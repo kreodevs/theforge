@@ -1,0 +1,28 @@
+# Un solo contenedor para Dokploy: Postgres + API + Web (Nginx)
+# Nombre del contenedor: theforge-db
+# Conexión interna: DATABASE_URL=postgresql://theforge:theforge@localhost:5432/theforge
+
+services:
+  theforge-db:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: theforge-db
+    environment:
+      - DATABASE_URL=postgresql://theforge:theforge@localhost:5432/theforge
+      - AI_PROVIDER=${AI_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY:-}
+    ports:
+      - "80:80"
+    volumes:
+      - theforge_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  theforge_db_data:

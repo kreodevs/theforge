@@ -1,0 +1,7 @@
+# store
+
+Estado global con Zustand.
+
+| Archivo              | Uso                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **workshopStore.ts** | Store del Workshop: project, session, mddContent, loading, synced, error, **agentProgress**. Acciones: fetchProject, sendMessage (ai-orchestrator/chat), updateMddContent, persistMddContent (PATCH project), **generateBenchmark** (POST /ai-analysis/stream, consume NDJSON, muestra progreso de agentes y persiste markdown en dbgaContent). Cuando la IA actualiza el MDD en la respuesta, set actualiza project/session/mddContent y el Semáforo y Costos se re-renderizan al instante. |

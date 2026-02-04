@@ -1,0 +1,10 @@
+{
+  "extends": "@the-forge/config/base",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": false
+  },
+  "include": ["src/**/*.ts", "src/generated"],
+  "exclude": ["node_modules", "dist"]
+}

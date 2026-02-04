@@ -1,0 +1,26 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const PROMPT_PATH = join(
+  __dirname,
+  "..",
+  "..",
+  "..",
+  "..",
+  "..",
+  "..",
+  "modules",
+  "ai",
+  "prompts",
+  "verify-deliverable-prompt.md",
+);
+
+function loadVerifyDeliverablePrompt(): string {
+  try {
+    return readFileSync(PROMPT_PATH, "utf-8").trim();
+  } catch {
+    return "Verifica si el documento generado cumple el MDD. Responde en una línea: Cumple o No cumple, y si no cumple lista 1-3 gaps concretos.";
+  }
+}
+
+export const VERIFY_DELIVERABLE_PROMPT = loadVerifyDeliverablePrompt();

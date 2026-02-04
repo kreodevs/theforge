@@ -1,0 +1,32 @@
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { HumanMessage } from "@langchain/core/messages";
+import { SYNTHESIS_PROMPT } from "../prompts/load-prompts.js";
+import type { DBGAStateType } from "../state/index.js";
+
+/** Creates the Synthesis (Gap Analysis) node. */
+export function createSynthesisNode(llm: BaseChatModel) {
+  return async (state: DBGAStateType): Promise<Partial<DBGAStateType>> => {
+    const context = [
+      `Idea del usuario: ${state.rawIdea}`,
+      "Competidores:",
+      ...state.competitors.map(
+        (c) =>
+          `- ${c.name} (${c.url})${c.uvp ? ` - UVP: ${c.uvp}` : ""}${c.pricing ? ` - Precio: ${c.pricing}` : ""}`,
+      ),
+      "Tech stack observado:",
+      ...state.techStackInsights.map((s) => `- ${s}`),
+      state.userPainPoints.length > 0
+        ? `Pain points del usuario: ${state.userPainPoints.join("; ")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const prompt = `${SYNTHESIS_PROMPT}\n\n---\n${context}`;
+    const response = await llm.invoke([new HumanMessage(prompt)]);
+    const gapAnalysis = typeof response.content === "string" ? response.content.trim() : "";
+    return {
+      gapAnalysis: gapAnalysis || "# Domain Benchmark & Gap Analysis\n\n(Sin contenido generado.)",
+      status: "finalizing",
+    };
+  };
+}

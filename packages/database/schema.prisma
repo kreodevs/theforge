@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id               String       @id @default(uuid())
+  name             String
+  hasUxTeam        Boolean      @default(false)
+  status           Status       @default(ROJO)
+  precisionScore   Int          @default(0)
+  sessions         Session[]
+  estimation       Estimation?
+  figmaMapping     Json?
+  dbgaContent          String?   @db.Text
+  specContent          String?   @db.Text
+  mddContent           String?   @db.Text
+  blueprintContent     String?   @db.Text
+  tasksContent         String?   @db.Text
+  apiContractsContent  String?   @db.Text
+  logicFlowsContent    String?   @db.Text
+  infraContent         String?   @db.Text
+  uxUiGuideContent     String?   @db.Text
+  phase0SummaryContent String?   @db.Text
+  agentCheckpoint      AgentStateCheckpoint?
+  createdAt            DateTime  @default(now())
+}
+
+/// Hilo de conversación LangGraph por proyecto. Permite retomar Fase 0 / DBGA.
+model AgentStateCheckpoint {
+  id        String   @id @default(uuid())
+  threadId  String   @unique
+  projectId String   @unique
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Memoria semántica: preferencias arquitectónicas extraídas al aprobar un MDD.
+/// Se inyectan al inicio de Fase 0 para alinear el benchmark al estilo del usuario.
+model ArchitecturalPreference {
+  id         String   @id @default(uuid())
+  projectId  String?
+  summary    String   @db.Text
+  createdAt  DateTime @default(now())
+}
+
+model Session {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chatLog     Json
+  contextStep String
+  updatedAt   DateTime @updatedAt
+}
+
+model Estimation {
+  id             String   @id @default(uuid())
+  projectId     String   @unique
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  totalHours    Float
+  totalMxn      Float
+  teamStructure Json
+}
+
+enum Status {
+  ROJO
+  AMARILLO
+  VERDE
+}

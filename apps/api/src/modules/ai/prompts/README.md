@@ -1,0 +1,14 @@
+# prompts
+
+Prompts del módulo AI.
+
+| Archivo                               | Uso                                                                                                                                                                                                                                                                                       |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **master-prompt.md**                  | Texto del prompt maestro. Edita este archivo para cambiar el comportamiento de la IA en la entrevista (rol, metodología, reglas).                                                                                                                                                         |
+| **master-prompt.ts**                  | Carga el contenido de `master-prompt.md` desde esta misma carpeta y lo exporta como `MASTER_PROMPT`. Se inyecta como system message en cada llamada a la IA desde el Workshop.                                                                                                            |
+| **discovery-benchmark-prompt.md**     | Prompt para Domain Benchmark & Gap Analysis (Paso 0). Usado por `DiscoveryService.generateBenchmark`.                                                                                                                                                                                     |
+| **phase0-deep-research-prompt.md**    | Prompt para Deep Research (Paso 0). Usado por `DiscoveryService.generatePhase0DeepResearch`; salida en `Project.phase0SummaryContent`.                                                                                                                                                    |
+| **phase0-benchmark-refine-prompt.md** | Prompt para refinar el Benchmark desde el chat (Paso 0). Cuando el usuario envía mensajes en el tab benchmark con DBGA existente, la IA devuelve el documento actualizado y termina con `---FIN_DBGA---`. Usado por `AiService.generateResponse` con `activeTab === "benchmark"`.         |
+| **ux-ui-guide-prompt.md**             | Guía UX/UI (tab Guía UX/UI). Incluye prioridad de reglas (accesibilidad CRÍTICA, touch CRÍTICA, layout/performance ALTA, tipografía/animación/estilo MEDIA) inspirada en UI/UX Pro Max; válida para cualquier dominio (SaaS, e-commerce, healthcare, etc.). Salida con `---FIN_UX_UI---`. |
+
+El build copia `*.md` a `dist/modules/ai/prompts/` para que la API lea el archivo en runtime. El `AiService` usa `MASTER_PROMPT` por defecto al llamar a `generateResponse`.

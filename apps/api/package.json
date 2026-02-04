@@ -1,0 +1,43 @@
+{
+  "name": "@the-forge/api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "start": "node dist/main.js",
+    "test": "nest build && node --test dist/apps/api/src/**/*.spec.js",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\""
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.0",
+    "@langchain/langgraph": "^0.2.0",
+    "@langchain/google-genai": "^0.1.0",
+    "@langchain/langgraph-checkpoint-postgres": "^1.0.0",
+    "@langchain/openai": "^0.3.0",
+    "@langchain/tavily": "^0.1.0",
+    "cheerio": "^1.0.0",
+    "@prisma/client": "^5.22.0",
+    "dotenv": "^16.4.5",
+    "@the-forge/database": "workspace:*",
+    "@the-forge/shared-types": "workspace:*",
+    "@google/generative-ai": "^0.21.0",
+    "@nestjs/common": "^10.4.9",
+    "@nestjs/core": "^10.4.9",
+    "@nestjs/platform-express": "^10.4.9",
+    "openai": "^4.73.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "json2md": "^2.0.0",
+    "pg": "^8.13.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.9",
+    "@nestjs/schematics": "^10.2.3",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "prisma": "^5.22.0",
+    "typescript": "^5.6.3"
+  }
+}

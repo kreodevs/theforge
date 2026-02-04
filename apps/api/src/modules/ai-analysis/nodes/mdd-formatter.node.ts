@@ -1,0 +1,93 @@
+import type { MDDStateType } from "../state/index.js";
+import {
+  ensureContratosSection,
+  extractSection3Body,
+  getMddDraftSummary,
+  hydrateStructuredFromDraft,
+  logMddNodeOutput,
+  normalizeMddFormat,
+  replaceContextWhenOnlyMetadata,
+  sanitizeContextKeyValueAndObject,
+  sanitizeContextSection,
+} from "../utils/mdd-sanitize.js";
+import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js";
+
+const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:Formatter] ${msg}`, ...args);
+
+function hasStructuredContent(mdd: MDDStateType["mddStructured"]): boolean {
+  if (!mdd || typeof mdd !== "object") return false;
+  const keys = Object.keys(mdd) as (keyof typeof mdd)[];
+  return keys.some((k) => {
+    const v = mdd[k];
+    if (v === undefined || v === null) return false;
+    if (typeof v === "string") return v.trim().length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    return Object.keys(v as object).length > 0;
+  });
+}
+
+/**
+ * Nodo formateador: si existe mddStructured con contenido, deriva mddDraft con mddStructuredToMarkdown;
+ * si no, normaliza mddDraft (unescape, Contexto a viñetas, tablas, TechnicalMetadata, etc.).
+ * Sin LLM ni tools.
+ */
+export function createMddFormatterNode(): (state: MDDStateType) => Promise<Partial<MDDStateType>> {
+  return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
+    const currentDraft = (state.mddDraft ?? "").trim();
+    const currentDraftLen = currentDraft.length;
+    const section3Body = extractSection3Body(currentDraft);
+    const draftHasSubstantialSection3 =
+      (section3Body?.length ?? 0) > 200 && /\bCREATE\s+TABLE\b/i.test(section3Body ?? "");
+    // No reemplazar por mddStructured si: hay directiva aceptada y draft sustancial, o el draft ya tiene §3 sustancial (evitar pisar modelo de datos actualizado por el SA).
+    const preserveDraftFromArchitect =
+      (state.acceptedProposalDirective ?? "").trim().length > 0 && currentDraftLen > 500;
+    const preserveDraft = preserveDraftFromArchitect || draftHasSubstantialSection3;
+
+    if (hasStructuredContent(state.mddStructured) && !preserveDraft) {
+      try {
+        const hydrated = hydrateStructuredFromDraft(state.mddStructured, state.mddDraft ?? "");
+        const rendered = mddStructuredToMarkdown(hydrated);
+        if (rendered.trim().length > 0) {
+          const markdown = normalizeMddFormat(rendered);
+          if (currentDraftLen > markdown.length * 1.35 || draftHasSubstantialSection3) {
+            if (draftHasSubstantialSection3) LOG("draft tiene §3 sustancial; no reemplazar por mddStructured, se normaliza draft");
+            else LOG("draft entrante (%s) mucho más largo que mddStructured (%s); se preserva draft y solo se normaliza", currentDraftLen, markdown.length);
+          } else {
+            LOG("derivado desde mddStructured len=%s (normalizado)", markdown.length);
+            logMddNodeOutput("Formatter", markdown);
+            return { mddDraft: markdown };
+          }
+        }
+      } catch (err) {
+        LOG("error render mddStructured: %s", err instanceof Error ? err.message : String(err));
+      }
+    } else if (preserveDraft) {
+      if (preserveDraftFromArchitect) LOG("acceptedProposalDirective presente y draft sustancial; no reemplazar por mddStructured, se normaliza draft");
+      else LOG("draft con §3 sustancial; no reemplazar por mddStructured, se normaliza draft");
+    }
+    const draft = currentDraft;
+    if (!draft || draft.length < 50) {
+      LOG("draft vacío o muy corto, sin cambios");
+      return {};
+    }
+    try {
+      const formatted = normalizeMddFormat(
+        ensureContratosSection(
+          replaceContextWhenOnlyMetadata(sanitizeContextKeyValueAndObject(sanitizeContextSection(draft))),
+        ),
+      );
+      if (formatted === draft) {
+        const sum = getMddDraftSummary(draft);
+        LOG("sin cambios len=%s section2=%s", sum.length, sum.section2);
+        return {};
+      }
+      const sum = getMddDraftSummary(formatted);
+      LOG("formateado len=%s -> %s section2=%s", draft.length, sum.length, sum.section2);
+      logMddNodeOutput("Formatter", formatted);
+      return { mddDraft: formatted };
+    } catch (err) {
+      LOG("error: %s", err instanceof Error ? err.message : String(err));
+      return {};
+    }
+  };
+}

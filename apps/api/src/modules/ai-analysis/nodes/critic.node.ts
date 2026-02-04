@@ -1,0 +1,30 @@
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { HumanMessage } from "@langchain/core/messages";
+import { CRITIC_PROMPT } from "../prompts/load-prompts.js";
+import { criticDecisionSchema, type DBGAStateType } from "../state/index.js";
+import { z } from "zod";
+
+const criticOutputSchema = z.object({
+  criticDecision: criticDecisionSchema,
+  refinedQuery: z.string().optional().nullable(),
+});
+
+/** Creates the Critic (Validation) node. */
+export function createCriticNode(llm: BaseChatModel) {
+  return async (state: DBGAStateType): Promise<Partial<DBGAStateType>> => {
+    const context = [
+      `Idea: ${state.rawIdea}`,
+      `Competidores (${state.competitors.length}): ${state.competitors.map((c) => `${c.name} - ${c.url}`).join("; ")}`,
+      `Tech insights: ${state.techStackInsights.join("; ") || "ninguno"}`,
+    ].join("\n");
+    const prompt = `${CRITIC_PROMPT}\n\n---\n${context}`;
+    const response = await llm.invoke([new HumanMessage(prompt)]);
+    const text = typeof response.content === "string" ? response.content : "";
+    const stripped = text.replace(/^```json?\s*|\s*```$/g, "").trim();
+    const parsed = criticOutputSchema.parse(JSON.parse(stripped) as unknown);
+    return {
+      criticDecision: parsed.criticDecision,
+      refinedQuery: parsed.refinedQuery ?? undefined,
+    };
+  };
+}
