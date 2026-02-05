@@ -29,7 +29,33 @@ function extractSection(md: string, pattern: RegExp): string {
   return rest.slice(0, end).trim();
 }
 
-/** Extrae palabras clave de stack/tecnologías (NestJS, React, PostgreSQL, etc.) de un bloque de texto. */
+/** Forma canónica por tecnología para que "postgres"/"postgresql" y "tailwind"/"tailwindcss" cuenten como match. */
+const STACK_CANONICAL: Record<string, string> = {
+  postgres: "postgresql",
+  postgresql: "postgresql",
+  mysql: "mysql",
+  sqlite: "sqlite",
+  tailwind: "tailwindcss",
+  tailwindcss: "tailwindcss",
+  vite: "vite",
+  webpack: "webpack",
+  nestjs: "nestjs",
+  react: "react",
+  vue: "vue",
+  angular: "angular",
+  svelte: "svelte",
+  prisma: "prisma",
+  typeorm: "typeorm",
+  docker: "docker",
+  dockerfile: "docker",
+  "docker-compose": "docker",
+  typescript: "typescript",
+  javascript: "javascript",
+  turborepo: "turborepo",
+  nx: "nx",
+};
+
+/** Extrae palabras clave de stack/tecnologías (NestJS, React, PostgreSQL, etc.) de un bloque de texto. Devuelve formas canónicas para comparación. */
 function extractStackKeywords(text: string): Set<string> {
   const lower = text.toLowerCase();
   const keywords = new Set<string>();
@@ -47,7 +73,9 @@ function extractStackKeywords(text: string): Set<string> {
   for (const p of patterns) {
     let match: RegExpExecArray | null;
     while ((match = p.exec(lower)) !== null) {
-      keywords.add(match[1]?.toLowerCase() ?? "");
+      const raw = (match[1]?.toLowerCase() ?? "").replace(/\s*v?\d*$/, "");
+      const canonical = STACK_CANONICAL[raw] ?? raw;
+      if (canonical) keywords.add(canonical);
     }
   }
   return keywords;

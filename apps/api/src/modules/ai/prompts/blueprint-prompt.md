@@ -14,7 +14,7 @@ El **MDD** del proyecto (secciones: Contexto, Arquitectura y Stack §2, Modelo d
 
 **Razona paso a paso:** dominio → stack explícito → entidades completas → arquitectura → consistencia.
 
-1. **Stack (obligatorio):** Extrae del MDD §2 **todas** las tecnologías: base de datos (PostgreSQL, MySQL, etc.), lenguajes, frameworks, Redis/caché si aplica. El Blueprint debe **mencionar explícitamente** cada una (p. ej. "PostgreSQL" si el MDD lo indica); si el MDD dice "postgresql" o "PostgreSQL", el Blueprint debe incluirlo en stack y en el apartado de persistencia.
+1. **Stack (obligatorio):** Extrae del MDD §2 **todas** las tecnologías: base de datos (PostgreSQL, MySQL, etc.), lenguajes, frameworks, build tools (Vite, Webpack), CSS (Tailwind CSS, etc.), Redis/caché si aplica. El Blueprint debe **nombrar explícitamente cada una** en el cuerpo del documento (p. ej. si el MDD indica "postgresql", escribe "PostgreSQL" en stack y persistencia; si indica "vite", escribe "Vite"; si "tailwind" o "tailwindcss", escribe "Tailwind CSS"). Un verificador automático compara MDD §2 vs Blueprint; ninguna tecnología del §2 puede faltar por nombre.
 2. **Entidades/tablas (obligatorio):** Extrae del MDD §3 (Modelo de Datos) **todas y cada una** de las entidades o tablas (users, roles, user_roles, applications, sessions, mfa_methods, audit_log, o las que el MDD defina para su dominio). El Blueprint debe **listar o describir cada tabla** con sus campos relevantes; no sustituyas por "entidades de dominio" genéricas ni omitas tablas. Si el MDD tiene 8 tablas, el Blueprint debe reflejar las 8.
 3. **Proyección de Arquitectura:** Diseña la solución según el stack y el estilo que el MDD defina. No introduzcas colas, buses o servicios distribuidos si el MDD no los especifica.
 4. **Consistencia:** Respeta la escala y el modelo de integración del MDD. No sobre-arquitecturar; no omitir stack ni entidades.
@@ -44,7 +44,8 @@ A continuación genera el contenido obligatorio del Blueprint:
 
 ### Reglas de Oro
 
-- **Cobertura:** Stack del MDD (p. ej. PostgreSQL) y **todas** las entidades/tablas del MDD §3 deben aparecer explícitamente en el Blueprint. Un verificador comparará MDD vs Blueprint; cero omisiones.
+- **Cobertura stack:** Cada tecnología del MDD §2 debe aparecer **por nombre** en el Blueprint: base de datos (PostgreSQL, MySQL…), runtime/framework (NestJS, Node…), frontend (React…), build (Vite, Webpack), estilos (Tailwind CSS). No des por hecho ni resumas; escríbelas. Un verificador automático busca esas cadenas; si faltan, se reportan como gaps.
+- **Cobertura entidades:** **Todas** las entidades/tablas del MDD §3 deben aparecer explícitamente en el Blueprint. Cero omisiones.
 - Ambigüedad: si el MDD no detalla, aplica OWASP ASVS Nivel 3 y documenta. Prohibido `any`. Dominio: nombres de módulos y tablas derivan del **MDD**, sea cual sea el dominio (SSO, ventas, salud, etc.).
 
 # Expectativa #
