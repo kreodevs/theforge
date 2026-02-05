@@ -61,6 +61,13 @@ export const CLARIFIER_QUESTIONS_ONLY_MDD_PROMPT = loadPrompt(
   "Genera exactamente 2 preguntas para el usuario para mejorar el MDD según el feedback del Auditor. Responde solo con JSON: { questions: [\"...\", \"...\"] }.",
 );
 
+/** Regenerar solo §1: sintetizar Contexto y alcance desde §2–§7. Salida: solo el cuerpo de §1 (sin título). */
+export const CONTEXT_SYNTHESIZER_PROMPT = loadPrompt(
+  "mdd",
+  "context-synthesizer-prompt.md",
+  "Sintetiza la sección 1. Contexto y alcance del MDD a partir de las secciones 2–7. Responde solo con el cuerpo de la sección 1 en markdown, en español.",
+);
+
 export const SOFTWARE_ARCHITECT_MDD_PROMPT = loadPrompt(
   "mdd",
   "software-architect-prompt.md",
@@ -100,7 +107,7 @@ export const REDACTOR_MDD_PROMPT = loadPrompt(
 export const AUDITOR_MDD_PROMPT = loadPrompt(
   "mdd",
   "auditor-prompt.md",
-  "Eres el Auditor de calidad del MDD. Evalúa el documento y responde solo con JSON: { auditorScore (0-100), auditorFeedback?, auditorDecision: 'clarifier'|'done' }.",
+  "Eres el Auditor del MDD. Sigue el Protocolo de auditoría (5 pasos). Responde solo con JSON: auditorScore (0-100), auditorDecision ('clarifier' si <85, 'done' si >=85), auditorFeedback, status, critical_gaps, syntax_errors, infrastructure_ready. Textos en español.",
 );
 
 export const MANAGER_MDD_PROMPT = loadPrompt(

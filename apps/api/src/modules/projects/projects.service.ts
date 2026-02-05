@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Status } from "@the-forge/database";
 import type { Prisma } from "@the-forge/database";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { SemaphoreService } from "../engine/semaphore.service.js";
 import { CostCalculatorService } from "../engine/cost-calculator.service.js";
 import { normalizeMddContent, extractTechnicalMetadataTags } from "../engine/mdd-markdown-parser.js";
+import { preRenderMddSanity, sanitizeMermaidInDraft } from "../engine/mdd-pre-render.js";
 import { parseInfraFixedHours } from "../engine/cost-calculator.service.js";
 import type { ApiConformanceResult, ConformanceResult } from "../engine/conformance.service.js";
 import { ConformanceService } from "../engine/conformance.service.js";
@@ -75,8 +76,20 @@ export class ProjectsService {
     const mddContentForRecalc = parsed.mddContent ?? existing.mddContent ?? null;
     const infraContentForRecalc = parsed.infraContent ?? existing.infraContent ?? null;
 
-    if (parsed.mddContent !== undefined) {
-      const normalized = normalizeMddContent(parsed.mddContent);
+    let effectiveMddForRecalc = mddContentForRecalc;
+    if (parsed.mddContent !== undefined && parsed.mddContent !== null) {
+      const mddContent = parsed.mddContent;
+      const sanity = preRenderMddSanity(mddContent);
+      if (!sanity.ok) {
+        throw new BadRequestException({
+          code: sanity.code,
+          message: sanity.message ?? "Error de validación del MDD",
+        });
+      }
+      const sanitizedDraft = sanitizeMermaidInDraft(mddContent);
+      updatePayload.mddContent = sanitizedDraft;
+      effectiveMddForRecalc = sanitizedDraft;
+      const normalized = normalizeMddContent(sanitizedDraft);
       const contentForSemaphore = JSON.stringify(normalized);
       const { status, precisionScore } = this.semaphore.evaluate(
         contentForSemaphore,
@@ -86,13 +99,13 @@ export class ProjectsService {
       updatePayload.precisionScore = precisionScore;
     }
 
-    if (mddContentForRecalc != null && (parsed.mddContent !== undefined || parsed.infraContent !== undefined)) {
-      const normalized = normalizeMddContent(mddContentForRecalc);
+    if (effectiveMddForRecalc != null && (parsed.mddContent !== undefined || parsed.infraContent !== undefined)) {
+      const normalized = normalizeMddContent(effectiveMddForRecalc);
       const status = (updatePayload.status as Status) ?? existing.status;
       const entityCount = normalized.db_entities?.length ?? 0;
       const screenCount = normalized.screens?.length ?? 0;
       const extraEndpointCount = normalized.extra_endpoints ?? 0;
-      const metadataTags = extractTechnicalMetadataTags(mddContentForRecalc);
+      const metadataTags = extractTechnicalMetadataTags(effectiveMddForRecalc);
       const infraFixedHours = parseInfraFixedHours(infraContentForRecalc);
 
       const { totalHours, totalMxn, teamStructure } = this.costCalculator.calculate({

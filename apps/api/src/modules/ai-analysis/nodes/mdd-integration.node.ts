@@ -9,6 +9,7 @@ import {
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
 import {
+  buildNewFormatManifestFromIdentifiedTerms,
   extractIdentifiedInfraFromText,
   fixIntegrationSectionBullets,
   getMddDraftSummary,
@@ -197,7 +198,12 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
                 content: "(Pendiente de definir.)",
               }),
             ],
-            manifest: { stack: [], pending: "Definir con el usuario: orquestación y despliegue" },
+            manifest: {
+              project_id: "mdd-project",
+              stack: { backend: {}, database: {}, security: {} },
+              deployment: { orchestrator: "TBD", provider: "TBD", tooling: {}, resources: {} },
+              integration_metadata: { api_prefix: "/api/v1", jwks_enabled: false, multi_tenant_support: false },
+            },
           }),
         };
         const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");
@@ -221,6 +227,10 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
         } catch {
           section = text.replace(/^```(?:markdown)?\s*|\s*```$/g, "").trim();
         }
+        const sec6Match = section.match(/\n##\s+6\.\s/m);
+        if (sec6Match != null && sec6Match.index != null) {
+          section = section.slice(0, sec6Match.index).trim();
+        }
         if (section.startsWith("{") && section.includes('"')) {
           section = jsonSectionToMarkdown(section, "Integración");
         }
@@ -228,6 +238,11 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
         slice = {
           integracion: markdownToIntegracion(section || "## Integración\n\n(Pendiente de definir.)", identifiedInfra),
         };
+        const man = slice.integracion.manifest as Record<string, unknown> | undefined;
+        const isOldFormat = man && Array.isArray(man.stack);
+        if (!slice.integracion.manifest || isOldFormat) {
+          slice.integracion.manifest = buildNewFormatManifestFromIdentifiedTerms(identifiedInfra);
+        }
       }
 
       const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");

@@ -12,7 +12,8 @@ export interface UseInterviewReturn {
   session: Session | null;
   loading: boolean;
   error: string | null;
-  sendMessage: (message: string) => Promise<void>;
+  /** options.regenerateSection: para comandos / (solo tab MDD). */
+  sendMessage: (message: string, options?: { regenerateSection?: number }) => Promise<void>;
 }
 
 export function useInterview(
@@ -55,7 +56,8 @@ export function useInterview(
       : baseMessages;
 
   const send = useCallback(
-    (message: string) => sendMessageStore(message, activeTab),
+    (message: string, options?: { regenerateSection?: number }) =>
+      sendMessageStore(message, activeTab, options),
     [sendMessageStore, activeTab],
   );
 

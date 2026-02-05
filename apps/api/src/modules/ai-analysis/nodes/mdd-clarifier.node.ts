@@ -55,7 +55,7 @@ export function createMddClarifierNode(llm: BaseChatModel) {
         const identifiedInfra = extractIdentifiedInfraFromText(draftAndUser);
         const alreadyDocumented = extractAlreadyDocumentedTopics(state.mddDraft ?? "");
         const contextParts = [
-          "**Precisión actual:** " + (state.auditorScore ?? 0) + "%. Objetivo: 95%.",
+          "**Precisión actual:** " + (state.auditorScore ?? 0) + "%. Objetivo: 85% (a partir de 85% se cede la intervención al usuario).",
           "**Borrador actual del MDD:**",
           state.mddDraft || "(vacío)",
           alreadyDocumented.length > 0

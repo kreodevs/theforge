@@ -5,6 +5,23 @@ import { mddStructuredSchema } from "./mdd-structured.schema.js";
 export const mddAuditorDecisionSchema = z.enum(["clarifier", "done"]);
 export type MDDAuditorDecision = z.infer<typeof mddAuditorDecisionSchema>;
 
+/** Gap crítico generado por el Auditor (LLM). Textos en español. */
+export const auditorCriticalGapSchema = z.object({
+  sections: z.array(z.string()),
+  issue: z.string(),
+  fix: z.string(),
+});
+
+/** Gaps estructurados del Auditor (fuente de verdad para estimador cuando existe). */
+export const auditorGapsSchema = z.object({
+  score: z.number().min(0).max(100),
+  status: z.enum(["APROBADO", "RECHAZADO"]),
+  critical_gaps: z.array(auditorCriticalGapSchema),
+  syntax_errors: z.array(z.string()),
+  infrastructure_ready: z.boolean(),
+});
+export type AuditorGapsState = z.infer<typeof auditorGapsSchema>;
+
 /** Un paso del plan explícito (patrón Planner–Executor). El Executor ejecuta en orden. */
 export const mddPlanStepSchema = z.object({
   step_id: z.string().describe("Identificador del paso (ej. '1', '2')"),
@@ -21,7 +38,7 @@ export type MddPlanStep = z.infer<typeof mddPlanStepSchema>;
  * Shared state for the MDD (Master Design Document) agent pipeline.
  * Input: dbgaContent (Benchmark & Gap Analysis). Output: mddDraft.
  * mddStructured is the source of truth when present; mddDraft is derived via mddStructuredToMarkdown.
- * Flow: Clarifier → Security Architect → Integration Engineer → Auditor → (score < 95 ? Clarifier : END).
+ * Flow: Clarifier → … → Auditor → (score < 85 ? Manager asigna gaps a agentes : END; umbral 85 = ceder al usuario).
  */
 export const mddStateSchema = z.object({
   /** Input: Domain Benchmark & Gap Analysis markdown. */
@@ -32,10 +49,12 @@ export const mddStateSchema = z.object({
   mddStructured: mddStructuredSchema.optional(),
   /** Accumulated MDD document (each agent appends). Derived from mddStructured when present. */
   mddDraft: z.string(),
-  /** Auditor quality score 0–100. If < 95, loop to Clarifier. */
+  /** Auditor quality score 0–100. If < 85, Manager assigns gap tasks to agents; if >= 85, hand over to user. */
   auditorScore: z.number().min(0).max(100),
-  /** Feedback from Auditor when score < 95 (passed to Clarifier on loop). */
+  /** Feedback from Auditor when score < 85 (passed to Clarifier/agents for correction). */
   auditorFeedback: z.string().optional(),
+  /** Gaps estructurados del Auditor (LLM); usado por el estimador en lugar de regex. */
+  auditorGaps: auditorGapsSchema.optional(),
   /** Route: "clarifier" = loop with feedback, "done" = end. */
   auditorDecision: mddAuditorDecisionSchema.optional(),
   /** Loop counter: max iterations to avoid infinite cycle (e.g. 3). */
@@ -106,6 +125,7 @@ export const defaultMDDState: MDDState = {
   mddDraft: "",
   auditorScore: 0,
   auditorFeedback: undefined,
+  auditorGaps: undefined,
   auditorDecision: undefined,
   mddIteration: 0,
   managerQuestions: undefined,

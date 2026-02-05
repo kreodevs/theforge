@@ -23,11 +23,13 @@ import {
   Play,
   ListOrdered,
   ListTodo,
+  Download,
 } from "lucide-react";
 import { useWorkshopStore, type Status } from "../store/workshopStore";
 import ChatContainer from "../components/ChatContainer";
 import MddViewer from "../components/MddViewer";
 import { calculateCostFromMdd } from "../utils/costCalculator";
+import { downloadDocumentsZip } from "../utils/downloadDocumentsZip";
 import type { LucideIcon } from "lucide-react";
 
 function DocEmptyState({
@@ -91,6 +93,8 @@ export default function WorkshopView({
   const infraContent = useWorkshopStore((s) => s.project?.infraContent ?? s.infraContent);
   const tasksContent = useWorkshopStore((s) => s.project?.tasksContent ?? s.tasksContent);
   const conformance = useWorkshopStore((s) => s.conformance);
+  const precisionBreakdown = useWorkshopStore((s) => s.precisionBreakdown);
+  const auditTrail = useWorkshopStore((s) => s.auditTrail);
   const pendingDeliverablePreview = useWorkshopStore((s) => s.pendingDeliverablePreview);
   const uxUiGuideContent = useWorkshopStore((s) => s.uxUiGuideContent ?? s.project?.uxUiGuideContent ?? null);
   const synced = useWorkshopStore((s) => s.synced);
@@ -100,6 +104,7 @@ export default function WorkshopView({
   const setError = useWorkshopStore((s) => s.setError);
   const fetchProject = useWorkshopStore((s) => s.fetchProject);
   const fetchWelcome = useWorkshopStore((s) => s.fetchWelcome);
+  const sendMessage = useWorkshopStore((s) => s.sendMessage);
   const setMddContent = useWorkshopStore((s) => s.setMddContent);
   const revertMddContent = useWorkshopStore((s) => s.revertMddContent);
   const persistAndReviewMdd = useWorkshopStore((s) => s.persistAndReviewMdd);
@@ -390,7 +395,48 @@ export default function WorkshopView({
             )}
           </span>
         </div>
+        <button
+          type="button"
+          onClick={async () => {
+            const ok = await downloadDocumentsZip(
+              {
+                dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
+                phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
+                specContent: specContent ?? project?.specContent ?? null,
+                mddContent: mddContent ?? project?.mddContent ?? "",
+                uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
+                blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
+                apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
+                logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
+                tasksContent: tasksContent ?? project?.tasksContent ?? null,
+                infraContent: infraContent ?? project?.infraContent ?? null,
+              },
+              projectName ?? project?.name ?? "Workshop",
+            );
+            if (ok) setError(null);
+            else setError("No hay documentos con contenido para descargar.");
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm"
+          title="Descargar todos los documentos del proyecto en un ZIP"
+        >
+          <Download className="w-4 h-4" />
+          Descargar todo (ZIP)
+        </button>
       </header>
+
+      {error && (
+        <div className="shrink-0 px-4 py-2 bg-red-500/10 border-b border-red-500/30 flex items-center justify-between gap-2">
+          <p className="text-sm text-red-200">{error}</p>
+          <button
+            type="button"
+            onClick={() => useWorkshopStore.getState().setError(null)}
+            className="text-red-300 hover:text-red-100 text-xs"
+            aria-label="Cerrar"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_320px]">
         {/* Columna A: Chat (siempre a la izquierda, como en MDD) */}
@@ -588,6 +634,47 @@ export default function WorkshopView({
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   Regenerar
+                </button>
+              )}
+              {centralPanel === "spec" && (
+                <button
+                  type="button"
+                  onClick={() => generateSpec(projectId)}
+                  disabled={loading}
+                  title="Regenerar Spec desde Benchmark y alcance"
+                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  Regenerar
+                </button>
+              )}
+              {centralPanel === "tasks" && (
+                <button
+                  type="button"
+                  onClick={() => generateTasks(projectId)}
+                  disabled={loading || !mddContent?.trim() || !blueprintContent?.trim()}
+                  title="Regenerar Tasks desde MDD y Blueprint"
+                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  Regenerar
+                </button>
+              )}
+              {centralPanel === "ux-ui-guide" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    sendMessage(
+                      "Genera la Guía UX/UI completa a partir del MDD y Blueprint del proyecto. Incluye: patrón/estilo, paleta y tokens de color, tipografía, espaciado y grid, componentes de referencia, prioridades de UX, criterios de accesibilidad (WCAG, contraste 4.5:1, teclado, touch 44px) y anti-patrones a evitar. Responde con el documento seguido de ---FIN_UX_UI--- y un mensaje breve.",
+                      "ux-ui-guide",
+                    )
+                  }
+                  disabled={loading || !mddContent?.trim()}
+                  title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat)"
+                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  {(uxUiGuideContent ?? "").trim() ? "Regenerar" : "Generar"}
                 </button>
               )}
             </div>
@@ -795,31 +882,62 @@ export default function WorkshopView({
               </>
             )}
             {centralPanel === "ux-ui-guide" && (
-              uxUiGuideViewMode === "preview" ? (
-                <MddViewer content={uxUiGuideContent ?? ""} />
-              ) : (
-                <textarea
-                  value={uxUiGuideContent ?? ""}
-                  onChange={(e) => setUxUiGuideContent(e.target.value || null)}
-                  onBlur={handleUxUiGuideBlur}
-                  placeholder="# Guía UX/UI\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
-                  className="w-full min-h-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
-                  spellCheck={false}
-                />
-              )
+              <>
+                {uxUiGuideViewMode === "preview" ? (
+                  <MddViewer content={uxUiGuideContent ?? ""} />
+                ) : (
+                  <textarea
+                    value={uxUiGuideContent ?? ""}
+                    onChange={(e) => setUxUiGuideContent(e.target.value || null)}
+                    onBlur={handleUxUiGuideBlur}
+                    placeholder="# Guía UX/UI\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
+                    className="w-full min-h-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
+                    spellCheck={false}
+                  />
+                )}
+                <div className="shrink-0 flex items-center justify-end gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      sendMessage(
+                        "Genera la Guía UX/UI completa a partir del MDD y Blueprint del proyecto. Incluye: patrón/estilo, paleta y tokens de color, tipografía, espaciado y grid, componentes de referencia, prioridades de UX, criterios de accesibilidad (WCAG, contraste 4.5:1, teclado, touch 44px) y anti-patrones a evitar. Responde con el documento seguido de ---FIN_UX_UI--- y un mensaje breve.",
+                        "ux-ui-guide",
+                      )
+                    }
+                    disabled={loading || !mddContent?.trim()}
+                    title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat)"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {(uxUiGuideContent ?? "").trim() ? "Regenerar" : "Generar"} guía
+                  </button>
+                </div>
+              </>
             )}
             {centralPanel === "spec" && (
               specContent ? (
                 <div className="flex flex-col gap-2 h-full min-h-0">
                   <MddViewer content={specContent} />
-                  <button
-                    type="button"
-                    onClick={() => persistSpecContent(specContent)}
-                    className="self-end flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 text-sm"
-                  >
-                    <Save className="w-4 h-4" />
-                    Guardar
-                  </button>
+                  <div className="self-end flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => generateSpec(projectId)}
+                      disabled={loading}
+                      title="Regenerar Spec desde Benchmark y alcance"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                      Regenerar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => persistSpecContent(specContent)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 text-sm"
+                    >
+                      <Save className="w-4 h-4" />
+                      Guardar
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <DocEmptyState
@@ -861,14 +979,26 @@ export default function WorkshopView({
               tasksContent ? (
                 <div className="flex flex-col gap-2 h-full min-h-0">
                   <MddViewer content={tasksContent} />
-                  <button
-                    type="button"
-                    onClick={() => persistTasksContent(tasksContent)}
-                    className="self-end flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 text-sm"
-                  >
-                    <Save className="w-4 h-4" />
-                    Guardar
-                  </button>
+                  <div className="self-end flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => generateTasks(projectId)}
+                      disabled={loading || !mddContent?.trim() || !blueprintContent?.trim()}
+                      title="Regenerar Tasks desde MDD y Blueprint"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                      Regenerar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => persistTasksContent(tasksContent)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 text-sm"
+                    >
+                      <Save className="w-4 h-4" />
+                      Guardar
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <DocEmptyState
@@ -1026,7 +1156,7 @@ export default function WorkshopView({
                   </button>
                 )}
                 <p className={conformance.api.ok ? "text-green-400" : "text-amber-400"}>
-                  API: {conformance.api.ok ? "Cumple" : `Faltan: ${conformance.api.missingInApi.join(", ")}`}
+                  API: {conformance.api.ok ? "Cumple" : `Faltan en el doc. de API (entregable): ${conformance.api.missingInApi.join(", ")}`}
                 </p>
                 {!conformance.api.ok && (conformance.api.missingInApi.length > 0 || conformance.api.extraInApi.length > 0) && (
                   <button
@@ -1154,11 +1284,11 @@ export default function WorkshopView({
                     <X className="w-5 h-5" />
                   </button>
                 </div>
-                <div className="p-6 overflow-y-auto space-y-8">
+                <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-8 custom-scrollbar">
                   {/* Sección Desglose */}
                   <div>
                     <h3 className="text-sm font-medium text-zinc-400 mb-3 uppercase tracking-wider">Desglose de Calificación</h3>
-                    {useWorkshopStore.getState().precisionBreakdown ? (
+                    {precisionBreakdown ? (
                       <div className="overflow-hidden rounded-lg border border-zinc-700">
                         <table className="w-full text-sm text-left">
                           <thead className="bg-zinc-800/50 text-zinc-400 border-b border-zinc-700">
@@ -1166,21 +1296,25 @@ export default function WorkshopView({
                               <th className="px-4 py-3 font-medium">Sección</th>
                               <th className="px-4 py-3 font-medium">Agente</th>
                               <th className="px-4 py-3 font-medium text-right">Calificación</th>
+                              <th className="px-4 py-3 font-medium">Por qué</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-700/50">
                             {[
-                              { section: "Contexto y alcance", agent: "Clarificador", value: useWorkshopStore.getState().precisionBreakdown?.contexto },
-                              { section: "Modelo de datos", agent: "Arquitecto de Software", value: useWorkshopStore.getState().precisionBreakdown?.modeloDatos },
-                              { section: "Contratos API", agent: "Arquitecto de Software", value: useWorkshopStore.getState().precisionBreakdown?.apiContracts },
-                              { section: "Seguridad", agent: "Arquitecto de Seguridad", value: useWorkshopStore.getState().precisionBreakdown?.seguridad },
-                              { section: "Integración", agent: "Ingeniero de Integración", value: useWorkshopStore.getState().precisionBreakdown?.integracion },
+                              { section: "Contexto y alcance", agent: "Clarificador", value: precisionBreakdown.contexto, reasonKey: "contexto" as const },
+                              { section: "Modelo de datos", agent: "Arquitecto de Software", value: precisionBreakdown.modeloDatos, reasonKey: "modeloDatos" as const },
+                              { section: "Contratos API", agent: "Arquitecto de Software", value: precisionBreakdown.apiContracts, reasonKey: "apiContracts" as const },
+                              { section: "Seguridad", agent: "Arquitecto de Seguridad", value: precisionBreakdown.seguridad, reasonKey: "seguridad" as const },
+                              { section: "Integración", agent: "Ingeniero de Integración", value: precisionBreakdown.integracion, reasonKey: "integracion" as const },
                             ].map((row, i) => (
                               <tr key={i} className="hover:bg-zinc-800/30">
-                                <td className="px-4 py-2.5 text-zinc-300">{row.section}</td>
-                                <td className="px-4 py-2.5 text-zinc-400">{row.agent}</td>
-                                <td className={`px-4 py-2.5 text-right font-mono font-medium ${(row.value ?? 0) >= 90 ? "text-green-400" : (row.value ?? 0) >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                                <td className="px-4 py-2.5 text-zinc-300 align-top">{row.section}</td>
+                                <td className="px-4 py-2.5 text-zinc-400 align-top">{row.agent}</td>
+                                <td className={`px-4 py-2.5 text-right font-mono font-medium align-top ${(row.value ?? 0) >= 90 ? "text-green-400" : (row.value ?? 0) >= 50 ? "text-amber-400" : "text-red-400"}`}>
                                   {row.value ?? 0}%
+                                </td>
+                                <td className="px-4 py-2.5 text-zinc-500 text-xs max-w-[280px] align-top">
+                                  {precisionBreakdown.sectionReasons?.[row.reasonKey] ?? "—"}
                                 </td>
                               </tr>
                             ))}
@@ -1198,10 +1332,10 @@ export default function WorkshopView({
                       <span>Audit Trail (Logs)</span>
                       <span className="text-xs normal-case text-zinc-500 font-normal">Secuencia de ejecución de agentes</span>
                     </h3>
-                    {useWorkshopStore.getState().auditTrail && useWorkshopStore.getState().auditTrail!.length > 0 ? (
+                    {auditTrail && auditTrail.length > 0 ? (
                       <div className="bg-zinc-950 rounded-lg border border-zinc-800 p-4 overflow-x-auto max-h-60 overflow-y-auto custom-scrollbar">
                         <pre className="font-mono text-xs text-green-400/90 whitespace-pre-wrap leading-relaxed">
-                          {useWorkshopStore.getState().auditTrail!.join(" -> ")}
+                          {auditTrail.join(" -> ")}
                         </pre>
                       </div>
                     ) : (

@@ -248,6 +248,47 @@ export function buildManifestFromIdentifiedInfra(identifiedTerms: string[]): str
 }
 
 /**
+ * Construye un manifest en el formato exclusivo (project_id, stack, deployment, integration_metadata)
+ * a partir de términos identificados en el documento. Usado cuando el LLM no devuelve JSON válido
+ * y el fallback no tiene bloque ```json (evita salida "Manifest: Docker, Dokploy").
+ */
+export function buildNewFormatManifestFromIdentifiedTerms(identifiedTerms: string[]): Record<string, unknown> {
+  const normalized = [...new Set(identifiedTerms.map((t) => t.toLowerCase()))];
+  const hasDokploy = normalized.includes("dokploy");
+  const hasK8s = normalized.includes("kubernetes") || normalized.includes("k8s");
+  const hasDocker = normalized.includes("docker") || normalized.includes("docker-compose");
+  const orchestrator = hasK8s ? "Kubernetes" : hasDocker ? "Docker Compose" : "TBD";
+  const deploymentManager = hasDokploy ? "Dokploy" : "TBD";
+  return {
+    project_id: "mdd-project",
+    stack: {
+      backend: {
+        framework: "NestJS",
+        version: "10.x",
+        language: "TypeScript",
+        orm: "TypeORM",
+        container: { base_image: "node:20-alpine", exposed_port: 3000 },
+      },
+      database: { engine: "PostgreSQL", version: "16", extensions: ["uuid-ossp", "pgcrypto"] },
+      security: {
+        protocol: "HTTPS",
+        token_management: "JWT",
+        mfa_strategy: "TOTP",
+        hashing_algorithm: "bcrypt",
+        hashing_rounds: 12,
+      },
+    },
+    deployment: {
+      orchestrator,
+      provider: "Self-hosted / Cloud",
+      tooling: { deployment_manager: deploymentManager, ci_cd: "Bitbucket Pipelines" },
+      resources: { min_replicas: 1, max_replicas: 5, cpu_threshold: "70%" },
+    },
+    integration_metadata: { api_prefix: "/api/v1", jwks_enabled: false, multi_tenant_support: false },
+  };
+}
+
+/**
  * Si el documento identificó una infra concreta (identifiedTerms) y el bloque manifest de la sección
  * incluye proveedores/servicios NO mencionados (ej. AWS cuando solo se mencionó Docker/Dokploy),
  * reemplaza el bloque por un manifest coherente con lo identificado.
@@ -516,6 +557,43 @@ export function fixIntegrationSectionBullets(sectionBody: string): string {
     .replace(/^-\s*(\*\*[^*]+\*\*:)/gm, "$1")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/**
+ * Convierte cuerpo de §6 que es JSON con viñetas (ej. "- \"## Seguridad\": { - \"Key\": \"value\" - }")
+ * a markdown legible (### Key, - value). Devuelve null si no aplica o el parse falla.
+ */
+function fixSection6BulletedJsonToMarkdown(sectionBody: string): string | null {
+  if (!sectionBody || typeof sectionBody !== "string") return null;
+  let trimmed = sectionBody
+    .replace(/^\s*\{:?\s*\n?/, "")
+    .replace(/(\n\s*-\s*)+$/, "")
+    .replace(/\n\s*---\s*$/, "")
+    .trim();
+  trimmed = trimmed
+    .replace(/\n\s*-\s*}\s*\n\s*-\s*}\s*$/, "\n}\n}")
+    .replace(/\n\s*-\s*}\s*$/, "\n}")
+    .replace(/\n\s*-\s*}\s*(?=\n)/g, "\n}\n")
+    .trim();
+  const candidate = unbulletAndJoinForJson(trimmed);
+  const firstBrace = candidate.indexOf("{");
+  if (firstBrace === -1) return null;
+  const braceEnd = findBalancedBraceRespectingStrings(candidate, firstBrace);
+  if (braceEnd === -1) return null;
+  try {
+    const jsonStr = candidate.slice(firstBrace, braceEnd + 1);
+    const obj = JSON.parse(jsonStr) as Record<string, unknown>;
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+    const inner = obj["## Seguridad"] ?? obj["6. Seguridad"] ?? obj["6.Seguridad"];
+    const toConvert =
+      inner !== null && typeof inner === "object" && !Array.isArray(inner)
+        ? (inner as Record<string, unknown>)
+        : obj;
+    const md = nestedSectionKeysToMarkdown(toConvert);
+    return md || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1173,6 +1251,21 @@ export function replaceContextSectionBody(draft: string, newBody: string): strin
   return draft.slice(0, sectionStart) + "\n\n" + newBody.trim() + (afterSection ? "\n\n" + afterSection : "");
 }
 
+/** Reemplaza el cuerpo de la sección 1 (cualquier variante de título) por newBody. Para regenerar §1 sin depender del título exacto. */
+export function replaceSection1BodyFromAnyHeading(draft: string, newBody: string): string {
+  for (const heading of CONTEXTO_HEADINGS_EXTRACT) {
+    const idx = draft.indexOf(heading);
+    if (idx === -1) continue;
+    const sectionStart = idx + heading.length;
+    const rest = draft.slice(sectionStart);
+    const nextHeadingInRest = rest.search(/\n##\s+/);
+    const endOfSection = nextHeadingInRest !== -1 ? sectionStart + nextHeadingInRest : draft.length;
+    const afterSection = endOfSection < draft.length ? draft.slice(endOfSection).trimStart() : "";
+    return draft.slice(0, sectionStart) + "\n\n" + newBody.trim() + (afterSection ? "\n\n" + afterSection : "");
+  }
+  return draft;
+}
+
 const METADATA_KEYS = /^(section\d|toolPreference|diagramFormat|apiFormat|tool\s*:)$/i;
 
 /** Detecta si el cuerpo de Contexto es solo metadatos (section3, toolPreference, etc.) sin prosa sustancial. */
@@ -1396,6 +1489,13 @@ const INSTRUCTION_STARTS = [
   /^\s*Aplica las correcciones que afecten a/i,
   /^\s*Unifica el documento y asegura que los gaps/i,
   /^\s*Opcional:\s*Usa la tool validate_mdd_structure/i,
+  /^\s*\*\*Opcional:\s*\*\*.*format_section3_endpoints/i,
+  /^\s*\*\*Requisitos o petición del usuario\s*\(incorporar en las secciones/i,
+  // Bloques que inyectamos en el contexto del SA; el LLM no debe copiarlos en la salida.
+  /^\s*\*\*ACCIÓN REQUERIDA\s*\(usuario aceptó esta propuesta\)\s*:\s*\*\*/i,
+  /^\s*\*\*Prioridad\s*\(léelo primero\)\s*:\s*\*\*/i,
+  /^\s*Requisitos del usuario\s*\(conversación reciente\)\s*:/im,
+  /^\s*Debes aplicar esta directiva al MDD/i,
 ];
 
 function isInstructionBlock(paragraph: string): boolean {
@@ -1702,6 +1802,8 @@ export function unescapeMermaidLiteralNewlines(draft: string): string {
 export function normalizeMddFormat(draft: string): string {
   let out = (draft || "").trim();
   if (!out) return draft;
+  // Muy al inicio: §6 pegada a ### (evita que deduplicateAndReorderMddSections tome heading+subheading como una línea)
+  out = out.replace(/(6\.\s*Seguridad)\s*(#{1,6})/gi, "$1\n\n$2");
 
   out = unescapeLiteralNewlines(out);
   out = fixDoubleMermaidFences(out);
@@ -1806,7 +1908,18 @@ export function normalizeMddFormat(draft: string): string {
     }
   }
 
-  // Sección 6 Seguridad: convertir viñetas "- 6.1 X" en ### 6.1 X
+  // Sección 6 Seguridad: quitar "{:" o "{" pegado al heading (ej. "## 6. Seguridad{:")
+  out = out.replace(/(##\s*6\.\s*Seguridad)\s*\{:\s*/gi, "$1\n\n");
+  out = out.replace(/(##\s*6\.\s*Seguridad)\s*\{\s*\n/gi, "$1\n\n");
+  // "6. Seguridad- Aspectos generales" → ## 6 + ## Aspectos Generales (formato canónico)
+  out = out.replace(/(?:#+\s*)?6\.\s*Seguridad\s*-\s*Aspectos\s+generales:?\s*/gi, "## 6. Seguridad\n\n## Aspectos Generales\n\n");
+  // Despegar "6. Seguridad-" genérico
+  out = out.replace(/(?:#+\s*)?6\.\s*Seguridad\s*-\s*/gi, "## 6. Seguridad\n\n");
+  // Corregir doble guion
+  out = out.replace(/(##\s*6\.\s*Seguridad\n\n)-\s*-\s*/gi, "$1- ");
+  // Si queda "## 6. Seguridad" o "6. Seguridad" pegado a "###", insertar salto (varias formas por si falla el regex anterior)
+  out = out.replace(/6\.\s*Seguridad\s*###/gi, "6. Seguridad\n\n###");
+  out = out.replace(/(##\s*6\.\s*Seguridad)([^\n]*?)(#{1,6}\s*)/gi, "$1\n\n$3");
   const seguridadHeading = "## 6. Seguridad";
   const seguridadIdx = out.indexOf(seguridadHeading);
   if (seguridadIdx !== -1) {
@@ -1814,7 +1927,10 @@ export function normalizeMddFormat(draft: string): string {
     const rest = out.slice(sectionStart);
     const nextH2 = rest.search(/\n##\s+/);
     const body = nextH2 !== -1 ? rest.slice(0, nextH2) : rest;
-    const fixed = fixSecuritySectionBullets(body);
+    let fixed = body.replace(/\s*--\s*\n*$/, "").trim();
+    fixed = fixSection6BulletedJsonToMarkdown(fixed) ?? fixed;
+    fixed = fixSecuritySectionBullets(fixed);
+    fixed = fixed.replace(/(\n\s*-\s*)+$/, "").replace(/\n\s*---\s*$/, "").trim();
     if (fixed !== body) {
       out =
         out.slice(0, sectionStart) + fixed + (nextH2 !== -1 ? rest.slice(nextH2) : "");
@@ -2015,10 +2131,56 @@ export function getMddDraftSummary(draft: string): { length: number; section2: "
 }
 
 /**
+ * Devuelve el rango [start, end) del bloque §2–§5 (Arquitectura hasta antes de Seguridad) en el draft.
+ * Usado para reemplazar solo §2–§5 al regenerar desde el arquitecto.
+ */
+export function getSections2To5Range(draft: string): { start: number; end: number } | null {
+  const trimmed = (draft ?? "").trim();
+  const startRe = /\n?(##\s*2\.\s*Arquitectura[^\n]*)/i;
+  const startM = trimmed.match(startRe);
+  if (!startM || startM.index == null) return null;
+  const start = startM.index + (startM[0].startsWith("\n") ? 1 : 0);
+  const afterStart = start + (startM[1]?.length ?? 0);
+  const rest = trimmed.slice(afterStart);
+  const endH2 = rest.search(/\n##\s+(?:6\.\s+)?Seguridad\b/i);
+  const end = endH2 >= 0 ? afterStart + endH2 : trimmed.length;
+  return { start, end };
+}
+
+/** Extrae el contenido de §2–§5 (desde ## 2. Arquitectura hasta antes de ## 6. Seguridad) de un draft. */
+export function extractSections2To5Content(draft: string): string | null {
+  const range = getSections2To5Range((draft ?? "").trim());
+  if (!range) return null;
+  return (draft ?? "").trim().slice(range.start, range.end).trim() || null;
+}
+
+/**
+ * Reemplaza solo el bloque §2–§5 en currentDraft por newSections2To5Markdown.
+ * newSections2To5Markdown debe incluir ## 2. Arquitectura … hasta el final de §5 (sin ## 6.).
+ */
+export function replaceSections2To5InDraft(
+  currentDraft: string,
+  newSections2To5Markdown: string,
+): string {
+  const trimmed = (currentDraft ?? "").trim();
+  const range = getSections2To5Range(trimmed);
+  if (range) {
+    const before = trimmed.slice(0, range.start);
+    const after = range.end < trimmed.length ? trimmed.slice(range.end).trimStart() : "";
+    return (before + "\n\n" + newSections2To5Markdown.trim() + (after ? "\n\n" + after : "")).trim();
+  }
+  const sec6 = trimmed.match(/\n##\s+(?:6\.\s+)?Seguridad\b/i);
+  if (sec6 && sec6.index != null) {
+    return (trimmed.slice(0, sec6.index).trim() + "\n\n" + newSections2To5Markdown.trim() + "\n\n" + trimmed.slice(sec6.index).trim()).trim();
+  }
+  return (trimmed + "\n\n" + newSections2To5Markdown.trim()).trim();
+}
+
+/**
  * Devuelve el rango [start, end) de la sección 6 (Seguridad) o 7 (Infraestructura) en el draft.
  * Usado para reemplazar solo esa sección sin tocar §1–§5 (evitar sobrescribir §3/§4 desde structured).
  */
-function getSection6Or7Range(
+export function getSection6Or7Range(
   draft: string,
   section: 6 | 7,
 ): { start: number; end: number; heading: string } | null {
@@ -2048,33 +2210,155 @@ export function replaceSection6Or7InDraft(
   section: 6 | 7,
   newSectionMarkdown: string,
 ): string {
+  let sectionMd = newSectionMarkdown.trim();
+  if (section === 6) {
+    sectionMd = sectionMd.replace(/\s*--\s*\n*$/, "").trim();
+  }
   const trimmed = (draft ?? "").trim();
   const range = getSection6Or7Range(trimmed, section);
   if (range) {
     const before = trimmed.slice(0, range.start);
     const after = range.end < trimmed.length ? trimmed.slice(range.end).trimStart() : "";
-    return (before + newSectionMarkdown.trim() + (after ? "\n\n" + after : "")).trim();
+    return (before + sectionMd + (after ? "\n\n" + after : "")).trim();
   }
   const otherRange = getSection6Or7Range(trimmed, section === 6 ? 7 : 6);
   if (section === 6 && otherRange) {
-    return (trimmed.slice(0, otherRange.start) + newSectionMarkdown.trim() + "\n\n" + trimmed.slice(otherRange.start)).trim();
+    return (trimmed.slice(0, otherRange.start) + sectionMd + "\n\n" + trimmed.slice(otherRange.start)).trim();
   }
   if (section === 7 && otherRange) {
-    return (trimmed.slice(0, otherRange.end) + "\n\n" + newSectionMarkdown.trim() + (otherRange.end < trimmed.length ? "\n\n" + trimmed.slice(otherRange.end) : "")).trim();
+    return (trimmed.slice(0, otherRange.end) + "\n\n" + sectionMd + (otherRange.end < trimmed.length ? "\n\n" + trimmed.slice(otherRange.end) : "")).trim();
   }
-  return (trimmed + "\n\n" + newSectionMarkdown.trim()).trim();
+  return (trimmed + "\n\n" + sectionMd).trim();
 }
 
-/** Convierte array de items { title, content } a markdown de la sección 6 (Seguridad). */
+/** Línea que es solo el título de la sección (evitar duplicar "6. Seguridad" en el cuerpo). */
+const reSection6TitleOnly = /^\s*(###?\s*)?6\.\s*Seguridad\s*$/i;
+
+/** Detecta subsección por número (6.1, 6.2) o por **Título:** */
+const reSection6SubsectionNum = /^\d+\.\d+\s+.+$/;
+const reSection6BoldHeading = /^\*\*[^*]+\*\*:\s*$/; // **Autenticación y Autorización:**
+
+const SECTION6_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+/**
+ * Formato canónico §6: ## Aspectos Generales + párrafo intro + ### A. / B. / C. con * bullets; Conclusión en blockquote.
+ */
+function formatSection6AspectosGenerales(lines: string[]): string {
+  const normalized = lines
+    .map((c) => c.replace(/^#+\s*/, "").replace(/^-\s*/, "").trim())
+    .filter((c) => c && !reSection6TitleOnly.test(c));
+  const intro: string[] = [];
+  const groups: { title: string; lines: string[] }[] = [];
+  let i = 0;
+  while (i < normalized.length) {
+    const line = normalized[i]!;
+    if (reSection6BoldHeading.test(line)) {
+      const title = line.replace(/^\*\*|\*\*:\s*$/g, "").trim();
+      const groupLines: string[] = [];
+      i++;
+      while (i < normalized.length && !reSection6BoldHeading.test(normalized[i]!)) {
+        groupLines.push(normalized[i]!);
+        i++;
+      }
+      groups.push({ title, lines: groupLines });
+    } else {
+      intro.push(line);
+      i++;
+    }
+  }
+  const out: string[] = [];
+  if (intro.length) out.push(intro.join(" ").trim(), "");
+  groups.forEach((g, idx) => {
+    const letter = SECTION6_LETTERS[idx] ?? String(idx + 1);
+    const title = g.title.trim();
+    if (/^conclusi[oó]n$/i.test(title)) {
+      const text = g.lines.length ? g.lines.join(" ").trim() : "(Pendiente.)";
+      out.push("> **Conclusión:** " + text, "");
+      return;
+    }
+    out.push(`### ${letter}. ${title}`);
+    out.push("");
+    g.lines.forEach((l) => out.push("* " + l));
+    out.push("");
+  });
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Agrupa líneas de contenido por subsecciones 6.1/6.2 o **X:**; 4 espacios para ítem, 8 para hijos. */
+function formatSection6ContentLines(lines: string[]): string {
+  const sub = "    - "; // 4 espacios = primer nivel
+  const subSub = "        - "; // 8 espacios = bajo subsección
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    let line = lines[i]!.trim();
+    if (!line) {
+      i++;
+      continue;
+    }
+    line = line.replace(/^#+\s*/, "").replace(/^-\s*/, "").trim();
+    if (reSection6TitleOnly.test(line)) {
+      i++;
+      continue;
+    }
+    const isSubsectionNum = reSection6SubsectionNum.test(line);
+    const isBoldHeading = reSection6BoldHeading.test(line);
+    if (isSubsectionNum || isBoldHeading) {
+      const label = line.endsWith(":") ? line : line + ":";
+      out.push(sub + label);
+      i++;
+      while (i < lines.length) {
+        const raw = lines[i]!.trim();
+        const next = raw.replace(/^-\s*/, "");
+        if (!next) {
+          i++;
+          continue;
+        }
+        if (reSection6SubsectionNum.test(next) || reSection6BoldHeading.test(next)) break;
+        out.push(subSub + next);
+        i++;
+      }
+    } else {
+      out.push(sub + line);
+      i++;
+    }
+  }
+  return out.length ? out.join("\n") : sub + "(Pendiente.)";
+}
+
+/** Convierte array de items { title, content } a markdown de la sección 6 (Seguridad). Categoría con -; subniveles 4 espacios; bajo 6.1/6.2 etc. 8 espacios. Sin "--" al final. */
 export function seguridadItemsToSection6Markdown(
   items: Array<{ title: string; content: string[] }>,
 ): string {
   if (!items?.length) return "## 6. Seguridad\n\n(Pendiente de definir.)";
-  const parts = items.map(
-    (item) =>
-      `### ${item.title}\n\n${Array.isArray(item.content) ? item.content.map((c) => `- ${c}`).join("\n") : item.content}`,
-  );
-  return "## 6. Seguridad\n\n" + parts.join("\n\n");
+  const filtered =
+    items.length > 1
+      ? items.filter((item) => {
+          const t = (item.title ?? "").trim().replace(/^\d+\.\d*\s*/, "");
+          return t && t !== "Seguridad" && !/^6\.\s*Seguridad$/i.test(t);
+        })
+      : items;
+  const reLineSeguridad = /^\s*(-\s*)?##\s*6\.\s*Seguridad\s*$/i;
+  const parts = filtered.map((item) => {
+    let title = (item.title ?? "").replace(/^\d+\.\d*\s*/, "").replace(/^#+\s*/, "").trim();
+    if (filtered.length === 1 && (!title || title === "Seguridad")) title = "Aspectos generales";
+    let lines = Array.isArray(item.content) ? item.content.filter(Boolean) : [String(item.content ?? "").trim()].filter(Boolean);
+    lines = lines
+      .filter((c) => !reLineSeguridad.test(c.trim()))
+      .map((c) => c.replace(/^#+\s*/, "").replace(/^-\s*/, "").trim())
+      .filter((c) => !reSection6TitleOnly.test(c));
+    // Un solo ítem "Aspectos generales" → formato canónico: ## Aspectos Generales + intro + ### A./B./C. + * bullets; Conclusión en blockquote
+    if (filtered.length === 1 && /^Aspectos\s+generales$/i.test(title)) {
+      const body = lines.length ? formatSection6AspectosGenerales(lines) : "(Pendiente de definir.)";
+      return `## Aspectos Generales\n\n${body}`;
+    }
+    const subBullets = lines.length ? formatSection6ContentLines(lines) : "    - (Pendiente.)";
+    const label = title.endsWith(":") ? title : title + ":";
+    return `- ${label}\n${subBullets}`;
+  });
+  let body = parts.length ? parts.join("\n\n") : "(Pendiente de definir.)";
+  body = body.replace(/\s*--\s*\n*$/, "").replace(/(\n\s*-\s*)+$/, "").trim();
+  return "## 6. Seguridad\n\n" + body;
 }
 
 /** Convierte objeto integracion (subsections + manifest) a markdown de la sección 7. */
@@ -2092,9 +2376,11 @@ export function integracionToSection7Markdown(integracion: {
       })
       .join("\n\n")
     : "(Pendiente de definir.)";
-  if (integracion?.manifest && typeof integracion.manifest === "object") {
-    body += "\n\n### Manifest de Infraestructura\n\n```json\n" + JSON.stringify(integracion.manifest, null, 2) + "\n```";
-  }
+  const manifest =
+    integracion?.manifest && typeof integracion.manifest === "object"
+      ? integracion.manifest
+      : buildNewFormatManifestFromIdentifiedTerms([]);
+  body += "\n\n### Manifest de Infraestructura\n\n```json\n" + JSON.stringify(manifest, null, 2) + "\n```";
   return "## 7. Infraestructura\n\n" + body;
 }
 
@@ -2309,8 +2595,10 @@ function sanitizeArquitecturaStackBody(body: string): string {
  * No parte en ## que estén dentro de bloques ```. Si la sección 2 contiene ## 3/## 4 embebidos, la reemplaza por placeholder.
  */
 export function deduplicateAndReorderMddSections(draft: string): string {
-  const trimmed = (draft || "").trim();
+  let trimmed = (draft || "").trim();
   if (!trimmed) return draft;
+  // Corregir §6 pegada a ### antes de extraer (evita que extractSection tome "## 6. Seguridad###..." como una sola línea)
+  trimmed = trimmed.replace(/(6\.\s*Seguridad)\s*(#{1,6})/gi, "$1\n\n$2");
   const titleMatch = trimmed.match(/^#\s+Master\s+Design\s+Document[^\n]*/i);
   const title = titleMatch ? titleMatch[0] : "# Master Design Document";
   const afterTitle = titleMatch ? trimmed.slice(titleMatch[0].length).replace(/^\s*\n+/, "") : trimmed;

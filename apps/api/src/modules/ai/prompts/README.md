@@ -1,6 +1,6 @@
 # prompts
 
-Prompts del módulo AI.
+Prompts del módulo AI. Están estructurados según marcos de ingeniería de prompts (COSTAR, RISEN, TIDD-EC) según el objetivo de cada uno: documentos completos con contexto/objetivo/audiencia (COSTAR), flujos con rol/pasos/restricciones (RISEN), salida acotada o JSON (TIDD-EC).
 
 | Archivo                               | Uso                                                                                                                                                                                                                                                                                       |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -22,7 +22,7 @@ const MAX_MDD_ITERATIONS = 3;
 
 /**
  * Builds and compiles the MDD StateGraph (one-shot, no Manager).
- * Flow: Clarifier → Software Architect → Formatter → Security → Integration → Formatter → Diagram Injector → Auditor → (score < 95 && iteration < MAX ? Clarifier : END).
+ * Flow: … → Auditor → (score < 85 && iteration < MAX ? Manager asigna gaps a agentes : END).
  * Los agentes generan contenido; el formateador (sin LLM) normaliza mddDraft; Redactor eliminado (documento unificado por merge + render).
  */
 export function createMddGraph() {
@@ -69,10 +69,10 @@ export function createMddGraph() {
 
 /**
  * Builds and compiles the MDD StateGraph with Manager as Entrevistador de Estados.
- * Caso 1 (Inicio): sin Bench ni MDD → Manager NO delega; ask_initial_topic pregunta "¿Sobre qué tema o problema necesitas el MDD?"; al responder → Clarifier → Security → Integration → Auditor → Manager; si score < 95 → Clarifier genera preguntas → Manager las muestra → bucle refinamiento.
- * Caso 2 (Refinamiento): mddDraft con contenido y score < 95% → entrevista guiada por auditorFeedback; cada respuesta modifica documento y Semáforo.
+ * Caso 1 (Inicio): sin Bench ni MDD → Manager NO delega; ask_initial_topic; al responder → Clarifier → … → Auditor → Manager; si score < 85 → Manager asigna gaps a agentes.
+ * Caso 2 (Refinamiento): score < 85% → Manager toma critical_gaps y asigna tareas a agentes para corregir.
  * Caso 3 (Benchmark): existe dbgaContent → delegar de inmediato a especialistas para v1; luego bucle refinamiento.
- * Done solo si Auditor >= 95% o usuario pide detenerse. Requiere checkpointer para interrupt/resume.
+ * Done cuando Auditor >= 85% (cede intervención al usuario) o usuario pide detenerse. Requiere checkpointer para interrupt/resume.
  */
 export function createMddGraphWithManager(
   checkpointer: BaseCheckpointSaver | null,

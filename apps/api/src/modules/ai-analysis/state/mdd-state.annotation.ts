@@ -1,6 +1,6 @@
 import { Annotation } from "@langchain/langgraph";
 import type { MddStructured } from "./mdd-structured.schema.js";
-import type { MDDAuditorDecision, MddPlanStep } from "./mdd-state.schema.js";
+import type { AuditorGapsState, MDDAuditorDecision, MddPlanStep } from "./mdd-state.schema.js";
 
 /**
  * LangGraph State annotation for the MDD workflow.
@@ -13,6 +13,7 @@ export const MDDStateAnnotation = Annotation.Root({
   mddDraft: Annotation<string>(),
   auditorScore: Annotation<number>(),
   auditorFeedback: Annotation<string | undefined>(),
+  auditorGaps: Annotation<AuditorGapsState | undefined>(),
   auditorDecision: Annotation<MDDAuditorDecision | undefined>(),
   mddIteration: Annotation<number | undefined>(),
   managerQuestions: Annotation<string[] | undefined>(),

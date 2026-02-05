@@ -3,6 +3,7 @@ import {
   ensureContratosSection,
   extractSection3Body,
   getMddDraftSummary,
+  getSection6Or7Range,
   hydrateStructuredFromDraft,
   logMddNodeOutput,
   normalizeMddFormat,
@@ -38,10 +39,18 @@ export function createMddFormatterNode(): (state: MDDStateType) => Promise<Parti
     const section3Body = extractSection3Body(currentDraft);
     const draftHasSubstantialSection3 =
       (section3Body?.length ?? 0) > 200 && /\bCREATE\s+TABLE\b/i.test(section3Body ?? "");
-    // No reemplazar por mddStructured si: hay directiva aceptada y draft sustancial, o el draft ya tiene §3 sustancial (evitar pisar modelo de datos actualizado por el SA).
+    const range6 = getSection6Or7Range(currentDraft, 6);
+    const section6Body =
+      range6 != null
+        ? currentDraft.slice(range6.start + (range6.heading?.length ?? 0), range6.end).trim()
+        : "";
+    const draftHasSubstantialSection6 =
+      section6Body.length > 200 && !/^\s*\(Pendiente[^)]*\)\s*$/im.test(section6Body);
+    // No reemplazar por mddStructured si: directiva aceptada, §3 sustancial, o §6 sustancial (evitar pisar Seguridad generada por Security node).
     const preserveDraftFromArchitect =
       (state.acceptedProposalDirective ?? "").trim().length > 0 && currentDraftLen > 500;
-    const preserveDraft = preserveDraftFromArchitect || draftHasSubstantialSection3;
+    const preserveDraft =
+      preserveDraftFromArchitect || draftHasSubstantialSection3 || draftHasSubstantialSection6;
 
     if (hasStructuredContent(state.mddStructured) && !preserveDraft) {
       try {
@@ -63,6 +72,7 @@ export function createMddFormatterNode(): (state: MDDStateType) => Promise<Parti
       }
     } else if (preserveDraft) {
       if (preserveDraftFromArchitect) LOG("acceptedProposalDirective presente y draft sustancial; no reemplazar por mddStructured, se normaliza draft");
+      else if (draftHasSubstantialSection6) LOG("draft con §6 sustancial; no reemplazar por mddStructured, se normaliza draft");
       else LOG("draft con §3 sustancial; no reemplazar por mddStructured, se normaliza draft");
     }
     const draft = currentDraft;

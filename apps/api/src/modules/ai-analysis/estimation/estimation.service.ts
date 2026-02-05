@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../../../prisma/prisma.service.js";
 import type {
+  AuditorGaps,
   LiveMetricsResult,
   MDDContext,
   PrecisionBreakdown,
@@ -39,14 +40,194 @@ function extractSection(md: string, pattern: RegExp): string {
   return rest.slice(0, end).trim();
 }
 
+/** Normalize to snake_case for comparison. */
+function toSnakeCase(s: string): string {
+  return s
+    .replace(/([A-Z])/g, "_$1")
+    .toLowerCase()
+    .replace(/^_/, "")
+    .replace(/-/g, "_");
+}
+
+/** Extract column names from SQL (CREATE TABLE ... ( col TYPE, ... )). */
+function extractSqlColumnNames(sqlBlock: string): Set<string> {
+  const set = new Set<string>();
+  const createMatch = sqlBlock.matchAll(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)["`]?\s*\(([\s\S]*?)\)\s*;/gi);
+  for (const m of createMatch) {
+    const body = m[2] ?? "";
+    const tokens = body.split(/[\s,]+/);
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (t && /^[a-z_][a-z0-9_]*$/i.test(t) && !/^(primary|key|references|constraint|unique|check|default|not|null|uuid|integer|varchar|text|boolean|timestamptz|timestamp|int|bigint|real|serial)$/i.test(t)) {
+        set.add(t.toLowerCase());
+      }
+    }
+  }
+  return set;
+}
+
+/** Extract top-level keys from ```json blocks in text. */
+function extractJsonKeysFromSection(text: string): Set<string> {
+  const set = new Set<string>();
+  const jsonBlocks = text.matchAll(/```json\s*([\s\S]*?)```/gi);
+  for (const m of jsonBlocks) {
+    try {
+      const parsed = JSON.parse(m[1]?.trim() ?? "{}") as Record<string, unknown>;
+      for (const k of Object.keys(parsed)) set.add(toSnakeCase(k));
+    } catch {
+      // skip malformed JSON
+    }
+  }
+  return set;
+}
+
+/** Extract entity and attribute names from ```mermaid erDiagram block. */
+function extractMermaidEntityAndAttrNames(md: string): { entities: Set<string>; attributes: Set<string> } {
+  const entities = new Set<string>();
+  const attributes = new Set<string>();
+  const m = md.match(/```mermaid\s*([\s\S]*?)```/i);
+  const inner = m?.[1]?.trim() ?? "";
+  if (!/erDiagram/i.test(inner)) return { entities, attributes };
+  const lines = inner.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const entityMatch = line.match(/^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\{\s*$/);
+    if (entityMatch) {
+      entities.add(entityMatch[1].toLowerCase());
+      i++;
+      while (i < lines.length && !/^\s*\}\s*$/.test(lines[i]!)) {
+        const attrMatch = lines[i]!.match(/\s*(\w+)\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
+        if (attrMatch) attributes.add(attrMatch[2].toLowerCase());
+        i++;
+      }
+      continue;
+    }
+  }
+  return { entities, attributes };
+}
+
+/** Section keys used in sectionStatus (matriz de trazabilidad). */
+const TRACEABILITY_SECTION_KEYS = [
+  "contexto",
+  "modeloDatos",
+  "apiContracts",
+  "seguridad",
+] as const;
+
+/** Trazabilidad: solo marca inconsistente cuando Contexto menciona un concepto que exige cadena §3→§4→§6 y el documento no tiene ninguno de los tres. No es obligatorio que todo lo mencionado recorra las 7 secciones. */
+function computeTraceabilityGaps(md: string): {
+  inconsistentSections: ReadonlyArray<(typeof TRACEABILITY_SECTION_KEYS)[number]>;
+} {
+  const inconsistentSections: Array<(typeof TRACEABILITY_SECTION_KEYS)[number]> = [];
+  const contextBlock = extractSection(md, /^#+\s*(?:1\.\s*)?(?:contexto\s+y\s+alcance|contexto\b)/im).toLowerCase();
+  const dataModelBlock = extractSection(md, /^#+\s*(?:3\.\s*)?(?:modelo\s+de\s+datos|datos\s*\/\s*entidades)/im).toLowerCase();
+  const apiBlock = extractSection(md, /^#+\s*(?:4\.\s*)?(?:contratos\s+de\s+api|api\s+contracts|endpoints)/im).toLowerCase();
+  const securityBlock = extractSection(md, /^##\s+(?:\d+\.\s*)?(?:seguridad|security)/im).toLowerCase();
+  const sqlBlock = (md.match(/```sql\s*([\s\S]*?)```/i)?.[1] ?? "") + dataModelBlock;
+
+  const hasMfaInContext = /\b(mfa|totp|2fa|two[- ]?factor|segundo factor|google\s+authenticator)\b/i.test(contextBlock);
+  if (hasMfaInContext) {
+    const hasSecretTables =
+      /\bmfa_secrets\b|\btotp_secret\b|\bmfa_secret\b|\botp_secret\b|create\s+table\s+\w*secret/i.test(sqlBlock);
+    const hasVerifyEndpoint = /\/verify|\/totp|\/mfa|verify.*totp/i.test(apiBlock);
+    const hasTotpInSecurity = /\b(totp|rfc\s*6238|algoritmo\s+totp|time-based)\b/i.test(securityBlock);
+    const hasAnySupport = hasSecretTables || hasVerifyEndpoint || hasTotpInSecurity;
+    if (!hasAnySupport) {
+      inconsistentSections.push("contexto", "modeloDatos", "apiContracts", "seguridad");
+    }
+  }
+
+  return {
+    inconsistentSections: [...new Set(inconsistentSections)],
+  };
+}
+
+/**
+ * Contract gaps (fallback cuando no hay auditorGaps del LLM).
+ * Alineado con Protocolo de auditoría: §2↔§7 (Infra), §3↔Mermaid (paridad), §4↔§3 (API), Lógica↔Seguridad.
+ */
+function computeContractGaps(md: string): {
+  apiSchemaGap: number;
+  mermaidParityGap: number;
+  infraStackGap: number;
+  securityEdgeCaseGap: number;
+} {
+  let apiSchemaGap = 0;
+  let mermaidParityGap = 0;
+  let infraStackGap = 0;
+  let securityEdgeCaseGap = 0;
+
+  const dataModelBlock = extractSection(md, /^#+\s*(?:3\.\s*)?(?:modelo\s+de\s+datos|datos\s*\/\s*entidades)/im);
+  const apiBlock = extractSection(md, /^#+\s*(?:4\.\s*)?(?:contratos\s+de\s+api|api\s+contracts|endpoints)/im);
+  const archBlock = extractSection(md, /^#+\s*(?:2\.\s*)?(?:arquitectura\s+y\s+stack|arquitectura\b)/im).toLowerCase();
+  const logicBlock = extractSection(md, /^#+\s*(?:5\.\s*)?(?:lógica\s+y\s+edge\s+cases|lógica\b|edge\s+cases)/im).toLowerCase();
+  const securityBlock = extractSection(md, /^##\s+(?:\d+\.\s*)?(?:seguridad|security)/im).toLowerCase();
+  const infraBlock = extractSection(md, /^#+\s*(?:7\.\s*)?(?:infraestructura|infra|integraci[oó]n)/im).toLowerCase();
+
+  const sqlBlock = (md.match(/```sql\s*([\s\S]*?)```/i)?.[1] ?? "") + dataModelBlock;
+  const sqlColumns = extractSqlColumnNames(sqlBlock);
+  const sqlTableNames = new Set(
+    [...md.matchAll(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)["`]?/gi)].map((x) => x[1].toLowerCase()),
+  );
+
+  const skipApiKeys = /^(id|created_at|updated_at|password|confirm_password|token|refresh_token|redirect_uri|scope|code|totp_code)$/i;
+  if (sqlColumns.size > 0 && apiBlock.length > 100) {
+    const apiKeys = extractJsonKeysFromSection(apiBlock);
+    for (const k of apiKeys) {
+      if (k && !skipApiKeys.test(k) && !sqlColumns.has(k)) {
+        const fromCamel = k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+        const backToSnake = fromCamel.replace(/([A-Z])/g, "_$1").toLowerCase();
+        if (!sqlColumns.has(backToSnake)) {
+          apiSchemaGap = 1;
+          break;
+        }
+      }
+    }
+  }
+
+  if (sqlTableNames.size > 0 && /```mermaid[\s\S]*?erDiagram/i.test(md)) {
+    const { entities, attributes } = extractMermaidEntityAndAttrNames(md);
+    for (const e of entities) {
+      if (!sqlTableNames.has(e)) {
+        mermaidParityGap = 1;
+        break;
+      }
+    }
+    if (mermaidParityGap === 0) {
+      for (const a of attributes) {
+        if (!sqlColumns.has(a)) {
+          mermaidParityGap = 1;
+          break;
+        }
+      }
+    }
+  }
+
+  // Solo marcar gap si §2 tiene backend Node/NestJS y §7 no menciona Docker ni Node (evitar falsos positivos cuando ya se describió stack).
+  if (/\b(nestjs|node\.?js|node\s)/i.test(archBlock) && archBlock.length > 50) {
+    const infraReflectsNode =
+      /\b(dockerfile|from\s+node|npm\s|pnpm\s|node\s|nodejs|docker\b|contenedor|imagen\s+node|backend\s+node)/i.test(infraBlock);
+    if (!infraReflectsNode) infraStackGap = 1;
+  }
+
+  if (/\b(bloqueo\s+de\s+cuenta|lock\s+account|intentos\s+fallidos|failed\s+attempts|máximo\s+de\s+intentos)\b/i.test(logicBlock)) {
+    if (!/\d+\s*(intentos?|attempts?)|intentos?\s*:\s*\d+|máximo\s+\d+/i.test(securityBlock)) {
+      securityEdgeCaseGap = 1;
+    }
+  }
+
+  return { apiSchemaGap, mermaidParityGap, infraStackGap, securityEdgeCaseGap };
+}
+
 /**
  * Gaps de consistencia y completitud (agnóstico de dominio).
  * Alineado con "MDD Universal Audit Rules":
  * - Rule 1 Feature-Infrastructure: scopeDataGap (alcance → modelo/API).
- * - Rule 2 Data Integrity: dataIntegrityGap (UUID PKs, created_at/updated_at TIMESTAMPTZ, ON DELETE).
+ * - Rule 2 Data Integrity: dataIntegrityGap (UUID PKs, created_at/updated_at TIMESTAMPTZ). No se exige ON DELETE (borrado puede ser lógico).
  * - Rule 3 API-Schema: no auto-check 1:1 (defer to agents); opcional apiErrorCodes en sección API.
  * - Rule 4 Inheritance: missingManifest + TechnicalMetadata/base template en proyectos derivados.
  * - Rule 5 Architectural: patrones y diagramas = SQL/API no se validan aquí (defer to agents/review).
+ * - Contract gaps: apiSchemaGap, mermaidParityGap, infraStackGap, securityEdgeCaseGap.
  */
 function computeConsistencyGaps(md: string): {
   scopeDataGap: number;
@@ -54,6 +235,10 @@ function computeConsistencyGaps(md: string): {
   securityCompletenessGap: number;
   missingManifest: number;
   dataIntegrityGap: number;
+  apiSchemaGap: number;
+  mermaidParityGap: number;
+  infraStackGap: number;
+  securityEdgeCaseGap: number;
 } {
   const lower = (md || "").trim().toLowerCase();
   // Estructura canónica MDD: 1 Contexto, 2 Arquitectura y Stack, 3 Modelo de Datos, 4 Contratos de API, 5 Lógica y Edge Cases, 6 Seguridad, 7 Infraestructura
@@ -82,6 +267,8 @@ function computeConsistencyGaps(md: string): {
     (md.match(/```sql\s*([\s\S]*?)```/i)?.[1] ?? "") +
     (dataModelBlock || lower);
   const tablesAndColumns = sqlBlock;
+
+  const contractGaps = computeContractGaps(md);
 
   // --- Rule 1: Document–Model congruence (domain-agnostic) ---
   // Cualquier concepto que el documento describa y que exija persistencia debe tener reflejo en tablas/columnas.
@@ -132,16 +319,17 @@ function computeConsistencyGaps(md: string): {
   }
   securityCompletenessGap = Math.min(1, securityCompletenessGap);
 
-  // --- Rule 2: Data Integrity & Scalability (UUID PKs, timestamps, ON DELETE) ---
+  // --- Rule 2: Data Integrity & Scalability (UUID PKs, timestamps). No se penaliza ON DELETE: no todos los proyectos usan delete físico. ---
   let dataIntegrityGap = 0;
   const hasTables = /\bcreate\s+table\b/i.test(sqlBlock);
   if (hasTables) {
-    const hasUuidPk = /(?:gen_random_uuid|uuid_generate_v4|uuid\s+primary\s+key|default\s+gen_random_uuid)/i.test(sqlBlock);
+    const hasUuidPk =
+      /(?:gen_random_uuid|uuid_generate_v4|default\s+gen_random_uuid)/i.test(sqlBlock) ||
+      /\buuid\s+primary\s+key\b/i.test(sqlBlock) ||
+      (/\buuid\b/i.test(sqlBlock) && /\bprimary\s+key\b/i.test(sqlBlock));
     const hasTimestamps = /(?:created_at|updated_at)/i.test(sqlBlock) && /timestamptz/i.test(sqlBlock);
-    const hasOnDelete = /on\s+delete\s+(cascade|set\s+null|restrict)/i.test(sqlBlock);
-    if (!hasUuidPk) dataIntegrityGap += 0.35;
-    if (!hasTimestamps) dataIntegrityGap += 0.35;
-    if (!hasOnDelete) dataIntegrityGap += 0.3;
+    if (!hasUuidPk) dataIntegrityGap += 0.5;
+    if (!hasTimestamps) dataIntegrityGap += 0.5;
   }
   dataIntegrityGap = Math.min(1, dataIntegrityGap);
 
@@ -155,40 +343,123 @@ function computeConsistencyGaps(md: string): {
     missingManifest = isDerivedOrMicro ? 0.5 : 0.25;
   }
 
-  return { scopeDataGap, contradictionGap, securityCompletenessGap, missingManifest, dataIntegrityGap };
+  return {
+    scopeDataGap,
+    contradictionGap,
+    securityCompletenessGap,
+    missingManifest,
+    dataIntegrityGap,
+    ...contractGaps,
+  };
 }
+
+/** Calificación máxima cuando la sección está en Estado Inconsistente (matriz de trazabilidad). */
+const PRECISION_CAP_INCONSISTENTE = 40;
 
 /**
  * Desglose de precisión por sección/agente (0–100) para la tabla del chat.
  * Usa las mismas secciones y gaps que el semáforo; cada dimensión se penaliza según gaps que la afectan.
+ * Si una sección está en traceabilityGaps.inconsistentSections, se capa a PRECISION_CAP_INCONSISTENTE.
  */
 function computePrecisionBreakdown(md: string): PrecisionBreakdown {
   const sections = detectReferenceSections(md);
   const gaps = computeConsistencyGaps(md);
+  const traceability = computeTraceabilityGaps(md);
+  const inconsistentSet = new Set(traceability.inconsistentSections);
   const contextBlock = extractSection(md, /^#+\s*(?:1\.\s*)?(?:contexto\s+y\s+alcance|contexto\b)/im);
   // Frontend está dentro de §2 Arquitectura y Stack (subsección ### Frontend)
   const frontendBlock = extractSection(md, /^#+\s*(?:2\.\s*)?(?:arquitectura\s+y\s+stack|arquitectura\s+frontend|frontend)/im);
 
-  const contexto = Math.round(
+  const sectionStatus: PrecisionBreakdown["sectionStatus"] = {};
+  if (inconsistentSet.size > 0) {
+    for (const key of TRACEABILITY_SECTION_KEYS) {
+      if (inconsistentSet.has(key)) sectionStatus[key] = "inconsistente";
+    }
+  }
+
+  let contexto = Math.round(
     Math.max(0, Math.min(100, 100 - (gaps.contradictionGap ? 40 : 0) - (contextBlock.length < 80 ? 30 : 0))),
   );
-  const modeloDatos = Math.round(
-    Math.max(0, Math.min(100, sections.db * 100 - gaps.dataIntegrityGap * 35 - gaps.scopeDataGap * 40)),
+  if (inconsistentSet.has("contexto")) contexto = Math.min(contexto, PRECISION_CAP_INCONSISTENTE);
+
+  let modeloDatos = Math.round(
+    Math.max(
+      0,
+      Math.min(100, sections.db * 100 - gaps.mermaidParityGap * 25),
+    ),
   );
-  const apiContracts = Math.round(
-    Math.max(0, Math.min(100, sections.endpoints * 100 - (sections.endpointsWithPayloads ? 0 : 25))),
+  if (inconsistentSet.has("modeloDatos")) modeloDatos = Math.min(modeloDatos, PRECISION_CAP_INCONSISTENTE);
+
+  let apiContracts = Math.round(
+    Math.max(
+      0,
+      Math.min(100, sections.endpoints * 100 - (sections.endpointsWithPayloads ? 0 : 25)),
+    ),
   );
+  if (inconsistentSet.has("apiContracts")) apiContracts = Math.min(apiContracts, PRECISION_CAP_INCONSISTENTE);
+
   const frontend = Math.round(
     Math.max(0, Math.min(100, frontendBlock.length >= 80 ? 100 : frontendBlock.length >= 40 ? 50 : 0)),
   );
-  const seguridad = Math.round(
-    Math.max(0, Math.min(100, sections.security * 100 - gaps.securityCompletenessGap * 30)),
+  let seguridad = Math.round(
+    Math.max(
+      0,
+      Math.min(100, sections.security * 100 - gaps.securityCompletenessGap * 30 - gaps.securityEdgeCaseGap * 30),
+    ),
   );
+  if (inconsistentSet.has("seguridad")) seguridad = Math.min(seguridad, PRECISION_CAP_INCONSISTENTE);
+
   const integracion = Math.round(
-    Math.max(0, Math.min(100, sections.infra * 100 - gaps.missingManifest * 40 - gaps.contradictionGap * 30)),
+    Math.max(
+      0,
+      Math.min(
+        100,
+        sections.infra * 100 - gaps.missingManifest * 40 - gaps.contradictionGap * 30 - gaps.infraStackGap * 30,
+      ),
+    ),
   );
 
-  return { contexto, modeloDatos, apiContracts, frontend, seguridad, integracion };
+  const sectionReasons: PrecisionBreakdown["sectionReasons"] = {};
+  const trazaMsg =
+    "Trazabilidad: concepto en Contexto sin ningún soporte en Modelo, API ni Seguridad (añade al menos uno o quítalo del contexto).";
+  if (contextBlock.length < 80) sectionReasons.contexto = "Sección §1 Contexto muy breve.";
+  if (gaps.contradictionGap) sectionReasons.contexto = (sectionReasons.contexto ? sectionReasons.contexto + " " : "") + "Contradicción entre contexto e integración.";
+  if (inconsistentSet.has("contexto")) sectionReasons.contexto = (sectionReasons.contexto ? sectionReasons.contexto + " " : "") + trazaMsg;
+
+  const modeloReasons: string[] = [];
+  if (gaps.mermaidParityGap) modeloReasons.push("Diagrama Mermaid no coincide con tablas SQL.");
+  if (inconsistentSet.has("modeloDatos")) modeloReasons.push(trazaMsg);
+  if (modeloReasons.length) sectionReasons.modeloDatos = modeloReasons.join(" ");
+
+  const apiReasons: string[] = [];
+  if (!sections.endpointsWithPayloads && sections.endpoints > 0) apiReasons.push("Faltan payloads (request/response) en endpoints.");
+  if (inconsistentSet.has("apiContracts")) apiReasons.push(trazaMsg);
+  if (apiReasons.length) sectionReasons.apiContracts = apiReasons.join(" ");
+
+  if (frontend < 100 && frontendBlock.length < 80) sectionReasons.frontend = "Sección Frontend en §2 muy breve o ausente.";
+
+  const segReasons: string[] = [];
+  if (gaps.securityCompletenessGap) segReasons.push("Falta almacén de credenciales o columnas de auditoría (según doc).");
+  if (gaps.securityEdgeCaseGap) segReasons.push("Lógica de bloqueo sin número de intentos definido en §6 Seguridad.");
+  if (inconsistentSet.has("seguridad")) segReasons.push(trazaMsg);
+  if (segReasons.length) sectionReasons.seguridad = segReasons.join(" ");
+
+  const intReasons: string[] = [];
+  if (gaps.missingManifest) intReasons.push("Falta manifest JSON o Technical Metadata en §7.");
+  if (gaps.contradictionGap) intReasons.push("Contradicción contexto ↔ integración.");
+  if (gaps.infraStackGap) intReasons.push("Stack (NestJS/Node) no reflejado en Infra (Dockerfile Node).");
+  if (intReasons.length) sectionReasons.integracion = intReasons.join(" ");
+
+  return {
+    contexto,
+    modeloDatos,
+    apiContracts,
+    frontend,
+    seguridad,
+    integracion,
+    ...(Object.keys(sectionStatus).length > 0 ? { sectionStatus } : {}),
+    ...(Object.keys(sectionReasons).length > 0 ? { sectionReasons } : {}),
+  };
 }
 
 /**
@@ -318,12 +589,20 @@ function parseCountsFromMarkdown(md: string): {
 @Injectable()
 export class EstimationService {
   private readonly liveDraftByProject = new Map<string, string>();
+  private readonly auditorGapsByProject = new Map<string, AuditorGaps>();
 
   constructor(private readonly prisma: PrismaService) { }
 
   setLiveDraft(projectId: string, mddDraft: string): void {
     if (!projectId?.trim()) return;
     this.liveDraftByProject.set(projectId.trim(), mddDraft ?? "");
+  }
+
+  /** Almacena gaps estructurados del Auditor (LLM) para usar en métricas cuando el draft no ha cambiado. */
+  setAuditorGaps(projectId: string, gaps: AuditorGaps | undefined): void {
+    if (!projectId?.trim()) return;
+    if (gaps == null) this.auditorGapsByProject.delete(projectId.trim());
+    else this.auditorGapsByProject.set(projectId.trim(), gaps);
   }
 
   clearLiveDraft(projectId: string): void {
@@ -341,14 +620,17 @@ export class EstimationService {
   }
 
   /**
-   * Métricas para un proyecto. Si se pasa mddContent, se usa ese (contenido actual en UI); sino liveDraft o DB.
+   * Métricas para un proyecto. Si se pasa mddContent, se usa ese; sino liveDraft o DB.
+   * Cuando no hay override y hay gaps del Auditor guardados para el proyecto, se usan para precisión/semáforo.
    */
   async getLiveMetricsForProject(projectId: string, mddContentOverride?: string): Promise<LiveMetricsResult> {
     const content =
       mddContentOverride != null && mddContentOverride.length > 0
         ? mddContentOverride
         : (await this.getMddContentForProject(projectId)) ?? "";
-    return this.calculateLiveMetrics(content);
+    const useStoredGaps = !mddContentOverride && this.auditorGapsByProject.has(projectId?.trim() ?? "");
+    const auditorGaps = useStoredGaps ? this.auditorGapsByProject.get(projectId!.trim()) : undefined;
+    return this.calculateLiveMetrics(content, { auditorGaps });
   }
 
   /** Desglose por sección/agente (0–100) para mostrar en la tabla del chat tras auditar. */
@@ -357,46 +639,85 @@ export class EstimationService {
   }
 
   /**
-   * Calcula métricas en vivo a partir del MDD (markdown o objeto con mddContent).
-   * - Horas: asignación automática (entidades, pantallas, endpoints) repartida 15% arquitectura, 45% back, 40% front.
-   * - totalMXN = totalHours × INTERNAL_HOUR_RATE ($185) × riskFactor.
-   * - Factor de riesgo: precisión < 70% → 1.25; precisión ≥ 95% → 1.0 (entre 70–95% se usa 1.0).
-   * - Verde solo si MDD tiene: entidades DB, endpoints con payloads, y sección Seguridad (MFA/Argon2).
+   * Reporte de gaps en lenguaje natural. Si se pasan auditorGaps (del Auditor LLM), se usan; si no, fallback a regex.
    */
-  calculateLiveMetrics(mddContext: MDDContext): LiveMetricsResult {
+  getGapsReport(md: string, auditorGaps?: AuditorGaps): string[] {
+    if (auditorGaps) {
+      const messages: string[] = [];
+      for (const g of auditorGaps.critical_gaps) {
+        messages.push(`[${g.sections.join(", ")}] ${g.issue} Corrección: ${g.fix}`);
+      }
+      for (const e of auditorGaps.syntax_errors) messages.push(e);
+      return messages;
+    }
+    const trimmed = (md ?? "").trim();
+    if (!trimmed) return [];
+    const traceability = computeTraceabilityGaps(trimmed);
+    const contract = computeContractGaps(trimmed);
+    const messages: string[] = [];
+    if (traceability.inconsistentSections.length > 0) {
+      messages.push("Trazabilidad MFA: Contexto menciona MFA pero falta tablas de secretos en Modelo de Datos, endpoint /verify o /totp en Contratos de API, o algoritmo TOTP en Seguridad.");
+    }
+    if (contract.mermaidParityGap) {
+      messages.push("El diagrama Mermaid (erDiagram) tiene entidades o atributos que no existen en el SQL; no se permiten abreviaturas.");
+    }
+    if (contract.infraStackGap) {
+      messages.push("El stack (NestJS/Node) en Arquitectura debe reflejarse en Infraestructura (Dockerfile compatible con Node.js).");
+    }
+    if (contract.securityEdgeCaseGap) {
+      messages.push("Lógica menciona bloqueo de cuenta pero Seguridad debe definir el número de intentos.");
+    }
+    return messages;
+  }
+
+  /**
+   * Calcula métricas en vivo a partir del MDD. Si options.auditorGaps está presente (evaluación del Auditor LLM),
+   * se usan score e infrastructure_ready para precisión y semáforo; si no, se usa lógica por regex.
+   */
+  calculateLiveMetrics(mddContext: MDDContext, options?: { auditorGaps?: AuditorGaps }): LiveMetricsResult {
     const raw =
       typeof mddContext === "string"
         ? mddContext
         : (mddContext as { mddContent?: string })?.mddContent ?? "";
     const md = raw?.trim() ?? "";
 
-    const sections = detectReferenceSections(md);
-    const gaps = computeConsistencyGaps(md);
+    let precision: number;
+    let status: SemaphoreStatusLive;
 
-    // Penalidades por gaps (genéricas): Rule 1 alcance↔modelo, Rule 2 integridad SQL, contradicción, seguridad, manifest.
-    const basePrecisionRaw =
-      (sections.db + sections.endpoints + sections.security + sections.infra) * 25;
-    const gapPenalty =
-      gaps.scopeDataGap * 22 +
-      gaps.contradictionGap * 22 +
-      gaps.securityCompletenessGap * 12 +
-      gaps.missingManifest * 16 +
-      gaps.dataIntegrityGap * 10;
-    const precisionRaw = Math.max(0, basePrecisionRaw - gapPenalty);
-    const precision = Math.min(100, Math.round(precisionRaw));
-
-    const hasGreenCriteria =
-      sections.db > 0 &&
-      sections.endpointsWithPayloads &&
-      sections.securitySubstantive &&
-      gaps.scopeDataGap === 0 &&
-      gaps.contradictionGap === 0;
-    const status: SemaphoreStatusLive =
-      precision >= PRECISION_GREEN_MIN && hasGreenCriteria
-        ? "green"
-        : precision >= PRECISION_RED_MAX
-          ? "yellow"
-          : "red";
+    if (options?.auditorGaps) {
+      const g = options.auditorGaps;
+      precision = Math.min(100, Math.max(0, g.score));
+      const hasGreenCriteria =
+        precision >= PRECISION_GREEN_MIN && g.infrastructure_ready && g.critical_gaps.length === 0;
+      status = hasGreenCriteria ? "green" : precision >= PRECISION_RED_MAX ? "yellow" : "red";
+    } else {
+      const sections = detectReferenceSections(md);
+      const gaps = computeConsistencyGaps(md);
+      const traceability = computeTraceabilityGaps(md);
+      const traceabilityPenalty = traceability.inconsistentSections.length > 0 ? 15 : 0;
+      const basePrecisionRaw =
+        (sections.db + sections.endpoints + sections.security + sections.infra) * 25;
+      const gapPenalty =
+        gaps.contradictionGap * 22 +
+        gaps.securityCompletenessGap * 12 +
+        gaps.missingManifest * 16 +
+        gaps.mermaidParityGap * 8 +
+        gaps.infraStackGap * 10 +
+        gaps.securityEdgeCaseGap * 8 +
+        traceabilityPenalty;
+      precision = Math.min(100, Math.round(Math.max(0, basePrecisionRaw - gapPenalty)));
+      const hasGreenCriteria =
+        sections.db > 0 &&
+        sections.endpointsWithPayloads &&
+        sections.securitySubstantive &&
+        gaps.contradictionGap === 0;
+      status =
+        precision >= PRECISION_GREEN_MIN && hasGreenCriteria
+          ? "green"
+          : precision >= PRECISION_RED_MAX
+            ? "yellow"
+            : "red";
+    }
 
     const { entityCount, screenCount, extraEndpointCount } = parseCountsFromMarkdown(md);
     const baseTotalHours =

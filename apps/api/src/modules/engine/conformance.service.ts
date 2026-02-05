@@ -67,19 +67,43 @@ function extractEntities(text: string): Set<string> {
   return entities;
 }
 
-/** Extrae métodos + rutas (GET /api/..., POST /auth/...) de un bloque. */
+/** Rutas que son mutaciones (login, register, logout, etc.): método por defecto POST, no GET. */
+function defaultMethodForPath(path: string): string {
+  const lower = path.toLowerCase();
+  if (/\/login\/?$|\/register\/?$|\/logout\/?$|\/mfa\/setup\/?$|\/mfa\/verify\/?$|\/auth\/login|\/auth\/register|\/auth\/logout/.test(lower)) {
+    return "POST";
+  }
+  if (/\/assign\/?$|\/create\/?$|\/delete\/?$|\/application\/register\/?$|\/role\/assign\/?$/.test(lower)) return "POST";
+  return "GET";
+}
+
+/** Extrae métodos + rutas (GET /api/..., POST /auth/...) de un bloque. Acepta líneas sueltas y filas de tabla Markdown (| POST | /api/v1/auth/login | ...). */
 function extractEndpoints(text: string): Array<{ method: string; path: string }> {
   const endpoints: Array<{ method: string; path: string }> = [];
+  const seen = new Set<string>();
+  const add = (method: string, path: string) => {
+    const key = `${method.toUpperCase()} ${path.replace(/\/$/, "").toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    endpoints.push({ method: method.toUpperCase(), path });
+  };
   const lines = text.split(/\r?\n/);
   for (const line of lines) {
     const methodPath = line.match(/\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[\w/-]+)/i);
     if (methodPath) {
-      endpoints.push({ method: methodPath[1].toUpperCase(), path: methodPath[2] });
+      add(methodPath[1], methodPath[2]);
+      continue;
+    }
+    const tableRow = line.match(/\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*(\/[\w/-]+)/i);
+    if (tableRow) {
+      add(tableRow[1], tableRow[2]);
       continue;
     }
     if (/\/api\/|\/auth\//.test(line)) {
       const path = line.match(/(\/[\w/-]+)/)?.[1];
-      if (path) endpoints.push({ method: "GET", path });
+      if (path) {
+        add(defaultMethodForPath(path), path);
+      }
     }
   }
   return endpoints;
@@ -87,7 +111,12 @@ function extractEndpoints(text: string): Array<{ method: string; path: string }>
 
 /** Normaliza endpoint para comparación (sin trailing slash, lowercase path). */
 function normEp(ep: { method: string; path: string }): string {
-  return `${ep.method} ${ep.path.replace(/\/$/, "").toLowerCase()}`;
+  let method = ep.method.toUpperCase();
+  const path = ep.path.replace(/\/$/, "").toLowerCase();
+  if (method === "GET" && defaultMethodForPath(path) === "POST") {
+    method = "POST";
+  }
+  return `${method} ${path}`;
 }
 
 /** Longitud mínima para considerar un documento como "con contenido" (evitar falsos Cumple cuando está vacío). */

@@ -28,6 +28,28 @@ const ACTIVE_TAB_LABELS: Record<ActiveTab, string> = {
   infra: "Infraestructura",
 };
 
+/** Comandos / para regenerar secciones del MDD (solo tab MDD). §1 = solo agente sintetizador de contexto desde §2–§7. */
+const MDD_SECTION_COMMANDS: { slug: string; label: string; section: number }[] = [
+  { slug: "contexto", label: "1. Contexto", section: 1 },
+  { slug: "arquitectura", label: "2. Arquitectura y Stack", section: 2 },
+  { slug: "modelo-datos", label: "3. Modelo de Datos", section: 3 },
+  { slug: "contratos-api", label: "4. Contratos de API", section: 4 },
+  { slug: "logica", label: "5. Lógica y Edge Cases", section: 5 },
+  { slug: "seguridad", label: "6. Seguridad", section: 6 },
+  { slug: "infraestructura", label: "7. Infraestructura", section: 7 },
+];
+
+function getRegenerateSectionFromSlashCommand(msg: string): number | null {
+  const t = msg.trim().toLowerCase();
+  if (!t.startsWith("/") || t.includes(" ")) return null;
+  const slug = t.slice(1);
+  if (!slug) return null;
+  const cmd = MDD_SECTION_COMMANDS.find(
+    (c) => c.slug === slug || String(c.section) === slug,
+  );
+  return cmd?.section ?? null;
+}
+
 /** Etiquetas legibles por nodo del plan MDD (para aprobación). */
 const PLAN_NODE_LABELS: Record<string, string> = {
   clarifier: "Clarificador (alcance)",
@@ -173,9 +195,27 @@ export default function ChatContainer({
   const handleSend = async () => {
     if (!inputValue.trim() || loading) return;
     const msg = inputValue.trim();
+    if (activeTab === "mdd" && msg === "/") {
+      setInputValue("");
+      return;
+    }
+    const section = activeTab === "mdd" ? getRegenerateSectionFromSlashCommand(msg) : null;
     setInputValue("");
-    await sendMessage(msg);
+    if (section != null) {
+      await sendMessage(msg, { regenerateSection: section });
+    } else {
+      await sendMessage(msg);
+    }
   };
+
+  const slashFilter = inputValue.startsWith("/") ? inputValue.slice(1).toLowerCase() : "";
+  const filteredSlashCommands = slashFilter
+    ? MDD_SECTION_COMMANDS.filter((c) => c.slug.startsWith(slashFilter) || String(c.section).startsWith(slashFilter))
+    : MDD_SECTION_COMMANDS;
+  const showSlashCommands =
+    activeTab === "mdd" &&
+    (inputValue === "/" ||
+      (inputValue.startsWith("/") && !inputValue.includes(" ") && filteredSlashCommands.length > 0));
 
   const handleGenerateBenchmark = () => {
     if (!inputValue.trim() || loading || !benchmarkMode) return;
@@ -395,6 +435,26 @@ export default function ChatContainer({
           {error && (
             <p className="px-4 pb-2 text-sm text-red-400">{error}</p>
           )}
+          {showSlashCommands && (
+            <div className="px-4 pt-2 border-t border-zinc-700/50 bg-zinc-800/30">
+              <p className="text-xs text-zinc-500 mb-2">Regenerar sección del MDD (solo esta sección se reescribirá):</p>
+              <div className="flex flex-wrap gap-1.5">
+                {filteredSlashCommands.map((cmd) => (
+                  <button
+                    key={cmd.section}
+                    type="button"
+                    onClick={() => {
+                      setInputValue("");
+                      sendMessage(`/${cmd.slug}`, { regenerateSection: cmd.section });
+                    }}
+                    className="px-2.5 py-1.5 rounded-md text-sm bg-zinc-700 hover:bg-amber-500/20 text-zinc-200 hover:text-amber-200 border border-zinc-600 hover:border-amber-500/40"
+                  >
+                    {cmd.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="p-4 border-t border-zinc-700 flex gap-2 shrink-0 items-end">
             <textarea
               ref={chatInputRef}
@@ -409,7 +469,9 @@ export default function ChatContainer({
               placeholder={
                 isBenchmarkFirstAction
                   ? "Ej: Quiero un sistema de login con SSO tipo Auth0, 2FA y auditoría de sesiones..."
-                  : `Tu respuesta (contexto: ${contextLabel})...`
+                  : activeTab === "mdd"
+                    ? "Escribe aquí o / para ver comandos de regenerar sección..."
+                    : `Tu respuesta (contexto: ${contextLabel})...`
               }
               rows={1}
               className="flex-1 min-h-[2.5rem] max-h-[5rem] overflow-y-auto resize-none bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none break-words min-w-0"

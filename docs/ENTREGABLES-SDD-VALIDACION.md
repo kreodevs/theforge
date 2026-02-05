@@ -18,6 +18,13 @@ El MDD debe generarse con **exactamente siete secciones**. Esta estructura es la
 | 6   | Seguridad            | Security Architect   | Sustancia técnica (MFA, hashes, RBAC)                                |
 | 7   | Infraestructura      | Integration Engineer | Variables de entorno, CI/CD, manifest                                |
 
+**Reglas avanzadas del estimador (matriz de trazabilidad, contratos estrictos, pre-render):**
+
+- **Matriz de trazabilidad:** Si el Contexto (1) menciona un concepto que exige reflejo en otras secciones (ej. MFA → §3 tablas de secretos, §4 endpoint /verify, §6 algoritmo TOTP), y falta un eslabón, las secciones involucradas pasan a "Estado Inconsistente" y su calificación se capa.
+- **Contratos estrictos:** Modelo de Datos↔Contratos API (campos JSON 1:1 con columnas SQL); Modelo↔Diagrama Mermaid (paridad absoluta, sin abreviaturas en Mermaid que no existan en SQL); Arquitectura↔Infraestructura (si stack pide NestJS, Infra debe proveer Dockerfile Node); Lógica↔Seguridad (si hay edge case "Bloqueo de cuenta", Seguridad debe definir número de intentos).
+- **Pre-render (sanidad de sintaxis):** Antes de persistir el MDD se valida: bloques Mermaid (sin coma entre PK y FK en atributos; espacios no ruptura normalizados). Tablas markdown en §4: sin líneas en blanco en medio; fila de alineación `|:---|` como segunda fila. Si falla: `ERR_MERMAID_SYNTAX` o `ERR_TABLE_SYNTAX` (API devuelve 400 y no se guarda).
+- **Agente Auditor:** Si la nota es &lt; 95% el Manager devuelve el documento al Clarifier con auditorFeedback (incluye reporte de gaps del estimador). Por debajo de 90% (nota &lt; 9/10) se considera segunda iteración automática con ese reporte.
+
 **Alineación con los cuadernos:**
 
 - **SDD:** La Constitución (Constitution) debe cubrir qué/por qué (Contexto), cómo a nivel técnico (Arquitectura, Modelo, Contratos, Lógica), y requisitos no funcionales (Seguridad, Infra). Nuestra estructura 1–7 mapea a esas dimensiones; no hay sección "Integración" como H2 — el contenido de integración/CI-CD vive en §7 Infraestructura.

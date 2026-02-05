@@ -19,8 +19,8 @@ Módulo de análisis agentic para **Domain Benchmark & Gap Analysis (DBGA)**. Or
 - **utils/** – Utilidades compartidas: `parse-json.ts` (`parseJsonOrThrow`) usada por nodos MDD; homologable con Benchmark sin cambiar su comportamiento
 - **ai-analysis.service.ts** – Orquestación; `startAnalysis(idea)` invoca el grafo; `streamAnalysis(idea, projectId)` emite progreso + markdown final
 - **estimation/** – Estimación en vivo independiente del flujo de agentes
-  - `estimation.types.ts` – `MDDReference`, `MDDContext`, `LiveMetricsResult`, tarifas y umbrales (Rojo &lt;50%, Amarillo 51–94%, Verde 95%+)
-  - `estimation.service.ts` – `EstimationService`: `calculateLiveMetrics(mddContext)`, `setLiveDraft(projectId, mddDraft)` (durante stream), `getLiveMetricsForProject(projectId)`. Fórmula: Costo = (Horas_Arquitecto × Tarifa_Ar) + (Horas_Back × Tarifa_Bk) + (Horas_Front × Tarifa_Fr); factor de riesgo +20% si precisión &lt; 70%.
+  - `estimation.types.ts` – `MDDReference`, `MDDContext`, `LiveMetricsResult`, `PrecisionBreakdown` (con `sectionStatus` opcional para "Estado Inconsistente"), tarifas y umbrales (Rojo &lt;50%, Amarillo 51–94%, Verde 95%+)
+  - `estimation.service.ts` – `EstimationService`: métricas en vivo y `getGapsReport`. **Alineado con Protocolo de auditoría:** cuando hay `auditorGaps` del Auditor (LLM), son la fuente de verdad; si no, fallback por regex (trazabilidad §1→§3→§4, paridad Mermaid, §2↔§7, Lógica↔Seguridad). Umbral de cierre de bucle automático: **85%** (Manager asigna gaps a agentes si &lt;85; a partir de 85 se cede al usuario). Fórmula: Costo = Horas × Tarifa × riskFactor; +20% si precisión &lt; 70%.
 - **ai-analysis.controller.ts** – `GET /ai-analysis/estimation?projectId=` (métricas en vivo); `POST /ai-analysis/start` con body `{ idea, projectId? }`; `POST /ai-analysis/stream` (DBGA); `POST /ai-analysis/mdd/stream` (MDD) devuelve NDJSON con eventos `progress` / `done` / `error`
 - **state/state-to-markdown.ts** – `stateToMarkdown(state)` genera el documento markdown final del DBGA; `getAgentLabel(nodeName, context?)` para etiquetas de agentes DBGA y MDD
 - **ai-analysis.module.ts** – Módulo NestJS
@@ -31,7 +31,7 @@ El MDD generado actúa como **Constitución del proyecto** (SDD): gobierna los e
 
 Pipeline de 4 agentes LangGraph para generar el MDD a partir del Benchmark & Gap Analysis:
 
-- **state/** – `mdd-state.schema.ts`, `mdd-state.annotation.ts`, `mdd-structured.schema.ts` – Estado: `dbgaContent`, `clarifiedScope`, `mddStructured` (objeto estructurado; fuente de verdad), `mddDraft` (derivado de `mddStructuredToMarkdown` cuando hay structured), `auditorScore`, `auditorFeedback`, `auditorDecision`, `mddIteration`, `lastStepFailed` (re-planning ante fallo 4.2), `mddPlan` (plan explícito al delegar 4.1)
+- **state/** – `mdd-state.schema.ts`, `mdd-state.annotation.ts`, `mdd-structured.schema.ts` – Estado: `dbgaContent`, `clarifiedScope`, `mddStructured`, `mddDraft`, `auditorScore`, `auditorFeedback`, `auditorGaps` (gaps estructurados del Auditor LLM: score, status, critical_gaps, syntax_errors, infrastructure_ready; en español), `auditorDecision`, `mddIteration`, `lastStepFailed`, `mddPlan`, …
 - **graph/mdd-graph.ts** – Grafo: Manager → (Clarifier | ask_initial_topic | **primer nodo de sectionsToRun**) → … → Auditor → Manager. **Orquestación:** (1) Usuario pide solo "contexto y alcance" → `delegateTarget=clarifier_only`; tras Clarifier, **merge_section1_only** → END. (2) Usuario describe una **necesidad** en lenguaje de dominio (ej. "nos falta una pantalla para dar de alta X") → el Manager infiere qué agentes están afectados y setea `delegateTarget=sections`, `sectionsToRun=[software_architect, security, ...]`; solo se ejecutan esos nodos en orden, luego format → diagram → auditor → manager. (3) Pipeline completo → Clarifier → … → Auditor → Manager. Redactor eliminado; documento unificado por merge de slices en `mddStructured` y render con `mddStructuredToMarkdown`. **Diagram Injector**: si hay `mddStructured.modeloDatos.sql` sin `diagramaEr`, genera erDiagram desde SQL e **inyecta solo el bloque en §3 del draft** (no reconstruye el documento desde structured, para no pisar §3). Si no hay structured, opera sobre `mddDraft` (suggestMddDiagrams + injectMddDiagrams). **Manager**: (1) "reformatea el documento" → si hay `mddStructured`, re-render con `mddStructuredToMarkdown`; si no, normalizeMddFormat; (2) "regenera el diagrama ER" → regenerateErDiagramFromSql y termina (sin LLM).
 - **Debug §3:** Si `DEBUG_MDD_SECTION3=1` (o `true`), en consola se loguea el cuerpo de §3 (longitud, tablas CREATE TABLE, preview) tras el Software Architect y al emitir el evento "done", para comparar y localizar dónde se pierde contenido.
 - **nodes/** – … **`mdd-formatter.node.ts`**, **`mdd-merge-section1.node.ts`** (fusiona solo sección 1 cuando `delegateTarget=clarifier_only`), **`mdd-diagram-injector.node.ts`** (sugiere e inyecta diagramas Mermaid según contenido), …
@@ -68,16 +68,16 @@ graph TD
     Auditor --> Estimator[Estimador: $ y Horas en vivo]
 
     %% El Bucle de Refinamiento
-    Auditor -- "Score < 95%" --> FeedbackLoop[Manager: Analiza Feedback]
+    Auditor -- "Score < 85%" --> FeedbackLoop[Manager: Asigna gaps a agentes]
     FeedbackLoop --> QuestionsRefine[Clarifier: 2 preguntas → Manager muestra]
     QuestionsRefine --> UserInputRefine[/Respuesta del Usuario/]
     UserInputRefine --> Manager
 
     %% Interacción Humana (refinamiento)
-    Manager -- "Score < 95%, sin respuesta aún" --> QuestionsRefine
+    Manager -- "Score < 85%, sin respuesta aún" --> QuestionsRefine
 
     %% Cierre
-    Auditor -- "Score >= 95%" --> Done[Acción: Done - Semáforo Verde]
+    Auditor -- "Score >= 85%" --> Done[Acción: Done - Cede al usuario]
     Manager -- "Usuario: parar/listo" --> Done
 
     %% Estilos
@@ -89,13 +89,14 @@ graph TD
 
 **Notas de implementación:**
 
-- **Estimador** no es un nodo del grafo: es `EstimationService` (setLiveDraft en cada paso del stream; calculateLiveMetrics para semáforo y mensaje "Estamos al X%").
+- **Estimador** no es un nodo del grafo: es `EstimationService` (setLiveDraft/setAuditorGaps en cada paso del stream; calculateLiveMetrics para semáforo). Los **gaps** los genera el **Auditor (LLM)** en JSON estructurado (`critical_gaps`, `syntax_errors`, `infrastructure_ready`); se guardan en `state.auditorGaps` y en el estimador por proyecto. Si el Auditor no devuelve esa estructura, se usa fallback por regex y `getGapsReport(md)`. Si precisión &lt; 85%, el Manager asigna los gaps a los agentes; a partir de 85% se cede la intervención al usuario.
 - **Caso 1:** sin Bench ni MDD → Manager va a `ask_initial_topic` (una pregunta); al responder, el usuario va de nuevo al Manager y este delega a Clarifier.
 - **Modificación puntual:** si el usuario escribe algo como "cambia X por Y" o "añade endpoint Z", el Manager delega directo a Clarifier (sin pedir 2 preguntas).
 
-- **Flujo con Manager (Entrevistador de Estados):** `createMddGraphWithManager(checkpointer)` – Manager no es pasapapeles. **Caso 1 (Inicio):** sin Bench ni MDD → Manager NO delega; nodo `ask_initial_topic` pregunta "¿Sobre qué tema o problema necesitas el MDD?"; al responder → Clarifier → Security → Integration → Auditor → Manager; si score < 95% → Clarifier genera preguntas (clarifier-questions-only) → Manager las muestra → bucle refinamiento. **Caso 2 (Refinamiento):** mddDraft con contenido y score < 95% → entrevista guiada por auditorFeedback; cada respuesta modifica documento y Semáforo. **Caso 3 (Benchmark):** existe dbgaContent → delegar de inmediato a especialistas para v1; luego bucle refinamiento. **Done** solo si Auditor >= 95% o usuario pide detenerse. EstimationService (setLiveDraft) se llama en cada iteración del stream para actualizar costo en la UI. `POST /ai-analysis/mdd/stream/manager`, `POST /ai-analysis/mdd/stream/resume`.
+- **Flujo con Manager (Entrevistador de Estados):** `createMddGraphWithManager(checkpointer)` – Manager no es pasapapeles. **Caso 1 (Inicio):** sin Bench ni MDD → Manager NO delega; nodo `ask_initial_topic` pregunta "¿Sobre qué tema o problema necesitas el MDD?"; al responder → Clarifier → Security → Integration → Auditor → Manager; si score < 85% → Manager asigna gaps a agentes (Clarifier/preguntas); >= 85% se cede al usuario. **Caso 2 (Refinamiento):** score < 85% → Manager asigna tareas de corrección a agentes según critical_gaps. **Caso 3 (Benchmark):** existe dbgaContent → delegar a especialistas. **Done** cuando Auditor >= 85% o usuario pide parar (umbral 85 = ceder intervención al usuario). EstimationService (setLiveDraft) se llama en cada iteración del stream para actualizar costo en la UI. `POST /ai-analysis/mdd/stream/manager`, `POST /ai-analysis/mdd/stream/resume`.
+- **Comandos / en el chat (solo tab MDD):** El usuario puede escribir `/` para ver la lista de secciones del MDD y elegir regenerar **solo esa sección** (el resto del documento se usa como contexto). Backend: `POST /ai-analysis/mdd/stream/regenerate-section` con `{ projectId, section: 1–7, mddContent? }`. §1 → solo agente **sintetizador de contexto** (regenera §1 desde §2–§7, sin ejecutar Clarifier ni el resto del grafo); 2–5 → Software Architect; 6 → Security; 7 → Integration. El mensaje no es obligatorio que sea un comando: si escribe texto normal (ej. rutas `/api/v1`) se envía al Manager con normalidad.
 - **Servicio** – `streamMddAnalysis(dbgaContent, projectId?)` emite progreso por nodo y al final `done` con el markdown del MDD. Durante el stream actualiza `EstimationService.setLiveDraft(projectId, mddDraft)` para que la UI pueda consumir métricas en vivo vía `GET /ai-analysis/estimation?projectId=`.
-- **Frontend** – En Paso 0 (Benchmark), botón "Generar MDD con agentes" llama a `POST /ai-analysis/mdd/stream` con `dbgaContent`, muestra progreso en el chat y persiste el resultado en `mddContent`. La columna derecha (Semáforo + Estimación MXN) consume `GET /ai-analysis/estimation?projectId=`; "Generar Entregables" se habilita cuando `status === "green"` (95%+).
+- **Frontend** – En Paso 0 (Benchmark), botón "Generar MDD con agentes" llama a `POST /ai-analysis/mdd/stream` con `dbgaContent`, muestra progreso en el chat y persiste el resultado en `mddContent`. La columna derecha (Semáforo + Estimación MXN) consume `GET /ai-analysis/estimation?projectId=`; "Generar Entregables" se habilita cuando `status === "green"` (95%+). El flujo deja de asignar agentes automáticamente cuando el Auditor da >= 85%.
 
 ### Contrato por paso (Specification-driven)
 
@@ -105,7 +106,7 @@ Cada agente recibe un **contrato explícito** para su paso: qué sección(es) de
 
 El flujo MDD actual se describe como **Supervisor + especialistas**, no como Planner–Executor en sentido estricto. Ver [docs/plan-mdd-planner-executor.md](../../../../docs/plan-mdd-planner-executor.md) para el diagnóstico completo y el plan de mejoras.
 
-- **Qué tenemos:** Manager sin herramientas (orquesta, no ejecuta); **interpreta la intención del usuario** y al delegar **genera el plan (tareas explícitas)** vía LLM (prompt `manager-plan-generator-prompt.md`): cada paso tiene `node`, `task_description` y **`goal`** (instrucción concreta para ese agente); si el LLM falla o devuelve plan inválido, fallback a `buildMddPlan` (secuencia fija + goal por regex). Re-planning cuando el Auditor devuelve score &lt; 95% (vuelta a Clarifier o a sections); re-planning ante fallo de ejecución (4.2: `lastStepFailed` + resume); herramientas acotadas por nodo; salida del Manager machine-readable (Zod: `action`, `target`, `sections`); plan explícito `mddPlan` (4.1) con opcional `required_tools` y **`goal`** por paso; **Executor único** ejecuta el plan paso a paso (grafo vuelve a executor tras cada nodo); **4.3** least privilege por paso (`currentStepAllowedTools`); **4.4** HITL con `plan_approval` y frontend "Ejecutar" / "Modificar". **Reflection/Critic:** tras Software Architect, el nodo `architect_critic` verifica si §3 y §4 cumplen la directiva; si hay gaps, vuelve al Arquitecto una vez con `architectCriticFeedback`.
+- **Qué tenemos:** Manager sin herramientas (orquesta, no ejecuta); **interpreta la intención del usuario** y al delegar **genera el plan (tareas explícitas)** vía LLM (prompt `manager-plan-generator-prompt.md`): cada paso tiene `node`, `task_description` y **`goal`** (instrucción concreta para ese agente); si el LLM falla o devuelve plan inválido, fallback a `buildMddPlan` (secuencia fija + goal por regex). Re-planning cuando el Auditor devuelve score &lt; 85% (vuelta a Clarifier o a sections); re-planning ante fallo de ejecución (4.2: `lastStepFailed` + resume); herramientas acotadas por nodo; salida del Manager machine-readable (Zod: `action`, `target`, `sections`); plan explícito `mddPlan` (4.1) con opcional `required_tools` y **`goal`** por paso; **Executor único** ejecuta el plan paso a paso (grafo vuelve a executor tras cada nodo); **4.3** least privilege por paso (`currentStepAllowedTools`); **4.4** HITL con `plan_approval` y frontend "Ejecutar" / "Modificar". **Reflection/Critic:** tras Software Architect, el nodo `architect_critic` verifica si §3 y §4 cumplen la directiva; si hay gaps, vuelve al Arquitecto una vez con `architectCriticFeedback`.
 - **Mejoras futuras:** Extender `required_tools` a más nodos si se añaden tools.
 
 ## Estado (DBGAState)

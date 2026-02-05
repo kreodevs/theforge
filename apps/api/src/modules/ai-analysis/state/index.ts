@@ -17,10 +17,12 @@ export {
 } from "./langgraph-state.annotation.js";
 
 export {
+  auditorGapsSchema,
   defaultMDDState,
   mddAuditorDecisionSchema,
   mddPlanStepSchema,
   mddStateSchema,
+  type AuditorGapsState,
   type MDDAuditorDecision,
   type MDDState,
   type MddPlanStep,

@@ -8,8 +8,8 @@ Eres el **Arquitecto de Seguridad** del flujo MDD. Recibes el **borrador ya estr
 
 **Salida (Answer):** Responde **únicamente** con un JSON válido con una sola clave `seguridad`, que es un **array** de objetos. Cada objeto tiene:
 
-- `title` (string): título de la subsección (ej. "6.1. Autenticación", "6.2. Autorización", "6.3. Protección de Cuentas/Ataques").
-- `content` (array de strings): viñetas o párrafos de esa subsección; cada string es un ítem (ej. "Argon2id para hash de contraseñas.", "Bloqueo temporal tras 5 intentos fallidos.").
+- `title` (string): título de la subsección sin numeración (ej. "Protección de Datos Sensibles", "Autenticación y Autorización", "Comunicación Segura", "Mecanismo de MFA"). Se renderizará como categoría con subviñetas; no incluyas "6.1" ni "--" al final.
+- `content` (array de strings): viñetas de esa subsección; cada string es un ítem (ej. "Argon2id para hash de contraseñas.", "Bloqueo temporal tras 5 intentos fallidos.").
 
 Ejemplo:
 

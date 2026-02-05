@@ -22,7 +22,13 @@ export class AiAnalysisController {
     if (!id) {
       throw new BadRequestException("projectId is required");
     }
-    return this.estimationService.getLiveMetricsForProject(id);
+    const metrics = await this.estimationService.getLiveMetricsForProject(id);
+    const mddContent = await this.estimationService.getMddContentForProject(id);
+    const precisionBreakdown =
+      mddContent && mddContent.trim().length > 80
+        ? this.estimationService.getPrecisionBreakdown(mddContent)
+        : undefined;
+    return { ...metrics, precisionBreakdown };
   }
 
   @Post("estimation")
@@ -33,7 +39,13 @@ export class AiAnalysisController {
     }
     const mddContent =
       typeof body?.mddContent === "string" ? body.mddContent.trim() || undefined : undefined;
-    return this.estimationService.getLiveMetricsForProject(id, mddContent);
+    const metrics = await this.estimationService.getLiveMetricsForProject(id, mddContent);
+    const contentForBreakdown = mddContent ?? (await this.estimationService.getMddContentForProject(id));
+    const precisionBreakdown =
+      contentForBreakdown && contentForBreakdown.trim().length > 80
+        ? this.estimationService.getPrecisionBreakdown(contentForBreakdown)
+        : undefined;
+    return { ...metrics, precisionBreakdown };
   }
 
   /**
@@ -191,17 +203,55 @@ export class AiAnalysisController {
   }
 
   /**
+   * Regenera solo una sección del MDD (2–7) con el resto del documento como contexto.
+   * Usado por comandos / en el chat (ej. /infraestructura).
+   * Body: { projectId: string, section: number, mddContent?: string }. NDJSON: progress | done | error.
+   */
+  @Post("mdd/stream/regenerate-section")
+  async streamMddRegenerateSection(
+    @Body() body: { projectId?: string; section?: number; mddContent?: string },
+    @Res() res: Response,
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    const section = typeof body?.section === "number" ? body.section : Number(body?.section);
+    const mddContent = typeof body?.mddContent === "string" ? body.mddContent.trim() : undefined;
+    if (!projectId) {
+      res.status(400).json({ message: "projectId is required" });
+      return;
+    }
+    if (!Number.isInteger(section) || section < 1 || section > 7) {
+      res.status(400).json({ message: "section must be 1–7" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+    const service = this.aiAnalysis;
+    const stream = Readable.from(
+      (async function* () {
+        for await (const event of service.streamMddRegenerateSection(projectId, section, mddContent)) {
+          yield JSON.stringify(event) + "\n";
+        }
+      })(),
+    );
+    stream.pipe(res);
+  }
+
+  /**
    * Reanuda el flujo MDD con Manager tras la respuesta del usuario.
-   * Body: { projectId: string, threadId: string, userMessage: string }.
+   * Body: { projectId: string, threadId: string, userMessage: string, mddContent?: string }.
+   * mddContent opcional: si viene, se inyecta en el estado para no perder el documento actual (evita revertir al checkpoint viejo).
    */
   @Post("mdd/stream/resume")
   async streamMddResume(
-    @Body() body: { projectId?: string; threadId?: string; userMessage?: string },
+    @Body() body: { projectId?: string; threadId?: string; userMessage?: string; mddContent?: string },
     @Res() res: Response,
   ) {
     const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
     const threadId = typeof body?.threadId === "string" ? body.threadId.trim() : "";
     const userMessage = typeof body?.userMessage === "string" ? body.userMessage.trim() : "";
+    const mddContent = typeof body?.mddContent === "string" ? body.mddContent.trim() : undefined;
     if (!projectId || !threadId) {
       throw new BadRequestException("projectId and threadId are required");
     }
@@ -217,7 +267,7 @@ export class AiAnalysisController {
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
-        for await (const event of service.streamMddResume(projectId, threadId, userMessage)) {
+        for await (const event of service.streamMddResume(projectId, threadId, userMessage, mddContent)) {
           yield JSON.stringify(event) + "\n";
         }
       })(),

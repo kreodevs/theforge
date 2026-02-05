@@ -3,17 +3,33 @@ import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { LivePrecisionCalculator } from "../estimation/estimation.types.js";
 import { AUDITOR_MDD_PROMPT } from "../prompts/load-prompts.js";
-import { mddAuditorDecisionSchema, type MDDStateType } from "../state/index.js";
+import { auditorGapsSchema, mddAuditorDecisionSchema, type MDDStateType } from "../state/index.js";
 import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { validateMddStructure } from "../utils/mdd-sanitize.js";
 import { z } from "zod";
 
-const SEMAPHORE_DONE_THRESHOLD = 95;
+/** >= 85: done (cede intervención al usuario). < 85: clarifier (Manager asigna gaps a agentes). */
+const AUDIT_PASS_THRESHOLD = 85;
+
+const auditorCriticalGapItemSchema = z.object({
+  sections: z.array(z.string()).optional().default([]),
+  issue: z.string().optional().default(""),
+  fix: z.string().optional().default(""),
+}).transform((o) => ({
+  sections: Array.isArray(o.sections) ? o.sections : [],
+  issue: typeof o.issue === "string" ? o.issue : "",
+  fix: typeof o.fix === "string" ? o.fix : "",
+}));
 
 const auditorOutputSchema = z.object({
   auditorScore: z.number().min(0).max(100),
   auditorFeedback: z.string().optional().nullable(),
   auditorDecision: mddAuditorDecisionSchema,
+  /** LLM a veces devuelve "completed"/"done"; lo normalizamos después del parse. */
+  status: z.string().optional(),
+  critical_gaps: z.array(auditorCriticalGapItemSchema).optional().default([]),
+  syntax_errors: z.array(z.string()).optional().default([]),
+  infrastructure_ready: z.boolean().optional(),
 });
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:Auditor] ${msg}`, ...args);
@@ -43,7 +59,7 @@ export function createMddAuditorNode(
       let prompt = `${AUDITOR_MDD_PROMPT}\n\n---\n**Borrador completo del MDD:**\n${draft || "(vacío)"}`;
       if (toolsToUse.length > 0) {
         prompt +=
-          "\n\n**Opcional:** Usa la tool validate_mdd_structure con el borrador anterior para obtener section3HasPayloads, missingSections, hasTechnicalMetadata e issues. Usa ese resultado para asignar auditorScore y auditorFeedback. Responde al final solo con el JSON { auditorScore, auditorFeedback, auditorDecision }.";
+          "\n\n**Opcional:** Usa la tool validate_mdd_structure con el borrador anterior para obtener section3HasPayloads, missingSections, hasTechnicalMetadata e issues. Usa ese resultado para rellenar auditorScore, auditorDecision, critical_gaps (issue/fix en español), syntax_errors e infrastructure_ready. Responde al final solo con el JSON de salida (auditorScore, auditorDecision, auditorFeedback, status, critical_gaps, syntax_errors, infrastructure_ready).";
       }
       const messages = [new HumanMessage(prompt)];
 
@@ -88,7 +104,7 @@ export function createMddAuditorNode(
         }
         score = Math.max(0, Math.min(100, score));
         const decision =
-          score >= SEMAPHORE_DONE_THRESHOLD && validation.missingSections.length === 0 ? "done" as const : "clarifier" as const;
+          score >= AUDIT_PASS_THRESHOLD && validation.missingSections.length === 0 ? "done" as const : "clarifier" as const;
         const iteration = (state.mddIteration ?? 0) + (decision === "clarifier" ? 1 : 0);
         const feedback =
           validation.issues.length > 0
@@ -110,7 +126,7 @@ export function createMddAuditorNode(
       let score = Math.min(100, Math.max(0, parsed.auditorScore));
       const validation = validateMddStructure(draft);
 
-      // Estructura 7 secciones obligatoria: si faltan secciones, MDD no es válido (score < 95).
+      // Estructura 7 secciones obligatoria: si faltan secciones, MDD no es válido (score capado).
       if (validation.missingSections.length > 0) {
         score = Math.min(score, 94);
         const sectionsNote = "Secciones obligatorias faltantes: " + validation.missingSections.join(", ") + ". El MDD debe tener exactamente las 7 secciones canónicas.";
@@ -126,33 +142,73 @@ export function createMddAuditorNode(
         }
       }
 
-      // Alinear con semáforo (reglas universales): si el semáforo marca < 95%, es la fuente de verdad.
-      if (precisionCalculator && draft.length > 100) {
+      const hasStructuredGaps =
+        Array.isArray(parsed.critical_gaps) && parsed.critical_gaps.length > 0 ||
+        Array.isArray(parsed.syntax_errors) && parsed.syntax_errors.length > 0 ||
+        parsed.status != null ||
+        typeof parsed.infrastructure_ready === "boolean";
+
+      let auditorGaps: typeof state.auditorGaps = undefined;
+      let feedback = (parsed.auditorFeedback ?? "").trim();
+
+      const normalizedStatus =
+        parsed.status === "APROBADO" || parsed.status === "RECHAZADO"
+          ? parsed.status
+          : (score >= AUDIT_PASS_THRESHOLD ? "APROBADO" : "RECHAZADO");
+
+      if (hasStructuredGaps) {
+        const criticalGaps = parsed.critical_gaps ?? [];
+        const syntaxErrors = parsed.syntax_errors ?? [];
+        const result = auditorGapsSchema.safeParse({
+          score,
+          status: normalizedStatus,
+          critical_gaps: criticalGaps,
+          syntax_errors: syntaxErrors,
+          infrastructure_ready: parsed.infrastructure_ready ?? true,
+        });
+        if (result.success) {
+          auditorGaps = result.data;
+          if (!feedback && (criticalGaps.length > 0 || syntaxErrors.length > 0)) {
+            const parts: string[] = [];
+            for (const g of criticalGaps) {
+              parts.push(`[${(g.sections ?? []).join(", ")}] ${g.issue} Corrección: ${g.fix}`);
+            }
+            for (const e of syntaxErrors) parts.push(e);
+            feedback = parts.join(" ");
+          }
+        }
+      }
+
+      if (!hasStructuredGaps && precisionCalculator && draft.length > 100) {
         const metrics = precisionCalculator.calculateLiveMetrics(draft);
-        if (metrics.precision < SEMAPHORE_DONE_THRESHOLD) {
+        if (metrics.precision < AUDIT_PASS_THRESHOLD) {
           score = metrics.precision;
           const semaphoreNote =
-            ` El semáforo de consistencia marca ${metrics.precision}%; se requieren correcciones según las reglas universales (alcance↔modelo de datos, integridad SQL, contradicciones entre secciones, manifest de infra) para llegar a 95%.`;
-          const existingFeedback = (parsed.auditorFeedback ?? "").trim();
-          parsed.auditorFeedback = existingFeedback ? existingFeedback + semaphoreNote : semaphoreNote.trim();
-          LOG("semáforo precision=%s < 95 → score y feedback alineados al semáforo", metrics.precision);
+            ` El semáforo de consistencia marca ${metrics.precision}%; se requieren correcciones para llegar al 85%.`;
+          feedback = feedback ? feedback + semaphoreNote : semaphoreNote.trim();
+          if (precisionCalculator.getGapsReport) {
+            const gapMessages = precisionCalculator.getGapsReport(draft);
+            if (gapMessages.length > 0) feedback += " Gaps detectados: " + gapMessages.join(" ");
+          }
+          LOG("semáforo (regex) precision=%s < 85 → score y feedback alineados", metrics.precision);
         }
       }
 
       const decision =
-        score >= SEMAPHORE_DONE_THRESHOLD && validation.missingSections.length === 0
+        score >= AUDIT_PASS_THRESHOLD && validation.missingSections.length === 0
           ? "done" as const
           : (parsed.auditorDecision === "clarifier" ? "clarifier" : "clarifier");
       const iteration = (state.mddIteration ?? 0) + (decision === "clarifier" ? 1 : 0);
-      const feedback =
-        parsed.auditorFeedback?.trim() ||
-        (score < SEMAPHORE_DONE_THRESHOLD
+      const finalFeedback =
+        feedback ||
+        (score < AUDIT_PASS_THRESHOLD
           ? "Faltan: modelo de datos/entidades con tipos y relaciones, contratos u operaciones con entrada/salida, decisiones de seguridad, estrategia de infraestructura/despliegue. Genera preguntas para cubrir estos huecos."
           : undefined);
-      LOG("ok score=%s decision=%s iteration=%s feedback=%s", score, decision, iteration, feedback ? "(presente)" : "(no)");
+      LOG("ok score=%s decision=%s iteration=%s gaps=%s", score, decision, iteration, auditorGaps ? "estructurados" : "no");
       return {
         auditorScore: score,
-        auditorFeedback: feedback,
+        auditorFeedback: finalFeedback,
+        auditorGaps: auditorGaps ?? undefined,
         auditorDecision: decision,
         mddIteration: iteration,
         delegateTarget: undefined,

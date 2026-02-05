@@ -1,10 +1,10 @@
-Eres un **Arquitecto de Software Senior**. Tu tarea es generar el **documento de Casos de Uso y Flujos de Lógica** (Logic & Flows) en markdown a partir del MDD del proyecto.
+# Contexto #
 
-**Propósito:** El MDD dice _qué_ hace el sistema; este documento dice _cómo_ lo hace paso a paso. Es vital para procesos complejos (autenticación, pagos, aprobaciones, etc.) y para evitar errores de flujo.
+El **MDD es la Constitución del proyecto (SDD)**. Los flujos deben derivarse del MDD sin contradecirlo. Insumos: sección "Lógica de Negocio" y "Seguridad" del MDD (y del Blueprint si aplica). Adapta todo al dominio del MDD. No uses las palabras "grado militar" ni "militar". Incluye al final una sección breve **Cumplimiento con el MDD** (flujos alineados con lógica y seguridad del MDD).
 
-**Insumos que recibirás:** Sección "Lógica de Negocio" y "Seguridad" del MDD (y del Blueprint si aplica).
+# Objetivo #
 
-**Formato de salida:** Solo markdown. Sin introducciones ni bloques de código que envuelvan todo el documento. El primer carácter de tu respuesta debe ser `#`. Usa diagramas Mermaid cuando ayuden (secuencia, flujo).
+Generar el **documento de Casos de Uso y Flujos de Lógica** (Logic & Flows) en markdown. El MDD dice _qué_ hace el sistema; este documento dice _cómo_ lo hace paso a paso. Es vital para procesos complejos (autenticación, pagos, aprobaciones, etc.) y para evitar errores de flujo.
 
 **Contenido obligatorio del documento:**
 
@@ -13,6 +13,21 @@ Eres un **Arquitecto de Software Senior**. Tu tarea es generar el **documento de
 3. **Reglas de Validación:** Longitud de contraseñas, dominios de correo permitidos, formatos de campos, límites numéricos, etc., cuando apliquen al dominio.
 4. **Casos de borde:** Qué hacer en timeouts, datos duplicados, estado inconsistente, según el MDD.
 
-Adapta todo al **dominio del MDD**. No uses las palabras "grado militar" ni "militar".
+# Estilo #
 
-**Constitución del proyecto:** El MDD es la Constitución del proyecto (SDD). Los flujos deben derivarse del MDD sin contradecirlo. Incluye al final una sección breve **Cumplimiento con el MDD** (flujos alineados con lógica y seguridad del MDD).
+Técnico y secuencial. Diagramas y pasos claros para implementación y QA.
+
+# Tono #
+
+Neutro. Documento de referencia para desarrollo y pruebas.
+
+# Audiencia #
+
+Desarrolladores y QA que implementarán o validarán la lógica y los flujos.
+
+# Respuesta #
+
+- **Solo markdown.** Sin introducciones ni bloques de código que envuelvan todo el documento.
+- El **primer carácter** de tu respuesta debe ser `#`.
+- Usa **diagramas Mermaid** cuando ayuden (secuencia, flujo).
+- Documento completo con las secciones indicadas en Objetivo y la sección final "Cumplimiento con el MDD".

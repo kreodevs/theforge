@@ -399,6 +399,14 @@ function validatedDecisionsMentionModel(state: MDDStateType): boolean {
 
 const MAX_ARCHITECT_TOOL_LOOPS = 2;
 
+/** Extrae el cuerpo de ## 6. Seguridad del draft (hasta ## 7. o fin). */
+function extractSection6SeguridadBody(draft: string): string | null {
+  const m = draft.match(/\n##\s+(?:6\.\s+)?Seguridad\b[^\n]*\n+([\s\S]*?)(?=\n##\s+|\z)/i);
+  if (!m?.[1]) return null;
+  const body = m[1].trim();
+  return body.length > 30 && !/^\s*\(?\s*Pendiente\s*\)?\s*$/i.test(body) ? body : null;
+}
+
 function buildArchitectToolsByName(tools: StructuredToolInterface[]): Record<string, StructuredToolInterface> {
   const byName: Record<string, StructuredToolInterface> = {};
   for (const t of tools) byName[t.name] = t;
@@ -543,6 +551,18 @@ export function createMddSoftwareArchitectNode(llm: BaseChatModel, tools: Struct
       if (asksForAppLevelRoles && draftTrimmed && /\bCREATE\s+TABLE\s+roles\b/i.test(draftTrimmed) && /\buser_roles\b/i.test(draftTrimmed)) {
         contextParts.unshift(
           "**ADVERTENCIA (obligatoria):** El borrador que ves abajo tiene §3 con un modelo antiguo (tabla `roles` global y `user_roles`). Tu objetivo pide roles por aplicación. DEBES reemplazar §3 por completo: tablas `applications`, `application_roles` (id, application_id, name), `user_application_roles` (user_id, application_id, role_id). No copies ni reutilices el SQL actual de §3; escríbelo desde cero con esas tablas.",
+          "",
+        );
+      }
+      const section6Body = extractSection6SeguridadBody(draftTrimmed);
+      if (section6Body) {
+        contextParts.unshift(
+          "",
+          "**Requisitos de §6 Seguridad (OBLIGATORIO aplicar en §3 y §4):**",
+          section6Body,
+          "",
+          "Interpreta §6 para descubrir endpoints y gaps. Aplica en §3: si §6 indica que un campo NO debe guardarse en BD (ej. jwt_token), elimínalo de tablas SQL y diagrama ER.",
+          "Aplica en §4 (Contratos de API): (1) Deriva de §6 **cada endpoint** que mencione o implique (ej. «endpoint JWKS» o «JSON Web Key Set» → GET /auth/jwks o /.well-known/jwks.json con response { \"keys\": [...] }; «refresh_token» → POST /auth/refresh; MFA/TOTP → endpoints que §6 implique). Si §6 dice «se implementará X», X debe estar documentado en §4 con método, ruta y request/response. (2) No documentes en §4 campos que §6 prohíba persistir. La aplicación es genérica: interpreta §6 para cerrar gaps en §4.",
           "",
         );
       }

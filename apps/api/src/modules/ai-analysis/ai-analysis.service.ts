@@ -6,14 +6,33 @@ import { Command, isGraphInterrupt } from "@langchain/langgraph";
 import { createDbgaGraph } from "./graph/dbga-graph.js";
 import { createMddGraph, createMddGraphWithManager } from "./graph/mdd-graph.js";
 import { defaultDBGAState, type DBGAState } from "./state/index.js";
-import { defaultMDDState, type MDDState } from "./state/index.js";
+import { defaultMDDState, type MDDState, type MDDStateType } from "./state/index.js";
 import { CheckpointerService } from "./checkpoint/checkpointer.service.js";
 import { EstimationService } from "./estimation/estimation.service.js";
 import { stateToMarkdown, getAgentLabel } from "./state/state-to-markdown.js";
 import type { MddStructured } from "./state/mdd-structured.schema.js";
 import { mddStructuredToMarkdown } from "./render/mdd-structured-to-markdown.js";
-import { hydrateStructuredFromDraft, logSection3Debug, normalizeMddFormat, replaceContextWhenOnlyMetadata, sanitizeContextKeyValueAndObject, sanitizeContextSection } from "./utils/mdd-sanitize.js";
+import {
+  extractContextSectionBody,
+  extractSections2To5Content,
+  hydrateStructuredFromDraft,
+  logSection3Debug,
+  normalizeMddFormat,
+  replaceContextWhenOnlyMetadata,
+  replaceSection1BodyFromAnyHeading,
+  replaceSections2To5InDraft,
+  sanitizeContextKeyValueAndObject,
+  sanitizeContextSection,
+} from "./utils/mdd-sanitize.js";
 import { injectMddDiagrams, suggestMddDiagrams } from "./utils/mdd-diagram-suggestions.js";
+import { markdownToMddStructured } from "./utils/mdd-markdown-to-structured.js";
+import { HumanMessage } from "@langchain/core/messages";
+import { createDbgaLLM } from "./llm/create-dbga-llm.js";
+import { CONTEXT_SYNTHESIZER_PROMPT } from "./prompts/load-prompts.js";
+import { createMddIntegrationNode } from "./nodes/mdd-integration.node.js";
+import { createMddSecurityNode } from "./nodes/mdd-security.node.js";
+import { createMddSoftwareArchitectNode } from "./nodes/mdd-software-architect.node.js";
+import { getMddArchitectTools } from "./tools/tool-registry.js";
 
 import type { PrecisionBreakdown } from "./estimation/estimation.types.js";
 
@@ -281,7 +300,7 @@ export class AiAnalysisService {
 
   /**
    * Streams the MDD (Master Design Document) pipeline: Clarificador → Security → Integration → Auditor.
-   * Si el Auditor da score < 95%, retorna al Clarificador con feedback (máx. 3 iteraciones).
+   * Si el Auditor da score < 85%, el Manager asigna gaps a los agentes; >= 85% cede al usuario (máx. iteraciones según config).
    * Emite eventos progress por nodo y al final done con el markdown del MDD.
    */
   async *streamMddAnalysis(
@@ -327,6 +346,7 @@ export class AiAnalysisService {
           lastState = data as MDDState;
           if (projectId?.trim() && (lastState.mddDraft ?? "").trim()) {
             this.estimationService.setLiveDraft(projectId.trim(), lastState.mddDraft ?? "");
+            if (lastState.auditorGaps) this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps);
           }
         }
       }
@@ -348,7 +368,7 @@ export class AiAnalysisService {
 
   /**
    * Flujo MDD con Manager (Supervisor): entrevista al usuario (máx. 2 preguntas por ronda),
-   * envía contexto a especialistas, no termina hasta que el Auditor confirme >= 95%.
+   * envía contexto a especialistas; termina cuando el Auditor da >= 85% (cede intervención al usuario) o usuario pide parar.
    * Emite "interrupt" con questions y threadId cuando el Manager pide respuestas; luego usar streamMddResume.
    */
   async *streamMddAnalysisWithManager(
@@ -414,6 +434,7 @@ export class AiAnalysisService {
 
     let lastState: MDDState = initialState;
     let lastNonEmptyDraft = (initialState.mddDraft ?? "").trim() || "";
+    const auditTrail: string[] = [];
 
     try {
       const stream = await graph.stream(initialState, {
@@ -426,6 +447,15 @@ export class AiAnalysisService {
         if (mode === "updates" && data && typeof data === "object" && !Array.isArray(data)) {
           const dataRecord = data as Record<string, unknown>;
           const nodeName = Object.keys(dataRecord)[0];
+          if (nodeName && nodeName !== "__interrupt__") {
+            const nodeData = dataRecord[nodeName] as Partial<MDDState> | undefined;
+            const draftLen = nodeData?.mddDraft?.length;
+            const scopeLen = nodeData?.clarifiedScope?.length;
+            const extra = [];
+            if (draftLen) extra.push(`draft=${draftLen}`);
+            if (scopeLen) extra.push(`scope=${scopeLen}`);
+            auditTrail.push(`${nodeName}(${extra.join(" ")})`);
+          }
           if (nodeName === "__interrupt__") {
             const interrupts = dataRecord.__interrupt__ as Array<{
               value?: { type?: string; reply?: string; questions?: string[]; plan?: Array<{ step_id: string; task_description: string; node: string }>; message?: string };
@@ -467,6 +497,7 @@ export class AiAnalysisService {
               status: metrics.status,
               precisionBreakdown,
               auditorFeedback: lastState?.auditorFeedback?.trim() || undefined,
+              auditTrail,
             };
             return;
           }
@@ -483,6 +514,7 @@ export class AiAnalysisService {
           if (draft) {
             lastNonEmptyDraft = draft;
             this.estimationService.setLiveDraft(projectId.trim(), draft);
+            if (lastState.auditorGaps) this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps);
             const prepared = prepareMddForOutput({
               mddStructured: lastState?.mddStructured,
               mddDraft: draft,
@@ -511,7 +543,7 @@ export class AiAnalysisService {
       }
       const metrics = this.estimationService.calculateLiveMetrics(markdown);
       const precisionBreakdown = this.estimationService.getPrecisionBreakdown(markdown);
-      this.logger.log(`[MDD stream/manager] done markdownLen=${markdown.length} finalDraftLen=${finalDraft.length} lastNonEmptyLen=${lastNonEmptyDraft.length}`);
+      this.logger.log(`[MDD stream/manager] done markdownLen=${markdown.length} finalDraftLen=${finalDraft.length} lastNonEmptyLen=${lastNonEmptyDraft.length} auditTrail=${auditTrail.length}`);
       yield {
         type: "done",
         markdown,
@@ -519,6 +551,7 @@ export class AiAnalysisService {
         status: metrics.status,
         auditorFeedback: lastState?.auditorFeedback?.trim() || undefined,
         precisionBreakdown,
+        auditTrail,
       };
     } catch (err) {
       if (isGraphInterrupt(err) && err.interrupts?.length > 0) {
@@ -567,10 +600,11 @@ export class AiAnalysisService {
           status,
           precisionBreakdown,
           auditorFeedback,
+          auditTrail: [],
         };
         return;
       }
-      this.estimationService.clearLiveDraft(projectId.trim());
+    this.estimationService.clearLiveDraft(projectId.trim());
       const message = err instanceof Error ? err.message : "Error en el flujo MDD con Manager";
       this.logger.error(`[MDD stream/manager] error: ${message}`, err instanceof Error ? err.stack : String(err));
       lastStepFailedByThread.set(threadId, { node: "unknown", error: message });
@@ -585,8 +619,9 @@ export class AiAnalysisService {
     projectId: string,
     threadId: string,
     userMessage: string,
+    mddContentFromClient?: string,
   ): AsyncGenerator<StreamMddManagerEvent> {
-    this.logger.log(`[MDD stream/resume] start projectId=${projectId} threadId=${threadId} userMessageLen=${userMessage?.length ?? 0}`);
+    this.logger.log(`[MDD stream/resume] start projectId=${projectId} threadId=${threadId} userMessageLen=${userMessage?.length ?? 0} mddContentLen=${(mddContentFromClient ?? "").length}`);
 
     const checkpointer = await this.checkpointerService.getCheckpointer();
     if (!checkpointer) {
@@ -626,12 +661,16 @@ export class AiAnalysisService {
       // Resume hace que interrupt() devuelva el valor; pero el estado (lastUserMessage) no se rellena automáticamente.
       // Inyectamos lastUserMessage para que el Manager vea la respuesta al reanudar (acuerdo breve → agente responsable).
       // Si había un fallo de nodo, inyectamos lastStepFailed para que el Manager re-planifique.
+      // mddContentFromClient: evita revertir al checkpoint viejo; el front envía el documento actual (ej. con secret_key en mfa_methods).
       const stream = await graph.stream(
         new Command({
           resume: userMessage.trim(),
           update: {
             lastUserMessage: userMessage.trim() || undefined,
             ...(pendingStepFailed ? { lastStepFailed: pendingStepFailed } : {}),
+            ...(mddContentFromClient?.trim() && mddContentFromClient.trim().length > 80
+              ? { mddDraft: mddContentFromClient.trim() }
+              : {}),
           },
         }),
         {
@@ -719,7 +758,10 @@ export class AiAnalysisService {
           const draft = (lastState.mddDraft ?? "").trim();
           if (draft) {
             lastNonEmptyDraft = draft;
-            if (projectId?.trim()) this.estimationService.setLiveDraft(projectId.trim(), draft);
+            if (projectId?.trim()) {
+              this.estimationService.setLiveDraft(projectId.trim(), draft);
+              if (lastState.auditorGaps) this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps);
+            }
             const prepared = prepareMddForOutput({
               mddStructured: lastState?.mddStructured,
               mddDraft: draft,
@@ -834,6 +876,151 @@ export class AiAnalysisService {
       const message = err instanceof Error ? err.message : "Error al reanudar el flujo MDD";
       this.logger.error(`[MDD stream/resume] error: ${message}`, err instanceof Error ? err.stack : String(err));
       yield { type: "error", message };
+    }
+  }
+
+  /**
+   * Regenera solo una sección del MDD (2–7) usando el resto del documento como contexto.
+   * Entrada alternativa: comandos / en el chat (ej. /infraestructura). No reemplaza el flujo
+   * con Manager (streamMddAnalysisWithManager / streamMddResume): si el usuario escribe texto
+   * normal, el frontend sigue usando manager/resume; este método solo se invoca cuando el
+   * cliente envía explícitamente section 2–7 (regenerate-section). NDJSON: progress | done | error.
+   */
+  async *streamMddRegenerateSection(
+    projectId: string,
+    section: number,
+    mddContentFromClient?: string,
+  ): AsyncGenerator<StreamMddManagerEvent> {
+    const pid = projectId?.trim();
+    if (!pid) {
+      yield { type: "error", message: "projectId es requerido" };
+      return;
+    }
+    if (section < 1 || section > 7) {
+      yield { type: "error", message: "section debe ser 1–7" };
+      return;
+    }
+    let mddContent = typeof mddContentFromClient === "string" ? mddContentFromClient.trim() : "";
+    if (mddContent.length < 100) {
+      const project = await this.prisma.project.findUnique({
+        where: { id: pid },
+        select: { mddContent: true },
+      });
+      mddContent = (project?.mddContent ?? "").trim();
+    }
+    if (mddContent.length < 100) {
+      yield { type: "error", message: "No hay MDD suficiente para regenerar una sección. Genera o edita el MDD antes." };
+      return;
+    }
+
+    const llm = createDbgaLLM();
+    const agentLabel =
+      section === 1
+        ? "Contexto (sintetizador)"
+        : section === 7
+          ? "Integración"
+          : section === 6
+            ? "Seguridad"
+            : "Arquitecto de Software";
+
+    yield { type: "progress", agent: agentLabel, message: `Regenerando §${section}...` };
+
+    try {
+      if (section === 1) {
+        const prompt = `${CONTEXT_SYNTHESIZER_PROMPT}\n\n---\n\n**Documento MDD (usa las secciones 2–7 para sintetizar la sección 1):**\n\n${mddContent}`;
+        const response = await llm.invoke([new HumanMessage(prompt)]);
+        const text = (typeof response.content === "string" ? response.content : "").trim();
+        let newBody = (text && extractContextSectionBody(text)) || text || "(Contexto sintetizado desde el documento.)";
+        const firstOtherSection = newBody.search(/\n##\s+(?:2|3|4|5|6|7)[.\s]/);
+        if (firstOtherSection !== -1) {
+          newBody = newBody.slice(0, firstOtherSection).trim();
+        }
+        const headingFragmentLine = /^\s*(?:y|and)\s+alcance\s*(?:del\s+)?mdd\s*\.?\s*$/i;
+        newBody = newBody
+          .split(/\r?\n/)
+          .filter((line) => !headingFragmentLine.test(line.trim()))
+          .join("\n")
+          .replace(/^\s*[\r\n]+/, "")
+          .replace(/^```[\w]*\s*\n?/, "")
+          .replace(/\n?```\s*$/, "")
+          .trim() || newBody;
+        const finalDraft = replaceSection1BodyFromAnyHeading(mddContent, newBody);
+        const markdown = prepareMddForOutput(finalDraft);
+        const metrics = this.estimationService.calculateLiveMetrics(markdown);
+        yield {
+          type: "done",
+          markdown,
+          precision: metrics.precision,
+          status: metrics.status,
+          precisionBreakdown: this.estimationService.getPrecisionBreakdown(markdown),
+        };
+        return;
+      }
+
+    const structured = markdownToMddStructured(mddContent);
+    const state: MDDState = {
+      ...defaultMDDState,
+      dbgaContent: "(Regenerando sección desde documento actual.)",
+      clarifiedScope: structured?.contextoAlcance ?? "",
+      mddStructured: structured ?? undefined,
+      mddDraft: mddContent,
+    };
+
+      if (section === 7) {
+        const integrationNode = createMddIntegrationNode(llm);
+        const result = await integrationNode(state as MDDStateType);
+        const finalDraft = (result.mddDraft ?? mddContent).trim();
+        const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
+        const metrics = this.estimationService.calculateLiveMetrics(markdown);
+        yield {
+          type: "done",
+          markdown,
+          precision: metrics.precision,
+          status: metrics.status,
+          precisionBreakdown: this.estimationService.getPrecisionBreakdown(markdown),
+        };
+        return;
+      }
+      if (section === 6) {
+        const securityNode = createMddSecurityNode(llm);
+        const result = await securityNode(state as MDDStateType);
+        const finalDraft = (result.mddDraft ?? mddContent).trim();
+        const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
+        const metrics = this.estimationService.calculateLiveMetrics(markdown);
+        yield {
+          type: "done",
+          markdown,
+          precision: metrics.precision,
+          status: metrics.status,
+          precisionBreakdown: this.estimationService.getPrecisionBreakdown(markdown),
+        };
+        return;
+      }
+      if (section >= 2 && section <= 5) {
+        const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools());
+        const result = await softwareArchitectNode(state as MDDStateType);
+        const architectDraft = (result.mddDraft ?? "").trim();
+        const content25 = extractSections2To5Content(architectDraft);
+        const finalDraft =
+          content25 != null
+            ? replaceSections2To5InDraft(mddContent, content25)
+            : architectDraft || mddContent;
+        const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
+        const metrics = this.estimationService.calculateLiveMetrics(markdown);
+        yield {
+          type: "done",
+          markdown,
+          precision: metrics.precision,
+          status: metrics.status,
+          precisionBreakdown: this.estimationService.getPrecisionBreakdown(markdown),
+        };
+        return;
+      }
+      yield { type: "error", message: "Sección no soportada para regeneración." };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[MDD regenerate-section] error: ${message}`, err instanceof Error ? err.stack : undefined);
+      yield { type: "error", message: `Error al regenerar §${section}: ${message}` };
     }
   }
 }

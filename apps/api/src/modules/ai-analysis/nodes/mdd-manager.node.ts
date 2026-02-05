@@ -53,13 +53,12 @@ const PIPELINE_TAIL = ["format_after_redactor", "diagram_injector", "auditor"] a
 function inferSectionsFromMessage(text: string): string[] {
   const t = (text ?? "").toLowerCase();
   const out: string[] = [];
-  if (
+  const needsModelOrApi =
     /\b(modelo\s+de\s+datos|modelo\s+datos|tablas?|entidades?|schema|sql|roles?|permisos?|aplicaciones?|§3|secci[oó]n\s*3)\b/i.test(t) ||
     /\b(contratos?\s+api|endpoints?|§4|secci[oó]n\s*4)\b/i.test(t) ||
-    /\b(arquitectura|stack|frontend)\b/i.test(t)
-  ) {
-    out.push("software_architect");
-  }
+    /\b(arquitectura|stack|frontend)\b/i.test(t) ||
+    /\b(base\s+de\s+datos|campo|columna|guardar(?:se)?\s+en|almacenar\s+en|jwt_token|refresh_token|token\s+en\s+bd)\b/i.test(t);
+  if (needsModelOrApi) out.push("software_architect");
   if (/\b(seguridad|mfa|2fa|autenticaci[oó]n|autorizaci[oó]n|rbac|§6|secci[oó]n\s*6)\b/i.test(t)) {
     out.push("security");
   }
@@ -109,7 +108,7 @@ function contextSuffix(userBrief: string | undefined): string {
 
 /** Indicios de requisito de modelo de datos (para goal explícito en paso software_architect). */
 const MODEL_REQUIREMENT_REGEX =
-  /\b(aplicaciones?|modelo\s+de\s+datos|roles?|permisos?|entidades?|tablas?|diagrama\s*(er|entidad|relaci[oó]n)?|relaci[oó]n(es)?)\b/i;
+  /\b(aplicaciones?|modelo\s+de\s+datos|roles?|permisos?|entidades?|tablas?|diagrama\s*(er|entidad|relaci[oó]n)?|relaci[oó]n(es)?|base\s+de\s+datos|campo|columna|guardar(?:se)?\s+en|jwt_token|refresh_token)\b/i;
 
 /** Indicios de petición que afectan §2 Arquitectura y Stack (stack tecnológico, frontend, backend, etc.). */
 const STACK_SECTION2_REGEX =
@@ -132,6 +131,9 @@ function goalForStep(node: string, directiveOrBrief: string | undefined): string
     if (rolesPorApp) {
       return "Cambiar el modelo de datos para que incluya applications, application_roles por aplicación y user_application_roles. No copies §3 del borrador; genera §3 desde cero con esas tablas. Luego elabora §4 Contratos de API.";
     }
+    if (directiveRequiresModelAndDiagramChange(full)) {
+      return `Requisito de seguridad/almacenamiento: ${trimmed} Debes actualizar §3 Modelo de Datos (quitar de las tablas SQL cualquier campo que no deba persistirse, p. ej. jwt_token) y el diagrama entidad-relación para que coincida; y §4 Contratos de API (añadir o ajustar endpoints, p. ej. refresh_token). Revisa todo el SQL y el erDiagram y elimina columnas que el usuario indica que no deben guardarse en BD.`;
+    }
     const affectsModel = MODEL_REQUIREMENT_REGEX.test(trimmed);
     const affectsSection2 = STACK_SECTION2_REGEX.test(trimmed);
     if (affectsModel && affectsSection2) {
@@ -148,6 +150,16 @@ function goalForStep(node: string, directiveOrBrief: string | undefined): string
   if (node === "security") return `Aplicar en §6 Seguridad lo que corresponda de: ${trimmed}`;
   if (node === "integration") return `Aplicar en §7 Infraestructura lo que corresponda de: ${trimmed}`;
   return undefined;
+}
+
+/** Si la directiva pide no guardar algo en BD (ej. jwt_token) o eliminar un campo, el Arquitecto debe actualizar §3 y diagrama. */
+function directiveRequiresModelAndDiagramChange(directive: string): boolean {
+  const d = (directive ?? "").toLowerCase();
+  return (
+    /\bno\s+guardar(?:se)?\s+en\s+base\s+de\s+datos\b/i.test(d) ||
+    /\b(no\s+almacenar|eliminar\s+campo|quitar\s+campo|no\s+persistir|jwt_token|refresh_token)\b/i.test(d) ||
+    /\bcampo\s+\w+.*(?:no\s+debe|no\s+guardar|eliminar|quitar)\b/i.test(d)
+  );
 }
 
 /** Construye el plan estructurado (lista de pasos) al delegar; artefacto explícito para patrón Planner–Executor. */
@@ -272,10 +284,13 @@ async function generateMddPlanWithLLM(
   }
 }
 
-const QUALITY_THRESHOLD = 95;
+/** >= 85: done (cede intervención al usuario). < 85: Manager asigna gaps a agentes para corregir. */
+const QUALITY_THRESHOLD = 85;
+/** Nota < 9/10: por debajo de 90% el documento se devuelve al Clarifier con reporte de gaps para segunda iteración. */
+const AUDITOR_RETRY_THRESHOLD = 90;
 const MAX_MDD_ITERATIONS = 3;
 
-/** Usuario pide explícitamente detenerse: done solo si Auditor >= 95% o el usuario lo pide. */
+/** Usuario pide explícitamente detenerse: done solo si Auditor >= 85% o el usuario lo pide. */
 const USER_STOP_PATTERN = /^(parar|detener|stop|terminar|salir|no\s+continuar|basta|listo)$/i;
 
 /** Petición explícita de auditar el documento → disparar solo el Auditor (no todo el pipeline). */
@@ -305,12 +320,12 @@ function looksLikeContextScopeOnlyRequest(msg: string): boolean {
   );
 }
 
-/** Indica si el usuario pide seguir refinando (ej. "sigamos trabajando", "avanzar al 95%", "seguir con el MDD"). */
+/** Indica si el usuario pide seguir refinando (ej. "sigamos trabajando", "avanzar al 85%", "seguir con el MDD"). */
 const CONTINUE_REFINING_PATTERN =
-  /(?:sigamos?|seguir|continu(?:ar|amos|emos)|avancemos?|avanzar|trabaj(?:ar|emos)|(?:del?\s+)?\d+\s*%\s*(?:al\s+)?95|(?:al\s+)?95\s*%|mejor(?:ar|emos)|refin(?:ar|emos)|complet(?:ar|emos)|termin(?:ar|emos)\s+el\s+mdd)/i;
+  /(?:sigamos?|seguir|continu(?:ar|amos|emos)|avancemos?|avanzar|trabaj(?:ar|emos)|(?:del?\s+)?\d+\s*%\s*(?:al\s+)?85|(?:al\s+)?85\s*%|mejor(?:ar|emos)|refin(?:ar|emos)|complet(?:ar|emos)|termin(?:ar|emos)\s+el\s+mdd)/i;
 
-/** Usuario pregunta qué falta o con qué continuar para llegar al 95% (debe responder con auditorFeedback). */
-const ASK_WHAT_NEEDED_FOR_95_PATTERN =
+/** Usuario pregunta qué falta o con qué continuar para llegar al 85% (debe responder con auditorFeedback). */
+const ASK_WHAT_NEEDED_FOR_85_PATTERN =
   /(?:con\s+qué|qué\s+falta|qué\s+necesitamos?|qué\s+hay\s+que\s+hacer|qué\s+pendiente|cómo\s+llegamos?)\s+(?:para\s+)?(?:llegar\s+al\s+)?\d+\s*%?|\d+\s*%?\s*(?:con\s+qué|qué\s+falta|qué\s+continuamos)/i;
 
 /** Respuesta breve de acuerdo a una propuesta (ACID, MFA, etc.): delegar para que se incorpore al MDD, no responder "reply". */
@@ -378,9 +393,9 @@ function mddHasContent(state: MDDStateType): boolean {
 /**
  * Manager como Entrevistador de Estados (no pasapapeles).
  * Caso 1: Sin Bench ni MDD → no delegar; pregunta "¿Sobre qué tema o problema necesitas el MDD?"; al responder delega a agentes para v1; luego bucle refinamiento (preguntas del Clarifier).
- * Caso 2: MDD con contenido pero score < 95% → entrevista de refinamiento guiada por auditorFeedback.
+ * Caso 2: MDD con contenido pero score < 85% → Manager asigna gaps a agentes; >= 85% cede al usuario.
  * Caso 3: Existe dbgaContent → delegar de inmediato a especialistas para v1; luego bucle refinamiento.
- * Done solo si Auditor >= 95% o usuario pide parar.
+ * Done solo si Auditor >= 85% o usuario pide parar (umbral 85 = ceder intervención al usuario).
  * Si se pasa precisionCalculator, el % mostrado coincide con el semáforo (calculateLiveMetrics sobre mddDraft).
  */
 export function createMddManagerNode(llm: BaseChatModel, precisionCalculator?: LivePrecisionCalculator | null) {
@@ -390,10 +405,13 @@ export function createMddManagerNode(llm: BaseChatModel, precisionCalculator?: L
     const iteration = state.mddIteration ?? 0;
     LOG("entry lastUserMessage=%s mddDraftLen=%s auditorScore=%s", userMessage.slice(0, 80), (state.mddDraft ?? "").length, score);
 
-    // Done solo si Auditor >= 95% o usuario pide explícitamente detenerse.
+    // Done solo si Auditor >= 85% o usuario pide explícitamente detenerse.
     if (score >= QUALITY_THRESHOLD) {
-      LOG("goto END (score >= 95)");
+      LOG("goto END (score >= 85)");
       return new Command({ goto: END });
+    }
+    if (score < AUDITOR_RETRY_THRESHOLD) {
+      LOG("score < 90% → segunda iteración con reporte de gaps");
     }
     if (USER_STOP_PATTERN.test(userMessage)) {
       LOG("goto END (usuario pidió detenerse)");
@@ -436,6 +454,12 @@ export function createMddManagerNode(llm: BaseChatModel, precisionCalculator?: L
     const hasBench = hasRealBenchmark(state);
     const hasDraft = mddHasContent(state);
     const hasAccumulated = !!(state.userInputAccumulated?.trim());
+
+    // Vuelta del executor sin mensaje nuevo: no generar otro plan ni preguntar de nuevo; terminar para que el usuario vea "MDD generado".
+    if (!userMessage.trim() && hasDraft) {
+      LOG("vuelta del executor sin mensaje nuevo → END (evitar segundo plan/segunda ejecución)");
+      return new Command({ goto: END });
+    }
 
     // Comando "reformatea el documento": si hay mddStructured, re-renderizar; si no, normalizar mddDraft (sin LLM) y terminar.
     if (REFORMAT_DOCUMENT_PATTERN.test(userMessage) && hasDraft) {
@@ -618,12 +642,12 @@ export function createMddManagerNode(llm: BaseChatModel, precisionCalculator?: L
       }
       const precision =
         precisionCalculator && (state.mddDraft ?? "").trim()
-          ? precisionCalculator.calculateLiveMetrics(state.mddDraft).precision
+          ? precisionCalculator.calculateLiveMetrics(state.mddDraft, { auditorGaps: state.auditorGaps ?? undefined }).precision
           : (state.auditorScore ?? 0);
       const directiveReply =
         "Estamos al " +
         precision +
-        "%. Para avanzar al 95%, necesito que definamos los siguientes puntos.\n\n" +
+        "%. Para avanzar al 85%, necesito que definamos los siguientes puntos.\n\n" +
         questions.join("\n\n");
       LOG("interrupt questions (Clarifier) count=%s con mensaje directivo", questions.length);
       const userAnswer = interrupt({ type: "questions", questions, reply: directiveReply });
@@ -696,7 +720,7 @@ export function createMddManagerNode(llm: BaseChatModel, precisionCalculator?: L
       }
     }
 
-    // Refinamiento obligatorio: score < 95% y sin mensaje → plan clarifier + merge_section1_only para no perder §2–§7.
+    // Refinamiento obligatorio: score < 85% y sin mensaje → plan clarifier + merge_section1_only (Manager asigna gaps a agentes).
     if (hasDraft && score < QUALITY_THRESHOLD && !userMessage) {
       const mddPlan = buildMddPlan("clarifier_only", undefined, getUserBrief(state), getPlanDirective(state));
       if (mddPlan.length > 0) {
@@ -739,24 +763,24 @@ export function createMddManagerNode(llm: BaseChatModel, precisionCalculator?: L
       });
     }
 
-    // Usuario pregunta qué falta para llegar al 95% → responder con auditorFeedback si existe (no mensaje genérico).
-    const askingWhatNeededFor95 =
+    // Usuario pregunta qué falta para llegar al 85% → responder con auditorFeedback si existe (no mensaje genérico).
+    const askingWhatNeededFor85 =
       userMessage &&
-      ASK_WHAT_NEEDED_FOR_95_PATTERN.test(userMessage.trim()) &&
+      ASK_WHAT_NEEDED_FOR_85_PATTERN.test(userMessage.trim()) &&
       hasDraft &&
       score < QUALITY_THRESHOLD;
-    if (askingWhatNeededFor95 && state.auditorFeedback?.trim()) {
+    if (askingWhatNeededFor85 && state.auditorFeedback?.trim()) {
       const precision =
         precisionCalculator && (state.mddDraft ?? "").trim()
-          ? precisionCalculator.calculateLiveMetrics(state.mddDraft).precision
+          ? precisionCalculator.calculateLiveMetrics(state.mddDraft, { auditorGaps: state.auditorGaps ?? undefined }).precision
           : score;
       const replyContent =
         "Estamos al " +
         precision +
-        "%. Para avanzar al 95%, necesitamos:\n\n" +
+        "%. Para avanzar al 85%, necesitamos:\n\n" +
         state.auditorFeedback.trim() +
         "\n\n¿Quieres que avancemos con estos puntos? Responde validando o indicando cambios concretos.";
-      LOG("interrupt reply (qué falta para 95%, con auditorFeedback)");
+      LOG("interrupt reply (qué falta para 85%, con auditorFeedback)");
       const resumeValue = interrupt({ type: "reply", reply: replyContent });
       const newMsg = typeof resumeValue === "string" ? resumeValue : String(resumeValue ?? "").trim();
       return new Command({

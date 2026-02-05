@@ -12,6 +12,7 @@ export interface MarkdownSection {
  * Parsea el contenido markdown en secciones.
  * Cada cabecera (# ... ## ... ###) inicia una nueva sección con id estable (slug del título).
  * El contenido antes de la primera cabecera es la sección "preamble".
+ * No se considera cabecera una línea que esté dentro de un bloque de código delimitado por ```.
  */
 export function parseMarkdownSections(content: string | null): MarkdownSection[] {
   if (!content?.trim()) {
@@ -22,10 +23,24 @@ export function parseMarkdownSections(content: string | null): MarkdownSection[]
   const sections: MarkdownSection[] = [];
   let current: { id: string; lines: string[] } = { id: "preamble", lines: [] };
   let sectionIndex = 0;
+  let inFencedBlock = false;
+  let fencedChar: string | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
-    const headerMatch = line.match(/^(#{1,6})\s+.+/);
+    const trimmed = line.trimStart();
+
+    if (/^`{3,}/.test(trimmed)) {
+      if (!inFencedBlock) {
+        inFencedBlock = true;
+        fencedChar = trimmed.slice(0, 3);
+      } else if (trimmed.startsWith(fencedChar ?? "")) {
+        inFencedBlock = false;
+        fencedChar = null;
+      }
+    }
+
+    const headerMatch = !inFencedBlock && line.match(/^(#{1,6})\s+.+/);
 
     if (headerMatch) {
       if (current.lines.length > 0) {

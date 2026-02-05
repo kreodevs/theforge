@@ -37,6 +37,8 @@ export interface PrecisionBreakdown {
   frontend: number;
   seguridad: number;
   integracion: number;
+  /** Motivo de la calificación por sección (por qué se obtuvo ese %). */
+  sectionReasons?: Partial<Record<"contexto" | "modeloDatos" | "apiContracts" | "frontend" | "seguridad" | "integracion", string>>;
 }
 
 /** Resultado de conformance (Blueprint/Infra vs MDD). */
@@ -149,9 +151,10 @@ interface WorkshopState {
   fetchProject: (projectId: string) => Promise<Project | null>;
   fetchWelcome: (projectId: string, activeTab?: string) => Promise<void>;
   clearChat: (projectId: string, activeTab?: string) => Promise<void>;
-  sendMessage: (message: string, activeTab?: string) => Promise<void>;
+  /** options.regenerateSection (1–7): regenerar solo esa sección del MDD (comando / en chat). §1 = solo sintetizador de contexto. */
+  sendMessage: (message: string, activeTab?: string, options?: { regenerateSection?: number }) => Promise<void>;
   updateMddContent: (content: string) => void;
-  persistMddContent: (content: string) => Promise<void>;
+  persistMddContent: (content: string, options?: { force?: boolean }) => Promise<void>;
   revertMddContent: () => void;
   persistAndReviewMdd: () => Promise<void>;
   setBlueprintContent: (content: string | null) => void;
@@ -373,11 +376,104 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
-  sendMessage: async (message, activeTab) => {
+  sendMessage: async (message, activeTab, options) => {
     const { projectId, session } = get();
     if (!projectId?.trim() || !message.trim()) return;
     const tab = activeTab ?? "mdd";
     const msg = message.trim();
+    const regenerateSection = options?.regenerateSection;
+
+    // Comandos /: solo si el cliente pide regenerar una sección (2–7). Resto del tiempo → Manager/resume.
+    if (tab === "mdd" && session?.id && typeof regenerateSection === "number" && regenerateSection >= 1 && regenerateSection <= 7) {
+      set({
+        loading: true,
+        loadingReason: "mdd",
+        error: null,
+        synced: false,
+        agentProgress: [{ agent: "Regenerando sección", message: `§${regenerateSection}...` }],
+      });
+      try {
+        const appendRes = await fetch(`${API_BASE}/sessions/${session.id}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "user", content: msg, tab: "mdd" }),
+        });
+        if (appendRes.ok) {
+          const updatedSession = (await appendRes.json()) as Session;
+          set({ session: updatedSession });
+        }
+        const mddContent = (get().mddContent ?? get().project?.mddContent ?? "").trim();
+        const r = await fetch(`${API_BASE}/ai-analysis/mdd/stream/regenerate-section`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, section: regenerateSection, mddContent: mddContent || undefined }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.message ?? "Error al regenerar sección");
+        }
+        const reader = r.body?.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              try {
+                const event = JSON.parse(trimmed) as { type: string; markdown?: string; message?: string; precision?: number; status?: string; precisionBreakdown?: PrecisionBreakdown };
+                if (event.type === "progress" && event.agent != null && event.message != null) {
+                  set((s) => ({ agentProgress: [...s.agentProgress, { agent: event.agent!, message: event.message! }] }));
+                } else if (event.type === "done" && event.markdown != null && event.markdown.trim().length > 80) {
+                  set({ mddContent: event.markdown });
+                  const { persistMddContent, fetchProject, fetchEstimation, fetchConformance } = get();
+                  await persistMddContent(event.markdown, { force: true });
+                  await fetchProject(projectId);
+                  fetchEstimation(projectId).catch(() => {});
+                  fetchConformance(projectId).catch(() => {});
+                  const current = get();
+                  set({
+                    project: current.project ? { ...current.project, mddContent: event.markdown } : null,
+                    loading: false,
+                    loadingReason: null,
+                    agentProgress: [],
+                  });
+                  const assistantRes = await fetch(`${API_BASE}/sessions/${session.id}/messages`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ role: "assistant", content: `Sección §${regenerateSection} regenerada. Revisa el documento en el panel central.`, tab: "mdd" }),
+                  });
+                  if (assistantRes.ok) {
+                    const sess = (await assistantRes.json()) as Session;
+                    set({ session: sess });
+                  }
+                  return;
+                } else if (event.type === "error" && event.message) {
+                  set({ error: event.message, loading: false, loadingReason: null, agentProgress: [] });
+                  return;
+                }
+              } catch {
+                // ignore parse
+              }
+            }
+          }
+        }
+        set({ loading: false, loadingReason: null, agentProgress: [] });
+      } catch (e) {
+        set({
+          error: e instanceof Error ? e.message : "Error al regenerar sección",
+          loading: false,
+          loadingReason: null,
+          agentProgress: [],
+        });
+      }
+      return;
+    }
 
     if (tab === "mdd" && session?.id) {
       const managerThreadId = get().managerThreadId;
@@ -425,7 +521,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
               : `${API_BASE}/ai-analysis/mdd/stream/manager`;
           const body =
             managerThreadId != null
-              ? { projectId, threadId: managerThreadId, userMessage: messageForApi }
+              ? {
+                  projectId,
+                  threadId: managerThreadId,
+                  userMessage: messageForApi,
+                  mddContent: (get().mddContent ?? get().project?.mddContent ?? "").trim() || undefined,
+                }
               : {
                 projectId,
                 dbgaContent: (get().dbgaContent ?? get().project?.dbgaContent ?? "").trim() || undefined,
@@ -490,8 +591,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                       set({ mddContent: event.markdown });
                       const { persistMddContent, fetchProject, fetchEstimation } = get();
                       await persistMddContent(event.markdown);
+                      const errBeforeFetch = get().error;
                       await fetchProject(projectId);
+                      if (errBeforeFetch) set({ error: errBeforeFetch });
                       await fetchEstimation(projectId);
+                      const current = get();
+                      set({
+                        mddContent: event.markdown,
+                        project: current.project ? { ...current.project, mddContent: event.markdown } : null,
+                      });
                     }
                     // No sobrescribir mddContent con markdown vacío (auditar puede venir de checkpoint sin draft)
 
@@ -553,8 +661,17 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
                     const { persistMddContent, fetchProject, fetchEstimation } = get();
                     if (markdownOk) await persistMddContent(event.markdown);
+                    const errorBeforeFetch = get().error;
                     await fetchProject(projectId);
+                    if (errorBeforeFetch) set({ error: errorBeforeFetch });
                     await fetchEstimation(projectId);
+                    if (markdownOk) {
+                      const current = get();
+                      set({
+                        mddContent: event.markdown,
+                        project: current.project ? { ...current.project, mddContent: event.markdown } : null,
+                      });
+                    }
 
                     const assistantContent = "MDD generado. Revisa el documento en el panel central.";
                     const assistantRes = await fetch(`${API_BASE}/sessions/${session.id}/messages`, {
@@ -613,6 +730,158 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           activeTab: tab,
         };
         if (activeTab === "benchmark") {
+          const dbga = get().dbgaContent ?? get().project?.dbgaContent ?? null;
+          if (dbga != null) body.dbgaContent = dbga;
+        }
+        const r = await fetch(`${API_BASE}/ai-orchestrator/chat/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.message ?? "Error en la entrevista");
+        }
+        const reader = r.body?.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        if (!reader) throw new Error("No se pudo leer el stream");
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() ?? "";
+          for (const block of lines) {
+            let event = "";
+            let dataStr = "";
+            for (const line of block.split("\n")) {
+              if (line.startsWith("event:")) event = line.slice(6).trim();
+              else if (line.startsWith("data:")) dataStr = line.slice(5).trim();
+            }
+            if (!event || !dataStr) continue;
+            try {
+              const data = JSON.parse(dataStr) as Record<string, unknown>;
+              if (event === "chunk" && typeof data.content === "string") {
+                set((s) => ({ streamingContent: (s.streamingContent ?? "") + data.content }));
+              } else if (event === "done") {
+                const sess = data.session as Session | undefined;
+                const proj = data.project as Project | undefined;
+                const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
+                const projectWithUx = proj
+                  ? { ...proj, uxUiGuideContent: uxFromApi ?? proj.uxUiGuideContent ?? null }
+                  : proj;
+                set({
+                  session: sess ?? get().session,
+                  project: projectWithUx ?? get().project,
+                  mddContent: proj?.mddContent ?? get().mddContent,
+                  uxUiGuideContent: uxFromApi ?? get().uxUiGuideContent ?? null,
+                  dbgaContent: proj?.dbgaContent ?? null,
+                  blueprintContent: proj?.blueprintContent ?? null,
+                  apiContractsContent: proj?.apiContractsContent ?? null,
+                  logicFlowsContent: proj?.logicFlowsContent ?? null,
+                  infraContent: proj?.infraContent ?? null,
+                  streamingUserMessage: null,
+                  streamingContent: null,
+                  streamingTab: null,
+                  synced: true,
+                  error: null,
+                });
+              } else if (event === "error" && data.error) {
+                set({
+                  error: String(data.error),
+                  streamingUserMessage: null,
+                  streamingContent: null,
+                  streamingTab: null,
+                  synced: true,
+                });
+              }
+            } catch (_) {
+              // ignore parse errors for partial chunks
+            }
+          }
+        }
+        if (buffer.trim()) {
+          let event = "";
+          let dataStr = "";
+          for (const line of buffer.split("\n")) {
+            if (line.startsWith("event:")) event = line.slice(6).trim();
+            else if (line.startsWith("data:")) dataStr = line.slice(5).trim();
+          }
+          if (event && dataStr) {
+            try {
+              const data = JSON.parse(dataStr) as Record<string, unknown>;
+              if (event === "chunk" && typeof data.content === "string") {
+                set((s) => ({ streamingContent: (s.streamingContent ?? "") + data.content }));
+              } else if (event === "done") {
+                const sess = data.session as Session | undefined;
+                const proj = data.project as Project | undefined;
+                const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
+                const projectWithUx = proj
+                  ? { ...proj, uxUiGuideContent: uxFromApi ?? proj.uxUiGuideContent ?? null }
+                  : proj;
+                set({
+                  session: sess ?? get().session,
+                  project: projectWithUx ?? get().project,
+                  mddContent: proj?.mddContent ?? get().mddContent,
+                  uxUiGuideContent: uxFromApi ?? get().uxUiGuideContent ?? null,
+                  dbgaContent: proj?.dbgaContent ?? null,
+                  blueprintContent: proj?.blueprintContent ?? null,
+                  apiContractsContent: proj?.apiContractsContent ?? null,
+                  logicFlowsContent: proj?.logicFlowsContent ?? null,
+                  infraContent: proj?.infraContent ?? null,
+                  streamingUserMessage: null,
+                  streamingContent: null,
+                  streamingTab: null,
+                  synced: true,
+                  error: null,
+                });
+              } else if (event === "error" && data.error) {
+                set({
+                  error: String(data.error),
+                  streamingUserMessage: null,
+                  streamingContent: null,
+                  streamingTab: null,
+                  synced: true,
+                });
+              }
+            } catch (_) {
+              // ignore
+            }
+          }
+        }
+      } catch (e) {
+        set({
+          error: e instanceof Error ? e.message : "Error al enviar",
+          streamingUserMessage: null,
+          streamingContent: null,
+          streamingTab: null,
+          synced: true,
+        });
+      } finally {
+        set({ loading: false });
+      }
+    } else {
+      // Chat genérico para Guía UX/UI, benchmark, spec, etc. (tabs que no usan el flujo MDD/Manager)
+      set({
+        loading: true,
+        error: null,
+        synced: false,
+        streamingUserMessage: msg,
+        streamingContent: "",
+        streamingTab: tab,
+      });
+      try {
+        const body: Record<string, unknown> = {
+          projectId,
+          sessionId: session?.id,
+          message: msg,
+          mddContent: get().mddContent || undefined,
+          uxUiGuideContent: get().uxUiGuideContent ?? get().project?.uxUiGuideContent ?? undefined,
+          activeTab: tab,
+        };
+        if (tab === "benchmark") {
           const dbga = get().dbgaContent ?? get().project?.dbgaContent ?? null;
           if (dbga != null) body.dbgaContent = dbga;
         }
@@ -818,6 +1087,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
       const proj = data as Project;
       set({ project: proj, blueprintContent: proj.blueprintContent ?? null, error: null });
+      get().fetchConformance(projectId).catch(() => {});
       return proj;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar blueprint" });
@@ -871,6 +1141,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
       const proj = data as Project;
       set({ project: proj, apiContractsContent: proj.apiContractsContent ?? null, error: null });
+      get().fetchConformance(projectId).catch(() => {});
       return proj;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar contratos API" });
@@ -922,6 +1193,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         logicFlowsContent: data.logicFlowsContent ?? null,
         error: null,
       });
+      get().fetchConformance(projectId).catch(() => {});
       return data;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar lógica y flujos" });
@@ -975,6 +1247,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
       const proj = data as Project;
       set({ project: proj, infraContent: proj.infraContent ?? null, error: null });
+      get().fetchConformance(projectId).catch(() => {});
       return proj;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar infraestructura" });
@@ -1354,9 +1627,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }),
       });
       if (!r.ok) return null;
-      const data: LiveMetricsResult = await r.json();
-      set({ liveMetrics: data });
-      return data;
+      const data = (await r.json()) as LiveMetricsResult & { precisionBreakdown?: PrecisionBreakdown };
+      const { precisionBreakdown, ...metrics } = data;
+      set({
+        liveMetrics: metrics,
+        ...(precisionBreakdown != null ? { precisionBreakdown } : {}),
+      });
+      return metrics;
     } catch {
       return null;
     }
@@ -1379,10 +1656,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
-  persistMddContent: async (content) => {
+  persistMddContent: async (content, options) => {
     const { projectId, project, fetchEstimation } = get();
-    if (!projectId || !project || content === (project.mddContent ?? "")) return;
-    set({ synced: false });
+    if (!projectId || !project) return;
+    if (!options?.force && content === (project.mddContent ?? "")) return;
+    set({ synced: false, error: null });
     try {
       const r = await fetch(`${API_BASE}/projects/${projectId}`, {
         method: "PATCH",
@@ -1391,7 +1669,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       });
       if (r.ok) {
         const data: Project = await r.json();
-        set({ project: data, mddContent: data.mddContent ?? content, synced: true });
+        const savedContent = data.mddContent ?? content;
+        set({ project: data, mddContent: savedContent, synced: true, error: null });
         await fetch(`${API_BASE}/ai-analysis/estimation/clear-draft`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1399,10 +1678,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }).catch(() => { });
         fetchEstimation(projectId).catch(() => { });
       } else {
-        set({ synced: true });
+        const errBody = await r.json().catch(() => ({}));
+        const message = typeof errBody?.message === "string" ? errBody.message : "Error al guardar el MDD";
+        set({ synced: false, error: message });
       }
     } catch {
-      set({ synced: true });
+      set({ synced: false, error: "Error de red al guardar" });
     }
   },
 

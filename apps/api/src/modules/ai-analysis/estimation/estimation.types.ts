@@ -16,12 +16,43 @@ export interface MDDReference {
 /** Contexto parcial del MDD (markdown o secciones detectadas) para cálculo en vivo. */
 export type MDDContext = string | { mddContent?: string; infraContent?: string };
 
+/**
+ * Gaps críticos generados por el Auditor (LLM). Textos en español.
+ * Sustituye al reporte por regex cuando el Auditor ya ha evaluado el MDD.
+ */
+export interface AuditorCriticalGap {
+  /** Secciones afectadas (ej. "Sección 3", "Sección 6"). */
+  sections: string[];
+  /** Descripción del problema en español. */
+  issue: string;
+  /** Acción concreta para corregir (ej. "Añadir tabla mfa_methods con user_id y secret_key"). */
+  fix: string;
+}
+
+export interface AuditorGaps {
+  /** Puntuación 0-100 (coherente con auditorScore). */
+  score: number;
+  /** APROBADO si score >= 85 y sin gaps críticos bloqueantes; RECHAZADO en caso contrario. */
+  status: "APROBADO" | "RECHAZADO";
+  /** Gaps críticos de consistencia/trazabilidad (secciones, problema, corrección). */
+  critical_gaps: AuditorCriticalGap[];
+  /** Errores de sintaxis o formato (ej. Mermaid, JSON). */
+  syntax_errors: string[];
+  /** true si §7 Infraestructura refleja el stack de §2 (Docker/Node, etc.). */
+  infrastructure_ready: boolean;
+}
+
 /** Contrato mínimo para que el Manager muestre la misma precisión que el semáforo. */
 export interface LivePrecisionCalculator {
-  calculateLiveMetrics(ctx: MDDContext): LiveMetricsResult;
+  calculateLiveMetrics(ctx: MDDContext, options?: { auditorGaps?: AuditorGaps }): LiveMetricsResult;
+  /** Opcional: reporte de gaps en lenguaje natural. Si se pasan auditorGaps, se usan en lugar de regex. */
+  getGapsReport?(md: string, auditorGaps?: AuditorGaps): string[];
 }
 
 export type SemaphoreStatusLive = "red" | "yellow" | "green";
+
+/** Estado por sección: inconsistente cuando la entidad no recorre las 7 secciones (matriz de trazabilidad). */
+export type SectionStatus = "ok" | "inconsistente";
 
 /** Calificación por sección/agente (0–100) para mostrar en la tabla del chat tras auditar. */
 export interface PrecisionBreakdown {
@@ -31,6 +62,10 @@ export interface PrecisionBreakdown {
   frontend: number;
   seguridad: number;
   integracion: number;
+  /** Si una sección está en "Estado Inconsistente" por trazabilidad, aparece aquí. */
+  sectionStatus?: Partial<Record<"contexto" | "modeloDatos" | "apiContracts" | "seguridad" | "integracion", SectionStatus>>;
+  /** Motivo de la calificación por sección (por qué se obtuvo ese %). */
+  sectionReasons?: Partial<Record<"contexto" | "modeloDatos" | "apiContracts" | "frontend" | "seguridad" | "integracion", string>>;
 }
 
 /** Salida exacta para la UI: Semáforo + Estimación (nómina interna y precio mercado). */
