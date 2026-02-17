@@ -10,11 +10,11 @@ export const competitorDataSchema = z.object({
   /** Verified URL (required – no hallucinated links) */
   url: z.string().url(),
   /** Unique Value Proposition */
-  uvp: z.string().optional(),
+  uvp: z.string().nullable().optional(),
   /** Pricing info if available */
-  pricing: z.string().optional(),
+  pricing: z.string().nullable().optional(),
   /** Market share or relative position if available */
-  marketShare: z.string().optional(),
+  marketShare: z.string().nullable().optional(),
 });
 
 export type CompetitorData = z.infer<typeof competitorDataSchema>;

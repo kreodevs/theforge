@@ -65,6 +65,24 @@ export class ProjectsController {
     return this.projects.generateTasks(id);
   }
 
+  @Post(":id/generate-architecture")
+  generateArchitecture(@Param("id") id: string, @Body() body: { preview?: boolean }) {
+    if (body?.preview) return this.projects.generateArchitecturePreview(id);
+    return this.projects.generateArchitecture(id);
+  }
+
+  @Post(":id/generate-use-cases")
+  generateUseCases(@Param("id") id: string, @Body() body: { preview?: boolean }) {
+    if (body?.preview) return this.projects.generateUseCasesPreview(id);
+    return this.projects.generateUseCases(id);
+  }
+
+  @Post(":id/generate-user-stories")
+  generateUserStories(@Param("id") id: string, @Body() body: { preview?: boolean }) {
+    if (body?.preview) return this.projects.generateUserStoriesPreview(id);
+    return this.projects.generateUserStories(id);
+  }
+
   @Post(":id/generate-blueprint")
   generateBlueprint(@Param("id") id: string, @Body() body: { preview?: boolean; gapsFeedback?: string }) {
     const gaps = typeof body?.gapsFeedback === "string" ? body.gapsFeedback.trim() || undefined : undefined;

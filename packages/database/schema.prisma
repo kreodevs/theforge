@@ -19,6 +19,9 @@ model Project {
   figmaMapping     Json?
   dbgaContent          String?   @db.Text
   specContent          String?   @db.Text
+  architectureContent  String?   @db.Text
+  useCasesContent      String?   @db.Text
+  userStoriesContent   String?   @db.Text
   mddContent           String?   @db.Text
   blueprintContent     String?   @db.Text
   tasksContent         String?   @db.Text

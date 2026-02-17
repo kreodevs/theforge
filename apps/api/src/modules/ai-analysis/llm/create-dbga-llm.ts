@@ -9,10 +9,10 @@ const PROVIDER = process.env.AI_PROVIDER?.toLowerCase() ?? "openai";
  * openai → ChatOpenAI (OPENAI_API_KEY), google → ChatGoogleGenerativeAI (GOOGLE_GENERATIVE_AI_API_KEY).
  */
 export function createDbgaLLM(): BaseChatModel {
-  if (PROVIDER === "google") {
-    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "";
+  if (PROVIDER === "google" || PROVIDER === "gemini") {
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GEMINI_API_KEY ?? "";
     return new ChatGoogleGenerativeAI({
-      model: "gemini-1.5-pro",
+      modelName: "gemini-2.0-flash",
       temperature: 0.5,
       apiKey: apiKey || undefined,
     });

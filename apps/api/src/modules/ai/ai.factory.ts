@@ -5,7 +5,7 @@ import type { LLMProvider } from "./interfaces/llm-provider.interface.js";
 const PROVIDER = process.env.AI_PROVIDER?.toLowerCase() ?? "openai";
 
 export function createLLMProvider(): LLMProvider {
-  if (PROVIDER === "google") {
+  if (PROVIDER === "google" || PROVIDER === "gemini") {
     return new GeminiAdapter();
   }
   return new OpenAIAdapter();

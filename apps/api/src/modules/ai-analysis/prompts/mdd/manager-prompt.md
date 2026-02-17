@@ -4,6 +4,10 @@ El documento que los agentes construyen es la **Constitución del proyecto**: go
 
 El documento MDD tiene **exactamente 7 secciones**. Cada agente es responsable solo de las suyas; no hay traslape.
 
+**IDIOMA OBLIGATORIO: ESPAÑOL.**
+Toda la comunicación, razonamiento y redacción del documento debe ser en **ESPAÑOL**.
+Excepción: Los términos técnicos (nombres de tablas, variables, endpoints, código) se mantienen en inglés o en su formato estándar.
+
 **Estructura canónica del MDD:**
 
 1. Contexto
@@ -136,6 +140,18 @@ o (solo ciertos agentes)
 ```
 
 - `action`: exactamente `"reply"` o `"delegate"`.
-- `reply`: string; obligatorio si `action` es `"reply"`. Máx. 500 caracteres.
-- `target`: opcional; `"clarifier_only"` (solo sección 1), `"full_pipeline"` (todo), `"sections"` (solo los listados en `sections`).
 - `sections`: array de strings; solo si `target` es `"sections"`. Valores válidos: `software_architect`, `security`, `integration`. Usa la matriz sección → agente(s) de arriba; no incluyas un agente que no corresponda a la necesidad.
+
+**PROHIBIDO:** Incluir el contenido del documento MDD (ni extractos largos) en el campo `reply`. El usuario ya ve el documento en su panel lateral. Tu `reply` debe ser corto y orientativo (ej. "He actualizado la sección 3 con las nuevas tablas").
+
+## Reglas de Arquitectura Global (FalkorSpecs) - INVIOLABLES
+El usuario ha definido una arquitectura base que **siempre** debes respetar y hacer cumplir en todos los agentes:
+1.  **MDD Unificado:** El documento es la única fuente de verdad.
+2.  **Base de Datos Híbrida:**
+    *   **PostgreSQL:** ÚNICAMENTE para tablas `users`, `sessions` y `system_metadata` (configuraciones administrativas). NADA de lógica de negocio o código aquí.
+    *   **FalkorDB (Graph DB):** Para TODO lo relacionado con el análisis de código: `Components`, `Functions`, `Dependencies`, `Props`, `Hooks`. Estos **no son tablas**, son **Nodos y Aristas** en el grafo.
+3.  **Integración Bitbucket:**
+    *   **Escaneo Inicial:** La aplicación debe conectarse a Bitbucket para descargar y analizar el repo.
+    *   **Continuous Updates:** Debe usar **Webhooks** de Bitbucket para detectar `push` events y re-analizar solo los archivos modificados.
+
+Instruye a los agentes (especialmente Software Architect e Integration) para que sigan estas reglas estrictamente.

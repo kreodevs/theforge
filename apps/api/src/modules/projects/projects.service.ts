@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { Status } from "@the-forge/database";
 import type { Prisma } from "@the-forge/database";
 import { PrismaService } from "../../prisma/prisma.service.js";
+import { SessionsService } from "../sessions/sessions.service.js";
 import { SemaphoreService } from "../engine/semaphore.service.js";
 import { CostCalculatorService } from "../engine/cost-calculator.service.js";
 import { normalizeMddContent, extractTechnicalMetadataTags } from "../engine/mdd-markdown-parser.js";
@@ -233,7 +234,7 @@ export class ProjectsService {
       project.dbgaContent ?? "",
       project.phase0SummaryContent,
     );
-    return this.update(projectId, { specContent: specContent.trim() });
+    return this.update(projectId, { specContent: SessionsService.cleanDocumentContent(specContent) });
   }
 
   /**
@@ -249,7 +250,49 @@ export class ProjectsService {
       project.mddContent ?? "",
       project.blueprintContent,
     );
-    return this.update(projectId, { tasksContent: tasksContent.trim() });
+    return this.update(projectId, { tasksContent: SessionsService.cleanDocumentContent(tasksContent) });
+  }
+
+  async generateArchitecturePreview(projectId: string): Promise<{ content: string }> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException("Project not found");
+    const content = await this.ai.generateArchitecture(project.mddContent ?? "", project.blueprintContent);
+    return { content: SessionsService.cleanDocumentContent(content) };
+  }
+
+  async generateArchitecture(projectId: string) {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException("Project not found");
+    const content = await this.ai.generateArchitecture(project.mddContent ?? "", project.blueprintContent);
+    return this.update(projectId, { architectureContent: SessionsService.cleanDocumentContent(content) });
+  }
+
+  async generateUseCasesPreview(projectId: string): Promise<{ content: string }> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException("Project not found");
+    const content = await this.ai.generateUseCases(project.mddContent ?? "", project.specContent);
+    return { content: SessionsService.cleanDocumentContent(content) };
+  }
+
+  async generateUseCases(projectId: string) {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException("Project not found");
+    const content = await this.ai.generateUseCases(project.mddContent ?? "", project.specContent);
+    return this.update(projectId, { useCasesContent: SessionsService.cleanDocumentContent(content) });
+  }
+
+  async generateUserStoriesPreview(projectId: string): Promise<{ content: string }> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException("Project not found");
+    const content = await this.ai.generateUserStories(project.mddContent ?? "", project.specContent, project.useCasesContent);
+    return { content: SessionsService.cleanDocumentContent(content) };
+  }
+
+  async generateUserStories(projectId: string) {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException("Project not found");
+    const content = await this.ai.generateUserStories(project.mddContent ?? "", project.specContent, project.useCasesContent);
+    return this.update(projectId, { userStoriesContent: SessionsService.cleanDocumentContent(content) });
   }
 
   /**
@@ -259,7 +302,7 @@ export class ProjectsService {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException("Project not found");
     const content = await this.ai.generateBlueprint(project.mddContent ?? "", gapsFeedback);
-    return { content: content.trim() };
+    return { content: SessionsService.cleanDocumentContent(content) };
   }
 
   /**
@@ -273,7 +316,7 @@ export class ProjectsService {
     if (!project) throw new NotFoundException("Project not found");
     const mddContent = project.mddContent ?? "";
     const blueprintContent = await this.ai.generateBlueprint(mddContent, gapsFeedback);
-    return this.update(projectId, { blueprintContent: blueprintContent.trim() });
+    return this.update(projectId, { blueprintContent: SessionsService.cleanDocumentContent(blueprintContent) });
   }
 
   /** Genera API contracts sin persistir (HITL). Opcional gapsFeedback para regenerar con gaps. */
@@ -285,7 +328,7 @@ export class ProjectsService {
       project.blueprintContent,
       gapsFeedback,
     );
-    return { content: content.trim() };
+    return { content: SessionsService.cleanDocumentContent(content) };
   }
 
   /** Genera Infra sin persistir (HITL). Opcional gapsFeedback para regenerar con gaps. */
@@ -297,7 +340,7 @@ export class ProjectsService {
       project.blueprintContent,
       gapsFeedback,
     );
-    return { content: content.trim() };
+    return { content: SessionsService.cleanDocumentContent(content) };
   }
 
   async generateApiContracts(projectId: string, gapsFeedback?: string | null) {
@@ -311,7 +354,7 @@ export class ProjectsService {
       project.blueprintContent,
       gapsFeedback,
     );
-    return this.update(projectId, { apiContractsContent: content.trim() });
+    return this.update(projectId, { apiContractsContent: SessionsService.cleanDocumentContent(content) });
   }
 
   async generateLogicFlows(projectId: string, gapsFeedback?: string | null) {
@@ -321,7 +364,7 @@ export class ProjectsService {
     });
     if (!project) throw new NotFoundException("Project not found");
     const content = await this.ai.generateLogicFlows(project.mddContent ?? "", gapsFeedback);
-    return this.update(projectId, { logicFlowsContent: content.trim() });
+    return this.update(projectId, { logicFlowsContent: SessionsService.cleanDocumentContent(content) });
   }
 
   async generateInfra(projectId: string, gapsFeedback?: string | null) {
@@ -335,7 +378,7 @@ export class ProjectsService {
       project.blueprintContent,
       gapsFeedback,
     );
-    return this.update(projectId, { infraContent: content.trim() });
+    return this.update(projectId, { infraContent: SessionsService.cleanDocumentContent(content) });
   }
 
   /**

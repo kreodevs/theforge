@@ -11,14 +11,21 @@ import { z } from "zod";
 /** >= 85: done (cede intervención al usuario). < 85: clarifier (Manager asigna gaps a agentes). */
 const AUDIT_PASS_THRESHOLD = 85;
 
-const auditorCriticalGapItemSchema = z.object({
-  sections: z.array(z.string()).optional().default([]),
-  issue: z.string().optional().default(""),
-  fix: z.string().optional().default(""),
-}).transform((o) => ({
-  sections: Array.isArray(o.sections) ? o.sections : [],
-  issue: typeof o.issue === "string" ? o.issue : "",
-  fix: typeof o.fix === "string" ? o.fix : "",
+const auditorCriticalGapItemSchema = z.union([
+  z.object({
+    sections: z.array(z.string()).optional().default([]),
+    issue: z.string().optional().default(""),
+    fix: z.string().optional().default(""),
+  }),
+  z.string().transform((str) => ({
+    sections: [] as string[],
+    issue: str,
+    fix: "Revisión manual requerida",
+  })),
+]).pipe(z.object({
+  sections: z.array(z.string()),
+  issue: z.string(),
+  fix: z.string(),
 }));
 
 const auditorOutputSchema = z.object({
@@ -58,8 +65,7 @@ export function createMddAuditorNode(
       const draft = (state.mddDraft ?? "").trim();
       let prompt = `${AUDITOR_MDD_PROMPT}\n\n---\n**Borrador completo del MDD:**\n${draft || "(vacío)"}`;
       if (toolsToUse.length > 0) {
-        prompt +=
-          "\n\n**Opcional:** Usa la tool validate_mdd_structure con el borrador anterior para obtener section3HasPayloads, missingSections, hasTechnicalMetadata e issues. Usa ese resultado para rellenar auditorScore, auditorDecision, critical_gaps (issue/fix en español), syntax_errors e infrastructure_ready. Responde al final solo con el JSON de salida (auditorScore, auditorDecision, auditorFeedback, status, critical_gaps, syntax_errors, infrastructure_ready).";
+        "\n\n**Opcional:** Usa la tool validate_mdd_structure con el borrador anterior para obtener section3HasPayloads, missingSections, hasTechnicalMetadata e issues. Usa ese resultado para rellenar auditorScore, auditorDecision, critical_gaps (donde cada gap es un objeto { sections: string[], issue: string, fix: string }), syntax_errors e infrastructure_ready. Responde al final solo con el JSON de salida.";
       }
       const messages = [new HumanMessage(prompt)];
 
@@ -170,7 +176,7 @@ export function createMddAuditorNode(
           auditorGaps = result.data;
           if (!feedback && (criticalGaps.length > 0 || syntaxErrors.length > 0)) {
             const parts: string[] = [];
-            for (const g of criticalGaps) {
+            for (const g of criticalGaps as unknown as { sections: string[], issue: string, fix: string }[]) {
               parts.push(`[${(g.sections ?? []).join(", ")}] ${g.issue} Corrección: ${g.fix}`);
             }
             for (const e of syntaxErrors) parts.push(e);

@@ -9,11 +9,11 @@ import type { ChecklistResult } from "@the-forge/shared-types";
 export class GeminiAdapter implements LLMProvider {
   private readonly model;
 
-  constructor(apiKey?: string, modelId = "gemini-1.5-pro") {
-    const key = apiKey ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  constructor(apiKey?: string, modelId = "gemini-2.0-flash") {
+    const key = apiKey ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GEMINI_API_KEY;
     if (!key) {
       throw new Error(
-        "GOOGLE_GENERATIVE_AI_API_KEY is required for Gemini adapter",
+        "GOOGLE_GENERATIVE_AI_API_KEY or GEMINI_API_KEY is required for Gemini adapter",
       );
     }
     const genAI = new GoogleGenerativeAI(key);

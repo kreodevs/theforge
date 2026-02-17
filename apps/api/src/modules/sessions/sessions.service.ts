@@ -101,70 +101,67 @@ export class SessionsService {
     return removed.trim();
   }
 
-  /** Acepta ---FIN_MDD---, --FIN_MDD---, -FIN_MDD--- (1+ guiones) o línea que solo contiene FIN_MDD. */
-  private static splitMddAndChat(response: string): { mddPart: string; chatPart: string } | null {
+  /** Acepta ---FIN_TAG--- para separar el documento del mensaje de chat. */
+  private static splitDocAndChat(response: string, tag: string): { docPart: string; chatPart: string } | null {
     const trimmed = response.trim();
     const normalized = SessionsService.normalizeDashes(trimmed);
-    const regex = /-{1,}FIN_MDD-{1,}/i;
+    const regex = new RegExp(`-{1,}FIN_${tag}-{1,}`, "i");
     const match = normalized.match(regex);
     if (match) {
       const idx = normalized.indexOf(match[0]);
-      const mddPart = trimmed.slice(0, idx).trim();
+      const docPart = trimmed.slice(0, idx).trim();
       const chatPart = trimmed.slice(idx + match[0].length).trim();
-      if (mddPart.length > 0) return { mddPart, chatPart };
+      if (docPart.length > 0) return { docPart, chatPart };
     }
-    const lineDelimiter = normalized.match(/\n(\s*-{0,}\s*FIN_MDD\s*-{0,}\s*)\n/i);
+    const lineDelimiter = normalized.match(new RegExp(`\\n(\\s*-{0,}\\s*FIN_${tag}\\s*-{0,}\\s*)\\n`, "i"));
     if (lineDelimiter) {
       const idx = normalized.indexOf(lineDelimiter[0]);
-      const mddPart = trimmed.slice(0, idx).trim();
+      const docPart = trimmed.slice(0, idx).trim();
       const chatPart = trimmed.slice(idx + lineDelimiter[0].length).trim();
-      if (mddPart.length > 0) return { mddPart, chatPart };
+      if (docPart.length > 0) return { docPart, chatPart };
     }
+    return null;
+  }
+
+  /** Acepta ---FIN_MDD---, --FIN_MDD---, -FIN_MDD--- (1+ guiones) o línea que solo contiene FIN_MDD. */
+  private static splitMddAndChat(response: string): { mddPart: string; chatPart: string } | null {
+    const res = SessionsService.splitDocAndChat(response, "MDD");
+    if (res) return { mddPart: res.docPart, chatPart: res.chatPart };
     return null;
   }
 
   /** Acepta ---FIN_DBGA--- para separar documento Benchmark & Gap Analysis del mensaje de chat. */
   private static splitDbgaAndChat(response: string): { docPart: string; chatPart: string } | null {
-    const trimmed = response.trim();
-    const normalized = SessionsService.normalizeDashes(trimmed);
-    const regex = /-{1,}FIN_DBGA-{1,}/i;
-    const match = normalized.match(regex);
-    if (match) {
-      const idx = normalized.indexOf(match[0]);
-      const docPart = trimmed.slice(0, idx).trim();
-      const chatPart = trimmed.slice(idx + match[0].length).trim();
-      if (docPart.length > 0) return { docPart, chatPart };
-    }
-    const lineDelimiter = normalized.match(/\n(\s*-{0,}\s*FIN_DBGA\s*-{0,}\s*)\n/i);
-    if (lineDelimiter) {
-      const idx = normalized.indexOf(lineDelimiter[0]);
-      const docPart = trimmed.slice(0, idx).trim();
-      const chatPart = trimmed.slice(idx + lineDelimiter[0].length).trim();
-      if (docPart.length > 0) return { docPart, chatPart };
-    }
-    return null;
+    return SessionsService.splitDocAndChat(response, "DBGA");
   }
 
   /** Acepta ---FIN_UX_UI--- para separar documento UX/UI Guide del mensaje de chat. */
   private static splitUxUiGuideAndChat(response: string): { docPart: string; chatPart: string } | null {
-    const trimmed = response.trim();
-    const normalized = SessionsService.normalizeDashes(trimmed);
-    const regex = /-{1,}FIN_UX_UI-{1,}/i;
-    const match = normalized.match(regex);
-    if (match) {
-      const idx = normalized.indexOf(match[0]);
-      const docPart = trimmed.slice(0, idx).trim();
-      const chatPart = trimmed.slice(idx + match[0].length).trim();
-      if (docPart.length > 0) return { docPart, chatPart };
+    return SessionsService.splitDocAndChat(response, "UX_UI");
+  }
+
+  /** Quita intros de chat y vallas de markdown (fences) de los documentos generados. */
+  public static cleanDocumentContent(text: string): string {
+    if (!text) return "";
+    let cleaned = text.trim();
+
+    // 1. Quitar vallas de markdown al inicio (```markdown o ```)
+    cleaned = cleaned.replace(/^\s*```(?:markdown)?\s*/i, "");
+
+    // 2. Buscar el primer encabezado (#) y descartar lo anterior (intro del chat)
+    // Buscamos cualquier nivel de encabezado #, ##, ### opcionalmente precededido por espacios
+    const headerMatch = cleaned.match(/^\s*#+|(?<=\n)\s*#+/);
+    if (headerMatch && headerMatch.index !== undefined) {
+      cleaned = cleaned.slice(headerMatch.index).trim();
     }
-    const lineDelimiter = normalized.match(/\n(\s*-{0,}\s*FIN_UX_UI\s*-{0,}\s*)\n/i);
-    if (lineDelimiter) {
-      const idx = normalized.indexOf(lineDelimiter[0]);
-      const docPart = trimmed.slice(0, idx).trim();
-      const chatPart = trimmed.slice(idx + lineDelimiter[0].length).trim();
-      if (docPart.length > 0) return { docPart, chatPart };
-    }
-    return null;
+
+    // 3. Volver a quitar vallas por si quedaron después de la intro
+    cleaned = cleaned.replace(/^\s*```(?:markdown)?\s*/i, "");
+
+    // 4. Quitar vallas de markdown al final (```)
+    cleaned = cleaned.replace(/\s*```\s*$/i, "");
+
+    return cleaned.trim();
   }
 
   async chat(
@@ -182,6 +179,12 @@ export class SessionsService {
     mddContent?: string | null;
     uxUiGuideContent?: string | null;
     dbgaContent?: string | null;
+    specContent?: string | null;
+    blueprintContent?: string | null;
+    apiContractsContent?: string | null;
+    logicFlowsContent?: string | null;
+    tasksContent?: string | null;
+    infraContent?: string | null;
   }> {
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
@@ -226,18 +229,36 @@ export class SessionsService {
     const mddSplit = SessionsService.splitMddAndChat(safeResponse);
     const uxSplit = SessionsService.splitUxUiGuideAndChat(safeResponse);
     const dbgaSplit = SessionsService.splitDbgaAndChat(safeResponse);
+    const specSplit = SessionsService.splitDocAndChat(safeResponse, "SPEC");
+    const blueSplit = SessionsService.splitDocAndChat(safeResponse, "BLUEPRINT");
+    const apiSplit = SessionsService.splitDocAndChat(safeResponse, "API");
+    const flowsSplit = SessionsService.splitDocAndChat(safeResponse, "FLOWS");
+    const tasksSplit = SessionsService.splitDocAndChat(safeResponse, "TASKS");
+    const infraSplit = SessionsService.splitDocAndChat(safeResponse, "INFRA");
+
     const hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
     const hasDbga = dbgaSplit !== null;
+    const hasSpec = specSplit !== null;
+    const hasBlue = blueSplit !== null;
+    const hasApi = apiSplit !== null;
+    const hasFlows = flowsSplit !== null;
+    const hasTasks = tasksSplit !== null;
+    const hasInfra = infraSplit !== null;
+
     let uxDocPart: string | undefined = hasUx ? uxSplit!.docPart : undefined;
     const dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
-    let rawChat = hasMdd
-      ? mddSplit!.chatPart
-      : hasUx
-        ? uxSplit!.chatPart
-        : hasDbga
-          ? dbgaSplit!.chatPart
-          : safeResponse;
+
+    let rawChat = safeResponse;
+    if (hasMdd) rawChat = mddSplit!.chatPart;
+    else if (hasUx) rawChat = uxSplit!.chatPart;
+    else if (hasDbga) rawChat = dbgaSplit!.chatPart;
+    else if (hasSpec) rawChat = specSplit!.chatPart;
+    else if (hasBlue) rawChat = blueSplit!.chatPart;
+    else if (hasApi) rawChat = apiSplit!.chatPart;
+    else if (hasFlows) rawChat = flowsSplit!.chatPart;
+    else if (hasTasks) rawChat = tasksSplit!.chatPart;
+    else if (hasInfra) rawChat = infraSplit!.chatPart;
 
     // Fallback: tab ux-ui-guide sin delimitador ---FIN_UX_UI--- pero respuesta con "# Guía UX/UI" → documento + opcional separador (---) + texto para chat
     const isUxTab = (options?.activeTab ?? "mdd").trim() === "ux-ui-guide";
@@ -284,6 +305,7 @@ export class SessionsService {
       mddPartLength: hasMdd ? mddSplit!.mddPart.length : 0,
       uxDocPartLength: uxDocPart?.length ?? 0,
       dbgaDocPartLength: dbgaDocPart?.length ?? 0,
+      infraLength: hasInfra ? infraSplit!.docPart.length : 0,
     });
 
     const updatedSession = await this.prisma.session.findUnique({
@@ -291,9 +313,15 @@ export class SessionsService {
     });
     return {
       session: updatedSession,
-      mddContent: hasMdd ? mddSplit!.mddPart : undefined,
-      uxUiGuideContent: uxDocPart,
-      dbgaContent: dbgaDocPart,
+      mddContent: hasMdd ? SessionsService.cleanDocumentContent(mddSplit!.mddPart) : undefined,
+      uxUiGuideContent: uxDocPart ? SessionsService.cleanDocumentContent(uxDocPart) : undefined,
+      dbgaContent: dbgaDocPart ? SessionsService.cleanDocumentContent(dbgaDocPart) : undefined,
+      specContent: hasSpec ? SessionsService.cleanDocumentContent(specSplit!.docPart) : undefined,
+      blueprintContent: hasBlue ? SessionsService.cleanDocumentContent(blueSplit!.docPart) : undefined,
+      apiContractsContent: hasApi ? SessionsService.cleanDocumentContent(apiSplit!.docPart) : undefined,
+      logicFlowsContent: hasFlows ? SessionsService.cleanDocumentContent(flowsSplit!.docPart) : undefined,
+      tasksContent: hasTasks ? SessionsService.cleanDocumentContent(tasksSplit!.docPart) : undefined,
+      infraContent: hasInfra ? SessionsService.cleanDocumentContent(infraSplit!.docPart) : undefined,
     };
   }
 
@@ -318,6 +346,12 @@ export class SessionsService {
       mddContent?: string | null;
       uxUiGuideContent?: string | null;
       dbgaContent?: string | null;
+      specContent?: string | null;
+      blueprintContent?: string | null;
+      apiContractsContent?: string | null;
+      logicFlowsContent?: string | null;
+      tasksContent?: string | null;
+      infraContent?: string | null;
     }
   > {
     const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
@@ -361,18 +395,36 @@ export class SessionsService {
     const mddSplit = SessionsService.splitMddAndChat(safeResponse);
     const uxSplit = SessionsService.splitUxUiGuideAndChat(safeResponse);
     const dbgaSplit = SessionsService.splitDbgaAndChat(safeResponse);
+    const specSplit = SessionsService.splitDocAndChat(safeResponse, "SPEC");
+    const blueSplit = SessionsService.splitDocAndChat(safeResponse, "BLUEPRINT");
+    const apiSplit = SessionsService.splitDocAndChat(safeResponse, "API");
+    const flowsSplit = SessionsService.splitDocAndChat(safeResponse, "FLOWS");
+    const tasksSplit = SessionsService.splitDocAndChat(safeResponse, "TASKS");
+    const infraSplit = SessionsService.splitDocAndChat(safeResponse, "INFRA");
+
     const hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
     const hasDbga = dbgaSplit !== null;
+    const hasSpec = specSplit !== null;
+    const hasBlue = blueSplit !== null;
+    const hasApi = apiSplit !== null;
+    const hasFlows = flowsSplit !== null;
+    const hasTasks = tasksSplit !== null;
+    const hasInfra = infraSplit !== null;
+
     let uxDocPart: string | undefined = hasUx ? uxSplit!.docPart : undefined;
     const dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
-    let rawChat = hasMdd
-      ? mddSplit!.chatPart
-      : hasUx
-        ? uxSplit!.chatPart
-        : hasDbga
-          ? dbgaSplit!.chatPart
-          : safeResponse;
+
+    let rawChat = safeResponse;
+    if (hasMdd) rawChat = mddSplit!.chatPart;
+    else if (hasUx) rawChat = uxSplit!.chatPart;
+    else if (hasDbga) rawChat = dbgaSplit!.chatPart;
+    else if (hasSpec) rawChat = specSplit!.chatPart;
+    else if (hasBlue) rawChat = blueSplit!.chatPart;
+    else if (hasApi) rawChat = apiSplit!.chatPart;
+    else if (hasFlows) rawChat = flowsSplit!.chatPart;
+    else if (hasTasks) rawChat = tasksSplit!.chatPart;
+    else if (hasInfra) rawChat = infraSplit!.chatPart;
 
     const isUxTab = (options?.activeTab ?? "mdd").trim() === "ux-ui-guide";
     const looksLikeUxGuide =
@@ -405,11 +457,18 @@ export class SessionsService {
     yield {
       type: "done",
       session: updatedSession,
-      mddContent: hasMdd ? mddSplit!.mddPart : undefined,
-      uxUiGuideContent: uxDocPart,
-      dbgaContent: dbgaDocPart,
+      mddContent: hasMdd ? SessionsService.cleanDocumentContent(mddSplit!.mddPart) : undefined,
+      uxUiGuideContent: uxDocPart ? SessionsService.cleanDocumentContent(uxDocPart) : undefined,
+      dbgaContent: dbgaDocPart ? SessionsService.cleanDocumentContent(dbgaDocPart) : undefined,
+      specContent: hasSpec ? SessionsService.cleanDocumentContent(specSplit!.docPart) : undefined,
+      blueprintContent: hasBlue ? SessionsService.cleanDocumentContent(blueSplit!.docPart) : undefined,
+      apiContractsContent: hasApi ? SessionsService.cleanDocumentContent(apiSplit!.docPart) : undefined,
+      logicFlowsContent: hasFlows ? SessionsService.cleanDocumentContent(flowsSplit!.docPart) : undefined,
+      tasksContent: hasTasks ? SessionsService.cleanDocumentContent(tasksSplit!.docPart) : undefined,
+      infraContent: hasInfra ? SessionsService.cleanDocumentContent(infraSplit!.docPart) : undefined,
     };
   }
+
 
   /**
    * Genera mensaje de bienvenida (y primera pregunta si no hay contenido, o continuación si ya hay MDD/historial)

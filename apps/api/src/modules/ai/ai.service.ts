@@ -9,6 +9,9 @@ import { API_CONTRACTS_PROMPT } from "./prompts/api-contracts-prompt.js";
 import { LOGIC_FLOWS_PROMPT } from "./prompts/logic-flows-prompt.js";
 import { INFRA_PROMPT } from "./prompts/infra-prompt.js";
 import { SPEC_PROMPT } from "./prompts/spec-prompt.js";
+import { ARCHITECTURE_PROMPT } from "./prompts/architecture-prompt.js";
+import { USE_CASES_PROMPT } from "./prompts/use-cases-prompt.js";
+import { USER_STORIES_PROMPT } from "./prompts/user-stories-prompt.js";
 import { TASKS_PROMPT } from "./prompts/tasks-prompt.js";
 import { VERIFY_DELIVERABLE_PROMPT } from "./prompts/verify-deliverable-prompt.js";
 import { CONFORMANCE_CHECK_PROMPT } from "./prompts/conformance-check-prompt.js";
@@ -25,13 +28,17 @@ export class AiService {
   ) { }
 
   private static readonly ACTIVE_TAB_LABELS: Record<string, string> = {
-    benchmark: "Benchmark & Gap Analysis (Paso 0)",
+    spec: "Spec (SDD: what/why)",
     mdd: "MDD",
+    architecture: "Arquitectura Agentica",
+    "use-cases": "Casos de Uso",
+    "user-stories": "Historias de Usuario",
     "ux-ui-guide": "Guía UX/UI",
     blueprint: "Blueprint",
     "api-contracts": "Contratos de API",
     "logic-flows": "Flujos de lógica",
     infra: "Infraestructura",
+    tasks: "Tareas (Breakdown)",
   };
 
   async generateResponse(
@@ -47,8 +54,26 @@ export class AiService {
         options?.systemPrompt ??
         (isBenchmarkRefine ? BENCHMARK_REFINE_PROMPT : isUxUiGuide ? UX_UI_GUIDE_PROMPT : MASTER_PROMPT);
       if (options?.activeTab?.trim()) {
-        const label = AiService.ACTIVE_TAB_LABELS[options.activeTab] ?? options.activeTab;
+        const at = options.activeTab.trim();
+        const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
         systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).`;
+
+        // Instrucción para delimitadores universales en el chat
+        const tagMap: Record<string, string> = {
+          spec: "SPEC",
+          architecture: "ARCH",
+          "use-cases": "USECASES",
+          "user-stories": "STORIES",
+          blueprint: "BLUEPRINT",
+          "api-contracts": "API",
+          "logic-flows": "FLOWS",
+          tasks: "TASKS",
+          infra: "INFRA",
+        };
+        const tag = tagMap[at];
+        if (tag) {
+          systemPrompt += `\n\nSi decides generar o actualizar el documento completo de ${label}, TERMINA el documento con la línea exacta \`---FIN_${tag}---\` y luego escribe tu mensaje para el chat.`;
+        }
       }
       if (options?.currentDbgaContent?.trim()) {
         if (isBenchmarkRefine) {
@@ -124,8 +149,26 @@ export class AiService {
       options?.systemPrompt ??
       (isBenchmarkRefine ? BENCHMARK_REFINE_PROMPT : isUxUiGuide ? UX_UI_GUIDE_PROMPT : MASTER_PROMPT);
     if (options?.activeTab?.trim()) {
-      const label = AiService.ACTIVE_TAB_LABELS[options.activeTab] ?? options.activeTab;
+      const at = options.activeTab.trim();
+      const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
       systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).`;
+
+      // Instrucción para delimitadores universales en el chat
+      const tagMap: Record<string, string> = {
+        spec: "SPEC",
+        architecture: "ARCH",
+        "use-cases": "USECASES",
+        "user-stories": "STORIES",
+        blueprint: "BLUEPRINT",
+        "api-contracts": "API",
+        "logic-flows": "FLOWS",
+        tasks: "TASKS",
+        infra: "INFRA",
+      };
+      const tag = tagMap[at];
+      if (tag) {
+        systemPrompt += `\n\nSi decides generar o actualizar el documento completo de ${label}, TERMINA el documento con la línea exacta \`---FIN_${tag}---\` y luego escribe tu mensaje para el chat.`;
+      }
     }
     if (options?.currentDbgaContent?.trim()) {
       if (isBenchmarkRefine) {
@@ -210,6 +253,47 @@ export class AiService {
         (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
         : "No hay MDD. Genera un documento Tasks genérico (Backend, Frontend, Infra) con ítems comprobables.";
     return this.generateResponse(prompt, [], { systemPrompt: TASKS_PROMPT + NO_MILITAR_INSTRUCTION });
+  }
+
+  async generateArchitecture(mddContent: string, blueprintContent?: string | null): Promise<string> {
+    const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
+    const blueprint = (blueprintContent?.trim() ?? "").slice(0, 8000);
+    const prompt =
+      mdd.length > 0
+        ? "Genera el documento de Arquitectura Agentica según las instrucciones del system prompt.\n\nMDD:\n---\n" +
+        mdd +
+        "\n---\n\n" +
+        (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
+        : "No hay MDD. Genera un documento de arquitectura genérico enfocado en agentes y orquestación.";
+    return this.generateResponse(prompt, [], { systemPrompt: ARCHITECTURE_PROMPT + NO_MILITAR_INSTRUCTION });
+  }
+
+  async generateUseCases(mddContent: string, specContent?: string | null): Promise<string> {
+    const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
+    const spec = (specContent?.trim() ?? "").slice(0, 8000);
+    const prompt =
+      mdd.length > 0
+        ? "Genera el documento de Casos de Uso según las instrucciones del system prompt.\n\nMDD:\n---\n" +
+        mdd +
+        "\n---\n\n" +
+        (spec ? "Spec (what/why):\n---\n" + spec + "\n---" : "")
+        : "No hay MDD. Genera un documento de casos de uso genérico con flujos principales y alternativos.";
+    return this.generateResponse(prompt, [], { systemPrompt: USE_CASES_PROMPT });
+  }
+
+  async generateUserStories(mddContent: string, specContent?: string | null, useCasesContent?: string | null): Promise<string> {
+    const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
+    const spec = (specContent?.trim() ?? "").slice(0, 6000);
+    const useCases = (useCasesContent?.trim() ?? "").slice(0, 6000);
+    const prompt =
+      mdd.length > 0
+        ? "Genera el documento de Historias de Usuario (Agile) según las instrucciones del system prompt.\n\nMDD:\n---\n" +
+        mdd +
+        "\n---\n\n" +
+        (spec ? "Spec:\n---\n" + spec + "\n---" : "") +
+        (useCases ? "\n\nCasos de Uso:\n---\n" + useCases + "\n---" : "")
+        : "No hay MDD. Genera historias de usuario genéricas (Como X, quiero Y, para Z) con criterios de aceptación.";
+    return this.generateResponse(prompt, [], { systemPrompt: USER_STORIES_PROMPT });
   }
 
   async generateBlueprint(mddContent: string, gapsFeedback?: string | null): Promise<string> {

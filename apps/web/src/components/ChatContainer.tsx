@@ -14,6 +14,9 @@ export type ActiveTab =
   | "tasks"
   | "api-contracts"
   | "logic-flows"
+  | "architecture"
+  | "use-cases"
+  | "user-stories"
   | "infra";
 
 const ACTIVE_TAB_LABELS: Record<ActiveTab, string> = {
@@ -25,6 +28,9 @@ const ACTIVE_TAB_LABELS: Record<ActiveTab, string> = {
   tasks: "Tasks",
   "api-contracts": "Contratos de API",
   "logic-flows": "Flujos de lógica",
+  architecture: "Arquitectura",
+  "use-cases": "Casos de Uso",
+  "user-stories": "Historias de Usuario",
   infra: "Infraestructura",
 };
 

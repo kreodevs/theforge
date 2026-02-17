@@ -81,17 +81,20 @@ export default function WorkshopView({
   const project = useWorkshopStore((s) => s.project);
   const liveMetrics = useWorkshopStore((s) => s.liveMetrics);
   const projectStatus: Status = project?.status ?? "ROJO";
-  const specContent = useWorkshopStore((s) => s.project?.specContent ?? s.specContent);
+  const specContent = useWorkshopStore((s) => s.specContent ?? s.project?.specContent ?? null);
   const semaphoreGreen = liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
   const hasSpec = (specContent ?? "").trim().length > 0;
   const canGenerate = semaphoreGreen && hasSpec;
   const mddContent = useWorkshopStore((s) => s.mddContent);
   const dbgaContent = useWorkshopStore((s) => s.dbgaContent ?? s.project?.dbgaContent ?? null);
-  const blueprintContent = useWorkshopStore((s) => s.project?.blueprintContent ?? s.blueprintContent);
-  const apiContractsContent = useWorkshopStore((s) => s.project?.apiContractsContent ?? s.apiContractsContent);
-  const logicFlowsContent = useWorkshopStore((s) => s.project?.logicFlowsContent ?? s.logicFlowsContent);
-  const infraContent = useWorkshopStore((s) => s.project?.infraContent ?? s.infraContent);
-  const tasksContent = useWorkshopStore((s) => s.project?.tasksContent ?? s.tasksContent);
+  const blueprintContent = useWorkshopStore((s) => s.blueprintContent ?? s.project?.blueprintContent ?? null);
+  const apiContractsContent = useWorkshopStore((s) => s.apiContractsContent ?? s.project?.apiContractsContent ?? null);
+  const logicFlowsContent = useWorkshopStore((s) => s.logicFlowsContent ?? s.project?.logicFlowsContent ?? null);
+  const infraContent = useWorkshopStore((s) => s.infraContent ?? s.project?.infraContent ?? null);
+  const tasksContent = useWorkshopStore((s) => s.tasksContent ?? s.project?.tasksContent ?? null);
+  const architectureContent = useWorkshopStore((s) => s.architectureContent ?? s.project?.architectureContent ?? null);
+  const useCasesContent = useWorkshopStore((s) => s.useCasesContent ?? s.project?.useCasesContent ?? null);
+  const userStoriesContent = useWorkshopStore((s) => s.userStoriesContent ?? s.project?.userStoriesContent ?? null);
   const conformance = useWorkshopStore((s) => s.conformance);
   const precisionBreakdown = useWorkshopStore((s) => s.precisionBreakdown);
   const auditTrail = useWorkshopStore((s) => s.auditTrail);
@@ -142,10 +145,18 @@ export default function WorkshopView({
   const phase0SummaryContent = useWorkshopStore(
     (s) => s.phase0SummaryContent ?? s.project?.phase0SummaryContent ?? null,
   );
+  const setSpecContent = useWorkshopStore((s) => s.setSpecContent);
   const setUxUiGuideContent = useWorkshopStore((s) => s.setUxUiGuideContent);
   const persistUxUiGuideContent = useWorkshopStore((s) => s.persistUxUiGuideContent);
+  const persistArchitectureContent = useWorkshopStore((s) => s.persistArchitectureContent);
+  const persistUseCasesContent = useWorkshopStore((s) => s.persistUseCasesContent);
+  const persistUserStoriesContent = useWorkshopStore((s) => s.persistUserStoriesContent);
+  const generateArchitecture = useWorkshopStore((s) => s.generateArchitecture);
+  const generateUseCases = useWorkshopStore((s) => s.generateUseCases);
+  const generateUserStories = useWorkshopStore((s) => s.generateUserStories);
   const [mddViewMode, setMddViewMode] = useState<"preview" | "source">("preview");
   const [benchmarkViewMode, setBenchmarkViewMode] = useState<"preview" | "source">("preview");
+  const [specViewMode, setSpecViewMode] = useState<"preview" | "source">("preview");
   const [phase0SummaryViewMode, setPhase0SummaryViewMode] = useState<"preview" | "source">("preview");
   /** Última idea usada al generar benchmark; se reutiliza en Deep Research para extraer URLs del texto */
   const [lastBenchmarkIdea, setLastBenchmarkIdea] = useState("");
@@ -154,8 +165,11 @@ export default function WorkshopView({
   const [logicFlowsViewMode, setLogicFlowsViewMode] = useState<"preview" | "source">("preview");
   const [infraViewMode, setInfraViewMode] = useState<"preview" | "source">("preview");
   const [uxUiGuideViewMode, setUxUiGuideViewMode] = useState<"preview" | "source">("preview");
+  const [architectureViewMode, setArchitectureViewMode] = useState<"preview" | "source">("preview");
+  const [useCasesViewMode, setUseCasesViewMode] = useState<"preview" | "source">("preview");
+  const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
   const [conformanceUseLlm, setConformanceUseLlm] = useState(false);
-  type DocPanel = "benchmark" | "spec" | "mdd" | "ux-ui-guide" | "blueprint" | "tasks" | "api-contracts" | "logic-flows" | "infra";
+  type DocPanel = "benchmark" | "spec" | "mdd" | "ux-ui-guide" | "blueprint" | "tasks" | "api-contracts" | "logic-flows" | "architecture" | "use-cases" | "user-stories" | "infra";
   const [centralPanel, setCentralPanel] = useState<DocPanel>("mdd");
   const [isGeneratingDeliverables, setIsGeneratingDeliverables] = useState(false);
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -166,6 +180,9 @@ export default function WorkshopView({
     setIsGeneratingDeliverables(true);
     setError(null);
     try {
+      await generateArchitecture(projectId);
+      await generateUseCases(projectId);
+      await generateUserStories(projectId);
       await generateBlueprint(projectId);
       await generateApiContracts(projectId);
       await generateLogicFlows(projectId);
@@ -179,6 +196,9 @@ export default function WorkshopView({
     canGenerate,
     isGeneratingDeliverables,
     setError,
+    generateArchitecture,
+    generateUseCases,
+    generateUserStories,
     generateBlueprint,
     generateApiContracts,
     generateLogicFlows,
@@ -230,6 +250,24 @@ export default function WorkshopView({
   }, [infraContent, projectId, project?.infraContent, project, persistInfraContent]);
 
   useEffect(() => {
+    if (!projectId || !project || architectureContent === (project.architectureContent ?? null)) return;
+    const t = setTimeout(() => persistArchitectureContent(architectureContent ?? ""), 1500);
+    return () => clearTimeout(t);
+  }, [architectureContent, projectId, project?.architectureContent, project, persistArchitectureContent]);
+
+  useEffect(() => {
+    if (!projectId || !project || useCasesContent === (project.useCasesContent ?? null)) return;
+    const t = setTimeout(() => persistUseCasesContent(useCasesContent ?? ""), 1500);
+    return () => clearTimeout(t);
+  }, [useCasesContent, projectId, project?.useCasesContent, project, persistUseCasesContent]);
+
+  useEffect(() => {
+    if (!projectId || !project || userStoriesContent === (project.userStoriesContent ?? null)) return;
+    const t = setTimeout(() => persistUserStoriesContent(userStoriesContent ?? ""), 1500);
+    return () => clearTimeout(t);
+  }, [userStoriesContent, projectId, project?.userStoriesContent, project, persistUserStoriesContent]);
+
+  useEffect(() => {
     if (!projectId || !project || dbgaContent === (project.dbgaContent ?? null)) return;
     const t = setTimeout(() => persistDbgaContent(dbgaContent ?? ""), 1500);
     return () => clearTimeout(t);
@@ -252,6 +290,18 @@ export default function WorkshopView({
     const t = setTimeout(() => persistUxUiGuideContent(uxUiGuideContent ?? ""), 1500);
     return () => clearTimeout(t);
   }, [uxUiGuideContent, projectId, project?.uxUiGuideContent, project, persistUxUiGuideContent]);
+
+  const handleSpecBlur = useCallback(() => {
+    if ((specContent ?? "") !== (project?.specContent ?? "")) {
+      persistSpecContent(specContent ?? "");
+    }
+  }, [specContent, project?.specContent, project, persistSpecContent]);
+
+  useEffect(() => {
+    if (!projectId || !project || (specContent ?? "") === (project.specContent ?? "")) return;
+    const t = setTimeout(() => persistSpecContent(specContent ?? ""), 1500);
+    return () => clearTimeout(t);
+  }, [specContent, projectId, project?.specContent, project, persistSpecContent]);
 
   const handleBlueprintBlur = useCallback(() => {
     if (blueprintContent != null) persistBlueprintContent(blueprintContent);
@@ -276,6 +326,18 @@ export default function WorkshopView({
   const handleUxUiGuideBlur = useCallback(() => {
     if (uxUiGuideContent != null) persistUxUiGuideContent(uxUiGuideContent);
   }, [uxUiGuideContent, persistUxUiGuideContent]);
+
+  const handleArchitectureBlur = useCallback(() => {
+    if (architectureContent != null) persistArchitectureContent(architectureContent);
+  }, [architectureContent, persistArchitectureContent]);
+
+  const handleUseCasesBlur = useCallback(() => {
+    if (useCasesContent != null) persistUseCasesContent(useCasesContent);
+  }, [useCasesContent, persistUseCasesContent]);
+
+  const handleUserStoriesBlur = useCallback(() => {
+    if (userStoriesContent != null) persistUserStoriesContent(userStoriesContent);
+  }, [userStoriesContent, persistUserStoriesContent]);
 
   const mddDirty = (mddContent ?? "") !== (project?.mddContent ?? "");
   const mddEmpty = !(mddContent ?? "").trim();
@@ -461,222 +523,313 @@ export default function WorkshopView({
 
         {/* Columna B: Contenido del tab (documento o Paso 0 = benchmark + deep research) */}
         <section className="flex flex-col min-w-0 min-h-0 border-r border-zinc-700 overflow-hidden">
-          <div className="px-4 py-2 border-b border-zinc-700 flex items-center justify-between gap-2 text-zinc-400 text-sm shrink-0">
-            <div className="flex items-center gap-1 flex-wrap">
-              {/* Orden = flujo de generación: Paso 0 → MDD → Spec → Guía UX/UI → Blueprint → API → Flujos → Tasks → Infra */}
-              <button
-                type="button"
-                onClick={() => setCentralPanel("benchmark")}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded ${centralPanel === "benchmark" ? "bg-zinc-700 text-amber-400" : "hover:bg-zinc-700/50"}`}
-              >
-                <Target className="w-4 h-4" />
-                Paso 0
-              </button>
-              <button
-                type="button"
-                onClick={() => setCentralPanel("mdd")}
-                title="Constitución del proyecto (gobierna Blueprint, Contratos API e Infra)"
-                className={`flex items-center gap-1.5 px-2 py-1 rounded ${centralPanel === "mdd" ? "bg-zinc-700 text-amber-400" : "hover:bg-zinc-700/50"}`}
-              >
-                <FileText className="w-4 h-4" />
-                MDD
-              </button>
-              <button
-                type="button"
-                onClick={() => setCentralPanel("spec")}
-                title="Spec (SDD: what/why); alimenta el MDD"
-                className={`flex items-center gap-1.5 px-2 py-1 rounded ${centralPanel === "spec" ? "bg-zinc-700 text-amber-400" : "hover:bg-zinc-700/50"}`}
-              >
-                <ListOrdered className="w-4 h-4" />
-                Spec
-              </button>
-              <button
-                type="button"
-                onClick={() => setCentralPanel("ux-ui-guide")}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded ${centralPanel === "ux-ui-guide" ? "bg-zinc-700 text-amber-400" : "hover:bg-zinc-700/50"}`}
-              >
-                <Palette className="w-4 h-4" />
-                Guía UX/UI
-              </button>
-              <button
-                type="button"
-                onClick={() => setCentralPanel("blueprint")}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded ${centralPanel === "blueprint" ? "bg-zinc-700 text-amber-400" : "hover:bg-zinc-700/50"}`}
-              >
-                <LayoutTemplate className="w-4 h-4" />
-                Blueprint
-              </button>
-              <button
-                type="button"
-                onClick={() => setCentralPanel("api-contracts")}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded ${centralPanel === "api-contracts" ? "bg-zinc-700 text-amber-400" : "hover:bg-zinc-700/50"}`}
-              >
-                <FileCode className="w-4 h-4" />
-                API
-              </button>
-              <button
-                type="button"
-                onClick={() => setCentralPanel("logic-flows")}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded ${centralPanel === "logic-flows" ? "bg-zinc-700 text-amber-400" : "hover:bg-zinc-700/50"}`}
-              >
-                <GitBranch className="w-4 h-4" />
-                Flujos
-              </button>
-              <button
-                type="button"
-                onClick={() => setCentralPanel("tasks")}
-                title="Tasks (breakdown desde MDD + Blueprint)"
-                className={`flex items-center gap-1.5 px-2 py-1 rounded ${centralPanel === "tasks" ? "bg-zinc-700 text-amber-400" : "hover:bg-zinc-700/50"}`}
-              >
-                <ListTodo className="w-4 h-4" />
-                Tasks
-              </button>
-              <button
-                type="button"
-                onClick={() => setCentralPanel("infra")}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded ${centralPanel === "infra" ? "bg-zinc-700 text-amber-400" : "hover:bg-zinc-700/50"}`}
-              >
-                <Server className="w-4 h-4" />
-                Infra
-              </button>
-            </div>
-            <p className="text-xs text-zinc-500 mt-1">
-              Orden: Paso 0 → MDD → Spec → Guía UX/UI → Blueprint → API → Flujos → Tasks → Infra
-            </p>
-            <div className="flex items-center gap-1 shrink-0">
-              {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "blueprint", "tasks", "api-contracts", "logic-flows", "infra"] as const).includes(
-                centralPanel as "spec" | "mdd" | "ux-ui-guide" | "blueprint" | "tasks" | "api-contracts" | "logic-flows" | "infra",
-              ) && (
-                  (centralPanel === "spec" ||
-                    centralPanel === "mdd" ||
-                    centralPanel === "ux-ui-guide" ||
-                    (centralPanel === "blueprint" && blueprintContent) ||
-                    (centralPanel === "tasks" && tasksContent) ||
-                    (centralPanel === "api-contracts" && apiContractsContent) ||
-                    (centralPanel === "logic-flows" && logicFlowsContent) ||
-                    (centralPanel === "infra" && infraContent)) &&
-                  centralPanel !== "spec" &&
-                  centralPanel !== "tasks" && (
+          <div className="px-4 py-2 border-b border-zinc-700 flex flex-col gap-2 text-zinc-400 text-sm shrink-0">
+            {/* Renglón 1: Todos los tabs de los documentos */}
+            <div className="flex items-center gap-0.5 flex-nowrap overflow-x-auto scrollbar-hide pb-1">
+              {(() => {
+                const getTabClass = (id: string, content: any) => {
+                  const isActive = centralPanel === id;
+                  const hasContent = !!String(content || "").trim();
+
+                  if (!hasContent) {
+                    return `flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap bg-red-100 text-zinc-900 font-semibold hover:bg-red-200 transition-colors shrink-0 ${isActive ? "ring-1 ring-red-400" : ""}`;
+                  }
+
+                  return `flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap transition-colors shrink-0 ${isActive ? "bg-zinc-700 text-amber-400 font-medium" : "text-zinc-400 hover:bg-zinc-700/50"}`;
+                };
+
+                return (
+                  <>
                     <button
                       type="button"
-                      onClick={() => {
-                        if (centralPanel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "ux-ui-guide") setUxUiGuideViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
-                      }}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50"
+                      onClick={() => setCentralPanel("benchmark")}
+                      className={getTabClass("benchmark", (phase0SummaryContent || "") + (useWorkshopStore.getState().dbgaContent || ""))}
                     >
-                      {(centralPanel === "mdd" ? mddViewMode
-                        : centralPanel === "ux-ui-guide" ? uxUiGuideViewMode
-                          : centralPanel === "blueprint" ? blueprintViewMode
-                            : centralPanel === "api-contracts" ? apiContractsViewMode
-                              : centralPanel === "logic-flows" ? logicFlowsViewMode
-                                : infraViewMode) === "preview" ? (
-                        <>
-                          <Code className="w-4 h-4" />
-                          Ver fuente
-                        </>
-                      ) : (
-                        <>
-                          <FileText className="w-4 h-4" />
-                          Ver previsualización
-                        </>
-                      )}
+                      <Target className="w-4 h-4" />
+                      Paso 0
                     </button>
-                  )
-                )}
-              {centralPanel === "blueprint" && (
-                <button
-                  type="button"
-                  onClick={() => generateBlueprint(projectId, { preview: true })}
-                  disabled={loading || mddReviewing || !mddContent?.trim()}
-                  title="Generar blueprint desde el MDD (vista previa antes de guardar)"
-                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  Generar
-                </button>
-              )}
-              {centralPanel === "api-contracts" && (
-                <button
-                  type="button"
-                  onClick={() => generateApiContracts(projectId, { preview: true })}
-                  disabled={loading || mddReviewing || !mddContent?.trim()}
-                  title="Generar contratos API desde el MDD (vista previa antes de guardar)"
-                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  Generar
-                </button>
-              )}
-              {centralPanel === "logic-flows" && (
-                <button
-                  type="button"
-                  onClick={() => generateLogicFlows(projectId)}
-                  disabled={loading || mddReviewing || !mddContent?.trim()}
-                  title="Regenerar flujos de lógica desde el MDD"
-                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  Regenerar
-                </button>
-              )}
-              {centralPanel === "infra" && (
-                <button
-                  type="button"
-                  onClick={() => generateInfra(projectId, { preview: true })}
-                  disabled={loading || mddReviewing || !mddContent?.trim()}
-                  title="Generar infraestructura desde el MDD (vista previa antes de guardar)"
-                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  Regenerar
-                </button>
-              )}
-              {centralPanel === "spec" && (
-                <button
-                  type="button"
-                  onClick={() => generateSpec(projectId)}
-                  disabled={loading}
-                  title="Regenerar Spec desde Benchmark y alcance"
-                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  Regenerar
-                </button>
-              )}
-              {centralPanel === "tasks" && (
-                <button
-                  type="button"
-                  onClick={() => generateTasks(projectId)}
-                  disabled={loading || !mddContent?.trim() || !blueprintContent?.trim()}
-                  title="Regenerar Tasks desde MDD y Blueprint"
-                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  Regenerar
-                </button>
-              )}
-              {centralPanel === "ux-ui-guide" && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    sendMessage(
-                      "Genera la Guía UX/UI completa a partir del MDD y Blueprint del proyecto. Incluye: patrón/estilo, paleta y tokens de color, tipografía, espaciado y grid, componentes de referencia, prioridades de UX, criterios de accesibilidad (WCAG, contraste 4.5:1, teclado, touch 44px) y anti-patrones a evitar. Responde con el documento seguido de ---FIN_UX_UI--- y un mensaje breve.",
-                      "ux-ui-guide",
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("mdd")}
+                      title="Constitución del proyecto (gobierna Blueprint, Contratos API e Infra)"
+                      className={getTabClass("mdd", mddContent)}
+                    >
+                      <FileText className="w-4 h-4" />
+                      MDD
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("spec")}
+                      title="Spec (SDD: what/why); alimenta el MDD"
+                      className={getTabClass("spec", specContent)}
+                    >
+                      <ListOrdered className="w-4 h-4" />
+                      Spec
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("architecture")}
+                      className={getTabClass("architecture", architectureContent)}
+                    >
+                      <GitBranch className="w-4 h-4" />
+                      Arq.
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("use-cases")}
+                      className={getTabClass("use-cases", useCasesContent)}
+                    >
+                      <ListOrdered className="w-4 h-4" />
+                      Casos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("user-stories")}
+                      className={getTabClass("user-stories", userStoriesContent)}
+                    >
+                      <Package className="w-4 h-4" />
+                      H.U.
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("blueprint")}
+                      className={getTabClass("blueprint", blueprintContent)}
+                    >
+                      <LayoutTemplate className="w-4 h-4" />
+                      Blueprint
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("ux-ui-guide")}
+                      className={getTabClass("ux-ui-guide", uxUiGuideContent)}
+                    >
+                      <Palette className="w-4 h-4" />
+                      Guía UX/UI
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("api-contracts")}
+                      className={getTabClass("api-contracts", apiContractsContent)}
+                    >
+                      <FileCode className="w-4 h-4" />
+                      API
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("logic-flows")}
+                      className={getTabClass("logic-flows", logicFlowsContent)}
+                    >
+                      <GitBranch className="w-4 h-4" />
+                      Flujos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("tasks")}
+                      title="Tasks (breakdown desde MDD + Blueprint)"
+                      className={getTabClass("tasks", tasksContent)}
+                    >
+                      <ListTodo className="w-4 h-4" />
+                      Tasks
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCentralPanel("infra")}
+                      className={getTabClass("infra", infraContent)}
+                    >
+                      <Server className="w-4 h-4" />
+                      Infra
+                    </button>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Renglón 2: Texto del flujo y botones de acción */}
+            <div className="flex items-center justify-between gap-1 border-t border-zinc-800 pt-2">
+              <p className="text-xs text-zinc-500">
+                Orden: Paso 0 → MDD → Spec → Arq. → Casos → H.U. → Blueprint → Guía UX/UI → API → Flujos → Tasks → Infra
+              </p>
+              <div className="flex items-center gap-2">
+                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra"] as const).includes(
+                  centralPanel as any,
+                ) && (
+                    (centralPanel === "spec" ||
+                      centralPanel === "mdd" ||
+                      centralPanel === "ux-ui-guide" ||
+                      (centralPanel === "blueprint" && blueprintContent) ||
+                      (centralPanel === "tasks" && tasksContent) ||
+                      (centralPanel === "api-contracts" && apiContractsContent) ||
+                      (centralPanel === "architecture" && architectureContent) ||
+                      (centralPanel === "use-cases" && useCasesContent) ||
+                      (centralPanel === "user-stories" && userStoriesContent) ||
+                      (centralPanel === "logic-flows" && logicFlowsContent) ||
+                      (centralPanel === "infra" && infraContent)) &&
+                    centralPanel !== "tasks" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (centralPanel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
+                          else if (centralPanel === "spec") setSpecViewMode((m) => (m === "preview" ? "source" : "preview"));
+                          else if (centralPanel === "architecture") setArchitectureViewMode((m) => (m === "preview" ? "source" : "preview"));
+                          else if (centralPanel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
+                          else if (centralPanel === "user-stories") setUserStoriesViewMode((m) => (m === "preview" ? "source" : "preview"));
+                          else if (centralPanel === "ux-ui-guide") setUxUiGuideViewMode((m) => (m === "preview" ? "source" : "preview"));
+                          else if (centralPanel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
+                          else if (centralPanel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
+                          else if (centralPanel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
+                          else if (centralPanel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
+                        }}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50"
+                      >
+                        {(centralPanel === "mdd" ? mddViewMode
+                          : centralPanel === "spec" ? specViewMode
+                            : centralPanel === "architecture" ? architectureViewMode
+                              : centralPanel === "use-cases" ? useCasesViewMode
+                                : centralPanel === "user-stories" ? userStoriesViewMode
+                                  : centralPanel === "ux-ui-guide" ? uxUiGuideViewMode
+                                    : centralPanel === "blueprint" ? blueprintViewMode
+                                      : centralPanel === "api-contracts" ? apiContractsViewMode
+                                        : centralPanel === "logic-flows" ? logicFlowsViewMode
+                                          : infraViewMode) === "preview" ? (
+                          <>
+                            <Code className="w-4 h-4" />
+                            Ver fuente
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="w-4 h-4" />
+                            Ver previsualización
+                          </>
+                        )}
+                      </button>
                     )
-                  }
-                  disabled={loading || !mddContent?.trim()}
-                  title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat)"
-                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  {(uxUiGuideContent ?? "").trim() ? "Regenerar" : "Generar"}
-                </button>
-              )}
+                  )}
+                {centralPanel === "architecture" && (
+                  <button
+                    type="button"
+                    onClick={() => generateArchitecture(projectId)}
+                    disabled={loading || !mddContent?.trim()}
+                    title="Generar arquitectura desde el MDD"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {architectureContent?.trim() ? "Regenerar" : "Generar"}
+                  </button>
+                )}
+                {centralPanel === "use-cases" && (
+                  <button
+                    type="button"
+                    onClick={() => generateUseCases(projectId)}
+                    disabled={loading || !mddContent?.trim()}
+                    title="Generar casos de uso desde el MDD"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {useCasesContent?.trim() ? "Regenerar" : "Generar"}
+                  </button>
+                )}
+                {centralPanel === "user-stories" && (
+                  <button
+                    type="button"
+                    onClick={() => generateUserStories(projectId)}
+                    disabled={loading || !mddContent?.trim()}
+                    title="Generar historias de usuario desde el MDD"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {userStoriesContent?.trim() ? "Regenerar" : "Generar"}
+                  </button>
+                )}
+                {centralPanel === "blueprint" && (
+                  <button
+                    type="button"
+                    onClick={() => generateBlueprint(projectId, { preview: true })}
+                    disabled={loading || mddReviewing || !mddContent?.trim()}
+                    title="Generar blueprint desde el MDD (vista previa antes de guardar)"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Generar
+                  </button>
+                )}
+                {centralPanel === "api-contracts" && (
+                  <button
+                    type="button"
+                    onClick={() => generateApiContracts(projectId, { preview: true })}
+                    disabled={loading || mddReviewing || !mddContent?.trim()}
+                    title="Generar contratos API desde el MDD (vista previa antes de guardar)"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Generar
+                  </button>
+                )}
+                {centralPanel === "logic-flows" && (
+                  <button
+                    type="button"
+                    onClick={() => generateLogicFlows(projectId)}
+                    disabled={loading || mddReviewing || !mddContent?.trim()}
+                    title="Regenerar flujos de lógica desde el MDD"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Regenerar
+                  </button>
+                )}
+                {centralPanel === "infra" && (
+                  <button
+                    type="button"
+                    onClick={() => generateInfra(projectId, { preview: true })}
+                    disabled={loading || mddReviewing || !mddContent?.trim()}
+                    title="Generar infraestructura desde el MDD (vista previa antes de guardar)"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Regenerar
+                  </button>
+                )}
+                {centralPanel === "spec" && (
+                  <button
+                    type="button"
+                    onClick={() => generateSpec(projectId)}
+                    disabled={loading}
+                    title="Regenerar Spec desde Benchmark y alcance"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Regenerar
+                  </button>
+                )}
+                {centralPanel === "tasks" && (
+                  <button
+                    type="button"
+                    onClick={() => generateTasks(projectId)}
+                    disabled={loading || !mddContent?.trim() || !blueprintContent?.trim()}
+                    title="Regenerar Tasks desde MDD y Blueprint"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Regenerar
+                  </button>
+                )}
+                {centralPanel === "ux-ui-guide" && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      sendMessage(
+                        "Genera la Guía UX/UI completa a partir del MDD y Blueprint del proyecto. Incluye: patrón/estilo, paleta y tokens de color, tipografía, espaciado y grid, componentes de referencia, prioridades de UX, criterios de accesibilidad (WCAG, contraste 4.5:1, teclado, touch 44px) y anti-patrones a evitar. Responde con el documento seguido de ---FIN_UX_UI--- y un mensaje breve.",
+                        "ux-ui-guide",
+                      )
+                    }
+                    disabled={loading || !mddContent?.trim() || !blueprintContent?.trim()}
+                    title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat)"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {(uxUiGuideContent ?? "").trim() ? "Regenerar" : "Generar"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex-1 overflow-auto p-4 min-h-0 flex flex-col min-w-0">
@@ -881,6 +1034,87 @@ export default function WorkshopView({
                 )}
               </>
             )}
+            {centralPanel === "architecture" && (
+              <>
+                {architectureViewMode === "preview" ? (
+                  <MddViewer content={architectureContent || ""} />
+                ) : (
+                  <textarea
+                    value={architectureContent ?? ""}
+                    onChange={(e) => useWorkshopStore.getState().setArchitectureContent(e.target.value)}
+                    onBlur={handleArchitectureBlur}
+                    placeholder="# Arquitectura del Sistema\n\nDefine aquí los patrones, componentes y orquestación de agentes..."
+                    className="w-full min-h-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
+                    spellCheck={false}
+                  />
+                )}
+                <div className="shrink-0 flex items-center justify-end gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => generateArchitecture(projectId)}
+                    disabled={loading || !mddContent?.trim()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {architectureContent?.trim() ? "Regenerar" : "Generar"} desde MDD
+                  </button>
+                </div>
+              </>
+            )}
+            {centralPanel === "use-cases" && (
+              <>
+                {useCasesViewMode === "preview" ? (
+                  <MddViewer content={useCasesContent || ""} />
+                ) : (
+                  <textarea
+                    value={useCasesContent ?? ""}
+                    onChange={(e) => useWorkshopStore.getState().setUseCasesContent(e.target.value)}
+                    onBlur={handleUseCasesBlur}
+                    placeholder="# Casos de Uso\n\nDescribe los escenarios de interacción y flujos transaccionales..."
+                    className="w-full min-h-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
+                    spellCheck={false}
+                  />
+                )}
+                <div className="shrink-0 flex items-center justify-end gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => generateUseCases(projectId)}
+                    disabled={loading || !mddContent?.trim()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {useCasesContent?.trim() ? "Regenerar" : "Generar"} desde MDD
+                  </button>
+                </div>
+              </>
+            )}
+            {centralPanel === "user-stories" && (
+              <>
+                {userStoriesViewMode === "preview" ? (
+                  <MddViewer content={userStoriesContent || ""} />
+                ) : (
+                  <textarea
+                    value={userStoriesContent ?? ""}
+                    onChange={(e) => useWorkshopStore.getState().setUserStoriesContent(e.target.value)}
+                    onBlur={handleUserStoriesBlur}
+                    placeholder="# Historias de Usuario\n\nDefine los requisitos en formato Agile (Como... quiero... para...)..."
+                    className="w-full min-h-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
+                    spellCheck={false}
+                  />
+                )}
+                <div className="shrink-0 flex items-center justify-end gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => generateUserStories(projectId)}
+                    disabled={loading || !mddContent?.trim()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {userStoriesContent?.trim() ? "Regenerar" : "Generar"} desde MDD
+                  </button>
+                </div>
+              </>
+            )}
             {centralPanel === "ux-ui-guide" && (
               <>
                 {uxUiGuideViewMode === "preview" ? (
@@ -904,7 +1138,7 @@ export default function WorkshopView({
                         "ux-ui-guide",
                       )
                     }
-                    disabled={loading || !mddContent?.trim()}
+                    disabled={loading || !mddContent?.trim() || !blueprintContent?.trim()}
                     title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat)"
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -915,30 +1149,41 @@ export default function WorkshopView({
               </>
             )}
             {centralPanel === "spec" && (
-              specContent ? (
-                <div className="flex flex-col gap-2 h-full min-h-0">
-                  <MddViewer content={specContent} />
-                  <div className="self-end flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => generateSpec(projectId)}
-                      disabled={loading}
-                      title="Regenerar Spec desde Benchmark y alcance"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                      Regenerar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => persistSpecContent(specContent)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 text-sm"
-                    >
-                      <Save className="w-4 h-4" />
-                      Guardar
-                    </button>
+              specContent || specViewMode === "source" ? (
+                specViewMode === "preview" ? (
+                  <div className="flex flex-col gap-2 h-full min-h-0">
+                    <MddViewer content={specContent || ""} />
+                    <div className="self-end flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => generateSpec(projectId)}
+                        disabled={loading}
+                        title="Regenerar Spec desde Benchmark y alcance"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        Regenerar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => persistSpecContent(specContent || "")}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 text-sm"
+                      >
+                        <Save className="w-4 h-4" />
+                        Guardar
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <textarea
+                    value={specContent || ""}
+                    onChange={(e) => setSpecContent(e.target.value)}
+                    onBlur={handleSpecBlur}
+                    placeholder="# Spec\n\nEl contenido del Spec se genera aquí o puedes escribirlo manualmente..."
+                    className="w-full min-h-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
+                    spellCheck={false}
+                  />
+                )
               ) : (
                 <DocEmptyState
                   icon={ListOrdered}

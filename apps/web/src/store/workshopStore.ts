@@ -2,6 +2,16 @@ import { create } from "zustand";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
+const cleanDoc = (text: string | null) => {
+  if (!text) return null;
+  let c = text.trim();
+  const firstHash = c.match(/^#|(?<=\n)#/);
+  if (firstHash && firstHash.index !== undefined) {
+    c = c.slice(firstHash.index).trim();
+  }
+  return c.replace(/^\s*```(?:markdown)?\s*/i, "").replace(/\s*```\s*$/i, "") || null;
+};
+
 export type Status = "ROJO" | "AMARILLO" | "VERDE";
 
 export interface ChatMessage {
@@ -69,6 +79,9 @@ export interface Project {
   tasksContent: string | null;
   apiContractsContent: string | null;
   logicFlowsContent: string | null;
+  architectureContent: string | null;
+  useCasesContent: string | null;
+  userStoriesContent: string | null;
   infraContent: string | null;
   estimation: Estimation | null;
 }
@@ -95,6 +108,9 @@ interface WorkshopState {
   tasksContent: string | null;
   apiContractsContent: string | null;
   logicFlowsContent: string | null;
+  architectureContent: string | null;
+  useCasesContent: string | null;
+  userStoriesContent: string | null;
   infraContent: string | null;
   /** Conformance (SDD Fase 2): Blueprint/API/Flujos/Infra vs MDD */
   conformance: {
@@ -104,7 +120,7 @@ interface WorkshopState {
     infra: ConformanceResult;
   } | null;
   /** HITL (Fase 4): vista previa antes de persistir */
-  pendingDeliverablePreview: { kind: "blueprint" | "api" | "infra"; content: string } | null;
+  pendingDeliverablePreview: { kind: "blueprint" | "api" | "infra" | "architecture" | "use-cases" | "user-stories"; content: string } | null;
   loading: boolean;
   /** Razón del loading para mostrar mensajes específicos (ej. deep research tarda más) */
   loadingReason: "benchmark" | "mdd" | "phase0-deep-research" | null;
@@ -169,6 +185,18 @@ interface WorkshopState {
   setInfraContent: (content: string | null) => void;
   persistInfraContent: (content: string) => Promise<void>;
   generateInfra: (projectId: string, options?: { preview?: boolean; gapsFeedback?: string }) => Promise<Project | null>;
+
+  setArchitectureContent: (content: string | null) => void;
+  persistArchitectureContent: (content: string) => Promise<void>;
+  generateArchitecture: (projectId: string, options?: { preview?: boolean }) => Promise<Project | null>;
+
+  setUseCasesContent: (content: string | null) => void;
+  persistUseCasesContent: (content: string) => Promise<void>;
+  generateUseCases: (projectId: string, options?: { preview?: boolean }) => Promise<Project | null>;
+
+  setUserStoriesContent: (content: string | null) => void;
+  persistUserStoriesContent: (content: string) => Promise<void>;
+  generateUserStories: (projectId: string, options?: { preview?: boolean }) => Promise<Project | null>;
   setSpecContent: (content: string | null) => void;
   persistSpecContent: (content: string) => Promise<void>;
   generateSpec: (projectId: string) => Promise<Project | null>;
@@ -176,8 +204,8 @@ interface WorkshopState {
   persistTasksContent: (content: string) => Promise<void>;
   generateTasks: (projectId: string) => Promise<Project | null>;
   fetchConformance: (projectId: string, options?: { useLlm?: boolean }) => Promise<void>;
-  verifyDeliverable: (projectId: string, deliverable: "blueprint" | "api" | "infra") => Promise<string>;
-  setPendingDeliverablePreview: (v: { kind: "blueprint" | "api" | "infra"; content: string } | null) => void;
+  verifyDeliverable: (projectId: string, deliverable: "blueprint" | "api" | "infra" | "architecture" | "use-cases" | "user-stories") => Promise<string>;
+  setPendingDeliverablePreview: (v: { kind: "blueprint" | "api" | "infra" | "architecture" | "use-cases" | "user-stories"; content: string } | null) => void;
   confirmDeliverable: () => Promise<void>;
   discardDeliverable: () => void;
   setDbgaContent: (content: string | null) => void;
@@ -211,6 +239,9 @@ const initialState = {
   tasksContent: null as string | null,
   apiContractsContent: null as string | null,
   logicFlowsContent: null as string | null,
+  architectureContent: null as string | null,
+  useCasesContent: null as string | null,
+  userStoriesContent: null as string | null,
   infraContent: null as string | null,
   conformance: null as {
     blueprint: ConformanceResult;
@@ -218,7 +249,7 @@ const initialState = {
     logicFlows: ConformanceResult;
     infra: ConformanceResult;
   } | null,
-  pendingDeliverablePreview: null as { kind: "blueprint" | "api" | "infra"; content: string } | null,
+  pendingDeliverablePreview: null as { kind: "blueprint" | "api" | "infra" | "architecture" | "use-cases" | "user-stories"; content: string } | null,
   loading: false,
   loadingReason: null as "benchmark" | "phase0-deep-research" | null,
   streamingUserMessage: null as string | null,
@@ -254,6 +285,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       blueprintContent: p?.blueprintContent ?? null,
       apiContractsContent: p?.apiContractsContent ?? null,
       logicFlowsContent: p?.logicFlowsContent ?? null,
+      architectureContent: p?.architectureContent ?? null,
+      useCasesContent: p?.useCasesContent ?? null,
+      userStoriesContent: p?.userStoriesContent ?? null,
       infraContent: p?.infraContent ?? null,
     }),
   setSession: (s) => set({ session: s }),
@@ -270,16 +304,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const data: Project = await r.json();
       set({
         project: data,
-        mddContent: data.mddContent ?? "",
-        uxUiGuideContent: data.uxUiGuideContent ?? null,
-        dbgaContent: data.dbgaContent ?? null,
-        specContent: data.specContent ?? null,
+        mddContent: cleanDoc(data.mddContent) ?? "",
+        uxUiGuideContent: cleanDoc(data.uxUiGuideContent ?? null),
+        dbgaContent: cleanDoc(data.dbgaContent ?? null),
+        specContent: cleanDoc(data.specContent ?? null),
         phase0SummaryContent: data.phase0SummaryContent ?? null,
-        blueprintContent: data.blueprintContent ?? null,
-        tasksContent: data.tasksContent ?? null,
-        apiContractsContent: data.apiContractsContent ?? null,
-        logicFlowsContent: data.logicFlowsContent ?? null,
-        infraContent: data.infraContent ?? null,
+        blueprintContent: cleanDoc(data.blueprintContent ?? null),
+        tasksContent: cleanDoc(data.tasksContent ?? null),
+        apiContractsContent: cleanDoc(data.apiContractsContent ?? null),
+        logicFlowsContent: cleanDoc(data.logicFlowsContent ?? null),
+        architectureContent: cleanDoc(data.architectureContent ?? null),
+        useCasesContent: cleanDoc(data.useCasesContent ?? null),
+        userStoriesContent: cleanDoc(data.userStoriesContent ?? null),
+        infraContent: cleanDoc(data.infraContent ?? null),
         error: null,
       });
       const sessionsRes = await fetch(`${API_BASE}/sessions/project/${projectId}`);
@@ -325,16 +362,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({
         session: data.session,
         project: data.project,
-        mddContent: data.project.mddContent ?? get().mddContent,
-        uxUiGuideContent: data.project.uxUiGuideContent ?? null,
-        dbgaContent: data.project.dbgaContent ?? null,
-        specContent: data.project.specContent ?? null,
+        mddContent: cleanDoc(data.project.mddContent ?? null) ?? get().mddContent,
+        uxUiGuideContent: cleanDoc(data.project.uxUiGuideContent ?? null),
+        dbgaContent: cleanDoc(data.project.dbgaContent ?? null),
+        specContent: cleanDoc(data.project.specContent ?? null),
         phase0SummaryContent: data.project.phase0SummaryContent ?? null,
-        blueprintContent: data.project.blueprintContent ?? null,
-        tasksContent: data.project.tasksContent ?? null,
-        apiContractsContent: data.project.apiContractsContent ?? null,
-        logicFlowsContent: data.project.logicFlowsContent ?? null,
-        infraContent: data.project.infraContent ?? null,
+        blueprintContent: cleanDoc(data.project.blueprintContent ?? null),
+        tasksContent: cleanDoc(data.project.tasksContent ?? null),
+        apiContractsContent: cleanDoc(data.project.apiContractsContent ?? null),
+        logicFlowsContent: cleanDoc(data.project.logicFlowsContent ?? null),
+        architectureContent: cleanDoc(data.project.architectureContent ?? null),
+        useCasesContent: cleanDoc(data.project.useCasesContent ?? null),
+        userStoriesContent: cleanDoc(data.project.userStoriesContent ?? null),
+        infraContent: cleanDoc(data.project.infraContent ?? null),
         synced: true,
         error: null,
       });
@@ -426,7 +466,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
               const trimmed = line.trim();
               if (!trimmed) continue;
               try {
-                const event = JSON.parse(trimmed) as { type: string; markdown?: string; message?: string; precision?: number; status?: string; precisionBreakdown?: PrecisionBreakdown };
+                const event = JSON.parse(trimmed) as { type: string; agent?: string; markdown?: string; message?: string; precision?: number; status?: string; precisionBreakdown?: PrecisionBreakdown };
                 if (event.type === "progress" && event.agent != null && event.message != null) {
                   set((s) => ({ agentProgress: [...s.agentProgress, { agent: event.agent!, message: event.message! }] }));
                 } else if (event.type === "done" && event.markdown != null && event.markdown.trim().length > 80) {
@@ -434,8 +474,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   const { persistMddContent, fetchProject, fetchEstimation, fetchConformance } = get();
                   await persistMddContent(event.markdown, { force: true });
                   await fetchProject(projectId);
-                  fetchEstimation(projectId).catch(() => {});
-                  fetchConformance(projectId).catch(() => {});
+                  fetchEstimation(projectId).catch(() => { });
+                  fetchConformance(projectId).catch(() => { });
                   const current = get();
                   set({
                     project: current.project ? { ...current.project, mddContent: event.markdown } : null,
@@ -522,11 +562,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           const body =
             managerThreadId != null
               ? {
-                  projectId,
-                  threadId: managerThreadId,
-                  userMessage: messageForApi,
-                  mddContent: (get().mddContent ?? get().project?.mddContent ?? "").trim() || undefined,
-                }
+                projectId,
+                threadId: managerThreadId,
+                userMessage: messageForApi,
+                mddContent: (get().mddContent ?? get().project?.mddContent ?? "").trim() || undefined,
+              }
               : {
                 projectId,
                 dbgaContent: (get().dbgaContent ?? get().project?.dbgaContent ?? "").trim() || undefined,
@@ -770,18 +810,25 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const proj = data.project as Project | undefined;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
                 const projectWithUx = proj
-                  ? { ...proj, uxUiGuideContent: uxFromApi ?? proj.uxUiGuideContent ?? null }
+                  ? {
+                    ...proj,
+                    mddContent: cleanDoc(proj.mddContent ?? null) ?? "",
+                    uxUiGuideContent: cleanDoc(uxFromApi ?? proj.uxUiGuideContent ?? null),
+                    blueprintContent: cleanDoc(proj.blueprintContent ?? null),
+                    dbgaContent: cleanDoc(proj.dbgaContent ?? null),
+                    specContent: cleanDoc(proj.specContent ?? null),
+                  }
                   : proj;
                 set({
                   session: sess ?? get().session,
                   project: projectWithUx ?? get().project,
-                  mddContent: proj?.mddContent ?? get().mddContent,
-                  uxUiGuideContent: uxFromApi ?? get().uxUiGuideContent ?? null,
-                  dbgaContent: proj?.dbgaContent ?? null,
-                  blueprintContent: proj?.blueprintContent ?? null,
-                  apiContractsContent: proj?.apiContractsContent ?? null,
-                  logicFlowsContent: proj?.logicFlowsContent ?? null,
-                  infraContent: proj?.infraContent ?? null,
+                  mddContent: cleanDoc(proj?.mddContent ?? null) ?? get().mddContent,
+                  uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
+                  dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
+                  blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
+                  apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null),
+                  logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
+                  infraContent: cleanDoc(proj?.infraContent ?? null),
                   streamingUserMessage: null,
                   streamingContent: null,
                   streamingTab: null,
@@ -819,18 +866,25 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const proj = data.project as Project | undefined;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
                 const projectWithUx = proj
-                  ? { ...proj, uxUiGuideContent: uxFromApi ?? proj.uxUiGuideContent ?? null }
+                  ? {
+                    ...proj,
+                    mddContent: cleanDoc(proj.mddContent ?? null) ?? "",
+                    uxUiGuideContent: cleanDoc(uxFromApi ?? proj.uxUiGuideContent ?? null),
+                    blueprintContent: cleanDoc(proj.blueprintContent ?? null),
+                    dbgaContent: cleanDoc(proj.dbgaContent ?? null),
+                    specContent: cleanDoc(proj.specContent ?? null),
+                  }
                   : proj;
                 set({
                   session: sess ?? get().session,
                   project: projectWithUx ?? get().project,
-                  mddContent: proj?.mddContent ?? get().mddContent,
-                  uxUiGuideContent: uxFromApi ?? get().uxUiGuideContent ?? null,
-                  dbgaContent: proj?.dbgaContent ?? null,
-                  blueprintContent: proj?.blueprintContent ?? null,
-                  apiContractsContent: proj?.apiContractsContent ?? null,
-                  logicFlowsContent: proj?.logicFlowsContent ?? null,
-                  infraContent: proj?.infraContent ?? null,
+                  mddContent: cleanDoc(proj?.mddContent ?? null) ?? get().mddContent,
+                  uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
+                  dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
+                  blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
+                  apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null),
+                  logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
+                  infraContent: cleanDoc(proj?.infraContent ?? null),
                   streamingUserMessage: null,
                   streamingContent: null,
                   streamingTab: null,
@@ -922,18 +976,25 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const proj = data.project as Project | undefined;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
                 const projectWithUx = proj
-                  ? { ...proj, uxUiGuideContent: uxFromApi ?? proj.uxUiGuideContent ?? null }
+                  ? {
+                    ...proj,
+                    mddContent: cleanDoc(proj.mddContent ?? null) ?? "",
+                    uxUiGuideContent: cleanDoc(uxFromApi ?? proj.uxUiGuideContent ?? null),
+                    blueprintContent: cleanDoc(proj.blueprintContent ?? null),
+                    dbgaContent: cleanDoc(proj.dbgaContent ?? null),
+                    specContent: cleanDoc(proj.specContent ?? null),
+                  }
                   : proj;
                 set({
                   session: sess ?? get().session,
                   project: projectWithUx ?? get().project,
-                  mddContent: proj?.mddContent ?? get().mddContent,
-                  uxUiGuideContent: uxFromApi ?? get().uxUiGuideContent ?? null,
-                  dbgaContent: proj?.dbgaContent ?? null,
-                  blueprintContent: proj?.blueprintContent ?? null,
-                  apiContractsContent: proj?.apiContractsContent ?? null,
-                  logicFlowsContent: proj?.logicFlowsContent ?? null,
-                  infraContent: proj?.infraContent ?? null,
+                  mddContent: cleanDoc(proj?.mddContent ?? null) ?? get().mddContent,
+                  uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
+                  dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
+                  blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
+                  apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null),
+                  logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
+                  infraContent: cleanDoc(proj?.infraContent ?? null),
                   streamingUserMessage: null,
                   streamingContent: null,
                   streamingTab: null,
@@ -971,18 +1032,37 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const proj = data.project as Project | undefined;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
                 const projectWithUx = proj
-                  ? { ...proj, uxUiGuideContent: uxFromApi ?? proj.uxUiGuideContent ?? null }
+                  ? {
+                    ...proj,
+                    mddContent: cleanDoc(proj.mddContent ?? null) ?? "",
+                    uxUiGuideContent: cleanDoc(uxFromApi ?? proj.uxUiGuideContent ?? null),
+                    dbgaContent: cleanDoc(proj.dbgaContent ?? null),
+                    specContent: cleanDoc(proj.specContent ?? null),
+                    blueprintContent: cleanDoc(proj.blueprintContent ?? null),
+                    apiContractsContent: cleanDoc(proj.apiContractsContent ?? null),
+                    logicFlowsContent: cleanDoc(proj.logicFlowsContent ?? null),
+                    tasksContent: cleanDoc(proj.tasksContent ?? null),
+                    architectureContent: cleanDoc(proj.architectureContent ?? null),
+                    useCasesContent: cleanDoc(proj.useCasesContent ?? null),
+                    userStoriesContent: cleanDoc(proj.userStoriesContent ?? null),
+                    infraContent: cleanDoc(proj.infraContent ?? null),
+                  }
                   : proj;
                 set({
                   session: sess ?? get().session,
                   project: projectWithUx ?? get().project,
-                  mddContent: proj?.mddContent ?? get().mddContent,
-                  uxUiGuideContent: uxFromApi ?? get().uxUiGuideContent ?? null,
-                  dbgaContent: proj?.dbgaContent ?? null,
-                  blueprintContent: proj?.blueprintContent ?? null,
-                  apiContractsContent: proj?.apiContractsContent ?? null,
-                  logicFlowsContent: proj?.logicFlowsContent ?? null,
-                  infraContent: proj?.infraContent ?? null,
+                  mddContent: cleanDoc(proj?.mddContent ?? null) ?? get().mddContent,
+                  uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
+                  dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
+                  specContent: cleanDoc(proj?.specContent ?? null),
+                  blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
+                  apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null),
+                  logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
+                  tasksContent: cleanDoc(proj?.tasksContent ?? null),
+                  architectureContent: cleanDoc(proj?.architectureContent ?? null),
+                  useCasesContent: cleanDoc(proj?.useCasesContent ?? null),
+                  userStoriesContent: cleanDoc(proj?.userStoriesContent ?? null),
+                  infraContent: cleanDoc(proj?.infraContent ?? null),
                   streamingUserMessage: null,
                   streamingContent: null,
                   streamingTab: null,
@@ -1025,14 +1105,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId || !project || content === (project.uxUiGuideContent ?? "")) return;
     set({ synced: false });
     try {
+      const cleanPath = cleanDoc(content) || content;
       const r = await fetch(`${API_BASE}/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uxUiGuideContent: content }),
+        body: JSON.stringify({ uxUiGuideContent: cleanPath }),
       });
       if (r.ok) {
         const data: Project = await r.json();
-        set({ project: data, uxUiGuideContent: data.uxUiGuideContent ?? content, synced: true });
+        set({ project: data, uxUiGuideContent: cleanDoc(data.uxUiGuideContent ?? cleanPath), synced: true });
       } else {
         set({ synced: true });
       }
@@ -1048,14 +1129,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId || !project || content === (project.blueprintContent ?? "")) return;
     set({ synced: false });
     try {
+      const cleanPath = cleanDoc(content) || content;
       const r = await fetch(`${API_BASE}/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blueprintContent: content }),
+        body: JSON.stringify({ blueprintContent: cleanPath }),
       });
       if (r.ok) {
         const data: Project = await r.json();
-        set({ project: data, blueprintContent: data.blueprintContent ?? content, synced: true });
+        set({ project: data, blueprintContent: cleanDoc(data.blueprintContent ?? cleanPath), synced: true });
       } else {
         set({ synced: true });
       }
@@ -1086,9 +1168,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         return null;
       }
       const proj = data as Project;
-      set({ project: proj, blueprintContent: proj.blueprintContent ?? null, error: null });
-      get().fetchConformance(projectId).catch(() => {});
-      return proj;
+      const raw = proj.blueprintContent ?? "";
+      const cleaned = raw.replace(/^\s*```(?:markdown)?\s*/i, "").replace(/^\s*```\s*/, "").replace(/\s*```\s*$/, "");
+      const newProj = { ...proj, blueprintContent: cleaned || null };
+
+      set({ project: newProj, blueprintContent: cleaned || null, error: null });
+      get().fetchConformance(projectId).catch(() => { });
+      return newProj;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar blueprint" });
       return null;
@@ -1103,14 +1189,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId || !project || content === (project.apiContractsContent ?? "")) return;
     set({ synced: false });
     try {
+      const cleanPath = cleanDoc(content) || content;
       const r = await fetch(`${API_BASE}/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiContractsContent: content }),
+        body: JSON.stringify({ apiContractsContent: cleanPath }),
       });
       if (r.ok) {
         const data: Project = await r.json();
-        set({ project: data, apiContractsContent: data.apiContractsContent ?? content, synced: true });
+        set({ project: data, apiContractsContent: cleanDoc(data.apiContractsContent ?? cleanPath), synced: true });
       } else {
         set({ synced: true });
       }
@@ -1141,7 +1228,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
       const proj = data as Project;
       set({ project: proj, apiContractsContent: proj.apiContractsContent ?? null, error: null });
-      get().fetchConformance(projectId).catch(() => {});
+      get().fetchConformance(projectId).catch(() => { });
       return proj;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar contratos API" });
@@ -1157,14 +1244,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId || !project || content === (project.logicFlowsContent ?? "")) return;
     set({ synced: false });
     try {
+      const cleanPath = cleanDoc(content) || content;
       const r = await fetch(`${API_BASE}/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ logicFlowsContent: content }),
+        body: JSON.stringify({ logicFlowsContent: cleanPath }),
       });
       if (r.ok) {
         const data: Project = await r.json();
-        set({ project: data, logicFlowsContent: data.logicFlowsContent ?? content, synced: true });
+        set({ project: data, logicFlowsContent: cleanDoc(data.logicFlowsContent ?? cleanPath), synced: true });
       } else {
         set({ synced: true });
       }
@@ -1193,7 +1281,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         logicFlowsContent: data.logicFlowsContent ?? null,
         error: null,
       });
-      get().fetchConformance(projectId).catch(() => {});
+      get().fetchConformance(projectId).catch(() => { });
       return data;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar lógica y flujos" });
@@ -1209,14 +1297,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId || !project || content === (project.infraContent ?? "")) return;
     set({ synced: false });
     try {
+      const cleanPath = cleanDoc(content) || content;
       const r = await fetch(`${API_BASE}/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ infraContent: content }),
+        body: JSON.stringify({ infraContent: cleanPath }),
       });
       if (r.ok) {
         const data: Project = await r.json();
-        set({ project: data, infraContent: data.infraContent ?? content, synced: true });
+        set({ project: data, infraContent: cleanDoc(data.infraContent ?? cleanPath), synced: true });
       } else {
         set({ synced: true });
       }
@@ -1247,10 +1336,169 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
       const proj = data as Project;
       set({ project: proj, infraContent: proj.infraContent ?? null, error: null });
-      get().fetchConformance(projectId).catch(() => {});
+      get().fetchConformance(projectId).catch(() => { });
       return proj;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar infraestructura" });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  setArchitectureContent: (content) => set({ architectureContent: content }),
+  persistArchitectureContent: async (content) => {
+    const { projectId, project } = get();
+    if (!projectId || !project || content === (project.architectureContent ?? "")) return;
+    set({ synced: false });
+    try {
+      const cleanPath = cleanDoc(content) || content;
+      const r = await fetch(`${API_BASE}/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ architectureContent: cleanPath }),
+      });
+      if (r.ok) {
+        const data: Project = await r.json();
+        set({ project: data, architectureContent: cleanDoc(data.architectureContent ?? cleanPath), synced: true });
+      } else {
+        set({ synced: true });
+      }
+    } catch {
+      set({ synced: true });
+    }
+  },
+  generateArchitecture: async (projectId, options) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const body: { preview?: boolean } = {};
+      if (options?.preview) body.preview = true;
+      const r = await fetch(`${API_BASE}/projects/${projectId}/generate-architecture`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.message ?? "Error al generar arquitectura");
+      }
+      const data = await r.json();
+      if (options?.preview && data.content != null) {
+        set({ pendingDeliverablePreview: { kind: "architecture", content: data.content }, error: null });
+        return null;
+      }
+      const proj = data as Project;
+      set({ project: proj, architectureContent: proj.architectureContent ?? null, error: null });
+      return proj;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al generar arquitectura" });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  setUseCasesContent: (content) => set({ useCasesContent: content }),
+  persistUseCasesContent: async (content) => {
+    const { projectId, project } = get();
+    if (!projectId || !project || content === (project.useCasesContent ?? "")) return;
+    set({ synced: false });
+    try {
+      const cleanPath = cleanDoc(content) || content;
+      const r = await fetch(`${API_BASE}/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ useCasesContent: cleanPath }),
+      });
+      if (r.ok) {
+        const data: Project = await r.json();
+        set({ project: data, useCasesContent: cleanDoc(data.useCasesContent ?? cleanPath), synced: true });
+      } else {
+        set({ synced: true });
+      }
+    } catch {
+      set({ synced: true });
+    }
+  },
+  generateUseCases: async (projectId, options) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const body: { preview?: boolean } = {};
+      if (options?.preview) body.preview = true;
+      const r = await fetch(`${API_BASE}/projects/${projectId}/generate-use-cases`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.message ?? "Error al generar casos de uso");
+      }
+      const data = await r.json();
+      if (options?.preview && data.content != null) {
+        set({ pendingDeliverablePreview: { kind: "use-cases", content: data.content }, error: null });
+        return null;
+      }
+      const proj = data as Project;
+      set({ project: proj, useCasesContent: proj.useCasesContent ?? null, error: null });
+      return proj;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al generar casos de uso" });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  setUserStoriesContent: (content) => set({ userStoriesContent: content }),
+  persistUserStoriesContent: async (content) => {
+    const { projectId, project } = get();
+    if (!projectId || !project || content === (project.userStoriesContent ?? "")) return;
+    set({ synced: false });
+    try {
+      const cleanPath = cleanDoc(content) || content;
+      const r = await fetch(`${API_BASE}/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userStoriesContent: cleanPath }),
+      });
+      if (r.ok) {
+        const data: Project = await r.json();
+        set({ project: data, userStoriesContent: cleanDoc(data.userStoriesContent ?? cleanPath), synced: true });
+      } else {
+        set({ synced: true });
+      }
+    } catch {
+      set({ synced: true });
+    }
+  },
+  generateUserStories: async (projectId, options) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const body: { preview?: boolean } = {};
+      if (options?.preview) body.preview = true;
+      const r = await fetch(`${API_BASE}/projects/${projectId}/generate-user-stories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.message ?? "Error al generar historias de usuario");
+      }
+      const data = await r.json();
+      if (options?.preview && data.content != null) {
+        set({ pendingDeliverablePreview: { kind: "user-stories", content: data.content }, error: null });
+        return null;
+      }
+      const proj = data as Project;
+      set({ project: proj, userStoriesContent: proj.userStoriesContent ?? null, error: null });
+      return proj;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al generar historias de usuario" });
       return null;
     } finally {
       set({ loading: false });
@@ -1263,14 +1511,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId || !project || content === (project.specContent ?? "")) return;
     set({ synced: false });
     try {
+      const cleanPath = cleanDoc(content) || content;
       const r = await fetch(`${API_BASE}/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ specContent: content }),
+        body: JSON.stringify({ specContent: cleanPath }),
       });
       if (r.ok) {
         const data: Project = await r.json();
-        set({ project: data, specContent: data.specContent ?? content, synced: true });
+        set({ project: data, specContent: cleanDoc(data.specContent ?? cleanPath), synced: true });
       } else set({ synced: true });
     } catch {
       set({ synced: true });
@@ -1286,8 +1535,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         throw new Error(err.message ?? "Error al generar Spec");
       }
       const data: Project = await r.json();
-      set({ project: data, specContent: data.specContent ?? null, error: null });
-      return data;
+      // Limpiar etiquetas markdown que a veces genera el LLM
+      const raw = data.specContent ?? "";
+      const cleaned = raw.replace(/^\s*```(?:markdown)?\s*/i, "").replace(/^\s*```\s*/, "").replace(/\s*```\s*$/, "");
+
+      const newData = { ...data, specContent: cleaned || null };
+      set({ project: newData, specContent: cleaned || null, error: null });
+      return newData;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar Spec" });
       return null;
@@ -1301,14 +1555,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId || !project || content === (project.tasksContent ?? "")) return;
     set({ synced: false });
     try {
+      const cleanPath = cleanDoc(content) || content;
       const r = await fetch(`${API_BASE}/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tasksContent: content }),
+        body: JSON.stringify({ tasksContent: cleanPath }),
       });
       if (r.ok) {
         const data: Project = await r.json();
-        set({ project: data, tasksContent: data.tasksContent ?? content, synced: true });
+        set({ project: data, tasksContent: cleanDoc(data.tasksContent ?? cleanPath), synced: true });
       } else set({ synced: true });
     } catch {
       set({ synced: true });
@@ -1368,6 +1623,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (kind === "blueprint") await get().persistBlueprintContent(content);
     else if (kind === "api") await get().persistApiContractsContent(content);
     else if (kind === "infra") await get().persistInfraContent(content);
+    else if (kind === "architecture") await get().persistArchitectureContent(content);
+    else if (kind === "use-cases") await get().persistUseCasesContent(content);
+    else if (kind === "user-stories") await get().persistUserStoriesContent(content);
     set({ pendingDeliverablePreview: null });
   },
   discardDeliverable: () => set({ pendingDeliverablePreview: null }),

@@ -209,6 +209,24 @@ export class AiOrchestratorService {
         if (msg.dbgaContent != null && msg.dbgaContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { dbgaContent: msg.dbgaContent });
         }
+        if (msg.specContent != null && msg.specContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, { specContent: msg.specContent });
+        }
+        if (msg.blueprintContent != null && msg.blueprintContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, { blueprintContent: msg.blueprintContent });
+        }
+        if (msg.apiContractsContent != null && msg.apiContractsContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, { apiContractsContent: msg.apiContractsContent });
+        }
+        if (msg.logicFlowsContent != null && msg.logicFlowsContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, { logicFlowsContent: msg.logicFlowsContent });
+        }
+        if (msg.tasksContent != null && msg.tasksContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, { tasksContent: msg.tasksContent });
+        }
+        if (msg.infraContent != null && msg.infraContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, { infraContent: msg.infraContent });
+        }
         const finalProject =
           updatedProject ??
           (await this.prisma.project.findUnique({

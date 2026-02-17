@@ -14,6 +14,10 @@
 
 **Salida:** Responde **únicamente** con el documento MDD completo en Markdown (desde # Master Design Document), **con las modificaciones ya aplicadas** en §2–§5. No devuelvas el borrador anterior sin cambiar: si hay ACCIÓN REQUERIDA o requisitos del usuario, el documento que devuelvas debe **reflejar esos cambios** (nuevas tablas, endpoints, frontend, roles por aplicación, etc.). **PROHIBIDO** incluir en la respuesta los bloques "ACCIÓN REQUERIDA", "Prioridad (léelo primero)" o "Requisitos del usuario (conversación reciente)"; son solo instrucciones para aplicar, no contenido del MDD.
 
+**IDIOMA OBLIGATORIO: ESPAÑOL.**
+La redacción de las secciones (explicaciones, justificaciones, lógica) debe ser en **ESPAÑOL**.
+El contenido técnico (código SQL, nombres de variables, endpoints, esquemas JSON, diagrama ER) debe mantenerse en **INGLÉS** o estándar técnico.
+
 **Narrowing (en positivo):** Incluye en §3 todas las entidades y relaciones mencionadas en el contexto o en los requisitos del usuario (usuarios, aplicaciones, roles, permisos, sesiones, etc.). El diagrama ER debe reflejar cada entidad y cada relación descrita.
 
 El documento MDD tiene **exactamente 7 secciones**. Tú eres responsable de **cuatro**: **2. Arquitectura y Stack**, **3. Modelo de Datos**, **4. Contratos de API** y **5. Lógica y Edge Cases**. No modifiques ni redactes las demás. Las secciones que rellenas forman parte del documento **Constitución del proyecto**: deben ser coherentes entre sí y con el contexto/clarifiedScope; todo entregable posterior (Blueprint, Contratos, Infra) se derivará de este documento.
@@ -37,8 +41,30 @@ El documento MDD tiene **exactamente 7 secciones**. Tú eres responsable de **cu
    - **Prioridad 1 (Scope):** Si el `Context/Scope` pide un cambio (ej. "Usar NestJS"), este MANDATO anula cualquier texto contrario en el Borrador. Debes **borrar y reescribir** las partes afectadas para que no queden rastros de la tecnología anterior (ej. si pasas de Express a NestJS, elimina menciones a "middlewares de Express").
    - **Prioridad 2 (Preservación):** Si el Scope **NO** menciona un tema y el Borrador ya lo tiene definido (y es técnicamente válido/compatible), **MANTENLO**. No borres detalles útiles que el usuario no pidió cambiar.
    - **Criterio de Reescritura:** Ante un cambio estructural (Stack Base, Lenguaje), es mejor reescribir la sub-sección completa (ej. "### Backend") para garantizar pureza, pero mantener las otras sub-secciones (ej. "### Frontend") si no fueron afectadas.
-3. **Redactar ## 2. Arquitectura y Stack**: **siempre** incluir backend (lenguaje, framework, BD) y stack tecnológico; el frontend es una **subsección** (### Frontend o ### Arquitectura Frontend) dentro de §2. Prohibido dejar §2 solo con contenido de frontend o "Pendiente"/"TBD".
-4. **Redactar ## 3. Modelo de Datos**: **OBLIGATORIO.** Siempre incluye un bloque de código SQL (formato Markdown: línea con tres backticks + palabra «sql», contenido con CREATE TABLE, línea con tres backticks para cerrar). Deriva las tablas del Contexto (sección 1): si habla de usuarios, aplicaciones, roles, sesiones, etc., define esas entidades. Subsección ### Diagrama entidad-relación con bloque de código Mermaid etiquetado «mermaid» y tipo erDiagram; y bloque de código con etiqueta «TechnicalMetadata» (ej. [high_security]). **Prohibido** omitir §3 o dejarla en (Pendiente). Relaciones en erDiagram con nombre de FK (ej. : "user_id", no : "id").
+**NUEVO ESTÁNDAR: Meta-Prompting (Schema Verification)**
+Antes de generar el SQL, realiza este paso intermedio (pensamiento):
+1.  **Listar Entidades:** Extrae todas las entidades sustantivas de la Sección 1 (ej. User, Order, Payment).
+2.  **Verificar Relaciones:** ¿Están definidas todas las FKs necesarias?
+3.  **Strict Types:** Define el tipo TypeScript vs SQL.
+    - `string` -> `VARCHAR(255)` o `TEXT` (no `string`)
+    - `number` -> `INTEGER` o `DECIMAL`
+    - `Date` -> `TIMESTAMPTZ` (OBLIGATORIO)
+
+**Regla Anti-Alucinación:** Si el usuario no especificó un campo pero es un estándar de industria (ej. `email` en `users`), AGRÉGALO. Si es un campo exótico sin definición, NO lo inventes; marca como pendiente de clarificación en una nota.
+
+4. **Redactar ## 3. Modelo de Datos**: **OBLIGATORIO - ARQUITECTURA HÍBRIDA.**
+    *   **PostgreSQL (SQL):** Solo para entidades administrativas: `users`, `sessions`, `roles`, `permissions`, `subscriptions`. Genera el bloque SQL `CREATE TABLE`.
+    *   **FalkorDB (Graph):** Para el modelado del código fuente (AST). NO generes tablas SQL para esto. Genera un bloque `cypher` o una descripción de **Nodos** (`Component`, `Function`, `Hook`, `File`) y **Aristas** (`IMPORTS`, `RENDERS`, `CALLS`, `USES_HOOK`).
+        *   Ejemplo Cypher: `(:Component)-[:RENDERS]->(:Component)`, `(:File)-[:DEFINES]->(:Function)`.
+    *   **Diagrama ER:** Específico para las tablas de PostgreSQL.
+    *   **Diagrama del Grafo:** Usa Mermaid `graph TD` para visualizar la ontología de código en FalkorDB.
+
+50: 
+51: 3. **Redactar ## 2. Arquitectura y Stack**:
+    *   **Ingestión:** Debe incluir **Bitbucket** como fuente. Detallar el flujo: "Escaneo inicial vía API" + "Actualizaciones incrementales vía Webhooks".
+    *   **Base de Datos:** Explicar claramente la separación PostgreSQL (Auth/Admin) vs FalkorDB (Knowledge Graph).
+    *   **Interface:** Oracle MCP server para consultas de agentes.
+    *   **Frontend y Backend:** Definir stack estándar (Node/NestJS, React/Vite).
 5. **Redactar ## 4. Contratos de API**: tabla resumen + endpoints con request/response en bloques de código etiquetados «json». **Nunca** dejar "(Pendiente)" en §4 cuando el alcance lo permita: genera al menos un resumen y endpoints básicos (ej. `/health`, login/auth) derivados del modelo de datos.
 6. **Redactar ## 5. Lógica y Edge Cases**: reglas de negocio, validaciones, casos borde, flujos de estado. **Nunca** dejar "(Pendiente)" en §5 cuando el alcance lo permita: genera al menos flujos maestros y excepciones (timeout, reintentos).
 7. **Conservar el resto**: copiar **## 1. Contexto** exactamente del borrador de entrada; dejar placeholders para ## 6. Seguridad y ## 7. Infraestructura.
@@ -81,12 +107,16 @@ El documento MDD tiene **exactamente 7 secciones**. Tú eres responsable de **cu
 
 ### 3. Modelo de Datos (tu responsabilidad)
 
-- **SQL:** Bloque de código SQL (abre con línea de tres backticks y la palabra sql; escribe CREATE TABLE en PostgreSQL con UUID para PKs, REFERENCES para FKs; cierra con línea de tres backticks).
-- **Fechas y zonas horarias:** Usa **siempre** `TIMESTAMPTZ` (con zona horaria) para columnas de fecha/hora (`created_at`, `updated_at`, `last_login_at`, etc.). **Nunca** uses `TIMESTAMP` sin zona: `TIMESTAMPTZ` evita ambigüedad en entornos distribuidos y despliegues multi-región.
-- **Congruencia §3 ↔ §4 (obligatoria):** Todo campo que aparezca en un request o response de la sección 4 **debe** tener soporte en el modelo de datos (§3). Si un endpoint devuelve `email` o `roles`, la tabla users (o tablas relacionadas) debe incluir la columna `email` y la relación con roles (tabla `roles`/`user_roles` o columna). No documentes en la API campos que no existan en el SQL. Antes de cerrar §3, revisa §4: cada campo de los JSON de respuesta (y los de request que se persisten) debe tener columna o tabla en §3.
-- **Campos que no deben persistirse:** Si el usuario (o la directiva) indica que un campo no debe guardarse en BD (ej. `jwt_token`), **no** lo incluyas en ninguna tabla de §3 ni en el diagrama ER. En §4 documenta la alternativa (ej. `POST /auth/refresh` con request `{ "refresh_token": "..." }` y response con nuevo access token; el refresh_token sí puede persistirse si aplica).
-- **Diagrama ER:** Subsección ### Diagrama entidad-relación con bloque de código Mermaid tipo erDiagram (abre tres backticks + mermaid; contenido erDiagram; cierra tres backticks). Relaciones etiquetadas con nombre de columna FK (ej. users en relación con sessions : "user_id"). No uses : "id".
-- **TechnicalMetadata:** Bloque de código con etiqueta TechnicalMetadata (tres backticks + TechnicalMetadata) y contenido [high_security] u otras etiquetas. Infiere entidades desde §1 (usuarios, sesiones, aplicaciones, roles, etc.).
+- **Estrategia Híbrida (Estricta):**
+  - **SQL (PostgreSQL):** ÚNICAMENTE para identidad, acceso y configuración del sistema (`users`, `sessions`, `workspaces`, `apikeys`). Usa `TIMESTAMPTZ`.
+  - **Graph (FalkorDB):** OBLIGATORIO para todo el análisis de código. NUNCA crees tablas SQL para `components`, `files`, `imports` o `functions`.
+  - **Entregables:**
+    1.  Bloque `sql` para tablas PostgreSQL.
+    2.  Bloque `mermaid` (erDiagram) para PostgreSQL.
+    3.  Bloque `cypher` (puedes usar el tag `cypher` o `text`) describiendo el esquema del grafo (Nodos y Relaciones).
+    4.  Bloque `mermaid` (graph TD) mostrando la ontología del grafo (ej. `File --> defines --> Component`).
+
+- **Congruencia §3 ↔ §4:** Los endpoints de análisis de código (ej. un endpoint de búsqueda semántica) consultarán FalkorDB, no SQL. Documenta esto en la descripción del endpoint en §4.
 
 ### 4. Contratos de API (tu responsabilidad)
 
