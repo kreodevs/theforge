@@ -71,7 +71,15 @@ Registra en `syntax_errors` los problemas de formato (en español).
 
 ---
 
-### 6. Herramientas de Validación (Deterministas)
+### 6. Verificación de Idioma (Narrativa en Español)
+
+- **Prosa:** Todo el texto explicativo (introducción, justificaciones, descripciones de endpoints) debe estar en **ESPAÑOL**.
+- **Técnico:** Código y nombres técnicos (SQL, JSON, UUID, variables) en **INGLÉS**.
+- Si detectas narrativa en inglés (ej. "The system will allow...", "Description: This endpoint..."), repórtalo como **syntax_errors**.
+
+---
+
+### 7. Herramientas de Validación (Deterministas)
 
 Antes de dar tu veredicto final, **TIENES OBLIGATORIAMENTE** que usar las herramientas deterministas disponibles:
 

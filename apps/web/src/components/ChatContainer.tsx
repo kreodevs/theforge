@@ -17,7 +17,9 @@ export type ActiveTab =
   | "architecture"
   | "use-cases"
   | "user-stories"
-  | "infra";
+  | "user-stories"
+  | "infra"
+  | "adrs";
 
 const ACTIVE_TAB_LABELS: Record<ActiveTab, string> = {
   benchmark: "Benchmark & Gap Analysis (Paso 0)",
@@ -32,6 +34,7 @@ const ACTIVE_TAB_LABELS: Record<ActiveTab, string> = {
   "use-cases": "Casos de Uso",
   "user-stories": "Historias de Usuario",
   infra: "Infraestructura",
+  adrs: "Decisiones Arquitectónicas (ADRs)",
 };
 
 /** Comandos / para regenerar secciones del MDD (solo tab MDD). §1 = solo agente sintetizador de contexto desde §2–§7. */
@@ -85,10 +88,12 @@ function PlanApprovalCard({
   onModify: () => void;
 }) {
   return (
-    <div className="mx-4 mb-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 flex flex-col max-h-[min(50vh,420px)]">
-      <p className="text-sm text-amber-200/90 mb-2 shrink-0">{planMessage}</p>
+    <div className="mx-4 mb-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 flex flex-col shrink-0">
+      <div className="text-sm text-amber-200/90 mb-3 shrink-0 prose prose-invert prose-p:my-1 prose-ul:my-1 prose-li:my-0">
+        <ReactMarkdown>{planMessage}</ReactMarkdown>
+      </div>
       <p className="text-xs text-zinc-400 mb-1.5 font-medium shrink-0">Tareas y responsables:</p>
-      <div className="overflow-auto min-h-0 mb-3 flex-1">
+      <div className="mb-3">
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="text-left text-zinc-400 border-b border-zinc-600">
@@ -420,6 +425,17 @@ export default function ChatContainer({
                 )}
               </div>
             )}
+
+            {activeTab === "mdd" && pendingPlanApproval && pendingPlanApproval.plan.length > 0 && (
+              <PlanApprovalCard
+                planMessage={pendingPlanApproval.planMessage}
+                plan={pendingPlanApproval.plan}
+                loading={loading}
+                onExecute={handlePlanExecute}
+                onModify={handlePlanModify}
+              />
+            )}
+
             {loading && (
               <div className="flex justify-start">
                 <div className="rounded-lg px-3 py-2 bg-zinc-800 border border-zinc-600">
@@ -429,15 +445,6 @@ export default function ChatContainer({
             )}
             <div ref={chatEndRef} />
           </div>
-          {activeTab === "mdd" && pendingPlanApproval && pendingPlanApproval.plan.length > 0 && (
-            <PlanApprovalCard
-              planMessage={pendingPlanApproval.planMessage}
-              plan={pendingPlanApproval.plan}
-              loading={loading}
-              onExecute={handlePlanExecute}
-              onModify={handlePlanModify}
-            />
-          )}
           {error && (
             <p className="px-4 pb-2 text-sm text-red-400">{error}</p>
           )}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   Code,
   Lock,
@@ -81,32 +81,59 @@ export default function WorkshopView({
 }: WorkshopViewProps) {
   const project = useWorkshopStore((s) => s.project);
   const liveMetrics = useWorkshopStore((s) => s.liveMetrics);
+  const mddContent = useWorkshopStore((s) => s.mddContent);
+  const specContentField = useWorkshopStore((s) => s.specContent);
+  const dbgaContentField = useWorkshopStore((s) => s.dbgaContent);
+  const blueprintContentField = useWorkshopStore((s) => s.blueprintContent);
+  const apiContractsContentField = useWorkshopStore((s) => s.apiContractsContent);
+  const logicFlowsContentField = useWorkshopStore((s) => s.logicFlowsContent);
+  const infraContentField = useWorkshopStore((s) => s.infraContent);
+  const tasksContentField = useWorkshopStore((s) => s.tasksContent);
+  const architectureContentField = useWorkshopStore((s) => s.architectureContent);
+  const useCasesContentField = useWorkshopStore((s) => s.useCasesContent);
+  const userStoriesContentField = useWorkshopStore((s) => s.userStoriesContent);
+  const phase0SummaryContentField = useWorkshopStore((s) => s.phase0SummaryContent);
+  const uxUiGuideContentField = useWorkshopStore((s) => s.uxUiGuideContent);
+
+  const specContent = specContentField ?? project?.specContent ?? null;
+  const dbgaContent = dbgaContentField ?? project?.dbgaContent ?? null;
+  const blueprintContent = blueprintContentField ?? project?.blueprintContent ?? null;
+  const apiContractsContent = apiContractsContentField ?? project?.apiContractsContent ?? null;
+  const logicFlowsContent = logicFlowsContentField ?? project?.logicFlowsContent ?? null;
+  const infraContent = infraContentField ?? project?.infraContent ?? null;
+  const tasksContent = tasksContentField ?? project?.tasksContent ?? null;
+  const architectureContent = architectureContentField ?? project?.architectureContent ?? null;
+  const useCasesContent = useCasesContentField ?? project?.useCasesContent ?? null;
+  const userStoriesContent = userStoriesContentField ?? project?.userStoriesContent ?? null;
+  const phase0SummaryContent = phase0SummaryContentField ?? project?.phase0SummaryContent ?? null;
+  const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
+
   const projectStatus: Status = project?.status ?? "ROJO";
-  const specContent = useWorkshopStore((s) => s.specContent ?? s.project?.specContent ?? null);
   const semaphoreGreen = liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
   const hasSpec = (specContent ?? "").trim().length > 0;
   const canGenerate = semaphoreGreen && hasSpec;
-  const mddContent = useWorkshopStore((s) => s.mddContent);
-  const dbgaContent = useWorkshopStore((s) => s.dbgaContent ?? s.project?.dbgaContent ?? null);
-  const blueprintContent = useWorkshopStore((s) => s.blueprintContent ?? s.project?.blueprintContent ?? null);
-  const apiContractsContent = useWorkshopStore((s) => s.apiContractsContent ?? s.project?.apiContractsContent ?? null);
-  const logicFlowsContent = useWorkshopStore((s) => s.logicFlowsContent ?? s.project?.logicFlowsContent ?? null);
-  const infraContent = useWorkshopStore((s) => s.infraContent ?? s.project?.infraContent ?? null);
-  const tasksContent = useWorkshopStore((s) => s.tasksContent ?? s.project?.tasksContent ?? null);
-  const architectureContent = useWorkshopStore((s) => s.architectureContent ?? s.project?.architectureContent ?? null);
-  const useCasesContent = useWorkshopStore((s) => s.useCasesContent ?? s.project?.useCasesContent ?? null);
-  const userStoriesContent = useWorkshopStore((s) => s.userStoriesContent ?? s.project?.userStoriesContent ?? null);
-  const conformance = useWorkshopStore((s) => s.conformance);
-  const precisionBreakdown = useWorkshopStore((s) => s.precisionBreakdown);
-  const auditTrail = useWorkshopStore((s) => s.auditTrail);
-  const pendingDeliverablePreview = useWorkshopStore((s) => s.pendingDeliverablePreview);
-  const uxUiGuideContent = useWorkshopStore((s) => s.uxUiGuideContent ?? s.project?.uxUiGuideContent ?? null);
+
+  /* Use stable selectors to avoid loops */
+  const conformanceRaw = useWorkshopStore((s) => s.conformance);
+  const conformance = useMemo(() => conformanceRaw, [conformanceRaw]);
+
+  const precisionBreakdownRaw = useWorkshopStore((s) => s.precisionBreakdown);
+  const precisionBreakdown = useMemo(() => precisionBreakdownRaw, [precisionBreakdownRaw]);
+
+  const auditTrailRaw = useWorkshopStore((s) => s.auditTrail);
+  const auditTrail = useMemo(() => auditTrailRaw || [], [auditTrailRaw]);
+
+  const pendingDeliverablePreviewRaw = useWorkshopStore((s) => s.pendingDeliverablePreview);
+  const pendingDeliverablePreview = useMemo(() => pendingDeliverablePreviewRaw, [pendingDeliverablePreviewRaw]);
   const synced = useWorkshopStore((s) => s.synced);
   const loading = useWorkshopStore((s) => s.loading);
   const loadingReason = useWorkshopStore((s) => s.loadingReason);
   const error = useWorkshopStore((s) => s.error);
   const setError = useWorkshopStore((s) => s.setError);
   const fetchProject = useWorkshopStore((s) => s.fetchProject);
+  const adrsRaw = useWorkshopStore((s) => s.adrs);
+  const adrs = useMemo(() => adrsRaw || [], [adrsRaw]);
+  const fetchAdrs = useWorkshopStore((s) => s.fetchAdrs);
   const fetchWelcome = useWorkshopStore((s) => s.fetchWelcome);
   const sendMessage = useWorkshopStore((s) => s.sendMessage);
   const setMddContent = useWorkshopStore((s) => s.setMddContent);
@@ -128,7 +155,9 @@ export default function WorkshopView({
   const generateSpec = useWorkshopStore((s) => s.generateSpec);
   const generateTasks = useWorkshopStore((s) => s.generateTasks);
   const persistSpecContent = useWorkshopStore((s) => s.persistSpecContent);
+  const setSpecContent = useWorkshopStore((s) => s.setSpecContent);
   const persistTasksContent = useWorkshopStore((s) => s.persistTasksContent);
+  const setUxUiGuideContent = useWorkshopStore((s) => s.setUxUiGuideContent);
   const fetchConformance = useWorkshopStore((s) => s.fetchConformance);
   const confirmDeliverable = useWorkshopStore((s) => s.confirmDeliverable);
   const discardDeliverable = useWorkshopStore((s) => s.discardDeliverable);
@@ -143,11 +172,6 @@ export default function WorkshopView({
   const clearPhase0SummaryContent = useWorkshopStore((s) => s.clearPhase0SummaryContent);
   const setPhase0SummaryContent = useWorkshopStore((s) => s.setPhase0SummaryContent);
   const persistPhase0SummaryContent = useWorkshopStore((s) => s.persistPhase0SummaryContent);
-  const phase0SummaryContent = useWorkshopStore(
-    (s) => s.phase0SummaryContent ?? s.project?.phase0SummaryContent ?? null,
-  );
-  const setSpecContent = useWorkshopStore((s) => s.setSpecContent);
-  const setUxUiGuideContent = useWorkshopStore((s) => s.setUxUiGuideContent);
   const persistUxUiGuideContent = useWorkshopStore((s) => s.persistUxUiGuideContent);
   const persistArchitectureContent = useWorkshopStore((s) => s.persistArchitectureContent);
   const persistUseCasesContent = useWorkshopStore((s) => s.persistUseCasesContent);
@@ -208,7 +232,16 @@ export default function WorkshopView({
   ]);
 
   const setProjectId = useWorkshopStore((s) => s.setProjectId);
+  /* Prevent infinite fetch loop */
+  const hasFetchedProject = useRef<string | null>(null);
   useEffect(() => {
+    if (!projectId) return;
+    if (hasFetchedProject.current === projectId) {
+      // Si ya se disparó para este ID, solo aseguramos que el store lo tenga
+      setProjectId(projectId);
+      return;
+    }
+    hasFetchedProject.current = projectId;
     setProjectId(projectId);
     fetchProject(projectId);
   }, [projectId, setProjectId, fetchProject]);
@@ -220,9 +253,7 @@ export default function WorkshopView({
     if (!(project.mddContent ?? "").trim()) setCentralPanel("benchmark");
   }, [project?.id, projectId, project?.mddContent]);
 
-  useEffect(() => {
-    if (projectId) fetchConformance(projectId);
-  }, [projectId, fetchConformance]);
+
 
   useEffect(() => {
     if (!projectId || !project || blueprintContent === (project.blueprintContent ?? null)) return;
@@ -544,7 +575,7 @@ export default function WorkshopView({
                     <button
                       type="button"
                       onClick={() => setCentralPanel("benchmark")}
-                      className={getTabClass("benchmark", (phase0SummaryContent || "") + (useWorkshopStore.getState().dbgaContent || ""))}
+                      className={getTabClass("benchmark", (phase0SummaryContent || "") + (dbgaContent || ""))}
                     >
                       <Target className="w-4 h-4" />
                       Paso 0
@@ -636,9 +667,9 @@ export default function WorkshopView({
                       type="button"
                       onClick={() => setCentralPanel("adrs")}
                       title="ADRs: Decisiones Arquitectónicas Guardadas en Memoria"
-                      className={getTabClass("adrs", useWorkshopStore.getState().adrs)}
+                      className={getTabClass("adrs", adrs)}
                     >
-                      <Server className="w-4 h-4" />
+                      <Brain className="w-4 h-4" />
                       ADRs
                     </button>
                     <button
@@ -1349,7 +1380,7 @@ export default function WorkshopView({
                     <p className="text-sm text-zinc-400">Historial de decisiones persistidas en el Grafo de Memoria Semántica.</p>
                   </div>
                   <button
-                    onClick={() => projectId && useWorkshopStore.getState().fetchAdrs(projectId)}
+                    onClick={() => projectId && fetchAdrs(projectId)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm"
                   >
                     <RefreshCw className="w-4 h-4" />
@@ -1357,7 +1388,7 @@ export default function WorkshopView({
                   </button>
                 </div>
 
-                {!useWorkshopStore.getState().adrs || useWorkshopStore.getState().adrs?.length === 0 ? (
+                {adrs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center p-12 text-center opacity-50">
                     <Brain className="w-12 h-12 mb-4 text-zinc-600" />
                     <p className="text-zinc-400">No hay decisiones guardadas aún para este proyecto.</p>
@@ -1365,7 +1396,7 @@ export default function WorkshopView({
                   </div>
                 ) : (
                   <div className="grid gap-4">
-                    {useWorkshopStore.getState().adrs?.map((adr, i) => (
+                    {adrs.map((adr, i) => (
                       <div key={i} className="p-4 rounded-lg bg-zinc-800 border border-zinc-700 hover:border-amber-500/50 transition-colors shadow-sm">
                         <div className="flex items-center justify-between mb-2">
                           <h4 className="font-bold text-zinc-100 flex items-center gap-2">

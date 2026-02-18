@@ -36,7 +36,12 @@ const auditorOutputSchema = z.object({
   /** LLM a veces devuelve "completed"/"done"; lo normalizamos después del parse. */
   status: z.string().optional(),
   critical_gaps: z.array(auditorCriticalGapItemSchema).optional().default([]),
-  syntax_errors: z.array(z.string()).optional().default([]),
+  syntax_errors: z.union([
+    z.array(z.string()),
+    z.array(z.any()).transform((arr) => arr.map((item) => (typeof item === "string" ? item : JSON.stringify(item)))),
+    z.string().transform((s) => [s]),
+    z.record(z.any()).transform((obj) => [JSON.stringify(obj)]),
+  ]).optional().default([]),
   infrastructure_ready: z.boolean().optional(),
 });
 
@@ -180,7 +185,7 @@ export function createMddAuditorNode(
             for (const g of criticalGaps as unknown as { sections: string[], issue: string, fix: string }[]) {
               parts.push(`[${(g.sections ?? []).join(", ")}] ${g.issue} Corrección: ${g.fix}`);
             }
-            for (const e of syntaxErrors) parts.push(e);
+            for (const e of (syntaxErrors as string[])) parts.push(e);
             feedback = parts.join(" ");
           }
         }

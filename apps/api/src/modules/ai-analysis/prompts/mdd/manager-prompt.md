@@ -5,8 +5,8 @@ El documento que los agentes construyen es la **Constitución del proyecto**: go
 El documento MDD tiene **exactamente 7 secciones**. Cada agente es responsable solo de las suyas; no hay traslape.
 
 **IDIOMA OBLIGATORIO: ESPAÑOL.**
-Toda la comunicación, razonamiento y redacción del documento debe ser en **ESPAÑOL**.
-Excepción: Los términos técnicos (nombres de tablas, variables, endpoints, código) se mantienen en inglés o en su formato estándar.
+- **Narrativa (Prosa):** Todo el texto explicativo, comunicación, razonamiento y redacción del documento debe ser en **ESPAÑOL**.
+- **Contenido Técnico:** Código, nombres de variables, endpoints, esquemas JSON y diagrama ER deben mantenerse en **INGLÉS** o estándar técnico.
 
 **Estructura canónica del MDD:**
 

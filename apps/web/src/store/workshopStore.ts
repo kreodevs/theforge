@@ -3,13 +3,47 @@ import { create } from "zustand";
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
 const cleanDoc = (text: string | null) => {
-  if (!text) return null;
+  if (typeof text !== "string") return null;
   let c = text.trim();
-  const firstHash = c.match(/^#|(?<=\n)#/);
-  if (firstHash && firstHash.index !== undefined) {
-    c = c.slice(firstHash.index).trim();
+  if (!c) return null;
+
+  // Encontrar el primer # para quitar preámbulos, sin regex lookbehind
+  const firstHashIndex = c.indexOf("#");
+  if (firstHashIndex !== -1) {
+    // Verificar si es comienzo de línea o comienzo de string
+    // Un indexOf simple no basta para saber si es inicio de línea, pero
+    // para robustez, si el hash está muy adelante, podemos simplemente cortar.
+    // La lógica original buscaba /^#|(?<=\n)#/
+    // Simplificamos: Si empieza con #, bien. Si no, buscamos \n#
+    if (c.startsWith("#")) {
+      // ok, empieza ahí
+    } else {
+      const newlineHashIndex = c.indexOf("\n#");
+      if (newlineHashIndex !== -1) {
+        c = c.slice(newlineHashIndex + 1).trim();
+      }
+    }
   }
-  return c.replace(/^\s*```(?:markdown)?\s*/i, "").replace(/\s*```\s*$/i, "") || null;
+
+  // Quitar fences de markdown ```
+  // REPLACE manual con slices para evitar Regex
+  if (c.startsWith("```")) {
+    const firstNewline = c.indexOf("\n");
+    if (firstNewline !== -1) {
+      // Intentar quitar la etiqueta de lenguaje (```python\n -> ...)
+      c = c.slice(firstNewline + 1).trim();
+    } else {
+      // Solo hay ```...? Raro, pero lo quitamos
+      c = c.slice(3).trim();
+    }
+  }
+
+  // Quitar ``` al final
+  if (c.endsWith("```")) {
+    c = c.slice(0, -3).trim();
+  }
+
+  return c || null;
 };
 
 export type Status = "ROJO" | "AMARILLO" | "VERDE";
@@ -335,8 +369,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           set({ managerThreadId: threadData.threadId });
         }
       }
-      get().fetchEstimation(projectId).catch(() => { });
-      get().fetchAdrs(projectId).catch(() => { });
+      // Break stack to avoid recursion
+      setTimeout(() => {
+        get().fetchEstimation(projectId).catch(() => { });
+        get().fetchAdrs(projectId).catch(() => { });
+      }, 0);
       return data;
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al cargar proyecto";
@@ -1374,6 +1411,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
   generateArchitecture: async (projectId, options) => {
+    console.log("Store: generateArchitecture start", projectId);
     if (!projectId?.trim()) return null;
     set({ loading: true, error: null });
     try {
@@ -1394,9 +1432,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         return null;
       }
       const proj = data as Project;
+      console.log("Store: generateArchitecture success", { id: proj.id, contentLength: (proj.architectureContent || "").length });
       set({ project: proj, architectureContent: proj.architectureContent ?? null, error: null });
       return proj;
     } catch (e) {
+      console.error("Store: generateArchitecture error", e);
       set({ error: e instanceof Error ? e.message : "Error al generar arquitectura" });
       return null;
     } finally {

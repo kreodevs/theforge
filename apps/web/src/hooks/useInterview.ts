@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import {
   useWorkshopStore,
   type ChatMessage,
@@ -24,15 +24,8 @@ export function useInterview(
   const session = useWorkshopStore((s) => s.session);
   const loading = useWorkshopStore((s) => s.loading);
   const error = useWorkshopStore((s) => s.error);
-  const fetchProject = useWorkshopStore((s) => s.fetchProject);
   const sendMessageStore = useWorkshopStore((s) => s.sendMessage);
-  const setProjectId = useWorkshopStore((s) => s.setProjectId);
 
-  useEffect(() => {
-    if (!projectId) return;
-    setProjectId(projectId);
-    fetchProject(projectId);
-  }, [projectId, setProjectId, fetchProject]);
 
   const activeTabNorm = activeTab ?? "mdd";
   const streamingUserMessage = useWorkshopStore((s) => s.streamingUserMessage);

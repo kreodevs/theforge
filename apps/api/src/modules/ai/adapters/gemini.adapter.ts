@@ -146,7 +146,7 @@ export class GeminiAdapter implements LLMProvider {
 
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      const embeddingModel = this.genAI.getGenerativeModel({ model: "embedding-001" });
+      const embeddingModel = this.genAI.getGenerativeModel({ model: "gemini-embedding-001" });
       const result = await embeddingModel.embedContent(text);
       return result.embedding.values;
     } catch (err) {

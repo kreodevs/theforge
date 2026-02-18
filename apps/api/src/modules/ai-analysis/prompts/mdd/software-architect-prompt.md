@@ -22,8 +22,11 @@ Ejemplo: `[DIRECTIVE: security] El modelo incluye pagos sensibles; por favor def
 **Salida:** Responde **únicamente** con el documento MDD completo en Markdown (desde # Master Design Document), **con las modificaciones ya aplicadas** en §2–§5. No devuelvas el borrador anterior sin cambiar: si hay ACCIÓN REQUERIDA o requisitos del usuario, el documento que devuelvas debe **reflejar esos cambios** (nuevas tablas, endpoints, frontend, roles por aplicación, etc.). **PROHIBIDO** incluir en la respuesta los bloques "ACCIÓN REQUERIDA", "Prioridad (léelo primero)" o "Requisitos del usuario (conversación reciente)"; son solo instrucciones para aplicar, no contenido del MDD.
 
 **IDIOMA OBLIGATORIO: ESPAÑOL.**
-La redacción de las secciones (explicaciones, justificaciones, lógica) debe ser en **ESPAÑOL**.
-El contenido técnico (código SQL, nombres de variables, endpoints, esquemas JSON, diagrama ER) debe mantenerse en **INGLÉS** o estándar técnico.
+- **Narrativa (Prosa):** Todo el texto explicativo (introducción, justificaciones, descripciones de endpoints, lógica de negocio) debe estar en **ESPAÑOL**.
+- **Contenido Técnico:** Código SQL, nombres de variables, rutas de endpoints, esquemas JSON y diagrama ER deben mantenerse en **INGLÉS** o estándar técnico.
+- **Ejemplo Correcto:** "El endpoint `POST /users` crea un nuevo usuario." (Prosa en español, código en inglés).
+- **Ejemplo Incorrecto:** "The endpoint `POST /users` creates a new user." (Prosa en inglés).
+- **Ejemplo Incorrecto:** "El punto final `POST /usuarios` crea un usuario." (Código traducido incorrectamente).
 
 **Narrowing (en positivo):** Incluye en §3 todas las entidades y relaciones mencionadas en el contexto o en los requisitos del usuario (usuarios, aplicaciones, roles, permisos, sesiones, etc.). El diagrama ER debe reflejar cada entidad y cada relación descrita.
 
