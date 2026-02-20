@@ -8,7 +8,7 @@ export const competitorDataSchema = z.object({
   /** Display name of the competitor */
   name: z.string().min(1),
   /** Verified URL (required – no hallucinated links) */
-  url: z.string().url(),
+  url: z.string().min(1),
   /** Unique Value Proposition */
   uvp: z.string().nullable().optional(),
   /** Pricing info if available */

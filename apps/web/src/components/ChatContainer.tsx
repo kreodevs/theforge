@@ -192,6 +192,7 @@ export default function ChatContainer({
   /** En Paso 0: "sin contenido" = sin mensajes del usuario; si solo hay burbujas del asistente, mostramos el texto instructivo. */
   const benchmarkEmpty =
     activeTab === "benchmark" &&
+    !benchmarkMode?.hasBenchmark &&
     (messages.length === 0 || messages.every((m) => m.role === "assistant"));
   const messagesToShow =
     benchmarkEmpty && messages.length > 0 ? [] : messages;
@@ -238,6 +239,9 @@ export default function ChatContainer({
   const handleClearChat = async () => {
     if (!projectId) return;
     setShowClearConfirm(false);
+    if (activeTab === "benchmark" && benchmarkMode) {
+      useWorkshopStore.getState().clearDbgaContent(projectId);
+    }
     await clearChat(projectId, activeTab);
   };
 
