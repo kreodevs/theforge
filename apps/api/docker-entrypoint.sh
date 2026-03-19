@@ -6,9 +6,14 @@ node /app/apps/api/scripts/wait-for-postgres.cjs
 
 cd /app/packages/database
 
-# Recuperar migración que pudo fallar por "ProjectType already exists" (db push previo)
-if ! npx prisma migrate resolve --applied 20250311000000_add_project_type_relic 2>/dev/null; then
-  :
+# NOTA: No marcar migraciones como applied en cada arranque. Eso provocaba que en BD vacías
+# se saltara 20250311000000 y fallara 20250311100000 (Project no existe).
+# Si db push creó el schema y "ProjectType already exists", ejecutar manualmente una vez:
+#   prisma migrate resolve --applied 20250311000000_add_project_type_relic
+
+# P3018: 20250311100000 falló por "Project does not exist" (20250309000000 crea el schema). Desbloquear.
+if npx prisma migrate resolve --rolled-back 20250311100000_add_legacy_flow_state 2>/dev/null; then
+  echo "migrate resolve: cleared failed record for 20250311100000_add_legacy_flow_state"
 fi
 
 # P3009: migración stage_sdd fallida en deploys viejos (enum Status). Idempotente: solo actúa si sigue en estado fallido.

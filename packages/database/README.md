@@ -9,14 +9,25 @@ Prisma schema y client compartido.
 
 **Imagen Docker (API):** el `ENTRYPOINT` del contenedor ejecuta `prisma migrate deploy` en cada arranque antes de levantar Nest; el CLI `prisma` va en `dependencies` de este package para que el deploy no dependa de devDependencies.
 
-**Memoria agéntica:** `Stage.shortTermContext` (JSON, STM); `EpisodicMemory` con `kind` (`REASONING_TRACE`, `ARCHITECTURE_DECISION`, `REFLEXION_FEEDBACK`, `EVALUATOR_REJECTION`, `TOOL_OUTPUT`). `Stage.isLegacy` y `Stage.relicProjectId` enrutan el flujo legacy; si `relicProjectId` es null en stage, aplica el del `Project`.
+**Memoria agéntica:** `Stage.shortTermContext` (JSON, STM); `EpisodicMemory` con `kind` (`REASONING_TRACE`, `ARCHITECTURE_DECISION`, `REFLEXION_FEEDBACK`, `EVALUATOR_REJECTION`, `TOOL_OUTPUT`). `Stage.isLegacy` y `Stage.theforgeProjectId` enrutan el flujo legacy; si `theforgeProjectId` es null en stage, aplica el del `Project`.
 
-**Si en producción la migración `20250311000000_add_project_type_relic` falla por "ProjectType already exists"** (p. ej. tras un `db push` previo), marcar como aplicada y volver a desplegar:
+**Si la BD fue creada con `db push`** y ya tiene las tablas, marcar la migración inicial como aplicada (solo una vez):
+
+```bash
+cd packages/database
+DATABASE_URL="postgresql://..." pnpm exec prisma migrate resolve --applied 20250309000000_initial_schema
+```
+
+**Si `20250311000000_add_project_type_relic` falla por "ProjectType already exists"** (p. ej. tras un `db push` previo), marcar como aplicada y volver a desplegar:
 
 ```bash
 cd packages/database
 DATABASE_URL="postgresql://user:pass@host:5432/maxprime" pnpm exec prisma migrate resolve --applied 20250311000000_add_project_type_relic
 ```
+
+### P3018 — `relation "Project" does not exist` (20250311100000_add_legacy_flow_state)
+
+Ocurre cuando la BD está vacía pero `20250311000000_add_project_type_relic` fue marcada como aplicada (p. ej. por un entrypoint que ejecutaba `resolve --applied` en cada arranque). **Solución:** la migración `20250309000000_initial_schema` crea Project, Session, Estimation y ArchitecturalPreference. Redespliega con la imagen que incluye esta migración; el entrypoint ya no marca migraciones como aplicadas en cada arranque.
 
 ### P3009 — `20250319140000_stage_sdd_deliverables` failed (migrate deploy bloqueado)
 
