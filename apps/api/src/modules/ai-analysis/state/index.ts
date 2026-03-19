@@ -29,7 +29,9 @@ export {
 } from "./mdd-state.schema.js";
 
 export {
+  getMddTemplatePlaceholder,
   mddStructuredSchema,
+  MDD_SECTION_ORDER,
   type MddStructured,
 } from "./mdd-structured.schema.js";
 

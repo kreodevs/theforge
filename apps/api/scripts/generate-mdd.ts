@@ -31,7 +31,7 @@ async function bootstrap() {
     const projectId = "interactive-cli-" + Date.now();
 
     console.clear();
-    intro(chalk.inverse(" 🔨 The Forge: Spec-Driven Generator (Interactive CLI) "));
+    intro(chalk.inverse(" 🔨 MaxPrime: Spec-Driven Generator (Interactive CLI) "));
 
     // 4. Pedir input inicial al usuario (Idea del proyecto)
     const initialIdea = await text({

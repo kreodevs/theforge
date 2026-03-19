@@ -38,6 +38,12 @@ importers:
       '@langchain/tavily':
         specifier: ^0.1.0
         version: 0.1.5(@langchain/core@0.3.80(openai@4.104.0(zod@3.25.76)))
+      '@maxprime/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@maxprime/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
       '@nestjs/common':
         specifier: ^10.4.9
         version: 10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -50,12 +56,6 @@ importers:
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
-      '@the-forge/database':
-        specifier: workspace:*
-        version: link:../../packages/database
-      '@the-forge/shared-types':
-        specifier: workspace:*
-        version: link:../../packages/shared-types
       cheerio:
         specifier: ^1.0.0
         version: 1.2.0
@@ -199,16 +199,16 @@ importers:
 
   packages/database:
     dependencies:
+      '@maxprime/config':
+        specifier: workspace:*
+        version: link:../config
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
-      '@the-forge/config':
-        specifier: workspace:*
-        version: link:../config
-    devDependencies:
       prisma:
         specifier: ^5.22.0
         version: 5.22.0
+    devDependencies:
       typescript:
         specifier: ^5.6.3
         version: 5.6.3
@@ -219,7 +219,7 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
-      '@the-forge/config':
+      '@maxprime/config':
         specifier: workspace:*
         version: link:../config
       typescript:

@@ -20,6 +20,29 @@ import { CONFORMANCE_CHECK_PROMPT } from "./prompts/conformance-check-prompt.js"
 const NO_MILITAR_INSTRUCTION =
   "\n\n**Regla obligatoria:** En toda tu respuesta no uses nunca las palabras \"militar\", \"grado militar\" ni variantes; usa \"alta criticidad\", \"misión crítica\" o \"robustez industrial\" en su lugar.";
 
+/** Opciones para generación legacy: contexto TheForge para priorizar conocimiento del codebase. */
+export interface LegacyGenerateOptions {
+  /** Contexto del codebase (TheForge). Cuando está presente, se inyecta al inicio del prompt y se instruye a priorizarlo. */
+  theforgeContext?: string;
+}
+
+/** Instrucción fija para toda documentación legacy: no inventar; solo MDD + conocimiento TheForge. */
+const LEGACY_NO_INVENTAR =
+  "**Regla obligatoria (legacy):** No inventes nada. Apégate al MDD y únicamente al conocimiento del codebase (TheForge) proporcionado arriba. Todo lo que escribas debe estar respaldado por el MDD o por ese contexto; si algo no aparece en ninguno de los dos, no lo incluyas.";
+
+function prependTheForgePrompt(prompt: string, theforgeContext: string): string {
+  const block = (theforgeContext ?? "").trim().slice(0, 12000);
+  if (!block) return prompt;
+  return (
+    "**Contexto del codebase (TheForge) — priorizar y usar en su totalidad antes de elaborar el documento:**\n---\n" +
+    block +
+    "\n---\n\n" +
+    LEGACY_NO_INVENTAR +
+    "\n\n**Instrucción:** Usa TODO el conocimiento anterior para alinear el documento con lo que ya existe en el proyecto. A continuación, el MDD u otros insumos.\n\n" +
+    prompt
+  );
+}
+
 @Injectable()
 export class AiService {
   constructor(
@@ -58,8 +81,9 @@ export class AiService {
         const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
         systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).`;
 
-        // Instrucción para delimitadores universales en el chat
+        // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
         const tagMap: Record<string, string> = {
+          mdd: "MDD",
           spec: "SPEC",
           architecture: "ARCH",
           "use-cases": "USECASES",
@@ -72,7 +96,15 @@ export class AiService {
         };
         const tag = tagMap[at];
         if (tag) {
-          systemPrompt += `\n\nSi decides generar o actualizar el documento completo de ${label}, TERMINA el documento con la línea exacta \`---FIN_${tag}---\` y luego escribe tu mensaje para el chat.`;
+          systemPrompt += `\n\nSi decides generar o actualizar el documento de ${label} (completo o solo una sección), escribe el contenido y TERMINA con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Así el sistema aplicará los cambios al documento del proyecto.`;
+          if (at === "mdd") {
+            systemPrompt +=
+              "\n\n**Cuando el usuario indique que falta algo en el documento** (ej. \"X no está mencionado\", \"el cotizador también se involucra\", \"falta Y\"), **debes** devolver el MDD o la sección correspondiente actualizada con ese contenido incorporado, terminando con \`---FIN_MDD---\`. No respondas solo con texto en el chat: aplica el cambio al documento para que se persista.";
+          }
+          if (at === "spec") {
+            systemPrompt +=
+              "\n\n**Cuando el usuario confirme que integre o aplique cambios al Spec** (ej. \"sí ingrésalo\", \"integralo\", \"aplica\", \"confirma\", \"actualiza el spec\"), **debes** devolver el **documento Spec completo** actualizado (incluyendo lo que ya existía más la nueva sección o cambios), terminando con \`---FIN_SPEC---\`. Nunca respondas solo con un mensaje tipo \"El documento Spec ha sido actualizado con éxito\": el sistema solo persiste cuando encuentra el contenido del documento seguido de ---FIN_SPEC---.";
+          }
         }
       }
       if (options?.currentDbgaContent?.trim()) {
@@ -106,11 +138,22 @@ export class AiService {
           options.currentUxUiGuideContent.trim().slice(0, 6000) +
           "\n---";
       }
+      if (options?.activeTab?.trim() === "spec" && options?.currentSpecContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual del Spec del proyecto. Al integrar o actualizar, incluye todo esto más la nueva sección o cambios, y termina con ---FIN_SPEC---.]\n---\n" +
+          options.currentSpecContent.trim().slice(0, 12000) +
+          "\n---";
+      }
       if (options?.learningHistory?.trim()) {
         systemPrompt +=
           "\n\n**HISTORIAL_DE_APRENDIZAJE (proyectos previos del usuario):**\n---\n" +
           options.learningHistory.trim().slice(0, 6000) +
           "\n---";
+      }
+      if (options?.complexityInterviewContext?.trim()) {
+        systemPrompt +=
+          "\n\n**[Política de complejidad / entrevista Fase 0 — aplicar en esta conversación]**\n" +
+          options.complexityInterviewContext.trim().slice(0, 8000);
       }
       const ts = () => new Date().toISOString();
       console.log(`[AiService] ${ts()} → Enviando al LLM:`, {
@@ -153,8 +196,9 @@ export class AiService {
       const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
       systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).`;
 
-      // Instrucción para delimitadores universales en el chat
+      // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
       const tagMap: Record<string, string> = {
+        mdd: "MDD",
         spec: "SPEC",
         architecture: "ARCH",
         "use-cases": "USECASES",
@@ -167,11 +211,19 @@ export class AiService {
       };
       const tag = tagMap[at];
       if (tag) {
-        systemPrompt += `\n\nSi decides generar o actualizar el documento completo de ${label}, TERMINA el documento con la línea exacta \`---FIN_${tag}---\` y luego escribe tu mensaje para el chat.`;
+          systemPrompt += `\n\nSi decides generar o actualizar el documento de ${label} (completo o solo una sección), escribe el contenido y TERMINA con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Así el sistema aplicará los cambios al documento del proyecto.`;
+          if (at === "mdd") {
+            systemPrompt +=
+              "\n\n**Cuando el usuario indique que falta algo en el documento** (ej. \"X no está mencionado\", \"el cotizador también se involucra\", \"falta Y\"), **debes** devolver el MDD o la sección correspondiente actualizada con ese contenido incorporado, terminando con \`---FIN_MDD---\`. No respondas solo con texto en el chat: aplica el cambio al documento para que se persista.";
+          }
+          if (at === "spec") {
+            systemPrompt +=
+              "\n\n**Cuando el usuario confirme que integre o aplique cambios al Spec** (ej. \"sí ingrésalo\", \"integralo\", \"aplica\", \"confirma\", \"actualiza el spec\"), **debes** devolver el **documento Spec completo** actualizado (incluyendo lo que ya existía más la nueva sección o cambios), terminando con \`---FIN_SPEC---\`. Nunca respondas solo con un mensaje tipo \"El documento Spec ha sido actualizado con éxito\": el sistema solo persiste cuando encuentra el contenido del documento seguido de ---FIN_SPEC---.";
+          }
+        }
       }
-    }
-    if (options?.currentDbgaContent?.trim()) {
-      if (isBenchmarkRefine) {
+      if (options?.currentDbgaContent?.trim()) {
+        if (isBenchmarkRefine) {
         systemPrompt +=
           "\n\n[Contenido actual del Benchmark & Gap Analysis del proyecto (a refinar según la petición del usuario)]\n---\n" +
           options.currentDbgaContent.trim() +
@@ -201,11 +253,22 @@ export class AiService {
         options.currentUxUiGuideContent.trim().slice(0, 6000) +
         "\n---";
     }
+    if (options?.activeTab?.trim() === "spec" && options?.currentSpecContent?.trim()) {
+      systemPrompt +=
+        "\n\n[Contenido actual del Spec del proyecto. Al integrar o actualizar, incluye todo esto más la nueva sección o cambios, y termina con ---FIN_SPEC---.]\n---\n" +
+        options.currentSpecContent.trim().slice(0, 12000) +
+        "\n---";
+    }
     if (options?.learningHistory?.trim()) {
       systemPrompt +=
         "\n\n**HISTORIAL_DE_APRENDIZAJE (proyectos previos del usuario):**\n---\n" +
         options.learningHistory.trim().slice(0, 6000) +
         "\n---";
+    }
+    if (options?.complexityInterviewContext?.trim()) {
+      systemPrompt +=
+        "\n\n**[Política de complejidad / entrevista Fase 0 — aplicar en esta conversación]**\n" +
+        options.complexityInterviewContext.trim().slice(0, 8000);
     }
     return this.provider.generateResponseStream(prompt, history, { ...options, systemPrompt });
   }
@@ -226,77 +289,95 @@ export class AiService {
   /**
    * Genera el documento Spec (SDD: what/why) desde Benchmark + opcional phase0/clarifiedScope.
    */
-  async generateSpec(dbgaContent: string, phase0Summary?: string | null): Promise<string> {
-    const dbga = (dbgaContent?.trim() ?? "").slice(0, 12000);
+  async generateSpec(
+    inputContent: string,
+    phase0Summary?: string | null,
+    source: "dbga" | "mdd" = "dbga",
+    options?: LegacyGenerateOptions,
+  ): Promise<string> {
+    const content = (inputContent?.trim() ?? "").slice(0, 12000);
     const phase0 = (phase0Summary?.trim() ?? "").slice(0, 4000);
-    const prompt =
-      dbga.length > 0
-        ? "Genera el documento Spec según las instrucciones del system prompt.\n\nBenchmark (DBGA):\n---\n" +
-        dbga +
-        "\n---" +
-        (phase0 ? "\n\nResumen fase 0 / alcance:\n---\n" + phase0 + "\n---" : "")
-        : "No hay Benchmark. Genera un Spec genérico (objetivos, alcance, criterios de éxito, user journeys) en markdown.";
+    const label = source === "mdd" ? "MDD" : "Benchmark (DBGA)";
+    let prompt =
+      content.length > 0
+        ? `Genera el documento Spec según las instrucciones del system prompt.\n\n${label}:\n---\n${content}\n---` +
+          (phase0 ? `\n\nResumen fase 0 / alcance:\n---\n${phase0}\n---` : "")
+        : "No hay Benchmark ni MDD. Genera un Spec genérico (objetivos, alcance, criterios de éxito, user journeys) en markdown.";
+    if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     return this.generateResponse(prompt, [], { systemPrompt: SPEC_PROMPT });
   }
 
   /**
    * Genera el documento Tasks (breakdown) desde MDD + Blueprint.
    */
-  async generateTasks(mddContent: string, blueprintContent?: string | null): Promise<string> {
+  async generateTasks(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 8000);
-    const prompt =
+    let prompt =
       mdd.length > 0
         ? "Genera el documento Tasks según las instrucciones del system prompt.\n\nMDD:\n---\n" +
         mdd +
         "\n---\n\n" +
         (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
         : "No hay MDD. Genera un documento Tasks genérico (Backend, Frontend, Infra) con ítems comprobables.";
+    if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     return this.generateResponse(prompt, [], { systemPrompt: TASKS_PROMPT + NO_MILITAR_INSTRUCTION });
   }
 
-  async generateArchitecture(mddContent: string, blueprintContent?: string | null): Promise<string> {
+  async generateArchitecture(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 8000);
-    const prompt =
+    let prompt =
       mdd.length > 0
         ? "Genera el documento de Arquitectura Agentica según las instrucciones del system prompt.\n\nMDD:\n---\n" +
         mdd +
         "\n---\n\n" +
         (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
         : "No hay MDD. Genera un documento de arquitectura genérico enfocado en agentes y orquestación.";
+    if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     return this.generateResponse(prompt, [], { systemPrompt: ARCHITECTURE_PROMPT + NO_MILITAR_INSTRUCTION });
   }
 
-  async generateUseCases(mddContent: string, specContent?: string | null): Promise<string> {
+  async generateUseCases(mddContent: string, specContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
     const spec = (specContent?.trim() ?? "").slice(0, 8000);
-    const prompt =
+    let prompt =
       mdd.length > 0
         ? "Genera el documento de Casos de Uso según las instrucciones del system prompt.\n\nMDD:\n---\n" +
         mdd +
         "\n---\n\n" +
         (spec ? "Spec (what/why):\n---\n" + spec + "\n---" : "")
         : "No hay MDD. Genera un documento de casos de uso genérico con flujos principales y alternativos.";
+    if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     return this.generateResponse(prompt, [], { systemPrompt: USE_CASES_PROMPT });
   }
 
-  async generateUserStories(mddContent: string, specContent?: string | null, useCasesContent?: string | null): Promise<string> {
+  async generateUserStories(mddContent: string, specContent?: string | null, useCasesContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
     const spec = (specContent?.trim() ?? "").slice(0, 6000);
     const useCases = (useCasesContent?.trim() ?? "").slice(0, 6000);
-    const prompt =
-      mdd.length > 0
-        ? "Genera el documento de Historias de Usuario (Agile) según las instrucciones del system prompt.\n\nMDD:\n---\n" +
+    const constitutionNote =
+      "El **MDD es la Constitución del proyecto**. Las historias de usuario deben derivarse **únicamente** del MDD, Spec y Casos de Uso. No inventes funcionalidades no descritas en estos documentos.\n\n";
+    let prompt: string;
+    if (mdd.length > 0) {
+      prompt =
+        "Genera el documento de Historias de Usuario según las instrucciones del system prompt. " +
+        constitutionNote +
+        "MDD:\n---\n" +
         mdd +
         "\n---\n\n" +
-        (spec ? "Spec:\n---\n" + spec + "\n---" : "") +
-        (useCases ? "\n\nCasos de Uso:\n---\n" + useCases + "\n---" : "")
-        : "No hay MDD. Genera historias de usuario genéricas (Como X, quiero Y, para Z) con criterios de aceptación.";
+        (spec ? "Spec:\n---\n" + spec + "\n---\n\n" : "") +
+        (useCases ? "Casos de Uso:\n---\n" + useCases + "\n---" : "");
+    } else {
+      prompt =
+        "No hay MDD disponible. No generes historias inventadas. Responde con un documento markdown que contenga solo un título " +
+        "# Historias de Usuario y un párrafo indicando que se requiere el MDD (y opcionalmente Spec y Casos de Uso) para derivar historias de usuario alineadas al alcance del proyecto.";
+    }
+    if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     return this.generateResponse(prompt, [], { systemPrompt: USER_STORIES_PROMPT });
   }
 
-  async generateBlueprint(mddContent: string, gapsFeedback?: string | null): Promise<string> {
+  async generateBlueprint(mddContent: string, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD). Tu salida debe adherirse a él en todo momento.\n\n";
     let prompt =
@@ -311,12 +392,20 @@ export class AiService {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
+    if (options?.theforgeContext?.trim()) {
+      prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+      const legacyBlueprintInstruction =
+        "\n\n**CRÍTICO — Proyecto existente (contexto Relic):** El bloque anterior describe el codebase REAL indexado por el MCP. El Blueprint DEBE describir ÚNICAMENTE esta estructura y stack. **PROHIBIDO inventar:** no Turborepo, Nx, NestJS, ni nuevos repos ni directorios que no aparezcan en ese contexto. El sistema puede tener uno o varios repositorios; indica los repos y carpetas reales. Solo añade o modifica lo que el MDD exija para el cambio. Si el contexto no menciona un framework concreto, no lo inventes.";
+      return this.generateResponse(prompt, [], {
+        systemPrompt: BLUEPRINT_PROMPT + NO_MILITAR_INSTRUCTION + legacyBlueprintInstruction,
+      });
+    }
     return this.generateResponse(prompt, [], {
       systemPrompt: BLUEPRINT_PROMPT + NO_MILITAR_INSTRUCTION,
     });
   }
 
-  async generateApiContracts(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null): Promise<string> {
+  async generateApiContracts(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mdd = mddContent?.trim() ?? "";
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 8000);
     const constitutionNote =
@@ -334,12 +423,13 @@ export class AiService {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
+    if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     return this.generateResponse(prompt, [], {
       systemPrompt: API_CONTRACTS_PROMPT + NO_MILITAR_INSTRUCTION,
     });
   }
 
-  async generateLogicFlows(mddContent: string, gapsFeedback?: string | null): Promise<string> {
+  async generateLogicFlows(mddContent: string, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mdd = mddContent?.trim() ?? "";
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD). Tu salida debe adherirse a él en todo momento.\n\n";
@@ -355,12 +445,13 @@ export class AiService {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
+    if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     return this.generateResponse(prompt, [], {
       systemPrompt: LOGIC_FLOWS_PROMPT + NO_MILITAR_INSTRUCTION,
     });
   }
 
-  async generateInfra(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null): Promise<string> {
+  async generateInfra(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mdd = mddContent?.trim() ?? "";
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 6000);
     const constitutionNote =
@@ -378,6 +469,7 @@ export class AiService {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
+    if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     return this.generateResponse(prompt, [], {
       systemPrompt: INFRA_PROMPT + NO_MILITAR_INSTRUCTION,
     });
@@ -399,6 +491,33 @@ export class AiService {
   /**
    * Conformance por LLM: devuelve { ok, gaps } para complementar heurísticas y reducir falsos positivos/negativos.
    */
+  /**
+   * Enmienda constitucional (SDD): alinea §3 y/o §4 con un delta detectado en entregables (Blueprint/API).
+   */
+  async proposeMddAmendment(params: {
+    currentMdd: string;
+    targetSections: number[];
+    rationale: string;
+    artifactExcerpt: string;
+  }): Promise<string> {
+    const sec = params.targetSections.filter((n) => n === 3 || n === 4);
+    if (sec.length === 0) {
+      throw new Error("targetSections debe incluir 3 y/o 4");
+    }
+    const label = sec.join(" y ");
+    const prompt =
+      `Actualiza el Master Design Document (markdown) incorporando el impacto descrito. ` +
+      `Modifica solo las secciones ## 3. … y/o ## 4. … según corresponda; el documento completo debe seguir siendo coherente (7 secciones canónicas).\n\n` +
+      `**Razonamiento / impacto:**\n${params.rationale.slice(0, 4000)}\n\n` +
+      `**Extracto del entregable que provoca el cambio:**\n---\n${params.artifactExcerpt.slice(0, 8000)}\n---\n\n` +
+      `**MDD actual (completo):**\n---\n${params.currentMdd.slice(0, 24000)}\n---\n\n` +
+      `Devuelve el MDD completo en markdown, con las secciones §${label} alineadas al extracto.`;
+    const system =
+      "Eres el guardián de la Constitución SDD. No contradigas el stack ni el dominio ya fijados en otras secciones. " +
+      "Conserva encabezados canónicos (## 1. … … ## 7.). Salida: solo el markdown del MDD.";
+    return this.generateResponse(prompt, [], { systemPrompt: system });
+  }
+
   async conformanceCheck(
     mddContent: string,
     documentContent: string,

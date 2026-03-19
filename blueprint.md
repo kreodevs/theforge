@@ -1,4 +1,4 @@
-# Implementation Blueprint: "The Forge"
+# Implementation Blueprint: "MaxPrime"
 
 **Objetivo:** Guía de construcción técnica para Cursor AI basada en el MDD v1.0. El MDD actúa como **Constitución del proyecto** (SDD): el Blueprint se genera leyendo y cumpliendo el MDD; no debe contradecirlo.
 
@@ -8,7 +8,7 @@ Se debe inicializar el proyecto con la siguiente jerarquía de archivos para ase
 
 Plaintext
 
-`/the-forge (Root)
+`/maxprime (Root)
 ├── apps/
 │   ├── api/                # NestJS Backend
 │   └── web/                # React (Vite) Frontend
@@ -26,37 +26,46 @@ Plaintext
 
 El esquema debe soportar el trabajo "a ratos" y el motor de costos.
 
-Fragmento de código
+Fragmento de código (resumen; ver `packages/database/schema.prisma` actual)
 
 `model Project {
-id String @id @default(uuid())
-name String
-hasUxTeam Boolean @default(false)
-status Status @default(ROJO) // Semáforo
-precisionScore Int @default(0)
-sessions Session[]
-estimation Estimation?
-figmaMapping Json? // Mapeo cargado por el UX
-mddContent String? @db.Text
-createdAt DateTime @default(now())
+  id String @id @default(uuid())
+  name String
+  projectType ProjectType @default(NEW)
+  theforgeProjectId String?
+  hasUxTeam Boolean @default(false)
+  stages Stage[]
+  sessions Session[]
+  // Entregables de documentación (SPEC, Blueprint, API, Infra, …) permanecen a nivel proyecto.
+  dbgaContent String? @db.Text
+  blueprintContent String? @db.Text
+  // … otros campos de entregables
+  figmaMapping Json?
+  createdAt DateTime @default(now())
 }
 
-model Session {
-id String @id @default(uuid())
-projectId String
-project Project @relation(fields: [projectId], references: [id])
-chatLog Json // Array de {role: 'user'|'assistant', content: string}
-contextStep String // 'CONTEXT', 'DATA', 'LOGIC', 'SECURITY'
-updatedAt DateTime @updatedAt
+// Ciclo SDD por etapa: MDD, semáforo, precisión y estimación viven aquí (1:N con Project).
+model Stage {
+  id String @id @default(uuid())
+  projectId String
+  ordinal Int @default(1)
+  workflowStatus StageStatus @default(DRAFT) // DRAFT | ACTIVE | …
+  mddContent String? @db.Text
+  status Status @default(ROJO) // Semáforo SDD ROJO | AMARILLO | VERDE
+  precisionScore Int @default(0)
+  estimation Estimation?
+  isLegacy Boolean @default(false)
+  theforgeProjectId String?
+  // … memoria episódica, etc.
 }
 
 model Estimation {
-id String @id @default(uuid())
-projectId String @unique
-project Project @relation(fields: [projectId], references: [id])
-totalHours Float
-totalMxn Float
-teamStructure Json // {architect: 1, back: 2, ...}
+  id String @id @default(uuid())
+  stageId String @unique
+  stage Stage @relation(fields: [stageId], references: [id])
+  totalHours Float
+  totalMxn Float
+  teamStructure Json
 }
 
 enum Status { ROJO, AMARILLO, VERDE }`

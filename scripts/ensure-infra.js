@@ -6,16 +6,16 @@
 
 const { spawnSync } = require('child_process');
 
-const POSTGRES_NAME = 'theforge-db';
-const FALKOR_NAME = 'theforge-falkor';
+const POSTGRES_NAME = 'maxprime-db';
+const FALKOR_NAME = 'maxprime-falkor-sdd';
 const COLIMA_START_ARGS = '--cpu 2 --memory 4';
 
 const POSTGRES_RUN_ARGS = [
   '-d',
   '--name', POSTGRES_NAME,
-  '-e', 'POSTGRES_USER=theforge',
-  '-e', 'POSTGRES_PASSWORD=theforge',
-  '-e', 'POSTGRES_DB=theforge',
+  '-e', 'POSTGRES_USER=maxprime',
+  '-e', 'POSTGRES_PASSWORD=maxprime',
+  '-e', 'POSTGRES_DB=maxprime',
   '-p', '5432:5432',
   'postgres:15-alpine',
 ];

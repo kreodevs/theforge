@@ -1,6 +1,7 @@
 generator client {
-  provider = "prisma-client-js"
-  output   = "./src/generated"
+  provider      = "prisma-client-js"
+  output        = "./src/generated"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
 }
 
 datasource db {
@@ -8,21 +9,99 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ProjectType {
+  NEW
+  LEGACY
+}
+
+/// Política de adopción SDD: define qué entregables y qué reglas de semáforo aplican al proyecto.
+enum ComplexityLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+/// Ciclo de vida agéntico: cada proyecto avanza por etapas (MDD, cambios legacy, auditoría, etc.).
+/// Entregables SDD “constitucionales” (MDD, semáforo, estimación) viven por etapa, no en Project.
+/// `isLegacy` + `theforgeProjectId` en Stage permiten enrutar sin releer Project en cada iteración.
+model Stage {
+  id               String       @id @default(uuid())
+  projectId        String
+  project          Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Orden dentro del proyecto (1 = primera etapa activa).
+  ordinal          Int          @default(1)
+  /// Clave estable p. ej. MDD_DRAFT, LEGACY_IMPACT, EVALUATOR.
+  key              String?
+  name             String?
+  /// Estado del workflow de la etapa (borrador, activa, cerrada).
+  workflowStatus   StageStatus  @default(DRAFT)
+  /// Constitución SDD (markdown): Master Design Document de 7 secciones para esta etapa.
+  mddContent       String?      @db.Text
+  /// Semáforo SDD (ROJO / AMARILLO / VERDE) derivado del MDD.
+  status           Status       @default(ROJO)
+  precisionScore   Int          @default(0)
+  estimation       Estimation?
+  /// Redundancia intencional con `Project.projectType === LEGACY` para queries y checkpoints por etapa.
+  isLegacy         Boolean      @default(false)
+  /// Override opcional; si null, aplica `Project.theforgeProjectId`.
+  theforgeProjectId   String?
+  /// Memoria de trabajo (corto plazo): último contexto / scratch del agente (JSON).
+  shortTermContext Json?
+  episodicMemories EpisodicMemory[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([projectId, ordinal])
+  @@index([projectId])
+}
+
+/// Memoria episódica (largo plazo por etapa): trazas de razonamiento, ADRs, críticas del Evaluator (Reflexion).
+model EpisodicMemory {
+  id        String             @id @default(uuid())
+  stageId   String
+  stage     Stage              @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  kind      EpisodicMemoryKind
+  content   String             @db.Text
+  metadata  Json?
+  createdAt DateTime           @default(now())
+
+  @@index([stageId, createdAt])
+}
+
+enum StageStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+  SUPERSEDED
+}
+
+enum EpisodicMemoryKind {
+  REASONING_TRACE
+  ARCHITECTURE_DECISION
+  REFLEXION_FEEDBACK
+  EVALUATOR_REJECTION
+  TOOL_OUTPUT
+}
+
 model Project {
   id               String       @id @default(uuid())
   name             String
+  /// Nivel de complejidad / riesgo: gobierna semáforo y qué documentos son obligatorios (efectivo tras confirmación).
+  complexity       ComplexityLevel @default(HIGH)
+  /// Propuesta HITL pendiente: { level, planSummary, reason } hasta que el usuario confirme en el chat.
+  complexityPending Json?
+  projectType      ProjectType  @default(NEW)
+  theforgeProjectId   String?
   hasUxTeam        Boolean      @default(false)
-  status           Status       @default(ROJO)
-  precisionScore   Int          @default(0)
+  stages           Stage[]
   sessions         Session[]
-  estimation       Estimation?
   figmaMapping     Json?
   dbgaContent          String?   @db.Text
   specContent          String?   @db.Text
   architectureContent  String?   @db.Text
   useCasesContent      String?   @db.Text
   userStoriesContent   String?   @db.Text
-  mddContent           String?   @db.Text
   blueprintContent     String?   @db.Text
   tasksContent         String?   @db.Text
   apiContractsContent  String?   @db.Text
@@ -30,18 +109,25 @@ model Project {
   infraContent         String?   @db.Text
   uxUiGuideContent     String?   @db.Text
   phase0SummaryContent String?   @db.Text
-  agentCheckpoint      AgentStateCheckpoint?
+  /// Estado del flujo legacy: { description?, filesToModify?, questions?, answers? }
+  legacyFlowState      Json?
+  agentCheckpoints     AgentStateCheckpoint[]
   createdAt            DateTime  @default(now())
 }
 
-/// Hilo de conversación LangGraph por proyecto. Permite retomar Fase 0 / DBGA.
+/// Hilo LangGraph: Fase 0 / DBGA usa `mddStageId` vacío; flujo MDD Manager por etapa usa el id de `Stage`.
 model AgentStateCheckpoint {
   id        String   @id @default(uuid())
   threadId  String   @unique
-  projectId String   @unique
+  projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// "" = DBGA/Benchmark compartido; UUID de Stage = Manager MDD de esa etapa.
+  mddStageId String  @default("")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([projectId, mddStageId])
+  @@index([projectId])
 }
 
 /// Memoria semántica: preferencias arquitectónicas extraídas al aprobar un MDD.
@@ -64,8 +150,8 @@ model Session {
 
 model Estimation {
   id             String   @id @default(uuid())
-  projectId     String   @unique
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stageId        String   @unique
+  stage          Stage    @relation(fields: [stageId], references: [id], onDelete: Cascade)
   totalHours    Float
   totalMxn      Float
   teamStructure Json

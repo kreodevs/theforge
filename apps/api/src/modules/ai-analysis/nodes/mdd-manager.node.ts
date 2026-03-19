@@ -21,6 +21,18 @@ import {
 import { z } from "zod";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { generateImpactAnalysis } from "../utils/mdd-impact-analysis.js";
+import { getAgenticRagToolset } from "../tools/tool-registry.js";
+import { runAgentToolsRound } from "../utils/mdd-agent-tools-invoke.js";
+import type { ProjectsService } from "../../projects/projects.service.js";
+import type { TheForgeService } from "../../theforge/theforge.service.js";
+import type { AiService } from "../../ai/ai.service.js";
+
+/** Tools SDD + TheForge para `search_memory` (bindTools). */
+export type MddManagerToolDeps = {
+  projects: ProjectsService;
+  theforge: TheForgeService;
+  ai: AiService;
+};
 
 /** Schema para parse manual (discriminated union). */
 const managerOutputSchema = z.discriminatedUnion("action", [
@@ -54,7 +66,7 @@ const managerStructuredOutputSchema = z.object({
     .describe("Si action es search_memory: la intención a buscar en el grafo (ej: 'auth con MFA'); si no, cadena vacía"),
 });
 
-/** Orden de agentes en el pipeline (sin Clarifier). Se inserta format_after_architect tras data_model y software_architect. */
+/** Orden de agentes en el pipeline (sin Clarifier). Tras software_architect viene format_after_architect (y crítico si aplica). */
 const PIPELINE_AGENTS = ["software_architect", "security", "integration"] as const;
 const PIPELINE_TAIL = ["format_after_redactor", "diagram_injector", "auditor"] as const;
 
@@ -411,6 +423,7 @@ export function createMddManagerNode(
   llm: BaseChatModel,
   graphMemory: GraphMemoryService,
   precisionCalculator?: LivePrecisionCalculator | null,
+  toolDeps?: MddManagerToolDeps | null,
 ) {
   return async (state: MDDStateType): Promise<Partial<MDDStateType> | Command> => {
     const userMessage = (state.lastUserMessage ?? "").trim();
@@ -969,6 +982,9 @@ export function createMddManagerNode(
       state.userInputAccumulated?.trim() ? `\n**Respuestas del usuario:**\n${state.userInputAccumulated.trim()}` : "",
       state.mddDraft?.trim() ? `\n**Borrador MDD:**\n${state.mddDraft.slice(0, 3000)}${state.mddDraft.length > 3000 ? "…" : ""}` : "",
       state.auditorFeedback?.trim() ? `\n**Feedback del Auditor:**\n${state.auditorFeedback.trim()}` : "",
+      state.episodicMemoryContext?.trim()
+        ? `\n**Memoria episódica (evaluador / reflexión — no ignores si pide corregir contratos o código):**\n${state.episodicMemoryContext.trim().slice(0, 4000)}${(state.episodicMemoryContext?.length ?? 0) > 4000 ? "…" : ""}`
+        : "",
       state.lastStepFailed
         ? `\n**Falló un paso anterior:** nodo "${state.lastStepFailed.node}": ${state.lastStepFailed.error}. El usuario reanudó para re-planificar. Decide si reintentar (delegate a ese nodo o pipeline), omitir o pedir aclaración (reply).`
         : "",
@@ -1070,6 +1086,29 @@ export function createMddManagerNode(
         }
 
         if (!memoryContext) memoryContext = "No se encontraron proyectos o decisiones previas similares.";
+
+        if (toolDeps && state.projectId?.trim() && memoryQuery) {
+          try {
+            const tools = getAgenticRagToolset(
+              graphMemory,
+              toolDeps.projects,
+              toolDeps.theforge,
+              toolDeps.ai,
+              state.projectId.trim(),
+              {
+                legacy: state.isLegacyProject === true,
+                theforgeProjectId: state.theforgeProjectId?.trim() ?? null,
+                activeStageId: state.activeStageId?.trim() ?? undefined,
+              },
+            );
+            if (tools.length > 0) {
+              const toolSummary = await runAgentToolsRound(llm, tools, memoryQuery);
+              memoryContext += "\n\n### Herramientas Grafo SDD / TheForge (query_sdd_graph, patch, MCP):\n" + toolSummary;
+            }
+          } catch (err) {
+            memoryContext += `\n\n(Error ejecutando herramientas agénticas: ${err instanceof Error ? err.message : String(err)})`;
+          }
+        }
 
         messages.push(new HumanMessage(`[Resultados de búsqueda en memoria semántica para "${memoryQuery}"]:\n${memoryContext}\n\nInstrucción: Usa esta información para decidir la mejor arquitectura o delegación.`));
         continue;

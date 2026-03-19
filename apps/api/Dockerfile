@@ -1,6 +1,8 @@
 # Build stage — context = repo root
 FROM node:20-alpine AS builder
 
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9.14.2 --activate
@@ -20,11 +22,13 @@ COPY packages/shared-types packages/shared-types
 COPY packages/config packages/config
 COPY apps/api apps/api
 
-ENV DATABASE_URL="postgresql://local:local@db:5432/theforge"
-RUN pnpm run build --filter=@the-forge/database --filter=@the-forge/shared-types --filter=@the-forge/api
+ENV DATABASE_URL="postgresql://local:local@db:5432/maxprime"
+RUN pnpm run build --filter=@maxprime/database --filter=@maxprime/shared-types --filter=@maxprime/api
 
 # Production stage — preserve pnpm layout for workspace resolution
 FROM node:20-alpine AS runner
+
+RUN apk add --no-cache wget openssl
 
 WORKDIR /app
 
@@ -32,11 +36,16 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 COPY --from=builder /app .
+COPY apps/api/docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+# entrypoint: wait DB → prisma migrate deploy → node (no sobrescribir CMD en Dokploy)
+
 WORKDIR /app/apps/api
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost:3000/projects || exit 1
+# start-period: tiempo para wait-for-postgres + migrate deploy + arranque Nest en cold start
+HEALTHCHECK --interval=30s --timeout=3s --start-period=90s --retries=3 \
+  CMD wget -qO- http://localhost:3000/health || exit 1
 
-CMD ["node", "dist/main.js"]
+ENTRYPOINT ["/entrypoint.sh"]

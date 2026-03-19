@@ -42,10 +42,7 @@ const auditorOutputSchema = z.object({
     z.string().transform((s) => [s]),
     z.record(z.any()).transform((obj) => [JSON.stringify(obj)]),
   ]).optional().default([]),
-  infrastructure_ready: z.union([
-    z.boolean(),
-    z.string().transform((s) => s.toLowerCase() === "true" || s.toLowerCase() === "yes" || s.toLowerCase() === "sí" || s.toLowerCase() === "si"),
-  ]).optional(),
+  infrastructure_ready: z.boolean().optional(),
 });
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:Auditor] ${msg}`, ...args);

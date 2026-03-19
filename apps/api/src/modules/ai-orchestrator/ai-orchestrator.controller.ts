@@ -24,9 +24,11 @@ export class AiOrchestratorController {
       uxUiGuideContent?: string | null;
       dbgaContent?: string | null;
       activeTab?: string;
+      stageId?: string;
     },
   ) {
-    const { projectId, sessionId, message, mddContent, uxUiGuideContent, dbgaContent, activeTab } = body;
+    const { projectId, sessionId, message, mddContent, uxUiGuideContent, dbgaContent, activeTab, stageId } =
+      body;
     if (!projectId || !message?.trim()) {
       throw new BadRequestException("projectId and message are required");
     }
@@ -38,6 +40,7 @@ export class AiOrchestratorController {
       activeTab?.trim() || undefined,
       uxUiGuideContent?.trim() || undefined,
       dbgaContent?.trim() || undefined,
+      stageId?.trim() || undefined,
     );
   }
 
@@ -51,11 +54,23 @@ export class AiOrchestratorController {
       mddContent?: string | null;
       uxUiGuideContent?: string | null;
       dbgaContent?: string | null;
+      specContent?: string | null;
       activeTab?: string;
+      stageId?: string;
     },
     @Res({ passthrough: false }) res: SseResponse,
   ) {
-    const { projectId, sessionId, message, mddContent, uxUiGuideContent, dbgaContent, activeTab } = body;
+    const {
+      projectId,
+      sessionId,
+      message,
+      mddContent,
+      uxUiGuideContent,
+      dbgaContent,
+      specContent,
+      activeTab,
+      stageId,
+    } = body;
     if (!projectId || !message?.trim()) {
       throw new BadRequestException("projectId and message are required");
     }
@@ -75,6 +90,8 @@ export class AiOrchestratorController {
         activeTab?.trim() || undefined,
         uxUiGuideContent?.trim() || undefined,
         dbgaContent?.trim() || undefined,
+        specContent?.trim() || undefined,
+        stageId?.trim() || undefined,
       );
       for await (const msg of stream) {
         const data = JSON.stringify(msg.data);
@@ -94,12 +111,12 @@ export class AiOrchestratorController {
   }
 
   @Post("welcome")
-  welcome(@Body() body: { projectId: string; sessionId?: string; activeTab?: string }) {
-    const { projectId, sessionId, activeTab } = body ?? {};
+  welcome(@Body() body: { projectId: string; sessionId?: string; activeTab?: string; stageId?: string }) {
+    const { projectId, sessionId, activeTab, stageId } = body ?? {};
     if (!projectId?.trim()) {
       throw new BadRequestException("projectId is required");
     }
-    return this.orchestrator.welcome(projectId.trim(), sessionId?.trim(), activeTab?.trim());
+    return this.orchestrator.welcome(projectId.trim(), sessionId?.trim(), activeTab?.trim(), stageId?.trim());
   }
 
   @Post("clear-chat")

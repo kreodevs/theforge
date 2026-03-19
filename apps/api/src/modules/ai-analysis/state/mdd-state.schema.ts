@@ -18,10 +18,7 @@ export const auditorGapsSchema = z.object({
   status: z.enum(["APROBADO", "RECHAZADO"]),
   critical_gaps: z.array(auditorCriticalGapSchema),
   syntax_errors: z.array(z.string()),
-  infrastructure_ready: z.union([
-    z.boolean(),
-    z.string().transform((s) => s.toLowerCase() === "true" || s.toLowerCase() === "yes" || s.toLowerCase() === "sí" || s.toLowerCase() === "si"),
-  ]),
+  infrastructure_ready: z.boolean(),
 });
 export type AuditorGapsState = z.infer<typeof auditorGapsSchema>;
 
@@ -119,6 +116,14 @@ export const mddStateSchema = z.object({
   architectCriticAttempts: z.number().int().min(0).optional(),
   /** ID del proyecto activo (para memoria semántica). */
   projectId: z.string().optional(),
+  /** Etapa SDD activa (FalkorDB / estimación); resuelto por AgentSupervisor. */
+  activeStageId: z.string().optional(),
+  /** Proyecto legacy (TheForge): habilita tools MCP en el Manager (search_memory). */
+  isLegacyProject: z.boolean().optional(),
+  /** ID en TheForge para herramientas de código. */
+  theforgeProjectId: z.string().optional(),
+  /** Resumen de EpisodicMemory (rechazos evaluator, reflexión) inyectado al Manager. */
+  episodicMemoryContext: z.string().optional(),
   /** Lista de directivas internas enviadas entre agentes (Mesh Topology). */
   internalDirectives: z.array(
     z.object({
@@ -166,5 +171,10 @@ export const defaultMDDState: MDDState = {
   architectCriticFeedback: undefined,
   architectCriticAttempts: undefined,
   projectId: undefined,
+  activeStageId: undefined,
+  isLegacyProject: undefined,
+  theforgeProjectId: undefined,
+  episodicMemoryContext: undefined,
   internalDirectives: undefined,
+  impactSummary: undefined,
 };

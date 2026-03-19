@@ -2,6 +2,8 @@ import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { PreferencesService } from "../ai/preferences.service.js";
+import { AiService } from "../ai/ai.service.js";
+import { DiscoveryService } from "../ai/discovery.service.js";
 import { Command, isGraphInterrupt } from "@langchain/langgraph";
 import { createDbgaGraph } from "./graph/dbga-graph.js";
 import { createMddGraph, createMddGraphWithManager } from "./graph/mdd-graph.js";
@@ -25,6 +27,11 @@ import {
   sanitizeContextSection,
 } from "./utils/mdd-sanitize.js";
 import { GraphMemoryService } from "./graph-memory/graph-memory.service.js";
+import { ProjectsService } from "../projects/projects.service.js";
+import { pickPrimaryStage } from "../projects/stage-helpers.js";
+import { TheForgeService } from "../theforge/theforge.service.js";
+import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
+import { EpisodicMemoryKind, type ComplexityLevel } from "@maxprime/database";
 import { injectMddDiagrams, suggestMddDiagrams } from "./utils/mdd-diagram-suggestions.js";
 import { markdownToMddStructured } from "./utils/mdd-markdown-to-structured.js";
 import { HumanMessage } from "@langchain/core/messages";
@@ -32,7 +39,7 @@ import { createDbgaLLM } from "./llm/create-dbga-llm.js";
 import { CONTEXT_SYNTHESIZER_PROMPT } from "./prompts/load-prompts.js";
 import { createMddIntegrationNode } from "./nodes/mdd-integration.node.js";
 import { createMddSecurityNode } from "./nodes/mdd-security.node.js";
-import { createMddSoftwareArchitectNode, replaceContratosInDraft } from "./nodes/mdd-software-architect.node.js";
+import { createMddSoftwareArchitectNode } from "./nodes/mdd-software-architect.node.js";
 import { getMddArchitectTools } from "./tools/tool-registry.js";
 
 import type { PrecisionBreakdown } from "./estimation/estimation.types.js";
@@ -78,6 +85,8 @@ export type StreamProgressEvent =
   | {
     type: "done";
     markdown: string;
+    /** Tras DBGA stream con projectId: propuesta HITL (persistida en `complexityPending`, no aplica `complexity` hasta confirmación en chat). */
+    complexityProposal?: { level: ComplexityLevel; planSummary: string; reason?: string };
     precision?: number;
     status?: "red" | "yellow" | "green";
     auditorFeedback?: string;
@@ -116,6 +125,12 @@ export type StreamMddManagerEvent =
 /** Guarda lastStepFailed por thread_id cuando un nodo falla; se inyecta al reanudar para que el Manager re-planifique. */
 const lastStepFailedByThread = new Map<string, { node: string; error: string }>();
 
+/** Clave de borrador en EstimationService: vacío → solo `projectId` (legacy). */
+function stageIdForEstimation(mddStageId: string): string | undefined {
+  const s = (mddStageId ?? "").trim();
+  return s.length > 0 ? s : undefined;
+}
+
 @Injectable()
 export class AiAnalysisService {
   private readonly logger = new Logger(AiAnalysisService.name);
@@ -126,22 +141,71 @@ export class AiAnalysisService {
     private readonly preferences: PreferencesService,
     private readonly estimationService: EstimationService,
     private readonly graphMemory: GraphMemoryService,
+    private readonly projects: ProjectsService,
+    private readonly theforge: TheForgeService,
+    private readonly agentSupervisor: AgentSupervisorService,
+    private readonly ai: AiService,
+    private readonly discovery: DiscoveryService,
   ) { }
 
-  /** Devuelve el threadId del flujo MDD para el proyecto, si existe (para rehidratar al reabrir la app). */
-  async getMddThreadId(projectId: string): Promise<string | null> {
+  /** Contexto agéntico (legacy, Relic, memoria episódica) para el estado MDD. */
+  private async buildMddAgentContext(
+    projectId: string,
+    preferredStageId?: string | null,
+  ): Promise<{
+    activeStageId?: string;
+    isLegacyProject?: boolean;
+    theforgeProjectId?: string;
+    episodicMemoryContext?: string;
+  }> {
+    const pid = projectId?.trim();
+    if (!pid) return {};
+    const project = await this.prisma.project.findUnique({
+      where: { id: pid },
+      include: { stages: { orderBy: { ordinal: "asc" } } },
+    });
+    if (!project) return {};
+    const route = await this.agentSupervisor.resolveRouteFromProject(project, preferredStageId);
+    const memories = await this.agentSupervisor.getRecentEpisodicMemory(route.stageId, 18);
+    const relevant = memories.filter(
+      (m) =>
+        m.kind === EpisodicMemoryKind.EVALUATOR_REJECTION ||
+        m.kind === EpisodicMemoryKind.REFLEXION_FEEDBACK,
+    );
+    const episodicMemoryContext =
+      relevant.length > 0
+        ? relevant
+            .map((m) => `[${m.kind}] ${m.content.slice(0, 2000)}`)
+            .join("\n---\n")
+            .slice(0, 12000)
+        : undefined;
+    return {
+      activeStageId: route.stageId,
+      isLegacyProject: route.flow === "LEGACY",
+      theforgeProjectId: route.theforgeProjectId ?? undefined,
+      episodicMemoryContext,
+    };
+  }
+
+  /** Devuelve el threadId del flujo MDD para el proyecto (y etapa opcional), si existe. */
+  async getMddThreadId(projectId: string, stageId?: string | null): Promise<string | null> {
     if (!projectId?.trim()) return null;
+    const mddStageId = stageId?.trim() ?? "";
     const row = await this.prisma.agentStateCheckpoint.findUnique({
-      where: { projectId: projectId.trim() },
+      where: {
+        projectId_mddStageId: { projectId: projectId.trim(), mddStageId },
+      },
       select: { threadId: true },
     });
     return row?.threadId ?? null;
   }
 
-  /** Borra el checkpoint del proyecto cuando el flujo MDD termina (done), para que el siguiente mensaje arranque limpio. */
-  async clearMddCheckpoint(projectId: string): Promise<void> {
+  /** Borra checkpoint para ese par proyecto / etapa (`mddStageId` vacío = hilo DBGA). */
+  async clearMddCheckpoint(projectId: string, mddStageId = ""): Promise<void> {
     if (!projectId?.trim()) return;
-    await this.prisma.agentStateCheckpoint.deleteMany({ where: { projectId: projectId.trim() } });
+    await this.prisma.agentStateCheckpoint.deleteMany({
+      where: { projectId: projectId.trim(), mddStageId: mddStageId.trim() },
+    });
   }
 
   /**
@@ -169,10 +233,13 @@ export class AiAnalysisService {
     let threadId: string;
     if (projectId?.trim()) {
       const row = await this.prisma.agentStateCheckpoint.upsert({
-        where: { projectId: projectId.trim() },
+        where: {
+          projectId_mddStageId: { projectId: projectId.trim(), mddStageId: "" },
+        },
         create: {
           threadId: randomUUID(),
           projectId: projectId.trim(),
+          mddStageId: "",
         },
         update: {},
       });
@@ -213,10 +280,13 @@ export class AiAnalysisService {
     let threadId: string;
     if (projectId?.trim()) {
       const row = await this.prisma.agentStateCheckpoint.upsert({
-        where: { projectId: projectId.trim() },
+        where: {
+          projectId_mddStageId: { projectId: projectId.trim(), mddStageId: "" },
+        },
         create: {
           threadId: randomUUID(),
           projectId: projectId.trim(),
+          mddStageId: "",
         },
         update: {},
       });
@@ -293,7 +363,26 @@ export class AiAnalysisService {
 
       const finalState = lastState as DBGAState;
       const markdown = stateToMarkdown(finalState);
-      yield { type: "done", markdown };
+
+      let complexityProposal: { level: ComplexityLevel; planSummary: string; reason?: string } | undefined;
+      const pid = projectId?.trim();
+      if (pid) {
+        try {
+          const proposal = await this.discovery.inferComplexityProposal(idea.trim(), markdown);
+          complexityProposal = proposal;
+          await this.projects.update(pid, { complexityPending: proposal });
+        } catch (err) {
+          this.logger.warn(
+            `inferComplexityProposal/update project failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      yield {
+        type: "done",
+        markdown,
+        ...(complexityProposal != null ? { complexityProposal } : {}),
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error en el análisis";
       yield { type: "error", message };
@@ -308,12 +397,26 @@ export class AiAnalysisService {
   async *streamMddAnalysis(
     dbgaContent: string,
     projectId?: string,
+    stageId?: string | null,
   ): AsyncGenerator<StreamProgressEvent> {
+    let estimationStage: string | undefined;
+    if (projectId?.trim()) {
+      const p = await this.prisma.project.findUnique({
+        where: { id: projectId.trim() },
+        include: { stages: { orderBy: { ordinal: "asc" } } },
+      });
+      if (p) {
+        const route = await this.agentSupervisor.resolveRouteFromProject(p, stageId);
+        estimationStage = route.stageId;
+      }
+    }
     const graph = createMddGraph(this.graphMemory);
+    const agentCtx = projectId?.trim() ? await this.buildMddAgentContext(projectId.trim(), stageId) : {};
     const initialState: MDDState = {
       ...defaultMDDState,
       dbgaContent: dbgaContent.trim() || "(Sin Benchmark. El usuario no tiene un documento de Benchmark; genera un MDD base con contexto, alcance y requisitos que el usuario podrá refinar.)",
       projectId: projectId?.trim(),
+      ...agentCtx,
     };
 
     const mddOrder: Array<{ node: string; message: string }> = [
@@ -348,8 +451,10 @@ export class AiAnalysisService {
         if (mode === "values" && data && typeof data === "object") {
           lastState = data as MDDState;
           if (projectId?.trim() && (lastState.mddDraft ?? "").trim()) {
-            this.estimationService.setLiveDraft(projectId.trim(), lastState.mddDraft ?? "");
-            if (lastState.auditorGaps) this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps);
+            this.estimationService.setLiveDraft(projectId.trim(), lastState.mddDraft ?? "", estimationStage);
+            if (lastState.auditorGaps) {
+              this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps, estimationStage);
+            }
           }
         }
       }
@@ -360,10 +465,10 @@ export class AiAnalysisService {
         mddDraft: raw || lastState.mddDraft,
       });
       logSection3Debug("final (stream done)", markdown);
-      if (projectId?.trim()) this.estimationService.clearLiveDraft(projectId.trim());
+      if (projectId?.trim()) this.estimationService.clearLiveDraft(projectId.trim(), estimationStage);
       yield { type: "done", markdown };
     } catch (err) {
-      if (projectId?.trim()) this.estimationService.clearLiveDraft(projectId.trim());
+      if (projectId?.trim()) this.estimationService.clearLiveDraft(projectId.trim(), estimationStage);
       const message = err instanceof Error ? err.message : "Error en el flujo MDD";
       yield { type: "error", message };
     }
@@ -379,6 +484,7 @@ export class AiAnalysisService {
     projectId: string,
     initialMessage?: string,
     initialMddDraft?: string,
+    stageIdFromClient?: string | null,
   ): AsyncGenerator<StreamMddManagerEvent> {
     this.logger.log(`[MDD stream/manager] start projectId=${projectId} initialMessage=${initialMessage ? "(presente)" : "(vacío)"} mddDraftLen=${(initialMddDraft ?? "").length}`);
 
@@ -389,16 +495,39 @@ export class AiAnalysisService {
       return;
     }
 
-    yield { type: "progress", agent: "Manager", message: "Procesando tu mensaje..." };
+    const projRow = await this.prisma.project.findUnique({
+      where: { id: projectId.trim() },
+      include: { stages: { orderBy: { ordinal: "asc" } } },
+    });
+    if (!projRow) {
+      yield { type: "error", message: "Proyecto no encontrado." };
+      return;
+    }
+    const route = await this.agentSupervisor.resolveRouteFromProject(projRow, stageIdFromClient);
+    const mddStageKey = route.stageId;
+    const estimationStageId = mddStageKey;
 
     const row = await this.prisma.agentStateCheckpoint.upsert({
-      where: { projectId: projectId.trim() },
-      create: { threadId: randomUUID(), projectId: projectId.trim() },
+      where: {
+        projectId_mddStageId: { projectId: projectId.trim(), mddStageId: mddStageKey },
+      },
+      create: {
+        threadId: randomUUID(),
+        projectId: projectId.trim(),
+        mddStageId: mddStageKey,
+      },
       update: {},
     });
     const threadId = row.threadId;
 
-    const graph = createMddGraphWithManager(checkpointer, this.graphMemory, this.estimationService);
+    yield { type: "progress", agent: "Manager", message: "Procesando tu mensaje..." };
+
+    const graph = createMddGraphWithManager(checkpointer, this.graphMemory, this.estimationService, {
+      projects: this.projects,
+      theforge: this.theforge,
+      ai: this.ai,
+    });
+    const agentCtx = await this.buildMddAgentContext(projectId, stageIdFromClient);
     const existingMdd = (initialMddDraft ?? "").trim();
     const rawInitial = (initialMessage ?? "").trim();
     const looksLikeMddDocument =
@@ -417,6 +546,7 @@ export class AiAnalysisService {
       lastUserMessage,
       mddDraft: existingMdd || defaultMDDState.mddDraft,
       projectId: projectId?.trim(),
+      ...agentCtx,
     };
     const config = { configurable: { thread_id: threadId } as Record<string, string> };
 
@@ -517,8 +647,10 @@ export class AiAnalysisService {
           const draft = (lastState.mddDraft ?? "").trim();
           if (draft) {
             lastNonEmptyDraft = draft;
-            this.estimationService.setLiveDraft(projectId.trim(), draft);
-            if (lastState.auditorGaps) this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps);
+            this.estimationService.setLiveDraft(projectId.trim(), draft, estimationStageId);
+            if (lastState.auditorGaps) {
+              this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps, estimationStageId);
+            }
             const prepared = prepareMddForOutput({
               mddStructured: lastState?.mddStructured,
               mddDraft: draft,
@@ -542,8 +674,8 @@ export class AiAnalysisService {
       });
       logSection3Debug("final (stream/manager done)", markdown);
       if (projectId?.trim()) {
-        this.estimationService.clearLiveDraft(projectId.trim());
-        this.clearMddCheckpoint(projectId.trim()).catch(() => { });
+        this.estimationService.clearLiveDraft(projectId.trim(), estimationStageId);
+        this.clearMddCheckpoint(projectId.trim(), mddStageKey).catch(() => { });
       }
       const metrics = this.estimationService.calculateLiveMetrics(markdown);
       const precisionBreakdown = this.estimationService.getPrecisionBreakdown(markdown);
@@ -608,7 +740,7 @@ export class AiAnalysisService {
         };
         return;
       }
-      this.estimationService.clearLiveDraft(projectId.trim());
+      this.estimationService.clearLiveDraft(projectId.trim(), estimationStageId);
       const message = err instanceof Error ? err.message : "Error en el flujo MDD con Manager";
       this.logger.error(`[MDD stream/manager] error: ${message}`, err instanceof Error ? err.stack : String(err));
       lastStepFailedByThread.set(threadId, { node: "unknown", error: message });
@@ -634,9 +766,24 @@ export class AiAnalysisService {
       return;
     }
 
+    const cp = await this.prisma.agentStateCheckpoint.findFirst({
+      where: { projectId: projectId.trim(), threadId: threadId.trim() },
+    });
+    if (!cp) {
+      yield { type: "error", message: "No hay checkpoint para este hilo. Inicia el flujo MDD con Manager." };
+      return;
+    }
+    const estimationStage = stageIdForEstimation(cp.mddStageId);
+    const preferredStageForCtx = cp.mddStageId.trim() ? cp.mddStageId : undefined;
+
     yield { type: "progress", agent: "Manager", message: "Reanudando flujo con tu respuesta..." };
 
-    const graph = createMddGraphWithManager(checkpointer, this.graphMemory, this.estimationService);
+    const graph = createMddGraphWithManager(checkpointer, this.graphMemory, this.estimationService, {
+      projects: this.projects,
+      theforge: this.theforge,
+      ai: this.ai,
+    });
+    const agentCtx = await this.buildMddAgentContext(projectId, preferredStageForCtx);
     const config = { configurable: { thread_id: threadId } as Record<string, string> };
     const auditTrail: string[] = [];
     const mddOrder: Array<{ node: string; message: string }> = [
@@ -676,6 +823,7 @@ export class AiAnalysisService {
               ? { mddDraft: mddContentFromClient.trim() }
               : {}),
             projectId: projectId?.trim(),
+            ...agentCtx,
           },
         }),
         {
@@ -764,8 +912,10 @@ export class AiAnalysisService {
           if (draft) {
             lastNonEmptyDraft = draft;
             if (projectId?.trim()) {
-              this.estimationService.setLiveDraft(projectId.trim(), draft);
-              if (lastState.auditorGaps) this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps);
+              this.estimationService.setLiveDraft(projectId.trim(), draft, estimationStage);
+              if (lastState.auditorGaps) {
+                this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps, estimationStage);
+              }
             }
             const prepared = prepareMddForOutput({
               mddStructured: lastState?.mddStructured,
@@ -785,10 +935,17 @@ export class AiAnalysisService {
         if (raw.length < 80 && projectId?.trim()) {
           const project = await this.prisma.project.findUnique({
             where: { id: projectId.trim() },
-            select: { mddContent: true },
+            include: { stages: { orderBy: { ordinal: "asc" } } },
           });
-          if (project?.mddContent?.trim() && project.mddContent.trim().length > 80) {
-            raw = project.mddContent.trim();
+          let storedMdd = "";
+          if (cp.mddStageId.trim()) {
+            storedMdd = project?.stages?.find((s) => s.id === cp.mddStageId)?.mddContent?.trim() ?? "";
+          }
+          if (storedMdd.length < 80) {
+            storedMdd = pickPrimaryStage(project?.stages ?? [])?.mddContent?.trim() ?? "";
+          }
+          if (storedMdd.length > 80) {
+            raw = storedMdd;
             this.logger.log("[MDD stream/resume] done: draft vacío/corto, usando mddContent del proyecto");
           }
         }
@@ -805,8 +962,8 @@ export class AiAnalysisService {
         });
         logSection3Debug("final (stream/resume done)", markdown);
         if (projectId?.trim()) {
-          this.estimationService.clearLiveDraft(projectId.trim());
-          this.clearMddCheckpoint(projectId.trim()).catch(() => { });
+          this.estimationService.clearLiveDraft(projectId.trim(), estimationStage);
+          this.clearMddCheckpoint(projectId.trim(), cp.mddStageId).catch(() => { });
         }
         const metrics = this.estimationService.calculateLiveMetrics(markdown);
         const precisionBreakdown = this.estimationService.getPrecisionBreakdown(markdown);
@@ -823,7 +980,7 @@ export class AiAnalysisService {
         };
       }
     } catch (err) {
-      if (projectId?.trim()) this.estimationService.clearLiveDraft(projectId.trim());
+      if (projectId?.trim()) this.estimationService.clearLiveDraft(projectId.trim(), estimationStage);
       if (isGraphInterrupt(err) && err.interrupts?.length > 0) {
         const value = err.interrupts[0]?.value as {
           type?: string;
@@ -895,6 +1052,7 @@ export class AiAnalysisService {
     projectId: string,
     section: number,
     mddContentFromClient?: string,
+    stageId?: string | null,
   ): AsyncGenerator<StreamMddManagerEvent> {
     const pid = projectId?.trim();
     if (!pid) {
@@ -909,9 +1067,15 @@ export class AiAnalysisService {
     if (mddContent.length < 100) {
       const project = await this.prisma.project.findUnique({
         where: { id: pid },
-        select: { mddContent: true },
+        include: { stages: { orderBy: { ordinal: "asc" } } },
       });
-      mddContent = (project?.mddContent ?? "").trim();
+      const sid = stageId?.trim();
+      if (sid) {
+        mddContent = project?.stages?.find((s) => s.id === sid)?.mddContent?.trim() ?? "";
+      }
+      if (mddContent.length < 100) {
+        mddContent = (pickPrimaryStage(project?.stages ?? [])?.mddContent ?? "").trim();
+      }
     }
     if (mddContent.length < 100) {
       yield { type: "error", message: "No hay MDD suficiente para regenerar una sección. Genera o edita el MDD antes." };
@@ -932,7 +1096,7 @@ export class AiAnalysisService {
 
     try {
       if (section === 1) {
-        const prompt = `${CONTEXT_SYNTHESIZER_PROMPT}\n\n---\n\n**Documento MDD (usa las secciones 2–7 para sintetizar la sección 1):**\n\n${mddContent}\n\n**🚨 RECORDATORIO INVIOLABLE (IDIOMA):** TODA LA NARRATIVA Y EXPLICACIONES QUE REDACTES **DEBEN ESTAR EN ESPAÑOL**. SI EL BORRADOR O EL CONTEXTO ESTÁN EN INGLÉS, TU DEBER ES **TRADUCIRLO AL ESPAÑOL** AL GENERAR TU RESPUESTA.`;
+        const prompt = `${CONTEXT_SYNTHESIZER_PROMPT}\n\n---\n\n**Documento MDD (usa las secciones 2–7 para sintetizar la sección 1):**\n\n${mddContent}`;
         const response = await llm.invoke([new HumanMessage(prompt)]);
         const text = (typeof response.content === "string" ? response.content : "").trim();
         let newBody = (text && extractContextSectionBody(text)) || text || "(Contexto sintetizado desde el documento.)";
@@ -1006,19 +1170,10 @@ export class AiAnalysisService {
         const result = await softwareArchitectNode(state as MDDStateType);
         const architectDraft = (result.mddDraft ?? "").trim();
         const content25 = extractSections2To5Content(architectDraft);
-        let finalDraft = mddContent;
-        if (content25 != null) {
-          finalDraft = replaceSections2To5InDraft(mddContent, content25);
-        } else if (architectDraft.length > 500 && /##\s*1\.\s*Contexto/i.test(architectDraft) && /##\s*7\.\s*Infraestructura/i.test(architectDraft)) {
-          finalDraft = architectDraft; // Es un documento completo, lo usamos todo
-        } else if (/##\s*(?:4\.\s*)?Contratos\b/i.test(architectDraft) || /^\s*(#+\s+)?(?:GET|POST|PUT|DELETE|PATCH)\s+\//i.test(architectDraft)) {
-          // Si parece que generó puramente la sección 4 de APIs, inyectémosla sin borrar el resto del doc
-          finalDraft = replaceContratosInDraft(mddContent, architectDraft);
-        } else if (architectDraft.length > mddContent.length / 2) {
-          finalDraft = architectDraft; // Fallback, pero al menos no si es un documento de una sola frase o de 10 endpoints
-        } else {
-          finalDraft = mddContent; // Mejor conservar el original que borrar todo si el merge falló estrepitosamente
-        }
+        const finalDraft =
+          content25 != null
+            ? replaceSections2To5InDraft(mddContent, content25)
+            : architectDraft || mddContent;
         const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
         const metrics = this.estimationService.calculateLiveMetrics(markdown);
         yield {

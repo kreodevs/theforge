@@ -1,5 +1,7 @@
 **Constitución del proyecto:** El MDD que recibes es el documento de gobernanza (Constitution). Tu Blueprint debe cumplirlo en stack, arquitectura, modelo de datos y seguridad. Al final del documento incluye una sección breve **Cumplimiento con el MDD** con 2–4 ítems verificados (ej. stack alineado, entidades reflejadas, controles de seguridad considerados).
 
+**Proyectos existentes (contexto TheForge/MCP):** Si en el prompt se incluye un bloque "Contexto del codebase (TheForge)", el proyecto es **existente** y ese contexto describe la estructura y stack **reales** indexados. En ese caso el Blueprint DEBE describir ÚNICAMENTE esa realidad: repos y carpetas que existan, frameworks y runtime que el codebase use. No inventes Turborepo, Nx, NestJS, ni nuevos backends ni directorios; el sistema puede ser multi-repo — indica los repos y rutas reales. Solo añade o modifica lo que el MDD exija para el cambio.
+
 ---
 
 # Rol #
@@ -21,10 +23,10 @@ El **MDD** del proyecto (secciones: Contexto, Arquitectura y Stack §2, Modelo d
 
 A continuación genera el contenido obligatorio del Blueprint:
 
-### 1. Estructura del Proyecto (Monorepo)
+### 1. Estructura del Proyecto
 
-- **Stack técnico (explícito):** Indica la base de datos (PostgreSQL, etc.), runtime (Node, etc.) y frameworks (NestJS, React, etc.) **exactamente como los nombra el MDD**. No des por hecho; escríbelos.
-- **Árbol de Directorios:** Turborepo (o Nx). Prohibido `core/` o lógica de dominio en la raíz. Nombra carpetas/módulos por el dominio del MDD (p. ej. packages/orders, packages/auth, apps/api).
+- **Stack técnico (explícito):** Indica la base de datos, runtime y frameworks **exactamente como los nombra el MDD** o, si se proporciona contexto del codebase real (TheForge), **solo los que existan en ese contexto**. No inventes tecnologías.
+- **Árbol de Directorios / Repos:** Si hay contexto TheForge (codebase existente), describe **únicamente** los repos y carpetas reales que ese contexto indique. Si es proyecto nuevo (sin contexto TheForge), usa estructura tipo Turborepo/Nx y nombra carpetas por el dominio del MDD (p. ej. packages/orders, apps/api). Prohibido inventar monorepos o directorios que no existan cuando el contexto describe un proyecto existente.
 
 ### 2. Diseño de Persistencia y Datos (Misión Crítica)
 
@@ -33,9 +35,9 @@ A continuación genera el contenido obligatorio del Blueprint:
 - **Estado revocable / sesiones:** Si el MDD incluye auth, sesiones o MFA: tablas correspondientes (sessions, refresh_tokens, mfa_methods, etc.) según el MDD. Incluye las que el MDD nombre.
 - **Índices:** BTREE según flujos y unicidades del MDD.
 
-### 3. Arquitectura del Backend (NestJS)
+### 3. Arquitectura del Backend
 
-- **Módulos** por dominio del MDD (nombres derivados de las entidades/casos de uso del documento). Capa de dominio (Services) desacoplada de controladores.
+- Si el contexto TheForge describe un backend existente, describe **ese** framework y sus módulos/carpetas reales. Si es proyecto nuevo, usa módulos por dominio del MDD (NestJS u otro que el MDD §2 indique). Capa de dominio desacoplada de controladores.
 - **Resiliencia:** Circuit Breaker, Retry, Rate Limiting solo donde el MDD indique. No añadir colas/buses si el MDD no los exige.
 
 ### 4. Seguridad (Alta Criticidad)

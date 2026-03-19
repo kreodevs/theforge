@@ -1,20 +1,98 @@
 import { HttpException, HttpStatus, Injectable, NotFoundException } from "@nestjs/common";
-import type { ChatMessage } from "@the-forge/shared-types";
-import { PrismaService } from "../../prisma/prisma.service.js";
+import type { ChatMessage } from "@maxprime/shared-types";
+import { ProjectsService } from "../projects/projects.service.js";
+import { SessionsService } from "../sessions/sessions.service.js";
+import { TheForgeService } from "../theforge/theforge.service.js";
+import { LEGACY_DOCUMENTATION_PROMPT } from "../ai/prompts/legacy-documentation-prompt.js";
+import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
+import type { SupervisorRouteResult } from "../agent-supervisor/agent-supervisor.types.js";
+import { SddIngestorService } from "../ai-analysis/sdd-ingestor.service.js";
+import { AgentEvaluatorService } from "../agent-supervisor/agent-evaluator.service.js";
+import { EpisodicMemoryKind } from "@maxprime/database";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
 }
-import { ProjectsService } from "../projects/projects.service.js";
-import { SessionsService } from "../sessions/sessions.service.js";
+
+function mddForRouteStage(
+  project: { mddContent?: string | null; stages?: { id: string; mddContent: string | null }[] },
+  routeStageId: string,
+): string | null | undefined {
+  const st = project.stages?.find((s) => s.id === routeStageId);
+  return st?.mddContent ?? project.mddContent;
+}
 
 @Injectable()
 export class AiOrchestratorService {
   constructor(
-    private readonly prisma: PrismaService,
     private readonly sessions: SessionsService,
     private readonly projects: ProjectsService,
+    private readonly theforge: TheForgeService,
+    private readonly agentSupervisor: AgentSupervisorService,
+    private readonly sddIngestor: SddIngestorService,
+    private readonly agentEvaluator: AgentEvaluatorService,
   ) { }
+
+  private scheduleSddIngest(projectId: string, ingestMdd: boolean): void {
+    if (!ingestMdd) return;
+    void this.sddIngestor.ingestProjectMdd(projectId).catch((err) => {
+      console.error("[Orchestrator] SDD ingest failed:", err);
+    });
+  }
+
+  /** Sufijo de prompt con rechazos/reflexión recientes (legacy / SDD). */
+  private async episodicPromptSuffix(stageId: string): Promise<string> {
+    const eps = await this.agentSupervisor.getRecentEpisodicMemory(stageId, 12);
+    const lines = eps.filter(
+      (e) =>
+        e.kind === EpisodicMemoryKind.EVALUATOR_REJECTION ||
+        e.kind === EpisodicMemoryKind.REFLEXION_FEEDBACK,
+    );
+    if (!lines.length) return "";
+    const body = lines
+      .map((e) => e.content.trim().slice(0, 2000))
+      .join("\n---\n")
+      .slice(0, 8000);
+    return `\n\n[Memoria episódica — correcciones exigidas por el evaluador; no repitas el mismo error]\n${body}`;
+  }
+
+  /**
+   * Instrucciones Fase 0 (DBGA) + contexto HITL si hay `complexityPending` (no aplica nivel hasta confirmación).
+   */
+  private buildComplexityInterviewContext(project: {
+    complexityPending?: unknown;
+    dbgaContent?: string | null;
+  }): string {
+    const chunks: string[] = [];
+    chunks.push(
+      `ENTREVISTA PROACTIVA (Fase 0 / Benchmark / DBGA):
+- Si el alcance **no es evidente** en el DBGA o en los mensajes, formula **1 o 2 preguntas clave** para clarificar la escala (ej.: ¿corrección rápida, integración de un módulo, o sistema central desde cero?).
+- No asumas complejidad sin señales claras; prioriza preguntas breves y concretas.`,
+    );
+    const raw = project.complexityPending;
+    if (raw != null && typeof raw === "object" && "level" in raw) {
+      const p = raw as { level?: string; planSummary?: string; reason?: string };
+      chunks.push(
+        `HITL — PROPUESTA DE COMPLEJIDAD PENDIENTE (el nivel **no** queda aplicado al proyecto hasta confirmación explícita, p. ej. "sí", "de acuerdo", "ejecuta este plan"):
+- Nivel propuesto: **${p.level ?? "?"}**
+- Plan sugerido: ${p.planSummary ?? ""}
+- Motivo: ${p.reason ?? ""}
+**Instrucción:** Propón en el chat esta clasificación y el plan (ej.: "Basado en tu requerimiento, clasifico esto como Baja Complejidad (LOW). Para ser ágiles, propongo generar únicamente Historias de Usuario y Tasks. ¿Estás de acuerdo o prefieres un diseño estructurado?"). **No** digas que el nivel ya está fijado ni que se ejecutará generación hasta que el usuario confirme explícitamente.`,
+      );
+    }
+    return chunks.join("\n\n");
+  }
+
+  private async maybeEvaluatorCritique(
+    projectId: string,
+    route: SupervisorRouteResult,
+    userMessage: string,
+  ): Promise<string | undefined> {
+    if (process.env.AGENT_EVALUATOR_LEGACY !== "true") return undefined;
+    if (route.flow !== "LEGACY" || !route.theforgeProjectId) return undefined;
+    const r = await this.agentEvaluator.evaluateLegacyProposal(projectId, route.stageId, userMessage);
+    return r.approved ? undefined : r.critique;
+  }
 
   /**
    * Envía un mensaje en la entrevista: obtiene o crea sesión, llama a la IA, persiste y devuelve sesión + proyecto actualizado.
@@ -28,12 +106,15 @@ export class AiOrchestratorService {
     activeTab?: string,
     uxUiGuideContentFromClient?: string,
     dbgaContentFromClient?: string,
+    stageIdFromClient?: string,
   ) {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      include: { estimation: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
+    let project = await this.projects.findOne(projectId);
+    const hitl = await this.projects.tryConfirmComplexityFromChatMessage(projectId, message);
+    if (hitl.confirmed || hitl.rejected) {
+      project = await this.projects.findOne(projectId);
+    }
+
+    const route = await this.agentSupervisor.resolveRouteFromProject(project, stageIdFromClient);
 
     let session;
     if (sessionId) {
@@ -53,8 +134,14 @@ export class AiOrchestratorService {
     }
 
     const currentMdd =
-      mddContentFromClient ?? project.mddContent ?? undefined;
+      mddContentFromClient ?? mddForRouteStage(project, route.stageId) ?? undefined;
     const isBenchmarkTab = activeTab?.trim() === "benchmark";
+    const hasComplexityPending =
+      project.complexityPending != null && typeof project.complexityPending === "object";
+    const complexityInterviewContext =
+      isBenchmarkTab || hasComplexityPending
+        ? this.buildComplexityInterviewContext(project)
+        : undefined;
     const currentDbga =
       isBenchmarkTab && (dbgaContentFromClient ?? project.dbgaContent ?? "")?.trim()
         ? (dbgaContentFromClient ?? project.dbgaContent ?? "").trim()
@@ -64,12 +151,22 @@ export class AiOrchestratorService {
     const currentUxUiGuide =
       uxUiGuideContentFromClient ?? project.uxUiGuideContent ?? undefined;
     if (mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
-      await this.projects.update(projectId, { mddContent: mddContentFromClient });
+      await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: route.stageId });
     }
     if (uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideContentFromClient });
     }
     const isUxUiGuide = activeTab?.trim() === "ux-ui-guide";
+    let systemPrompt: string | undefined;
+    if (route.flow === "LEGACY" && route.theforgeProjectId) {
+      const theforgeProjectId = route.theforgeProjectId;
+      systemPrompt = LEGACY_DOCUMENTATION_PROMPT;
+      systemPrompt += await this.episodicPromptSuffix(route.stageId);
+      const theforgeContext = await this.theforge.askCodebase(message, theforgeProjectId);
+      if (theforgeContext.trim()) {
+        systemPrompt += "\n\n[Contexto TheForge (respuesta a la pregunta del usuario)]\n---\n" + theforgeContext.trim() + "\n---";
+      }
+    }
     let updatedSession;
     let mddFromResponse: string | null | undefined;
     let uxUiGuideFromResponse: string | null | undefined;
@@ -81,6 +178,9 @@ export class AiOrchestratorService {
         currentUxUiGuideContent: currentUxUiGuide,
         currentBlueprintContent: isUxUiGuide ? (project.blueprintContent ?? undefined) : undefined,
         activeTab,
+        systemPrompt,
+        stageId: route.stageId,
+        complexityInterviewContext,
       });
       updatedSession = chatResult.session;
       mddFromResponse = chatResult.mddContent;
@@ -98,7 +198,7 @@ export class AiOrchestratorService {
     if (!updatedSession) throw new NotFoundException("Session not found after chat");
     let updatedProject: Awaited<ReturnType<ProjectsService["update"]>> | null = null;
     if (mddFromResponse != null && mddFromResponse.length > 0) {
-      updatedProject = await this.projects.update(projectId, { mddContent: mddFromResponse });
+      updatedProject = await this.projects.update(projectId, { mddContent: mddFromResponse, stageId: route.stageId });
     }
     if (uxUiGuideFromResponse != null && uxUiGuideFromResponse.length > 0) {
       console.log("[Orchestrator] persisting uxUiGuideContent (Guía UX/UI) length:", uxUiGuideFromResponse.length);
@@ -109,10 +209,7 @@ export class AiOrchestratorService {
       updatedProject = await this.projects.update(projectId, { dbgaContent: dbgaFromResponse });
     }
     if (!updatedProject) {
-      updatedProject = await this.prisma.project.findUnique({
-        where: { id: projectId },
-        include: { estimation: true },
-      });
+      updatedProject = await this.projects.findOne(projectId);
     }
     const outUx = updatedProject?.uxUiGuideContent ?? null;
     const uxToReturn = (uxUiGuideFromResponse != null && uxUiGuideFromResponse.length > 0)
@@ -120,18 +217,22 @@ export class AiOrchestratorService {
       : outUx;
     console.log("[Orchestrator] returning uxUiGuideContent (Guía UX/UI) length:", uxToReturn?.length ?? 0);
 
-    const finalProject = updatedProject ?? (await this.prisma.project.findUnique({
-      where: { id: projectId },
-      include: { estimation: true },
-    })) ?? project;
+    const finalProject = updatedProject ?? (await this.projects.findOne(projectId)) ?? project;
     if (uxToReturn != null && finalProject && "uxUiGuideContent" in finalProject) {
       (finalProject as { uxUiGuideContent: string | null }).uxUiGuideContent = uxToReturn;
     }
+
+    const shouldIngestMdd =
+      (mddFromResponse != null && mddFromResponse.length > 0) ||
+      (mddContentFromClient != null && mddContentFromClient.trim().length > 0);
+    this.scheduleSddIngest(projectId, shouldIngestMdd);
+    const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, route, message);
 
     return {
       session: updatedSession,
       project: finalProject,
       uxUiGuideContent: uxToReturn ?? undefined,
+      evaluatorCritique,
     };
   }
 
@@ -146,12 +247,16 @@ export class AiOrchestratorService {
     activeTab?: string,
     uxUiGuideContentFromClient?: string,
     dbgaContentFromClient?: string,
+    specContentFromClient?: string,
+    stageIdFromClient?: string,
   ): AsyncGenerator<{ event: string; data: unknown }> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      include: { estimation: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
+    let project = await this.projects.findOne(projectId);
+    const hitl = await this.projects.tryConfirmComplexityFromChatMessage(projectId, message);
+    if (hitl.confirmed || hitl.rejected) {
+      project = await this.projects.findOne(projectId);
+    }
+
+    const routeStream = await this.agentSupervisor.resolveRouteFromProject(project, stageIdFromClient);
 
     let session;
     if (sessionId) {
@@ -170,8 +275,14 @@ export class AiOrchestratorService {
       }
     }
 
-    const currentMdd = mddContentFromClient ?? project.mddContent ?? undefined;
+    const currentMdd = mddContentFromClient ?? mddForRouteStage(project, routeStream.stageId) ?? undefined;
     const isBenchmarkTab = activeTab?.trim() === "benchmark";
+    const hasComplexityPendingStream =
+      project.complexityPending != null && typeof project.complexityPending === "object";
+    const complexityInterviewContext =
+      isBenchmarkTab || hasComplexityPendingStream
+        ? this.buildComplexityInterviewContext(project)
+        : undefined;
     const currentDbga =
       isBenchmarkTab && (dbgaContentFromClient ?? project.dbgaContent ?? "")?.trim()
         ? (dbgaContentFromClient ?? project.dbgaContent ?? "").trim()
@@ -179,20 +290,35 @@ export class AiOrchestratorService {
           ? project.dbgaContent
           : undefined;
     const currentUxUiGuide = uxUiGuideContentFromClient ?? project.uxUiGuideContent ?? undefined;
+    const currentSpec = specContentFromClient ?? (project as { specContent?: string | null }).specContent ?? undefined;
     if (mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
-      await this.projects.update(projectId, { mddContent: mddContentFromClient });
+      await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: routeStream.stageId });
     }
     if (uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideContentFromClient });
     }
     const isUxUiGuide = activeTab?.trim() === "ux-ui-guide";
+    let systemPromptStream: string | undefined;
+    if (routeStream.flow === "LEGACY" && routeStream.theforgeProjectId) {
+      const theforgeProjectId = routeStream.theforgeProjectId;
+      systemPromptStream = LEGACY_DOCUMENTATION_PROMPT;
+      systemPromptStream += await this.episodicPromptSuffix(routeStream.stageId);
+      const theforgeContext = await this.theforge.askCodebase(message, theforgeProjectId);
+      if (theforgeContext.trim()) {
+        systemPromptStream += "\n\n[Contexto TheForge (respuesta a la pregunta del usuario)]\n---\n" + theforgeContext.trim() + "\n---";
+      }
+    }
 
     const stream = this.sessions.chatStream(session.id, message, {
       currentMddContent: currentMdd,
       currentDbgaContent: currentDbga,
       currentUxUiGuideContent: currentUxUiGuide,
       currentBlueprintContent: isUxUiGuide ? (project.blueprintContent ?? undefined) : undefined,
+      currentSpecContent: activeTab?.trim() === "spec" ? currentSpec : undefined,
       activeTab,
+      systemPrompt: systemPromptStream,
+      stageId: routeStream.stageId,
+      complexityInterviewContext,
     });
 
     for await (const msg of stream) {
@@ -201,7 +327,10 @@ export class AiOrchestratorService {
       } else {
         let updatedProject: Awaited<ReturnType<ProjectsService["update"]>> | null = null;
         if (msg.mddContent != null && msg.mddContent.length > 0) {
-          updatedProject = await this.projects.update(projectId, { mddContent: msg.mddContent });
+          updatedProject = await this.projects.update(projectId, {
+            mddContent: msg.mddContent,
+            stageId: routeStream.stageId,
+          });
         }
         if (msg.uxUiGuideContent != null && msg.uxUiGuideContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { uxUiGuideContent: msg.uxUiGuideContent });
@@ -228,24 +357,25 @@ export class AiOrchestratorService {
           updatedProject = await this.projects.update(projectId, { infraContent: msg.infraContent });
         }
         const finalProject =
-          updatedProject ??
-          (await this.prisma.project.findUnique({
-            where: { id: projectId },
-            include: { estimation: true },
-          })) ??
-          project;
+          updatedProject ?? (await this.projects.findOne(projectId)) ?? project;
         const uxToReturn =
           msg.uxUiGuideContent != null && msg.uxUiGuideContent.length > 0
             ? msg.uxUiGuideContent
             : finalProject?.uxUiGuideContent ?? null;
         const projectOut = { ...finalProject } as typeof finalProject & { uxUiGuideContent?: string | null };
         if (uxToReturn != null) projectOut.uxUiGuideContent = uxToReturn;
+        const shouldIngestMddStream =
+          (msg.mddContent != null && msg.mddContent.length > 0) ||
+          (mddContentFromClient != null && mddContentFromClient.trim().length > 0);
+        this.scheduleSddIngest(projectId, shouldIngestMddStream);
+        const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, routeStream, message);
         yield {
           event: "done",
           data: {
             session: msg.session,
             project: projectOut,
             uxUiGuideContent: uxToReturn ?? undefined,
+            evaluatorCritique,
           },
         };
       }
@@ -257,11 +387,7 @@ export class AiOrchestratorService {
    * Devuelve sesión (con chatLog vacío) y proyecto para que el front actualice y pueda pedir welcome de nuevo.
    */
   async clearChat(projectId: string, sessionId?: string) {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      include: { estimation: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
+    const project = await this.projects.findOne(projectId);
 
     let session;
     if (sessionId) {
@@ -286,13 +412,12 @@ export class AiOrchestratorService {
   /**
    * Genera mensaje de bienvenida (y primera pregunta si no hay contenido, o continuación si ya hay MDD/historial).
    * Obtiene o crea sesión, persiste solo el mensaje del asistente y devuelve sesión + proyecto.
+   * `stageId` opcional: alinea el contexto MDD del mensaje con la etapa del Workshop (no solo el MDD aplanado del proyecto).
    */
-  async welcome(projectId: string, sessionId?: string, activeTab?: string) {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      include: { estimation: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
+  async welcome(projectId: string, sessionId?: string, activeTab?: string, stageId?: string) {
+    const project = await this.projects.findOne(projectId);
+    const route = await this.agentSupervisor.resolveRouteFromProject(project, stageId);
+    const stageMdd = mddForRouteStage(project, route.stageId) ?? project.mddContent ?? null;
 
     let session;
     if (sessionId) {
@@ -323,17 +448,15 @@ export class AiOrchestratorService {
 
     const updatedSession = await this.sessions.generateWelcome(session.id, {
       projectName: project.name,
-      mddContent: project.mddContent,
+      mddContent: stageMdd,
       dbgaContent: project.dbgaContent,
       uxUiGuideContent: project.uxUiGuideContent,
       chatLog: messagesForTab,
       activeTab,
+      stageId: route.stageId,
     });
 
-    const updatedProject = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      include: { estimation: true },
-    });
+    const updatedProject = await this.projects.findOne(projectId);
 
     return {
       session: updatedSession,

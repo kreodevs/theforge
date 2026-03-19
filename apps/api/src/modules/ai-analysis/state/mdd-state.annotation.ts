@@ -44,6 +44,10 @@ export const MDDStateAnnotation = Annotation.Root({
   architectCriticFeedback: Annotation<string | undefined>(),
   architectCriticAttempts: Annotation<number | undefined>(),
   projectId: Annotation<string | undefined>(),
+  activeStageId: Annotation<string | undefined>(),
+  isLegacyProject: Annotation<boolean | undefined>(),
+  theforgeProjectId: Annotation<string | undefined>(),
+  episodicMemoryContext: Annotation<string | undefined>(),
   /** Lista de directivas internas enviadas entre agentes (Mesh Topology). */
   internalDirectives: Annotation<
     Array<{ from: string; to: string; message: string; timestamp?: string }> | undefined

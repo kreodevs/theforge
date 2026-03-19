@@ -145,5 +145,5 @@ Si el Manager detecta que la conversación incluye requisitos de modelo (p. ej. 
 ## 6. Referencias
 
 - Cuadernos NotebookLM: _Arquitectura de Prompts y Patrones_, _Specification-Driven Development and the Evolution of AI Engineering_, _Architecting Agentic Systems: Frameworks, Patterns, and Advanced Workflows_.
-- Repo: `docs/MDD-PATRONES-FLUJO.md`, `docs/plan-mdd-planner-executor.md`, `docs/ENTREGABLES-SDD-VALIDACION.md`.
+- Repo: `docs/MDD-PATRONES-FLUJO.md`, `docs/archive/plan-mdd-planner-executor.md`, `docs/ENTREGABLES-SDD-VALIDACION.md`.
 - Código: `apps/api/src/modules/ai-analysis/nodes/mdd-software-architect.node.ts`, `mdd-security.node.ts`, `mdd-integration.node.ts`, `utils/mdd-merge-structured.ts`, `utils/mdd-sanitize.ts` (`hydrateStructuredFromDraft`, `parseModeloDatosFromSection3Markdown`), `utils/mdd-user-brief.ts`, `mdd-manager.node.ts`.

@@ -23,7 +23,7 @@ export function createMddGraphPopulatorNode(llm: BaseChatModel, graphMemory: Gra
 
         try {
             // 1. Sincronización determinista (Tablas, Endpoints)
-            await graphMemory.syncMddToGraph(projectId, structured);
+            await graphMemory.syncMddToGraph(projectId, state.activeStageId, structured);
 
             // 2. Extracción semántica de ADRs (LLM)
             if (state.mddDraft && state.mddDraft.length > 500) {

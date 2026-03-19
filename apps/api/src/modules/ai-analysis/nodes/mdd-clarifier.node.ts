@@ -2,6 +2,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage } from "@langchain/core/messages";
 import { CLARIFIER_MDD_PROMPT, CLARIFIER_QUESTIONS_ONLY_MDD_PROMPT } from "../prompts/load-prompts.js";
 import type { MDDStateType } from "../state/index.js";
+import { getMddTemplatePlaceholder } from "../state/mdd-structured.schema.js";
 import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
 import { extractAlreadyDocumentedTopics, extractIdentifiedInfraFromText, getMddDraftSummary, logMddNodeOutput } from "../utils/mdd-sanitize.js";
@@ -139,8 +140,8 @@ export function createMddClarifierNode(llm: BaseChatModel) {
         LOG("LLM vacío, usando fallback");
         const noBench = /sin benchmark|no hay benchmark/i.test(state.dbgaContent);
         const base = noBench
-          ? "# Master Design Document\n\n## Contexto\n\n(Genera un MDD base; el usuario refinará después.)"
-          : `# Master Design Document\n\n## Contexto\n\n(Basado en: ${state.dbgaContent.slice(0, 1500)}.)`;
+          ? getMddTemplatePlaceholder("(Genera un MDD base; el usuario refinará después.)")
+          : getMddTemplatePlaceholder(`(Basado en: ${state.dbgaContent.slice(0, 1500)}.)`);
         return {
           clarifiedScope: state.dbgaContent.slice(0, 2000),
           mddDraft: base,
@@ -161,7 +162,7 @@ export function createMddClarifierNode(llm: BaseChatModel) {
         const fallbackDraft = draftTrimmed && draftTrimmed.length > 200 ? draftTrimmed : undefined;
         return {
           clarifiedScope: fallbackScope,
-          mddDraft: fallbackDraft ?? `# Master Design Document\n\n## 1. Contexto\n\n${fallbackScope}\n\n## 2. Arquitectura y Stack\n\n(Pendiente)\n\n## 3. Modelo de Datos\n\n(Pendiente)\n\n## 4. Contratos de API\n\n(Pendiente)\n\n## 5. Lógica y Edge Cases\n\n(Pendiente)\n\n## 6. Seguridad\n\n(Pendiente)\n\n## 7. Infraestructura\n\n(Pendiente)`,
+          mddDraft: fallbackDraft ?? getMddTemplatePlaceholder(fallbackScope),
           clarifierJustGeneratedQuestions: false,
         };
       }
@@ -203,7 +204,7 @@ export function createMddClarifierNode(llm: BaseChatModel) {
         draft =
           draftTrimmed && !isBrokenDraft(draftTrimmed)
             ? draftTrimmed
-            : `# Master Design Document\n\n## 1. Contexto\n\n${scope || "(Pendiente de definir según alcance.)"}\n\n## 2. Arquitectura y Stack\n\n(Pendiente)\n\n## 3. Modelo de Datos\n\n(Pendiente)\n\n## 4. Contratos de API\n\n(Pendiente)\n\n## 5. Lógica y Edge Cases\n\n(Pendiente)\n\n## 6. Seguridad\n\n(Pendiente)\n\n## 7. Infraestructura\n\n(Pendiente)`;
+            : getMddTemplatePlaceholder(scope || "(Pendiente de definir según alcance.)");
       }
 
       const section1Match = draft.match(/\n##\s*1\.\s*Contexto\s*\n+([\s\S]*?)(?=\n##\s|\n#\s|$)/i) ?? draft.match(/\n##\s*Contexto\s*\n+([\s\S]*?)(?=\n##\s|\n#\s|$)/i);
@@ -226,7 +227,7 @@ export function createMddClarifierNode(llm: BaseChatModel) {
       const merged = slice ? mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "") : state.mddStructured;
       const hadStructured = state.mddStructured != null && typeof state.mddStructured === "object";
       const useRendered = hadStructured && merged != null;
-      const mddDraft = useRendered ? mddStructuredToMarkdown(merged!) : (draft || `# Master Design Document\n\n${scope}`);
+      const mddDraft = useRendered ? mddStructuredToMarkdown(merged!) : (draft || getMddTemplatePlaceholder(scope));
       const outStructured = merged ?? (slice ? mergeMddStructured(undefined, slice) : undefined);
       const sum = getMddDraftSummary(mddDraft);
       LOG("ok clarifiedScopeLen=%s mddDraftLen=%s section2=%s useRendered=%s", scope.length, sum.length, sum.section2, useRendered);

@@ -1,8 +1,5 @@
-# utils
+# Utilidades web
 
-Utilidades compartidas.
-
-| Archivo                 | Uso                                                                                                                                                                                                                                                                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **costCalculator.ts**   | Estimación final alineada con el backend: Base = Entidades×12 + Pantallas×16 + Endpoints extra×4; multiplicadores por TechnicalMetadata; horas fijas de infra; buffer 25% si semáforo ≠ VERDE. Total MXN = Total Horas × $1,050/hr. calculateCostFromMdd(mddContent, { status, infraContent }) para actualización instantánea en la Col C. |
-| **markdownSections.ts** | parseMarkdownSections(content): divide el markdown en secciones por cabeceras (# … ## … ###). Cada sección tiene id estable (preamble, section-0, section-1, …) para que MddViewer solo re-renderice las secciones que cambian al hacer streaming.                                                                                         |
+- **`costCalculator.ts`** — estimación MXN desde MDD.
+- **`downloadDocumentsZip.ts`** — ZIP de entregables.
+- **`complexityTabs.ts`** — `isTabVisibleForComplexity(tab, complexity, { projectType })`: **LOW** oculta MDD/Blueprint/API; **MEDIUM** alinea la barra con `DELIVERABLES_BY_COMPLEXITY` (NEW: Paso 0, Spec, API, Guía UX/UI, Tasks, ADRs — sin MDD en barra; LEGACY: Modificación, MDD, Spec, API, Guía UX/UI, Tasks); **HIGH** muestra todo. Los documentos no mostrados pueden seguir en BD; la constitución para generadores sigue usando `constitutionMarkdown` en API (DBGA/Spec si no hay MDD).

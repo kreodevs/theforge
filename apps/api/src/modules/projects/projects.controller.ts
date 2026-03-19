@@ -4,7 +4,7 @@ import {
   createProjectSchema,
   updateProjectSchema,
   phase0DeepResearchBodySchema,
-} from "@the-forge/shared-types";
+} from "@maxprime/shared-types";
 
 @Controller("projects")
 export class ProjectsController {
@@ -18,6 +18,20 @@ export class ProjectsController {
   @Get()
   findAll() {
     return this.projects.findAll();
+  }
+
+  @Post(":id/stages")
+  createStage(@Param("id") projectId: string, @Body() body: unknown) {
+    return this.projects.createStage(projectId, body ?? {});
+  }
+
+  @Patch(":id/stages/:stageId")
+  patchStage(
+    @Param("id") projectId: string,
+    @Param("stageId") stageId: string,
+    @Body() body: unknown,
+  ) {
+    return this.projects.patchStage(projectId, stageId, body ?? {});
   }
 
   @Get(":id")
@@ -53,6 +67,24 @@ export class ProjectsController {
       urls: parsed.urls,
       includeBenchmark: parsed.includeBenchmark,
     });
+  }
+
+  /** Cascada de entregables según `Project.complexity` (LOW / MEDIUM / HIGH). */
+  @Post(":id/generate-deliverables")
+  generateDeliverablesCascade(@Param("id") id: string) {
+    return this.projects.generateDeliverablesCascade(id);
+  }
+
+  /** Aplica `complexityPending` a `complexity` y limpia HITL (alternativa a confirmar por mensaje en el chat). */
+  @Post(":id/confirm-complexity")
+  confirmComplexity(@Param("id") id: string) {
+    return this.projects.confirmComplexityProposal(id);
+  }
+
+  /** Re-infiere propuesta HITL desde DBGA/MDD existentes (re-valorar sin stream DBGA). Body opcional: `{ note?: string }`. */
+  @Post(":id/reassess-complexity")
+  reassessComplexity(@Param("id") id: string, @Body() body: { note?: string }) {
+    return this.projects.reassessComplexity(id, { note: body?.note });
   }
 
   @Post(":id/generate-spec")

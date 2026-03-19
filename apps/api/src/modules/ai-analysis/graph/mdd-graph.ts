@@ -10,7 +10,7 @@ import { createMddDiagramInjectorNode } from "../nodes/mdd-diagram-injector.node
 import { createMddSecurityNode } from "../nodes/mdd-security.node.js";
 import { createMddIntegrationNode } from "../nodes/mdd-integration.node.js";
 import { createMddAuditorNode } from "../nodes/mdd-auditor.node.js";
-import { createMddManagerNode } from "../nodes/mdd-manager.node.js";
+import { createMddManagerNode, type MddManagerToolDeps } from "../nodes/mdd-manager.node.js";
 import { createMddPlanApprovalNode } from "../nodes/mdd-plan-approval.node.js";
 import { createMddExecutorNode } from "../nodes/mdd-executor.node.js";
 import { createMddMergeSection1Node } from "../nodes/mdd-merge-section1.node.js";
@@ -88,9 +88,10 @@ export function createMddGraphWithManager(
   checkpointer: BaseCheckpointSaver | null,
   graphMemory: GraphMemoryService,
   precisionCalculator?: LivePrecisionCalculator | null,
+  managerToolDeps?: MddManagerToolDeps | null,
 ) {
   const llm = createDbgaLLM();
-  const managerNode = createMddManagerNode(llm, graphMemory, precisionCalculator);
+  const managerNode = createMddManagerNode(llm, graphMemory, precisionCalculator, managerToolDeps ?? null);
   const askInitialTopicNode = createMddAskInitialTopicNode();
   const clarifierNode = createMddClarifierNode(llm);
   const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools());
@@ -107,21 +108,14 @@ export function createMddGraphWithManager(
   /** Si hay directiva/requisitos y §3+§4 con contenido y aún no hemos pasado por critic (attempts < 1), ir a architect_critic. */
   function routeAfterSoftwareArchitect(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
-
-    // Siempre intentar Architect Critic si hay modelo y contratos, antes de seguir el flujo
+    const next = nextInSections(state, "software_architect");
+    if (next) return next;
+    const hasDirective = !!(state.acceptedProposalDirective?.trim());
     const draft = (state.mddDraft ?? "").trim();
     const hasSection3 = /##\s*3\.\s*Modelo\s+(?:de\s+)?datos/i.test(draft) && /\bCREATE\s+TABLE\b/i.test(draft);
     const hasSection4 = /##\s*4\.\s*Contratos\s+de\s+API/i.test(draft);
     const attempts = state.architectCriticAttempts ?? 0;
-
-    // Si hay directiva (HITL), critic es obligatorio. Si no, solo si hay algo que criticar.
-    const hasDirective = !!(state.acceptedProposalDirective?.trim());
-    if (hasSection3 && hasSection4 && (hasDirective || attempts < 1)) {
-      if (attempts < 1) return "architect_critic";
-    }
-
-    const next = nextInSections(state, "software_architect");
-    if (next) return next;
+    if (hasDirective && hasSection3 && hasSection4 && attempts < 1) return "architect_critic";
     return "format_after_architect";
   }
 

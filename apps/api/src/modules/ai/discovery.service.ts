@@ -1,7 +1,10 @@
 import { Injectable } from "@nestjs/common";
+import { ComplexityLevel } from "@maxprime/database";
+import type { ComplexityPending } from "@maxprime/shared-types";
 import { AiService } from "./ai.service.js";
 import { DISCOVERY_BENCHMARK_PROMPT } from "./prompts/discovery-benchmark-prompt.js";
 import { PHASE0_DEEP_RESEARCH_PROMPT } from "./prompts/phase0-deep-research-prompt.js";
+import { COMPLEXITY_INFERENCE_PROMPT } from "./prompts/complexity-inference-prompt.js";
 
 /**
  * Servicio de descubrimiento: Domain Benchmark & Gap Analysis (DBGA).
@@ -75,5 +78,51 @@ export class DiscoveryService {
     return this.ai.generateResponse(prompt, [], {
       systemPrompt: PHASE0_DEEP_RESEARCH_PROMPT,
     });
+  }
+
+  /**
+   * Clasifica LOW / MEDIUM / HIGH a partir de la idea y (opcionalmente) el DBGA ya generado.
+   * Usado tras Benchmark stream o generate-benchmark para fijar `Project.complexity`.
+   */
+  async inferComplexity(userIdea: string, dbgaMarkdown?: string | null): Promise<ComplexityLevel> {
+    const p = await this.inferComplexityProposal(userIdea, dbgaMarkdown);
+    return p.level;
+  }
+
+  /**
+   * Propuesta completa para HITL: nivel + plan + motivo (no persiste `complexity` hasta confirmación del usuario).
+   */
+  async inferComplexityProposal(userIdea: string, dbgaMarkdown?: string | null): Promise<ComplexityPending> {
+    const idea = (userIdea ?? "").trim().slice(0, 6000);
+    const dbga = (dbgaMarkdown ?? "").trim().slice(0, 14_000);
+    let prompt =
+      "Clasifica la complejidad del trabajo según las reglas del system prompt.\n\n" +
+      (idea ? `Idea / petición:\n---\n${idea}\n---\n\n` : "") +
+      (dbga ? `Extracto del Benchmark (DBGA):\n---\n${dbga}\n---` : "");
+    if (!idea && !dbga) {
+      prompt = "No hay contexto. Responde con complexity HIGH por defecto.";
+    }
+    try {
+      const raw = await this.ai.generateResponse(prompt, [], {
+        systemPrompt: COMPLEXITY_INFERENCE_PROMPT,
+      });
+      const cleaned = raw
+        .replace(/```json\s*/gi, "")
+        .replace(/```\s*/g, "")
+        .trim();
+      const j = JSON.parse(cleaned) as { complexity?: string; planSummary?: string; reason?: string };
+      const c = String(j.complexity ?? "").toUpperCase();
+      const level: ComplexityLevel =
+        c === "LOW" || c === "MEDIUM" || c === "HIGH" ? (c as ComplexityLevel) : ComplexityLevel.HIGH;
+      const planSummary = (j.planSummary ?? "").trim() || "Plan según nivel de complejidad estándar.";
+      const reason = (j.reason ?? "").trim() || "Clasificación automática.";
+      return { level, planSummary, reason };
+    } catch {
+      return {
+        level: ComplexityLevel.HIGH,
+        planSummary: "Constitución SDD completa (MDD canónico y entregables alineados).",
+        reason: "No se pudo parsear la inferencia; se usa HIGH por defecto.",
+      };
+    }
   }
 }

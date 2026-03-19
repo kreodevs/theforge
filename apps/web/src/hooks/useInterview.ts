@@ -31,6 +31,7 @@ export function useInterview(
   const streamingUserMessage = useWorkshopStore((s) => s.streamingUserMessage);
   const streamingContent = useWorkshopStore((s) => s.streamingContent);
   const streamingTab = useWorkshopStore((s) => s.streamingTab);
+  const activeStageId = useWorkshopStore((s) => s.activeStageId);
 
   const baseMessages = (session?.chatLog ?? []).filter(
     (m) => (m.tab ?? "mdd") === activeTabNorm,
@@ -39,11 +40,17 @@ export function useInterview(
     streamingUserMessage != null && (streamingTab ?? "mdd") === activeTabNorm
       ? [
         ...baseMessages,
-        { role: "user" as const, content: streamingUserMessage, tab: activeTabNorm },
+        {
+          role: "user" as const,
+          content: streamingUserMessage,
+          tab: activeTabNorm,
+          ...(activeStageId ? { stageId: activeStageId } : {}),
+        },
         {
           role: "assistant" as const,
           content: streamingContent ?? "",
           tab: activeTabNorm,
+          ...(activeStageId ? { stageId: activeStageId } : {}),
         },
       ]
       : baseMessages;

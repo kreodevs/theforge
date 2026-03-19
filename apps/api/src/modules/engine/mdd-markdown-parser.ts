@@ -39,64 +39,48 @@ export function parseMarkdownMdd(md: string | null): ParsedMdd {
     const line = lines[i];
     const lower = line.toLowerCase();
 
-    const isHeaderLine = line.startsWith("#");
-
     if (
-      isHeaderLine && (
-        /modelo de datos/i.test(line) ||
-        /\b3\./i.test(line) ||
-        lower.includes("modelo de datos") ||
-        lower.includes("data model")
-      )
+      /^#+\s*(\d\.)?\s*modelo de datos/i.test(line) ||
+      /^#+\s*3\./i.test(line) ||
+      lower.includes("modelo de datos")
     ) {
       inDataModel = true;
       inApi = false;
       continue;
     }
     if (
-      isHeaderLine && (
-        /contratos de api/i.test(line) ||
-        /\b4\./i.test(line) ||
-        lower.includes("contratos de api") ||
-        lower.includes("api contracts") ||
-        lower.includes("endpoints")
-      )
+      /^#+\s*(\d\.)?\s*contratos de api/i.test(line) ||
+      /^#+\s*4\./i.test(line) ||
+      lower.includes("contratos de api") ||
+      lower.includes("endpoints")
     ) {
       inDataModel = false;
       inApi = true;
       continue;
     }
-    if (isHeaderLine && (/^#+\s*(\d\.)?\s*(lógica|negocio|logic)/i.test(line) || lower.includes("lógica de negocio") || lower.includes("business logic"))) {
+    if (/^#+\s*(\d\.)?\s*(lógica|negocio)/i.test(line) || lower.includes("lógica de negocio")) {
       hasBusinessLogic = true;
     }
-    if (lower.includes("edge cases") || lower.includes("casos límite") || lower.includes("manejo de errores") || lower.includes("error handling")) {
+    if (/edge\s*cases|casos\s*límite|manejo de errores/i.test(lower)) {
       hasEdgeCases = true;
     }
-    if (inDataModel && (lower.includes("uuid") || lower.includes("string") || lower.includes("integer") || lower.includes("varchar") || /\*\*[^*]+\*\*:/.test(line) || lower.includes("primary key"))) {
+    if (inDataModel && (lower.includes("uuid") || lower.includes("string") || lower.includes("integer") || /\*\*[^*]+\*\*:/.test(line))) {
       hasFieldTypes = true;
     }
 
     if (inDataModel) {
-      // Detección de entidades: **Entity**, CREATE TABLE Entity, o Entity (
-      const entityMatch = line.match(/\*\*([A-Za-z][A-Za-z0-9_]*)\*\*(?:\s*\([^)]*\))?\s*[:]?|^-\s*\*\*([A-Za-z][A-Za-z0-9_]*)\*\*|(?:\bcreate\s+table\s+)(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)["`]?/i);
+      const entityMatch = line.match(/\*\*([A-Za-z][A-Za-z0-9_]*)\*\*(?:\s*\([^)]*\))?\s*[:]?|^-\s*\*\*([A-Za-z][A-Za-z0-9_]*)\*\*|^([A-Za-z][A-Za-z0-9_]*)\s*\(/);
       if (entityMatch) {
         const name = (entityMatch[1] ?? entityMatch[2] ?? entityMatch[3])?.trim();
         if (name && !entities.includes(name)) entities.push(name);
       }
-      // Detección de nodos/relaciones Cypher (para FalkorDB/Grafos)
-      const graphMatch = line.match(/(?:\((?:[a-z0-9_]+)?\s*:\s*([A-Z][A-Za-z0-9_]*)\s*\))|(?:\s*:\s*([A-Z][A-Za-z0-9_]*)\b)/);
-      if (graphMatch) {
-        const name = (graphMatch[1] ?? graphMatch[2])?.trim();
-        if (name && !entities.includes(name)) entities.push(name);
+      if (!entityMatch && /\*\*[A-Za-z][A-Za-z0-9_]*\*\*/.test(line)) {
+        const boldMatch = line.match(/\*\*([A-Za-z][A-Za-z0-9_]*)\*\*/);
+        if (boldMatch?.[1] && !entities.includes(boldMatch[1])) entities.push(boldMatch[1]);
       }
     }
-    if (inApi) {
-      // Detección de endpoints: /api/..., /auth/..., métodos HTTP aislados en tablas, o rutas entre backticks
-      const hasMethod = /\b(POST|GET|PUT|DELETE|PATCH)\b/.test(line);
-      const hasPath = /(\/[\w/{}-]+)/.test(line);
-      if (hasMethod && hasPath) {
-        apiOrScreens.push({ path: line.trim() });
-      }
+    if (inApi && (/\/api\/|\/auth\//.test(line) || /\b(POST|GET|PUT|DELETE|PATCH)\b/.test(line))) {
+      apiOrScreens.push({ path: line.trim() });
     }
   }
 

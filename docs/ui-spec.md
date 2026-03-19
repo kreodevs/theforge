@@ -1,4 +1,4 @@
-## 1. La Pantalla de "The Forge" (The Workshop)
+## 1. La Pantalla de "MaxPrime" (The Workshop)
 
 Esta es la vista principal donde sucede la magia. Debe ser una interfaz de **tres columnas** (o una principal con dos sidebars) para evitar que pierdas el contexto.
 

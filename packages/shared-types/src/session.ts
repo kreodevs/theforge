@@ -4,6 +4,8 @@ const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string(),
   tab: z.string().optional(),
+  /** Etapa del Workshop cuando se envió el mensaje (historial global; no filtra por etapa). */
+  stageId: z.string().optional(),
 });
 
 export const contextStepEnum = ["CONTEXT", "DATA", "LOGIC", "SECURITY"] as const;
@@ -19,6 +21,7 @@ export const appendChatSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string(),
   tab: z.string().optional(),
+  stageId: z.string().optional(),
 });
 
 export const sessionResponseSchema = z.object({

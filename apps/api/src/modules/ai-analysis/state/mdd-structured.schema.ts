@@ -121,3 +121,41 @@ export const MDD_SECTION_TO_AGENTS: Record<string, string[]> = {
   "6. Seguridad": ["security"],
   "7. Infraestructura": ["integration"],
 };
+
+/**
+ * Plantilla canónica del MDD (7 secciones) según Specification-Driven Development.
+ * Única fuente de verdad para placeholders en Clarifier y Legacy.
+ * @param section1Content - Contenido opcional para la sección 1 (Contexto); si no se pasa, se usa "(Pendiente)".
+ */
+export function getMddTemplatePlaceholder(section1Content?: string): string {
+  const s1 = (section1Content ?? "(Pendiente)").trim() || "(Pendiente)";
+  return `# Master Design Document
+
+## 1. Contexto
+
+${s1}
+
+## 2. Arquitectura y Stack
+
+(Pendiente)
+
+## 3. Modelo de Datos
+
+(Pendiente)
+
+## 4. Contratos de API
+
+(Pendiente)
+
+## 5. Lógica y Edge Cases
+
+(Pendiente)
+
+## 6. Seguridad
+
+(Pendiente)
+
+## 7. Infraestructura
+
+(Pendiente)`;
+}

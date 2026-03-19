@@ -1,4 +1,4 @@
-# The Forge — Ejecución en local
+# MaxPrime — Ejecución en local
 
 Pasos para desarrollar en tu máquina. Se asume **Docker** instalado para la base de datos (no hace falta instalar PostgreSQL).
 
@@ -22,10 +22,10 @@ pnpm install
 ### 2. Levantar solo Postgres
 
 ```bash
-docker run -d --name theforge-db \
-  -e POSTGRES_USER=theforge \
-  -e POSTGRES_PASSWORD=theforge \
-  -e POSTGRES_DB=theforge \
+docker run -d --name maxprime-db \
+  -e POSTGRES_USER=maxprime \
+  -e POSTGRES_PASSWORD=maxprime \
+  -e POSTGRES_DB=maxprime \
   -p 5432:5432 \
   postgres:15-alpine
 ```
@@ -35,7 +35,7 @@ docker run -d --name theforge-db \
 En la raíz del repo (o en `apps/api`), crea `.env`:
 
 ```env
-DATABASE_URL=postgresql://theforge:theforge@localhost:5432/theforge
+DATABASE_URL=postgresql://maxprime:maxprime@localhost:5432/maxprime
 ```
 
 Opcional (para chat con IA):
@@ -107,11 +107,11 @@ pnpm run dev
 ### Parar Postgres
 
 ```bash
-docker stop theforge-db
-docker rm theforge-db   # si quieres borrar el contenedor (los datos se pierden)
+docker stop maxprime-db
+docker rm maxprime-db   # si quieres borrar el contenedor (los datos se pierden)
 ```
 
-Para conservar datos, solo `docker stop theforge-db`; al volver a hacer `docker run ...` usa otro nombre o el mismo si ya lo borraste.
+Para conservar datos, solo `docker stop maxprime-db`; al volver a hacer `docker run ...` usa otro nombre o el mismo si ya lo borraste.
 
 ---
 
@@ -124,8 +124,8 @@ docker compose up --build
 ```
 
 - **App:** http://localhost:80  
-- **Contenedor:** `theforge-db`  
-- **Datos:** volumen `theforge_db_data`
+- **Contenedor:** `maxprime-db`  
+- **Datos:** volumen `maxprime_db_data`
 
 Útil para probar el despliegue o si no quieres tener Node/pnpm en local.
 
@@ -135,11 +135,11 @@ docker compose up --build
 
 Si tienes PostgreSQL 15 en local:
 
-1. Crea la base de datos `theforge` y un usuario/contraseña.
+1. Crea la base de datos `maxprime` y un usuario/contraseña.
 2. En `.env`:
 
    ```env
-   DATABASE_URL=postgresql://USUARIO:PASSWORD@localhost:5432/theforge
+   DATABASE_URL=postgresql://USUARIO:PASSWORD@localhost:5432/maxprime
    ```
 
 3. Luego: `pnpm install` → `pnpm run db:generate` → `pnpm run db:push` → `pnpm run dev`.
@@ -150,7 +150,7 @@ Si tienes PostgreSQL 15 en local:
 
 ```bash
 pnpm install
-echo "DATABASE_URL=postgresql://theforge:theforge@localhost:5432/theforge" > .env
+echo "DATABASE_URL=postgresql://maxprime:maxprime@localhost:5432/maxprime" > .env
 pnpm run db:generate && pnpm run db:push
 pnpm run dev:local
 ```

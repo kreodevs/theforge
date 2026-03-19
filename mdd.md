@@ -1,4 +1,4 @@
-# MDD: "The Forge" - Software Factory Orchestrator
+# MDD: "MaxPrime" - Software Factory Orchestrator
 
 **Versión:** 1.0 (Producción) | **Arquitectura:** Monorepo (Turborepo) | **Estado del Semáforo:** 🟢 Listo para implementación.
 
@@ -6,7 +6,7 @@
 
 ## 1. Resumen Ejecutivo y Alcance
 
-**The Forge** es una plataforma interna diseñada para centralizar la creación de software. Su objetivo es transformar una entrevista técnica proactiva en un paquete de ingeniería de alta precisión (+90%) para ser ejecutado por agentes de IA (Cursor/Antigravity) o desarrolladores humanos.
+**MaxPrime** es una plataforma interna diseñada para centralizar la creación de software. Su objetivo es transformar una entrevista técnica proactiva en un paquete de ingeniería de alta precisión (+90%) para ser ejecutado por agentes de IA (Cursor/Antigravity) o desarrolladores humanos.
 
 - **Pilar de Negocio:** Reducir el tiempo de desarrollo de meses a semanas.
 - **Pilar de Gestión:** Proveer estimaciones automáticas de costo (MXN) y tiempo.
@@ -30,7 +30,7 @@ Para garantizar escalabilidad y despliegue profesional, se utilizará una estruc
 
 Plaintext
 
-`/the-forge
+`/maxprime
 /apps
 /api <-- Backend NestJS
 /web <-- Frontend React
@@ -104,7 +104,7 @@ La aplicación se desplegará mediante Dokploy usando contenedores Docker multie
 
 ---
 
-## 7. Entregables Finales (Output de The Forge)
+## 7. Entregables Finales (Output de MaxPrime)
 
 El **Master Design Doc** actúa como **Constitución del proyecto** según Specification-Driven Development (SDD): se establece o refina primero, y todo lo que se genere después (blueprint, contratos, infra) debe cumplirlo. Donde aplique, los entregables incluyen un breve checklist de cumplimiento con el MDD.
 

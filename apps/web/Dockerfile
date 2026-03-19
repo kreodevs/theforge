@@ -16,10 +16,12 @@ RUN pnpm install
 COPY packages/config packages/config
 COPY apps/web apps/web
 
-RUN pnpm run build --filter=@the-forge/web
+RUN pnpm run build --filter=@maxprime/web
 
 # Production stage — Nginx
 FROM nginx:alpine AS runner
+
+RUN apk add --no-cache wget
 
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf

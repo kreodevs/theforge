@@ -1,14 +1,16 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import type { Session } from "@the-forge/database";
+import type { Session } from "@maxprime/database";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { PreferencesService } from "../ai/preferences.service.js";
+import { ChatResponseParserService } from "./chat-response-parser.service.js";
 import {
   createSessionSchema,
   appendChatSchema,
   contextStepEnum,
+  type AppendChatDto,
   type ChatMessage,
-} from "@the-forge/shared-types";
+} from "@maxprime/shared-types";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -20,6 +22,7 @@ export class SessionsService {
     private readonly prisma: PrismaService,
     private readonly ai: AiService,
     private readonly preferences: PreferencesService,
+    private readonly parser: ChatResponseParserService,
   ) { }
 
   async create(data: { projectId: string; contextStep?: string; chatLog?: ChatMessage[] }) {
@@ -63,10 +66,7 @@ export class SessionsService {
     });
   }
 
-  async appendMessage(
-    sessionId: string,
-    data: { role: "user" | "assistant"; content: string; tab?: string },
-  ) {
+  async appendMessage(sessionId: string, data: AppendChatDto) {
     const parsed = appendChatSchema.parse(data);
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
@@ -86,84 +86,6 @@ export class SessionsService {
     });
   }
 
-  /**
-   * Normaliza guiones Unicode (en-dash, em-dash, etc.) a ASCII '-' para que el delimitador coincida.
-   * Algunos modelos devuelven U+2013/U+2014 en lugar de U+002D.
-   */
-  private static normalizeDashes(s: string): string {
-    return s.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
-  }
-
-  /** Quita etiquetas tipo "**MENSAJE PARA EL CHAT:**" al inicio del mensaje de chat. */
-  private static stripChatLabel(text: string): string {
-    const t = text.trim();
-    const removed = t.replace(/^\s*\*{0,2}\s*MENSAJE\s+PARA\s+EL\s+CHAT\s*\*{0,2}\s*:?\s*\n?/i, "");
-    return removed.trim();
-  }
-
-  /** Acepta ---FIN_TAG--- para separar el documento del mensaje de chat. */
-  private static splitDocAndChat(response: string, tag: string): { docPart: string; chatPart: string } | null {
-    const trimmed = response.trim();
-    const normalized = SessionsService.normalizeDashes(trimmed);
-    const regex = new RegExp(`-{1,}FIN_${tag}-{1,}`, "i");
-    const match = normalized.match(regex);
-    if (match) {
-      const idx = normalized.indexOf(match[0]);
-      const docPart = trimmed.slice(0, idx).trim();
-      const chatPart = trimmed.slice(idx + match[0].length).trim();
-      if (docPart.length > 0) return { docPart, chatPart };
-    }
-    const lineDelimiter = normalized.match(new RegExp(`\\n(\\s*-{0,}\\s*FIN_${tag}\\s*-{0,}\\s*)\\n`, "i"));
-    if (lineDelimiter) {
-      const idx = normalized.indexOf(lineDelimiter[0]);
-      const docPart = trimmed.slice(0, idx).trim();
-      const chatPart = trimmed.slice(idx + lineDelimiter[0].length).trim();
-      if (docPart.length > 0) return { docPart, chatPart };
-    }
-    return null;
-  }
-
-  /** Acepta ---FIN_MDD---, --FIN_MDD---, -FIN_MDD--- (1+ guiones) o línea que solo contiene FIN_MDD. */
-  private static splitMddAndChat(response: string): { mddPart: string; chatPart: string } | null {
-    const res = SessionsService.splitDocAndChat(response, "MDD");
-    if (res) return { mddPart: res.docPart, chatPart: res.chatPart };
-    return null;
-  }
-
-  /** Acepta ---FIN_DBGA--- para separar documento Benchmark & Gap Analysis del mensaje de chat. */
-  private static splitDbgaAndChat(response: string): { docPart: string; chatPart: string } | null {
-    return SessionsService.splitDocAndChat(response, "DBGA");
-  }
-
-  /** Acepta ---FIN_UX_UI--- para separar documento UX/UI Guide del mensaje de chat. */
-  private static splitUxUiGuideAndChat(response: string): { docPart: string; chatPart: string } | null {
-    return SessionsService.splitDocAndChat(response, "UX_UI");
-  }
-
-  /** Quita intros de chat y vallas de markdown (fences) de los documentos generados. */
-  public static cleanDocumentContent(text: string): string {
-    if (!text) return "";
-    let cleaned = text.trim();
-
-    // 1. Quitar vallas de markdown al inicio (```markdown o ```)
-    cleaned = cleaned.replace(/^\s*```(?:markdown)?\s*/i, "");
-
-    // 2. Buscar el primer encabezado (#) y descartar lo anterior (intro del chat)
-    // Buscamos cualquier nivel de encabezado #, ##, ### opcionalmente precededido por espacios
-    const headerMatch = cleaned.match(/^\s*#+|(?<=\n)\s*#+/);
-    if (headerMatch && headerMatch.index !== undefined) {
-      cleaned = cleaned.slice(headerMatch.index).trim();
-    }
-
-    // 3. Volver a quitar vallas por si quedaron después de la intro
-    cleaned = cleaned.replace(/^\s*```(?:markdown)?\s*/i, "");
-
-    // 4. Quitar vallas de markdown al final (```)
-    cleaned = cleaned.replace(/\s*```\s*$/i, "");
-
-    return cleaned.trim();
-  }
-
   async chat(
     sessionId: string,
     userMessage: string,
@@ -173,6 +95,12 @@ export class SessionsService {
       currentUxUiGuideContent?: string;
       currentBlueprintContent?: string;
       activeTab?: string;
+      /** Override system prompt (ej. modo legacy con TheForge). */
+      systemPrompt?: string;
+      /** Etapa activa del Workshop: se guarda en cada mensaje user/assistant del par. */
+      stageId?: string;
+      /** Fase 0 (benchmark): instrucciones de entrevista proactiva + contexto HITL de complejidad */
+      complexityInterviewContext?: string;
     },
   ): Promise<{
     session: Session | null;
@@ -210,6 +138,8 @@ export class SessionsService {
         currentBlueprintContent: options?.currentBlueprintContent,
         activeTab: options?.activeTab,
         learningHistory: learningHistory || undefined,
+        systemPrompt: options?.systemPrompt,
+        complexityInterviewContext: options?.complexityInterviewContext,
       });
     } catch (err) {
       console.error("[Chat] ai.generateResponse error:", err);
@@ -226,15 +156,15 @@ export class SessionsService {
         "La IA no generó texto (respuesta vacía o bloqueada). Intenta de nuevo o reformula el mensaje.",
       );
     }
-    const mddSplit = SessionsService.splitMddAndChat(safeResponse);
-    const uxSplit = SessionsService.splitUxUiGuideAndChat(safeResponse);
-    const dbgaSplit = SessionsService.splitDbgaAndChat(safeResponse);
-    const specSplit = SessionsService.splitDocAndChat(safeResponse, "SPEC");
-    const blueSplit = SessionsService.splitDocAndChat(safeResponse, "BLUEPRINT");
-    const apiSplit = SessionsService.splitDocAndChat(safeResponse, "API");
-    const flowsSplit = SessionsService.splitDocAndChat(safeResponse, "FLOWS");
-    const tasksSplit = SessionsService.splitDocAndChat(safeResponse, "TASKS");
-    const infraSplit = SessionsService.splitDocAndChat(safeResponse, "INFRA");
+    const mddSplit = this.parser.splitMddAndChat(safeResponse);
+    const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
+    const dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
+    const specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
+    const blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
+    const apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
+    const flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
+    const tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
+    const infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
 
     const hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
@@ -286,13 +216,16 @@ export class SessionsService {
       console.log("[Chat] fallback: uxUiGuideContent length:", uxDocPart?.length ?? 0, "chat length:", rawChat.length);
     }
 
-    const assistantContent = SessionsService.stripChatLabel(rawChat);
+    const assistantContent = this.parser.stripChatLabel(rawChat);
 
     const tab = options?.activeTab ?? "mdd";
+    const stageId = options?.stageId?.trim();
+    const userMsg = { role: "user" as const, content: userMessage, tab };
+    const asstMsg = { role: "assistant" as const, content: assistantContent, tab };
     const updated = [
       ...fullLog,
-      { role: "user" as const, content: userMessage, tab },
-      { role: "assistant" as const, content: assistantContent, tab },
+      stageId ? { ...userMsg, stageId } : userMsg,
+      stageId ? { ...asstMsg, stageId } : asstMsg,
     ];
 
     await this.prisma.session.update({
@@ -311,17 +244,19 @@ export class SessionsService {
     const updatedSession = await this.prisma.session.findUnique({
       where: { id: sessionId },
     });
+    const cleanedMddPart = hasMdd ? this.parser.cleanDocumentContent(mddSplit!.mddPart) : "";
+    const finalMdd = hasMdd ? this.parser.mergeMddSectionOrUseFull(options?.currentMddContent, cleanedMddPart) : undefined;
     return {
       session: updatedSession,
-      mddContent: hasMdd ? SessionsService.cleanDocumentContent(mddSplit!.mddPart) : undefined,
-      uxUiGuideContent: uxDocPart ? SessionsService.cleanDocumentContent(uxDocPart) : undefined,
-      dbgaContent: dbgaDocPart ? SessionsService.cleanDocumentContent(dbgaDocPart) : undefined,
-      specContent: hasSpec ? SessionsService.cleanDocumentContent(specSplit!.docPart) : undefined,
-      blueprintContent: hasBlue ? SessionsService.cleanDocumentContent(blueSplit!.docPart) : undefined,
-      apiContractsContent: hasApi ? SessionsService.cleanDocumentContent(apiSplit!.docPart) : undefined,
-      logicFlowsContent: hasFlows ? SessionsService.cleanDocumentContent(flowsSplit!.docPart) : undefined,
-      tasksContent: hasTasks ? SessionsService.cleanDocumentContent(tasksSplit!.docPart) : undefined,
-      infraContent: hasInfra ? SessionsService.cleanDocumentContent(infraSplit!.docPart) : undefined,
+      mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
+      uxUiGuideContent: uxDocPart ? this.parser.cleanDocumentContent(uxDocPart) : undefined,
+      dbgaContent: dbgaDocPart ? this.parser.cleanDocumentContent(dbgaDocPart) : undefined,
+      specContent: hasSpec ? this.parser.cleanDocumentContent(specSplit!.docPart) : undefined,
+      blueprintContent: hasBlue ? this.parser.cleanDocumentContent(blueSplit!.docPart) : undefined,
+      apiContractsContent: hasApi ? this.parser.cleanDocumentContent(apiSplit!.docPart) : undefined,
+      logicFlowsContent: hasFlows ? this.parser.cleanDocumentContent(flowsSplit!.docPart) : undefined,
+      tasksContent: hasTasks ? this.parser.cleanDocumentContent(tasksSplit!.docPart) : undefined,
+      infraContent: hasInfra ? this.parser.cleanDocumentContent(infraSplit!.docPart) : undefined,
     };
   }
 
@@ -336,7 +271,11 @@ export class SessionsService {
       currentDbgaContent?: string;
       currentUxUiGuideContent?: string;
       currentBlueprintContent?: string;
+      currentSpecContent?: string;
       activeTab?: string;
+      systemPrompt?: string;
+      stageId?: string;
+      complexityInterviewContext?: string;
     },
   ): AsyncGenerator<
     | { type: "chunk"; content: string }
@@ -361,7 +300,10 @@ export class SessionsService {
     const history = filterChatByTab(fullLog, options?.activeTab ?? "mdd");
     const activeTab = options?.activeTab ?? "mdd";
     const tab = activeTab;
-    const userEntry = { role: "user" as const, content: userMessage, tab };
+    const stageId = options?.stageId?.trim();
+    const userEntry = stageId
+      ? { role: "user" as const, content: userMessage, tab, stageId }
+      : { role: "user" as const, content: userMessage, tab };
 
     const learningHistory = await this.preferences.getPreferencesForContext(session.projectId, 5);
     let stream: AsyncIterable<string>;
@@ -371,8 +313,11 @@ export class SessionsService {
         currentDbgaContent: options?.currentDbgaContent,
         currentUxUiGuideContent: options?.currentUxUiGuideContent,
         currentBlueprintContent: options?.currentBlueprintContent,
+        currentSpecContent: options?.currentSpecContent,
         activeTab: options?.activeTab,
         learningHistory: learningHistory || undefined,
+        systemPrompt: options?.systemPrompt,
+        complexityInterviewContext: options?.complexityInterviewContext,
       });
     } catch (err) {
       console.error("[ChatStream] ai.generateResponseStream error:", err);
@@ -392,15 +337,15 @@ export class SessionsService {
       );
     }
 
-    const mddSplit = SessionsService.splitMddAndChat(safeResponse);
-    const uxSplit = SessionsService.splitUxUiGuideAndChat(safeResponse);
-    const dbgaSplit = SessionsService.splitDbgaAndChat(safeResponse);
-    const specSplit = SessionsService.splitDocAndChat(safeResponse, "SPEC");
-    const blueSplit = SessionsService.splitDocAndChat(safeResponse, "BLUEPRINT");
-    const apiSplit = SessionsService.splitDocAndChat(safeResponse, "API");
-    const flowsSplit = SessionsService.splitDocAndChat(safeResponse, "FLOWS");
-    const tasksSplit = SessionsService.splitDocAndChat(safeResponse, "TASKS");
-    const infraSplit = SessionsService.splitDocAndChat(safeResponse, "INFRA");
+    const mddSplit = this.parser.splitMddAndChat(safeResponse);
+    const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
+    const dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
+    const specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
+    const blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
+    const apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
+    const flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
+    const tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
+    const infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
 
     const hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
@@ -446,26 +391,31 @@ export class SessionsService {
       }
     }
 
-    const assistantContent = SessionsService.stripChatLabel(rawChat);
-    const updated = [...fullLog, userEntry, { role: "assistant" as const, content: assistantContent, tab }];
+    const assistantContent = this.parser.stripChatLabel(rawChat);
+    const assistantEntry = stageId
+      ? { role: "assistant" as const, content: assistantContent, tab, stageId }
+      : { role: "assistant" as const, content: assistantContent, tab };
+    const updated = [...fullLog, userEntry, assistantEntry];
     await this.prisma.session.update({
       where: { id: sessionId },
       data: { chatLog: updated as object },
     });
 
     const updatedSession = await this.prisma.session.findUnique({ where: { id: sessionId } });
+    const cleanedMddPart = hasMdd ? this.parser.cleanDocumentContent(mddSplit!.mddPart) : "";
+    const finalMdd = hasMdd ? this.parser.mergeMddSectionOrUseFull(options?.currentMddContent, cleanedMddPart) : undefined;
     yield {
       type: "done",
       session: updatedSession,
-      mddContent: hasMdd ? SessionsService.cleanDocumentContent(mddSplit!.mddPart) : undefined,
-      uxUiGuideContent: uxDocPart ? SessionsService.cleanDocumentContent(uxDocPart) : undefined,
-      dbgaContent: dbgaDocPart ? SessionsService.cleanDocumentContent(dbgaDocPart) : undefined,
-      specContent: hasSpec ? SessionsService.cleanDocumentContent(specSplit!.docPart) : undefined,
-      blueprintContent: hasBlue ? SessionsService.cleanDocumentContent(blueSplit!.docPart) : undefined,
-      apiContractsContent: hasApi ? SessionsService.cleanDocumentContent(apiSplit!.docPart) : undefined,
-      logicFlowsContent: hasFlows ? SessionsService.cleanDocumentContent(flowsSplit!.docPart) : undefined,
-      tasksContent: hasTasks ? SessionsService.cleanDocumentContent(tasksSplit!.docPart) : undefined,
-      infraContent: hasInfra ? SessionsService.cleanDocumentContent(infraSplit!.docPart) : undefined,
+      mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
+      uxUiGuideContent: uxDocPart ? this.parser.cleanDocumentContent(uxDocPart) : undefined,
+      dbgaContent: dbgaDocPart ? this.parser.cleanDocumentContent(dbgaDocPart) : undefined,
+      specContent: hasSpec ? this.parser.cleanDocumentContent(specSplit!.docPart) : undefined,
+      blueprintContent: hasBlue ? this.parser.cleanDocumentContent(blueSplit!.docPart) : undefined,
+      apiContractsContent: hasApi ? this.parser.cleanDocumentContent(apiSplit!.docPart) : undefined,
+      logicFlowsContent: hasFlows ? this.parser.cleanDocumentContent(flowsSplit!.docPart) : undefined,
+      tasksContent: hasTasks ? this.parser.cleanDocumentContent(tasksSplit!.docPart) : undefined,
+      infraContent: hasInfra ? this.parser.cleanDocumentContent(infraSplit!.docPart) : undefined,
     };
   }
 
@@ -483,6 +433,7 @@ export class SessionsService {
       uxUiGuideContent?: string | null;
       chatLog?: ChatMessage[];
       activeTab?: string;
+      stageId?: string;
     },
   ) {
     const session = await this.prisma.session.findUnique({
@@ -581,13 +532,16 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
     }
 
     const response = await this.ai.generateResponse(syntheticPrompt, []);
-    const mddSplit = SessionsService.splitMddAndChat(response);
-    const uxSplit = SessionsService.splitUxUiGuideAndChat(response);
+    const mddSplit = this.parser.splitMddAndChat(response);
+    const uxSplit = this.parser.splitUxUiGuideAndChat(response);
     const rawChat = mddSplit !== null ? mddSplit.chatPart : uxSplit !== null ? uxSplit.chatPart : response;
-    const contentToAppend = SessionsService.stripChatLabel(rawChat);
+    const contentToAppend = this.parser.stripChatLabel(rawChat);
+    const sid = context.stageId?.trim();
     return this.appendMessage(
       sessionId,
-      { role: "assistant", content: contentToAppend, tab: context.activeTab },
+      sid
+        ? { role: "assistant", content: contentToAppend, tab: context.activeTab, stageId: sid }
+        : { role: "assistant", content: contentToAppend, tab: context.activeTab },
     );
   }
 

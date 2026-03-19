@@ -1,160 +1,450 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { Status } from "@the-forge/database";
-import type { Prisma } from "@the-forge/database";
+import { ComplexityLevel, Prisma, StageStatus, Status } from "@maxprime/database";
+import type { Estimation, Project, Stage } from "@maxprime/database";
 import { PrismaService } from "../../prisma/prisma.service.js";
-import { SessionsService } from "../sessions/sessions.service.js";
-import { SemaphoreService } from "../engine/semaphore.service.js";
-import { CostCalculatorService } from "../engine/cost-calculator.service.js";
-import { normalizeMddContent, extractTechnicalMetadataTags } from "../engine/mdd-markdown-parser.js";
-import { preRenderMddSanity, sanitizeMermaidInDraft } from "../engine/mdd-pre-render.js";
-import { parseInfraFixedHours } from "../engine/cost-calculator.service.js";
+import { cleanDocumentContent } from "../sessions/document-content.util.js";
+import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
+import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
+import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
+import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
 import type { ApiConformanceResult, ConformanceResult } from "../engine/conformance.service.js";
 import { ConformanceService } from "../engine/conformance.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
 import { ScraperService } from "../scraper/scraper.service.js";
+import { TheForgeService } from "../theforge/theforge.service.js";
 import { resolveUrls } from "../scraper/url-utils.js";
 import {
   createProjectSchema,
+  createStageBodySchema,
+  patchStageBodySchema,
   updateProjectSchema,
+  DELIVERABLES_BY_COMPLEXITY,
+  type DeliverableKind,
+  type ComplexityPending,
+  type CreateProjectDto,
   type UpdateProjectDto,
-} from "@the-forge/shared-types";
+} from "@maxprime/shared-types";
+import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
+import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
+
+type StageWithEst = Stage & { estimation: Estimation | null };
+
+function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unknown>>(project: P) {
+  const flat = flattenStageDeliverables(project.stages);
+  return { ...project, ...flat };
+}
 
 @Injectable()
 export class ProjectsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly semaphore: SemaphoreService,
-    private readonly costCalculator: CostCalculatorService,
     private readonly conformance: ConformanceService,
     private readonly ai: AiService,
     private readonly discovery: DiscoveryService,
     private readonly scraper: ScraperService,
-  ) { }
+    private readonly estimationRecalc: ProjectEstimationRecalcService,
+    private readonly mddUpdatePipeline: MddUpdatePipelineService,
+    private readonly semaphore: SemaphoreService,
+    private readonly theforge: TheForgeService,
+  ) {}
 
-  async create(data: { name: string; hasUxTeam?: boolean }) {
+  private buildSemaphoreBase(
+    p: Pick<
+      Project,
+      | "complexity"
+      | "hasUxTeam"
+      | "figmaMapping"
+      | "specContent"
+      | "useCasesContent"
+      | "userStoriesContent"
+      | "tasksContent"
+      | "apiContractsContent"
+      | "uxUiGuideContent"
+      | "logicFlowsContent"
+      | "infraContent"
+    >,
+  ): Omit<SemaphoreEvaluationInput, "mddJsonString"> {
+    return {
+      complexity: p.complexity ?? ComplexityLevel.HIGH,
+      hasUxTeam: p.hasUxTeam,
+      figmaMapping: p.figmaMapping,
+      deliverables: {
+        specContent: p.specContent,
+        useCasesContent: p.useCasesContent,
+        userStoriesContent: p.userStoriesContent,
+        tasksContent: p.tasksContent,
+        apiContractsContent: p.apiContractsContent,
+        uxUiGuideContent: p.uxUiGuideContent,
+        logicFlowsContent: p.logicFlowsContent,
+        infraContent: p.infraContent,
+      },
+    };
+  }
+
+  private mergeProjectForSemaphore(
+    existing: Project,
+    rest: Partial<UpdateProjectDto>,
+  ): Pick<
+    Project,
+    | "complexity"
+    | "hasUxTeam"
+    | "figmaMapping"
+    | "specContent"
+    | "useCasesContent"
+    | "userStoriesContent"
+    | "tasksContent"
+    | "apiContractsContent"
+    | "uxUiGuideContent"
+    | "logicFlowsContent"
+    | "infraContent"
+  > {
+    return {
+      complexity: (rest.complexity ?? existing.complexity) as ComplexityLevel,
+      hasUxTeam: rest.hasUxTeam ?? existing.hasUxTeam,
+      figmaMapping: (rest.figmaMapping !== undefined ? rest.figmaMapping : existing.figmaMapping) as Project["figmaMapping"],
+      specContent: rest.specContent !== undefined ? rest.specContent : existing.specContent,
+      useCasesContent: rest.useCasesContent !== undefined ? rest.useCasesContent : existing.useCasesContent,
+      userStoriesContent: rest.userStoriesContent !== undefined ? rest.userStoriesContent : existing.userStoriesContent,
+      tasksContent: rest.tasksContent !== undefined ? rest.tasksContent : existing.tasksContent,
+      apiContractsContent: rest.apiContractsContent !== undefined ? rest.apiContractsContent : existing.apiContractsContent,
+      uxUiGuideContent: rest.uxUiGuideContent !== undefined ? rest.uxUiGuideContent : existing.uxUiGuideContent,
+      logicFlowsContent: rest.logicFlowsContent !== undefined ? rest.logicFlowsContent : existing.logicFlowsContent,
+      infraContent: rest.infraContent !== undefined ? rest.infraContent : existing.infraContent,
+    };
+  }
+
+  private mddJsonStringForSemaphore(mddContent: string | null): string | null {
+    if (!mddContent?.trim()) return null;
+    const normalized = normalizeMddContent(mddContent);
+    return JSON.stringify(normalized);
+  }
+
+  /** Recalcula semáforo de la etapa principal cuando cambian entregables/complejidad sin tocar el MDD. */
+  private async refreshStageSemaphoreFromProject(projectId: string): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
+    if (!project) return;
+    const targetStage = pickPrimaryStage(project.stages);
+    if (!targetStage) return;
+
+    const { status, precisionScore } = this.semaphore.evaluate({
+      ...this.buildSemaphoreBase(project),
+      mddJsonString: this.mddJsonStringForSemaphore(targetStage.mddContent),
+    });
+
+    await this.prisma.stage.update({
+      where: { id: targetStage.id },
+      data: { status, precisionScore },
+    });
+
+    const mddForRecalc = targetStage.mddContent ?? null;
+    if (mddForRecalc != null) {
+      await this.estimationRecalc.recalcAndUpsert(targetStage.id, {
+        mddContent: mddForRecalc,
+        infraContent: project.infraContent ?? null,
+        status,
+      });
+    }
+  }
+
+  private mddFromStages(stages: StageWithEst[]): string {
+    return pickPrimaryStage(stages)?.mddContent ?? "";
+  }
+
+  /** Insumo principal para prompts de entregables: MDD o, en LOW/MEDIUM sin MDD, DBGA + resumen + spec. */
+  private constitutionMarkdown(project: Project & { stages: StageWithEst[] }): string {
+    const mdd = this.mddFromStages(project.stages).trim();
+    if (mdd.length > 0) return mdd;
+    const cx = project.complexity ?? ComplexityLevel.HIGH;
+    if (cx === ComplexityLevel.LOW || cx === ComplexityLevel.MEDIUM) {
+      const parts = [
+        (project.dbgaContent ?? "").trim(),
+        (project.phase0SummaryContent ?? "").trim(),
+        (project.specContent ?? "").trim(),
+      ].filter((p) => p.length > 0);
+      return parts.join("\n\n---\n\n");
+    }
+    return "";
+  }
+
+  async create(data: CreateProjectDto) {
     const parsed = createProjectSchema.parse(data);
-    return this.prisma.project.create({
+    const isLegacy = parsed.projectType === "LEGACY";
+    const created = await this.prisma.project.create({
       data: {
         name: parsed.name,
         hasUxTeam: parsed.hasUxTeam ?? false,
+        complexity: parsed.complexity as ComplexityLevel,
+        projectType: parsed.projectType,
+        theforgeProjectId: parsed.theforgeProjectId ?? undefined,
+        stages: {
+          create: {
+            ordinal: 1,
+            key: "main",
+            name: "Etapa principal",
+            workflowStatus: StageStatus.ACTIVE,
+            isLegacy,
+            theforgeProjectId: parsed.theforgeProjectId ?? null,
+          },
+        },
+      },
+      include: {
+        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
       },
     });
+    return toApiProject(created);
   }
 
   async findAll() {
-    return this.prisma.project.findMany({
+    const rows = await this.prisma.project.findMany({
       orderBy: { createdAt: "desc" },
-      include: { estimation: true },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
+    return rows.map((p) => toApiProject(p));
   }
 
   async findOne(id: string) {
     const project = await this.prisma.project.findUnique({
       where: { id },
-      include: { sessions: true, estimation: true },
+      include: {
+        sessions: true,
+        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+      },
     });
     if (!project) throw new NotFoundException("Project not found");
-    return project;
+    return toApiProject(project);
   }
 
   async update(id: string, data: UpdateProjectDto) {
     const parsed = updateProjectSchema.partial().parse(data);
-    const existing = await this.prisma.project.findUnique({ where: { id } });
+    const existing = await this.prisma.project.findUnique({
+      where: { id },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!existing) throw new NotFoundException("Project not found");
 
+    const {
+      mddContent: parsedMdd,
+      stageId: parsedStageId,
+      clearComplexityPending,
+      complexityPending: cpInput,
+      ...rest
+    } = parsed;
+
+    const targetStage: StageWithEst | undefined =
+      (parsedStageId?.trim() && existing.stages.find((s) => s.id === parsedStageId.trim())) ||
+      pickPrimaryStage(existing.stages);
+    if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
+
+    const mergedForSemaphore = this.mergeProjectForSemaphore(existing, rest);
+
     const updatePayload: Prisma.ProjectUpdateInput = {
-      ...parsed,
+      ...rest,
       figmaMapping:
-        parsed.figmaMapping === null
-          ? undefined
-          : (parsed.figmaMapping as Prisma.InputJsonValue),
+        rest.figmaMapping === null ? undefined : (rest.figmaMapping as Prisma.InputJsonValue),
     };
-    if (parsed.uxUiGuideContent !== undefined) {
-      updatePayload.uxUiGuideContent = parsed.uxUiGuideContent;
+    if (clearComplexityPending === true) {
+      updatePayload.complexityPending = Prisma.JsonNull;
+    } else if (cpInput !== undefined) {
+      updatePayload.complexityPending =
+        cpInput === null ? Prisma.JsonNull : (cpInput as Prisma.InputJsonValue);
+    }
+    if (rest.uxUiGuideContent !== undefined) {
+      updatePayload.uxUiGuideContent = rest.uxUiGuideContent;
     }
 
-    const mddContentForRecalc = parsed.mddContent ?? existing.mddContent ?? null;
-    const infraContentForRecalc = parsed.infraContent ?? existing.infraContent ?? null;
+    const infraContentForRecalc = rest.infraContent ?? existing.infraContent ?? null;
 
-    let effectiveMddForRecalc = mddContentForRecalc;
-    if (parsed.mddContent !== undefined && parsed.mddContent !== null) {
-      const mddContent = parsed.mddContent;
-      const sanity = preRenderMddSanity(mddContent);
-      if (!sanity.ok) {
+    let pipelineResult: { sanitizedMdd: string; status: Status; precisionScore: number } | null = null;
+    if (parsedMdd !== undefined && parsedMdd !== null) {
+      const result = this.mddUpdatePipeline.process(parsedMdd, this.buildSemaphoreBase(mergedForSemaphore));
+      if (!result.ok) {
         throw new BadRequestException({
-          code: sanity.code,
-          message: sanity.message ?? "Error de validación del MDD",
+          code: result.code,
+          message: result.message,
         });
       }
-      const sanitizedDraft = sanitizeMermaidInDraft(mddContent);
-      updatePayload.mddContent = sanitizedDraft;
-      effectiveMddForRecalc = sanitizedDraft;
-      const normalized = normalizeMddContent(sanitizedDraft);
-      const contentForSemaphore = JSON.stringify(normalized);
-      const { status, precisionScore } = this.semaphore.evaluate(
-        contentForSemaphore,
-        existing.hasUxTeam,
-      );
-      updatePayload.status = status;
-      updatePayload.precisionScore = precisionScore;
-    }
-
-    if (effectiveMddForRecalc != null && (parsed.mddContent !== undefined || parsed.infraContent !== undefined)) {
-      const normalized = normalizeMddContent(effectiveMddForRecalc);
-      const status = (updatePayload.status as Status) ?? existing.status;
-      const entityCount = normalized.db_entities?.length ?? 0;
-      const screenCount = normalized.screens?.length ?? 0;
-      const extraEndpointCount = normalized.extra_endpoints ?? 0;
-      const metadataTags = extractTechnicalMetadataTags(effectiveMddForRecalc);
-      const infraFixedHours = parseInfraFixedHours(infraContentForRecalc);
-
-      const { totalHours, totalMxn, teamStructure } = this.costCalculator.calculate({
-        entityCount,
-        screenCount,
-        extraEndpointCount,
-        metadataTags,
-        infraFixedHours,
-        status,
-      });
-      await this.prisma.estimation.upsert({
-        where: { projectId: id },
-        create: {
-          projectId: id,
-          totalHours,
-          totalMxn,
-          teamStructure: teamStructure as object,
-        },
-        update: {
-          totalHours,
-          totalMxn,
-          teamStructure: teamStructure as object,
+      pipelineResult = {
+        sanitizedMdd: result.sanitizedMdd,
+        status: result.status,
+        precisionScore: result.precisionScore,
+      };
+      await this.prisma.stage.update({
+        where: { id: targetStage.id },
+        data: {
+          mddContent: result.sanitizedMdd,
+          status: result.status,
+          precisionScore: result.precisionScore,
         },
       });
     }
 
-    return this.prisma.project.update({
-      where: { id },
-      data: updatePayload,
-      include: { estimation: true },
-    });
+    const mddForRecalc =
+      pipelineResult?.sanitizedMdd ?? targetStage.mddContent ?? null;
+    const statusForRecalc = pipelineResult?.status ?? targetStage.status;
+
+    if (mddForRecalc != null && (parsedMdd !== undefined || rest.infraContent !== undefined)) {
+      await this.estimationRecalc.recalcAndUpsert(targetStage.id, {
+        mddContent: mddForRecalc,
+        infraContent: infraContentForRecalc,
+        status: statusForRecalc,
+      });
+    }
+
+    const hasProjectFieldUpdates =
+      (Object.keys(rest) as (keyof typeof rest)[]).some((k) => rest[k] !== undefined) ||
+      clearComplexityPending === true ||
+      cpInput !== undefined;
+    if (hasProjectFieldUpdates) {
+      await this.prisma.project.update({
+        where: { id },
+        data: updatePayload,
+      });
+    }
+
+    const shouldRefreshSemaphoreWithoutMdd =
+      (parsedMdd === undefined || parsedMdd === null) &&
+      (rest.complexity !== undefined ||
+        rest.hasUxTeam !== undefined ||
+        rest.figmaMapping !== undefined ||
+        rest.specContent !== undefined ||
+        rest.useCasesContent !== undefined ||
+        rest.userStoriesContent !== undefined ||
+        rest.tasksContent !== undefined ||
+        rest.apiContractsContent !== undefined ||
+        rest.uxUiGuideContent !== undefined ||
+        rest.logicFlowsContent !== undefined ||
+        cpInput !== undefined ||
+        clearComplexityPending === true);
+    if (shouldRefreshSemaphoreWithoutMdd) {
+      await this.refreshStageSemaphoreFromProject(id);
+    }
+
+    return this.findOne(id);
   }
 
   async remove(id: string) {
-    // ArchitecturalPreference no tiene FK con Project en el schema → borrar explícito para no dejar huérfanos
     await this.prisma.architecturalPreference.deleteMany({ where: { projectId: id } });
     await this.prisma.project.delete({ where: { id } });
     return { deleted: id };
   }
 
-  /**
-   * Genera el Domain Benchmark & Gap Analysis (DBGA) a partir de la idea del usuario y opcionalmente URLs (scraping).
-   * Persiste en dbgaContent.
-   */
+  /** Una sola etapa ACTIVE por proyecto: demueve las demás ACTIVE a SUPERSEDED. */
+  async activateStageExclusive(projectId: string, stageId: string): Promise<void> {
+    const stage = await this.prisma.stage.findFirst({
+      where: { id: stageId, projectId },
+    });
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+    await this.prisma.$transaction([
+      this.prisma.stage.updateMany({
+        where: { projectId, workflowStatus: StageStatus.ACTIVE },
+        data: { workflowStatus: StageStatus.SUPERSEDED },
+      }),
+      this.prisma.stage.update({
+        where: { id: stageId },
+        data: { workflowStatus: StageStatus.ACTIVE },
+      }),
+    ]);
+  }
+
+  async createStage(projectId: string, body: unknown) {
+    const dto = createStageBodySchema.parse(body);
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" } } },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+
+    const maxOrd = project.stages.length ? Math.max(...project.stages.map((s) => s.ordinal)) : 0;
+    const ordinal = dto.ordinal ?? maxOrd + 1;
+    if (project.stages.some((s) => s.ordinal === ordinal)) {
+      throw new BadRequestException(`Ya existe una etapa con ordinal ${ordinal}`);
+    }
+
+    let mddContent: string | null = null;
+    let stStatus: Status = Status.ROJO;
+    let precisionScore = 0;
+    if (dto.copyMddFromStageId?.trim()) {
+      const copyFrom = dto.copyMddFromStageId.trim();
+      const src = project.stages.find((s) => s.id === copyFrom);
+      if (!src) throw new BadRequestException("copyMddFromStageId no pertenece al proyecto");
+      mddContent = src.mddContent;
+      stStatus = src.status;
+      precisionScore = src.precisionScore;
+    }
+
+    const isLegacy = project.projectType === "LEGACY";
+    const newStage = await this.prisma.stage.create({
+      data: {
+        projectId,
+        ordinal,
+        key: dto.key ?? `stage_${ordinal}`,
+        name: dto.name?.trim() ?? `Etapa ${ordinal}`,
+        workflowStatus: StageStatus.DRAFT,
+        mddContent,
+        status: stStatus,
+        precisionScore,
+        isLegacy,
+        theforgeProjectId: project.theforgeProjectId,
+      },
+    });
+
+    if (dto.activate !== false) {
+      await this.activateStageExclusive(projectId, newStage.id);
+    }
+
+    const withEst = await this.prisma.stage.findUnique({
+      where: { id: newStage.id },
+      include: { estimation: true },
+    });
+    if (withEst?.mddContent?.trim()) {
+      await this.estimationRecalc.recalcAndUpsert(withEst.id, {
+        mddContent: withEst.mddContent,
+        infraContent: project.infraContent ?? null,
+        status: withEst.status,
+      });
+    }
+
+    return this.findOne(projectId);
+  }
+
+  async patchStage(projectId: string, stageId: string, body: unknown) {
+    const dto = patchStageBodySchema.parse(body);
+    const stage = await this.prisma.stage.findFirst({
+      where: { id: stageId, projectId },
+      include: { estimation: true },
+    });
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    if (dto.activate === true) {
+      await this.activateStageExclusive(projectId, stageId);
+    }
+
+    const data: Prisma.StageUpdateInput = {};
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.key !== undefined) data.key = dto.key.trim();
+    if (dto.ordinal !== undefined) {
+      const clash = await this.prisma.stage.findFirst({
+        where: { projectId, ordinal: dto.ordinal, NOT: { id: stageId } },
+      });
+      if (clash) throw new BadRequestException(`Ordinal ${dto.ordinal} ya está en uso`);
+      data.ordinal = dto.ordinal;
+    }
+
+    if (Object.keys(data).length > 0) {
+      await this.prisma.stage.update({ where: { id: stageId }, data });
+    }
+
+    return this.findOne(projectId);
+  }
+
   async generateBenchmark(projectId: string, userIdea: string, urls?: string[]) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { estimation: true },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
     if (!project) throw new NotFoundException("Project not found");
     const resolvedUrls = resolveUrls(urls, userIdea);
@@ -173,22 +463,230 @@ export class ProjectsService {
       console.log("[generateBenchmark] Sin URLs en idea/body; no se hace scraping.");
     }
     const dbgaContent = await this.discovery.generateBenchmark(userIdea, scrapedContext);
-    return this.update(projectId, { dbgaContent: dbgaContent.trim() });
+    const trimmed = dbgaContent.trim();
+    let proposal: ComplexityPending;
+    try {
+      proposal = await this.discovery.inferComplexityProposal(userIdea, trimmed);
+    } catch {
+      proposal = {
+        level: ComplexityLevel.HIGH,
+        planSummary: "Constitución SDD completa.",
+        reason: "Inferencia no disponible; se propone HIGH por defecto.",
+      };
+    }
+    return this.update(projectId, {
+      dbgaContent: trimmed,
+      complexityPending: proposal,
+    });
   }
 
   /**
-   * Deep research (fase 0): scraping opcional de URLs + LLM genera documento de resumen en markdown.
-   * Persiste en phase0SummaryContent.
+   * Re-infiere `complexityPending` (HITL) desde DBGA / MDD / Spec ya existentes, sin re-ejecutar el stream DBGA.
+   * Útil para proyectos existentes que quieren re-valorar el nivel según el alcance documentado.
    */
+  async reassessComplexity(projectId: string, options?: { note?: string }) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+
+    const dbga = (project.dbgaContent ?? "").trim();
+    const mdd = this.mddFromStages(project.stages).trim();
+    const spec = (project.specContent ?? "").trim();
+    const phase0 = (project.phase0SummaryContent ?? "").trim();
+
+    const chunks: string[] = [];
+    if (dbga.length > 0) chunks.push(dbga);
+    if (mdd.length > 0) chunks.push(mdd);
+    if (spec.length > 0) chunks.push(spec);
+    if (phase0.length > 0 && chunks.join("").length < 400) chunks.push(phase0);
+
+    const context = chunks.join("\n\n---\n\n").slice(0, 24_000);
+    if (context.trim().length < 80) {
+      throw new BadRequestException(
+        "No hay suficiente contexto (DBGA y/o MDD de etapa, Spec). En legacy asegúrate de tener MDD de cambio; en producto nuevo, Paso 0 o MDD.",
+      );
+    }
+
+    const note = options?.note?.trim();
+    const idea =
+      note && note.length > 0
+        ? note.slice(0, 6000)
+        : `Re-valoración de complejidad del proyecto «${project.name}» según el alcance actual documentado.`;
+
+    let proposal: ComplexityPending;
+    try {
+      proposal = await this.discovery.inferComplexityProposal(idea, context);
+    } catch {
+      proposal = {
+        level: ComplexityLevel.HIGH,
+        planSummary: "Constitución SDD completa.",
+        reason: "Inferencia no disponible; se propone HIGH por defecto.",
+      };
+    }
+    return this.update(projectId, { complexityPending: proposal });
+  }
+
+  /** Aplica la propuesta pendiente a `complexity` y limpia HITL (tras confirmación explícita del usuario). */
+  async confirmComplexityProposal(projectId: string) {
+    const row = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!row) throw new NotFoundException("Project not found");
+    const raw = row.complexityPending;
+    if (raw == null || typeof raw !== "object" || !("level" in raw)) {
+      throw new BadRequestException("No hay propuesta de complejidad pendiente de confirmar.");
+    }
+    const level = (raw as { level: string }).level as ComplexityLevel;
+    return this.update(projectId, {
+      complexity: level,
+      clearComplexityPending: true,
+    });
+  }
+
+  /**
+   * Interpreta mensajes cortos del chat del Workshop para confirmar o rechazar la propuesta HITL.
+   * @returns si se aplicó confirmación o rechazo (y el proyecto debió refrescarse).
+   */
+  tryConfirmComplexityFromChatMessage(projectId: string, message: string): Promise<{
+    confirmed: boolean;
+    rejected: boolean;
+  }> {
+    return this._tryConfirmComplexityFromChatMessage(projectId, message);
+  }
+
+  private async _tryConfirmComplexityFromChatMessage(
+    projectId: string,
+    message: string,
+  ): Promise<{ confirmed: boolean; rejected: boolean }> {
+    const row = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!row?.complexityPending) return { confirmed: false, rejected: false };
+    const t = message.trim().toLowerCase();
+    const confirm =
+      /^(sí|si|de acuerdo|ok|confirmo|adelante|vale|correcto)\b/.test(t) ||
+      /ejecuta este plan|acepto el plan|aplica el plan|sí,?\s*ejecuta|confirmar plan/.test(t);
+    const reject =
+      /^(no|mejor|prefiero|cancelar)\b/.test(t) || /rechazo|no quiero|otro nivel/.test(t);
+    if (confirm && !reject) {
+      await this.confirmComplexityProposal(projectId);
+      return { confirmed: true, rejected: false };
+    }
+    if (reject) {
+      await this.update(projectId, { clearComplexityPending: true });
+      return { confirmed: false, rejected: true };
+    }
+    return { confirmed: false, rejected: false };
+  }
+
+  /**
+   * Guía UX/UI generada por LLM (mismo criterio que legacy, sin Relic).
+   */
+  async generateUxUiGuide(projectId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    const mdd = this.constitutionMarkdown(project);
+    const bp = (project.blueprintContent ?? "").trim();
+    const uxPrompt =
+      "Genera la Guía UX/UI en markdown según el system prompt.\n\nMDD / constitución:\n---\n" +
+      mdd.slice(0, 8000) +
+      "\n---\n\nBlueprint:\n---\n" +
+      bp.slice(0, 4000) +
+      "\n---";
+    const raw = await this.ai.generateResponse(uxPrompt, [], { systemPrompt: UX_UI_GUIDE_PROMPT });
+    const clean = (raw ?? "").replace(/\n---FIN_UX_UI---.*/s, "").trim();
+    return this.update(projectId, { uxUiGuideContent: cleanDocumentContent(clean) });
+  }
+
+  private async ensureBlueprintForApi(projectId: string): Promise<void> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) return;
+    if ((project.blueprintContent ?? "").trim().length > 48) return;
+    await this.generateBlueprint(projectId);
+  }
+
+  private async runDeliverableStep(kind: DeliverableKind, projectId: string): Promise<void> {
+    switch (kind) {
+      case "mdd_canonical":
+        return;
+      case "spec":
+        await this.generateSpec(projectId);
+        return;
+      case "architecture":
+        await this.generateArchitecture(projectId);
+        return;
+      case "use_cases":
+        await this.generateUseCases(projectId);
+        return;
+      case "blueprint":
+        await this.generateBlueprint(projectId);
+        return;
+      case "api_contracts":
+        await this.ensureBlueprintForApi(projectId);
+        await this.generateApiContracts(projectId);
+        return;
+      case "logic_flows":
+        await this.generateLogicFlows(projectId);
+        return;
+      case "ux_ui_guide":
+        await this.generateUxUiGuide(projectId);
+        return;
+      case "user_stories":
+        await this.generateUserStories(projectId);
+        return;
+      case "tasks":
+        await this.generateTasks(projectId);
+        return;
+      case "infra":
+        await this.generateInfra(projectId);
+        return;
+      default: {
+        const _exhaustive: never = kind;
+        return _exhaustive;
+      }
+    }
+  }
+
+  /**
+   * Enrutamiento dinámico: solo ejecuta generadores listados en `DELIVERABLES_BY_COMPLEXITY`.
+   */
+  async generateDeliverablesCascade(projectId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    if (project.projectType === "LEGACY") {
+      throw new BadRequestException("Usa el flujo de entregables legacy del proyecto.");
+    }
+    if (project.complexityPending != null) {
+      throw new BadRequestException(
+        "Hay una propuesta de complejidad pendiente de confirmación. Confirma o rechaza en el chat del Workshop antes de generar entregables.",
+      );
+    }
+    const c = project.complexity ?? ComplexityLevel.HIGH;
+    const deliverablesToRun = DELIVERABLES_BY_COMPLEXITY[c];
+    for (const step of deliverablesToRun) {
+      await this.runDeliverableStep(step, projectId);
+    }
+    return this.findOne(projectId);
+  }
+
   async phase0DeepResearch(
     projectId: string,
     options: { userIdea?: string; urls?: string[]; includeBenchmark?: boolean },
   ) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { estimation: true },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
     if (!project) throw new NotFoundException("Project not found");
+    if ((project as { projectType?: string }).projectType === "LEGACY") {
+      throw new BadRequestException(
+        "Paso 0 (Deep Research) no aplica a proyectos legacy. Usa el flujo de modificaciones en el chat.",
+      );
+    }
     const userIdea = options.userIdea?.trim() ?? "";
     const resolvedUrls = resolveUrls(options.urls, userIdea);
     let scrapedContext: string | undefined;
@@ -217,174 +715,211 @@ export class ProjectsService {
     if (typeof summary !== "string") {
       throw new Error("El proveedor de IA devolvió un formato inesperado");
     }
-    // Reemplazo completo (no concatenar): el resumen anterior se sobrescribe
     return this.update(projectId, { phase0SummaryContent: summary.trim() });
   }
 
-  /**
-   * Genera el Spec (SDD: what/why) desde Benchmark + phase0Summary y lo persiste en specContent.
-   */
   async generateSpec(projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { estimation: true },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
     if (!project) throw new NotFoundException("Project not found");
+    if ((project as { projectType?: string }).projectType === "LEGACY") {
+      throw new BadRequestException(
+        "Generar Spec con este flujo es solo para proyectos nuevos. En legacy usa el flujo de entregables legacy.",
+      );
+    }
+    const dbga = (project.dbgaContent ?? "").trim();
+    const rawMdd = this.mddFromStages(project.stages).trim();
+    const inputContent = dbga || rawMdd || this.constitutionMarkdown(project).trim();
     const specContent = await this.ai.generateSpec(
-      project.dbgaContent ?? "",
+      inputContent,
       project.phase0SummaryContent,
+      dbga.length === 0 && rawMdd.length > 0 ? "mdd" : "dbga",
     );
-    return this.update(projectId, { specContent: SessionsService.cleanDocumentContent(specContent) });
+    return this.update(projectId, { specContent: cleanDocumentContent(specContent) });
   }
 
-  /**
-   * Genera el documento Tasks (breakdown) desde MDD + Blueprint y lo persiste en tasksContent.
-   */
   async generateTasks(projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { estimation: true },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
     if (!project) throw new NotFoundException("Project not found");
     const tasksContent = await this.ai.generateTasks(
-      project.mddContent ?? "",
+      this.constitutionMarkdown(project),
       project.blueprintContent,
     );
-    return this.update(projectId, { tasksContent: SessionsService.cleanDocumentContent(tasksContent) });
+    return this.update(projectId, { tasksContent: cleanDocumentContent(tasksContent) });
   }
 
   async generateArchitecturePreview(projectId: string): Promise<{ content: string }> {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!project) throw new NotFoundException("Project not found");
-    const content = await this.ai.generateArchitecture(project.mddContent ?? "", project.blueprintContent);
-    return { content: SessionsService.cleanDocumentContent(content) };
+    const content = await this.ai.generateArchitecture(
+      this.constitutionMarkdown(project),
+      project.blueprintContent,
+    );
+    return { content: cleanDocumentContent(content) };
   }
 
   async generateArchitecture(projectId: string) {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!project) throw new NotFoundException("Project not found");
-    const content = await this.ai.generateArchitecture(project.mddContent ?? "", project.blueprintContent);
-    return this.update(projectId, { architectureContent: SessionsService.cleanDocumentContent(content) });
+    const content = await this.ai.generateArchitecture(
+      this.constitutionMarkdown(project),
+      project.blueprintContent,
+    );
+    return this.update(projectId, { architectureContent: cleanDocumentContent(content) });
   }
 
   async generateUseCasesPreview(projectId: string): Promise<{ content: string }> {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!project) throw new NotFoundException("Project not found");
-    const content = await this.ai.generateUseCases(project.mddContent ?? "", project.specContent);
-    return { content: SessionsService.cleanDocumentContent(content) };
+    const content = await this.ai.generateUseCases(this.constitutionMarkdown(project), project.specContent);
+    return { content: cleanDocumentContent(content) };
   }
 
   async generateUseCases(projectId: string) {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!project) throw new NotFoundException("Project not found");
-    const content = await this.ai.generateUseCases(project.mddContent ?? "", project.specContent);
-    return this.update(projectId, { useCasesContent: SessionsService.cleanDocumentContent(content) });
+    const content = await this.ai.generateUseCases(this.constitutionMarkdown(project), project.specContent);
+    return this.update(projectId, { useCasesContent: cleanDocumentContent(content) });
   }
 
   async generateUserStoriesPreview(projectId: string): Promise<{ content: string }> {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!project) throw new NotFoundException("Project not found");
-    const content = await this.ai.generateUserStories(project.mddContent ?? "", project.specContent, project.useCasesContent);
-    return { content: SessionsService.cleanDocumentContent(content) };
+    const content = await this.ai.generateUserStories(
+      this.constitutionMarkdown(project),
+      project.specContent,
+      project.useCasesContent,
+    );
+    return { content: cleanDocumentContent(content) };
   }
 
   async generateUserStories(projectId: string) {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!project) throw new NotFoundException("Project not found");
-    const content = await this.ai.generateUserStories(project.mddContent ?? "", project.specContent, project.useCasesContent);
-    return this.update(projectId, { userStoriesContent: SessionsService.cleanDocumentContent(content) });
+    const content = await this.ai.generateUserStories(
+      this.constitutionMarkdown(project),
+      project.specContent,
+      project.useCasesContent,
+    );
+    return this.update(projectId, { userStoriesContent: cleanDocumentContent(content) });
   }
 
-  /**
-   * Genera el blueprint sin persistir (HITL: vista previa). Opcional gapsFeedback para regenerar con gaps.
-   */
   async generateBlueprintPreview(projectId: string, gapsFeedback?: string | null): Promise<{ content: string }> {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!project) throw new NotFoundException("Project not found");
-    const content = await this.ai.generateBlueprint(project.mddContent ?? "", gapsFeedback);
-    return { content: SessionsService.cleanDocumentContent(content) };
+    const content = await this.ai.generateBlueprint(this.constitutionMarkdown(project), gapsFeedback);
+    return { content: cleanDocumentContent(content) };
   }
 
-  /**
-   * Genera el blueprint a partir del MDD guardado en el proyecto y lo persiste.
-   */
   async generateBlueprint(projectId: string, gapsFeedback?: string | null) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { estimation: true },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
     if (!project) throw new NotFoundException("Project not found");
-    const mddContent = project.mddContent ?? "";
-    const blueprintContent = await this.ai.generateBlueprint(mddContent, gapsFeedback);
-    return this.update(projectId, { blueprintContent: SessionsService.cleanDocumentContent(blueprintContent) });
+    const mddContent = this.constitutionMarkdown(project);
+    const p = project as { projectType?: string; theforgeProjectId?: string | null };
+    let legacyOpts: { theforgeContext: string } | undefined;
+    if (p.projectType === "LEGACY" && p.theforgeProjectId && this.theforge.isConfigured()) {
+      const theforgeContext = await this.theforge.getContextForDeliverables(p.theforgeProjectId);
+      if (theforgeContext.trim()) legacyOpts = { theforgeContext };
+    }
+    const blueprintContent = await this.ai.generateBlueprint(mddContent, gapsFeedback, legacyOpts);
+    return this.update(projectId, { blueprintContent: cleanDocumentContent(blueprintContent) });
   }
 
-  /** Genera API contracts sin persistir (HITL). Opcional gapsFeedback para regenerar con gaps. */
   async generateApiContractsPreview(projectId: string, gapsFeedback?: string | null): Promise<{ content: string }> {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!project) throw new NotFoundException("Project not found");
     const content = await this.ai.generateApiContracts(
-      project.mddContent ?? "",
+      this.constitutionMarkdown(project),
       project.blueprintContent,
       gapsFeedback,
     );
-    return { content: SessionsService.cleanDocumentContent(content) };
+    return { content: cleanDocumentContent(content) };
   }
 
-  /** Genera Infra sin persistir (HITL). Opcional gapsFeedback para regenerar con gaps. */
   async generateInfraPreview(projectId: string, gapsFeedback?: string | null): Promise<{ content: string }> {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!project) throw new NotFoundException("Project not found");
     const content = await this.ai.generateInfra(
-      project.mddContent ?? "",
+      this.constitutionMarkdown(project),
       project.blueprintContent,
       gapsFeedback,
     );
-    return { content: SessionsService.cleanDocumentContent(content) };
+    return { content: cleanDocumentContent(content) };
   }
 
   async generateApiContracts(projectId: string, gapsFeedback?: string | null) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { estimation: true },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
     if (!project) throw new NotFoundException("Project not found");
     const content = await this.ai.generateApiContracts(
-      project.mddContent ?? "",
+      this.constitutionMarkdown(project),
       project.blueprintContent,
       gapsFeedback,
     );
-    return this.update(projectId, { apiContractsContent: SessionsService.cleanDocumentContent(content) });
+    return this.update(projectId, { apiContractsContent: cleanDocumentContent(content) });
   }
 
   async generateLogicFlows(projectId: string, gapsFeedback?: string | null) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { estimation: true },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
     if (!project) throw new NotFoundException("Project not found");
-    const content = await this.ai.generateLogicFlows(project.mddContent ?? "", gapsFeedback);
-    return this.update(projectId, { logicFlowsContent: SessionsService.cleanDocumentContent(content) });
+    const content = await this.ai.generateLogicFlows(this.constitutionMarkdown(project), gapsFeedback);
+    return this.update(projectId, { logicFlowsContent: cleanDocumentContent(content) });
   }
 
   async generateInfra(projectId: string, gapsFeedback?: string | null) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { estimation: true },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
     if (!project) throw new NotFoundException("Project not found");
     const content = await this.ai.generateInfra(
-      project.mddContent ?? "",
+      this.constitutionMarkdown(project),
       project.blueprintContent,
       gapsFeedback,
     );
-    return this.update(projectId, { infraContent: SessionsService.cleanDocumentContent(content) });
+    return this.update(projectId, { infraContent: cleanDocumentContent(content) });
   }
 
-  /**
-   * Conformance (SDD Fase 2): verificación Blueprint/API/Flujos/Infra vs MDD.
-   * Si useLlm=true, complementa heurísticas con verificación por LLM para reducir falsos positivos/negativos.
-   */
   async getConformance(
     projectId: string,
     options?: { useLlm?: boolean },
@@ -394,26 +929,30 @@ export class ProjectsService {
     logicFlows: ConformanceResult;
     infra: ConformanceResult;
   }> {
-    const p = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const p = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!p) throw new NotFoundException("Project not found");
+    const mdd = this.constitutionMarkdown(p);
 
     const heuristic = {
-      blueprint: this.conformance.checkBlueprint(p.mddContent, p.blueprintContent),
-      api: this.conformance.checkApi(p.mddContent, p.apiContractsContent),
-      logicFlows: this.conformance.checkLogicFlows(p.mddContent, p.logicFlowsContent),
-      infra: this.conformance.checkInfra(p.mddContent, p.infraContent),
+      blueprint: this.conformance.checkBlueprint(mdd, p.blueprintContent),
+      api: this.conformance.checkApi(mdd, p.apiContractsContent),
+      logicFlows: this.conformance.checkLogicFlows(mdd, p.logicFlowsContent),
+      infra: this.conformance.checkInfra(mdd, p.infraContent),
     };
 
     if (!options?.useLlm) return heuristic;
 
-    const mdd = (p.mddContent ?? "").trim();
-    if (mdd.length < 200) return heuristic;
+    const mddTrim = mdd.trim();
+    if (mddTrim.length < 200) return heuristic;
 
     const [blueprintLlm, apiLlm, logicFlowsLlm, infraLlm] = await Promise.all([
-      this.ai.conformanceCheck(mdd, (p.blueprintContent ?? "").trim(), "blueprint"),
-      this.ai.conformanceCheck(mdd, (p.apiContractsContent ?? "").trim(), "api"),
-      this.ai.conformanceCheck(mdd, (p.logicFlowsContent ?? "").trim(), "logicFlows"),
-      this.ai.conformanceCheck(mdd, (p.infraContent ?? "").trim(), "infra"),
+      this.ai.conformanceCheck(mddTrim, (p.blueprintContent ?? "").trim(), "blueprint"),
+      this.ai.conformanceCheck(mddTrim, (p.apiContractsContent ?? "").trim(), "api"),
+      this.ai.conformanceCheck(mddTrim, (p.logicFlowsContent ?? "").trim(), "logicFlows"),
+      this.ai.conformanceCheck(mddTrim, (p.infraContent ?? "").trim(), "infra"),
     ]);
 
     return {
@@ -426,14 +965,14 @@ export class ProjectsService {
     };
   }
 
-  /**
-   * Reflexión (SDD Fase 3): verifica si un entregable cumple el MDD (LLM).
-   */
   async verifyDeliverable(
     projectId: string,
     deliverable: "blueprint" | "api" | "infra",
   ): Promise<string> {
-    const p = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const p = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
     if (!p) throw new NotFoundException("Project not found");
     const doc =
       deliverable === "blueprint"
@@ -441,6 +980,6 @@ export class ProjectsService {
         : deliverable === "api"
           ? p.apiContractsContent
           : p.infraContent;
-    return this.ai.verifyDeliverable(p.mddContent ?? "", doc ?? "", deliverable);
+    return this.ai.verifyDeliverable(this.constitutionMarkdown(p), doc ?? "", deliverable);
   }
 }

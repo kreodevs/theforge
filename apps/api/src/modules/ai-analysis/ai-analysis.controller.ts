@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Post, Query, Res } from "@nestjs/common";
 import { Response } from "express";
 import { Readable } from "node:stream";
+import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiAnalysisService } from "./ai-analysis.service.js";
 import { EstimationService } from "./estimation/estimation.service.js";
 
@@ -9,6 +10,7 @@ export class AiAnalysisController {
   constructor(
     private readonly aiAnalysis: AiAnalysisService,
     private readonly estimationService: EstimationService,
+    private readonly prisma: PrismaService,
   ) { }
 
   /**
@@ -17,37 +19,41 @@ export class AiAnalysisController {
    * POST: si body.mddContent está presente, calcula métricas sobre ese contenido (lo que ve el usuario); sino igual que GET.
    */
   @Get("estimation")
-  async getEstimation(@Query("projectId") projectId: string) {
+  async getEstimation(
+    @Query("projectId") projectId: string,
+    @Query("stageId") stageId?: string,
+  ) {
     const id = typeof projectId === "string" ? projectId.trim() : "";
     if (!id) {
       throw new BadRequestException("projectId is required");
     }
-    const metrics = await this.estimationService.getLiveMetricsForProject(id);
-    const mddContent = await this.estimationService.getMddContentForProject(id);
+    const sid = typeof stageId === "string" ? stageId.trim() || undefined : undefined;
+    const metrics = await this.estimationService.getLiveMetricsForProject(id, undefined, sid);
+    const mddContent = await this.estimationService.getMddContentForProject(id, sid);
     const precisionBreakdown =
       mddContent && mddContent.trim().length > 80
         ? this.estimationService.getPrecisionBreakdown(mddContent)
         : undefined;
-    const gaps = mddContent ? this.estimationService.getGapsReport(mddContent) : [];
-    return { ...metrics, precisionBreakdown, gaps };
+    return { ...metrics, precisionBreakdown };
   }
 
   @Post("estimation")
-  async postEstimation(@Body() body: { projectId?: string; mddContent?: string }) {
+  async postEstimation(@Body() body: { projectId?: string; mddContent?: string; stageId?: string }) {
     const id = typeof body?.projectId === "string" ? body.projectId.trim() : "";
     if (!id) {
       throw new BadRequestException("projectId is required");
     }
+    const sid = typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined;
     const mddContent =
       typeof body?.mddContent === "string" ? body.mddContent.trim() || undefined : undefined;
-    const metrics = await this.estimationService.getLiveMetricsForProject(id, mddContent);
-    const contentForBreakdown = mddContent ?? (await this.estimationService.getMddContentForProject(id));
+    const metrics = await this.estimationService.getLiveMetricsForProject(id, mddContent, sid);
+    const contentForBreakdown =
+      mddContent ?? (await this.estimationService.getMddContentForProject(id, sid));
     const precisionBreakdown =
       contentForBreakdown && contentForBreakdown.trim().length > 80
         ? this.estimationService.getPrecisionBreakdown(contentForBreakdown)
         : undefined;
-    const gaps = contentForBreakdown ? this.estimationService.getGapsReport(contentForBreakdown) : [];
-    return { ...metrics, precisionBreakdown, gaps };
+    return { ...metrics, precisionBreakdown };
   }
 
   /**
@@ -55,12 +61,13 @@ export class AiAnalysisController {
    * Llamar tras PATCH project con mddContent para que el semáforo refleje el contenido guardado.
    */
   @Post("estimation/clear-draft")
-  async clearEstimationDraft(@Body() body: { projectId?: string }) {
+  async clearEstimationDraft(@Body() body: { projectId?: string; stageId?: string }) {
     const id = typeof body?.projectId === "string" ? body.projectId.trim() : "";
     if (!id) {
       throw new BadRequestException("projectId is required");
     }
-    this.estimationService.clearLiveDraft(id);
+    const sid = typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined;
+    this.estimationService.clearLiveDraft(id, sid);
     return { ok: true };
   }
 
@@ -131,12 +138,13 @@ export class AiAnalysisController {
    * El frontend lo usa para rehidratar managerThreadId al reabrir la app y seguir con resume.
    */
   @Get("mdd/thread")
-  async getMddThread(@Query("projectId") projectId: string) {
+  async getMddThread(@Query("projectId") projectId: string, @Query("stageId") stageId?: string) {
     const id = typeof projectId === "string" ? projectId.trim() : "";
     if (!id) {
       throw new BadRequestException("projectId is required");
     }
-    const threadId = await this.aiAnalysis.getMddThreadId(id);
+    const sid = typeof stageId === "string" ? stageId.trim() || undefined : undefined;
+    const threadId = await this.aiAnalysis.getMddThreadId(id, sid);
     return { threadId };
   }
 
@@ -147,11 +155,12 @@ export class AiAnalysisController {
    */
   @Post("mdd/stream")
   async streamMdd(
-    @Body() body: { dbgaContent?: string; projectId?: string },
+    @Body() body: { dbgaContent?: string; projectId?: string; stageId?: string },
     @Res() res: Response,
   ) {
     const dbgaContent = typeof body?.dbgaContent === "string" ? body.dbgaContent.trim() : "";
     const projectId = typeof body?.projectId === "string" ? body.projectId.trim() || undefined : undefined;
+    const stageId = typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined;
 
     res.setHeader("Content-Type", "application/x-ndjson");
     res.setHeader("Cache-Control", "no-cache");
@@ -161,7 +170,7 @@ export class AiAnalysisController {
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
-        for await (const event of service.streamMddAnalysis(dbgaContent, projectId)) {
+        for await (const event of service.streamMddAnalysis(dbgaContent, projectId, stageId)) {
           yield JSON.stringify(event) + "\n";
         }
       })(),
@@ -177,16 +186,29 @@ export class AiAnalysisController {
    */
   @Post("mdd/stream/manager")
   async streamMddManager(
-    @Body() body: { dbgaContent?: string; projectId?: string; initialMessage?: string; mddContent?: string },
+    @Body() body: {
+      dbgaContent?: string;
+      projectId?: string;
+      initialMessage?: string;
+      mddContent?: string;
+      stageId?: string;
+    },
     @Res() res: Response,
   ) {
     const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
     if (!projectId) {
       throw new BadRequestException("projectId is required for the Manager flow");
     }
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (project && (project as { projectType?: string }).projectType === "LEGACY") {
+      throw new BadRequestException(
+        "Generar MDD con agentes (Manager) es solo para proyectos nuevos. En legacy usa el flujo de modificaciones.",
+      );
+    }
     const dbgaContent = typeof body?.dbgaContent === "string" ? body.dbgaContent.trim() : "";
     const initialMessage = typeof body?.initialMessage === "string" ? body.initialMessage.trim() : undefined;
     const mddContent = typeof body?.mddContent === "string" ? body.mddContent.trim() : undefined;
+    const stageId = typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined;
 
     res.setHeader("Content-Type", "application/x-ndjson");
     res.setHeader("Cache-Control", "no-cache");
@@ -196,7 +218,13 @@ export class AiAnalysisController {
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
-        for await (const event of service.streamMddAnalysisWithManager(dbgaContent, projectId, initialMessage, mddContent)) {
+        for await (const event of service.streamMddAnalysisWithManager(
+          dbgaContent,
+          projectId,
+          initialMessage,
+          mddContent,
+          stageId,
+        )) {
           yield JSON.stringify(event) + "\n";
         }
       })(),
@@ -211,15 +239,22 @@ export class AiAnalysisController {
    */
   @Post("mdd/stream/regenerate-section")
   async streamMddRegenerateSection(
-    @Body() body: { projectId?: string; section?: number; mddContent?: string },
+    @Body() body: { projectId?: string; section?: number; mddContent?: string; stageId?: string },
     @Res() res: Response,
   ) {
     const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
     const section = typeof body?.section === "number" ? body.section : Number(body?.section);
     const mddContent = typeof body?.mddContent === "string" ? body.mddContent.trim() : undefined;
+    const stageId = typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined;
     if (!projectId) {
       res.status(400).json({ message: "projectId is required" });
       return;
+    }
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (project && (project as { projectType?: string }).projectType === "LEGACY") {
+      throw new BadRequestException(
+        "Regenerar sección MDD es solo para proyectos nuevos. En legacy usa el flujo de modificaciones.",
+      );
     }
     if (!Number.isInteger(section) || section < 1 || section > 7) {
       res.status(400).json({ message: "section must be 1–7" });
@@ -232,7 +267,7 @@ export class AiAnalysisController {
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
-        for await (const event of service.streamMddRegenerateSection(projectId, section, mddContent)) {
+        for await (const event of service.streamMddRegenerateSection(projectId, section, mddContent, stageId)) {
           yield JSON.stringify(event) + "\n";
         }
       })(),

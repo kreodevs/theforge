@@ -4,7 +4,7 @@ import type {
   ChatMessage,
   GenerateResponseOptions,
 } from "../interfaces/llm-provider.interface.js";
-import type { ChecklistResult } from "@the-forge/shared-types";
+import type { ChecklistResult } from "@maxprime/shared-types";
 
 export class GeminiAdapter implements LLMProvider {
   private readonly genAI: GoogleGenerativeAI;

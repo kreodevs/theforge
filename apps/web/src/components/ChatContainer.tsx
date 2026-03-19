@@ -1,7 +1,7 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil } from "lucide-react";
+import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil, X, RefreshCw } from "lucide-react";
 import { useInterview } from "../hooks/useInterview";
 import { useWorkshopStore } from "../store/workshopStore";
 
@@ -22,7 +22,7 @@ export type ActiveTab =
   | "adrs";
 
 const ACTIVE_TAB_LABELS: Record<ActiveTab, string> = {
-  benchmark: "Benchmark & Gap Analysis (Paso 0)",
+  benchmark: "Benchmark & Gap Analysis (Paso 0, opcional)",
   spec: "Spec",
   mdd: "MDD",
   "ux-ui-guide": "Guía UX/UI",
@@ -156,6 +156,10 @@ interface ChatContainerProps {
     hasBenchmark: boolean;
     onGenerateBenchmark: (idea: string) => void;
   };
+  /** Re-inferir complejidad (HITL) y abrir entrevista; típico en proyectos existentes */
+  onRevaluate?: () => void | Promise<void>;
+  /** Evita doble clic mientras corre re-valoración + primer mensaje */
+  revaluateBusy?: boolean;
 }
 
 export default function ChatContainer({
@@ -163,10 +167,16 @@ export default function ChatContainer({
   activeTab = "mdd",
   embedded = false,
   benchmarkMode,
+  onRevaluate,
+  revaluateBusy = false,
 }: ChatContainerProps) {
   const { messages, loading, error, sendMessage } = useInterview(projectId, activeTab);
   const contextLabel = ACTIVE_TAB_LABELS[activeTab];
   const clearChat = useWorkshopStore((s) => s.clearChat);
+  const workshopStages = useWorkshopStore((s) => s.project?.stages ?? []);
+  const activeStageIdForChat = useWorkshopStore((s) => s.activeStageId);
+  const evaluatorCritique = useWorkshopStore((s) => s.evaluatorCritique);
+  const clearEvaluatorCritique = useWorkshopStore((s) => s.clearEvaluatorCritique);
   const loadingReason = useWorkshopStore((s) => s.loadingReason);
   const agentProgress = useWorkshopStore((s) => s.agentProgress);
   const pendingPlanApproval = useWorkshopStore((s) => s.pendingPlanApproval);
@@ -177,6 +187,30 @@ export default function ChatContainer({
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const prevStageForBannerRef = useRef<string | null>(null);
+  const [stageSwitchBannerOpen, setStageSwitchBannerOpen] = useState(false);
+  const multiStageChat = workshopStages.length > 1;
+
+  const stageNameForBadge = useMemo(() => {
+    return (stageId: string | undefined) => {
+      if (!stageId) return "";
+      const st = workshopStages.find((s) => s.id === stageId);
+      return st ? String(st.name ?? st.key ?? "").trim() || `§${st.ordinal}` : stageId.slice(0, 8);
+    };
+  }, [workshopStages]);
+
+  useEffect(() => {
+    if (!multiStageChat || !activeStageIdForChat) {
+      prevStageForBannerRef.current = activeStageIdForChat ?? null;
+      setStageSwitchBannerOpen(false);
+      return;
+    }
+    const prev = prevStageForBannerRef.current;
+    if (prev !== null && prev !== activeStageIdForChat) {
+      setStageSwitchBannerOpen(true);
+    }
+    prevStageForBannerRef.current = activeStageIdForChat;
+  }, [activeStageIdForChat, multiStageChat]);
 
   /** Auto-resize textarea hasta máx. 3 líneas visibles (~5rem), luego scroll */
   useEffect(() => {
@@ -192,7 +226,6 @@ export default function ChatContainer({
   /** En Paso 0: "sin contenido" = sin mensajes del usuario; si solo hay burbujas del asistente, mostramos el texto instructivo. */
   const benchmarkEmpty =
     activeTab === "benchmark" &&
-    !benchmarkMode?.hasBenchmark &&
     (messages.length === 0 || messages.every((m) => m.role === "assistant"));
   const messagesToShow =
     benchmarkEmpty && messages.length > 0 ? [] : messages;
@@ -202,7 +235,13 @@ export default function ChatContainer({
       chatEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
     }, 100);
     return () => clearTimeout(t);
-  }, [messagesToShow.length, agentProgress.length, loading, messagesToShow[messagesToShow.length - 1]?.content]);
+  }, [
+    messagesToShow.length,
+    agentProgress.length,
+    loading,
+    messagesToShow[messagesToShow.length - 1]?.content,
+    evaluatorCritique,
+  ]);
 
   const handleSend = async () => {
     if (!inputValue.trim() || loading) return;
@@ -239,9 +278,6 @@ export default function ChatContainer({
   const handleClearChat = async () => {
     if (!projectId) return;
     setShowClearConfirm(false);
-    if (activeTab === "benchmark" && benchmarkMode) {
-      useWorkshopStore.getState().clearDbgaContent(projectId);
-    }
     await clearChat(projectId, activeTab);
   };
 
@@ -285,26 +321,15 @@ export default function ChatContainer({
               disabled={loading}
             />
             {isBenchmarkFirstAction ? (
-              <>
-                <button
-                  onClick={handleGenerateBenchmark}
-                  disabled={loading || !inputValue.trim()}
-                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-                  title="Generar Benchmark & Gap Analysis"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  Generar Benchmark & Gap Analysis
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    useWorkshopStore.getState().setActivePanel("mdd");
-                  }}
-                  className="text-xs text-zinc-500 hover:text-amber-400 underline decoration-zinc-700 underline-offset-4 self-center"
-                >
-                  Omitir investigación e ir directamente al MDD
-                </button>
-              </>
+              <button
+                onClick={handleGenerateBenchmark}
+                disabled={loading || !inputValue.trim()}
+                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                title="Generar Benchmark & Gap Analysis"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Generar Benchmark & Gap Analysis
+              </button>
             ) : (
               <button
                 onClick={handleSend}
@@ -328,17 +353,54 @@ export default function ChatContainer({
                 <span className="text-zinc-500 text-xs">· {contextLabel}</span>
               )}
             </span>
-            <button
-              type="button"
-              onClick={() => setShowClearConfirm(true)}
-              disabled={loading || messages.length === 0}
-              className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50 disabled:pointer-events-none"
-              title="Borrar historial (el MDD se mantiene)"
-            >
-              <Trash2 className="w-4 h-4" />
-              Borrar historial
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {onRevaluate && projectId ? (
+                <button
+                  type="button"
+                  onClick={() => void onRevaluate()}
+                  disabled={loading || revaluateBusy}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-300 hover:text-amber-400 hover:bg-amber-500/10 disabled:opacity-50 disabled:pointer-events-none"
+                  title="Producto nuevo (Paso 0) o legacy (MDD): re-infiere complejidad desde tus documentos y abre la entrevista HITL"
+                >
+                  {revaluateBusy ? (
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4 shrink-0" />
+                  )}
+                  Re-Valorar
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(true)}
+                disabled={loading || messages.length === 0}
+                className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50 disabled:pointer-events-none"
+                title="Borrar historial (el MDD se mantiene)"
+              >
+                <Trash2 className="w-4 h-4" />
+                Borrar historial
+              </button>
+            </div>
           </div>
+          {multiStageChat && stageSwitchBannerOpen && (
+            <div
+              className="shrink-0 mx-3 mt-2 mb-1 px-3 py-2 rounded-lg border border-amber-500/35 bg-amber-500/10 text-amber-100/95 text-xs leading-snug flex gap-2 items-start"
+              role="status"
+            >
+              <span className="flex-1">
+                <strong className="text-amber-200">Historial global:</strong> el chat no se filtra por etapa.
+                Los mensajes anteriores pueden referirse a otra línea de trabajo. El foco del MDD y el semáforo
+                sí corresponden a la etapa seleccionada arriba.
+              </span>
+              <button
+                type="button"
+                onClick={() => setStageSwitchBannerOpen(false)}
+                className="shrink-0 px-2 py-0.5 rounded bg-zinc-700/80 hover:bg-zinc-600 text-zinc-200 text-[11px]"
+              >
+                Cerrar
+              </button>
+            </div>
+          )}
           {showClearConfirm && (
             <div
               className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -386,6 +448,13 @@ export default function ChatContainer({
                       : "bg-zinc-800 text-zinc-200 border border-zinc-600"
                       }`}
                   >
+                    {msg.stageId ? (
+                      <span
+                        className="block text-[10px] font-medium uppercase tracking-wide text-amber-400/85 mb-1"
+                      >
+                        Etapa: {stageNameForBadge(msg.stageId)}
+                      </span>
+                    ) : null}
                     {msg.role === "assistant" ? (
                       <div className="prose prose-invert prose-sm max-w-none prose-table:text-zinc-300 prose-th:border-zinc-600 prose-td:border-zinc-600">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
@@ -411,6 +480,24 @@ export default function ChatContainer({
                 </p>
               </div>
             ) : null}
+
+            {evaluatorCritique ? (
+              <div className="rounded-lg border border-violet-800/50 bg-violet-950/30 px-3 py-2 text-xs text-zinc-200 leading-relaxed">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <span className="font-medium text-violet-200">Crítica del evaluador</span>
+                  <button
+                    type="button"
+                    onClick={() => clearEvaluatorCritique()}
+                    className="shrink-0 text-zinc-500 hover:text-zinc-300 p-0.5 rounded"
+                    aria-label="Cerrar crítica"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="whitespace-pre-wrap text-zinc-300">{evaluatorCritique}</p>
+              </div>
+            ) : null}
+
             {showAgentProgress && (
               <div className="space-y-1.5 pb-2 border-b border-zinc-700/50">
                 <p className="text-xs text-zinc-500 font-medium">

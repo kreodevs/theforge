@@ -12,6 +12,11 @@ import {
 } from "./linter-tools.js";
 import { createQueryIntentGraphTool } from "./graph-query.tool.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
+import { getSddAgentTools } from "./agent-sdd-tools.js";
+import { getLegacyTheForgeAgentTools } from "./agent-theforge-tools.js";
+import { TheForgeService } from "../../theforge/theforge.service.js";
+import { ProjectsService } from "../../projects/projects.service.js";
+import type { AiService } from "../../ai/ai.service.js";
 
 /**
  * Tools for the Scout (Market Scout) agent: search + scrape.
@@ -72,4 +77,22 @@ export function getMddDiagramTools(): StructuredToolInterface[] {
  */
 export function getManagerTools(graphMemory: GraphMemoryService): StructuredToolInterface[] {
   return [createQueryIntentGraphTool(graphMemory)];
+}
+
+/**
+ * Agentic RAG: consulta/patch sobre Grafo SDD + herramientas TheForge para legacy (Coordinador).
+ */
+export function getAgenticRagToolset(
+  graphMemory: GraphMemoryService,
+  projects: ProjectsService,
+  theforge: TheForgeService,
+  ai: AiService,
+  projectId: string,
+  opts: { legacy: boolean; theforgeProjectId: string | null; activeStageId?: string },
+): StructuredToolInterface[] {
+  const sdd = getSddAgentTools(graphMemory, projects, ai, projectId, opts.activeStageId);
+  if (!opts.legacy || !opts.theforgeProjectId || !theforge.isConfigured()) {
+    return sdd;
+  }
+  return [...sdd, ...getLegacyTheForgeAgentTools(theforge, opts.theforgeProjectId)];
 }

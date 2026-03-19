@@ -1,0 +1,94 @@
+# Manual del Workshop (MaxPrime)
+
+## 1. Qué es esta pantalla
+
+El **Workshop** es la vista de trabajo de un **proyecto**: tres columnas.
+
+| Zona | Función |
+|------|---------|
+| **Izquierda — Conversación** | Chat con el orquestador de IA. Según el **tab** central (MDD, Spec, Legacy, etc.), los mensajes van al flujo adecuado. Puedes escribir **`/`** para ver comandos (p. ej. regenerar una sección del MDD). |
+| **Centro — Documentos** | Pestañas con el contenido generado o editado: Benchmark (Paso 0), MDD, Spec, arquitectura, casos, historias, blueprint, guía UX/UI, contratos API, flujos, infra, tasks, ADRs… |
+| **Derecha — Semáforo y costos** | Estado del MDD respecto a la **Constitución SDD** (semáforo) y **estimación** en MXN. El botón **Generar entregables** lanza la cascada de documentos cuando el semáforo está en verde y hay Spec. |
+
+Arriba a la derecha: **Descargar todo (ZIP)** agrupa los documentos con contenido en un archivo.
+
+---
+
+## 2. Orden recomendado del flujo
+
+En el propio Workshop suele mostrarse una cadena del tipo:
+
+`MDD → Spec → Arq. → Casos → H.U. → Blueprint → Guía UX/UI → API → Flujos → Tasks → Infra` (y **Paso 0** opcional: benchmark / investigación).
+
+- **Paso 0 (opcional):** Benchmark & Gap Analysis (competencia, URLs, deep research). Alimenta el Spec y el contexto del MDD. Tras el stream del benchmark puede aparecer un **banner de complejidad propuesta** (HITL): confirma o descarta desde ahí, o escribe en el chat (p. ej. «sí, ejecuta este plan»); hasta confirmar, el nivel no queda aplicado al proyecto. En proyectos ya existentes puedes pulsar **Re-Valorar** (arriba en el chat) para volver a inferir la propuesta desde tu DBGA/MDD actual y abrir la entrevista sin regenerar todo el benchmark.
+
+**Complejidad media (producto nuevo):** en la barra de documentos no verás MDD ni entregables fuera de la matriz (Spec → API → Guía UX/UI → Tasks); el insumo sigue siendo Paso 0 / Spec. Las pestañas con contenido se muestran con fondo verde esmeralda; las vacías, con borde punteado gris.
+- **MDD (Master Design Document):** documento maestro de 7 secciones; gobierna el resto (SDD).
+- **Spec:** benchmark + alcance clarificado; conviene tenerlo antes de cerrar el MDD.
+- **Entregables:** cuando el **semáforo** está en verde y existe Spec, usa **Generar entregables** (o generación individual desde cada pestaña) para arquitectura, casos, historias, blueprint, API, flujos, infra, etc.
+
+**Legacy:** el tab **Modificación** sustituye el Paso 0; el flujo usa Relic (código indexado) y luego MDD + entregables en cascada.
+
+---
+
+## 3. Semáforo y estimación
+
+- **Rojo / Amarillo / Verde:** indica si el MDD cumple reglas mínimas (entidades, contratos, casos límite, etc.) para generar código y documentos pesados.
+- **Precisión %:** desglose de la última auditoría; puedes abrir **Ver logs y desglose**.
+- **Estimación:** horas y MXN por rol; fórmula fija (no es “precio comercial” obligatorio, es referencia interna).
+
+Sin **verde + Spec** no se habilita la generación masiva de entregables coherente con el diseño.
+
+---
+
+## 4. Chat: qué pedir
+
+- Pide cambios al MDD en lenguaje natural; el **Manager** delega en Clarifier, Arquitecto, etc.
+- Usa **`/`** en el campo de texto para **regenerar solo una sección** (1–7) sin rehacer todo el documento.
+- En proyectos **Legacy**, describe la modificación en **Modificación**; el sistema consulta el contexto del repositorio vía Relic cuando aplica.
+
+---
+
+## 5. Etapas (`Stage`)
+
+Cada proyecto puede tener **varias etapas** (`Stage`): cada una tiene su propio **MDD**, **semáforo**, **precisión** y **estimación**. Los entregables **globales** del proyecto (Spec, Blueprint, etc. en la raíz del `Project`) siguen siendo compartidos salvo que el producto diga lo contrario.
+
+En el **Workshop**, el **selector de etapa** (cuando hay más de una) define el foco: el MDD central, el semáforo y la estimación se leen/escriben con **`stageId`** en `PATCH` del proyecto y en los streams MDD (`/ai-analysis/mdd/...`). La **bienvenida** del orquestador acepta `stageId` para alinear el contexto al MDD de esa etapa (no solo al aplanado por defecto).
+
+**Hilo del Manager (LangGraph)** y **checkpoint** (`AgentStateCheckpoint`) son **por etapa**: al cambiar de etapa, el front pide `GET /ai-analysis/mdd/thread?projectId=&stageId=` para rehidratar el `threadId` correcto. El chat sigue siendo **una sesión global**; el historial **no** se filtra por etapa.
+
+**En la UI:** con **más de una etapa**, al **cambiar el selector** de etapa (arriba a la derecha) puede aparecer un **aviso** recordando que el historial del chat es compartido; puedes cerrarlo. Los mensajes **nuevos** pueden mostrar una etiqueta **«Etapa: …»** cuando el sistema guardó la etapa en foco al enviarlos (los mensajes antiguos pueden no tenerla).
+
+**Nueva etapa:** botón **Nueva etapa** junto al selector → modal y `POST /projects/:id/stages` (opcional copiar MDD desde la etapa actual).
+
+### Checklist manual (multi-etapa)
+
+1. Crear o seleccionar proyecto con al menos dos etapas.
+2. Cambiar el selector de etapa y comprobar que el MDD/semáforo cambian.
+3. Abrir flujo Manager en etapa A, interrumpir; cambiar a etapa B — debe mostrar otro hilo o vacío según datos.
+4. Generar MDD desde Benchmark con etapa B seleccionada — borrador en vivo y métricas deben corresponder a B.
+
+---
+
+## 6. Cómo organizar varias líneas de trabajo
+
+| Enfoque | Cuándo usarlo |
+|---------|----------------|
+| **Varias etapas en un proyecto** | Releases o líneas de diseño paralelas con MDD separado por etapa (selector + API `stageId`). |
+| **Varios proyectos** | Aislar por completo historial, chat y alcance cuando no quieres compartir nada. |
+| **API / scripts** | `PATCH` con `stageId`, creación de `Stage` vía REST; detalle en `docs/STAGE-SDD.md`. |
+
+**Plan técnico** de etapas Workshop: `docs/WORKSHOP-STAGES-IMPLEMENTATION-PLAN.md`.
+
+---
+
+## 7. Sincronización y errores
+
+- **Sincronizado / Sincronizando:** indica si los cambios locales del documento activo están alineados con el servidor.
+- Si aparece un **mensaje de error** en rojo arriba, léelo; suele ser timeout de IA, validación o red. Puedes cerrarlo con la **X** y reintentar la acción.
+
+---
+
+## 8. Más documentación
+
+En el repositorio del producto: `docs/STAGE-SDD.md`, `docs/MAXPRIME-INDEX.md`, `docs/ENTREGABLES-SDD-VALIDACION.md` (flujo SDD y validación).

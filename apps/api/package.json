@@ -1,5 +1,5 @@
 {
-  "name": "@the-forge/api",
+  "name": "@maxprime/api",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -22,8 +22,8 @@
     "@nestjs/core": "^10.4.9",
     "@nestjs/platform-express": "^10.4.9",
     "@prisma/client": "^5.22.0",
-    "@the-forge/database": "workspace:*",
-    "@the-forge/shared-types": "workspace:*",
+    "@maxprime/database": "workspace:*",
+    "@maxprime/shared-types": "workspace:*",
     "cheerio": "^1.0.0",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",

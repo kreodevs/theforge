@@ -1,5 +1,5 @@
 {
-  "extends": "@the-forge/config/base",
+  "extends": "@maxprime/config/base",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",

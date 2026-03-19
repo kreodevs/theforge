@@ -1,6 +1,7 @@
-# Revisión de seguridad — The Forge
+# Revisión de seguridad — MaxPrime
 
-**Fecha:** 2025-01-29  
+**Fecha:** 2025-01-29 · **Nota 2026:** Los hallazgos siguen siendo útiles como lista de verificación; valida en código si ya hay SSO/guards (p. ej. variables `SSO_*` en `.env.example`) antes de asumir que C1 sigue igual.
+
 **Alcance:** API NestJS, web Vite/React, módulos ai-analysis, scraper, sesiones, proyectos.
 
 ---

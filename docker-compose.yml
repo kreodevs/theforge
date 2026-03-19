@@ -1,46 +1,124 @@
-# Un solo contenedor para Dokploy: Postgres + API + Web (Nginx)
-# Nombre del contenedor: theforge-db
-# Conexión interna: DATABASE_URL=postgresql://theforge:theforge@localhost:5432/theforge
+# Dokploy: db + api + web + FalkorDB (grafo SDD documental; Relic/MCP es externo)
+# Dominios en Dokploy: / → maxprime-web:80, /api → maxprime-api:3000 (Strip Path: sí)
+# Si falla "network dokploy-network not found", quitar la red externa (Isolated Deployments)
+# default con name evita que Compose cree una red *_default extra (reduce agotamiento de address pools)
+
+networks:
+  default:
+    name: maxprime-app-network
+    driver: bridge
+  dokploy-network:
+    external: true
 
 services:
-  theforge-db:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: theforge-db
+  maxprime-db:
+    image: postgres:15-alpine
+    container_name: maxprime-db
+    networks:
+      - default
     environment:
-      - DATABASE_URL=postgresql://theforge:theforge@localhost:5432/theforge
-      - AI_PROVIDER=${AI_PROVIDER:-openai}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY:-}
-    ports:
-      - "80:80"
+      POSTGRES_USER: maxprime
+      POSTGRES_PASSWORD: maxprime
+      POSTGRES_DB: maxprime
     volumes:
-      - theforge_db_data:/var/lib/postgresql/data
+      - maxprime_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
-      interval: 30s
-      timeout: 5s
-      start_period: 15s
-      retries: 3
-    depends_on:
-      - theforge-falkor
+      test: ["CMD-SHELL", "pg_isready -U maxprime -d maxprime"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
-  theforge-falkor:
+  # Grafo SDD (MDD, entregables, RAG agéntico). Aislado del índice de código en TheForge.
+  maxprime-falkor-sdd:
     image: falkordb/falkordb:latest
-    container_name: theforge-falkor
+    container_name: maxprime-falkor-sdd
+    networks:
+      - default
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
-      - falkor_data:/var/lib/falkordb/data
-    environment:
-      - REDIS_ARGS=--appendonly yes
+      - falkor_sdd_data:/var/lib/falkordb/data
     healthcheck:
       test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  maxprime-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: maxprime-api
+    networks:
+      - default
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.maxprime-api.rule=Host(`${WEB_DOMAIN:-maxprime.local}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.maxprime-api.priority=100"
+      - "traefik.http.routers.maxprime-api.entrypoints=websecure"
+      - "traefik.http.routers.maxprime-api.tls.certResolver=letsencrypt"
+      - "traefik.http.services.maxprime-api.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.maxprime-api-strip.stripprefix.prefixes=/api"
+      - "traefik.http.routers.maxprime-api.middlewares=maxprime-api-strip"
+    environment:
+      DATABASE_URL: postgresql://maxprime:maxprime@maxprime-db:5432/maxprime
+      # Grafo documental SDD (Cypher, MDD_Section). TheForge MCP va aparte (THEFORGE_MCP_URL).
+      FALKORDB_SDD_URL: redis://maxprime-falkor-sdd:6379
+      FALKORDB_URL: redis://maxprime-falkor-sdd:6379
+      # Evaluador legacy + crítica en respuesta chat (opcional; por defecto desactivado).
+      AGENT_EVALUATOR_LEGACY: ${AGENT_EVALUATOR_LEGACY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_EMBEDDING_DIM: ${OPENAI_EMBEDDING_DIM:-}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
+      THEFORGE_MCP_URL: ${THEFORGE_MCP_URL:-}
+      THEFORGE_M2M_TOKEN: ${THEFORGE_M2M_TOKEN:-}
+      # Cliente HTTP al MCP ajeno (TheForge); no confundir con Falkor SDD ni con un MCP propio.
+      THEFORGE_MCP_TIMEOUT_MS: ${THEFORGE_MCP_TIMEOUT_MS:-60000}
+    depends_on:
+      maxprime-db:
+        condition: service_healthy
+      maxprime-falkor-sdd:
+        condition: service_healthy
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      # wait-for-postgres + migrate deploy + Nest cold start
+      start_period: 90s
+      retries: 3
+
+  maxprime-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: maxprime-web
+    networks:
+      - default
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.maxprime-web.rule=Host(`${WEB_DOMAIN:-maxprime.local}`)"
+      - "traefik.http.routers.maxprime-web.priority=1"
+      - "traefik.http.routers.maxprime-web.entrypoints=websecure"
+      - "traefik.http.routers.maxprime-web.tls.certResolver=letsencrypt"
+      - "traefik.http.services.maxprime-web.loadbalancer.server.port=80"
+    depends_on:
+      - maxprime-api
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:80/ | head -c 1 | grep -q . || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
 volumes:
-  theforge_db_data:
-  falkor_data:
+  maxprime_db_data:
+  falkor_sdd_data:

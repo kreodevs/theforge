@@ -1,4 +1,4 @@
-import type { ChecklistResult } from "@the-forge/shared-types";
+import type { ChecklistResult } from "@maxprime/shared-types";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -14,10 +14,14 @@ export interface GenerateResponseOptions {
   currentUxUiGuideContent?: string;
   /** Blueprint del proyecto; se inyecta en contexto cuando activeTab es ux-ui-guide para alinear la guía con pantallas/estructura */
   currentBlueprintContent?: string;
+  /** Spec actual del proyecto; se inyecta cuando activeTab es spec para que el modelo pueda fusionar nuevas secciones */
+  currentSpecContent?: string;
   /** Tab activo en el Workshop: benchmark | mdd | ux-ui-guide | blueprint | api-contracts | logic-flows | infra */
   activeTab?: string;
   /** Memoria semántica: preferencias arquitectónicas de proyectos previos (HISTORIAL_DE_APRENDIZAJE) */
   learningHistory?: string;
+  /** Fase 0: propuesta de complejidad pendiente (HITL) + instrucciones de entrevista proactiva */
+  complexityInterviewContext?: string;
 }
 
 export interface LLMProvider {

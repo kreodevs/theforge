@@ -1,0 +1,57 @@
+# SPEC-MCP-001 — Uso desde MaxPrime
+
+Resumen del contrato entre **MaxPrime** (flujo legacy) y el **MCP Relic (FalkorSpecs)** según SPEC-MCP-001 (multi-repo, herramientas de refactor seguro).
+
+## Proyecto vs repo
+
+- **projectId** en las herramientas puede ser **ID de proyecto** (Relic, multi-root) o **ID de repo** (`roots[].id`). El MCP resuelve automáticamente (repositories vs projects según endpoint).
+- **list_known_projects** devuelve `[{ id, name, roots: [{ id, name?, branch? }] }]`. Cada `roots[].id` es válido como `projectId` en el resto de herramientas.
+
+## Flujo legacy: plan de modificación
+
+Para `POST /projects/:projectId/legacy/start` con `{ description }`:
+
+1. **Llamada principal:** `get_modification_plan(userDescription, projectId)`  
+   - **Argumentos:** `userDescription` (descripción de la modificación), `projectId` (theforgeProjectId: puede ser ID de proyecto o de repo).  
+   - **Respuesta:** `{ filesToModify: Array<{ path: string, repoId: string }>, questionsToRefine: string[] }`. Cada archivo incluye `repoId` (root); si hay varios repoId distintos, el cambio afecta a más de un repo (multi-root).
+
+2. **Garantías del MCP:**
+   - **filesToModify:** Solo rutas que existen en el grafo (path + repoId). No se inventan nombres ni extensiones.
+   - **questionsToRefine:** Solo preguntas de negocio/funcionalidad.
+
+3. **Fallback:** Si el MCP no expone `get_modification_plan` o devuelve error, MaxPrime usa `ask_codebase` pidiendo el mismo JSON; convierte paths a `{ path, repoId: projectId }`.
+
+4. **Sugerencias:** Tras obtener `questionsToRefine`, MaxPrime llama `ask_codebase` para rellenar respuestas sugeridas.
+
+5. **Generación de MDD:** MaxPrime enriquece el contexto con **`validate_before_edit`** (obligatorio antes de editar: impacto + contrato en un solo llamado) para los 3 primeros archivos a modificar; si no está disponible, fallback a `get_legacy_impact`. Además usa `get_file_content` (contenido de los 2 primeros archivos) y varias `ask_codebase`, para que el MDD refleje impacto real, contratos y código existente.
+
+## Regla para toda la documentación legacy
+
+**No inventar.** Toda la documentación generada para proyectos legacy (Spec, MDD, Blueprint, Arquitectura, Casos de uso, Historias, API, Flujos, Infra, Tasks, Guía UX/UI) debe **apegarse al MDD y al conocimiento obtenido vía MCP Relic**. Si algo no está en el MDD ni en el contexto del codebase (Relic), no se incluye. Esta regla se inyecta en todos los prompts cuando se pasa `relicContext` (AiService: `prependRelicPrompt` + instrucción explícita en Blueprint y Guía UX/UI).
+
+## Protocolo recomendado (MCP)
+
+1. `list_known_projects` al inicio.
+2. Fijar `projectId`: en MaxPrime se guarda como `theforgeProjectId` en el proyecto; en Cursor puede usarse `.theforge-project` en la raíz del repo indexado.
+3. **Antes de editar:** `validate_before_edit` con el nombre del nodo (MaxPrime lo aplica al generar el MDD).
+4. Usar props/contratos del grafo; no inventar.
+
+## Herramientas MCP usadas por MaxPrime
+
+| Uso | Herramienta |
+|-----|-------------|
+| Listar proyectos (multi-root) al crear proyecto legacy | `list_known_projects` → `{ id, name, roots: [{ id, name?, branch? }] }` |
+| Inicio del flujo (archivos + preguntas) | `get_modification_plan` (primario), `ask_codebase` (fallback/sugerencias) |
+| Contexto para generar MDD | `ask_codebase` (múltiples); **`validate_before_edit`** (impacto + contrato por archivo); fallback `get_legacy_impact`; `get_file_content` (contenido de archivos a modificar) |
+| Refactor seguro (disponibles en RelicService) | `get_contract_specs`, `get_component_graph` (aún no usados en flujo automático). Catálogo completo: **HERRAMIENTAS-MCP-RELIC.md**. |
+
+## Transporte
+
+- **Corporativo:** HTTP (Streamable) a `THEFORGE_MCP_URL` (p. ej. `https://theforge.obp.mx/mcp`), auth Bearer con `THEFORGE_M2M_TOKEN`.
+- **Local/IDE:** Stdio según configuración de Cursor.
+
+## Referencia
+
+- **Catálogo completo de herramientas:** [HERRAMIENTAS-MCP-RELIC.md](./HERRAMIENTAS-MCP-RELIC.md) (todas las herramientas MCP y uso en MaxPrime).
+- Especificación completa del MCP: guía “Ayuda — MCP FalkorSpecs” (theforge.obp.mx).
+- Configuración en MaxPrime: `docs/RELIC-MAXPRIME.md`, `apps/api/src/modules/relic/relic.service.ts`.

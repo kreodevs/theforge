@@ -1,14 +1,50 @@
 import { z } from "zod";
 import { StatusEnum } from "./status.js";
 
-export const createProjectSchema = z.object({
-  name: z.string().min(1),
-  hasUxTeam: z.boolean().default(false),
-});
+export const ProjectTypeEnum = z.enum(["NEW", "LEGACY"]);
+export type ProjectType = z.infer<typeof ProjectTypeEnum>;
+
+/** Alineado con Prisma `ComplexityLevel`: define semáforo y entregables obligatorios. */
+export const ComplexityLevelEnum = z.enum(["LOW", "MEDIUM", "HIGH"]);
+export type ComplexityLevel = z.infer<typeof ComplexityLevelEnum>;
+
+/** Propuesta de complejidad pendiente de confirmación (HITL). */
+export const complexityPendingSchema = z
+  .object({
+    level: ComplexityLevelEnum,
+    planSummary: z.string(),
+    reason: z.string().optional(),
+  })
+  .strict();
+export type ComplexityPending = z.infer<typeof complexityPendingSchema>;
+
+export const createProjectSchema = z
+  .object({
+    name: z.string().min(1),
+    hasUxTeam: z.boolean().default(false),
+    complexity: ComplexityLevelEnum.default("HIGH"),
+    projectType: ProjectTypeEnum.default("NEW"),
+    theforgeProjectId: z.string().uuid().optional().nullable(),
+  })
+  .refine(
+    (data) => {
+      if (data.projectType === "LEGACY") return !!data.theforgeProjectId;
+      return true;
+    },
+    { message: "theforgeProjectId es obligatorio cuando projectType es LEGACY", path: ["theforgeProjectId"] },
+  );
 
 export const updateProjectSchema = z.object({
   name: z.string().min(1).optional(),
   hasUxTeam: z.boolean().optional(),
+  complexity: ComplexityLevelEnum.optional(),
+  /** Borrar propuesta pendiente sin aplicar (rechazo). */
+  clearComplexityPending: z.boolean().optional(),
+  complexityPending: complexityPendingSchema.nullable().optional(),
+  projectType: ProjectTypeEnum.optional(),
+  theforgeProjectId: z.string().uuid().optional().nullable(),
+  /** Etapa donde aplicar `mddContent`; si se omite, la etapa activa (workflow) o la primera por ordinal. */
+  stageId: z.string().uuid().optional(),
   dbgaContent: z.string().optional().nullable(),
   specContent: z.string().optional().nullable(),
   architectureContent: z.string().optional().nullable(),
@@ -35,7 +71,11 @@ export const phase0DeepResearchBodySchema = z.object({
 export const projectResponseSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
+  projectType: ProjectTypeEnum,
+  theforgeProjectId: z.string().nullable(),
   hasUxTeam: z.boolean(),
+  complexity: ComplexityLevelEnum,
+  complexityPending: complexityPendingSchema.nullable().optional(),
   status: z.enum(StatusEnum),
   precisionScore: z.number(),
   dbgaContent: z.string().nullable(),

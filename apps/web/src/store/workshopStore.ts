@@ -2,6 +2,22 @@ import { create } from "zustand";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
+function pickEvaluatorCritique(data: Record<string, unknown>): string | null {
+  const c = data.evaluatorCritique;
+  return typeof c === "string" && c.trim().length > 0 ? c.trim() : null;
+}
+
+/** Body JSON para `POST /sessions/:id/messages` con `stageId` opcional. */
+export function sessionMessageBody(
+  base: { role: "user" | "assistant"; content: string; tab?: string },
+  stageId: string | null | undefined,
+): string {
+  return JSON.stringify({
+    ...base,
+    ...(stageId?.trim() ? { stageId: stageId.trim() } : {}),
+  });
+}
+
 const cleanDoc = (text: string | null) => {
   if (typeof text !== "string") return null;
   let c = text.trim();
@@ -52,6 +68,8 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   tab?: string;
+  /** Etapa en foco al enviar (el historial del chat sigue siendo global). */
+  stageId?: string;
 }
 
 export interface Estimation {
@@ -98,9 +116,46 @@ export interface ApiConformanceResult {
   extraInApi: string[];
 }
 
+/** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por Relic). */
+export interface LegacyFlowState {
+  description?: string;
+  /** Paths o { path, repoId } (multi-repo, SPEC-MCP-001). */
+  filesToModify?: (string | { path: string; repoId?: string })[];
+  questions?: string[];
+  /** Respuestas sugeridas por Relic desde el codebase; se muestran pre-rellenadas */
+  suggestedAnswers?: Record<string, string>;
+  answers?: Record<string, string>;
+}
+
+/** Fila `Stage` en `GET /projects/:id` (MDD/semáforo por etapa). */
+export interface WorkshopStage {
+  id: string;
+  ordinal: number;
+  key: string | null;
+  name: string | null;
+  workflowStatus: string;
+  mddContent?: string | null;
+  status: Status;
+  precisionScore: number;
+  estimation: Estimation | null;
+}
+
+/** Propuesta HITL hasta confirmación en chat o `POST .../confirm-complexity`. */
+export interface ComplexityPending {
+  level: "LOW" | "MEDIUM" | "HIGH";
+  planSummary: string;
+  reason?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
+  /** Política SDD: gobierna semáforo y entregables (API: `Project.complexity`). */
+  complexity?: "LOW" | "MEDIUM" | "HIGH";
+  /** Inferencia / plan propuesto; no aplica a `complexity` hasta confirmación explícita. */
+  complexityPending?: ComplexityPending | null;
+  projectType?: "NEW" | "LEGACY";
+  theforgeProjectId?: string | null;
   status: Status;
   precisionScore: number;
   hasUxTeam: boolean;
@@ -117,7 +172,96 @@ export interface Project {
   useCasesContent: string | null;
   userStoriesContent: string | null;
   infraContent: string | null;
+  legacyFlowState?: LegacyFlowState | null;
   estimation: Estimation | null;
+  /** Presente en respuesta API completa; el front usa `activeStageId` para foco MDD. */
+  stages?: WorkshopStage[];
+}
+
+function pickDefaultStageId(stages: WorkshopStage[]): string | null {
+  if (!stages.length) return null;
+  const active = stages
+    .filter((s) => s.workflowStatus === "ACTIVE")
+    .sort((a, b) => a.ordinal - b.ordinal);
+  if (active.length > 0) return active[0]!.id;
+  return [...stages].sort((a, b) => a.ordinal - b.ordinal)[0]!.id;
+}
+
+/** Campos planos del proyecto alineados con la etapa en foco (MDD / semáforo / estimación). */
+function workshopFlatFromStage(p: Project, stageId: string | null): Pick<Project, "mddContent" | "status" | "precisionScore" | "estimation"> {
+  const stages = p.stages;
+  if (!stageId || !stages?.length) {
+    return {
+      mddContent: p.mddContent,
+      status: p.status,
+      precisionScore: p.precisionScore,
+      estimation: p.estimation,
+    };
+  }
+  const st = stages.find((s) => s.id === stageId);
+  if (!st) {
+    return {
+      mddContent: p.mddContent,
+      status: p.status,
+      precisionScore: p.precisionScore,
+      estimation: p.estimation,
+    };
+  }
+  return {
+    mddContent: st.mddContent ?? null,
+    status: st.status,
+    precisionScore: st.precisionScore,
+    estimation: st.estimation ?? null,
+  };
+}
+
+/** Tras respuesta API con `stages[]`, mantiene foco si la etapa sigue existiendo. */
+function mergeProjectWithActiveStage(
+  proj: Project,
+  prevActiveId: string | null,
+): { project: Project; activeStageId: string | null; mddContent: string } {
+  const stages = proj.stages ?? [];
+  const activeStageId =
+    prevActiveId && stages.some((s) => s.id === prevActiveId) ? prevActiveId : pickDefaultStageId(stages);
+  const flat = workshopFlatFromStage(proj, activeStageId);
+  return {
+    project: { ...proj, ...flat },
+    activeStageId,
+    mddContent: cleanDoc(flat.mddContent) ?? "",
+  };
+}
+
+/** Proyecto tras evento `done` del orquestador: conserva etapa activa y limpia documentos mostrados. */
+function projectWithUxAfterStream(
+  proj: Project | undefined,
+  uxFromApi: string | null | undefined,
+  prevActiveId: string | null,
+): { project: Project; mddContent: string; activeStageId: string | null } | null {
+  if (!proj) return null;
+  const merged = mergeProjectWithActiveStage(proj, prevActiveId);
+  const p = merged.project;
+  return {
+    project: {
+      ...p,
+      complexityPending:
+        proj != null && proj.complexityPending !== undefined
+          ? proj.complexityPending
+          : p.complexityPending ?? null,
+      uxUiGuideContent: cleanDoc(uxFromApi ?? p.uxUiGuideContent ?? null),
+      blueprintContent: cleanDoc(p.blueprintContent ?? null),
+      dbgaContent: cleanDoc(p.dbgaContent ?? null),
+      specContent: cleanDoc(p.specContent ?? null),
+      apiContractsContent: cleanDoc(p.apiContractsContent ?? null),
+      logicFlowsContent: cleanDoc(p.logicFlowsContent ?? null),
+      tasksContent: cleanDoc(p.tasksContent ?? null),
+      architectureContent: cleanDoc(p.architectureContent ?? null),
+      useCasesContent: cleanDoc(p.useCasesContent ?? null),
+      userStoriesContent: cleanDoc(p.userStoriesContent ?? null),
+      infraContent: cleanDoc(p.infraContent ?? null),
+    },
+    mddContent: merged.mddContent,
+    activeStageId: merged.activeStageId,
+  };
 }
 
 export interface Session {
@@ -157,15 +301,20 @@ interface WorkshopState {
   pendingDeliverablePreview: { kind: "blueprint" | "api" | "infra" | "architecture" | "use-cases" | "user-stories"; content: string } | null;
   loading: boolean;
   /** Razón del loading para mostrar mensajes específicos (ej. deep research tarda más) */
-  loadingReason: "benchmark" | "mdd" | "phase0-deep-research" | null;
+  loadingReason:
+    | "benchmark"
+    | "mdd"
+    | "phase0-deep-research"
+    | "legacy-mdd"
+    | "legacy-deliverables"
+    | "deliverables-cascade"
+    | null;
   /** Mensaje de usuario en curso (streaming); se muestra hasta recibir "done" */
   streamingUserMessage: string | null;
   /** Contenido del asistente que llega por stream; se concatena hasta "done" */
   streamingContent: string | null;
   /** Tab del mensaje en streaming (para filtrar por tab) */
   streamingTab: string | null;
-  /** Tab central activo (Benchmark, MDD, etc.) */
-  activePanel: DocPanel;
   /** Progreso de agentes DBGA (Benchmark): qué agente trabaja y qué hace */
   agentProgress: Array<{ agent: string; message: string }>;
   /** Métricas en vivo (Semáforo + estimación) desde GET /ai-analysis/estimation */
@@ -182,6 +331,9 @@ interface WorkshopState {
   precisionBreakdown: PrecisionBreakdown | null;
   /** Feedback del auditor (para mostrar en UI fuera del chat) */
   auditorFeedback: string | null;
+  /** Crítica del evaluador legacy (SDD vs código); solo si el backend la envía */
+  evaluatorCritique: string | null;
+  clearEvaluatorCritique: () => void;
   /** Plan pendiente de aprobación (HITL 4.4): pasos a ejecutar; el usuario puede Ejecutar o Modificar */
   pendingPlanApproval: {
     plan: Array<{ step_id: string; task_description: string; node: string; goal?: string }>;
@@ -191,6 +343,11 @@ interface WorkshopState {
   mddJustGeneratedFromBenchmark: boolean;
   /** Decisiones Arquitectónicas (ADRs) asociadas al proyecto */
   adrs: any[] | null;
+  /** Etapa cuyo MDD edita el Workshop (debe existir en `project.stages`). */
+  activeStageId: string | null;
+  setActiveStageId: (stageId: string | null) => void;
+  /** Crea etapa vía `POST /projects/:id/stages`; opcional copia MDD desde `activeStageId`. */
+  createWorkshopStage: (opts: { name?: string; key?: string; copyMddFromCurrent?: boolean }) => Promise<Project | null>;
 
   setProjectId: (id: string | null) => void;
   setProject: (p: Project | null) => void;
@@ -199,7 +356,6 @@ interface WorkshopState {
   setUxUiGuideContent: (content: string | null) => void;
   persistUxUiGuideContent: (content: string) => Promise<void>;
   setLoading: (v: boolean) => void;
-  setActivePanel: (panel: DocPanel) => void;
   setSynced: (v: boolean) => void;
   setError: (e: string | null) => void;
 
@@ -242,6 +398,14 @@ interface WorkshopState {
   setTasksContent: (content: string | null) => void;
   persistTasksContent: (content: string) => Promise<void>;
   generateTasks: (projectId: string) => Promise<Project | null>;
+  /** POST /projects/:id/generate-deliverables — cascada según complexity. */
+  generateDeliverablesCascade: (projectId: string) => Promise<Project | null>;
+  /** HITL: aplica propuesta pendiente a `complexity` y limpia `complexityPending`. */
+  confirmComplexityProposal: (projectId: string) => Promise<Project | null>;
+  /** HITL: descarta propuesta sin aplicar nivel (`clearComplexityPending`). */
+  dismissComplexityProposal: (projectId: string) => Promise<Project | null>;
+  /** Re-infiere propuesta HITL desde documentos existentes (`POST .../reassess-complexity`). */
+  reassessComplexity: (projectId: string, note?: string) => Promise<Project | null>;
   fetchConformance: (projectId: string, options?: { useLlm?: boolean }) => Promise<void>;
   verifyDeliverable: (projectId: string, deliverable: "blueprint" | "api" | "infra" | "architecture" | "use-cases" | "user-stories") => Promise<string>;
   setPendingDeliverablePreview: (v: { kind: "blueprint" | "api" | "infra" | "architecture" | "use-cases" | "user-stories"; content: string } | null) => void;
@@ -261,25 +425,15 @@ interface WorkshopState {
     opts: { userIdea?: string; urls?: string[]; includeBenchmark?: boolean },
   ) => Promise<Project | null>;
   clearPhase0SummaryContent: (projectId: string) => Promise<void>;
+  /** Flujo legacy: analizar con Relic → archivos + preguntas */
+  legacyStart: (projectId: string, description: string) => Promise<{ filesToModify: (string | { path: string; repoId?: string })[]; questions: string[]; suggestedAnswers?: Record<string, string> } | null>;
+  legacyAnswer: (projectId: string, answers: Record<string, string>) => Promise<boolean>;
+  legacyGenerateMdd: (projectId: string) => Promise<{ mddContent: string } | null>;
+  legacyGenerateDeliverables: (projectId: string) => Promise<boolean>;
   fetchEstimation: (projectId: string) => Promise<LiveMetricsResult | null>;
   fetchAdrs: (projectId: string) => Promise<void>;
   reset: () => void;
 }
-
-export type DocPanel =
-  | "benchmark"
-  | "spec"
-  | "mdd"
-  | "ux-ui-guide"
-  | "blueprint"
-  | "tasks"
-  | "api-contracts"
-  | "logic-flows"
-  | "architecture"
-  | "use-cases"
-  | "user-stories"
-  | "infra"
-  | "adrs";
 
 const initialState = {
   projectId: null as string | null,
@@ -298,19 +452,24 @@ const initialState = {
   useCasesContent: null as string | null,
   userStoriesContent: null as string | null,
   infraContent: null as string | null,
-  conformance: {
-    blueprint: { ok: true, gaps: [] },
-    api: { ok: true, missingInApi: [], extraInApi: [] },
-    logicFlows: { ok: true, gaps: [] },
-    infra: { ok: true, gaps: [] },
-  },
+  conformance: null as {
+    blueprint: ConformanceResult;
+    api: ApiConformanceResult;
+    logicFlows: ConformanceResult;
+    infra: ConformanceResult;
+  } | null,
   pendingDeliverablePreview: null as { kind: "blueprint" | "api" | "infra" | "architecture" | "use-cases" | "user-stories"; content: string } | null,
   loading: false,
-  loadingReason: null as "benchmark" | "phase0-deep-research" | null,
+  loadingReason: null as
+    | "benchmark"
+    | "phase0-deep-research"
+    | "legacy-mdd"
+    | "legacy-deliverables"
+    | "deliverables-cascade"
+    | null,
   streamingUserMessage: null as string | null,
   streamingContent: null as string | null,
   streamingTab: null as string | null,
-  activePanel: "mdd" as DocPanel,
   agentProgress: [] as Array<{ agent: string; message: string }>,
   liveMetrics: null as LiveMetricsResult | null,
   managerThreadId: null as string | null,
@@ -320,39 +479,101 @@ const initialState = {
   auditTrail: null as string[] | null,
   precisionBreakdown: null as PrecisionBreakdown | null,
   auditorFeedback: null as string | null,
+  evaluatorCritique: null as string | null,
   pendingPlanApproval: null as {
     plan: Array<{ step_id: string; task_description: string; node: string; goal?: string }>;
     planMessage: string;
   } | null,
   mddJustGeneratedFromBenchmark: false,
   adrs: null as any[] | null,
+  activeStageId: null as string | null,
 };
 
 export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   ...initialState,
 
   setProjectId: (id) => set({ projectId: id }),
-  setProject: (p) =>
+  setProject: (p) => {
+    if (!p) {
+      set({ project: null, activeStageId: null });
+      return;
+    }
+    const stages = p.stages ?? [];
+    const prev = get().activeStageId;
+    const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
+    const flat = workshopFlatFromStage(p, activeStageId);
     set({
-      project: p,
-      mddContent: p?.mddContent ?? "",
-      uxUiGuideContent: p?.uxUiGuideContent ?? null,
-      dbgaContent: p?.dbgaContent ?? null,
-      phase0SummaryContent: p?.phase0SummaryContent ?? null,
-      blueprintContent: p?.blueprintContent ?? null,
-      apiContractsContent: p?.apiContractsContent ?? null,
-      logicFlowsContent: p?.logicFlowsContent ?? null,
-      architectureContent: p?.architectureContent ?? null,
-      useCasesContent: p?.useCasesContent ?? null,
-      userStoriesContent: p?.userStoriesContent ?? null,
-      infraContent: p?.infraContent ?? null,
-    }),
+      project: { ...p, ...flat },
+      activeStageId,
+      mddContent: cleanDoc(flat.mddContent) ?? "",
+      uxUiGuideContent: p.uxUiGuideContent ?? null,
+      dbgaContent: p.dbgaContent ?? null,
+      phase0SummaryContent: p.phase0SummaryContent ?? null,
+      blueprintContent: p.blueprintContent ?? null,
+      apiContractsContent: p.apiContractsContent ?? null,
+      logicFlowsContent: p.logicFlowsContent ?? null,
+      architectureContent: p.architectureContent ?? null,
+      useCasesContent: p.useCasesContent ?? null,
+      userStoriesContent: p.userStoriesContent ?? null,
+      infraContent: p.infraContent ?? null,
+    });
+  },
   setSession: (s) => set({ session: s }),
   setMddContent: (content) => set({ mddContent: content }),
   setLoading: (v) => set({ loading: v }),
-  setActivePanel: (panel) => set({ activePanel: panel }),
   setSynced: (v) => set({ synced: v }),
   setError: (e) => set({ error: e }),
+  clearEvaluatorCritique: () => set({ evaluatorCritique: null }),
+
+  setActiveStageId: (stageId) => {
+    const { project, projectId } = get();
+    if (!project || !stageId) return;
+    if (!project.stages?.some((s) => s.id === stageId)) return;
+    const flat = workshopFlatFromStage(project, stageId);
+    set({
+      activeStageId: stageId,
+      project: { ...project, ...flat },
+      mddContent: cleanDoc(flat.mddContent) ?? "",
+    });
+    const pid = projectId ?? project.id;
+    if (pid?.trim()) {
+      const qs = new URLSearchParams({ projectId: pid.trim(), stageId });
+      void fetch(`${API_BASE}/ai-analysis/mdd/thread?${qs.toString()}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: { threadId?: string | null } | null) => {
+          if (data?.threadId) set({ managerThreadId: data.threadId });
+          else set({ managerThreadId: null });
+        })
+        .catch(() => {});
+      void get()
+        .fetchEstimation(pid.trim())
+        .catch(() => {});
+    }
+  },
+
+  createWorkshopStage: async (opts) => {
+    const { projectId, activeStageId, fetchProject } = get();
+    if (!projectId?.trim()) return null;
+    const body: Record<string, unknown> = { activate: true };
+    if (opts.name?.trim()) body.name = opts.name.trim();
+    if (opts.key?.trim()) body.key = opts.key.trim();
+    if (opts.copyMddFromCurrent && activeStageId) body.copyMddFromStageId = activeStageId;
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId.trim()}/stages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "No se pudo crear la etapa");
+      }
+      return fetchProject(projectId.trim());
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al crear etapa" });
+      return null;
+    }
+  },
 
   fetchProject: async (projectId) => {
     try {
@@ -360,9 +581,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const r = await fetch(`${API_BASE}/projects/${projectId}`);
       if (!r.ok) throw new Error("Proyecto no encontrado");
       const data: Project = await r.json();
+      const stages = data.stages ?? [];
+      const prev = get().activeStageId;
+      const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
+      const flat = workshopFlatFromStage(data, activeStageId);
       set({
-        project: data,
-        mddContent: cleanDoc(data.mddContent) ?? "",
+        project: { ...data, ...flat },
+        activeStageId,
+        mddContent: cleanDoc(flat.mddContent) ?? "",
         uxUiGuideContent: cleanDoc(data.uxUiGuideContent ?? null),
         dbgaContent: cleanDoc(data.dbgaContent ?? null),
         specContent: cleanDoc(data.specContent ?? null),
@@ -382,7 +608,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const sessions: Session[] = await sessionsRes.json();
         set({ session: sessions.length > 0 ? sessions[0] : null });
       }
-      const threadRes = await fetch(`${API_BASE}/ai-analysis/mdd/thread?projectId=${encodeURIComponent(projectId)}`).catch(() => null);
+      const sid = get().activeStageId;
+      const threadQs = new URLSearchParams({ projectId });
+      if (sid) threadQs.set("stageId", sid);
+      const threadRes = await fetch(`${API_BASE}/ai-analysis/mdd/thread?${threadQs.toString()}`).catch(() => null);
       if (threadRes?.ok) {
         const threadData = (await threadRes.json()) as { threadId?: string | null };
         if (threadData.threadId) {
@@ -393,7 +622,6 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       setTimeout(() => {
         get().fetchEstimation(projectId).catch(() => { });
         get().fetchAdrs(projectId).catch(() => { });
-        get().fetchConformance(projectId).catch(() => { });
       }, 0);
       return data;
     } catch (e) {
@@ -408,6 +636,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId?.trim()) return;
     set({ loading: true, error: null });
     try {
+      const stageWelcome = get().activeStageId;
       const r = await fetch(`${API_BASE}/ai-orchestrator/welcome`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -415,6 +644,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           projectId,
           sessionId: session?.id,
           activeTab: activeTab ?? undefined,
+          ...(stageWelcome ? { stageId: stageWelcome } : {}),
         }),
       });
       if (!r.ok) {
@@ -422,22 +652,28 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         throw new Error(err.message ?? "Error al cargar bienvenida");
       }
       const data: { session: Session; project: Project } = await r.json();
+      const p = data.project;
+      const stages = p.stages ?? [];
+      const prev = get().activeStageId;
+      const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
+      const flat = workshopFlatFromStage(p, activeStageId);
       set({
         session: data.session,
-        project: data.project,
-        mddContent: cleanDoc(data.project.mddContent ?? null) ?? get().mddContent,
-        uxUiGuideContent: cleanDoc(data.project.uxUiGuideContent ?? null),
-        dbgaContent: cleanDoc(data.project.dbgaContent ?? null),
-        specContent: cleanDoc(data.project.specContent ?? null),
-        phase0SummaryContent: data.project.phase0SummaryContent ?? null,
-        blueprintContent: cleanDoc(data.project.blueprintContent ?? null),
-        tasksContent: cleanDoc(data.project.tasksContent ?? null),
-        apiContractsContent: cleanDoc(data.project.apiContractsContent ?? null),
-        logicFlowsContent: cleanDoc(data.project.logicFlowsContent ?? null),
-        architectureContent: cleanDoc(data.project.architectureContent ?? null),
-        useCasesContent: cleanDoc(data.project.useCasesContent ?? null),
-        userStoriesContent: cleanDoc(data.project.userStoriesContent ?? null),
-        infraContent: cleanDoc(data.project.infraContent ?? null),
+        project: { ...p, ...flat },
+        activeStageId,
+        mddContent: cleanDoc(flat.mddContent ?? null) ?? get().mddContent,
+        uxUiGuideContent: cleanDoc(p.uxUiGuideContent ?? null),
+        dbgaContent: cleanDoc(p.dbgaContent ?? null),
+        specContent: cleanDoc(p.specContent ?? null),
+        phase0SummaryContent: p.phase0SummaryContent ?? null,
+        blueprintContent: cleanDoc(p.blueprintContent ?? null),
+        tasksContent: cleanDoc(p.tasksContent ?? null),
+        apiContractsContent: cleanDoc(p.apiContractsContent ?? null),
+        logicFlowsContent: cleanDoc(p.logicFlowsContent ?? null),
+        architectureContent: cleanDoc(p.architectureContent ?? null),
+        useCasesContent: cleanDoc(p.useCasesContent ?? null),
+        userStoriesContent: cleanDoc(p.userStoriesContent ?? null),
+        infraContent: cleanDoc(p.infraContent ?? null),
         synced: true,
         error: null,
       });
@@ -466,7 +702,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         throw new Error(err.message ?? "Error al borrar historial");
       }
       const data: { session: Session | null; project: Project } = await r.json();
-      set({ session: data.session, project: data.project, error: null, managerThreadId: null });
+      const p = data.project;
+      const stages = p.stages ?? [];
+      const prev = get().activeStageId;
+      const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
+      const flat = workshopFlatFromStage(p, activeStageId);
+      set({
+        session: data.session,
+        project: { ...p, ...flat },
+        activeStageId,
+        error: null,
+        managerThreadId: null,
+        evaluatorCritique: null,
+      });
       if (data.session) {
         await get().fetchWelcome(projectId, activeTab);
       }
@@ -499,17 +747,23 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const appendRes = await fetch(`${API_BASE}/sessions/${session.id}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: "user", content: msg, tab: "mdd" }),
+          body: sessionMessageBody({ role: "user", content: msg, tab: "mdd" }, get().activeStageId),
         });
         if (appendRes.ok) {
           const updatedSession = (await appendRes.json()) as Session;
           set({ session: updatedSession });
         }
         const mddContent = (get().mddContent ?? get().project?.mddContent ?? "").trim();
+        const regStage = get().activeStageId;
         const r = await fetch(`${API_BASE}/ai-analysis/mdd/stream/regenerate-section`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, section: regenerateSection, mddContent: mddContent || undefined }),
+          body: JSON.stringify({
+            projectId,
+            section: regenerateSection,
+            mddContent: mddContent || undefined,
+            ...(regStage ? { stageId: regStage } : {}),
+          }),
         });
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
@@ -545,11 +799,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     loading: false,
                     loadingReason: null,
                     agentProgress: [],
+                    evaluatorCritique: null,
                   });
                   const assistantRes = await fetch(`${API_BASE}/sessions/${session.id}/messages`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ role: "assistant", content: `Sección §${regenerateSection} regenerada. Revisa el documento en el panel central.`, tab: "mdd" }),
+                    body: sessionMessageBody(
+                      {
+                        role: "assistant",
+                        content: `Sección §${regenerateSection} regenerada. Revisa el documento en el panel central.`,
+                        tab: "mdd",
+                      },
+                      get().activeStageId,
+                    ),
                   });
                   if (assistantRes.ok) {
                     const sess = (await assistantRes.json()) as Session;
@@ -557,7 +819,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   }
                   return;
                 } else if (event.type === "error" && event.message) {
-                  set({ error: event.message, loading: false, loadingReason: null, agentProgress: [] });
+                  set({ error: event.message, loading: false, loadingReason: null, agentProgress: [], evaluatorCritique: null });
                   return;
                 }
               } catch {
@@ -566,13 +828,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             }
           }
         }
-        set({ loading: false, loadingReason: null, agentProgress: [] });
+        set({ loading: false, loadingReason: null, agentProgress: [], evaluatorCritique: null });
       } catch (e) {
         set({
           error: e instanceof Error ? e.message : "Error al regenerar sección",
           loading: false,
           loadingReason: null,
           agentProgress: [],
+          evaluatorCritique: null,
         });
       }
       return;
@@ -604,13 +867,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           streamingUserMessage: looksLikeMddDocument ? messageForApi : msg,
           pendingPlanApproval: null,
           mddJustGeneratedFromBenchmark: false,
+          evaluatorCritique: null,
         });
         try {
           if (!looksLikeMddDocument) {
             const appendRes = await fetch(`${API_BASE}/sessions/${session.id}/messages`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ role: "user", content: msg, tab: "mdd" }),
+              body: sessionMessageBody({ role: "user", content: msg, tab: "mdd" }, get().activeStageId),
             });
             if (!appendRes.ok) throw new Error("Error al enviar mensaje");
             const updatedSession = (await appendRes.json()) as Session;
@@ -622,19 +886,22 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             managerThreadId != null
               ? `${API_BASE}/ai-analysis/mdd/stream/resume`
               : `${API_BASE}/ai-analysis/mdd/stream/manager`;
+          const mddStage = get().activeStageId;
+          const draftForMdd = (get().mddContent ?? get().project?.mddContent ?? "").trim() || undefined;
           const body =
             managerThreadId != null
               ? {
                 projectId,
                 threadId: managerThreadId,
                 userMessage: messageForApi,
-                mddContent: (get().mddContent ?? get().project?.mddContent ?? "").trim() || undefined,
+                mddContent: draftForMdd,
               }
               : {
                 projectId,
                 dbgaContent: (get().dbgaContent ?? get().project?.dbgaContent ?? "").trim() || undefined,
                 initialMessage: messageForApi,
-                mddContent: (get().mddContent ?? get().project?.mddContent ?? "").trim() || undefined,
+                mddContent: draftForMdd,
+                ...(mddStage ? { stageId: mddStage } : {}),
               };
           const r = await fetch(url, {
             method: "POST",
@@ -736,14 +1003,21 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                       const appendAssistant = await fetch(`${API_BASE}/sessions/${session.id}/messages`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ role: "assistant", content, tab: "mdd" }),
+                        body: sessionMessageBody({ role: "assistant", content, tab: "mdd" }, get().activeStageId),
                       });
                       if (appendAssistant.ok) {
                         sess = (await appendAssistant.json()) as Session;
                         set({ session: sess });
                       }
                     }
-                    set({ loading: false, loadingReason: null, agentProgress: [], streamingUserMessage: null, streamingContent: null });
+                    set({
+                      loading: false,
+                      loadingReason: null,
+                      agentProgress: [],
+                      streamingUserMessage: null,
+                      streamingContent: null,
+                      evaluatorCritique: null,
+                    });
                     return;
                   } else if (event.type === "done" && event.markdown != null) {
                     set({ managerThreadId: null, pendingPlanApproval: null });
@@ -780,20 +1054,37 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     const assistantRes = await fetch(`${API_BASE}/sessions/${session.id}/messages`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        role: "assistant",
-                        content: assistantContent,
-                        tab: "mdd",
-                      }),
+                      body: sessionMessageBody(
+                        { role: "assistant", content: assistantContent, tab: "mdd" },
+                        get().activeStageId,
+                      ),
                     });
                     if (assistantRes.ok) {
                       const sess = (await assistantRes.json()) as Session;
                       set({ session: sess });
                     }
-                    set({ loading: false, loadingReason: null, agentProgress: [], streamingUserMessage: null, streamingContent: null, pendingPlanApproval: null });
+                    set({
+                      loading: false,
+                      loadingReason: null,
+                      agentProgress: [],
+                      streamingUserMessage: null,
+                      streamingContent: null,
+                      pendingPlanApproval: null,
+                      evaluatorCritique: null,
+                    });
                     return;
                   } else if (event.type === "error" && event.message) {
-                    set({ managerThreadId: null, pendingPlanApproval: null, error: String(event.message), loading: false, loadingReason: null, agentProgress: [], streamingUserMessage: null, streamingContent: null });
+                    set({
+                      managerThreadId: null,
+                      pendingPlanApproval: null,
+                      error: String(event.message),
+                      loading: false,
+                      loadingReason: null,
+                      agentProgress: [],
+                      streamingUserMessage: null,
+                      streamingContent: null,
+                      evaluatorCritique: null,
+                    });
                     return;
                   }
                 } catch (_) {
@@ -811,6 +1102,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             loadingReason: null,
             agentProgress: [],
             streamingUserMessage: null,
+            evaluatorCritique: null,
           });
         }
       }
@@ -822,6 +1114,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         streamingUserMessage: msg,
         streamingContent: "",
         streamingTab: tab,
+        evaluatorCritique: null,
       });
       try {
         const body: Record<string, unknown> = {
@@ -832,6 +1125,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           uxUiGuideContent: get().uxUiGuideContent ?? undefined,
           activeTab: tab,
         };
+        const stageFocus = get().activeStageId;
+        if (stageFocus) body.stageId = stageFocus;
+        if (activeTab === "spec") {
+          const spec = get().specContent ?? get().project?.specContent ?? null;
+          if (spec != null) body.specContent = spec;
+        }
         if (activeTab === "benchmark") {
           const dbga = get().dbgaContent ?? get().project?.dbgaContent ?? null;
           if (dbga != null) body.dbgaContent = dbga;
@@ -872,22 +1171,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const sess = data.session as Session | undefined;
                 const proj = data.project as Project | undefined;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
-                const projectWithUx = proj
-                  ? {
-                    ...proj,
-                    mddContent: cleanDoc(proj.mddContent ?? null) ?? "",
-                    uxUiGuideContent: cleanDoc(uxFromApi ?? proj.uxUiGuideContent ?? null),
-                    blueprintContent: cleanDoc(proj.blueprintContent ?? null),
-                    dbgaContent: cleanDoc(proj.dbgaContent ?? null),
-                    specContent: cleanDoc(proj.specContent ?? null),
-                  }
-                  : proj;
+                const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 set({
                   session: sess ?? get().session,
-                  project: projectWithUx ?? get().project,
-                  mddContent: cleanDoc(proj?.mddContent ?? null) ?? get().mddContent,
+                  project: packed?.project ?? get().project,
+                  activeStageId: packed?.activeStageId ?? get().activeStageId,
+                  mddContent: packed?.mddContent ?? get().mddContent,
                   uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
+                  specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
                   apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null),
                   logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
@@ -897,6 +1189,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   streamingTab: null,
                   synced: true,
                   error: null,
+                  evaluatorCritique: pickEvaluatorCritique(data),
                 });
               } else if (event === "error" && data.error) {
                 set({
@@ -928,22 +1221,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const sess = data.session as Session | undefined;
                 const proj = data.project as Project | undefined;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
-                const projectWithUx = proj
-                  ? {
-                    ...proj,
-                    mddContent: cleanDoc(proj.mddContent ?? null) ?? "",
-                    uxUiGuideContent: cleanDoc(uxFromApi ?? proj.uxUiGuideContent ?? null),
-                    blueprintContent: cleanDoc(proj.blueprintContent ?? null),
-                    dbgaContent: cleanDoc(proj.dbgaContent ?? null),
-                    specContent: cleanDoc(proj.specContent ?? null),
-                  }
-                  : proj;
+                const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 set({
                   session: sess ?? get().session,
-                  project: projectWithUx ?? get().project,
-                  mddContent: cleanDoc(proj?.mddContent ?? null) ?? get().mddContent,
+                  project: packed?.project ?? get().project,
+                  activeStageId: packed?.activeStageId ?? get().activeStageId,
+                  mddContent: packed?.mddContent ?? get().mddContent,
                   uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
+                  specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
                   apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null),
                   logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
@@ -953,6 +1239,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   streamingTab: null,
                   synced: true,
                   error: null,
+                  evaluatorCritique: pickEvaluatorCritique(data),
                 });
               } else if (event === "error" && data.error) {
                 set({
@@ -988,6 +1275,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         streamingUserMessage: msg,
         streamingContent: "",
         streamingTab: tab,
+        evaluatorCritique: null,
       });
       try {
         const body: Record<string, unknown> = {
@@ -998,6 +1286,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           uxUiGuideContent: get().uxUiGuideContent ?? get().project?.uxUiGuideContent ?? undefined,
           activeTab: tab,
         };
+        {
+          const sf = get().activeStageId;
+          if (sf) body.stageId = sf;
+        }
         if (tab === "benchmark") {
           const dbga = get().dbgaContent ?? get().project?.dbgaContent ?? null;
           if (dbga != null) body.dbgaContent = dbga;
@@ -1038,22 +1330,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const sess = data.session as Session | undefined;
                 const proj = data.project as Project | undefined;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
-                const projectWithUx = proj
-                  ? {
-                    ...proj,
-                    mddContent: cleanDoc(proj.mddContent ?? null) ?? "",
-                    uxUiGuideContent: cleanDoc(uxFromApi ?? proj.uxUiGuideContent ?? null),
-                    blueprintContent: cleanDoc(proj.blueprintContent ?? null),
-                    dbgaContent: cleanDoc(proj.dbgaContent ?? null),
-                    specContent: cleanDoc(proj.specContent ?? null),
-                  }
-                  : proj;
+                const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 set({
                   session: sess ?? get().session,
-                  project: projectWithUx ?? get().project,
-                  mddContent: cleanDoc(proj?.mddContent ?? null) ?? get().mddContent,
+                  project: packed?.project ?? get().project,
+                  activeStageId: packed?.activeStageId ?? get().activeStageId,
+                  mddContent: packed?.mddContent ?? get().mddContent,
                   uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
+                  specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
                   apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null),
                   logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
@@ -1063,6 +1348,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   streamingTab: null,
                   synced: true,
                   error: null,
+                  evaluatorCritique: pickEvaluatorCritique(data),
                 });
               } else if (event === "error" && data.error) {
                 set({
@@ -1094,27 +1380,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const sess = data.session as Session | undefined;
                 const proj = data.project as Project | undefined;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
-                const projectWithUx = proj
-                  ? {
-                    ...proj,
-                    mddContent: cleanDoc(proj.mddContent ?? null) ?? "",
-                    uxUiGuideContent: cleanDoc(uxFromApi ?? proj.uxUiGuideContent ?? null),
-                    dbgaContent: cleanDoc(proj.dbgaContent ?? null),
-                    specContent: cleanDoc(proj.specContent ?? null),
-                    blueprintContent: cleanDoc(proj.blueprintContent ?? null),
-                    apiContractsContent: cleanDoc(proj.apiContractsContent ?? null),
-                    logicFlowsContent: cleanDoc(proj.logicFlowsContent ?? null),
-                    tasksContent: cleanDoc(proj.tasksContent ?? null),
-                    architectureContent: cleanDoc(proj.architectureContent ?? null),
-                    useCasesContent: cleanDoc(proj.useCasesContent ?? null),
-                    userStoriesContent: cleanDoc(proj.userStoriesContent ?? null),
-                    infraContent: cleanDoc(proj.infraContent ?? null),
-                  }
-                  : proj;
+                const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 set({
                   session: sess ?? get().session,
-                  project: projectWithUx ?? get().project,
-                  mddContent: cleanDoc(proj?.mddContent ?? null) ?? get().mddContent,
+                  project: packed?.project ?? get().project,
+                  activeStageId: packed?.activeStageId ?? get().activeStageId,
+                  mddContent: packed?.mddContent ?? get().mddContent,
                   uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
                   specContent: cleanDoc(proj?.specContent ?? null),
@@ -1131,6 +1402,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   streamingTab: null,
                   synced: true,
                   error: null,
+                  evaluatorCritique: pickEvaluatorCritique(data),
                 });
               } else if (event === "error" && data.error) {
                 set({
@@ -1654,6 +1926,89 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ loading: false });
     }
   },
+  generateDeliverablesCascade: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "deliverables-cascade", error: null });
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId}/generate-deliverables`, { method: "POST" });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al generar entregables");
+      }
+      await r.json();
+      return get().fetchProject(projectId);
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al generar entregables" });
+      return null;
+    } finally {
+      set({ loading: false, loadingReason: null });
+    }
+  },
+
+  confirmComplexityProposal: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId.trim()}/confirm-complexity`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "No se pudo confirmar la complejidad");
+      }
+      return await get().fetchProject(projectId.trim());
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al confirmar complejidad" });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  dismissComplexityProposal: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId.trim()}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clearComplexityPending: true }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "No se pudo descartar la propuesta");
+      }
+      return await get().fetchProject(projectId.trim());
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al descartar propuesta" });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  reassessComplexity: async (projectId, note) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId.trim()}/reassess-complexity`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(note?.trim() ? { note: note.trim() } : {}),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "No se pudo re-valorar la complejidad");
+      }
+      return await get().fetchProject(projectId.trim());
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al re-valorar" });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
   fetchConformance: async (projectId, options) => {
     if (!projectId?.trim()) return;
     const useLlm = options?.useLlm === true;
@@ -1753,11 +2108,25 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             const trimmed = line.trim();
             if (!trimmed) continue;
             try {
-              const event = JSON.parse(trimmed) as { type: string; agent?: string; message?: string; markdown?: string };
+              const event = JSON.parse(trimmed) as {
+                type: string;
+                agent?: string;
+                message?: string;
+                markdown?: string;
+                complexityProposal?: ComplexityPending;
+              };
               if (event.type === "progress" && event.agent != null && event.message != null) {
                 set((s) => ({ agentProgress: [...s.agentProgress, { agent: event.agent!, message: event.message! }] }));
               } else if (event.type === "done" && event.markdown != null) {
                 finalMarkdown = event.markdown;
+                if (event.complexityProposal != null) {
+                  set((s) => ({
+                    project:
+                      s.project != null
+                        ? { ...s.project, complexityPending: event.complexityProposal! }
+                        : s.project,
+                  }));
+                }
               } else if (event.type === "error" && event.message) {
                 throw new Error(event.message);
               }
@@ -1790,12 +2159,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const dbgaContent = (get().dbgaContent ?? get().project?.dbgaContent ?? "").trim();
     set({ loading: true, loadingReason: "mdd", error: null, agentProgress: [] });
     try {
+      const benchStage = get().activeStageId;
       const r = await fetch(`${API_BASE}/ai-analysis/mdd/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dbgaContent: dbgaContent || undefined,
           projectId: projectId.trim(),
+          ...(benchStage ? { stageId: benchStage } : {}),
         }),
       });
       if (!r.ok) {
@@ -1942,21 +2313,22 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId?.trim()) return null;
     try {
       const currentMdd = (get().mddContent ?? get().project?.mddContent ?? "").trim();
+      const sid = get().activeStageId;
       const r = await fetch(`${API_BASE}/ai-analysis/estimation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId: projectId.trim(),
           ...(currentMdd ? { mddContent: currentMdd } : {}),
+          ...(sid ? { stageId: sid } : {}),
         }),
       });
       if (!r.ok) return null;
-      const data = (await r.json()) as LiveMetricsResult & { precisionBreakdown?: PrecisionBreakdown; gaps?: string[] };
-      const { precisionBreakdown, gaps, ...metrics } = data;
+      const data = (await r.json()) as LiveMetricsResult & { precisionBreakdown?: PrecisionBreakdown };
+      const { precisionBreakdown, ...metrics } = data;
       set({
         liveMetrics: metrics,
         ...(precisionBreakdown != null ? { precisionBreakdown } : {}),
-        ...(gaps != null && gaps.length > 0 ? { auditorFeedback: gaps.join("\n\n") } : { auditorFeedback: null }),
       });
       return metrics;
     } catch {
@@ -1981,25 +2353,133 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
+  legacyStart: async (projectId, description) => {
+    if (!projectId?.trim() || !description?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId}/legacy/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: description.trim() }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al analizar con Relic");
+      }
+      const data = (await r.json()) as {
+        filesToModify: (string | { path: string; repoId?: string })[];
+        questions: string[];
+        suggestedAnswers?: Record<string, string>;
+      };
+      await get().fetchProject(projectId);
+      set({ loading: false, error: null });
+      return data;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error legacy start", loading: false });
+      return null;
+    }
+  },
+
+  legacyAnswer: async (projectId, answers) => {
+    if (!projectId?.trim()) return false;
+    set({ loading: true, error: null });
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId}/legacy/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: answers ?? {} }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al guardar respuestas");
+      }
+      await get().fetchProject(projectId);
+      set({ loading: false, error: null });
+      return true;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error legacy answer", loading: false });
+      return false;
+    }
+  },
+
+  legacyGenerateMdd: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "legacy-mdd", error: null });
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId}/legacy/generate-mdd`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al generar MDD");
+      }
+      const data = (await r.json()) as { mddContent: string };
+      await get().fetchProject(projectId);
+      set({
+        mddContent: data.mddContent ?? get().project?.mddContent ?? "",
+        loading: false,
+        loadingReason: null,
+        error: null,
+      });
+      return data;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al generar MDD legacy", loading: false, loadingReason: null });
+      return null;
+    }
+  },
+
+  legacyGenerateDeliverables: async (projectId) => {
+    if (!projectId?.trim()) return false;
+    set({ loading: true, loadingReason: "legacy-deliverables", error: null });
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId}/legacy/generate-deliverables`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al generar entregables");
+      }
+      const proj = await get().fetchProject(projectId);
+      set({ loading: false, loadingReason: null, error: null });
+      return proj != null;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al generar entregables legacy", loading: false, loadingReason: null });
+      return false;
+    }
+  },
+
   persistMddContent: async (content, options) => {
     const { projectId, project, fetchEstimation } = get();
     if (!projectId || !project) return;
     if (!options?.force && content === (project.mddContent ?? "")) return;
     set({ synced: false, error: null });
     try {
+      const stageId = get().activeStageId;
       const r = await fetch(`${API_BASE}/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mddContent: content }),
+        body: JSON.stringify({ mddContent: content, ...(stageId ? { stageId } : {}) }),
       });
       if (r.ok) {
         const data: Project = await r.json();
-        const savedContent = data.mddContent ?? content;
-        set({ project: data, mddContent: savedContent, synced: true, error: null });
+        const packed = projectWithUxAfterStream(data, data.uxUiGuideContent, get().activeStageId);
+        const savedContent = packed?.mddContent ?? data.mddContent ?? content;
+        set({
+          project: packed?.project ?? data,
+          activeStageId: packed?.activeStageId ?? get().activeStageId,
+          mddContent: savedContent,
+          synced: true,
+          error: null,
+        });
         await fetch(`${API_BASE}/ai-analysis/estimation/clear-draft`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId: projectId.trim() }),
+          body: JSON.stringify({
+            projectId: projectId.trim(),
+            ...(stageId ? { stageId } : {}),
+          }),
         }).catch(() => { });
         fetchEstimation(projectId).catch(() => { });
       } else {

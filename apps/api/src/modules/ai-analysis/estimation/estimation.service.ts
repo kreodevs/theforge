@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../../../prisma/prisma.service.js";
+import { pickPrimaryStage } from "../../projects/stage-helpers.js";
 import type {
   AuditorGaps,
   LiveMetricsResult,
@@ -548,43 +549,30 @@ function parseCountsFromMarkdown(md: string): {
 
   for (const line of lines) {
     const lower = line.toLowerCase();
-    const isHeaderLine = line.startsWith("#");
-
-    if (isHeaderLine && (/modelo de datos/i.test(line) || /\b3\./i.test(line) || lower.includes("modelo de datos") || lower.includes("data model"))) {
+    if (/^#+\s*(?:\d\.\s*)?.*modelo de datos/i.test(line) || (lower.includes("modelo de datos") && /^#+\s*/.test(line))) {
       inDataModel = true;
       inApi = false;
       continue;
     }
-    if (isHeaderLine && (/contratos de api/i.test(line) || /\b4\./i.test(line) || lower.includes("contratos de api") || lower.includes("api contracts") || lower.includes("endpoints"))) {
+    if (/^#+\s*(?:\d\.\s*)?.*contratos de api|^#+\s*4\.|endpoints/i.test(line) || (lower.includes("contratos de api") && /^#+\s*/.test(line))) {
       inDataModel = false;
       inApi = true;
       continue;
     }
-
     if (inDataModel) {
-      // Entity markers: **Name**, CREATE TABLE Name, (id:Name)
-      const m = line.match(/\*\*([A-Za-z][A-Za-z0-9_]*)\*\*(?:\s*\([^)]*\))?\s*[:]?|^-\s*\*\*([A-Za-z][A-Za-z0-9_]*)\*\*|(?:\bcreate\s+table\s+)(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)["`]?/i);
+      const m = line.match(/\*\*([A-Za-z][A-Za-z0-9_]*)\*\*|^-\s*\*\*([A-Za-z][A-Za-z0-9_]*)\*\*|^([A-Za-z][A-Za-z0-9_]*)\s*\(/);
       if (m) {
         const name = (m[1] ?? m[2] ?? m[3])?.trim();
-        if (name) entities.add(name.toLowerCase());
+        if (name) entities.add(name);
       }
-      const graphMatch = line.match(/(?:\((?:[a-z0-9_]+)?\s*:\s*([A-Z][A-Za-z0-9_]*)\s*\))|(?:\s*:\s*([A-Z][A-Za-z0-9_]*)\b)/);
-      if (graphMatch) {
-        const name = (graphMatch[1] ?? graphMatch[2])?.trim();
-        if (name) entities.add(name.toLowerCase());
-      }
+      const createTable = line.match(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)["`]?/i);
+      if (createTable) entities.add(createTable[1].toLowerCase());
     }
-
-    if (inApi) {
-      const hasMethod = /\b(POST|GET|PUT|DELETE|PATCH)\b/.test(line);
-      const hasPath = /(\/[\w/{}-]+)/.test(line);
-      if (hasMethod && hasPath) {
-        extraEndpointCount += 1;
-      }
+    if (inApi && (/\/api\/|\/auth\//.test(line) || /\b(POST|GET|PUT|DELETE|PATCH)\s+(\/|https?)/i.test(line))) {
+      extraEndpointCount += 1;
     }
   }
 
-  // Global capture for safety
   const createTableGlobal = md.matchAll(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)["`]?/gi);
   for (const m of createTableGlobal) entities.add(m[1].toLowerCase());
 
@@ -606,43 +594,77 @@ export class EstimationService {
 
   constructor(private readonly prisma: PrismaService) { }
 
-  setLiveDraft(projectId: string, mddDraft: string): void {
+  /** Clave de borrador/gaps: `projectId` o `projectId::stageId` si hay etapa explícita. */
+  private draftKey(projectId: string, stageId?: string | null): string {
+    const p = projectId?.trim() ?? "";
+    const s = stageId?.trim();
+    return s ? `${p}::${s}` : p;
+  }
+
+  setLiveDraft(projectId: string, mddDraft: string, stageId?: string | null): void {
     if (!projectId?.trim()) return;
-    this.liveDraftByProject.set(projectId.trim(), mddDraft ?? "");
+    this.liveDraftByProject.set(this.draftKey(projectId, stageId), mddDraft ?? "");
   }
 
   /** Almacena gaps estructurados del Auditor (LLM) para usar en métricas cuando el draft no ha cambiado. */
-  setAuditorGaps(projectId: string, gaps: AuditorGaps | undefined): void {
+  setAuditorGaps(projectId: string, gaps: AuditorGaps | undefined, stageId?: string | null): void {
     if (!projectId?.trim()) return;
-    if (gaps == null) this.auditorGapsByProject.delete(projectId.trim());
-    else this.auditorGapsByProject.set(projectId.trim(), gaps);
+    const key = this.draftKey(projectId, stageId);
+    if (gaps == null) this.auditorGapsByProject.delete(key);
+    else this.auditorGapsByProject.set(key, gaps);
   }
 
-  clearLiveDraft(projectId: string): void {
-    if (projectId?.trim()) this.liveDraftByProject.delete(projectId.trim());
+  clearLiveDraft(projectId: string, stageId?: string | null): void {
+    if (!projectId?.trim()) return;
+    this.liveDraftByProject.delete(this.draftKey(projectId, stageId));
   }
 
-  async getMddContentForProject(projectId: string): Promise<string | null> {
-    const live = this.liveDraftByProject.get(projectId?.trim() ?? "");
+  async getMddContentForProject(projectId: string, stageId?: string | null): Promise<string | null> {
+    const key = this.draftKey(projectId, stageId);
+    const live = this.liveDraftByProject.get(key);
     if (live != null && live.trim().length > 0) return live;
+    const legacyOnly = projectId?.trim() ?? "";
+    if (stageId?.trim()) {
+      const legacy = this.liveDraftByProject.get(legacyOnly);
+      if (legacy != null && legacy.trim().length > 0) return legacy;
+    }
     const project = await this.prisma.project.findUnique({
       where: { id: projectId?.trim() },
-      select: { mddContent: true },
+      include: { stages: { orderBy: { ordinal: "asc" } } },
     });
-    return project?.mddContent ?? null;
+    const stages = project?.stages ?? [];
+    if (stageId?.trim()) {
+      const st = stages.find((s) => s.id === stageId.trim());
+      return st?.mddContent ?? null;
+    }
+    const stage = pickPrimaryStage(stages);
+    return stage?.mddContent ?? null;
   }
 
   /**
    * Métricas para un proyecto. Si se pasa mddContent, se usa ese; sino liveDraft o DB.
    * Cuando no hay override y hay gaps del Auditor guardados para el proyecto, se usan para precisión/semáforo.
    */
-  async getLiveMetricsForProject(projectId: string, mddContentOverride?: string): Promise<LiveMetricsResult> {
+  async getLiveMetricsForProject(
+    projectId: string,
+    mddContentOverride?: string,
+    stageId?: string | null,
+  ): Promise<LiveMetricsResult> {
     const content =
       mddContentOverride != null && mddContentOverride.length > 0
         ? mddContentOverride
-        : (await this.getMddContentForProject(projectId)) ?? "";
-    const useStoredGaps = !mddContentOverride && this.auditorGapsByProject.has(projectId?.trim() ?? "");
-    const auditorGaps = useStoredGaps ? this.auditorGapsByProject.get(projectId!.trim()) : undefined;
+        : (await this.getMddContentForProject(projectId, stageId)) ?? "";
+    const key = this.draftKey(projectId, stageId);
+    const useStoredGaps = !mddContentOverride && this.auditorGapsByProject.has(key);
+    const useLegacyGaps =
+      !mddContentOverride &&
+      !useStoredGaps &&
+      this.auditorGapsByProject.has(projectId?.trim() ?? "");
+    const auditorGaps = useStoredGaps
+      ? this.auditorGapsByProject.get(key)
+      : useLegacyGaps
+        ? this.auditorGapsByProject.get(projectId!.trim())
+        : undefined;
     return this.calculateLiveMetrics(content, { auditorGaps });
   }
 
@@ -665,27 +687,22 @@ export class EstimationService {
     }
     const trimmed = (md ?? "").trim();
     if (!trimmed) return [];
-
-    const breakdown = computePrecisionBreakdown(trimmed);
+    const traceability = computeTraceabilityGaps(trimmed);
+    const contract = computeContractGaps(trimmed);
     const messages: string[] = [];
-
-    if (breakdown.sectionReasons) {
-      for (const key of Object.keys(breakdown.sectionReasons)) {
-        const reason = breakdown.sectionReasons[key as keyof typeof breakdown.sectionReasons];
-        if (reason) {
-          // Si hay múltiples oraciones unidas por espacio o punto, las separamos para que se vean como items individuales
-          const parts = reason.split(/\.\s+/);
-          for (const p of parts) {
-            const clean = p.trim();
-            if (clean) {
-              messages.push(clean.endsWith(".") ? clean : clean + ".");
-            }
-          }
-        }
-      }
+    if (traceability.inconsistentSections.length > 0) {
+      messages.push("Trazabilidad MFA: Contexto menciona MFA pero falta tablas de secretos en Modelo de Datos, endpoint /verify o /totp en Contratos de API, o algoritmo TOTP en Seguridad.");
     }
-
-    return [...new Set(messages)];
+    if (contract.mermaidParityGap) {
+      messages.push("El diagrama Mermaid (erDiagram) tiene entidades o atributos que no existen en el SQL; no se permiten abreviaturas.");
+    }
+    if (contract.infraStackGap) {
+      messages.push("El stack (NestJS/Node) en Arquitectura debe reflejarse en Infraestructura (Dockerfile compatible con Node.js).");
+    }
+    if (contract.securityEdgeCaseGap) {
+      messages.push("Lógica menciona bloqueo de cuenta pero Seguridad debe definir el número de intentos.");
+    }
+    return messages;
   }
 
   /**
