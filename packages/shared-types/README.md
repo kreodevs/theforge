@@ -1,4 +1,4 @@
-# @maxprime/shared-types
+# @theforge/shared-types
 
 DTOs e interfaces compartidas (Zod).
 

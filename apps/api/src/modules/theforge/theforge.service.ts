@@ -83,7 +83,7 @@ export class TheForgeService {
 
   /**
    * Timeout HTTP al **MCP externo de TheForge** (JSON-RPC). No confundir con un MCP servidor propio.
-   * @see docs/MCP-ARQUITECTURA-MAXPRIME.md
+   * @see docs/MCP-ARQUITECTURA-THEFORGE.md
    */
   private theforgeMcpTimeoutMs(): number {
     const n = parseInt(process.env.THEFORGE_MCP_TIMEOUT_MS ?? "60000", 10);

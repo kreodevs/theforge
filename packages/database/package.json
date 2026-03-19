@@ -1,5 +1,5 @@
 {
-  "name": "@maxprime/database",
+  "name": "@theforge/database",
   "version": "0.0.0",
   "private": true,
   "main": "./dist/index.js",
@@ -21,6 +21,6 @@
     "typescript": "^5.6.3"
   },
   "peerDependencies": {
-    "@maxprime/config": "workspace:*"
+    "@theforge/config": "workspace:*"
   }
 }

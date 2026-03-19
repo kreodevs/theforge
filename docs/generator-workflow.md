@@ -1,4 +1,4 @@
-# MaxPrime: Spec-Driven Generator Workflow
+# TheForge: Spec-Driven Generator Workflow
 
 This document outlines the standard operating procedure for generating high-precision software specifications using the "Constitution" pattern.
 

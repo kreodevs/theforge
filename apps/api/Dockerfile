@@ -22,8 +22,8 @@ COPY packages/shared-types packages/shared-types
 COPY packages/config packages/config
 COPY apps/api apps/api
 
-ENV DATABASE_URL="postgresql://local:local@db:5432/maxprime"
-RUN pnpm run build --filter=@maxprime/database --filter=@maxprime/shared-types --filter=@maxprime/api
+ENV DATABASE_URL="postgresql://local:local@db:5432/theforge"
+RUN pnpm run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/api
 
 # Production stage — preserve pnpm layout for workspace resolution
 FROM node:20-alpine AS runner

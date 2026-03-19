@@ -1,4 +1,4 @@
-# Revisión de seguridad — MaxPrime
+# Revisión de seguridad — TheForge
 
 **Fecha:** 2025-01-29 · **Nota 2026:** Los hallazgos siguen siendo útiles como lista de verificación; valida en código si ya hay SSO/guards (p. ej. variables `SSO_*` en `.env.example`) antes de asumir que C1 sigue igual.
 

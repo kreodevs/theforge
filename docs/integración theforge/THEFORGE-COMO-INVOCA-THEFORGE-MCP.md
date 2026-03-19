@@ -1,6 +1,6 @@
-# Cómo MaxPrime invoca el MCP de TheForge
+# Cómo TheForge invoca el MCP de TheForge
 
-Documento para explicar al equipo/proyecto TheForge cómo MaxPrime usa su MCP: transporte, autenticación, herramientas llamadas y formato de las peticiones.
+Documento para explicar al equipo/proyecto TheForge cómo TheForge usa su MCP: transporte, autenticación, herramientas llamadas y formato de las peticiones.
 
 ---
 
@@ -8,7 +8,7 @@ Documento para explicar al equipo/proyecto TheForge cómo MaxPrime usa su MCP: t
 
 - **No usamos MCP por stdio** desde la API. La API Nest (backend) llama al MCP por **HTTP**.
 - **URL:** Variable de entorno `THEFORGE_MCP_URL` (ej. `https://theforge.obp.mx/mcp`). Si está vacía, TheForge se considera no configurado y todas las llamadas devuelven vacío/null sin hacer petición.
-- **Auth:** Header `Authorization: Bearer <RELIC_M2M_TOKEN>`. La variable es `RELIC_M2M_TOKEN`. Si falta el token, no se envía header (y el servidor puede rechazar).
+- **Auth:** Header `Authorization: Bearer <THEFORGE_M2M_TOKEN>`. La variable es `THEFORGE_M2M_TOKEN`. Si falta el token, no se envía header (y el servidor puede rechazar).
 - **Content-Type:** `application/json`.
 - **Accept:** `application/json, text/event-stream` (por si el MCP devuelve SSE).
 
@@ -16,13 +16,13 @@ Cada petición es un **JSON-RPC 2.0** con `method: "tools/call"` y `params: { na
 
 **Timeout y reintentos:** `THEFORGE_MCP_TIMEOUT_MS` limita la duración de cada `POST` (por defecto **60000** ms). El cliente **no** reintenta automáticamente si hay timeout o error HTTP; una nueva acción del usuario o del flujo dispara otra llamada.
 
-**MCP en el IDE vs API:** El servidor MCP que configures en Cursor/IDE (`~/.cursor/mcp.json`, etc.) es **independiente** de `THEFORGE_MCP_URL` de la API: sirve al editor, no sustituye la variable de entorno del backend. Cómo MaxPrime separa TheForge, Falkor SDD y un MCP propio hipotético: [`docs/MCP-ARQUITECTURA-MAXPRIME.md`](../MCP-ARQUITECTURA-MAXPRIME.md).
+**MCP en el IDE vs API:** El servidor MCP que configures en Cursor/IDE (`~/.cursor/mcp.json`, etc.) es **independiente** de `THEFORGE_MCP_URL` de la API: sirve al editor, no sustituye la variable de entorno del backend. Cómo TheForge separa TheForge, Falkor SDD y un MCP propio hipotético: [`docs/MCP-ARQUITECTURA-THEFORGE.md`](../MCP-ARQUITECTURA-THEFORGE.md).
 
 ---
 
 ## 2. Formato de la petición (JSON-RPC)
 
-Todas las llamadas desde MaxPrime tienen esta forma:
+Todas las llamadas desde TheForge tienen esta forma:
 
 ```json
 {
@@ -98,7 +98,7 @@ Se envía con `POST` al `THEFORGE_MCP_URL`, body = el JSON de arriba.
 - `filesToModify`: array de **objetos** `{ path: string, repoId: string }` (multi-repo). Cada archivo incluye su `repoId` (root). Aceptamos también formato legacy `string[]` y lo convertimos a `{ path, repoId: "" }`.
 - `questionsToRefine`: array de strings (preguntas de negocio/funcionalidad únicamente).
 
-Si esta herramienta no existe o falla, MaxPrime hace **fallback** con `ask_codebase` (ver abajo) pidiendo el mismo JSON; los paths se guardan con `repoId: projectId`.
+Si esta herramienta no existe o falla, TheForge hace **fallback** con `ask_codebase` (ver abajo) pidiendo el mismo JSON; los paths se guardan con `repoId: projectId`.
 
 ---
 
@@ -137,9 +137,9 @@ Si esta herramienta no existe o falla, MaxPrime hace **fallback** con `ask_codeb
 
 ### 3.4 Validación antes de editar y refactor seguro
 
-MaxPrime invoca estas herramientas cuando aplica; `projectId` puede ser ID de proyecto o de repo.
+TheForge invoca estas herramientas cuando aplica; `projectId` puede ser ID de proyecto o de repo.
 
-| Herramienta | Argumentos | Uso en MaxPrime |
+| Herramienta | Argumentos | Uso en TheForge |
 |-------------|------------|-----------------|
 | **validate_before_edit** | `nodeName`, `projectId`, `currentFilePath?` | **Obligatorio antes de editar (MCP):** impacto + contrato en un solo llamado. Al generar el MDD se llama para los 3 primeros archivos a modificar; si no está disponible o devuelve vacío, se usa get_legacy_impact. |
 | **get_file_content** | `path`, `projectId`, `ref?` | Al generar el MDD: contenido de los 2 primeros archivos a modificar. |
@@ -147,7 +147,7 @@ MaxPrime invoca estas herramientas cuando aplica; `projectId` puede ser ID de pr
 | **get_contract_specs** | `componentName`, `projectId?` | Disponible en TheForgeService; no usado en flujo automático. |
 | **get_component_graph** | `componentName`, `projectId`, `depth?` (default 2) | Disponible en TheForgeService; no usado en flujo automático. |
 
-Todas usan el mismo transporte JSON-RPC y el mismo parseo de `result.content[].text`. Catálogo completo de herramientas MCP (incluidas las que MaxPrime aún no invoca): **HERRAMIENTAS-MCP-RELIC.md**.
+Todas usan el mismo transporte JSON-RPC y el mismo parseo de `result.content[].text`. Catálogo completo de herramientas MCP (incluidas las que TheForge aún no invoca): **HERRAMIENTAS-MCP-THEFORGE.md**.
 
 ---
 
@@ -167,10 +167,10 @@ Todas usan el mismo transporte JSON-RPC y el mismo parseo de `result.content[].t
 | Qué necesita TheForge | Detalle |
 |-------------------|--------|
 | **Endpoint** | Un único URL (ej. `https://theforge.obp.mx/mcp`) que acepte POST con JSON-RPC 2.0, `method: "tools/call"`. |
-| **Auth** | Bearer token en header; MaxPrime lo envía desde `RELIC_M2M_TOKEN`. |
-| **Herramientas usadas** | `list_known_projects`, `get_modification_plan`, `ask_codebase`, **`validate_before_edit`** (antes de editar), `get_file_content`, `get_legacy_impact` (fallback); opcionales `get_contract_specs`, `get_component_graph`. Ver catálogo en HERRAMIENTAS-MCP-RELIC.md. |
+| **Auth** | Bearer token en header; TheForge lo envía desde `THEFORGE_M2M_TOKEN`. |
+| **Herramientas usadas** | `list_known_projects`, `get_modification_plan`, `ask_codebase`, **`validate_before_edit`** (antes de editar), `get_file_content`, `get_legacy_impact` (fallback); opcionales `get_contract_specs`, `get_component_graph`. Ver catálogo en HERRAMIENTAS-MCP-THEFORGE.md. |
 | **Contrato de `get_modification_plan`** | SPEC-MCP-001: `filesToModify`: array de `{ path, repoId }`; `questionsToRefine`: solo preguntas de negocio. Aceptamos también `filesToModify: string[]` legacy. |
-| **Idempotencia / estado** | MaxPrime no asume estado en el MCP; cada petición es independiente. |
+| **Idempotencia / estado** | TheForge no asume estado en el MCP; cada petición es independiente. |
 | **Respuesta** | JSON-RPC `result.content[]` con al menos un item `type: "text"` y `text` con el payload (array de proyectos, JSON con filesToModify/questionsToRefine, o texto libre). |
 
-Referencia en código: `apps/api/src/modules/relic/relic.service.ts`. Catálogo completo de herramientas MCP y uso en MaxPrime: **HERRAMIENTAS-MCP-RELIC.md**.
+Referencia en código: `apps/api/src/modules/relic/theforge.service.ts`. Catálogo completo de herramientas MCP y uso en TheForge: **HERRAMIENTAS-MCP-THEFORGE.md**.

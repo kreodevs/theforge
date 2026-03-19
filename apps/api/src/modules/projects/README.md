@@ -9,5 +9,5 @@ CRUD de proyectos, actualización de MDD y entregables (Blueprint, API, etc.).
 - **stage-helpers.ts:** `pickPrimaryStage`, `flattenStageDeliverables`.
 - **Engine (MddUpdatePipelineService):** Validación de MDD al persistir en etapa.
 - **Complejidad HITL:** `complexityPending` (JSON) propone nivel + plan hasta confirmación en el chat o vía `POST /projects/:id/confirm-complexity`. Con propuesta pendiente, `POST /projects/:id/generate-deliverables` responde 400.
-- **Entregables:** `POST /projects/:id/generate-deliverables` itera `DELIVERABLES_BY_COMPLEXITY` (`@maxprime/shared-types`) — solo genera los documentos listados para el nivel efectivo.
+- **Entregables:** `POST /projects/:id/generate-deliverables` itera `DELIVERABLES_BY_COMPLEXITY` (`@theforge/shared-types`) — solo genera los documentos listados para el nivel efectivo.
 - **Re-valorar complejidad:** `POST /projects/:id/reassess-complexity` (body opcional `{ note?: string }`) — vuelve a inferir `complexityPending` desde DBGA/MDD/Spec existentes sin re-ejecutar el stream DBGA.

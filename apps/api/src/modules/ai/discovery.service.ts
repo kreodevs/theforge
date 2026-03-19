@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { ComplexityLevel } from "@maxprime/database";
-import type { ComplexityPending } from "@maxprime/shared-types";
+import { ComplexityLevel } from "@theforge/database";
+import type { ComplexityPending } from "@theforge/shared-types";
 import { AiService } from "./ai.service.js";
 import { DISCOVERY_BENCHMARK_PROMPT } from "./prompts/discovery-benchmark-prompt.js";
 import { PHASE0_DEEP_RESEARCH_PROMPT } from "./prompts/phase0-deep-research-prompt.js";

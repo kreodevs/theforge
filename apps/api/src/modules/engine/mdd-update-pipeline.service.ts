@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { Status } from "@maxprime/database";
+import { Status } from "@theforge/database";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "./semaphore.service.js";
 import { normalizeMddContent } from "./mdd-markdown-parser.js";
 import { preRenderMddSanity, sanitizeMermaidInDraft } from "./mdd-pre-render.js";

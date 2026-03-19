@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import { PrismaClient } from "@maxprime/database";
+import { PrismaClient } from "@theforge/database";
 
 @Injectable()
 export class PrismaService

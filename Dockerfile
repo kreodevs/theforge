@@ -13,8 +13,8 @@ COPY packages/database packages/database
 COPY packages/shared-types packages/shared-types
 COPY packages/config packages/config
 COPY apps/api apps/api
-ENV DATABASE_URL="postgresql://maxprime:maxprime@localhost:5432/maxprime"
-RUN pnpm run build --filter=@maxprime/database --filter=@maxprime/shared-types --filter=@maxprime/api
+ENV DATABASE_URL="postgresql://theforge:theforge@localhost:5432/theforge"
+RUN pnpm run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/api
 
 # ========== Build Web ==========
 FROM node:20-alpine AS web-builder
@@ -27,7 +27,7 @@ COPY apps/web/package.json apps/web/
 RUN pnpm install
 COPY packages/config packages/config
 COPY apps/web apps/web
-RUN pnpm run build --filter=@maxprime/web
+RUN pnpm run build --filter=@theforge/web
 
 # ========== Contenedor único: Postgres + API + Nginx (para Dokploy) ==========
 FROM postgres:15-alpine
@@ -38,10 +38,10 @@ RUN apk add --no-cache nodejs npm nginx
 RUN apk add --no-cache nodejs-current 2>/dev/null || true
 RUN corepack enable 2>/dev/null && corepack prepare pnpm@9.14.2 --activate 2>/dev/null || npm install -g pnpm 2>/dev/null || true
 
-ENV POSTGRES_USER=maxprime
-ENV POSTGRES_PASSWORD=maxprime
-ENV POSTGRES_DB=maxprime
-ENV DATABASE_URL="postgresql://maxprime:maxprime@localhost:5432/maxprime"
+ENV POSTGRES_USER=theforge
+ENV POSTGRES_PASSWORD=theforge
+ENV POSTGRES_DB=theforge
+ENV DATABASE_URL="postgresql://theforge:theforge@localhost:5432/theforge"
 ENV NODE_ENV=production
 ENV PORT=3000
 

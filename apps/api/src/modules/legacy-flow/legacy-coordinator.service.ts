@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { ComplexityLevel } from "@maxprime/database";
-import { DELIVERABLES_BY_COMPLEXITY, type DeliverableKind } from "@maxprime/shared-types";
+import { ComplexityLevel } from "@theforge/database";
+import { DELIVERABLES_BY_COMPLEXITY, type DeliverableKind } from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
 import type { TheForgeFileToModify } from "../theforge/theforge.service.js";
@@ -66,7 +66,7 @@ export class LegacyCoordinatorService {
 
   /**
    * Obtiene el proyecto y valida que sea legacy y tenga theforgeProjectId.
-   * @param projectId - ID del proyecto en MaxPrime.
+   * @param projectId - ID del proyecto en TheForge.
    * @returns Proyecto y theforgeId; lanza si no existe, no es LEGACY o no tiene theforgeProjectId.
    */
   private async getLegacyProject(projectId: string) {

@@ -1,6 +1,6 @@
-# @maxprime/web
+# @theforge/web
 
-Frontend React (Vite) + Tailwind de MaxPrime.
+Frontend React (Vite) + Tailwind de TheForge.
 
 - Lista y creación de proyectos; semáforo (ROJO/AMARILLO/VERDE). El proyecto incluye `complexity` (`LOW` \| `MEDIUM` \| `HIGH`) desde API para adaptar entregables (la UI puede filtrar pestañas según este campo).
 - Crear proyecto: **Nuevo**, **Proyecto existente (TheForge)** o **Repositorio existente (TheForge)**. Modal TheForge con pestañas Proyectos / Repositorios (repos derivados de los roots de los proyectos); mismo flujo legacy con `theforgeProjectId` (proyecto o repo).

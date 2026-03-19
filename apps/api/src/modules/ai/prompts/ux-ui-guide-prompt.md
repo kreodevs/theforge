@@ -1,4 +1,4 @@
-# Guía UX/UI — MaxPrime
+# Guía UX/UI — TheForge
 
 # Rol #
 

@@ -1,11 +1,11 @@
-# MaxPrime — Índice de Arquitectura
+# TheForge — Índice de Arquitectura
 
 **Fuentes:** `blueprint.md`, `mdd.md`, [STAGE-SDD.md](STAGE-SDD.md) (Stage / Prisma / Falkor SDD).  
 **Propósito:** Single source of truth del flujo, contrato IA y despliegue. Uso por el agente y por implementaciones.
 
 ---
 
-## 1. Flujo de MaxPrime (resumen)
+## 1. Flujo de TheForge (resumen)
 
 ```
 [Entrada] → Entrevista proactiva (IA) → MDD en sesión → Semáforo → [ROJO|AMARILLO|VERDE]
@@ -32,7 +32,7 @@ flowchart LR
 
 **Validación SDD:** Ver [Entregables y validación SDD](ENTREGABLES-SDD-VALIDACION.md) para la estructura canónica del MDD, el mapeo de documentos (Guía UX/UI, Blueprint, API, Flujos, Infra) con Specification-Driven Development y Architecting Agentic Systems. **Plan 10/10:** mismo doc §6 (plan por fases). §7 estado de implementación: Spec, Tasks, Conformance, Verifier, HITL y orden en UI implementados.
 
-**MCP TheForge vs Grafo SDD:** El MCP de TheForge (código indexado) es **externo** y se invoca por HTTP desde la API (`THEFORGE_MCP_URL`). El grafo documental SDD vive en **FalkorDB local** (`FALKORDB_SDD_URL`). No son intercambiables. Detalle: [MCP-ARQUITECTURA-MAXPRIME.md](MCP-ARQUITECTURA-MAXPRIME.md). Roadmaps y análisis largos no prioritarios: [docs/archive/README.md](archive/README.md).
+**MCP TheForge vs Grafo SDD:** El MCP de TheForge (código indexado) es **externo** y se invoca por HTTP desde la API (`THEFORGE_MCP_URL`). El grafo documental SDD vive en **FalkorDB local** (`FALKORDB_SDD_URL`). No son intercambiables. Detalle: [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md). Roadmaps y análisis largos no prioritarios: [docs/archive/README.md](archive/README.md).
 
 **Flujo Workshop agéntico:** Chat → `AgentSupervisor` (etapa activa `Stage`) → ingest MDD a Falkor SDD por `stageId` → evaluador legacy opcional → respuesta puede incluir `evaluatorCritique`. Memoria episódica: `GET /agent-supervisor/episodic/:projectId`. **API REST:** `GET/PATCH /projects/:id` devuelve y acepta `mddContent` / `status` / `precisionScore` / `estimation` **aplanados** desde la etapa principal; `PATCH` admite `stageId` opcional para escribir el MDD en otra etapa.
 
@@ -122,10 +122,10 @@ El agente debe comprobar estado VERDE antes de generar código (architect-behavi
 
 | Servicio               | Rol                                                                 | Imagen / build                          |
 | ---------------------- | ------------------------------------------------------------------- | --------------------------------------- |
-| **maxprime-db**        | PostgreSQL                                                          | `postgres:15-alpine`                    |
-| **maxprime-falkor-sdd** | Grafo documental SDD (Cypher, MDD, ingest); **no** es el grafo TheForge | `falkordb/falkordb:latest`              |
-| **maxprime-api**       | NestJS API                                                          | Build multi-stage `apps/api/Dockerfile` |
-| **maxprime-web**       | Front estático                                                      | Build `apps/web/Dockerfile` (Nginx)     |
+| **theforge-db**        | PostgreSQL                                                          | `postgres:15-alpine`                    |
+| **theforge-falkor-sdd** | Grafo documental SDD (Cypher, MDD, ingest); **no** es el grafo TheForge | `falkordb/falkordb:latest`              |
+| **theforge-api**       | NestJS API                                                          | Build multi-stage `apps/api/Dockerfile` |
+| **theforge-web**       | Front estático                                                      | Build `apps/web/Dockerfile` (Nginx)     |
 
 No hay servicio **Redis genérico** ni BullMQ en este compose: el único “Redis” es FalkorDB embebido en el contenedor Falkor para el grafo SDD.
 
@@ -133,11 +133,11 @@ No hay servicio **Redis genérico** ni BullMQ en este compose: el único “Redi
 
 - **Core:** `DATABASE_URL`, `PORT` (opcional)
 - **IA:** `AI_PROVIDER`, `OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY`, opcional `OPENAI_EMBEDDING_DIM`
-- **Grafo SDD:** `FALKORDB_SDD_URL` y/o `FALKORDB_URL` (mismo destino en Docker: `redis://maxprime-falkor-sdd:6379`)
+- **Grafo SDD:** `FALKORDB_SDD_URL` y/o `FALKORDB_URL` (mismo destino en Docker: `redis://theforge-falkor-sdd:6379`)
 - **TheForge (opcional, legacy):** `THEFORGE_MCP_URL`, `THEFORGE_M2M_TOKEN`, `THEFORGE_MCP_TIMEOUT_MS`
 - **Orquestador:** `AGENT_EVALUATOR_LEGACY` (opcional; crítica en respuesta chat)
 
-Detalle TheForge vs IDE vs Falkor: [MCP-ARQUITECTURA-MAXPRIME.md](MCP-ARQUITECTURA-MAXPRIME.md).
+Detalle TheForge vs IDE vs Falkor: [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md).
 
 ### 6.3 Criterios "Dokploy-ready"
 

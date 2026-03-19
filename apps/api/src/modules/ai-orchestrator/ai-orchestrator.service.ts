@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable, NotFoundException } from "@nestjs/common";
-import type { ChatMessage } from "@maxprime/shared-types";
+import type { ChatMessage } from "@theforge/shared-types";
 import { ProjectsService } from "../projects/projects.service.js";
 import { SessionsService } from "../sessions/sessions.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
@@ -8,7 +8,7 @@ import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.ser
 import type { SupervisorRouteResult } from "../agent-supervisor/agent-supervisor.types.js";
 import { SddIngestorService } from "../ai-analysis/sdd-ingestor.service.js";
 import { AgentEvaluatorService } from "../agent-supervisor/agent-evaluator.service.js";
-import { EpisodicMemoryKind } from "@maxprime/database";
+import { EpisodicMemoryKind } from "@theforge/database";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);

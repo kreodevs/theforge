@@ -1,4 +1,4 @@
-import type { ChecklistResult } from "@maxprime/shared-types";
+import type { ChecklistResult } from "@theforge/shared-types";
 
 export interface ChatMessage {
   role: "user" | "assistant";

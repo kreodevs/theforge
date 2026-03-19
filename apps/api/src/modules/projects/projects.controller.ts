@@ -4,7 +4,7 @@ import {
   createProjectSchema,
   updateProjectSchema,
   phase0DeepResearchBodySchema,
-} from "@maxprime/shared-types";
+} from "@theforge/shared-types";
 
 @Controller("projects")
 export class ProjectsController {

@@ -1,4 +1,4 @@
-# MaxPrime
+# TheForge
 
 Monorepo Turborepo: API NestJS + Web React (Vite) + Prisma. IA agnóstica (OpenAI/Gemini), Semáforo MDD, motor de estimación MXN. Despliegue Dokploy-ready con Docker.
 
@@ -38,20 +38,20 @@ pnpm run build
 
 ## Docker (Dokploy) — un solo contenedor
 
-Un único contenedor **maxprime-db** con Postgres + API + Web (Nginx). Conexión interna: `postgresql://maxprime:maxprime@localhost:5432/maxprime`.
+Un único contenedor **theforge-db** con Postgres + API + Web (Nginx). Conexión interna: `postgresql://theforge:theforge@localhost:5432/theforge`.
 
 ```bash
 docker compose up --build
 ```
 
-- **Contenedor:** `maxprime-db` (nombre del servicio y del contenedor)
+- **Contenedor:** `theforge-db` (nombre del servicio y del contenedor)
 - **Puerto:** 80 (Web + proxy `/api` → API en el mismo contenedor)
-- **Volumen:** `maxprime_db_data` (datos de Postgres)
+- **Volumen:** `theforge_db_data` (datos de Postgres)
 
 Env opcionales: `AI_PROVIDER` (openai | google), `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`.
 
 ## Docs
 
-- [Índice de arquitectura](docs/MAXPRIME-INDEX.md)
+- [Índice de arquitectura](docs/THEFORGE-INDEX.md)
 - [Blueprint](blueprint.md)
 - [MDD](mdd.md)

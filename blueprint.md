@@ -1,4 +1,4 @@
-# Implementation Blueprint: "MaxPrime"
+# Implementation Blueprint: "TheForge"
 
 **Objetivo:** Guía de construcción técnica para Cursor AI basada en el MDD v1.0. El MDD actúa como **Constitución del proyecto** (SDD): el Blueprint se genera leyendo y cumpliendo el MDD; no debe contradecirlo.
 
@@ -8,7 +8,7 @@ Se debe inicializar el proyecto con la siguiente jerarquía de archivos para ase
 
 Plaintext
 
-`/maxprime (Root)
+`/theforge (Root)
 ├── apps/
 │   ├── api/                # NestJS Backend
 │   └── web/                # React (Vite) Frontend

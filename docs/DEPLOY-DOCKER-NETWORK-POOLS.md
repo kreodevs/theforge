@@ -3,7 +3,7 @@
 Si en producción ves:
 
 ```
-failed to create network apps-imjmedia-maxprime-xxx_default: Error response from daemon: all predefined address pools have been fully subnetted
+failed to create network apps-imjmedia-theforge-xxx_default: Error response from daemon: all predefined address pools have been fully subnetted
 ```
 
 es porque el daemon de Docker ha agotado los rangos por defecto para crear redes.
@@ -48,6 +48,6 @@ Solo las **nuevas** redes usarán estos pools; las ya creadas no cambian.
 
 ## Solución 2: Menos redes por despliegue (docker-compose)
 
-En el compose se puede usar una sola red bridge con nombre fijo y redefinir `default` para que Compose no cree una red `_default` extra. Eso ya está aplicado en `docker-compose.yml` (red `default` con nombre `maxprime-app-network`), reduciendo una red por despliegue.
+En el compose se puede usar una sola red bridge con nombre fijo y redefinir `default` para que Compose no cree una red `_default` extra. Eso ya está aplicado en `docker-compose.yml` (red `default` con nombre `theforge-app-network`), reduciendo una red por despliegue.
 
 Si el error persiste, la causa está en el servidor: hace falta **Solución 1** (prune y/o ampliar pools).

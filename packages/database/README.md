@@ -1,4 +1,4 @@
-# @maxprime/database
+# @theforge/database
 
 Prisma schema y client compartido.
 
@@ -22,7 +22,7 @@ DATABASE_URL="postgresql://..." pnpm exec prisma migrate resolve --applied 20250
 
 ```bash
 cd packages/database
-DATABASE_URL="postgresql://user:pass@host:5432/maxprime" pnpm exec prisma migrate resolve --applied 20250311000000_add_project_type_relic
+DATABASE_URL="postgresql://user:pass@host:5432/theforge" pnpm exec prisma migrate resolve --applied 20250311000000_add_project_type_relic
 ```
 
 ### P3018 — `relation "Project" does not exist` (20250311100000_add_legacy_flow_state)

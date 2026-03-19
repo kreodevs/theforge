@@ -1,4 +1,4 @@
-# Plan de Implementación: Evolución Agentica de MaxPrime
+# Plan de Implementación: Evolución Agentica de TheForge
 
 Este plan detalla los pasos técnicos para elevar el sistema de la Fase 3 (Agentic Engineering) hacia un modelo de **Ingeniería Autónoma de Alta Fidelidad**, basándose en los principios de Architecting Agentic Systems y SDD.
 

@@ -1,6 +1,6 @@
 # Etapas (Stage) y SDD — modelo mental
 
-**Propósito:** Una sola página con el mapa **Proyecto → Etapa → Constitución + coste → grafo Falkor**. Complementa [MAXPRIME-INDEX.md](MAXPRIME-INDEX.md) §7 y [MCP-ARQUITECTURA-MAXPRIME.md](MCP-ARQUITECTURA-MAXPRIME.md) §2 sin repetir Docker ni Relic.
+**Propósito:** Una sola página con el mapa **Proyecto → Etapa → Constitución + coste → grafo Falkor**. Complementa [THEFORGE-INDEX.md](THEFORGE-INDEX.md) §7 y [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md) §2 sin repetir Docker ni Relic.
 
 ---
 
@@ -59,7 +59,7 @@ erDiagram
 
 La ingesta al grafo local usa el **mismo** `stageId` que el MDD persistido: nodos `Stage`, `MDD_Section`, `DB_Entity`, `API_Endpoint`, relaciones `IMPLEMENTS`, `CONSUMES`, etc. Variables: `FALKORDB_SDD_URL` / `FALKORDB_URL`.
 
-Consultas desde agentes: `params.projectId` **o** `params.stageId` (mínimo uno). Herramientas: `query_sdd_graph`, `supervisor_query_sdd_graph`, `patch_mdd_section`, `propose_mdd_amendment`. Detalle: [MCP-ARQUITECTURA-MAXPRIME.md](MCP-ARQUITECTURA-MAXPRIME.md).
+Consultas desde agentes: `params.projectId` **o** `params.stageId` (mínimo uno). Herramientas: `query_sdd_graph`, `supervisor_query_sdd_graph`, `patch_mdd_section`, `propose_mdd_amendment`. Detalle: [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md).
 
 ---
 

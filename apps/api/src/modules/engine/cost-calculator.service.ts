@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { Status } from "@maxprime/database";
-import type { TeamStructure } from "@maxprime/shared-types";
+import { Status } from "@theforge/database";
+import type { TeamStructure } from "@theforge/shared-types";
 
 const HOURS_PER_ENTITY = 12;
 const HOURS_PER_SCREEN = 16;

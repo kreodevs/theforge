@@ -2,7 +2,7 @@
 
 Uso del **oráculo TheForge** (grafo de código vía MCP) para documentar cambios, mejoras y refactors con datos reales del código indexado.
 
-**API vs IDE:** La aplicación llama a TheForge por HTTP (`THEFORGE_MCP_URL`) desde Nest; el MCP que configures en Cursor es independiente. Ver [MCP-ARQUITECTURA-MAXPRIME.md](MCP-ARQUITECTURA-MAXPRIME.md).
+**API vs IDE:** La aplicación llama a TheForge por HTTP (`THEFORGE_MCP_URL`) desde Nest; el MCP que configures en Cursor es independiente. Ver [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md).
 
 ---
 

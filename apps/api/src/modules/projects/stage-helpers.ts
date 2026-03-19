@@ -1,4 +1,4 @@
-import { StageStatus, Status, type Stage, type Estimation } from "@maxprime/database";
+import { StageStatus, Status, type Stage, type Estimation } from "@theforge/database";
 
 /** Etapa “en foco”: ACTIVE con menor ordinal, o la de menor ordinal si ninguna está ACTIVE. */
 export function pickPrimaryStage<T extends { ordinal: number; workflowStatus: StageStatus }>(

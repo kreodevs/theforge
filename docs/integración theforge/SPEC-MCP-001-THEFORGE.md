@@ -1,6 +1,6 @@
-# SPEC-MCP-001 — Uso desde MaxPrime
+# SPEC-MCP-001 — Uso desde TheForge
 
-Resumen del contrato entre **MaxPrime** (flujo legacy) y el **MCP Relic (FalkorSpecs)** según SPEC-MCP-001 (multi-repo, herramientas de refactor seguro).
+Resumen del contrato entre **TheForge** (flujo legacy) y el **MCP Relic (FalkorSpecs)** según SPEC-MCP-001 (multi-repo, herramientas de refactor seguro).
 
 ## Proyecto vs repo
 
@@ -19,11 +19,11 @@ Para `POST /projects/:projectId/legacy/start` con `{ description }`:
    - **filesToModify:** Solo rutas que existen en el grafo (path + repoId). No se inventan nombres ni extensiones.
    - **questionsToRefine:** Solo preguntas de negocio/funcionalidad.
 
-3. **Fallback:** Si el MCP no expone `get_modification_plan` o devuelve error, MaxPrime usa `ask_codebase` pidiendo el mismo JSON; convierte paths a `{ path, repoId: projectId }`.
+3. **Fallback:** Si el MCP no expone `get_modification_plan` o devuelve error, TheForge usa `ask_codebase` pidiendo el mismo JSON; convierte paths a `{ path, repoId: projectId }`.
 
-4. **Sugerencias:** Tras obtener `questionsToRefine`, MaxPrime llama `ask_codebase` para rellenar respuestas sugeridas.
+4. **Sugerencias:** Tras obtener `questionsToRefine`, TheForge llama `ask_codebase` para rellenar respuestas sugeridas.
 
-5. **Generación de MDD:** MaxPrime enriquece el contexto con **`validate_before_edit`** (obligatorio antes de editar: impacto + contrato en un solo llamado) para los 3 primeros archivos a modificar; si no está disponible, fallback a `get_legacy_impact`. Además usa `get_file_content` (contenido de los 2 primeros archivos) y varias `ask_codebase`, para que el MDD refleje impacto real, contratos y código existente.
+5. **Generación de MDD:** TheForge enriquece el contexto con **`validate_before_edit`** (obligatorio antes de editar: impacto + contrato en un solo llamado) para los 3 primeros archivos a modificar; si no está disponible, fallback a `get_legacy_impact`. Además usa `get_file_content` (contenido de los 2 primeros archivos) y varias `ask_codebase`, para que el MDD refleje impacto real, contratos y código existente.
 
 ## Regla para toda la documentación legacy
 
@@ -32,11 +32,11 @@ Para `POST /projects/:projectId/legacy/start` con `{ description }`:
 ## Protocolo recomendado (MCP)
 
 1. `list_known_projects` al inicio.
-2. Fijar `projectId`: en MaxPrime se guarda como `theforgeProjectId` en el proyecto; en Cursor puede usarse `.theforge-project` en la raíz del repo indexado.
-3. **Antes de editar:** `validate_before_edit` con el nombre del nodo (MaxPrime lo aplica al generar el MDD).
+2. Fijar `projectId`: en TheForge se guarda como `theforgeProjectId` en el proyecto; en Cursor puede usarse `.theforge-project` en la raíz del repo indexado.
+3. **Antes de editar:** `validate_before_edit` con el nombre del nodo (TheForge lo aplica al generar el MDD).
 4. Usar props/contratos del grafo; no inventar.
 
-## Herramientas MCP usadas por MaxPrime
+## Herramientas MCP usadas por TheForge
 
 | Uso | Herramienta |
 |-----|-------------|
@@ -52,6 +52,6 @@ Para `POST /projects/:projectId/legacy/start` con `{ description }`:
 
 ## Referencia
 
-- **Catálogo completo de herramientas:** [HERRAMIENTAS-MCP-RELIC.md](./HERRAMIENTAS-MCP-RELIC.md) (todas las herramientas MCP y uso en MaxPrime).
+- **Catálogo completo de herramientas:** [HERRAMIENTAS-MCP-THEFORGE.md](./HERRAMIENTAS-MCP-THEFORGE.md) (todas las herramientas MCP y uso en TheForge).
 - Especificación completa del MCP: guía “Ayuda — MCP FalkorSpecs” (theforge.obp.mx).
-- Configuración en MaxPrime: `docs/RELIC-MAXPRIME.md`, `apps/api/src/modules/relic/relic.service.ts`.
+- Configuración en TheForge: `docs/THEFORGE-MCP.md`, `apps/api/src/modules/theforge/theforge.service.ts`.

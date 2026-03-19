@@ -1,12 +1,12 @@
-# MaxPrime — Qué hace el proyecto (detalle técnico y flujos)
+# TheForge — Qué hace el proyecto (detalle técnico y flujos)
 
-**Propósito:** Descripción operativa y técnica de MaxPrime para uso como fuente en NotebookLM y onboarding. Complementa la Documentación Estratégica (valor ejecutivo).
+**Propósito:** Descripción operativa y técnica de TheForge para uso como fuente en NotebookLM y onboarding. Complementa la Documentación Estratégica (valor ejecutivo).
 
 ---
 
 ## 1. Resumen en una frase
 
-MaxPrime es un monorepo (API NestJS + Web React) que orquesta una **entrevista proactiva con IA** hasta producir un **MDD (Master Design Document)** como Constitución del proyecto; valida completitud con un **semáforo** (ROJO/AMARILLO/VERDE), calcula **estimación en MXN** y genera entregables (Blueprint, API, Flujos, Infra). Soporta **proyectos nuevos** (desde cero) y **proyectos legacy** (cambios en código existente) integrando el grafo de código vía MCP Relic (FalkorSpecs).
+TheForge es un monorepo (API NestJS + Web React) que orquesta una **entrevista proactiva con IA** hasta producir un **MDD (Master Design Document)** como Constitución del proyecto; valida completitud con un **semáforo** (ROJO/AMARILLO/VERDE), calcula **estimación en MXN** y genera entregables (Blueprint, API, Flujos, Infra). Soporta **proyectos nuevos** (desde cero) y **proyectos legacy** (cambios en código existente) integrando el grafo de código vía MCP Relic (FalkorSpecs).
 
 ---
 
@@ -34,7 +34,7 @@ En ambos casos el **MDD es la Constitución**: todo se valida contra él (SDD). 
 │   └── config/       # TypeScript, ESLint, Tailwind base
 ├── docs/             # Documentación (índice, planes, integración Relic)
 ├── blueprint.md      # Guía de implementación técnica (Constitución → plan)
-├── mdd.md            # MDD del producto MaxPrime (7 secciones)
+├── mdd.md            # MDD del producto TheForge (7 secciones)
 ├── docker-compose.yml
 └── turbo.json
 ```
@@ -63,7 +63,7 @@ En ambos casos el **MDD es la Constitución**: todo se valida contra él (SDD). 
 
 ## 6. Integración Relic (proyectos legacy)
 
-- **Relic** indexa repos/proyectos en un grafo (FalkorDB) y expone un MCP (FalkorSpecs). MaxPrime llama al MCP por **HTTP** (JSON-RPC, Bearer token) desde el backend.
+- **Relic** indexa repos/proyectos en un grafo (FalkorDB) y expone un MCP (FalkorSpecs). TheForge llama al MCP por **HTTP** (JSON-RPC, Bearer token) desde el backend.
 - **Flujo:** Usuario crea proyecto legacy eligiendo un **proyecto** o **repositorio** indexado en Relic → se guarda `relicProjectId`. En «Modificación» describe el cambio → `get_modification_plan` devuelve `filesToModify` (path + repoId) y `questionsToRefine` → el usuario responde (con sugerencias desde `ask_codebase`) → al generar MDD se usa `validate_before_edit` (o `get_legacy_impact`), `get_file_content` y varias `ask_codebase` para contexto. Luego misma cascada de entregables que en proyecto nuevo.
 - **Herramientas MCP usadas:** list_known_projects, get_modification_plan, ask_codebase, validate_before_edit, get_file_content, get_legacy_impact; disponibles get_contract_specs, get_component_graph. Ver `docs/integración relic/HERRAMIENTAS-MCP-RELIC.md`.
 
@@ -97,10 +97,10 @@ Cada entregable se valida (Revisor) y se persiste en el proyecto. La estructura 
 
 | Documento | Uso |
 |-----------|-----|
-| **docs/MAXPRIME-INDEX.md** | Índice de arquitectura: flujo, IA, semáforo, estimación, Docker. |
+| **docs/THEFORGE-INDEX.md** | Índice de arquitectura: flujo, IA, semáforo, estimación, Docker. |
 | **blueprint.md** | Guía de implementación técnica (Constitución → plan). |
-| **mdd.md** | MDD del producto MaxPrime (7 secciones). |
-| **docs/MAXPRIME-DOCUMENTACION-ESTRATEGICA.md** | Valor ejecutivo (tesis, negocio, ROI). |
+| **mdd.md** | MDD del producto TheForge (7 secciones). |
+| **docs/THEFORGE-DOCUMENTACION-ESTRATEGICA.md** | Valor ejecutivo (tesis, negocio, ROI). |
 | **docs/ENTREGABLES-SDD-VALIDACION.md** | Estructura canónica del MDD, mapeo SDD, validación frente a Architecting Agentic Systems. |
 | **docs/integración relic/** | Contrato con MCP Relic, herramientas, flujo legacy. |
 

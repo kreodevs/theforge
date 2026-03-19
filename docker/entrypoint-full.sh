@@ -11,7 +11,7 @@ else
 fi
 
 # Esperar a que Postgres acepte conexiones
-until pg_isready -U maxprime -d maxprime -h localhost 2>/dev/null; do
+until pg_isready -U theforge -d theforge -h localhost 2>/dev/null; do
   sleep 1
 done
 

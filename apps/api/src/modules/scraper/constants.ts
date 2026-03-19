@@ -8,4 +8,4 @@ export const TIMEOUT_MS = 10_000;
 export const MAX_BODY_KB = 512;
 
 /** User-Agent para requests de scraping. */
-export const SCRAPER_USER_AGENT = "MaxPrime-Scraper/1.0";
+export const SCRAPER_USER_AGENT = "TheForge-Scraper/1.0";

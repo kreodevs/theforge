@@ -68,7 +68,7 @@ scraper/
   - Parsear con Cheerio; extraer en orden: `h1–h6`, `p`, `ul/ol`, `pre`, `article`, `main`; quitar `script`, `style`, `nav` agresivo.
   - Pasar el HTML extraído a `htmlToMarkdown(html)`.
 - **Tipos:** `ScrapedPage = { url: string; markdown: string; error?: string }`. Si una URL falla (timeout, 403, etc.), devolver `{ url, markdown: '', error }` y no romper el flujo.
-- **Headers:** User-Agent razonable (ej. "MaxPrime-Scraper/1.0") para no ser bloqueado por algunos sitios.
+- **Headers:** User-Agent razonable (ej. "TheForge-Scraper/1.0") para no ser bloqueado por algunos sitios.
 
 ### 4.3 html-to-markdown
 

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { EpisodicMemoryKind } from "@maxprime/database";
+import { EpisodicMemoryKind } from "@theforge/database";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { AgentSupervisorService } from "./agent-supervisor.service.js";
 

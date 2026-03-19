@@ -236,7 +236,7 @@ export default function App() {
         <header className="border-b border-zinc-700/80 pb-6">
           <h1 className="text-3xl font-bold text-amber-400 flex items-center gap-2">
             <Flame className="w-8 h-8" />
-            MaxPrime
+            TheForge
           </h1>
           <p className="text-zinc-400 mt-1">
             Software Factory — Entrevista proactiva → MDD → Semáforo →

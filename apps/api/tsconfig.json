@@ -21,8 +21,8 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@maxprime/database": ["../../packages/database/src"],
-      "@maxprime/shared-types": ["../../packages/shared-types/src"]
+      "@theforge/database": ["../../packages/database/src"],
+      "@theforge/shared-types": ["../../packages/shared-types/src"]
     }
   },
   "include": ["src/**/*"],

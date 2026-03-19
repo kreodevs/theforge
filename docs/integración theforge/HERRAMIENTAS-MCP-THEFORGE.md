@@ -1,6 +1,6 @@
 # Catálogo de herramientas MCP FalkorSpecs (Relic)
 
-Referencia de todas las herramientas del MCP según la guía actual (theforge.obp.mx). Columna **MaxPrime** indica uso actual o previsto.
+Referencia de todas las herramientas del MCP según la guía actual (theforge.obp.mx). Columna **TheForge** indica uso actual o previsto.
 
 ---
 
@@ -13,7 +13,7 @@ Referencia de todas las herramientas del MCP según la guía actual (theforge.ob
 
 ## Herramientas
 
-| Herramienta | Uso (MCP) | MaxPrime |
+| Herramienta | Uso (MCP) | TheForge |
 |-------------|-----------|----------|
 | **list_known_projects** | Mapear IDs a nombres (proyectos + roots). | ✅ Listado al crear proyecto legacy (proyectos y repos); `theforgeProjectId` = proyecto o repo. |
 | **get_modification_plan** | Plan: filesToModify (path + repoId) y questionsToRefine. | ✅ Inicio flujo legacy (primario); fallback con ask_codebase. |
@@ -44,11 +44,11 @@ Referencia de todas las herramientas del MCP según la guía actual (theforge.ob
 ## Protocolo recomendado (Relic)
 
 1. **list_known_projects** al inicio.
-2. Si existe **.theforge-project** en el repo indexado (no en MaxPrime), usar su `projectId` en todas las llamadas.
+2. Si existe **.theforge-project** en el repo indexado (no en TheForge), usar su `projectId` en todas las llamadas.
 3. **Antes de editar:** `validate_before_edit` con el nombre del nodo.
 4. Usar props/contratos que devuelve el grafo; no inventar.
 
-MaxPrime aplica (2) usando el `theforgeProjectId` guardado en el proyecto; (3) en la generación del MDD de cambio para los archivos a modificar.
+TheForge aplica (2) usando el `theforgeProjectId` guardado en el proyecto; (3) en la generación del MDD de cambio para los archivos a modificar.
 
 ---
 
@@ -56,6 +56,6 @@ MaxPrime aplica (2) usando el `theforgeProjectId` guardado en el proyecto; (3) e
 
 - **URL:** `https://theforge.obp.mx/mcp` (o `THEFORGE_MCP_URL` en backend).
 - **Auth:** Opcional `Authorization: Bearer m2m_xxx` o `X-M2M-Token` en headers.
-- **.theforge-project:** En la raíz del **repo indexado** (no en el repo de MaxPrime), con `{ "projectId": "uuid" }` para fijar el proyecto en Cursor.
+- **.theforge-project:** En la raíz del **repo indexado** (no en el repo de TheForge), con `{ "projectId": "uuid" }` para fijar el proyecto en Cursor.
 
-Referencias: SPEC-MCP-001-MAXPRIME.md, MAXPRIME-COMO-INVOCA-RELIC-MCP.md.
+Referencias: SPEC-MCP-001-THEFORGE.md, THEFORGE-COMO-INVOCA-THEFORGE-MCP.md.

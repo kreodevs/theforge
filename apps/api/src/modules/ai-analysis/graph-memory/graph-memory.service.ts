@@ -9,7 +9,7 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(GraphMemoryService.name);
     private client: FalkorDB | null = null;
     private graph: Graph | null = null;
-    private readonly graphName = "maxprime_memory";
+    private readonly graphName = "theforge_memory";
 
     constructor(
         @Inject(LLM_PROVIDER)

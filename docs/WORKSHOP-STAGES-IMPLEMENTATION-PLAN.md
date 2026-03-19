@@ -112,5 +112,5 @@
 ## 5. Referencias
 
 - [STAGE-SDD.md](STAGE-SDD.md) — modelo Stage, API aplanada, Falkor.  
-- [MCP-ARQUITECTURA-MAXPRIME.md](MCP-ARQUITECTURA-MAXPRIME.md) — consultas `stageId` en grafo SDD.  
+- [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md) — consultas `stageId` en grafo SDD.  
 - Código: [projects.service.ts](../apps/api/src/modules/projects/projects.service.ts), [stage-helpers.ts](../apps/api/src/modules/projects/stage-helpers.ts), [workshopStore.ts](../apps/web/src/store/workshopStore.ts).

@@ -1,20 +1,20 @@
 # docs
 
-Documentación de arquitectura y operación de MaxPrime. **Entrada recomendada:** [MAXPRIME-INDEX.md](MAXPRIME-INDEX.md).
+Documentación de arquitectura y operación de TheForge. **Entrada recomendada:** [THEFORGE-INDEX.md](THEFORGE-INDEX.md).
 
 ## Índice principal
 
 | Documento | Uso |
 |-----------|-----|
-| [MAXPRIME-INDEX.md](MAXPRIME-INDEX.md) | Flujo producto, IA agnóstica, semáforo, estimación MXN, Docker/Dokploy, Prisma, checklist. |
+| [THEFORGE-INDEX.md](THEFORGE-INDEX.md) | Flujo producto, IA agnóstica, semáforo, estimación MXN, Docker/Dokploy, Prisma, checklist. |
 | [STAGE-SDD.md](STAGE-SDD.md) | **Stage** vs **Project**: MDD/semáforo/estimación por etapa, API aplanada, enlace a Falkor SDD (diagrama ER). |
 | [WORKSHOP-STAGES-IMPLEMENTATION-PLAN.md](WORKSHOP-STAGES-IMPLEMENTATION-PLAN.md) | Plan **front + API**: selector de etapa, nueva etapa, clonado MDD; brechas (estimación, orquestador, chat). |
-| [MAXPRIME-QUE-HACE-EL-PROYECTO.md](MAXPRIME-QUE-HACE-EL-PROYECTO.md) | Detalle técnico: módulos API, flujos nuevo vs legacy, Relic, entregables. |
-| [MCP-ARQUITECTURA-MAXPRIME.md](MCP-ARQUITECTURA-MAXPRIME.md) | Relic MCP (HTTP) vs Falkor SDD local (topología Stage / DB_Entity / API_Endpoint) vs MCP propio hipotético. |
+| [THEFORGE-QUE-HACE-EL-PROYECTO.md](THEFORGE-QUE-HACE-EL-PROYECTO.md) | Detalle técnico: módulos API, flujos nuevo vs legacy, Relic, entregables. |
+| [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md) | Relic MCP (HTTP) vs Falkor SDD local (topología Stage / DB_Entity / API_Endpoint) vs MCP propio hipotético. |
 | [ENTREGABLES-SDD-VALIDACION.md](ENTREGABLES-SDD-VALIDACION.md) | SDD, conformance, orden de generación en UI. |
-| [RELIC-MAXPRIME.md](RELIC-MAXPRIME.md) | Uso de Relic desde **Cursor** (MCP FalkorSpecs) para doc de cambios. |
+| [THEFORGE-MCP.md](THEFORGE-MCP.md) | Uso de Relic desde **Cursor** (MCP FalkorSpecs) para doc de cambios. |
 | [APRENDIZAJES.md](APRENDIZAJES.md) | Errores, pivotes, referencias para el equipo. |
-| [MAXPRIME-DOCUMENTACION-ESTRATEGICA.md](MAXPRIME-DOCUMENTACION-ESTRATEGICA.md) | Tesis de valor / negocio (no técnico). |
+| [THEFORGE-DOCUMENTACION-ESTRATEGICA.md](THEFORGE-DOCUMENTACION-ESTRATEGICA.md) | Tesis de valor / negocio (no técnico). |
 
 ## Carpetas
 

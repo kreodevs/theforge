@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { Status } from "@maxprime/database";
+import { Status } from "@theforge/database";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { CostCalculatorService, parseInfraFixedHours } from "../engine/cost-calculator.service.js";
 import { normalizeMddContent, extractTechnicalMetadataTags } from "../engine/mdd-markdown-parser.js";

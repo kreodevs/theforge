@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import type { Session } from "@maxprime/database";
+import type { Session } from "@theforge/database";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { PreferencesService } from "../ai/preferences.service.js";
@@ -10,7 +10,7 @@ import {
   contextStepEnum,
   type AppendChatDto,
   type ChatMessage,
-} from "@maxprime/shared-types";
+} from "@theforge/shared-types";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);

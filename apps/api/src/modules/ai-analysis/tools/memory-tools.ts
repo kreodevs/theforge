@@ -9,7 +9,7 @@ export function createGraphMemoryTools(graphMemory: GraphMemoryService) {
      */
     const queryIntentGraphTool = new DynamicStructuredTool({
         name: "query_intent_graph",
-        description: `Consulta la memoria semántica (Grafo de Intención) de MaxPrime para encontrar proyectos previos, 
+        description: `Consulta la memoria semántica (Grafo de Intención) de TheForge para encontrar proyectos previos, 
 modelos de datos y contratos de API similares a la petición actual. 
 Úsala cuando inicies un proyecto o necesites inspiración técnica basada en lo que el usuario ya ha construido antes.`,
         schema: z.object({

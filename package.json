@@ -1,16 +1,16 @@
 {
-  "name": "maxprime",
+  "name": "theforge",
   "private": true,
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
     "dev:local": "node scripts/ensure-infra.js && pnpm run dev",
-    "dev:api": "node scripts/ensure-infra.js && turbo run dev --filter=@maxprime/api",
-    "dev:web": "turbo run dev --filter=@maxprime/web",
+    "dev:api": "node scripts/ensure-infra.js && turbo run dev --filter=@theforge/api",
+    "dev:web": "turbo run dev --filter=@theforge/web",
     "lint": "turbo run lint",
-    "db:generate": "turbo run db:generate --filter=@maxprime/database",
-    "db:push": "turbo run db:push --filter=@maxprime/database",
-    "db:migrate": "turbo run db:migrate --filter=@maxprime/database"
+    "db:generate": "turbo run db:generate --filter=@theforge/database",
+    "db:push": "turbo run db:push --filter=@theforge/database",
+    "db:migrate": "turbo run db:migrate --filter=@theforge/database"
   },
   "devDependencies": {
     "turbo": "^2.3.0"

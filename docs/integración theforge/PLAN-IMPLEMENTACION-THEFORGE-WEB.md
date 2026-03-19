@@ -1,4 +1,4 @@
-# Plan de implementación: Integración TheForge en la aplicación web MaxPrime
+# Plan de implementación: Integración TheForge en la aplicación web TheForge
 
 **Estado (2026):** Gran parte de este plan ya está en el código (`modules/relic`, `legacy-flow`, tipo de proyecto, Workshop). Usar el repo como fuente de verdad; este documento conserva el desglose por capas y decisiones de diseño.
 
@@ -12,7 +12,7 @@
 
 | Área | Qué se hace |
 |------|--------------|
-| **Entrada en web** | Usuario elige: "Producto nuevo" (flujo actual) o "Producto legacy (TheForge)". Si existente → listado de proyectos indexados en TheForge → al elegir uno se crea proyecto MaxPrime vinculado. |
+| **Entrada en web** | Usuario elige: "Producto nuevo" (flujo actual) o "Producto legacy (TheForge)". Si existente → listado de proyectos indexados en TheForge → al elegir uno se crea proyecto TheForge vinculado. |
 | **Backend** | Cliente MCP contra TheForge (HTTP); endpoint para listar proyectos TheForge; modelo `Project` con tipo (NEW \| LEGACY) y `relicProjectId`; flujo de chat distinto para legacy (prompt + enriquecimiento de contexto vía MCP). |
 | **Agentes** | **Nuevo:** flujo actual (entrevista → MDD → semáforo → entregables). **Legacy:** mismo canal de chat pero system prompt y contexto orientados a documentación de cambios; el backend llama al MCP y inyecta resultados en el contexto del LLM. |
 
@@ -22,7 +22,7 @@
 
 - **TheForge MCP** está accesible desde la API (URL configurable, p. ej. `https://theforge.obp.mx/mcp`). Si el MCP usa Streamable HTTP, el backend usará un cliente HTTP/SSE compatible; si TheForge expone un wrapper REST de las herramientas, se usará ese REST.
 - **Autenticación:** TheForge requiere un **token M2M** (machine-to-machine). El backend debe enviarlo en cada petición al MCP (header `Authorization: Bearer <token>` o el que indique TheForge). La variable de entorno es **`RELIC_M2M_TOKEN`**. **El token no debe commitearse:** configurarlo solo en `.env` local o en los secrets del despliegue.
-- **Proyectos legacy en MaxPrime** no requieren semáforo VERDE ni generación de entregables tipo Blueprint/OpenAPI desde cero; el foco es documentación de cambios, changelog, impacto de refactors y deuda técnica.
+- **Proyectos legacy en TheForge** no requieren semáforo VERDE ni generación de entregables tipo Blueprint/OpenAPI desde cero; el foco es documentación de cambios, changelog, impacto de refactors y deuda técnica.
 
 ---
 
@@ -124,7 +124,7 @@ Las fases 1–6 dejan la app usable: elegir proyecto nuevo o legacy, listar TheF
 ## 5. Criterios de aceptación (resumen)
 
 - [x] Usuario puede elegir "Proyecto nuevo" o "Proyecto existente (TheForge)" desde la web.
-- [x] Si elige existente, ve la lista de proyectos indexados en TheForge (desde el MCP) y al elegir uno se crea un proyecto MaxPrime tipo LEGACY vinculado por `relicProjectId`.
+- [x] Si elige existente, ve la lista de proyectos indexados en TheForge (desde el MCP) y al elegir uno se crea un proyecto TheForge tipo LEGACY vinculado por `relicProjectId`.
 - [x] En el Workshop se distingue visualmente un proyecto legacy (badge/indicador).
 - [x] El chat para proyectos legacy usa prompt y contexto enriquecido con datos del MCP (`ask_codebase` inyectado en system prompt) para documentación de cambios sin inventar contratos.
 - [x] Si TheForge no está configurado o no responde, el modal muestra mensaje claro; el flujo "Proyecto nuevo" no se ve afectado.
@@ -144,8 +144,8 @@ Las fases 1–6 dejan la app usable: elegir proyecto nuevo o legacy, listar TheF
 
 ## 7. Documentación a actualizar
 
-- **`docs/integración relic/relic.md`:** Añadir sección "Uso desde la aplicación web MaxPrime" que enlace a este plan y al flujo (listado → crear proyecto legacy → chat con contexto MCP).
-- **`docs/MAXPRIME-INDEX.md`:** En §6 (Despliegue) añadir variables `THEFORGE_MCP_URL` (y si aplica `RELIC_API_KEY`).
+- **`docs/integración relic/relic.md`:** Añadir sección "Uso desde la aplicación web TheForge" que enlace a este plan y al flujo (listado → crear proyecto legacy → chat con contexto MCP).
+- **`docs/THEFORGE-INDEX.md`:** En §6 (Despliegue) añadir variables `THEFORGE_MCP_URL` (y si aplica `RELIC_API_KEY`).
 - **`docs/integración relic/README.md`:** Crear o actualizar con índice: relic.md (qué es TheForge y herramientas MCP), PLAN-IMPLEMENTACION-RELIC-WEB.md (este plan).
 
 Cuando este plan esté aprobado al 100%, se puede bajar a tareas concretas (issues o checklist por fase) e implementar en la rama `relic-integration`.

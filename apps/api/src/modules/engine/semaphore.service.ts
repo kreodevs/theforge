@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { ComplexityLevel, Status } from "@maxprime/database";
-import { mddJsonSchema, type MddJson } from "@maxprime/shared-types";
+import { ComplexityLevel, Status } from "@theforge/database";
+import { mddJsonSchema, type MddJson } from "@theforge/shared-types";
 
 /** Longitud mínima (caracteres no vacíos) para considerar un entregable “presente”. */
 const MIN_DELIVERABLE_LEN = 48;

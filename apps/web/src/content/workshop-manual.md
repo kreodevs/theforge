@@ -1,4 +1,4 @@
-# Manual del Workshop (MaxPrime)
+# Manual del Workshop (TheForge)
 
 ## 1. Qué es esta pantalla
 
@@ -91,4 +91,4 @@ En el **Workshop**, el **selector de etapa** (cuando hay más de una) define el 
 
 ## 8. Más documentación
 
-En el repositorio del producto: `docs/STAGE-SDD.md`, `docs/MAXPRIME-INDEX.md`, `docs/ENTREGABLES-SDD-VALIDACION.md` (flujo SDD y validación).
+En el repositorio del producto: `docs/STAGE-SDD.md`, `docs/THEFORGE-INDEX.md`, `docs/ENTREGABLES-SDD-VALIDACION.md` (flujo SDD y validación).

@@ -2,7 +2,7 @@
 const { Client } = require('pg');
 
 const client = new Client({
-  connectionString: 'postgresql://maxprime:maxprime@localhost:5432/maxprime',
+  connectionString: 'postgresql://theforge:theforge@localhost:5432/theforge',
 });
 
 async function run() {

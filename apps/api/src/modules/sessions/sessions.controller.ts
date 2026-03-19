@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
 import { SessionsService } from "./sessions.service.js";
-import { createSessionSchema, appendChatSchema } from "@maxprime/shared-types";
+import { createSessionSchema, appendChatSchema } from "@theforge/shared-types";
 
 @Controller("sessions")
 export class SessionsController {

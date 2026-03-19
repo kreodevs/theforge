@@ -36,7 +36,7 @@ El MDD debe generarse con **exactamente siete secciones**. Esta estructura es la
 
 En SDD la jerarquía es: **Constitution → Spec → Plan → Tasks → Implementation**. Los artefactos típicos son `spec.md`, `plan.md`, `tasks.md`, `contracts/` (API), y opcionales `data-model.md`, `research.md`, `quickstart.md`.
 
-| Artefacto SDD                       | En MaxPrime                               | Validación                                                                                                                                                                                                                                   |
+| Artefacto SDD                       | En TheForge                               | Validación                                                                                                                                                                                                                                   |
 | ----------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Constitution**                    | **MDD** (Master Design Document)           | Correcto. El MDD es la Constitución del proyecto; se establece primero y gobierna el resto.                                                                                                                                                  |
 | **Spec** (what/why)                 | **Benchmark (DBGA)** + clarifiedScope      | Correcto. El benchmark descubre funcionalidades y requisitos; alimenta la Constitución (MDD).                                                                                                                                                |
@@ -48,7 +48,7 @@ En SDD la jerarquía es: **Constitution → Spec → Plan → Tasks → Implemen
 
 **Conclusión SDD:** Los cinco documentos (Guía UX/UI, Blueprint, API, Flujos, Infra) están justificados. Blueprint = plan técnico; API = contratos (requeridos en SDD); Flujos = flujos de lógica/journeys; Infra = parte del plan; Guía UX/UI = design system/handoff. Todos se derivan de la Constitución (MDD) y, donde aplica, del Plan (Blueprint).
 
-**Spec como paso explícito antes del MDD:** En MaxPrime, **Spec = Benchmark + clarifiedScope** (alcance aclarado por el Clarifier). Es el artefacto explícito que debe existir o revisarse antes de dar por cerrado el MDD: el Clarifier usa el Spec (si está presente) como entrada principal para la sección 1. Contexto y alcance. Generar o revisar el Spec desde Paso 0/Benchmark antes de cerrar el MDD mejora la trazabilidad SDD (Constitution → Spec → Plan → Tasks).
+**Spec como paso explícito antes del MDD:** En TheForge, **Spec = Benchmark + clarifiedScope** (alcance aclarado por el Clarifier). Es el artefacto explícito que debe existir o revisarse antes de dar por cerrado el MDD: el Clarifier usa el Spec (si está presente) como entrada principal para la sección 1. Contexto y alcance. Generar o revisar el Spec desde Paso 0/Benchmark antes de cerrar el MDD mejora la trazabilidad SDD (Constitution → Spec → Plan → Tasks).
 
 ---
 
@@ -56,7 +56,7 @@ En SDD la jerarquía es: **Constitution → Spec → Plan → Tasks → Implemen
 
 El cuaderno recomienda:
 
-| Patrón / práctica               | En MaxPrime                                                                                                                                                                                                                                                                                                                                                                      | Validación                                                                                                                                                    |
+| Patrón / práctica               | En TheForge                                                                                                                                                                                                                                                                                                                                                                      | Validación                                                                                                                                                    |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Plan-then-Execute (P-t-E)**   | El "plan" es el **MDD** (Constitución); la "ejecución" es la generación de cada entregable (Blueprint, API, Flujos, Infra) desde el MDD.                                                                                                                                                                                                                                          | Correcto. No ejecutamos código sin un plan (MDD); generamos artefactos en orden (Blueprint → API, etc.).                                                      |
 | **Chain (waterfall)**           | El **MDD** se construye con un pipeline en cadena (Clarifier → Software Architect → Security → Integration → Auditor). Los entregables posteriores (Blueprint, API, Infra) se generan uno a uno desde el MDD (y Blueprint cuando aplica).                                                                                                                                         | Correcto. El flujo "Generar Entregables" ejecuta Blueprint → API → Flujos → Infra en secuencia; API e Infra reciben además el Blueprint como entrada.         |
@@ -79,7 +79,7 @@ El cuaderno recomienda:
 
 ## 4. Resumen
 
-| Documento           | ¿Requerido en SDD?                        | Implementación MaxPrime                                                            | Alineado |
+| Documento           | ¿Requerido en SDD?                        | Implementación TheForge                                                            | Alineado |
 | ------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------- | -------- |
 | **Guía UX/UI**      | Design system / UX en Constitution o Spec | Chat con MDD + Blueprint; documento markdown con tokens, prioridades, accesibilidad | Sí       |
 | **Blueprint**       | Plan (arquitectura, stack)                | Un LLM desde MDD; markdown con estructura, persistencia, backend/frontend           | Sí       |
@@ -128,7 +128,7 @@ Objetivo: cerrar los huecos que dejan la evaluación en ~7.5 y alcanzar alineaci
 - **Implementación:** Nuevo contenido `tasksContent` en Project (o documento generado bajo demanda). Un prompt “Tasks” que recibe MDD + Blueprint y devuelve markdown con secciones tipo: Backend tasks, Frontend tasks, Infra tasks, con ítems comprobables (checklist). Opcional: generación automática al pasar a VERDE o al generar Blueprint.
 - **Criterio de éxito:** Existe `tasksContent` (o equivalente) que lista tareas derivadas del Plan y se puede mostrar en Workshop o exportar.
 
-**Entregables Fase 1:** Spec explícito + Tasks; docs y prompts actualizados; índice MAXPRIME-INDEX menciona Spec y Tasks.
+**Entregables Fase 1:** Spec explícito + Tasks; docs y prompts actualizados; índice THEFORGE-INDEX menciona Spec y Tasks.
 
 ---
 
@@ -190,7 +190,7 @@ Objetivo: cerrar los huecos que dejan la evaluación en ~7.5 y alcanzar alineaci
 
 **4.3 Documentación y re-evaluación**
 
-- **Qué:** Actualizar MAXPRIME-INDEX y ENTREGABLES-SDD-VALIDACION con: Spec, Tasks, Conformance, Reflection, HITL. Re-evaluar contra SDD y fijar la meta en 10/10.
+- **Qué:** Actualizar THEFORGE-INDEX y ENTREGABLES-SDD-VALIDACION con: Spec, Tasks, Conformance, Reflection, HITL. Re-evaluar contra SDD y fijar la meta en 10/10.
 - **Criterio de éxito:** Doc describe el flujo completo SDD (Constitution → Spec → Plan → Tasks → Implementation) con artefactos y verificaciones; evaluación interna 10/10.
 
 **Entregables Fase 4:** HITL antes de persistir; orden recomendado en UI; documentación actualizada.
@@ -229,7 +229,7 @@ Orden sugerido: **Fase 1** (Spec + Tasks) → **Fase 2** (conformance) → **Fas
 
 | Mejora                                                                           | Estado                                                                                                                                                                                                                                    |
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Spec = Benchmark + clarifiedScope** como paso explícito antes de cerrar el MDD | Documentado en §1 y MAXPRIME-INDEX; nota en UI (pestaña Spec).                                                                                                                                                                           |
+| **Spec = Benchmark + clarifiedScope** como paso explícito antes de cerrar el MDD | Documentado en §1 y THEFORGE-INDEX; nota en UI (pestaña Spec).                                                                                                                                                                           |
 | **Conformance Flujos vs §5** (Lógica y Edge Cases)                               | `checkLogicFlowsVsMdd` en ConformanceService; GET conformance incluye `logicFlows`; UI muestra Flujos en panel Conformance vs MDD.                                                                                                        |
 | **Regenerar con gaps**                                                           | Parámetro `gapsFeedback` en generateBlueprint, generateApiContracts, generateLogicFlows, generateInfra; prompts reciben "Los siguientes puntos deben corregirse..."; botones "Regenerar X con gaps" en panel Conformance cuando hay gaps. |
 | **Spec obligatorio en flujo**                                                    | "Generar entregables" solo habilitado cuando Semáforo VERDE y Spec existe (specContent no vacío). Mensaje: "Genera o revisa el Spec antes de generar entregables" cuando falta Spec.                                                      |

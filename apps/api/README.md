@@ -1,6 +1,6 @@
-# @maxprime/api
+# @theforge/api
 
-Backend NestJS de MaxPrime.
+Backend NestJS de TheForge.
 
 - **Módulos:** Projects (incluye `POST/PATCH …/projects/:id/stages`, **`POST …/generate-deliverables`** cascada por `complexity`, y MDD por etapa con `stageId` en PATCH), Sessions, AI (adapters OpenAI/Gemini), Engine (cost-calculator, semáforo). **Ai-orchestrator:** `POST /ai-orchestrator/welcome` acepta `stageId` opcional (contexto MDD alineado a la etapa). **Ai-analysis:** checkpoints LangGraph / `mdd/thread` por `projectId` + `mddStageId`.
 - **DB:** Prisma + PostgreSQL (schema en `packages/database`).

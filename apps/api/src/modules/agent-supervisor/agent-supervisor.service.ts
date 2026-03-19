@@ -6,7 +6,7 @@ import {
   type EpisodicMemory,
   type Project,
   type Stage,
-} from "@maxprime/database";
+} from "@theforge/database";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { pickPrimaryStage } from "../projects/stage-helpers.js";
 import type {

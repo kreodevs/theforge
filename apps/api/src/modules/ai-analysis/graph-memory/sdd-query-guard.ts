@@ -1,6 +1,6 @@
 /**
  * Validación de consultas Cypher de solo lectura acotadas a un proyecto (Grafo SDD).
- * El MCP de TheForge y el acceso HTTP a TheForge son ajenos: esto aplica solo a FalkorDB local (MaxPrime).
+ * El MCP de TheForge y el acceso HTTP a TheForge son ajenos: esto aplica solo a FalkorDB local (TheForge).
  */
 
 const FORBIDDEN = [

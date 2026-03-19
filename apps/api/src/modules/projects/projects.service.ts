@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { ComplexityLevel, Prisma, StageStatus, Status } from "@maxprime/database";
-import type { Estimation, Project, Stage } from "@maxprime/database";
+import { ComplexityLevel, Prisma, StageStatus, Status } from "@theforge/database";
+import type { Estimation, Project, Stage } from "@theforge/database";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
@@ -24,7 +24,7 @@ import {
   type ComplexityPending,
   type CreateProjectDto,
   type UpdateProjectDto,
-} from "@maxprime/shared-types";
+} from "@theforge/shared-types";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 

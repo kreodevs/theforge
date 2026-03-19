@@ -1,37 +1,37 @@
-# Dokploy: db + api + web + FalkorDB (grafo SDD documental; Relic/MCP es externo)
-# Dominios en Dokploy: / → maxprime-web:80, /api → maxprime-api:3000 (Strip Path: sí)
+# Dokploy: db + api + web + FalkorDB (grafo SDD documental; TheForge MCP es externo)
+# Dominios en Dokploy: / → theforge-web:80, /api → theforge-api:3000 (Strip Path: sí)
 # Si falla "network dokploy-network not found", quitar la red externa (Isolated Deployments)
 # default con name evita que Compose cree una red *_default extra (reduce agotamiento de address pools)
 
 networks:
   default:
-    name: maxprime-app-network
+    name: theforge-app-network
     driver: bridge
   dokploy-network:
     external: true
 
 services:
-  maxprime-db:
+  theforge-db:
     image: postgres:15-alpine
-    container_name: maxprime-db
+    container_name: theforge-db
     networks:
       - default
     environment:
-      POSTGRES_USER: maxprime
-      POSTGRES_PASSWORD: maxprime
-      POSTGRES_DB: maxprime
+      POSTGRES_USER: theforge
+      POSTGRES_PASSWORD: theforge
+      POSTGRES_DB: theforge
     volumes:
-      - maxprime_db_data:/var/lib/postgresql/data
+      - theforge_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U maxprime -d maxprime"]
+      test: ["CMD-SHELL", "pg_isready -U theforge -d theforge"]
       interval: 5s
       timeout: 3s
       retries: 5
 
   # Grafo SDD (MDD, entregables, RAG agéntico). Aislado del índice de código en TheForge.
-  maxprime-falkor-sdd:
+  theforge-falkor-sdd:
     image: falkordb/falkordb:latest
-    container_name: maxprime-falkor-sdd
+    container_name: theforge-falkor-sdd
     networks:
       - default
     ports:
@@ -44,28 +44,28 @@ services:
       timeout: 5s
       retries: 5
 
-  maxprime-api:
+  theforge-api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    container_name: maxprime-api
+    container_name: theforge-api
     networks:
       - default
       - dokploy-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.maxprime-api.rule=Host(`${WEB_DOMAIN:-maxprime.local}`) && PathPrefix(`/api`)"
-      - "traefik.http.routers.maxprime-api.priority=100"
-      - "traefik.http.routers.maxprime-api.entrypoints=websecure"
-      - "traefik.http.routers.maxprime-api.tls.certResolver=letsencrypt"
-      - "traefik.http.services.maxprime-api.loadbalancer.server.port=3000"
-      - "traefik.http.middlewares.maxprime-api-strip.stripprefix.prefixes=/api"
-      - "traefik.http.routers.maxprime-api.middlewares=maxprime-api-strip"
+      - "traefik.http.routers.theforge-api.rule=Host(`${WEB_DOMAIN:-theforge.local}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.theforge-api.priority=100"
+      - "traefik.http.routers.theforge-api.entrypoints=websecure"
+      - "traefik.http.routers.theforge-api.tls.certResolver=letsencrypt"
+      - "traefik.http.services.theforge-api.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.theforge-api-strip.stripprefix.prefixes=/api"
+      - "traefik.http.routers.theforge-api.middlewares=theforge-api-strip"
     environment:
-      DATABASE_URL: postgresql://maxprime:maxprime@maxprime-db:5432/maxprime
+      DATABASE_URL: postgresql://theforge:theforge@theforge-db:5432/theforge
       # Grafo documental SDD (Cypher, MDD_Section). TheForge MCP va aparte (THEFORGE_MCP_URL).
-      FALKORDB_SDD_URL: redis://maxprime-falkor-sdd:6379
-      FALKORDB_URL: redis://maxprime-falkor-sdd:6379
+      FALKORDB_SDD_URL: redis://theforge-falkor-sdd:6379
+      FALKORDB_URL: redis://theforge-falkor-sdd:6379
       # Evaluador legacy + crítica en respuesta chat (opcional; por defecto desactivado).
       AGENT_EVALUATOR_LEGACY: ${AGENT_EVALUATOR_LEGACY:-}
       AI_PROVIDER: ${AI_PROVIDER:-openai}
@@ -77,9 +77,9 @@ services:
       # Cliente HTTP al MCP ajeno (TheForge); no confundir con Falkor SDD ni con un MCP propio.
       THEFORGE_MCP_TIMEOUT_MS: ${THEFORGE_MCP_TIMEOUT_MS:-60000}
     depends_on:
-      maxprime-db:
+      theforge-db:
         condition: service_healthy
-      maxprime-falkor-sdd:
+      theforge-falkor-sdd:
         condition: service_healthy
     expose:
       - "3000"
@@ -91,23 +91,23 @@ services:
       start_period: 90s
       retries: 3
 
-  maxprime-web:
+  theforge-web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    container_name: maxprime-web
+    container_name: theforge-web
     networks:
       - default
       - dokploy-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.maxprime-web.rule=Host(`${WEB_DOMAIN:-maxprime.local}`)"
-      - "traefik.http.routers.maxprime-web.priority=1"
-      - "traefik.http.routers.maxprime-web.entrypoints=websecure"
-      - "traefik.http.routers.maxprime-web.tls.certResolver=letsencrypt"
-      - "traefik.http.services.maxprime-web.loadbalancer.server.port=80"
+      - "traefik.http.routers.theforge-web.rule=Host(`${WEB_DOMAIN:-theforge.local}`)"
+      - "traefik.http.routers.theforge-web.priority=1"
+      - "traefik.http.routers.theforge-web.entrypoints=websecure"
+      - "traefik.http.routers.theforge-web.tls.certResolver=letsencrypt"
+      - "traefik.http.services.theforge-web.loadbalancer.server.port=80"
     depends_on:
-      - maxprime-api
+      - theforge-api
     healthcheck:
       test:
         [
@@ -120,5 +120,5 @@ services:
       retries: 3
 
 volumes:
-  maxprime_db_data:
+  theforge_db_data:
   falkor_sdd_data:

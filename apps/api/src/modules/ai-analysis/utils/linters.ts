@@ -19,7 +19,7 @@ export function lintSql(sql: string): SqlLintResult {
 
     for (const stmt of statements) {
         try {
-            // We use 'postgresql' as the default flavor for MaxPrime
+            // We use 'postgresql' as the default flavor for TheForge
             parser.parse(stmt, { database: "postgresql" });
         } catch (err: any) {
             errors.push(`Error en sentencia: "${stmt.slice(0, 50)}...". Detalle: ${err.message}`);
