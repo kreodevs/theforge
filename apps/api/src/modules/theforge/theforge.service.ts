@@ -84,7 +84,7 @@ function extractJsonFromToolContent(text: string): string {
 }
 
 /**
- * Servicio de integración con el MCP TheForge (FalkorSpecs).
+ * Servicio de integración con el MCP TheForge (AriadneSpecs).
  * Expone listado de proyectos (multi-root), plan de modificación, ask_codebase y herramientas de refactor seguro (SPEC-MCP-001).
  * Requiere THEFORGE_MCP_URL y MCP_AUTH_TOKEN en el entorno.
  */

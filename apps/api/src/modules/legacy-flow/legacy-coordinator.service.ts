@@ -132,7 +132,7 @@ export class LegacyCoordinatorService {
   }
 
   /**
-   * Inicia el flujo legacy: consulta FalkorSpecs MCP (get_modification_plan o ask_codebase), obtiene archivos y preguntas,
+   * Inicia el flujo legacy: consulta AriadneSpecs MCP (get_modification_plan o ask_codebase), obtiene archivos y preguntas,
    * pide sugerencias de respuestas al codebase y persiste todo en legacyFlowState.
    * @param projectId - ID del proyecto.
    * @param description - Descripción de la modificación que quiere el usuario.
@@ -230,7 +230,7 @@ export class LegacyCoordinatorService {
   }
 
   /**
-   * Genera el MDD de cambio a partir de la descripción, archivos, respuestas del usuario y contexto FalkorSpecs (múltiples ask_codebase).
+   * Genera el MDD de cambio a partir de la descripción, archivos, respuestas del usuario y contexto AriadneSpecs (múltiples ask_codebase).
    * Persiste el resultado en mddContent del proyecto.
    * @param projectId - ID del proyecto.
    * @returns Contenido Markdown del MDD generado.
@@ -302,7 +302,7 @@ export class LegacyCoordinatorService {
 
   /**
    * Genera entregables según `Project.complexity` y `DELIVERABLES_BY_COMPLEXITY` (despacho dinámico).
-   * Legacy inyecta contexto FalkorSpecs en cada llamada. No ejecuta generadores fuera de la lista (ahorra tokens).
+   * Legacy inyecta contexto AriadneSpecs en cada llamada. No ejecuta generadores fuera de la lista (ahorra tokens).
    */
   async generateDeliverables(projectId: string): Promise<{ ok: boolean }> {
     const { project, theforgeId } = await this.getLegacyProject(projectId);

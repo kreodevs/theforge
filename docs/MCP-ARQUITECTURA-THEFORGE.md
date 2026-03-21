@@ -2,7 +2,7 @@
 
 TheForge **no** implementa el mismo protocolo ni el mismo despliegue que el MCP de **TheForge**. Son capas distintas; mezclarlas en configuración o en documentación genera errores de despliegue y de expectativas.
 
-## 1. MCP de TheForge (FalkorSpecs) — **ajeno** al repo
+## 1. MCP de TheForge (AriadneSpecs) — **ajeno** al repo
 
 - **Qué es:** Servidor MCP operado en el entorno TheForge (p. ej. JSON-RPC sobre HTTPS). Indexa el **código** del repositorio del cliente en un grafo gestionado por TheForge.
 - **Cómo lo usa TheForge:** La API Nest (`TheForgeService`) hace **HTTP POST** a `THEFORGE_MCP_URL` con JSON-RPC `tools/call` (p. ej. `ask_codebase`, `get_modification_plan`, `validate_before_edit`). No es un proceso MCP embebido en el contenedor de TheForge.
@@ -19,7 +19,7 @@ TheForge **no** implementa el mismo protocolo ni el mismo despliegue que el MCP 
 
 ## 3. Si en el futuro TheForge expone su propio MCP
 
-Sería un **servidor MCP distinto** (herramientas sobre el Grafo SDD, proyectos, sesiones), con otro puerto/URL y otro contrato de herramientas. No reutiliza el endpoint de TheForge ni el binario FalkorSpecs. Sigue siendo **opcional (YAGNI)**: no sustituye TheForge, el Falkor SDD local ni las respuestas del orquestador en la app.
+Sería un **servidor MCP distinto** (herramientas sobre el Grafo SDD, proyectos, sesiones), con otro puerto/URL y otro contrato de herramientas. No reutiliza el endpoint de TheForge ni el binario AriadneSpecs. Sigue siendo **opcional (YAGNI)**: no sustituye TheForge, el Falkor SDD local ni las respuestas del orquestador en la app.
 
 - Variables sugeridas (ejemplo, no implementado aún): `THEFORGE_MCP_PORT`, documentación de tools en OpenAPI o README del servidor MCP.
 - **No** confundir con `THEFORGE_MCP_URL`.

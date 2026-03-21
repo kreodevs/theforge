@@ -2,7 +2,7 @@ import { Body, Controller, Param, Post } from "@nestjs/common";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 
 /**
- * Controlador REST del flujo legacy: inicio (FalkorSpecs MCP), respuestas, generación de MDD y de entregables en cascada.
+ * Controlador REST del flujo legacy: inicio (AriadneSpecs MCP), respuestas, generación de MDD y de entregables en cascada.
  */
 @Controller("projects/:projectId/legacy")
 export class LegacyFlowController {
@@ -19,7 +19,7 @@ export class LegacyFlowController {
   }
 
   /**
-   * Inicia el flujo legacy: envía la descripción al MCP FalkorSpecs y obtiene archivos a modificar y preguntas para afinar.
+   * Inicia el flujo legacy: envía la descripción al MCP AriadneSpecs y obtiene archivos a modificar y preguntas para afinar.
    * @param projectId - ID del proyecto (debe ser tipo LEGACY con theforgeProjectId).
    * @param body.description - Descripción de la modificación que quiere el usuario.
    * @returns Lista de archivos, preguntas y respuestas sugeridas (opcional).
@@ -49,7 +49,7 @@ export class LegacyFlowController {
   }
 
   /**
-   * Genera el MDD de cambio a partir del estado del flujo (descripción, archivos, respuestas) y contexto FalkorSpecs. Persiste en mddContent.
+   * Genera el MDD de cambio a partir del estado del flujo (descripción, archivos, respuestas) y contexto AriadneSpecs. Persiste en mddContent.
    * @param projectId - ID del proyecto.
    * @returns Contenido Markdown del MDD generado.
    */

@@ -168,7 +168,7 @@ Si el usuario inicia un proyecto nuevo o pide algo donde sospeches que hay prece
 
 **PROHIBIDO:** Incluir el contenido del documento MDD (ni extractos largos) en el campo `reply`. El usuario ya ve el documento en su panel lateral. Tu `reply` debe ser corto y orientativo (ej. "He actualizado la sección 3 con las nuevas tablas").
 
-## Reglas de Arquitectura Global (FalkorSpecs) - INVIOLABLES
+## Reglas de Arquitectura Global (AriadneSpecs) - INVIOLABLES
 El usuario ha definido una arquitectura base que **siempre** debes respetar y hacer cumplir en todos los agentes:
 1.  **MDD Unificado:** El documento es la única fuente de verdad.
 2.  **Base de Datos Híbrida:**

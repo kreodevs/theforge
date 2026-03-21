@@ -6,7 +6,7 @@
 
 ## 1. Resumen en una frase
 
-TheForge es un monorepo (API NestJS + Web React) que orquesta una **entrevista proactiva con IA** hasta producir un **MDD (Master Design Document)** como Constitución del proyecto; valida completitud con un **semáforo** (ROJO/AMARILLO/VERDE), calcula **estimación en MXN** y genera entregables (Blueprint, API, Flujos, Infra). Soporta **proyectos nuevos** (desde cero) y **proyectos legacy** (cambios en código existente) integrando el grafo de código vía MCP Relic (FalkorSpecs).
+TheForge es un monorepo (API NestJS + Web React) que orquesta una **entrevista proactiva con IA** hasta producir un **MDD (Master Design Document)** como Constitución del proyecto; valida completitud con un **semáforo** (ROJO/AMARILLO/VERDE), calcula **estimación en MXN** y genera entregables (Blueprint, API, Flujos, Infra). Soporta **proyectos nuevos** (desde cero) y **proyectos legacy** (cambios en código existente) integrando el grafo de código vía MCP Relic (AriadneSpecs).
 
 ---
 
@@ -50,7 +50,7 @@ En ambos casos el **MDD es la Constitución**: todo se valida contra él (SDD). 
 | **ai** | Orquestación de IA: adapters (OpenAI, Gemini) según `AI_PROVIDER`; generación de respuesta, checklist, Spec, MDD (multiagente: Clarifier, Architect, Security, Integration, Auditor), Blueprint, Casos de Uso, Historias, etc. Prompts en `modules/ai/prompts/`. |
 | **engine** | Semáforo (validación del JSON/estructura del proyecto: entidades, business_core, edge_cases, field_types) y motor de estimación (cost-calculator: horas × tarifas MXN por rol). Lógica pura, sin IA. |
 | **legacy-flow** | Coordinador (start → archivos + preguntas; answer; generate-mdd; generate-deliverables) y Revisor (revisa listas y documentos antes de persistir). Knowledge pack (NotebookLM/SDD/Agentic) en `knowledge/`. |
-| **relic** | Cliente HTTP al MCP Relic (FalkorSpecs): `list_known_projects`, `get_modification_plan`, `ask_codebase`, `validate_before_edit`, `get_file_content`, `get_legacy_impact`, etc. Usado por legacy-flow para plan de modificación y contexto al generar MDD. |
+| **relic** | Cliente HTTP al MCP Relic (AriadneSpecs): `list_known_projects`, `get_modification_plan`, `ask_codebase`, `validate_before_edit`, `get_file_content`, `get_legacy_impact`, etc. Usado por legacy-flow para plan de modificación y contexto al generar MDD. |
 
 ---
 
@@ -63,7 +63,7 @@ En ambos casos el **MDD es la Constitución**: todo se valida contra él (SDD). 
 
 ## 6. Integración Relic (proyectos legacy)
 
-- **Relic** indexa repos/proyectos en un grafo (FalkorDB) y expone un MCP (FalkorSpecs). TheForge llama al MCP por **HTTP** (JSON-RPC, Bearer token) desde el backend.
+- **Relic** indexa repos/proyectos en un grafo (FalkorDB) y expone un MCP (AriadneSpecs). TheForge llama al MCP por **HTTP** (JSON-RPC, Bearer token) desde el backend.
 - **Flujo:** Usuario crea proyecto legacy eligiendo un **proyecto** o **repositorio** indexado en Relic → se guarda `relicProjectId`. En «Modificación» describe el cambio → `get_modification_plan` devuelve `filesToModify` (path + repoId) y `questionsToRefine` → el usuario responde (con sugerencias desde `ask_codebase`) → al generar MDD se usa `validate_before_edit` (o `get_legacy_impact`), `get_file_content` y varias `ask_codebase` para contexto. Luego misma cascada de entregables que en proyecto nuevo.
 - **Herramientas MCP usadas:** list_known_projects, get_modification_plan, ask_codebase, validate_before_edit, get_file_content, get_legacy_impact; disponibles get_contract_specs, get_component_graph. Ver `docs/integración relic/HERRAMIENTAS-MCP-RELIC.md`.
 

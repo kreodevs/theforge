@@ -2,7 +2,7 @@ import { Controller, Get, Logger } from "@nestjs/common";
 import { TheForgeService } from "./theforge.service.js";
 
 /**
- * Controlador REST para integración con TheForge (MCP FalkorSpecs).
+ * Controlador REST para integración con TheForge (MCP AriadneSpecs).
  * Expone el listado de proyectos indexados para que la web permita crear proyectos legacy vinculados.
  */
 @Controller("theforge")

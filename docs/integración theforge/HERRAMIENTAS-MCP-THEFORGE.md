@@ -1,4 +1,4 @@
-# Catálogo de herramientas MCP FalkorSpecs (SPEC-MCP-001)
+# Catálogo de herramientas MCP AriadneSpecs (SPEC-MCP-001)
 
 Referencia de todas las herramientas del MCP según la guía actual (theforge.obp.mx). Columna **TheForge** indica uso actual o previsto.
 
@@ -41,7 +41,7 @@ Referencia de todas las herramientas del MCP según la guía actual (theforge.ob
 
 ---
 
-## Protocolo recomendado (FalkorSpecs)
+## Protocolo recomendado (AriadneSpecs)
 
 1. **list_known_projects** al inicio.
 2. Si existe **.theforge-project** en el repo indexado (no en TheForge), usar su `projectId` en todas las llamadas.

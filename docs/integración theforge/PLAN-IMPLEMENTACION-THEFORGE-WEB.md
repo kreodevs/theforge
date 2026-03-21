@@ -2,7 +2,7 @@
 
 **Estado (2026):** Gran parte de este plan ya está en el código (`modules/relic`, `legacy-flow`, tipo de proyecto, Workshop). Usar el repo como fuente de verdad; este documento conserva el desglose por capas y decisiones de diseño.
 
-**Objetivo original:** Permitir en la aplicación web (no solo en Cursor) trabajar **proyectos legacy** usando el MCP de TheForge (FalkorSpecs), distinguiendo desde la entrada entre **proyecto nuevo** (flujo actual SADD) y **proyecto existente/legacy** (documentación de cambios con grafo indexado).
+**Objetivo original:** Permitir en la aplicación web (no solo en Cursor) trabajar **proyectos legacy** usando el MCP de TheForge (AriadneSpecs), distinguiendo desde la entrada entre **proyecto nuevo** (flujo actual SADD) y **proyecto existente/legacy** (documentación de cambios con grafo indexado).
 
 **Referencia MCP TheForge:** `docs/integración relic/relic.md` — herramientas `list_known_projects`, `validate_before_edit`, `get_legacy_impact`, `get_contract_specs`, `get_component_graph`, `ask_codebase`, etc.
 

@@ -12,7 +12,7 @@ Documentación de arquitectura y operación de TheForge. **Entrada recomendada:*
 | [THEFORGE-QUE-HACE-EL-PROYECTO.md](THEFORGE-QUE-HACE-EL-PROYECTO.md) | Detalle técnico: módulos API, flujos nuevo vs legacy, Relic, entregables. |
 | [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md) | Relic MCP (HTTP) vs Falkor SDD local (topología Stage / DB_Entity / API_Endpoint) vs MCP propio hipotético. |
 | [ENTREGABLES-SDD-VALIDACION.md](ENTREGABLES-SDD-VALIDACION.md) | SDD, conformance, orden de generación en UI. |
-| [THEFORGE-MCP.md](THEFORGE-MCP.md) | Uso de Relic desde **Cursor** (MCP FalkorSpecs) para doc de cambios. |
+| [THEFORGE-MCP.md](THEFORGE-MCP.md) | Uso de Relic desde **Cursor** (MCP AriadneSpecs) para doc de cambios. |
 | [APRENDIZAJES.md](APRENDIZAJES.md) | Errores, pivotes, referencias para el equipo. |
 | [THEFORGE-DOCUMENTACION-ESTRATEGICA.md](THEFORGE-DOCUMENTACION-ESTRATEGICA.md) | Tesis de valor / negocio (no técnico). |
 

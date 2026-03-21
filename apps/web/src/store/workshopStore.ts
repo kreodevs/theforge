@@ -116,13 +116,13 @@ export interface ApiConformanceResult {
   extraInApi: string[];
 }
 
-/** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por FalkorSpecs). */
+/** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por AriadneSpecs). */
 export interface LegacyFlowState {
   description?: string;
   /** Paths o { path, repoId } (multi-repo, SPEC-MCP-001). */
   filesToModify?: (string | { path: string; repoId?: string })[];
   questions?: string[];
-  /** Respuestas sugeridas por FalkorSpecs desde el codebase; se muestran pre-rellenadas */
+  /** Respuestas sugeridas por AriadneSpecs desde el codebase; se muestran pre-rellenadas */
   suggestedAnswers?: Record<string, string>;
   answers?: Record<string, string>;
   /** Documentación de partida del codebase (opcional, generada vía MCP). */
@@ -430,7 +430,7 @@ interface WorkshopState {
   clearPhase0SummaryContent: (projectId: string) => Promise<void>;
   /** Flujo legacy: documentación de partida (opcional) */
   legacyGenerateCodebaseDoc: (projectId: string) => Promise<{ codebaseDoc: string } | null>;
-  /** Flujo legacy: analizar con FalkorSpecs → archivos + preguntas */
+  /** Flujo legacy: analizar con AriadneSpecs → archivos + preguntas */
   legacyStart: (projectId: string, description: string) => Promise<{ filesToModify: (string | { path: string; repoId?: string })[]; questions: string[]; suggestedAnswers?: Record<string, string> } | null>;
   legacyAnswer: (projectId: string, answers: Record<string, string>) => Promise<boolean>;
   legacyGenerateMdd: (projectId: string) => Promise<{ mddContent: string } | null>;

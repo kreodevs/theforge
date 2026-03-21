@@ -1,4 +1,4 @@
-# Resumen: TheForge / FalkorSpecs — Para usar su conocimiento en otro proyecto
+# Resumen: TheForge / AriadneSpecs — Para usar su conocimiento en otro proyecto
 
 Documento para dar contexto a Cursor (u otro agente) en **un proyecto distinto a TheForge** que quiera aprovechar el conocimiento indexado por TheForge.
 
@@ -6,11 +6,11 @@ Documento para dar contexto a Cursor (u otro agente) en **un proyecto distinto a
 
 ## 1. Qué es TheForge
 
-**TheForge (FalkorSpecs)** es una plataforma que:
+**TheForge (AriadneSpecs)** es una plataforma que:
 
 - **Indexa repositorios** (Bitbucket/GitHub) con análisis estático (Tree-sitter): extrae componentes, hooks, funciones, imports, props, llamadas entre funciones.
 - **Guarda todo en un grafo** (FalkorDB): nodos `Project`, `File`, `Component`, `Hook`, `Function`, relaciones `IMPORTS`, `RENDERS`, `CALLS`, `HAS_PROP`, etc.
-- **Expone ese conocimiento vía MCP** (Model Context Protocol): un servidor MCP ("FalkorSpecs Oracle") que la IA (Cursor, etc.) puede llamar para consultar el grafo **antes** de tocar código, evitando alucinaciones y rupturas en refactors.
+- **Expone ese conocimiento vía MCP** (Model Context Protocol): un servidor MCP ("AriadneSpecs Oracle") que la IA (Cursor, etc.) puede llamar para consultar el grafo **antes** de tocar código, evitando alucinaciones y rupturas en refactors.
 
 En resumen: **TheForge = ingest de repos + grafo FalkorDB + servidor MCP con herramientas de contexto**. No es "el código de tu app": es la **memoria estructural** del código ya indexado.
 
@@ -20,21 +20,21 @@ En resumen: **TheForge = ingest de repos + grafo FalkorDB + servidor MCP con her
 
 Para que Cursor use ese conocimiento **desde un workspace que no es el repo TheForge** (por ejemplo, un repo "Legacy" o "Moderno" que ya está indexado en TheForge):
 
-### 2.1 Conectar el MCP de FalkorSpecs
+### 2.1 Conectar el MCP de AriadneSpecs
 
-Cursor debe tener configurado el servidor MCP de FalkorSpecs. Opciones típicas:
+Cursor debe tener configurado el servidor MCP de AriadneSpecs. Opciones típicas:
 
 - **Producción (URL):** En `~/.cursor/mcp.json` (o Cursor Settings → MCP):
   ```json
   {
     "mcpServers": {
-      "falkorspecs": {
+      "ariadnespecs": {
         "url": "https://theforge.obp.mx/mcp"
       }
     }
   }
   ```
-- **Local / túnel:** Si TheForge corre en tu máquina o usas túnel SSH a FalkorDB, arrancar el MCP (`node services/mcp-falkorspec/dist/index.js` con `FALKORDB_HOST`, `INGEST_URL`, `PORT=8080`) y poner `"url": "http://localhost:8080/mcp"`.
+- **Local / túnel:** Si TheForge corre en tu máquina o usas túnel SSH a FalkorDB, arrancar el MCP (`node services/mcp-ariadnespecs/dist/index.js` con `FALKORDB_HOST`, `INGEST_URL`, `PORT=8080`) y poner `"url": "http://localhost:8080/mcp"`.
 
 Sin esta conexión, las herramientas no están disponibles.
 
@@ -83,7 +83,7 @@ El grafo puede tener **varios proyectos** indexados. Cada uno tiene un `projectI
 
 ## 4. Qué necesitas en el otro proyecto
 
-- **Cursor** (o IDE con MCP) con el servidor **Falkorspecs** configurado y accesible (URL o local + túnel).
+- **Cursor** (o IDE con MCP) con el servidor **AriadneSpecs** configurado y accesible (URL o local + túnel).
 - **`.theforge-project`** en la raíz del repo con el `projectId` del proyecto ya indexado en TheForge (recomendado).
 - **Reglas o prompt** que indiquen al agente: (1) usar siempre `projectId` en las llamadas MCP, (2) ejecutar `validate_before_edit` antes de editar componente/función, (3) no inventar props ni firmas y usar lo que devuelve el grafo.
 

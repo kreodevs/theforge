@@ -244,12 +244,12 @@ export default function WorkshopView({
   /** Paso actual mostrado mientras corre legacy-mdd o legacy-deliverables (rota cada 6s) */
   const [legacyStepIndex, setLegacyStepIndex] = useState(0);
   const legacyStepsCodebaseDoc = [
-    "Consultando codebase vía FalkorSpecs…",
+    "Consultando codebase vía AriadneSpecs…",
     "Extrayendo modelos y arquitectura…",
     "Generando documentación…",
   ];
   const legacyStepsMdd = [
-    "Consultando FalkorSpecs (contexto del codebase)…",
+    "Consultando AriadneSpecs (contexto del codebase)…",
     "Generando borrador del MDD…",
     "Revisando documento con el revisor…",
   ];
@@ -1225,7 +1225,7 @@ export default function WorkshopView({
                 </div>
                 {!project.legacyFlowState?.filesToModify?.length && !project.legacyFlowState?.questions?.length ? (
                   <>
-                    <p>Describe la modificación que quieres hacer al proyecto. FalkorSpecs analizará el código y te devolverá archivos a modificar y preguntas para afinar.</p>
+                    <p>Describe la modificación que quieres hacer al proyecto. AriadneSpecs analizará el código y te devolverá archivos a modificar y preguntas para afinar.</p>
                     <textarea
                       value={legacyDescriptionInput}
                       onChange={(e) => setLegacyDescriptionInput(e.target.value)}
@@ -1242,7 +1242,7 @@ export default function WorkshopView({
                       className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                      Analizar con FalkorSpecs
+                      Analizar con AriadneSpecs
                     </button>
                   </>
                 ) : (
@@ -1268,7 +1268,7 @@ export default function WorkshopView({
                       <div>
                         <h4 className="text-zinc-400 font-medium mb-2">Preguntas para afinar</h4>
                         {project.legacyFlowState.suggestedAnswers && Object.keys(project.legacyFlowState.suggestedAnswers).length > 0 ? (
-                          <p className="text-zinc-500 text-xs mb-2">Respuestas sugeridas por FalkorSpecs (puedes editarlas).</p>
+                          <p className="text-zinc-500 text-xs mb-2">Respuestas sugeridas por AriadneSpecs (puedes editarlas).</p>
                         ) : null}
                         <div className="space-y-3">
                           {project.legacyFlowState.questions.map((q, i) => (

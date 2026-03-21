@@ -1,4 +1,4 @@
-# TheForge (FalkorSpecs) — Documentación de cambios y mejoras
+# TheForge (AriadneSpecs) — Documentación de cambios y mejoras
 
 Uso del **oráculo TheForge** (grafo de código vía MCP) para documentar cambios, mejoras y refactors con datos reales del código indexado.
 
@@ -9,7 +9,7 @@ Uso del **oráculo TheForge** (grafo de código vía MCP) para documentar cambio
 ## 1. Qué aporta TheForge aquí
 
 - **Grafo indexado:** Componentes, hooks, funciones, imports, props, llamadas (FalkorDB en TheForge).
-- **MCP FalkorSpecs:** Herramientas que Cursor puede llamar para consultar ese grafo **antes** de escribir doc o código.
+- **MCP AriadneSpecs:** Herramientas que Cursor puede llamar para consultar ese grafo **antes** de escribir doc o código.
 - **Beneficio:** Changelogs, ADRs y docs de mejoras basados en impacto real (`get_legacy_impact`), contratos reales (`get_contract_specs`) y análisis de proyecto (`get_project_analysis`), sin inventar dependencias ni props.
 
 ---
@@ -23,7 +23,7 @@ En `~/.cursor/mcp.json` (o Cursor Settings → MCP):
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "https://theforge.obp.mx/mcp"
     }
   }
@@ -87,4 +87,4 @@ La **regla de Cursor** `theforge-documentation.mdc` aplica a `docs/**`, `CHANGEL
 
 ## 5. Relación con el FalkorDB interno
 
-El proyecto usa **FalkorDB** internamente (p. ej. `graph-memory`, `ai-analysis`) para memoria semántica y grafo de MDD. **TheForge MCP es un sistema aparte:** indexa repos en su propio FalkorDB y expone ese conocimiento vía MCP. Para doc de cambios/mejoras desde Cursor se usa el **MCP FalkorSpecs** (TheForge), no el grafo interno de la API.
+El proyecto usa **FalkorDB** internamente (p. ej. `graph-memory`, `ai-analysis`) para memoria semántica y grafo de MDD. **TheForge MCP es un sistema aparte:** indexa repos en su propio FalkorDB y expone ese conocimiento vía MCP. Para doc de cambios/mejoras desde Cursor se usa el **MCP AriadneSpecs** (TheForge), no el grafo interno de la API.

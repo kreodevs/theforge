@@ -28,7 +28,7 @@ Conocimiento y experiencia del proyecto para traspaso a juniors: qué pedimos, c
 - **Planes por feature:** Documentos `docs/PLAN-*.md` (alcance, capas, dependencias, orden de implementación). Ejemplos: [PLAN-MDD-STRUCTURED-OUTPUT-JSON2MD.md](archive/PLAN-MDD-STRUCTURED-OUTPUT-JSON2MD.md) (referencia en archivo), [PLAN-FASE0-SCRAPING-DEEP-RESEARCH.md](PLAN-FASE0-SCRAPING-DEEP-RESEARCH.md).
 - **Reglas de Cursor:** `.cursor/rules/` (the-forge-flow, architect-behavior, tech-stack, nestjs, langchain, **theforge-documentation**) para que el agente respete IA agnóstica, Semáforo, estimación, Docker y use TheForge para doc de cambios/mejoras.
 - **Skill del proyecto:** [.cursor/skills/theforge/SKILL.md](../.cursor/skills/theforge/SKILL.md) como referencia única (índice, monorepo, IA, Workshop, checklist).
-- **Documentación de cambios con TheForge:** Si se pide changelog, doc de refactor o mejoras, el agente debe usar el MCP FalkorSpecs (grafo indexado) con `projectId` de `.theforge-project`. Ver [THEFORGE-MCP.md](THEFORGE-MCP.md).
+- **Documentación de cambios con TheForge:** Si se pide changelog, doc de refactor o mejoras, el agente debe usar el MCP AriadneSpecs (grafo indexado) con `projectId` de `.theforge-project`. Ver [THEFORGE-MCP.md](THEFORGE-MCP.md).
 - **Especificaciones de producto:** [../mdd.md](../mdd.md), [../blueprint.md](../blueprint.md), [ui-spec.md](ui-spec.md).
 
 ### Ejemplos de prompts que funcionaron

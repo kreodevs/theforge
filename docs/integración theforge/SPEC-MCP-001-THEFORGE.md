@@ -1,6 +1,6 @@
 # SPEC-MCP-001 — Uso desde TheForge
 
-Resumen del contrato entre **TheForge** (flujo legacy) y el **MCP FalkorSpecs** (SPEC-MCP-001) según multi-repo, herramientas de refactor seguro.
+Resumen del contrato entre **TheForge** (flujo legacy) y el **MCP AriadneSpecs** (SPEC-MCP-001) según multi-repo, herramientas de refactor seguro.
 
 ## Proyecto vs repo
 
@@ -27,7 +27,7 @@ Para `POST /projects/:projectId/legacy/start` con `{ description }`:
 
 ## Regla para toda la documentación legacy
 
-**No inventar.** Toda la documentación generada para proyectos legacy (Spec, MDD, Blueprint, Arquitectura, Casos de uso, Historias, API, Flujos, Infra, Tasks, Guía UX/UI) debe **apegarse al MDD y al conocimiento obtenido vía MCP FalkorSpecs**. Si algo no está en el MDD ni en el contexto del codebase, no se incluye. Esta regla se inyecta en todos los prompts cuando se pasa `relicContext` (AiService: `prependRelicPrompt` + instrucción explícita en Blueprint y Guía UX/UI).
+**No inventar.** Toda la documentación generada para proyectos legacy (Spec, MDD, Blueprint, Arquitectura, Casos de uso, Historias, API, Flujos, Infra, Tasks, Guía UX/UI) debe **apegarse al MDD y al conocimiento obtenido vía MCP AriadneSpecs**. Si algo no está en el MDD ni en el contexto del codebase, no se incluye. Esta regla se inyecta en todos los prompts cuando se pasa `relicContext` (AiService: `prependRelicPrompt` + instrucción explícita en Blueprint y Guía UX/UI).
 
 ## Protocolo recomendado (MCP)
 
@@ -53,5 +53,5 @@ Para `POST /projects/:projectId/legacy/start` con `{ description }`:
 ## Referencia
 
 - **Catálogo completo de herramientas:** [HERRAMIENTAS-MCP-THEFORGE.md](./HERRAMIENTAS-MCP-THEFORGE.md) (todas las herramientas MCP y uso en TheForge).
-- Especificación completa del MCP: guía “Ayuda — MCP FalkorSpecs” (theforge.obp.mx).
+- Especificación completa del MCP: guía “Ayuda — MCP AriadneSpecs” (theforge.obp.mx).
 - Configuración en TheForge: `docs/THEFORGE-MCP.md`, `apps/api/src/modules/theforge/theforge.service.ts`.
