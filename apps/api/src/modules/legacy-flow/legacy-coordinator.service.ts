@@ -21,6 +21,8 @@ export interface LegacyFlowState {
   /** Respuestas sugeridas por TheForge (codebase); el usuario puede editarlas */
   suggestedAnswers?: Record<string, string>;
   answers?: Record<string, string>;
+  /** Documentación de partida del codebase (opcional, generada vía MCP antes del flujo de modificación). */
+  codebaseDoc?: string;
 }
 
 const COORDINATOR_SYSTEM =
@@ -83,7 +85,54 @@ export class LegacyCoordinatorService {
   }
 
   /**
-   * Inicia el flujo legacy: consulta Relic (get_modification_plan o ask_codebase), obtiene archivos y preguntas,
+   * Genera documentación de partida del codebase vía MCP (opcional, ideal como primer paso).
+   * Consulta exhaustivamente modelos, arquitectura, stack, reglas de negocio y convenciones.
+   * @param projectId - ID del proyecto.
+   * @returns Contenido Markdown de la documentación o null si TheForge no está configurado.
+   */
+  async generateCodebaseDoc(projectId: string): Promise<{ codebaseDoc: string } | null> {
+    const { theforgeId } = await this.getLegacyProject(projectId);
+    if (!this.theforge.isConfigured()) return null;
+
+    const parts: string[] = [];
+    const q1 = await this.theforge.askCodebase(
+      "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
+      theforgeId,
+    );
+    if (q1.trim()) parts.push("## 1. Modelos, rutas y configuración\n\n" + q1.trim());
+
+    const q2 = await this.theforge.askCodebase(
+      "Describe architecture: folder structure, modules, how backend and frontend connect, existing patterns and conventions. Include file paths for key areas.",
+      theforgeId,
+    );
+    if (q2.trim()) parts.push("## 2. Arquitectura y carpetas\n\n" + q2.trim());
+
+    const q3 = await this.theforge.askCodebase(
+      "What is the EXACT tech stack and directory structure of this project? List only what exists in the codebase: backend runtime and framework (e.g. Node/Express, Node/NestJS, Python/Django), frontend framework (e.g. React, Vue), database, build tools. If the project has multiple repositories, list them and their main folders. Do NOT assume or invent; only state what the codebase contains.",
+      theforgeId,
+    );
+    if (q3.trim()) parts.push("## 3. Stack y estructura\n\n" + q3.trim());
+
+    const q4 = await this.theforge.askCodebase(
+      "What are the main business rules, validations, naming conventions, and key patterns used across the codebase? Include any domain-specific logic, constants, or shared utilities.",
+      theforgeId,
+    );
+    if (q4.trim()) parts.push("## 4. Reglas de negocio y convenciones\n\n" + q4.trim());
+
+    const codebaseDoc = parts.length > 0
+      ? "# Documentación del Codebase (partida)\n\n" + parts.join("\n\n---\n\n")
+      : "";
+
+    const state = ((await this.projects.findOne(projectId)) as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {};
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { legacyFlowState: { ...state, codebaseDoc } as object },
+    });
+    return { codebaseDoc };
+  }
+
+  /**
+   * Inicia el flujo legacy: consulta FalkorSpecs MCP (get_modification_plan o ask_codebase), obtiene archivos y preguntas,
    * pide sugerencias de respuestas al codebase y persiste todo en legacyFlowState.
    * @param projectId - ID del proyecto.
    * @param description - Descripción de la modificación que quiere el usuario.
@@ -102,7 +151,7 @@ export class LegacyCoordinatorService {
       filesToModify = plan.filesToModify;
       questions = plan.questionsToRefine;
     } else {
-      // Fallback: TheForge sin get_modification_plan (MCP antiguo)
+      // Fallback: cuando get_modification_plan no responde o devuelve error
       const question =
         `The user wants to make the following change to this codebase:\n\n"${desc}"\n\n` +
         `Analyze the ACTUAL indexed codebase (graph/files) for this project. Respond with a JSON object only: { "filesToModify": string[], "questions": string[] }.\n` +
@@ -181,7 +230,7 @@ export class LegacyCoordinatorService {
   }
 
   /**
-   * Genera el MDD de cambio a partir de la descripción, archivos, respuestas del usuario y contexto Relic (múltiples ask_codebase).
+   * Genera el MDD de cambio a partir de la descripción, archivos, respuestas del usuario y contexto FalkorSpecs (múltiples ask_codebase).
    * Persiste el resultado en mddContent del proyecto.
    * @param projectId - ID del proyecto.
    * @returns Contenido Markdown del MDD generado.
@@ -221,13 +270,13 @@ export class LegacyCoordinatorService {
       const nodeName = f.path.replace(/^.*[/\\]/, "").replace(/\.[^.]+$/, "") || f.path;
       const repoId = f.repoId || theforgeId;
       let impactBlock = await this.theforge.validateBeforeEdit(nodeName, repoId, f.path);
-      if (!impactBlock?.trim()) impactBlock = await this.theforge.getLegacyImpact(nodeName, repoId);
+      if (!impactBlock?.trim()) impactBlock = await this.theforge.getLegacyImpact(nodeName, repoId, f.path);
       if (impactBlock.trim()) theforgeParts.push(`Validación antes de editar "${f.path}":\n` + impactBlock.trim());
     }
     // Contenido de los primeros 2 archivos a modificar (get_file_content) para contexto exacto
     for (let i = 0; i < Math.min(2, files.length); i++) {
       const f = files[i]!;
-      const content = await this.theforge.getFileContent(f.path, f.repoId || theforgeId);
+      const content = await this.theforge.getFileContent(f.path, f.repoId || theforgeId, undefined, f.path);
       if (content.trim()) theforgeParts.push(`Contenido de ${f.path}:\n` + content.slice(0, 3000) + (content.length > 3000 ? "\n…" : ""));
     }
     const theforgeContext = theforgeParts.join("\n\n---\n\n");
@@ -253,7 +302,7 @@ export class LegacyCoordinatorService {
 
   /**
    * Genera entregables según `Project.complexity` y `DELIVERABLES_BY_COMPLEXITY` (despacho dinámico).
-   * Legacy inyecta contexto Relic en cada llamada. No ejecuta generadores fuera de la lista (ahorra tokens).
+   * Legacy inyecta contexto FalkorSpecs en cada llamada. No ejecuta generadores fuera de la lista (ahorra tokens).
    */
   async generateDeliverables(projectId: string): Promise<{ ok: boolean }> {
     const { project, theforgeId } = await this.getLegacyProject(projectId);

@@ -4,6 +4,7 @@ Flujo separado para **proyectos legacy** (documentados en TheForge): modificacio
 
 ## Endpoints
 
+- `POST /projects/:projectId/legacy/generate-codebase-doc` — Genera documentación de partida del codebase vía MCP (opcional, ideal como primer paso). Persiste en `legacyFlowState.codebaseDoc`. Devuelve `{ codebaseDoc }` o `null` si TheForge no está configurado.
 - `POST /projects/:projectId/legacy/start` — body `{ description: string }`. Llama a TheForge **`get_modification_plan`** (SPEC-MCP-001); si no está disponible, fallback a `ask_codebase`. Devuelve `{ filesToModify, questions }` y persiste en `legacyFlowState`.
 - `POST /projects/:projectId/legacy/answer` — body `{ answers: Record<string, string> }`. Guarda respuestas del usuario.
 - `POST /projects/:projectId/legacy/generate-mdd` — Genera el MDD de cambio (coordinador + revisor) y persiste en `mddContent`. Usa varias consultas a TheForge (qué existe, arquitectura, reglas) y exige al LLM inferir impacto completo en módulos/entidades/UI, no solo el requerimiento literal.

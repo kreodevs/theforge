@@ -21,7 +21,7 @@
 ## 2. Supuestos y dependencias
 
 - **TheForge MCP** está accesible desde la API (URL configurable, p. ej. `https://theforge.obp.mx/mcp`). Si el MCP usa Streamable HTTP, el backend usará un cliente HTTP/SSE compatible; si TheForge expone un wrapper REST de las herramientas, se usará ese REST.
-- **Autenticación:** TheForge requiere un **token M2M** (machine-to-machine). El backend debe enviarlo en cada petición al MCP (header `Authorization: Bearer <token>` o el que indique TheForge). La variable de entorno es **`RELIC_M2M_TOKEN`**. **El token no debe commitearse:** configurarlo solo en `.env` local o en los secrets del despliegue.
+- **Autenticación:** TheForge requiere un **token M2M** (machine-to-machine). El backend debe enviarlo en cada petición al MCP (header `Authorization: Bearer <token>` o el que indique TheForge). La variable de entorno es **`MCP_AUTH_TOKEN`**. **El token no debe commitearse:** configurarlo solo en `.env` local o en los secrets del despliegue.
 - **Proyectos legacy en TheForge** no requieren semáforo VERDE ni generación de entregables tipo Blueprint/OpenAPI desde cero; el foco es documentación de cambios, changelog, impacto de refactors y deuda técnica.
 
 ---
@@ -37,12 +37,12 @@
 
 ### 3.2 API — Cliente TheForge (MCP)
 
-- **Nuevo módulo `relic`** (o `relic-mcp`) en `apps/api`:
+- **Nuevo módulo `theforge`** (o `relic-mcp`) en `apps/api`:
   - **TheForgeMcpClient** (o servicio equivalente): conecta al servidor MCP de TheForge por URL.
   - Métodos que encapsulan herramientas MCP mínimas para esta fase:
     - `listKnownProjects(): Promise<Array<{ id: string; name: string; rootPath?: string }>>` → herramienta `list_known_projects`.
     - Opcional para siguientes fases: `validateBeforeEdit(nodeName: string, projectId: string)`, `getLegacyImpact(...)`, `getContractSpecs(...)`, `askCodebase(question: string, projectId: string)`.
-  - Configuración: `THEFORGE_MCP_URL` (obligatorio para usar TheForge), `RELIC_M2M_TOKEN` (token M2M; obligatorio para que las llamadas al MCP sean autorizadas). El cliente debe enviar el token en cada petición (p. ej. header `Authorization: Bearer <RELIC_M2M_TOKEN>`).
+  - Configuración: `THEFORGE_MCP_URL` (obligatorio para usar TheForge), `MCP_AUTH_TOKEN` (token M2M; obligatorio para que las llamadas al MCP sean autorizadas). El cliente debe enviar el token en cada petición (p. ej. header `Authorization: Bearer <MCP_AUTH_TOKEN>`).
   - Si el SDK `@modelcontextprotocol/sdk` ofrece cliente Streamable HTTP por URL, usarlo; si no, implementar llamadas HTTP/SSE al endpoint según la especificación MCP (Streamable HTTP) para invocar herramientas.
 - **Manejo de errores:** Si TheForge no está configurado o no responde, `listKnownProjects` devuelve array vacío o error controlado; la UI no debe romperse.
 
@@ -100,8 +100,8 @@
 
 - **API:**
   - `THEFORGE_MCP_URL`: URL del servidor MCP (p. ej. `https://theforge.obp.mx/mcp`). Si no está definida, el módulo TheForge no hace llamadas y `listKnownProjects` devuelve vacío (o endpoint devuelve `theforgeAvailable: false`).
-  - `RELIC_M2M_TOKEN`: Token M2M para autenticación con TheForge. **No commitear:** solo en `.env` o secrets del despliegue. Sin este token las llamadas al MCP fallarán por no autorizadas.
-- **Docker:** Añadir `THEFORGE_MCP_URL` y `RELIC_M2M_TOKEN` al `docker-compose.yml` para el servicio `api` (el token vía secret o env en Dokploy), documentado en el índice de despliegue.
+  - `MCP_AUTH_TOKEN`: Token M2M para autenticación con TheForge. **No commitear:** solo en `.env` o secrets del despliegue. Sin este token las llamadas al MCP fallarán por no autorizadas.
+- **Docker:** `THEFORGE_MCP_URL` y `MCP_AUTH_TOKEN` están en `docker-compose.yml` para el servicio `api`; el token se inyecta vía env (ej. secret en Dokploy).
 
 ---
 
@@ -128,7 +128,7 @@ Las fases 1–6 dejan la app usable: elegir proyecto nuevo o legacy, listar TheF
 - [x] En el Workshop se distingue visualmente un proyecto legacy (badge/indicador).
 - [x] El chat para proyectos legacy usa prompt y contexto enriquecido con datos del MCP (`ask_codebase` inyectado en system prompt) para documentación de cambios sin inventar contratos.
 - [x] Si TheForge no está configurado o no responde, el modal muestra mensaje claro; el flujo "Proyecto nuevo" no se ve afectado.
-- [x] Documentación: README de la carpeta y del módulo `relic`; env y despliegue documentados (THEFORGE_MCP_URL, RELIC_M2M_TOKEN).
+- [x] Documentación: README de la carpeta y del módulo `theforge`; env y despliegue documentados (THEFORGE_MCP_URL, MCP_AUTH_TOKEN).
 
 ---
 
@@ -138,7 +138,7 @@ Las fases 1–6 dejan la app usable: elegir proyecto nuevo o legacy, listar TheF
 |--------|------------|
 | MCP solo documentado para Cursor (stdio/URL en mcp.json) | Verificar si TheForge expone el mismo endpoint por HTTP/SSE; si solo stdio, necesitar un proxy o adaptador en el backend que hable con TheForge. |
 | Latencia por llamadas MCP en cada mensaje | En fase 7, enriquecer solo cuando el mensaje lo justifique (p. ej. detectar nombres de componentes); cachear por sesión si es viable. |
-| TheForge requiere autenticación no documentada | **Resuelto:** auth por token M2M; env `RELIC_M2M_TOKEN`; enviar en header que indique TheForge (p. ej. `Authorization: Bearer`). |
+| TheForge requiere autenticación no documentada | **Resuelto:** auth por token M2M; env `MCP_AUTH_TOKEN`; enviar en header que indique TheForge (p. ej. `Authorization: Bearer`). |
 
 ---
 

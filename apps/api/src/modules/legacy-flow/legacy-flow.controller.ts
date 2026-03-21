@@ -2,14 +2,24 @@ import { Body, Controller, Param, Post } from "@nestjs/common";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 
 /**
- * Controlador REST del flujo legacy: inicio (Relic), respuestas, generación de MDD y de entregables en cascada.
+ * Controlador REST del flujo legacy: inicio (FalkorSpecs MCP), respuestas, generación de MDD y de entregables en cascada.
  */
 @Controller("projects/:projectId/legacy")
 export class LegacyFlowController {
   constructor(private readonly coordinator: LegacyCoordinatorService) {}
 
   /**
-   * Inicia el flujo legacy: envía la descripción a Relic y obtiene archivos a modificar y preguntas para afinar.
+   * Genera documentación de partida del codebase vía MCP (opcional, ideal como primer paso).
+   * @param projectId - ID del proyecto (debe ser LEGACY con theforgeProjectId).
+   * @returns { codebaseDoc: string } o null si TheForge no está configurado.
+   */
+  @Post("generate-codebase-doc")
+  async generateCodebaseDoc(@Param("projectId") projectId: string) {
+    return this.coordinator.generateCodebaseDoc(projectId);
+  }
+
+  /**
+   * Inicia el flujo legacy: envía la descripción al MCP FalkorSpecs y obtiene archivos a modificar y preguntas para afinar.
    * @param projectId - ID del proyecto (debe ser tipo LEGACY con theforgeProjectId).
    * @param body.description - Descripción de la modificación que quiere el usuario.
    * @returns Lista de archivos, preguntas y respuestas sugeridas (opcional).
@@ -39,7 +49,7 @@ export class LegacyFlowController {
   }
 
   /**
-   * Genera el MDD de cambio a partir del estado del flujo (descripción, archivos, respuestas) y contexto Relic. Persiste en mddContent.
+   * Genera el MDD de cambio a partir del estado del flujo (descripción, archivos, respuestas) y contexto FalkorSpecs. Persiste en mddContent.
    * @param projectId - ID del proyecto.
    * @returns Contenido Markdown del MDD generado.
    */

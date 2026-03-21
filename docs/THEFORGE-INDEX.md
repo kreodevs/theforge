@@ -134,7 +134,7 @@ No hay servicio **Redis genérico** ni BullMQ en este compose: el único “Redi
 - **Core:** `DATABASE_URL`, `PORT` (opcional)
 - **IA:** `AI_PROVIDER`, `OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY`, opcional `OPENAI_EMBEDDING_DIM`
 - **Grafo SDD:** `FALKORDB_SDD_URL` y/o `FALKORDB_URL` (mismo destino en Docker: `redis://theforge-falkor-sdd:6379`)
-- **TheForge (opcional, legacy):** `THEFORGE_MCP_URL`, `THEFORGE_M2M_TOKEN`, `THEFORGE_MCP_TIMEOUT_MS`
+- **TheForge (opcional, legacy):** `THEFORGE_MCP_URL`, `MCP_AUTH_TOKEN`, `THEFORGE_MCP_TIMEOUT_MS`
 - **Orquestador:** `AGENT_EVALUATOR_LEGACY` (opcional; crítica en respuesta chat)
 
 Detalle TheForge vs IDE vs Falkor: [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md).

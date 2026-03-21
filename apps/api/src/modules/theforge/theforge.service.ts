@@ -12,7 +12,7 @@ export interface TheForgeProject {
   name: string;
   /** Repos del proyecto (multi-root). Cada root.id es válido como projectId en herramientas. */
   roots?: TheForgeProjectRoot[];
-  /** @deprecated Usar roots[].id y roots[].name. Conservado para compatibilidad con MCP antiguo. */
+  /** @deprecated Usar roots[].id y roots[].name. Conservado para compatibilidad con respuestas MCP. */
   rootPath?: string;
   /** @deprecated Usar roots[].branch */
   branch?: string;
@@ -22,6 +22,26 @@ export interface TheForgeProject {
 export interface TheForgeFileToModify {
   path: string;
   repoId: string;
+}
+
+/** Scope opcional para acotar multi-root (SPEC-MCP-001). */
+export interface TheForgeScope {
+  repoIds?: string[];
+  includePathPrefixes?: string[];
+  excludePathGlobs?: string[];
+}
+
+/** Opciones opcionales para get_modification_plan (SPEC-MCP-001). */
+export interface GetModificationPlanOptions {
+  scope?: TheForgeScope;
+  currentFilePath?: string;
+}
+
+/** Opciones opcionales para ask_codebase (SPEC-MCP-001). */
+export interface AskCodebaseOptions {
+  scope?: TheForgeScope;
+  twoPhase?: boolean;
+  currentFilePath?: string;
 }
 
 /** Respuesta de get_modification_plan (SPEC-MCP-001): paths con repoId y preguntas de negocio. */
@@ -66,7 +86,7 @@ function extractJsonFromToolContent(text: string): string {
 /**
  * Servicio de integración con el MCP TheForge (FalkorSpecs).
  * Expone listado de proyectos (multi-root), plan de modificación, ask_codebase y herramientas de refactor seguro (SPEC-MCP-001).
- * Requiere THEFORGE_MCP_URL y THEFORGE_M2M_TOKEN en el entorno.
+ * Requiere THEFORGE_MCP_URL y MCP_AUTH_TOKEN en el entorno.
  */
 @Injectable()
 export class TheForgeService {
@@ -78,7 +98,7 @@ export class TheForgeService {
   }
 
   private get token(): string {
-    return process.env.THEFORGE_M2M_TOKEN?.trim() ?? "";
+    return process.env.MCP_AUTH_TOKEN?.trim() ?? "";
   }
 
   /**
@@ -147,7 +167,7 @@ export class TheForgeService {
 
   /**
    * Indica si el cliente TheForge está configurado (URL y token presentes).
-   * @returns true si THEFORGE_MCP_URL y THEFORGE_M2M_TOKEN están definidos.
+   * @returns true si THEFORGE_MCP_URL y MCP_AUTH_TOKEN están definidos.
    */
   isConfigured(): boolean {
     return this.baseUrl.length > 0 && this.token.length > 0;
@@ -186,7 +206,7 @@ export class TheForgeService {
    */
   async listKnownProjects(): Promise<TheForgeProject[]> {
     if (!this.isConfigured()) {
-      this.logger.warn("[TheForge] listKnownProjects: no configurado (THEFORGE_MCP_URL o THEFORGE_M2M_TOKEN vacíos)");
+      this.logger.warn("[TheForge] listKnownProjects: no configurado (THEFORGE_MCP_URL o MCP_AUTH_TOKEN vacíos)");
       return [];
     }
     const hasToken = this.token.length > 0;
@@ -267,20 +287,25 @@ export class TheForgeService {
    * Obtiene el plan de modificación basado solo en el grafo (herramienta MCP get_modification_plan).
    * Garantiza filesToModify = rutas reales del proyecto; questionsToRefine = solo preguntas de negocio.
    * @param userDescription - Descripción de la modificación que quiere el usuario.
-   * @param projectId - ID del proyecto en TheForge (theforgeProjectId).
+   * @param projectId - ID del proyecto o repo en TheForge (theforgeProjectId; puede ser roots[].id).
+   * @param opts - scope (repoIds, includePathPrefixes, excludePathGlobs), currentFilePath (SPEC-MCP-001).
    * @returns Plan con filesToModify y questionsToRefine, o null si TheForge no está configurado o la herramienta falla.
    */
-  async getModificationPlan(userDescription: string, projectId: string): Promise<TheForgeModificationPlan | null> {
+  async getModificationPlan(
+    userDescription: string,
+    projectId: string,
+    opts?: GetModificationPlanOptions,
+  ): Promise<TheForgeModificationPlan | null> {
     if (!this.isConfigured()) return null;
     try {
+      const args: Record<string, unknown> = { userDescription: userDescription.trim(), projectId };
+      if (opts?.currentFilePath?.trim()) args.currentFilePath = opts.currentFilePath.trim();
+      if (opts?.scope && Object.keys(opts.scope).length > 0) args.scope = opts.scope;
       const response = await this.postTheForgeMcp({
         jsonrpc: "2.0",
         id: "get-modification-plan-1",
         method: "tools/call",
-        params: {
-          name: "get_modification_plan",
-          arguments: { userDescription: userDescription.trim(), projectId },
-        },
+        params: { name: "get_modification_plan", arguments: args },
       });
       if (!response.ok) return null;
       const raw = await response.text();
@@ -315,20 +340,22 @@ export class TheForgeService {
   /**
    * Realiza una pregunta en lenguaje natural sobre el código indexado (herramienta MCP ask_codebase).
    * @param question - Pregunta en texto libre sobre el codebase.
-   * @param projectId - ID del proyecto en TheForge.
+   * @param projectId - ID del proyecto o repo en TheForge.
+   * @param opts - scope, twoPhase, currentFilePath (SPEC-MCP-001).
    * @returns Respuesta de texto del MCP o cadena vacía si falla.
    */
-  async askCodebase(question: string, projectId: string): Promise<string> {
+  async askCodebase(question: string, projectId: string, opts?: AskCodebaseOptions): Promise<string> {
     if (!this.isConfigured()) return "";
     try {
+      const args: Record<string, unknown> = { question, projectId };
+      if (opts?.currentFilePath?.trim()) args.currentFilePath = opts.currentFilePath.trim();
+      if (opts?.scope && Object.keys(opts.scope).length > 0) args.scope = opts.scope;
+      if (typeof opts?.twoPhase === "boolean") args.twoPhase = opts.twoPhase;
       const response = await this.postTheForgeMcp({
         jsonrpc: "2.0",
         id: "ask-codebase-1",
         method: "tools/call",
-        params: {
-          name: "ask_codebase",
-          arguments: { question, projectId },
-        },
+        params: { name: "ask_codebase", arguments: args },
       });
       if (!response.ok) return "";
       const raw = await response.text();
@@ -352,9 +379,15 @@ export class TheForgeService {
    * Obtiene el contenido de un archivo del repo/proyecto (herramienta MCP get_file_content).
    * projectId puede ser ID de proyecto o de repo (roots[].id); el MCP resuelve automáticamente.
    */
-  async getFileContent(path: string, projectId: string, ref?: string): Promise<string> {
+  async getFileContent(
+    path: string,
+    projectId: string,
+    ref?: string,
+    currentFilePath?: string,
+  ): Promise<string> {
     const args: Record<string, unknown> = { path: path.trim(), projectId };
     if (ref?.trim()) args.ref = ref.trim();
+    if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
     const out = await this.callTool("get_file_content", args);
     return out ?? "";
   }
@@ -363,8 +396,14 @@ export class TheForgeService {
    * Analiza qué se rompería si se modifica un nodo (herramienta MCP get_legacy_impact).
    * Útil para incluir impacto en el contexto del MDD de cambio.
    */
-  async getLegacyImpact(nodeName: string, projectId: string): Promise<string> {
-    const out = await this.callTool("get_legacy_impact", { nodeName: nodeName.trim(), projectId });
+  async getLegacyImpact(
+    nodeName: string,
+    projectId: string,
+    currentFilePath?: string,
+  ): Promise<string> {
+    const args: Record<string, unknown> = { nodeName: nodeName.trim(), projectId };
+    if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
+    const out = await this.callTool("get_legacy_impact", args);
     return out ?? "";
   }
 
@@ -384,9 +423,14 @@ export class TheForgeService {
    * Extrae props y firma de un componente (herramienta MCP get_contract_specs).
    * Para que el MDD/código respete la estructura existente.
    */
-  async getContractSpecs(componentName: string, projectId?: string): Promise<string> {
+  async getContractSpecs(
+    componentName: string,
+    projectId?: string,
+    currentFilePath?: string,
+  ): Promise<string> {
     const args: Record<string, unknown> = { componentName: componentName.trim() };
     if (projectId?.trim()) args.projectId = projectId.trim();
+    if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
     const out = await this.callTool("get_contract_specs", args);
     return out ?? "";
   }
@@ -395,12 +439,19 @@ export class TheForgeService {
    * Recupera el árbol de dependencias de un componente (herramienta MCP get_component_graph).
    * depth por defecto 2. Evita asumir que un componente es aislado.
    */
-  async getComponentGraph(componentName: string, projectId: string, depth: number = 2): Promise<string> {
-    const out = await this.callTool("get_component_graph", {
+  async getComponentGraph(
+    componentName: string,
+    projectId: string,
+    depth: number = 2,
+    currentFilePath?: string,
+  ): Promise<string> {
+    const args: Record<string, unknown> = {
       componentName: componentName.trim(),
       projectId,
       depth: Number.isFinite(depth) ? depth : 2,
-    });
+    };
+    if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
+    const out = await this.callTool("get_component_graph", args);
     return out ?? "";
   }
 }

@@ -27,7 +27,7 @@ En el propio Workshop suele mostrarse una cadena del tipo:
 - **Spec:** benchmark + alcance clarificado; conviene tenerlo antes de cerrar el MDD.
 - **Entregables:** cuando el **semáforo** está en verde y existe Spec, usa **Generar entregables** (o generación individual desde cada pestaña) para arquitectura, casos, historias, blueprint, API, flujos, infra, etc.
 
-**Legacy:** el tab **Modificación** sustituye el Paso 0; el flujo usa Relic (código indexado) y luego MDD + entregables en cascada.
+**Legacy:** el tab **Modificación** sustituye el Paso 0. Puedes generar primero **documentación de partida** (opcional, ideal) vía FalkorSpecs; luego describes la modificación y el flujo usa FalkorSpecs para MDD + entregables en cascada.
 
 ---
 
@@ -45,7 +45,7 @@ Sin **verde + Spec** no se habilita la generación masiva de entregables coheren
 
 - Pide cambios al MDD en lenguaje natural; el **Manager** delega en Clarifier, Arquitecto, etc.
 - Usa **`/`** en el campo de texto para **regenerar solo una sección** (1–7) sin rehacer todo el documento.
-- En proyectos **Legacy**, describe la modificación en **Modificación**; el sistema consulta el contexto del repositorio vía Relic cuando aplica.
+- En proyectos **Legacy**, describe la modificación en **Modificación**; el sistema consulta el contexto del repositorio vía FalkorSpecs cuando aplica.
 
 ---
 

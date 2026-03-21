@@ -41,22 +41,27 @@ export function getLegacyTheForgeAgentTools(theforge: TheForgeService, theforgeP
       },
     ),
     tool(
-      async ({ path, ref }) => theforge.getFileContent(path, pid, ref),
+      async ({ path, ref, currentFilePath }) =>
+        theforge.getFileContent(path, pid, ref, currentFilePath),
       {
         name: "get_file_content",
         description: "Lee el contenido de un archivo del repositorio indexado.",
         schema: z.object({
           path: z.string(),
           ref: z.string().optional(),
+          currentFilePath: z.string().optional(),
         }),
       },
     ),
     tool(
-      async ({ nodeName }) => theforge.getLegacyImpact(nodeName, pid),
+      async ({ nodeName, currentFilePath }) => theforge.getLegacyImpact(nodeName, pid, currentFilePath),
       {
         name: "get_legacy_impact",
         description: "Impacto en el grafo de código si se modifica un símbolo/nodo.",
-        schema: z.object({ nodeName: z.string() }),
+        schema: z.object({
+          nodeName: z.string(),
+          currentFilePath: z.string().optional(),
+        }),
       },
     ),
   ];

@@ -73,7 +73,7 @@ services:
       OPENAI_EMBEDDING_DIM: ${OPENAI_EMBEDDING_DIM:-}
       GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
       THEFORGE_MCP_URL: ${THEFORGE_MCP_URL:-}
-      THEFORGE_M2M_TOKEN: ${THEFORGE_M2M_TOKEN:-}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
       # Cliente HTTP al MCP ajeno (TheForge); no confundir con Falkor SDD ni con un MCP propio.
       THEFORGE_MCP_TIMEOUT_MS: ${THEFORGE_MCP_TIMEOUT_MS:-60000}
     depends_on:

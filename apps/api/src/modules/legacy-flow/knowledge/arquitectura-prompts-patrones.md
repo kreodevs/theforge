@@ -11,5 +11,5 @@ Base de conocimiento para el flujo legacy (derivado del cuaderno NotebookLM "Arq
 
 ## Aplicación al flujo legacy
 
-- El coordinador orquesta pasos y consulta Relic; el revisor revisa lista de archivos, MDD y entregables antes de presentarlos.
+- El coordinador orquesta pasos y consulta FalkorSpecs MCP; el revisor revisa lista de archivos, MDD y entregables antes de presentarlos.
 - Prompts del coordinador y revisor deben incluir este conocimiento para mantener consistencia y calidad.

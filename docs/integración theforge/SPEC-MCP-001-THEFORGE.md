@@ -1,10 +1,10 @@
 # SPEC-MCP-001 — Uso desde TheForge
 
-Resumen del contrato entre **TheForge** (flujo legacy) y el **MCP Relic (FalkorSpecs)** según SPEC-MCP-001 (multi-repo, herramientas de refactor seguro).
+Resumen del contrato entre **TheForge** (flujo legacy) y el **MCP FalkorSpecs** (SPEC-MCP-001) según multi-repo, herramientas de refactor seguro.
 
 ## Proyecto vs repo
 
-- **projectId** en las herramientas puede ser **ID de proyecto** (Relic, multi-root) o **ID de repo** (`roots[].id`). El MCP resuelve automáticamente (repositories vs projects según endpoint).
+- **projectId** en las herramientas puede ser **ID de proyecto** (multi-root) o **ID de repo** (`roots[].id`). El MCP resuelve automáticamente (repositories vs projects según endpoint).
 - **list_known_projects** devuelve `[{ id, name, roots: [{ id, name?, branch? }] }]`. Cada `roots[].id` es válido como `projectId` en el resto de herramientas.
 
 ## Flujo legacy: plan de modificación
@@ -27,7 +27,7 @@ Para `POST /projects/:projectId/legacy/start` con `{ description }`:
 
 ## Regla para toda la documentación legacy
 
-**No inventar.** Toda la documentación generada para proyectos legacy (Spec, MDD, Blueprint, Arquitectura, Casos de uso, Historias, API, Flujos, Infra, Tasks, Guía UX/UI) debe **apegarse al MDD y al conocimiento obtenido vía MCP Relic**. Si algo no está en el MDD ni en el contexto del codebase (Relic), no se incluye. Esta regla se inyecta en todos los prompts cuando se pasa `relicContext` (AiService: `prependRelicPrompt` + instrucción explícita en Blueprint y Guía UX/UI).
+**No inventar.** Toda la documentación generada para proyectos legacy (Spec, MDD, Blueprint, Arquitectura, Casos de uso, Historias, API, Flujos, Infra, Tasks, Guía UX/UI) debe **apegarse al MDD y al conocimiento obtenido vía MCP FalkorSpecs**. Si algo no está en el MDD ni en el contexto del codebase, no se incluye. Esta regla se inyecta en todos los prompts cuando se pasa `relicContext` (AiService: `prependRelicPrompt` + instrucción explícita en Blueprint y Guía UX/UI).
 
 ## Protocolo recomendado (MCP)
 
@@ -43,11 +43,11 @@ Para `POST /projects/:projectId/legacy/start` con `{ description }`:
 | Listar proyectos (multi-root) al crear proyecto legacy | `list_known_projects` → `{ id, name, roots: [{ id, name?, branch? }] }` |
 | Inicio del flujo (archivos + preguntas) | `get_modification_plan` (primario), `ask_codebase` (fallback/sugerencias) |
 | Contexto para generar MDD | `ask_codebase` (múltiples); **`validate_before_edit`** (impacto + contrato por archivo); fallback `get_legacy_impact`; `get_file_content` (contenido de archivos a modificar) |
-| Refactor seguro (disponibles en RelicService) | `get_contract_specs`, `get_component_graph` (aún no usados en flujo automático). Catálogo completo: **HERRAMIENTAS-MCP-RELIC.md**. |
+| Refactor seguro (disponibles en TheForgeService) | `get_contract_specs`, `get_component_graph` (aún no usados en flujo automático). Catálogo completo: **HERRAMIENTAS-MCP-THEFORGE.md**. |
 
 ## Transporte
 
-- **Corporativo:** HTTP (Streamable) a `THEFORGE_MCP_URL` (p. ej. `https://theforge.obp.mx/mcp`), auth Bearer con `THEFORGE_M2M_TOKEN`.
+- **Corporativo:** HTTP (Streamable) a `THEFORGE_MCP_URL` (p. ej. `https://theforge.obp.mx/mcp`), auth Bearer con `MCP_AUTH_TOKEN`.
 - **Local/IDE:** Stdio según configuración de Cursor.
 
 ## Referencia

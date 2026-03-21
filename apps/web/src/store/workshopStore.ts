@@ -116,15 +116,17 @@ export interface ApiConformanceResult {
   extraInApi: string[];
 }
 
-/** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por Relic). */
+/** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por FalkorSpecs). */
 export interface LegacyFlowState {
   description?: string;
   /** Paths o { path, repoId } (multi-repo, SPEC-MCP-001). */
   filesToModify?: (string | { path: string; repoId?: string })[];
   questions?: string[];
-  /** Respuestas sugeridas por Relic desde el codebase; se muestran pre-rellenadas */
+  /** Respuestas sugeridas por FalkorSpecs desde el codebase; se muestran pre-rellenadas */
   suggestedAnswers?: Record<string, string>;
   answers?: Record<string, string>;
+  /** Documentación de partida del codebase (opcional, generada vía MCP). */
+  codebaseDoc?: string;
 }
 
 /** Fila `Stage` en `GET /projects/:id` (MDD/semáforo por etapa). */
@@ -305,6 +307,7 @@ interface WorkshopState {
     | "benchmark"
     | "mdd"
     | "phase0-deep-research"
+    | "legacy-codebase-doc"
     | "legacy-mdd"
     | "legacy-deliverables"
     | "deliverables-cascade"
@@ -425,7 +428,9 @@ interface WorkshopState {
     opts: { userIdea?: string; urls?: string[]; includeBenchmark?: boolean },
   ) => Promise<Project | null>;
   clearPhase0SummaryContent: (projectId: string) => Promise<void>;
-  /** Flujo legacy: analizar con Relic → archivos + preguntas */
+  /** Flujo legacy: documentación de partida (opcional) */
+  legacyGenerateCodebaseDoc: (projectId: string) => Promise<{ codebaseDoc: string } | null>;
+  /** Flujo legacy: analizar con FalkorSpecs → archivos + preguntas */
   legacyStart: (projectId: string, description: string) => Promise<{ filesToModify: (string | { path: string; repoId?: string })[]; questions: string[]; suggestedAnswers?: Record<string, string> } | null>;
   legacyAnswer: (projectId: string, answers: Record<string, string>) => Promise<boolean>;
   legacyGenerateMdd: (projectId: string) => Promise<{ mddContent: string } | null>;
@@ -463,6 +468,7 @@ const initialState = {
   loadingReason: null as
     | "benchmark"
     | "phase0-deep-research"
+    | "legacy-codebase-doc"
     | "legacy-mdd"
     | "legacy-deliverables"
     | "deliverables-cascade"
@@ -2350,6 +2356,28 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
     } catch {
       // ignore
+    }
+  },
+
+  legacyGenerateCodebaseDoc: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "legacy-codebase-doc", error: null });
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId}/legacy/generate-codebase-doc`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al generar documentación");
+      }
+      const data = (await r.json()) as { codebaseDoc: string } | null;
+      await get().fetchProject(projectId);
+      set({ loading: false, loadingReason: null, error: null });
+      return data;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al generar documentación", loading: false, loadingReason: null });
+      return null;
     }
   },
 

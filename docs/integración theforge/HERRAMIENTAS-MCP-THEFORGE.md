@@ -1,4 +1,4 @@
-# Catálogo de herramientas MCP FalkorSpecs (Relic)
+# Catálogo de herramientas MCP FalkorSpecs (SPEC-MCP-001)
 
 Referencia de todas las herramientas del MCP según la guía actual (theforge.obp.mx). Columna **TheForge** indica uso actual o previsto.
 
@@ -21,9 +21,9 @@ Referencia de todas las herramientas del MCP según la guía actual (theforge.ob
 | **get_file_content** | Contenido de un archivo (Bitbucket/GitHub; INGEST_URL). | ✅ Contexto de los 2 primeros archivos a modificar al generar MDD. |
 | **validate_before_edit** | **Obligatorio antes de editar:** impacto + contrato en un solo llamado. | ✅ Al generar MDD: validación de los 3 primeros archivos; fallback a get_legacy_impact si no disponible. |
 | **get_legacy_impact** | Qué se rompe si se modifica un nodo. | ✅ Fallback cuando validate_before_edit no existe o devuelve vacío. |
-| **get_contract_specs** | Props reales de un componente. | Disponible en RelicService; no usado en flujo automático. |
-| **get_component_graph** | Árbol de dependencias de un componente. | Disponible en RelicService; no usado en flujo automático. |
-| **get_functions_in_file** | Funciones y componentes que contiene un archivo. | No implementado en RelicService; uso futuro en contexto por archivo. |
+| **get_contract_specs** | Props reales de un componente. | Disponible en TheForgeService; no usado en flujo automático. |
+| **get_component_graph** | Árbol de dependencias de un componente. | Disponible en TheForgeService; no usado en flujo automático. |
+| **get_functions_in_file** | Funciones y componentes que contiene un archivo. | No implementado en TheForgeService; uso futuro en contexto por archivo. |
 | **get_import_graph** | Grafo de imports de un archivo (qué importa/exporta). | No implementado; uso futuro. |
 | **get_file_context** | Contenido + imports + exports (paso: search → get_file_context → validate). | No implementado; alternativa enriquecida a get_file_content. |
 | **get_project_standards** | Prettier, ESLint, tsconfig. | No implementado; uso futuro para que código generado siga estándares. |
@@ -41,7 +41,7 @@ Referencia de todas las herramientas del MCP según la guía actual (theforge.ob
 
 ---
 
-## Protocolo recomendado (Relic)
+## Protocolo recomendado (FalkorSpecs)
 
 1. **list_known_projects** al inicio.
 2. Si existe **.theforge-project** en el repo indexado (no en TheForge), usar su `projectId` en todas las llamadas.

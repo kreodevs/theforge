@@ -197,6 +197,7 @@ export default function WorkshopView({
   const clearPhase0SummaryContent = useWorkshopStore((s) => s.clearPhase0SummaryContent);
   const setPhase0SummaryContent = useWorkshopStore((s) => s.setPhase0SummaryContent);
   const persistPhase0SummaryContent = useWorkshopStore((s) => s.persistPhase0SummaryContent);
+  const legacyGenerateCodebaseDoc = useWorkshopStore((s) => s.legacyGenerateCodebaseDoc);
   const legacyStart = useWorkshopStore((s) => s.legacyStart);
   const legacyAnswer = useWorkshopStore((s) => s.legacyAnswer);
   const legacyGenerateMdd = useWorkshopStore((s) => s.legacyGenerateMdd);
@@ -242,8 +243,13 @@ export default function WorkshopView({
   const [legacyAnswersInput, setLegacyAnswersInput] = useState<Record<string, string>>({});
   /** Paso actual mostrado mientras corre legacy-mdd o legacy-deliverables (rota cada 6s) */
   const [legacyStepIndex, setLegacyStepIndex] = useState(0);
+  const legacyStepsCodebaseDoc = [
+    "Consultando codebase vía FalkorSpecs…",
+    "Extrayendo modelos y arquitectura…",
+    "Generando documentación…",
+  ];
   const legacyStepsMdd = [
-    "Consultando Relic (contexto del codebase)…",
+    "Consultando FalkorSpecs (contexto del codebase)…",
     "Generando borrador del MDD…",
     "Revisando documento con el revisor…",
   ];
@@ -256,11 +262,16 @@ export default function WorkshopView({
     "Generando Tasks…",
   ];
   useEffect(() => {
-    if (!loading || (loadingReason !== "legacy-mdd" && loadingReason !== "legacy-deliverables")) {
+    if (!loading || (loadingReason !== "legacy-mdd" && loadingReason !== "legacy-deliverables" && loadingReason !== "legacy-codebase-doc")) {
       setLegacyStepIndex(0);
       return;
     }
-    const steps = loadingReason === "legacy-mdd" ? legacyStepsMdd : legacyStepsDeliverables;
+    const steps =
+      loadingReason === "legacy-codebase-doc"
+        ? legacyStepsCodebaseDoc
+        : loadingReason === "legacy-mdd"
+          ? legacyStepsMdd
+          : legacyStepsDeliverables;
     const id = setInterval(() => setLegacyStepIndex((i) => (i + 1) % steps.length), 6000);
     return () => clearInterval(id);
   }, [loading, loadingReason]);
@@ -1173,9 +1184,48 @@ export default function WorkshopView({
             {centralPanel === "legacy" && project?.projectType === "LEGACY" && projectId && (
               <div className="rounded-lg bg-zinc-800/80 border border-zinc-600 p-6 text-zinc-300 text-sm space-y-6">
                 <p className="font-medium text-amber-400/90">Flujo de modificación (Legacy)</p>
+                {/* Documentación de partida (opcional, ideal como primer paso) */}
+                <div className="space-y-2">
+                  {project.legacyFlowState?.codebaseDoc ? (
+                    <details className="group">
+                      <summary className="cursor-pointer list-none flex items-center gap-2 text-amber-400/90 hover:text-amber-400">
+                        <FileText className="w-4 h-4 shrink-0" />
+                        Documentación del codebase (partida)
+                      </summary>
+                      <div className="mt-2 max-h-[280px] overflow-y-auto rounded border border-zinc-600 bg-zinc-900/80 p-3 text-xs font-mono text-zinc-400 whitespace-pre-wrap">
+                        {project.legacyFlowState.codebaseDoc.slice(0, 8000)}
+                        {project.legacyFlowState.codebaseDoc.length > 8000 ? "\n\n… (truncado)" : ""}
+                      </div>
+                    </details>
+                  ) : null}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await legacyGenerateCodebaseDoc(projectId);
+                      }}
+                      disabled={loading}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded text-xs bg-zinc-700/80 text-zinc-300 hover:bg-zinc-600 disabled:opacity-50"
+                    >
+                      {loading && loadingReason === "legacy-codebase-doc" ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                      ) : (
+                        <FileText className="w-3.5 h-3.5 shrink-0" />
+                      )}
+                      {project.legacyFlowState?.codebaseDoc ? "Regenerar" : "Generar"} documentación de partida
+                    </button>
+                    <span className="text-zinc-500 text-xs">(opcional, ideal antes de describir la modificación)</span>
+                  </div>
+                  {loading && loadingReason === "legacy-codebase-doc" && (
+                    <p className="text-amber-300/80 text-xs flex items-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                      {legacyStepsCodebaseDoc[legacyStepIndex % legacyStepsCodebaseDoc.length]}
+                    </p>
+                  )}
+                </div>
                 {!project.legacyFlowState?.filesToModify?.length && !project.legacyFlowState?.questions?.length ? (
                   <>
-                    <p>Describe la modificación que quieres hacer al proyecto. Relic analizará el código y te devolverá archivos a modificar y preguntas para afinar.</p>
+                    <p>Describe la modificación que quieres hacer al proyecto. FalkorSpecs analizará el código y te devolverá archivos a modificar y preguntas para afinar.</p>
                     <textarea
                       value={legacyDescriptionInput}
                       onChange={(e) => setLegacyDescriptionInput(e.target.value)}
@@ -1192,7 +1242,7 @@ export default function WorkshopView({
                       className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                      Analizar con Relic
+                      Analizar con FalkorSpecs
                     </button>
                   </>
                 ) : (
@@ -1218,7 +1268,7 @@ export default function WorkshopView({
                       <div>
                         <h4 className="text-zinc-400 font-medium mb-2">Preguntas para afinar</h4>
                         {project.legacyFlowState.suggestedAnswers && Object.keys(project.legacyFlowState.suggestedAnswers).length > 0 ? (
-                          <p className="text-zinc-500 text-xs mb-2">Respuestas sugeridas por Relic (puedes editarlas).</p>
+                          <p className="text-zinc-500 text-xs mb-2">Respuestas sugeridas por FalkorSpecs (puedes editarlas).</p>
                         ) : null}
                         <div className="space-y-3">
                           {project.legacyFlowState.questions.map((q, i) => (

@@ -241,7 +241,7 @@ export default function App() {
           </DialogHeader>
           {!theforgeAvailable && !theforgeLoading && (
             <p className="text-sm text-[var(--foreground-muted)]">
-              TheForge no está configurado o no está disponible. Configura THEFORGE_MCP_URL y THEFORGE_M2M_TOKEN en el backend.
+              TheForge no está configurado o no está disponible. Configura THEFORGE_MCP_URL y MCP_AUTH_TOKEN en el backend.
             </p>
           )}
           {theforgeLoading && (
