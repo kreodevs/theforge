@@ -21,6 +21,11 @@ if npx prisma migrate resolve --rolled-back 20250319140000_stage_sdd_deliverable
   echo "migrate resolve: cleared failed record for 20250319140000_stage_sdd_deliverables"
 fi
 
+# P3009: agent_checkpoint_mdd_stage fallida (p. ej. constraint/index ya existente o tabla no creada).
+if npx prisma migrate resolve --rolled-back 20260319130000_agent_checkpoint_mdd_stage 2>/dev/null; then
+  echo "migrate resolve: cleared failed record for 20260319130000_agent_checkpoint_mdd_stage"
+fi
+
 # Otra migración atascada (opcional): PRISMA_RESOLVE_ROLLED_BACK=<nombre_carpeta>
 if [ -n "$PRISMA_RESOLVE_ROLLED_BACK" ]; then
   echo "prisma migrate resolve --rolled-back $PRISMA_RESOLVE_ROLLED_BACK"

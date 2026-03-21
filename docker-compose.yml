@@ -76,6 +76,8 @@ services:
       MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
       # Cliente HTTP al MCP ajeno (TheForge); no confundir con Falkor SDD ni con un MCP propio.
       THEFORGE_MCP_TIMEOUT_MS: ${THEFORGE_MCP_TIMEOUT_MS:-60000}
+      # P3009: si una migración queda fallida, desbloquear antes de deploy (ej. 20260319130000_agent_checkpoint_mdd_stage).
+      PRISMA_RESOLVE_ROLLED_BACK: ${PRISMA_RESOLVE_ROLLED_BACK:-}
     depends_on:
       theforge-db:
         condition: service_healthy

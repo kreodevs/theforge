@@ -92,3 +92,21 @@ ORDER BY table_name, ordinal_position;
 La migración `stage_sdd_deliverables` asumía nombres fijos de FK/UNIQUE en `Estimation`. Bases creadas con `db push` u otra versión de Prisma pueden tener **otro nombre** o solo un índice único. El `migration.sql` del repo usa bloques `DO` que buscan en `pg_catalog` el FK a `Project` y el `UNIQUE` sobre `projectId`, más `DROP INDEX IF EXISTS` para nombres habituales.
 
 Tras un fallo **P3018**, vuelve a ejecutar `migrate resolve --rolled-back` para esa migración (el entrypoint de la API lo intenta solo) y redeploy con el SQL actualizado.
+
+### P3009 — `20260319130000_agent_checkpoint_mdd_stage` failed
+
+El entrypoint ya incluye `resolve --rolled-back` para esta migración. Si falla de nuevo tras redeploy:
+
+**Opción A — Sin rebuild:** Añadir en el environment del contenedor API:
+```
+PRISMA_RESOLVE_ROLLED_BACK=20260319130000_agent_checkpoint_mdd_stage
+```
+Redeploy. En el siguiente arranque el entrypoint desbloqueará y `migrate deploy` reintentará.
+
+**Opción B — Manual** (con la misma `DATABASE_URL` de producción):
+```bash
+cd packages/database
+export DATABASE_URL="postgresql://theforge:theforge@theforge-db:5432/theforge"
+pnpm exec prisma migrate resolve --rolled-back 20260319130000_agent_checkpoint_mdd_stage
+pnpm exec prisma migrate deploy
+```
