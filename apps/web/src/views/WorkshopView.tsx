@@ -229,7 +229,7 @@ export default function WorkshopView({
   const [useCasesViewMode, setUseCasesViewMode] = useState<"preview" | "source">("preview");
   const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
   const [conformanceUseLlm, setConformanceUseLlm] = useState(false);
-  type DocPanel = "benchmark" | "legacy" | "spec" | "mdd" | "ux-ui-guide" | "blueprint" | "tasks" | "api-contracts" | "logic-flows" | "architecture" | "use-cases" | "user-stories" | "infra" | "adrs";
+  type DocPanel = "benchmark" | "legacy" | "mdd-inicial" | "spec" | "mdd" | "ux-ui-guide" | "blueprint" | "tasks" | "api-contracts" | "logic-flows" | "architecture" | "use-cases" | "user-stories" | "infra" | "adrs";
   const [centralPanel, setCentralPanel] = useState<DocPanel>("mdd");
   const [revaluateBusy, setRevaluateBusy] = useState(false);
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -836,15 +836,28 @@ export default function WorkshopView({
                 return (
                   <>
                     {isLegacyProject && (
-                      <button
-                        type="button"
-                        onClick={() => setCentralPanel("legacy")}
-                        className={getTabClass("legacy", project?.legacyFlowState?.description ?? "")}
-                        title="Describir modificación → Relic → MDD → entregables"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                        Modificación
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setCentralPanel("legacy")}
+                          className={getTabClass("legacy", project?.legacyFlowState?.description ?? "")}
+                          title="Describir modificación → AriadneSpecs → MDD → entregables"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                          Modificación
+                        </button>
+                        {tabVisible("mdd-inicial") && (
+                          <button
+                            type="button"
+                            onClick={() => setCentralPanel("mdd-inicial")}
+                            className={getTabClass("mdd-inicial", project?.legacyFlowState?.codebaseDoc ?? "")}
+                            title="Documentación de partida del codebase (AriadneSpecs)"
+                          >
+                            <FileText className="w-4 h-4" />
+                            MDD Inicial
+                          </button>
+                        )}
+                      </>
                     )}
                     {!isLegacyProject && (
                       <button
@@ -1136,6 +1149,25 @@ export default function WorkshopView({
                     Regenerar
                   </button>
                 )}
+                {centralPanel === "mdd-inicial" && isLegacyProject && projectId && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const res = await legacyGenerateCodebaseDoc(projectId);
+                      if (res) setCentralPanel("mdd-inicial");
+                    }}
+                    disabled={loading}
+                    title="Generar documentación de partida del codebase vía AriadneSpecs"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading && loadingReason === "legacy-codebase-doc" ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    {project?.legacyFlowState?.codebaseDoc ? "Regenerar" : "Generar"} documentación de partida
+                  </button>
+                )}
                 {centralPanel === "spec" && (
                   <button
                     type="button"
@@ -1181,48 +1213,33 @@ export default function WorkshopView({
             </div>
           </div>
           <div className="flex-1 overflow-auto p-4 min-h-0 flex flex-col min-w-0">
+            {centralPanel === "mdd-inicial" && project?.projectType === "LEGACY" && projectId && (
+              <div className="rounded-lg bg-zinc-800/80 border border-zinc-600 p-6 text-zinc-300 text-sm space-y-4">
+                <p className="font-medium text-amber-400/90">MDD Inicial — Documentación del codebase (partida)</p>
+                <p className="text-zinc-500 text-xs">
+                  Contexto del codebase generado vía AriadneSpecs. Opcional pero recomendado antes de describir la modificación.
+                </p>
+                {project.legacyFlowState?.codebaseDoc ? (
+                  <div className="flex-1 overflow-auto rounded border border-zinc-600 bg-zinc-900/80 p-4 text-xs font-mono text-zinc-400 whitespace-pre-wrap max-h-[calc(100vh-280px)]">
+                    {project.legacyFlowState.codebaseDoc}
+                  </div>
+                ) : (
+                  <div className="rounded border border-dashed border-zinc-600 bg-zinc-900/50 p-8 text-center text-zinc-500">
+                    {loading && loadingReason === "legacy-codebase-doc" ? (
+                      <p className="flex items-center justify-center gap-2 text-amber-300/80">
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        {legacyStepsCodebaseDoc[legacyStepIndex % legacyStepsCodebaseDoc.length]}
+                      </p>
+                    ) : (
+                      <p>Usa el botón &quot;Generar documentación de partida&quot; arriba para crear la documentación del codebase.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {centralPanel === "legacy" && project?.projectType === "LEGACY" && projectId && (
               <div className="rounded-lg bg-zinc-800/80 border border-zinc-600 p-6 text-zinc-300 text-sm space-y-6">
                 <p className="font-medium text-amber-400/90">Flujo de modificación (Legacy)</p>
-                {/* Documentación de partida (opcional, ideal como primer paso) */}
-                <div className="space-y-2">
-                  {project.legacyFlowState?.codebaseDoc ? (
-                    <details className="group">
-                      <summary className="cursor-pointer list-none flex items-center gap-2 text-amber-400/90 hover:text-amber-400">
-                        <FileText className="w-4 h-4 shrink-0" />
-                        Documentación del codebase (partida)
-                      </summary>
-                      <div className="mt-2 max-h-[280px] overflow-y-auto rounded border border-zinc-600 bg-zinc-900/80 p-3 text-xs font-mono text-zinc-400 whitespace-pre-wrap">
-                        {project.legacyFlowState.codebaseDoc.slice(0, 8000)}
-                        {project.legacyFlowState.codebaseDoc.length > 8000 ? "\n\n… (truncado)" : ""}
-                      </div>
-                    </details>
-                  ) : null}
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await legacyGenerateCodebaseDoc(projectId);
-                      }}
-                      disabled={loading}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded text-xs bg-zinc-700/80 text-zinc-300 hover:bg-zinc-600 disabled:opacity-50"
-                    >
-                      {loading && loadingReason === "legacy-codebase-doc" ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                      ) : (
-                        <FileText className="w-3.5 h-3.5 shrink-0" />
-                      )}
-                      {project.legacyFlowState?.codebaseDoc ? "Regenerar" : "Generar"} documentación de partida
-                    </button>
-                    <span className="text-zinc-500 text-xs">(opcional, ideal antes de describir la modificación)</span>
-                  </div>
-                  {loading && loadingReason === "legacy-codebase-doc" && (
-                    <p className="text-amber-300/80 text-xs flex items-center gap-2">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                      {legacyStepsCodebaseDoc[legacyStepIndex % legacyStepsCodebaseDoc.length]}
-                    </p>
-                  )}
-                </div>
                 {!project.legacyFlowState?.filesToModify?.length && !project.legacyFlowState?.questions?.length ? (
                   <>
                     <p>Describe la modificación que quieres hacer al proyecto. AriadneSpecs analizará el código y te devolverá archivos a modificar y preguntas para afinar.</p>

@@ -8,6 +8,8 @@ import { Button, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogC
 
 export type ActiveTab =
   | "benchmark"
+  | "legacy"
+  | "mdd-inicial"
   | "spec"
   | "mdd"
   | "ux-ui-guide"
@@ -24,6 +26,8 @@ export type ActiveTab =
 
 const ACTIVE_TAB_LABELS: Record<ActiveTab, string> = {
   benchmark: "Benchmark & Gap Analysis (Paso 0, opcional)",
+  legacy: "Modificación (Legacy)",
+  "mdd-inicial": "MDD Inicial (documentación de partida)",
   spec: "Spec",
   mdd: "MDD",
   "ux-ui-guide": "Guía UX/UI",

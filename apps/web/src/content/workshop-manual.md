@@ -27,7 +27,7 @@ En el propio Workshop suele mostrarse una cadena del tipo:
 - **Spec:** benchmark + alcance clarificado; conviene tenerlo antes de cerrar el MDD.
 - **Entregables:** cuando el **semáforo** está en verde y existe Spec, usa **Generar entregables** (o generación individual desde cada pestaña) para arquitectura, casos, historias, blueprint, API, flujos, infra, etc.
 
-**Legacy:** el tab **Modificación** sustituye el Paso 0. Puedes generar primero **documentación de partida** (opcional, ideal) vía AriadneSpecs; luego describes la modificación y el flujo usa AriadneSpecs para MDD + entregables en cascada.
+**Legacy:** el tab **Modificación** sustituye el Paso 0. El tab **MDD Inicial** muestra la documentación de partida del codebase (generada vía AriadneSpecs). Genera primero la documentación de partida (opcional, ideal) desde el tab MDD Inicial; luego describe la modificación en Modificación y el flujo usa AriadneSpecs para MDD + entregables en cascada.
 
 ---
 
