@@ -126,13 +126,18 @@ export default function WorkshopView({
   const complexity = project?.complexity ?? "HIGH";
   const isLegacyProject = project?.projectType === "LEGACY";
   const canGenerate = useMemo(() => {
+    if (isLegacyProject) {
+      const hasMdd = (mddContent ?? "").trim().length > 0;
+      const hasCodebaseDoc = (project?.legacyFlowState?.codebaseDoc ?? "").trim().length > 0;
+      return hasMdd || hasCodebaseDoc;
+    }
     if (complexity === "LOW" || complexity === "MEDIUM") {
       const hasBootstrap =
         (dbgaContent ?? "").trim().length > 0 || (mddContent ?? "").trim().length > 0;
       return (semaphoreGreen && hasSpec) || hasBootstrap;
     }
     return semaphoreGreen && hasSpec;
-  }, [complexity, semaphoreGreen, hasSpec, dbgaContent, mddContent]);
+  }, [isLegacyProject, complexity, semaphoreGreen, hasSpec, dbgaContent, mddContent, project?.legacyFlowState?.codebaseDoc]);
 
   /* Use stable selectors to avoid loops */
   const conformanceRaw = useWorkshopStore((s) => s.conformance);
@@ -154,7 +159,7 @@ export default function WorkshopView({
   const synced = useWorkshopStore((s) => s.synced);
   const loading = useWorkshopStore((s) => s.loading);
   const loadingReason = useWorkshopStore((s) => s.loadingReason);
-  const cascadeRunning = loading && loadingReason === "deliverables-cascade";
+  const cascadeRunning = loading && (loadingReason === "deliverables-cascade" || loadingReason === "legacy-deliverables");
   const error = useWorkshopStore((s) => s.error);
   const setError = useWorkshopStore((s) => s.setError);
   const fetchProject = useWorkshopStore((s) => s.fetchProject);
@@ -290,8 +295,13 @@ export default function WorkshopView({
   const handleGenerateDeliverables = useCallback(async () => {
     if (!projectId || !canGenerate || cascadeRunning) return;
     setError(null);
-    await generateDeliverablesCascade(projectId);
-  }, [projectId, canGenerate, cascadeRunning, setError, generateDeliverablesCascade]);
+    if (isLegacyProject) {
+      await legacyGenerateDeliverables(projectId);
+      if (projectId) fetchProject(projectId);
+    } else {
+      await generateDeliverablesCascade(projectId);
+    }
+  }, [projectId, canGenerate, cascadeRunning, setError, isLegacyProject, legacyGenerateDeliverables, fetchProject, generateDeliverablesCascade]);
 
   /** Re-valorar complejidad: NEW → tab Paso 0 + chat benchmark; LEGACY → tab MDD (no existe DBGA). Misma API `reassess-complexity`. */
   const handleRevaluateComplexity = useCallback(async () => {
@@ -1250,23 +1260,43 @@ export default function WorkshopView({
                   Contexto del codebase generado vía AriadneSpecs. Opcional pero recomendado antes de describir la modificación.
                 </p>
                 {project.legacyFlowState?.codebaseDoc || mddInicialLocalContent ? (
-                  <div className="flex-1 overflow-auto min-h-0 flex flex-col">
-                    {mddInicialViewMode === "preview" ? (
-                      <div className="flex-1 overflow-auto rounded border border-zinc-600 bg-zinc-900/80 p-4 text-sm text-zinc-300 prose prose-invert prose-zinc max-w-none [&_pre]:bg-zinc-800 [&_pre]:p-3 [&_pre]:rounded [&_code]:bg-zinc-800 [&_code]:px-1 [&_code]:rounded [&_h1]:text-xl [&_h2]:text-lg [&_ul]:list-disc [&_ul]:pl-6">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {mddInicialLocalContent || project.legacyFlowState?.codebaseDoc || ""}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <textarea
-                        value={mddInicialLocalContent}
-                        onChange={(e) => setMddInicialLocalContent(e.target.value)}
-                        placeholder="# Documentación del Codebase (partida)\n\nGenera la documentación o escribe aquí..."
-                        className="flex-1 min-h-[200px] w-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
-                        spellCheck={false}
-                      />
-                    )}
-                  </div>
+                  <>
+                    <div className="flex-1 overflow-auto min-h-0 flex flex-col">
+                      {mddInicialViewMode === "preview" ? (
+                        <div className="flex-1 overflow-auto rounded border border-zinc-600 bg-zinc-900/80 p-4 text-sm text-zinc-300 prose prose-invert prose-zinc max-w-none [&_pre]:bg-zinc-800 [&_pre]:p-3 [&_pre]:rounded [&_code]:bg-zinc-800 [&_code]:px-1 [&_code]:rounded [&_h1]:text-xl [&_h2]:text-lg [&_ul]:list-disc [&_ul]:pl-6">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {mddInicialLocalContent || project.legacyFlowState?.codebaseDoc || ""}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        <textarea
+                          value={mddInicialLocalContent}
+                          onChange={(e) => setMddInicialLocalContent(e.target.value)}
+                          placeholder="# Documentación del Codebase (partida)\n\nGenera la documentación o escribe aquí..."
+                          className="flex-1 min-h-[200px] w-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
+                          spellCheck={false}
+                        />
+                      )}
+                    </div>
+                    <div className="shrink-0 pt-4 border-t border-zinc-700 mt-4">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if ((mddInicialLocalContent || project.legacyFlowState?.codebaseDoc) && mddInicialViewMode === "source" && mddInicialLocalContent !== (project?.legacyFlowState?.codebaseDoc ?? "")) {
+                            await legacyUpdateCodebaseDoc(projectId, mddInicialLocalContent);
+                          }
+                          await legacyGenerateDeliverables(projectId);
+                          if (projectId) fetchProject(projectId);
+                        }}
+                        disabled={loading || !(mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc)?.trim()}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Genera Spec, Arq., Casos, Blueprint, API, etc. desde la documentación del codebase (ingeniería inversa)"
+                      >
+                        {loading && loadingReason === "legacy-deliverables" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        Generar entregables (ingeniería inversa)
+                      </button>
+                    </div>
+                  </>
                 ) : (
                   <div className="rounded border border-dashed border-zinc-600 bg-zinc-900/50 p-8 text-center text-zinc-500">
                     {loading && loadingReason === "legacy-codebase-doc" ? (
@@ -1390,18 +1420,19 @@ export default function WorkshopView({
                     )}
                   </>
                 )}
-                {(project.mddContent ?? "").trim() ? (
+                {((project.mddContent ?? "").trim() || (project.legacyFlowState?.codebaseDoc ?? "").trim()) ? (
                   <div className="border-t border-zinc-700 pt-4">
                     <button
                       type="button"
                       onClick={async () => {
                         await legacyGenerateDeliverables(projectId);
+                        if (projectId) fetchProject(projectId);
                       }}
                       disabled={loading}
                       className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 disabled:opacity-50"
                     >
                       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                      Generar entregables (SPEC → … → Tasks)
+                      {(project.mddContent ?? "").trim() ? "Generar entregables" : "Generar entregables (ingeniería inversa)"}
                     </button>
                     {loading && loadingReason === "legacy-deliverables" && (
                       <p className="mt-2 text-green-300/80 text-xs flex items-center gap-2">

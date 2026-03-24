@@ -354,8 +354,11 @@ export class LegacyCoordinatorService {
       );
     }
 
-    const mdd = String(project.mddContent ?? "").trim();
-    if (!mdd) throw new BadRequestException("Genera primero el MDD de cambio (generate-mdd) antes de generar entregables.");
+    const codebaseDoc = String((project as { legacyFlowState?: LegacyFlowState }).legacyFlowState?.codebaseDoc ?? "").trim();
+    const mddContent = String(project.mddContent ?? "").trim();
+    const mdd =
+      mddContent || (codebaseDoc ? `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}` : "");
+    if (!mdd) throw new BadRequestException("Genera la documentación de partida (MDD Inicial) o el MDD de cambio antes de generar entregables.");
 
     const theforgeContext = await this.theforge.getContextForDeliverables(theforgeId);
     const legacyOpts = theforgeContext ? { theforgeContext } : undefined;

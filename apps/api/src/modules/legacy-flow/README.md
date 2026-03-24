@@ -9,7 +9,7 @@ Flujo separado para **proyectos legacy** (documentados en TheForge): modificacio
 - `POST /projects/:projectId/legacy/start` — body `{ description: string }`. Llama a TheForge **`get_modification_plan`** (SPEC-MCP-001); si no está disponible, fallback a `ask_codebase`. Devuelve `{ filesToModify, questions }` y persiste en `legacyFlowState`.
 - `POST /projects/:projectId/legacy/answer` — body `{ answers: Record<string, string> }`. Guarda respuestas del usuario.
 - `POST /projects/:projectId/legacy/generate-mdd` — Genera el MDD de cambio (coordinador + revisor) y persiste en `mddContent`. Usa varias consultas a TheForge (qué existe, arquitectura, reglas) y exige al LLM inferir impacto completo en módulos/entidades/UI, no solo el requerimiento literal.
-- `POST /projects/:projectId/legacy/generate-deliverables` — Despacho dinámico según `Project.complexity`: solo los pasos en `DELIVERABLES_BY_COMPLEXITY` (`@theforge/shared-types`), con contexto TheForge inyectado por paso. Si hay `complexityPending` sin confirmar, 400 (igual que proyectos nuevos).
+- `POST /projects/:projectId/legacy/generate-deliverables` — Despacho dinámico según `Project.complexity`: solo los pasos en `DELIVERABLES_BY_COMPLEXITY`, con contexto TheForge inyectado. **Fuente:** `mddContent` (MDD de cambio) o, si está vacío, `legacyFlowState.codebaseDoc` (MDD Inicial → ingeniería inversa). Si hay `complexityPending` sin confirmar, 400.
 
 ## Servicios
 
