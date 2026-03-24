@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   Code,
   Lock,
@@ -1264,10 +1262,8 @@ export default function WorkshopView({
                   <>
                     <div className="flex-1 overflow-auto min-h-0 flex flex-col">
                       {mddInicialViewMode === "preview" ? (
-                        <div className="flex-1 overflow-auto rounded border border-zinc-600 bg-zinc-900/80 p-4 text-sm text-zinc-300 prose prose-invert prose-zinc max-w-none [&_pre]:bg-zinc-800 [&_pre]:p-3 [&_pre]:rounded [&_code]:bg-zinc-800 [&_code]:px-1 [&_code]:rounded [&_h1]:text-xl [&_h2]:text-lg [&_ul]:list-disc [&_ul]:pl-6">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {mddInicialLocalContent || project.legacyFlowState?.codebaseDoc || ""}
-                          </ReactMarkdown>
+                        <div className="flex-1 overflow-auto rounded border border-zinc-600 bg-zinc-900/80 p-4 min-h-0">
+                          <MddViewer content={mddInicialLocalContent || project.legacyFlowState?.codebaseDoc || ""} />
                         </div>
                       ) : (
                         <textarea

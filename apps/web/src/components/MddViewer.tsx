@@ -133,12 +133,12 @@ function MermaidBlock({ content, blockKey }: { content: string; blockKey: string
 
     setError(null);
     let cancelled = false;
-    const normalized = normalizeMermaidForRender(content);
-    if (!normalized) return;
+    const toRender = /erDiagram/i.test(content) ? normalizeMermaidForRender(content) : content.trim();
+    if (!toRender) return;
 
     const doRender = async () => {
       try {
-        const { svg, bindFunctions } = await mermaid.render(renderId, normalized);
+        const { svg, bindFunctions } = await mermaid.render(renderId, toRender);
         if (cancelled || !el) return;
         el.innerHTML = svg;
         bindFunctions?.(el);
