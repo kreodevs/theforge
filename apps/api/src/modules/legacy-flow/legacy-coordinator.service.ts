@@ -144,6 +144,23 @@ export class LegacyCoordinatorService {
   }
 
   /**
+   * Actualiza la documentación de partida del codebase (edición manual).
+   * @param projectId - ID del proyecto.
+   * @param codebaseDoc - Contenido Markdown.
+   * @returns { codebaseDoc: string }.
+   */
+  async updateCodebaseDoc(projectId: string, codebaseDoc: string): Promise<{ codebaseDoc: string }> {
+    await this.getLegacyProject(projectId);
+    const state = ((await this.projects.findOne(projectId)) as { legacyFlowState?: LegacyFlowState | null })
+      .legacyFlowState ?? {};
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { legacyFlowState: { ...state, codebaseDoc } as object },
+    });
+    return { codebaseDoc };
+  }
+
+  /**
    * Inicia el flujo legacy: consulta AriadneSpecs MCP (get_modification_plan o ask_codebase), obtiene archivos y preguntas,
    * pide sugerencias de respuestas al codebase y persiste todo en legacyFlowState.
    * @param projectId - ID del proyecto.

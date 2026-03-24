@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post } from "@nestjs/common";
+import { Body, Controller, Param, Patch, Post } from "@nestjs/common";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 
 /**
@@ -16,6 +16,21 @@ export class LegacyFlowController {
   @Post("generate-codebase-doc")
   async generateCodebaseDoc(@Param("projectId") projectId: string) {
     return this.coordinator.generateCodebaseDoc(projectId);
+  }
+
+  /**
+   * Actualiza la documentación de partida del codebase (edición manual).
+   * @param projectId - ID del proyecto.
+   * @param body.codebaseDoc - Contenido Markdown de la documentación.
+   * @returns { codebaseDoc: string }.
+   */
+  @Patch("codebase-doc")
+  async updateCodebaseDoc(
+    @Param("projectId") projectId: string,
+    @Body() body: { codebaseDoc?: string },
+  ) {
+    const codebaseDoc = typeof body?.codebaseDoc === "string" ? body.codebaseDoc : "";
+    return this.coordinator.updateCodebaseDoc(projectId, codebaseDoc);
   }
 
   /**

@@ -430,6 +430,8 @@ interface WorkshopState {
   clearPhase0SummaryContent: (projectId: string) => Promise<void>;
   /** Flujo legacy: documentación de partida (opcional) */
   legacyGenerateCodebaseDoc: (projectId: string) => Promise<{ codebaseDoc: string } | null>;
+  /** Flujo legacy: actualizar documentación de partida (edición manual) */
+  legacyUpdateCodebaseDoc: (projectId: string, codebaseDoc: string) => Promise<boolean>;
   /** Flujo legacy: analizar con AriadneSpecs → archivos + preguntas */
   legacyStart: (projectId: string, description: string) => Promise<{ filesToModify: (string | { path: string; repoId?: string })[]; questions: string[]; suggestedAnswers?: Record<string, string> } | null>;
   legacyAnswer: (projectId: string, answers: Record<string, string>) => Promise<boolean>;
@@ -2378,6 +2380,25 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar documentación", loading: false, loadingReason: null });
       return null;
+    }
+  },
+
+  legacyUpdateCodebaseDoc: async (projectId, codebaseDoc) => {
+    if (!projectId?.trim()) return false;
+    try {
+      const r = await fetch(`${API_BASE}/projects/${projectId}/legacy/codebase-doc`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codebaseDoc }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al guardar documentación");
+      }
+      await get().fetchProject(projectId);
+      return true;
+    } catch {
+      return false;
     }
   },
 

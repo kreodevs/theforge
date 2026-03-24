@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Code,
   Lock,
@@ -198,6 +200,7 @@ export default function WorkshopView({
   const setPhase0SummaryContent = useWorkshopStore((s) => s.setPhase0SummaryContent);
   const persistPhase0SummaryContent = useWorkshopStore((s) => s.persistPhase0SummaryContent);
   const legacyGenerateCodebaseDoc = useWorkshopStore((s) => s.legacyGenerateCodebaseDoc);
+  const legacyUpdateCodebaseDoc = useWorkshopStore((s) => s.legacyUpdateCodebaseDoc);
   const legacyStart = useWorkshopStore((s) => s.legacyStart);
   const legacyAnswer = useWorkshopStore((s) => s.legacyAnswer);
   const legacyGenerateMdd = useWorkshopStore((s) => s.legacyGenerateMdd);
@@ -228,6 +231,9 @@ export default function WorkshopView({
   const [architectureViewMode, setArchitectureViewMode] = useState<"preview" | "source">("preview");
   const [useCasesViewMode, setUseCasesViewMode] = useState<"preview" | "source">("preview");
   const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
+  const [mddInicialViewMode, setMddInicialViewMode] = useState<"preview" | "source">("preview");
+  const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
+  const [mddInicialSaving, setMddInicialSaving] = useState(false);
   const [conformanceUseLlm, setConformanceUseLlm] = useState(false);
   type DocPanel = "benchmark" | "legacy" | "mdd-inicial" | "spec" | "mdd" | "ux-ui-guide" | "blueprint" | "tasks" | "api-contracts" | "logic-flows" | "architecture" | "use-cases" | "user-stories" | "infra" | "adrs";
   const [centralPanel, setCentralPanel] = useState<DocPanel>("mdd");
@@ -275,6 +281,11 @@ export default function WorkshopView({
     const id = setInterval(() => setLegacyStepIndex((i) => (i + 1) % steps.length), 6000);
     return () => clearInterval(id);
   }, [loading, loadingReason]);
+
+  useEffect(() => {
+    const codebaseDoc = project?.legacyFlowState?.codebaseDoc ?? "";
+    if (codebaseDoc) setMddInicialLocalContent(codebaseDoc);
+  }, [project?.legacyFlowState?.codebaseDoc]);
 
   const handleGenerateDeliverables = useCallback(async () => {
     if (!projectId || !canGenerate || cascadeRunning) return;
@@ -1024,12 +1035,14 @@ export default function WorkshopView({
                       (centralPanel === "use-cases" && useCasesContent) ||
                       (centralPanel === "user-stories" && userStoriesContent) ||
                       (centralPanel === "logic-flows" && logicFlowsContent) ||
-                      (centralPanel === "infra" && infraContent)) &&
+                      (centralPanel === "infra" && infraContent) ||
+                      (centralPanel === "mdd-inicial" && (project?.legacyFlowState?.codebaseDoc || mddInicialLocalContent))) &&
                     centralPanel !== "tasks" && (
                       <button
                         type="button"
                         onClick={() => {
                           if (centralPanel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
+                          else if (centralPanel === "mdd-inicial") setMddInicialViewMode((m) => (m === "preview" ? "source" : "preview"));
                           else if (centralPanel === "spec") setSpecViewMode((m) => (m === "preview" ? "source" : "preview"));
                           else if (centralPanel === "architecture") setArchitectureViewMode((m) => (m === "preview" ? "source" : "preview"));
                           else if (centralPanel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
@@ -1043,6 +1056,7 @@ export default function WorkshopView({
                         className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50"
                       >
                         {(centralPanel === "mdd" ? mddViewMode
+                          : centralPanel === "mdd-inicial" ? mddInicialViewMode
                           : centralPanel === "spec" ? specViewMode
                             : centralPanel === "architecture" ? architectureViewMode
                               : centralPanel === "use-cases" ? useCasesViewMode
@@ -1168,6 +1182,22 @@ export default function WorkshopView({
                     {project?.legacyFlowState?.codebaseDoc ? "Regenerar" : "Generar"} documentación de partida
                   </button>
                 )}
+                {centralPanel === "mdd-inicial" && mddInicialViewMode === "source" && (mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc) && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setMddInicialSaving(true);
+                      await legacyUpdateCodebaseDoc(projectId, mddInicialLocalContent);
+                      setMddInicialSaving(false);
+                    }}
+                    disabled={mddInicialSaving || mddInicialLocalContent === (project?.legacyFlowState?.codebaseDoc ?? "")}
+                    title="Guardar cambios en la documentación"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {mddInicialSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Guardar
+                  </button>
+                )}
                 {centralPanel === "spec" && (
                   <button
                     type="button"
@@ -1214,14 +1244,28 @@ export default function WorkshopView({
           </div>
           <div className="flex-1 overflow-auto p-4 min-h-0 flex flex-col min-w-0">
             {centralPanel === "mdd-inicial" && project?.projectType === "LEGACY" && projectId && (
-              <div className="rounded-lg bg-zinc-800/80 border border-zinc-600 p-6 text-zinc-300 text-sm space-y-4">
-                <p className="font-medium text-amber-400/90">MDD Inicial — Documentación del codebase (partida)</p>
-                <p className="text-zinc-500 text-xs">
+              <div className="rounded-lg bg-zinc-800/80 border border-zinc-600 p-6 text-zinc-300 text-sm space-y-4 flex flex-col min-h-0 flex-1">
+                <p className="font-medium text-amber-400/90 shrink-0">MDD Inicial — Documentación del codebase (partida)</p>
+                <p className="text-zinc-500 text-xs shrink-0">
                   Contexto del codebase generado vía AriadneSpecs. Opcional pero recomendado antes de describir la modificación.
                 </p>
-                {project.legacyFlowState?.codebaseDoc ? (
-                  <div className="flex-1 overflow-auto rounded border border-zinc-600 bg-zinc-900/80 p-4 text-xs font-mono text-zinc-400 whitespace-pre-wrap max-h-[calc(100vh-280px)]">
-                    {project.legacyFlowState.codebaseDoc}
+                {project.legacyFlowState?.codebaseDoc || mddInicialLocalContent ? (
+                  <div className="flex-1 overflow-auto min-h-0 flex flex-col">
+                    {mddInicialViewMode === "preview" ? (
+                      <div className="flex-1 overflow-auto rounded border border-zinc-600 bg-zinc-900/80 p-4 text-sm text-zinc-300 prose prose-invert prose-zinc max-w-none [&_pre]:bg-zinc-800 [&_pre]:p-3 [&_pre]:rounded [&_code]:bg-zinc-800 [&_code]:px-1 [&_code]:rounded [&_h1]:text-xl [&_h2]:text-lg [&_ul]:list-disc [&_ul]:pl-6">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {mddInicialLocalContent || project.legacyFlowState?.codebaseDoc || ""}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <textarea
+                        value={mddInicialLocalContent}
+                        onChange={(e) => setMddInicialLocalContent(e.target.value)}
+                        placeholder="# Documentación del Codebase (partida)\n\nGenera la documentación o escribe aquí..."
+                        className="flex-1 min-h-[200px] w-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
+                        spellCheck={false}
+                      />
+                    )}
                   </div>
                 ) : (
                   <div className="rounded border border-dashed border-zinc-600 bg-zinc-900/50 p-8 text-center text-zinc-500">
