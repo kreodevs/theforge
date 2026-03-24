@@ -901,8 +901,7 @@ export default function WorkshopView({
                         MDD
                       </button>
                     )}
-                    {/* Legacy: solo mostrar tabs de documentos que ya tienen contenido (generados por flujo entregables) */}
-                    {tabVisible("spec") && (!isLegacyProject || (specContent ?? "").trim()) && (
+                    {tabVisible("spec") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("spec")}
@@ -913,7 +912,7 @@ export default function WorkshopView({
                         Spec
                       </button>
                     )}
-                    {tabVisible("architecture") && (!isLegacyProject || (architectureContent ?? "").trim()) && (
+                    {tabVisible("architecture") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("architecture")}
@@ -923,7 +922,7 @@ export default function WorkshopView({
                         Arq.
                       </button>
                     )}
-                    {tabVisible("use-cases") && (!isLegacyProject || (useCasesContent ?? "").trim()) && (
+                    {tabVisible("use-cases") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("use-cases")}
@@ -933,7 +932,7 @@ export default function WorkshopView({
                         Casos
                       </button>
                     )}
-                    {tabVisible("user-stories") && (!isLegacyProject || (userStoriesContent ?? "").trim()) && (
+                    {tabVisible("user-stories") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("user-stories")}
@@ -943,7 +942,7 @@ export default function WorkshopView({
                         H.U.
                       </button>
                     )}
-                    {(!isLegacyProject || (blueprintContent ?? "").trim()) && tabVisible("blueprint") && (
+                    {tabVisible("blueprint") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("blueprint")}
@@ -953,7 +952,7 @@ export default function WorkshopView({
                         Blueprint
                       </button>
                     )}
-                    {tabVisible("ux-ui-guide") && (!isLegacyProject || (uxUiGuideContent ?? "").trim()) && (
+                    {tabVisible("ux-ui-guide") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("ux-ui-guide")}
@@ -963,7 +962,7 @@ export default function WorkshopView({
                         Guía UX/UI
                       </button>
                     )}
-                    {(!isLegacyProject || (apiContractsContent ?? "").trim()) && tabVisible("api-contracts") && (
+                    {tabVisible("api-contracts") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("api-contracts")}
@@ -973,7 +972,7 @@ export default function WorkshopView({
                         API
                       </button>
                     )}
-                    {tabVisible("logic-flows") && (!isLegacyProject || (logicFlowsContent ?? "").trim()) && (
+                    {tabVisible("logic-flows") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("logic-flows")}
@@ -983,7 +982,7 @@ export default function WorkshopView({
                         Flujos
                       </button>
                     )}
-                    {tabVisible("tasks") && (!isLegacyProject || (tasksContent ?? "").trim()) && (
+                    {tabVisible("tasks") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("tasks")}
@@ -1005,7 +1004,7 @@ export default function WorkshopView({
                         ADRs
                       </button>
                     )}
-                    {tabVisible("infra") && (!isLegacyProject || (infraContent ?? "").trim()) && (
+                    {tabVisible("infra") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("infra")}
