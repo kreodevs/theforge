@@ -7,11 +7,13 @@ Documento para explicar al equipo/proyecto TheForge cómo TheForge usa su MCP: t
 ## 1. Transporte y autenticación
 
 - **No usamos MCP por stdio** desde la API. La API Nest (backend) llama al MCP por **HTTP**.
-- **URL:** Variable de entorno `THEFORGE_MCP_URL` (ej. `https://theforge.obp.mx/mcp`). Si está vacía, TheForge se considera no configurado y todas las llamadas devuelven vacío/null sin hacer petición.
-- **Auth:** Header `Authorization: Bearer <MCP_AUTH_TOKEN>`. La variable es `MCP_AUTH_TOKEN` (inyectada en Docker). Si falta el token, no se envía header (y el servidor puede rechazar).
+- **URL:** Variable de entorno `THEFORGE_MCP_URL` (ej. `https://ariadne.kreoint.mx/mcp`). Si está vacía, TheForge se considera no configurado y todas las llamadas devuelven vacío/null sin hacer petición.
+- **Auth (opcional):** Si `MCP_AUTH_TOKEN` está definido → header `Authorization: Bearer <token>`. Si `MCP_X_M2M_TOKEN` está definido → header `X-M2M-Token: <token>` (alternativa AriadneSpecs). Si ninguno está definido, no se envía header de auth (servidores sin auth en red interna).
 - **Content-Type:** `application/json`.
 - **Accept:** `application/json, text/event-stream` (por si el MCP devuelve SSE).
 - **MCP-Protocol-Version:** `2025-03-26` (obligatorio según spec Streamable HTTP).
+
+Contrato completo: [Llamadas-HTTPS-MCP-AriadneSpecs.md](Llamadas-HTTPS-MCP-AriadneSpecs.md).
 
 Cada petición es un **JSON-RPC 2.0** con `method: "tools/call"` y `params: { name: "<tool_name>", arguments: { ... } }`.
 

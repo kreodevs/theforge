@@ -101,6 +101,11 @@ export class TheForgeService {
     return process.env.MCP_AUTH_TOKEN?.trim() ?? "";
   }
 
+  /** X-M2M-Token alternativo (AriadneSpecs); si está definido se usa en lugar de Authorization Bearer. */
+  private get xM2mToken(): string {
+    return process.env.MCP_X_M2M_TOKEN?.trim() ?? "";
+  }
+
   /**
    * Timeout HTTP al **MCP externo de TheForge** (JSON-RPC). No confundir con un MCP servidor propio.
    * @see docs/MCP-ARQUITECTURA-THEFORGE.md
@@ -110,23 +115,28 @@ export class TheForgeService {
     return Number.isFinite(n) && n > 0 ? n : 60000;
   }
 
-  /** POST JSON-RPC al endpoint TheForge (MCP ajeno) con abort por timeout. */
+  /** POST JSON-RPC al endpoint TheForge (MCP ajeno) con abort por timeout. Headers según Streamable HTTP + AriadneSpecs. */
   private async postTheForgeMcp(body: object): Promise<Response> {
     const t0 = Date.now();
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), this.theforgeMcpTimeoutMs());
-    const tokenPreview = this.token ? `${this.token.slice(0, 4)}...${this.token.slice(-4)}` : "(vacío)";
-    this.logger.log(`[TheForge] MCP POST ${this.baseUrl} | token length=${this.token.length} preview=${tokenPreview}`);
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+      "MCP-Protocol-Version": "2025-03-26",
+    };
+    if (this.xM2mToken) {
+      headers["X-M2M-Token"] = this.xM2mToken;
+    } else if (this.token) {
+      headers.Authorization = `Bearer ${this.token}`;
+    }
+    const authPreview = this.xM2mToken ? "X-M2M-Token" : this.token ? `Bearer ${this.token.slice(0, 4)}...` : "sin auth";
+    this.logger.log(`[TheForge] MCP POST ${this.baseUrl} | auth=${authPreview}`);
     try {
       const response = await fetch(this.baseUrl, {
         method: "POST",
         signal: ctrl.signal,
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-          "MCP-Protocol-Version": "2025-03-26",
-          Authorization: `Bearer ${this.token}`,
-        },
+        headers,
         body: JSON.stringify(body),
       });
       this.logger.debug(`[TheForge] MCP HTTP ${response.status} ${Date.now() - t0}ms`);
@@ -174,11 +184,11 @@ export class TheForgeService {
   }
 
   /**
-   * Indica si el cliente TheForge está configurado (URL y token presentes).
-   * @returns true si THEFORGE_MCP_URL y MCP_AUTH_TOKEN están definidos.
+   * Indica si el cliente TheForge está configurado.
+   * @returns true si THEFORGE_MCP_URL está definido. El token es opcional (solo si el servidor MCP requiere auth).
    */
   isConfigured(): boolean {
-    return this.baseUrl.length > 0 && this.token.length > 0;
+    return this.baseUrl.length > 0;
   }
 
   /**
@@ -224,11 +234,10 @@ export class TheForgeService {
    */
   async listKnownProjects(): Promise<TheForgeProject[]> {
     if (!this.isConfigured()) {
-      this.logger.warn("[TheForge] listKnownProjects: no configurado (THEFORGE_MCP_URL o MCP_AUTH_TOKEN vacíos)");
+      this.logger.warn("[TheForge] listKnownProjects: no configurado (THEFORGE_MCP_URL vacío)");
       return [];
     }
-    const hasToken = this.token.length > 0;
-    this.logger.log(`[TheForge] listKnownProjects: llamando MCP en ${this.baseUrl}, Authorization Bearer present=${hasToken}`);
+    this.logger.log(`[TheForge] listKnownProjects: llamando MCP en ${this.baseUrl}`);
     try {
       const response = await this.postTheForgeMcp({
         jsonrpc: "2.0",

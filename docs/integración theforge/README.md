@@ -4,8 +4,9 @@ Documentación para usar el conocimiento indexado por **TheForge** (grafo de có
 
 | Documento | Descripción |
 |-----------|-------------|
+| **Llamadas-HTTPS-MCP-AriadneSpecs.md** | Contrato MCP AriadneSpecs: endpoint, JSON-RPC 2.0, headers, herramientas y argumentos. |
 | **theforge.md** | Qué es TheForge, MCP en Cursor, herramientas (`list_known_projects`, `validate_before_edit`, etc.). |
-| **THEFORGE-COMO-INVOCA-THEFORGE-MCP.md** | Cómo la API invoca el MCP (HTTP, JSON-RPC, Bearer, timeout). Para compartir con el equipo TheForge. |
+| **THEFORGE-COMO-INVOCA-THEFORGE-MCP.md** | Cómo la API invoca el MCP (HTTP, JSON-RPC, Bearer/X-M2M-Token, timeout). Para compartir con el equipo TheForge. |
 | **HERRAMIENTAS-MCP-THEFORGE.md** | Catálogo de herramientas AriadneSpecs usadas o disponibles. |
 | **SPEC-MCP-001-THEFORGE.md** | Contrato recomendado TheForge ↔ MCP (`get_modification_plan`, `validate_before_edit`, etc.). |
 | **PLAN-IMPLEMENTACION-THEFORGE-WEB.md** | Plan original por capas (DB, módulo `theforge`, flujo LEGACY). **Estado:** la integración base está en `apps/api` + `apps/web`; usar el código como fuente de verdad y este doc como contexto histórico. |
