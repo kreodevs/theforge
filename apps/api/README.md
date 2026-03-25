@@ -6,7 +6,7 @@ Backend NestJS de TheForge.
 - **DB:** Prisma + PostgreSQL (schema en `packages/database`).
 - **IA:** `AI_PROVIDER=openai|google`; factory inyecta el adapter.
 
-Env: `DATABASE_URL`, `AI_PROVIDER`, `OPENAI_API_KEY` o `GOOGLE_GENERATIVE_AI_API_KEY`.
+Env: `DATABASE_URL`, `AI_PROVIDER`, `OPENAI_API_KEY` o `GOOGLE_GENERATIVE_AI_API_KEY`. Proyectos **legacy** + MCP: `THEFORGE_MCP_URL`, tokens MCP; pipeline evidencia-primero y topes en variables `LEGACY_*` (ver raíz `.env.example` y `docs/LEGACY-EVIDENCE-CONTEXT.md`).
 
 ## Despliegue (Docker / Dokploy)
 

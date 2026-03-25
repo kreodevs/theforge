@@ -2,6 +2,7 @@ import { Injectable, Inject } from "@nestjs/common";
 import type { LLMProvider } from "../ai/interfaces/llm-provider.interface.js";
 import { LLM_PROVIDER } from "../ai/interfaces/llm-provider.interface.js";
 import type { TheForgeFileToModify } from "../theforge/theforge.service.js";
+import { countMddCodePathReferences } from "../theforge/theforge-evidence-context.util.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
@@ -69,7 +70,12 @@ export class LegacyReviewerService {
    * @returns Contenido del MDD revisado.
    */
   async reviewMdd(description: string, mddDraft: string): Promise<string> {
+    const refHint =
+      countMddCodePathReferences(mddDraft) < 3
+        ? "ADVERTENCIA SDD: el borrador casi no cita rutas de archivo (`ruta/archivo.ts`). Enriquece cada sección aplicable con paths concretos alineados al contexto del cambio y al índice TheForge.\n\n"
+        : "";
     const prompt =
+      refHint +
       "Revisa el siguiente MDD de cambio para un proyecto legacy. Asegura que sea coherente con la descripción del cambio y completo. " +
       "Responde ÚNICAMENTE con el markdown del MDD revisado (sin comentarios adicionales).\n\nDescripción del cambio:\n---\n" +
       description +

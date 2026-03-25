@@ -1,4 +1,9 @@
 import { Injectable, Logger } from "@nestjs/common";
+import {
+  buildLegacyEvidenceMarkdown,
+  clipLegacySemanticSection,
+  isLegacyEvidenceFirstEnabled,
+} from "./theforge-evidence-context.util.js";
 
 /** Repo (root) dentro de un proyecto multi-repo. */
 export interface TheForgeProjectRoot {
@@ -41,6 +46,8 @@ export interface GetModificationPlanOptions {
 export interface AskCodebaseOptions {
   scope?: TheForgeScope;
   twoPhase?: boolean;
+  /** Propaga al ingest Ariadne: prompt SDD con ## Evidencia primero (listados anclados). */
+  responseMode?: "default" | "evidence_first";
   currentFilePath?: string;
 }
 
@@ -198,7 +205,18 @@ export class TheForgeService {
    */
   async getContextForDeliverables(projectId: string): Promise<string> {
     if (!this.isConfigured()) return "";
+    if (isLegacyEvidenceFirstEnabled()) {
+      try {
+        return await buildLegacyEvidenceMarkdown(this, projectId, { includeSynthesis: true });
+      } catch (err) {
+        this.logger.warn(
+          `[TheForge] getContextForDeliverables: evidencia-primero falló, modo clásico. ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
     const parts: string[] = [];
+    const semanticLimit = parseInt(process.env.LEGACY_SEMANTIC_SEARCH_LIMIT ?? "12", 10);
+    const lim = Number.isFinite(semanticLimit) && semanticLimit > 0 ? semanticLimit : 12;
     const [q1, q2, q3, searchModels, searchApi, searchUi] = await Promise.all([
       this.askCodebase(
         "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
@@ -212,17 +230,17 @@ export class TheForgeService {
         "What is the EXACT tech stack and directory structure of this project? List only what exists in the codebase: backend runtime and framework (e.g. Node/Express, Node/NestJS, Python/Django), frontend framework (e.g. React, Vue), database, build tools. If the project has multiple repositories, list them and their main folders. Do NOT assume or invent; only state what the codebase contains.",
         projectId,
       ),
-      this.semanticSearch("data models entities database schema", projectId, 5),
-      this.semanticSearch("API routes endpoints controllers", projectId, 5),
-      this.semanticSearch("UI components screens pages", projectId, 5),
+      this.semanticSearch("data models entities database schema", projectId, lim),
+      this.semanticSearch("API routes endpoints controllers", projectId, lim),
+      this.semanticSearch("UI components screens pages", projectId, lim),
     ]);
     if (q1.trim()) parts.push("Modelos, rutas y configuración:\n" + q1.trim());
     if (q2.trim()) parts.push("Arquitectura y carpetas:\n" + q2.trim());
     if (q3.trim()) parts.push("Stack y estructura real (solo lo que existe):\n" + q3.trim());
     const searchParts: string[] = [];
-    if (searchModels.trim()) searchParts.push("Búsqueda semántica modelos: " + searchModels.trim().slice(0, 800));
-    if (searchApi.trim()) searchParts.push("Búsqueda semántica API: " + searchApi.trim().slice(0, 800));
-    if (searchUi.trim()) searchParts.push("Búsqueda semántica UI: " + searchUi.trim().slice(0, 800));
+    if (searchModels.trim()) searchParts.push("Búsqueda semántica modelos: " + clipLegacySemanticSection(searchModels.trim()));
+    if (searchApi.trim()) searchParts.push("Búsqueda semántica API: " + clipLegacySemanticSection(searchApi.trim()));
+    if (searchUi.trim()) searchParts.push("Búsqueda semántica UI: " + clipLegacySemanticSection(searchUi.trim()));
     if (searchParts.length > 0) parts.push("Índice semántico:\n" + searchParts.join("\n"));
     return parts.join("\n\n---\n\n");
   }
@@ -388,10 +406,10 @@ export class TheForgeService {
   async askCodebase(question: string, projectId: string, opts?: AskCodebaseOptions): Promise<string> {
     if (!this.isConfigured()) return "";
     try {
-      const args: Record<string, unknown> = { question, projectId };
+      const args: Record<string, unknown> = { question, projectId, twoPhase: opts?.twoPhase ?? true };
       if (opts?.currentFilePath?.trim()) args.currentFilePath = opts.currentFilePath.trim();
       if (opts?.scope && Object.keys(opts.scope).length > 0) args.scope = opts.scope;
-      if (typeof opts?.twoPhase === "boolean") args.twoPhase = opts.twoPhase;
+      if (opts?.responseMode === "evidence_first") args.responseMode = "evidence_first";
       const response = await this.postTheForgeMcp({
         jsonrpc: "2.0",
         id: "ask-codebase-1",

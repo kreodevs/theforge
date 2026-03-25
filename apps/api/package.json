@@ -6,7 +6,7 @@
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
-    "test": "nest build && node --test dist/apps/api/src/**/*.spec.js",
+    "test": "nest build && find dist -name '*.spec.js' -exec node --test {} +",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\""
   },
   "dependencies": {

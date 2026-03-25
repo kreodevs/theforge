@@ -40,9 +40,9 @@ const referenceMdd: MddStructured = {
 };
 
 describe("mddStructuredToMarkdown", () => {
-  it("generates markdown with ## 1. Contexto y alcance", () => {
+  it("generates markdown with ## 1. Contexto (canónico SDD)", () => {
     const md = mddStructuredToMarkdown(referenceMdd);
-    assert.ok(md.includes("## 1. Contexto y alcance"), "debe contener sección 1");
+    assert.ok(md.includes("## 1. Contexto"), "debe contener sección 1 Contexto");
   });
 
   it("generates markdown with ## 3. Modelo de Datos", () => {
@@ -65,14 +65,18 @@ describe("mddStructuredToMarkdown", () => {
     assert.ok(md.includes("Metadata") && md.includes("high_security"), "debe contener metadata high_security");
   });
 
-  it("generates markdown with ## Seguridad", () => {
+  it("generates markdown with ## 6. Seguridad", () => {
     const md = mddStructuredToMarkdown(referenceMdd);
-    assert.ok(md.includes("## Seguridad"), "debe contener sección Seguridad");
+    assert.ok(md.includes("## 6. Seguridad"), "debe contener sección 6 Seguridad");
   });
 
-  it("generates markdown with ## Integración", () => {
+  it("generates markdown with ## 7. Infraestructura (integración + manifest)", () => {
     const md = mddStructuredToMarkdown(referenceMdd);
-    assert.ok(md.includes("## Integración"), "debe contener sección Integración");
+    assert.ok(md.includes("## 7. Infraestructura"), "debe contener sección 7 Infraestructura");
+    assert.ok(
+      md.includes("Flujo de integración") || md.includes("Manifest"),
+      "debe incluir subsecciones de integración o manifest",
+    );
   });
 
   it("uses default title when mdd is empty", () => {

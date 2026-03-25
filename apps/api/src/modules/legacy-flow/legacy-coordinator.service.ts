@@ -1,10 +1,16 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ComplexityLevel } from "@theforge/database";
 import { DELIVERABLES_BY_COMPLEXITY, type DeliverableKind } from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
 import type { TheForgeFileToModify } from "../theforge/theforge.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
+import {
+  buildLegacyEvidenceMarkdown,
+  DEFAULT_SEMANTIC_QUERIES,
+  isLegacyEvidenceFirstEnabled,
+  clipLegacySemanticSection,
+} from "../theforge/theforge-evidence-context.util.js";
 import { AiService } from "../ai/ai.service.js";
 import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
@@ -30,6 +36,11 @@ const COORDINATOR_SYSTEM =
   "Usa el conocimiento base para mantener coherencia y cascada specification-driven.\n\nConocimiento base:\n---\n" +
   KNOWLEDGE +
   "\n---";
+
+function mddTheforgeContextMaxChars(): number {
+  const n = parseInt(process.env.LEGACY_MDD_THEFORGE_CONTEXT_MAX_CHARS ?? "24000", 10);
+  return Number.isFinite(n) && n > 0 ? n : 24000;
+}
 
 /**
  * Extrae una cadena JSON de un texto que puede ser JSON directo o markdown con bloque de código.
@@ -58,6 +69,8 @@ function normalizeFilesToModify(raw: LegacyFlowState["filesToModify"], defaultRe
  */
 @Injectable()
 export class LegacyCoordinatorService {
+  private readonly logger = new Logger(LegacyCoordinatorService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly projects: ProjectsService,
@@ -94,46 +107,64 @@ export class LegacyCoordinatorService {
     const { theforgeId } = await this.getLegacyProject(projectId);
     if (!this.theforge.isConfigured()) return null;
 
-    const parts: string[] = [];
-    const q1 = await this.theforge.askCodebase(
-      "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
-      theforgeId,
-    );
-    if (q1.trim()) parts.push("## 1. Modelos, rutas y configuración\n\n" + q1.trim());
+    let codebaseDoc = "";
 
-    const q2 = await this.theforge.askCodebase(
-      "Describe architecture: folder structure, modules, how backend and frontend connect, existing patterns and conventions. Include file paths for key areas.",
-      theforgeId,
-    );
-    if (q2.trim()) parts.push("## 2. Arquitectura y carpetas\n\n" + q2.trim());
+    if (isLegacyEvidenceFirstEnabled()) {
+      try {
+        const body = await buildLegacyEvidenceMarkdown(this.theforge, theforgeId, { includeSynthesis: true });
+        if (body.trim()) codebaseDoc = "# Documentación del Codebase (partida)\n\n" + body.trim();
+      } catch (err) {
+        this.logger.warn(
+          `generateCodebaseDoc: evidencia-primero falló, modo clásico. ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
-    const q3 = await this.theforge.askCodebase(
-      "What is the EXACT tech stack and directory structure of this project? List only what exists in the codebase: backend runtime and framework (e.g. Node/Express, Node/NestJS, Python/Django), frontend framework (e.g. React, Vue), database, build tools. If the project has multiple repositories, list them and their main folders. Do NOT assume or invent; only state what the codebase contains.",
-      theforgeId,
-    );
-    if (q3.trim()) parts.push("## 3. Stack y estructura\n\n" + q3.trim());
+    if (!codebaseDoc) {
+      const parts: string[] = [];
+      const lim = parseInt(process.env.LEGACY_SEMANTIC_SEARCH_LIMIT ?? "12", 10);
+      const semanticLim = Number.isFinite(lim) && lim > 0 ? lim : 12;
+      const q1 = await this.theforge.askCodebase(
+        "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
+        theforgeId,
+      );
+      if (q1.trim()) parts.push("## 1. Modelos, rutas y configuración\n\n" + q1.trim());
 
-    const q4 = await this.theforge.askCodebase(
-      "What are the main business rules, validations, naming conventions, and key patterns used across the codebase? Include any domain-specific logic, constants, or shared utilities.",
-      theforgeId,
-    );
-    if (q4.trim()) parts.push("## 4. Reglas de negocio y convenciones\n\n" + q4.trim());
+      const q2 = await this.theforge.askCodebase(
+        "Describe architecture: folder structure, modules, how backend and frontend connect, existing patterns and conventions. Include file paths for key areas.",
+        theforgeId,
+      );
+      if (q2.trim()) parts.push("## 2. Arquitectura y carpetas\n\n" + q2.trim());
 
-    // Búsqueda semántica: enriquece con hits del grafo (componentes, funciones, archivos por término)
-    const [searchModels, searchApi, searchUi] = await Promise.all([
-      this.theforge.semanticSearch("data models entities database schema tables", theforgeId, 5),
-      this.theforge.semanticSearch("API routes endpoints controllers services", theforgeId, 5),
-      this.theforge.semanticSearch("UI components screens pages views", theforgeId, 5),
-    ]);
-    const searchParts: string[] = [];
-    if (searchModels.trim()) searchParts.push("Modelos/entidades (búsqueda semántica):\n" + searchModels.trim());
-    if (searchApi.trim()) searchParts.push("API/rutas (búsqueda semántica):\n" + searchApi.trim());
-    if (searchUi.trim()) searchParts.push("Componentes/pantallas (búsqueda semántica):\n" + searchUi.trim());
-    if (searchParts.length > 0) parts.push("## 5. Índice semántico del grafo\n\n" + searchParts.join("\n\n"));
+      const q3 = await this.theforge.askCodebase(
+        "What is the EXACT tech stack and directory structure of this project? List only what exists in the codebase: backend runtime and framework (e.g. Node/Express, Node/NestJS, Python/Django), frontend framework (e.g. React, Vue), database, build tools. If the project has multiple repositories, list them and their main folders. Do NOT assume or invent; only state what the codebase contains.",
+        theforgeId,
+      );
+      if (q3.trim()) parts.push("## 3. Stack y estructura\n\n" + q3.trim());
 
-    const codebaseDoc = parts.length > 0
-      ? "# Documentación del Codebase (partida)\n\n" + parts.join("\n\n---\n\n")
-      : "";
+      const q4 = await this.theforge.askCodebase(
+        "What are the main business rules, validations, naming conventions, and key patterns used across the codebase? Include any domain-specific logic, constants, or shared utilities.",
+        theforgeId,
+      );
+      if (q4.trim()) parts.push("## 4. Reglas de negocio y convenciones\n\n" + q4.trim());
+
+      const [searchModels, searchApi, searchUi] = await Promise.all([
+        this.theforge.semanticSearch("data models entities database schema tables", theforgeId, semanticLim),
+        this.theforge.semanticSearch("API routes endpoints controllers services", theforgeId, semanticLim),
+        this.theforge.semanticSearch("UI components screens pages views", theforgeId, semanticLim),
+      ]);
+      const searchParts: string[] = [];
+      if (searchModels.trim()) {
+        searchParts.push("Modelos/entidades (búsqueda semántica):\n" + clipLegacySemanticSection(searchModels.trim()));
+      }
+      if (searchApi.trim()) searchParts.push("API/rutas (búsqueda semántica):\n" + clipLegacySemanticSection(searchApi.trim()));
+      if (searchUi.trim()) {
+        searchParts.push("Componentes/pantallas (búsqueda semántica):\n" + clipLegacySemanticSection(searchUi.trim()));
+      }
+      if (searchParts.length > 0) parts.push("## 5. Índice semántico del grafo\n\n" + searchParts.join("\n\n"));
+
+      codebaseDoc = parts.length > 0 ? "# Documentación del Codebase (partida)\n\n" + parts.join("\n\n---\n\n") : "";
+    }
 
     const state = ((await this.projects.findOne(projectId)) as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {};
     await this.prisma.project.update({
@@ -274,13 +305,40 @@ export class LegacyCoordinatorService {
       .map(([k, v]) => `${k}: ${v}`)
       .join("\n");
 
-    // Múltiples consultas a TheForge para contexto amplio (ask_codebase + semantic_search + refactor seguro)
+    // Múltiples consultas a TheForge para contexto amplio (evidencia del índice + ask_codebase + refactor seguro)
     const theforgeParts: string[] = [];
+    if (description && isLegacyEvidenceFirstEnabled()) {
+      try {
+        const descTerms = description.slice(0, 160).replace(/[^\w\s]/g, " ").trim();
+        const semanticQueries =
+          descTerms.length > 2
+            ? [`${descTerms} modules services handlers components routes`, ...DEFAULT_SEMANTIC_QUERIES]
+            : [...DEFAULT_SEMANTIC_QUERIES];
+        const changeEvidence = await buildLegacyEvidenceMarkdown(this.theforge, theforgeId, {
+          semanticQueries,
+          includeSynthesis: false,
+        });
+        if (changeEvidence.trim()) {
+          theforgeParts.push("Evidencia del índice TheForge (cambio + ejes modelo/API/UI):\n\n" + changeEvidence.trim());
+        }
+      } catch (err) {
+        this.logger.warn(
+          `generateMdd: bloque evidencia falló; se continúa sin él. ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
     if (description) {
       // Búsqueda semántica con términos del cambio para descubrir archivos/símbolos relacionados
       const descTerms = description.slice(0, 200).replace(/[^\w\s]/g, " ");
-      const searchRelated = await this.theforge.semanticSearch(descTerms, theforgeId, 5);
-      if (searchRelated?.trim()) theforgeParts.push("Código relacionado (búsqueda semántica):\n" + searchRelated.trim());
+      const semLim = parseInt(process.env.LEGACY_SEMANTIC_SEARCH_LIMIT ?? "12", 10);
+      const searchRelated = await this.theforge.semanticSearch(
+        descTerms,
+        theforgeId,
+        Number.isFinite(semLim) && semLim > 0 ? semLim : 12,
+      );
+      if (searchRelated?.trim()) {
+        theforgeParts.push("Código relacionado (búsqueda semántica):\n" + clipLegacySemanticSection(searchRelated.trim()));
+      }
 
       const q1 = await this.theforge.askCodebase(
         `For this change: "${description.slice(0, 400)}". List what ALREADY EXISTS in the codebase: data models/entities (tables, fields), API endpoints or services, and UI screens or components that touch clients, discounts, prices, price lists, campaigns, or profitability. Be exhaustive.`,
@@ -332,7 +390,11 @@ export class LegacyCoordinatorService {
       "\n---\n\n" +
       filesLine +
       (answersText ? "Respuestas del usuario:\n---\n" + answersText + "\n---\n\n" : "") +
-      (theforgeContext ? "Contexto del codebase (TheForge) — incluye validaciones, definiciones exactas, funciones por archivo y búsqueda semántica. Usar TODO para inferir impacto completo:\n---\n" + theforgeContext.slice(0, 12000) + "\n---" : "");
+      (theforgeContext
+        ? "Contexto del codebase (TheForge) — incluye evidencia del índice, validaciones, definiciones exactas, funciones por archivo y búsqueda semántica. Usar TODO para inferir impacto completo. No inventes rutas ni APIs que no aparezcan en este contexto.\n---\n" +
+          theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
+          "\n---"
+        : "");
     const mddDraft = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
     const mddContent = await this.reviewer.reviewMdd(description, mddDraft?.trim() ?? "");
     const cleaned = cleanDocumentContent(mddContent);
@@ -443,7 +505,7 @@ export class LegacyCoordinatorService {
           if (theforgeContext) {
             uxPrompt =
               "**Contexto del codebase (TheForge) — priorizar y usar antes de elaborar:**\n---\n" +
-              theforgeContext.slice(0, 12000) +
+              theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
               "\n---\n\n**Regla obligatoria (legacy):** No inventes nada. Apégate al MDD y únicamente al conocimiento del codebase (TheForge) proporcionado arriba.\n\n**Instrucción:** Usa TODO el conocimiento anterior para alinear la guía con lo que ya existe. A continuación, MDD y Blueprint.\n\n" +
               uxPrompt;
           }

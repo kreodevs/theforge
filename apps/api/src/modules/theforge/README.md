@@ -1,10 +1,17 @@
-# Módulo TheForge
+# Módulo TheForge (cliente MCP)
 
-Integración con el MCP de TheForge (AriadneSpecs) para listar proyectos indexados y enriquecer el chat en proyectos legacy.
+Integración HTTP JSON-RPC con el MCP AriadneSpecs (`THEFORGE_MCP_URL`): proyectos, `get_modification_plan`, `ask_codebase`, búsqueda semántica, contenido de archivo y herramientas SDD (`validate_before_edit`, etc.).
 
-- **TheForgeService:** `listKnownProjects()`, `getModificationPlan()`, `askCodebase()`, `getFileContent`, `validateBeforeEdit`, `getLegacyImpact`, `getContractSpecs`, `getComponentGraph`, `semanticSearch()`, `getFunctionsInFile()`, `getDefinitions()`, `getReferences()` — llamadas al MCP AriadneSpecs. Cumple spec: `MCP-Protocol-Version: 2025-03-26`, manejo de `result.isError`. Herramientas de documentación legacy: semantic_search, get_functions_in_file, get_definitions usadas en generateCodebaseDoc, getContextForDeliverables y generateMdd.
-- **TheForgeController:** `GET /theforge/projects` → `{ projects, theforgeAvailable }`.
+## Contexto evidencia-primero (legacy / entregables)
 
-Env: `THEFORGE_MCP_URL` (obligatorio para usar MCP); `MCP_AUTH_TOKEN` o `MCP_X_M2M_TOKEN` (opcional si el servidor requiere auth); `THEFORGE_MCP_TIMEOUT_MS` (opcional, default 60000).
+`theforge-evidence-context.util.ts` arma Markdown de contexto para **SDD legacy**:
 
-Contrato MCP: `docs/integración theforge/Llamadas-HTTPS-MCP-AriadneSpecs.md`. Ver también `PLAN-IMPLEMENTACION-THEFORGE-WEB.md` y `theforge.md`.
+1. Varios `semantic_search` (límite configurable).
+2. Extracción heurística de rutas desde el texto MCP (`extractCandidatePathsFromMcpText`).
+3. `get_functions_in_file` por rutas candidatas (tope configurable).
+4. `get_file_content` en rutas prioritarias (p. ej. `schema.prisma`, `package.json`).
+5. Opcional: un `ask_codebase` con prompt acotado a “solo evidencia” (`twoPhase: true`).
+
+La API Nest `TheForgeService.getContextForDeliverables` y `LegacyCoordinatorService.generateCodebaseDoc` / `generateMdd` usan este pipeline cuando `LEGACY_EVIDENCE_FIRST_CONTEXT` está activo (default).
+
+Variables relevantes: ver `.env.example` en la raíz del monorepo (prefijo `LEGACY_*`).

@@ -13,8 +13,8 @@ Flujo separado para **proyectos legacy** (documentados en TheForge): modificacio
 
 ## Servicios
 
-- **LegacyCoordinatorService:** Orquesta start (TheForge), answer, generateMdd, generateDeliverables. Usa knowledge pack y AiService para generación. En legacy, **prioriza TheForge**: genera codebase doc con ask_codebase + semantic_search; genera MDD con ask_codebase, semantic_search, validate_before_edit, get_definitions, get_functions_in_file, get_file_content; genera entregables con getContextForDeliverables (ask_codebase + semantic_search). Contexto inyectado en cada paso vía `theforgeContext`. **Regla aplicada a todos los entregables:** no inventar; apegarse al MDD y al conocimiento TheForge.
-- **LegacyReviewerService:** Revisa lista archivos/preguntas y borrador MDD antes de devolver al usuario.
+- **LegacyCoordinatorService:** Orquesta start (TheForge), answer, generateMdd, generateDeliverables. Usa knowledge pack y AiService para generación. En legacy, **prioriza TheForge** con pipeline **evidencia-primero** (default, `LEGACY_EVIDENCE_FIRST_CONTEXT`): `semantic_search` → extracción de rutas → `get_functions_in_file` → `get_file_content` en prioritarios → resumen vía `ask_codebase` acotado a la evidencia (`twoPhase: true` en el cliente). Si desactivas el flag, vuelve el modo clásico (varias preguntas NL + semántica). `generateMdd` antepone un bloque de evidencia del índice (misma util) además de validación por archivo, definiciones y extractos. `getContextForDeliverables` reutiliza el mismo pipeline. Límite de contexto en prompts: `LEGACY_MDD_THEFORGE_CONTEXT_MAX_CHARS` (default 24000). Ver `../theforge/README.md` y `.env.example`.
+- **LegacyReviewerService:** Revisa lista archivos/preguntas y borrador MDD. Si el MDD casi no cita rutas (menos de 3 referencias tipo `archivo.ts`), antepone aviso SDD al prompt de revisión.
 
 ## Conocimiento
 
