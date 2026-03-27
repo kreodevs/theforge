@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import {
   buildLegacyEvidenceMarkdown,
   clipLegacySemanticSection,
@@ -95,13 +95,20 @@ function extractJsonFromToolContent(text: string): string {
 /**
  * Servicio de integración con el MCP TheForge (AriadneSpecs).
  * Expone listado de proyectos (multi-root), plan de modificación, ask_codebase y herramientas de refactor seguro (SPEC-MCP-001).
- * Requiere THEFORGE_MCP_URL y MCP_AUTH_TOKEN en el entorno.
+ * Requiere THEFORGE_MCP_URL para estar “configurado”; MCP_AUTH_TOKEN (o MCP_X_M2M_TOKEN) si el MCP exige auth.
  */
 @Injectable()
-export class TheForgeService {
+export class TheForgeService implements OnModuleInit {
   private readonly logger = new Logger(TheForgeService.name);
 
   constructor(private readonly contextCache: TheForgeContextCacheService) {}
+
+  onModuleInit(): void {
+    if (this.isConfigured()) return;
+    this.logger.warn(
+      "[TheForge] THEFORGE_MCP_URL vacío: MCP desactivado. Comprueba env dentro del contenedor theforge-api (env_file .env o variables del servicio en Dokploy; evita compose que fije la clave a string vacío).",
+    );
+  }
 
   private get baseUrl(): string {
     const url = process.env.THEFORGE_MCP_URL?.trim();

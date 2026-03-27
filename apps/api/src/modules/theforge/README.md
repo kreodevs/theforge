@@ -2,6 +2,8 @@
 
 Integración HTTP JSON-RPC con el MCP AriadneSpecs (`THEFORGE_MCP_URL`): proyectos, `get_modification_plan`, `ask_codebase`, búsqueda semántica, contenido de archivo y herramientas SDD (`validate_before_edit`, etc.).
 
+**Despliegue Docker:** en `docker-compose.yml`, `THEFORGE_MCP_URL` / tokens MCP no deben quedar fijados a `""` vía `${VAR:-}`; ver comentarios en el compose y `README` raíz (Dokploy → servicio `theforge-api`).
+
 ## Contexto evidencia-primero (legacy / entregables)
 
 `theforge-evidence-context.util.ts` arma Markdown de contexto para **SDD legacy**:

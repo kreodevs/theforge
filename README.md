@@ -50,6 +50,10 @@ docker compose up --build
 
 Env opcionales: `AI_PROVIDER` (openai | google), `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`.
 
+### Compose multi-servicio (`docker-compose.yml`)
+
+`THEFORGE_MCP_URL` y `MCP_AUTH_TOKEN` **no** se interpolan con `${VAR:-}` en el servicio `theforge-api`: un valor vacío en el bloque `environment` impide que las mismas claves lleguen desde `.env` o desde las variables de **ese** servicio en Dokploy. El servicio usa `env_file: .env` (opcional, `required: false`) más lo que inyecte el orquestador en el contenedor API.
+
 ## Docs
 
 - [Índice de arquitectura](docs/THEFORGE-INDEX.md)

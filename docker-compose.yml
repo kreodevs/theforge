@@ -63,6 +63,13 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     container_name: theforge-api
+    # Carga THEFORGE_MCP_URL / MCP_* desde `.env` local sin pisar con "" si Compose no
+    # tiene esas claves al interpolar `${VAR:-}`. En Dokploy: también inyecta por servicio
+    # (theforge-api); si solo estaban como vars “globales” y el compose las expandía vacías,
+    # el API nunca veía el valor.
+    env_file:
+      - path: .env
+        required: false
     networks:
       - default
       - dokploy-network
@@ -90,9 +97,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_EMBEDDING_DIM: ${OPENAI_EMBEDDING_DIM:-}
       GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
-      THEFORGE_MCP_URL: ${THEFORGE_MCP_URL:-}
-      # MCP_AUTH_TOKEN: inyectar desde Environment de Dokploy (auth con Ariadne MCP).
-      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+      # THEFORGE_MCP_URL / MCP_AUTH_TOKEN / MCP_X_M2M_TOKEN: no usar ${VAR:-} aquí (quedan
+      # como "" y pueden anular env_file o variables runtime). Definirlas en `.env` o en
+      # Environment del servicio theforge-api en Dokploy.
       # Cliente HTTP al MCP ajeno (TheForge); no confundir con Falkor SDD ni con un MCP propio.
       THEFORGE_MCP_TIMEOUT_MS: ${THEFORGE_MCP_TIMEOUT_MS:-60000}
       # P3009: si una migración queda fallida, desbloquear antes de deploy (ej. 20260319130000_agent_checkpoint_mdd_stage).
