@@ -7,6 +7,7 @@
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "test": "nest build && find dist -name '*.spec.js' -exec node --test {} +",
+    "test:mcp-alignment": "nest build && node --test dist/apps/api/src/modules/theforge/theforge-mcp-tools-alignment.spec.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\""
   },
   "dependencies": {

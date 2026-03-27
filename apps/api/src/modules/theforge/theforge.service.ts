@@ -6,6 +6,7 @@ import {
   isLegacyEvidenceFirstEnabled,
 } from "./theforge-evidence-context.util.js";
 import { TheForgeContextCacheService } from "./theforge-context-cache.service.js";
+import { parseMcpResponse } from "./mcp-http.util.js";
 
 /** Repo (root) dentro de un proyecto multi-repo. */
 export interface TheForgeProjectRoot {
@@ -57,26 +58,6 @@ export interface AskCodebaseOptions {
 export interface TheForgeModificationPlan {
   filesToModify: TheForgeFileToModify[];
   questionsToRefine: string[];
-}
-
-/**
- * Parsea la respuesta del MCP: puede ser JSON directo o SSE (líneas event:/data:).
- * @param raw - Texto crudo de la respuesta HTTP del MCP.
- * @returns Objeto parseado o null si no se puede extraer JSON.
- */
-function parseMcpResponse(raw: string): unknown {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith("{")) {
-    return JSON.parse(raw) as unknown;
-  }
-  // SSE: buscar línea "data: {...}" y extraer el JSON
-  for (const line of raw.split("\n")) {
-    const dataLine = line.startsWith("data:") ? line.slice(5).trim() : null;
-    if (dataLine && dataLine.startsWith("{")) {
-      return JSON.parse(dataLine) as unknown;
-    }
-  }
-  return null;
 }
 
 /**
