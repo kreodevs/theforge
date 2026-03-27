@@ -10,6 +10,7 @@ import {
   DEFAULT_SEMANTIC_QUERIES,
   isLegacyEvidenceFirstEnabled,
   clipLegacySemanticSection,
+  legacyAnalyzerIndicatesEmptyIndex,
 } from "../theforge/theforge-evidence-context.util.js";
 import { AiService } from "../ai/ai.service.js";
 import { LegacyReviewerService } from "./legacy-reviewer.service.js";
@@ -112,8 +113,14 @@ export class LegacyCoordinatorService {
     if (isLegacyEvidenceFirstEnabled()) {
       try {
         const body = await buildLegacyEvidenceMarkdown(this.theforge, theforgeId, { includeSynthesis: true });
-        if (body.trim()) {
-          codebaseDoc = "# Documentación del Codebase (partida)\n\n" + body.trim();
+        const trimmed = body.trim();
+        if (trimmed && legacyAnalyzerIndicatesEmptyIndex(trimmed)) {
+          this.logger.warn(
+            `generateCodebaseDoc: Legacy Analyzer devolvió «sin datos en índice» (evidencia insuficiente o responseMode evidence_first sin contexto). ` +
+              `No se persiste ese texto; se intenta modo clásico ask_codebase. theforgeId=${theforgeId} — confirma que el UUID coincide con el repo indexado en Ariadne.`,
+          );
+        } else if (trimmed) {
+          codebaseDoc = "# Documentación del Codebase (partida)\n\n" + trimmed;
         } else {
           this.logger.warn(
             `generateCodebaseDoc: pipeline evidencia compacta devolvió vacío (semantic_search sin texto útil o sin rutas). ` +

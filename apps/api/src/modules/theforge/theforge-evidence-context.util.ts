@@ -138,6 +138,19 @@ function hasUsableLegacyGraphEvidence(semanticChunks: string[], chosenPaths: str
   return maxChunk >= 80;
 }
 
+/**
+ * True cuando la salida del Analyzer / MCP es el mensaje de “índice sin datos” (no es documentación útil).
+ * En ese caso conviene **no** persistir el bloque y hacer fallback a `ask_codebase` clásico.
+ */
+export function legacyAnalyzerIndicatesEmptyIndex(markdown: string): boolean {
+  const t = (markdown ?? "").toLowerCase();
+  return (
+    t.includes("sin datos en índice") ||
+    t.includes("no se obtuvo contexto desde las herramientas") ||
+    (t.includes("verifica sync") && t.includes("reformula la pregunta"))
+  );
+}
+
 /** Recorte configurable para bloques semantic_search (modo legacy clásico). */
 export function clipLegacySemanticSection(s: string): string {
   const max = parsePositiveInt("LEGACY_SEMANTIC_SECTION_MAX_CHARS", 6000);

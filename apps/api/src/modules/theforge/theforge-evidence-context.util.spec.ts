@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { countMddCodePathReferences, extractCandidatePathsFromMcpText } from "./theforge-evidence-context.util.js";
+import {
+  countMddCodePathReferences,
+  extractCandidatePathsFromMcpText,
+  legacyAnalyzerIndicatesEmptyIndex,
+} from "./theforge-evidence-context.util.js";
 
 test("extractCandidatePathsFromMcpText: backticks", () => {
   const text = "Ver `apps/api/src/main.ts` y `packages/foo/bar.tsx`.";
@@ -22,4 +26,17 @@ test("extractCandidatePathsFromMcpText: ignora ..", () => {
 test("countMddCodePathReferences", () => {
   const mdd = "Editar `src/a.ts` y `src/b.tsx`.\nTambién apps/web/src/c.ts";
   assert.ok(countMddCodePathReferences(mdd) >= 3);
+});
+
+test("legacyAnalyzerIndicatesEmptyIndex: detecta mensaje Ariadne sin índice", () => {
+  const sample =
+    "# Contexto TheForge — Legacy Analyzer (compacto)\n\n**sin datos en índice para este alcance** — no se obtuvo contexto desde las herramientas (Cypher/archivos/RAG). Verifica sync/resync del repositorio.";
+  assert.equal(legacyAnalyzerIndicatesEmptyIndex(sample), true);
+});
+
+test("legacyAnalyzerIndicatesEmptyIndex: documentación real no coincide", () => {
+  assert.equal(
+    legacyAnalyzerIndicatesEmptyIndex("## Resumen de impacto\n- El módulo `apps/api/src/foo.ts` expone POST /orders."),
+    false,
+  );
 });
