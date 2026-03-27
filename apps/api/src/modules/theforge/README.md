@@ -2,6 +2,8 @@
 
 Integración HTTP JSON-RPC con el MCP AriadneSpecs (`THEFORGE_MCP_URL`): proyectos, `get_modification_plan`, `ask_codebase`, búsqueda semántica, contenido de archivo y herramientas SDD (`validate_before_edit`, etc.).
 
+**Depuración:** con `DEBUG_MCP=1` (o `true`), `TheForgeService.postTheForgeMcp` registra cada cuerpo JSON-RPC enviado y la respuesta cruda (truncada por `DEBUG_MCP_MAX_RESPONSE_CHARS`, default 32768; request por `DEBUG_MCP_MAX_REQUEST_CHARS`, default 65536). En Docker: variable en `.env` o `docker-compose` (`DEBUG_MCP: ${DEBUG_MCP:-0}`).
+
 **Despliegue Docker:** en `docker-compose.yml`, `THEFORGE_MCP_URL` / tokens MCP no deben quedar fijados a `""` vía `${VAR:-}`; ver comentarios en el compose y `README` raíz (Dokploy → servicio `theforge-api`).
 
 ## Contexto evidencia-primero (legacy / entregables)

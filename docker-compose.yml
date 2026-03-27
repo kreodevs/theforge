@@ -102,6 +102,8 @@ services:
       # Environment del servicio theforge-api en Dokploy.
       # Cliente HTTP al MCP ajeno (TheForge); no confundir con Falkor SDD ni con un MCP propio.
       THEFORGE_MCP_TIMEOUT_MS: ${THEFORGE_MCP_TIMEOUT_MS:-60000}
+      # 1 = loguear JSON-RPC y cuerpo de respuesta del MCP Ariadne (verbose; no usar en prod estable).
+      DEBUG_MCP: ${DEBUG_MCP:-0}
       # P3009: si una migración queda fallida, desbloquear antes de deploy (ej. 20260319130000_agent_checkpoint_mdd_stage).
       PRISMA_RESOLVE_ROLLED_BACK: ${PRISMA_RESOLVE_ROLLED_BACK:-}
       # OTP: definir EMAIL_OTP (y SMTP*) en Dokploy / .env — único correo que recibe el código.

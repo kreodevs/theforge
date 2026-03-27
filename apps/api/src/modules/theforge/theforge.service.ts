@@ -73,6 +73,21 @@ function extractJsonFromToolContent(text: string): string {
   return jsonBlock ? jsonBlock[1].trim() : t;
 }
 
+function truncateForMcpDebug(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max)}\n… [DEBUG_MCP truncado, ${s.length} caracteres total; amplía DEBUG_MCP_MAX_RESPONSE_CHARS si hace falta]`;
+}
+
+function debugMcpRequestMaxChars(): number {
+  const n = parseInt(process.env.DEBUG_MCP_MAX_REQUEST_CHARS ?? "65536", 10);
+  return Number.isFinite(n) && n > 0 ? n : 65536;
+}
+
+function debugMcpResponseMaxChars(): number {
+  const n = parseInt(process.env.DEBUG_MCP_MAX_RESPONSE_CHARS ?? "32768", 10);
+  return Number.isFinite(n) && n > 0 ? n : 32768;
+}
+
 /**
  * Servicio de integración con el MCP TheForge (AriadneSpecs).
  * Expone listado de proyectos (multi-root), plan de modificación, ask_codebase y herramientas de refactor seguro (SPEC-MCP-001).
@@ -114,6 +129,13 @@ export class TheForgeService implements OnModuleInit {
     return Number.isFinite(n) && n > 0 ? n : 60000;
   }
 
+  /** `DEBUG_MCP=1` o `true`: loguea JSON-RPC enviado y respuesta cruda del MCP Ariadne (TheForge). */
+  private isDebugMcp(): boolean {
+    const v = process.env.DEBUG_MCP?.trim().toLowerCase();
+    if (!v) return false;
+    return v === "1" || v === "true" || v === "yes" || v === "on";
+  }
+
   /** POST JSON-RPC al endpoint TheForge (MCP ajeno) con abort por timeout. Headers según Streamable HTTP + AriadneSpecs. */
   private async postTheForgeMcp(body: object): Promise<Response> {
     const t0 = Date.now();
@@ -131,6 +153,17 @@ export class TheForgeService implements OnModuleInit {
     }
     const authPreview = this.xM2mToken ? "X-M2M-Token" : this.token ? `Bearer ${this.token.slice(0, 4)}...` : "sin auth";
     this.logger.log(`[TheForge] MCP POST ${this.baseUrl} | auth=${authPreview}`);
+
+    if (this.isDebugMcp()) {
+      let reqStr: string;
+      try {
+        reqStr = JSON.stringify(body);
+      } catch {
+        reqStr = String(body);
+      }
+      this.logger.log(`[DEBUG_MCP] request (${reqStr.length} chars):\n${truncateForMcpDebug(reqStr, debugMcpRequestMaxChars())}`);
+    }
+
     try {
       const response = await fetch(this.baseUrl, {
         method: "POST",
@@ -138,6 +171,18 @@ export class TheForgeService implements OnModuleInit {
         headers,
         body: JSON.stringify(body),
       });
+
+      if (this.isDebugMcp()) {
+        try {
+          const raw = await response.clone().text();
+          this.logger.log(
+            `[DEBUG_MCP] response HTTP ${response.status} ${Date.now() - t0}ms (${raw.length} chars):\n${truncateForMcpDebug(raw, debugMcpResponseMaxChars())}`,
+          );
+        } catch (e) {
+          this.logger.warn(`[DEBUG_MCP] no se pudo leer clone de respuesta: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
       this.logger.debug(`[TheForge] MCP HTTP ${response.status} ${Date.now() - t0}ms`);
       return response;
     } catch (err) {

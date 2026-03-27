@@ -8,6 +8,7 @@ TheForge **no** implementa el mismo protocolo ni el mismo despliegue que el MCP 
 - **Cómo lo usa TheForge:** La API Nest (`TheForgeService`) hace **HTTP POST** a `THEFORGE_MCP_URL` con JSON-RPC `tools/call` (p. ej. `ask_codebase`, `get_modification_plan`, `validate_before_edit`). No es un proceso MCP embebido en el contenedor de TheForge.
 - **Autenticación:** `MCP_AUTH_TOKEN` (Bearer).
 - **Timeouts:** `THEFORGE_MCP_TIMEOUT_MS` (default 60000). El grafo y la latencia son ajenos a nuestro control.
+- **Depuración:** `DEBUG_MCP=1` hace que la API registre cada petición JSON-RPC y la respuesta cruda del MCP (ver también `DEBUG_MCP_MAX_REQUEST_CHARS` / `DEBUG_MCP_MAX_RESPONSE_CHARS`). En Docker: variable en el servicio `theforge-api`.
 - **Cursor / IDE:** El MCP que configures en `~/.cursor/mcp.json` apuntando a TheForge sirve al **editor**, no sustituye la variable `THEFORGE_MCP_URL` de la API en producción.
 - **Crítica del evaluador en el chat** (`evaluatorCritique` en la respuesta del orquestador) viene del **pipeline TheForge** (evaluador opcional), no del endpoint TheForge: son canales independientes.
 
