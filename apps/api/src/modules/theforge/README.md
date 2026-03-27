@@ -19,3 +19,5 @@ Integración HTTP JSON-RPC con el MCP AriadneSpecs (`THEFORGE_MCP_URL`): proyect
 La API Nest `TheForgeService.getContextForDeliverables` y `LegacyCoordinatorService.generateCodebaseDoc` / `generateMdd` usan este pipeline cuando `LEGACY_EVIDENCE_FIRST_CONTEXT` está activo (default).
 
 Variables relevantes: ver `.env.example` en la raíz del monorepo (prefijo `LEGACY_*`, `THEFORGE_CONTEXT_*`).
+
+**«Sin datos en índice» en MDD inicial pero el repo “sí está indexado” en Ariadne:** el MCP que usa la API filtra por `theforgeProjectId` (UUID del proyecto o de un `roots[].id` en multi-repo). Si en The Forge enlazaste el id del **contenedor** equivocado, o una instancia MCP distinta a la del IDE, `semantic_search` devuelve vacío y el Analyzer repetía el mensaje de Ariadne. Con `LEGACY_ANALYZER_REQUIRE_GRAPH_HITS=1` (default) se **omite** el Analyzer sin hits y se hace fallback a `ask_codebase` clásico (sin `evidence_first`). Revisa en UI de creación de proyecto que el id coincida con `list_known_projects` / el repo realmente sincronizado.

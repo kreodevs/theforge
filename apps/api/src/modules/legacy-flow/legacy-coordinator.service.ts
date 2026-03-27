@@ -112,7 +112,15 @@ export class LegacyCoordinatorService {
     if (isLegacyEvidenceFirstEnabled()) {
       try {
         const body = await buildLegacyEvidenceMarkdown(this.theforge, theforgeId, { includeSynthesis: true });
-        if (body.trim()) codebaseDoc = "# Documentación del Codebase (partida)\n\n" + body.trim();
+        if (body.trim()) {
+          codebaseDoc = "# Documentación del Codebase (partida)\n\n" + body.trim();
+        } else {
+          this.logger.warn(
+            `generateCodebaseDoc: pipeline evidencia compacta devolvió vacío (semantic_search sin texto útil o sin rutas). ` +
+              `Probable causa: theforgeProjectId no coincide con el proyecto/repo indexado en Ariadne, o índice sin RAG para ese ID. ` +
+              `Siguiente paso: modo clásico ask_codebase. theforgeId=${theforgeId.slice(0, 8)}…`,
+          );
+        }
       } catch (err) {
         this.logger.warn(
           `generateCodebaseDoc: evidencia-primero falló, modo clásico. ${err instanceof Error ? err.message : String(err)}`,

@@ -228,10 +228,14 @@ export class TheForgeService implements OnModuleInit {
             return hit;
           }
           const built = await buildLegacyEvidenceMarkdown(this, projectId, { includeSynthesis: true });
-          this.contextCache.set(key, built);
-          return built;
+          if (built.trim()) {
+            this.contextCache.set(key, built);
+            return built;
+          }
+        } else {
+          const built = await buildLegacyEvidenceMarkdown(this, projectId, { includeSynthesis: true });
+          if (built.trim()) return built;
         }
-        return await buildLegacyEvidenceMarkdown(this, projectId, { includeSynthesis: true });
       } catch (err) {
         this.logger.warn(
           `[TheForge] getContextForDeliverables: evidencia-primero falló, modo clásico. ${err instanceof Error ? err.message : String(err)}`,

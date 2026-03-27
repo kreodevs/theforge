@@ -126,6 +126,18 @@ function clip(s: string, max: number): string {
   return s.slice(0, max) + "\n… [recortado por LEGACY_SEMANTIC_SECTION_MAX_CHARS]";
 }
 
+/**
+ * True si hay señal útil del índice MCP (semantic_search + rutas extraídas).
+ * Si todo está vacío y aún así pasamos a Legacy Analyzer con `evidence_first`, Ariadne suele
+ * responder «sin datos en índice…» aunque el repo exista en UI: ID de proyecto/repo incorrecto,
+ * desfase de instancia MCP, o índice vectorial aún sin poblar para ese scope.
+ */
+function hasUsableLegacyGraphEvidence(semanticChunks: string[], chosenPaths: string[]): boolean {
+  if (chosenPaths.length > 0) return true;
+  const maxChunk = Math.max(0, ...semanticChunks.map((c) => (c?.trim().length ?? 0)));
+  return maxChunk >= 80;
+}
+
 /** Recorte configurable para bloques semantic_search (modo legacy clásico). */
 export function clipLegacySemanticSection(s: string): string {
   const max = parsePositiveInt("LEGACY_SEMANTIC_SECTION_MAX_CHARS", 6000);
@@ -177,6 +189,11 @@ export async function buildLegacyEvidenceMarkdown(
   const extracted = extractCandidatePathsFromMcpText(mergedSemantic);
   const sorted = sortPathsByPriority(extracted);
   const chosen = sorted.slice(0, maxPaths);
+
+  const requireGraphHits = envFlag("LEGACY_ANALYZER_REQUIRE_GRAPH_HITS", true);
+  if (!hasUsableLegacyGraphEvidence(semanticChunks, chosen)) {
+    if (requireGraphHits) return "";
+  }
   const fnPaths = chosen.slice(0, maxFnPaths);
 
   const fnBlocks = await mapInBatches(fnPaths, 4, async (path) => {
