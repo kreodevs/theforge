@@ -1069,8 +1069,8 @@ export default function WorkshopView({
             </div>
 
             {/* Renglón 2: Texto del flujo y botones de acción */}
-            <div className="flex items-center justify-between gap-1 border-t border-zinc-800 pt-2">
-              <p className="text-xs text-zinc-500">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-t border-zinc-800 pt-2">
+              <p className="text-xs text-zinc-500 min-w-0 sm:flex-1">
                 {complexity === "LOW"
                   ? "Complejidad baja: Spec → H.U. → Tasks (MDD / Blueprint / API ocultos). Paso 0 opcional."
                   : complexity === "MEDIUM"
@@ -1081,7 +1081,7 @@ export default function WorkshopView({
                       ? "Legacy: MDD Inicial opcional (Ariadne → doc. de partida); luego Modificación + MDD de cambio y entregables. Cada etapa del taller = una modificación con doc actualizada vía Ariadne."
                       : "Orden: MDD → Spec → Arq. → Casos → H.U. → Blueprint → Guía UX/UI → API → Flujos → Tasks → Infra (Paso 0 opcional)"}
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 shrink-0 sm:justify-end">
                 {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra"] as const).includes(
                   centralPanel as any,
                 ) && (
@@ -1236,14 +1236,19 @@ export default function WorkshopView({
                     }}
                     disabled={loading}
                     title="Generar documentación de partida del codebase vía AriadneSpecs"
-                    className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
                   >
                     {loading && loadingReason === "legacy-codebase-doc" ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                     ) : (
-                      <RefreshCw className="w-4 h-4" />
+                      <RefreshCw className="w-4 h-4 shrink-0" />
                     )}
-                    {project?.legacyFlowState?.codebaseDoc ? "Regenerar" : "Generar"} documentación de partida
+                    <span className="sm:hidden">
+                      {project?.legacyFlowState?.codebaseDoc ? "Regenerar" : "Generar"} doc. partida
+                    </span>
+                    <span className="hidden sm:inline">
+                      {project?.legacyFlowState?.codebaseDoc ? "Regenerar" : "Generar"} documentación de partida
+                    </span>
                   </button>
                 )}
                 {centralPanel === "mdd-inicial" && mddInicialViewMode === "source" && (mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc) && (
