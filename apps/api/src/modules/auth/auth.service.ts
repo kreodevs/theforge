@@ -100,15 +100,10 @@ export class AuthService {
   }
 
   /**
-   * Solicitud de OTP: solo el correo autorizado recibe código; el resto recibe la misma respuesta OK sin envío.
+   * Solicitud de OTP: el código solo se envía a `EMAIL_OTP` / `AUTH_ALLOWED_OTP_EMAIL` (dev: default en constantes).
    */
-  async requestOtp(rawEmail: string): Promise<{ ok: true }> {
-    const email = normalizeEmail(rawEmail);
-    const allowed = this.allowedEmail();
-    if (email !== allowed) {
-      return { ok: true };
-    }
-
+  async requestOtp(): Promise<{ ok: true }> {
+    const email = this.allowedEmail();
     const now = Date.now();
     const last = this.lastOtpRequestAt.get(email) ?? 0;
     if (now - last < OTP_RESEND_MS) {
@@ -152,17 +147,12 @@ export class AuthService {
     return { ok: true };
   }
 
-  async verifyOtp(rawEmail: string, rawCode: string): Promise<{
+  async verifyOtp(rawCode: string): Promise<{
     accessToken: string;
     user: { email: string; role: string };
   }> {
-    const email = normalizeEmail(rawEmail);
+    const email = this.allowedEmail();
     const code = rawCode.trim();
-    const allowed = this.allowedEmail();
-
-    if (email !== allowed) {
-      throw new UnauthorizedException("Código o correo inválido");
-    }
 
     const entry = this.otpByEmail.get(email);
     if (!entry || Date.now() > entry.expiresAt || entry.code !== code) {

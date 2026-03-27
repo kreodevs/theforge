@@ -1,7 +1,7 @@
 # auth
 
-- **`POST /auth/otp/request`** — body `{ email }`. Respuesta `{ ok: true }` salvo error de servidor. Solo el correo configurado en **`EMAIL_OTP`** (preferido) o **`AUTH_ALLOWED_OTP_EMAIL`** recibe OTP; el resto obtiene la misma respuesta sin envío. **Producción (`NODE_ENV=production`):** al arranque debe existir `EMAIL_OTP` o `AUTH_ALLOWED_OTP_EMAIL` con un email válido; además exige `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`. **Desarrollo:** sin SMTP el código se registra en logs.
-- **`POST /auth/otp/verify`** — body `{ email, code }`. Hace `upsert` de `User` por email y emite JWT con `sub` = `User.id`, `role: admin`. Respuesta `{ accessToken, user: { email, role: "admin" } }`. El OTP sigue en memoria hasta verificar o expirar.
+- **`POST /auth/otp/request`** — body `{}` opcional (si incluye `email` se ignora). Respuesta `{ ok: true }`. El OTP solo se envía al correo de **`EMAIL_OTP`** / **`AUTH_ALLOWED_OTP_EMAIL`**. **Producción:** `EMAIL_OTP` o `AUTH_ALLOWED_OTP_EMAIL` obligatorio al arranque; `SMTP_*` para envío real. **Desarrollo:** sin SMTP el código va a logs.
+- **`POST /auth/otp/verify`** — body `{ code }` (opcional `email`, ignorado). `upsert` de `User` con el correo autorizado y JWT (`sub` = `User.id`, `role: admin`). Respuesta `{ accessToken, user: { email, role: "admin" } }`.
 
 Variables: `SMTP_PORT` (default 587), `SMTP_SECURE=1` solo si el servidor exige TLS directo. `SMTP_FROM` puede ser solo nombre visible; si no incluye `@`, se usa `SMTP_USER` como dirección.
 
