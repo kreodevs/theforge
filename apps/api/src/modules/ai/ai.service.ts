@@ -339,15 +339,23 @@ export class AiService {
   }
 
   async generateUseCases(mddContent: string, specContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
-    const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
+    const mddRaw = mddContent?.trim() ?? "";
+    if (!mddRaw) {
+      return (
+        "# Casos de uso\n\n" +
+        "No hay **MDD** (Constitución) disponible. No se generaron casos de uso automáticamente para **evitar inventar un dominio ajeno** al proyecto.\n\n" +
+        "Completa el MDD y, si aplica, el **Spec**; luego vuelve a ejecutar **Generar casos de uso** desde el Workshop.\n"
+      );
+    }
+    const mdd = mddRaw.slice(0, 12000);
     const spec = (specContent?.trim() ?? "").slice(0, 8000);
     let prompt =
-      mdd.length > 0
-        ? "Genera el documento de Casos de Uso según las instrucciones del system prompt.\n\nMDD:\n---\n" +
-        mdd +
-        "\n---\n\n" +
-        (spec ? "Spec (what/why):\n---\n" + spec + "\n---" : "")
-        : "No hay MDD. Genera un documento de casos de uso genérico con flujos principales y alternativos.";
+      "Genera el documento de Casos de Uso según las instrucciones del system prompt. " +
+      "Cada flujo debe alinearse al texto del MDD y del Spec; no cites archivos ni entidades que no aparezcan en esos documentos.\n\n" +
+      "MDD:\n---\n" +
+      mdd +
+      "\n---\n\n" +
+      (spec ? "Spec (what/why):\n---\n" + spec + "\n---" : "");
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     return this.generateResponse(prompt, [], { systemPrompt: USE_CASES_PROMPT });
   }
