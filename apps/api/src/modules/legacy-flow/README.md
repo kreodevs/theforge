@@ -10,10 +10,20 @@ Flujo separado para **proyectos legacy** (documentados en TheForge): modificacio
 - `POST /projects/:projectId/legacy/answer` — body `{ answers: Record<string, string> }`. Guarda respuestas del usuario.
 - `POST /projects/:projectId/legacy/generate-mdd` — Genera el MDD de cambio (coordinador + revisor) y persiste en `mddContent`. Usa varias consultas a TheForge (qué existe, arquitectura, reglas) y exige al LLM inferir impacto completo en módulos/entidades/UI, no solo el requerimiento literal.
 - `POST /projects/:projectId/legacy/generate-deliverables` — Despacho dinámico según `Project.complexity`: solo los pasos en `DELIVERABLES_BY_COMPLEXITY`, con contexto TheForge inyectado. **Fuente:** `mddContent` (MDD de cambio) o, si está vacío, `legacyFlowState.codebaseDoc` (MDD Inicial → ingeniería inversa). Si hay `complexityPending` sin confirmar, 400.
+- `POST /projects/:projectId/legacy/resolve-index-sdd-conflict` — body `{ choice: "trust_index" | "trust_sdd" | "proceed_with_warnings" }`. Tras un **409** `LEGACY_INDEX_SDD_MISMATCH`, el usuario confirma cómo proceder; se persiste en `legacyFlowState.legacyIndexSddResolution` y se desbloquean `generate-codebase-doc`, `generate-mdd` y `generate-deliverables`.
+
+## Alineación índice Ariadne ↔ grafo SDD (FalkorDB)
+
+Antes de llamar a la IA en documentación/MDD/entregables legacy, el coordinador **consulta FalkorDB** (`GraphMemoryService.getSddStageSnapshot`: `DB_Entity`, `API_Endpoint` de la etapa principal) y lo cruza con señales del índice MCP (`gatherLegacyIndexSignals`: `semantic_search` + rutas, sin LLM).
+
+- **Índice vacío + SDD “rico”** (varias entidades o endpoints en Falkor): **409** — el código indexado no aporta evidencia pero el SDD asimilado sí; riesgo de UUID/repo desalineado.
+- **Solapamiento bajo** entre nombres de entidades/rutas del SDD y el texto del índice: **409** — discrepancia grave entre diseño en grafo y lo que refleja Ariadne.
+
+Desactivar el guardarraíl: `LEGACY_SDD_INDEX_GATE=0`. Umbrales: `LEGACY_SDD_INDEX_MIN_OVERLAP_RATIO` (default 0.28), `LEGACY_SDD_RICH_MIN_ENTITIES`, `LEGACY_SDD_RICH_MIN_ENDPOINTS`, `LEGACY_SDD_MIN_ARTIFACTS_FOR_OVERLAP` — ver `legacy-index-sdd-alignment.util.ts`.
 
 ## Servicios
 
-- **LegacyCoordinatorService:** Orquesta start (TheForge), answer, generateMdd, generateDeliverables. Usa knowledge pack y AiService para generación. En legacy, **prioriza TheForge** con pipeline **evidencia-primero** (default, `LEGACY_EVIDENCE_FIRST_CONTEXT`): `semantic_search` → extracción de rutas → `get_functions_in_file` → `get_file_content` en prioritarios → resumen vía `ask_codebase` acotado a la evidencia (`twoPhase: true` en el cliente). Si desactivas el flag, vuelve el modo clásico (varias preguntas NL + semántica). `generateMdd` antepone un bloque de evidencia del índice (misma util) además de validación por archivo, definiciones y extractos. `getContextForDeliverables` reutiliza el mismo pipeline. Límite de contexto en prompts: `LEGACY_MDD_THEFORGE_CONTEXT_MAX_CHARS` (default 24000). Ver `../theforge/README.md` y `.env.example`.
+- **LegacyCoordinatorService:** Orquesta start (TheForge), answer, generateMdd, generateDeliverables. Usa knowledge pack y AiService para generación. Inyecta **GraphMemoryService** para el gate índice/SDD (Falkor). En legacy, **prioriza TheForge** con pipeline **evidencia-primero** (default, `LEGACY_EVIDENCE_FIRST_CONTEXT`): `semantic_search` → extracción de rutas → `get_functions_in_file` → `get_file_content` en prioritarios → resumen vía `ask_codebase` acotado a la evidencia (`twoPhase: true` en el cliente). Si desactivas el flag, vuelve el modo clásico (varias preguntas NL + semántica). `generateMdd` antepone un bloque de evidencia del índice (misma util) además de validación por archivo, definiciones y extractos. `getContextForDeliverables` reutiliza el mismo pipeline. Límite de contexto en prompts: `LEGACY_MDD_THEFORGE_CONTEXT_MAX_CHARS` (default 24000). Ver `../theforge/README.md` y `.env.example`.
 - **LegacyReviewerService:** Revisa lista archivos/preguntas y borrador MDD. Si el MDD casi no cita rutas (menos de 3 referencias tipo `archivo.ts`), antepone aviso SDD al prompt de revisión.
 
 ## Conocimiento

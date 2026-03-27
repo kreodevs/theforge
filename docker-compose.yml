@@ -29,7 +29,8 @@ services:
       retries: 5
 
   # Grafo SDD (MDD, entregables, RAG agéntico). Aislado del índice de código en TheForge.
-  # Cola BullMQ (cascada generate-deliverables). Opcional: sin este servicio, REDIS_URL vacío → modo síncrono.
+  # Cola BullMQ (cascada generate-deliverables). Obligatorio en el stack Dokploy/compose oficial:
+  # sin Redis de cola, REDIS_URL vacío fuerza modo síncrono y riesgo de timeouts en cascadas largas.
   theforge-redis-queue:
     image: redis:7-alpine
     container_name: theforge-redis-queue
@@ -84,7 +85,7 @@ services:
       - "traefik.http.routers.theforge-api.middlewares=theforge-api-strip"
     environment:
       DATABASE_URL: postgresql://theforge:theforge@theforge-db:5432/theforge
-      # BullMQ: definir REDIS_URL para encolar cascada de entregables (evita timeouts HTTP largos).
+      # BullMQ: REDIS_URL apunta al Redis de cola (servicio siguiente). Requerido para entregables asíncronos resilientes.
       REDIS_URL: ${REDIS_URL:-redis://theforge-redis-queue:6379}
       # Obligatorio en producción; en local Dokploy sustituir por secreto fuerte.
       JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-replace-in-dokploy}

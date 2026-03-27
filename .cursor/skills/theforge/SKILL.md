@@ -7,7 +7,7 @@ description: Guides work on The Forge monorepo (NestJS API, React Vite web, Pris
 
 ## Reference docs
 
-- **Architecture:** `docs/THE-FORGE-INDEX.md` — flujo, IA agnóstica, Semáforo, estimación, Dokploy.
+- **Architecture:** `docs/THEFORGE-INDEX.md` — flujo, IA agnóstica, Semáforo, estimación, Dokploy.
 - **Blueprint:** `blueprint.md` — estructura monorepo, Prisma, módulos AI/engine.
 - **MDD:** El MDD es la Constitución del proyecto (SDD); gobierna Blueprint, Contratos, Infra. Estructura canónica: 7 secciones (1. Contexto, 2. Arquitectura y Stack, 3. Modelo de Datos, 4. Contratos de API, 5. Lógica y Edge Cases, 6. Seguridad, 7. Infraestructura). Ver `docs/ENTREGABLES-SDD-VALIDACION.md` §0.
 - **UI:** `docs/ui-spec.md` — Workshop tres columnas, chat, MDD viewer, Semáforo.
@@ -18,9 +18,10 @@ description: Guides work on The Forge monorepo (NestJS API, React Vite web, Pris
 ```
 apps/api          NestJS (modules: ai, ai-orchestrator, engine, projects, sessions)
 apps/web          React (Vite) + Tailwind (views/WorkshopView, components, store, hooks, utils)
-packages/database Prisma schema + client (schema en packages/database)
+packages/database     Prisma schema + client (schema en packages/database)
 packages/shared-types DTOs + Zod (Status, ChecklistResult, mddJson, etc.)
-packages/config   tsconfig.base, eslint, tailwind
+packages/business-rules Estimación MXN y reglas puras compartidas API + web
+packages/config       tsconfig.base, eslint, tailwind
 ```
 
 ## IA agnóstica
@@ -32,7 +33,7 @@ packages/config   tsconfig.base, eslint, tailwind
 ## Semáforo y estimación
 
 - **Semáforo:** ROJO (db_entities vacío o business_core null), AMARILLO (falta edge_cases/field_types), VERDE (checklist completo).
-- **Costos:** Fórmula fija en `cost-calculator.service.ts` y `apps/web/src/utils/costCalculator.ts`. No alterar: H_total = ((Entidades×12)+(Pantallas×16))×1.25; tarifas MXN Architect 1500, Back 950, Front 850, UX 750. Motor de estimación siempre activo en UI; botón "Generar Entregables" solo en VERDE.
+- **Costos:** Fuente única `packages/business-rules` (consumen `CostCalculatorService` y `costCalculator.ts` en web). No alterar fórmula/tarifas sin acuerdo: ver `docs/THEFORGE-INDEX.md` §5. Motor de estimación siempre activo en UI; botón "Generar Entregables" solo en VERDE.
 
 ## Workshop (frontend)
 
@@ -55,6 +56,6 @@ packages/config   tsconfig.base, eslint, tailwind
 ## Checklist al cambiar
 
 - [ ] IA: ¿Solo AI_PROVIDER + factory? ¿Imports de SDKs solo en ai/adapters?
-- [ ] Estimación: ¿Fórmula/tarifas intactas en cost-calculator?
+- [ ] Estimación: ¿Fórmula/tarifas intactas en `packages/business-rules`?
 - [ ] Docker: ¿docker-compose y env actualizados?
 - [ ] README de la carpeta afectada actualizado si creas componente/página.

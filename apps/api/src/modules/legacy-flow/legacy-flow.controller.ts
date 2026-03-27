@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Patch, Post } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Param, Patch, Post } from "@nestjs/common";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 
 /**
@@ -16,6 +16,21 @@ export class LegacyFlowController {
   @Post("generate-codebase-doc")
   async generateCodebaseDoc(@Param("projectId") projectId: string) {
     return this.coordinator.generateCodebaseDoc(projectId);
+  }
+
+  /**
+   * Tras 409 LEGACY_INDEX_SDD_MISMATCH: confirma si se confía en el índice MCP, en el SDD (Falkor) o continuar con advertencia.
+   */
+  @Post("resolve-index-sdd-conflict")
+  async resolveIndexSddConflict(
+    @Param("projectId") projectId: string,
+    @Body() body: { choice?: "trust_index" | "trust_sdd" | "proceed_with_warnings" },
+  ) {
+    const choice = body?.choice;
+    if (choice !== "trust_index" && choice !== "trust_sdd" && choice !== "proceed_with_warnings") {
+      throw new BadRequestException("body.choice debe ser trust_index | trust_sdd | proceed_with_warnings");
+    }
+    return this.coordinator.resolveIndexSddConflict(projectId, choice);
   }
 
   /**

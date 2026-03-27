@@ -46,9 +46,10 @@ flowchart LR
 │   ├── api/          # NestJS
 │   └── web/          # React (Vite) + Tailwind
 ├── packages/
-│   ├── database/     # Prisma schema + client
-│   ├── shared-types/ # DTOs e interfaces
-│   └── config/       # TS, ESLint, Tailwind
+│   ├── database/       # Prisma schema + client
+│   ├── shared-types/   # DTOs e interfaces
+│   ├── business-rules/ # Reglas puras compartidas (estimación MXN, parse infra)
+│   └── config/         # TS, ESLint, Tailwind
 ├── docker-compose.yml
 ├── turbo.json
 └── .cursor/rules/
@@ -108,11 +109,9 @@ El agente debe comprobar estado VERDE antes de generar código (architect-behavi
 
 ## 5. Motor de estimación (MXN, México 2026)
 
-- **Fórmula:**  
-  `H_total = ((Entidades × 12) + (Pantallas × 16)) × 1.25`  
-  Coste = horas × tarifas por rol.
-- **Tarifas hora (MXN):** Architect $1 500, Backend $950, Frontend $850, UX $750.
-- **Implementación:** `apps/api/src/modules/engine/cost-calculator.service.ts`. Lógica pura; no IA. No alterar fórmulas ni tarifas sin acuerdo explícito.
+- **Fórmula (detalle en código):** horas base = entidades×12 + pantallas×16 + endpoints extra×4; multiplicadores por etiquetas `TechnicalMetadata`; horas fijas (metadata + sección infra); si el semáforo **no** es VERDE, buffer **1.25**; **total MXN** = horas totales × **$1 050/h** (tarifa única del estimador). Las cifras **Architect $1 500, Back $950, Front $850, UX $750** son referencia por rol / vista de equipo (mismo paquete).
+- **Fuente única de verdad:** `packages/business-rules` (`computeCostEstimation`, constantes y multiplicadores). El servicio Nest `CostCalculatorService` delega allí; el front (`apps/web/src/utils/costCalculator.ts`) importa el mismo paquete para el panel del Workshop.
+- **Lógica pura; no IA.** No alterar fórmulas ni tarifas sin acuerdo explícito y sin actualizar este índice.
 
 ---
 
@@ -120,20 +119,22 @@ El agente debe comprobar estado VERDE antes de generar código (architect-behavi
 
 ### 6.1 Servicios (`docker-compose.yml` en la raíz)
 
-| Servicio               | Rol                                                                 | Imagen / build                          |
-| ---------------------- | ------------------------------------------------------------------- | --------------------------------------- |
-| **theforge-db**        | PostgreSQL                                                          | `postgres:15-alpine`                    |
-| **theforge-falkor-sdd** | Grafo documental SDD (Cypher, MDD, ingest); **no** es el grafo TheForge | `falkordb/falkordb:latest`              |
-| **theforge-api**       | NestJS API                                                          | Build multi-stage `apps/api/Dockerfile` |
-| **theforge-web**       | Front estático                                                      | Build `apps/web/Dockerfile` (Nginx)     |
+| Servicio                 | Rol                                                                 | Imagen / build                          |
+| ------------------------ | ------------------------------------------------------------------- | --------------------------------------- |
+| **theforge-db**          | PostgreSQL                                                          | `postgres:15-alpine`                    |
+| **theforge-redis-queue** | **Redis dedicado a BullMQ** (cola de cascada `generate-deliverables`; obligatorio en el stack documentado) | `redis:7-alpine`                        |
+| **theforge-falkor-sdd**  | Grafo documental SDD (Cypher, MDD, ingest); **no** es el grafo índice de código TheForge | `falkordb/falkordb:latest`              |
+| **theforge-api**         | NestJS API                                                          | Build multi-stage `apps/api/Dockerfile` |
+| **theforge-web**         | Front estático                                                      | Build `apps/web/Dockerfile` (Nginx)     |
 
-No hay servicio **Redis genérico** ni BullMQ en este compose: el único “Redis” es FalkorDB embebido en el contenedor Falkor para el grafo SDD.
+**Importante:** Hay **dos** usos de protocolo Redis en el stack: (1) **FalkorDB** para el grafo SDD (`FALKORDB_SDD_URL`); (2) **Redis de cola** para **BullMQ** (`REDIS_URL` → `theforge-redis-queue`). No son intercambiables. En despliegue oficial, **BullMQ + Redis de cola son obligatorios** para entregables asíncronos resilientes (evitar timeouts HTTP en cascadas largas); vaciar `REDIS_URL` fuerza fallback síncrono solo para desarrollo excepcional.
 
 ### 6.2 Variables de entorno (api) — resumen
 
 - **Core:** `DATABASE_URL`, `PORT` (opcional)
+- **Cola asíncrona (obligatorio en stack Dokploy/compose de referencia):** `REDIS_URL` (p. ej. `redis://theforge-redis-queue:6379`) para **BullMQ**
 - **IA:** `AI_PROVIDER`, `OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY`, opcional `OPENAI_EMBEDDING_DIM`
-- **Grafo SDD:** `FALKORDB_SDD_URL` y/o `FALKORDB_URL` (mismo destino en Docker: `redis://theforge-falkor-sdd:6379`)
+- **Grafo SDD:** `FALKORDB_SDD_URL` y/o `FALKORDB_URL` (en Docker: `redis://theforge-falkor-sdd:6379`) — **distinto** del Redis de cola
 - **TheForge (opcional, legacy):** `THEFORGE_MCP_URL`, `MCP_AUTH_TOKEN`, `THEFORGE_MCP_TIMEOUT_MS`
 - **Orquestador:** `AGENT_EVALUATOR_LEGACY` (opcional; crítica en respuesta chat)
 
@@ -141,7 +142,7 @@ Detalle TheForge vs IDE vs Falkor: [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTU
 
 ### 6.3 Criterios "Dokploy-ready"
 
-- **docker-compose.yml:** servicios anteriores; volúmenes para Postgres y datos Falkor.
+- **docker-compose.yml:** servicios anteriores; volúmenes para Postgres, Falkor SDD y **Redis de cola** (`theforge_redis_queue_data`).
 - **Builds:** `api` y `web` multi-stage; sin depender del host.
 - **Healthchecks** en `docker-compose` para `db`, `falkor-sdd`, `api`, `web`.
 
@@ -159,5 +160,5 @@ Modelos principales: **Project** (entregables globales: SPEC, Blueprint, API, In
 
 - [ ] IA: Solo `AI_PROVIDER` + factory; adapters solo en `ai/adapters/`; sin `openai`/`gemini` en servicios.
 - [ ] Semáforo: Reglas ROJO/AMARILLO/VERDE implementadas y usadas antes de generar código.
-- [ ] Estimación: Fórmula y tarifas únicas en `cost-calculator.service.ts`.
-- [ ] Docker: `docker-compose` con api, web, db, Falkor SDD; Dockerfiles multi-stage; env documentados (`.env.example`).
+- [ ] Estimación: Fórmula y tarifas únicas en `packages/business-rules` (consumidas por API y web).
+- [ ] Docker: `docker-compose` con api, web, db, **Redis cola (BullMQ)**, Falkor SDD; Dockerfiles multi-stage; env documentados (`.env.example`).

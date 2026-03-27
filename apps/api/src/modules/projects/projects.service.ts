@@ -14,6 +14,7 @@ import { AiService } from "../ai/ai.service.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
 import { ScraperService } from "../scraper/scraper.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
+import type { IOrchestratorProjectsPort } from "./projects-service.port.js";
 import { resolveUrls } from "../scraper/url-utils.js";
 import {
   createProjectSchema,
@@ -37,7 +38,7 @@ function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unkn
 }
 
 @Injectable()
-export class ProjectsService {
+export class ProjectsService implements IOrchestratorProjectsPort {
   /** Scope de proyecto autenticado (AsyncLocalStorage). */
   private projectWhereForUser(projectId: string) {
     return { id: projectId, userId: getRequestUserId() };
@@ -269,7 +270,11 @@ export class ProjectsService {
 
     let pipelineResult: { sanitizedMdd: string; status: Status; precisionScore: number } | null = null;
     if (parsedMdd !== undefined && parsedMdd !== null) {
-      const result = this.mddUpdatePipeline.process(parsedMdd, this.buildSemaphoreBase(mergedForSemaphore));
+      const result = await this.mddUpdatePipeline.process(
+        parsedMdd,
+        this.buildSemaphoreBase(mergedForSemaphore),
+        { projectId: id, stageId: targetStage.id },
+      );
       if (!result.ok) {
         throw new BadRequestException({
           code: result.code,

@@ -132,7 +132,7 @@ function clip(s: string, max: number): string {
  * responder «sin datos en índice…» aunque el repo exista en UI: ID de proyecto/repo incorrecto,
  * desfase de instancia MCP, o índice vectorial aún sin poblar para ese scope.
  */
-function hasUsableLegacyGraphEvidence(semanticChunks: string[], chosenPaths: string[]): boolean {
+export function legacyIndexHasUsableGraphEvidence(semanticChunks: string[], chosenPaths: string[]): boolean {
   if (chosenPaths.length > 0) return true;
   const maxChunk = Math.max(0, ...semanticChunks.map((c) => (c?.trim().length ?? 0)));
   return maxChunk >= 80;
@@ -174,6 +174,37 @@ export interface BuildLegacyEvidenceMarkdownOptions {
   includeSynthesis?: boolean;
 }
 
+export interface LegacyIndexSignalsGathered {
+  semanticChunks: string[];
+  chosenPaths: string[];
+  mergedSemantic: string;
+}
+
+/**
+ * Recopila señales del índice MCP (sin llamadas a LLM). Útil para cruzar con Falkor SDD antes de sintetizar.
+ */
+export async function gatherLegacyIndexSignals(
+  api: TheForgeEvidenceApi,
+  projectId: string,
+  options?: Pick<BuildLegacyEvidenceMarkdownOptions, "semanticQueries">,
+): Promise<LegacyIndexSignalsGathered> {
+  const useAnalyzer = isLegacyAnalyzerCompactEnabled();
+  const queries = options?.semanticQueries?.length ? options.semanticQueries : [...DEFAULT_SEMANTIC_QUERIES];
+  const semanticLimit = parsePositiveInt("LEGACY_SEMANTIC_SEARCH_LIMIT", 12);
+  const maxPaths = parsePositiveInt("LEGACY_EVIDENCE_MAX_PATHS", useAnalyzer ? 28 : 35);
+
+  const semanticChunks = await Promise.all(
+    queries.map((q) => api.semanticSearch(q.trim(), projectId, semanticLimit)),
+  );
+
+  const mergedSemantic = semanticChunks.filter(Boolean).join("\n\n");
+  const extracted = extractCandidatePathsFromMcpText(mergedSemantic);
+  const sorted = sortPathsByPriority(extracted);
+  const chosenPaths = sorted.slice(0, maxPaths);
+
+  return { semanticChunks, chosenPaths, mergedSemantic };
+}
+
 /**
  * Construye Markdown de contexto: búsqueda semántica + rutas extraídas + símbolos por archivo + extractos de archivos prioritarios.
  * Pensado para SDD legacy: la síntesis va después y debe citar solo lo presente en el bloque de evidencia.
@@ -185,8 +216,6 @@ export async function buildLegacyEvidenceMarkdown(
 ): Promise<string> {
   const useAnalyzer = isLegacyAnalyzerCompactEnabled();
   const queries = options?.semanticQueries?.length ? options.semanticQueries : [...DEFAULT_SEMANTIC_QUERIES];
-  const semanticLimit = parsePositiveInt("LEGACY_SEMANTIC_SEARCH_LIMIT", 12);
-  const maxPaths = parsePositiveInt("LEGACY_EVIDENCE_MAX_PATHS", useAnalyzer ? 28 : 35);
   const maxFnPaths = parsePositiveInt("LEGACY_EVIDENCE_FUNCTIONS_PATHS", useAnalyzer ? 16 : 20);
   const maxFullFiles = useAnalyzer
     ? 0
@@ -194,17 +223,12 @@ export async function buildLegacyEvidenceMarkdown(
   const sectionMax = parsePositiveInt("LEGACY_SEMANTIC_SECTION_MAX_CHARS", useAnalyzer ? 4000 : 6000);
   const fileContentMax = parsePositiveInt("LEGACY_FILE_CONTENT_MAX_CHARS", 4000);
 
-  const semanticChunks = await Promise.all(
-    queries.map((q) => api.semanticSearch(q.trim(), projectId, semanticLimit)),
-  );
-
-  const mergedSemantic = semanticChunks.filter(Boolean).join("\n\n");
-  const extracted = extractCandidatePathsFromMcpText(mergedSemantic);
-  const sorted = sortPathsByPriority(extracted);
-  const chosen = sorted.slice(0, maxPaths);
+  const { semanticChunks, chosenPaths: chosen } = await gatherLegacyIndexSignals(api, projectId, {
+    semanticQueries: options?.semanticQueries,
+  });
 
   const requireGraphHits = envFlag("LEGACY_ANALYZER_REQUIRE_GRAPH_HITS", true);
-  if (!hasUsableLegacyGraphEvidence(semanticChunks, chosen)) {
+  if (!legacyIndexHasUsableGraphEvidence(semanticChunks, chosen)) {
     if (requireGraphHits) return "";
   }
   const fnPaths = chosen.slice(0, maxFnPaths);

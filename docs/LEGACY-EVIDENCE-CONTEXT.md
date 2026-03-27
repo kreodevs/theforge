@@ -19,3 +19,7 @@ The Forge reduce la dependencia de respuestas **solo** sintetizadas por `ask_cod
 Precisión adicional requiere índice completo (parsers/ingest) y, en el servicio ingest, telemetría `CHAT_TELEMETRY_LOG=1` y revisión de `CHAT_TWO_PHASE`. El chat acepta **`responseMode: 'evidence_first'`** (también vía MCP `ask_codebase`) para forzar salida con `## Evidencia` primero y más contexto al sintetizador (`CHAT_EVIDENCE_FIRST_MAX_CHARS`). Ver README del servicio ingest en el repo Ariadne.
 
 **Cobertura de archivos:** el ingest indexa además `.mjs` y `.cjs` (mismo parser JS que `.js`); hace falta **resync** del repo para que entren al grafo.
+
+## Cruce con Falkor SDD (legacy)
+
+El flujo legacy compara señales del índice (`gatherLegacyIndexSignals`) con `DB_Entity` / `API_Endpoint` de la etapa en **FalkorDB local** (`FALKORDB_SDD_URL`). Si hay discrepancia grave o índice vacío frente a SDD poblado, la API responde **409** con `code: LEGACY_INDEX_SDD_MISMATCH` hasta que el cliente llame `POST .../legacy/resolve-index-sdd-conflict`. Detalle: `apps/api/src/modules/legacy-flow/README.md`.

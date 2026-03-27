@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ComplexityLevel } from "@theforge/database";
 import { DELIVERABLES_BY_COMPLEXITY, type DeliverableKind } from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
@@ -8,10 +8,15 @@ import { TheForgeService } from "../theforge/theforge.service.js";
 import {
   buildLegacyEvidenceMarkdown,
   DEFAULT_SEMANTIC_QUERIES,
+  gatherLegacyIndexSignals,
   isLegacyEvidenceFirstEnabled,
   clipLegacySemanticSection,
   legacyAnalyzerIndicatesEmptyIndex,
+  legacyIndexHasUsableGraphEvidence,
 } from "../theforge/theforge-evidence-context.util.js";
+import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.service.js";
+import { evaluateLegacyIndexSddGate } from "./legacy-index-sdd-alignment.util.js";
+import { pickPrimaryStage } from "../projects/stage-helpers.js";
 import { AiService } from "../ai/ai.service.js";
 import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
@@ -19,6 +24,8 @@ import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
+
+export type LegacyIndexSddResolutionChoice = "trust_index" | "trust_sdd" | "proceed_with_warnings";
 
 export interface LegacyFlowState {
   description?: string;
@@ -30,6 +37,11 @@ export interface LegacyFlowState {
   answers?: Record<string, string>;
   /** Documentación de partida del codebase (opcional, generada vía MCP antes del flujo de modificación). */
   codebaseDoc?: string;
+  /** Tras 409 LEGACY_INDEX_SDD_MISMATCH: el usuario confirma cómo proceder (índice vs SDD). */
+  legacyIndexSddResolution?: {
+    choice: LegacyIndexSddResolutionChoice;
+    resolvedAt: string;
+  };
 }
 
 const COORDINATOR_SYSTEM =
@@ -41,6 +53,17 @@ const COORDINATOR_SYSTEM =
 function mddTheforgeContextMaxChars(): number {
   const n = parseInt(process.env.LEGACY_MDD_THEFORGE_CONTEXT_MAX_CHARS ?? "24000", 10);
   return Number.isFinite(n) && n > 0 ? n : 24000;
+}
+
+function envFlag(name: string, defaultTrue: boolean): boolean {
+  const v = process.env[name]?.trim().toLowerCase();
+  if (v === undefined || v === "") return defaultTrue;
+  return !["0", "false", "off", "no"].includes(v);
+}
+
+/** Cruza índice Ariadne con Falkor SDD antes de LLM (default: activo). Desactivar: LEGACY_SDD_INDEX_GATE=0. */
+function isLegacySddIndexGateEnabled(): boolean {
+  return envFlag("LEGACY_SDD_INDEX_GATE", true);
 }
 
 /**
@@ -78,6 +101,7 @@ export class LegacyCoordinatorService {
     private readonly theforge: TheForgeService,
     private readonly ai: AiService,
     private readonly reviewer: LegacyReviewerService,
+    private readonly graphMemory: GraphMemoryService,
   ) {}
 
   /**
@@ -98,6 +122,61 @@ export class LegacyCoordinatorService {
     return { project, theforgeId };
   }
 
+  private hasLegacyIndexSddResolution(state: LegacyFlowState): boolean {
+    const r = state.legacyIndexSddResolution;
+    return typeof r?.choice === "string" && typeof r?.resolvedAt === "string" && r.resolvedAt.length > 0;
+  }
+
+  /**
+   * Consulta Falkor SDD (etapa) y cruza con señales del índice Ariadne; lanza 409 si hay discrepancia grave
+   * y el usuario no ha resuelto en legacyFlowState.
+   */
+  private async assertLegacyIndexSddGate(
+    projectId: string,
+    theforgeId: string,
+    legacyState: LegacyFlowState,
+    options?: { semanticQueries?: readonly string[] },
+  ): Promise<void> {
+    if (!isLegacySddIndexGateEnabled()) return;
+    if (this.hasLegacyIndexSddResolution(legacyState)) return;
+
+    const row = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { stages: true },
+    });
+    const stageId = row?.stages?.length ? pickPrimaryStage(row.stages)?.id : undefined;
+    if (!stageId?.trim()) return;
+
+    const snapshot = await this.graphMemory.getSddStageSnapshot(projectId, stageId);
+    if (!snapshot) return;
+
+    const gathered = await gatherLegacyIndexSignals(this.theforge, theforgeId, {
+      semanticQueries: options?.semanticQueries,
+    });
+    const hasUsable = legacyIndexHasUsableGraphEvidence(gathered.semanticChunks, gathered.chosenPaths);
+    const indexBlobLower = [gathered.mergedSemantic, ...gathered.chosenPaths, ...gathered.semanticChunks]
+      .join("\n")
+      .toLowerCase();
+
+    const gate = evaluateLegacyIndexSddGate(
+      {
+        semanticChunks: gathered.semanticChunks,
+        chosenPaths: gathered.chosenPaths,
+        indexBlobLower,
+      },
+      snapshot,
+      hasUsable,
+    );
+
+    if (!gate.blocking) return;
+
+    throw new ConflictException({
+      code: "LEGACY_INDEX_SDD_MISMATCH",
+      message: gate.summary,
+      gate,
+    });
+  }
+
   /**
    * Genera documentación de partida del codebase vía MCP (opcional, ideal como primer paso).
    * Consulta exhaustivamente modelos, arquitectura, stack, reglas de negocio y convenciones.
@@ -105,8 +184,12 @@ export class LegacyCoordinatorService {
    * @returns Contenido Markdown de la documentación o null si TheForge no está configurado.
    */
   async generateCodebaseDoc(projectId: string): Promise<{ codebaseDoc: string } | null> {
-    const { theforgeId } = await this.getLegacyProject(projectId);
+    const { project, theforgeId } = await this.getLegacyProject(projectId);
     if (!this.theforge.isConfigured()) return null;
+
+    const legacyState =
+      ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState);
 
     let codebaseDoc = "";
 
@@ -187,6 +270,31 @@ export class LegacyCoordinatorService {
       data: { legacyFlowState: { ...state, codebaseDoc } as object },
     });
     return { codebaseDoc };
+  }
+
+  /**
+   * Tras un 409 LEGACY_INDEX_SDD_MISMATCH, el usuario elige cómo proceder (índice MCP vs SDD en Falkor).
+   */
+  async resolveIndexSddConflict(
+    projectId: string,
+    choice: LegacyIndexSddResolutionChoice,
+  ): Promise<{ ok: boolean; legacyIndexSddResolution: LegacyFlowState["legacyIndexSddResolution"] }> {
+    await this.getLegacyProject(projectId);
+    const allowed: LegacyIndexSddResolutionChoice[] = ["trust_index", "trust_sdd", "proceed_with_warnings"];
+    if (!allowed.includes(choice)) {
+      throw new BadRequestException(`choice debe ser uno de: ${allowed.join(", ")}`);
+    }
+    const project = await this.projects.findOne(projectId);
+    const state = ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const legacyIndexSddResolution: LegacyFlowState["legacyIndexSddResolution"] = {
+      choice,
+      resolvedAt: new Date().toISOString(),
+    };
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { legacyFlowState: { ...state, legacyIndexSddResolution } as object },
+    });
+    return { ok: true, legacyIndexSddResolution };
   }
 
   /**
@@ -320,6 +428,13 @@ export class LegacyCoordinatorService {
       .map(([k, v]) => `${k}: ${v}`)
       .join("\n");
 
+    const descTermsGate = description.slice(0, 160).replace(/[^\w\s]/g, " ").trim();
+    const gateSemanticQueries =
+      descTermsGate.length > 2
+        ? [`${descTermsGate} modules services handlers components routes`, ...DEFAULT_SEMANTIC_QUERIES]
+        : [...DEFAULT_SEMANTIC_QUERIES];
+    await this.assertLegacyIndexSddGate(projectId, theforgeId, state, { semanticQueries: gateSemanticQueries });
+
     // Múltiples consultas a TheForge para contexto amplio (evidencia del índice + ask_codebase + refactor seguro)
     const theforgeParts: string[] = [];
     if (description && isLegacyEvidenceFirstEnabled()) {
@@ -436,6 +551,10 @@ export class LegacyCoordinatorService {
     const mdd =
       mddContent || (codebaseDoc ? `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}` : "");
     if (!mdd) throw new BadRequestException("Genera la documentación de partida (MDD Inicial) o el MDD de cambio antes de generar entregables.");
+
+    const legacyState =
+      ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState);
 
     const theforgeContext = await this.theforge.getContextForDeliverables(theforgeId);
     const legacyOpts = theforgeContext ? { theforgeContext } : undefined;

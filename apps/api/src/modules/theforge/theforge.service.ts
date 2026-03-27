@@ -5,6 +5,7 @@ import {
   DEFAULT_SEMANTIC_QUERIES,
   isLegacyEvidenceFirstEnabled,
 } from "./theforge-evidence-context.util.js";
+import type { IOrchestratorTheForgePort } from "./theforge-service.port.js";
 import { TheForgeContextCacheService } from "./theforge-context-cache.service.js";
 import { parseMcpResponse } from "./mcp-http.util.js";
 
@@ -94,7 +95,7 @@ function debugMcpResponseMaxChars(): number {
  * Requiere THEFORGE_MCP_URL para estar “configurado”; MCP_AUTH_TOKEN (o MCP_X_M2M_TOKEN) si el MCP exige auth.
  */
 @Injectable()
-export class TheForgeService implements OnModuleInit {
+export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort {
   private readonly logger = new Logger(TheForgeService.name);
 
   constructor(private readonly contextCache: TheForgeContextCacheService) {}

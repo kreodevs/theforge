@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { DeliverablesQueueService } from "./deliverables-queue.service.js";
+import { PROJECTS_ORCHESTRATOR_PORT } from "./projects-service.port.js";
 import { ProjectsService } from "./projects.service.js";
 import { ProjectsController } from "./projects.controller.js";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
@@ -11,7 +12,12 @@ import { TheForgeModule } from "../theforge/theforge.module.js";
 @Module({
   imports: [EngineModule, AiModule, ScraperModule, TheForgeModule],
   controllers: [ProjectsController],
-  providers: [ProjectsService, ProjectEstimationRecalcService, DeliverablesQueueService],
-  exports: [ProjectsService, DeliverablesQueueService],
+  providers: [
+    ProjectsService,
+    { provide: PROJECTS_ORCHESTRATOR_PORT, useExisting: ProjectsService },
+    ProjectEstimationRecalcService,
+    DeliverablesQueueService,
+  ],
+  exports: [ProjectsService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService],
 })
 export class ProjectsModule { }

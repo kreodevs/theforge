@@ -298,6 +298,138 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
     }
 
     /**
+     * Lee entidades y endpoints SDD ingeridos para una etapa (cruce con índice Ariadne en flujo legacy).
+     */
+    async getSddStageSnapshot(
+        projectId: string,
+        stageId: string,
+    ): Promise<{ entityNames: string[]; endpoints: Array<{ method: string; path: string }> } | null> {
+        if (!this.graph) return null;
+        const sid = (stageId ?? "").trim();
+        const pid = (projectId ?? "").trim();
+        if (!sid || !pid) return null;
+        try {
+            const qEntities = `
+        MATCH (t:DB_Entity)
+        WHERE t.projectId = $projectId AND t.stageId = $stageId
+        RETURN collect(DISTINCT t.name) AS entityNames
+      `;
+            const qEndpoints = `
+        MATCH (e:API_Endpoint)
+        WHERE e.projectId = $projectId AND e.stageId = $stageId
+        RETURN collect(DISTINCT { method: e.method, path: e.path }) AS endpoints
+      `;
+            const [r1, r2] = await Promise.all([
+                this.graph.query(qEntities, { params: { projectId: pid, stageId: sid } }),
+                this.graph.query(qEndpoints, { params: { projectId: pid, stageId: sid } }),
+            ]);
+            const rawNames = (r1?.data?.[0] as { entityNames?: unknown } | undefined)?.entityNames;
+            const entityNames = Array.isArray(rawNames)
+                ? rawNames.filter((x): x is string => typeof x === "string" && x.length > 0)
+                : [];
+            const rawEps = (r2?.data?.[0] as { endpoints?: unknown } | undefined)?.endpoints;
+            const endpoints: Array<{ method: string; path: string }> = [];
+            if (Array.isArray(rawEps)) {
+                for (const row of rawEps) {
+                    if (row && typeof row === "object" && "path" in row) {
+                        const path = String((row as { path?: unknown }).path ?? "");
+                        const method = String((row as { method?: unknown }).method ?? "");
+                        if (path.trim()) endpoints.push({ method, path });
+                    }
+                }
+            }
+            return { entityNames, endpoints };
+        } catch (err) {
+            this.logger.warn(
+                `[GraphMemory] getSddStageSnapshot falló: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return null;
+        }
+    }
+
+    /**
+     * Evalúa coherencia de dependencias modelo↔API en el subgrafo SDD (FalkorDB / OpenCypher).
+     * Un endpoint sin :CONSUMES hacia entidad o una entidad sin consumidor se considera huérfano respecto al dominio enlazado.
+     */
+    async evaluateSddDependencyHealth(
+        projectId: string,
+        stageId: string,
+    ): Promise<{
+        entityCount: number;
+        endpointCount: number;
+        orphanEntityCount: number;
+        orphanEndpointCount: number;
+        isCoherent: boolean;
+    } | null> {
+        if (!this.graph) return null;
+        const pid = (projectId ?? "").trim();
+        const sid = (stageId ?? "").trim();
+        if (!pid || !sid) return null;
+        const params = { projectId: pid, stageId: sid };
+
+        const pickCount = (row: unknown, key: string): number => {
+            if (!row || typeof row !== "object") return 0;
+            const v = (row as Record<string, unknown>)[key];
+            return typeof v === "number" && Number.isFinite(v) ? v : 0;
+        };
+
+        try {
+            const qEntityTotal = `
+        MATCH (t:DB_Entity)
+        WHERE t.projectId = $projectId AND t.stageId = $stageId
+        RETURN count(t) AS c
+      `;
+            const qEndpointTotal = `
+        MATCH (e:API_Endpoint)
+        WHERE e.projectId = $projectId AND e.stageId = $stageId
+        RETURN count(e) AS c
+      `;
+            const qOrphanEndpoints = `
+        MATCH (e:API_Endpoint)
+        WHERE e.projectId = $projectId AND e.stageId = $stageId
+          AND NOT (e)-[:CONSUMES]->(:DB_Entity)
+        RETURN count(e) AS c
+      `;
+            const qOrphanEntities = `
+        MATCH (t:DB_Entity)
+        WHERE t.projectId = $projectId AND t.stageId = $stageId
+          AND NOT (:API_Endpoint)-[:CONSUMES]->(t)
+        RETURN count(t) AS c
+      `;
+            const [rEnt, rEp, rOe, rOt] = await Promise.all([
+                this.graph.query(qEntityTotal, { params }),
+                this.graph.query(qEndpointTotal, { params }),
+                this.graph.query(qOrphanEndpoints, { params }),
+                this.graph.query(qOrphanEntities, { params }),
+            ]);
+
+            const entityCount = pickCount(rEnt?.data?.[0], "c");
+            const endpointCount = pickCount(rEp?.data?.[0], "c");
+            const orphanEndpointCount = pickCount(rOe?.data?.[0], "c");
+            const orphanEntityCount = pickCount(rOt?.data?.[0], "c");
+
+            const isCoherent =
+                entityCount > 0 &&
+                endpointCount > 0 &&
+                orphanEndpointCount === 0 &&
+                orphanEntityCount === 0;
+
+            return {
+                entityCount,
+                endpointCount,
+                orphanEntityCount,
+                orphanEndpointCount,
+                isCoherent,
+            };
+        } catch (err) {
+            this.logger.warn(
+                `[GraphMemory] evaluateSddDependencyHealth falló: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return null;
+        }
+    }
+
+    /**
      * Cypher de solo lectura sobre el grafo SDD (Agentic RAG).
      */
     async querySddGraphReadOnly(cypher: string, params?: Record<string, unknown>) {

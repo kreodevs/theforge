@@ -21,6 +21,7 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
+      "@theforge/business-rules": ["../../packages/business-rules/src"],
       "@theforge/database": ["../../packages/database/src"],
       "@theforge/shared-types": ["../../packages/shared-types/src"]
     }

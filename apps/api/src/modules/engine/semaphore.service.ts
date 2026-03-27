@@ -23,6 +23,11 @@ export type SemaphoreEvaluationInput = {
   /** JSON string normalizado del MDD (solo aplica al camino HIGH). */
   mddJsonString: string | null;
   deliverables: SemaphoreDeliverablesSnapshot;
+  /**
+   * Si es true, el Grafo SDD (FalkorDB) no reporta dependencias huérfanas entre API_Endpoint y DB_Entity
+   * para la etapa; en HIGH puede sustituir la puerta rígida edge_cases/field_types (§3–§5) hacia VERDE.
+   */
+  sddDomainGraphOk?: boolean;
 };
 
 function substantial(s: string | null | undefined): boolean {
@@ -49,11 +54,7 @@ export class SemaphoreService {
         return this.evaluateMedium(input);
       case ComplexityLevel.HIGH:
       default:
-        return this.evaluateHigh(
-          input.mddJsonString,
-          input.hasUxTeam,
-          input.figmaMapping,
-        );
+        return this.evaluateHigh(input);
     }
   }
 
@@ -100,11 +101,12 @@ export class SemaphoreService {
     return { status: Status.ROJO, precisionScore: 30 };
   }
 
-  private evaluateHigh(
-    mddContent: string | null,
-    hasUxTeam: boolean,
-    figmaMapping?: unknown,
-  ): { status: Status; precisionScore: number } {
+  private evaluateHigh(input: SemaphoreEvaluationInput): { status: Status; precisionScore: number } {
+    const mddContent = input.mddJsonString;
+    const hasUxTeam = input.hasUxTeam;
+    const figmaMapping = input.figmaMapping;
+    const graphRelief = input.sddDomainGraphOk === true;
+
     if (!mddContent?.trim()) {
       return { status: Status.ROJO, precisionScore: 0 };
     }
@@ -137,7 +139,8 @@ export class SemaphoreService {
       return { status: Status.ROJO, precisionScore: 30 };
     }
 
-    if (!hasEdgeCases || !hasFieldTypes) {
+    const docGaps = !hasEdgeCases || !hasFieldTypes;
+    if (docGaps && !graphRelief) {
       return { status: Status.AMARILLO, precisionScore: 70 };
     }
 
@@ -147,6 +150,7 @@ export class SemaphoreService {
       return { status: Status.AMARILLO, precisionScore: 85 };
     }
 
-    return { status: Status.VERDE, precisionScore: 95 };
+    const precisionScore = docGaps && graphRelief ? 92 : 95;
+    return { status: Status.VERDE, precisionScore };
   }
 }

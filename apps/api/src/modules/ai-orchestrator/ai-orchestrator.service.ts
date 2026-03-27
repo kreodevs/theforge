@@ -1,8 +1,14 @@
-import { HttpException, HttpStatus, Injectable, NotFoundException } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { ChatMessage } from "@theforge/shared-types";
-import { ProjectsService } from "../projects/projects.service.js";
+import {
+  PROJECTS_ORCHESTRATOR_PORT,
+  type IOrchestratorProjectsPort,
+} from "../projects/projects-service.port.js";
 import { SessionsService } from "../sessions/sessions.service.js";
-import { TheForgeService } from "../theforge/theforge.service.js";
+import {
+  THEFORGE_ORCHESTRATOR_PORT,
+  type IOrchestratorTheForgePort,
+} from "../theforge/theforge-service.port.js";
 import { LEGACY_DOCUMENTATION_PROMPT } from "../ai/prompts/legacy-documentation-prompt.js";
 import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
 import type { SupervisorRouteResult } from "../agent-supervisor/agent-supervisor.types.js";
@@ -26,8 +32,8 @@ function mddForRouteStage(
 export class AiOrchestratorService {
   constructor(
     private readonly sessions: SessionsService,
-    private readonly projects: ProjectsService,
-    private readonly theforge: TheForgeService,
+    @Inject(PROJECTS_ORCHESTRATOR_PORT) private readonly projects: IOrchestratorProjectsPort,
+    @Inject(THEFORGE_ORCHESTRATOR_PORT) private readonly theforge: IOrchestratorTheForgePort,
     private readonly agentSupervisor: AgentSupervisorService,
     private readonly sddIngestor: SddIngestorService,
     private readonly agentEvaluator: AgentEvaluatorService,
@@ -196,7 +202,7 @@ export class AiOrchestratorService {
       );
     }
     if (!updatedSession) throw new NotFoundException("Session not found after chat");
-    let updatedProject: Awaited<ReturnType<ProjectsService["update"]>> | null = null;
+    let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
     if (mddFromResponse != null && mddFromResponse.length > 0) {
       updatedProject = await this.projects.update(projectId, { mddContent: mddFromResponse, stageId: route.stageId });
     }
@@ -325,7 +331,7 @@ export class AiOrchestratorService {
       if (msg.type === "chunk") {
         yield { event: "chunk", data: { content: msg.content } };
       } else {
-        let updatedProject: Awaited<ReturnType<ProjectsService["update"]>> | null = null;
+        let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
         if (msg.mddContent != null && msg.mddContent.length > 0) {
           updatedProject = await this.projects.update(projectId, {
             mddContent: msg.mddContent,
