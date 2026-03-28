@@ -105,6 +105,11 @@ export default function WorkshopView({
     workshopStages.length > 0 ? workshopStages : (project?.stages ?? []);
   const liveMetrics = useWorkshopStore((s) => s.liveMetrics);
   const mddContent = useWorkshopStore((s) => s.mddContent);
+  /** MDD en store o persistido en proyecto (evita botones Generar/Regenerar deshabilitados si el store quedó vacío). */
+  const effectiveMddTrimmed = useMemo(
+    () => (mddContent ?? "").trim() || (project?.mddContent ?? "").trim(),
+    [mddContent, project?.mddContent],
+  );
   const specContentField = useWorkshopStore((s) => s.specContent);
   const dbgaContentField = useWorkshopStore((s) => s.dbgaContent);
   const blueprintContentField = useWorkshopStore((s) => s.blueprintContent);
@@ -136,21 +141,32 @@ export default function WorkshopView({
   const hasSpec = (specContent ?? "").trim().length > 0;
   const complexity = project?.complexity ?? "HIGH";
   const isLegacyProject = project?.projectType === "LEGACY";
-  const isReverseEngineering = isLegacyProject && !!((project?.legacyFlowState?.codebaseDoc ?? "").trim()) && !(mddContent ?? "").trim();
+  const isReverseEngineering =
+    isLegacyProject &&
+    !!((project?.legacyFlowState?.codebaseDoc ?? "").trim()) &&
+    !effectiveMddTrimmed;
   const effectiveComplexityForTabs = isReverseEngineering ? "HIGH" : complexity;
   const canGenerate = useMemo(() => {
     if (isLegacyProject) {
-      const hasMdd = (mddContent ?? "").trim().length > 0;
+      const hasMdd = effectiveMddTrimmed.length > 0;
       const hasCodebaseDoc = (project?.legacyFlowState?.codebaseDoc ?? "").trim().length > 0;
       return hasMdd || hasCodebaseDoc;
     }
     if (complexity === "LOW" || complexity === "MEDIUM") {
       const hasBootstrap =
-        (dbgaContent ?? "").trim().length > 0 || (mddContent ?? "").trim().length > 0;
+        (dbgaContent ?? "").trim().length > 0 || effectiveMddTrimmed.length > 0;
       return (semaphoreGreen && hasSpec) || hasBootstrap;
     }
     return semaphoreGreen && hasSpec;
-  }, [isLegacyProject, complexity, semaphoreGreen, hasSpec, dbgaContent, mddContent, project?.legacyFlowState?.codebaseDoc]);
+  }, [
+    isLegacyProject,
+    complexity,
+    semaphoreGreen,
+    hasSpec,
+    dbgaContent,
+    effectiveMddTrimmed,
+    project?.legacyFlowState?.codebaseDoc,
+  ]);
 
   /* Use stable selectors to avoid loops */
   const conformanceRaw = useWorkshopStore((s) => s.conformance);
@@ -1154,7 +1170,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateArchitecture(projectId)}
-                    disabled={loading || !mddContent?.trim()}
+                    disabled={loading || !effectiveMddTrimmed}
                     title="Generar arquitectura desde el MDD"
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1166,7 +1182,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateUseCases(projectId)}
-                    disabled={loading || !mddContent?.trim()}
+                    disabled={loading || !effectiveMddTrimmed}
                     title="Generar casos de uso desde el MDD"
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1178,7 +1194,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateUserStories(projectId)}
-                    disabled={loading || !mddContent?.trim()}
+                    disabled={loading || !effectiveMddTrimmed}
                     title="Generar historias de usuario desde el MDD"
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1190,7 +1206,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateBlueprint(projectId, { preview: true })}
-                    disabled={loading || mddReviewing || !mddContent?.trim()}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed}
                     title="Generar blueprint desde el MDD (vista previa antes de guardar)"
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1202,7 +1218,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateApiContracts(projectId, { preview: true })}
-                    disabled={loading || mddReviewing || !mddContent?.trim() || apiBlueprintDmBlocked}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed || apiBlueprintDmBlocked}
                     title={
                       apiBlueprintDmBlocked
                         ? apiBlueprintBlockedHint
@@ -1218,7 +1234,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateLogicFlows(projectId)}
-                    disabled={loading || mddReviewing || !mddContent?.trim()}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed}
                     title="Regenerar flujos de lógica desde el MDD"
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1230,7 +1246,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateInfra(projectId, { preview: true })}
-                    disabled={loading || mddReviewing || !mddContent?.trim()}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed}
                     title="Generar infraestructura desde el MDD (vista previa antes de guardar)"
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1294,7 +1310,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateTasks(projectId)}
-                    disabled={loading || !mddContent?.trim() || !blueprintContent?.trim()}
+                    disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
                     title="Regenerar Tasks desde MDD y Blueprint"
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1311,7 +1327,7 @@ export default function WorkshopView({
                         "ux-ui-guide",
                       )
                     }
-                    disabled={loading || !mddContent?.trim() || !blueprintContent?.trim()}
+                    disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
                     title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat)"
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1795,7 +1811,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateArchitecture(projectId)}
-                    disabled={loading || !mddContent?.trim()}
+                    disabled={loading || !effectiveMddTrimmed}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
@@ -1822,7 +1838,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateUseCases(projectId)}
-                    disabled={loading || !mddContent?.trim()}
+                    disabled={loading || !effectiveMddTrimmed}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
@@ -1849,7 +1865,7 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={() => generateUserStories(projectId)}
-                    disabled={loading || !mddContent?.trim()}
+                    disabled={loading || !effectiveMddTrimmed}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
@@ -1881,7 +1897,7 @@ export default function WorkshopView({
                         "ux-ui-guide",
                       )
                     }
-                    disabled={loading || !mddContent?.trim() || !blueprintContent?.trim()}
+                    disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
                     title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat)"
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1948,7 +1964,7 @@ export default function WorkshopView({
                   description="Spec = Benchmark + alcance. Alimenta el MDD; revísalo antes de dar por cerrado el MDD."
                   onGenerate={() => generateSpec(projectId)}
                   loading={loading}
-                  hasMdd={!!(dbgaContent?.trim() || mddContent?.trim())}
+                  hasMdd={!!(dbgaContent?.trim() || effectiveMddTrimmed)}
                 />
               )
             )}
@@ -1973,7 +1989,7 @@ export default function WorkshopView({
                   description="El blueprint se genera a partir del MDD guardado (vista previa antes de guardar)."
                   onGenerate={() => generateBlueprint(projectId, { preview: true })}
                   loading={loading || mddReviewing}
-                  hasMdd={!!mddContent?.trim()}
+                  hasMdd={!!effectiveMddTrimmed}
                 />
               )
             )}
@@ -1985,7 +2001,7 @@ export default function WorkshopView({
                     <button
                       type="button"
                       onClick={() => generateTasks(projectId)}
-                      disabled={loading || !mddContent?.trim() || !blueprintContent?.trim()}
+                      disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
                       title="Regenerar Tasks desde MDD y Blueprint"
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -2009,7 +2025,7 @@ export default function WorkshopView({
                   description="Breakdown desde MDD + Blueprint."
                   onGenerate={() => generateTasks(projectId)}
                   loading={loading}
-                  hasMdd={!!(mddContent?.trim() && blueprintContent?.trim())}
+                  hasMdd={!!(effectiveMddTrimmed && blueprintContent?.trim())}
                 />
               )
             )}
@@ -2034,7 +2050,7 @@ export default function WorkshopView({
                   description="OpenAPI/Swagger desde el MDD (vista previa antes de guardar)."
                   onGenerate={() => generateApiContracts(projectId, { preview: true })}
                   loading={loading || mddReviewing}
-                  hasMdd={!!mddContent?.trim()}
+                  hasMdd={!!effectiveMddTrimmed}
                   generateBlocked={apiBlueprintDmBlocked}
                   generateBlockedReason={apiBlueprintBlockedHint}
                 />
@@ -2061,7 +2077,7 @@ export default function WorkshopView({
                   description="Diagramas de secuencia, MFA y reglas de validación desde el MDD."
                   onGenerate={() => generateLogicFlows(projectId)}
                   loading={loading || mddReviewing}
-                  hasMdd={!!mddContent?.trim()}
+                  hasMdd={!!effectiveMddTrimmed}
                 />
               )
             )}
@@ -2086,7 +2102,7 @@ export default function WorkshopView({
                   description="Dockerfile, docker-compose desde el MDD (vista previa antes de guardar)."
                   onGenerate={() => generateInfra(projectId, { preview: true })}
                   loading={loading || mddReviewing}
-                  hasMdd={!!mddContent?.trim()}
+                  hasMdd={!!effectiveMddTrimmed}
                 />
               )
             )}
