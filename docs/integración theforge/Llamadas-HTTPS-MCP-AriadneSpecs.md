@@ -2,6 +2,8 @@
 
 Guía para **implementar llamadas HTTP/HTTPS** desde una aplicación al servidor MCP AriadneSpecs. El MCP usa el protocolo **Streamable HTTP** (JSON-RPC 2.0 sobre POST). Esta documentación describe el contrato que debe implementar el cliente.
 
+**Fuente canónica (repo Ariadne):** `docs/MCP_HTTPS.md` y `docs/mcp_server_specs.md` (SPEC-MCP-001). Mantener esta copia sincronizada con esos archivos al cambiar el servidor MCP.
+
 ---
 
 ## 1. Endpoint y método
@@ -151,24 +153,35 @@ Si hay error en la ejecución de la herramienta:
 
 ## 7. Herramientas principales y argumentos
 
-| Herramienta             | Argumentos requeridos | Argumentos opcionales                                         |
-| ----------------------- | --------------------- | ------------------------------------------------------------- |
-| `list_known_projects`   | —                     | —                                                             |
-| `get_legacy_impact`     | `nodeName`            | `projectId`, `currentFilePath`                                |
-| `get_contract_specs`    | `componentName`       | `projectId`, `currentFilePath`                                |
-| `get_component_graph`   | `componentName`       | `depth`, `projectId`, `currentFilePath`                       |
-| `get_file_content`      | `path`                | `projectId`, `currentFilePath`, `ref`                         |
-| `semantic_search`       | `query`               | `projectId`, `limit`                                          |
-| `validate_before_edit` | `nodeName`            | `projectId`, `currentFilePath`                                |
-| `get_project_analysis`  | `projectId`           | `mode` (diagnostico, duplicados, reingenieria, codigo_muerto) |
-| `ask_codebase`          | `question`            | `projectId`, `currentFilePath`, `scope`, `twoPhase`           |
-| `get_modification_plan` | `userDescription`     | `projectId`, `currentFilePath`, `scope`                       |
-| `get_definitions`       | `symbolName`          | `projectId`, `currentFilePath`                                |
-| `get_references`        | `symbolName`          | `projectId`, `currentFilePath`                                |
-| `get_functions_in_file` | `path`                | `projectId`, `currentFilePath`                                |
-| `get_import_graph`      | `filePath`            | `projectId`, `currentFilePath`                                |
+(Copia alineada con `MCP_HTTPS.md` §7; ver allí **FALKOR_SHARD_BY_PROJECT** y matices de `semantic_search`.)
 
-> **projectId:** ID de proyecto o de repo. Obtener con `list_known_projects`; el campo `id` del proyecto o `roots[].id` de cada repo.
+| Herramienta                     | Argumentos requeridos   | Argumentos opcionales                                                                 |
+| ------------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| `list_known_projects`           | —                       | —                                                                                     |
+| `get_legacy_impact`             | `nodeName`              | `projectId`, `currentFilePath`                                                       |
+| `get_contract_specs`            | `componentName`         | `projectId`, `currentFilePath`                                                       |
+| `get_component_graph`           | `componentName`         | `depth`, `projectId`, `currentFilePath`                                                |
+| `get_file_content`              | `path` + (`projectId` **o** `currentFilePath`) | `ref`                                                                              |
+| `semantic_search`               | `query`; con sharding también **`projectId`** | `limit`; **`projectId`** opcional sin sharding. **No** `scope` ni `currentFilePath`. |
+| `validate_before_edit`        | `nodeName`              | `projectId`, `currentFilePath`                                                       |
+| `get_project_analysis`          | `projectId`             | `mode` (diagnostico, duplicados, reingenieria, codigo_muerto, seguridad)              |
+| `ask_codebase`                  | `question`              | `projectId`, `currentFilePath`, `scope`, `twoPhase`                                   |
+| `get_modification_plan`         | `userDescription`       | `projectId`, `currentFilePath`, `scope`                                               |
+| `get_definitions`               | `symbolName`            | `projectId`, `currentFilePath`                                                       |
+| `get_references`                | `symbolName`            | `projectId`, `currentFilePath`                                                       |
+| `get_implementation_details`    | `symbolName`            | `projectId`, `currentFilePath`                                                       |
+| `get_functions_in_file`         | `path` + (`projectId` **o** `currentFilePath`) | —                                                                 |
+| `get_import_graph`              | `filePath` + (`projectId` **o** `currentFilePath`) | —                                                                                |
+| `trace_reachability`            | `projectId` **o** `currentFilePath` | —                                                                             |
+| `check_export_usage`            | `projectId` **o** `currentFilePath` | `filePath` opcional                                                                 |
+| `get_affected_scopes`          | `nodeName`              | `projectId`, `currentFilePath`, `includeTestFiles`                                   |
+| `check_breaking_changes`        | `nodeName`              | `projectId`, `currentFilePath`, `removedParams`                                         |
+| `find_similar_implementations` | `query`                 | `projectId`, `currentFilePath`, `limit`                                               |
+| `get_project_standards`        | `projectId` **o** `currentFilePath` | —                                                                                   |
+| `get_file_context`             | `filePath` + (`projectId` **o** `currentFilePath`) | `ref`                                                                            |
+| `analyze_local_changes`        | —                       | `projectId` o `currentFilePath`; `workspaceRoot` o `stagedDiff`                      |
+
+> **projectId (The Forge API):** `list_known_projects.id` = workspace (ingest `/projects/:id/…`); `roots[].id` = repo. El cliente Nest resuelve y usa **workspace `id`** como `projectId` en **`ask_codebase`** y **`get_modification_plan`**, y **`roots[].id`** (o primer root del workspace) en herramientas de grafo / **`semantic_search`**, más `scope.repoIds` en ask/plan. Ver `apps/api/src/modules/theforge/ariadne-mcp-scope.util.ts`.
 
 ---
 
@@ -177,8 +190,9 @@ Si hay error en la ejecución de la herramienta:
 El servicio `TheForgeService` (`apps/api/src/modules/theforge/theforge.service.ts`) implementa este contrato:
 
 - `isConfigured()`: true si `THEFORGE_MCP_URL` está definido (token opcional)
-- Headers: solo envía `Authorization: Bearer` o `X-M2M-Token` cuando el token está configurado
-- Variables: `THEFORGE_MCP_URL`, `MCP_AUTH_TOKEN` (Bearer), `MCP_X_M2M_TOKEN` (alternativa)
+- Headers: `MCP-Protocol-Version: 2025-03-26`, `Accept: application/json, text/event-stream`; auth `Authorization: Bearer` o `X-M2M-Token` cuando el token está configurado
+- Variables: `THEFORGE_MCP_URL`, `MCP_AUTH_TOKEN`, `MCP_X_M2M_TOKEN`, `THEFORGE_LIST_PROJECTS_CACHE_MS` (resolución id workspace vs repo)
+- `pnpm --filter @theforge/api test:mcp-alignment`: exige que existan en el servidor las herramientas de `THEFORGE_MCP_TOOLS_WE_CALL` y que los `required` del `inputSchema` estén cubiertos en `theforge-mcp-client-contract.ts`
 
 ---
 

@@ -682,7 +682,7 @@ export default function WorkshopView({
           {project?.projectType === "LEGACY" && project?.theforgeProjectId?.trim() && (
             <span
               className="w-full sm:w-auto min-w-0 font-mono text-[10px] sm:text-[11px] text-zinc-500 leading-tight"
-              title={`UUID enviado al MCP TheForge / Ariadne (ask_codebase, semantic_search, MDD inicial): ${project.theforgeProjectId}`}
+              title={`UUID guardado (theforgeProjectId). La API resuelve: ingest proyecto (ask_codebase, get_modification_plan) = id workspace; grafo/semantic = roots[].id; scope.repoIds en ask/plan. ${project.theforgeProjectId}`}
             >
               <span className="text-zinc-600 select-none" aria-hidden>
                 MCP{" "}

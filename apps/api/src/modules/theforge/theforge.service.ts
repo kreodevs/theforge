@@ -8,6 +8,11 @@ import {
 import type { IOrchestratorTheForgePort } from "./theforge-service.port.js";
 import { TheForgeContextCacheService } from "./theforge-context-cache.service.js";
 import { parseMcpResponse } from "./mcp-http.util.js";
+import {
+  mergeAriadneCodebaseScope,
+  resolveAriadneCodebaseMcpTarget,
+  type AriadneCodebaseResolution,
+} from "./ariadne-mcp-scope.util.js";
 
 /** Repo (root) dentro de un proyecto multi-repo. */
 export interface TheForgeProjectRoot {
@@ -97,6 +102,9 @@ function debugMcpResponseMaxChars(): number {
 @Injectable()
 export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort {
   private readonly logger = new Logger(TheForgeService.name);
+
+  /** Cache de `list_known_projects` para resolver id proyecto ↔ roots sin un POST por cada tool call. */
+  private projectsCatalogCache: { at: number; projects: TheForgeProject[] } | null = null;
 
   constructor(private readonly contextCache: TheForgeContextCacheService) {}
 
@@ -236,6 +244,31 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     return this.baseUrl.length > 0;
   }
 
+  private projectsCatalogCacheTtlMs(): number {
+    const n = parseInt(process.env.THEFORGE_LIST_PROJECTS_CACHE_MS ?? "60000", 10);
+    return Number.isFinite(n) && n >= 0 ? n : 60000;
+  }
+
+  /**
+   * Catálogo MCP (con TTL) para mapear `theforgeProjectId` persistido → `roots[].id` + `scope.repoIds`.
+   */
+  private async getProjectsCatalog(): Promise<TheForgeProject[]> {
+    if (!this.isConfigured()) return [];
+    const ttl = this.projectsCatalogCacheTtlMs();
+    const now = Date.now();
+    if (ttl > 0 && this.projectsCatalogCache && now - this.projectsCatalogCache.at < ttl) {
+      return this.projectsCatalogCache.projects;
+    }
+    const projects = await this.fetchListKnownProjectsFromMcp();
+    this.projectsCatalogCache = { at: now, projects };
+    return projects;
+  }
+
+  private async resolveStoredToMcp(storedTheforgeId: string): Promise<AriadneCodebaseResolution> {
+    const catalog = await this.getProjectsCatalog();
+    return resolveAriadneCodebaseMcpTarget(storedTheforgeId, catalog);
+  }
+
   /**
    * Contexto amplio del codebase para generación de entregables (Blueprint, API, etc.).
    * Incluye modelos/rutas, arquitectura y stack + estructura real para no inventar plataformas.
@@ -302,15 +335,19 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
 
   /**
    * Lista los proyectos indexados en TheForge (herramienta MCP list_known_projects).
-   * Si TheForge no está configurado o falla, devuelve array vacío.
-   * @returns Lista de proyectos con id, name, rootPath y branch (opcional).
+   * Usa caché en memoria (TTL `THEFORGE_LIST_PROJECTS_CACHE_MS`, default 60000 ms; `0` = sin caché).
    */
   async listKnownProjects(): Promise<TheForgeProject[]> {
     if (!this.isConfigured()) {
       this.logger.warn("[TheForge] listKnownProjects: no configurado (THEFORGE_MCP_URL vacío)");
       return [];
     }
-    this.logger.log(`[TheForge] listKnownProjects: llamando MCP en ${this.baseUrl}`);
+    this.logger.log(`[TheForge] listKnownProjects → getProjectsCatalog (${this.baseUrl})`);
+    return this.getProjectsCatalog();
+  }
+
+  private async fetchListKnownProjectsFromMcp(): Promise<TheForgeProject[]> {
+    this.logger.log(`[TheForge] fetchListKnownProjectsFromMcp: POST ${this.baseUrl}`);
     try {
       const response = await this.postTheForgeMcp({
         jsonrpc: "2.0",
@@ -396,9 +433,8 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
    * Obtiene el plan de modificación basado solo en el grafo (herramienta MCP get_modification_plan).
    * Garantiza filesToModify = rutas reales del proyecto; questionsToRefine = solo preguntas de negocio.
    * @param userDescription - Descripción de la modificación que quiere el usuario.
-   * @param projectId - ID del proyecto o repo en TheForge (theforgeProjectId; puede ser roots[].id).
-   * @param opts - scope (repoIds, includePathPrefixes, excludePathGlobs), currentFilePath (SPEC-MCP-001).
-   * @returns Plan con filesToModify y questionsToRefine, o null si TheForge no está configurado o la herramienta falla.
+   * @param projectId - `theforgeProjectId` guardado (id de proyecto Ariadne o `roots[].id`); se normaliza vía `list_known_projects`.
+   * @param opts - scope (repoIds, …), currentFilePath (SPEC-MCP-001). El scope se fusiona con el derivado del catálogo multi-root.
    */
   async getModificationPlan(
     userDescription: string,
@@ -407,9 +443,14 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   ): Promise<TheForgeModificationPlan | null> {
     if (!this.isConfigured()) return null;
     try {
-      const args: Record<string, unknown> = { userDescription: userDescription.trim(), projectId };
+      const ident = await this.resolveStoredToMcp(projectId);
+      const scope = mergeAriadneCodebaseScope(ident.scopeForScopedTools, opts?.scope);
+      const args: Record<string, unknown> = {
+        userDescription: userDescription.trim(),
+        projectId: ident.workspaceProjectId,
+      };
       if (opts?.currentFilePath?.trim()) args.currentFilePath = opts.currentFilePath.trim();
-      if (opts?.scope && Object.keys(opts.scope).length > 0) args.scope = opts.scope;
+      if (scope && Object.keys(scope).length > 0) args.scope = scope;
       const response = await this.postTheForgeMcp({
         jsonrpc: "2.0",
         id: "get-modification-plan-1",
@@ -454,16 +495,22 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   /**
    * Realiza una pregunta en lenguaje natural sobre el código indexado (herramienta MCP ask_codebase).
    * @param question - Pregunta en texto libre sobre el codebase.
-   * @param projectId - ID del proyecto o repo en TheForge.
+   * @param projectId - `theforgeProjectId` persistido; se resuelve a `roots[].id` + `scope.repoIds` cuando aplica.
    * @param opts - scope, twoPhase, currentFilePath (SPEC-MCP-001).
    * @returns Respuesta de texto del MCP o cadena vacía si falla.
    */
   async askCodebase(question: string, projectId: string, opts?: AskCodebaseOptions): Promise<string> {
     if (!this.isConfigured()) return "";
     try {
-      const args: Record<string, unknown> = { question, projectId, twoPhase: opts?.twoPhase ?? true };
+      const ident = await this.resolveStoredToMcp(projectId);
+      const scope = mergeAriadneCodebaseScope(ident.scopeForScopedTools, opts?.scope);
+      const args: Record<string, unknown> = {
+        question,
+        projectId: ident.workspaceProjectId,
+        twoPhase: opts?.twoPhase ?? true,
+      };
       if (opts?.currentFilePath?.trim()) args.currentFilePath = opts.currentFilePath.trim();
-      if (opts?.scope && Object.keys(opts.scope).length > 0) args.scope = opts.scope;
+      if (scope && Object.keys(scope).length > 0) args.scope = scope;
       if (opts?.responseMode === "evidence_first") args.responseMode = "evidence_first";
       const response = await this.postTheForgeMcp({
         jsonrpc: "2.0",
@@ -496,7 +543,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
 
   /**
    * Obtiene el contenido de un archivo del repo/proyecto (herramienta MCP get_file_content).
-   * projectId puede ser ID de proyecto o de repo (roots[].id); el MCP resuelve automáticamente.
+   * `projectId` se normaliza al id de repo indexado cuando el valor guardado es el id de workspace Ariadne.
    */
   async getFileContent(
     path: string,
@@ -504,7 +551,8 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     ref?: string,
     currentFilePath?: string,
   ): Promise<string> {
-    const args: Record<string, unknown> = { path: path.trim(), projectId };
+    const ident = await this.resolveStoredToMcp(projectId);
+    const args: Record<string, unknown> = { path: path.trim(), projectId: ident.graphProjectId };
     if (ref?.trim()) args.ref = ref.trim();
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
     const out = await this.callTool("get_file_content", args);
@@ -520,7 +568,8 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     projectId: string,
     currentFilePath?: string,
   ): Promise<string> {
-    const args: Record<string, unknown> = { nodeName: nodeName.trim(), projectId };
+    const ident = await this.resolveStoredToMcp(projectId);
+    const args: Record<string, unknown> = { nodeName: nodeName.trim(), projectId: ident.graphProjectId };
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
     const out = await this.callTool("get_legacy_impact", args);
     return out ?? "";
@@ -532,7 +581,8 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
    * @returns Texto con impacto y contrato, o vacío si la herramienta no está disponible.
    */
   async validateBeforeEdit(nodeName: string, projectId: string, currentFilePath?: string): Promise<string> {
-    const args: Record<string, unknown> = { nodeName: nodeName.trim(), projectId };
+    const ident = await this.resolveStoredToMcp(projectId);
+    const args: Record<string, unknown> = { nodeName: nodeName.trim(), projectId: ident.graphProjectId };
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
     const out = await this.callTool("validate_before_edit", args);
     return out ?? "";
@@ -548,7 +598,10 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     currentFilePath?: string,
   ): Promise<string> {
     const args: Record<string, unknown> = { componentName: componentName.trim() };
-    if (projectId?.trim()) args.projectId = projectId.trim();
+    if (projectId?.trim()) {
+      const ident = await this.resolveStoredToMcp(projectId.trim());
+      args.projectId = ident.graphProjectId;
+    }
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
     const out = await this.callTool("get_contract_specs", args);
     return out ?? "";
@@ -564,9 +617,10 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     depth: number = 2,
     currentFilePath?: string,
   ): Promise<string> {
+    const ident = await this.resolveStoredToMcp(projectId);
     const args: Record<string, unknown> = {
       componentName: componentName.trim(),
-      projectId,
+      projectId: ident.graphProjectId,
       depth: Number.isFinite(depth) ? depth : 2,
     };
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
@@ -584,7 +638,10 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     limit?: number,
   ): Promise<string> {
     const args: Record<string, unknown> = { query: query.trim() };
-    if (projectId?.trim()) args.projectId = projectId.trim();
+    if (projectId?.trim()) {
+      const ident = await this.resolveStoredToMcp(projectId.trim());
+      args.projectId = ident.graphProjectId;
+    }
     if (typeof limit === "number" && limit > 0) args.limit = limit;
     const out = await this.callTool("semantic_search", args);
     return out ?? "";
@@ -600,7 +657,10 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     currentFilePath?: string,
   ): Promise<string> {
     const args: Record<string, unknown> = { path: path.trim() };
-    if (projectId?.trim()) args.projectId = projectId.trim();
+    if (projectId?.trim()) {
+      const ident = await this.resolveStoredToMcp(projectId.trim());
+      args.projectId = ident.graphProjectId;
+    }
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
     const out = await this.callTool("get_functions_in_file", args);
     return out ?? "";
@@ -616,7 +676,10 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     currentFilePath?: string,
   ): Promise<string> {
     const args: Record<string, unknown> = { symbolName: symbol.trim() };
-    if (projectId?.trim()) args.projectId = projectId.trim();
+    if (projectId?.trim()) {
+      const ident = await this.resolveStoredToMcp(projectId.trim());
+      args.projectId = ident.graphProjectId;
+    }
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
     const out = await this.callTool("get_definitions", args);
     return out ?? "";
@@ -632,7 +695,10 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     currentFilePath?: string,
   ): Promise<string> {
     const args: Record<string, unknown> = { symbolName: symbol.trim() };
-    if (projectId?.trim()) args.projectId = projectId.trim();
+    if (projectId?.trim()) {
+      const ident = await this.resolveStoredToMcp(projectId.trim());
+      args.projectId = ident.graphProjectId;
+    }
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
     const out = await this.callTool("get_references", args);
     return out ?? "";
