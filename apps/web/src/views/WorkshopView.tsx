@@ -1786,7 +1786,7 @@ export default function WorkshopView({
                     value={architectureContent ?? ""}
                     onChange={(e) => setArchitectureContent(e.target.value)}
                     onBlur={handleArchitectureBlur}
-                    placeholder="# Arquitectura del Sistema\n\nDefine aquí los patrones, componentes y orquestación de agentes..."
+                    placeholder="# Arquitectura del sistema\n\nMódulos, datos, APIs y flujos del producto (según MDD y codebase)..."
                     className="w-full min-h-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
                     spellCheck={false}
                   />

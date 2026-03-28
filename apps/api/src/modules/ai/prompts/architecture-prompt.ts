@@ -7,7 +7,7 @@ function loadArchitecturePrompt(): string {
     try {
         return readFileSync(PROMPT_PATH, "utf-8").trim();
     } catch {
-        return "Eres un arquitecto de sistemas agenticos. Genera el documento de Arquitectura enfocada en orquestación de agentes y flujos de trabajo avanzada en markdown. Salida solo markdown, primer carácter #.";
+        return "Eres arquitecto de software del producto descrito en el MDD. Genera arquitectura técnica (módulos, datos, APIs) en markdown; no inventes agentes LLM ni titules el sistema como TheForge. Primer carácter #.";
     }
 }
 

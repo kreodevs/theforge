@@ -34,7 +34,8 @@ function prependTheForgePrompt(prompt: string, theforgeContext: string): string 
   const block = (theforgeContext ?? "").trim().slice(0, 12000);
   if (!block) return prompt;
   return (
-    "**Contexto del codebase (TheForge) — priorizar y usar en su totalidad antes de elaborar el documento:**\n---\n" +
+    "**Contexto del codebase (índice vía TheForge MCP) — priorizar y usar en su totalidad antes de elaborar el documento:**\n" +
+    "**Nota:** «TheForge» aquí es la herramienta de indexado, **no** el nombre del producto ni del sistema que documentas (ese nombre sale del MDD).\n---\n" +
     block +
     "\n---\n\n" +
     LEGACY_NO_INVENTAR +
@@ -53,7 +54,7 @@ export class AiService {
   private static readonly ACTIVE_TAB_LABELS: Record<string, string> = {
     spec: "Spec (SDD: what/why)",
     mdd: "MDD",
-    architecture: "Arquitectura Agentica",
+    architecture: "Arquitectura del sistema",
     "use-cases": "Casos de Uso",
     "user-stories": "Historias de Usuario",
     "ux-ui-guide": "Guía UX/UI",
@@ -329,11 +330,11 @@ export class AiService {
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 8000);
     let prompt =
       mdd.length > 0
-        ? "Genera el documento de Arquitectura Agentica según las instrucciones del system prompt.\n\nMDD:\n---\n" +
+        ? "Genera el documento de **Arquitectura del sistema** (producto del MDD) según el system prompt. Describe el software legacy real o planificado: módulos, datos, APIs, flujos — **no** diseño multi-agente ni nombre TheForge como producto.\n\nMDD:\n---\n" +
         mdd +
         "\n---\n\n" +
         (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
-        : "No hay MDD. Genera un documento de arquitectura genérico enfocado en agentes y orquestación.";
+        : "No hay MDD. Genera un documento breve de arquitectura genérica (capas, trade-offs) sin inventar dominio ni agentes.";
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     return this.generateResponse(prompt, [], { systemPrompt: ARCHITECTURE_PROMPT + NO_MILITAR_INSTRUCTION });
   }
