@@ -8,6 +8,7 @@ import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
 import { extractAlreadyDocumentedTopics, extractIdentifiedInfraFromText, getMddDraftSummary, logMddNodeOutput } from "../utils/mdd-sanitize.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
 import { extractFirstJsonObject, parseJsonOrThrow } from "../utils/parse-json.js";
+import { clarifierComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
 import { z } from "zod";
 
 /** Acepta string o objeto (el LLM a veces devuelve objeto); normaliza a string. */
@@ -114,7 +115,7 @@ export function createMddClarifierNode(llm: BaseChatModel) {
       const briefBlock = brief
         ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar la sección 1. Contexto para una aplicación que cumple este objetivo; las secciones 2–7 son placeholders de una línea.\n\n---\n\n`
         : "";
-      let prompt = `${CLARIFIER_MDD_PROMPT}\n\n---\n${briefBlock}**DBGA (entrada):**\n${state.dbgaContent}`;
+      let prompt = `${CLARIFIER_MDD_PROMPT}${clarifierComplexityAppendix(state.mddComplexity)}\n\n---\n${briefBlock}**DBGA (entrada):**\n${state.dbgaContent}`;
       const draftTrimmed = (state.mddDraft ?? "").trim();
       if (draftTrimmed) {
         const maxDraftLen = 14_000;

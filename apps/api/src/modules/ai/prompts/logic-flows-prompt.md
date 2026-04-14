@@ -31,3 +31,7 @@ Desarrolladores y QA que implementarán o validarán la lógica y los flujos.
 - El **primer carácter** de tu respuesta debe ser `#`.
 - Usa **diagramas Mermaid** cuando ayuden (secuencia, flujo).
 - Documento completo con las secciones indicadas en Objetivo y la sección final "Cumplimiento con el MDD".
+
+# Proyecto legacy (mensaje con contexto TheForge) #
+
+Si el mensaje incluye **Contexto del codebase (TheForge)**, los pasos y validaciones deben referir **archivos, servicios o puntos de extensión** que TheForge mencione (lifecycles, policies, middleware). Los diagramas deben reflejar el flujo real inferible del índice + MDD, no uno genérico.

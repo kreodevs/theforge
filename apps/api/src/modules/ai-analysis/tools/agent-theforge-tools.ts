@@ -114,3 +114,38 @@ export function getLegacyTheForgeAgentTools(theforge: TheForgeService, theforgeP
     ),
   ];
 }
+
+/**
+ * Subconjunto TheForge (MCP) para el **Arquitecto MDD** en flujo legacy: contrato e impacto antes de fijar §3 y §4.
+ * Se inyecta solo si `isLegacyProject` y `theforgeProjectId` están en el estado del grafo.
+ */
+export function getMddArchitectTheForgeTools(theforge: TheForgeService, theforgeProjectId: string): StructuredToolInterface[] {
+  const pid = theforgeProjectId.trim();
+  return [
+    tool(
+      async ({ componentName, currentFilePath }) =>
+        theforge.getContractSpecs(componentName.trim(), pid, currentFilePath),
+      {
+        name: "get_contract_specs",
+        description:
+          "Obtiene props, firma o contrato de un símbolo/componente en el código indexado (TheForge). Usa esta herramienta antes de documentar en §3 o §4 cualquier entidad, servicio o tipo exportado que exista en el repo legacy. Si la respuesta indica NOT_FOUND_IN_GRAPH, vacío o sin datos útiles, NO inventes props ni firmas: añade en el MDD un ítem bajo «Bloqueantes de negocio» y deja explícito que falta validación humana o índice.",
+        schema: z.object({
+          componentName: z.string(),
+          currentFilePath: z.string().optional(),
+        }),
+      },
+    ),
+    tool(
+      async ({ nodeName, currentFilePath }) => theforge.getLegacyImpact(nodeName.trim(), pid, currentFilePath),
+      {
+        name: "get_legacy_impact",
+        description:
+          "Impacto en el grafo si se toca un nodo/símbolo. Para cada entidad o módulo legacy citado en modelo o API, valida que el impacto sea coherente con el cambio descrito.",
+        schema: z.object({
+          nodeName: z.string(),
+          currentFilePath: z.string().optional(),
+        }),
+      },
+    ),
+  ];
+}

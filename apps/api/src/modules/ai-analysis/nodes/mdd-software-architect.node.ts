@@ -11,6 +11,9 @@ import { getUserBrief, getUserExplicitRequirements } from "../utils/mdd-user-bri
 import { extractFirstJsonObject, extractJsonFromCodeBlock } from "../utils/parse-json.js";
 import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { getInternalDirectivesContext, extractInternalDirectives } from "../utils/mdd-mesh-topology.js";
+import { softwareArchitectComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
+import type { TheForgeService } from "../../theforge/theforge.service.js";
+import { getMddArchitectTheForgeTools } from "../tools/agent-theforge-tools.js";
 import { z } from "zod";
 
 /** Schema estructurado que algunos LLMs devuelven en lugar de mddDraft. */
@@ -408,6 +411,12 @@ function validatedDecisionsMentionModel(state: MDDStateType): boolean {
 }
 
 const MAX_ARCHITECT_TOOL_LOOPS = 2;
+const MAX_ARCHITECT_TOOL_LOOPS_FORGE = 5;
+
+export type MddSoftwareArchitectNodeOptions = {
+  /** Legacy + `theforgeProjectId`: añade `get_contract_specs` y `get_legacy_impact` (MCP TheForge). */
+  theforge?: TheForgeService | null;
+};
 
 /** Extrae el cuerpo de ## 6. Seguridad del draft (hasta ## 7. o fin). */
 function extractSection6SeguridadBody(draft: string): string | null {
@@ -424,12 +433,25 @@ function buildArchitectToolsByName(tools: StructuredToolInterface[]): Record<str
 }
 
 /** Creates the MDD Software Architect node. Transforms Clarifier draft into technical doc (SQL schema, API contracts with payloads). Optionally with tools (format_section3_endpoints). 4.3: si state.currentStepAllowedTools está set, solo usa esas tools. */
-export function createMddSoftwareArchitectNode(llm: BaseChatModel, tools: StructuredToolInterface[] = []) {
+export function createMddSoftwareArchitectNode(
+  llm: BaseChatModel,
+  tools: StructuredToolInterface[] = [],
+  opts?: MddSoftwareArchitectNodeOptions | null,
+) {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
+    const tfPid = (state.theforgeProjectId ?? "").trim();
+    const useTheForgeTools =
+      !!opts?.theforge &&
+      opts.theforge.isConfigured() &&
+      state.isLegacyProject === true &&
+      tfPid.length > 0;
+    const forgeTools = useTheForgeTools ? getMddArchitectTheForgeTools(opts!.theforge!, tfPid) : [];
+    const baseTools = [...tools, ...forgeTools];
     const allowed = state.currentStepAllowedTools;
-    const toolsToUse = allowed?.length ? tools.filter((t) => allowed.includes(t.name)) : tools;
+    const toolsToUse = allowed?.length ? baseTools.filter((t) => allowed.includes(t.name)) : baseTools;
     const toolsByName = buildArchitectToolsByName(toolsToUse);
     const llmWithTools = llm.bindTools && toolsToUse.length > 0 ? llm.bindTools(toolsToUse) : llm;
+    const maxToolLoops = forgeTools.length > 0 ? MAX_ARCHITECT_TOOL_LOOPS_FORGE : MAX_ARCHITECT_TOOL_LOOPS;
 
     LOG("entry mddDraftLen=%s tools=%s (allowed=%s)", (state.mddDraft ?? "").length, toolsToUse.length, allowed?.length ?? "all");
     if (state.clarifiedScope) LOG("Context/Scope received: %s...", state.clarifiedScope.slice(0, 100));
@@ -544,10 +566,14 @@ export function createMddSoftwareArchitectNode(llm: BaseChatModel, tools: Struct
           state.auditorFeedback.trim(),
         );
       }
-      if (tools.length > 0) {
+      if (toolsToUse.length > 0) {
+        const forgeHint =
+          forgeTools.length > 0
+            ? " **TheForge (legacy):** Tienes `get_contract_specs` y `get_legacy_impact`. Antes de cerrar §3 y §4, valida símbolos/entidades del repo que cites. Si `get_contract_specs` devuelve NOT_FOUND_IN_GRAPH o vacío, no inventes: documenta «Bloqueante de negocio» en §1 o §5."
+            : "";
         contextParts.push(
           "",
-          "**Opcional:** Puedes usar la tool format_section3_endpoints con domain y lista de endpoints para generar el markdown de la sección 4 (tabla + request/response en ```json). Luego incorpora ese markdown en tu documento final.",
+          `[Instrucción de sistema — no copiar al MDD] Si conviene, invoca la tool format_section3_endpoints (domain + lista de endpoints) para generar markdown de §4; el texto de esta línea no debe aparecer en el documento final.${forgeHint}`,
         );
       }
       // Prioridad inviolable como primera línea del contexto inyectado (plan A/C).
@@ -578,13 +604,13 @@ export function createMddSoftwareArchitectNode(llm: BaseChatModel, tools: Struct
         );
       }
       const context = contextParts.join("\n");
-      const prompt = `${SOFTWARE_ARCHITECT_MDD_PROMPT}\n\n---\n${context}`;
+      const prompt = `${SOFTWARE_ARCHITECT_MDD_PROMPT}${softwareArchitectComplexityAppendix(state.mddComplexity)}\n\n---\n${context}`;
       const messages = [new HumanMessage(prompt)];
 
       let text = "";
-      if (tools.length > 0) {
+      if (toolsToUse.length > 0) {
         let loopCount = 0;
-        while (loopCount < MAX_ARCHITECT_TOOL_LOOPS) {
+        while (loopCount < maxToolLoops) {
           const response = await llmWithTools.invoke(messages);
           const aiMsg = response as AIMessage;
           text = typeof aiMsg.content === "string" ? aiMsg.content : "";

@@ -6,4 +6,6 @@ export * from "./stage.js";
 export * from "./session.js";
 export * from "./estimation.js";
 export * from "./mdd.js";
+export * from "./mdd-pipeline-limits.js";
+export * from "./markdown-repair.js";
 export * from "./orchestrator.js";

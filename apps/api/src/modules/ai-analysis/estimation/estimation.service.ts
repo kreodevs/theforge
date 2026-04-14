@@ -3,6 +3,7 @@ import { PrismaService } from "../../../prisma/prisma.service.js";
 import { pickPrimaryStage } from "../../projects/stage-helpers.js";
 import type {
   AuditorGaps,
+  EstimationComplexity,
   LiveMetricsResult,
   MDDContext,
   PrecisionBreakdown,
@@ -357,14 +358,39 @@ function computeConsistencyGaps(md: string): {
 /** Calificación máxima cuando la sección está en Estado Inconsistente (matriz de trazabilidad). */
 const PRECISION_CAP_INCONSISTENTE = 40;
 
+function isRelaxedComplexity(c: EstimationComplexity): boolean {
+  return c === "LOW" || c === "MEDIUM";
+}
+
+/**
+ * LOW/MEDIUM: no exigir en semáforo/desglose los mismos rigores que HIGH (credenciales/SQL, Dockerfile vs §2, edge security, manifest §7).
+ * La matriz de entregables ya es más liviana; el auditor LLM sigue pudiendo marcar gaps narrativos.
+ */
+function adjustGapsForEstimationComplexity(
+  gaps: ReturnType<typeof computeConsistencyGaps>,
+  complexity: EstimationComplexity,
+): ReturnType<typeof computeConsistencyGaps> {
+  if (complexity === "HIGH") return gaps;
+  const g = { ...gaps };
+  if (isRelaxedComplexity(complexity)) {
+    g.securityCompletenessGap = 0;
+    g.infraStackGap = 0;
+    g.securityEdgeCaseGap = 0;
+  }
+  if (complexity === "LOW") {
+    g.missingManifest = 0;
+  }
+  return g;
+}
+
 /**
  * Desglose de precisión por sección/agente (0–100) para la tabla del chat.
  * Usa las mismas secciones y gaps que el semáforo; cada dimensión se penaliza según gaps que la afectan.
  * Si una sección está en traceabilityGaps.inconsistentSections, se capa a PRECISION_CAP_INCONSISTENTE.
  */
-function computePrecisionBreakdown(md: string): PrecisionBreakdown {
+function computePrecisionBreakdown(md: string, complexity: EstimationComplexity = "HIGH"): PrecisionBreakdown {
   const sections = detectReferenceSections(md);
-  const gaps = computeConsistencyGaps(md);
+  const gaps = adjustGapsForEstimationComplexity(computeConsistencyGaps(md), complexity);
   const traceability = computeTraceabilityGaps(md);
   const inconsistentSet = new Set(traceability.inconsistentSections);
   const contextBlock = extractSection(md, /^#+\s*(?:1\.\s*)?(?:contexto\s+y\s+alcance|contexto\b)/im);
@@ -591,8 +617,28 @@ function parseCountsFromMarkdown(md: string): {
 export class EstimationService {
   private readonly liveDraftByProject = new Map<string, string>();
   private readonly auditorGapsByProject = new Map<string, AuditorGaps>();
+  /** `projectId` o `projectId::stageId` → complejidad para semáforo/desglose (alineado con Workshop). */
+  private readonly estimationComplexityByKey = new Map<string, EstimationComplexity>();
 
   constructor(private readonly prisma: PrismaService) { }
+
+  /** Inicio de stream MDD o tras cargar proyecto: fija complejidad para `calculateLiveMetrics` sin pasarla en cada llamada. */
+  cacheProjectComplexity(projectId: string, stageId: string | null | undefined, complexity: EstimationComplexity): void {
+    const p = projectId?.trim();
+    if (!p) return;
+    this.estimationComplexityByKey.set(this.draftKey(p, stageId), complexity);
+  }
+
+  private resolveEstimationComplexity(options?: {
+    complexity?: EstimationComplexity;
+    projectId?: string;
+    stageId?: string | null;
+  }): EstimationComplexity {
+    if (options?.complexity) return options.complexity;
+    const pid = options?.projectId?.trim();
+    if (!pid) return "HIGH";
+    return this.estimationComplexityByKey.get(this.draftKey(pid, options?.stageId)) ?? "HIGH";
+  }
 
   /** Clave de borrador/gaps: `projectId` o `projectId::stageId` si hay etapa explícita. */
   private draftKey(projectId: string, stageId?: string | null): string {
@@ -665,12 +711,27 @@ export class EstimationService {
       : useLegacyGaps
         ? this.auditorGapsByProject.get(projectId!.trim())
         : undefined;
-    return this.calculateLiveMetrics(content, { auditorGaps });
+    const proj = await this.prisma.project.findUnique({
+      where: { id: projectId.trim() },
+      select: { complexity: true },
+    });
+    const cx = (proj?.complexity as EstimationComplexity) ?? "HIGH";
+    this.cacheProjectComplexity(projectId, stageId, cx);
+    return this.calculateLiveMetrics(content, {
+      auditorGaps,
+      complexity: cx,
+      projectId: projectId.trim(),
+      stageId: stageId ?? null,
+    });
   }
 
   /** Desglose por sección/agente (0–100) para mostrar en la tabla del chat tras auditar. */
-  getPrecisionBreakdown(md: string): PrecisionBreakdown {
-    return computePrecisionBreakdown((md ?? "").trim());
+  getPrecisionBreakdown(
+    md: string,
+    options?: { complexity?: EstimationComplexity; projectId?: string; stageId?: string | null },
+  ): PrecisionBreakdown {
+    const cx = this.resolveEstimationComplexity(options);
+    return computePrecisionBreakdown((md ?? "").trim(), cx);
   }
 
   /**
@@ -709,12 +770,22 @@ export class EstimationService {
    * Calcula métricas en vivo a partir del MDD. Si options.auditorGaps está presente (evaluación del Auditor LLM),
    * se usan score e infrastructure_ready para precisión y semáforo; si no, se usa lógica por regex.
    */
-  calculateLiveMetrics(mddContext: MDDContext, options?: { auditorGaps?: AuditorGaps }): LiveMetricsResult {
+  calculateLiveMetrics(
+    mddContext: MDDContext,
+    options?: {
+      auditorGaps?: AuditorGaps;
+      complexity?: EstimationComplexity;
+      projectId?: string;
+      stageId?: string | null;
+    },
+  ): LiveMetricsResult {
     const raw =
       typeof mddContext === "string"
         ? mddContext
         : (mddContext as { mddContent?: string })?.mddContent ?? "";
     const md = raw?.trim() ?? "";
+
+    const cx = this.resolveEstimationComplexity(options);
 
     let precision: number;
     let status: SemaphoreStatusLive;
@@ -722,12 +793,14 @@ export class EstimationService {
     if (options?.auditorGaps) {
       const g = options.auditorGaps;
       precision = Math.min(100, Math.max(0, g.score));
-      const hasGreenCriteria =
-        precision >= PRECISION_GREEN_MIN && g.infrastructure_ready && g.critical_gaps.length === 0;
+      const strictInfra = cx === "HIGH";
+      const hasGreenCriteria = strictInfra
+        ? precision >= PRECISION_GREEN_MIN && g.infrastructure_ready && g.critical_gaps.length === 0
+        : precision >= PRECISION_GREEN_MIN && g.critical_gaps.length === 0;
       status = hasGreenCriteria ? "green" : precision >= PRECISION_RED_MAX ? "yellow" : "red";
     } else {
       const sections = detectReferenceSections(md);
-      const gaps = computeConsistencyGaps(md);
+      const gaps = adjustGapsForEstimationComplexity(computeConsistencyGaps(md), cx);
       const traceability = computeTraceabilityGaps(md);
       const traceabilityPenalty = traceability.inconsistentSections.length > 0 ? 15 : 0;
       const basePrecisionRaw =
@@ -742,10 +815,14 @@ export class EstimationService {
         traceabilityPenalty;
       precision = Math.min(100, Math.round(Math.max(0, basePrecisionRaw - gapPenalty)));
       const hasGreenCriteria =
-        sections.db > 0 &&
-        sections.endpointsWithPayloads &&
-        sections.securitySubstantive &&
-        gaps.contradictionGap === 0;
+        cx === "HIGH"
+          ? sections.db > 0 &&
+            sections.endpointsWithPayloads &&
+            sections.securitySubstantive &&
+            gaps.contradictionGap === 0
+          : cx === "MEDIUM"
+            ? sections.db > 0 && sections.endpointsWithPayloads && gaps.contradictionGap === 0
+            : sections.db > 0 && gaps.contradictionGap === 0;
       status =
         precision >= PRECISION_GREEN_MIN && hasGreenCriteria
           ? "green"

@@ -4,7 +4,38 @@ import type {
   ChatMessage,
   GenerateResponseOptions,
 } from "../interfaces/llm-provider.interface.js";
-import type { ChecklistResult } from "@theforge/shared-types";
+import type { ChatImagePart, ChecklistResult } from "@theforge/shared-types";
+
+type GeminiContentPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
+
+type GeminiContent = { role: "user" | "model"; parts: GeminiContentPart[] };
+
+function geminiUserParts(text: string, images?: ChatImagePart[]): GeminiContentPart[] {
+  const trimmed = text.trim();
+  const t =
+    trimmed.length > 0
+      ? trimmed
+      : "(El usuario adjuntó solo imágenes; intégralas según el contexto de la conversación y el documento activo.)";
+  const parts: GeminiContentPart[] = [{ text: t }];
+  for (const img of images ?? []) {
+    parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
+  }
+  return parts;
+}
+
+function historyToGeminiContents(history: ChatMessage[]): GeminiContent[] {
+  const out: GeminiContent[] = [];
+  for (const m of history) {
+    if (m.role === "user") {
+      out.push({ role: "user", parts: geminiUserParts(m.content, m.images) });
+    } else {
+      out.push({ role: "model", parts: [{ text: m.content }] });
+    }
+  }
+  return out;
+}
 
 export class GeminiAdapter implements LLMProvider {
   private readonly genAI: GoogleGenerativeAI;
@@ -27,7 +58,7 @@ export class GeminiAdapter implements LLMProvider {
     options?: GenerateResponseOptions,
   ): Promise<string> {
     try {
-      const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
+      const contents: GeminiContent[] = [];
       if (options?.systemPrompt) {
         contents.push({
           role: "user",
@@ -38,14 +69,8 @@ export class GeminiAdapter implements LLMProvider {
           parts: [{ text: "Entendido. Procedo con la entrevista según las instrucciones." }],
         });
       }
-      for (const m of history) {
-        if (m.role === "user") {
-          contents.push({ role: "user", parts: [{ text: m.content }] });
-        } else {
-          contents.push({ role: "model", parts: [{ text: m.content }] });
-        }
-      }
-      contents.push({ role: "user", parts: [{ text: prompt }] });
+      contents.push(...historyToGeminiContents(history));
+      contents.push({ role: "user", parts: geminiUserParts(prompt, options?.userMessageImages) });
 
       const ts = () => new Date().toISOString();
       console.log(`[GeminiAdapter] ${ts()} → Request enviado a Gemini:`, { contentsCount: contents.length, promptLength: prompt.length });
@@ -57,7 +82,6 @@ export class GeminiAdapter implements LLMProvider {
       try {
         text = result.response.text() ?? "";
       } catch (textErr) {
-        // Respuesta vacía o bloqueada (safety/filters): response.text() lanza
         console.error("[GeminiAdapter] response.text() failed (empty/blocked)", textErr);
         throw new Error(
           "La IA no devolvió texto (respuesta vacía o bloqueada). Intenta de nuevo o reformula el mensaje.",
@@ -79,7 +103,7 @@ export class GeminiAdapter implements LLMProvider {
     history: ChatMessage[],
     options?: GenerateResponseOptions,
   ): Promise<AsyncIterable<string>> {
-    const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
+    const contents: GeminiContent[] = [];
     if (options?.systemPrompt) {
       contents.push({
         role: "user",
@@ -90,14 +114,8 @@ export class GeminiAdapter implements LLMProvider {
         parts: [{ text: "Entendido. Procedo con la entrevista según las instrucciones." }],
       });
     }
-    for (const m of history) {
-      if (m.role === "user") {
-        contents.push({ role: "user", parts: [{ text: m.content }] });
-      } else {
-        contents.push({ role: "model", parts: [{ text: m.content }] });
-      }
-    }
-    contents.push({ role: "user", parts: [{ text: prompt }] });
+    contents.push(...historyToGeminiContents(history));
+    contents.push({ role: "user", parts: geminiUserParts(prompt, options?.userMessageImages) });
 
     const result = await this.model.generateContentStream({
       contents,

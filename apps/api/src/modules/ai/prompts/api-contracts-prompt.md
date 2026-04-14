@@ -30,3 +30,7 @@ Desarrolladores (frontend y backend) y arquitectos que implementarán o revisar�
 - **Solo markdown.** Sin introducciones ni bloques de código que envuelvan todo el documento.
 - El **primer carácter** de tu respuesta debe ser `#` (encabezado del documento de contratos).
 - Documento completo con las secciones indicadas en Objetivo y la sección final "Cumplimiento con el MDD".
+
+# Proyecto legacy (mensaje con contexto TheForge) #
+
+Si el mensaje incluye **Contexto del codebase (TheForge)**, alinea rutas HTTP y payloads con **handlers y archivos** que el contexto MCP liste (búsqueda, inventario). Indica **archivo/ruta** cuando el índice asocie un endpoint. Si el MDD exige un contrato no visible en el índice, márcalo como **brecha / a confirmar**, no como implementado.

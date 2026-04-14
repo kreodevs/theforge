@@ -95,13 +95,25 @@ Nada de lógica acoplada a un proveedor fuera de `adapters/` y del factory.
 
 ## 4. Semáforo del MDD
 
-Servicio en backend que analiza el markdown/estructura del MDD persistido en la **etapa activa** (`Stage.mddContent`; el API expone el mismo contenido como campos de primer nivel del proyecto por compatibilidad).
+Servicio en backend (`SemaphoreService`) que combina **complejidad del proyecto** (`ComplexityLevel`), **entregables** (LOW/MEDIUM) y **JSON normalizado del MDD** de la **etapa activa** (`normalizeMddContent` → string JSON con `db_entities`, `business_core`, `edge_cases`, `field_types`, opcionalmente `constitution`). El API expone el MDD también como campos de primer nivel del proyecto por compatibilidad.
 
-| Estado       | Condición                                                                |
-| ------------ | ------------------------------------------------------------------------ |
-| **ROJO**     | `db_entities.length === 0` **o** `business_core == null`. Bloqueado.     |
-| **AMARILLO** | Hay entidades pero faltan `edge_cases` o `field_types` (precisión ~70%). |
-| **VERDE**    | Checklist completo y, si aplica, mapeo UX. Precisión +95%.               |
+### 4.1 Por complejidad
+
+| Nivel   | Resumen |
+| ------- | ------- |
+| **LOW** | Historias de usuario + tareas sustanciales; Figma si `hasUxTeam`. |
+| **MEDIUM** | Cinco gates: spec o casos de uso, contratos API, guía UX **o** flujos, **historias de usuario**, tareas. Los cinco cumplidos → VERDE (~95); 3–4 → AMARILLO (~70); menos → ROJO. |
+| **HIGH** | Ver §4.2. |
+
+### 4.2 HIGH (MDD canónico + alivio de grafo + Constitución Cursor)
+
+| Estado       | Condición (orden conceptual) |
+| ------------ | ---------------------------- |
+| **ROJO**     | Sin JSON válido; o sin entidades / sin `business_core` sustancial. |
+| **AMARILLO** | Hay entidades y núcleo de negocio pero faltan `edge_cases` o `field_types` **y** no hay alivio de grafo SDD; o falta Figma con equipo UX (~85); o incumplen puertas **Constitución Cursor** cuando `constitution.template_detected` (mapa de contextos, glosario, Gherkin §5, bloqueantes abiertos, «¿Por qué?»/ADR en §2 — ver `semaphore.service.ts`). |
+| **VERDE**    | Checklist MDD completo y Figma si aplica (~95). **O** faltan textos edge/field pero el **Grafo SDD** (Falkor) no reporta dependencias huérfanas entre endpoint de API y entidad de dominio (`sddDomainGraphOk`) → VERDE con precisión **92** (The Forge conserva esta señal frente a solo MaxPrime). |
+
+Las puertas de constitución **no** sustituyen ROJO por entidades vacías; pueden bajar un VERDE (p. ej. 95 o 92) a AMARILLO si la plantilla §1–§5 está incompleta. Si el resultado base ya es AMARILLO con score más bajo que el de constitución, se conserva el más estricto.
 
 El agente debe comprobar estado VERDE antes de generar código (architect-behavior).
 

@@ -1,9 +1,11 @@
 import { useRef, useEffect, useState, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil, X, RefreshCw } from "lucide-react";
+import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil, X, RefreshCw, ImagePlus } from "lucide-react";
 import { useInterview } from "../hooks/useInterview";
 import { useWorkshopStore } from "../store/workshopStore";
+import type { ChatImagePart } from "@theforge/shared-types";
+import { MDD_LONG_PASTE_WARN_CHARS } from "@theforge/shared-types/mdd-pipeline-limits";
 import { Button, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui";
 
 export type ActiveTab =
@@ -62,6 +64,30 @@ function getRegenerateSectionFromSlashCommand(msg: string): number | null {
     (c) => c.slug === slug || String(c.section) === slug,
   );
   return cmd?.section ?? null;
+}
+
+const ACCEPT_IMG = /^image\/(png|jpeg|jpg|gif|webp)$/i;
+
+async function readFilesAsChatParts(files: Iterable<File>): Promise<ChatImagePart[]> {
+  const list = Array.from(files).slice(0, 6);
+  const out: ChatImagePart[] = [];
+  for (const file of list) {
+    const mimeRaw = file.type || "image/png";
+    const mime = mimeRaw.toLowerCase() === "image/jpg" ? "image/jpeg" : mimeRaw.toLowerCase();
+    if (!ACCEPT_IMG.test(mime)) continue;
+    const b64 = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const s = String(r.result ?? "");
+        const i = s.indexOf("base64,");
+        resolve(i >= 0 ? s.slice(i + 7) : s);
+      };
+      r.onerror = () => reject(new Error("read"));
+      r.readAsDataURL(file);
+    });
+    out.push({ mimeType: mime, base64: b64 });
+  }
+  return out;
 }
 
 /** Etiquetas legibles por nodo del plan MDD (para aprobación). */
@@ -179,6 +205,9 @@ export default function ChatContainer({
   const isMddStreaming = loading && loadingReason === "mdd";
   const showAgentProgress = isBenchmarkStreaming || isMddStreaming;
   const [inputValue, setInputValue] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [pendingPreviews, setPendingPreviews] = useState<string[]>([]);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -238,19 +267,28 @@ export default function ChatContainer({
     evaluatorCritique,
   ]);
 
+  useEffect(() => {
+    const urls = pendingFiles.map((f) => URL.createObjectURL(f));
+    setPendingPreviews(urls);
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, [pendingFiles]);
+
   const handleSend = async () => {
-    if (!inputValue.trim() || loading) return;
+    if ((!inputValue.trim() && !pendingFiles.length) || loading) return;
     const msg = inputValue.trim();
     if (activeTab === "mdd" && msg === "/") {
       setInputValue("");
       return;
     }
     const section = activeTab === "mdd" ? getRegenerateSectionFromSlashCommand(msg) : null;
+    const imageParts = pendingFiles.length ? await readFilesAsChatParts(pendingFiles) : [];
+    setPendingFiles([]);
     setInputValue("");
+    const imgOpt = imageParts.length ? { images: imageParts } : {};
     if (section != null) {
-      await sendMessage(msg, { regenerateSection: section });
+      await sendMessage(msg, { regenerateSection: section, ...imgOpt });
     } else {
-      await sendMessage(msg);
+      await sendMessage(msg, { ...imgOpt });
     }
   };
 
@@ -262,6 +300,8 @@ export default function ChatContainer({
     activeTab === "mdd" &&
     (inputValue === "/" ||
       (inputValue.startsWith("/") && !inputValue.includes(" ") && filteredSlashCommands.length > 0));
+
+  const showLongPasteMddWarn = activeTab === "mdd" && inputValue.length > MDD_LONG_PASTE_WARN_CHARS;
 
   const handleGenerateBenchmark = () => {
     if (!inputValue.trim() || loading || !benchmarkMode) return;
@@ -295,26 +335,79 @@ export default function ChatContainer({
             ¿Qué quieres construir y cuál es tu referencia (ej. industria o producto similar)?
           </p>
           <div className="w-full max-w-2xl flex flex-col gap-3">
-            <textarea
-              ref={chatInputRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" || e.shiftKey) return;
-                e.preventDefault();
-                if (isBenchmarkFirstAction) handleGenerateBenchmark();
-                else handleSend();
+            {showLongPasteMddWarn && (
+              <p className="text-xs text-amber-500/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                Mensaje muy largo ({inputValue.length} caracteres). Conviene trocear por sección (p. ej.{" "}
+                <code className="text-amber-200">/contratos-api</code>) o varios mensajes; el envío no se bloquea.
+              </p>
+            )}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files;
+                if (!f?.length) return;
+                setPendingFiles((p) => [...p, ...Array.from(f)].slice(0, 6));
+                e.target.value = "";
               }}
-              placeholder={
-                isBenchmarkFirstAction
-                  ? "Describe tu idea; si incluyes URLs (ej. https://auth0.com/docs) se usarán como referencias para el benchmark..."
-                  : "Describe tu idea o pega un enlace de referencia..."
-              }
-              rows={1}
-              className="w-full min-h-[2.5rem] max-h-[5rem] overflow-y-auto resize-none bg-zinc-800/50 border border-zinc-600 rounded-lg px-4 py-3 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none break-words"
-              spellCheck={false}
-              disabled={loading}
             />
+            {!isBenchmarkFirstAction && pendingPreviews.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {pendingPreviews.map((url, i) => (
+                  <div key={`${url}-${i}`} className="relative shrink-0">
+                    <img
+                      src={url}
+                      alt=""
+                      className="h-16 w-16 object-cover rounded-lg border border-zinc-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
+                      className="absolute -top-1 -right-1 rounded-full bg-zinc-800 border border-zinc-500 p-0.5 text-zinc-300 hover:text-white"
+                      aria-label="Quitar imagen"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="flex gap-2 items-end w-full min-w-0">
+              {!isBenchmarkFirstAction ? (
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={loading || pendingFiles.length >= 6}
+                  className="shrink-0 p-2.5 rounded-lg border border-zinc-600 bg-zinc-800/80 text-zinc-300 hover:text-amber-400 hover:border-amber-500/40 disabled:opacity-40"
+                  title="Adjuntar imagen (máx. 6, PNG/JPEG/WebP/GIF)"
+                >
+                  <ImagePlus className="w-5 h-5" />
+                </button>
+              ) : null}
+              <textarea
+                ref={chatInputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || e.shiftKey) return;
+                  e.preventDefault();
+                  if (isBenchmarkFirstAction) handleGenerateBenchmark();
+                  else void handleSend();
+                }}
+                placeholder={
+                  isBenchmarkFirstAction
+                    ? "Describe tu idea; si incluyes URLs (ej. https://auth0.com/docs) se usarán como referencias para el benchmark..."
+                    : "Describe tu idea o pega un enlace de referencia..."
+                }
+                rows={1}
+                className="flex-1 min-w-0 min-h-[2.5rem] max-h-[5rem] overflow-y-auto resize-none bg-zinc-800/50 border border-zinc-600 rounded-lg px-4 py-3 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none break-words"
+                spellCheck={false}
+                disabled={loading}
+              />
+            </div>
             {isBenchmarkFirstAction ? (
               <button
                 onClick={handleGenerateBenchmark}
@@ -327,8 +420,8 @@ export default function ChatContainer({
               </button>
             ) : (
               <button
-                onClick={handleSend}
-                disabled={loading || !inputValue.trim()}
+                onClick={() => void handleSend()}
+                disabled={loading || (!inputValue.trim() && !pendingFiles.length)}
                 className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                 title="Enviar"
               >
@@ -439,7 +532,21 @@ export default function ChatContainer({
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                       </div>
                     ) : (
-                      <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                      <div>
+                        {msg.images != null && msg.images.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 mb-1.5">
+                            {msg.images.map((im, j) => (
+                              <img
+                                key={j}
+                                src={`data:${im.mimeType};base64,${im.base64}`}
+                                alt=""
+                                className="max-h-36 max-w-[min(100%,280px)] rounded-md border border-amber-500/35 object-contain bg-zinc-900/50"
+                              />
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -549,50 +656,102 @@ export default function ChatContainer({
               </div>
             </div>
           )}
-          <div className="p-4 border-t border-zinc-700 flex gap-2 shrink-0 items-end">
-            <textarea
-              ref={chatInputRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" || e.shiftKey) return;
-                e.preventDefault();
-                if (isBenchmarkFirstAction) handleGenerateBenchmark();
-                else handleSend();
-              }}
-              placeholder={
-                isBenchmarkFirstAction
-                  ? "Ej: Quiero un sistema de login con SSO tipo Auth0, 2FA y auditoría de sesiones..."
-                  : activeTab === "mdd"
-                    ? "Escribe aquí o / para ver comandos de regenerar sección..."
-                    : `Tu respuesta (contexto: ${contextLabel})...`
-              }
-              rows={1}
-              className="flex-1 min-h-[2.5rem] max-h-[5rem] overflow-y-auto resize-none bg-[var(--input)] border border-[var(--input-border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:ring-2 focus:ring-[var(--ring)] focus:border-transparent outline-none break-words min-w-0"
-              spellCheck={false}
-              disabled={loading}
-            />
-            {isBenchmarkFirstAction ? (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleGenerateBenchmark}
-                disabled={loading || !inputValue.trim()}
-                loading={loading}
-                title="Generar Benchmark & Gap Analysis"
-              >
-                <Send className="w-4 h-4 shrink-0" />
-              </Button>
-            ) : (
-              <Button
-                size="icon"
-                onClick={handleSend}
-                disabled={loading || !inputValue.trim()}
-                title="Enviar"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
+          <div className="p-4 border-t border-zinc-700 flex flex-col gap-2 shrink-0">
+            {showLongPasteMddWarn && (
+              <p className="text-xs text-amber-500/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                Mensaje muy largo ({inputValue.length} caracteres). Conviene trocear por sección o varios mensajes.
+              </p>
             )}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files;
+                if (!f?.length) return;
+                setPendingFiles((p) => [...p, ...Array.from(f)].slice(0, 6));
+                e.target.value = "";
+              }}
+            />
+            {pendingPreviews.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {pendingPreviews.map((url, i) => (
+                  <div key={`${url}-${i}`} className="relative shrink-0">
+                    <img
+                      src={url}
+                      alt=""
+                      className="h-16 w-16 object-cover rounded-lg border border-zinc-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
+                      className="absolute -top-1 -right-1 rounded-full bg-zinc-800 border border-zinc-500 p-0.5 text-zinc-300 hover:text-white"
+                      aria-label="Quitar imagen"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="flex gap-2 items-end w-full min-w-0">
+              {!isBenchmarkFirstAction ? (
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={loading || pendingFiles.length >= 6}
+                  className="shrink-0 p-2.5 rounded-lg border border-zinc-600 bg-zinc-800/80 text-zinc-300 hover:text-amber-400 hover:border-amber-500/40 disabled:opacity-40"
+                  title="Adjuntar imagen (máx. 6, PNG/JPEG/WebP/GIF)"
+                >
+                  <ImagePlus className="w-5 h-5" />
+                </button>
+              ) : null}
+              <textarea
+                ref={chatInputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || e.shiftKey) return;
+                  e.preventDefault();
+                  if (isBenchmarkFirstAction) handleGenerateBenchmark();
+                  else void handleSend();
+                }}
+                placeholder={
+                  isBenchmarkFirstAction
+                    ? "Ej: Quiero un sistema de login con SSO tipo Auth0, 2FA y auditoría de sesiones..."
+                    : activeTab === "mdd"
+                      ? "Escribe aquí o / para ver comandos de regenerar sección..."
+                      : `Tu respuesta (contexto: ${contextLabel})...`
+                }
+                rows={1}
+                className="flex-1 min-h-[2.5rem] max-h-[5rem] overflow-y-auto resize-none bg-[var(--input)] border border-[var(--input-border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:ring-2 focus:ring-[var(--ring)] focus:border-transparent outline-none break-words min-w-0"
+                spellCheck={false}
+                disabled={loading}
+              />
+              {isBenchmarkFirstAction ? (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleGenerateBenchmark}
+                  disabled={loading || !inputValue.trim()}
+                  loading={loading}
+                  title="Generar Benchmark & Gap Analysis"
+                >
+                  <Send className="w-4 h-4 shrink-0" />
+                </Button>
+              ) : (
+                <Button
+                  size="icon"
+                  onClick={() => void handleSend()}
+                  disabled={loading || (!inputValue.trim() && !pendingFiles.length)}
+                  title="Enviar"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
           </div>
         </>
       )}

@@ -20,11 +20,13 @@ export {
   auditorGapsSchema,
   defaultMDDState,
   mddAuditorDecisionSchema,
+  mddComplexityLevelSchema,
   mddPlanStepSchema,
   mddStateSchema,
   type AuditorGapsState,
   type MDDAuditorDecision,
   type MDDState,
+  type MddComplexityLevel,
   type MddPlanStep,
 } from "./mdd-state.schema.js";
 

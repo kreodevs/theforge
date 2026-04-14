@@ -44,12 +44,24 @@ export interface AuditorGaps {
 
 /** Contrato mínimo para que el Manager muestre la misma precisión que el semáforo. */
 export interface LivePrecisionCalculator {
-  calculateLiveMetrics(ctx: MDDContext, options?: { auditorGaps?: AuditorGaps }): LiveMetricsResult;
+  calculateLiveMetrics(
+    ctx: MDDContext,
+    options?: {
+      auditorGaps?: AuditorGaps;
+      /** Si no viene, se usa caché por `projectId`+`stageId` cuando existan. */
+      complexity?: EstimationComplexity;
+      projectId?: string;
+      stageId?: string | null;
+    },
+  ): LiveMetricsResult;
   /** Opcional: reporte de gaps en lenguaje natural. Si se pasan auditorGaps, se usan en lugar de regex. */
   getGapsReport?(md: string, auditorGaps?: AuditorGaps): string[];
 }
 
 export type SemaphoreStatusLive = "red" | "yellow" | "green";
+
+/** Alineado con `Project.complexity` (Prisma). Goberna relajación del desglose en vivo y prompts MDD. */
+export type EstimationComplexity = "LOW" | "MEDIUM" | "HIGH";
 
 /** Estado por sección: inconsistente cuando la entidad no recorre las 7 secciones (matriz de trazabilidad). */
 export type SectionStatus = "ok" | "inconsistente";

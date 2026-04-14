@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Post, Res } from "@nestjs/common";
 import { AiOrchestratorService } from "./ai-orchestrator.service.js";
+import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
 
 /** Minimal type for SSE response (avoids express types). */
 interface SseResponse {
@@ -25,22 +26,26 @@ export class AiOrchestratorController {
       dbgaContent?: string | null;
       activeTab?: string;
       stageId?: string;
+      images?: unknown;
     },
   ) {
     const { projectId, sessionId, message, mddContent, uxUiGuideContent, dbgaContent, activeTab, stageId } =
       body;
-    if (!projectId || !message?.trim()) {
-      throw new BadRequestException("projectId and message are required");
+    const images = parseChatImageAttachments(body.images);
+    const msg = typeof message === "string" ? message.trim() : "";
+    if (!projectId || (!msg && !images.length)) {
+      throw new BadRequestException("projectId and message or images are required");
     }
     return this.orchestrator.chat(
       projectId,
-      message.trim(),
+      msg,
       sessionId,
       mddContent?.trim() || undefined,
       activeTab?.trim() || undefined,
       uxUiGuideContent?.trim() || undefined,
       dbgaContent?.trim() || undefined,
       stageId?.trim() || undefined,
+      images,
     );
   }
 
@@ -57,6 +62,7 @@ export class AiOrchestratorController {
       specContent?: string | null;
       activeTab?: string;
       stageId?: string;
+      images?: unknown;
     },
     @Res({ passthrough: false }) res: SseResponse,
   ) {
@@ -71,8 +77,10 @@ export class AiOrchestratorController {
       activeTab,
       stageId,
     } = body;
-    if (!projectId || !message?.trim()) {
-      throw new BadRequestException("projectId and message are required");
+    const images = parseChatImageAttachments(body.images);
+    const msg = typeof message === "string" ? message.trim() : "";
+    if (!projectId || (!msg && !images.length)) {
+      throw new BadRequestException("projectId and message or images are required");
     }
 
     res.setHeader("Content-Type", "text/event-stream");
@@ -84,7 +92,7 @@ export class AiOrchestratorController {
     try {
       const stream = this.orchestrator.chatStream(
         projectId,
-        message.trim(),
+        msg,
         sessionId?.trim(),
         mddContent?.trim() || undefined,
         activeTab?.trim() || undefined,
@@ -92,10 +100,11 @@ export class AiOrchestratorController {
         dbgaContent?.trim() || undefined,
         specContent?.trim() || undefined,
         stageId?.trim() || undefined,
+        images,
       );
-      for await (const msg of stream) {
-        const data = JSON.stringify(msg.data);
-        res.write(`event: ${msg.event}\ndata: ${data}\n\n`);
+      for await (const ev of stream) {
+        const data = JSON.stringify(ev.data);
+        res.write(`event: ${ev.event}\ndata: ${data}\n\n`);
         if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
           (res as unknown as { flush: () => void }).flush();
         }

@@ -34,3 +34,7 @@ Producto, arquitectura y equipos que usarán el Spec para alinear el MDD y el de
 
 - **Extrae y consolida** solo la información de las entradas (Benchmark, alcance clarificado, resumen fase 0).
 - **No inventes** objetivos, alcance ni criterios que no estén respaldados por el Benchmark o el alcance proporcionado.
+
+# Proyecto legacy (mensaje con contexto TheForge) #
+
+Si el **mensaje de usuario** incluye el bloque **Contexto del codebase (TheForge)**, el Spec sigue siendo what/why, pero el **Alcance** y los **user journeys** deben mencionar **módulos, APIs o pantallas reales** que TheForge o el MDD identifiquen para el cambio. No inventes superficies no respaldadas por ese bloque o por el MDD.

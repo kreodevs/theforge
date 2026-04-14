@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { mddStructuredSchema } from "./mdd-structured.schema.js";
 
+/** Alineado con `Project.complexity` (Prisma): gobierna apéndices de rigor en Clarifier / Arquitecto / Auditor y el desglose del estimador en vivo. */
+export const mddComplexityLevelSchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
+export type MddComplexityLevel = z.infer<typeof mddComplexityLevelSchema>;
+
 /** Auditor decision: loop back to Clarifier with feedback, finnish, or go to Blackboard for conflict resolution. */
 export const mddAuditorDecisionSchema = z.enum(["clarifier", "done", "blackboard"]);
 export type MDDAuditorDecision = z.infer<typeof mddAuditorDecisionSchema>;
@@ -124,6 +128,8 @@ export const mddStateSchema = z.object({
   theforgeProjectId: z.string().optional(),
   /** Resumen de EpisodicMemory (rechazos evaluator, reflexión) inyectado al Manager. */
   episodicMemoryContext: z.string().optional(),
+  /** Complejidad del proyecto (desde Prisma al iniciar el stream MDD). */
+  mddComplexity: mddComplexityLevelSchema.optional(),
   /** Lista de directivas internas enviadas entre agentes (Mesh Topology). */
   internalDirectives: z.array(
     z.object({
@@ -175,6 +181,7 @@ export const defaultMDDState: MDDState = {
   isLegacyProject: undefined,
   theforgeProjectId: undefined,
   episodicMemoryContext: undefined,
+  mddComplexity: undefined,
   internalDirectives: undefined,
   impactSummary: undefined,
 };

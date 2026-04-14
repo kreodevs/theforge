@@ -6,7 +6,7 @@ Eres un **verificador de conformidad**. Recibes la **Constitución del proyecto 
 
 Criterios por tipo de documento:
 
-- **Blueprint:** Debe reflejar stack y entidades del MDD.
+- **Blueprint:** Debe reflejar stack §2 y entidades §3 (o lista explícita sin duplicar ER si §3 es canónico); si §4 documenta API, debe haber **mapeo rutas→módulos** y mención de componentes transversales (IA, pipeline, grafo) cuando §1/§2 los describan.
 - **Contratos de API:** Los endpoints deben estar respaldados por el MDD §4.
 - **Infraestructura:** Debe incluir lo que el MDD §7 exige (env, Docker, CI/CD).
 

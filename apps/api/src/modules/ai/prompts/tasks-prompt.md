@@ -8,10 +8,12 @@ Generar el **documento Tasks** (breakdown de implementación) en markdown: lista
 
 **Contenido obligatorio (secciones con ítems comprobables):**
 
-1. **Backend tasks:** Módulos a implementar, entidades/repositorios, endpoints a desarrollar (por sección del Blueprint o por dominio).
-2. **Frontend tasks:** Vistas/pantallas, componentes clave, flujos de UI (alineados con los contratos de API y el Blueprint).
+1. **Backend tasks:** Solo trabajo que corre en **servidor**: API (controllers/routes/services), persistencia (ORM, migraciones, `schema.prisma`, Strapi `src/api/**/content-types/**/schema.json`), validación en capa API, jobs server-side.
+2. **Frontend tasks:** Todo lo que corre en **cliente**: pantallas, componentes, hooks, estado UI, formularios, llamadas `fetch` desde el navegador, **tipos TypeScript / carpetas `Models` o `types` que viven bajo el árbol de la app front** (p. ej. `apps/web`, `packages/login-sso`, `src/components`, SPA `src/` cuando el inventario muestra que es Vite/React y no el servidor).
 3. **Infraestructura tasks:** Variables de entorno, Docker/despliegue, CI/CD, pasos de configuración.
 4. **Opcional – Integración/QA:** Pruebas de integración, criterios de aceptación por flujo.
+
+**Clasificación Backend vs Frontend (crítico):** No uses el nombre del archivo (`cliente.ts`, `Model`) para decidir la sección. Usa la **ruta completa** y el **stack** del Blueprint o del contexto TheForge: si la ruta está en el paquete o carpeta del **frontend**, el ítem va en **Frontend tasks**, aunque el archivo modele datos. La persistencia real del campo (BD / API Strapi / Nest) va en **Backend**. Si un mismo cambio toca ambos, crea **dos** ítems (uno por capa).
 
 # Estilo #
 
@@ -29,3 +31,11 @@ Equipo de desarrollo (backend, frontend, DevOps) que ejecutará las tareas.
 
 - **Solo markdown.** El **primer carácter** debe ser `#`. Sin introducciones ni texto conversacional antes del documento.
 - Documento completo con las cuatro secciones indicadas en Objetivo, usando viñetas o checklist.
+
+# Proyecto legacy (mensaje con contexto TheForge) #
+
+Si el **mensaje de usuario** trae **Contexto del codebase (TheForge)**, cada tarea debe incluir **al menos una ruta de archivo** del repo (como aparece en TheForge) **o** un identificador inequívoco del índice (endpoint + método, content-type, componente con path). Las secciones **Archivo del plan** e **Inventario** del bloque TheForge tienen prioridad. No mezcles archivos de dominios distintos salvo que TheForge + MDD lo justifiquen.
+
+**Backend multi-stack:** deduce del contexto si el API es Strapi, Nest, u otro. Para **cambios de modelo/campo**: en Strapi la tarea debe apuntar a `schema.json` del content-type, no a `lifecycles.js` (salvo que el trabajo sean hooks). En Nest/Prisma/TypeORM, apunta a entidades, DTOs o `schema.prisma` según lo que TheForge muestre. No atribuyas rutas “que suenan bien” en la misma carpeta si otra extensión es la fuente de verdad del esquema.
+
+**No confundir capas:** Si TheForge muestra `src/Models/cliente.ts` (o similar) **dentro del repo o paquete de la SPA**, esas tareas son **Frontend** (tipos, validación de formulario, mapeo UI). Solo si la misma ruta o el inventario demuestran que es **código de servidor** (p. ej. `apps/api/src/...`, Strapi `src/api/...`) van en **Backend**.

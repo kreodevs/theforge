@@ -6,7 +6,7 @@ Devuelve SOLO un JSON válido (sin markdown, sin texto extra) con esta forma exa
 
 planSummary debe alinearse con el nivel:
 - LOW: p.ej. "Solo Historias de Usuario y Tasks; sin MDD canónico ni Blueprint obligatorio."
-- MEDIUM: p.ej. "Spec, contratos API, guía UX/UI y Tasks; sin constitución MDD de 7 secciones."
+- MEDIUM: p.ej. "Spec, contratos API, guía UX/UI, Historias de Usuario y Tasks; sin constitución MDD de 7 secciones."
 - HIGH: p.ej. "MDD canónico, Blueprint, Spec, API, flujos, guía UX, historias, tasks e infra."
 
 Criterios:

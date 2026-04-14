@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiAnalysisService } from "./ai-analysis.service.js";
 import { EstimationService } from "./estimation/estimation.service.js";
+import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
 
 @Controller("ai-analysis")
 export class AiAnalysisController {
@@ -32,7 +33,7 @@ export class AiAnalysisController {
     const mddContent = await this.estimationService.getMddContentForProject(id, sid);
     const precisionBreakdown =
       mddContent && mddContent.trim().length > 80
-        ? this.estimationService.getPrecisionBreakdown(mddContent)
+        ? this.estimationService.getPrecisionBreakdown(mddContent, { projectId: id, stageId: sid ?? null })
         : undefined;
     return { ...metrics, precisionBreakdown };
   }
@@ -51,7 +52,7 @@ export class AiAnalysisController {
       mddContent ?? (await this.estimationService.getMddContentForProject(id, sid));
     const precisionBreakdown =
       contentForBreakdown && contentForBreakdown.trim().length > 80
-        ? this.estimationService.getPrecisionBreakdown(contentForBreakdown)
+        ? this.estimationService.getPrecisionBreakdown(contentForBreakdown, { projectId: id, stageId: sid ?? null })
         : undefined;
     return { ...metrics, precisionBreakdown };
   }
@@ -192,6 +193,7 @@ export class AiAnalysisController {
       initialMessage?: string;
       mddContent?: string;
       stageId?: string;
+      images?: unknown;
     },
     @Res() res: Response,
   ) {
@@ -209,6 +211,7 @@ export class AiAnalysisController {
     const initialMessage = typeof body?.initialMessage === "string" ? body.initialMessage.trim() : undefined;
     const mddContent = typeof body?.mddContent === "string" ? body.mddContent.trim() : undefined;
     const stageId = typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined;
+    const imageAttachments = parseChatImageAttachments(body?.images);
 
     res.setHeader("Content-Type", "application/x-ndjson");
     res.setHeader("Cache-Control", "no-cache");
@@ -224,6 +227,7 @@ export class AiAnalysisController {
           initialMessage,
           mddContent,
           stageId,
+          imageAttachments,
         )) {
           yield JSON.stringify(event) + "\n";
         }
@@ -282,18 +286,25 @@ export class AiAnalysisController {
    */
   @Post("mdd/stream/resume")
   async streamMddResume(
-    @Body() body: { projectId?: string; threadId?: string; userMessage?: string; mddContent?: string },
+    @Body() body: {
+      projectId?: string;
+      threadId?: string;
+      userMessage?: string;
+      mddContent?: string;
+      images?: unknown;
+    },
     @Res() res: Response,
   ) {
     const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
     const threadId = typeof body?.threadId === "string" ? body.threadId.trim() : "";
     const userMessage = typeof body?.userMessage === "string" ? body.userMessage.trim() : "";
     const mddContent = typeof body?.mddContent === "string" ? body.mddContent.trim() : undefined;
+    const imageAttachments = parseChatImageAttachments(body?.images);
     if (!projectId || !threadId) {
       throw new BadRequestException("projectId and threadId are required");
     }
-    if (!userMessage) {
-      throw new BadRequestException("userMessage is required");
+    if (!userMessage && !imageAttachments.length) {
+      throw new BadRequestException("userMessage or images are required");
     }
 
     res.setHeader("Content-Type", "application/x-ndjson");
@@ -304,7 +315,13 @@ export class AiAnalysisController {
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
-        for await (const event of service.streamMddResume(projectId, threadId, userMessage, mddContent)) {
+        for await (const event of service.streamMddResume(
+          projectId,
+          threadId,
+          userMessage,
+          mddContent,
+          imageAttachments,
+        )) {
           yield JSON.stringify(event) + "\n";
         }
       })(),

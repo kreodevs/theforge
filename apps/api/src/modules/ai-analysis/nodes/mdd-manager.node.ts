@@ -1,3 +1,8 @@
+import {
+  MDD_MAX_GOAL_OTHER_NODES_CHARS,
+  MDD_MAX_GOAL_SOFTWARE_ARCHITECT_CHARS,
+  MDD_MAX_PLAN_DIRECTIVE_CHARS,
+} from "@theforge/shared-types";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { HumanMessage } from "@langchain/core/messages";
 import { Command, END, interrupt } from "@langchain/langgraph";
@@ -78,6 +83,7 @@ function inferSectionsFromMessage(text: string): string[] {
     /\b(modelo\s+de\s+datos|modelo\s+datos|tablas?|entidades?|schema|sql|roles?|permisos?|aplicaciones?|§3|secci[oó]n\s*3)\b/i.test(t) ||
     /\b(contratos?\s+api|endpoints?|§4|secci[oó]n\s*4)\b/i.test(t) ||
     /\b(arquitectura|stack|frontend)\b/i.test(t) ||
+    /\b(denue|inegi|directorio\s+estad[ií]stico|app\/api\/denue|consulta\/buscar)\b/i.test(t) ||
     /\b(base\s+de\s+datos|campo|columna|guardar(?:se)?\s+en|almacenar\s+en|jwt_token|refresh_token|token\s+en\s+bd)\b/i.test(t);
   if (needsModelOrApi) out.push("software_architect");
   if (/\b(seguridad|mfa|2fa|autenticaci[oó]n|autorizaci[oó]n|rbac|§6|secci[oó]n\s*6)\b/i.test(t)) {
@@ -135,6 +141,11 @@ const MODEL_REQUIREMENT_REGEX =
 const STACK_SECTION2_REGEX =
   /\b(stack|arquitectura|frontend|backend|framework|tecnolog[ií]a|nestjs|react|vue|angular|node\.?js|postgresql|mysql|vite|webpack|docker|secci[oó]n\s*2|§2)\b/i;
 
+function truncateForGoal(text: string, max: number): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > max ? t.slice(0, max) + "…" : t;
+}
+
 /**
  * Goal para un paso a partir del plan/directiva. El manager es la única fuente de instrucciones
  * explícitas para los agentes: aquí se construye el texto que recibe cada nodo (currentStepGoal).
@@ -143,9 +154,10 @@ const STACK_SECTION2_REGEX =
 function goalForStep(node: string, directiveOrBrief: string | undefined): string | undefined {
   if (!directiveOrBrief || directiveOrBrief.length < 10) return undefined;
   const full = directiveOrBrief.replace(/\s+/g, " ").trim();
-  const trimmed = full.slice(0, 120) + (full.length > 120 ? "…" : "");
-  if (trimmed.length < 10) return undefined;
-  if (node === "clarifier") return `Aclarar contexto y alcance para: ${trimmed}`;
+  const shortGoal = truncateForGoal(full, MDD_MAX_GOAL_OTHER_NODES_CHARS);
+  const architectGoal = truncateForGoal(full, MDD_MAX_GOAL_SOFTWARE_ARCHITECT_CHARS);
+  if (architectGoal.length < 10) return undefined;
+  if (node === "clarifier") return `Aclarar contexto y alcance para: ${shortGoal}`;
   if (node === "software_architect") {
     const rolesPorApp =
       /(?:roles?\s+por\s+aplicaci[oó]n|roles?\s+a\s+nivel\s+de\s+aplicaci[oó]n|permisos?\s+basados\s+en\s+roles?\s+definidos\s+por\s+cada\s+aplicaci[oó]n)/i.test(full);
@@ -153,23 +165,23 @@ function goalForStep(node: string, directiveOrBrief: string | undefined): string
       return "Cambiar el modelo de datos para que incluya applications, application_roles por aplicación y user_application_roles. No copies §3 del borrador; genera §3 desde cero con esas tablas. Luego elabora §4 Contratos de API.";
     }
     if (directiveRequiresModelAndDiagramChange(full)) {
-      return `Requisito de seguridad/almacenamiento: ${trimmed} Debes actualizar §3 Modelo de Datos (quitar de las tablas SQL cualquier campo que no deba persistirse, p. ej. jwt_token) y el diagrama entidad-relación para que coincida; y §4 Contratos de API (añadir o ajustar endpoints, p. ej. refresh_token). Revisa todo el SQL y el erDiagram y elimina columnas que el usuario indica que no deben guardarse en BD.`;
+      return `Requisito de seguridad/almacenamiento: ${architectGoal} Debes actualizar §3 Modelo de Datos (quitar de las tablas SQL cualquier campo que no deba persistirse, p. ej. jwt_token) y el diagrama entidad-relación para que coincida; y §4 Contratos de API (añadir o ajustar endpoints, p. ej. refresh_token). Revisa todo el SQL y el erDiagram y elimina columnas que el usuario indica que no deben guardarse en BD.`;
     }
-    const affectsModel = MODEL_REQUIREMENT_REGEX.test(trimmed);
-    const affectsSection2 = STACK_SECTION2_REGEX.test(trimmed);
+    const affectsModel = MODEL_REQUIREMENT_REGEX.test(full);
+    const affectsSection2 = STACK_SECTION2_REGEX.test(full);
     if (affectsModel && affectsSection2) {
-      return `Actualizar §2 Arquitectura y Stack y el modelo de datos según lo que pide el usuario. Elabora §2, §3 (SQL, diagrama ER), §4 y §5 según: ${trimmed}`;
+      return `Actualizar §2 Arquitectura y Stack y el modelo de datos según lo que pide el usuario. Elabora §2, §3 (SQL, diagrama ER), §4 y §5 según: ${architectGoal}`;
     }
     if (affectsSection2) {
-      return `Actualizar §2 Arquitectura y Stack según lo que pide el usuario. Elabora §2 (y §3, §4, §5 si aplica) según: ${trimmed}`;
+      return `Actualizar §2 Arquitectura y Stack según lo que pide el usuario. Elabora §2 (y §3, §4, §5 si aplica) según: ${architectGoal}`;
     }
     if (affectsModel) {
-      return `Cambiar el modelo de datos para que incluya lo que pide el usuario. Elabora §3 (SQL, diagrama ER) y §4 Contratos según: ${trimmed}`;
+      return `Cambiar el modelo de datos para que incluya lo que pide el usuario. Elabora §3 (SQL, diagrama ER) y §4 Contratos según: ${architectGoal}`;
     }
-    return `Incorporar en §2, §3, §4 y §5 lo indicado: ${trimmed}`;
+    return `Incorporar en §2, §3, §4 y §5 lo indicado: ${architectGoal}`;
   }
-  if (node === "security") return `Aplicar en §6 Seguridad lo que corresponda de: ${trimmed}`;
-  if (node === "integration") return `Aplicar en §7 Infraestructura lo que corresponda de: ${trimmed}`;
+  if (node === "security") return `Aplicar en §6 Seguridad lo que corresponda de: ${shortGoal}`;
+  if (node === "integration") return `Aplicar en §7 Infraestructura lo que corresponda de: ${shortGoal}`;
   return undefined;
 }
 
@@ -194,10 +206,7 @@ function buildMddPlan(
   const effectiveBrief =
     planDirective?.trim() && planDirective.trim().length > 50 ? planDirective.trim() : (userBrief ?? "");
   const suffix = contextSuffix(effectiveBrief);
-  const briefForGoal =
-    effectiveBrief && MODEL_REQUIREMENT_REGEX.test(effectiveBrief)
-      ? effectiveBrief.replace(/\s+/g, " ").trim().slice(0, 120) + (effectiveBrief.length > 120 ? "…" : "")
-      : effectiveBrief;
+  const briefForGoal = effectiveBrief.replace(/\s+/g, " ").trim();
   const step = (node: string, stepId: string, desc: string, isFirst: boolean): MddPlanStep =>
     stepWithTools(node, stepId, isFirst ? desc + suffix : desc, goalForStep(node, briefForGoal));
 
@@ -325,6 +334,29 @@ const REFORMAT_DOCUMENT_PATTERN =
 /** Usuario pide regenerar el diagrama ER desde el SQL (solo sección 2, sin LLM). */
 const REGENERATE_ER_DIAGRAM_PATTERN =
   /regenera(r)?\s+(el\s+)?(diagrama\s+)?(er|entidad-relación|entidad\s+relación)(\s+desde\s+el\s+sql)?|regenerar\s+(el\s+)?(diagrama\s+)?(er|entidad-relación)/i;
+
+/** Regeneración completa del MDD (constitución); plan aprobado + pipeline, no solo reply del Manager. */
+function looksLikeFullMddRegenerateRequest(msg: string): boolean {
+  const m = (msg ?? "").trim();
+  if (m.length < 10) return false;
+  if (REGENERATE_ER_DIAGRAM_PATTERN.test(m)) return false;
+  if (REFORMAT_DOCUMENT_PATTERN.test(m)) return false;
+  return (
+    /(?:re)?genera(?:rá|ra|r|mos|da)\s+(?:de\s+nuevo\s+)?(?:todo\s+)?(?:el\s+|la\s+)?(?:mdd|master\s+design\s+document(?:\s*\(mdd\))?|documento\s+(?:maestro|completo))\b/i.test(m) ||
+    /\b(?:vuelve|volver)\s+a\s+generar\s+(?:el\s+|la\s+)?(?:mdd|documento)\b/i.test(m) ||
+    /\brehacer\s+(?:el\s+|la\s+)?(?:mdd|documento)(?:\s+desde\s+cero)?\b/i.test(m) ||
+    /\bactualiza(?:r)?\s+(?:el\s+|la\s+)?(?:mdd|documento)\s+completo\b/i.test(m)
+  );
+}
+
+const FULL_MDD_REGENERATE_DIRECTIVE =
+  "ACCIÓN REQUERIDA — Regeneración completa del MDD (constitución vigente del repo):\n" +
+  "1) §2: solo stack que §1 sustente; bloque ```TechnicalMetadata``` **prohibido** en §2 (va en §3).\n" +
+  "2) §3: CREATE TABLE + erDiagram + ```TechnicalMetadata```; si hay GEOMETRY, extensiones `postgis` en el SQL; YAGNI.\n" +
+  "3) §4: **obligatorio §4.A** (API del producto: tabla + /health + endpoints alineados a §3). **§4.B** solo para integraciones externas (DENUE, etc.). No dejes §4 = solo terceros.\n" +
+  "4) §5: proporcional al alcance; sin checklist genérico interminable.\n" +
+  "5) Reescribe §2–§5 desde cero si el borrador contradice lo anterior; conserva §1 salvo que el usuario pida cambiar contexto.\n" +
+  "6) §6 y §7: placeholders breves para agentes posteriores si aún no aplican — sin fusionar `## 6. Seguridad` con `###`.";
 
 /**
  * Usuario pide explícitamente solo generar/regenerar contexto y alcance a partir del documento.
@@ -455,12 +487,19 @@ export function createMddManagerNode(
         const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Plan aprobado: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
         const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Plan aprobado: ${userMessage}` : ""].filter(Boolean).join("\n\n");
         const directive = state.planUserIntent ?? getLastSubstantiveUserMessage(state);
+        const impact = state.impactSummary?.trim();
+        let mergedDirective = directive?.trim() ?? "";
+        if (impact && mergedDirective && !mergedDirective.includes(impact.slice(0, Math.min(80, impact.length)))) {
+          mergedDirective = `${mergedDirective}\n\n---\n\n**Resumen de impacto (aprobado con el plan):**\n${impact}`;
+        } else if (impact && !mergedDirective) {
+          mergedDirective = `**Resumen de impacto (aprobado con el plan):**\n${impact}`;
+        }
         return new Command({
           update: {
             userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
             dbgaContent: dbgaWithRequest || state.dbgaContent,
             lastUserMessage: undefined,
-            requestQuestionsOnly: false,
+            requestQuestionsOnly: pending.delegateTarget === "clarifier_only",
             lastStepFailed: undefined,
             mddPlan: pending.mddPlan,
             delegateTarget: pending.delegateTarget,
@@ -468,7 +507,8 @@ export function createMddManagerNode(
             previousMddDraftForMerge: pending.previousMddDraftForMerge,
             pendingPlanApproval: undefined,
             planUserIntent: undefined,
-            ...(directive ? { acceptedProposalDirective: directive } : {}),
+            impactSummary: undefined,
+            ...(mergedDirective ? { acceptedProposalDirective: mergedDirective } : {}),
           },
           goto: pending.goto,
         });
@@ -532,6 +572,33 @@ export function createMddManagerNode(
       } catch (err) {
         LOG("regenerar ER error: %s", err instanceof Error ? err.message : String(err));
         return new Command({ goto: END });
+      }
+    }
+
+    if (hasDraft && userMessage && looksLikeFullMddRegenerateRequest(userMessage)) {
+      const planDirective = [FULL_MDD_REGENERATE_DIRECTIVE, getPlanDirective(state)].filter(Boolean).join("\n\n");
+      const clipped =
+        planDirective.length > MDD_MAX_PLAN_DIRECTIVE_CHARS
+          ? planDirective.slice(0, MDD_MAX_PLAN_DIRECTIVE_CHARS) + "…"
+          : planDirective;
+      const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), clipped);
+      if (mddPlan.length > 0) {
+        const accumulatedWithRequest = [state.userInputAccumulated?.trim(), `Petición: ${userMessage}`].filter(Boolean).join("\n\n---\n\n");
+        const dbgaWithRequest = [state.dbgaContent?.trim(), `Petición: ${userMessage}`].filter(Boolean).join("\n\n");
+        const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
+        LOG("regeneración completa MDD solicitada → plan_approval full_pipeline");
+        return new Command({
+          update: {
+            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
+            dbgaContent: dbgaWithRequest || state.dbgaContent,
+            lastUserMessage: undefined,
+            requestQuestionsOnly: false,
+            pendingPlanApproval: { mddPlan, delegateTarget: "full_pipeline", goto: "clarifier" },
+            planUserIntent: clipped,
+            impactSummary,
+          },
+          goto: "plan_approval",
+        });
       }
     }
 
@@ -670,7 +737,12 @@ export function createMddManagerNode(
       }
       const precision =
         precisionCalculator && (state.mddDraft ?? "").trim()
-          ? precisionCalculator.calculateLiveMetrics(state.mddDraft, { auditorGaps: state.auditorGaps ?? undefined }).precision
+          ? precisionCalculator.calculateLiveMetrics(state.mddDraft, {
+            auditorGaps: state.auditorGaps ?? undefined,
+            complexity: state.mddComplexity,
+            projectId: state.projectId,
+            stageId: state.activeStageId ?? null,
+          }).precision
           : (state.auditorScore ?? 0);
       const directiveReply =
         "Estamos al " +
@@ -807,7 +879,12 @@ export function createMddManagerNode(
     if (askingWhatNeededFor85 && state.auditorFeedback?.trim()) {
       const precision =
         precisionCalculator && (state.mddDraft ?? "").trim()
-          ? precisionCalculator.calculateLiveMetrics(state.mddDraft, { auditorGaps: state.auditorGaps ?? undefined }).precision
+          ? precisionCalculator.calculateLiveMetrics(state.mddDraft, {
+            auditorGaps: state.auditorGaps ?? undefined,
+            complexity: state.mddComplexity,
+            projectId: state.projectId,
+            stageId: state.activeStageId ?? null,
+          }).precision
           : score;
       const replyContent =
         "Estamos al " +

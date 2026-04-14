@@ -4,7 +4,45 @@ import type {
   ChatMessage,
   GenerateResponseOptions,
 } from "../interfaces/llm-provider.interface.js";
-import type { ChecklistResult } from "@theforge/shared-types";
+import type { ChatImagePart, ChecklistResult } from "@theforge/shared-types";
+
+function buildOpenAiUserMessage(
+  text: string,
+  images?: ChatImagePart[],
+): OpenAI.Chat.ChatCompletionUserMessageParam {
+  const trimmed = text.trim();
+  const hasImages = images != null && images.length > 0;
+  if (!hasImages) {
+    return { role: "user", content: trimmed.length > 0 ? trimmed : "(sin texto)" };
+  }
+  const parts: OpenAI.Chat.ChatCompletionContentPart[] = [];
+  parts.push({
+    type: "text",
+    text:
+      trimmed.length > 0
+        ? trimmed
+        : "(El usuario adjuntó solo imágenes; intégralas según el contexto de la conversación y el documento activo.)",
+  });
+  for (const img of images) {
+    parts.push({
+      type: "image_url",
+      image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+    });
+  }
+  return { role: "user", content: parts };
+}
+
+function historyToOpenAiMessages(history: ChatMessage[]): OpenAI.Chat.ChatCompletionMessageParam[] {
+  return history.map((m) => {
+    if (m.role === "assistant") {
+      return { role: "assistant", content: m.content };
+    }
+    if (m.images?.length) {
+      return buildOpenAiUserMessage(m.content, m.images);
+    }
+    return { role: "user", content: m.content };
+  });
+}
 
 export class OpenAIAdapter implements LLMProvider {
   private readonly client: OpenAI;
@@ -30,11 +68,8 @@ export class OpenAIAdapter implements LLMProvider {
         messages.push({ role: "system", content: options.systemPrompt });
       }
       messages.push(
-        ...history.map((m) => ({
-          role: m.role as "user" | "assistant" | "system",
-          content: m.content,
-        })),
-        { role: "user", content: prompt },
+        ...historyToOpenAiMessages(history),
+        buildOpenAiUserMessage(prompt, options?.userMessageImages),
       );
 
       const ts = () => new Date().toISOString();
@@ -70,11 +105,8 @@ export class OpenAIAdapter implements LLMProvider {
       messages.push({ role: "system", content: options.systemPrompt });
     }
     messages.push(
-      ...history.map((m) => ({
-        role: m.role as "user" | "assistant" | "system",
-        content: m.content,
-      })),
-      { role: "user", content: prompt },
+      ...historyToOpenAiMessages(history),
+      buildOpenAiUserMessage(prompt, options?.userMessageImages),
     );
 
     const stream = await this.client.chat.completions.create({

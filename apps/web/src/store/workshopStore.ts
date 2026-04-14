@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ChatImagePart } from "@theforge/shared-types";
 import { apiFetch, API_BASE } from "../utils/apiClient";
 
 function pickEvaluatorCritique(data: Record<string, unknown>): string | null {
@@ -8,7 +9,7 @@ function pickEvaluatorCritique(data: Record<string, unknown>): string | null {
 
 /** Body JSON para `POST /sessions/:id/messages` con `stageId` opcional. */
 export function sessionMessageBody(
-  base: { role: "user" | "assistant"; content: string; tab?: string },
+  base: { role: "user" | "assistant"; content: string; tab?: string; images?: ChatImagePart[] },
   stageId: string | null | undefined,
 ): string {
   return JSON.stringify({
@@ -69,6 +70,7 @@ export interface ChatMessage {
   tab?: string;
   /** Etapa en foco al enviar (el historial del chat sigue siendo global). */
   stageId?: string;
+  images?: ChatImagePart[];
 }
 
 export interface Estimation {
@@ -314,6 +316,8 @@ interface WorkshopState {
     | null;
   /** Mensaje de usuario en curso (streaming); se muestra hasta recibir "done" */
   streamingUserMessage: string | null;
+  /** Imágenes del turno en streaming (mismo ciclo que streamingUserMessage). */
+  streamingUserImages: ChatImagePart[] | null;
   /** Contenido del asistente que llega por stream; se concatena hasta "done" */
   streamingContent: string | null;
   /** Tab del mensaje en streaming (para filtrar por tab) */
@@ -368,7 +372,11 @@ interface WorkshopState {
   fetchWelcome: (projectId: string, activeTab?: string) => Promise<void>;
   clearChat: (projectId: string, activeTab?: string) => Promise<void>;
   /** options.regenerateSection (1–7): regenerar solo esa sección del MDD (comando / en chat). §1 = solo sintetizador de contexto. */
-  sendMessage: (message: string, activeTab?: string, options?: { regenerateSection?: number }) => Promise<void>;
+  sendMessage: (
+    message: string,
+    activeTab?: string,
+    options?: { regenerateSection?: number; images?: ChatImagePart[] },
+  ) => Promise<void>;
   updateMddContent: (content: string) => void;
   persistMddContent: (content: string, options?: { force?: boolean }) => Promise<void>;
   revertMddContent: () => void;
@@ -479,6 +487,7 @@ const initialState = {
     | "deliverables-cascade"
     | null,
   streamingUserMessage: null as string | null,
+  streamingUserImages: null as ChatImagePart[] | null,
   streamingContent: null as string | null,
   streamingTab: null as string | null,
   agentProgress: [] as Array<{ agent: string; message: string }>,
@@ -758,6 +767,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         error: null,
         managerThreadId: null,
         evaluatorCritique: null,
+        streamingUserMessage: null,
+        streamingUserImages: null,
+        streamingContent: null,
+        streamingTab: null,
       });
       if (data.session) {
         await get().fetchWelcome(projectId, activeTab);
@@ -773,7 +786,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   sendMessage: async (message, activeTab, options) => {
     const { projectId, session } = get();
-    if (!projectId?.trim() || !message.trim()) return;
+    const images = options?.images ?? [];
+    if (!projectId?.trim() || (!message.trim() && !images.length)) return;
     const tab = activeTab ?? "mdd";
     const msg = message.trim();
     const regenerateSection = options?.regenerateSection;
@@ -908,7 +922,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           error: null,
           synced: false,
           agentProgress: [],
-          streamingUserMessage: looksLikeMddDocument ? messageForApi : msg,
+          streamingUserMessage: looksLikeMddDocument
+            ? messageForApi
+            : msg || (images.length ? "(Imagen adjunta)" : ""),
+          streamingUserImages: images.length ? images : null,
           pendingPlanApproval: null,
           mddJustGeneratedFromBenchmark: false,
           evaluatorCritique: null,
@@ -918,13 +935,21 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             const appendRes = await apiFetch(`${API_BASE}/sessions/${session.id}/messages`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: sessionMessageBody({ role: "user", content: msg, tab: "mdd" }, get().activeStageId),
+              body: sessionMessageBody(
+                {
+                  role: "user",
+                  content: msg || (images.length ? "(Imagen adjunta)" : msg),
+                  tab: "mdd",
+                  ...(images.length ? { images } : {}),
+                },
+                get().activeStageId,
+              ),
             });
             if (!appendRes.ok) throw new Error("Error al enviar mensaje");
             const updatedSession = (await appendRes.json()) as Session;
             set({ session: updatedSession });
           }
-          set({ streamingUserMessage: null });
+          set({ streamingUserMessage: null, streamingUserImages: null });
 
           const url =
             managerThreadId != null
@@ -939,6 +964,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 threadId: managerThreadId,
                 userMessage: messageForApi,
                 mddContent: draftForMdd,
+                ...(images.length ? { images } : {}),
               }
               : {
                 projectId,
@@ -946,6 +972,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 initialMessage: messageForApi,
                 mddContent: draftForMdd,
                 ...(mddStage ? { stageId: mddStage } : {}),
+                ...(images.length ? { images } : {}),
               };
           const r = await apiFetch(url, {
             method: "POST",
@@ -1059,6 +1086,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                       loadingReason: null,
                       agentProgress: [],
                       streamingUserMessage: null,
+                      streamingUserImages: null,
                       streamingContent: null,
                       evaluatorCritique: null,
                     });
@@ -1112,6 +1140,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                       loadingReason: null,
                       agentProgress: [],
                       streamingUserMessage: null,
+                      streamingUserImages: null,
                       streamingContent: null,
                       pendingPlanApproval: null,
                       evaluatorCritique: null,
@@ -1126,6 +1155,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                       loadingReason: null,
                       agentProgress: [],
                       streamingUserMessage: null,
+                      streamingUserImages: null,
                       streamingContent: null,
                       evaluatorCritique: null,
                     });
@@ -1146,6 +1176,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             loadingReason: null,
             agentProgress: [],
             streamingUserMessage: null,
+            streamingUserImages: null,
             evaluatorCritique: null,
           });
         }
@@ -1155,7 +1186,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         loading: true,
         error: null,
         synced: false,
-        streamingUserMessage: msg,
+        streamingUserMessage: msg || (images.length ? "(Imagen adjunta)" : ""),
+        streamingUserImages: images.length ? images : null,
         streamingContent: "",
         streamingTab: tab,
         evaluatorCritique: null,
@@ -1164,7 +1196,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const body: Record<string, unknown> = {
           projectId,
           sessionId: session?.id,
-          message: msg,
+          message: msg || "",
           mddContent: get().mddContent || undefined,
           uxUiGuideContent: get().uxUiGuideContent ?? undefined,
           activeTab: tab,
@@ -1179,6 +1211,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           const dbga = get().dbgaContent ?? get().project?.dbgaContent ?? null;
           if (dbga != null) body.dbgaContent = dbga;
         }
+        if (images.length) body.images = images;
         const r = await apiFetch(`${API_BASE}/ai-orchestrator/chat/stream`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1229,6 +1262,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
                   infraContent: cleanDoc(proj?.infraContent ?? null),
                   streamingUserMessage: null,
+                  streamingUserImages: null,
                   streamingContent: null,
                   streamingTab: null,
                   synced: true,
@@ -1239,6 +1273,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 set({
                   error: String(data.error),
                   streamingUserMessage: null,
+                  streamingUserImages: null,
                   streamingContent: null,
                   streamingTab: null,
                   synced: true,
@@ -1279,6 +1314,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
                   infraContent: cleanDoc(proj?.infraContent ?? null),
                   streamingUserMessage: null,
+                  streamingUserImages: null,
                   streamingContent: null,
                   streamingTab: null,
                   synced: true,
@@ -1289,6 +1325,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 set({
                   error: String(data.error),
                   streamingUserMessage: null,
+                  streamingUserImages: null,
                   streamingContent: null,
                   streamingTab: null,
                   synced: true,
@@ -1303,6 +1340,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         set({
           error: e instanceof Error ? e.message : "Error al enviar",
           streamingUserMessage: null,
+          streamingUserImages: null,
           streamingContent: null,
           streamingTab: null,
           synced: true,
@@ -1316,7 +1354,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         loading: true,
         error: null,
         synced: false,
-        streamingUserMessage: msg,
+        streamingUserMessage: msg || (images.length ? "(Imagen adjunta)" : ""),
+        streamingUserImages: images.length ? images : null,
         streamingContent: "",
         streamingTab: tab,
         evaluatorCritique: null,
@@ -1325,7 +1364,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const body: Record<string, unknown> = {
           projectId,
           sessionId: session?.id,
-          message: msg,
+          message: msg || "",
           mddContent: get().mddContent || undefined,
           uxUiGuideContent: get().uxUiGuideContent ?? get().project?.uxUiGuideContent ?? undefined,
           activeTab: tab,
@@ -1338,6 +1377,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           const dbga = get().dbgaContent ?? get().project?.dbgaContent ?? null;
           if (dbga != null) body.dbgaContent = dbga;
         }
+        if (images.length) body.images = images;
         const r = await apiFetch(`${API_BASE}/ai-orchestrator/chat/stream`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1388,6 +1428,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
                   infraContent: cleanDoc(proj?.infraContent ?? null),
                   streamingUserMessage: null,
+                  streamingUserImages: null,
                   streamingContent: null,
                   streamingTab: null,
                   synced: true,
@@ -1398,6 +1439,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 set({
                   error: String(data.error),
                   streamingUserMessage: null,
+                  streamingUserImages: null,
                   streamingContent: null,
                   streamingTab: null,
                   synced: true,
@@ -1442,6 +1484,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   userStoriesContent: cleanDoc(proj?.userStoriesContent ?? null),
                   infraContent: cleanDoc(proj?.infraContent ?? null),
                   streamingUserMessage: null,
+                  streamingUserImages: null,
                   streamingContent: null,
                   streamingTab: null,
                   synced: true,
@@ -1452,6 +1495,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 set({
                   error: String(data.error),
                   streamingUserMessage: null,
+                  streamingUserImages: null,
                   streamingContent: null,
                   streamingTab: null,
                   synced: true,
@@ -1466,6 +1510,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         set({
           error: e instanceof Error ? e.message : "Error al enviar",
           streamingUserMessage: null,
+          streamingUserImages: null,
           streamingContent: null,
           streamingTab: null,
           synced: true,

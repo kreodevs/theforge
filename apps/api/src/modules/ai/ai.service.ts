@@ -1,6 +1,11 @@
 import { Injectable, Inject } from "@nestjs/common";
-import type { LLMProvider, GenerateResponseOptions } from "./interfaces/llm-provider.interface.js";
+import type {
+  LLMProvider,
+  GenerateResponseOptions,
+  ChatMessage as LlmChatMessage,
+} from "./interfaces/llm-provider.interface.js";
 import { LLM_PROVIDER } from "./interfaces/llm-provider.interface.js";
+import type { ChatImagePart } from "@theforge/shared-types";
 import { MASTER_PROMPT } from "./prompts/master-prompt.js";
 import { UX_UI_GUIDE_PROMPT } from "./prompts/ux-ui-guide-prompt.js";
 import { BENCHMARK_REFINE_PROMPT } from "./prompts/phase0-benchmark-refine-prompt.js";
@@ -107,7 +112,7 @@ export class AiService {
 
   async generateResponse(
     prompt: string,
-    history: Array<{ role: "user" | "assistant"; content: string }>,
+    history: LlmChatMessage[],
     options?: GenerateResponseOptions,
   ): Promise<string> {
     try {
@@ -197,6 +202,20 @@ export class AiService {
           options.complexityInterviewContext.trim().slice(0, 8000);
       }
       systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
+      if (
+        (options?.userMessageImages?.length ?? 0) > 0 ||
+        history.some((h) => h.role === "user" && (h.images?.length ?? 0) > 0)
+      ) {
+        systemPrompt +=
+          "\n\n**Entrada multimodal:** Puede haber imágenes en el historial o en este mensaje. Interprétalas en el contexto del documento activo y la conversación (modelo de datos, UI, flujos); no inventes detalles no visibles.";
+        if (
+          options?.activeTab?.trim() === "mdd" &&
+          (options?.currentMddContent?.trim().length ?? 0) > 400
+        ) {
+          systemPrompt +=
+            "\n\n**MDD no destructivo (obligatorio si ya hay MDD en contexto):** El bloque \"Contenido actual del MDD\" incluye **todas** las secciones. Si el usuario pide revisar, alinear o ampliar (p. ej. tras un diagrama), **no sustituyas el proyecto por un solo fragmento**: devuelve el **MDD completo** actualizado (copia el contenido existente y aplica cambios), terminando con `---FIN_MDD---`. Si optas por enviar **solo una sección**, debe empezar por el **mismo patrón de encabezado** que ya usa el documento para esa sección (`## N.` recomendado, mismo `N` que corresponda). Nunca envíes solo tablas o JSON sueltos sin el título de sección reconocible.";
+        }
+      }
       const ts = () => new Date().toISOString();
       console.log(`[AiService] ${ts()} → Enviando al LLM:`, {
         activeTab: options?.activeTab,
@@ -207,6 +226,7 @@ export class AiService {
       });
       const out = await this.provider.generateResponse(prompt, history, {
         systemPrompt,
+        userMessageImages: options?.userMessageImages,
       });
       console.log(`[AiService] ${ts()} ← Respuesta del LLM recibida:`, {
         length: out?.length ?? 0,
@@ -224,7 +244,7 @@ export class AiService {
    */
   async generateResponseStream(
     prompt: string,
-    history: Array<{ role: "user" | "assistant"; content: string }>,
+    history: LlmChatMessage[],
     options?: GenerateResponseOptions,
   ): Promise<AsyncIterable<string>> {
     const isUxUiGuide = options?.activeTab?.trim() === "ux-ui-guide";
@@ -313,7 +333,36 @@ export class AiService {
         options.complexityInterviewContext.trim().slice(0, 8000);
     }
     systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
+    if (
+      (options?.userMessageImages?.length ?? 0) > 0 ||
+      history.some((h) => h.role === "user" && (h.images?.length ?? 0) > 0)
+    ) {
+      systemPrompt +=
+        "\n\n**Entrada multimodal:** Puede haber imágenes en el historial o en este mensaje. Interprétalas en el contexto del documento activo y la conversación (modelo de datos, UI, flujos); no inventes detalles no visibles.";
+      if (
+        options?.activeTab?.trim() === "mdd" &&
+        (options?.currentMddContent?.trim().length ?? 0) > 400
+      ) {
+        systemPrompt +=
+          "\n\n**MDD no destructivo (obligatorio si ya hay MDD en contexto):** El bloque \"Contenido actual del MDD\" incluye **todas** las secciones. Si el usuario pide revisar, alinear o ampliar (p. ej. tras un diagrama), **no sustituyas el proyecto por un solo fragmento**: devuelve el **MDD completo** actualizado (copia el contenido existente y aplica cambios), terminando con `---FIN_MDD---`. Si optas por enviar **solo una sección**, debe empezar por el **mismo patrón de encabezado** que ya usa el documento para esa sección (`## N.` recomendado, mismo `N` que corresponda). Nunca envíes solo tablas o JSON sueltos sin el título de sección reconocible.";
+      }
+    }
     return this.provider.generateResponseStream(prompt, history, { ...options, systemPrompt });
+  }
+
+  /**
+   * Visión → texto para inyectar en el grafo MDD (Manager) sin soportar multimodal en LangGraph.
+   */
+  async describeImagesForMddPipeline(userText: string, images: ChatImagePart[]): Promise<string> {
+    if (!images.length) return "";
+    const hint = (userText ?? "").trim().slice(0, 4000) || "(sin texto adicional)";
+    const prompt = `El usuario está elaborando el Master Design Document. Mensaje o petición asociada:\n---\n${hint}\n---\n\nDescribe lo que muestran las imágenes: modelo de datos, UI, flujos, stack visible, etc. Responde en español, viñetas; indica partes ilegibles.`;
+    const out = await this.generateResponse(prompt, [], {
+      systemPrompt:
+        "Eres arquitecto de software: extrae solo información sustentada en las imágenes; no inventes.",
+      userMessageImages: images,
+    });
+    return out.trim().slice(0, 12000);
   }
 
   async parseChecklist(text: string) {

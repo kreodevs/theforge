@@ -1,7 +1,9 @@
 /**
  * Utilidades puras para normalizar y limpiar contenido de documentos
- * (respuestas de chat con bloques ---FIN_MDD---, etc.). Sin dependencias de Nest.
+ * (respuestas de chat con bloques ---FIN_MDD---, etc.). Sin Nest; `repairMarkdownFences` desde shared-types.
  */
+
+import { repairMarkdownFences } from "@theforge/shared-types/markdown-repair";
 
 /** Normaliza guiones Unicode a ASCII '-' para que coincidan delimitadores como ---FIN_MDD---. */
 export function normalizeDashes(s: string): string {
@@ -26,5 +28,5 @@ export function cleanDocumentContent(text: string): string {
   }
   cleaned = cleaned.replace(/^\s*```(?:markdown)?\s*/i, "");
   cleaned = cleaned.replace(/\s*```\s*$/i, "");
-  return cleaned.trim();
+  return repairMarkdownFences(cleaned.trim());
 }

@@ -1,8 +1,11 @@
 /**
  * Parsea un MDD en markdown (generado por la IA) a una estructura JSON mínima
  * para que el semáforo y el cost calculator puedan evaluar y estimar.
- * El semáforo espera JSON con db_entities, business_core, edge_cases, field_types.
+ * El semáforo espera JSON con db_entities, business_core, edge_cases, field_types
+ * y opcionalmente `constitution` (Constitución Cursor, solo puertas en HIGH si template_detected).
  */
+
+import type { MddConstitutionSignals } from "@theforge/shared-types";
 
 export interface ParsedMdd {
   db_entities: { name?: string }[];
@@ -12,6 +15,102 @@ export interface ParsedMdd {
   business_core: string | null;
   edge_cases?: string;
   field_types?: string;
+  constitution?: MddConstitutionSignals;
+}
+
+/** Extrae el cuerpo de `## N. …` hasta el siguiente `##` numerado (mismo nivel). */
+export function extractSectionByNumber(md: string, sectionNum: number): string {
+  const re = /^##\s*(\d+)\.\s*[^\n]*/gim;
+  const matches: { num: number; index: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(md)) !== null) {
+    matches.push({ num: parseInt(m[1]!, 10), index: m.index });
+  }
+  const idx = matches.findIndex((x) => x.num === sectionNum);
+  if (idx === -1) return "";
+  const start = matches[idx]!.index;
+  const next = matches[idx + 1];
+  const end = next ? next.index : md.length;
+  return md.slice(start, end).trim();
+}
+
+/**
+ * Heurísticas sobre §1–§2–§5 para alinear el semáforo HIGH con la plantilla «Constitución Cursor».
+ * Si `template_detected` es false, `SemaphoreService` no aplica puertas extra (MDD legacy).
+ */
+export function extractConstitutionSignalsFromMarkdown(md: string): MddConstitutionSignals {
+  const s1 = extractSectionByNumber(md, 1);
+  const s2 = extractSectionByNumber(md, 2);
+  const s5 = extractSectionByNumber(md, 5);
+
+  const template_detected =
+    /###\s*mapa\s+de\s+contextos/i.test(s1) ||
+    /###\s*glosario\s+de\s+dominio/i.test(s1) ||
+    /ubiquitous\s+language/i.test(s1) ||
+    /lenguaje\s+ubicuo/i.test(s1);
+
+  if (!template_detected) {
+    return { template_detected: false };
+  }
+
+  const has_context_map =
+    /en\s+alcance/i.test(s1) && /colindante/i.test(s1) && /fuera\s+de\s+alcance/i.test(s1);
+
+  const glossMatch = s1.match(
+    /###\s*(?:glosario\s+de\s+dominio|[^\n]*lenguaje\s+ubicuo[^\n]*|[^\n]*ubiquitous\s+language[^\n]*)\s*\n([\s\S]*?)(?=^###\s|^##\s*\d+\.|\z)/im,
+  );
+  const glossBody = (glossMatch?.[1] ?? "").trim();
+  const has_glossary =
+    glossBody.length >= 25 &&
+    (/^[-*]|\n[-*]/.test(glossBody) || /^\|.+\|/m.test(glossBody) || /\*\*[^*]+\*\*\s*[|:]/.test(glossBody));
+
+  const blockMatch = s1.match(
+    /###\s*bloqueantes?\s+de\s+negocio[^\n]*\n([\s\S]*?)(?=^###\s|^##\s*2\.|\z)/im,
+  );
+  const blockBody = (blockMatch?.[1] ?? "").trim();
+  const has_open_blockers =
+    blockBody.length > 0 &&
+    !/^[-*]?\s*ninguno\b/im.test(blockBody) &&
+    !/^ninguno\.?\s*$/im.test(blockBody) &&
+    !/^sin\s+bloqueantes/im.test(blockBody);
+
+  const dado = /\bDado\b/i.test(s5) || /\bGiven\b/i.test(s5);
+  const cuando = /\bCuando\b/i.test(s5) || /\bWhen\b/i.test(s5);
+  const entonces = /\bEntonces\b/i.test(s5) || /\bThen\b/i.test(s5);
+  const has_gherkin = s5.length > 80 && dado && cuando && entonces;
+  const gherkin_scenario_count = Math.max(
+    (s5.match(/\bDado\b/gi) ?? []).length,
+    (s5.match(/\bGiven\b/gi) ?? []).length,
+  );
+
+  const has_stack_rationale =
+    /¿Por\s*qué\s*\?/i.test(s2) ||
+    /\*\*¿Por\s*qué\?\*\*/i.test(s2) ||
+    /\*\*Decisión:\*\*/i.test(s2) ||
+    /\*\*Decisión\s*:/i.test(s2) ||
+    /\bADR\b/i.test(s2);
+
+  return {
+    template_detected: true,
+    has_context_map,
+    has_glossary,
+    has_gherkin,
+    gherkin_scenario_count: has_gherkin ? Math.max(1, gherkin_scenario_count) : 0,
+    has_open_blockers,
+    has_stack_rationale,
+  };
+}
+
+function mergeConstitutionFromMarkdown(
+  parsedJson: Record<string, unknown> | undefined,
+  raw: string,
+): MddConstitutionSignals {
+  const fromMd = extractConstitutionSignalsFromMarkdown(raw);
+  const fromJson = parsedJson?.constitution;
+  if (fromJson && typeof fromJson === "object" && !Array.isArray(fromJson)) {
+    return { ...fromMd, ...(fromJson as MddConstitutionSignals) };
+  }
+  return fromMd;
 }
 
 export function parseMarkdownMdd(md: string | null): ParsedMdd {
@@ -21,6 +120,7 @@ export function parseMarkdownMdd(md: string | null): ParsedMdd {
     edge_cases: "",
     field_types: "",
     extra_endpoints: 0,
+    constitution: { template_detected: false },
   };
   if (!md?.trim()) return empty;
 
@@ -109,6 +209,7 @@ export function parseMarkdownMdd(md: string | null): ParsedMdd {
     business_core,
     edge_cases,
     field_types,
+    constitution: extractConstitutionSignalsFromMarkdown(content),
   };
 }
 
@@ -124,6 +225,7 @@ export function normalizeMddContent(mddContent: string | null): ParsedMdd & { sc
       edge_cases: "",
       field_types: "",
       extra_endpoints: 0,
+      constitution: { template_detected: false },
     };
   }
   try {
@@ -134,6 +236,7 @@ export function normalizeMddContent(mddContent: string | null): ParsedMdd & { sc
       : Array.isArray((parsed as { pantallas?: unknown[] }).pantallas)
         ? (parsed as { pantallas: unknown[] }).pantallas
         : [];
+    const raw = mddContent.trim();
     return {
       db_entities: Array.isArray(parsed.db_entities) ? parsed.db_entities : [],
       screens,
@@ -141,6 +244,7 @@ export function normalizeMddContent(mddContent: string | null): ParsedMdd & { sc
       business_core: parsed.business_core != null ? String(parsed.business_core) : null,
       edge_cases: parsed.edge_cases != null ? String(parsed.edge_cases) : "",
       field_types: parsed.field_types != null ? String(parsed.field_types) : "",
+      constitution: mergeConstitutionFromMarkdown(parsed, raw),
     };
   } catch {
     return parseMarkdownMdd(mddContent);

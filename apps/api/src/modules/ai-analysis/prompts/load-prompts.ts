@@ -121,3 +121,10 @@ export const MANAGER_PLAN_GENERATOR_PROMPT = loadPrompt(
   "manager-plan-generator-prompt.md",
   "Genera un plan de ejecución MDD: lista de pasos con step_id, node, task_description y goal. Responde solo con JSON: { steps: [{ step_id, node, task_description, goal? }] }.",
 );
+
+/** Esqueleto canónico del MDD (§4.A antes que §4.B, profundidad §5, YAGNI). Referencia en prompts y docs; no se inyecta entero salvo que el producto lo requiera. */
+export const MDD_CONSTITUTION_SKELETON_MARKDOWN = loadPrompt(
+  "mdd",
+  "mdd-constitution-skeleton.md",
+  "# Master Design Document — constitución (YAGNI)\n\nVer repositorio: prompts/mdd/mdd-constitution-skeleton.md",
+);

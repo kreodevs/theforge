@@ -162,6 +162,9 @@ importers:
       '@theforge/business-rules':
         specifier: workspace:*
         version: link:../../packages/business-rules
+      '@theforge/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

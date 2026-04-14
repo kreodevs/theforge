@@ -35,3 +35,7 @@ Técnico, verificable, sin hype de IA. Prioriza diagramas y listas sobre narrati
 - **Solo markdown.** El **primer carácter** debe ser `#` (título = nombre del producto/sistema del MDD, no “TheForge”).
 - No incluyas sección obligatoria tipo “Alineación con Architecting Agentic Systems”.
 - Si falta información en todas las fuentes, dilo explícitamente en vez de rellenar con plantillas de agentes.
+
+# Proyecto legacy (mensaje con contexto TheForge) #
+
+Si el mensaje incluye **Contexto del codebase (TheForge)**, prioriza la **arquitectura real** del repositorio indexado (framework, capas, carpetas, integraciones) citando hechos del bloque. Solo añade patrones agénticos si el MDD o el Blueprint los describen explícitamente; no sustituyas un monolito o SPA real por un diseño de agentes ficticio.

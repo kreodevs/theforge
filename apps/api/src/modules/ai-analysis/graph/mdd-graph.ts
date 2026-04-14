@@ -20,19 +20,27 @@ import { createMddBlackboardNode } from "../nodes/mdd-blackboard.node.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { createDbgaLLM } from "../llm/create-dbga-llm.js";
 import { getMddAuditorTools, getMddArchitectTools } from "../tools/tool-registry.js";
+import type { TheForgeService } from "../../theforge/theforge.service.js";
 import { MDDStateAnnotation, type MDDStateType } from "../state/index.js";
 
 const MAX_MDD_ITERATIONS = 3;
+
+/** Opciones al compilar el grafo MDD (p. ej. TheForge MCP para herramientas del Arquitecto en legacy). */
+export type MddGraphCompileOptions = {
+  theforge?: TheForgeService | null;
+};
 
 /**
  * Builds and compiles the MDD StateGraph (one-shot, no Manager).
  * Flow: … → Auditor → (score < 85 && iteration < MAX ? Manager asigna gaps a agentes : END).
  * Los agentes generan contenido; el formateador (sin LLM) normaliza mddDraft; Redactor eliminado (documento unificado por merge + render).
  */
-export function createMddGraph(graphMemory: GraphMemoryService) {
+export function createMddGraph(graphMemory: GraphMemoryService, options?: MddGraphCompileOptions) {
   const llm = createDbgaLLM();
   const clarifierNode = createMddClarifierNode(llm);
-  const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools());
+  const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
+    theforge: options?.theforge ?? null,
+  });
   const formatterNode = createMddFormatterNode();
   const securityNode = createMddSecurityNode(llm);
   const integrationNode = createMddIntegrationNode(llm);
@@ -89,12 +97,16 @@ export function createMddGraphWithManager(
   graphMemory: GraphMemoryService,
   precisionCalculator?: LivePrecisionCalculator | null,
   managerToolDeps?: MddManagerToolDeps | null,
+  compileOptions?: MddGraphCompileOptions,
 ) {
   const llm = createDbgaLLM();
   const managerNode = createMddManagerNode(llm, graphMemory, precisionCalculator, managerToolDeps ?? null);
   const askInitialTopicNode = createMddAskInitialTopicNode();
   const clarifierNode = createMddClarifierNode(llm);
-  const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools());
+  const theForgeForArchitect = compileOptions?.theforge ?? managerToolDeps?.theforge ?? null;
+  const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
+    theforge: theForgeForArchitect,
+  });
   const architectCriticNode = createMddArchitectCriticNode(llm);
   const formatterNode = createMddFormatterNode();
   const securityNode = createMddSecurityNode(llm);

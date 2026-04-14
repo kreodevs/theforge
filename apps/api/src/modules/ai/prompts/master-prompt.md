@@ -21,6 +21,8 @@ Metodología de rigor técnico:
 - **Etiquetado (TechnicalMetadata):** Al final de la sección "2. Arquitectura", incluye un bloque `TechnicalMetadata` con etiquetas: `[high_security]`, `[external_api]`, `[multi_tenant]`, `[cicd_pipeline]`, `[real_time]`.
 - **Inyección de datos:** Usa tipos físicos (ej. `BIGINT`, `TIMESTAMPTZ`, `INDEX BTREE`). Define Circuit Breakers, Retries y esquemas Zod/JSON.
 - **Sistemas público + admin o multi-rol:** Si el contexto indica parte pública y administrativa o varios roles, el MDD debe incluir: (1) APIs/rutas públicas vs autenticadas (y por rol si aplica); (2) modelo de roles y permisos (RBAC); (3) mención explícita de "app pública" vs "panel admin" y qué módulos sirven a cada uno. Inyectar en la Parte 1 sin esperar a que el usuario lo pida.
+- **Coherencia §1 → §3 y §4 (obligatorio):** El **Modelo de datos** y los **Contratos de API** deben ser **consecuencia directa** del problema en **§1 Contexto** y del **Benchmark (DBGA)** cuando exista. Antes de escribir SQL o rutas: cada entidad o endpoint debe poder justificarse con el dominio ya descrito (mismo negocio, sinónimos razonables o inferencia inequívoca, p. ej. auditoría si hay mutaciones sensibles y actores nombrados). **Prohibido** rellenar con **plantillas ajenas al dominio**: tablas `users` / `sessions` solo para “completar” el ER, CRUD genérico de inventario o catálogo sin anclaje en §1/DBGA, o stack de auth completo (JWT, MFA, etc.) si el usuario **no** describió producto con **cuentas de usuario / login / B2C**. Si el dominio es geo, grafos, fuentes externas (DENUE, INEGI, DatsWhy, etc.), POIs, OOH, consultas vía LLM, etc., §3 y §4 deben reflejar **esas** entidades, relaciones, integraciones y verbos HTTP — no un backend CRUD distinto. **Autocomprobación:** por cada tabla o ruta nueva, pregúntate “¿§1 o el benchmark lo exigen?”; si no, no lo inventes.
+- **Profundidad mínima de §5 (Lógica y Edge Cases):** No dependas de que el usuario pida “más §5” en el chat. Con la información ya presente en §1–§4, **§5 debe quedar ~70% lista para un senior** (accionable, sin placeholders): al menos **cuatro áreas** cubiertas con prosa o `###` (p. ej. validación/calidad de datos; resiliencia hacia terceros o jobs; consistencia entre almacenes o pasos del pipeline; concurrencia/idempotencia o estados de error donde aplique), **≥8 viñetas sustantivas** en total **o** cuatro subsecciones `###` bajo `## 5`, y **≥2 escenarios Gherkin** (`Dado`/`Cuando`/`Entonces`) para los **caminos críticos** del dominio. Cada endpoint **mutante** o **de larga duración** de §4 debe tener **al menos una** línea de comportamiento esperado en §5 (validación, timeout, reintento, idempotencia o código de error). Prohibido dejar §5 en **solo 2–3 viñetas** si §4 documenta **≥3** rutas de producto o §1 describe flujo multi-paso (ingesta, grafo, geo, LLM, etc.).
 
 # Expectativa #
 
@@ -39,6 +41,8 @@ Metodología de rigor técnico:
 **Don't:**
 
 - No des "sugerencias" en lugar de especificaciones; no uses placeholders cuando haya información suficiente.
+- No introduzcas **modelo SQL ni APIs** que contradigan o **ignoren** el §1 vigente (ni “defaults” de otra clase de producto).
+- No pegues **instrucciones, guías externas ni trozos de otros prompts** dentro del MDD (en especial **después** del bloque JSON del **Manifest de Infraestructura** en §7: tras el cierre del fence del manifest no debe ir prosa suelta ni documentación de otro sistema).
 - No pongas texto conversacional antes del MDD. No uses encabezados en la Parte 3.
 
 **Formato de respuesta (inviolable):**

@@ -2,6 +2,7 @@ import { Component, memo, useEffect, useId, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
+import { repairMarkdownFences } from "@theforge/shared-types/markdown-repair";
 import { parseMarkdownSections } from "../utils/markdownSections";
 
 /** Quita bloques ```mermaid vacíos para no intentar renderizarlos (evita SVG de error). */
@@ -288,7 +289,7 @@ class MddViewerErrorBoundary extends Component<
  * evitando parpadeo al hacer streaming o al actualizar el documento.
  */
 function MddViewerInner({ content, className = "" }: MddViewerProps) {
-  const cleaned = stripBrokenMermaidBlocks(content);
+  const cleaned = stripBrokenMermaidBlocks(repairMarkdownFences(content));
   const sections = parseMarkdownSections(cleaned);
 
   return (

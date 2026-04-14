@@ -8,7 +8,7 @@ function loadBlueprintPrompt(): string {
   try {
     return readFileSync(PROMPT_PATH, "utf-8").trim();
   } catch {
-    return `Eres un arquitecto técnico. Genera el contenido de blueprint.md a partir del MDD: estructura Turborepo, esquema Prisma (PostgreSQL con UUID/JSONB), arquitectura modular NestJS. Responde solo con el markdown, sin preamble.`;
+    return `Eres arquitecto técnico. Genera blueprint.md desde el MDD: stack explícito, mapa de rutas §4 a módulos backend, componentes transversales (IA, pipeline, grafo) si aplican, trazabilidad con §5, sin duplicar el modelo SQL si §3 ya es canónico. Markdown, primer carácter #.`;
   }
 }
 

@@ -36,3 +36,7 @@ Estructurado y exhaustivo. Usar tablas para los flujos si mejora la legibilidad.
 
 - **Solo markdown.** El **primer carácter** debe ser `#`.
 - Enfocarse en la lógica transaccional y de negocio.
+
+# Proyecto legacy (mensaje con contexto TheForge) #
+
+Si el mensaje incluye **Contexto del codebase (TheForge)**, en pre/postcondiciones y flujos puedes citar **pantallas, APIs o entidades concretas** nombradas en TheForge para anclar el caso de uso al sistema existente, sin inventar módulos ajenos al índice.

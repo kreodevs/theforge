@@ -28,6 +28,7 @@ Documentación de arquitectura y operación de TheForge. **Entrada recomendada:*
 | Archivo | Nota |
 |---------|------|
 | [PLAN-FASE0-SCRAPING-DEEP-RESEARCH.md](PLAN-FASE0-SCRAPING-DEEP-RESEARCH.md) | Paso 0: URLs, scraping, deep research. |
+| [PLAN-IMPLEMENTACION-MAXPRIME-A-THEFORGE.md](PLAN-IMPLEMENTACION-MAXPRIME-A-THEFORGE.md) | Sincronizar mejoras del monorepo MaxPrime (constitución/semáforo, parser MDD, estimación en vivo, LangGraph, prompts, web) sin perder auth, business-rules ni cola Redis. |
 | [PLAN-MDD-ARQUITECTO-NO-ACTUALIZA-MODELO.md](PLAN-MDD-ARQUITECTO-NO-ACTUALIZA-MODELO.md) | Post-mortem §3 / merge estructurado (estado: implementado P0–P4). |
 | [MDD-PATRONES-FLUJO.md](MDD-PATRONES-FLUJO.md) | Patrones Manager, delegación, §6/§7. |
 | [ui-spec.md](ui-spec.md) | Especificación UI Workshop (referencia). |

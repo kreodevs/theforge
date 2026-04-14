@@ -41,8 +41,11 @@ function figmaGateOk(hasUxTeam: boolean, figmaMapping: unknown): boolean {
 /**
  * Puertas de calidad dinámicas según ComplexityLevel:
  * - LOW: Historias de usuario + tareas (sin exigir MDD).
- * - MEDIUM: Spec o casos de uso, contratos API, guía UX/flujos (al menos uno de cada par donde aplica), tareas.
- * - HIGH: regla histórica del MDD en JSON (entidades, negocio, edge cases, field_types) + Figma si hay equipo UX.
+ * - MEDIUM: Spec o casos de uso, contratos API, guía UX/flujos, historias de usuario, tareas (5 gates; ver código).
+ * - HIGH: regla histórica del MDD en JSON (entidades, negocio, edge cases, field_types) + Figma si hay equipo UX;
+ *   alivio opcional con `sddDomainGraphOk` cuando faltan textos edge/field_types.
+ *   Si `constitution.template_detected` (plantilla Constitución Cursor en §1), puertas extra — incumplimientos → AMARILLO
+ *   (no ROJO salvo reglas previas); se combinan con el resultado base (no empeora un AMARILLO ya más bajo que la constitución).
  */
 @Injectable()
 export class SemaphoreService {
@@ -83,22 +86,61 @@ export class SemaphoreService {
     const hasSpecOrUc = substantial(d.specContent) || substantial(d.useCasesContent);
     const hasApi = substantial(d.apiContractsContent);
     const hasUxOrFlows = substantial(d.uxUiGuideContent) || substantial(d.logicFlowsContent);
+    const hasUserStories = substantial(d.userStoriesContent);
     const hasTasks = substantial(d.tasksContent);
 
     if (!figmaGateOk(input.hasUxTeam, input.figmaMapping)) {
       return { status: Status.AMARILLO, precisionScore: 85 };
     }
 
-    const gates = [hasSpecOrUc, hasApi, hasUxOrFlows, hasTasks];
+    const gates = [hasSpecOrUc, hasApi, hasUxOrFlows, hasUserStories, hasTasks];
     const okCount = gates.filter(Boolean).length;
 
-    if (okCount === 4) {
+    if (okCount === 5) {
       return { status: Status.VERDE, precisionScore: 95 };
     }
-    if (okCount >= 2) {
+    if (okCount >= 3) {
       return { status: Status.AMARILLO, precisionScore: 70 };
     }
     return { status: Status.ROJO, precisionScore: 30 };
+  }
+
+  /**
+   * Si el MDD usa la plantilla Constitución Cursor, exige señales mínimas (parser markdown → JSON).
+   * Devuelve AMARILLO con la peor puntuación entre las dimensiones fallidas; null si no aplica o todo cumple.
+   */
+  private applyConstitutionHighGates(parsed: MddJson): { status: Status; precisionScore: number } | null {
+    const c = parsed.constitution;
+    if (!c?.template_detected) return null;
+
+    let score = 95;
+    if (!c.has_context_map) score = Math.min(score, 84);
+    if (!c.has_glossary) score = Math.min(score, 86);
+    if (!c.has_gherkin) score = Math.min(score, 88);
+    if (c.has_open_blockers) score = Math.min(score, 78);
+    if (!c.has_stack_rationale) score = Math.min(score, 90);
+
+    if (score >= 95) return null;
+    return { status: Status.AMARILLO, precisionScore: score };
+  }
+
+  /** Aplica puertas de constitución sin suavizar un AMARILLO que ya es más estricto (precision más bajo). */
+  private mergeConstitutionHigh(
+    parsed: MddJson,
+    result: { status: Status; precisionScore: number },
+  ): { status: Status; precisionScore: number } {
+    const constitutionDowngrade = this.applyConstitutionHighGates(parsed);
+    if (!constitutionDowngrade) return result;
+    if (result.status === Status.VERDE) {
+      return constitutionDowngrade;
+    }
+    if (
+      result.status === Status.AMARILLO &&
+      constitutionDowngrade.precisionScore < result.precisionScore
+    ) {
+      return constitutionDowngrade;
+    }
+    return result;
   }
 
   private evaluateHigh(input: SemaphoreEvaluationInput): { status: Status; precisionScore: number } {
@@ -140,17 +182,20 @@ export class SemaphoreService {
     }
 
     const docGaps = !hasEdgeCases || !hasFieldTypes;
+
+    let result: { status: Status; precisionScore: number };
     if (docGaps && !graphRelief) {
-      return { status: Status.AMARILLO, precisionScore: 70 };
+      result = { status: Status.AMARILLO, precisionScore: 70 };
+    } else {
+      const figmaOk = hasUxTeam ? figmaMapping != null : true;
+      if (!figmaOk) {
+        result = { status: Status.AMARILLO, precisionScore: 85 };
+      } else {
+        const precisionScore = docGaps && graphRelief ? 92 : 95;
+        result = { status: Status.VERDE, precisionScore };
+      }
     }
 
-    const figmaOk = hasUxTeam ? figmaMapping != null : true;
-
-    if (!figmaOk) {
-      return { status: Status.AMARILLO, precisionScore: 85 };
-    }
-
-    const precisionScore = docGaps && graphRelief ? 92 : 95;
-    return { status: Status.VERDE, precisionScore };
+    return this.mergeConstitutionHigh(parsed, result);
   }
 }

@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { AiOrchestratorService } from "./ai-orchestrator.service.js";
 import { AiOrchestratorController } from "./ai-orchestrator.controller.js";
 import { ProjectsModule } from "../projects/projects.module.js";
@@ -8,7 +8,7 @@ import { AgentSupervisorModule } from "../agent-supervisor/agent-supervisor.modu
 import { AiAnalysisModule } from "../ai-analysis/ai-analysis.module.js";
 
 @Module({
-  imports: [SessionsModule, ProjectsModule, TheForgeModule, AgentSupervisorModule, AiAnalysisModule],
+  imports: [forwardRef(() => SessionsModule), ProjectsModule, TheForgeModule, AgentSupervisorModule, AiAnalysisModule],
   controllers: [AiOrchestratorController],
   providers: [AiOrchestratorService],
   exports: [AiOrchestratorService],

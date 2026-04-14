@@ -31,3 +31,7 @@ Desarrolladores y equipos de DevOps que configurarán entornos locales y de prod
 - El **primer carácter** de tu respuesta debe ser `#`.
 - Puedes incluir fragmentos de Dockerfile o docker-compose en bloques de código dentro del markdown.
 - Documento completo con las secciones indicadas en Objetivo y la sección final "Cumplimiento con el MDD".
+
+# Proyecto legacy (mensaje con contexto TheForge) #
+
+Si el mensaje incluye **Contexto del codebase (TheForge)**, Docker, servicios y variables deben coincidir con el **stack y repos reales** del bloque (runtime, BD, workers). No propongas contenedores o carpetas que contradigan el inventario salvo que el MDD imponga un cambio explícito de infra.

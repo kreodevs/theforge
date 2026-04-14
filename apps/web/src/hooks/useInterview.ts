@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import type { ChatImagePart } from "@theforge/shared-types";
 import {
   useWorkshopStore,
   type ChatMessage,
@@ -12,8 +13,11 @@ export interface UseInterviewReturn {
   session: Session | null;
   loading: boolean;
   error: string | null;
-  /** options.regenerateSection: para comandos / (solo tab MDD). */
-  sendMessage: (message: string, options?: { regenerateSection?: number }) => Promise<void>;
+  /** options.regenerateSection: para comandos / (solo tab MDD). options.images: adjuntos visión. */
+  sendMessage: (
+    message: string,
+    options?: { regenerateSection?: number; images?: ChatImagePart[] },
+  ) => Promise<void>;
 }
 
 export function useInterview(
@@ -26,9 +30,9 @@ export function useInterview(
   const error = useWorkshopStore((s) => s.error);
   const sendMessageStore = useWorkshopStore((s) => s.sendMessage);
 
-
   const activeTabNorm = activeTab ?? "mdd";
   const streamingUserMessage = useWorkshopStore((s) => s.streamingUserMessage);
+  const streamingUserImages = useWorkshopStore((s) => s.streamingUserImages);
   const streamingContent = useWorkshopStore((s) => s.streamingContent);
   const streamingTab = useWorkshopStore((s) => s.streamingTab);
   const activeStageId = useWorkshopStore((s) => s.activeStageId);
@@ -39,24 +43,25 @@ export function useInterview(
   const messages =
     streamingUserMessage != null && (streamingTab ?? "mdd") === activeTabNorm
       ? [
-        ...baseMessages,
-        {
-          role: "user" as const,
-          content: streamingUserMessage,
-          tab: activeTabNorm,
-          ...(activeStageId ? { stageId: activeStageId } : {}),
-        },
-        {
-          role: "assistant" as const,
-          content: streamingContent ?? "",
-          tab: activeTabNorm,
-          ...(activeStageId ? { stageId: activeStageId } : {}),
-        },
-      ]
+          ...baseMessages,
+          {
+            role: "user" as const,
+            content: streamingUserMessage,
+            tab: activeTabNorm,
+            ...(activeStageId ? { stageId: activeStageId } : {}),
+            ...(streamingUserImages?.length ? { images: streamingUserImages } : {}),
+          },
+          {
+            role: "assistant" as const,
+            content: streamingContent ?? "",
+            tab: activeTabNorm,
+            ...(activeStageId ? { stageId: activeStageId } : {}),
+          },
+        ]
       : baseMessages;
 
   const send = useCallback(
-    (message: string, options?: { regenerateSection?: number }) =>
+    (message: string, options?: { regenerateSection?: number; images?: ChatImagePart[] }) =>
       sendMessageStore(message, activeTab, options),
     [sendMessageStore, activeTab],
   );

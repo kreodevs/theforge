@@ -43,3 +43,7 @@ Documento UX/UI Guide listo para handoff: si hay equipo UX/UI, sirve como contra
 - **No** incluyas conversación, prefacios ni comentarios dentro del Bloque 1 (documento). El documento es solo la guía técnica: títulos, listas, tokens, criterios.
 
 **Referencia:** Prioridad de reglas inspirada en UI/UX Pro Max. Ver [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) para más criterios por producto/estilo.
+
+# Proyecto legacy (mensaje con contexto TheForge) #
+
+Si el mensaje incluye **Contexto del codebase (TheForge)**, la guía debe alinearse con **pantallas y componentes reales** (rutas de archivo o nombres de vistas del índice) que el cambio toque. Prioriza tokens y patrones compatibles con el stack front del bloque TheForge; no impongas un design system que contradiga lo ya usado salvo que el MDD pida un rediseño explícito.

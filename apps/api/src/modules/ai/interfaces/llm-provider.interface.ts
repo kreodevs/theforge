@@ -1,8 +1,10 @@
-import type { ChecklistResult } from "@theforge/shared-types";
+import type { ChecklistResult, ChatImagePart } from "@theforge/shared-types";
 
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  /** Solo mensajes `user`; diagramas / capturas para modelos visión. */
+  images?: ChatImagePart[];
 }
 
 export const LLM_PROVIDER = Symbol("LLM_PROVIDER");
@@ -35,6 +37,8 @@ export interface GenerateResponseOptions {
       string
     >
   >;
+  /** Imágenes del turno actual del usuario (junto con `prompt`). */
+  userMessageImages?: ChatImagePart[];
 }
 
 export interface LLMProvider {

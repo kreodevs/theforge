@@ -1,4 +1,10 @@
 import type { MDDStateType } from "../state/index.js";
+import {
+  MDD_MAX_EXPLICIT_REQUIREMENTS_CHARS,
+  MDD_MAX_PLAN_BLOCK_CHARS,
+  MDD_MAX_PLAN_DIRECTIVE_CHARS,
+  MDD_MAX_USER_BRIEF_FROM_ACCUMULATED_CHARS,
+} from "@theforge/shared-types";
 
 /** Prefijos que suelen preceder al requisito real del usuario (se eliminan para obtener el brief). */
 const COMMAND_PREFIXES = [
@@ -34,7 +40,7 @@ export function getUserBrief(state: MDDStateType): string {
   const last = (state.lastUserMessage ?? "").trim();
   if (last.length >= MIN_BRIEF_LENGTH) {
     const stripped = stripCommandPrefix(last);
-    if (stripped.length >= MIN_BRIEF_LENGTH) return stripped;
+    if (stripped.length >= MIN_BRIEF_LENGTH) return stripped.slice(0, MDD_MAX_USER_BRIEF_FROM_ACCUMULATED_CHARS);
   }
   const accumulated = (state.userInputAccumulated ?? "").trim();
   if (accumulated.length >= MIN_BRIEF_LENGTH) {
@@ -43,8 +49,8 @@ export function getUserBrief(state: MDDStateType): string {
       : accumulated;
     const withoutPeticion = lastBlock.replace(/^petición\s*:?\s*/i, "").trim();
     const stripped = stripCommandPrefix(withoutPeticion);
-    if (stripped.length >= MIN_BRIEF_LENGTH) return stripped.slice(0, 500);
-    if (lastBlock.length >= MIN_BRIEF_LENGTH) return lastBlock.slice(0, 500);
+    if (stripped.length >= MIN_BRIEF_LENGTH) return stripped.slice(0, MDD_MAX_USER_BRIEF_FROM_ACCUMULATED_CHARS);
+    if (lastBlock.length >= MIN_BRIEF_LENGTH) return lastBlock.slice(0, MDD_MAX_USER_BRIEF_FROM_ACCUMULATED_CHARS);
   }
   const scope = (state.clarifiedScope ?? "").trim();
   if (scope.length >= MIN_BRIEF_LENGTH) {
@@ -60,13 +66,14 @@ export function getUserBrief(state: MDDStateType): string {
 const TRIVIAL_REPLY = /^(?:Usuario:\s*)?(?:s[ií]|s[ií]\s*,\s*de\s*acuerdo|de\s*acuerdo|ok|vale|correcto|estoy\s+de\s+acuerdo|perfecto|acepto)[\s.]*$/i;
 
 const MIN_REQUIREMENTS_LENGTH = 50;
-const MAX_REQUIREMENTS_CHARS = 1500;
 
 /**
  * Texto de requisitos o petición del usuario para inyectar al Arquitecto (§3 y §4).
  * Prioridad: userInputAccumulated (bloques sustanciales que no sean solo "sí"/"ok"), luego dbgaContent.
+ * Si el último mensaje es sustancial y aún no está cubierto en el acumulado, se añade (evita que una petición reciente no llegue al nodo cuando el acumulado no se fusionó igual).
  */
 export function getUserExplicitRequirements(state: MDDStateType): string {
+  let combined = "";
   const accumulated = (state.userInputAccumulated ?? "").trim();
   if (accumulated.length >= MIN_REQUIREMENTS_LENGTH) {
     const blocks = accumulated.split(/\n\n---\n\n/).map((s) => s.trim()).filter(Boolean);
@@ -74,17 +81,27 @@ export function getUserExplicitRequirements(state: MDDStateType): string {
       (b) => b.length >= MIN_REQUIREMENTS_LENGTH && !TRIVIAL_REPLY.test(b.replace(/^Usuario:\s*/i, "").trim()),
     );
     if (substantial.length > 0) {
-      const combined = substantial.join("\n\n");
-      return combined.slice(0, MAX_REQUIREMENTS_CHARS);
+      combined = substantial.join("\n\n");
     }
   }
-  const dbga = (state.dbgaContent ?? "").trim();
-  if (dbga.length >= MIN_REQUIREMENTS_LENGTH && !dbga.startsWith("(Sin Benchmark")) {
-    const peticionMatch = dbga.match(/(?:Petición|Usuario|Respuesta del usuario)[:\s]*\n([\s\S]{1,1200})/i);
-    if (peticionMatch?.[1]?.trim()) return peticionMatch[1].trim().slice(0, MAX_REQUIREMENTS_CHARS);
-    return dbga.slice(0, MAX_REQUIREMENTS_CHARS);
+  if (!combined.length) {
+    const dbga = (state.dbgaContent ?? "").trim();
+    if (dbga.length >= MIN_REQUIREMENTS_LENGTH && !dbga.startsWith("(Sin Benchmark")) {
+      const peticionMatch = dbga.match(/(?:Petición|Usuario|Respuesta del usuario)[:\s]*\n([\s\S]{1,1200})/i);
+      combined = peticionMatch?.[1]?.trim() ? peticionMatch[1].trim() : dbga;
+    }
   }
-  return "";
+  const last = (state.lastUserMessage ?? "").trim();
+  if (last.length >= MIN_REQUIREMENTS_LENGTH && !TRIVIAL_REPLY.test(last)) {
+    const lastNorm = last.replace(/^(Usuario|Petición):\s*/i, "").trim();
+    const prefix = lastNorm.slice(0, Math.min(120, lastNorm.length));
+    if (!combined.length) {
+      combined = lastNorm;
+    } else if (prefix.length >= 40 && !combined.includes(prefix)) {
+      combined = `${combined}\n\n---\n\n${lastNorm}`;
+    }
+  }
+  return combined.slice(0, MDD_MAX_EXPLICIT_REQUIREMENTS_CHARS);
 }
 
 const MIN_SUBSTANTIVE_LENGTH = 25;
@@ -94,13 +111,10 @@ const SYSTEM_QUESTION_PATTERN = /^(?:¿Ejecutar\s+este\s+plan|¿Puedes\s+detalla
 
 /** Indicios de requisito de diseño: entidades, modelo, diagrama, aplicaciones, roles, permisos, stack, arquitectura. */
 const DESIGN_REQUIREMENT_REGEX =
-  /\b(aplicaciones?|diagrama\s*(er|entidad|relaci[oó]n)?|entidad|entidades|modelo\s+de\s+datos|roles?|permisos?|relaci[oó]n(es)?|tablas?|usuarios?|CREATE\s+TABLE|stack|arquitectura|frontend|backend|framework|tecnolog[ií]a|nestjs|react|vue|angular|node\.?js|postgresql|mysql|vite|webpack|secci[oó]n\s*2|§2)\b/i;
+  /\b(aplicaciones?|diagrama\s*(er|entidad|relaci[oó]n)?|entidad|entidades|modelo\s+de\s+datos|roles?|permisos?|relaci[oó]n(es)?|tablas?|usuarios?|CREATE\s+TABLE|stack|arquitectura|frontend|backend|framework|tecnolog[ií]a|nestjs|react|vue|angular|node\.?js|postgresql|mysql|vite|webpack|secci[oó]n\s*2|§2|denue|inegi|contratos?\s+de\s+api|endpoints?|documentaci[oó]n\s+(de\s+)?api|microservicio|consumo\s+del\s+microservicio|otras\s+aplicaciones|api\s+propia)\b/i;
 
 /**
- * Último mensaje sustancial del usuario (para usarlo como directiva al confirmar un plan).
- * Prioridad 1: bloque que contenga indicios de requisito de diseño (entidades, aplicaciones, diagrama, roles, etc.).
- * Prioridad 2: último bloque sustancial y no trivial que no sea pregunta del sistema.
- * Fallback: lastUserMessage si es sustancial.
+ * Ultimo mensaje sustancial del usuario (directiva al confirmar un plan): prioridad diseño > ultimo bloque > lastUserMessage.
  */
 export function getLastSubstantiveUserMessage(state: MDDStateType): string {
   const accumulated = (state.userInputAccumulated ?? "").trim();
@@ -122,7 +136,6 @@ export function getLastSubstantiveUserMessage(state: MDDStateType): string {
   return "";
 }
 
-const MAX_PLAN_DIRECTIVE_CHARS = 2000;
 const MAX_PLAN_BLOCKS = 4;
 
 /**
@@ -140,7 +153,7 @@ export function getPlanDirective(state: MDDStateType): string {
       const withoutPrefix = b.replace(/^Usuario:\s*|Plan aprobado:\s*|Petición:\s*/gi, "").trim();
       if (withoutPrefix.length < MIN_SUBSTANTIVE_LENGTH || TRIVIAL_REPLY.test(withoutPrefix)) continue;
       if (SYSTEM_QUESTION_PATTERN.test(withoutPrefix)) continue;
-      substantial.unshift(withoutPrefix.slice(0, 600));
+      substantial.unshift(withoutPrefix.slice(0, MDD_MAX_PLAN_BLOCK_CHARS));
     }
     if (substantial.length > 0) {
       parts.push("Requisitos del usuario (conversación reciente):\n" + substantial.join("\n\n---\n\n"));
@@ -152,7 +165,7 @@ export function getPlanDirective(state: MDDStateType): string {
     parts.push("Alcance clarificado (resumen):\n" + fragment);
   }
   const combined = parts.join("\n\n");
-  if (combined.length > MAX_PLAN_DIRECTIVE_CHARS) return combined.slice(0, MAX_PLAN_DIRECTIVE_CHARS) + "…";
+  if (combined.length > MDD_MAX_PLAN_DIRECTIVE_CHARS) return combined.slice(0, MDD_MAX_PLAN_DIRECTIVE_CHARS) + "…";
   if (combined) return combined;
   return getLastSubstantiveUserMessage(state);
 }

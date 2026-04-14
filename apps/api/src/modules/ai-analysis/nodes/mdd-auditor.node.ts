@@ -7,6 +7,7 @@ import { auditorGapsSchema, mddAuditorDecisionSchema, type MDDStateType } from "
 import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { validateMddStructure } from "../utils/mdd-sanitize.js";
 import { getInternalDirectivesContext } from "../utils/mdd-mesh-topology.js";
+import { auditorConstitutionRigorAppendix } from "../utils/mdd-complexity-rigor.js";
 import { z } from "zod";
 
 /** >= 85: done (cede intervención al usuario). < 85: clarifier (Manager asigna gaps a agentes). */
@@ -69,7 +70,7 @@ export function createMddAuditorNode(
     LOG("entry mddDraftLen=%s tools=%s (allowed=%s)", (state.mddDraft ?? "").length, toolsToUse.length, allowed?.length ?? "all");
     try {
       const draft = (state.mddDraft ?? "").trim();
-      let prompt = `${AUDITOR_MDD_PROMPT}\n\n---\n**Borrador completo del MDD:**\n${draft || "(vacío)"}\n\n${getInternalDirectivesContext(state, "auditor")}`;
+      let prompt = `${AUDITOR_MDD_PROMPT}\n\n---\n**Borrador completo del MDD:**\n${draft || "(vacío)"}\n\n${getInternalDirectivesContext(state, "auditor")}${auditorConstitutionRigorAppendix(state.mddComplexity)}`;
       if (toolsToUse.length > 0) {
         prompt += "\n\n**Opcional:** Usa las tools de validación (validate_mdd_structure, validate_sql_syntax, validate_json_payloads) con el borrador anterior para obtener métricas objetivas. Usa esos resultados para rellenar auditorScore, auditorDecision, critical_gaps, syntax_errors e infrastructure_ready. Responde al final solo con el JSON de salida.";
       }
@@ -192,7 +193,11 @@ export function createMddAuditorNode(
       }
 
       if (!hasStructuredGaps && precisionCalculator && draft.length > 100) {
-        const metrics = precisionCalculator.calculateLiveMetrics(draft);
+        const metrics = precisionCalculator.calculateLiveMetrics(draft, {
+          complexity: state.mddComplexity,
+          projectId: state.projectId,
+          stageId: state.activeStageId ?? null,
+        });
         if (metrics.precision < AUDIT_PASS_THRESHOLD) {
           score = metrics.precision;
           const semaphoreNote =

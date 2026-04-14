@@ -1,12 +1,32 @@
 import { z } from "zod";
 
-const chatMessageSchema = z.object({
-  role: z.enum(["user", "assistant"]),
-  content: z.string(),
-  tab: z.string().optional(),
-  /** Etapa del Workshop cuando se envió el mensaje (historial global; no filtra por etapa). */
-  stageId: z.string().optional(),
+/** Parte de imagen en base64 (sin prefijo `data:`); el API valida MIME y tamaño. */
+export const chatImagePartSchema = z.object({
+  mimeType: z.string().min(3).max(80),
+  base64: z.string().min(1),
 });
+
+export type ChatImagePart = z.infer<typeof chatImagePartSchema>;
+
+const chatMessageSchema = z
+  .object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+    /** Capturas o diagramas enviados por el usuario (solo rol `user`). */
+    images: z.array(chatImagePartSchema).max(6).optional(),
+    tab: z.string().optional(),
+    /** Etapa del Workshop cuando se envió el mensaje (historial global; no filtra por etapa). */
+    stageId: z.string().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.role === "assistant" && val.images != null && val.images.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "assistant messages cannot include images",
+        path: ["images"],
+      });
+    }
+  });
 
 export const contextStepEnum = ["CONTEXT", "DATA", "LOGIC", "SECURITY"] as const;
 export type ContextStep = (typeof contextStepEnum)[number];
@@ -17,12 +37,23 @@ export const createSessionSchema = z.object({
   chatLog: z.array(chatMessageSchema).default([]),
 });
 
-export const appendChatSchema = z.object({
-  role: z.enum(["user", "assistant"]),
-  content: z.string(),
-  tab: z.string().optional(),
-  stageId: z.string().optional(),
-});
+export const appendChatSchema = z
+  .object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+    images: z.array(chatImagePartSchema).max(6).optional(),
+    tab: z.string().optional(),
+    stageId: z.string().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.role === "assistant" && val.images != null && val.images.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "assistant messages cannot include images",
+        path: ["images"],
+      });
+    }
+  });
 
 export const sessionResponseSchema = z.object({
   id: z.string().uuid(),

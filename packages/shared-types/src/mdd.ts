@@ -1,10 +1,28 @@
 import { z } from "zod";
 
-export const mddJsonSchema = z.object({
-  db_entities: z.array(z.unknown()).default([]),
-  business_core: z.unknown().nullable().optional(),
-  edge_cases: z.unknown().optional(),
-  field_types: z.unknown().optional(),
+/** Señales «Constitución Cursor» (rellenadas al normalizar markdown → JSON para el semáforo HIGH). */
+export const mddConstitutionSchema = z.object({
+  /** El MDD sigue la plantilla nueva (§1 con mapa/glosario); si es false, el semáforo no aplica puertas extra. */
+  template_detected: z.boolean().optional(),
+  has_context_map: z.boolean().optional(),
+  has_glossary: z.boolean().optional(),
+  has_gherkin: z.boolean().optional(),
+  gherkin_scenario_count: z.number().optional(),
+  /** true = hay ítems de bloqueo explícitos (no «Ninguno»). */
+  has_open_blockers: z.boolean().optional(),
+  has_stack_rationale: z.boolean().optional(),
 });
+
+export type MddConstitutionSignals = z.infer<typeof mddConstitutionSchema>;
+
+export const mddJsonSchema = z
+  .object({
+    db_entities: z.array(z.unknown()).default([]),
+    business_core: z.unknown().nullable().optional(),
+    edge_cases: z.unknown().optional(),
+    field_types: z.unknown().optional(),
+    constitution: mddConstitutionSchema.optional(),
+  })
+  .passthrough();
 
 export type MddJson = z.infer<typeof mddJsonSchema>;

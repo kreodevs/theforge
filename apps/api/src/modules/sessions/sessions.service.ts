@@ -3,7 +3,7 @@ import type { Session } from "@theforge/database";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiService } from "../ai/ai.service.js";
-import type { GenerateResponseOptions } from "../ai/interfaces/llm-provider.interface.js";
+import type { GenerateResponseOptions, ChatMessage as LlmChatMessage } from "../ai/interfaces/llm-provider.interface.js";
 import { PreferencesService } from "../ai/preferences.service.js";
 import { ChatResponseParserService } from "./chat-response-parser.service.js";
 import {
@@ -12,10 +12,19 @@ import {
   contextStepEnum,
   type AppendChatDto,
   type ChatMessage,
+  type ChatImagePart,
 } from "@theforge/shared-types";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
+}
+
+function sessionHistoryToLlm(history: ChatMessage[]): LlmChatMessage[] {
+  return history.map((m) => ({
+    role: m.role,
+    content: m.content,
+    ...(m.role === "user" && m.images != null && m.images.length > 0 ? { images: m.images } : {}),
+  }));
 }
 
 @Injectable()
@@ -116,6 +125,8 @@ export class SessionsService {
       /** Guía UX/UI: NEW → bloque Google Stitch para el producto; LEGACY → prohibido. */
       projectTypeForUxGuide?: GenerateResponseOptions["projectTypeForUxGuide"];
       uxGuideAdditionalDocs?: GenerateResponseOptions["uxGuideAdditionalDocs"];
+      /** Imágenes del turno actual (solo usuario). */
+      userImages?: ChatImagePart[];
     },
   ): Promise<{
     session: Session | null;
@@ -144,9 +155,15 @@ export class SessionsService {
       historyLength: history.length,
     });
     const learningHistory = await this.preferences.getPreferencesForContext(session.projectId, 5);
+    const llmHistory = sessionHistoryToLlm(history);
+    const promptForModel =
+      userMessage.trim() ||
+      (options?.userImages?.length
+        ? "(El usuario envió solo imágenes; usa el contenido visual en el contexto del documento activo.)"
+        : "");
     let response: string;
     try {
-      response = await this.ai.generateResponse(userMessage, history, {
+      response = await this.ai.generateResponse(promptForModel, llmHistory, {
         currentMddContent: options?.currentMddContent,
         currentDbgaContent: options?.currentDbgaContent,
         currentUxUiGuideContent: options?.currentUxUiGuideContent,
@@ -157,6 +174,7 @@ export class SessionsService {
         complexityInterviewContext: options?.complexityInterviewContext,
         projectTypeForUxGuide: options?.projectTypeForUxGuide,
         uxGuideAdditionalDocs: options?.uxGuideAdditionalDocs,
+        userMessageImages: options?.userImages,
       });
     } catch (err) {
       console.error("[Chat] ai.generateResponse error:", err);
@@ -237,13 +255,17 @@ export class SessionsService {
 
     const tab = options?.activeTab ?? "mdd";
     const stageId = options?.stageId?.trim();
-    const userMsg = { role: "user" as const, content: userMessage, tab };
+    const userContentForLog =
+      userMessage.trim() || (options?.userImages?.length ? "(Imagen adjunta)" : userMessage);
+    const userMsgBase = {
+      role: "user" as const,
+      content: userContentForLog,
+      tab,
+      ...(options?.userImages?.length ? { images: options.userImages } : {}),
+    };
+    const userMsg = stageId ? { ...userMsgBase, stageId } : userMsgBase;
     const asstMsg = { role: "assistant" as const, content: assistantContent, tab };
-    const updated = [
-      ...fullLog,
-      stageId ? { ...userMsg, stageId } : userMsg,
-      stageId ? { ...asstMsg, stageId } : asstMsg,
-    ];
+    const updated = [...fullLog, userMsg, stageId ? { ...asstMsg, stageId } : asstMsg];
 
     await this.prisma.session.update({
       where: { id: sessionId },
@@ -295,6 +317,7 @@ export class SessionsService {
       complexityInterviewContext?: string;
       projectTypeForUxGuide?: GenerateResponseOptions["projectTypeForUxGuide"];
       uxGuideAdditionalDocs?: GenerateResponseOptions["uxGuideAdditionalDocs"];
+      userImages?: ChatImagePart[];
     },
   ): AsyncGenerator<
     | { type: "chunk"; content: string }
@@ -322,14 +345,26 @@ export class SessionsService {
     const activeTab = options?.activeTab ?? "mdd";
     const tab = activeTab;
     const stageId = options?.stageId?.trim();
-    const userEntry = stageId
-      ? { role: "user" as const, content: userMessage, tab, stageId }
-      : { role: "user" as const, content: userMessage, tab };
+    const userContentForLog =
+      userMessage.trim() || (options?.userImages?.length ? "(Imagen adjunta)" : userMessage);
+    const userEntryBase = {
+      role: "user" as const,
+      content: userContentForLog,
+      tab,
+      ...(options?.userImages?.length ? { images: options.userImages } : {}),
+    };
+    const userEntry = stageId ? { ...userEntryBase, stageId } : userEntryBase;
 
     const learningHistory = await this.preferences.getPreferencesForContext(session.projectId, 5);
+    const llmHistory = sessionHistoryToLlm(history);
+    const promptForModel =
+      userMessage.trim() ||
+      (options?.userImages?.length
+        ? "(El usuario envió solo imágenes; usa el contenido visual en el contexto del documento activo.)"
+        : "");
     let stream: AsyncIterable<string>;
     try {
-      stream = await this.ai.generateResponseStream(userMessage, history, {
+      stream = await this.ai.generateResponseStream(promptForModel, llmHistory, {
         currentMddContent: options?.currentMddContent,
         currentDbgaContent: options?.currentDbgaContent,
         currentUxUiGuideContent: options?.currentUxUiGuideContent,
@@ -341,6 +376,7 @@ export class SessionsService {
         complexityInterviewContext: options?.complexityInterviewContext,
         projectTypeForUxGuide: options?.projectTypeForUxGuide,
         uxGuideAdditionalDocs: options?.uxGuideAdditionalDocs,
+        userMessageImages: options?.userImages,
       });
     } catch (err) {
       console.error("[ChatStream] ai.generateResponseStream error:", err);

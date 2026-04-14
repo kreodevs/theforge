@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import type { ChatMessage } from "@theforge/shared-types";
+import type { ChatImagePart, ChatMessage } from "@theforge/shared-types";
 import {
   PROJECTS_ORCHESTRATOR_PORT,
   type IOrchestratorProjectsPort,
@@ -114,9 +114,11 @@ export class AiOrchestratorService {
     uxUiGuideContentFromClient?: string,
     dbgaContentFromClient?: string,
     stageIdFromClient?: string,
+    userImages: ChatImagePart[] = [],
   ) {
     let project = await this.projects.findOne(projectId);
-    const hitl = await this.projects.tryConfirmComplexityFromChatMessage(projectId, message);
+    const hitlLine = message.trim() || (userImages.length ? "(Imagen adjunta)" : "");
+    const hitl = await this.projects.tryConfirmComplexityFromChatMessage(projectId, hitlLine);
     if (hitl.confirmed || hitl.rejected) {
       project = await this.projects.findOne(projectId);
     }
@@ -169,7 +171,12 @@ export class AiOrchestratorService {
       const theforgeProjectId = route.theforgeProjectId;
       systemPrompt = LEGACY_DOCUMENTATION_PROMPT;
       systemPrompt += await this.episodicPromptSuffix(route.stageId);
-      const theforgeContext = await this.theforge.askCodebase(message, theforgeProjectId);
+      const theforgeQuery =
+        message.trim() ||
+        (userImages.length
+          ? "El usuario adjuntó imágenes en el chat; resume el contexto útil para documentación."
+          : "");
+      const theforgeContext = await this.theforge.askCodebase(theforgeQuery, theforgeProjectId);
       if (theforgeContext.trim()) {
         systemPrompt += "\n\n[Contexto TheForge (respuesta a la pregunta del usuario)]\n---\n" + theforgeContext.trim() + "\n---";
       }
@@ -188,6 +195,7 @@ export class AiOrchestratorService {
         systemPrompt,
         stageId: route.stageId,
         complexityInterviewContext,
+        userImages,
         ...uxGuideLlmOptions(project),
       });
       updatedSession = chatResult.session;
@@ -234,7 +242,7 @@ export class AiOrchestratorService {
       (mddFromResponse != null && mddFromResponse.length > 0) ||
       (mddContentFromClient != null && mddContentFromClient.trim().length > 0);
     this.scheduleSddIngest(projectId, shouldIngestMdd);
-    const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, route, message);
+    const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, route, hitlLine);
 
     return {
       session: updatedSession,
@@ -242,6 +250,37 @@ export class AiOrchestratorService {
       uxUiGuideContent: uxToReturn ?? undefined,
       evaluatorCritique,
     };
+  }
+
+  /**
+   * Paridad con `POST /ai-orchestrator/chat`: mismo flujo (HITL, PATCH MDD/UX/DBGA desde body,
+   * supervisor, legacy + TheForge, `uxGuideLlmOptions`, persistencia de respuesta, ingest SDD, evaluador).
+   * `projectId` se toma de la sesión.
+   */
+  async chatBySessionId(
+    sessionId: string,
+    args: {
+      message: string;
+      userImages?: ChatImagePart[];
+      mddContentFromClient?: string;
+      activeTab?: string;
+      uxUiGuideContentFromClient?: string;
+      dbgaContentFromClient?: string;
+      stageIdFromClient?: string;
+    },
+  ) {
+    const session = await this.sessions.findOne(sessionId);
+    return this.chat(
+      session.projectId,
+      args.message,
+      sessionId,
+      args.mddContentFromClient,
+      args.activeTab,
+      args.uxUiGuideContentFromClient,
+      args.dbgaContentFromClient,
+      args.stageIdFromClient,
+      args.userImages ?? [],
+    );
   }
 
   /**
@@ -257,9 +296,11 @@ export class AiOrchestratorService {
     dbgaContentFromClient?: string,
     specContentFromClient?: string,
     stageIdFromClient?: string,
+    userImages: ChatImagePart[] = [],
   ): AsyncGenerator<{ event: string; data: unknown }> {
     let project = await this.projects.findOne(projectId);
-    const hitl = await this.projects.tryConfirmComplexityFromChatMessage(projectId, message);
+    const hitlLineStream = message.trim() || (userImages.length ? "(Imagen adjunta)" : "");
+    const hitl = await this.projects.tryConfirmComplexityFromChatMessage(projectId, hitlLineStream);
     if (hitl.confirmed || hitl.rejected) {
       project = await this.projects.findOne(projectId);
     }
@@ -311,7 +352,12 @@ export class AiOrchestratorService {
       const theforgeProjectId = routeStream.theforgeProjectId;
       systemPromptStream = LEGACY_DOCUMENTATION_PROMPT;
       systemPromptStream += await this.episodicPromptSuffix(routeStream.stageId);
-      const theforgeContext = await this.theforge.askCodebase(message, theforgeProjectId);
+      const theforgeQueryStream =
+        message.trim() ||
+        (userImages.length
+          ? "El usuario adjuntó imágenes en el chat; resume el contexto útil para documentación."
+          : "");
+      const theforgeContext = await this.theforge.askCodebase(theforgeQueryStream, theforgeProjectId);
       if (theforgeContext.trim()) {
         systemPromptStream += "\n\n[Contexto TheForge (respuesta a la pregunta del usuario)]\n---\n" + theforgeContext.trim() + "\n---";
       }
@@ -327,6 +373,7 @@ export class AiOrchestratorService {
       systemPrompt: systemPromptStream,
       stageId: routeStream.stageId,
       complexityInterviewContext,
+      userImages,
       ...uxGuideLlmOptions(project),
     });
 
@@ -377,7 +424,7 @@ export class AiOrchestratorService {
           (msg.mddContent != null && msg.mddContent.length > 0) ||
           (mddContentFromClient != null && mddContentFromClient.trim().length > 0);
         this.scheduleSddIngest(projectId, shouldIngestMddStream);
-        const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, routeStream, message);
+        const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, routeStream, hitlLineStream);
         yield {
           event: "done",
           data: {
