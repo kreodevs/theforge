@@ -141,6 +141,15 @@ export default function WorkshopView({
   const hasSpec = (specContent ?? "").trim().length > 0;
   const complexity = project?.complexity ?? "HIGH";
   const isLegacyProject = project?.projectType === "LEGACY";
+  const uxGuideOneShotChatPrompt = useMemo(
+    () =>
+      "Genera la Guía UX/UI completa a partir del MDD y Blueprint del proyecto. Incluye: patrón/estilo, paleta y tokens de color, tipografía, espaciado y grid, componentes de referencia, prioridades de UX, criterios de accesibilidad (WCAG, contraste 4.5:1, teclado, touch 44px) y anti-patrones a evitar." +
+      (isLegacyProject
+        ? ""
+        : " Para proyecto nuevo, al final añade la sección ## Prompt para Google Stitch (producto): un solo bloque listo para pegar en Google Stitch con pantallas y flujos del **producto** definido en el MDD y documentos (no describas la app The Forge ni el Workshop).") +
+      " Responde con el documento seguido de ---FIN_UX_UI--- y un mensaje breve.",
+    [isLegacyProject],
+  );
   const isReverseEngineering =
     isLegacyProject &&
     !!((project?.legacyFlowState?.codebaseDoc ?? "").trim()) &&
@@ -1321,14 +1330,9 @@ export default function WorkshopView({
                 {centralPanel === "ux-ui-guide" && (
                   <button
                     type="button"
-                    onClick={() =>
-                      sendMessage(
-                        "Genera la Guía UX/UI completa a partir del MDD y Blueprint del proyecto. Incluye: patrón/estilo, paleta y tokens de color, tipografía, espaciado y grid, componentes de referencia, prioridades de UX, criterios de accesibilidad (WCAG, contraste 4.5:1, teclado, touch 44px) y anti-patrones a evitar. Responde con el documento seguido de ---FIN_UX_UI--- y un mensaje breve.",
-                        "ux-ui-guide",
-                      )
-                    }
+                    onClick={() => sendMessage(uxGuideOneShotChatPrompt, "ux-ui-guide")}
                     disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
-                    title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat)"
+                    title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat). Proyectos nuevos: incluye prompt Google Stitch para el producto."
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
@@ -1891,14 +1895,9 @@ export default function WorkshopView({
                 <div className="shrink-0 flex items-center justify-end gap-2 mt-2">
                   <button
                     type="button"
-                    onClick={() =>
-                      sendMessage(
-                        "Genera la Guía UX/UI completa a partir del MDD y Blueprint del proyecto. Incluye: patrón/estilo, paleta y tokens de color, tipografía, espaciado y grid, componentes de referencia, prioridades de UX, criterios de accesibilidad (WCAG, contraste 4.5:1, teclado, touch 44px) y anti-patrones a evitar. Responde con el documento seguido de ---FIN_UX_UI--- y un mensaje breve.",
-                        "ux-ui-guide",
-                      )
-                    }
+                    onClick={() => sendMessage(uxGuideOneShotChatPrompt, "ux-ui-guide")}
                     disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
-                    title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat)"
+                    title="Generar o regenerar la Guía UX/UI desde el MDD (se envía al chat). Proyectos nuevos: incluye prompt Google Stitch para el producto."
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}

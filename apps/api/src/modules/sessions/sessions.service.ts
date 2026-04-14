@@ -3,6 +3,7 @@ import type { Session } from "@theforge/database";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiService } from "../ai/ai.service.js";
+import type { GenerateResponseOptions } from "../ai/interfaces/llm-provider.interface.js";
 import { PreferencesService } from "../ai/preferences.service.js";
 import { ChatResponseParserService } from "./chat-response-parser.service.js";
 import {
@@ -112,6 +113,9 @@ export class SessionsService {
       stageId?: string;
       /** Fase 0 (benchmark): instrucciones de entrevista proactiva + contexto HITL de complejidad */
       complexityInterviewContext?: string;
+      /** Guía UX/UI: NEW → bloque Google Stitch para el producto; LEGACY → prohibido. */
+      projectTypeForUxGuide?: GenerateResponseOptions["projectTypeForUxGuide"];
+      uxGuideAdditionalDocs?: GenerateResponseOptions["uxGuideAdditionalDocs"];
     },
   ): Promise<{
     session: Session | null;
@@ -151,6 +155,8 @@ export class SessionsService {
         learningHistory: learningHistory || undefined,
         systemPrompt: options?.systemPrompt,
         complexityInterviewContext: options?.complexityInterviewContext,
+        projectTypeForUxGuide: options?.projectTypeForUxGuide,
+        uxGuideAdditionalDocs: options?.uxGuideAdditionalDocs,
       });
     } catch (err) {
       console.error("[Chat] ai.generateResponse error:", err);
@@ -287,6 +293,8 @@ export class SessionsService {
       systemPrompt?: string;
       stageId?: string;
       complexityInterviewContext?: string;
+      projectTypeForUxGuide?: GenerateResponseOptions["projectTypeForUxGuide"];
+      uxGuideAdditionalDocs?: GenerateResponseOptions["uxGuideAdditionalDocs"];
     },
   ): AsyncGenerator<
     | { type: "chunk"; content: string }
@@ -331,6 +339,8 @@ export class SessionsService {
         learningHistory: learningHistory || undefined,
         systemPrompt: options?.systemPrompt,
         complexityInterviewContext: options?.complexityInterviewContext,
+        projectTypeForUxGuide: options?.projectTypeForUxGuide,
+        uxGuideAdditionalDocs: options?.uxGuideAdditionalDocs,
       });
     } catch (err) {
       console.error("[ChatStream] ai.generateResponseStream error:", err);

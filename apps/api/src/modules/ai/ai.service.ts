@@ -65,6 +65,46 @@ export class AiService {
     tasks: "Tareas (Breakdown)",
   };
 
+  /** Política Google Stitch + fragmentos SDD para Guía UX/UI (según projectType). */
+  private appendUxGuideStitchPolicy(
+    systemPrompt: string,
+    options: GenerateResponseOptions | undefined,
+  ): string {
+    const pt = options?.projectTypeForUxGuide;
+    if (!pt) return systemPrompt;
+    if (options?.activeTab?.trim() !== "ux-ui-guide") return systemPrompt;
+    let s = systemPrompt;
+    if (pt === "LEGACY") {
+      return (
+        s +
+        "\n\n**[Tipo de proyecto: LEGACY]** Cambio sobre sistema existente. **Prohibido** incluir en la Guía UX/UI ninguna sección titulada **«Prompt para Google Stitch»** ni brief para herramientas de diseño generativo (p. ej. Google Stitch) orientado a un producto greenfield desde cero. La guía debe alinearse con lo ya existente descrito en el MDD y el contexto del proyecto."
+      );
+    }
+    if (pt === "NEW") {
+      s +=
+        "\n\n**[Tipo de proyecto: NEW]** Al generar o actualizar la **Guía UX/UI completa**, **incluye obligatoriamente** al final del documento markdown (antes de la línea `---FIN_UX_UI---`) la sección **## Prompt para Google Stitch (producto)** con **un único bloque de texto** listo para copiar y pegar en Google Stitch. Ese prompt debe describir **el producto que estamos especificando en este proyecto** (el sistema del cliente según el MDD y los documentos del contexto), **no** la aplicación interna The Forge ni su Workshop. Incluye: (1) nombre provisional del producto y propuesta de valor en una frase; (2) usuarios objetivo y contexto de uso; (3) inventario de **pantallas, vistas o flujos** inferidos de MDD, Blueprint, Spec, casos de uso, historias, flujos de lógica y arquitectura que recibes en el contexto; (4) dirección visual, stack de UI (p. ej. React, Tailwind, shadcn) y criterios de accesibilidad alineados a las secciones anteriores de esta guía; (5) si el producto es web, pedir **variantes desktop y móvil**; (6) estados vacío, carga y error en flujos críticos. Si faltan datos, **infórelos** y declara **supuestos explícitos** dentro del bloque Stitch.";
+      const docs = options.uxGuideAdditionalDocs;
+      if (docs) {
+        const blocks: [string, string | undefined][] = [
+          ["Spec (SDD what/why)", docs.spec],
+          ["Casos de uso", docs.useCases],
+          ["Historias de usuario", docs.userStories],
+          ["Flujos de lógica / interacción", docs.logicFlows],
+          ["Arquitectura del sistema (impacto UI)", docs.architecture],
+          ["Contratos de API (datos y pantallas)", docs.apiContracts],
+          ["Benchmark & Gap Analysis (dominio)", docs.dbga],
+          ["Resumen fase 0", docs.phase0],
+        ];
+        for (const [title, body] of blocks) {
+          if (body?.trim()) {
+            s += `\n\n[${title} — contexto para Guía UX/UI y Prompt Stitch del producto]\n---\n${body.trim()}\n---`;
+          }
+        }
+      }
+    }
+    return s;
+  }
+
   async generateResponse(
     prompt: string,
     history: Array<{ role: "user" | "assistant"; content: string }>,
@@ -156,6 +196,7 @@ export class AiService {
           "\n\n**[Política de complejidad / entrevista Fase 0 — aplicar en esta conversación]**\n" +
           options.complexityInterviewContext.trim().slice(0, 8000);
       }
+      systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
       const ts = () => new Date().toISOString();
       console.log(`[AiService] ${ts()} → Enviando al LLM:`, {
         activeTab: options?.activeTab,
@@ -271,6 +312,7 @@ export class AiService {
         "\n\n**[Política de complejidad / entrevista Fase 0 — aplicar en esta conversación]**\n" +
         options.complexityInterviewContext.trim().slice(0, 8000);
     }
+    systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
     return this.provider.generateResponseStream(prompt, history, { ...options, systemPrompt });
   }
 

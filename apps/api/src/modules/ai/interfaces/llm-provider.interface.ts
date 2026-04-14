@@ -22,6 +22,19 @@ export interface GenerateResponseOptions {
   learningHistory?: string;
   /** Fase 0: propuesta de complejidad pendiente (HITL) + instrucciones de entrevista proactiva */
   complexityInterviewContext?: string;
+  /**
+   * Guía UX/UI: gobierna el bloque «Prompt para Google Stitch».
+   * - NEW: el documento debe incluir ese prompt para el **producto del MDD** (no The Forge).
+   * - LEGACY: prohibido incluir sección Stitch.
+   */
+  projectTypeForUxGuide?: "NEW" | "LEGACY";
+  /** Fragmentos SDD para alinear guía + Stitch (típico en proyectos NEW). */
+  uxGuideAdditionalDocs?: Partial<
+    Record<
+      "spec" | "useCases" | "userStories" | "logicFlows" | "architecture" | "apiContracts" | "dbga" | "phase0",
+      string
+    >
+  >;
 }
 
 export interface LLMProvider {

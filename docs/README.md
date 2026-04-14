@@ -31,6 +31,7 @@ Documentación de arquitectura y operación de TheForge. **Entrada recomendada:*
 | [PLAN-MDD-ARQUITECTO-NO-ACTUALIZA-MODELO.md](PLAN-MDD-ARQUITECTO-NO-ACTUALIZA-MODELO.md) | Post-mortem §3 / merge estructurado (estado: implementado P0–P4). |
 | [MDD-PATRONES-FLUJO.md](MDD-PATRONES-FLUJO.md) | Patrones Manager, delegación, §6/§7. |
 | [ui-spec.md](ui-spec.md) | Especificación UI Workshop (referencia). |
+| [stitch-master-prompt.md](stitch-master-prompt.md) | **Prompt maestro** para Google Stitch (todas las pantallas + variantes). |
 | [generator-workflow.md](generator-workflow.md) | Filosofía Constitution / loop interactivo (inglés). |
 | [ai-agents-dbga.md](ai-agents-dbga.md) | Agentes benchmark / DBGA. |
 | [DEPLOY-DOCKER-NETWORK-POOLS.md](DEPLOY-DOCKER-NETWORK-POOLS.md) | Redes Docker / Dokploy. |

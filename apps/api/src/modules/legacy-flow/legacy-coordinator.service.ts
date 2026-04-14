@@ -643,7 +643,11 @@ export class LegacyCoordinatorService {
               "\n---\n\n**Regla obligatoria (legacy):** No inventes nada. Apégate al MDD y únicamente al conocimiento del codebase (TheForge) proporcionado arriba.\n\n**Instrucción:** Usa TODO el conocimiento anterior para alinear la guía con lo que ya existe. A continuación, MDD y Blueprint.\n\n" +
               uxPrompt;
           }
-          const uxUiGuideContent = await this.ai.generateResponse(uxPrompt, [], { systemPrompt: UX_UI_GUIDE_PROMPT });
+          const uxUiGuideContent = await this.ai.generateResponse(uxPrompt, [], {
+            systemPrompt: UX_UI_GUIDE_PROMPT,
+            activeTab: "ux-ui-guide",
+            projectTypeForUxGuide: "LEGACY",
+          });
           const uxClean = (uxUiGuideContent ?? "").replace(/\n---FIN_UX_UI---.*/s, "").trim();
           await update({ uxUiGuideContent: cleanDocumentContent(uxClean) });
           p = await load();

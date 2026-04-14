@@ -10,7 +10,7 @@ description: Guides work on The Forge monorepo (NestJS API, React Vite web, Pris
 - **Architecture:** `docs/THEFORGE-INDEX.md` — flujo, IA agnóstica, Semáforo, estimación, Dokploy.
 - **Blueprint:** `blueprint.md` — estructura monorepo, Prisma, módulos AI/engine.
 - **MDD:** El MDD es la Constitución del proyecto (SDD); gobierna Blueprint, Contratos, Infra. Estructura canónica: 7 secciones (1. Contexto, 2. Arquitectura y Stack, 3. Modelo de Datos, 4. Contratos de API, 5. Lógica y Edge Cases, 6. Seguridad, 7. Infraestructura). Ver `docs/ENTREGABLES-SDD-VALIDACION.md` §0.
-- **UI:** `docs/ui-spec.md` — Workshop tres columnas, chat, MDD viewer, Semáforo.
+- **UI:** `docs/ui-spec.md` — Workshop tres columnas, chat, MDD viewer, Semáforo. Brief Google Stitch: `docs/stitch-master-prompt.md`.
 - **Rules:** `.cursor/rules/` — tech-stack, architect-behavior, the-forge-flow.
 
 ## Monorepo structure

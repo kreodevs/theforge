@@ -15,6 +15,7 @@ import type { SupervisorRouteResult } from "../agent-supervisor/agent-supervisor
 import { SddIngestorService } from "../ai-analysis/sdd-ingestor.service.js";
 import { AgentEvaluatorService } from "../agent-supervisor/agent-evaluator.service.js";
 import { EpisodicMemoryKind } from "@theforge/database";
+import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -187,6 +188,7 @@ export class AiOrchestratorService {
         systemPrompt,
         stageId: route.stageId,
         complexityInterviewContext,
+        ...uxGuideLlmOptions(project),
       });
       updatedSession = chatResult.session;
       mddFromResponse = chatResult.mddContent;
@@ -325,6 +327,7 @@ export class AiOrchestratorService {
       systemPrompt: systemPromptStream,
       stageId: routeStream.stageId,
       complexityInterviewContext,
+      ...uxGuideLlmOptions(project),
     });
 
     for await (const msg of stream) {

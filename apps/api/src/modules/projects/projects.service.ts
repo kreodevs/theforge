@@ -28,6 +28,7 @@ import {
   type UpdateProjectDto,
 } from "@theforge/shared-types";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
+import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 
 type StageWithEst = Stage & { estimation: Estimation | null };
@@ -655,12 +656,14 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const mdd = this.constitutionMarkdown(project);
     const bp = (project.blueprintContent ?? "").trim();
     const uxPrompt =
-      "Genera la Guía UX/UI en markdown según el system prompt.\n\nMDD / constitución:\n---\n" +
-      mdd.slice(0, 8000) +
-      "\n---\n\nBlueprint:\n---\n" +
-      bp.slice(0, 4000) +
-      "\n---";
-    const raw = await this.ai.generateResponse(uxPrompt, [], { systemPrompt: UX_UI_GUIDE_PROMPT });
+      "Genera la Guía UX/UI completa en markdown según tu rol. El contexto (MDD, Blueprint y documentos SDD) está en el system prompt. Termina el documento con la línea exacta ---FIN_UX_UI--- y deja un mensaje breve para el usuario después.";
+    const raw = await this.ai.generateResponse(uxPrompt, [], {
+      systemPrompt: UX_UI_GUIDE_PROMPT,
+      activeTab: "ux-ui-guide",
+      currentMddContent: mdd,
+      currentBlueprintContent: bp || undefined,
+      ...uxGuideLlmOptions(project),
+    });
     const clean = (raw ?? "").replace(/\n---FIN_UX_UI---.*/s, "").trim();
     return this.update(projectId, { uxUiGuideContent: cleanDocumentContent(clean) });
   }
