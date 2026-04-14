@@ -10,9 +10,9 @@ Documentación de arquitectura y operación de TheForge. **Entrada recomendada:*
 | [STAGE-SDD.md](STAGE-SDD.md) | **Stage** vs **Project**: MDD/semáforo/estimación por etapa, API aplanada, enlace a Falkor SDD (diagrama ER). |
 | [WORKSHOP-STAGES-IMPLEMENTATION-PLAN.md](WORKSHOP-STAGES-IMPLEMENTATION-PLAN.md) | Plan **front + API**: selector de etapa, nueva etapa, clonado MDD; brechas (estimación, orquestador, chat). |
 | [THEFORGE-QUE-HACE-EL-PROYECTO.md](THEFORGE-QUE-HACE-EL-PROYECTO.md) | Detalle técnico: módulos API, flujos nuevo vs legacy, Relic, entregables. |
-| [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md) | Relic MCP (HTTP) vs Falkor SDD local (topología Stage / DB_Entity / API_Endpoint) vs MCP propio hipotético. |
+| [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md) | MCP **AriadneSpecs** (HTTP, código indexado) vs Falkor SDD local vs MCP propio hipotético. Especificación servidor: monorepo Ariadne (`MCP_HTTPS.md`, `mcp_server_specs.md`). |
 | [ENTREGABLES-SDD-VALIDACION.md](ENTREGABLES-SDD-VALIDACION.md) | SDD, conformance, orden de generación en UI. |
-| [THEFORGE-MCP.md](THEFORGE-MCP.md) | Uso de Relic desde **Cursor** (MCP AriadneSpecs) para doc de cambios. |
+| [THEFORGE-MCP.md](THEFORGE-MCP.md) | Uso del MCP AriadneSpecs desde **Cursor** para doc de cambios en repos indexados. |
 | [APRENDIZAJES.md](APRENDIZAJES.md) | Errores, pivotes, referencias para el equipo. |
 | [THEFORGE-DOCUMENTACION-ESTRATEGICA.md](THEFORGE-DOCUMENTACION-ESTRATEGICA.md) | Tesis de valor / negocio (no técnico). |
 
@@ -20,7 +20,7 @@ Documentación de arquitectura y operación de TheForge. **Entrada recomendada:*
 
 | Carpeta | Uso |
 |---------|-----|
-| [integración relic/](integración%20relic/README.md) | Contrato HTTP con Relic, herramientas MCP, planes de integración web. |
+| [integración theforge/](integración%20theforge/README.md) | Cliente HTTP The Forge ↔ MCP AriadneSpecs (alineado a `MCP_HTTPS.md` / SPEC-MCP-001 en repo Ariadne). |
 | [archive/](archive/README.md) | Roadmaps y análisis históricos (no sustituyen al código). |
 
 ## Planes y especificaciones sueltas

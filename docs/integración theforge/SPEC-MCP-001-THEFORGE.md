@@ -1,6 +1,6 @@
-# SPEC-MCP-001 — Uso desde TheForge
+# SPEC-MCP-001 — Uso desde The Forge
 
-Resumen del contrato entre **TheForge** (flujo legacy) y el **MCP AriadneSpecs** (SPEC-MCP-001) según multi-repo, herramientas de refactor seguro.
+Resumen del contrato entre la **API The Forge** (flujo legacy) y el **MCP AriadneSpecs**. La definición normativa del servidor está en el monorepo **Ariadne**: **`docs/mcp_server_specs.md`** (SPEC-MCP-001), **`docs/MCP_HTTPS.md`**, **`docs/MCP_AYUDA.md`**. Este archivo describe solo el **uso cliente** The Forge.
 
 ## Proyecto vs repo
 
@@ -32,7 +32,7 @@ Para `POST /projects/:projectId/legacy/start` con `{ description }`:
 ## Protocolo recomendado (MCP)
 
 1. `list_known_projects` al inicio.
-2. Fijar `projectId`: en TheForge se guarda como `theforgeProjectId` en el proyecto; en Cursor puede usarse `.theforge-project` en la raíz del repo indexado.
+2. Fijar `projectId`: en The Forge se guarda como `theforgeProjectId` en el proyecto; en Cursor, especificación Ariadne: **`.ariadne-project`** en la raíz del repo indexado (`MCP_AYUDA.md` §4). Documentación antigua: `.theforge-project` con el mismo JSON.
 3. **Antes de editar:** `validate_before_edit` con el nombre del nodo (TheForge lo aplica al generar el MDD).
 4. Usar props/contratos del grafo; no inventar.
 

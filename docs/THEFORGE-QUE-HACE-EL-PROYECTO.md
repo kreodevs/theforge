@@ -6,7 +6,7 @@
 
 ## 1. Resumen en una frase
 
-TheForge es un monorepo (API NestJS + Web React) que orquesta una **entrevista proactiva con IA** hasta producir un **MDD (Master Design Document)** como Constitución del proyecto; valida completitud con un **semáforo** (ROJO/AMARILLO/VERDE), calcula **estimación en MXN** y genera entregables (Blueprint, API, Flujos, Infra). Soporta **proyectos nuevos** (desde cero) y **proyectos legacy** (cambios en código existente) integrando el grafo de código vía MCP Relic (AriadneSpecs).
+TheForge es un monorepo (API NestJS + Web React) que orquesta una **entrevista proactiva con IA** hasta producir un **MDD (Master Design Document)** como Constitución del proyecto; valida completitud con un **semáforo** (ROJO/AMARILLO/VERDE), calcula **estimación en MXN** y genera entregables (Blueprint, API, Flujos, Infra). Soporta **proyectos nuevos** (desde cero) y **proyectos legacy** (cambios en código existente) integrando el grafo de código vía **MCP AriadneSpecs** (HTTP JSON-RPC; ver monorepo Ariadne `MCP_HTTPS.md` / `mcp_server_specs.md`).
 
 ---
 
@@ -15,7 +15,7 @@ TheForge es un monorepo (API NestJS + Web React) que orquesta una **entrevista p
 | Flujo | Entrada | Salida principal | Dónde vive |
 |-------|---------|-------------------|------------|
 | **Proyecto nuevo (SADD)** | Nombre del proyecto, chat con IA (entrevista) | MDD en sesión → Semáforo → Estimación → Entregables (Blueprint, SPEC, Casos de Uso, Historias, API, Flujos, Infra, Tasks) | Workshop: pestañas Entrevista, MDD, Semáforo, Entregables. Backend: `modules/ai`, `modules/engine`, `modules/projects`. |
-| **Proyecto legacy** | Descripción del cambio + proyecto/repo indexado en Relic | Plan de modificación (archivos a modificar + preguntas de negocio) → Respuestas del usuario → MDD de cambio → misma cascada de entregables | Workshop: tab «Modificación» en proyectos LEGACY. Backend: `modules/legacy-flow` (Coordinador, Revisor), `modules/relic`. |
+| **Proyecto legacy** | Descripción del cambio + proyecto/repo indexado en Ariadne | Plan de modificación (archivos a modificar + preguntas de negocio) → Respuestas del usuario → MDD de cambio → misma cascada de entregables | Workshop: tab «Modificación» en proyectos LEGACY. Backend: `modules/legacy-flow` (Coordinador, Revisor), `modules/theforge` (cliente MCP). |
 
 En ambos casos el **MDD es la Constitución**: todo se valida contra él (SDD). El semáforo y el estimador leen el contenido del MDD (y del proyecto) para calcular estado y coste.
 
@@ -26,13 +26,13 @@ En ambos casos el **MDD es la Constitución**: todo se valida contra él (SDD). 
 ```
 /
 ├── apps/
-│   ├── api/          # NestJS: proyectos, sesiones, IA, engine, legacy-flow, Relic
+│   ├── api/          # NestJS: proyectos, sesiones, IA, engine, legacy-flow, theforge (MCP)
 │   └── web/          # React (Vite) + Tailwind: landing, Workshop (vista por proyecto)
 ├── packages/
 │   ├── database/     # Prisma schema (Project, Stage, Session, Estimation→Stage, etc.) y client
 │   ├── shared-types/ # DTOs e interfaces compartidas (Zod)
 │   └── config/       # TypeScript, ESLint, Tailwind base
-├── docs/             # Documentación (índice, planes, integración Relic)
+├── docs/             # Documentación (índice, planes, integración AriadneSpecs)
 ├── blueprint.md      # Guía de implementación técnica (Constitución → plan)
 ├── mdd.md            # MDD del producto TheForge (7 secciones)
 ├── docker-compose.yml
@@ -45,12 +45,12 @@ En ambos casos el **MDD es la Constitución**: todo se valida contra él (SDD). 
 
 | Módulo | Responsabilidad |
 |--------|-----------------|
-| **projects** | CRUD de proyectos; MDD + semáforo + estimación por **Stage** (etapa activa); entregables (Blueprint, SPEC, …) en `Project`; tipo NEW/LEGACY, `relicProjectId` para legacy. |
+| **projects** | CRUD de proyectos; MDD + semáforo + estimación por **Stage** (etapa activa); entregables (Blueprint, SPEC, …) en `Project`; tipo NEW/LEGACY, `theforgeProjectId` para legacy (ID proyecto o repo en Ariadne). |
 | **sessions** | Sesiones por proyecto; `chatLog` (historial de chat), `contextStep` (CONTEXT, DATA, LOGIC, SECURITY); persistencia de la entrevista. |
 | **ai** | Orquestación de IA: adapters (OpenAI, Gemini) según `AI_PROVIDER`; generación de respuesta, checklist, Spec, MDD (multiagente: Clarifier, Architect, Security, Integration, Auditor), Blueprint, Casos de Uso, Historias, etc. Prompts en `modules/ai/prompts/`. |
 | **engine** | Semáforo (validación del JSON/estructura del proyecto: entidades, business_core, edge_cases, field_types) y motor de estimación (cost-calculator: horas × tarifas MXN por rol). Lógica pura, sin IA. |
 | **legacy-flow** | Coordinador (start → archivos + preguntas; answer; generate-mdd; generate-deliverables) y Revisor (revisa listas y documentos antes de persistir). Knowledge pack (NotebookLM/SDD/Agentic) en `knowledge/`. |
-| **relic** | Cliente HTTP al MCP Relic (AriadneSpecs): `list_known_projects`, `get_modification_plan`, `ask_codebase`, `validate_before_edit`, `get_file_content`, `get_legacy_impact`, etc. Usado por legacy-flow para plan de modificación y contexto al generar MDD. |
+| **theforge** | Cliente HTTP al MCP AriadneSpecs (`THEFORGE_MCP_URL`): `list_known_projects`, `get_modification_plan`, `ask_codebase`, `validate_before_edit`, `get_file_content`, `get_legacy_impact`, `semantic_search`, etc. Usado por legacy-flow y orquestador para plan de modificación y contexto al generar MDD. |
 
 ---
 
@@ -61,11 +61,11 @@ En ambos casos el **MDD es la Constitución**: todo se valida contra él (SDD). 
 
 ---
 
-## 6. Integración Relic (proyectos legacy)
+## 6. Integración AriadneSpecs (proyectos legacy)
 
-- **Relic** indexa repos/proyectos en un grafo (FalkorDB) y expone un MCP (AriadneSpecs). TheForge llama al MCP por **HTTP** (JSON-RPC, Bearer token) desde el backend.
-- **Flujo:** Usuario crea proyecto legacy eligiendo un **proyecto** o **repositorio** indexado en Relic → se guarda `relicProjectId`. En «Modificación» describe el cambio → `get_modification_plan` devuelve `filesToModify` (path + repoId) y `questionsToRefine` → el usuario responde (con sugerencias desde `ask_codebase`) → al generar MDD se usa `validate_before_edit` (o `get_legacy_impact`), `get_file_content` y varias `ask_codebase` para contexto. Luego misma cascada de entregables que en proyecto nuevo.
-- **Herramientas MCP usadas:** list_known_projects, get_modification_plan, ask_codebase, validate_before_edit, get_file_content, get_legacy_impact; disponibles get_contract_specs, get_component_graph. Ver `docs/integración relic/HERRAMIENTAS-MCP-RELIC.md`.
+- **AriadneSpecs** indexa repos/proyectos en un grafo (FalkorDB) y expone un MCP Streamable HTTP. The Forge llama al MCP por **HTTP** (JSON-RPC `tools/call`, headers `MCP-Protocol-Version`, Bearer o `X-M2M-Token`) desde `TheForgeService`. Contrato: monorepo Ariadne (`MCP_HTTPS.md`, `mcp_server_specs.md`); resumen cliente: `docs/integración theforge/THEFORGE-COMO-INVOCA-THEFORGE-MCP.md`.
+- **Flujo:** Usuario crea proyecto legacy eligiendo un **proyecto** o **repositorio** indexado → se guarda **`theforgeProjectId`**. En «Modificación» describe el cambio → `get_modification_plan` devuelve `filesToModify` (path + repoId) y `questionsToRefine` → el usuario responde (con sugerencias desde `ask_codebase`) → al generar MDD se usa `validate_before_edit` (o `get_legacy_impact`), `get_file_content` y varias `ask_codebase` para contexto. Luego misma cascada de entregables que en proyecto nuevo.
+- **Herramientas MCP usadas:** list_known_projects, get_modification_plan, ask_codebase, validate_before_edit, get_file_content, get_legacy_impact; disponibles get_contract_specs, get_component_graph. Ver `docs/integración theforge/HERRAMIENTAS-MCP-THEFORGE.md`.
 
 ---
 
@@ -102,7 +102,7 @@ Cada entregable se valida (Revisor) y se persiste en el proyecto. La estructura 
 | **mdd.md** | MDD del producto TheForge (7 secciones). |
 | **docs/THEFORGE-DOCUMENTACION-ESTRATEGICA.md** | Valor ejecutivo (tesis, negocio, ROI). |
 | **docs/ENTREGABLES-SDD-VALIDACION.md** | Estructura canónica del MDD, mapeo SDD, validación frente a Architecting Agentic Systems. |
-| **docs/integración relic/** | Contrato con MCP Relic, herramientas, flujo legacy. |
+| **docs/integración theforge/** | Cliente The Forge ↔ MCP AriadneSpecs, herramientas, flujo legacy. |
 
 ---
 

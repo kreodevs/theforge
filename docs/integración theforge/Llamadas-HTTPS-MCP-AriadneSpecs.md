@@ -2,7 +2,13 @@
 
 Guía para **implementar llamadas HTTP/HTTPS** desde una aplicación al servidor MCP AriadneSpecs. El MCP usa el protocolo **Streamable HTTP** (JSON-RPC 2.0 sobre POST). Esta documentación describe el contrato que debe implementar el cliente.
 
-**Fuente canónica (repo Ariadne):** `docs/MCP_HTTPS.md` y `docs/mcp_server_specs.md` (SPEC-MCP-001). Mantener esta copia sincronizada con esos archivos al cambiar el servidor MCP.
+**Fuente canónica (repo Ariadne):**
+
+- `docs/MCP_HTTPS.md` — contrato Streamable HTTP (headers, `tools/list`, `tools/call`, SSE, sharding, §11 datos fuera del grafo).
+- `docs/mcp_server_specs.md` — SPEC-MCP-001 (herramientas, proyecto vs repo, ingest).
+- `docs/MCP_AYUDA.md` — uso en Cursor, troubleshooting (HTML en lugar de JSON, rutas Dokploy `/mcp` y `/.well-known`), `.ariadne-project`.
+
+Mantener esta copia sincronizada con esos archivos al cambiar el servidor MCP.
 
 ---
 
@@ -153,7 +159,7 @@ Si hay error en la ejecución de la herramienta:
 
 ## 7. Herramientas principales y argumentos
 
-(Copia alineada con `MCP_HTTPS.md` §7; ver allí **FALKOR_SHARD_BY_PROJECT** y matices de `semantic_search`.)
+(Espejo de `MCP_HTTPS.md` §7 / `mcp_server_specs.md` §2; ver allí **FALKOR_SHARD_BY_PROJECT**, `semantic_search` vs `ask_codebase` + `scope`, y **`responseMode`** en `ask_codebase`.)
 
 | Herramienta                     | Argumentos requeridos   | Argumentos opcionales                                                                 |
 | ------------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
@@ -162,10 +168,10 @@ Si hay error en la ejecución de la herramienta:
 | `get_contract_specs`            | `componentName`         | `projectId`, `currentFilePath`                                                       |
 | `get_component_graph`           | `componentName`         | `depth`, `projectId`, `currentFilePath`                                                |
 | `get_file_content`              | `path` + (`projectId` **o** `currentFilePath`) | `ref`                                                                              |
-| `semantic_search`               | `query`; con sharding también **`projectId`** | `limit`; **`projectId`** opcional sin sharding. **No** `scope` ni `currentFilePath`. |
+| `semantic_search`               | `query`; con sharding **`projectId` obligatorio** | `limit`. **No** admite `scope` ni `currentFilePath` (SPEC). |
 | `validate_before_edit`        | `nodeName`              | `projectId`, `currentFilePath`                                                       |
-| `get_project_analysis`          | `projectId`             | `mode` (diagnostico, duplicados, reingenieria, codigo_muerto, seguridad)              |
-| `ask_codebase`                  | `question`              | `projectId`, `currentFilePath`, `scope`, `twoPhase`                                   |
+| `get_project_analysis`          | —                       | `projectId`, `currentFilePath`, `mode` ∈ `diagnostico` \| `duplicados` \| `reingenieria` \| `codigo_muerto` \| `seguridad` |
+| `ask_codebase`                  | `question`              | `projectId`, `currentFilePath`, `scope`, `twoPhase`, **`responseMode`** (`default` \| `evidence_first`) |
 | `get_modification_plan`         | `userDescription`       | `projectId`, `currentFilePath`, `scope`                                               |
 | `get_definitions`               | `symbolName`            | `projectId`, `currentFilePath`                                                       |
 | `get_references`                | `symbolName`            | `projectId`, `currentFilePath`                                                       |
@@ -196,7 +202,13 @@ El servicio `TheForgeService` (`apps/api/src/modules/theforge/theforge.service.t
 
 ---
 
-## 9. Códigos HTTP
+## 9. Nota: `execute_cypher` y esquema BD
+
+No existe herramienta pública `execute_cypher` en `tools/list` del MCP HTTP: es retriever **interno** del chat del ingest (`MCP_HTTPS.md` §11). Para esquema BD / rutas / `.env.example` desde cliente HTTP: `get_file_content`, `semantic_search` / grafo, o API REST del despliegue.
+
+---
+
+## 10. Códigos HTTP
 
 | Código | Significado                                                               |
 | ------ | ------------------------------------------------------------------------- |
@@ -206,3 +218,9 @@ El servicio `TheForgeService` (`apps/api/src/modules/theforge/theforge.service.t
 | 401    | Unauthorized — Falta o token incorrecto (si MCP_AUTH_TOKEN está definido) |
 | 404    | Not Found — Ruta incorrecta (verificar que sea `/mcp`)                   |
 | 500    | Internal Server Error — Error del servidor                                |
+
+---
+
+## 11. Troubleshooting (resumen)
+
+Ver **`MCP_AYUDA.md` §7** en el repo Ariadne: respuesta HTML (`<!doctype`) suele indicar que `/mcp` o `/.well-known` no enrutan al servicio MCP; **401** si falta token cuando el servidor exige autenticación.

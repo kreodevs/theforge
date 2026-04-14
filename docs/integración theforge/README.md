@@ -1,10 +1,12 @@
-# Integración TheForge (AriadneSpecs) en TheForge
+# Integración AriadneSpecs (MCP) en The Forge
 
-Documentación para usar el conocimiento indexado por **TheForge** (grafo de código vía MCP) en TheForge, desde Cursor y desde la **API** (HTTP JSON-RPC, no stdio en el contenedor de la API).
+Documentación para usar el conocimiento indexado por **AriadneSpecs** (grafo de código vía MCP) en la aplicación The Forge: desde **Cursor** y desde la **API Nest** (HTTP JSON-RPC `tools/call`, no stdio en el contenedor de la API).
+
+**Especificación canónica del servidor MCP** (monorepo **Ariadne**): `docs/MCP_AYUDA.md`, `docs/MCP_HTTPS.md`, `docs/mcp_server_specs.md` (SPEC-MCP-001). La tabla siguiente es documentación **cliente** The Forge alineada a esos archivos.
 
 | Documento | Descripción |
 |-----------|-------------|
-| **Llamadas-HTTPS-MCP-AriadneSpecs.md** | Contrato MCP AriadneSpecs: endpoint, JSON-RPC 2.0, headers, herramientas y argumentos. |
+| **Llamadas-HTTPS-MCP-AriadneSpecs.md** | Espejo del contrato HTTP (`MCP_HTTPS.md` + SPEC-MCP-001): endpoint, JSON-RPC 2.0, headers, herramientas, sharding, troubleshooting. |
 | **theforge.md** | Qué es TheForge, MCP en Cursor, herramientas (`list_known_projects`, `validate_before_edit`, etc.). |
 | **THEFORGE-COMO-INVOCA-THEFORGE-MCP.md** | Cómo la API invoca el MCP (HTTP, JSON-RPC, Bearer/X-M2M-Token, timeout). Para compartir con el equipo TheForge. |
 | **HERRAMIENTAS-MCP-THEFORGE.md** | Catálogo de herramientas AriadneSpecs usadas o disponibles. |

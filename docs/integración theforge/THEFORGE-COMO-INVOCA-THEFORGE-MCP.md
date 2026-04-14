@@ -1,6 +1,24 @@
-# Cómo TheForge invoca el MCP de TheForge
+# Cómo The Forge invoca el MCP AriadneSpecs
 
-Documento para explicar al equipo/proyecto TheForge cómo TheForge usa su MCP: transporte, autenticación, herramientas llamadas y formato de las peticiones.
+Documento para explicar cómo la **API Nest** de The Forge consume el servidor MCP **AriadneSpecs** (grafo de código indexado): transporte, autenticación, herramientas y JSON-RPC.
+
+---
+
+## 0. Especificación canónica (monorepo Ariadne)
+
+El comportamiento del **servidor** MCP está definido en el monorepo **Ariadne** (no en The Forge). Mantén esta carpeta alineada con:
+
+| Documento Ariadne | Contenido |
+|---------------------|-----------|
+| **`docs/MCP_AYUDA.md`** | Configuración Cursor (`mcp.json`), lista de herramientas, protocolo operativo (`list_known_projects` primero, `validate_before_edit` antes de editar), `.ariadne-project`, troubleshooting (rutas `/mcp`, `/.well-known`, HTML vs JSON). |
+| **`docs/MCP_HTTPS.md`** | Contrato **Streamable HTTP**: `POST` JSON-RPC 2.0, headers obligatorios (`MCP-Protocol-Version: 2025-03-26`, `Accept`, auth Bearer / `X-M2M-Token`), `tools/list` / `tools/call`, respuestas JSON y SSE, códigos HTTP, matriz de argumentos por herramienta, sharding `FALKOR_SHARD_BY_PROJECT`, matices de `semantic_search` vs `ask_codebase` + `scope`. |
+| **`docs/mcp_server_specs.md`** | **SPEC-MCP-001**: arquitectura del MCP, **proyecto vs repo** (`list_known_projects.id` vs `roots[].id` como `projectId` intercambiable en herramientas con fallback ingest), `ask_codebase` (`scope`, `twoPhase`, `responseMode`), `get_modification_plan`, `get_project_analysis` (modos incl. `seguridad`), ingest (`/projects/...` vs `/repositories/...`). |
+
+**En este repo**, la copia operativa del contrato HTTP está en [Llamadas-HTTPS-MCP-AriadneSpecs.md](Llamadas-HTTPS-MCP-AriadneSpecs.md). La implementación del cliente es `apps/api/src/modules/theforge/theforge.service.ts` (`postTheForgeMcp`).
+
+**Servidor stateless:** no es obligatorio enviar `initialize` ni `Mcp-Session-Id`; cada `tools/call` es independiente (véase `MCP_HTTPS.md` §4).
+
+**Nombre del archivo en el repo indexado (Cursor):** la especificación Ariadne usa **`.ariadne-project`** (`MCP_AYUDA.md` §4). En documentación antigua de The Forge a veces se citaba `.theforge-project` con el mismo JSON `{ "projectId": "uuid" }`; el propósito es idéntico. En la **app** The Forge el vínculo se guarda en BD como **`theforgeProjectId`** (proyecto o `roots[].id`).
 
 ---
 
@@ -13,7 +31,7 @@ Documento para explicar al equipo/proyecto TheForge cómo TheForge usa su MCP: t
 - **Accept:** `application/json, text/event-stream` (por si el MCP devuelve SSE).
 - **MCP-Protocol-Version:** `2025-03-26` (obligatorio según spec Streamable HTTP).
 
-Contrato completo: [Llamadas-HTTPS-MCP-AriadneSpecs.md](Llamadas-HTTPS-MCP-AriadneSpecs.md).
+Contrato HTTP detallado (espejo alineado con `MCP_HTTPS.md`): [Llamadas-HTTPS-MCP-AriadneSpecs.md](Llamadas-HTTPS-MCP-AriadneSpecs.md).
 
 Cada petición es un **JSON-RPC 2.0** con `method: "tools/call"` y `params: { name: "<tool_name>", arguments: { ... } }`.
 
@@ -117,8 +135,8 @@ Si esta herramienta no existe o falla, TheForge hace **fallback** con `ask_codeb
 
 - **Argumentos:**
   - `question` (string): pregunta en lenguaje natural sobre el codebase.
-  - `projectId` (string): `theforgeProjectId`.
-  - `scope?`, `twoPhase?`, `currentFilePath?` (SPEC-MCP-001): opcionales.
+  - `projectId` (string): `theforgeProjectId` (ID de proyecto Ariadne o `roots[].id`; el MCP resuelve ingest según `mcp_server_specs.md` §2).
+  - `scope?`, `twoPhase?`, `currentFilePath?`, **`responseMode?`** (`default` \| `evidence_first`): opcionales (`mcp_server_specs.md` **Tool: `ask_codebase`**). The Forge usa `responseMode: "evidence_first"` en el pipeline de evidencia legacy cuando aplica (`theforge-evidence-context.util.ts`).
 
 **Petición de ejemplo:**
 
@@ -172,8 +190,8 @@ Todas usan el mismo transporte JSON-RPC y el mismo parseo de `result.content[].t
 
 | Qué necesita TheForge | Detalle |
 |-------------------|--------|
-| **Endpoint** | Un único URL (ej. `https://theforge.obp.mx/mcp`) que acepte POST con JSON-RPC 2.0, `method: "tools/call"`. |
-| **Auth** | Bearer token en header; TheForge lo envía desde `MCP_AUTH_TOKEN`. |
+| **Endpoint** | Un único URL (`THEFORGE_MCP_URL`, ej. `https://ariadne.kreoint.mx/mcp`) que acepte POST con JSON-RPC 2.0, `method: "tools/call"`. |
+| **Auth** | `Authorization: Bearer` desde `MCP_AUTH_TOKEN`, o `X-M2M-Token` desde `MCP_X_M2M_TOKEN` (alternativa Ariadne; ver `MCP_HTTPS.md` §3). |
 | **Herramientas usadas** | `list_known_projects`, `get_modification_plan`, `ask_codebase`, **`validate_before_edit`** (antes de editar), `get_file_content`, `get_legacy_impact` (fallback); opcionales `get_contract_specs`, `get_component_graph`. Ver catálogo en HERRAMIENTAS-MCP-THEFORGE.md. |
 | **Contrato de `get_modification_plan`** | SPEC-MCP-001: `filesToModify`: array de `{ path, repoId }`; `questionsToRefine`: solo preguntas de negocio. Aceptamos también `filesToModify: string[]` legacy. |
 | **Idempotencia / estado** | TheForge no asume estado en el MCP; cada petición es independiente. |
