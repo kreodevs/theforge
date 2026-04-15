@@ -1,6 +1,37 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { sanitizeSeguridadIntegracionRawJson } from "./mdd-sanitize.js";
+import { normalizeMddEnglishSubheadings, sanitizeSeguridadIntegracionRawJson } from "./mdd-sanitize.js";
+
+describe("normalizeMddEnglishSubheadings", () => {
+  it("traduce subtítulos típicos del brief en inglés (§1–§2, §6)", () => {
+    const raw = `
+## 1. Contexto
+
+**1.1. Project Vision & Objectives:**
+
+Foo.
+
+**1.2. Functional Requirements (EARS Format):**
+
+Bar.
+
+**2.1. Technical Architecture:**
+
+Baz.
+
+## 6. Seguridad**6.2. Identity:**
+
+Qux.
+`;
+    const out = normalizeMddEnglishSubheadings(raw);
+    assert.ok(out.includes("**1.1. Visión y objetivos del producto:**"));
+    assert.ok(out.includes("**1.2. Requisitos funcionales (formato EARS):**"));
+    assert.ok(out.includes("**2.1. Arquitectura técnica:**"));
+    assert.ok(out.includes("**6.2. Identidad:**"));
+    assert.ok(!out.includes("**6.2. Identity:**"));
+    assert.match(out, /##\s*6\.\s*Seguridad\s*\n+\s*\*\*6\.2\./);
+  });
+});
 
 describe("sanitizeSeguridadIntegracionRawJson", () => {
   it("descontamina sección Seguridad cuando viene como bullet list con líneas de JSON", () => {

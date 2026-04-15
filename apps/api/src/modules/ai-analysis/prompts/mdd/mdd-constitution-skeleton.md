@@ -84,6 +84,10 @@ Subsecciones 7.1–7.4 + variables + CI/CD según prompt del Ingeniero de Integr
 
 ---
 
+## Idioma de encabezados
+
+- Los **títulos y subtítulos** del MDD (incl. `**1.1. …**`, `###`) van en **español**. Si el usuario o el Benchmark aportan secciones en inglés, **traduce el encabezado** al español de producto/ingeniería; no copies literalmente títulos en inglés del brief.
+
 ## Prohibiciones (calidad del artefacto)
 
 - No pegar instrucciones internas, herramientas ni JSON de ejemplo del prompt en el cuerpo del MDD.

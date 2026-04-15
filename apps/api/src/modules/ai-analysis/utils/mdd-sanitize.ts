@@ -1435,6 +1435,63 @@ export function ensureContratosSection(draft: string): string {
   return trimmed + CONTRATOS_PLACEHOLDER.trim();
 }
 
+/**
+ * Subtítulos en inglés que el LLM suele copiar del brief del usuario; se reemplazan por español canónico.
+ * Orden: frases más largas / específicas primero.
+ */
+const ENGLISH_SUBHEADING_TO_ES: Array<{ pattern: RegExp; replacement: string }> = [
+  // §1
+  {
+    pattern:
+      /\*\*1\.1\.\s*Project\s+Vision\s*(?:&|and)\s*Objectives(?:\s*\([^)]*\))?\s*:\s*\*\*/gi,
+    replacement: "**1.1. Visión y objetivos del producto:**",
+  },
+  {
+    pattern: /###\s*1\.1\.\s*Project\s+Vision\s*(?:&|and)\s*Objectives(?:\s*\([^)]*\))?\s*:?/gi,
+    replacement: "### 1.1. Visión y objetivos del producto",
+  },
+  {
+    pattern: /\*\*1\.2\.\s*Functional\s+Requirements(?:\s*\([^)]*\))?\s*:\s*\*\*/gi,
+    replacement: "**1.2. Requisitos funcionales (formato EARS):**",
+  },
+  { pattern: /###\s*1\.2\.\s*Functional\s+Requirements(?:\s*\([^)]*\))?\s*:?/gi, replacement: "### 1.2. Requisitos funcionales (formato EARS)" },
+  {
+    pattern: /\*\*1\.3\.\s*Monetization\s*(?:&|and)\s*Pricing\s+Architecture\s*:\s*\*\*/gi,
+    replacement: "**1.3. Monetización y arquitectura de precios:**",
+  },
+  {
+    pattern: /###\s*1\.3\.\s*Monetization\s*(?:&|and)\s*Pricing\s+Architecture\s*:?/gi,
+    replacement: "### 1.3. Monetización y arquitectura de precios",
+  },
+  // §2
+  { pattern: /\*\*2\.1\.\s*Technical\s+Architecture\s*:\s*\*\*/gi, replacement: "**2.1. Arquitectura técnica:**" },
+  { pattern: /###\s*2\.1\.\s*Technical\s+Architecture\s*:?/gi, replacement: "### 2.1. Arquitectura técnica" },
+  { pattern: /\*\*2\.2\.\s*Technical\s+Architecture\s*:\s*\*\*/gi, replacement: "**2.2. Arquitectura técnica (detalle):**" },
+  // §6 (seguridad)
+  { pattern: /\*\*6\.2\.\s*Identity\s*:\s*\*\*/gi, replacement: "**6.2. Identidad:**" },
+  { pattern: /###\s*6\.2\.\s*Identity\s*:?/gi, replacement: "### 6.2. Identidad" },
+  { pattern: /\*\*6\.3\.\s*Data\s+Sovereignty\s*:\s*\*\*/gi, replacement: "**6.3. Soberanía de datos:**" },
+  { pattern: /###\s*6\.3\.\s*Data\s+Sovereignty\s*:?/gi, replacement: "### 6.3. Soberanía de datos" },
+  { pattern: /\*\*6\.4\.\s*Vulnerability\s+Management\s*:\s*\*\*/gi, replacement: "**6.4. Gestión de vulnerabilidades:**" },
+  { pattern: /###\s*6\.4\.\s*Vulnerability\s+Management\s*:?/gi, replacement: "### 6.4. Gestión de vulnerabilidades" },
+  { pattern: /\*\*6\.5\.\s*Incident\s+Response\s*:\s*\*\*/gi, replacement: "**6.5. Respuesta a incidentes:**" },
+  { pattern: /###\s*6\.5\.\s*Incident\s+Response\s*:?/gi, replacement: "### 6.5. Respuesta a incidentes" },
+];
+
+/**
+ * Normaliza subtítulos frecuentes en inglés (procedentes del brief) a español, sin tocar el cuerpo del texto.
+ */
+export function normalizeMddEnglishSubheadings(draft: string): string {
+  if (!draft || typeof draft !== "string") return draft;
+  let out = draft;
+  for (const { pattern, replacement } of ENGLISH_SUBHEADING_TO_ES) {
+    out = out.replace(pattern, replacement);
+  }
+  // `## 6. Seguridad**6.1. Privacidad:**` (H2 pegado a subencabezado en negrita)
+  out = out.replace(/(##\s*6\.\s*Seguridad)\*\*(\d+\.\d+)/gi, "$1\n\n**$2");
+  return out;
+}
+
 /** Títulos canónicos del MDD (7 secciones). */
 const CANONICAL_HEADINGS: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: /^#+\s*Contexto\s*y\s*alcance\s*$/im, replacement: "## 1. Contexto" },
@@ -1824,6 +1881,7 @@ export function normalizeMddFormat(draft: string): string {
   for (const { pattern, replacement } of CANONICAL_HEADINGS) {
     out = out.replace(pattern, replacement);
   }
+  out = normalizeMddEnglishSubheadings(out);
   // Dentro de ## 2. Arquitectura y Stack, normalizar 4.x → 2.x (subsecciones mal numeradas por el LLM)
   const archStackHeading = "## 2. Arquitectura y Stack";
   const archStackIdx = out.indexOf(archStackHeading);
