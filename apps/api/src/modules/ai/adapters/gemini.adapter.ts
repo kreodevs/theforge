@@ -51,10 +51,11 @@ export class GeminiAdapter implements LLMProvider {
       );
     }
     this.apiKey = key;
+    // Usar || (no ??): si GOOGLE_CHAT_MODEL está definida pero vacía en Docker, "" debe caer al default.
     const resolvedModel =
-      modelId ??
-      process.env.GOOGLE_CHAT_MODEL?.trim() ??
-      process.env.GEMINI_CHAT_MODEL?.trim() ??
+      modelId?.trim() ||
+      process.env.GOOGLE_CHAT_MODEL?.trim() ||
+      process.env.GEMINI_CHAT_MODEL?.trim() ||
       "gemini-2.0-flash";
     this.genAI = new GoogleGenerativeAI(key);
     this.model = this.genAI.getGenerativeModel({ model: resolvedModel });
