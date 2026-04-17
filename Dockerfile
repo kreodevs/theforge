@@ -57,8 +57,8 @@ WORKDIR /app
 COPY --from=api-builder /app /app
 COPY --from=web-builder /app/apps/web/dist /usr/share/nginx/html
 
-# Nginx: SPA + proxy /api -> localhost:3000
-RUN echo 'server{listen 80;root /usr/share/nginx/html;index index.html;location /{try_files $uri $uri/ /index.html;}location /api/{proxy_pass http://127.0.0.1:3000/;proxy_http_version 1.1;proxy_set_header Host $host;proxy_set_header X-Real-IP $remote_addr;}}' > /etc/nginx/http.d/default.conf
+# Nginx: SPA + /assets sin fallback a index.html + proxy /api -> localhost:3000
+COPY docker/nginx-fullstack.conf /etc/nginx/http.d/default.conf
 
 COPY docker/entrypoint-full.sh /entrypoint-full.sh
 RUN chmod +x /entrypoint-full.sh

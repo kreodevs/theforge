@@ -5,6 +5,7 @@ import type {
   GenerateResponseOptions,
 } from "../interfaces/llm-provider.interface.js";
 import type { ChatImagePart, ChecklistResult } from "@theforge/shared-types";
+import { generateGeminiTextEmbedding } from "../embeddings/gemini-text-embedding.js";
 
 type GeminiContentPart =
   | { text: string }
@@ -40,16 +41,23 @@ function historyToGeminiContents(history: ChatMessage[]): GeminiContent[] {
 export class GeminiAdapter implements LLMProvider {
   private readonly genAI: GoogleGenerativeAI;
   private readonly model;
+  private readonly apiKey: string;
 
-  constructor(apiKey?: string, modelId = "gemini-2.0-flash") {
+  constructor(apiKey?: string, modelId?: string) {
     const key = apiKey ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GEMINI_API_KEY;
     if (!key) {
       throw new Error(
         "GOOGLE_GENERATIVE_AI_API_KEY or GEMINI_API_KEY is required for Gemini adapter",
       );
     }
+    this.apiKey = key;
+    const resolvedModel =
+      modelId ??
+      process.env.GOOGLE_CHAT_MODEL?.trim() ??
+      process.env.GEMINI_CHAT_MODEL?.trim() ??
+      "gemini-2.0-flash";
     this.genAI = new GoogleGenerativeAI(key);
-    this.model = this.genAI.getGenerativeModel({ model: modelId });
+    this.model = this.genAI.getGenerativeModel({ model: resolvedModel });
   }
 
   async generateResponse(
@@ -164,9 +172,7 @@ export class GeminiAdapter implements LLMProvider {
 
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      const embeddingModel = this.genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-      const result = await embeddingModel.embedContent(text);
-      return result.embedding.values;
+      return await generateGeminiTextEmbedding(text, this.apiKey);
     } catch (err) {
       console.error("[GeminiAdapter] generateEmbedding error:", err);
       return [];

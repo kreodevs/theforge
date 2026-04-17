@@ -8,7 +8,7 @@ Módulo de análisis agentic para **Domain Benchmark & Gap Analysis (DBGA)**. Or
   - `dbga-state.schema.ts` – Schemas Zod y tipos: `CompetitorData`, `DBGAStatus`, `DBGAState`
   - `langgraph-state.annotation.ts` – Anotación LangGraph `DBGAStateAnnotation` para `StateGraph`
   - `index.ts` – Re-export
-- **llm/** – `create-dbga-llm.ts` – Factory: `AI_PROVIDER` (openai | google) → ChatOpenAI o ChatGoogleGenerativeAI
+- **llm/** – `create-dbga-llm.ts` – Mismo runtime que el adapter principal (`resolvePrimaryChatRuntime` en `ai/config/llm-config.ts`): OpenAI-compatible (openai/kimi) o Google.
 - **graph/** – `dbga-graph.ts` – StateGraph compilado; edges Scout → Auditor → Critic → (Scout | Synthesis) → END
 - **nodes/** – Nodos por agente: Scout (con tools), Auditor (con tools), Critic, Synthesis
 - **tools/** – ToolRegistry e integración externa

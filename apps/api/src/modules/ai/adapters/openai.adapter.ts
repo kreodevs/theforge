@@ -5,6 +5,14 @@ import type {
   GenerateResponseOptions,
 } from "../interfaces/llm-provider.interface.js";
 import type { ChatImagePart, ChecklistResult } from "@theforge/shared-types";
+import {
+  getGoogleApiKeyForOptionalEmbeddings,
+  normalizeLlmProviderId,
+  resolveEmbeddingsBackend,
+  resolvePrimaryChatRuntime,
+  type OpenAiCompatibleRuntime,
+} from "../config/llm-config.js";
+import { generateGeminiTextEmbedding } from "../embeddings/gemini-text-embedding.js";
 
 function buildOpenAiUserMessage(
   text: string,
@@ -44,17 +52,29 @@ function historyToOpenAiMessages(history: ChatMessage[]): OpenAI.Chat.ChatComple
   });
 }
 
+function getOpenAiCompatibleRuntimeStrict(): OpenAiCompatibleRuntime {
+  const id = normalizeLlmProviderId();
+  if (id === "google") {
+    throw new Error("OpenAIAdapter requires LLM_PRIMARY_PROVIDER/AI_PROVIDER openai or kimi");
+  }
+  return resolvePrimaryChatRuntime() as OpenAiCompatibleRuntime;
+}
+
 export class OpenAIAdapter implements LLMProvider {
-  private readonly client: OpenAI;
+  private readonly chatClient: OpenAI;
+  /** Solo API OpenAI oficial (embeddings); sin baseURL custom. */
+  private readonly embeddingOpenAi: OpenAI;
   private readonly model: string;
 
-  constructor(apiKey?: string, model = "gpt-4o") {
-    const key = apiKey ?? process.env.OPENAI_API_KEY;
-    if (!key) {
-      throw new Error("OPENAI_API_KEY is required for OpenAI adapter");
-    }
-    this.client = new OpenAI({ apiKey: key });
-    this.model = model;
+  constructor(apiKey?: string, model?: string) {
+    const runtime = getOpenAiCompatibleRuntimeStrict();
+    const key = apiKey ?? runtime.apiKey;
+    this.model = model ?? runtime.chatModel;
+    this.chatClient = new OpenAI({
+      apiKey: key,
+      baseURL: runtime.baseURL,
+    });
+    this.embeddingOpenAi = new OpenAI({ apiKey: key });
   }
 
   async generateResponse(
@@ -73,8 +93,11 @@ export class OpenAIAdapter implements LLMProvider {
       );
 
       const ts = () => new Date().toISOString();
-      console.log(`[OpenAIAdapter] ${ts()} → Request enviado a OpenAI:`, { messagesCount: messages.length, model: this.model });
-      const completion = await this.client.chat.completions.create({
+      console.log(`[OpenAIAdapter] ${ts()} → Request enviado (OpenAI-compatible):`, {
+        messagesCount: messages.length,
+        model: this.model,
+      });
+      const completion = await this.chatClient.chat.completions.create({
         model: this.model,
         messages,
         max_tokens: 8192,
@@ -82,7 +105,7 @@ export class OpenAIAdapter implements LLMProvider {
 
       const content = completion.choices[0]?.message?.content ?? "";
       const choice = completion.choices[0];
-      console.log(`[OpenAIAdapter] ${ts()} ← Response recibida de OpenAI:`, {
+      console.log(`[OpenAIAdapter] ${ts()} ← Response recibida:`, {
         contentLength: content.length,
         preview: content.slice(0, 200) + (content.length > 200 ? "…" : ""),
         finishReason: choice?.finish_reason,
@@ -109,7 +132,7 @@ export class OpenAIAdapter implements LLMProvider {
       buildOpenAiUserMessage(prompt, options?.userMessageImages),
     );
 
-    const stream = await this.client.chat.completions.create({
+    const stream = await this.chatClient.chat.completions.create({
       model: this.model,
       messages,
       max_tokens: 8192,
@@ -130,7 +153,7 @@ export class OpenAIAdapter implements LLMProvider {
 
   async parseChecklist(text: string): Promise<ChecklistResult> {
     try {
-      const response = await this.client.chat.completions.create({
+      const response = await this.chatClient.chat.completions.create({
         model: this.model,
         messages: [
           {
@@ -156,8 +179,23 @@ export class OpenAIAdapter implements LLMProvider {
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
+    const backend = resolveEmbeddingsBackend();
+    if (backend === "gemini") {
+      const gKey = getGoogleApiKeyForOptionalEmbeddings();
+      if (!gKey) {
+        console.error("[OpenAIAdapter] generateEmbedding: LLM_EMBEDDINGS_PROVIDER=google pero falta clave Google");
+        return [];
+      }
+      try {
+        return await generateGeminiTextEmbedding(text, gKey);
+      } catch (err) {
+        console.error("[OpenAIAdapter] generateEmbedding (Gemini) error:", err);
+        return [];
+      }
+    }
+
     try {
-      const resp = await this.client.embeddings.create({
+      const resp = await this.embeddingOpenAi.embeddings.create({
         model: "text-embedding-3-small",
         input: text.replace(/\n/g, " "),
       });

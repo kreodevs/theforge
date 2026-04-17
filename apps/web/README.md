@@ -9,6 +9,7 @@ Frontend React (Vite) + Tailwind de TheForge.
 - **Guía UX/UI:** en proyectos **NEW**, la API pide al modelo la sección **## Prompt para Google Stitch (producto)** (MDD + SDD en contexto); en **LEGACY** no se genera bloque Stitch. El botón "Generar" del tab usa un mensaje acorde (`uxGuideOneShotChatPrompt` en `WorkshopView`).
 - **Responsive:** lista de proyectos y modales usable en móvil (`100dvh`, `viewport-fit=cover`, targets táctiles). Workshop: en `lg+` sigue el grid de 3 columnas; debajo, barra inferior Chat / Docs / Estado.
 - Proxy `/api` al backend en dev. En prod, Nginx hace proxy.
+- **Nginx (`nginx.conf`):** `/assets/*` no usa el fallback del SPA (`try_files` solo sirve ficheros reales) para que un chunk faltante no se sustituya por `index.html` (error de MIME `text/html` en módulos JS). `index.html` va con `Cache-Control: no-cache` para alinear shell y hashes tras cada deploy.
 - **Estimación MXN:** `src/utils/costCalculator.ts` delega en `@theforge/business-rules` (misma lógica que el API). Vite resuelve el paquete al **fuente** del monorepo (`vite.config.ts` + `tsconfig` paths) para que Rollup no falle con re-exports CJS del `dist`.
 
 `pnpm dev` → http://localhost:5173
