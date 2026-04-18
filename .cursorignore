@@ -1,0 +1,11 @@
+# Dependencias
+node_modules/
+
+# Config de despliegue / secretos (p. ej. PM2)
+ecosystem.config.js
+
+# Variables de entorno (las plantillas sí se indexan)
+.env
+.env.*
+!.env.example
+!**/.env.example

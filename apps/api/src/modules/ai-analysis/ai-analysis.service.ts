@@ -886,15 +886,15 @@ export class AiAnalysisService {
     if (pendingStepFailed) lastStepFailedByThread.delete(threadId);
 
     try {
-      // Resume hace que interrupt() devuelva el valor; pero el estado (lastUserMessage) no se rellena automáticamente.
-      // Inyectamos lastUserMessage para que el Manager vea la respuesta al reanudar (acuerdo breve → agente responsable).
+      // `resume` entrega el texto a interrupt(); el nodo reanudado (plan_approval, manager, ask_initial_topic) aplica
+      // su propio update a lastUserMessage. No inyectar lastUserMessage aquí: duplicaría el canal en el mismo paso
+      // (INVALID_CONCURRENT_GRAPH_UPDATE / LastValue).
       // Si había un fallo de nodo, inyectamos lastStepFailed para que el Manager re-planifique.
       // mddContentFromClient: evita revertir al checkpoint viejo; el front envía el documento actual (ej. con secret_key en mfa_methods).
       const stream = await graph.stream(
         new Command({
           resume: resumeText,
           update: {
-            lastUserMessage: resumeText || undefined,
             ...(pendingStepFailed ? { lastStepFailed: pendingStepFailed } : {}),
             ...(mddContentFromClient?.trim() && mddContentFromClient.trim().length > 80
               ? { mddDraft: mddContentFromClient.trim() }
