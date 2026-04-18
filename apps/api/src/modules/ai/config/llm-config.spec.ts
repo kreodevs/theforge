@@ -4,8 +4,15 @@ import {
   getLlmProvidersSnapshot,
   normalizeLlmProviderId,
   resolveEmbeddingsBackend,
+  resolveLangChainChatTemperature,
   resolveOpenAiOfficialEmbeddingApiKey,
 } from "./llm-config.js";
+
+test("resolveLangChainChatTemperature — kimi es 1 (API Moonshot)", () => {
+  assert.equal(resolveLangChainChatTemperature({ providerId: "kimi" }), 1);
+  assert.equal(resolveLangChainChatTemperature({ providerId: "openai" }), 0.5);
+  assert.equal(resolveLangChainChatTemperature({ providerId: "google" }), 0.5);
+});
 
 test("normalizeLlmProviderId — alias gemini/moonshot", () => {
   assert.equal(normalizeLlmProviderId("gemini"), "google");

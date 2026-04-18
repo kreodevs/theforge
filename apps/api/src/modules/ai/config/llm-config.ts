@@ -37,6 +37,17 @@ export interface GoogleRuntime {
 
 export type PrimaryChatRuntime = OpenAiCompatibleRuntime | GoogleRuntime;
 
+/**
+ * LangChain / ChatOpenAI: Kimi (Moonshot) devuelve 400 si temperature ≠ 1 en varios modelos.
+ */
+export function resolveLangChainChatTemperature(
+  r: Pick<PrimaryChatRuntime, "providerId">,
+): number {
+  if (r.providerId === "google") return 0.5;
+  if (r.providerId === "kimi") return 1;
+  return 0.5;
+}
+
 const KIMI_DEFAULT_BASE = "https://api.moonshot.ai/v1";
 const KIMI_DEFAULT_MODEL = "kimi-k2.5";
 const OPENAI_DEFAULT_MODEL = "gpt-4o";
