@@ -9,6 +9,7 @@ import {
   getGoogleApiKeyForOptionalEmbeddings,
   normalizeLlmProviderId,
   resolveEmbeddingsBackend,
+  resolveOpenAiOfficialEmbeddingApiKey,
   resolvePrimaryChatRuntime,
   type OpenAiCompatibleRuntime,
 } from "../config/llm-config.js";
@@ -61,9 +62,11 @@ function getOpenAiCompatibleRuntimeStrict(): OpenAiCompatibleRuntime {
 }
 
 export class OpenAIAdapter implements LLMProvider {
+  private static warnedEmbeddingNone = false;
+
   private readonly chatClient: OpenAI;
   /** Solo API OpenAI oficial (embeddings); sin baseURL custom. */
-  private readonly embeddingOpenAi: OpenAI;
+  private readonly embeddingOpenAi: OpenAI | null;
   private readonly model: string;
 
   constructor(apiKey?: string, model?: string) {
@@ -74,7 +77,8 @@ export class OpenAIAdapter implements LLMProvider {
       apiKey: key,
       baseURL: runtime.baseURL,
     });
-    this.embeddingOpenAi = new OpenAI({ apiKey: key });
+    const embedKey = resolveOpenAiOfficialEmbeddingApiKey();
+    this.embeddingOpenAi = embedKey ? new OpenAI({ apiKey: embedKey }) : null;
   }
 
   async generateResponse(
@@ -192,6 +196,22 @@ export class OpenAIAdapter implements LLMProvider {
         console.error("[OpenAIAdapter] generateEmbedding (Gemini) error:", err);
         return [];
       }
+    }
+
+    if (backend === "none") {
+      if (!OpenAIAdapter.warnedEmbeddingNone) {
+        OpenAIAdapter.warnedEmbeddingNone = true;
+        console.warn(
+          "[OpenAIAdapter] Embeddings desactivados (Kimi: la clave de Moonshot no sirve en api.openai.com). " +
+            "Opciones: GOOGLE_GENERATIVE_AI_API_KEY (embeddings Gemini), OPENAI_EMBEDDING_API_KEY (solo OpenAI), o OPENAI_EMBEDDING_DIM para índices sin llamada a embedding.",
+        );
+      }
+      return [];
+    }
+
+    if (!this.embeddingOpenAi) {
+      console.error("[OpenAIAdapter] generateEmbedding: backend openai-official sin cliente");
+      return [];
     }
 
     try {

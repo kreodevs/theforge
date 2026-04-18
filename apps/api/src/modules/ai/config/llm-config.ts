@@ -88,26 +88,58 @@ export function resolvePrimaryChatRuntime(): PrimaryChatRuntime {
   };
 }
 
-export type ResolvedEmbeddingsBackend = "openai-official" | "gemini";
+export type ResolvedEmbeddingsBackend = "openai-official" | "gemini" | "none";
+
+/**
+ * Clave OpenAI **solo** para embeddings (`text-embedding-3-small`).
+ * Obligatoria si `AI_PROVIDER=kimi` (o override `LLM_EMBEDDINGS_PROVIDER=openai`) y quieres embeddings OpenAI:
+ * la clave de Moonshot no sirve en api.openai.com.
+ */
+export function resolveEmbeddingOnlyOpenAiKey(): string | undefined {
+  const k =
+    process.env.OPENAI_EMBEDDING_API_KEY?.trim() ?? process.env.OPENAI_EMBEDDINGS_API_KEY?.trim();
+  return k || undefined;
+}
 
 /**
  * Embeddings: por defecto siguen al proveedor de chat (Google→Gemini; OpenAI→OpenAI).
- * Con kimi: si hay clave Google, embeddings Gemini; si no, OpenAI oficial con AI_API_KEY (falla suave si la clave es solo Moonshot).
+ * Con kimi: si hay clave Google → Gemini; si hay OPENAI_EMBEDDING_API_KEY → OpenAI oficial; si no → none (sin llamar a OpenAI con la key de Moonshot).
  * Override opcional: LLM_EMBEDDINGS_PROVIDER=openai|google
  */
 export function resolveEmbeddingsBackend(): ResolvedEmbeddingsBackend {
   const override = process.env.LLM_EMBEDDINGS_PROVIDER?.toLowerCase().trim();
-  if (override === "google" || override === "gemini") return "gemini";
-  if (override === "openai") return "openai-official";
-
   const primary = normalizeLlmProviderId();
-  if (primary === "google") return "gemini";
-  if (primary === "kimi") {
-    const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GEMINI_API_KEY;
-    if (googleKey) return "gemini";
+  const googleKey = getGoogleApiKeyForOptionalEmbeddings();
+  const openAiEmbedOnly = resolveEmbeddingOnlyOpenAiKey();
+
+  if (override === "google" || override === "gemini") return "gemini";
+  if (override === "openai") {
+    if (primary === "kimi") {
+      return openAiEmbedOnly ? "openai-official" : "none";
+    }
     return "openai-official";
   }
+
+  if (primary === "google") return "gemini";
+  if (primary === "kimi") {
+    if (googleKey) return "gemini";
+    return openAiEmbedOnly ? "openai-official" : "none";
+  }
   return "openai-official";
+}
+
+/**
+ * API key para cliente OpenAI oficial de embeddings (solo cuando el backend resuelve a openai-official).
+ */
+export function resolveOpenAiOfficialEmbeddingApiKey(): string | undefined {
+  if (resolveEmbeddingsBackend() !== "openai-official") return undefined;
+  const primary = normalizeLlmProviderId();
+  const embedOnly = resolveEmbeddingOnlyOpenAiKey();
+  if (primary === "kimi") {
+    return embedOnly;
+  }
+  const chat = resolveAiCompatibleApiKey();
+  return chat || embedOnly || undefined;
 }
 
 export function getGoogleApiKeyForOptionalEmbeddings(): string | undefined {
