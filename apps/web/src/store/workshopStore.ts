@@ -267,6 +267,17 @@ function projectWithUxAfterStream(
   };
 }
 
+/** Trazas MCP (Ariadne) devueltas cuando el API tiene `LEGACY_CODEBASE_DOC_MCP_DEBUG_UI=1`. */
+export interface LegacyMcpDebugEntry {
+  at: string;
+  rpcMethod: string;
+  toolName?: string;
+  requestJson: string;
+  responseHttpStatus: number;
+  responseBodyPreview: string;
+  durationMs: number;
+}
+
 export interface Session {
   id: string;
   projectId: string;
@@ -341,6 +352,9 @@ interface WorkshopState {
   /** Crítica del evaluador legacy (SDD vs código); solo si el backend la envía */
   evaluatorCritique: string | null;
   clearEvaluatorCritique: () => void;
+  /** Última traza pregunta↔respuesta MCP al generar doc. partida (solo si el API envía `mcpDebugTrace`). */
+  legacyMcpDebugTrace: LegacyMcpDebugEntry[] | null;
+  clearLegacyMcpDebugTrace: () => void;
   /** Plan pendiente de aprobación (HITL 4.4): pasos a ejecutar; el usuario puede Ejecutar o Modificar */
   pendingPlanApproval: {
     plan: Array<{ step_id: string; task_description: string; node: string; goal?: string }>;
@@ -438,8 +452,8 @@ interface WorkshopState {
     opts: { userIdea?: string; urls?: string[]; includeBenchmark?: boolean },
   ) => Promise<Project | null>;
   clearPhase0SummaryContent: (projectId: string) => Promise<void>;
-  /** Flujo legacy: documentación de partida (opcional) */
-  legacyGenerateCodebaseDoc: (projectId: string) => Promise<{ codebaseDoc: string } | null>;
+  /** Flujo legacy: documentación de partida (opcional); puede incluir `mcpDebugTrace` si el API tiene debug activo. */
+  legacyGenerateCodebaseDoc: (projectId: string) => Promise<{ codebaseDoc: string; mcpDebugTrace?: LegacyMcpDebugEntry[] } | null>;
   /** Flujo legacy: actualizar documentación de partida (edición manual) */
   legacyUpdateCodebaseDoc: (projectId: string, codebaseDoc: string) => Promise<boolean>;
   /** Flujo legacy: analizar con AriadneSpecs → archivos + preguntas */
@@ -500,6 +514,7 @@ const initialState = {
   precisionBreakdown: null as PrecisionBreakdown | null,
   auditorFeedback: null as string | null,
   evaluatorCritique: null as string | null,
+  legacyMcpDebugTrace: null as LegacyMcpDebugEntry[] | null,
   pendingPlanApproval: null as {
     plan: Array<{ step_id: string; task_description: string; node: string; goal?: string }>;
     planMessage: string;
@@ -546,6 +561,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setSynced: (v) => set({ synced: v }),
   setError: (e) => set({ error: e }),
   clearEvaluatorCritique: () => set({ evaluatorCritique: null }),
+  clearLegacyMcpDebugTrace: () => set({ legacyMcpDebugTrace: null }),
 
   setActiveStageId: (stageId) => {
     const { project, projectId, workshopStages } = get();
@@ -654,6 +670,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         userStoriesContent: cleanDoc(data.userStoriesContent ?? null),
         infraContent: cleanDoc(data.infraContent ?? null),
         error: null,
+        legacyMcpDebugTrace: null,
       });
       const sessionsRes = await apiFetch(`${API_BASE}/sessions/project/${projectId}`);
       if (sessionsRes.ok) {
@@ -2377,7 +2394,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const err = await r.json().catch(() => ({}));
         throw new Error((err as { message?: string }).message ?? "Error al generar documentación");
       }
-      const data = (await r.json()) as { codebaseDoc: string } | null;
+      const data = (await r.json()) as {
+        codebaseDoc: string;
+        mcpDebugTrace?: LegacyMcpDebugEntry[];
+      } | null;
       await get().fetchProject(projectId);
       if (data == null) {
         set({
@@ -2385,13 +2405,24 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           loadingReason: null,
           error:
             "No se pudo generar el MDD inicial: TheForge MCP no está configurado en el backend o la respuesta fue vacía. Revisa THEFORGE_MCP_URL.",
+          legacyMcpDebugTrace: null,
         });
         return null;
       }
-      set({ loading: false, loadingReason: null, error: null });
+      set({
+        loading: false,
+        loadingReason: null,
+        error: null,
+        legacyMcpDebugTrace: data.mcpDebugTrace ?? null,
+      });
       return data;
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : "Error al generar documentación", loading: false, loadingReason: null });
+      set({
+        error: e instanceof Error ? e.message : "Error al generar documentación",
+        loading: false,
+        loadingReason: null,
+        legacyMcpDebugTrace: null,
+      });
       return null;
     }
   },

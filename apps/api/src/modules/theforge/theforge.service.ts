@@ -6,6 +6,7 @@ import {
   isLegacyEvidenceFirstEnabled,
 } from "./theforge-evidence-context.util.js";
 import type { IOrchestratorTheForgePort } from "./theforge-service.port.js";
+import { appendMcpUiDebug, isMcpUiDebugActive } from "./mcp-ui-debug.context.js";
 import { TheForgeContextCacheService } from "./theforge-context-cache.service.js";
 import { parseMcpResponse } from "./mcp-http.util.js";
 import {
@@ -273,6 +274,32 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
         headers,
         body: JSON.stringify(body),
       });
+
+      if (isMcpUiDebugActive()) {
+        try {
+          const rawUi = await response.clone().text();
+          const b = body as { method?: unknown; params?: { name?: unknown } };
+          const rpcMethod = typeof b.method === "string" ? b.method : "unknown";
+          const toolName = typeof b.params?.name === "string" ? b.params.name : undefined;
+          let reqStr = "";
+          try {
+            reqStr = JSON.stringify(body);
+          } catch {
+            reqStr = String(body);
+          }
+          appendMcpUiDebug({
+            at: new Date().toISOString(),
+            rpcMethod,
+            toolName,
+            requestJson: truncateForMcpDebug(reqStr, 16000),
+            responseHttpStatus: response.status,
+            responseBodyPreview: truncateForMcpDebug(rawUi, 16000),
+            durationMs: Date.now() - t0,
+          });
+        } catch {
+          /* no bloquear flujo MCP */
+        }
+      }
 
       if (this.isDebugMcp()) {
         try {

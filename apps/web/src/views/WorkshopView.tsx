@@ -36,6 +36,7 @@ import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import MddViewer from "../components/MddViewer";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
+import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
 import { calculateCostFromMdd } from "../utils/costCalculator";
 import { downloadDocumentsZip } from "../utils/downloadDocumentsZip";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
@@ -246,6 +247,7 @@ export default function WorkshopView({
   const setPhase0SummaryContent = useWorkshopStore((s) => s.setPhase0SummaryContent);
   const persistPhase0SummaryContent = useWorkshopStore((s) => s.persistPhase0SummaryContent);
   const legacyGenerateCodebaseDoc = useWorkshopStore((s) => s.legacyGenerateCodebaseDoc);
+  const legacyMcpDebugTrace = useWorkshopStore((s) => s.legacyMcpDebugTrace);
   const legacyUpdateCodebaseDoc = useWorkshopStore((s) => s.legacyUpdateCodebaseDoc);
   const legacyStart = useWorkshopStore((s) => s.legacyStart);
   const legacyAnswer = useWorkshopStore((s) => s.legacyAnswer);
@@ -1366,6 +1368,7 @@ export default function WorkshopView({
                         />
                       )}
                     </div>
+                    <LegacyMcpDebugPanel trace={legacyMcpDebugTrace} />
                     <div className="shrink-0 pt-4 border-t border-zinc-700 mt-4">
                       <button
                         type="button"

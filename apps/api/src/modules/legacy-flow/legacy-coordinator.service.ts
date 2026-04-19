@@ -22,8 +22,16 @@ import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
+import {
+  isLegacyCodebaseDocMcpDebugUiEnabled,
+  runWithMcpUiDebug,
+  type McpUiDebugEntry,
+} from "../theforge/mcp-ui-debug.context.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
+
+/** Respuesta de `generate-codebase-doc` cuando el API tiene trazas MCP (debug UI). */
+export type GenerateCodebaseDocResponse = { codebaseDoc: string; mcpDebugTrace?: McpUiDebugEntry[] };
 
 export type LegacyIndexSddResolutionChoice = "trust_index" | "trust_sdd" | "proceed_with_warnings";
 
@@ -183,7 +191,17 @@ export class LegacyCoordinatorService {
    * @param projectId - ID del proyecto.
    * @returns Contenido Markdown de la documentación o null si TheForge no está configurado.
    */
-  async generateCodebaseDoc(projectId: string): Promise<{ codebaseDoc: string } | null> {
+  async generateCodebaseDoc(projectId: string): Promise<GenerateCodebaseDocResponse | null> {
+    if (isLegacyCodebaseDocMcpDebugUiEnabled()) {
+      const { result, trace } = await runWithMcpUiDebug(() => this.generateCodebaseDocCore(projectId));
+      if (!result) return null;
+      return { ...result, mcpDebugTrace: trace };
+    }
+    return this.generateCodebaseDocCore(projectId);
+  }
+
+  /** Generación de doc. partida (sin ALS de debug). */
+  private async generateCodebaseDocCore(projectId: string): Promise<{ codebaseDoc: string } | null> {
     const { project, theforgeId } = await this.getLegacyProject(projectId);
     if (!this.theforge.isConfigured()) return null;
 
