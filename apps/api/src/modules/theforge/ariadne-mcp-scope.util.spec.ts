@@ -34,7 +34,7 @@ describe("resolveAriadneCodebaseMcpTarget", () => {
     assert.deepEqual(r.scopeForScopedTools?.repoIds, ["repo-a", "repo-b"]);
   });
 
-  test("id que es roots[].id: workspace=padre, graph=ese repo, scope acota a ese repo", () => {
+  test("id que es roots[].id: workspace=padre, graph=ese repo, scope=todos los roots (proyecto completo en ingest)", () => {
     const r = resolveAriadneCodebaseMcpTarget("repo-b", [
       {
         id: "proj-1",
@@ -43,7 +43,7 @@ describe("resolveAriadneCodebaseMcpTarget", () => {
     ]);
     assert.equal(r.workspaceProjectId, "proj-1");
     assert.equal(r.graphProjectId, "repo-b");
-    assert.deepEqual(r.scopeForScopedTools?.repoIds, ["repo-b"]);
+    assert.deepEqual(r.scopeForScopedTools?.repoIds, ["repo-a", "repo-b"]);
   });
 });
 

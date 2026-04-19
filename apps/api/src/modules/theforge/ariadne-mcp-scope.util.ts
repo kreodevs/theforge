@@ -4,7 +4,7 @@
  * - `roots[].id` = repo indexado (ingest: `/repositories/:id/...`, nodo `projectId` en Falkor según sync).
  *
  * `get_modification_plan` → `POST /projects/:projectId/modification-plan` → **projectId = workspace `id`**.
- * `ask_codebase` → `POST /projects/:id/chat` primero → **projectId = workspace `id`** + `scope.repoIds` para acotar.
+ * `ask_codebase` → `POST /projects/:id/chat` primero → **projectId = workspace `id`** + `scope.repoIds`: si el id guardado es un **root**, se envían **todos** los `roots[].id` del proyecto (código del proyecto Ariadne), no solo ese repo.
  * `semantic_search` **no** admite `scope` ni `currentFilePath` (solo `projectId` + `limit`).
  */
 
@@ -78,10 +78,12 @@ export function resolveAriadneCodebaseMcpTarget(
     const roots = p.roots;
     if (!roots?.length) continue;
     if (!roots.some((r) => r.id === raw)) continue;
+    /** Mismo criterio que si el usuario guardó el `id` del workspace: chat/plan ingest ven **todo** el proyecto Ariadne, no un solo root. `graphProjectId` sigue siendo el root guardado (shard Falkor / selección). */
+    const allRepoIds = Array.from(new Set(roots.map((r) => r.id.trim()).filter(Boolean)));
     return {
       workspaceProjectId: p.id,
       graphProjectId: raw,
-      scopeForScopedTools: { repoIds: [raw] },
+      ...(allRepoIds.length > 0 ? { scopeForScopedTools: { repoIds: allRepoIds } } : {}),
     };
   }
 

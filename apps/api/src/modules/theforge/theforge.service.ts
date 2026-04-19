@@ -433,7 +433,8 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   async getC4Model(projectId: string): Promise<string> {
     if (!this.isConfigured()) return "";
     const ident = await this.resolveStoredToMcp(projectId);
-    const out = await this.callTool("get_c4_model", { projectId: ident.graphProjectId });
+    /** C4 agregado a nivel proyecto (GraphService); alinear con `ask_codebase` → `workspaceProjectId`, no solo un shard/repo. */
+    const out = await this.callTool("get_c4_model", { projectId: ident.workspaceProjectId });
     return (out ?? "").trim();
   }
 
@@ -639,7 +640,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   /**
    * Realiza una pregunta en lenguaje natural sobre el código indexado (herramienta MCP ask_codebase).
    * @param question - Pregunta en texto libre sobre el codebase.
-   * @param projectId - `theforgeProjectId` persistido; se resuelve a `roots[].id` + `scope.repoIds` cuando aplica.
+   * @param projectId - `theforgeProjectId` persistido; `projectId` MCP = **workspace** Ariadne; `scope.repoIds` = todos los roots del proyecto si hay catálogo (ver `resolveAriadneCodebaseMcpTarget`).
    * @param opts - scope, twoPhase, currentFilePath (SPEC-MCP-001).
    * @returns Respuesta de texto del MCP o cadena vacía si falla.
    */
