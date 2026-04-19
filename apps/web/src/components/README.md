@@ -8,6 +8,6 @@ Componentes reutilizables. La UI usa **Kreo** (tema dorado/corporativo) vía `co
 | **MddViewer.tsx**     | Visualizador de MDD por cabeceras (##, ###), ReactMarkdown por sección, `mermaid`, re-render parcial en streaming. Aplica `repairMarkdownFences` antes de partir secciones (mismo patrón de alias hacia `packages/shared-types/src`). |
 | **WorkshopHelpModal.tsx** | Modal de ayuda: lee [content/workshop-manual.md](../content/workshop-manual.md) vía `?raw`, render con `react-markdown` + `remark-gfm`. Cierre con X, Escape o clic fuera. |
 | **ComplexityPendingBanner.tsx** | Si `project.complexityPending` (HITL tras DBGA / inferencia), banner ámbar con plan y botones **Confirmar** (`POST /projects/:id/confirm-complexity`) / **Descartar** (`PATCH` con `clearComplexityPending`). El chat también puede confirmar o rechazar por texto. |
-| **LegacyMcpDebugPanel/** | Panel colapsable (MDD Inicial, LEGACY): traza petición↔respuesta JSON-RPC con Ariadne cuando el API envía `mcpDebugTrace` (`LEGACY_CODEBASE_DOC_MCP_DEBUG_UI=1`). Ver README en la carpeta. |
+| **LegacyMcpDebugPanel/** | Panel colapsable (MDD Inicial, LEGACY): traza petición↔respuesta JSON-RPC con Ariadne cuando el API envía `mcpDebugTrace` (`LEGACY_CODEBASE_DOC_MCP_DEBUG_UI=1`); botón **Copiar traza**. En **WorkshopView**, **Copiar MDD** junto al título copia el markdown de partida. Ver README en la carpeta. |
 
 Texto del manual: `src/content/workshop-manual.md` (flujo Workshop, semáforo, Legacy, etapas).

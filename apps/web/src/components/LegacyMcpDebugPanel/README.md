@@ -4,5 +4,6 @@ Panel colapsable para depurar el flujo **petición → respuesta** entre The For
 
 - **Datos:** `legacyMcpDebugTrace` en `workshopStore`, rellenado cuando el API responde con `mcpDebugTrace` en `POST /projects/:id/legacy/generate-codebase-doc`.
 - **Backend:** activar `LEGACY_CODEBASE_DOC_MCP_DEBUG_UI=1` en el servicio API para incluir la traza.
+- **Copiar:** botón **Copiar traza** en la cabecera del `<details>` vuelca todo el texto formateado (exportable también vía `formatLegacyMcpTraceForClipboard`).
 
 Componente exportado por defecto desde `LegacyMcpDebugPanel.tsx` en esta carpeta.

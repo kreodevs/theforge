@@ -29,6 +29,8 @@ import {
   HelpCircle,
   Layers,
   MessageSquare,
+  Copy,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWorkshopStore, type Status } from "../store/workshopStore";
@@ -282,6 +284,18 @@ export default function WorkshopView({
   const [mddInicialViewMode, setMddInicialViewMode] = useState<"preview" | "source">("preview");
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
+  const [mddInicialCopyOk, setMddInicialCopyOk] = useState(false);
+  const copyMddInicialMarkdown = useCallback(async () => {
+    const text = (mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc || "").trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setMddInicialCopyOk(true);
+      window.setTimeout(() => setMddInicialCopyOk(false), 2000);
+    } catch {
+      /* clipboard */
+    }
+  }, [mddInicialLocalContent, project?.legacyFlowState?.codebaseDoc]);
   const [conformanceUseLlm, setConformanceUseLlm] = useState(false);
   type DocPanel = "benchmark" | "legacy" | "mdd-inicial" | "spec" | "mdd" | "ux-ui-guide" | "blueprint" | "tasks" | "api-contracts" | "logic-flows" | "architecture" | "use-cases" | "user-stories" | "infra" | "adrs";
   const [centralPanel, setCentralPanel] = useState<DocPanel>("mdd");
@@ -1347,10 +1361,25 @@ export default function WorkshopView({
           <div className="flex-1 overflow-auto p-4 min-h-0 flex flex-col min-w-0">
             {centralPanel === "mdd-inicial" && project?.projectType === "LEGACY" && projectId && (
               <div className="rounded-lg bg-zinc-800/80 border border-zinc-600 p-6 text-zinc-300 text-sm space-y-4 flex flex-col min-h-0 flex-1">
-                <p className="font-medium text-amber-400/90 shrink-0">MDD Inicial — Documentación del codebase (partida)</p>
-                <p className="text-zinc-500 text-xs shrink-0">
-                  Reconstrucción AS-IS desde el índice AriadneSpecs (equivalente al “primer paso” de documentación). Opcional: puedes ir directo a <strong>Modificación</strong> si solo quieres un cambio puntual; para volcar todo el conocimiento del repo aquí, usa el botón de abajo.
-                </p>
+                <div className="flex flex-wrap items-start justify-between gap-2 shrink-0">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="font-medium text-amber-400/90">MDD Inicial — Documentación del codebase (partida)</p>
+                    <p className="text-zinc-500 text-xs">
+                      Reconstrucción AS-IS desde el índice AriadneSpecs (equivalente al “primer paso” de documentación). Opcional: puedes ir directo a <strong>Modificación</strong> si solo quieres un cambio puntual; para volcar todo el conocimiento del repo aquí, usa el botón de abajo.
+                    </p>
+                  </div>
+                  {(mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc)?.trim() ? (
+                    <button
+                      type="button"
+                      title="Copiar el markdown del MDD inicial al portapapeles (p. ej. para pegar en un chat con IA)"
+                      onClick={() => void copyMddInicialMarkdown()}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-amber-500/35 bg-amber-950/30 px-2.5 py-1.5 text-[11px] font-medium text-amber-200/90 hover:bg-amber-950/50"
+                    >
+                      {mddInicialCopyOk ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {mddInicialCopyOk ? "Copiado" : "Copiar MDD"}
+                    </button>
+                  ) : null}
+                </div>
                 {project.legacyFlowState?.codebaseDoc || mddInicialLocalContent ? (
                   <>
                     <div className="flex-1 overflow-auto min-h-0 flex flex-col">
