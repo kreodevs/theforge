@@ -18,3 +18,13 @@ export function loadStagedDiscoveryMddPrompt(): string {
     return "";
   }
 }
+
+const PLACEHOLDER = "{{theforgeProjectId}}";
+
+/**
+ * Sustituye `{{theforgeProjectId}}` en el prompt cargado para que el modelo repita el UUID en cada tool call (requerido por Ariadne MCP).
+ */
+export function hydrateStagedDiscoveryMddPrompt(template: string, theforgeProjectId: string): string {
+  if (!template) return "";
+  return template.split(PLACEHOLDER).join(theforgeProjectId.trim());
+}

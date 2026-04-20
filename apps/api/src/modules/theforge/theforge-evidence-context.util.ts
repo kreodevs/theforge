@@ -4,7 +4,7 @@ import type { AskCodebaseOptions } from "./theforge.service.js";
  * API mínima del cliente TheForge/MCP para armar contexto “evidencia primero”.
  */
 export interface TheForgeEvidenceApi {
-  semanticSearch(query: string, projectId?: string, limit?: number): Promise<string>;
+  semanticSearch(query: string, projectId: string, limit?: number): Promise<string>;
   getFunctionsInFile(path: string, projectId?: string, currentFilePath?: string): Promise<string>;
   getFileContent(path: string, projectId: string, ref?: string, currentFilePath?: string): Promise<string>;
   askCodebase(question: string, projectId: string, opts?: AskCodebaseOptions): Promise<string>;

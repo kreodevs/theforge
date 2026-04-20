@@ -6,7 +6,7 @@ import { createDbgaLLM } from "../ai-analysis/llm/create-dbga-llm.js";
 import { getStagedDiscoveryTheForgeTools } from "../ai-analysis/tools/agent-theforge-tools.js";
 import type { TheForgeService } from "../theforge/theforge.service.js";
 import type { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
-import { loadStagedDiscoveryMddPrompt } from "./staged-discovery-mdd.loader.js";
+import { hydrateStagedDiscoveryMddPrompt, loadStagedDiscoveryMddPrompt } from "./staged-discovery-mdd.loader.js";
 
 export type StagedDiscoveryMode = "initial" | "change";
 
@@ -119,11 +119,19 @@ export async function runLegacyStagedDiscoveryMddAgent(opts: RunLegacyStagedDisc
     logger?.warn?.(`runLegacyStagedDiscoveryMddAgent: resolveRoute falló: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  const system = loadStagedDiscoveryMddPrompt();
-  if (!system) {
+  if (!tfPid) {
+    logger?.warn?.(
+      "runLegacyStagedDiscoveryMddAgent: sin theforgeProjectId resuelto (Supervisor/proyecto); no se puede llamar al MCP Ariadne.",
+    );
+    return "";
+  }
+
+  const rawPrompt = loadStagedDiscoveryMddPrompt();
+  if (!rawPrompt) {
     logger?.warn?.("runLegacyStagedDiscoveryMddAgent: staged-discovery-mdd-prompt.md vacío o no encontrado.");
     return "";
   }
+  const system = hydrateStagedDiscoveryMddPrompt(rawPrompt, tfPid);
 
   const tools = getStagedDiscoveryTheForgeTools(theforge, tfPid);
   const maxRounds = envPositiveInt("LEGACY_STAGED_DISCOVERY_MAX_TOOL_ROUNDS", 18);

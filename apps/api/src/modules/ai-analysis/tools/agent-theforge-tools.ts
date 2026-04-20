@@ -10,9 +10,14 @@ import { TheForgeService } from "../../theforge/theforge.service.js";
  * Solo `ask_codebase`, `semantic_search`, `get_file_content` — descubrimiento escalonado MDD legacy (Plan-and-Execute).
  */
 export function getStagedDiscoveryTheForgeTools(theforge: TheForgeService, theforgeProjectId: string): StructuredToolInterface[] {
-  const pid = theforgeProjectId;
+  const pid = theforgeProjectId.trim();
   const defaultLimit = parseInt(process.env.LEGACY_SEMANTIC_SEARCH_LIMIT ?? "12", 10);
   const lim = Number.isFinite(defaultLimit) && defaultLimit > 0 ? defaultLimit : 12;
+  /** El MCP Ariadne exige `projectId` en cada llamada; el modelo debe repetir el UUID canónico (anti–tool-args vacíos). La API sigue usando `pid` resuelto por Supervisor/proyecto. */
+  const projectIdField = () =>
+    z.literal(pid).describe(
+      "Identificador de proyecto en Ariadne (theforgeProjectId). Debe ser exactamente el UUID del system prompt.",
+    );
   return [
     tool(
       async ({ question }) => theforge.askCodebase(question, pid),
@@ -20,7 +25,10 @@ export function getStagedDiscoveryTheForgeTools(theforge: TheForgeService, thefo
         name: "ask_codebase",
         description:
           "Fase 1: pregunta abierta sobre el codebase indexado (topología, módulos, carpetas). Usa la raíz del proyecto.",
-        schema: z.object({ question: z.string() }),
+        schema: z.object({
+          question: z.string(),
+          projectId: projectIdField(),
+        }),
       },
     ),
     tool(
@@ -31,6 +39,7 @@ export function getStagedDiscoveryTheForgeTools(theforge: TheForgeService, thefo
           "Fase 2: búsqueda semántica enfocada (backend: modelo/API; frontend: pantallas/flujos). Repite por componente.",
         schema: z.object({
           query: z.string(),
+          projectId: projectIdField(),
           limit: z.number().optional(),
         }),
       },
@@ -43,6 +52,7 @@ export function getStagedDiscoveryTheForgeTools(theforge: TheForgeService, thefo
         description: "Lee implementación exacta de un archivo crítico mencionado en el índice.",
         schema: z.object({
           path: z.string(),
+          projectId: projectIdField(),
           ref: z.string().optional(),
           currentFilePath: z.string().optional(),
         }),
@@ -52,14 +62,21 @@ export function getStagedDiscoveryTheForgeTools(theforge: TheForgeService, thefo
 }
 
 export function getLegacyTheForgeAgentTools(theforge: TheForgeService, theforgeProjectId: string): StructuredToolInterface[] {
-  const pid = theforgeProjectId;
+  const pid = theforgeProjectId.trim();
+  const projectIdField = () =>
+    z.literal(pid).describe(
+      "Identificador de proyecto Ariadne (theforgeProjectId). Debe coincidir con el UUID del contexto de sesión.",
+    );
   return [
     tool(
       async ({ question }) => theforge.askCodebase(question, pid),
       {
         name: "ask_codebase",
         description: "Pregunta en lenguaje natural sobre el código indexado en TheForge (grafo del repo).",
-        schema: z.object({ question: z.string() }),
+        schema: z.object({
+          question: z.string(),
+          projectId: projectIdField(),
+        }),
       },
     ),
     tool(
@@ -117,6 +134,7 @@ export function getLegacyTheForgeAgentTools(theforge: TheForgeService, theforgeP
         description: "Busca componentes, funciones y archivos por palabra clave en el grafo indexado.",
         schema: z.object({
           query: z.string(),
+          projectId: projectIdField(),
           limit: z.number().optional(),
         }),
       },

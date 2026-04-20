@@ -807,17 +807,22 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   /**
    * Búsqueda semántica en el grafo (herramienta MCP semantic_search).
    * Encuentra componentes, funciones y archivos por palabra clave. Útil para documentación y refinamiento del plan.
+   * `projectId` es **obligatorio** en el contrato MCP Ariadne (id de repo/workspace normalizado vía `resolveStoredToMcp`).
    */
   async semanticSearch(
     query: string,
-    projectId?: string,
+    projectId: string,
     limit?: number,
   ): Promise<string> {
-    const args: Record<string, unknown> = { query: query.trim() };
-    if (projectId?.trim()) {
-      const ident = await this.resolveStoredToMcp(projectId.trim());
-      args.projectId = ident.graphProjectId;
+    if (!this.isConfigured()) return "";
+    const trimmed = projectId.trim();
+    if (!trimmed) {
+      this.logger.warn("[TheForge] semanticSearch: projectId es obligatorio para la herramienta MCP semantic_search.");
+      return "";
     }
+    const args: Record<string, unknown> = { query: query.trim() };
+    const ident = await this.resolveStoredToMcp(trimmed);
+    args.projectId = ident.graphProjectId;
     if (typeof limit === "number" && limit > 0) args.limit = limit;
     const out = await this.callTool("semantic_search", args);
     return out ?? "";
