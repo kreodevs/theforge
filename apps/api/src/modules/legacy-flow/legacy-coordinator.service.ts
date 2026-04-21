@@ -8,6 +8,7 @@ import { TheForgeService } from "../theforge/theforge.service.js";
 import {
   DEFAULT_SEMANTIC_QUERIES,
   gatherLegacyIndexSignals,
+  getLegacySemanticSearchLimit,
   isLegacyEvidenceFirstEnabled,
   clipLegacySemanticSection,
   filterNoiseFromLegacySemanticChunk,
@@ -265,8 +266,7 @@ export class LegacyCoordinatorService {
 
     if (!codebaseDoc) {
       const parts: string[] = [];
-      const lim = parseInt(process.env.LEGACY_SEMANTIC_SEARCH_LIMIT ?? "12", 10);
-      const semanticLim = Number.isFinite(lim) && lim > 0 ? lim : 12;
+      const semanticLim = getLegacySemanticSearchLimit();
       /** En paralelo: misma ventana de timeout que una sola llamada (evita 4× tiempo serial y respuestas vacías por abort). */
       const [r1, r2, r3, r4] = await Promise.all([
         this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId),
@@ -506,12 +506,7 @@ export class LegacyCoordinatorService {
     if (description) {
       // Búsqueda semántica con términos del cambio para descubrir archivos/símbolos relacionados
       const descTerms = description.slice(0, 200).replace(/[^\w\s]/g, " ");
-      const semLim = parseInt(process.env.LEGACY_SEMANTIC_SEARCH_LIMIT ?? "12", 10);
-      const searchRelated = await this.theforge.semanticSearch(
-        descTerms,
-        theforgeId,
-        Number.isFinite(semLim) && semLim > 0 ? semLim : 12,
-      );
+      const searchRelated = await this.theforge.semanticSearch(descTerms, theforgeId, getLegacySemanticSearchLimit());
       if (searchRelated?.trim()) {
         theforgeParts.push("Código relacionado (búsqueda semántica):\n" + clipLegacySemanticSection(searchRelated.trim()));
       }

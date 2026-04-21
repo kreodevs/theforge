@@ -8,7 +8,7 @@ Integración HTTP JSON-RPC con el MCP AriadneSpecs (`THEFORGE_MCP_URL`): proyect
 - **`roots[].id`**: repo → **`/repositories/:id/...`** y valor típico de `projectId` en nodos Falkor según sync.
 - **`TheForgeService`** cachea `list_known_projects` (`THEFORGE_LIST_PROJECTS_CACHE_MS`, default 60s; `0` = sin caché) y, a partir del UUID guardado en `Project.theforgeProjectId`, calcula:
   - **`workspaceProjectId`**: siempre el **`id` del workspace** cuando el catálogo lo permite (si guardaste un `roots[].id`, se busca el proyecto padre). Se usa como **`projectId`** en **`ask_codebase`** y **`get_modification_plan`** (alineado con `POST /projects/:id/chat` y `POST /projects/:id/modification-plan`).
-  - **`graphProjectId`**: repo para **grafo / lecturas sin `scope`**: primer `roots[].id` si elegiste el workspace, o el **mismo** `roots[].id` si elegiste un repo. Se usa en `semantic_search`, `get_file_content`, `get_definitions`, etc. En **`TheForgeService.semanticSearch`**, el parámetro `projectId` (valor persistido / `theforgeProjectId`) es **obligatorio**: el MCP rechaza llamadas sin `projectId` en `arguments`. Ariadne **no** admite `scope` ni `currentFilePath` en `semantic_search`; para acotar prefijos/repos usar **`ask_codebase`** con `scope`.
+  - **`graphProjectId`**: repo para **grafo / herramientas MCP solo-UUID**: primer `roots[].id` si elegiste el workspace, o el **mismo** `roots[].id` si elegiste un repo. Se usa en `get_file_content`, `get_definitions`, etc. **`TheForgeService.semanticSearch`**: con proyecto multi-root, el servicio usa **`scope.repoIds`** del catálogo y **concatena** una `semantic_search` por repo (el MCP no tiene `scope`). Con un solo root, una sola llamada con `limit` total.
   - **`scope.repoIds`**: en **`ask_codebase`** y **`get_modification_plan`**, lista de `roots[].id`. Si `theforgeProjectId` es el **workspace** `id`, son todos los roots; si es un **`roots[].id`**, igualmente se envían **todos** los roots del padre (proyecto completo en ingest). Para acotar a un repo, el caller puede pasar `opts.scope.repoIds` y hace overlay (ver `mergeAriadneCodebaseScope`).
 - **Sharding (`FALKOR_SHARD_BY_PROJECT`)**: el UUID en Falkor debe coincidir con el índice; si el despliegue parte por proyecto, revisar que `graphProjectId` sea el que usa el sync (repo vs workspace) según `.ariadne-project` / ingest.
 
@@ -20,7 +20,7 @@ Integración HTTP JSON-RPC con el MCP AriadneSpecs (`THEFORGE_MCP_URL`): proyect
 
 `theforge-evidence-context.util.ts` arma Markdown de contexto para **SDD legacy**:
 
-1. Varios `semantic_search` (límite configurable).
+1. Varios `semantic_search` (`LEGACY_SEMANTIC_SEARCH_LIMIT`, default **80** hits por query; recorte markdown `LEGACY_SEMANTIC_SECTION_MAX_CHARS`, default **16000**).
 2. Extracción heurística de rutas desde el texto MCP (`extractCandidatePathsFromMcpText`).
 3. `get_functions_in_file` por rutas candidatas (tope configurable).
 4. Con **`LEGACY_ANALYZER_COMPACT=1` (default):** no se vuelcan extractos completos de archivo; un paso **Legacy Analyzer** (`runLegacyAnalyzerPass`) devuelve secciones fijas (impacto, API, datos, riesgos) vía `ask_codebase` solo sobre la evidencia recortada. Con `LEGACY_ANALYZER_COMPACT=0` se restaura el flujo anterior (extractos de archivo + síntesis larga).

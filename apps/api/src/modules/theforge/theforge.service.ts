@@ -3,6 +3,7 @@ import {
   buildLegacyEvidenceMarkdown,
   clipLegacySemanticSection,
   DEFAULT_SEMANTIC_QUERIES,
+  getLegacySemanticSearchLimit,
   isLegacyEvidenceFirstEnabled,
 } from "./theforge-evidence-context.util.js";
 import type { IOrchestratorTheForgePort } from "./theforge-service.port.js";
@@ -400,7 +401,8 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     if (isLegacyEvidenceFirstEnabled()) {
       try {
         if (this.contextCache.isEnabled()) {
-          const probe = await this.semanticSearch(DEFAULT_SEMANTIC_QUERIES[0], projectId, 8);
+          const probeLimit = Math.min(48, getLegacySemanticSearchLimit());
+          const probe = await this.semanticSearch(DEFAULT_SEMANTIC_QUERIES[0], projectId, probeLimit);
           const fp = this.contextCache.fingerprintFromSemanticSlice(projectId, probe);
           const key = this.contextCache.cacheKey(projectId, fp);
           const hit = this.contextCache.get(key);
@@ -424,8 +426,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       }
     }
     const parts: string[] = [];
-    const semanticLimit = parseInt(process.env.LEGACY_SEMANTIC_SEARCH_LIMIT ?? "12", 10);
-    const lim = Number.isFinite(semanticLimit) && semanticLimit > 0 ? semanticLimit : 12;
+    const lim = getLegacySemanticSearchLimit();
     const [q1, q2, q3, searchModels, searchApi, searchUi] = await Promise.all([
       this.askCodebase(
         "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
@@ -805,9 +806,22 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   /**
+   * Resuelve etiqueta legible para un `roots[].id` usando el catálogo MCP (multi-root).
+   */
+  private repoLabelFromCatalog(catalog: TheForgeProject[], repoId: string): string {
+    for (const p of catalog) {
+      const r = p.roots?.find((x) => x.id === repoId);
+      if (r?.name?.trim()) return r.name.trim();
+    }
+    return `repo:${repoId.slice(0, 8)}…`;
+  }
+
+  /**
    * Búsqueda semántica en el grafo (herramienta MCP semantic_search).
    * Encuentra componentes, funciones y archivos por palabra clave. Útil para documentación y refinamiento del plan.
-   * `projectId` es **obligatorio** en el contrato MCP Ariadne (id de repo/workspace normalizado vía `resolveStoredToMcp`).
+   *
+   * **Multi-root:** el MCP no acepta `scope`; cuando el proyecto tiene varios `roots[]`, se lanza **una llamada por repo**
+   * (mismos términos) y se concatenan con separadores y título por repo — mismo criterio de cobertura que `ask_codebase` + `scope.repoIds`.
    */
   async semanticSearch(
     query: string,
@@ -820,12 +834,33 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       this.logger.warn("[TheForge] semanticSearch: projectId es obligatorio para la herramienta MCP semantic_search.");
       return "";
     }
-    const args: Record<string, unknown> = { query: query.trim() };
     const ident = await this.resolveStoredToMcp(trimmed);
-    args.projectId = ident.graphProjectId;
-    if (typeof limit === "number" && limit > 0) args.limit = limit;
-    const out = await this.callTool("semantic_search", args);
-    return out ?? "";
+    const catalog = await this.getProjectsCatalog();
+    const lim = typeof limit === "number" && limit > 0 ? limit : getLegacySemanticSearchLimit();
+    const q = query.trim();
+    const fromScope = ident.scopeForScopedTools?.repoIds?.length
+      ? [...new Set(ident.scopeForScopedTools.repoIds.map((x) => x.trim()).filter(Boolean))]
+      : [];
+    const repoIds = fromScope.length > 0 ? fromScope : [ident.graphProjectId].filter(Boolean);
+    if (repoIds.length === 0) return "";
+
+    if (repoIds.length === 1) {
+      const args: Record<string, unknown> = { query: q, projectId: repoIds[0], limit: lim };
+      const out = await this.callTool("semantic_search", args);
+      return out ?? "";
+    }
+
+    const perRepo = Math.max(4, Math.ceil(lim / repoIds.length));
+    const chunks = await Promise.all(
+      repoIds.map(async (rid) => {
+        const out = await this.callTool("semantic_search", { query: q, projectId: rid, limit: perRepo });
+        const text = (out ?? "").trim();
+        if (!text) return "";
+        const label = this.repoLabelFromCatalog(catalog, rid);
+        return `#### ${label} (\`${rid.slice(0, 8)}…\`)\n\n${text}`;
+      }),
+    );
+    return chunks.filter(Boolean).join("\n\n---\n\n");
   }
 
   /**

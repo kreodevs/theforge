@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
+import { getLegacySemanticSearchLimit } from "../../theforge/theforge-evidence-context.util.js";
 import { TheForgeService } from "../../theforge/theforge.service.js";
 
 /**
@@ -11,8 +12,7 @@ import { TheForgeService } from "../../theforge/theforge.service.js";
  */
 export function getStagedDiscoveryTheForgeTools(theforge: TheForgeService, theforgeProjectId: string): StructuredToolInterface[] {
   const pid = theforgeProjectId.trim();
-  const defaultLimit = parseInt(process.env.LEGACY_SEMANTIC_SEARCH_LIMIT ?? "12", 10);
-  const lim = Number.isFinite(defaultLimit) && defaultLimit > 0 ? defaultLimit : 12;
+  const lim = getLegacySemanticSearchLimit();
   /** El MCP Ariadne exige `projectId` en cada llamada; el modelo debe repetir el UUID canónico (anti–tool-args vacíos). La API sigue usando `pid` resuelto por Supervisor/proyecto. */
   const projectIdField = () =>
     z.literal(pid).describe(
@@ -127,8 +127,7 @@ export function getLegacyTheForgeAgentTools(theforge: TheForgeService, theforgeP
       },
     ),
     tool(
-      async ({ query, limit }) =>
-        theforge.semanticSearch(query, pid, limit ?? 5),
+      async ({ query, limit }) => theforge.semanticSearch(query, pid, limit),
       {
         name: "semantic_search",
         description: "Busca componentes, funciones y archivos por palabra clave en el grafo indexado.",

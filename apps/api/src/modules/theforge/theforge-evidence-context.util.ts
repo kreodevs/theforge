@@ -34,6 +34,16 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+/**
+ * Límite de resultados por query en `semantic_search` (MCP suele aceptar miles; 12 dejaba el índice casi vacío, sobre todo multi-root).
+ * Override: `LEGACY_SEMANTIC_SEARCH_LIMIT`.
+ */
+export const DEFAULT_LEGACY_SEMANTIC_SEARCH_LIMIT = 80;
+
+export function getLegacySemanticSearchLimit(): number {
+  return envInt("LEGACY_SEMANTIC_SEARCH_LIMIT", DEFAULT_LEGACY_SEMANTIC_SEARCH_LIMIT);
+}
+
 /** Activa pipeline evidencia-primero (documentación legacy / entregables). Default: activo. */
 export function isLegacyEvidenceFirstEnabled(): boolean {
   return envFlag("LEGACY_EVIDENCE_FIRST_CONTEXT", true);
@@ -151,9 +161,12 @@ export function legacyAnalyzerIndicatesEmptyIndex(markdown: string): boolean {
   );
 }
 
+/** Default antes 6000; subido para no truncar índices amplios tras subir `getLegacySemanticSearchLimit`. */
+const DEFAULT_LEGACY_SEMANTIC_SECTION_MAX_CHARS = 16_000;
+
 /** Recorte configurable para bloques semantic_search (modo legacy clásico). */
 export function clipLegacySemanticSection(s: string): string {
-  const max = parsePositiveInt("LEGACY_SEMANTIC_SECTION_MAX_CHARS", 6000);
+  const max = parsePositiveInt("LEGACY_SEMANTIC_SECTION_MAX_CHARS", DEFAULT_LEGACY_SEMANTIC_SECTION_MAX_CHARS);
   return clip(s.trim(), max);
 }
 
@@ -205,7 +218,7 @@ export async function gatherLegacyIndexSignals(
 ): Promise<LegacyIndexSignalsGathered> {
   const useAnalyzer = isLegacyAnalyzerCompactEnabled();
   const queries = options?.semanticQueries?.length ? options.semanticQueries : [...DEFAULT_SEMANTIC_QUERIES];
-  const semanticLimit = parsePositiveInt("LEGACY_SEMANTIC_SEARCH_LIMIT", 12);
+  const semanticLimit = getLegacySemanticSearchLimit();
   const maxPaths = parsePositiveInt("LEGACY_EVIDENCE_MAX_PATHS", useAnalyzer ? 28 : 35);
 
   const semanticChunks = await Promise.all(
@@ -235,7 +248,10 @@ export async function buildLegacyEvidenceMarkdown(
   const maxFullFiles = useAnalyzer
     ? 0
     : parsePositiveInt("LEGACY_EVIDENCE_FULL_FILE_PATHS", 3);
-  const sectionMax = parsePositiveInt("LEGACY_SEMANTIC_SECTION_MAX_CHARS", useAnalyzer ? 4000 : 6000);
+  const sectionMax = parsePositiveInt(
+    "LEGACY_SEMANTIC_SECTION_MAX_CHARS",
+    useAnalyzer ? 4000 : DEFAULT_LEGACY_SEMANTIC_SECTION_MAX_CHARS,
+  );
   const fileContentMax = parsePositiveInt("LEGACY_FILE_CONTENT_MAX_CHARS", 4000);
 
   const { semanticChunks, chosenPaths: chosen } = await gatherLegacyIndexSignals(api, projectId, {

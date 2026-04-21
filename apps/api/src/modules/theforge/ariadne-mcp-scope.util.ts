@@ -5,7 +5,7 @@
  *
  * `get_modification_plan` → `POST /projects/:projectId/modification-plan` → **projectId = workspace `id`**.
  * `ask_codebase` → `POST /projects/:id/chat` primero → **projectId = workspace `id`** + `scope.repoIds`: si el id guardado es un **root**, se envían **todos** los `roots[].id` del proyecto (código del proyecto Ariadne), no solo ese repo.
- * `semantic_search` **no** admite `scope` ni `currentFilePath` (solo `projectId` + `limit`).
+ * `semantic_search` en MCP **no** admite `scope`; en **TheForgeService.semanticSearch** se replica el alcance multi-root lanzando **una llamada por** `roots[].id` y fusionando resultados cuando `scopeForScopedTools.repoIds` tiene más de un id.
  */
 
 export type AriadneListedRoot = { id: string };

@@ -4,7 +4,7 @@ The Forge reduce la dependencia de respuestas **solo** sintetizadas por `ask_cod
 
 ## Flujo
 
-1. Varios `semantic_search` contra el grafo Ariadne (límite `LEGACY_SEMANTIC_SEARCH_LIMIT`, default 12).
+1. Varios `semantic_search` contra el grafo Ariadne (límite `LEGACY_SEMANTIC_SEARCH_LIMIT`, default 80; el MCP admite órdenes mayores — ajusta si saturás contexto).
 2. Heurística de rutas en el texto devuelto (`extractCandidatePathsFromMcpText`).
 3. `get_functions_in_file` por hasta `LEGACY_EVIDENCE_FUNCTIONS_PATHS` rutas.
 4. `get_file_content` para hasta `LEGACY_EVIDENCE_FULL_FILE_PATHS` rutas prioritarias (p. ej. Prisma, `package.json`).
