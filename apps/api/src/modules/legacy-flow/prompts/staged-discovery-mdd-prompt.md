@@ -2,6 +2,16 @@ IMPORTANTE: Para TODAS tus llamadas a herramientas como `ask_codebase`, `semanti
 
 ---
 
+## Contrato técnico The Forge → MCP Ariadne (léelo antes de llamar herramientas)
+
+1. **`projectId` en herramientas:** usa **exactamente** el UUID `{{theforgeProjectId}}` del encabezado. No inventes otros ids; el catálogo de repos arriba solo sirve para **interpretar** qué hay detrás de cada `roots[].id`, no para sustituir el literal del esquema de la tool.
+2. **`ask_codebase`:** va al **ingest** (LLM/orchestrator). Si la pregunta es demasiado amplia (“lista exhaustiva de todo”) o el servidor está cargado, la respuesta puede ser **vacía** o timeout en The Forge. Parte por **un repo o un capítulo** (p. ej. solo entidades en `smile-nest`, solo flujo público de citas en `web-oraltrack`).
+3. **`semantic_search`:** es búsqueda en el **grafo** (keyword / embed según Ariadne). Si devuelve “No se encontraron resultados”, cambia la **query** a términos del negocio del producto (español, nombres de entidad reales) o cambia de **repo** según el rol (p. ej. no busques “prisma tables” en un front estático).
+4. **`limit` en `semantic_search`:** **omite** el argumento si no tienes un motivo fuerte; The Forge aplica un **mínimo** para no pedir índices ridículamente cortos. No intentes “ahorrar tokens” bajando el límite.
+5. **Multi-repo:** una misma pregunta de modelos puede aplicar solo al backend; documenta **qué repo** alimenta cada sección del MDD para no mezclar evidencias incompatibles.
+
+---
+
 ## Catálogo MCP (partida obligatoria)
 
 {{ariadneRepositoriesCatalog}}

@@ -11,6 +11,7 @@ Documentación para usar el conocimiento indexado por **AriadneSpecs** (grafo de
 | **THEFORGE-COMO-INVOCA-THEFORGE-MCP.md** | Cómo la API invoca el MCP (HTTP, JSON-RPC, Bearer/X-M2M-Token, timeout). Para compartir con el equipo TheForge. |
 | **HERRAMIENTAS-MCP-THEFORGE.md** | Catálogo de herramientas AriadneSpecs usadas o disponibles. |
 | **SPEC-MCP-001-THEFORGE.md** | Contrato recomendado TheForge ↔ MCP (`get_modification_plan`, `validate_before_edit`, etc.). |
+| **ARIADNE-CONSULTA-DESDE-THEFORGE.md** | Reglas prácticas: timeout, `projectId`, `semantic_search` vs `ask_codebase`, suelo de `limit`, doc. partida secuencial. |
 | **PLAN-IMPLEMENTACION-THEFORGE-WEB.md** | Plan original por capas (DB, módulo `theforge`, flujo LEGACY). **Estado:** la integración base está en `apps/api` + `apps/web`; usar el código como fuente de verdad y este doc como contexto histórico. |
 
 Flujo legacy detallado (histórico): [../archive/PLAN-FLUJO-LEGACY-V2.md](../archive/PLAN-FLUJO-LEGACY-V2.md).

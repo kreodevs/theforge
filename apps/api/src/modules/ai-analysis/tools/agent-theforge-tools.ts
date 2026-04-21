@@ -10,9 +10,20 @@ import { TheForgeService } from "../../theforge/theforge.service.js";
 /**
  * Solo `ask_codebase`, `semantic_search`, `get_file_content` — descubrimiento escalonado MDD legacy (Plan-and-Execute).
  */
+/**
+ * Evita que el LLM pase `limit` bajo (p. ej. 20) en `semantic_search` y reciba índices casi vacíos.
+ * Suelo = `LEGACY_STAGED_DISCOVERY_SEMANTIC_FLOOR` o, si no está, `LEGACY_SEMANTIC_SEARCH_LIMIT`.
+ */
+function stagedDiscoverySemanticSearchLimit(requested: number | undefined): number {
+  const defaultL = getLegacySemanticSearchLimit();
+  const envFloor = parseInt(process.env.LEGACY_STAGED_DISCOVERY_SEMANTIC_FLOOR ?? "", 10);
+  const floor = Number.isFinite(envFloor) && envFloor > 0 ? envFloor : defaultL;
+  const raw = typeof requested === "number" && requested > 0 ? requested : defaultL;
+  return Math.max(raw, floor);
+}
+
 export function getStagedDiscoveryTheForgeTools(theforge: TheForgeService, theforgeProjectId: string): StructuredToolInterface[] {
   const pid = theforgeProjectId.trim();
-  const lim = getLegacySemanticSearchLimit();
   /** El MCP Ariadne exige `projectId` en cada llamada; el modelo debe repetir el UUID canónico (anti–tool-args vacíos). La API sigue usando `pid` resuelto por Supervisor/proyecto. */
   const projectIdField = () =>
     z.literal(pid).describe(
@@ -33,16 +44,17 @@ export function getStagedDiscoveryTheForgeTools(theforge: TheForgeService, thefo
       },
     ),
     tool(
-      async ({ query, limit }) => theforge.semanticSearch(query, pid, limit ?? lim),
+      async ({ query, limit }) => theforge.semanticSearch(query, pid, stagedDiscoverySemanticSearchLimit(limit)),
       {
         name: "semantic_search",
         description:
           "Fase 2 (no al inicio): búsqueda semántica **corta y específica** por repo/tema ya identificado (ej. entidades de X, rutas de Y). " +
-          "Evita varias consultas genéricas en paralelo antes de haber cerrado roles de repos y arquitectura de alto nivel.",
+          "Evita varias consultas genéricas en paralelo antes de haber cerrado roles de repos y arquitectura de alto nivel. " +
+          "Prefiere **omitir** `limit` (The Forge aplica el mínimo del despliegue); no lo bajes artificialmente.",
         schema: z.object({
           query: z.string(),
           projectId: projectIdField(),
-          limit: z.number().optional(),
+          limit: z.number().optional().describe("Opcional; si lo omites se usa el límite seguro del API. No uses valores bajos (<40)."),
         }),
       },
     ),

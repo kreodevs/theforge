@@ -55,7 +55,7 @@ const CODEBASE_DOC_CLASSIC_Q = {
 
 /** Prefacio cuando solo se pudo rellenar la §5 (grafo); las síntesis ask_codebase quedaron vacías. */
 const CODEBASE_DOC_SEMANTIC_ONLY_PREFACE =
-  "> **Por qué ves solo el índice semántico (§5):** en esta ejecución **`ask_codebase` no devolvió texto** para las secciones 1–4 ni para la síntesis de respaldo (suele ser **timeout** del MCP: sube `THEFORGE_MCP_TIMEOUT_MS` en el API, p. ej. `180000`–`300000`; revisa logs Nest/ingest o carga concurrente). Lo que sigue **no es un resumen deliberado**: es la salida combinada de **`semantic_search`** por cada repo multi-root, con límite por query (`LEGACY_SEMANTIC_SEARCH_LIMIT`) y recorte global (`LEGACY_CODEBASE_DOC_SEMANTIC_MAX_CHARS`). Activa `LEGACY_CODEBASE_DOC_MCP_DEBUG_UI` para ver las llamadas MCP o vuelve a generar cuando el orchestrator responda.";
+  "> **Por qué ves solo el índice semántico (§5):** en esta ejecución **`ask_codebase` no devolvió texto** para las secciones 1–4 ni para la síntesis de respaldo (suele ser **timeout** del MCP: sube `THEFORGE_MCP_TIMEOUT_MS` en el API, p. ej. `180000`–`300000`; revisa logs Nest/ingest o carga concurrente). El modo clásico usa **4× `ask_codebase` secuenciales** por defecto (`LEGACY_CODEBASE_DOC_PARALLEL_ASK=0`); si reactivas paralelo (`=1`), aumenta timeout. Lo que sigue **no es un resumen deliberado**: es la salida combinada de **`semantic_search`** por cada repo multi-root, con límite por query (`LEGACY_SEMANTIC_SEARCH_LIMIT`) y recorte global (`LEGACY_CODEBASE_DOC_SEMANTIC_MAX_CHARS`). En descubrimiento escalonado, `LEGACY_STAGED_DISCOVERY_SEMANTIC_FLOOR` evita `limit` demasiado bajo en herramientas. Activa `LEGACY_CODEBASE_DOC_MCP_DEBUG_UI` para ver las llamadas MCP o vuelve a generar cuando el orchestrator responda.";
 
 /** Respuesta de `generate-codebase-doc` cuando el API tiene trazas MCP (debug UI). */
 export type GenerateCodebaseDocResponse = { codebaseDoc: string; mcpDebugTrace?: McpUiDebugEntry[] };
@@ -99,6 +99,12 @@ function envFlag(name: string, defaultTrue: boolean): boolean {
 /** Cruza índice Ariadne con Falkor SDD antes de LLM (default: activo). Desactivar: LEGACY_SDD_INDEX_GATE=0. */
 function isLegacySddIndexGateEnabled(): boolean {
   return envFlag("LEGACY_SDD_INDEX_GATE", true);
+}
+
+/** Modo clásico doc. partida: 4× `ask_codebase` en paralelo (más riesgo de timeout en MCP). Default: secuencial. */
+function isCodebaseDocClassicParallelAsk(): boolean {
+  const v = process.env.LEGACY_CODEBASE_DOC_PARALLEL_ASK?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
 /**
@@ -274,13 +280,23 @@ export class LegacyCoordinatorService {
       const parts: string[] = [];
       const semanticLim = getLegacySemanticSearchLimit();
       const legacyAsk = getLegacyAskCodebaseOptions();
-      /** En paralelo: misma ventana de timeout que una sola llamada (evita 4× tiempo serial y respuestas vacías por abort). */
-      const [r1, r2, r3, r4] = await Promise.all([
-        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId, legacyAsk),
-        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q2, theforgeId, legacyAsk),
-        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q3, theforgeId, legacyAsk),
-        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q4, theforgeId, legacyAsk),
-      ]);
+      let r1: string;
+      let r2: string;
+      let r3: string;
+      let r4: string;
+      if (isCodebaseDocClassicParallelAsk()) {
+        [r1, r2, r3, r4] = await Promise.all([
+          this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId, legacyAsk),
+          this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q2, theforgeId, legacyAsk),
+          this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q3, theforgeId, legacyAsk),
+          this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q4, theforgeId, legacyAsk),
+        ]);
+      } else {
+        r1 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId, legacyAsk);
+        r2 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q2, theforgeId, legacyAsk);
+        r3 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q3, theforgeId, legacyAsk);
+        r4 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q4, theforgeId, legacyAsk);
+      }
       if (r1.trim()) parts.push("## 1. Modelos, rutas y configuración\n\n" + r1.trim());
       if (r2.trim()) parts.push("## 2. Arquitectura y carpetas\n\n" + r2.trim());
       if (r3.trim()) parts.push("## 3. Stack y estructura\n\n" + r3.trim());
