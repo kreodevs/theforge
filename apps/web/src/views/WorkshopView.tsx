@@ -44,6 +44,11 @@ import { downloadDocumentsZip } from "../utils/downloadDocumentsZip";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "../components/ui";
+import {
+  LEGACY_CODEBASE_DOC_STEPS,
+  LEGACY_DELIVERABLES_STEPS,
+  LEGACY_MDD_STEPS,
+} from "../constants/legacy-workshop-loading-steps";
 
 function DocEmptyState({
   icon: Icon,
@@ -315,24 +320,6 @@ export default function WorkshopView({
   const [legacyAnswersInput, setLegacyAnswersInput] = useState<Record<string, string>>({});
   /** Paso actual mostrado mientras corre legacy-mdd o legacy-deliverables (rota cada 6s) */
   const [legacyStepIndex, setLegacyStepIndex] = useState(0);
-  const legacyStepsCodebaseDoc = [
-    "Consultando codebase vía AriadneSpecs…",
-    "Extrayendo modelos y arquitectura…",
-    "Generando documentación…",
-  ];
-  const legacyStepsMdd = [
-    "Consultando AriadneSpecs (contexto del codebase)…",
-    "Generando borrador del MDD…",
-    "Revisando documento con el revisor…",
-  ];
-  const legacyStepsDeliverables = [
-    "Generando SPEC…",
-    "Generando Arquitectura…",
-    "Generando Casos de uso e Historias…",
-    "Generando Blueprint y Guía UX/UI…",
-    "Generando Contratos API, Flujos e Infra…",
-    "Generando Tasks…",
-  ];
   useEffect(() => {
     if (!loading || (loadingReason !== "legacy-mdd" && loadingReason !== "legacy-deliverables" && loadingReason !== "legacy-codebase-doc")) {
       setLegacyStepIndex(0);
@@ -340,10 +327,10 @@ export default function WorkshopView({
     }
     const steps =
       loadingReason === "legacy-codebase-doc"
-        ? legacyStepsCodebaseDoc
+        ? LEGACY_CODEBASE_DOC_STEPS
         : loadingReason === "legacy-mdd"
-          ? legacyStepsMdd
-          : legacyStepsDeliverables;
+          ? LEGACY_MDD_STEPS
+          : LEGACY_DELIVERABLES_STEPS;
     const id = setInterval(() => setLegacyStepIndex((i) => (i + 1) % steps.length), 6000);
     return () => clearInterval(id);
   }, [loading, loadingReason]);
@@ -1422,7 +1409,7 @@ export default function WorkshopView({
                     {loading && loadingReason === "legacy-codebase-doc" ? (
                       <p className="flex items-center justify-center gap-2 text-amber-300/80">
                         <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                        {legacyStepsCodebaseDoc[legacyStepIndex % legacyStepsCodebaseDoc.length]}
+                        {LEGACY_CODEBASE_DOC_STEPS[legacyStepIndex % LEGACY_CODEBASE_DOC_STEPS.length]}
                       </p>
                     ) : (
                       <>
@@ -1594,7 +1581,7 @@ export default function WorkshopView({
                     {loading && loadingReason === "legacy-mdd" && (
                       <p className="mt-2 text-amber-300/80 text-xs flex items-center gap-2">
                         <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                        {legacyStepsMdd[legacyStepIndex % legacyStepsMdd.length]}
+                        {LEGACY_MDD_STEPS[legacyStepIndex % LEGACY_MDD_STEPS.length]}
                       </p>
                     )}
                   </>
@@ -1616,7 +1603,7 @@ export default function WorkshopView({
                     {loading && loadingReason === "legacy-deliverables" && (
                       <p className="mt-2 text-green-300/80 text-xs flex items-center gap-2">
                         <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                        {legacyStepsDeliverables[legacyStepIndex % legacyStepsDeliverables.length]}
+                        {LEGACY_DELIVERABLES_STEPS[legacyStepIndex % LEGACY_DELIVERABLES_STEPS.length]}
                       </p>
                     )}
                   </div>

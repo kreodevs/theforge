@@ -1,4 +1,9 @@
 import { useRef, useEffect, useState, useMemo } from "react";
+import {
+  LEGACY_CODEBASE_DOC_STEPS,
+  LEGACY_DELIVERABLES_STEPS,
+  LEGACY_MDD_STEPS,
+} from "../constants/legacy-workshop-loading-steps";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil, X, RefreshCw, ImagePlus } from "lucide-react";
@@ -204,6 +209,19 @@ export default function ChatContainer({
   const isBenchmarkStreaming = activeTab === "benchmark" && loading && loadingReason === "benchmark";
   const isMddStreaming = loading && loadingReason === "mdd";
   const showAgentProgress = isBenchmarkStreaming || isMddStreaming;
+  /** Generación larga en segundo plano (mismo criterio que el panel central en WorkshopView). */
+  const isLegacyLongRun =
+    loading &&
+    (loadingReason === "legacy-codebase-doc" ||
+      loadingReason === "legacy-mdd" ||
+      loadingReason === "legacy-deliverables");
+  const legacyRotatingSteps = useMemo(() => {
+    if (loadingReason === "legacy-codebase-doc") return LEGACY_CODEBASE_DOC_STEPS;
+    if (loadingReason === "legacy-mdd") return LEGACY_MDD_STEPS;
+    if (loadingReason === "legacy-deliverables") return LEGACY_DELIVERABLES_STEPS;
+    return LEGACY_CODEBASE_DOC_STEPS;
+  }, [loadingReason]);
+  const [legacyProgressIndex, setLegacyProgressIndex] = useState(0);
   const [inputValue, setInputValue] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([]);
@@ -236,6 +254,16 @@ export default function ChatContainer({
     prevStageForBannerRef.current = activeStageIdForChat;
   }, [activeStageIdForChat, multiStageChat]);
 
+  useEffect(() => {
+    if (!isLegacyLongRun) {
+      setLegacyProgressIndex(0);
+      return;
+    }
+    const steps = legacyRotatingSteps;
+    const id = setInterval(() => setLegacyProgressIndex((i) => (i + 1) % steps.length), 6000);
+    return () => clearInterval(id);
+  }, [isLegacyLongRun, legacyRotatingSteps]);
+
   /** Auto-resize textarea hasta máx. 3 líneas visibles (~5rem), luego scroll */
   useEffect(() => {
     const el = chatInputRef.current;
@@ -265,6 +293,8 @@ export default function ChatContainer({
     loading,
     messagesToShow[messagesToShow.length - 1]?.content,
     evaluatorCritique,
+    isLegacyLongRun,
+    legacyProgressIndex,
   ]);
 
   useEffect(() => {
@@ -551,11 +581,11 @@ export default function ChatContainer({
                   </div>
                 </div>
               ))
-            ) : loading && !showAgentProgress ? (
+            ) : loading && !showAgentProgress && !isLegacyLongRun ? (
               <p className="text-zinc-500 text-sm text-center py-8">
                 Cargando mensaje de bienvenida…
               </p>
-            ) : !loading && !showAgentProgress ? (
+            ) : !loading && !showAgentProgress && !isLegacyLongRun ? (
               <div className="text-center py-8 space-y-3">
                 <p className="text-zinc-500 text-sm">
                   {activeTab === "benchmark"
@@ -564,6 +594,28 @@ export default function ChatContainer({
                       ? "Escribe aquí: pide generar el MDD con agentes, que revise el documento, o haz preguntas. El gerente decidirá quién responde."
                       : `Escribe un mensaje para continuar. La IA adaptará su respuesta al documento activo (${contextLabel}).`}
                 </p>
+              </div>
+            ) : null}
+
+            {isLegacyLongRun ? (
+              <div
+                className="rounded-lg border border-amber-500/35 bg-amber-950/25 px-3 py-2.5 space-y-1.5"
+                role="status"
+                aria-live="polite"
+              >
+                <p className="text-[10px] font-medium uppercase tracking-wide text-amber-400/85">
+                  {loadingReason === "legacy-codebase-doc"
+                    ? "MDD inicial (partida)"
+                    : loadingReason === "legacy-mdd"
+                      ? "MDD de cambio"
+                      : "Entregables legacy"}
+                </p>
+                <div className="flex items-start gap-2 text-sm text-amber-100/90">
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-400 shrink-0 mt-0.5" aria-hidden />
+                  <span className="leading-snug">
+                    {legacyRotatingSteps[legacyProgressIndex % legacyRotatingSteps.length]}
+                  </span>
+                </div>
               </div>
             ) : null}
 
@@ -624,7 +676,7 @@ export default function ChatContainer({
               />
             )}
 
-            {loading && (
+            {loading && !isLegacyLongRun && (
               <div className="flex justify-start">
                 <div className="rounded-lg px-3 py-2 bg-zinc-800 border border-zinc-600">
                   <Loader2 className="w-4 h-4 animate-spin text-amber-400" />

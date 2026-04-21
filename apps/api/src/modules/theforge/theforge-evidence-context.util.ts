@@ -157,6 +157,19 @@ export function clipLegacySemanticSection(s: string): string {
   return clip(s.trim(), max);
 }
 
+/**
+ * Quita líneas de `semantic_search` que suelen ser ruido (instrucciones LLM, no código del producto).
+ */
+export function filterNoiseFromLegacySemanticChunk(s: string): string {
+  const lines = s.split("\n");
+  const out: string[] = [];
+  for (const line of lines) {
+    if (/\bGEMINI\.md\b/i.test(line)) continue;
+    out.push(line);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 async function mapInBatches<T, R>(items: T[], batchSize: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = [];
   for (let i = 0; i < items.length; i += batchSize) {

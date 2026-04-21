@@ -10,6 +10,7 @@ import {
   gatherLegacyIndexSignals,
   isLegacyEvidenceFirstEnabled,
   clipLegacySemanticSection,
+  filterNoiseFromLegacySemanticChunk,
   legacyAnalyzerIndicatesEmptyIndex,
   legacyIndexHasUsableGraphEvidence,
 } from "../theforge/theforge-evidence-context.util.js";
@@ -30,6 +31,24 @@ import {
 } from "../theforge/mcp-ui-debug.context.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
+
+/** Modo clásico `generate-codebase-doc`: síntesis única si las 4 rondas `ask_codebase` vienen vacías (p. ej. timeout por serie secuencial). */
+const CODEBASE_DOC_FALLBACK_SYNTHESIS_PROMPT =
+  "Documenta el repositorio indexado en Ariadne (ámbito actual). Responde en **español** en markdown con subapartados claros: " +
+  "**Propósito** del repo en el producto; **stack y tooling** (solo lo que inferas del índice: React, Vite, npm, etc.); " +
+  "**Estructura de carpetas**; **pantallas o rutas principales**; **datos y API** — si en este repo no hay modelos/Prisma y el backend está en otro servicio, dilo explícitamente. " +
+  "No inventes archivos ni endpoints. Mínimo unas 400 palabras. Si algo no consta en el índice, dilo.";
+
+const CODEBASE_DOC_CLASSIC_Q = {
+  q1:
+    "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
+  q2:
+    "Describe architecture: folder structure, modules, how backend and frontend connect, existing patterns and conventions. Include file paths for key areas.",
+  q3:
+    "What is the EXACT tech stack and directory structure of this project? List only what exists in the codebase: backend runtime and framework (e.g. Node/Express, Node/NestJS, Python/Django), frontend framework (e.g. React, Vue), database, build tools. If the project has multiple repositories, list them and their main folders. Do NOT assume or invent; only state what the codebase contains.",
+  q4:
+    "What are the main business rules, validations, naming conventions, and key patterns used across the codebase? Include any domain-specific logic, constants, or shared utilities.",
+} as const;
 
 /** Respuesta de `generate-codebase-doc` cuando el API tiene trazas MCP (debug UI). */
 export type GenerateCodebaseDocResponse = { codebaseDoc: string; mcpDebugTrace?: McpUiDebugEntry[] };
@@ -248,29 +267,27 @@ export class LegacyCoordinatorService {
       const parts: string[] = [];
       const lim = parseInt(process.env.LEGACY_SEMANTIC_SEARCH_LIMIT ?? "12", 10);
       const semanticLim = Number.isFinite(lim) && lim > 0 ? lim : 12;
-      const q1 = await this.theforge.askCodebase(
-        "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
-        theforgeId,
-      );
-      if (q1.trim()) parts.push("## 1. Modelos, rutas y configuración\n\n" + q1.trim());
+      /** En paralelo: misma ventana de timeout que una sola llamada (evita 4× tiempo serial y respuestas vacías por abort). */
+      const [r1, r2, r3, r4] = await Promise.all([
+        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId),
+        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q2, theforgeId),
+        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q3, theforgeId),
+        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q4, theforgeId),
+      ]);
+      if (r1.trim()) parts.push("## 1. Modelos, rutas y configuración\n\n" + r1.trim());
+      if (r2.trim()) parts.push("## 2. Arquitectura y carpetas\n\n" + r2.trim());
+      if (r3.trim()) parts.push("## 3. Stack y estructura\n\n" + r3.trim());
+      if (r4.trim()) parts.push("## 4. Reglas de negocio y convenciones\n\n" + r4.trim());
 
-      const q2 = await this.theforge.askCodebase(
-        "Describe architecture: folder structure, modules, how backend and frontend connect, existing patterns and conventions. Include file paths for key areas.",
-        theforgeId,
-      );
-      if (q2.trim()) parts.push("## 2. Arquitectura y carpetas\n\n" + q2.trim());
-
-      const q3 = await this.theforge.askCodebase(
-        "What is the EXACT tech stack and directory structure of this project? List only what exists in the codebase: backend runtime and framework (e.g. Node/Express, Node/NestJS, Python/Django), frontend framework (e.g. React, Vue), database, build tools. If the project has multiple repositories, list them and their main folders. Do NOT assume or invent; only state what the codebase contains.",
-        theforgeId,
-      );
-      if (q3.trim()) parts.push("## 3. Stack y estructura\n\n" + q3.trim());
-
-      const q4 = await this.theforge.askCodebase(
-        "What are the main business rules, validations, naming conventions, and key patterns used across the codebase? Include any domain-specific logic, constants, or shared utilities.",
-        theforgeId,
-      );
-      if (q4.trim()) parts.push("## 4. Reglas de negocio y convenciones\n\n" + q4.trim());
+      if (!r1.trim() && !r2.trim() && !r3.trim() && !r4.trim()) {
+        this.logger.warn(
+          "generateCodebaseDoc: las cuatro rondas ask_codebase (clásico) vinieron vacías; síntesis única de respaldo (revisa THEFORGE_MCP_TIMEOUT_MS si persiste).",
+        );
+        const fb = await this.theforge.askCodebase(CODEBASE_DOC_FALLBACK_SYNTHESIS_PROMPT, theforgeId);
+        if (fb.trim()) {
+          parts.unshift("## 1–4. Panorama del codebase (síntesis)\n\n" + fb.trim());
+        }
+      }
 
       const [searchModels, searchApi, searchUi] = await Promise.all([
         this.theforge.semanticSearch("data models entities database schema tables", theforgeId, semanticLim),
@@ -278,12 +295,13 @@ export class LegacyCoordinatorService {
         this.theforge.semanticSearch("UI components screens pages views", theforgeId, semanticLim),
       ]);
       const searchParts: string[] = [];
+      const clipSem = (chunk: string) => clipLegacySemanticSection(filterNoiseFromLegacySemanticChunk(chunk.trim()));
       if (searchModels.trim()) {
-        searchParts.push("Modelos/entidades (búsqueda semántica):\n" + clipLegacySemanticSection(searchModels.trim()));
+        searchParts.push("Modelos/entidades (búsqueda semántica):\n" + clipSem(searchModels));
       }
-      if (searchApi.trim()) searchParts.push("API/rutas (búsqueda semántica):\n" + clipLegacySemanticSection(searchApi.trim()));
+      if (searchApi.trim()) searchParts.push("API/rutas (búsqueda semántica):\n" + clipSem(searchApi));
       if (searchUi.trim()) {
-        searchParts.push("Componentes/pantallas (búsqueda semántica):\n" + clipLegacySemanticSection(searchUi.trim()));
+        searchParts.push("Componentes/pantallas (búsqueda semántica):\n" + clipSem(searchUi));
       }
       if (searchParts.length > 0) parts.push("## 5. Índice semántico del grafo\n\n" + searchParts.join("\n\n"));
 
