@@ -43,5 +43,7 @@ Ver plan histórico en `docs/archive/PLAN-FLUJO-LEGACY-V2.md`.
 ## Contrato con TheForge (SPEC-MCP-001)
 
 - **Primario:** Se llama **`get_modification_plan(userDescription, projectId)`**. Respuesta: `{ filesToModify: string[], questionsToRefine: string[] }`. Garantías del MCP: `filesToModify` = solo rutas de nodos File del proyecto en FalkorDB (verificadas); `questionsToRefine` = solo preguntas de negocio/funcionalidad (no "¿hay otros componentes?").
-- **Fallback:** Si el MCP no expone `get_modification_plan`, se usa `ask_codebase` con un prompt que pide el mismo JSON; se filtran preguntas tipo "otros componentes".
+- **Fallback:** Si el MCP no expone `get_modification_plan`, se usa `ask_codebase` con un prompt que pide el mismo JSON; se filtran preguntas tipo "otros componentes". Los `filesToModify` usan `getDefaultRepoIdForStoredProject` como **`repoId`** (primer root del workspace en catálogo), no el UUID del proyecto workspace crudo.
+- **`generate-mdd`:** `validate_before_edit` / `get_definitions` usan un nombre de nodo inferido desde `get_functions_in_file` (`legacy-graph-node-name.util.ts`), no solo el stem del path.
+- **`ask_codebase` en legacy:** Por defecto `responseMode: evidence_first` + `twoPhase` (`getLegacyAskCodebaseOptions`); desactivar MDD ingest en esas llamadas: `LEGACY_ASK_CODEBASE_EVIDENCE_FIRST=0`.
 - **Sugerencias de respuestas:** Tras obtener las preguntas, se llama `ask_codebase` para rellenar sugerencias desde el codebase.

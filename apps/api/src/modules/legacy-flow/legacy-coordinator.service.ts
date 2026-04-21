@@ -8,6 +8,7 @@ import { TheForgeService } from "../theforge/theforge.service.js";
 import {
   DEFAULT_SEMANTIC_QUERIES,
   gatherLegacyIndexSignals,
+  getLegacyAskCodebaseOptions,
   getLegacySemanticSearchLimit,
   isLegacyEvidenceFirstEnabled,
   clipLegacySemanticSection,
@@ -15,6 +16,7 @@ import {
   legacyAnalyzerIndicatesEmptyIndex,
   legacyIndexHasUsableGraphEvidence,
 } from "../theforge/theforge-evidence-context.util.js";
+import { inferLegacyGraphNodeNameFromFunctionsFileText } from "./legacy-graph-node-name.util.js";
 import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
 import { runLegacyStagedDiscoveryMddAgent } from "./legacy-staged-discovery-agent.js";
 import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.service.js";
@@ -271,12 +273,13 @@ export class LegacyCoordinatorService {
     if (!codebaseDoc) {
       const parts: string[] = [];
       const semanticLim = getLegacySemanticSearchLimit();
+      const legacyAsk = getLegacyAskCodebaseOptions();
       /** En paralelo: misma ventana de timeout que una sola llamada (evita 4× tiempo serial y respuestas vacías por abort). */
       const [r1, r2, r3, r4] = await Promise.all([
-        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId),
-        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q2, theforgeId),
-        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q3, theforgeId),
-        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q4, theforgeId),
+        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId, legacyAsk),
+        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q2, theforgeId, legacyAsk),
+        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q3, theforgeId, legacyAsk),
+        this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q4, theforgeId, legacyAsk),
       ]);
       if (r1.trim()) parts.push("## 1. Modelos, rutas y configuración\n\n" + r1.trim());
       if (r2.trim()) parts.push("## 2. Arquitectura y carpetas\n\n" + r2.trim());
@@ -288,7 +291,7 @@ export class LegacyCoordinatorService {
         this.logger.warn(
           "generateCodebaseDoc: las cuatro rondas ask_codebase (clásico) vinieron vacías; síntesis única de respaldo (revisa THEFORGE_MCP_TIMEOUT_MS si persiste).",
         );
-        const fb = await this.theforge.askCodebase(CODEBASE_DOC_FALLBACK_SYNTHESIS_PROMPT, theforgeId);
+        const fb = await this.theforge.askCodebase(CODEBASE_DOC_FALLBACK_SYNTHESIS_PROMPT, theforgeId, legacyAsk);
         synthesisFallback = fb?.trim() ?? "";
         if (synthesisFallback) {
           parts.unshift("## 1–4. Panorama del codebase (síntesis)\n\n" + synthesisFallback);
@@ -397,13 +400,15 @@ export class LegacyCoordinatorService {
         `Analyze the ACTUAL indexed codebase (graph/files) for this project. Respond with a JSON object only: { "filesToModify": string[], "questions": string[] }.\n` +
         `- filesToModify: List ONLY real file paths that EXIST in this indexed project. Do NOT invent file names (e.g. no .java if the project has no Java).\n` +
         `- questions: ONLY business/functional clarifying questions. Do NOT ask "are there other components to consider?".`;
-      const raw = await this.theforge.askCodebase(question, theforgeId);
+      const legacyAsk = getLegacyAskCodebaseOptions();
+      const raw = await this.theforge.askCodebase(question, theforgeId, legacyAsk);
       if (raw.trim()) {
         try {
           const jsonStr = extractJsonFromText(raw);
           const parsed = JSON.parse(jsonStr) as { filesToModify?: unknown; questions?: unknown };
           const paths = Array.isArray(parsed?.filesToModify) ? parsed.filesToModify.filter((f) => typeof f === "string") : [];
-          filesToModify = paths.map((path) => ({ path: path as string, repoId: theforgeId }));
+          const defaultRepoId = await this.theforge.getDefaultRepoIdForStoredProject(theforgeId);
+          filesToModify = paths.map((path) => ({ path: path as string, repoId: defaultRepoId }));
           questions = Array.isArray(parsed?.questions) ? parsed.questions.filter((q) => typeof q === "string") : [];
         } catch {
           questions = [raw.slice(0, 500)];
@@ -418,13 +423,14 @@ export class LegacyCoordinatorService {
 
     let suggestedAnswers: Record<string, string> = {};
     if (questions.length > 0) {
+      const legacyAsk = getLegacyAskCodebaseOptions();
       const answerPrompt =
         `Change requested: "${desc.slice(0, 400)}"\n\n` +
         `Based ONLY on the codebase, answer these questions briefly (one short paragraph or bullet list per question). ` +
         `If the code does not contain the answer, use empty string for that key. ` +
         `Respond with a JSON object only, with string keys "0", "1", "2", ... (index of each question):\n\n` +
         questions.map((q, i) => `${i}. ${q}`).join("\n");
-      const answerRaw = await this.theforge.askCodebase(answerPrompt, theforgeId);
+      const answerRaw = await this.theforge.askCodebase(answerPrompt, theforgeId, legacyAsk);
       if (answerRaw.trim()) {
         try {
           const answerStr = extractJsonFromText(answerRaw);
@@ -517,6 +523,7 @@ export class LegacyCoordinatorService {
       }
     }
     if (description) {
+      const legacyAsk = getLegacyAskCodebaseOptions();
       // Búsqueda semántica con términos del cambio para descubrir archivos/símbolos relacionados
       const descTerms = description.slice(0, 200).replace(/[^\w\s]/g, " ");
       const searchRelated = await this.theforge.semanticSearch(descTerms, theforgeId, getLegacySemanticSearchLimit());
@@ -527,31 +534,34 @@ export class LegacyCoordinatorService {
       const q1 = await this.theforge.askCodebase(
         `For this change: "${description.slice(0, 400)}". List what ALREADY EXISTS in the codebase: data models/entities (tables, fields), API endpoints or services, and UI screens or components that touch clients, discounts, prices, price lists, campaigns, or profitability. Be exhaustive.`,
         theforgeId,
+        legacyAsk,
       );
       if (q1.trim()) theforgeParts.push("Existe en el codebase:\n" + q1.trim());
       const q2 = await this.theforge.askCodebase(
         `For the same change: "${description.slice(0, 400)}". What architecture patterns, module structure, and file organization does the app use in the areas affected? Which files import or depend on client, discount, or pricing logic?`,
         theforgeId,
+        legacyAsk,
       );
       if (q2.trim()) theforgeParts.push("Arquitectura y dependencias:\n" + q2.trim());
       const q3 = await this.theforge.askCodebase(
         `Summarize any business rules, validations, or edge cases already implemented in the codebase for: clients, discounts, price lists, campaigns, or profitability. Include where they live (file or module).`,
         theforgeId,
+        legacyAsk,
       );
       if (q3.trim()) theforgeParts.push("Reglas y edge cases existentes:\n" + q3.trim());
     }
     // Validación antes de editar (validate_before_edit = impacto + contrato); fallback a get_legacy_impact
-    // + get_definitions (ubicación exacta) y get_functions_in_file (qué exporta el archivo)
+    // + get_definitions (ubicación exacta); get_functions_in_file alimenta el nombre de nodo para el grafo
     for (let i = 0; i < Math.min(3, files.length); i++) {
       const f = files[i]!;
-      const nodeName = f.path.replace(/^.*[/\\]/, "").replace(/\.[^.]+$/, "") || f.path;
       const repoId = f.repoId || theforgeId;
-      const [impactBlock, defs, funcs] = await Promise.all([
+      const funcs = await this.theforge.getFunctionsInFile(f.path, repoId, f.path);
+      const nodeName = inferLegacyGraphNodeNameFromFunctionsFileText(funcs, f.path);
+      const [impactBlock, defs] = await Promise.all([
         this.theforge.validateBeforeEdit(nodeName, repoId, f.path).then((b) => b || this.theforge.getLegacyImpact(nodeName, repoId, f.path)),
         this.theforge.getDefinitions(nodeName, repoId, f.path),
-        this.theforge.getFunctionsInFile(f.path, repoId, f.path),
       ]);
-      if (impactBlock?.trim()) theforgeParts.push(`Validación antes de editar "${f.path}":\n` + impactBlock.trim());
+      if (impactBlock?.trim()) theforgeParts.push(`Validación antes de editar "${f.path}" (nodo grafo: \`${nodeName}\`):\n` + impactBlock.trim());
       if (defs?.trim()) theforgeParts.push(`Definición de "${nodeName}" (archivo:líneas):\n` + defs.trim());
       if (funcs?.trim()) theforgeParts.push(`Funciones/componentes en ${f.path}:\n` + funcs.trim());
     }

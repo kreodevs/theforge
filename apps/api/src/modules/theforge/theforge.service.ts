@@ -3,6 +3,7 @@ import {
   buildLegacyEvidenceMarkdown,
   clipLegacySemanticSection,
   DEFAULT_SEMANTIC_QUERIES,
+  getLegacyAskCodebaseOptions,
   getLegacySemanticSearchLimit,
   isLegacyEvidenceFirstEnabled,
 } from "./theforge-evidence-context.util.js";
@@ -60,9 +61,15 @@ export interface AskCodebaseOptions {
   /**
    * `evidence_first`: el ingest (LLM + orchestrator) puede devolver **JSON MDD** con claves tipo
    * `summary`, `entities`, `evidence_paths`, etc., o envolverlo en `mddDocument`. `TheForgeService.askCodebase`
-   * lo normaliza a markdown antes de devolverlo. `default`: prosa/markdown clásico.
+   * lo normaliza a markdown antes de devolverlo. `raw_evidence`: JSON crudo del ingest (sin normalizar).
+   * `default`: prosa/markdown clásico.
    */
-  responseMode?: "default" | "evidence_first";
+  responseMode?: "default" | "evidence_first" | "raw_evidence";
+  /**
+   * Solo con `responseMode: raw_evidence`; si true, retrieve sin LLM cuando el ingest lo soporta
+   * (Ariadne `deterministicRetriever` + orchestrator `raw-evidence-deterministic`).
+   */
+  deterministicRetriever?: boolean;
   currentFilePath?: string;
 }
 
@@ -391,6 +398,19 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   /**
+   * Repo UUID para anclar paths cuando no hay `repoId` por archivo (p. ej. fallback JSON de `start`).
+   * Con catálogo multi-root, evita usar el **workspace** `id` como `repoId` (no válido en Falkor por repo).
+   */
+  async getDefaultRepoIdForStoredProject(storedTheforgeId: string): Promise<string> {
+    const raw = storedTheforgeId.trim();
+    if (!this.isConfigured() || !raw) return raw;
+    const ident = await this.resolveStoredToMcp(raw);
+    const g = ident.graphProjectId.trim();
+    const w = ident.workspaceProjectId.trim();
+    return g || w || raw;
+  }
+
+  /**
    * Contexto amplio del codebase para generación de entregables (Blueprint, API, etc.).
    * Incluye modelos/rutas, arquitectura y stack + estructura real para no inventar plataformas.
    * @param projectId - ID de proyecto o repo en TheForge.
@@ -427,18 +447,22 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     }
     const parts: string[] = [];
     const lim = getLegacySemanticSearchLimit();
+    const legacyAsk = getLegacyAskCodebaseOptions();
     const [q1, q2, q3, searchModels, searchApi, searchUi] = await Promise.all([
       this.askCodebase(
         "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
         projectId,
+        legacyAsk,
       ),
       this.askCodebase(
         "Describe architecture: folder structure, modules, how backend and frontend connect, existing patterns and conventions. Include file paths for key areas.",
         projectId,
+        legacyAsk,
       ),
       this.askCodebase(
         "What is the EXACT tech stack and directory structure of this project? List only what exists in the codebase: backend runtime and framework (e.g. Node/Express, Node/NestJS, Python/Django), frontend framework (e.g. React, Vue), database, build tools. If the project has multiple repositories, list them and their main folders. Do NOT assume or invent; only state what the codebase contains.",
         projectId,
+        legacyAsk,
       ),
       this.semanticSearch("data models entities database schema", projectId, lim),
       this.semanticSearch("API routes endpoints controllers", projectId, lim),
@@ -684,7 +708,12 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       };
       if (opts?.currentFilePath?.trim()) args.currentFilePath = opts.currentFilePath.trim();
       if (scope && Object.keys(scope).length > 0) args.scope = scope;
-      if (opts?.responseMode === "evidence_first") args.responseMode = "evidence_first";
+      if (opts?.responseMode && opts.responseMode !== "default") {
+        args.responseMode = opts.responseMode;
+      }
+      if (opts?.deterministicRetriever === true) {
+        args.deterministicRetriever = true;
+      }
       const response = await this.postTheForgeMcp({
         jsonrpc: "2.0",
         id: "ask-codebase-1",

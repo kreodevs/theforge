@@ -68,6 +68,17 @@ export function isLegacyAnalyzerAttachRawEnabled(): boolean {
   return envFlag("LEGACY_ANALYZER_ATTACH_RAW", false);
 }
 
+/**
+ * Opciones MCP para `ask_codebase` en flujos legacy / entregables (TheForgeService).
+ * Por defecto `responseMode: evidence_first` + `twoPhase: true`. Desactivar evidencia MDD: `LEGACY_ASK_CODEBASE_EVIDENCE_FIRST=0`.
+ */
+export function getLegacyAskCodebaseOptions(): AskCodebaseOptions {
+  if (!envFlag("LEGACY_ASK_CODEBASE_EVIDENCE_FIRST", true)) {
+    return { twoPhase: true };
+  }
+  return { twoPhase: true, responseMode: "evidence_first" };
+}
+
 const LEGACY_ANALYZER_INPUT_MAX = () => parsePositiveInt("LEGACY_ANALYZER_INPUT_MAX_CHARS", 14000);
 
 /**

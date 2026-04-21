@@ -16,6 +16,7 @@ export const THEFORGE_MCP_CLIENT_ARG_KEYS: Readonly<Record<string, ReadonlySet<s
     "currentFilePath",
     "scope",
     "responseMode",
+    "deterministicRetriever",
   ]),
   get_modification_plan: new Set([
     "userDescription",
