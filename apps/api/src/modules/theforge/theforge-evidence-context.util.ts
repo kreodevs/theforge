@@ -34,6 +34,12 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+/** Variable explícita activada (1/true/yes/on). Default false si no está definida. */
+function envExplicitlyEnabled(name: string): boolean {
+  const v = process.env[name]?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
 /**
  * Límite de resultados por query en `semantic_search` (MCP suele aceptar miles; 12 dejaba el índice casi vacío, sobre todo multi-root).
  * Override: `LEGACY_SEMANTIC_SEARCH_LIMIT`.
@@ -171,13 +177,16 @@ export function clipLegacySemanticSection(s: string): string {
 }
 
 /**
- * Quita líneas de `semantic_search` que suelen ser ruido (instrucciones LLM, no código del producto).
+ * Quita líneas de `semantic_search` que suelen ser ruido (instrucciones LLM, docs de diseño indexados como nodos Markdown).
+ * Conservar `**MarkdownDoc:**`: `LEGACY_SEMANTIC_KEEP_MARKDOWN_DOCS=1`.
  */
 export function filterNoiseFromLegacySemanticChunk(s: string): string {
+  const keepMd = envExplicitlyEnabled("LEGACY_SEMANTIC_KEEP_MARKDOWN_DOCS");
   const lines = s.split("\n");
   const out: string[] = [];
   for (const line of lines) {
     if (/\bGEMINI\.md\b/i.test(line)) continue;
+    if (!keepMd && /\*\*MarkdownDoc:\*\*/i.test(line)) continue;
     out.push(line);
   }
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();

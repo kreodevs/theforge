@@ -30,7 +30,7 @@ Integración HTTP JSON-RPC con el MCP AriadneSpecs (`THEFORGE_MCP_URL`): proyect
 
 `TheForgeService.getContextForDeliverables` sigue usando `buildLegacyEvidenceMarkdown` (pipeline anterior) cuando `LEGACY_EVIDENCE_FIRST_CONTEXT` está activo. **`LegacyCoordinatorService.generateCodebaseDoc` / `generateMdd`** usan en su lugar **descubrimiento escalonado** (LLM + `ask_codebase` / `semantic_search` / `get_file_content`, prompt `legacy-flow/prompts/staged-discovery-mdd-prompt.md`) con el mismo flag. `gatherLegacyIndexSignals` sigue siendo la fase **sin LLM** para la puerta índice↔SDD en Falkor (ver `docs/LEGACY-EVIDENCE-CONTEXT.md` y `legacy-flow/README.md`).
 
-Variables relevantes: ver `.env.example` en la raíz del monorepo (prefijo `LEGACY_*`, `THEFORGE_CONTEXT_*`).
+Variables relevantes: ver `.env.example` en la raíz del monorepo (prefijo `LEGACY_*`, `THEFORGE_CONTEXT_*`). **`LEGACY_SEMANTIC_KEEP_MARKDOWN_DOCS`:** si no está en `1`, se eliminan del texto de evidencia las líneas `**MarkdownDoc:**` devueltas por el MCP (documentación de diseño indexada, no código).
 
 **C4 en Blueprint (legacy):** `getContextForDeliverables` antepone (si hay respuesta) el markdown de `get_c4_model` antes de la evidencia semántica/Analyzer. Requiere que el **servidor MCP** tenga JWT válido hacia el API Nest (`ARIADNE_API_BEARER` / `ARIADNE_API_JWT`); si no, la herramienta falla y se continúa sin bloque C4. Desactivar: `LEGACY_C4_CONTEXT=0`. Recorte: `LEGACY_C4_MAX_CHARS` (default 5000). El prefacio TheForge en prompts usa `THEFORGE_CONTEXT_PREPEND_MAX_CHARS` (default 16000) para dar cabida a C4 + evidencia.
 
