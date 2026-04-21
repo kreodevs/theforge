@@ -32,7 +32,7 @@ docker run -d --name theforge-db \
 
 ### 3. Variables de entorno
 
-En la raíz del repo (o en `apps/api`), crea `.env`:
+En la raíz del repo (o en `apps/api`), crea `.env` (plantilla comentada con todas las variables: **`.env.example`** en la raíz).
 
 ```env
 DATABASE_URL=postgresql://theforge:theforge@localhost:5432/theforge
