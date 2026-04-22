@@ -1353,75 +1353,81 @@ export default function WorkshopView({
           <div className="flex-1 overflow-auto p-4 min-h-0 flex flex-col min-w-0">
             {centralPanel === "mdd-inicial" && project?.projectType === "LEGACY" && projectId && (
               <div className="rounded-lg bg-zinc-800/80 border border-zinc-600 p-6 text-zinc-300 text-sm space-y-4 flex flex-col min-h-0 flex-1">
-                <div className="flex flex-wrap items-start justify-between gap-2 shrink-0">
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <p className="font-medium text-amber-400/90">MDD Inicial — Documentación del codebase (partida)</p>
-                    <p className="text-zinc-500 text-xs">
-                      Reconstrucción AS-IS desde el índice AriadneSpecs (equivalente al “primer paso” de documentación). Opcional: puedes ir directo a <strong>Modificación</strong> si solo quieres un cambio puntual; para volcar todo el conocimiento del repo aquí, usa el botón de abajo.
+                <div className="shrink-0 space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <p className="min-w-0 flex-1 font-medium text-amber-400/90 leading-snug pr-1">
+                      MDD Inicial — Documentación del codebase (partida)
                     </p>
+                    {(mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc)?.trim() ? (
+                      <button
+                        type="button"
+                        title="Copiar el markdown del MDD inicial al portapapeles (p. ej. para pegar en un chat con IA)"
+                        onClick={() => void copyMddInicialMarkdown()}
+                        className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-md border border-amber-500/35 bg-amber-950/30 px-2.5 py-1.5 text-[11px] font-medium text-amber-200/90 hover:bg-amber-950/50"
+                      >
+                        {mddInicialCopyOk ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {mddInicialCopyOk ? "Copiado" : "Copiar MDD"}
+                      </button>
+                    ) : null}
                   </div>
+                  <p className="text-zinc-500 text-xs leading-relaxed max-w-3xl">
+                    Reconstrucción AS-IS desde el índice AriadneSpecs (equivalente al “primer paso” de documentación). Opcional: puedes ir directo a <strong>Modificación</strong> si solo quieres un cambio puntual; para volcar todo el conocimiento del repo aquí, usa el botón de abajo.
+                  </p>
                   <fieldset
                     disabled={loading && loadingReason === "legacy-codebase-doc"}
-                    className="shrink-0 space-y-2.5 rounded-lg border border-zinc-600/60 bg-zinc-900/35 p-3 text-left"
+                    className="w-full min-w-0 rounded-lg border border-zinc-600/60 bg-zinc-900/35 p-3 sm:p-4 text-left"
                   >
-                    <legend className="px-1 text-[11px] font-medium text-zinc-400">Modo ingest (ask_codebase)</legend>
-                    <label className="flex cursor-pointer gap-2.5 items-start">
-                      <input
-                        type="radio"
-                        name="codebase-doc-response-mode"
-                        className="mt-1 accent-amber-500"
-                        checked={codebaseDocResponseMode === "default"}
-                        onChange={() => setCodebaseDocResponseMode("default")}
-                      />
-                      <span>
-                        <span className="text-sm text-zinc-200">Chat normal</span>
-                        <span className="mt-0.5 block text-xs text-zinc-500">
-                          Prosa; ReAct en retrieve (hasta 4 vueltas LLM en backend).
+                    <legend className="mb-3 block w-full border-b border-zinc-600/50 pb-2 text-left text-[11px] font-medium text-zinc-400">
+                      Modo ingest (ask_codebase)
+                    </legend>
+                    <div className="space-y-2">
+                      <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-zinc-800/60 sm:px-2">
+                        <input
+                          type="radio"
+                          name="codebase-doc-response-mode"
+                          className="mt-1 shrink-0 accent-amber-500"
+                          checked={codebaseDocResponseMode === "default"}
+                          onChange={() => setCodebaseDocResponseMode("default")}
+                        />
+                        <span className="min-w-0">
+                          <span className="text-sm text-zinc-200">Chat normal</span>
+                          <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
+                            Prosa; ReAct en retrieve (hasta 4 vueltas LLM en backend).
+                          </span>
                         </span>
-                      </span>
-                    </label>
-                    <label className="flex cursor-pointer gap-2.5 items-start">
-                      <input
-                        type="radio"
-                        name="codebase-doc-response-mode"
-                        className="mt-1 accent-amber-500"
-                        checked={codebaseDocResponseMode === "evidence_first"}
-                        onChange={() => setCodebaseDocResponseMode("evidence_first")}
-                      />
-                      <span>
-                        <span className="text-sm text-zinc-200">MDD / SDD (recomendado)</span>
-                        <span className="mt-0.5 block text-xs text-zinc-500">
-                          Una petición: JSON MDD 7 secciones desde Ariadne (menos idas y vueltas que varios MCP).
+                      </label>
+                      <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-zinc-800/60 sm:px-2">
+                        <input
+                          type="radio"
+                          name="codebase-doc-response-mode"
+                          className="mt-1 shrink-0 accent-amber-500"
+                          checked={codebaseDocResponseMode === "evidence_first"}
+                          onChange={() => setCodebaseDocResponseMode("evidence_first")}
+                        />
+                        <span className="min-w-0">
+                          <span className="text-sm text-zinc-200">MDD / SDD (recomendado)</span>
+                          <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
+                            Una petición: JSON MDD 7 secciones desde Ariadne (menos idas y vueltas que varios MCP).
+                          </span>
                         </span>
-                      </span>
-                    </label>
-                    <label className="flex cursor-pointer gap-2.5 items-start">
-                      <input
-                        type="radio"
-                        name="codebase-doc-response-mode"
-                        className="mt-1 accent-amber-500"
-                        checked={codebaseDocResponseMode === "raw_evidence"}
-                        onChange={() => setCodebaseDocResponseMode("raw_evidence")}
-                      />
-                      <span>
-                        <span className="text-sm text-zinc-200">Evidencia bruta (barato)</span>
-                        <span className="mt-0.5 block text-xs text-zinc-500">
-                          Sin LLM en retrieve; JSON para sintetizar fuera o depurar 429.
+                      </label>
+                      <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-zinc-800/60 sm:px-2">
+                        <input
+                          type="radio"
+                          name="codebase-doc-response-mode"
+                          className="mt-1 shrink-0 accent-amber-500"
+                          checked={codebaseDocResponseMode === "raw_evidence"}
+                          onChange={() => setCodebaseDocResponseMode("raw_evidence")}
+                        />
+                        <span className="min-w-0">
+                          <span className="text-sm text-zinc-200">Evidencia bruta (barato)</span>
+                          <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
+                            Sin LLM en retrieve; JSON para sintetizar fuera o depurar 429.
+                          </span>
                         </span>
-                      </span>
-                    </label>
+                      </label>
+                    </div>
                   </fieldset>
-                  {(mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc)?.trim() ? (
-                    <button
-                      type="button"
-                      title="Copiar el markdown del MDD inicial al portapapeles (p. ej. para pegar en un chat con IA)"
-                      onClick={() => void copyMddInicialMarkdown()}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-amber-500/35 bg-amber-950/30 px-2.5 py-1.5 text-[11px] font-medium text-amber-200/90 hover:bg-amber-950/50"
-                    >
-                      {mddInicialCopyOk ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      {mddInicialCopyOk ? "Copiado" : "Copiar MDD"}
-                    </button>
-                  ) : null}
                 </div>
                 {project.legacyFlowState?.codebaseDoc || mddInicialLocalContent ? (
                   <>
