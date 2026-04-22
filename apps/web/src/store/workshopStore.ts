@@ -117,6 +117,35 @@ export interface ApiConformanceResult {
   extraInApi: string[];
 }
 
+/** Paso de la cascada legacy de entregables (respuesta `POST …/legacy/generate-deliverables`). */
+export interface LegacyDeliverablesDebugStep {
+  kind: string;
+  at: string;
+  durationMs: number;
+  ok: boolean;
+  outChars?: number;
+  detail?: string;
+  error?: string;
+}
+
+/** Trazabilidad de la última generación de entregables legacy (API + `legacyFlowState`). */
+export interface LegacyDeliverablesDebugReport {
+  startedAt: string;
+  finishedAt?: string;
+  ok?: boolean;
+  deliverablesWithBody?: number;
+  mddSource: string;
+  mddChars: number;
+  codebaseDocChars: number;
+  mddContentChars: number;
+  theforgeContextChars: number;
+  theforgeConfigured: boolean;
+  complexityEffective: string;
+  deliverablesOrder: string[];
+  steps: LegacyDeliverablesDebugStep[];
+  fatalError?: { message: string; stack?: string };
+}
+
 /** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por AriadneSpecs). */
 export interface LegacyFlowState {
   description?: string;
@@ -128,6 +157,8 @@ export interface LegacyFlowState {
   answers?: Record<string, string>;
   /** Documentación de partida del codebase (opcional, generada vía MCP). */
   codebaseDoc?: string;
+  /** Última traza de `generate-deliverables` (persistida en el servidor). */
+  lastDeliverablesDebug?: LegacyDeliverablesDebugReport;
 }
 
 /** Fila `Stage` en `GET /projects/:id` (MDD/semáforo por etapa). */
@@ -355,6 +386,9 @@ interface WorkshopState {
   /** Última traza pregunta↔respuesta MCP al generar doc. partida (solo si el API envía `mcpDebugTrace`). */
   legacyMcpDebugTrace: LegacyMcpDebugEntry[] | null;
   clearLegacyMcpDebugTrace: () => void;
+  /** Última traza de `POST …/legacy/generate-deliverables` (cuerpo JSON de la respuesta). */
+  lastLegacyDeliverablesDebug: LegacyDeliverablesDebugReport | null;
+  clearLegacyDeliverablesDebug: () => void;
   /** Plan pendiente de aprobación (HITL 4.4): pasos a ejecutar; el usuario puede Ejecutar o Modificar */
   pendingPlanApproval: {
     plan: Array<{ step_id: string; task_description: string; node: string; goal?: string }>;
@@ -518,6 +552,7 @@ const initialState = {
   auditorFeedback: null as string | null,
   evaluatorCritique: null as string | null,
   legacyMcpDebugTrace: null as LegacyMcpDebugEntry[] | null,
+  lastLegacyDeliverablesDebug: null as LegacyDeliverablesDebugReport | null,
   pendingPlanApproval: null as {
     plan: Array<{ step_id: string; task_description: string; node: string; goal?: string }>;
     planMessage: string;
@@ -534,7 +569,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setProjectId: (id) => set({ projectId: id }),
   setProject: (p) => {
     if (!p) {
-      set({ project: null, activeStageId: null, workshopStages: [] });
+      set({ project: null, activeStageId: null, workshopStages: [], lastLegacyDeliverablesDebug: null });
       return;
     }
     const stages = p.stages ?? [];
@@ -556,6 +591,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       useCasesContent: p.useCasesContent ?? null,
       userStoriesContent: p.userStoriesContent ?? null,
       infraContent: p.infraContent ?? null,
+      lastLegacyDeliverablesDebug: p.legacyFlowState?.lastDeliverablesDebug ?? null,
     });
   },
   setSession: (s) => set({ session: s }),
@@ -565,6 +601,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setError: (e) => set({ error: e }),
   clearEvaluatorCritique: () => set({ evaluatorCritique: null }),
   clearLegacyMcpDebugTrace: () => set({ legacyMcpDebugTrace: null }),
+  clearLegacyDeliverablesDebug: () => set({ lastLegacyDeliverablesDebug: null }),
 
   setActiveStageId: (stageId) => {
     const { project, projectId, workshopStages } = get();
@@ -2540,6 +2577,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const err = await r.json().catch(() => ({}));
         throw new Error((err as { message?: string }).message ?? "Error al generar entregables");
       }
+      const data = (await r.json()) as { ok?: boolean; lastDeliverablesDebug?: LegacyDeliverablesDebugReport };
+      if (import.meta.env.DEV && data.lastDeliverablesDebug) {
+        console.debug("[LegacyDeliverables]", data.lastDeliverablesDebug);
+      }
+      set({ lastLegacyDeliverablesDebug: data.lastDeliverablesDebug ?? null });
       const proj = await get().fetchProject(projectId);
       set({ loading: false, loadingReason: null, error: null });
       return proj != null;

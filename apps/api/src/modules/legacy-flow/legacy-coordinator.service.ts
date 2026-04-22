@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { ComplexityLevel } from "@theforge/database";
+import { ComplexityLevel, type Project as DbProject } from "@theforge/database";
 import {
   DELIVERABLES_BY_COMPLEXITY,
   type DeliverableKind,
@@ -68,6 +68,44 @@ export type GenerateCodebaseDocResponse = { codebaseDoc: string; mcpDebugTrace?:
 
 export type LegacyIndexSddResolutionChoice = "trust_index" | "trust_sdd" | "proceed_with_warnings";
 
+/** Paso de la cascada legacy de entregables (telemetría / depuración). */
+export type LegacyDeliverablesDebugStepKind =
+  | "preflight"
+  | "index_sdd_gate"
+  | "theforge_context"
+  | DeliverableKind;
+
+export interface LegacyDeliverablesDebugStep {
+  kind: LegacyDeliverablesDebugStepKind;
+  /** ISO al finalizar el paso */
+  at: string;
+  durationMs: number;
+  ok: boolean;
+  /** Caracteres del campo persistido en `Project` tras el paso (si aplica). */
+  outChars?: number;
+  detail?: string;
+  error?: string;
+}
+
+/** Trazabilidad de la última ejecución de `POST …/legacy/generate-deliverables` (persistida + respuesta HTTP). */
+export interface LegacyDeliverablesDebugReport {
+  startedAt: string;
+  finishedAt?: string;
+  ok?: boolean;
+  /** Pasos entregables con salida > 48 chars (heurística “hubo cuerpo”). */
+  deliverablesWithBody?: number;
+  mddSource: "mddContent" | "codebaseDoc_fallback" | "none";
+  mddChars: number;
+  codebaseDocChars: number;
+  mddContentChars: number;
+  theforgeContextChars: number;
+  theforgeConfigured: boolean;
+  complexityEffective: ComplexityLevel;
+  deliverablesOrder: DeliverableKind[];
+  steps: LegacyDeliverablesDebugStep[];
+  fatalError?: { message: string; stack?: string };
+}
+
 export interface LegacyFlowState {
   description?: string;
   /** Archivos a modificar; cada uno con path y repoId (multi-repo). Compatible con formato antiguo string[]. */
@@ -83,6 +121,8 @@ export interface LegacyFlowState {
     choice: LegacyIndexSddResolutionChoice;
     resolvedAt: string;
   };
+  /** Última traza de generación de entregables (legacy); sobreescrita en cada POST generate-deliverables. */
+  lastDeliverablesDebug?: LegacyDeliverablesDebugReport;
 }
 
 const COORDINATOR_SYSTEM =
@@ -111,6 +151,36 @@ function isLegacySddIndexGateEnabled(): boolean {
 function isCodebaseDocClassicParallelAsk(): boolean {
   const v = process.env.LEGACY_CODEBASE_DOC_PARALLEL_ASK?.trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+/** Logs Nest por paso en cascada entregables legacy. Activar: `LEGACY_DELIVERABLES_DEBUG=1`. */
+function isLegacyDeliverablesDebugVerbose(): boolean {
+  const v = process.env.LEGACY_DELIVERABLES_DEBUG?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+const DELIVERABLE_PROJECT_FIELD: Partial<Record<DeliverableKind, keyof DbProject>> = {
+  spec: "specContent",
+  architecture: "architectureContent",
+  use_cases: "useCasesContent",
+  blueprint: "blueprintContent",
+  api_contracts: "apiContractsContent",
+  logic_flows: "logicFlowsContent",
+  ux_ui_guide: "uxUiGuideContent",
+  user_stories: "userStoriesContent",
+  tasks: "tasksContent",
+  infra: "infraContent",
+};
+
+function deliverableFieldCharCount(p: Record<string, unknown>, kind: DeliverableKind): number {
+  const field = DELIVERABLE_PROJECT_FIELD[kind];
+  if (!field) return 0;
+  return String(p[field] ?? "").length;
+}
+
+function clipDebug(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max)}…`;
 }
 
 /**
@@ -630,11 +700,72 @@ export class LegacyCoordinatorService {
     return { mddContent: cleaned };
   }
 
+  /** Persiste `lastDeliverablesDebug` en `legacyFlowState` (no lanza si Prisma falla). */
+  private async persistDeliverablesDebugReport(
+    projectId: string,
+    report: LegacyDeliverablesDebugReport,
+  ): Promise<void> {
+    try {
+      const row = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { legacyFlowState: true },
+      });
+      const state = (row?.legacyFlowState as LegacyFlowState | null | undefined) ?? {};
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { legacyFlowState: { ...state, lastDeliverablesDebug: report } as object },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[LegacyDeliverables] persistDeliverablesDebugReport: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /**
    * Genera entregables según `Project.complexity` y `DELIVERABLES_BY_COMPLEXITY` (despacho dinámico).
    * Legacy inyecta contexto AriadneSpecs en cada llamada. No ejecuta generadores fuera de la lista (ahorra tokens).
+   * @returns `lastDeliverablesDebug` — traza de pasos (también persistida en `legacyFlowState.lastDeliverablesDebug`).
    */
-  async generateDeliverables(projectId: string): Promise<{ ok: boolean }> {
+  async generateDeliverables(
+    projectId: string,
+  ): Promise<{ ok: boolean; lastDeliverablesDebug: LegacyDeliverablesDebugReport }> {
+    const report: LegacyDeliverablesDebugReport = {
+      startedAt: new Date().toISOString(),
+      mddSource: "none",
+      mddChars: 0,
+      codebaseDocChars: 0,
+      mddContentChars: 0,
+      theforgeContextChars: 0,
+      theforgeConfigured: this.theforge.isConfigured(),
+      complexityEffective: ComplexityLevel.HIGH,
+      deliverablesOrder: [],
+      steps: [],
+    };
+
+    const pushStep = (step: Omit<LegacyDeliverablesDebugStep, "at"> & { at?: string }) => {
+      const full: LegacyDeliverablesDebugStep = {
+        ...step,
+        at: step.at ?? new Date().toISOString(),
+      };
+      report.steps.push(full);
+      if (isLegacyDeliverablesDebugVerbose()) {
+        this.logger.log(
+          `[LegacyDeliverables] step=${full.kind} ok=${full.ok} ms=${full.durationMs} outChars=${full.outChars ?? "-"} ${full.detail ?? ""} ${full.error ?? ""}`.trim(),
+        );
+      }
+    };
+
+    const markFatal = (err: unknown) => {
+      report.finishedAt = new Date().toISOString();
+      report.ok = false;
+      const msg = err instanceof Error ? err.message : String(err);
+      report.fatalError = {
+        message: clipDebug(msg, 2000),
+        stack: err instanceof Error ? clipDebug(err.stack ?? "", 4000) : undefined,
+      };
+    };
+
     const { project, theforgeId } = await this.getLegacyProject(projectId);
     const row = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!row) throw new NotFoundException("Project not found");
@@ -646,15 +777,57 @@ export class LegacyCoordinatorService {
 
     const codebaseDoc = String((project as { legacyFlowState?: LegacyFlowState }).legacyFlowState?.codebaseDoc ?? "").trim();
     const mddContent = String(project.mddContent ?? "").trim();
+    report.codebaseDocChars = codebaseDoc.length;
+    report.mddContentChars = mddContent.length;
+    report.mddSource = mddContent ? "mddContent" : codebaseDoc ? "codebaseDoc_fallback" : "none";
     const mdd =
       mddContent || (codebaseDoc ? `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}` : "");
-    if (!mdd) throw new BadRequestException("Genera la documentación de partida (MDD Inicial) o el MDD de cambio antes de generar entregables.");
+    report.mddChars = mdd.length;
+
+    const isReverseEngineering = !mddContent && !!codebaseDoc;
+    pushStep({
+      kind: "preflight",
+      durationMs: 0,
+      ok: !!mdd,
+      detail: `reverseEngineering=${isReverseEngineering} mddSource=${report.mddSource}`,
+    });
+
+    if (!mdd) {
+      markFatal(new Error("missing_mdd_and_codebaseDoc"));
+      await this.persistDeliverablesDebugReport(projectId, report);
+      throw new BadRequestException("Genera la documentación de partida (MDD Inicial) o el MDD de cambio antes de generar entregables.");
+    }
 
     const legacyState =
       ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
-    await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState);
 
+    const tGate = Date.now();
+    try {
+      await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState);
+      pushStep({ kind: "index_sdd_gate", durationMs: Date.now() - tGate, ok: true });
+    } catch (err) {
+      pushStep({
+        kind: "index_sdd_gate",
+        durationMs: Date.now() - tGate,
+        ok: false,
+        error: clipDebug(err instanceof Error ? err.message : String(err), 800),
+      });
+      markFatal(err);
+      await this.persistDeliverablesDebugReport(projectId, report);
+      if (isLegacyDeliverablesDebugVerbose()) this.logger.error(err);
+      throw err;
+    }
+
+    const tTf = Date.now();
     const theforgeContext = await this.theforge.getContextForDeliverables(theforgeId);
+    report.theforgeContextChars = theforgeContext.length;
+    pushStep({
+      kind: "theforge_context",
+      durationMs: Date.now() - tTf,
+      ok: true,
+      outChars: theforgeContext.length,
+      detail: theforgeContext.trim() ? "non_empty" : "empty_string",
+    });
     const legacyOpts = theforgeContext ? { theforgeContext } : undefined;
 
     const update = async (data: Record<string, unknown>) => {
@@ -668,9 +841,10 @@ export class LegacyCoordinatorService {
     };
 
     let p = await load();
-    const isReverseEngineering = !mddContent && !!codebaseDoc;
     const complexity = isReverseEngineering ? ComplexityLevel.HIGH : (row.complexity ?? ComplexityLevel.HIGH);
     const deliverablesToRun = DELIVERABLES_BY_COMPLEXITY[complexity];
+    report.complexityEffective = complexity;
+    report.deliverablesOrder = [...deliverablesToRun];
 
     const ensureBlueprint = async (): Promise<string> => {
       let bp = String(p.blueprintContent ?? "").trim();
@@ -784,9 +958,55 @@ export class LegacyCoordinatorService {
     };
 
     for (const kind of deliverablesToRun) {
-      await runStep(kind);
+      if (kind === "mdd_canonical") {
+        pushStep({ kind: "mdd_canonical", durationMs: 0, ok: true, detail: "noop" });
+        continue;
+      }
+      const t0 = Date.now();
+      try {
+        await runStep(kind);
+        p = await load();
+        const outChars = deliverableFieldCharCount(p as Record<string, unknown>, kind);
+        const short = outChars < 48;
+        pushStep({
+          kind,
+          durationMs: Date.now() - t0,
+          ok: true,
+          outChars,
+          detail: short ? "output_under_48_chars" : undefined,
+        });
+      } catch (err) {
+        pushStep({
+          kind,
+          durationMs: Date.now() - t0,
+          ok: false,
+          error: clipDebug(err instanceof Error ? err.message : String(err), 800),
+        });
+        markFatal(err);
+        await this.persistDeliverablesDebugReport(projectId, report);
+        if (isLegacyDeliverablesDebugVerbose()) this.logger.error(err);
+        throw err;
+      }
     }
 
-    return { ok: true };
+    report.finishedAt = new Date().toISOString();
+    report.ok = true;
+    report.deliverablesWithBody = report.steps.filter(
+      (s) =>
+        typeof s.outChars === "number" &&
+        s.outChars > 48 &&
+        s.kind !== "preflight" &&
+        s.kind !== "index_sdd_gate" &&
+        s.kind !== "theforge_context" &&
+        s.kind !== "mdd_canonical",
+    ).length;
+
+    await this.persistDeliverablesDebugReport(projectId, report);
+    const elapsed = Date.parse(report.finishedAt) - Date.parse(report.startedAt);
+    this.logger.log(
+      `[LegacyDeliverables] cascade_ok project=${projectId.slice(0, 8)}… steps=${report.steps.length} withBody=${report.deliverablesWithBody} tfCtxChars=${report.theforgeContextChars} elapsedMs=${elapsed}`,
+    );
+
+    return { ok: true, lastDeliverablesDebug: report };
   }
 }
