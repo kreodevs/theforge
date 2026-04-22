@@ -144,6 +144,8 @@ export interface LegacyDeliverablesDebugReport {
   deliverablesOrder: string[];
   steps: LegacyDeliverablesDebugStep[];
   fatalError?: { message: string; stack?: string };
+  upstreamRateLimited?: boolean;
+  retryAfterSeconds?: number;
 }
 
 /** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por AriadneSpecs). */
@@ -2574,8 +2576,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         headers: { "Content-Type": "application/json" },
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { message?: string }).message ?? "Error al generar entregables");
+        const err = (await r.json().catch(() => ({}))) as {
+          message?: string;
+          lastDeliverablesDebug?: LegacyDeliverablesDebugReport;
+          retryAfterSeconds?: number;
+        };
+        if (r.status === 429 && err.lastDeliverablesDebug) {
+          set({ lastLegacyDeliverablesDebug: err.lastDeliverablesDebug });
+        }
+        const suffix =
+          r.status === 429 && typeof err.retryAfterSeconds === "number"
+            ? ` Reintenta en ~${err.retryAfterSeconds}s (límite TPM/RPM del proveedor).`
+            : "";
+        throw new Error((err.message ?? "Error al generar entregables") + suffix);
       }
       const data = (await r.json()) as { ok?: boolean; lastDeliverablesDebug?: LegacyDeliverablesDebugReport };
       if (import.meta.env.DEV && data.lastDeliverablesDebug) {

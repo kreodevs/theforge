@@ -1,4 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { ComplexityLevel, type Project as DbProject } from "@theforge/database";
 import {
   DELIVERABLES_BY_COMPLEXITY,
@@ -104,6 +111,10 @@ export interface LegacyDeliverablesDebugReport {
   deliverablesOrder: DeliverableKind[];
   steps: LegacyDeliverablesDebugStep[];
   fatalError?: { message: string; stack?: string };
+  /** Si el fallo fue 429 del proveedor LLM (p. ej. TPM Moonshot). */
+  upstreamRateLimited?: boolean;
+  /** Segundos sugeridos de espera (cabeceras `retry-after` / `msh-cooldown-seconds` del upstream). */
+  retryAfterSeconds?: number;
 }
 
 export interface LegacyFlowState {
@@ -181,6 +192,46 @@ function deliverableFieldCharCount(p: Record<string, unknown>, kind: Deliverable
 function clipDebug(s: string, max: number): string {
   if (s.length <= max) return s;
   return `${s.slice(0, max)}…`;
+}
+
+function readRetryAfterSecondsFromErrorHeaders(err: unknown): number | null {
+  if (typeof err !== "object" || err === null) return null;
+  const headers = (err as { headers?: unknown }).headers;
+  if (!headers || typeof headers !== "object") return null;
+  const h = headers as Record<string, unknown>;
+  for (const key of ["retry-after", "x-retry-after", "msh-cooldown-seconds", "Retry-After", "X-Retry-After"]) {
+    const v = h[key];
+    if (v == null) continue;
+    const n = parseInt(String(v), 10);
+    if (Number.isFinite(n) && n > 0) return Math.min(600, Math.max(1, n));
+  }
+  return null;
+}
+
+/** Si el SDK OpenAI-compatible devolvió 429 (TPM/RPM), respuesta HTTP clara para el cliente + traza. */
+function upstreamLlmRateLimitHttpException(
+  err: unknown,
+  lastDeliverablesDebug: LegacyDeliverablesDebugReport,
+): HttpException | null {
+  const status =
+    typeof err === "object" && err !== null && "status" in err ? (err as { status?: number }).status : undefined;
+  if (status !== 429) return null;
+  const message =
+    err instanceof Error && err.message.trim()
+      ? err.message.trim()
+      : "Proveedor LLM: límite de uso (429). Reintenta más tarde.";
+  const retryAfterSeconds = readRetryAfterSecondsFromErrorHeaders(err) ?? 60;
+  return new HttpException(
+    {
+      statusCode: 429,
+      message,
+      error: "Too Many Requests",
+      code: "UPSTREAM_LLM_RATE_LIMIT",
+      retryAfterSeconds,
+      lastDeliverablesDebug,
+    },
+    429,
+  );
 }
 
 /**
@@ -983,8 +1034,14 @@ export class LegacyCoordinatorService {
           error: clipDebug(err instanceof Error ? err.message : String(err), 800),
         });
         markFatal(err);
+        if (typeof err === "object" && err !== null && (err as { status?: number }).status === 429) {
+          report.upstreamRateLimited = true;
+          report.retryAfterSeconds = readRetryAfterSecondsFromErrorHeaders(err) ?? 60;
+        }
         await this.persistDeliverablesDebugReport(projectId, report);
         if (isLegacyDeliverablesDebugVerbose()) this.logger.error(err);
+        const rateLimited = upstreamLlmRateLimitHttpException(err, report);
+        if (rateLimited) throw rateLimited;
         throw err;
       }
     }
