@@ -15,7 +15,8 @@ Guía **cliente** (API Nest `TheForgeService` + agentes legacy) para no quedarse
 ### 2.1 `ask_codebase` — modo por defecto hacia Ariadne
 
 - **`TheForgeService.askCodebase`** envía por defecto **`responseMode: raw_evidence`** y **`deterministicRetriever: true`** (retrieve determinista según SPEC / ingest). El caller puede sobreescribir con `AskCodebaseOptions` (p. ej. `evidence_first` para JSON MDD ya sintetizado, o `default` para prosa).
-- El JSON de `raw_evidence` se **normaliza a markdown** en la API (`normalizeAskCodebaseRawEvidenceContent`) para que coordinadores y prompts sigan recibiendo texto utilizable.
+- El JSON de `raw_evidence` se **normaliza a markdown** en la API (`normalizeAskCodebaseRawEvidenceContent` + `theforge-raw-evidence-markdown.ts`): `gatheredContext` se parte por bloques `---`, se extraen **Conteos** (tabla) y **Muestras** (listas por etiqueta), y `collectedResults` pasa a **tabla** en lugar de JSON gigante. Ariadne **no** expone hoy un flag tipo “devuelve solo JSON schema X” para `raw_evidence`; si necesitas el contrato MDD de 7 claves en una sola respuesta, pide **`evidence_first`** al MCP (o deja que el cliente Nest ya lo formatee).
+- Tuneo opcional: `RAW_EVIDENCE_GATHERED_MAX_CHARS`, `RAW_EVIDENCE_CHUNK_TAIL_MAX`, `RAW_EVIDENCE_MUESTRAS_PER_KEY`, `RAW_EVIDENCE_COLLECTED_MAX_ROWS`.
 - **`LEGACY_ASK_CODEBASE_EVIDENCE_FIRST=0`**: `getLegacyAskCodebaseOptions()` fuerza `responseMode: default` (sin `raw_evidence` / deterministic en ese flujo).
 
 ## 3. `semantic_search`: queries y `limit`
