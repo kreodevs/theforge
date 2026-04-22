@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Param, Patch, Post } from "@nestjs/common";
+import { generateCodebaseDocRequestSchema } from "@theforge/shared-types";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 
 /**
@@ -14,8 +15,12 @@ export class LegacyFlowController {
    * @returns { codebaseDoc: string } o null si TheForge no está configurado.
    */
   @Post("generate-codebase-doc")
-  async generateCodebaseDoc(@Param("projectId") projectId: string) {
-    return this.coordinator.generateCodebaseDoc(projectId);
+  async generateCodebaseDoc(@Param("projectId") projectId: string, @Body() body: unknown) {
+    const parsed = generateCodebaseDocRequestSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.flatten());
+    }
+    return this.coordinator.generateCodebaseDoc(projectId, parsed.data);
   }
 
   /**

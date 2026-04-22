@@ -2,6 +2,7 @@ import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import { getLegacySemanticSearchLimit } from "../../theforge/theforge-evidence-context.util.js";
+import type { AskCodebaseOptions } from "../../theforge/theforge.service.js";
 import { TheForgeService } from "../../theforge/theforge.service.js";
 
 /**
@@ -22,7 +23,11 @@ function stagedDiscoverySemanticSearchLimit(requested: number | undefined): numb
   return Math.max(raw, floor);
 }
 
-export function getStagedDiscoveryTheForgeTools(theforge: TheForgeService, theforgeProjectId: string): StructuredToolInterface[] {
+export function getStagedDiscoveryTheForgeTools(
+  theforge: TheForgeService,
+  theforgeProjectId: string,
+  askCodebaseOpts?: AskCodebaseOptions,
+): StructuredToolInterface[] {
   const pid = theforgeProjectId.trim();
   /** El MCP Ariadne exige `projectId` en cada llamada; el modelo debe repetir el UUID canónico (anti–tool-args vacíos). La API sigue usando `pid` resuelto por Supervisor/proyecto. */
   const projectIdField = () =>
@@ -31,7 +36,7 @@ export function getStagedDiscoveryTheForgeTools(theforge: TheForgeService, thefo
     );
   return [
     tool(
-      async ({ question }) => theforge.askCodebase(question, pid),
+      async ({ question }) => theforge.askCodebase(question, pid, askCodebaseOpts),
       {
         name: "ask_codebase",
         description:

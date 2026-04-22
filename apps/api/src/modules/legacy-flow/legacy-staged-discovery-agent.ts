@@ -4,6 +4,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { Logger } from "@nestjs/common";
 import { createDbgaLLM } from "../ai-analysis/llm/create-dbga-llm.js";
 import { getStagedDiscoveryTheForgeTools } from "../ai-analysis/tools/agent-theforge-tools.js";
+import type { AskCodebaseOptions } from "../theforge/theforge.service.js";
 import type { TheForgeService } from "../theforge/theforge.service.js";
 import type { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
 import { hydrateStagedDiscoveryMddPrompt, loadStagedDiscoveryMddPrompt } from "./staged-discovery-mdd.loader.js";
@@ -21,6 +22,8 @@ export interface RunLegacyStagedDiscoveryMddOptions {
   mode: StagedDiscoveryMode;
   /** Solo modo `change`: descripción del cambio para priorizar Fase 2–3. */
   changeDescription?: string;
+  /** Opciones MCP por petición (p. ej. doc. partida con `responseMode` desde la UI). */
+  askCodebaseOptions?: AskCodebaseOptions;
   logger?: Pick<Logger, "warn" | "log" | "debug">;
 }
 
@@ -104,7 +107,7 @@ async function runStagedDiscoveryToolLoop(
  * Resuelve `theforgeProjectId` con **AgentSupervisor** (etapa legacy).
  */
 export async function runLegacyStagedDiscoveryMddAgent(opts: RunLegacyStagedDiscoveryMddOptions): Promise<string> {
-  const { theforge, projectId, theforgeProjectId, agentSupervisor, mode, changeDescription, logger } = opts;
+  const { theforge, projectId, theforgeProjectId, agentSupervisor, mode, changeDescription, askCodebaseOptions, logger } = opts;
   if (!theforge.isConfigured()) return "";
 
   let tfPid = theforgeProjectId.trim();
@@ -136,7 +139,7 @@ export async function runLegacyStagedDiscoveryMddAgent(opts: RunLegacyStagedDisc
   const reposCatalog = await buildAriadneRepositoriesCatalogMarkdown(theforge, tfPid);
   const system = hydrateStagedDiscoveryMddPrompt(rawPrompt, tfPid, reposCatalog);
 
-  const tools = getStagedDiscoveryTheForgeTools(theforge, tfPid);
+  const tools = getStagedDiscoveryTheForgeTools(theforge, tfPid, askCodebaseOptions);
   const maxRounds = envPositiveInt("LEGACY_STAGED_DISCOVERY_MAX_TOOL_ROUNDS", 18);
   const maxOut = envPositiveInt("LEGACY_STAGED_DISCOVERY_OUTPUT_MAX_CHARS", 96000);
 

@@ -9,3 +9,4 @@ export * from "./mdd.js";
 export * from "./mdd-pipeline-limits.js";
 export * from "./markdown-repair.js";
 export * from "./orchestrator.js";
+export * from "./legacy-codebase-doc.js";

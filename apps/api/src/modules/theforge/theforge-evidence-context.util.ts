@@ -1,3 +1,4 @@
+import type { CodebaseDocResponseMode } from "@theforge/shared-types";
 import type { AskCodebaseOptions } from "./theforge.service.js";
 
 /**
@@ -78,6 +79,23 @@ export function getLegacyAskCodebaseOptions(): AskCodebaseOptions {
     return { twoPhase: true, responseMode: "default" };
   }
   return { twoPhase: true, responseMode: "raw_evidence", deterministicRetriever: true };
+}
+
+/**
+ * Opciones MCP para cada `ask_codebase` al generar doc. partida.
+ * Si el cliente no envía `responseMode`, se mantiene el comportamiento por env (`getLegacyAskCodebaseOptions`).
+ */
+export function askCodebaseOptionsForCodebaseDoc(responseMode?: CodebaseDocResponseMode): AskCodebaseOptions {
+  if (responseMode === "default") {
+    return { twoPhase: true, responseMode: "default" };
+  }
+  if (responseMode === "evidence_first") {
+    return { twoPhase: true, responseMode: "evidence_first" };
+  }
+  if (responseMode === "raw_evidence") {
+    return { twoPhase: true, responseMode: "raw_evidence", deterministicRetriever: true };
+  }
+  return getLegacyAskCodebaseOptions();
 }
 
 const LEGACY_ANALYZER_INPUT_MAX = () => parsePositiveInt("LEGACY_ANALYZER_INPUT_MAX_CHARS", 14000);

@@ -1,12 +1,17 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ComplexityLevel } from "@theforge/database";
-import { DELIVERABLES_BY_COMPLEXITY, type DeliverableKind } from "@theforge/shared-types";
+import {
+  DELIVERABLES_BY_COMPLEXITY,
+  type DeliverableKind,
+  type GenerateCodebaseDocRequest,
+} from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
 import type { TheForgeFileToModify } from "../theforge/theforge.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import {
   DEFAULT_SEMANTIC_QUERIES,
+  askCodebaseOptionsForCodebaseDoc,
   gatherLegacyIndexSignals,
   getLegacyAskCodebaseOptions,
   getLegacySemanticSearchLimit,
@@ -225,17 +230,23 @@ export class LegacyCoordinatorService {
    * @param projectId - ID del proyecto.
    * @returns Contenido Markdown de la documentación o null si TheForge no está configurado.
    */
-  async generateCodebaseDoc(projectId: string): Promise<GenerateCodebaseDocResponse | null> {
+  async generateCodebaseDoc(
+    projectId: string,
+    req?: GenerateCodebaseDocRequest,
+  ): Promise<GenerateCodebaseDocResponse | null> {
     if (isLegacyCodebaseDocMcpDebugUiEnabled()) {
-      const { result, trace } = await runWithMcpUiDebug(() => this.generateCodebaseDocCore(projectId));
+      const { result, trace } = await runWithMcpUiDebug(() => this.generateCodebaseDocCore(projectId, req));
       if (!result) return null;
       return { ...result, mcpDebugTrace: trace };
     }
-    return this.generateCodebaseDocCore(projectId);
+    return this.generateCodebaseDocCore(projectId, req);
   }
 
   /** Generación de doc. partida (sin ALS de debug). */
-  private async generateCodebaseDocCore(projectId: string): Promise<{ codebaseDoc: string } | null> {
+  private async generateCodebaseDocCore(
+    projectId: string,
+    req?: GenerateCodebaseDocRequest,
+  ): Promise<{ codebaseDoc: string } | null> {
     const { project, theforgeId } = await this.getLegacyProject(projectId);
     if (!this.theforge.isConfigured()) return null;
 
@@ -244,6 +255,7 @@ export class LegacyCoordinatorService {
     await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState);
 
     let codebaseDoc = "";
+    const codebaseDocAskOpts = askCodebaseOptionsForCodebaseDoc(req?.responseMode);
 
     if (isLegacyEvidenceFirstEnabled()) {
       try {
@@ -253,6 +265,7 @@ export class LegacyCoordinatorService {
           theforgeProjectId: theforgeId,
           agentSupervisor: this.agentSupervisor,
           mode: "initial",
+          askCodebaseOptions: codebaseDocAskOpts,
           logger: this.logger,
         });
         const trimmed = body.trim();
@@ -279,7 +292,7 @@ export class LegacyCoordinatorService {
     if (!codebaseDoc) {
       const parts: string[] = [];
       const semanticLim = getLegacySemanticSearchLimit();
-      const legacyAsk = getLegacyAskCodebaseOptions();
+      const legacyAsk = codebaseDocAskOpts;
       let r1: string;
       let r2: string;
       let r3: string;
