@@ -693,6 +693,25 @@ Proyecto: ${context.projectName ?? "Sin nombre"}${activeTabHint}
 Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanza la primera pregunta o instrucción para comenzar la entrevista y construir el MDD. Responde en un solo mensaje.`;
     }
 
+    /** Guía meta para que el primer mensaje (welcome) no sea genérico ante “¿cómo se llena?” u omisión del usuario. */
+    const brdWelcomeExtras = `
+[Instrucciones adicionales para tu respuesta única:]
+- Incluye una **mini-guía** (3–5 frases): qué es el BRD de etapa en The Forge, bloques típicos en markdown (problema, objetivos/KPIs, alcance, actores, riesgos), que el **panel** es editable con **Guardar** / **Aprobar BRD**, y que **aquí** refináis por chat.
+- Si el usuario pregunta explícitamente cómo rellenarlo, sé **concreto**; no pidas “área o proceso genérico” si ya hay **Benchmark** o **BRD** en el contexto de este prompt: **ancla** en ese texto.
+- Solo si entregas un **borrador BRD completo** nuevo desde el chat, termina el markdown con la línea exacta \`---FIN_BRD---\`. Si solo orientas o conversas, **sin** delimitador.`;
+
+    const toBeWelcomeExtras = `
+[Instrucciones adicionales para tu respuesta única:]
+- Incluye una **mini-guía** (3–5 frases): el **Manual To-Be** describe el comportamiento y reglas **deseadas** (flujos, if/then, pantallas, estados vacío/carga/error); el **BRD** fija problema y alcance de negocio; el **MDD** es el diseño técnico. El usuario edita en el **panel** (**Guardar** / **Aprobar To-Be**) y aquí itera contigo.
+- Si pregunta cómo rellenarlo, sé **concreto**; si hay **BRD** o **Benchmark** arriba, úsalos para proponer **un primer flujo o sección** a documentar, no preguntas genéricas desconectadas.
+- Solo si entregas un **borrador To-Be completo** nuevo desde el chat, termina el markdown con \`---FIN_TOBE---\`. Si solo orientas o conversas, **sin** delimitador.`;
+
+    if (isBrdTab) {
+      syntheticPrompt += brdWelcomeExtras;
+    } else if (isToBeTab) {
+      syntheticPrompt += toBeWelcomeExtras;
+    }
+
     const response = await this.ai.generateResponse(syntheticPrompt, []);
     const mddSplit = this.parser.splitMddAndChat(response);
     const uxSplit = this.parser.splitUxUiGuideAndChat(response);

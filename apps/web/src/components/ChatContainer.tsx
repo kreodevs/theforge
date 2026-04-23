@@ -204,6 +204,8 @@ export default function ChatContainer({
   const { messages, loading, error, sendMessage } = useInterview(projectId, activeTab);
   const contextLabel = ACTIVE_TAB_LABELS[activeTab];
   const clearChat = useWorkshopStore((s) => s.clearChat);
+  const fetchWelcome = useWorkshopStore((s) => s.fetchWelcome);
+  const session = useWorkshopStore((s) => s.session);
   const workshopStages = useWorkshopStore((s) => s.project?.stages ?? []);
   const activeStageIdForChat = useWorkshopStore((s) => s.activeStageId);
   const evaluatorCritique = useWorkshopStore((s) => s.evaluatorCritique);
@@ -250,6 +252,20 @@ export default function ChatContainer({
       return st ? String(st.name ?? st.key ?? "").trim() || `§${st.ordinal}` : stageId.slice(0, 8);
     };
   }, [workshopStages]);
+
+  useEffect(() => {
+    const tab = activeTab ?? "mdd";
+    if (!projectId?.trim() || !session?.id) return;
+    if (tab === "mdd") return;
+    const welcomeTabs: ActiveTab[] = ["brd", "to-be", "ux-ui-guide", "benchmark"];
+    if (!welcomeTabs.includes(tab)) return;
+    const count = (session.chatLog ?? []).filter((m: { tab?: string }) => (m.tab ?? "mdd") === tab).length;
+    if (count > 0) return;
+    const t = window.setTimeout(() => {
+      void fetchWelcome(projectId, tab);
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [projectId, activeTab, session?.id, session?.chatLog, fetchWelcome]);
 
   useEffect(() => {
     if (!multiStageChat || !activeStageIdForChat) {
