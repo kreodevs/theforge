@@ -146,6 +146,11 @@ export interface LegacyDeliverablesDebugReport {
   fatalError?: { message: string; stack?: string };
   upstreamRateLimited?: boolean;
   retryAfterSeconds?: number;
+  mddCharsSentToLlm?: number;
+  mddClippedForLlm?: boolean;
+  mddLlmStrategy?: "full" | "truncate" | "rollup";
+  mddRollupWindows?: number;
+  mddRollupFailed?: boolean;
 }
 
 /** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por AriadneSpecs). */

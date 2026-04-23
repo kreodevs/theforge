@@ -115,6 +115,16 @@ export interface LegacyDeliverablesDebugReport {
   upstreamRateLimited?: boolean;
   /** Segundos sugeridos de espera (cabeceras `retry-after` / `msh-cooldown-seconds` del upstream). */
   retryAfterSeconds?: number;
+  /** Caracteres del MDD realmente enviados al LLM tras `LEGACY_DELIVERABLES_MDD_MAX_CHARS`. */
+  mddCharsSentToLlm?: number;
+  /** Si se truncó el MDD para respetar el tope y mitigar 429 / límites de contexto. */
+  mddClippedForLlm?: boolean;
+  /** Cómo se preparó el texto MDD para la cascada LLM. */
+  mddLlmStrategy?: "full" | "truncate" | "rollup";
+  /** Ventanas del rollup (0 = MDD completo sin rollup). */
+  mddRollupWindows?: number;
+  /** Si el rollup falló y se aplicó fallback a truncado. */
+  mddRollupFailed?: boolean;
 }
 
 export interface LegacyFlowState {
@@ -176,11 +186,11 @@ function sleepMs(ms: number): Promise<void> {
 
 /**
  * Pausa entre cada paso LLM de la cascada (mitiga TPM/RPM en Gemini/Moonshot).
- * Default 3500 ms. `0` o vacío desactiva (solo tras al menos un paso LLM previo).
+ * Default 5000 ms. `0` o vacío desactiva (solo tras al menos un paso LLM previo).
  */
 function legacyDeliverablesInterStepDelayMs(): number {
   const raw = process.env.LEGACY_DELIVERABLES_INTER_STEP_DELAY_MS?.trim();
-  if (raw === undefined || raw === "") return 3500;
+  if (raw === undefined || raw === "") return 5000;
   const n = parseInt(raw, 10);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.min(n, 180_000);
@@ -188,21 +198,161 @@ function legacyDeliverablesInterStepDelayMs(): number {
 
 /**
  * Cooldown único antes del primer `runStep` cuando el MDD inyectado es muy largo (p. ej. `codebaseDoc_fallback`).
- * Default: si `mddChars` > 100000 → espera 12000 ms una vez.
+ * Default: si `mddChars` > 80000 → espera 20000 ms una vez.
  */
 function legacyDeliverablesLargeMddCooldownMs(mddChars: number): number {
   const thresholdRaw = process.env.LEGACY_DELIVERABLES_LARGE_MDD_THRESHOLD_CHARS?.trim();
   const threshold =
     thresholdRaw === undefined || thresholdRaw === ""
-      ? 100_000
+      ? 80_000
       : Math.max(0, parseInt(thresholdRaw, 10) || 0);
   if (threshold === 0 || mddChars <= threshold) return 0;
   const coolRaw = process.env.LEGACY_DELIVERABLES_LARGE_MDD_COOLDOWN_MS?.trim();
   const cool =
     coolRaw === undefined || coolRaw === ""
-      ? 12_000
+      ? 20_000
       : Math.max(0, parseInt(coolRaw, 10) || 0);
   return Math.min(cool, 180_000);
+}
+
+/**
+ * Tope de caracteres del MDD inyectado en cada paso LLM de entregables legacy (además de system + TheForge).
+ * Default 80000: doc. partida enorme ya no manda ~200k en una sola petición (principal causa de 429 Gemini).
+ */
+function legacyDeliverablesMddMaxCharsForLlm(): number {
+  const raw = process.env.LEGACY_DELIVERABLES_MDD_MAX_CHARS?.trim();
+  if (raw === undefined || raw === "") return 80_000;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 12_000) return 12_000;
+  return Math.min(n, 500_000);
+}
+
+function clipMddForLegacyDeliverablesLlm(mdd: string, report: LegacyDeliverablesDebugReport): string {
+  const max = legacyDeliverablesMddMaxCharsForLlm();
+  if (mdd.length <= max) {
+    report.mddCharsSentToLlm = mdd.length;
+    report.mddClippedForLlm = false;
+    report.mddLlmStrategy = report.mddLlmStrategy ?? "full";
+    return mdd;
+  }
+  report.mddLlmStrategy = "truncate";
+  report.mddClippedForLlm = true;
+  const footer =
+    "\n\n---\n\n> **Nota (The Forge — entregables legacy):** El documento superó `LEGACY_DELIVERABLES_MDD_MAX_CHARS` (" +
+    String(max) +
+    " caracteres). **Solo se envió el inicio** al modelo; el final fue omitido. Prioriza coherencia con lo visible; no inventes secciones omitidas.\n";
+  const budget = Math.max(0, max - footer.length);
+  const clipped = mdd.slice(0, budget) + footer;
+  report.mddCharsSentToLlm = clipped.length;
+  return clipped;
+}
+
+function isLegacyDeliverablesMddRollupEnabled(): boolean {
+  const v = process.env.LEGACY_DELIVERABLES_MDD_ROLLUP?.trim().toLowerCase();
+  if (v === "0" || v === "false" || v === "off" || v === "no") return false;
+  return true;
+}
+
+function legacyDeliverablesRollupChunkChars(): number {
+  const n = parseInt(process.env.LEGACY_DELIVERABLES_ROLLUP_CHUNK_CHARS ?? "40000", 10);
+  return Number.isFinite(n) && n >= 8000 ? Math.min(n, 120_000) : 40_000;
+}
+
+function legacyDeliverablesRollupMaxChunks(): number {
+  const n = parseInt(process.env.LEGACY_DELIVERABLES_ROLLUP_MAX_CHUNKS ?? "32", 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 64) : 32;
+}
+
+/** Trocea el MDD en ventanas (~chunkSize) cortando preferentemente en `\n## `. */
+function splitMddForRollupChunks(mdd: string, chunkSize: number, maxChunks: number): string[] {
+  if (mdd.length <= chunkSize) return [mdd];
+  const chunks: string[] = [];
+  let pos = 0;
+  while (pos < mdd.length && chunks.length < maxChunks) {
+    const hardEnd = Math.min(pos + chunkSize, mdd.length);
+    if (hardEnd >= mdd.length) {
+      const tail = mdd.slice(pos).trim();
+      if (tail) chunks.push(tail);
+      pos = mdd.length;
+      break;
+    }
+    const window = mdd.slice(pos, hardEnd);
+    const breakAt = window.lastIndexOf("\n## ");
+    const cut = breakAt >= Math.floor(chunkSize * 0.35) ? pos + breakAt : hardEnd;
+    const piece = mdd.slice(pos, cut).trim();
+    if (piece) chunks.push(piece);
+    pos = cut;
+    while (pos < mdd.length && (mdd[pos] === "\n" || mdd[pos] === "\r")) pos++;
+    if (piece.length === 0 && pos < mdd.length && pos < hardEnd) pos = hardEnd;
+  }
+  if (pos < mdd.length && chunks.length > 0) {
+    chunks[chunks.length - 1] =
+      (chunks[chunks.length - 1] ?? "") +
+      "\n\n> **[The Forge]** Parte del MDD no entró en más ventanas (límite `LEGACY_DELIVERABLES_ROLLUP_MAX_CHUNKS`=" +
+      String(maxChunks) +
+      "). Continúa aproximadamente desde el carácter " +
+      String(pos) +
+      " del MDD original.\n";
+  }
+  return chunks;
+}
+
+const LEGACY_MDD_ROLLUP_EXTRACTOR_SYSTEM =
+  "Eres analista SDD. Recibes UN fragmento del MDD (Markdown) de un proyecto.\n" +
+  "Extrae SOLO hechos presentes en el texto (no inventes nada que no aparezca o no se deduzca con certeza razonable): " +
+  "modelo de datos, entidades, campos; rutas/API/endpoints; reglas de negocio y validaciones; " +
+  "flujos y casos límite; seguridad; infra y despliegue; stack y convenciones si constan.\n" +
+  "Salida en **español**, markdown compacto con viñetas y `###` breves.\n" +
+  "Si el fragmento casi no aporta hechos técnicos, responde exactamente en una línea: `Sin hechos técnicos densos en este fragmento.`\n" +
+  "Límite aproximado: **4000 palabras** (~24k caracteres) — prioriza hechos concretos dentro del límite.";
+
+function isLegacy429Like(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const o = err as { status?: number; statusCode?: number };
+  if (o.status === 429 || o.statusCode === 429) return true;
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("429") ||
+    msg.includes("resource exhausted") ||
+    msg.includes("too many requests") ||
+    msg.includes("rate limit")
+  );
+}
+
+/** Reintentos ante 429 / resource exhausted (Gemini, Moonshot, etc.). */
+async function runWithLegacy429Retries<T>(
+  run: () => Promise<T>,
+  ctx: { logger: Logger; step: string },
+): Promise<T> {
+  const maxRaw = process.env.LEGACY_DELIVERABLES_LLM_429_MAX_RETRIES?.trim();
+  const maxRetries =
+    maxRaw === undefined || maxRaw === ""
+      ? 5
+      : Math.max(0, Math.min(12, parseInt(maxRaw, 10) || 0));
+  const baseRaw = process.env.LEGACY_DELIVERABLES_LLM_429_BASE_DELAY_MS?.trim();
+  const baseMs =
+    baseRaw === undefined || baseRaw === ""
+      ? 15_000
+      : Math.max(500, parseInt(baseRaw, 10) || 15_000);
+
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await run();
+    } catch (err) {
+      if (!isLegacy429Like(err) || attempt >= maxRetries) throw err;
+      const fromHeaderSec = readRetryAfterSecondsFromErrorHeaders(err);
+      const waitMs =
+        fromHeaderSec != null
+          ? Math.min(180_000, Math.max(2_000, fromHeaderSec * 1000))
+          : Math.min(180_000, baseMs * 2 ** attempt);
+      attempt++;
+      ctx.logger.warn(
+        `[LegacyDeliverables] upstream 429-like → wait ${waitMs}ms then retry ${attempt}/${maxRetries} (step=${ctx.step})`,
+      );
+      await sleepMs(waitMs);
+    }
+  }
 }
 
 const DELIVERABLE_PROJECT_FIELD: Partial<Record<DeliverableKind, keyof DbProject>> = {
@@ -243,14 +393,12 @@ function readRetryAfterSecondsFromErrorHeaders(err: unknown): number | null {
   return null;
 }
 
-/** Si el SDK OpenAI-compatible devolvió 429 (TPM/RPM), respuesta HTTP clara para el cliente + traza. */
+/** Si el proveedor LLM devolvió 429 / resource exhausted (OpenAI-compatible, Gemini, etc.). */
 function upstreamLlmRateLimitHttpException(
   err: unknown,
   lastDeliverablesDebug: LegacyDeliverablesDebugReport,
 ): HttpException | null {
-  const status =
-    typeof err === "object" && err !== null && "status" in err ? (err as { status?: number }).status : undefined;
-  if (status !== 429) return null;
+  if (!isLegacy429Like(err)) return null;
   const message =
     err instanceof Error && err.message.trim()
       ? err.message.trim()
@@ -809,6 +957,92 @@ export class LegacyCoordinatorService {
   }
 
   /**
+   * Construye el texto MDD alimentado a la cascada de entregables: MDD completo, **rollup por ventanas**
+   * (varias llamadas LLM con trozos + ensamblado) si supera `LEGACY_DELIVERABLES_MDD_MAX_CHARS`, o truncado legacy
+   * si `LEGACY_DELIVERABLES_MDD_ROLLUP=0` o falla una ventana.
+   */
+  private async buildLegacyDeliverablesMddForLlm(
+    mdd: string,
+    report: LegacyDeliverablesDebugReport,
+  ): Promise<string> {
+    const max = legacyDeliverablesMddMaxCharsForLlm();
+    if (mdd.length <= max) {
+      report.mddLlmStrategy = "full";
+      report.mddCharsSentToLlm = mdd.length;
+      report.mddClippedForLlm = false;
+      report.mddRollupWindows = 0;
+      return mdd;
+    }
+    if (!isLegacyDeliverablesMddRollupEnabled()) {
+      report.mddRollupWindows = 0;
+      return clipMddForLegacyDeliverablesLlm(mdd, report);
+    }
+
+    const chunkSize = legacyDeliverablesRollupChunkChars();
+    const maxChunks = legacyDeliverablesRollupMaxChunks();
+    const chunks = splitMddForRollupChunks(mdd, chunkSize, maxChunks);
+    report.mddRollupWindows = chunks.length;
+    report.mddLlmStrategy = "rollup";
+
+    if (isLegacyDeliverablesDebugVerbose()) {
+      this.logger.log(
+        `[LegacyDeliverables] mdd_rollup windows=${chunks.length} chunkSize=${chunkSize} originalChars=${mdd.length}`,
+      );
+    }
+
+    const parts: string[] = [];
+    const prelude =
+      "# Síntesis operacional del MDD (ventanas The Forge)\n\n" +
+      "> Este documento fue **ensamblado por el backend** a partir de extracciones LLM **ventana por ventana** del MDD completo (" +
+      String(mdd.length) +
+      " caracteres). Úsalo como constitución efectiva para SPEC, Blueprint, etc. " +
+      "El MDD íntegro permanece en el proyecto; aquí se intenta **no perder secciones** frente a un único `generateContent` gigante.\n\n";
+
+    for (let i = 0; i < chunks.length; i++) {
+      if (i > 0) {
+        const gap = legacyDeliverablesInterStepDelayMs();
+        if (gap > 0) await sleepMs(gap);
+      }
+      const chunk = chunks[i]!;
+      const userPrompt =
+        `Ventana **${i + 1} de ${chunks.length}** del MDD (Markdown). Extrae hechos según el system prompt.\n\n---\n\n` +
+        chunk +
+        "\n\n---\n\nResponde solo con el markdown de extracción.";
+      try {
+        const text = await runWithLegacy429Retries(
+          () =>
+            this.ai.generateResponse(userPrompt, [], {
+              systemPrompt: LEGACY_MDD_ROLLUP_EXTRACTOR_SYSTEM,
+              activeTab: "mdd",
+            }),
+          { logger: this.logger, step: `mdd_rollup_${i + 1}/${chunks.length}` },
+        );
+        parts.push(`## Ventana ${i + 1} / ${chunks.length}\n\n${(text ?? "").trim()}`);
+      } catch (e) {
+        this.logger.warn(
+          `[LegacyDeliverables] mdd_rollup window ${i + 1}/${chunks.length} failed, fallback truncate — ${e instanceof Error ? e.message : String(e)}`,
+        );
+        report.mddRollupFailed = true;
+        return clipMddForLegacyDeliverablesLlm(mdd, report);
+      }
+    }
+
+    let rollupDoc = prelude + parts.join("\n\n---\n\n");
+    if (rollupDoc.length > max) {
+      const footer =
+        "\n\n> **Nota:** La síntesis rollup superó `LEGACY_DELIVERABLES_MDD_MAX_CHARS` (" +
+        String(max) +
+        "); se recortó el **final** del documento ensamblado (las ventanas iniciales se conservan).\n";
+      rollupDoc = rollupDoc.slice(0, Math.max(0, max - footer.length)) + footer;
+      report.mddClippedForLlm = true;
+    } else {
+      report.mddClippedForLlm = false;
+    }
+    report.mddCharsSentToLlm = rollupDoc.length;
+    return rollupDoc;
+  }
+
+  /**
    * Genera entregables según `Project.complexity` y `DELIVERABLES_BY_COMPLEXITY` (despacho dinámico).
    * Legacy inyecta contexto AriadneSpecs en cada llamada. No ejecuta generadores fuera de la lista (ahorra tokens).
    * @returns `lastDeliverablesDebug` — traza de pasos (también persistida en `legacyFlowState.lastDeliverablesDebug`).
@@ -869,13 +1103,20 @@ export class LegacyCoordinatorService {
     const mdd =
       mddContent || (codebaseDoc ? `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}` : "");
     report.mddChars = mdd.length;
+    const mddForLlm = await this.buildLegacyDeliverablesMddForLlm(mdd, report);
+    if (isLegacyDeliverablesDebugVerbose()) {
+      this.logger.log(
+        `[LegacyDeliverables] mdd_llm strategy=${report.mddLlmStrategy ?? "?"} originalChars=${report.mddChars} sentChars=${report.mddCharsSentToLlm ?? mddForLlm.length} rollupWindows=${report.mddRollupWindows ?? 0} clipped=${report.mddClippedForLlm ?? false} rollupFailed=${report.mddRollupFailed ?? false}`,
+      );
+    }
 
     const isReverseEngineering = !mddContent && !!codebaseDoc;
     pushStep({
       kind: "preflight",
       durationMs: 0,
       ok: !!mdd,
-      detail: `reverseEngineering=${isReverseEngineering} mddSource=${report.mddSource}`,
+      detail:
+        `reverseEngineering=${isReverseEngineering} mddSource=${report.mddSource} mddLlmStrategy=${report.mddLlmStrategy ?? "?"} rollupWindows=${report.mddRollupWindows ?? 0} clipped=${report.mddClippedForLlm ?? false} rollupFailed=${report.mddRollupFailed ?? false}`,
     });
 
     if (!mdd) {
@@ -935,7 +1176,7 @@ export class LegacyCoordinatorService {
     const ensureBlueprint = async (): Promise<string> => {
       let bp = String(p.blueprintContent ?? "").trim();
       if (bp.length > 48) return bp;
-      bp = await this.ai.generateBlueprint(mdd, undefined, legacyOpts);
+      bp = await this.ai.generateBlueprint(mddForLlm, undefined, legacyOpts);
       await update({ blueprintContent: cleanDocumentContent(bp) });
       p = await load();
       return String(p.blueprintContent ?? "").trim();
@@ -946,14 +1187,14 @@ export class LegacyCoordinatorService {
         case "mdd_canonical":
           return;
         case "spec": {
-          const specContent = await this.ai.generateSpec(mdd, null, "mdd", legacyOpts);
+          const specContent = await this.ai.generateSpec(mddForLlm, null, "mdd", legacyOpts);
           await update({ specContent: cleanDocumentContent(specContent) });
           p = await load();
           return;
         }
         case "architecture": {
           const architectureContent = await this.ai.generateArchitecture(
-            mdd,
+            mddForLlm,
             p.blueprintContent ?? undefined,
             legacyOpts,
           );
@@ -962,26 +1203,26 @@ export class LegacyCoordinatorService {
           return;
         }
         case "use_cases": {
-          const useCasesContent = await this.ai.generateUseCases(mdd, p.specContent, legacyOpts);
+          const useCasesContent = await this.ai.generateUseCases(mddForLlm, p.specContent, legacyOpts);
           await update({ useCasesContent: cleanDocumentContent(useCasesContent) });
           p = await load();
           return;
         }
         case "blueprint": {
-          const blueprintContent = await this.ai.generateBlueprint(mdd, undefined, legacyOpts);
+          const blueprintContent = await this.ai.generateBlueprint(mddForLlm, undefined, legacyOpts);
           await update({ blueprintContent: cleanDocumentContent(blueprintContent) });
           p = await load();
           return;
         }
         case "api_contracts": {
           const bp = await ensureBlueprint();
-          const apiContractsContent = await this.ai.generateApiContracts(mdd, bp, undefined, legacyOpts);
+          const apiContractsContent = await this.ai.generateApiContracts(mddForLlm, bp, undefined, legacyOpts);
           await update({ apiContractsContent: cleanDocumentContent(apiContractsContent) });
           p = await load();
           return;
         }
         case "logic_flows": {
-          const logicFlowsContent = await this.ai.generateLogicFlows(mdd, undefined, legacyOpts);
+          const logicFlowsContent = await this.ai.generateLogicFlows(mddForLlm, undefined, legacyOpts);
           await update({ logicFlowsContent: cleanDocumentContent(logicFlowsContent) });
           p = await load();
           return;
@@ -990,7 +1231,7 @@ export class LegacyCoordinatorService {
           const bp = String(p.blueprintContent ?? "").trim() || (await ensureBlueprint());
           let uxPrompt =
             "Genera la Guía UX/UI en markdown según el system prompt. MDD:\n---\n" +
-            mdd.slice(0, 8000) +
+            mddForLlm.slice(0, 8000) +
             "\n---\n\nBlueprint:\n---\n" +
             bp.slice(0, 4000) +
             "\n---";
@@ -1013,7 +1254,7 @@ export class LegacyCoordinatorService {
         }
         case "user_stories": {
           const userStoriesContent = await this.ai.generateUserStories(
-            mdd,
+            mddForLlm,
             p.specContent,
             p.useCasesContent,
             legacyOpts,
@@ -1024,14 +1265,14 @@ export class LegacyCoordinatorService {
         }
         case "tasks": {
           const bp = p.blueprintContent?.trim();
-          const tasksContent = await this.ai.generateTasks(mdd, bp || undefined, legacyOpts);
+          const tasksContent = await this.ai.generateTasks(mddForLlm, bp || undefined, legacyOpts);
           await update({ tasksContent: cleanDocumentContent(tasksContent) });
           p = await load();
           return;
         }
         case "infra": {
           const bp = await ensureBlueprint();
-          const infraContent = await this.ai.generateInfra(mdd, bp, undefined, legacyOpts);
+          const infraContent = await this.ai.generateInfra(mddForLlm, bp, undefined, legacyOpts);
           await update({ infraContent: cleanDocumentContent(infraContent) });
           p = await load();
           return;
@@ -1070,7 +1311,7 @@ export class LegacyCoordinatorService {
 
       const t0 = Date.now();
       try {
-        await runStep(kind);
+        await runWithLegacy429Retries(() => runStep(kind), { logger: this.logger, step: kind });
         p = await load();
         const outChars = deliverableFieldCharCount(p as Record<string, unknown>, kind);
         const short = outChars < 48;
@@ -1089,7 +1330,7 @@ export class LegacyCoordinatorService {
           error: clipDebug(err instanceof Error ? err.message : String(err), 800),
         });
         markFatal(err);
-        if (typeof err === "object" && err !== null && (err as { status?: number }).status === 429) {
+        if (isLegacy429Like(err)) {
           report.upstreamRateLimited = true;
           report.retryAfterSeconds = readRetryAfterSecondsFromErrorHeaders(err) ?? 60;
         }
