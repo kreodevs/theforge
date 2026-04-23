@@ -52,6 +52,20 @@ function normalizeMermaidForRender(content: string): string {
 }
 
 /**
+ * El motor de Mermaid compara el tipo de diagrama en forma estricta (p. ej. solo `timeline`).
+ * Exportaciones legacy a veces ponen `Timeline`; eso dispara UnknownDiagramError en el navegador.
+ */
+function normalizeMermaidFirstLineKeywords(content: string): string {
+  const lines = content.split("\n");
+  if (!lines.length) return content;
+  const first = lines[0] ?? "";
+  const fixed = first.replace(/^\s*timeline\b/i, (m) => m.replace(/timeline/gi, "timeline"));
+  if (fixed === first) return content;
+  lines[0] = fixed;
+  return lines.join("\n");
+}
+
+/**
  * Tipos de diagrama Mermaid válidos (insensible a mayúsculas).
  * No usar `graph\b`: rutas `graph-internal/…` activan \b entre `h` y `-` y se parsean como Mermaid.
  * graph/flowchart legados exigen `TD|TB|LR|RL|BT`; el resto exige separador real (\s, \n o fin).
@@ -138,7 +152,9 @@ function MermaidBlock({ content, blockKey }: { content: string; blockKey: string
 
     setError(null);
     let cancelled = false;
-    const toRender = /erDiagram/i.test(content) ? normalizeMermaidForRender(content) : content.trim();
+    const toRender = /erDiagram/i.test(content)
+      ? normalizeMermaidForRender(content)
+      : normalizeMermaidFirstLineKeywords(content.trim());
     if (!toRender) return;
 
     const doRender = async () => {
@@ -224,7 +240,9 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
             }
             if (looksLikeMermaidBlock(source, className) && source.trim()) {
               const trimmed = source.trim();
-              const normalized = /erDiagram/i.test(trimmed) ? normalizeMermaidForRender(trimmed) : trimmed;
+              const normalized = /erDiagram/i.test(trimmed)
+                ? normalizeMermaidForRender(trimmed)
+                : normalizeMermaidFirstLineKeywords(trimmed);
               const key = mermaidKey(normalized);
               return (
                 <MermaidBlockErrorBoundary content={normalized} blockKey={key}>
