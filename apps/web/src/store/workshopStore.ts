@@ -221,6 +221,8 @@ export interface Project {
   /** Inferencia / plan propuesto; no aplica a `complexity` hasta confirmación explícita. */
   complexityPending?: ComplexityPending | null;
   projectType?: "NEW" | "LEGACY";
+  /** Si true, el API bloquea MDD técnico hasta BRD + To-Be aprobados (configurable en el panel). */
+  requireBrdTobeGate?: boolean;
   theforgeProjectId?: string | null;
   status: Status;
   precisionScore: number;
@@ -386,6 +388,8 @@ interface WorkshopState {
     | "legacy-codebase-doc"
     | "legacy-mdd"
     | "legacy-as-is"
+    | "legacy-brd-tobe-suggest"
+    | "brd-tobe-from-dbga"
     | "legacy-deliverables"
     | "deliverables-cascade"
     | null;
@@ -443,6 +447,8 @@ interface WorkshopState {
     stageId: string,
     body: Record<string, string | boolean | undefined>,
   ) => Promise<boolean>;
+  /** `PATCH /projects/:id` con `{ requireBrdTobeGate }` — control usuario (no env). */
+  setProjectRequireBrdTobeGate: (projectId: string, requireBrdTobeGate: boolean) => Promise<boolean>;
 
   setProjectId: (id: string | null) => void;
   setProject: (p: Project | null) => void;
@@ -537,6 +543,15 @@ interface WorkshopState {
   legacyGenerateMdd: (projectId: string) => Promise<{ mddContent: string } | null>;
   /** POST …/legacy/generate-as-is-manual → persiste `asIsManualContent` en la etapa legacy/primaria. */
   legacyGenerateAsIsManual: (projectId: string) => Promise<{ asIsManualContent: string; stageId: string } | null>;
+  /** POST …/legacy/suggest-brd-tobe-from-codebase-doc — borradores desde doc. Ariadne (sin aprobar). */
+  legacySuggestBrdTobeFromCodebaseDoc: (
+    projectId: string,
+  ) => Promise<{ brdContent: string; toBeManualContent: string; stageId: string } | null>;
+  /** POST …/projects/:id/suggest-brd-tobe-from-dbga — greenfield desde `dbgaContent`. */
+  suggestBrdTobeFromDbga: (
+    projectId: string,
+    opts?: { stageId?: string | null },
+  ) => Promise<{ brdContent: string; toBeManualContent: string; stageId: string } | null>;
   legacyGenerateDeliverables: (projectId: string) => Promise<boolean>;
   fetchEstimation: (projectId: string) => Promise<LiveMetricsResult | null>;
   fetchAdrs: (projectId: string) => Promise<void>;
@@ -575,6 +590,8 @@ const initialState = {
     | "legacy-codebase-doc"
     | "legacy-mdd"
     | "legacy-as-is"
+    | "legacy-brd-tobe-suggest"
+    | "brd-tobe-from-dbga"
     | "legacy-deliverables"
     | "deliverables-cascade"
     | null,
@@ -745,6 +762,31 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return true;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al actualizar etapa" });
+      return false;
+    }
+  },
+
+  setProjectRequireBrdTobeGate: async (projectId, requireBrdTobeGate) => {
+    if (!projectId?.trim()) {
+      set({ error: "Falta proyecto" });
+      return false;
+    }
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requireBrdTobeGate }),
+      });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+        const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+        throw new Error(msg ?? "PATCH proyecto falló");
+      }
+      await get().fetchProject(projectId.trim());
+      set({ error: null });
+      return true;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al actualizar proyecto" });
       return false;
     }
   },
@@ -2676,6 +2718,62 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     } catch (e) {
       set({
         error: e instanceof Error ? e.message : "Error al generar manual As-Is",
+        loading: false,
+        loadingReason: null,
+      });
+      return null;
+    }
+  },
+
+  legacySuggestBrdTobeFromCodebaseDoc: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "legacy-brd-tobe-suggest", error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/legacy/suggest-brd-tobe-from-codebase-doc`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al generar BRD/To-Be");
+      }
+      const data = (await r.json()) as { brdContent: string; toBeManualContent: string; stageId: string };
+      await get().fetchProject(projectId.trim());
+      set({ loading: false, loadingReason: null, error: null });
+      return data;
+    } catch (e) {
+      set({
+        error: e instanceof Error ? e.message : "Error al sugerir BRD/To-Be",
+        loading: false,
+        loadingReason: null,
+      });
+      return null;
+    }
+  },
+
+  suggestBrdTobeFromDbga: async (projectId, opts) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "brd-tobe-from-dbga", error: null });
+    try {
+      const body: { stageId?: string } = {};
+      const sid = opts?.stageId?.trim();
+      if (sid) body.stageId = sid;
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/suggest-brd-tobe-from-dbga`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al generar BRD/To-Be desde DBGA");
+      }
+      const data = (await r.json()) as { brdContent: string; toBeManualContent: string; stageId: string };
+      await get().fetchProject(projectId.trim());
+      set({ loading: false, loadingReason: null, error: null });
+      return data;
+    } catch (e) {
+      set({
+        error: e instanceof Error ? e.message : "Error al sugerir BRD/To-Be desde DBGA",
         loading: false,
         loadingReason: null,
       });

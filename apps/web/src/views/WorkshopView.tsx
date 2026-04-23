@@ -131,6 +131,11 @@ export default function WorkshopView({
   );
   const specContentField = useWorkshopStore((s) => s.specContent);
   const dbgaContentField = useWorkshopStore((s) => s.dbgaContent);
+  /** Mismo criterio que `POST …/suggest-brd-tobe-from-dbga` (lee `dbgaContent` persistido en proyecto). */
+  const dbgaContentCharCount = useMemo(
+    () => (project?.dbgaContent ?? "").trim().length,
+    [project?.dbgaContent],
+  );
   const blueprintContentField = useWorkshopStore((s) => s.blueprintContent);
   const apiContractsContentField = useWorkshopStore((s) => s.apiContractsContent);
   const logicFlowsContentField = useWorkshopStore((s) => s.logicFlowsContent);
@@ -1858,10 +1863,12 @@ export default function WorkshopView({
                 )}
                 <BrdTobeStagePanel
                   projectId={projectId}
+                  requireBrdTobeGate={project?.requireBrdTobeGate === true}
                   activeStageId={activeStageId}
                   stage={activeWorkshopStage}
                   isLegacyProject={isLegacyProject}
                   codebaseDocChars={codebaseDocCharCount}
+                  dbgaContentChars={dbgaContentCharCount}
                 />
                 {mddDirty && (
                   <div className="shrink-0 flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-amber-500/10 border border-amber-500/30 mb-3">

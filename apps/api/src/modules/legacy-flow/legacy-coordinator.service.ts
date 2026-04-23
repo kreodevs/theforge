@@ -55,8 +55,8 @@ import type {
 import {
   brdTobeGateFailureMessage,
   composeBrdToBeAsIsPreamble,
-  isBrdTobeGateEnabled,
   isBrdTobeGateSatisfied,
+  parseBrdTobeTaggedSuggest,
 } from "../ai-analysis/utils/brd-tobe-gate.util.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
@@ -511,7 +511,11 @@ export class LegacyCoordinatorService {
   }
 
   private async enforceLegacyBrdTobeGate(projectId: string): Promise<void> {
-    if (!isBrdTobeGateEnabled()) return;
+    const row = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { requireBrdTobeGate: true },
+    });
+    if (!row?.requireBrdTobeGate) return;
     const st = await this.resolveLegacyGateStage(projectId);
     if (!st) {
       throw new BadRequestException("No hay etapa para validar BRD/To-Be. Crea etapa en el proyecto.");
@@ -546,6 +550,56 @@ export class LegacyCoordinatorService {
     const asIs = cleanDocumentContent((mddDraft ?? "").trim()) || "(As-Is generado vacío.)";
     await this.prisma.stage.update({ where: { id: stage.id }, data: { asIsManualContent: asIs } });
     return { asIsManualContent: asIs, stageId: stage.id };
+  }
+
+  /**
+   * Borradores BRD + Manual To-Be a partir de `legacyFlowState.codebaseDoc` (Ariadne); persiste en la etapa gate sin aprobar.
+   */
+  async suggestBrdTobeFromCodebaseDoc(projectId: string): Promise<{
+    brdContent: string;
+    toBeManualContent: string;
+    stageId: string;
+  }> {
+    const { project } = await this.getLegacyProject(projectId);
+    const state = ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const codebaseDoc = String(state.codebaseDoc ?? "").trim();
+    if (codebaseDoc.length < 300) {
+      throw new BadRequestException(
+        "Se requiere documentación de partida del codebase (mín. ~300 caracteres). Ejecuta primero generate-codebase-doc.",
+      );
+    }
+    const stage = await this.resolveLegacyGateStage(projectId);
+    if (!stage?.id) {
+      throw new BadRequestException("No hay etapa para persistir BRD / To-Be.");
+    }
+    const prompt =
+      "Eres analista de negocio. A partir del documento siguiente (índice / evidencia del codebase vía Ariadne), redacta **dos** borradores en español, en markdown:\n" +
+      "1) **BRD de cambio:** problema, alcance, supuestos, riesgos; cita rutas o módulos del documento fuente cuando puedas.\n" +
+      "2) **Manual To-Be:** comportamiento y reglas de negocio **deseadas** tras el cambio; alinea con el BRD; no inventes APIs o archivos que no aparezcan en el fuente (indica «no consta» si falta evidencia).\n\n" +
+      "Responde **solo** con este formato exacto (delimitadores literales):\n" +
+      "<<<BRD>>>\n(markdown BRD)\n<<<END_BRD>>>\n<<<TOBE>>>\n(markdown To-Be)\n<<<END_TOBE>>>\n\n" +
+      "--- DOCUMENTO ---\n\n" +
+      codebaseDoc.slice(0, 120_000);
+    const raw = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
+    const text = (raw ?? "").trim();
+    const parsed = parseBrdTobeTaggedSuggest(text);
+    if (!parsed) {
+      throw new BadRequestException(
+        "No se pudieron extraer BRD y To-Be del modelo. Reintenta o acorta el documento de partida.",
+      );
+    }
+    const brd = cleanDocumentContent(parsed.brd);
+    const tobe = cleanDocumentContent(parsed.tobe);
+    await this.prisma.stage.update({
+      where: { id: stage.id },
+      data: {
+        brdContent: brd,
+        toBeManualContent: tobe,
+        brdApprovedAt: null,
+        toBeApprovedAt: null,
+      },
+    });
+    return { brdContent: brd, toBeManualContent: tobe, stageId: stage.id };
   }
 
   private hasLegacyIndexSddResolution(state: LegacyFlowState): boolean {

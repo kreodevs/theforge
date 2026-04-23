@@ -113,6 +113,8 @@ model Project {
   /// Propuesta HITL pendiente: { level, planSummary, reason } hasta que el usuario confirme en el chat.
   complexityPending Json?
   projectType      ProjectType  @default(NEW)
+  /// Si true, el API bloquea MDD técnico (§3+) hasta BRD y Manual To-Be aprobados en la etapa activa. LEGACY suele ir en false hasta una fase de mejora; NEW en true por defecto.
+  requireBrdTobeGate Boolean     @default(true)
   theforgeProjectId   String?
   hasUxTeam        Boolean      @default(false)
   stages           Stage[]

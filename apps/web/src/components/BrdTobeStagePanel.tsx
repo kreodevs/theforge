@@ -4,25 +4,36 @@ import { useWorkshopStore, type WorkshopStage } from "../store/workshopStore";
 
 export interface BrdTobeStagePanelProps {
   projectId: string;
+  /** `Project.requireBrdTobeGate`: si true, el API exige BRD+To-Be antes del MDD técnico. */
+  requireBrdTobeGate: boolean;
   activeStageId: string | null;
   stage: WorkshopStage | undefined;
   isLegacyProject: boolean;
   codebaseDocChars: number;
+  /** Greenfield: longitud de `project.dbgaContent` persistido (misma fuente que el POST suggest-brd-tobe-from-dbga). */
+  dbgaContentChars: number;
 }
 
 /**
  * BRD / Manual To-Be / As-Is por etapa: edición vía PATCH y aprobaciones HITL.
- * Legacy: botón para sintetizar As-Is desde `codebaseDoc` (API `generate-as-is-manual`).
+ * Toggle proyecto **Exigir BRD/To-Be** (persistido; no env).
+ * Legacy: As-Is y borradores BRD/To-Be desde doc. Ariadne (`codebaseDoc`).
+ * Greenfield: borradores BRD/To-Be desde DBGA (`POST …/suggest-brd-tobe-from-dbga`).
  */
 export function BrdTobeStagePanel({
   projectId,
+  requireBrdTobeGate,
   activeStageId,
   stage,
   isLegacyProject,
   codebaseDocChars,
+  dbgaContentChars,
 }: BrdTobeStagePanelProps) {
   const patchWorkshopStage = useWorkshopStore((s) => s.patchWorkshopStage);
+  const setProjectRequireBrdTobeGate = useWorkshopStore((s) => s.setProjectRequireBrdTobeGate);
   const legacyGenerateAsIsManual = useWorkshopStore((s) => s.legacyGenerateAsIsManual);
+  const legacySuggestBrdTobeFromCodebaseDoc = useWorkshopStore((s) => s.legacySuggestBrdTobeFromCodebaseDoc);
+  const suggestBrdTobeFromDbga = useWorkshopStore((s) => s.suggestBrdTobeFromDbga);
   const storeLoading = useWorkshopStore((s) => s.loading);
   const loadingReason = useWorkshopStore((s) => s.loadingReason);
 
@@ -39,6 +50,8 @@ export function BrdTobeStagePanel({
 
   const busy = localBusy || storeLoading;
   const asIsLoading = loadingReason === "legacy-as-is";
+  const brdTobeSuggestLoading =
+    loadingReason === "legacy-brd-tobe-suggest" || loadingReason === "brd-tobe-from-dbga";
 
   const saveBrd = useCallback(async () => {
     if (!activeStageId) return;
@@ -81,6 +94,28 @@ export function BrdTobeStagePanel({
     setLocalBusy(false);
   }, [legacyGenerateAsIsManual, projectId]);
 
+  const runSuggestBrdTobe = useCallback(async () => {
+    setLocalBusy(true);
+    await legacySuggestBrdTobeFromCodebaseDoc(projectId);
+    setLocalBusy(false);
+  }, [legacySuggestBrdTobeFromCodebaseDoc, projectId]);
+
+  const runSuggestBrdTobeFromDbga = useCallback(async () => {
+    if (!activeStageId) return;
+    setLocalBusy(true);
+    await suggestBrdTobeFromDbga(projectId, { stageId: activeStageId });
+    setLocalBusy(false);
+  }, [activeStageId, projectId, suggestBrdTobeFromDbga]);
+
+  const toggleRequireGate = useCallback(
+    async (next: boolean) => {
+      setLocalBusy(true);
+      await setProjectRequireBrdTobeGate(projectId, next);
+      setLocalBusy(false);
+    },
+    [projectId, setProjectRequireBrdTobeGate],
+  );
+
   if (!activeStageId) {
     return (
       <div className="mb-3 rounded-lg border border-zinc-600/60 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
@@ -100,6 +135,20 @@ export function BrdTobeStagePanel({
           BRD {brdOk ? "✓ aprobado" : "—"} · To-Be {tobeOk ? "✓ aprobado" : "—"}
         </span>
       </div>
+
+      <label className="flex cursor-pointer items-start gap-2 text-xs text-zinc-300">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-3.5 w-3.5 rounded border-zinc-500"
+          checked={requireBrdTobeGate}
+          disabled={busy}
+          onChange={(e) => void toggleRequireGate(e.target.checked)}
+        />
+        <span>
+          Exigir BRD y Manual To-Be <strong>aprobados</strong> antes del MDD técnico (§3+). En legacy suele
+          desactivarse para el MDD inicial; actívalo al entrar en una fase de mejora.
+        </span>
+      </label>
 
       <div className="space-y-1">
         <label className="text-xs text-zinc-400">BRD (markdown)</label>
@@ -146,17 +195,50 @@ export function BrdTobeStagePanel({
       <div className="space-y-1">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className="text-xs text-zinc-400">As-Is (mapa / proceso actual)</label>
-          {isLegacyProject && (
+          {isLegacyProject ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                loading={brdTobeSuggestLoading}
+                disabled={busy || codebaseDocChars < 300}
+                onClick={() => void runSuggestBrdTobe()}
+                title={
+                  codebaseDocChars < 300
+                    ? "Genera primero la doc. partida del codebase (≥300 caracteres)."
+                    : "Borradores desde Ariadne; revisa y aprueba después."
+                }
+              >
+                BRD + To-Be desde doc. partida
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                loading={asIsLoading}
+                disabled={busy || codebaseDocChars < 400}
+                onClick={() => void runLegacyAsIs()}
+                title={codebaseDocChars < 400 ? "Genera primero la doc. partida del codebase (≥400 caracteres)." : undefined}
+              >
+                As-Is desde doc. partida
+              </Button>
+            </div>
+          ) : (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              loading={asIsLoading}
-              disabled={busy || codebaseDocChars < 400}
-              onClick={() => void runLegacyAsIs()}
-              title={codebaseDocChars < 400 ? "Genera primero la doc. partida del codebase (≥400 caracteres)." : undefined}
+              loading={loadingReason === "brd-tobe-from-dbga"}
+              disabled={busy || dbgaContentChars < 300}
+              onClick={() => void runSuggestBrdTobeFromDbga()}
+              title={
+                dbgaContentChars < 300
+                  ? "Genera o guarda el DBGA en el Paso 0 (≥300 caracteres)."
+                  : "Borradores desde Domain Benchmark; revisa y aprueba después."
+              }
             >
-              As-Is desde doc. partida
+              BRD + To-Be desde DBGA
             </Button>
           )}
         </div>

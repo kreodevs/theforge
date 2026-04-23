@@ -155,6 +155,16 @@ export class ProjectsController {
     return this.projects.generateBenchmark(id, userIdea, urls);
   }
 
+  /** Greenfield: borradores BRD + To-Be desde `dbgaContent` (no usa codebaseDoc / Ariadne). Body opcional: `{ stageId }`. */
+  @Post(":id/suggest-brd-tobe-from-dbga")
+  suggestBrdTobeFromDbga(
+    @Param("id") id: string,
+    @Body() body: { stageId?: string },
+  ) {
+    const stageId = typeof body?.stageId === "string" ? body.stageId : undefined;
+    return this.projects.suggestBrdTobeFromDbga(id, { stageId });
+  }
+
   @Post(":id/phase0-deep-research")
   phase0DeepResearch(@Param("id") id: string, @Body() body: unknown) {
     const parsed = phase0DeepResearchBodySchema.parse(body ?? {});

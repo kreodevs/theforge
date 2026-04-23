@@ -44,7 +44,7 @@ Documento de trabajo para integrar **fases previas al MDD** (BRD + Manual To-Be 
 
 1. **UI / `activeTab`:** pasos Workshop **BRD → To-Be → MDD** con edición y aprobación en etapa activa.
 2. **System prompts / grafo Manager:** el Manager sigue la entrevista; el **gate** corta antes de nodos técnicos del grafo si falta aprobación.
-3. **Guardarraíl (`THEFORGE_BRD_TOBE_GATE`, default on):** antes de nodos que redactan **§3 modelo / §4 API** (y equivalentes en el grafo con Manager), comprobar en la `Stage` resuelta:
+3. **Guardarraíl por proyecto (`Project.requireBrdTobeGate`, elegible en el Workshop):** antes de nodos que redactan **§3 modelo / §4 API** (y equivalentes en el grafo con Manager), si el flag está activo, comprobar en la `Stage` resuelta:
    - `brdContent` y `toBeManualContent` con longitud mínima (`BRD_TOBE_MIN_BODY_CHARS`).
    - `brdApprovedAt` y `toBeApprovedAt` no null.
    - Si falla → evento NDJSON `blocked` (streams) sin llamada LLM de síntesis técnica en ese paso.
@@ -72,7 +72,7 @@ Documento de trabajo para integrar **fases previas al MDD** (BRD + Manual To-Be 
 
 ### 3.2 BRD + To-Be antes del MDD de cambio
 
-- **`generate-mdd` y `generate-deliverables`:** si el gate está activo, exigen la misma `Stage` (etapa `isLegacy` si existe, si no la primaria) con BRD/To-Be aprobados (`enforceLegacyBrdTobeGate`).
+- **`generate-mdd` y `generate-deliverables`:** si `requireBrdTobeGate` está activo en el proyecto, exigen la misma `Stage` (etapa `isLegacy` si existe, si no la primaria) con BRD/To-Be aprobados. **LEGACY** por defecto `requireBrdTobeGate=false` (MDD inicial sin obligación). **`suggest-brd-tobe-from-codebase-doc`:** borradores desde `codebaseDoc`.
 - **Guardarraíl índice/SDD:** `assertLegacyIndexSddGate` sigue **antes** del MDD; orden: índice/SDD resuelto → BRD/To-Be → MDD técnico.
 
 ### 3.3 MDD de cambio

@@ -8,12 +8,6 @@ export type StageBrdTobeGateFields = {
   toBeApprovedAt: Date | null | undefined;
 };
 
-export function isBrdTobeGateEnabled(): boolean {
-  const v = process.env.THEFORGE_BRD_TOBE_GATE?.trim().toLowerCase();
-  if (v === "0" || v === "false" || v === "off" || v === "no") return false;
-  return true;
-}
-
 export function isBrdTobeGateSatisfied(stage: StageBrdTobeGateFields): boolean {
   const brd = (stage.brdContent ?? "").trim();
   const tobe = (stage.toBeManualContent ?? "").trim();
@@ -29,7 +23,7 @@ export function brdTobeGateFailureMessage(): string {
   return (
     "El MDD técnico (§3 modelo, §4 API y posteriores) requiere **BRD** y **Manual To-Be** aprobados en la etapa: " +
     `mínimo ${BRD_TOBE_MIN_BODY_CHARS} caracteres cada uno y marcar aprobación (PATCH etapa con approveBrd / approveToBe). ` +
-    "Edita BRD y To-Be en el panel del Workshop o vía API."
+    "Edita BRD y To-Be en el panel del Workshop, o desactiva «Exigir BRD/To-Be» en ese panel si no aplica a esta fase."
   );
 }
 
@@ -67,4 +61,19 @@ const TECHNICAL_MDD_NODES = new Set([
 export function isTechnicalMddGraphNode(nodeName: string | undefined): boolean {
   if (!nodeName) return false;
   return TECHNICAL_MDD_NODES.has(nodeName);
+}
+
+function extractTaggedBlock(text: string, open: string, close: string): string {
+  const i = text.indexOf(open);
+  const j = text.indexOf(close);
+  if (i === -1 || j === -1 || j <= i) return "";
+  return text.slice(i + open.length, j).trim();
+}
+
+/** Parsea la respuesta del LLM con delimitadores `<<<BRD>>>` / `<<<TOBE>>>` (mismo contrato que legacy `suggest-brd-tobe-from-codebase-doc`). */
+export function parseBrdTobeTaggedSuggest(text: string): { brd: string; tobe: string } | null {
+  const brdRaw = extractTaggedBlock(text, "<<<BRD>>>", "<<<END_BRD>>>");
+  const tobeRaw = extractTaggedBlock(text, "<<<TOBE>>>", "<<<END_TOBE>>>");
+  if (!brdRaw.trim() || !tobeRaw.trim()) return null;
+  return { brd: brdRaw.trim(), tobe: tobeRaw.trim() };
 }

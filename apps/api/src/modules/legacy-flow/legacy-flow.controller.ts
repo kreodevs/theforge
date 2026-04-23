@@ -102,6 +102,14 @@ export class LegacyFlowController {
   }
 
   /**
+   * Rellena borradores BRD y Manual To-Be en la etapa legacy (o primaria) a partir de `codebaseDoc`; no aprueba HITL.
+   */
+  @Post("suggest-brd-tobe-from-codebase-doc")
+  async suggestBrdTobeFromCodebaseDoc(@Param("projectId") projectId: string) {
+    return this.coordinator.suggestBrdTobeFromCodebaseDoc(projectId);
+  }
+
+  /**
    * Genera en cascada todos los entregables (SPEC, Arquitectura, Casos de uso, Historias, Blueprint, Guía UX/UI, API, Flujos, Infra, Tasks) desde el MDD.
    * @param projectId - ID del proyecto (debe tener mddContent generado previamente).
    * @returns Confirmación de que la cascada terminó.

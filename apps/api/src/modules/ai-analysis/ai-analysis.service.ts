@@ -12,7 +12,6 @@ import { defaultMDDState, type MDDState, type MDDStateType } from "./state/index
 import {
   brdTobeGateFailureMessage,
   composeBrdToBeAsIsPreamble,
-  isBrdTobeGateEnabled,
   isBrdTobeGateSatisfied,
   isTechnicalMddGraphNode,
 } from "./utils/brd-tobe-gate.util.js";
@@ -441,7 +440,6 @@ export class AiAnalysisService {
   ): AsyncGenerator<StreamProgressEvent> {
     let estimationStage: string | undefined;
     let gateStage: Awaited<ReturnType<PrismaService["stage"]["findUnique"]>> | null = null;
-    let projectType: string | undefined;
     let enforceBrdTobeGate = false;
     if (projectId?.trim()) {
       const p = await this.prisma.project.findUnique({
@@ -449,7 +447,6 @@ export class AiAnalysisService {
         include: { stages: { orderBy: { ordinal: "asc" } } },
       });
       if (p) {
-        projectType = (p as { projectType?: string }).projectType;
         const route = await this.agentSupervisor.resolveRouteFromProject(p, stageId);
         estimationStage = route.stageId;
         this.estimationService.cacheProjectComplexity(
@@ -460,7 +457,7 @@ export class AiAnalysisService {
         if (estimationStage?.trim()) {
           gateStage = await this.prisma.stage.findUnique({ where: { id: estimationStage.trim() } });
         }
-        enforceBrdTobeGate = isBrdTobeGateEnabled() && projectType !== "LEGACY";
+        enforceBrdTobeGate = !!(p as { requireBrdTobeGate?: boolean }).requireBrdTobeGate;
       }
     }
     const graph = createMddGraph(this.graphMemory, { theforge: this.theforge });
@@ -468,7 +465,7 @@ export class AiAnalysisService {
     let dbgaEffective =
       dbgaContent.trim() ||
       "(Sin Benchmark. El usuario no tiene un documento de Benchmark; genera un MDD base con contexto, alcance y requisitos que el usuario podrá refinar.)";
-    if (gateStage && projectType !== "LEGACY") {
+    if (gateStage) {
       const pre = composeBrdToBeAsIsPreamble(gateStage);
       if (pre) dbgaEffective = pre + dbgaEffective;
     }
@@ -587,8 +584,7 @@ export class AiAnalysisService {
     const gateStage = mddStageKey?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: mddStageKey.trim() } })
       : null;
-    const projectType = (projRow as { projectType?: string }).projectType;
-    const enforceBrdTobeGate = isBrdTobeGateEnabled() && projectType !== "LEGACY";
+    const enforceBrdTobeGate = !!(projRow as { requireBrdTobeGate?: boolean }).requireBrdTobeGate;
 
     const row = await this.prisma.agentStateCheckpoint.upsert({
       where: {
@@ -635,7 +631,7 @@ export class AiAnalysisService {
       }
     }
     let dbgaEffective = dbgaContent.trim() || "(Sin Benchmark. El usuario no tiene un documento de Benchmark; genera un MDD base.)";
-    if (gateStage && projectType !== "LEGACY") {
+    if (gateStage) {
       const pre = composeBrdToBeAsIsPreamble(gateStage);
       if (pre) dbgaEffective = pre + dbgaEffective;
     }
@@ -904,12 +900,12 @@ export class AiAnalysisService {
 
     const projForGate = await this.prisma.project.findUnique({
       where: { id: projectId.trim() },
-      select: { projectType: true },
+      select: { requireBrdTobeGate: true },
     });
     const gateStageResume = preferredStageForCtx?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: preferredStageForCtx.trim() } })
       : null;
-    const enforceBrdTobeGateResume = isBrdTobeGateEnabled() && projForGate?.projectType !== "LEGACY";
+    const enforceBrdTobeGateResume = projForGate?.requireBrdTobeGate === true;
 
     yield { type: "progress", agent: "Manager", message: "Reanudando flujo con tu respuesta..." };
 
@@ -1240,7 +1236,7 @@ export class AiAnalysisService {
       where: { id: pid },
       select: {
         complexity: true,
-        projectType: true,
+        requireBrdTobeGate: true,
         stages: { orderBy: { ordinal: "asc" }, select: { id: true, ordinal: true, workflowStatus: true } },
       },
     });
@@ -1250,8 +1246,7 @@ export class AiAnalysisService {
     const gateStageRegen = regenEstimationStage
       ? await this.prisma.stage.findUnique({ where: { id: regenEstimationStage } })
       : null;
-    const regenProjectType = projRowRegen?.projectType;
-    const enforceBrdTobeGateRegen = isBrdTobeGateEnabled() && regenProjectType !== "LEGACY";
+    const enforceBrdTobeGateRegen = projRowRegen?.requireBrdTobeGate === true;
     if (section >= 2 && enforceBrdTobeGateRegen && gateStageRegen && !isBrdTobeGateSatisfied(gateStageRegen)) {
       yield { type: "blocked", code: "BRD_TOBE_GATE", message: brdTobeGateFailureMessage() };
       return;
@@ -1307,7 +1302,7 @@ export class AiAnalysisService {
       const structured = markdownToMddStructured(mddContent);
       const agentCtxRegen = await this.buildMddAgentContext(pid, regenEstimationStage ?? null);
       let dbgaRegen = "(Regenerando sección desde documento actual.)";
-      if (gateStageRegen && regenProjectType !== "LEGACY") {
+      if (gateStageRegen) {
         const pre = composeBrdToBeAsIsPreamble(gateStageRegen);
         if (pre) dbgaRegen = pre + dbgaRegen;
       }

@@ -1,5 +1,7 @@
 import { useRef, useEffect, useState, useMemo } from "react";
 import {
+  BRD_TOBE_FROM_DBGA_STEPS,
+  LEGACY_BRD_TOBE_SUGGEST_STEPS,
   LEGACY_CODEBASE_DOC_STEPS,
   LEGACY_DELIVERABLES_STEPS,
   LEGACY_MDD_STEPS,
@@ -214,10 +216,15 @@ export default function ChatContainer({
     loading &&
     (loadingReason === "legacy-codebase-doc" ||
       loadingReason === "legacy-mdd" ||
-      loadingReason === "legacy-deliverables");
+      loadingReason === "legacy-as-is" ||
+      loadingReason === "legacy-brd-tobe-suggest" ||
+      loadingReason === "legacy-deliverables" ||
+      loadingReason === "brd-tobe-from-dbga");
   const legacyRotatingSteps = useMemo(() => {
     if (loadingReason === "legacy-codebase-doc") return LEGACY_CODEBASE_DOC_STEPS;
     if (loadingReason === "legacy-mdd") return LEGACY_MDD_STEPS;
+    if (loadingReason === "legacy-brd-tobe-suggest") return LEGACY_BRD_TOBE_SUGGEST_STEPS;
+    if (loadingReason === "brd-tobe-from-dbga") return BRD_TOBE_FROM_DBGA_STEPS;
     if (loadingReason === "legacy-deliverables") return LEGACY_DELIVERABLES_STEPS;
     return LEGACY_CODEBASE_DOC_STEPS;
   }, [loadingReason]);
@@ -608,7 +615,13 @@ export default function ChatContainer({
                     ? "MDD inicial (partida)"
                     : loadingReason === "legacy-mdd"
                       ? "MDD de cambio"
-                      : "Entregables legacy"}
+                      : loadingReason === "legacy-as-is"
+                        ? "Manual As-Is"
+                        : loadingReason === "legacy-brd-tobe-suggest"
+                          ? "BRD / To-Be (borradores)"
+                          : loadingReason === "brd-tobe-from-dbga"
+                            ? "BRD / To-Be desde DBGA"
+                            : "Entregables legacy"}
                 </p>
                 <div className="flex items-start gap-2 text-sm text-amber-100/90">
                   <Loader2 className="w-4 h-4 animate-spin text-amber-400 shrink-0 mt-0.5" aria-hidden />

@@ -37,6 +37,8 @@ export const createProjectSchema = z
 export const updateProjectSchema = z.object({
   name: z.string().min(1).optional(),
   hasUxTeam: z.boolean().optional(),
+  /** Si true, el backend exige BRD + To-Be aprobados antes del MDD técnico (streams y, en legacy, generate-mdd / entregables). */
+  requireBrdTobeGate: z.boolean().optional(),
   complexity: ComplexityLevelEnum.optional(),
   /** Borrar propuesta pendiente sin aplicar (rechazo). */
   clearComplexityPending: z.boolean().optional(),
@@ -72,6 +74,7 @@ export const projectResponseSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   projectType: ProjectTypeEnum,
+  requireBrdTobeGate: z.boolean(),
   theforgeProjectId: z.string().nullable(),
   hasUxTeam: z.boolean(),
   complexity: ComplexityLevelEnum,

@@ -30,7 +30,12 @@ import {
 } from "@theforge/shared-types";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
+import { parseBrdTobeTaggedSuggest } from "../ai-analysis/utils/brd-tobe-gate.util.js";
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
+
+/** System prompt para sintetizar BRD/To-Be desde DBGA (greenfield); más ligero que el coordinador legacy + KNOWLEDGE. */
+const DBGA_BRD_TOBE_SUGGEST_SYSTEM =
+  "Eres analista de producto y arquitecto de soluciones en español. Produces BRD y manuales To-Be en markdown coherentes con el benchmark de dominio (DBGA); no inventes requisitos que contradigan el texto; usa «no consta» cuando falte evidencia.";
 
 type StageWithEst = Stage & { estimation: Estimation | null };
 
@@ -193,6 +198,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         hasUxTeam: parsed.hasUxTeam ?? false,
         complexity: parsed.complexity as ComplexityLevel,
         projectType: parsed.projectType,
+        requireBrdTobeGate: !isLegacy,
         theforgeProjectId: parsed.theforgeProjectId ?? undefined,
         stages: {
           create: {
@@ -1089,5 +1095,65 @@ export class ProjectsService implements IOrchestratorProjectsPort {
           ? p.apiContractsContent
           : p.infraContent;
     return this.ai.verifyDeliverable(this.constitutionMarkdown(p), doc ?? "", deliverable);
+  }
+
+  /**
+   * Borradores BRD + Manual To-Be desde `Project.dbgaContent` (greenfield). LEGACY debe usar
+   * `POST …/legacy/suggest-brd-tobe-from-codebase-doc`.
+   */
+  async suggestBrdTobeFromDbga(
+    projectId: string,
+    opts?: { stageId?: string | null },
+  ): Promise<{ brdContent: string; toBeManualContent: string; stageId: string }> {
+    const project = await this.prisma.project.findFirst({
+      where: this.projectWhereForUser(projectId),
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    if (project.projectType === "LEGACY") {
+      throw new BadRequestException(
+        "En proyectos legacy usa POST …/legacy/suggest-brd-tobe-from-codebase-doc (documentación Ariadne).",
+      );
+    }
+    const dbga = String(project.dbgaContent ?? "").trim();
+    if (dbga.length < 300) {
+      throw new BadRequestException(
+        "Se requiere DBGA en el proyecto (mín. ~300 caracteres). Genera el benchmark en el Paso 0 o pégalo en el proyecto.",
+      );
+    }
+    const sid = opts?.stageId?.trim();
+    const stage: StageWithEst | undefined =
+      (sid ? project.stages.find((s) => s.id === sid) : undefined) ||
+      pickPrimaryStage(project.stages as StageWithEst[]);
+    if (!stage?.id) {
+      throw new BadRequestException("No hay etapa para persistir BRD / To-Be.");
+    }
+    const prompt =
+      "Eres analista de negocio. A partir del **Domain Benchmark / guía de dominio (DBGA)** siguiente, redacta **dos** borradores en español, en markdown:\n" +
+      "1) **BRD:** problema, alcance de producto, supuestos, riesgos y métricas de éxito alineadas con el DBGA.\n" +
+      "2) **Manual To-Be:** comportamiento y reglas de negocio **deseadas** del producto; coherente con el BRD; no inventes módulos o APIs que no se deduzcan del DBGA (indica «no consta» si falta detalle).\n\n" +
+      "Responde **solo** con este formato exacto (delimitadores literales):\n" +
+      "<<<BRD>>>\n(markdown BRD)\n<<<END_BRD>>>\n<<<TOBE>>>\n(markdown To-Be)\n<<<END_TOBE>>>\n\n" +
+      "--- DBGA ---\n\n" +
+      dbga.slice(0, 120_000);
+    const raw = await this.ai.generateResponse(prompt, [], { systemPrompt: DBGA_BRD_TOBE_SUGGEST_SYSTEM });
+    const parsed = parseBrdTobeTaggedSuggest((raw ?? "").trim());
+    if (!parsed) {
+      throw new BadRequestException(
+        "No se pudieron extraer BRD y To-Be del modelo. Reintenta o acorta el DBGA.",
+      );
+    }
+    const brd = cleanDocumentContent(parsed.brd);
+    const tobe = cleanDocumentContent(parsed.tobe);
+    await this.prisma.stage.update({
+      where: { id: stage.id },
+      data: {
+        brdContent: brd,
+        toBeManualContent: tobe,
+        brdApprovedAt: null,
+        toBeApprovedAt: null,
+      },
+    });
+    return { brdContent: brd, toBeManualContent: tobe, stageId: stage.id };
   }
 }
