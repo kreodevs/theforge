@@ -35,6 +35,7 @@
     "express": "^5.2.1",
     "falkordb": "^6.6.0",
     "ip-range-check": "^0.2.0",
+    "js-tiktoken": "^1.0.21",
     "json2md": "^2.0.0",
     "node-sql-parser": "^5.4.0",
     "nodemailer": "^8.0.4",

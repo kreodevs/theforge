@@ -128,6 +128,25 @@ export interface LegacyDeliverablesDebugStep {
   error?: string;
 }
 
+/** Grupo de ventanas MDD en section-merge (API `lastDeliverablesDebug`). */
+export interface LegacySectionMergeTraceGroup {
+  id: string;
+  sections: number[];
+  durationMs: number;
+  outChars: number;
+  ok: boolean;
+}
+
+export interface LegacySectionMergeTrace {
+  kind: string;
+  groups: LegacySectionMergeTraceGroup[];
+  mechanicalOk: boolean;
+  conformanceOk?: boolean;
+  gaps: string[];
+  repaired?: boolean;
+  finalChars: number;
+}
+
 /** Trazabilidad de la última generación de entregables legacy (API + `legacyFlowState`). */
 export interface LegacyDeliverablesDebugReport {
   startedAt: string;
@@ -151,6 +170,7 @@ export interface LegacyDeliverablesDebugReport {
   mddLlmStrategy?: "full" | "truncate" | "rollup";
   mddRollupWindows?: number;
   mddRollupFailed?: boolean;
+  sectionMergeTraces?: LegacySectionMergeTrace[];
 }
 
 /** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por AriadneSpecs). */

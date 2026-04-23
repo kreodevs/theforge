@@ -45,6 +45,13 @@ import {
   type McpUiDebugEntry,
 } from "../theforge/mcp-ui-debug.context.js";
 import { normalizeRawEvidenceJsonBlocksInMarkdown } from "../theforge/theforge-raw-evidence-markdown.js";
+import { trySectionMergeDeliverable } from "./legacy-section-merge-deliverables.runner.js";
+import type { LegacySectionMergeTrace } from "./legacy-section-merge.types.js";
+import { LegacyDeliverablesStrategyService } from "./legacy-deliverables-strategy/legacy-deliverables-strategy.service.js";
+import type {
+  LegacyDeliverablesStrategyContext,
+  LegacyDeliverablesStrategyResolution,
+} from "./legacy-deliverables-strategy/legacy-deliverables-strategy.types.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
 
@@ -125,6 +132,10 @@ export interface LegacyDeliverablesDebugReport {
   mddRollupWindows?: number;
   /** Si el rollup falló y se aplicó fallback a truncado. */
   mddRollupFailed?: boolean;
+  /** Trazas de generación por secciones MDD + verificación (`LEGACY_DELIVERABLES_SECTION_MERGE`). */
+  sectionMergeTraces?: LegacySectionMergeTrace[];
+  /** Una entrada por intento de entregable: política env, envelope y estimación de tokens (motor de estrategia). */
+  strategyDecisions?: LegacyDeliverablesStrategyResolution[];
 }
 
 export interface LegacyFlowState {
@@ -454,6 +465,7 @@ export class LegacyCoordinatorService {
     private readonly reviewer: LegacyReviewerService,
     private readonly graphMemory: GraphMemoryService,
     private readonly agentSupervisor: AgentSupervisorService,
+    private readonly legacyDeliverablesStrategy: LegacyDeliverablesStrategyService,
   ) {}
 
   /**
@@ -1157,6 +1169,30 @@ export class LegacyCoordinatorService {
     });
     const legacyOpts = theforgeContext ? { theforgeContext } : undefined;
 
+    const run429 = <T>(fn: () => Promise<T>, step: string) =>
+      runWithLegacy429Retries(fn, { logger: this.logger, step });
+
+    const pushSectionMergeTrace = (t: LegacySectionMergeTrace) => {
+      report.sectionMergeTraces = [...(report.sectionMergeTraces ?? []), t];
+    };
+
+    const pushStrategyDecision = (d: LegacyDeliverablesStrategyResolution) => {
+      report.strategyDecisions = [...(report.strategyDecisions ?? []), d];
+    };
+
+    const resolveSectionMergeAttempt = async (
+      kind: DeliverableKind,
+      fields: Partial<Pick<LegacyDeliverablesStrategyContext, "blueprintText" | "specText" | "useCasesText">>,
+    ): Promise<boolean> => {
+      const d = await this.legacyDeliverablesStrategy.resolveSectionMergeAttempt(kind, {
+        mddText: mddForLlm,
+        theforgeContextText: theforgeContext,
+        ...fields,
+      });
+      pushStrategyDecision(d);
+      return d.attemptSectionMerge;
+    };
+
     const update = async (data: Record<string, unknown>) => {
       await this.prisma.project.update({ where: { id: projectId }, data: data as object });
     };
@@ -1187,12 +1223,41 @@ export class LegacyCoordinatorService {
         case "mdd_canonical":
           return;
         case "spec": {
+          const sm = await trySectionMergeDeliverable(this.ai, "spec", mddForLlm, legacyOpts, {}, run429, this.logger, {
+            attemptSectionMerge: await resolveSectionMergeAttempt("spec", {}),
+          });
+          if (sm) {
+            pushSectionMergeTrace(sm.trace);
+            await update({ specContent: cleanDocumentContent(sm.content) });
+            p = await load();
+            return;
+          }
           const specContent = await this.ai.generateSpec(mddForLlm, null, "mdd", legacyOpts);
           await update({ specContent: cleanDocumentContent(specContent) });
           p = await load();
           return;
         }
         case "architecture": {
+          const smArch = await trySectionMergeDeliverable(
+            this.ai,
+            "architecture",
+            mddForLlm,
+            legacyOpts,
+            { blueprint: p.blueprintContent ?? undefined },
+            run429,
+            this.logger,
+            {
+              attemptSectionMerge: await resolveSectionMergeAttempt("architecture", {
+                blueprintText: p.blueprintContent ?? undefined,
+              }),
+            },
+          );
+          if (smArch) {
+            pushSectionMergeTrace(smArch.trace);
+            await update({ architectureContent: cleanDocumentContent(smArch.content) });
+            p = await load();
+            return;
+          }
           const architectureContent = await this.ai.generateArchitecture(
             mddForLlm,
             p.blueprintContent ?? undefined,
@@ -1203,12 +1268,41 @@ export class LegacyCoordinatorService {
           return;
         }
         case "use_cases": {
+          const smUc = await trySectionMergeDeliverable(
+            this.ai,
+            "use_cases",
+            mddForLlm,
+            legacyOpts,
+            { spec: p.specContent ?? undefined },
+            run429,
+            this.logger,
+            {
+              attemptSectionMerge: await resolveSectionMergeAttempt("use_cases", {
+                specText: p.specContent ?? undefined,
+              }),
+            },
+          );
+          if (smUc) {
+            pushSectionMergeTrace(smUc.trace);
+            await update({ useCasesContent: cleanDocumentContent(smUc.content) });
+            p = await load();
+            return;
+          }
           const useCasesContent = await this.ai.generateUseCases(mddForLlm, p.specContent, legacyOpts);
           await update({ useCasesContent: cleanDocumentContent(useCasesContent) });
           p = await load();
           return;
         }
         case "blueprint": {
+          const smBp = await trySectionMergeDeliverable(this.ai, "blueprint", mddForLlm, legacyOpts, {}, run429, this.logger, {
+            attemptSectionMerge: await resolveSectionMergeAttempt("blueprint", {}),
+          });
+          if (smBp) {
+            pushSectionMergeTrace(smBp.trace);
+            await update({ blueprintContent: cleanDocumentContent(smBp.content) });
+            p = await load();
+            return;
+          }
           const blueprintContent = await this.ai.generateBlueprint(mddForLlm, undefined, legacyOpts);
           await update({ blueprintContent: cleanDocumentContent(blueprintContent) });
           p = await load();
@@ -1216,24 +1310,81 @@ export class LegacyCoordinatorService {
         }
         case "api_contracts": {
           const bp = await ensureBlueprint();
+          const smApi = await trySectionMergeDeliverable(
+            this.ai,
+            "api_contracts",
+            mddForLlm,
+            legacyOpts,
+            { blueprint: bp },
+            run429,
+            this.logger,
+            {
+              attemptSectionMerge: await resolveSectionMergeAttempt("api_contracts", {
+                blueprintText: bp,
+              }),
+            },
+          );
+          if (smApi) {
+            pushSectionMergeTrace(smApi.trace);
+            await update({ apiContractsContent: cleanDocumentContent(smApi.content) });
+            p = await load();
+            return;
+          }
           const apiContractsContent = await this.ai.generateApiContracts(mddForLlm, bp, undefined, legacyOpts);
           await update({ apiContractsContent: cleanDocumentContent(apiContractsContent) });
           p = await load();
           return;
         }
         case "logic_flows": {
+          const smLf = await trySectionMergeDeliverable(
+            this.ai,
+            "logic_flows",
+            mddForLlm,
+            legacyOpts,
+            {},
+            run429,
+            this.logger,
+            { attemptSectionMerge: await resolveSectionMergeAttempt("logic_flows", {}) },
+          );
+          if (smLf) {
+            pushSectionMergeTrace(smLf.trace);
+            await update({ logicFlowsContent: cleanDocumentContent(smLf.content) });
+            p = await load();
+            return;
+          }
           const logicFlowsContent = await this.ai.generateLogicFlows(mddForLlm, undefined, legacyOpts);
           await update({ logicFlowsContent: cleanDocumentContent(logicFlowsContent) });
           p = await load();
           return;
         }
         case "ux_ui_guide": {
-          const bp = String(p.blueprintContent ?? "").trim() || (await ensureBlueprint());
+          const bpUx = String(p.blueprintContent ?? "").trim() || (await ensureBlueprint());
+          const smUx = await trySectionMergeDeliverable(
+            this.ai,
+            "ux_ui_guide",
+            mddForLlm,
+            legacyOpts,
+            { blueprint: bpUx },
+            run429,
+            this.logger,
+            {
+              attemptSectionMerge: await resolveSectionMergeAttempt("ux_ui_guide", {
+                blueprintText: bpUx,
+              }),
+            },
+          );
+          if (smUx) {
+            pushSectionMergeTrace(smUx.trace);
+            const uxClean = smUx.content.replace(/\n---FIN_UX_UI---.*/s, "").trim();
+            await update({ uxUiGuideContent: cleanDocumentContent(uxClean) });
+            p = await load();
+            return;
+          }
           let uxPrompt =
             "Genera la Guía UX/UI en markdown según el system prompt. MDD:\n---\n" +
             mddForLlm.slice(0, 8000) +
             "\n---\n\nBlueprint:\n---\n" +
-            bp.slice(0, 4000) +
+            bpUx.slice(0, 4000) +
             "\n---";
           if (theforgeContext) {
             uxPrompt =
@@ -1253,6 +1404,27 @@ export class LegacyCoordinatorService {
           return;
         }
         case "user_stories": {
+          const smUs = await trySectionMergeDeliverable(
+            this.ai,
+            "user_stories",
+            mddForLlm,
+            legacyOpts,
+            { spec: p.specContent ?? undefined, useCases: p.useCasesContent ?? undefined },
+            run429,
+            this.logger,
+            {
+              attemptSectionMerge: await resolveSectionMergeAttempt("user_stories", {
+                specText: p.specContent ?? undefined,
+                useCasesText: p.useCasesContent ?? undefined,
+              }),
+            },
+          );
+          if (smUs) {
+            pushSectionMergeTrace(smUs.trace);
+            await update({ userStoriesContent: cleanDocumentContent(smUs.content) });
+            p = await load();
+            return;
+          }
           const userStoriesContent = await this.ai.generateUserStories(
             mddForLlm,
             p.specContent,
@@ -1264,15 +1436,55 @@ export class LegacyCoordinatorService {
           return;
         }
         case "tasks": {
-          const bp = p.blueprintContent?.trim();
-          const tasksContent = await this.ai.generateTasks(mddForLlm, bp || undefined, legacyOpts);
+          const bpTasks = p.blueprintContent?.trim();
+          const smTk = await trySectionMergeDeliverable(
+            this.ai,
+            "tasks",
+            mddForLlm,
+            legacyOpts,
+            { blueprint: bpTasks || undefined },
+            run429,
+            this.logger,
+            {
+              attemptSectionMerge: await resolveSectionMergeAttempt("tasks", {
+                blueprintText: bpTasks || undefined,
+              }),
+            },
+          );
+          if (smTk) {
+            pushSectionMergeTrace(smTk.trace);
+            await update({ tasksContent: cleanDocumentContent(smTk.content) });
+            p = await load();
+            return;
+          }
+          const tasksContent = await this.ai.generateTasks(mddForLlm, bpTasks || undefined, legacyOpts);
           await update({ tasksContent: cleanDocumentContent(tasksContent) });
           p = await load();
           return;
         }
         case "infra": {
-          const bp = await ensureBlueprint();
-          const infraContent = await this.ai.generateInfra(mddForLlm, bp, undefined, legacyOpts);
+          const bpInf = await ensureBlueprint();
+          const smIf = await trySectionMergeDeliverable(
+            this.ai,
+            "infra",
+            mddForLlm,
+            legacyOpts,
+            { blueprint: bpInf },
+            run429,
+            this.logger,
+            {
+              attemptSectionMerge: await resolveSectionMergeAttempt("infra", {
+                blueprintText: bpInf,
+              }),
+            },
+          );
+          if (smIf) {
+            pushSectionMergeTrace(smIf.trace);
+            await update({ infraContent: cleanDocumentContent(smIf.content) });
+            p = await load();
+            return;
+          }
+          const infraContent = await this.ai.generateInfra(mddForLlm, bpInf, undefined, legacyOpts);
           await update({ infraContent: cleanDocumentContent(infraContent) });
           p = await load();
           return;

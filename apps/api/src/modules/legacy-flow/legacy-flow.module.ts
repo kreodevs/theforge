@@ -8,11 +8,12 @@ import { TheForgeModule } from "../theforge/theforge.module.js";
 import { LegacyFlowController } from "./legacy-flow.controller.js";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 import { LegacyReviewerService } from "./legacy-reviewer.service.js";
+import { LegacyDeliverablesStrategyService } from "./legacy-deliverables-strategy/legacy-deliverables-strategy.service.js";
 
 @Module({
   imports: [PrismaModule, AiModule, ProjectsModule, TheForgeModule, AiAnalysisModule, AgentSupervisorModule],
   controllers: [LegacyFlowController],
-  providers: [LegacyCoordinatorService, LegacyReviewerService],
+  providers: [LegacyCoordinatorService, LegacyReviewerService, LegacyDeliverablesStrategyService],
   exports: [LegacyCoordinatorService, LegacyReviewerService],
 })
 export class LegacyFlowModule {}
