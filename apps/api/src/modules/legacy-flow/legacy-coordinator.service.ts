@@ -170,6 +170,41 @@ function isLegacyDeliverablesDebugVerbose(): boolean {
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Pausa entre cada paso LLM de la cascada (mitiga TPM/RPM en Gemini/Moonshot).
+ * Default 3500 ms. `0` o vacío desactiva (solo tras al menos un paso LLM previo).
+ */
+function legacyDeliverablesInterStepDelayMs(): number {
+  const raw = process.env.LEGACY_DELIVERABLES_INTER_STEP_DELAY_MS?.trim();
+  if (raw === undefined || raw === "") return 3500;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(n, 180_000);
+}
+
+/**
+ * Cooldown único antes del primer `runStep` cuando el MDD inyectado es muy largo (p. ej. `codebaseDoc_fallback`).
+ * Default: si `mddChars` > 100000 → espera 12000 ms una vez.
+ */
+function legacyDeliverablesLargeMddCooldownMs(mddChars: number): number {
+  const thresholdRaw = process.env.LEGACY_DELIVERABLES_LARGE_MDD_THRESHOLD_CHARS?.trim();
+  const threshold =
+    thresholdRaw === undefined || thresholdRaw === ""
+      ? 100_000
+      : Math.max(0, parseInt(thresholdRaw, 10) || 0);
+  if (threshold === 0 || mddChars <= threshold) return 0;
+  const coolRaw = process.env.LEGACY_DELIVERABLES_LARGE_MDD_COOLDOWN_MS?.trim();
+  const cool =
+    coolRaw === undefined || coolRaw === ""
+      ? 12_000
+      : Math.max(0, parseInt(coolRaw, 10) || 0);
+  return Math.min(cool, 180_000);
+}
+
 const DELIVERABLE_PROJECT_FIELD: Partial<Record<DeliverableKind, keyof DbProject>> = {
   spec: "specContent",
   architecture: "architectureContent",
@@ -1008,11 +1043,31 @@ export class LegacyCoordinatorService {
       }
     };
 
+    const largeMddCooldown = legacyDeliverablesLargeMddCooldownMs(report.mddChars);
+    if (largeMddCooldown > 0) {
+      if (isLegacyDeliverablesDebugVerbose()) {
+        this.logger.log(
+          `[LegacyDeliverables] throttle large_mdd_cooldown_ms=${largeMddCooldown} mddChars=${report.mddChars}`,
+        );
+      }
+      await sleepMs(largeMddCooldown);
+    }
+
+    let didRunLlmDeliverableStep = false;
     for (const kind of deliverablesToRun) {
       if (kind === "mdd_canonical") {
         pushStep({ kind: "mdd_canonical", durationMs: 0, ok: true, detail: "noop" });
         continue;
       }
+      const interStepMs = legacyDeliverablesInterStepDelayMs();
+      if (didRunLlmDeliverableStep && interStepMs > 0) {
+        if (isLegacyDeliverablesDebugVerbose()) {
+          this.logger.log(`[LegacyDeliverables] throttle inter_step_ms=${interStepMs} before=${kind}`);
+        }
+        await sleepMs(interStepMs);
+      }
+      didRunLlmDeliverableStep = true;
+
       const t0 = Date.now();
       try {
         await runStep(kind);

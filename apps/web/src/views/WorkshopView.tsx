@@ -31,6 +31,7 @@ import {
   MessageSquare,
   Copy,
   Check,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CodebaseDocResponseMode } from "@theforge/shared-types";
@@ -1373,61 +1374,67 @@ export default function WorkshopView({
                   <p className="text-zinc-500 text-xs leading-relaxed max-w-3xl">
                     Reconstrucción AS-IS desde el índice AriadneSpecs (equivalente al “primer paso” de documentación). Opcional: puedes ir directo a <strong>Modificación</strong> si solo quieres un cambio puntual; para volcar todo el conocimiento del repo aquí, usa el botón de abajo.
                   </p>
-                  <fieldset
-                    disabled={loading && loadingReason === "legacy-codebase-doc"}
-                    className="w-full min-w-0 rounded-lg border border-zinc-600/60 bg-zinc-900/35 p-3 sm:p-4 text-left"
-                  >
-                    <legend className="mb-3 block w-full border-b border-zinc-600/50 pb-2 text-left text-[11px] font-medium text-zinc-400">
-                      Modo ingest (ask_codebase)
-                    </legend>
-                    <div className="space-y-2">
-                      <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-zinc-800/60 sm:px-2">
-                        <input
-                          type="radio"
-                          name="codebase-doc-response-mode"
-                          className="mt-1 shrink-0 accent-amber-500"
-                          checked={codebaseDocResponseMode === "default"}
-                          onChange={() => setCodebaseDocResponseMode("default")}
-                        />
-                        <span className="min-w-0">
-                          <span className="text-sm text-zinc-200">Chat normal</span>
-                          <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
-                            Prosa; ReAct en retrieve (hasta 4 vueltas LLM en backend).
+                  <details className="w-full min-w-0 rounded-lg border border-zinc-600/60 bg-zinc-900/35 text-left [&_summary::-webkit-details-marker]:hidden open:[&_summary_.ingest-mode-chevron]:rotate-180">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-left text-[11px] font-medium text-zinc-400 hover:bg-zinc-800/40 sm:px-4">
+                      <span>Modo ingest (ask_codebase)</span>
+                      <ChevronDown
+                        className="ingest-mode-chevron h-4 w-4 shrink-0 text-zinc-500 transition-transform duration-200"
+                        aria-hidden
+                      />
+                    </summary>
+                    <fieldset
+                      disabled={loading && loadingReason === "legacy-codebase-doc"}
+                      className="m-0 min-w-0 border-0 p-0 px-3 pb-3 pt-1 sm:px-4 sm:pb-4"
+                    >
+                      <div className="space-y-2">
+                        <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-zinc-800/60 sm:px-2">
+                          <input
+                            type="radio"
+                            name="codebase-doc-response-mode"
+                            className="mt-1 shrink-0 accent-amber-500"
+                            checked={codebaseDocResponseMode === "default"}
+                            onChange={() => setCodebaseDocResponseMode("default")}
+                          />
+                          <span className="min-w-0">
+                            <span className="text-sm text-zinc-200">Chat normal</span>
+                            <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
+                              Prosa; ReAct en retrieve (hasta 4 vueltas LLM en backend).
+                            </span>
                           </span>
-                        </span>
-                      </label>
-                      <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-zinc-800/60 sm:px-2">
-                        <input
-                          type="radio"
-                          name="codebase-doc-response-mode"
-                          className="mt-1 shrink-0 accent-amber-500"
-                          checked={codebaseDocResponseMode === "evidence_first"}
-                          onChange={() => setCodebaseDocResponseMode("evidence_first")}
-                        />
-                        <span className="min-w-0">
-                          <span className="text-sm text-zinc-200">MDD / SDD (recomendado)</span>
-                          <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
-                            Una petición: JSON MDD 7 secciones desde Ariadne (menos idas y vueltas que varios MCP).
+                        </label>
+                        <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-zinc-800/60 sm:px-2">
+                          <input
+                            type="radio"
+                            name="codebase-doc-response-mode"
+                            className="mt-1 shrink-0 accent-amber-500"
+                            checked={codebaseDocResponseMode === "evidence_first"}
+                            onChange={() => setCodebaseDocResponseMode("evidence_first")}
+                          />
+                          <span className="min-w-0">
+                            <span className="text-sm text-zinc-200">MDD / SDD (recomendado)</span>
+                            <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
+                              Una petición: JSON MDD 7 secciones desde Ariadne (menos idas y vueltas que varios MCP).
+                            </span>
                           </span>
-                        </span>
-                      </label>
-                      <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-zinc-800/60 sm:px-2">
-                        <input
-                          type="radio"
-                          name="codebase-doc-response-mode"
-                          className="mt-1 shrink-0 accent-amber-500"
-                          checked={codebaseDocResponseMode === "raw_evidence"}
-                          onChange={() => setCodebaseDocResponseMode("raw_evidence")}
-                        />
-                        <span className="min-w-0">
-                          <span className="text-sm text-zinc-200">Evidencia bruta (barato)</span>
-                          <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
-                            Sin LLM en retrieve; JSON para sintetizar fuera o depurar 429.
+                        </label>
+                        <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-zinc-800/60 sm:px-2">
+                          <input
+                            type="radio"
+                            name="codebase-doc-response-mode"
+                            className="mt-1 shrink-0 accent-amber-500"
+                            checked={codebaseDocResponseMode === "raw_evidence"}
+                            onChange={() => setCodebaseDocResponseMode("raw_evidence")}
+                          />
+                          <span className="min-w-0">
+                            <span className="text-sm text-zinc-200">Evidencia bruta (barato)</span>
+                            <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
+                              Sin LLM en retrieve; JSON para sintetizar fuera o depurar 429.
+                            </span>
                           </span>
-                        </span>
-                      </label>
-                    </div>
-                  </fieldset>
+                        </label>
+                      </div>
+                    </fieldset>
+                  </details>
                 </div>
                 {project.legacyFlowState?.codebaseDoc || mddInicialLocalContent ? (
                   <>
