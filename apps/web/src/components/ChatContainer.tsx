@@ -20,6 +20,8 @@ export type ActiveTab =
   | "legacy"
   | "mdd-inicial"
   | "spec"
+  | "brd"
+  | "to-be"
   | "mdd"
   | "ux-ui-guide"
   | "blueprint"
@@ -29,7 +31,6 @@ export type ActiveTab =
   | "architecture"
   | "use-cases"
   | "user-stories"
-  | "user-stories"
   | "infra"
   | "adrs";
 
@@ -38,6 +39,8 @@ const ACTIVE_TAB_LABELS: Record<ActiveTab, string> = {
   legacy: "Modificación (Legacy)",
   "mdd-inicial": "MDD Inicial (documentación de partida)",
   spec: "Spec",
+  brd: "BRD (etapa)",
+  "to-be": "Manual To-Be (etapa)",
   mdd: "MDD",
   "ux-ui-guide": "Guía UX/UI",
   blueprint: "Blueprint",

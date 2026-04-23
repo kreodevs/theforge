@@ -1425,6 +1425,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           const dbga = get().dbgaContent ?? get().project?.dbgaContent ?? null;
           if (dbga != null) body.dbgaContent = dbga;
         }
+        if (tab === "brd" || tab === "to-be") {
+          const aid = get().activeStageId;
+          const st = get().project?.stages?.find((x) => x.id === aid);
+          if (tab === "brd") body.brdContent = st?.brdContent ?? "";
+          if (tab === "to-be") body.toBeManualContent = st?.toBeManualContent ?? "";
+        }
+        if (tab === "spec") {
+          const sc = get().specContent ?? get().project?.specContent;
+          if (sc != null && String(sc).trim()) body.specContent = sc;
+        }
         if (images.length) body.images = images;
         const r = await apiFetch(`${API_BASE}/ai-orchestrator/chat/stream`, {
           method: "POST",
@@ -1463,11 +1473,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const proj = data.project as Project | undefined;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
                 const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
+                const nextStages = packed?.project?.stages ?? proj?.stages;
                 set({
                   session: sess ?? get().session,
                   project: packed?.project ?? get().project,
                   activeStageId: packed?.activeStageId ?? get().activeStageId,
                   mddContent: packed?.mddContent ?? get().mddContent,
+                  workshopStages: nextStages && nextStages.length > 0 ? nextStages : get().workshopStages,
                   uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
@@ -1515,11 +1527,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const proj = data.project as Project | undefined;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
                 const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
+                const nextStagesB = packed?.project?.stages ?? proj?.stages;
                 set({
                   session: sess ?? get().session,
                   project: packed?.project ?? get().project,
                   activeStageId: packed?.activeStageId ?? get().activeStageId,
                   mddContent: packed?.mddContent ?? get().mddContent,
+                  workshopStages: nextStagesB && nextStagesB.length > 0 ? nextStagesB : get().workshopStages,
                   uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
                   specContent: cleanDoc(proj?.specContent ?? null),

@@ -24,13 +24,25 @@ export class AiOrchestratorController {
       mddContent?: string | null;
       uxUiGuideContent?: string | null;
       dbgaContent?: string | null;
+      brdContent?: string | null;
+      toBeManualContent?: string | null;
       activeTab?: string;
       stageId?: string;
       images?: unknown;
     },
   ) {
-    const { projectId, sessionId, message, mddContent, uxUiGuideContent, dbgaContent, activeTab, stageId } =
-      body;
+    const {
+      projectId,
+      sessionId,
+      message,
+      mddContent,
+      uxUiGuideContent,
+      dbgaContent,
+      brdContent,
+      toBeManualContent,
+      activeTab,
+      stageId,
+    } = body;
     const images = parseChatImageAttachments(body.images);
     const msg = typeof message === "string" ? message.trim() : "";
     if (!projectId || (!msg && !images.length)) {
@@ -44,6 +56,8 @@ export class AiOrchestratorController {
       activeTab?.trim() || undefined,
       uxUiGuideContent?.trim() || undefined,
       dbgaContent?.trim() || undefined,
+      brdContent?.trim() || undefined,
+      toBeManualContent?.trim() || undefined,
       stageId?.trim() || undefined,
       images,
     );
@@ -60,6 +74,8 @@ export class AiOrchestratorController {
       uxUiGuideContent?: string | null;
       dbgaContent?: string | null;
       specContent?: string | null;
+      brdContent?: string | null;
+      toBeManualContent?: string | null;
       activeTab?: string;
       stageId?: string;
       images?: unknown;
@@ -74,6 +90,8 @@ export class AiOrchestratorController {
       uxUiGuideContent,
       dbgaContent,
       specContent,
+      brdContent,
+      toBeManualContent,
       activeTab,
       stageId,
     } = body;
@@ -99,6 +117,8 @@ export class AiOrchestratorController {
         uxUiGuideContent?.trim() || undefined,
         dbgaContent?.trim() || undefined,
         specContent?.trim() || undefined,
+        brdContent?.trim() || undefined,
+        toBeManualContent?.trim() || undefined,
         stageId?.trim() || undefined,
         images,
       );

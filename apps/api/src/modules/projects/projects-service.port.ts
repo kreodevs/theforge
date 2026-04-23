@@ -5,5 +5,5 @@ export const PROJECTS_ORCHESTRATOR_PORT = Symbol("PROJECTS_ORCHESTRATOR_PORT");
 
 export type IOrchestratorProjectsPort = Pick<
   ProjectsService,
-  "findOne" | "update" | "tryConfirmComplexityFromChatMessage"
+  "findOne" | "update" | "tryConfirmComplexityFromChatMessage" | "patchStage"
 >;

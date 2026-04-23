@@ -64,6 +64,8 @@ export class AiService {
 
   private static readonly ACTIVE_TAB_LABELS: Record<string, string> = {
     spec: "Spec (SDD: what/why)",
+    brd: "BRD (etapa)",
+    "to-be": "Manual To-Be (etapa)",
     mdd: "MDD",
     architecture: "Arquitectura del sistema",
     "use-cases": "Casos de Uso",
@@ -137,6 +139,8 @@ export class AiService {
         const tagMap: Record<string, string> = {
           mdd: "MDD",
           spec: "SPEC",
+          brd: "BRD",
+          "to-be": "TOBE",
           architecture: "ARCH",
           "use-cases": "USECASES",
           "user-stories": "STORIES",
@@ -156,6 +160,14 @@ export class AiService {
           if (at === "spec") {
             systemPrompt +=
               "\n\n**Cuando el usuario confirme que integre o aplique cambios al Spec** (ej. \"sí ingrésalo\", \"integralo\", \"aplica\", \"confirma\", \"actualiza el spec\"), **debes** devolver el **documento Spec completo** actualizado (incluyendo lo que ya existía más la nueva sección o cambios), terminando con \`---FIN_SPEC---\`. Nunca respondas solo con un mensaje tipo \"El documento Spec ha sido actualizado con éxito\": el sistema solo persiste cuando encuentra el contenido del documento seguido de ---FIN_SPEC---.";
+          }
+          if (at === "brd") {
+            systemPrompt +=
+              "\n\n**Para persistir el BRD** debes devolver el **markdown del BRD completo** actualizado cuando el usuario pida aplicar, integrar o actualizar (incluye lo ya existente más cambios), terminando con \`---FIN_BRD---\`. Sin ese delimitador el sistema no guarda el documento.";
+          }
+          if (at === "to-be") {
+            systemPrompt +=
+              "\n\n**Para persistir el Manual To-Be** debes devolver el **markdown completo** actualizado cuando el usuario pida aplicar, integrar o actualizar, terminando con \`---FIN_TOBE---\`. Sin ese delimitador el sistema no guarda el documento.";
           }
         }
       }
@@ -194,6 +206,18 @@ export class AiService {
         systemPrompt +=
           "\n\n[Contenido actual del Spec del proyecto. Al integrar o actualizar, incluye todo esto más la nueva sección o cambios, y termina con ---FIN_SPEC---.]\n---\n" +
           options.currentSpecContent.trim().slice(0, 12000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "brd" && options?.currentBrdContent?.trim()) {
+        systemPrompt +=
+          "\n\n[BRD actual de la etapa del Workshop. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_BRD---.]\n---\n" +
+          options.currentBrdContent.trim().slice(0, 8000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "to-be" && options?.currentToBeManualContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Manual To-Be actual de la etapa. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_TOBE---.]\n---\n" +
+          options.currentToBeManualContent.trim().slice(0, 8000) +
           "\n---";
       }
       if (options?.learningHistory?.trim()) {
@@ -268,6 +292,8 @@ export class AiService {
       const tagMap: Record<string, string> = {
         mdd: "MDD",
         spec: "SPEC",
+        brd: "BRD",
+        "to-be": "TOBE",
         architecture: "ARCH",
         "use-cases": "USECASES",
         "user-stories": "STORIES",
@@ -287,6 +313,14 @@ export class AiService {
           if (at === "spec") {
             systemPrompt +=
               "\n\n**Cuando el usuario confirme que integre o aplique cambios al Spec** (ej. \"sí ingrésalo\", \"integralo\", \"aplica\", \"confirma\", \"actualiza el spec\"), **debes** devolver el **documento Spec completo** actualizado (incluyendo lo que ya existía más la nueva sección o cambios), terminando con \`---FIN_SPEC---\`. Nunca respondas solo con un mensaje tipo \"El documento Spec ha sido actualizado con éxito\": el sistema solo persiste cuando encuentra el contenido del documento seguido de ---FIN_SPEC---.";
+          }
+          if (at === "brd") {
+            systemPrompt +=
+              "\n\n**Para persistir el BRD** debes devolver el **markdown del BRD completo** actualizado cuando el usuario pida aplicar, integrar o actualizar (incluye lo ya existente más cambios), terminando con \`---FIN_BRD---\`. Sin ese delimitador el sistema no guarda el documento.";
+          }
+          if (at === "to-be") {
+            systemPrompt +=
+              "\n\n**Para persistir el Manual To-Be** debes devolver el **markdown completo** actualizado cuando el usuario pida aplicar, integrar o actualizar, terminando con \`---FIN_TOBE---\`. Sin ese delimitador el sistema no guarda el documento.";
           }
         }
       }
@@ -327,6 +361,18 @@ export class AiService {
         options.currentSpecContent.trim().slice(0, 12000) +
         "\n---";
     }
+    if (options?.activeTab?.trim() === "brd" && options?.currentBrdContent?.trim()) {
+      systemPrompt +=
+        "\n\n[BRD actual de la etapa del Workshop. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_BRD---.]\n---\n" +
+        options.currentBrdContent.trim().slice(0, 8000) +
+        "\n---";
+    }
+    if (options?.activeTab?.trim() === "to-be" && options?.currentToBeManualContent?.trim()) {
+      systemPrompt +=
+        "\n\n[Manual To-Be actual de la etapa. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_TOBE---.]\n---\n" +
+        options.currentToBeManualContent.trim().slice(0, 8000) +
+        "\n---";
+    }
     if (options?.learningHistory?.trim()) {
       systemPrompt +=
         "\n\n**HISTORIAL_DE_APRENDIZAJE (proyectos previos del usuario):**\n---\n" +
@@ -340,9 +386,9 @@ export class AiService {
     }
     systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
     if (
-      (options?.userMessageImages?.length ?? 0) > 0 ||
-      history.some((h) => h.role === "user" && (h.images?.length ?? 0) > 0)
-    ) {
+        (options?.userMessageImages?.length ?? 0) > 0 ||
+        history.some((h) => h.role === "user" && (h.images?.length ?? 0) > 0)
+      ) {
       systemPrompt +=
         "\n\n**Entrada multimodal:** Puede haber imágenes en el historial o en este mensaje. Interprétalas en el contexto del documento activo y la conversación (modelo de datos, UI, flujos); no inventes detalles no visibles.";
       if (

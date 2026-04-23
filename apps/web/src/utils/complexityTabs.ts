@@ -4,6 +4,8 @@ export type WorkshopDocTab =
   | "legacy"
   | "mdd-inicial"
   | "spec"
+  | "brd"
+  | "to-be"
   | "mdd"
   | "ux-ui-guide"
   | "blueprint"
@@ -47,6 +49,8 @@ export function isTabVisibleForComplexity(
       const allow: WorkshopDocTab[] = [
         "legacy",
         "mdd-inicial",
+        "brd",
+        "to-be",
         "mdd",
         "spec",
         "api-contracts",
@@ -58,6 +62,8 @@ export function isTabVisibleForComplexity(
     const allowNew: WorkshopDocTab[] = [
       "benchmark",
       "spec",
+      "brd",
+      "to-be",
       "api-contracts",
       "ux-ui-guide",
       "tasks",

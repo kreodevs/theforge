@@ -18,6 +18,10 @@ export interface GenerateResponseOptions {
   currentBlueprintContent?: string;
   /** Spec actual del proyecto; se inyecta cuando activeTab es spec para que el modelo pueda fusionar nuevas secciones */
   currentSpecContent?: string;
+  /** BRD de la etapa activa (Workshop); tab `brd` */
+  currentBrdContent?: string;
+  /** Manual To-Be de la etapa activa; tab `to-be` */
+  currentToBeManualContent?: string;
   /** Tab activo en el Workshop: benchmark | mdd | ux-ui-guide | blueprint | api-contracts | logic-flows | infra */
   activeTab?: string;
   /** Memoria semántica: preferencias arquitectónicas de proyectos previos (HISTORIAL_DE_APRENDIZAJE) */

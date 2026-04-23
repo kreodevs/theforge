@@ -4,6 +4,8 @@ import {
   Lock,
   AlertTriangle,
   CheckCircle2,
+  ClipboardList,
+  BookOpen,
   Cloud,
   CloudOff,
   FileText,
@@ -320,7 +322,24 @@ export default function WorkshopView({
     }
   }, [mddInicialLocalContent, project?.legacyFlowState?.codebaseDoc]);
   const [conformanceUseLlm, setConformanceUseLlm] = useState(false);
-  type DocPanel = "benchmark" | "legacy" | "mdd-inicial" | "spec" | "mdd" | "ux-ui-guide" | "blueprint" | "tasks" | "api-contracts" | "logic-flows" | "architecture" | "use-cases" | "user-stories" | "infra" | "adrs";
+  type DocPanel =
+    | "benchmark"
+    | "legacy"
+    | "mdd-inicial"
+    | "spec"
+    | "brd"
+    | "to-be"
+    | "mdd"
+    | "ux-ui-guide"
+    | "blueprint"
+    | "tasks"
+    | "api-contracts"
+    | "logic-flows"
+    | "architecture"
+    | "use-cases"
+    | "user-stories"
+    | "infra"
+    | "adrs";
   const [centralPanel, setCentralPanel] = useState<DocPanel>("mdd");
   /** Por debajo de `lg`: una columna con control de Chat / Documentos / Semáforo. */
   type WorkshopMobileColumn = "chat" | "workspace" | "metrics";
@@ -996,17 +1015,6 @@ export default function WorkshopView({
                         Paso 0
                       </button>
                     )}
-                    {tabVisible("mdd") && (
-                      <button
-                        type="button"
-                        onClick={() => setCentralPanel("mdd")}
-                        title="Constitución del proyecto (gobierna Blueprint, Contratos API e Infra)"
-                        className={getTabClass("mdd", mddContent)}
-                      >
-                        <FileText className="w-4 h-4" />
-                        MDD
-                      </button>
-                    )}
                     {tabVisible("spec") && (
                       <button
                         type="button"
@@ -1016,6 +1024,39 @@ export default function WorkshopView({
                       >
                         <ListOrdered className="w-4 h-4" />
                         Spec
+                      </button>
+                    )}
+                    {tabVisible("brd") && (
+                      <button
+                        type="button"
+                        onClick={() => setCentralPanel("brd")}
+                        title="BRD por etapa; entrevista en el panel de chat"
+                        className={getTabClass("brd", activeWorkshopStage?.brdContent)}
+                      >
+                        <ClipboardList className="w-4 h-4" />
+                        BRD
+                      </button>
+                    )}
+                    {tabVisible("to-be") && (
+                      <button
+                        type="button"
+                        onClick={() => setCentralPanel("to-be")}
+                        title="Manual To-Be y As-Is por etapa; entrevista en el chat"
+                        className={getTabClass("to-be", activeWorkshopStage?.toBeManualContent)}
+                      >
+                        <BookOpen className="w-4 h-4" />
+                        To-Be
+                      </button>
+                    )}
+                    {tabVisible("mdd") && (
+                      <button
+                        type="button"
+                        onClick={() => setCentralPanel("mdd")}
+                        title="Constitución del proyecto (gobierna Blueprint, Contratos API e Infra)"
+                        className={getTabClass("mdd", mddContent)}
+                      >
+                        <FileText className="w-4 h-4" />
+                        MDD
                       </button>
                     )}
                     {tabVisible("architecture") && (
@@ -1862,6 +1903,7 @@ export default function WorkshopView({
                   </div>
                 )}
                 <BrdTobeStagePanel
+                  panel="gate-only"
                   projectId={projectId}
                   requireBrdTobeGate={project?.requireBrdTobeGate === true}
                   activeStageId={activeStageId}
@@ -2081,6 +2123,30 @@ export default function WorkshopView({
                   hasMdd={!!(dbgaContent?.trim() || effectiveMddTrimmed)}
                 />
               )
+            )}
+            {centralPanel === "brd" && projectId && (
+              <BrdTobeStagePanel
+                panel="brd"
+                projectId={projectId}
+                requireBrdTobeGate={project?.requireBrdTobeGate === true}
+                activeStageId={activeStageId}
+                stage={activeWorkshopStage}
+                isLegacyProject={isLegacyProject}
+                codebaseDocChars={codebaseDocCharCount}
+                dbgaContentChars={dbgaContentCharCount}
+              />
+            )}
+            {centralPanel === "to-be" && projectId && (
+              <BrdTobeStagePanel
+                panel="tobe"
+                projectId={projectId}
+                requireBrdTobeGate={project?.requireBrdTobeGate === true}
+                activeStageId={activeStageId}
+                stage={activeWorkshopStage}
+                isLegacyProject={isLegacyProject}
+                codebaseDocChars={codebaseDocCharCount}
+                dbgaContentChars={dbgaContentCharCount}
+              />
             )}
             {centralPanel === "blueprint" && (
               blueprintContent ? (

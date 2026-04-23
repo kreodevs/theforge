@@ -12,6 +12,8 @@ export interface BrdTobeStagePanelProps {
   codebaseDocChars: number;
   /** Greenfield: longitud de `project.dbgaContent` persistido (misma fuente que el POST suggest-brd-tobe-from-dbga). */
   dbgaContentChars: number;
+  /** `full` = BRD + To-Be + As-Is + gate (legacy). `brd` / `tobe` = pestañas dedicadas del Workshop. `gate-only` = solo toggle bajo MDD. */
+  panel?: "full" | "brd" | "tobe" | "gate-only";
 }
 
 /**
@@ -28,6 +30,7 @@ export function BrdTobeStagePanel({
   isLegacyProject,
   codebaseDocChars,
   dbgaContentChars,
+  panel = "full",
 }: BrdTobeStagePanelProps) {
   const patchWorkshopStage = useWorkshopStore((s) => s.patchWorkshopStage);
   const setProjectRequireBrdTobeGate = useWorkshopStore((s) => s.setProjectRequireBrdTobeGate);
@@ -127,29 +130,68 @@ export function BrdTobeStagePanel({
   const brdOk = !!stage?.brdApprovedAt;
   const tobeOk = !!stage?.toBeApprovedAt;
 
+  if (panel === "gate-only") {
+    return (
+      <div className="mb-3 space-y-2 rounded-lg border border-zinc-600/60 bg-zinc-900/40 p-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-medium text-zinc-200">BRD / To-Be</span>
+          <span className="text-xs text-zinc-500">
+            BRD {brdOk ? "✓" : "—"} · To-Be {tobeOk ? "✓" : "—"}
+          </span>
+        </div>
+        <p className="text-xs text-zinc-500">
+          Edita y conversa en las pestañas <strong>BRD</strong> y <strong>To-Be</strong> (a la izquierda de MDD).
+        </p>
+        <label className="flex cursor-pointer items-start gap-2 text-xs text-zinc-300">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-3.5 w-3.5 rounded border-zinc-500"
+            checked={requireBrdTobeGate}
+            disabled={busy}
+            onChange={(e) => void toggleRequireGate(e.target.checked)}
+          />
+          <span>
+            Exigir BRD y Manual To-Be <strong>aprobados</strong> antes del MDD técnico (§3+). En legacy suele
+            desactivarse para el MDD inicial; actívalo al entrar en una fase de mejora.
+          </span>
+        </label>
+      </div>
+    );
+  }
+
+  const title =
+    panel === "brd" ? "BRD (etapa)" : panel === "tobe" ? "Manual To-Be / As-Is (etapa)" : "BRD / To-Be / As-Is (etapa)";
+  const showGate = panel === "full";
+  const showBrdBlock = panel === "full" || panel === "brd";
+  const showTobeBlock = panel === "full" || panel === "tobe";
+  const showAsIsBlock = panel === "full" || panel === "tobe";
+
   return (
     <div className="mb-3 space-y-3 rounded-lg border border-zinc-600/60 bg-zinc-900/40 p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium text-zinc-200">BRD / To-Be / As-Is (etapa)</span>
+        <span className="font-medium text-zinc-200">{title}</span>
         <span className="text-xs text-zinc-500">
           BRD {brdOk ? "✓ aprobado" : "—"} · To-Be {tobeOk ? "✓ aprobado" : "—"}
         </span>
       </div>
 
-      <label className="flex cursor-pointer items-start gap-2 text-xs text-zinc-300">
-        <input
-          type="checkbox"
-          className="mt-0.5 h-3.5 w-3.5 rounded border-zinc-500"
-          checked={requireBrdTobeGate}
-          disabled={busy}
-          onChange={(e) => void toggleRequireGate(e.target.checked)}
-        />
-        <span>
-          Exigir BRD y Manual To-Be <strong>aprobados</strong> antes del MDD técnico (§3+). En legacy suele
-          desactivarse para el MDD inicial; actívalo al entrar en una fase de mejora.
-        </span>
-      </label>
+      {showGate ? (
+        <label className="flex cursor-pointer items-start gap-2 text-xs text-zinc-300">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-3.5 w-3.5 rounded border-zinc-500"
+            checked={requireBrdTobeGate}
+            disabled={busy}
+            onChange={(e) => void toggleRequireGate(e.target.checked)}
+          />
+          <span>
+            Exigir BRD y Manual To-Be <strong>aprobados</strong> antes del MDD técnico (§3+). En legacy suele
+            desactivarse para el MDD inicial; actívalo al entrar en una fase de mejora.
+          </span>
+        </label>
+      ) : null}
 
+      {showBrdBlock ? (
       <div className="space-y-1">
         <label className="text-xs text-zinc-400">BRD (markdown)</label>
         <textarea
@@ -169,8 +211,60 @@ export function BrdTobeStagePanel({
             Aprobar BRD
           </Button>
         </div>
+        {panel === "brd" ? (
+          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-700/60 pt-2">
+            {isLegacyProject ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  loading={brdTobeSuggestLoading}
+                  disabled={busy || codebaseDocChars < 300}
+                  onClick={() => void runSuggestBrdTobe()}
+                  title={
+                    codebaseDocChars < 300
+                      ? "Genera primero la doc. partida del codebase (≥300 caracteres)."
+                      : "Borradores desde Ariadne; revisa pestaña To-Be también."
+                  }
+                >
+                  BRD + To-Be desde doc. partida
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  loading={asIsLoading}
+                  disabled={busy || codebaseDocChars < 400}
+                  onClick={() => void runLegacyAsIs()}
+                  title={codebaseDocChars < 400 ? "Genera primero la doc. partida del codebase (≥400 caracteres)." : undefined}
+                >
+                  As-Is desde doc. partida
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                loading={loadingReason === "brd-tobe-from-dbga"}
+                disabled={busy || dbgaContentChars < 300}
+                onClick={() => void runSuggestBrdTobeFromDbga()}
+                title={
+                  dbgaContentChars < 300
+                    ? "Genera o guarda el DBGA en el Paso 0 (≥300 caracteres)."
+                    : "Borradores BRD+To-Be desde Domain Benchmark; revisa pestaña To-Be."
+                }
+              >
+                BRD + To-Be desde DBGA
+              </Button>
+            )}
+          </div>
+        ) : null}
       </div>
+      ) : null}
 
+      {showTobeBlock ? (
       <div className="space-y-1">
         <label className="text-xs text-zinc-400">Manual To-Be</label>
         <textarea
@@ -191,7 +285,9 @@ export function BrdTobeStagePanel({
           </Button>
         </div>
       </div>
+      ) : null}
 
+      {showAsIsBlock ? (
       <div className="space-y-1">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className="text-xs text-zinc-400">As-Is (mapa / proceso actual)</label>
@@ -255,6 +351,7 @@ export function BrdTobeStagePanel({
           Guardar As-Is
         </Button>
       </div>
+      ) : null}
     </div>
   );
 }

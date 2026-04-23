@@ -29,6 +29,22 @@ function mddForRouteStage(
   return st?.mddContent ?? project.mddContent;
 }
 
+function stageBrdContent(
+  project: { stages?: { id: string; brdContent: string | null }[] | null },
+  routeStageId: string,
+): string | null | undefined {
+  const st = project.stages?.find((s) => s.id === routeStageId);
+  return st?.brdContent ?? undefined;
+}
+
+function stageToBeManualContent(
+  project: { stages?: { id: string; toBeManualContent: string | null }[] | null },
+  routeStageId: string,
+): string | null | undefined {
+  const st = project.stages?.find((s) => s.id === routeStageId);
+  return st?.toBeManualContent ?? undefined;
+}
+
 @Injectable()
 export class AiOrchestratorService {
   constructor(
@@ -113,6 +129,8 @@ export class AiOrchestratorService {
     activeTab?: string,
     uxUiGuideContentFromClient?: string,
     dbgaContentFromClient?: string,
+    brdContentFromClient?: string,
+    toBeManualContentFromClient?: string,
     stageIdFromClient?: string,
     userImages: ChatImagePart[] = [],
   ) {
@@ -159,11 +177,21 @@ export class AiOrchestratorService {
           : undefined;
     const currentUxUiGuide =
       uxUiGuideContentFromClient ?? project.uxUiGuideContent ?? undefined;
+    const currentBrd =
+      brdContentFromClient ?? stageBrdContent(project, route.stageId) ?? undefined;
+    const currentToBeManual =
+      toBeManualContentFromClient ?? stageToBeManualContent(project, route.stageId) ?? undefined;
     if (mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: route.stageId });
     }
     if (uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideContentFromClient });
+    }
+    if (brdContentFromClient != null && brdContentFromClient.trim().length > 0) {
+      await this.projects.patchStage(projectId, route.stageId, { brdContent: brdContentFromClient });
+    }
+    if (toBeManualContentFromClient != null && toBeManualContentFromClient.trim().length > 0) {
+      await this.projects.patchStage(projectId, route.stageId, { toBeManualContent: toBeManualContentFromClient });
     }
     const isUxUiGuide = activeTab?.trim() === "ux-ui-guide";
     let systemPrompt: string | undefined;
@@ -185,12 +213,16 @@ export class AiOrchestratorService {
     let mddFromResponse: string | null | undefined;
     let uxUiGuideFromResponse: string | null | undefined;
     let dbgaFromResponse: string | null | undefined;
+    let brdFromResponse: string | null | undefined;
+    let toBeFromResponse: string | null | undefined;
     try {
       const chatResult = await this.sessions.chat(session.id, message, {
         currentMddContent: currentMdd,
         currentDbgaContent: currentDbga,
         currentUxUiGuideContent: currentUxUiGuide,
         currentBlueprintContent: isUxUiGuide ? (project.blueprintContent ?? undefined) : undefined,
+        currentBrdContent: activeTab?.trim() === "brd" ? currentBrd : undefined,
+        currentToBeManualContent: activeTab?.trim() === "to-be" ? currentToBeManual : undefined,
         activeTab,
         systemPrompt,
         stageId: route.stageId,
@@ -202,6 +234,8 @@ export class AiOrchestratorService {
       mddFromResponse = chatResult.mddContent;
       uxUiGuideFromResponse = chatResult.uxUiGuideContent;
       dbgaFromResponse = chatResult.dbgaContent;
+      brdFromResponse = chatResult.brdContent;
+      toBeFromResponse = chatResult.toBeManualContent;
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Error al generar la respuesta";
@@ -223,6 +257,14 @@ export class AiOrchestratorService {
     if (dbgaFromResponse != null && dbgaFromResponse.length > 0) {
       console.log("[Orchestrator] persisting dbgaContent (Benchmark refinado) length:", dbgaFromResponse.length);
       updatedProject = await this.projects.update(projectId, { dbgaContent: dbgaFromResponse });
+    }
+    if (brdFromResponse != null && brdFromResponse.length > 0) {
+      await this.projects.patchStage(projectId, route.stageId, { brdContent: brdFromResponse });
+      updatedProject = await this.projects.findOne(projectId);
+    }
+    if (toBeFromResponse != null && toBeFromResponse.length > 0) {
+      await this.projects.patchStage(projectId, route.stageId, { toBeManualContent: toBeFromResponse });
+      updatedProject = await this.projects.findOne(projectId);
     }
     if (!updatedProject) {
       updatedProject = await this.projects.findOne(projectId);
@@ -266,6 +308,8 @@ export class AiOrchestratorService {
       activeTab?: string;
       uxUiGuideContentFromClient?: string;
       dbgaContentFromClient?: string;
+      brdContentFromClient?: string;
+      toBeManualContentFromClient?: string;
       stageIdFromClient?: string;
     },
   ) {
@@ -278,6 +322,8 @@ export class AiOrchestratorService {
       args.activeTab,
       args.uxUiGuideContentFromClient,
       args.dbgaContentFromClient,
+      args.brdContentFromClient,
+      args.toBeManualContentFromClient,
       args.stageIdFromClient,
       args.userImages ?? [],
     );
@@ -295,6 +341,8 @@ export class AiOrchestratorService {
     uxUiGuideContentFromClient?: string,
     dbgaContentFromClient?: string,
     specContentFromClient?: string,
+    brdContentFromClient?: string,
+    toBeManualContentFromClient?: string,
     stageIdFromClient?: string,
     userImages: ChatImagePart[] = [],
   ): AsyncGenerator<{ event: string; data: unknown }> {
@@ -340,11 +388,21 @@ export class AiOrchestratorService {
           : undefined;
     const currentUxUiGuide = uxUiGuideContentFromClient ?? project.uxUiGuideContent ?? undefined;
     const currentSpec = specContentFromClient ?? (project as { specContent?: string | null }).specContent ?? undefined;
+    const currentBrdStream =
+      brdContentFromClient ?? stageBrdContent(project, routeStream.stageId) ?? undefined;
+    const currentToBeStream =
+      toBeManualContentFromClient ?? stageToBeManualContent(project, routeStream.stageId) ?? undefined;
     if (mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: routeStream.stageId });
     }
     if (uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideContentFromClient });
+    }
+    if (brdContentFromClient != null && brdContentFromClient.trim().length > 0) {
+      await this.projects.patchStage(projectId, routeStream.stageId, { brdContent: brdContentFromClient });
+    }
+    if (toBeManualContentFromClient != null && toBeManualContentFromClient.trim().length > 0) {
+      await this.projects.patchStage(projectId, routeStream.stageId, { toBeManualContent: toBeManualContentFromClient });
     }
     const isUxUiGuide = activeTab?.trim() === "ux-ui-guide";
     let systemPromptStream: string | undefined;
@@ -369,6 +427,8 @@ export class AiOrchestratorService {
       currentUxUiGuideContent: currentUxUiGuide,
       currentBlueprintContent: isUxUiGuide ? (project.blueprintContent ?? undefined) : undefined,
       currentSpecContent: activeTab?.trim() === "spec" ? currentSpec : undefined,
+      currentBrdContent: activeTab?.trim() === "brd" ? currentBrdStream : undefined,
+      currentToBeManualContent: activeTab?.trim() === "to-be" ? currentToBeStream : undefined,
       activeTab,
       systemPrompt: systemPromptStream,
       stageId: routeStream.stageId,
@@ -396,6 +456,14 @@ export class AiOrchestratorService {
         }
         if (msg.specContent != null && msg.specContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { specContent: msg.specContent });
+        }
+        if (msg.brdContent != null && msg.brdContent.length > 0) {
+          await this.projects.patchStage(projectId, routeStream.stageId, { brdContent: msg.brdContent });
+          updatedProject = await this.projects.findOne(projectId);
+        }
+        if (msg.toBeManualContent != null && msg.toBeManualContent.length > 0) {
+          await this.projects.patchStage(projectId, routeStream.stageId, { toBeManualContent: msg.toBeManualContent });
+          updatedProject = await this.projects.findOne(projectId);
         }
         if (msg.blueprintContent != null && msg.blueprintContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { blueprintContent: msg.blueprintContent });
@@ -502,11 +570,14 @@ export class AiOrchestratorService {
       return { session, project };
     }
 
+    const stageRow = project.stages?.find((s) => s.id === route.stageId);
     const updatedSession = await this.sessions.generateWelcome(session.id, {
       projectName: project.name,
       mddContent: stageMdd,
       dbgaContent: project.dbgaContent,
       uxUiGuideContent: project.uxUiGuideContent,
+      brdContent: stageRow?.brdContent ?? undefined,
+      toBeManualContent: stageRow?.toBeManualContent ?? undefined,
       chatLog: messagesForTab,
       activeTab,
       stageId: route.stageId,
