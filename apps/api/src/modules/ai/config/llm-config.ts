@@ -1,194 +1,93 @@
 /**
- * Configuración unificada de LLM: un solo punto de lectura de env para chat, embeddings
- * y listado de proveedores configurados (sin nuevas claves secretas; solo alias y flags opcionales).
+ * Configuración unificada de LLM: OpenRouter (chat + embeddings vía API compatible OpenAI).
  */
 
-export type NormalizedLlmProviderId = "openai" | "google" | "kimi";
+export const OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api/v1";
+export const OPENROUTER_DEFAULT_CHAT_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
+export const OPENROUTER_DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small";
+
+export type NormalizedLlmProviderId = "openrouter";
 
 /**
- * Clave para APIs compatibles con OpenAI (OpenAI, Moonshot/Kimi, etc.).
- * Prioridad: `AI_API_KEY` → `OPENAI_API_KEY` (alias retrocompatible).
+ * Clave OpenRouter. Prioridad: OPENROUTER_API_KEY → AI_API_KEY → OPENAI_API_KEY
  */
-export function resolveAiCompatibleApiKey(): string {
-  return process.env.AI_API_KEY?.trim() ?? process.env.OPENAI_API_KEY?.trim() ?? "";
+export function resolveOpenRouterApiKey(): string {
+  return (
+    process.env.OPENROUTER_API_KEY?.trim() ??
+    process.env.AI_API_KEY?.trim() ??
+    process.env.OPENAI_API_KEY?.trim() ??
+    ""
+  );
 }
 
-/** Alias homologados: gemini→google, moonshot→kimi. Fuente: AI_PROVIDER */
-export function normalizeLlmProviderId(raw?: string): NormalizedLlmProviderId {
-  const p = (raw ?? process.env.AI_PROVIDER ?? "openai").toLowerCase().trim();
-  if (p === "google" || p === "gemini") return "google";
-  if (p === "kimi" || p === "moonshot") return "kimi";
-  return "openai";
+/** Homologado: el runtime es siempre OpenRouter. */
+export function normalizeLlmProviderId(_raw?: string): NormalizedLlmProviderId {
+  return "openrouter";
 }
 
-export interface OpenAiCompatibleRuntime {
-  providerId: "openai" | "kimi";
+export interface OpenRouterRuntime {
+  providerId: "openrouter";
   apiKey: string;
-  /** Vacío = cliente OpenAI oficial (default del SDK). */
-  baseURL?: string;
+  baseURL: string;
   chatModel: string;
+  embeddingModel: string;
 }
 
-export interface GoogleRuntime {
-  providerId: "google";
-  apiKey: string;
-  chatModel: string;
-}
-
-export type PrimaryChatRuntime = OpenAiCompatibleRuntime | GoogleRuntime;
+export type PrimaryChatRuntime = OpenRouterRuntime;
 
 /**
- * LangChain / ChatOpenAI: Kimi (Moonshot) devuelve 400 si temperature ≠ 1 en varios modelos.
+ * Runtime único: OpenRouter (chat fijo a Hermes 405B salvo override por env).
  */
-export function resolveLangChainChatTemperature(
-  r: Pick<PrimaryChatRuntime, "providerId">,
-): number {
-  if (r.providerId === "google") return 0.5;
-  if (r.providerId === "kimi") return 1;
+export function resolvePrimaryChatRuntime(): OpenRouterRuntime {
+  const apiKey = resolveOpenRouterApiKey();
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY (or AI_API_KEY / OPENAI_API_KEY) is required");
+  }
+  const baseURL = process.env.OPENROUTER_BASE_URL?.trim() || OPENROUTER_DEFAULT_BASE;
+  const chatModel = process.env.OPENROUTER_CHAT_MODEL?.trim() || OPENROUTER_DEFAULT_CHAT_MODEL;
+  const embeddingModel =
+    process.env.OPENROUTER_EMBEDDING_MODEL?.trim() || OPENROUTER_DEFAULT_EMBEDDING_MODEL;
+  return { providerId: "openrouter", apiKey, baseURL, chatModel, embeddingModel };
+}
+
+/**
+ * LangChain / ChatOpenAI: temperatura fija coherente con el workshop.
+ */
+export function resolveLangChainChatTemperature(_r: Pick<OpenRouterRuntime, "providerId">): number {
   return 0.5;
 }
 
-const KIMI_DEFAULT_BASE = "https://api.moonshot.ai/v1";
-const KIMI_DEFAULT_MODEL = "kimi-k2.5";
-const OPENAI_DEFAULT_MODEL = "gpt-4o";
-const GOOGLE_DEFAULT_MODEL = "gemini-2.0-flash";
+export type ResolvedEmbeddingsBackend = "openrouter" | "none";
 
 /**
- * Runtime del proveedor activo para chat (y mismo adapter salvo embeddings delegados).
- */
-export function resolvePrimaryChatRuntime(): PrimaryChatRuntime {
-  const id = normalizeLlmProviderId();
-  if (id === "google") {
-    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GEMINI_API_KEY ?? "";
-    if (!apiKey) {
-      throw new Error(
-        "GOOGLE_GENERATIVE_AI_API_KEY or GEMINI_API_KEY is required when AI_PROVIDER is google",
-      );
-    }
-    const chatModel =
-      process.env.GOOGLE_CHAT_MODEL?.trim() ||
-      process.env.GEMINI_CHAT_MODEL?.trim() ||
-      GOOGLE_DEFAULT_MODEL;
-    return { providerId: "google", apiKey, chatModel };
-  }
-
-  const apiKey = resolveAiCompatibleApiKey();
-  if (!apiKey) {
-    throw new Error(
-      "AI_API_KEY is required for openai/kimi (o OPENAI_API_KEY; OpenAI oficial o Moonshot/Kimi)",
-    );
-  }
-
-  const explicitBase = process.env.OPENAI_BASE_URL?.trim();
-  const explicitModel = process.env.OPENAI_CHAT_MODEL?.trim();
-
-  if (id === "kimi") {
-    return {
-      providerId: "kimi",
-      apiKey,
-      baseURL: explicitBase || KIMI_DEFAULT_BASE,
-      chatModel: explicitModel || KIMI_DEFAULT_MODEL,
-    };
-  }
-
-  return {
-    providerId: "openai",
-    apiKey,
-    baseURL: explicitBase || undefined,
-    chatModel: explicitModel || OPENAI_DEFAULT_MODEL,
-  };
-}
-
-export type ResolvedEmbeddingsBackend = "openai-official" | "gemini" | "none";
-
-/**
- * Clave OpenAI **solo** para embeddings (`text-embedding-3-small`).
- * Obligatoria si `AI_PROVIDER=kimi` (o override `LLM_EMBEDDINGS_PROVIDER=openai`) y quieres embeddings OpenAI:
- * la clave de Moonshot no sirve en api.openai.com.
- */
-export function resolveEmbeddingOnlyOpenAiKey(): string | undefined {
-  const k =
-    process.env.OPENAI_EMBEDDING_API_KEY?.trim() ?? process.env.OPENAI_EMBEDDINGS_API_KEY?.trim();
-  return k || undefined;
-}
-
-/**
- * Embeddings: por defecto siguen al proveedor de chat (Google→Gemini; OpenAI→OpenAI).
- * Con kimi: si hay clave Google → Gemini; si hay OPENAI_EMBEDDING_API_KEY → OpenAI oficial; si no → none (sin llamar a OpenAI con la key de Moonshot).
- * Override opcional: LLM_EMBEDDINGS_PROVIDER=openai|google
+ * Embeddings: OpenRouter (mismo base URL) salvo `LLM_EMBEDDINGS_PROVIDER=none|off`.
+ * Override dedicado: OPENROUTER_EMBEDDING_API_KEY (misma API, otra clave) para solo embeddings.
  */
 export function resolveEmbeddingsBackend(): ResolvedEmbeddingsBackend {
-  const override = process.env.LLM_EMBEDDINGS_PROVIDER?.toLowerCase().trim();
-  const primary = normalizeLlmProviderId();
-  const googleKey = getGoogleApiKeyForOptionalEmbeddings();
-  const openAiEmbedOnly = resolveEmbeddingOnlyOpenAiKey();
-
-  if (override === "google" || override === "gemini") return "gemini";
-  if (override === "openai") {
-    if (primary === "kimi") {
-      return openAiEmbedOnly ? "openai-official" : "none";
-    }
-    return "openai-official";
-  }
-
-  if (primary === "google") return "gemini";
-  if (primary === "kimi") {
-    if (googleKey) return "gemini";
-    return openAiEmbedOnly ? "openai-official" : "none";
-  }
-  return "openai-official";
+  const o = process.env.LLM_EMBEDDINGS_PROVIDER?.toLowerCase().trim();
+  if (o === "none" || o === "off" || o === "0" || o === "false") return "none";
+  return "openrouter";
 }
 
 /**
- * API key para cliente OpenAI oficial de embeddings (solo cuando el backend resuelve a openai-official).
+ * Clave usada en el cliente de embeddings (OpenRouter). Si `OPENROUTER_EMBEDDING_API_KEY` está
+ * vacío, reutiliza la clave de chat.
  */
-export function resolveOpenAiOfficialEmbeddingApiKey(): string | undefined {
-  if (resolveEmbeddingsBackend() !== "openai-official") return undefined;
-  const primary = normalizeLlmProviderId();
-  const embedOnly = resolveEmbeddingOnlyOpenAiKey();
-  if (primary === "kimi") {
-    return embedOnly;
-  }
-  const chat = resolveAiCompatibleApiKey();
-  return chat || embedOnly || undefined;
-}
-
-export function getGoogleApiKeyForOptionalEmbeddings(): string | undefined {
-  const k = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GEMINI_API_KEY;
-  return k?.trim() ? k : undefined;
+export function resolveOpenRouterEmbeddingApiKey(): string | undefined {
+  if (resolveEmbeddingsBackend() === "none") return undefined;
+  const only =
+    process.env.OPENROUTER_EMBEDDING_API_KEY?.trim() ?? process.env.OPENAI_EMBEDDING_API_KEY?.trim();
+  if (only) return only;
+  return resolveOpenRouterApiKey() || undefined;
 }
 
 export interface LlmProviderSnapshot {
   id: NormalizedLlmProviderId;
-  /** Tiene clave para chat de ese proveedor */
   chatConfigured: boolean;
-  /** Proveedor seleccionado como activo */
-  active: boolean;
+  active: true;
 }
 
-/** Vista rápida de qué proveedores tienen clave y cuál está activo (sin exponer secretos). */
 export function getLlmProvidersSnapshot(): LlmProviderSnapshot[] {
-  const active = normalizeLlmProviderId();
-  const openaiKey = Boolean(resolveAiCompatibleApiKey());
-  const googleKey = Boolean(
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() || process.env.GEMINI_API_KEY?.trim(),
-  );
-
-  return [
-    {
-      id: "openai",
-      chatConfigured: openaiKey,
-      active: active === "openai",
-    },
-    {
-      id: "google",
-      chatConfigured: googleKey,
-      active: active === "google",
-    },
-    {
-      id: "kimi",
-      chatConfigured: openaiKey,
-      active: active === "kimi",
-    },
-  ];
+  const k = Boolean(resolveOpenRouterApiKey());
+  return [{ id: "openrouter", chatConfigured: k, active: true }];
 }

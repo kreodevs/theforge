@@ -528,7 +528,10 @@ export class SessionsService {
     syntheticPrompt: string,
     activeTab?: string,
   ): Promise<string> {
-    const opts: GenerateResponseOptions = { activeTab: activeTab?.trim() || undefined };
+    const opts: GenerateResponseOptions = {
+      activeTab: activeTab?.trim() || undefined,
+      welcomeBrief: true,
+    };
     const maxAttempts = 4;
     let lastErr: unknown;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {

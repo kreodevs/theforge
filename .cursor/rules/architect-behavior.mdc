@@ -8,6 +8,6 @@ globs: apps/api/src/modules/engine/**, apps/api/src/modules/ai/**
 **Referencia:** Reglas del Semáforo y despliegue en `docs/notebooklm/THEFORGE-INDEX.md`.
 
 - **Validación Proactiva:** Antes de generar código, verifica si el MDD está en estado "VERDE" según las reglas del Semáforo (§4 del índice).
-- **Resiliencia:** Siempre incluye manejo de errores (`try/catch`) y logs estructurados, especialmente en integraciones con OpenAI y Gemini.
+- **Resiliencia:** Siempre incluye manejo de errores (`try/catch`) y logs estructurados, especialmente en integraciones con OpenRouter.
 - **Estimación:** La lógica de costos en `cost-calculator.service.ts` es sagrada; no permitas que la IA alucine valores. Usar estrictamente las tarifas MXN definidas.
 - **Dokploy-Ready:** Asegúrate de que cualquier nuevo servicio o variable de entorno se refleje en el `docker-compose.yml`.

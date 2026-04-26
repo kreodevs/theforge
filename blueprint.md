@@ -74,14 +74,14 @@ enum Status { ROJO, AMARILLO, VERDE }`
 
 ## 3. Lógica de IA Agnóstica (`apps/api/src/modules/ai/`)
 
-Implementar el patrón Strategy para alternar entre proveedores.
+Un solo adapter: tráfico LLM vía **OpenRouter** (API compatible OpenAI).
 
 - **`interfaces/llm-provider.interface.ts`**:
   - `abstract generateResponse(prompt, history): Promise<string>`
   - `abstract parseChecklist(text): Promise<ChecklistResult>`
-- **`adapters/openai.adapter.ts`**: Implementación usando `openai` SDK.
-- **`adapters/gemini.adapter.ts`**: Implementación usando `@google/generative-ai`.
-- **`ai.factory.ts`**: Clase que instancia el adaptador basado en `process.env.AI_PROVIDER`.
+- **`adapters/openrouter.adapter.ts`**: implementación con SDK `openai` y `baseURL` OpenRouter (chat + embeddings).
+- **`config/llm-config.ts`**: clave, URL, modelos (`OPENROUTER_*`).
+- **`ai.factory.ts`**: devuelve `OpenRouterAdapter`.
 
 ---
 
@@ -119,7 +119,7 @@ YAML
     context: ./apps/api
     environment:
       - DATABASE_URL=${DATABASE_URL}
-      - AI_PROVIDER=${AI_PROVIDER}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
   web:
     build: .
     context: ./apps/web
@@ -137,5 +137,5 @@ Cuando inicialices el proyecto, dile a Cursor:
 1. "Lee `@blueprint.md` y `@MDD.md`."
 2. "Comienza creando el Monorepo con Turborepo."
 3. "Configura `packages/database` con el esquema de Prisma proporcionado."
-4. "Implementa el `LLMProvider` asegurando que sea agnóstico (OpenAI/Gemini)."
+4. "Implementa el `LLMProvider` vía `OpenRouterAdapter` (OpenRouter API, SDK openai)."
 5. "Crea la lógica del Semáforo en el Backend para que valide la completitud de la entrevista."

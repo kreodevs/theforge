@@ -57,11 +57,11 @@ flowchart LR
 
 ---
 
-## 3. IA agnóstica (OpenAI / Gemini)
+## 3. IA vía OpenRouter (contrato estable)
 
 ### 3.1 Contrato del proveedor (adapters)
 
-La capa de **adapters** implementa una interfaz técnica común. No debe haber imports de `openai` o `@google/generative-ai` fuera de `apps/api/src/modules/ai/adapters/`.
+La capa de **adapters** implementa una interfaz técnica común. El tráfico LLM sale por **OpenRouter** (API compatible OpenAI, SDK `openai`). No debe haber imports de SDKs de LLM fuera de `apps/api/src/modules/ai/adapters/`.
 
 **Interfaz mínima (blueprint):**
 
@@ -78,18 +78,18 @@ La capa de **adapters** implementa una interfaz técnica común. No debe haber i
 
 | Regla             | Detalle                                                                                                               |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Strategy**      | `LLMProvider` (o nombre equivalente) como interfaz; `OpenAIAdapter` y `GeminiAdapter` como implementaciones.          |
-| **Configuración** | Un solo punto: `process.env.AI_PROVIDER` (`openai` \| `google`). Sin branching por proveedor en servicios de negocio. |
-| **Factory**       | Clase/función que devuelve la instancia del adapter según `AI_PROVIDER`. Inyectada en Nest (DI).                      |
+| **Strategy**      | `LLMProvider` como interfaz; implementación `OpenRouterAdapter` (OpenAI SDK + `baseURL` OpenRouter).                    |
+| **Configuración** | `resolvePrimaryChatRuntime()` en `llm-config.ts` (clave, `OPENROUTER_BASE_URL`, `OPENROUTER_CHAT_MODEL`, embeddings).   |
+| **Factory**       | `createLLMProvider()` → `OpenRouterAdapter`. Inyectada en Nest (DI).                                                  |
 | **Resiliencia**   | try/catch y logs estructurados en todas las llamadas a los adapters (regla en architect-behavior).                    |
 
-### 3.3 Variables de entorno por proveedor
+### 3.3 Variables de entorno (OpenRouter)
 
-- **OpenAI-compatible:** `AI_API_KEY` (alias `OPENAI_API_KEY`) y opcionalmente modelo (`OPENAI_CHAT_MODEL`, etc.).
-- **Google:** `GOOGLE_GENERATIVE_AI_API_KEY` (y opcionalmente modelo).
-- **Común:** `AI_PROVIDER`.
+- **Clave:** `OPENROUTER_API_KEY` (o alias `AI_API_KEY` / `OPENAI_API_KEY`).
+- **URL / modelos:** `OPENROUTER_BASE_URL` (default `https://openrouter.ai/api/v1`), `OPENROUTER_CHAT_MODEL` (default `nousresearch/hermes-3-llama-3.1-405b`), `OPENROUTER_EMBEDDING_MODEL` (default `openai/text-embedding-3-small`), opcional `OPENROUTER_EMBEDDING_API_KEY`, cabeceras `OPENROUTER_HTTP_REFERER` / `OPENROUTER_APP_TITLE`.
+- **Embeddings off:** `LLM_EMBEDDINGS_PROVIDER=none`.
 
-Nada de lógica acoplada a un proveedor fuera de `adapters/` y del factory.
+Lógica de conexión solo en `adapters/` y `llm-config.ts`.
 
 ---
 
@@ -145,7 +145,7 @@ El agente debe comprobar estado VERDE antes de generar código (architect-behavi
 
 - **Core:** `DATABASE_URL`, `PORT` (opcional)
 - **Cola asíncrona (obligatorio en stack Dokploy/compose de referencia):** `REDIS_URL` (p. ej. `redis://theforge-redis-queue:6379`) para **BullMQ**
-- **IA:** `AI_PROVIDER`, `AI_API_KEY` (alias `OPENAI_API_KEY`) / `GOOGLE_GENERATIVE_AI_API_KEY`, opcional `OPENAI_EMBEDDING_DIM`
+- **IA:** `OPENROUTER_API_KEY` (o `AI_API_KEY` / `OPENAI_API_KEY`), opcional `OPENROUTER_*`; opcional `OPENAI_EMBEDDING_DIM` (dimensión sin probe al arranque)
 - **Grafo SDD:** `FALKORDB_SDD_URL` y/o `FALKORDB_URL` (en Docker: `redis://theforge-falkor-sdd:6379`) — **distinto** del Redis de cola
 - **TheForge (opcional, legacy):** `THEFORGE_MCP_URL`, `MCP_AUTH_TOKEN`, `THEFORGE_MCP_TIMEOUT_MS`
 - **Orquestador:** `AGENT_EVALUATOR_LEGACY` (opcional; crítica en respuesta chat)
@@ -170,7 +170,7 @@ Modelos principales: **Project** (entregables globales: SPEC, Blueprint, API, In
 
 ## 8. Checklist de verificación (Principal Engineer)
 
-- [ ] IA: Solo `AI_PROVIDER` + factory; adapters solo en `ai/adapters/`; sin `openai`/`gemini` en servicios.
+- [ ] IA: Solo OpenRouter + factory; adapters solo en `ai/adapters/`; sin SDKs de LLM en servicios de negocio.
 - [ ] Semáforo: Reglas ROJO/AMARILLO/VERDE implementadas y usadas antes de generar código.
 - [ ] Estimación: Fórmula y tarifas únicas en `packages/business-rules` (consumidas por API y web).
 - [ ] Docker: `docker-compose` con api, web, db, **Redis cola (BullMQ)**, Falkor SDD; Dockerfiles multi-stage; env documentados (`.env.example`).

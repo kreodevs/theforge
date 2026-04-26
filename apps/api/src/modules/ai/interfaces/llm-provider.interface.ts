@@ -43,6 +43,11 @@ export interface GenerateResponseOptions {
   >;
   /** Imágenes del turno actual del usuario (junto con `prompt`). */
   userMessageImages?: ChatImagePart[];
+  /**
+   * Si true, no inyecta `MASTER_PROMPT` completo: system corto para bienvenidas (`generateWelcome`)
+   * (menos tokens hacia el LLM).
+   */
+  welcomeBrief?: boolean;
 }
 
 export interface LLMProvider {

@@ -7,6 +7,12 @@ import type {
 import { LLM_PROVIDER } from "./interfaces/llm-provider.interface.js";
 import type { ChatImagePart } from "@theforge/shared-types";
 import { MASTER_PROMPT } from "./prompts/master-prompt.js";
+
+/** System corto solo para bienvenidas: evita ~6k+ chars de MASTER en cada `POST …/welcome`. */
+const WELCOME_BRIEF_SYSTEM_PROMPT = `Eres el asistente del Workshop **The Forge** (especificación: MDD, BRD por etapa, Manual To-Be, Spec, Benchmark, etc.).
+- Responde en **español**, tono profesional y **breve**.
+- No inventes requisitos que contradigan el texto del **mensaje de usuario** (puede traer fragmentos de Benchmark, BRD u otros documentos).
+- Si el mensaje pide **un solo** mensaje de bienvenida u orientación inicial, cumple sin divagar ni copiar el enunciado entero.`;
 import { UX_UI_GUIDE_PROMPT } from "./prompts/ux-ui-guide-prompt.js";
 import { BENCHMARK_REFINE_PROMPT } from "./prompts/phase0-benchmark-refine-prompt.js";
 import { BLUEPRINT_PROMPT } from "./prompts/blueprint-prompt.js";
@@ -129,7 +135,13 @@ export class AiService {
         options?.activeTab?.trim() === "benchmark" && (options?.currentDbgaContent?.trim() ?? "").length > 0;
       let systemPrompt =
         options?.systemPrompt ??
-        (isBenchmarkRefine ? BENCHMARK_REFINE_PROMPT : isUxUiGuide ? UX_UI_GUIDE_PROMPT : MASTER_PROMPT);
+        (options?.welcomeBrief
+          ? WELCOME_BRIEF_SYSTEM_PROMPT
+          : isBenchmarkRefine
+            ? BENCHMARK_REFINE_PROMPT
+            : isUxUiGuide
+              ? UX_UI_GUIDE_PROMPT
+              : MASTER_PROMPT);
       if (options?.activeTab?.trim()) {
         const at = options.activeTab.trim();
         const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
@@ -151,7 +163,7 @@ export class AiService {
           infra: "INFRA",
         };
         const tag = tagMap[at];
-        if (tag) {
+        if (tag && !options?.welcomeBrief) {
           systemPrompt += `\n\nSi decides generar o actualizar el documento de ${label} (completo o solo una sección), escribe el contenido y TERMINA con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Así el sistema aplicará los cambios al documento del proyecto.`;
           if (at === "mdd") {
             systemPrompt +=
@@ -171,6 +183,170 @@ export class AiService {
           }
         }
       }
+      if (!options?.welcomeBrief) {
+        if (options?.currentDbgaContent?.trim()) {
+          if (isBenchmarkRefine) {
+            systemPrompt +=
+              "\n\n[Contenido actual del Benchmark & Gap Analysis del proyecto (a refinar según la petición del usuario)]\n---\n" +
+              options.currentDbgaContent.trim() +
+              "\n---";
+          } else if (!options?.currentMddContent?.trim()) {
+            systemPrompt +=
+              "\n\n[Contexto base: Domain Benchmark & Gap Analysis del usuario. Úsalo como referencia para guiar la entrevista y redactar el MDD.]\n---\n" +
+              options.currentDbgaContent.trim().slice(0, 4000) +
+              "\n---";
+          }
+        }
+        if (options?.currentMddContent?.trim()) {
+          systemPrompt +=
+            "\n\n[Contenido actual del MDD del proyecto (puede incluir ediciones del usuario)]\n---\n" +
+            options.currentMddContent.trim() +
+            "\n---";
+        }
+        if (isUxUiGuide && options?.currentBlueprintContent?.trim()) {
+          systemPrompt +=
+            "\n\n[Blueprint del proyecto: estructura, pantallas y módulos. Úsalo para alinear la Guía UX/UI con las pantallas y flujos descritos.]\n---\n" +
+            options.currentBlueprintContent.trim().slice(0, 6000) +
+            "\n---";
+        }
+        if (options?.currentUxUiGuideContent?.trim()) {
+          systemPrompt +=
+            "\n\n[Contenido actual de la Guía UX/UI del proyecto (puede incluir ediciones del usuario)]\n---\n" +
+            options.currentUxUiGuideContent.trim().slice(0, 6000) +
+            "\n---";
+        }
+        if (options?.activeTab?.trim() === "spec" && options?.currentSpecContent?.trim()) {
+          systemPrompt +=
+            "\n\n[Contenido actual del Spec del proyecto. Al integrar o actualizar, incluye todo esto más la nueva sección o cambios, y termina con ---FIN_SPEC---.]\n---\n" +
+            options.currentSpecContent.trim().slice(0, 12000) +
+            "\n---";
+        }
+        if (options?.activeTab?.trim() === "brd" && options?.currentBrdContent?.trim()) {
+          systemPrompt +=
+            "\n\n[BRD actual de la etapa del Workshop. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_BRD---.]\n---\n" +
+            options.currentBrdContent.trim().slice(0, 8000) +
+            "\n---";
+        }
+        if (options?.activeTab?.trim() === "to-be" && options?.currentToBeManualContent?.trim()) {
+          systemPrompt +=
+            "\n\n[Manual To-Be actual de la etapa. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_TOBE---.]\n---\n" +
+            options.currentToBeManualContent.trim().slice(0, 8000) +
+            "\n---";
+        }
+        if (options?.learningHistory?.trim()) {
+          systemPrompt +=
+            "\n\n**HISTORIAL_DE_APRENDIZAJE (proyectos previos del usuario):**\n---\n" +
+            options.learningHistory.trim().slice(0, 6000) +
+            "\n---";
+        }
+        if (options?.complexityInterviewContext?.trim()) {
+          systemPrompt +=
+            "\n\n**[Política de complejidad / entrevista Fase 0 — aplicar en esta conversación]**\n" +
+            options.complexityInterviewContext.trim().slice(0, 8000);
+        }
+      }
+      systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
+      if (
+        (options?.userMessageImages?.length ?? 0) > 0 ||
+        history.some((h) => h.role === "user" && (h.images?.length ?? 0) > 0)
+      ) {
+        systemPrompt +=
+          "\n\n**Entrada multimodal:** Puede haber imágenes en el historial o en este mensaje. Interprétalas en el contexto del documento activo y la conversación (modelo de datos, UI, flujos); no inventes detalles no visibles.";
+        if (
+          options?.activeTab?.trim() === "mdd" &&
+          (options?.currentMddContent?.trim().length ?? 0) > 400
+        ) {
+          systemPrompt +=
+            "\n\n**MDD no destructivo (obligatorio si ya hay MDD en contexto):** El bloque \"Contenido actual del MDD\" incluye **todas** las secciones. Si el usuario pide revisar, alinear o ampliar (p. ej. tras un diagrama), **no sustituyas el proyecto por un solo fragmento**: devuelve el **MDD completo** actualizado (copia el contenido existente y aplica cambios), terminando con `---FIN_MDD---`. Si optas por enviar **solo una sección**, debe empezar por el **mismo patrón de encabezado** que ya usa el documento para esa sección (`## N.` recomendado, mismo `N` que corresponda). Nunca envíes solo tablas o JSON sueltos sin el título de sección reconocible.";
+        }
+      }
+      const ts = () => new Date().toISOString();
+      console.log(`[AiService] ${ts()} → Enviando al LLM:`, {
+        activeTab: options?.activeTab,
+        welcomeBrief: options?.welcomeBrief === true,
+        promptLength: prompt.length,
+        promptPreview: prompt.slice(0, 120) + (prompt.length > 120 ? "…" : ""),
+        systemPromptLength: systemPrompt.length,
+        approxTotalChars: systemPrompt.length + prompt.length,
+        historyLength: history.length,
+      });
+      const out = await this.provider.generateResponse(prompt, history, {
+        systemPrompt,
+        userMessageImages: options?.userMessageImages,
+      });
+      console.log(`[AiService] ${ts()} ← Respuesta del LLM recibida:`, {
+        length: out?.length ?? 0,
+        preview: (out ?? "").slice(0, 200) + ((out?.length ?? 0) > 200 ? "…" : ""),
+      });
+      return out;
+    } catch (err) {
+      console.error("[AiService] generateResponse error", err);
+      throw err;
+    }
+  }
+
+  /**
+   * Streaming: same system prompt as generateResponse, yields chunks from the provider.
+   */
+  async generateResponseStream(
+    prompt: string,
+    history: LlmChatMessage[],
+    options?: GenerateResponseOptions,
+  ): Promise<AsyncIterable<string>> {
+    const isUxUiGuide = options?.activeTab?.trim() === "ux-ui-guide";
+    const isBenchmarkRefine =
+      options?.activeTab?.trim() === "benchmark" && (options?.currentDbgaContent?.trim() ?? "").length > 0;
+    let systemPrompt =
+      options?.systemPrompt ??
+      (options?.welcomeBrief
+        ? WELCOME_BRIEF_SYSTEM_PROMPT
+        : isBenchmarkRefine
+          ? BENCHMARK_REFINE_PROMPT
+          : isUxUiGuide
+            ? UX_UI_GUIDE_PROMPT
+            : MASTER_PROMPT);
+    if (options?.activeTab?.trim()) {
+      const at = options.activeTab.trim();
+      const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
+      systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).`;
+
+      // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
+      const tagMap: Record<string, string> = {
+        mdd: "MDD",
+        spec: "SPEC",
+        brd: "BRD",
+        "to-be": "TOBE",
+        architecture: "ARCH",
+        "use-cases": "USECASES",
+        "user-stories": "STORIES",
+        blueprint: "BLUEPRINT",
+        "api-contracts": "API",
+        "logic-flows": "FLOWS",
+        tasks: "TASKS",
+        infra: "INFRA",
+      };
+      const tag = tagMap[at];
+      if (tag && !options?.welcomeBrief) {
+        systemPrompt += `\n\nSi decides generar o actualizar el documento de ${label} (completo o solo una sección), escribe el contenido y TERMINA con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Así el sistema aplicará los cambios al documento del proyecto.`;
+        if (at === "mdd") {
+          systemPrompt +=
+            "\n\n**Cuando el usuario indique que falta algo en el documento** (ej. \"X no está mencionado\", \"el cotizador también se involucra\", \"falta Y\"), **debes** devolver el MDD o la sección correspondiente actualizada con ese contenido incorporado, terminando con \`---FIN_MDD---\`. No respondas solo con texto en el chat: aplica el cambio al documento para que se persista.";
+        }
+        if (at === "spec") {
+          systemPrompt +=
+            "\n\n**Cuando el usuario confirme que integre o aplique cambios al Spec** (ej. \"sí ingrésalo\", \"integralo\", \"aplica\", \"confirma\", \"actualiza el spec\"), **debes** devolver el **documento Spec completo** actualizado (incluyendo lo que ya existía más la nueva sección o cambios), terminando con \`---FIN_SPEC---\`. Nunca respondas solo con un mensaje tipo \"El documento Spec ha sido actualizado con éxito\": el sistema solo persiste cuando encuentra el contenido del documento seguido de ---FIN_SPEC---.";
+        }
+        if (at === "brd") {
+          systemPrompt +=
+            "\n\n**Para persistir el BRD** debes devolver el **markdown del BRD completo** actualizado cuando el usuario pida aplicar, integrar o actualizar (incluye lo ya existente más cambios), terminando con \`---FIN_BRD---\`. Sin ese delimitador el sistema no guarda el documento.";
+        }
+        if (at === "to-be") {
+          systemPrompt +=
+            "\n\n**Para persistir el Manual To-Be** debes devolver el **markdown completo** actualizado cuando el usuario pida aplicar, integrar o actualizar, terminando con \`---FIN_TOBE---\`. Sin ese delimitador el sistema no guarda el documento.";
+        }
+      }
+    }
+    if (!options?.welcomeBrief) {
       if (options?.currentDbgaContent?.trim()) {
         if (isBenchmarkRefine) {
           systemPrompt +=
@@ -231,158 +407,6 @@ export class AiService {
           "\n\n**[Política de complejidad / entrevista Fase 0 — aplicar en esta conversación]**\n" +
           options.complexityInterviewContext.trim().slice(0, 8000);
       }
-      systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
-      if (
-        (options?.userMessageImages?.length ?? 0) > 0 ||
-        history.some((h) => h.role === "user" && (h.images?.length ?? 0) > 0)
-      ) {
-        systemPrompt +=
-          "\n\n**Entrada multimodal:** Puede haber imágenes en el historial o en este mensaje. Interprétalas en el contexto del documento activo y la conversación (modelo de datos, UI, flujos); no inventes detalles no visibles.";
-        if (
-          options?.activeTab?.trim() === "mdd" &&
-          (options?.currentMddContent?.trim().length ?? 0) > 400
-        ) {
-          systemPrompt +=
-            "\n\n**MDD no destructivo (obligatorio si ya hay MDD en contexto):** El bloque \"Contenido actual del MDD\" incluye **todas** las secciones. Si el usuario pide revisar, alinear o ampliar (p. ej. tras un diagrama), **no sustituyas el proyecto por un solo fragmento**: devuelve el **MDD completo** actualizado (copia el contenido existente y aplica cambios), terminando con `---FIN_MDD---`. Si optas por enviar **solo una sección**, debe empezar por el **mismo patrón de encabezado** que ya usa el documento para esa sección (`## N.` recomendado, mismo `N` que corresponda). Nunca envíes solo tablas o JSON sueltos sin el título de sección reconocible.";
-        }
-      }
-      const ts = () => new Date().toISOString();
-      console.log(`[AiService] ${ts()} → Enviando al LLM:`, {
-        activeTab: options?.activeTab,
-        promptLength: prompt.length,
-        promptPreview: prompt.slice(0, 120) + (prompt.length > 120 ? "…" : ""),
-        systemPromptLength: systemPrompt.length,
-        historyLength: history.length,
-      });
-      const out = await this.provider.generateResponse(prompt, history, {
-        systemPrompt,
-        userMessageImages: options?.userMessageImages,
-      });
-      console.log(`[AiService] ${ts()} ← Respuesta del LLM recibida:`, {
-        length: out?.length ?? 0,
-        preview: (out ?? "").slice(0, 200) + ((out?.length ?? 0) > 200 ? "…" : ""),
-      });
-      return out;
-    } catch (err) {
-      console.error("[AiService] generateResponse error", err);
-      throw err;
-    }
-  }
-
-  /**
-   * Streaming: same system prompt as generateResponse, yields chunks from the provider.
-   */
-  async generateResponseStream(
-    prompt: string,
-    history: LlmChatMessage[],
-    options?: GenerateResponseOptions,
-  ): Promise<AsyncIterable<string>> {
-    const isUxUiGuide = options?.activeTab?.trim() === "ux-ui-guide";
-    const isBenchmarkRefine =
-      options?.activeTab?.trim() === "benchmark" && (options?.currentDbgaContent?.trim() ?? "").length > 0;
-    let systemPrompt =
-      options?.systemPrompt ??
-      (isBenchmarkRefine ? BENCHMARK_REFINE_PROMPT : isUxUiGuide ? UX_UI_GUIDE_PROMPT : MASTER_PROMPT);
-    if (options?.activeTab?.trim()) {
-      const at = options.activeTab.trim();
-      const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
-      systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).`;
-
-      // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
-      const tagMap: Record<string, string> = {
-        mdd: "MDD",
-        spec: "SPEC",
-        brd: "BRD",
-        "to-be": "TOBE",
-        architecture: "ARCH",
-        "use-cases": "USECASES",
-        "user-stories": "STORIES",
-        blueprint: "BLUEPRINT",
-        "api-contracts": "API",
-        "logic-flows": "FLOWS",
-        tasks: "TASKS",
-        infra: "INFRA",
-      };
-      const tag = tagMap[at];
-      if (tag) {
-          systemPrompt += `\n\nSi decides generar o actualizar el documento de ${label} (completo o solo una sección), escribe el contenido y TERMINA con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Así el sistema aplicará los cambios al documento del proyecto.`;
-          if (at === "mdd") {
-            systemPrompt +=
-              "\n\n**Cuando el usuario indique que falta algo en el documento** (ej. \"X no está mencionado\", \"el cotizador también se involucra\", \"falta Y\"), **debes** devolver el MDD o la sección correspondiente actualizada con ese contenido incorporado, terminando con \`---FIN_MDD---\`. No respondas solo con texto en el chat: aplica el cambio al documento para que se persista.";
-          }
-          if (at === "spec") {
-            systemPrompt +=
-              "\n\n**Cuando el usuario confirme que integre o aplique cambios al Spec** (ej. \"sí ingrésalo\", \"integralo\", \"aplica\", \"confirma\", \"actualiza el spec\"), **debes** devolver el **documento Spec completo** actualizado (incluyendo lo que ya existía más la nueva sección o cambios), terminando con \`---FIN_SPEC---\`. Nunca respondas solo con un mensaje tipo \"El documento Spec ha sido actualizado con éxito\": el sistema solo persiste cuando encuentra el contenido del documento seguido de ---FIN_SPEC---.";
-          }
-          if (at === "brd") {
-            systemPrompt +=
-              "\n\n**Para persistir el BRD** debes devolver el **markdown del BRD completo** actualizado cuando el usuario pida aplicar, integrar o actualizar (incluye lo ya existente más cambios), terminando con \`---FIN_BRD---\`. Sin ese delimitador el sistema no guarda el documento.";
-          }
-          if (at === "to-be") {
-            systemPrompt +=
-              "\n\n**Para persistir el Manual To-Be** debes devolver el **markdown completo** actualizado cuando el usuario pida aplicar, integrar o actualizar, terminando con \`---FIN_TOBE---\`. Sin ese delimitador el sistema no guarda el documento.";
-          }
-        }
-      }
-      if (options?.currentDbgaContent?.trim()) {
-        if (isBenchmarkRefine) {
-        systemPrompt +=
-          "\n\n[Contenido actual del Benchmark & Gap Analysis del proyecto (a refinar según la petición del usuario)]\n---\n" +
-          options.currentDbgaContent.trim() +
-          "\n---";
-      } else if (!options?.currentMddContent?.trim()) {
-        systemPrompt +=
-          "\n\n[Contexto base: Domain Benchmark & Gap Analysis del usuario. Úsalo como referencia para guiar la entrevista y redactar el MDD.]\n---\n" +
-          options.currentDbgaContent.trim().slice(0, 4000) +
-          "\n---";
-      }
-    }
-    if (options?.currentMddContent?.trim()) {
-      systemPrompt +=
-        "\n\n[Contenido actual del MDD del proyecto (puede incluir ediciones del usuario)]\n---\n" +
-        options.currentMddContent.trim() +
-        "\n---";
-    }
-    if (isUxUiGuide && options?.currentBlueprintContent?.trim()) {
-      systemPrompt +=
-        "\n\n[Blueprint del proyecto: estructura, pantallas y módulos. Úsalo para alinear la Guía UX/UI con las pantallas y flujos descritos.]\n---\n" +
-        options.currentBlueprintContent.trim().slice(0, 6000) +
-        "\n---";
-    }
-    if (options?.currentUxUiGuideContent?.trim()) {
-      systemPrompt +=
-        "\n\n[Contenido actual de la Guía UX/UI del proyecto (puede incluir ediciones del usuario)]\n---\n" +
-        options.currentUxUiGuideContent.trim().slice(0, 6000) +
-        "\n---";
-    }
-    if (options?.activeTab?.trim() === "spec" && options?.currentSpecContent?.trim()) {
-      systemPrompt +=
-        "\n\n[Contenido actual del Spec del proyecto. Al integrar o actualizar, incluye todo esto más la nueva sección o cambios, y termina con ---FIN_SPEC---.]\n---\n" +
-        options.currentSpecContent.trim().slice(0, 12000) +
-        "\n---";
-    }
-    if (options?.activeTab?.trim() === "brd" && options?.currentBrdContent?.trim()) {
-      systemPrompt +=
-        "\n\n[BRD actual de la etapa del Workshop. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_BRD---.]\n---\n" +
-        options.currentBrdContent.trim().slice(0, 8000) +
-        "\n---";
-    }
-    if (options?.activeTab?.trim() === "to-be" && options?.currentToBeManualContent?.trim()) {
-      systemPrompt +=
-        "\n\n[Manual To-Be actual de la etapa. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_TOBE---.]\n---\n" +
-        options.currentToBeManualContent.trim().slice(0, 8000) +
-        "\n---";
-    }
-    if (options?.learningHistory?.trim()) {
-      systemPrompt +=
-        "\n\n**HISTORIAL_DE_APRENDIZAJE (proyectos previos del usuario):**\n---\n" +
-        options.learningHistory.trim().slice(0, 6000) +
-        "\n---";
-    }
-    if (options?.complexityInterviewContext?.trim()) {
-      systemPrompt +=
-        "\n\n**[Política de complejidad / entrevista Fase 0 — aplicar en esta conversación]**\n" +
-        options.complexityInterviewContext.trim().slice(0, 8000);
     }
     systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
     if (

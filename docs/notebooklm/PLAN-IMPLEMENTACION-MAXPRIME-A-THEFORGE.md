@@ -98,7 +98,7 @@ Documentar la regla combinada en `docs/notebooklm/THEFORGE-INDEX.md` (sección s
 ### 2.9 Chat multimodal
 
 - **MaxPrime:** `ChatImagePart` en `session.ts`, validación Zod, orquestador y flujos con `userImages`, `AiService` preparado para adjuntos.
-- **The Forge:** paridad con MaxPrime en API + web: `ChatImagePart`, `appendChatSchema` / historial, `parseChatImageAttachments`, adaptadores OpenAI/Gemini, orquestador + Manager MDD (`describeImagesForMddPipeline`), `workshopStore` / `ChatContainer`.
+- **The Forge:** paridad con MaxPrime en API + web: `ChatImagePart`, `appendChatSchema` / historial, `parseChatImageAttachments`, `OpenRouterAdapter`, orquestador + Manager MDD (`describeImagesForMddPipeline`), `workshopStore` / `ChatContainer`.
 
 **Estado:** Hecho — límites MIME/tamaño en `chat-image-attachments.util.ts`, máx. 6 imágenes (Zod alineado con API y UI). Sin cambiar guards JWT ni rate limits.
 

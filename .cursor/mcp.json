@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "hermes": {
+      "command": "hermes",
+      "args": ["--profile", "theforge", "mcp", "serve"]
+    }
+  }
+}

@@ -47,7 +47,7 @@ En ambos casos el **MDD es la Constitución**: todo se valida contra él (SDD). 
 |--------|-----------------|
 | **projects** | CRUD de proyectos; MDD + semáforo + estimación por **Stage** (etapa activa); entregables (Blueprint, SPEC, …) en `Project`; tipo NEW/LEGACY, `theforgeProjectId` para legacy (ID proyecto o repo en Ariadne). |
 | **sessions** | Sesiones por proyecto; `chatLog` (historial de chat), `contextStep` (CONTEXT, DATA, LOGIC, SECURITY); persistencia de la entrevista. |
-| **ai** | Orquestación de IA: adapters (OpenAI, Gemini) según `AI_PROVIDER`; generación de respuesta, checklist, Spec, MDD (multiagente: Clarifier, Architect, Security, Integration, Auditor), Blueprint, Casos de Uso, Historias, etc. Prompts en `modules/ai/prompts/`. |
+| **ai** | Orquestación de IA: `OpenRouterAdapter` (OpenRouter); generación de respuesta, checklist, Spec, MDD (multiagente: Clarifier, Architect, Security, Integration, Auditor), Blueprint, Casos de Uso, Historias, etc. Prompts en `modules/ai/prompts/`. |
 | **engine** | Semáforo (validación del JSON/estructura del proyecto: entidades, business_core, edge_cases, field_types) y motor de estimación (cost-calculator: horas × tarifas MXN por rol). Lógica pura, sin IA. |
 | **legacy-flow** | Coordinador (start → archivos + preguntas; answer; generate-mdd; generate-deliverables) y Revisor (revisa listas y documentos antes de persistir). Knowledge pack (NotebookLM/SDD/Agentic) en `knowledge/`. |
 | **theforge** | Cliente HTTP al MCP AriadneSpecs (`THEFORGE_MCP_URL`): `list_known_projects`, `get_modification_plan`, `ask_codebase`, `validate_before_edit`, `get_file_content`, `get_legacy_impact`, `semantic_search`, etc. Usado por legacy-flow y orquestador para plan de modificación y contexto al generar MDD. |
@@ -87,7 +87,7 @@ Cada entregable se valida (Revisor) y se persiste en el proyecto. La estructura 
 
 ## 8. Stack y despliegue
 
-- **Backend:** NestJS, Prisma (PostgreSQL), adapters IA (OpenAI/Gemini). Opcional: Redis/BullMQ.
+- **Backend:** NestJS, Prisma (PostgreSQL), LLM vía OpenRouter. Opcional: Redis/BullMQ.
 - **Frontend:** React 18, Vite, Tailwind. Proxy `/api` al backend en dev.
 - **Despliegue:** Docker (Dokploy-ready): servicios api, web, db (Postgres), opcional redis. Healthchecks, variables de entorno documentadas. Un solo `docker-compose` en raíz.
 

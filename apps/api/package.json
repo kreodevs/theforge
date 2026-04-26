@@ -12,9 +12,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",
-    "@google/generative-ai": "^0.21.0",
     "@langchain/core": "^0.3.0",
-    "@langchain/google-genai": "^0.1.0",
     "@langchain/langgraph": "^0.2.0",
     "@langchain/langgraph-checkpoint-postgres": "^1.0.0",
     "@langchain/openai": "^0.3.0",

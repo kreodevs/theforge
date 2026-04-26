@@ -1,7 +1,7 @@
 # The Forge — Knowledge Base (NotebookLM / PROJECT_BRAIN_DUMP)
 
 > **Propósito:** Documento maestro para cuadernos de estudio (p. ej. NotebookLM). Describe el monorepo **theforge** tal como está en el código y en `docs/` a marzo 2026.  
-> **No confundir:** Este repo es **The Forge** (Software Factory: entrevista → MDD → semáforo → estimación). No es el producto “Google Antigravity”; la IA agéntica usa **LangChain / LangGraph** y orquestación propia (`AgentSupervisor`), con LLMs **OpenAI** o **Google Gemini** vía adapters.
+> **No confundir:** Este repo es **The Forge** (Software Factory: entrevista → MDD → semáforo → estimación). No es el producto “Google Antigravity”; la IA agéntica usa **LangChain / LangGraph** y orquestación propia (`AgentSupervisor`), con el LLM **vía OpenRouter** (API compatible OpenAI; adapter `OpenRouterAdapter`).
 
 ---
 
@@ -11,7 +11,7 @@
 
 - **Frontend:** React 18 + Vite 6 + Tailwind 3, estado con Zustand, UI estilo Kreo (tokens luxury/dorado).
 - **Backend:** NestJS 10, Prisma 5 + PostgreSQL, grafo documental en **FalkorDB** (Cypher), colas **BullMQ** opcionales vía Redis, integración **HTTP JSON-RPC** con MCP externo **AriadneSpecs / TheForge** para código indexado (`THEFORGE_MCP_URL`).
-- **IA:** Patrón **strategy** (`LLMProvider`: OpenAIAdapter / GeminiAdapter); **LangGraph** para grafos de agentes; **AgentSupervisor** como capa de orquestación del chat y la etapa (`Stage`).
+- **IA:** Patrón **strategy** (`LLMProvider` → `OpenRouterAdapter`); **LangGraph** para grafos de agentes; **AgentSupervisor** como capa de orquestación del chat y la etapa (`Stage`).
 
 **Fuentes canónicas en repo:** `docs/notebooklm/THEFORGE-INDEX.md`, `docs/notebooklm/MCP-ARQUITECTURA-THEFORGE.md`, `docs/notebooklm/STAGE-SDD.md`, `blueprint.md`, `.cursor/skills/theforge/SKILL.md`.
 
@@ -24,7 +24,7 @@
 | Capa | Patrón / estilo |
 |------|------------------|
 | API | **Modular monolith (NestJS)**: módulos por dominio, **DI** de Nest, guards/interceptors globales (`JwtAuthGuard`, `UserContextInterceptor`). |
-| IA | **Ports & Adapters**: interfaz `LLMProvider` en `modules/ai/interfaces/`; únicas implementaciones en `modules/ai/adapters/`. Factory `createLLMProvider()` según `AI_PROVIDER`. |
+| IA | **Ports & Adapters**: interfaz `LLMProvider` en `modules/ai/interfaces/`; implementación `OpenRouterAdapter` en `modules/ai/adapters/`. Factory `createLLMProvider()`. |
 | Datos relacionales | **Repository vía PrismaService**; modelos `User`, `Project`, `Stage`, `Session`, `Estimation`, `EpisodicMemory`. |
 | Grafo SDD | **FalkorDB** como backend de grafo embebido (Redis-compatible): nodos de documento/entidades por **stage**, no mezclar con el índice de código del MCP. |
 | Legacy / código | **TheForgeService** cliente HTTP al MCP ajeno; **LegacyCoordinatorService** orquesta flujo legacy + documentación de partida. |
@@ -81,7 +81,7 @@ flowchart TB
 
   subgraph External["Externos"]
     MCP[Ariadne MCP THEFORGE_MCP_URL]
-    LLM[OpenAI / Google Gemini]
+    LLM[OpenRouter API]
   end
 
   WV --> API_CLIENT
@@ -121,8 +121,7 @@ flowchart TB
 | HTTP API | express (Nest) | ^5.2.1 |
 | Colas | bullmq | ^5.71.1 |
 | Grafo SDD | falkordb | ^6.6.0 |
-| IA – OpenAI | openai | ^4.73.0 |
-| IA – Google | @google/generative-ai | ^0.21.0 |
+| IA – OpenRouter (cliente) | openai | ^4.73.0 |
 | IA – orquestación | @langchain/langgraph, checkpoint postgres | ^0.2.x / ^1.0.0 |
 | Validación / tipos | zod | ^3.23.8 |
 | Web | react / react-dom | ^18.3.1 |
@@ -131,9 +130,9 @@ flowchart TB
 | Markdown UI | react-markdown, mermaid | ^10.x / ^11.x |
 | Estilos | tailwindcss | ^3.4.15 |
 
-**Servicios externos:** MCP Ariadne (HTTPS JSON-RPC); proveedores LLM (OpenAI / Google); opcional Tavily (`@langchain/tavily`); email OTP (nodemailer + `EMAIL_OTP`).
+**Servicios externos:** MCP Ariadne (HTTPS JSON-RPC); **OpenRouter** (LLM/embedding vía API compatible OpenAI); opcional Tavily (`@langchain/tavily`); email OTP (nodemailer + `EMAIL_OTP`).
 
-**No hay “Google Antigravity” como dependencia** en este repositorio; si un documento externo lo menciona, aquí el paralelo es **Gemini + LangChain + Cursor**.
+**No hay “Google Antigravity” como dependencia** en este repositorio; si un documento externo lo menciona, aquí el paralelo es el flujo **Workshop + LangGraph + OpenRouter + MCP** (no un producto Google interno al repo).
 
 ---
 
@@ -144,7 +143,7 @@ flowchart TB
 | Autenticación OTP + JWT | `modules/auth/` | OTP por email; JWT; `JwtAuthGuard` global. |
 | Proyectos CRUD + entregables | `modules/projects/` | `Project`, campos de documentos; etapas `Stage`; cascadas de generación. |
 | Sesiones / chat log | `modules/sessions/` | Persistencia `Session.chatLog`, `contextStep`. |
-| LLM unificado | `modules/ai/` (`ai.factory`, `adapters/*`, `ai.service`) | `AI_PROVIDER` → OpenAI o Gemini; sin imports de SDK fuera de `adapters/`. |
+| LLM unificado | `modules/ai/` (`ai.factory`, `adapters/openrouter.adapter.ts`, `ai.service`) | OpenRouter; sin imports de SDK fuera de `adapters/`. |
 | Motor semáforo / checklist | `modules/engine/` (+ uso desde proyectos/orquestador) | Derivación ROJO/AMARILLO/VERDE desde estructura MDD (entidades, business_core, edge_cases…). |
 | Estimación MXN | `modules/engine/cost-calculator.service.ts`, `apps/web/src/utils/costCalculator.ts` | Horas: entidades×12 + pantallas×16 + endpoints×4; multiplicadores `TechnicalMetadata`; buffer 1.25 si status ≠ VERDE; **total MXN horas × 1050** en servicio alineado con front. Tarifas por rol en front (`RATES_MXN`) para **vista** de equipo. |
 | Orquestador chat | `modules/ai-orchestrator/` | Entrada HTTP del workshop; delega en supervisor. |
@@ -205,7 +204,7 @@ flowchart LR
 1. **MDD de 7 secciones:** Orden y semántica acotan semáforo y flujos (ver `docs/notebooklm/THEFORGE-INDEX.md` §4 y `docs/notebooklm/ENTREGABLES-SDD-VALIDACION.md`).
 2. **Semáforo:** ROJO si faltan entidades o `business_core`; AMARILLO con gaps; VERDE checklist completo (~95% precisión según reglas del engine).
 3. **Generar entregables en cascada:** Condicionado a complejidad (`LOW` / `MEDIUM` / `HIGH`) y a semáforo VERDE donde aplica; LEGACY tiene caminos alternos (codebase doc, ingeniería inversa).
-4. **IA agnóstica:** Ningún servicio de negocio debe importar `openai` o `@google/generative-ai` directamente.
+4. **LLM aislado:** Ningún servicio de negocio debe importar el SDK `openai` (u otros clientes LLM) directamente; solo el adapter.
 5. **Conformance:** Blueprint debe alinearse con MDD §3 para desbloquear generación de API en UI (lógica en flujo legacy + conformance service).
 6. **Coste:** Fórmula y constantes compartidas conceptualmente entre `cost-calculator.service.ts` y `costCalculator.ts`; alterar solo con acuerdo explícito (regla de arquitectura).
 
@@ -217,7 +216,7 @@ flowchart LR
 - **Índice THE-FORGE vs THEFORGE:** Algunos paths históricos (`THE-FORGE-INDEX` eliminado o renombrado a `THEFORGE-INDEX.md`); buscar referencias rotas.
 - **Agentic AI:** LangGraph + checkpoints en Postgres; complejidad alta — candidato a diagramas de secuencia por “tipo de mensaje” y tests de contrato en rutas críticas.
 - **MCP:** Contrato evoluciona (`theforge-mcp-tools-alignment.spec.ts`); mantener `THEFORGE_MCP_CLIENT_ARG_KEYS` sincronizado.
-- **NotebookLM:** Cualquier afirmación sobre “Antigravity” debe contrastarse con este archivo: aquí las herramientas son **LangChain/LangGraph + adapters OpenAI/Gemini + MCP HTTP**.
+- **NotebookLM:** Cualquier afirmación sobre “Antigravity” debe contrastarse con este archivo: aquí las herramientas son **LangChain/LangGraph + OpenRouter + MCP HTTP**.
 
 ---
 

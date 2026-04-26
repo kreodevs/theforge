@@ -38,19 +38,12 @@ En la raíz del repo (o en `apps/api`), crea `.env` (plantilla comentada con tod
 DATABASE_URL=postgresql://theforge:theforge@localhost:5432/theforge
 ```
 
-Opcional (para chat con IA):
+Opcional (chat con IA vía **OpenRouter**):
 
 ```env
-AI_PROVIDER=openai
-AI_API_KEY=sk-...
-# OPENAI_API_KEY=sk-...   # mismo efecto que AI_API_KEY (alias)
-```
-
-O con Gemini:
-
-```env
-AI_PROVIDER=google
-GOOGLE_GENERATIVE_AI_API_KEY=...
+OPENROUTER_API_KEY=sk-or-v1-...
+# o alias: AI_API_KEY / OPENAI_API_KEY
+# OPENROUTER_CHAT_MODEL=nousresearch/hermes-3-llama-3.1-405b   # default en código
 ```
 
 ### 4. Crear tablas (Prisma)

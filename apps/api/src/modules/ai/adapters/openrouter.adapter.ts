@@ -6,14 +6,11 @@ import type {
 } from "../interfaces/llm-provider.interface.js";
 import type { ChatImagePart, ChecklistResult } from "@theforge/shared-types";
 import {
-  getGoogleApiKeyForOptionalEmbeddings,
-  normalizeLlmProviderId,
   resolveEmbeddingsBackend,
-  resolveOpenAiOfficialEmbeddingApiKey,
+  resolveOpenRouterEmbeddingApiKey,
   resolvePrimaryChatRuntime,
-  type OpenAiCompatibleRuntime,
+  type OpenRouterRuntime,
 } from "../config/llm-config.js";
-import { generateGeminiTextEmbedding } from "../embeddings/gemini-text-embedding.js";
 
 function buildOpenAiUserMessage(
   text: string,
@@ -53,32 +50,41 @@ function historyToOpenAiMessages(history: ChatMessage[]): OpenAI.Chat.ChatComple
   });
 }
 
-function getOpenAiCompatibleRuntimeStrict(): OpenAiCompatibleRuntime {
-  const id = normalizeLlmProviderId();
-  if (id === "google") {
-    throw new Error("OpenAIAdapter requires AI_PROVIDER openai or kimi");
-  }
-  return resolvePrimaryChatRuntime() as OpenAiCompatibleRuntime;
+function openRouterDefaultHeaders(): Record<string, string> | undefined {
+  const referer = process.env.OPENROUTER_HTTP_REFERER?.trim();
+  const title = process.env.OPENROUTER_APP_TITLE?.trim();
+  if (!referer && !title) return undefined;
+  return {
+    ...(referer ? { "HTTP-Referer": referer } : {}),
+    ...(title ? { "X-OpenRouter-Title": title } : {}),
+  };
 }
 
-export class OpenAIAdapter implements LLMProvider {
+export class OpenRouterAdapter implements LLMProvider {
   private static warnedEmbeddingNone = false;
 
   private readonly chatClient: OpenAI;
-  /** Solo API OpenAI oficial (embeddings); sin baseURL custom. */
-  private readonly embeddingOpenAi: OpenAI | null;
+  /** Cliente embeddings: misma base URL; clave puede ser OPENROUTER_EMBEDDING_API_KEY. */
+  private readonly embeddingClient: OpenAI;
   private readonly model: string;
+  private readonly embeddingModel: string;
 
-  constructor(apiKey?: string, model?: string) {
-    const runtime = getOpenAiCompatibleRuntimeStrict();
-    const key = apiKey ?? runtime.apiKey;
-    this.model = model ?? runtime.chatModel;
+  constructor() {
+    const runtime = resolvePrimaryChatRuntime() as OpenRouterRuntime;
+    this.model = runtime.chatModel;
+    this.embeddingModel = runtime.embeddingModel;
+    const headers = openRouterDefaultHeaders();
     this.chatClient = new OpenAI({
-      apiKey: key,
+      apiKey: runtime.apiKey,
       baseURL: runtime.baseURL,
+      defaultHeaders: headers,
     });
-    const embedKey = resolveOpenAiOfficialEmbeddingApiKey();
-    this.embeddingOpenAi = embedKey ? new OpenAI({ apiKey: embedKey }) : null;
+    const embKey = resolveOpenRouterEmbeddingApiKey() ?? runtime.apiKey;
+    this.embeddingClient = new OpenAI({
+      apiKey: embKey,
+      baseURL: runtime.baseURL,
+      defaultHeaders: headers,
+    });
   }
 
   async generateResponse(
@@ -97,7 +103,7 @@ export class OpenAIAdapter implements LLMProvider {
       );
 
       const ts = () => new Date().toISOString();
-      console.log(`[OpenAIAdapter] ${ts()} → Request enviado (OpenAI-compatible):`, {
+      console.log(`[OpenRouterAdapter] ${ts()} → Request enviado:`, {
         messagesCount: messages.length,
         model: this.model,
       });
@@ -109,7 +115,7 @@ export class OpenAIAdapter implements LLMProvider {
 
       const content = completion.choices[0]?.message?.content ?? "";
       const choice = completion.choices[0];
-      console.log(`[OpenAIAdapter] ${ts()} ← Response recibida:`, {
+      console.log(`[OpenRouterAdapter] ${ts()} ← Response recibida:`, {
         contentLength: content.length,
         preview: content.slice(0, 200) + (content.length > 200 ? "…" : ""),
         finishReason: choice?.finish_reason,
@@ -117,7 +123,7 @@ export class OpenAIAdapter implements LLMProvider {
       });
       return content;
     } catch (err) {
-      console.error("[OpenAIAdapter] generateResponse error:", err);
+      console.error("[OpenRouterAdapter] generateResponse error:", err);
       throw err;
     }
   }
@@ -177,51 +183,31 @@ export class OpenAIAdapter implements LLMProvider {
         items: Array.isArray(parsed.items) ? parsed.items : [],
       };
     } catch (err) {
-      console.error("[OpenAIAdapter] parseChecklist error", err);
+      console.error("[OpenRouterAdapter] parseChecklist error", err);
       return { complete: false, items: [] };
     }
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
-    const backend = resolveEmbeddingsBackend();
-    if (backend === "gemini") {
-      const gKey = getGoogleApiKeyForOptionalEmbeddings();
-      if (!gKey) {
-        console.error("[OpenAIAdapter] generateEmbedding: LLM_EMBEDDINGS_PROVIDER=google pero falta clave Google");
-        return [];
-      }
-      try {
-        return await generateGeminiTextEmbedding(text, gKey);
-      } catch (err) {
-        console.error("[OpenAIAdapter] generateEmbedding (Gemini) error:", err);
-        return [];
-      }
-    }
-
-    if (backend === "none") {
-      if (!OpenAIAdapter.warnedEmbeddingNone) {
-        OpenAIAdapter.warnedEmbeddingNone = true;
+    if (resolveEmbeddingsBackend() === "none") {
+      if (!OpenRouterAdapter.warnedEmbeddingNone) {
+        OpenRouterAdapter.warnedEmbeddingNone = true;
         console.warn(
-          "[OpenAIAdapter] Embeddings desactivados (Kimi: la clave de Moonshot no sirve en api.openai.com). " +
-            "Opciones: GOOGLE_GENERATIVE_AI_API_KEY (embeddings Gemini), OPENAI_EMBEDDING_API_KEY (solo OpenAI), o OPENAI_EMBEDDING_DIM para índices sin llamada a embedding.",
+          "[OpenRouterAdapter] Embeddings desactivados (LLM_EMBEDDINGS_PROVIDER=none). " +
+            "Semantic search / ADRs limitados. OPENAI_EMBEDDING_DIM fija la dimensión sin llamar API.",
         );
       }
       return [];
     }
 
-    if (!this.embeddingOpenAi) {
-      console.error("[OpenAIAdapter] generateEmbedding: backend openai-official sin cliente");
-      return [];
-    }
-
     try {
-      const resp = await this.embeddingOpenAi.embeddings.create({
-        model: "text-embedding-3-small",
+      const resp = await this.embeddingClient.embeddings.create({
+        model: this.embeddingModel,
         input: text.replace(/\n/g, " "),
       });
       return resp.data[0].embedding;
     } catch (err) {
-      console.error("[OpenAIAdapter] generateEmbedding error:", err);
+      console.error("[OpenRouterAdapter] generateEmbedding error:", err);
       return [];
     }
   }

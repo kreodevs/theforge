@@ -65,7 +65,7 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             const isQuota = typeof (err as { code?: string })?.code === "string" && ((err as { code: string }).code === "insufficient_quota" || msg.includes("429") || msg.includes("quota"));
             if (isQuota) {
                 this.logger.warn(
-                    "OpenAI quota exceeded on startup; graph memory indices skipped. API will run but semantic search/ADRs may be limited. Check billing or use OPENAI_EMBEDDING_DIM to skip embedding call.",
+                    "OpenRouter / embeddings quota exceeded on startup; graph memory indices skipped. API will run but semantic search/ADRs may be limited. Check billing or use OPENAI_EMBEDDING_DIM to skip embedding call.",
                 );
             } else {
                 this.logger.warn(`No se pudieron inicializar índices vectoriales: ${msg}`);

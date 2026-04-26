@@ -51,9 +51,7 @@ To initiate this workflow in Cursor/Antigravity:
 npx ts-node scripts/generate-mdd.ts --interactive
 ```
 
-### Supported Providers
-The system automatically detects your provider from `.env`:
-- **Gemini:** Set `AI_PROVIDER=gemini` and `GEMINI_API_KEY`.
-- **OpenAI:** Set `AI_PROVIDER=openai` and `AI_API_KEY` (or `OPENAI_API_KEY`).
+### Proveedor LLM (alineado al API The Forge)
+El backend usa **OpenRouter** (`OPENROUTER_API_KEY` o `AI_API_KEY` / `OPENAI_API_KEY`). Ver `.env.example` y `docs/notebooklm/THEFORGE-INDEX.md` §3.
 
-(Note: Script implementation pending in `scripts/generate-mdd.ts`)
+(Nota: script `generate-mdd.ts` pendiente si aplica)

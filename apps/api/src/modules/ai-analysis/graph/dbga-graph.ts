@@ -12,7 +12,7 @@ import { createDbgaLLM } from "../llm/create-dbga-llm.js";
  * Builds and compiles the DBGA StateGraph.
  * Edges: Scout → Auditor → Critic → (Scout | Synthesis) → END.
  * Scout uses Tavily + scrape_url (Cheerio); Auditor uses scrape_url.
- * LLM: AI_PROVIDER (openai | google) → OpenAI o Gemini.
+ * LLM: OpenRouter (mismo runtime que el adapter principal).
  * Si se pasa checkpointer, el estado se persiste por thread_id (retomar Fase 0).
  */
 export function createDbgaGraph(checkpointer?: BaseCheckpointSaver | null) {

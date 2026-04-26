@@ -42,7 +42,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Nota sobre “Google Antigravity”
 
-En este repositorio **no existe una dependencia llamada Google Antigravity**; la pila agéntica documentada es **LangChain / LangGraph**, adapters **OpenAI / Google Gemini** y MCP. Cualquier referencia externa a “Antigravity” debe interpretarse como **agentes IDE / flujo Workshop**, no como módulo interno.
+En este repositorio **no existe una dependencia llamada Google Antigravity**; la pila agéntica documentada es **LangChain / LangGraph**, LLM **vía OpenRouter** (adapter) y MCP. Cualquier referencia externa a “Antigravity” debe interpretarse como **agentes IDE / flujo Workshop**, no como módulo interno.
 
 ---
 

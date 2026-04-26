@@ -1,10 +1,10 @@
 # TheForge
 
-Monorepo Turborepo: API NestJS + Web React (Vite) + Prisma. IA agnóstica (OpenAI/Gemini), Semáforo MDD, motor de estimación MXN. Despliegue Dokploy-ready con Docker.
+Monorepo Turborepo: API NestJS + Web React (Vite) + Prisma. LLM vía **OpenRouter**, Semáforo MDD, motor de estimación MXN. Despliegue Dokploy-ready con Docker.
 
 ## Estructura
 
-- **apps/api** — NestJS: proyectos, sesiones, AI (adapters OpenAI/Gemini), engine (cost-calculator, semáforo).
+- **apps/api** — NestJS: proyectos, sesiones, AI (OpenRouter), engine (cost-calculator, semáforo).
 - **apps/web** — React (Vite) + Tailwind.
 - **packages/database** — Prisma schema y client.
 - **packages/shared-types** — DTOs e interfaces (Zod).

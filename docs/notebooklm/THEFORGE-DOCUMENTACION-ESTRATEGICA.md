@@ -27,7 +27,7 @@ TheForge es la primera plataforma que convierte la especificación de software e
 | **Constitución MDD + Semáforo en tiempo real** | Un solo documento maestro que gobierna alcance, arquitectura, datos, API, seguridad e infra; validación automática de completitud antes de construir. | Reducción de desvíos de alcance y retrabajo (estimable 20–35% en proyectos típicos); menos ciclos de "nos faltó esto". |
 | **Motor de estimación en MXN (horas × tarifas por rol)** | Presupuesto y horas visibles desde la especificación, sin depender de hojas de cálculo externas ni de juicio aislado. | Mejor precisión en ofertas y planificación; reducción del TCO por menor incertidumbre y menos sobrecostos por alcance no acordado. |
 | **Flujo Legacy con grafo de código (Relic)** | Documentar cambios en sistemas existentes con lista real de archivos afectados y preguntas de negocio; MDD de cambio alineado al código. | Aceleración del time-to-market en evolución de productos legacy; mitigación de errores por cambios no documentados o mal acotados. |
-| **IA agnóstica (OpenAI / Gemini intercambiables)** | Libertad de elegir proveedor de IA sin reescribir la plataforma; resiliencia ante cambios de precios o políticas. | Reducción del riesgo de dependencia de un solo vendor; control del costo de IA a largo plazo. |
+| **IA vía capa de adapters (OpenRouter)** | Mismo contrato de negocio; el tráfico sale por OpenRouter (modelos y precios centralizados en un hub). | Menos acoplamiento en servicios; cambios de modelo vía `OPENROUTER_*` sin tocar lógica de entrevista. |
 | **Orquestación multiagente (Clarificador, Arquitecto, Seguridad, Integración, Auditor)** | Generación guiada del MDD por especialistas virtuales con revisión y umbral de calidad (ej. 85%) antes de dar por cerrado. | Menor tiempo de redacción manual de especificaciones; mayor consistencia y menor tasa de errores en el documento base. |
 
 ---
@@ -58,7 +58,7 @@ Todo lo descrito anteriormente está soportado por la implementación actual de 
 - El MDD de 7 secciones, el semáforo (rojo/amarillo/verde) y el motor de estimación en MXN existen y se calculan en tiempo real a partir del contenido del proyecto.
 - El flujo legacy con integración Relic (plan de modificación, archivos a modificar, preguntas de afinación, generación de MDD de cambio) está implementado; la lista de archivos y preguntas proviene del grafo de código cuando el MCP correspondiente está disponible.
 - La orquestación multiagente (Manager, Clarificador, Arquitecto, Seguridad, Integración, Auditor) y el umbral de calidad (ej. 85%) para ceder al usuario están implementados en el backend.
-- La IA agnóstica (OpenAI / Gemini por configuración) está implementada vía adapters y variable de entorno; no hay lógica de negocio atada a un proveedor único.
+- El LLM está acotado a **OpenRouter** (adapter + `llm-config`); no hay lógica de entrevista acoplada al detalle del proveedor remoto.
 - El despliegue en un solo contenedor (Dokploy) está documentado y soportado en el repositorio.
 
 La postura es audaz en valor de negocio, pero **100% alineada con lo que el código hace hoy**: no se prometen funcionalidades inexistentes.

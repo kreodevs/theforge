@@ -46,7 +46,7 @@ La interfaz debe reflejar en qué etapa de la entrevista estamos (aunque sea una
 
 Asegúrate de que Cursor implemente estos elementos específicos en la GUI:
 
-- **Selector de Provider:** Un pequeño toggle o dropdown en el header para elegir entre **OpenAI** y **Google Gemini** (esto cambia la `baseUrl` o el header que el backend enviará al adaptador).
+- **Selector de provider (legacy spec):** El backend fija el LLM a **OpenRouter**; no hay toggle OpenAI/Gemini en el cliente. Cualquier cambio de modelo o clave es por **variables de entorno** (`OPENROUTER_*` / `docker-compose` / Dokploy).
 - **Módulo de Carga de UX:** Si al inicio marcaste "Tengo equipo de UX", debe aparecer un área de **Drag & Drop** para subir el JSON de mapeo de Figma.
 - **Exportador de Formatos:** Una sección de "Descargas" donde se listan los entregables (Blueprint.md, Prisma Schema, OpenAPI YAML) una vez finalizada la entrevista.
 

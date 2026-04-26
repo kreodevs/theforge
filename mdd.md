@@ -46,11 +46,11 @@ Plaintext
 
 ## 3. Integración de IA Agnóstica (Strategy Pattern)
 
-La aplicación debe funcionar con dos proveedores distintos según el entorno (Trabajo o Negocio).
+El tráfico LLM sale por **OpenRouter**; el contrato de negocio sigue siendo `LLMProvider`.
 
 - **Contrato:** Interfaz `LLMProvider` que define métodos para: `entrevistar()`, `analizarContexto()` y `generarBlueprint()`.
-- **Proveedores:** `OpenAIAdapter` (GPT-4o) y `GeminiAdapter` (Gemini 1.5 Pro).
-- **Configuración:** Variable de entorno `AI_PROVIDER` (`openai` o `google`).
+- **Implementación:** `OpenRouterAdapter` (SDK `openai` → `https://openrouter.ai/api/v1`). Modelo de chat por defecto: `nousresearch/hermes-3-llama-3.1-405b` (`OPENROUTER_CHAT_MODEL`).
+- **Configuración:** `OPENROUTER_API_KEY` (o alias `AI_API_KEY` / `OPENAI_API_KEY`), opcional `OPENROUTER_*` en `llm-config.ts`.
 
 ---
 

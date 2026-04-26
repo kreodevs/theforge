@@ -28,7 +28,7 @@ packages/config       tsconfig.base, eslint, tailwind
 ## IA agnóstica
 
 - **Contrato:** `LLMProvider` (generateResponse, parseChecklist). Adapters solo en `apps/api/src/modules/ai/adapters/`.
-- **Config:** `AI_PROVIDER` (openai | google). Factory por env. Sin lógica de proveedor fuera de adapters.
+- **Config:** **OpenRouter** único (`OPENROUTER_API_KEY` o alias `AI_API_KEY` / `OPENAI_API_KEY`). Default chat: `nousresearch/hermes-3-llama-3.1-405b`. Factory por env. Sin lógica de proveedor fuera de adapters.
 - **Prompt maestro:** `apps/api/src/modules/ai/prompts/master-prompt.md` — editar el .md; el .ts lo carga en runtime.
 
 ## Semáforo y estimación
@@ -45,7 +45,7 @@ packages/config       tsconfig.base, eslint, tailwind
 ## Docker / Dokploy
 
 - **Un contenedor:** servicio `theforge-db` (Postgres + API + Nginx). Conexión interna `localhost:5432`.
-- **Env:** DATABASE_URL, AI_PROVIDER, AI_API_KEY (alias OPENAI_API_KEY) o GOOGLE_GENERATIVE_AI_API_KEY. Opcional: `LANGGRAPH_RECURSION_LIMIT` (10–500, default 100) para el grafo MDD. Nuevos servicios/variables → actualizar `docker-compose.yml`.
+- **Env:** DATABASE_URL, `OPENROUTER_API_KEY` (o `AI_API_KEY` / `OPENAI_API_KEY`), opcional `OPENROUTER_BASE_URL` / `OPENROUTER_CHAT_MODEL` / `OPENROUTER_EMBEDDING_MODEL`. Opcional: `LANGGRAPH_RECURSION_LIMIT` (10–500, default 100) para el grafo MDD. Nuevos servicios/variables → actualizar `docker-compose.yml`.
 
 ## Reglas de código
 
@@ -56,7 +56,7 @@ packages/config       tsconfig.base, eslint, tailwind
 
 ## Checklist al cambiar
 
-- [ ] IA: ¿Solo AI_PROVIDER + factory? ¿Imports de SDKs solo en ai/adapters?
+- [ ] IA: ¿Solo OpenRouter + factory? ¿Imports de SDKs solo en ai/adapters?
 - [ ] Estimación: ¿Fórmula/tarifas intactas en `packages/business-rules`?
 - [ ] Docker: ¿docker-compose y env actualizados?
 - [ ] README de la carpeta afectada actualizado si creas componente/página.
