@@ -14,15 +14,18 @@ import {
 } from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
-import type { TheForgeFileToModify } from "../theforge/theforge.service.js";
+import type { AskCodebaseOptions, TheForgeFileToModify } from "../theforge/theforge.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import {
   DEFAULT_SEMANTIC_QUERIES,
   askCodebaseOptionsForCodebaseDoc,
   askCodebaseOptionsForCodebaseDocClassicSegments,
   gatherLegacyIndexSignals,
+  getLegacyCodebaseDocSynthesisInputMaxChars,
   getLegacyAskCodebaseOptions,
   getLegacySemanticSearchLimit,
+  isDeterministicRawEvidenceClassicAsk,
+  isLegacyCodebaseDocIndexSynthesisEnabled,
   isLegacyEvidenceFirstEnabled,
   clipLegacySemanticSection,
   clipLegacySemanticSectionForCodebaseDoc,
@@ -70,6 +73,14 @@ const CODEBASE_DOC_FALLBACK_SYNTHESIS_PROMPT =
   "**Estructura de carpetas**; **pantallas o rutas principales**; **datos y API** — si en este repo no hay modelos/Prisma y el backend está en otro servicio, dilo explícitamente. " +
   "No inventes archivos ni endpoints. Mínimo unas 400 palabras. Si algo no consta en el índice, dilo.";
 
+/** Una sola llamada `ask_codebase` con `responseMode: evidence_first` (modo Workshop `ingest_mdd`). */
+const CODEBASE_DOC_INGEST_MDD_QUESTION =
+  "Documentación de partida (MDD) del código indexado en el ámbito actual: propósito del repo, " +
+  "superficie API y rutas, modelo de datos y persistencia, lógica de negocio deducible del grafo, infraestructura relevante, " +
+  "riesgos y lagunas del índice, y rutas de evidencia. Si el proyecto es multi-root, respeta el alcance del repo en scope. " +
+  "No inventes artefactos que no aparezcan en el índice; si algo no consta, dilo explícitamente por sección. " +
+  "Cumple el contrato MDD `evidence_first` del orchestrator/ingest.";
+
 const CODEBASE_DOC_CLASSIC_Q = {
   q1:
     "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
@@ -80,6 +91,23 @@ const CODEBASE_DOC_CLASSIC_Q = {
   q4:
     "What are the main business rules, validations, naming conventions, and key patterns used across the codebase? Include any domain-specific logic, constants, or shared utilities.",
 } as const;
+
+/** Segunda pasada (prosa) cuando el clásico usó evidencia determinista: convierte bundle + semántica en MDD legible. */
+const CODEBASE_DOC_MDD_FROM_INDEX_PROMPT =
+  "Eres redactor técnico SDD. Recibes **EVIDENCIA** del índice Ariadne (markdown: bundle `raw_evidence` determinista y, si consta, extractos de `semantic_search`). " +
+  "Redacta un **documento de partida tipo MDD** en **español**, en **markdown claro**, con **exactamente** estos encabezados `##` en este orden. " +
+  "Si un apartado no tiene soporte en la evidencia, escribe *No consta en el índice para este repo/alcance.*\n\n" +
+  "## Resumen ejecutivo\n" +
+  "## Modelos de datos y persistencia\n" +
+  "## Rutas, API y servicios\n" +
+  "## Arquitectura y estructura de carpetas\n" +
+  "## Stack y herramientas observables\n" +
+  "## Reglas de negocio, convenciones y patrones\n" +
+  "## Riesgos y lagunas del índice\n\n" +
+  "Normas: no inventes archivos ni APIs que no aparezcan en la evidencia; cita rutas con backticks. " +
+  "No repitas tablas JSON ni bloques `cypher` ni el texto de ayuda sobre `evidence_first`: sintetiza en prosa y viñetas. " +
+  "Máximo ~1400 palabras en total.\n\n" +
+  "--- EVIDENCIA ---\n\n";
 
 /** Prefacio cuando solo se pudo rellenar la §5 (grafo); las síntesis ask_codebase quedaron vacías. */
 const CODEBASE_DOC_SEMANTIC_ONLY_PREFACE =
@@ -695,7 +723,24 @@ export class LegacyCoordinatorService {
     let codebaseDoc = "";
     const codebaseDocAskOpts = askCodebaseOptionsForCodebaseDoc(req?.responseMode);
 
-    if (isLegacyEvidenceFirstEnabled()) {
+    if (req?.responseMode === "ingest_mdd") {
+      const ingestAsk = askCodebaseOptionsForCodebaseDoc("ingest_mdd");
+      const raw =
+        (await this.theforge.askCodebase(CODEBASE_DOC_INGEST_MDD_QUESTION, theforgeId, ingestAsk))?.trim() ?? "";
+      if (raw && legacyAnalyzerIndicatesEmptyIndex(raw)) {
+        this.logger.warn(
+          `generateCodebaseDoc: ingest_mdd devolvió señal de índice vacío; se intenta modo clásico. theforgeId=${theforgeId}`,
+        );
+      } else if (raw) {
+        codebaseDoc = "# MDD de partida (ingest Ariadne — evidence_first)\n\n" + raw;
+      } else {
+        this.logger.warn(
+          `generateCodebaseDoc: ingest_mdd devolvió vacío; modo clásico. theforgeId=${theforgeId.slice(0, 8)}…`,
+        );
+      }
+    }
+
+    if (isLegacyEvidenceFirstEnabled() && req?.responseMode !== "ingest_mdd") {
       try {
         const body = await runLegacyStagedDiscoveryMddAgent({
           theforge: this.theforge,
@@ -731,11 +776,17 @@ export class LegacyCoordinatorService {
       const parts: string[] = [];
       const semanticLim = getLegacySemanticSearchLimit();
       const legacyAsk = askCodebaseOptionsForCodebaseDocClassicSegments(req?.responseMode);
+      const deterministicClassic = isDeterministicRawEvidenceClassicAsk(legacyAsk);
       let r1: string;
       let r2: string;
       let r3: string;
       let r4: string;
-      if (isCodebaseDocClassicParallelAsk()) {
+      if (deterministicClassic) {
+        r1 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId, legacyAsk);
+        r2 = "";
+        r3 = "";
+        r4 = "";
+      } else if (isCodebaseDocClassicParallelAsk()) {
         [r1, r2, r3, r4] = await Promise.all([
           this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId, legacyAsk),
           this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q2, theforgeId, legacyAsk),
@@ -748,10 +799,6 @@ export class LegacyCoordinatorService {
         r3 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q3, theforgeId, legacyAsk);
         r4 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q4, theforgeId, legacyAsk);
       }
-      if (r1.trim()) parts.push("## 1. Modelos, rutas y configuración\n\n" + r1.trim());
-      if (r2.trim()) parts.push("## 2. Arquitectura y carpetas\n\n" + r2.trim());
-      if (r3.trim()) parts.push("## 3. Stack y estructura\n\n" + r3.trim());
-      if (r4.trim()) parts.push("## 4. Reglas de negocio y convenciones\n\n" + r4.trim());
 
       let synthesisFallback = "";
       if (!r1.trim() && !r2.trim() && !r3.trim() && !r4.trim()) {
@@ -764,9 +811,6 @@ export class LegacyCoordinatorService {
           parts.unshift("## 1–4. Panorama del codebase (síntesis)\n\n" + synthesisFallback);
         }
       }
-
-      const hasAskProse =
-        [r1, r2, r3, r4].some((x) => x.trim()) || synthesisFallback.length > 0;
 
       const gateChunks = indexSignalsFromGate?.semanticChunks;
       const reuseGateTriple =
@@ -789,7 +833,66 @@ export class LegacyCoordinatorService {
       if (searchUi.trim()) {
         searchParts.push("Componentes/pantallas (búsqueda semántica):\n" + clipSem(searchUi));
       }
-      if (searchParts.length > 0) parts.push("## 5. Índice semántico del grafo\n\n" + searchParts.join("\n\n"));
+
+      let mddFromIndex = "";
+      if (
+        deterministicClassic &&
+        r1.trim() &&
+        isLegacyCodebaseDocIndexSynthesisEnabled() &&
+        !synthesisFallback
+      ) {
+        const maxIn = getLegacyCodebaseDocSynthesisInputMaxChars();
+        let bundle =
+          r1.trim() +
+          (searchParts.length > 0
+            ? "\n\n---\n\n### Fragmentos de búsqueda semántica (TheForge)\n\n" + searchParts.join("\n\n")
+            : "");
+        if (bundle.length > maxIn) {
+          bundle =
+            bundle.slice(0, maxIn) +
+            `\n\n… [recortado: LEGACY_CODEBASE_DOC_SYNTHESIS_INPUT_MAX_CHARS=${maxIn}]`;
+        }
+        const proseOpts: AskCodebaseOptions = {
+          ...legacyAsk,
+          responseMode: "default",
+          deterministicRetriever: false,
+        };
+        try {
+          mddFromIndex =
+            (await this.theforge.askCodebase(
+              CODEBASE_DOC_MDD_FROM_INDEX_PROMPT + bundle,
+              theforgeId,
+              proseOpts,
+            ))?.trim() ?? "";
+        } catch (err) {
+          this.logger.warn(
+            `generateCodebaseDoc: síntesis MDD desde índice omitida: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      if (deterministicClassic && r1.trim() && !synthesisFallback) {
+        if (mddFromIndex) {
+          parts.push("## MDD de partida (síntesis desde el índice)\n\n" + mddFromIndex);
+          parts.push("## Anexo: evidencia MCP (`raw_evidence`, determinista)\n\n" + r1.trim());
+        } else {
+          parts.push("## 1–4. Evidencia del índice (determinista)\n\n" + r1.trim());
+        }
+        if (searchParts.length > 0) {
+          parts.push("## 5. Índice semántico del grafo\n\n" + searchParts.join("\n\n"));
+        }
+      } else {
+        if (r1.trim()) parts.push("## 1. Modelos, rutas y configuración\n\n" + r1.trim());
+        if (r2.trim()) parts.push("## 2. Arquitectura y carpetas\n\n" + r2.trim());
+        if (r3.trim()) parts.push("## 3. Stack y estructura\n\n" + r3.trim());
+        if (r4.trim()) parts.push("## 4. Reglas de negocio y convenciones\n\n" + r4.trim());
+        if (searchParts.length > 0) parts.push("## 5. Índice semántico del grafo\n\n" + searchParts.join("\n\n"));
+      }
+
+      const hasAskProse =
+        [r1, r2, r3, r4].some((x) => x.trim()) ||
+        synthesisFallback.length > 0 ||
+        mddFromIndex.length > 0;
 
       let docBody = parts.length > 0 ? parts.join("\n\n---\n\n") : "";
       if (docBody && !hasAskProse) {

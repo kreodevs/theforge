@@ -98,6 +98,9 @@ export function askCodebaseOptionsForCodebaseDoc(responseMode?: CodebaseDocRespo
   if (responseMode === "raw_evidence") {
     return { twoPhase: true, responseMode: "raw_evidence", deterministicRetriever: true };
   }
+  if (responseMode === "ingest_mdd") {
+    return { twoPhase: true, responseMode: "evidence_first" };
+  }
   return getLegacyAskCodebaseOptions();
 }
 
@@ -113,7 +116,31 @@ export function askCodebaseOptionsForCodebaseDocClassicSegments(
   if (responseMode === "evidence_first") {
     return { twoPhase: true, responseMode: "raw_evidence", deterministicRetriever: true };
   }
+  if (responseMode === "ingest_mdd") {
+    return { twoPhase: true, responseMode: "raw_evidence", deterministicRetriever: true };
+  }
   return askCodebaseOptionsForCodebaseDoc(responseMode);
+}
+
+/**
+ * `raw_evidence` + `deterministicRetriever` hace que `ask_codebase` devuelva el mismo bundle para cualquier pregunta
+ * (el ingest no personaliza por texto de la pregunta). El modo clásico debe evitar 4× la misma respuesta.
+ */
+export function isDeterministicRawEvidenceClassicAsk(opts: AskCodebaseOptions): boolean {
+  return opts.responseMode === "raw_evidence" && opts.deterministicRetriever !== false;
+}
+
+/**
+ * Tras una única evidencia determinista, un segundo `ask_codebase` con `responseMode: default` redacta el MDD en prosa.
+ * Desactivar: `LEGACY_CODEBASE_DOC_INDEX_SYNTHESIS=0`.
+ */
+export function isLegacyCodebaseDocIndexSynthesisEnabled(): boolean {
+  return envFlag("LEGACY_CODEBASE_DOC_INDEX_SYNTHESIS", true);
+}
+
+/** Tope de caracteres de evidencia+semántica que se inyectan en el prompt de síntesis MDD. */
+export function getLegacyCodebaseDocSynthesisInputMaxChars(): number {
+  return envInt("LEGACY_CODEBASE_DOC_SYNTHESIS_INPUT_MAX_CHARS", 28000);
 }
 
 const LEGACY_ANALYZER_INPUT_MAX = () => parsePositiveInt("LEGACY_ANALYZER_INPUT_MAX_CHARS", 14000);

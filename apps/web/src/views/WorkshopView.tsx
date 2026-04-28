@@ -308,7 +308,7 @@ export default function WorkshopView({
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
   const [mddInicialCopyOk, setMddInicialCopyOk] = useState(false);
-  /** `ask_codebase` / Ariadne al generar doc. partida (`POST …/legacy/generate-codebase-doc`). Default `raw_evidence`: menos LLM en ingest; `evidence_first` dispara MDD 7§ en orchestrator (mucho más lento). */
+  /** `ask_codebase` / Ariadne al generar doc. partida (`POST …/legacy/generate-codebase-doc`). Default `raw_evidence`. `ingest_mdd` = una sola pasada `evidence_first` (MDD ingest), sin agente escalonado ni síntesis Nest. */
   const [codebaseDocResponseMode, setCodebaseDocResponseMode] = useState<CodebaseDocResponseMode>("raw_evidence");
   const copyMddInicialMarkdown = useCallback(async () => {
     const text = (mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc || "").trim();
@@ -1406,7 +1406,13 @@ export default function WorkshopView({
               </div>
             </div>
           </div>
-          <div className="flex-1 overflow-auto p-4 min-h-0 flex flex-col min-w-0">
+          <div
+            className={
+              centralPanel === "brd" || centralPanel === "to-be"
+                ? "flex-1 overflow-hidden p-4 min-h-0 flex flex-col min-w-0"
+                : "flex-1 overflow-auto p-4 min-h-0 flex flex-col min-w-0"
+            }
+          >
             {centralPanel === "mdd-inicial" && project?.projectType === "LEGACY" && projectId && (
               <div className="rounded-lg bg-zinc-800/80 border border-zinc-600 p-6 text-zinc-300 text-sm space-y-4 flex flex-col min-h-0 flex-1">
                 <div className="shrink-0 space-y-3">
@@ -1484,6 +1490,23 @@ export default function WorkshopView({
                             <span className="text-sm text-zinc-200">Evidencia bruta (recomendado)</span>
                             <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
                               Retrieve determinista; suele ser el mejor equilibrio tiempo/calidad para doc. partida.
+                            </span>
+                          </span>
+                        </label>
+                        <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-zinc-800/60 sm:px-2">
+                          <input
+                            type="radio"
+                            name="codebase-doc-response-mode"
+                            className="mt-1 shrink-0 accent-amber-500"
+                            checked={codebaseDocResponseMode === "ingest_mdd"}
+                            onChange={() => setCodebaseDocResponseMode("ingest_mdd")}
+                          />
+                          <span className="min-w-0">
+                            <span className="text-sm text-zinc-200">MDD ingest (solo Ariadne)</span>
+                            <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
+                              Una llamada <code className="text-zinc-400">evidence_first</code>: salida normalizada del
+                              orchestrator. Sin agente escalonado ni segunda pasada en The Forge; si falla, fallback
+                              clásico <code className="text-zinc-400">raw_evidence</code>.
                             </span>
                           </span>
                         </label>
@@ -2125,28 +2148,32 @@ export default function WorkshopView({
               )
             )}
             {centralPanel === "brd" && projectId && (
-              <BrdTobeStagePanel
-                panel="brd"
-                projectId={projectId}
-                requireBrdTobeGate={project?.requireBrdTobeGate === true}
-                activeStageId={activeStageId}
-                stage={activeWorkshopStage}
-                isLegacyProject={isLegacyProject}
-                codebaseDocChars={codebaseDocCharCount}
-                dbgaContentChars={dbgaContentCharCount}
-              />
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <BrdTobeStagePanel
+                  panel="brd"
+                  projectId={projectId}
+                  requireBrdTobeGate={project?.requireBrdTobeGate === true}
+                  activeStageId={activeStageId}
+                  stage={activeWorkshopStage}
+                  isLegacyProject={isLegacyProject}
+                  codebaseDocChars={codebaseDocCharCount}
+                  dbgaContentChars={dbgaContentCharCount}
+                />
+              </div>
             )}
             {centralPanel === "to-be" && projectId && (
-              <BrdTobeStagePanel
-                panel="tobe"
-                projectId={projectId}
-                requireBrdTobeGate={project?.requireBrdTobeGate === true}
-                activeStageId={activeStageId}
-                stage={activeWorkshopStage}
-                isLegacyProject={isLegacyProject}
-                codebaseDocChars={codebaseDocCharCount}
-                dbgaContentChars={dbgaContentCharCount}
-              />
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <BrdTobeStagePanel
+                  panel="tobe"
+                  projectId={projectId}
+                  requireBrdTobeGate={project?.requireBrdTobeGate === true}
+                  activeStageId={activeStageId}
+                  stage={activeWorkshopStage}
+                  isLegacyProject={isLegacyProject}
+                  codebaseDocChars={codebaseDocCharCount}
+                  dbgaContentChars={dbgaContentCharCount}
+                />
+              </div>
             )}
             {centralPanel === "blueprint" && (
               blueprintContent ? (

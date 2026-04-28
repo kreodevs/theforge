@@ -3,6 +3,7 @@
  * Compartidos entre WorkshopView (panel central) y ChatContainer (columna chat).
  */
 export const LEGACY_CODEBASE_DOC_STEPS = [
+  "Orchestrator MDD (evidence_first) — Ariadne ingest…",
   "Agente de descubrimiento — consultando AriadneSpecs…",
   "Agente de análisis — modelos, rutas y arquitectura…",
   "Agente redactor — ensamblando documentación de partida…",

@@ -165,10 +165,21 @@ export function BrdTobeStagePanel({
   const showBrdBlock = panel === "full" || panel === "brd";
   const showTobeBlock = panel === "full" || panel === "tobe";
   const showAsIsBlock = panel === "full" || panel === "tobe";
+  /** Pestañas dedicadas Workshop: el panel debe crecer en altura (flex) y los textareas absorben el espacio. */
+  const fillWorkspace = panel === "brd" || panel === "tobe";
+
+  const textareaGrowClass =
+    "w-full rounded-md border border-zinc-600 bg-zinc-950/80 p-2 font-mono text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-amber-500/70 resize-none";
 
   return (
-    <div className="mb-3 space-y-3 rounded-lg border border-zinc-600/60 bg-zinc-900/40 p-3 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div
+      className={
+        fillWorkspace
+          ? "flex min-h-0 flex-1 flex-col gap-3 rounded-lg border border-zinc-600/60 bg-zinc-900/40 p-3 text-sm"
+          : "mb-3 space-y-3 rounded-lg border border-zinc-600/60 bg-zinc-900/40 p-3 text-sm"
+      }
+    >
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <span className="font-medium text-zinc-200">{title}</span>
         <span className="text-xs text-zinc-500">
           BRD {brdOk ? "✓ aprobado" : "—"} · To-Be {tobeOk ? "✓ aprobado" : "—"}
@@ -176,7 +187,7 @@ export function BrdTobeStagePanel({
       </div>
 
       {showGate ? (
-        <label className="flex cursor-pointer items-start gap-2 text-xs text-zinc-300">
+        <label className="flex shrink-0 cursor-pointer items-start gap-2 text-xs text-zinc-300">
           <input
             type="checkbox"
             className="mt-0.5 h-3.5 w-3.5 rounded border-zinc-500"
@@ -192,18 +203,22 @@ export function BrdTobeStagePanel({
       ) : null}
 
       {showBrdBlock ? (
-      <div className="space-y-1">
-        <label className="text-xs text-zinc-400">BRD (markdown)</label>
+      <div className={panel === "brd" ? "flex min-h-0 flex-1 flex-col gap-1" : "space-y-1"}>
+        <label className="shrink-0 text-xs text-zinc-400">BRD (markdown)</label>
         <textarea
           value={brd}
           onChange={(e) => setBrd(e.target.value)}
           disabled={busy}
-          rows={4}
+          rows={panel === "brd" ? undefined : 4}
           spellCheck={false}
-          className="w-full rounded-md border border-zinc-600 bg-zinc-950/80 p-2 font-mono text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-amber-500/70"
+          className={
+            panel === "brd"
+              ? `${textareaGrowClass} min-h-[10rem] flex-1`
+              : `w-full rounded-md border border-zinc-600 bg-zinc-950/80 p-2 font-mono text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-amber-500/70`
+          }
           placeholder="Problema, KPIs, alcance…"
         />
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void saveBrd()}>
             Guardar BRD
           </Button>
@@ -212,7 +227,7 @@ export function BrdTobeStagePanel({
           </Button>
         </div>
         {panel === "brd" ? (
-          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-700/60 pt-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-700/60 pt-2">
             {isLegacyProject ? (
               <>
                 <Button
@@ -264,94 +279,193 @@ export function BrdTobeStagePanel({
       </div>
       ) : null}
 
-      {showTobeBlock ? (
-      <div className="space-y-1">
-        <label className="text-xs text-zinc-400">Manual To-Be</label>
-        <textarea
-          value={tobe}
-          onChange={(e) => setTobe(e.target.value)}
-          disabled={busy}
-          rows={4}
-          spellCheck={false}
-          className="w-full rounded-md border border-zinc-600 bg-zinc-950/80 p-2 font-mono text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-amber-500/70"
-          placeholder="Lógica y comportamiento deseado…"
-        />
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void saveTobe()}>
-            Guardar To-Be
-          </Button>
-          <Button type="button" size="sm" disabled={busy || !tobe.trim()} onClick={() => void approveTobe()}>
-            Aprobar To-Be
-          </Button>
-        </div>
-      </div>
-      ) : null}
-
-      {showAsIsBlock ? (
-      <div className="space-y-1">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <label className="text-xs text-zinc-400">As-Is (mapa / proceso actual)</label>
-          {isLegacyProject ? (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                loading={brdTobeSuggestLoading}
-                disabled={busy || codebaseDocChars < 300}
-                onClick={() => void runSuggestBrdTobe()}
-                title={
-                  codebaseDocChars < 300
-                    ? "Genera primero la doc. partida del codebase (≥300 caracteres)."
-                    : "Borradores desde Ariadne; revisa y aprueba después."
-                }
-              >
-                BRD + To-Be desde doc. partida
+      {panel === "tobe" ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-1">
+            <label className="shrink-0 text-xs text-zinc-400">Manual To-Be</label>
+            <textarea
+              value={tobe}
+              onChange={(e) => setTobe(e.target.value)}
+              disabled={busy}
+              spellCheck={false}
+              className={`${textareaGrowClass} min-h-[10rem] flex-1`}
+              placeholder="Lógica y comportamiento deseado…"
+            />
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void saveTobe()}>
+                Guardar To-Be
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                loading={asIsLoading}
-                disabled={busy || codebaseDocChars < 400}
-                onClick={() => void runLegacyAsIs()}
-                title={codebaseDocChars < 400 ? "Genera primero la doc. partida del codebase (≥400 caracteres)." : undefined}
-              >
-                As-Is desde doc. partida
+              <Button type="button" size="sm" disabled={busy || !tobe.trim()} onClick={() => void approveTobe()}>
+                Aprobar To-Be
               </Button>
             </div>
-          ) : (
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-1">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+              <label className="text-xs text-zinc-400">As-Is (mapa / proceso actual)</label>
+              {isLegacyProject ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    loading={brdTobeSuggestLoading}
+                    disabled={busy || codebaseDocChars < 300}
+                    onClick={() => void runSuggestBrdTobe()}
+                    title={
+                      codebaseDocChars < 300
+                        ? "Genera primero la doc. partida del codebase (≥300 caracteres)."
+                        : "Borradores desde Ariadne; revisa y aprueba después."
+                    }
+                  >
+                    BRD + To-Be desde doc. partida
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    loading={asIsLoading}
+                    disabled={busy || codebaseDocChars < 400}
+                    onClick={() => void runLegacyAsIs()}
+                    title={
+                      codebaseDocChars < 400 ? "Genera primero la doc. partida del codebase (≥400 caracteres)." : undefined
+                    }
+                  >
+                    As-Is desde doc. partida
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  loading={loadingReason === "brd-tobe-from-dbga"}
+                  disabled={busy || dbgaContentChars < 300}
+                  onClick={() => void runSuggestBrdTobeFromDbga()}
+                  title={
+                    dbgaContentChars < 300
+                      ? "Genera o guarda el DBGA en el Paso 0 (≥300 caracteres)."
+                      : "Borradores desde Domain Benchmark; revisa y aprueba después."
+                  }
+                >
+                  BRD + To-Be desde DBGA
+                </Button>
+              )}
+            </div>
+            <textarea
+              value={asis}
+              onChange={(e) => setAsis(e.target.value)}
+              disabled={busy}
+              spellCheck={false}
+              className={`${textareaGrowClass} min-h-[8rem] flex-1`}
+              placeholder="Opcional: proceso o código actual…"
+            />
             <Button
               type="button"
               variant="outline"
               size="sm"
-              loading={loadingReason === "brd-tobe-from-dbga"}
-              disabled={busy || dbgaContentChars < 300}
-              onClick={() => void runSuggestBrdTobeFromDbga()}
-              title={
-                dbgaContentChars < 300
-                  ? "Genera o guarda el DBGA en el Paso 0 (≥300 caracteres)."
-                  : "Borradores desde Domain Benchmark; revisa y aprueba después."
-              }
+              disabled={busy}
+              className="shrink-0 self-start"
+              onClick={() => void saveAsis()}
             >
-              BRD + To-Be desde DBGA
+              Guardar As-Is
             </Button>
-          )}
+          </div>
         </div>
-        <textarea
-          value={asis}
-          onChange={(e) => setAsis(e.target.value)}
-          disabled={busy}
-          rows={3}
-          spellCheck={false}
-          className="w-full rounded-md border border-zinc-600 bg-zinc-950/80 p-2 font-mono text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-amber-500/70"
-          placeholder="Opcional: proceso o código actual…"
-        />
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void saveAsis()}>
-          Guardar As-Is
-        </Button>
-      </div>
-      ) : null}
+      ) : (
+        <>
+          {showTobeBlock ? (
+            <div className="space-y-1">
+              <label className="text-xs text-zinc-400">Manual To-Be</label>
+              <textarea
+                value={tobe}
+                onChange={(e) => setTobe(e.target.value)}
+                disabled={busy}
+                rows={4}
+                spellCheck={false}
+                className="w-full rounded-md border border-zinc-600 bg-zinc-950/80 p-2 font-mono text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-amber-500/70"
+                placeholder="Lógica y comportamiento deseado…"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void saveTobe()}>
+                  Guardar To-Be
+                </Button>
+                <Button type="button" size="sm" disabled={busy || !tobe.trim()} onClick={() => void approveTobe()}>
+                  Aprobar To-Be
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {showAsIsBlock ? (
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs text-zinc-400">As-Is (mapa / proceso actual)</label>
+                {isLegacyProject ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      loading={brdTobeSuggestLoading}
+                      disabled={busy || codebaseDocChars < 300}
+                      onClick={() => void runSuggestBrdTobe()}
+                      title={
+                        codebaseDocChars < 300
+                          ? "Genera primero la doc. partida del codebase (≥300 caracteres)."
+                          : "Borradores desde Ariadne; revisa y aprueba después."
+                      }
+                    >
+                      BRD + To-Be desde doc. partida
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      loading={asIsLoading}
+                      disabled={busy || codebaseDocChars < 400}
+                      onClick={() => void runLegacyAsIs()}
+                      title={
+                        codebaseDocChars < 400 ? "Genera primero la doc. partida del codebase (≥400 caracteres)." : undefined
+                      }
+                    >
+                      As-Is desde doc. partida
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    loading={loadingReason === "brd-tobe-from-dbga"}
+                    disabled={busy || dbgaContentChars < 300}
+                    onClick={() => void runSuggestBrdTobeFromDbga()}
+                    title={
+                      dbgaContentChars < 300
+                        ? "Genera o guarda el DBGA en el Paso 0 (≥300 caracteres)."
+                        : "Borradores desde Domain Benchmark; revisa y aprueba después."
+                    }
+                  >
+                    BRD + To-Be desde DBGA
+                  </Button>
+                )}
+              </div>
+              <textarea
+                value={asis}
+                onChange={(e) => setAsis(e.target.value)}
+                disabled={busy}
+                rows={3}
+                spellCheck={false}
+                className="w-full rounded-md border border-zinc-600 bg-zinc-950/80 p-2 font-mono text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-amber-500/70"
+                placeholder="Opcional: proceso o código actual…"
+              />
+              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void saveAsis()}>
+                Guardar As-Is
+              </Button>
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
