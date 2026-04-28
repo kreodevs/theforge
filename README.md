@@ -58,6 +58,14 @@ Variables de entorno: referencia completa (qué hace cada una, valores posibles 
 
 ## Docs
 
+- [CONTRIBUTING.md](CONTRIBUTING.md) — licencia, PRs, tests.
+- [docs/JSDOC.md](docs/JSDOC.md) — convenciones de documentación en código.
 - [Índice de arquitectura](docs/notebooklm/THEFORGE-INDEX.md)
 - [Blueprint](blueprint.md)
 - [MDD](mdd.md)
+
+## Licencia y autoría
+
+- **Licencia:** [Apache License 2.0](LICENSE). Aviso: [NOTICE](NOTICE).
+- **Autores y colaboradores:** [AUTHORS.md](AUTHORS.md).
+- **Contribución y JSDoc:** [CONTRIBUTING.md](CONTRIBUTING.md) y [docs/JSDOC.md](docs/JSDOC.md).

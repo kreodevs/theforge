@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Punto de entrada de **@theforge/api** (NestJS). Carga variables de entorno desde la raíz del
+ * monorepo y locales, ajusta límites de `EventEmitter`, valida correo OTP en producción, aplica CORS estricto,
+ * body JSON/urlencoded (hasta 50mb para contenido MDD) y escucha en `PORT` (default 3000).
+ *
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
+ * @author Jorge Correa <jcorrea@e-personal.net>
+ */
 import { config } from "dotenv";
 import { resolve } from "node:path";
 import { NestFactory } from "@nestjs/core";

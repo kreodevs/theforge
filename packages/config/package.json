@@ -2,6 +2,8 @@
   "name": "@theforge/config",
   "private": true,
   "version": "0.0.0",
+  "author": "Jorge Correa <jcorrea@e-personal.net>",
+  "license": "Apache-2.0",
   "exports": {
     "./base": "./tsconfig.base.json",
     "./eslint": "./eslint.config.mjs",

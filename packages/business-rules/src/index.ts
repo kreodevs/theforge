@@ -1,3 +1,10 @@
+/**
+ * @fileoverview **@theforge/business-rules** — reglas puras de negocio: estimación de coste (MXN), estructura
+ * de equipo, horas por endpoint/pantalla/entidad y utilidades de metadatos. Depende de tipos en `@theforge/shared-types`.
+ *
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
+ */
 export {
   BUFFER_FACTOR_WHEN_NOT_VERDE,
   computeCostEstimation,

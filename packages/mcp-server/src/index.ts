@@ -1,17 +1,15 @@
 #!/usr/bin/env node
 /**
- * TheForge MCP Server — TypeScript
+ * @fileoverview **@theforge/mcp-server** — servidor MCP en TypeScript que expone la API REST de The Forge
+ * (NestJS) como herramientas MCP. Autenticación M2M: `MCP_M2M_SECRET` → JWT con refresco ante `401`.
  *
- * Expone la API REST de TheForge (NestJS) como herramientas MCP sobre HTTP (StreamableHTTP).
- * Se autentica contra la API vía MCP_M2M_SECRET → JWT, con auto-refresh en 401.
+ * **Transportes**
+ * - HTTP (`StreamableHTTP`): despliegue detrás de Docker/Traefik; flag `--http`, puerto `PORT` (default 3100).
+ * - Stdio: desarrollo local o integración como subproceso (sin args).
  *
- * Transportes:
- *   - HTTP (StreamableHTTP): ideal para despliegue en Docker/Traefik
- *   - Stdio: para desarrollo local con Hermes como subproceso
- *
- * Args:
- *   --http          Modo HTTP (StreamableHTTP). Puerto vía PORT (default 3100).
- *   sin args        Modo stdio (por defecto).
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
+ * @author Jorge Correa <jcorrea@e-personal.net>
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -107,6 +105,14 @@ function apiDelete(path: string): Promise<unknown> {
 
 // ── Tool Definitions (43 tools) ────────────────────────────────────────
 
+/**
+ * Manifiesto MCP: 43 herramientas que reflejan la API REST The Forge (proyectos, entregables, análisis,
+ * orquestador, sesiones, flujo legacy e integración Ariadne). Cada `name` debe existir como método en
+ * {@link handlers}.
+ *
+ * @see {@link ./mcp-tools.doc.ts} tabla completa nombre → verbo HTTP.
+ * @constant {import("@modelcontextprotocol/sdk/types.js").Tool[]}
+ */
 const TOOLS: Tool[] = [
   // ── Projects ──
   {
@@ -619,6 +625,12 @@ const TOOLS: Tool[] = [
 
 type Handler = (args: Record<string, unknown>) => Promise<string>;
 
+/**
+ * Mapa nombre MCP → función async que serializa JSON de respuesta API. Las claves deben coincidir con
+ * {@link TOOLS}. Errores de red o 4xx/5xx se propagan al `catch` de `CallTool`.
+ *
+ * @see {@link ./mcp-tools.doc.ts}
+ */
 const handlers: Record<string, Handler> = {
   // Projects
   async list_projects() {
@@ -884,6 +896,12 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 
+/**
+ * Ejecuta la tool solicitada usando {@link handlers}. Desconocidas → excepción; fallos de handler → `isError`.
+ *
+ * @param request - `params.name` y `params.arguments` alineados con JSON Schema de {@link TOOLS}.
+ * @see {@link ./mcp-tools.doc.ts}
+ */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   const handler = handlers[name];

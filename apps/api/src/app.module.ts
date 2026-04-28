@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Módulo raíz **AppModule** de The Forge API: configuración global, Prisma, auth JWT, módulos de
+ * dominio (proyectos, sesiones, AI, engine con semáforo MDD y costes), orquestador, análisis, flujo legacy y
+ * guard/interceptor globales (`JwtAuthGuard`, `UserContextInterceptor`).
+ *
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
+ */
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";

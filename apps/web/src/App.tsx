@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Raíz de la SPA The Forge: estado de sesión (JWT), lista de proyectos, login OTP y vista principal
+ * **Workshop** (`WorkshopView`). Comunicación HTTP centralizada vía `apiClient`.
+ *
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
+ */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronRight,
