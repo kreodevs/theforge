@@ -13,7 +13,7 @@ Paquete **`packages/mcp-server`** del monorepo The Forge: servidor **MCP propio*
 | **Paquete** | `@theforge/mcp-server` (`pnpm --filter @theforge/mcp-server build`) |
 | **Binario** | `theforge-mcp` → `dist/index.js` |
 | **Modo stdio** | Por defecto (sin args): Cursor / Claude Desktop ejecutan el binario. |
-| **Modo HTTP** | `node dist/index.js --http` o `npm run start` — **Streamable HTTP**, puerto `PORT` (default **3100**). |
+| **Modo HTTP** | `node dist/index.js --http` o `npm run start` — **Streamable HTTP**, puerto `PORT` (default **3100**; en algunos despliegues se mapea a **3000**). |
 | **Backend** | `THEFORGE_API_URL` (default `http://localhost:3000`) — misma API que el front. |
 
 ---
@@ -25,6 +25,18 @@ Paquete **`packages/mcp-server`** del monorepo The Forge: servidor **MCP propio*
 - Timeout por petición a la API: **`THEFORGE_MCP_TIMEOUT`** (ms), default **120000**.
 
 Sin `MCP_M2M_SECRET`, `login()` lanza error al primer uso autenticado.
+
+### 2.1 `fetch failed` en login (producción)
+
+El arranque hace `POST ${THEFORGE_API_URL}/auth/mcp-login`. **`fetch failed`** (Node) casi siempre es **red / URL**, no credenciales.
+
+| Causa | Qué hacer |
+|--------|-----------|
+| **`THEFORGE_API_URL` por defecto** (`http://localhost:3000`) dentro de un contenedor MCP | `localhost` es el propio contenedor. Usa el **hostname del servicio API** en la misma red Docker (ej. `http://theforge-api:3000` como en `docker-compose.yml`). En Dokploy, define el env apuntando al servicio interno que exponga Nest. |
+| API aún no levantada | Orden de arranque / `depends_on` con healthcheck; el MCP reintenta login en cada herramienta, pero conviene que la API responda antes. |
+| TLS / HTTPS mal configurado | Si la API solo escucha HTTP interno, no mezcles `https://` sin certificado válido para ese host. |
+
+El binario **ya no** usa `node --experimental-network-imports` (era ruido en logs y no hace falta para el SDK empaquetado en `node_modules`).
 
 ---
 

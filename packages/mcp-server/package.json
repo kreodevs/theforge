@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node --experimental-network-imports dist/index.js --http",
+    "start": "node dist/index.js --http",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {

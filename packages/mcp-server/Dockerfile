@@ -25,4 +25,4 @@ COPY --from=builder /app/package.json ./
 
 EXPOSE 3100
 
-CMD ["node", "--experimental-network-imports", "dist/index.js", "--http"]
+CMD ["node", "dist/index.js", "--http"]

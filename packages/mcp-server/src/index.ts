@@ -911,7 +911,13 @@ async function main(): Promise<void> {
       await login();
       console.error(`[theforge-mcp] JWT obtenido, API en ${API_BASE}`);
     } catch (err) {
-      console.error(`[theforge-mcp] Error de login inicial: ${err instanceof Error ? err.message : err}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[theforge-mcp] Error de login inicial: ${msg}`);
+      console.error(
+        `[theforge-mcp] THEFORGE_API_URL=${JSON.stringify(API_BASE)} — si ves "fetch failed" en prod: ` +
+          "la API debe ser alcanzable desde este proceso (en Docker usa el hostname del servicio, p. ej. http://theforge-api:3000, no localhost salvo que compartáis red). " +
+          "Comprueba MCP_M2M_SECRET, que la API esté arriba y /auth/mcp-login expuesto.",
+      );
       console.error(`[theforge-mcp] Continuando — se reintentará en cada llamado`);
     }
   } else {
