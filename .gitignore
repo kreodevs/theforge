@@ -54,5 +54,4 @@ state.db-wal
 answer*.json
 skills/
 .hermes_history
-state.db-wal
 sessions/*
