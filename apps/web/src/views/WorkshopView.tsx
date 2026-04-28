@@ -308,8 +308,8 @@ export default function WorkshopView({
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
   const [mddInicialCopyOk, setMddInicialCopyOk] = useState(false);
-  /** `ask_codebase` / Ariadne al generar doc. partida (`POST …/legacy/generate-codebase-doc`). */
-  const [codebaseDocResponseMode, setCodebaseDocResponseMode] = useState<CodebaseDocResponseMode>("evidence_first");
+  /** `ask_codebase` / Ariadne al generar doc. partida (`POST …/legacy/generate-codebase-doc`). Default `raw_evidence`: menos LLM en ingest; `evidence_first` dispara MDD 7§ en orchestrator (mucho más lento). */
+  const [codebaseDocResponseMode, setCodebaseDocResponseMode] = useState<CodebaseDocResponseMode>("raw_evidence");
   const copyMddInicialMarkdown = useCallback(async () => {
     const text = (mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc || "").trim();
     if (!text) return;
@@ -1466,9 +1466,9 @@ export default function WorkshopView({
                             onChange={() => setCodebaseDocResponseMode("evidence_first")}
                           />
                           <span className="min-w-0">
-                            <span className="text-sm text-zinc-200">MDD / SDD (recomendado)</span>
+                            <span className="text-sm text-zinc-200">MDD / SDD (pesado)</span>
                             <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
-                              Una petición: JSON MDD 7 secciones desde Ariadne (menos idas y vueltas que varios MCP).
+                              JSON MDD 7§ vía orchestrator/ingest: puede tardar muchos minutos en repos grandes.
                             </span>
                           </span>
                         </label>
@@ -1481,9 +1481,9 @@ export default function WorkshopView({
                             onChange={() => setCodebaseDocResponseMode("raw_evidence")}
                           />
                           <span className="min-w-0">
-                            <span className="text-sm text-zinc-200">Evidencia bruta (barato)</span>
+                            <span className="text-sm text-zinc-200">Evidencia bruta (recomendado)</span>
                             <span className="mt-0.5 block text-xs text-zinc-500 leading-relaxed">
-                              Sin LLM en retrieve; JSON para sintetizar fuera o depurar 429.
+                              Retrieve determinista; suele ser el mejor equilibrio tiempo/calidad para doc. partida.
                             </span>
                           </span>
                         </label>

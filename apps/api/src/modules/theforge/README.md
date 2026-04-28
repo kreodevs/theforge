@@ -12,6 +12,8 @@ Integración HTTP JSON-RPC con el MCP AriadneSpecs (`THEFORGE_MCP_URL`): proyect
   - **`scope.repoIds`**: en **`ask_codebase`** y **`get_modification_plan`**, lista de `roots[].id`. Si `theforgeProjectId` es el **workspace** `id`, son todos los roots; si es un **`roots[].id`**, igualmente se envían **todos** los roots del padre (proyecto completo en ingest). Para acotar a un repo, el caller puede pasar `opts.scope.repoIds` y hace overlay (ver `mergeAriadneCodebaseScope`).
 - **Sharding (`FALKOR_SHARD_BY_PROJECT`)**: el UUID en Falkor debe coincidir con el índice; si el despliegue parte por proyecto, revisar que `graphProjectId` sea el que usa el sync (repo vs workspace) según `.ariadne-project` / ingest.
 
+**Timeouts HTTP (cliente Nest → MCP):** `THEFORGE_MCP_TIMEOUT_MS` (default **60000**) aplica a **casi todas** las herramientas (`semantic_search`, `get_file_content`, …). **`ask_codebase`** usa **`THEFORGE_MCP_ASK_CODEBASE_TIMEOUT_MS`** si está definido; si no, default **900000** (15 min) en código para no cortar ingest/evidence_first mientras el servidor sigue procesando. Alinear con **`MCP_ASK_CODEBASE_TIMEOUT_MS`** en el despliegue Ariadne (MCP) / ingest.
+
 **Depuración:** con `DEBUG_MCP=1` (o `true`), `TheForgeService.postTheForgeMcp` registra cada cuerpo JSON-RPC enviado y la respuesta cruda (truncada por `DEBUG_MCP_MAX_RESPONSE_CHARS`, default 32768; request por `DEBUG_MCP_MAX_REQUEST_CHARS`, default 65536). En Docker: variable en `.env` o `docker-compose` (`DEBUG_MCP: ${DEBUG_MCP:-0}`).
 
 **Despliegue Docker:** en `docker-compose.yml`, `THEFORGE_MCP_URL` / tokens MCP no deben quedar fijados a `""` vía `${VAR:-}`; ver comentarios en el compose y `README` raíz (Dokploy → servicio `theforge-api`).

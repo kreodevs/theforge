@@ -22,6 +22,8 @@ Flujo separado para **proyectos legacy** (documentados en TheForge): modificacio
 
 Antes de llamar a la IA en documentación/MDD/entregables legacy, el coordinador **consulta FalkorDB** (`GraphMemoryService.getSddStageSnapshot`: `DB_Entity`, `API_Endpoint` de la etapa principal) y lo cruza con señales del índice MCP (`gatherLegacyIndexSignals`: `semantic_search` + rutas, sin LLM).
 
+**Optimización (doc. partida):** si el gate corrió y pasó, `assertLegacyIndexSddGate` devuelve las mismas señales MCP; en el **modo clásico** de `generate-codebase-doc`, la **§5 (índice semántico)** reutiliza esos tres bloques y **no** vuelve a lanzar 3× `semantic_search` (misma orden eje modelos/API/UI que `DEFAULT_SEMANTIC_QUERIES`). Si el gate no ejecutó gather (`LEGACY_SDD_INDEX_GATE=0`, sin snapshot, etc.), se mantiene el triple `semantic_search` explícito del modo clásico.
+
 - **Índice vacío + SDD “rico”** (varias entidades o endpoints en Falkor): **409** — el código indexado no aporta evidencia pero el SDD asimilado sí; riesgo de UUID/repo desalineado.
 - **Solapamiento bajo** entre nombres de entidades/rutas del SDD y el texto del índice: **409** — discrepancia grave entre diseño en grafo y lo que refleja Ariadne.
 

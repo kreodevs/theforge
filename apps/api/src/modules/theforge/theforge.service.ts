@@ -250,11 +250,27 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
 
   /**
    * Timeout HTTP al **MCP externo de TheForge** (JSON-RPC). No confundir con un MCP servidor propio.
+   * Herramientas rápidas (`semantic_search`, `get_file_content`, …): este valor.
    * @see docs/notebooklm/MCP-ARQUITECTURA-THEFORGE.md
    */
   private theforgeMcpTimeoutMs(): number {
     const n = parseInt(process.env.THEFORGE_MCP_TIMEOUT_MS ?? "60000", 10);
     return Number.isFinite(n) && n > 0 ? n : 60000;
+  }
+
+  /**
+   * Timeout solo para **`tools/call` → `ask_codebase`** (ingest/orchestrator pueden tardar minutos).
+   * `THEFORGE_MCP_ASK_CODEBASE_TIMEOUT_MS` explícito; si no, default **900000** (15 min) para no abortar
+   * el cliente Nest mientras el MCP sigue vivo (`THEFORGE_MCP_TIMEOUT_MS` sigue valiendo para el resto).
+   */
+  private theforgeMcpAskCodebaseTimeoutMs(): number {
+    const raw = process.env.THEFORGE_MCP_ASK_CODEBASE_TIMEOUT_MS?.trim();
+    if (raw) {
+      const n = parseInt(raw, 10);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    const fallback = 900000;
+    return fallback;
   }
 
   /** `DEBUG_MCP=1` o `true`: loguea JSON-RPC enviado y respuesta cruda del MCP Ariadne (TheForge). */
@@ -264,11 +280,15 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     return v === "1" || v === "true" || v === "yes" || v === "on";
   }
 
-  /** POST JSON-RPC al endpoint TheForge (MCP ajeno) con abort por timeout. Headers según Streamable HTTP + AriadneSpecs. */
-  private async postTheForgeMcp(body: object): Promise<Response> {
+  /**
+   * POST JSON-RPC al endpoint TheForge (MCP ajeno) con abort por timeout. Headers según Streamable HTTP + AriadneSpecs.
+   * @param opts.timeoutMs — Override del abort (p. ej. `ask_codebase` largo).
+   */
+  private async postTheForgeMcp(body: object, opts?: { timeoutMs?: number }): Promise<Response> {
     const t0 = Date.now();
     const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), this.theforgeMcpTimeoutMs());
+    const timeoutMs = opts?.timeoutMs ?? this.theforgeMcpTimeoutMs();
+    const to = setTimeout(() => ctrl.abort(), timeoutMs);
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
@@ -738,12 +758,15 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       if (merged.responseMode === "raw_evidence" && merged.deterministicRetriever !== false) {
         args.deterministicRetriever = true;
       }
-      const response = await this.postTheForgeMcp({
-        jsonrpc: "2.0",
-        id: "ask-codebase-1",
-        method: "tools/call",
-        params: { name: "ask_codebase", arguments: args },
-      });
+      const response = await this.postTheForgeMcp(
+        {
+          jsonrpc: "2.0",
+          id: "ask-codebase-1",
+          method: "tools/call",
+          params: { name: "ask_codebase", arguments: args },
+        },
+        { timeoutMs: this.theforgeMcpAskCodebaseTimeoutMs() },
+      );
       if (!response.ok) return "";
       const raw = await response.text();
       const data = parseMcpResponse(raw) as {

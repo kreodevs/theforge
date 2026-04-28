@@ -19,6 +19,7 @@ import { TheForgeService } from "../theforge/theforge.service.js";
 import {
   DEFAULT_SEMANTIC_QUERIES,
   askCodebaseOptionsForCodebaseDoc,
+  askCodebaseOptionsForCodebaseDocClassicSegments,
   gatherLegacyIndexSignals,
   getLegacyAskCodebaseOptions,
   getLegacySemanticSearchLimit,
@@ -27,6 +28,7 @@ import {
   clipLegacySemanticSectionForCodebaseDoc,
   legacyAnalyzerIndicatesEmptyIndex,
   legacyIndexHasUsableGraphEvidence,
+  type LegacyIndexSignalsGathered,
 } from "../theforge/theforge-evidence-context.util.js";
 import { inferLegacyGraphNodeNameFromFunctionsFileText } from "./legacy-graph-node-name.util.js";
 import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
@@ -81,7 +83,7 @@ const CODEBASE_DOC_CLASSIC_Q = {
 
 /** Prefacio cuando solo se pudo rellenar la §5 (grafo); las síntesis ask_codebase quedaron vacías. */
 const CODEBASE_DOC_SEMANTIC_ONLY_PREFACE =
-  "> **Por qué ves solo el índice semántico (§5):** en esta ejecución **`ask_codebase` no devolvió texto** para las secciones 1–4 ni para la síntesis de respaldo (suele ser **timeout** del MCP: sube `THEFORGE_MCP_TIMEOUT_MS` en el API, p. ej. `180000`–`300000`; revisa logs Nest/ingest o carga concurrente). El modo clásico usa **4× `ask_codebase` secuenciales** por defecto (`LEGACY_CODEBASE_DOC_PARALLEL_ASK=0`); si reactivas paralelo (`=1`), aumenta timeout. Lo que sigue **no es un resumen deliberado**: es la salida combinada de **`semantic_search`** por cada repo multi-root, con límite por query (`LEGACY_SEMANTIC_SEARCH_LIMIT`) y recorte global (`LEGACY_CODEBASE_DOC_SEMANTIC_MAX_CHARS`). En descubrimiento escalonado, `LEGACY_STAGED_DISCOVERY_SEMANTIC_FLOOR` evita `limit` demasiado bajo en herramientas. Activa `LEGACY_CODEBASE_DOC_MCP_DEBUG_UI` para ver las llamadas MCP o vuelve a generar cuando el orchestrator responda.";
+  "> **Por qué ves solo el índice semántico (§5):** en esta ejecución **`ask_codebase` no devolvió texto** para las secciones 1–4 ni para la síntesis de respaldo (suele ser **timeout** del `fetch` hacia el MCP: por defecto `ask_codebase` usa **15 min** vía `THEFORGE_MCP_ASK_CODEBASE_TIMEOUT_MS` / fallback en código; el resto de herramientas sigue en `THEFORGE_MCP_TIMEOUT_MS` ~60s. Si aún corta, sube `THEFORGE_MCP_ASK_CODEBASE_TIMEOUT_MS` y alinea con `MCP_ASK_CODEBASE_TIMEOUT_MS` en el servidor MCP Ariadne / ingest. El modo clásico usa **4× `ask_codebase` secuenciales** por defecto (`LEGACY_CODEBASE_DOC_PARALLEL_ASK=0`); si reactivas paralelo (`=1`), aumenta timeouts. Lo que sigue **no es un resumen deliberado**: es la salida combinada de **`semantic_search`** por cada repo multi-root, con límite por query (`LEGACY_SEMANTIC_SEARCH_LIMIT`) y recorte global (`LEGACY_CODEBASE_DOC_SEMANTIC_MAX_CHARS`). En descubrimiento escalonado, `LEGACY_STAGED_DISCOVERY_SEMANTIC_FLOOR` evita `limit` demasiado bajo en herramientas. Activa `LEGACY_CODEBASE_DOC_MCP_DEBUG_UI` para ver las llamadas MCP o vuelve a generar cuando el orchestrator responda.";
 
 /** Respuesta de `generate-codebase-doc` cuando el API tiene trazas MCP (debug UI). */
 export type GenerateCodebaseDocResponse = { codebaseDoc: string; mcpDebugTrace?: McpUiDebugEntry[] };
@@ -610,25 +612,28 @@ export class LegacyCoordinatorService {
   /**
    * Consulta Falkor SDD (etapa) y cruza con señales del índice Ariadne; lanza 409 si hay discrepancia grave
    * y el usuario no ha resuelto en legacyFlowState.
+   *
+   * @returns Señales MCP ya obtenidas (`gatherLegacyIndexSignals`) cuando el gate corrió y pasó — el caller puede
+   *          reutilizarlas (p. ej. §5 de doc. partida) y evitar repetir 3× `semantic_search` idénticas en coste MCP.
    */
   private async assertLegacyIndexSddGate(
     projectId: string,
     theforgeId: string,
     legacyState: LegacyFlowState,
     options?: { semanticQueries?: readonly string[] },
-  ): Promise<void> {
-    if (!isLegacySddIndexGateEnabled()) return;
-    if (this.hasLegacyIndexSddResolution(legacyState)) return;
+  ): Promise<LegacyIndexSignalsGathered | null> {
+    if (!isLegacySddIndexGateEnabled()) return null;
+    if (this.hasLegacyIndexSddResolution(legacyState)) return null;
 
     const row = await this.prisma.project.findUnique({
       where: { id: projectId },
       include: { stages: true },
     });
     const stageId = row?.stages?.length ? pickPrimaryStage(row.stages)?.id : undefined;
-    if (!stageId?.trim()) return;
+    if (!stageId?.trim()) return null;
 
     const snapshot = await this.graphMemory.getSddStageSnapshot(projectId, stageId);
-    if (!snapshot) return;
+    if (!snapshot) return null;
 
     const gathered = await gatherLegacyIndexSignals(this.theforge, theforgeId, {
       semanticQueries: options?.semanticQueries,
@@ -648,7 +653,7 @@ export class LegacyCoordinatorService {
       hasUsable,
     );
 
-    if (!gate.blocking) return;
+    if (!gate.blocking) return gathered;
 
     throw new ConflictException({
       code: "LEGACY_INDEX_SDD_MISMATCH",
@@ -685,7 +690,7 @@ export class LegacyCoordinatorService {
 
     const legacyState =
       ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
-    await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState);
+    const indexSignalsFromGate = await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState);
 
     let codebaseDoc = "";
     const codebaseDocAskOpts = askCodebaseOptionsForCodebaseDoc(req?.responseMode);
@@ -725,7 +730,7 @@ export class LegacyCoordinatorService {
     if (!codebaseDoc) {
       const parts: string[] = [];
       const semanticLim = getLegacySemanticSearchLimit();
-      const legacyAsk = codebaseDocAskOpts;
+      const legacyAsk = askCodebaseOptionsForCodebaseDocClassicSegments(req?.responseMode);
       let r1: string;
       let r2: string;
       let r3: string;
@@ -763,11 +768,18 @@ export class LegacyCoordinatorService {
       const hasAskProse =
         [r1, r2, r3, r4].some((x) => x.trim()) || synthesisFallback.length > 0;
 
-      const [searchModels, searchApi, searchUi] = await Promise.all([
-        this.theforge.semanticSearch("data models entities database schema tables", theforgeId, semanticLim),
-        this.theforge.semanticSearch("API routes endpoints controllers services", theforgeId, semanticLim),
-        this.theforge.semanticSearch("UI components screens pages views", theforgeId, semanticLim),
-      ]);
+      const gateChunks = indexSignalsFromGate?.semanticChunks;
+      const reuseGateTriple =
+        Array.isArray(gateChunks) &&
+        gateChunks.length >= 3 &&
+        gateChunks.slice(0, 3).every((c) => typeof c === "string");
+      const [searchModels, searchApi, searchUi] = reuseGateTriple
+        ? ([gateChunks[0], gateChunks[1], gateChunks[2]] as [string, string, string])
+        : await Promise.all([
+            this.theforge.semanticSearch("data models entities database schema tables", theforgeId, semanticLim),
+            this.theforge.semanticSearch("API routes endpoints controllers services", theforgeId, semanticLim),
+            this.theforge.semanticSearch("UI components screens pages views", theforgeId, semanticLim),
+          ]);
       const searchParts: string[] = [];
       const clipSem = (chunk: string) => clipLegacySemanticSectionForCodebaseDoc(chunk);
       if (searchModels.trim()) {

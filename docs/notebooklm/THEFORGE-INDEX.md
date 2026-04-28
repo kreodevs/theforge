@@ -147,7 +147,7 @@ El agente debe comprobar estado VERDE antes de generar código (architect-behavi
 - **Cola asíncrona (obligatorio en stack Dokploy/compose de referencia):** `REDIS_URL` (p. ej. `redis://theforge-redis-queue:6379`) para **BullMQ**
 - **IA:** `OPENROUTER_API_KEY` (o `AI_API_KEY` / `OPENAI_API_KEY`), opcional `OPENROUTER_*`; opcional `OPENAI_EMBEDDING_DIM` (dimensión sin probe al arranque)
 - **Grafo SDD:** `FALKORDB_SDD_URL` y/o `FALKORDB_URL` (en Docker: `redis://theforge-falkor-sdd:6379`) — **distinto** del Redis de cola
-- **TheForge (opcional, legacy):** `THEFORGE_MCP_URL`, `MCP_AUTH_TOKEN`, `THEFORGE_MCP_TIMEOUT_MS`
+- **TheForge (opcional, legacy):** `THEFORGE_MCP_URL`, `MCP_AUTH_TOKEN`, `THEFORGE_MCP_TIMEOUT_MS`, `THEFORGE_MCP_ASK_CODEBASE_TIMEOUT_MS` (solo `ask_codebase`; default API 15 min si omites)
 - **Orquestador:** `AGENT_EVALUATOR_LEGACY` (opcional; crítica en respuesta chat)
 
 Detalle TheForge vs IDE vs Falkor: [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md).

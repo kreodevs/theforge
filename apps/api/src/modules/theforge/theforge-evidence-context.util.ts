@@ -51,9 +51,12 @@ export function getLegacySemanticSearchLimit(): number {
   return envInt("LEGACY_SEMANTIC_SEARCH_LIMIT", DEFAULT_LEGACY_SEMANTIC_SEARCH_LIMIT);
 }
 
-/** Activa pipeline evidencia-primero (documentación legacy / entregables). Default: activo. */
+/**
+ * Activa descubrimiento escalonado (ReAct + muchas herramientas MCP) antes del modo clásico en doc. partida / cambio.
+ * Default **off**: evita ciclos de 10–25+ min salvo que se opte explícitamente (`LEGACY_EVIDENCE_FIRST_CONTEXT=true`).
+ */
 export function isLegacyEvidenceFirstEnabled(): boolean {
-  return envFlag("LEGACY_EVIDENCE_FIRST_CONTEXT", true);
+  return envFlag("LEGACY_EVIDENCE_FIRST_CONTEXT", false);
 }
 
 /**
@@ -96,6 +99,21 @@ export function askCodebaseOptionsForCodebaseDoc(responseMode?: CodebaseDocRespo
     return { twoPhase: true, responseMode: "raw_evidence", deterministicRetriever: true };
   }
   return getLegacyAskCodebaseOptions();
+}
+
+/**
+ * Opciones MCP para las cuatro preguntas clásicas (q1–q4) y la síntesis de fallback al armar doc. partida.
+ * Con `responseMode: "evidence_first"`, cada `ask_codebase` devuelve el **mismo** JSON MDD (7 secciones);
+ * concatenarlo bajo `## 1`–`## 4` repite el payload. El descubrimiento escalonado sigue usando
+ * {@link askCodebaseOptionsForCodebaseDoc} con el modo elegido; aquí se fuerza el perfil de `raw_evidence`.
+ */
+export function askCodebaseOptionsForCodebaseDocClassicSegments(
+  responseMode?: CodebaseDocResponseMode,
+): AskCodebaseOptions {
+  if (responseMode === "evidence_first") {
+    return { twoPhase: true, responseMode: "raw_evidence", deterministicRetriever: true };
+  }
+  return askCodebaseOptionsForCodebaseDoc(responseMode);
 }
 
 const LEGACY_ANALYZER_INPUT_MAX = () => parsePositiveInt("LEGACY_ANALYZER_INPUT_MAX_CHARS", 14000);
