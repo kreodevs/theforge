@@ -22,3 +22,7 @@ Configurar AriadneSpecs en `~/.cursor/mcp.json` (ver `theforge.md`). La regla `.
 ## Uso en la aplicación web
 
 En la entrada se distingue **proyecto nuevo** vs **legacy (TheForge)**; los proyectos legacy guardan `theforgeProjectId` y el orquestador usa el módulo **theforge** (`ask_codebase`, planes de modificación, etc.) según la ruta resuelta por `AgentSupervisor`. Detalle arquitectónico: [../MCP-ARQUITECTURA-THEFORGE.md](../MCP-ARQUITECTURA-THEFORGE.md) (MCP IDE ≠ `THEFORGE_MCP_URL` de la API).
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

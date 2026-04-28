@@ -241,3 +241,7 @@ Opcional: MaxPrime y The Forge solo levantan Postgres + Falkor. The Forge en pro
 ---
 
 *Documento generado como plan previo a cambios de código; la ejecución debe hacerse por fases con commits revisables.*
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

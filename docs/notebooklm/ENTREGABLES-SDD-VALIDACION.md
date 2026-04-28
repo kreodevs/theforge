@@ -235,3 +235,7 @@ Orden sugerido: **Fase 1** (Spec + Tasks) → **Fase 2** (conformance) → **Fas
 | **Spec obligatorio en flujo**                                                    | "Generar entregables" solo habilitado cuando Semáforo VERDE y Spec existe (specContent no vacío). Mensaje: "Genera o revisa el Spec antes de generar entregables" cuando falta Spec.                                                      |
 | **Conformance más robusto**                                                      | Heurísticas refinadas: Blueprint acepta coincidencia parcial de entidades; API case-insensitive; Flujos exige diagramas solo si §5 los menciona. Opción "Incluir verificación con IA" (GET conformance?useLlm=true) complementa con LLM.  |
 | **Estructura 7 secciones obligatoria**                                           | En el Auditor: si validateMddStructure detecta missingSections, score se capa a 94 y decision = "clarifier"; el MDD no se da por válido hasta tener las 7 secciones canónicas.                                                            |
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

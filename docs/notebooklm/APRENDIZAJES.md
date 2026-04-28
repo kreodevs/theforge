@@ -221,3 +221,7 @@ _Rellenar con datos reales._
 | Plan Fase 0         | [PLAN-FASE0-SCRAPING-DEEP-RESEARCH.md](PLAN-FASE0-SCRAPING-DEEP-RESEARCH.md)                |
 | Skill TheForge     | [.cursor/skills/theforge/SKILL.md](../../.cursor/skills/theforge/SKILL.md)                     |
 | Flujo MDD y agentes | [apps/api/src/modules/ai-analysis/README.md](../../apps/api/src/modules/ai-analysis/README.md) |
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

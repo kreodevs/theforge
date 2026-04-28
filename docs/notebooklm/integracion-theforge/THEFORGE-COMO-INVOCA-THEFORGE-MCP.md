@@ -198,3 +198,7 @@ Todas usan el mismo transporte JSON-RPC y el mismo parseo de `result.content[].t
 | **Respuesta** | JSON-RPC `result.content[]` con al menos un item `type: "text"` y `text` con el payload (array de proyectos, JSON con filesToModify/questionsToRefine, o texto libre). |
 
 Referencia en código: `apps/api/src/modules/theforge/theforge.service.ts`. Catálogo completo de herramientas MCP y uso en TheForge: **HERRAMIENTAS-MCP-THEFORGE.md**.
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

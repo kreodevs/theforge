@@ -82,3 +82,7 @@ interface DBGAState {
 2. **NO** hardcoded prompts. Use a separate `prompts/` directory or constants.
 3. **NO** blocking calls. Always return a `JobId` or use a Stream.
 4. **NO** generic `any` types. Use Zod schemas for agent outputs.
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

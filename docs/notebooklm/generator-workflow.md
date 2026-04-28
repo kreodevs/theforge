@@ -55,3 +55,7 @@ npx ts-node scripts/generate-mdd.ts --interactive
 El backend usa **OpenRouter** (`OPENROUTER_API_KEY` o `AI_API_KEY` / `OPENAI_API_KEY`). Ver `.env.example` y `docs/notebooklm/THEFORGE-INDEX.md` §3.
 
 (Nota: script `generate-mdd.ts` pendiente si aplica)
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

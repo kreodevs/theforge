@@ -398,3 +398,7 @@ La aplicación **no** usa stdio: el servicio `TheForgeService` (`apps/api/src/mo
 - **Resolución `projectId`:** `list_known_projects.id` = workspace (ingest `/projects/:id/…`); `roots[].id` = repo. El Nest resuelve en `ariadne-mcp-scope.util.ts`: workspace `id` para **`ask_codebase`** / **`get_modification_plan`**; **`roots[].id`** (o primer root) para herramientas de grafo / **`semantic_search`**, más `scope.repoIds` en ask/plan cuando aplica.
 - **Contrato de argumentos:** `theforge-mcp-client-contract.ts` + `npm run test:mcp-alignment -w @theforge/api` desde la raíz del monorepo (herramientas esperadas y claves frente a `tools/list`).
 - **Troubleshooting Cursor / HTML:** en Ariadne, `docs/MCP_AYUDA.md` §7 — respuesta `<!doctype` suele indicar que `/mcp` no enruta al servicio MCP; **401** si falta token cuando el servidor exige autenticación al **path `/mcp`** (distinto de errores Nest internos al MCP, §10).
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

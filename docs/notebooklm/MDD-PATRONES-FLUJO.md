@@ -70,3 +70,7 @@ flowchart LR
 - Cuaderno NotebookLM: _Specification-Driven Development and the Evolution of AI Engineering_.
 - Cuaderno: _Arquitectura de Prompts y Patrones_.
 - Repo: [plan-mdd-planner-executor.md](../archive/plan-mdd-planner-executor.md), [ENTREGABLES-SDD-VALIDACION.md](ENTREGABLES-SDD-VALIDACION.md), [apps/api/src/modules/ai-analysis/README.md](../../apps/api/src/modules/ai-analysis/README.md).
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

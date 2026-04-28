@@ -61,3 +61,7 @@ Ver **`MCP_AYUDA.md`** en Ariadne: `url` en `~/.cursor/mcp.json`, headers Bearer
 - **`.ariadne-project`** en la raíz del repo indexado (`MCP_AYUDA.md` §4) para fijar `projectId` en el IDE.
 
 Referencias: [THEFORGE-COMO-INVOCA-THEFORGE-MCP.md](THEFORGE-COMO-INVOCA-THEFORGE-MCP.md), [Llamadas-HTTPS-MCP-AriadneSpecs.md](Llamadas-HTTPS-MCP-AriadneSpecs.md), SPEC-MCP-001-THEFORGE.md.
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

@@ -110,3 +110,7 @@
 - OWASP Top 10
 - CWE-59 (Improper Link Resolution), CWE-78 (OS Command Injection), CWE-918 (SSRF)
 - CVE-2025-54798 (tmp), CVE-2025-64756 (glob CLI)
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

@@ -88,3 +88,7 @@ El grafo puede tener **varios proyectos** indexados. Cada uno tiene un `projectI
 - **Reglas o prompt** que indiquen al agente: (1) usar siempre `projectId` en las llamadas MCP, (2) ejecutar `validate_before_edit` antes de editar componente/función, (3) no inventar props ni firmas y usar lo que devuelve el grafo.
 
 Con esto, Cursor en "otro proyecto" puede usar el conocimiento de TheForge (grafo + ingest) para refactors seguros, diagnósticos y preguntas sobre el código indexado.
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

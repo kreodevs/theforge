@@ -62,3 +62,7 @@ Todo lo descrito anteriormente está soportado por la implementación actual de 
 - El despliegue en un solo contenedor (Dokploy) está documentado y soportado en el repositorio.
 
 La postura es audaz en valor de negocio, pero **100% alineada con lo que el código hace hoy**: no se prometen funcionalidades inexistentes.
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

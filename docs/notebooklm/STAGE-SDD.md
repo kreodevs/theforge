@@ -75,3 +75,7 @@ Consultas desde agentes: `params.projectId` **o** `params.stageId` (mínimo uno)
 ---
 
 *Mantener alineado con el código; si cambia el contrato API de aplanado, actualizar §3.*
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

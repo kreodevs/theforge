@@ -23,3 +23,7 @@ Precisión adicional requiere índice completo (parsers/ingest) y, en el servici
 ## Cruce con Falkor SDD (legacy)
 
 El flujo legacy compara señales del índice (`gatherLegacyIndexSignals`) con `DB_Entity` / `API_Endpoint` de la etapa en **FalkorDB local** (`FALKORDB_SDD_URL`). Si hay discrepancia grave o índice vacío frente a SDD poblado, la API responde **409** con `code: LEGACY_INDEX_SDD_MISMATCH` hasta que el cliente llame `POST .../legacy/resolve-index-sdd-conflict`. Detalle: `apps/api/src/modules/legacy-flow/README.md`.
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

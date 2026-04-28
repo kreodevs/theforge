@@ -168,3 +168,7 @@ Usuario (Paso 0)
 - **Legal/ToS:** Uso interno; no redistribuir contenido crudo; documentar en README o términos.
 
 Con este plan se cubre: Cheerio, detección de URLs, scraping, conversión a markdown, uso en lo solicitado en fase 0 y deep research con LLM con documento de resumen en markdown.
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

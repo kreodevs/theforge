@@ -59,3 +59,7 @@ Asegúrate de que Cursor implemente estos elementos específicos en la GUI:
 - **Gráficos:** Recharts (para mostrar la distribución de costos/tiempo).
 
 ---
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

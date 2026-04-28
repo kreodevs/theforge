@@ -132,3 +132,7 @@ Documento de trabajo para integrar **fases previas al MDD** (BRD + Manual To-Be 
 ---
 
 _Última actualización: alineado a fuente única `Stage`; priorizar L1/L2 antes de F2 si hace falta._
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

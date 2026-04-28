@@ -51,3 +51,7 @@ Solo las **nuevas** redes usarán estos pools; las ya creadas no cambian.
 En el compose se puede usar una sola red bridge con nombre fijo y redefinir `default` para que Compose no cree una red `_default` extra. Eso ya está aplicado en `docker-compose.yml` (red `default` con nombre `theforge-app-network`), reduciendo una red por despliegue.
 
 Si el error persiste, la causa está en el servidor: hace falta **Solución 1** (prune y/o ampliar pools).
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

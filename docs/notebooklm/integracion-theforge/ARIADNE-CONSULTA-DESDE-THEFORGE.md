@@ -36,3 +36,7 @@ Guía **cliente** (API Nest `TheForgeService` + agentes legacy) para no quedarse
 ## 6. Prompt del agente (Plan-and-Execute)
 
 - `apps/api/src/modules/legacy-flow/prompts/staged-discovery-mdd-prompt.md` incluye **Fase 0** (repos/roles) y contrato técnico MCP. Se hidrata con `{{theforgeProjectId}}` y `{{ariadneRepositoriesCatalog}}` (`list_known_projects`).
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

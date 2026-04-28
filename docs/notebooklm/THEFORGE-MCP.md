@@ -88,3 +88,7 @@ La **regla de Cursor** `theforge-documentation.mdc` aplica a `docs/**` (incl. `d
 ## 5. Relación con el FalkorDB interno
 
 El proyecto usa **FalkorDB** internamente (p. ej. `graph-memory`, `ai-analysis`) para memoria semántica y grafo de MDD. **TheForge MCP es un sistema aparte:** indexa repos en su propio FalkorDB y expone ese conocimiento vía MCP. Para doc de cambios/mejoras desde Cursor se usa el **MCP AriadneSpecs** (TheForge), no el grafo interno de la API.
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*

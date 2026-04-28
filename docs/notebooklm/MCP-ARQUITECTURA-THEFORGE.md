@@ -34,3 +34,7 @@ Sería un **servidor MCP distinto** (herramientas sobre el Grafo SDD, proyectos,
 | MCP TheForge (?) | STDIO/HTTP MCP  | Futuro; no es TheForge       |
 
 Ver también: [THEFORGE-MCP.md](./THEFORGE-MCP.md), carpeta [integracion-theforge/](./integracion-theforge/README.md).
+
+---
+
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*
