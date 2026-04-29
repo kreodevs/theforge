@@ -23,6 +23,7 @@ packages/database/src/generated
 .vscode
 .cursor/
 .gemini/
+*.code-workspace
 *.swp
 *.swo
 
