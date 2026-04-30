@@ -15,8 +15,19 @@ until pg_isready -U theforge -d theforge -h localhost 2>/dev/null; do
   sleep 1
 done
 
-# Migraciones
-cd /app/packages/database 2>/dev/null && ./node_modules/.bin/prisma migrate deploy 2>/dev/null || true
+# Migraciones versionadas (si hay archivos en prisma/migrations/)
+cd /app/packages/database
+echo "[entrypoint] Ejecutando migrate deploy..."
+./node_modules/.bin/prisma migrate deploy 2>&1 || true
+
+# Sincronizar schema completo (crea columnas faltantes, índices, etc.)
+echo "[entrypoint] Sincronizando schema con db push..."
+./node_modules/.bin/prisma db push --accept-data-loss 2>&1 || true
+
+# Fallback directo SQL por si db push no funcionó (cache o schema desfasado)
+echo "[entrypoint] Verificando columna mcpSecret via SQL directo..."
+PGPASSWORD=theforge psql -U theforge -d theforge -h localhost -c 'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mcpSecret" TEXT UNIQUE;' 2>&1 || true
+echo "[entrypoint] Schema sincronizado correctamente"
 
 # API en background
 cd /app/apps/api

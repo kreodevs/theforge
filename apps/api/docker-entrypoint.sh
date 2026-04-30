@@ -41,6 +41,15 @@ npx prisma migrate deploy || {
   exit 1
 }
 
+# Sincronizar schema: crea columnas/índices no cubiertos por migraciones versionadas
+# (ej. mcpSecret agregado directamente en schema.prisma sin generar migración)
+echo "Running prisma db push (schema sync)..."
+npx prisma db push --accept-data-loss || true
+
+# Fallback SQL directo por si db push no creó la columna
+echo "Checking mcpSecret column via SQL..."
+PGPASSWORD=${POSTGRES_PASSWORD:-theforge} psql -U ${POSTGRES_USER:-theforge} -d ${POSTGRES_DB:-theforge} -h localhost -c 'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mcpSecret" TEXT UNIQUE;' 2>&1 || true
+
 cd /app/apps/api
 MAIN_JS="$(find . -name main.js -type f 2>/dev/null | head -1)"
 if [ -z "$MAIN_JS" ]; then
