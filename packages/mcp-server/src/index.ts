@@ -978,14 +978,21 @@ async function main(): Promise<void> {
       const body = Buffer.concat(chunks).toString();
 
       // Delegar al transport MCP
+      let errorCaught: Error | unknown = null;
       try {
         await httpTransport.handleRequest(req, res, body);
       } catch (err) {
+        errorCaught = err;
         const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[theforge-mcp] Error en handleRequest: ${msg}`);
+        console.error(`[theforge-mcp] Stack: ${err instanceof Error ? err.stack : 'N/A'}`);
         if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: msg }));
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end(`MCP Error: ${msg}`);
         }
+      }
+      if (res.headersSent && res.statusCode >= 400 && errorCaught) {
+        console.error(`[theforge-mcp] Error después de headers sent (HTTP ${res.statusCode})`);
       }
     });
 
