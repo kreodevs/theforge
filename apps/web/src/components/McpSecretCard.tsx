@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { Button } from "../ui/Button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/Card";
+import { Button, Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui";
 import { Shield, RefreshCw, Eye, EyeOff, Copy, Check } from "lucide-react";
-import { api } from "@/lib/api";
+import { apiFetch, API_BASE } from "../utils/apiClient";
 
 /**
  * Panel de configuración del secret MCP M2M.
@@ -21,7 +20,7 @@ export function McpSecretCard() {
     setLoading(true);
     setError("");
     try {
-      const res = await api.get("/api/auth/mcp-secret");
+      const res = await apiFetch(`${API_BASE}/auth/mcp-secret`);
       if (!res.ok) throw new Error("No se pudo obtener el secret");
       const data = await res.json();
       setMcpSecret(data.mcpSecret ?? "");
@@ -41,7 +40,7 @@ export function McpSecretCard() {
     setError("");
     setMessage("");
     try {
-      const res = await api.post("/api/auth/mcp-secret/regenerate");
+      const res = await apiFetch(`${API_BASE}/auth/mcp-secret/regenerate`, { method: "POST" });
       if (!res.ok) throw new Error("No se pudo regenerar el secret");
       const data = await res.json();
       setMcpSecret(data.mcpSecret ?? "");
@@ -59,7 +58,6 @@ export function McpSecretCard() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback
       const ta = document.createElement("textarea");
       ta.value = mcpSecret;
       document.body.appendChild(ta);
@@ -85,14 +83,13 @@ export function McpSecretCard() {
           <div>
             <CardTitle>Secret MCP</CardTitle>
             <CardDescription>
-              Token para autenticar el MCP server como tu usuario. Se genera automáticamente y es rotable.
+              Token para autenticar el MCP server como tu usuario. Roteable.
             </CardDescription>
           </div>
         </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {/* Mensajes */}
           {message && (
             <div className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-3 text-sm text-[var(--accent)]">
               {message}
@@ -104,7 +101,6 @@ export function McpSecretCard() {
             </div>
           )}
 
-          {/* Secret display */}
           <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/50 p-3">
             <div className="flex items-center gap-2">
               <code className="flex-1 break-all font-mono text-sm text-[var(--foreground)]">
@@ -114,58 +110,28 @@ export function McpSecretCard() {
                     : mcpSecret.replace(/./g, "•")
                   : loading
                   ? "Cargando..."
-                  : "Sin secret disponible"}
+                  : "Sin secret"}
               </code>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                onClick={() => setVisible(!visible)}
-                disabled={!mcpSecret}
-              >
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setVisible(!visible)} disabled={!mcpSecret}>
                 {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                onClick={handleCopy}
-                disabled={!mcpSecret}
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-green-500" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleCopy} disabled={!mcpSecret}>
+                {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRegenerate}
-              loading={loading}
-              disabled={loading}
-            >
-              <RefreshCw className="h-4 w-4" />
-              Regenerar secret
+            <Button variant="outline" size="sm" onClick={handleRegenerate} loading={loading} disabled={loading}>
+              <RefreshCw className="h-4 w-4" /> Regenerar secret
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={fetchSecret}
-              disabled={loading}
-            >
+            <Button variant="ghost" size="sm" onClick={fetchSecret} disabled={loading}>
               Recargar
             </Button>
           </div>
 
           <p className="text-xs text-[var(--foreground-muted)]">
-            Este secret permite que el MCP server actúe en tu nombre. Si lo comprometes,
-            regéneralo para invalidar el anterior.
+            Este secret permite que el MCP server actúe en tu nombre. Si lo comprometes, regéneralo para invalidar el anterior.
           </p>
         </div>
       </CardContent>
