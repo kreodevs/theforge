@@ -96,7 +96,6 @@ export default function App() {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [theforgeModalTab, setTheForgeModalTab] = useState<
   const [theforgeModalTab, setTheForgeModalTab] = useState<"projects" | "repos">("projects");
   const [theforgeProjects, setTheForgeProjects] = useState<TheForgeProject[]>([]);
   const [theforgeAvailable, setTheForgeAvailable] = useState(false);
