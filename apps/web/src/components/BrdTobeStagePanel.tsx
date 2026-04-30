@@ -54,6 +54,7 @@ export function BrdTobeStagePanel({
   const legacyGenerateAsIsManual = useWorkshopStore((s) => s.legacyGenerateAsIsManual);
   const legacySuggestBrdTobeFromCodebaseDoc = useWorkshopStore((s) => s.legacySuggestBrdTobeFromCodebaseDoc);
   const suggestBrdTobeFromDbga = useWorkshopStore((s) => s.suggestBrdTobeFromDbga);
+  const generateMddFromBenchmark = useWorkshopStore((s) => s.generateMddFromBenchmark);
   const storeLoading = useWorkshopStore((s) => s.loading);
   const loadingReason = useWorkshopStore((s) => s.loadingReason);
 
@@ -165,6 +166,12 @@ export function BrdTobeStagePanel({
     await suggestBrdTobeFromDbga(projectId, { stageId: activeStageId });
     setLocalBusy(false);
   }, [activeStageId, projectId, suggestBrdTobeFromDbga]);
+
+  const runGenerateMddFromBrd = useCallback(async () => {
+    setLocalBusy(true);
+    await generateMddFromBenchmark(projectId);
+    setLocalBusy(false);
+  }, [projectId, generateMddFromBenchmark]);
 
   const toggleRequireGate = useCallback(
     async (next: boolean) => {
@@ -315,7 +322,7 @@ export function BrdTobeStagePanel({
                       : "Borradores desde Ariadne; revisa pestaña To-Be también."
                   }
                 >
-                  BRD + To-Be desde doc. partida
+                  Generar To-Be desde doc. partida
                 </Button>
                 <Button
                   type="button"
@@ -330,21 +337,33 @@ export function BrdTobeStagePanel({
                 </Button>
               </>
             ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                loading={loadingReason === "brd-tobe-from-dbga"}
-                disabled={busy || dbgaContentChars < 300}
-                onClick={() => void runSuggestBrdTobeFromDbga()}
-                title={
-                  dbgaContentChars < 300
-                    ? "Genera o guarda el DBGA en el Paso 0 (≥300 caracteres)."
-                    : "Borradores BRD+To-Be desde Domain Benchmark; revisa pestaña To-Be."
-                }
-              >
-                BRD + To-Be desde DBGA
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  loading={loadingReason === "brd-tobe-from-dbga"}
+                  disabled={busy || dbgaContentChars < 300}
+                  onClick={() => void runSuggestBrdTobeFromDbga()}
+                  title={
+                    dbgaContentChars < 300
+                      ? "Genera o guarda el DBGA en el Paso 0 (≥300 caracteres)."
+                      : "Generar Manual To-Be desde el Domain Benchmark."
+                  }
+                >
+                  Generar To-Be
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  loading={loadingReason === "mdd"}
+                  disabled={busy || !brd.trim()}
+                  onClick={() => void runGenerateMddFromBrd()}
+                  title="Generar MDD desde el BRD y Benchmark"
+                >
+                  Generar MDD
+                </Button>
+              </>
             )}
           </div>
         ) : null}
@@ -398,7 +417,7 @@ export function BrdTobeStagePanel({
                         : "Borradores desde Ariadne; revisa y aprueba después."
                     }
                   >
-                    BRD + To-Be desde doc. partida
+                    Generar To-Be desde doc. partida
                   </Button>
                   <Button
                     type="button"
@@ -428,7 +447,7 @@ export function BrdTobeStagePanel({
                       : "Borradores desde Domain Benchmark; revisa y aprueba después."
                   }
                 >
-                  BRD + To-Be desde DBGA
+                  Generar To-Be
                 </Button>
               )}
             </div>

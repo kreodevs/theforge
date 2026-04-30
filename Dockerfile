@@ -1,3 +1,4 @@
+# ========== CACHE-BUST: 2026-05-01 ==========
 # ========== Build API ==========
 FROM node:20-alpine AS api-builder
 WORKDIR /app

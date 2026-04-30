@@ -266,6 +266,7 @@ export default function WorkshopView({
   const clearDbgaContent = useWorkshopStore((s) => s.clearDbgaContent);
   const generateBenchmark = useWorkshopStore((s) => s.generateBenchmark);
   const generateMddFromBenchmark = useWorkshopStore((s) => s.generateMddFromBenchmark);
+  const suggestBrdTobeFromDbga = useWorkshopStore((s) => s.suggestBrdTobeFromDbga);
   const mddJustGeneratedFromBenchmark = useWorkshopStore((s) => s.mddJustGeneratedFromBenchmark);
   const clearMddJustGeneratedFromBenchmark = useWorkshopStore((s) => s.clearMddJustGeneratedFromBenchmark);
   const phase0DeepResearch = useWorkshopStore((s) => s.phase0DeepResearch);
@@ -1101,22 +1102,11 @@ export default function WorkshopView({
                         Paso 0
                       </button>
                     )}
-                    {tabVisible("spec") && (
-                      <button
-                        type="button"
-                        onClick={() => setCentralPanel("spec")}
-                        title="Spec (SDD: what/why); alimenta el MDD"
-                        className={getTabClass("spec", specContent)}
-                      >
-                        <ListOrdered className="w-4 h-4" />
-                        Spec
-                      </button>
-                    )}
                     {tabVisible("brd") && (
                       <button
                         type="button"
                         onClick={() => setCentralPanel("brd")}
-                        title="BRD por etapa; entrevista en el panel de chat"
+                        title="BRD por etapa; requisitos de negocio"
                         className={getTabClass("brd", activeWorkshopStage?.brdContent)}
                       >
                         <ClipboardList className="w-4 h-4" />
@@ -1143,6 +1133,17 @@ export default function WorkshopView({
                       >
                         <FileText className="w-4 h-4" />
                         MDD
+                      </button>
+                    )}
+                    {tabVisible("spec") && (
+                      <button
+                        type="button"
+                        onClick={() => setCentralPanel("spec")}
+                        title="Spec (SDD: what/why); alimenta el MDD"
+                        className={getTabClass("spec", specContent)}
+                      >
+                        <ListOrdered className="w-4 h-4" />
+                        Spec
                       </button>
                     )}
                     {tabVisible("architecture") && (
@@ -1263,7 +1264,7 @@ export default function WorkshopView({
                       : "Complejidad media (producto nuevo): sin MDD en barra — insumo Paso 0 / Spec. Entregables: Spec → API → Guía UX/UI → Tasks."
                     : isLegacyProject
                       ? "Legacy: MDD Inicial opcional (Ariadne → doc. de partida); luego Modificación + MDD de cambio y entregables. Cada etapa del taller = una modificación con doc actualizada vía Ariadne."
-                      : "Orden: MDD → Spec → Arq. → Casos → H.U. → Blueprint → Guía UX/UI → API → Flujos → Tasks → Infra (Paso 0 opcional)"}
+                      : "Orden: Paso 0 → BRD → To-Be → MDD → Spec → Arq. → Casos → H.U. → Blueprint → Guía UX/UI → API → Flujos → Tasks → Infra"}
               </p>
               <div className="flex flex-wrap items-center gap-2 shrink-0 sm:justify-end">
                 {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "to-be"] as const).includes(
@@ -1890,30 +1891,29 @@ export default function WorkshopView({
                   <button
                     type="button"
                     onClick={async () => {
-                      const result = await generateMddFromBenchmark(projectId);
-                      if (result) setCentralPanel("mdd");
+                      await suggestBrdTobeFromDbga(projectId, { stageId: activeStageId ?? undefined });
+                      setCentralPanel("brd");
                     }}
-                    disabled={loading && loadingReason === "mdd"}
+                    disabled={loading && loadingReason === "brd-tobe-from-dbga"}
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-amber-400 hover:bg-amber-500/20 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Generar MDD con agentes (Benchmark opcional: si no hay, los agentes generan un MDD base)"
+                    title="Generar BRD desde el Benchmark (DBGA); luego revisa y aprueba en el tab BRD"
                   >
-                    {loading && loadingReason === "mdd" ? (
+                    {loading && loadingReason === "brd-tobe-from-dbga" ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Play className="w-4 h-4" />
                     )}
-                    Generar MDD con agentes
+                    Generar BRD con agentes
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setCentralPanel("mdd");
-                      fetchWelcome(projectId, "mdd");
+                      setCentralPanel("brd");
                     }}
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 text-sm"
-                    title="Ir a MDD y editar manualmente o usar el chat"
+                    title="Ir a BRD y editar manualmente o usar el chat"
                   >
-                    Ir a MDD (editar)
+                    Ir a BRD (editar)
                   </button>
                   {dbgaContent != null && dbgaContent !== "" && (
                     <button
