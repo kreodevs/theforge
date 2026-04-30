@@ -1116,7 +1116,9 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       );
     }
     const dbga = String(project.dbgaContent ?? "").trim();
-    if (dbga.length < 300) {
+    const phase0 = String(project.phase0SummaryContent ?? "").trim();
+    const effectiveDbga = dbga.length >= 300 ? dbga : phase0;
+    if (effectiveDbga.length < 300) {
       throw new BadRequestException(
         "Se requiere DBGA en el proyecto (mín. ~300 caracteres). Genera el benchmark en el Paso 0 o pégalo en el proyecto.",
       );
@@ -1135,7 +1137,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       "Responde **solo** con este formato exacto (delimitadores literales):\n" +
       "<<<BRD>>>\n(markdown BRD)\n<<<END_BRD>>>\n<<<TOBE>>>\n(markdown To-Be)\n<<<END_TOBE>>>\n\n" +
       "--- DBGA ---\n\n" +
-      dbga.slice(0, 120_000);
+      effectiveDbga.slice(0, 120_000);
     const raw = await this.ai.generateResponse(prompt, [], { systemPrompt: DBGA_BRD_TOBE_SUGGEST_SYSTEM });
     const parsed = parseBrdTobeTaggedSuggest((raw ?? "").trim());
     if (!parsed) {

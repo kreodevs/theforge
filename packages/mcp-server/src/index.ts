@@ -946,6 +946,16 @@ const handlers: Record<string, Handler> = {
       includeBenchmark: true,
     }) as Record<string, unknown>;
 
+    // Step 3b: Sync phase0SummaryContent → dbgaContent (el deep research guarda en phase0, pero suggest-brd-tobe lee dbga)
+    console.error("[theforge-mcp] [generate_phase0] Paso 3b: Sincronizando phase0 → dbgaContent...");
+    const projectBeforeSync = await apiGet(`/projects/${projectId}`) as Record<string, unknown>;
+    const phase0 = (projectBeforeSync.phase0SummaryContent as string || "").trim();
+    const dbga = (projectBeforeSync.dbgaContent as string || "").trim();
+    if (phase0.length >= 300 && dbga.length < 300) {
+      await apiPatch(`/projects/${projectId}`, { dbgaContent: phase0 });
+      console.error("[theforge-mcp] [generate_phase0] dbgaContent actualizado desde phase0SummaryContent");
+    }
+
     // Step 4: Generar BRD + To-Be desde DBGA
     console.error("[theforge-mcp] [generate_phase0] Paso 4: Generando BRD + To-Be...");
     const brdTobeResult = await apiPost(`/projects/${projectId}/suggest-brd-tobe-from-dbga`) as Record<string, unknown>;
