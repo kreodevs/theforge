@@ -21,9 +21,13 @@ echo "[entrypoint] Ejecutando migrate deploy..."
 ./node_modules/.bin/prisma migrate deploy 2>&1 || true
 
 # Sincronizar schema completo (crea columnas faltantes, índices, etc.)
-# Se ignora error para no matar el entrypoint (set -e está activo)
+# Sincronizar schema completo (crea columnas faltantes, índices, etc.)
 echo "[entrypoint] Sincronizando schema con db push..."
 ./node_modules/.bin/prisma db push --accept-data-loss 2>&1 || true
+
+# Fallback directo SQL por si db push no funcionó (cache o schema desfasado)
+echo "[entrypoint] Verificando columna mcpSecret via SQL directo..."
+psql -U theforge -d theforge -c 'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mcpSecret" TEXT UNIQUE;' 2>&1 || true
 echo "[entrypoint] Schema sincronizado correctamente"
 
 # API en background
