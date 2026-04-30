@@ -234,7 +234,6 @@ export default function WorkshopView({
   const adrsRaw = useWorkshopStore((s) => s.adrs);
   const adrs = useMemo(() => adrsRaw || [], [adrsRaw]);
   const fetchAdrs = useWorkshopStore((s) => s.fetchAdrs);
-  const fetchWelcome = useWorkshopStore((s) => s.fetchWelcome);
   const sendMessage = useWorkshopStore((s) => s.sendMessage);
   const setMddContent = useWorkshopStore((s) => s.setMddContent);
   const revertMddContent = useWorkshopStore((s) => s.revertMddContent);
@@ -265,7 +264,6 @@ export default function WorkshopView({
   const persistDbgaContent = useWorkshopStore((s) => s.persistDbgaContent);
   const clearDbgaContent = useWorkshopStore((s) => s.clearDbgaContent);
   const generateBenchmark = useWorkshopStore((s) => s.generateBenchmark);
-  const generateMddFromBenchmark = useWorkshopStore((s) => s.generateMddFromBenchmark);
   const suggestBrdTobeFromDbga = useWorkshopStore((s) => s.suggestBrdTobeFromDbga);
   const mddJustGeneratedFromBenchmark = useWorkshopStore((s) => s.mddJustGeneratedFromBenchmark);
   const clearMddJustGeneratedFromBenchmark = useWorkshopStore((s) => s.clearMddJustGeneratedFromBenchmark);
