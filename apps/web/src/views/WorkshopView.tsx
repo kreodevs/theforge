@@ -728,6 +728,7 @@ export default function WorkshopView({
     ? {
       totalMxn: costDisplayFallback.totalMxn,
       totalMxnMarket: costDisplayFallback.totalMxn,
+      totalMxnIA: 0,
       totalHours: costDisplayFallback.totalHours,
       teamStructure: costDisplayFallback.teamStructure,
       rolesHours: { architect: 0, back: 0, front: 0 } as Record<string, number>,
@@ -736,6 +737,7 @@ export default function WorkshopView({
       ? {
         totalMxn: liveMetrics.totalMXN,
         totalMxnMarket: liveMetrics.totalMXNMarket,
+        totalMxnIA: liveMetrics.totalMXNIA ?? 0,
         totalHours: liveMetrics.totalHours,
         teamStructure: liveMetrics.roles as Record<string, number>,
         rolesHours: liveMetrics.rolesHours as Record<string, number>,
@@ -743,6 +745,7 @@ export default function WorkshopView({
       : {
         ...costDisplayFallback,
         totalMxnMarket: costDisplayFallback.totalMxn,
+        totalMxnIA: 0,
         rolesHours: {} as Record<string, number>,
       };
 
@@ -2707,7 +2710,7 @@ export default function WorkshopView({
               <p className="text-zinc-400 text-sm">
                 {costDisplay.totalHours.toFixed(1)} h totales
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <p className="text-xs text-zinc-500 mb-0.5">Nómina interna</p>
                   <p className="text-xl font-bold text-amber-400">
@@ -2715,7 +2718,13 @@ export default function WorkshopView({
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500 mb-0.5">Precio mercado</p>
+                  <p className="text-xs text-zinc-500 mb-0.5">Costo IA</p>
+                  <p className="text-xl font-bold text-purple-400">
+                    ${costDisplay.totalMxnIA.toLocaleString("es-MX")}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500 mb-0.5">Valor mercado</p>
                   <p className="text-xl font-bold text-green-400">
                     ${(costDisplay.totalMxnMarket ?? costDisplay.totalMxn).toLocaleString("es-MX")}
                   </p>

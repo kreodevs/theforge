@@ -93,6 +93,8 @@ export interface LiveMetricsResult {
   /** Horas por rol (reparto delivery). */
   rolesHours: Record<string, number>;
   status: SemaphoreStatusLive;
+  /** Costo estimado de generación con IA (USD → MXN ~ $20/USD). */
+  totalMXNIA: number;
   /** Pistas breves para preparar documentos y mejorar efectividad con IA (OpenRouter / cascadas). */
   readinessHints: string[];
 }
@@ -102,6 +104,19 @@ export const BASE_SALARY_NET_MONTH = 21_000;
 export const SOCIAL_LOAD_FACTOR = 1.4;
 export const HOURS_PER_MONTH = 160;
 export const INTERNAL_HOUR_RATE = 185;
+
+/** Tokens de salida estimados por entidad para generación IA. */
+export const AI_TOKENS_PER_ENTITY = 2_000;
+/** Tokens de salida estimados por pantalla para generación IA. */
+export const AI_TOKENS_PER_SCREEN = 3_000;
+/** Tokens de salida estimados por endpoint extra para generación IA. */
+export const AI_TOKENS_PER_ENDPOINT = 500;
+/** Tokens base (overhead) por proyecto para generación IA. */
+export const AI_BASE_OVERHEAD_TOKENS = 5_000;
+/** Costo por token de salida IA en USD (~$1/M tokens). */
+export const AI_COST_PER_TOKEN_USD = 0.000001;
+/** Tipo de cambio USD → MXN para mostrar costo IA en MXN. */
+export const MXN_PER_USD = 20;
 
 /** Tarifa hora a precio de mercado (consultoría / venta), MXN/hr. */
 export const MARKET_HOUR_RATE = 1_050;
@@ -119,8 +134,4 @@ export const PRECISION_GREEN_MIN = 95;
 export const RISK_FACTOR_LOW_PRECISION = 1.25;
 export const RISK_PRECISION_THRESHOLD = 85;
 
-/**
- * Tarifa interna por hora-hombre (nómina). Se usa para calcular el costo real del equipo
- * en `totalMXN`. El mercado (`totalMXNMarket`) usa MARKET_HOUR_RATE.
- */
-export const INTERNAL_HOUR_RATE = 185;
+

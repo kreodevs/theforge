@@ -16,6 +16,12 @@ import {
   RISK_FACTOR_LOW_PRECISION,
   RISK_PRECISION_THRESHOLD,
   INTERNAL_HOUR_RATE,
+  AI_TOKENS_PER_ENTITY,
+  AI_TOKENS_PER_SCREEN,
+  AI_TOKENS_PER_ENDPOINT,
+  AI_BASE_OVERHEAD_TOKENS,
+  AI_COST_PER_TOKEN_USD,
+  MXN_PER_USD,
 } from "./estimation.types.js";
 import {
   allocateDeliveryRoleHours,
@@ -1038,11 +1044,19 @@ export class EstimationService {
     const totalMXN = Math.round(internalPayroll * riskFactor * 100) / 100;
     // Mercado: referencia a tarifa de mercado
     const totalMXNMarket = Math.round(totalHours * MARKET_HOUR_RATE * riskFactor * 100) / 100;
+    // Costo IA: tokens de salida estimados a $1/M tokens, convertido a MXN
+    const totalAITokens =
+      AI_BASE_OVERHEAD_TOKENS +
+      entityCount * AI_TOKENS_PER_ENTITY +
+      screenCount * AI_TOKENS_PER_SCREEN +
+      extraEndpointCount * AI_TOKENS_PER_ENDPOINT;
+    const totalMXNIA = Math.round(totalAITokens * AI_COST_PER_TOKEN_USD * MXN_PER_USD * 100) / 100;
 
     return {
       precision,
       totalMXN,
       totalMXNMarket,
+      totalMXNIA,
       totalHours: Math.round(totalHours * 100) / 100,
       roles,
       rolesHours,

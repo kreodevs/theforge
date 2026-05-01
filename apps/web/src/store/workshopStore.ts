@@ -86,6 +86,8 @@ export interface LiveMetricsResult {
   precision: number;
   totalMXN: number;
   totalMXNMarket: number;
+  /** Costo estimado de generación con IA (USD → MXN). */
+  totalMXNIA: number;
   totalHours: number;
   roles: Record<string, number>;
   rolesHours: Record<string, number>;
