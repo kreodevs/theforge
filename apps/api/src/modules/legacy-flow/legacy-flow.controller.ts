@@ -105,8 +105,11 @@ export class LegacyFlowController {
    * Rellena borradores BRD y Manual To-Be en la etapa legacy (o primaria) a partir de `codebaseDoc`; no aprueba HITL.
    */
   @Post("suggest-brd-tobe-from-codebase-doc")
-  async suggestBrdTobeFromCodebaseDoc(@Param("projectId") projectId: string) {
-    return this.coordinator.suggestBrdTobeFromCodebaseDoc(projectId);
+  async suggestBrdTobeFromCodebaseDoc(
+    @Param("projectId") projectId: string,
+    @Body() body: { stageId?: string },
+  ) {
+    return this.coordinator.suggestBrdTobeFromCodebaseDoc(projectId, body.stageId);
   }
 
   /**

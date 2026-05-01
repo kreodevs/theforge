@@ -156,9 +156,9 @@ export function BrdTobeStagePanel({
 
   const runSuggestBrdTobe = useCallback(async () => {
     setLocalBusy(true);
-    await legacySuggestBrdTobeFromCodebaseDoc(projectId);
+    await legacySuggestBrdTobeFromCodebaseDoc(projectId, activeStageId ?? undefined);
     setLocalBusy(false);
-  }, [legacySuggestBrdTobeFromCodebaseDoc, projectId]);
+  }, [legacySuggestBrdTobeFromCodebaseDoc, projectId, activeStageId]);
 
   const runSuggestBrdTobeFromDbga = useCallback(async () => {
     if (!activeStageId) return;

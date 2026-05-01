@@ -513,6 +513,20 @@ export default function WorkshopView({
     void fetchConformance(projectId);
   }, [projectId, project?.id, fetchConformance]);
 
+  // Mobile: al volver de background, re-verificar si hay tareas completadas
+  useEffect(() => {
+    if (!projectId) return;
+    const handleVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      const store = useWorkshopStore.getState();
+      if (store.loading) {
+        fetchProject(projectId).catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [projectId, fetchProject]);
+
   useEffect(() => {
     if (!project || project.id !== projectId) return;
     if (initialPanelSetForProject.current === projectId) return;

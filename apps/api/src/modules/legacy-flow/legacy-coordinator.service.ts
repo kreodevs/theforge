@@ -590,7 +590,7 @@ export class LegacyCoordinatorService {
   /**
    * Borradores BRD + Manual To-Be a partir de `legacyFlowState.codebaseDoc` (Ariadne); persiste en la etapa gate sin aprobar.
    */
-  async suggestBrdTobeFromCodebaseDoc(projectId: string): Promise<{
+  async suggestBrdTobeFromCodebaseDoc(projectId: string, stageIdHint?: string): Promise<{
     brdContent: string;
     toBeManualContent: string;
     stageId: string;
@@ -603,7 +603,13 @@ export class LegacyCoordinatorService {
         "Se requiere documentación de partida del codebase (mín. ~300 caracteres). Ejecuta primero generate-codebase-doc.",
       );
     }
-    const stage = await this.resolveLegacyGateStage(projectId);
+    let stage;
+    if (stageIdHint?.trim()) {
+      stage = await this.prisma.stage.findUnique({ where: { id: stageIdHint.trim() } });
+      if (!stage) throw new BadRequestException(`Etapa ${stageIdHint} no encontrada.`);
+    } else {
+      stage = await this.resolveLegacyGateStage(projectId);
+    }
     if (!stage?.id) {
       throw new BadRequestException("No hay etapa para persistir BRD / To-Be.");
     }

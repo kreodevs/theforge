@@ -547,6 +547,7 @@ interface WorkshopState {
   /** POST …/legacy/suggest-brd-tobe-from-codebase-doc — borradores desde doc. Ariadne (sin aprobar). */
   legacySuggestBrdTobeFromCodebaseDoc: (
     projectId: string,
+    stageId?: string,
   ) => Promise<{ brdContent: string; toBeManualContent: string; stageId: string } | null>;
   /** POST …/projects/:id/suggest-brd-tobe-from-dbga — greenfield desde `dbgaContent`. */
   suggestBrdTobeFromDbga: (
@@ -2744,13 +2745,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
-  legacySuggestBrdTobeFromCodebaseDoc: async (projectId) => {
+  legacySuggestBrdTobeFromCodebaseDoc: async (projectId, stageId) => {
     if (!projectId?.trim()) return null;
     set({ loading: true, loadingReason: "legacy-brd-tobe-suggest", error: null });
+    const body: Record<string, string> = {};
+    if (stageId?.trim()) body.stageId = stageId.trim();
     try {
       const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/legacy/suggest-brd-tobe-from-codebase-doc`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
