@@ -63,6 +63,9 @@ model Stage {
   /// Semáforo SDD (ROJO / AMARILLO / VERDE) derivado del MDD.
   status           Status       @default(ROJO)
   precisionScore   Int          @default(0)
+  /// Estado del flujo legacy para esta etapa: { description?, filesToModify?, questions?, answers? }
+  /// Cada etapa de un proyecto legacy tiene su propio cambio (CHANGE) o es la línea base (BASELINE).
+  legacyChangeState Json?
   estimation       Estimation?
   /// Redundancia intencional con `Project.projectType === LEGACY` para queries y checkpoints por etapa.
   isLegacy         Boolean      @default(false)

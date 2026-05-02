@@ -545,6 +545,34 @@ export class LegacyCoordinatorService {
     return this.prisma.stage.findUnique({ where: { id: picked.id } });
   }
 
+  /**
+   * Lee el estado de cambio legacy: prioriza stage.legacyChangeState (nuevo),
+   * con fallback a project.legacyFlowState (legacy) para compatibilidad.
+   */
+  private getLegacyChangeState(stage: { legacyChangeState?: unknown } | null, project: { legacyFlowState?: unknown }): LegacyFlowState {
+    if (stage?.legacyChangeState && typeof stage.legacyChangeState === "object") {
+      return stage.legacyChangeState as LegacyFlowState;
+    }
+    return ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+  }
+
+  /**
+   * Persiste el estado de cambio legacy en stage.legacyChangeState Y project.legacyFlowState
+   * (dual-write durante migración; luego se eliminará project.legacyFlowState).
+   */
+  async persistLegacyChangeState(projectId: string, stageId: string, state: LegacyFlowState): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.stage.update({
+        where: { id: stageId },
+        data: { legacyChangeState: state as object },
+      }),
+      this.prisma.project.update({
+        where: { id: projectId },
+        data: { legacyFlowState: state as object },
+      }),
+    ]);
+  }
+
   private async enforceLegacyBrdTobeGate(projectId: string): Promise<void> {
     const row = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -1101,7 +1129,8 @@ export class LegacyCoordinatorService {
    */
   async generateMdd(projectId: string): Promise<{ mddContent: string }> {
     const { project, theforgeId } = await this.getLegacyProject(projectId);
-    const state = ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const gateStage = await this.resolveLegacyGateStage(projectId);
+    const state = this.getLegacyChangeState(gateStage, project);
     const description = state.description ?? "";
     const files = normalizeFilesToModify(state.filesToModify, theforgeId);
     const answers = state.answers ?? {};
@@ -1116,7 +1145,6 @@ export class LegacyCoordinatorService {
         : [...DEFAULT_SEMANTIC_QUERIES];
     await this.assertLegacyIndexSddGate(projectId, theforgeId, state, { semanticQueries: gateSemanticQueries });
     await this.enforceLegacyBrdTobeGate(projectId);
-    const gateStage = await this.resolveLegacyGateStage(projectId);
     const brdPre = gateStage ? composeBrdToBeAsIsPreamble(gateStage) : "";
 
     // Múltiples consultas a TheForge para contexto amplio (evidencia del índice + ask_codebase + refactor seguro)
@@ -1258,6 +1286,10 @@ export class LegacyCoordinatorService {
     const mddDraft = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
     const mddContent = await this.reviewer.reviewMdd(description, mddDraft?.trim() ?? "");
     const cleaned = cleanDocumentContent(mddContent);
+    // Dual-write durante migración: stage.legacyChangeState + project.legacyFlowState
+    if (gateStage?.id) {
+      await this.persistLegacyChangeState(projectId, gateStage.id, state).catch(() => {});
+    }
     await this.projects.update(projectId, { mddContent: cleaned });
     return { mddContent: cleaned };
   }
