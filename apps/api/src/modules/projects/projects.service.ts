@@ -1165,31 +1165,76 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     if (!stage?.id) {
       throw new BadRequestException("No hay etapa para persistir BRD / To-Be.");
     }
-    const prompt =
-      "Eres analista de negocio. A partir del **Domain Benchmark / guía de dominio (DBGA)** siguiente, redacta **dos** borradores en español, en markdown:\n" +
-      "1) **BRD:** problema, alcance de producto, supuestos, riesgos y métricas de éxito alineadas con el DBGA.\n" +
-      "2) **Manual To-Be:** comportamiento y reglas de negocio **deseadas** del producto; coherente con el BRD; no inventes módulos o APIs que no se deduzcan del DBGA (indica «no consta» si falta detalle).\n\n" +
+    const dbgaSlice = effectiveDbga.slice(0, 120_000);
+
+    /** Extrae contenido de un solo tag (BRD o TOBE) del texto generado. */
+    const extractTagged = (text: string, tag: "BRD" | "TOBE"): string | null => {
+      const cleaned = text.replace(/```\w*\s*\n?/g, "").trim();
+      const match = cleaned.match(new RegExp(`<<<\\s*${tag}\\s*>>>\\s*([\\s\\S]*?)\\s*<<<_?END_${tag}_?>>>`, "i"));
+      return match?.[1]?.trim() ?? null;
+    };
+
+    // Paso 1: Generar BRD
+    const brdPrompt =
+      "Eres analista de negocio. A partir del **Domain Benchmark / guía de dominio (DBGA)** siguiente, " +
+      "genera **solo el BRD** en español, en markdown:\n" +
+      "**BRD:** problema, alcance de producto, supuestos, riesgos y métricas de éxito alineadas con el DBGA.\n\n" +
       "Responde **solo** con este formato exacto (delimitadores literales):\n" +
-      "<<<BRD>>>\n(markdown BRD)\n<<<END_BRD>>>\n<<<TOBE>>>\n(markdown To-Be)\n<<<END_TOBE>>>\n\n" +
+      "<<<BRD>>>\n(markdown BRD)\n<<<END_BRD>>>\n\n" +
       "--- DBGA ---\n\n" +
-      effectiveDbga.slice(0, 120_000);
-    let raw: string;
-    let parsed: { brd: string; tobe: string } | null = null;
+      dbgaSlice;
+    let brd = "";
     for (let attempt = 1; attempt <= 2; attempt++) {
-      raw = await this.ai.generateResponse(prompt, [], { systemPrompt: DBGA_BRD_TOBE_SUGGEST_SYSTEM });
-      parsed = parseBrdTobeTaggedSuggest((raw ?? "").trim());
-      if (parsed) break;
+      const raw = await this.ai.generateResponse(brdPrompt, [], {
+        systemPrompt: DBGA_BRD_TOBE_SUGGEST_SYSTEM,
+      });
+      const extracted = extractTagged((raw ?? "").trim(), "BRD");
+      if (extracted) {
+        brd = cleanDocumentContent(extracted);
+        break;
+      }
       if (attempt < 2) {
-        console.warn(`[suggestBrdTobeFromDbga] Intento ${attempt}/2: respuesta mal formada, reintentando...`);
+        console.warn(`[suggestBrdTobeFromDbga] Intento BRD ${attempt}/2: respuesta mal formada, reintentando...`);
       }
     }
-    if (!parsed) {
+    if (!brd) {
       throw new BadRequestException(
-        "No se pudieron extraer BRD y To-Be del modelo tras 2 intentos. Reintenta o acorta el DBGA.",
+        "No se pudo generar el BRD. Reintenta o acorta el DBGA.",
       );
     }
-    const brd = cleanDocumentContent(parsed.brd);
-    const tobe = cleanDocumentContent(parsed.tobe);
+
+    // Paso 2: Generar To-Be con el BRD como contexto
+    const tobePrompt =
+      "Eres analista de negocio. A partir del **Domain Benchmark / guía de dominio (DBGA)** siguiente " +
+      "y del **BRD** ya generado, genera **solo el Manual To-Be** en español, en markdown:\n" +
+      "**Manual To-Be:** comportamiento y reglas de negocio **deseadas** del producto; coherente con el BRD; " +
+      "no inventes módulos o APIs que no se deduzcan del DBGA (indica «no consta» si falta detalle).\n\n" +
+      "**BRD generado (como referencia):**\n\n" +
+      brd.slice(0, 15_000) +
+      "\n\n---\n\n" +
+      "Responde **solo** con este formato exacto (delimitadores literales):\n" +
+      "<<<TOBE>>>\n(markdown To-Be)\n<<<END_TOBE>>>\n\n" +
+      "--- DBGA ---\n\n" +
+      dbgaSlice;
+    let tobe = "";
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const raw = await this.ai.generateResponse(tobePrompt, [], {
+        systemPrompt: DBGA_BRD_TOBE_SUGGEST_SYSTEM,
+      });
+      const extracted = extractTagged((raw ?? "").trim(), "TOBE");
+      if (extracted) {
+        tobe = cleanDocumentContent(extracted);
+        break;
+      }
+      if (attempt < 2) {
+        console.warn(`[suggestBrdTobeFromDbga] Intento To-Be ${attempt}/2: respuesta mal formada, reintentando...`);
+      }
+    }
+    if (!tobe) {
+      throw new BadRequestException(
+        "No se pudo generar el To-Be. Reintenta o acorta el DBGA.",
+      );
+    }
     await this.prisma.stage.update({
       where: { id: stage.id },
       data: {
