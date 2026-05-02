@@ -177,7 +177,8 @@ services:
       - default
       - dokploy-network
     depends_on:
-      - theforge-api
+      theforge-api:
+        condition: service_healthy
     env_file:
       - path: .env
         required: false
