@@ -60,6 +60,7 @@ export const updateProjectSchema = z.object({
   infraContent: z.string().optional().nullable(),
   uxUiGuideContent: z.string().optional().nullable(),
   phase0SummaryContent: z.string().optional().nullable(),
+  aemContent: z.string().optional().nullable(),
   figmaMapping: z.record(z.unknown()).optional().nullable(),
 });
 
@@ -94,6 +95,7 @@ export const projectResponseSchema = z.object({
   infraContent: z.string().nullable(),
   uxUiGuideContent: z.string().nullable(),
   phase0SummaryContent: z.string().nullable(),
+  aemContent: z.string().nullable(),
   figmaMapping: z.record(z.unknown()).nullable(),
   createdAt: z.string().datetime(),
 });

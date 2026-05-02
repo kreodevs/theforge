@@ -16,7 +16,8 @@ export type WorkshopDocTab =
   | "use-cases"
   | "user-stories"
   | "infra"
-  | "adrs";
+  | "adrs"
+  | "aem";
 
 export type ProjectTypeForTabs = "NEW" | "LEGACY";
 

@@ -652,6 +652,18 @@ const TOOLS: Tool[] = [
   },
   // ── TheForge Integration ──
   {
+    name: "set_aem_content",
+    description: "Actualiza el contenido AEM (Análisis y Estrategia de Mercado) del proyecto. Usado por aplicaciones externas de análisis de mercado.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        content: { type: "string", description: "Contenido AEM en Markdown" },
+      },
+      required: ["projectId", "content"],
+    },
+  },
+  {
     name: "list_theforge_projects",
     description: "Lista proyectos indexados en TheForge/Ariadne (multi-root)",
     inputSchema: { type: "object", properties: {}, required: [] },
@@ -977,6 +989,10 @@ const handlers: Record<string, Handler> = {
     return JSON.stringify(summary);
   },
   // TheForge
+  async set_aem_content(args) {
+    const { projectId, content } = args as { projectId: string; content: string };
+    return JSON.stringify(await apiPatch(`/projects/${projectId}`, { aemContent: content }));
+  },
   async list_theforge_projects() {
     return JSON.stringify(await apiGet("/theforge/projects"));
   },

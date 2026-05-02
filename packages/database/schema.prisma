@@ -139,6 +139,7 @@ model Project {
   infraContent         String?   @db.Text
   uxUiGuideContent     String?   @db.Text
   phase0SummaryContent String?   @db.Text
+  aemContent           String?   @db.Text
   /// Estado del flujo legacy: { description?, filesToModify?, questions?, answers? }
   legacyFlowState      Json?
   agentCheckpoints     AgentStateCheckpoint[]

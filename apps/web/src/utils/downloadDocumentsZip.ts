@@ -11,6 +11,7 @@ export interface DocumentsForZip {
   logicFlowsContent: string | null;
   tasksContent: string | null;
   infraContent: string | null;
+  aemContent: string | null;
 }
 
 /**
@@ -36,6 +37,7 @@ export async function downloadDocumentsZip(
     ["logic-flows.md", documents.logicFlowsContent ?? ""],
     ["tasks.md", documents.tasksContent ?? ""],
     ["infra.md", documents.infraContent ?? ""],
+    ["aem.md", documents.aemContent ?? ""],
   ];
 
   let count = 0;

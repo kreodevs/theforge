@@ -158,6 +158,9 @@ export default function WorkshopView({
   const userStoriesContentField = useWorkshopStore((s) => s.userStoriesContent);
   const phase0SummaryContentField = useWorkshopStore((s) => s.phase0SummaryContent);
   const uxUiGuideContentField = useWorkshopStore((s) => s.uxUiGuideContent);
+  const aemContentField = useWorkshopStore((s) => s.aemContent);
+  const setAemContent = useWorkshopStore((s) => s.setAemContent);
+  const persistAemContent = useWorkshopStore((s) => s.persistAemContent);
 
   const specContent = specContentField ?? project?.specContent ?? null;
   const dbgaContent = dbgaContentField ?? project?.dbgaContent ?? null;
@@ -171,6 +174,7 @@ export default function WorkshopView({
   const userStoriesContent = userStoriesContentField ?? project?.userStoriesContent ?? null;
   const phase0SummaryContent = phase0SummaryContentField ?? project?.phase0SummaryContent ?? null;
   const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
+  const aemContent = aemContentField ?? project?.aemContent ?? null;
 
   const projectStatus: Status = project?.status ?? "ROJO";
   const semaphoreGreen = liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
@@ -323,6 +327,7 @@ export default function WorkshopView({
   const [useCasesViewMode, setUseCasesViewMode] = useState<"preview" | "source">("preview");
   const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
   const [mddInicialViewMode, setMddInicialViewMode] = useState<"preview" | "source">("preview");
+  const [aemViewMode, setAemViewMode] = useState<"preview" | "source">("preview");
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
   const [mddInicialCopyOk, setMddInicialCopyOk] = useState(false);
@@ -366,7 +371,8 @@ export default function WorkshopView({
     | "use-cases"
     | "user-stories"
     | "infra"
-    | "adrs";
+    | "adrs"
+    | "aem";
   const [centralPanel, setCentralPanel] = useState<DocPanel>("mdd");
   /** Por debajo de `lg`: una columna con control de Chat / Documentos / Semáforo. */
   type WorkshopMobileColumn = "chat" | "workspace" | "metrics";
@@ -721,6 +727,18 @@ export default function WorkshopView({
     return () => clearTimeout(t);
   }, [specContent, projectId, project?.specContent, project, persistSpecContent]);
 
+  const handleAemBlur = useCallback(() => {
+    if ((aemContent ?? "") !== (project?.aemContent ?? "")) {
+      persistAemContent(aemContent ?? "");
+    }
+  }, [aemContent, project?.aemContent, project, persistAemContent]);
+
+  useEffect(() => {
+    if (!projectId || !project || (aemContent ?? "") === (project.aemContent ?? "")) return;
+    const t = setTimeout(() => persistAemContent(aemContent ?? ""), 1500);
+    return () => clearTimeout(t);
+  }, [aemContent, projectId, project?.aemContent, project, persistAemContent]);
+
   const handleBlueprintBlur = useCallback(() => {
     if (blueprintContent != null) persistBlueprintContent(blueprintContent);
   }, [blueprintContent, persistBlueprintContent]);
@@ -759,6 +777,7 @@ export default function WorkshopView({
 
   const mddDirty = (mddContent ?? "") !== (project?.mddContent ?? "");
   const specDirty = (specContent ?? "") !== (project?.specContent ?? "");
+  const aemDirty = (aemContent ?? "") !== (project?.aemContent ?? "");
   const mddEmpty = !((mddContent ?? "").trim() || (project?.mddContent ?? "").trim());
   const precisionScore = mddEmpty ? 0 : (liveMetrics?.precision ?? project?.precisionScore ?? 0);
   const costDisplayFallback = calculateCostFromMdd(mddContent, {
@@ -956,6 +975,7 @@ export default function WorkshopView({
                   logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
                   tasksContent: tasksContent ?? project?.tasksContent ?? null,
                   infraContent: infraContent ?? project?.infraContent ?? null,
+                  aemContent: aemContent ?? project?.aemContent ?? null,
                 },
                 projectName ?? project?.name ?? "Workshop",
               );
@@ -1253,6 +1273,16 @@ export default function WorkshopView({
                         Guía UX/UI
                       </button>
                     )}
+                    {tabVisible("aem") && (
+                      <button
+                        type="button"
+                        onClick={() => setCentralPanel("aem")}
+                        className={getTabClass("aem", aemContent)}
+                      >
+                        <FileText className="w-4 h-4" />
+                        AEM
+                      </button>
+                    )}
                     {tabVisible("api-contracts") && (
                       <button
                         type="button"
@@ -1324,12 +1354,13 @@ export default function WorkshopView({
                       : "Orden: Paso 0 → BRD → To-Be → MDD → Spec → Arq. → Casos → H.U. → Blueprint → Guía UX/UI → API → Flujos → Tasks → Infra"}
               </p>
               <div className="flex flex-wrap items-center gap-2 shrink-0 sm:justify-end">
-                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "to-be"] as const).includes(
+                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "to-be"] as const).includes(
                   centralPanel as any,
                 ) && (
                     (centralPanel === "spec" ||
                       centralPanel === "mdd" ||
                       centralPanel === "ux-ui-guide" ||
+                      centralPanel === "aem" ||
                       (centralPanel === "blueprint" && blueprintContent) ||
                       (centralPanel === "tasks" && tasksContent) ||
                       (centralPanel === "api-contracts" && apiContractsContent) ||
@@ -1352,6 +1383,7 @@ export default function WorkshopView({
                           else if (centralPanel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
                           else if (centralPanel === "user-stories") setUserStoriesViewMode((m) => (m === "preview" ? "source" : "preview"));
                           else if (centralPanel === "ux-ui-guide") setUxUiGuideViewMode((m) => m === "design" ? "preview" : m === "preview" ? "source" : "design");
+                          else if (centralPanel === "aem") setAemViewMode((m) => (m === "preview" ? "source" : "preview"));
                           else if (centralPanel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
                           else if (centralPanel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
                           else if (centralPanel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
@@ -1368,6 +1400,7 @@ export default function WorkshopView({
                               : centralPanel === "use-cases" ? useCasesViewMode
                                 : centralPanel === "user-stories" ? userStoriesViewMode
                                   : centralPanel === "ux-ui-guide" ? uxUiGuideViewMode
+                                    : centralPanel === "aem" ? aemViewMode
                                     : centralPanel === "blueprint" ? blueprintViewMode
                                       : centralPanel === "api-contracts" ? apiContractsViewMode
                                         : centralPanel === "logic-flows" ? logicFlowsViewMode
@@ -2353,6 +2386,57 @@ export default function WorkshopView({
                   onGenerate={() => generateSpec(projectId)}
                   loading={loading}
                   hasMdd={!!(dbgaContent?.trim() || effectiveMddTrimmed)}
+                />
+              )
+            )}
+            {centralPanel === "aem" && (
+              aemContent || aemViewMode === "source" ? (
+                aemViewMode === "preview" ? (
+                  <div className="flex flex-col gap-2 h-full min-h-0">
+                    <MddViewer content={aemContent || ""} />
+                    <div className="self-end flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => persistAemContent(aemContent || "")}
+                        disabled={!aemDirty}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-500/20"
+                      >
+                        <Save className="w-4 h-4" />
+                        Guardar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2 h-full min-h-0">
+                    <div className="shrink-0 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => persistAemContent(aemContent || "")}
+                        disabled={!aemDirty}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-500/20"
+                      >
+                        <Save className="w-4 h-4" />
+                        Guardar
+                      </button>
+                    </div>
+                    <textarea
+                      value={aemContent || ""}
+                      onChange={(e) => setAemContent(e.target.value)}
+                      onBlur={handleAemBlur}
+                      placeholder="# AEM\n\nAnálisis y Estrategia de Mercado — contenido sobre mercado, competencia, posicionamiento..."
+                      className="flex-1 min-h-0 w-full bg-zinc-800/50 border border-zinc-600 rounded-lg p-4 text-sm font-mono text-zinc-200 placeholder-zinc-500 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
+                      spellCheck={false}
+                    />
+                  </div>
+                )
+              ) : (
+                <DocEmptyState
+                  icon={FileText}
+                  title="AEM"
+                  description="Análisis y Estrategia de Mercado — define el mercado, competencia, posicionamiento y estrategia comercial del proyecto."
+                  onGenerate={() => {}}
+                  loading={false}
+                  hasMdd={false}
                 />
               )
             )}

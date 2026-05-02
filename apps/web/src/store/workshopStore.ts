@@ -270,6 +270,7 @@ export interface Project {
   useCasesContent: string | null;
   userStoriesContent: string | null;
   infraContent: string | null;
+  aemContent: string | null;
   legacyFlowState?: LegacyFlowState | null;
   estimation: Estimation | null;
   /** Presente en respuesta API completa; el front usa `activeStageId` para foco MDD. */
@@ -399,6 +400,7 @@ interface WorkshopState {
   useCasesContent: string | null;
   userStoriesContent: string | null;
   infraContent: string | null;
+  aemContent: string | null;
   /** Conformance (SDD Fase 2): Blueprint/API/Flujos/Infra vs MDD; `blueprintDataModel` = §3 vs Blueprint (gating API). */
   conformance: {
     blueprint: ConformanceResult;
@@ -535,6 +537,8 @@ interface WorkshopState {
   generateUserStories: (projectId: string, options?: { preview?: boolean }) => Promise<Project | null>;
   setSpecContent: (content: string | null) => void;
   persistSpecContent: (content: string) => Promise<void>;
+  setAemContent: (content: string | null) => void;
+  persistAemContent: (content: string) => Promise<void>;
   generateSpec: (projectId: string) => Promise<Project | null>;
   setTasksContent: (content: string | null) => void;
   persistTasksContent: (content: string) => Promise<void>;
@@ -612,6 +616,7 @@ const initialState = {
   useCasesContent: null as string | null,
   userStoriesContent: null as string | null,
   infraContent: null as string | null,
+  aemContent: null as string | null,
   conformance: null as {
     blueprint: ConformanceResult;
     blueprintDataModel: ConformanceResult;
@@ -689,6 +694,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       useCasesContent: p.useCasesContent ?? null,
       userStoriesContent: p.userStoriesContent ?? null,
       infraContent: p.infraContent ?? null,
+      aemContent: p.aemContent ?? null,
       lastLegacyDeliverablesDebug: p.legacyFlowState?.lastDeliverablesDebug ?? null,
     });
   },
@@ -859,6 +865,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         useCasesContent: cleanDoc(data.useCasesContent ?? null),
         userStoriesContent: cleanDoc(data.userStoriesContent ?? null),
         infraContent: cleanDoc(data.infraContent ?? null),
+        aemContent: cleanDoc(data.aemContent ?? null),
         error: null,
         legacyMcpDebugTrace: null,
       });
@@ -934,6 +941,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         useCasesContent: cleanDoc(p.useCasesContent ?? null),
         userStoriesContent: cleanDoc(p.userStoriesContent ?? null),
         infraContent: cleanDoc(p.infraContent ?? null),
+        aemContent: cleanDoc(p.aemContent ?? null),
         synced: true,
         error: null,
       });
@@ -2069,6 +2077,26 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (r.ok) {
         const data: Project = await r.json();
         set({ project: data, specContent: cleanDoc(data.specContent ?? cleanPath), synced: true });
+      } else set({ synced: true });
+    } catch {
+      set({ synced: true });
+    }
+  },
+  setAemContent: (content) => set({ aemContent: content }),
+  persistAemContent: async (content) => {
+    const { projectId, project } = get();
+    if (!projectId || !project || content === (project.aemContent ?? "")) return;
+    set({ synced: false });
+    try {
+      const cleanPath = cleanDoc(content) || content;
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aemContent: cleanPath }),
+      });
+      if (r.ok) {
+        const data: Project = await r.json();
+        set({ project: data, aemContent: cleanDoc(data.aemContent ?? cleanPath), synced: true });
       } else set({ synced: true });
     } catch {
       set({ synced: true });
