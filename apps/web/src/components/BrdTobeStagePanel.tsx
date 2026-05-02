@@ -322,7 +322,7 @@ export function BrdTobeStagePanel({
                       : "Borradores desde Ariadne; revisa pestaña To-Be también."
                   }
                 >
-                  Generar To-Be desde doc. partida
+                  Generar BRD desde doc. partida
                 </Button>
                 <Button
                   type="button"
