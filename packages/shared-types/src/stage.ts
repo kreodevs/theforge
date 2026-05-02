@@ -8,6 +8,8 @@ export const createStageBodySchema = z.object({
   ordinal: z.number().int().min(1).optional(),
   /** Copiar MDD y semáforo desde otra etapa del mismo proyecto */
   copyMddFromStageId: z.string().uuid().optional(),
+  /** Copiar legacyChangeState desde otra etapa del mismo proyecto (flujo legacy) */
+  copyLegacyChangeFromStageId: z.string().uuid().optional(),
   /** Si true (default), esta etapa pasa a ACTIVE y las demás ACTIVE → SUPERSEDED */
   activate: z.boolean().optional().default(true),
 });

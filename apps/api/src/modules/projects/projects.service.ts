@@ -401,6 +401,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     let mddContent: string | null = null;
     let stStatus: Status = Status.ROJO;
     let precisionScore = 0;
+    let legacyChangeState: any = null;
     if (dto.copyMddFromStageId?.trim()) {
       const copyFrom = dto.copyMddFromStageId.trim();
       const src = project.stages.find((s) => s.id === copyFrom);
@@ -408,6 +409,12 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       mddContent = src.mddContent;
       stStatus = src.status;
       precisionScore = src.precisionScore;
+    }
+    if (dto.copyLegacyChangeFromStageId?.trim()) {
+      const copyFrom = dto.copyLegacyChangeFromStageId.trim();
+      const src = project.stages.find((s) => s.id === copyFrom);
+      if (!src) throw new BadRequestException("copyLegacyChangeFromStageId no pertenece al proyecto");
+      legacyChangeState = src.legacyChangeState as object | null;
     }
 
     const isLegacy = project.projectType === "LEGACY";
@@ -421,6 +428,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         mddContent,
         status: stStatus,
         precisionScore,
+        legacyChangeState,
         isLegacy,
         theforgeProjectId: project.theforgeProjectId,
       },

@@ -122,9 +122,16 @@ export default function WorkshopView({
   );
   const patchWorkshopStage = useWorkshopStore((s) => s.patchWorkshopStage);
   const generateMddFromBenchmark = useWorkshopStore((s) => s.generateMddFromBenchmark);
+  /** Estado legacy efectivo: lee de la etapa activa primero, con fallback a project.legacyFlowState */
+  const activeLegacyState = useMemo(() => {
+    if (project?.projectType === "LEGACY" && activeWorkshopStage?.legacyChangeState) {
+      return activeWorkshopStage.legacyChangeState;
+    }
+    return project?.legacyFlowState ?? null;
+  }, [project?.projectType, activeWorkshopStage?.legacyChangeState, project?.legacyFlowState]);
   const codebaseDocCharCount = useMemo(
-    () => (project?.legacyFlowState?.codebaseDoc ?? "").trim().length,
-    [project?.legacyFlowState?.codebaseDoc],
+    () => (activeLegacyState?.codebaseDoc ?? "").trim().length,
+    [activeLegacyState?.codebaseDoc],
   );
   const liveMetrics = useWorkshopStore((s) => s.liveMetrics);
   const mddContent = useWorkshopStore((s) => s.mddContent);
@@ -180,13 +187,13 @@ export default function WorkshopView({
   );
   const isReverseEngineering =
     isLegacyProject &&
-    !!((project?.legacyFlowState?.codebaseDoc ?? "").trim()) &&
+    !!((activeLegacyState?.codebaseDoc ?? "").trim()) &&
     !effectiveMddTrimmed;
   const effectiveComplexityForTabs = isReverseEngineering ? "HIGH" : complexity;
   const canGenerate = useMemo(() => {
     if (isLegacyProject) {
       const hasMdd = effectiveMddTrimmed.length > 0;
-      const hasCodebaseDoc = (project?.legacyFlowState?.codebaseDoc ?? "").trim().length > 0;
+      const hasCodebaseDoc = (activeLegacyState?.codebaseDoc ?? "").trim().length > 0;
       return hasMdd || hasCodebaseDoc;
     }
     if (complexity === "LOW" || complexity === "MEDIUM") {
@@ -202,7 +209,7 @@ export default function WorkshopView({
     hasSpec,
     dbgaContent,
     effectiveMddTrimmed,
-    project?.legacyFlowState?.codebaseDoc,
+    activeLegacyState?.codebaseDoc,
   ]);
 
   /* Use stable selectors to avoid loops */
@@ -323,7 +330,7 @@ export default function WorkshopView({
   /** `ask_codebase` / Ariadne al generar doc. partida (`POST …/legacy/generate-codebase-doc`). Default `raw_evidence`. `ingest_mdd` = una sola pasada `evidence_first` (MDD ingest), sin agente escalonado ni síntesis Nest. */
   const [codebaseDocResponseMode, setCodebaseDocResponseMode] = useState<CodebaseDocResponseMode>("raw_evidence");
   const copyMddInicialMarkdown = useCallback(async () => {
-    const text = (mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc || "").trim();
+    const text = (mddInicialLocalContent || activeLegacyState?.codebaseDoc || "").trim();
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -332,7 +339,7 @@ export default function WorkshopView({
     } catch {
       /* clipboard */
     }
-  }, [mddInicialLocalContent, project?.legacyFlowState?.codebaseDoc]);
+  }, [mddInicialLocalContent, activeLegacyState?.codebaseDoc]);
   const [conformanceUseLlm, setConformanceUseLlm] = useState(false);
   type DocPanel =
     | "benchmark"
@@ -385,9 +392,9 @@ export default function WorkshopView({
   }, [loading, loadingReason]);
 
   useEffect(() => {
-    const codebaseDoc = project?.legacyFlowState?.codebaseDoc ?? "";
+    const codebaseDoc = activeLegacyState?.codebaseDoc ?? "";
     if (codebaseDoc) setMddInicialLocalContent(codebaseDoc);
-  }, [project?.legacyFlowState?.codebaseDoc]);
+  }, [activeLegacyState?.codebaseDoc]);
 
   useEffect(() => {
     brdTobeServerSnap.current = { stageId: "", brd: "", tobe: "", asis: "" };
@@ -1013,6 +1020,7 @@ export default function WorkshopView({
                   const res = await createWorkshopStage({
                     name: newStageName.trim() || undefined,
                     copyMddFromStageId: copyMddSourceStageId.trim() || undefined,
+                    copyLegacyChangeFromStageId: copyMddSourceStageId.trim() || undefined,
                   });
                   if (res) setShowStageModal(false);
                 }}
@@ -1114,7 +1122,7 @@ export default function WorkshopView({
                         <button
                           type="button"
                           onClick={() => setCentralPanel("legacy")}
-                          className={getTabClass("legacy", project?.legacyFlowState?.description ?? "")}
+                          className={getTabClass("legacy", activeLegacyState?.description ?? "")}
                           title="Describir modificación → AriadneSpecs → MDD → entregables"
                         >
                           <Edit3 className="w-4 h-4" />
@@ -1124,7 +1132,7 @@ export default function WorkshopView({
                           <button
                             type="button"
                             onClick={() => setCentralPanel("mdd-inicial")}
-                            className={getTabClass("mdd-inicial", project?.legacyFlowState?.codebaseDoc ?? "")}
+                            className={getTabClass("mdd-inicial", activeLegacyState?.codebaseDoc ?? "")}
                             title="Documentación de partida del codebase (AriadneSpecs)"
                           >
                             <FileText className="w-4 h-4" />
@@ -1322,7 +1330,7 @@ export default function WorkshopView({
                       (centralPanel === "user-stories" && userStoriesContent) ||
                       (centralPanel === "logic-flows" && logicFlowsContent) ||
                       (centralPanel === "infra" && infraContent) ||
-                      (centralPanel === "mdd-inicial" && (project?.legacyFlowState?.codebaseDoc || mddInicialLocalContent)) ||
+                      (centralPanel === "mdd-inicial" && (activeLegacyState?.codebaseDoc || mddInicialLocalContent)) ||
                       (centralPanel === "brd" && !!activeStageId) ||
                       (centralPanel === "to-be" && !!activeStageId)) &&
                     centralPanel !== "tasks" && (
@@ -1465,6 +1473,7 @@ export default function WorkshopView({
                     onClick={async () => {
                       const res = await legacyGenerateCodebaseDoc(projectId, {
                         responseMode: codebaseDocResponseMode,
+                        stageId: activeStageId ?? undefined,
                       });
                       if (res) setCentralPanel("mdd-inicial");
                     }}
@@ -1478,14 +1487,14 @@ export default function WorkshopView({
                       <RefreshCw className="w-4 h-4 shrink-0" />
                     )}
                     <span className="sm:hidden">
-                      {project?.legacyFlowState?.codebaseDoc ? "Regenerar" : "Generar"} doc. partida
+                      {activeLegacyState?.codebaseDoc ? "Regenerar" : "Generar"} doc. partida
                     </span>
                     <span className="hidden sm:inline">
-                      {project?.legacyFlowState?.codebaseDoc ? "Regenerar" : "Generar"} documentación de partida
+                      {activeLegacyState?.codebaseDoc ? "Regenerar" : "Generar"} documentación de partida
                     </span>
                   </button>
                 )}
-                {centralPanel === "mdd-inicial" && mddInicialViewMode === "source" && (mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc) && (
+                {centralPanel === "mdd-inicial" && mddInicialViewMode === "source" && (mddInicialLocalContent || activeLegacyState?.codebaseDoc) && (
                   <button
                     type="button"
                     onClick={async () => {
@@ -1493,7 +1502,7 @@ export default function WorkshopView({
                       await legacyUpdateCodebaseDoc(projectId, mddInicialLocalContent);
                       setMddInicialSaving(false);
                     }}
-                    disabled={mddInicialSaving || mddInicialLocalContent === (project?.legacyFlowState?.codebaseDoc ?? "")}
+                    disabled={mddInicialSaving || mddInicialLocalContent === (activeLegacyState?.codebaseDoc ?? "")}
                     title="Guardar cambios en la documentación"
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -1578,7 +1587,7 @@ export default function WorkshopView({
                     <p className="min-w-0 flex-1 font-medium text-amber-400/90 leading-snug pr-1">
                       MDD Inicial — Documentación del codebase (partida)
                     </p>
-                    {(mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc)?.trim() ? (
+                    {(mddInicialLocalContent || activeLegacyState?.codebaseDoc)?.trim() ? (
                       <button
                         type="button"
                         title="Copiar el markdown del MDD inicial al portapapeles (p. ej. para pegar en un chat con IA)"
@@ -1672,12 +1681,12 @@ export default function WorkshopView({
                     </fieldset>
                   </details>
                 </div>
-                {project.legacyFlowState?.codebaseDoc || mddInicialLocalContent ? (
+                {activeLegacyState?.codebaseDoc || mddInicialLocalContent ? (
                   <>
                     <div className="flex-1 overflow-auto min-h-0 flex flex-col">
                       {mddInicialViewMode === "preview" ? (
                         <div className="flex-1 overflow-auto rounded border border-zinc-600 bg-zinc-900/80 p-4 min-h-0">
-                          <MddViewer content={mddInicialLocalContent || project.legacyFlowState?.codebaseDoc || ""} />
+                          <MddViewer content={mddInicialLocalContent || activeLegacyState?.codebaseDoc || ""} />
                         </div>
                       ) : (
                         <textarea
@@ -1694,13 +1703,13 @@ export default function WorkshopView({
                       <button
                         type="button"
                         onClick={async () => {
-                          if ((mddInicialLocalContent || project.legacyFlowState?.codebaseDoc) && mddInicialViewMode === "source" && mddInicialLocalContent !== (project?.legacyFlowState?.codebaseDoc ?? "")) {
+                          if ((mddInicialLocalContent || activeLegacyState?.codebaseDoc) && mddInicialViewMode === "source" && mddInicialLocalContent !== (activeLegacyState?.codebaseDoc ?? "")) {
                             await legacyUpdateCodebaseDoc(projectId, mddInicialLocalContent);
                           }
                           await legacyGenerateDeliverables(projectId);
                           if (projectId) fetchProject(projectId);
                         }}
-                        disabled={loading || !(mddInicialLocalContent || project?.legacyFlowState?.codebaseDoc)?.trim()}
+                        disabled={loading || !(mddInicialLocalContent || activeLegacyState?.codebaseDoc)?.trim()}
                         className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Genera Spec, Arq., Casos, Blueprint, API, etc. desde la documentación del codebase (ingeniería inversa)"
                       >
@@ -1726,6 +1735,7 @@ export default function WorkshopView({
                           onClick={async () => {
                             const res = await legacyGenerateCodebaseDoc(projectId, {
                               responseMode: codebaseDocResponseMode,
+                              stageId: activeStageId ?? undefined,
                             });
                             if (res?.codebaseDoc) setCentralPanel("mdd-inicial");
                           }}
@@ -1749,7 +1759,7 @@ export default function WorkshopView({
             {centralPanel === "legacy" && project?.projectType === "LEGACY" && projectId && (
               <div className="rounded-lg bg-zinc-800/80 border border-zinc-600 p-6 text-zinc-300 text-sm space-y-6">
                 <p className="font-medium text-amber-400/90">Flujo de modificación (Legacy)</p>
-                {!project.legacyFlowState?.codebaseDoc?.trim() ? (
+                {!activeLegacyState?.codebaseDoc?.trim() ? (
                   <div className="rounded-lg border border-amber-500/35 bg-amber-950/25 px-4 py-3 space-y-3 text-amber-100/90 text-sm">
                     <p>
                       <strong className="text-amber-200">Primera documentación del repo:</strong> en la pestaña{" "}
@@ -1763,6 +1773,7 @@ export default function WorkshopView({
                         onClick={async () => {
                           const res = await legacyGenerateCodebaseDoc(projectId, {
                             responseMode: codebaseDocResponseMode,
+                            stageId: activeStageId ?? undefined,
                           });
                           if (res?.codebaseDoc?.trim()) setCentralPanel("mdd-inicial");
                         }}
@@ -1789,7 +1800,7 @@ export default function WorkshopView({
                     <strong>MDD de cambio</strong> de esta etapa.
                   </p>
                 )}
-                {!project.legacyFlowState?.filesToModify?.length && !project.legacyFlowState?.questions?.length ? (
+                {!activeLegacyState?.filesToModify?.length && !activeLegacyState?.questions?.length ? (
                   <>
                     <p>Describe la modificación que quieres hacer al proyecto. AriadneSpecs analizará el código y te devolverá archivos a modificar y preguntas para afinar.</p>
                     <textarea
@@ -1801,7 +1812,7 @@ export default function WorkshopView({
                     <button
                       type="button"
                       onClick={async () => {
-                        const res = await legacyStart(projectId, legacyDescriptionInput);
+                        const res = await legacyStart(projectId, legacyDescriptionInput, activeStageId ?? undefined);
                         if (res) setLegacyDescriptionInput("");
                       }}
                       disabled={loading || !legacyDescriptionInput.trim()}
@@ -1813,11 +1824,11 @@ export default function WorkshopView({
                   </>
                 ) : (
                   <>
-                    {project.legacyFlowState?.filesToModify?.length ? (
+                    {activeLegacyState?.filesToModify?.length ? (
                       <div>
                         <h4 className="text-zinc-400 font-medium mb-2">Archivos a modificar</h4>
                         <ul className="list-disc list-inside text-zinc-400 space-y-1">
-                          {project.legacyFlowState.filesToModify.map((f, i) => {
+                          {activeLegacyState.filesToModify.map((f, i) => {
                             const path = typeof f === "string" ? f : f.path;
                             const repoId = typeof f === "string" ? null : f.repoId;
                             return (
@@ -1830,21 +1841,21 @@ export default function WorkshopView({
                         </ul>
                       </div>
                     ) : null}
-                    {project.legacyFlowState?.questions?.length ? (
+                    {activeLegacyState?.questions?.length ? (
                       <div>
                         <h4 className="text-zinc-400 font-medium mb-2">Preguntas para afinar</h4>
-                        {project.legacyFlowState.suggestedAnswers && Object.keys(project.legacyFlowState.suggestedAnswers).length > 0 ? (
+                        {activeLegacyState.suggestedAnswers && Object.keys(activeLegacyState.suggestedAnswers).length > 0 ? (
                           <p className="text-zinc-500 text-xs mb-2">Respuestas sugeridas por AriadneSpecs (puedes editarlas).</p>
                         ) : null}
                         <div className="space-y-3">
-                          {project.legacyFlowState.questions.map((q, i) => (
+                          {activeLegacyState.questions.map((q, i) => (
                             <div key={i}>
                               <label className="block text-zinc-400 text-xs mb-1">{q}</label>
                               <input
                                 type="text"
-                                value={legacyAnswersInput[i] ?? project.legacyFlowState?.answers?.[String(i)] ?? project.legacyFlowState?.suggestedAnswers?.[i] ?? ""}
+                                value={legacyAnswersInput[i] ?? activeLegacyState?.answers?.[String(i)] ?? activeLegacyState?.suggestedAnswers?.[i] ?? ""}
                                 onChange={(e) => setLegacyAnswersInput((prev) => ({ ...prev, [i]: e.target.value }))}
-                                placeholder={project.legacyFlowState?.suggestedAnswers?.[i] ? undefined : "Escribe tu respuesta…"}
+                                placeholder={activeLegacyState?.suggestedAnswers?.[i] ? undefined : "Escribe tu respuesta…"}
                                 className="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1.5 text-zinc-200 focus:ring-2 focus:ring-amber-500 outline-none"
                               />
                             </div>
@@ -1857,11 +1868,11 @@ export default function WorkshopView({
                         type="button"
                         onClick={async () => {
                           const answers: Record<string, string> = {};
-                          project.legacyFlowState?.questions?.forEach((_, i) => {
-                            const v = (legacyAnswersInput[i] ?? project.legacyFlowState?.answers?.[String(i)] ?? project.legacyFlowState?.suggestedAnswers?.[i])?.trim();
+                          activeLegacyState?.questions?.forEach((_, i) => {
+                            const v = (legacyAnswersInput[i] ?? activeLegacyState?.answers?.[String(i)] ?? activeLegacyState?.suggestedAnswers?.[i])?.trim();
                             if (v) answers[String(i)] = v;
                           });
-                          await legacyAnswer(projectId, answers);
+                          await legacyAnswer(projectId, answers, activeStageId ?? undefined);
                         }}
                         disabled={loading}
                         className="px-3 py-1.5 rounded bg-zinc-700 text-zinc-300 hover:bg-zinc-600 text-sm disabled:opacity-50"
@@ -1872,12 +1883,12 @@ export default function WorkshopView({
                         type="button"
                         onClick={async () => {
                           const answers: Record<string, string> = {};
-                          project.legacyFlowState?.questions?.forEach((_, i) => {
-                            const v = (legacyAnswersInput[i] ?? project.legacyFlowState?.answers?.[String(i)] ?? project.legacyFlowState?.suggestedAnswers?.[i])?.trim();
+                          activeLegacyState?.questions?.forEach((_, i) => {
+                            const v = (legacyAnswersInput[i] ?? activeLegacyState?.answers?.[String(i)] ?? activeLegacyState?.suggestedAnswers?.[i])?.trim();
                             if (v) answers[String(i)] = v;
                           });
-                          await legacyAnswer(projectId, answers);
-                          const ok = await legacyGenerateMdd(projectId);
+                          await legacyAnswer(projectId, answers, activeStageId ?? undefined);
+                          const ok = await legacyGenerateMdd(projectId, activeStageId ?? undefined);
                           if (ok) setCentralPanel("mdd");
                         }}
                         disabled={loading}
@@ -1895,7 +1906,7 @@ export default function WorkshopView({
                     )}
                   </>
                 )}
-                {((project.mddContent ?? "").trim() || (project.legacyFlowState?.codebaseDoc ?? "").trim()) ? (
+                {((project.mddContent ?? "").trim() || (activeLegacyState?.codebaseDoc ?? "").trim()) ? (
                   <div className="border-t border-zinc-700 pt-4">
                     <button
                       type="button"
@@ -2095,7 +2106,7 @@ export default function WorkshopView({
                 <div className="flex shrink-0 flex-wrap items-center gap-2 mb-3">
                   <button
                     type="button"
-                    onClick={() => void (isLegacyProject ? legacyGenerateMdd(projectId) : generateMddFromBenchmark(projectId))}
+                    onClick={() => void (isLegacyProject ? legacyGenerateMdd(projectId, activeStageId ?? undefined) : generateMddFromBenchmark(projectId))}
                     disabled={loading && (loadingReason === "mdd" || loadingReason === "legacy-mdd")}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/80 text-zinc-900 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                   >

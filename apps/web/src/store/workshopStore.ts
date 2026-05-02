@@ -232,6 +232,8 @@ export interface WorkshopStage {
   status: Status;
   precisionScore: number;
   estimation: Estimation | null;
+  /** Estado del flujo legacy para esta etapa (cambio) */
+  legacyChangeState?: LegacyFlowState | null;
 }
 
 /** Propuesta HITL hasta confirmación en chat o `POST .../confirm-complexity`. */
@@ -475,7 +477,7 @@ interface WorkshopState {
   activeStageId: string | null;
   setActiveStageId: (stageId: string | null) => void;
   /** `POST /projects/:id/stages` → `{ stage }`; opcional `copyMddFromStageId`. */
-  createWorkshopStage: (opts: { name?: string; key?: string; copyMddFromStageId?: string }) => Promise<Project | null>;
+  createWorkshopStage: (opts: { name?: string; key?: string; copyMddFromStageId?: string; copyLegacyChangeFromStageId?: string }) => Promise<Project | null>;
   /** `PATCH /projects/:id/stages/:stageId` — BRD/To-Be/As-Is, aprobaciones, etc. */
   patchWorkshopStage: (
     stageId: string,
@@ -567,14 +569,14 @@ interface WorkshopState {
   /** Flujo legacy: documentación de partida (opcional); puede incluir `mcpDebugTrace` si el API tiene debug activo. */
   legacyGenerateCodebaseDoc: (
     projectId: string,
-    opts?: { responseMode?: CodebaseDocResponseMode },
+    opts?: { responseMode?: CodebaseDocResponseMode; stageId?: string },
   ) => Promise<{ codebaseDoc: string; mcpDebugTrace?: LegacyMcpDebugEntry[] } | null>;
   /** Flujo legacy: actualizar documentación de partida (edición manual) */
   legacyUpdateCodebaseDoc: (projectId: string, codebaseDoc: string) => Promise<boolean>;
   /** Flujo legacy: analizar con AriadneSpecs → archivos + preguntas */
-  legacyStart: (projectId: string, description: string) => Promise<{ filesToModify: (string | { path: string; repoId?: string })[]; questions: string[]; suggestedAnswers?: Record<string, string> } | null>;
-  legacyAnswer: (projectId: string, answers: Record<string, string>) => Promise<boolean>;
-  legacyGenerateMdd: (projectId: string) => Promise<{ mddContent: string } | null>;
+  legacyStart: (projectId: string, description: string, stageId?: string) => Promise<{ filesToModify: (string | { path: string; repoId?: string })[]; questions: string[]; suggestedAnswers?: Record<string, string> } | null>;
+  legacyAnswer: (projectId: string, answers: Record<string, string>, stageId?: string) => Promise<boolean>;
+  legacyGenerateMdd: (projectId: string, stageId?: string) => Promise<{ mddContent: string } | null>;
   /** POST …/legacy/generate-as-is-manual → persiste `asIsManualContent` en la etapa legacy/primaria. */
   legacyGenerateAsIsManual: (projectId: string) => Promise<{ asIsManualContent: string; stageId: string } | null>;
   /** POST …/legacy/suggest-brd-tobe-from-codebase-doc — borradores desde doc. Ariadne (sin aprobar). */
@@ -734,6 +736,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (opts.name?.trim()) body.name = opts.name.trim();
     if (opts.key?.trim()) body.key = opts.key.trim();
     if (opts.copyMddFromStageId?.trim()) body.copyMddFromStageId = opts.copyMddFromStageId.trim();
+    if (opts.copyLegacyChangeFromStageId?.trim()) body.copyLegacyChangeFromStageId = opts.copyLegacyChangeFromStageId.trim();
     try {
       const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/stages`, {
         method: "POST",
@@ -2619,12 +2622,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId?.trim()) return null;
     set({ loading: true, loadingReason: "legacy-codebase-doc", error: null });
     try {
-      const body =
-        opts?.responseMode !== undefined ? JSON.stringify({ responseMode: opts.responseMode }) : JSON.stringify({});
+      const body: Record<string, unknown> = {};
+      if (opts?.responseMode !== undefined) body.responseMode = opts.responseMode;
+      if (opts?.stageId?.trim()) body.stageId = opts.stageId.trim();
       const r = await apiFetch(`${API_BASE}/projects/${projectId}/legacy/generate-codebase-doc`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body,
+        body: JSON.stringify(body),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -2682,14 +2686,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
-  legacyStart: async (projectId, description) => {
+  legacyStart: async (projectId, description, stageId) => {
     if (!projectId?.trim() || !description?.trim()) return null;
     set({ loading: true, error: null });
     try {
+      const body: Record<string, unknown> = { description: description.trim() };
+      if (stageId?.trim()) body.stageId = stageId.trim();
       const r = await apiFetch(`${API_BASE}/projects/${projectId}/legacy/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: description.trim() }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -2709,14 +2715,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
-  legacyAnswer: async (projectId, answers) => {
+  legacyAnswer: async (projectId, answers, stageId) => {
     if (!projectId?.trim()) return false;
     set({ loading: true, error: null });
     try {
+      const body: Record<string, unknown> = { answers: answers ?? {} };
+      if (stageId?.trim()) body.stageId = stageId.trim();
       const r = await apiFetch(`${API_BASE}/projects/${projectId}/legacy/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: answers ?? {} }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -2731,13 +2739,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
-  legacyGenerateMdd: async (projectId) => {
+  legacyGenerateMdd: async (projectId, stageId) => {
     if (!projectId?.trim()) return null;
     set({ loading: true, loadingReason: "legacy-mdd", error: null });
     try {
+      const body: Record<string, unknown> = {};
+      if (stageId?.trim()) body.stageId = stageId.trim();
       const r = await apiFetch(`${API_BASE}/projects/${projectId}/legacy/generate-mdd`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));

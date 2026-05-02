@@ -645,4 +645,101 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
         }
         return [...new Set(tableNames)];
     }
+
+    /**
+     * Crea/actualiza un nodo :LegacyStage en FalkorDB con sus relaciones.
+     *
+     * @param params.stageId      - ID de la etapa legacy (Stage.id)
+     * @param params.projectId    - ID del proyecto en TheForge
+     * @param params.ordinal      - Número de orden de la etapa
+     * @param params.name         - Nombre de la etapa
+     * @param params.description  - Descripción opcional de la etapa
+     * @param params.parentStageId - Si tiene etapa padre, crea relación DERIVED_FROM
+     * @param params.theforgeProjectId - Si se proporciona, relaciona con Project via HAS_LEGACY_STAGE
+     */
+    async syncLegacyStage(params: {
+        stageId: string;
+        projectId: string;
+        ordinal: number;
+        name: string;
+        description?: string;
+        parentStageId?: string;
+        theforgeProjectId?: string;
+    }) {
+        if (!this.graph) return;
+        const { stageId, projectId, ordinal, name, description, parentStageId, theforgeProjectId } = params;
+        const ts = Date.now();
+
+        try {
+            // Crear/actualizar el nodo LegacyStage con sus propiedades
+            await this.graph.query(
+                `
+          MERGE (s:LegacyStage {stageId: $stageId})
+          SET s.projectId = $projectId,
+              s.ordinal = $ordinal,
+              s.name = $name,
+              s.description = $description,
+              s.updatedAt = $ts
+          RETURN s
+        `,
+                {
+                    params: {
+                        stageId,
+                        projectId,
+                        ordinal,
+                        name,
+                        description: description ?? '',
+                        ts,
+                    },
+                },
+            );
+
+            // Relación DERIVED_FROM si hay parentStageId
+            if (parentStageId) {
+                await this.graph.query(
+                    `
+            MATCH (s:LegacyStage {stageId: $stageId})
+            MATCH (parent:LegacyStage {stageId: $parentStageId})
+            MERGE (s)-[:DERIVED_FROM]->(parent)
+          `,
+                    { params: { stageId, parentStageId } },
+                );
+            }
+
+            // Relación HAS_LEGACY_STAGE desde Project si hay theforgeProjectId
+            if (theforgeProjectId) {
+                await this.graph.query(
+                    `
+            MATCH (s:LegacyStage {stageId: $stageId})
+            MERGE (p:Project {id: $theforgeProjectId})
+            MERGE (p)-[:HAS_LEGACY_STAGE]->(s)
+          `,
+                    { params: { stageId, theforgeProjectId } },
+                );
+            }
+
+            this.logger.log(`[GraphMemory] LegacyStage sincronizado: ${name} (${stageId})`);
+        } catch (err) {
+            this.logger.error(`[GraphMemory] syncLegacyStage falló: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
+
+    /**
+     * Elimina un nodo LegacyStage y sus relaciones del grafo FalkorDB.
+     */
+    async clearLegacyStage(stageId: string) {
+        if (!this.graph) return;
+        try {
+            await this.graph.query(
+                `
+          MATCH (s:LegacyStage {stageId: $stageId})
+          DETACH DELETE s
+        `,
+                { params: { stageId } },
+            );
+            this.logger.log(`[GraphMemory] LegacyStage eliminado: ${stageId}`);
+        } catch (err) {
+            this.logger.error(`[GraphMemory] clearLegacyStage falló: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
 }

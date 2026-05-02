@@ -20,7 +20,8 @@ export class LegacyFlowController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.flatten());
     }
-    return this.coordinator.generateCodebaseDoc(projectId, parsed.data);
+    const stageId = (body as Record<string, unknown>)?.stageId as string | undefined;
+    return this.coordinator.generateCodebaseDoc(projectId, parsed.data, stageId);
   }
 
   /**
@@ -29,13 +30,13 @@ export class LegacyFlowController {
   @Post("resolve-index-sdd-conflict")
   async resolveIndexSddConflict(
     @Param("projectId") projectId: string,
-    @Body() body: { choice?: "trust_index" | "trust_sdd" | "proceed_with_warnings" },
+    @Body() body: { choice?: "trust_index" | "trust_sdd" | "proceed_with_warnings"; stageId?: string },
   ) {
     const choice = body?.choice;
     if (choice !== "trust_index" && choice !== "trust_sdd" && choice !== "proceed_with_warnings") {
       throw new BadRequestException("body.choice debe ser trust_index | trust_sdd | proceed_with_warnings");
     }
-    return this.coordinator.resolveIndexSddConflict(projectId, choice);
+    return this.coordinator.resolveIndexSddConflict(projectId, choice, body.stageId);
   }
 
   /**
@@ -47,10 +48,10 @@ export class LegacyFlowController {
   @Patch("codebase-doc")
   async updateCodebaseDoc(
     @Param("projectId") projectId: string,
-    @Body() body: { codebaseDoc?: string },
+    @Body() body: { codebaseDoc?: string; stageId?: string },
   ) {
     const codebaseDoc = typeof body?.codebaseDoc === "string" ? body.codebaseDoc : "";
-    return this.coordinator.updateCodebaseDoc(projectId, codebaseDoc);
+    return this.coordinator.updateCodebaseDoc(projectId, codebaseDoc, body.stageId);
   }
 
   /**
@@ -62,10 +63,10 @@ export class LegacyFlowController {
   @Post("start")
   async start(
     @Param("projectId") projectId: string,
-    @Body() body: { description?: string },
+    @Body() body: { description?: string; stageId?: string },
   ) {
     const description = typeof body?.description === "string" ? body.description.trim() : "";
-    return this.coordinator.start(projectId, description);
+    return this.coordinator.start(projectId, description, body.stageId);
   }
 
   /**
@@ -77,10 +78,10 @@ export class LegacyFlowController {
   @Post("answer")
   async answer(
     @Param("projectId") projectId: string,
-    @Body() body: { answers?: Record<string, string> },
+    @Body() body: { answers?: Record<string, string>; stageId?: string },
   ) {
     const answers = body?.answers && typeof body.answers === "object" ? body.answers : {};
-    return this.coordinator.answer(projectId, answers);
+    return this.coordinator.answer(projectId, answers, body.stageId);
   }
 
   /**
@@ -89,16 +90,22 @@ export class LegacyFlowController {
    * @returns Contenido Markdown del MDD generado.
    */
   @Post("generate-mdd")
-  async generateMdd(@Param("projectId") projectId: string) {
-    return this.coordinator.generateMdd(projectId);
+  async generateMdd(
+    @Param("projectId") projectId: string,
+    @Body() body: { stageId?: string } = {},
+  ) {
+    return this.coordinator.generateMdd(projectId, body.stageId);
   }
 
   /**
    * Genera mapa As-Is (markdown) desde `codebaseDoc` y lo guarda en `Stage.asIsManualContent` (etapa legacy o primaria).
    */
   @Post("generate-as-is-manual")
-  async generateAsIsManual(@Param("projectId") projectId: string) {
-    return this.coordinator.generateAsIsManual(projectId);
+  async generateAsIsManual(
+    @Param("projectId") projectId: string,
+    @Body() body: { stageId?: string } = {},
+  ) {
+    return this.coordinator.generateAsIsManual(projectId, body.stageId);
   }
 
   /**
@@ -118,7 +125,10 @@ export class LegacyFlowController {
    * @returns Confirmación de que la cascada terminó.
    */
   @Post("generate-deliverables")
-  async generateDeliverables(@Param("projectId") projectId: string) {
-    return this.coordinator.generateDeliverables(projectId);
+  async generateDeliverables(
+    @Param("projectId") projectId: string,
+    @Body() body: { stageId?: string } = {},
+  ) {
+    return this.coordinator.generateDeliverables(projectId, body.stageId);
   }
 }
