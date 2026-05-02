@@ -84,7 +84,7 @@ function parseYamlFrontMatter(content: string): { frontMatter: DesignTokens | nu
         // Find the last typography key (we don't track currentSubKey)
         const typoKeys = tokens.typography ? Object.keys(tokens.typography) : [];
         if (typoKeys.length > 0) {
-          const lastKey = typoKeys[typoKeys.length - 1];
+          const lastKey: string = typoKeys[typoKeys.length - 1]!;
           if (!tokens.typography![lastKey]) tokens.typography![lastKey] = {};
           (tokens.typography![lastKey] as Record<string, string>)[k] = v;
         }
@@ -108,7 +108,7 @@ function parseYamlFrontMatter(content: string): { frontMatter: DesignTokens | nu
         const v = kv[2]!.replace(/["']/g, "");
         const compKeys = tokens.components ? Object.keys(tokens.components) : [];
         if (compKeys.length > 0) {
-          const lastKey = compKeys[compKeys.length - 1];
+          const lastKey: string = compKeys[compKeys.length - 1]!;
           if (!tokens.components![lastKey]) tokens.components![lastKey] = {};
           (tokens.components![lastKey] as Record<string, string>)[k] = v;
         }
