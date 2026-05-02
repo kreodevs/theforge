@@ -145,7 +145,7 @@ export class AiService {
       if (options?.activeTab?.trim()) {
         const at = options.activeTab.trim();
         const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
-        systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).`;
+        systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).\n\n**Desambiguación:** Si el usuario expresa una intención de cambio o modificación (ej. "agrega", "cambia", "modifica", "actualiza") o percibes ambigüedad entre una consulta y un cambio, PREGUNTA explícitamente: "¿Es una consulta o quieres que aplique el cambio al documento?". No asumas que quiere modificar el documento a menos que lo confirme.`;
 
         // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
         const tagMap: Record<string, string> = {

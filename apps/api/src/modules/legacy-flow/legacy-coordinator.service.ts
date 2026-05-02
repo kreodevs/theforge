@@ -605,13 +605,22 @@ export class LegacyCoordinatorService {
         this.logger.warn(`[LegacyCoordinator] syncCurrentLegacyStage: stage ${stageId} no encontrada`);
         return;
       }
+      // Buscar etapa base (ordinal anterior) para relación DERIVED_FROM
+      let parentStageId: string | undefined;
+      if (stage.ordinal > 1) {
+        const baseline = await this.prisma.stage.findFirst({
+          where: { projectId: stage.projectId, ordinal: stage.ordinal - 1 },
+          select: { id: true },
+        });
+        if (baseline) parentStageId = baseline.id;
+      }
       await this.graphMemory.syncLegacyStage({
         stageId: stage.id,
         projectId,
         ordinal: stage.ordinal,
         name: stage.name ?? "",
         description: (stage as { description?: string | null }).description ?? undefined,
-        parentStageId: (stage as { parentStageId?: string | null }).parentStageId ?? undefined,
+        parentStageId,
         theforgeProjectId: project?.theforgeProjectId ?? undefined,
       });
     } catch (err) {
