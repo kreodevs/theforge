@@ -110,7 +110,7 @@ export class OpenRouterAdapter implements LLMProvider {
       const completion = await this.chatClient.chat.completions.create({
         model: this.model,
         messages,
-        max_tokens: 8192,
+        max_tokens: options?.maxTokensOverride ?? 8192,
       });
 
       const content = completion.choices[0]?.message?.content ?? "";
