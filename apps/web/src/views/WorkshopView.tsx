@@ -2103,18 +2103,7 @@ export default function WorkshopView({
                   codebaseDocChars={codebaseDocCharCount}
                   dbgaContentChars={dbgaContentCharCount}
                 />
-                {/* Gate BRD/To-Be: si requireBrdTobeGate está activo y BRD o To-Be no aprobados, bloquear */}
-                {(() => {
-                  const brdGateBlocked = project?.requireBrdTobeGate === true &&
-                    (!activeWorkshopStage?.brdApprovedAt || !activeWorkshopStage?.toBeApprovedAt);
-                  return null;
-                })()}
                 <div className="flex shrink-0 flex-wrap items-center gap-2 mb-3">
-                  {(() => {
-                    const brdGateBlocked = project?.requireBrdTobeGate === true &&
-                      (!activeWorkshopStage?.brdApprovedAt || !activeWorkshopStage?.toBeApprovedAt);
-                    return null;
-                  })()}
                   <button
                     type="button"
                     onClick={() => void (isLegacyProject ? legacyGenerateMdd(projectId, activeStageId ?? undefined) : generateMddFromBenchmark(projectId))}
