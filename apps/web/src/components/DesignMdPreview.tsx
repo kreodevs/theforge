@@ -4,31 +4,35 @@ interface DesignTokens {
   name?: string;
   description?: string;
   colors?: Record<string, string>;
-  typography?: Record<string, {
-    fontFamily?: string;
-    fontSize?: string;
-    fontWeight?: number | string;
-    lineHeight?: number | string;
-    letterSpacing?: string;
-  }>;
+  typography?: Record<string, TypographyToken>;
   rounded?: Record<string, string>;
   spacing?: Record<string, string>;
-  components?: Record<string, {
-    backgroundColor?: string;
-    textColor?: string;
-    rounded?: string;
-    padding?: string | number;
-    size?: string | number;
-    height?: string | number;
-    width?: string | number;
-    typography?: string;
-  }>;
+  components?: Record<string, ComponentToken>;
+}
+
+interface TypographyToken {
+  fontFamily?: string;
+  fontSize?: string;
+  fontWeight?: number | string;
+  lineHeight?: number | string;
+  letterSpacing?: string;
+}
+
+interface ComponentToken {
+  backgroundColor?: string;
+  textColor?: string;
+  rounded?: string;
+  padding?: string | number;
+  size?: string | number;
+  height?: string | number;
+  width?: string | number;
+  typography?: string;
 }
 
 function resolveRef(value: string, tokens: DesignTokens): string {
   const match = value.match(/^\{([\w.]+)\}$/);
   if (!match) return value;
-  const parts = match[1]!.split(".");
+  const parts = match[1].split(".");
   let obj: unknown = tokens;
   for (const part of parts) {
     if (obj && typeof obj === "object" && part in obj) {
@@ -40,90 +44,87 @@ function resolveRef(value: string, tokens: DesignTokens): string {
   return typeof obj === "string" ? obj : value;
 }
 
+function setTypoField(t: Record<string, TypographyToken>, key: string, field: string, val: string): void {
+  if (!t[key]) t[key] = {};
+  (t[key] as Record<string, string>)[field] = val;
+}
+
+function setCompField(t: Record<string, ComponentToken>, key: string, field: string, val: string): void {
+  if (!t[key]) t[key] = {};
+  (t[key] as Record<string, string>)[field] = val;
+}
+
 function parseYamlFrontMatter(content: string): { frontMatter: DesignTokens | null; body: string } {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!match) return { frontMatter: null, body: content };
 
-  const yamlString = match[1] ?? "";
-  const body = match[2]?.trim() ?? "";
+  const rawYaml = match[1] ?? "";
+  const body = (match[2] ?? "").trim();
   const tokens: DesignTokens = {};
 
   let currentSection: string | null = null;
-  let currentTypographyKey: string | null = null;
+  let currentSubKey: string | null = null;
 
-  for (const line of yamlString.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
+  const lines = rawYaml.split("\n");
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
 
-    // Detect section headers (colors:, typography:, rounded:, spacing:, components:)
-    const sectionMatch = trimmed.match(/^(\w+):\s*$/);
-    if (sectionMatch) {
-      currentSection = sectionMatch[1]!;
+    // Section header
+    const sec = t.match(/^(\w+):\s*$/);
+    if (sec) {
+      currentSection = sec[1];
+      currentSubKey = null;
       continue;
     }
 
-    // Detect typography sub-keys (h1:, body-md:, etc.)
-    if (currentSection === "typography") {
-      const typoKeyMatch = trimmed.match(/^(\S+):\s*$/);
-      if (typoKeyMatch) {
-        currentTypographyKey = typoKeyMatch[1]!;
-        if (!tokens.typography) tokens.typography = {};
-        tokens.typography[currentTypographyKey] = {};
-        continue;
-      }
-      // Typography field values (fontFamily:, fontSize:, etc.)
-      if (currentTypographyKey && tokens.typography[currentTypographyKey]) {
-        const kvMatch = trimmed.match(/^(\w+):\s*["']?(.+?)["']?\s*$/);
-        if (kvMatch) {
-          const key = kvMatch[1]!;
-          const val = kvMatch[2]!.replace(/["']/g, "");
-          (tokens.typography[currentTypographyKey] as Record<string, string>)[key] = val;
-        }
-      }
+    // Sub-key (typography: h1:, components: button-primary:)
+    const sub = t.match(/^(\S+):\s*$/);
+    if (currentSection === "typography" && sub) {
+      currentSubKey = sub[1];
+      if (!tokens.typography) tokens.typography = {};
+      if (!tokens.typography[currentSubKey]) tokens.typography[currentSubKey] = {};
+      continue;
+    }
+    if (currentSection === "components" && sub) {
+      currentSubKey = sub[1];
+      if (!tokens.components) tokens.components = {};
+      if (!tokens.components[currentSubKey]) tokens.components[currentSubKey] = {};
       continue;
     }
 
-    // Handle simple key-value sections (colors:, rounded:, spacing:)
-    if (currentSection && ["colors", "rounded", "spacing"].includes(currentSection)) {
-      const kvMatch = trimmed.match(/^(\S+):\s*["']?(.+?)["']?\s*$/);
-      if (kvMatch) {
-        const key = kvMatch[1]!;
-        const val = kvMatch[2]!.replace(/["']/g, "");
-        const section = tokens as Record<string, Record<string, string>>;
-        if (!section[currentSection]) {
-          section[currentSection] = {};
-        }
-        section[currentSection]![key] = val;
-      }
-      continue;
-    }
+    // Key: value
+    const kv = t.match(/^(\w+):\s*["']?(.+?)["']?\s*$/);
+    if (!kv) continue;
+    const key = kv[1];
+    const val = kv[2].replace(/["']/g, "");
 
-    // Handle components section
-    if (currentSection === "components") {
-      const compKeyMatch = trimmed.match(/^(\S+):\s*$/);
-      if (compKeyMatch) {
-        currentTypographyKey = compKeyMatch[1]!;
-        if (!tokens.components) tokens.components = {};
-        tokens.components[currentTypographyKey] = {};
-        continue;
-      }
-      if (currentTypographyKey && tokens.components[currentTypographyKey]) {
-        const kvMatch = trimmed.match(/^(\w+):\s*["']?(.+?)["']?\s*$/);
-        if (kvMatch) {
-          const key = kvMatch[1]!;
-          const val = kvMatch[2]!.replace(/["']/g, "");
-          (tokens.components[currentTypographyKey] as Record<string, string>)[key] = val;
-        }
-      }
-      continue;
-    }
-
-    // Top-level fields (version, name, description)
+    // Top-level fields
     if (!currentSection) {
-      const kvMatch = trimmed.match(/^(\w+):\s*["']?(.+?)["']?\s*$/);
-      if (kvMatch && kvMatch[1] && ["name", "description", "version"].includes(kvMatch[1])) {
-        (tokens as Record<string, string>)[kvMatch[1]] = kvMatch[2]!.replace(/["']/g, "");
+      if (["name", "description", "version"].includes(key)) {
+        (tokens as Record<string, string>)[key] = val;
       }
+      continue;
+    }
+
+    // Colors, rounded, spacing
+    if (["colors", "rounded", "spacing"].includes(currentSection)) {
+      const sec2 = tokens as Record<string, Record<string, string>>;
+      if (!sec2[currentSection]) sec2[currentSection] = {};
+      sec2[currentSection][key] = val;
+      continue;
+    }
+
+    // Typography fields
+    if (currentSection === "typography" && currentSubKey && tokens.typography) {
+      setTypoField(tokens.typography, currentSubKey, key, val);
+      continue;
+    }
+
+    // Components fields
+    if (currentSection === "components" && currentSubKey && tokens.components) {
+      setCompField(tokens.components, currentSubKey, key, val);
+      continue;
     }
   }
 
@@ -158,7 +159,7 @@ function TypographySpec({
   token,
 }: {
   label: string;
-  token: { fontFamily?: string; fontSize?: string; fontWeight?: number | string; lineHeight?: number | string; letterSpacing?: string };
+  token: TypographyToken;
 }) {
   const style: Record<string, string> = {};
   if (token.fontFamily) style.fontFamily = token.fontFamily;
@@ -194,11 +195,11 @@ function SpacingScale({ tokens }: { tokens: Record<string, string> | undefined }
     <div className="space-y-2">
       {Object.entries(tokens).map(([key, val]) => {
         const px = parseInt(val.replace("px", "").replace("rem", ""));
-        const width = isNaN(px) ? 60 : Math.min(px * 4, 200);
+        const w = isNaN(px) ? 60 : Math.min(px * 4, 200);
         return (
           <div key={key} className="flex items-center gap-3">
             <span className="text-[10px] uppercase tracking-wider text-zinc-500 w-8 shrink-0">{key}</span>
-            <div className="h-4 rounded bg-amber-500/40" style={{ width: `${Math.max(width, 8)}px` }} />
+            <div className="h-4 rounded bg-amber-500/40" style={{ width: `${Math.max(w, 8)}px` }} />
             <span className="text-[10px] font-mono text-zinc-500">{val}</span>
           </div>
         );
@@ -213,7 +214,7 @@ function ComponentPreview({
   tokens,
 }: {
   name: string;
-  token: { backgroundColor?: string; textColor?: string; rounded?: string; padding?: string | number };
+  token: ComponentToken;
   tokens: DesignTokens;
 }) {
   const bg = token.backgroundColor ? resolveRef(token.backgroundColor, tokens) : "#3B82F6";
@@ -245,9 +246,14 @@ export function DesignMdPreview({ content }: { content: string }) {
     );
   }
 
+  const colors = frontMatter.colors;
+  const typography = frontMatter.typography;
+  const spacing = frontMatter.spacing;
+  const rounded = frontMatter.rounded;
+  const components = frontMatter.components;
+
   return (
     <div className="overflow-auto p-4 space-y-8">
-      {/* Header */}
       {frontMatter.name && (
         <div>
           <h2 className="text-lg font-semibold text-zinc-100">{frontMatter.name}</h2>
@@ -257,66 +263,58 @@ export function DesignMdPreview({ content }: { content: string }) {
         </div>
       )}
 
-      {/* Colors */}
-      {frontMatter.colors && Object.keys(frontMatter.colors).length > 0 && (
+      {colors && Object.keys(colors).length > 0 && (
         <section>
           <h3 className="text-xs uppercase tracking-wider text-zinc-500 font-medium mb-3">Colors</h3>
           <div className="flex flex-wrap gap-2">
-            {Object.entries(frontMatter.colors).map(([name, hex]) => (
+            {Object.entries(colors).map(([name, hex]) => (
               <ColorSwatch key={name} name={name} hex={hex} />
             ))}
           </div>
         </section>
       )}
 
-      {/* Typography */}
-      {frontMatter.typography && Object.keys(frontMatter.typography).length > 0 && (
+      {typography && Object.keys(typography).length > 0 && (
         <section>
           <h3 className="text-xs uppercase tracking-wider text-zinc-500 font-medium mb-3">Typography</h3>
           <div className="space-y-2">
-            {Object.entries(frontMatter.typography).map(([key, val]) => (
+            {Object.entries(typography).map(([key, val]) => (
               <TypographySpec key={key} label={key} token={val} />
             ))}
           </div>
         </section>
       )}
 
-      {/* Spacing */}
-      {frontMatter.spacing && Object.keys(frontMatter.spacing).length > 0 && (
+      {spacing && Object.keys(spacing).length > 0 && (
         <section>
           <h3 className="text-xs uppercase tracking-wider text-zinc-500 font-medium mb-3">Spacing Scale</h3>
-          <SpacingScale tokens={frontMatter.spacing} />
+          <SpacingScale tokens={spacing} />
         </section>
       )}
 
-      {/* Border Radius */}
-      {frontMatter.rounded && Object.keys(frontMatter.rounded).length > 0 && (
+      {rounded && Object.keys(rounded).length > 0 && (
         <section>
           <h3 className="text-xs uppercase tracking-wider text-zinc-500 font-medium mb-3">Border Radius</h3>
           <div className="flex flex-wrap gap-3">
-            {Object.entries(frontMatter.rounded).map(([key, val]) => {
-              const px = parseInt(val.replace("px", ""));
-              return (
-                <div key={key} className="flex flex-col items-center gap-1">
-                  <div
-                    className="w-10 h-10 bg-amber-500/30 border border-amber-500/50"
-                    style={{ borderRadius: val }}
-                  />
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-500">{key}</span>
-                  <span className="text-[9px] font-mono text-zinc-600">{val}</span>
-                </div>
-              );
-            })}
+            {Object.entries(rounded).map(([key, val]) => (
+              <div key={key} className="flex flex-col items-center gap-1">
+                <div
+                  className="w-10 h-10 bg-amber-500/30 border border-amber-500/50"
+                  style={{ borderRadius: val }}
+                />
+                <span className="text-[10px] uppercase tracking-wider text-zinc-500">{key}</span>
+                <span className="text-[9px] font-mono text-zinc-600">{val}</span>
+              </div>
+            ))}
           </div>
         </section>
       )}
 
-      {/* Components */}
-      {frontMatter.components && Object.keys(frontMatter.components).length > 0 && (
+      {components && Object.keys(components).length > 0 && (
         <section>
           <h3 className="text-xs uppercase tracking-wider text-zinc-500 font-medium mb-3">Components</h3>
           <div className="flex flex-wrap gap-4">
-            {Object.entries(frontMatter.components).map(([name, token]) => (
+            {Object.entries(components).map(([name, token]) => (
               <ComponentPreview key={name} name={name} token={token} tokens={frontMatter} />
             ))}
           </div>
