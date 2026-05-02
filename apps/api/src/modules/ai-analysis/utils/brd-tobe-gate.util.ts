@@ -63,13 +63,6 @@ export function isTechnicalMddGraphNode(nodeName: string | undefined): boolean {
   return TECHNICAL_MDD_NODES.has(nodeName);
 }
 
-function extractTaggedBlock(text: string, open: string, close: string): string {
-  const i = text.indexOf(open);
-  const j = text.indexOf(close);
-  if (i === -1 || j === -1 || j <= i) return "";
-  return text.slice(i + open.length, j).trim();
-}
-
 /**
  * Parsea la respuesta del LLM con delimitadores `<<<BRD>>>` / `<<<TOBE>>>` (mismo contrato que legacy `suggest-brd-tobe-from-codebase-doc`).
  * Tolerante a: markdown fences alrededor de los tags, espacios extra, mayúsculas/minúsculas, y `<<<END_xxx>>>` con guion bajo antes de END.

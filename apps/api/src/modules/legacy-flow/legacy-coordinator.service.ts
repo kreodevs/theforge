@@ -727,7 +727,7 @@ export class LegacyCoordinatorService {
       "<<<BRD>>>\n(markdown BRD)\n<<<END_BRD>>>\n<<<TOBE>>>\n(markdown To-Be)\n<<<END_TOBE>>>\n\n" +
       "--- DOCUMENTO ---\n\n" +
       codebaseDoc.slice(0, 120_000);
-    let raw: string;
+    let raw = "";
     let parsed: { brd: string; tobe: string } | null = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       raw = await this.ai.generateResponse(prompt, [], {
