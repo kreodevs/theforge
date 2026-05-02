@@ -210,7 +210,6 @@ export default function WorkshopView({
   const conformance = useMemo(() => conformanceRaw, [conformanceRaw]);
   const documentCompleteness = useWorkshopStore((s) => s.documentCompleteness);
   const crossDocumentGaps = useWorkshopStore((s) => s.crossDocumentGaps);
-  const consistencyScore = useWorkshopStore((s) => s.consistencyScore);
   const apiBlueprintDmBlocked = conformance?.blueprintDataModel?.ok === false;
   const apiBlueprintBlockedHint =
     "El Blueprint no cubre el §3 Modelo de datos del MDD. Corrige o regenera el Blueprint; revisa el panel Conformance.";
@@ -2769,7 +2768,7 @@ export default function WorkshopView({
                   ["infraContent", "Infra"],
                   ["tasksContent", "Tasks"],
                 ].map(([key, label]) => {
-                  const score = (documentCompleteness as Record<string, number>)[key] ?? 0;
+                  const score = (documentCompleteness as unknown as Record<string, number>)[key as string] ?? 0;
                   return (
                     <div key={key} className="flex items-center justify-between">
                       <span className="text-zinc-500">{label}</span>
