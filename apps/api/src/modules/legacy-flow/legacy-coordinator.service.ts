@@ -1197,8 +1197,16 @@ export class LegacyCoordinatorService {
       ? "Archivos a modificar (path" + (files.some((x) => x.repoId) ? ", repoId" : "") + "):\n" +
         files.map((f) => (f.repoId ? `${f.path} (repoId: ${f.repoId})` : f.path)).join("\n") + "\n\n"
       : "";
+    const codebaseDoc = ((state.codebaseDoc ?? "") as string).trim();
+    const codebaseDocBlock = codebaseDoc.length >= 80
+      ? "## Documentación de partida — MDD inicial del codebase (Ariadne)\n\n" +
+        codebaseDoc.slice(0, 40000) +
+        (codebaseDoc.length > 40000 ? "\n\n> *[Nota: El MDD inicial se truncó a 40,000 caracteres para control de contexto.]*" : "") +
+        "\n\n---\n\n"
+      : "";
     const prompt =
       (brdPre ? brdPre + "\n\n" : "") +
+      codebaseDocBlock +
       "Genera un documento MDD de cambio (Markdown) para un proyecto legacy. Según Specification-Driven Development, el MDD es la **Constitución del cambio** y debe tener **exactamente 7 secciones** en este orden: 1. Contexto, 2. Arquitectura y Stack, 3. Modelo de Datos, 4. Contratos de API, 5. Lógica y Edge Cases, 6. Seguridad, 7. Infraestructura. Aplica cada sección al **cambio** descrito (qué se modifica en contexto, stack, modelo, API, lógica, seguridad e infra).\n\n" +
       "**Prioridad:** Recupera y usa en su totalidad el conocimiento del codebase (TheForge) que se te proporciona antes de elaborar el documento. Usa TODO ese contexto; infiere todas las modificaciones necesarias en módulos, entidades, APIs y pantallas existentes que el cambio afecte; no te limites al requerimiento literal. El MDD debe reflejar el conocimiento real de la aplicación indexada (qué hay hoy y qué debe cambiar).\n\n" +
       "Descripción del cambio:\n---\n" +

@@ -2095,11 +2095,11 @@ export default function WorkshopView({
                 <div className="flex shrink-0 flex-wrap items-center gap-2 mb-3">
                   <button
                     type="button"
-                    onClick={() => void generateMddFromBenchmark(projectId)}
-                    disabled={loading && loadingReason === "mdd"}
+                    onClick={() => void (isLegacyProject ? legacyGenerateMdd(projectId) : generateMddFromBenchmark(projectId))}
+                    disabled={loading && (loadingReason === "mdd" || loadingReason === "legacy-mdd")}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/80 text-zinc-900 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                   >
-                    {loading && loadingReason === "mdd" ? (
+                    {(loading && (loadingReason === "mdd" || loadingReason === "legacy-mdd")) ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <RefreshCw className="w-4 h-4" />

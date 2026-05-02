@@ -39,6 +39,10 @@ function buildHumanInstruction(mode: StagedDiscoveryMode, changeDescription?: st
     "**Fase 1:** arquitectura de alto nivel entre repos (una `ask_codebase` acotada o una `semantic_search` muy específica si aplica). " +
     "**Fase 2:** profundiza **por tópicos o repos**, una cosa a la vez: `semantic_search` focalizada y `get_file_content` solo donde la evidencia lo exija. " +
     "**Fase 3:** MDD Markdown completo con las 7 secciones. " +
+    "**IMPORTANTE — Para evitar ciclos:** En Fase 3, produce el MDD **sin llamar más herramientas**. " +
+    "Si ya ejecutaste herramientas en Fase 2 y tienes evidencia suficiente, salta a Fase 3 directamente. " +
+    "No repitas la misma tool_call ni la misma búsqueda semántica. " +
+    "Máximo 6 rondas de tool_calls en total; si llegas a ese límite, fuerza la salida con lo que tengas. " +
     "Tu respuesta final debe ser ÚNICAMENTE el documento Markdown del MDD (sin preámbulos ni comentarios meta).";
   if (mode === "change") {
     s +=
@@ -140,7 +144,7 @@ export async function runLegacyStagedDiscoveryMddAgent(opts: RunLegacyStagedDisc
   const system = hydrateStagedDiscoveryMddPrompt(rawPrompt, tfPid, reposCatalog);
 
   const tools = getStagedDiscoveryTheForgeTools(theforge, tfPid, askCodebaseOptions);
-  const maxRounds = envPositiveInt("LEGACY_STAGED_DISCOVERY_MAX_TOOL_ROUNDS", 18);
+  const maxRounds = envPositiveInt("LEGACY_STAGED_DISCOVERY_MAX_TOOL_ROUNDS", 8);
   const maxOut = envPositiveInt("LEGACY_STAGED_DISCOVERY_OUTPUT_MAX_CHARS", 96000);
 
   try {
