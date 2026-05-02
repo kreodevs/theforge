@@ -710,44 +710,83 @@ export class LegacyCoordinatorService {
       } catch { /* non-critical */ }
     }
     const isInitialLegacyStage = !baselineStageBrdBlock;
-    const prompt =
-      isInitialLegacyStage
-        ? "Eres analista de negocio. A partir del **MDD inicial** (documentación del codebase existente a continuación), " +
-          "deriva **dos** borradores en español, en markdown, que reflejen fielmente el sistema documentado:\n" +
-          "1) **BRD (sistema actual):** problema de negocio que resuelve el sistema existente, alcance actual, usuarios, supuestos y riesgos identificados. Cita módulos o rutas del MDD inicial.\n" +
-          "2) **Manual To-Be (sistema actual):** comportamiento y reglas de negocio del sistema **tal como existe hoy**, según el MDD inicial. Describe la lógica actual, no una visión futura.\n\n" +
-          "IMPORTANTE: Este NO es un documento de cambio. Debes **reflejar el sistema existente** descrito en el MDD inicial.\n\n"
-        : "Eres analista de negocio. A partir del documento siguiente (índice / evidencia del codebase vía Ariadne), redacta **dos** borradores en español, en markdown, como documentos de cambio:\n" +
-          "1) **BRD de cambio:** problema que resuelve este cambio, alcance del cambio, supuestos, riesgos; cita rutas o módulos del documento fuente que este cambio toca.\n" +
-          "2) **Manual To-Be de cambio:** comportamiento y reglas de negocio **deseadas** tras aplicar el cambio; alinea con el BRD de cambio; no inventes APIs o archivos que no aparezcan en el fuente (indica «no consta» si falta evidencia).\n\n" +
-          "IMPORTANTE: Este es un **documento de cambio**, no una descripción del sistema completo. Céntrate en qué cambia, qué se agrega y qué se modifica.\n\n"
-      +
-      (baselineStageBrdBlock ? baselineStageBrdBlock : "") +
-      "Responde **solo** con este formato exacto (delimitadores literales):\n" +
-      "<<<BRD>>>\n(markdown BRD)\n<<<END_BRD>>>\n<<<TOBE>>>\n(markdown To-Be)\n<<<END_TOBE>>>\n\n" +
-      "--- DOCUMENTO ---\n\n" +
-      codebaseDoc.slice(0, 120_000);
-    let raw = "";
-    let parsed: { brd: string; tobe: string } | null = null;
+    const basePrompt = isInitialLegacyStage
+      ? "Eres analista de negocio. A partir del **MDD inicial** (documentación del codebase existente a continuación), " +
+        "deriva un borrador en español, en markdown, que refleje fielmente el sistema documentado.\\n\\n" +
+        "IMPORTANTE: Este NO es un documento de cambio. Debes **reflejar el sistema existente** descrito en el MDD inicial.\\n\\n"
+      : "Eres analista de negocio. A partir del documento siguiente (índice / evidencia del codebase vía Ariadne), redacta un borrador en español, en markdown, como documento de cambio.\\n\\n" +
+        "IMPORTANTE: Este es un **documento de cambio**, no una descripción del sistema completo. Céntrate en qué cambia, qué se agrega y qué se modifica.\\n\\n";
+
+    const codebaseChunk = codebaseDoc.slice(0, 120_000);
+    const baselineBlock = baselineStageBrdBlock ? baselineStageBrdBlock : "";
+
+    // Generar BRD
+    const brdPrompt =
+      basePrompt +
+      (isInitialLegacyStage
+        ? "Genera el **BRD (sistema actual):** problema de negocio que resuelve el sistema existente, alcance actual, usuarios, supuestos y riesgos identificados. Cita módulos o rutas del MDD inicial.\\n\\n"
+        : "Genera el **BRD de cambio:** problema que resuelve este cambio, alcance del cambio, supuestos, riesgos; cita rutas o módulos del documento fuente que este cambio toca.\\n\\n") +
+      baselineBlock +
+      "Responde **solo** con este formato exacto (delimitadores literales):\\n" +
+      "<<<BRD>>>\\n(markdown BRD)\\n<<<END_BRD>>>\\n\\n" +
+      "--- DOCUMENTO ---\\n\\n" +
+      codebaseChunk;
+
+    let brd = "";
     for (let attempt = 1; attempt <= 2; attempt++) {
-      raw = await this.ai.generateResponse(prompt, [], {
+      const raw = await this.ai.generateResponse(brdPrompt, [], {
         systemPrompt: COORDINATOR_SYSTEM,
         maxTokensOverride: 32000,
       });
-      parsed = parseBrdTobeTaggedSuggest((raw ?? "").trim());
-      if (parsed) break;
+      const parsed = parseBrdTobeTaggedSuggest((raw ?? "").trim());
+      if (parsed?.brd) {
+        brd = cleanDocumentContent(parsed.brd);
+        break;
+      }
       if (attempt < 2) {
-        console.warn(`[suggestBrdTobeFromCodebaseDoc] Intento ${attempt}/2: respuesta mal formada, reintentando...`);
+        console.warn(`[suggestBrdTobeFromCodebaseDoc] Intento BRD ${attempt}/2: respuesta mal formada, reintentando...`);
       }
     }
-    if (!parsed) {
-      console.error(`[suggestBrdTobeFromCodebaseDoc] Fallo definitivo. Primeros 800 chars de respuesta:\n${(raw ?? "").slice(0, 800)}`);
+    if (!brd) {
       throw new BadRequestException(
-        "No se pudieron extraer BRD y To-Be del modelo tras 2 intentos. Reintenta o acorta el documento de partida.",
+        "No se pudo generar el BRD. Reintenta o acorta el documento de partida.",
       );
     }
-    const brd = cleanDocumentContent(parsed.brd);
-    const tobe = cleanDocumentContent(parsed.tobe);
+
+    // Generar To-Be
+    const tobePrompt =
+      basePrompt +
+      (isInitialLegacyStage
+        ? "Genera el **Manual To-Be (sistema actual):** comportamiento y reglas de negocio del sistema **tal como existe hoy**, según el MDD inicial. Describe la lógica actual, no una visión futura.\\n\\n"
+        : "Genera el **Manual To-Be de cambio:** comportamiento y reglas de negocio **deseadas** tras aplicar el cambio; alinea con el BRD de cambio; no inventes APIs o archivos que no aparezcan en el fuente (indica «no consta» si falta evidencia).\\n\\n") +
+      baselineBlock +
+      "**BRD generado (como referencia):**\\n\\n" + brd.slice(0, 15000) + "\\n\\n---\\n\\n" +
+      "Responde **solo** con este formato exacto (delimitadores literales):\\n" +
+      "<<<TOBE>>>\\n(markdown To-Be)\\n<<<END_TOBE>>>\\n\\n" +
+      "--- DOCUMENTO ---\\n\\n" +
+      codebaseChunk;
+
+    let tobe = "";
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const raw = await this.ai.generateResponse(tobePrompt, [], {
+        systemPrompt: COORDINATOR_SYSTEM,
+        maxTokensOverride: 32000,
+      });
+      const parsed = parseBrdTobeTaggedSuggest((raw ?? "").trim());
+      if (parsed?.tobe) {
+        tobe = cleanDocumentContent(parsed.tobe);
+        break;
+      }
+      if (attempt < 2) {
+        console.warn(`[suggestBrdTobeFromCodebaseDoc] Intento To-Be ${attempt}/2: respuesta mal formada, reintentando...`);
+      }
+    }
+    if (!tobe) {
+      throw new BadRequestException(
+        "No se pudo generar el To-Be. Reintenta o acorta el documento de partida.",
+      );
+    }
+
     await this.prisma.stage.update({
       where: { id: stage.id },
       data: {
