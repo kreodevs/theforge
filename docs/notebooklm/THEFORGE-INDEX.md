@@ -34,6 +34,8 @@ flowchart LR
 
 **MCP AriadneSpecs vs Grafo SDD:** El MCP **AriadneSpecs** (código indexado del cliente) es **externo** al monorepo The Forge y se invoca por HTTP desde la API (`THEFORGE_MCP_URL`, JSON-RPC Streamable HTTP). Especificación del servidor: monorepo **Ariadne** (`MCP_HTTPS.md`, `mcp_server_specs.md`, `MCP_AYUDA.md`). El grafo documental SDD vive en **FalkorDB local** (`FALKORDB_SDD_URL`). No son intercambiables. Detalle: [MCP-ARQUITECTURA-THEFORGE.md](MCP-ARQUITECTURA-THEFORGE.md), [integracion-theforge/README.md](integracion-theforge/README.md). Histórico / roadmaps no prioritarios: [../archive/README.md](../archive/README.md).
 
+**Etapas como cambios legacy (mayo 2026):** Cada etapa de cambio en flujo legacy es un `Stage` independiente. FalkorDB sincroniza `:LegacyStage` con `DERIVED_FROM` al padre por ordinal. Stage 1 produce BRD/To-Be como "sistema actual". Etapas 2+ usan prompts incrementales desde el MDD de la etapa base. El chat legacy incluye desambiguación: ante ambigüedad, pregunta si es consulta o cambio nuevo. Ver `PLAN-BRD-TOBE-MANUAL-PROCESOS-THEFORGE.md`.
+
 **MCP servidor The Forge (`@theforge/mcp-server`):** paquete en `packages/mcp-server` que expone la **API Nest** como herramientas MCP (stdio o HTTP); auth `MCP_M2M_SECRET`. Documentación: [THEFORGE-MCP-SERVER.md](THEFORGE-MCP-SERVER.md). No sustituye a AriadneSpecs.
 
 **Flujo Workshop agéntico:** Chat → `AgentSupervisor` (etapa activa `Stage`) → ingest MDD a Falkor SDD por `stageId` → evaluador legacy opcional → respuesta puede incluir `evaluatorCritique`. Memoria episódica: `GET /agent-supervisor/episodic/:projectId`. **API REST:** `GET/PATCH /projects/:id` devuelve y acepta `mddContent` / `status` / `precisionScore` / `estimation` **aplanados** desde la etapa principal; `PATCH` admite `stageId` opcional para escribir el MDD en otra etapa.
@@ -179,4 +181,4 @@ Modelos principales: **Project** (entregables globales: SPEC, Blueprint, API, In
 
 ---
 
-*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-05-02. Rutas relativas al monorepo `theforge`.*

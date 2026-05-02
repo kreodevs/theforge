@@ -1,3 +1,5 @@
+> ⚠️ **Nota histórica:** Este documento describe un flujo especulativo de generación vía Cursor/Antigravity. La implementación real del pipeline MDD multiagente está en `apps/api/src/modules/ai-analysis/` (LangGraph). Ver `THEFORGE-INDEX.md` y `MDD-PATRONES-FLUJO.md` para la versión actual.
+
 # TheForge: Spec-Driven Generator Workflow
 
 This document outlines the standard operating procedure for generating high-precision software specifications using the "Constitution" pattern.
@@ -58,4 +60,4 @@ El backend usa **OpenRouter** (`OPENROUTER_API_KEY` o `AI_API_KEY` / `OPENAI_API
 
 ---
 
-*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-05-02. Rutas relativas al monorepo `theforge`.*

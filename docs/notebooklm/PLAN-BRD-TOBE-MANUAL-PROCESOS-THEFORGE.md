@@ -2,7 +2,12 @@
 
 Documento de trabajo para integrar **fases previas al MDD** (BRD + Manual To-Be en greenfield; As-Is + BRD/To-Be antes del MDD de cambio en legacy), alineado con el stack actual (NestJS, Prisma, FalkorDB, `AgentSupervisorService`, `AiOrchestratorService`, `LegacyCoordinatorService`, MCP Ariadne/TheForge).
 
-**Estado:** en curso — G0/G1/L1/L2 parcialmente implementados en código; F1/F2 pendientes.
+**Estado:** ✅ **Completado** (mayo 2026) — G0/G1/G2/L1/L2 implementados en código.  
+- Etapas como cambios legacy: FalkorDB sync LegacyStage con DERIVED_FROM, dual-write legacy→stage, prompts incrementales.  
+- Stage 1: BRD/To-Be como "sistema actual".  
+- Chat legacy con desambiguación consulta vs cambio.  
+- Botón "+ Nueva etapa de cambio" en UI Workshop.  
+- F1/F2 (FalkorDB ingesta extendida) pendientes de baja prioridad.
 
 ---
 
@@ -135,4 +140,4 @@ _Última actualización: alineado a fuente única `Stage`; priorizar L1/L2 antes
 
 ---
 
-*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-05-02. Rutas relativas al monorepo `theforge`.*

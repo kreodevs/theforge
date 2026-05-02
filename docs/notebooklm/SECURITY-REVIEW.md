@@ -1,6 +1,9 @@
 # Revisión de seguridad — TheForge
 
-**Fecha:** 2025-01-29 · **Nota 2026:** Los hallazgos siguen siendo útiles como lista de verificación; valida en código si ya hay SSO/guards (p. ej. variables `SSO_*` en `.env.example`) antes de asumir que C1 sigue igual.
+**Fecha:** 2025-01-29 · **Nota 2026 (actualizado mayo 2026):** Los hallazgos de seguridad han sido mayoritariamente corregidos:
+- ✅ **C1 (Autenticación):** JWT + OTP implementado, `JwtAuthGuard` global activo en toda la API.
+- ✅ **A1 (CORS):** `CORS_ORIGINS` restringido en producción.
+- ✅ **M1 (SSRF):** Scraper usa `ip-range-check` (bloqueo IPs privadas).
 
 **Alcance:** API NestJS, web Vite/React, módulos ai-analysis, scraper, sesiones, proyectos.
 
@@ -113,4 +116,4 @@
 
 ---
 
-*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-05-02. Rutas relativas al monorepo `theforge`.*

@@ -13,7 +13,7 @@ Punto de entrada para humanos y agentes. **Arquitectura y producto (NotebookLM):
 
 ## Raíz del monorepo (no están en `docs/`)
 
-- `blueprint.md`, `mdd.md` — especificación de producto viva.
+- `blueprint.md`, `mdd.md` — especificación de producto viva. Actualizadas a v2.0 (mayo 2026).
 
 ## Limpieza reciente (2026-04)
 

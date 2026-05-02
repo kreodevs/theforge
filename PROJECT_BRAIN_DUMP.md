@@ -1,19 +1,21 @@
 # The Forge — Knowledge Base (NotebookLM / PROJECT_BRAIN_DUMP)
 
-> **Propósito:** Documento maestro para cuadernos de estudio (p. ej. NotebookLM). Describe el monorepo **theforge** tal como está en el código y en `docs/` a marzo 2026.  
-> **No confundir:** Este repo es **The Forge** (Software Factory: entrevista → MDD → semáforo → estimación). No es el producto “Google Antigravity”; la IA agéntica usa **LangChain / LangGraph** y orquestación propia (`AgentSupervisor`), con el LLM **vía OpenRouter** (API compatible OpenAI; adapter `OpenRouterAdapter`).
+> **Propósito:** Documento maestro para cuadernos de estudio (p. ej. NotebookLM). Describe el monorepo **theforge** tal como está en el código a mayo 2026.
+> **No confundir:** Este repo es **The Forge** (Software Factory: entrevista → MDD → semáforo → estimación). No es el producto "Google Antigravity"; la IA agéntica usa **LangChain / LangGraph** y orquestación propia (`AgentSupervisor`), con el LLM **vía OpenRouter** (API compatible OpenAI; adapter `OpenRouterAdapter`).
 
 ---
 
 ## 1. Executive Summary
 
-**The Forge** es una aplicación **Specification-Driven Development (SDD)** que guía un proyecto desde una **entrevista proactiva con IA** hasta un **Master Design Document (MDD)** de 7 secciones canónicas, un **semáforo** de calidad (ROJO / AMARILLO / VERDE), **estimación de coste en MXN** y generación de **entregables** (Spec, Blueprint, contratos API, flujos, infra, tasks, etc.).
+**The Forge** es una aplicación **Specification-Driven Development (SDD)** que guía un proyecto desde una **entrevista proactiva con IA** hasta un **Master Design Document (MDD)** de 7 secciones canónicas, un **semáforo** de calidad (ROJO / AMARILLO / VERDE), **estimación de coste en MXN** (nómina interna + valor mercado) y generación de **entregables** (Spec, Blueprint, contratos API, flujos, infra, tasks, etc.).
 
-- **Frontend:** React 18 + Vite 6 + Tailwind 3, estado con Zustand, UI estilo Kreo (tokens luxury/dorado).
-- **Backend:** NestJS 10, Prisma 5 + PostgreSQL, grafo documental en **FalkorDB** (Cypher), colas **BullMQ** opcionales vía Redis, integración **HTTP JSON-RPC** con MCP externo **AriadneSpecs / TheForge** para código indexado (`THEFORGE_MCP_URL`).
-- **IA:** Patrón **strategy** (`LLMProvider` → `OpenRouterAdapter`); **LangGraph** para grafos de agentes; **AgentSupervisor** como capa de orquestación del chat y la etapa (`Stage`).
+- **Frontend:** React 18 + Vite 6 + Tailwind 3, estado con Zustand.
+- **Backend:** NestJS 10, Prisma 5 + PostgreSQL, grafo documental en **FalkorDB** (Cypher), colas **BullMQ** vía Redis, integración **HTTP JSON-RPC** con MCP externo **AriadneSpecs**.
+- **IA:** Patrón **strategy** (`LLMProvider` → `OpenRouterAdapter`); **LangGraph** para grafos de agentes multi-etapa; **AgentSupervisor** como capa de orquestación.
+- **Multi-etapa:** Un proyecto tiene múltiples `Stage` (etapas), cada una con su propio MDD, semáforo, BRD/To-Be/As-Is y estimación. Las etapas legacy se relacionan en FalkorDB (`DERIVED_FROM`).
+- **MCP propio:** `@theforge/mcp-server` expone la API Nest como herramientas MCP (stdio/HTTP).
 
-**Fuentes canónicas en repo:** `docs/notebooklm/THEFORGE-INDEX.md`, `docs/notebooklm/MCP-ARQUITECTURA-THEFORGE.md`, `docs/notebooklm/STAGE-SDD.md`, `blueprint.md`, `.cursor/skills/theforge/SKILL.md`.
+**Fuentes canónicas en repo:** `docs/notebooklm/THEFORGE-INDEX.md`, `docs/notebooklm/STAGE-SDD.md`, `blueprint.md`, `mdd.md`.
 
 ---
 
@@ -22,228 +24,156 @@
 ### 2.1 Patrón de diseño
 
 | Capa | Patrón / estilo |
-|------|------------------|
-| API | **Modular monolith (NestJS)**: módulos por dominio, **DI** de Nest, guards/interceptors globales (`JwtAuthGuard`, `UserContextInterceptor`). |
-| IA | **Ports & Adapters**: interfaz `LLMProvider` en `modules/ai/interfaces/`; implementación `OpenRouterAdapter` en `modules/ai/adapters/`. Factory `createLLMProvider()`. |
-| Datos relacionales | **Repository vía PrismaService**; modelos `User`, `Project`, `Stage`, `Session`, `Estimation`, `EpisodicMemory`. |
-| Grafo SDD | **FalkorDB** como backend de grafo embebido (Redis-compatible): nodos de documento/entidades por **stage**, no mezclar con el índice de código del MCP. |
-| Legacy / código | **TheForgeService** cliente HTTP al MCP ajeno; **LegacyCoordinatorService** orquesta flujo legacy + documentación de partida. |
+|---|---|
+| API | **Modular monolith (NestJS)**: módulos por dominio, DI de Nest, guards globales (`JwtAuthGuard`) |
+| IA | **Ports & Adapters**: interfaz `LLMProvider`; implementación `OpenRouterAdapter` |
+| Datos relacionales | **Repository vía PrismaService**; modelos User, Project, Stage, Session, Estimation |
+| Grafo SDD | **FalkorDB** — nodos por stageId: Project, Stage, DB_Entity, API_Endpoint |
+| Legacy / código | **TheForgeService** cliente HTTP al MCP Ariadne; **LegacyCoordinatorService** |
+| MCP propio | **`@theforge/mcp-server`** — herramientas sobre la API Nest (proyectos, entregables, orquestador) |
 
-No es hexagonal puro con puertos explícitos en todos los módulos; es un **Nest modular** con disciplina fuerte en la capa IA (adapters) y contratos en `packages/shared-types`.
-
-### 2.2 Estructura de carpetas (relevante)
+### 2.2 Estructura de carpetas
 
 ```
 theforge/
 ├── apps/
-│   ├── api/                 # NestJS — orquestador, IA, proyectos, MCP cliente
-│   │   └── src/
-│   │       ├── app.module.ts
-│   │       ├── modules/     # auth, ai, engine, projects, sessions,
-│   │       │                 # ai-orchestrator, agent-supervisor, ai-analysis,
-│   │       │                 # theforge, legacy-flow, scraper
-│   │       ├── prisma/
-│   │       └── common/
-│   └── web/                 # React + Vite — Workshop, lista proyectos, OTP
+│   ├── api/                 # NestJS — auth, ai, engine, projects, sessions,
+│   │                         # ai-orchestrator, agent-supervisor, ai-analysis,
+│   │                         # theforge, legacy-flow, scraper, graph-memory
+│   └── web/                 # React + Vite — Workshop, Login, Lista proyectos
 ├── packages/
 │   ├── database/            # schema.prisma, migraciones
-│   ├── shared-types/       # Zod/DTOs compartidos
-│   └── config/              # tsconfig, eslint, tailwind base
-├── docs/                    # THEFORGE-INDEX, MCP, STAGE-SDD, validación SDD
-├── docker-compose.yml       # db, redis cola, falkor-sdd, api, web
+│   ├── shared-types/        # Zod/DTOs compartidos
+│   ├── business-rules/      # Estimación MXN, constantes (fuente única)
+│   ├── config/              # tsconfig, eslint, tailwind base
+│   └── mcp-server/          # Servidor MCP propio (stdio/HTTP)
+├── docs/
+│   ├── JSDOC.md             # Convenciones de documentación
+│   ├── notebooklm/          # Corpus: THEFORGE-INDEX, SDD, MCP, planes
+│   └── archive/             # Histórico y roadmaps
+├── docker-compose.yml       # 6 servicios: db, redis, falkor, api, web, mcp
+├── blueprint.md             # Guía de implementación técnica
+├── mdd.md                   # MDD del producto TheForge (7 secciones)
 └── turbo.json
 ```
 
-### 2.3 Flujo de datos principal (mermaid)
+### 2.3 Flujo de datos principal
 
-```mermaid
-flowchart TB
-  subgraph Web["apps/web"]
-    WV[WorkshopView + Zustand]
-    API_CLIENT[apiFetch / JWT]
-  end
-
-  subgraph Api["apps/api NestJS"]
-    ORCH[AiOrchestratorService]
-    SUP[AgentSupervisorService]
-    PRJ[ProjectsService]
-    AI[AiService + LLM_PROVIDER]
-    ENG[EngineService / CostCalculator]
-    TF[TheForgeService → MCP HTTP]
-    LG[LangGraph graphs + checkpoints PG]
-  end
-
-  subgraph Data["Persistencia"]
-    PG[(PostgreSQL Prisma)]
-    FK[(FalkorDB SDD)]
-    RD[(Redis BullMQ opcional)]
-  end
-
-  subgraph External["Externos"]
-    MCP[Ariadne MCP THEFORGE_MCP_URL]
-    LLM[OpenRouter API]
-  end
-
-  WV --> API_CLIENT
-  API_CLIENT --> ORCH
-  ORCH --> SUP
-  SUP --> LG
-  SUP --> AI
-  AI --> LLM
-  SUP --> FK
-  ORCH --> PRJ
-  PRJ --> PG
-  TF --> MCP
-  LEG[LegacyCoordinatorService] --> TF
-  LEG --> PG
-  ENG --> PRJ
 ```
-
-**Chat workshop:** `POST /ai-orchestrator/chat` (y rutas relacionadas) → orquestador → supervisor → herramientas (incl. ingesta MDD a Falkor, herramientas de grafo SDD) → respuesta al cliente.
-
-### 2.4 Tres “cerebros” que NotebookLM no debe mezclar
-
-1. **PostgreSQL + Prisma:** estado durable del producto (usuario, proyecto, etapas, sesiones, MDD por etapa aplanado al API para compatibilidad).
-2. **FalkorDB (grafo SDD):** vista estructurada del MDD y entidades por `stageId` — consultas Cypher de solo lectura / herramientas de agente.
-3. **MCP TheForge (Ariadne):** índice del **código fuente** del cliente; UUID `theforgeProjectId` (proyecto o `roots[].id`). **No** es la misma base que Falkor SDD.
+Web [WorkshopView + Zustand] → apiFetch (JWT)
+                                     ↓
+                          AiOrchestratorService
+                                     ↓
+                          AgentSupervisorService
+                                    /  \
+                                   /    \
+                         LangGraph     GraphMemoryService (FalkorDB)
+                         (MDD agents)        /        \
+                            |              /          \
+                       OpenRouter     FalkorDB     PostgreSQL
+                       (LLM)          (grafo SDD)  (Prisma)
+```
 
 ---
 
-## 3. Stack Tecnológico (versiones declaradas en package.json)
+## 3. Stack Tecnológico
 
-| Área | Paquete / runtime | Versión (aprox.) |
-|------|-------------------|-------------------|
-| Monorepo | npm workspaces | turbo |
-| Build | turbo | ^2.3.0 |
+| Área | Paquete | Versión |
+|---|---|---|
+| Monorepo | npm workspaces / turbo | ^2.3 |
 | Runtime Node | engines | >=20 |
 | API framework | @nestjs/* | ^10.4.x |
-| ORM | prisma / @prisma/client | ^5.22.0 |
-| HTTP API | express (Nest) | ^5.2.1 |
-| Colas | bullmq | ^5.71.1 |
-| Grafo SDD | falkordb | ^6.6.0 |
-| IA – OpenRouter (cliente) | openai | ^4.73.0 |
-| IA – orquestación | @langchain/langgraph, checkpoint postgres | ^0.2.x / ^1.0.0 |
-| Validación / tipos | zod | ^3.23.8 |
-| Web | react / react-dom | ^18.3.1 |
-| Web build | vite | ^6.0.3 |
-| Web estado | zustand | ^5.0.10 |
-| Markdown UI | react-markdown, mermaid | ^10.x / ^11.x |
-| Estilos | tailwindcss | ^3.4.15 |
-
-**Servicios externos:** MCP Ariadne (HTTPS JSON-RPC); **OpenRouter** (LLM/embedding vía API compatible OpenAI); opcional Tavily (`@langchain/tavily`); email OTP (nodemailer + `EMAIL_OTP`).
-
-**No hay “Google Antigravity” como dependencia** en este repositorio; si un documento externo lo menciona, aquí el paralelo es el flujo **Workshop + LangGraph + OpenRouter + MCP** (no un producto Google interno al repo).
+| ORM | prisma / @prisma/client | ^5.22 |
+| Colas | bullmq | ^5.71 |
+| Grafo SDD | falkordb | ^6.6 |
+| IA (OpenRouter) | openai SDK | ^4.73 |
+| IA (orquestación) | @langchain/langgraph | ^0.2.x |
+| Web | react / react-dom | ^18.3 |
+| Web build | vite | ^6 |
+| Web estado | zustand | ^5 |
+| Markdown UI | react-markdown + mermaid | ^10.x / ^11.x |
+| Estilos | tailwindcss | ^3.4 |
 
 ---
 
 ## 4. Inventario de Funcionalidades
 
-| Funcionalidad | Archivos / módulos clave | Lógica principal |
-|---------------|--------------------------|------------------|
-| Autenticación OTP + JWT | `modules/auth/` | OTP por email; JWT; `JwtAuthGuard` global. |
-| Proyectos CRUD + entregables | `modules/projects/` | `Project`, campos de documentos; etapas `Stage`; cascadas de generación. |
-| Sesiones / chat log | `modules/sessions/` | Persistencia `Session.chatLog`, `contextStep`. |
-| LLM unificado | `modules/ai/` (`ai.factory`, `adapters/openrouter.adapter.ts`, `ai.service`) | OpenRouter; sin imports de SDK fuera de `adapters/`. |
-| Motor semáforo / checklist | `modules/engine/` (+ uso desde proyectos/orquestador) | Derivación ROJO/AMARILLO/VERDE desde estructura MDD (entidades, business_core, edge_cases…). |
-| Estimación MXN | `modules/engine/cost-calculator.service.ts`, `apps/web/src/utils/costCalculator.ts` | Horas: entidades×12 + pantallas×16 + endpoints×4; multiplicadores `TechnicalMetadata`; buffer 1.25 si status ≠ VERDE; **total MXN horas × 1050** en servicio alineado con front. Tarifas por rol en front (`RATES_MXN`) para **vista** de equipo. |
-| Orquestador chat | `modules/ai-orchestrator/` | Entrada HTTP del workshop; delega en supervisor. |
-| Supervisor agéntico | `modules/agent-supervisor/` | Enrutado por etapa; ingest MDD a Falkor; herramientas; evaluador legacy opcional (`AGENT_EVALUATOR_LEGACY`). |
-| Análisis / ADRs / hilos | `modules/ai-analysis/` | Hilos MDD, ADRs persistidos, rutas de análisis. |
-| Cliente MCP TheForge | `modules/theforge/theforge.service.ts`, `theforge-evidence-context.util.ts` | `tools/call` (list_known_projects, ask_codebase, semantic_search, get_file_content, …); `DEBUG_MCP=1` loguea request/response. |
-| Flujo legacy | `modules/legacy-flow/` | `generateCodebaseDoc`, `start`, MDD de cambio, entregables; `legacyAnalyzerIndicatesEmptyIndex` evita persistir texto “sin datos en índice” y fuerza fallback clásico. |
-| Scraper / URLs | `modules/scraper/` | Guard SSRF (`ip-range-check`), Cheerio. |
-| Workshop UI | `apps/web/src/views/WorkshopView.tsx`, `store/workshopStore.ts` | Tres columnas desktop; móvil tabs Chat/Docs/Estado; semáforo y costos; tabs de documentos. |
-| Lista proyectos + TheForge modal | `apps/web/src/App.tsx` | Crear NEW/LEGACY; modal proyectos/repos MCP. |
+| Funcionalidad | Archivos clave |
+|---|---|
+| Auth OTP + JWT | `modules/auth/` (guard global, JWT, OTP email) |
+| Proyectos + Etapas | `modules/projects/` (CRUD, Stage, entregables, gates) |
+| Sesiones / chat | `modules/sessions/` (chatLog, contextStep) |
+| LLM unificado | `modules/ai/` (LLMProvider, OpenRouterAdapter) |
+| Semáforo | `modules/engine/` + `@theforge/business-rules` |
+| Estimación MXN | `modules/engine/` + `business-rules` (fuente única) |
+| Pipeline MDD multiagente | `modules/ai-analysis/` (LangGraph, 7 agentes) |
+| DBGA / Fase 0 | `modules/ai-analysis/` (Scout, Tech Auditor, Synthesis) |
+| Orquestador chat | `modules/ai-orchestrator/` |
+| Supervisor agéntico | `modules/agent-supervisor/` (herramientas, Falkor) |
+| Cliente MCP Ariadne | `modules/theforge/` (HTTP JSON-RPC) |
+| Flujo legacy | `modules/legacy-flow/` (coordinator, staged discovery) |
+| Grafo Falkor SDD | `modules/graph-memory/` (Cypher queries) |
+| Scraper URLs | `modules/scraper/` (Cheerio, ip-range-check) |
+| MCP server propio | `packages/mcp-server/` (40+ herramientas) |
+| Workshop UI | `apps/web/src/views/WorkshopView.tsx` |
+| Lista proyectos | `apps/web/src/App.tsx` |
+
+### 4.1 Flujo Greenfield (proyectos nuevos)
+Paso 0 (DBGA) → BRD (opcional gate) → To-Be (opcional) → MDD §1–7 → Semáforo → Entregables
+
+### 4.2 Flujo Legacy (cambios en código existente)
+Start (modification plan) → Answer (preguntas) → As-Is → BRD/To-Be (opcional) → MDD de cambio → Entregables. Cada etapa es un `Stage` independiente con trazabilidad FalkorDB.
 
 ---
 
-## 5. Grafo de Dependencias (servicios Nest — comunicación lógica)
+## 5. Lógica de Negocio Crítica
 
-```mermaid
-flowchart LR
-  Auth[AuthModule]
-  Prisma[PrismaModule]
-  Ai[AiModule]
-  Engine[EngineModule]
-  Projects[ProjectsModule]
-  Sessions[SessionsModule]
-  TheForge[TheForgeModule]
-  Legacy[LegacyFlowModule]
-  Analysis[AiAnalysisModule]
-  Supervisor[AgentSupervisorModule]
-  Orchestrator[AiOrchestratorModule]
-
-  Orchestrator --> Sessions
-  Orchestrator --> Projects
-  Orchestrator --> TheForge
-  Orchestrator --> Supervisor
-  Orchestrator --> Analysis
-
-  Supervisor --> Projects
-  Supervisor --> Ai
-  Supervisor --> Analysis
-
-  Legacy --> TheForge
-  Legacy --> Projects
-  Legacy --> Ai
-
-  Projects --> Prisma
-  Sessions --> Prisma
-  Auth --> Prisma
-  Ai --> Prisma
-
-  Engine --> Prisma
-```
-
-**Dependencias npm internas:** `apps/api` depende de `@theforge/database` y `@theforge/shared-types`. `apps/web` consume API vía HTTP (no importa workspace de API).
+1. **MDD de 7 secciones:** Orden canónico: Contexto, Arquitectura y Stack, Modelo de Datos, Contratos API, Lógica y Edge Cases, Seguridad, Infraestructura.
+2. **Semáforo:** ROJO <85%, AMARILLO 85-94%, VERDE ≥95% (con alivio de grafo SDD).
+3. **Estimación:** Fórmula en `@theforge/business-rules`. Nómina interna: $185/hr. Mercado: $1,050/hr.
+4. **Etapas como cambios:** Cada cambio legacy = nuevo Stage con `DERIVED_FROM` a etapa anterior en FalkorDB.
+5. **BRD/To-Be Gate:** Opcional por proyecto. Exige BRD y To-Be aprobados antes de generar MDD técnico.
+6. **Chat legacy con desambiguación:** Si el usuario menciona un cambio o hay ambigüedad, preguntar si es consulta o cambio.
+7. **LLM aislado:** Ningún servicio de negocio importa SDK `openai` directamente.
+8. **Conformance:** Blueprint/API/Infra vs MDD — gates que bloquean generación si hay gaps.
+9. **Preferencias arquitectónicas aprendidas:** `ArchitecturalPreference` desde MDDs anteriores.
 
 ---
 
-## 6. Lógica de Negocio Crítica (reglas embebidas)
+## 6. Puntos de Extensión
 
-1. **MDD de 7 secciones:** Orden y semántica acotan semáforo y flujos (ver `docs/notebooklm/THEFORGE-INDEX.md` §4 y `docs/notebooklm/ENTREGABLES-SDD-VALIDACION.md`).
-2. **Semáforo:** ROJO si faltan entidades o `business_core`; AMARILLO con gaps; VERDE checklist completo (~95% precisión según reglas del engine).
-3. **Generar entregables en cascada:** Condicionado a complejidad (`LOW` / `MEDIUM` / `HIGH`) y a semáforo VERDE donde aplica; LEGACY tiene caminos alternos (codebase doc, ingeniería inversa).
-4. **LLM aislado:** Ningún servicio de negocio debe importar el SDK `openai` (u otros clientes LLM) directamente; solo el adapter.
-5. **Conformance:** Blueprint debe alinearse con MDD §3 para desbloquear generación de API en UI (lógica en flujo legacy + conformance service).
-6. **Coste:** Fórmula y constantes compartidas conceptualmente entre `cost-calculator.service.ts` y `costCalculator.ts`; alterar solo con acuerdo explícito (regla de arquitectura).
+- **Duplicación documentación vs código:** Algunos archivos `docs/` pueden quedar desactualizados. Este documento y `THEFORGE-INDEX.md` son la fuente canónica.
+- **Agentic AI:** LangGraph + checkpoints en Postgres. Complejidad alta — candidato a diagramas de secuencia.
+- **MCP:** `@theforge/mcp-server` evoluciona con cada nuevo endpoint de producto.
+- **Multi-tenant:** Modelo actual por `userId` en `Project`. Sin aislamiento multi-org pensado aún.
 
 ---
 
-## 7. Puntos de Extensión y Refactorización
+## 7. Preguntas Abiertas
 
-- **Duplicación documentación vs código:** `docs/notebooklm/THEFORGE-INDEX.md` §6.1 menciona compose “sin Redis BullMQ”; el `docker-compose.yml` actual incluye **theforge-redis-queue** — conviene **alinear docs** con el stack real.
-- **Índice THE-FORGE vs THEFORGE:** Algunos paths históricos (`THE-FORGE-INDEX` eliminado o renombrado a `THEFORGE-INDEX.md`); buscar referencias rotas.
-- **Agentic AI:** LangGraph + checkpoints en Postgres; complejidad alta — candidato a diagramas de secuencia por “tipo de mensaje” y tests de contrato en rutas críticas.
-- **MCP:** Contrato evoluciona (`theforge-mcp-tools-alignment.spec.ts`); mantener `THEFORGE_MCP_CLIENT_ARG_KEYS` sincronizado.
-- **NotebookLM:** Cualquier afirmación sobre “Antigravity” debe contrastarse con este archivo: aquí las herramientas son **LangChain/LangGraph + OpenRouter + MCP HTTP**.
+1. ¿BullMQ + Redis obligatorio en todos los despliegues o mantener modo síncrono?
+2. ¿Evolucionar el modelo de costos para incluir costo de tokens IA en la estimación?
+3. ¿Multi-tenant con aislamiento real por organización?
 
 ---
 
-## 8. Preguntas Abiertas (para debatir con NotebookLM)
-
-1. ¿Conviene extraer **puertos explícitos** (interfaces) para `ProjectsService` y `TheForgeService` y testear el orquestador con dobles, o el coste es demasiado alto para el tamaño del equipo?
-2. ¿El **modelo de coste** debería unificar una sola fuente de verdad (p. ej. paquete `shared`) para backend + frontend y eliminar divergencias futuras con `RATES_MXN` vs `RATE_MXN_PER_HOUR`?
-3. **Escala:** ¿BullMQ + Redis como obligatorio en todos los despliegues o mantener modo síncrono para instalaciones pequeñas?
-4. **Seguridad MCP:** ¿Auditoría sistemática de prompts y de datos enviados en `DEBUG_MCP=1` en entornos compartidos?
-5. **Multi-tenant:** El modelo actual es por `userId` en `Project`; ¿hay límites de aislamiento pensados para SaaS multi-org?
-
----
-
-## 9. Referencias rápidas de archivos
+## 8. Referencias rápidas de archivos
 
 | Tema | Ruta |
-|------|------|
+|---|---|
 | Entrada Nest | `apps/api/src/main.ts`, `app.module.ts` |
 | Chat HTTP | `apps/api/src/modules/ai-orchestrator/` |
 | Supervisor | `apps/api/src/modules/agent-supervisor/` |
 | Prisma schema | `packages/database/schema.prisma` |
 | Cliente MCP | `apps/api/src/modules/theforge/theforge.service.ts` |
 | Legacy | `apps/api/src/modules/legacy-flow/legacy-coordinator.service.ts` |
-| Workshop | `apps/web/src/views/WorkshopView.tsx`, `apps/web/src/store/workshopStore.ts` |
+| Grafo SDD | `apps/api/src/modules/graph-memory/graph-memory.service.ts` |
+| Workshop | `apps/web/src/views/WorkshopView.tsx` |
+| Store | `apps/web/src/store/workshopStore.ts` |
 | Índice arquitectura | `docs/notebooklm/THEFORGE-INDEX.md` |
 | Docker | `docker-compose.yml`, `.env.example` |
+| MCP server propio | `packages/mcp-server/src/index.ts` |
 
 ---
 
-*Generado como volcado estructurado para ingestión en NotebookLM. Última revisión según árbol de código del monorepo **theforge**.*
+*Actualizado al estado del monorepo a mayo 2026.*

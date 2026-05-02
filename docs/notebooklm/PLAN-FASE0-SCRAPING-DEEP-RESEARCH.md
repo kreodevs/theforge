@@ -171,4 +171,4 @@ Con este plan se cubre: Cheerio, detección de URLs, scraping, conversión a mar
 
 ---
 
-*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-05-02. Rutas relativas al monorepo `theforge`.*

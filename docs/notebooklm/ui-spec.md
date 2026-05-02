@@ -1,3 +1,7 @@
+# ui-spec
+
+> ⚠️ **Nota:** Este documento es una especificación inicial del diseño de UI. La implementación actual del Workshop (WorkshopView.tsx) puede diferir en detalles. Ver `docs/notebooklm/THEFORGE-INDEX.md` y el código fuente para la versión vigente.
+
 ## 1. La Pantalla de "TheForge" (The Workshop)
 
 Esta es la vista principal donde sucede la magia. Debe ser una interfaz de **tres columnas** (o una principal con dos sidebars) para evitar que pierdas el contexto.
@@ -62,4 +66,4 @@ Asegúrate de que Cursor implemente estos elementos específicos en la GUI:
 
 ---
 
-*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-04-28. Rutas relativas al monorepo `theforge`.*
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-05-02. Rutas relativas al monorepo `theforge`.*
