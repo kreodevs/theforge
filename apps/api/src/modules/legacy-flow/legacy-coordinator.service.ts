@@ -621,12 +621,19 @@ export class LegacyCoordinatorService {
       "<<<BRD>>>\n(markdown BRD)\n<<<END_BRD>>>\n<<<TOBE>>>\n(markdown To-Be)\n<<<END_TOBE>>>\n\n" +
       "--- DOCUMENTO ---\n\n" +
       codebaseDoc.slice(0, 120_000);
-    const raw = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
-    const text = (raw ?? "").trim();
-    const parsed = parseBrdTobeTaggedSuggest(text);
+    let raw: string;
+    let parsed: { brd: string; tobe: string } | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      raw = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
+      parsed = parseBrdTobeTaggedSuggest((raw ?? "").trim());
+      if (parsed) break;
+      if (attempt < 2) {
+        console.warn(`[suggestBrdTobeFromCodebaseDoc] Intento ${attempt}/2: respuesta mal formada, reintentando...`);
+      }
+    }
     if (!parsed) {
       throw new BadRequestException(
-        "No se pudieron extraer BRD y To-Be del modelo. Reintenta o acorta el documento de partida.",
+        "No se pudieron extraer BRD y To-Be del modelo tras 2 intentos. Reintenta o acorta el documento de partida.",
       );
     }
     const brd = cleanDocumentContent(parsed.brd);

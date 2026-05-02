@@ -310,6 +310,7 @@ export default function WorkshopView({
   const [mddInicialCopyOk, setMddInicialCopyOk] = useState(false);
   /** BRD / To-Be (pestañas Workshop): borradores locales y modo preview|fuente (Grabar vía barra / aviso). */
   const brdTobeServerSnap = useRef({ stageId: "", brd: "", tobe: "", asis: "" });
+  const prevLoadingReasonRef = useRef<string | null>(null);
   const [brdWorkshopDraft, setBrdWorkshopDraft] = useState("");
   const [toBeWorkshopDraft, setToBeWorkshopDraft] = useState("");
   const [asIsWorkshopDraft, setAsIsWorkshopDraft] = useState("");
@@ -394,6 +395,7 @@ export default function WorkshopView({
     setToBeDocViewMode("preview");
   }, [projectId]);
 
+  /** Sincroniza drafts desde el stage cuando el contenido del servidor cambia, preservando ediciones del usuario. */
   useEffect(() => {
     if (!activeWorkshopStage || activeWorkshopStage.id !== activeStageId) return;
     const id = activeWorkshopStage.id;
@@ -433,6 +435,26 @@ export default function WorkshopView({
     activeWorkshopStage?.toBeManualContent,
     activeWorkshopStage?.asIsManualContent,
   ]);
+
+  /** Fuerza sincronización cuando una operación de BRD/To-Be acaba de completarse (loading pasó de true a false).
+   *  Cubre casos donde el efecto anterior no detectó el cambio (ej. Zustand batching, referencia de stage sin mutar). */
+  useEffect(() => {
+    const wasGeneratingBrd =
+      prevLoadingReasonRef.current === "brd-tobe-from-dbga" ||
+      prevLoadingReasonRef.current === "legacy-brd-tobe-suggest";
+    if (!loading && wasGeneratingBrd && activeWorkshopStage) {
+      setBrdWorkshopDraft(activeWorkshopStage.brdContent ?? "");
+      setToBeWorkshopDraft(activeWorkshopStage.toBeManualContent ?? "");
+      setAsIsWorkshopDraft(activeWorkshopStage.asIsManualContent ?? "");
+      brdTobeServerSnap.current = {
+        stageId: activeWorkshopStage.id,
+        brd: activeWorkshopStage.brdContent ?? "",
+        tobe: activeWorkshopStage.toBeManualContent ?? "",
+        asis: activeWorkshopStage.asIsManualContent ?? "",
+      };
+    }
+    prevLoadingReasonRef.current = loadingReason;
+  }, [loading, loadingReason, activeWorkshopStage?.id, activeWorkshopStage?.brdContent, activeWorkshopStage?.toBeManualContent, activeWorkshopStage?.asIsManualContent]);
 
   const brdWorkshopDirty = useMemo(
     () => brdWorkshopDraft !== (activeWorkshopStage?.brdContent ?? ""),
