@@ -797,6 +797,24 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   /**
+   * Extrae tokens de diseño del codebase (herramienta MCP extract_design_tokens).
+   * @param projectId - `theforgeProjectId` persistido.
+   * @returns JSON con tokens de diseño (tailwindTokens, cssTokens, etc.) o string vacío si falla.
+   */
+  async extractDesignTokens(projectId: string): Promise<string> {
+    if (!this.isConfigured()) return "";
+    try {
+      const ident = await this.resolveStoredToMcp(projectId);
+      const args: Record<string, unknown> = { projectId: ident.graphProjectId };
+      const out = await this.callTool("extract_design_tokens", args);
+      return out ?? "";
+    } catch (err) {
+      this.logger.error(`[TheForge] extractDesignTokens failed: ${err instanceof Error ? err.message : String(err)}`);
+      return "";
+    }
+  }
+
+  /**
    * Obtiene el contenido de un archivo del repo/proyecto (herramienta MCP get_file_content).
    * `projectId` se normaliza al id de repo indexado cuando el valor guardado es el id de workspace Ariadne.
    */

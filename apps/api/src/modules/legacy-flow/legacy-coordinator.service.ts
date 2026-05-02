@@ -49,10 +49,6 @@ import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import {
-  extractDesignTokensFromTheForgeContext,
-  formatDesignTokensForUxGuide,
-} from "../ai/design-token-extractor.js";
-import {
   isLegacyCodebaseDocMcpDebugUiEnabled,
   runWithMcpUiDebug,
   type McpUiDebugEntry,
@@ -1924,20 +1920,32 @@ export class LegacyCoordinatorService {
               "\n---\n\n**Regla obligatoria (legacy):** No inventes nada. Apégate al MDD y únicamente al conocimiento del codebase (TheForge) proporcionado arriba.\n\n**Instrucción:** Usa TODO el conocimiento anterior para alinear la guía con lo que ya existe. A continuación, MDD y Blueprint.\n\n" +
               uxPrompt;
           }
-          // Extraer tokens de diseño reales del codebase (Tailwind config, CSS custom props, themes)
+          // Extraer tokens de diseño reales del codebase (herramienta MCP extract_design_tokens)
           try {
-            const designTokenFindings = await extractDesignTokensFromTheForgeContext(
-              (q: string) => this.theforge.askCodebase(q, theforgeId),
-            );
-            const tokenCtx = formatDesignTokensForUxGuide(designTokenFindings);
-            if (tokenCtx.trim()) {
-              uxPrompt = "**Tokens de diseño extraídos del codebase — usar como valores reales:**\n---\n" +
-                tokenCtx.slice(0, 6000) +
-                "\n---\n\n" + uxPrompt;
+            const raw = await this.theforge.extractDesignTokens(theforgeId);
+            if (raw.trim()) {
+              const parsed = JSON.parse(raw) as {
+                foundTailwind?: boolean;
+                foundCssCustomProps?: boolean;
+                foundThemeFile?: boolean;
+                tailwindTokens?: Record<string, string>;
+                cssTokens?: Record<string, string>;
+                summary?: string;
+              } | null;
+              if (parsed?.summary?.trim()) {
+                const hasTokens = parsed.foundTailwind || parsed.foundCssCustomProps || parsed.foundThemeFile;
+                if (hasTokens) {
+                  uxPrompt =
+                    "**Tokens de diseño extraídos del codebase — usar como valores reales:**\\n---\\n" +
+                    (parsed.summary ?? "").slice(0, 6000) +
+                    "\\n---\\n\\n" +
+                    uxPrompt;
+                }
+              }
             }
           } catch {
             // Si falla la extracción, continuar sin tokens — no bloquear la generación
-            this.logger.warn("[Legacy UX/UI] Design token extraction skipped (error, continuing without tokens)");
+            this.logger.warn("[Legacy UX/UI] Design token extraction via MCP tool skipped (error, continuing without tokens)");
           }
           const uxUiGuideContent = await this.ai.generateResponse(uxPrompt, [], {
             systemPrompt: UX_UI_GUIDE_PROMPT,
