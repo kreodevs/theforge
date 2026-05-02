@@ -6,6 +6,7 @@ import type {
   EstimationComplexity,
   LiveMetricsResult,
   MDDContext,
+  PlanningDocumentFields,
   PrecisionBreakdown,
   SemaphoreStatusLive,
 } from "./estimation.types.js";
@@ -22,12 +23,17 @@ import {
   AI_BASE_OVERHEAD_TOKENS,
   AI_COST_PER_TOKEN_USD,
   MXN_PER_USD,
+  COMPLETENESS_WEIGHT,
+  CROSS_CONSISTENCY_WEIGHT,
+  MDD_QUALITY_WEIGHT,
 } from "./estimation.types.js";
 import {
   allocateDeliveryRoleHours,
   buildDeliveryTeamStructure,
 } from "@theforge/business-rules";
 import { extractTechnicalMetadataTags } from "../../engine/mdd-markdown-parser.js";
+import { computeDocumentCompleteness } from "./completeness.util.js";
+import { computeCrossDocumentConsistency } from "./consistency.util.js";
 
 /** Horas base por unidad (entidades, pantallas, endpoints) para derivar total. */
 const HOURS_PER_ENTITY = 12;
@@ -951,6 +957,7 @@ export class EstimationService {
       complexity?: EstimationComplexity;
       projectId?: string;
       stageId?: string | null;
+      documents?: PlanningDocumentFields;
     },
   ): LiveMetricsResult {
     const raw =
@@ -960,12 +967,76 @@ export class EstimationService {
     const md = raw?.trim() ?? "";
 
     const cx = this.resolveEstimationComplexity(options);
+    const docs = options?.documents;
+    const hasDocs = docs && Object.values(docs).some(v => String(v ?? "").trim().length > 0);
 
     let precision: number;
     let status: SemaphoreStatusLive;
     let readinessHints: string[];
 
-    if (options?.auditorGaps) {
+    if (hasDocs) {
+      // ── Métrica integral ──────────────────────────────────
+      // 1. Calidad MDD (path existente: auditor o regex)
+      let mddQuality: number;
+      if (options?.auditorGaps) {
+        mddQuality = Math.min(100, Math.max(0, options.auditorGaps.score));
+      } else {
+        const sections = detectReferenceSections(md);
+        const gaps = adjustGapsForEstimationComplexity(computeConsistencyGaps(md), cx);
+        const traceability = computeTraceabilityGaps(md);
+        const traceabilityPenalty = traceability.inconsistentSections.length > 0 ? 15 : 0;
+        const basePrecisionRaw = (sections.db + sections.endpoints + sections.security + sections.infra) * 25;
+        const gapPenalty =
+          gaps.contradictionGap * 22 +
+          gaps.securityCompletenessGap * 12 +
+          gaps.missingManifest * 16 +
+          gaps.mermaidParityGap * 8 +
+          gaps.infraStackGap * 10 +
+          gaps.securityEdgeCaseGap * 8 +
+          traceabilityPenalty;
+        mddQuality = Math.min(100, Math.round(Math.max(0, basePrecisionRaw - gapPenalty)));
+      }
+
+      // 2. Completitud (todos los documentos)
+      const completeness = computeDocumentCompleteness(docs!);
+      const completenessScore = completeness.overall;
+
+      // 3. Consistencia transversal
+      const consistency = computeCrossDocumentConsistency(docs!);
+      const consistencyScore = consistency.score;
+
+      // 4. Fórmula ponderada
+      precision = Math.round(
+        completenessScore * COMPLETENESS_WEIGHT +
+        consistencyScore * CROSS_CONSISTENCY_WEIGHT +
+        mddQuality * MDD_QUALITY_WEIGHT
+      );
+
+      // 5. Semáforo
+      const gapCount = consistency.gaps.length;
+      const hasGreenCriteria = precision >= PRECISION_GREEN_MIN && gapCount === 0;
+      status = hasGreenCriteria ? "green" : precision >= PRECISION_RED_MAX ? "yellow" : "red";
+
+      // 6. Hints incluyen gaps de consistencia
+      readinessHints = [];
+      if (consistency.gaps.length > 0) {
+        readinessHints.push(
+          ...consistency.gaps.slice(0, 3).map(
+            (g) => `[${g.from}→${g.to}] ${g.concept}: ${g.severity === "missing" ? "no cubierto" : "parcial"}`
+          )
+        );
+      }
+      // Añadir MDD hints si no hay suficientes hints de consistencia
+      if (readinessHints.length < 3) {
+        try {
+          const dummySections = { db: 0, endpoints: 0, endpointsWithPayloads: false, security: 0, securitySubstantive: false, infra: 0 };
+          const dummyGaps = { scopeDataGap: 0, contradictionGap: 0, securityCompletenessGap: 0, missingManifest: 0, dataIntegrityGap: 0, apiSchemaGap: 0, mermaidParityGap: 0, infraStackGap: 0, securityEdgeCaseGap: 0 };
+          const mddHints = buildReadinessHints(md, mddQuality, dummySections, dummyGaps, cx);
+          readinessHints.push(...mddHints.slice(0, 3 - readinessHints.length));
+        } catch { /* no-op */ }
+      }
+
+    } else if (options?.auditorGaps) {
       const g = options.auditorGaps;
       precision = Math.min(100, Math.max(0, g.score));
       const strictInfra = cx === "HIGH";
