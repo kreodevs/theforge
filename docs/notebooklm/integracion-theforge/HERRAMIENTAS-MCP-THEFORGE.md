@@ -39,8 +39,9 @@ Referencia de herramientas del MCP **AriadneSpecs** alineada a **`mcp_server_spe
 | **check_breaking_changes** | Alerta si se eliminan params usados en N sitios. | No implementado. |
 | **find_similar_implementations** | Búsqueda semántica antes de escribir código nuevo. | No implementado. |
 | **analyze_local_changes** | Pre-flight: git diff --cached vs grafo; tabla Tipo/Elemento/Impacto/Riesgo. Requiere workspaceRoot o stagedDiff. | No aplica desde API (sin acceso a workspace local); uso en Cursor en repo indexado. |
+| **extract_design_tokens** | Busca archivos de tokens de diseño (Tailwind config, CSS custom props, theme/token JSONs) en FalkorDB, parsea valores directamente (sin LLM), retorna JSON estructurado. | ✅ TheForgeService.extractDesignTokens — usado en legacy UX/UI guide. |
 
----
+|---
 
 ## Protocolo recomendado (AriadneSpecs)
 

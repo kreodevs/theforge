@@ -42,7 +42,20 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Nota sobre “Google Antigravity”
 
-En este repositorio **no existe una dependencia llamada Google Antigravity**; la pila agéntica documentada es **LangChain / LangGraph**, LLM **vía OpenRouter** (adapter) y MCP. Cualquier referencia externa a “Antigravity” debe interpretarse como **agentes IDE / flujo Workshop**, no como módulo interno.
+En este repositorio **no existe una dependencia llamada Google Antigravity**; la pila agéntica documentada es **LangChain / LangGraph**, LLM **vía OpenRouter** (adapter) y MCP. Cualquier referencia externa a "Antigravity" debe interpretarse como **agentes IDE / flujo Workshop**, no como módulo interno.
+
+---
+
+## [0.3.0] — 2026-05-02
+
+### Added
+
+- **AEM (Análisis y Estrategia de Mercado)**: nueva pestaña en el Workshop con editor preview/source, auto-save al perder foco, y soporte en ZIP de descarga. Campo `aemContent` en Prisma + DTO + MCP tool `set_aem_content`.
+- **Design token extraction**: reemplazado extractor LLM-based por tool MCP dedicado `extract_design_tokens` en AriadneSpecs (sin LLM, más rápido). Añadido método `extractDesignTokens()` en TheForgeService. Eliminado `design-token-extractor.ts`.
+
+### Changed
+
+- **Docs**: actualizados MCP server docs, CHANGELOG, README.
 
 ---
 

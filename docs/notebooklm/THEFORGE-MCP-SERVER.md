@@ -2,7 +2,7 @@
 
 Paquete **`packages/mcp-server`** del monorepo The Forge: servidor **MCP propio** que expone la **API REST Nest** (`apps/api`) como herramientas MCP. **No es** el MCP **AriadneSpecs** (código indexado del cliente); ese sigue siendo externo (`THEFORGE_MCP_URL` → oráculo Ariadne). Este servidor es **The Forge sobre The Forge**: IDE u orquestador llama al MCP → JWT M2M → mismo backend que la web.
 
-**Última revisión:** 2026-04-28.
+**Última revisión:** 2026-05-02.
 
 ---
 
@@ -44,13 +44,14 @@ El binario **ya no** usa `node --experimental-network-imports` (era ruido en log
 
 Definidas en `packages/mcp-server/src/index.ts` (array `TOOLS` + mapa `handlers`). Incluyen, entre otras:
 
-- **Proyectos:** `list_projects`, `get_project`, `create_project`, `delete_project`, `get_project_stages`, `get_conformance`, `patch_project`, `generate_benchmark`, `phase0_deep_research`, `suggest_brd_tobe_from_dbga`.
+- **Proyectos:** `list_projects`, `get_project`, `create_project`, `delete_project`, `get_project_stages`, `get_conformance`, `patch_project`, `generate_benchmark`, `phase0_deep_research`, `suggest_brd_tobe_from_dbga`, `set_aem_content`.
 - **Entregables SDD:** `generate_deliverables`, `generate_spec`, `generate_blueprint`, `generate_architecture`, `generate_api_contracts`, `generate_use_cases`, `generate_user_stories`, `generate_logic_flows`, `generate_infra`, `confirm_complexity`, `reassess_complexity`.
 - **IA / análisis:** `start_analysis`, `get_estimation`, `get_mdd_thread`, `get_adrs`, `review_mdd`.
 - **Orquestador:** `orchestrator_chat`, `orchestrator_welcome`, `orchestrator_clear_chat`.
 - **Sesiones:** `create_session`, `get_project_sessions`, `get_session`, `chat_in_session`.
 - **Legacy (prefijo implícito en rutas API):** `legacy_start`, `legacy_answer`, `legacy_generate_mdd`, `legacy_generate_codebase_doc`, `legacy_generate_deliverables`, `legacy_update_codebase_doc`, `legacy_generate_as_is_manual`, `legacy_suggest_brd_tobe`, `legacy_resolve_index_sdd_conflict`.
 - **Integración Ariadne listado:** `list_theforge_projects` — delega en el endpoint que lista proyectos indexados (multi-root) para enlazar con `theforgeProjectId`.
+- **Integración externa:** `set_aem_content` — establece contenido AEM desde apps externas de análisis de mercado.
 
 Los nombres exactos y `inputSchema` están en el código fuente; la lista puede crecer con el API.
 
