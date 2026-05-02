@@ -1928,7 +1928,6 @@ export class LegacyCoordinatorService {
           try {
             const designTokenFindings = await extractDesignTokensFromTheForgeContext(
               (q: string) => this.theforge.askCodebase(q, theforgeId),
-              theforgeId,
             );
             const tokenCtx = formatDesignTokensForUxGuide(designTokenFindings);
             if (tokenCtx.trim()) {

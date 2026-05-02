@@ -18,18 +18,7 @@ interface DesignTokenFindings {
  */
 export async function extractDesignTokensFromTheForgeContext(
   askCodebase: (query: string) => Promise<string>,
-  theforgeProjectId: string,
 ): Promise<DesignTokenFindings> {
-  const empty: DesignTokenFindings = {
-    foundTailwind: false,
-    foundCssCustomProps: false,
-    foundThemeFile: false,
-    tailwindConfigSample: "",
-    cssCustomPropsSample: "",
-    themeSample: "",
-    summary: "",
-  };
-
   const queries = [
     {
       key: "tailwind" as const,
