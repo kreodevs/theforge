@@ -897,11 +897,67 @@ export class EstimationService {
     });
     const cx = (proj?.complexity as EstimationComplexity) ?? "HIGH";
     this.cacheProjectComplexity(projectId, stageId, cx);
+
+    // Cargar documentos de etapa + proyecto para métrica integral
+    let documents: PlanningDocumentFields = {};
+    const sid = stageId?.trim();
+    if (sid) {
+      const stage = await this.prisma.stage.findUnique({
+        where: { id: sid },
+        select: {
+          brdContent: true,
+          toBeManualContent: true,
+          asIsManualContent: true,
+        },
+      });
+      if (stage) {
+        documents = {
+          brdContent: stage.brdContent ?? undefined,
+          toBeManualContent: stage.toBeManualContent ?? undefined,
+          asIsManualContent: stage.asIsManualContent ?? undefined,
+        };
+      }
+    }
+    try {
+      const projectRec = await this.prisma.project.findUnique({
+        where: { id: projectId.trim() },
+        select: {
+          specContent: true,
+          architectureContent: true,
+          useCasesContent: true,
+          userStoriesContent: true,
+          blueprintContent: true,
+          apiContractsContent: true,
+          logicFlowsContent: true,
+          infraContent: true,
+          tasksContent: true,
+        },
+      });
+      if (projectRec) {
+        // Merge project-level docs (don't override stage-level)
+        documents = {
+          ...documents,
+          specContent: (projectRec as any).specContent ?? documents.specContent,
+          architectureContent: (projectRec as any).architectureContent ?? documents.architectureContent,
+          useCasesContent: (projectRec as any).useCasesContent ?? documents.useCasesContent,
+          userStoriesContent: (projectRec as any).userStoriesContent ?? documents.userStoriesContent,
+          blueprintContent: (projectRec as any).blueprintContent ?? documents.blueprintContent,
+          apiContractsContent: (projectRec as any).apiContractsContent ?? documents.apiContractsContent,
+          logicFlowsContent: (projectRec as any).logicFlowsContent ?? documents.logicFlowsContent,
+          infraContent: (projectRec as any).infraContent ?? documents.infraContent,
+          tasksContent: (projectRec as any).tasksContent ?? documents.tasksContent,
+        };
+      }
+    } catch {
+      // no-op
+    }
+
     return this.calculateLiveMetrics(content, {
       auditorGaps,
       complexity: cx,
       projectId: projectId.trim(),
       stageId: stageId ?? null,
+      documents,
     });
   }
 
