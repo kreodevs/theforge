@@ -70,10 +70,21 @@ function extractTaggedBlock(text: string, open: string, close: string): string {
   return text.slice(i + open.length, j).trim();
 }
 
-/** Parsea la respuesta del LLM con delimitadores `<<<BRD>>>` / `<<<TOBE>>>` (mismo contrato que legacy `suggest-brd-tobe-from-codebase-doc`). */
+/**
+ * Parsea la respuesta del LLM con delimitadores `<<<BRD>>>` / `<<<TOBE>>>` (mismo contrato que legacy `suggest-brd-tobe-from-codebase-doc`).
+ * Tolerante a: markdown fences alrededor de los tags, espacios extra, mayúsculas/minúsculas, y `<<<END_xxx>>>` con guion bajo antes de END.
+ */
 export function parseBrdTobeTaggedSuggest(text: string): { brd: string; tobe: string } | null {
-  const brdRaw = extractTaggedBlock(text, "<<<BRD>>>", "<<<END_BRD>>>");
-  const tobeRaw = extractTaggedBlock(text, "<<<TOBE>>>", "<<<END_TOBE>>>");
-  if (!brdRaw.trim() || !tobeRaw.trim()) return null;
-  return { brd: brdRaw.trim(), tobe: tobeRaw.trim() };
+  // Paso 1: quitar markdown fences que envuelvan todo el bloque (```markdown … ```)
+  let cleaned = text.replace(/```\w*\s*\n?/g, "").trim();
+
+  // Paso 2: extraer con regex tolerante (tolera espacios, guion bajo opcional antes de END)
+  const brdMatch = cleaned.match(/<<<\s*BRD\s*>>>\s*([\s\S]*?)\s*<<<_?END_BRD_?>>>/i);
+  const tobeMatch = cleaned.match(/<<<\s*TOBE\s*>>>\s*([\s\S]*?)\s*<<<_?END_TOBE_?>>>/i);
+
+  const brd = brdMatch?.[1]?.trim() ?? "";
+  const tobe = tobeMatch?.[1]?.trim() ?? "";
+
+  if (!brd || !tobe) return null;
+  return { brd, tobe };
 }

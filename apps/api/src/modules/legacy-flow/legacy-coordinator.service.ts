@@ -653,7 +653,7 @@ export class LegacyCoordinatorService {
       "## 1. Resumen ejecutivo del sistema actual\n## 2. Dominios y capacidades observadas\n## 3. Flujos críticos (AS-IS) con referencia a rutas o archivos citados del texto fuente cuando sea posible\n## 4. Datos y contratos existentes mencionados\n## 5. Riesgos técnicos o deuda detectados\n\n" +
       "Reglas: no inventes módulos que no aparezcan en el documento; si falta evidencia, indica «no consta». Usa listas breves donde ayude.\n\n--- DOCUMENTO FUENTE ---\n\n" +
       codebaseDoc.slice(0, 120_000);
-    const mddDraft = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
+    const mddDraft = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM, maxTokensOverride: 32000 });
     const asIs = cleanDocumentContent((mddDraft ?? "").trim()) || "(As-Is generado vacío.)";
     await this.prisma.stage.update({ where: { id: stage.id }, data: { asIsManualContent: asIs } });
     await this.syncCurrentLegacyStageToGraph(projectId, stage.id).catch(() => {});
@@ -730,7 +730,10 @@ export class LegacyCoordinatorService {
     let raw: string;
     let parsed: { brd: string; tobe: string } | null = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
-      raw = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
+      raw = await this.ai.generateResponse(prompt, [], {
+        systemPrompt: COORDINATOR_SYSTEM,
+        maxTokensOverride: 32000,
+      });
       parsed = parseBrdTobeTaggedSuggest((raw ?? "").trim());
       if (parsed) break;
       if (attempt < 2) {
@@ -738,6 +741,7 @@ export class LegacyCoordinatorService {
       }
     }
     if (!parsed) {
+      console.error(`[suggestBrdTobeFromCodebaseDoc] Fallo definitivo. Primeros 800 chars de respuesta:\n${(raw ?? "").slice(0, 800)}`);
       throw new BadRequestException(
         "No se pudieron extraer BRD y To-Be del modelo tras 2 intentos. Reintenta o acorta el documento de partida.",
       );
@@ -1438,7 +1442,7 @@ export class LegacyCoordinatorService {
             "\n---"
           : "");
     }
-    const mddDraft = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
+    const mddDraft = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM, maxTokensOverride: 32000 });
     const mddContent = await this.reviewer.reviewMdd(description, mddDraft?.trim() ?? "");
     const cleaned = cleanDocumentContent(mddContent);
     // Dual-write durante migración: stage.legacyChangeState + project.legacyFlowState

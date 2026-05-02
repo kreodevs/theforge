@@ -22,6 +22,8 @@ export interface GenerateResponseOptions {
   currentBrdContent?: string;
   /** Manual To-Be de la etapa activa; tab `to-be` */
   currentToBeManualContent?: string;
+  /** Activar para que el LLM use más tokens de salida en respuestas extensas (default 8192). */
+  maxTokensOverride?: number;
   /** Tab activo en el Workshop: benchmark | mdd | ux-ui-guide | blueprint | api-contracts | logic-flows | infra */
   activeTab?: string;
   /** Memoria semántica: preferencias arquitectónicas de proyectos previos (HISTORIAL_DE_APRENDIZAJE) */
