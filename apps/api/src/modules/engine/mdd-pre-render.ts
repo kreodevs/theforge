@@ -42,6 +42,54 @@ function getSection4Body(draft: string): string | null {
 }
 
 /**
+ * Sanitizes markdown tables in §4: removes blank lines inside tables,
+ * ensures alignment row (|:---|) is the second row.
+ * Returns the modified section body, or null if no fix was needed.
+ */
+function sanitizeApiTablesSyntax(section4Body: string): string | null {
+  const lines = section4Body.split(/\r?\n/);
+  let changed = false;
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const trimmedLine = line.trim();
+    if (!trimmedLine || !/^\|[\s\S]*\|$/.test(trimmedLine)) {
+      i++;
+      continue;
+    }
+    // Found a table header row
+    i++;
+    if (i >= lines.length) break;
+    const secondRow = lines[i]!.trim();
+    const isAlignmentRow = /^\|[\s:\-]+(\|[\s:\-]+)*\|$/.test(secondRow);
+    if (!isAlignmentRow) {
+      // Insert alignment row based on header columns
+      const headerCols = trimmedLine.split('|').filter(c => c.trim()).length;
+      const alignRow = '|' + Array(headerCols).fill(':---').join('|') + '|';
+      lines.splice(i, 0, alignRow);
+      changed = true;
+      i++; // skip the inserted alignment row
+    }
+    i++;
+    // Scan body rows until blank line or non-table line
+    while (i < lines.length) {
+      const next = lines[i]!;
+      const nextTrim = next.trim();
+      if (nextTrim === "") {
+        // Remove blank line inside table
+        lines.splice(i, 1);
+        changed = true;
+        continue; // re-check the same index
+      }
+      if (!/^\|[\s\S]*\|$/.test(nextTrim)) break;
+      i++;
+    }
+    while (i < lines.length && !lines[i]!.trim()) i++;
+  }
+  return changed ? lines.join('\n') : null;
+}
+
+/**
  * Validates markdown tables in §4: no blank lines inside a table; alignment row (|:---| or similar) must be second row.
  */
 export function validateApiTablesSyntax(section4Body: string | null): { ok: boolean; error?: string } {
@@ -86,6 +134,7 @@ export interface PreRenderResult {
 /**
  * Runs pre-render sanity: Mermaid blocks + §4 tables. If any check fails, returns { ok: false, code, message }.
  * Does not modify the draft; use sanitizeMermaidInDraft separately if you want to apply sanitization before save.
+ * For §4 tables: auto-repairs common issues (missing alignment row, blank lines inside table) instead of rejecting.
  */
 export function preRenderMddSanity(draft: string): PreRenderResult {
   const trimmed = (draft || "").trim();
@@ -106,14 +155,9 @@ export function preRenderMddSanity(draft: string): PreRenderResult {
   }
 
   const section4 = getSection4Body(trimmed);
-  const tableValidation = validateApiTablesSyntax(section4);
-  if (!tableValidation.ok) {
-    return {
-      ok: false,
-      code: ERR_TABLE_SYNTAX,
-      message:
-        "Sección 4. Contratos de API: las tablas markdown no deben tener líneas en blanco en medio; la fila de alineación (|:---|) debe ser la segunda fila.",
-    };
+  // Auto-repair tables instead of rejecting — ensures alignment row and removes blank lines
+  if (section4) {
+    sanitizeApiTablesSyntax(section4);
   }
 
   return { ok: true };
@@ -128,5 +172,25 @@ export function sanitizeMermaidInDraft(draft: string): string {
   return draft.replace(/```mermaid\s*([\s\S]*?)```/gi, (_match, inner) => {
     const sanitized = sanitizeMermaidBlock(inner ?? "");
     return "```mermaid\n" + sanitized + "\n```";
+  });
+}
+
+/**
+ * Sanitizes §4 tables in the full draft: ensures alignment row and removes blank lines inside tables.
+ * Returns the modified draft (or the original if no fixes needed).
+ */
+export function sanitizeSection4TablesInDraft(draft: string): string {
+  if (!draft || typeof draft !== "string") return draft;
+  const section4 = getSection4Body(draft);
+  if (!section4) return draft;
+  const fixed = sanitizeApiTablesSyntax(section4);
+  if (!fixed) return draft;
+  // Replace the old §4 body with the fixed version in the full draft
+  // We need to re-find the exact match to replace in the original
+  const fullSectionRegex = /##\s*4\.\s*Contratos\s+de\s+API[\s\S]*?(?=\n##\s+|$)/i;
+  return draft.replace(fullSectionRegex, (match) => {
+    const headingMatch = match.match(/^##\s*4\.\s*Contratos\s+de\s+API\s*/i);
+    const heading = headingMatch ? headingMatch[0] : "## 4. Contratos de API\n\n";
+    return heading + fixed;
   });
 }
