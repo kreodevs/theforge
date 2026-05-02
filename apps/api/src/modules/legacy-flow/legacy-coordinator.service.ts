@@ -593,14 +593,14 @@ export class LegacyCoordinatorService {
    */
   async generateAsIsManual(projectId: string): Promise<{ asIsManualContent: string; stageId: string }> {
     const { project } = await this.getLegacyProject(projectId);
-    const state = ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const stage = await this.resolveLegacyGateStage(projectId);
+    const state = this.getLegacyChangeState(stage, project);
     const codebaseDoc = String(state.codebaseDoc ?? "").trim();
     if (codebaseDoc.length < 400) {
       throw new BadRequestException(
         "Se requiere documentación de partida del codebase (mín. ~400 caracteres). Ejecuta primero generate-codebase-doc.",
       );
     }
-    const stage = await this.resolveLegacyGateStage(projectId);
     if (!stage?.id) {
       throw new BadRequestException("No hay etapa para persistir el mapa As-Is.");
     }
@@ -624,7 +624,10 @@ export class LegacyCoordinatorService {
     stageId: string;
   }> {
     const { project } = await this.getLegacyProject(projectId);
-    const state = ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const gateStageResolved = stageIdHint?.trim()
+      ? await this.prisma.stage.findUnique({ where: { id: stageIdHint.trim() } })
+      : await this.resolveLegacyGateStage(projectId);
+    const state = this.getLegacyChangeState(gateStageResolved, project);
     const codebaseDoc = String(state.codebaseDoc ?? "").trim();
     if (codebaseDoc.length < 300) {
       throw new BadRequestException(
@@ -970,11 +973,18 @@ export class LegacyCoordinatorService {
       codebaseDoc = normalizeRawEvidenceJsonBlocksInMarkdown(codebaseDoc);
     }
 
-    const state = ((await this.projects.findOne(projectId)) as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {};
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: { legacyFlowState: { ...state, codebaseDoc } as object },
-    });
+    const stage = await this.resolveLegacyGateStage(projectId);
+    const projectFromDb = await this.projects.findOne(projectId);
+    const state = this.getLegacyChangeState(stage, projectFromDb);
+    const nextLegacy = { ...state, codebaseDoc } as LegacyFlowState;
+    if (stage?.id) {
+      await this.persistLegacyChangeState(projectId, stage.id, nextLegacy);
+    } else {
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { legacyFlowState: nextLegacy as object },
+      });
+    }
     return { codebaseDoc };
   }
 
@@ -991,15 +1001,21 @@ export class LegacyCoordinatorService {
       throw new BadRequestException(`choice debe ser uno de: ${allowed.join(", ")}`);
     }
     const project = await this.projects.findOne(projectId);
-    const state = ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const gateStageForResolution = await this.resolveLegacyGateStage(projectId);
+    const state = this.getLegacyChangeState(gateStageForResolution, project);
     const legacyIndexSddResolution: LegacyFlowState["legacyIndexSddResolution"] = {
       choice,
       resolvedAt: new Date().toISOString(),
     };
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: { legacyFlowState: { ...state, legacyIndexSddResolution } as object },
-    });
+    const next = { ...state, legacyIndexSddResolution };
+    if (gateStageForResolution?.id) {
+      await this.persistLegacyChangeState(projectId, gateStageForResolution.id, next);
+    } else {
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { legacyFlowState: next as object },
+      });
+    }
     return { ok: true, legacyIndexSddResolution };
   }
 
@@ -1011,12 +1027,18 @@ export class LegacyCoordinatorService {
    */
   async updateCodebaseDoc(projectId: string, codebaseDoc: string): Promise<{ codebaseDoc: string }> {
     await this.getLegacyProject(projectId);
-    const state = ((await this.projects.findOne(projectId)) as { legacyFlowState?: LegacyFlowState | null })
-      .legacyFlowState ?? {};
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: { legacyFlowState: { ...state, codebaseDoc } as object },
-    });
+    const stage = await this.resolveLegacyGateStage(projectId);
+    const project = await this.projects.findOne(projectId);
+    const state = this.getLegacyChangeState(stage, project);
+    const next = { ...state, codebaseDoc } as LegacyFlowState;
+    if (stage?.id) {
+      await this.persistLegacyChangeState(projectId, stage.id, next);
+    } else {
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { legacyFlowState: next as object },
+      });
+    }
     return { codebaseDoc };
   }
 
@@ -1097,10 +1119,15 @@ export class LegacyCoordinatorService {
       questions,
       suggestedAnswers: Object.keys(suggestedAnswers).length > 0 ? suggestedAnswers : undefined,
     };
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: { legacyFlowState: state as object },
-    });
+    const gateStageForStart = await this.resolveLegacyGateStage(projectId);
+    if (gateStageForStart?.id) {
+      await this.persistLegacyChangeState(projectId, gateStageForStart.id, state);
+    } else {
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { legacyFlowState: state as object },
+      });
+    }
     return { filesToModify, questions, suggestedAnswers: Object.keys(suggestedAnswers).length > 0 ? suggestedAnswers : undefined };
   }
 
@@ -1108,16 +1135,20 @@ export class LegacyCoordinatorService {
    * Registra las respuestas del usuario a las preguntas del flujo. Persiste en legacyFlowState.answers.
    * @param projectId - ID del proyecto.
    * @param answers - Mapa índice de pregunta → respuesta (p. ej. { "0": "10", "1": "30" }).
-   * @returns { ok: true } si se guardó correctamente.
    */
   async answer(projectId: string, answers: Record<string, string>): Promise<{ ok: boolean }> {
     const { project } = await this.getLegacyProject(projectId);
-    const state = ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
-    const next: LegacyFlowState = { ...state, answers: answers && Object.keys(answers).length > 0 ? answers : undefined };
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: { legacyFlowState: next as object },
-    });
+    const gateStageForAnswer = await this.resolveLegacyGateStage(projectId);
+    const prev = this.getLegacyChangeState(gateStageForAnswer, project);
+    const next: LegacyFlowState = { ...prev, answers };
+    if (gateStageForAnswer?.id) {
+      await this.persistLegacyChangeState(projectId, gateStageForAnswer.id, next);
+    } else {
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { legacyFlowState: next as object },
+      });
+    }
     return { ok: true };
   }
 
@@ -1302,13 +1333,28 @@ export class LegacyCoordinatorService {
     try {
       const row = await this.prisma.project.findUnique({
         where: { id: projectId },
-        select: { legacyFlowState: true },
+        select: { legacyFlowState: true, stages: { orderBy: { ordinal: "asc" }, take: 1, select: { id: true } } },
       });
       const state = (row?.legacyFlowState as LegacyFlowState | null | undefined) ?? {};
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: { ...state, lastDeliverablesDebug: report } as object },
-      });
+      const next = { ...state, lastDeliverablesDebug: report } as LegacyFlowState;
+      const stageId = row?.stages?.[0]?.id;
+      if (stageId) {
+        await this.prisma.$transaction([
+          this.prisma.stage.update({
+            where: { id: stageId },
+            data: { legacyChangeState: next as object },
+          }),
+          this.prisma.project.update({
+            where: { id: projectId },
+            data: { legacyFlowState: next as object },
+          }),
+        ]);
+      } else {
+        await this.prisma.project.update({
+          where: { id: projectId },
+          data: { legacyFlowState: next as object },
+        });
+      }
     } catch (err) {
       this.logger.warn(
         `[LegacyDeliverables] persistDeliverablesDebugReport: ${err instanceof Error ? err.message : String(err)}`,
