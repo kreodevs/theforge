@@ -74,7 +74,7 @@ function extractSqlColumnNames(sqlBlock: string): Set<string> {
     const tokens = body.split(/[\s,]+/);
     for (let i = 0; i < tokens.length; i++) {
       const t = tokens[i];
-      if (t && /^[a-z_][a-z0-9_]*$/i.test(t) && !/^(primary|key|references|constraint|unique|check|default|not|null|uuid|integer|varchar|text|boolean|timestamptz|timestamp|int|bigint|real|serial)$/i.test(t)) {
+      if (t && /^[a-z_][a-z0-9_]*$/i.test(t) && !/^(primary|key|references|constraint|unique|check|default|not|null|uuid|integer|varchar|text|boolean|timestamptz|timestamp|int|bigint|real|serial|on|delete|cascade|set|true|false|in|between|and|or|as|from|where|having|group|order|by|asc|desc|like|is|exists|any|all|some|off|a|pgp_sym_encrypt|jsonb|inet|jwt|bcrypt|nivel|cifrado|cost|soft)$/i.test(t)) {
         set.add(t.toLowerCase());
       }
     }
@@ -113,7 +113,7 @@ function extractMermaidEntityAndAttrNames(md: string): { entities: Set<string>; 
       i++;
       while (i < lines.length && !/^\s*\}\s*$/.test(lines[i]!)) {
         const attrMatch = lines[i]!.match(/\s*(\w+)\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
-        if (attrMatch) attributes.add(attrMatch[2].toLowerCase());
+        if (attrMatch && !/^(uuid|default|pk|fk|index|unique|key|null|not|set|check|primary|references)$/i.test(attrMatch[2])) attributes.add(attrMatch[2].toLowerCase());
         i++;
       }
       continue;
