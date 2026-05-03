@@ -479,8 +479,8 @@ export class AiService {
    * Genera el documento Tasks (breakdown) desde MDD + Blueprint.
    */
   async generateTasks(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
-    const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
-    const blueprint = (blueprintContent?.trim() ?? "").slice(0, 8000);
+    const mdd = (mddContent?.trim() ?? "").slice(0, 30000);
+    const blueprint = (blueprintContent?.trim() ?? "").slice(0, 15000);
     let prompt =
       mdd.length > 0
         ? "Genera el documento Tasks según las instrucciones del system prompt.\n\nMDD:\n---\n" +
@@ -493,8 +493,8 @@ export class AiService {
   }
 
   async generateArchitecture(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
-    const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
-    const blueprint = (blueprintContent?.trim() ?? "").slice(0, 8000);
+    const mdd = (mddContent?.trim() ?? "").slice(0, 30000);
+    const blueprint = (blueprintContent?.trim() ?? "").slice(0, 15000);
     let prompt =
       mdd.length > 0
         ? "Genera el documento de **Arquitectura del sistema** (producto del MDD) según el system prompt. Describe el software legacy real o planificado: módulos, datos, APIs, flujos — **no** diseño multi-agente ni nombre TheForge como producto.\n\nMDD:\n---\n" +
@@ -515,8 +515,8 @@ export class AiService {
         "Completa el MDD y, si aplica, el **Spec**; luego vuelve a ejecutar **Generar casos de uso** desde el Workshop.\n"
       );
     }
-    const mdd = mddRaw.slice(0, 12000);
-    const spec = (specContent?.trim() ?? "").slice(0, 8000);
+    const mdd = mddRaw.slice(0, 30000);
+    const spec = (specContent?.trim() ?? "").slice(0, 15000);
     let prompt =
       "Genera el documento de Casos de Uso según las instrucciones del system prompt. " +
       "Cada flujo debe alinearse al texto del MDD y del Spec; no cites archivos ni entidades que no aparezcan en esos documentos.\n\n" +
@@ -529,9 +529,9 @@ export class AiService {
   }
 
   async generateUserStories(mddContent: string, specContent?: string | null, useCasesContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
-    const mdd = (mddContent?.trim() ?? "").slice(0, 10000);
-    const spec = (specContent?.trim() ?? "").slice(0, 6000);
-    const useCases = (useCasesContent?.trim() ?? "").slice(0, 6000);
+    const mdd = (mddContent?.trim() ?? "").slice(0, 30000);
+    const spec = (specContent?.trim() ?? "").slice(0, 15000);
+    const useCases = (useCasesContent?.trim() ?? "").slice(0, 15000);
     const constitutionNote =
       "El **MDD es la Constitución del proyecto**. Las historias de usuario deben derivarse **únicamente** del MDD, Spec y Casos de Uso. No inventes funcionalidades no descritas en estos documentos.\n\n";
     let prompt: string;
