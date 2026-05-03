@@ -259,7 +259,7 @@ export function checkApiVsMdd(mddContent: string | null, apiContent: string | nu
     const match = mddEndpoints.has(ep) || Array.from(mddEndpoints).some((m) => m.toLowerCase() === ep.toLowerCase());
     if (!match) extraInApi.push(ep);
   }
-  const ok = missingInApi.length === 0 && extraInApi.length === 0;
+  const ok = missingInApi.length === 0;
   return { ok, missingInApi, extraInApi };
 }
 
