@@ -235,6 +235,8 @@ export default function WorkshopView({
 
   const precisionBreakdownRaw = useWorkshopStore((s) => s.precisionBreakdown);
   const precisionBreakdown = useMemo(() => precisionBreakdownRaw, [precisionBreakdownRaw]);
+  const estimation = useWorkshopStore((s) => s.estimation);
+  const readinessHints = useMemo(() => estimation?.readinessHints ?? null, [estimation?.readinessHints]);
 
   const auditTrailRaw = useWorkshopStore((s) => s.auditTrail);
   const auditTrail = useMemo(() => auditTrailRaw || [], [auditTrailRaw]);
@@ -3122,6 +3124,24 @@ export default function WorkshopView({
                       </div>
                     ) : (
                       <p className="text-zinc-500 italic">No hay desglose disponible aún.</p>
+                    )}
+
+                    {/* Siguientes pasos / readiness hints */}
+                    {readinessHints && readinessHints.length > 0 && (
+                      <div className="mt-4">
+                        <h4 className="text-sm font-medium text-amber-400 mb-2 flex items-center gap-2">
+                          <Target className="w-3.5 h-3.5" />
+                          Pendiente para llegar a 100%
+                        </h4>
+                        <ul className="space-y-1.5">
+                          {readinessHints.map((hint, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-zinc-400">
+                              <span className="text-amber-500 mt-0.5 shrink-0">▶</span>
+                              <span>{hint}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
 
