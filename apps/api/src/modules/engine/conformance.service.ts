@@ -97,6 +97,11 @@ function extractEntities(text: string): Set<string> {
   for (const m of tableRows) {
     if (m[1]) entities.add(m[1].toLowerCase());
   }
+  // Extraer de listas markdown: - users  o  * users
+  const listItems = text.matchAll(/^[\s]*[-*]\s+([a-z_][a-z0-9_]*)\s*$/gim);
+  for (const m of listItems) {
+    if (m[1]) entities.add(m[1].toLowerCase());
+  }
   return entities;
 }
 
