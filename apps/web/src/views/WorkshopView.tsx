@@ -2167,12 +2167,8 @@ export default function WorkshopView({
                   {effectiveMddTrimmed.length > 200 && (
                     <button
                       type="button"
-                      onClick={() => {
-                        if (!projectId || cascadeRunning) return;
-                        setError(null);
-                        generateDeliverablesCascade(projectId);
-                      }}
-                      disabled={cascadeRunning || mddReviewing}
+                      onClick={handleGenerateDeliverables}
+                      disabled={!canGenerate || cascadeRunning || mddReviewing}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-green-600/80 text-white hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {cascadeRunning ? (
