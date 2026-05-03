@@ -92,13 +92,13 @@ function extractEntities(text: string): Set<string> {
   for (const m of bold) {
     if (m[1] && m[1].length > 2) entities.add(m[1].toLowerCase());
   }
-  // Extraer de filas de tabla markdown: | entidad | ... |
-  const tableRows = text.matchAll(/^\|\s*([a-z_][a-z0-9_]*)\s*\|/gim);
+  // Extraer de filas de tabla markdown: | entidad | ... |  o  | `entidad` | ... |
+  const tableRows = text.matchAll(/^\|\s*`?([a-z_][a-z0-9_]*)`?\s*\|/gim);
   for (const m of tableRows) {
     if (m[1]) entities.add(m[1].toLowerCase());
   }
   // Extraer de listas markdown: - users  o  * users
-  const listItems = text.matchAll(/^[\s]*[-*]\s+([a-z_][a-z0-9_]*)\s*$/gim);
+  const listItems = text.matchAll(/^[\s]*[-*]\s+(?:`?)([a-z_][a-z0-9_]*)(?:`?)\s*$/gim);
   for (const m of listItems) {
     if (m[1]) entities.add(m[1].toLowerCase());
   }
