@@ -71,8 +71,8 @@ export function createMddAuditorNode(
     const llmWithTools = llm.bindTools && toolsToUse.length > 0 ? llm.bindTools(toolsToUse) : llm;
 
     LOG("entry mddDraftLen=%s tools=%s (allowed=%s)", (state.mddDraft ?? "").length, toolsToUse.length, allowed?.length ?? "all");
+    const draft = (state.mddDraft ?? "").trim();
     try {
-      const draft = (state.mddDraft ?? "").trim();
       let prompt = `${AUDITOR_MDD_PROMPT}\n\n---\n**Borrador completo del MDD:**\n${draft || "(vacío)"}\n\n${getInternalDirectivesContext(state, "auditor")}${auditorConstitutionRigorAppendix(state.mddComplexity)}`;
       if (toolsToUse.length > 0) {
         prompt += "\n\n**Opcional:** Usa las tools de validación (validate_mdd_structure, validate_sql_syntax, validate_json_payloads) con el borrador anterior para obtener métricas objetivas. Usa esos resultados para rellenar auditorScore, auditorDecision, critical_gaps, syntax_errors e infrastructure_ready. Responde al final solo con el JSON de salida.";
@@ -278,8 +278,31 @@ export function createMddAuditorNode(
         acceptedProposalDirective: undefined,
       };
     } catch (err) {
-      LOG("error: %s", err instanceof Error ? err.message : String(err));
-      throw err;
+      LOG("error: %s — usando fallback determinístico", err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300));
+      const validation = validateMddStructure(draft);
+      let fallbackScore = 80;
+      if (!validation.section3HasPayloads) fallbackScore -= 20;
+      if (!validation.hasTechnicalMetadata) fallbackScore -= 5;
+      if (validation.missingSections.length > 0) {
+        fallbackScore = Math.min(fallbackScore, 94);
+        fallbackScore -= validation.missingSections.length * 5;
+      }
+      fallbackScore = Math.max(0, Math.min(100, fallbackScore));
+      const fallbackDecision = fallbackScore >= AUDIT_PASS_THRESHOLD && validation.missingSections.length === 0 ? "done" as const : "clarifier" as const;
+      const fallbackIteration = (state.mddIteration ?? 0) + (fallbackDecision === "clarifier" ? 1 : 0);
+      const fallbackFeedback = validation.issues.length > 0
+        ? validation.issues.join(" ")
+        : "Faltan: modelo de datos/entidades, contratos con payloads, decisiones de seguridad, estrategia de infraestructura.";
+      LOG("fallback score=%s decision=%s", fallbackScore, fallbackDecision);
+      return {
+        auditorScore: fallbackScore,
+        auditorFeedback: fallbackFeedback,
+        auditorDecision: fallbackDecision,
+        mddIteration: fallbackIteration,
+        delegateTarget: undefined,
+        sectionsToRun: undefined,
+        acceptedProposalDirective: undefined,
+      };
     }
   };
 }
