@@ -186,7 +186,7 @@ function computeContractGaps(md: string): {
     [...md.matchAll(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)["`]?/gi)].map((x) => x[1].toLowerCase()),
   );
 
-  const skipApiKeys = /^(id|created_at|updated_at|password|confirm_password|token|refresh_token|redirect_uri|scope|code|totp_code)$/i;
+  const skipApiKeys = /^(id|created_at|updated_at|password|confirm_password|token|refresh_token|redirect_uri|scope|code|totp_code|payment|professional|client|user|data|meta|gateway|video_room)$/i;
   if (sqlColumns.size > 0 && apiBlock.length > 100) {
     const apiKeys = extractJsonKeysFromSection(apiBlock);
     for (const k of apiKeys) {
@@ -226,8 +226,8 @@ function computeContractGaps(md: string): {
     if (!infraReflectsNode) infraStackGap = 1;
   }
 
-  if (/\b(bloqueo\s+de\s+cuenta|lock\s+account|intentos\s+fallidos|failed\s+attempts|máximo\s+de\s+intentos)\b/i.test(logicBlock)) {
-    if (!/\d+\s*(intentos?|attempts?)|intentos?\s*:\s*\d+|máximo\s+\d+/i.test(securityBlock)) {
+  if (/\b(bloqueo\s+de\s+cuenta|lock\s+account|intentos\s+fallidos|failed\s+attempts|máximo\s+de\s+intentos|fallos?\b)/i.test(logicBlock)) {
+    if (!/\d+\s*(intentos?|attempts?|fallos?)|intentos?\s*:\s*\d+|máximo\s+\d+|fallos?\s*:\s*\d+/i.test(securityBlock)) {
       securityEdgeCaseGap = 1;
     }
   }
