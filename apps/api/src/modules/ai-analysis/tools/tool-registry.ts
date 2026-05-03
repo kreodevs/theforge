@@ -3,7 +3,6 @@ import { createTavilySearchTool } from "./tavily.tool.js";
 import { createScrapeUrlTool } from "./scrape-cheerio.tool.js";
 import {
   createValidateMddStructureTool,
-  createFormatSection3EndpointsTool,
   createSuggestMddDiagramsTool,
 } from "./mdd-tools.js";
 import {
