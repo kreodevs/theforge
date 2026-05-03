@@ -127,18 +127,18 @@ function extractEndpoints(text: string): Array<{ method: string; path: string }>
   };
   const lines = text.split(/\r?\n/);
   for (const line of lines) {
-    const methodPath = line.match(/\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[\/\w:-]+)/i);
+    const methodPath = line.match(/\b(GET|POST|PUT|PATCH|DELETE)\s+`?(\/[\/\w:-]+)`?/i);
     if (methodPath) {
       add(methodPath[1], methodPath[2]);
       continue;
     }
-    const tableRow = line.match(/\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*(\/[\/\w:-]+)/i);
+    const tableRow = line.match(/\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*`?(\/[\/\w:-]+)`?/i);
     if (tableRow) {
       add(tableRow[1], tableRow[2]);
       continue;
     }
     if (/\/api\/|\/auth\//.test(line)) {
-      const path = line.match(/(\/[\/\w:-]+)/)?.[1];
+      const path = line.match(/`?(\/[\/\w:-]+)`?/)?.[1];
       if (path) {
         add(defaultMethodForPath(path), path);
       }
