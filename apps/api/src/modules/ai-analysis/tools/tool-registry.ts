@@ -48,10 +48,13 @@ export function getMddAuditorTools(): StructuredToolInterface[] {
 }
 
 /**
- * Tools for MDD Software Architect: formatear sección 3 (Contratos de API) con endpoints en markdown.
+ * Tools for MDD Software Architect: formatear sección 4 (Contratos de API) con endpoints en markdown.
+ * Temporalmente vacío porque modelos como DeepSeek V4 Pro tienen problemas con tool calling
+ * en LangChain ChatOpenAI. Sin tools, el Software Architect genera las secciones 2-5
+ * directamente en markdown, que es más confiable con modelos actuales.
  */
 export function getMddArchitectTools(): StructuredToolInterface[] {
-  return [createFormatSection3EndpointsTool()];
+  return [];
 }
 
 /**
