@@ -235,8 +235,7 @@ export default function WorkshopView({
 
   const precisionBreakdownRaw = useWorkshopStore((s) => s.precisionBreakdown);
   const precisionBreakdown = useMemo(() => precisionBreakdownRaw, [precisionBreakdownRaw]);
-  const estimation = useWorkshopStore((s) => s.estimation);
-  const readinessHints = useMemo(() => estimation?.readinessHints ?? null, [estimation?.readinessHints]);
+  const readinessHints = useMemo(() => liveMetrics?.readinessHints ?? null, [liveMetrics?.readinessHints]);
 
   const auditTrailRaw = useWorkshopStore((s) => s.auditTrail);
   const auditTrail = useMemo(() => auditTrailRaw || [], [auditTrailRaw]);
@@ -3134,7 +3133,7 @@ export default function WorkshopView({
                           Pendiente para llegar a 100%
                         </h4>
                         <ul className="space-y-1.5">
-                          {readinessHints.map((hint, i) => (
+                          {readinessHints.map((hint: string, i: number) => (
                             <li key={i} className="flex items-start gap-2 text-xs text-zinc-400">
                               <span className="text-amber-500 mt-0.5 shrink-0">▶</span>
                               <span>{hint}</span>
