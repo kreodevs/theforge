@@ -72,6 +72,37 @@ export function createMddAuditorNode(
 
     LOG("entry mddDraftLen=%s tools=%s (allowed=%s)", (state.mddDraft ?? "").length, toolsToUse.length, allowed?.length ?? "all");
     const draft = (state.mddDraft ?? "").trim();
+
+    // Shortcut: si el draft ya es grande (>5000 chars), evitar llamada LLM del Auditor
+    // que tarda demasiado y causa timeout del proxy/frontend. Usar validación determinística.
+    if (draft.length > 5000) {
+      LOG("draft grande (%s chars) → shortcut determinístico", draft.length);
+      const validation = validateMddStructure(draft);
+      let shortcutScore = 80;
+      if (!validation.section3HasPayloads) shortcutScore -= 20;
+      if (!validation.hasTechnicalMetadata) shortcutScore -= 5;
+      if (validation.missingSections.length > 0) {
+        shortcutScore = Math.min(shortcutScore, 94);
+        shortcutScore -= validation.missingSections.length * 5;
+      }
+      shortcutScore = Math.max(0, Math.min(100, shortcutScore));
+      const shortcutDecision = shortcutScore >= AUDIT_PASS_THRESHOLD && validation.missingSections.length === 0 ? "done" as const : "clarifier" as const;
+      const shortcutIteration = (state.mddIteration ?? 0) + (shortcutDecision === "clarifier" ? 1 : 0);
+      const shortcutFeedback = validation.issues.length > 0
+        ? validation.issues.join(" ")
+        : "Revisión completada: el MDD tiene estructura base.";
+      LOG("shortcut score=%s decision=%s", shortcutScore, shortcutDecision);
+      return {
+        auditorScore: shortcutScore,
+        auditorFeedback: shortcutFeedback,
+        auditorDecision: shortcutDecision,
+        mddIteration: shortcutIteration,
+        delegateTarget: undefined,
+        sectionsToRun: undefined,
+        acceptedProposalDirective: undefined,
+      };
+    }
+
     try {
       let prompt = `${AUDITOR_MDD_PROMPT}\n\n---\n**Borrador completo del MDD:**\n${draft || "(vacío)"}\n\n${getInternalDirectivesContext(state, "auditor")}${auditorConstitutionRigorAppendix(state.mddComplexity)}`;
       if (toolsToUse.length > 0) {
