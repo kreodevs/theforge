@@ -8,25 +8,33 @@ export function extractConcepts(text: string): Set<string> {
   const s = new Set<string>();
   const lower = text.toLowerCase();
 
+  // Normaliza un posible titulo: quita prefijos como "1. ", "3.1 ", "a) " etc
+  const normalizeTitle = (t: string): string =>
+    t.replace(/^[\d\s]*\.?\s*/, "").replace(/[:;]\s*$/, "").trim();
+
+  // Titulos estructurales que no son conceptos de dominio
+  const isStructural = (t: string): boolean =>
+    /^(objetivos?|alcance|criterios?\s+de\s+éxito|para\s+quién|fuera\s+del\s+alcance|dentro\s+del\s+(mvp|alcance)|dependencias\s+conocidas|supuestos|riesgos|métricas\s+de\s+éxito|público\s+objetivo|descripción|justificación|contexto|introducción|definiciones|siglas|referencias|anexos|glosario|conclusiones|próximos\s+pasos|roadmap|plan\s+de\s+trabajo|entregables|cronograma|diagramas|vista\s+general|arquitectura\s+general)$/i.test(t);
+
   // H2 titles (## Section Name)
   const h2 = lower.matchAll(/^##\s+(.+)$/gm);
   for (const m of h2) {
-    const t = m[1].trim();
-    if (t.length > 3 && t.length <= 100 && !/^(objetivos?|alcance|criterios?\s+de\s+éxito|para\s+quién|fuera\s+del\s+alcance|dentro\s+del\s+(mvp|alcance)|dependencias\s+conocidas|supuestos|riesgos|métricas\s+de\s+éxito|público\s+objetivo|descripción|justificación|contexto|introducción|definiciones|siglas|referencias|anexos|glosario|conclusiones|próximos\s+pasos|roadmap|plan\s+de\s+trabajo|entregables|cronograma|diagramas|vista\s+general|arquitectura\s+general)$/i.test(t)) s.add(t);
+    const t = normalizeTitle(m[1].trim());
+    if (t.length > 3 && t.length <= 100 && !isStructural(t)) s.add(t);
   }
 
   // Bold phrases (3-60 chars)
   const bold = lower.matchAll(/\*\*(.{3,60}?)\*\*/g);
   for (const m of bold) {
-    const t = m[1].trim();
-    if (t.length > 3) s.add(t);
+    const t = normalizeTitle(m[1].trim());
+    if (t.length > 3 && !isStructural(t)) s.add(t);
   }
 
-  // Bullet items starting with capitalized word (likely a concept)
+  // Bullet items starting with lowercase word (likely a concept)
   const bullets = lower.matchAll(/^[-*]\s+([a-záéíóúñ][a-záéíóúñ\s]{3,80})$/gim);
   for (const m of bullets) {
-    const t = m[1].trim();
-    if (t.length > 3 && t.length <= 100) s.add(t);
+    const t = normalizeTitle(m[1].trim());
+    if (t.length > 3 && t.length <= 100 && !isStructural(t)) s.add(t);
   }
 
   return s;
