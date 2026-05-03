@@ -625,7 +625,13 @@ export function createMddSoftwareArchitectNode(
               continue;
             }
             const args = typeof tc.args === "object" && tc.args !== null ? (tc.args as Record<string, unknown>) : {};
-            const result = await tool.invoke(args);
+            let result: unknown;
+            try {
+              result = await tool.invoke(args);
+            } catch (toolErr) {
+              LOG("tool.invoke error: %s args=%s", toolErr instanceof Error ? toolErr.message : String(toolErr), JSON.stringify(args).slice(0, 200));
+              result = `Error: ${toolErr instanceof Error ? toolErr.message : "Tool call failed"}`;
+            }
             const content = typeof result === "string" ? result : JSON.stringify(result);
             toolMessages.push(new ToolMessage({ content, tool_call_id: toolCallId }));
           }
