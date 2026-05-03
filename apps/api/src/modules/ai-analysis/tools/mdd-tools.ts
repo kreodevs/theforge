@@ -96,7 +96,7 @@ export function createFormatSection3EndpointsTool() {
       description:
         "Genera el markdown de la sección 4 (Contratos de API) del MDD: tabla de endpoints y para cada uno request/response en bloques ```json. Parámetros: domain (string opcional, ej. SSO); endpoints (array de objetos con method, path, description opcional, request_body/requestBody opcional, response_200/response200 opcional, response_401/response401 opcional).",
       schema: z.object({
-        domain: z.string().default("").describe("Dominio del proyecto, ej. SSO, auth, ecommerce"),
+        domain: z.string().optional().nullable().describe("Dominio del proyecto, ej. SSO, auth, ecommerce (opcional)"),
         endpoints: z
           .union([
             z.array(z.record(z.unknown())).min(1).max(30),
