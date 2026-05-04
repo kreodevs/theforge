@@ -574,9 +574,12 @@ const TOOLS: Tool[] = [
       type: "object",
       properties: {
         projectId: { type: "string" },
-        theforgeProjectId: { type: "string", description: "ID del proyecto en TheForge/Ariadne" },
-        specificFiles: { type: "array", items: { type: "string" }, description: "Archivos específicos a documentar" },
-        refresh: { type: "boolean", description: "Forzar regeneración" },
+        responseMode: {
+          type: "string",
+          enum: ["default", "evidence_first", "raw_evidence", "ingest_mdd"],
+          description: "Modo de generación: default (descubrimiento escalonado), evidence_first, raw_evidence, ingest_mdd (MDD completo del orquestador)",
+        },
+        stageId: { type: "string", description: "ID de etapa opcional" },
       },
       required: ["projectId"],
     },
@@ -901,12 +904,11 @@ const handlers: Record<string, Handler> = {
     return JSON.stringify(await apiPost(`/projects/${args.projectId}/legacy/generate-mdd`));
   },
   async legacy_generate_codebase_doc(args) {
+    const body: Record<string, unknown> = {};
+    if (args.responseMode !== undefined) body.responseMode = args.responseMode;
+    if (args.stageId !== undefined) body.stageId = args.stageId;
     return JSON.stringify(
-      await apiPost(`/projects/${args.projectId}/legacy/generate-codebase-doc`, {
-        theforgeProjectId: (args.theforgeProjectId as string) ?? "",
-        specificFiles: (args.specificFiles as string[]) ?? [],
-        refresh: args.refresh ?? false,
-      }),
+      await apiPost(`/projects/${args.projectId}/legacy/generate-codebase-doc`, body),
     );
   },
   async legacy_generate_deliverables(args) {
