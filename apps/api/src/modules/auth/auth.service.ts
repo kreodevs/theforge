@@ -407,4 +407,36 @@ export class AuthService {
   private generateMcpSecret(): string {
     return randomBytes(32).toString("hex");
   }
+
+  /** POST /users — crear usuario manualmente (admin). */
+  async createUser(
+    email: string,
+    name?: string,
+    role?: string,
+  ): Promise<{ id: string; email: string; role: string }> {
+    const normalized = email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({ where: { email: normalized } });
+    if (existing) {
+      throw new BadRequestException("El email ya está registrado");
+    }
+    const user = await this.prisma.user.create({
+      data: {
+        email: normalized,
+        name: name?.trim() || null,
+        role: role === "admin" ? "admin" : "developer",
+        mcpSecret: this.generateMcpSecret(),
+      },
+    });
+    return { id: user.id, email: user.email, role: user.role };
+  }
+
+  /** DELETE /users/:id — eliminar usuario (admin). */
+  async deleteUser(id: string): Promise<{ deleted: boolean }> {
+    try {
+      await this.prisma.user.delete({ where: { id } });
+      return { deleted: true };
+    } catch {
+      throw new NotFoundException("Usuario no encontrado");
+    }
+  }
 }

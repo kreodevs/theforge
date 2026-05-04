@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -154,5 +155,20 @@ export class UsersController {
     this.requireAdmin();
     if (!body?.role) throw new BadRequestException("role requerido");
     return this.auth.updateUserRole(id, body.role);
+  }
+
+  @Post()
+  @HttpCode(201)
+  createUser(@Body() body: { email?: string; name?: string; role?: string }) {
+    this.requireAdmin();
+    if (!body?.email) throw new BadRequestException("email requerido");
+    return this.auth.createUser(body.email, body.name, body.role);
+  }
+
+  @Delete(":id")
+  @HttpCode(200)
+  deleteUser(@Param("id") id: string) {
+    this.requireAdmin();
+    return this.auth.deleteUser(id);
   }
 }
