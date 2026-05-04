@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Flame, Loader2 } from "lucide-react";
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from "@/components/ui";
-import { API_BASE, setAccessToken, getAccessToken, clearAccessToken } from "@/utils/apiClient";
+import { API_BASE, setAccessToken } from "@/utils/apiClient";
 
 interface LoginViewProps {
   onLoggedIn: () => void;

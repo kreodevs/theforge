@@ -21,13 +21,12 @@ import {
   Shield,
   Sparkles,
   Trash2,
-  Users,
 } from "lucide-react";
 import WorkshopView from "./views/WorkshopView";
 import LoginView from "./views/LoginView";
 import { McpSecretCard } from "./components/McpSecretCard";
 import { UsersList } from "./components/UsersList";
-import { apiFetch, clearAccessToken, getAccessToken, API_BASE, getStoredUser, type TheForgeUser } from "./utils/apiClient";
+import { apiFetch, API_BASE, getStoredUser } from "./utils/apiClient";
 import {
   Button,
   Input,

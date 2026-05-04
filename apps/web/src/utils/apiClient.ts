@@ -12,7 +12,7 @@ export const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 /** Decodifica JWT sin verificar firma. */
 function decodeJwt(token: string): Record<string, unknown> | null {
   try {
-    return JSON.parse(atob(token.split(".")[1])) as Record<string, unknown>;
+    return JSON.parse(atob((token.split(".")[1] ?? ""))) as Record<string, unknown>;
   } catch {
     return null;
   }
