@@ -104,6 +104,27 @@ export class AuthController {
     const userId = getRequestUserId();
     return this.auth.regenerateMcpSecret(userId);
   }
+
+  /** GET /auth/has-users — verifica si hay usuarios registrados (público). */
+  @Get("has-users")
+  @Public()
+  @HttpCode(200)
+  hasUsers() {
+    return this.auth.hasUsers();
+  }
+
+  /** POST /auth/register-first-admin — crea el primer admin (público, solo si no hay usuarios). */
+  @Post("register-first-admin")
+  @Public()
+  @HttpCode(201)
+  registerFirstAdmin(@Body() body: unknown) {
+    const email = (body != null && typeof body === "object" ? (body as Record<string, unknown>).email : undefined) as string | undefined;
+    const name = (body != null && typeof body === "object" ? (body as Record<string, unknown>).name : undefined) as string | undefined;
+    if (!email || typeof email !== "string") {
+      throw new BadRequestException("email es requerido");
+    }
+    return this.auth.registerFirstAdmin(email, typeof name === "string" ? name : undefined);
+  }
 }
 
 /**

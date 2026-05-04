@@ -367,4 +367,44 @@ export class AuthService {
 
     return { id: userId, email: user.email, role };
   }
+
+  /** GET /auth/has-users — verifica si hay usuarios registrados. */
+  async hasUsers(): Promise<{ hasUsers: boolean }> {
+    const count = await this.prisma.user.count();
+    return { hasUsers: count > 0 };
+  }
+
+  /** POST /auth/register-first-admin — crea el primer admin. */
+  async registerFirstAdmin(
+    email: string,
+    name?: string,
+  ): Promise<{ created: boolean; message: string; user?: { id: string; email: string; role: string } }> {
+    const normalized = email.trim().toLowerCase();
+    const existing = await this.prisma.user.count();
+    if (existing > 0) {
+      return { created: false, message: "Ya existen usuarios registrados" };
+    }
+    try {
+      const user = await this.prisma.user.create({
+        data: {
+          email: normalized,
+          name: name?.trim() || null,
+          role: "admin",
+          mcpSecret: this.generateMcpSecret(),
+        },
+      });
+      return {
+        created: true,
+        message: "Administrador creado exitosamente",
+        user: { id: user.id, email: user.email, role: user.role },
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      return { created: false, message: msg };
+    }
+  }
+
+  private generateMcpSecret(): string {
+    return randomBytes(32).toString("hex");
+  }
 }
