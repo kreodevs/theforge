@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Loader2, UserPlus, Trash2, X, Check } from "lucide-react";
+import { Loader2, UserPlus, Trash2, X } from "lucide-react";
 import { apiFetch, API_BASE } from "@/utils/apiClient";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
