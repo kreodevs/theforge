@@ -15,6 +15,7 @@ export type CodebaseDocResponseMode = z.infer<typeof codebaseDocResponseModeSche
 export const generateCodebaseDocRequestSchema = z
   .object({
     responseMode: codebaseDocResponseModeSchema.optional(),
+    stageId: z.string().optional(),
   })
   .strict();
 
