@@ -264,6 +264,12 @@ export class ProjectsController {
     return this.projects.verifyDeliverable(id, deliverable);
   }
 
+  /** Notifica a Hermes Agent que este proyecto está listo para desarrollo. */
+  @Post(":id/launch-hermes")
+  launchHermes(@Param("id") id: string) {
+    return this.projects.launchHermes(id);
+  }
+
   @Delete(":id")
   remove(@Param("id") id: string) {
     const role = getRequestUserRole();

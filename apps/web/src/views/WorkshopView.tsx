@@ -33,6 +33,7 @@ import {
   MessageSquare,
   Copy,
   Check,
+  Rocket,
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -253,6 +254,7 @@ export default function WorkshopView({
   const cascadeRunning = loading && (loadingReason === "deliverables-cascade" || loadingReason === "legacy-deliverables");
   const error = useWorkshopStore((s) => s.error);
   const setError = useWorkshopStore((s) => s.setError);
+  const launchHermes = useWorkshopStore((s) => s.launchHermes);
   const fetchProject = useWorkshopStore((s) => s.fetchProject);
   const adrsRaw = useWorkshopStore((s) => s.adrs);
   const adrs = useMemo(() => adrsRaw || [], [adrsRaw]);
@@ -960,6 +962,25 @@ export default function WorkshopView({
           >
             <HelpCircle className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Ayuda</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
+              launchHermes(projectId).then((res) => {
+                if (res?.success) setError("✅ Proyecto enviado a Hermes Agent");
+              }).catch((err: Error) => setError(err.message));
+            }}
+            disabled={loading}
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-1.5 rounded text-zinc-300 hover:text-emerald-400 hover:bg-emerald-900/30 text-sm touch-manipulation min-h-[44px] sm:min-h-0 border border-zinc-600 hover:border-emerald-700 transition-colors"
+            title="Lanzar proyecto a Hermes Agent para desarrollo"
+          >
+            {loading && loadingReason === "launch-hermes" ? (
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+            ) : (
+              <Rocket className="w-4 h-4 shrink-0" />
+            )}
+            <span className="hidden sm:inline">Lanzar</span>
           </button>
           <button
             type="button"

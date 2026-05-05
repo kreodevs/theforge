@@ -3035,5 +3035,22 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       console.error("Error fetching ADRs:", err);
     }
   },
+  launchHermes: async (projectId: string) => {
+    if (!projectId?.trim()) return;
+    set({ loading: true, loadingReason: "launch-hermes", error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/launch-hermes`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al lanzar a Hermes");
+      }
+      const data = (await r.json()) as { success: boolean; status: number };
+      return data;
+    } finally {
+      set({ loading: false, loadingReason: null });
+    }
+  },
   reset: () => set(initialState),
 }));
