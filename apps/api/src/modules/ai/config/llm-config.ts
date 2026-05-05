@@ -36,35 +36,15 @@ export interface OpenRouterRuntime {
 export type PrimaryChatRuntime = OpenRouterRuntime;
 
 /**
- * Resuelve el modelo de chat para un componente específico.
- * Convención: LLM_MODEL_{COMPONENTE} → OPENROUTER_CHAT_MODEL → default.
- *
- * Componentes registrados:
- * - DBGA → OPENROUTER_CHAT_MODEL_DBGA (MDD pipeline / LangGraph)
- * - ORCHESTRATOR → OPENROUTER_CHAT_MODEL (Workshop chat, por ahora)
- *
- * Uso futuro (LemonData / otros proveedores): misma convención
- * LLM_MODEL_{COMPONENTE} primero, luego OPENROUTER_CHAT_MODEL como fallback.
- */
-export function resolveComponentChatModel(component: string): string {
-  const envVar = `OPENROUTER_CHAT_MODEL_${component.toUpperCase().replace(/-/g, "_")}`;
-  const override = process.env[envVar]?.trim();
-  return override || process.env.OPENROUTER_CHAT_MODEL?.trim() || OPENROUTER_DEFAULT_CHAT_MODEL;
-}
-
-/**
  * Runtime único: OpenRouter (chat fijo a Hermes 405B salvo override por env).
- * Si se pasa `component`, se resuelve el modelo específico vía OPENROUTER_CHAT_MODEL_{COMPONENTE}.
  */
-export function resolvePrimaryChatRuntime(component?: string): OpenRouterRuntime {
+export function resolvePrimaryChatRuntime(): OpenRouterRuntime {
   const apiKey = resolveOpenRouterApiKey();
   if (!apiKey) {
     throw new Error("OPENROUTER_API_KEY (or AI_API_KEY / OPENAI_API_KEY) is required");
   }
   const baseURL = process.env.OPENROUTER_BASE_URL?.trim() || OPENROUTER_DEFAULT_BASE;
-  const chatModel = component
-    ? resolveComponentChatModel(component)
-    : (process.env.OPENROUTER_CHAT_MODEL?.trim() || OPENROUTER_DEFAULT_CHAT_MODEL);
+  const chatModel = process.env.OPENROUTER_CHAT_MODEL?.trim() || OPENROUTER_DEFAULT_CHAT_MODEL;
   const embeddingModel =
     process.env.OPENROUTER_EMBEDDING_MODEL?.trim() || OPENROUTER_DEFAULT_EMBEDDING_MODEL;
   return { providerId: "openrouter", apiKey, baseURL, chatModel, embeddingModel };
