@@ -7,7 +7,7 @@ interface LoginViewProps {
   onLoggedIn: () => void;
 }
 
-type Step = "send" | "code" | "sso" | "register";
+type Step = "send" | "code" | "sso";
 
 export default function LoginView({ onLoggedIn }: LoginViewProps) {
   const [code, setCode] = useState("");
@@ -15,9 +15,6 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ssoEnabled, setSsoEnabled] = useState(false);
-  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
-  const [setupEmail, setSetupEmail] = useState("");
-  const [setupName, setSetupName] = useState("");
 
   useEffect(() => {
     const ssoUrl = import.meta.env.VITE_SSO_URL as string;
@@ -31,60 +28,7 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
     if (ssoToken) {
       handleSsoLogin(ssoToken);
     }
-
-    // Verificar si hay usuarios registrados
-    checkHasUsers();
   }, []);
-
-  const checkHasUsers = async () => {
-    try {
-      const r = await fetch(`${API_BASE}/auth/has-users`);
-      const data = (await r.json()) as { hasUsers?: boolean };
-      if (data.hasUsers === false) {
-        setNeedsSetup(true);
-        setStep("register");
-      } else {
-        setNeedsSetup(false);
-      }
-    } catch {
-      setNeedsSetup(false);
-    }
-  };
-
-  const handleRegisterFirstAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!setupEmail.trim()) {
-      setError("Email requerido");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const r = await fetch(`${API_BASE}/auth/register-first-admin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: setupEmail.trim(),
-          name: setupName.trim() || undefined,
-        }),
-      });
-      const data = (await r.json()) as {
-        created?: boolean;
-        message?: string;
-      };
-      if (data?.created) {
-        setStep("send");
-        setNeedsSetup(false);
-        setError(null);
-      } else {
-        setError(data?.message || "Error al crear administrador");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error de conexión");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   async function handleSsoLogin(token: string) {
     setLoading(true);
@@ -100,7 +44,6 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
         throw new Error(data.message ?? "Error SSO");
       }
       setAccessToken(data.accessToken);
-      // Limpiar query params
       window.history.replaceState({}, "", window.location.pathname);
       onLoggedIn();
     } catch (err) {
@@ -173,55 +116,12 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
             <Flame className="w-7 h-7" />
             The Forge
           </CardTitle>
-          {needsSetup !== true && (
-            <p className="text-sm text-[var(--foreground-muted)] font-normal">
-              El código se envía al correo configurado en el servidor (EMAIL_OTP).
-            </p>
-          )}
+          <p className="text-sm text-[var(--foreground-muted)] font-normal">
+            El código se envía al correo configurado en el servidor (EMAIL_OTP).
+          </p>
         </CardHeader>
         <CardContent>
-          {needsSetup === null ? (
-            <p className="text-sm text-[var(--foreground-muted)]">Cargando...</p>
-          ) : step === "register" ? (
-            <form onSubmit={handleRegisterFirstAdmin} className="space-y-4">
-              <p className="text-sm text-amber-500 font-medium">
-                ⚙️ No hay usuarios registrados. Crea el primer administrador.
-              </p>
-              <div className="space-y-2">
-                <label htmlFor="setup-email" className="text-sm text-[var(--foreground-muted)]">
-                  Email
-                </label>
-                <Input
-                  id="setup-email"
-                  type="email"
-                  placeholder="admin@email.com"
-                  value={setupEmail}
-                  onChange={(ev) => setSetupEmail(ev.target.value)}
-                  disabled={loading}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="setup-name" className="text-sm text-[var(--foreground-muted)]">
-                  Nombre (opcional)
-                </label>
-                <Input
-                  id="setup-name"
-                  type="text"
-                  placeholder="Tu nombre"
-                  value={setupName}
-                  onChange={(ev) => setSetupName(ev.target.value)}
-                  disabled={loading}
-                />
-              </div>
-              {error && (
-                <p className="text-sm text-[var(--destructive)]">{error}</p>
-              )}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Creando..." : "Crear administrador"}
-              </Button>
-            </form>
-          ) : step === "send" ? (
+          {step === "send" ? (
             <form onSubmit={requestOtp} className="space-y-4">
               {error && (
                 <p className="text-sm text-[var(--destructive)]">{error}</p>

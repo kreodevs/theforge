@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import WorkshopView from "./views/WorkshopView";
 import LoginView from "./views/LoginView";
+import SetupView from "./views/SetupView";
 import { McpSecretCard } from "./components/McpSecretCard";
 import { UsersList } from "./components/UsersList";
 import { apiFetch, clearAccessToken, getAccessToken, API_BASE, getStoredUser } from "./utils/apiClient";
@@ -100,6 +101,7 @@ export default function App() {
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const [theforgeModalTab, setTheForgeModalTab] = useState<"projects" | "repos">("projects");
   const [theforgeProjects, setTheForgeProjects] = useState<TheForgeProject[]>([]);
   const [theforgeAvailable, setTheForgeAvailable] = useState(false);
@@ -222,6 +224,17 @@ export default function App() {
     if (!workshopProject) loadProjects();
   }, [workshopProject]);
 
+  // Check if first-run setup is needed (no users exist)
+  useEffect(() => {
+    if (authed) return;
+    fetch(`${API_BASE}/auth/has-users`)
+      .then((r) => r.json())
+      .then((data: { hasUsers?: boolean }) => {
+        setNeedsSetup(data.hasUsers === false);
+      })
+      .catch(() => setNeedsSetup(false));
+  }, [authed]);
+
   useEffect(() => {
     function onAuthExpired() {
       setAuthed(false);
@@ -232,6 +245,16 @@ export default function App() {
   }, []);
 
   if (!authed) {
+    if (needsSetup === null) {
+      return (
+        <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex items-center justify-center p-6">
+          <p className="text-sm text-[var(--foreground-muted)]">Cargando...</p>
+        </div>
+      );
+    }
+    if (needsSetup) {
+      return <SetupView onComplete={() => setNeedsSetup(false)} />;
+    }
     return <LoginView onLoggedIn={() => setAuthed(true)} />;
   }
 
