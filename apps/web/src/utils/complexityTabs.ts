@@ -38,6 +38,9 @@ export function isTabVisibleForComplexity(
   const c = complexity ?? "HIGH";
   const pt: ProjectTypeForTabs = opts?.projectType ?? "NEW";
 
+  // AEM siempre visible, sin importar complejidad ni tipo de proyecto
+  if (tab === "aem") return true;
+
   if (c === "HIGH") return true;
 
   if (c === "LOW") {
