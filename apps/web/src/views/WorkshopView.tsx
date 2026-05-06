@@ -2211,7 +2211,7 @@ export default function WorkshopView({
                     <button
                       type="button"
                       onClick={handleGenerateDeliverables}
-                      disabled={!canGenerate || cascadeRunning || mddReviewing || (project?.requireBrdTobeGate === true && (!(activeWorkshopStage?.brdContent ?? "").trim() || !(activeWorkshopStage?.toBeManualContent ?? "").trim()))}
+                      disabled={!canGenerate || cascadeRunning || mddReviewing || project?.requireBrdTobeGate === true}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-green-600/80 text-white hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {cascadeRunning ? (
@@ -3038,7 +3038,7 @@ export default function WorkshopView({
           <button
             type="button"
             onClick={handleGenerateDeliverables}
-            disabled={!canGenerate || cascadeRunning || mddReviewing}
+            disabled={!canGenerate || cascadeRunning || mddReviewing || project?.requireBrdTobeGate === true}
             className="w-full py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-green-600 hover:bg-green-500 text-white disabled:bg-zinc-600 disabled:hover:bg-zinc-600 flex items-center justify-center gap-2"
           >
             {cascadeRunning ? (
