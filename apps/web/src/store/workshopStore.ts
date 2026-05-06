@@ -821,6 +821,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ error: "Falta proyecto" });
       return false;
     }
+    // Optimistic update: reflejar cambio al instante en el store
+    const prev = get().project;
+    if (prev) {
+      set({ project: { ...prev, requireBrdTobeGate } });
+    }
     try {
       const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}`, {
         method: "PATCH",
@@ -828,6 +833,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         body: JSON.stringify({ requireBrdTobeGate }),
       });
       if (!r.ok) {
+        // Revertir optimismo si falló
+        if (prev) {
+          set({ project: prev });
+        }
         const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
         const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
         throw new Error(msg ?? "PATCH proyecto falló");
