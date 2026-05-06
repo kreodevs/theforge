@@ -165,13 +165,19 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
                 </label>
                 <Input
                   id="code"
+                  type="text"
                   inputMode="numeric"
                   autoComplete="one-time-code"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint="done"
                   placeholder="000000"
+                  maxLength={6}
+                  pattern="\d{6}"
                   value={code}
-                  onChange={(ev) => setCode(ev.target.value.replace(/\D/g, "").slice(0, 8))}
+                  onChange={(ev) => setCode(ev.target.value.replace(/\D/g, "").slice(0, 6))}
                   required
-                  minLength={6}
                 />
               </div>
               {error && (
