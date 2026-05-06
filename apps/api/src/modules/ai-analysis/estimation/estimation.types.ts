@@ -107,16 +107,16 @@ export const SOCIAL_LOAD_FACTOR = 1.4;
 export const HOURS_PER_MONTH = 160;
 export const INTERNAL_HOUR_RATE = 185;
 
-/** Tokens de salida estimados por entidad para generación IA. */
-export const AI_TOKENS_PER_ENTITY = 2_000;
-/** Tokens de salida estimados por pantalla para generación IA. */
-export const AI_TOKENS_PER_SCREEN = 3_000;
-/** Tokens de salida estimados por endpoint extra para generación IA. */
-export const AI_TOKENS_PER_ENDPOINT = 500;
-/** Tokens base (overhead) por proyecto para generación IA. */
-export const AI_BASE_OVERHEAD_TOKENS = 5_000;
-/** Costo por token de salida IA en USD (~$1/M tokens). */
-export const AI_COST_PER_TOKEN_USD = 0.000001;
+/** Tokens de salida estimados por entidad para generación IA (input + output total del pipeline). */
+export const AI_TOKENS_PER_ENTITY = 50_000;
+/** Tokens estimados por pantalla (cubre múltiples agentes: UI, API, flujos). */
+export const AI_TOKENS_PER_SCREEN = 80_000;
+/** Tokens estimados por endpoint extra (análisis + contratos + lógica). */
+export const AI_TOKENS_PER_ENDPOINT = 20_000;
+/** Tokens base (overhead) del pipeline MDD + cascada de documentos. */
+export const AI_BASE_OVERHEAD_TOKENS = 200_000;
+/** Costo por token IA en USD blended (~$3/M incluyendo input+output del pipeline completo). */
+export const AI_COST_PER_TOKEN_USD = 0.000003;
 /** Tipo de cambio USD → MXN para mostrar costo IA en MXN. */
 export const MXN_PER_USD = 20;
 
