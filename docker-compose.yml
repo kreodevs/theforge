@@ -196,6 +196,32 @@ services:
       start_period: 10s
       retries: 3
 
+  # Adminer — gestor de BD web (auto-fill, solo falta la password)
+  # Exponer en Dokploy: dominio theforge.kreoint.mx, path /adminer, puerto 8080
+  theforge-adminer:
+    image: adminer:4.8.1
+    container_name: theforge-adminer
+    networks:
+      - default
+      - dokploy-network
+    depends_on:
+      theforge-db:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: theforge-db
+      ADMINER_DEFAULT_USERNAME: theforge
+      ADMINER_DEFAULT_DRIVER: pgsql
+      ADMINER_DEFAULT_DB: theforge
+      ADMINER_DESIGN: nette
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ | grep -q adminer || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
 volumes:
   theforge_db_data:
   theforge_redis_queue_data:
