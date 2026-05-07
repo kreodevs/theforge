@@ -1,5 +1,266 @@
 import { useMemo } from "react";
 
+// ─── Tipos compartidos ─────────────────────────────────────────
+
+interface DesignTokens {
+  name?: string;
+  description?: string;
+  colors?: Record<string, string>;
+  typography?: Record<string, TypographyToken>;
+  rounded?: Record<string, string>;
+  spacing?: Record<string, string>;
+  elevation?: Record<string, string>;
+  components?: Record<string, ComponentToken>;
+}
+
+interface TypographyToken {
+  fontFamily?: string;
+  fontSize?: string;
+  fontWeight?: number | string;
+  lineHeight?: number | string;
+  letterSpacing?: string;
+}
+
+interface ComponentToken {
+  backgroundColor?: string;
+  textColor?: string;
+  rounded?: string;
+  padding?: string | number;
+  size?: string | number;
+  height?: string | number;
+  width?: string | number;
+  typography?: string;
+}
+
+// ─── Google-style DESIGN.md parser ─────────────────────────────
+
+function parseDesignMdContent(content: string): DesignTokens | null {
+  const tokens: DesignTokens = {};
+
+  // ── Colors ──────────────────────────────────────────────
+  const colorsSection = extractSection(content, ["colors", "color"]);
+  if (colorsSection) {
+    const colors: Record<string, string> = {};
+    // Pattern: "Primary (#HEX)" or "Primary: #HEX" or "--primary: #HEX"
+    const colorPatterns = [
+      /(?:^|\n)\s*(?:\*\*)?(\w[\w\s-]*?)(?:\*\*)?\s*[:(]\s*[#]?\(?([A-Fa-f0-9]{6})\)?/gm,
+      /--[\w-]+:\s*[#]?\(?([A-Fa-f0-9]{6})\)?/g,
+    ];
+    for (const pattern of colorPatterns) {
+      let m: RegExpExecArray | null;
+      const re = new RegExp(pattern.source, 'gm');
+      while ((m = re.exec(colorsSection)) !== null) {
+        if (m[1] && m[2]) {
+          const name = m[1].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          if (name) colors[name] = `#${m[2].toUpperCase()}`;
+        }
+      }
+    }
+    // Also look for CSS var comments: "Primary (#1A5F7A): Azul profundo."
+    const cssColorRe = /(\w[\w\s]*?)\s*\((#([A-Fa-f0-9]{6}))\)/g;
+    let cm: RegExpExecArray | null;
+    while ((cm = cssColorRe.exec(colorsSection)) !== null) {
+      const name = cm[1]!.toLowerCase().trim().replace(/\s+/g, '-');
+      const hex = cm[2]!.toUpperCase();
+      if (name && !Object.values(colors).includes(hex)) {
+        colors[name] = hex;
+      }
+    }
+    if (Object.keys(colors).length > 0) tokens.colors = colors;
+  }
+
+  // ── Typography ──────────────────────────────────────────
+  const typographySection = extractSection(content, ["typography", "type", "fonts", "font"]);
+  if (typographySection) {
+    const typography: Record<string, TypographyToken> = {};
+    
+    // Font family
+    const ff = typographySection.match(/(?:font[-\s]?family|Inter|sans-serif)[^.]*(?:Inter|system-ui)/i);
+    if (ff) {
+      // Extract Inter reference
+    }
+
+    // Hierarchy: "h1 32px 700 40px -0.02em" or "h1: 32px / 700 / 40px / -0.02em"
+    const hierRe = /(h1|h2|h3|h4|h5|h6|body[\s-]?md|body[\s-]?sm|body|label[\s-]?sm|label|small|caption|footnote)\s+(\d+)\s*px\s+(\d{3})\s+(\d+)\s*px\s*([\d.-]+)?\s*(?:em)?/gi;
+    let hm: RegExpExecArray | null;
+    while ((hm = hierRe.exec(typographySection)) !== null) {
+      const key = hm[1]!.toLowerCase().replace(/[\s_]+/g, '-');
+      typography[key] = {
+        fontSize: `${hm[2]}px`,
+        fontWeight: parseInt(hm[3]!),
+        lineHeight: `${hm[4]}px`,
+        letterSpacing: hm[5] ? `${hm[5]}em` : undefined,
+      };
+    }
+
+    // Also handle "Token Tamaño Peso Leading Tracking" tables
+    const tableRe = /\|?\s*(h1|h2|h3|h4|h5|h6|body[\s-]?md|body[\s-]?sm|label[\s-]?sm)\s*\|?\s*(\d+)\s*px?\s*\|?\s*(\d{3})\s*\|?\s*(\d+)\s*px?\s*\|?\s*([\d.-]+)?\s*(?:em)?/gi;
+    let tm: RegExpExecArray | null;
+    while ((tm = tableRe.exec(typographySection)) !== null) {
+      const key = tm[1]!.toLowerCase().replace(/[\s_]+/g, '-');
+      typography[key] = {
+        fontSize: `${tm[2]}px`,
+        fontWeight: parseInt(tm[3]!),
+        lineHeight: `${tm[4]}px`,
+        letterSpacing: tm[5] ? `${tm[5]}em` : undefined,
+      };
+    }
+
+    if (Object.keys(typography).length > 0) {
+      typography['font-sans'] = { fontFamily: "'Inter', system-ui, -apple-system, sans-serif" };
+      tokens.typography = typography;
+    }
+  }
+
+  // ── Layout / Spacing ────────────────────────────────────
+  const layoutSection = extractSection(content, ["layout", "spacing"]);
+  if (layoutSection) {
+    const spacing: Record<string, string> = {};
+    
+    // Grid columns
+    const gridRe = /(\d+)\s*columnas/i;
+    const gm2 = gridRe.exec(layoutSection);
+    if (gm2) spacing['grid-columns'] = gm2[1]!;
+
+    // Spacing tokens
+    const spRe = /(xs|sm|md|lg|xl|2xl|3xl)\s*[:(]\s*(\d+)\s*px/gi;
+    let sm: RegExpExecArray | null;
+    while ((sm = spRe.exec(layoutSection)) !== null) {
+      spacing[sm[1]!.toLowerCase()] = `${sm[2]}px`;
+    }
+
+    if (Object.keys(spacing).length > 0) tokens.spacing = spacing;
+  }
+
+  // ── Elevation & Depth ───────────────────────────────────
+  const elevationSection = extractSection(content, ["elevation", "depth", "shadow"]);
+  if (elevationSection) {
+    const elevation: Record<string, string> = {};
+    
+    // "Card: 0 1px 3px rgba(...)" or "Tarjetas (card): 0 1px 3px rgba(...)"
+    const shRe = /(Card|Tarjeta|Modal|Panel|Dropdown|Tooltip|Sticky|Header|card|modal|dropdown|tooltip|sticky)[\s:(]+([\d\s,.pxrgba()a-zA-Z-]+?)(?:\n|$)/gi;
+    let shm: RegExpExecArray | null;
+    while ((shm = shRe.exec(elevationSection)) !== null) {
+      const key = shm[1]!.toLowerCase();
+      const val = shm[2]!.trim().replace(/\s+/g, ' ');
+      if (val && val.includes('rgba')) {
+        if (key.includes('card')) elevation['card'] = val;
+        else if (key.includes('modal') || key.includes('panel')) elevation['modal'] = val;
+        else if (key.includes('dropdown') || key.includes('tooltip')) elevation['dropdown'] = val;
+        else if (key.includes('sticky') || key.includes('header')) elevation['sticky'] = val;
+      }
+    }
+
+    if (Object.keys(elevation).length > 0) tokens.elevation = elevation;
+  }
+
+  // ── Shapes / Border Radius ─────────────────────────────
+  const shapesSection = extractSection(content, ["shapes", "rounded", "border-radius", "border radius"]);
+  if (shapesSection) {
+    const rounded: Record<string, string> = {};
+    
+    // "sm (6px): Botones, inputs" or "sm: 6px"
+    const rdRe = /(sm|md|lg|xl|full)\s*[:(]\s*(\d+)\s*px/gi;
+    let rm: RegExpExecArray | null;
+    while ((rm = rdRe.exec(shapesSection)) !== null) {
+      rounded[rm[1]!.toLowerCase()] = `${rm[2]}px`;
+    }
+
+    if (Object.keys(rounded).length > 0) tokens.rounded = rounded;
+  }
+
+  // ── Components ─────────────────────────────────────────
+  const componentsSection = extractSection(content, ["components"]);
+  if (componentsSection) {
+    const components: Record<string, ComponentToken> = {};
+    
+    // Each component is a subsection like "Button Primary" or "Card"
+    const compSections = componentsSection.split(/\n(?=\w[\w\s]+\n[=-]+|\n###?\s+)/);
+    for (const block of compSections) {
+      const nameMatch = block.match(/^(?:###?\s+)?(\w[\w\s/]+?)(?:\n|$)/m);
+      if (!nameMatch) continue;
+      const compName = nameMatch[1]!.trim().toLowerCase().replace(/\s+/g, '-');
+      
+      const comp: ComponentToken = {};
+      
+      // Color / background
+      const bgMatch = block.match(/(?:Color|Background|Fondo|Bg)[:\s]+(.+?)(?:\n|$)/i);
+      if (bgMatch) {
+        const val = bgMatch[1]!.trim();
+        const hex = val.match(/#([A-Fa-f0-9]{6})/);
+        if (hex) comp.backgroundColor = `#${hex[1]!.toUpperCase()}`;
+        else if (val.includes('tertiary') || val.includes('amber') || val.includes('ámbar')) 
+          comp.backgroundColor = '{colors.tertiary}' in components ? '#F4A261' : '#F4A261';
+        else if (val.includes('primary') || val.includes('azul') || val.includes('blue'))
+          comp.backgroundColor = '{colors.primary}' in components ? '#1A5F7A' : '#1A5F7A';
+        else if (val.includes('secondary') || val.includes('verde') || val.includes('green'))
+          comp.backgroundColor = '{colors.secondary}' in components ? '#2E8B57' : '#2E8B57';
+        else if (val.includes('neutral') || val.includes('blanco') || val.includes('white') || val.includes('#FFF'))
+          comp.backgroundColor = '#FFFFFF';
+      }
+      
+      // Text color
+      const fgMatch = block.match(/(?:Texto|Text|Color de texto)[:\s]+(.+?)(?:\n|$)/i);
+      if (fgMatch) {
+        const val = fgMatch[1]!.trim();
+        if (val.includes('blanco') || val.includes('white') || val.includes('#FFF') || val.includes('#FFFFFF'))
+          comp.textColor = '#FFFFFF';
+        else if (val.includes('#') && val.match(/#([A-Fa-f0-9]{6})/))
+          comp.textColor = `#${val.match(/#([A-Fa-f0-9]{6})/)![1]!.toUpperCase()}`;
+        else comp.textColor = '#1A1C1E';
+      }
+      
+      // Border radius
+      const rdMatch = block.match(/(?:rounded|border radius|border-radius|redondeado)[.\s:]+(.+?)(?:\n|$)/i);
+      if (rdMatch) {
+        const val = rdMatch[1]!.trim();
+        const px = val.match(/(\d+)\s*px/);
+        if (px) comp.rounded = `${px[1]}px`;
+        else if (val.includes('sm')) comp.rounded = '6px';
+        else if (val.includes('md')) comp.rounded = '12px';
+        else if (val.includes('lg')) comp.rounded = '20px';
+      }
+      
+      // Padding
+      const padMatch = block.match(/(?:Padding|pad)[:\s]+(.+?)(?:\n|$)/i);
+      if (padMatch) {
+        const val = padMatch[1]!.trim();
+        const px = val.match(/(\d+)\s*px/);
+        if (px) comp.padding = `${px[1]}px`;
+      }
+      
+      // Only add if we extracted meaningful props
+      if (comp.backgroundColor || comp.textColor || comp.rounded || comp.padding) {
+        components[compName] = comp;
+      }
+    }
+
+    if (Object.keys(components).length > 0) tokens.components = components;
+  }
+
+  return Object.keys(tokens).length > 0 ? tokens : null;
+}
+
+/** Extract a markdown section by heading name. Tries multiple heading formats. */
+function extractSection(content: string, names: string[]): string | null {
+  for (const name of names) {
+    // Match ## Name, ### Name, **Name**, or standalone Name: section
+    const patterns = [
+      new RegExp(`##+\\s*${escapeRegex(name)}[^\\n]*(?:\\n[^#][^\\n]*)*`, 'i'),
+      new RegExp(`\\*\\*${escapeRegex(name)}\\*\\*[^\\n]*(?:\\n(?!##|\\*\\*)[^\\n]*)*`, 'i'),
+    ];
+    for (const pattern of patterns) {
+      const m = pattern.exec(content);
+      if (m) return m[0];
+    }
+  }
+  return null;
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 interface DesignTokens {
   name?: string;
   description?: string;
@@ -246,7 +507,29 @@ function ComponentPreview({
 }
 
 export function DesignMdPreview({ content }: { content: string }) {
-  const { frontMatter } = useMemo(() => parseYamlFrontMatter(content), [content]);
+  // Try YAML frontmatter first, then Google-style DESIGN.md
+  const frontMatter = useMemo(() => {
+    const yaml = parseYamlFrontMatter(content).frontMatter;
+    if (yaml && (yaml.colors || yaml.typography || yaml.components)) return yaml;
+    return parseDesignMdContent(content);
+  }, [content]);
+
+  // Extract name/description from markdown if not in tokens
+  const title = useMemo(() => {
+    if (frontMatter?.name) return frontMatter.name;
+    const h1 = content.match(/^#\s+(.+)/m);
+    return h1?.[1] ?? "Vista previa de diseño";
+  }, [content, frontMatter]);
+
+  const description = useMemo(() => {
+    if (frontMatter?.description) return frontMatter.description;
+    const overview = extractSection(content, ["overview", "introduction", "intro"]);
+    if (overview) {
+      const firstLine = overview.split("\n").slice(1).find(l => l.trim() && !l.startsWith("#"));
+      return firstLine?.trim() ?? null;
+    }
+    return null;
+  }, [content, frontMatter]);
 
   if (!frontMatter || (!frontMatter.colors && !frontMatter.typography && !frontMatter.components)) {
     return (
@@ -264,11 +547,11 @@ export function DesignMdPreview({ content }: { content: string }) {
 
   return (
     <div className="overflow-auto p-4 space-y-8">
-      {frontMatter.name && (
+      {title && (
         <div>
-          <h2 className="text-lg font-semibold text-zinc-100">{frontMatter.name}</h2>
-          {frontMatter.description && (
-            <p className="text-sm text-zinc-400 mt-1">{frontMatter.description}</p>
+          <h2 className="text-lg font-semibold text-zinc-100">{title}</h2>
+          {description && (
+            <p className="text-sm text-zinc-400 mt-1">{description}</p>
           )}
         </div>
       )}
@@ -319,6 +602,35 @@ export function DesignMdPreview({ content }: { content: string }) {
           </div>
         </section>
       )}
+
+      {(() => {
+        const el = frontMatter.elevation ?? (frontMatter as any).elevation;
+        if (!el || Object.keys(el).length === 0) return null;
+        return (
+          <section>
+            <h3 className="text-xs uppercase tracking-wider text-zinc-500 font-medium mb-3">Elevation & Depth</h3>
+            <div className="space-y-3">
+              {Object.entries(el).map(([key, val]) => {
+                const shadowValue = typeof val === 'string' ? val : String(val);
+                return (
+                  <div key={key} className="flex items-start gap-4 p-3 rounded-lg bg-zinc-800/50 border border-zinc-600/30">
+                    <span className="text-[10px] uppercase tracking-wider text-zinc-500 w-16 shrink-0">{key}</span>
+                    <div className="flex-1">
+                      <div
+                        className="w-full h-12 rounded bg-zinc-900 flex items-center justify-center"
+                        style={{ boxShadow: shadowValue }}
+                      >
+                        <span className="text-[10px] text-zinc-500 font-mono">{key}</span>
+                      </div>
+                      <div className="mt-1.5 text-[9px] font-mono text-zinc-600 break-all">{shadowValue}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })()}
 
       {components && Object.keys(components).length > 0 && (
         <section>
