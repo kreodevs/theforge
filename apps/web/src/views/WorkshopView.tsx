@@ -1054,7 +1054,7 @@ export default function WorkshopView({
                   ? "Lanzar proyecto a Hermes Agent para desarrollo"
                   : "Hermes no configurado — falta HERMES_WEBHOOK_URL y HERMES_API_KEY"
             }
-            className={`flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-1.5 rounded text-sm touch-manipulation min-h-[44px] sm:min-h-0 border transition-colors ${
+            className={`flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-1.5 rounded-lg text-sm touch-manipulation min-h-[44px] sm:min-h-0 border transition-colors ${
               hermesConfigured === false
                 ? "text-zinc-600 border-zinc-700 cursor-not-allowed"
                 : "text-zinc-300 hover:text-emerald-400 hover:bg-emerald-900/30 border-zinc-600 hover:border-emerald-700"

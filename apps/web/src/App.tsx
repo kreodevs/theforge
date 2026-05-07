@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkshopStore } from "./store/workshopStore";
 import {
+  AlertTriangle,
   FolderGit2,
   FolderOpen,
   GitBranch,
@@ -423,9 +424,33 @@ export default function App() {
             </DialogDescription>
           </DialogHeader>
           {!theforgeAvailable && !theforgeLoading && (
-            <p className="text-sm text-[var(--foreground-muted)]">
-              TheForge no está configurado o no está disponible. Configura THEFORGE_MCP_URL y MCP_AUTH_TOKEN en el backend.
-            </p>
+            <div
+              role="alert"
+              className="rounded-[var(--radius-md)] border border-[color-mix(in_oklch,var(--destructive)_42%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_14%,var(--card))] p-4 shadow-sm"
+            >
+              <div className="flex gap-3">
+                <AlertTriangle
+                  className="mt-0.5 h-5 w-5 shrink-0 text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]"
+                  aria-hidden
+                />
+                <div className="min-w-0 space-y-3 text-sm">
+                  <p className="font-semibold leading-snug text-[var(--foreground)]">
+                    TheForge no está configurado o no está disponible.
+                  </p>
+                  <p className="leading-relaxed text-[var(--foreground-muted)]">
+                    Configura estas variables en el backend:
+                  </p>
+                  <ul className="flex flex-col gap-2 font-mono text-xs text-[var(--foreground)]">
+                    <li className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_55%,var(--card))] px-3 py-2">
+                      THEFORGE_MCP_URL
+                    </li>
+                    <li className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_55%,var(--card))] px-3 py-2">
+                      MCP_AUTH_TOKEN
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
           )}
           {theforgeLoading && (
             <div className="flex items-center gap-2 text-[var(--foreground-muted)] py-6">
