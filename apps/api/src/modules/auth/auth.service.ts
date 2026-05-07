@@ -101,6 +101,17 @@ export class AuthService {
     return display;
   }
 
+  /** Host público de la web (Safari) para @domain #code y magic link. Lee WEB_DOMAIN del env. */
+  private resolveWebAppHostname(): string | null {
+    const raw = stripEnvQuotes(this.config.get<string>("WEB_DOMAIN"))?.trim();
+    if (!raw) return null;
+    let host = raw.toLowerCase();
+    host = host.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].replace(/^\./, '');
+    if (!host || host.length > 253 || !/^[\w.-]+$/.test(host)) return null;
+    if (host.includes('..')) return null;
+    return host;
+  }
+
   /**
    * Solicitud de OTP: el código solo se envía a `EMAIL_OTP` / `AUTH_ALLOWED_OTP_EMAIL` (dev: default en constantes).
    */
@@ -130,13 +141,53 @@ export class AuthService {
     }
 
     const from = this.mailFromHeader();
+
+    // iOS domain-bound + magic link
+    const appHost = this.resolveWebAppHostname();
+    const domainLine = appHost ? `@${appHost} #${code}` : null;
+    const magicLink = appHost
+      ? `https://${appHost}/auth/magic-link?otp=${code}&email=${encodeURIComponent(email)}`
+      : null;
+
+    // Texto plano con formato iOS
+    const textLines = [
+      code,
+      '',
+      `Use ${code} as your The Forge verification code.`,
+      '',
+      `Your verification code is: ${code}`,
+      '',
+      `Tu código: ${code}. Vence en 10 minutos. Si no lo pediste, ignora.`,
+    ];
+    if (domainLine) textLines.push('', domainLine);
+    if (magicLink) textLines.push('', `O toca este enlace: ${magicLink}`);
+    const textBody = textLines.join('\n');
+
+    const htmlMagicLink = magicLink
+      ? `<a href="${magicLink}" style="display:inline-block;margin:16px 0;padding:14px 28px;background:#059669;color:#fff;border-radius:12px;font-size:16px;font-weight:700;text-decoration:none;text-align:center;">👉 Acceder al instante</a>
+         <p style="margin:0 0 16px;font-size:13px;color:#64748b;">O ingresa el código manualmente.</p>`
+      : '';
+    const htmlDomainLine = domainLine
+      ? `<p style="margin:12px 0 0;font-size:12px;color:#64748b;word-break:break-all;font-family:ui-monospace,monospace;">${domainLine}</p>`
+      : '';
+
     try {
       await transport.sendMail({
         from,
         to: email,
-        subject: "Código de acceso — The Forge",
-        text: `Tu código: ${code}\nVence en 10 minutos.`,
-        html: `<p>Tu código: <strong>${code}</strong></p><p>Vence en 10 minutos.</p>`,
+        subject: `The Forge verification code ${code}`,
+        text: textBody,
+        html: `
+          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;padding:20px;color:#1e293b;max-width:480px;">
+            <p style="margin:0 0 16px;font-size:18px;font-weight:700;color:#059669;">The Forge</p>
+            <p style="margin:0 0 8px;">Tu código de acceso:</p>
+            <p style="margin:0 0 8px;font-size:28px;font-weight:800;color:#0f172a;">${code}</p>
+            <p style="margin:0 0 8px;font-size:15px;color:#475569;">Use <strong>${code}</strong> as your verification code.</p>
+            <p style="margin:0 0 16px;font-size:14px;color:#64748b;">Vence en 10 minutos.</p>
+            ${htmlMagicLink}
+            ${htmlDomainLine}
+          </div>
+        `,
       });
       this.logger.log(`OTP enviado por SMTP a ${email}`);
     } catch (err) {

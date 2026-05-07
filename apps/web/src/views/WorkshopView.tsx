@@ -28,6 +28,7 @@ import {
   MessageSquare,
   Copy,
   Check,
+  Rocket,
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -281,7 +282,7 @@ export default function WorkshopView({
       const hasCodebaseDoc = (activeLegacyState?.codebaseDoc ?? "").trim().length > 0;
       return hasMdd || hasCodebaseDoc;
     }
-    if (complexity === "LOW" || complexity === "MEDIUM") {
+    if (complexity === "LOW" || complexity === "MEDIUM" || complexity === "HIGH") {
       const hasBootstrap =
         (dbgaContent ?? "").trim().length > 0 || effectiveMddTrimmed.length > 0;
       return (semaphoreGreen && hasSpec) || hasBootstrap;
@@ -319,6 +320,7 @@ export default function WorkshopView({
   const cascadeRunning = loading && (loadingReason === "deliverables-cascade" || loadingReason === "legacy-deliverables");
   const error = useWorkshopStore((s) => s.error);
   const setError = useWorkshopStore((s) => s.setError);
+  const launchHermes = useWorkshopStore((s) => s.launchHermes);
   const fetchProject = useWorkshopStore((s) => s.fetchProject);
   const adrsRaw = useWorkshopStore((s) => s.adrs);
   const adrs = useMemo(() => adrsRaw || [], [adrsRaw]);
@@ -396,6 +398,7 @@ export default function WorkshopView({
   const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
   const [mddInicialViewMode, setMddInicialViewMode] = useState<"preview" | "source">("preview");
   const [aemViewMode, setAemViewMode] = useState<"preview" | "source">("preview");
+  const [hermesConfigured, setHermesConfigured] = useState<boolean | null>(null);
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
   const [mddInicialCopyOk, setMddInicialCopyOk] = useState(false);
@@ -845,6 +848,17 @@ export default function WorkshopView({
     return () => clearTimeout(t);
   }, [aemContent, projectId, project?.aemContent, project, persistAemContent]);
 
+  // Consultar si Hermes Agent está configurado en el backend
+  useEffect(() => {
+    if (!projectId) return;
+    import("../utils/apiClient").then(({ apiFetch, API_BASE }) => {
+      apiFetch(`${API_BASE}/projects/hermes-status`)
+        .then((r) => r.json() as Promise<{ configured: boolean }>)
+        .then((data) => setHermesConfigured(data.configured === true))
+        .catch(() => setHermesConfigured(false));
+    });
+  }, [projectId]);
+
   const handleBlueprintBlur = useCallback(() => {
     if (blueprintContent != null) persistBlueprintContent(blueprintContent);
   }, [blueprintContent, persistBlueprintContent]);
@@ -1023,6 +1037,35 @@ export default function WorkshopView({
           >
             <HelpCircle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
             <span className="hidden sm:inline">Ayuda</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
+              launchHermes(projectId).then((res: { success: boolean; status: number } | undefined) => {
+                if (res?.success) setError("✅ Proyecto enviado a Hermes Agent");
+              }).catch((err: Error) => setError(err.message));
+            }}
+            disabled={loading || hermesConfigured === false}
+            title={
+              hermesConfigured === null
+                ? "Verificando configuración…"
+                : hermesConfigured
+                  ? "Lanzar proyecto a Hermes Agent para desarrollo"
+                  : "Hermes no configurado — falta HERMES_WEBHOOK_URL y HERMES_API_KEY"
+            }
+            className={`flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-1.5 rounded text-sm touch-manipulation min-h-[44px] sm:min-h-0 border transition-colors ${
+              hermesConfigured === false
+                ? "text-zinc-600 border-zinc-700 cursor-not-allowed"
+                : "text-zinc-300 hover:text-emerald-400 hover:bg-emerald-900/30 border-zinc-600 hover:border-emerald-700"
+            }`}
+          >
+            {loading && loadingReason === "launch-hermes" ? (
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+            ) : (
+              <Rocket className="w-4 h-4 shrink-0" />
+            )}
+            <span className="hidden sm:inline">Lanzar</span>
           </button>
           <button
             type="button"
@@ -1991,7 +2034,7 @@ export default function WorkshopView({
                     <button
                       type="button"
                       onClick={() => void (isLegacyProject ? legacyGenerateMdd(projectId, activeStageId ?? undefined) : generateMddFromBenchmark(projectId))}
-                      disabled={(loading && (loadingReason === "mdd" || loadingReason === "legacy-mdd")) || (project?.requireBrdTobeGate === true && (!activeWorkshopStage?.brdApprovedAt || !activeWorkshopStage?.toBeApprovedAt))}
+                      disabled={(loading && (loadingReason === "mdd" || loadingReason === "legacy-mdd")) || (project?.requireBrdTobeGate === true && (!(activeWorkshopStage?.brdContent ?? "").trim() || !(activeWorkshopStage?.toBeManualContent ?? "").trim()))}
                       className={cn(
                         WORKSHOP_MDD_ACTION_PRIMARY,
                         "bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]",
@@ -2008,7 +2051,7 @@ export default function WorkshopView({
                       <button
                         type="button"
                         onClick={handleGenerateDeliverables}
-                        disabled={!canGenerate || cascadeRunning || mddReviewing}
+                        disabled={!canGenerate || cascadeRunning || mddReviewing || project?.requireBrdTobeGate === true}
                         className={cn(
                           WORKSHOP_MDD_ACTION_PRIMARY,
                           "bg-[var(--success)] text-[var(--success-foreground)] hover:bg-[color-mix(in_oklch,var(--success)_88%,black)]",
@@ -2023,7 +2066,7 @@ export default function WorkshopView({
                       </button>
                     )}
                   </div>
-                  {(project?.requireBrdTobeGate === true && (!activeWorkshopStage?.brdApprovedAt || !activeWorkshopStage?.toBeApprovedAt)) ? (
+                  {(project?.requireBrdTobeGate === true && (!(activeWorkshopStage?.brdContent ?? "").trim() || !(activeWorkshopStage?.toBeManualContent ?? "").trim())) ? (
                     <div
                       className="flex min-w-0 items-start gap-2 rounded-lg border border-[color-mix(in_oklch,var(--destructive)_38%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_12%,var(--card))] px-3 py-2.5 text-sm leading-snug text-[color-mix(in_oklch,var(--destructive)_92%,var(--foreground))]"
                       role="status"
@@ -2031,7 +2074,7 @@ export default function WorkshopView({
                     >
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]" aria-hidden />
                       <span>
-                        <span className="font-semibold">Aprobaciones pendientes.</span> Aprueba BRD y To-Be en sus pestañas; el semáforo usa el mismo criterio antes de desbloquear entregables.
+                        <span className="font-semibold">BRD / To-Be incompletos.</span> Completa el contenido en sus pestañas antes de generar el MDD o los entregables.
                       </span>
                     </div>
                   ) : (

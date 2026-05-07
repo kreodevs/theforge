@@ -1246,4 +1246,56 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     });
     return { brdContent: brd, toBeManualContent: tobe, stageId: stage.id };
   }
+
+  /** Notifica a Hermes Agent que el proyecto está listo para desarrollo via webhook proxy. */
+  async launchHermes(projectId: string) {
+    const project = await this.findOne(projectId);
+    if (!project) throw new NotFoundException("Proyecto no encontrado");
+
+    const webhookUrl = process.env.HERMES_WEBHOOK_URL?.trim();
+    const apiKey = process.env.HERMES_API_KEY?.trim();
+    if (!webhookUrl || !apiKey) {
+      throw new BadRequestException(
+        "HERMES_WEBHOOK_URL y HERMES_API_KEY no están configurados",
+      );
+    }
+
+    const payload = {
+      event_type: "project.ready",
+      project: {
+        id: project.id,
+        name: project.name,
+        type: project.projectType,
+        sessionId: null as string | null,
+      },
+    };
+
+    // Buscar la sesión activa más reciente para incluir sessionId
+    try {
+      const lastSession = await this.prisma.session.findFirst({
+        where: { projectId: project.id },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      });
+      if (lastSession) payload.project.sessionId = lastSession.id;
+    } catch {
+      // sessionId no crítico
+    }
+
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Hermes webhook respondió ${response.status}: ${text}`);
+    }
+
+    return { success: true, status: response.status };
+  }
 }

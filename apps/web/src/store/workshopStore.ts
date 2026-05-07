@@ -424,6 +424,7 @@ interface WorkshopState {
     | "brd-tobe-from-dbga"
     | "legacy-deliverables"
     | "deliverables-cascade"
+    | "launch-hermes"
     | null;
   /** Mensaje de usuario en curso (streaming); se muestra hasta recibir "done" */
   streamingUserMessage: string | null;
@@ -599,6 +600,8 @@ interface WorkshopState {
   legacyGenerateDeliverables: (projectId: string) => Promise<boolean>;
   fetchEstimation: (projectId: string) => Promise<LiveMetricsResult | null>;
   fetchAdrs: (projectId: string) => Promise<void>;
+  /** Notifica a Hermes Agent que el proyecto está listo para desarrollo. */
+  launchHermes: (projectId: string) => Promise<{ success: boolean; status: number } | undefined>;
   reset: () => void;
 }
 
@@ -823,6 +826,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ error: "Falta proyecto" });
       return false;
     }
+    // Optimistic update: reflejar cambio al instante en el store
+    const prev = get().project;
+    if (prev) {
+      set({ project: { ...prev, requireBrdTobeGate } });
+    }
     try {
       const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}`, {
         method: "PATCH",
@@ -830,6 +838,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         body: JSON.stringify({ requireBrdTobeGate }),
       });
       if (!r.ok) {
+        // Revertir optimismo si falló
+        if (prev) {
+          set({ project: prev });
+        }
         const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
         const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
         throw new Error(msg ?? "PATCH proyecto falló");
@@ -3038,6 +3050,23 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
     } catch (err) {
       console.error("Error fetching ADRs:", err);
+    }
+  },
+  launchHermes: async (projectId: string) => {
+    if (!projectId?.trim()) return;
+    set({ loading: true, loadingReason: "launch-hermes", error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/launch-hermes`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al lanzar a Hermes");
+      }
+      const data = (await r.json()) as { success: boolean; status: number };
+      return data;
+    } finally {
+      set({ loading: false, loadingReason: null });
     }
   },
   reset: () => set(initialState),

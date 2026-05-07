@@ -176,8 +176,18 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "get_project_deliverables",
+    description:
+      "Devuelve un resumen estructurado de todos los documentos de la cascada (Spec, Blueprint, API Contracts, Architecture, Use Cases, User Stories, Logic Flows, Infra, UX/UI Guide, DBGA). Cada doc incluye 'exists', 'wordCount' y 'content' completo si existe. Los docs de stage (BRD, To-Be, As-Is, MDD) están en get_project_stages.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "ID del proyecto" } },
+      required: ["projectId"],
+    },
+  },
+  {
     name: "get_project_stages",
-    description: "Lista las etapas (stages) de un proyecto",
+    description: "Lista las etapas (stages) de un proyecto. Incluye projectDocuments (resumen de documentos de la cascada del Project).",
     inputSchema: {
       type: "object",
       properties: { projectId: { type: "string" } },
@@ -707,7 +717,71 @@ const handlers: Record<string, Handler> = {
     return JSON.stringify(await apiDelete(`/projects/${args.projectId}`));
   },
   async get_project_stages(args) {
-    return JSON.stringify(await apiGet(`/projects/${args.projectId}/stages`));
+    const projectId = args.projectId as string;
+    const [stagesResult, projectResult] = await Promise.all([
+      apiGet(`/projects/${projectId}/stages`),
+      apiGet(`/projects/${projectId}`).catch(() => null),
+    ]);
+    const result = stagesResult as Record<string, unknown>;
+    // Attach project document summary so agents see what cascade docs exist
+    if (projectResult && typeof projectResult === "object") {
+      const p = projectResult as Record<string, unknown>;
+      const docFields = [
+        "specContent", "architectureContent", "blueprintContent",
+        "apiContractsContent", "useCasesContent", "userStoriesContent",
+        "logicFlowsContent", "infraContent", "tasksContent",
+        "uxUiGuideContent", "dbgaContent", "phase0SummaryContent",
+        "aemContent",
+      ];
+      const projectDocuments: Record<string, { exists: boolean; wordCount: number }> = {};
+      for (const field of docFields) {
+        const content = p[field];
+        const text = typeof content === "string" ? content : "";
+        projectDocuments[field] = {
+          exists: text.trim().length > 0,
+          wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+        };
+      }
+      (result as any).projectDocuments = projectDocuments;
+    }
+    return JSON.stringify(result);
+  },
+  async get_project_deliverables(args) {
+    const projectId = args.projectId as string;
+    const project = await apiGet(`/projects/${projectId}`) as Record<string, unknown>;
+    const docFields: { key: string; label: string }[] = [
+      { key: "specContent", label: "Spec" },
+      { key: "architectureContent", label: "Architecture" },
+      { key: "blueprintContent", label: "Blueprint" },
+      { key: "apiContractsContent", label: "API Contracts" },
+      { key: "useCasesContent", label: "Use Cases" },
+      { key: "userStoriesContent", label: "User Stories" },
+      { key: "logicFlowsContent", label: "Logic Flows" },
+      { key: "infraContent", label: "Infrastructure" },
+      { key: "tasksContent", label: "Tasks" },
+      { key: "uxUiGuideContent", label: "UX/UI Guide" },
+      { key: "dbgaContent", label: "DBGA" },
+      { key: "phase0SummaryContent", label: "Phase 0 Summary" },
+      { key: "aemContent", label: "AEM" },
+    ];
+    const deliverables: Record<string, { label: string; exists: boolean; wordCount: number; content: string | null }> = {};
+    for (const { key, label } of docFields) {
+      const content = project[key];
+      const text = typeof content === "string" ? content : "";
+      deliverables[key] = {
+        label,
+        exists: text.trim().length > 0,
+        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+        content: text.trim().length > 0 ? text : null,
+      };
+    }
+    return JSON.stringify({
+      projectId,
+      projectName: project.name ?? null,
+      deliverables,
+      totalDocs: Object.values(deliverables).filter((d) => d.exists).length,
+      note: "Los documentos de stage (BRD, To-Be, As-Is, MDD) están en get_project_stages, no en este tool.",
+    });
   },
   async get_conformance(args) {
     return JSON.stringify(

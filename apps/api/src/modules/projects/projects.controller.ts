@@ -130,6 +130,13 @@ export class ProjectsController {
     void tick();
   }
 
+  /** Indica si Hermes Agent está configurado (env vars presentes). */
+  @Get("hermes-status")
+  hermesStatus() {
+    const configured = !!(process.env.HERMES_WEBHOOK_URL?.trim() && process.env.HERMES_API_KEY?.trim());
+    return { configured };
+  }
+
   @Get(":id")
   findOne(@Param("id") id: string) {
     return this.projects.findOne(id);
@@ -262,6 +269,12 @@ export class ProjectsController {
   ) {
     const deliverable = body?.deliverable ?? "blueprint";
     return this.projects.verifyDeliverable(id, deliverable);
+  }
+
+  /** Notifica a Hermes Agent que este proyecto está listo para desarrollo. */
+  @Post(":id/launch-hermes")
+  launchHermes(@Param("id") id: string) {
+    return this.projects.launchHermes(id);
   }
 
   @Delete(":id")

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import WorkshopView from "./views/WorkshopView";
 import LoginView from "./views/LoginView";
+import SetupView from "./views/SetupView";
 import { CreateProjectWizardDialog } from "./components/CreateProjectWizardDialog";
 import { ProjectFolderTile } from "./components/ProjectFolderTile";
 import { DashboardSidebar } from "./components/DashboardSidebar";
@@ -102,6 +103,7 @@ export default function App() {
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const [theforgeModalTab, setTheForgeModalTab] = useState<"projects" | "repos">("projects");
   const [theforgeProjects, setTheForgeProjects] = useState<TheForgeProject[]>([]);
   const [theforgeAvailable, setTheForgeAvailable] = useState(false);
@@ -121,6 +123,7 @@ export default function App() {
       return next;
     });
   }, []);
+  const [transitioning, setTransitioning] = useState(false);
 
   const theforgeRepositories = useMemo((): TheForgeRepository[] => {
     const byId = new Map<string, TheForgeRepository>();
@@ -278,6 +281,17 @@ export default function App() {
     void loadProjects();
   }, [authed, workshopProject, loadProjects]);
 
+  // Check if first-run setup is needed (no users exist)
+  useEffect(() => {
+    if (authed) return;
+    fetch(`${API_BASE}/auth/has-users`)
+      .then((r) => r.json())
+      .then((data: { hasUsers?: boolean }) => {
+        setNeedsSetup(data.hasUsers === false);
+      })
+      .catch(() => setNeedsSetup(false));
+  }, [authed]);
+
   useEffect(() => {
     function onAuthExpired() {
       setAuthed(false);
@@ -288,7 +302,34 @@ export default function App() {
   }, []);
 
   if (!authed) {
-    return <LoginView onLoggedIn={() => setAuthed(true)} />;
+    if (needsSetup === null) {
+      return (
+        <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex items-center justify-center p-6">
+          <p className="text-sm text-[var(--foreground-muted)]">Cargando...</p>
+        </div>
+      );
+    }
+    if (needsSetup) {
+      return <SetupView onComplete={() => setNeedsSetup(false)} />;
+    }
+    return <LoginView onLoggedIn={() => {
+      setTransitioning(true);
+      // Breve pausa para que React monte el árbol completo antes de mostrar el contenido
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setAuthed(true);
+          setTransitioning(false);
+        });
+      });
+    }} />;
+  }
+
+  if (transitioning) {
+    return (
+      <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex items-center justify-center p-6">
+        <Loader2 className="w-8 h-8 animate-spin text-[var(--primary)]" />
+      </div>
+    );
   }
 
   function logout() {
