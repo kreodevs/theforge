@@ -258,9 +258,55 @@ export default function WorkshopView({
   const uxGuideOneShotChatPrompt = useMemo(
     () =>
       "Genera la **Guía UX/UI completa en formato DESIGN.md** (especificación abierta de Google). " +
-      "El documento DEBE empezar con YAML front matter con tokens de diseño (version, name, description, colors, typography, rounded, spacing, components) " +
-      "seguido de las secciones canónicas: Overview, Colors, Typography, Layout, Elevation & Depth, Shapes, Components, Do's and Don'ts. " +
-      "Usa {token.references} en los componentes, no dupliques valores. " +
+      "El documento DEBE empezar con YAML front matter con tokens de diseño ESTRUCTURADOS (version, name, description, colors, typography, rounded, spacing, components) " +
+      "seguido de las secciones canónicas en markdown: Overview, Colors, Typography, Layout, Elevation & Depth, Shapes, Components, Do's and Don'ts. " +
+      "Es CRÍTICO que el YAML front matter tenga el formato exacto de ejemplo:\n" +
+      "---\n" +
+      "name: CRM Pipeline\n" +
+      "description: CRM minimalista para consultores\n" +
+      "colors:\n" +
+      '  primary: \"#1A5F7A\"\n' +
+      '  secondary: \"#2E8B57\"\n' +
+      '  tertiary: \"#F4A261\"\n' +
+      '  neutral: \"#F5F7FA\"\n' +
+      '  foreground: \"#1A1A2E\"\n' +
+      "typography:\n" +
+      "  h1:\n" +
+      '    fontSize: \"32px\"\n' +
+      "    fontWeight: 700\n" +
+      '    lineHeight: \"40px\"\n' +
+      '    letterSpacing: \"-0.02em\"\n' +
+      "  body-md:\n" +
+      '    fontSize: \"16px\"\n' +
+      "    fontWeight: 400\n" +
+      '    lineHeight: \"26px\"\n' +
+      "  label-sm:\n" +
+      '    fontSize: \"14px\"\n' +
+      "    fontWeight: 500\n" +
+      '    lineHeight: \"20px\"\n' +
+      "rounded:\n" +
+      '  sm: \"6px\"\n' +
+      '  md: \"12px\"\n' +
+      '  lg: \"20px\"\n' +
+      "spacing:\n" +
+      '  xs: \"4px\"\n' +
+      '  sm: \"8px\"\n' +
+      '  md: \"16px\"\n' +
+      '  lg: \"24px\"\n' +
+      '  xl: \"32px\"\n' +
+      "components:\n" +
+      "  button-primary:\n" +
+      '    backgroundColor: \"{colors.tertiary}\"\n' +
+      '    textColor: \"#FFFFFF\"\n' +
+      '    rounded: \"{rounded.sm}\"\n' +
+      '    padding: \"12px 16px\"\n' +
+      "  card:\n" +
+      '    backgroundColor: \"{colors.neutral}\"\n' +
+      '    rounded: \"{rounded.md}\"\n' +
+      '    padding: \"24px\"\n' +
+      "---\n" +
+      "Luego del front matter, incluye las secciones canónicas en markdown con descripciones y usos de cada token. " +
+      "Usa {token.references} en las descripciones, no dupliques valores. " +
       "Incluye: patrón/estilo, paleta y tokens de color, tipografía, espaciado y grid, componentes de referencia, " +
       "prioridades de UX, criterios de accesibilidad (WCAG, contraste 4.5:1, teclado, touch 44px) y anti-patrones a evitar." +
       (isLegacyProject
@@ -937,7 +983,7 @@ export default function WorkshopView({
   return (
     <div
       data-workshop-root
-      className="workshop-root h-[100dvh] min-h-0 flex flex-col bg-[var(--background)] text-[var(--foreground)] antialiased"
+      className="workshop-root min-h-0 flex flex-col bg-[var(--background)] text-[var(--foreground)] antialiased"
     >
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_35%,var(--background))] px-3 py-2.5 sm:px-5 sm:py-3 shrink-0 backdrop-blur-sm">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
