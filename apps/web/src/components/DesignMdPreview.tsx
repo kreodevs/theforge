@@ -174,12 +174,17 @@ function parseDesignMdContent(content: string): DesignTokens | null {
   if (componentsSection) {
     const components: Record<string, ComponentToken> = {};
     
-    // Each component is a subsection like "Button Primary" or "Card"
-    const compSections = componentsSection.split(/\n(?=\w[\w\s]+\n[=-]+|\n###?\s+)/);
-    for (const block of compSections) {
-      const nameMatch = block.match(/^(?:###?\s+)?(\w[\w\s/]+?)(?:\n|$)/m);
+    // Split by component name: a line that starts with a word that isn't a property
+    // Common patterns:
+    // "Button Primary" or "Button Primary:" on its own line
+    // "### Button" or "### Button Primary" markdown heading
+    // "Button\n-----" underline heading
+    const compBlocks = componentsSection.split(/\n(?=(?:[A-Z]\w[\w\s]*?)(?:\n|:)|###?\s+)/);
+    for (const block of compBlocks) {
+      const nameMatch = block.match(/^(?:###?\s+)?([A-Z]\w[\w\s/]+?)(?:\s*:)?(?:\n|$)/m);
       if (!nameMatch) continue;
-      const compName = nameMatch[1]!.trim().toLowerCase().replace(/\s+/g, '-');
+      const compName = nameMatch[1]!.trim().toLowerCase().replace(/[\s/]+/g, '-');
+      if (['overview', 'colors', 'typography', 'layout', 'components', 'elevation', 'shapes', "do's", "don'ts", 'dos', 'donts', 'introduction'].includes(compName)) continue;
       
       const comp: ComponentToken = {};
       
@@ -245,8 +250,9 @@ function parseDesignMdContent(content: string): DesignTokens | null {
 function extractSection(content: string, names: string[]): string | null {
   for (const name of names) {
     // Match ## Name, ### Name, **Name**, or standalone Name: section
+    // Allows blank lines and non-heading content within the section
     const patterns = [
-      new RegExp(`##+\\s*${escapeRegex(name)}[^\\n]*(?:\\n[^#][^\\n]*)*`, 'i'),
+      new RegExp(`##+\\s*${escapeRegex(name)}[^\\n]*(?:\\n(?:[^#][^\\n]*|\\s*)?)*`, 'i'),
       new RegExp(`\\*\\*${escapeRegex(name)}\\*\\*[^\\n]*(?:\\n(?!##|\\*\\*)[^\\n]*)*`, 'i'),
     ];
     for (const pattern of patterns) {
