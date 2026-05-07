@@ -142,7 +142,7 @@ export function UsersList() {
       ) : (
         <button
           onClick={() => setShowCreate(true)}
-          className="w-full flex items-center gap-2 rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:border-[var(--accent)] transition-colors"
+          className="w-full flex items-center gap-2 rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:border-[var(--primary)]/40 transition-colors"
         >
           <UserPlus className="w-4 h-4" />
           Nuevo usuario

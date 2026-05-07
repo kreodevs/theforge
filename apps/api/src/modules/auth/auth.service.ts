@@ -186,6 +186,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: userRole,
+      name: user.name ?? undefined,
     });
 
     return {
@@ -210,6 +211,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: userRole,
+      name: user.name ?? undefined,
     });
     return {
       accessToken,
@@ -308,6 +310,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      name: user.name ?? undefined,
     });
 
     return {
