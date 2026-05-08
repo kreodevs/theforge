@@ -299,11 +299,34 @@ export default function WorkshopView({
       '    backgroundColor: \"{colors.tertiary}\"\n' +
       '    textColor: \"#FFFFFF\"\n' +
       '    rounded: \"{rounded.sm}\"\n' +
-      '    padding: \"12px 16px\"\n' +
+      '    padding: \"12px 20px\"\n' +
+      '    typography: label-sm\n' +
+      "  button-secondary:\n" +
+      '    backgroundColor: \"{colors.primary}\"\n' +
+      '    textColor: \"#FFFFFF\"\n' +
+      '    rounded: \"{rounded.sm}\"\n' +
+      '    padding: \"12px 20px\"\n' +
+      '    typography: label-sm\n' +
+      "  button-ghost:\n" +
+      '    backgroundColor: \"transparent\"\n' +
+      '    textColor: \"{colors.primary}\"\n' +
+      '    rounded: \"{rounded.sm}\"\n' +
+      '    padding: \"8px 16px\"\n' +
       "  card:\n" +
       '    backgroundColor: \"{colors.neutral}\"\n' +
+      '    textColor: \"{colors.foreground}\"\n' +
       '    rounded: \"{rounded.md}\"\n' +
       '    padding: \"24px\"\n' +
+      "  badge:\n" +
+      '    backgroundColor: \"{colors.tertiary}\"\n' +
+      '    textColor: \"#FFFFFF\"\n' +
+      '    rounded: \"{rounded.lg}\"\n' +
+      '    padding: \"4px 10px\"\n' +
+      "  input:\n" +
+      '    backgroundColor: \"#FFFFFF\"\n' +
+      '    textColor: \"{colors.foreground}\"\n' +
+      '    rounded: \"{rounded.sm}\"\n' +
+      '    padding: \"10px 14px\"\n' +
       "---\n" +
       "Luego del front matter, incluye las secciones canónicas en markdown con descripciones y usos de cada token. " +
       "Usa {token.references} en las descripciones, no dupliques valores. " +
