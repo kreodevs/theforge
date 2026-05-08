@@ -1,4 +1,4 @@
-import { useRef, useEffect, useLayoutEffect, useState, useMemo } from "react";
+import { useRef, useEffect, useLayoutEffect, useState, useMemo, useCallback } from "react";
 import {
   BRD_TOBE_FROM_DBGA_STEPS,
   LEGACY_BRD_TOBE_SUGGEST_STEPS,
@@ -8,7 +8,7 @@ import {
 } from "../constants/legacy-workshop-loading-steps";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil, X, RefreshCw, ImagePlus, Mic } from "lucide-react";
+import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil, X, RefreshCw, ImagePlus, Mic, ChevronDown } from "lucide-react";
 import { useInterview } from "../hooks/useInterview";
 import { useWorkshopStore } from "../store/workshopStore";
 import type { ChatImagePart } from "@theforge/shared-types";
@@ -285,9 +285,11 @@ export default function ChatContainer({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const prevStageForBannerRef = useRef<string | null>(null);
   const [stageSwitchBannerOpen, setStageSwitchBannerOpen] = useState(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
   const multiStageChat = workshopStages.length > 1;
 
   /** STT (speech‑to‑text) via mic */
@@ -372,10 +374,12 @@ export default function ChatContainer({
     benchmarkEmpty && messages.length > 0 ? [] : messages;
 
   useEffect(() => {
-    const t = setTimeout(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    if (isNearBottom || loading || messagesToShow.length === 0) {
       chatEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
-    }, 100);
-    return () => clearTimeout(t);
+    }
   }, [
     messagesToShow.length,
     agentProgress.length,
@@ -385,6 +389,14 @@ export default function ChatContainer({
     isLegacyLongRun,
     legacyProgressIndex,
   ]);
+
+  /** Scroll to bottom on mount (after messages render). */
+  useEffect(() => {
+    const t = setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    }, 200);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const urls = pendingFiles.map((f) => URL.createObjectURL(f));
@@ -463,6 +475,18 @@ export default function ChatContainer({
       // Permission denied or no mic
     }
   };
+
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    setShowScrollBtn(false);
+  };
+
+  const handleChatScroll = useCallback(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const far = el.scrollHeight - el.scrollTop - el.clientHeight > 200;
+    setShowScrollBtn(far);
+  }, []);
 
   const handleSend = async () => {
     if ((!inputValue.trim() && !pendingFiles.length) || loading) return;
@@ -720,7 +744,8 @@ export default function ChatContainer({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+          <div className="relative flex-1 min-h-0">
+            <div ref={chatScrollRef} onScroll={handleChatScroll} className="absolute inset-0 overflow-y-auto p-4 space-y-4">
             {messagesToShow.length ? (
               messagesToShow.map((msg, i) => (
                 <div
@@ -876,6 +901,19 @@ export default function ChatContainer({
               </div>
             )}
             <div ref={chatEndRef} />
+            {showScrollBtn ? (
+              <div className="sticky bottom-4 flex justify-center pointer-events-none">
+                <button
+                  type="button"
+                  onClick={scrollToBottom}
+                  className="pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)] shadow-md hover:text-[var(--foreground)] hover:shadow-lg transition-shadow"
+                  aria-label="Ir al final"
+                >
+                  <ChevronDown className="h-5 w-5" />
+                </button>
+              </div>
+            ) : null}
+          </div>
           </div>
           {error && (
             <p className="px-4 pb-2 text-sm text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]">{error}</p>
