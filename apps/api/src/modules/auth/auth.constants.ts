@@ -1,6 +1,8 @@
 /**
- * Solo en desarrollo si no defines `EMAIL_OTP` ni `AUTH_ALLOWED_OTP_EMAIL`.
- * En producción la API exige uno de esos dos en el entorno (ver `main.ts`).
+ * Constantes de auth.
+ *
+ * Históricamente este archivo contenía `DEFAULT_ALLOWED_OTP_EMAIL` (email único hardcodeado para OTP)
+ * y las envs `EMAIL_OTP` / `AUTH_ALLOWED_OTP_EMAIL`. Eso se eliminó: ahora el email del OTP viene
+ * en el body del request y se valida contra la tabla `User`. Cada usuario tiene su propio mcpSecret.
  */
-export const DEFAULT_ALLOWED_OTP_EMAIL = "jorge.correa@kreoint.mx";
 export const ADMIN_ROLE = "admin";

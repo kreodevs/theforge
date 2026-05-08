@@ -113,17 +113,15 @@ services:
       DEBUG_MCP: ${DEBUG_MCP:-0}
       # P3009: si una migración queda fallida, desbloquear antes de deploy (ej. 20260319130000_agent_checkpoint_mdd_stage).
       PRISMA_RESOLVE_ROLLED_BACK: ${PRISMA_RESOLVE_ROLLED_BACK:-}
-      # OTP: definir EMAIL_OTP (y SMTP*) en Dokploy / .env — único correo que recibe el código.
+      # OTP multi-usuario: el email viene en el body del request y se valida contra la tabla `User`.
+      # Configura SMTP_* para envío real; en dev sin SMTP el código se loguea en stdout.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-0}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
-      # Único correo que puede solicitar/recibir OTP (obligatorio con NODE_ENV=production en la imagen API).
-      EMAIL_OTP: ${EMAIL_OTP:-}
-      # Alias retrocompatible; si falta EMAIL_OTP puedes usar solo esto.
-      AUTH_ALLOWED_OTP_EMAIL: ${AUTH_ALLOWED_OTP_EMAIL:-}
+      # [DEPRECATED] EMAIL_OTP / AUTH_ALLOWED_OTP_EMAIL ya no se usan; el primer admin se crea desde la UI.
       # Lista separada por comas. Por defecto incluye producción kreoint + WEB_DOMAIN + Vite local.
       CORS_ORIGINS: ${CORS_ORIGINS:-https://${WEB_DOMAIN:-theforge.local},https://theforge.kreoint.mx,http://localhost:5173,http://127.0.0.1:5173}
       # Secreto compartido para validar login MCP (POST /auth/mcp-login)

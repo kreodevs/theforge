@@ -18,12 +18,12 @@ import { getRequestUserId, getRequestUserRole } from "../../common/request-user.
 import { ForbiddenException } from "@nestjs/common";
 
 const requestOtpSchema = z.object({
-  email: z.string().email().optional(),
+  email: z.string().email(),
 }).strict();
 
 const verifyOtpSchema = z.object({
+  email: z.string().email(),
   code: z.string().min(6).max(8),
-  email: z.string().email().optional(),
 }).strict();
 
 const mcpLoginSchema = z.object({
@@ -51,9 +51,8 @@ export class AuthController {
   @Public()
   @HttpCode(200)
   requestOtp(@Body() body: unknown) {
-    const raw = body != null && typeof body === "object" ? body : {};
-    parseBody(requestOtpSchema, raw);
-    return this.auth.requestOtp();
+    const parsed = parseBody(requestOtpSchema, body);
+    return this.auth.requestOtp(parsed.email);
   }
 
   @Post("otp/verify")
@@ -61,7 +60,7 @@ export class AuthController {
   @HttpCode(200)
   verify(@Body() body: unknown) {
     const parsed = parseBody(verifyOtpSchema, body);
-    return this.auth.verifyOtp(parsed.code);
+    return this.auth.verifyOtp(parsed.email, parsed.code);
   }
 
   @Post("mcp-login")
@@ -154,7 +153,7 @@ export class UsersController {
   updateRole(@Param("id") id: string, @Body() body: { role?: string }) {
     this.requireAdmin();
     if (!body?.role) throw new BadRequestException("role requerido");
-    return this.auth.updateUserRole(id, body.role);
+    return this.auth.updateUserRole(id, body.role, getRequestUserId());
   }
 
   @Post()
@@ -169,6 +168,19 @@ export class UsersController {
   @HttpCode(200)
   deleteUser(@Param("id") id: string) {
     this.requireAdmin();
-    return this.auth.deleteUser(id);
+    return this.auth.deleteUser(id, getRequestUserId());
+  }
+
+  @Get(":id/mcp-secret")
+  getMcpSecret(@Param("id") id: string) {
+    this.requireAdmin();
+    return this.auth.getUserMcpSecretAdmin(id);
+  }
+
+  @Post(":id/mcp-secret/regenerate")
+  @HttpCode(200)
+  regenerateMcpSecret(@Param("id") id: string) {
+    this.requireAdmin();
+    return this.auth.regenerateUserMcpSecretAdmin(id);
   }
 }

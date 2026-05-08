@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,7 +12,6 @@ import { JwtService } from "@nestjs/jwt";
 import { randomInt, randomBytes } from "node:crypto";
 import nodemailer from "nodemailer";
 import { PrismaService } from "../../prisma/prisma.service.js";
-import { DEFAULT_ALLOWED_OTP_EMAIL } from "./auth.constants.js";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_RESEND_MS = 60 * 1000;
@@ -48,14 +48,6 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
   ) {}
-
-  /** Único destinatario OTP: `EMAIL_OTP` (prod/Docker), si no `AUTH_ALLOWED_OTP_EMAIL`, si no default de desarrollo. */
-  private allowedEmail(): string {
-    const emailOtp = stripEnvQuotes(this.config.get<string>("EMAIL_OTP"));
-    const legacy = stripEnvQuotes(this.config.get<string>("AUTH_ALLOWED_OTP_EMAIL"));
-    const raw = emailOtp?.trim() || legacy?.trim();
-    return raw ? normalizeEmail(raw) : DEFAULT_ALLOWED_OTP_EMAIL;
-  }
 
   private smtpConfig():
     | { host: string; port: number; secure: boolean; user: string; pass: string }
@@ -113,10 +105,22 @@ export class AuthService {
   }
 
   /**
-   * Solicitud de OTP: el código solo se envía a `EMAIL_OTP` / `AUTH_ALLOWED_OTP_EMAIL` (dev: default en constantes).
+   * Solicitud de OTP. El email viene del request; solo se envía si existe un usuario registrado con ese email.
+   * Si no existe, devuelve ok igualmente (anti-enumeración).
    */
-  async requestOtp(): Promise<{ ok: true }> {
-    const email = this.allowedEmail();
+  async requestOtp(rawEmail: string): Promise<{ ok: true }> {
+    const email = normalizeEmail(rawEmail);
+    if (!email) {
+      throw new BadRequestException("email requerido");
+    }
+
+    // Anti-enumeración: si el usuario no existe, devolvemos ok sin enviar nada.
+    const user = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (!user) {
+      this.logger.warn(`OTP solicitado para email no registrado: ${email}`);
+      return { ok: true };
+    }
+
     const now = Date.now();
     const last = this.lastOtpRequestAt.get(email) ?? 0;
     if (now - last < OTP_RESEND_MS) {
@@ -200,11 +204,14 @@ export class AuthService {
     return { ok: true };
   }
 
-  async verifyOtp(rawCode: string): Promise<{
+  async verifyOtp(rawEmail: string, rawCode: string): Promise<{
     accessToken: string;
     user: { id: string; email: string; role: string };
   }> {
-    const email = this.allowedEmail();
+    const email = normalizeEmail(rawEmail);
+    if (!email) {
+      throw new BadRequestException("email requerido");
+    }
     const code = rawCode.trim();
 
     const entry = this.otpByEmail.get(email);
@@ -212,13 +219,12 @@ export class AuthService {
       throw new UnauthorizedException("Código o correo inválido");
     }
 
-    this.otpByEmail.delete(email);
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new UnauthorizedException("Código o correo inválido");
+    }
 
-    const user = await this.prisma.user.upsert({
-      where: { email },
-      create: { email },
-      update: {},
-    });
+    this.otpByEmail.delete(email);
 
     // Generar mcpSecret automático si no existe (primera vez) — NO ROMPER
     if (!user.mcpSecret) {
@@ -403,20 +409,52 @@ export class AuthService {
     }));
   }
 
-  /** Cambiar rol de un usuario (admin-only). */
-  async updateUserRole(userId: string, role: string) {
+  /** Obtener mcpSecret de cualquier usuario (admin-only). Genera uno si falta. */
+  async getUserMcpSecretAdmin(userId: string): Promise<{ mcpSecret: string; email: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { mcpSecret: true, email: true },
+    });
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+    if (!user.mcpSecret) {
+      const mcpSecret = this.generateMcpSecret();
+      await this.prisma.user.update({ where: { id: userId }, data: { mcpSecret } });
+      this.logger.log(`MCP secret generado por admin para usuario ${userId}`);
+      return { mcpSecret, email: user.email };
+    }
+    return { mcpSecret: user.mcpSecret, email: user.email };
+  }
+
+  /** Regenerar mcpSecret de cualquier usuario (admin-only). */
+  async regenerateUserMcpSecretAdmin(userId: string): Promise<{ mcpSecret: string; email: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+    const mcpSecret = this.generateMcpSecret();
+    await this.prisma.user.update({ where: { id: userId }, data: { mcpSecret } });
+    this.logger.log(`MCP secret regenerado por admin para usuario ${userId}`);
+    return { mcpSecret, email: user.email };
+  }
+
+  /** Cambiar rol de un usuario (admin-only). No permite degradarse a sí mismo (developer). */
+  async updateUserRole(targetUserId: string, role: string, actorUserId: string) {
     if (role !== "admin" && role !== "developer") {
       throw new BadRequestException("Rol inválido. Use 'admin' o 'developer'.");
     }
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (targetUserId === actorUserId && role === "developer") {
+      throw new ForbiddenException("No puedes degradar tu propio rol de administrador");
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
     if (!user) throw new NotFoundException("Usuario no encontrado");
 
     await this.prisma.user.update({
-      where: { id: userId },
+      where: { id: targetUserId },
       data: { role },
     });
 
-    return { id: userId, email: user.email, role };
+    return { id: targetUserId, email: user.email, role };
   }
 
   /** GET /auth/has-users — verifica si hay usuarios registrados. */
@@ -481,10 +519,13 @@ export class AuthService {
     return { id: user.id, email: user.email, role: user.role };
   }
 
-  /** DELETE /users/:id — eliminar usuario (admin). */
-  async deleteUser(id: string): Promise<{ deleted: boolean }> {
+  /** DELETE /users/:id — eliminar usuario (admin). No permite borrar la propia cuenta. */
+  async deleteUser(targetUserId: string, actorUserId: string): Promise<{ deleted: boolean }> {
+    if (targetUserId === actorUserId) {
+      throw new ForbiddenException("No puedes eliminar tu propia cuenta");
+    }
     try {
-      await this.prisma.user.delete({ where: { id } });
+      await this.prisma.user.delete({ where: { id: targetUserId } });
       return { deleted: true };
     } catch {
       throw new NotFoundException("Usuario no encontrado");

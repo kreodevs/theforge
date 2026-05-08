@@ -25,8 +25,8 @@ import {
 import WorkshopView from "./views/WorkshopView";
 import LoginView from "./views/LoginView";
 import SetupView from "./views/SetupView";
+import UsersView from "./views/UsersView";
 import { McpSecretCard } from "./components/McpSecretCard";
-import { UsersList } from "./components/UsersList";
 import { apiFetch, clearAccessToken, getAccessToken, API_BASE, getStoredUser } from "./utils/apiClient";
 import {
   Button,
@@ -100,7 +100,7 @@ export default function App() {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showUsers, setShowUsers] = useState(false);
+  const [usersViewOpen, setUsersViewOpen] = useState(false);
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const [theforgeModalTab, setTheForgeModalTab] = useState<"projects" | "repos">("projects");
   const [theforgeProjects, setTheForgeProjects] = useState<TheForgeProject[]>([]);
@@ -240,6 +240,7 @@ export default function App() {
     function onAuthExpired() {
       setAuthed(false);
       setWorkshopProject(null);
+      setUsersViewOpen(false);
     }
     window.addEventListener("theforge:auth-expired", onAuthExpired);
     return () => window.removeEventListener("theforge:auth-expired", onAuthExpired);
@@ -280,6 +281,7 @@ export default function App() {
     clearAccessToken();
     setAuthed(false);
     setWorkshopProject(null);
+    setUsersViewOpen(false);
   }
 
   if (workshopProject) {
@@ -290,6 +292,10 @@ export default function App() {
         onBack={() => setWorkshopProject(null)}
       />
     );
+  }
+
+  if (usersViewOpen && getStoredUser()?.role === "admin") {
+    return <UsersView onBack={() => setUsersViewOpen(false)} />;
   }
 
   return (
@@ -321,17 +327,6 @@ export default function App() {
             <DialogDescription>Configuración de tu cuenta y herramientas.</DialogDescription>
           </DialogHeader>
           <McpSecretCard />
-        </DialogContent>
-      </Dialog>
-
-      {/* Users Dialog (admin only) */}
-      <Dialog open={showUsers} onOpenChange={setShowUsers}>
-        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>Usuarios</DialogTitle>
-            <DialogDescription>Gestión de usuarios y roles.</DialogDescription>
-          </DialogHeader>
-          <UsersList />
         </DialogContent>
       </Dialog>
 
@@ -458,7 +453,7 @@ export default function App() {
             </p>
           </div>
         {getStoredUser()?.role === "admin" && (
-        <Button variant="outline" size="sm" onClick={() => setShowUsers(true)} className="shrink-0 self-start sm:self-auto touch-manipulation min-h-[44px] sm:min-h-9 gap-2">
+        <Button variant="outline" size="sm" onClick={() => setUsersViewOpen(true)} className="shrink-0 self-start sm:self-auto touch-manipulation min-h-[44px] sm:min-h-9 gap-2">
           <Shield className="w-4 h-4" />
           Usuarios
         </Button>
