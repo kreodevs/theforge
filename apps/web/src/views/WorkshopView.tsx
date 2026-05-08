@@ -2931,6 +2931,17 @@ export default function WorkshopView({
           </div>
         ) : null}
 
+        {/* ── Floating help FAB (mobile only) ── */}
+        <button
+          type="button"
+          onClick={() => setShowHelpModal(true)}
+          className="lg:hidden fixed bottom-[calc(52px+env(safe-area-inset-bottom)+8px)] right-4 z-20 flex h-11 w-11 min-h-0 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] shadow-lg shadow-black/25 transition-transform active:scale-90 hover:scale-105 touch-manipulation"
+          title="Ayuda — TheForge"
+          aria-label="Ayuda"
+        >
+          <HelpCircle className="h-5 w-5" strokeWidth={2.5} aria-hidden />
+        </button>
+
         <nav
           className="lg:hidden shrink-0 sticky bottom-0 z-10 grid grid-cols-3 border-t border-[var(--border)] bg-[color-mix(in_oklch,var(--background)_92%,black)] backdrop-blur-sm pb-[max(4px,env(safe-area-inset-bottom))]"
           aria-label="Cambiar panel del workshop"

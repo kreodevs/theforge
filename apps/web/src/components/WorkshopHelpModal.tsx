@@ -778,13 +778,13 @@ export default function WorkshopHelpModal({ open, onClose }: WorkshopHelpModalPr
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
-          {/* ── Sidebar (desktop) / Select (mobile) ── */}
+          {/* ── Sidebar (desktop) / Select (mobile, sticky) ── */}
           <nav className="shrink-0 border-b border-[var(--border)] sm:w-56 sm:border-b-0 sm:border-r sm:overflow-y-auto">
-            {/* Mobile: select */}
+            {/* Mobile: select — sticky so user can switch sections without scrolling up */}
             <select
               value={activeSection}
               onChange={(e) => setActiveSection(e.target.value)}
-              className="block w-full border-0 border-b border-[var(--border)] bg-transparent px-4 py-3 text-sm text-[var(--foreground)] outline-none focus:ring-0 sm:hidden"
+              className="sticky top-0 z-10 block w-full border-0 border-b border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--foreground)] outline-none focus:ring-0 sm:hidden"
               aria-label="Sección de ayuda"
             >
               {SECTIONS.map((s) => (
