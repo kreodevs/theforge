@@ -798,13 +798,141 @@ function ComponentPreview({ name, token, tokens }: { name: string; token: Compon
   );
 }
 
+// ─── Relleno automático de secciones faltantes ─────────────
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const c = hex.replace("#", "");
+  if (c.length !== 6) return null;
+  return {
+    r: parseInt(c.slice(0, 2), 16),
+    g: parseInt(c.slice(2, 4), 16),
+    b: parseInt(c.slice(4, 6), 16),
+  };
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  return `#${[r, g, b].map((v) => clamp(v).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+function lighten(hex: string, factor: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return rgbToHex(
+    rgb.r + (255 - rgb.r) * factor,
+    rgb.g + (255 - rgb.g) * factor,
+    rgb.b + (255 - rgb.b) * factor,
+  );
+}
+
+function darken(hex: string, factor: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return rgbToHex(
+    rgb.r * (1 - factor),
+    rgb.g * (1 - factor),
+    rgb.b * (1 - factor),
+  );
+}
+
+const DEFAULT_TYPOGRAPHY: Record<string, TypographyToken> = {
+  "font-sans": { fontFamily: "'Inter', system-ui, -apple-system, sans-serif" },
+  h1: { fontSize: "32px", fontWeight: 700, lineHeight: "40px", letterSpacing: "-0.02em" },
+  h2: { fontSize: "24px", fontWeight: 600, lineHeight: "32px", letterSpacing: "-0.01em" },
+  h3: { fontSize: "20px", fontWeight: 600, lineHeight: "28px" },
+  h4: { fontSize: "18px", fontWeight: 600, lineHeight: "24px" },
+  "body-md": { fontSize: "16px", fontWeight: 400, lineHeight: "26px" },
+  "body-sm": { fontSize: "14px", fontWeight: 400, lineHeight: "22px" },
+  "label-sm": { fontSize: "14px", fontWeight: 500, lineHeight: "20px" },
+  caption: { fontSize: "12px", fontWeight: 400, lineHeight: "16px" },
+  overline: { fontSize: "10px", fontWeight: 600, lineHeight: "14px", letterSpacing: "0.08em" },
+};
+
+const DEFAULT_ROUNDED: Record<string, string> = {
+  none: "0px", sm: "6px", md: "12px", lg: "20px", xl: "28px", full: "9999px",
+};
+
+const DEFAULT_SPACING: Record<string, string> = {
+  xxs: "2px", xs: "4px", sm: "8px", md: "16px", lg: "24px", xl: "32px", "2xl": "48px", "3xl": "64px",
+};
+
+const DEFAULT_ELEVATION: Record<string, string> = {
+  card: "0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06)",
+  dropdown: "0 4px 6px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06)",
+  modal: "0 10px 25px rgba(0,0,0,0.15), 0 6px 10px rgba(0,0,0,0.10)",
+  sticky: "0 2px 4px rgba(0,0,0,0.05)",
+};
+
+function fillDesignMdDefaults(tokens: DesignTokens | null): DesignTokens | null {
+  if (!tokens) return null;
+  const t = { ...tokens };
+
+  // Fill colors
+  if (t.colors && Object.keys(t.colors).length > 0) {
+    const c = { ...t.colors };
+    const p = c["primary"] || c["primary"] || "#3B82F6";
+    c["primary"] ??= p;
+    c["secondary"] ??= p !== "#3B82F6" ? p : "#2E8B57";
+    c["tertiary"] ??= p !== "#F4A261" ? "#F4A261" : lighten(p, 0.3);
+    c["neutral"] ??= lighten(p, 0.8);
+    c["foreground"] ??= darken(p, 0.8) || "#1A1A2E";
+    c["background"] ??= "#FFFFFF";
+    c["muted"] ??= lighten(p, 0.85);
+    c["border"] ??= lighten(p, 0.7);
+    c["danger"] ??= "#DC2626";
+    c["success"] ??= "#16A34A";
+    c["warning"] ??= "#F59E0B";
+    c["info"] ??= "#3B82F6";
+    t.colors = c;
+  }
+
+  // Fill typography
+  if (!t.typography || Object.keys(t.typography).length === 0) {
+    t.typography = { ...DEFAULT_TYPOGRAPHY };
+  }
+
+  // Fill rounded
+  if (!t.rounded || Object.keys(t.rounded).length === 0) {
+    t.rounded = { ...DEFAULT_ROUNDED };
+  }
+
+  // Fill spacing
+  if (!t.spacing || Object.keys(t.spacing).length === 0) {
+    t.spacing = { ...DEFAULT_SPACING };
+  }
+
+  // Fill elevation
+  if (!t.elevation || Object.keys(t.elevation).length === 0) {
+    (t as any).elevation = { ...DEFAULT_ELEVATION };
+  }
+
+  // Fill components
+  if (t.colors && (!t.components || Object.keys(t.components).length === 0)) {
+    const c = t.colors;
+    t.components = {
+      "button-primary": { backgroundColor: c["tertiary"] || "#F4A261", textColor: "#FFFFFF", rounded: "{rounded.sm}", padding: "12px 20px", typography: "label-sm" },
+      "button-secondary": { backgroundColor: c["primary"] || "#1A5F7A", textColor: "#FFFFFF", rounded: "{rounded.sm}", padding: "12px 20px", typography: "label-sm" },
+      "button-ghost": { backgroundColor: "transparent", textColor: c["primary"] || "#1A5F7A", rounded: "{rounded.sm}", padding: "8px 16px" },
+      "button-danger": { backgroundColor: "#DC2626", textColor: "#FFFFFF", rounded: "{rounded.sm}", padding: "12px 20px", typography: "label-sm" },
+      card: { backgroundColor: c["neutral"] || "#F5F7FA", textColor: c["foreground"] || "#1A1A2E", rounded: "{rounded.md}", padding: "24px" },
+      badge: { backgroundColor: c["tertiary"] || "#F4A261", textColor: "#FFFFFF", rounded: "{rounded.full}", padding: "4px 10px" },
+      input: { backgroundColor: "#FFFFFF", textColor: c["foreground"] || "#1A1A2E", rounded: "{rounded.sm}", padding: "10px 14px" },
+      modal: { backgroundColor: "#FFFFFF", rounded: "{rounded.lg}", padding: "24px" },
+      toast: { backgroundColor: c["foreground"] || "#1A1A2E", textColor: "#FFFFFF", rounded: "{rounded.md}", padding: "12px 16px" },
+      skeleton: { backgroundColor: c["muted"] || "#E8ECF0", rounded: "{rounded.sm}" },
+    };
+  }
+
+  return t;
+}
+
 // ─── Componente principal ────────────────────────────────────
 
 export function DesignMdPreview({ content }: { content: string }) {
   const frontMatter = useMemo(() => {
     const yaml = parseYamlFrontMatter(content).frontMatter;
-    if (yaml && (yaml.colors || yaml.typography || yaml.components)) return yaml;
-    return parseDesignMdContent(content);
+    if (yaml && (yaml.colors || yaml.typography || yaml.components)) return fillDesignMdDefaults(yaml);
+    return fillDesignMdDefaults(parseDesignMdContent(content));
   }, [content]);
 
   const body = useMemo(() => {
