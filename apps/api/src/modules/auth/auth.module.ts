@@ -5,6 +5,7 @@ import { PassportModule } from "@nestjs/passport";
 import type { SignOptions } from "jsonwebtoken";
 import { AuthController, UsersController } from "./auth.controller.js";
 import { AuthService } from "./auth.service.js";
+import { BootstrapAdminService } from "./bootstrap-admin.service.js";
 import { JwtStrategy } from "./jwt.strategy.js";
 
 @Module({
@@ -34,7 +35,7 @@ import { JwtStrategy } from "./jwt.strategy.js";
     }),
   ],
   controllers: [AuthController, UsersController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, BootstrapAdminService],
   exports: [AuthService],
 })
 export class AuthModule {}
