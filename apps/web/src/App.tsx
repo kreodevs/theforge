@@ -551,7 +551,7 @@ export default function App() {
       </Dialog>
 
       {workshopProject ? (
-        <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] sm:flex-row">
+        <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-y-auto bg-[var(--background)] text-[var(--foreground)] sm:flex-row sm:overflow-hidden">
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}
@@ -574,7 +574,7 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] sm:flex-row">
+        <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-y-auto bg-[var(--background)] text-[var(--foreground)] sm:flex-row sm:overflow-hidden">
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}

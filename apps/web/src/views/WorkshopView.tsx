@@ -1264,7 +1264,7 @@ export default function WorkshopView({
         {/* Columna B: Contenido del tab (documento o Paso 0 = benchmark + deep research) */}
         <section
           className={cn(
-            "min-w-0 min-h-0 border-r border-[var(--border)] overflow-y-auto lg:min-h-0 lg:overflow-hidden",
+            "min-w-0 min-h-0 border-r border-[var(--border)] overflow-hidden lg:min-h-0",
             "flex flex-col",
             mobileWorkshopColumn === "workspace" ? "flex flex-1 min-h-0" : "hidden lg:flex lg:flex-col",
           )}
@@ -2779,7 +2779,7 @@ export default function WorkshopView({
         ) : null}
 
         <nav
-          className="lg:hidden shrink-0 grid grid-cols-3 border-t border-[var(--border)] bg-[color-mix(in_oklch,var(--background)_92%,black)] backdrop-blur-sm pb-[max(4px,env(safe-area-inset-bottom))]"
+          className="lg:hidden shrink-0 sticky bottom-0 z-10 grid grid-cols-3 border-t border-[var(--border)] bg-[color-mix(in_oklch,var(--background)_92%,black)] backdrop-blur-sm pb-[max(4px,env(safe-area-inset-bottom))]"
           aria-label="Cambiar panel del workshop"
         >
           <button
