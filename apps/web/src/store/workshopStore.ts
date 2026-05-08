@@ -1540,13 +1540,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
                 const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 const nextStages = packed?.project?.stages ?? proj?.stages;
+                const freshUx = cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null);
                 set({
                   session: sess ?? get().session,
                   project: packed?.project ?? get().project,
                   activeStageId: packed?.activeStageId ?? get().activeStageId,
                   mddContent: packed?.mddContent ?? get().mddContent,
                   workshopStages: nextStages && nextStages.length > 0 ? nextStages : get().workshopStages,
-                  uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
+                  uxUiGuideContent: freshUx,
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
@@ -1561,6 +1562,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   error: null,
                   evaluatorCritique: pickEvaluatorCritique(data),
                 });
+                // Auto-persist UX/UI guide when the orchestrator returns content on its tab
+                if (tab === "ux-ui-guide" && freshUx) {
+                  get().persistUxUiGuideContent(freshUx).catch(() => {});
+                }
               } else if (event === "error" && data.error) {
                 set({
                   error: String(data.error),
@@ -1594,13 +1599,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
                 const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 const nextStagesB = packed?.project?.stages ?? proj?.stages;
+                const freshUx = cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null);
                 set({
                   session: sess ?? get().session,
                   project: packed?.project ?? get().project,
                   activeStageId: packed?.activeStageId ?? get().activeStageId,
                   mddContent: packed?.mddContent ?? get().mddContent,
                   workshopStages: nextStagesB && nextStagesB.length > 0 ? nextStagesB : get().workshopStages,
-                  uxUiGuideContent: cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null),
+                  uxUiGuideContent: freshUx,
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
                   specContent: cleanDoc(proj?.specContent ?? null),
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
@@ -1619,6 +1625,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   error: null,
                   evaluatorCritique: pickEvaluatorCritique(data),
                 });
+                // Auto-persist UX/UI guide when the orchestrator returns content on its tab
+                if (tab === "ux-ui-guide" && freshUx) {
+                  get().persistUxUiGuideContent(freshUx).catch(() => {});
+                }
               } else if (event === "error" && data.error) {
                 set({
                   error: String(data.error),
