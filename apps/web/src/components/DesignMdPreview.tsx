@@ -385,7 +385,7 @@ function ColorSwatch({ name, hex, description }: { name: string; hex: string; de
   );
 }
 
-// ─── Componente: preview de tipografía ─────────────────────
+// ─── Componente: preview de tipografía (estilo referencia) ──
 
 function TypographySpec({ label, token }: { label: string; token: TypographyToken }) {
   const style: Record<string, string> = {};
@@ -395,23 +395,55 @@ function TypographySpec({ label, token }: { label: string; token: TypographyToke
   if (token.lineHeight) style.lineHeight = String(token.lineHeight);
   if (token.letterSpacing) style.letterSpacing = token.letterSpacing;
 
+  const fontName = token.fontFamily?.includes("Inter") ? "Inter" : token.fontFamily ?? "";
+
+  // Sample text por nivel
+  const samples: Record<string, string> = {
+    "h1": "Bringing technology to life",
+    "h2": "Two patterns, built to the same research foundation",
+    "h3": "Section heading",
+    "h4": "Sub-section heading",
+    "h5": "Component title",
+    "h6": "Small heading",
+    "body-md": "Lead management for independent consultants and coaches in LATAM.",
+    "body-sm": "Track deals, set reminders, and close more sales — all from any device.",
+    "label-sm": "Button label",
+    "label": "Button label",
+    "small": "Small caption text",
+    "caption": "Caption goes here",
+    "footnote": "Footnote reference",
+  };
+  const sample = samples[label.toLowerCase()] ?? "The quick brown fox jumps over the lazy dog 123";
+
   return (
-    <div className="flex items-start gap-4 p-3.5 rounded-lg bg-zinc-800/40 border border-zinc-700/30">
-      <div className="min-w-[72px] shrink-0 pt-0.5">
-        <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">{label.replace(/-/g, " ")}</span>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-zinc-100 truncate" style={style}>
-          The quick brown fox jumps over the lazy dog 123
-        </p>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-[10px] text-zinc-500 font-mono">
-          {token.fontFamily && <span>{token.fontFamily}</span>}
-          {token.fontSize && <span>{token.fontSize}</span>}
-          {token.fontWeight && <span>w{token.fontWeight}</span>}
-          {token.lineHeight && <span>lh {token.lineHeight}</span>}
-          {token.letterSpacing && <span>{token.letterSpacing}</span>}
+    <div>
+      <div className="flex items-center justify-between gap-4 min-h-[3rem] sm:min-h-[3.5rem]">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-zinc-100" style={style}>
+            {sample}
+          </p>
         </div>
       </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-zinc-500 font-mono">
+        <span>{token.fontSize ?? "—"}</span>
+        <span className="text-zinc-600">/</span>
+        <span>w{token.fontWeight ?? "—"}</span>
+        <span className="text-zinc-600">/</span>
+        <span>lh {token.lineHeight ?? "—"}</span>
+        {token.letterSpacing && (
+          <>
+            <span className="text-zinc-600">/</span>
+            <span>{token.letterSpacing}</span>
+          </>
+        )}
+        {fontName && (
+          <>
+            <span className="text-zinc-600">·</span>
+            <span className="text-zinc-600">{fontName}</span>
+          </>
+        )}
+      </div>
+      <hr className="border-t border-zinc-800 mt-3" />
     </div>
   );
 }
@@ -510,22 +542,29 @@ function ComponentPreview({ name, token, tokens }: { name: string; token: Compon
 
   // ── Button ──────────────────────────────────────
   if (type === "button") {
+    const borderRadius = radius;
+    const height = typeof token.height === "number" ? `${token.height}px` : "40px";
     return (
       <div className="flex flex-col gap-1.5">
-        <span className="text-[10px] uppercase tracking-wider text-zinc-500">{displayName}</span>
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">{displayName}</span>
         <button
-          className="text-xs font-medium cursor-default select-none focus:outline-none"
+          className="text-sm font-medium cursor-default select-none focus:outline-none"
           style={{
             backgroundColor: bg,
             color: fg,
-            borderRadius: radius,
+            borderRadius: borderRadius,
             padding: pad,
-            border: bg === "transparent" ? `1.5px solid ${fg}` : "none",
-            boxShadow: bg === "transparent" ? "none" : "0 1px 2px rgba(0,0,0,0.1)",
+            height: height,
+            minWidth: "120px",
+            border: bg === "transparent" ? `1px solid ${fg}` : "none",
+            boxShadow: bg === "transparent" ? "none" : "0 1px 2px rgba(0,0,0,0.06)",
           }}
         >
-          {displayName}
+          {displayName.replace(/^Button /i, "")}
         </button>
+        <p className="text-[9px] text-zinc-500 font-mono mt-1">
+          {bg.includes("transparent") || bg === "transparent" ? "Transparent + 1px hairline border" : "Ink pill / 9999px / 40px"}
+        </p>
       </div>
     );
   }
