@@ -983,7 +983,7 @@ export default function WorkshopView({
   return (
     <div
       data-workshop-root
-      className="workshop-root min-h-0 flex flex-col bg-[var(--background)] text-[var(--foreground)] antialiased"
+      className="workshop-root min-h-[100dvh] sm:min-h-0 flex flex-col bg-[var(--background)] text-[var(--foreground)] antialiased"
     >
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_35%,var(--background))] px-3 py-2.5 sm:px-5 sm:py-3 shrink-0 backdrop-blur-sm">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
