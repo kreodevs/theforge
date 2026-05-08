@@ -292,8 +292,9 @@ export default function ChatContainer({
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const multiStageChat = workshopStages.length > 1;
 
-  /** STT (speech‑to‑text) via mic */
+  /** STT (speech‑to‑text) via mic — `/audio/config` exposes whether API has STT_MODEL */
   const [sttModel, setSttModel] = useState<string | null>(null);
+  const [sttConfigLoaded, setSttConfigLoaded] = useState(false);
   const [recording, setRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -416,6 +417,9 @@ export default function ChatContainer({
           setSttModel(data.sttModel);
         }
       } catch { /* no STT */ }
+      finally {
+        setSttConfigLoaded(true);
+      }
     })();
   }, []);
 
@@ -603,14 +607,26 @@ export default function ChatContainer({
                   <ImagePlus className="h-[1.125rem] w-[1.125rem] shrink-0" aria-hidden />
                 </button>
               ) : null}
-              {sttModel ? (
+              {sttConfigLoaded ? (
                 <button
                   type="button"
                   onClick={handleMicClick}
-                  disabled={loading}
-                  className={`${AI_COMPOSER_ATTACH_BTN} ${recording ? "text-[var(--destructive)] animate-pulse" : ""}`}
-                  title={recording ? "Detener grabación" : "Grabar voz"}
-                  aria-label={recording ? "Detener grabación" : "Grabar voz"}
+                  disabled={loading || (!sttModel && !recording)}
+                  className={`${AI_COMPOSER_ATTACH_BTN} ${recording ? "text-[var(--destructive)] animate-pulse" : ""} ${!sttModel ? "cursor-not-allowed opacity-45" : ""}`}
+                  title={
+                    !sttModel
+                      ? "Dictado por voz desactivado: configura STT_MODEL en el servidor API (modelo Whisper/OpenRouter) y OPENROUTER_API_KEY."
+                      : recording
+                        ? "Detener grabación"
+                        : "Grabar voz"
+                  }
+                  aria-label={
+                    !sttModel
+                      ? "Dictado no disponible: falta STT_MODEL en la API"
+                      : recording
+                        ? "Detener grabación"
+                        : "Grabar voz"
+                  }
                 >
                   <Mic className={`h-[1.125rem] w-[1.125rem] shrink-0 ${recording ? "text-[var(--destructive)]" : ""}`} aria-hidden />
                 </button>
@@ -989,14 +1005,26 @@ export default function ChatContainer({
                   <ImagePlus className="h-[1.125rem] w-[1.125rem] shrink-0" aria-hidden />
                 </button>
               ) : null}
-              {sttModel ? (
+              {sttConfigLoaded ? (
                 <button
                   type="button"
                   onClick={handleMicClick}
-                  disabled={loading}
-                  className={`${AI_COMPOSER_ATTACH_BTN} ${recording ? "text-[var(--destructive)] animate-pulse" : ""}`}
-                  title={recording ? "Detener grabación" : "Grabar voz"}
-                  aria-label={recording ? "Detener grabación" : "Grabar voz"}
+                  disabled={loading || (!sttModel && !recording)}
+                  className={`${AI_COMPOSER_ATTACH_BTN} ${recording ? "text-[var(--destructive)] animate-pulse" : ""} ${!sttModel ? "cursor-not-allowed opacity-45" : ""}`}
+                  title={
+                    !sttModel
+                      ? "Dictado por voz desactivado: configura STT_MODEL en el servidor API (modelo Whisper/OpenRouter) y OPENROUTER_API_KEY."
+                      : recording
+                        ? "Detener grabación"
+                        : "Grabar voz"
+                  }
+                  aria-label={
+                    !sttModel
+                      ? "Dictado no disponible: falta STT_MODEL en la API"
+                      : recording
+                        ? "Detener grabación"
+                        : "Grabar voz"
+                  }
                 >
                   <Mic className={`h-[1.125rem] w-[1.125rem] shrink-0 ${recording ? "text-[var(--destructive)]" : ""}`} aria-hidden />
                 </button>
