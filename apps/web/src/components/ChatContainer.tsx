@@ -8,7 +8,7 @@ import {
 } from "../constants/legacy-workshop-loading-steps";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil, X, RefreshCw, ImagePlus } from "lucide-react";
+import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil, X, RefreshCw, ImagePlus, Mic } from "lucide-react";
 import { useInterview } from "../hooks/useInterview";
 import { useWorkshopStore } from "../store/workshopStore";
 import type { ChatImagePart } from "@theforge/shared-types";
@@ -290,6 +290,12 @@ export default function ChatContainer({
   const [stageSwitchBannerOpen, setStageSwitchBannerOpen] = useState(false);
   const multiStageChat = workshopStages.length > 1;
 
+  /** STT (speech‑to‑text) via mic */
+  const [sttModel, setSttModel] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   const stageNameForBadge = useMemo(() => {
     return (stageId: string | undefined) => {
       if (!stageId) return "";
@@ -385,6 +391,78 @@ export default function ChatContainer({
     setPendingPreviews(urls);
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [pendingFiles]);
+
+  /** Fetch STT config on mount */
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(
+          `${import.meta.env.VITE_API_URL ?? "/api"}/audio/config`,
+        );
+        if (r.ok) {
+          const data: { sttModel: string | null } = await r.json();
+          setSttModel(data.sttModel);
+        }
+      } catch { /* no STT */ }
+    })();
+  }, []);
+
+  const handleMicClick = async () => {
+    if (recording) {
+      // Stop recording
+      mediaRecorderRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks: Blob[] = [];
+      audioChunksRef.current = chunks;
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      recorder.onstop = async () => {
+        // Release mic
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunks, { type: mimeType });
+        if (blob.size < 100) return; // silence / too short
+
+        // Send to backend
+        try {
+          const formData = new FormData();
+          formData.append("audio", blob, "recording.webm");
+          const r = await fetch(
+            `${import.meta.env.VITE_API_URL ?? "/api"}/audio/transcribe`,
+            { method: "POST", body: formData },
+          );
+          if (r.ok) {
+            const data: { text: string } = await r.json();
+            if (data.text?.trim()) {
+              setInputValue((prev) => {
+                const sep = prev.trim() ? " " : "";
+                return prev + sep + data.text.trim();
+              });
+              // Focus textarea after setting value
+              requestAnimationFrame(() => chatInputRef.current?.focus());
+            }
+          }
+        } catch { /* transcribe failed – silently */ }
+      };
+      recorder.onerror = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setRecording(false);
+      };
+      recorder.start();
+      setRecording(true);
+    } catch {
+      // Permission denied or no mic
+    }
+  };
 
   const handleSend = async () => {
     if ((!inputValue.trim() && !pendingFiles.length) || loading) return;
@@ -499,6 +577,18 @@ export default function ChatContainer({
                   aria-label="Adjuntar imagen"
                 >
                   <ImagePlus className="h-[1.125rem] w-[1.125rem] shrink-0" aria-hidden />
+                </button>
+              ) : null}
+              {sttModel ? (
+                <button
+                  type="button"
+                  onClick={handleMicClick}
+                  disabled={loading}
+                  className={`${AI_COMPOSER_ATTACH_BTN} ${recording ? "text-[var(--destructive)] animate-pulse" : ""}`}
+                  title={recording ? "Detener grabación" : "Grabar voz"}
+                  aria-label={recording ? "Detener grabación" : "Grabar voz"}
+                >
+                  <Mic className={`h-[1.125rem] w-[1.125rem] shrink-0 ${recording ? "text-[var(--destructive)]" : ""}`} aria-hidden />
                 </button>
               ) : null}
               <textarea
@@ -861,6 +951,18 @@ export default function ChatContainer({
                   aria-label="Adjuntar imagen"
                 >
                   <ImagePlus className="h-[1.125rem] w-[1.125rem] shrink-0" aria-hidden />
+                </button>
+              ) : null}
+              {sttModel ? (
+                <button
+                  type="button"
+                  onClick={handleMicClick}
+                  disabled={loading}
+                  className={`${AI_COMPOSER_ATTACH_BTN} ${recording ? "text-[var(--destructive)] animate-pulse" : ""}`}
+                  title={recording ? "Detener grabación" : "Grabar voz"}
+                  aria-label={recording ? "Detener grabación" : "Grabar voz"}
+                >
+                  <Mic className={`h-[1.125rem] w-[1.125rem] shrink-0 ${recording ? "text-[var(--destructive)]" : ""}`} aria-hidden />
                 </button>
               ) : null}
               <textarea
