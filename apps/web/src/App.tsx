@@ -21,11 +21,11 @@ import {
 import WorkshopView from "./views/WorkshopView";
 import LoginView from "./views/LoginView";
 import SetupView from "./views/SetupView";
+import UsersView from "./views/UsersView";
 import { CreateProjectWizardDialog } from "./components/CreateProjectWizardDialog";
 import { ProjectFolderTile } from "./components/ProjectFolderTile";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { McpSecretCard } from "./components/McpSecretCard";
-import { UsersList } from "./components/UsersList";
 import { apiFetch, clearAccessToken, getAccessToken, API_BASE, getStoredUser } from "./utils/apiClient";
 import {
   Button,
@@ -103,7 +103,7 @@ export default function App() {
   const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showUsers, setShowUsers] = useState(false);
+  const [usersViewOpen, setUsersViewOpen] = useState(false);
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const [theforgeModalTab, setTheForgeModalTab] = useState<"projects" | "repos">("projects");
   const [theforgeProjects, setTheForgeProjects] = useState<TheForgeProject[]>([]);
@@ -297,6 +297,7 @@ export default function App() {
     function onAuthExpired() {
       setAuthed(false);
       setWorkshopProject(null);
+      setUsersViewOpen(false);
     }
     window.addEventListener("theforge:auth-expired", onAuthExpired);
     return () => window.removeEventListener("theforge:auth-expired", onAuthExpired);
@@ -337,6 +338,7 @@ export default function App() {
     clearAccessToken();
     setAuthed(false);
     setWorkshopProject(null);
+    setUsersViewOpen(false);
     setProjects([]);
     setProjectSearchQuery("");
   }
@@ -347,6 +349,10 @@ export default function App() {
     useWorkshopStore.getState().setWorkshopActiveDocPanel("mdd");
     setWorkshopProject(null);
   }, []);
+
+  if (usersViewOpen && getStoredUser()?.role === "admin") {
+    return <UsersView onBack={() => setUsersViewOpen(false)} />;
+  }
 
   return (
     <>
@@ -401,17 +407,6 @@ export default function App() {
             <DialogDescription>Configuración de tu cuenta y herramientas.</DialogDescription>
           </DialogHeader>
           <McpSecretCard />
-        </DialogContent>
-      </Dialog>
-
-      {/* Users Dialog (admin only) */}
-      <Dialog open={showUsers} onOpenChange={setShowUsers}>
-        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>Usuarios</DialogTitle>
-            <DialogDescription>Gestión de usuarios y roles.</DialogDescription>
-          </DialogHeader>
-          <UsersList />
         </DialogContent>
       </Dialog>
 
@@ -558,7 +553,7 @@ export default function App() {
             user={getStoredUser()}
             onLogout={logout}
             onOpenSettings={() => setShowSettings(true)}
-            onOpenUsers={() => setShowUsers(true)}
+            onOpenUsers={() => setUsersViewOpen(true)}
             canManageUsers={isAdmin}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={handleToggleSidebarCollapsed}
@@ -581,7 +576,7 @@ export default function App() {
             user={getStoredUser()}
             onLogout={logout}
             onOpenSettings={() => setShowSettings(true)}
-            onOpenUsers={() => setShowUsers(true)}
+            onOpenUsers={() => setUsersViewOpen(true)}
             canManageUsers={isAdmin}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={handleToggleSidebarCollapsed}

@@ -10,6 +10,7 @@ interface LoginViewProps {
 type Step = "send" | "code" | "sso";
 
 export default function LoginView({ onLoggedIn }: LoginViewProps) {
+  const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<Step>("send");
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,6 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
       setSsoEnabled(true);
     }
 
-    // Manejar redirect SSO con token
     const params = new URLSearchParams(window.location.search);
     const ssoToken = params.get("sso_token");
     if (ssoToken) {
@@ -56,12 +56,17 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
   async function requestOtp(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) {
+      setError("Email requerido");
+      return;
+    }
     setLoading(true);
     try {
       const r = await fetch(`${API_BASE}/auth/otp/request`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ email: normalized }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -69,6 +74,7 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
           typeof err.message === "string" ? err.message : "No se pudo enviar el código",
         );
       }
+      setEmail(normalized);
       setStep("code");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error");
@@ -85,7 +91,7 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
       const r = await fetch(`${API_BASE}/auth/otp/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: code.trim() }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), code: code.trim() }),
       });
       const data = (await r.json().catch(() => ({}))) as {
         accessToken?: string;
@@ -117,16 +123,36 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
             The Forge
           </CardTitle>
           <p className="text-sm text-[var(--foreground-muted)] font-normal">
-            El código se envía al correo configurado en el servidor (EMAIL_OTP).
+            Ingresa tu correo registrado para recibir el código de acceso.
           </p>
         </CardHeader>
         <CardContent>
           {step === "send" ? (
             <form onSubmit={requestOtp} className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="login-email" className="text-sm text-[var(--foreground-muted)]">
+                  Email
+                </label>
+                <Input
+                  id="login-email"
+                  type="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint="next"
+                  placeholder="tu@empresa.com"
+                  value={email}
+                  onChange={(ev) => setEmail(ev.target.value)}
+                  disabled={loading}
+                  required
+                />
+              </div>
               {error && (
                 <p className="text-sm text-[var(--destructive)]">{error}</p>
               )}
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full" disabled={loading || !email.trim()}>
                 {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : null}
@@ -159,6 +185,9 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
             </form>
           ) : (
             <form onSubmit={verifyOtp} className="space-y-4">
+              <p className="text-xs text-[var(--foreground-muted)]">
+                Código enviado a <span className="font-medium text-[var(--foreground)]">{email}</span>
+              </p>
               <div className="space-y-2">
                 <label htmlFor="code" className="text-sm text-[var(--foreground-muted)]">
                   Código de 6 dígitos

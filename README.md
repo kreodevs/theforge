@@ -64,8 +64,8 @@ Variables de entorno: referencia completa a continuación. Alternativamente, rev
 | `WEB_DOMAIN` | — | api | Host canónico del frontend (opcional) |
 | `JWT_SECRET` | — | api | **Obligatorio en production.** Firma JWT |
 | `JWT_EXPIRES_IN` | `7d` | api | Caducidad del JWT (formato `ms`: ej. `7d`, `24h`) |
-| `EMAIL_OTP` | — | api | Único email autorizado para OTP (whitelist) |
-| `AUTH_ALLOWED_OTP_EMAIL` | — | api | Alias legacy del correo OTP |
+| ~~`EMAIL_OTP`~~ | — | — | **Deprecado.** Multi-usuario: el email se valida contra la tabla `User`. |
+| ~~`AUTH_ALLOWED_OTP_EMAIL`~~ | — | — | **Deprecado.** Reemplazado por gestión de usuarios en la UI. |
 | `SMTP_HOST` | — | api | Servidor SMTP (obligatorio en production) |
 | `SMTP_PORT` | `587` | api | Puerto SMTP |
 | `SMTP_SECURE` | `0` | api | `1` = SSL directo; `0` = STARTTLS (típ. con puerto 587) |
