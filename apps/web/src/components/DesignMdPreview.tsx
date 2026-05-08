@@ -571,24 +571,25 @@ function ComponentPreview({ name, token, tokens }: { name: string; token: Compon
 
   // ── Input ────────────────────────────────────────
   if (type === "input") {
+    const labels = ["email", "workspace", "api"];
+    const placeholders = ["you@example.com", "Acme Studio", "sk_........"];
+    const idx = name.includes("email") ? 0 : name.includes("api") ? 2 : name.includes("workspace") ? 1 : 0;
     return (
       <div className="flex flex-col gap-1.5">
-        <span className="text-[10px] uppercase tracking-wider text-zinc-500">{displayName}</span>
-        <div
-          className="flex items-center text-xs w-full max-w-[220px]"
-          style={{
-            backgroundColor: bg,
-            borderRadius: radius,
-            padding: pad,
-            border: `1px solid ${isLightColor(bg) ? "rgba(0,0,0,0.15)" : "rgba(255,255,255,0.15)"}`,
-          }}
-        >
-          <span
-            className="opacity-40"
-            style={{ color: fg }}
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">{displayName}</span>
+        <div className="flex flex-col gap-0.5 w-full max-w-[200px]">
+          <label className="text-[9px] font-medium text-zinc-400 uppercase tracking-wide">{labels[idx]}</label>
+          <div
+            className="flex items-center text-[11px] w-full h-9 px-3"
+            style={{
+              backgroundColor: bg,
+              borderRadius: radius,
+              border: `1px solid rgba(255,255,255,0.1)`,
+              color: fg,
+            }}
           >
-            {isLightColor(bg) ? "Escribe aquí..." : "Type here..."}
-          </span>
+            <span className="opacity-30">{placeholders[idx]}</span>
+          </div>
         </div>
       </div>
     );
@@ -627,19 +628,21 @@ function ComponentPreview({ name, token, tokens }: { name: string; token: Compon
 
   // ── Badge ─────────────────────────────────────────
   if (type === "badge") {
+    const badgeName = name.replace(/^badge[-\s]/i, "").toUpperCase();
     return (
       <div className="flex flex-col gap-1.5">
-        <span className="text-[10px] uppercase tracking-wider text-zinc-500">{displayName}</span>
-        <div
-          className="inline-flex items-center text-[10px] font-medium w-fit"
-          style={{
-            backgroundColor: bg,
-            color: fg,
-            borderRadius: radius,
-            padding: pad,
-          }}
-        >
-          {displayName.replace(/^Bague /i, "")}
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">{displayName}</span>
+        <div className="flex flex-wrap gap-2 items-center">
+          <div
+            className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wider px-2.5 py-1 w-fit"
+            style={{
+              backgroundColor: bg,
+              color: fg,
+              borderRadius: radius,
+            }}
+          >
+            {badgeName || "NEW"}
+          </div>
         </div>
       </div>
     );
