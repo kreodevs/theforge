@@ -744,8 +744,7 @@ export default function ChatContainer({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <div className="relative flex-1 min-h-0">
-            <div ref={chatScrollRef} onScroll={handleChatScroll} className="absolute inset-0 overflow-y-auto p-4 space-y-4">
+          <div ref={chatScrollRef} onScroll={handleChatScroll} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
             {messagesToShow.length ? (
               messagesToShow.map((msg, i) => (
                 <div
@@ -901,20 +900,19 @@ export default function ChatContainer({
               </div>
             )}
             <div ref={chatEndRef} />
-            {showScrollBtn ? (
-              <div className="sticky bottom-4 flex justify-center pointer-events-none">
-                <button
-                  type="button"
-                  onClick={scrollToBottom}
-                  className="pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)] shadow-md hover:text-[var(--foreground)] hover:shadow-lg transition-shadow"
-                  aria-label="Ir al final"
-                >
-                  <ChevronDown className="h-5 w-5" />
-                </button>
-              </div>
-            ) : null}
           </div>
-          </div>
+          {showScrollBtn ? (
+            <div className="flex justify-center -mt-10 mb-2 pointer-events-none relative z-10">
+              <button
+                type="button"
+                onClick={scrollToBottom}
+                className="pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)] shadow-md hover:text-[var(--foreground)] hover:shadow-lg transition-shadow"
+                aria-label="Ir al final"
+              >
+                <ChevronDown className="h-5 w-5" />
+              </button>
+            </div>
+          ) : null}
           {error && (
             <p className="px-4 pb-2 text-sm text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]">{error}</p>
           )}
