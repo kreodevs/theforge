@@ -255,40 +255,11 @@ export default function WorkshopView({
   const hasSpec = (specContent ?? "").trim().length > 0;
   const complexity = project?.complexity ?? "HIGH";
   const isLegacyProject = project?.projectType === "LEGACY";
-  const uxGuideOneShotChatPrompt = useMemo(
-    () =>
-      "Genera la **Guía UX/UI completa en formato DESIGN.md** (especificación abierta de Google). " +
-      "El documento DEBE empezar con YAML front matter. Incluye TODAS las secciones: name, description, colors (brand + neutral + semánticos), typography (h1‑h4, body‑md/sm, label, caption, overline), rounded (none→sm→md→lg→full), spacing (xs→xl→2xl), elevation (card, dropdown, modal), y components (button‑primary, button‑secondary, button‑ghost, card, badge, input, modal, toast, skeleton). " +
-      "Ejemplo del FORMATO YAML (usa los tokens reales del proyecto, no copies los valores de ejemplo):\\n" +
-      "---\\n" +
-      'name: \\"Pipeline CRM\\"\\n' +
-      "colors:\\n" +
-      '  primary: \\"#1A5F7A\\"\\n' +
-      '  foreground: \\"#1A1A2E\\"\\n' +
-      '  background: \\"#FFFFFF\\"\\n' +
-      "typography:\\n" +
-      "  h1:\\n" +
-      '    fontSize: \\"32px\\"\\n' +
-      "    fontWeight: 700\\n" +
-      "rounded:\\n" +
-      '  sm: \\"6px\\"\\n' +
-      "elevation:\\n" +
-      '  card: \\"0 1px 3px rgba(0,0,0,0.10)\\"\\n' +
-      "components:\\n" +
-      "  button-primary:\\n" +
-      '    backgroundColor: \\"{colors.tertiary}\\"\\n' +
-      '    textColor: \\"#FFFFFF\\"\\n' +
-      "---\\n" +
-      "Luego del front matter, secciones canónicas en markdown: Overview, Colors, Typography, Layout, Elevation & Depth, Shapes, Components, Do's and Don'ts. " +
-      "Incluye: criterios WCAG (contraste 4.5:1, touch 44px, teclado), patrón/estilo, y usos de cada token." +
-      (isLegacyProject
-        ? ""
-        : " Para proyecto nuevo, al final del contenido (antes de ---FIN_UX_UI---) añade la sección ## Prompt para Google Stitch (producto): " +
-          "un solo bloque listo para copiar y pegar en Google Stitch con pantallas y flujos del **producto** definido en el MDD y documentos " +
-          "(no describas la app The Forge ni el Workshop).") +
-      " Responde con el DESIGN.md completo y termina con ---FIN_UX_UI--- y luego un breve comentario.",
-    [isLegacyProject],
-  );
+
+  // ─── Generación secuencial multi-sección del DESIGN.md ─────
+  const [uxGenerating, setUxGenerating] = useState(false);
+  const [uxGenProgress, setUxGenProgress] = useState<string | null>(null);
+
   const isReverseEngineering =
     isLegacyProject &&
     !!((activeLegacyState?.codebaseDoc ?? "").trim()) &&
@@ -389,6 +360,134 @@ export default function WorkshopView({
   const legacyGenerateMdd = useWorkshopStore((s) => s.legacyGenerateMdd);
   const legacyGenerateDeliverables = useWorkshopStore((s) => s.legacyGenerateDeliverables);
   const persistUxUiGuideContent = useWorkshopStore((s) => s.persistUxUiGuideContent);
+  const generateUxGuideSequential = useCallback(async () => {
+    const { apiFetch, API_BASE } = await import("../utils/apiClient");
+    const mdd = effectiveMddTrimmed || "";
+    const blueprint = blueprintContent?.trim() || "";
+    const spec = specContent?.trim() || "";
+    const contextMd = [
+      mdd ? `## MDD\n${mdd.slice(0, 3000)}` : "",
+      blueprint ? `## Blueprint (data model)\n${blueprint.slice(0, 2000)}` : "",
+      spec ? `## Spec\n${spec.slice(0, 2000)}` : "",
+    ].filter(Boolean).join("\n\n");
+
+    const projectName = project?.name || "Proyecto";
+    const step = async (instruction: string): Promise<string> => {
+      setUxGenProgress(instruction.slice(0, 60));
+      const body: Record<string, unknown> = {
+        projectId,
+        message: `Eres un diseñador UX/UI experto. Genera EXACTAMENTE lo que se pide a continuación, sin incluir nada más.\n\n${instruction}\n\nContexto del proyecto:\n${contextMd}`,
+        activeTab: "ux-ui-guide",
+      };
+      if (mdd) body.mddContent = mdd;
+      const r = await apiFetch(`${API_BASE}/ai-orchestrator/chat/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(`Error: ${r.status}`);
+      const reader = r.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let result = "";
+      if (!reader) throw new Error("No reader");
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        for (const block of parts) {
+          let dataStr = "";
+          for (const line of block.split("\n")) {
+            if (line.startsWith("data:")) dataStr = line.slice(5).trim();
+          }
+          if (!dataStr) continue;
+          try {
+            const data = JSON.parse(dataStr) as Record<string, unknown>;
+            if (data.content) result += data.content;
+          } catch { /* ignore */ }
+        }
+      }
+      return result.trim();
+    };
+
+    try {
+      setUxGenerating(true);
+      setUxGenProgress("Generando paleta de colores\u2026");
+
+      // 1. Colors
+      const colorsYaml = await step(
+        `Genera SOLO la secci\u00f3n \`colors:\` del YAML front matter para el DESIGN.md de "${projectName}".\n` +
+        "Debe incluir TODOS estos keys con valores reales del proyecto:\n" +
+        "primary, secondary, tertiary, neutral, foreground, background, muted, border, danger, success, warning, info\n" +
+        "Responde \u00daNICAMENTE con el bloque YAML (sin \`\`\`yaml ni explicaciones), empezando por \'colors:\'."
+      );
+
+      setUxGenProgress("Generando escala tipogr\u00e1fica\u2026");
+
+      // 2. Typography
+      const typographyYaml = await step(
+        `Genera SOLO la secci\u00f3n \`typography:\` del YAML front matter para el DESIGN.md de "${projectName}".\n` +
+        "Debe incluir TODOS: font-sans (fontFamily), h1, h2, h3, h4, body-md, body-sm, label-sm, caption, overline\n" +
+        "Cada uno con: fontSize, fontWeight, lineHeight, y letterSpacing cuando aplique.\n" +
+        "Responde \u00daNICAMENTE con el bloque YAML, empezando por \'typography:\'."
+      );
+
+      setUxGenProgress("Generando rounded, spacing y elevation\u2026");
+
+      // 3. Rounded + Spacing + Elevation
+      const layoutYaml = await step(
+        `Genera las secciones YAML de \`rounded:\`, \`spacing:\` y \`elevation:\` para "${projectName}".\n` +
+        "rounded: none(0px), sm(6px), md(12px), lg(20px), xl(28px), full(9999px)\n" +
+        "spacing: xxs(2px), xs(4px), sm(8px), md(16px), lg(24px), xl(32px), 2xl(48px), 3xl(64px)\n" +
+        "elevation: card, dropdown, modal, sticky (con box-shadow realistas)\n" +
+        "Responde \u00daNICAMENTE con los 3 bloques YAML seguidos."
+      );
+
+      setUxGenProgress("Generando componentes visuales\u2026");
+
+      // 4. Components
+      const componentsYaml = await step(
+        `Genera SOLO la secci\u00f3n \`components:\` del YAML para "${projectName}".\n` +
+        "Debe incluir TODOS: button-primary, button-secondary, button-ghost, button-danger, card, badge, input, modal, toast, skeleton\n" +
+        "Cada componente con: backgroundColor, textColor, rounded, padding, typography (usando {token.references} cuando aplique).\n" +
+        "Usa los colores del proyecto (primary, secondary, tertiary, danger, neutral, foreground, muted, background).\n" +
+        "Responde \u00daNICAMENTE con el bloque YAML, empezando por \'components:\'."
+      );
+
+      setUxGenProgress("Generando documentaci\u00f3n markdown\u2026");
+
+      // 5. Markdown documentation sections
+      const docSections = await step(
+        `Genera las secciones markdown del DESIGN.md para "${projectName}" (sin el YAML front matter).\n` +
+        "Secciones: ## Overview, ## Colors, ## Typography, ## Layout, ## Elevation " +
+        "Depth, ## Shapes, ## Components, ## Do\'s and Don\'ts.\n" +
+        "Incluye criterios WCAG AA (contraste 4.5:1, touch targets 44px, navegaci\u00f3n por teclado).\n" +
+        "Usa {token.references} en las descripciones.\n" +
+        "Responde \u00daNICAMENTE con las secciones markdown."
+      );
+
+      setUxGenProgress("Ensamblando DESIGN.md completo\u2026");
+
+      // 6. Assemble
+      const yamlParts = [colorsYaml, typographyYaml, layoutYaml, componentsYaml]
+        .map(p => p.replace(/^```yaml\n?/i, "").replace(/```\n?$/i, "").trim())
+        .join("\n");
+
+      const fullDesignMd = `---\nname: "${projectName}"\n${yamlParts}\n---\n\n${docSections}`;
+
+      setUxUiGuideContent(fullDesignMd);
+      await persistUxUiGuideContent(fullDesignMd);
+      setUxGenerating(false);
+      setUxGenProgress(null);
+    } catch (e) {
+      setUxGenerating(false);
+      setUxGenProgress(null);
+      console.error("Error generating UX guide:", e);
+    }
+  }, [projectId, project, effectiveMddTrimmed, blueprintContent, specContent, setUxUiGuideContent, persistUxUiGuideContent]);
+
   const persistArchitectureContent = useWorkshopStore((s) => s.persistArchitectureContent);
   const persistUseCasesContent = useWorkshopStore((s) => s.persistUseCasesContent);
   const persistUserStoriesContent = useWorkshopStore((s) => s.persistUserStoriesContent);
@@ -1501,13 +1600,13 @@ export default function WorkshopView({
                 {centralPanel === "ux-ui-guide" && (
                   <button
                     type="button"
-                    onClick={() => sendMessage(uxGuideOneShotChatPrompt, "ux-ui-guide")}
-                    disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
-                    title="Generar o regenerar la Guía UX/UI en formato DESIGN.md desde el MDD (se envía al chat). Proyectos nuevos: incluye prompt Google Stitch para el producto."
+                    onClick={generateUxGuideSequential}
+                    disabled={uxGenerating || loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
+                    title="Generar la Guía UX/UI en 5 pasos: colores → tipografía → espaciado → componentes → documentación"
                     className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                    {(uxUiGuideContent ?? "").trim() ? "Regenerar" : "Generar"}
+                    {uxGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {uxGenProgress ?? ((uxUiGuideContent ?? "").trim() ? "Regenerar" : "Generar")}
                   </button>
                 )}
               </div>
@@ -2247,13 +2346,13 @@ export default function WorkshopView({
                 <div className="shrink-0 flex items-center justify-end gap-2 mt-2">
                   <button
                     type="button"
-                    onClick={() => sendMessage(uxGuideOneShotChatPrompt, "ux-ui-guide")}
-                    disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
-                    title="Generar o regenerar la Guía UX/UI en formato DESIGN.md desde el MDD (se envía al chat). Proyectos nuevos: incluye prompt Google Stitch para el producto."
+                    onClick={generateUxGuideSequential}
+                    disabled={uxGenerating || loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
+                    title="Generar la Guía UX/UI en 5 pasos: colores → tipografía → espaciado → componentes → documentación"
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                    {(uxUiGuideContent ?? "").trim() ? "Regenerar" : "Generar"} guía
+                    {uxGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {uxGenProgress ?? ((uxUiGuideContent ?? "").trim() ? "Regenerar" : "Generar")} guía
                   </button>
                 </div>
               </>
