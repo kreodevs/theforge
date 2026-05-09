@@ -15,15 +15,15 @@ export const LEGACY_MDD_STEPS = [
   "Agente revisor — revisando el documento…",
 ];
 
-export const LEGACY_BRD_TOBE_SUGGEST_STEPS = [
+export const LEGACY_BRD_SUGGEST_STEPS = [
   "Leyendo documentación de partida (Ariadne)…",
-  "Redactando borradores BRD y Manual To-Be…",
+  "Redactando borrador BRD…",
 ];
 
-/** Greenfield: mismo ritmo de UX que legacy BRD/To-Be, fuente DBGA. */
-export const BRD_TOBE_FROM_DBGA_STEPS = [
+/** Greenfield: mismo ritmo de UX que legacy BRD. */
+export const BRD_FROM_DBGA_STEPS = [
   "Leyendo Domain Benchmark (DBGA)…",
-  "Redactando borradores BRD y Manual To-Be…",
+  "Redactando borrador BRD…",
 ];
 
 export const LEGACY_DELIVERABLES_STEPS = [

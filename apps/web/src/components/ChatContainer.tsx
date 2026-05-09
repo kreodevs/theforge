@@ -1,10 +1,10 @@
 import { useRef, useEffect, useLayoutEffect, useState, useMemo, useCallback } from "react";
 import {
-  BRD_TOBE_FROM_DBGA_STEPS,
-  LEGACY_BRD_TOBE_SUGGEST_STEPS,
   LEGACY_CODEBASE_DOC_STEPS,
-  LEGACY_DELIVERABLES_STEPS,
   LEGACY_MDD_STEPS,
+  LEGACY_BRD_SUGGEST_STEPS,
+  BRD_FROM_DBGA_STEPS,
+  LEGACY_DELIVERABLES_STEPS,
 } from "../constants/legacy-workshop-loading-steps";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -270,8 +270,8 @@ export default function ChatContainer({
   const legacyRotatingSteps = useMemo(() => {
     if (loadingReason === "legacy-codebase-doc") return LEGACY_CODEBASE_DOC_STEPS;
     if (loadingReason === "legacy-mdd") return LEGACY_MDD_STEPS;
-    if (loadingReason === "legacy-brd-suggest") return LEGACY_BRD_TOBE_SUGGEST_STEPS;
-    if (loadingReason === "brd-from-dbga") return BRD_TOBE_FROM_DBGA_STEPS;
+    if (loadingReason === "legacy-brd-suggest") return LEGACY_BRD_SUGGEST_STEPS;
+    if (loadingReason === "brd-from-dbga") return BRD_FROM_DBGA_STEPS;
     if (loadingReason === "legacy-deliverables") return LEGACY_DELIVERABLES_STEPS;
     return LEGACY_CODEBASE_DOC_STEPS;
   }, [loadingReason]);
