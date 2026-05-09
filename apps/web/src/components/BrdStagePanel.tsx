@@ -1,6 +1,3 @@
-import { useCallback, useState } from "react";
-import { Button } from "./ui";
-
 export interface BrdStagePanelProps {
   projectId: string;
   activeStageId: string | null;
@@ -18,10 +15,6 @@ export function BrdStagePanel({
   onBrdContentChange,
   docViewMode,
 }: BrdStagePanelProps) {
-  const [localBusy, setLocalBusy] = useState(false);
-  // Patch stage via parent (the parent calls the store action)
-  const busy = localBusy;
-
   if (!activeStageId) {
     return (
       <div className="mb-3 rounded-lg border border-[var(--border)]/60 bg-[var(--background)]/40 px-3 py-2 text-xs text-[var(--muted-foreground)]">
@@ -48,7 +41,6 @@ export function BrdStagePanel({
           <textarea
             value={brdContent}
             onChange={(e) => onBrdContentChange(e.target.value)}
-            disabled={busy}
             spellCheck={false}
             className="w-full min-h-[10rem] flex-1 rounded-md border border-[var(--border)] bg-[var(--background)]/80 p-2 font-mono text-xs text-[var(--foreground)] outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--primary)_55%,transparent)] resize-none"
             placeholder="Problema, KPIs, alcance…"

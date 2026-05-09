@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   Code,
-  AlertTriangle,
-  CheckCircle2,
   Cloud,
   CloudOff,
   FileText,
@@ -24,6 +22,7 @@ import {
   Download,
   Brain,
   HelpCircle,
+  CheckCircle2,
   Layers,
   MessageSquare,
   Copy,
@@ -88,7 +87,6 @@ type WorkshopDocToolbarViewModes = {
   apiContractsViewMode: "preview" | "source";
   logicFlowsViewMode: "preview" | "source";
   brdDocViewMode: "preview" | "source";
-  toBeDocViewMode: "preview" | "source";
   infraViewMode: "preview" | "source";
 };
 
@@ -108,7 +106,6 @@ function getWorkshopDocToolbarActiveViewMode(
   if (centralPanel === "api-contracts") return modes.apiContractsViewMode;
   if (centralPanel === "logic-flows") return modes.logicFlowsViewMode;
   if (centralPanel === "brd") return modes.brdDocViewMode;
-  if (centralPanel === "to-be") return modes.toBeDocViewMode;
   return modes.infraViewMode;
 }
 
@@ -247,10 +244,6 @@ export default function WorkshopView({
     }
     return project?.legacyFlowState ?? null;
   }, [project?.projectType, activeWorkshopStage?.legacyChangeState, project?.legacyFlowState]);
-  const codebaseDocCharCount = useMemo(
-    () => (activeLegacyState?.codebaseDoc ?? "").trim().length,
-    [activeLegacyState?.codebaseDoc],
-  );
   const liveMetrics = useWorkshopStore((s) => s.liveMetrics);
   const mddContent = useWorkshopStore((s) => s.mddContent);
   /** MDD en store o persistido en proyecto (evita botones Generar/Regenerar deshabilitados si el store quedó vacío). */
@@ -261,10 +254,7 @@ export default function WorkshopView({
   const specContentField = useWorkshopStore((s) => s.specContent);
   const dbgaContentField = useWorkshopStore((s) => s.dbgaContent);
   /** Mismo criterio que `POST …/suggest-brd-tobe-from-dbga` (lee `dbgaContent` persistido en proyecto). */
-  const dbgaContentCharCount = useMemo(
-    () => (project?.dbgaContent ?? "").trim().length,
-    [project?.dbgaContent],
-  );
+  // dbgaContentCharCount eliminado
   const blueprintContentField = useWorkshopStore((s) => s.blueprintContent);
   const apiContractsContentField = useWorkshopStore((s) => s.apiContractsContent);
   const logicFlowsContentField = useWorkshopStore((s) => s.logicFlowsContent);
@@ -563,13 +553,10 @@ export default function WorkshopView({
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
   const [mddInicialCopyOk, setMddInicialCopyOk] = useState(false);
   /** BRD / To-Be (pestañas Workshop): borradores locales y modo preview|fuente (Grabar vía barra / aviso). */
-  const brdTobeServerSnap = useRef({ stageId: "", brd: "", tobe: "", asis: "" });
+  const brdTobeServerSnap = useRef({ stageId: "", brd: "" });
   const prevLoadingReasonRef = useRef<string | null>(null);
   const [brdWorkshopDraft, setBrdWorkshopDraft] = useState("");
-  const [toBeWorkshopDraft, setToBeWorkshopDraft] = useState("");
-  const [asIsWorkshopDraft, setAsIsWorkshopDraft] = useState("");
   const [brdDocViewMode, setBrdDocViewMode] = useState<"preview" | "source">("preview");
-  const [toBeDocViewMode, setToBeDocViewMode] = useState<"preview" | "source">("preview");
   const [brdTobePersistBusy, setBrdTobePersistBusy] = useState(false);
   /** `ask_codebase` / Ariadne al generar doc. partida (`POST …/legacy/generate-codebase-doc`). Default `raw_evidence`. `ingest_mdd` = una sola pasada `evidence_first` (MDD ingest), sin agente escalonado ni síntesis Nest. */
   const [codebaseDocResponseMode, setCodebaseDocResponseMode] = useState<CodebaseDocResponseMode>("raw_evidence");
@@ -1390,7 +1377,6 @@ export default function WorkshopView({
                         apiContractsViewMode,
                         logicFlowsViewMode,
                         brdDocViewMode,
-                        toBeDocViewMode,
                         infraViewMode,
                       });
                       const { Icon: DocToggleIcon, tooltip: docToggleTooltip } = workshopDocSourceTogglePresentation(
@@ -1595,18 +1581,7 @@ export default function WorkshopView({
                     Guardar
                   </button>
                 )}
-                {centralPanel === "to-be" && toBeDocViewMode === "source" && activeStageId && toBeWorkshopTabDirty && (
-                  <button
-                    type="button"
-                    onClick={() => void persistToBeTabWorkshopDrafts()}
-                    disabled={brdTobePersistBusy}
-                    title="Guardar Manual To-Be y As-Is en la etapa activa"
-                    className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {brdTobePersistBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Guardar
-                  </button>
-                )}
+                {/* to-be save button removed */}
                 {centralPanel === "spec" && (
                   <button
                     type="button"
