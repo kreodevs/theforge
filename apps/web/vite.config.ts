@@ -1,9 +1,43 @@
+import fs from "fs";
+import path from "path";
+import type { Connect } from "vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import path from "path";
+
+/** Many clients request /favicon.ico even when HTML links /favicon.svg; serve SVG bytes with correct MIME (dev + preview). */
+function faviconIcoFallbackMiddleware(): Connect.NextHandleFunction {
+  const svgPath = path.resolve(__dirname, "public/favicon.svg");
+  return (req, res, next) => {
+    const pathname = req.url?.split("?")[0];
+    if (pathname !== "/favicon.ico") {
+      next();
+      return;
+    }
+    fs.readFile(svgPath, (err, buf) => {
+      if (err) {
+        next();
+        return;
+      }
+      res.setHeader("Content-Type", "image/svg+xml");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.end(buf);
+    });
+  };
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "favicon-ico-fallback",
+      configureServer(server) {
+        server.middlewares.use(faviconIcoFallbackMiddleware());
+      },
+      configurePreviewServer(server) {
+        server.middlewares.use(faviconIcoFallbackMiddleware());
+      },
+    },
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

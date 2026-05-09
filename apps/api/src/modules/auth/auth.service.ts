@@ -36,6 +36,100 @@ function isProduction(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
+/**
+ * OTP email layout — inline CSS only (Gmail/Outlook). Colors mirror web `--primary` warm terracotta + cream bg.
+ */
+function buildOtpEmailHtml(code: string, magicLinkBlock: string, domainLineBlock: string): string {
+  const primary = "#b45309";
+  const bgPage = "#f4f1ea";
+  const card = "#ffffff";
+  const border = "#e7e5e4";
+  const text = "#44403c";
+  const muted = "#78716c";
+  const footerBg = "#fafaf9";
+
+  return `
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0;background:${bgPage};">
+  <tr>
+    <td align="center" style="padding:28px 14px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:520px;background:${card};border-radius:16px;border:1px solid ${border};overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,0.06);">
+        <tr>
+          <td style="height:4px;background:linear-gradient(90deg,transparent,${primary},transparent);"></td>
+        </tr>
+        <tr>
+          <td style="padding:28px 28px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+            <p style="margin:0;font-size:22px;font-weight:700;color:${primary};letter-spacing:-0.02em;">The Forge</p>
+            <p style="margin:10px 0 0;font-size:13px;color:${muted};letter-spacing:0.02em;">Acceso sin contraseña</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 28px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:${text};">
+            <p style="margin:0 0 14px;font-size:15px;line-height:1.55;">Hola,</p>
+            <p style="margin:0 0 22px;font-size:15px;line-height:1.55;">Usa este código de un solo uso para iniciar sesión:</p>
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${footerBg};border:1px solid ${border};border-radius:14px;margin:0 0 22px;">
+              <tr>
+                <td align="center" style="padding:22px 16px;">
+                  <p style="margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:${muted};">Tu código</p>
+                  <p style="margin:0;font-size:34px;font-weight:800;letter-spacing:0.22em;color:#1c1917;font-family:ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace;line-height:1.2;">${code}</p>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0 0 18px;font-size:13px;line-height:1.55;color:${muted};">
+              Caduca en <strong style="color:#57534e;">10 minutos</strong>. Si no solicitaste este acceso, ignora este mensaje.
+            </p>
+            ${magicLinkBlock}
+            ${domainLineBlock}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 28px;background:${footerBg};border-top:1px solid ${border};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:11px;line-height:1.5;color:#a8a29e;">
+            Proyecto de código abierto · Apache License 2.0
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>`.trim();
+}
+
+function buildOtpMagicLinkHtml(magicLink: string): string {
+  const primary = "#b45309";
+  return `
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px;">
+  <tr>
+    <td>
+      <a href="${magicLink}" style="display:inline-block;padding:14px 28px;background:${primary};color:#ffffff;border-radius:9999px;font-size:15px;font-weight:600;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+        Acceder al instante
+      </a>
+    </td>
+  </tr>
+</table>
+<p style="margin:0;font-size:13px;line-height:1.5;color:#78716c;">También puedes introducir el código manualmente en la pantalla de acceso.</p>`;
+}
+
+function buildOtpDomainLineHtml(domainLine: string): string {
+  return `<p style="margin:18px 0 0;font-size:12px;color:#a8a29e;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;line-height:1.4;">${domainLine}</p>`;
+}
+
+function buildOtpPlainText(code: string, domainLine: string | null, magicLink: string | null): string {
+  const lines = [
+    "The Forge",
+    "",
+    `Tu código de acceso: ${code}`,
+    "",
+    "Caduca en 10 minutos.",
+    "",
+    "Si no solicitaste este correo, puedes ignorarlo.",
+  ];
+  if (domainLine) {
+    lines.push("", domainLine);
+  }
+  if (magicLink) {
+    lines.push("", `Enlace directo: ${magicLink}`);
+  }
+  return lines.join("\n");
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -153,45 +247,18 @@ export class AuthService {
       ? `https://${appHost}/auth/magic-link?otp=${code}&email=${encodeURIComponent(email)}`
       : null;
 
-    // Texto plano con formato iOS
-    const textLines = [
-      code,
-      '',
-      `Use ${code} as your The Forge verification code.`,
-      '',
-      `Your verification code is: ${code}`,
-      '',
-      `Tu código: ${code}. Vence en 10 minutos. Si no lo pediste, ignora.`,
-    ];
-    if (domainLine) textLines.push('', domainLine);
-    if (magicLink) textLines.push('', `O toca este enlace: ${magicLink}`);
-    const textBody = textLines.join('\n');
-
-    const htmlMagicLink = magicLink
-      ? `<a href="${magicLink}" style="display:inline-block;margin:16px 0;padding:14px 28px;background:#059669;color:#fff;border-radius:12px;font-size:16px;font-weight:700;text-decoration:none;text-align:center;">👉 Acceder al instante</a>
-         <p style="margin:0 0 16px;font-size:13px;color:#64748b;">O ingresa el código manualmente.</p>`
-      : '';
-    const htmlDomainLine = domainLine
-      ? `<p style="margin:12px 0 0;font-size:12px;color:#64748b;word-break:break-all;font-family:ui-monospace,monospace;">${domainLine}</p>`
-      : '';
+    const textBody = buildOtpPlainText(code, domainLine, magicLink);
+    const magicLinkBlock = magicLink ? buildOtpMagicLinkHtml(magicLink) : "";
+    const domainLineBlock = domainLine ? buildOtpDomainLineHtml(domainLine) : "";
+    const htmlBody = buildOtpEmailHtml(code, magicLinkBlock, domainLineBlock);
 
     try {
       await transport.sendMail({
         from,
         to: email,
-        subject: `The Forge verification code ${code}`,
+        subject: `The Forge — tu código de acceso`,
         text: textBody,
-        html: `
-          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;padding:20px;color:#1e293b;max-width:480px;">
-            <p style="margin:0 0 16px;font-size:18px;font-weight:700;color:#059669;">The Forge</p>
-            <p style="margin:0 0 8px;">Tu código de acceso:</p>
-            <p style="margin:0 0 8px;font-size:28px;font-weight:800;color:#0f172a;">${code}</p>
-            <p style="margin:0 0 8px;font-size:15px;color:#475569;">Use <strong>${code}</strong> as your verification code.</p>
-            <p style="margin:0 0 16px;font-size:14px;color:#64748b;">Vence en 10 minutos.</p>
-            ${htmlMagicLink}
-            ${htmlDomainLine}
-          </div>
-        `,
+        html: htmlBody,
       });
       this.logger.log(`OTP enviado por SMTP a ${email}`);
     } catch (err) {

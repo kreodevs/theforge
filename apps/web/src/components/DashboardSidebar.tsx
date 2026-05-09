@@ -4,7 +4,7 @@
  * With an open workshop project, shows deliverables under the project name and syncs
  * the active document tab via `useWorkshopStore`.
  */
-import { useCallback, useMemo, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type MouseEvent, type ReactElement } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -14,12 +14,9 @@ import {
   Flame,
   FolderOpen,
   LogOut,
-  Monitor,
-  Moon,
   Search,
   Settings,
   Shield,
-  Sun,
 } from "lucide-react";
 import { Input } from "./ui/Input";
 import {
@@ -29,7 +26,7 @@ import {
   TooltipTrigger,
 } from "./ui";
 import type { TheForgeUser } from "@/utils/apiClient";
-import { useTheme, type ThemePreference } from "@/theme/ThemeProvider";
+import { ThemeModeToggle } from "@/components/ThemeModeToggle";
 import { cn } from "@/lib/utils";
 import { useWorkshopStore } from "../store/workshopStore";
 import { buildWorkshopDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
@@ -93,60 +90,6 @@ function CollapsedRailHint({
         {label}
       </TooltipContent>
     </Tooltip>
-  );
-}
-
-function ThemeModeToggle({ compact }: { compact: boolean }) {
-  const { preference, setPreference } = useTheme();
-
-  const item = (value: ThemePreference, label: string, icon: ReactNode) => {
-    const button = (
-      <button
-        type="button"
-        onClick={() => setPreference(value)}
-        title={label}
-        aria-label={label}
-        aria-pressed={preference === value}
-        className={cn(
-          "flex items-center justify-center rounded-[var(--radius-md)] font-medium transition-colors",
-          compact ? "w-full py-2.5" : "flex-1 flex-col gap-0.5 py-2 text-[11px]",
-          preference === value
-            ? "bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm"
-            : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]",
-        )}
-      >
-        <span className={cn("flex items-center justify-center", !compact && "flex-col gap-0.5")}>
-          <span className="[&>svg]:h-4 [&>svg]:w-4">{icon}</span>
-          {!compact ? <span className="leading-none">{label}</span> : null}
-        </span>
-      </button>
-    );
-    if (!compact) return button;
-    return (
-      <Tooltip delayDuration={200}>
-        <TooltipTrigger asChild>{button}</TooltipTrigger>
-        <TooltipContent side="right" align="center" sideOffset={10}>
-          {label}
-        </TooltipContent>
-      </Tooltip>
-    );
-  };
-
-  return (
-    <div
-      className={cn(
-        "mb-3 rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_6%,var(--sidebar))] p-1 shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--sidebar-foreground)_8%,transparent)]",
-        compact ? "flex flex-col gap-0.5" : "",
-      )}
-      role="group"
-      aria-label="Tema de la interfaz"
-    >
-      <div className={cn(compact ? "flex flex-col gap-0.5" : "flex gap-0.5")}>
-        {item("light", "Claro", <Sun className="h-4 w-4" />)}
-        {item("system", "Sistema", <Monitor className="h-4 w-4" />)}
-        {item("dark", "Oscuro", <Moon className="h-4 w-4" />)}
-      </div>
-    </div>
   );
 }
 
@@ -263,6 +206,9 @@ export function DashboardSidebar({
   ]);
 
   const inWorkshop = !!workshopProject && typeof onExitWorkshop === "function";
+
+  /** Workshop folder row toggles “Pasos del flujo” (replaced native <details> for reliable scroll layout). */
+  const [workshopFlowExpanded, setWorkshopFlowExpanded] = useState(true);
 
   return (
     <TooltipProvider delayDuration={280}>
@@ -389,45 +335,67 @@ export function DashboardSidebar({
                 </button>
               </CollapsedRailHint>
 
-              {/* Plain div (not <details>): flex + min-h-0 height math is reliable for the scrollable steps list. */}
+              {/* Flex wrapper (not <details>): scroll math stays stable; expand/collapse via React state. */}
               <div
                 className="group/ws flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
                 role="group"
                 aria-label={`Proyecto ${workshopProject.name}`}
               >
-                <div
-                  className={cn(
-                    "flex shrink-0 items-center gap-2 rounded-[var(--radius-lg)] px-2 py-2",
-                    "bg-[color-mix(in_oklch,var(--primary)_14%,var(--sidebar))] text-[var(--sidebar-foreground)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_28%,transparent)]",
-                    rail && "sm:justify-center sm:px-0",
-                  )}
-                  title={rail ? undefined : workshopProject.name}
-                >
-                  {rail ? (
-                    <Tooltip delayDuration={200}>
-                      <TooltipTrigger asChild>
+                {rail ? (
+                  <Tooltip delayDuration={200}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        id="workshop-project-folder-toggle"
+                        aria-expanded={workshopFlowExpanded}
+                        aria-controls="workshop-flow-steps-panel"
+                        onClick={() => setWorkshopFlowExpanded((v) => !v)}
+                        className={cn(
+                          "flex w-full shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius-lg)] px-2 py-2 text-left outline-none transition-colors",
+                          "bg-[color-mix(in_oklch,var(--primary)_14%,var(--sidebar))] text-[var(--sidebar-foreground)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_28%,transparent)]",
+                          "hover:bg-[color-mix(in_oklch,var(--primary)_18%,var(--sidebar))] focus-visible:ring-2 focus-visible:ring-[var(--sidebar-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sidebar)]",
+                          "sm:justify-center sm:px-0",
+                        )}
+                      >
                         <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-md)]">
                           <FolderOpen className="h-4 w-4 shrink-0 text-[var(--primary)]" aria-hidden />
                         </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" align="center" sideOffset={10}>
-                        Proyecto: {workshopProject.name}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <>
-                      <FolderOpen className="h-4 w-4 shrink-0 text-[var(--primary)]" aria-hidden />
-                      <span className="min-w-0 flex-1 truncate text-left text-sm font-medium">
-                        {workshopProject.name}
-                      </span>
-                      <ChevronDown
-                        className="h-4 w-4 shrink-0 rotate-180 text-[var(--muted-foreground)] transition-transform"
-                        aria-hidden
-                      />
-                    </>
-                  )}
-                </div>
-                <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-1">
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" align="center" sideOffset={10}>
+                      Proyecto: {workshopProject.name}. {workshopFlowExpanded ? "Ocultar" : "Mostrar"} pasos del flujo
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <button
+                    type="button"
+                    id="workshop-project-folder-toggle"
+                    aria-expanded={workshopFlowExpanded}
+                    aria-controls="workshop-flow-steps-panel"
+                    onClick={() => setWorkshopFlowExpanded((v) => !v)}
+                    title={workshopProject.name}
+                    className={cn(
+                      "flex w-full shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius-lg)] px-2 py-2 text-left outline-none transition-colors",
+                      "bg-[color-mix(in_oklch,var(--primary)_14%,var(--sidebar))] text-[var(--sidebar-foreground)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_28%,transparent)]",
+                      "hover:bg-[color-mix(in_oklch,var(--primary)_18%,var(--sidebar))] focus-visible:ring-2 focus-visible:ring-[var(--sidebar-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sidebar)]",
+                    )}
+                  >
+                    <FolderOpen className="h-4 w-4 shrink-0 text-[var(--primary)]" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{workshopProject.name}</span>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 shrink-0 text-[var(--muted-foreground)] transition-transform duration-200",
+                        workshopFlowExpanded ? "rotate-180" : "rotate-0",
+                      )}
+                      aria-hidden
+                    />
+                  </button>
+                )}
+                {workshopFlowExpanded ? (
+                <div
+                  id="workshop-flow-steps-panel"
+                  className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-1"
+                >
                   <p
                     className={cn(
                       "mb-1.5 shrink-0 px-1 text-[10px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]",
@@ -543,6 +511,7 @@ export function DashboardSidebar({
                     )}
                   </div>
                 </div>
+                ) : null}
               </div>
             </div>
           ) : (
