@@ -348,11 +348,8 @@ export default function App() {
   const handleExitWorkshop = useCallback(() => {
     useWorkshopStore.getState().setWorkshopActiveDocPanel("mdd");
     setWorkshopProject(null);
+    setUsersViewOpen(false);
   }, []);
-
-  if (usersViewOpen && getStoredUser()?.role === "admin") {
-    return <UsersView onBack={() => setUsersViewOpen(false)} />;
-  }
 
   return (
     <>
@@ -559,13 +556,20 @@ export default function App() {
             onToggleCollapsed={handleToggleSidebarCollapsed}
             workshopProject={{ id: workshopProject.id, name: workshopProject.name }}
             onExitWorkshop={handleExitWorkshop}
+            onBeforeNavigateToProjects={() => setUsersViewOpen(false)}
           />
           <div className="flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col overflow-visible sm:overflow-hidden">
-            <WorkshopView
-              projectId={workshopProject.id}
-              projectName={workshopProject.name}
-              onBack={handleExitWorkshop}
-            />
+            {usersViewOpen && isAdmin ? (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+                <UsersView />
+              </div>
+            ) : (
+              <WorkshopView
+                projectId={workshopProject.id}
+                projectName={workshopProject.name}
+                onBack={handleExitWorkshop}
+              />
+            )}
           </div>
         </div>
       ) : (
@@ -580,9 +584,13 @@ export default function App() {
             canManageUsers={isAdmin}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={handleToggleSidebarCollapsed}
+            onBeforeNavigateToProjects={() => setUsersViewOpen(false)}
           />
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        {usersViewOpen && isAdmin ? (
+          <UsersView />
+        ) : (
         <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6 px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
         <header className="flex flex-col gap-4 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-end sm:justify-between sm:pb-5">
           <div>
@@ -760,6 +768,7 @@ export default function App() {
           </div>
         ) : null}
         </div>
+        )}
       </main>
         </div>
       )}

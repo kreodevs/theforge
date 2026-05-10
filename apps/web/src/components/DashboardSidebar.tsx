@@ -56,6 +56,8 @@ export interface DashboardSidebarProps {
   workshopProject?: { id: string; name: string } | null;
   /** Leave workshop and return to the project dashboard. */
   onExitWorkshop?: () => void;
+  /** Runs before scrolling to the projects grid (e.g. close admin Users view). */
+  onBeforeNavigateToProjects?: () => void;
 }
 
 function getDisplayName(user: TheForgeUser | null): string {
@@ -170,6 +172,7 @@ export function DashboardSidebar({
   onToggleCollapsed,
   workshopProject = null,
   onExitWorkshop,
+  onBeforeNavigateToProjects,
 }: DashboardSidebarProps) {
   const rail = collapsed;
   /** Expanded/collapsed list under the workshop project name (header toggles this). */
@@ -180,8 +183,11 @@ export function DashboardSidebar({
   }, [workshopProject?.id]);
 
   const handleScrollToProjects = useCallback(() => {
-    document.getElementById("dashboard-projects")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
+    onBeforeNavigateToProjects?.();
+    requestAnimationFrame(() => {
+      document.getElementById("dashboard-projects")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [onBeforeNavigateToProjects]);
 
   const storeProject = useWorkshopStore((s) => s.project);
   const workshopStages = useWorkshopStore((s) => s.workshopStages);
@@ -288,7 +294,8 @@ export function DashboardSidebar({
         !inWorkshop && "sm:h-full sm:max-h-[100dvh] sm:min-h-0",
         inWorkshop &&
           "min-h-0 overflow-hidden max-sm:max-h-[min(38rem,calc(100svh-5.5rem))] max-sm:min-h-0 sm:h-full sm:max-h-[min(100dvh,100svh)] sm:min-h-0",
-        rail ? "sm:w-16 sm:min-w-[4rem]" : "sm:w-[210px] sm:min-w-[210px]",
+        // Expanded: 16rem / 256px (common nav width); rail stays 4rem.
+        rail ? "sm:w-16 sm:min-w-[4rem]" : "sm:w-64 sm:min-w-64",
       )}
       aria-label="Navegación principal"
     >
@@ -330,8 +337,8 @@ export function DashboardSidebar({
               title={rail ? "Expandir barra lateral" : "Contraer barra lateral"}
               aria-expanded={!rail}
               className={cn(
-                "hidden shrink-0 rounded-[var(--radius-md)] p-2 text-[var(--sidebar-foreground)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] sm:flex",
-                rail && "sm:w-10 sm:shrink-0 sm:items-center sm:justify-center sm:p-2",
+                "hidden shrink-0 flex items-center justify-center rounded-[var(--radius-md)] border border-[color-mix(in_oklch,var(--sidebar-border)_70%,var(--sidebar))] bg-[color-mix(in_oklch,var(--sidebar-foreground)_6%,var(--sidebar))] p-2 text-[var(--sidebar-foreground)] shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--sidebar-foreground)_8%,transparent)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sidebar)] active:scale-[0.97] sm:flex",
+                rail && "sm:size-10 sm:shrink-0 sm:p-0",
               )}
             >
               <ChevronLeft className={cn("h-5 w-5", rail && "hidden")} aria-hidden />

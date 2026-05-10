@@ -1,6 +1,6 @@
 /**
  * @fileoverview Shared chrome for the passwordless login screen: ambient background,
- * theme switcher, and contributor footer (matches product shell branding).
+ * contributor footer, and exported LoginThemeSwitcher for use inside the login card.
  */
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -57,7 +57,8 @@ function LoginAmbientBackground() {
   );
 }
 
-function LoginThemeSwitcher({ className }: { className?: string }) {
+/** Theme control for the login screen; intended to sit inside the login card (not floating over the accent bar). */
+export function LoginThemeSwitcher({ className }: { className?: string }) {
   const { preference, setPreference } = useTheme();
 
   function renderThemeButton(value: ThemePreference, label: string) {
@@ -108,11 +109,11 @@ function ContributorAvatarStrip({ contributors }: { contributors: readonly Forge
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   return (
-    <div className="flex flex-col items-end gap-1 overflow-visible">
-      <p className="text-[9px] font-medium uppercase tracking-[0.12em] text-[var(--foreground-muted)]">
+    <div className="flex w-full flex-col items-center gap-1 overflow-visible sm:w-auto sm:items-end">
+      <p className="text-center text-[9px] font-medium uppercase tracking-[0.12em] text-[var(--foreground-muted)] sm:text-right">
         Colaboradores y autores
       </p>
-      <ul className="flex justify-end overflow-visible pr-0.5 pt-0.5">
+      <ul className="flex justify-center overflow-visible pr-0.5 pt-0.5 sm:justify-end">
         {contributors.map((c, index) => {
           const profileUrl = getGitHubProfileUrl(c.githubLogin);
           const isHovered = hoveredId === c.id;
@@ -179,16 +180,17 @@ function LoginFooterBar() {
     <footer
       className={cn(
         "relative z-[1] mt-auto w-full border-t border-[color-mix(in_oklch,var(--border)_65%,transparent)]",
-        "bg-[color-mix(in_oklch,var(--card)_40%,transparent)] px-3 py-2.5 backdrop-blur-sm",
+        "bg-[color-mix(in_oklch,var(--card)_40%,transparent)] backdrop-blur-sm",
+        "px-[max(0.75rem,env(safe-area-inset-left))] pb-[max(0.625rem,env(safe-area-inset-bottom))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-2.5",
         "dark:bg-[color-mix(in_oklch,var(--card)_28%,transparent)]",
       )}
     >
-      <div className="mx-auto flex max-w-6xl flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-6">
-        <div className="max-w-xl space-y-1">
+      <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
+        <div className="max-w-xl space-y-1 text-center md:text-left">
           <p className="text-[11px] leading-snug text-[var(--foreground-muted)]">
             © {year} The Forge. Apache License 2.0. Código abierto en GitHub.
           </p>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] md:justify-start">
             <a
               href={FORGE_GITHUB_REPO_URL}
               target="_blank"
@@ -220,19 +222,28 @@ export interface LoginScreenChromeProps {
 }
 
 /**
- * Full-viewport shell: gradient mesh, dot grid, theme control (top-right), scrollable main, footer.
+ * Full-viewport shell: gradient mesh, dot grid, scrollable main, footer.
+ * Desktop (md+): theme toggle floats top-right. Mobile: theme is rendered inside the login card (LoginView).
  */
 export function LoginScreenChrome({ children }: LoginScreenChromeProps) {
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="relative flex min-h-screen flex-col bg-[var(--background)] text-[var(--foreground)]">
+      <div className="relative flex min-h-screen min-h-[100dvh] flex-col bg-[var(--background)] text-[var(--foreground)]">
         <LoginAmbientBackground />
-        <div className="pointer-events-none absolute right-4 top-4 z-20 md:right-8 md:top-6">
+        <div className="pointer-events-none absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-20 hidden md:block md:right-8 md:top-6">
           <div className="pointer-events-auto">
             <LoginThemeSwitcher />
           </div>
         </div>
-        <div className="relative z-[1] flex flex-1 flex-col px-4 pb-6 pt-20 md:px-8">
+        <div
+          className={cn(
+            "relative z-[1] flex min-h-0 flex-1 flex-col",
+            "pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]",
+            "pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1rem,calc(env(safe-area-inset-top)+0.5rem))]",
+            "sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))] sm:pt-8",
+            "md:pl-[max(2rem,env(safe-area-inset-left))] md:pr-[max(2rem,env(safe-area-inset-right))] md:pt-12 lg:pt-14",
+          )}
+        >
           {children}
         </div>
         <LoginFooterBar />

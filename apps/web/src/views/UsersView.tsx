@@ -1,7 +1,6 @@
-import { ArrowLeft, Shield } from "lucide-react";
+import { Shield } from "lucide-react";
 import { UsersList } from "@/components/UsersList";
 import {
-  Button,
   Card,
   CardContent,
   CardDescription,
@@ -9,35 +8,20 @@ import {
   CardTitle,
 } from "@/components/ui";
 
-interface UsersViewProps {
-  onBack: () => void;
-}
-
-/** Vista dedicada de administración de usuarios (solo admin). Reemplaza el modal anterior. */
-export default function UsersView({ onBack }: UsersViewProps) {
+/** Vista de administración de usuarios (solo admin). Renderizada dentro del layout con sidebar (`App.tsx`). */
+export default function UsersView() {
   return (
-    <div className="min-h-[100dvh] bg-[var(--background)] text-[var(--foreground)] px-4 py-6 sm:p-6 lg:p-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <header className="border-b border-[var(--border)] pb-4 sm:pb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-start min-w-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onBack}
-              className="shrink-0 touch-manipulation min-h-[44px] sm:min-h-9 gap-2 self-start"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Volver a proyectos
-            </Button>
-            <div className="min-w-0">
-              <h1 className="text-2xl sm:text-3xl font-bold text-[var(--primary)] flex items-center gap-2">
-                <Shield className="w-8 h-8 shrink-0" />
-                Usuarios
-              </h1>
-              <p className="text-[var(--foreground-muted)] mt-1 text-sm sm:text-base">
-                Alta de usuarios, roles y API keys MCP por cuenta.
-              </p>
-            </div>
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6 px-4 py-6 text-[var(--foreground)] sm:px-6 lg:px-8 xl:px-10">
+      <div className="mx-auto max-w-4xl space-y-6">
+        <header className="border-b border-[var(--border)] pb-4 sm:pb-6">
+          <div className="min-w-0">
+            <h1 className="flex items-center gap-2 text-2xl font-bold text-[var(--primary)] sm:text-3xl">
+              <Shield className="h-8 w-8 shrink-0" />
+              Usuarios
+            </h1>
+            <p className="mt-1 text-sm text-[var(--foreground-muted)] sm:text-base">
+              Alta de usuarios, roles y API keys MCP por cuenta.
+            </p>
           </div>
         </header>
 
