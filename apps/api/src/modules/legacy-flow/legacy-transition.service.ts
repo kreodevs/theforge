@@ -34,7 +34,7 @@ export class LegacyTransitionService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly projects: ProjectsService,
+    private readonly _projects: ProjectsService,
   ) {}
 
   /**

@@ -28,7 +28,7 @@ export class CheckNavigationImpactService {
   async checkImpact(
     projectId: string,
     componentPath: string,
-    stageId?: string,
+    _stageId?: string,
   ): Promise<NavigationImpactResult> {
     const comp = (componentPath ?? "").trim();
     if (!comp) throw new BadRequestException("componentPath is required");

@@ -26,14 +26,11 @@ import {
   type InterviewStatus,
   type NavigationMapSummary,
   type AffectedRoute,
-  type AffectedEndpoint,
-  type NewFieldSpec,
 } from "./change-interview.types.js";
 import {
   INTERVIEW_SYSTEM_PROMPT,
   START_PROMPT_TEMPLATE,
   CONTINUE_PROMPT_TEMPLATE,
-  CONFIRMATION_PROMPT_TEMPLATE,
   CHANGE_SCOPE_EXTRACTION_PROMPT,
 } from "./change-interview.prompts.js";
 
@@ -45,7 +42,6 @@ export class ChangeInterviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AiService,
-    private readonly theforge: TheForgeService,
     private readonly projects: ProjectsService,
   ) {}
 
@@ -73,7 +69,7 @@ export class ChangeInterviewService {
     const affectedComponents = this.findAffectedComponents(desc, navMap, relevantRoutes);
 
     // Build navigation map summary
-    const navSummary: NavigationMapSummary = navMap
+    let navSummary: NavigationMapSummary | null = navMap
       ? {
           routes: (navMap.routes ?? []).map((r: any) => ({
             url: r.url ?? "",

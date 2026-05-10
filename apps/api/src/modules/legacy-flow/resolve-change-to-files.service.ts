@@ -7,8 +7,6 @@
  * Puede usarse como herramienta independiente o integrada en ChangeInterviewService.
  */
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
-import { PrismaService } from "../../prisma/prisma.service.js";
-import { AiService } from "../ai/ai.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
 
 export interface ResolveChangeResult {
@@ -34,8 +32,6 @@ export class ResolveChangeToFilesService {
   private readonly logger = new Logger(ResolveChangeToFilesService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly ai: AiService,
     private readonly projects: ProjectsService,
   ) {}
 
