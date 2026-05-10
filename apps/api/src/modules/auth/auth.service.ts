@@ -62,6 +62,30 @@ export class AuthService {
     return { host, port, secure, user, pass };
   }
 
+  /** Gmail / Google Workspace SMTP hosts — used for From + password quirks. */
+  private isGoogleSmtpHost(host: string): boolean {
+    const h = host.toLowerCase();
+    return h.includes("gmail.com") || h.includes("googlemail.com");
+  }
+
+  /**
+   * Gmail app passwords are often pasted as "xxxx xxxx xxxx xxxx"; SMTP auth expects 16 chars without spaces.
+   */
+  private normalizeSmtpPassword(pass: string, host: string): string {
+    if (this.isGoogleSmtpHost(host)) return pass.replace(/\s+/g, "");
+    return pass;
+  }
+
+  /**
+   * STARTTLS (587) must use secure=false; SSL (465) must use secure=true.
+   * Mis-set SMTP_SECURE with port 587 breaks TLS negotiation with many providers (including Gmail).
+   */
+  private resolveSmtpTls(port: number, secureFromEnv: boolean): { port: number; secure: boolean } {
+    if (port === 587) return { port, secure: false };
+    if (port === 465) return { port, secure: true };
+    return { port, secure: secureFromEnv };
+  }
+
   private smtpTransport(): nodemailer.Transporter | null {
     if (this.transporter === undefined) {
       const cfg = this.smtpConfig();
@@ -69,22 +93,57 @@ export class AuthService {
         this.transporter = null;
         return null;
       }
+      const pass = this.normalizeSmtpPassword(cfg.pass, cfg.host);
+      const { port, secure } = this.resolveSmtpTls(cfg.port, cfg.secure);
+      if (cfg.port === 587 && cfg.secure) {
+        this.logger.warn(
+          "SMTP: puerto 587 implica STARTTLS (secure=false). Se fuerza secure=false; revise SMTP_SECURE en .env.",
+        );
+      }
+      if (cfg.port === 465 && !cfg.secure) {
+        this.logger.warn(
+          "SMTP: puerto 465 suele usar SSL directo (secure=true). Se fuerza secure=true; revise SMTP_SECURE.",
+        );
+      }
+
       this.transporter = nodemailer.createTransport({
         host: cfg.host,
-        port: cfg.port,
-        secure: cfg.secure,
-        auth: { user: cfg.user, pass: cfg.pass },
+        port,
+        secure,
+        auth: { user: cfg.user, pass },
+        tls: { minVersion: "TLSv1.2" },
+        connectionTimeout: 25_000,
+        greetingTimeout: 25_000,
+        socketTimeout: 25_000,
+        ...(!secure && port === 587 ? { requireTLS: true as const } : {}),
       });
     }
     return this.transporter;
   }
 
-  /** Cabecera From: si SMTP_FROM no incluye @, se usa SMTP_USER como dirección. */
+  /**
+   * Cabecera From: si SMTP_FROM no incluye @, se usa SMTP_USER como dirección.
+   * Gmail SMTP solo acepta envío como la cuenta autenticada (o alias verificado); si SMTP_FROM es otro correo, se ignora.
+   */
   private mailFromHeader(): string {
     const cfg = this.smtpConfig();
     const user = cfg?.user ?? stripEnvQuotes(this.config.get<string>("SMTP_USER")) ?? "";
     const raw = stripEnvQuotes(this.config.get<string>("SMTP_FROM"));
     const display = raw?.trim() ?? "";
+    const host = cfg?.host ?? "";
+
+    if (user && cfg && this.isGoogleSmtpHost(host)) {
+      if (!display) return `The Forge <${user}>`;
+      if (!display.includes("@")) return `"${display.replace(/"/g, "")}" <${user}>`;
+      const emailMatch = display.match(/[\w.+-]+@[\w.-]+\.\w+/i);
+      const fromAddr = emailMatch ? emailMatch[0].toLowerCase() : "";
+      if (fromAddr && fromAddr === user.toLowerCase()) return display;
+      this.logger.warn(
+        `SMTP_FROM no coincide con SMTP_USER en Gmail; se envía como The Forge <${user}> para evitar rechazo.`,
+      );
+      return `The Forge <${user}>`;
+    }
+
     if (!display) {
       return user ? `The Forge <${user}>` : "The Forge <noreply@localhost>";
     }
@@ -197,7 +256,9 @@ export class AuthService {
     } catch (err) {
       this.otpByEmail.delete(email);
       this.lastOtpRequestAt.delete(email);
-      this.logger.error(`Fallo SMTP al enviar OTP: ${err instanceof Error ? err.message : err}`);
+      const e = err as Error & { responseCode?: number | string; response?: string; command?: string };
+      const detail = [e.message, e.responseCode, e.response].filter(Boolean).join(" | ");
+      this.logger.error(`Fallo SMTP al enviar OTP: ${detail || String(err)}`);
       throw new ServiceUnavailableException("No se pudo enviar el código por correo");
     }
 
