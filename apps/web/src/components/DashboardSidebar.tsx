@@ -109,7 +109,7 @@ function ThemeModeToggle({ compact }: { compact: boolean }) {
         aria-pressed={preference === value}
         className={cn(
           "flex items-center justify-center rounded-[var(--radius-md)] font-medium transition-colors",
-          compact ? "w-full py-2.5" : "flex-1 flex-col gap-0.5 py-2 text-[11px]",
+          compact ? "w-full py-2" : "flex-1 flex-col gap-0.5 py-1.5 text-[10px]",
           preference === value
             ? "bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm"
             : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]",
@@ -135,7 +135,7 @@ function ThemeModeToggle({ compact }: { compact: boolean }) {
   return (
     <div
       className={cn(
-        "mb-3 rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_6%,var(--sidebar))] p-1 shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--sidebar-foreground)_8%,transparent)]",
+        "mb-2 rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_6%,var(--sidebar))] p-0.5 shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--sidebar-foreground)_8%,transparent)]",
         compact ? "flex flex-col gap-0.5" : "",
       )}
       role="group"
@@ -271,9 +271,10 @@ export function DashboardSidebar({
         "flex w-full shrink-0 flex-col border-[var(--sidebar-border)] bg-[var(--sidebar)] text-[var(--sidebar-foreground)] sm:border-b-0 sm:border-r sm:min-h-0 sm:self-stretch sm:sticky sm:top-0 sm:transition-[width] sm:duration-200 sm:ease-out",
         // Workshop: cap height on narrow stacked layout; fill row height on sm+ so steps can scroll.
         // overflow-y-auto on the steps list shows a scrollbar only when content overflows.
+        !inWorkshop && "sm:h-full sm:max-h-[100dvh] sm:min-h-0",
         inWorkshop &&
           "min-h-0 overflow-hidden max-sm:max-h-[min(38rem,calc(100svh-5.5rem))] max-sm:min-h-0 sm:h-full sm:max-h-[min(100dvh,100svh)] sm:min-h-0",
-        rail ? "sm:w-[4.5rem] sm:min-w-[4.5rem]" : "sm:w-[272px]",
+        rail ? "sm:w-16 sm:min-w-[4rem]" : "sm:w-[210px] sm:min-w-[210px]",
       )}
       aria-label="Navegación principal"
     >
@@ -282,8 +283,8 @@ export function DashboardSidebar({
           "flex flex-col min-h-0",
           inWorkshop
             ? "min-h-0 flex-1 gap-4 overflow-hidden"
-            : "gap-6 sm:min-h-0 sm:flex-1 sm:overflow-y-auto",
-          rail ? "p-4 sm:px-2 sm:py-4" : "p-4",
+            : "min-h-0 gap-4 sm:flex-1 sm:overflow-hidden",
+          rail ? "p-3 sm:px-2 sm:py-3" : "px-3 py-3 sm:px-3 sm:py-3",
         )}
       >
         <div
@@ -566,8 +567,8 @@ export function DashboardSidebar({
 
       <div
         className={cn(
-          "mt-auto shrink-0 border-t border-[color-mix(in_oklch,var(--sidebar-border)_75%,var(--sidebar))] p-3",
-          rail && "sm:px-2",
+          "mt-auto shrink-0 border-t border-[color-mix(in_oklch,var(--sidebar-border)_75%,var(--sidebar))] p-2",
+          rail && "sm:px-1.5",
         )}
       >
         <ThemeModeToggle compact={rail} />
