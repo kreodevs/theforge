@@ -10,7 +10,6 @@
  */
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service.js";
-import { ProjectsService } from "../projects/projects.service.js";
 
 export interface LegacyTransitionStatus {
   canTransition: boolean;
@@ -34,7 +33,6 @@ export class LegacyTransitionService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly _projects: ProjectsService,
   ) {}
 
   /**

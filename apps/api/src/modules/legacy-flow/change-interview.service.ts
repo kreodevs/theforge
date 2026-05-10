@@ -17,7 +17,6 @@
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiService } from "../ai/ai.service.js";
-import { TheForgeService } from "../theforge/theforge.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
 import {
   type ChangeScope,
