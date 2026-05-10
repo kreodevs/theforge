@@ -13,6 +13,10 @@ export function sanitizeMermaidBlock(content: string): string {
   return content
     .replace(/\u00A0/g, " ")
     .replace(/[\u2000-\u200B\u202F\u205F\u3000]/g, " ")
+    // Auto-repair `PK, FK` / `FK, PK` (common LLM artifact) → keep PK annotation only.
+    // Mermaid erDiagram attributes accept one annotation per line; the FK is expressed via relationship lines.
+    .replace(/\bPK\s*,\s*FK\b/gi, "PK")
+    .replace(/\bFK\s*,\s*PK\b/gi, "FK")
     .split("\n")
     .map((line) => line.trimEnd())
     .join("\n")
