@@ -103,6 +103,38 @@ Variables de entorno: referencia completa a continuación. Alternativamente, rev
 | `THEFORGE_MCP_ASK_CODEBASE_TIMEOUT_MS` | `900000` (15 min) | api | Timeout solo para `ask_codebase` (ingest puede tardar minutos) |
 | `THEFORGE_API_URL` | `http://localhost:3000` | mcp | URL de la API Nest **desde el proceso MCP** |
 
+### 🔷 Legacy — Nuevos servicios (ChangeInterview, Navigation Impact, Transición)
+
+| Variable | Default | Dónde aplica | Qué hace |
+|---|---|---|---|
+| `ARIADNE_MCP_URL` | `http://ariadne-mcp:3101` | api | URL del MCP AriadneSpecs para consultar navigation map y SDD |
+| `ARIADNE_MCP_TIMEOUT` | `30000` | api | Timeout en ms para llamadas al MCP Ariadne |
+
+### Endpoints REST (nuevos flujo legacy)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/projects/:id/legacy/transition-status` | Verifica si un proyecto NEW puede migrar a flujo legacy (consulta AriadneSpecs) |
+| POST | `/projects/:id/legacy/execute-transition` | Ejecuta la transición: crea stage baseline con navigation map inicial |
+| POST | `/projects/:id/legacy/interview/start` | Inicia entrevista conversacional: envía descripción, recibe preguntas contextuales |
+| POST | `/projects/:id/legacy/interview/:sessionId/chat` | Continúa la entrevista con mensaje del usuario |
+| POST | `/projects/:id/legacy/interview/:sessionId/confirm` | Confirma y persiste el ChangeScope |
+| POST | `/projects/:id/legacy/interview/:sessionId/cancel` | Cancela la entrevista |
+| GET | `/projects/:id/legacy/interview/:sessionId` | Estado actual de la entrevista (mensajes, ChangeScope) |
+| POST | `/projects/:id/legacy/resolve-change-to-files` | Dada una descripción, resuelve archivos a modificar usando el navigation map |
+| POST | `/projects/:id/legacy/check-navigation-impact` | Evalúa si modificar un componente afecta múltiples rutas |
+
+### Endpoints existentes (flujo legacy original)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/projects/:id/legacy/start` | Inicia flujo legacy original (MCP AriadneSpecs) |
+| POST | `/projects/:id/legacy/answer` | Responde preguntas del flujo original |
+| POST | `/projects/:id/legacy/generate-mdd` | Genera MDD desde el estado del flujo |
+| POST | `/projects/:id/legacy/generate-deliverables` | Cascada completa de entregables |
+| POST | `/projects/:id/legacy/generate-codebase-doc` | Documentación de partida del codebase |
+| POST | `/projects/:id/legacy/resolve-index-sdd-conflict` | Resuelve conflicto índice MCP vs SDD |
+
 ### 🔷 Caché y Debug
 
 | Variable | Default | Dónde aplica | Qué hace |
