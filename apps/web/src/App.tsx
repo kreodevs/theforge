@@ -348,11 +348,8 @@ export default function App() {
   const handleExitWorkshop = useCallback(() => {
     useWorkshopStore.getState().setWorkshopActiveDocPanel("mdd");
     setWorkshopProject(null);
+    setUsersViewOpen(false);
   }, []);
-
-  if (usersViewOpen && getStoredUser()?.role === "admin") {
-    return <UsersView onBack={() => setUsersViewOpen(false)} />;
-  }
 
   return (
     <>
@@ -546,7 +543,7 @@ export default function App() {
       </Dialog>
 
       {workshopProject ? (
-        <div className="flex w-full min-h-[100dvh] flex-col overflow-y-auto bg-[var(--background)] text-[var(--foreground)] sm:h-[100dvh] sm:max-h-[100dvh] sm:min-h-0 sm:flex-row sm:overflow-hidden">
+        <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] sm:flex-row">
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}
@@ -559,17 +556,24 @@ export default function App() {
             onToggleCollapsed={handleToggleSidebarCollapsed}
             workshopProject={{ id: workshopProject.id, name: workshopProject.name }}
             onExitWorkshop={handleExitWorkshop}
+            onBeforeNavigateToProjects={() => setUsersViewOpen(false)}
           />
           <div className="flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col overflow-visible sm:overflow-hidden">
-            <WorkshopView
-              projectId={workshopProject.id}
-              projectName={workshopProject.name}
-              onBack={handleExitWorkshop}
-            />
+            {usersViewOpen && isAdmin ? (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+                <UsersView />
+              </div>
+            ) : (
+              <WorkshopView
+                projectId={workshopProject.id}
+                projectName={workshopProject.name}
+                onBack={handleExitWorkshop}
+              />
+            )}
           </div>
         </div>
       ) : (
-        <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-y-auto bg-[var(--background)] text-[var(--foreground)] sm:flex-row sm:overflow-hidden">
+        <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] sm:flex-row">
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}
@@ -580,23 +584,50 @@ export default function App() {
             canManageUsers={isAdmin}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={handleToggleSidebarCollapsed}
+            onBeforeNavigateToProjects={() => setUsersViewOpen(false)}
           />
 
-          <main className="min-h-0 flex-1 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        {usersViewOpen && isAdmin ? (
+          <UsersView />
+        ) : (
         <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6 px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
-        <header className="flex flex-col gap-4 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-end sm:justify-between sm:pb-5">
-          <div>
+        <header className="flex flex-row items-center justify-between gap-3 border-b border-[var(--border)] pb-4 sm:items-end sm:pb-5">
+          <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--foreground-subtle)]">
               Panel
             </p>
-            <p className="mt-1 text-sm text-[var(--foreground-muted)] sm:text-base">
+            <p className="mt-1 hidden text-sm text-[var(--foreground-muted)] sm:mt-1 sm:block sm:text-base">
               Entrevista proactiva → MDD → Semáforo → Estimación
             </p>
           </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex shrink-0 items-center gap-1.5 sm:flex-row sm:gap-2">
             <Button
               type="button"
-              className="w-full touch-manipulation min-h-11 sm:w-auto sm:min-h-10"
+              size="icon"
+              className="touch-manipulation sm:hidden"
+              onClick={() => setShowCreateWizard(true)}
+              disabled={loading}
+              aria-label="Crear nuevo proyecto"
+              title="Crear nuevo proyecto"
+            >
+              <Plus className="h-4 w-4 shrink-0" aria-hidden />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="touch-manipulation sm:hidden"
+              onClick={() => void loadProjects()}
+              disabled={loading}
+              aria-label="Refrescar lista de proyectos"
+              title="Refrescar"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <RefreshCw className="h-4 w-4" aria-hidden />}
+            </Button>
+            <Button
+              type="button"
+              className="hidden w-full touch-manipulation min-h-11 sm:inline-flex sm:w-auto sm:min-h-10"
               onClick={() => setShowCreateWizard(true)}
               disabled={loading}
             >
@@ -606,7 +637,7 @@ export default function App() {
             <Button
               type="button"
               variant="outline"
-              className="w-full touch-manipulation min-h-11 sm:w-auto sm:min-h-10"
+              className="hidden w-full touch-manipulation min-h-11 sm:inline-flex sm:w-auto sm:min-h-10"
               onClick={() => void loadProjects()}
               disabled={loading}
             >
@@ -760,6 +791,7 @@ export default function App() {
           </div>
         ) : null}
         </div>
+        )}
       </main>
         </div>
       )}
