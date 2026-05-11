@@ -840,11 +840,12 @@ export default function WorkshopView({
     setCentralPanel(pt === "LEGACY" ? "mdd" : "spec");
   }, [complexity, centralPanel, project?.projectType]);
 
-  // Legacy: si el panel activo es un documento que no tiene contenido (tab oculto), ir a Modificación o MDD
+  // Legacy: si el panel activo es un documento que no tiene contenido y NO es etapa 1 (AS-IS),
+  // redirigir a Modificación. En etapa 1 todos los paneles deben ser accesibles.
   useEffect(() => {
     if (project?.projectType !== "LEGACY") return;
-    // Nota: "ux-ui-guide" queda fuera intencionalmente — tiene botón "Generar"/"Regenerar"
-    // propio y no debe redirigir a Modificación cuando está vacío.
+    // Etapa 1 (ordinal 1) = AS-IS: todos los paneles accesibles con botón "Generar desde MDD Inicial"
+    if (activeWorkshopStage?.ordinal === 1) return;
     const emptyLegacyPanels: DocPanel[] = [
       "spec", "architecture", "use-cases", "user-stories", "blueprint",
       "api-contracts", "logic-flows", "tasks", "infra",
@@ -865,6 +866,7 @@ export default function WorkshopView({
     if (!(content ?? "").trim()) setCentralPanel("legacy");
   }, [
     project?.projectType,
+    activeWorkshopStage?.ordinal,
     centralPanel,
     specContent,
     architectureContent,
