@@ -1,11 +1,7 @@
-import { Controller, Post, Body, Logger } from "@nestjs/common";
-import { PrismaService } from "../../prisma/prisma.service.js";
+import { Controller, Post, Body } from "@nestjs/common";
 
 @Controller("admin")
 export class AdminController {
-  private readonly logger = new Logger(AdminController.name);
-
-  constructor(private readonly prisma: PrismaService) {}
 
   @Post("ariadne-config/test")
   async testAriadneConnection(
