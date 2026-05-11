@@ -32,6 +32,17 @@ export class BootstrapAdminService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    // ARRANQUE_LIMPIO=true → elimina todos los usuarios para que SetupView aparezca.
+    // Útil en forks / entornos de desarrollo donde la BD viene con datos heredados.
+    const clean = stripEnvQuotes(this.config.get<string>("ARRANQUE_LIMPIO"));
+    if (clean?.toLowerCase() === "true" || clean === "1") {
+      const { count } = await this.prisma.user.deleteMany({});
+      this.logger.warn(
+        `ARRANQUE_LIMPIO=true: ${count} usuario(s) eliminados. Reinicia sin esta env para operación normal.`,
+      );
+      return; // No ejecutar BOOTSTRAP_ADMIN_EMAILS sobre tabla vacía
+    }
+
     const raw = stripEnvQuotes(this.config.get<string>("BOOTSTRAP_ADMIN_EMAILS"));
     if (!raw?.trim()) return;
 
