@@ -387,6 +387,7 @@ export default function WorkshopView({
   const setPhase0SummaryContent = useWorkshopStore((s) => s.setPhase0SummaryContent);
   const persistPhase0SummaryContent = useWorkshopStore((s) => s.persistPhase0SummaryContent);
   const legacyGenerateCodebaseDoc = useWorkshopStore((s) => s.legacyGenerateCodebaseDoc);
+  const legacySuggestBrdFromCodebaseDoc = useWorkshopStore((s) => s.legacySuggestBrdFromCodebaseDoc);
   const legacyMcpDebugTrace = useWorkshopStore((s) => s.legacyMcpDebugTrace);
   const legacyUpdateCodebaseDoc = useWorkshopStore((s) => s.legacyUpdateCodebaseDoc);
   const legacyStart = useWorkshopStore((s) => s.legacyStart);
@@ -399,10 +400,15 @@ export default function WorkshopView({
     const mdd = effectiveMddTrimmed || "";
     const blueprint = blueprintContent?.trim() || "";
     const specContentStr = specContent?.trim() || "";
+    // Legacy: incluir codebaseDoc (MDD Inicial) como contexto AS-IS del frontend real
+    const codebaseDoc = isLegacyProject && activeLegacyState?.codebaseDoc?.trim()
+      ? activeLegacyState.codebaseDoc.slice(0, 4000)
+      : "";
     const contextMd = [
       mdd ? `## MDD\n${mdd.slice(0, 4000)}` : "",
       blueprint ? `## Blueprint (data model)\n${blueprint.slice(0, 3000)}` : "",
       specContentStr ? `## Spec\n${specContentStr.slice(0, 2000)}` : "",
+      codebaseDoc ? `## Codebase Doc (AS-IS — documentación del frontend real)\n${codebaseDoc}` : "",
     ].filter(Boolean).join("\n\n");
 
     const projectName = project?.name || "Proyecto";
@@ -460,7 +466,13 @@ export default function WorkshopView({
         `Luego las secciones markdown:\n` +
         `## Overview\n## Colors\n## Typography\n## Layout & Spacing\n## Elevation Depth\n## Shapes\n## Components\n## Do's and Don'ts\n\n` +
         `Incluye criterios WCAG AA (contraste 4.5:1, touch targets 44px, navegación por teclado).\n` +
-        `Usa {token.references} en las descripciones de los tokens.\n\n` +
+        `Usa {token.references} en las descripciones de los tokens.\n` +
+        `${
+          codebaseDoc
+            ? "IMPORTANTE: Extrae colores, tipografía, espaciado y componentes del codebase AS-IS — el proyecto YA EXISTE y tiene un frontend real con diseño definido. Refleja los tokens reales del proyecto, no propongas un diseño nuevo.\n"
+            : ""
+        }` +
+        `\n` +
         `Contexto del proyecto:\n${contextMd}\n\n` +
         `IMPORTANTE: Responde ÚNICAMENTE con el archivo DESIGN.md completo empezando por "---". NO agregues texto explicativo ni bloques \`\`\` alrededor.`;
 
@@ -2539,6 +2551,30 @@ export default function WorkshopView({
             )}
             {centralPanel === "brd" && projectId && (
               <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+                {/* Legacy: generar BRD desde codebaseDoc (AS-IS) antes de describir cambios */}
+                {isLegacyProject && (activeLegacyState?.codebaseDoc ?? "").trim().length > 0 && !brdWorkshopDraft.trim() && (
+                  <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] px-3 py-2.5">
+                    <span className="text-sm text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
+                      Documenta requisitos AS-IS desde el codebase existente.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const res = await legacySuggestBrdFromCodebaseDoc(projectId, activeStageId ?? undefined);
+                        if (res?.brdContent) setBrdWorkshopDraft(res.brdContent);
+                      }}
+                      disabled={loading && loadingReason === "legacy-brd-suggest"}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading && loadingReason === "legacy-brd-suggest" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Play className="h-4 w-4" />
+                      )}
+                      Generar BRD desde MDD Inicial
+                    </button>
+                  </div>
+                )}
                 {brdWorkshopDirty && (
                   <div className="shrink-0 flex items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] px-3 py-2">
                     <span className="text-sm text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">Cambios sin guardar en el BRD de esta etapa.</span>
