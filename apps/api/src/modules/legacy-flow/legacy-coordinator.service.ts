@@ -244,7 +244,7 @@ function sleepMs(ms: number): Promise<void> {
  */
 function legacyDeliverablesInterStepDelayMs(): number {
   const raw = process.env.LEGACY_DELIVERABLES_INTER_STEP_DELAY_MS?.trim();
-  if (raw === undefined || raw === "") return 5000;
+  if (raw === undefined || raw === "") return 15000;
   const n = parseInt(raw, 10);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.min(n, 180_000);
