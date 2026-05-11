@@ -18,6 +18,7 @@ import {
 } from "./ariadne-mcp-scope.util.js";
 import { formatRawEvidenceObjectToMarkdown } from "./theforge-raw-evidence-markdown.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
+import { getRequestUserId } from "../../common/request-user.store.js";
 
 /** Repo (root) dentro de un proyecto multi-repo. */
 export interface TheForgeProjectRoot {
@@ -330,13 +331,23 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       Accept: "application/json, text/event-stream",
       "MCP-Protocol-Version": "2025-03-26",
     };
-    if (this.xM2mToken) {
-      headers["X-M2M-Token"] = this.xM2mToken;
-    } else if (this.token) {
-      headers.Authorization = `Bearer ${this.token}`;
+    // Enviar mcpSecret del usuario autenticado como X-M2M-Token para que Ariadne valide contra BD
+    try {
+      const userId = getRequestUserId();
+      if (userId) {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { mcpSecret: true },
+        });
+        if (user?.mcpSecret) {
+          headers["X-M2M-Token"] = user.mcpSecret;
+        }
+      }
+    } catch {
+      // Sin contexto de usuario (cron, background sin request) → no enviar token
     }
-    const authPreview = this.xM2mToken ? "X-M2M-Token" : this.token ? `Bearer ${this.token.slice(0, 4)}...` : "sin auth";
-    this.logger.log(`[TheForge] MCP POST ${this.baseUrl} | auth=${authPreview}`);
+    const hasAuth = !!headers["X-M2M-Token"];
+    this.logger.log(`[TheForge] MCP POST ${this.baseUrl} | auth=${hasAuth ? "X-M2M-Token (user)" : "sin auth"}`);
 
     if (this.isDebugMcp()) {
       let reqStr: string;
