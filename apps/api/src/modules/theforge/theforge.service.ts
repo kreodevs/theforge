@@ -17,6 +17,7 @@ import {
   type AriadneCodebaseResolution,
 } from "./ariadne-mcp-scope.util.js";
 import { formatRawEvidenceObjectToMarkdown } from "./theforge-raw-evidence-markdown.js";
+import { PrismaService } from "../../prisma/prisma.service.js";
 
 /** Repo (root) dentro de un proyecto multi-repo. */
 export interface TheForgeProjectRoot {
@@ -225,9 +226,15 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   /** Cache de `list_known_projects` para resolver id proyecto ↔ roots sin un POST por cada tool call. */
   private projectsCatalogCache: { at: number; projects: TheForgeProject[] } | null = null;
 
-  constructor(private readonly contextCache: TheForgeContextCacheService) {}
+  constructor(
+    private readonly contextCache: TheForgeContextCacheService,
+    private readonly prisma: PrismaService,
+  ) {
+  }
 
   onModuleInit(): void {
+    // Refrescar config desde BD
+    this.refreshAriadneConfig().catch(() => {});
     if (this.isConfigured()) return;
     this.logger.warn(
       "[TheForge] THEFORGE_MCP_URL vacío: MCP desactivado. Comprueba env dentro del contenedor theforge-api (env_file .env o variables del servicio en Dokploy; evita compose que fije la clave a string vacío).",
@@ -236,16 +243,45 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
 
   private get baseUrl(): string {
     const url = process.env.THEFORGE_MCP_URL?.trim();
-    return url ?? "";
+    if (url) return url;
+    return this.ariadneConfig?.url ?? "";
   }
 
+  /** Token estático Authorization Bearer. */
   private get token(): string {
     return process.env.MCP_AUTH_TOKEN?.trim() ?? "";
   }
 
   /** X-M2M-Token alternativo (AriadneSpecs); si está definido se usa en lugar de Authorization Bearer. */
   private get xM2mToken(): string {
-    return process.env.MCP_X_M2M_TOKEN?.trim() ?? "";
+    const envToken = process.env.MCP_X_M2M_TOKEN?.trim();
+    if (envToken) return envToken;
+    return this.ariadneConfig?.token ?? "";
+  }
+
+  /** Cache en memoria del config de Ariadne (refrescado cada llamada por simplicidad). */
+  private cachedAriadneConfig: { url: string; token: string } | null = null;
+
+  private get ariadneConfig(): { url: string; token: string } | null {
+    if (!this.prisma) return null;
+    // Lectura lazy — se carga bajo demanda
+    return this.cachedAriadneConfig;
+  }
+
+  /** Refresca la config desde BD */
+  private async refreshAriadneConfig(): Promise<void> {
+    try {
+      const rows = await this.prisma.appConfig.findMany({
+        where: { key: { in: ["ariadne_mcp_url", "ariadne_mcp_token"] } },
+      });
+      const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+      this.cachedAriadneConfig = {
+        url: map.ariadne_mcp_url ?? "",
+        token: map.ariadne_mcp_token ?? "",
+      };
+    } catch {
+      this.cachedAriadneConfig = null;
+    }
   }
 
   /**

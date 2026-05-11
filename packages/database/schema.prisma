@@ -192,3 +192,11 @@ enum Status {
   AMARILLO
   VERDE
 }
+
+/// Configuración global de la aplicación (clave-valor).
+/// Usada para almacenar ajustes de integración externa,
+/// ej. `ariadne_mcp_url` y `ariadne_mcp_token`.
+model AppConfig {
+  key   String @id
+  value String
+}
