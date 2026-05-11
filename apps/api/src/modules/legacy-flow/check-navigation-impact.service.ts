@@ -8,6 +8,7 @@
  */
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { ProjectsService } from "../projects/projects.service.js";
+import { TheForgeService } from "../theforge/theforge.service.js";
 
 export interface NavigationImpactResult {
   isShared: boolean;
@@ -20,7 +21,10 @@ export interface NavigationImpactResult {
 export class CheckNavigationImpactService {
   private readonly logger = new Logger(CheckNavigationImpactService.name);
 
-  constructor(private readonly projects: ProjectsService) {}
+  constructor(
+    private readonly projects: ProjectsService,
+    private readonly theforge: TheForgeService,
+  ) {}
 
   /**
    * Evalúa el impacto de modificar un componente en el navigation map.
@@ -112,28 +116,7 @@ export class CheckNavigationImpactService {
       const theforgeId = (theforgeProject as any)?.theforgeProjectId;
       if (!theforgeId) return null;
 
-      const mcpUrl = process.env.ARIADNE_MCP_URL ?? "http://ariadne-mcp:3101";
-      const response = await fetch(`${mcpUrl}/mcp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.MCP_AUTH_TOKEN ?? ""}`,
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "tools/call",
-          params: {
-            name: "generate_navigation_map",
-            arguments: { projectId: theforgeId, scope: "full" },
-          },
-          id: 1,
-        }),
-        signal: AbortSignal.timeout(30_000),
-      });
-
-      if (!response.ok) return null;
-      const data = await response.json() as any;
-      const content = data?.result?.content?.[0]?.text;
+      const content = await this.theforge.fetchNavigationMap(theforgeId);
       if (!content) return null;
 
       return this.parseNavMap(content);

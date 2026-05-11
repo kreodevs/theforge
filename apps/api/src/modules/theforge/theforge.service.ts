@@ -245,6 +245,8 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   private get baseUrl(): string {
     const url = process.env.THEFORGE_MCP_URL?.trim();
     if (url) return url;
+    const legacyUrl = process.env.ARIADNE_MCP_URL?.trim();
+    if (legacyUrl) return legacyUrl;
     return this.ariadneConfig?.url ?? "";
   }
 
@@ -404,7 +406,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   /** Llama a una herramienta MCP por nombre y argumentos; devuelve el text del result.content o null. */
-  private async callTool(toolName: string, args: Record<string, unknown>): Promise<string | null> {
+  private async callToolInternal(toolName: string, args: Record<string, unknown>): Promise<string | null> {
     if (!this.isConfigured()) return null;
     try {
       const response = await this.postTheForgeMcp({
@@ -434,6 +436,19 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       this.logger.error(`[TheForge] ${toolName} failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
+  }
+
+  /** Versión pública de callTool para servicios externos que no son TheForgeService. */
+  async callTool(toolName: string, args: Record<string, unknown>): Promise<string | null> {
+    return this.callToolInternal(toolName, args);
+  }
+
+  /** Obtiene el navigation map de un proyecto Ariadne (generate_navigation_map). */
+  async fetchNavigationMap(theforgeId: string): Promise<string | null> {
+    return this.callToolInternal("generate_navigation_map", {
+      projectId: theforgeId,
+      scope: "full",
+    });
   }
 
   /**
@@ -558,7 +573,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     if (!this.isConfigured()) return "";
     const ident = await this.resolveStoredToMcp(projectId);
     /** C4 agregado a nivel proyecto (GraphService); alinear con `ask_codebase` → `workspaceProjectId`, no solo un shard/repo. */
-    const out = await this.callTool("get_c4_model", { projectId: ident.workspaceProjectId });
+    const out = await this.callToolInternal("get_c4_model", { projectId: ident.workspaceProjectId });
     return (out ?? "").trim();
   }
 
@@ -841,7 +856,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     try {
       const ident = await this.resolveStoredToMcp(projectId);
       const args: Record<string, unknown> = { projectId: ident.graphProjectId };
-      const out = await this.callTool("extract_design_tokens", args);
+      const out = await this.callToolInternal("extract_design_tokens", args);
       return out ?? "";
     } catch (err) {
       this.logger.error(`[TheForge] extractDesignTokens failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -863,7 +878,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     const args: Record<string, unknown> = { path: path.trim(), projectId: ident.graphProjectId };
     if (ref?.trim()) args.ref = ref.trim();
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
-    const out = await this.callTool("get_file_content", args);
+    const out = await this.callToolInternal("get_file_content", args);
     return out ?? "";
   }
 
@@ -879,7 +894,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     const ident = await this.resolveStoredToMcp(projectId);
     const args: Record<string, unknown> = { nodeName: nodeName.trim(), projectId: ident.graphProjectId };
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
-    const out = await this.callTool("get_legacy_impact", args);
+    const out = await this.callToolInternal("get_legacy_impact", args);
     return out ?? "";
   }
 
@@ -892,7 +907,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     const ident = await this.resolveStoredToMcp(projectId);
     const args: Record<string, unknown> = { nodeName: nodeName.trim(), projectId: ident.graphProjectId };
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
-    const out = await this.callTool("validate_before_edit", args);
+    const out = await this.callToolInternal("validate_before_edit", args);
     return out ?? "";
   }
 
@@ -911,7 +926,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       args.projectId = ident.graphProjectId;
     }
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
-    const out = await this.callTool("get_contract_specs", args);
+    const out = await this.callToolInternal("get_contract_specs", args);
     return out ?? "";
   }
 
@@ -930,7 +945,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       args.projectId = ident.graphProjectId;
     }
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
-    const out = await this.callTool("get_implementation_details", args);
+    const out = await this.callToolInternal("get_implementation_details", args);
     return out ?? "";
   }
 
@@ -951,7 +966,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       depth: Number.isFinite(depth) ? depth : 2,
     };
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
-    const out = await this.callTool("get_component_graph", args);
+    const out = await this.callToolInternal("get_component_graph", args);
     return out ?? "";
   }
 
@@ -996,14 +1011,14 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
 
     if (repoIds.length === 1) {
       const args: Record<string, unknown> = { query: q, projectId: repoIds[0], limit: lim };
-      const out = await this.callTool("semantic_search", args);
+      const out = await this.callToolInternal("semantic_search", args);
       return out ?? "";
     }
 
     const perRepo = Math.max(4, Math.ceil(lim / repoIds.length));
     const chunks = await Promise.all(
       repoIds.map(async (rid) => {
-        const out = await this.callTool("semantic_search", { query: q, projectId: rid, limit: perRepo });
+        const out = await this.callToolInternal("semantic_search", { query: q, projectId: rid, limit: perRepo });
         const text = (out ?? "").trim();
         if (!text) return "";
         const label = this.repoLabelFromCatalog(catalog, rid);
@@ -1028,7 +1043,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       args.projectId = ident.graphProjectId;
     }
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
-    const out = await this.callTool("get_functions_in_file", args);
+    const out = await this.callToolInternal("get_functions_in_file", args);
     return out ?? "";
   }
 
@@ -1047,7 +1062,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       args.projectId = ident.graphProjectId;
     }
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
-    const out = await this.callTool("get_definitions", args);
+    const out = await this.callToolInternal("get_definitions", args);
     return out ?? "";
   }
 
@@ -1066,7 +1081,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       args.projectId = ident.graphProjectId;
     }
     if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
-    const out = await this.callTool("get_references", args);
+    const out = await this.callToolInternal("get_references", args);
     return out ?? "";
   }
 }

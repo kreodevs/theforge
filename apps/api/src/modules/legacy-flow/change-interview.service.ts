@@ -18,6 +18,7 @@ import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
+import { TheForgeService } from "../theforge/theforge.service.js";
 import {
   type ChangeScope,
   type InterviewMessage,
@@ -42,6 +43,7 @@ export class ChangeInterviewService {
     private readonly prisma: PrismaService,
     private readonly ai: AiService,
     private readonly projects: ProjectsService,
+    private readonly theforge: TheForgeService,
   ) {}
 
   /**
@@ -250,7 +252,6 @@ export class ChangeInterviewService {
 
   private async fetchNavigationMap(projectId: string): Promise<any | null> {
     try {
-      // Try to fetch from AriadneSpecs MCP (calls Ariadne ingest API)
       const theforgeProject = await this.projects.findOne(projectId);
       const theforgeId = (theforgeProject as any)?.theforgeProjectId;
 
@@ -259,37 +260,11 @@ export class ChangeInterviewService {
         return null;
       }
 
-      // Try HTTP call to Ariadne MCP server
-      const mcpUrl = process.env.ARIADNE_MCP_URL ?? "http://ariadne-mcp:3101";
-      const response = await fetch(`${mcpUrl}/mcp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.MCP_AUTH_TOKEN ?? ""}`,
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "tools/call",
-          params: {
-            name: "generate_navigation_map",
-            arguments: {
-              projectId: theforgeId,
-              scope: "full",
-            },
-          },
-          id: 1,
-        }),
-        signal: AbortSignal.timeout(30_000),
-      });
-
-      if (!response.ok) {
-        this.logger.warn(`MCP call failed: ${response.status}`);
+      const content = await this.theforge.fetchNavigationMap(theforgeId);
+      if (!content) {
+        this.logger.warn(`MCP navigation map call failed for ${theforgeId}`);
         return null;
       }
-
-      const data = await response.json() as any;
-      const content = data?.result?.content?.[0]?.text;
-      if (!content) return null;
 
       // Parse the navigation map from the MCP response
       return this.parseNavMapFromMarkdown(content);

@@ -10,6 +10,7 @@
  */
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service.js";
+import { TheForgeService } from "../theforge/theforge.service.js";
 
 export interface LegacyTransitionStatus {
   canTransition: boolean;
@@ -33,6 +34,7 @@ export class LegacyTransitionService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly theforge: TheForgeService,
   ) {}
 
   /**
@@ -65,34 +67,13 @@ export class LegacyTransitionService {
 
     // Verify the Ariadne project exists and has indexed repos
     try {
-      const mcpUrl = process.env.ARIADNE_MCP_URL ?? "http://ariadne-mcp:3101";
-      const response = await fetch(`${mcpUrl}/mcp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.MCP_AUTH_TOKEN ?? ""}`,
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "tools/call",
-          params: {
-            name: "generate_navigation_map",
-            arguments: { projectId: theforgeId, scope: "full" },
-          },
-          id: 1,
-        }),
-        signal: AbortSignal.timeout(15_000),
-      });
-
-      if (!response.ok) {
+      const content = await this.theforge.fetchNavigationMap(theforgeId);
+      if (!content) {
         return {
           canTransition: false,
           reason: "El repositorio vinculado no tiene código indexado en AriadneSpecs. Realiza un sync primero.",
         };
       }
-
-      const data = await response.json() as any;
-      const content = data?.result?.content?.[0]?.text ?? "";
       const routeCount = (content.match(/^##\s+\//gm) ?? []).length;
 
       return {
@@ -170,30 +151,6 @@ export class LegacyTransitionService {
   }
 
   private async fetchNavigationMap(theforgeId: string): Promise<string | null> {
-    try {
-      const mcpUrl = process.env.ARIADNE_MCP_URL ?? "http://ariadne-mcp:3101";
-      const response = await fetch(`${mcpUrl}/mcp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.MCP_AUTH_TOKEN ?? ""}`,
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "tools/call",
-          params: {
-            name: "generate_navigation_map",
-            arguments: { projectId: theforgeId, scope: "full" },
-          },
-          id: 1,
-        }),
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!response.ok) return null;
-      const data = await response.json() as any;
-      return data?.result?.content?.[0]?.text ?? null;
-    } catch {
-      return null;
-    }
+    return this.theforge.fetchNavigationMap(theforgeId);
   }
 }

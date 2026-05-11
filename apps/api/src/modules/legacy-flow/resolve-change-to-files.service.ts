@@ -8,6 +8,7 @@
  */
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { ProjectsService } from "../projects/projects.service.js";
+import { TheForgeService } from "../theforge/theforge.service.js";
 
 export interface ResolveChangeResult {
   suggestedFiles: string[];
@@ -33,6 +34,7 @@ export class ResolveChangeToFilesService {
 
   constructor(
     private readonly projects: ProjectsService,
+    private readonly theforge: TheForgeService,
   ) {}
 
   /**
@@ -170,33 +172,14 @@ export class ResolveChangeToFilesService {
 
     for (const file of files.slice(0, 3)) {
       try {
-        const componentName = file.split("/").pop()?.replace(/\.(tsx|ts|jsx|js)$/, "") ?? "";
+        const componentName = file.split("/").pop()?.replace(/\\.(tsx|ts|jsx|js)$/, "") ?? "";
 
-        const mcpUrl = process.env.ARIADNE_MCP_URL ?? "http://ariadne-mcp:3101";
-        const response = await fetch(`${mcpUrl}/mcp`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.MCP_AUTH_TOKEN ?? ""}`,
-          },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "tools/call",
-            params: {
-              name: "validate_before_edit",
-              arguments: { projectId: theforgeId, nodeName: componentName },
-            },
-            id: 1,
-          }),
-          signal: AbortSignal.timeout(10_000),
+        const text = await this.theforge.callTool("validate_before_edit", {
+          projectId: theforgeId,
+          nodeName: componentName,
         });
-
-        if (response.ok) {
-          const data = await response.json() as any;
-          const text = data?.result?.content?.[0]?.text ?? "";
-          if (text.includes("⚠️") || text.includes("WARNING") || text.includes("shared")) {
-            warnings.push(`${file}: ${text.slice(0, 200)}`);
-          }
+        if (text?.includes("⚠️") || text?.includes("WARNING") || text?.includes("shared")) {
+          warnings.push(`${file}: ${text.slice(0, 200)}`);
         }
       } catch {
         this.logger.warn(`SDD check failed for ${file}`);
@@ -218,28 +201,7 @@ export class ResolveChangeToFilesService {
       const theforgeId = (theforgeProject as any)?.theforgeProjectId;
       if (!theforgeId) return null;
 
-      const mcpUrl = process.env.ARIADNE_MCP_URL ?? "http://ariadne-mcp:3101";
-      const response = await fetch(`${mcpUrl}/mcp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.MCP_AUTH_TOKEN ?? ""}`,
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "tools/call",
-          params: {
-            name: "generate_navigation_map",
-            arguments: { projectId: theforgeId, scope: "full" },
-          },
-          id: 1,
-        }),
-        signal: AbortSignal.timeout(30_000),
-      });
-
-      if (!response.ok) return null;
-      const data = await response.json() as any;
-      const content = data?.result?.content?.[0]?.text;
+      const content = await this.theforge.fetchNavigationMap(theforgeId);
       if (!content) return null;
 
       return this.parseNavMap(content);
