@@ -2089,7 +2089,7 @@ export class LegacyCoordinatorService {
   }
 
   /** Mapping de tipo de documento a campo de proyecto. */
-  private static readonly DOCUMENT_TYPE_FIELD: Record<string, keyof import("@prisma/client").Prisma.ProjectUpdateInput> = {
+  private static readonly DOCUMENT_TYPE_FIELD: Record<string, string> = {
     spec: "specContent",
     architecture: "architectureContent",
     "use-cases": "useCasesContent",
@@ -2191,9 +2191,9 @@ export class LegacyCoordinatorService {
     });
 
     this.logger.log(
-      `[LegacyCoordinator] generateFromCodebase project=${projectId.slice(0, 8)}… type=${documentType} field=${field} chars=${content.length}`,
+      `[LegacyCoordinator] generateFromCodebase project=${projectId.slice(0, 8)}… type=${documentType} field=${String(field)} chars=${content.length}`,
     );
 
-    return { content, field };
+    return { content, field: String(field) };
   }
 }
