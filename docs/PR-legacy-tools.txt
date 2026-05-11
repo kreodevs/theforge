@@ -1,0 +1,27 @@
+Title: Registrar 8 nuevas tools MCP para flujo legacy (entrevista, impacto navegación, transición)
+
+Body:
+
+## Cambios
+
+Registra las 8 herramientas MCP nuevas en el servidor MCP de TheForge (`packages/mcp-server/src/index.ts`):
+
+### TOOLS[] — Schema de entrada
+- `legacy_interview_start` — Inicia entrevista conversacional (projectId, description, stageId opcional)
+- `legacy_interview_chat` — Continúa conversación (sessionId, message)
+- `legacy_interview_confirm` — Confirma ChangeScope (sessionId)
+- `legacy_interview_status` — Estado actual (sessionId)
+- `legacy_resolve_change_to_files` — Resuelve archivos a modificar (projectId, description)
+- `legacy_check_navigation_impact` — Detecta componentes compartidos entre rutas (projectId, componentPath)
+- `legacy_transition_status` — Verifica si proyecto NEW puede migrar a legacy (projectId)
+- `legacy_execute_transition` — Ejecuta transición con baseline (projectId)
+
+### handlers[] — Implementación
+Cada handler llama a los endpoints REST que ya existen en TheForge:
+- `/projects/:id/legacy/interview/*` (ChangeInterviewService)
+- `/projects/:id/legacy/resolve-change-to-files` (ResolveChangeToFilesService)
+- `/projects/:id/legacy/check-navigation-impact` (CheckNavigationImpactService)
+- `/projects/:id/legacy/transition-status` y `/execute-transition` (LegacyTransitionService)
+
+### Por qué
+Sin esto, las herramientas del nuevo flujo legacy (entrevista conversacional, detección de componentes compartidos, transición NEW→LEGACY) no eran visibles para los agentes MCP que consumen TheForge — solo existían como endpoints REST internos.

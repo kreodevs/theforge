@@ -248,18 +248,6 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     return this.ariadneConfig?.url ?? "";
   }
 
-  /** Token estático Authorization Bearer. */
-  private get token(): string {
-    return process.env.MCP_AUTH_TOKEN?.trim() ?? "";
-  }
-
-  /** X-M2M-Token alternativo (AriadneSpecs); si está definido se usa en lugar de Authorization Bearer. */
-  private get xM2mToken(): string {
-    const envToken = process.env.MCP_X_M2M_TOKEN?.trim();
-    if (envToken) return envToken;
-    return this.ariadneConfig?.token ?? "";
-  }
-
   /** Cache en memoria del config de Ariadne (refrescado cada llamada por simplicidad). */
   private cachedAriadneConfig: { url: string; token: string } | null = null;
 
