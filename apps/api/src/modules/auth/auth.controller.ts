@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
@@ -103,6 +104,19 @@ export class AuthController {
   regenerateMcpSecret() {
     const userId = getRequestUserId();
     return this.auth.regenerateMcpSecret(userId);
+  }
+
+  @Get("ariadne-config")
+  getAriadneConfig() {
+    const userId = getRequestUserId();
+    return this.auth.getAriadneConfig(userId);
+  }
+
+  @Put("ariadne-config")
+  @HttpCode(200)
+  async setAriadneConfig(@Body() body: { url?: string }) {
+    const userId = getRequestUserId();
+    return this.auth.setAriadneConfig(userId, body.url ?? "");
   }
 
   /** GET /auth/has-users — verifica si hay usuarios registrados (público). */

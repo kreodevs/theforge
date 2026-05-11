@@ -450,6 +450,25 @@ export class AuthService {
     return { mcpSecret };
   }
 
+  /** Obtiene la URL del MCP de Ariadne configurada por el usuario. */
+  async getAriadneConfig(userId: string): Promise<{ url: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { ariadneMcpUrl: true },
+    });
+    return { url: user?.ariadneMcpUrl ?? "" };
+  }
+
+  /** Guarda la URL del MCP de Ariadne para el usuario. */
+  async setAriadneConfig(userId: string, url: string): Promise<{ ok: boolean }> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { ariadneMcpUrl: url.trim() || null },
+    });
+    this.logger.log(`Ariadne MCP URL actualizada para usuario ${userId}`);
+    return { ok: true };
+  }
+
   // ─── SSO ───
 
   /**

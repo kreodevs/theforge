@@ -321,23 +321,27 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       Accept: "application/json, text/event-stream",
       "MCP-Protocol-Version": "2025-03-26",
     };
-    // Enviar mcpSecret del usuario autenticado como X-M2M-Token para que Ariadne valide contra BD
+    let resolvedUrl = this.baseUrl;
+    // Obtener URL + token del usuario autenticado (cada usuario configura su propio MCP de Ariadne)
     try {
       const userId = getRequestUserId();
       if (userId) {
         const user = await this.prisma.user.findUnique({
           where: { id: userId },
-          select: { mcpSecret: true },
+          select: { mcpSecret: true, ariadneMcpUrl: true },
         });
         if (user?.mcpSecret) {
           headers["X-M2M-Token"] = user.mcpSecret;
         }
+        if (user?.ariadneMcpUrl?.trim()) {
+          resolvedUrl = user.ariadneMcpUrl.trim();
+        }
       }
     } catch {
-      // Sin contexto de usuario (cron, background sin request) → no enviar token
+      // Sin contexto de usuario (cron, background sin request) → usar fallback global
     }
     const hasAuth = !!headers["X-M2M-Token"];
-    this.logger.log(`[TheForge] MCP POST ${this.baseUrl} | auth=${hasAuth ? "X-M2M-Token (user)" : "sin auth"}`);
+    this.logger.log(`[TheForge] MCP POST ${resolvedUrl} | auth=${hasAuth ? "X-M2M-Token (user)" : "sin auth"}`);
 
     if (this.isDebugMcp()) {
       let reqStr: string;

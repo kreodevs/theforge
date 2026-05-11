@@ -20,6 +20,9 @@ model User {
   /// Usado para autenticar peticiones del MCP server como este usuario.
   /// Generado automáticamente en el primer login OTP. Roteable desde la UI.
   mcpSecret String?   @unique
+  /// URL del MCP de Ariadne configurada por el usuario (opcional).
+  /// Usada para llamar a AriadneSpecs MCP. Si no está definida, se usa el fallback global.
+  ariadneMcpUrl String?
   projects  Project[]
   sessions  Session[]
 }
