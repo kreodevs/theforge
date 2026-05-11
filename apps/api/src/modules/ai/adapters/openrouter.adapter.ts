@@ -51,6 +51,13 @@ function historyToOpenAiMessages(history: ChatMessage[]): OpenAI.Chat.ChatComple
   });
 }
 
+function llmMaxTokens(): number {
+  const raw = process.env.LLM_MAX_TOKENS?.trim();
+  if (raw === undefined || raw === "") return 120_000;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : 120_000;
+}
+
 function openRouterDefaultHeaders(): Record<string, string> | undefined {
   const referer = process.env.OPENROUTER_HTTP_REFERER?.trim();
   const title = process.env.OPENROUTER_APP_TITLE?.trim();
@@ -116,7 +123,7 @@ export class OpenRouterAdapter implements LLMProvider {
       const completion = await this.chatClient.chat.completions.create({
         model: activeModel,
         messages,
-        max_tokens: options?.maxTokensOverride ?? 65535,
+        max_tokens: options?.maxTokensOverride ?? llmMaxTokens(),
       });
 
       const content = completion.choices[0]?.message?.content ?? "";
@@ -153,7 +160,7 @@ export class OpenRouterAdapter implements LLMProvider {
     const stream = await this.chatClient.chat.completions.create({
       model: activeModel,
       messages,
-      max_tokens: 65535,
+      max_tokens: llmMaxTokens(),
       stream: true,
     });
 

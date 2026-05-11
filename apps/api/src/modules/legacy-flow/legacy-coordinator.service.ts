@@ -275,7 +275,7 @@ function legacyDeliverablesLargeMddCooldownMs(mddChars: number): number {
  */
 function legacyDeliverablesMddMaxCharsForLlm(): number {
   const raw = process.env.LEGACY_DELIVERABLES_MDD_MAX_CHARS?.trim();
-  if (raw === undefined || raw === "") return 80_000;
+  if (raw === undefined || raw === "") return 120_000;
   const n = parseInt(raw, 10);
   if (!Number.isFinite(n) || n < 12_000) return 12_000;
   return Math.min(n, 500_000);
