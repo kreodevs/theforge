@@ -2055,6 +2055,7 @@ export class LegacyCoordinatorService {
           error: clipDebug(err instanceof Error ? err.message : String(err), 800),
         });
         markFatal(err);
+        this.logger.error(`[LegacyDeliverables] FATAL step=${kind} — ${err instanceof Error ? err.message : String(err)}${err instanceof Error && err.stack ? `\n${err.stack.slice(0, 2000)}` : ""}`);
         if (isLegacy429Like(err)) {
           report.upstreamRateLimited = true;
           report.retryAfterSeconds = readRetryAfterSecondsFromErrorHeaders(err) ?? 60;

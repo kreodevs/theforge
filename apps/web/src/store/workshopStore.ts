@@ -3018,7 +3018,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ loading: false, loadingReason: null, error: null });
       return proj != null;
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : "Error al generar entregables legacy", loading: false, loadingReason: null });
+      const msg = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
+      // Log error to console for debugging
+      console.error("[workshopStore] legacyGenerateDeliverables error:", msg, e);
+      set({ error: msg, loading: false, loadingReason: null });
       return false;
     }
   },
