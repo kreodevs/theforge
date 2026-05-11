@@ -831,9 +831,11 @@ export default function WorkshopView({
   // Legacy: si el panel activo es un documento que no tiene contenido (tab oculto), ir a Modificación o MDD
   useEffect(() => {
     if (project?.projectType !== "LEGACY") return;
+    // Nota: "ux-ui-guide" queda fuera intencionalmente — tiene botón "Generar"/"Regenerar"
+    // propio y no debe redirigir a Modificación cuando está vacío.
     const emptyLegacyPanels: DocPanel[] = [
       "spec", "architecture", "use-cases", "user-stories", "blueprint",
-      "ux-ui-guide", "api-contracts", "logic-flows", "tasks", "infra",
+      "api-contracts", "logic-flows", "tasks", "infra",
     ];
     if (!emptyLegacyPanels.includes(centralPanel as DocPanel)) return;
     const contentByPanel: Record<string, string | null> = {
@@ -842,7 +844,6 @@ export default function WorkshopView({
       "use-cases": useCasesContent ?? null,
       "user-stories": userStoriesContent ?? null,
       blueprint: blueprintContent ?? null,
-      "ux-ui-guide": uxUiGuideContent ?? null,
       "api-contracts": apiContractsContent ?? null,
       "logic-flows": logicFlowsContent ?? null,
       tasks: tasksContent ?? null,
@@ -858,7 +859,6 @@ export default function WorkshopView({
     useCasesContent,
     userStoriesContent,
     blueprintContent,
-    uxUiGuideContent,
     apiContractsContent,
     logicFlowsContent,
     tasksContent,
