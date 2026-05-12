@@ -35,6 +35,8 @@ const NO_MILITAR_INSTRUCTION =
 export interface LegacyGenerateOptions {
   /** Contexto del codebase (TheForge). Cuando está presente, se inyecta al inicio del prompt y se instruye a priorizarlo. */
   theforgeContext?: string;
+  /** Contratos de API reales obtenidos vía get_contract_specs del MCP de Ariadne. Props/firmas reales de componentes para alinear endpoints. */
+  contractSpecs?: string;
 }
 
 /** Instrucción fija para toda documentación legacy: no inventar; solo MDD + conocimiento TheForge. */
@@ -585,9 +587,10 @@ export class AiService {
     });
   }
 
-  async generateApiContracts(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
+  async generateApiContracts(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, brdContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mdd = mddContent?.trim() ?? "";
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 8000);
+    const brd = (brdContent?.trim() ?? "").slice(0, 8000);
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD). Tu salida debe adherirse a él en todo momento.\n\n";
     let prompt =
@@ -597,13 +600,21 @@ export class AiService {
         "MDD:\n---\n" +
         mdd +
         "\n---\n\n" +
-        (blueprint ? "Blueprint (esquema Prisma / estructura):\n---\n" + blueprint + "\n---" : "")
+        (blueprint ? "Blueprint (esquema Prisma / estructura):\n---\n" + blueprint + "\n---" : "") +
+        (brd ? "\n\n**BRD (requerimientos de negocio):** Los contratos de API deben satisfacer estos requerimientos.\n---\n" + brd + "\n---" : "")
         : "No hay MDD. Genera un documento de contratos API genérico (endpoints, request/response, códigos HTTP).";
     if (gapsFeedback?.trim()) {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    if (options?.contractSpecs?.trim()) {
+      const specsBlock = options.contractSpecs.trim().slice(0, 12000);
+      prompt +=
+        "\n\n**Contratos reales desde el codebase (get_contract_specs):** Usa estas firmas, props y tipos reales para alinear los endpoints del documento. No inventes tipos que contradigan esta evidencia.\n---\n" +
+        specsBlock +
+        "\n---";
+    }
     return this.generateResponse(prompt, [], {
       systemPrompt: API_CONTRACTS_PROMPT + NO_MILITAR_INSTRUCTION,
     });

@@ -1012,10 +1012,32 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     });
     if (!project) throw new NotFoundException("Project not found");
     this.assertBlueprintCoversMddDataModel(project);
+
+    // Obtener BRD de la primera etapa (si existe)
+    const mainStage = project.stages?.[0];
+    const brdContent = mainStage?.brdContent ?? undefined;
+
+    // Para proyectos legacy con Ariadne configurado, obtener contexto y contract specs
+    const p = project as { projectType?: string; theforgeProjectId?: string | null };
+    let legacyOpts: { theforgeContext?: string; contractSpecs?: string } | undefined;
+    if (p.projectType === "LEGACY" && p.theforgeProjectId && this.theforge.isConfigured()) {
+      const [theforgeContext, contractSpecs] = await Promise.all([
+        this.theforge.getContextForDeliverables(p.theforgeProjectId),
+        this.theforge.gatherContractSpecsForApi(p.theforgeProjectId),
+      ]);
+      if (theforgeContext.trim() || contractSpecs.trim()) {
+        legacyOpts = {
+          ...(theforgeContext.trim() ? { theforgeContext } : {}),
+          ...(contractSpecs.trim() ? { contractSpecs } : {}),
+        };
+      }
+    }
     const content = await this.ai.generateApiContracts(
       this.constitutionMarkdown(project),
       project.blueprintContent,
       gapsFeedback,
+      brdContent,
+      legacyOpts,
     );
     return { content: cleanDocumentContent(content) };
   }
@@ -1041,10 +1063,32 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     });
     if (!project) throw new NotFoundException("Project not found");
     this.assertBlueprintCoversMddDataModel(project);
+
+    // Obtener BRD de la primera etapa (si existe)
+    const mainStage = project.stages?.[0];
+    const brdContent = mainStage?.brdContent ?? undefined;
+
+    // Para proyectos legacy con Ariadne configurado, obtener contexto y contract specs
+    const p = project as { projectType?: string; theforgeProjectId?: string | null };
+    let legacyOpts: { theforgeContext?: string; contractSpecs?: string } | undefined;
+    if (p.projectType === "LEGACY" && p.theforgeProjectId && this.theforge.isConfigured()) {
+      const [theforgeContext, contractSpecs] = await Promise.all([
+        this.theforge.getContextForDeliverables(p.theforgeProjectId),
+        this.theforge.gatherContractSpecsForApi(p.theforgeProjectId),
+      ]);
+      if (theforgeContext.trim() || contractSpecs.trim()) {
+        legacyOpts = {
+          ...(theforgeContext.trim() ? { theforgeContext } : {}),
+          ...(contractSpecs.trim() ? { contractSpecs } : {}),
+        };
+      }
+    }
     const content = await this.ai.generateApiContracts(
       this.constitutionMarkdown(project),
       project.blueprintContent,
       gapsFeedback,
+      brdContent,
+      legacyOpts,
     );
     return this.update(projectId, { apiContractsContent: cleanDocumentContent(content) });
   }
