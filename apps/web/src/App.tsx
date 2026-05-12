@@ -315,7 +315,7 @@ export default function App() {
     if (needsSetup) {
       return <SetupView onComplete={() => setNeedsSetup(false)} />;
     }
-    return <LoginView onLoggedIn={() => setAuthed(true)} />;
+    return <LoginView onLoggedIn={() => window.location.reload()} />;
   }
 
   function logout() {
