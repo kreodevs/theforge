@@ -1644,7 +1644,10 @@ export class LegacyCoordinatorService {
     }
 
     const tTf = Date.now();
-    const theforgeContext = await this.theforge.getContextForDeliverables(theforgeId);
+    const [theforgeContext, contractSpecs] = await Promise.all([
+      this.theforge.getContextForDeliverables(theforgeId),
+      this.theforge.gatherContractSpecsForApi(theforgeId),
+    ]);
     report.theforgeContextChars = theforgeContext.length;
     pushStep({
       kind: "theforge_context",
@@ -1653,7 +1656,13 @@ export class LegacyCoordinatorService {
       outChars: theforgeContext.length,
       detail: theforgeContext.trim() ? "non_empty" : "empty_string",
     });
-    const legacyOpts = theforgeContext ? { theforgeContext } : undefined;
+    const legacyOpts: { theforgeContext?: string; contractSpecs?: string } | undefined =
+      theforgeContext.trim() || contractSpecs.trim()
+        ? {
+            ...(theforgeContext.trim() ? { theforgeContext } : {}),
+            ...(contractSpecs.trim() ? { contractSpecs } : {}),
+          }
+        : undefined;
 
     const run429 = <T>(fn: () => Promise<T>, step: string) =>
       runWithLegacy429Retries(fn, { logger: this.logger, step });
@@ -1816,7 +1825,7 @@ export class LegacyCoordinatorService {
             p = await load();
             return;
           }
-          const apiContractsContent = await this.ai.generateApiContracts(mddForLlm, bp, undefined, legacyOpts);
+          const apiContractsContent = await this.ai.generateApiContracts(mddForLlm, bp, undefined, undefined, legacyOpts);
           await update({ apiContractsContent: cleanDocumentContent(apiContractsContent) });
           p = await load();
           return;

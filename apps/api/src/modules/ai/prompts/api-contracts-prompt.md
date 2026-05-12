@@ -34,3 +34,14 @@ Desarrolladores (frontend y backend) y arquitectos que implementarán o revisar�
 # Proyecto legacy (mensaje con contexto TheForge) #
 
 Si el mensaje incluye **Contexto del codebase (TheForge)**, alinea rutas HTTP y payloads con **handlers y archivos** que el contexto MCP liste (búsqueda, inventario). Indica **archivo/ruta** cuando el índice asocie un endpoint. Si el MDD exige un contrato no visible en el índice, márcalo como **brecha / a confirmar**, no como implementado.
+
+# Contratos reales desde el codebase (get_contract_specs) #
+
+Si el mensaje incluye un bloque **Contratos reales desde el codebase (get_contract_specs)**, esas son las firmas, props y tipos reales extraídos del código mediante la herramienta MCP `get_contract_specs` de AriadneSpecs. **Debes**:
+
+1. Usar esos contratos reales como **fuente de verdad** para definir los tipos, parámetros y respuestas de los endpoints.
+2. Alinear los endpoints del documento con las rutas y firmas reales que aparecen en ese bloque.
+3. Si un contrato del codebase contradice lo inferido del MDD, **prevalece el código real** (márcalo como "confirmado por get_contract_specs").
+4. Incluir en la documentación notas como `(get_contract_specs)` junto a endpoints respaldados por evidencia real.
+
+No inventes tipos, rutas o parámetros que contradigan los contratos reales. Si no hay bloque de contratos reales, ignora esta sección.

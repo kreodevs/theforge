@@ -935,6 +935,59 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   /**
+   * Recopila contratos de API reales desde el MCP de Ariadne para la generación del documento de Contratos de API.
+   * 1. Pregunta al codebase qué controladores/componentes existen
+   * 2. Para cada uno, llama a get_contract_specs
+   * 3. Devuelve un markdown con toda la evidencia
+   */
+  async gatherContractSpecsForApi(projectId: string): Promise<string> {
+    if (!this.isConfigured()) return "";
+    try {
+      // Paso 1: Identificar componentes/controladores via ask_codebase
+      const componentList = await this.askCodebase(
+        "List ONLY the exact names of ALL controllers, route handlers, services and API-related components/functions in this project. Return each name on a separate line prefixed with '- '. Do NOT include descriptions, file paths or any other text — just the names.",
+        projectId,
+      );
+      if (!componentList?.trim()) return "";
+
+      // Extraer nombres de componentes (líneas que empiezan con "- " o simplemente nombres)
+      const lines = componentList.split("\n").map(l => l.trim()).filter(Boolean);
+      const names: string[] = [];
+      for (const line of lines) {
+        const name = line.replace(/^-\s*/, "").replace(/[^a-zA-Z0-9_]/g, "").trim();
+        if (name.length > 1 && name.length < 100) names.push(name);
+      }
+
+      // Tomar máximo 8 componentes para no abusar del MCP
+      const topNames = [...new Set(names)].slice(0, 8);
+      if (topNames.length === 0) return componentList.trim().slice(0, 4000);
+
+      // Paso 2: Obtener contract specs para cada componente
+      const parts: string[] = [];
+      for (const name of topNames) {
+        try {
+          const specs = await this.getContractSpecs(name, projectId);
+          if (specs?.trim()) {
+            parts.push(`### \`${name}\` (get_contract_specs)\n\n${specs.trim()}`);
+          }
+        } catch {
+          // Si falla para un componente, continuamos con el siguiente
+        }
+      }
+
+      if (parts.length === 0) {
+        // Fallback: devolver el listado de componentes al menos
+        return `## Componentes identificados en el codebase\n\n${componentList.trim().slice(0, 4000)}`;
+      }
+
+      return `## Contratos reales desde el codebase (get_contract_specs)\n\n${parts.join("\n\n---\n\n")}`;
+    } catch (err) {
+      this.logger.warn(`[TheForge] gatherContractSpecsForApi falló: ${err instanceof Error ? err.message : String(err)}`);
+      return "";
+    }
+  }
+
+  /**
    * Firma, tipos y endpoints asociados a un símbolo (herramienta MCP get_implementation_details).
    * Preferible a búsqueda semántica genérica cuando ya conoces el nombre del símbolo en el índice.
    */
