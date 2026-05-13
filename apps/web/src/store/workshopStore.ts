@@ -248,6 +248,8 @@ export interface Project {
   /** Inferencia / plan propuesto; no aplica a `complexity` hasta confirmación explícita. */
   complexityPending?: ComplexityPending | null;
   projectType?: "NEW" | "LEGACY";
+  /** Privado (solo owner) o compartido (todos los usuarios). */
+  visibility?: "PRIVATE" | "SHARED";
   /** Si true, el API bloquea MDD técnico hasta BRD + To-Be aprobados (configurable en el panel). */
   requireBrdTobeGate?: boolean;
   theforgeProjectId?: string | null;

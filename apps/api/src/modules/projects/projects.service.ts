@@ -47,9 +47,28 @@ function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unkn
 @Injectable()
 export class ProjectsService implements IOrchestratorProjectsPort {
 
-  /** Scope de proyecto autenticado (AsyncLocalStorage). */
+  /** Scope de proyecto autenticado (AsyncLocalStorage). Solo owner. */
   private projectWhereForUser(projectId: string) {
     return { id: projectId, userId: getRequestUserId() };
+  }
+
+  /**
+   * Verifica que el usuario tenga acceso al proyecto:
+   * - PRIVATE: solo owner
+   * - SHARED: cualquier usuario autenticado
+   * Retorna el proyecto si hay acceso, o lanza NotFoundException.
+   */
+  private async assertProjectAccess(projectId: string): Promise<Project & { stages: StageWithEst[] }> {
+    const userId = getRequestUserId();
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    const isOwner = project.userId === userId;
+    const isShared = project.visibility === "SHARED";
+    if (!isOwner && !isShared) throw new NotFoundException("Project not found");
+    return project as Project & { stages: StageWithEst[] };
   }
 
   constructor(
@@ -194,6 +213,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       data: {
         userId,
         name: parsed.name,
+        visibility: parsed.visibility ?? "PRIVATE",
         hasUxTeam: parsed.hasUxTeam ?? false,
         complexity: parsed.complexity as ComplexityLevel,
         projectType: parsed.projectType,
@@ -218,8 +238,14 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   }
 
   async findAll() {
+    const userId = getRequestUserId();
     const rows = await this.prisma.project.findMany({
-      where: { userId: getRequestUserId() },
+      where: {
+        OR: [
+          { userId },                          // mis proyectos PRIVATE
+          { visibility: "SHARED" },            // todos los SHARED
+        ],
+      },
       orderBy: { createdAt: "desc" },
       include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
@@ -227,24 +253,22 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   }
 
   async findOne(id: string) {
-    const project = await this.prisma.project.findFirst({
-      where: this.projectWhereForUser(id),
-      include: {
-        sessions: true,
-        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
-      },
+    const project = await this.assertProjectAccess(id);
+    // add sessions separately (not included in assertProjectAccess)
+    const withSessions = await this.prisma.project.findFirst({
+      where: { id },
+      include: { sessions: true },
     });
-    if (!project) throw new NotFoundException("Project not found");
-    return toApiProject(project);
+    return toApiProject({
+      ...project,
+      sessions: withSessions?.sessions ?? [],
+    });
   }
 
   async update(id: string, data: UpdateProjectDto) {
     const parsed = updateProjectSchema.partial().parse(data);
-    const existing = await this.prisma.project.findFirst({
-      where: this.projectWhereForUser(id),
-      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
-    });
-    if (!existing) throw new NotFoundException("Project not found");
+    const existing = await this.assertProjectAccess(id);
+    const existingRaw = existing as Project & { stages: StageWithEst[] };
 
     const {
       mddContent: parsedMdd,
@@ -254,12 +278,22 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       ...rest
     } = parsed;
 
+    // Settings que solo el owner puede cambiar
+    const hasSettingsChange = rest.name !== undefined || rest.visibility !== undefined ||
+      rest.complexity !== undefined || rest.hasUxTeam !== undefined ||
+      rest.projectType !== undefined || rest.theforgeProjectId !== undefined ||
+      rest.figmaMapping !== undefined || clearComplexityPending === true ||
+      cpInput !== undefined;
+    if (hasSettingsChange && existingRaw.userId !== getRequestUserId()) {
+      throw new BadRequestException("Only the project owner can change project settings");
+    }
+
     const targetStage: StageWithEst | undefined =
-      (parsedStageId?.trim() && existing.stages.find((s) => s.id === parsedStageId.trim())) ||
-      pickPrimaryStage(existing.stages);
+      (parsedStageId?.trim() && existingRaw.stages.find((s) => s.id === parsedStageId.trim())) ||
+      pickPrimaryStage(existingRaw.stages);
     if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
 
-    const mergedForSemaphore = this.mergeProjectForSemaphore(existing, rest);
+    const mergedForSemaphore = this.mergeProjectForSemaphore(existingRaw, rest);
 
     const updatePayload: Prisma.ProjectUpdateInput = {
       ...rest,

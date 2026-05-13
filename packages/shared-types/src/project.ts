@@ -18,9 +18,13 @@ export const complexityPendingSchema = z
   .strict();
 export type ComplexityPending = z.infer<typeof complexityPendingSchema>;
 
+export const VisibilityEnum = z.enum(["PRIVATE", "SHARED"]);
+export type Visibility = z.infer<typeof VisibilityEnum>;
+
 export const createProjectSchema = z
   .object({
     name: z.string().min(1),
+    visibility: VisibilityEnum.default("PRIVATE"),
     hasUxTeam: z.boolean().default(false),
     complexity: ComplexityLevelEnum.default("HIGH"),
     projectType: ProjectTypeEnum.default("NEW"),
@@ -36,6 +40,7 @@ export const createProjectSchema = z
 
 export const updateProjectSchema = z.object({
   name: z.string().min(1).optional(),
+  visibility: VisibilityEnum.optional(),
   hasUxTeam: z.boolean().optional(),
   /** Si true, el backend exige BRD + To-Be aprobados antes del MDD técnico (streams y, en legacy, generate-mdd / entregables). */
   requireBrdTobeGate: z.boolean().optional(),

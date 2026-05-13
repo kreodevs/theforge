@@ -12,6 +12,7 @@ export interface ProjectFolderTileProps {
   status: ProjectFolderStatus;
   precisionScore: number;
   projectType?: "NEW" | "LEGACY";
+  visibility?: "PRIVATE" | "SHARED";
   selected: boolean;
   selectable: boolean;
   onOpen: () => void;
@@ -97,14 +98,17 @@ export function ProjectFolderTile({
   status,
   precisionScore,
   projectType,
+  visibility,
   selected,
   selectable,
   onOpen,
   onToggleSelect,
 }: ProjectFolderTileProps) {
   const typeIsNew = (projectType ?? "NEW") === "NEW";
+  const isShared = visibility === "SHARED";
   const selectId = `select-project-${id}`;
-  const subtitle = `${precisionScore}% precisión · ${statusLabelEs[status]}`;
+  const visibilityLabel = isShared ? "Compartido" : "Privado";
+  const subtitle = `${precisionScore}% precisión · ${statusLabelEs[status]} · ${visibilityLabel}`;
 
   return (
     <article

@@ -111,11 +111,18 @@ enum EpisodicMemoryKind {
   TOOL_OUTPUT
 }
 
+enum Visibility {
+  PRIVATE
+  SHARED
+}
+
 model Project {
   id               String       @id @default(uuid())
   userId           String
   user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   name             String
+  /// Privado (solo owner) o compartido (todos los usuarios ven/editan).
+  visibility       Visibility   @default(PRIVATE)
   /// Nivel de complejidad / riesgo: gobierna semáforo y qué documentos son obligatorios (efectivo tras confirmación).
   complexity       ComplexityLevel @default(HIGH)
   /// Propuesta HITL pendiente: { level, planSummary, reason } hasta que el usuario confirme en el chat.

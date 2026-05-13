@@ -731,6 +731,7 @@ export default function App() {
                       status={p.status}
                       precisionScore={p.precisionScore}
                       projectType={p.projectType}
+                      visibility={p.visibility}
                       selected={selectedProjectIds.includes(p.id)}
                       selectable={isAdmin}
                       onOpen={() => setWorkshopProject(p)}
