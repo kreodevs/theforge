@@ -53,6 +53,7 @@ import {
   AlertDialogTitle,
   EmptyState,
 } from "./components/ui";
+import { cn } from "@/lib/utils";
 
 type Status = "ROJO" | "AMARILLO" | "VERDE";
 
