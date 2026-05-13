@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
-  Code,
   Cloud,
   CloudOff,
   FileText,
@@ -34,6 +33,7 @@ import {
   Plus,
   Globe,
   Lock,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CodebaseDocResponseMode } from "@theforge/shared-types";
@@ -121,11 +121,11 @@ function workshopDocSourceTogglePresentation(
   activeViewMode: string,
 ): { Icon: LucideIcon; tooltip: string } {
   if (centralPanel === "ux-ui-guide") {
-    if (activeViewMode === "preview") return { Icon: Code, tooltip: "Ver markdown" };
+    if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Ver markdown" };
     if (activeViewMode === "design") return { Icon: Palette, tooltip: "Ver preview diseño" };
     return { Icon: FileText, tooltip: "Ver preview visual" };
   }
-  if (activeViewMode === "preview") return { Icon: Code, tooltip: "Ver fuente" };
+  if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Ver fuente" };
   return { Icon: FileText, tooltip: "Ver previsualización" };
 }
 
@@ -2525,7 +2525,7 @@ export default function WorkshopView({
                         className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
                       >
                         {benchmarkViewMode === "preview" ? (
-                          <><Code className="w-4 h-4" /> Ver fuente</>
+                          <><Pencil className="w-4 h-4" /> Ver fuente</>
                         ) : (
                           <><FileText className="w-4 h-4" /> Ver previsualización</>
                         )}
@@ -2577,7 +2577,7 @@ export default function WorkshopView({
                         className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
                       >
                         {phase0SummaryViewMode === "preview" ? (
-                          <><Code className="w-4 h-4" /> Ver fuente</>
+                          <><Pencil className="w-4 h-4" /> Ver fuente</>
                         ) : (
                           <><FileText className="w-4 h-4" /> Ver previsualización</>
                         )}
