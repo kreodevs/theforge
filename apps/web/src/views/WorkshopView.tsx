@@ -3278,10 +3278,10 @@ export default function WorkshopView({
               (centralPanel === "brd" && !!activeStageId));
           const showFlowOrder = effectiveComplexityForTabs === "HIGH";
 
-          /** Chat tab: lift scroll FAB above composer + bottom nav so it does not cover Send. */
+          /** Chat tab: scroll FAB just above the border above the composer (nav + composer shell + tight gap). */
           const mobileScrollFabBottom =
             mobileWorkshopColumn === "chat"
-              ? "calc(3.25rem + 9.5rem + env(safe-area-inset-bottom, 0px))"
+              ? "calc(3.25rem + 6rem + env(safe-area-inset-bottom, 0px))"
               : "calc(3.25rem + 0.5rem + env(safe-area-inset-bottom, 0px))";
 
           const showDocOrFlowFabStack = showDocToggle || showFlowOrder;
