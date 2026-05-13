@@ -24,7 +24,7 @@ const MDD_AUDITOR_LABEL = "Auditor (calidad MDD)";
  * Post-procesa el markdown para asegurar que bloques JSON sueltos (sin ```json)
  * tengan code fences. Detecta líneas que inician con `{` y contienen JSON válido.
  */
-function ensureJsonCodeFences(markdown: string): string {
+export function ensureJsonCodeFences(markdown: string): string {
   // No procesar si ya está dentro de un bloque de código
   const lines = markdown.split("\n");
   const result: string[] = [];

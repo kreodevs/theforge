@@ -309,6 +309,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     if (rest.uxUiGuideContent !== undefined) {
       updatePayload.uxUiGuideContent = rest.uxUiGuideContent;
     }
+    if (rest.dbgaContent !== undefined && rest.dbgaContent !== null) {
+      const { ensureJsonCodeFences } = await import("../ai-analysis/state/state-to-markdown.js");
+      updatePayload.dbgaContent = ensureJsonCodeFences(rest.dbgaContent);
+    }
 
     const infraContentForRecalc = rest.infraContent ?? existing.infraContent ?? null;
 
