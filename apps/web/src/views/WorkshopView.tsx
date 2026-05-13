@@ -247,6 +247,23 @@ interface WorkshopViewProps {
   onBack?: () => void;
 }
 
+/** First vertically scrollable region under `root` (BFS) for mobile scroll FAB targeting. */
+function findVerticalScrollHost(root: HTMLElement | null): HTMLElement | null {
+  if (!root) return null;
+  const queue: HTMLElement[] = [root];
+  while (queue.length > 0) {
+    const el = queue.shift()!;
+    const st = getComputedStyle(el);
+    const canY = st.overflowY === "auto" || st.overflowY === "scroll";
+    if (canY && el.scrollHeight > el.clientHeight + 1) return el;
+    for (let i = 0; i < el.children.length; i++) {
+      const ch = el.children[i];
+      if (ch instanceof HTMLElement) queue.push(ch);
+    }
+  }
+  return null;
+}
+
 export default function WorkshopView({
   projectId,
   projectName,
@@ -656,33 +673,103 @@ export default function WorkshopView({
   const chatSectionRef = useRef<HTMLElement>(null);
   const metricsSectionRef = useRef<HTMLElement>(null);
   const [scrollFabDirection, setScrollFabDirection] = useState<"down" | "up">("down");
+  /** Mobile-only: show scroll FAB only when the active column has overflow (chat / docs / estado). */
+  const [mobileScrollFabScrollable, setMobileScrollFabScrollable] = useState(false);
 
   const getActiveScrollContainer = useCallback((): HTMLElement | null => {
-    if (mobileWorkshopColumn === "workspace") return workspaceScrollRef.current;
-    if (mobileWorkshopColumn === "chat") {
-      const section = chatSectionRef.current;
-      return section?.querySelector("[class*='overflow-y-auto']") as HTMLElement | null;
-    }
-    if (mobileWorkshopColumn === "metrics") return metricsSectionRef.current;
+    if (mobileWorkshopColumn === "workspace") return findVerticalScrollHost(workspaceScrollRef.current);
+    if (mobileWorkshopColumn === "chat") return findVerticalScrollHost(chatSectionRef.current);
+    if (mobileWorkshopColumn === "metrics") return findVerticalScrollHost(metricsSectionRef.current);
     return null;
   }, [mobileWorkshopColumn]);
 
   useEffect(() => {
-    const updateDirection = () => {
-      const container = getActiveScrollContainer();
-      if (!container) { setScrollFabDirection("down"); return; }
-      const atBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 20;
-      setScrollFabDirection(atBottom ? "up" : "down");
+    if (isLgLayout) {
+      setMobileScrollFabScrollable(false);
+      setScrollFabDirection("down");
+      return;
+    }
+
+    let detached = false;
+    let rafId = 0;
+    let retryTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+    let container: HTMLElement | null = null;
+    let ro: ResizeObserver | null = null;
+    let mo: MutationObserver | null = null;
+
+    const update = () => {
+      if (detached) return;
+      const c = getActiveScrollContainer();
+      if (!c) {
+        setMobileScrollFabScrollable(false);
+        setScrollFabDirection("down");
+        return;
+      }
+      const scrollable = c.scrollHeight > c.clientHeight + 1;
+      setMobileScrollFabScrollable(scrollable);
+      if (scrollable) {
+        const atBottom = c.scrollTop + c.clientHeight >= c.scrollHeight - 20;
+        setScrollFabDirection(atBottom ? "up" : "down");
+      } else {
+        setScrollFabDirection("down");
+      }
     };
 
-    updateDirection();
+    const scheduleUpdate = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(update);
+    };
 
-    const container = getActiveScrollContainer();
-    if (!container) return;
+    function cleanupContainer() {
+      window.removeEventListener("resize", scheduleUpdate);
+      if (!container) return;
+      container.removeEventListener("scroll", scheduleUpdate);
+      ro?.disconnect();
+      ro = null;
+      mo?.disconnect();
+      mo = null;
+      container = null;
+    }
 
-    container.addEventListener("scroll", updateDirection, { passive: true });
-    return () => container.removeEventListener("scroll", updateDirection);
-  }, [mobileWorkshopColumn, getActiveScrollContainer]);
+    function bindToCurrent(): boolean {
+      cleanupContainer();
+      const c = getActiveScrollContainer();
+      if (!c) {
+        setMobileScrollFabScrollable(false);
+        setScrollFabDirection("down");
+        return false;
+      }
+      container = c;
+      scheduleUpdate();
+      c.addEventListener("scroll", scheduleUpdate, { passive: true });
+      window.addEventListener("resize", scheduleUpdate, { passive: true });
+      ro = new ResizeObserver(scheduleUpdate);
+      ro.observe(c);
+      for (const ch of Array.from(c.children)) {
+        if (ch instanceof HTMLElement) ro.observe(ch);
+      }
+      mo = new MutationObserver(scheduleUpdate);
+      mo.observe(c, { childList: true, subtree: true, characterData: true });
+      return true;
+    }
+
+    function tryBind(attempt: number) {
+      if (detached) return;
+      if (bindToCurrent()) return;
+      if (attempt > 30) return;
+      if (retryTimer !== null) globalThis.clearTimeout(retryTimer);
+      retryTimer = globalThis.setTimeout(() => tryBind(attempt + 1), 50);
+    }
+
+    tryBind(0);
+
+    return () => {
+      detached = true;
+      cancelAnimationFrame(rafId);
+      if (retryTimer !== null) globalThis.clearTimeout(retryTimer);
+      cleanupContainer();
+    };
+  }, [isLgLayout, mobileWorkshopColumn, getActiveScrollContainer, centralPanel]);
 
   useEffect(() => {
     if (typeof globalThis.matchMedia !== "function") return;
@@ -3284,32 +3371,36 @@ export default function WorkshopView({
               ? "calc(3.25rem + 6rem + env(safe-area-inset-bottom, 0px))"
               : "calc(3.25rem + 0.5rem + env(safe-area-inset-bottom, 0px))";
 
-          const showDocOrFlowFabStack = showDocToggle || showFlowOrder;
+          /** Mobile: doc toggle + flow order only on Docs tab; hidden on Chat and Estado. */
+          const showDocOrFlowFabStack =
+            mobileWorkshopColumn === "workspace" && (showDocToggle || showFlowOrder);
 
           return (
             <>
-              <button
-                type="button"
-                onClick={() => {
-                  const container = getActiveScrollContainer();
-                  if (!container) return;
-                  if (scrollFabDirection === "down") {
-                    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-                  } else {
-                    container.scrollTo({ top: 0, behavior: "smooth" });
-                  }
-                }}
-                className={cn(fabVisual, "lg:hidden fixed right-4 z-20")}
-                style={{ bottom: mobileScrollFabBottom }}
-                title={scrollFabDirection === "down" ? "Ir al final" : "Ir al inicio"}
-                aria-label={scrollFabDirection === "down" ? "Ir al final del documento" : "Ir al inicio del documento"}
-              >
-                {scrollFabDirection === "down" ? (
-                  <ArrowDown className="h-5 w-5" strokeWidth={2.5} aria-hidden />
-                ) : (
-                  <ArrowUp className="h-5 w-5" strokeWidth={2.5} aria-hidden />
-                )}
-              </button>
+              {mobileScrollFabScrollable ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const container = getActiveScrollContainer();
+                    if (!container) return;
+                    if (scrollFabDirection === "down") {
+                      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+                    } else {
+                      container.scrollTo({ top: 0, behavior: "smooth" });
+                    }
+                  }}
+                  className={cn(fabVisual, "lg:hidden fixed right-4 z-20")}
+                  style={{ bottom: mobileScrollFabBottom }}
+                  title={scrollFabDirection === "down" ? "Ir al final" : "Ir al inicio"}
+                  aria-label={scrollFabDirection === "down" ? "Ir al final del documento" : "Ir al inicio del documento"}
+                >
+                  {scrollFabDirection === "down" ? (
+                    <ArrowDown className="h-5 w-5" strokeWidth={2.5} aria-hidden />
+                  ) : (
+                    <ArrowUp className="h-5 w-5" strokeWidth={2.5} aria-hidden />
+                  )}
+                </button>
+              ) : null}
 
               {showDocOrFlowFabStack ? (
                 <div className="lg:hidden pointer-events-none fixed right-4 top-1/2 z-20 flex -translate-y-1/2 flex-col items-end gap-3">
