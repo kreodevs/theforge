@@ -3284,7 +3284,9 @@ export default function WorkshopView({
               ? "calc(3.25rem + 6rem + env(safe-area-inset-bottom, 0px))"
               : "calc(3.25rem + 0.5rem + env(safe-area-inset-bottom, 0px))";
 
-          const showDocOrFlowFabStack = showDocToggle || showFlowOrder;
+          /** Mobile: doc toggle + flow order only on Docs tab; hidden on Chat and Estado. */
+          const showDocOrFlowFabStack =
+            mobileWorkshopColumn === "workspace" && (showDocToggle || showFlowOrder);
 
           return (
             <>
