@@ -32,10 +32,13 @@ import {
   Rocket,
   ChevronDown,
   Plus,
+  Globe,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CodebaseDocResponseMode } from "@theforge/shared-types";
 import { useWorkshopStore, type Status } from "../store/workshopStore";
+import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import MddViewer from "../components/MddViewer";
@@ -1146,6 +1149,42 @@ export default function WorkshopView({
                 >
                   Legacy
                 </span>
+              )}
+              {project && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const newVis = project.visibility === "SHARED" ? "PRIVATE" : "SHARED";
+                    try {
+                      const r = await apiFetch(`${API_BASE}/projects/${project.id}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ visibility: newVis }),
+                      });
+                      if (r.ok) {
+                        const data = await r.json();
+                        useWorkshopStore.getState().setProject(data);
+                      }
+                    } catch {}
+                  }}
+                  className={cn(
+                    "shrink-0 inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-medium transition-colors",
+                    project.visibility === "SHARED"
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                      : "border-zinc-500/40 bg-zinc-500/10 text-zinc-400 hover:bg-zinc-500/20",
+                  )}
+                  title={
+                    project.visibility === "SHARED"
+                      ? "Compartido — todos los usuarios pueden ver y editar. Click para hacer privado."
+                      : "Privado — solo tú puedes ver y editar. Click para compartir."
+                  }
+                >
+                  {project.visibility === "SHARED" ? (
+                    <><Globe className="h-3 w-3" aria-hidden /> Compartido</>
+                  ) : (
+                    <><Lock className="h-3 w-3" aria-hidden /> Privado</>
+                  )}
+                </button>
               )}
               <span
                 role="status"
