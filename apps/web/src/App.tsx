@@ -61,6 +61,7 @@ interface Project {
   precisionScore: number;
   hasUxTeam: boolean;
   projectType?: "NEW" | "LEGACY";
+  visibility?: "PRIVATE" | "SHARED";
   theforgeProjectId?: string | null;
   createdAt: string;
 }
