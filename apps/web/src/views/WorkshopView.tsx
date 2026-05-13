@@ -1775,12 +1775,12 @@ export default function WorkshopView({
         >
           <div className="hidden lg:flex shrink-0 flex-col gap-2.5 border-b border-[var(--border)] px-3 py-2.5 text-sm text-[var(--muted-foreground)] sm:px-4 sm:py-3">
             <TooltipProvider delayDuration={280}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start lg:items-center sm:justify-between sm:gap-3">
               <WorkshopDocToolbarHint
                 tier={effectiveComplexityForTabs as WorkshopComplexityTier}
                 isLegacyProject={isLegacyProject}
               />
-              <div className="flex flex-wrap items-center gap-1.5 shrink-0 sm:justify-end sm:gap-2 sm:pt-0.5">
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0 sm:justify-end sm:gap-2 sm:pt-0.5 lg:pt-0">
                 {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "to-be"] as const).includes(
                   centralPanel as any,
                 ) && (
