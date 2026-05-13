@@ -398,6 +398,54 @@ export class AiService {
           options.currentToBeManualContent.trim().slice(0, 8000) +
           "\n---";
       }
+      if (options?.activeTab?.trim() === "architecture" && (options as any).currentArchitectureContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual del documento Architecture del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_ARCH---.]\n---\n" +
+          (options as any).currentArchitectureContent.trim().slice(0, 12000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "use-cases" && (options as any).currentUseCasesContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual de Use Cases del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_USECASES---.]\n---\n" +
+          (options as any).currentUseCasesContent.trim().slice(0, 12000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "user-stories" && (options as any).currentUserStoriesContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual de User Stories del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_STORIES---.]\n---\n" +
+          (options as any).currentUserStoriesContent.trim().slice(0, 12000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "blueprint" && options?.currentBlueprintContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual del Blueprint del proyecto. Al actualizar, incluye todo esto más los cambios; termina con ---FIN_BLUEPRINT---.]\n---\n" +
+          options.currentBlueprintContent.trim().slice(0, 12000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "api-contracts" && (options as any).currentApiContractsContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual de API Contracts del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_API---.]\n---\n" +
+          (options as any).currentApiContractsContent.trim().slice(0, 12000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "logic-flows" && (options as any).currentLogicFlowsContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual de Logic Flows del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_FLOWS---.]\n---\n" +
+          (options as any).currentLogicFlowsContent.trim().slice(0, 12000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "tasks" && (options as any).currentTasksContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual de Tasks del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_TASKS---.]\n---\n" +
+          (options as any).currentTasksContent.trim().slice(0, 12000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "infra" && (options as any).currentInfraContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual de Infraestructura del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_INFRA---.]\n---\n" +
+          (options as any).currentInfraContent.trim().slice(0, 12000) +
+          "\n---";
+      }
       if (options?.learningHistory?.trim()) {
         systemPrompt +=
           "\n\n**HISTORIAL_DE_APRENDIZAJE (proyectos previos del usuario):**\n---\n" +

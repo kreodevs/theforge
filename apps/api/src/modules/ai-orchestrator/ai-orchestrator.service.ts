@@ -366,6 +366,13 @@ export class AiOrchestratorService {
     const currentSpec = specContentFromClient ?? (project as { specContent?: string | null }).specContent ?? undefined;
     const currentBrdStream =
       brdContentFromClient ?? stageBrdContent(project, routeStream.stageId) ?? undefined;
+    const currentArchitecture = (project as any).architectureContent ?? undefined;
+    const currentUseCases = (project as any).useCasesContent ?? undefined;
+    const currentUserStories = (project as any).userStoriesContent ?? undefined;
+    const currentApiContracts = (project as any).apiContractsContent ?? undefined;
+    const currentLogicFlows = (project as any).logicFlowsContent ?? undefined;
+    const currentTasks = (project as any).tasksContent ?? undefined;
+    const currentInfra = (project as any).infraContent ?? undefined;
     if (mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: routeStream.stageId });
     }
@@ -399,6 +406,13 @@ export class AiOrchestratorService {
       currentBlueprintContent: isUxUiGuide ? (project.blueprintContent ?? undefined) : undefined,
       currentSpecContent: activeTab?.trim() === "spec" ? currentSpec : undefined,
       currentBrdContent: activeTab?.trim() === "brd" ? currentBrdStream : undefined,
+      currentArchitectureContent: activeTab?.trim() === "architecture" ? currentArchitecture : undefined,
+      currentUseCasesContent: activeTab?.trim() === "use-cases" ? currentUseCases : undefined,
+      currentUserStoriesContent: activeTab?.trim() === "user-stories" ? currentUserStories : undefined,
+      currentApiContractsContent: activeTab?.trim() === "api-contracts" ? currentApiContracts : undefined,
+      currentLogicFlowsContent: activeTab?.trim() === "logic-flows" ? currentLogicFlows : undefined,
+      currentTasksContent: activeTab?.trim() === "tasks" ? currentTasks : undefined,
+      currentInfraContent: activeTab?.trim() === "infra" ? currentInfra : undefined,
       activeTab,
       systemPrompt: systemPromptStream,
       stageId: routeStream.stageId,
@@ -445,6 +459,15 @@ export class AiOrchestratorService {
         }
         if (msg.infraContent != null && msg.infraContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { infraContent: msg.infraContent });
+        }
+        if (msg.architectureContent != null && msg.architectureContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, { architectureContent: msg.architectureContent } as any);
+        }
+        if (msg.useCasesContent != null && msg.useCasesContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, { useCasesContent: msg.useCasesContent } as any);
+        }
+        if (msg.userStoriesContent != null && msg.userStoriesContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, { userStoriesContent: msg.userStoriesContent } as any);
         }
         const finalProject =
           updatedProject ?? (await this.projects.findOne(projectId)) ?? project;

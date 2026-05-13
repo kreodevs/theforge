@@ -157,6 +157,9 @@ export class SessionsService {
     logicFlowsContent?: string | null;
     tasksContent?: string | null;
     infraContent?: string | null;
+    architectureContent?: string | null;
+    useCasesContent?: string | null;
+    userStoriesContent?: string | null;
   }> {
     const session = await this.prisma.session.findFirst({
       where: this.sessionScope(sessionId),
@@ -223,6 +226,9 @@ export class SessionsService {
     const flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
     const tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
     const infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
+    const archSplit = this.parser.splitDocAndChat(safeResponse, "ARCH");
+    const useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
+    const storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
 
     const hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
@@ -235,6 +241,9 @@ export class SessionsService {
     const hasFlows = flowsSplit !== null;
     const hasTasks = tasksSplit !== null;
     const hasInfra = infraSplit !== null;
+    const hasArch = archSplit !== null;
+    const hasUseCases = useCasesSplit !== null;
+    const hasStories = storiesSplit !== null;
 
     let uxDocPart: string | undefined = hasUx ? uxSplit!.docPart : undefined;
     const dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
@@ -251,6 +260,9 @@ export class SessionsService {
     else if (hasFlows) rawChat = flowsSplit!.chatPart;
     else if (hasTasks) rawChat = tasksSplit!.chatPart;
     else if (hasInfra) rawChat = infraSplit!.chatPart;
+    else if (hasArch) rawChat = archSplit!.chatPart;
+    else if (hasUseCases) rawChat = useCasesSplit!.chatPart;
+    else if (hasStories) rawChat = storiesSplit!.chatPart;
 
     // Fallback: tab ux-ui-guide sin delimitador ---FIN_UX_UI--- pero respuesta con "# Guía UX/UI" → documento + opcional separador (---) + texto para chat
     const isUxTab = (options?.activeTab ?? "mdd").trim() === "ux-ui-guide";
@@ -325,6 +337,9 @@ export class SessionsService {
       logicFlowsContent: hasFlows ? this.parser.cleanDocumentContent(flowsSplit!.docPart) : undefined,
       tasksContent: hasTasks ? this.parser.cleanDocumentContent(tasksSplit!.docPart) : undefined,
       infraContent: hasInfra ? this.parser.cleanDocumentContent(infraSplit!.docPart) : undefined,
+      architectureContent: hasArch ? this.parser.cleanDocumentContent(archSplit!.docPart) : undefined,
+      useCasesContent: hasUseCases ? this.parser.cleanDocumentContent(useCasesSplit!.docPart) : undefined,
+      userStoriesContent: hasStories ? this.parser.cleanDocumentContent(storiesSplit!.docPart) : undefined,
     };
   }
 
@@ -342,6 +357,13 @@ export class SessionsService {
       currentSpecContent?: string;
       currentBrdContent?: string;
       currentToBeManualContent?: string;
+      currentArchitectureContent?: string;
+      currentUseCasesContent?: string;
+      currentUserStoriesContent?: string;
+      currentApiContractsContent?: string;
+      currentLogicFlowsContent?: string;
+      currentTasksContent?: string;
+      currentInfraContent?: string;
       activeTab?: string;
       systemPrompt?: string;
       stageId?: string;
@@ -366,6 +388,9 @@ export class SessionsService {
       logicFlowsContent?: string | null;
       tasksContent?: string | null;
       infraContent?: string | null;
+      architectureContent?: string | null;
+      useCasesContent?: string | null;
+      userStoriesContent?: string | null;
     }
   > {
     const session = await this.prisma.session.findFirst({
@@ -418,7 +443,7 @@ export class SessionsService {
       throw err;
     }
 
-    const DOC_DELIMITER_RE = /-{2,}\s*FIN_(?:MDD|UX_UI|DBGA|SPEC|BRD|TOBE|BLUEPRINT|API|FLOWS|TASKS|INFRA)\s*-{2,}/i;
+    const DOC_DELIMITER_RE = /-{2,}\s*FIN_(?:MDD|UX_UI|DBGA|SPEC|BRD|TOBE|BLUEPRINT|API|FLOWS|TASKS|INFRA|ARCH|USECASES|STORIES)\s*-{2,}/i;
     let buffer = "";
     let documentChunksDone = false;
     for await (const chunk of stream) {
@@ -459,6 +484,9 @@ export class SessionsService {
     const flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
     const tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
     const infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
+    const archSplit = this.parser.splitDocAndChat(safeResponse, "ARCH");
+    const useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
+    const storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
 
     const hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
@@ -471,6 +499,9 @@ export class SessionsService {
     const hasFlows = flowsSplit !== null;
     const hasTasks = tasksSplit !== null;
     const hasInfra = infraSplit !== null;
+    const hasArch = archSplit !== null;
+    const hasUseCases = useCasesSplit !== null;
+    const hasStories = storiesSplit !== null;
 
     let uxDocPart: string | undefined = hasUx ? uxSplit!.docPart : undefined;
     const dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
@@ -487,6 +518,9 @@ export class SessionsService {
     else if (hasFlows) rawChat = flowsSplit!.chatPart;
     else if (hasTasks) rawChat = tasksSplit!.chatPart;
     else if (hasInfra) rawChat = infraSplit!.chatPart;
+    else if (hasArch) rawChat = archSplit!.chatPart;
+    else if (hasUseCases) rawChat = useCasesSplit!.chatPart;
+    else if (hasStories) rawChat = storiesSplit!.chatPart;
 
     const isUxTab = (options?.activeTab ?? "mdd").trim() === "ux-ui-guide";
     const looksLikeUxGuide =
@@ -537,6 +571,9 @@ export class SessionsService {
       logicFlowsContent: hasFlows ? this.parser.cleanDocumentContent(flowsSplit!.docPart) : undefined,
       tasksContent: hasTasks ? this.parser.cleanDocumentContent(tasksSplit!.docPart) : undefined,
       infraContent: hasInfra ? this.parser.cleanDocumentContent(infraSplit!.docPart) : undefined,
+      architectureContent: hasArch ? this.parser.cleanDocumentContent(archSplit!.docPart) : undefined,
+      useCasesContent: hasUseCases ? this.parser.cleanDocumentContent(useCasesSplit!.docPart) : undefined,
+      userStoriesContent: hasStories ? this.parser.cleanDocumentContent(storiesSplit!.docPart) : undefined,
     };
   }
 
