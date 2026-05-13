@@ -1503,6 +1503,38 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           const sc = get().specContent ?? get().project?.specContent;
           if (sc != null && String(sc).trim()) body.specContent = sc;
         }
+        if (tab === "architecture") {
+          const ac = get().architectureContent;
+          if (ac != null && String(ac).trim()) body.architectureContent = ac;
+        }
+        if (tab === "blueprint") {
+          const bc = get().blueprintContent;
+          if (bc != null && String(bc).trim()) body.blueprintContent = bc;
+        }
+        if (tab === "use-cases") {
+          const uc = get().useCasesContent;
+          if (uc != null && String(uc).trim()) body.useCasesContent = uc;
+        }
+        if (tab === "user-stories") {
+          const us = get().userStoriesContent;
+          if (us != null && String(us).trim()) body.userStoriesContent = us;
+        }
+        if (tab === "api-contracts") {
+          const ac = get().apiContractsContent;
+          if (ac != null && String(ac).trim()) body.apiContractsContent = ac;
+        }
+        if (tab === "logic-flows") {
+          const lf = get().logicFlowsContent;
+          if (lf != null && String(lf).trim()) body.logicFlowsContent = lf;
+        }
+        if (tab === "tasks") {
+          const tc = get().tasksContent;
+          if (tc != null && String(tc).trim()) body.tasksContent = tc;
+        }
+        if (tab === "infra") {
+          const ic = get().infraContent;
+          if (ic != null && String(ic).trim()) body.infraContent = ic;
+        }
         if (images.length) body.images = images;
         const r = await apiFetch(`${API_BASE}/ai-orchestrator/chat/stream`, {
           method: "POST",
@@ -1552,6 +1584,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   uxUiGuideContent: freshUx,
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
+                  architectureContent: cleanDoc(proj?.architectureContent ?? null),
+                  useCasesContent: cleanDoc(proj?.useCasesContent ?? null),
+                  userStoriesContent: cleanDoc(proj?.userStoriesContent ?? null),
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
                   apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null),
                   logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),

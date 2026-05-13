@@ -73,6 +73,14 @@ export class AiOrchestratorController {
       dbgaContent?: string | null;
       specContent?: string | null;
       brdContent?: string | null;
+      architectureContent?: string | null;
+      blueprintContent?: string | null;
+      useCasesContent?: string | null;
+      userStoriesContent?: string | null;
+      apiContractsContent?: string | null;
+      logicFlowsContent?: string | null;
+      tasksContent?: string | null;
+      infraContent?: string | null;
       activeTab?: string;
       stageId?: string;
       images?: unknown;

@@ -14,14 +14,28 @@ export interface GenerateResponseOptions {
   currentMddContent?: string;
   currentDbgaContent?: string;
   currentUxUiGuideContent?: string;
-  /** Blueprint del proyecto; se inyecta en contexto cuando activeTab es ux-ui-guide para alinear la guía con pantallas/estructura */
+  /** Blueprint del proyecto; se inyecta en contexto para ux-ui-guide y blueprint tabs */
   currentBlueprintContent?: string;
-  /** Spec actual del proyecto; se inyecta cuando activeTab es spec para que el modelo pueda fusionar nuevas secciones */
+  /** Spec actual del proyecto; se inyecta cuando activeTab es spec */
   currentSpecContent?: string;
   /** BRD de la etapa activa (Workshop); tab `brd` */
   currentBrdContent?: string;
   /** Manual To-Be de la etapa activa; tab `to-be` */
   currentToBeManualContent?: string;
+  /** Architecture actual del proyecto; tab `architecture` */
+  currentArchitectureContent?: string;
+  /** Use Cases actuales del proyecto; tab `use-cases` */
+  currentUseCasesContent?: string;
+  /** User Stories actuales del proyecto; tab `user-stories` */
+  currentUserStoriesContent?: string;
+  /** API Contracts actual del proyecto; tab `api-contracts` */
+  currentApiContractsContent?: string;
+  /** Logic Flows actual del proyecto; tab `logic-flows` */
+  currentLogicFlowsContent?: string;
+  /** Tasks actual del proyecto; tab `tasks` */
+  currentTasksContent?: string;
+  /** Infra actual del proyecto; tab `infra` */
+  currentInfraContent?: string;
   /** Activar para que el LLM use más tokens de salida en respuestas extensas (default 65535). */
   maxTokensOverride?: number;
   /** Tab activo en el Workshop: benchmark | mdd | ux-ui-guide | blueprint | api-contracts | logic-flows | infra */
