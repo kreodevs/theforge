@@ -28,3 +28,11 @@ Antes de sintetizar, **verifica cada competidor** contra la idea del usuario:
 - Si después del filtrado de relevancia quedan pocos o ningún competidor, indica esto claramente en el Resumen ejecutivo y basa las funcionalidades en **estándares del dominio** y buenas prácticas, no en competidores irrelevantes.
 
 **Salida:** Responde en **markdown puro**. Empieza por un título (ej. `# Domain Benchmark & Gap Analysis`) y las secciones. No incluyas JSON ni texto conversacional antes o después del documento.
+
+**Importante:** Cuando incluyas bloques de código (JSON, ejemplos de configuraciones, payloads de API, etc.), **siempre usa code fences con el lenguaje especificado**: 
+- JSON → ` ```json `
+- SQL → ` ```sql `
+- YAML → ` ```yaml `
+- XML → ` ```xml `
+
+No uses indentación con espacios para bloques de código — siempre usa ``` fences. Esto es crítico para que el documento se renderice correctamente en la interfaz web.
