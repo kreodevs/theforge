@@ -112,11 +112,14 @@ export function createMddClarifierNode(llm: BaseChatModel) {
 
     try {
       const brief = getUserBrief(state);
-      const briefBlock = brief
-        ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar la sección 1. Contexto para una aplicación que cumple este objetivo; las secciones 2–7 son placeholders de una línea.\n\n---\n\n`
-        : "";
-      let prompt = `${CLARIFIER_MDD_PROMPT}${clarifierComplexityAppendix(state.mddComplexity)}\n\n---\n${briefBlock}**DBGA (entrada):**\n${state.dbgaContent}`;
       const draftTrimmed = (state.mddDraft ?? "").trim();
+      const hasSubstantialDraft = draftTrimmed.length > 500 && /##\s*2\.\s*Arquitectura/i.test(draftTrimmed);
+      const briefBlock = brief && !hasSubstantialDraft
+        ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar la sección 1. Contexto para una aplicación que cumple este objetivo; las secciones 2–7 son placeholders de una línea.\n\n---\n\n`
+        : brief && hasSubstantialDraft
+          ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Revisa y modifica el borrador existente del MDD según el objetivo. Preserva el contenido completo de todas las secciones (1-7) y solo aplica los cambios necesarios para cumplir el objetivo.\n\n---\n\n`
+          : "";
+      let prompt = `${CLARIFIER_MDD_PROMPT}${clarifierComplexityAppendix(state.mddComplexity)}\n\n---\n${briefBlock}**DBGA (entrada):**\n${state.dbgaContent}`;
       if (draftTrimmed) {
         const maxDraftLen = 14_000;
         const draftBlock =
