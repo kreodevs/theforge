@@ -13,11 +13,17 @@ body,
 #root {
   height: 100%;
   min-height: 100dvh;
-  width: 100%;
+  position: relative;
+}
+
+html {
   overflow-x: hidden;
+  width: 100%;
 }
 
 body {
+  overflow-x: hidden;
+  width: 100%;
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
