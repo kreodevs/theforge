@@ -2008,11 +2008,7 @@ export default function WorkshopView({
           </div>
           <div
             ref={workspaceScrollRef}
-            className={
-              centralPanel === "brd" || centralPanel === "to-be"
-                ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4"
-                : "flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-4"
-            }
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-4"
           >
             {canGenerateFromCodebase && (
               <div className="shrink-0 mb-3 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-3 py-2.5">
