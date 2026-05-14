@@ -123,7 +123,7 @@ const AI_COMPOSER_SHELL =
   "flex w-full min-w-0 items-end gap-2 rounded-[1.25rem] border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_92%,var(--muted))] px-2.5 py-2 shadow-sm transition-[border-color,background-color] focus-within:border-[color-mix(in_oklch,var(--primary)_30%,var(--border))] focus-within:bg-[color-mix(in_oklch,var(--card)_96%,var(--muted))] dark:bg-[color-mix(in_oklch,var(--card)_62%,var(--muted))] dark:focus-within:bg-[color-mix(in_oklch,var(--card)_72%,var(--muted))]";
 
 const AI_COMPOSER_TEXTAREA =
-  "min-h-[2.25rem] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-sm leading-6 text-[var(--foreground)] shadow-none outline-none ring-0 appearance-none break-words min-w-0 overflow-y-hidden overflow-x-hidden placeholder:text-[var(--muted-foreground)] focus:border-0 focus:shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0";
+  "min-h-[2.25rem] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-base leading-6 text-[var(--foreground)] shadow-none outline-none ring-0 appearance-none break-words min-w-0 overflow-y-hidden overflow-x-hidden placeholder:text-[var(--muted-foreground)] focus:border-0 focus:shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0";
 
 const AI_COMPOSER_ATTACH_BTN =
   "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--primary)] disabled:pointer-events-none disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-0";
