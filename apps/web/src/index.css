@@ -8,10 +8,17 @@
   border-color: var(--border);
 }
 
-html,
-body,
+html {
+  overflow-x: hidden;
+  width: 100%;
+}
+body {
+  overflow-x: hidden;
+  width: 100%;
+  position: relative;
+}
 #root {
-  height: 100%;
+  width: 100%;
   min-height: 100dvh;
 }
 
