@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
-  Code,
   Cloud,
   CloudOff,
   FileText,
@@ -34,6 +33,7 @@ import {
   Plus,
   Globe,
   Lock,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CodebaseDocResponseMode } from "@theforge/shared-types";
@@ -71,12 +71,19 @@ const WORKSHOP_HEADER_CTL =
 const WORKSHOP_HEADER_CTL_HOVER =
   "hover:bg-[color-mix(in_oklch,var(--muted)_52%,var(--card))] hover:border-[color-mix(in_oklch,var(--border)_88%,var(--foreground))]";
 
-/** Ayuda / ZIP: no default outline — hover tint only (Claude-style toolbar links). */
-const WORKSHOP_HEADER_SECONDARY =
-  "inline-flex h-11 min-h-[44px] sm:h-9 sm:min-h-0 items-center justify-center gap-1.5 rounded-lg px-2 sm:px-2.5 text-sm font-normal text-[var(--muted-foreground)] transition-[background-color,color] hover:bg-[color-mix(in_oklch,var(--muted)_55%,transparent)] hover:text-[var(--foreground)] touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-0";
+/** Workshop header: framed square icon controls (Nueva etapa, ZIP, Hermes, Ayuda). */
+const WORKSHOP_HEADER_ICON_BTN = cn(
+  WORKSHOP_HEADER_CTL,
+  WORKSHOP_HEADER_CTL_HOVER,
+  "inline-flex w-11 shrink-0 items-center justify-center p-0 sm:w-9",
+);
 
 const WORKSHOP_MDD_ACTION_PRIMARY =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color-mix(in_oklch,var(--card)_40%,var(--background))] disabled:cursor-not-allowed disabled:opacity-50";
+
+/** Preview/source toggle and flow-order: same outline chip in the doc toolbar. */
+const WORKSHOP_DOC_TOOLBAR_ICON_BTN =
+  "rounded-xl border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_65%,var(--muted))] text-[var(--foreground)] shadow-sm hover:bg-[color-mix(in_oklch,var(--muted)_45%,var(--card))] hover:text-[var(--primary)] focus-visible:ring-offset-[color-mix(in_oklch,var(--card)_40%,var(--background))]";
 
 type WorkshopComplexityTier = "LOW" | "MEDIUM" | "HIGH";
 
@@ -121,11 +128,11 @@ function workshopDocSourceTogglePresentation(
   activeViewMode: string,
 ): { Icon: LucideIcon; tooltip: string } {
   if (centralPanel === "ux-ui-guide") {
-    if (activeViewMode === "preview") return { Icon: Code, tooltip: "Ver markdown" };
+    if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Ver markdown" };
     if (activeViewMode === "design") return { Icon: Palette, tooltip: "Ver preview diseño" };
     return { Icon: FileText, tooltip: "Ver preview visual" };
   }
-  if (activeViewMode === "preview") return { Icon: Code, tooltip: "Ver fuente" };
+  if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Editar" };
   return { Icon: FileText, tooltip: "Ver previsualización" };
 }
 
@@ -163,15 +170,18 @@ function WorkshopDocToolbarHint({
 
   if (tier !== "HIGH") {
     return (
-      <p className="min-w-0 flex-1 text-xs leading-relaxed text-[var(--foreground-subtle)] sm:max-w-[min(100%,52rem)]">
+      <p
+        className="min-w-0 flex-1 text-xs leading-relaxed text-[var(--foreground-subtle)] sm:max-w-[min(100%,52rem)] lg:line-clamp-1"
+        title={fullText}
+      >
         {fullText}
       </p>
     );
   }
 
   return (
-    <div className="min-w-0 flex-1 sm:max-w-[min(100%,52rem)]">
-      <p className="text-xs font-medium leading-snug text-[var(--foreground)]">{summaryLine}</p>
+    <div className="min-w-0 flex-1 sm:max-w-[min(100%,52rem)]" title={summaryLine}>
+      <p className="text-xs font-medium leading-snug text-[var(--foreground)] lg:line-clamp-1">{summaryLine}</p>
     </div>
   );
 }
@@ -1218,9 +1228,7 @@ export default function WorkshopView({
         <div
           className={cn(
             "grid grid-cols-1 gap-3 max-sm:gap-2.5 sm:items-center sm:gap-x-4 sm:gap-y-0",
-            workshopStagesList.length > 0
-              ? "sm:grid-cols-[minmax(0,1fr)_auto_auto]"
-              : "sm:grid-cols-[minmax(0,1fr)_auto]",
+            "sm:grid-cols-[minmax(0,1fr)_auto]",
           )}
         >
           {/* Column 1 — title + sync + legacy (single baseline on desktop) */}
@@ -1298,329 +1306,269 @@ export default function WorkshopView({
             </div>
           </div>
 
-          {/* Column 2 — stage selector (never wrap Nueva etapa to a new row) */}
+          {/* Column 2 — stages + icon actions: selector, Nueva etapa, ZIP, Hermes, Ayuda (sin etapas: ZIP, Hermes, Ayuda en desktop) */}
           {workshopStagesList.length > 0 ? (
-            <div
-              className={cn(
-                "flex min-w-0 flex-nowrap items-center gap-1.5",
-                "max-sm:w-full max-sm:gap-2",
-                "sm:max-w-[min(100%,24rem)] sm:justify-self-end",
-                "overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin] sm:overflow-visible sm:pb-0",
-              )}
-            >
-              <Layers
-                className="hidden h-4 w-4 shrink-0 text-[var(--foreground-subtle)] sm:block"
-                strokeWidth={2}
-                aria-hidden
-              />
-              <label htmlFor="workshop-stage-select" className="sr-only">
-                Vista en vivo: etapa del Workshop (MDD y semáforo)
-              </label>
-              <div className="relative min-w-[12rem] max-w-[240px] flex-1 sm:min-w-[14rem] sm:flex-none">
-                <select
-                  id="workshop-stage-select"
-                  className={cn(
-                    WORKSHOP_HEADER_CTL,
-                    WORKSHOP_HEADER_CTL_HOVER,
-                    "w-full min-w-0 cursor-pointer appearance-none py-0 pl-3 pr-10 leading-10 sm:leading-9",
-                  )}
-                  value={activeStageId ?? workshopStagesList[0]?.id ?? ""}
-                  onChange={(e) => setActiveStageId(e.target.value)}
-                >
-                  {workshopStagesList.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      #{st.ordinal}{" "}
-                      {(st.name ?? st.key ?? st.id.slice(0, 8)) + ` · ${st.workflowStatus}`}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  className="pointer-events-none absolute right-3 top-1/2 z-[1] h-[1.125rem] w-[1.125rem] -translate-y-1/2 text-[color-mix(in_oklch,var(--foreground)_72%,var(--muted-foreground))]"
-                  strokeWidth={2.25}
+            <TooltipProvider delayDuration={280}>
+              <div
+                className={cn(
+                  "flex min-w-0 flex-nowrap items-center gap-1.5",
+                  "max-sm:w-full max-sm:gap-2",
+                  "sm:max-w-none sm:justify-self-end",
+                  "overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin] sm:overflow-visible sm:pb-0",
+                )}
+              >
+                <Layers
+                  className="hidden h-4 w-4 shrink-0 text-[var(--foreground-subtle)] sm:block"
+                  strokeWidth={2}
                   aria-hidden
                 />
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewStageName("");
-                  setCopyMddSourceStageId(activeStageId ?? "");
-                  setShowStageModal(true);
-                }}
-                className={cn(
-                  WORKSHOP_HEADER_CTL,
-                  WORKSHOP_HEADER_CTL_HOVER,
-                  "hidden shrink-0 whitespace-nowrap px-3 py-0 leading-10 sm:inline-flex sm:leading-9",
-                )}
-              >
-                Nueva etapa
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewStageName("");
-                  setCopyMddSourceStageId(activeStageId ?? "");
-                  setShowStageModal(true);
-                }}
-                className={cn(
-                  WORKSHOP_HEADER_CTL,
-                  WORKSHOP_HEADER_CTL_HOVER,
-                  "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl sm:hidden",
-                )}
-                title="Nueva etapa"
-                aria-label="Nueva etapa"
-              >
-                <Plus className="h-5 w-5 shrink-0" aria-hidden />
-              </button>
+                <label htmlFor="workshop-stage-select" className="sr-only">
+                  Vista en vivo: etapa del Workshop (MDD y semáforo)
+                </label>
+                <div className="relative min-w-[12rem] max-w-[240px] flex-1 sm:min-w-[14rem] sm:flex-none">
+                  <select
+                    id="workshop-stage-select"
+                    className={cn(
+                      WORKSHOP_HEADER_CTL,
+                      WORKSHOP_HEADER_CTL_HOVER,
+                      "w-full min-w-0 cursor-pointer appearance-none py-0 pl-3 pr-10 leading-10 sm:leading-9",
+                    )}
+                    value={activeStageId ?? workshopStagesList[0]?.id ?? ""}
+                    onChange={(e) => setActiveStageId(e.target.value)}
+                  >
+                    {workshopStagesList.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        #{st.ordinal}{" "}
+                        {(st.name ?? st.key ?? st.id.slice(0, 8)) + ` · ${st.workflowStatus}`}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    className="pointer-events-none absolute right-3 top-1/2 z-[1] h-[1.125rem] w-[1.125rem] -translate-y-1/2 text-[color-mix(in_oklch,var(--foreground)_72%,var(--muted-foreground))]"
+                    strokeWidth={2.25}
+                    aria-hidden
+                  />
+                </div>
 
-              {/* Mobile-only: secondary actions beside stage controls */}
-              <button
-                type="button"
-                onClick={() => setShowHelpModal(true)}
-                className={cn(
-                  WORKSHOP_HEADER_CTL,
-                  WORKSHOP_HEADER_CTL_HOVER,
-                  "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl sm:hidden",
-                )}
-                title="Manual de uso del Workshop"
-                aria-label="Ayuda — manual del Workshop"
-              >
-                <HelpCircle className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
-                  launchHermes(projectId)
-                    .then((res: { success: boolean; status: number } | undefined) => {
-                      if (res?.success) setError("✅ Proyecto enviado a Hermes Agent");
-                    })
-                    .catch((err: Error) => setError(err.message));
-                }}
-                disabled={loading || hermesConfigured === false}
-                className={cn(
-                  WORKSHOP_HEADER_CTL,
-                  WORKSHOP_HEADER_CTL_HOVER,
-                  "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl sm:hidden",
-                  hermesConfigured === false && "cursor-not-allowed opacity-60",
-                )}
-                title={
-                  hermesConfigured === null
-                    ? "Verificando configuración…"
-                    : hermesConfigured
-                      ? "Lanzar proyecto a Hermes Agent"
-                      : "Hermes no configurado"
-                }
-                aria-label={
-                  hermesConfigured === null
-                    ? "Verificando Hermes"
-                    : hermesConfigured
-                      ? "Lanzar proyecto a Hermes Agent"
-                      : "Hermes no configurado"
-                }
-              >
-                {loading && loadingReason === "launch-hermes" ? (
-                  <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
-                ) : (
-                  <Rocket className="h-5 w-5 shrink-0" aria-hidden />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const ok = await downloadDocumentsZip(
-                    {
-                      dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
-                      phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
-                      specContent: specContent ?? project?.specContent ?? null,
-                      mddContent: mddContent ?? project?.mddContent ?? "",
-                      uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
-                      blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
-                      apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
-                      logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
-                      tasksContent: tasksContent ?? project?.tasksContent ?? null,
-                      infraContent: infraContent ?? project?.infraContent ?? null,
-                      aemContent: aemContent ?? project?.aemContent ?? null,
-                    },
-                    projectName ?? project?.name ?? "Workshop",
-                  );
-                  if (ok) setError(null);
-                  else setError("No hay documentos con contenido para descargar.");
-                }}
-                className={cn(
-                  WORKSHOP_HEADER_CTL,
-                  WORKSHOP_HEADER_CTL_HOVER,
-                  "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl sm:hidden",
-                )}
-                title="Descargar todos los documentos en ZIP"
-                aria-label="Descargar todos los documentos en ZIP"
-              >
-                <Download className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
-              </button>
-            </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewStageName("");
+                        setCopyMddSourceStageId(activeStageId ?? "");
+                        setShowStageModal(true);
+                      }}
+                      className={WORKSHOP_HEADER_ICON_BTN}
+                      aria-label="Nueva etapa"
+                    >
+                      <Plus className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Nueva etapa</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await downloadDocumentsZip(
+                          {
+                            dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
+                            phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
+                            specContent: specContent ?? project?.specContent ?? null,
+                            mddContent: mddContent ?? project?.mddContent ?? "",
+                            uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
+                            blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
+                            apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
+                            logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
+                            tasksContent: tasksContent ?? project?.tasksContent ?? null,
+                            infraContent: infraContent ?? project?.infraContent ?? null,
+                            aemContent: aemContent ?? project?.aemContent ?? null,
+                          },
+                          projectName ?? project?.name ?? "Workshop",
+                        );
+                        if (ok) setError(null);
+                        else setError("No hay documentos con contenido para descargar.");
+                      }}
+                      className={WORKSHOP_HEADER_ICON_BTN}
+                      title="Descargar todos los documentos en ZIP"
+                      aria-label="Descargar todos los documentos del proyecto en ZIP"
+                    >
+                      <Download className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Descargar ZIP del proyecto</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
+                        launchHermes(projectId)
+                          .then((res: { success: boolean; status: number } | undefined) => {
+                            if (res?.success) setError("✅ Proyecto enviado a Hermes Agent");
+                          })
+                          .catch((err: Error) => setError(err.message));
+                      }}
+                      disabled={loading || hermesConfigured === false}
+                      className={cn(
+                        WORKSHOP_HEADER_ICON_BTN,
+                        hermesConfigured === false && "cursor-not-allowed opacity-60",
+                      )}
+                      title={
+                        hermesConfigured === null
+                          ? "Verificando configuración…"
+                          : hermesConfigured
+                            ? "Lanzar proyecto a Hermes Agent"
+                            : "Hermes no configurado"
+                      }
+                      aria-label={
+                        hermesConfigured === null
+                          ? "Verificando Hermes"
+                          : hermesConfigured
+                            ? "Lanzar proyecto a Hermes Agent"
+                            : "Hermes no configurado"
+                      }
+                    >
+                      {loading && loadingReason === "launch-hermes" ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                      ) : (
+                        <Rocket className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {hermesConfigured === null
+                      ? "Verificando Hermes…"
+                      : hermesConfigured
+                        ? "Lanzar proyecto a Hermes Agent"
+                        : "Hermes no configurado (HERMES_WEBHOOK_URL / HERMES_API_KEY)"}
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setShowHelpModal(true)}
+                      className={WORKSHOP_HEADER_ICON_BTN}
+                      title="Manual de uso del Workshop"
+                      aria-label="Ayuda — manual del Workshop"
+                    >
+                      <HelpCircle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Manual del Workshop</TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
           ) : (
-            /* No stages: still show secondary actions on mobile */
-            <div className="flex sm:hidden min-w-0 flex-nowrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setShowHelpModal(true)}
-                className={cn(
-                  WORKSHOP_HEADER_CTL,
-                  WORKSHOP_HEADER_CTL_HOVER,
-                  "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                )}
-                title="Manual de uso del Workshop"
-                aria-label="Ayuda — manual del Workshop"
-              >
-                <HelpCircle className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
-                  launchHermes(projectId)
-                    .then((res: { success: boolean; status: number } | undefined) => {
-                      if (res?.success) setError("✅ Proyecto enviado a Hermes Agent");
-                    })
-                    .catch((err: Error) => setError(err.message));
-                }}
-                disabled={loading || hermesConfigured === false}
-                className={cn(
-                  WORKSHOP_HEADER_CTL,
-                  WORKSHOP_HEADER_CTL_HOVER,
-                  "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                  hermesConfigured === false && "cursor-not-allowed opacity-60",
-                )}
-                title={hermesConfigured ? "Lanzar proyecto a Hermes Agent" : "Hermes no configurado"}
-                aria-label={hermesConfigured ? "Lanzar proyecto a Hermes Agent" : "Hermes no configurado"}
-              >
-                {loading && loadingReason === "launch-hermes" ? (
-                  <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
-                ) : (
-                  <Rocket className="h-5 w-5 shrink-0" aria-hidden />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const ok = await downloadDocumentsZip(
-                    {
-                      dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
-                      phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
-                      specContent: specContent ?? project?.specContent ?? null,
-                      mddContent: mddContent ?? project?.mddContent ?? "",
-                      uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
-                      blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
-                      apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
-                      logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
-                      tasksContent: tasksContent ?? project?.tasksContent ?? null,
-                      infraContent: infraContent ?? project?.infraContent ?? null,
-                      aemContent: aemContent ?? project?.aemContent ?? null,
-                    },
-                    projectName ?? project?.name ?? "Workshop",
-                  );
-                  if (ok) setError(null);
-                  else setError("No hay documentos con contenido para descargar.");
-                }}
-                className={cn(
-                  WORKSHOP_HEADER_CTL,
-                  WORKSHOP_HEADER_CTL_HOVER,
-                  "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                )}
-                title="Descargar todos los documentos en ZIP"
-                aria-label="Descargar todos los documentos en ZIP"
-              >
-                <Download className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
-              </button>
-            </div>
+            <TooltipProvider delayDuration={280}>
+              <div className="flex min-w-0 flex-nowrap items-center justify-end gap-1.5 sm:justify-self-end">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await downloadDocumentsZip(
+                          {
+                            dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
+                            phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
+                            specContent: specContent ?? project?.specContent ?? null,
+                            mddContent: mddContent ?? project?.mddContent ?? "",
+                            uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
+                            blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
+                            apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
+                            logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
+                            tasksContent: tasksContent ?? project?.tasksContent ?? null,
+                            infraContent: infraContent ?? project?.infraContent ?? null,
+                            aemContent: aemContent ?? project?.aemContent ?? null,
+                          },
+                          projectName ?? project?.name ?? "Workshop",
+                        );
+                        if (ok) setError(null);
+                        else setError("No hay documentos con contenido para descargar.");
+                      }}
+                      className={WORKSHOP_HEADER_ICON_BTN}
+                      title="Descargar todos los documentos en ZIP"
+                      aria-label="Descargar todos los documentos del proyecto en ZIP"
+                    >
+                      <Download className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Descargar ZIP del proyecto</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
+                        launchHermes(projectId)
+                          .then((res: { success: boolean; status: number } | undefined) => {
+                            if (res?.success) setError("✅ Proyecto enviado a Hermes Agent");
+                          })
+                          .catch((err: Error) => setError(err.message));
+                      }}
+                      disabled={loading || hermesConfigured === false}
+                      className={cn(
+                        WORKSHOP_HEADER_ICON_BTN,
+                        hermesConfigured === false && "cursor-not-allowed opacity-60",
+                      )}
+                      title={
+                        hermesConfigured === null
+                          ? "Verificando configuración…"
+                          : hermesConfigured
+                            ? "Lanzar proyecto a Hermes Agent"
+                            : "Hermes no configurado"
+                      }
+                      aria-label={
+                        hermesConfigured === null
+                          ? "Verificando Hermes"
+                          : hermesConfigured
+                            ? "Lanzar proyecto a Hermes Agent"
+                            : "Hermes no configurado"
+                      }
+                    >
+                      {loading && loadingReason === "launch-hermes" ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                      ) : (
+                        <Rocket className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {hermesConfigured === null
+                      ? "Verificando Hermes…"
+                      : hermesConfigured
+                        ? "Lanzar proyecto a Hermes Agent"
+                        : "Hermes no configurado"}
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setShowHelpModal(true)}
+                      className={WORKSHOP_HEADER_ICON_BTN}
+                      title="Manual de uso del Workshop"
+                      aria-label="Ayuda — manual del Workshop"
+                    >
+                      <HelpCircle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Manual del Workshop</TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
           )}
 
-          {/* Column 3 — secondary actions (desktop only, mobile actions move to stage row) */}
-          <div
-            className={cn(
-              "hidden sm:flex flex-nowrap items-center justify-end gap-1 sm:justify-self-end sm:gap-1.5",
-            )}
-          >
-            <button
-              type="button"
-              onClick={() => setShowHelpModal(true)}
-              className={cn(WORKSHOP_HEADER_SECONDARY, "max-sm:mx-auto max-sm:w-full max-sm:justify-center")}
-              title="Manual de uso del Workshop"
-              aria-label="Ayuda — manual del Workshop"
-            >
-              <HelpCircle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-              <span className="hidden sm:inline">Ayuda</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
-                launchHermes(projectId)
-                  .then((res: { success: boolean; status: number } | undefined) => {
-                    if (res?.success) setError("✅ Proyecto enviado a Hermes Agent");
-                  })
-                  .catch((err: Error) => setError(err.message));
-              }}
-              disabled={loading || hermesConfigured === false}
-              title={
-                hermesConfigured === null
-                  ? "Verificando configuración…"
-                  : hermesConfigured
-                    ? "Lanzar proyecto a Hermes Agent para desarrollo"
-                    : "Hermes no configurado — falta HERMES_WEBHOOK_URL y HERMES_API_KEY"
-              }
-              aria-label={
-                hermesConfigured === null
-                  ? "Verificando Hermes"
-                  : hermesConfigured
-                    ? "Lanzar proyecto a Hermes Agent"
-                    : "Hermes no configurado"
-              }
-              className={cn(
-                "inline-flex h-11 min-h-[44px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-sm font-medium touch-manipulation transition-colors sm:h-9 sm:min-h-0 sm:min-w-0 sm:px-3 sm:py-0",
-                "max-sm:mx-auto max-sm:min-h-11 max-sm:w-full max-sm:justify-center max-sm:px-0",
-                hermesConfigured === false
-                  ? "cursor-not-allowed border-[var(--border)] text-[var(--muted-foreground)] opacity-60"
-                  : "border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_50%,transparent)] text-[var(--foreground)] hover:border-[color-mix(in_oklch,var(--primary)_45%,var(--border))] hover:bg-[color-mix(in_oklch,var(--muted)_40%,var(--card))] hover:text-[var(--foreground)]",
-              )}
-            >
-              {loading && loadingReason === "launch-hermes" ? (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-              ) : (
-                <Rocket className="h-4 w-4 shrink-0" aria-hidden />
-              )}
-              <span className="hidden sm:inline">Lanzar</span>
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const ok = await downloadDocumentsZip(
-                  {
-                    dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
-                    phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
-                    specContent: specContent ?? project?.specContent ?? null,
-                    mddContent: mddContent ?? project?.mddContent ?? "",
-                    uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
-                    blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
-                    apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
-                    logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
-                    tasksContent: tasksContent ?? project?.tasksContent ?? null,
-                    infraContent: infraContent ?? project?.infraContent ?? null,
-                    aemContent: aemContent ?? project?.aemContent ?? null,
-                  },
-                  projectName ?? project?.name ?? "Workshop",
-                );
-                if (ok) setError(null);
-                else setError("No hay documentos con contenido para descargar.");
-              }}
-              className={cn(WORKSHOP_HEADER_SECONDARY, "max-sm:mx-auto max-sm:w-full max-sm:justify-center")}
-              title="Descargar todos los documentos del proyecto en un ZIP"
-              aria-label="Descargar todos los documentos del proyecto en ZIP"
-            >
-              <Download className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-              <span className="hidden sm:inline">Descargar ZIP</span>
-            </button>
-          </div>
         </div>
 
         {project?.projectType === "LEGACY" && project?.theforgeProjectId?.trim() ? (
@@ -1773,14 +1721,14 @@ export default function WorkshopView({
               : "hidden lg:flex lg:h-full lg:min-h-0 lg:flex-col",
           )}
         >
-          <div className="hidden lg:flex shrink-0 flex-col gap-2.5 border-b border-[var(--border)] px-3 py-2.5 text-sm text-[var(--muted-foreground)] sm:px-4 sm:py-3">
+          <div className="hidden shrink-0 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_45%,var(--background))] px-3 py-2.5 text-sm text-[var(--muted-foreground)] sm:px-4 sm:py-3 lg:flex lg:h-16 lg:min-h-16 lg:max-h-16 lg:items-center lg:overflow-hidden lg:py-0 lg:pl-4 lg:pr-4">
             <TooltipProvider delayDuration={280}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+            <div className="flex min-h-0 w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3 lg:flex-nowrap lg:items-center">
               <WorkshopDocToolbarHint
                 tier={effectiveComplexityForTabs as WorkshopComplexityTier}
                 isLegacyProject={isLegacyProject}
               />
-              <div className="flex flex-wrap items-center gap-1.5 shrink-0 sm:justify-end sm:gap-2 sm:pt-0.5">
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0 sm:justify-end sm:gap-2 sm:pt-0.5 lg:flex-nowrap lg:pt-0">
                 {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "to-be"] as const).includes(
                   centralPanel as any,
                 ) && (
@@ -1824,9 +1772,9 @@ export default function WorkshopView({
                         <TooltipTrigger asChild>
                           <Button
                         type="button"
-                        variant="ghost"
+                        variant="outline"
                         size="icon"
-                        className="h-11 w-11 shrink-0 rounded-xl text-[var(--muted-foreground)] hover:bg-[color-mix(in_oklch,var(--muted)_52%,var(--card))] hover:text-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color-mix(in_oklch,var(--card)_40%,var(--background))] sm:h-9 sm:w-9"
+                        className={WORKSHOP_DOC_TOOLBAR_ICON_BTN}
                         aria-label={docToggleTooltip}
                         onClick={() => {
                           if (centralPanel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
@@ -1845,7 +1793,7 @@ export default function WorkshopView({
                           // to-be tab removed
                         }}
                           >
-                            <DocToggleIcon className="h-4 w-4 shrink-0" aria-hidden />
+                            <DocToggleIcon className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="bottom" align="end" className="max-w-[14rem]">
@@ -1862,7 +1810,7 @@ export default function WorkshopView({
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="h-11 w-11 shrink-0 rounded-xl border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_65%,var(--muted))] text-[var(--foreground)] shadow-sm hover:bg-[color-mix(in_oklch,var(--muted)_45%,var(--card))] hover:text-[var(--primary)] sm:h-9 sm:w-9"
+                        className={WORKSHOP_DOC_TOOLBAR_ICON_BTN}
                         aria-label="Ver orden completo de flujo"
                         onClick={() => setFlowOrderModalOpen(true)}
                       >
@@ -2062,8 +2010,8 @@ export default function WorkshopView({
             ref={workspaceScrollRef}
             className={
               centralPanel === "brd" || centralPanel === "to-be"
-                ? "flex-1 overflow-hidden p-4 min-h-0 flex flex-col min-w-0"
-                : "flex-1 overflow-auto p-4 min-h-0 flex flex-col min-w-0"
+                ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4"
+                : "flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-4"
             }
           >
             {canGenerateFromCodebase && (
@@ -2525,7 +2473,7 @@ export default function WorkshopView({
                         className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
                       >
                         {benchmarkViewMode === "preview" ? (
-                          <><Code className="w-4 h-4" /> Ver fuente</>
+                          <><Pencil className="w-4 h-4" /> Editar</>
                         ) : (
                           <><FileText className="w-4 h-4" /> Ver previsualización</>
                         )}
@@ -2577,7 +2525,7 @@ export default function WorkshopView({
                         className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
                       >
                         {phase0SummaryViewMode === "preview" ? (
-                          <><Code className="w-4 h-4" /> Ver fuente</>
+                          <><Pencil className="w-4 h-4" /> Editar</>
                         ) : (
                           <><FileText className="w-4 h-4" /> Ver previsualización</>
                         )}
