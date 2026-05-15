@@ -292,11 +292,18 @@ export class SessionsService {
       let chatParts: string[] = [];
 
       if (docStartMatch) {
+        // Has # Guía UX/UI heading — doc starts there
         docSection = docStartIdx > 0 ? trimmed.slice(docStartIdx) : trimmed;
         if (hasIntro) chatParts.push(trimmed.slice(0, docStartIdx).trim());
       } else if (yamlStartMatch) {
-        // YAML frontmatter: doc starts at ---
-        docSection = trimmed;
+        // YAML frontmatter: skip the closing --- before looking for separator
+        const yamlEndMatch = trimmed.slice(3).match(/\n---\s*\n/);
+        if (yamlEndMatch && yamlEndMatch.index != null) {
+          const yamlEnd = yamlEndMatch.index + 4; // +4 for \n---\n after the first ---
+          docSection = trimmed.slice(yamlEnd).trim();
+        } else {
+          docSection = trimmed.slice(3); // no closing ---, just skip opening
+        }
       } else if (yamlInlineStart) {
         // YAML sin --- al inicio: probablemente todo el response es el documento
         docSection = trimmed;
@@ -304,6 +311,8 @@ export class SessionsService {
         docSection = trimmed;
       }
 
+      // Buscar separador (---, ___, ***) para dividir documento de chat
+      // NOTA: si docSection empezó como YAML, ya saltamos el --- de cierre del frontmatter
       const hrMatch = docSection.match(/\n\s*[-*_]{3,}\s*\n/);
       if (hrMatch && hrMatch.index != null) {
         uxDocPart = docSection.slice(0, hrMatch.index).trim();
@@ -575,10 +584,18 @@ export class SessionsService {
       let chatParts: string[] = [];
 
       if (docStartMatch) {
+        // Has # Guía UX/UI heading — doc starts there
         docSection = docStartIdx > 0 ? trimmed.slice(docStartIdx) : trimmed;
         if (hasIntro) chatParts.push(trimmed.slice(0, docStartIdx).trim());
       } else if (yamlStartMatch) {
-        docSection = trimmed;
+        // YAML frontmatter: skip the closing --- before looking for separator
+        const yamlEndMatch = trimmed.slice(3).match(/\n---\s*\n/);
+        if (yamlEndMatch && yamlEndMatch.index != null) {
+          const yamlEnd = yamlEndMatch.index + 4;
+          docSection = trimmed.slice(yamlEnd).trim();
+        } else {
+          docSection = trimmed.slice(3);
+        }
       } else if (yamlInlineStart) {
         docSection = trimmed;
       } else {
