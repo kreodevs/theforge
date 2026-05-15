@@ -1,6 +1,9 @@
 # Build stage — context = packages/mcp-server
 FROM node:20-alpine AS builder
 
+ARG BUILD_CACHE_BUST
+RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
+
 WORKDIR /app
 
 # Copy only what we need
