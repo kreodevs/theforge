@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useMemo, type PointerEvent as
 import {
   Cloud,
   CloudOff,
+  AlertTriangle,
   FileText,
   Package,
   LayoutTemplate,
@@ -1538,14 +1539,33 @@ export default function WorkshopView({
               <span
                 role="status"
                 aria-live="polite"
-                aria-label={synced ? "Sincronizado con el servidor" : "Sincronizando con el servidor"}
+                aria-label={
+                  error
+                    ? `Error de sincronización: ${error}`
+                    : synced
+                      ? "Sincronizado con el servidor"
+                      : "Sincronizando con el servidor"
+                }
                 className={cn(
                   "flex shrink-0 items-center gap-1.5 text-xs text-[var(--foreground-subtle)]",
                   "max-sm:rounded-full max-sm:border max-sm:border-[color-mix(in_oklch,var(--border)_80%,transparent)] max-sm:bg-[color-mix(in_oklch,var(--card)_40%,transparent)] max-sm:px-2 max-sm:py-1",
                 )}
-                title={synced ? "Sincronizado" : "Sincronizando"}
+                title={
+                  error
+                    ? `Sin conexión — toca para reintentar`
+                    : synced
+                      ? "Sincronizado"
+                      : "Sincronizando"
+                }
+                onClick={error ? () => { setError(null); apiFetch(`${API_BASE}/projects/${projectId ?? ""}`).catch(() => {}); } : undefined}
+                style={error ? { cursor: "pointer" } : undefined}
               >
-                {synced ? (
+                {error ? (
+                  <>
+                    <AlertTriangle className="h-3.5 w-3.5 text-[var(--warning)]" aria-hidden />
+                    <span className="hidden sm:inline">Sin conexión</span>
+                  </>
+                ) : synced ? (
                   <>
                     <Cloud className="h-3.5 w-3.5 text-[var(--success)]" aria-hidden />
                     <span className="hidden sm:inline">Sincronizado</span>

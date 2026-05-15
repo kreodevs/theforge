@@ -76,3 +76,87 @@ export async function apiFetch(
   }
   return r;
 }
+
+/**
+ * Fetch con reintentos automáticos ante NetworkError o 5xx.
+ * Backoff exponencial: 1s → 2s → 4s (con jitter ±500ms).
+ * @param maxRetries  Número de reintentos (default 3 → hasta 4 intentos totales)
+ */
+export async function fetchWithRetry(
+  input: string | URL,
+  init?: RequestInit,
+  maxRetries = 3,
+): Promise<Response> {
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const r = await apiFetch(input, init);
+      if (r.status < 500 || attempt === maxRetries) return r;
+      lastErr = new Error(`Error del servidor (HTTP ${r.status})`);
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      if (attempt === maxRetries) throw lastErr;
+    }
+    const delay = Math.min(1000 * Math.pow(2, attempt), 8000) + Math.random() * 500;
+    await new Promise((r) => setTimeout(r, delay));
+  }
+  throw lastErr ?? new Error("fetchWithRetry: error desconocido");
+}
+
+/* ── Cola offline para persistencia local ────────────────────────────── */
+
+const OFFLINE_QUEUE_KEY = "theforge_offline_queue";
+
+export interface OfflineEntry {
+  field: string;
+  content: string;
+  projectId: string;
+  timestamp: number;
+}
+
+export function getOfflineQueue(): OfflineEntry[] {
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    return raw ? (JSON.parse(raw) as OfflineEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addToOfflineQueue(entry: OfflineEntry): void {
+  const queue = getOfflineQueue();
+  // Reemplazar entrada previa del mismo field (solo la última versión)
+  const filtered = queue.filter((e) => e.field !== entry.field);
+  filtered.push(entry);
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(filtered));
+}
+
+export function removeFromOfflineQueue(field: string): void {
+  const queue = getOfflineQueue();
+  const filtered = queue.filter((e) => e.field !== field);
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(filtered));
+}
+
+/** Reintenta enviar todos los items pendientes. Retorna cuántos se pudieron sincronizar. */
+export async function flushOfflineQueue(): Promise<number> {
+  const queue = getOfflineQueue();
+  if (queue.length === 0) return 0;
+  let synced = 0;
+  for (const entry of queue) {
+    try {
+      const r = await fetchWithRetry(`${API_BASE}/projects/${entry.projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [entry.field]: entry.content }),
+      });
+      if (r.ok) {
+        removeFromOfflineQueue(entry.field);
+        synced++;
+      }
+    } catch {
+      // No se pudo sincronizar ahora, se reintentará después
+      break;
+    }
+  }
+  return synced;
+}

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ChatImagePart, CodebaseDocResponseMode } from "@theforge/shared-types";
-import { apiFetch, API_BASE } from "../utils/apiClient";
+import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue } from "../utils/apiClient";
+import { parseErrorMessageFromResponse } from "../utils/httpError";
 
 function pickEvaluatorCritique(data: Record<string, unknown>): string | null {
   const c = data.evaluatorCritique;
@@ -61,6 +62,51 @@ const cleanDoc = (text: string | null) => {
 
   return c || null;
 };
+
+/**
+ * Helper para persist*Content: aplica retry, offline queue y setea error en el store.
+ * Reemplaza el patrón repetitivo de 13 persist functions.
+ */
+async function persistField(
+  fieldName: string,
+  content: string | null,
+  getState: () => WorkshopState,
+  setState: (partial: Partial<WorkshopState>) => void,
+): Promise<void> {
+  const { projectId, project } = getState();
+  if (!projectId || !project) return;
+  if (content === ((project as unknown as Record<string, unknown>)[fieldName] ?? "")) return;
+
+  const cleaned = cleanDoc(content) || content || "";
+  setState({ synced: false, error: null });
+
+  try {
+    const r = await fetchWithRetry(`${API_BASE}/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [fieldName]: cleaned }),
+    });
+    if (r.ok) {
+      const data = (await r.json()) as unknown;
+      setState({
+        project: data as Project,
+        [fieldName]: cleanDoc(((data as Record<string, unknown>)[fieldName] as string) ?? cleaned),
+        synced: true,
+        error: null,
+      } as Partial<WorkshopState>);
+      // Flush offline queue oportunistically
+      flushOfflineQueue().catch(() => {});
+    } else {
+      const errText = await parseErrorMessageFromResponse(r, "Error al guardar");
+      addToOfflineQueue({ field: fieldName, content: cleaned, projectId, timestamp: Date.now() });
+      setState({ synced: true, error: `Error: ${errText}. Cambio guardado localmente.` });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    addToOfflineQueue({ field: fieldName, content: cleaned, projectId, timestamp: Date.now() });
+    setState({ synced: true, error: `Sin conexión: ${msg}. Cambio guardado localmente.` });
+  }
+}
 
 export type Status = "ROJO" | "AMARILLO" | "VERDE";
 
@@ -1702,49 +1748,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   setUxUiGuideContent: (content) => set({ uxUiGuideContent: content }),
   persistUxUiGuideContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.uxUiGuideContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uxUiGuideContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, uxUiGuideContent: cleanDoc(data.uxUiGuideContent ?? cleanPath), synced: true });
-      } else {
-        set({ synced: true });
-      }
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("uxUiGuideContent", content, get, set);
   },
 
   setBlueprintContent: (content) => set({ blueprintContent: content }),
 
   persistBlueprintContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.blueprintContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blueprintContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, blueprintContent: cleanDoc(data.blueprintContent ?? cleanPath), synced: true });
-      } else {
-        set({ synced: true });
-      }
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("blueprintContent", content, get, set);
   },
 
   generateBlueprint: async (projectId, options) => {
@@ -1786,25 +1796,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   setApiContractsContent: (content) => set({ apiContractsContent: content }),
   persistApiContractsContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.apiContractsContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiContractsContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, apiContractsContent: cleanDoc(data.apiContractsContent ?? cleanPath), synced: true });
-      } else {
-        set({ synced: true });
-      }
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("apiContractsContent", content, get, set);
   },
   generateApiContracts: async (projectId, options) => {
     if (!projectId?.trim()) return null;
@@ -1860,25 +1852,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   setLogicFlowsContent: (content) => set({ logicFlowsContent: content }),
   persistLogicFlowsContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.logicFlowsContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ logicFlowsContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, logicFlowsContent: cleanDoc(data.logicFlowsContent ?? cleanPath), synced: true });
-      } else {
-        set({ synced: true });
-      }
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("logicFlowsContent", content, get, set);
   },
   generateLogicFlows: async (projectId, options) => {
     if (!projectId?.trim()) return null;
@@ -1913,25 +1887,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   setInfraContent: (content) => set({ infraContent: content }),
   persistInfraContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.infraContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ infraContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, infraContent: cleanDoc(data.infraContent ?? cleanPath), synced: true });
-      } else {
-        set({ synced: true });
-      }
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("infraContent", content, get, set);
   },
   generateInfra: async (projectId, options) => {
     if (!projectId?.trim()) return null;
@@ -1968,25 +1924,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   setArchitectureContent: (content) => set({ architectureContent: content }),
   persistArchitectureContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.architectureContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ architectureContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, architectureContent: cleanDoc(data.architectureContent ?? cleanPath), synced: true });
-      } else {
-        set({ synced: true });
-      }
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("architectureContent", content, get, set);
   },
   generateArchitecture: async (projectId, options) => {
     console.log("Store: generateArchitecture start", projectId);
@@ -2024,25 +1962,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   setUseCasesContent: (content) => set({ useCasesContent: content }),
   persistUseCasesContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.useCasesContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ useCasesContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, useCasesContent: cleanDoc(data.useCasesContent ?? cleanPath), synced: true });
-      } else {
-        set({ synced: true });
-      }
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("useCasesContent", content, get, set);
   },
   generateUseCases: async (projectId, options) => {
     if (!projectId?.trim()) return null;
@@ -2077,25 +1997,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   setUserStoriesContent: (content) => set({ userStoriesContent: content }),
   persistUserStoriesContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.userStoriesContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userStoriesContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, userStoriesContent: cleanDoc(data.userStoriesContent ?? cleanPath), synced: true });
-      } else {
-        set({ synced: true });
-      }
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("userStoriesContent", content, get, set);
   },
   generateUserStories: async (projectId, options) => {
     if (!projectId?.trim()) return null;
@@ -2130,43 +2032,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   setSpecContent: (content) => set({ specContent: content }),
   persistSpecContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.specContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ specContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, specContent: cleanDoc(data.specContent ?? cleanPath), synced: true });
-      } else set({ synced: true });
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("specContent", content, get, set);
   },
   setAemContent: (content) => set({ aemContent: content }),
   persistAemContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.aemContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ aemContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, aemContent: cleanDoc(data.aemContent ?? cleanPath), synced: true });
-      } else set({ synced: true });
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("aemContent", content, get, set);
   },
   generateSpec: async (projectId) => {
     if (!projectId?.trim()) return null;
@@ -2194,23 +2064,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   },
   setTasksContent: (content) => set({ tasksContent: content }),
   persistTasksContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.tasksContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const cleanPath = cleanDoc(content) || content;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tasksContent: cleanPath }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, tasksContent: cleanDoc(data.tasksContent ?? cleanPath), synced: true });
-      } else set({ synced: true });
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("tasksContent", content, get, set);
   },
   generateTasks: async (projectId) => {
     if (!projectId?.trim()) return null;
@@ -2412,24 +2266,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setDbgaContent: (content) => set({ dbgaContent: content }),
 
   persistDbgaContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.dbgaContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dbgaContent: content }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, dbgaContent: data.dbgaContent ?? content, synced: true });
-      } else {
-        set({ synced: true });
-      }
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("dbgaContent", content, get, set);
   },
 
   setAgentProgress: (progress) => set({ agentProgress: progress }),
@@ -2631,24 +2468,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setPhase0SummaryContent: (content) => set({ phase0SummaryContent: content }),
 
   persistPhase0SummaryContent: async (content) => {
-    const { projectId, project } = get();
-    if (!projectId || !project || content === (project.phase0SummaryContent ?? "")) return;
-    set({ synced: false });
-    try {
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phase0SummaryContent: content }),
-      });
-      if (r.ok) {
-        const data: Project = await r.json();
-        set({ project: data, phase0SummaryContent: data.phase0SummaryContent ?? content, synced: true });
-      } else {
-        set({ synced: true });
-      }
-    } catch {
-      set({ synced: true });
-    }
+    await persistField("phase0SummaryContent", content, get, set);
   },
 
   phase0DeepResearch: async (projectId, opts) => {
