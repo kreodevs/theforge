@@ -16,6 +16,10 @@
           else document.documentElement.classList.remove("dark");
         } catch (e) {}
       })();
+      // Safari iOS bfcache: recarga si la página venía de caché en memoria
+      window.addEventListener("pageshow", function (e) {
+        if (e.persisted) window.location.reload();
+      });
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
