@@ -639,6 +639,7 @@ export default function WorkshopView({
       const decoder = new TextDecoder();
       let buffer = "";
       let result = "";
+      let streamError: string | null = null;
       if (!reader) throw new Error("No reader");
       while (true) {
         const { done, value } = await reader.read();
@@ -647,16 +648,27 @@ export default function WorkshopView({
         const parts = buffer.split("\n\n");
         buffer = parts.pop() ?? "";
         for (const block of parts) {
+          const lines = block.split("\n");
+          let eventType = "";
           let dataStr = "";
-          for (const line of block.split("\n")) {
+          for (const line of lines) {
+            if (line.startsWith("event:")) eventType = line.slice(6).trim();
             if (line.startsWith("data:")) dataStr = line.slice(5).trim();
           }
           if (!dataStr) continue;
           try {
             const data = JSON.parse(dataStr) as Record<string, unknown>;
-            if (data.content) result += data.content;
+            if (eventType === "error" && data.error) {
+              streamError = String(data.error);
+            } else if (data.content) {
+              result += data.content;
+            }
           } catch { /* ignore */ }
         }
+      }
+
+      if (streamError) {
+        throw new Error(streamError);
       }
 
       const trimmed = result.trim();
@@ -686,9 +698,11 @@ export default function WorkshopView({
     } catch (e) {
       setUxGenerating(false);
       setUxGenProgress(null);
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Error al generar guía UX/UI: ${msg}`);
       console.error("Error generating UX guide:", e);
     }
-  }, [projectId, project, effectiveMddTrimmed, blueprintContent, specContent, setUxUiGuideContent, persistUxUiGuideContent]);
+  }, [projectId, project, effectiveMddTrimmed, blueprintContent, specContent, setUxUiGuideContent, persistUxUiGuideContent, setError]);
 
   const persistArchitectureContent = useWorkshopStore((s) => s.persistArchitectureContent);
   const persistUseCasesContent = useWorkshopStore((s) => s.persistUseCasesContent);
