@@ -45,7 +45,7 @@ import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import MddViewer from "../components/MddViewer";
-import { DesignMdPreview, extractDesignMdFrontMatter, fillDesignMdDefaults, tokensToYamlFrontMatter } from "../components/DesignMdPreview";
+import { DesignMdPreview, replaceYamlFrontMatter } from "../components/DesignMdPreview";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
 import { WorkshopMetricsColumnInner } from "./WorkshopMetricsColumnInner";
 import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
@@ -667,26 +667,12 @@ export default function WorkshopView({
         .trim();
 
       if (!cleaned || !cleaned.startsWith("---")) {
-        // If the orchestrator didn't return YAML front matter, extract tokens
-        // from the markdown, fill defaults, and prepend YAML
+        // If the orchestrator didn't return YAML front matter, generate it
+        // from the markdown body (extract tokens, fill defaults, prepend YAML)
         try {
-          const tokens = extractDesignMdFrontMatter(cleaned || result);
-          if (tokens) {
-            const filled = fillDesignMdDefaults(tokens);
-            if (filled) {
-              filled.name = filled.name || projectName;
-              const yamlStr = tokensToYamlFrontMatter(filled);
-              const finalContent = yamlStr + "\n\n" + (cleaned || result);
-              setUxUiGuideContent(finalContent);
-              await persistUxUiGuideContent(finalContent);
-            } else {
-              setUxUiGuideContent(cleaned || result);
-              await persistUxUiGuideContent(cleaned || result);
-            }
-          } else {
-            setUxUiGuideContent(cleaned || result);
-            await persistUxUiGuideContent(cleaned || result);
-          }
+          const finalContent = replaceYamlFrontMatter(cleaned || result, projectName);
+          setUxUiGuideContent(finalContent);
+          await persistUxUiGuideContent(finalContent);
         } catch {
           setUxUiGuideContent(cleaned || result);
           await persistUxUiGuideContent(cleaned || result);
@@ -1366,9 +1352,13 @@ export default function WorkshopView({
 
   useEffect(() => {
     if (!projectId || !project || (uxUiGuideContent ?? "") === (project.uxUiGuideContent ?? "")) return;
-    const t = setTimeout(() => persistUxUiGuideContent(uxUiGuideContent ?? ""), 1500);
+    const t = setTimeout(() => {
+      const content = replaceYamlFrontMatter(uxUiGuideContent ?? "", projectName);
+      if (content !== (uxUiGuideContent ?? "")) setUxUiGuideContent(content);
+      persistUxUiGuideContent(content);
+    }, 1500);
     return () => clearTimeout(t);
-  }, [uxUiGuideContent, projectId, project?.uxUiGuideContent, project, persistUxUiGuideContent]);
+  }, [uxUiGuideContent, projectId, project?.uxUiGuideContent, project, persistUxUiGuideContent, projectName]);
 
   const handleSpecBlur = useCallback(() => {
     if ((specContent ?? "") !== (project?.specContent ?? "")) {
@@ -1477,8 +1467,12 @@ export default function WorkshopView({
   }, [dbgaContent, persistDbgaContent]);
 
   const handleUxUiGuideBlur = useCallback(() => {
-    if (uxUiGuideContent != null) persistUxUiGuideContent(uxUiGuideContent);
-  }, [uxUiGuideContent, persistUxUiGuideContent]);
+    if (uxUiGuideContent != null) {
+      const content = replaceYamlFrontMatter(uxUiGuideContent, projectName);
+      if (content !== uxUiGuideContent) setUxUiGuideContent(content);
+      persistUxUiGuideContent(content);
+    }
+  }, [uxUiGuideContent, persistUxUiGuideContent, projectName]);
 
   const handleArchitectureBlur = useCallback(() => {
     if (architectureContent != null) persistArchitectureContent(architectureContent);
@@ -3459,7 +3453,11 @@ export default function WorkshopView({
                     ) : (
                       <div className="flex min-h-0 flex-1 flex-col gap-2">
                         <WorkshopDocSourceSaveBar
-                          onSave={() => void persistUxUiGuideContent(uxUiGuideContent ?? "")}
+                          onSave={() => {
+                            const content = replaceYamlFrontMatter(uxUiGuideContent ?? "", projectName);
+                            if (content !== (uxUiGuideContent ?? "")) setUxUiGuideContent(content);
+                            void persistUxUiGuideContent(content);
+                          }}
                           disabled={!uxUiGuideDirty}
                         />
                         <textarea

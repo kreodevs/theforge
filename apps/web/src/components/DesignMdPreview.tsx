@@ -1173,3 +1173,20 @@ export function tokensToYamlFrontMatter(tokens: DesignTokens): string {
   lines.push("---");
   return lines.join("\n");
 }
+
+/**
+ * Reemplaza el YAML frontmatter del contenido de la guía UX/UI a partir del body markdown.
+ * - Si ya tiene YAML frontmatter, lo extrae y regenera desde el body.
+ * - Si no tiene YAML frontmatter, lo genera desde el markdown.
+ * - Si no se pueden extraer tokens, devuelve el contenido original sin cambios.
+ */
+export function replaceYamlFrontMatter(content: string, projectName?: string): string {
+  const { body } = parseYamlFrontMatter(content);
+  const tokens = extractDesignMdFrontMatter(content);
+  if (!tokens) return content;
+  const filled = fillDesignMdDefaults(tokens);
+  if (!filled) return content;
+  if (projectName) filled.name = filled.name || projectName;
+  const yamlStr = tokensToYamlFrontMatter(filled);
+  return yamlStr + "\n\n" + body;
+}
