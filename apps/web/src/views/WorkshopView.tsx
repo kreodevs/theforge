@@ -45,7 +45,7 @@ import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import MddViewer from "../components/MddViewer";
-import { DesignMdPreview } from "../components/DesignMdPreview";
+import { DesignMdPreview, extractDesignMdFrontMatter, fillDesignMdDefaults, tokensToYamlFrontMatter } from "../components/DesignMdPreview";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
 import { WorkshopMetricsColumnInner } from "./WorkshopMetricsColumnInner";
 import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
@@ -667,10 +667,30 @@ export default function WorkshopView({
         .trim();
 
       if (!cleaned || !cleaned.startsWith("---")) {
-        // If the orchestrator didn't return YAML front matter, wrap what we got
-        // so the user sees something in preview mode
-        setUxUiGuideContent(cleaned || result);
-        await persistUxUiGuideContent(cleaned || result);
+        // If the orchestrator didn't return YAML front matter, extract tokens
+        // from the markdown, fill defaults, and prepend YAML
+        try {
+          const tokens = extractDesignMdFrontMatter(cleaned || result);
+          if (tokens) {
+            const filled = fillDesignMdDefaults(tokens);
+            if (filled) {
+              filled.name = filled.name || projectName;
+              const yamlStr = tokensToYamlFrontMatter(filled);
+              const finalContent = yamlStr + "\n\n" + (cleaned || result);
+              setUxUiGuideContent(finalContent);
+              await persistUxUiGuideContent(finalContent);
+            } else {
+              setUxUiGuideContent(cleaned || result);
+              await persistUxUiGuideContent(cleaned || result);
+            }
+          } else {
+            setUxUiGuideContent(cleaned || result);
+            await persistUxUiGuideContent(cleaned || result);
+          }
+        } catch {
+          setUxUiGuideContent(cleaned || result);
+          await persistUxUiGuideContent(cleaned || result);
+        }
       } else {
         setUxUiGuideContent(cleaned);
         await persistUxUiGuideContent(cleaned);
