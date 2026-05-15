@@ -863,7 +863,7 @@ const DEFAULT_ELEVATION: Record<string, string> = {
   sticky: "0 2px 4px rgba(0,0,0,0.05)",
 };
 
-function fillDesignMdDefaults(tokens: DesignTokens | null): DesignTokens | null {
+export function fillDesignMdDefaults(tokens: DesignTokens | null): DesignTokens | null {
   if (!tokens) return null;
   const t = { ...tokens };
 
@@ -1124,4 +1124,52 @@ export function extractDesignMdFrontMatter(content: string): DesignTokens | null
   const yaml = parseYamlFrontMatter(content).frontMatter;
   if (yaml && (yaml.colors || yaml.typography || yaml.components)) return yaml;
   return parseDesignMdContent(content);
+}
+
+/**
+ * Convierte DesignTokens a string YAML frontmatter para prepender al markdown.
+ * Útil cuando el orquestador no devuelve YAML frontmatter en la guía UX/UI.
+ */
+export function tokensToYamlFrontMatter(tokens: DesignTokens): string {
+  const lines: string[] = ["---"];
+  if (tokens.name) lines.push(`name: ${JSON.stringify(tokens.name)}`);
+
+  function writeSection(key: string, obj: Record<string, unknown> | undefined, indent = 0): void {
+    if (!obj || Object.keys(obj).length === 0) return;
+    const pad = "  ".repeat(indent);
+    lines.push(`${pad}${key}:`);
+    for (const [k, v] of Object.entries(obj)) {
+      const innerPad = "  ".repeat(indent + 1);
+      if (v !== null && typeof v === "object") {
+        lines.push(`${innerPad}${k}:`);
+        for (const [sk, sv] of Object.entries(v as Record<string, unknown>)) {
+          if (typeof sv === "string" || typeof sv === "number") {
+            if (typeof sv === "string" && (sv.includes(":") || sv.startsWith("{") || sv.startsWith("#") || sv.includes("'") || sv.includes('"'))) {
+              lines.push(`${innerPad}  ${sk}: ${JSON.stringify(sv)}`);
+            } else {
+              lines.push(`${innerPad}  ${sk}: ${sv}`);
+            }
+          }
+        }
+      } else if (typeof v === "string" || typeof v === "number") {
+        if (typeof v === "string" && (v.includes(":") || v.startsWith("{") || v.startsWith("#") || v.includes("'"))) {
+          lines.push(`${innerPad}${k}: ${JSON.stringify(v)}`);
+        } else {
+          lines.push(`${innerPad}${k}: ${v}`);
+        }
+      }
+    }
+  }
+
+  if (tokens.version) lines.push(`version: ${tokens.version}`);
+
+  writeSection("colors", tokens.colors as Record<string, unknown>);
+  writeSection("typography", tokens.typography as Record<string, unknown>);
+  writeSection("rounded", tokens.rounded as Record<string, unknown>);
+  writeSection("spacing", tokens.spacing as Record<string, unknown>);
+  writeSection("elevation", tokens.elevation as Record<string, unknown>);
+  writeSection("components", tokens.components as Record<string, unknown>);
+
+  lines.push("---");
+  return lines.join("\n");
 }
