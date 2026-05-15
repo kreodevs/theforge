@@ -1,7 +1,6 @@
-import { Component, memo, useCallback, useEffect, useId, useRef, useState } from "react";
+import { Component, memo, useEffect, useId, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Printer } from "lucide-react";
 import mermaid from "mermaid";
 import { repairMarkdownFences } from "@theforge/shared-types/markdown-repair";
 import { parseMarkdownSections } from "../utils/markdownSections";
@@ -315,75 +314,12 @@ class MddViewerErrorBoundary extends Component<
 function MddViewerInner({ content, className = "" }: MddViewerProps) {
   const cleaned = stripBrokenMermaidBlocks(repairMarkdownFences(content));
   const sections = parseMarkdownSections(cleaned);
-  const printRef = useRef<HTMLDivElement>(null);
-
-  const handlePrint = useCallback(() => {
-    if (!printRef.current) return;
-    // Clonar el contenido para la impresión
-    const printContent = printRef.current.cloneNode(true) as HTMLElement;
-    const printWin = window.open("", "_blank");
-    if (!printWin) {
-      // Fallback: window.print() con @media print CSS
-      document.body.classList.add("printing-md-content");
-      window.print();
-      return;
-    }
-    const styles = Array.from(document.styleSheets)
-      .map((s) => {
-        try {
-          return Array.from(s.cssRules || [])
-            .map((r) => r.cssText)
-            .join("\n");
-        } catch {
-          return "";
-        }
-      })
-      .join("\n");
-    printWin.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Imprimir documento</title>
-  <style>${styles}</style>
-  <style>
-    body { padding: 2rem; background: #fff; color: #111; }
-    * { color: #111 !important; background: transparent !important; }
-    .markdown-preview { max-width: 900px; margin: 0 auto; }
-    img { max-width: 100%; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 8px; }
-    pre { overflow-x: auto; border: 1px solid #ddd; padding: 12px; background: #f5f5f5; }
-    code { background: #f5f5f5; padding: 2px 4px; }
-    @page { margin: 2cm; }
-  </style>
-</head>
-<body>
-  ${printContent.innerHTML}
-</body>
-</html>`);
-    printWin.document.close();
-    printWin.focus();
-    setTimeout(() => printWin.print(), 500);
-  }, []);
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={handlePrint}
-        className="absolute top-0 right-0 z-10 flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs text-[var(--foreground-subtle)] hover:text-[var(--foreground)] hover:border-[var(--border-hover)] transition-colors print:hidden"
-        title="Imprimir documento"
-        aria-label="Imprimir"
-      >
-        <Printer className="h-3.5 w-3.5" aria-hidden />
-        <span className="hidden sm:inline">Imprimir</span>
-      </button>
-      <div ref={printRef} className={`space-y-4 markdown-preview min-w-0 ${className}`}>
-        {sections.map((section) => (
-          <MdSection key={section.id} content={section.content} />
-        ))}
-      </div>
+    <div className={`space-y-4 markdown-preview min-w-0 ${className}`}>
+      {sections.map((section) => (
+        <MdSection key={section.id} content={section.content} />
+      ))}
     </div>
   );
 }

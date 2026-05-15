@@ -3,6 +3,7 @@ import {
   Cloud,
   CloudOff,
   AlertTriangle,
+  Printer,
   FileText,
   Package,
   LayoutTemplate,
@@ -1406,6 +1407,51 @@ export default function WorkshopView({
     if (infraContent != null) persistInfraContent(infraContent);
   }, [infraContent, persistInfraContent]);
 
+  /** Imprime el documento visible actual (encuentra .markdown-preview en el DOM). */
+  const handlePrintDocument = useCallback(() => {
+    const preview = document.querySelector<HTMLElement>(".markdown-preview");
+    if (!preview) return;
+    const printContent = preview.cloneNode(true) as HTMLElement;
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+      document.body.classList.add("printing-md-content");
+      window.print();
+      return;
+    }
+    const styles = Array.from(document.styleSheets)
+      .map((s) => {
+        try { return Array.from(s.cssRules || []).map((r) => r.cssText).join("\n"); }
+        catch { return ""; }
+      })
+      .join("\n");
+    printWin.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Imprimir documento</title>
+  <style>${styles}</style>
+  <style>
+    body { padding: 2rem; background: #fff; color: #111; }
+    * { color: #111 !important; background: transparent !important; }
+    .markdown-preview { max-width: 900px; margin: 0 auto; }
+    img { max-width: 100%; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+    pre { overflow-x: auto; border: 1px solid #ddd; padding: 12px; background: #f5f5f5; }
+    code { background: #f5f5f5; padding: 2px 4px; }
+    @page { margin: 2cm; }
+  </style>
+</head>
+<body>
+  ${printContent.innerHTML}
+</body>
+</html>`);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => printWin.print(), 500);
+  }, []);
+
   const handleBenchmarkBlur = useCallback(() => {
     if (dbgaContent != null) persistDbgaContent(dbgaContent);
   }, [dbgaContent, persistDbgaContent]);
@@ -2196,6 +2242,23 @@ export default function WorkshopView({
                     </TooltipContent>
                   </Tooltip>
                 )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className={WORKSHOP_DOC_TOOLBAR_ICON_BTN}
+                      aria-label="Imprimir documento"
+                      onClick={handlePrintDocument}
+                    >
+                      <Printer className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" align="end" className="max-w-[10rem]">
+                    Imprimir
+                  </TooltipContent>
+                </Tooltip>
                 {centralPanel === "architecture" && !!architectureContent?.trim() && (
                   <Tooltip>
                     <TooltipTrigger asChild>

@@ -1,5 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
-import { Printer } from "lucide-react";
+import { useMemo } from "react";
 
 // ─── Tipos compartidos ─────────────────────────────────────────
 
@@ -941,8 +940,6 @@ export function DesignMdPreview({ content }: { content: string }) {
     return body;
   }, [content]);
 
-  const previewRef = useRef<HTMLDivElement>(null);
-
   const title = useMemo(() => {
     if (frontMatter?.name) return frontMatter.name;
     const h1 = content.match(/^#\s+(.+)/m);
@@ -958,49 +955,6 @@ export function DesignMdPreview({ content }: { content: string }) {
     }
     return null;
   }, [content, frontMatter]);
-
-  const handlePrint = useCallback(() => {
-    if (!previewRef.current) return;
-    const printContent = previewRef.current.cloneNode(true) as HTMLElement;
-    const printWin = window.open("", "_blank");
-    if (!printWin) {
-      document.body.classList.add("printing-md-content");
-      window.print();
-      return;
-    }
-    const styles = Array.from(document.styleSheets)
-      .map((s) => {
-        try { return Array.from(s.cssRules || []).map((r) => r.cssText).join("\n"); }
-        catch { return ""; }
-      })
-      .join("\n");
-    printWin.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${title}</title>
-  <style>${styles}</style>
-  <style>
-    body { padding: 2rem; background: #fff; color: #111; }
-    * { color: #111 !important; background: transparent !important; }
-    .max-w-2xl { max-width: 900px; margin: 0 auto; }
-    img { max-width: 100%; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 8px; }
-    pre { overflow-x: auto; border: 1px solid #ddd; padding: 12px; background: #f5f5f5; }
-    code { background: #f5f5f5; padding: 2px 4px; }
-    @page { margin: 2cm; }
-  </style>
-</head>
-<body>
-  ${printContent.innerHTML}
-</body>
-</html>`);
-    printWin.document.close();
-    printWin.focus();
-    setTimeout(() => printWin.print(), 500);
-  }, [title]);
 
   if (!frontMatter || (!frontMatter.colors && !frontMatter.typography && !frontMatter.components)) {
     return (
@@ -1041,18 +995,7 @@ export function DesignMdPreview({ content }: { content: string }) {
   }
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={handlePrint}
-        className="absolute top-5 right-5 z-10 flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs text-[var(--foreground-subtle)] hover:text-[var(--foreground)] hover:border-[var(--border-hover)] transition-colors print:hidden"
-        title="Imprimir diseño"
-        aria-label="Imprimir"
-      >
-        <Printer className="h-3.5 w-3.5" aria-hidden />
-        <span className="hidden sm:inline">Imprimir</span>
-      </button>
-      <div ref={previewRef} className="p-5 space-y-10 max-w-2xl">
+    <div className="p-5 space-y-10 max-w-2xl">
       {/* Header */}
       {title && (
         <div>
@@ -1174,7 +1117,6 @@ export function DesignMdPreview({ content }: { content: string }) {
         </section>
       )}
     </div>
-  </div>
   );
 }
 
