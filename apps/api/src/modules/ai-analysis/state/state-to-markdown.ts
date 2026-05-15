@@ -137,7 +137,14 @@ export function ensureJsonCodeFences(markdown: string): string {
 
     result.push(line);
   }
-  return result.join("\n");
+  // Post-procesamiento: normalizar headings que el LLM dejó indentados o sin espacio
+  // después de ###. CommonMark trata líneas con 4+ espacios como código indentado,
+  // y "###texto" no es un heading válido (necesita "### texto").
+  const cleaned = result.join("\n").replace(
+    /^( {4,})(#{1,6})(\S.*)$/gm,
+    (_, _spaces, hashes, rest) => `${hashes} ${rest.trimStart()}`,
+  );
+  return cleaned;
 }
 
 /**
