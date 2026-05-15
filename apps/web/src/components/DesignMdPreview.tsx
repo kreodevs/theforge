@@ -4,6 +4,7 @@ import { useMemo } from "react";
 
 interface DesignTokens {
   name?: string;
+  version?: string;
   description?: string;
   colors?: Record<string, string>;
   typography?: Record<string, TypographyToken>;
