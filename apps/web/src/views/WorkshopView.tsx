@@ -735,6 +735,8 @@ export default function WorkshopView({
   const [phase0SummaryViewMode, setPhase0SummaryViewMode] = useState<"preview" | "source">("preview");
   /** Última idea usada al generar benchmark; se reutiliza en Deep Research para extraer URLs del texto */
   const [lastBenchmarkIdea, setLastBenchmarkIdea] = useState("");
+  /** Pestañas internas del panel benchmark: Fase 0 (DBGA) / Benchmark (Deep Research). */
+  const [benchmarkPhaseTab, setBenchmarkPhaseTab] = useState<"fase0" | "benchmark">("fase0");
   const [blueprintViewMode, setBlueprintViewMode] = useState<"preview" | "source">("preview");
   const [apiContractsViewMode, setApiContractsViewMode] = useState<"preview" | "source">("preview");
   const [logicFlowsViewMode, setLogicFlowsViewMode] = useState<"preview" | "source">("preview");
@@ -3042,67 +3044,85 @@ export default function WorkshopView({
             )}
             {centralPanel === "benchmark" && (
               <>
-                {loading && loadingReason === "phase0-deep-research" && (
-                  <div className="shrink-0 rounded-lg bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] px-4 py-2 mb-2 text-sm text-[color-mix(in_oklch,var(--primary)_65%,var(--foreground))] flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                    <span>Generando Deep Research… Suele tardar 1–2 minutos; no cierres la página.</span>
-                  </div>
-                )}
-                <div className="shrink-0 flex items-center gap-2 mb-3 flex-wrap">
+                {/* Pestañas internas: Fase 0 | Benchmark */}
+                <div className="shrink-0 flex border-b border-[var(--border)] mb-4">
                   <button
                     type="button"
-                    onClick={async () => {
-                      await suggestBrdFromDbga(projectId, { stageId: activeStageId ?? undefined });
-                      setCentralPanel("brd");
-                    }}
-                    disabled={loading && loadingReason === "brd-from-dbga"}
-                    className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--primary)_18%,transparent)] text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Generar BRD desde el Benchmark (DBGA); luego revisa y aprueba en el tab BRD"
-                  >
-                    {loading && loadingReason === "brd-from-dbga" ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Play className="w-4 h-4" />
+                    onClick={() => setBenchmarkPhaseTab("fase0")}
+                    className={cn(
+                      "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
+                      benchmarkPhaseTab === "fase0"
+                        ? "border-[var(--primary)] text-[var(--primary)]"
+                        : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:border-[var(--border)]",
                     )}
-                    Generar BRD con agentes
+                  >
+                    Fase 0
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setCentralPanel("brd");
-                    }}
-                    className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
-                    title="Ir a BRD y editar manualmente o usar el chat"
+                    onClick={() => setBenchmarkPhaseTab("benchmark")}
+                    className={cn(
+                      "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
+                      benchmarkPhaseTab === "benchmark"
+                        ? "border-[var(--primary)] text-[var(--primary)]"
+                        : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:border-[var(--border)]",
+                    )}
                   >
-                    Ir a BRD (editar)
+                    Benchmark
                   </button>
-                  {dbgaContent != null && dbgaContent !== "" && (
-                    <button
-                      type="button"
-                      onClick={() => projectId && clearDbgaContent(projectId)}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--destructive)_12%,transparent)] text-sm"
-                      title="Borrar el Benchmark (podrás generar uno nuevo después)"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Borrar benchmark
-                    </button>
-                  )}
                 </div>
-                {dbgaContent != null && dbgaContent !== "" && (
-                  <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] pt-4">
-                    <h3 className="shrink-0 text-sm font-medium text-[var(--muted-foreground)] mb-2">Benchmark (DBGA) — opcional</h3>
-                    <div className="shrink-0 flex items-center justify-end gap-2 mb-2 flex-wrap">
+
+                {benchmarkPhaseTab === "fase0" ? (
+                  <>
+                    {loading && loadingReason === "phase0-deep-research" && (
+                      <div className="shrink-0 rounded-lg bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] px-4 py-2 mb-2 text-sm text-[color-mix(in_oklch,var(--primary)_65%,var(--foreground))] flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span>Generando Deep Research… Suele tardar 1–2 minutos; no cierres la página.</span>
+                      </div>
+                    )}
+                    <div className="shrink-0 flex items-center gap-2 mb-3 flex-wrap">
                       <button
                         type="button"
-                        onClick={() => setBenchmarkViewMode((m) => (m === "preview" ? "source" : "preview"))}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
+                        onClick={async () => {
+                          await suggestBrdFromDbga(projectId, { stageId: activeStageId ?? undefined });
+                          setCentralPanel("brd");
+                        }}
+                        disabled={loading && loadingReason === "brd-from-dbga"}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--primary)_18%,transparent)] text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Generar BRD desde el Benchmark (DBGA); luego revisa y aprueba en el tab BRD"
                       >
-                        {benchmarkViewMode === "preview" ? (
-                          <><Pencil className="w-4 h-4" /> Editar</>
+                        {loading && loadingReason === "brd-from-dbga" ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
-                          <><FileText className="w-4 h-4" /> Ver previsualización</>
+                          <Play className="w-4 h-4" />
                         )}
+                        Generar BRD con agentes
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCentralPanel("brd");
+                        }}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
+                        title="Ir a BRD y editar manualmente o usar el chat"
+                      >
+                        Ir a BRD (editar)
+                      </button>
+                      {dbgaContent != null && dbgaContent !== "" && (
+                        <button
+                          type="button"
+                          onClick={() => projectId && clearDbgaContent(projectId)}
+                          className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--destructive)_12%,transparent)] text-sm"
+                          title="Borrar el contenido de Fase 0 (podrás generar uno nuevo después)"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Borrar Fase 0
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Generar Deep Research — siempre visible en Fase 0 */}
+                    <div className="shrink-0 flex items-center gap-2 mb-3">
                       <button
                         type="button"
                         onClick={async () => {
@@ -3110,78 +3130,111 @@ export default function WorkshopView({
                             userIdea: lastBenchmarkIdea.trim() || undefined,
                             includeBenchmark: true,
                           });
+                          setBenchmarkPhaseTab("benchmark");
                         }}
                         disabled={loading}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm disabled:opacity-50"
-                        title="Generar documento de resumen (deep research); puede tardar 1–2 min"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Generar Benchmark & Deep Research desde la Fase 0; luego ve a la pestaña Benchmark para revisarlo"
                       >
                         {loading && loadingReason === "phase0-deep-research" ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : null}
-                        {loading && loadingReason === "phase0-deep-research" ? "Generando…" : "Generar Deep Research"}
-                      </button>
-                      <span className="text-[var(--foreground-subtle)] text-xs self-center">(puede tardar 1–2 min)</span>
-                    </div>
-                    <div className="flex-1 flex flex-col min-h-0">
-                      {benchmarkViewMode === "preview" ? (
-                        <div className="flex-1 min-h-[200px] overflow-auto">
-                          <MddViewer content={dbgaContent} />
-                        </div>
-                      ) : (
-                        <textarea
-                          value={dbgaContent}
-                          onChange={(e) => setDbgaContent(e.target.value)}
-                          onBlur={handleBenchmarkBlur}
-                          placeholder="# Domain Benchmark & Gap Analysis..."
-                          className="flex-1 min-h-[200px] w-full bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                          spellCheck={false}
-                        />
-                      )}
-                    </div>
-                  </div>
-                )}
-                {phase0SummaryContent != null && phase0SummaryContent !== "" && (
-                  <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] mt-4 pt-4">
-                    <h3 className="shrink-0 text-sm font-medium text-[var(--muted-foreground)] mb-2">Resumen Deep Research</h3>
-                    <div className="shrink-0 flex items-center justify-end gap-2 mb-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => setPhase0SummaryViewMode((m) => (m === "preview" ? "source" : "preview"))}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
-                      >
-                        {phase0SummaryViewMode === "preview" ? (
-                          <><Pencil className="w-4 h-4" /> Editar</>
                         ) : (
-                          <><FileText className="w-4 h-4" /> Ver previsualización</>
+                          <Rocket className="w-4 h-4" />
                         )}
+                        {loading && loadingReason === "phase0-deep-research" ? "Generando…" : "Generar Benchmark"}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => projectId && clearPhase0SummaryContent(projectId)}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--destructive)_12%,transparent)] text-sm"
-                        title="Borrar el resumen Deep Research (podrás generar uno nuevo después)"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Borrar resumen
-                      </button>
+                      <span className="text-[var(--foreground-subtle)] text-xs">(puede tardar 1–2 min)</span>
                     </div>
-                    <div className="flex-1 flex flex-col min-h-0">
-                      {phase0SummaryViewMode === "preview" ? (
-                        <div className="flex-1 min-h-[200px] overflow-auto">
-                          <MddViewer content={phase0SummaryContent ?? ""} />
+
+                    {dbgaContent != null && dbgaContent !== "" && (
+                      <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] pt-4">
+                        <h3 className="shrink-0 text-sm font-medium text-[var(--muted-foreground)] mb-2">Análisis (DBGA) — Fase 0</h3>
+                        <div className="shrink-0 flex items-center justify-end gap-2 mb-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setBenchmarkViewMode((m) => (m === "preview" ? "source" : "preview"))}
+                            className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
+                          >
+                            {benchmarkViewMode === "preview" ? (
+                              <><Pencil className="w-4 h-4" /> Editar</>
+                            ) : (
+                              <><FileText className="w-4 h-4" /> Ver previsualización</>
+                            )}
+                          </button>
                         </div>
-                      ) : (
-                        <textarea
-                          value={phase0SummaryContent ?? ""}
-                          onChange={(e) => setPhase0SummaryContent(e.target.value || null)}
-                          onBlur={handlePhase0SummaryBlur}
-                          placeholder="# Resumen Deep Research..."
-                          className="flex-1 min-h-[200px] w-full bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                          spellCheck={false}
-                        />
-                      )}
-                    </div>
-                  </div>
+                        <div className="flex-1 flex flex-col min-h-0">
+                          {benchmarkViewMode === "preview" ? (
+                            <div className="flex-1 min-h-[200px] overflow-auto">
+                              <MddViewer content={dbgaContent} />
+                            </div>
+                          ) : (
+                            <textarea
+                              value={dbgaContent}
+                              onChange={(e) => setDbgaContent(e.target.value)}
+                              onBlur={handleBenchmarkBlur}
+                              placeholder="# Domain Benchmark & Gap Analysis..."
+                              className="flex-1 min-h-[200px] w-full bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
+                              spellCheck={false}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {phase0SummaryContent != null && phase0SummaryContent !== "" ? (
+                      <div className="flex-1 flex flex-col min-h-0">
+                        <div className="shrink-0 flex items-center justify-end gap-2 mb-3 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setPhase0SummaryViewMode((m) => (m === "preview" ? "source" : "preview"))}
+                            className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
+                          >
+                            {phase0SummaryViewMode === "preview" ? (
+                              <><Pencil className="w-4 h-4" /> Editar</>
+                            ) : (
+                              <><FileText className="w-4 h-4" /> Ver previsualización</>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => projectId && clearPhase0SummaryContent(projectId)}
+                            className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--destructive)_12%,transparent)] text-sm"
+                            title="Borrar el resumen Benchmark (podrás generar uno nuevo desde Fase 0)"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Borrar benchmark
+                          </button>
+                        </div>
+                        <div className="flex-1 flex flex-col min-h-0">
+                          {phase0SummaryViewMode === "preview" ? (
+                            <div className="flex-1 min-h-[200px] overflow-auto">
+                              <MddViewer content={phase0SummaryContent ?? ""} />
+                            </div>
+                          ) : (
+                            <textarea
+                              value={phase0SummaryContent ?? ""}
+                              onChange={(e) => setPhase0SummaryContent(e.target.value || null)}
+                              onBlur={handlePhase0SummaryBlur}
+                              placeholder="# Resumen Deep Research..."
+                              className="flex-1 min-h-[200px] w-full bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
+                              spellCheck={false}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center min-h-[200px]">
+                        <div className="text-center">
+                          <Globe className="w-8 h-8 mx-auto mb-2 text-[var(--muted-foreground)] opacity-40" />
+                          <p className="text-sm text-[var(--muted-foreground)]">
+                            Aún no hay Benchmark. Ve a la pestaña <strong>Fase 0</strong>, completa el análisis y presiona <strong>Generar Benchmark</strong>.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
