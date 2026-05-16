@@ -218,32 +218,32 @@ export class SessionsService {
     const mddSplit = this.parser.splitMddAndChat(safeResponse);
     const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
     const dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
-    const specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
+    let specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
     const brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
     const tobeSplit = this.parser.splitDocAndChat(safeResponse, "TOBE");
-    const blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
-    const apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
-    const flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
-    const tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
-    const infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
-    const archSplit = this.parser.splitDocAndChat(safeResponse, "ARCH");
-    const useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
-    const storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
+    let blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
+    let apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
+    let flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
+    let tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
+    let infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
+    let archSplit = this.parser.splitDocAndChat(safeResponse, "ARCH");
+    let useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
+    let storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
 
     const hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
     const hasDbga = dbgaSplit !== null;
-    const hasSpec = specSplit !== null;
+    let hasSpec = specSplit !== null;
     const hasBrd = brdSplit !== null;
     const hasTobe = tobeSplit !== null;
-    const hasBlue = blueSplit !== null;
-    const hasApi = apiSplit !== null;
-    const hasFlows = flowsSplit !== null;
-    const hasTasks = tasksSplit !== null;
-    const hasInfra = infraSplit !== null;
-    const hasArch = archSplit !== null;
-    const hasUseCases = useCasesSplit !== null;
-    const hasStories = storiesSplit !== null;
+    let hasBlue = blueSplit !== null;
+    let hasApi = apiSplit !== null;
+    let hasFlows = flowsSplit !== null;
+    let hasTasks = tasksSplit !== null;
+    let hasInfra = infraSplit !== null;
+    let hasArch = archSplit !== null;
+    let hasUseCases = useCasesSplit !== null;
+    let hasStories = storiesSplit !== null;
 
     let uxDocPart: string | undefined = hasUx ? uxSplit!.docPart : undefined;
     const dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
@@ -313,6 +313,43 @@ export class SessionsService {
       }
       rawChat = chatParts.length > 0 ? chatParts.join("\n\n") : "Guía UX/UI generada. Revisa el panel del documento.";
       console.log("[Chat] fallback (mejorado): uxUiGuideContent length:", uxDocPart?.length ?? 0, "chat length:", rawChat.length, "match type:", docStartMatch ? "h1" : yamlStartMatch ? "yaml" : yamlInlineStart ? "yaml-inline" : "other");
+    }
+
+    // Fallback genérico para tabs de documento (architecture, use-cases, etc.) sin ---FIN_TAG---
+    {
+      const fbTab = (options?.activeTab ?? "mdd").trim();
+      const fbSplit = this.parser.detectDocFallback(safeResponse, fbTab);
+      if (fbSplit) {
+        // Set the correct split variable based on tab
+        switch (fbTab) {
+          case "spec": specSplit = fbSplit; hasSpec = true; break;
+          case "blueprint": blueSplit = fbSplit; hasBlue = true; break;
+          case "api-contracts": apiSplit = fbSplit; hasApi = true; break;
+          case "logic-flows": flowsSplit = fbSplit; hasFlows = true; break;
+          case "tasks": tasksSplit = fbSplit; hasTasks = true; break;
+          case "infra": infraSplit = fbSplit; hasInfra = true; break;
+          case "architecture": archSplit = fbSplit; hasArch = true; break;
+          case "use-cases": useCasesSplit = fbSplit; hasUseCases = true; break;
+          case "user-stories": storiesSplit = fbSplit; hasStories = true; break;
+        }
+        // Only apply fallback if no higher-priority document was found
+        if (!hasMdd && !hasUx && !hasDbga) {
+          // Find the matching split in the rawChat chain (lines 252-265 style)
+          let fbFound = false;
+          if (hasSpec) { rawChat = specSplit!.chatPart; fbFound = true; }
+          else if (hasBlue) { rawChat = blueSplit!.chatPart; fbFound = true; }
+          else if (hasApi) { rawChat = apiSplit!.chatPart; fbFound = true; }
+          else if (hasFlows) { rawChat = flowsSplit!.chatPart; fbFound = true; }
+          else if (hasTasks) { rawChat = tasksSplit!.chatPart; fbFound = true; }
+          else if (hasInfra) { rawChat = infraSplit!.chatPart; fbFound = true; }
+          else if (hasArch) { rawChat = archSplit!.chatPart; fbFound = true; }
+          else if (hasUseCases) { rawChat = useCasesSplit!.chatPart; fbFound = true; }
+          else if (hasStories) { rawChat = storiesSplit!.chatPart; fbFound = true; }
+          if (fbFound) {
+            console.log("[Chat] fallback genérico detectado para tab:", fbTab);
+          }
+        }
+      }
     }
 
     const assistantContent = this.parser.stripChatLabel(rawChat);
@@ -468,7 +505,7 @@ export class SessionsService {
       throw err;
     }
 
-    const DOC_DELIMITER_RE = /-{2,}\s*FIN_(?:MDD|UX_UI|DBGA|SPEC|BRD|TOBE|BLUEPRINT|API|FLOWS|TASKS|INFRA|ARCH|USECASES|STORIES)\s*-{2,}/i;
+    const DOC_DELIMITER_RE = /-{1,}\s*FIN_(?:MDD|UX_UI|DBGA|SPEC|BRD|TOBE|BLUEPRINT|API|FLOWS|TASKS|INFRA|ARCH|USECASES|STORIES)\s*-{1,}/i;
     let buffer = "";
     let documentChunksDone = false;
     for await (const chunk of stream) {
@@ -501,32 +538,32 @@ export class SessionsService {
     const mddSplit = this.parser.splitMddAndChat(safeResponse);
     const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
     const dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
-    const specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
+    let specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
     const brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
     const tobeSplit = this.parser.splitDocAndChat(safeResponse, "TOBE");
-    const blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
-    const apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
-    const flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
-    const tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
-    const infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
-    const archSplit = this.parser.splitDocAndChat(safeResponse, "ARCH");
-    const useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
-    const storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
+    let blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
+    let apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
+    let flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
+    let tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
+    let infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
+    let archSplit = this.parser.splitDocAndChat(safeResponse, "ARCH");
+    let useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
+    let storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
 
     const hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
     const hasDbga = dbgaSplit !== null;
-    const hasSpec = specSplit !== null;
+    let hasSpec = specSplit !== null;
     const hasBrd = brdSplit !== null;
     const hasTobe = tobeSplit !== null;
-    const hasBlue = blueSplit !== null;
-    const hasApi = apiSplit !== null;
-    const hasFlows = flowsSplit !== null;
-    const hasTasks = tasksSplit !== null;
-    const hasInfra = infraSplit !== null;
-    const hasArch = archSplit !== null;
-    const hasUseCases = useCasesSplit !== null;
-    const hasStories = storiesSplit !== null;
+    let hasBlue = blueSplit !== null;
+    let hasApi = apiSplit !== null;
+    let hasFlows = flowsSplit !== null;
+    let hasTasks = tasksSplit !== null;
+    let hasInfra = infraSplit !== null;
+    let hasArch = archSplit !== null;
+    let hasUseCases = useCasesSplit !== null;
+    let hasStories = storiesSplit !== null;
 
     let uxDocPart: string | undefined = hasUx ? uxSplit!.docPart : undefined;
     const dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
@@ -593,6 +630,40 @@ export class SessionsService {
       }
       rawChat = chatParts.length > 0 ? chatParts.join("\n\n") : "Guía UX/UI generada. Revisa el panel del documento.";
       console.log("[ChatStream] fallback (mejorado): uxUiGuideContent length:", uxDocPart?.length ?? 0, "chat length:", rawChat.length, "match type:", docStartMatch ? "h1" : yamlStartMatch ? "yaml" : yamlInlineStart ? "yaml-inline" : "other");
+    }
+
+    // Fallback genérico para tabs de documento (architecture, use-cases, etc.) sin ---FIN_TAG---
+    {
+      const fbTab = (options?.activeTab ?? "mdd").trim();
+      const fbSplit = this.parser.detectDocFallback(safeResponse, fbTab);
+      if (fbSplit) {
+        switch (fbTab) {
+          case "spec": specSplit = fbSplit; hasSpec = true; break;
+          case "blueprint": blueSplit = fbSplit; hasBlue = true; break;
+          case "api-contracts": apiSplit = fbSplit; hasApi = true; break;
+          case "logic-flows": flowsSplit = fbSplit; hasFlows = true; break;
+          case "tasks": tasksSplit = fbSplit; hasTasks = true; break;
+          case "infra": infraSplit = fbSplit; hasInfra = true; break;
+          case "architecture": archSplit = fbSplit; hasArch = true; break;
+          case "use-cases": useCasesSplit = fbSplit; hasUseCases = true; break;
+          case "user-stories": storiesSplit = fbSplit; hasStories = true; break;
+        }
+        if (!hasMdd && !hasUx && !hasDbga) {
+          let fbFound = false;
+          if (hasSpec) { rawChat = specSplit!.chatPart; fbFound = true; }
+          else if (hasBlue) { rawChat = blueSplit!.chatPart; fbFound = true; }
+          else if (hasApi) { rawChat = apiSplit!.chatPart; fbFound = true; }
+          else if (hasFlows) { rawChat = flowsSplit!.chatPart; fbFound = true; }
+          else if (hasTasks) { rawChat = tasksSplit!.chatPart; fbFound = true; }
+          else if (hasInfra) { rawChat = infraSplit!.chatPart; fbFound = true; }
+          else if (hasArch) { rawChat = archSplit!.chatPart; fbFound = true; }
+          else if (hasUseCases) { rawChat = useCasesSplit!.chatPart; fbFound = true; }
+          else if (hasStories) { rawChat = storiesSplit!.chatPart; fbFound = true; }
+          if (fbFound) {
+            console.log("[ChatStream] fallback genérico detectado para tab:", fbTab);
+          }
+        }
+      }
     }
 
     const assistantContent = this.parser.stripChatLabel(rawChat);

@@ -35,7 +35,7 @@ Metodología de rigor técnico:
 
 - Escribe directamente especificaciones técnicas (ej. `id: UUID PRIMARY KEY`). La Parte 1 es el plano final; si la info es insuficiente, asume la mejor práctica (ADR).
 - Parte 1 (MDD) comienza estrictamente con el carácter `#`. Solo Markdown técnico puro.
-- Parte 2: delimitador exacto `-FIN_MDD---`.
+- Parte 2: delimitador exacto `---FIN_MDD---`.
 - Parte 3 (Chat): solo el mensaje. Sin encabezados tipo "MENSAJE PARA EL CHAT". Empieza directo (saludo, resumen de inyección, estado semáforo, pregunta).
 
 **Don't:**
@@ -48,5 +48,5 @@ Metodología de rigor técnico:
 **Formato de respuesta (inviolable):**
 
 1. **DOCUMENTO COMPLETO** (empezando con `#`)
-2. `-FIN_MDD---`
+2. `---FIN_MDD---`
 3. **Mensaje breve** (sin etiquetas ni encabezados)
