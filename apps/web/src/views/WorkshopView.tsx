@@ -56,6 +56,7 @@ import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complex
 import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "../components/WorkshopDocSourceSaveBar";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { StandardDocPanel } from "../components/StandardDocPanel";
+import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import type { LucideIcon } from "lucide-react";
 import {
   Button,
@@ -1194,70 +1195,27 @@ export default function WorkshopView({
     infraContent,
   ]);
 
+  // ─── Auto-save hooks ────
+  const { handleBlur: handleSpecBlur, isDirty: specDirty } = useAutoSaveContent(specContent, project?.specContent, persistSpecContent, projectId);
+  const { handleBlur: handleAemBlur, isDirty: aemDirty } = useAutoSaveContent(aemContent, project?.aemContent, persistAemContent, projectId);
+  const { handleBlur: handleArchitectureBlur, isDirty: architectureDirty } = useAutoSaveContent(architectureContent, project?.architectureContent, persistArchitectureContent, projectId);
+  const { handleBlur: handleUseCasesBlur, isDirty: useCasesDirty } = useAutoSaveContent(useCasesContent, project?.useCasesContent, persistUseCasesContent, projectId);
+  const { handleBlur: handleUserStoriesBlur, isDirty: userStoriesDirty } = useAutoSaveContent(userStoriesContent, project?.userStoriesContent, persistUserStoriesContent, projectId);
+  const { handleBlur: handleBlueprintBlur, isDirty: blueprintDirty } = useAutoSaveContent(blueprintContent, project?.blueprintContent, persistBlueprintContent, projectId);
+  const { handleBlur: handleApiContractsBlur, isDirty: apiContractsDirty } = useAutoSaveContent(apiContractsContent, project?.apiContractsContent, persistApiContractsContent, projectId);
+  const { handleBlur: handleLogicFlowsBlur, isDirty: logicFlowsDirty } = useAutoSaveContent(logicFlowsContent, project?.logicFlowsContent, persistLogicFlowsContent, projectId);
+  const { handleBlur: handleInfraBlur, isDirty: infraDirty } = useAutoSaveContent(infraContent, project?.infraContent, persistInfraContent, projectId);
+  const { handleBlur: handleBenchmarkBlur } = useAutoSaveContent(dbgaContent, project?.dbgaContent, persistDbgaContent, projectId);
+  const { handleBlur: handlePhase0SummaryBlur } = useAutoSaveContent(phase0SummaryContent, project?.phase0SummaryContent, persistPhase0SummaryContent, projectId);
 
-
+  // tasks auto-save (view-only, no blur needed)
   useEffect(() => {
-    if (!projectId || !project || blueprintContent === (project.blueprintContent ?? null)) return;
-    const t = setTimeout(() => {
-      persistBlueprintContent(blueprintContent ?? "");
-    }, 1500);
+    if (!projectId || !project || (tasksContent ?? "") === (project.tasksContent ?? "")) return;
+    const t = setTimeout(() => persistTasksContent(tasksContent ?? ""), 1500);
     return () => clearTimeout(t);
-  }, [blueprintContent, projectId, project?.blueprintContent, project, persistBlueprintContent]);
+  }, [tasksContent, projectId, project?.tasksContent, project, persistTasksContent]);
 
-  useEffect(() => {
-    if (!projectId || !project || apiContractsContent === (project.apiContractsContent ?? null)) return;
-    const t = setTimeout(() => persistApiContractsContent(apiContractsContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [apiContractsContent, projectId, project?.apiContractsContent, project, persistApiContractsContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || logicFlowsContent === (project.logicFlowsContent ?? null)) return;
-    const t = setTimeout(() => persistLogicFlowsContent(logicFlowsContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [logicFlowsContent, projectId, project?.logicFlowsContent, project, persistLogicFlowsContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || infraContent === (project.infraContent ?? null)) return;
-    const t = setTimeout(() => persistInfraContent(infraContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [infraContent, projectId, project?.infraContent, project, persistInfraContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || architectureContent === (project.architectureContent ?? null)) return;
-    const t = setTimeout(() => persistArchitectureContent(architectureContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [architectureContent, projectId, project?.architectureContent, project, persistArchitectureContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || useCasesContent === (project.useCasesContent ?? null)) return;
-    const t = setTimeout(() => persistUseCasesContent(useCasesContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [useCasesContent, projectId, project?.useCasesContent, project, persistUseCasesContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || userStoriesContent === (project.userStoriesContent ?? null)) return;
-    const t = setTimeout(() => persistUserStoriesContent(userStoriesContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [userStoriesContent, projectId, project?.userStoriesContent, project, persistUserStoriesContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || dbgaContent === (project.dbgaContent ?? null)) return;
-    const t = setTimeout(() => persistDbgaContent(dbgaContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [dbgaContent, projectId, project?.dbgaContent, project, persistDbgaContent]);
-
-  const handlePhase0SummaryBlur = useCallback(() => {
-    if ((phase0SummaryContent ?? "") !== (project?.phase0SummaryContent ?? "")) {
-      persistPhase0SummaryContent(phase0SummaryContent ?? "");
-    }
-  }, [phase0SummaryContent, project?.phase0SummaryContent, project, persistPhase0SummaryContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || phase0SummaryContent === (project.phase0SummaryContent ?? null)) return;
-    const t = setTimeout(() => persistPhase0SummaryContent(phase0SummaryContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [phase0SummaryContent, projectId, project?.phase0SummaryContent, project, persistPhase0SummaryContent]);
-
+  // ux-ui-guide auto-save (special: replaceYamlFrontMatter before persist)
   useEffect(() => {
     if (!projectId || !project || (uxUiGuideContent ?? "") === (project.uxUiGuideContent ?? "")) return;
     const t = setTimeout(() => {
@@ -1268,35 +1226,14 @@ export default function WorkshopView({
     return () => clearTimeout(t);
   }, [uxUiGuideContent, projectId, project?.uxUiGuideContent, project, persistUxUiGuideContent, projectName]);
 
-  const handleSpecBlur = useCallback(() => {
-    if ((specContent ?? "") !== (project?.specContent ?? "")) {
-      persistSpecContent(specContent ?? "");
+  // ux-ui-guide blur (special: replaceYamlFrontMatter)
+  const handleUxUiGuideBlur = useCallback(() => {
+    if (uxUiGuideContent != null) {
+      const content = replaceYamlFrontMatter(uxUiGuideContent, projectName);
+      if (content !== uxUiGuideContent) setUxUiGuideContent(content);
+      persistUxUiGuideContent(content);
     }
-  }, [specContent, project?.specContent, project, persistSpecContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || (specContent ?? "") === (project.specContent ?? "")) return;
-    const t = setTimeout(() => persistSpecContent(specContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [specContent, projectId, project?.specContent, project, persistSpecContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || (tasksContent ?? "") === (project.tasksContent ?? "")) return;
-    const t = setTimeout(() => persistTasksContent(tasksContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [tasksContent, projectId, project?.tasksContent, project, persistTasksContent]);
-
-  const handleAemBlur = useCallback(() => {
-    if ((aemContent ?? "") !== (project?.aemContent ?? "")) {
-      persistAemContent(aemContent ?? "");
-    }
-  }, [aemContent, project?.aemContent, project, persistAemContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || (aemContent ?? "") === (project.aemContent ?? "")) return;
-    const t = setTimeout(() => persistAemContent(aemContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [aemContent, projectId, project?.aemContent, project, persistAemContent]);
+  }, [uxUiGuideContent, persistUxUiGuideContent, projectName]);
 
   // Consultar si Hermes Agent está configurado en el backend
   useEffect(() => {
@@ -1308,22 +1245,6 @@ export default function WorkshopView({
         .catch(() => setHermesConfigured(false));
     });
   }, [projectId]);
-
-  const handleBlueprintBlur = useCallback(() => {
-    if (blueprintContent != null) persistBlueprintContent(blueprintContent);
-  }, [blueprintContent, persistBlueprintContent]);
-
-  const handleApiContractsBlur = useCallback(() => {
-    if (apiContractsContent != null) persistApiContractsContent(apiContractsContent);
-  }, [apiContractsContent, persistApiContractsContent]);
-
-  const handleLogicFlowsBlur = useCallback(() => {
-    if (logicFlowsContent != null) persistLogicFlowsContent(logicFlowsContent);
-  }, [logicFlowsContent, persistLogicFlowsContent]);
-
-  const handleInfraBlur = useCallback(() => {
-    if (infraContent != null) persistInfraContent(infraContent);
-  }, [infraContent, persistInfraContent]);
 
   /** Imprime el documento visible actual (encuentra .markdown-preview en el DOM). */
   const handlePrintDocument = useCallback(() => {
@@ -1370,41 +1291,8 @@ export default function WorkshopView({
     setTimeout(() => printWin.print(), 500);
   }, []);
 
-  const handleBenchmarkBlur = useCallback(() => {
-    if (dbgaContent != null) persistDbgaContent(dbgaContent);
-  }, [dbgaContent, persistDbgaContent]);
-
-  const handleUxUiGuideBlur = useCallback(() => {
-    if (uxUiGuideContent != null) {
-      const content = replaceYamlFrontMatter(uxUiGuideContent, projectName);
-      if (content !== uxUiGuideContent) setUxUiGuideContent(content);
-      persistUxUiGuideContent(content);
-    }
-  }, [uxUiGuideContent, persistUxUiGuideContent, projectName]);
-
-  const handleArchitectureBlur = useCallback(() => {
-    if (architectureContent != null) persistArchitectureContent(architectureContent);
-  }, [architectureContent, persistArchitectureContent]);
-
-  const handleUseCasesBlur = useCallback(() => {
-    if (useCasesContent != null) persistUseCasesContent(useCasesContent);
-  }, [useCasesContent, persistUseCasesContent]);
-
-  const handleUserStoriesBlur = useCallback(() => {
-    if (userStoriesContent != null) persistUserStoriesContent(userStoriesContent);
-  }, [userStoriesContent, persistUserStoriesContent]);
-
   const mddDirty = (mddContent ?? "") !== (project?.mddContent ?? "");
-  const specDirty = (specContent ?? "") !== (project?.specContent ?? "");
-  const aemDirty = (aemContent ?? "") !== (project?.aemContent ?? "");
-  const architectureDirty = (architectureContent ?? "") !== (project?.architectureContent ?? "");
-  const useCasesDirty = (useCasesContent ?? "") !== (project?.useCasesContent ?? "");
-  const userStoriesDirty = (userStoriesContent ?? "") !== (project?.userStoriesContent ?? "");
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
-  const blueprintDirty = (blueprintContent ?? "") !== (project?.blueprintContent ?? "");
-  const apiContractsDirty = (apiContractsContent ?? "") !== (project?.apiContractsContent ?? "");
-  const logicFlowsDirty = (logicFlowsContent ?? "") !== (project?.logicFlowsContent ?? "");
-  const infraDirty = (infraContent ?? "") !== (project?.infraContent ?? "");
 
   if (error && !project) {
     return (
