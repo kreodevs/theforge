@@ -103,6 +103,16 @@ function parseDesignMdContent(content: string): DesignTokens | null {
         colors[name] = hex;
       }
     }
+    // Markdown table pattern: | Rol | ... | #HEX | ... |
+    const tableRowRe = /\|\s*(\w[\w\s]*?)\s*\|[^|]*\|\s*#([A-Fa-f0-9]{6})\s*\|/gm;
+    let trm: RegExpExecArray | null;
+    while ((trm = tableRowRe.exec(colorsSection)) !== null) {
+      const name = trm[1]!.toLowerCase().trim().replace(/\s+/g, '-');
+      const hex = `#${trm[2]!.toUpperCase()}`;
+      if (name && !Object.values(colors).includes(hex)) {
+        colors[name] = hex;
+      }
+    }
     if (Object.keys(colors).length > 0) tokens.colors = colors;
   }
 
@@ -137,6 +147,18 @@ function parseDesignMdContent(content: string): DesignTokens | null {
     if (Object.keys(typography).length > 0) {
       typography['font-sans'] = { fontFamily: "'Inter', system-ui, -apple-system, sans-serif" };
       tokens.typography = typography;
+    }
+    // Spanish typography table: | Propósito | Fuente | Peso | Tamaños clave |
+    // e.g. | Títulos grandes (h1, h2) | Inter | Bold (700) | 32px, 28px |
+    const spanishTypoRe = /\|\s*[\w\sáéíóúñÑ()/,]+\s*\|[^|]*\|[^|]*\|\s*([\d]+)px/gi;
+    if (Object.keys(typography).length === 0) {
+      let stm: RegExpExecArray | null;
+      while ((stm = spanishTypoRe.exec(typographySection)) !== null) {
+        const size = parseInt(stm[1]!);
+        if (!typography['body-md'] && size >= 14 && size <= 18) {
+          typography['body-md'] = { fontSize: `${size}px`, fontWeight: 400, lineHeight: `${Math.round(size * 1.5)}px` };
+        }
+      }
     }
   }
 
@@ -201,9 +223,26 @@ function parseDesignMdContent(content: string): DesignTokens | null {
 }
 
 function extractSection(content: string, names: string[]): string | null {
-  for (const name of names) {
+  // Also try Spanish equivalents
+  const spanishAliases: Record<string, string[]> = {
+    colors: ["colores", "paleta", "color", "paleta de colores"],
+    typography: ["tipografía", "tipografia", "fuentes", "fonts"],
+    components: ["componentes", "ui clave", "componentes ui"],
+    spacing: ["espaciado", "espacio", "layout"],
+    elevation: ["elevación", "elevacion", "sombras"],
+    shapes: ["formas", "bordes", "border", "rounded"],
+  };
+  // For each name, also try its Spanish aliases
+  const allNames = [...names];
+  for (const n of names) {
+    const lower = n.toLowerCase();
+    if (spanishAliases[lower]) {
+      allNames.push(...spanishAliases[lower]);
+    }
+  }
+  for (const name of allNames) {
     const patterns = [
-      new RegExp(`##+\\s*${escapeRegex(name)}[^\\n]*(?:\\n(?:[^#][^\\n]*|\\s*)?)*`, 'i'),
+      new RegExp(`##+\\s*\\d*\\.?\\s*${escapeRegex(name)}[^\\n]*(?:\\n(?:[^#][^\\n]*|\\s*)?)*`, 'i'),
       new RegExp(`\\*\\*${escapeRegex(name)}\\*\\*[^\\n]*(?:\\n(?!##|\\*\\*)[^\\n]*)*`, 'i'),
     ];
     for (const pattern of patterns) {
