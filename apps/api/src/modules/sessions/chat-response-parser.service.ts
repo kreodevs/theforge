@@ -81,6 +81,52 @@ export class ChatResponseParserService {
     return cleanDocumentContentUtil(text);
   }
 
+  /**
+   * Fallback: detecta documento por patrón de encabezado cuando el LLM omite ---FIN_TAG---.
+   * Aplica para tabs: architecture, use-cases, user-stories, spec, blueprint,
+   * api-contracts, logic-flows, tasks, infra.
+   */
+  detectDocFallback(response: string, activeTab: string): { docPart: string; chatPart: string } | null {
+    const trimmed = response?.trim();
+    if (!trimmed || trimmed.length < 200) return null;
+
+    const HEADING_PATTERNS: Record<string, RegExp> = {
+      architecture: /^#\s*(?:Arquitectura|Architecture)\b/im,
+      "use-cases": /^#\s*(?:Casos de Uso|Use Cases)\b/im,
+      "user-stories": /^#\s*(?:Historias de Usuario|User Stories)\b/im,
+      spec: /^#\s*Spec\b/i,
+      blueprint: /^#\s*Blueprint\b/i,
+      "api-contracts": /^#\s*(?:Contratos de API|API Contracts)\b/im,
+      "logic-flows": /^#\s*(?:Flujos de L.gica|Logic Flows)\b/im,
+      tasks: /^#\s*(?:Tareas|Tasks)\b/i,
+      infra: /^#\s*(?:Infraestructura|Infrastructure|Infra(?![a-z]))(?:\s|$)/im,
+    };
+
+    const pattern = HEADING_PATTERNS[activeTab];
+    if (!pattern) return null;
+    const match = trimmed.match(pattern);
+    if (!match?.index) return null;
+
+    const docStartIdx = match.index;
+    const docSection = docStartIdx > 0 ? trimmed.slice(docStartIdx) : trimmed;
+    const hrMatch = docSection.match(/\n\s*[-*_]{3,}\s*\n/);
+    const docPart = (hrMatch && hrMatch.index != null
+      ? docSection.slice(0, hrMatch.index)
+      : docSection
+    ).trim();
+
+    const afterHr = hrMatch && hrMatch.index != null
+      ? docSection.slice(hrMatch.index + hrMatch[0].length).trim()
+      : "";
+    const beforeDoc = docStartIdx > 0 ? trimmed.slice(0, docStartIdx).trim() : "";
+    const label = activeTab.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const chatPart = afterHr || beforeDoc
+      ? [beforeDoc, afterHr].filter(Boolean).join("\n\n")
+      : `${label} actualizado. Revisa el panel del documento.`;
+
+    return { docPart, chatPart };
+  }
+
   stripChatLabel(text: string): string {
     return stripChatLabelUtil(text);
   }
