@@ -55,6 +55,7 @@ import { downloadDocumentsZip } from "../utils/downloadDocumentsZip";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
 import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "../components/WorkshopDocSourceSaveBar";
 import { DocEmptyState } from "../components/DocEmptyState";
+import { StandardDocPanel } from "../components/StandardDocPanel";
 import type { LucideIcon } from "lucide-react";
 import {
   Button,
@@ -3245,58 +3246,21 @@ export default function WorkshopView({
               </>
             )}
             {centralPanel === "architecture" && (
-              <>
-                {architectureViewMode === "preview" && !architectureContent?.trim() ? (
-                  <DocEmptyState
-                    icon={Layers}
-                    title="Arquitectura"
-                    description="Módulos, datos, APIs y flujos del producto, alineados con el MDD y el codebase."
-                    onGenerate={() => generateArchitecture(projectId)}
-                    loading={loading}
-                    hasMdd={!!effectiveMddTrimmed}
-                  />
-                ) : (
-                  <>
-                    {architectureViewMode === "preview" ? (
-                      <MddViewer content={architectureContent || ""} />
-                    ) : (
-                      <div className="flex min-h-0 flex-1 flex-col gap-2">
-                        <WorkshopDocSourceSaveBar
-                          onSave={() => void persistArchitectureContent(architectureContent ?? "")}
-                          disabled={!architectureDirty}
-                        />
-                        <textarea
-                          value={architectureContent ?? ""}
-                          onChange={(e) => setArchitectureContent(e.target.value)}
-                          onBlur={handleArchitectureBlur}
-                          placeholder="# Arquitectura del sistema\n\nMódulos, datos, APIs y flujos del producto (según MDD y codebase)..."
-                          className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                          spellCheck={false}
-                        />
-                      </div>
-                    )}
-                    {!architectureContent?.trim() && architectureViewMode === "source" ? (
-                      <div className="shrink-0 mt-4 flex min-h-[200px] w-full justify-center sm:justify-end">
-                        {loading ? (
-                          <AiDocumentBuildingPlaceholder documentTitle="Arquitectura" />
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="lg"
-                            className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
-                            onClick={() => generateArchitecture(projectId)}
-                            disabled={loading || !effectiveMddTrimmed}
-                          >
-                            <Sparkles className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                            Generar Arquitectura desde MDD
-                          </Button>
-                        )}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </>
+              <StandardDocPanel
+                icon={Layers}
+                title="Arquitectura"
+                description="Módulos, datos, APIs y flujos del producto, alineados con el MDD y el codebase."
+                content={architectureContent}
+                onContentChange={(v) => setArchitectureContent(v)}
+                onSave={() => void persistArchitectureContent(architectureContent ?? "")}
+                isDirty={architectureDirty}
+                viewMode={architectureViewMode}
+                onGenerate={() => generateArchitecture(projectId)}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading}
+                placeholder="# Arquitectura del sistema\n\nMódulos, datos, APIs y flujos del producto (según MDD y codebase)..."
+                onBlur={handleArchitectureBlur}
+              />
             )}
             {centralPanel === "use-cases" && (
               <>
