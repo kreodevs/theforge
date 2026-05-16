@@ -56,6 +56,7 @@ import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complex
 import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "../components/WorkshopDocSourceSaveBar";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { StandardDocPanel } from "../components/StandardDocPanel";
+import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -2071,164 +2072,63 @@ export default function WorkshopView({
                   </TooltipContent>
                 </Tooltip>
                 {centralPanel === "architecture" && !!architectureContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateArchitecture(projectId)}
-                        disabled={loading || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar arquitectura desde el MDD"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar arquitectura desde el MDD
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateArchitecture(projectId)}
+                    disabled={loading || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar arquitectura desde el MDD"
+                  />
                 )}
                 {centralPanel === "use-cases" && !!useCasesContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateUseCases(projectId)}
-                        disabled={loading || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar casos de uso desde el MDD"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar casos de uso desde el MDD
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateUseCases(projectId)}
+                    disabled={loading || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar casos de uso desde el MDD"
+                  />
                 )}
                 {centralPanel === "user-stories" && !!userStoriesContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateUserStories(projectId)}
-                        disabled={loading || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar historias de usuario desde el MDD"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar historias de usuario desde el MDD
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateUserStories(projectId)}
+                    disabled={loading || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar historias de usuario desde el MDD"
+                  />
                 )}
                 {centralPanel === "blueprint" && !!blueprintContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateBlueprint(projectId, { preview: true })}
-                        disabled={loading || mddReviewing || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar blueprint desde el MDD (vista previa antes de guardar)"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar blueprint desde el MDD (vista previa antes de guardar)
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateBlueprint(projectId, { preview: true })}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar blueprint desde el MDD (vista previa antes de guardar)"
+                    tooltip="Regenerar blueprint desde el MDD (vista previa antes de guardar)"
+                  />
                 )}
                 {centralPanel === "api-contracts" && !!apiContractsContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateApiContracts(projectId, { preview: true })}
-                        disabled={loading || mddReviewing || !effectiveMddTrimmed || apiBlueprintDmBlocked}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label={
-                          apiBlueprintDmBlocked
-                            ? apiBlueprintBlockedHint
-                            : "Regenerar contratos API desde el MDD (vista previa antes de guardar)"
-                        }
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      {apiBlueprintDmBlocked
-                        ? apiBlueprintBlockedHint
-                        : "Regenerar contratos API desde el MDD (vista previa antes de guardar)"}
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateApiContracts(projectId, { preview: true })}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed || apiBlueprintDmBlocked}
+                    loading={loading}
+                    ariaLabel={apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API desde el MDD (vista previa antes de guardar)"}
+                    tooltip={apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API desde el MDD (vista previa antes de guardar)"}
+                  />
                 )}
                 {centralPanel === "logic-flows" && !!logicFlowsContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateLogicFlows(projectId)}
-                        disabled={loading || mddReviewing || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar flujos de lógica desde el MDD"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar flujos de lógica desde el MDD
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateLogicFlows(projectId)}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar flujos de lógica desde el MDD"
+                  />
                 )}
                 {centralPanel === "infra" && !!infraContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateInfra(projectId, { preview: true })}
-                        disabled={loading || mddReviewing || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar infraestructura desde el MDD (vista previa antes de guardar)"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar infraestructura desde el MDD (vista previa antes de guardar)
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateInfra(projectId, { preview: true })}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar infraestructura desde el MDD (vista previa antes de guardar)"
+                    tooltip="Regenerar infraestructura desde el MDD (vista previa antes de guardar)"
+                  />
                 )}
                 {centralPanel === "mdd-inicial" &&
                   isLegacyProject &&
@@ -2311,48 +2211,20 @@ export default function WorkshopView({
                 )}
                 {/* to-be save button removed */}
                 {centralPanel === "spec" && !!specContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateSpec(projectId)}
-                        disabled={loading}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar Spec desde Benchmark y alcance"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar Spec desde Benchmark y alcance
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateSpec(projectId)}
+                    disabled={loading}
+                    loading={loading}
+                    ariaLabel="Regenerar Spec desde Benchmark y alcance"
+                  />
                 )}
                 {centralPanel === "tasks" && !!tasksContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateTasks(projectId)}
-                        disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar Tasks desde MDD y Blueprint"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar Tasks desde MDD y Blueprint
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateTasks(projectId)}
+                    disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
+                    loading={loading}
+                    ariaLabel="Regenerar Tasks desde MDD y Blueprint"
+                  />
                 )}
                 {centralPanel === "ux-ui-guide" && !!uxUiGuideContent?.trim() && (
                   <Tooltip>
