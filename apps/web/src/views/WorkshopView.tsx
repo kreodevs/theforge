@@ -3147,8 +3147,7 @@ export default function WorkshopView({
                       <span className="text-[var(--foreground-subtle)] text-xs">(puede tardar 1–2 min)</span>
                     </div>
 
-                    {dbgaContent != null && dbgaContent !== "" && (
-                      <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] pt-4">
+                    <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] pt-4">
                         <h3 className="shrink-0 text-sm font-medium text-[var(--muted-foreground)] mb-2">Análisis (DBGA) — Fase 0</h3>
                         <div className="shrink-0 flex items-center justify-end gap-2 mb-2 flex-wrap">
                           <button
@@ -3164,13 +3163,13 @@ export default function WorkshopView({
                           </button>
                         </div>
                         <div className="flex-1 flex flex-col min-h-0">
-                          {benchmarkViewMode === "preview" ? (
+                          {benchmarkViewMode === "preview" && dbgaContent != null && dbgaContent !== "" ? (
                             <div className="flex-1 min-h-[200px] overflow-auto">
                               <MddViewer content={dbgaContent} />
                             </div>
                           ) : (
                             <textarea
-                              value={dbgaContent}
+                              value={dbgaContent ?? ""}
                               onChange={(e) => setDbgaContent(e.target.value)}
                               onBlur={handleBenchmarkBlur}
                               placeholder="# Domain Benchmark & Gap Analysis..."
@@ -3180,11 +3179,9 @@ export default function WorkshopView({
                           )}
                         </div>
                       </div>
-                    )}
                   </>
                 ) : (
                   <>
-                    {phase0SummaryContent != null && phase0SummaryContent !== "" ? (
                       <div className="flex-1 flex flex-col min-h-0">
                         <div className="shrink-0 flex items-center justify-end gap-2 mb-3 flex-wrap">
                           <button
@@ -3198,20 +3195,31 @@ export default function WorkshopView({
                               <><FileText className="w-4 h-4" /> Ver previsualización</>
                             )}
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => projectId && clearPhase0SummaryContent(projectId)}
-                            className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--destructive)_12%,transparent)] text-sm"
-                            title="Borrar el resumen Benchmark (podrás generar uno nuevo desde Fase 0)"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Borrar benchmark
-                          </button>
+                          {phase0SummaryContent != null && phase0SummaryContent !== "" && (
+                            <button
+                              type="button"
+                              onClick={() => projectId && clearPhase0SummaryContent(projectId)}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded text-[var(--muted-foreground)] hover:text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--destructive)_12%,transparent)] text-sm"
+                              title="Borrar el resumen Benchmark (podrás generar uno nuevo desde Fase 0)"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Borrar benchmark
+                            </button>
+                          )}
                         </div>
                         <div className="flex-1 flex flex-col min-h-0">
-                          {phase0SummaryViewMode === "preview" ? (
+                          {phase0SummaryViewMode === "preview" && phase0SummaryContent != null && phase0SummaryContent !== "" ? (
                             <div className="flex-1 min-h-[200px] overflow-auto">
                               <MddViewer content={phase0SummaryContent ?? ""} />
+                            </div>
+                          ) : phase0SummaryViewMode === "preview" ? (
+                            <div className="flex-1 flex items-center justify-center min-h-[200px]">
+                              <div className="text-center">
+                                <Globe className="w-8 h-8 mx-auto mb-2 text-[var(--muted-foreground)] opacity-40" />
+                                <p className="text-sm text-[var(--muted-foreground)]">
+                                  Aún no hay Benchmark. Ve a la pestaña <strong>Fase 0</strong>, completa el análisis y presiona <strong>Generar Benchmark</strong>.
+                                </p>
+                              </div>
                             </div>
                           ) : (
                             <textarea
@@ -3225,16 +3233,6 @@ export default function WorkshopView({
                           )}
                         </div>
                       </div>
-                    ) : (
-                      <div className="flex-1 flex items-center justify-center min-h-[200px]">
-                        <div className="text-center">
-                          <Globe className="w-8 h-8 mx-auto mb-2 text-[var(--muted-foreground)] opacity-40" />
-                          <p className="text-sm text-[var(--muted-foreground)]">
-                            Aún no hay Benchmark. Ve a la pestaña <strong>Fase 0</strong>, completa el análisis y presiona <strong>Generar Benchmark</strong>.
-                          </p>
-                        </div>
-                      </div>
-                    )}
                   </>
                 )}
               </>
