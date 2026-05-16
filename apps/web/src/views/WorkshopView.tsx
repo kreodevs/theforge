@@ -3263,112 +3263,38 @@ export default function WorkshopView({
               />
             )}
             {centralPanel === "use-cases" && (
-              <>
-                {useCasesViewMode === "preview" && !useCasesContent?.trim() ? (
-                  <DocEmptyState
-                    icon={Target}
-                    title="Casos de uso"
-                    description="Escenarios de interacción y flujos transaccionales derivados del MDD."
-                    onGenerate={() => generateUseCases(projectId)}
-                    loading={loading}
-                    hasMdd={!!effectiveMddTrimmed}
-                  />
-                ) : (
-                  <>
-                    {useCasesViewMode === "preview" ? (
-                      <MddViewer content={useCasesContent || ""} />
-                    ) : (
-                      <div className="flex min-h-0 flex-1 flex-col gap-2">
-                        <WorkshopDocSourceSaveBar
-                          onSave={() => void persistUseCasesContent(useCasesContent ?? "")}
-                          disabled={!useCasesDirty}
-                        />
-                        <textarea
-                          value={useCasesContent ?? ""}
-                          onChange={(e) => setUseCasesContent(e.target.value)}
-                          onBlur={handleUseCasesBlur}
-                          placeholder="# Casos de Uso\n\nDescribe los escenarios de interacción y flujos transaccionales..."
-                          className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                          spellCheck={false}
-                        />
-                      </div>
-                    )}
-                    {!useCasesContent?.trim() && useCasesViewMode === "source" ? (
-                      <div className="shrink-0 mt-4 flex min-h-[200px] w-full justify-center sm:justify-end">
-                        {loading ? (
-                          <AiDocumentBuildingPlaceholder documentTitle="Casos de uso" />
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="lg"
-                            className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
-                            onClick={() => generateUseCases(projectId)}
-                            disabled={loading || !effectiveMddTrimmed}
-                          >
-                            <Sparkles className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                            Generar Casos de uso desde MDD
-                          </Button>
-                        )}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </>
+              <StandardDocPanel
+                icon={Target}
+                title="Casos de uso"
+                description="Escenarios de interacción y flujos transaccionales derivados del MDD."
+                content={useCasesContent}
+                onContentChange={(v) => setUseCasesContent(v)}
+                onSave={() => void persistUseCasesContent(useCasesContent ?? "")}
+                isDirty={useCasesDirty}
+                viewMode={useCasesViewMode}
+                onGenerate={() => generateUseCases(projectId)}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading}
+                placeholder="# Casos de Uso\n\nDescribe los escenarios de interacción y flujos transaccionales..."
+                onBlur={handleUseCasesBlur}
+              />
             )}
             {centralPanel === "user-stories" && (
-              <>
-                {userStoriesViewMode === "preview" && !userStoriesContent?.trim() ? (
-                  <DocEmptyState
-                    icon={MessageSquare}
-                    title="Historias de usuario"
-                    description="Requisitos en formato ágil (Como / Quiero / Para) a partir del MDD."
-                    onGenerate={() => generateUserStories(projectId)}
-                    loading={loading}
-                    hasMdd={!!effectiveMddTrimmed}
-                  />
-                ) : (
-                  <>
-                    {userStoriesViewMode === "preview" ? (
-                      <MddViewer content={userStoriesContent || ""} />
-                    ) : (
-                      <div className="flex min-h-0 flex-1 flex-col gap-2">
-                        <WorkshopDocSourceSaveBar
-                          onSave={() => void persistUserStoriesContent(userStoriesContent ?? "")}
-                          disabled={!userStoriesDirty}
-                        />
-                        <textarea
-                          value={userStoriesContent ?? ""}
-                          onChange={(e) => setUserStoriesContent(e.target.value)}
-                          onBlur={handleUserStoriesBlur}
-                          placeholder="# Historias de Usuario\n\nDefine los requisitos en formato Agile (Como... quiero... para...)..."
-                          className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                          spellCheck={false}
-                        />
-                      </div>
-                    )}
-                    {!userStoriesContent?.trim() && userStoriesViewMode === "source" ? (
-                      <div className="shrink-0 mt-4 flex min-h-[200px] w-full justify-center sm:justify-end">
-                        {loading ? (
-                          <AiDocumentBuildingPlaceholder documentTitle="Historias de usuario" />
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="lg"
-                            className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
-                            onClick={() => generateUserStories(projectId)}
-                            disabled={loading || !effectiveMddTrimmed}
-                          >
-                            <Sparkles className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                            Generar Historias de usuario desde MDD
-                          </Button>
-                        )}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </>
+              <StandardDocPanel
+                icon={MessageSquare}
+                title="Historias de usuario"
+                description="Requisitos en formato ágil (Como / Quiero / Para) a partir del MDD."
+                content={userStoriesContent}
+                onContentChange={(v) => setUserStoriesContent(v)}
+                onSave={() => void persistUserStoriesContent(userStoriesContent ?? "")}
+                isDirty={userStoriesDirty}
+                viewMode={userStoriesViewMode}
+                onGenerate={() => generateUserStories(projectId)}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading}
+                placeholder="# Historias de Usuario\n\nDefine los requisitos en formato Agile (Como... quiero... para...)..."
+                onBlur={handleUserStoriesBlur}
+              />
             )}
             {centralPanel === "ux-ui-guide" && (
               <>
