@@ -20,12 +20,9 @@ import {
   Play,
   ListOrdered,
   ListTodo,
-  Download,
-  Brain,
   ArrowDown,
   ArrowUp,
   HelpCircle,
-  CheckCircle2,
   Layers,
   MessageSquare,
   Copy,
@@ -36,7 +33,6 @@ import {
   Globe,
   Lock,
   Pencil,
-  Sparkles,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -46,13 +42,20 @@ import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import MddViewer from "../components/MddViewer";
-import { DesignMdPreview, replaceYamlFrontMatter } from "../components/DesignMdPreview";
+import { replaceYamlFrontMatter } from "../components/DesignMdPreview";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
 import { WorkshopMetricsColumnInner } from "./WorkshopMetricsColumnInner";
 import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
 import { BrdStagePanel } from "../components/BrdStagePanel";
 import { downloadDocumentsZip } from "../utils/downloadDocumentsZip";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
+import { StandardDocPanel } from "../components/StandardDocPanel";
+import { DocEmptyState } from "../components/DocEmptyState";
+import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
+import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
+import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
+import { AdrsPanel } from "../components/AdrsPanel";
+import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import type { LucideIcon } from "lucide-react";
 import {
   Button,
@@ -63,7 +66,6 @@ import {
 } from "../components/ui";
 import { WorkshopFlowOrderModal } from "../components/WorkshopFlowOrderModal";
 import {
-  AiDocumentBuildingPlaceholder,
   AiGenerationPanel,
   AiGenerativeDots,
 } from "../components/AiGenerationLoader";
@@ -210,131 +212,6 @@ function WorkshopDocToolbarHint({
   return (
     <div className="min-w-0 flex-1 sm:max-w-[min(100%,52rem)]" title={summaryLine}>
       <p className="text-xs font-medium leading-snug text-[var(--foreground)] lg:line-clamp-1">{summaryLine}</p>
-    </div>
-  );
-}
-
-/** Primary CTA styling: shared by `DocEmptyState` and source-mode “first generate” rows. */
-const WORKSHOP_DOC_EMPTY_PRIMARY_BTN = cn(
-  "h-12 gap-2 rounded-xl text-base font-semibold shadow-md",
-  "shadow-[color-mix(in_oklch,var(--primary)_42%,transparent)]",
-  "hover:shadow-lg hover:shadow-[color-mix(in_oklch,var(--primary)_48%,transparent)]",
-);
-
-function DocEmptyState({
-  icon: Icon,
-  title,
-  description,
-  onGenerate,
-  loading,
-  hasMdd,
-  generateBlocked,
-  generateBlockedReason,
-  /** Etiqueta para botón "Generar desde MDD Inicial" en legacy etapa 1 */
-  legacyGenerateLabel,
-  onLegacyGenerate,
-  legacyGenerateLoading,
-}: {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  onGenerate: () => void;
-  loading: boolean;
-  hasMdd: boolean;
-  /** ej. Blueprint §3 incompleto — bloquea generación aunque haya MDD */
-  generateBlocked?: boolean;
-  generateBlockedReason?: string;
-  legacyGenerateLabel?: string;
-  onLegacyGenerate?: () => void;
-  legacyGenerateLoading?: boolean;
-}) {
-  const blocked = !!generateBlocked;
-  if (loading && !blocked) {
-    return (
-      <div className="flex min-h-[280px] w-full flex-1 flex-col items-center justify-center px-4 py-8 text-center sm:px-6">
-        <AiDocumentBuildingPlaceholder documentTitle={title} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex min-h-[260px] w-full flex-1 flex-col items-center justify-center gap-6 px-4 py-8 text-center sm:px-6">
-      <Icon
-        className="h-10 w-10 shrink-0 text-[color-mix(in_oklch,var(--primary)_45%,var(--muted-foreground))]"
-        strokeWidth={1.5}
-        aria-hidden
-      />
-      <div className="flex min-w-0 max-w-md flex-col gap-2">
-        <h3 className="text-lg font-semibold tracking-tight text-[var(--foreground)] sm:text-xl">{title}</h3>
-        <p className="text-sm leading-relaxed text-[var(--muted-foreground)]">{description}</p>
-      </div>
-      <div className="flex w-full max-w-md min-w-0 flex-col items-stretch gap-3">
-        <Button
-          type="button"
-          variant="default"
-          size="lg"
-          className={cn("w-full", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
-          onClick={onGenerate}
-          disabled={loading || !hasMdd || blocked}
-          loading={loading}
-          generativeLoading={loading}
-        >
-          {!loading ? <Sparkles className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden /> : null}
-          Generar {title} desde MDD
-        </Button>
-        {!hasMdd && (
-          <p className="text-xs leading-relaxed text-[var(--muted-foreground)]">
-            Necesitas tener contenido en el MDD para generar este documento.
-          </p>
-        )}
-        {blocked && generateBlockedReason && (
-          <p className="text-xs font-medium leading-relaxed text-[color-mix(in_oklch,var(--primary)_88%,var(--foreground))]">
-            {generateBlockedReason}
-          </p>
-        )}
-        {legacyGenerateLabel && onLegacyGenerate && (
-          <Button
-            type="button"
-            variant="outline"
-            size="default"
-            className="h-11 w-full gap-2 rounded-xl font-medium"
-            onClick={onLegacyGenerate}
-            disabled={legacyGenerateLoading}
-            loading={legacyGenerateLoading}
-            generativeLoading={legacyGenerateLoading}
-          >
-            {!legacyGenerateLoading ? <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden /> : null}
-            {legacyGenerateLabel}
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Save control above the markdown editor: full-width primary action (no nested card). */
-function WorkshopDocSourceSaveBar({
-  onSave,
-  disabled,
-  label = "Guardar",
-}: {
-  onSave: () => void | Promise<void>;
-  disabled: boolean;
-  label?: string;
-}) {
-  return (
-    <div className="shrink-0 w-full min-w-0">
-      <Button
-        type="button"
-        variant="default"
-        size="lg"
-        className={cn("w-full touch-manipulation", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
-        disabled={disabled}
-        onClick={() => void onSave()}
-      >
-        <Save className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-        {label}
-      </Button>
     </div>
   );
 }
@@ -759,6 +636,24 @@ export default function WorkshopView({
   const [brdTobePersistBusy, setBrdTobePersistBusy] = useState(false);
   /** `ask_codebase` / Ariadne al generar doc. partida (`POST …/legacy/generate-codebase-doc`). Default `raw_evidence`. `ingest_mdd` = una sola pasada `evidence_first` (MDD ingest), sin agente escalonado ni síntesis Nest. */
   const [codebaseDocResponseMode, setCodebaseDocResponseMode] = useState<CodebaseDocResponseMode>("raw_evidence");
+
+  /** Alterna preview/source/design del panel de documento activo. */
+  const toggleDocViewMode = (panel: string) => {
+    if (panel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "mdd-inicial") setMddInicialViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "spec") setSpecViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "architecture") setArchitectureViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "user-stories") setUserStoriesViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "ux-ui-guide") setUxUiGuideViewMode((m) => m === "design" ? "preview" : m === "preview" ? "source" : "design");
+    else if (panel === "aem") setAemViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "brd") setBrdDocViewMode((m) => (m === "preview" ? "source" : "preview"));
+  };
+
   const copyMddInicialMarkdown = useCallback(async () => {
     const text = (mddInicialLocalContent || activeLegacyState?.codebaseDoc || "").trim();
     if (!text) return;
@@ -1316,70 +1211,27 @@ export default function WorkshopView({
     infraContent,
   ]);
 
+  // ─── Auto-save hooks ────
+  const { handleBlur: handleSpecBlur, isDirty: specDirty } = useAutoSaveContent(specContent, project?.specContent, persistSpecContent, projectId);
+  const { handleBlur: handleAemBlur, isDirty: aemDirty } = useAutoSaveContent(aemContent, project?.aemContent, persistAemContent, projectId);
+  const { handleBlur: handleArchitectureBlur, isDirty: architectureDirty } = useAutoSaveContent(architectureContent, project?.architectureContent, persistArchitectureContent, projectId);
+  const { handleBlur: handleUseCasesBlur, isDirty: useCasesDirty } = useAutoSaveContent(useCasesContent, project?.useCasesContent, persistUseCasesContent, projectId);
+  const { handleBlur: handleUserStoriesBlur, isDirty: userStoriesDirty } = useAutoSaveContent(userStoriesContent, project?.userStoriesContent, persistUserStoriesContent, projectId);
+  const { handleBlur: handleBlueprintBlur, isDirty: blueprintDirty } = useAutoSaveContent(blueprintContent, project?.blueprintContent, persistBlueprintContent, projectId);
+  const { handleBlur: handleApiContractsBlur, isDirty: apiContractsDirty } = useAutoSaveContent(apiContractsContent, project?.apiContractsContent, persistApiContractsContent, projectId);
+  const { handleBlur: handleLogicFlowsBlur, isDirty: logicFlowsDirty } = useAutoSaveContent(logicFlowsContent, project?.logicFlowsContent, persistLogicFlowsContent, projectId);
+  const { handleBlur: handleInfraBlur, isDirty: infraDirty } = useAutoSaveContent(infraContent, project?.infraContent, persistInfraContent, projectId);
+  const { handleBlur: handleBenchmarkBlur } = useAutoSaveContent(dbgaContent, project?.dbgaContent, persistDbgaContent, projectId);
+  const { handleBlur: handlePhase0SummaryBlur } = useAutoSaveContent(phase0SummaryContent, project?.phase0SummaryContent, persistPhase0SummaryContent, projectId);
 
-
+  // tasks auto-save (view-only, no blur needed)
   useEffect(() => {
-    if (!projectId || !project || blueprintContent === (project.blueprintContent ?? null)) return;
-    const t = setTimeout(() => {
-      persistBlueprintContent(blueprintContent ?? "");
-    }, 1500);
+    if (!projectId || !project || (tasksContent ?? "") === (project.tasksContent ?? "")) return;
+    const t = setTimeout(() => persistTasksContent(tasksContent ?? ""), 1500);
     return () => clearTimeout(t);
-  }, [blueprintContent, projectId, project?.blueprintContent, project, persistBlueprintContent]);
+  }, [tasksContent, projectId, project?.tasksContent, project, persistTasksContent]);
 
-  useEffect(() => {
-    if (!projectId || !project || apiContractsContent === (project.apiContractsContent ?? null)) return;
-    const t = setTimeout(() => persistApiContractsContent(apiContractsContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [apiContractsContent, projectId, project?.apiContractsContent, project, persistApiContractsContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || logicFlowsContent === (project.logicFlowsContent ?? null)) return;
-    const t = setTimeout(() => persistLogicFlowsContent(logicFlowsContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [logicFlowsContent, projectId, project?.logicFlowsContent, project, persistLogicFlowsContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || infraContent === (project.infraContent ?? null)) return;
-    const t = setTimeout(() => persistInfraContent(infraContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [infraContent, projectId, project?.infraContent, project, persistInfraContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || architectureContent === (project.architectureContent ?? null)) return;
-    const t = setTimeout(() => persistArchitectureContent(architectureContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [architectureContent, projectId, project?.architectureContent, project, persistArchitectureContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || useCasesContent === (project.useCasesContent ?? null)) return;
-    const t = setTimeout(() => persistUseCasesContent(useCasesContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [useCasesContent, projectId, project?.useCasesContent, project, persistUseCasesContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || userStoriesContent === (project.userStoriesContent ?? null)) return;
-    const t = setTimeout(() => persistUserStoriesContent(userStoriesContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [userStoriesContent, projectId, project?.userStoriesContent, project, persistUserStoriesContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || dbgaContent === (project.dbgaContent ?? null)) return;
-    const t = setTimeout(() => persistDbgaContent(dbgaContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [dbgaContent, projectId, project?.dbgaContent, project, persistDbgaContent]);
-
-  const handlePhase0SummaryBlur = useCallback(() => {
-    if ((phase0SummaryContent ?? "") !== (project?.phase0SummaryContent ?? "")) {
-      persistPhase0SummaryContent(phase0SummaryContent ?? "");
-    }
-  }, [phase0SummaryContent, project?.phase0SummaryContent, project, persistPhase0SummaryContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || phase0SummaryContent === (project.phase0SummaryContent ?? null)) return;
-    const t = setTimeout(() => persistPhase0SummaryContent(phase0SummaryContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [phase0SummaryContent, projectId, project?.phase0SummaryContent, project, persistPhase0SummaryContent]);
-
+  // ux-ui-guide auto-save (special: replaceYamlFrontMatter before persist)
   useEffect(() => {
     if (!projectId || !project || (uxUiGuideContent ?? "") === (project.uxUiGuideContent ?? "")) return;
     const t = setTimeout(() => {
@@ -1390,35 +1242,14 @@ export default function WorkshopView({
     return () => clearTimeout(t);
   }, [uxUiGuideContent, projectId, project?.uxUiGuideContent, project, persistUxUiGuideContent, projectName]);
 
-  const handleSpecBlur = useCallback(() => {
-    if ((specContent ?? "") !== (project?.specContent ?? "")) {
-      persistSpecContent(specContent ?? "");
+  // ux-ui-guide blur (special: replaceYamlFrontMatter)
+  const handleUxUiGuideBlur = useCallback(() => {
+    if (uxUiGuideContent != null) {
+      const content = replaceYamlFrontMatter(uxUiGuideContent, projectName);
+      if (content !== uxUiGuideContent) setUxUiGuideContent(content);
+      persistUxUiGuideContent(content);
     }
-  }, [specContent, project?.specContent, project, persistSpecContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || (specContent ?? "") === (project.specContent ?? "")) return;
-    const t = setTimeout(() => persistSpecContent(specContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [specContent, projectId, project?.specContent, project, persistSpecContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || (tasksContent ?? "") === (project.tasksContent ?? "")) return;
-    const t = setTimeout(() => persistTasksContent(tasksContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [tasksContent, projectId, project?.tasksContent, project, persistTasksContent]);
-
-  const handleAemBlur = useCallback(() => {
-    if ((aemContent ?? "") !== (project?.aemContent ?? "")) {
-      persistAemContent(aemContent ?? "");
-    }
-  }, [aemContent, project?.aemContent, project, persistAemContent]);
-
-  useEffect(() => {
-    if (!projectId || !project || (aemContent ?? "") === (project.aemContent ?? "")) return;
-    const t = setTimeout(() => persistAemContent(aemContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [aemContent, projectId, project?.aemContent, project, persistAemContent]);
+  }, [uxUiGuideContent, persistUxUiGuideContent, projectName]);
 
   // Consultar si Hermes Agent está configurado en el backend
   useEffect(() => {
@@ -1430,22 +1261,6 @@ export default function WorkshopView({
         .catch(() => setHermesConfigured(false));
     });
   }, [projectId]);
-
-  const handleBlueprintBlur = useCallback(() => {
-    if (blueprintContent != null) persistBlueprintContent(blueprintContent);
-  }, [blueprintContent, persistBlueprintContent]);
-
-  const handleApiContractsBlur = useCallback(() => {
-    if (apiContractsContent != null) persistApiContractsContent(apiContractsContent);
-  }, [apiContractsContent, persistApiContractsContent]);
-
-  const handleLogicFlowsBlur = useCallback(() => {
-    if (logicFlowsContent != null) persistLogicFlowsContent(logicFlowsContent);
-  }, [logicFlowsContent, persistLogicFlowsContent]);
-
-  const handleInfraBlur = useCallback(() => {
-    if (infraContent != null) persistInfraContent(infraContent);
-  }, [infraContent, persistInfraContent]);
 
   /** Imprime el documento visible actual (encuentra .markdown-preview en el DOM). */
   const handlePrintDocument = useCallback(() => {
@@ -1492,41 +1307,8 @@ export default function WorkshopView({
     setTimeout(() => printWin.print(), 500);
   }, []);
 
-  const handleBenchmarkBlur = useCallback(() => {
-    if (dbgaContent != null) persistDbgaContent(dbgaContent);
-  }, [dbgaContent, persistDbgaContent]);
-
-  const handleUxUiGuideBlur = useCallback(() => {
-    if (uxUiGuideContent != null) {
-      const content = replaceYamlFrontMatter(uxUiGuideContent, projectName);
-      if (content !== uxUiGuideContent) setUxUiGuideContent(content);
-      persistUxUiGuideContent(content);
-    }
-  }, [uxUiGuideContent, persistUxUiGuideContent, projectName]);
-
-  const handleArchitectureBlur = useCallback(() => {
-    if (architectureContent != null) persistArchitectureContent(architectureContent);
-  }, [architectureContent, persistArchitectureContent]);
-
-  const handleUseCasesBlur = useCallback(() => {
-    if (useCasesContent != null) persistUseCasesContent(useCasesContent);
-  }, [useCasesContent, persistUseCasesContent]);
-
-  const handleUserStoriesBlur = useCallback(() => {
-    if (userStoriesContent != null) persistUserStoriesContent(userStoriesContent);
-  }, [userStoriesContent, persistUserStoriesContent]);
-
   const mddDirty = (mddContent ?? "") !== (project?.mddContent ?? "");
-  const specDirty = (specContent ?? "") !== (project?.specContent ?? "");
-  const aemDirty = (aemContent ?? "") !== (project?.aemContent ?? "");
-  const architectureDirty = (architectureContent ?? "") !== (project?.architectureContent ?? "");
-  const useCasesDirty = (useCasesContent ?? "") !== (project?.useCasesContent ?? "");
-  const userStoriesDirty = (userStoriesContent ?? "") !== (project?.userStoriesContent ?? "");
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
-  const blueprintDirty = (blueprintContent ?? "") !== (project?.blueprintContent ?? "");
-  const apiContractsDirty = (apiContractsContent ?? "") !== (project?.apiContractsContent ?? "");
-  const logicFlowsDirty = (logicFlowsContent ?? "") !== (project?.logicFlowsContent ?? "");
-  const infraDirty = (infraContent ?? "") !== (project?.infraContent ?? "");
 
   if (error && !project) {
     return (
@@ -1732,39 +1514,28 @@ export default function WorkshopView({
                   <TooltipContent side="bottom">Nueva etapa</TooltipContent>
                 </Tooltip>
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const ok = await downloadDocumentsZip(
-                          {
-                            dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
-                            phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
-                            specContent: specContent ?? project?.specContent ?? null,
-                            mddContent: mddContent ?? project?.mddContent ?? "",
-                            uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
-                            blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
-                            apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
-                            logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
-                            tasksContent: tasksContent ?? project?.tasksContent ?? null,
-                            infraContent: infraContent ?? project?.infraContent ?? null,
-                            aemContent: aemContent ?? project?.aemContent ?? null,
-                          },
-                          projectName ?? project?.name ?? "Workshop",
-                        );
-                        if (ok) setError(null);
-                        else setError("No hay documentos con contenido para descargar.");
-                      }}
-                      className={WORKSHOP_HEADER_ICON_BTN}
-                      title="Descargar todos los documentos en ZIP"
-                      aria-label="Descargar todos los documentos del proyecto en ZIP"
-                    >
-                      <Download className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Descargar ZIP del proyecto</TooltipContent>
-                </Tooltip>
+                <WorkshopDownloadZipButton
+                  onClick={async () => {
+                    const ok = await downloadDocumentsZip(
+                      {
+                        dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
+                        phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
+                        specContent: specContent ?? project?.specContent ?? null,
+                        mddContent: mddContent ?? project?.mddContent ?? "",
+                        uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
+                        blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
+                        apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
+                        logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
+                        tasksContent: tasksContent ?? project?.tasksContent ?? null,
+                        infraContent: infraContent ?? project?.infraContent ?? null,
+                        aemContent: aemContent ?? project?.aemContent ?? null,
+                      },
+                      projectName ?? project?.name ?? "Workshop",
+                    );
+                    if (ok) setError(null);
+                    else setError("No hay documentos con contenido para descargar.");
+                  }}
+                />
 
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1833,39 +1604,28 @@ export default function WorkshopView({
           ) : (
             <TooltipProvider delayDuration={280}>
               <div className="flex min-w-0 flex-nowrap items-center justify-end gap-1.5 sm:justify-self-end">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const ok = await downloadDocumentsZip(
-                          {
-                            dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
-                            phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
-                            specContent: specContent ?? project?.specContent ?? null,
-                            mddContent: mddContent ?? project?.mddContent ?? "",
-                            uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
-                            blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
-                            apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
-                            logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
-                            tasksContent: tasksContent ?? project?.tasksContent ?? null,
-                            infraContent: infraContent ?? project?.infraContent ?? null,
-                            aemContent: aemContent ?? project?.aemContent ?? null,
-                          },
-                          projectName ?? project?.name ?? "Workshop",
-                        );
-                        if (ok) setError(null);
-                        else setError("No hay documentos con contenido para descargar.");
-                      }}
-                      className={WORKSHOP_HEADER_ICON_BTN}
-                      title="Descargar todos los documentos en ZIP"
-                      aria-label="Descargar todos los documentos del proyecto en ZIP"
-                    >
-                      <Download className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Descargar ZIP del proyecto</TooltipContent>
-                </Tooltip>
+                <WorkshopDownloadZipButton
+                  onClick={async () => {
+                    const ok = await downloadDocumentsZip(
+                      {
+                        dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
+                        phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
+                        specContent: specContent ?? project?.specContent ?? null,
+                        mddContent: mddContent ?? project?.mddContent ?? "",
+                        uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
+                        blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
+                        apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
+                        logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
+                        tasksContent: tasksContent ?? project?.tasksContent ?? null,
+                        infraContent: infraContent ?? project?.infraContent ?? null,
+                        aemContent: aemContent ?? project?.aemContent ?? null,
+                      },
+                      projectName ?? project?.name ?? "Workshop",
+                    );
+                    if (ok) setError(null);
+                    else setError("No hay documentos con contenido para descargar.");
+                  }}
+                />
 
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -2241,22 +2001,7 @@ export default function WorkshopView({
                         size="icon"
                         className={WORKSHOP_DOC_TOOLBAR_ICON_BTN}
                         aria-label={docToggleTooltip}
-                        onClick={() => {
-                          if (centralPanel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "mdd-inicial") setMddInicialViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "spec") setSpecViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "architecture") setArchitectureViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "user-stories") setUserStoriesViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "ux-ui-guide") setUxUiGuideViewMode((m) => m === "design" ? "preview" : m === "preview" ? "source" : "design");
-                          else if (centralPanel === "aem") setAemViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "brd") setBrdDocViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          // to-be tab removed
-                        }}
+                        onClick={() => toggleDocViewMode(centralPanel)}
                           >
                             <DocToggleIcon className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
                           </Button>
@@ -2305,164 +2050,63 @@ export default function WorkshopView({
                   </TooltipContent>
                 </Tooltip>
                 {centralPanel === "architecture" && !!architectureContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateArchitecture(projectId)}
-                        disabled={loading || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar arquitectura desde el MDD"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar arquitectura desde el MDD
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateArchitecture(projectId)}
+                    disabled={loading || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar arquitectura desde el MDD"
+                  />
                 )}
                 {centralPanel === "use-cases" && !!useCasesContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateUseCases(projectId)}
-                        disabled={loading || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar casos de uso desde el MDD"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar casos de uso desde el MDD
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateUseCases(projectId)}
+                    disabled={loading || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar casos de uso desde el MDD"
+                  />
                 )}
                 {centralPanel === "user-stories" && !!userStoriesContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateUserStories(projectId)}
-                        disabled={loading || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar historias de usuario desde el MDD"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar historias de usuario desde el MDD
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateUserStories(projectId)}
+                    disabled={loading || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar historias de usuario desde el MDD"
+                  />
                 )}
                 {centralPanel === "blueprint" && !!blueprintContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateBlueprint(projectId, { preview: true })}
-                        disabled={loading || mddReviewing || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar blueprint desde el MDD (vista previa antes de guardar)"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar blueprint desde el MDD (vista previa antes de guardar)
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateBlueprint(projectId, { preview: true })}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar blueprint desde el MDD (vista previa antes de guardar)"
+                    tooltip="Regenerar blueprint desde el MDD (vista previa antes de guardar)"
+                  />
                 )}
                 {centralPanel === "api-contracts" && !!apiContractsContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateApiContracts(projectId, { preview: true })}
-                        disabled={loading || mddReviewing || !effectiveMddTrimmed || apiBlueprintDmBlocked}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label={
-                          apiBlueprintDmBlocked
-                            ? apiBlueprintBlockedHint
-                            : "Regenerar contratos API desde el MDD (vista previa antes de guardar)"
-                        }
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      {apiBlueprintDmBlocked
-                        ? apiBlueprintBlockedHint
-                        : "Regenerar contratos API desde el MDD (vista previa antes de guardar)"}
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateApiContracts(projectId, { preview: true })}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed || apiBlueprintDmBlocked}
+                    loading={loading}
+                    ariaLabel={apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API desde el MDD (vista previa antes de guardar)"}
+                    tooltip={apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API desde el MDD (vista previa antes de guardar)"}
+                  />
                 )}
                 {centralPanel === "logic-flows" && !!logicFlowsContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateLogicFlows(projectId)}
-                        disabled={loading || mddReviewing || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar flujos de lógica desde el MDD"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar flujos de lógica desde el MDD
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateLogicFlows(projectId)}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar flujos de lógica desde el MDD"
+                  />
                 )}
                 {centralPanel === "infra" && !!infraContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateInfra(projectId, { preview: true })}
-                        disabled={loading || mddReviewing || !effectiveMddTrimmed}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar infraestructura desde el MDD (vista previa antes de guardar)"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar infraestructura desde el MDD (vista previa antes de guardar)
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateInfra(projectId, { preview: true })}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar infraestructura desde el MDD (vista previa antes de guardar)"
+                    tooltip="Regenerar infraestructura desde el MDD (vista previa antes de guardar)"
+                  />
                 )}
                 {centralPanel === "mdd-inicial" &&
                   isLegacyProject &&
@@ -2545,48 +2189,20 @@ export default function WorkshopView({
                 )}
                 {/* to-be save button removed */}
                 {centralPanel === "spec" && !!specContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateSpec(projectId)}
-                        disabled={loading}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar Spec desde Benchmark y alcance"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar Spec desde Benchmark y alcance
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateSpec(projectId)}
+                    disabled={loading}
+                    loading={loading}
+                    ariaLabel="Regenerar Spec desde Benchmark y alcance"
+                  />
                 )}
                 {centralPanel === "tasks" && !!tasksContent?.trim() && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => generateTasks(projectId)}
-                        disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Regenerar Tasks desde MDD y Blueprint"
-                      >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Regenerar Tasks desde MDD y Blueprint
-                    </TooltipContent>
-                  </Tooltip>
+                  <WorkshopRegenButton
+                    onClick={() => generateTasks(projectId)}
+                    disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
+                    loading={loading}
+                    ariaLabel="Regenerar Tasks desde MDD y Blueprint"
+                  />
                 )}
                 {centralPanel === "ux-ui-guide" && !!uxUiGuideContent?.trim() && (
                   <Tooltip>
@@ -3368,293 +2984,112 @@ export default function WorkshopView({
               </>
             )}
             {centralPanel === "architecture" && (
-              <>
-                {architectureViewMode === "preview" && !architectureContent?.trim() ? (
-                  <DocEmptyState
-                    icon={Layers}
-                    title="Arquitectura"
-                    description="Módulos, datos, APIs y flujos del producto, alineados con el MDD y el codebase."
-                    onGenerate={() => generateArchitecture(projectId)}
-                    loading={loading}
-                    hasMdd={!!effectiveMddTrimmed}
-                  />
-                ) : (
-                  <>
-                    {architectureViewMode === "preview" ? (
-                      <MddViewer content={architectureContent || ""} />
-                    ) : (
-                      <div className="flex min-h-0 flex-1 flex-col gap-2">
-                        <WorkshopDocSourceSaveBar
-                          onSave={() => void persistArchitectureContent(architectureContent ?? "")}
-                          disabled={!architectureDirty}
-                        />
-                        <textarea
-                          value={architectureContent ?? ""}
-                          onChange={(e) => setArchitectureContent(e.target.value)}
-                          onBlur={handleArchitectureBlur}
-                          placeholder="# Arquitectura del sistema\n\nMódulos, datos, APIs y flujos del producto (según MDD y codebase)..."
-                          className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                          spellCheck={false}
-                        />
-                      </div>
-                    )}
-                    {!architectureContent?.trim() && architectureViewMode === "source" ? (
-                      <div className="shrink-0 mt-4 flex min-h-[200px] w-full justify-center sm:justify-end">
-                        {loading ? (
-                          <AiDocumentBuildingPlaceholder documentTitle="Arquitectura" />
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="lg"
-                            className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
-                            onClick={() => generateArchitecture(projectId)}
-                            disabled={loading || !effectiveMddTrimmed}
-                          >
-                            <Sparkles className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                            Generar Arquitectura desde MDD
-                          </Button>
-                        )}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </>
+              <StandardDocPanel
+                icon={Layers}
+                title="Arquitectura"
+                description="Módulos, datos, APIs y flujos del producto, alineados con el MDD y el codebase."
+                content={architectureContent}
+                onContentChange={(v) => setArchitectureContent(v)}
+                onSave={() => void persistArchitectureContent(architectureContent ?? "")}
+                isDirty={architectureDirty}
+                viewMode={architectureViewMode}
+                onGenerate={() => generateArchitecture(projectId)}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading}
+                placeholder="# Arquitectura del sistema\n\nMódulos, datos, APIs y flujos del producto (según MDD y codebase)..."
+                onBlur={handleArchitectureBlur}
+              />
             )}
             {centralPanel === "use-cases" && (
-              <>
-                {useCasesViewMode === "preview" && !useCasesContent?.trim() ? (
-                  <DocEmptyState
-                    icon={Target}
-                    title="Casos de uso"
-                    description="Escenarios de interacción y flujos transaccionales derivados del MDD."
-                    onGenerate={() => generateUseCases(projectId)}
-                    loading={loading}
-                    hasMdd={!!effectiveMddTrimmed}
-                  />
-                ) : (
-                  <>
-                    {useCasesViewMode === "preview" ? (
-                      <MddViewer content={useCasesContent || ""} />
-                    ) : (
-                      <div className="flex min-h-0 flex-1 flex-col gap-2">
-                        <WorkshopDocSourceSaveBar
-                          onSave={() => void persistUseCasesContent(useCasesContent ?? "")}
-                          disabled={!useCasesDirty}
-                        />
-                        <textarea
-                          value={useCasesContent ?? ""}
-                          onChange={(e) => setUseCasesContent(e.target.value)}
-                          onBlur={handleUseCasesBlur}
-                          placeholder="# Casos de Uso\n\nDescribe los escenarios de interacción y flujos transaccionales..."
-                          className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                          spellCheck={false}
-                        />
-                      </div>
-                    )}
-                    {!useCasesContent?.trim() && useCasesViewMode === "source" ? (
-                      <div className="shrink-0 mt-4 flex min-h-[200px] w-full justify-center sm:justify-end">
-                        {loading ? (
-                          <AiDocumentBuildingPlaceholder documentTitle="Casos de uso" />
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="lg"
-                            className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
-                            onClick={() => generateUseCases(projectId)}
-                            disabled={loading || !effectiveMddTrimmed}
-                          >
-                            <Sparkles className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                            Generar Casos de uso desde MDD
-                          </Button>
-                        )}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </>
+              <StandardDocPanel
+                icon={Target}
+                title="Casos de uso"
+                description="Escenarios de interacción y flujos transaccionales derivados del MDD."
+                content={useCasesContent}
+                onContentChange={(v) => setUseCasesContent(v)}
+                onSave={() => void persistUseCasesContent(useCasesContent ?? "")}
+                isDirty={useCasesDirty}
+                viewMode={useCasesViewMode}
+                onGenerate={() => generateUseCases(projectId)}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading}
+                placeholder="# Casos de Uso\n\nDescribe los escenarios de interacción y flujos transaccionales..."
+                onBlur={handleUseCasesBlur}
+              />
             )}
             {centralPanel === "user-stories" && (
-              <>
-                {userStoriesViewMode === "preview" && !userStoriesContent?.trim() ? (
-                  <DocEmptyState
-                    icon={MessageSquare}
-                    title="Historias de usuario"
-                    description="Requisitos en formato ágil (Como / Quiero / Para) a partir del MDD."
-                    onGenerate={() => generateUserStories(projectId)}
-                    loading={loading}
-                    hasMdd={!!effectiveMddTrimmed}
-                  />
-                ) : (
-                  <>
-                    {userStoriesViewMode === "preview" ? (
-                      <MddViewer content={userStoriesContent || ""} />
-                    ) : (
-                      <div className="flex min-h-0 flex-1 flex-col gap-2">
-                        <WorkshopDocSourceSaveBar
-                          onSave={() => void persistUserStoriesContent(userStoriesContent ?? "")}
-                          disabled={!userStoriesDirty}
-                        />
-                        <textarea
-                          value={userStoriesContent ?? ""}
-                          onChange={(e) => setUserStoriesContent(e.target.value)}
-                          onBlur={handleUserStoriesBlur}
-                          placeholder="# Historias de Usuario\n\nDefine los requisitos en formato Agile (Como... quiero... para...)..."
-                          className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                          spellCheck={false}
-                        />
-                      </div>
-                    )}
-                    {!userStoriesContent?.trim() && userStoriesViewMode === "source" ? (
-                      <div className="shrink-0 mt-4 flex min-h-[200px] w-full justify-center sm:justify-end">
-                        {loading ? (
-                          <AiDocumentBuildingPlaceholder documentTitle="Historias de usuario" />
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="lg"
-                            className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
-                            onClick={() => generateUserStories(projectId)}
-                            disabled={loading || !effectiveMddTrimmed}
-                          >
-                            <Sparkles className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                            Generar Historias de usuario desde MDD
-                          </Button>
-                        )}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </>
+              <StandardDocPanel
+                icon={MessageSquare}
+                title="Historias de usuario"
+                description="Requisitos en formato ágil (Como / Quiero / Para) a partir del MDD."
+                content={userStoriesContent}
+                onContentChange={(v) => setUserStoriesContent(v)}
+                onSave={() => void persistUserStoriesContent(userStoriesContent ?? "")}
+                isDirty={userStoriesDirty}
+                viewMode={userStoriesViewMode}
+                onGenerate={() => generateUserStories(projectId)}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading}
+                placeholder="# Historias de Usuario\n\nDefine los requisitos en formato Agile (Como... quiero... para...)..."
+                onBlur={handleUserStoriesBlur}
+              />
             )}
             {centralPanel === "ux-ui-guide" && (
-              <>
-                {!uxUiGuideContent?.trim() && (uxUiGuideViewMode === "preview" || uxUiGuideViewMode === "design") ? (
-                  <DocEmptyState
-                    icon={Palette}
-                    title="Guía UX/UI"
-                    description="Colores, tipografía, espaciado, componentes y documentación; se apoya en el MDD y el Blueprint."
-                    onGenerate={generateUxGuideSequential}
-                    loading={uxGenerating || loading}
-                    hasMdd={!!(effectiveMddTrimmed && blueprintContent?.trim())}
-                  />
-                ) : (
-                  <>
-                    {uxUiGuideViewMode === "design" ? (
-                      <div className="min-h-0 flex-1 overflow-auto">
-                        <DesignMdPreview content={uxUiGuideContent ?? ""} />
-                      </div>
-                    ) : uxUiGuideViewMode === "preview" ? (
-                      <MddViewer content={uxUiGuideContent ?? ""} />
-                    ) : (
-                      <div className="flex min-h-0 flex-1 flex-col gap-2">
-                        <WorkshopDocSourceSaveBar
-                          onSave={() => {
-                            const content = replaceYamlFrontMatter(uxUiGuideContent ?? "", projectName);
-                            if (content !== (uxUiGuideContent ?? "")) setUxUiGuideContent(content);
-                            void persistUxUiGuideContent(content);
-                          }}
-                          disabled={!uxUiGuideDirty}
-                        />
-                        <textarea
-                          value={uxUiGuideContent ?? ""}
-                          onChange={(e) => setUxUiGuideContent(e.target.value || null)}
-                          onBlur={handleUxUiGuideBlur}
-                          placeholder="# Guía UX/UI\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
-                          className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                          spellCheck={false}
-                        />
-                      </div>
-                    )}
-                    {!uxUiGuideContent?.trim() && uxUiGuideViewMode === "source" ? (
-                      <div className="shrink-0 mt-4 flex min-h-[200px] w-full justify-center sm:justify-end">
-                        {uxGenerating || loading ? (
-                          <AiDocumentBuildingPlaceholder documentTitle="Guía UX/UI" />
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="lg"
-                            className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
-                            onClick={generateUxGuideSequential}
-                            disabled={uxGenerating || loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
-                          >
-                            <Sparkles className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                            Generar Guía UX/UI desde MDD
-                          </Button>
-                        )}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </>
+              <UxUiGuidePanel
+                content={uxUiGuideContent}
+                onContentChange={(v) => setUxUiGuideContent(v)}
+                onSave={() => {
+                  const content = replaceYamlFrontMatter(uxUiGuideContent ?? "", projectName);
+                  if (content !== (uxUiGuideContent ?? "")) setUxUiGuideContent(content);
+                  void persistUxUiGuideContent(content);
+                }}
+                isDirty={uxUiGuideDirty}
+                viewMode={uxUiGuideViewMode}
+                onGenerate={generateUxGuideSequential}
+                canGenerate={!!(effectiveMddTrimmed && blueprintContent?.trim())}
+                isLoading={loading}
+                isGenerating={uxGenerating}
+                placeholder="# Guía UX/UI\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
+                onBlur={handleUxUiGuideBlur}
+              />
             )}
             {centralPanel === "spec" && (
-              specContent || specViewMode === "source" ? (
-                specViewMode === "preview" ? (
-                  <MddViewer content={specContent || ""} />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2">
-                    <WorkshopDocSourceSaveBar
-                      onSave={() => void persistSpecContent(specContent ?? "")}
-                      disabled={!specDirty}
-                    />
-                    <textarea
-                      value={specContent || ""}
-                      onChange={(e) => setSpecContent(e.target.value)}
-                      onBlur={handleSpecBlur}
-                      placeholder="# Spec\n\nEl contenido del Spec se genera aquí o puedes escribirlo manualmente..."
-                      className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                      spellCheck={false}
-                    />
-                  </div>
-                )
-              ) : (
-                <DocEmptyState
-                  icon={ListOrdered}
-                  title="Spec"
-                  description="Spec = Benchmark + alcance. Alimenta el MDD; revísalo antes de dar por cerrado el MDD."
-                  onGenerate={() => generateSpec(projectId)}
-                  loading={loading}
-                  hasMdd={!!(dbgaContent?.trim() || effectiveMddTrimmed)}
-                  legacyGenerateLabel={canGenerateFromCodebase ? "Generar Spec desde MDD Inicial" : undefined}
-                  onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "spec", activeStageId ?? undefined) : undefined}
-                  legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                />
-              )
+              <StandardDocPanel
+                icon={ListOrdered}
+                title="Spec"
+                description="Spec = Benchmark + alcance. Alimenta el MDD; revísalo antes de dar por cerrado el MDD."
+                content={specContent}
+                onContentChange={(v) => setSpecContent(v)}
+                onSave={() => void persistSpecContent(specContent ?? "")}
+                isDirty={specDirty}
+                viewMode={specViewMode}
+                onGenerate={() => generateSpec(projectId)}
+                canGenerate={!!(dbgaContent?.trim() || effectiveMddTrimmed)}
+                isLoading={loading}
+                placeholder="# Spec\n\nEl contenido del Spec se genera aquí o puedes escribirlo manualmente..."
+                onBlur={handleSpecBlur}
+                legacyGenerateLabel={canGenerateFromCodebase ? "Generar Spec desde MDD Inicial" : undefined}
+                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "spec", activeStageId ?? undefined) : undefined}
+                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
+              />
             )}
             {centralPanel === "aem" && (
-              aemContent || aemViewMode === "source" ? (
-                aemViewMode === "preview" ? (
-                  <MddViewer content={aemContent || ""} />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2">
-                    <WorkshopDocSourceSaveBar
-                      onSave={() => void persistAemContent(aemContent ?? "")}
-                      disabled={!aemDirty}
-                    />
-                    <textarea
-                      value={aemContent || ""}
-                      onChange={(e) => setAemContent(e.target.value)}
-                      onBlur={handleAemBlur}
-                      placeholder="# AEM\n\nAnálisis y Estrategia de Mercado — contenido sobre mercado, competencia, posicionamiento..."
-                      className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                      spellCheck={false}
-                    />
-                  </div>
-                )
-              ) : (
-                <DocEmptyState
-                  icon={FileText}
-                  title="AEM"
-                  description="Análisis y Estrategia de Mercado — define el mercado, competencia, posicionamiento y estrategia comercial del proyecto."
-                  onGenerate={() => {}}
-                  loading={false}
-                  hasMdd={false}
-                />
-              )
+              <StandardDocPanel
+                icon={FileText}
+                title="AEM"
+                description="Análisis y Estrategia de Mercado — define el mercado, competencia, posicionamiento y estrategia comercial del proyecto."
+                content={aemContent}
+                onContentChange={(v) => setAemContent(v)}
+                onSave={() => void persistAemContent(aemContent ?? "")}
+                isDirty={aemDirty}
+                viewMode={aemViewMode}
+                onGenerate={() => {}}
+                canGenerate={false}
+                isLoading={false}
+                placeholder="# AEM\n\nAnálisis y Estrategia de Mercado — contenido sobre mercado, competencia, posicionamiento..."
+                onBlur={handleAemBlur}
+                hideGenerate
+              />
             )}
             {centralPanel === "brd" && projectId && (
               <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
@@ -3718,38 +3153,24 @@ export default function WorkshopView({
             )}
             {/* to-be tab removed — secciones To-Be y As-Is eliminadas del sistema */}
             {centralPanel === "blueprint" && (
-              blueprintContent ? (
-                blueprintViewMode === "preview" ? (
-                  <MddViewer content={blueprintContent} />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2">
-                    <WorkshopDocSourceSaveBar
-                      onSave={() => void persistBlueprintContent(blueprintContent)}
-                      disabled={!blueprintDirty}
-                    />
-                    <textarea
-                      value={blueprintContent}
-                      onChange={(e) => setBlueprintContent(e.target.value)}
-                      onBlur={handleBlueprintBlur}
-                      placeholder="# Blueprint\n\nEl contenido del blueprint se genera desde el MDD..."
-                      className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                      spellCheck={false}
-                    />
-                  </div>
-                )
-              ) : (
-                <DocEmptyState
-                  icon={LayoutTemplate}
-                  title="Blueprint"
-                  description="El blueprint se genera a partir del MDD guardado (vista previa antes de guardar)."
-                  onGenerate={() => generateBlueprint(projectId, { preview: true })}
-                  loading={loading || mddReviewing}
-                  hasMdd={!!effectiveMddTrimmed}
-                  legacyGenerateLabel={canGenerateFromCodebase ? "Generar Blueprint desde MDD Inicial" : undefined}
-                  onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "blueprint", activeStageId ?? undefined) : undefined}
-                  legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                />
-              )
+              <StandardDocPanel
+                icon={LayoutTemplate}
+                title="Blueprint"
+                description="El blueprint se genera a partir del MDD guardado (vista previa antes de guardar)."
+                content={blueprintContent}
+                onContentChange={(v) => setBlueprintContent(v)}
+                onSave={() => void persistBlueprintContent(blueprintContent ?? "")}
+                isDirty={blueprintDirty}
+                viewMode={blueprintViewMode}
+                onGenerate={() => generateBlueprint(projectId, { preview: true })}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading || mddReviewing}
+                placeholder="# Blueprint\n\nEl contenido del blueprint se genera desde el MDD..."
+                onBlur={handleBlueprintBlur}
+                legacyGenerateLabel={canGenerateFromCodebase ? "Generar Blueprint desde MDD Inicial" : undefined}
+                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "blueprint", activeStageId ?? undefined) : undefined}
+                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
+              />
             )}
             {centralPanel === "tasks" && (
               tasksContent ? (
@@ -3769,159 +3190,70 @@ export default function WorkshopView({
               )
             )}
             {centralPanel === "api-contracts" && (
-              apiContractsContent ? (
-                apiContractsViewMode === "preview" ? (
-                  <MddViewer content={apiContractsContent} />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2">
-                    <WorkshopDocSourceSaveBar
-                      onSave={() => void persistApiContractsContent(apiContractsContent)}
-                      disabled={!apiContractsDirty}
-                    />
-                    <textarea
-                      value={apiContractsContent}
-                      onChange={(e) => setApiContractsContent(e.target.value)}
-                      onBlur={handleApiContractsBlur}
-                      placeholder="# Contratos de API (OpenAPI/Swagger)\n\n..."
-                      className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                      spellCheck={false}
-                    />
-                  </div>
-                )
-              ) : (
-                <DocEmptyState
-                  icon={FileCode}
-                  title="Contratos de API"
-                  description="OpenAPI/Swagger desde el MDD (vista previa antes de guardar)."
-                  onGenerate={() => generateApiContracts(projectId, { preview: true })}
-                  loading={loading || mddReviewing}
-                  hasMdd={!!effectiveMddTrimmed}
-                  generateBlocked={apiBlueprintDmBlocked}
-                  generateBlockedReason={apiBlueprintBlockedHint}
-                  legacyGenerateLabel={canGenerateFromCodebase ? "Generar API Contracts desde MDD Inicial" : undefined}
-                  onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "api-contracts", activeStageId ?? undefined) : undefined}
-                  legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                />
-              )
+              <StandardDocPanel
+                icon={FileCode}
+                title="Contratos de API"
+                description="OpenAPI/Swagger desde el MDD (vista previa antes de guardar)."
+                content={apiContractsContent}
+                onContentChange={(v) => setApiContractsContent(v)}
+                onSave={() => void persistApiContractsContent(apiContractsContent ?? "")}
+                isDirty={apiContractsDirty}
+                viewMode={apiContractsViewMode}
+                onGenerate={() => generateApiContracts(projectId, { preview: true })}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading || mddReviewing}
+                placeholder="# Contratos de API (OpenAPI/Swagger)\n\n..."
+                onBlur={handleApiContractsBlur}
+                generateBlocked={apiBlueprintDmBlocked}
+                generateBlockedReason={apiBlueprintBlockedHint}
+                legacyGenerateLabel={canGenerateFromCodebase ? "Generar API Contracts desde MDD Inicial" : undefined}
+                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "api-contracts", activeStageId ?? undefined) : undefined}
+                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
+              />
             )}
             {centralPanel === "logic-flows" && (
-              logicFlowsContent ? (
-                logicFlowsViewMode === "preview" ? (
-                  <MddViewer content={logicFlowsContent} />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2">
-                    <WorkshopDocSourceSaveBar
-                      onSave={() => void persistLogicFlowsContent(logicFlowsContent)}
-                      disabled={!logicFlowsDirty}
-                    />
-                    <textarea
-                      value={logicFlowsContent}
-                      onChange={(e) => setLogicFlowsContent(e.target.value)}
-                      onBlur={handleLogicFlowsBlur}
-                      placeholder="# Casos de Uso y Flujos de Lógica\n\n..."
-                      className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                      spellCheck={false}
-                    />
-                  </div>
-                )
-              ) : (
-                <DocEmptyState
-                  icon={GitBranch}
-                  title="Casos de Uso y Flujos"
-                  description="Diagramas de secuencia, MFA y reglas de validación desde el MDD."
-                  onGenerate={() => generateLogicFlows(projectId)}
-                  loading={loading || mddReviewing}
-                  hasMdd={!!effectiveMddTrimmed}
-                  legacyGenerateLabel={canGenerateFromCodebase ? "Generar Flujos desde MDD Inicial" : undefined}
-                  onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "logic-flows", activeStageId ?? undefined) : undefined}
-                  legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                />
-              )
+              <StandardDocPanel
+                icon={GitBranch}
+                title="Casos de Uso y Flujos"
+                description="Diagramas de secuencia, MFA y reglas de validación desde el MDD."
+                content={logicFlowsContent}
+                onContentChange={(v) => setLogicFlowsContent(v)}
+                onSave={() => void persistLogicFlowsContent(logicFlowsContent ?? "")}
+                isDirty={logicFlowsDirty}
+                viewMode={logicFlowsViewMode}
+                onGenerate={() => generateLogicFlows(projectId)}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading || mddReviewing}
+                placeholder="# Casos de Uso y Flujos de Lógica\n\n..."
+                onBlur={handleLogicFlowsBlur}
+              />
             )}
             {centralPanel === "infra" && (
-              infraContent ? (
-                infraViewMode === "preview" ? (
-                  <MddViewer content={infraContent} />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2">
-                    <WorkshopDocSourceSaveBar
-                      onSave={() => void persistInfraContent(infraContent)}
-                      disabled={!infraDirty}
-                    />
-                    <textarea
-                      value={infraContent}
-                      onChange={(e) => setInfraContent(e.target.value)}
-                      onBlur={handleInfraBlur}
-                      placeholder="# Infraestructura y Despliegue\n\n..."
-                      className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                      spellCheck={false}
-                    />
-                  </div>
-                )
-              ) : (
-                <DocEmptyState
-                  icon={Server}
-                  title="Infraestructura y Despliegue"
-                  description="Dockerfile, docker-compose desde el MDD (vista previa antes de guardar)."
-                  onGenerate={() => generateInfra(projectId, { preview: true })}
-                  loading={loading || mddReviewing}
-                  hasMdd={!!effectiveMddTrimmed}
-                  legacyGenerateLabel={canGenerateFromCodebase ? "Generar Infra desde MDD Inicial" : undefined}
-                  onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "infra", activeStageId ?? undefined) : undefined}
-                  legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                />
-              )
+              <StandardDocPanel
+                icon={Server}
+                title="Infraestructura y Despliegue"
+                description="Dockerfile, docker-compose desde el MDD (vista previa antes de guardar)."
+                content={infraContent}
+                onContentChange={(v) => setInfraContent(v)}
+                onSave={() => void persistInfraContent(infraContent ?? "")}
+                isDirty={infraDirty}
+                viewMode={infraViewMode}
+                onGenerate={() => generateInfra(projectId, { preview: true })}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading || mddReviewing}
+                placeholder="# Infraestructura\n\n..."
+                onBlur={handleInfraBlur}
+                legacyGenerateLabel={canGenerateFromCodebase ? "Generar Infra desde MDD Inicial" : undefined}
+                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "infra", activeStageId ?? undefined) : undefined}
+                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
+              />
             )}
             {centralPanel === "adrs" && (
-              <div className="flex flex-col gap-6 h-full min-h-0 overflow-auto">
-                <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
-                  <div>
-                    <h3 className="text-lg font-semibold text-[var(--primary)]">Decisiones Arquitectónicas (ADRs)</h3>
-                    <p className="text-sm text-[var(--muted-foreground)]">Historial de decisiones persistidas en el Grafo de Memoria Semántica.</p>
-                  </div>
-                  <button
-                    onClick={() => projectId && fetchAdrs(projectId)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Actualizar
-                  </button>
-                </div>
-
-                {adrs.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center p-12 text-center opacity-50">
-                    <Brain className="w-12 h-12 mb-4 text-[color-mix(in_oklch,var(--foreground-subtle)_82%,var(--background))]" />
-                    <p className="text-[var(--muted-foreground)]">No hay decisiones guardadas aún para este proyecto.</p>
-                    <p className="text-xs text-[var(--foreground-subtle)] mt-2">Las decisiones se extraen automáticamente al finalizar el MDD.</p>
-                  </div>
-                ) : (
-                  <div className="grid gap-4">
-                    {adrs.map((adr, i) => (
-                      <div key={i} className="p-4 rounded-lg bg-[var(--card)] border border-[var(--border)] hover:border-[color-mix(in_oklch,var(--primary)_45%,var(--border))] transition-colors shadow-sm">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-bold text-[var(--foreground)] flex items-center gap-2">
-                            <CheckCircle2 className={`w-4 h-4 ${adr.status === 'Accepted' ? 'text-[var(--success)]' : 'text-[var(--primary)]'}`} />
-                            {adr.title}
-                          </h4>
-                          <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded ${adr.status === 'Accepted' ? 'bg-[color-mix(in_oklch,var(--success)_12%,transparent)] text-[color-mix(in_oklch,var(--success)_88%,var(--foreground))]' : 'bg-[color-mix(in_oklch,var(--primary)_12%,var(--card))] text-[var(--primary)]'}`}>
-                            {adr.status}
-                          </span>
-                        </div>
-                        <div className="space-y-3">
-                          <div>
-                            <p className="text-[11px] font-bold text-[var(--foreground-subtle)] uppercase">Contexto</p>
-                            <p className="text-sm text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] leading-relaxed">{adr.context}</p>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-bold text-[var(--foreground-subtle)] uppercase">Consecuencia</p>
-                            <p className="text-sm text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] leading-relaxed italic border-l-2 border-[var(--border)] pl-3">{adr.consequence}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <AdrsPanel
+                adrs={adrs}
+                projectId={projectId}
+                onRefresh={fetchAdrs}
+              />
             )}
           </div>
         </section>
@@ -4130,21 +3462,7 @@ export default function WorkshopView({
                       className={cn(fabVisual, "pointer-events-auto")}
                       title={docToggleTooltip}
                       aria-label={docToggleTooltip}
-                      onClick={() => {
-                        if (centralPanel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "mdd-inicial") setMddInicialViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "spec") setSpecViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "architecture") setArchitectureViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "user-stories") setUserStoriesViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "ux-ui-guide") setUxUiGuideViewMode((m) => m === "design" ? "preview" : m === "preview" ? "source" : "design");
-                        else if (centralPanel === "aem") setAemViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "brd") setBrdDocViewMode((m) => (m === "preview" ? "source" : "preview"));
-                      }}
+                      onClick={() => toggleDocViewMode(centralPanel)}
                     >
                       <DocToggleIcon className="h-5 w-5" strokeWidth={2.5} aria-hidden />
                     </button>
