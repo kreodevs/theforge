@@ -5,7 +5,7 @@ ARG BUILD_CACHE_BUST
 RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
 WORKDIR /app
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache gcompat
 
 COPY package.json turbo.json .npmrc ./
 COPY packages/config/package.json packages/config/

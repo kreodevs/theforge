@@ -4,7 +4,7 @@ FROM node:20-alpine AS builder
 ARG BUILD_CACHE_BUST
 RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
-RUN apk add --no-cache openssl libc6-compat
+RUN apk add --no-cache gcompat openssl
 
 WORKDIR /app
 
