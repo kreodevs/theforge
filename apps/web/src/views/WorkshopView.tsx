@@ -3576,38 +3576,24 @@ export default function WorkshopView({
               />
             )}
             {centralPanel === "infra" && (
-              infraContent ? (
-                infraViewMode === "preview" ? (
-                  <MddViewer content={infraContent} />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2">
-                    <WorkshopDocSourceSaveBar
-                      onSave={() => void persistInfraContent(infraContent)}
-                      disabled={!infraDirty}
-                    />
-                    <textarea
-                      value={infraContent}
-                      onChange={(e) => setInfraContent(e.target.value)}
-                      onBlur={handleInfraBlur}
-                      placeholder="# Infraestructura y Despliegue\n\n..."
-                      className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                      spellCheck={false}
-                    />
-                  </div>
-                )
-              ) : (
-                <DocEmptyState
-                  icon={Server}
-                  title="Infraestructura y Despliegue"
-                  description="Dockerfile, docker-compose desde el MDD (vista previa antes de guardar)."
-                  onGenerate={() => generateInfra(projectId, { preview: true })}
-                  loading={loading || mddReviewing}
-                  hasMdd={!!effectiveMddTrimmed}
-                  legacyGenerateLabel={canGenerateFromCodebase ? "Generar Infra desde MDD Inicial" : undefined}
-                  onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "infra", activeStageId ?? undefined) : undefined}
-                  legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                />
-              )
+              <StandardDocPanel
+                icon={Server}
+                title="Infraestructura y Despliegue"
+                description="Dockerfile, docker-compose desde el MDD (vista previa antes de guardar)."
+                content={infraContent}
+                onContentChange={(v) => setInfraContent(v)}
+                onSave={() => void persistInfraContent(infraContent ?? "")}
+                isDirty={infraDirty}
+                viewMode={infraViewMode}
+                onGenerate={() => generateInfra(projectId, { preview: true })}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading || mddReviewing}
+                placeholder="# Infraestructura\n\n..."
+                onBlur={handleInfraBlur}
+                legacyGenerateLabel={canGenerateFromCodebase ? "Generar Infra desde MDD Inicial" : undefined}
+                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "infra", activeStageId ?? undefined) : undefined}
+                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
+              />
             )}
             {centralPanel === "adrs" && (
               <div className="flex flex-col gap-6 h-full min-h-0 overflow-auto">
