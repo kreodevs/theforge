@@ -29,6 +29,8 @@ export interface StandardDocPanelProps {
   /** Bloqueo específico (ej. Blueprint §3). */
   generateBlocked?: boolean;
   generateBlockedReason?: string;
+  /** Oculta completamente los botones de generar (panel manual como AEM). */
+  hideGenerate?: boolean;
 }
 
 /**
@@ -57,9 +59,21 @@ export function StandardDocPanel({
   legacyGenerateLoading,
   generateBlocked,
   generateBlockedReason,
+  hideGenerate,
 }: StandardDocPanelProps) {
+  const IconComp = icon;
   // Estado 1: preview vacío → DocEmptyState
   if (viewMode === "preview" && !content?.trim()) {
+    if (hideGenerate) {
+      return (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+          <IconComp className="h-12 w-12 text-[var(--muted-foreground)] opacity-50" strokeWidth={1.5} />
+          <h3 className="text-lg font-semibold text-[var(--foreground)]">{title}</h3>
+          <p className="max-w-md text-sm text-[var(--muted-foreground)]">{description}</p>
+          <p className="mt-2 text-xs text-[var(--muted-foreground)] opacity-60">Este documento se escribe manualmente. Cambia a modo edición para empezar.</p>
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <DocEmptyState
@@ -98,7 +112,7 @@ export function StandardDocPanel({
               spellCheck={false}
             />
           </div>
-          {!content?.trim() && (
+          {!content?.trim() && !hideGenerate && (
             <div className="shrink-0 mt-4 flex min-h-[200px] w-full justify-center sm:justify-end">
               {isLoading ? (
                 <AiDocumentBuildingPlaceholder documentTitle={title} />

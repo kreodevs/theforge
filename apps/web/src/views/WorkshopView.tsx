@@ -3393,35 +3393,22 @@ export default function WorkshopView({
               )
             )}
             {centralPanel === "aem" && (
-              aemContent || aemViewMode === "source" ? (
-                aemViewMode === "preview" ? (
-                  <MddViewer content={aemContent || ""} />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2">
-                    <WorkshopDocSourceSaveBar
-                      onSave={() => void persistAemContent(aemContent ?? "")}
-                      disabled={!aemDirty}
-                    />
-                    <textarea
-                      value={aemContent || ""}
-                      onChange={(e) => setAemContent(e.target.value)}
-                      onBlur={handleAemBlur}
-                      placeholder="# AEM\n\nAnálisis y Estrategia de Mercado — contenido sobre mercado, competencia, posicionamiento..."
-                      className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                      spellCheck={false}
-                    />
-                  </div>
-                )
-              ) : (
-                <DocEmptyState
-                  icon={FileText}
-                  title="AEM"
-                  description="Análisis y Estrategia de Mercado — define el mercado, competencia, posicionamiento y estrategia comercial del proyecto."
-                  onGenerate={() => {}}
-                  loading={false}
-                  hasMdd={false}
-                />
-              )
+              <StandardDocPanel
+                icon={FileText}
+                title="AEM"
+                description="Análisis y Estrategia de Mercado — define el mercado, competencia, posicionamiento y estrategia comercial del proyecto."
+                content={aemContent}
+                onContentChange={(v) => setAemContent(v)}
+                onSave={() => void persistAemContent(aemContent ?? "")}
+                isDirty={aemDirty}
+                viewMode={aemViewMode}
+                onGenerate={() => {}}
+                canGenerate={false}
+                isLoading={false}
+                placeholder="# AEM\n\nAnálisis y Estrategia de Mercado — contenido sobre mercado, competencia, posicionamiento..."
+                onBlur={handleAemBlur}
+                hideGenerate
+              />
             )}
             {centralPanel === "brd" && projectId && (
               <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
@@ -3572,38 +3559,21 @@ export default function WorkshopView({
               )
             )}
             {centralPanel === "logic-flows" && (
-              logicFlowsContent ? (
-                logicFlowsViewMode === "preview" ? (
-                  <MddViewer content={logicFlowsContent} />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2">
-                    <WorkshopDocSourceSaveBar
-                      onSave={() => void persistLogicFlowsContent(logicFlowsContent)}
-                      disabled={!logicFlowsDirty}
-                    />
-                    <textarea
-                      value={logicFlowsContent}
-                      onChange={(e) => setLogicFlowsContent(e.target.value)}
-                      onBlur={handleLogicFlowsBlur}
-                      placeholder="# Casos de Uso y Flujos de Lógica\n\n..."
-                      className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                      spellCheck={false}
-                    />
-                  </div>
-                )
-              ) : (
-                <DocEmptyState
-                  icon={GitBranch}
-                  title="Casos de Uso y Flujos"
-                  description="Diagramas de secuencia, MFA y reglas de validación desde el MDD."
-                  onGenerate={() => generateLogicFlows(projectId)}
-                  loading={loading || mddReviewing}
-                  hasMdd={!!effectiveMddTrimmed}
-                  legacyGenerateLabel={canGenerateFromCodebase ? "Generar Flujos desde MDD Inicial" : undefined}
-                  onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "logic-flows", activeStageId ?? undefined) : undefined}
-                  legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                />
-              )
+              <StandardDocPanel
+                icon={GitBranch}
+                title="Casos de Uso y Flujos"
+                description="Diagramas de secuencia, MFA y reglas de validación desde el MDD."
+                content={logicFlowsContent}
+                onContentChange={(v) => setLogicFlowsContent(v)}
+                onSave={() => void persistLogicFlowsContent(logicFlowsContent ?? "")}
+                isDirty={logicFlowsDirty}
+                viewMode={logicFlowsViewMode}
+                onGenerate={() => generateLogicFlows(projectId)}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading || mddReviewing}
+                placeholder="# Casos de Uso y Flujos de Lógica\n\n..."
+                onBlur={handleLogicFlowsBlur}
+              />
             )}
             {centralPanel === "infra" && (
               infraContent ? (
