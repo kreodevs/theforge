@@ -36,7 +36,6 @@ import {
   Globe,
   Lock,
   Pencil,
-  Sparkles,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -46,17 +45,17 @@ import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import MddViewer from "../components/MddViewer";
-import { DesignMdPreview, replaceYamlFrontMatter } from "../components/DesignMdPreview";
+import { replaceYamlFrontMatter } from "../components/DesignMdPreview";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
 import { WorkshopMetricsColumnInner } from "./WorkshopMetricsColumnInner";
 import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
 import { BrdStagePanel } from "../components/BrdStagePanel";
 import { downloadDocumentsZip } from "../utils/downloadDocumentsZip";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
-import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "../components/WorkshopDocSourceSaveBar";
-import { DocEmptyState } from "../components/DocEmptyState";
 import { StandardDocPanel } from "../components/StandardDocPanel";
+import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
+import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -68,7 +67,6 @@ import {
 } from "../components/ui";
 import { WorkshopFlowOrderModal } from "../components/WorkshopFlowOrderModal";
 import {
-  AiDocumentBuildingPlaceholder,
   AiGenerationPanel,
   AiGenerativeDots,
 } from "../components/AiGenerationLoader";
@@ -3057,66 +3055,23 @@ export default function WorkshopView({
               />
             )}
             {centralPanel === "ux-ui-guide" && (
-              <>
-                {!uxUiGuideContent?.trim() && (uxUiGuideViewMode === "preview" || uxUiGuideViewMode === "design") ? (
-                  <DocEmptyState
-                    icon={Palette}
-                    title="Guía UX/UI"
-                    description="Colores, tipografía, espaciado, componentes y documentación; se apoya en el MDD y el Blueprint."
-                    onGenerate={generateUxGuideSequential}
-                    loading={uxGenerating || loading}
-                    hasMdd={!!(effectiveMddTrimmed && blueprintContent?.trim())}
-                  />
-                ) : (
-                  <>
-                    {uxUiGuideViewMode === "design" ? (
-                      <div className="min-h-0 flex-1 overflow-auto">
-                        <DesignMdPreview content={uxUiGuideContent ?? ""} />
-                      </div>
-                    ) : uxUiGuideViewMode === "preview" ? (
-                      <MddViewer content={uxUiGuideContent ?? ""} />
-                    ) : (
-                      <div className="flex min-h-0 flex-1 flex-col gap-2">
-                        <WorkshopDocSourceSaveBar
-                          onSave={() => {
-                            const content = replaceYamlFrontMatter(uxUiGuideContent ?? "", projectName);
-                            if (content !== (uxUiGuideContent ?? "")) setUxUiGuideContent(content);
-                            void persistUxUiGuideContent(content);
-                          }}
-                          disabled={!uxUiGuideDirty}
-                        />
-                        <textarea
-                          value={uxUiGuideContent ?? ""}
-                          onChange={(e) => setUxUiGuideContent(e.target.value || null)}
-                          onBlur={handleUxUiGuideBlur}
-                          placeholder="# Guía UX/UI\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
-                          className="min-h-0 w-full flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                          spellCheck={false}
-                        />
-                      </div>
-                    )}
-                    {!uxUiGuideContent?.trim() && uxUiGuideViewMode === "source" ? (
-                      <div className="shrink-0 mt-4 flex min-h-[200px] w-full justify-center sm:justify-end">
-                        {uxGenerating || loading ? (
-                          <AiDocumentBuildingPlaceholder documentTitle="Guía UX/UI" />
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="lg"
-                            className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
-                            onClick={generateUxGuideSequential}
-                            disabled={uxGenerating || loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
-                          >
-                            <Sparkles className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden />
-                            Generar Guía UX/UI desde MDD
-                          </Button>
-                        )}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </>
+              <UxUiGuidePanel
+                content={uxUiGuideContent}
+                onContentChange={(v) => setUxUiGuideContent(v)}
+                onSave={() => {
+                  const content = replaceYamlFrontMatter(uxUiGuideContent ?? "", projectName);
+                  if (content !== (uxUiGuideContent ?? "")) setUxUiGuideContent(content);
+                  void persistUxUiGuideContent(content);
+                }}
+                isDirty={uxUiGuideDirty}
+                viewMode={uxUiGuideViewMode}
+                onGenerate={generateUxGuideSequential}
+                canGenerate={!!(effectiveMddTrimmed && blueprintContent?.trim())}
+                isLoading={loading}
+                isGenerating={uxGenerating}
+                placeholder="# Guía UX/UI\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
+                onBlur={handleUxUiGuideBlur}
+              />
             )}
             {centralPanel === "spec" && (
               <StandardDocPanel
