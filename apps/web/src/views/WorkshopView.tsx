@@ -20,7 +20,6 @@ import {
   Play,
   ListOrdered,
   ListTodo,
-  Download,
   Brain,
   ArrowDown,
   ArrowUp,
@@ -55,6 +54,7 @@ import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complex
 import { StandardDocPanel } from "../components/StandardDocPanel";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
+import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
 import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import type { LucideIcon } from "lucide-react";
@@ -1497,39 +1497,28 @@ export default function WorkshopView({
                   <TooltipContent side="bottom">Nueva etapa</TooltipContent>
                 </Tooltip>
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const ok = await downloadDocumentsZip(
-                          {
-                            dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
-                            phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
-                            specContent: specContent ?? project?.specContent ?? null,
-                            mddContent: mddContent ?? project?.mddContent ?? "",
-                            uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
-                            blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
-                            apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
-                            logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
-                            tasksContent: tasksContent ?? project?.tasksContent ?? null,
-                            infraContent: infraContent ?? project?.infraContent ?? null,
-                            aemContent: aemContent ?? project?.aemContent ?? null,
-                          },
-                          projectName ?? project?.name ?? "Workshop",
-                        );
-                        if (ok) setError(null);
-                        else setError("No hay documentos con contenido para descargar.");
-                      }}
-                      className={WORKSHOP_HEADER_ICON_BTN}
-                      title="Descargar todos los documentos en ZIP"
-                      aria-label="Descargar todos los documentos del proyecto en ZIP"
-                    >
-                      <Download className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Descargar ZIP del proyecto</TooltipContent>
-                </Tooltip>
+                <WorkshopDownloadZipButton
+                  onClick={async () => {
+                    const ok = await downloadDocumentsZip(
+                      {
+                        dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
+                        phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
+                        specContent: specContent ?? project?.specContent ?? null,
+                        mddContent: mddContent ?? project?.mddContent ?? "",
+                        uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
+                        blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
+                        apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
+                        logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
+                        tasksContent: tasksContent ?? project?.tasksContent ?? null,
+                        infraContent: infraContent ?? project?.infraContent ?? null,
+                        aemContent: aemContent ?? project?.aemContent ?? null,
+                      },
+                      projectName ?? project?.name ?? "Workshop",
+                    );
+                    if (ok) setError(null);
+                    else setError("No hay documentos con contenido para descargar.");
+                  }}
+                />
 
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1598,39 +1587,28 @@ export default function WorkshopView({
           ) : (
             <TooltipProvider delayDuration={280}>
               <div className="flex min-w-0 flex-nowrap items-center justify-end gap-1.5 sm:justify-self-end">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const ok = await downloadDocumentsZip(
-                          {
-                            dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
-                            phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
-                            specContent: specContent ?? project?.specContent ?? null,
-                            mddContent: mddContent ?? project?.mddContent ?? "",
-                            uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
-                            blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
-                            apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
-                            logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
-                            tasksContent: tasksContent ?? project?.tasksContent ?? null,
-                            infraContent: infraContent ?? project?.infraContent ?? null,
-                            aemContent: aemContent ?? project?.aemContent ?? null,
-                          },
-                          projectName ?? project?.name ?? "Workshop",
-                        );
-                        if (ok) setError(null);
-                        else setError("No hay documentos con contenido para descargar.");
-                      }}
-                      className={WORKSHOP_HEADER_ICON_BTN}
-                      title="Descargar todos los documentos en ZIP"
-                      aria-label="Descargar todos los documentos del proyecto en ZIP"
-                    >
-                      <Download className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Descargar ZIP del proyecto</TooltipContent>
-                </Tooltip>
+                <WorkshopDownloadZipButton
+                  onClick={async () => {
+                    const ok = await downloadDocumentsZip(
+                      {
+                        dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
+                        phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
+                        specContent: specContent ?? project?.specContent ?? null,
+                        mddContent: mddContent ?? project?.mddContent ?? "",
+                        uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
+                        blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
+                        apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
+                        logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
+                        tasksContent: tasksContent ?? project?.tasksContent ?? null,
+                        infraContent: infraContent ?? project?.infraContent ?? null,
+                        aemContent: aemContent ?? project?.aemContent ?? null,
+                      },
+                      projectName ?? project?.name ?? "Workshop",
+                    );
+                    if (ok) setError(null);
+                    else setError("No hay documentos con contenido para descargar.");
+                  }}
+                />
 
                 <Tooltip>
                   <TooltipTrigger asChild>
