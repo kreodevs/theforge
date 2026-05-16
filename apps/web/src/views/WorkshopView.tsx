@@ -20,11 +20,9 @@ import {
   Play,
   ListOrdered,
   ListTodo,
-  Brain,
   ArrowDown,
   ArrowUp,
   HelpCircle,
-  CheckCircle2,
   Layers,
   MessageSquare,
   Copy,
@@ -56,6 +54,7 @@ import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
 import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
 import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
+import { AdrsPanel } from "../components/AdrsPanel";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -637,6 +636,24 @@ export default function WorkshopView({
   const [brdTobePersistBusy, setBrdTobePersistBusy] = useState(false);
   /** `ask_codebase` / Ariadne al generar doc. partida (`POST …/legacy/generate-codebase-doc`). Default `raw_evidence`. `ingest_mdd` = una sola pasada `evidence_first` (MDD ingest), sin agente escalonado ni síntesis Nest. */
   const [codebaseDocResponseMode, setCodebaseDocResponseMode] = useState<CodebaseDocResponseMode>("raw_evidence");
+
+  /** Alterna preview/source/design del panel de documento activo. */
+  const toggleDocViewMode = (panel: string) => {
+    if (panel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "mdd-inicial") setMddInicialViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "spec") setSpecViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "architecture") setArchitectureViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "user-stories") setUserStoriesViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "ux-ui-guide") setUxUiGuideViewMode((m) => m === "design" ? "preview" : m === "preview" ? "source" : "design");
+    else if (panel === "aem") setAemViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "brd") setBrdDocViewMode((m) => (m === "preview" ? "source" : "preview"));
+  };
+
   const copyMddInicialMarkdown = useCallback(async () => {
     const text = (mddInicialLocalContent || activeLegacyState?.codebaseDoc || "").trim();
     if (!text) return;
@@ -1984,22 +2001,7 @@ export default function WorkshopView({
                         size="icon"
                         className={WORKSHOP_DOC_TOOLBAR_ICON_BTN}
                         aria-label={docToggleTooltip}
-                        onClick={() => {
-                          if (centralPanel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "mdd-inicial") setMddInicialViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "spec") setSpecViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "architecture") setArchitectureViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "user-stories") setUserStoriesViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "ux-ui-guide") setUxUiGuideViewMode((m) => m === "design" ? "preview" : m === "preview" ? "source" : "design");
-                          else if (centralPanel === "aem") setAemViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          else if (centralPanel === "brd") setBrdDocViewMode((m) => (m === "preview" ? "source" : "preview"));
-                          // to-be tab removed
-                        }}
+                        onClick={() => toggleDocViewMode(centralPanel)}
                           >
                             <DocToggleIcon className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
                           </Button>
@@ -3247,55 +3249,11 @@ export default function WorkshopView({
               />
             )}
             {centralPanel === "adrs" && (
-              <div className="flex flex-col gap-6 h-full min-h-0 overflow-auto">
-                <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
-                  <div>
-                    <h3 className="text-lg font-semibold text-[var(--primary)]">Decisiones Arquitectónicas (ADRs)</h3>
-                    <p className="text-sm text-[var(--muted-foreground)]">Historial de decisiones persistidas en el Grafo de Memoria Semántica.</p>
-                  </div>
-                  <button
-                    onClick={() => projectId && fetchAdrs(projectId)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] text-sm"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Actualizar
-                  </button>
-                </div>
-
-                {adrs.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center p-12 text-center opacity-50">
-                    <Brain className="w-12 h-12 mb-4 text-[color-mix(in_oklch,var(--foreground-subtle)_82%,var(--background))]" />
-                    <p className="text-[var(--muted-foreground)]">No hay decisiones guardadas aún para este proyecto.</p>
-                    <p className="text-xs text-[var(--foreground-subtle)] mt-2">Las decisiones se extraen automáticamente al finalizar el MDD.</p>
-                  </div>
-                ) : (
-                  <div className="grid gap-4">
-                    {adrs.map((adr, i) => (
-                      <div key={i} className="p-4 rounded-lg bg-[var(--card)] border border-[var(--border)] hover:border-[color-mix(in_oklch,var(--primary)_45%,var(--border))] transition-colors shadow-sm">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-bold text-[var(--foreground)] flex items-center gap-2">
-                            <CheckCircle2 className={`w-4 h-4 ${adr.status === 'Accepted' ? 'text-[var(--success)]' : 'text-[var(--primary)]'}`} />
-                            {adr.title}
-                          </h4>
-                          <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded ${adr.status === 'Accepted' ? 'bg-[color-mix(in_oklch,var(--success)_12%,transparent)] text-[color-mix(in_oklch,var(--success)_88%,var(--foreground))]' : 'bg-[color-mix(in_oklch,var(--primary)_12%,var(--card))] text-[var(--primary)]'}`}>
-                            {adr.status}
-                          </span>
-                        </div>
-                        <div className="space-y-3">
-                          <div>
-                            <p className="text-[11px] font-bold text-[var(--foreground-subtle)] uppercase">Contexto</p>
-                            <p className="text-sm text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] leading-relaxed">{adr.context}</p>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-bold text-[var(--foreground-subtle)] uppercase">Consecuencia</p>
-                            <p className="text-sm text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] leading-relaxed italic border-l-2 border-[var(--border)] pl-3">{adr.consequence}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <AdrsPanel
+                adrs={adrs}
+                projectId={projectId}
+                onRefresh={fetchAdrs}
+              />
             )}
           </div>
         </section>
@@ -3504,21 +3462,7 @@ export default function WorkshopView({
                       className={cn(fabVisual, "pointer-events-auto")}
                       title={docToggleTooltip}
                       aria-label={docToggleTooltip}
-                      onClick={() => {
-                        if (centralPanel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "mdd-inicial") setMddInicialViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "spec") setSpecViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "architecture") setArchitectureViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "user-stories") setUserStoriesViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "ux-ui-guide") setUxUiGuideViewMode((m) => m === "design" ? "preview" : m === "preview" ? "source" : "design");
-                        else if (centralPanel === "aem") setAemViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        else if (centralPanel === "brd") setBrdDocViewMode((m) => (m === "preview" ? "source" : "preview"));
-                      }}
+                      onClick={() => toggleDocViewMode(centralPanel)}
                     >
                       <DocToggleIcon className="h-5 w-5" strokeWidth={2.5} aria-hidden />
                     </button>
