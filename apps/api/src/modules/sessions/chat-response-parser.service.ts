@@ -100,6 +100,7 @@ export class ChatResponseParserService {
       "logic-flows": /^#\s*(?:Flujos de L.gica|Logic Flows)\b/im,
       tasks: /^#\s*(?:Tareas|Tasks)\b/i,
       infra: /^#\s*(?:Infraestructura|Infrastructure|Infra(?![a-z]))(?:\s|$)/im,
+      benchmark: /^#\s*(?:Benchmark|Domain Benchmark|Análisis)\b/im,
     };
 
     const pattern = HEADING_PATTERNS[activeTab];

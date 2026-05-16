@@ -217,7 +217,7 @@ export class SessionsService {
     }
     const mddSplit = this.parser.splitMddAndChat(safeResponse);
     const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
-    const dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
+    let dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
     let specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
     const brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
     const tobeSplit = this.parser.splitDocAndChat(safeResponse, "TOBE");
@@ -232,7 +232,7 @@ export class SessionsService {
 
     const hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
-    const hasDbga = dbgaSplit !== null;
+    let hasDbga = dbgaSplit !== null;
     let hasSpec = specSplit !== null;
     const hasBrd = brdSplit !== null;
     const hasTobe = tobeSplit !== null;
@@ -246,7 +246,7 @@ export class SessionsService {
     let hasStories = storiesSplit !== null;
 
     let uxDocPart: string | undefined = hasUx ? uxSplit!.docPart : undefined;
-    const dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
+    let dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
 
     let rawChat = safeResponse;
     if (hasMdd) rawChat = mddSplit!.chatPart;
@@ -331,12 +331,14 @@ export class SessionsService {
           case "architecture": archSplit = fbSplit; hasArch = true; break;
           case "use-cases": useCasesSplit = fbSplit; hasUseCases = true; break;
           case "user-stories": storiesSplit = fbSplit; hasStories = true; break;
+          case "benchmark": dbgaSplit = fbSplit; hasDbga = true; dbgaDocPart = fbSplit.docPart; break;
         }
         // Only apply fallback if no higher-priority document was found
-        if (!hasMdd && !hasUx && !hasDbga) {
+        if (!hasMdd && !hasUx) {
           // Find the matching split in the rawChat chain (lines 252-265 style)
           let fbFound = false;
-          if (hasSpec) { rawChat = specSplit!.chatPart; fbFound = true; }
+          if (hasDbga) { rawChat = dbgaSplit!.chatPart; fbFound = true; }
+          else if (hasSpec) { rawChat = specSplit!.chatPart; fbFound = true; }
           else if (hasBlue) { rawChat = blueSplit!.chatPart; fbFound = true; }
           else if (hasApi) { rawChat = apiSplit!.chatPart; fbFound = true; }
           else if (hasFlows) { rawChat = flowsSplit!.chatPart; fbFound = true; }
@@ -537,7 +539,7 @@ export class SessionsService {
 
     const mddSplit = this.parser.splitMddAndChat(safeResponse);
     const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
-    const dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
+    let dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
     let specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
     const brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
     const tobeSplit = this.parser.splitDocAndChat(safeResponse, "TOBE");
@@ -552,7 +554,7 @@ export class SessionsService {
 
     const hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
-    const hasDbga = dbgaSplit !== null;
+    let hasDbga = dbgaSplit !== null;
     let hasSpec = specSplit !== null;
     const hasBrd = brdSplit !== null;
     const hasTobe = tobeSplit !== null;
@@ -566,7 +568,7 @@ export class SessionsService {
     let hasStories = storiesSplit !== null;
 
     let uxDocPart: string | undefined = hasUx ? uxSplit!.docPart : undefined;
-    const dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
+    let dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
 
     let rawChat = safeResponse;
     if (hasMdd) rawChat = mddSplit!.chatPart;
@@ -647,6 +649,7 @@ export class SessionsService {
           case "architecture": archSplit = fbSplit; hasArch = true; break;
           case "use-cases": useCasesSplit = fbSplit; hasUseCases = true; break;
           case "user-stories": storiesSplit = fbSplit; hasStories = true; break;
+          case "benchmark": dbgaSplit = fbSplit; hasDbga = true; dbgaDocPart = fbSplit.docPart; break;
         }
         if (!hasMdd && !hasUx && !hasDbga) {
           let fbFound = false;
