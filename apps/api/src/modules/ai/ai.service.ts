@@ -39,9 +39,9 @@ export interface LegacyGenerateOptions {
   contractSpecs?: string;
 }
 
-/** Instrucción fija para toda documentación legacy: complementar sin inventar. */
+/** Instrucción fija para toda documentación legacy: no inventar; solo MDD + conocimiento TheForge. */
 const LEGACY_NO_INVENTAR =
-  "**Regla obligatoria (legacy):** Cumple estrictamente con lo que especifican los documentos. No inventes funcionalidades nuevas ni cambies el alcance. Sin embargo, puedes y debes complementar con lo necesario para que lo especificado funcione correctamente: validaciones, manejo de errores, estados de UI, casos edge obvios, autenticación donde aplique, migraciones de DB requeridas, y cualquier boilerplate indispensable. Si algo es ambiguo o hay múltiples formas válidas de implementarlo, pregunta.";
+  "**Regla obligatoria (legacy):** No inventes nada. Apégate al MDD y únicamente al conocimiento del codebase (TheForge) proporcionado arriba. Todo lo que escribas debe estar respaldado por el MDD o por ese contexto; si algo no aparece en ninguno de los dos, no lo incluyas.";
 
 function trimTheForgeContextBlock(theforgeContext: string): string {
   const max = parseInt(process.env.THEFORGE_CONTEXT_PREPEND_MAX_CHARS ?? "16000", 10);

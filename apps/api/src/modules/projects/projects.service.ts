@@ -36,7 +36,7 @@ import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 
 /** System prompt para sintetizar BRD/To-Be desde DBGA (greenfield); más ligero que el coordinador legacy + KNOWLEDGE. */
 const DBGA_BRD_TOBE_SUGGEST_SYSTEM =
-  "Eres analista de producto y arquitecto de soluciones en español. Produces BRD en markdown coherentes con el benchmark de dominio (DBGA). El BRD DEBE incluir la sección «Pain Points & Problem Statement» al inicio, detallando dolores del cliente, soluciones actuales y validación de demanda. Cumple estrictamente con lo que especifican los documentos. No inventes funcionalidades nuevas ni cambies el alcance. Sin embargo, puedes y debes complementar con lo necesario para que lo especificado funcione correctamente: validaciones, manejo de errores, estados de UI, casos edge obvios, autenticación donde aplique, migraciones de DB requeridas, y cualquier boilerplate indispensable. Si algo es ambiguo o hay múltiples formas válidas de implementarlo, pregunta.";
+  "Eres analista de producto y arquitecto de soluciones en español. Produces BRD en markdown coherentes con el benchmark de dominio (DBGA). El BRD DEBE incluir la sección «Pain Points & Problem Statement» al inicio, detallando dolores del cliente, soluciones actuales y validación de demanda. No inventes requisitos que contradigan el texto; usa «no consta» cuando falte evidencia.";
 
 type StageWithEst = Stage & { estimation: Estimation | null };
 
