@@ -219,7 +219,7 @@ export class SessionsService {
     const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
     let dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
     let specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
-    const brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
+    let brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
     const tobeSplit = this.parser.splitDocAndChat(safeResponse, "TOBE");
     let blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
     let apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
@@ -234,7 +234,7 @@ export class SessionsService {
     let hasUx = uxSplit !== null;
     let hasDbga = dbgaSplit !== null;
     let hasSpec = specSplit !== null;
-    const hasBrd = brdSplit !== null;
+    let hasBrd = brdSplit !== null;
     const hasTobe = tobeSplit !== null;
     let hasBlue = blueSplit !== null;
     let hasApi = apiSplit !== null;
@@ -332,6 +332,7 @@ export class SessionsService {
           case "use-cases": useCasesSplit = fbSplit; hasUseCases = true; break;
           case "user-stories": storiesSplit = fbSplit; hasStories = true; break;
           case "benchmark": dbgaSplit = fbSplit; hasDbga = true; dbgaDocPart = fbSplit.docPart; break;
+          case "brd": brdSplit = fbSplit; hasBrd = true; break;
         }
         // Only apply fallback if no higher-priority document was found
         if (!hasMdd && !hasUx) {
@@ -339,6 +340,7 @@ export class SessionsService {
           let fbFound = false;
           if (hasDbga) { rawChat = dbgaSplit!.chatPart; fbFound = true; }
           else if (hasSpec) { rawChat = specSplit!.chatPart; fbFound = true; }
+          else if (hasBrd) { rawChat = brdSplit!.chatPart; fbFound = true; }
           else if (hasBlue) { rawChat = blueSplit!.chatPart; fbFound = true; }
           else if (hasApi) { rawChat = apiSplit!.chatPart; fbFound = true; }
           else if (hasFlows) { rawChat = flowsSplit!.chatPart; fbFound = true; }
@@ -541,7 +543,7 @@ export class SessionsService {
     const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
     let dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
     let specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
-    const brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
+    let brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
     const tobeSplit = this.parser.splitDocAndChat(safeResponse, "TOBE");
     let blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
     let apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
@@ -556,7 +558,7 @@ export class SessionsService {
     let hasUx = uxSplit !== null;
     let hasDbga = dbgaSplit !== null;
     let hasSpec = specSplit !== null;
-    const hasBrd = brdSplit !== null;
+    let hasBrd = brdSplit !== null;
     const hasTobe = tobeSplit !== null;
     let hasBlue = blueSplit !== null;
     let hasApi = apiSplit !== null;
@@ -650,10 +652,12 @@ export class SessionsService {
           case "use-cases": useCasesSplit = fbSplit; hasUseCases = true; break;
           case "user-stories": storiesSplit = fbSplit; hasStories = true; break;
           case "benchmark": dbgaSplit = fbSplit; hasDbga = true; dbgaDocPart = fbSplit.docPart; break;
+          case "brd": brdSplit = fbSplit; hasBrd = true; break;
         }
         if (!hasMdd && !hasUx && !hasDbga) {
           let fbFound = false;
           if (hasSpec) { rawChat = specSplit!.chatPart; fbFound = true; }
+          else if (hasBrd) { rawChat = brdSplit!.chatPart; fbFound = true; }
           else if (hasBlue) { rawChat = blueSplit!.chatPart; fbFound = true; }
           else if (hasApi) { rawChat = apiSplit!.chatPart; fbFound = true; }
           else if (hasFlows) { rawChat = flowsSplit!.chatPart; fbFound = true; }
