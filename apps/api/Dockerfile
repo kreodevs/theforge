@@ -45,8 +45,7 @@ WORKDIR /app/apps/api
 
 EXPOSE 3000
 
-# start-period: tiempo para wait-for-postgres + migrate deploy + arranque Nest en cold start
-HEALTHCHECK --interval=30s --timeout=3s --start-period=90s --retries=3 \
-  CMD wget -qO- http://localhost:3000/health || exit 1
+# HEALTHCHECK desactivado: Dokploy no lo soporta correctamente
+# HEALTHCHECK NONE
 
 ENTRYPOINT ["/entrypoint.sh"]
