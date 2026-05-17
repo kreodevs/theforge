@@ -177,7 +177,29 @@ export class AiService {
           }
           if (at === "brd") {
             systemPrompt +=
-              "\n\n**OBLIGATORIO - BRD (\`---FIN_BRD---\`):** Cuando el usuario pida agregar, modificar o eliminar algo del BRD, **NO preguntes ni pidas confirmaci\u00f3n**. Aplica el cambio **inmediatamente**: devuelve el **markdown completo del BRD** actualizado (conservando TODO el contenido existente) y termina con \`---FIN_BRD---\`. Lo que escribas despu\u00e9s de esa l\u00ednea ser\u00e1 el mensaje de chat. Sin \`---FIN_BRD---\` no se persiste nada.";
+              "\n\n**OBLIGATORIO - BRD (formato exacto obligatorio):**
+
+**NO preguntes ni pidas confirmaci\u00f3n**. Cuando el usuario pida agregar, modificar o eliminar algo del BRD, **Aplica el cambio inmediatamente** siguiendo este formato:
+
+```
+[BRD completo actualizado con el cambio incorporado, conservando TODO el contenido existente]
+---FIN_BRD---
+[breve mensaje de chat resumiendo lo que cambiaste]
+```
+
+EJEMPLO:
+```
+# Business Requirements Document: CRM Inmobiliario
+
+## Alcance
+### Funcional
+RF-1: ...
+RF-15: ...
+---FIN_BRD---
+Agregado RF-15 al alcance.
+```
+
+**IMPORTANTE:** Sin ``---FIN_BRD---`` no se persiste NADA. El contenido del BRD va ANTES del delimitador. El mensaje de chat va DESPU\u00c9S.";
           }
           if (at === "to-be") {
             systemPrompt +=
@@ -340,7 +362,29 @@ export class AiService {
         }
         if (at === "brd") {
           systemPrompt +=
-            "\n\n**OBLIGATORIO - BRD (\`---FIN_BRD---\`):** Cuando el usuario pida agregar, modificar o eliminar algo del BRD, **NO preguntes ni pidas confirmaci\u00f3n**. Aplica el cambio **inmediatamente**: devuelve el **markdown completo del BRD** actualizado (conservando TODO el contenido existente) y termina con \`---FIN_BRD---\`. Lo que escribas despu\u00e9s de esa l\u00ednea ser\u00e1 el mensaje de chat. Sin \`---FIN_BRD---\` no se persiste nada.";
+            "\n\n**OBLIGATORIO - BRD (formato exacto obligatorio):**
+
+**NO preguntes ni pidas confirmaci\u00f3n**. Cuando el usuario pida agregar, modificar o eliminar algo del BRD, **Aplica el cambio inmediatamente** siguiendo este formato:
+
+```
+[BRD completo actualizado con el cambio incorporado, conservando TODO el contenido existente]
+---FIN_BRD---
+[breve mensaje de chat resumiendo lo que cambiaste]
+```
+
+EJEMPLO:
+```
+# Business Requirements Document: CRM Inmobiliario
+
+## Alcance
+### Funcional
+RF-1: ...
+RF-15: ...
+---FIN_BRD---
+Agregado RF-15 al alcance.
+```
+
+**IMPORTANTE:** Sin ``---FIN_BRD---`` no se persiste NADA. El contenido del BRD va ANTES del delimitador. El mensaje de chat va DESPU\u00c9S.";
         }
         if (at === "to-be") {
           systemPrompt +=
