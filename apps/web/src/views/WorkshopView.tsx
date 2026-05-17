@@ -2077,20 +2077,20 @@ export default function WorkshopView({
                 )}
                 {centralPanel === "blueprint" && !!blueprintContent?.trim() && (
                   <WorkshopRegenButton
-                    onClick={() => generateBlueprint(projectId, { preview: true })}
+                    onClick={() => generateBlueprint(projectId)}
                     disabled={loading || mddReviewing || !effectiveMddTrimmed}
                     loading={loading}
-                    ariaLabel="Regenerar blueprint desde el MDD (vista previa antes de guardar)"
-                    tooltip="Regenerar blueprint desde el MDD (vista previa antes de guardar)"
+                    ariaLabel="Regenerar blueprint desde el MDD"
+                    tooltip="Regenerar blueprint desde el MDD"
                   />
                 )}
                 {centralPanel === "api-contracts" && !!apiContractsContent?.trim() && (
                   <WorkshopRegenButton
-                    onClick={() => generateApiContracts(projectId, { preview: true })}
+                    onClick={() => generateApiContracts(projectId)}
                     disabled={loading || mddReviewing || !effectiveMddTrimmed || apiBlueprintDmBlocked}
                     loading={loading}
-                    ariaLabel={apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API desde el MDD (vista previa antes de guardar)"}
-                    tooltip={apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API desde el MDD (vista previa antes de guardar)"}
+                    ariaLabel={apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API desde el MDD"}
+                    tooltip={apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API desde el MDD"}
                   />
                 )}
                 {centralPanel === "logic-flows" && !!logicFlowsContent?.trim() && (
@@ -2103,11 +2103,11 @@ export default function WorkshopView({
                 )}
                 {centralPanel === "infra" && !!infraContent?.trim() && (
                   <WorkshopRegenButton
-                    onClick={() => generateInfra(projectId, { preview: true })}
+                    onClick={() => generateInfra(projectId)}
                     disabled={loading || mddReviewing || !effectiveMddTrimmed}
                     loading={loading}
-                    ariaLabel="Regenerar infraestructura desde el MDD (vista previa antes de guardar)"
-                    tooltip="Regenerar infraestructura desde el MDD (vista previa antes de guardar)"
+                    ariaLabel="Regenerar infraestructura desde el MDD"
+                    tooltip="Regenerar infraestructura desde el MDD"
                   />
                 )}
                 {centralPanel === "mdd-inicial" &&
@@ -3171,7 +3171,7 @@ export default function WorkshopView({
                 onSave={() => void persistBlueprintContent(blueprintContent ?? "")}
                 isDirty={blueprintDirty}
                 viewMode={blueprintViewMode}
-                onGenerate={() => generateBlueprint(projectId, { preview: true })}
+                onGenerate={() => generateBlueprint(projectId)}
                 canGenerate={!!effectiveMddTrimmed}
                 isLoading={loading || mddReviewing}
                 placeholder="# Blueprint\n\nEl contenido del blueprint se genera desde el MDD..."
@@ -3208,7 +3208,7 @@ export default function WorkshopView({
                 onSave={() => void persistApiContractsContent(apiContractsContent ?? "")}
                 isDirty={apiContractsDirty}
                 viewMode={apiContractsViewMode}
-                onGenerate={() => generateApiContracts(projectId, { preview: true })}
+                onGenerate={() => generateApiContracts(projectId)}
                 canGenerate={!!effectiveMddTrimmed}
                 isLoading={loading || mddReviewing}
                 placeholder="# Contratos de API (OpenAPI/Swagger)\n\n..."
@@ -3247,7 +3247,7 @@ export default function WorkshopView({
                 onSave={() => void persistInfraContent(infraContent ?? "")}
                 isDirty={infraDirty}
                 viewMode={infraViewMode}
-                onGenerate={() => generateInfra(projectId, { preview: true })}
+                onGenerate={() => generateInfra(projectId)}
                 canGenerate={!!effectiveMddTrimmed}
                 isLoading={loading || mddReviewing}
                 placeholder="# Infraestructura\n\n..."
