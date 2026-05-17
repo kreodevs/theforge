@@ -61,6 +61,89 @@ function normalizeMermaidContent(content: string): string {
     .trim();
 }
 
+/**
+ * Corrige errores sintácticos comunes en sequenceDiagram generados por IA:
+ * 1. Si falta "sequenceDiagram" pero empieza con participant → lo agrega.
+ * 2. `F -->U` (espacio + dash simple) → `F-->>U` (doble dash + arrow).
+ * 3. `APART-->>API 409` (falta ":") → `APART-->>API: 409`.
+ * 4. `APART>>DB` (falta dash) → `APART->>DB`.
+ * 5. Líneas sueltas sin arrow (ej. "DB OK") → se convierten a `Note over B: texto`.
+ *    Si no se puede determinar el participante, se ignoran (mejor que error de parse).
+ */
+function normalizeMermaidSequenceSyntax(content: string): string {
+  // Solo aplicar a sequence diagrams
+  if (!/sequenceDiagram/i.test(content)) return content;
+
+  // Trim whitespace per line uniformly before parsing
+  const lines = content.trim().split("\n");
+  const out: string[] = [];
+
+  // 1. Si después de "sequenceDiagram" la siguiente línea no es un participante/actor,
+  //    o si falta "sequenceDiagram" por completo y arranca con participant → lo inserta
+  let hasSeqDiag = false;
+  for (const line of lines) {
+    const t = line.trim();
+    if (/^sequenceDiagram$/i.test(t)) { hasSeqDiag = true; break; }
+  }
+  if (!hasSeqDiag) {
+    // Check if first meaningful line is a participant/actor
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t) continue;
+      if (/^(participant|actor)\s/i.test(t)) {
+        out.push("sequenceDiagram");
+        break;
+      }
+      break; // Don't add for non-participant starts
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]!;
+    const trimmed = raw.trim();
+
+    // Skip empty lines, comments, and keywords
+    if (!trimmed) { out.push(raw); continue; }
+    if (/^(sequenceDiagram|participant|actor|Note\s|alt|else|end|loop|opt|par|rect|critical|break)\b/i.test(trimmed)) {
+      out.push(raw);
+      continue;
+    }
+
+    // 2. Fix space in arrow: `F -->U` → `F-->>U`
+    let fixed = trimmed.replace(/(\w+)\s+-->\s*(\w+)/g, "$1-->>$2");
+
+    // 3. Fix missing colon after participant arrow: `APART-->>API 409` → `APART-->>API: 409`
+    //    Pattern: word-->>word <digits or words without colon>
+    fixed = fixed.replace(/(-->>[A-Za-z_]\w*)\s+(\d[\d\s{])/g, "$1: $2");
+    fixed = fixed.replace(/(-->>[A-Za-z_]\w*)\s+(\{)/g, "$1: $2");
+
+    // 4. Fix missing dash: `APART>>DB` → `APART->>DB`
+    fixed = fixed.replace(/([A-Za-z_]\w*)>>([A-Za-z_])/g, "$1->>$2");
+
+    // 5. Bare label lines (no arrow pattern): convert to Note with default participant
+    //    Pattern: just text with no `->`, `-->>`, `-->`, `::`, `|`
+    if (!/->|-->>|-->/.test(fixed) && !/^\s*(Note|alt|else|end|loop)/.test(fixed)) {
+      // Check if it looks like a bare label (not a code comment or directive)
+      if (/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ\s,:]+$/i.test(fixed.trim())) {
+        // Try to extract participant from context (last seen participant)
+        let lastParticipant = "B";
+        for (let j = i - 1; j >= 0; j--) {
+          const p = lines[j]!.trim();
+          const pm = p.match(/^participant\s+(\w+)/i);
+          if (pm?.[1]) { lastParticipant = pm[1]; break; }
+          const am = p.match(/^(\w+)(?:--?>>?|->>?)/);
+          if (am?.[1]) { lastParticipant = am[1]; break; }
+        }
+        fixed = `Note over ${lastParticipant}: ${fixed.trim()}`;
+      }
+    }
+
+    out.push(fixed);
+  }
+
+  return out.join("\n");
+}
+
 /** Normalización exclusiva para erDiagram: tipos PostgreSQL → tipos Mermaid seguros. */
 function normalizeErDiagramTypes(content: string): string {
   return content
@@ -268,7 +351,7 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
               const trimmed = source.trim();
               const normalized = /erDiagram/i.test(trimmed)
                 ? normalizeMermaidForRender(trimmed)
-                : normalizeMermaidFirstLineKeywords(normalizeMermaidContent(trimmed));
+                : normalizeMermaidFirstLineKeywords(normalizeMermaidSequenceSyntax(normalizeMermaidContent(trimmed)));
               const key = mermaidKey(normalized);
               return (
                 <MermaidBlockErrorBoundary content={normalized} blockKey={key}>
