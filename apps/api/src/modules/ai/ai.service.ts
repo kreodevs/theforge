@@ -177,7 +177,7 @@ export class AiService {
           }
           if (at === "brd") {
             systemPrompt +=
-              "\n\n**Para persistir el BRD debes usar \`---FIN_BRD---\`.** Si decides hacer cambios al BRD (agregar, modificar o eliminar contenido), **no te limites a describirlo en el chat**: DEBES devolver el **markdown completo del BRD** actualizado (incluyendo todo el contenido existente más tus cambios), terminando con la línea exacta \`---FIN_BRD---\`. El chat después de esa línea será la respuesta conversacional. Si dices \"He actualizado el BRD\" en el chat PERO no incluyes \`---FIN_BRD---\`, el sistema NO persiste ningún cambio y el usuario no ve nada.";
+              "\n\n**OBLIGATORIO - BRD (\`---FIN_BRD---\`):** Cuando el usuario pida agregar, modificar o eliminar algo del BRD, **NO preguntes ni pidas confirmaci\u00f3n**. Aplica el cambio **inmediatamente**: devuelve el **markdown completo del BRD** actualizado (conservando TODO el contenido existente) y termina con \`---FIN_BRD---\`. Lo que escribas despu\u00e9s de esa l\u00ednea ser\u00e1 el mensaje de chat. Sin \`---FIN_BRD---\` no se persiste nada.";
           }
           if (at === "to-be") {
             systemPrompt +=
@@ -340,7 +340,7 @@ export class AiService {
         }
         if (at === "brd") {
           systemPrompt +=
-            "\n\n**Para persistir el BRD debes usar \`---FIN_BRD---\`.** Si decides hacer cambios al BRD (agregar, modificar o eliminar contenido), **no te limites a describirlo en el chat**: DEBES devolver el **markdown completo del BRD** actualizado (incluyendo todo el contenido existente más tus cambios), terminando con la línea exacta \`---FIN_BRD---\`. El chat después de esa línea será la respuesta conversacional. Si dices \"He actualizado el BRD\" en el chat PERO no incluyes \`---FIN_BRD---\`, el sistema NO persiste ningún cambio y el usuario no ve nada.";
+            "\n\n**OBLIGATORIO - BRD (\`---FIN_BRD---\`):** Cuando el usuario pida agregar, modificar o eliminar algo del BRD, **NO preguntes ni pidas confirmaci\u00f3n**. Aplica el cambio **inmediatamente**: devuelve el **markdown completo del BRD** actualizado (conservando TODO el contenido existente) y termina con \`---FIN_BRD---\`. Lo que escribas despu\u00e9s de esa l\u00ednea ser\u00e1 el mensaje de chat. Sin \`---FIN_BRD---\` no se persiste nada.";
         }
         if (at === "to-be") {
           systemPrompt +=
