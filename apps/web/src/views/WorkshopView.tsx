@@ -54,6 +54,7 @@ import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
 import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
 import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AdrsPanel } from "../components/AdrsPanel";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import type { LucideIcon } from "lucide-react";
@@ -3041,6 +3042,7 @@ export default function WorkshopView({
               />
             )}
             {centralPanel === "ux-ui-guide" && (
+              <ErrorBoundary>
               <UxUiGuidePanel
                 content={uxUiGuideContent}
                 onContentChange={(v) => setUxUiGuideContent(v)}
@@ -3058,6 +3060,7 @@ export default function WorkshopView({
                 placeholder="# Guía UX/UI\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
                 onBlur={handleUxUiGuideBlur}
               />
+              </ErrorBoundary>
             )}
             {centralPanel === "spec" && (
               <StandardDocPanel
