@@ -169,7 +169,7 @@ export class AiOrchestratorService {
     const currentUxUiGuide =
       uxUiGuideContentFromClient ?? project.uxUiGuideContent ?? undefined;
     const currentBrd =
-      brdContentFromClient ?? stageBrdContent(project, route.stageId) ?? undefined;
+      stageBrdContent(project, route.stageId) ?? brdContentFromClient ?? undefined;
     if (mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: route.stageId });
     }
@@ -177,7 +177,11 @@ export class AiOrchestratorService {
       await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideContentFromClient });
     }
     if (brdContentFromClient != null && brdContentFromClient.trim().length > 0) {
-      await this.projects.patchStage(projectId, route.stageId, { brdContent: brdContentFromClient });
+      const persistedBrd = stageBrdContent(project, route.stageId);
+      // Solo persiste si no hay un valor más reciente en BD
+      if (!persistedBrd || persistedBrd !== brdContentFromClient) {
+        await this.projects.patchStage(projectId, route.stageId, { brdContent: brdContentFromClient });
+      }
     }
     const isUxUiGuide = activeTab?.trim() === "ux-ui-guide";
     let systemPrompt: string | undefined;
@@ -365,7 +369,7 @@ export class AiOrchestratorService {
     const currentUxUiGuide = uxUiGuideContentFromClient ?? project.uxUiGuideContent ?? undefined;
     const currentSpec = specContentFromClient ?? (project as { specContent?: string | null }).specContent ?? undefined;
     const currentBrdStream =
-      brdContentFromClient ?? stageBrdContent(project, routeStream.stageId) ?? undefined;
+      stageBrdContent(project, routeStream.stageId) ?? brdContentFromClient ?? undefined;
     const currentArchitecture = (project as any).architectureContent ?? undefined;
     const currentUseCases = (project as any).useCasesContent ?? undefined;
     const currentUserStories = (project as any).userStoriesContent ?? undefined;
@@ -380,7 +384,10 @@ export class AiOrchestratorService {
       await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideContentFromClient });
     }
     if (brdContentFromClient != null && brdContentFromClient.trim().length > 0) {
-      await this.projects.patchStage(projectId, routeStream.stageId, { brdContent: brdContentFromClient });
+      const persistedBrdStream = stageBrdContent(project, routeStream.stageId);
+      if (!persistedBrdStream || persistedBrdStream !== brdContentFromClient) {
+        await this.projects.patchStage(projectId, routeStream.stageId, { brdContent: brdContentFromClient });
+      }
     }
     const isUxUiGuide = activeTab?.trim() === "ux-ui-guide";
     let systemPromptStream: string | undefined;
