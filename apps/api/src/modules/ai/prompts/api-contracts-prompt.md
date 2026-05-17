@@ -45,3 +45,5 @@ Si el mensaje incluye un bloque **Contratos reales desde el codebase (get_contra
 4. Incluir en la documentación notas como `(get_contract_specs)` junto a endpoints respaldados por evidencia real.
 
 No inventes tipos, rutas o parámetros que contradigan los contratos reales. Si no hay bloque de contratos reales, ignora esta sección.
+
+Cumple estrictamente con lo que especifican los documentos. No inventes funcionalidades nuevas ni cambies el alcance. Sin embargo, puedes y debes complementar con lo necesario para que lo especificado funcione correctamente: validaciones, manejo de errores, estados de UI, casos edge obvios, autenticación donde aplique, migraciones de DB requeridas, y cualquier boilerplate indispensable. Si algo es ambiguo o hay múltiples formas válidas de implementarlo, pregunta.
