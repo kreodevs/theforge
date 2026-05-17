@@ -171,11 +171,25 @@ export class AiAnalysisController {
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
-        for await (const event of service.streamMddAnalysis(dbgaContent, projectId, stageId)) {
-          yield JSON.stringify(event) + "\n";
+        try {
+          for await (const event of service.streamMddAnalysis(dbgaContent, projectId, stageId)) {
+            yield JSON.stringify(event) + "\n";
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : "Error interno del servidor";
+          console.error("[MDD stream] error:", errMsg);
+          yield JSON.stringify({ type: "error", message: errMsg }) + "\n";
         }
       })(),
     );
+    // Si el cliente se desconecta, destruir el stream para no quedarlo colgado
+    res.on("close", () => { stream.destroy(); });
+    stream.on("error", (err) => {
+      console.error("[MDD stream] stream error:", err);
+      if (!res.destroyed) {
+        try { res.end(); } catch { /* ignore */ }
+      }
+    });
     stream.pipe(res);
   }
 
@@ -221,18 +235,32 @@ export class AiAnalysisController {
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
-        for await (const event of service.streamMddAnalysisWithManager(
-          dbgaContent,
-          projectId,
-          initialMessage,
-          mddContent,
-          stageId,
-          imageAttachments,
-        )) {
-          yield JSON.stringify(event) + "\n";
+        try {
+          for await (const event of service.streamMddAnalysisWithManager(
+            dbgaContent,
+            projectId,
+            initialMessage,
+            mddContent,
+            stageId,
+            imageAttachments,
+          )) {
+            yield JSON.stringify(event) + "\n";
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : "Error interno del servidor";
+          console.error("[MDD stream/manager] error:", errMsg);
+          yield JSON.stringify({ type: "error", message: errMsg }) + "\n";
         }
       })(),
     );
+    // Si el cliente se desconecta, destruir el stream para no quedarlo colgado
+    res.on("close", () => { stream.destroy(); });
+    stream.on("error", (err) => {
+      console.error("[MDD stream/manager] stream error:", err);
+      if (!res.destroyed) {
+        try { res.end(); } catch { /* ignore */ }
+      }
+    });
     stream.pipe(res);
   }
 
@@ -271,11 +299,24 @@ export class AiAnalysisController {
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
-        for await (const event of service.streamMddRegenerateSection(projectId, section, mddContent, stageId)) {
-          yield JSON.stringify(event) + "\n";
+        try {
+          for await (const event of service.streamMddRegenerateSection(projectId, section, mddContent, stageId)) {
+            yield JSON.stringify(event) + "\n";
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : "Error interno del servidor";
+          console.error("[MDD stream/regenerate-section] error:", errMsg);
+          yield JSON.stringify({ type: "error", message: errMsg }) + "\n";
         }
       })(),
     );
+    res.on("close", () => { stream.destroy(); });
+    stream.on("error", (err) => {
+      console.error("[MDD stream/regenerate-section] stream error:", err);
+      if (!res.destroyed) {
+        try { res.end(); } catch { /* ignore */ }
+      }
+    });
     stream.pipe(res);
   }
 
@@ -315,17 +356,31 @@ export class AiAnalysisController {
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
-        for await (const event of service.streamMddResume(
-          projectId,
-          threadId,
-          userMessage,
-          mddContent,
-          imageAttachments,
-        )) {
-          yield JSON.stringify(event) + "\n";
+        try {
+          for await (const event of service.streamMddResume(
+            projectId,
+            threadId,
+            userMessage,
+            mddContent,
+            imageAttachments,
+          )) {
+            yield JSON.stringify(event) + "\n";
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : "Error interno del servidor";
+          console.error("[MDD stream/resume] error:", errMsg);
+          yield JSON.stringify({ type: "error", message: errMsg }) + "\n";
         }
       })(),
     );
+    // Si el cliente se desconecta, destruir el stream para no quedarlo colgado
+    res.on("close", () => { stream.destroy(); });
+    stream.on("error", (err) => {
+      console.error("[MDD stream/resume] stream error:", err);
+      if (!res.destroyed) {
+        try { res.end(); } catch { /* ignore */ }
+      }
+    });
     stream.pipe(res);
   }
 
