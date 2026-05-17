@@ -3,6 +3,35 @@ import type { ChatImagePart, CodebaseDocResponseMode } from "@theforge/shared-ty
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue } from "../utils/apiClient";
 import { parseErrorMessageFromResponse } from "../utils/httpError";
 
+/**
+ * Convierte mensajes de error de fetch del navegador (Safari "Load failed", Chrome "Failed to fetch")
+ * a mensajes amigables en español.
+ */
+function friendlyFetchError(e: unknown): string {
+  if (e instanceof Error) {
+    const msg = e.message;
+    if (
+      msg === "Load failed" ||
+      msg === "Failed to fetch" ||
+      msg === "NetworkError when attempting to fetch resource." ||
+      msg === "The network connection was lost." ||
+      msg.startsWith("TypeError: Failed to fetch") ||
+      msg.startsWith("TypeError: NetworkError") ||
+      msg.startsWith("TypeError: Load failed") ||
+      msg.includes("ERR_CONNECTION") ||
+      msg.includes("ERR_NETWORK") ||
+      msg.includes("network") ||
+      msg.includes("NetworkError") ||
+      /load\s+fail/i.test(msg) ||
+      /failed\s+to\s+fetch/i.test(msg)
+    ) {
+      return "Error de conexión con el servidor. Reintenta en unos segundos.";
+    }
+    return msg;
+  }
+  return String(e);
+}
+
 function pickEvaluatorCritique(data: Record<string, unknown>): string | null {
   const c = data.evaluatorCritique;
   return typeof c === "string" && c.trim().length > 0 ? c.trim() : null;
@@ -1180,7 +1209,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         set({ loading: false, loadingReason: null, agentProgress: [], evaluatorCritique: null });
       } catch (e) {
         set({
-          error: e instanceof Error ? e.message : "Error al regenerar sección",
+          error: e instanceof Error ? friendlyFetchError(e) : "Error al regenerar sección",
           loading: false,
           loadingReason: null,
           agentProgress: [],
@@ -1488,7 +1517,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           set({
             managerThreadId: null,
             pendingPlanApproval: null,
-            error: e instanceof Error ? e.message : "Error en el flujo MDD",
+            error: friendlyFetchError(e),
             loading: false,
             loadingReason: null,
             agentProgress: [],
@@ -1730,7 +1759,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }
       } catch (e) {
         set({
-          error: e instanceof Error ? e.message : "Error al enviar",
+          error: e instanceof Error ? friendlyFetchError(e) : "Error al enviar",
           streamingUserMessage: null,
           streamingUserImages: null,
           streamingContent: null,
