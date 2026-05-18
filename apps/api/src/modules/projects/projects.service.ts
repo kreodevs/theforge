@@ -15,6 +15,7 @@ import {
   checkBlueprintSectionHeaders,
   checkBlueprintApiTableFormat,
   checkBlueprintSpanishQuality,
+  checkBlueprintSelfContained,
 } from "../engine/conformance.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
@@ -1029,24 +1030,27 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     // 2. Secciones requeridas presentes
     // 3. Formato de tabla API correcto
     // 4. Calidad de español
+    // 5. Autocontenido (sin "ver §X", "véase §X", "remite al MDD")
     // Si alguna falla y no es un reintento, regenerar con feedback combinado.
     const entityCheck = checkBlueprintDataModelVsMdd(mddContent, blueprintContent);
     const sectionCheck = checkBlueprintSectionHeaders(blueprintContent);
     const tableCheck = checkBlueprintApiTableFormat(blueprintContent);
     const spanishCheck = checkBlueprintSpanishQuality(blueprintContent);
+    const selfContainedCheck = checkBlueprintSelfContained(blueprintContent);
 
     const allGaps = [
       ...entityCheck.gaps,
       ...sectionCheck.gaps,
       ...tableCheck.gaps,
       ...spanishCheck.gaps,
+      ...selfContainedCheck.gaps,
     ];
 
     const needsRetry = allGaps.length > 0 && !gapsFeedback;
     if (needsRetry) {
-      // Pasar los gaps más relevantes como feedback (máximo 8 para no saturar contexto)
-      const gapFeedback = allGaps.slice(0, 8).join("; ");
-      this.logger.warn(`[Blueprint] Calidad insuficiente (${entityCheck.gaps.length} entidades, ${sectionCheck.gaps.length} secciones, ${tableCheck.gaps.length} tabla, ${spanishCheck.gaps.length} español) — reintentando con feedback: ${gapFeedback}`);
+      // Pasar los gaps más relevantes como feedback (máximo 10 para no saturar contexto)
+      const gapFeedback = allGaps.slice(0, 10).join("; ");
+      this.logger.warn(`[Blueprint] Calidad insuficiente (${entityCheck.gaps.length} entidades, ${sectionCheck.gaps.length} secciones, ${tableCheck.gaps.length} tabla, ${spanishCheck.gaps.length} español, ${selfContainedCheck.gaps.length} autocontenido) — reintentando con feedback: ${gapFeedback}`);
       blueprintContent = await this.ai.generateBlueprint(mddContent, gapFeedback, legacyOpts);
       blueprintContent = cleanDocumentContent(blueprintContent);
     }

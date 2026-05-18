@@ -231,6 +231,45 @@ export function checkBlueprintSpanishQuality(blueprintContent: string | null): C
   return { ok: gaps.length === 0, gaps };
 }
 
+/** Patrones de referencia al MDD que DEBEN estar ausentes en el Blueprint (autocontenido). */
+const MDD_REFERENCE_PATTERNS: { pattern: RegExp; example: string }[] = [
+  // "Ver diagrama en §2.3", "ver §2 del MDD", "véase §3"
+  { pattern: /\bver\s+(?:diagrama|figura|tabla|secci[oó]n|el)\s*(?:en\s+)?[§][\d.]/gi, example: "ver diagrama en §2.3" },
+  { pattern: /\b(?:v[ée]ase|v[ée]r)\s+[§]\d/gi, example: "véase §3" },
+  { pattern: /\b(?:remitimos?\s+al?\s+MDD|remite\s+al\s+MDD)\b/i, example: "remite al MDD" },
+  { pattern: /\b(?:el\s+MDD\s+(?:define|describe|detalla|contiene|especifica|tiene|l[Ii]sta))\b/i, example: "el MDD define..." },
+  { pattern: /\b(?:consultar\s+(?:el\s+)?MDD|v[ée]r\s+(?:el\s+)?MDD)\b/i, example: "consultar el MDD" },
+];
+
+/**
+ * Verifica que el Blueprint no delegue contenido al MDD (autocontenido).
+ * Permite excepciones: "(ver §3 del MDD para columnas)" y "(ver §6 para flujo SSO completo)".
+ */
+export function checkBlueprintSelfContained(blueprintContent: string | null): ConformanceResult {
+  const gaps: string[] = [];
+  if (!blueprintContent?.trim()) return { ok: true, gaps: [] };
+
+  for (const { pattern, example } of MDD_REFERENCE_PATTERNS) {
+    const matches = blueprintContent.matchAll(pattern);
+    for (const match of matches) {
+      const fullMatch = match[0];
+      const context = blueprintContent.slice(Math.max(0, (match.index ?? 0) - 40), (match.index ?? 0) + 80);
+
+      // Excepciones permitidas: ver §3 para columnas, ver §6 para SSO
+      const allowedSql = /ver\s+[§]3\s+del\s+MDD\s+para\s+(?:columnas|tipos|índices|esquema)/i;
+      const allowedSso = /ver\s+[§]6\s+(?:del\s+MDD\s+)?para\s+(?:el\s+)?flujo\s+SSO/i;
+      if (allowedSql.test(context) || allowedSso.test(context)) continue;
+
+      gaps.push(
+        `El Blueprint delega contenido al MDD ("${fullMatch}" en contexto: "...${context.trim()}..."). ` +
+        `El Blueprint debe ser autocontenido. En su lugar, describe el contenido directamente. ` +
+        `Ejemplo de lo que no debe ocurrir: "${example}".`,
+      );
+    }
+  }
+  return { ok: gaps.length === 0, gaps };
+}
+
 /** Patrón de tabla markdown válida con método HTTP + ruta. */
 const API_TABLE_PATTERN = /^\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*`?.+`?\s*\|/im;
 
