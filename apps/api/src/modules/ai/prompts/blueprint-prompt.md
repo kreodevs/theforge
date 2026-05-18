@@ -28,16 +28,25 @@ El **MDD** del proyecto (secciones: Contexto, Arquitectura §2, Modelo §3, Cont
 6. **Seguridad y auth:** Si §6 describe **SSO / redirect / JWT**, no reduzcas el Blueprint a **"JWT en API"** solo: indica **quién** redirige (cliente BFF vs SPA), **Bearer** en rutas API tras emisión del token, y **remisión explícita** a §6 para flujos SSO. Si §6 solo exige Bearer en API, basta con una frase alineada.
 7. **Plan de implementación sugerido:** Orden **fases** (p. ej. esquema PostGIS + migraciones → API CRUD → módulo grafo → servicio NL→Cypher → jobs de ingesta) según dependencias del MDD; 4–8 viñetas máximo.
 
-A continuación genera el contenido obligatorio del Blueprint:
+A continuación genera EXACTAMENTE las siguientes secciones. NO omitas ninguna. CADA sección listada abajo DEBE aparecer en el Blueprint con su cabecera exacta. El verificador automático rechazará el documento si falta alguna sección o si la sección 2 no lista TODAS las entidades por nombre.
 
 ### 1. Estructura del proyecto y stack
 
 - **Stack técnico (explícito):** Base de datos, runtime, frameworks **como en el MDD §2** o, con contexto TheForge, **solo lo real** del codebase.
 - **Árbol de directorios / repos:** Proyecto nuevo: estructura coherente con el dominio (p. ej. NestJS por módulos de dominio). Proyecto existente (TheForge): solo rutas reales del contexto.
 
-### 2. Persistencia y datos
-
-- **Cobertura §3:** Lista de tablas/nodos; si el MDD ya detalla SQL, **no repitas** CREATE TABLE completos salvo que añadas índices o migraciones **nuevas** justificadas.
+### 2. Persistencia y datos (OBLIGATORIO — NO OMITIR)
+ 
+- **Cobertura §3:** Lista COMPLETA de TODAS las tablas que aparecen en §3 del MDD. Copia los nombres exactos del MDD. Formato obligatorio: cabeceras markdown `### nombre_tabla` (una por línea). Ejemplo:
+  ```
+  ### developers
+  ### users
+  ### properties
+  ### leads
+  ### bookings
+  ### payment_plans
+  ```
+  Si el MDD §3 ya detalla SQL completo, NO dupliques columnas ni CREATE TABLE — solo lista los nombres como se muestra arriba y añade "(ver §3 del MDD para columnas, tipos e índices)". NUNCA sustituyas la lista por "véase §3", "remite al MDD", "no se duplica" o frases similares. La lista nominal DEBE estar presente.
 - **Índices:** BTREE/GIST según geo y consultas del MDD.
 - **Auditoría / sesiones:** Solo si el MDD §3 o §6 lo exigen.
 
@@ -79,3 +88,4 @@ Blueprint en markdown. Primer carácter `#`. Sin introducciones ni envolver el d
 - **Prohibido** "grado militar", "militar" o variantes. Usa "alta criticidad", "misión crítica" o "robustez industrial".
 - No omitir tecnologías §2 ni entidades §3 (al menos por nombre).
 - **Prohibido** Blueprint que solo parafrasee §3 sin mapa §4, sin componentes transversales cuando §1/§2 mencionan IA, grafo o pipeline, y sin vínculo a §5.
+- **Prohibido** omitir la sección "### 2. Persistencia y datos" o escribir "véase §3" sin lista nominal explícita de tablas.
