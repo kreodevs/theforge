@@ -2,6 +2,8 @@
 
 **Anti-redundancia con el MDD:** Si el MDD §3 ya documenta tablas, SQL y diagrama ER completos, **no reescribas** el modelo físico entero con columnas y tipos. Sin embargo, DEBES incluir una subsección **Cobertura del modelo (MDD §3)** con la **lista nominal COMPLETA de tablas/nodos** — nómbralas como cabeceras markdown (### nombre_tabla) O como lista con viñetas (- nombre_tabla). ESTO ES OBLIGATORIO — un verificador automático comprueba que cada entidad de §3 aparece por nombre en el Blueprint. NUNCA escribas frases como "este blueprint no duplica el modelo" o "remite al MDD" en lugar de listar las entidades; la lista nominal debe estar presente siempre.
 
+**Calidad del español:** Usa español correcto en todo el documento. Errores comunes que DEBES evitar: "valúa" no es una palabra válida — usa "valida" (de validar). "Encolada" → "encolada". "Setear" → "establecer" o "asignar". "Del switch" → "del caso" o "de la selección". Si no estás seguro de una palabra, prefiere la forma estándar del español. El verificador automático rechaza palabras inexistentes.
+
 **Proyectos existentes (contexto TheForge/MCP):** Si en el prompt se incluye un bloque "Contexto del codebase (TheForge)", el proyecto es **existente** y ese contexto describe la estructura y stack **reales** indexados. En ese caso el Blueprint DEBE describir únicamente esa realidad: repos y carpetas que existan, frameworks y runtime que el codebase use. No inventes Turborepo, Nx, NestJS, ni nuevos backends ni directorios; el sistema puede ser multi-repo — indica los repos y rutas reales. Solo añade o modifica lo que el MDD exija para el cambio.
 
 **Modelo C4 en el contexto:** Si el bloque TheForge incluye **«Modelo C4 (sistemas, contenedores, comunicación)»**, trátalo como **fuente de verdad** para contenedores lógicos, sistemas y relaciones `COMMUNICATES_WITH`. Refleja ese modelo en la sección de estructura/arquitectura (p. ej. diagrama o lista de contenedores y dependencias). No contradigas el C4 salvo que el MDD documente explícitamente un cambio de arquitectura; si el C4 y el resto del índice discrepan, prioriza el C4 para topología y el resto del contexto para rutas de código.
@@ -55,6 +57,20 @@ A continuación genera EXACTAMENTE las siguientes secciones. NO omitas ninguna. 
 - Tabla **Método + Ruta** → **Módulo o bounded context** → **notas** (auth, paginación, geo).
 - Incluye `/health` y rutas de negocio; separa §4.B (integraciones externas) si el MDD las distingue.
 
+| Ruta | Módulo NestJS | Servicio / Handler | Notas |
+|------|---------------|--------------------|-------|
+| GET /health | HealthModule | HealthController | Sin auth; verifica DB + Redis |
+| POST /api/auth/login | AuthModule | LoginHandler | Primer factor; si MFA activo devuelve login_token |
+```
+
+Cada endpoint del MDD §4 debe tener EXACTAMENTE UNA FILA en esta tabla.**
+
+Prohibido:
+- Tablas sin cabeceras claras (Método + Ruta + Módulo)
+- Tablas con columnas fusionadas, líneas rotas o formato inconsistente
+- Listas de rutas sin tabla (solo aceptable si §4 tiene 1-2 endpoints)
+- Dejar endpoints del MDD sin fila correspondiente
+
 ### 4. Componentes transversales (pipeline, IA, grafo)
 
 - Servicios que el MDD no acote a un solo CRUD: traducción NL→Cypher, jobs de ingesta, integraciones nombradas en §1 (p. ej. DENUE, DatsWhy cuando §1 los cite), sincronización con FalkorDB si aplica. Interfaces y dependencias entre ellos.
@@ -71,11 +87,38 @@ A continuación genera EXACTAMENTE las siguientes secciones. NO omitas ninguna. 
 
 - Fases ordenadas con dependencias explícitas.
 
+### 8. Checklist de verificación del Blueprint (AUTOGENERADO — NO OMITIR)
+
+IMPORTANTE: Esta sección debe aparecer al final del documento y debe constar de los siguientes ítems, marcados con ✅ (cumple) o ❌ (no cumple). DEBES marcar cada uno basándote en lo que realmente generaste:
+
+- ✅/❌ Sec 1: Stack técnico listado con tecnologías y versiones del MDD §2
+- ✅/❌ Sec 2: Lista nominal de TODAS las entidades del MDD §3 presente (ninguna omitida)
+- ✅/❌ Sec 3: Tabla API completa con cada endpoint del MDD §4 en una fila
+- ✅/❌ Sec 4: Componentes transversales cubiertos (si aplican según MDD §1/§2)
+- ✅/❌ Sec 5: Seguridad en despliegue alineada con MDD §6
+- ✅/❌ Sec 6: Riesgos y mitigaciones trazados a MDD §5
+- ✅/❌ Sec 7: Plan de implementación por fases con dependencias
+
+Ejemplo de salida correcta:
+```
+### 8. Checklist de verificación del Blueprint
+- ✅ Sec 1: Stack técnico listado con tecnologías y versiones del MDD §2
+- ✅ Sec 2: Lista nominal de TODAS las entidades del MDD §3 presente
+- ✅ Sec 3: Tabla API completa con cada endpoint del MDD §4 en una fila
+- ✅ Sec 4: Componentes transversales cubiertos
+- ✅ Sec 5: Seguridad en despliegue alineada con MDD §6
+- ✅ Sec 6: Riesgos y mitigaciones trazados a MDD §5
+- ✅ Sec 7: Plan de implementación por fases con dependencias
+```
+
 ### Reglas de oro
 
 - **Cobertura stack:** Cada tecnología del MDD §2 debe aparecer **por nombre** en el Blueprint.
 - **Cobertura entidades:** **TODAS** las tablas/nodos del §3 deben nombrarse (obligatorio, verificado automáticamente); cero omisiones. Prohibido sustituir la lista por frases como "véase §3" o "remite al MDD".
 - **Cobertura API:** Toda fila de la tabla de §4.A debe tener **fila** en el mapa §4→módulos.
+- **Formato tabla API:** La tabla debe tener cabeceras claras (Método | Ruta | Módulo | Notas) y formato markdown válido con la fila de separación `|---|---|---|`.
+- **Checklist final:** La sección "### 8. Checklist de verificación del Blueprint" DEBE aparecer al final con los 7 ítems marcados.
+- **Calidad de español:** Prohibido usar palabras inexistentes como "valúa", "setear", "del switch". Usa español normativo.
 - No sobre-arquitecturar (colas, event buses) si el MDD no los exige.
 - Ambigüedad: si el MDD no detalla, aplica OWASP ASVS Nivel 3 y documenta. Prohibido `any`.
 
@@ -89,3 +132,5 @@ Blueprint en markdown. Primer carácter `#`. Sin introducciones ni envolver el d
 - No omitir tecnologías §2 ni entidades §3 (al menos por nombre).
 - **Prohibido** Blueprint que solo parafrasee §3 sin mapa §4, sin componentes transversales cuando §1/§2 mencionan IA, grafo o pipeline, y sin vínculo a §5.
 - **Prohibido** omitir la sección "### 2. Persistencia y datos" o escribir "véase §3" sin lista nominal explícita de tablas.
+- **Prohibido** omitir la sección "### 8. Checklist de verificación del Blueprint" al final del documento.
+- **Prohibido** usar palabras inexistentes como "valúa", "setear", "del switch", "encolada" — usa español correcto siempre.

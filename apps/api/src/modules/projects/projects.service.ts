@@ -12,6 +12,9 @@ import type { ApiConformanceResult, ConformanceResult } from "../engine/conforma
 import {
   ConformanceService,
   checkBlueprintDataModelVsMdd,
+  checkBlueprintSectionHeaders,
+  checkBlueprintApiTableFormat,
+  checkBlueprintSpanishQuality,
 } from "../engine/conformance.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
@@ -1021,12 +1024,29 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     let blueprintContent = await this.ai.generateBlueprint(mddContent, gapsFeedback, legacyOpts);
     blueprintContent = cleanDocumentContent(blueprintContent);
 
-    // Verificar que el blueprint contiene las entidades del MDD §3.
-    // Si no, reintentar con el error de conformancia como feedback.
-    const conformance = checkBlueprintDataModelVsMdd(mddContent, blueprintContent);
-    if (!conformance.ok && !gapsFeedback) {
-      const gapFeedback = conformance.gaps.slice(0, 5).join("; ");
-      this.logger.warn(`[Blueprint] Conformancia falló en primer intento — reintentando con feedback: ${gapFeedback}`);
+    // Verificación multi-capa del Blueprint:
+    // 1. Entidades del MDD §3 vs Blueprint
+    // 2. Secciones requeridas presentes
+    // 3. Formato de tabla API correcto
+    // 4. Calidad de español
+    // Si alguna falla y no es un reintento, regenerar con feedback combinado.
+    const entityCheck = checkBlueprintDataModelVsMdd(mddContent, blueprintContent);
+    const sectionCheck = checkBlueprintSectionHeaders(blueprintContent);
+    const tableCheck = checkBlueprintApiTableFormat(blueprintContent);
+    const spanishCheck = checkBlueprintSpanishQuality(blueprintContent);
+
+    const allGaps = [
+      ...entityCheck.gaps,
+      ...sectionCheck.gaps,
+      ...tableCheck.gaps,
+      ...spanishCheck.gaps,
+    ];
+
+    const needsRetry = allGaps.length > 0 && !gapsFeedback;
+    if (needsRetry) {
+      // Pasar los gaps más relevantes como feedback (máximo 8 para no saturar contexto)
+      const gapFeedback = allGaps.slice(0, 8).join("; ");
+      this.logger.warn(`[Blueprint] Calidad insuficiente (${entityCheck.gaps.length} entidades, ${sectionCheck.gaps.length} secciones, ${tableCheck.gaps.length} tabla, ${spanishCheck.gaps.length} español) — reintentando con feedback: ${gapFeedback}`);
       blueprintContent = await this.ai.generateBlueprint(mddContent, gapFeedback, legacyOpts);
       blueprintContent = cleanDocumentContent(blueprintContent);
     }

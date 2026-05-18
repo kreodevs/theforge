@@ -176,6 +176,103 @@ function normEp(ep: { method: string; path: string }): string {
 /** Longitud mínima para considerar un documento como "con contenido" (evitar falsos Cumple cuando está vacío). */
 const MIN_DOC_LENGTH = 80;
 
+/** Cabeceras de sección requeridas en el Blueprint (sin importar nivel ##). */
+const BLUEPRINT_REQUIRED_SECTIONS = [
+  { label: "Stack / Estructura", patterns: [/stack/i, /estructura/i, /tecnol/] },
+  { label: "Persistencia y datos", patterns: [/persistencia/i, /datos/i, /modelo\s+de\s+datos/i] },
+  { label: "Mapa de contratos API", patterns: [/contratos\s*api/i, /mapa\s+de\s+(?:rutas|contratos|api)/i, /api.*m[oó]dulos/i, /contratos.*m[oó]dulos/i] },
+  { label: "Componentes transversales", patterns: [/transversal/i, /pipeline/i, /componentes?/i] },
+  { label: "Seguridad en despliegue", patterns: [/seguridad.*despliegue/i, /seguridad.*deploy/i, /seguridad.*auth/i] },
+  { label: "Riesgos y mitigaciones", patterns: [/riesgos/i, /mitigacion/i] },
+  { label: "Plan de implementación", patterns: [/plan.*implementaci[oó]n/i, /fases/i, /implementaci[oó]n/i] },
+];
+
+/**
+ * Verifica que el Blueprint contenga todas las secciones requeridas.
+ * Busca cabeceras markdown (###) que contengan los patrones.
+ */
+export function checkBlueprintSectionHeaders(blueprintContent: string | null): ConformanceResult {
+  const gaps: string[] = [];
+  if (!blueprintContent?.trim() || blueprintContent.trim().length < MIN_DOC_LENGTH) {
+    return { ok: false, gaps: ["Falta Blueprint con contenido suficiente para validar secciones"] };
+  }
+  // Buscar todas las cabeceras markdown de nivel 2 o 3 en el Blueprint
+  const headers = blueprintContent.match(/^#{2,3}\s+.+$/gm) ?? [];
+  for (const section of BLUEPRINT_REQUIRED_SECTIONS) {
+    const found = headers.some((h) =>
+      section.patterns.some((p) => p.test(h)),
+    );
+    if (!found) {
+      gaps.push(`Blueprint no incluye sección "${section.label}". Las cabeceras encontradas son: ${headers.slice(0, 15).map((h) => h.trim()).join(", ")}`);
+    }
+  }
+  return { ok: gaps.length === 0, gaps };
+}
+
+/** Palabras y frases incorrectas en español con su corrección. */
+const SPANISH_ERRORS: { wrong: RegExp; correction: string }[] = [
+  { wrong: /\bval[uú]a(?:ndo|r|s|)\b/i, correction: "valida/validando (de validar)" },
+  { wrong: /\bsetear\b/i, correction: "establecer/asignar" },
+  { wrong: /\bdel\s+switch\b/i, correction: "del caso/selección" },
+  { wrong: /\bencolada\b/i, correction: "encolada (si es 'encolar', sin doble n)" },
+];
+
+/**
+ * Verifica calidad de español: busca palabras inexistentes o errores comunes.
+ */
+export function checkBlueprintSpanishQuality(blueprintContent: string | null): ConformanceResult {
+  const gaps: string[] = [];
+  if (!blueprintContent?.trim()) return { ok: true, gaps: [] };
+  for (const { wrong, correction } of SPANISH_ERRORS) {
+    if (wrong.test(blueprintContent)) {
+      gaps.push(`Error de español: se encontró patrón "${wrong.source}" — usa "${correction}" en su lugar`);
+    }
+  }
+  return { ok: gaps.length === 0, gaps };
+}
+
+/** Patrón de tabla markdown válida con método HTTP + ruta. */
+const API_TABLE_PATTERN = /^\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*`?.+`?\s*\|/im;
+
+/**
+ * Verifica que el Blueprint contenga al menos una tabla markdown con formato
+ * correcto para las rutas API (Método | Ruta | ...).
+ */
+export function checkBlueprintApiTableFormat(blueprintContent: string | null): ConformanceResult {
+  const gaps: string[] = [];
+  if (!blueprintContent?.trim()) {
+    return { ok: false, gaps: ["Falta Blueprint para verificar tabla API"] };
+  }
+  const hasApiTable = API_TABLE_PATTERN.test(blueprintContent);
+  if (!hasApiTable) {
+    // Buscar si hay rutas mencionadas sin tabla
+    const hasRoutes = /\/api\/|\/auth\/|\/health/.test(blueprintContent);
+    if (hasRoutes) {
+      gaps.push("El Blueprint menciona rutas API pero no las presenta en una tabla markdown con formato | Método | Ruta | Módulo | Notas |");
+    }
+  }
+  // Verificar que la tabla tiene la fila de separación (|---|---|---|)
+  const hasSeparator = /^\|[-:]+\|[-:]+\|[-:]+\|/.test(blueprintContent);
+  if (hasApiTable && !hasSeparator) {
+    gaps.push("La tabla de rutas API no tiene una fila de separación después de las cabeceras (formato markdown: |---|---:|---|)");
+  }
+  return { ok: gaps.length === 0, gaps };
+}
+
+/** Verificación completa del Blueprint: secciones + formato + español */
+export function checkBlueprintFullQuality(blueprintContent: string | null): ConformanceResult {
+  const gaps: string[] = [];
+  const checks = [
+    checkBlueprintSectionHeaders(blueprintContent),
+    checkBlueprintApiTableFormat(blueprintContent),
+    checkBlueprintSpanishQuality(blueprintContent),
+  ];
+  for (const c of checks) {
+    gaps.push(...c.gaps);
+  }
+  return { ok: gaps.length === 0, gaps };
+}
+
 /**
  * Solo §3 Modelo de datos vs Blueprint (entidades/tablas). Usado para gate de generación de API.
  */
