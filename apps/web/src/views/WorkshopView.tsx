@@ -2919,20 +2919,19 @@ export default function WorkshopView({
                             )}
                           >
                             {cascadeRunning ? (
-                              <span className="inline-flex items-center gap-2" aria-hidden>
+                              <span className="inline-flex items-center gap-2">
                                 <span className="text-[var(--success-foreground)]">
                                   <AiGenerativeDots />
                                 </span>
-                                {cascadeProgress.length > 0 && (
-                                  <span className="text-xs font-normal text-[var(--success-foreground)] opacity-80">
-                                    {cascadeProgress[0]?.message}
-                                  </span>
-                                )}
                               </span>
                             ) : (
                               <Layers className="h-4 w-4 shrink-0" aria-hidden />
                             )}
-                            {cascadeRunning ? "Generando documentos…" : "Generar todos los documentos"}
+                            {cascadeRunning
+                              ? cascadeProgress.length > 0
+                                ? `Generando ${cascadeProgress[0]?.message ?? "documentos…"}`
+                                : "Generando documentos…"
+                              : "Generar todos los documentos"}
                           </button>
                         )}
                       </div>
