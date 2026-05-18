@@ -110,6 +110,8 @@ docker compose up --build
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | Clave principal |
 | `OPENROUTER_CHAT_MODEL` | `nousresearch/hermes-3-llama-3.1-405b` | Modelo de chat |
+| `OPENROUTER_CHAT_MODEL_FALLBACK` / `OPENROUTER_CHAT_MODEL_FALLBACKS` | — | Modelo(s) de respaldo (opcional; sin definir = un solo modelo) |
+| `OPENROUTER_CHAT_FALLBACK_ON_429` | `1` (si hay fallbacks) | `0` desactiva pasar al siguiente modelo tras 429 |
 | `OPENROUTER_EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Modelo de embeddings |
 | `TAVILY_API_KEY` | — | Búsqueda web Scout (opcional) |
 
