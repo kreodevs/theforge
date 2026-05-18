@@ -480,6 +480,7 @@ function computePrecisionBreakdown(md: string, complexity: EstimationComplexity 
   if (frontend < 100 && frontendBlock.length < 80) sectionReasons.frontend = "Sección Frontend en §2 muy breve o ausente.";
 
   const segReasons: string[] = [];
+  if (sections.security === 0) segReasons.push("§6 Seguridad no está presente en el MDD. La sección completa falta — debe generarse.");
   if (gaps.securityCompletenessGap) segReasons.push("Falta almacén de credenciales o columnas de auditoría (según doc).");
   if (gaps.securityEdgeCaseGap) segReasons.push("Lógica de bloqueo sin número de intentos definido en §6 Seguridad.");
   if (inconsistentSet.has("seguridad")) segReasons.push(trazaMsg);
