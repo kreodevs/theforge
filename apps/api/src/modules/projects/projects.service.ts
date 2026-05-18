@@ -16,6 +16,7 @@ import {
   checkBlueprintApiTableFormat,
   checkBlueprintSpanishQuality,
   checkBlueprintSelfContained,
+  checkBlueprintTableFormat,
 } from "../engine/conformance.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
@@ -1037,6 +1038,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const tableCheck = checkBlueprintApiTableFormat(blueprintContent);
     const spanishCheck = checkBlueprintSpanishQuality(blueprintContent);
     const selfContainedCheck = checkBlueprintSelfContained(blueprintContent);
+    const generalTableCheck = checkBlueprintTableFormat(blueprintContent);
 
     const allGaps = [
       ...entityCheck.gaps,
@@ -1044,13 +1046,14 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       ...tableCheck.gaps,
       ...spanishCheck.gaps,
       ...selfContainedCheck.gaps,
+      ...generalTableCheck.gaps,
     ];
 
     const needsRetry = allGaps.length > 0 && !gapsFeedback;
     if (needsRetry) {
-      // Pasar los gaps más relevantes como feedback (máximo 10 para no saturar contexto)
-      const gapFeedback = allGaps.slice(0, 10).join("; ");
-      this.logger.warn(`[Blueprint] Calidad insuficiente (${entityCheck.gaps.length} entidades, ${sectionCheck.gaps.length} secciones, ${tableCheck.gaps.length} tabla, ${spanishCheck.gaps.length} español, ${selfContainedCheck.gaps.length} autocontenido) — reintentando con feedback: ${gapFeedback}`);
+      // Pasar los gaps más relevantes como feedback (máximo 12 para no saturar contexto)
+      const gapFeedback = allGaps.slice(0, 12).join("; ");
+      this.logger.warn(`[Blueprint] Calidad insuficiente (${entityCheck.gaps.length} entidades, ${sectionCheck.gaps.length} secciones, ${tableCheck.gaps.length} tablaAPI, ${generalTableCheck.gaps.length} tablaGral, ${spanishCheck.gaps.length} español, ${selfContainedCheck.gaps.length} autocontenido) — reintentando con feedback: ${gapFeedback}`);
       blueprintContent = await this.ai.generateBlueprint(mddContent, gapFeedback, legacyOpts);
       blueprintContent = cleanDocumentContent(blueprintContent);
     }
