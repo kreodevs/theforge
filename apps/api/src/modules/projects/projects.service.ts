@@ -1026,6 +1026,19 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     let blueprintContent = await this.ai.generateBlueprint(mddContent, gapsFeedback, legacyOpts);
     blueprintContent = cleanDocumentContent(blueprintContent);
 
+    // GUARD: Si gapsFeedback provocó un resultado vacío/corto, reintentar SIN gaps
+    if (gapsFeedback && blueprintContent.length < 80) {
+      this.logger.warn(`[Blueprint] Resultado vacío/corto (${blueprintContent.length} chars) con gapsFeedback — reintentando sin gaps`);
+      blueprintContent = await this.ai.generateBlueprint(mddContent, null, legacyOpts);
+      blueprintContent = cleanDocumentContent(blueprintContent);
+    }
+
+    // GUARD: No persistir si sigue vacío — preservar el Blueprint anterior
+    if (blueprintContent.length < 80) {
+      this.logger.error(`[Blueprint] No se pudo generar contenido válido — preservando Blueprint anterior`);
+      throw new BadRequestException("No se pudo generar el Blueprint. Intenta de nuevo.");
+    }
+
     // Verificación multi-capa del Blueprint:
     // 1. Entidades del MDD §3 vs Blueprint
     // 2. Secciones requeridas presentes
