@@ -1,5 +1,17 @@
 **Constitución del proyecto:** El MDD que recibes es el documento de gobernanza (Constitution). Tu Blueprint debe **cumplirlo** en stack, arquitectura, contratos y seguridad. Al final incluye **Cumplimiento con el MDD** (2–4 ítems verificables).
 
+**Autocontenido obligatorio:** El Blueprint debe ser **completamente legible sin el MDD**. Describe cada concepto en el propio texto del Blueprint. Las únicas excepciones a esta regla son:
+- La lista de columnas SQL cuando §3 ya las tiene detalladas: puedes escribir "(ver §3 del MDD para columnas, tipos e índices)"
+- Flujos SSO complejos cuando §6 los especifica: puedes escribir "ver §6 del MDD para el flujo SSO completo"
+
+Prohibido en cualquier otra situación:
+- ❌ "Ver diagrama en §2.3 del MDD" → en su lugar, describe la arquitectura o incluye un diagrama en el Blueprint
+- ❌ "Los contratos API se listan en §4 del MDD" → en su lugar, incluye la tabla de rutas en el Blueprint
+- ❌ "Remitimos al MDD para los casos de uso" → en su lugar, resume los casos de uso
+- ❌ "Véase §5 del MDD para reglas de negocio" → en su lugar, traza las reglas en la sección 6 del Blueprint
+
+El verificador automático busca frases como "ver §", "véase §", "remite al MDD", "remitimos al" y las reporta como error a menos que sean la excepción SQL o SSO permitida.
+
 **Anti-redundancia con el MDD:** Si el MDD §3 ya documenta tablas, SQL y diagrama ER completos, **no reescribas** el modelo físico entero con columnas y tipos. Sin embargo, DEBES incluir una subsección **Cobertura del modelo (MDD §3)** con la **lista nominal COMPLETA de tablas/nodos** — nómbralas como cabeceras markdown (### nombre_tabla) O como lista con viñetas (- nombre_tabla). ESTO ES OBLIGATORIO — un verificador automático comprueba que cada entidad de §3 aparece por nombre en el Blueprint. NUNCA escribas frases como "este blueprint no duplica el modelo" o "remite al MDD" en lugar de listar las entidades; la lista nominal debe estar presente siempre.
 
 **Calidad del español:** Usa español correcto en todo el documento. Errores comunes que DEBES evitar: "valúa" no es una palabra válida — usa "valida" (de validar). "Encolada" → "encolada". "Setear" → "establecer" o "asignar". "Del switch" → "del caso" o "de la selección". Si no estás seguro de una palabra, prefiere la forma estándar del español. El verificador automático rechaza palabras inexistentes.
@@ -98,6 +110,7 @@ IMPORTANTE: Esta sección debe aparecer al final del documento y debe constar de
 - ✅/❌ Sec 5: Seguridad en despliegue alineada con MDD §6
 - ✅/❌ Sec 6: Riesgos y mitigaciones trazados a MDD §5
 - ✅/❌ Sec 7: Plan de implementación por fases con dependencias
+- ✅/❌ Autocontenido: Sin frases como "ver §X", "véase §X", "remite al MDD"
 
 Ejemplo de salida correcta:
 ```
@@ -109,6 +122,7 @@ Ejemplo de salida correcta:
 - ✅ Sec 5: Seguridad en despliegue alineada con MDD §6
 - ✅ Sec 6: Riesgos y mitigaciones trazados a MDD §5
 - ✅ Sec 7: Plan de implementación por fases con dependencias
+- ✅ Autocontenido: Sin frases como "ver §X", "véase §X", "remite al MDD"
 ```
 
 ### Reglas de oro
@@ -117,6 +131,7 @@ Ejemplo de salida correcta:
 - **Cobertura entidades:** **TODAS** las tablas/nodos del §3 deben nombrarse (obligatorio, verificado automáticamente); cero omisiones. Prohibido sustituir la lista por frases como "véase §3" o "remite al MDD".
 - **Cobertura API:** Toda fila de la tabla de §4.A debe tener **fila** en el mapa §4→módulos.
 - **Formato tabla API:** La tabla debe tener cabeceras claras (Método | Ruta | Módulo | Notas) y formato markdown válido con la fila de separación `|---|---|---|`.
+- **Autocontenido:** El Blueprint debe ser legible sin el MDD. Prohibido "ver §X", "véase §X", "remite al MDD" como sustituto del contenido. Las únicas excepciones son "(ver §3 del MDD para columnas)" y "(ver §6 para flujo SSO completo)".
 - **Checklist final:** La sección "### 8. Checklist de verificación del Blueprint" DEBE aparecer al final con los 7 ítems marcados.
 - **Calidad de español:** Prohibido usar palabras inexistentes como "valúa", "setear", "del switch". Usa español normativo.
 - No sobre-arquitecturar (colas, event buses) si el MDD no los exige.
@@ -134,3 +149,4 @@ Blueprint en markdown. Primer carácter `#`. Sin introducciones ni envolver el d
 - **Prohibido** omitir la sección "### 2. Persistencia y datos" o escribir "véase §3" sin lista nominal explícita de tablas.
 - **Prohibido** omitir la sección "### 8. Checklist de verificación del Blueprint" al final del documento.
 - **Prohibido** usar palabras inexistentes como "valúa", "setear", "del switch", "encolada" — usa español correcto siempre.
+- **Prohibido** frases como "ver diagrama en §X", "remitimos al MDD para", "véase §X del MDD" como sustituto del contenido del Blueprint. Las únicas excepciones son "(ver §3 del MDD para columnas)" o "(ver §6 para el flujo SSO completo)".
