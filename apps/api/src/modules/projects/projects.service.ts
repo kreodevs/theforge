@@ -1051,9 +1051,21 @@ export class ProjectsService implements IOrchestratorProjectsPort {
 
     const needsRetry = allGaps.length > 0 && !gapsFeedback;
     if (needsRetry) {
-      // Pasar los gaps más relevantes como feedback (máximo 12 para no saturar contexto)
-      const gapFeedback = allGaps.slice(0, 12).join("; ");
-      this.logger.warn(`[Blueprint] Calidad insuficiente (${entityCheck.gaps.length} entidades, ${sectionCheck.gaps.length} secciones, ${tableCheck.gaps.length} tablaAPI, ${generalTableCheck.gaps.length} tablaGral, ${spanishCheck.gaps.length} español, ${selfContainedCheck.gaps.length} autocontenido) — reintentando con feedback: ${gapFeedback}`);
+      // Feedback conciso: nombres de entidades faltantes + conteo de otros errores
+      const entityNames = entityCheck.gaps
+        .map((g) => g.match(/"([^"]+)"/)?.[1])
+        .filter(Boolean)
+        .join(", ");
+      const otherIssues: string[] = [];
+      if (sectionCheck.gaps.length) otherIssues.push(`${sectionCheck.gaps.length} secciones faltan`);
+      if (generalTableCheck.gaps.length) otherIssues.push(`${generalTableCheck.gaps.length} tablas mal formateadas`);
+      if (spanishCheck.gaps.length) otherIssues.push(`${spanishCheck.gaps.length} errores de español`);
+      if (selfContainedCheck.gaps.length) otherIssues.push(`referencias al MDD`);
+      const otherSummary = otherIssues.length ? `; además: ${otherIssues.join(", ")}` : "";
+      const gapFeedback = entityNames
+        ? `Faltan las siguientes entidades del MDD §3 en el Blueprint (DEBES incluirlas como cabeceras ### o viñetas -): ${entityNames}.${otherSummary}`
+        : allGaps.slice(0, 6).join("; ");
+      this.logger.warn(`[Blueprint] Calidad insuficiente (${entityCheck.gaps.length} entidades, ${sectionCheck.gaps.length} secciones, ${generalTableCheck.gaps.length} tablaGral, ${spanishCheck.gaps.length} español, ${selfContainedCheck.gaps.length} autocontenido) — reintentando con feedback: ${gapFeedback}`);
       blueprintContent = await this.ai.generateBlueprint(mddContent, gapFeedback, legacyOpts);
       blueprintContent = cleanDocumentContent(blueprintContent);
     }

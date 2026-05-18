@@ -118,11 +118,11 @@ function extractEntities(text: string): Set<string> {
       entities.add(m[1].toLowerCase());
     }
   }
-  // Extraer de listas inline en párrafos: "Las tablas developers, users, properties..."
+// Extraer de listas inline en párrafos: "Las tablas developers, users, properties..."
   // Busca frases como "tablas X, Y, Z" o "entidades X, Y, Z" o "tables X, Y, Z"
-  // y extrae los nombres separados por coma.
+  // y extrae los nombres separados por coma. Soporta opcional ":" después del trigger word.
   const inlineEntityLists = text.matchAll(
-    /\b(?:tablas?|entidades?|tables?|entities?|modelos?)\s+([a-z_][a-z0-9_]*(?:\s*,\s*[a-z_][a-z0-9_]*)+)/gi,
+    /\b(?:tablas?|entidades?|tables?|entities?|modelos?)\s*:?\s*([a-z_][a-z0-9_]*(?:\s*,\s*[a-z_][a-z0-9_]*)+)/gi,
   );
   for (const m of inlineEntityLists) {
     const names = m[1].split(/\s*,\s*/);
@@ -456,9 +456,14 @@ export function checkBlueprintDataModelVsMdd(
     const partialMatch = Array.from(blueprintEntities).some(
       (b) => b.includes(e) || e.includes(b),
     );
-    if (!exactMatch && !partialMatch) {
-      gaps.push(`Entidad/tabla "${e}" del MDD §3 no está reflejada en el Blueprint`);
-    }
+    if (exactMatch || partialMatch) continue;
+
+    // Fallback: buscar el nombre de la entidad como palabra suelta en el Blueprint
+    // (captura menciones en párrafos, oraciones, cualquier formato no estructurado)
+    const nameRegex = new RegExp(`\\b${e.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    if (nameRegex.test(blueprintContent)) continue;
+
+    gaps.push(`Entidad/tabla "${e}" del MDD §3 no está reflejada en el Blueprint`);
   }
   return { ok: gaps.length === 0, gaps };
 }
