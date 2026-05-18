@@ -9,7 +9,10 @@ import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semap
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
 import type { ApiConformanceResult, ConformanceResult } from "../engine/conformance.service.js";
-import { ConformanceService } from "../engine/conformance.service.js";
+import {
+  ConformanceService,
+  checkBlueprintDataModelVsMdd,
+} from "../engine/conformance.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
 import { ScraperService } from "../scraper/scraper.service.js";
@@ -1015,8 +1018,20 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       const theforgeContext = await this.theforge.getContextForDeliverables(p.theforgeProjectId);
       if (theforgeContext.trim()) legacyOpts = { theforgeContext };
     }
-    const blueprintContent = await this.ai.generateBlueprint(mddContent, gapsFeedback, legacyOpts);
-    return this.update(projectId, { blueprintContent: cleanDocumentContent(blueprintContent) });
+    let blueprintContent = await this.ai.generateBlueprint(mddContent, gapsFeedback, legacyOpts);
+    blueprintContent = cleanDocumentContent(blueprintContent);
+
+    // Verificar que el blueprint contiene las entidades del MDD §3.
+    // Si no, reintentar con el error de conformancia como feedback.
+    const conformance = checkBlueprintDataModelVsMdd(mddContent, blueprintContent);
+    if (!conformance.ok && !gapsFeedback) {
+      const gapFeedback = conformance.gaps.slice(0, 5).join("; ");
+      this.logger.warn(`[Blueprint] Conformancia falló en primer intento — reintentando con feedback: ${gapFeedback}`);
+      blueprintContent = await this.ai.generateBlueprint(mddContent, gapFeedback, legacyOpts);
+      blueprintContent = cleanDocumentContent(blueprintContent);
+    }
+
+    return this.update(projectId, { blueprintContent });
   }
 
   async generateApiContractsPreview(projectId: string, gapsFeedback?: string | null): Promise<{ content: string }> {
