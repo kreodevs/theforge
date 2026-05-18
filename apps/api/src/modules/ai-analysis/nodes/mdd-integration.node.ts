@@ -7,16 +7,15 @@ import {
   mddIntegracionWithManifestSchema,
 } from "../state/mdd-structured.schema.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
+import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
 import {
   buildNewFormatManifestFromIdentifiedTerms,
   extractIdentifiedInfraFromText,
   fixIntegrationSectionBullets,
   getMddDraftSummary,
-  integracionToSection7Markdown,
   jsonSectionToMarkdown,
   logMddNodeOutput,
-  replaceSection6Or7InDraft,
   sanitizeManifestToMatchIdentifiedInfra,
   stripInstructionAndFeedbackBlocks,
   stripNotaPendienteHeadingInIntegrationSection,
@@ -209,8 +208,7 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
           }),
         };
         const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");
-        const section7Md = integracionToSection7Markdown(slice.integracion);
-        const mddDraft = replaceSection6Or7InDraft(state.mddDraft ?? "", 7, section7Md);
+        const mddDraft = mddStructuredToMarkdown(merged);
         logMddNodeOutput("Integration", mddDraft);
         return { mddStructured: merged, mddDraft };
       }
@@ -248,8 +246,7 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
       }
 
       const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");
-      const section7Md = integracionToSection7Markdown(slice.integracion);
-      const mddDraft = replaceSection6Or7InDraft(state.mddDraft ?? "", 7, section7Md);
+      const mddDraft = mddStructuredToMarkdown(merged);
       const internalDirectives = extractInternalDirectives(text, "integration_engineer");
       const meshUpdate = internalDirectives.length > 0 ? { internalDirectives } : {};
 

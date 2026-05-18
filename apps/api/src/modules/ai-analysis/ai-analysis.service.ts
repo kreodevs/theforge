@@ -26,7 +26,6 @@ import {
   replaceContextWhenOnlyMetadata,
   replaceSection1BodyFromAnyHeading,
   replaceSections2To5InDraft,
-  replaceSection6Or7InDraft,
   sanitizeContextKeyValueAndObject,
   sanitizeContextSection,
 } from "./utils/mdd-sanitize.js";
@@ -76,11 +75,11 @@ function prepareMddForOutput(
   let raw: string;
   if (typeof input === "string") {
     raw = input;
-  } else if ((input.mddDraft ?? "").trim().length > 500) {
-    raw = (input.mddDraft ?? "").trim();
   } else if (hasStructuredContent(input.mddStructured)) {
     const hydrated = hydrateStructuredFromDraft(input.mddStructured, input.mddDraft ?? "");
     raw = mddStructuredToMarkdown(hydrated);
+  } else if ((input.mddDraft ?? "").trim().length > 500) {
+    raw = (input.mddDraft ?? "").trim();
   } else {
     raw = (input.mddDraft ?? "").trim();
   }
@@ -757,49 +756,7 @@ export class AiAnalysisService {
         mddDraft: rawMarkdown,
       });
       logSection3Debug("final (stream/manager done)", markdown);
-      // AUTO-FIX §6: si la IA saltó §6, forzar generación con el nodo de seguridad
-      if (!/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(markdown)) {
-        this.logger.log("[MDD auto-fix §6] §6 falta — ejecutando nodo de seguridad...");
-        try {
-          const llm = createDbgaLLM();
-          const securityNode = createMddSecurityNode(llm);
-          const state = {
-            ...defaultMDDState,
-            mddDraft: markdown,
-            clarifiedScope: lastState?.clarifiedScope ?? "",
-            acceptedProposalDirective: lastState?.acceptedProposalDirective,
-            auditorFeedback: lastState?.auditorFeedback,
-            projectId: lastState?.projectId,
-            dbgaContent: lastState?.dbgaContent ?? "",
-          };
-          const result = await securityNode(state as MDDStateType);
-          let fixedDraft = (result.mddDraft ?? markdown).trim();
-          // Fallback directo si el nodo de seguridad no insertó §6
-          if (!/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(fixedDraft)) {
-            fixedDraft = replaceSection6Or7InDraft(markdown, 6, "## 6. Seguridad\n\n(Pendiente de definir.)");
-            this.logger.log("[MDD auto-fix §6] fallback: placeholder insertado vía replaceSection6Or7InDraft");
-          }
-          if (/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(fixedDraft)) {
-            markdown = normalizeMddFormat(fixedDraft);
-            this.logger.log(`[MDD auto-fix §6] §6 asegurada. markdownLen: ${markdown.length}`);
-          } else {
-            // Último recurso: concatenar al final (infalible)
-            markdown = normalizeMddFormat(markdown + "\n\n---\n## 6. Seguridad\n\n(Pendiente de definir.)\n");
-            this.logger.log("[MDD auto-fix §6] fallback final: concatenado al final del documento");
-          }
-        } catch (err) {
-          this.logger.warn(`[MDD auto-fix §6] error: ${err instanceof Error ? err.message : String(err)}`);
-          // Último fallback: insertar placeholder directamente
-          const placeholder = replaceSection6Or7InDraft(markdown, 6, "## 6. Seguridad\n\n(Pendiente de definir.)");
-          if (/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(placeholder)) {
-            markdown = normalizeMddFormat(placeholder);
-            this.logger.log("[MDD auto-fix §6] último fallback: placeholder insertado tras error");
-          } else {
-            markdown = normalizeMddFormat(markdown + "\n\n---\n## 6. Seguridad\n\n(Pendiente de definir.)\n");
-            this.logger.log("[MDD auto-fix §6] fallback final catch: concatenado al final");
-          }
-        }
-      }
+      
       if (projectId?.trim()) {
         this.estimationService.clearLiveDraft(projectId.trim(), estimationStageId);
         this.clearMddCheckpoint(projectId.trim(), mddStageKey).catch(() => { });
@@ -1110,49 +1067,7 @@ export class AiAnalysisService {
           mddDraft: raw,
         });
         logSection3Debug("final (stream/resume done)", markdown);
-        // AUTO-FIX §6: si la IA saltó §6, forzar generación con el nodo de seguridad
-        if (!/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(markdown)) {
-          this.logger.log("[MDD auto-fix §6] §6 falta — ejecutando nodo de seguridad...");
-          try {
-            const llm = createDbgaLLM();
-            const securityNode = createMddSecurityNode(llm);
-            const state = {
-              ...defaultMDDState,
-              mddDraft: markdown,
-              clarifiedScope: lastState?.clarifiedScope ?? "",
-              acceptedProposalDirective: lastState?.acceptedProposalDirective,
-              auditorFeedback: lastState?.auditorFeedback,
-              projectId: lastState?.projectId,
-              dbgaContent: lastState?.dbgaContent ?? "",
-            };
-            const result = await securityNode(state as MDDStateType);
-            let fixedDraft = (result.mddDraft ?? markdown).trim();
-            // Fallback directo si el nodo de seguridad no insertó §6
-            if (!/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(fixedDraft)) {
-              fixedDraft = replaceSection6Or7InDraft(markdown, 6, "## 6. Seguridad\n\n(Pendiente de definir.)");
-              this.logger.log("[MDD auto-fix §6] fallback: placeholder insertado vía replaceSection6Or7InDraft");
-            }
-            if (/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(fixedDraft)) {
-              markdown = normalizeMddFormat(fixedDraft);
-              this.logger.log(`[MDD auto-fix §6] §6 asegurada. markdownLen: ${markdown.length}`);
-            } else {
-              // Último recurso: concatenar al final (infalible)
-              markdown = normalizeMddFormat(markdown + "\n\n---\n## 6. Seguridad\n\n(Pendiente de definir.)\n");
-              this.logger.log("[MDD auto-fix §6] fallback final: concatenado al final del documento");
-            }
-          } catch (err) {
-            this.logger.warn(`[MDD auto-fix §6] error: ${err instanceof Error ? err.message : String(err)}`);
-            // Último fallback: insertar placeholder directamente
-            const placeholder = replaceSection6Or7InDraft(markdown, 6, "## 6. Seguridad\n\n(Pendiente de definir.)");
-            if (/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(placeholder)) {
-              markdown = normalizeMddFormat(placeholder);
-              this.logger.log("[MDD auto-fix §6] último fallback: placeholder insertado tras error");
-            } else {
-              markdown = normalizeMddFormat(markdown + "\n\n---\n## 6. Seguridad\n\n(Pendiente de definir.)\n");
-              this.logger.log("[MDD auto-fix §6] fallback final catch: concatenado al final");
-            }
-          }
-        }
+        
         if (projectId?.trim()) {
           this.estimationService.clearLiveDraft(projectId.trim(), estimationStage);
           this.clearMddCheckpoint(projectId.trim(), cp.mddStageId).catch(() => { });
