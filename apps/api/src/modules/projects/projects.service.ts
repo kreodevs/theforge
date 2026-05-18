@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ComplexityLevel, Prisma, StageStatus, Status } from "@theforge/database";
 import type { Estimation, Project, Stage } from "@theforge/database";
 import { getRequestUserId } from "../../common/request-user.store.js";
@@ -47,6 +47,7 @@ function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unkn
 
 @Injectable()
 export class ProjectsService implements IOrchestratorProjectsPort {
+  private readonly logger = new Logger(ProjectsService.name);
 
   /** Scope de proyecto autenticado (AsyncLocalStorage). Solo owner. */
   private projectWhereForUser(projectId: string) {
@@ -832,10 +833,22 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const deliverablesToRun = DELIVERABLES_BY_COMPLEXITY[c];
     const total = deliverablesToRun.length;
     let index = 0;
+    const errors: { step: string; error: string }[] = [];
     for (const step of deliverablesToRun) {
       onProgress?.({ step, index, total });
-      await this.runDeliverableStep(step, projectId);
+      try {
+        await this.runDeliverableStep(step, projectId);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Error desconocido";
+        this.logger.warn(`[Cascade] Paso ${step} saltado: ${message}. Continuando con el siguiente.`);
+        errors.push({ step, error: message });
+      }
       index += 1;
+    }
+    if (errors.length > 0) {
+      this.logger.warn(
+        `[Cascade] Completada con ${errors.length}/${total} paso(s) saltado(s): ${errors.map((e) => `${e.step}: ${e.error}`).join("; ")}`,
+      );
     }
     return this.findOne(projectId);
   }
