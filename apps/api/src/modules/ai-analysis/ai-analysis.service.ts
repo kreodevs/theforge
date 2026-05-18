@@ -173,6 +173,7 @@ export class AiAnalysisService {
     private readonly agentSupervisor: AgentSupervisorService,
     private readonly ai: AiService,
     private readonly discovery: DiscoveryService,
+    private readonly createDbgaGraphFn: typeof createDbgaGraph = createDbgaGraph,
   ) { }
 
   /** Contexto agéntico (legacy, Relic, memoria episódica) para el estado MDD. */
@@ -257,7 +258,7 @@ export class AiAnalysisService {
    */
   async startAnalysis(idea: string, projectId?: string): Promise<DBGAState> {
     const checkpointer = await this.checkpointerService.getCheckpointer();
-    const graph = createDbgaGraph(checkpointer ?? undefined);
+    const graph = this.createDbgaGraphFn(checkpointer ?? undefined);
 
     let threadId: string;
     if (projectId?.trim()) {
@@ -307,7 +308,7 @@ export class AiAnalysisService {
     projectId?: string,
   ): AsyncGenerator<StreamProgressEvent> {
     const checkpointer = await this.checkpointerService.getCheckpointer();
-    const graph = createDbgaGraph(checkpointer ?? undefined);
+    const graph = this.createDbgaGraphFn(checkpointer ?? undefined);
 
     let threadId: string;
     if (projectId?.trim()) {
