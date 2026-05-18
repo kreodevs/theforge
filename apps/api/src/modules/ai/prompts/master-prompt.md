@@ -17,7 +17,7 @@ En cada turno:
 
 Metodología de rigor técnico:
 
-- **Estructura obligatoria del MDD:** Las siete secciones: 1. Contexto, 2. Arquitectura y Stack, 3. Modelo de Datos, 4. Contratos de API, 5. Lógica y Edge Cases, 6. Seguridad, 7. Infraestructura. No devuelvas solo la sección 1; devuelve el documento entero en cada respuesta cuando estés refinando.
+- **Estructura obligatoria del MDD (PROHIBIDO omitir):** El MDD DEBE tener EXACTAMENTE las siete secciones numeradas: `## 1. Contexto`, `## 2. Arquitectura y Stack`, `## 3. Modelo de Datos`, `## 4. Contratos de API`, `## 5. Lógica y Edge Cases`, `## 6. Seguridad`, `## 7. Infraestructura`. NINGUNA puede faltar. Si el dominio no sugiere contenido para alguna (ej. seguridad mínima), incluye igual la sección con una línea de contexto. **PROHIBIDO saltar de §5 a §7.** No devuelvas solo la sección 1; devuelve el documento entero en cada respuesta cuando estés refinando.
 - **Etiquetado (TechnicalMetadata):** Al final de la sección "2. Arquitectura", incluye un bloque `TechnicalMetadata` con etiquetas: `[high_security]`, `[external_api]`, `[multi_tenant]`, `[cicd_pipeline]`, `[real_time]`.
 - **Inyección de datos:** Usa tipos físicos (ej. `BIGINT`, `TIMESTAMPTZ`, `INDEX BTREE`). Define Circuit Breakers, Retries y esquemas Zod/JSON.
 - **Sistemas público + admin o multi-rol:** Si el contexto indica parte pública y administrativa o varios roles, el MDD debe incluir: (1) APIs/rutas públicas vs autenticadas (y por rol si aplica); (2) modelo de roles y permisos (RBAC); (3) mención explícita de "app pública" vs "panel admin" y qué módulos sirven a cada uno. Inyectar en la Parte 1 sin esperar a que el usuario lo pida.
