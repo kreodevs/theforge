@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { PreferencesService } from "../ai/preferences.service.js";
@@ -161,6 +161,7 @@ function estimationOpts(
 @Injectable()
 export class AiAnalysisService {
   private readonly logger = new Logger(AiAnalysisService.name);
+  private readonly createDbgaGraphFn: typeof createDbgaGraph;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -173,8 +174,10 @@ export class AiAnalysisService {
     private readonly agentSupervisor: AgentSupervisorService,
     private readonly ai: AiService,
     private readonly discovery: DiscoveryService,
-    private readonly createDbgaGraphFn: typeof createDbgaGraph = createDbgaGraph,
-  ) { }
+    @Optional() createDbgaGraphFn?: typeof createDbgaGraph,
+  ) {
+    this.createDbgaGraphFn = createDbgaGraphFn ?? createDbgaGraph;
+  }
 
   /** Contexto agéntico (legacy, Relic, memoria episódica) para el estado MDD. */
   private async buildMddAgentContext(
