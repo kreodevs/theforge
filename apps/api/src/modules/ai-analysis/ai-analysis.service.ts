@@ -47,18 +47,10 @@ import { createMddSecurityNode } from "./nodes/mdd-security.node.js";
 import { createMddSoftwareArchitectNode } from "./nodes/mdd-software-architect.node.js";
 import { getMddArchitectTools } from "./tools/tool-registry.js";
 import { contextSynthesizerComplexityAppendix } from "./utils/mdd-complexity-rigor.js";
+import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
+import { resolveLangGraphRecursionLimit } from "./utils/langgraph-recursion.util.js";
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
-
-/** LangGraph default recursion limit is 25; MDD con Manager puede superarlo. Override: `LANGGRAPH_RECURSION_LIMIT` (10–500). */
-function resolveLangGraphRecursionLimit(): number {
-  const raw = process.env.LANGGRAPH_RECURSION_LIMIT?.trim();
-  if (raw) {
-    const n = Number(raw);
-    if (Number.isFinite(n) && n >= 10 && n <= 500) return Math.floor(n);
-  }
-  return 100;
-}
 
 const LANGGRAPH_RECURSION_LIMIT = resolveLangGraphRecursionLimit();
 
@@ -426,13 +418,7 @@ export class AiAnalysisService {
         ...(complexityProposal != null ? { complexityProposal } : {}),
       };
     } catch (err) {
-      const raw = err instanceof Error ? err.message : "Error en el análisis";
-      const isRecursionLimit =
-        /recursion limit/i.test(raw) || /GRAPH_RECURSION/i.test(raw);
-      const message = isRecursionLimit
-        ? "No se pudieron identificar competidores directos tras varios intentos. Esto suele ocurrir en dominios internos B2B o nichos muy específicos. Puedes continuar con un análisis sin competidores de referencia o reformular la idea con más contexto."
-        : raw;
-      yield { type: "error", message };
+      yield { type: "error", message: formatDbgaStreamError(err) };
     }
   }
 
