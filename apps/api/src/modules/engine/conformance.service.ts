@@ -299,6 +299,89 @@ export function checkBlueprintSelfContained(blueprintContent: string | null): Co
   return { ok: gaps.length === 0, gaps };
 }
 
+/**
+ * Verifica que todas las tablas markdown del Blueprint tengan formato válido:
+ * - Separador (|---|---|) en línea distinta a la cabecera
+ * - Mismo número de columnas en cabecera, separador y filas
+ * - Celdas vacías con al menos un espacio (| | no ||)
+ */
+export function checkBlueprintTableFormat(blueprintContent: string | null): ConformanceResult {
+  const gaps: string[] = [];
+  if (!blueprintContent?.trim()) return { ok: true, gaps: [] };
+
+  const lines = blueprintContent.split("\n");
+  let inTable = false;
+  let headerCols = 0;
+  let lineNum = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    lineNum = i + 1;
+
+    // Detectar inicio de tabla markdown: línea que empieza con |
+    if (!line.trim().startsWith("|")) {
+      inTable = false;
+      continue;
+    }
+
+    const cols = line.split("|").length - 1; // columnas = número de pipes - 1 (por pipes al inicio y final)
+    if (cols < 2) continue;
+
+    if (!inTable) {
+      // Primera fila de la tabla (cabecera)
+      inTable = true;
+      headerCols = cols;
+
+      // Verificar que la SIGUIENTE línea no contenga separador pegado
+      if (i + 1 < lines.length) {
+        const nextLine = lines[i + 1].trim();
+        // Si la siguiente línea tiene tanto texto como separador en la misma línea
+        if (nextLine.startsWith("|") && /^\|[|\-:]+\|/.test(nextLine) && /[a-zA-Z]/.test(nextLine)) {
+          gaps.push(
+            `Línea ${lineNum + 1}: La fila de separación (|---|---|) está pegada al contenido de la cabecera. ` +
+            "Deben estar en líneas separadas. Ejemplo correcto:\n" +
+            "| Col1 | Col2 |\n" +
+            "|------|------|\n" +
+            "| val1 | val2 |",
+          );
+        }
+      }
+      continue;
+    }
+
+    // Verificar fila separadora (|---|---|)
+    const isSeparator = /^\|[-:]+\|/.test(line.trim());
+    if (isSeparator) {
+      const sepCols = line.trim().split("|").length - 1;
+      if (sepCols !== headerCols) {
+        gaps.push(
+          `Línea ${lineNum}: La fila separadora tiene ${sepCols} columnas pero la cabecera tiene ${headerCols}. ` +
+          `Deben coincidir. Cabecera: "${lines[i - 1]?.trim()}", Separador: "${line.trim()}"`,
+        );
+      }
+      continue;
+    }
+
+    // Verificar fila de datos
+    if (cols !== headerCols) {
+      gaps.push(
+        `Línea ${lineNum}: La fila de datos tiene ${cols} columnas pero la cabecera tiene ${headerCols}. ` +
+        `Fila: "${line.trim()}"`,
+      );
+    }
+
+    // Verificar celdas vacías sin espacio: ||
+    if (/\|\|/.test(line)) {
+      gaps.push(
+        `Línea ${lineNum}: Celda vacía sin espacio (||). Usa "| |" en lugar de "||". ` +
+        `Fila: "${line.trim()}"`,
+      );
+    }
+  }
+
+  return { ok: gaps.length === 0, gaps };
+}
+
 /** Patrón de tabla markdown válida con método HTTP + ruta. */
 const API_TABLE_PATTERN = /^\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*`?.+`?\s*\|/im;
 

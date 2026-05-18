@@ -86,6 +86,17 @@ Prohibido:
 ### 4. Componentes transversales (pipeline, IA, grafo)
 
 - Servicios que el MDD no acote a un solo CRUD: traducción NL→Cypher, jobs de ingesta, integraciones nombradas en §1 (p. ej. DENUE, DatsWhy cuando §1 los cite), sincronización con FalkorDB si aplica. Interfaces y dependencias entre ellos.
+- **Formato obligatorio:** Lista de viñetas o tabla markdown bien formada. Si usas tabla:
+  - **Cada celda vacía debe tener al menos un espacio** (`| |`), no dejarla como `||`
+  - **La fila separadora DEBE estar en su propia línea**, no pegada a la cabecera
+  - **Columnas deben coincidir**: mismo número en cabecera, separador y filas de datos
+  - Ejemplo correcto:
+  ```markdown
+  | Componente | Descripción | Módulo |
+  |------------|-------------|--------|
+  | Tenant Middleware | Extrae developer_id | CommonModule |
+  | RBAC Guard | Verifica permisos | CommonGuard |
+  ```
 
 ### 5. Seguridad en despliegue
 
