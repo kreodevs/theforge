@@ -1016,9 +1016,22 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const entityList = Array.from(mddEntities).sort().join(", ");
     if (!entityList) return mddContent;
     return mddContent +
-      `\n\n**LISTA EXACTA DE ENTIDADES DEL MDD §3 (extraídas automáticamente del SQL):** ${entityList}\n\n` +
-      `TODAS estas entidades DEBEN aparecer por nombre en la sección "### 2. Persistencia y datos" del Blueprint, ` +
-      `como cabeceras ### o viñetas -. NO omitas ninguna.\n\n`;
+`
+**LISTA EXACTA DE ENTIDADES DEL MDD §3 (extraídas automáticamente del SQL):** ${entityList}
+
+CADA entidad DEBE aparecer en su PROPIA LÍNEA con cabecera ### o viñeta - en la sección "### 2. Persistencia y datos".
+Ejemplo CORRECTO:
+### developers
+### users
+### properties
+
+Ejemplo INCORRECTO (NO detectado automáticamente):
+developers
+users
+properties
+
+PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### o viñetas -. NO omitas ninguna.
+`;
   }
 
   async generateBlueprintPreview(projectId: string, gapsFeedback?: string | null): Promise<{ content: string }> {

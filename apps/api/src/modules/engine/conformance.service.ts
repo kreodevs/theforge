@@ -150,6 +150,19 @@ export function extractEntities(text: string): Set<string> {
       }
     }
   }
+  // Extraer nombres de entidades en texto plano por línea independiente:
+  // developers
+  // users
+  // properties
+  // Formato común cuando la IA los lista sin markdown.
+  // Filtra palabras genéricas (modelo, stack, etc.) y requiere >= 3 chars.
+  const bareWords = text.matchAll(/^\s*([a-z_][a-z0-9_]{2,})\s*$/gm);
+  for (const m of bareWords) {
+    const word = m[1].toLowerCase();
+    if (word.length > 2 && !genericHeaders.test(word) && !entities.has(word)) {
+      entities.add(word);
+    }
+  }
   return entities;
 }
 
