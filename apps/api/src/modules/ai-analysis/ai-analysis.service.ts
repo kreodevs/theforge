@@ -779,17 +779,24 @@ export class AiAnalysisService {
             fixedDraft = replaceSection6Or7InDraft(markdown, 6, "## 6. Seguridad\n\n(Pendiente de definir.)");
             this.logger.log("[MDD auto-fix §6] fallback: placeholder insertado vía replaceSection6Or7InDraft");
           }
-          if (fixedDraft !== markdown) {
+          if (/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(fixedDraft)) {
             markdown = normalizeMddFormat(fixedDraft);
             this.logger.log(`[MDD auto-fix §6] §6 asegurada. markdownLen: ${markdown.length}`);
+          } else {
+            // Último recurso: concatenar al final (infalible)
+            markdown = normalizeMddFormat(markdown + "\n\n---\n## 6. Seguridad\n\n(Pendiente de definir.)\n");
+            this.logger.log("[MDD auto-fix §6] fallback final: concatenado al final del documento");
           }
         } catch (err) {
           this.logger.warn(`[MDD auto-fix §6] error: ${err instanceof Error ? err.message : String(err)}`);
           // Último fallback: insertar placeholder directamente
           const placeholder = replaceSection6Or7InDraft(markdown, 6, "## 6. Seguridad\n\n(Pendiente de definir.)");
-          if (placeholder !== markdown) {
+          if (/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(placeholder)) {
             markdown = normalizeMddFormat(placeholder);
             this.logger.log("[MDD auto-fix §6] último fallback: placeholder insertado tras error");
+          } else {
+            markdown = normalizeMddFormat(markdown + "\n\n---\n## 6. Seguridad\n\n(Pendiente de definir.)\n");
+            this.logger.log("[MDD auto-fix §6] fallback final catch: concatenado al final");
           }
         }
       }
@@ -1125,17 +1132,24 @@ export class AiAnalysisService {
               fixedDraft = replaceSection6Or7InDraft(markdown, 6, "## 6. Seguridad\n\n(Pendiente de definir.)");
               this.logger.log("[MDD auto-fix §6] fallback: placeholder insertado vía replaceSection6Or7InDraft");
             }
-            if (fixedDraft !== markdown) {
+            if (/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(fixedDraft)) {
               markdown = normalizeMddFormat(fixedDraft);
               this.logger.log(`[MDD auto-fix §6] §6 asegurada. markdownLen: ${markdown.length}`);
+            } else {
+              // Último recurso: concatenar al final (infalible)
+              markdown = normalizeMddFormat(markdown + "\n\n---\n## 6. Seguridad\n\n(Pendiente de definir.)\n");
+              this.logger.log("[MDD auto-fix §6] fallback final: concatenado al final del documento");
             }
           } catch (err) {
             this.logger.warn(`[MDD auto-fix §6] error: ${err instanceof Error ? err.message : String(err)}`);
             // Último fallback: insertar placeholder directamente
             const placeholder = replaceSection6Or7InDraft(markdown, 6, "## 6. Seguridad\n\n(Pendiente de definir.)");
-            if (placeholder !== markdown) {
+            if (/^##\s+(?:\d+\.\s*)?Seguridad\b/im.test(placeholder)) {
               markdown = normalizeMddFormat(placeholder);
               this.logger.log("[MDD auto-fix §6] último fallback: placeholder insertado tras error");
+            } else {
+              markdown = normalizeMddFormat(markdown + "\n\n---\n## 6. Seguridad\n\n(Pendiente de definir.)\n");
+              this.logger.log("[MDD auto-fix §6] fallback final catch: concatenado al final");
             }
           }
         }
