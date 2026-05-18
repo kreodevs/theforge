@@ -39,7 +39,7 @@ export interface GenerateJobStatus {
   projectId?: string;
   type: GenerateJobType | null;
   status: "queued" | "active" | "completed" | "failed" | "retrying" | "unknown";
-  progress: number;
+  progress: unknown;
   result?: unknown;
   error?: string;
   attemptsMade: number;
@@ -119,8 +119,8 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
 
           switch (type) {
             case "cascade":
-              return this.projects.generateDeliverablesCascade(projectId, () => {
-                job.updateProgress(1);
+              return this.projects.generateDeliverablesCascade(projectId, (p) => {
+                job.updateProgress(p);
               });
             case "blueprint":
               if (preview) return this.projects.generateBlueprintPreview(projectId, gapsFeedback);
@@ -214,7 +214,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
       projectId: data?.projectId,
       type: data?.type ?? null,
       status,
-      progress: (job.progress as number) ?? 0,
+      progress: job.progress ?? 0,
       result: job.returnvalue ?? undefined,
       error: job.failedReason ?? undefined,
       attemptsMade: job.attemptsMade,
