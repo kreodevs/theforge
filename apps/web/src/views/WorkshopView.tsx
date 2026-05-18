@@ -3543,13 +3543,12 @@ export default function WorkshopView({
                     <h3 className="text-sm font-medium text-[var(--muted-foreground)] mb-3 uppercase tracking-wider">Desglose de Calificación</h3>
                     {precisionBreakdown ? (
                       <div className="overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0 rounded-lg border border-[var(--border)]">
-                        <table className="w-full text-sm text-left min-w-[520px] sm:min-w-0">
+                        <table className="w-full text-sm text-left">
                           <thead className="bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] text-[var(--muted-foreground)] border-b border-[var(--border)]">
                             <tr>
                               <th className="px-4 py-3 font-medium">Sección</th>
                               <th className="px-4 py-3 font-medium">Agente</th>
                               <th className="px-4 py-3 font-medium text-right">Calificación</th>
-                              <th className="px-4 py-3 font-medium">Por qué</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[color-mix(in_oklch,var(--border)_70%,transparent)]">
@@ -3561,13 +3560,17 @@ export default function WorkshopView({
                               { section: "Integración", agent: "Ingeniero de Integración", value: precisionBreakdown.integracion, reasonKey: "integracion" as const },
                             ].map((row, i) => (
                               <tr key={i} className="hover:bg-[var(--card)]/30">
-                                <td className="px-4 py-2.5 text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] align-top">{row.section}</td>
+                                <td className="px-4 py-2.5 text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] align-top">
+                                  {row.section}
+                                  {precisionBreakdown.sectionReasons?.[row.reasonKey] && (
+                                    <p className="text-[var(--foreground-subtle)] text-xs mt-1 leading-tight max-w-[260px]">
+                                      {precisionBreakdown.sectionReasons[row.reasonKey]}
+                                    </p>
+                                  )}
+                                </td>
                                 <td className="px-4 py-2.5 text-[var(--muted-foreground)] align-top">{row.agent}</td>
                                 <td className={`px-4 py-2.5 text-right font-mono font-medium align-top ${(row.value ?? 0) >= 90 ? "text-[color-mix(in_oklch,var(--success)_88%,var(--foreground))]" : (row.value ?? 0) >= 50 ? "text-[var(--primary)]" : "text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]"}`}>
                                   {row.value ?? 0}%
-                                </td>
-                                <td className="px-4 py-2.5 text-[var(--foreground-subtle)] text-xs max-w-[280px] align-top">
-                                  {precisionBreakdown.sectionReasons?.[row.reasonKey] ?? "—"}
                                 </td>
                               </tr>
                             ))}
