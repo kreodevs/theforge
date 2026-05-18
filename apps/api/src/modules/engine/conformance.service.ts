@@ -109,6 +109,15 @@ function extractEntities(text: string): Set<string> {
   for (const m of listItems) {
     if (m[1]) entities.add(m[1].toLowerCase());
   }
+  // Extraer de cabeceras markdown: ### developers  o  ### `developers`
+  // Filtra cabeceras genéricas (secciones, descripción, etc.)
+  const genericHeaders = /^(modelo|entidad|tabla|nombre|descripcion|datos|campo|tipo|relacion|relación|indice|índice)$/i;
+  const headers = text.matchAll(/^#{2,5}\s+`?([a-z_][a-z0-9_]*)`?\s*$/gim);
+  for (const m of headers) {
+    if (m[1] && !genericHeaders.test(m[1]) && m[1].length > 2) {
+      entities.add(m[1].toLowerCase());
+    }
+  }
   return entities;
 }
 
