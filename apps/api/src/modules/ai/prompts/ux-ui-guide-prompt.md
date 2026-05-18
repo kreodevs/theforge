@@ -118,9 +118,24 @@ Cada sección debe explicar con prosa humana **por qué** esos valores existen y
 
 # Pasos #
 
-1. **Analiza el dominio y contexto** del MDD y documentos de entrada. Infiere el tipo de producto (SaaS, e-commerce, fintech, healthtech, etc.) para proponer un estilo coherente.
+1. **Extrae del MDD las señales de diseño.** Analiza §1 (Contexto) y la descripción del producto para determinar:
+   - **Personalidad de marca:** ¿El producto es serio/financiero? (bancos, fintech, cumplimiento legal) → minimalista, tipografía serif o sans-serif sobria, colores fríos. ¿Creativo/entretenimiento? (marketing, medios, gaming) → tipografía expresiva, colores vibrantes. ¿Profesional/herramienta? (CRM, SaaS, ERP) → tipografía neutra legible, colores de confianza (azules, verdes). ¿Salud/bienestar? → verdes suaves, azules calmados, redondez generosa. ¿Inmobiliario? → azul confiable, verde crecimiento, tipografía limpia sans-serif.
+   - **Público objetivo:** ¿B2B (profesionales, gerentes) o B2C (consumidores finales)? B2B prefiere eficiencia, densidad de datos, tablas; B2C prefiere calidez, imágenes grandes, storytelling visual.
+   - **Dominio funcional:** El §3 (entidades/tablas) revela el core del producto. Ej: si tiene `bookings`, `payment_plans`, `properties` → inmobiliario/booking. Si tiene `transactions`, `accounts` → fintech. Las entidades guían la selección de íconos y metáforas visuales.
+   - **Complejidad de datos:** Si el MDD usa tablas densas, vistas materializadas, particiones → el design system debe priorizar legibilidad de datos (tipografía mono para tablas, densidad controlada).
 
-2. **Propón la paleta y tokens** basados en el dominio. Para legacy, respeta los tokens existentes en el codebase. Para new, propón basado en mejores prácticas del dominio.
+2. **Propón la paleta y tokens basados en el dominio** usando las señales extraídas en el paso 1:
+   - **Colores:**
+     * Domino inmobiliario: azul marino `#1B3A5C` (confianza), verde esmeralda `#2E7D5B` (crecimiento), beige `#F5F0EB` (calidez hogareña).
+     * Domino fintech: azul `#1565C0` + verde `#2E7D32` (seguridad), tonos neutros fríos.
+     * Domino salud: verde salvia `#4A7C59` + azul cielo `#5BA3CF` (calma), redondez suave.
+     * Domino creativo: colores vivos + gradientes + tipografía display.
+     * Domino SaaS/CRM: azul corporativo + grises neutros + un acento (verde/ámbar/índigo).
+   - **Tipografía:**
+     * B2B denso: Inter, IBM Plex, Source Sans (compactas, legibles, bajo x-height).
+     * B2C/creativo: Playfair Display para títulos + Figtree o Onest para cuerpo.
+     * Fintech/legal: system-ui (SF/Inter) + ocasional serif para títulos si el producto lo amerita.
+   - **Justifica CADA decisión citando el MDD.** No inventes una paleta genérica. Si el MDD describe "plataforma de corretaje de propiedades entre developers y brokers", el diseño debe reflejar profesionalismo + calidez, no neón ni pastel infantil.
 
 3. **Genera el documento DESIGN.md completo** con:
    - Front matter YAML con tokens (colores, tipografía, rounded, spacing, componentes)
