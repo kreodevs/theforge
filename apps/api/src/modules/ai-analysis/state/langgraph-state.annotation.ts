@@ -1,6 +1,14 @@
 import { Annotation } from "@langchain/langgraph";
 import type { CompetitorData, CriticDecision, DBGAStatus } from "./dbga-state.schema.js";
 
+/** Reducer for techStackInsights: last write wins (replace, not append). */
+export function reduceTechStackInsights(
+  _left: string[],
+  right: string | string[],
+): string[] {
+  return Array.isArray(right) ? right : [right];
+}
+
 /**
  * LangGraph State annotation for the DBGA workflow.
  * Strictly typed; matches DBGAState from dbga-state.schema.
@@ -13,7 +21,7 @@ export const DBGAStateAnnotation = Annotation.Root({
     default: () => [],
   }),
   techStackInsights: Annotation<string[]>({
-    reducer: (_left, right) => (Array.isArray(right) ? right : [right]),
+    reducer: reduceTechStackInsights,
     default: () => [],
   }),
   userPainPoints: Annotation<string[]>({
