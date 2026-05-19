@@ -41,6 +41,8 @@ import { injectMddDiagrams, suggestMddDiagrams } from "./utils/mdd-diagram-sugge
 import { markdownToMddStructured } from "./utils/mdd-markdown-to-structured.js";
 import { HumanMessage } from "@langchain/core/messages";
 import { createDbgaLLM } from "./llm/create-dbga-llm.js";
+import { AIFactory } from "../ai/ai.factory.js";
+import { getRequestUserId } from "../../common/request-user.store.js";
 import { CONTEXT_SYNTHESIZER_PROMPT } from "./prompts/load-prompts.js";
 import { createMddIntegrationNode } from "./nodes/mdd-integration.node.js";
 import { createMddSecurityNode } from "./nodes/mdd-security.node.js";
@@ -175,9 +177,22 @@ export class AiAnalysisService {
     private readonly agentSupervisor: AgentSupervisorService,
     private readonly ai: AiService,
     private readonly discovery: DiscoveryService,
+    private readonly aiFactory: AIFactory,
     @Optional() createDbgaGraphFn?: typeof createDbgaGraph,
   ) {
     this.createDbgaGraphFn = createDbgaGraphFn ?? createDbgaGraph;
+  }
+
+  private async resolveUserId(projectId?: string): Promise<string> {
+    const pid = projectId?.trim();
+    if (pid) {
+      const row = await this.prisma.project.findUnique({
+        where: { id: pid },
+        select: { userId: true },
+      });
+      if (row?.userId) return row.userId;
+    }
+    return getRequestUserId();
   }
 
   /** Contexto agéntico (legacy, Relic, memoria episódica) para el estado MDD. */
@@ -262,7 +277,8 @@ export class AiAnalysisService {
    */
   async startAnalysis(idea: string, projectId?: string): Promise<DBGAState> {
     const checkpointer = await this.checkpointerService.getCheckpointer();
-    const graph = this.createDbgaGraphFn(checkpointer ?? undefined);
+    const userId = await this.resolveUserId(projectId);
+    const graph = await this.createDbgaGraphFn(this.aiFactory, userId, checkpointer ?? undefined);
 
     let threadId: string;
     if (projectId?.trim()) {
@@ -312,7 +328,8 @@ export class AiAnalysisService {
     projectId?: string,
   ): AsyncGenerator<StreamProgressEvent> {
     const checkpointer = await this.checkpointerService.getCheckpointer();
-    const graph = this.createDbgaGraphFn(checkpointer ?? undefined);
+    const userId = await this.resolveUserId(projectId);
+    const graph = await this.createDbgaGraphFn(this.aiFactory, userId, checkpointer ?? undefined);
 
     let threadId: string;
     if (projectId?.trim()) {
@@ -458,7 +475,11 @@ export class AiAnalysisService {
         }
       }
     }
-    const graph = createMddGraph(this.graphMemory, { theforge: this.theforge, nodeCache: this.nodeCacheService });
+    const userId = await this.resolveUserId(projectId);
+    const graph = await createMddGraph(this.aiFactory, userId, this.graphMemory, {
+      theforge: this.theforge,
+      nodeCache: this.nodeCacheService,
+    });
     const agentCtx = projectId?.trim() ? await this.buildMddAgentContext(projectId.trim(), stageId) : {};
     let dbgaEffective =
       dbgaContent.trim() ||
@@ -589,11 +610,20 @@ export class AiAnalysisService {
 
     yield { type: "progress", agent: "Manager", message: "Procesando tu mensaje..." };
 
-    const graph = createMddGraphWithManager(checkpointer, this.graphMemory, this.estimationService, {
-      projects: this.projects,
-      theforge: this.theforge,
-      ai: this.ai,
-    }, { nodeCache: this.nodeCacheService });
+    const mddUserId = await this.resolveUserId(projectId);
+    const graph = await createMddGraphWithManager(
+      this.aiFactory,
+      mddUserId,
+      checkpointer,
+      this.graphMemory,
+      this.estimationService,
+      {
+        projects: this.projects,
+        theforge: this.theforge,
+        ai: this.ai,
+      },
+      { theforge: this.theforge, nodeCache: this.nodeCacheService },
+    );
     const agentCtx = await this.buildMddAgentContext(projectId, stageIdFromClient);
     const existingMdd = (initialMddDraft ?? "").trim();
     const rawInitial = (initialMessage ?? "").trim();
@@ -879,11 +909,20 @@ export class AiAnalysisService {
 
     yield { type: "progress", agent: "Manager", message: "Reanudando flujo con tu respuesta..." };
 
-    const graph = createMddGraphWithManager(checkpointer, this.graphMemory, this.estimationService, {
-      projects: this.projects,
-      theforge: this.theforge,
-      ai: this.ai,
-    }, { nodeCache: this.nodeCacheService });
+    const resumeUserId = await this.resolveUserId(projectId);
+    const graph = await createMddGraphWithManager(
+      this.aiFactory,
+      resumeUserId,
+      checkpointer,
+      this.graphMemory,
+      this.estimationService,
+      {
+        projects: this.projects,
+        theforge: this.theforge,
+        ai: this.ai,
+      },
+      { theforge: this.theforge, nodeCache: this.nodeCacheService },
+    );
     const agentCtx = await this.buildMddAgentContext(projectId, preferredStageForCtx);
     if (agentCtx.mddComplexity != null) {
       this.estimationService.cacheProjectComplexity(projectId.trim(), estimationStage ?? null, agentCtx.mddComplexity);
@@ -1203,7 +1242,8 @@ export class AiAnalysisService {
     this.estimationService.cacheProjectComplexity(pid, regenEstimationStage ?? null, regenCx);
     const regenEstOpts = { projectId: pid, stageId: regenEstimationStage ?? null, complexity: regenCx };
 
-    const llm = createDbgaLLM();
+    const regenUserId = await this.resolveUserId(pid);
+    const llm = await createDbgaLLM(this.aiFactory, regenUserId);
     const agentLabel =
       section === 1
         ? "Contexto (sintetizador)"

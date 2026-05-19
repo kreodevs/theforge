@@ -20,6 +20,7 @@ import { createMddCrossConsistencyNode } from "../nodes/mdd-cross-consistency.no
 import { createMddBlackboardNode } from "../nodes/mdd-blackboard.node.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { createDbgaLLM } from "../llm/create-dbga-llm.js";
+import type { AIFactory } from "../../ai/ai.factory.js";
 import { getMddAuditorTools, getMddArchitectTools } from "../tools/tool-registry.js";
 import type { TheForgeService } from "../../theforge/theforge.service.js";
 import { MDDStateAnnotation, type MDDStateType } from "../state/index.js";
@@ -76,11 +77,14 @@ export type MddGraphCompileOptions = {
  * Flow: … → Auditor → (score < 85 && iteration < MAX ? Manager asigna gaps a agentes : END).
  * Los agentes generan contenido; el formateador (sin LLM) normaliza mddDraft; Redactor eliminado (documento unificado por merge + render).
  */
-export function createMddGraph(graphMemory: GraphMemoryService, options?: MddGraphCompileOptions) {
-  const llm = createDbgaLLM();
+export async function createMddGraph(
+  aiFactory: AIFactory,
+  userId: string,
+  graphMemory: GraphMemoryService,
+  options?: MddGraphCompileOptions,
+) {
+  const llm = await createDbgaLLM(aiFactory, userId);
   const nodeCache = options?.nodeCache ?? null;
-
-  // ---- Node functions (wrapped with cache where profitable) ----
 
   const clarifierNode = wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(llm));
   const softwareArchitectNode = wrapCache(
@@ -150,14 +154,16 @@ export function createMddGraph(graphMemory: GraphMemoryService, options?: MddGra
  * Caso 3 (Benchmark): existe dbgaContent → delegar de inmediato a especialistas para v1; luego bucle refinamiento.
  * Done cuando Auditor >= 85% (cede intervención al usuario) o usuario pide detenerse. Requiere checkpointer para interrupt/resume.
  */
-export function createMddGraphWithManager(
+export async function createMddGraphWithManager(
+  aiFactory: AIFactory,
+  userId: string,
   checkpointer: BaseCheckpointSaver | null,
   graphMemory: GraphMemoryService,
   precisionCalculator?: LivePrecisionCalculator | null,
   managerToolDeps?: MddManagerToolDeps | null,
   compileOptions?: MddGraphCompileOptions,
 ) {
-  const llm = createDbgaLLM();
+  const llm = await createDbgaLLM(aiFactory, userId);
   const nodeCache = compileOptions?.nodeCache ?? null;
   const managerNode = createMddManagerNode(llm, graphMemory, precisionCalculator, managerToolDeps ?? null);
   const askInitialTopicNode = createMddAskInitialTopicNode();

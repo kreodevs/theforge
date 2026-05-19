@@ -1,6 +1,6 @@
-import { Injectable, Inject } from "@nestjs/common";
-import type { LLMProvider } from "../ai/interfaces/llm-provider.interface.js";
-import { LLM_PROVIDER } from "../ai/interfaces/llm-provider.interface.js";
+import { Injectable } from "@nestjs/common";
+import { AIFactory } from "../ai/ai.factory.js";
+import { getRequestUserId } from "../../common/request-user.store.js";
 import type { TheForgeFileToModify } from "../theforge/theforge.service.js";
 import { countMddCodePathReferences } from "../theforge/theforge-evidence-context.util.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
@@ -19,10 +19,7 @@ const REVIEWER_SYSTEM =
  */
 @Injectable()
 export class LegacyReviewerService {
-  constructor(
-    @Inject(LLM_PROVIDER)
-    private readonly provider: LLMProvider,
-  ) {}
+  constructor(private readonly aiFactory: AIFactory) {}
 
   /**
    * Revisa la lista de archivos a modificar y preguntas antes de devolverlas al usuario.
@@ -48,7 +45,8 @@ export class LegacyReviewerService {
       "Elimina de filesToModify cualquier ruta que parezca inventada o que no corresponda al stack real del proyecto.\n\n" +
       input;
     try {
-      const out = await this.provider.generateResponse(prompt, [], { systemPrompt: REVIEWER_SYSTEM });
+      const provider = await this.aiFactory.createForUser(getRequestUserId());
+      const out = await provider.generateResponse(prompt, [], { systemPrompt: REVIEWER_SYSTEM });
       const trimmed = out.trim().replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
       const parsed = JSON.parse(trimmed) as { filesToModify?: string[]; questions?: string[] };
       const keptPaths = Array.isArray(parsed?.filesToModify) ? parsed.filesToModify.filter((f) => typeof f === "string") : paths;
@@ -83,7 +81,8 @@ export class LegacyReviewerService {
       mddDraft +
       "\n---";
     try {
-      const out = await this.provider.generateResponse(prompt, [], { systemPrompt: REVIEWER_SYSTEM });
+      const provider = await this.aiFactory.createForUser(getRequestUserId());
+      const out = await provider.generateResponse(prompt, [], { systemPrompt: REVIEWER_SYSTEM });
       return out?.trim() ?? mddDraft;
     } catch {
       return mddDraft;

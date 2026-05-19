@@ -1,23 +1,24 @@
 import type { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager";
-import { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { BaseChatModel, type BaseChatModelParams } from "@langchain/core/language_models/chat_models";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
-import { ChatOpenAI, type ChatOpenAICallOptions } from "@langchain/openai";
+import type { StructuredToolInterface } from "@langchain/core/tools";
 import { isModelExhaustionError, runWithModelFallback } from "../../ai/config/llm-model-fallback.js";
 
 /**
- * ChatOpenAI con cadena de modelos: solo hace fallback en errores de agotamiento (quota, 429 opcional, etc.).
+ * Cadena de modelos sobre cualquier BaseChatModel: fallback solo en agotamiento (quota, 429, etc.).
  */
-export class OpenRouterFallbackChatModel extends BaseChatModel {
+export class ChainedFallbackChatModel extends BaseChatModel {
   constructor(
-    private readonly buildLlm: (model: string) => ChatOpenAI,
+    private readonly buildLlm: (model: string) => BaseChatModel,
     private readonly models: string[],
+    params?: BaseChatModelParams,
   ) {
-    super({});
+    super(params ?? {});
   }
 
   _llmType(): string {
-    return "openrouter-chat-fallback";
+    return "chained-chat-fallback";
   }
 
   async _generate(
@@ -25,13 +26,12 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
     options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
-    const openAiOptions = options as ChatOpenAICallOptions;
     return runWithModelFallback({
       models: this.models,
-      label: "OpenRouterFallbackChatModel._generate",
+      label: "ChainedFallbackChatModel._generate",
       run: async (model) => {
         const llm = this.buildLlm(model);
-        return llm._generate(messages, openAiOptions, runManager);
+        return llm._generate(messages, options, runManager);
       },
     });
   }
@@ -41,7 +41,6 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
     options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun,
   ): AsyncGenerator<ChatGenerationChunk> {
-    const openAiOptions = options as ChatOpenAICallOptions;
     let lastErr: unknown;
     for (let i = 0; i < this.models.length; i++) {
       const model = this.models[i]!;
@@ -50,10 +49,10 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
       try {
         await runWithModelFallback({
           models: [model],
-          label: `OpenRouterFallbackChatModel._stream[${model}]`,
+          label: `ChainedFallbackChatModel._stream[${model}]`,
           run: async () => {
             const llm = this.buildLlm(model);
-            const iter = llm._streamResponseChunks(messages, openAiOptions, runManager);
+            const iter = llm._streamResponseChunks(messages, options, runManager);
             const first = await iter.next();
             if (first.done) throw new Error(`empty stream from ${model}`);
             firstChunk = first.value;
@@ -72,7 +71,7 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
         const hasNext = i < this.models.length - 1;
         if (!hasNext || !isModelExhaustionError(err)) throw err;
         console.warn(
-          `[OpenRouterFallbackChatModel] modelo ${model} agotado, probando ${this.models[i + 1]}`,
+          `[ChainedFallbackChatModel] modelo ${model} agotado, probando ${this.models[i + 1]}`,
         );
       }
     }
@@ -80,11 +79,17 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
   }
 
   bindTools(
-    tools: Parameters<ChatOpenAI["bindTools"]>[0],
-    kwargs?: Parameters<ChatOpenAI["bindTools"]>[1],
+    tools: StructuredToolInterface[],
+    kwargs?: Record<string, unknown>,
   ): BaseChatModel {
-    return new OpenRouterFallbackChatModel(
-      (model) => this.buildLlm(model).bindTools(tools, kwargs) as unknown as ChatOpenAI,
+    return new ChainedFallbackChatModel(
+      (model) => {
+        const llm = this.buildLlm(model);
+        if (!llm.bindTools) {
+          throw new Error(`El modelo ${model} no soporta bindTools`);
+        }
+        return llm.bindTools(tools, kwargs) as BaseChatModel;
+      },
       this.models,
     );
   }

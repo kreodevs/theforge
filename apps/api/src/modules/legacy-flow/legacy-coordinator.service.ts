@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   HttpException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -48,8 +47,8 @@ import { AiService } from "../ai/ai.service.js";
 import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
-import type { LLMProvider } from "../ai/interfaces/llm-provider.interface.js";
-import { LLM_PROVIDER } from "../ai/interfaces/llm-provider.interface.js";
+import { AIFactory } from "../ai/ai.factory.js";
+import { getRequestUserId } from "../../common/request-user.store.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import {
   isLegacyCodebaseDocMcpDebugUiEnabled,
@@ -501,8 +500,7 @@ export class LegacyCoordinatorService {
   private readonly logger = new Logger(LegacyCoordinatorService.name);
 
   constructor(
-    @Inject(LLM_PROVIDER)
-    private readonly llm: LLMProvider,
+    private readonly aiFactory: AIFactory,
     private readonly prisma: PrismaService,
     private readonly projects: ProjectsService,
     private readonly theforge: TheForgeService,
@@ -867,6 +865,8 @@ export class LegacyCoordinatorService {
     if (isLegacyEvidenceFirstEnabled() && req?.responseMode !== "ingest_mdd") {
       try {
         const body = await runLegacyStagedDiscoveryMddAgent({
+          aiFactory: this.aiFactory,
+          userId: getRequestUserId(),
           theforge: this.theforge,
           projectId,
           theforgeProjectId: theforgeId,
@@ -1272,6 +1272,8 @@ export class LegacyCoordinatorService {
   if (isLegacyEvidenceFirstEnabled()) {
       try {
         const changeEvidence = await runLegacyStagedDiscoveryMddAgent({
+          aiFactory: this.aiFactory,
+          userId: getRequestUserId(),
           theforge: this.theforge,
           projectId,
           theforgeProjectId: theforgeId,
@@ -2198,7 +2200,8 @@ export class LegacyCoordinatorService {
     const prompt = `${typePrompt}\n\n--- codebaseDoc ---\n\n${codebaseChunk}`;
 
     // Llamar al LLM
-    const raw = await this.llm.generateResponse(prompt, [], {
+    const llm = await this.aiFactory.createForUser(getRequestUserId());
+    const raw = await llm.generateResponse(prompt, [], {
       systemPrompt:
         "Eres un analista de software experto. Genera documentación técnica precisa basada en el codebase proporcionado.",
     });

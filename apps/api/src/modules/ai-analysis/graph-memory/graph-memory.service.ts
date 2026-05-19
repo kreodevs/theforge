@@ -1,20 +1,38 @@
 import { FalkorDB, Graph } from "falkordb";
 import { MddStructured } from "../state/mdd-structured.schema.js";
 import { validateSddReadQuery } from "./sdd-query-guard.js";
-import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
-import { LLMProvider, LLM_PROVIDER } from "../../ai/interfaces/llm-provider.interface.js";
-
+import { BadRequestException, Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
+import { AIFactory } from "../../ai/ai.factory.js";
+import { getRequestUserId } from "../../../common/request-user.store.js";
 @Injectable()
 export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(GraphMemoryService.name);
     private client: FalkorDB | null = null;
     private graph: Graph | null = null;
     private readonly graphName = "theforge_memory";
+    /** Dimensiones para las que ya se creó índice vectorial en Falkor. */
+    private readonly vectorIndexDims = new Set<number>();
 
-    constructor(
-        @Inject(LLM_PROVIDER)
-        private readonly aiProvider: LLMProvider,
-    ) { }
+    constructor(private readonly aiFactory: AIFactory) { }
+
+    private async embed(text: string, userId?: string): Promise<number[]> {
+        const uid = userId ?? getRequestUserId();
+        const runtime = await this.aiFactory.resolveEmbeddingRuntime(uid);
+        if (!runtime.embeddingDimension) {
+            throw new BadRequestException(
+                "No se pudo determinar la dimensión de embeddings. Configura embeddingDimension o un modelo con dimensión conocida en el catálogo.",
+            );
+        }
+        await this.ensureVectorIndices(runtime.embeddingDimension);
+        const provider = await this.aiFactory.createEmbeddingForUser(uid);
+        const vec = await provider.generateEmbedding(text);
+        if (vec.length > 0 && vec.length !== runtime.embeddingDimension) {
+            this.logger.warn(
+                `[GraphMemory] dimensión devuelta (${vec.length}) ≠ configurada (${runtime.embeddingDimension}) para usuario ${uid}`,
+            );
+        }
+        return vec;
+    }
 
     async onModuleInit() {
         const url =
@@ -26,7 +44,6 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             this.graph = this.client.selectGraph(this.graphName);
             this.logger.log(`Conectado a FalkorDB en ${url}`);
 
-            // Attach error handler para evitar crash si Redis/FalkorDB se desconecta después
             this.client.on("error", (err: unknown) => {
                 const msg = err instanceof Error ? err.message : String(err);
                 this.logger.error(`FalkorDB disconnected: ${msg}`);
@@ -34,51 +51,34 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
                 this.graph = null;
             });
 
-            // Inicializar índices vectoriales
-            await this.initializeIndices();
+            this.logger.log(
+                "Índices vectoriales Falkor: se crean bajo demanda por dimensión de embedding del usuario",
+            );
         } catch (err) {
             this.logger.error(`Error conectando a FalkorDB: ${err instanceof Error ? err.message : String(err)}`);
         }
     }
 
-    private async initializeIndices() {
-        if (!this.graph) return;
+    private async ensureVectorIndices(dim: number) {
+        if (!this.graph || dim <= 0) return;
+        if (this.vectorIndexDims.has(dim)) return;
+
         try {
-            // Dimensión: env evita llamar a la API en arranque (útil si hay 429 / cuota agotada)
-            const envDim = process.env.OPENAI_EMBEDDING_DIM || process.env.EMBEDDING_DIM;
-            let dim = envDim ? parseInt(envDim, 10) : 0;
-            if (!dim || dim <= 0) {
-                const dummy = await this.aiProvider.generateEmbedding("test");
-                dim = dummy.length;
+            for (const label of ["Project", "Decision"] as const) {
+                try {
+                    await this.graph.query(
+                        `CALL db.idx.vector.create('${label}', 'embedding', $dim, 'cosine')`,
+                        { params: { dim } },
+                    );
+                    this.logger.log(`Índice vectorial creado para '${label}' con dimensión ${dim}`);
+                } catch {
+                    // Probablemente ya existe para esta dimensión
+                }
             }
-            if (dim === 0) return;
-
-            // Intentar crear índice para Proyectos (basado en título/contenido)
-            try {
-                await this.graph.query(`CALL db.idx.vector.create('Project', 'embedding', $dim, 'cosine')`, { params: { dim } });
-                this.logger.log(`Índice vectorial creado para 'Project' con dimensión ${dim}`);
-            } catch (e) {
-                // Probablemente ya existe
-            }
-
-            // Índice vectorial para Decisiones (ADRs)
-            try {
-                await this.graph.query(`CALL db.idx.vector.create('Decision', 'embedding', $dim, 'cosine')`, { params: { dim } });
-                this.logger.log(`Índice vectorial creado para 'Decision' con dimensión ${dim}`);
-            } catch (e) {
-                // Ya existe
-            }
+            this.vectorIndexDims.add(dim);
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            const isQuota = typeof (err as { code?: string })?.code === "string" && ((err as { code: string }).code === "insufficient_quota" || msg.includes("429") || msg.includes("quota"));
-            if (isQuota) {
-                this.logger.warn(
-                    "OpenRouter / embeddings quota exceeded on startup; graph memory indices skipped. API will run but semantic search/ADRs may be limited. Check billing or use OPENAI_EMBEDDING_DIM to skip embedding call.",
-                );
-            } else {
-                this.logger.warn(`No se pudieron inicializar índices vectoriales: ${msg}`);
-            }
-            // No rethrow: la API debe arrancar aunque FalkorDB/embeddings fallen
+            this.logger.warn(`No se pudieron inicializar índices vectoriales (dim=${dim}): ${msg}`);
         }
     }
 
@@ -98,7 +98,8 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
     async ensureProject(projectId: string, title?: string) {
         if (!this.graph) return;
         const textToEmbed = title || projectId;
-        const embedding = await this.aiProvider.generateEmbedding(textToEmbed);
+        const embedding = await this.embed(textToEmbed);
+        if (embedding.length === 0) return;
 
         const query = `
       MERGE (p:Project {id: $id}) 
@@ -125,16 +126,23 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
 
             const contextSummary = structured.contextoAlcance || "";
             const textToEmbed = `${structured.title || projectId}\n${contextSummary}`.slice(0, 2000);
-            const embedding = await this.aiProvider.generateEmbedding(textToEmbed);
+            const embedding = await this.embed(textToEmbed);
 
-            await this.graph.query(
-                `
+            if (embedding.length > 0) {
+                await this.graph.query(
+                    `
         MERGE (p:Project {id: $id})
         SET p.title = $title, p.embedding = $embedding
         RETURN p
       `,
-                { params: { id: projectId, title: structured.title || projectId, embedding } },
-            );
+                    { params: { id: projectId, title: structured.title || projectId, embedding } },
+                );
+            } else {
+                await this.graph.query(
+                    `MERGE (p:Project {id: $id}) SET p.title = $title RETURN p`,
+                    { params: { id: projectId, title: structured.title || projectId } },
+                );
+            }
 
             await this.graph.query(
                 `
@@ -231,6 +239,7 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             }
             await this.syncMddSectionNodes(projectId, sid, structured);
         } catch (err) {
+            if (err instanceof BadRequestException) throw err;
             this.logger.error(`Error sincronizando MDD al grafo: ${err instanceof Error ? err.message : String(err)}`);
         }
     }
@@ -408,7 +417,6 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
 
     /**
      * Evalúa coherencia de dependencias modelo↔API en el subgrafo SDD (FalkorDB / OpenCypher).
-     * Un endpoint sin :CONSUMES hacia entidad o una entidad sin consumidor se considera huérfano respecto al dominio enlazado.
      */
     async evaluateSddDependencyHealth(
         projectId: string,
@@ -518,10 +526,9 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
     async searchSimilarProjects(query: string, limit = 3) {
         if (!this.graph) return [];
         try {
-            const embedding = await this.aiProvider.generateEmbedding(query);
+            const embedding = await this.embed(query);
             if (embedding.length === 0) return [];
 
-            // Query híbrida: busca proyectos similares y trae sus artefactos
             const cypher = `
         CALL db.idx.vector.queryNodes('Project', 'embedding', $limit, $embedding)
         YIELD node AS project, score
@@ -535,6 +542,10 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             const result = await this.graph.query(cypher, { params: { embedding, limit } });
             return result.data;
         } catch (err) {
+            if (err instanceof BadRequestException) {
+                this.logger.warn(`[GraphMemory] searchSimilarProjects: ${err.message}`);
+                return [];
+            }
             this.logger.error(`Error en búsqueda similar: ${err instanceof Error ? err.message : String(err)}`);
             return [];
         }
@@ -557,7 +568,8 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
 
         try {
             const textToEmbed = `${decision.title}\n${decision.context}\n${decision.consequence}`.slice(0, 2000);
-            const embedding = await this.aiProvider.generateEmbedding(textToEmbed);
+            const embedding = await this.embed(textToEmbed);
+            if (embedding.length === 0) return;
 
             const query = `
         MATCH (p:Project {id: $projectId})
@@ -582,6 +594,10 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
                 }
             });
         } catch (err) {
+            if (err instanceof BadRequestException) {
+                this.logger.warn(`[GraphMemory] saveDecision: ${err.message}`);
+                return;
+            }
             this.logger.error(`Error guardando decisión ADR: ${err instanceof Error ? err.message : String(err)}`);
         }
     }
@@ -592,7 +608,7 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
     async searchSimilarDecisions(query: string, limit = 5) {
         if (!this.graph) return [];
         try {
-            const embedding = await this.aiProvider.generateEmbedding(query);
+            const embedding = await this.embed(query);
             if (embedding.length === 0) return [];
 
             const cypher = `
@@ -610,6 +626,10 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             const result = await this.graph.query(cypher, { params: { embedding, limit } });
             return result.data;
         } catch (err) {
+            if (err instanceof BadRequestException) {
+                this.logger.warn(`[GraphMemory] searchSimilarDecisions: ${err.message}`);
+                return [];
+            }
             this.logger.error(`Error en búsqueda de decisiones: ${err instanceof Error ? err.message : String(err)}`);
             return [];
         }
@@ -656,14 +676,6 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
 
     /**
      * Crea/actualiza un nodo :LegacyStage en FalkorDB con sus relaciones.
-     *
-     * @param params.stageId      - ID de la etapa legacy (Stage.id)
-     * @param params.projectId    - ID del proyecto en TheForge
-     * @param params.ordinal      - Número de orden de la etapa
-     * @param params.name         - Nombre de la etapa
-     * @param params.description  - Descripción opcional de la etapa
-     * @param params.parentStageId - Si tiene etapa padre, crea relación DERIVED_FROM
-     * @param params.theforgeProjectId - Si se proporciona, relaciona con Project via HAS_LEGACY_STAGE
      */
     async syncLegacyStage(params: {
         stageId: string;
@@ -679,7 +691,6 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
         const ts = Date.now();
 
         try {
-            // Crear/actualizar el nodo LegacyStage con sus propiedades
             await this.graph.query(
                 `
           MERGE (s:LegacyStage {stageId: $stageId})
@@ -702,7 +713,6 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
                 },
             );
 
-            // Relación DERIVED_FROM si hay parentStageId
             if (parentStageId) {
                 await this.graph.query(
                     `
@@ -714,7 +724,6 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
                 );
             }
 
-            // Relación HAS_LEGACY_STAGE desde Project si hay theforgeProjectId
             if (theforgeProjectId) {
                 await this.graph.query(
                     `
