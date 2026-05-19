@@ -103,14 +103,29 @@ function parseDesignMdContent(content: string): DesignTokens | null {
         colors[name] = hex;
       }
     }
-    // Markdown table pattern: | Rol | ... | #HEX | ... |
-    const tableRowRe = /\|\s*\*{0,2}([\w\s\-áéíóúñÑ/]+?)\*{0,2}\s*\|[^|]*\|\s*`?(?:#([A-Fa-f0-9]{6}))`?\s*\|/gm;
-    let trm: RegExpExecArray | null;
-    while ((trm = tableRowRe.exec(colorsSection)) !== null) {
-      const name = trm[1]!.replace(/\*\*/g, '').toLowerCase().trim().replace(/\s+/g, '-');
-      const hex = `#${trm[2]!.toUpperCase()}`;
-      if (name && !Object.values(colors).includes(hex)) {
-        colors[name] = hex;
+    // Markdown table patterns
+    // Pattern A: | Name | Middle | #HEX | ... | (hex in col 3)
+    const tableReHexCol3 = /\|\s*\*{0,2}([\w\s\-áéíóúñÑ/]+?)\*{0,2}\s*\|[^|]*\|\s*`?(?:#([A-Fa-f0-9]{6}))`?\s*\|/gm;
+    for (const re of [tableReHexCol3]) {
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(colorsSection)) !== null) {
+        const name = m[1]!.replace(/\*\*/g, '').toLowerCase().trim().replace(/\s+/g, '-');
+        const hex = `#${m[2]!.toUpperCase()}`;
+        if (name && !Object.values(colors).includes(hex)) {
+          colors[name] = hex;
+        }
+      }
+    }
+    // Pattern B: | Name | #HEX | ... | (hex in col 2 — common in UX/UI guide)
+    const tableReHexCol2 = /\|\s*\*{0,2}([\w\s\-áéíóúñÑ/]+?)\*{0,2}\s*\|\s*`?(?:#([A-Fa-f0-9]{6}))`?\s*\|[^|]*\|/gm;
+    {
+      let m: RegExpExecArray | null;
+      while ((m = tableReHexCol2.exec(colorsSection)) !== null) {
+        const name = m[1]!.replace(/\*\*/g, '').toLowerCase().trim().replace(/\s+/g, '-');
+        const hex = `#${m[2]!.toUpperCase()}`;
+        if (name && !Object.values(colors).includes(hex)) {
+          colors[name] = hex;
+        }
       }
     }
     if (Object.keys(colors).length > 0) tokens.colors = colors;
@@ -970,9 +985,31 @@ export function fillDesignMdDefaults(tokens: DesignTokens | null): DesignTokens 
 
 export function DesignMdPreview({ content }: { content: string }) {
   const frontMatter = useMemo(() => {
-    const yaml = parseYamlFrontMatter(content).frontMatter;
-    if (yaml && (yaml.colors || yaml.typography || yaml.components)) return fillDesignMdDefaults(yaml);
-    return fillDesignMdDefaults(parseDesignMdContent(content));
+    const { frontMatter: yaml } = parseYamlFrontMatter(content);
+    const bodyTokens = parseDesignMdContent(content);
+
+    // Merge: YAML frontmatter takes precedence, body markdown fills gaps
+    // (e.g. PrimaryHover, Surface, SurfaceHover, Accent defined in body tables)
+    if (yaml && (yaml.colors || yaml.typography || yaml.components)) {
+      if (bodyTokens?.colors && yaml.colors) {
+        // Body colors that aren't already in YAML
+        for (const [k, v] of Object.entries(bodyTokens.colors)) {
+          if (!(k in yaml.colors)) yaml.colors[k] = v;
+        }
+      }
+      if (bodyTokens?.typography && yaml.typography) {
+        for (const [k, v] of Object.entries(bodyTokens.typography)) {
+          if (!(k in yaml.typography)) yaml.typography[k] = v;
+        }
+      }
+      if (bodyTokens?.components && yaml.components) {
+        for (const [k, v] of Object.entries(bodyTokens.components)) {
+          if (!(k in yaml.components)) yaml.components[k] = v;
+        }
+      }
+      return fillDesignMdDefaults(yaml);
+    }
+    return fillDesignMdDefaults(bodyTokens);
   }, [content]);
 
   const body = useMemo(() => {
@@ -1161,9 +1198,29 @@ export function DesignMdPreview({ content }: { content: string }) {
 }
 
 export function extractDesignMdFrontMatter(content: string): DesignTokens | null {
-  const yaml = parseYamlFrontMatter(content).frontMatter;
-  if (yaml && (yaml.colors || yaml.typography || yaml.components)) return yaml;
-  return parseDesignMdContent(content);
+  const { frontMatter: yaml } = parseYamlFrontMatter(content);
+  const bodyTokens = parseDesignMdContent(content);
+
+  if (yaml && (yaml.colors || yaml.typography || yaml.components)) {
+    // Merge body tokens into YAML to capture extra colors from body tables (e.g. PrimaryHover)
+    if (bodyTokens?.colors && yaml.colors) {
+      for (const [k, v] of Object.entries(bodyTokens.colors)) {
+        if (!(k in yaml.colors)) yaml.colors[k] = v;
+      }
+    }
+    if (bodyTokens?.typography && yaml.typography) {
+      for (const [k, v] of Object.entries(bodyTokens.typography)) {
+        if (!(k in yaml.typography)) yaml.typography[k] = v;
+      }
+    }
+    if (bodyTokens?.components && yaml.components) {
+      for (const [k, v] of Object.entries(bodyTokens.components)) {
+        if (!(k in yaml.components)) yaml.components[k] = v;
+      }
+    }
+    return yaml;
+  }
+  return bodyTokens;
 }
 
 /**
