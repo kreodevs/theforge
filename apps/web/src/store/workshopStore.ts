@@ -103,14 +103,14 @@ const cleanDoc = (text: string | null) => {
   // Encontrar el primer # para quitar preámbulos, sin regex lookbehind
   // IMPORTANTE: Si hay bloque YAML (---\\n...\\n---), buscar # solo después de ese bloque
   // para no cortar el frontmatter
-  const yamlBlockEnd = c.startsWith("---") ? c.indexOf("\\n---", 3) : -1;
+  const yamlBlockEnd = c.startsWith("---") ? c.indexOf("\n---", 3) : -1;
   const searchStart = yamlBlockEnd !== -1 ? yamlBlockEnd + 5 : 0; // +5 = \\n + --- + \\n
   const firstHashIndex = c.indexOf("#", searchStart);
   if (firstHashIndex !== -1) {
     if (c.startsWith("#", searchStart)) {
       // ok, empieza ahí (o después del YAML)
     } else {
-      const newlineHashIndex = c.indexOf("\\n#", searchStart);
+      const newlineHashIndex = c.indexOf("\n#", searchStart);
       if (newlineHashIndex !== -1) {
         c = c.slice(newlineHashIndex + 1).trim();
       }
@@ -1700,15 +1700,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   mddContent: packed?.mddContent ?? get().mddContent,
                   workshopStages: nextStages && nextStages.length > 0 ? nextStages : get().workshopStages,
                   uxUiGuideContent: freshUx,
-                  dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
+                  dbgaContent: cleanDoc(proj?.dbgaContent ?? null) ?? get().dbgaContent,
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
-                  architectureContent: cleanDoc(proj?.architectureContent ?? null),
-                  useCasesContent: cleanDoc(proj?.useCasesContent ?? null),
-                  userStoriesContent: cleanDoc(proj?.userStoriesContent ?? null),
-                  blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
-                  apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null),
-                  logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
-                  infraContent: cleanDoc(proj?.infraContent ?? null),
+                  architectureContent: cleanDoc(proj?.architectureContent ?? null) ?? get().architectureContent,
+                  useCasesContent: cleanDoc(proj?.useCasesContent ?? null) ?? get().useCasesContent,
+                  userStoriesContent: cleanDoc(proj?.userStoriesContent ?? null) ?? get().userStoriesContent,
+                  blueprintContent: cleanDoc(proj?.blueprintContent ?? null) ?? get().blueprintContent,
+                  apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null) ?? get().apiContractsContent,
+                  logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null) ?? get().logicFlowsContent,
+                  tasksContent: cleanDoc(proj?.tasksContent ?? null) ?? get().tasksContent,
+                  infraContent: cleanDoc(proj?.infraContent ?? null) ?? get().infraContent,
                   streamingUserMessage: null,
                   streamingUserImages: null,
                   streamingContent: null,
@@ -1762,16 +1763,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   mddContent: packed?.mddContent ?? get().mddContent,
                   workshopStages: nextStagesB && nextStagesB.length > 0 ? nextStagesB : get().workshopStages,
                   uxUiGuideContent: freshUx,
-                  dbgaContent: cleanDoc(proj?.dbgaContent ?? null),
-                  specContent: cleanDoc(proj?.specContent ?? null),
-                  blueprintContent: cleanDoc(proj?.blueprintContent ?? null),
-                  apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null),
-                  logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null),
-                  tasksContent: cleanDoc(proj?.tasksContent ?? null),
-                  architectureContent: cleanDoc(proj?.architectureContent ?? null),
-                  useCasesContent: cleanDoc(proj?.useCasesContent ?? null),
-                  userStoriesContent: cleanDoc(proj?.userStoriesContent ?? null),
-                  infraContent: cleanDoc(proj?.infraContent ?? null),
+                  dbgaContent: cleanDoc(proj?.dbgaContent ?? null) ?? get().dbgaContent,
+                  specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
+                  blueprintContent: cleanDoc(proj?.blueprintContent ?? null) ?? get().blueprintContent,
+                  apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null) ?? get().apiContractsContent,
+                  logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null) ?? get().logicFlowsContent,
+                  tasksContent: cleanDoc(proj?.tasksContent ?? null) ?? get().tasksContent,
+                  architectureContent: cleanDoc(proj?.architectureContent ?? null) ?? get().architectureContent,
+                  useCasesContent: cleanDoc(proj?.useCasesContent ?? null) ?? get().useCasesContent,
+                  userStoriesContent: cleanDoc(proj?.userStoriesContent ?? null) ?? get().userStoriesContent,
+                  infraContent: cleanDoc(proj?.infraContent ?? null) ?? get().infraContent,
                   streamingUserMessage: null,
                   streamingUserImages: null,
                   streamingContent: null,
