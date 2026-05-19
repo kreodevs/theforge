@@ -2075,7 +2075,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           }
           if (j.state === "completed") break;
           const prog = j.progress;
-          if (prog && prog.step && !completedSteps.has(prog.step)) {
+          if (prog && prog.step && prog.step !== "done" && !completedSteps.has(prog.step)) {
             completedSteps.add(prog.step);
             set((s) => ({
               agentProgress: s.agentProgress.map((item) =>
