@@ -23,12 +23,52 @@ import { createDbgaLLM } from "../llm/create-dbga-llm.js";
 import { getMddAuditorTools, getMddArchitectTools } from "../tools/tool-registry.js";
 import type { TheForgeService } from "../../theforge/theforge.service.js";
 import { MDDStateAnnotation, type MDDStateType } from "../state/index.js";
+import type { NodeCacheService } from "../checkpoint/node-cache.service.js";
+import {
+  clarifierInput,
+  softwareArchitectInput,
+  securityInput,
+  integrationInput,
+  llmFormatterInput,
+  crossConsistencyInput,
+} from "../checkpoint/node-input-hash.js";
 
 const MAX_MDD_ITERATIONS = 2;
+
+// ---------------------------------------------------------------------------
+// Cache wrapper — wraps an LLM node function so it checks the in-memory
+// cache before executing.  On a cache hit the LLM call is skipped entirely.
+// ---------------------------------------------------------------------------
+
+type NodeFn = (state: MDDStateType) => Promise<Partial<MDDStateType>>;
+type InputHashFn = (state: MDDStateType) => Record<string, unknown>;
+
+function wrapCache(
+  cache: NodeCacheService | null,
+  nodeName: string,
+  getInput: InputHashFn,
+  nodeFn: NodeFn,
+): NodeFn {
+  if (!cache) return nodeFn;
+  return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
+    const projectId = state.projectId;
+    const key = cache.key(nodeName, projectId, getInput(state));
+    const cached = cache.get(key);
+    if (cached !== undefined) {
+      console.log(`[MDD:Cache] HIT ${nodeName} (key=${key})`);
+      return cached;
+    }
+    const result = await nodeFn(state);
+    cache.set(key, result);
+    return result;
+  };
+}
 
 /** Opciones al compilar el grafo MDD (p. ej. TheForge MCP para herramientas del Arquitecto en legacy). */
 export type MddGraphCompileOptions = {
   theforge?: TheForgeService | null;
+  /** Cache por nodo para evitar re-ejecutar LLM si el input no cambió. */
+  nodeCache?: NodeCacheService | null;
 };
 
 /**
@@ -38,16 +78,25 @@ export type MddGraphCompileOptions = {
  */
 export function createMddGraph(graphMemory: GraphMemoryService, options?: MddGraphCompileOptions) {
   const llm = createDbgaLLM();
-  const clarifierNode = createMddClarifierNode(llm);
-  const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
-    theforge: options?.theforge ?? null,
-  });
+  const nodeCache = options?.nodeCache ?? null;
+
+  // ---- Node functions (wrapped with cache where profitable) ----
+
+  const clarifierNode = wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(llm));
+  const softwareArchitectNode = wrapCache(
+    nodeCache,
+    "software_architect",
+    softwareArchitectInput,
+    createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
+      theforge: options?.theforge ?? null,
+    }),
+  );
   const formatterNode = createMddFormatterNode();
-  const securityNode = createMddSecurityNode(llm);
-  const integrationNode = createMddIntegrationNode(llm);
+  const securityNode = wrapCache(nodeCache, "security", securityInput, createMddSecurityNode(llm));
+  const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(llm));
   const diagramInjectorNode = createMddDiagramInjectorNode();
-  const consistencyNode = createMddCrossConsistencyNode(llm);
-  const llmFormatterNode = createMddLlmFormatterNode(llm);
+  const consistencyNode = wrapCache(nodeCache, "cross_consistency", crossConsistencyInput, createMddCrossConsistencyNode(llm));
+  const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
   const auditorNode = createMddAuditorNode(llm, getMddAuditorTools(), null);
   const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
 
@@ -73,12 +122,18 @@ export function createMddGraph(graphMemory: GraphMemoryService, options?: MddGra
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
     .addEdge("software_architect", "format_after_architect")
+    // [PARALELO] Security + Integration: escriben keys distintas del estado (§6 y §7)
     .addEdge("format_after_architect", "security")
-    .addEdge("security", "integration")
+    .addEdge("format_after_architect", "integration")
+    .addEdge("security", "format_after_redactor")
     .addEdge("integration", "format_after_redactor")
     .addEdge("format_after_redactor", "llm_formatter")
+    // [PARALELO] CrossConsistency: solo produce internalDirectives (read-only mddDraft)
+    // DiagramInjector inyecta diagramas en mddDraft (code-only, <3s).
+    // Auditor usa shortcut code-only (99% casos). Corren en paralelo sin conflicto.
     .addEdge("llm_formatter", "cross_consistency_checker")
-    .addEdge("cross_consistency_checker", "diagram_injector")
+    .addEdge("llm_formatter", "diagram_injector")
+    .addEdge("cross_consistency_checker", "auditor")
     .addEdge("diagram_injector", "auditor")
     .addConditionalEdges("auditor", routeAuditor, {
       clarifier: "clarifier",
@@ -104,20 +159,26 @@ export function createMddGraphWithManager(
   compileOptions?: MddGraphCompileOptions,
 ) {
   const llm = createDbgaLLM();
+  const nodeCache = compileOptions?.nodeCache ?? null;
   const managerNode = createMddManagerNode(llm, graphMemory, precisionCalculator, managerToolDeps ?? null);
   const askInitialTopicNode = createMddAskInitialTopicNode();
-  const clarifierNode = createMddClarifierNode(llm);
+  const clarifierNode = wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(llm));
   const theForgeForArchitect = compileOptions?.theforge ?? managerToolDeps?.theforge ?? null;
-  const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
-    theforge: theForgeForArchitect,
-  });
+  const softwareArchitectNode = wrapCache(
+    nodeCache,
+    "software_architect",
+    softwareArchitectInput,
+    createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
+      theforge: theForgeForArchitect,
+    }),
+  );
   const architectCriticNode = createMddArchitectCriticNode(llm);
   const formatterNode = createMddFormatterNode();
-  const securityNode = createMddSecurityNode(llm);
-  const integrationNode = createMddIntegrationNode(llm);
-  const llmFormatterNode = createMddLlmFormatterNode(llm);
+  const securityNode = wrapCache(nodeCache, "security", securityInput, createMddSecurityNode(llm));
+  const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(llm));
+  const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
   const diagramInjectorNode = createMddDiagramInjectorNode();
-  const consistencyNode = createMddCrossConsistencyNode(llm);
+  const consistencyNode = wrapCache(nodeCache, "cross_consistency", crossConsistencyInput, createMddCrossConsistencyNode(llm));
   const auditorNode = createMddAuditorNode(llm, getMddAuditorTools(), precisionCalculator ?? null);
   const blackboardNode = createMddBlackboardNode(llm);
   const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
@@ -167,7 +228,11 @@ export function createMddGraphWithManager(
   }
   function routeAfterSecurity(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
-    return nextInSections(state, "security") ?? "integration";
+    // sectionsToRun mode: seguir el plan (p.ej. security → integration)
+    const nextSection = nextInSections(state, "security");
+    if (nextSection) return nextSection;
+    // Default: integration corre en paralelo desde format_after_architect
+    return "format_after_redactor";
   }
   function routeAfterIntegration(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
@@ -300,14 +365,18 @@ export function createMddGraphWithManager(
       executor: "executor",
     })
     .addConditionalEdges("security", routeAfterSecurity, {
+      format_after_redactor: "format_after_redactor",
       integration: "integration",
       cross_consistency_checker: "cross_consistency_checker",
-      format_after_redactor: "format_after_redactor",
       diagram_injector: "diagram_injector",
       auditor: "auditor",
       manager: "manager",
       executor: "executor",
     })
+    // [PARALELO] Security + Integration en Manager: format_after_architect
+    // envía a integración en paralelo. routeAfterSecurity redirige a
+    // format_after_redactor (en vez de integration) en el caso default.
+    .addEdge("format_after_architect", "integration")
     .addConditionalEdges("integration", routeAfterIntegration, {
       llm_formatter: "llm_formatter",
       format_after_redactor: "format_after_redactor",

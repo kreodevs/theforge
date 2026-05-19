@@ -131,6 +131,21 @@ Este documento representa el estado incremental del proyecto a fecha de **2 de m
 
 ---
 
+## [0.6.0] — 2026-05-19
+
+### Added
+
+- **NodeCacheService**: Cache en memoria por nodo LLM con TTL de 1 hora. Cada nodo del pipeline MDD (Clarifier, Software Architect, Security, Integration, LLM Formatter, Cross-Consistency) calcula un hash SHA-256 de sus campos de entrada y reusa el resultado si el input no cambió. En re-runs tras fallo, el ahorro es de ~70-85% del tiempo total del pipeline.
+- **Paralelismo Security + Integration** (ambos grafos): Security (§6) e Integration (§7) corren en paralelo en el grafo `createMddGraph` (one-shot) y `createMddGraphWithManager` (Manager). Escriben keys distintas del estado (`mddStructured.seguridad` vs `mddStructured.integracion`). Ahorro ~15s.
+- **Paralelismo Cross-Consistency + DiagramInjector** (grafo one-shot): CrossConsistency (read-only, produce `internalDirectives`) y DiagramInjector (code-only, inyecta diagramas) corren en paralelo tras LLMFormatter. Auditor espera a ambos mediante fan-in. Sin riesgo de precisión porque el Auditor usa shortcut code-only (99% casos) que no evalúa diagramas.
+
+### Changed
+
+- **`mdd-graph.ts`**: Los nodos LLM se envuelven con `wrapCache()` que checkea cache antes de ejecutar. Se añadió `routeAfterSecurity` → `format_after_redactor` (en vez de `integration`) para el caso default.
+- **`ai-analysis.service.ts`**: Inyecta `NodeCacheService` y lo pasa a `createMddGraph` y `createMddGraphWithManager` via `MddGraphCompileOptions.nodeCache`.
+
+---
+
 ## [0.5.0] — 2026-05-19
 
 ### Added

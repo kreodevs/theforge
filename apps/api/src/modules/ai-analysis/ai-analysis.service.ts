@@ -13,6 +13,7 @@ import {
   composeBrdPreamble,
 } from "./utils/brd-tobe-gate.util.js";
 import { CheckpointerService } from "./checkpoint/checkpointer.service.js";
+import { NodeCacheService } from "./checkpoint/node-cache.service.js";
 import { EstimationService } from "./estimation/estimation.service.js";
 import { stateToMarkdown, getAgentLabel } from "./state/state-to-markdown.js";
 import type { MddStructured } from "./state/mdd-structured.schema.js";
@@ -168,6 +169,7 @@ export class AiAnalysisService {
     private readonly preferences: PreferencesService,
     private readonly estimationService: EstimationService,
     private readonly graphMemory: GraphMemoryService,
+    private readonly nodeCacheService: NodeCacheService,
     private readonly projects: ProjectsService,
     private readonly theforge: TheForgeService,
     private readonly agentSupervisor: AgentSupervisorService,
@@ -456,7 +458,7 @@ export class AiAnalysisService {
         }
       }
     }
-    const graph = createMddGraph(this.graphMemory, { theforge: this.theforge });
+    const graph = createMddGraph(this.graphMemory, { theforge: this.theforge, nodeCache: this.nodeCacheService });
     const agentCtx = projectId?.trim() ? await this.buildMddAgentContext(projectId.trim(), stageId) : {};
     let dbgaEffective =
       dbgaContent.trim() ||
@@ -591,7 +593,7 @@ export class AiAnalysisService {
       projects: this.projects,
       theforge: this.theforge,
       ai: this.ai,
-    });
+    }, { nodeCache: this.nodeCacheService });
     const agentCtx = await this.buildMddAgentContext(projectId, stageIdFromClient);
     const existingMdd = (initialMddDraft ?? "").trim();
     const rawInitial = (initialMessage ?? "").trim();
@@ -881,7 +883,7 @@ export class AiAnalysisService {
       projects: this.projects,
       theforge: this.theforge,
       ai: this.ai,
-    });
+    }, { nodeCache: this.nodeCacheService });
     const agentCtx = await this.buildMddAgentContext(projectId, preferredStageForCtx);
     if (agentCtx.mddComplexity != null) {
       this.estimationService.cacheProjectComplexity(projectId.trim(), estimationStage ?? null, agentCtx.mddComplexity);
