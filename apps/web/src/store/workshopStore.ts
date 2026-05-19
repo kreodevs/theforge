@@ -2057,7 +2057,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 ...s.agentProgress,
                 {
                   agent: "Entregables",
-                  message: `✅ ${String(prog.step ?? "paso")} (${prog.index + 1}/${prog.total})`,
+                  message: `✅ ${String(prog.step ?? "paso")} (${(prog.index as number) + 1}/${prog.total as number})`,
                 },
               ],
             }));
