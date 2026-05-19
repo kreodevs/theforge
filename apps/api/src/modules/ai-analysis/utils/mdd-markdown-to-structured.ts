@@ -109,13 +109,18 @@ export function markdownToMddStructured(draft: string): MddStructured {
 
   const sectionInt = getSectionBody(trimmed, /##\s+Integraci[oó]n/i);
   if (sectionInt) {
-    const subsections: Array<{ title: string; content: string | string[] }> = [];
+    const subsections: Array<{ title: string; content: string[] }> = [];
     const h3s = sectionInt.split(/(?=###\s+)/);
     for (const block of h3s) {
       const titleMatch = block.match(/^###\s+(.+?)(?:\n|$)/m);
       const title = titleMatch?.[1]?.trim() ?? "Integración";
-      const content = block.replace(/^###\s+[^\n]+\n?/m, "").trim();
-      if (title || content) subsections.push(mddIntegracionSubsectionSchema.parse({ title, content: content || "(Pendiente)" }));
+      const contentArr = block
+        .replace(/^###\s+[^\n]+\n?/m, "")
+        .split(/\n/)
+        .map((l) => l.replace(/^\s*[-*]\s+/, "").trim())
+        .filter(Boolean);
+      const content = contentArr.length ? contentArr : ["(Pendiente)"];
+      if (title) subsections.push(mddIntegracionSubsectionSchema.parse({ title, content }));
     }
     if (subsections.length) out.integracion = mddIntegracionWithManifestSchema.parse({ subsections });
   }
