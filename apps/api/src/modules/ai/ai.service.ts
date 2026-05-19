@@ -649,7 +649,7 @@ if (at === "to-be") {
 
   async generateApiContracts(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, brdContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mdd = mddContent?.trim() ?? "";
-    const blueprint = (blueprintContent?.trim() ?? "").slice(0, 8000);
+    const blueprint = (blueprintContent?.trim() ?? "").slice(0, 16000);
     const brd = (brdContent?.trim() ?? "").slice(0, 8000);
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD). Tu salida debe adherirse a él en todo momento.\n\n";
