@@ -181,8 +181,8 @@ services:
   # Hermes se conecta vía URL (StreamableHTTP) enviando MCP_M2M_SECRET en header
   theforge-mcp:
     build:
-      context: packages/mcp-server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: packages/mcp-server/Dockerfile
       args:
         BUILD_CACHE_BUST: ${BUILD_CACHE_BUST:-68}
     container_name: theforge-mcp
