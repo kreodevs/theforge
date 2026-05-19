@@ -114,6 +114,23 @@ Este documento representa el estado incremental del proyecto a fecha de **2 de m
 
 ---
 
+## [0.6.0] — 2026-05-21
+
+### Added
+
+- **`@theforge/shared-types/markdown-table`**: Nueva función experta en tablas markdown como único punto de verdad. `generateTable(columns, rows, caption?)` genera tablas normalizadas desde datos estructurados. `normalizeTable(table)` corrige tablas existentes (quita línea en blanco tras separador, padding uniforme, alineación detectada). `normalizeAllTables(doc)` corrige todas las tablas en un documento. 4 nuevas MCP tools: `generate_markdown_table`, `normalize_markdown_table`, `generate_mermaid`, `normalize_mermaid`.
+  - `packages/shared-types/src/markdown-table.ts` — implementación
+  - `packages/shared-types/src/mermaid.ts` — implementación
+  - `packages/mcp-server/src/index.ts` — tools + handlers
+
+- **`@theforge/shared-types/mermaid`**: Nueva función experta en diagramas Mermaid. `generateMermaid({type, options})` genera sintaxis válida para flowchart, sequenceDiagram, classDiagram, erDiagram, gantt, stateDiagram, pie, gitGraph. `normalizeMermaid(raw)` corrige errores comunes (IDs con espacios → underscore, bloques sin cerrar, quotes). `validateMermaid(raw)` reporta errores sin modificar.
+
+### Changed
+
+- **`packages/mcp-server`**: 4 nuevas tools de utilidad (`generate_markdown_table`, `normalize_markdown_table`, `generate_mermaid`, `normalize_mermaid`) que importan y delegan en `@theforge/shared-types`, manteniendo las funciones como single source of truth para que el pipeline de generación de documentos también pueda importarlas directamente sin pasar por MCP.
+
+---
+
 ## [0.5.0] — 2026-05-19
 
 ### Added
