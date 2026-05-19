@@ -110,7 +110,8 @@ function markdownToIntegracion(
   }
   section = stripNotaPendienteHeadingInIntegrationSection(section);
   let manifest: Record<string, unknown> | undefined = extractManifestFromMarkdown(section);
-  const content = section.replace(/```json\s*[\s\S]*?```/i, "").trim() || "(Pendiente de definir.)";
+  const contentText = section.replace(/```json\s*[\s\S]*?```/i, "").trim() || "(Pendiente de definir.)";
+  const content = [contentText];
   const subsection = mddIntegracionSubsectionSchema.parse({
     title: "Integración",
     content,
@@ -119,6 +120,53 @@ function markdownToIntegracion(
     subsections: [subsection],
     manifest,
   });
+}
+
+/** Si alguna subsección tiene content vacío, la rellena con un hint contextual. */
+function ensureIntegrationContent(
+  slice: { integracion: z.infer<typeof mddIntegracionWithManifestSchema> },
+  state: MDDStateType,
+): void {
+  const subs = Array.isArray(slice.integracion) ? slice.integracion : slice.integracion.subsections;
+  if (!subs) return;
+  const scope = (state.clarifiedScope ?? "").slice(0, 200).trim();
+  for (const sub of subs) {
+    const contentArr = Array.isArray(sub.content) ? sub.content : [String(sub.content ?? "")];
+    const hasRealContent = contentArr.some((c: string) => c.trim().length > 10);
+    if (!hasRealContent) {
+      const hint = getIntegrationHint(sub.title, scope);
+      sub.content = [hint, "(Detalle pendiente de definir en la iteración.)"];
+      LOG("rellenado content vacío para %s", sub.title);
+    } else {
+      // Asegurar que sea array
+      sub.content = contentArr;
+    }
+  }
+}
+
+/** Genera un hint contextual para una subsección de integración con content vacío. */
+function getIntegrationHint(title: string, scope: string): string {
+  const t = title.toLowerCase();
+  const ctx = scope ? ` (contexto: ${scope.slice(0, 120)})` : "";
+  if (t.includes("flujo") || t.includes("integración") || t.includes("7.1")) {
+    return `Describir paso a paso el flujo de integración entre los sistemas involucrados.${ctx}`;
+  }
+  if (t.includes("seguridad") || t.includes("validación") || t.includes("7.2")) {
+    return `Documentar TLS en tránsito, validación de tokens, rate limiting y autenticación a nivel transporte.${ctx}`;
+  }
+  if (t.includes("resilien") || t.includes("7.3")) {
+    return `Definir timeouts, reintentos con backoff y circuit breaker según los requisitos del sistema.${ctx}`;
+  }
+  if (t.includes("infraestructura") || t.includes("despliegue") || t.includes("7.4")) {
+    return `Especificar stack de despliegue (Docker, Dokploy, Kubernetes) y configuración de contenedores.${ctx}`;
+  }
+  if (t.includes("variable") || t.includes("entorno") || t.includes("7.5")) {
+    return `Enumerar variables de entorno necesarias: base de datos, autenticación, caché, logging.${ctx}`;
+  }
+  if (t.includes("ci/cd") || t.includes("pipeline") || t.includes("7.6")) {
+    return `Describir pipeline CI/CD: linting, tests, build, deploy y healthcheck.${ctx}`;
+  }
+  return `Detalle pendiente para "${title}".${ctx}`;
 }
 
 /** Creates the MDD Integration Engineer node. Outputs structured integracion; merge into mddStructured and derive mddDraft. */
@@ -195,7 +243,7 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
             subsections: [
               mddIntegracionSubsectionSchema.parse({
                 title: "Integración",
-                content: "(Pendiente de definir.)",
+                content: ["(Pendiente de definir.)"],
               }),
             ],
             manifest: {
@@ -216,6 +264,7 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
       try {
         const parsed = parseJsonOrThrow(jsonStr, integrationStructuredSchema);
         slice = { integracion: parsed.integracion };
+        LOG("parse estructurado ok subs=%d", slice.integracion.subsections.length);
       } catch {
         LOG("parse estructurado falló, fallback desde markdown");
         let section = "";
@@ -241,6 +290,17 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
         if (!slice.integracion.manifest || isOldFormat) {
           slice.integracion.manifest = buildNewFormatManifestFromIdentifiedTerms(identifiedInfra);
         }
+      }
+
+      // Log raw LLM response for debugging
+      LOG("raw text first 300 chars: %s", (text ?? "").slice(0, 300).replace(/\n/g, "\\n"));
+
+      // Post-processing: si alguna subsección tiene content vacío, rellenar con hint
+      ensureIntegrationContent(slice, state);
+      // Log qué subsections tienen contenido real
+      const subs = Array.isArray(slice.integracion) ? slice.integracion : slice.integracion.subsections;
+      for (const s of subs) {
+        LOG("subsection %s contentLen=%d", s.title, Array.isArray(s.content) ? s.content.join("").length : String(s.content ?? "").length);
       }
 
       const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");
