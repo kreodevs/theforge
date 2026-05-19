@@ -31,6 +31,42 @@ model User {
   sessions  Session[]
   changeLogs ChangeLog[]
   favorites  FavoriteProject[]
+  aiSettings UserAISettings?
+  providerConfigs UserProviderConfig[]
+}
+
+/// Preferencias de IA por usuario (proveedor activo, embeddings).
+model UserAISettings {
+  userId             String   @id
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeProvider     String
+  /// Proveedor BYOK para embeddings cuando el activo no los expone (p. ej. anthropic).
+  embeddingProvider  String?
+  embeddingsEnabled  Boolean  @default(true)
+  updatedAt          DateTime @updatedAt
+}
+
+/// Configuración BYOK por proveedor (token cifrado + modelos).
+model UserProviderConfig {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider        String
+  tokenCiphertext String   @db.Text
+  tokenKeyVersion Int
+  chatModel           String
+  chatModelFallbacks  String[] @default([])
+  embeddingModel      String?
+  /// Dimensión del vector de embeddings (override; si null, se deriva del catálogo).
+  embeddingDimension  Int?
+  sttModel            String?
+  baseUrl             String?
+  extras              Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
 }
 
 enum ProjectType {
