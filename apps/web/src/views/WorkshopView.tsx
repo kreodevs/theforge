@@ -3066,6 +3066,7 @@ export default function WorkshopView({
             {centralPanel === "ux-ui-guide" && (
               <ErrorBoundary>
               <UxUiGuidePanel
+                key={uxUiGuideContent ? "populated" : "empty"}
                 content={uxUiGuideContent}
                 onContentChange={(v) => setUxUiGuideContent(v)}
                 onSave={() => {
