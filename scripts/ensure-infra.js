@@ -35,7 +35,25 @@ function run(cmd, options = {}) {
   });
 }
 
+function isDockerAvailable() {
+  const info = run('docker info');
+  return info.status === 0;
+}
+
 function ensureColima() {
+  if (isDockerAvailable()) {
+    console.log('[ensure-infra] Docker disponible; omitiendo Colima.');
+    return 0;
+  }
+
+  const which = run('command -v colima');
+  if (which.status !== 0 || !which.stdout?.trim()) {
+    console.error(
+      '[ensure-infra] Docker no está disponible y Colima no está instalado. Inicia Docker Desktop o instala Colima.',
+    );
+    return 1;
+  }
+
   const status = run('colima status');
   if (status.status === 0) {
     console.log('[ensure-infra] Colima ya está en ejecución.');
