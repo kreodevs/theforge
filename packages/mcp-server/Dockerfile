@@ -9,16 +9,18 @@ WORKDIR /app
 # Copy workspace manifests
 COPY package.json turbo.json .npmrc ./
 COPY packages/shared-types/package.json packages/shared-types/
+COPY packages/config/package.json packages/config/
 COPY packages/mcp-server/package.json packages/mcp-server/
 
 RUN npm install
 
 # Copy all source code
 COPY packages/shared-types packages/shared-types
+COPY packages/config packages/config
 COPY packages/mcp-server packages/mcp-server
 
-# Build: compila shared-types primero, luego mcp-server
-RUN npx turbo run build --filter=@theforge/shared-types --filter=@theforge/mcp-server
+# Build: compila shared-types y config primero, luego mcp-server
+RUN npx turbo run build --filter=@theforge/config --filter=@theforge/shared-types --filter=@theforge/mcp-server
 
 # Production stage
 FROM node:20-alpine AS runner
