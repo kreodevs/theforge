@@ -127,6 +127,50 @@ export class ChatResponseParserService {
     return [before, cleaned, after].filter(Boolean).join("\n\n");
   }
 
+  /**
+   * Safe merge for UX/UI guide (free-form document, no numbered sections).
+   * If newPart looks like a complete guide (starts with # heading, ≥300 chars),
+   * returns it. Otherwise keeps the current document.
+   */
+  mergeUxUiGuideSectionOrUseFull(currentUx: string | undefined, newPart: string): string {
+    const cleaned = newPart.trim();
+    if (!cleaned) return (currentUx ?? "").trim();
+    const current = (currentUx ?? "").trim();
+
+    // Looks like a complete guide: starts with # heading and is long enough
+    const hasHeading = /^#\s/.test(cleaned) || /^#\w/.test(cleaned);
+    const isLongEnough = cleaned.length >= 300;
+    const isMuchShorter = current.length > 0 && cleaned.length < current.length * 0.3;
+
+    if (hasHeading && isLongEnough) return cleaned;
+    if (isLongEnough && !isMuchShorter) return cleaned;
+    // Fragment — preserve existing
+    return current;
+  }
+
+  /**
+   * Split document and chat with a flexible delimiter regex.
+   * Unlike splitDocAndChat (requires -{1,}FIN_TAG-{1,}), this also handles
+   * edge cases where the delimiter has no leading newline or has extra spaces.
+   */
+  splitDocWithFlexibleDelimiter(response: string, tag: string): { docPart: string; chatPart: string } | null {
+    const trimmed = response.trim();
+    const normalized = normalizeDashes(trimmed);
+    // Match FIN_TAG with flexible dashes (at least 1), possibly preceded by \n or space
+    const regex = new RegExp(`\\n?-{1,}\\s*FIN_${tag}\\s*-{1,}`, "i");
+    const match = normalized.match(regex);
+    if (!match) return null;
+
+    const idx = normalized.indexOf(match[0]);
+    // If the match started with \n, adjust index by 1
+    const adjIdx = match[0].startsWith("\n") ? idx + 1 : idx;
+    const docPart = trimmed.slice(0, adjIdx).trim();
+    const chatPart = trimmed.slice(adjIdx + match[0].length).trim();
+    if (docPart.length > 0) return { docPart, chatPart };
+
+    return null;
+  }
+
   cleanDocumentContent(text: string): string {
     return cleanDocumentContentUtil(text);
   }

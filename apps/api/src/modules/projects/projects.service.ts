@@ -769,7 +769,12 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       currentBlueprintContent: bp || undefined,
       ...uxGuideLlmOptions(project),
     });
-    const clean = (raw ?? "").replace(/\n---FIN_UX_UI---.*/s, "").trim();
+    const clean = (raw ?? "").replace(/\n?-{1,}FIN_UX_UI-{1,}[\s\S]*$/i, "").trim();
+    if (!clean) {
+      // LLM no generó contenido de documento (solo chat) — no persistas nada
+      this.logger.warn(`[generateUxUiGuide] LLM returned empty content for project ${projectId}`);
+      return project;
+    }
     return this.update(projectId, { uxUiGuideContent: cleanDocumentContent(clean) });
   }
 
