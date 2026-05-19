@@ -122,10 +122,9 @@ export function createMddGraph(graphMemory: GraphMemoryService, options?: MddGra
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
     .addEdge("software_architect", "format_after_architect")
-    // [PARALELO] Security + Integration: escriben keys distintas del estado (§6 y §7)
+    // Security → Integration secuencial: ambos escriben a mddStructured (LastValue reducer)
     .addEdge("format_after_architect", "security")
-    .addEdge("format_after_architect", "integration")
-    .addEdge("security", "format_after_redactor")
+    .addEdge("security", "integration")
     .addEdge("integration", "format_after_redactor")
     .addEdge("format_after_redactor", "llm_formatter")
     // [PARALELO] CrossConsistency: solo produce internalDirectives (read-only mddDraft)
@@ -228,11 +227,7 @@ export function createMddGraphWithManager(
   }
   function routeAfterSecurity(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
-    // sectionsToRun mode: seguir el plan (p.ej. security → integration)
-    const nextSection = nextInSections(state, "security");
-    if (nextSection) return nextSection;
-    // Default: integration corre en paralelo desde format_after_architect
-    return "format_after_redactor";
+    return nextInSections(state, "security") ?? "integration";
   }
   function routeAfterIntegration(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
@@ -365,18 +360,14 @@ export function createMddGraphWithManager(
       executor: "executor",
     })
     .addConditionalEdges("security", routeAfterSecurity, {
-      format_after_redactor: "format_after_redactor",
       integration: "integration",
       cross_consistency_checker: "cross_consistency_checker",
+      format_after_redactor: "format_after_redactor",
       diagram_injector: "diagram_injector",
       auditor: "auditor",
       manager: "manager",
       executor: "executor",
     })
-    // [PARALELO] Security + Integration en Manager: format_after_architect
-    // envía a integración en paralelo. routeAfterSecurity redirige a
-    // format_after_redactor (en vez de integration) en el caso default.
-    .addEdge("format_after_architect", "integration")
     .addConditionalEdges("integration", routeAfterIntegration, {
       llm_formatter: "llm_formatter",
       format_after_redactor: "format_after_redactor",
