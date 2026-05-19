@@ -4,7 +4,6 @@ import { SECURITY_ARCHITECT_MDD_PROMPT } from "../prompts/load-prompts.js";
 import type { MDDStateType } from "../state/index.js";
 import { mddSeguridadItemSchema } from "../state/mdd-structured.schema.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
-import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
 import {
   getMddDraftSummary,
@@ -124,9 +123,8 @@ export function createMddSecurityNode(llm: BaseChatModel) {
         LOG("LLM vacío, usando fallback");
         const slice = { seguridad: [mddSeguridadItemSchema.parse({ title: "Seguridad", content: ["(Pendiente de definir.)"] })] };
         const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");
-        const mddDraft = mddStructuredToMarkdown(merged);
-        logMddNodeOutput("Security", mddDraft);
-        return { mddStructured: merged, mddDraft };
+        logMddNodeOutput("Security", state.mddDraft ?? "");
+        return { mddStructured: merged };
       }
       const jsonStr = extractFirstJsonObject(text) ?? text.trim();
 
@@ -170,11 +168,10 @@ export function createMddSecurityNode(llm: BaseChatModel) {
       }
 
       const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");
-      const mddDraft = mddStructuredToMarkdown(merged);
-      const sum = getMddDraftSummary(mddDraft);
-      LOG("ok seguridad §6 reemplazada mddDraftLen=%s section2=%s", sum.length, sum.section2);
-      logMddNodeOutput("Security", mddDraft);
-      return { mddStructured: merged, mddDraft };
+      const sum = getMddDraftSummary(state.mddDraft ?? "");
+      LOG("ok seguridad §6 actualizada en mddStructured mddDraftLen=%s section2=%s", sum.length, sum.section2);
+      logMddNodeOutput("Security", state.mddDraft ?? "");
+      return { mddStructured: merged };
     } catch (err) {
       LOG("error: %s", err instanceof Error ? err.message : String(err));
       throw err;

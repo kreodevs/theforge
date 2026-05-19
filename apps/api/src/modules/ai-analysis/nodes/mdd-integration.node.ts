@@ -7,7 +7,6 @@ import {
   mddIntegracionWithManifestSchema,
 } from "../state/mdd-structured.schema.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
-import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
 import {
   buildNewFormatManifestFromIdentifiedTerms,
@@ -208,9 +207,8 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
           }),
         };
         const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");
-        const mddDraft = mddStructuredToMarkdown(merged);
-        logMddNodeOutput("Integration", mddDraft);
-        return { mddStructured: merged, mddDraft };
+        logMddNodeOutput("Integration", state.mddDraft ?? "");
+        return { mddStructured: merged };
       }
       const jsonStr = extractFirstJsonObject(text) ?? text.trim();
 
@@ -246,7 +244,7 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
       }
 
       const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");
-      const mddDraft = mddStructuredToMarkdown(merged);
+      const mddDraft = state.mddDraft ?? "";
       const internalDirectives = extractInternalDirectives(text, "integration_engineer");
       const meshUpdate = internalDirectives.length > 0 ? { internalDirectives } : {};
 
