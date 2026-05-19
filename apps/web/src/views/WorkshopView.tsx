@@ -516,6 +516,7 @@ export default function WorkshopView({
       let buffer = "";
       let result = "";
       let streamError: string | null = null;
+      let doneUxUiGuideContent: string | null = null;
       if (!reader) throw new Error("No reader");
       while (true) {
         const { done, value } = await reader.read();
@@ -536,6 +537,12 @@ export default function WorkshopView({
             const data = JSON.parse(dataStr) as Record<string, unknown>;
             if (eventType === "error" && data.error) {
               streamError = String(data.error);
+            } else if (eventType === "done") {
+              // The "done" event carries the actual document content
+              const uxVal = (data as Record<string, unknown>).uxUiGuideContent;
+              if (typeof uxVal === "string" && uxVal.trim().length > 0) {
+                doneUxUiGuideContent = uxVal;
+              }
             } else if (data.content) {
               result += data.content;
             }
@@ -547,29 +554,34 @@ export default function WorkshopView({
         throw new Error(streamError);
       }
 
-      const trimmed = result.trim();
-      // Strip any wrapping ```yaml or ```markdown fences the orchestrator might add
-      let cleaned = trimmed
-        .replace(/^```(?:yaml|markdown)\s*\n?/i, "")
-        .replace(/\n?```\s*$/i, "")
-        .trim();
-      // Strip ---FIN_UX_UI--- delimiter and chat message (same regex as backend generateUxUiGuide)
-      cleaned = cleaned.replace(/\n?-{1,}FIN_UX_UI-{1,}[\s\S]*$/i, "").trim();
-
-      if (!cleaned || !cleaned.startsWith("---")) {
-        // If the orchestrator didn't return YAML front matter, generate it
-        // from the markdown body (extract tokens, fill defaults, prepend YAML)
-        try {
-          const finalContent = replaceYamlFrontMatter(cleaned || result, projectName);
-          setUxUiGuideContent(finalContent);
-          await persistUxUiGuideContent(finalContent);
-        } catch {
-          setUxUiGuideContent(cleaned || result);
-          await persistUxUiGuideContent(cleaned || result);
-        }
+      // Prefer the document content from the "done" event (which the backend
+      // extracts before the ---FIN_UX_UI--- delimiter). The chunk events only
+      // carry the chat message after the delimiter.
+      if (doneUxUiGuideContent) {
+        setUxUiGuideContent(doneUxUiGuideContent);
+        await persistUxUiGuideContent(doneUxUiGuideContent);
       } else {
-        setUxUiGuideContent(cleaned);
-        await persistUxUiGuideContent(cleaned);
+        const trimmed = result.trim();
+        let cleaned = trimmed
+          .replace(/^```(?:yaml|markdown)\s*\n?/i, "")
+          .replace(/\n?```\s*$/i, "")
+          .trim();
+        // Strip ---FIN_UX_UI--- delimiter and chat message
+        cleaned = cleaned.replace(/\n?-{1,}FIN_UX_UI-{1,}[\s\S]*$/i, "").trim();
+
+        if (!cleaned || !cleaned.startsWith("---")) {
+          try {
+            const finalContent = replaceYamlFrontMatter(cleaned || result, projectName);
+            setUxUiGuideContent(finalContent);
+            await persistUxUiGuideContent(finalContent);
+          } catch {
+            setUxUiGuideContent(cleaned || result);
+            await persistUxUiGuideContent(cleaned || result);
+          }
+        } else {
+          setUxUiGuideContent(cleaned);
+          await persistUxUiGuideContent(cleaned);
+        }
       }
       setUxGenerating(false);
       setUxGenProgress(null);
