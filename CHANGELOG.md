@@ -111,3 +111,25 @@ En este repositorio **no existe una dependencia llamada Google Antigravity**; la
 ---
 
 Este documento representa el estado incremental del proyecto a fecha de **2 de mayo de 2026**.
+
+---
+
+## [0.5.0] — 2026-05-19
+
+### Added
+
+- **Cross-project table import (`get_project_tables` tool):** El Software Architect ahora puede importar tablas SQL de otro proyecto de TheForge durante la generación del MDD. Se invoca con `get_project_tables(projectId, tableNames?)`. Útil cuando un proyecto necesita tablas compartidas de un proyecto existente. Ver README sección "Cross-Project Table References".
+- **MCP tool `get_project_tables`:** Nueva herramienta en el MCP server que expone la misma funcionalidad para acceso externo.
+- **Detección de lenguaje natural para regenerar secciones:** El chat del MDD ahora reconoce frases como "regenera sección 2" sin necesidad del comando `/`.
+
+### Fixed
+
+- **Secciones §6-§7 preservadas al regenerar §2:** Doble capa: prompt + post-processing code para que el SA no reemplace Seguridad e Infraestructura con placeholders.
+- **Líneas en blanco en tablas markdown:** Regla explícita en prompts para evitar renderizado roto.
+- **Anti-Swagger/OpenAPI en §4:** Prohibición explícita con ejemplo concreto para evitar que el SA genere OpenAPI specs en vez de markdown plano.
+
+### Changed
+
+- **`tool-registry.ts`:** `getMddArchitectTools()` ahora retorna `[createGetProjectTablesTool()]` (antes array vacío).
+
+---

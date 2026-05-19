@@ -113,6 +113,21 @@ function getRegenerateSectionFromSlashCommand(msg: string): number | null {
   return cmd?.section ?? null;
 }
 
+/**
+ * Detecta lenguaje natural tipo "regenera sección 2", "regenerar la seccion 6",
+ * "regenera la 3", "regenera seccion 4", etc.
+ */
+function detectNaturalRegenerateSection(msg: string): number | null {
+  const t = msg.trim().toLowerCase();
+  // Patrones: regenera/regenerar [la] sección/seccion [número]
+  const match = t.match(
+    /^regenera(?:r)?\s+(?:la\s+)?secci[oó]n\s+(\d)$/i,
+  );
+  if (!match) return null;
+  const section = parseInt(match[1]!, 10);
+  return section >= 1 && section <= 7 ? section : null;
+}
+
 const ACCEPT_IMG = /^image\/(png|jpeg|jpg|gif|webp)$/i;
 
 /** Single bordered “AI bar”: attach + textarea + send share one surface (Claude/ChatGPT-style unified chrome). */
@@ -503,7 +518,9 @@ export default function ChatContainer({
       setInputValue("");
       return;
     }
-    const section = activeTab === "mdd" ? getRegenerateSectionFromSlashCommand(msg) : null;
+    const section = activeTab === "mdd"
+      ? (getRegenerateSectionFromSlashCommand(msg) ?? detectNaturalRegenerateSection(msg))
+      : null;
     const imageParts = pendingFiles.length ? await readFilesAsChatParts(pendingFiles) : [];
     setPendingFiles([]);
     setInputValue("");

@@ -135,6 +135,48 @@ Ver referencia completa en [`.env.example`](./.env.example).
 
 ---
 
+## Cross-Project Table References
+
+El **Software Architect** puede importar tablas SQL de otro proyecto de TheForge durante la generación del MDD usando la tool `get_project_tables`.
+
+### Cómo usarlo
+
+En el chat del MDD (o en el BRD), incluye la instrucción:
+
+> Usa `get_project_tables('PROJECT_ID', ['tabla1', 'tabla2'])` para importar las definiciones de tablas compartidas.
+
+**Parámetros:**
+
+| Parámetro | Requerido | Descripción |
+|-----------|-----------|-------------|
+| `projectId` | ✅ | ID del proyecto de referencia (UUID de TheForge) |
+| `tableNames` | ❌ | Lista opcional de nombres de tablas a importar. Si se omite, importa todas. |
+
+### Ejemplo
+
+En el BRD escribes:
+
+```markdown
+## Integraciones
+
+El sistema de suscripciones necesita las tablas compartidas del proyecto "Gestión de Usuarios".
+Usa `get_project_tables('abc123', ['usuarios', 'pagos', 'suscripciones'])` para traer las definiciones.
+```
+
+El Software Architect invoca la tool y las tablas aparecen en §3 (Modelo de Datos) del nuevo proyecto.
+
+### Mecanismo
+
+1. El SA detecta la instrucción y llama `get_project_tables(projectId, tableNames?)`
+2. La tool obtiene el MDD del proyecto de referencia desde la API
+3. Extrae las sentencias `CREATE TABLE` de §3 del proyecto origen
+4. Filtra por `tableNames` si se especificaron
+5. Devuelve el SQL listo para integrar en §3 del proyecto nuevo
+
+Ver CHANGELOG v0.5.0.
+
+---
+
 ## Contribución
 
 - Reporta bugs o propone features en [Issues](https://github.com/kreodevs/theforge/issues)

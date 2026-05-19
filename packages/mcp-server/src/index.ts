@@ -814,6 +814,22 @@ const TOOLS: Tool[] = [
     description: "Lista proyectos indexados en TheForge/Ariadne (multi-root)",
     inputSchema: { type: "object", properties: {}, required: [] },
   },
+  {
+    name: "get_project_tables",
+    description: "Obtiene definiciones de tablas SQL del §3 (Modelo de Datos) del MDD de un proyecto de referencia. Opcional: filtrar solo las tablas especificadas en tableNames.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "ID del proyecto del que extraer las tablas" },
+        tableNames: {
+          type: "array",
+          items: { type: "string" },
+          description: "Lista opcional de nombres de tablas a filtrar (ej. ['usuarios', 'pagos']). Si se omite, devuelve todas.",
+        },
+      },
+      required: ["projectId"],
+    },
+  },
 ];
 
 // ── Handler Map ────────────────────────────────────────────────────────
@@ -1247,6 +1263,42 @@ const handlers: Record<string, Handler> = {
   // TheForge
   async list_theforge_projects() {
     return JSON.stringify(await apiGet("/theforge/projects"));
+  },
+  async get_project_tables(args) {
+    const { projectId, tableNames } = args as { projectId: string; tableNames?: string[] };
+    const project = await apiGet(`/projects/${projectId}`) as Record<string, unknown>;
+    const mddContent = (project.mddContent as string ?? "").trim();
+    if (!mddContent) {
+      return JSON.stringify({ error: "El proyecto no tiene contenido MDD", tables: [] });
+    }
+    // Extraer sección 3 (Modelo de Datos) - buscar CREATE TABLE
+    const section3Match = mddContent.match(/##\s+(?:3\.\s+)?Modelo\s+(?:de\s+)?Datos[^#]*(?:CREATE\s+TABLE[\s\S]*?)(?=\n##\s+(?:4|5|6|7)\.|\n##\s+(?:Seguridad|Infraestructura|Contratos|Lógica)|\z)/i);
+    const sqlBlock = section3Match?.[0] ?? "";
+    if (!sqlBlock.trim()) {
+      return JSON.stringify({ error: "No se encontró la sección 3 (Modelo de Datos) en el MDD", tables: [] });
+    }
+    // Extraer todas las sentencias CREATE TABLE
+    const tableRegex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\(([\s\S]*?)\);/gi;
+    const allTables: { name: string; sql: string; columns: string[] }[] = [];
+    let tableMatch: RegExpExecArray | null;
+    while ((tableMatch = tableRegex.exec(sqlBlock)) !== null) {
+      const name = tableMatch[1]!;
+      const body = tableMatch[2]!.trim();
+      const lines = body.split("\n").map(l => l.trim()).filter(Boolean);
+      allTables.push({ name, sql: tableMatch[0]!, columns: lines.slice(0, 20) }); // max 20 col preview
+    }
+    let tables = allTables;
+    if (Array.isArray(tableNames) && tableNames.length > 0) {
+      const filterSet = new Set(tableNames.map(n => n.toLowerCase()));
+      tables = allTables.filter(t => filterSet.has(t.name.toLowerCase()));
+    }
+    return JSON.stringify({
+      projectId,
+      projectName: project.name ?? "",
+      total: allTables.length,
+      filtered: tables.length,
+      tables: tables.map(t => ({ name: t.name, sql: t.sql })),
+    });
   },
 };
 
