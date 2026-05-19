@@ -707,7 +707,8 @@ export default function WorkshopView({
     | "use-cases"
     | "user-stories"
     | "infra"
-    | "aem";
+    | "aem"
+    | "adrs";
   const centralPanel = useWorkshopStore((s) => s.workshopActiveDocPanel) as DocPanel;
   const setCentralPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
   /** Por debajo de `lg`: una columna con control de Chat / Documentos / Semáforo. */
