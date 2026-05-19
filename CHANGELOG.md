@@ -146,7 +146,7 @@ Este documento representa el estado incremental del proyecto a fecha de **2 de m
 
 ---
 
-
+## [0.5.0] — 2026-05-19
 
 ### Added
 
