@@ -9,6 +9,7 @@ import { createMddFormatterNode } from "../nodes/mdd-formatter.node.js";
 import { createMddDiagramInjectorNode } from "../nodes/mdd-diagram-injector.node.js";
 import { createMddSecurityNode } from "../nodes/mdd-security.node.js";
 import { createMddIntegrationNode } from "../nodes/mdd-integration.node.js";
+import { createMddLlmFormatterNode } from "../nodes/mdd-llm-formatter.node.js";
 import { createMddAuditorNode } from "../nodes/mdd-auditor.node.js";
 import { createMddManagerNode, type MddManagerToolDeps } from "../nodes/mdd-manager.node.js";
 import { createMddPlanApprovalNode } from "../nodes/mdd-plan-approval.node.js";
@@ -46,6 +47,7 @@ export function createMddGraph(graphMemory: GraphMemoryService, options?: MddGra
   const integrationNode = createMddIntegrationNode(llm);
   const diagramInjectorNode = createMddDiagramInjectorNode();
   const consistencyNode = createMddCrossConsistencyNode(llm);
+  const llmFormatterNode = createMddLlmFormatterNode(llm);
   const auditorNode = createMddAuditorNode(llm, getMddAuditorTools(), null);
   const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
 
@@ -63,6 +65,7 @@ export function createMddGraph(graphMemory: GraphMemoryService, options?: MddGra
     .addNode("security", securityNode)
     .addNode("integration", integrationNode)
     .addNode("format_after_redactor", formatterNode)
+    .addNode("llm_formatter", llmFormatterNode)
     .addNode("cross_consistency_checker", consistencyNode)
     .addNode("diagram_injector", diagramInjectorNode)
     .addNode("auditor", auditorNode)
@@ -73,7 +76,8 @@ export function createMddGraph(graphMemory: GraphMemoryService, options?: MddGra
     .addEdge("format_after_architect", "security")
     .addEdge("security", "integration")
     .addEdge("integration", "format_after_redactor")
-    .addEdge("format_after_redactor", "cross_consistency_checker")
+    .addEdge("format_after_redactor", "llm_formatter")
+    .addEdge("llm_formatter", "cross_consistency_checker")
     .addEdge("cross_consistency_checker", "diagram_injector")
     .addEdge("diagram_injector", "auditor")
     .addConditionalEdges("auditor", routeAuditor, {
@@ -111,6 +115,7 @@ export function createMddGraphWithManager(
   const formatterNode = createMddFormatterNode();
   const securityNode = createMddSecurityNode(llm);
   const integrationNode = createMddIntegrationNode(llm);
+  const llmFormatterNode = createMddLlmFormatterNode(llm);
   const diagramInjectorNode = createMddDiagramInjectorNode();
   const consistencyNode = createMddCrossConsistencyNode(llm);
   const auditorNode = createMddAuditorNode(llm, getMddAuditorTools(), precisionCalculator ?? null);
@@ -170,7 +175,7 @@ export function createMddGraphWithManager(
   }
   function routeAfterFormatRedactor(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
-    return nextInSections(state, "format_after_redactor") ?? "cross_consistency_checker";
+    return nextInSections(state, "format_after_redactor") ?? "llm_formatter";
   }
   function routeAfterConsistency(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
@@ -213,6 +218,7 @@ export function createMddGraphWithManager(
     "format_after_architect",
     "security",
     "integration",
+    "llm_formatter",
     "cross_consistency_checker",
     "graph_populator",
     "blackboard",
@@ -250,6 +256,7 @@ export function createMddGraphWithManager(
     .addNode("security", securityNode)
     .addNode("integration", integrationNode)
     .addNode("format_after_redactor", formatterNode)
+    .addNode("llm_formatter", llmFormatterNode)
     .addNode("cross_consistency_checker", consistencyNode)
     .addNode("diagram_injector", diagramInjectorNode)
     .addNode("auditor", auditorNode)
@@ -302,6 +309,7 @@ export function createMddGraphWithManager(
       executor: "executor",
     })
     .addConditionalEdges("integration", routeAfterIntegration, {
+      llm_formatter: "llm_formatter",
       format_after_redactor: "format_after_redactor",
       cross_consistency_checker: "cross_consistency_checker",
       diagram_injector: "diagram_injector",
@@ -310,12 +318,14 @@ export function createMddGraphWithManager(
       executor: "executor",
     })
     .addConditionalEdges("format_after_redactor", routeAfterFormatRedactor, {
+      llm_formatter: "llm_formatter",
       cross_consistency_checker: "cross_consistency_checker",
       diagram_injector: "diagram_injector",
       auditor: "auditor",
       manager: "manager",
       executor: "executor",
     })
+    .addEdge("llm_formatter", "cross_consistency_checker")
     .addConditionalEdges("cross_consistency_checker", routeAfterConsistency, {
       diagram_injector: "diagram_injector",
       auditor: "auditor",
