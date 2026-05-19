@@ -847,20 +847,25 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const c = project.complexity ?? ComplexityLevel.HIGH;
     const deliverablesToRun = DELIVERABLES_BY_COMPLEXITY[c];
     const total = deliverablesToRun.length;
-    let index = 0;
     const errors: { step: string; error: string }[] = [];
-    for (const step of deliverablesToRun) {
-      try {
-        await this.runDeliverableStep(step, projectId);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : "Error desconocido";
-        this.logger.warn(`[Cascade] Paso ${step} saltado: ${message}. Continuando con el siguiente.`);
-        errors.push({ step, error: message });
-      }
-      // Reportar progreso DESPUÉS de que el paso se completó, no antes
-      onProgress?.({ step, index, total });
-      index += 1;
-    }
+
+    // [PARALELO] Todos los documentos son generaciones LLM independientes.
+    // No comparten estado ni LangGraph — cada uno se guarda directo a DB.
+    // Promise.allSettled asegura que si un paso falla, los demás continúan.
+    const stepList = [...deliverablesToRun];
+    await Promise.allSettled(
+      stepList.map(async (step, idx) => {
+        try {
+          await this.runDeliverableStep(step, projectId);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : "Error desconocido";
+          this.logger.warn(`[Cascade] Paso ${step} saltado: ${message}.`);
+          errors.push({ step, error: message });
+        }
+        // Reportar progreso por paso completado
+        onProgress?.({ step, index: idx, total });
+      }),
+    );
     // Señal de finalización: reportar un paso "done" para que el frontend sepa que terminó
     onProgress?.({ step: "done" as DeliverableKind, index: total, total });
     if (errors.length > 0) {
