@@ -393,7 +393,7 @@ export class SessionsService {
     return {
       session: updatedSession,
       mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
-      uxUiGuideContent: uxDocPart ? this.parser.cleanDocumentContent(uxDocPart) : undefined,
+      uxUiGuideContent: hasUx ? this.parser.mergeUxUiGuideSectionOrUseFull(options?.currentUxUiGuideContent, this.parser.cleanDocumentContent(uxDocPart!)) : undefined,
       dbgaContent: dbgaDocPart ? this.parser.cleanDocumentContent(dbgaDocPart) : undefined,
       specContent: hasSpec ? this.parser.cleanDocumentContent(specSplit!.docPart) : undefined,
       brdContent: hasBrd ? this.parser.cleanDocumentContent(brdSplit!.docPart) : undefined,
@@ -692,7 +692,7 @@ export class SessionsService {
       type: "done",
       session: updatedSession,
       mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
-      uxUiGuideContent: uxDocPart ? this.parser.cleanDocumentContent(uxDocPart) : undefined,
+      uxUiGuideContent: hasUx ? this.parser.mergeUxUiGuideSectionOrUseFull(options?.currentUxUiGuideContent, this.parser.cleanDocumentContent(uxDocPart!)) : undefined,
       dbgaContent: dbgaDocPart ? this.parser.cleanDocumentContent(dbgaDocPart) : undefined,
       specContent: hasSpec ? this.parser.cleanDocumentContent(specSplit!.docPart) : undefined,
       brdContent: hasBrd ? this.parser.cleanDocumentContent(brdSplit!.docPart) : undefined,
