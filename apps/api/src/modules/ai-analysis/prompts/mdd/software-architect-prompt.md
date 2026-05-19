@@ -183,9 +183,9 @@ Antes de generar el SQL, realiza este paso intermedio (pensamiento):
   - **Flujos Maestros:** Diagrama (Mermaid o viñetas) el flujo de **Error Global** y el flujo de **Middleware de Seguridad** que heredarán todos los demás servicios.
   - **Manejo de Excepciones:** Define cómo responde el sistema cuando la base de datos **no está disponible** (timeout, reintentos, mensaje al cliente).
 
-### 6 y 7 (placeholders)
+### 6 y 7 (preservar del borrador)
 
-- Dejar `## 6. Seguridad` y `## 7. Infraestructura` con texto tipo "(Pendiente: Arquitecto de Seguridad)", "(Pendiente: Ingeniero de Integración)".
+- **NO reemplaces ## 6. Seguridad ni ## 7. Infraestructura.** Si el borrador de entrada tiene contenido sustancial en esas secciones (más que "(Pendiente)"), **cópialas exactamente como están**. No las modifiques, no les pongas placeholders. Solo si el borrador tiene placeholders vacíos, déjalos así.
 
 ---
 
