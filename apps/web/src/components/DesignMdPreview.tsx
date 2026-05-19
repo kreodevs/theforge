@@ -991,20 +991,33 @@ export function DesignMdPreview({ content }: { content: string }) {
     // Merge: YAML frontmatter takes precedence, body markdown fills gaps
     // (e.g. PrimaryHover, Surface, SurfaceHover, Accent defined in body tables)
     if (yaml && (yaml.colors || yaml.typography || yaml.components)) {
-      if (bodyTokens?.colors && yaml.colors) {
-        // Body colors that aren't already in YAML
-        for (const [k, v] of Object.entries(bodyTokens.colors)) {
-          if (!(k in yaml.colors)) yaml.colors[k] = v;
+      // Merge body tokens into YAML — each section independently
+      // (YAML may have typography but no colors, or vice versa)
+      if (bodyTokens?.colors) {
+        if (yaml.colors) {
+          for (const [k, v] of Object.entries(bodyTokens.colors)) {
+            if (!(k in yaml.colors)) yaml.colors[k] = v;
+          }
+        } else {
+          yaml.colors = { ...bodyTokens.colors };
         }
       }
-      if (bodyTokens?.typography && yaml.typography) {
-        for (const [k, v] of Object.entries(bodyTokens.typography)) {
-          if (!(k in yaml.typography)) yaml.typography[k] = v;
+      if (bodyTokens?.typography) {
+        if (yaml.typography) {
+          for (const [k, v] of Object.entries(bodyTokens.typography)) {
+            if (!(k in yaml.typography)) yaml.typography[k] = v;
+          }
+        } else {
+          yaml.typography = { ...bodyTokens.typography };
         }
       }
-      if (bodyTokens?.components && yaml.components) {
-        for (const [k, v] of Object.entries(bodyTokens.components)) {
-          if (!(k in yaml.components)) yaml.components[k] = v;
+      if (bodyTokens?.components) {
+        if (yaml.components) {
+          for (const [k, v] of Object.entries(bodyTokens.components)) {
+            if (!(k in yaml.components)) yaml.components[k] = v;
+          }
+        } else {
+          yaml.components = { ...bodyTokens.components };
         }
       }
       return fillDesignMdDefaults(yaml);
@@ -1202,20 +1215,32 @@ export function extractDesignMdFrontMatter(content: string): DesignTokens | null
   const bodyTokens = parseDesignMdContent(content);
 
   if (yaml && (yaml.colors || yaml.typography || yaml.components)) {
-    // Merge body tokens into YAML to capture extra colors from body tables (e.g. PrimaryHover)
-    if (bodyTokens?.colors && yaml.colors) {
-      for (const [k, v] of Object.entries(bodyTokens.colors)) {
-        if (!(k in yaml.colors)) yaml.colors[k] = v;
+    // Merge body tokens into YAML — each section independently
+    if (bodyTokens?.colors) {
+      if (yaml.colors) {
+        for (const [k, v] of Object.entries(bodyTokens.colors)) {
+          if (!(k in yaml.colors)) yaml.colors[k] = v;
+        }
+      } else {
+        yaml.colors = { ...bodyTokens.colors };
       }
     }
-    if (bodyTokens?.typography && yaml.typography) {
-      for (const [k, v] of Object.entries(bodyTokens.typography)) {
-        if (!(k in yaml.typography)) yaml.typography[k] = v;
+    if (bodyTokens?.typography) {
+      if (yaml.typography) {
+        for (const [k, v] of Object.entries(bodyTokens.typography)) {
+          if (!(k in yaml.typography)) yaml.typography[k] = v;
+        }
+      } else {
+        yaml.typography = { ...bodyTokens.typography };
       }
     }
-    if (bodyTokens?.components && yaml.components) {
-      for (const [k, v] of Object.entries(bodyTokens.components)) {
-        if (!(k in yaml.components)) yaml.components[k] = v;
+    if (bodyTokens?.components) {
+      if (yaml.components) {
+        for (const [k, v] of Object.entries(bodyTokens.components)) {
+          if (!(k in yaml.components)) yaml.components[k] = v;
+        }
+      } else {
+        yaml.components = { ...bodyTokens.components };
       }
     }
     return yaml;
