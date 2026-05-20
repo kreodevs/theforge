@@ -1,18 +1,27 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@theforge/database";
+import type { ProviderInstance } from "@theforge/database";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { TokenCryptoService } from "../crypto/token-crypto.service.js";
 import {
   PROVIDER_CATALOG,
-  buildCloudflareBaseUrl,
+  isChatModelWhitelisted,
+  isEmbeddingModelWhitelisted,
   isProviderId,
   listProviderCatalog,
-  resolveCloudflareAccountId,
   resolveEmbeddingDimensionForModel,
   type ProviderId,
 } from "../ai/providers/provider-catalog.js";
 import type { UserLLMRuntime } from "../ai/providers/llm-runtime.types.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
+import { isSuperAdmin } from "../../common/roles.js";
+import {
+  buildModelFields,
+  maskApiKeyHint,
+  normalizeProviderExtras,
+  resolveConfigBaseUrl,
+  resolveRuntimeBaseUrl,
+} from "./provider-config.helpers.js";
 
 export interface UpsertProviderConfigDto {
   apiKey: string;
@@ -27,6 +36,7 @@ export interface UpsertProviderConfigDto {
 
 export interface UpdateAISettingsDto {
   activeProvider?: string;
+  activeTenantInstanceId?: string | null;
   embeddingProvider?: string | null;
   embeddingsEnabled?: boolean;
 }
@@ -46,12 +56,24 @@ export class UserProvidersService {
     const row = await this.prisma.userAISettings.findUnique({ where: { userId } });
     return {
       activeProvider: row?.activeProvider ?? null,
+      activeTenantInstanceId: row?.activeTenantInstanceId ?? null,
       embeddingProvider: row?.embeddingProvider ?? null,
       embeddingsEnabled: row?.embeddingsEnabled ?? true,
     };
   }
 
   async updateSettings(dto: UpdateAISettingsDto, userId = getRequestUserId()) {
+    if (dto.activeTenantInstanceId !== undefined && dto.activeTenantInstanceId !== null) {
+      const inst = await this.prisma.providerInstance.findFirst({
+        where: {
+          id: dto.activeTenantInstanceId,
+          ...this.instanceAccessibleByUser(userId),
+        },
+      });
+      if (!inst) {
+        throw new BadRequestException("Instancia de proveedor no disponible");
+      }
+    }
     if (dto.activeProvider !== undefined) {
       if (!isProviderId(dto.activeProvider)) {
         throw new BadRequestException("Proveedor activo no válido");
@@ -89,11 +111,15 @@ export class UserProvidersService {
       create: {
         userId,
         activeProvider: dto.activeProvider ?? "openrouter",
+        activeTenantInstanceId: dto.activeTenantInstanceId ?? undefined,
         embeddingProvider: dto.embeddingProvider ?? undefined,
         embeddingsEnabled: dto.embeddingsEnabled ?? true,
       },
       update: {
         ...(dto.activeProvider !== undefined ? { activeProvider: dto.activeProvider } : {}),
+        ...(dto.activeTenantInstanceId !== undefined
+          ? { activeTenantInstanceId: dto.activeTenantInstanceId }
+          : {}),
         ...(dto.embeddingProvider !== undefined
           ? { embeddingProvider: dto.embeddingProvider }
           : {}),
@@ -102,6 +128,7 @@ export class UserProvidersService {
     });
     return {
       activeProvider: row.activeProvider,
+      activeTenantInstanceId: row.activeTenantInstanceId,
       embeddingProvider: row.embeddingProvider,
       embeddingsEnabled: row.embeddingsEnabled,
     };
@@ -134,30 +161,9 @@ export class UserProvidersService {
     if (!key) {
       throw new BadRequestException("La clave API es obligatoria");
     }
-    const catalog = PROVIDER_CATALOG[provider];
-    const chatModel = dto.chatModel?.trim() || catalog.defaultChatModel;
-    const chatModelFallbacks = normalizeFallbacks(dto.chatModelFallbacks);
-    const embeddingModel =
-      dto.embeddingModel === null
-        ? null
-        : (dto.embeddingModel?.trim() || catalog.defaultEmbeddingModel);
-    const embeddingDimension =
-      dto.embeddingDimension === null
-        ? null
-        : dto.embeddingDimension !== undefined
-          ? dto.embeddingDimension
-          : resolveEmbeddingDimensionForModel(provider, embeddingModel);
-    const sttModel =
-      dto.sttModel === null
-        ? null
-        : (dto.sttModel?.trim() || catalog.defaultSttModel);
-    if (sttModel && !catalog.supportsStt) {
-      throw new BadRequestException(`El proveedor «${provider}» no soporta transcripción de audio`);
-    }
-
+    const models = buildModelFields(provider, dto);
     const extras = normalizeProviderExtras(provider, dto.extras);
     const baseUrl = resolveConfigBaseUrl(provider, dto.baseUrl, extras);
-
     const { ciphertext, keyVersion } = this.tokenCrypto.encrypt(key);
 
     const row = await this.prisma.userProviderConfig.upsert({
@@ -167,22 +173,14 @@ export class UserProvidersService {
         provider,
         tokenCiphertext: ciphertext,
         tokenKeyVersion: keyVersion,
-        chatModel,
-        chatModelFallbacks,
-        embeddingModel,
-        embeddingDimension,
-        sttModel,
+        ...models,
         baseUrl,
         extras: extras as Prisma.InputJsonValue,
       },
       update: {
         tokenCiphertext: ciphertext,
         tokenKeyVersion: keyVersion,
-        chatModel,
-        chatModelFallbacks,
-        embeddingModel,
-        embeddingDimension,
-        sttModel,
+        ...models,
         baseUrl,
         extras: extras as Prisma.InputJsonValue,
       },
@@ -243,20 +241,54 @@ export class UserProvidersService {
     return { ok: true };
   }
 
-  /** Runtime para chat/visión del proveedor activo. */
+  /** Indica si el usuario tiene proveedor usable (tenant o BYOK personal). */
+  async hasUsableProvider(userId: string): Promise<boolean> {
+    try {
+      await this.resolveRuntime(userId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Runtime para chat/visión: tenant primero, luego BYOK personal. */
   async resolveRuntime(userId: string): Promise<UserLLMRuntime> {
+    const tenant = await this.resolveTenantInstanceForUser(userId);
+    if (tenant) {
+      return this.runtimeFromTenantInstance(userId, tenant);
+    }
     return this.resolveRuntimeForProvider(userId, await this.activeProviderId(userId));
   }
 
-  /** Runtime para embeddings (proveedor dedicado o activo si soporta embeddings). */
   async resolveEmbeddingRuntime(userId: string): Promise<UserLLMRuntime> {
     const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
     if (!settings?.embeddingsEnabled) {
       throw new BadRequestException("Los embeddings están desactivados en tus ajustes de IA");
     }
+
+    const tenant = await this.resolveTenantInstanceForUser(userId);
+    if (tenant && isProviderId(tenant.providerType)) {
+      const tenantProvider = tenant.providerType;
+      const catalog = PROVIDER_CATALOG[tenantProvider];
+      const bypass = await this.userBypassesWhitelist(userId);
+      const embModel = tenant.embeddingModel ?? catalog.defaultEmbeddingModel;
+      if (
+        catalog.supportsEmbeddings &&
+        embModel &&
+        isEmbeddingModelWhitelisted(
+          tenantProvider,
+          embModel,
+          tenant.allowedEmbeddingModels,
+          bypass,
+        )
+      ) {
+        return this.runtimeFromTenantInstance(userId, tenant, { forEmbeddings: true });
+      }
+    }
+
     const active = await this.activeProviderId(userId);
     const embProvider =
-      settings.embeddingProvider && isProviderId(settings.embeddingProvider)
+      settings?.embeddingProvider && isProviderId(settings.embeddingProvider)
         ? settings.embeddingProvider
         : active;
     const catalog = PROVIDER_CATALOG[embProvider];
@@ -268,7 +300,6 @@ export class UserProvidersService {
     return this.resolveRuntimeForProvider(userId, embProvider);
   }
 
-  /** STT: modelo y runtime del proveedor activo (o error si no soporta STT). */
   async resolveSttRuntime(userId: string): Promise<UserLLMRuntime & { sttModel: string }> {
     const runtime = await this.resolveRuntime(userId);
     const catalog = PROVIDER_CATALOG[runtime.providerId];
@@ -290,12 +321,120 @@ export class UserProvidersService {
     return { ...runtime, sttModel };
   }
 
+  private async userBypassesWhitelist(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    return isSuperAdmin(user?.role ?? "developer");
+  }
+
+  private instanceAccessibleByUser(userId: string): Prisma.ProviderInstanceWhereInput {
+    return {
+      OR: [
+        { enabledForUsers: true },
+        { createdByUserId: userId, enabledForUsers: false },
+      ],
+    };
+  }
+
+  private async resolveTenantInstanceForUser(userId: string): Promise<ProviderInstance | null> {
+    const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
+    const access = this.instanceAccessibleByUser(userId);
+    if (settings?.activeTenantInstanceId) {
+      const chosen = await this.prisma.providerInstance.findFirst({
+        where: { id: settings.activeTenantInstanceId, ...access },
+      });
+      if (chosen) return chosen;
+    }
+    const personal = await this.prisma.providerInstance.findFirst({
+      where: { createdByUserId: userId, enabledForUsers: false },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (personal) return personal;
+    return this.prisma.providerInstance.findFirst({
+      where: { enabledForUsers: true, isTenantDefault: true },
+    });
+  }
+
+  private async runtimeFromTenantInstance(
+    userId: string,
+    instance: ProviderInstance,
+    opts?: { forEmbeddings?: boolean },
+  ): Promise<UserLLMRuntime> {
+    if (!isProviderId(instance.providerType)) {
+      throw new BadRequestException("Instancia tenant con tipo de proveedor no válido");
+    }
+    const provider = instance.providerType;
+    const bypass = await this.userBypassesWhitelist(userId);
+    const catalog = PROVIDER_CATALOG[provider];
+    const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
+
+    if (
+      !isChatModelWhitelisted(
+        provider,
+        instance.chatModel,
+        instance.allowedChatModels,
+        bypass,
+      )
+    ) {
+      throw new BadRequestException(
+        `El modelo de chat «${instance.chatModel}» no está permitido en la instancia tenant «${instance.displayName}»`,
+      );
+    }
+
+    const embeddingModel = instance.embeddingModel ?? catalog.defaultEmbeddingModel;
+    if (
+      opts?.forEmbeddings &&
+      embeddingModel &&
+      !isEmbeddingModelWhitelisted(
+        provider,
+        embeddingModel,
+        instance.allowedEmbeddingModels,
+        bypass,
+      )
+    ) {
+      throw new BadRequestException(
+        `El modelo de embeddings «${embeddingModel}» no está permitido en la instancia tenant`,
+      );
+    }
+
+    const apiKey = this.tokenCrypto.decrypt(instance.tokenCiphertext, instance.tokenKeyVersion);
+    const extras = (instance.extras ?? {}) as Record<string, unknown>;
+    const legacyFallbacks = extras.chatModelFallbacks;
+    const chatModelFallbacks =
+      instance.chatModelFallbacks.length > 0
+        ? instance.chatModelFallbacks
+        : Array.isArray(legacyFallbacks)
+          ? legacyFallbacks.filter((m): m is string => typeof m === "string" && m.length > 0)
+          : [];
+
+    return {
+      providerId: provider,
+      apiKey,
+      baseURL: resolveRuntimeBaseUrl(provider, instance.baseUrl, extras),
+      chatModel: instance.chatModel,
+      chatModelFallbacks,
+      embeddingModel,
+      embeddingDimension: resolveEmbeddingDimensionForModel(
+        provider,
+        embeddingModel,
+        instance.embeddingDimension,
+      ),
+      embeddingsEnabled: settings?.embeddingsEnabled ?? true,
+      sttModel: instance.sttModel ?? catalog.defaultSttModel,
+      visionModel:
+        (typeof extras.visionModel === "string" && extras.visionModel.trim()) || instance.chatModel,
+      extras,
+    };
+  }
+
   private async activeProviderId(userId: string): Promise<ProviderId> {
     const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
     const active = settings?.activeProvider;
     if (!active || !isProviderId(active)) {
       throw new BadRequestException(
-        "Configura un proveedor de IA en Ajustes (clave API y proveedor activo)",
+        "Configura un proveedor de IA en Ajustes (instancia tenant o clave API personal)",
       );
     }
     return active;
@@ -345,92 +484,4 @@ export class UserProvidersService {
       extras,
     };
   }
-}
-
-function normalizeFallbacks(raw?: string[]): string[] {
-  if (!raw?.length) return [];
-  const seen = new Set<string>();
-  return raw
-    .map((m) => m.trim())
-    .filter((m) => {
-      if (!m || seen.has(m)) return false;
-      seen.add(m);
-      return true;
-    });
-}
-
-function maskApiKeyHint(key: string): string {
-  const t = key.trim();
-  if (t.length <= 8) return "••••";
-  return `${t.slice(0, 4)}…${t.slice(-4)}`;
-}
-
-function normalizeProviderExtras(
-  provider: ProviderId,
-  raw?: Record<string, unknown> | null,
-): Record<string, unknown> {
-  const extras: Record<string, unknown> = { ...(raw ?? {}) };
-
-  if (provider === "cloudflare") {
-    const accountId =
-      (typeof extras.accountId === "string" && extras.accountId.trim()) ||
-      (typeof raw?.accountId === "string" && raw.accountId.trim()) ||
-      "";
-    if (!accountId) {
-      throw new BadRequestException(
-        "Cloudflare requiere accountId en extras (Account ID de tu cuenta Cloudflare)",
-      );
-    }
-    extras.accountId = accountId;
-  }
-
-  return extras;
-}
-
-function resolveConfigBaseUrl(
-  provider: ProviderId,
-  dtoBaseUrl: string | null | undefined,
-  extras: Record<string, unknown>,
-): string {
-  const catalog = PROVIDER_CATALOG[provider];
-  const trimmed = dtoBaseUrl?.trim();
-
-  if (provider === "cloudflare") {
-    const accountId = resolveCloudflareAccountId(extras, trimmed);
-    if (!accountId) {
-      throw new BadRequestException(
-        "Cloudflare requiere accountId en extras o una baseUrl con /accounts/{id}/ai/v1",
-      );
-    }
-    if (trimmed && !trimmed.includes("{accountId}")) {
-      return trimmed;
-    }
-    return buildCloudflareBaseUrl(accountId);
-  }
-
-  return trimmed || catalog.defaultBaseUrl;
-}
-
-function resolveRuntimeBaseUrl(
-  provider: ProviderId,
-  storedBaseUrl: string | null | undefined,
-  extras: Record<string, unknown>,
-): string {
-  const catalog = PROVIDER_CATALOG[provider];
-  const trimmed = storedBaseUrl?.trim();
-
-  if (provider === "cloudflare") {
-    const accountId = resolveCloudflareAccountId(extras, trimmed);
-    if (accountId) {
-      if (trimmed && !trimmed.includes("{accountId}")) {
-        return trimmed;
-      }
-      return buildCloudflareBaseUrl(accountId);
-    }
-    throw new BadRequestException(
-      "Configuración Cloudflare incompleta: falta accountId en extras",
-    );
-  }
-
-  return trimmed || catalog.defaultBaseUrl;
 }

@@ -12,13 +12,66 @@ function mockPrisma(overrides: Partial<Record<string, unknown>> = {}) {
     settings: null as {
       userId: string;
       activeProvider: string;
+      activeTenantInstanceId: string | null;
       embeddingProvider: string | null;
       embeddingsEnabled: boolean;
     } | null,
     configs: new Map<string, Record<string, unknown>>(),
+    instances: new Map<string, Record<string, unknown>>(),
+    userRole: "developer" as string,
   };
 
   return {
+    user: {
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        where.id === USER_ID ? { role: store.userRole } : null,
+    },
+    providerInstance: {
+      findFirst: async ({
+        where,
+      }: {
+        where: {
+          id?: string;
+          enabledForUsers?: boolean;
+          isTenantDefault?: boolean;
+          createdByUserId?: string;
+          OR?: Array<{ enabledForUsers?: boolean; createdByUserId?: string }>;
+        };
+      }) => {
+        for (const inst of store.instances.values()) {
+          if (where.id && inst.id !== where.id) continue;
+          if (where.OR) {
+            const ok = where.OR.some((clause) => {
+              if (clause.enabledForUsers === true && inst.enabledForUsers === true) return true;
+              if (
+                clause.enabledForUsers === false &&
+                clause.createdByUserId === inst.createdByUserId &&
+                inst.enabledForUsers === false
+              ) {
+                return true;
+              }
+              return false;
+            });
+            if (!ok) continue;
+            return inst;
+          }
+          if (where.enabledForUsers !== undefined && inst.enabledForUsers !== where.enabledForUsers) {
+            continue;
+          }
+          if (where.isTenantDefault !== undefined && inst.isTenantDefault !== where.isTenantDefault) {
+            continue;
+          }
+          if (
+            where.createdByUserId !== undefined &&
+            inst.createdByUserId !== where.createdByUserId
+          ) {
+            continue;
+          }
+          return inst;
+        }
+        return null;
+      },
+    },
     userAISettings: {
       findUnique: async ({ where }: { where: { userId: string } }) =>
         where.userId === USER_ID ? store.settings : null,
@@ -83,7 +136,8 @@ function mockPrisma(overrides: Partial<Record<string, unknown>> = {}) {
           .map(([, v]) => v),
     },
     ...overrides,
-  } as unknown as PrismaService;
+    __store: store,
+  } as unknown as PrismaService & { __store: typeof store };
 }
 
 function mockCrypto(): TokenCryptoService {
@@ -179,6 +233,115 @@ test("UserProvidersService — cloudflare upsert y baseURL", async () => {
     "https://api.cloudflare.com/client/v4/accounts/cf-account-abc/ai/v1",
   );
   assert.equal(runtime.embeddingDimension, 768);
+});
+
+test("UserProvidersService.updateSettings — instancia personal del usuario", async () => {
+  const prisma = mockPrisma();
+  const store = (prisma as { __store: { instances: Map<string, Record<string, unknown>> } })
+    .__store;
+  store.instances.set("personal-1", {
+    id: "personal-1",
+    providerType: "openrouter",
+    displayName: "Mi OR",
+    createdByUserId: USER_ID,
+    enabledForUsers: false,
+    isTenantDefault: false,
+    tokenCiphertext: "enc:sk-personal-key-12345678",
+    tokenKeyVersion: 1,
+    chatModel: "nousresearch/hermes-3-llama-3.1-405b",
+    chatModelFallbacks: [],
+    embeddingModel: "openai/text-embedding-3-small",
+    embeddingDimension: 1536,
+    sttModel: null,
+    baseUrl: null,
+    extras: {},
+    allowedChatModels: [],
+    allowedEmbeddingModels: [],
+  });
+  const svc = new UserProvidersService(prisma, mockCrypto());
+  await svc.upsertConfig("openrouter", { apiKey: "sk-byok-fallback-12345678" }, USER_ID);
+  const settings = await svc.updateSettings(
+    { activeTenantInstanceId: "personal-1" },
+    USER_ID,
+  );
+  assert.equal(settings.activeTenantInstanceId, "personal-1");
+});
+
+test("UserProvidersService.updateSettings — rechaza instancia personal de otro usuario", async () => {
+  const prisma = mockPrisma();
+  const store = (prisma as { __store: { instances: Map<string, Record<string, unknown>> } })
+    .__store;
+  store.instances.set("other-personal", {
+    id: "other-personal",
+    providerType: "openrouter",
+    displayName: "Ajena",
+    createdByUserId: "other-user",
+    enabledForUsers: false,
+    isTenantDefault: false,
+    tokenCiphertext: "enc:sk-other-12345678",
+    tokenKeyVersion: 1,
+    chatModel: "nousresearch/hermes-3-llama-3.1-405b",
+    chatModelFallbacks: [],
+    embeddingModel: null,
+    embeddingDimension: 1536,
+    sttModel: null,
+    baseUrl: null,
+    extras: {},
+    allowedChatModels: [],
+    allowedEmbeddingModels: [],
+  });
+  const svc = new UserProvidersService(prisma, mockCrypto());
+  await assert.rejects(
+    () => svc.updateSettings({ activeTenantInstanceId: "other-personal" }, USER_ID),
+    (err: unknown) => err instanceof BadRequestException,
+  );
+});
+
+test("UserProvidersService.resolveRuntime — tenant primero", async () => {
+  const prisma = mockPrisma();
+  const store = (
+    prisma as {
+      __store: {
+        settings: {
+          userId: string;
+          activeProvider: string;
+          activeTenantInstanceId: string | null;
+          embeddingProvider: string | null;
+          embeddingsEnabled: boolean;
+        } | null;
+        instances: Map<string, Record<string, unknown>>;
+      };
+    }
+  ).__store;
+  store.instances.set("tenant-1", {
+    id: "tenant-1",
+    providerType: "openrouter",
+    displayName: "Equipo OR",
+    enabledForUsers: true,
+    isTenantDefault: true,
+    tokenCiphertext: "enc:sk-tenant-key-12345678",
+    tokenKeyVersion: 1,
+    chatModel: "nousresearch/hermes-3-llama-3.1-405b",
+    chatModelFallbacks: [],
+    embeddingModel: "openai/text-embedding-3-small",
+    embeddingDimension: 1536,
+    sttModel: null,
+    baseUrl: null,
+    extras: {},
+    allowedChatModels: [],
+    allowedEmbeddingModels: [],
+  });
+  store.settings = {
+    userId: USER_ID,
+    activeProvider: "openrouter",
+    activeTenantInstanceId: "tenant-1",
+    embeddingProvider: null,
+    embeddingsEnabled: true,
+  };
+  const svc = new UserProvidersService(prisma, mockCrypto());
+  const runtime = await svc.resolveRuntime(USER_ID);
+  assert.equal(runtime.apiKey, "sk-tenant-key-12345678");
+  assert.equal(runtime.providerId, "openrouter");
 });
 
 test("UserProvidersService — groq upsert, baseURL y STT", async () => {

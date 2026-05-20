@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Put } from "@nestjs/common";
+import { getRequestUserId } from "../../common/request-user.store.js";
 import {
   UserProvidersService,
   type UpdateAISettingsDto,
@@ -12,6 +13,11 @@ export class UserProvidersController {
   @Get("catalog")
   getCatalog() {
     return this.userProviders.getCatalog();
+  }
+
+  @Get("status")
+  getStatus() {
+    return this.userProviders.hasUsableProvider(getRequestUserId()).then((usable) => ({ usable }));
   }
 
   @Get("settings")
