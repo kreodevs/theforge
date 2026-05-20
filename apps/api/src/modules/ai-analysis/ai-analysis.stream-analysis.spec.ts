@@ -18,6 +18,7 @@ function createServiceWithMockGraph(): AiAnalysisService {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
     {
       resolveRuntime: async () => ({
         providerId: "openrouter",
@@ -42,6 +43,25 @@ function createServiceWithMockGraph(): AiAnalysisService {
 }
 
 describe("AiAnalysisService.streamAnalysis", () => {
+  it("yields error cuando createDbgaGraph falla antes de graph.stream", async () => {
+    const service = createServiceWithMockGraph();
+    (service as unknown as { createDbgaGraphFn: () => Promise<never> }).createDbgaGraphFn =
+      async () => {
+        throw new Error("modelo no permitido en instancia PROD");
+      };
+
+    const events: Array<{ type: string; message?: string }> = [];
+    await runWithRequestUserAsync("test-user", async () => {
+      for await (const event of service.streamAnalysis("idea de prueba")) {
+        events.push(event);
+      }
+    });
+
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "error");
+    assert.match(events[0].message ?? "", /modelo no permitido/i);
+  });
+
   it("yields error NDJSON con mensaje español cuando graph.stream lanza recursion limit", async () => {
     assert.match(RECURSION_RAW, /25/);
 

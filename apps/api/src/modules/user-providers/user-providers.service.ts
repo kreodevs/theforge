@@ -409,6 +409,21 @@ export class UserProvidersService {
           ? legacyFallbacks.filter((m): m is string => typeof m === "string" && m.length > 0)
           : [];
 
+    for (const fallbackModel of chatModelFallbacks) {
+      if (
+        !isChatModelWhitelisted(
+          provider,
+          fallbackModel,
+          instance.allowedChatModels,
+          bypass,
+        )
+      ) {
+        throw new BadRequestException(
+          `El modelo de respaldo «${fallbackModel}» no está permitido en la instancia tenant «${instance.displayName}»`,
+        );
+      }
+    }
+
     return {
       providerId: provider,
       apiKey,
