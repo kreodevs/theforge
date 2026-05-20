@@ -38,6 +38,14 @@ function isProduction(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
+/** 1|true|yes|on — devuelve el OTP en la respuesta sin enviar correo. Con 0 u omitido, se envía email si hay SMTP. */
+function otpDevExposeCode(): boolean {
+  const v = stripEnvQuotes(process.env.OTP_DEV_EXPOSE_CODE);
+  if (!v) return false;
+  const n = v.toLowerCase();
+  return n === "1" || n === "true" || n === "yes" || n === "on";
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -272,7 +280,7 @@ export class AuthService {
    * Solicitud de OTP. El email viene del request; solo se envía si existe un usuario registrado con ese email.
    * Si no existe, devuelve ok igualmente (anti-enumeración).
    */
-  async requestOtp(rawEmail: string): Promise<{ ok: true }> {
+  async requestOtp(rawEmail: string): Promise<{ ok: true; devCode?: string }> {
     const email = normalizeEmail(rawEmail);
     if (!email) {
       throw new BadRequestException("email requerido");
@@ -303,10 +311,27 @@ export class AuthService {
       this.otpByEmail.set(email, { code, expiresAt: now + OTP_TTL_MS });
       this.lastOtpRequestAt.set(email, now);
 
+      if (otpDevExposeCode()) {
+        this.logger.warn(
+          `OTP_DEV_EXPOSE_CODE activo: código para ${email} (no se envía correo)`,
+        );
+        return { ok: true, devCode: code };
+      }
+
       const transport = this.smtpTransport();
       if (!transport) {
-        this.logger.warn(`OTP para ${email} (solo dev, sin SMTP): ${code}`);
-        return { ok: true };
+        if (isProduction()) {
+          this.logger.error(
+            "SMTP no configurado y OTP_DEV_EXPOSE_CODE=0: no se puede enviar el código",
+          );
+          throw new ServiceUnavailableException("Envío de correo no disponible");
+        }
+        this.logger.warn(
+          `OTP para ${email}: configure SMTP o OTP_DEV_EXPOSE_CODE=1 para desarrollo`,
+        );
+        throw new ServiceUnavailableException(
+          "Envío de correo no disponible. Configure SMTP o OTP_DEV_EXPOSE_CODE=1 en desarrollo.",
+        );
       }
 
       const from = this.mailFromHeader();
@@ -608,15 +633,21 @@ export class AuthService {
   }
 
   /** Cambiar rol de un usuario (admin-only). No permite degradarse a sí mismo (developer). */
-  async updateUserRole(targetUserId: string, role: string, actorUserId: string) {
-    if (role !== "admin" && role !== "developer") {
-      throw new BadRequestException("Rol inválido. Use 'admin' o 'developer'.");
+  async updateUserRole(targetUserId: string, role: string, actorUserId: string, actorRole: string) {
+    if (role !== "admin" && role !== "developer" && role !== "super_admin") {
+      throw new BadRequestException("Rol inválido. Use 'super_admin', 'admin' o 'developer'.");
+    }
+    if (role === "super_admin" && actorRole !== "super_admin") {
+      throw new ForbiddenException("Solo un super_admin puede asignar el rol super_admin");
     }
     if (targetUserId === actorUserId && role === "developer") {
       throw new ForbiddenException("No puedes degradar tu propio rol de administrador");
     }
     const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
     if (!user) throw new NotFoundException("Usuario no encontrado");
+    if (user.role === "super_admin" && role !== "super_admin" && actorRole !== "super_admin") {
+      throw new ForbiddenException("Solo un super_admin puede cambiar el rol de otro super_admin");
+    }
 
     await this.prisma.user.update({
       where: { id: targetUserId },
@@ -636,7 +667,13 @@ export class AuthService {
   async registerFirstAdmin(
     email: string,
     name?: string,
-  ): Promise<{ created: boolean; message: string; user?: { id: string; email: string; role: string } }> {
+  ): Promise<{
+    created: boolean;
+    message: string;
+    user?: { id: string; email: string; role: string };
+    /** Solo al crear el primer admin: permite entrar sin correo vía MCP. */
+    mcpSecret?: string;
+  }> {
     const normalized = email.trim().toLowerCase();
     const existing = await this.prisma.user.count();
     if (existing > 0) {
@@ -647,7 +684,7 @@ export class AuthService {
         data: {
           email: normalized,
           name: name?.trim() || null,
-          role: "admin",
+          role: "super_admin",
           mcpSecret: this.generateMcpSecret(),
         },
       });
@@ -655,6 +692,7 @@ export class AuthService {
         created: true,
         message: "Administrador creado exitosamente",
         user: { id: user.id, email: user.email, role: user.role },
+        mcpSecret: user.mcpSecret ?? undefined,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error desconocido";
