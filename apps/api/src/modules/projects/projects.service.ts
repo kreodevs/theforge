@@ -791,6 +791,120 @@ name: ${JSON.stringify(name)}
   }
 
   /**
+   * Repara/regenera solo el YAML frontmatter de la Guía UX/UI usando el MDD como contexto.
+   * NO regenera el cuerpo markdown — solo los tokens de diseño (colors, typography, etc.).
+   * Útil cuando el LLM generó el markdown pero sin YAML, o el YAML está incompleto.
+   */
+  async repairUxUiGuideYaml(projectId: string): Promise<string> {
+    const project = await this.assertProjectAccess(projectId);
+    const mdd = this.constitutionMarkdown(project);
+    const bp = (project.blueprintContent ?? "").trim();
+    const spec = (project.specContent ?? "").trim();
+    const name = project.name || projectId;
+
+    const repairPrompt =
+      `Eres un diseñador UX/UI experto. Genera ÚNICAMENTE el YAML frontmatter del archivo DESIGN.md ` +
+      `para el proyecto "${name}", basándote en el contexto del MDD, Blueprint y Spec que recibes.\n\n` +
+      `IMPORTANTE: Responde ÚNICAMENTE con el bloque YAML entre --- y ---. NO incluyas secciones markdown, ` +
+      `ni texto explicativo, ni bloques \`\`\` alrededor.\n\n` +
+      `El YAML debe tener esta estructura:\n` +
+      `---\n` +
+      `version: alpha\n` +
+      `name: "${name}"\n` +
+      `description: "Frase corta que capture la personalidad visual del proyecto"\n` +
+      `colors:\n` +
+      `  primary: "#<Hex>"\n` +
+      `  secondary: "#<Hex>"\n` +
+      `  tertiary: "#<Hex>"\n` +
+      `  neutral: "#<Hex>"\n` +
+      `  foreground: "#<Hex>"\n` +
+      `  background: "#<Hex>"\n` +
+      `  muted: "#<Hex>"\n` +
+      `  border: "#<Hex>"\n` +
+      `  danger: "#<Hex>"\n` +
+      `  success: "#<Hex>"\n` +
+      `  warning: "#<Hex>"\n` +
+      `  info: "#<Hex>"\n` +
+      `typography:\n` +
+      `  font-sans: ["Inter", "system-ui", "sans-serif"]\n` +
+      `  h1: { fontFamily: "...", fontSize: 32px, fontWeight: 700, lineHeight: 40px, letterSpacing: "-0.02em" }\n` +
+      `  h2: { similar }\n` +
+      `  h3: { similar }\n` +
+      `  body-md: { fontFamily: "...", fontSize: 16px, fontWeight: 400, lineHeight: 24px }\n` +
+      `  body-sm: { similar }\n` +
+      `  label-sm: { similar }\n` +
+      `rounded:\n` +
+      `  none: 0px\n` +
+      `  sm: 6px\n` +
+      `  md: 12px\n` +
+      `  lg: 20px\n` +
+      `  xl: 28px\n` +
+      `  full: 9999px\n` +
+      `spacing:\n` +
+      `  xxs: 2px\n` +
+      `  xs: 4px\n` +
+      `  sm: 8px\n` +
+      `  md: 16px\n` +
+      `  lg: 24px\n` +
+      `  xl: 32px\n` +
+      `  2xl: 48px\n` +
+      `  3xl: 64px\n` +
+      `elevation:\n` +
+      `  card: { boxShadow: "..." }\n` +
+      `  dropdown: { boxShadow: "..." }\n` +
+      `  modal: { boxShadow: "..." }\n` +
+      `  sticky: { boxShadow: "..." }\n` +
+      `components:\n` +
+      `  button-primary: { backgroundColor, textColor, rounded, padding, typography }\n` +
+      `  button-secondary: { ... }\n` +
+      `  button-ghost: { ... }\n` +
+      `  button-danger: { ... }\n` +
+      `  card: { ... }\n` +
+      `  badge: { ... }\n` +
+      `  input: { ... }\n` +
+      `  modal: { ... }\n` +
+      `  toast: { ... }\n` +
+      `  skeleton: { ... }\n` +
+      `---\n\n` +
+      `Contexto del proyecto:\n` +
+      `${mdd ? `## MDD\n${mdd.slice(0, 6000)}` : ""}\n\n` +
+      `${bp ? `## Blueprint\n${bp.slice(0, 4000)}` : ""}\n\n` +
+      `${spec ? `## Spec\n${spec.slice(0, 3000)}` : ""}\n\n` +
+      `NO incluyas secciones markdown, solo el bloque YAML.`;
+
+    const raw = await this.ai.generateResponse(repairPrompt, [], {
+      systemPrompt: UX_UI_GUIDE_PROMPT,
+      activeTab: "ux-ui-guide",
+      currentMddContent: mdd,
+      currentBlueprintContent: bp || undefined,
+      ...uxGuideLlmOptions(project),
+    });
+
+    const trimmed = (raw ?? "").trim();
+    // Extract YAML block (between --- markers)
+    const yamlMatch = trimmed.match(/^---\n([\s\S]*?)\n---/);
+    if (!yamlMatch) {
+      // Maybe the LLM returned just the YAML without --- markers, or with extra text
+      // Try to find any YAML-like structure
+      if (trimmed.startsWith("---")) {
+        // Already a frontmatter block, extract it
+        const endIdx = trimmed.indexOf("---", 3);
+        if (endIdx !== -1) {
+          return trimmed.slice(0, endIdx + 3);
+        }
+        return trimmed;
+      }
+      this.logger.warn(`[repairUxUiGuideYaml] No YAML block found in LLM response for ${projectId}`);
+      // Return minimal default YAML
+      return `---
+name: ${JSON.stringify(name)}
+---`;
+    }
+
+    return `---\n${yamlMatch[1]!.trim()}\n---`;
+  }
+
+  /**
    * [UNIFIED] Genera cualquier documento del pipeline. Usado tanto por la cascada
    * (generateDeliverablesCascade) como por los endpoints individuales (controller.queueOrSync).
    */
