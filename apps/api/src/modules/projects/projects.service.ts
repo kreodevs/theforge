@@ -775,7 +775,16 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       this.logger.warn(`[generateUxUiGuide] LLM returned empty content for project ${projectId}`);
       return project;
     }
-    return this.update(projectId, { uxUiGuideContent: cleanDocumentContent(clean) });
+    // Si el LLM no generó YAML frontmatter, agregar uno por defecto
+    let finalContent = cleanDocumentContent(clean);
+    if (!finalContent.startsWith("---")) {
+      const name = project.name ?? projectId;
+      finalContent = `---
+name: ${JSON.stringify(name)}
+---
+\n\n${finalContent}`;
+    }
+    return this.update(projectId, { uxUiGuideContent: finalContent });
   }
 
   private async ensureBlueprintForApi(projectId: string): Promise<void> {
