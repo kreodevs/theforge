@@ -17,6 +17,9 @@ import {
   checkBlueprintSpanishQuality,
   checkBlueprintSelfContained,
   checkBlueprintTableFormat,
+  checkApiVsMdd,
+  checkLogicFlowsVsMdd,
+  checkInfraVsMdd,
   extractEntities,
   extractSection,
 } from "../engine/conformance.service.js";
@@ -787,14 +790,16 @@ name: ${JSON.stringify(name)}
     return this.update(projectId, { uxUiGuideContent: finalContent });
   }
 
-  private async ensureBlueprintForApi(projectId: string): Promise<void> {
-    const project = await this.assertProjectAccess(projectId).catch(() => null);
-    if (!project) return;
-    if ((project.blueprintContent ?? "").trim().length > 48) return;
-    await this.generateBlueprint(projectId);
-  }
-
-  private async runDeliverableStep(kind: DeliverableKind, projectId: string): Promise<void> {
+  /**
+   * [UNIFIED] Genera cualquier documento del pipeline. Usado tanto por la cascada
+   * (generateDeliverablesCascade) como por los endpoints individuales (controller.queueOrSync).
+   */
+  async generateDocument(
+    kind: DeliverableKind,
+    projectId: string,
+    options?: { gapsFeedback?: string | null },
+  ): Promise<void> {
+    const gaps = options?.gapsFeedback ?? undefined;
     switch (kind) {
       case "mdd_canonical":
         return;
@@ -808,14 +813,14 @@ name: ${JSON.stringify(name)}
         await this.generateUseCases(projectId);
         return;
       case "blueprint":
-        await this.generateBlueprint(projectId);
+        await this.generateBlueprint(projectId, gaps);
         return;
       case "api_contracts":
         await this.ensureBlueprintForApi(projectId);
-        await this.generateApiContracts(projectId);
+        await this.generateApiContracts(projectId, gaps);
         return;
       case "logic_flows":
-        await this.generateLogicFlows(projectId);
+        await this.generateLogicFlows(projectId, gaps);
         return;
       case "ux_ui_guide":
         await this.generateUxUiGuide(projectId);
@@ -827,13 +832,24 @@ name: ${JSON.stringify(name)}
         await this.generateTasks(projectId);
         return;
       case "infra":
-        await this.generateInfra(projectId);
+        await this.generateInfra(projectId, gaps);
         return;
       default: {
         const _exhaustive: never = kind;
         return _exhaustive;
       }
     }
+  }
+
+  private async ensureBlueprintForApi(projectId: string): Promise<void> {
+    const project = await this.assertProjectAccess(projectId).catch(() => null);
+    if (!project) return;
+    if ((project.blueprintContent ?? "").trim().length > 48) return;
+    await this.generateBlueprint(projectId);
+  }
+
+  private async runDeliverableStep(kind: DeliverableKind, projectId: string, options?: { gapsFeedback?: string | null }): Promise<void> {
+    return this.generateDocument(kind, projectId, options);
   }
 
   /**
@@ -877,12 +893,49 @@ name: ${JSON.stringify(name)}
     // No comparten estado ni LangGraph — cada uno se guarda directo a DB.
     // Promise.allSettled asegura que si un paso falla, los demás continúan.
     // Usamos contador atómico (no array index) para progreso real.
+    // Recolectamos gaps de conformance existentes para pasarlos a cada generador.
+    const projectFresh = await this.findOne(projectId);
+    const mddContent = this.constitutionMarkdown(project);
+    const gapsMap = new Map<string, string | null>();
+    for (const step of deliverablesToRun) {
+      const stepKey = step as string;
+      if (stepKey === "blueprint") {
+        const bp = projectFresh?.blueprintContent ?? "";
+        if (bp.trim().length > 80) {
+          const entityCheck = checkBlueprintDataModelVsMdd(mddContent, bp);
+          const sectionCheck = checkBlueprintSectionHeaders(bp);
+          const selfCheck = checkBlueprintSelfContained(bp);
+          const allGaps = entityCheck.gaps.concat(sectionCheck.gaps, selfCheck.gaps);
+          if (allGaps.length > 0) gapsMap.set("blueprint", allGaps.join("\n"));
+        }
+      } else if (stepKey === "api_contracts") {
+        const api = projectFresh?.apiContractsContent ?? "";
+        if (api.trim().length > 80) {
+          const apiCheck = checkApiVsMdd(mddContent, api);
+          const apiGaps = [...apiCheck.missingInApi, ...apiCheck.extraInApi];
+          if (apiGaps.length > 0) gapsMap.set("api_contracts", apiGaps.join("\n"));
+        }
+      } else if (stepKey === "logic_flows") {
+        const lf = projectFresh?.logicFlowsContent ?? "";
+        if (lf.trim().length > 80) {
+          const lfCheck = checkLogicFlowsVsMdd(mddContent, lf);
+          if (lfCheck.gaps.length > 0) gapsMap.set("logic_flows", lfCheck.gaps.join("\n"));
+        }
+      } else if (stepKey === "infra") {
+        const infra = projectFresh?.infraContent ?? "";
+        if (infra.trim().length > 80) {
+          const infraCheck = checkInfraVsMdd(mddContent, infra);
+          if (infraCheck.gaps.length > 0) gapsMap.set("infra", infraCheck.gaps.join("\n"));
+        }
+      }
+    }
     let completedCount = 0;
     const stepList = [...deliverablesToRun];
     await Promise.allSettled(
       stepList.map(async (step) => {
         try {
-          await this.runDeliverableStep(step, projectId);
+          const stepGaps = gapsMap.get(step) ?? undefined;
+          await this.runDeliverableStep(step, projectId, stepGaps ? { gapsFeedback: stepGaps } : undefined);
         } catch (e) {
           const message = e instanceof Error ? e.message : "Error desconocido";
           this.logger.warn(`[Cascade] Paso ${step} saltado: ${message}.`);
