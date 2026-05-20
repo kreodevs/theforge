@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Flame, Loader2 } from "lucide-react";
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from "@/components/ui";
-import { API_BASE } from "@/utils/apiClient";
+import { API_BASE, setAccessToken } from "@/utils/apiClient";
 
 interface SetupViewProps {
   onComplete: () => void;
@@ -13,6 +13,7 @@ export default function SetupView({ onComplete }: SetupViewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [createdMcpSecret, setCreatedMcpSecret] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
 
   // Verificar que realmente no hay usuarios; si los hay, notificar
@@ -53,8 +54,10 @@ export default function SetupView({ onComplete }: SetupViewProps) {
       const data = (await r.json()) as {
         created?: boolean;
         message?: string;
+        mcpSecret?: string;
       };
       if (data?.created) {
+        setCreatedMcpSecret(data.mcpSecret ?? null);
         setDone(true);
       } else {
         setError(data?.message || "Error al crear administrador");
@@ -89,10 +92,44 @@ export default function SetupView({ onComplete }: SetupViewProps) {
               Administrador <strong>{email}</strong> creado exitosamente.
             </p>
             <p className="text-sm text-[var(--foreground-muted)]">
-              Ahora inicia sesión para acceder al sistema. Recibirás un código OTP en tu correo.
+              Puedes entrar <strong>sin correo</strong> con este secret MCP (guárdalo en un lugar
+              seguro):
             </p>
-            <Button type="button" className="w-full" onClick={onComplete}>
-              Ir a iniciar sesión
+            {createdMcpSecret ? (
+              <pre className="max-h-24 overflow-auto rounded-md border border-[var(--border)] bg-[var(--muted)]/40 p-3 text-xs font-mono break-all">
+                {createdMcpSecret}
+              </pre>
+            ) : null}
+            <Button
+              type="button"
+              className="w-full"
+              onClick={async () => {
+                if (!createdMcpSecret) {
+                  onComplete();
+                  return;
+                }
+                try {
+                  const r = await fetch(`${API_BASE}/auth/mcp-login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ secret: createdMcpSecret }),
+                  });
+                  const data = (await r.json()) as { accessToken?: string };
+                  if (data.accessToken) {
+                    setAccessToken(data.accessToken);
+                    window.location.reload();
+                    return;
+                  }
+                } catch {
+                  /* fallback */
+                }
+                onComplete();
+              }}
+            >
+              Entrar con secret MCP
+            </Button>
+            <Button type="button" variant="outline" className="w-full" onClick={onComplete}>
+              Ir a iniciar sesión (correo)
             </Button>
           </CardContent>
         </Card>

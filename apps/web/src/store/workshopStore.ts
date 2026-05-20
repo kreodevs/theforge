@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ChatImagePart, CodebaseDocResponseMode } from "@theforge/shared-types";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue } from "../utils/apiClient";
 import { parseErrorMessageFromResponse } from "../utils/httpError";
+import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
 
 /**
  * Convierte mensajes de error de fetch del navegador (Safari "Load failed", Chrome "Failed to fetch")
@@ -30,6 +31,25 @@ function friendlyFetchError(e: unknown): string {
     return msg;
   }
   return String(e);
+}
+
+function streamErrorPatch(event: { message?: string; code?: string }) {
+  const message = String(event.message ?? "Error en el análisis");
+  return {
+    error: message,
+    modelsUnavailableModalOpen: isModelsUnavailableStreamError(event),
+  };
+}
+
+function errorStateFromCaught(e: unknown) {
+  if (e instanceof Error) {
+    const code =
+      "code" in e && typeof (e as { code?: string }).code === "string"
+        ? (e as { code?: string }).code
+        : undefined;
+    return streamErrorPatch({ message: e.message, code });
+  }
+  return streamErrorPatch({ message: String(e) });
 }
 
 /**
@@ -566,6 +586,9 @@ interface WorkshopState {
   mddReviewing: boolean;
   synced: boolean;
   error: string | null;
+  /** Modal: ningún modelo de la cadena (principal + respaldos) respondió. */
+  modelsUnavailableModalOpen: boolean;
+  setModelsUnavailableModalOpen: (open: boolean) => void;
   /** Logs de auditoría del último stream MDD */
   auditTrail: string[] | null;
   /** Desglose de calificación del último stream MDD */
@@ -779,6 +802,7 @@ const initialState = {
   mddReviewing: false,
   synced: true,
   error: null as string | null,
+  modelsUnavailableModalOpen: false,
   auditTrail: null as string[] | null,
   precisionBreakdown: null as PrecisionBreakdown | null,
   documentCompleteness: null as DocumentCompleteness | null,
@@ -837,6 +861,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setLoading: (v) => set({ loading: v }),
   setSynced: (v) => set({ synced: v }),
   setError: (e) => set({ error: e }),
+  setModelsUnavailableModalOpen: (open) => set({ modelsUnavailableModalOpen: open }),
   clearEvaluatorCritique: () => set({ evaluatorCritique: null }),
   clearLegacyMcpDebugTrace: () => set({ legacyMcpDebugTrace: null }),
   clearLegacyDeliverablesDebug: () => set({ lastLegacyDeliverablesDebug: null }),
@@ -1244,7 +1269,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   });
                   return;
                 } else if (event.type === "error" && event.message) {
-                  set({ error: event.message, loading: false, loadingReason: null, agentProgress: [], evaluatorCritique: null });
+                  set({
+                    ...streamErrorPatch(event as { message: string; code?: string }),
+                    loading: false,
+                    loadingReason: null,
+                    agentProgress: [],
+                    evaluatorCritique: null,
+                  });
                   return;
                 }
               } catch {
@@ -1255,8 +1286,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }
         set({ loading: false, loadingReason: null, agentProgress: [], evaluatorCritique: null });
       } catch (e) {
+        const msg = e instanceof Error ? friendlyFetchError(e) : "Error al regenerar sección";
+        const code =
+          e instanceof Error && "code" in e && typeof (e as { code?: string }).code === "string"
+            ? (e as { code?: string }).code
+            : undefined;
         set({
-          error: e instanceof Error ? friendlyFetchError(e) : "Error al regenerar sección",
+          ...streamErrorPatch({ message: msg, code }),
           loading: false,
           loadingReason: null,
           agentProgress: [],
@@ -1543,7 +1579,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     set({
                       managerThreadId: null,
                       pendingPlanApproval: null,
-                      error: String(event.message),
+                      ...streamErrorPatch(event as { message: string; code?: string }),
                       loading: false,
                       loadingReason: null,
                       agentProgress: [],
@@ -1561,10 +1597,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             }
           }
         } catch (e) {
+          const msg = friendlyFetchError(e);
+          const code =
+            e instanceof Error && "code" in e && typeof (e as { code?: string }).code === "string"
+              ? (e as { code?: string }).code
+              : undefined;
           set({
             managerThreadId: null,
             pendingPlanApproval: null,
-            error: friendlyFetchError(e),
+            ...streamErrorPatch({ message: msg, code }),
             loading: false,
             loadingReason: null,
             agentProgress: [],
@@ -2292,7 +2333,9 @@ if (prog && prog.step && prog.step !== "done") {
                   }));
                 }
               } else if (event.type === "error" && event.message) {
-                throw new Error(event.message);
+                const err = new Error(event.message) as Error & { code?: string };
+                if ((event as { code?: string }).code) err.code = (event as { code?: string }).code;
+                throw err;
               }
             } catch (parseErr) {
               if (parseErr instanceof SyntaxError) continue;
@@ -2311,7 +2354,12 @@ if (prog && prog.step && prog.step !== "done") {
       }
       return get().project;
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : "Error al generar Benchmark" });
+      set({
+        ...errorStateFromCaught(e),
+        loading: false,
+        loadingReason: null,
+        agentProgress: [],
+      });
       return null;
     } finally {
       set({ loading: false, loadingReason: null, agentProgress: [] });
@@ -2326,6 +2374,7 @@ if (prog && prog.step && prog.step !== "done") {
     const MAX_RETRIES = 3;
     const RETRY_DELAY_MS = 2000;
     let lastError: string | null = null;
+    let lastErrorCode: string | undefined;
     let accumulatedMdd: string | null = null;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -2371,7 +2420,9 @@ if (prog && prog.step && prog.step !== "done") {
                 } else if (event.type === "blocked" && event.message) {
                   throw new Error(String(event.message));
                 } else if (event.type === "error" && event.message) {
-                  throw new Error(event.message);
+                  const err = new Error(event.message) as Error & { code?: string };
+                  if ((event as { code?: string }).code) err.code = (event as { code?: string }).code;
+                  throw err;
                 }
               } catch (parseErr) {
                 if (parseErr instanceof SyntaxError) continue;
@@ -2412,7 +2463,14 @@ if (prog && prog.step && prog.step !== "done") {
         set({ loading: false, loadingReason: null, agentProgress: [] });
         return get().project;
       } catch (e) {
-        lastError = e instanceof Error ? e.message : "Error al generar MDD";
+        const patch = errorStateFromCaught(e);
+        lastError = patch.error;
+        if (e instanceof Error && "code" in e && typeof (e as { code?: string }).code === "string") {
+          lastErrorCode = (e as { code?: string }).code;
+        }
+        if (patch.modelsUnavailableModalOpen) {
+          break;
+        }
         // Si tenemos contenido acumulado, guardarlo antes de reintentar
         if (accumulatedMdd && accumulatedMdd.trim().length > 80) {
           set({ mddContent: accumulatedMdd });
@@ -2427,8 +2485,15 @@ if (prog && prog.step && prog.step !== "done") {
       }
     }
 
-    set({ error: lastError ?? "Error al generar MDD tras reintentos" });
-    set({ loading: false, loadingReason: null, agentProgress: [] });
+    set({
+      ...streamErrorPatch({
+        message: lastError ?? "Error al generar MDD tras reintentos",
+        code: lastErrorCode,
+      }),
+      loading: false,
+      loadingReason: null,
+      agentProgress: [],
+    });
     return null;
   },
 
