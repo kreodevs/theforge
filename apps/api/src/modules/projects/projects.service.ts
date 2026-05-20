@@ -265,7 +265,37 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       orderBy: { createdAt: "desc" },
       include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
     });
-    return rows.map((p) => toApiProject(p));
+    const favoriteProjectIds = await this.getUserFavoriteIds(userId);
+    return rows.map((p) => ({
+      ...toApiProject(p),
+      isFavorite: favoriteProjectIds.has(p.id),
+    }));
+  }
+
+  async getUserFavoriteIds(userId?: string): Promise<Set<string>> {
+    const uid = userId ?? getRequestUserId();
+    const favs = await this.prisma.favoriteProject.findMany({
+      where: { userId: uid },
+      select: { projectId: true },
+    });
+    return new Set(favs.map((f) => f.projectId));
+  }
+
+  async toggleFavorite(projectId: string) {
+    const userId = getRequestUserId();
+    // Verificar acceso al proyecto (todos los proyectos visibles para el usuario)
+    await this.assertProjectAccess(projectId);
+    const existing = await this.prisma.favoriteProject.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+    });
+    if (existing) {
+      await this.prisma.favoriteProject.delete({ where: { id: existing.id } });
+      return { favorited: false };
+    }
+    await this.prisma.favoriteProject.create({
+      data: { userId, projectId },
+    });
+    return { favorited: true };
   }
 
   async findOne(id: string) {
@@ -275,10 +305,17 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       where: { id },
       include: { sessions: true },
     });
-    return toApiProject({
-      ...project,
-      sessions: withSessions?.sessions ?? [],
+    const userId = getRequestUserId();
+    const fav = await this.prisma.favoriteProject.findUnique({
+      where: { userId_projectId: { userId, projectId: id } },
     });
+    return {
+      ...toApiProject({
+        ...project,
+        sessions: withSessions?.sessions ?? [],
+      }),
+      isFavorite: fav !== null,
+    };
   }
 
   async update(id: string, data: UpdateProjectDto) {
