@@ -17,19 +17,16 @@ import {
   RefreshCw,
   Sparkles,
   Trash2,
-  Eye,
-  EyeOff,
 } from "lucide-react";
 import WorkshopView from "./views/WorkshopView";
 import LoginView from "./views/LoginView";
 import SetupView from "./views/SetupView";
+import SettingsView from "./views/SettingsView";
 import UsersView from "./views/UsersView";
 import { CreateProjectWizardDialog } from "./components/CreateProjectWizardDialog";
 import { ProjectFolderTile } from "./components/ProjectFolderTile";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { McpSecretCard } from "./components/McpSecretCard";
-import { AriadneConfigCard } from "./components/AriadneConfigCard";
 import { apiFetch, clearAccessToken, getAccessToken, API_BASE, getStoredUser } from "./utils/apiClient";
 import {
   Button,
@@ -53,8 +50,6 @@ import {
   AlertDialogTitle,
   EmptyState,
 } from "./components/ui";
-import { cn } from "@/lib/utils";
-
 type Status = "ROJO" | "AMARILLO" | "VERDE";
 
 interface Project {
@@ -116,8 +111,8 @@ export default function App() {
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [usersViewOpen, setUsersViewOpen] = useState(false);
+  const [settingsViewOpen, setSettingsViewOpen] = useState(false);
   const [showIaCost, setShowIaCost] = useState(() => localStorage.getItem("theforge_show_ia_cost") !== "0");
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const [theforgeModalTab, setTheForgeModalTab] = useState<"projects" | "repos">("projects");
@@ -178,7 +173,15 @@ export default function App() {
     setLoading(true);
     try {
       const r = await apiFetch(`${API_BASE}/projects`);
-      const data: unknown = await r.json();
+      const raw = await r.text();
+      let data: unknown = null;
+      if (raw) {
+        try {
+          data = JSON.parse(raw) as unknown;
+        } catch {
+          data = null;
+        }
+      }
       if (!r.ok || !Array.isArray(data)) {
         setProjects([]);
         return;
@@ -323,13 +326,32 @@ export default function App() {
   }, [authed]);
 
   useEffect(() => {
+    const hash = window.location.hash.replace(/^#\/?/, "").trim();
+    if (hash === "settings") {
+      setSettingsViewOpen(true);
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, []);
+
+  useEffect(() => {
     function onAuthExpired() {
       setAuthed(false);
       setWorkshopProject(null);
       setUsersViewOpen(false);
+      setSettingsViewOpen(false);
     }
     window.addEventListener("theforge:auth-expired", onAuthExpired);
     return () => window.removeEventListener("theforge:auth-expired", onAuthExpired);
+  }, []);
+
+  const openSettings = useCallback(() => {
+    setUsersViewOpen(false);
+    setSettingsViewOpen(true);
+  }, []);
+
+  const openUsers = useCallback(() => {
+    setSettingsViewOpen(false);
+    setUsersViewOpen(true);
   }, []);
 
   if (!authed) {
@@ -351,17 +373,36 @@ export default function App() {
     setAuthed(false);
     setWorkshopProject(null);
     setUsersViewOpen(false);
+    setSettingsViewOpen(false);
     setProjects([]);
     setProjectSearchQuery("");
   }
 
-  const isAdmin = getStoredUser()?.role === "admin";
+  const userRole = getStoredUser()?.role;
+  const isAdmin = userRole === "admin" || userRole === "super_admin";
 
   const handleExitWorkshop = useCallback(() => {
     useWorkshopStore.getState().setWorkshopActiveDocPanel("mdd");
     setWorkshopProject(null);
     setUsersViewOpen(false);
+    setSettingsViewOpen(false);
   }, []);
+
+  const closePanelViews = useCallback(() => {
+    setUsersViewOpen(false);
+    setSettingsViewOpen(false);
+  }, []);
+
+  const settingsPanel = settingsViewOpen ? (
+    <SettingsView
+      showIaCost={showIaCost}
+      onToggleIaCost={() => {
+        const next = !showIaCost;
+        localStorage.setItem("theforge_show_ia_cost", next ? "1" : "0");
+        setShowIaCost(next);
+      }}
+    />
+  ) : null;
 
   return (
     <ErrorBoundary>
@@ -407,47 +448,6 @@ export default function App() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Settings Dialog */}
-      <Dialog open={showSettings} onOpenChange={setShowSettings}>
-        <DialogContent className="max-w-xl max-h-[85dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Ajustes</DialogTitle>
-            <DialogDescription>Configuración de tu cuenta y herramientas.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <McpSecretCard />
-            <AriadneConfigCard />
-            <label className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 cursor-pointer">
-              <div className="flex items-center gap-2">
-                {showIaCost ? <Eye className="h-4 w-4 text-[var(--foreground-subtle)]" /> : <EyeOff className="h-4 w-4 text-[var(--foreground-subtle)]" />}
-                <span className="text-sm font-medium">Mostrar costo de IA en semáforo</span>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={showIaCost}
-                onClick={() => {
-                  const next = !showIaCost;
-                  localStorage.setItem("theforge_show_ia_cost", next ? "1" : "0");
-                  setShowIaCost(next);
-                }}
-                className={cn(
-                  "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]",
-                  showIaCost ? "bg-[var(--primary)]" : "bg-[color-mix(in_oklch,var(--muted-foreground)_25%,var(--border))]",
-                )}
-              >
-                <span
-                  className={cn(
-                    "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out",
-                    showIaCost ? "translate-x-4" : "translate-x-0",
-                  )}
-                />
-              </button>
-            </label>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={showTheForgeModal} onOpenChange={setShowTheForgeModal}>
         <DialogContent size="lg" className="max-h-[min(80vh,100dvh-2rem)] w-[calc(100vw-1.5rem)] sm:w-full flex flex-col overflow-hidden">
@@ -591,17 +591,22 @@ export default function App() {
             onProjectSearchChange={setProjectSearchQuery}
             user={getStoredUser()}
             onLogout={logout}
-            onOpenSettings={() => setShowSettings(true)}
-            onOpenUsers={() => setUsersViewOpen(true)}
+            onOpenSettings={openSettings}
+            onOpenUsers={openUsers}
             canManageUsers={isAdmin}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={handleToggleSidebarCollapsed}
             workshopProject={{ id: workshopProject.id, name: workshopProject.name }}
             onExitWorkshop={handleExitWorkshop}
-            onBeforeNavigateToProjects={() => setUsersViewOpen(false)}
+            onBeforeNavigateToProjects={closePanelViews}
+            onBeforeNavigateToWorkshopDoc={closePanelViews}
           />
           <div className="flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col overflow-hidden">
-            {usersViewOpen && isAdmin ? (
+            {settingsViewOpen ? (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+                {settingsPanel}
+              </div>
+            ) : usersViewOpen && isAdmin ? (
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
                 <UsersView />
               </div>
@@ -610,6 +615,7 @@ export default function App() {
                 projectId={workshopProject.id}
                 projectName={workshopProject.name}
                 onBack={handleExitWorkshop}
+                onOpenSettings={openSettings}
               />
             )}
           </div>
@@ -621,16 +627,18 @@ export default function App() {
             onProjectSearchChange={setProjectSearchQuery}
             user={getStoredUser()}
             onLogout={logout}
-            onOpenSettings={() => setShowSettings(true)}
-            onOpenUsers={() => setUsersViewOpen(true)}
+            onOpenSettings={openSettings}
+            onOpenUsers={openUsers}
             canManageUsers={isAdmin}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={handleToggleSidebarCollapsed}
-            onBeforeNavigateToProjects={() => setUsersViewOpen(false)}
+            onBeforeNavigateToProjects={closePanelViews}
           />
 
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        {usersViewOpen && isAdmin ? (
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        {settingsViewOpen ? (
+          settingsPanel
+        ) : usersViewOpen && isAdmin ? (
           <UsersView />
         ) : (
         <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6 px-4 py-6 sm:px-6 lg:px-8 xl:px-10">

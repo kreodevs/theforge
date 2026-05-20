@@ -61,6 +61,8 @@ export interface DashboardSidebarProps {
   onExitWorkshop?: () => void;
   /** Runs before scrolling to the projects grid (e.g. close admin Users view). */
   onBeforeNavigateToProjects?: () => void;
+  /** Runs before switching workshop doc tab (e.g. close Settings / Users overlay). */
+  onBeforeNavigateToWorkshopDoc?: () => void;
 }
 
 function getDisplayName(user: TheForgeUser | null): string {
@@ -176,6 +178,7 @@ export function DashboardSidebar({
   workshopProject = null,
   onExitWorkshop,
   onBeforeNavigateToProjects,
+  onBeforeNavigateToWorkshopDoc,
 }: DashboardSidebarProps) {
   const rail = collapsed;
   /** Drawer navigation below lg; fixed sidebar column from lg. */
@@ -627,6 +630,7 @@ export function DashboardSidebar({
                                     aria-current={isCurrent ? "page" : undefined}
                                     onClick={() => {
                                       closeMobileNav();
+                                      onBeforeNavigateToWorkshopDoc?.();
                                       setWorkshopActiveDocPanel(item.id);
                                     }}
                                     className={cn(

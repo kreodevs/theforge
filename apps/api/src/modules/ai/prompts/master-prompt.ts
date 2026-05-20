@@ -6,8 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Nest copia los .md a dist/modules/ai/prompts/; __dirname en runtime es dist/apps/api/src/modules/ai/prompts/
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "master-prompt.md");
+const PROMPT_PATH = join(__dirname, "master-prompt.md");
 
 function loadMasterPrompt(): string {
   try {

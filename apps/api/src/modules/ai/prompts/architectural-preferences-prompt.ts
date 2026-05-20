@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "architectural-preferences-prompt.md");
+const PROMPT_PATH = join(__dirname, "architectural-preferences-prompt.md");
 
 function load(): string {
   try {

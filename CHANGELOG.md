@@ -2,6 +2,41 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
+## [0.8.0] — 2026-05-20
+
+### Added
+
+- **Arquitectura multi-proveedor BYOK + tenant:** Cada usuario resuelve runtime IA con prioridad **instancia tenant** (`ProviderInstance`) y respaldo **BYOK personal** (`UserProviderConfig`). Sin fallback a claves LLM en variables de entorno (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, etc.). Documentación: `multi_provider_spec.md`.
+- **Rol `super_admin`:** CRUD de instancias tenant, promoción de otros super admins, bypass de whitelist de modelos en instancias. Primer usuario (`POST /auth/register-first-admin`) → `super_admin`. Migración: usuario más antiguo por `createdAt` si no existía ningún `super_admin`.
+- **Cifrado de tokens BYOK:** Módulo `crypto/` con `TOKEN_MASTER_KEYS` y `TOKEN_ACTIVE_KEY_VERSION`. Script `scripts/rotate-master-key.ts` y `npm run rotate-master-key` (incluye `provider_instances`). Guía en README § Cifrado de tokens BYOK; script empaquetado en imagen API.
+- **Catálogo de proveedores:** `provider-catalog.ts` — OpenRouter, OpenAI, Anthropic, Gemini, **Cloudflare Workers AI** y **Groq** (chat, embeddings y/o STT según capacidades del proveedor).
+- **`AIFactory` + adaptadores OpenAI-compatible:** Resolución tenant-first vía `UserProvidersService.resolveRuntime`; jobs BullMQ propagan `userId` con `runWithRequestUserAsync`.
+- **API tenant:** `GET/POST/PUT/DELETE /provider-instances` (super_admin), `GET /provider-instances/enabled` (usuarios con instancias habilitadas).
+- **API usuario:** `GET/PUT /user-providers/*` — configuración BYOK personal, ajustes activos (`activeProvider`, `activeTenantInstanceId`, `embeddingProvider`), catálogo de modelos y fallbacks.
+- **Visibilidad de proyectos:** Enum `Visibility` (`PRIVATE` | `SHARED`). `PRIVATE`: solo owner; `SHARED`: accesible a usuarios autenticados del tenant. Campo en Prisma, DTO y listado/filtrado en `projects.service.ts`.
+- **UI de ajustes (`#/settings`):** `ProviderInstancesCard`, `AIProvidersCard`, modales `UserProviderConfigModal` / `ProviderInstanceConfigModal`, formularios compartidos y diálogo `ModelsUnavailableDialog` cuando no hay modelos configurados.
+- **Filtro de errores LLM:** `ModelsUnavailableExceptionFilter` — respuestas HTTP coherentes cuando el runtime no tiene proveedor usable o modelos disponibles (chat, MDD, DBGA, entregables).
+
+### Changed
+
+- **Pipeline IA (MDD, DBGA, entregables, chat, audio STT, embeddings/Falkor):** Todas las llamadas LLM usan runtime BYOK del usuario autenticado (o `job.data.userId` en cola).
+- **`docker-compose` / `.env.example`:** Eliminadas variables de claves LLM en servidor; obligatorias `TOKEN_MASTER_KEYS` + `TOKEN_ACTIVE_KEY_VERSION`. Opcionales de servidor: `LLM_MAX_TOKENS`, `STT_MODEL`, `EMBEDDING_DIM` como defaults cuando el usuario omite valor en BYOK.
+- **`BOOTSTRAP_ADMIN_EMAILS`:** Solo promueve a `admin` (nunca `super_admin`).
+- **Setup / Login:** Primer admin con `super_admin` y `mcpSecret` autogenerado; `UsersList` permite asignar `super_admin` solo si el usuario actual lo es.
+- **Workshop:** Integración de selección de instancia tenant / proveedor personal en el store y vistas.
+
+### Fixed
+
+- **Asignación de `super_admin`:** Lógica de bootstrap y creación de usuarios aclarada — `BOOTSTRAP_ADMIN_EMAILS` no eleva a super admin; rol reservado al primer registro o migración explícita.
+
+### Impacto arquitectónico
+
+- **Nuevo eje de configuración IA:** De “clave global en env” a “tenant instance → BYOK personal → error explícito”. `EngineModule` / LangGraph / `ProjectsService` dependen de `UserProvidersModule`.
+- **Seguridad:** Tokens API nunca en texto plano en BD; solo `tokenCiphertext` + versión de clave. Rotación sin re-ingestar proyectos.
+- **Despliegue:** Requiere migraciones `20260519120000`–`20260519140000` y definir `TOKEN_MASTER_KEYS` antes de arrancar el API en producción.
+
+---
+
 ## [0.7.3] — 2026-05-20
 
 ### Added
@@ -206,4 +241,4 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ---
 
-Este documento representa el estado incremental del proyecto a fecha de **19 de mayo de 2026**.
+Este documento representa el estado incremental del proyecto a fecha de **20 de mayo de 2026**.

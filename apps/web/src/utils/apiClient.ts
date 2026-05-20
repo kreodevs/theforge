@@ -4,7 +4,7 @@ const USER_KEY = "theforge_user";
 export interface TheForgeUser {
   id: string;
   email: string;
-  role: "admin" | "developer";
+  role: "super_admin" | "admin" | "developer";
   /** Display name from profile / JWT; may be empty until backend provides it */
   name?: string | null;
 }
@@ -37,7 +37,8 @@ export function setAccessToken(token: string): void {
     const user: TheForgeUser = {
       id: (payload.sub as string) || "",
       email: (payload.email as string) || "",
-      role: (payload.role as "admin" | "developer") || "developer",
+      role:
+        (payload.role as TheForgeUser["role"]) || "developer",
       name,
     };
     localStorage.setItem(USER_KEY, JSON.stringify(user));
@@ -52,6 +53,26 @@ export function getStoredUser(): TheForgeUser | null {
   } catch {
     return null;
   }
+}
+
+/** Sincroniza rol y perfil desde la API (útil si el JWT en localStorage está desactualizado). */
+export async function refreshStoredUserFromApi(): Promise<TheForgeUser | null> {
+  const r = await apiFetch(`${API_BASE}/auth/me`);
+  if (!r.ok) return getStoredUser();
+  const data = (await r.json()) as {
+    id?: string;
+    email?: string;
+    role?: TheForgeUser["role"];
+    name?: string | null;
+  };
+  const user: TheForgeUser = {
+    id: data.id ?? "",
+    email: data.email ?? "",
+    role: data.role ?? "developer",
+    name: data.name ?? null,
+  };
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  return user;
 }
 
 export function clearAccessToken(): void {

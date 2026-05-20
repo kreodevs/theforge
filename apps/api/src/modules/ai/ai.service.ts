@@ -1,10 +1,10 @@
-import { Injectable, Inject } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import type {
-  LLMProvider,
   GenerateResponseOptions,
   ChatMessage as LlmChatMessage,
 } from "./interfaces/llm-provider.interface.js";
-import { LLM_PROVIDER } from "./interfaces/llm-provider.interface.js";
+import { AIFactory } from "./ai.factory.js";
+import { getRequestUserId } from "../../common/request-user.store.js";
 import type { ChatImagePart } from "@theforge/shared-types";
 import { MASTER_PROMPT } from "./prompts/master-prompt.js";
 
@@ -65,10 +65,11 @@ function prependTheForgePrompt(prompt: string, theforgeContext: string): string 
 
 @Injectable()
 export class AiService {
-  constructor(
-    @Inject(LLM_PROVIDER)
-    private readonly provider: LLMProvider,
-  ) { }
+  constructor(private readonly aiFactory: AIFactory) {}
+
+  private async provider() {
+    return this.aiFactory.createForUser(getRequestUserId());
+  }
 
   private static readonly ACTIVE_TAB_LABELS: Record<string, string> = {
     spec: "Spec (SDD: what/why)",
@@ -268,7 +269,7 @@ export class AiService {
         approxTotalChars: systemPrompt.length + prompt.length,
         historyLength: history.length,
       });
-      const out = await this.provider.generateResponse(prompt, history, {
+      const out = await (await this.provider()).generateResponse(prompt, history, {
         systemPrompt,
         userMessageImages: options?.userMessageImages,
       });
@@ -462,7 +463,7 @@ export class AiService {
           "\n\n**MDD no destructivo (obligatorio si ya hay MDD en contexto):** El bloque \"Contenido actual del MDD\" incluye **todas** las secciones. Si el usuario pide revisar, alinear o ampliar (p. ej. tras un diagrama), **no sustituyas el proyecto por un solo fragmento**: devuelve el **MDD completo** actualizado (copia el contenido existente y aplica cambios), terminando con `---FIN_MDD---`. Si optas por enviar **solo una sección**, debe empezar por el **mismo patrón de encabezado** que ya usa el documento para esa sección (`## N.` recomendado, mismo `N` que corresponda). Nunca envíes solo tablas o JSON sueltos sin el título de sección reconocible.";
       }
     }
-    return this.provider.generateResponseStream(prompt, history, { ...options, systemPrompt });
+    return (await this.provider()).generateResponseStream(prompt, history, { ...options, systemPrompt });
   }
 
   /**
@@ -482,7 +483,7 @@ export class AiService {
 
   async parseChecklist(text: string) {
     try {
-      return await this.provider.parseChecklist(text);
+      return await (await this.provider()).parseChecklist(text);
     } catch (err) {
       console.error("[AiService] parseChecklist error", err);
       throw err;

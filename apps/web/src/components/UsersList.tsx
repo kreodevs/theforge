@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/Input";
 interface UserRow {
   id: string;
   email: string;
-  role: "admin" | "developer";
+  role: "super_admin" | "admin" | "developer";
   name: string | null;
   hasMcpSecret: boolean;
   createdAt: string;
@@ -72,7 +72,9 @@ export function UsersList() {
   const [openSecretFor, setOpenSecretFor] = useState<string | null>(null);
   const [secrets, setSecrets] = useState<Record<string, SecretState>>({});
 
-  const myId = getStoredUser()?.id ?? "";
+  const me = getStoredUser();
+  const myId = me?.id ?? "";
+  const isSuperAdmin = me?.role === "super_admin";
 
   const updateSecret = (userId: string, patch: Partial<SecretState>) => {
     setSecrets((prev) => ({
@@ -98,7 +100,10 @@ export function UsersList() {
     loadUsers();
   }, [loadUsers]);
 
-  const handleRoleChange = async (userId: string, role: "admin" | "developer") => {
+  const handleRoleChange = async (
+    userId: string,
+    role: "super_admin" | "admin" | "developer",
+  ) => {
     setRoleActionError(null);
     const r = await apiFetch(`${API_BASE}/users/${userId}/role`, {
       method: "PATCH",
@@ -324,14 +329,24 @@ export function UsersList() {
                       className="text-sm rounded-md border border-[var(--border)] bg-[var(--muted)]/40 px-2 py-1 font-medium capitalize text-[var(--foreground)]"
                       title="Tu rol solo puede cambiarlo otro administrador"
                     >
-                      {u.role === "admin" ? "Admin" : "Developer"}
+                      {u.role === "super_admin"
+                        ? "Super admin"
+                        : u.role === "admin"
+                          ? "Admin"
+                          : "Developer"}
                     </span>
                   ) : (
                     <select
                       value={u.role}
-                      onChange={(e) => handleRoleChange(u.id, e.target.value as "admin" | "developer")}
+                      onChange={(e) =>
+                        handleRoleChange(
+                          u.id,
+                          e.target.value as "super_admin" | "admin" | "developer",
+                        )
+                      }
                       className="text-sm rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1"
                     >
+                      {isSuperAdmin ? <option value="super_admin">Super admin</option> : null}
                       <option value="admin">Admin</option>
                       <option value="developer">Developer</option>
                     </select>

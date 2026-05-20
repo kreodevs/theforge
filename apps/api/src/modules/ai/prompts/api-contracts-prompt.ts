@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "api-contracts-prompt.md");
+const PROMPT_PATH = join(__dirname, "api-contracts-prompt.md");
 
 function loadApiContractsPrompt(): string {
   try {

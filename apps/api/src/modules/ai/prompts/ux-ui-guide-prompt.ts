@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "ux-ui-guide-prompt.md");
+const PROMPT_PATH = join(__dirname, "ux-ui-guide-prompt.md");
 
 function loadUxUiGuidePrompt(): string {
   try {

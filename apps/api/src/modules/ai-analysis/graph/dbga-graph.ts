@@ -8,16 +8,21 @@ import { createSynthesisNode } from "../nodes/synthesis.node.js";
 import { getScoutTools, getAuditorTools } from "../tools/tool-registry.js";
 import { createDbgaLLM } from "../llm/create-dbga-llm.js";
 import { routeDbgaAfterCritic } from "./dbga-critic-routing.js";
+import type { AIFactory } from "../../ai/ai.factory.js";
 
 /**
  * Builds and compiles the DBGA StateGraph.
  * Edges: Scout → Auditor → Critic → (Scout | Synthesis) → END.
  * Scout uses Tavily + scrape_url (Cheerio); Auditor uses scrape_url.
- * LLM: OpenRouter (mismo runtime que el adapter principal).
+ * LLM: runtime BYOK del usuario (OpenAI-compatible).
  * Si se pasa checkpointer, el estado se persiste por thread_id (retomar Fase 0).
  */
-export function createDbgaGraph(checkpointer?: BaseCheckpointSaver | null) {
-  const llm = createDbgaLLM();
+export async function createDbgaGraph(
+  aiFactory: AIFactory,
+  userId: string,
+  checkpointer?: BaseCheckpointSaver | null,
+) {
+  const llm = await createDbgaLLM(aiFactory, userId);
 
   const scoutTools = getScoutTools();
   const auditorTools = getAuditorTools();

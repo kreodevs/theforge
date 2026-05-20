@@ -1,19 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROMPT_PATH = join(
-  __dirname,
-  "..",
-  "..",
-  "..",
-  "..",
-  "..",
-  "..",
-  "modules",
-  "ai",
-  "prompts",
-  "conformance-check-prompt.md",
-);
+const PROMPT_PATH = join(__dirname, "conformance-check-prompt.md");
 
 function loadConformanceCheckPrompt(): string {
   try {

@@ -7,8 +7,8 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Public } from "../../common/decorators/public.decorator.js";
 import { AudioService } from "./audio.service.js";
+import { getRequestUserId } from "../../common/request-user.store.js";
 
 /** Minimal file shape from multer. */
 interface UploadedAudioFile {
@@ -20,26 +20,28 @@ interface UploadedAudioFile {
 export class AudioController {
   constructor(private readonly audio: AudioService) {}
 
-  /** Public config: frontend checks STT_MODEL availability. */
-  @Public()
+  /**
+   * Config STT del usuario autenticado (sttModel en BYOK del proveedor activo).
+   * Sin sesión devuelve sttModel null.
+   */
   @Get("config")
-  getConfig(): { sttModel: string | null } {
-    const sttModel = process.env.STT_MODEL?.trim() || null;
-    return { sttModel };
+  async getConfig(): Promise<{ sttModel: string | null }> {
+    try {
+      const userId = getRequestUserId();
+      return await this.audio.getSttConfigForUser(userId);
+    } catch {
+      return { sttModel: null };
+    }
   }
 
-  /** Transcribe an audio file using the configured STT_MODEL. */
-  @Public()
+  /** Transcribe an audio file using the user's configured STT model. */
   @Post("transcribe")
   @UseInterceptors(FileInterceptor("audio"))
   async transcribe(
     @UploadedFile() file: UploadedAudioFile,
   ): Promise<{ text: string }> {
     if (!file) {
-      throw new BadRequestException("No audio file provided");
-    }
-    if (!process.env.STT_MODEL?.trim()) {
-      throw new BadRequestException("STT_MODEL is not configured");
+      throw new BadRequestException("No se proporcionó archivo de audio");
     }
     const text = await this.audio.transcribe(file.buffer, file.mimetype);
     return { text };
