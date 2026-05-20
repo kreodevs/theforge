@@ -2067,14 +2067,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             throw new Error((err as { message?: string }).message ?? "Error al consultar cola de entregables");
           }
           const j = (await st.json()) as {
-            state: string;
+            status: string;
             progress?: { step?: string; index?: number; total?: number };
             failedReason?: string;
           };
-          if (j.state === "failed") {
+          if (j.status === "failed") {
             throw new Error(j.failedReason ?? "Cascada de entregables fallida");
           }
-          if (j.state === "completed") break;
+          if (j.status === "completed") break;
           const prog = j.progress;
           if (prog && prog.step && prog.step !== "done") {
             if (!completedSteps.has(prog.step)) {
