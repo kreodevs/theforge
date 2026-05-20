@@ -12,6 +12,7 @@ export function isModelsUnavailableStreamError(event: {
   const msg = (event.message ?? "").trim();
   return (
     msg.includes("No hay un modelo disponible configurado") ||
-    /not a valid model id/i.test(msg)
+    /not a valid model id/i.test(msg) ||
+    /no endpoints found for/i.test(msg)
   );
 }

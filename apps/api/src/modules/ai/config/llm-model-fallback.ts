@@ -87,7 +87,9 @@ export function isModelExhaustionError(
     msg.includes("not a valid model") ||
     msg.includes("invalid model id") ||
     msg.includes("invalid model") ||
-    msg.includes("unknown model")
+    msg.includes("unknown model") ||
+    msg.includes("no endpoints found") ||
+    msg.includes("no endpoint found")
   ) {
     return true;
   }
@@ -95,7 +97,7 @@ export function isModelExhaustionError(
   if (status === 400 && (msg.includes("model") || msg.includes("invalid"))) {
     return true;
   }
-  if (status === 404 && msg.includes("model")) {
+  if (status === 404 && (msg.includes("model") || msg.includes("endpoint"))) {
     return true;
   }
 

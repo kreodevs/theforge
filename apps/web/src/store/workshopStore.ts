@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import type { ChatImagePart, CodebaseDocResponseMode } from "@theforge/shared-types";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue } from "../utils/apiClient";
-import { parseErrorMessageFromResponse } from "../utils/httpError";
+import {
+  parseApiErrorPayloadFromResponse,
+  parseErrorMessageFromResponse,
+} from "../utils/httpError";
 import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
 
 /**
@@ -1082,8 +1085,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.message ?? "Error al cargar bienvenida");
+        const payload = await parseApiErrorPayloadFromResponse(r, "Error al cargar bienvenida");
+        set({
+          ...streamErrorPatch(payload),
+          synced: true,
+          loading: false,
+        });
+        return;
       }
       const data: { session: Session; project: Project } = await r.json();
       const p = data.project;
@@ -1115,7 +1123,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       });
     } catch (e) {
       set({
-        error: e instanceof Error ? e.message : "Error al cargar bienvenida",
+        ...errorStateFromCaught(e),
         synced: true,
       });
     } finally {

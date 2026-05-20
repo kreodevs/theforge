@@ -17,6 +17,17 @@ test("isModelExhaustionError — modelo no encontrado", () => {
   assert.equal(isModelExhaustionError(new Error("The model does not exist")), true);
 });
 
+test("isModelExhaustionError — OpenRouter sin endpoints (404)", () => {
+  assert.equal(
+    isModelExhaustionError(
+      Object.assign(new Error("404 No endpoints found for deepseek/deepseek-r1:free."), {
+        status: 404,
+      }),
+    ),
+    true,
+  );
+});
+
 test("isModelExhaustionError — ID de modelo inválido (OpenRouter 400)", () => {
   assert.equal(
     isModelExhaustionError(new Error("400 qwen/qwen3-coder-480b:free is not a valid model ID")),

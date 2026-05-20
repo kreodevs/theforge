@@ -12,6 +12,7 @@ import * as dns from "node:dns";
 import { resolve } from "node:path";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module.js";
+import { ModelsUnavailableExceptionFilter } from "./common/filters/models-unavailable.exception-filter.js";
 
 // SMTP (p. ej. Gmail): priorizar IPv4 evita timeouts cuando IPv6 no llega al servidor de correo.
 if (typeof dns.setDefaultResultOrder === "function") {
@@ -48,6 +49,7 @@ function corsOriginsFromEnv(): string[] {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useGlobalFilters(new ModelsUnavailableExceptionFilter());
   const origins = corsOriginsFromEnv();
   app.enableCors({ origin: origins, credentials: true });
 

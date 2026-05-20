@@ -599,6 +599,7 @@ export default function App() {
             workshopProject={{ id: workshopProject.id, name: workshopProject.name }}
             onExitWorkshop={handleExitWorkshop}
             onBeforeNavigateToProjects={closePanelViews}
+            onBeforeNavigateToWorkshopDoc={closePanelViews}
           />
           <div className="flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col overflow-hidden">
             {settingsViewOpen ? (
@@ -635,7 +636,9 @@ export default function App() {
           />
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        {usersViewOpen && isAdmin ? (
+        {settingsViewOpen ? (
+          settingsPanel
+        ) : usersViewOpen && isAdmin ? (
           <UsersView />
         ) : (
         <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6 px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
