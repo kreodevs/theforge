@@ -11,7 +11,7 @@ Auth multi-usuario con OTP por email + JWT. Cada `User` tiene su propio `mcpSecr
 - **`POST /auth/mcp-login`** — body `{ secret }`. Intercambia un `mcpSecret` por JWT del usuario dueño del secret. Usado por el MCP server.
 - **`POST /auth/sso/login`** — body `{ token }`. Login vía SSO externo (`SSO_URL/verify`). Crea/actualiza usuario local.
 - **`GET /auth/has-users`** — `{ hasUsers: boolean }`. Usado por el `SetupView` para detectar primer arranque.
-- **`POST /auth/register-first-admin`** — body `{ email, name? }`. Crea el primer admin (solo si la tabla `User` está vacía). Genera `mcpSecret` automáticamente.
+- **`POST /auth/register-first-admin`** — body `{ email, name? }`. Crea el primer usuario con rol `super_admin` (solo si la tabla `User` está vacía). Genera `mcpSecret` automáticamente.
 
 ### Autenticados (JWT)
 
@@ -23,7 +23,7 @@ Auth multi-usuario con OTP por email + JWT. Cada `User` tiene su propio `mcpSecr
 
 - **`GET /users`** — lista usuarios (`{ id, email, role, name, hasMcpSecret, createdAt }[]`).
 - **`POST /users`** — body `{ email, name?, role? }`. Crea usuario y genera `mcpSecret`.
-- **`PATCH /users/:id/role`** — body `{ role }` (`admin` | `developer`). No permite degradarse a sí mismo a `developer` (`403`).
+- **`PATCH /users/:id/role`** — body `{ role }` (`super_admin` | `admin` | `developer`). Solo un `super_admin` puede asignar o quitar `super_admin`. No permite degradarse a sí mismo a `developer` (`403`).
 - **`DELETE /users/:id`** — elimina usuario (cascada sobre projects/sessions). No permite borrar la propia cuenta (`403`).
 - **`GET /users/:id/mcp-secret`** — ver `mcpSecret` de cualquier usuario.
 - **`POST /users/:id/mcp-secret/regenerate`** — rotar `mcpSecret` de cualquier usuario.

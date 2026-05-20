@@ -11,7 +11,7 @@ Cada usuario puede usar **instancias de proveedor a nivel tenant** (credenciales
 | `developer` | Uso de instancias tenant + BYOK personal |
 
 - Primer usuario (`POST /auth/register-first-admin`): `super_admin`.
-- Migración prod: usuario más antiguo por `createdAt` → `super_admin`.
+- Migración prod: usuario más antiguo por `createdAt` → `super_admin` solo si no existe ningún `super_admin`.
 - `BOOTSTRAP_ADMIN_EMAILS`: promueve a `admin` únicamente (nunca `super_admin`).
 
 ## Componentes

@@ -36,9 +36,10 @@ ALTER TABLE "UserAISettings" ADD COLUMN IF NOT EXISTS "activeTenantInstanceId" T
 ALTER TABLE "UserAISettings" DROP CONSTRAINT IF EXISTS "UserAISettings_activeTenantInstanceId_fkey";
 ALTER TABLE "UserAISettings" ADD CONSTRAINT "UserAISettings_activeTenantInstanceId_fkey" FOREIGN KEY ("activeTenantInstanceId") REFERENCES "ProviderInstance"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- Usuario más antiguo → super_admin (prod bootstrap)
+-- Usuario más antiguo → super_admin (prod bootstrap), solo si aún no hay ninguno
 UPDATE "User" SET "role" = 'super_admin'
-WHERE "id" = (SELECT "id" FROM "User" ORDER BY "createdAt" ASC LIMIT 1);
+WHERE "id" = (SELECT "id" FROM "User" ORDER BY "createdAt" ASC LIMIT 1)
+  AND NOT EXISTS (SELECT 1 FROM "User" WHERE "role" = 'super_admin' LIMIT 1);
 
 -- Migrar BYOK existentes a instancias tenant (propiedad del super_admin más antiguo)
 INSERT INTO "ProviderInstance" (
