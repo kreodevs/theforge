@@ -335,7 +335,7 @@ export function DashboardSidebar({
   }, [closeMobileNav, onExitWorkshop]);
 
   return (
-    <div className="relative flex w-full shrink-0 flex-col lg:h-full lg:min-h-0 lg:w-auto lg:shrink-0">
+    <div className="relative flex w-full shrink-0 flex-col lg:z-40 lg:h-full lg:min-h-0 lg:w-auto lg:shrink-0">
       <header
         className="sticky top-0 z-40 flex w-full items-center justify-between gap-2 border-b border-[color-mix(in_oklch,var(--sidebar-border)_90%,var(--sidebar))] bg-[var(--sidebar)] px-3 py-2.5 text-[var(--sidebar-foreground)] lg:hidden"
         style={{ paddingTop: "max(0.625rem, env(safe-area-inset-top))" }}
@@ -394,7 +394,10 @@ export function DashboardSidebar({
           : "max-lg:-translate-x-full max-lg:pointer-events-none",
         !inWorkshop && "lg:h-full lg:max-h-[100dvh] lg:min-h-0",
         inWorkshop &&
-          "min-h-0 overflow-hidden lg:h-full lg:max-h-[min(100dvh,100svh)] lg:min-h-0",
+          cn(
+            "min-h-0 lg:h-full lg:max-h-[min(100dvh,100svh)] lg:min-h-0",
+            rail ? "overflow-hidden lg:overflow-visible" : "overflow-hidden",
+          ),
         // Expanded: 16rem / 256px (common nav width); rail stays 4rem.
         rail ? "lg:w-16 lg:min-w-[4rem]" : "lg:w-64 lg:min-w-64",
       )}
@@ -711,7 +714,7 @@ export function DashboardSidebar({
       <div
         className={cn(
           "mt-auto shrink-0 border-t border-[color-mix(in_oklch,var(--sidebar-border)_75%,var(--sidebar))] p-2",
-          rail && "lg:px-1.5",
+          rail && "lg:relative lg:z-[1] lg:px-1.5",
         )}
       >
         <ThemeModeToggle compact={rail} />
@@ -770,7 +773,14 @@ export function DashboardSidebar({
               aria-hidden
             />
           </summary>
-          <div className="absolute bottom-full left-2 right-2 z-[var(--z-popover)] mb-1 min-w-[10rem] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--popover)] py-1 text-[var(--popover-foreground)] shadow-lg">
+          <div
+            className={cn(
+              "absolute z-[var(--z-popover)] min-w-[10.5rem] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--popover)] py-1 text-[var(--popover-foreground)] shadow-lg",
+              rail
+                ? "bottom-0 left-full right-auto mb-0 ml-2 max-lg:bottom-full max-lg:left-2 max-lg:right-2 max-lg:mb-1 max-lg:ml-0"
+                : "bottom-full left-2 right-2 mb-1",
+            )}
+          >
             <button
               type="button"
               className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-[var(--popover-foreground)] hover:bg-[var(--muted)]"
