@@ -124,11 +124,24 @@ export class AiAnalysisController {
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
-        for await (const event of service.streamAnalysis(idea, projectId)) {
-          yield JSON.stringify(event) + "\n";
+        try {
+          for await (const event of service.streamAnalysis(idea, projectId)) {
+            yield JSON.stringify(event) + "\n";
+          }
+        } catch (err) {
+          const payload = formatDbgaStreamError(err);
+          console.error("[DBGA stream] error:", payload.message);
+          yield JSON.stringify({ type: "error", ...payload }) + "\n";
         }
       })(),
     );
+    res.on("close", () => { stream.destroy(); });
+    stream.on("error", (err) => {
+      console.error("[DBGA stream] stream error:", err);
+      if (!res.destroyed) {
+        try { res.end(); } catch { /* ignore */ }
+      }
+    });
     stream.pipe(res);
   }
 
