@@ -362,7 +362,8 @@ export default function WorkshopView({
   const loading = useWorkshopStore((s) => s.loading);
   const loadingReason = useWorkshopStore((s) => s.loadingReason);
   const cascadeRunning = loading && (loadingReason === "deliverables-cascade" || loadingReason === "legacy-deliverables");
-  const cascadeProgress = useWorkshopStore((s) => s.agentProgress);
+  const cascadeCompleted = useWorkshopStore((s) => s.cascadeCompleted);
+  const cascadeTotal = useWorkshopStore((s) => s.cascadeTotal);
   const error = useWorkshopStore((s) => s.error);
   const setError = useWorkshopStore((s) => s.setError);
   const launchHermes = useWorkshopStore((s) => s.launchHermes);
@@ -607,18 +608,46 @@ export default function WorkshopView({
     }
   }, [projectId, project, effectiveMddTrimmed, blueprintContent, specContent, setUxUiGuideContent, persistUxUiGuideContent, setError]);
 
-  /** Repara el YAML frontmatter de la guía UX/UI desde el markdown existente.
-   * Útil cuando el contenido fue generado por una IA externa o copiado manualmente
-   * y no tiene el YAML frontmatter que DesignMdPreview necesita para el preview visual. */
-  const repairUxGuide = useCallback(() => {
+  /** Repara/regenera el YAML frontmatter de la guía UX/UI usando el MDD como contexto vía API.
+   * Llama al endpoint que genera YAML desde el MDD independientemente del body markdown. */
+  const repairUxGuide = useCallback(async () => {
     const current = uxUiGuideContent ?? "";
-    if (!current.trim()) return;
-    const repaired = replaceYamlFrontMatter(current, projectName);
-    if (repaired !== current) {
-      setUxUiGuideContent(repaired);
-      persistUxUiGuideContent(repaired);
+    if (!projectId || !current.trim()) return;
+    setUxGenerating(true);
+    setUxGenProgress("Reparando YAML frontmatter…");
+    try {
+      const { apiFetch, API_BASE } = await import("../utils/apiClient");
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}/repair-ux-ui-guide`, {
+        method: "POST",
+      });
+      if (!r.ok) throw new Error(`Error: ${r.status}`);
+      const yamlStr: string = await r.text();
+      if (!yamlStr.startsWith("---")) {
+        console.warn("[repairUxGuide] Response is not YAML frontmatter, falling back to local repair");
+        const repaired = replaceYamlFrontMatter(current, projectName);
+        if (repaired !== current) {
+          await persistUxUiGuideContent(repaired);
+        }
+        return;
+      }
+      // Strip existing YAML from the current content, keep the body
+      const bodyMatch = current.match(/^---[\s\S]*?\n---\n?\n?([\s\S]*)$/);
+      const body = bodyMatch?.[1]?.trim() ?? current.trim();
+      const newContent = yamlStr + "\n\n" + body;
+      // Let persistField handle the local state update (single re-render)
+      await persistUxUiGuideContent(newContent);
+    } catch (e) {
+      console.error("[repairUxGuide] API call failed, falling back to local repair:", e);
+      // Fallback: local regex-based repair
+      const repaired = replaceYamlFrontMatter(current, projectName);
+      if (repaired !== current) {
+        await persistUxUiGuideContent(repaired);
+      }
+    } finally {
+      setUxGenerating(false);
+      setUxGenProgress(null);
     }
-  }, [uxUiGuideContent, projectName, setUxUiGuideContent, persistUxUiGuideContent]);
+  }, [projectId, uxUiGuideContent, projectName, persistUxUiGuideContent, setUxGenerating, setUxGenProgress]);
 
   const persistArchitectureContent = useWorkshopStore((s) => s.persistArchitectureContent);
   const persistUseCasesContent = useWorkshopStore((s) => s.persistUseCasesContent);
@@ -2241,7 +2270,7 @@ export default function WorkshopView({
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Reparar YAML frontmatter — genera el YAML estructurado desde el markdown existente
+                      Reparar YAML frontmatter — regenera tokens de diseño desde el MDD
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -2953,8 +2982,8 @@ export default function WorkshopView({
                               <Layers className="h-4 w-4 shrink-0" aria-hidden />
                             )}
                             {cascadeRunning
-                              ? cascadeProgress.length > 0
-                                ? `Generando ${cascadeProgress[0]?.message ?? "documentos…"}`
+                              ? cascadeCompleted > 0
+                                ? `Generando documentos (${cascadeCompleted}/${cascadeTotal})`
                                 : "Generando documentos…"
                               : "Generar todos los documentos"}
                           </button>
