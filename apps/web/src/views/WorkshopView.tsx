@@ -160,8 +160,8 @@ function workshopDocSourceTogglePresentation(
 ): { Icon: LucideIcon; tooltip: string } {
   if (centralPanel === "ux-ui-guide") {
     if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Ver markdown" };
-    if (activeViewMode === "design") return { Icon: Palette, tooltip: "Ver preview diseño" };
-    return { Icon: FileText, tooltip: "Ver preview visual" };
+    if (activeViewMode === "design") return { Icon: Palette, tooltip: "Ver UI Kit y tokens" };
+    return { Icon: FileText, tooltip: "Ver documento DESIGN.md" };
   }
   if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Editar" };
   return { Icon: FileText, tooltip: "Ver previsualización" };
@@ -182,11 +182,11 @@ function WorkshopDocToolbarHint({
       ? "Complejidad baja: Spec → H.U. → Tasks (MDD / Blueprint / API ocultos). Paso 0 opcional."
       : tier === "MEDIUM"
         ? _isLegacyProject
-          ? "Complejidad media (legacy): MDD Inicial opcional (Ariadne); MDD de cambio + Spec → API → Guía UX/UI → Tasks."
-          : "Complejidad media (producto nuevo): sin MDD en barra — insumo Paso 0 / Spec. Entregables: Spec → API → Guía UX/UI → Tasks."
+          ? "Complejidad media (legacy): MDD Inicial opcional (Ariadne); MDD de cambio + Spec → API → Design System → Tasks."
+          : "Complejidad media (producto nuevo): sin MDD en barra — insumo Paso 0 / Spec. Entregables: Spec → API → Design System → Tasks."
         : _isLegacyProject
           ? "Legacy: MDD Inicial opcional (Ariadne → doc. de partida); luego Modificación + MDD de cambio y entregables. Cada etapa del taller = una modificación con doc actualizada vía Ariadne."
-          : "Orden: Paso 0 → BRD → To-Be → MDD → Spec → Arq. → Casos → H.U. → Blueprint → Guía UX/UI → API → Flujos → Tasks → Infra";
+          : "Orden: Paso 0 → BRD → To-Be → MDD → Spec → Arq. → Casos → H.U. → Blueprint → Design System → API → Flujos → Tasks → Infra";
 
   const summaryLine =
     tier === "LOW"
@@ -194,7 +194,7 @@ function WorkshopDocToolbarHint({
       : tier === "MEDIUM"
         ? _isLegacyProject
           ? "Complejidad media (legacy): doc. de partida opcional con Ariadne; luego MDD de cambio y entregables (Spec → API → UX/UI → Tasks)."
-          : "Complejidad media (producto nuevo): insumo Paso 0 / Spec; entregables Spec → API → Guía UX/UI → Tasks (sin MDD en barra hasta avanzar el flujo)."
+          : "Complejidad media (producto nuevo): insumo Paso 0 / Spec; entregables Spec → API → Design System → Tasks (sin MDD en barra hasta avanzar el flujo)."
         : _isLegacyProject
           ? "Complejidad alta (legacy): Ariadne para doc. de partida, Modificación por etapa y documentación actualizada con el taller."
           : "Complejidad alta (producto nuevo): recorre Paso 0, BRD, To-Be, MDD y entregables hasta Infra en el orden sugerido.";
@@ -575,12 +575,12 @@ export default function WorkshopView({
       setUxGenerating(false);
       setUxGenProgress(null);
       const msg = e instanceof Error ? e.message : String(e);
-      setError(`Error al generar guía UX/UI: ${msg}`);
+      setError(`Error al generar design system: ${msg}`);
       console.error("Error generating UX guide:", e);
     }
   }, [projectId, project, effectiveMddTrimmed, blueprintContent, specContent, setUxUiGuideContent, persistUxUiGuideContent, setError]);
 
-  /** Repara el YAML frontmatter de la guía UX/UI desde el markdown existente.
+  /** Repara el YAML frontmatter de la design system desde el markdown existente.
    * Útil cuando el contenido fue generado por una IA externa o copiado manualmente
    * y no tiene el YAML frontmatter que DesignMdPreview necesita para el preview visual. */
   const repairUxGuide = useCallback(() => {
@@ -2210,7 +2210,7 @@ export default function WorkshopView({
                         onClick={repairUxGuide}
                         disabled={uxGenerating || loading}
                         className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label="Reparar YAML frontmatter de la guía UX/UI desde el contenido existente"
+                        aria-label="Reparar YAML frontmatter de la design system desde el contenido existente"
                       >
                         <Wrench className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
                       </button>
@@ -2228,7 +2228,7 @@ export default function WorkshopView({
                         onClick={generateUxGuideSequential}
                         disabled={uxGenerating || loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
                         className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
-                        aria-label={uxGenProgress ?? "Regenerar guía UX/UI desde MDD y Blueprint"}
+                        aria-label={uxGenProgress ?? "Regenerar design system desde MDD y Blueprint"}
                       >
                         {uxGenerating ? (
                           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
@@ -2238,7 +2238,7 @@ export default function WorkshopView({
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      {uxGenProgress ?? "Regenerar guía UX/UI desde MDD y Blueprint"}
+                      {uxGenProgress ?? "Regenerar design system desde MDD y Blueprint"}
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -3052,7 +3052,7 @@ export default function WorkshopView({
                 canGenerate={!!(effectiveMddTrimmed && blueprintContent?.trim())}
                 isLoading={loading}
                 isGenerating={uxGenerating}
-                placeholder="# Guía UX/UI\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
+                placeholder="# Design System\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
                 onBlur={handleUxUiGuideBlur}
               />
               </ErrorBoundary>
