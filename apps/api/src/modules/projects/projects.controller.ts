@@ -204,6 +204,11 @@ export class ProjectsController {
     return this.queueOrSync(id, "tasks", {}, queue);
   }
 
+  @Post(":id/repair-ux-ui-guide")
+  repairUxUiGuide(@Param("id") id: string) {
+    return this.projects.repairUxUiGuideYaml(id);
+  }
+
   @Post(":id/generate-architecture")
   generateArchitecture(
     @Param("id") id: string,

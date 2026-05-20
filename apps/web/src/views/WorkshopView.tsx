@@ -608,18 +608,43 @@ export default function WorkshopView({
     }
   }, [projectId, project, effectiveMddTrimmed, blueprintContent, specContent, setUxUiGuideContent, persistUxUiGuideContent, setError]);
 
-  /** Repara el YAML frontmatter de la guía UX/UI desde el markdown existente.
-   * Útil cuando el contenido fue generado por una IA externa o copiado manualmente
-   * y no tiene el YAML frontmatter que DesignMdPreview necesita para el preview visual. */
-  const repairUxGuide = useCallback(() => {
+  /** Repara/regenera el YAML frontmatter de la guía UX/UI usando el MDD como contexto vía API.
+   * Llama al endpoint que genera YAML desde el MDD independientemente del body markdown. */
+  const repairUxGuide = useCallback(async () => {
     const current = uxUiGuideContent ?? "";
-    if (!current.trim()) return;
-    const repaired = replaceYamlFrontMatter(current, projectName);
-    if (repaired !== current) {
-      setUxUiGuideContent(repaired);
-      persistUxUiGuideContent(repaired);
+    if (!projectId || !current.trim()) return;
+    try {
+      const { apiFetch, API_BASE } = await import("../utils/apiClient");
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}/repair-ux-ui-guide`, {
+        method: "POST",
+      });
+      if (!r.ok) throw new Error(`Error: ${r.status}`);
+      const yamlStr: string = await r.text();
+      if (!yamlStr.startsWith("---")) {
+        console.warn("[repairUxGuide] Response is not YAML frontmatter, falling back to local repair");
+        const repaired = replaceYamlFrontMatter(current, projectName);
+        if (repaired !== current) {
+          setUxUiGuideContent(repaired);
+          persistUxUiGuideContent(repaired);
+        }
+        return;
+      }
+      // Strip existing YAML from the current content, keep the body
+      const bodyMatch = current.match(/^---[\s\S]*?\n---\n?\n?([\s\S]*)$/);
+      const body = bodyMatch?.[1]?.trim() ?? current.trim();
+      const newContent = yamlStr + "\n\n" + body;
+      setUxUiGuideContent(newContent);
+      persistUxUiGuideContent(newContent);
+    } catch (e) {
+      console.error("[repairUxGuide] API call failed, falling back to local repair:", e);
+      // Fallback: local regex-based repair
+      const repaired = replaceYamlFrontMatter(current, projectName);
+      if (repaired !== current) {
+        setUxUiGuideContent(repaired);
+        persistUxUiGuideContent(repaired);
+      }
     }
-  }, [uxUiGuideContent, projectName, setUxUiGuideContent, persistUxUiGuideContent]);
+  }, [projectId, uxUiGuideContent, projectName, setUxUiGuideContent, persistUxUiGuideContent]);
 
   const persistArchitectureContent = useWorkshopStore((s) => s.persistArchitectureContent);
   const persistUseCasesContent = useWorkshopStore((s) => s.persistUseCasesContent);
@@ -2242,7 +2267,7 @@ export default function WorkshopView({
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Reparar YAML frontmatter — genera el YAML estructurado desde el markdown existente
+                      Reparar YAML frontmatter — regenera tokens de diseño desde el MDD
                     </TooltipContent>
                   </Tooltip>
                 )}
