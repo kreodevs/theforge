@@ -167,7 +167,7 @@ export class AiService {
           systemPrompt += `\n\n**Instrucción DE delimitador (OBLIGATORIO):** Cuando generes o actualices el documento de ${label} (completo o solo una sección), DEBES escribir el contenido y TERMINAR con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Sin ese delimitador, el sistema NO persiste ningún cambio y el usuario no ve nada en el panel del documento.`;
           if (at === "mdd") {
             systemPrompt +=
-              "\n\n**Cuando el usuario indique que falta algo en el documento** (ej. \"X no está mencionado\", \"el cotizador también se involucra\", \"falta Y\"), **debes** devolver el MDD o la sección correspondiente actualizada con ese contenido incorporado, terminando con `---FIN_MDD---`. **Siempre incluye un mensaje breve en el chat después de `---FIN_MDD---`** resumiendo el cambio (ej. \"Actualizada la sección 7 con Dokploy en lugar de AWS.\"). Ese mensaje de chat es lo único que verá el usuario.";
+              "\n\n**\u26a0\ufe0f REGLA ABSOLUTA \u2014 MDD:** Cada vez que el usuario pida **agregar, cambiar, modificar, actualizar, corregir o eliminar** algo del MDD (ej. \"agrega X\", \"cambia Y por Z\", \"falta W\", \"actualiza la secci\u00f3n N\"), **DEBES** devolver el **MDD COMPLETO ACTUALIZADO** (conservando TODO el contenido existente m\u00e1s los cambios) terminando con `---FIN_MDD---`. **NUNCA** respondas solo con un mensaje como \"MDD actualizado\" o \"Hecho\" \u2014 si lo haces, el sistema NO persiste ning\u00fan cambio y el usuario cree que se aplic\u00f3 cuando no es as\u00ed. Siempre incluye un mensaje breve resumiendo el cambio DESPU\u00c9S de `---FIN_MDD---`.";
           }
           if (at === "spec") {
             systemPrompt +=
@@ -327,7 +327,7 @@ export class AiService {
         systemPrompt += `\n\nSi decides generar o actualizar el documento de ${label} (completo o solo una sección), escribe el contenido y TERMINA con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Así el sistema aplicará los cambios al documento del proyecto.`;
         if (at === "mdd") {
             systemPrompt +=
-              "\n\n**Cuando el usuario indique que falta algo en el documento** (ej. \"X no está mencionado\", \"el cotizador también se involucra\", \"falta Y\"), **debes** devolver el MDD o la sección correspondiente actualizada con ese contenido incorporado, terminando con `---FIN_MDD---`. **Siempre incluye un mensaje breve en el chat después de `---FIN_MDD---`** resumiendo el cambio (ej. \"Actualizada la sección 7 con Dokploy en lugar de AWS.\"). Ese mensaje de chat es lo único que verá el usuario.";
+              "\n\n**\u26a0\ufe0f REGLA ABSOLUTA \u2014 MDD:** Cada vez que el usuario pida **agregar, cambiar, modificar, actualizar, corregir o eliminar** algo del MDD (ej. \"agrega X\", \"cambia Y por Z\", \"falta W\", \"actualiza la secci\u00f3n N\"), **DEBES** devolver el **MDD COMPLETO ACTUALIZADO** (conservando TODO el contenido existente m\u00e1s los cambios) terminando con `---FIN_MDD---`. **NUNCA** respondas solo con un mensaje como \"MDD actualizado\" o \"Hecho\" \u2014 si lo haces, el sistema NO persiste ning\u00fan cambio y el usuario cree que se aplic\u00f3 cuando no es as\u00ed. Siempre incluye un mensaje breve resumiendo el cambio DESPU\u00c9S de `---FIN_MDD---`.";
           }
         if (at === "spec") {
           systemPrompt +=

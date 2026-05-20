@@ -1304,11 +1304,14 @@ export function tokensToYamlFrontMatter(tokens: DesignTokens): string {
  */
 export function replaceYamlFrontMatter(content: string, projectName?: string): string {
   const { body } = parseYamlFrontMatter(content);
-  const tokens = extractDesignMdFrontMatter(content);
-  if (!tokens) return content;
+  let tokens = extractDesignMdFrontMatter(content);
+  if (!tokens) {
+    // Sin YAML ni tokens detectables — crear defaults desde el nombre del proyecto
+    tokens = { name: projectName } as DesignTokens;
+  }
   const filled = fillDesignMdDefaults(tokens);
   if (!filled) return content;
-  if (projectName) filled.name = filled.name || projectName;
+  if (projectName && !filled.name) filled.name = projectName;
   const yamlStr = tokensToYamlFrontMatter(filled);
   return yamlStr + "\n\n" + body;
 }
