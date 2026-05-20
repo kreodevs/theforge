@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "discovery-benchmark-prompt.md");
+const PROMPT_PATH = join(__dirname, "discovery-benchmark-prompt.md");
 
 function loadDiscoveryBenchmarkPrompt(): string {
   try {

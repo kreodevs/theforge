@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "spec-prompt.md");
+const PROMPT_PATH = join(__dirname, "spec-prompt.md");
 
 function loadSpecPrompt(): string {
   try {

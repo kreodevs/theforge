@@ -214,3 +214,40 @@ export function resolveEmbeddingDimensionForModel(
   }
   return PROVIDER_CATALOG[providerId].defaultEmbeddingDimension;
 }
+
+/** Modelos de chat publicados en catálogo (whitelist base cuando la instancia no define lista). */
+export function catalogChatModels(providerId: ProviderId): string[] {
+  const c = PROVIDER_CATALOG[providerId];
+  return [...new Set([c.defaultChatModel, ...(c.chatModels ?? [])])];
+}
+
+/** Modelos de embedding publicados en catálogo. */
+export function catalogEmbeddingModels(providerId: ProviderId): string[] {
+  const c = PROVIDER_CATALOG[providerId];
+  const models = [...(c.embeddingModels ?? [])];
+  if (c.defaultEmbeddingModel) models.push(c.defaultEmbeddingModel);
+  return [...new Set(models)];
+}
+
+export function isChatModelWhitelisted(
+  providerId: ProviderId,
+  model: string,
+  allowedChatModels: string[],
+  bypassWhitelist: boolean,
+): boolean {
+  if (bypassWhitelist) return true;
+  if (allowedChatModels.length > 0) return allowedChatModels.includes(model);
+  return catalogChatModels(providerId).includes(model);
+}
+
+export function isEmbeddingModelWhitelisted(
+  providerId: ProviderId,
+  model: string | null,
+  allowedEmbeddingModels: string[],
+  bypassWhitelist: boolean,
+): boolean {
+  if (!model) return true;
+  if (bypassWhitelist) return true;
+  if (allowedEmbeddingModels.length > 0) return allowedEmbeddingModels.includes(model);
+  return catalogEmbeddingModels(providerId).includes(model);
+}

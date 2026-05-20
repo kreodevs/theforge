@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Nest copia *.md a dist; misma convención que master-prompt
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "blueprint-prompt.md");
+const PROMPT_PATH = join(__dirname, "blueprint-prompt.md");
 
 function loadBlueprintPrompt(): string {
   try {

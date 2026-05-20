@@ -19,8 +19,33 @@ function errorStatus(err: unknown): number | undefined {
 }
 
 function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message.toLowerCase();
+  if (err instanceof Error) {
+    const nested =
+      err != null &&
+      typeof err === "object" &&
+      "error" in err &&
+      (err as { error?: { message?: string } }).error?.message;
+    if (typeof nested === "string" && nested.trim()) {
+      return `${err.message} ${nested}`.toLowerCase();
+    }
+    return err.message.toLowerCase();
+  }
   return String(err).toLowerCase();
+}
+
+export const MODELS_UNAVAILABLE_CODE = "MODELS_UNAVAILABLE" as const;
+
+export const MODELS_UNAVAILABLE_MESSAGE =
+  "No hay un modelo disponible configurado. Revisa el modelo principal y los respaldos en Ajustes → Gestionar instancias.";
+
+/** Todos los modelos de la cadena fallaron (inválidos, agotados o no encontrados). */
+export class ModelsUnavailableError extends Error {
+  readonly code = MODELS_UNAVAILABLE_CODE;
+
+  constructor(message = MODELS_UNAVAILABLE_MESSAGE) {
+    super(message);
+    this.name = "ModelsUnavailableError";
+  }
 }
 
 /**
@@ -45,7 +70,9 @@ export function isModelExhaustionError(
     msg.includes("billing") ||
     msg.includes("quota") ||
     msg.includes("exceeded your current quota") ||
-    msg.includes("payment required")
+    msg.includes("payment required") ||
+    msg.includes("free-models-per-day") ||
+    msg.includes("free model requests")
   ) {
     return true;
   }
@@ -56,8 +83,19 @@ export function isModelExhaustionError(
     msg.includes("does not exist") ||
     msg.includes("not available") ||
     msg.includes("model unavailable") ||
-    msg.includes("no longer available")
+    msg.includes("no longer available") ||
+    msg.includes("not a valid model") ||
+    msg.includes("invalid model id") ||
+    msg.includes("invalid model") ||
+    msg.includes("unknown model")
   ) {
+    return true;
+  }
+
+  if (status === 400 && (msg.includes("model") || msg.includes("invalid"))) {
+    return true;
+  }
+  if (status === 404 && msg.includes("model")) {
     return true;
   }
 
@@ -131,7 +169,12 @@ async function withTransientRetry<T>(
       return await fn();
     } catch (err) {
       lastErr = err;
-      if (!isTransientRetryableError(err) || attempt === maxRetries) {
+      // Agotamiento (quota, créditos, 429 diario, modelo inválido): no backoff — siguiente modelo.
+      if (
+        isModelExhaustionError(err) ||
+        !isTransientRetryableError(err) ||
+        attempt === maxRetries
+      ) {
         throw err;
       }
       const after = retryAfterSeconds(err);
@@ -167,7 +210,14 @@ export async function runWithModelFallback<T>({
     throw new Error(`${label}: models chain is empty`);
   }
   if (models.length === 1) {
-    return withTransientRetry(() => run(models[0]!), label, retriesPerModel);
+    try {
+      return await withTransientRetry(() => run(models[0]!), label, retriesPerModel);
+    } catch (err) {
+      if (isModelExhaustionError(err)) {
+        throw new ModelsUnavailableError();
+      }
+      throw err;
+    }
   }
 
   let lastErr: unknown;
@@ -179,7 +229,15 @@ export async function runWithModelFallback<T>({
     } catch (err) {
       lastErr = err;
       const hasNext = i < models.length - 1;
-      if (!hasNext || !isModelExhaustionError(err)) {
+      if (!hasNext) {
+        if (isModelExhaustionError(err)) {
+          console.warn(`${label} — cadena de modelos agotada sin alternativa usable`);
+          throw new ModelsUnavailableError();
+        }
+        console.error(`${label} — error no recuperable o agotada la cadena de modelos:`, err);
+        throw err;
+      }
+      if (!isModelExhaustionError(err)) {
         console.error(`${label} — error no recuperable o agotada la cadena de modelos:`, err);
         throw err;
       }
