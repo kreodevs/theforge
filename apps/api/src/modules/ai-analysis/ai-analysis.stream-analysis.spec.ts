@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { runWithRequestUserAsync } from "../../common/request-user.store.js";
 import { AiAnalysisService } from "./ai-analysis.service.js";
 
 const RECURSION_RAW =
@@ -17,12 +18,26 @@ function createServiceWithMockGraph(): AiAnalysisService {
     {} as never,
     {} as never,
     {} as never,
-    () =>
+    {
+      resolveRuntime: async () => ({
+        providerId: "openrouter",
+        apiKey: "k",
+        baseURL: "https://x",
+        chatModel: "m",
+        chatModelFallbacks: [],
+        embeddingModel: null,
+        embeddingDimension: null,
+        embeddingsEnabled: false,
+        sttModel: null,
+        visionModel: "m",
+      }),
+    } as never,
+    async (_factory, _userId) =>
       ({
         stream: async () => {
           throw new Error(RECURSION_RAW);
         },
-      }) as ReturnType<typeof import("./graph/dbga-graph.js").createDbgaGraph>,
+      }) as Awaited<ReturnType<typeof import("./graph/dbga-graph.js").createDbgaGraph>>,
   );
 }
 
@@ -32,9 +47,11 @@ describe("AiAnalysisService.streamAnalysis", () => {
 
     const service = createServiceWithMockGraph();
     const events: Array<{ type: string; message?: string }> = [];
-    for await (const event of service.streamAnalysis("plataforma B2B interna")) {
-      events.push(event);
-    }
+    await runWithRequestUserAsync("test-user", async () => {
+      for await (const event of service.streamAnalysis("plataforma B2B interna")) {
+        events.push(event);
+      }
+    });
 
     assert.equal(events.length, 1);
     assert.equal(events[0].type, "error");

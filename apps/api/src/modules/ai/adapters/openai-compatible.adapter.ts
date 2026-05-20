@@ -5,14 +5,8 @@ import type {
   GenerateResponseOptions,
 } from "../interfaces/llm-provider.interface.js";
 import type { ChatImagePart, ChecklistResult } from "@theforge/shared-types";
-import {
-  resolveEmbeddingsBackend,
-  resolveOpenRouterEmbeddingApiKey,
-  resolvePrimaryChatRuntime,
-  resolveChatModelChain,
-  resolveVisionModelChain,
-  type OpenRouterRuntime,
-} from "../config/llm-config.js";
+import type { UserLLMRuntime } from "../providers/llm-runtime.types.js";
+import { llmMaxTokens } from "../config/llm-config.js";
 import { runWithModelFallback } from "../config/llm-model-fallback.js";
 
 function buildOpenAiUserMessage(
@@ -53,47 +47,96 @@ function historyToOpenAiMessages(history: ChatMessage[]): OpenAI.Chat.ChatComple
   });
 }
 
-function llmMaxTokens(): number {
-  const raw = process.env.LLM_MAX_TOKENS?.trim();
-  if (raw === undefined || raw === "") return 120_000;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : 120_000;
+function optionalDefaultHeaders(runtime: UserLLMRuntime): Record<string, string> | undefined {
+  if (runtime.providerId === "openrouter") {
+    const referer =
+      (typeof runtime.extras?.httpReferer === "string" && runtime.extras.httpReferer.trim()) ||
+      undefined;
+    const title =
+      (typeof runtime.extras?.appTitle === "string" && runtime.extras.appTitle.trim()) || undefined;
+    if (!referer && !title) return undefined;
+    return {
+      ...(referer ? { "HTTP-Referer": referer } : {}),
+      ...(title ? { "X-OpenRouter-Title": title } : {}),
+    };
+  }
+
+  const raw = runtime.extras?.headers;
+  if (raw == null) return undefined;
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v === "string" && v.length > 0) out[k] = v;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          if (typeof v === "string" && v.length > 0) out[k] = v;
+        }
+        return Object.keys(out).length > 0 ? out : undefined;
+      }
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
-function openRouterDefaultHeaders(): Record<string, string> | undefined {
-  const referer = process.env.OPENROUTER_HTTP_REFERER?.trim();
-  const title = process.env.OPENROUTER_APP_TITLE?.trim();
-  if (!referer && !title) return undefined;
-  return {
-    ...(referer ? { "HTTP-Referer": referer } : {}),
-    ...(title ? { "X-OpenRouter-Title": title } : {}),
-  };
+function chatModelChain(runtime: UserLLMRuntime): string[] {
+  const primary = runtime.chatModel;
+  const fallbacks = runtime.chatModelFallbacks ?? [];
+  const seen = new Set<string>([primary]);
+  const chain = [primary];
+  for (const m of fallbacks) {
+    if (!m || seen.has(m)) continue;
+    seen.add(m);
+    chain.push(m);
+  }
+  return chain;
 }
 
-export class OpenRouterAdapter implements LLMProvider {
-  private static warnedEmbeddingNone = false;
+function visionModelChain(runtime: UserLLMRuntime): string[] {
+  const primary = runtime.visionModel || runtime.chatModel;
+  const vf =
+    typeof runtime.extras?.visionModelFallback === "string"
+      ? runtime.extras.visionModelFallback.trim()
+      : "";
+  if (vf) return [primary, vf].filter((m, i, a) => a.indexOf(m) === i);
+  const chain = chatModelChain(runtime);
+  if (chain.length > 1) return [primary, ...chain.slice(1)].filter((m, i, a) => a.indexOf(m) === i);
+  return [primary];
+}
+
+export class OpenAICompatibleAdapter implements LLMProvider {
+  private static warnedEmbeddingOff = false;
 
   private readonly chatClient: OpenAI;
-  /** Cliente embeddings: misma base URL; clave puede ser OPENROUTER_EMBEDDING_API_KEY. */
   private readonly embeddingClient: OpenAI;
   private readonly chatModels: string[];
   private readonly visionModels: string[];
-  private readonly embeddingModel: string;
+  private readonly embeddingModel: string | null;
+  private readonly embeddingsEnabled: boolean;
+  private readonly label: string;
 
-  constructor() {
-    const runtime = resolvePrimaryChatRuntime() as OpenRouterRuntime;
-    this.chatModels = resolveChatModelChain();
-    this.visionModels = resolveVisionModelChain();
+  constructor(runtime: UserLLMRuntime) {
+    this.label = `OpenAICompatibleAdapter(${runtime.providerId})`;
+    this.chatModels = chatModelChain(runtime);
+    this.visionModels = visionModelChain(runtime);
     this.embeddingModel = runtime.embeddingModel;
-    const headers = openRouterDefaultHeaders();
+    this.embeddingsEnabled = runtime.embeddingsEnabled && !!runtime.embeddingModel;
+    const headers = optionalDefaultHeaders(runtime);
     this.chatClient = new OpenAI({
       apiKey: runtime.apiKey,
       baseURL: runtime.baseURL,
       defaultHeaders: headers,
     });
-    const embKey = resolveOpenRouterEmbeddingApiKey() ?? runtime.apiKey;
     this.embeddingClient = new OpenAI({
-      apiKey: embKey,
+      apiKey: runtime.apiKey,
       baseURL: runtime.baseURL,
       defaultHeaders: headers,
     });
@@ -109,7 +152,7 @@ export class OpenRouterAdapter implements LLMProvider {
 
     return runWithModelFallback({
       models,
-      label: "OpenRouterAdapter.generateResponse",
+      label: `${this.label}.generateResponse`,
       run: async (activeModel) => {
         const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
         if (options?.systemPrompt) {
@@ -120,27 +163,13 @@ export class OpenRouterAdapter implements LLMProvider {
           buildOpenAiUserMessage(prompt, options?.userMessageImages),
         );
 
-        const ts = () => new Date().toISOString();
-        console.log(`[OpenRouterAdapter] ${ts()} → Request enviado:`, {
-          messagesCount: messages.length,
-          model: activeModel,
-          hasImages,
-        });
         const completion = await this.chatClient.chat.completions.create({
           model: activeModel,
           messages,
           max_tokens: options?.maxTokensOverride ?? llmMaxTokens(),
         });
 
-        const content = completion.choices[0]?.message?.content ?? "";
-        const choice = completion.choices[0];
-        console.log(`[OpenRouterAdapter] ${ts()} ← Response recibida:`, {
-          contentLength: content.length,
-          preview: content.slice(0, 200) + (content.length > 200 ? "…" : ""),
-          finishReason: choice?.finish_reason,
-          usage: completion.usage,
-        });
-        return content;
+        return completion.choices[0]?.message?.content ?? "";
       },
     });
   }
@@ -153,10 +182,9 @@ export class OpenRouterAdapter implements LLMProvider {
     const hasImages = options?.userMessageImages != null && options.userMessageImages.length > 0;
     const models = hasImages ? this.visionModels : this.chatModels;
 
-    // El retry y el fallback de modelo ocurren al crear el stream (antes del primer chunk).
     const stream = await runWithModelFallback({
       models,
-      label: "OpenRouterAdapter.generateResponseStream",
+      label: `${this.label}.generateResponseStream`,
       run: async (activeModel) => {
         const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
         if (options?.systemPrompt) {
@@ -178,16 +206,11 @@ export class OpenRouterAdapter implements LLMProvider {
 
     return {
       async *[Symbol.asyncIterator]() {
-        try {
-          for await (const chunk of stream) {
-            const delta = chunk.choices[0]?.delta?.content;
-            if (typeof delta === "string" && delta.length > 0) {
-              yield delta;
-            }
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (typeof delta === "string" && delta.length > 0) {
+            yield delta;
           }
-        } catch (err) {
-          console.error("[OpenRouterAdapter] generateResponseStream error durante streaming:", err);
-          throw err;
         }
       },
     };
@@ -197,7 +220,7 @@ export class OpenRouterAdapter implements LLMProvider {
     try {
       const response = await runWithModelFallback({
         models: this.chatModels,
-        label: "OpenRouterAdapter.parseChecklist",
+        label: `${this.label}.parseChecklist`,
         run: (model) =>
           this.chatClient.chat.completions.create({
             model,
@@ -219,19 +242,17 @@ export class OpenRouterAdapter implements LLMProvider {
         complete: Boolean(parsed.complete),
         items: Array.isArray(parsed.items) ? parsed.items : [],
       };
-    } catch (err) {
-      console.error("[OpenRouterAdapter] parseChecklist error", err);
+    } catch {
       return { complete: false, items: [] };
     }
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
-    if (resolveEmbeddingsBackend() === "none") {
-      if (!OpenRouterAdapter.warnedEmbeddingNone) {
-        OpenRouterAdapter.warnedEmbeddingNone = true;
+    if (!this.embeddingsEnabled || !this.embeddingModel) {
+      if (!OpenAICompatibleAdapter.warnedEmbeddingOff) {
+        OpenAICompatibleAdapter.warnedEmbeddingOff = true;
         console.warn(
-          "[OpenRouterAdapter] Embeddings desactivados (LLM_EMBEDDINGS_PROVIDER=none). " +
-            "Semantic search / ADRs limitados. OPENAI_EMBEDDING_DIM fija la dimensión sin llamar API.",
+          `[${this.label}] Embeddings desactivados para este usuario/proveedor.`,
         );
       }
       return [];
@@ -242,9 +263,9 @@ export class OpenRouterAdapter implements LLMProvider {
         model: this.embeddingModel,
         input: text.replace(/\n/g, " "),
       });
-      return resp.data[0].embedding;
+      return resp.data[0]?.embedding ?? [];
     } catch (err) {
-      console.error("[OpenRouterAdapter] generateEmbedding error:", err);
+      console.error(`[${this.label}] generateEmbedding error:`, err);
       return [];
     }
   }

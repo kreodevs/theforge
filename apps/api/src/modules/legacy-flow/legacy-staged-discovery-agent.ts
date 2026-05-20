@@ -3,6 +3,7 @@ import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { Logger } from "@nestjs/common";
 import { createDbgaLLM } from "../ai-analysis/llm/create-dbga-llm.js";
+import type { AIFactory } from "../ai/ai.factory.js";
 import { getStagedDiscoveryTheForgeTools } from "../ai-analysis/tools/agent-theforge-tools.js";
 import type { AskCodebaseOptions } from "../theforge/theforge.service.js";
 import type { TheForgeService } from "../theforge/theforge.service.js";
@@ -13,6 +14,8 @@ import { buildAriadneRepositoriesCatalogMarkdown } from "./staged-discovery-cata
 export type StagedDiscoveryMode = "initial" | "change";
 
 export interface RunLegacyStagedDiscoveryMddOptions {
+  aiFactory: AIFactory;
+  userId: string;
   theforge: TheForgeService;
   /** Para resolver ruta Supervisor (LEGACY + theforgeProjectId de etapa). */
   projectId: string;
@@ -111,7 +114,7 @@ async function runStagedDiscoveryToolLoop(
  * Resuelve `theforgeProjectId` con **AgentSupervisor** (etapa legacy).
  */
 export async function runLegacyStagedDiscoveryMddAgent(opts: RunLegacyStagedDiscoveryMddOptions): Promise<string> {
-  const { theforge, projectId, theforgeProjectId, agentSupervisor, mode, changeDescription, askCodebaseOptions, logger } = opts;
+  const { aiFactory, userId, theforge, projectId, theforgeProjectId, agentSupervisor, mode, changeDescription, askCodebaseOptions, logger } = opts;
   if (!theforge.isConfigured()) return "";
 
   let tfPid = theforgeProjectId.trim();
@@ -148,7 +151,7 @@ export async function runLegacyStagedDiscoveryMddAgent(opts: RunLegacyStagedDisc
   const maxOut = envPositiveInt("LEGACY_STAGED_DISCOVERY_OUTPUT_MAX_CHARS", 96000);
 
   try {
-    const llm = createDbgaLLM();
+    const llm = await createDbgaLLM(aiFactory, userId);
     const human = buildHumanInstruction(mode, changeDescription);
     return await runStagedDiscoveryToolLoop(llm, tools, system, human, maxRounds, maxOut);
   } catch (e) {

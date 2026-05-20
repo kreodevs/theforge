@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "logic-flows-prompt.md");
+const PROMPT_PATH = join(__dirname, "logic-flows-prompt.md");
 
 function loadLogicFlowsPrompt(): string {
   try {

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "user-stories-prompt.md");
+const PROMPT_PATH = join(__dirname, "user-stories-prompt.md");
 
 function loadUserStoriesPrompt(): string {
     try {

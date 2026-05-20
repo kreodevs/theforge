@@ -3,14 +3,16 @@ import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
 import { ChatOpenAI, type ChatOpenAICallOptions } from "@langchain/openai";
-import { resolveChatModelChain } from "../../ai/config/llm-config.js";
 import { isModelExhaustionError, runWithModelFallback } from "../../ai/config/llm-model-fallback.js";
 
 /**
  * ChatOpenAI con cadena de modelos: solo hace fallback en errores de agotamiento (quota, 429 opcional, etc.).
  */
 export class OpenRouterFallbackChatModel extends BaseChatModel {
-  constructor(private readonly buildLlm: (model: string) => ChatOpenAI) {
+  constructor(
+    private readonly buildLlm: (model: string) => ChatOpenAI,
+    private readonly models: string[],
+  ) {
     super({});
   }
 
@@ -23,10 +25,9 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
     options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
-    const models = resolveChatModelChain();
     const openAiOptions = options as ChatOpenAICallOptions;
     return runWithModelFallback({
-      models,
+      models: this.models,
       label: "OpenRouterFallbackChatModel._generate",
       run: async (model) => {
         const llm = this.buildLlm(model);
@@ -40,11 +41,10 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
     options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun,
   ): AsyncGenerator<ChatGenerationChunk> {
-    const models = resolveChatModelChain();
     const openAiOptions = options as ChatOpenAICallOptions;
     let lastErr: unknown;
-    for (let i = 0; i < models.length; i++) {
-      const model = models[i]!;
+    for (let i = 0; i < this.models.length; i++) {
+      const model = this.models[i]!;
       let firstChunk: ChatGenerationChunk | undefined;
       let rest: AsyncIterator<ChatGenerationChunk> | undefined;
       try {
@@ -69,10 +69,10 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
         return;
       } catch (err) {
         lastErr = err;
-        const hasNext = i < models.length - 1;
+        const hasNext = i < this.models.length - 1;
         if (!hasNext || !isModelExhaustionError(err)) throw err;
         console.warn(
-          `[OpenRouterFallbackChatModel] modelo ${model} agotado, probando ${models[i + 1]}`,
+          `[OpenRouterFallbackChatModel] modelo ${model} agotado, probando ${this.models[i + 1]}`,
         );
       }
     }
@@ -85,6 +85,7 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
   ): BaseChatModel {
     return new OpenRouterFallbackChatModel(
       (model) => this.buildLlm(model).bindTools(tools, kwargs) as unknown as ChatOpenAI,
+      this.models,
     );
   }
 }

@@ -16,7 +16,7 @@ import { Public } from "../../common/decorators/public.decorator.js";
 import { AuthService } from "./auth.service.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
-import { ForbiddenException } from "@nestjs/common";
+import { requireAdmin } from "../../common/guards/role.helpers.js";
 
 const requestOtpSchema = z.object({
   email: z.string().email(),
@@ -154,30 +154,23 @@ export class AuthController {
 export class UsersController {
   constructor(private readonly auth: AuthService) {}
 
-  private requireAdmin() {
-    const role = getRequestUserRole();
-    if (role !== "admin") {
-      throw new ForbiddenException("Se requiere rol admin");
-    }
-  }
-
   @Get()
   listUsers() {
-    this.requireAdmin();
+    requireAdmin();
     return this.auth.listUsers();
   }
 
   @Patch(":id/role")
   updateRole(@Param("id") id: string, @Body() body: { role?: string }) {
-    this.requireAdmin();
+    requireAdmin();
     if (!body?.role) throw new BadRequestException("role requerido");
-    return this.auth.updateUserRole(id, body.role, getRequestUserId());
+    return this.auth.updateUserRole(id, body.role, getRequestUserId(), getRequestUserRole());
   }
 
   @Post()
   @HttpCode(201)
   createUser(@Body() body: { email?: string; name?: string; role?: string }) {
-    this.requireAdmin();
+    requireAdmin();
     if (!body?.email) throw new BadRequestException("email requerido");
     return this.auth.createUser(body.email, body.name, body.role);
   }
@@ -185,20 +178,20 @@ export class UsersController {
   @Delete(":id")
   @HttpCode(200)
   deleteUser(@Param("id") id: string) {
-    this.requireAdmin();
+    requireAdmin();
     return this.auth.deleteUser(id, getRequestUserId());
   }
 
   @Get(":id/mcp-secret")
   getMcpSecret(@Param("id") id: string) {
-    this.requireAdmin();
+    requireAdmin();
     return this.auth.getUserMcpSecretAdmin(id);
   }
 
   @Post(":id/mcp-secret/regenerate")
   @HttpCode(200)
   regenerateMcpSecret(@Param("id") id: string) {
-    this.requireAdmin();
+    requireAdmin();
     return this.auth.regenerateUserMcpSecretAdmin(id);
   }
 }

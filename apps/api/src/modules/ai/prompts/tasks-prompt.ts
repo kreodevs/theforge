@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "tasks-prompt.md");
+const PROMPT_PATH = join(__dirname, "tasks-prompt.md");
 
 function loadTasksPrompt(): string {
   try {

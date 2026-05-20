@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROMPT_PATH = join(__dirname, "..", "..", "..", "..", "..", "..", "modules", "ai", "prompts", "use-cases-prompt.md");
+const PROMPT_PATH = join(__dirname, "use-cases-prompt.md");
 
 function loadUseCasesPrompt(): string {
     try {

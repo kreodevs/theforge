@@ -54,6 +54,8 @@ import { useWorkshopStore, type Status } from "../store/workshopStore";
 import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
+import { AIProviderBanner } from "../components/AIProviderBanner";
+import { ModelsUnavailableDialog } from "../components/ModelsUnavailableDialog";
 import MddViewer from "../components/MddViewer";
 import { replaceYamlFrontMatter } from "../components/DesignMdPreview";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
@@ -210,6 +212,7 @@ interface WorkshopViewProps {
   projectId: string;
   projectName?: string;
   onBack?: () => void;
+  onOpenSettings?: () => void;
 }
 
 /** First vertically scrollable region under `root` (BFS) for mobile scroll FAB targeting. */
@@ -233,6 +236,7 @@ export default function WorkshopView({
   projectId,
   projectName,
   onBack,
+  onOpenSettings,
 }: WorkshopViewProps) {
   const project = useWorkshopStore((s) => s.project);
   const activeStageId = useWorkshopStore((s) => s.activeStageId);
@@ -355,6 +359,8 @@ export default function WorkshopView({
   const cascadeTotal = useWorkshopStore((s) => s.cascadeTotal);
   const error = useWorkshopStore((s) => s.error);
   const setError = useWorkshopStore((s) => s.setError);
+  const modelsUnavailableModalOpen = useWorkshopStore((s) => s.modelsUnavailableModalOpen);
+  const setModelsUnavailableModalOpen = useWorkshopStore((s) => s.setModelsUnavailableModalOpen);
   const launchHermes = useWorkshopStore((s) => s.launchHermes);
   const fetchProject = useWorkshopStore((s) => s.fetchProject);
   const adrsRaw = useWorkshopStore((s) => s.adrs);
@@ -1844,7 +1850,14 @@ export default function WorkshopView({
         </div>
       )}
 
+      <ModelsUnavailableDialog
+        open={modelsUnavailableModalOpen}
+        onOpenChange={setModelsUnavailableModalOpen}
+        onOpenSettings={onOpenSettings}
+      />
+
       <div className="shrink-0">
+        <AIProviderBanner onOpenSettings={onOpenSettings} />
         <ComplexityPendingBanner />
       </div>
 
