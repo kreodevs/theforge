@@ -2058,6 +2058,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         });
 
         const completedSteps = new Set<string>();
+        let lastActiveStep: string | null = null;
         while (Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 1200));
           const st = await apiFetch(`${API_BASE}/projects/${pid}/deliverables-jobs/${data.jobId}`);
@@ -2075,19 +2076,34 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           }
           if (j.state === "completed") break;
           const prog = j.progress;
-          if (prog && prog.step && prog.step !== "done" && !completedSteps.has(prog.step)) {
-            completedSteps.add(prog.step);
-            set((s) => ({
-              agentProgress: s.agentProgress.map((item) =>
-                item.step === prog.step
-                  ? { ...item, message: `✅ ${prog.step} — Terminado`, status: "terminado" }
-                  : item,
-              ),
-              cascadeCompleted: completedSteps.size,
-            }));
+          if (prog && prog.step && prog.step !== "done") {
+            if (!completedSteps.has(prog.step)) {
+              completedSteps.add(prog.step);
+              set((s) => ({
+                agentProgress: s.agentProgress.map((item) =>
+                  item.step === prog.step
+                    ? { ...item, message: `✅ ${prog.step} — Terminado`, status: "terminado" }
+                    : item,
+                ),
+                cascadeCompleted: completedSteps.size,
+              }));
+            }
+            // Marcar el paso activo actual si es diferente al último completado
+            if (prog.step !== lastActiveStep) {
+              lastActiveStep = prog.step;
+              if (!completedSteps.has(prog.step)) {
+                set((s) => ({
+                  agentProgress: s.agentProgress.map((item) =>
+                    item.step === prog.step
+                      ? { ...item, message: `⚡ ${prog.step} — Generando…`, status: "generando" }
+                      : item,
+                  ),
+                }));
+              }
+            }
           }
         }
-        // Si quedaron pendientes (timeout), marcarlos como terminados igual
+        // Si quedaron pendientes, marcarlos como terminados
         set((s) => ({
           agentProgress: s.agentProgress.map((item) =>
             item.status === "generando"
@@ -2096,8 +2112,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           ),
           cascadeCompleted: allStepLabels.length,
         }));
-        // Esperar un momento para que el chat vea el estado final antes de limpiar
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        // Esperar un momento para que el chat vea el estado final
+        await new Promise((resolve) => setTimeout(resolve, 4000));
         set({ agentProgress: [] });
         const projQueued = await get().fetchProject(pid);
         await get().fetchEstimation(pid).catch(() => {});
