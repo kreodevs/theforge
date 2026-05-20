@@ -306,6 +306,16 @@ export class ProjectsController {
     return this.projects.remove(id);
   }
 
+  @Get("favorites")
+  listFavorites() {
+    return this.projects.getUserFavoriteIds().then((s) => Array.from(s));
+  }
+
+  @Post(":id/favorite")
+  toggleFavorite(@Param("id") id: string) {
+    return this.projects.toggleFavorite(id);
+  }
+
   /**
    * Helper: si la cola está habilitada y el cliente envió `?queue=true`,
    * encola el job y devuelve `{ queued: true, jobId }`.

@@ -2,6 +2,18 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
+## [0.7.3] — 2026-05-20
+
+### Added
+
+- **Corazón de favoritos en proyectos:** Cada proyecto en el listado ahora muestra un ❤️ que permite marcarlo como favorito con toggle persistente en BD. Backend: `FavoriteProject` table (Prisma + migración), `POST /projects/:id/favorite`, `GET /projects/favorites`. Frontend: `isFavorite` desde API + `onToggleFavorite` en `ProjectFolderTile`.
+
+### Changed
+
+- **BUILD_CACHE_BUST**: 73 → 74
+
+---
+
 ## [0.7.2] — 2026-05-21
 
 ### Fixed
