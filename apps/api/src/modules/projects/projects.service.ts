@@ -1044,7 +1044,7 @@ name: ${JSON.stringify(name)}
     // No comparten estado ni LangGraph — cada uno se guarda directo a DB.
     // Promise.allSettled asegura que si un paso falla, los demás continúan.
     // Usamos contador atómico (no array index) para progreso real.
-    // Recolectamos gaps de conformance existentes para pasarlos a cada generador.
+// Recolectamos gaps de conformance existentes para pasarlos a cada generador.
     const projectFresh = await this.findOne(projectId);
     const mddContent = this.constitutionMarkdown(project);
     const gapsMap = new Map<string, string | null>();
