@@ -8,7 +8,7 @@ Módulo de análisis agentic para **Domain Benchmark & Gap Analysis (DBGA)**. Or
   - `dbga-state.schema.ts` – Schemas Zod y tipos: `CompetitorData`, `DBGAStatus`, `DBGAState`
   - `langgraph-state.annotation.ts` – Anotación LangGraph `DBGAStateAnnotation` para `StateGraph`
   - `index.ts` – Re-export
-- **llm/** – `create-dbga-llm.ts` – Runtime BYOK/tenant del usuario (`resolveRuntime`). `createMddAuditorLLM` usa `resolveAuditorRuntime` (instancia `mddAuditorTenantInstanceId` en Ajustes, si no la activa).
+- **llm/** – `create-dbga-llm.ts` – Runtime BYOK/tenant del usuario (`resolveRuntime`). `createMddAuditorLLM` usa `resolveAuditorRuntime` (instancia `mddAuditorTenantInstanceId` o activa, con `auditorChatModel` opcional).
 - **graph/** – `dbga-graph.ts` – StateGraph compilado; edges Scout → Auditor → Critic → (Scout | Synthesis) → END
 - **nodes/** – Nodos por agente: Scout (con tools), Auditor (con tools), Critic, Synthesis
 - **tools/** – ToolRegistry e integración externa

@@ -407,21 +407,38 @@ export class UserProvidersService {
   }
 
   /**
-   * Runtime del agente Auditor (grafo MDD). Si hay `mddAuditorTenantInstanceId` accesible, esa instancia;
-   * si no, el mismo runtime que `resolveRuntime`.
+   * Runtime del agente Auditor (grafo MDD).
+   * 1) Instancia dedicada (`mddAuditorTenantInstanceId`) con `auditorChatModel` opcional.
+   * 2) Instancia activa con `auditorChatModel` opcional.
+   * 3) Mismo runtime que `resolveRuntime`.
    */
   async resolveAuditorRuntime(userId: string): Promise<UserLLMRuntime> {
     const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
-    const auditorInstanceId = settings?.mddAuditorTenantInstanceId;
-    if (auditorInstanceId) {
-      const inst = await this.prisma.providerInstance.findFirst({
-        where: { id: auditorInstanceId, ...this.instanceAccessibleByUser(userId) },
+    const dedicatedId = settings?.mddAuditorTenantInstanceId;
+    if (dedicatedId) {
+      const dedicated = await this.prisma.providerInstance.findFirst({
+        where: { id: dedicatedId, ...this.instanceAccessibleByUser(userId) },
       });
-      if (inst) {
-        return this.runtimeFromTenantInstance(userId, inst);
+      if (dedicated) {
+        return this.runtimeFromTenantInstanceForAuditor(userId, dedicated);
       }
     }
+    const tenant = await this.resolveTenantInstanceForUser(userId);
+    if (tenant) return this.runtimeFromTenantInstanceForAuditor(userId, tenant);
     return this.resolveRuntime(userId);
+  }
+
+  private async runtimeFromTenantInstanceForAuditor(
+    userId: string,
+    instance: ProviderInstance,
+  ): Promise<UserLLMRuntime> {
+    const override = instance.auditorChatModel?.trim();
+    if (override) {
+      return this.runtimeFromTenantInstance(userId, instance, {
+        chatModelOverride: override,
+      });
+    }
+    return this.runtimeFromTenantInstance(userId, instance);
   }
 
   async resolveEmbeddingRuntime(userId: string): Promise<UserLLMRuntime> {
