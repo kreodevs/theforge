@@ -1,4 +1,4 @@
-import { extractSection3Body } from "../../ai-analysis/utils/mdd-sanitize.js";
+import { extractSection3Body } from "../ai-analysis/utils/mdd-sanitize.js";
 
 // ---------------------------------------------------------------------------
 // UI Design System & Component Mapping — Blueprint Section 8
