@@ -65,6 +65,8 @@ model ProviderInstance {
   tokenKeyVersion        Int
   chatModel              String
   chatModelFallbacks     String[] @default([])
+  /// Modelo solo para el agente Auditor MDD en esta instancia; vacío = mismo que chatModel.
+  auditorChatModel       String?
   embeddingModel         String?
   embeddingDimension     Int?
   sttModel               String?

@@ -2,7 +2,7 @@
 
 | Componente | Rol |
 |------------|-----|
-| **ProviderInstancesCard** | CRUD/listado de instancias de proveedor IA; marca la instancia **Activa** (runtime por defecto del grafo MDD y chat). |
+| **ProviderInstancesCard** | CRUD/listado de instancias de proveedor IA; marca la instancia **Activa** (runtime por defecto del grafo MDD y chat). En el modal, **Modelo de auditor** opcional (`auditorChatModel`) para el nodo Auditor MDD. |
 | **AgentsConfigCard** | Ajustes → **Agentes** → **Auditor**: selector de instancia dedicada (`mddAuditorTenantInstanceId`). Sin selección, el Auditor usa el mismo runtime que la instancia activa. |
 | **McpSecretCard** | Secret MCP rotable del usuario. |
 | **AriadneConfigCard** | URL/token MCP de Ariadne (base de conocimientos). |

@@ -8,6 +8,7 @@ export interface UserProviderFormState {
   apiKey: string;
   chatModel: string;
   chatModelFallbacks: string;
+  auditorChatModel: string;
   embeddingModel: string;
   sttModel: string;
   visionModel: string;
@@ -44,6 +45,7 @@ export function configFormFromInstance(
     apiKey: "",
     chatModel: inst.chatModel,
     chatModelFallbacks: inst.chatModelFallbacks?.join(", ") ?? "",
+    auditorChatModel: inst.auditorChatModel ?? "",
     embeddingModel: inst.embeddingModel ?? "",
     sttModel: inst.sttModel ?? "",
     visionModel: inst.visionModel ?? "",
@@ -61,6 +63,7 @@ export function configFormFromUserConfig(
     apiKey: "",
     chatModel: cfg.chatModel || catalog.defaultChatModel,
     chatModelFallbacks: cfg.chatModelFallbacks?.join(", ") ?? "",
+    auditorChatModel: "",
     embeddingModel: cfg.embeddingModel ?? catalog.defaultEmbeddingModel ?? "",
     sttModel: cfg.sttModel ?? catalog.defaultSttModel ?? "",
     visionModel: cfg.visionModel ?? catalog.defaultVisionModel ?? "",
@@ -78,6 +81,7 @@ export function createEmptyUserProviderForm(
     apiKey: "",
     chatModel: catalog.defaultChatModel,
     chatModelFallbacks: "",
+    auditorChatModel: "",
     embeddingModel: catalog.defaultEmbeddingModel ?? "",
     sttModel: catalog.defaultSttModel ?? "",
     visionModel: catalog.defaultVisionModel ?? "",
@@ -93,6 +97,7 @@ export type UserProviderFormFields =
   | "apiKey"
   | "chatModel"
   | "chatModelFallbacks"
+  | "auditorChatModel"
   | "embeddingModel"
   | "sttModel"
   | "visionModel"
@@ -169,6 +174,16 @@ export function validateUserProviderForm(args: {
       errors.chatModelFallbacks = "El modelo de respaldo no puede ser igual al principal";
       break;
     }
+  }
+
+  if (form.auditorChatModel.trim() && form.auditorChatModel.trim().length < 2) {
+    errors.auditorChatModel = "Indica un modelo de auditor válido";
+  } else if (
+    form.auditorChatModel.trim() &&
+    form.auditorChatModel.trim() === form.chatModel.trim()
+  ) {
+    errors.auditorChatModel =
+      "Si es el mismo que el de chat, déjalo vacío (se usará el modelo de chat)";
   }
 
   if (catalog.supportsEmbeddings && form.embeddingModel.trim()) {

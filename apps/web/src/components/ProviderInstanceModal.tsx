@@ -98,6 +98,7 @@ export function ProviderInstanceModal({
     apiKey: "",
     chatModel: "",
     chatModelFallbacks: "",
+    auditorChatModel: "",
     embeddingModel: "",
     sttModel: "",
     visionModel: "",
@@ -211,6 +212,7 @@ export function ProviderInstanceModal({
         apiKey: true,
         chatModel: true,
         chatModelFallbacks: true,
+        auditorChatModel: true,
         embeddingModel: true,
         sttModel: true,
         visionModel: true,
@@ -285,6 +287,7 @@ export function ProviderInstanceModal({
         apiKey: configForm.apiKey.trim(),
         chatModel: configForm.chatModel.trim(),
         chatModelFallbacks: parseFallbacks(configForm.chatModelFallbacks),
+        auditorChatModel: configForm.auditorChatModel.trim() || null,
         embeddingModel: activeCatalog.supportsEmbeddings
           ? configForm.embeddingModel.trim() || null
           : null,

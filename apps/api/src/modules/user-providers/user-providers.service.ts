@@ -533,7 +533,7 @@ export class UserProvidersService {
   private async runtimeFromTenantInstance(
     userId: string,
     instance: ProviderInstance,
-    opts?: { forEmbeddings?: boolean },
+    opts?: { forEmbeddings?: boolean; chatModelOverride?: string },
   ): Promise<UserLLMRuntime> {
     if (!isProviderId(instance.providerType)) {
       throw new BadRequestException("Instancia tenant con tipo de proveedor no válido");
@@ -543,7 +543,8 @@ export class UserProvidersService {
     const catalog = PROVIDER_CATALOG[provider];
     const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
     const userGrants = settings?.allowedChatModels ?? [];
-    const chatModel = instance.chatModel;
+    const chatModel = opts?.chatModelOverride?.trim() || instance.chatModel;
+    const modelRole = opts?.chatModelOverride ? "auditor" : "activo";
 
     if (
       !isChatModelAllowedForTenantUser(
@@ -559,7 +560,7 @@ export class UserProvidersService {
           ? `Modelos permitidos para ti: ${userGrants.join(", ")}. Activa un proveedor cuyo modelo esté en esa lista.`
           : `Pide al super_admin modelos en Usuarios o revisa el proveedor «${instance.displayName}».`;
       throw new BadRequestException(
-        `El modelo «${chatModel}» del proveedor activo «${instance.displayName}» no está autorizado. ${hint}`,
+        `El modelo «${chatModel}» del proveedor ${modelRole} «${instance.displayName}» no está autorizado. ${hint}`,
       );
     }
 
