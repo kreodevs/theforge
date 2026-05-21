@@ -2,6 +2,20 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
+## [0.8.1] — 2026-05-21
+
+### Added
+
+- **Validación de idea DBGA insuficiente:** `streamAnalysis` rechaza saludos o textos demasiado cortos antes de invocar el grafo LangGraph, emitiendo un evento NDJSON `error` con código `INSUFFICIENT_IDEA` y mensaje en español orientado al Benchmark.
+- **Util `dbga-idea-validation`:** Heurística de saludos (normalización NFD, sin acentos) y umbral de longitud mínima; tests unitarios dedicados.
+
+### Fixed
+
+- **Nodo Scout (DBGA):** Si el modelo responde en prosa en lugar de JSON (p. ej. ante un saludo), el parseo ya no aborta todo el stream: se reutiliza `parseJsonOrThrow` compartido y se continúa con lista vacía de competidores.
+- **Errores de stream DBGA:** `formatDbgaStreamError` traduce `SyntaxError` por JSON inválido (token inesperado) a mensaje amigable en español, sin exponer detalles del motor de parseo al cliente.
+
+---
+
 ## [0.8.0] — 2026-05-20
 
 ### Added
