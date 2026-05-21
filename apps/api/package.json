@@ -9,6 +9,7 @@
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "test": "node --import tsx --test 'src/**/*.spec.ts'",
+    "test:types": "tsc --noEmit -p tsconfig.json",
     "test:mcp-alignment": "nest build && node --test dist/apps/api/src/modules/theforge/theforge-mcp-tools-alignment.spec.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\""
   },

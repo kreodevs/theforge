@@ -65,6 +65,7 @@ model ProviderInstance {
   embeddingModel         String?
   embeddingDimension     Int?
   sttModel               String?
+  visionModel            String?
   baseUrl                String?
   extras                 Json?
   enabledForUsers        Boolean  @default(false)
@@ -96,6 +97,7 @@ model UserProviderConfig {
   /// Dimensión del vector de embeddings (override; si null, se deriva del catálogo).
   embeddingDimension  Int?
   sttModel            String?
+  visionModel         String?
   baseUrl             String?
   extras              Json?
   createdAt       DateTime @default(now())

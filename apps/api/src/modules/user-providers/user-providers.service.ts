@@ -29,6 +29,7 @@ import {
   normalizeProviderExtras,
   resolveConfigBaseUrl,
   resolveRuntimeBaseUrl,
+  resolveVisionModelForRuntime,
 } from "./provider-config.helpers.js";
 
 export interface UpsertProviderConfigDto {
@@ -38,6 +39,7 @@ export interface UpsertProviderConfigDto {
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
   sttModel?: string | null;
+  visionModel?: string | null;
   baseUrl?: string | null;
   extras?: Record<string, unknown> | null;
 }
@@ -269,6 +271,7 @@ export class UserProvidersService {
       embeddingModel: r.embeddingModel,
       embeddingDimension: r.embeddingDimension,
       sttModel: r.sttModel,
+      visionModel: r.visionModel,
       baseUrl: r.baseUrl,
       extras: r.extras,
       configured: true,
@@ -327,6 +330,7 @@ export class UserProvidersService {
       embeddingModel: row.embeddingModel,
       embeddingDimension: row.embeddingDimension,
       sttModel: row.sttModel,
+      visionModel: row.visionModel,
       baseUrl: row.baseUrl,
       extras: row.extras,
       configured: true,
@@ -435,14 +439,10 @@ export class UserProvidersService {
         `El proveedor activo «${runtime.providerId}» no soporta transcripción de audio. Usa OpenRouter, OpenAI o Groq.`,
       );
     }
-    const sttModel =
-      runtime.sttModel?.trim() ||
-      catalog.defaultSttModel ||
-      process.env.STT_MODEL?.trim() ||
-      null;
+    const sttModel = runtime.sttModel?.trim() || catalog.defaultSttModel || null;
     if (!sttModel) {
       throw new BadRequestException(
-        "Configura sttModel en tu proveedor activo (p. ej. whisper-1) o define STT_MODEL como valor por defecto del servidor",
+        "Configura el modelo de transcripción (STT) en tu proveedor activo en Ajustes (p. ej. whisper-1)",
       );
     }
     return { ...runtime, sttModel };
@@ -590,8 +590,13 @@ export class UserProvidersService {
       ),
       embeddingsEnabled: settings?.embeddingsEnabled ?? true,
       sttModel: instance.sttModel ?? catalog.defaultSttModel,
-      visionModel:
-        (typeof extras.visionModel === "string" && extras.visionModel.trim()) || chatModel,
+      visionModel: resolveVisionModelForRuntime({
+        visionModel: instance.visionModel,
+        chatModel,
+        extras,
+        catalogDefaultVisionModel: catalog.defaultVisionModel,
+        supportsVision: catalog.supportsVision,
+      }),
       extras,
     };
   }
@@ -646,8 +651,13 @@ export class UserProvidersService {
       embeddingDimension,
       embeddingsEnabled: settings?.embeddingsEnabled ?? true,
       sttModel: cfg.sttModel ?? catalog.defaultSttModel,
-      visionModel:
-        (typeof extras.visionModel === "string" && extras.visionModel.trim()) || cfg.chatModel,
+      visionModel: resolveVisionModelForRuntime({
+        visionModel: cfg.visionModel,
+        chatModel: cfg.chatModel,
+        extras,
+        catalogDefaultVisionModel: catalog.defaultVisionModel,
+        supportsVision: catalog.supportsVision,
+      }),
       extras,
     };
   }

@@ -32,6 +32,7 @@ export interface UpsertProviderInstanceDto {
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
   sttModel?: string | null;
+  visionModel?: string | null;
   baseUrl?: string | null;
   extras?: Record<string, unknown> | null;
   enabledForUsers?: boolean;
@@ -55,6 +56,7 @@ function mapInstanceRow(
     embeddingModel: string | null;
     embeddingDimension: number | null;
     sttModel: string | null;
+    visionModel: string | null;
     baseUrl: string | null;
     extras: unknown;
     enabledForUsers: boolean;
@@ -78,6 +80,7 @@ function mapInstanceRow(
     embeddingModel: row.embeddingModel,
     embeddingDimension: row.embeddingDimension,
     sttModel: row.sttModel,
+    visionModel: row.visionModel,
     baseUrl: row.baseUrl,
     extras: row.extras,
     enabledForUsers: row.enabledForUsers,
@@ -155,6 +158,7 @@ export class ProviderInstancesService {
         embeddingModel: true,
         embeddingDimension: true,
         sttModel: true,
+        visionModel: true,
         baseUrl: true,
         extras: true,
         enabledForUsers: true,
@@ -216,6 +220,7 @@ export class ProviderInstancesService {
         embeddingModel: dto.embeddingModel,
         embeddingDimension: dto.embeddingDimension,
         sttModel: dto.sttModel,
+        visionModel: dto.visionModel,
         baseUrl: dto.baseUrl,
         extras: dto.extras,
         enabledForUsers: teamVisible,
@@ -270,6 +275,7 @@ export class ProviderInstancesService {
       embeddingModel: string | null;
       embeddingDimension: number | null;
       sttModel: string | null;
+      visionModel: string | null;
       baseUrl: string | null;
       extras: unknown;
       enabledForUsers: boolean;
