@@ -248,6 +248,10 @@ export class ProviderInstancesService {
       where: { activeTenantInstanceId: id },
       data: { activeTenantInstanceId: null },
     });
+    await this.prisma.userAISettings.updateMany({
+      where: { mddAuditorTenantInstanceId: id },
+      data: { mddAuditorTenantInstanceId: null },
+    });
     await this.prisma.providerInstance.delete({ where: { id } });
     if (existing.isTenantDefault) {
       const next = await this.prisma.providerInstance.findFirst({
