@@ -284,9 +284,16 @@ export class AiAnalysisService {
     idea: string,
     projectId?: string,
   ): AsyncGenerator<StreamProgressEvent> {
-    const checkpointer = await this.checkpointerService.getCheckpointer();
-    const userId = await this.resolveUserId(projectId);
-    const graph = await this.createDbgaGraphFn(this.aiFactory, userId, checkpointer ?? undefined);
+    let checkpointer: Awaited<ReturnType<CheckpointerService["getCheckpointer"]>>;
+    let graph: Awaited<ReturnType<typeof createDbgaGraph>>;
+    try {
+      checkpointer = await this.checkpointerService.getCheckpointer();
+      const userId = await this.resolveUserId(projectId);
+      graph = await this.createDbgaGraphFn(this.aiFactory, userId, checkpointer ?? undefined);
+    } catch (err) {
+      yield { type: "error", ...formatDbgaStreamError(err) };
+      return;
+    }
 
     let threadId: string;
     if (projectId?.trim()) {
@@ -432,11 +439,18 @@ export class AiAnalysisService {
         }
       }
     }
-    const userId = await this.resolveUserId(projectId);
-    const graph = await createMddGraph(this.aiFactory, userId, this.graphMemory, {
-      theforge: this.theforge,
-      nodeCache: this.nodeCacheService,
-    });
+    let graph: Awaited<ReturnType<typeof createMddGraph>>;
+    try {
+      const userId = await this.resolveUserId(projectId);
+      graph = await createMddGraph(this.aiFactory, userId, this.graphMemory, {
+        theforge: this.theforge,
+        nodeCache: this.nodeCacheService,
+      });
+    } catch (err) {
+      const formatted = formatDbgaStreamError(err);
+      yield { type: "error", message: formatted.message, code: formatted.code };
+      return;
+    }
     const agentCtx = projectId?.trim() ? await this.buildMddAgentContext(projectId.trim(), stageId) : {};
     let dbgaEffective =
       dbgaContent.trim() ||
@@ -504,8 +518,8 @@ export class AiAnalysisService {
       yield { type: "done", markdown };
     } catch (err) {
       if (projectId?.trim()) this.estimationService.clearLiveDraft(projectId.trim(), estimationStage);
-      const message = err instanceof Error ? err.message : "Error en el flujo MDD";
-      yield { type: "error", message };
+      const formatted = formatDbgaStreamError(err);
+      yield { type: "error", message: formatted.message, code: formatted.code };
     }
   }
 
@@ -567,20 +581,28 @@ export class AiAnalysisService {
 
     yield { type: "progress", agent: "Manager", message: "Procesando tu mensaje..." };
 
-    const mddUserId = await this.resolveUserId(projectId);
-    const graph = await createMddGraphWithManager(
-      this.aiFactory,
-      mddUserId,
-      checkpointer,
-      this.graphMemory,
-      this.estimationService,
-      {
-        projects: this.projects,
-        theforge: this.theforge,
-        ai: this.ai,
-      },
-      { theforge: this.theforge, nodeCache: this.nodeCacheService },
-    );
+    let graph: Awaited<ReturnType<typeof createMddGraphWithManager>>;
+    try {
+      const mddUserId = await this.resolveUserId(projectId);
+      graph = await createMddGraphWithManager(
+        this.aiFactory,
+        mddUserId,
+        checkpointer,
+        this.graphMemory,
+        this.estimationService,
+        {
+          projects: this.projects,
+          theforge: this.theforge,
+          ai: this.ai,
+        },
+        { theforge: this.theforge, nodeCache: this.nodeCacheService },
+      );
+    } catch (err) {
+      const formatted = formatDbgaStreamError(err);
+      this.logger.error(`[MDD stream/manager] setup error: ${formatted.message}`, err instanceof Error ? err.stack : String(err));
+      yield { type: "error", message: formatted.message, code: formatted.code };
+      return;
+    }
     const agentCtx = await this.buildMddAgentContext(projectId, stageIdFromClient);
     const existingMdd = (initialMddDraft ?? "").trim();
     const rawInitial = (initialMessage ?? "").trim();
@@ -875,20 +897,28 @@ export class AiAnalysisService {
 
     yield { type: "progress", agent: "Manager", message: "Reanudando flujo con tu respuesta..." };
 
-    const resumeUserId = await this.resolveUserId(projectId);
-    const graph = await createMddGraphWithManager(
-      this.aiFactory,
-      resumeUserId,
-      checkpointer,
-      this.graphMemory,
-      this.estimationService,
-      {
-        projects: this.projects,
-        theforge: this.theforge,
-        ai: this.ai,
-      },
-      { theforge: this.theforge, nodeCache: this.nodeCacheService },
-    );
+    let graph: Awaited<ReturnType<typeof createMddGraphWithManager>>;
+    try {
+      const resumeUserId = await this.resolveUserId(projectId);
+      graph = await createMddGraphWithManager(
+        this.aiFactory,
+        resumeUserId,
+        checkpointer,
+        this.graphMemory,
+        this.estimationService,
+        {
+          projects: this.projects,
+          theforge: this.theforge,
+          ai: this.ai,
+        },
+        { theforge: this.theforge, nodeCache: this.nodeCacheService },
+      );
+    } catch (err) {
+      const formatted = formatDbgaStreamError(err);
+      this.logger.error(`[MDD stream/resume] setup error: ${formatted.message}`, err instanceof Error ? err.stack : String(err));
+      yield { type: "error", message: formatted.message, code: formatted.code };
+      return;
+    }
     const agentCtx = await this.buildMddAgentContext(projectId, preferredStageForCtx);
     if (agentCtx.mddComplexity != null) {
       this.estimationService.cacheProjectComplexity(projectId.trim(), estimationStage ?? null, agentCtx.mddComplexity);
@@ -1226,8 +1256,15 @@ export class AiAnalysisService {
     this.estimationService.cacheProjectComplexity(pid, regenEstimationStage ?? null, regenCx);
     const regenEstOpts = { projectId: pid, stageId: regenEstimationStage ?? null, complexity: regenCx };
 
-    const regenUserId = await this.resolveUserId(pid);
-    const llm = await createDbgaLLM(this.aiFactory, regenUserId);
+    let llm: Awaited<ReturnType<typeof createDbgaLLM>>;
+    try {
+      const regenUserId = await this.resolveUserId(pid);
+      llm = await createDbgaLLM(this.aiFactory, regenUserId);
+    } catch (err) {
+      const formatted = formatDbgaStreamError(err);
+      yield { type: "error", message: formatted.message, code: formatted.code };
+      return;
+    }
     const agentLabel =
       section === 1
         ? "Contexto (sintetizador)"
