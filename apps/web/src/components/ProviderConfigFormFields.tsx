@@ -258,6 +258,48 @@ export function ProviderConfigFormFields({
         />
       ) : null}
 
+      {catalog.supportsVision ? (
+        <>
+          <FormField
+            id={`${idPrefix}-vision`}
+            label="Modelo de visión"
+            hint="Se usa cuando el mensaje incluye imágenes. Vacío = valor del catálogo o modelo de chat."
+            error={showError("visionModel")}
+          >
+            <Input
+              id={`${idPrefix}-vision`}
+              value={form.visionModel}
+              onChange={(e) => {
+                onPatch({ visionModel: e.target.value });
+                onClearFieldError("visionModel");
+              }}
+              onBlur={() => onBlurField("visionModel")}
+              placeholder={catalog.defaultVisionModel ?? "gpt-4o"}
+              aria-invalid={!!showError("visionModel")}
+              className={cn("font-mono text-xs", inputErrorClass("visionModel"))}
+            />
+          </FormField>
+          <FormField
+            id={`${idPrefix}-vision-fallback`}
+            label="Respaldo de visión (opcional)"
+            hint="Si falla el modelo de visión. Separado del respaldo de chat."
+            error={showError("visionModelFallback")}
+          >
+            <Input
+              id={`${idPrefix}-vision-fallback`}
+              value={form.visionModelFallback}
+              onChange={(e) => {
+                onPatch({ visionModelFallback: e.target.value });
+                onClearFieldError("visionModelFallback");
+              }}
+              onBlur={() => onBlurField("visionModelFallback")}
+              aria-invalid={!!showError("visionModelFallback")}
+              className={cn("font-mono text-xs", inputErrorClass("visionModelFallback"))}
+            />
+          </FormField>
+        </>
+      ) : null}
+
       {catalog.baseUrlEditable ? (
         <FormField
           id={`${idPrefix}-base-url`}

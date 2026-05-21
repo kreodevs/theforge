@@ -72,6 +72,8 @@ export interface ProviderCatalogEntry {
   /** Dimensión del modelo de embedding por defecto del proveedor. */
   defaultEmbeddingDimension: number | null;
   defaultSttModel: string | null;
+  /** Modelo para chat con imágenes (visión). */
+  defaultVisionModel: string | null;
   defaultBaseUrl: string;
   /** Si el usuario puede editar baseUrl (p. ej. Cloudflare con account_id en la ruta). */
   baseUrlEditable?: boolean;
@@ -90,6 +92,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingModel: "openai/text-embedding-3-small",
     defaultEmbeddingDimension: 1536,
     defaultSttModel: "openai/whisper-1",
+    defaultVisionModel: "openai/gpt-4o",
     defaultBaseUrl: "https://openrouter.ai/api/v1",
     supportsEmbeddings: true,
     supportsVision: true,
@@ -102,6 +105,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingModel: "text-embedding-3-small",
     defaultEmbeddingDimension: 1536,
     defaultSttModel: "whisper-1",
+    defaultVisionModel: "gpt-4o",
     defaultBaseUrl: "https://api.openai.com/v1",
     supportsEmbeddings: true,
     supportsVision: true,
@@ -114,6 +118,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingModel: null,
     defaultEmbeddingDimension: null,
     defaultSttModel: null,
+    defaultVisionModel: "claude-3-5-sonnet-20240620",
     defaultBaseUrl: "https://api.anthropic.com",
     supportsEmbeddings: false,
     supportsVision: true,
@@ -126,6 +131,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingModel: "text-embedding-004",
     defaultEmbeddingDimension: 768,
     defaultSttModel: null,
+    defaultVisionModel: "gemini-1.5-pro",
     defaultBaseUrl: "https://generativelanguage.googleapis.com",
     supportsEmbeddings: true,
     supportsVision: true,
@@ -150,6 +156,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     ],
     defaultEmbeddingDimension: 768,
     defaultSttModel: null,
+    defaultVisionModel: null,
     defaultBaseUrl: CLOUDFLARE_BASE_URL_TEMPLATE,
     baseUrlEditable: true,
     extraFields: [
@@ -187,6 +194,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingModel: null,
     defaultEmbeddingDimension: null,
     defaultSttModel: "whisper-large-v3",
+    defaultVisionModel: null,
     defaultBaseUrl: "https://api.groq.com/openai/v1",
     supportsEmbeddings: false,
     supportsVision: false,

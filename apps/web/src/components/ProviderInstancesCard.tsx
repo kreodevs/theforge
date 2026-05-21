@@ -86,6 +86,7 @@ export function ProviderInstancesCard() {
         embeddingModel: inst.embeddingModel,
         embeddingDimension: inst.embeddingDimension,
         sttModel: inst.sttModel,
+        visionModel: inst.visionModel,
         baseUrl: inst.baseUrl,
         extras: inst.extras ?? null,
         enabledForUsers: next,

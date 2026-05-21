@@ -26,7 +26,7 @@ import {
   type ProviderInstanceMetaFields,
 } from "@/utils/provider-instance-form";
 import {
-  buildExtrasPayload,
+  buildProviderExtrasPayload,
   configFormFromInstance,
   createEmptyUserProviderForm,
   parseFallbacks,
@@ -100,6 +100,8 @@ export function ProviderInstanceModal({
     chatModelFallbacks: "",
     embeddingModel: "",
     sttModel: "",
+    visionModel: "",
+    visionModelFallback: "",
     baseUrl: "",
     extras: {},
   });
@@ -211,6 +213,8 @@ export function ProviderInstanceModal({
         chatModelFallbacks: true,
         embeddingModel: true,
         sttModel: true,
+        visionModel: true,
+        visionModelFallback: true,
         baseUrl: true,
       };
       for (const field of activeCatalog?.extraFields ?? []) {
@@ -273,7 +277,7 @@ export function ProviderInstanceModal({
     setSaving(true);
     try {
       const normalizedSlug = normalizeProviderInstanceSlug(slug);
-      const extras = buildExtrasPayload(activeCatalog, configForm.extras);
+      const extras = buildProviderExtrasPayload(activeCatalog, configForm);
       const body = {
         providerType,
         slug: isEditing ? editing!.slug : normalizedSlug,
@@ -285,6 +289,9 @@ export function ProviderInstanceModal({
           ? configForm.embeddingModel.trim() || null
           : null,
         sttModel: activeCatalog.supportsStt ? configForm.sttModel.trim() || null : null,
+        visionModel: activeCatalog.supportsVision
+          ? configForm.visionModel.trim() || null
+          : null,
         baseUrl: activeCatalog.baseUrlEditable ? configForm.baseUrl.trim() || null : null,
         extras: Object.keys(extras).length > 0 ? extras : null,
         enabledForUsers: isSuperAdmin ? enabledForUsers : false,

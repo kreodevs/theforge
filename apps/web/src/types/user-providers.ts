@@ -26,6 +26,7 @@ export interface ProviderCatalogEntry {
   embeddingModels?: string[];
   defaultEmbeddingDimension: number | null;
   defaultSttModel: string | null;
+  defaultVisionModel: string | null;
   defaultBaseUrl: string;
   baseUrlEditable?: boolean;
   extraFields?: ProviderExtraFieldSpec[];
@@ -41,6 +42,7 @@ export interface UserProviderConfigSummary {
   embeddingModel: string | null;
   embeddingDimension: number | null;
   sttModel: string | null;
+  visionModel: string | null;
   baseUrl: string | null;
   extras: Record<string, unknown> | null;
   configured: boolean;
@@ -65,6 +67,7 @@ export interface ProviderInstanceSummary {
   embeddingModel: string | null;
   embeddingDimension: number | null;
   sttModel: string | null;
+  visionModel: string | null;
   baseUrl: string | null;
   extras: Record<string, unknown> | null;
   enabledForUsers: boolean;
@@ -87,6 +90,7 @@ export interface UpsertProviderInstanceBody {
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
   sttModel?: string | null;
+  visionModel?: string | null;
   baseUrl?: string | null;
   extras?: Record<string, unknown> | null;
   enabledForUsers?: boolean;
@@ -102,6 +106,7 @@ export interface UpsertProviderConfigBody {
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
   sttModel?: string | null;
+  visionModel?: string | null;
   baseUrl?: string | null;
   extras?: Record<string, unknown> | null;
 }

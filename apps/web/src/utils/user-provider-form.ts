@@ -10,8 +10,15 @@ export interface UserProviderFormState {
   chatModelFallbacks: string;
   embeddingModel: string;
   sttModel: string;
+  visionModel: string;
+  visionModelFallback: string;
   baseUrl: string;
   extras: Record<string, string>;
+}
+
+function visionFallbackFromExtras(raw?: Record<string, unknown> | null): string {
+  const v = raw?.visionModelFallback;
+  return typeof v === "string" ? v : "";
 }
 
 export function extrasFromRecord(
@@ -39,6 +46,8 @@ export function configFormFromInstance(
     chatModelFallbacks: inst.chatModelFallbacks?.join(", ") ?? "",
     embeddingModel: inst.embeddingModel ?? "",
     sttModel: inst.sttModel ?? "",
+    visionModel: inst.visionModel ?? "",
+    visionModelFallback: visionFallbackFromExtras(inst.extras),
     baseUrl: inst.baseUrl ?? "",
     extras: extrasFromRecord(catalog, inst.extras),
   };
@@ -54,6 +63,8 @@ export function configFormFromUserConfig(
     chatModelFallbacks: cfg.chatModelFallbacks?.join(", ") ?? "",
     embeddingModel: cfg.embeddingModel ?? catalog.defaultEmbeddingModel ?? "",
     sttModel: cfg.sttModel ?? catalog.defaultSttModel ?? "",
+    visionModel: cfg.visionModel ?? catalog.defaultVisionModel ?? "",
+    visionModelFallback: visionFallbackFromExtras(cfg.extras),
     baseUrl: cfg.baseUrl ?? catalog.defaultBaseUrl,
     extras: extrasFromRecord(catalog, cfg.extras),
   };
@@ -69,6 +80,8 @@ export function createEmptyUserProviderForm(
     chatModelFallbacks: "",
     embeddingModel: catalog.defaultEmbeddingModel ?? "",
     sttModel: catalog.defaultSttModel ?? "",
+    visionModel: catalog.defaultVisionModel ?? "",
+    visionModelFallback: "",
     baseUrl: "",
     extras: Object.fromEntries(
       (catalog.extraFields ?? []).map((f) => [f.key, ""]),
@@ -82,6 +95,8 @@ export type UserProviderFormFields =
   | "chatModelFallbacks"
   | "embeddingModel"
   | "sttModel"
+  | "visionModel"
+  | "visionModelFallback"
   | "baseUrl"
   | `extra:${string}`;
 
@@ -112,6 +127,17 @@ export function buildExtrasPayload(
       out[field.key] = raw;
     }
   }
+  return out;
+}
+
+/** Fusiona extras del catálogo con campos de visión (respaldo en JSON extras). */
+export function buildProviderExtrasPayload(
+  catalog: ProviderCatalogEntry,
+  form: Pick<UserProviderFormState, "extras" | "visionModelFallback">,
+): Record<string, unknown> {
+  const out = buildExtrasPayload(catalog, form.extras);
+  const vf = form.visionModelFallback.trim();
+  if (vf) out.visionModelFallback = vf;
   return out;
 }
 
@@ -153,6 +179,18 @@ export function validateUserProviderForm(args: {
 
   if (catalog.supportsStt && form.sttModel.trim() && form.sttModel.trim().length < 2) {
     errors.sttModel = "Indica un modelo de transcripción válido";
+  }
+
+  if (catalog.supportsVision && form.visionModel.trim() && form.visionModel.trim().length < 2) {
+    errors.visionModel = "Indica un modelo de visión válido";
+  }
+
+  if (
+    catalog.supportsVision &&
+    form.visionModelFallback.trim() &&
+    form.visionModelFallback.trim().length < 2
+  ) {
+    errors.visionModelFallback = "Indica un modelo de respaldo de visión válido";
   }
 
   if (catalog.baseUrlEditable && form.baseUrl.trim()) {

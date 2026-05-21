@@ -37,7 +37,11 @@ Docker: see [`README.md`](README.md) **Docker** section.
 ## Tests and lint
 
 - `npm run lint` at root (Turbo).
-- API package: see `apps/api/package.json` for `test` and special checks (e.g. MCP alignment).
+- **`npm run test`** at root: smoke y unit tests en API, web (utilidades puras) y `business-rules`.
+- **`npm run test:types`**: `tsc --noEmit` en API y web (detecta imports rotos y tipos antes de desplegar).
+- API: `cd apps/api && npm test` — incluye `src/smoke/cross-module-imports.smoke.spec.ts` (imports entre módulos Nest).
+- Web: `cd apps/web && npm test` — utilidades NDJSON, errores HTTP, markdown, design tokens.
+- MCP alignment (API): `npm run test:mcp-alignment` en `apps/api`.
 
 ## Pull requests
 

@@ -9,7 +9,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --import tsx --test 'src/**/*.spec.ts'",
+    "test:types": "tsc -b --noEmit"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",

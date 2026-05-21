@@ -468,6 +468,12 @@ export function AIProvidersCard({ personalMode = false }: AIProvidersCardProps) 
                           <dd className="font-mono text-xs">{activeConfig.sttModel}</dd>
                         </div>
                       ) : null}
+                      {activeConfig?.visionModel ? (
+                        <div>
+                          <dt className="text-[var(--foreground-muted)]">Visión</dt>
+                          <dd className="font-mono text-xs">{activeConfig.visionModel}</dd>
+                        </div>
+                      ) : null}
                     </dl>
                   ) : (
                     <p className="text-sm text-[var(--foreground-muted)]">
