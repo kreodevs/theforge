@@ -119,6 +119,7 @@ export function buildModelFields(
   dto: {
     chatModel?: string;
     chatModelFallbacks?: string[];
+    auditorChatModel?: string | null;
     embeddingModel?: string | null;
     embeddingDimension?: number | null;
     sttModel?: string | null;
@@ -150,9 +151,16 @@ export function buildModelFields(
   if (visionModel && !catalog.supportsVision) {
     throw new BadRequestException(`El proveedor «${provider}» no soporta visión (imágenes)`);
   }
+  const auditorRaw = dto.auditorChatModel;
+  const auditorChatModel =
+    auditorRaw === null || auditorRaw === undefined
+      ? null
+      : auditorRaw.trim() || null;
+
   return {
     chatModel,
     chatModelFallbacks,
+    auditorChatModel,
     embeddingModel,
     embeddingDimension,
     sttModel,

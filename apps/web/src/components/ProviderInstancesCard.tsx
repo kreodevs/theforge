@@ -83,6 +83,7 @@ export function ProviderInstancesCard() {
         displayName: inst.displayName,
         chatModel: inst.chatModel,
         chatModelFallbacks: inst.chatModelFallbacks,
+        auditorChatModel: inst.auditorChatModel,
         embeddingModel: inst.embeddingModel,
         embeddingDimension: inst.embeddingDimension,
         sttModel: inst.sttModel,
@@ -198,6 +199,9 @@ export function ProviderInstancesCard() {
                       <p className="font-medium text-[var(--foreground)]">{inst.displayName}</p>
                       <p className="text-xs text-[var(--foreground-muted)]">
                         {inst.providerType}/{inst.slug} · {inst.chatModel}
+                        {inst.auditorChatModel
+                          ? ` · auditor: ${inst.auditorChatModel}`
+                          : ""}
                         {inst.apiKeyHint ? ` · ${inst.apiKeyHint}` : ""}
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">

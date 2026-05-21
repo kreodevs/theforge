@@ -47,7 +47,6 @@ export interface UpsertProviderConfigDto {
 export interface UpdateAISettingsDto {
   activeProvider?: string;
   activeTenantInstanceId?: string | null;
-  mddAuditorTenantInstanceId?: string | null;
   embeddingProvider?: string | null;
   embeddingsEnabled?: boolean;
 }
@@ -68,7 +67,6 @@ export class UserProvidersService {
     return {
       activeProvider: row?.activeProvider ?? null,
       activeTenantInstanceId: row?.activeTenantInstanceId ?? null,
-      mddAuditorTenantInstanceId: row?.mddAuditorTenantInstanceId ?? null,
       embeddingProvider: row?.embeddingProvider ?? null,
       embeddingsEnabled: row?.embeddingsEnabled ?? true,
       allowedChatModels: row?.allowedChatModels ?? [],
@@ -184,24 +182,16 @@ export class UserProvidersService {
       select: { role: true },
     });
     if (user?.role === "developer") {
-      if (
-        dto.activeTenantInstanceId !== undefined ||
-        dto.activeProvider !== undefined ||
-        dto.mddAuditorTenantInstanceId !== undefined
-      ) {
+      if (dto.activeTenantInstanceId !== undefined || dto.activeProvider !== undefined) {
         throw new ForbiddenException(
           "Los developers usan el proveedor predeterminado configurado por el super_admin",
         );
       }
     }
-    for (const instanceId of [
-      dto.activeTenantInstanceId,
-      dto.mddAuditorTenantInstanceId,
-    ]) {
-      if (instanceId === undefined || instanceId === null) continue;
+    if (dto.activeTenantInstanceId !== undefined && dto.activeTenantInstanceId !== null) {
       const inst = await this.prisma.providerInstance.findFirst({
         where: {
-          id: instanceId,
+          id: dto.activeTenantInstanceId,
           ...this.instanceAccessibleByUser(userId),
         },
       });
@@ -247,7 +237,6 @@ export class UserProvidersService {
         userId,
         activeProvider: dto.activeProvider ?? "openrouter",
         activeTenantInstanceId: dto.activeTenantInstanceId ?? undefined,
-        mddAuditorTenantInstanceId: dto.mddAuditorTenantInstanceId ?? undefined,
         embeddingProvider: dto.embeddingProvider ?? undefined,
         embeddingsEnabled: dto.embeddingsEnabled ?? true,
       },
@@ -255,9 +244,6 @@ export class UserProvidersService {
         ...(dto.activeProvider !== undefined ? { activeProvider: dto.activeProvider } : {}),
         ...(dto.activeTenantInstanceId !== undefined
           ? { activeTenantInstanceId: dto.activeTenantInstanceId }
-          : {}),
-        ...(dto.mddAuditorTenantInstanceId !== undefined
-          ? { mddAuditorTenantInstanceId: dto.mddAuditorTenantInstanceId }
           : {}),
         ...(dto.embeddingProvider !== undefined
           ? { embeddingProvider: dto.embeddingProvider }
@@ -268,7 +254,6 @@ export class UserProvidersService {
     return {
       activeProvider: row.activeProvider,
       activeTenantInstanceId: row.activeTenantInstanceId,
-      mddAuditorTenantInstanceId: row.mddAuditorTenantInstanceId,
       embeddingProvider: row.embeddingProvider,
       embeddingsEnabled: row.embeddingsEnabled,
     };
@@ -407,21 +392,15 @@ export class UserProvidersService {
   }
 
   /**
-   * Runtime del agente Auditor (grafo MDD). Si hay `mddAuditorTenantInstanceId` accesible, esa instancia;
-   * si no, el mismo runtime que `resolveRuntime`.
+   * Runtime del agente Auditor (grafo MDD): instancia activa del usuario con `auditorChatModel`
+   * si está definido; si no, mismo runtime que `resolveRuntime`.
    */
   async resolveAuditorRuntime(userId: string): Promise<UserLLMRuntime> {
-    const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
-    const auditorInstanceId = settings?.mddAuditorTenantInstanceId;
-    if (auditorInstanceId) {
-      const inst = await this.prisma.providerInstance.findFirst({
-        where: { id: auditorInstanceId, ...this.instanceAccessibleByUser(userId) },
-      });
-      if (inst) {
-        return this.runtimeFromTenantInstance(userId, inst);
-      }
-    }
-    return this.resolveRuntime(userId);
+    const tenant = await this.resolveTenantInstanceForUser(userId);
+    if (!tenant) return this.resolveRuntime(userId);
+    const override = tenant.auditorChatModel?.trim();
+    if (!override) return this.runtimeFromTenantInstance(userId, tenant);
+    return this.runtimeFromTenantInstance(userId, tenant, { chatModelOverride: override });
   }
 
   async resolveEmbeddingRuntime(userId: string): Promise<UserLLMRuntime> {
@@ -533,7 +512,7 @@ export class UserProvidersService {
   private async runtimeFromTenantInstance(
     userId: string,
     instance: ProviderInstance,
-    opts?: { forEmbeddings?: boolean },
+    opts?: { forEmbeddings?: boolean; chatModelOverride?: string },
   ): Promise<UserLLMRuntime> {
     if (!isProviderId(instance.providerType)) {
       throw new BadRequestException("Instancia tenant con tipo de proveedor no válido");
@@ -543,7 +522,8 @@ export class UserProvidersService {
     const catalog = PROVIDER_CATALOG[provider];
     const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
     const userGrants = settings?.allowedChatModels ?? [];
-    const chatModel = instance.chatModel;
+    const chatModel = opts?.chatModelOverride?.trim() || instance.chatModel;
+    const modelRole = opts?.chatModelOverride ? "auditor" : "activo";
 
     if (
       !isChatModelAllowedForTenantUser(
@@ -559,7 +539,7 @@ export class UserProvidersService {
           ? `Modelos permitidos para ti: ${userGrants.join(", ")}. Activa un proveedor cuyo modelo esté en esa lista.`
           : `Pide al super_admin modelos en Usuarios o revisa el proveedor «${instance.displayName}».`;
       throw new BadRequestException(
-        `El modelo «${chatModel}» del proveedor activo «${instance.displayName}» no está autorizado. ${hint}`,
+        `El modelo «${chatModel}» del proveedor ${modelRole} «${instance.displayName}» no está autorizado. ${hint}`,
       );
     }
 
