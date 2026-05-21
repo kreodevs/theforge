@@ -95,6 +95,25 @@ export function resolveRuntimeBaseUrl(
   return trimmed || catalog.defaultBaseUrl;
 }
 
+export function resolveVisionModelForRuntime(params: {
+  visionModel?: string | null;
+  chatModel: string;
+  extras?: Record<string, unknown> | null;
+  catalogDefaultVisionModel?: string | null;
+  supportsVision: boolean;
+}): string {
+  if (!params.supportsVision) return params.chatModel;
+  const extras = (params.extras ?? {}) as Record<string, unknown>;
+  const legacyExtras =
+    typeof extras.visionModel === "string" ? extras.visionModel.trim() : "";
+  return (
+    params.visionModel?.trim() ||
+    legacyExtras ||
+    params.catalogDefaultVisionModel?.trim() ||
+    params.chatModel
+  );
+}
+
 export function buildModelFields(
   provider: ProviderId,
   dto: {
@@ -103,6 +122,7 @@ export function buildModelFields(
     embeddingModel?: string | null;
     embeddingDimension?: number | null;
     sttModel?: string | null;
+    visionModel?: string | null;
   },
 ) {
   const catalog = PROVIDER_CATALOG[provider];
@@ -123,5 +143,19 @@ export function buildModelFields(
   if (sttModel && !catalog.supportsStt) {
     throw new BadRequestException(`El proveedor «${provider}» no soporta transcripción de audio`);
   }
-  return { chatModel, chatModelFallbacks, embeddingModel, embeddingDimension, sttModel };
+  const visionModel =
+    dto.visionModel === null
+      ? null
+      : (dto.visionModel?.trim() || catalog.defaultVisionModel);
+  if (visionModel && !catalog.supportsVision) {
+    throw new BadRequestException(`El proveedor «${provider}» no soporta visión (imágenes)`);
+  }
+  return {
+    chatModel,
+    chatModelFallbacks,
+    embeddingModel,
+    embeddingDimension,
+    sttModel,
+    visionModel,
+  };
 }

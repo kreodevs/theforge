@@ -16,6 +16,8 @@
     "dev:api": "node scripts/ensure-infra.js && turbo run dev --filter=@theforge/api",
     "dev:web": "turbo run dev --filter=@theforge/web",
     "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:types": "turbo run test:types",
     "db:generate": "turbo run db:generate --filter=@theforge/database",
     "db:push": "turbo run db:push --filter=@theforge/database",
     "db:migrate": "turbo run db:migrate --filter=@theforge/database",

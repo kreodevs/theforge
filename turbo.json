@@ -23,6 +23,12 @@
         "^build"
       ]
     },
+    "test": {
+      "dependsOn": [
+        "^build"
+      ]
+    },
+    "test:types": {},
     "db:generate": {
       "cache": false
     },
