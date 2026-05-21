@@ -18,7 +18,7 @@ import type {
 } from "@/types/user-providers";
 import { upsertProviderConfig } from "@/lib/user-providers-api";
 import {
-  buildExtrasPayload,
+  buildProviderExtrasPayload,
   createEmptyUserProviderForm,
   parseFallbacks,
   validateUserProviderForm,
@@ -137,6 +137,8 @@ export function UserProviderConfigModal({
           chatModelFallbacks: true,
           embeddingModel: true,
           sttModel: true,
+          visionModel: true,
+          visionModelFallback: true,
           baseUrl: true,
         };
         for (const field of activeCatalog.extraFields ?? []) {
@@ -190,7 +192,7 @@ export function UserProviderConfigModal({
 
     setSaving(true);
     try {
-      const extras = buildExtrasPayload(activeCatalog, form.extras);
+      const extras = buildProviderExtrasPayload(activeCatalog, form);
       await upsertProviderConfig(providerId, {
         apiKey: form.apiKey.trim(),
         chatModel: form.chatModel.trim(),
@@ -199,6 +201,7 @@ export function UserProviderConfigModal({
           ? form.embeddingModel.trim() || null
           : null,
         sttModel: activeCatalog.supportsStt ? form.sttModel.trim() || null : null,
+        visionModel: activeCatalog.supportsVision ? form.visionModel.trim() || null : null,
         baseUrl: activeCatalog.baseUrlEditable ? form.baseUrl.trim() || null : null,
         extras: Object.keys(extras).length > 0 ? extras : null,
       });
