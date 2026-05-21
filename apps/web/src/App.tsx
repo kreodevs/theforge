@@ -41,7 +41,6 @@ import {
   DialogTitle,
   DialogDescription,
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -108,6 +107,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [workshopProject, setWorkshopProject] = useState<Project | null>(null);
   const [bulkDeleteTargets, setBulkDeleteTargets] = useState<Project[] | null>(null);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
@@ -283,22 +284,36 @@ export default function App() {
   const openBulkDeleteConfirm = useCallback(() => {
     const targets = displayedProjects.filter((p) => selectedProjectIds.includes(p.id));
     if (targets.length === 0) return;
+    setBulkDeleteError(null);
     setBulkDeleteTargets(targets);
+    setBulkDeleteDialogOpen(true);
   }, [displayedProjects, selectedProjectIds]);
 
   const confirmBulkDelete = useCallback(async () => {
     if (!bulkDeleteTargets?.length) return;
+    setBulkDeleteError(null);
     setLoading(true);
     try {
       for (const p of bulkDeleteTargets) {
         const r = await apiFetch(`${API_BASE}/projects/${p.id}`, {
           method: "DELETE",
         });
-        if (!r.ok) throw new Error("Error al borrar");
+        if (!r.ok) {
+          const msg =
+            r.status === 403
+              ? "No tienes permiso para borrar proyectos."
+              : r.status === 404
+                ? "Proyecto no encontrado."
+                : "Error al borrar";
+          throw new Error(msg);
+        }
       }
+      setBulkDeleteDialogOpen(false);
       setBulkDeleteTargets(null);
       setSelectedProjectIds([]);
       await loadProjects();
+    } catch (err) {
+      setBulkDeleteError(err instanceof Error ? err.message : "Error al borrar");
     } finally {
       setLoading(false);
     }
@@ -414,7 +429,16 @@ export default function App() {
         onContinueLegacy={openTheForgeModal}
       />
 
-      <AlertDialog open={!!bulkDeleteTargets?.length} onOpenChange={(open) => !open && !loading && setBulkDeleteTargets(null)}>
+      <AlertDialog
+        open={bulkDeleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !loading) {
+            setBulkDeleteDialogOpen(false);
+            setBulkDeleteTargets(null);
+            setBulkDeleteError(null);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -423,6 +447,14 @@ export default function App() {
             <AlertDialogDescription>
               Se eliminarán sesiones y estimaciones. Esta acción no se puede deshacer.
             </AlertDialogDescription>
+            {bulkDeleteError ? (
+              <p
+                role="alert"
+                className="rounded-md border border-[color-mix(in_oklch,var(--destructive)_42%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_12%,var(--card))] px-3 py-2 text-sm text-[var(--destructive)]"
+              >
+                {bulkDeleteError}
+              </p>
+            ) : null}
             {bulkDeleteTargets && bulkDeleteTargets.length > 0 ? (
               <ul className="max-h-40 list-inside list-disc overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--muted)]/30 py-2 pl-4 pr-2 text-sm text-[var(--foreground)]">
                 {bulkDeleteTargets.slice(0, 12).map((p) => (
@@ -439,12 +471,25 @@ export default function App() {
             ) : null}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setBulkDeleteTargets(null)} disabled={loading}>
+            <AlertDialogCancel
+              type="button"
+              disabled={loading}
+              onClick={() => {
+                setBulkDeleteDialogOpen(false);
+                setBulkDeleteTargets(null);
+                setBulkDeleteError(null);
+              }}
+            >
               Cancelar
             </AlertDialogCancel>
-            <AlertDialogAction onClick={() => void confirmBulkDelete()} disabled={loading}>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={loading}
+              onClick={() => void confirmBulkDelete()}
+            >
               {loading ? "Borrando…" : bulkDeleteTargets && bulkDeleteTargets.length > 1 ? `Borrar (${bulkDeleteTargets.length})` : "Borrar"}
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
