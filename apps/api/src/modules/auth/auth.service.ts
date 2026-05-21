@@ -679,7 +679,7 @@ export class AuthService {
   }
 
   /** Cambiar rol de un usuario (admin-only). No permite degradarse a sí mismo (developer). */
-  async updateUserRole(targetUserId: string, role: string, actorUserId: string, actorRole: string) {
+  async updateUserRole(targetUserId: string, role: string, actorUserId: string) {
     if (role !== "admin" && role !== "developer" && role !== "super_admin") {
       throw new BadRequestException("Rol inválido. Use 'super_admin', 'admin' o 'developer'.");
     }
