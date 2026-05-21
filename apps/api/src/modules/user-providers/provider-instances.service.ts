@@ -158,6 +158,7 @@ export class ProviderInstancesService {
         displayName: true,
         chatModel: true,
         chatModelFallbacks: true,
+        auditorChatModel: true,
         embeddingModel: true,
         embeddingDimension: true,
         sttModel: true,
