@@ -17,6 +17,10 @@ export default defineConfig({
         __dirname,
         "../../packages/shared-types/src/mdd-pipeline-limits.ts",
       ),
+      "@theforge/shared-types/mermaid": path.resolve(
+        __dirname,
+        "../../packages/shared-types/src/mermaid.ts",
+      ),
     },
   },
   server: {

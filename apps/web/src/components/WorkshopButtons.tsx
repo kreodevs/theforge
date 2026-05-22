@@ -248,16 +248,10 @@ type WorkshopRailIconButtonProps = ComponentProps<"button"> & {
 const workshopRailIconSelectedClass = SIDEBAR_RAIL_ICON_BTN_SELECTED;
 
 /** Icono del rail del sidebar — reposo transparente; activo con relleno primary. */
-export function WorkshopRailIconButton({
-  selected,
-  outlined,
-  size = "compact",
-  className,
-  type = "button",
-  ...props
-}: WorkshopRailIconButtonProps) {
-  return (
+export const WorkshopRailIconButton = forwardRef<HTMLButtonElement, WorkshopRailIconButtonProps>(
+  ({ selected, outlined, size = "compact", className, type = "button", ...props }, ref) => (
     <button
+      ref={ref}
       type={type}
       className={cn(
         outlined ? SIDEBAR_RAIL_ICON_BTN_OUTLINED : SIDEBAR_RAIL_ICON_BTN_IDLE,
@@ -267,8 +261,9 @@ export function WorkshopRailIconButton({
       )}
       {...props}
     />
-  );
-}
+  ),
+);
+WorkshopRailIconButton.displayName = "WorkshopRailIconButton";
 
 /** Icono Lucide para botones del toolbar de documentos (hover invertido). */
 export function WorkshopDocToolbarIcon({

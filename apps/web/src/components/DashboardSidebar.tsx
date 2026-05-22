@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  forwardRef,
   type MouseEvent,
   type ComponentProps,
   type ReactElement,
@@ -170,28 +171,25 @@ const sidebarAccountButtonClass = cn(
 const sidebarInsetButtonSelectedClass =
   "border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm";
 
-function SidebarInsetToggleButton({
-  selected,
-  compact,
-  className,
-  children,
-  ...props
-}: ComponentProps<"button"> & { selected?: boolean; compact?: boolean }) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        sidebarInsetButtonBaseClass,
-        compact ? "h-8 w-8 rounded-full" : "min-h-8 flex-1 flex-col gap-0.5 rounded-[var(--radius-md)] py-1.5 text-[10px]",
-        selected ? sidebarInsetButtonSelectedClass : sidebarInsetButtonIdleClass,
-        className,
-      )}
-      {...props}
-    >
-      {children}
-    </button>
-  );
-}
+const SidebarInsetToggleButton = forwardRef<
+  HTMLButtonElement,
+  ComponentProps<"button"> & { selected?: boolean; compact?: boolean }
+>(({ selected, compact, className, children, ...props }, ref) => (
+  <button
+    ref={ref}
+    type="button"
+    className={cn(
+      sidebarInsetButtonBaseClass,
+      compact ? "h-8 w-8 rounded-full" : "min-h-8 flex-1 flex-col gap-0.5 rounded-[var(--radius-md)] py-1.5 text-[10px]",
+      selected ? sidebarInsetButtonSelectedClass : sidebarInsetButtonIdleClass,
+      className,
+    )}
+    {...props}
+  >
+    {children}
+  </button>
+));
+SidebarInsetToggleButton.displayName = "SidebarInsetToggleButton";
 
 function ThemeModeToggle({ compact }: { compact: boolean }) {
   const { preference, setPreference } = useTheme();
