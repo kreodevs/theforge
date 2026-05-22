@@ -99,6 +99,7 @@ export function ProviderInstanceModal({
     chatModel: "",
     chatModelFallbacks: "",
     auditorChatModel: "",
+    fastTaskChatModel: "",
     embeddingModel: "",
     sttModel: "",
     visionModel: "",
@@ -213,6 +214,7 @@ export function ProviderInstanceModal({
         chatModel: true,
         chatModelFallbacks: true,
         auditorChatModel: true,
+        fastTaskChatModel: true,
         embeddingModel: true,
         sttModel: true,
         visionModel: true,
@@ -288,6 +290,7 @@ export function ProviderInstanceModal({
         chatModel: configForm.chatModel.trim(),
         chatModelFallbacks: parseFallbacks(configForm.chatModelFallbacks),
         auditorChatModel: configForm.auditorChatModel.trim() || null,
+        fastTaskChatModel: configForm.fastTaskChatModel.trim() || null,
         embeddingModel: activeCatalog.supportsEmbeddings
           ? configForm.embeddingModel.trim() || null
           : null,

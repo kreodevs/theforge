@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import {
   Button,
@@ -45,6 +45,15 @@ export function ProviderInstancesCard() {
 
   const activeInstanceId = userSettings?.activeTenantInstanceId ?? null;
 
+  const sortedInstances = useMemo(() => {
+    if (!activeInstanceId) return instances;
+    return [...instances].sort((a, b) => {
+      if (a.id === activeInstanceId) return -1;
+      if (b.id === activeInstanceId) return 1;
+      return 0;
+    });
+  }, [instances, activeInstanceId]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -83,6 +92,7 @@ export function ProviderInstancesCard() {
         chatModel: inst.chatModel,
         chatModelFallbacks: inst.chatModelFallbacks,
         auditorChatModel: inst.auditorChatModel,
+        fastTaskChatModel: inst.fastTaskChatModel,
         embeddingModel: inst.embeddingModel,
         embeddingDimension: inst.embeddingDimension,
         sttModel: inst.sttModel,
@@ -174,14 +184,14 @@ export function ProviderInstancesCard() {
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Cargando instancias…
               </div>
-            ) : instances.length === 0 ? (
+            ) : sortedInstances.length === 0 ? (
               <p className="py-2 text-sm text-[var(--foreground-muted)]">
                 {canManage
                   ? "No hay instancias. Crea la primera con el botón de arriba."
                   : "No hay instancias disponibles. Pide a un administrador que configure una."}
               </p>
             ) : (
-              instances.map((inst) => {
+              sortedInstances.map((inst) => {
                 const Icon = getProviderIcon(inst.providerType);
                 const isActive = activeInstanceId === inst.id;
                 return (

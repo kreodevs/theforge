@@ -9,6 +9,7 @@ export interface UserProviderFormState {
   chatModel: string;
   chatModelFallbacks: string;
   auditorChatModel: string;
+  fastTaskChatModel: string;
   embeddingModel: string;
   sttModel: string;
   visionModel: string;
@@ -46,6 +47,7 @@ export function configFormFromInstance(
     chatModel: inst.chatModel,
     chatModelFallbacks: inst.chatModelFallbacks?.join(", ") ?? "",
     auditorChatModel: inst.auditorChatModel ?? "",
+    fastTaskChatModel: inst.fastTaskChatModel ?? "",
     embeddingModel: inst.embeddingModel ?? "",
     sttModel: inst.sttModel ?? "",
     visionModel: inst.visionModel ?? "",
@@ -64,6 +66,7 @@ export function configFormFromUserConfig(
     chatModel: cfg.chatModel || catalog.defaultChatModel,
     chatModelFallbacks: cfg.chatModelFallbacks?.join(", ") ?? "",
     auditorChatModel: "",
+    fastTaskChatModel: "",
     embeddingModel: cfg.embeddingModel ?? catalog.defaultEmbeddingModel ?? "",
     sttModel: cfg.sttModel ?? catalog.defaultSttModel ?? "",
     visionModel: cfg.visionModel ?? catalog.defaultVisionModel ?? "",
@@ -82,6 +85,7 @@ export function createEmptyUserProviderForm(
     chatModel: catalog.defaultChatModel,
     chatModelFallbacks: "",
     auditorChatModel: "",
+    fastTaskChatModel: "",
     embeddingModel: catalog.defaultEmbeddingModel ?? "",
     sttModel: catalog.defaultSttModel ?? "",
     visionModel: catalog.defaultVisionModel ?? "",
@@ -98,6 +102,7 @@ export type UserProviderFormFields =
   | "chatModel"
   | "chatModelFallbacks"
   | "auditorChatModel"
+  | "fastTaskChatModel"
   | "embeddingModel"
   | "sttModel"
   | "visionModel"
@@ -183,6 +188,16 @@ export function validateUserProviderForm(args: {
     form.auditorChatModel.trim() === form.chatModel.trim()
   ) {
     errors.auditorChatModel =
+      "Si es el mismo que el de chat, déjalo vacío (se usará el modelo de chat)";
+  }
+
+  if (form.fastTaskChatModel.trim() && form.fastTaskChatModel.trim().length < 2) {
+    errors.fastTaskChatModel = "Indica un modelo rápido válido";
+  } else if (
+    form.fastTaskChatModel.trim() &&
+    form.fastTaskChatModel.trim() === form.chatModel.trim()
+  ) {
+    errors.fastTaskChatModel =
       "Si es el mismo que el de chat, déjalo vacío (se usará el modelo de chat)";
   }
 

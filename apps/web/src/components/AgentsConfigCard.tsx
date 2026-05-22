@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bot, Check, Loader2 } from "lucide-react";
+import { Bot, Check, Loader2, Zap } from "lucide-react";
 import {
   Button,
   Card,
@@ -25,6 +25,11 @@ function auditorModelLabel(inst: ProviderInstanceSummary): string {
   return `${inst.displayName} — ${model}`;
 }
 
+function fastTaskModelLabel(inst: ProviderInstanceSummary): string {
+  const model = inst.fastTaskChatModel?.trim() || inst.chatModel;
+  return `${inst.displayName} — ${model}`;
+}
+
 export function AgentsConfigCard() {
   const role = getStoredUser()?.role;
   const canPick = canPickInstances(role);
@@ -38,6 +43,7 @@ export function AgentsConfigCard() {
   const [savedFlash, setSavedFlash] = useState(false);
 
   const auditorInstanceId = settings?.mddAuditorTenantInstanceId ?? "";
+  const fastTaskInstanceId = settings?.mddFastTaskTenantInstanceId ?? "";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,9 +90,33 @@ export function AgentsConfigCard() {
     }
   }
 
-  const selected = instances.find((i) => i.id === auditorInstanceId);
-  const selectedModel =
-    selected?.auditorChatModel?.trim() || selected?.chatModel;
+  async function handleFastTaskChange(nextId: string) {
+    if (!canPick) return;
+    const value = nextId === "" ? null : nextId;
+    if (value === (settings?.mddFastTaskTenantInstanceId ?? null)) return;
+    setSaving(true);
+    setError("");
+    setSavedFlash(false);
+    try {
+      const updated = await updateUserAISettings({
+        mddFastTaskTenantInstanceId: value,
+      });
+      setSettings(updated);
+      setSavedFlash(true);
+      window.setTimeout(() => setSavedFlash(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const selectedAuditor = instances.find((i) => i.id === auditorInstanceId);
+  const selectedAuditorModel =
+    selectedAuditor?.auditorChatModel?.trim() || selectedAuditor?.chatModel;
+  const selectedFastTask = instances.find((i) => i.id === fastTaskInstanceId);
+  const selectedFastTaskModel =
+    selectedFastTask?.fastTaskChatModel?.trim() || selectedFastTask?.chatModel;
 
   return (
     <Card variant="ghost">
@@ -96,15 +126,15 @@ export function AgentsConfigCard() {
             <Bot className="h-5 w-5 text-[var(--primary)]" />
           </div>
           <div>
-            <CardTitle>Auditor</CardTitle>
+            <CardTitle>Agentes MDD</CardTitle>
             <CardDescription>
-              Modelo del agente que revisa el MDD (score, gaps, decisión). El resto
-              de agentes del grafo usan el proveedor activo.
+              Modelos dedicados para roles específicos del grafo MDD. El resto
+              de agentes usan el proveedor activo.
             </CardDescription>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-[var(--foreground-muted)]">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -116,53 +146,98 @@ export function AgentsConfigCard() {
         {!loading && isDeveloper ? (
           <p className="text-sm text-[var(--foreground-muted)]">
             Los developers usan el proveedor predeterminado del equipo para todos
-            los agentes, incluido el Auditor.
+            los agentes.
           </p>
         ) : null}
 
         {!loading && !isDeveloper ? (
-          <div className="space-y-2">
-            <label
-              htmlFor="mdd-auditor-instance"
-              className="text-sm font-medium text-[var(--foreground)]"
-            >
-              Proveedor para el Auditor
-            </label>
-            <select
-              id="mdd-auditor-instance"
-              disabled={!canPick || saving || instances.length === 0}
-              value={auditorInstanceId}
-              onChange={(e) => void handleAuditorChange(e.target.value)}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] disabled:opacity-50"
-            >
-              <option value="">
-                Mismo que proveedor activo (predeterminado)
-              </option>
-              {instances.map((inst) => (
-                <option key={inst.id} value={inst.id}>
-                  {auditorModelLabel(inst)}
+          <>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Bot className="h-4 w-4 text-[var(--primary)]" />
+                <label
+                  htmlFor="mdd-auditor-instance"
+                  className="text-sm font-medium text-[var(--foreground)]"
+                >
+                  Auditor (revisión final)
+                </label>
+              </div>
+              <select
+                id="mdd-auditor-instance"
+                disabled={!canPick || saving || instances.length === 0}
+                value={auditorInstanceId}
+                onChange={(e) => void handleAuditorChange(e.target.value)}
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] disabled:opacity-50"
+              >
+                <option value="">
+                  Mismo que proveedor activo (predeterminado)
                 </option>
-              ))}
-            </select>
-            {selected ? (
-              <p className="text-xs text-[var(--foreground-muted)]">
-                {selected.providerType}/{selected.slug} · {selectedModel}
-                {selected.auditorChatModel?.trim() ? " (modelo de auditor)" : ""}
-                {selected.apiKeyHint ? ` · ${selected.apiKeyHint}` : ""}
-              </p>
-            ) : (
-              <p className="text-xs text-[var(--foreground-muted)]">
-                Sin override: el Auditor comparte el runtime del proveedor marcado
-                como Activa arriba (o el default del equipo).
-              </p>
-            )}
-          </div>
+                {instances.map((inst) => (
+                  <option key={inst.id} value={inst.id}>
+                    {auditorModelLabel(inst)}
+                  </option>
+                ))}
+              </select>
+              {selectedAuditor ? (
+                <p className="text-xs text-[var(--foreground-muted)]">
+                  {selectedAuditor.providerType}/{selectedAuditor.slug} · {selectedAuditorModel}
+                  {selectedAuditor.auditorChatModel?.trim() ? " (modelo de auditor)" : ""}
+                  {selectedAuditor.apiKeyHint ? ` · ${selectedAuditor.apiKeyHint}` : ""}
+                </p>
+              ) : (
+                <p className="text-xs text-[var(--foreground-muted)]">
+                  Sin override: el Auditor comparte el runtime del proveedor marcado
+                  como Activa (o el default del equipo).
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-[var(--primary)]" />
+                <label
+                  htmlFor="mdd-fast-task-instance"
+                  className="text-sm font-medium text-[var(--foreground)]"
+                >
+                  Tareas rápidas (cross-consistency)
+                </label>
+              </div>
+              <select
+                id="mdd-fast-task-instance"
+                disabled={!canPick || saving || instances.length === 0}
+                value={fastTaskInstanceId}
+                onChange={(e) => void handleFastTaskChange(e.target.value)}
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] disabled:opacity-50"
+              >
+                <option value="">
+                  Mismo que proveedor activo (predeterminado)
+                </option>
+                {instances.map((inst) => (
+                  <option key={inst.id} value={inst.id}>
+                    {fastTaskModelLabel(inst)}
+                  </option>
+                ))}
+              </select>
+              {selectedFastTask ? (
+                <p className="text-xs text-[var(--foreground-muted)]">
+                  {selectedFastTask.providerType}/{selectedFastTask.slug} · {selectedFastTaskModel}
+                  {selectedFastTask.fastTaskChatModel?.trim() ? " (modelo rápido)" : ""}
+                  {selectedFastTask.apiKeyHint ? ` · ${selectedFastTask.apiKeyHint}` : ""}
+                </p>
+              ) : (
+                <p className="text-xs text-[var(--foreground-muted)]">
+                  Sin override: las tareas rápidas comparten el runtime del
+                  proveedor activo.
+                </p>
+              )}
+            </div>
+          </>
         ) : null}
 
         {!loading && !isDeveloper && instances.length === 0 ? (
           <p className="text-sm text-[var(--foreground-muted)]">
-            Crea al menos una instancia de proveedor arriba para asignar un modelo
-            al Auditor (p. ej. Claude Opus en una instancia dedicada).
+            Crea al menos una instancia de proveedor arriba para asignar
+            modelos dedicados a estos agentes.
           </p>
         ) : null}
 
@@ -181,10 +256,10 @@ export function AgentsConfigCard() {
         ) : null}
 
         <p className="text-xs text-[var(--foreground-subtle)]">
-          Útil para usar un modelo más capaz solo en la revisión final (p. ej. Opus)
-          mientras Clarifier, Arquitecto y Seguridad usan un modelo más rápido/económico.
-          Opcional: en el modal de la instancia puedes definir un «Modelo de auditor»
-          distinto al de chat.
+          Útil para usar un modelo más capaz en revisión (Opus) y uno más rápido
+          en inspecciones ligeras (Haiku), mientras los agentes principales usan
+          el modelo de chat. Opcional: en el modal de la instancia puedes definir
+          un «Modelo de auditor» o «Modelo rápido» distinto al de chat (misma API key).
         </p>
       </CardContent>
     </Card>

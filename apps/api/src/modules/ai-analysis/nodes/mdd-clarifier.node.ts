@@ -1,5 +1,4 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { HumanMessage } from "@langchain/core/messages";
 import { CLARIFIER_MDD_PROMPT, CLARIFIER_QUESTIONS_ONLY_MDD_PROMPT } from "../prompts/load-prompts.js";
 import type { MDDStateType } from "../state/index.js";
 import { getMddTemplatePlaceholder } from "../state/mdd-structured.schema.js";
@@ -8,6 +7,7 @@ import { getMddDraftSummary, extractAlreadyDocumentedTopics, extractIdentifiedIn
 import { getUserBrief } from "../utils/mdd-user-brief.js";
 import { extractFirstJsonObject, parseJsonOrThrow } from "../utils/parse-json.js";
 import { clarifierComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
+import { buildCachedHumanMessage } from "../utils/mdd-llm-cache.js";
 import { z } from "zod";
 
 /** Acepta string o objeto (el LLM a veces devuelve objeto); normaliza a string. */
@@ -87,8 +87,12 @@ export function createMddClarifierNode(llm: BaseChatModel) {
           );
         }
         const context = contextParts.join("\n");
-        const prompt = `${CLARIFIER_QUESTIONS_ONLY_MDD_PROMPT}\n\n---\n${context}`;
-        const response = await llm.invoke([new HumanMessage(prompt)]);
+        const response = await llm.invoke([
+          buildCachedHumanMessage(llm, [
+            { text: CLARIFIER_QUESTIONS_ONLY_MDD_PROMPT, cache: true },
+            { text: `---\n${context}` },
+          ]),
+        ]);
         const text = typeof response.content === "string" ? response.content : "";
         const questions = text.trim()
           ? parseJsonOrThrow(text, questionsOnlySchema).questions.slice(0, 2)
@@ -118,26 +122,41 @@ export function createMddClarifierNode(llm: BaseChatModel) {
         : brief && hasSubstantialDraft
           ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Revisa y modifica el borrador existente del MDD según el objetivo. Preserva el contenido completo de todas las secciones (1-7) y solo aplica los cambios necesarios para cumplir el objetivo.\n\n---\n\n`
           : "";
-      let prompt = `${CLARIFIER_MDD_PROMPT}${clarifierComplexityAppendix(state.mddComplexity)}\n\n---\n${briefBlock}**DBGA (entrada):**\n${state.dbgaContent}`;
+      const systemBlock = `${CLARIFIER_MDD_PROMPT}${clarifierComplexityAppendix(state.mddComplexity)}`;
+      const MAX_DBGA_CHARS = 20_000;
+      const dbgaRaw = state.dbgaContent ?? "";
+      const dbgaTrimmed = dbgaRaw.length > MAX_DBGA_CHARS
+        ? dbgaRaw.slice(0, MAX_DBGA_CHARS) + "\n\n...(DBGA truncado para reducir tokens)"
+        : dbgaRaw;
+      const benchBlock = `---\n${briefBlock}**DBGA (entrada):**\n${dbgaTrimmed}`;
+      let draftBlockText = "";
       if (draftTrimmed) {
         const maxDraftLen = 14_000;
-        const draftBlock =
+        const draftBody =
           draftTrimmed.length > maxDraftLen
             ? draftTrimmed.slice(0, maxDraftLen) + "\n\n...(truncado; mantén el resto del documento en tu salida basándote en la estructura anterior)..."
             : draftTrimmed;
-        prompt += `\n\n**Borrador actual del MDD (refinar con las respuestas del usuario y feedback; NO reemplazar por un resumen nuevo; incorpora cambios y devuelve el documento completo):**\n${draftBlock}`;
+        draftBlockText = `**Borrador actual del MDD (refinar con las respuestas del usuario y feedback; NO reemplazar por un resumen nuevo; incorpora cambios y devuelve el documento completo):**\n${draftBody}`;
       }
+      const dynamicParts: string[] = [];
       if (state.auditorFeedback?.trim()) {
-        prompt += `\n\n**Feedback del Auditor (incorporar):**\n${state.auditorFeedback.trim()}`;
+        dynamicParts.push(`**Feedback del Auditor (incorporar):**\n${state.auditorFeedback.trim()}`);
       }
       if (state.userInputAccumulated?.trim()) {
-        prompt += `\n\n**Respuestas del usuario (incorporar al borrador; el v2 debe reflejar esto):**\n${state.userInputAccumulated.trim()}`;
+        dynamicParts.push(`**Respuestas del usuario (incorporar al borrador; el v2 debe reflejar esto):**\n${state.userInputAccumulated.trim()}`);
         const lastSegment = state.userInputAccumulated.split(/\n\n---\n\n/).pop()?.trim() ?? "";
         if (lastSegment.length <= 80 && /^(?:usuario:\s*)?(?:s[ií]|s[ií]\s*,\s*de\s*acuerdo|de\s*acuerdo|ok|vale|correcto|estoy\s+de\s+acuerdo|perfecto|acepto)[\s.]*$/i.test(lastSegment)) {
-          prompt += `\n\n**Importante:** La última respuesta es un acuerdo breve; el usuario acepta la propuesta concreta del Feedback del Auditor (ej. transacciones ACID, consistencia eventual, Docker, etc.). Incorpórala explícitamente al borrador en la sección correspondiente.`;
+          dynamicParts.push(`**Importante:** La última respuesta es un acuerdo breve; el usuario acepta la propuesta concreta del Feedback del Auditor (ej. transacciones ACID, consistencia eventual, Docker, etc.). Incorpórala explícitamente al borrador en la sección correspondiente.`);
         }
       }
-      const response = await llm.invoke([new HumanMessage(prompt)]);
+      const response = await llm.invoke([
+        buildCachedHumanMessage(llm, [
+          { text: systemBlock, cache: true },
+          { text: benchBlock, cache: true },
+          { text: draftBlockText, cache: !!draftBlockText },
+          { text: dynamicParts.join("\n\n") },
+        ]),
+      ]);
       const text = typeof response.content === "string" ? response.content : "";
       if (!text.trim()) {
         LOG("LLM vacío, usando fallback");

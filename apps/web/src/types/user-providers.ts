@@ -54,6 +54,8 @@ export interface UserAISettings {
   activeTenantInstanceId: string | null;
   /** Instancia dedicada para el Auditor MDD; null = instancia activa. */
   mddAuditorTenantInstanceId: string | null;
+  /** Instancia dedicada para tareas ligeras MDD (cross_consistency); null = instancia activa. */
+  mddFastTaskTenantInstanceId: string | null;
   embeddingProvider: ProviderId | null;
   embeddingsEnabled: boolean;
   allowedChatModels?: string[];
@@ -67,6 +69,7 @@ export interface ProviderInstanceSummary {
   chatModel: string;
   chatModelFallbacks: string[];
   auditorChatModel: string | null;
+  fastTaskChatModel: string | null;
   embeddingModel: string | null;
   embeddingDimension: number | null;
   sttModel: string | null;
@@ -91,6 +94,7 @@ export interface UpsertProviderInstanceBody {
   chatModel?: string;
   chatModelFallbacks?: string[];
   auditorChatModel?: string | null;
+  fastTaskChatModel?: string | null;
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
   sttModel?: string | null;
@@ -119,6 +123,7 @@ export interface UpdateAISettingsBody {
   activeProvider?: ProviderId;
   activeTenantInstanceId?: string | null;
   mddAuditorTenantInstanceId?: string | null;
+  mddFastTaskTenantInstanceId?: string | null;
   embeddingProvider?: ProviderId | null;
   embeddingsEnabled?: boolean;
 }

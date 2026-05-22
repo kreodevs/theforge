@@ -1938,12 +1938,9 @@ export function normalizeMddFormat(draft: string): string {
       trimmedBody.length < 50 ||
       (!/CREATE\s+TABLE/i.test(trimmedBody) && /pendiente|placeholder/i.test(trimmedBody))
     ) {
-      // Cuerpo vacío o solo placeholder: inyectar SQL mínimo (SSO/auth) para que la sección tenga contenido
-      const minimalSql =
-        "\n\n(Esquema mínimo; el Arquitecto debe completar con todas las tablas del dominio.)\n\n```sql\n" +
-        "CREATE TABLE users (\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n  username VARCHAR(255) NOT NULL UNIQUE,\n  password_hash VARCHAR(255) NOT NULL,\n  mfa_enabled BOOLEAN NOT NULL DEFAULT false,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE sessions (\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n  token_hash VARCHAR(255) NOT NULL,\n  expires_at TIMESTAMPTZ NOT NULL,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n" +
-        "```\n\n";
-      out = out.slice(0, sectionStart) + minimalSql + (nextH2 !== -1 ? rest.slice(nextH2) : "");
+      const honestPlaceholder =
+        "\n\n(Pendiente: el Arquitecto de Software no generó el esquema de §3. Revisar logs del nodo `software_architect` y reintentar.)\n\n";
+      out = out.slice(0, sectionStart) + honestPlaceholder + (nextH2 !== -1 ? rest.slice(nextH2) : "");
     } else {
       // Aplicar cuerpo ya limpiado (JSON dentro de mermaid quitado, duplicados truncados)
       out = out.slice(0, sectionStart) + "\n\n" + trimmedBody + (nextH2 !== -1 ? rest.slice(nextH2) : "");

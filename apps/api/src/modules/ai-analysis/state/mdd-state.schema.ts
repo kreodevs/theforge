@@ -63,6 +63,8 @@ export const mddStateSchema = z.object({
   auditorDecision: mddAuditorDecisionSchema.optional(),
   /** Loop counter: max iterations to avoid infinite cycle (e.g. 3). */
   mddIteration: z.number().int().min(0).optional(),
+  /** Hash de §3+§4+§7 del último OK_CONSISTENT — permite saltar el LLM de cross_consistency si nada cambió. */
+  crossConsistencyLastOkHash: z.string().optional(),
   /** Manager (Supervisor): preguntas para el usuario (generadas por Clarifier cuando requestQuestionsOnly). */
   managerQuestions: z.array(z.string()).optional(),
   /** Respuestas del usuario acumuladas (entrevista). */

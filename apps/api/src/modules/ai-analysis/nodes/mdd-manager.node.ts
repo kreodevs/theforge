@@ -26,6 +26,7 @@ import {
 import { z } from "zod";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { generateImpactAnalysis } from "../utils/mdd-impact-analysis.js";
+import { buildCachedHumanMessage } from "../utils/mdd-llm-cache.js";
 import { getAgenticRagToolset } from "../tools/tool-registry.js";
 import { runAgentToolsRound } from "../utils/mdd-agent-tools-invoke.js";
 import type { ProjectsService } from "../../projects/projects.service.js";
@@ -288,9 +289,13 @@ async function generateMddPlanWithLLM(
   ]
     .filter(Boolean)
     .join("\n");
-  const prompt = `${MANAGER_PLAN_GENERATOR_PROMPT}\n\n---\n${context}`;
   try {
-    const response = await llm.invoke([new HumanMessage(prompt)]);
+    const response = await llm.invoke([
+      buildCachedHumanMessage(llm, [
+        { text: MANAGER_PLAN_GENERATOR_PROMPT, cache: true },
+        { text: `---\n${context}` },
+      ]),
+    ]);
     const text = typeof response.content === "string" ? response.content : "";
     if (!text.trim()) return [];
     const jsonStr = extractFirstJsonObject(text);
@@ -1130,8 +1135,17 @@ export function createMddManagerNode(
       .filter(Boolean)
       .join("\n");
 
-    const prompt = `${MANAGER_MDD_PROMPT}\n\n---\nRonda ${round}.\n\n${context}`;
-    let messages: HumanMessage[] = [new HumanMessage(prompt)];
+    const draftMatch = state.mddDraft?.trim()
+      ? `\n**Borrador MDD (completo):**\n${state.mddDraft.slice(0, 12_000)}${state.mddDraft.length > 12_000 ? "\n\n...(truncado, las últimas secciones pueden estar omitidas)" : ""}`
+      : "";
+    const contextWithoutDraft = draftMatch ? context.replace(draftMatch, "") : context;
+    let messages: HumanMessage[] = [
+      buildCachedHumanMessage(llm, [
+        { text: MANAGER_MDD_PROMPT, cache: true },
+        { text: draftMatch.trim(), cache: !!draftMatch },
+        { text: `---\nRonda ${round}.\n\n${contextWithoutDraft}` },
+      ]),
+    ];
     let action: "reply" | "delegate" | "search_memory" = "reply";
     let replyContent = "¿En qué más puedo ayudarte con el MDD? Puedes pedir refinamientos o revisar el documento.";
     let delegateTarget: "clarifier_only" | "full_pipeline" | "sections" | undefined;

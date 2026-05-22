@@ -1,6 +1,6 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { HumanMessage } from "@langchain/core/messages";
 import { SECURITY_ARCHITECT_MDD_PROMPT } from "../prompts/load-prompts.js";
+import { buildCachedHumanMessage } from "../utils/mdd-llm-cache.js";
 import type { MDDStateType } from "../state/index.js";
 import { mddSeguridadItemSchema } from "../state/mdd-structured.schema.js";
 import type { MddSeguridadItem } from "../state/mdd-structured.schema.js";
@@ -101,8 +101,16 @@ export function createMddSecurityNode(llm: BaseChatModel) {
         );
       }
       const context = contextParts.filter(Boolean).join("\n");
-      const prompt = `${SECURITY_ARCHITECT_MDD_PROMPT}\n\n---\n${context}`;
-      const response = await llm.invoke([new HumanMessage(prompt)]);
+      const draftBody = (state.mddDraft ?? "").trim();
+      const draftBlock = draftBody ? `**Borrador actual del MDD:**\n${draftBody}` : "";
+      const contextWithoutDraft = draftBlock ? context.replace(draftBlock, "") : context;
+      const response = await llm.invoke([
+        buildCachedHumanMessage(llm, [
+          { text: SECURITY_ARCHITECT_MDD_PROMPT, cache: true },
+          { text: draftBlock, cache: !!draftBlock },
+          { text: `---\n${contextWithoutDraft}` },
+        ]),
+      ]);
       const text = stripThinkingTags(typeof response.content === "string" ? response.content : "");
 
       LOG("[DIAG §6] LLM text len=%s rawPrefix=%s", text.length, text.slice(0, 200).replace(/\n/g, " "));

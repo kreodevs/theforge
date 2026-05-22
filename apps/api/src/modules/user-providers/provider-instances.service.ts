@@ -30,6 +30,7 @@ export interface UpsertProviderInstanceDto {
   chatModel?: string;
   chatModelFallbacks?: string[];
   auditorChatModel?: string | null;
+  fastTaskChatModel?: string | null;
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
   sttModel?: string | null;
@@ -55,6 +56,7 @@ function mapInstanceRow(
     chatModel: string;
     chatModelFallbacks: string[];
     auditorChatModel: string | null;
+    fastTaskChatModel: string | null;
     embeddingModel: string | null;
     embeddingDimension: number | null;
     sttModel: string | null;
@@ -80,6 +82,7 @@ function mapInstanceRow(
     chatModel: row.chatModel,
     chatModelFallbacks: row.chatModelFallbacks,
     auditorChatModel: row.auditorChatModel,
+    fastTaskChatModel: row.fastTaskChatModel,
     embeddingModel: row.embeddingModel,
     embeddingDimension: row.embeddingDimension,
     sttModel: row.sttModel,
@@ -159,6 +162,7 @@ export class ProviderInstancesService {
         chatModel: true,
         chatModelFallbacks: true,
         auditorChatModel: true,
+        fastTaskChatModel: true,
         embeddingModel: true,
         embeddingDimension: true,
         sttModel: true,
@@ -222,6 +226,7 @@ export class ProviderInstancesService {
         chatModel: dto.chatModel,
         chatModelFallbacks: dto.chatModelFallbacks,
         auditorChatModel: dto.auditorChatModel,
+        fastTaskChatModel: dto.fastTaskChatModel,
         embeddingModel: dto.embeddingModel,
         embeddingDimension: dto.embeddingDimension,
         sttModel: dto.sttModel,
@@ -252,6 +257,10 @@ export class ProviderInstancesService {
     await this.prisma.userAISettings.updateMany({
       where: { mddAuditorTenantInstanceId: id },
       data: { mddAuditorTenantInstanceId: null },
+    });
+    await this.prisma.userAISettings.updateMany({
+      where: { mddFastTaskTenantInstanceId: id },
+      data: { mddFastTaskTenantInstanceId: null },
     });
     await this.prisma.providerInstance.delete({ where: { id } });
     if (existing.isTenantDefault) {
@@ -317,6 +326,7 @@ export class ProviderInstancesService {
         models.chatModel,
         ...models.chatModelFallbacks,
         ...(models.auditorChatModel ? [models.auditorChatModel] : []),
+        ...(models.fastTaskChatModel ? [models.fastTaskChatModel] : []),
       ]);
     }
     const extras = normalizeProviderExtras(providerType, dto.extras ?? (existing?.extras as Record<string, unknown>));

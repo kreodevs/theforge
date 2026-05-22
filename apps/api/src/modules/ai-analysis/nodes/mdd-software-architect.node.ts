@@ -1,5 +1,5 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { SOFTWARE_ARCHITECT_MDD_PROMPT } from "../prompts/load-prompts.js";
 import type { MDDStateType } from "../state/index.js";
@@ -15,6 +15,7 @@ import { softwareArchitectComplexityAppendix } from "../utils/mdd-complexity-rig
 import type { TheForgeService } from "../../theforge/theforge.service.js";
 import { getMddArchitectTheForgeTools } from "../tools/agent-theforge-tools.js";
 import { stripThinkingTags } from "../utils/mdd-security-parse.js";
+import { buildCachedHumanMessage } from "../utils/mdd-llm-cache.js";
 import { z } from "zod";
 
 /** Schema estructurado que algunos LLMs devuelven en lugar de mddDraft. */
@@ -411,8 +412,8 @@ function validatedDecisionsMentionModel(state: MDDStateType): boolean {
   );
 }
 
-const MAX_ARCHITECT_TOOL_LOOPS = 2;
-const MAX_ARCHITECT_TOOL_LOOPS_FORGE = 5;
+const MAX_ARCHITECT_TOOL_LOOPS = 1;
+const MAX_ARCHITECT_TOOL_LOOPS_FORGE = 3;
 
 export type MddSoftwareArchitectNodeOptions = {
   /** Legacy + `theforgeProjectId`: añade herramientas MCP TheForge (contrato, impacto, firma). */
@@ -630,8 +631,18 @@ export function createMddSoftwareArchitectNode(
         );
       }
       const context = contextParts.join("\n");
-      const prompt = `${SOFTWARE_ARCHITECT_MDD_PROMPT}${softwareArchitectComplexityAppendix(state.mddComplexity)}\n\n---\n${context}`;
-      const messages = [new HumanMessage(prompt)];
+      const systemBlock = `${SOFTWARE_ARCHITECT_MDD_PROMPT}${softwareArchitectComplexityAppendix(state.mddComplexity)}`;
+      const draftCacheBlock = draftTrimmed.length > 0
+        ? `**Borrador actual del MDD (Contexto + Modelo de datos del Experto en Datos):**\n${draftTrimmed}`
+        : "";
+      const contextWithoutDraft = draftCacheBlock ? context.replace(draftCacheBlock, "") : context;
+      const messages = [
+        buildCachedHumanMessage(llm, [
+          { text: systemBlock, cache: true },
+          { text: draftCacheBlock, cache: !!draftCacheBlock },
+          { text: `---\n${contextWithoutDraft}` },
+        ]),
+      ];
 
       let text = "";
       if (toolsToUse.length > 0) {
@@ -671,8 +682,8 @@ export function createMddSoftwareArchitectNode(
       text = stripThinkingTags(text);
 
       if (!text.trim()) {
-        LOG("LLM vacío, devolviendo borrador sin transformar");
-        return {};
+        LOG("[FATAL] LLM devolvió texto vacío — probable truncation por LLM_MAX_TOKENS bajo o tool loop sin output final. Re-emitiendo draft sin tocar para forzar re-ejecución en próximo turno.");
+        return { mddDraft: state.mddDraft ?? "" };
       }
       const contextIntro = ((state.clarifiedScope ?? "").trim() || (draftTrimmed.slice(0, 800) + (draftTrimmed.length > 800 ? "…" : ""))).trim();
       let mddDraft = "";
@@ -808,7 +819,14 @@ export function createMddSoftwareArchitectNode(
           throw new SyntaxError("El Arquitecto no devolvió JSON con mddDraft, ni sqlSchema/apiContracts, ni markdown usable.");
         }
       }
-      if (!mddDraft) return {};
+      if (!mddDraft) {
+        LOG("[FATAL] No se pudo construir mddDraft (ni JSON, ni markdown, ni borrador entrante). textLen=%s draftLen=%s rawPrefix=%s",
+          text.length,
+          draftTrimmed.length,
+          text.slice(0, 200).replace(/\n/g, " "),
+        );
+        return { mddDraft: state.mddDraft ?? "" };
+      }
       // §3 la genera el SA; no hay Experto en Modelo de Datos en el flujo.
       // No pisar sección 4 (Contratos) si el borrador entrante ya tenía contratos y el Arquitecto devolvió placeholder.
       const incomingContratos = extractContratosBody(draftTrimmed);

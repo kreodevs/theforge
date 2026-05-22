@@ -8,6 +8,7 @@ import type { UserLLMRuntime } from "../../ai/providers/llm-runtime.types.js";
 import type { ProviderId } from "../../ai/providers/provider-catalog.js";
 import { ChainedFallbackChatModel } from "./chained-fallback-chat-model.js";
 import { OpenRouterFallbackChatModel } from "./openrouter-fallback-chat-model.js";
+import { tagLlmProvider } from "../utils/mdd-llm-cache.js";
 
 /** @internal */ const LLM_TIMEOUT_MS = parseInt(
   process.env.LANGGRAPH_LLM_TIMEOUT_MS?.trim() || "300000",
@@ -85,7 +86,9 @@ function buildWithFallbacks(
 
 export function createDbgaLLMFromRuntime(runtime: UserLLMRuntime): BaseChatModel {
   const models = chatModelChain(runtime);
-  return buildWithFallbacks(runtime, models, (model) => buildLangChainChat(runtime, model));
+  const llm = buildWithFallbacks(runtime, models, (model) => buildLangChainChat(runtime, model));
+  tagLlmProvider(llm, runtime.providerId as ProviderId, models[0] ?? runtime.chatModel);
+  return llm;
 }
 
 /**
@@ -102,5 +105,17 @@ export async function createMddAuditorLLM(
   userId: string,
 ): Promise<BaseChatModel> {
   const runtime = await aiFactory.resolveAuditorRuntime(userId);
+  return createDbgaLLMFromRuntime(runtime);
+}
+
+/**
+ * LLM para tareas ligeras del MDD (cross_consistency inspector).
+ * Override de modelo vía env `MDD_FAST_TASK_MODEL`. Cae al modelo principal si no se configura.
+ */
+export async function createMddFastTaskLLM(
+  aiFactory: AIFactory,
+  userId: string,
+): Promise<BaseChatModel> {
+  const runtime = await aiFactory.resolveFastTaskRuntime(userId);
   return createDbgaLLMFromRuntime(runtime);
 }

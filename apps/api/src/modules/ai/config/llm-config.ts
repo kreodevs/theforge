@@ -9,9 +9,9 @@ export const OPENROUTER_DEFAULT_VISION_MODEL = "openai/gpt-4o";
 
 export function llmMaxTokens(): number {
   const raw = process.env.LLM_MAX_TOKENS?.trim();
-  if (raw === undefined || raw === "") return 120_000;
+  if (raw === undefined || raw === "") return 32_000;
   const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : 120_000;
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : 32_000;
 }
 
 /**

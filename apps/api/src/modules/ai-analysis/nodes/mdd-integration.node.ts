@@ -1,6 +1,6 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { HumanMessage } from "@langchain/core/messages";
 import { INTEGRATION_ENGINEER_MDD_PROMPT } from "../prompts/load-prompts.js";
+import { buildCachedHumanMessage } from "../utils/mdd-llm-cache.js";
 import type { MDDStateType } from "../state/index.js";
 import {
   mddIntegracionSubsectionSchema,
@@ -236,8 +236,18 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
         );
       }
       const context = contextParts.join("\n");
-      const prompt = `${INTEGRATION_ENGINEER_MDD_PROMPT}\n\n---\n${context}`;
-      const response = await llm.invoke([new HumanMessage(prompt)]);
+      const draftBody = (state.mddDraft ?? "").trim();
+      const draftBlock = draftBody
+        ? `**Borrador actual del MDD (usa las secciones 1–4 y Seguridad para derivar ## Integración):**\n${draftBody}`
+        : "";
+      const contextWithoutDraft = draftBlock ? context.replace(draftBlock, "") : context;
+      const response = await llm.invoke([
+        buildCachedHumanMessage(llm, [
+          { text: INTEGRATION_ENGINEER_MDD_PROMPT, cache: true },
+          { text: draftBlock, cache: !!draftBlock },
+          { text: `---\n${contextWithoutDraft}` },
+        ]),
+      ]);
       const text = stripThinkingTags(typeof response.content === "string" ? response.content : "");
       if (!text.trim()) {
         LOG("LLM vacío, usando fallback");

@@ -48,6 +48,7 @@ export interface UpdateAISettingsDto {
   activeProvider?: string;
   activeTenantInstanceId?: string | null;
   mddAuditorTenantInstanceId?: string | null;
+  mddFastTaskTenantInstanceId?: string | null;
   embeddingProvider?: string | null;
   embeddingsEnabled?: boolean;
 }
@@ -69,6 +70,7 @@ export class UserProvidersService {
       activeProvider: row?.activeProvider ?? null,
       activeTenantInstanceId: row?.activeTenantInstanceId ?? null,
       mddAuditorTenantInstanceId: row?.mddAuditorTenantInstanceId ?? null,
+      mddFastTaskTenantInstanceId: row?.mddFastTaskTenantInstanceId ?? null,
       embeddingProvider: row?.embeddingProvider ?? null,
       embeddingsEnabled: row?.embeddingsEnabled ?? true,
       allowedChatModels: row?.allowedChatModels ?? [],
@@ -193,7 +195,8 @@ export class UserProvidersService {
       if (
         dto.activeTenantInstanceId !== undefined ||
         dto.activeProvider !== undefined ||
-        dto.mddAuditorTenantInstanceId !== undefined
+        dto.mddAuditorTenantInstanceId !== undefined ||
+        dto.mddFastTaskTenantInstanceId !== undefined
       ) {
         throw new ForbiddenException(
           "Los developers usan el proveedor predeterminado configurado por el super_admin",
@@ -203,6 +206,7 @@ export class UserProvidersService {
     for (const instanceId of [
       dto.activeTenantInstanceId,
       dto.mddAuditorTenantInstanceId,
+      dto.mddFastTaskTenantInstanceId,
     ]) {
       if (instanceId === undefined || instanceId === null) continue;
       const inst = await this.prisma.providerInstance.findFirst({
@@ -254,6 +258,7 @@ export class UserProvidersService {
         activeProvider: dto.activeProvider ?? "openrouter",
         activeTenantInstanceId: dto.activeTenantInstanceId ?? undefined,
         mddAuditorTenantInstanceId: dto.mddAuditorTenantInstanceId ?? undefined,
+        mddFastTaskTenantInstanceId: dto.mddFastTaskTenantInstanceId ?? undefined,
         embeddingProvider: dto.embeddingProvider ?? undefined,
         embeddingsEnabled: dto.embeddingsEnabled ?? true,
       },
@@ -265,6 +270,9 @@ export class UserProvidersService {
         ...(dto.mddAuditorTenantInstanceId !== undefined
           ? { mddAuditorTenantInstanceId: dto.mddAuditorTenantInstanceId }
           : {}),
+        ...(dto.mddFastTaskTenantInstanceId !== undefined
+          ? { mddFastTaskTenantInstanceId: dto.mddFastTaskTenantInstanceId }
+          : {}),
         ...(dto.embeddingProvider !== undefined
           ? { embeddingProvider: dto.embeddingProvider }
           : {}),
@@ -275,6 +283,7 @@ export class UserProvidersService {
       activeProvider: row.activeProvider,
       activeTenantInstanceId: row.activeTenantInstanceId,
       mddAuditorTenantInstanceId: row.mddAuditorTenantInstanceId,
+      mddFastTaskTenantInstanceId: row.mddFastTaskTenantInstanceId,
       embeddingProvider: row.embeddingProvider,
       embeddingsEnabled: row.embeddingsEnabled,
     };
@@ -439,6 +448,41 @@ export class UserProvidersService {
     instance: ProviderInstance,
   ): Promise<UserLLMRuntime> {
     const override = instance.auditorChatModel?.trim();
+    if (override) {
+      return this.runtimeFromTenantInstance(userId, instance, {
+        chatModelOverride: override,
+      });
+    }
+    return this.runtimeFromTenantInstance(userId, instance);
+  }
+
+  /**
+   * Runtime para tareas ligeras del MDD (cross_consistency inspector).
+   * 1) Instancia dedicada (`mddFastTaskTenantInstanceId`) con `fastTaskChatModel` opcional.
+   * 2) Instancia activa con `fastTaskChatModel` opcional.
+   * 3) Mismo runtime que `resolveRuntime`.
+   */
+  async resolveFastTaskRuntime(userId: string): Promise<UserLLMRuntime> {
+    const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
+    const dedicatedId = settings?.mddFastTaskTenantInstanceId;
+    if (dedicatedId) {
+      const dedicated = await this.prisma.providerInstance.findFirst({
+        where: { id: dedicatedId, ...this.instanceAccessibleByUser(userId) },
+      });
+      if (dedicated) {
+        return this.runtimeFromTenantInstanceForFastTask(userId, dedicated);
+      }
+    }
+    const tenant = await this.resolveTenantInstanceForUser(userId);
+    if (tenant) return this.runtimeFromTenantInstanceForFastTask(userId, tenant);
+    return this.resolveRuntime(userId);
+  }
+
+  private async runtimeFromTenantInstanceForFastTask(
+    userId: string,
+    instance: ProviderInstance,
+  ): Promise<UserLLMRuntime> {
+    const override = instance.fastTaskChatModel?.trim();
     if (override) {
       return this.runtimeFromTenantInstance(userId, instance, {
         chatModelOverride: override,

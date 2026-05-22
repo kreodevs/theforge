@@ -11,7 +11,7 @@ import type { MDDStateType } from "../state/index.js";
 
 export function clarifierInput(state: MDDStateType): Record<string, unknown> {
   return {
-    dbgaContent: state.dbgaContent,
+    dbgaHash: cheapHash(state.dbgaContent),
     mddDraft: truncStr(state.mddDraft, 20_000),
     auditorFeedback: state.auditorFeedback,
     userInputAccumulated: state.userInputAccumulated,
@@ -25,6 +25,7 @@ export function clarifierInput(state: MDDStateType): Record<string, unknown> {
 export function softwareArchitectInput(state: MDDStateType): Record<string, unknown> {
   return {
     clarifiedScope: state.clarifiedScope,
+    dbgaHash: cheapHash(state.dbgaContent),
     mddDraft: truncStr(state.mddDraft, 20_000),
     mddStructuredKeys: state.mddStructured
       ? Object.keys(state.mddStructured).filter((k) => k !== "seguridad" && k !== "integracion")
@@ -41,6 +42,7 @@ export function softwareArchitectInput(state: MDDStateType): Record<string, unkn
 export function securityInput(state: MDDStateType): Record<string, unknown> {
   return {
     clarifiedScope: state.clarifiedScope,
+    dbgaHash: cheapHash(state.dbgaContent),
     mddDraft: truncStr(state.mddDraft, 20_000),
     mddStructuredSeguridad: state.mddStructured?.seguridad,
     acceptedProposalDirective: state.acceptedProposalDirective,
@@ -51,6 +53,7 @@ export function securityInput(state: MDDStateType): Record<string, unknown> {
 export function integrationInput(state: MDDStateType): Record<string, unknown> {
   return {
     clarifiedScope: state.clarifiedScope,
+    dbgaHash: cheapHash(state.dbgaContent),
     mddDraft: truncStr(state.mddDraft, 20_000),
     mddStructuredIntegracion: state.mddStructured?.integracion,
     acceptedProposalDirective: state.acceptedProposalDirective,
@@ -88,6 +91,16 @@ export function architectCriticInput(state: MDDStateType): Record<string, unknow
 function truncStr(s: string | undefined, max: number): string | undefined {
   if (!s) return s;
   return s.length > max ? s.slice(0, max) : s;
+}
+
+/** Cheap deterministic hash for long content (BRD/DBGA) to use as cache key component. */
+function cheapHash(s: string | undefined | null): string {
+  if (!s) return "0";
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) - hash + s.charCodeAt(i)) | 0;
+  }
+  return `${s.length}:${hash}`;
 }
 
 /** Snap the first `max` chars of each string/key in mddStructured. */

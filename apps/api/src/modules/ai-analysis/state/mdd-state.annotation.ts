@@ -38,6 +38,7 @@ export const MDDStateAnnotation = Annotation.Root({
   auditorGaps: Annotation<AuditorGapsState | undefined>(),
   auditorDecision: Annotation<MDDAuditorDecision | undefined>(),
   mddIteration: Annotation<number | undefined>(),
+  crossConsistencyLastOkHash: Annotation<string | undefined>(),
   managerQuestions: Annotation<string[] | undefined>(),
   userInputAccumulated: Annotation<string | undefined>(),
   managerRound: Annotation<number | undefined>(),

@@ -245,6 +245,26 @@ export function ProviderConfigFormFields({
         />
       </FormField>
 
+      <FormField
+        id={`${idPrefix}-fast-task-model`}
+        label="Modelo rápido (opcional)"
+        hint="Para tareas ligeras del MDD (cross-consistency inspector). Vacío = mismo que modelo de chat. Misma clave API."
+        error={showError("fastTaskChatModel")}
+      >
+        <Input
+          id={`${idPrefix}-fast-task-model`}
+          value={form.fastTaskChatModel}
+          onChange={(e) => {
+            onPatch({ fastTaskChatModel: e.target.value });
+            onClearFieldError("fastTaskChatModel");
+          }}
+          onBlur={() => onBlurField("fastTaskChatModel")}
+          placeholder="p. ej. anthropic/claude-haiku-4-5"
+          aria-invalid={!!showError("fastTaskChatModel")}
+          className={cn("font-mono text-xs", inputErrorClass("fastTaskChatModel"))}
+        />
+      </FormField>
+
       {catalog.supportsEmbeddings ? (
         <ModelInput
           id={`${idPrefix}-embedding`}

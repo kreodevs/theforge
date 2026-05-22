@@ -34,6 +34,10 @@ export class AIFactory {
     return this.userProviders.resolveAuditorRuntime(userId);
   }
 
+  async resolveFastTaskRuntime(userId: string): Promise<UserLLMRuntime> {
+    return this.userProviders.resolveFastTaskRuntime(userId);
+  }
+
   async createForUser(userId: string): Promise<LLMProvider> {
     const runtime = await this.resolveRuntime(userId);
     return this.create(runtime);

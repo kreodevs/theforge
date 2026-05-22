@@ -120,6 +120,7 @@ export function buildModelFields(
     chatModel?: string;
     chatModelFallbacks?: string[];
     auditorChatModel?: string | null;
+    fastTaskChatModel?: string | null;
     embeddingModel?: string | null;
     embeddingDimension?: number | null;
     sttModel?: string | null;
@@ -156,11 +157,17 @@ export function buildModelFields(
     auditorRaw === null || auditorRaw === undefined
       ? null
       : auditorRaw.trim() || null;
+  const fastTaskRaw = dto.fastTaskChatModel;
+  const fastTaskChatModel =
+    fastTaskRaw === null || fastTaskRaw === undefined
+      ? null
+      : fastTaskRaw.trim() || null;
 
   return {
     chatModel,
     chatModelFallbacks,
     auditorChatModel,
+    fastTaskChatModel,
     embeddingModel,
     embeddingDimension,
     sttModel,
