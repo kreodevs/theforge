@@ -1,18 +1,15 @@
-import { normalizeMermaid } from "@theforge/shared-types/mermaid";
-
 /**
  * Pre-render sanity checks for MDD before persist.
- * - Mermaid: normalize via expert normalizeMermaid; reject if PK,FK comma still present.
+ * - Mermaid: normalize via expert normalizeMermaid from shared-types; reject if PK,FK comma still present.
  * - §4 Contratos de API tables: no blank lines inside table; alignment row |:---| must be second row (ERR_TABLE_SYNTAX).
  */
 
 export const ERR_MERMAID_SYNTAX = "ERR_MERMAID_SYNTAX";
 export const ERR_TABLE_SYNTAX = "ERR_TABLE_SYNTAX";
-
 /** Normalize unicode spaces to ASCII space inside Mermaid block content. Preserves valid erDiagram syntax. */
 export function sanitizeMermaidBlock(content: string): string {
   if (!content || typeof content !== "string") return "";
-  // 1. Normalize unicode spaces (handled at draft level before normalizeMermaid)
+  // 1. Normalize unicode spaces + PK,FK repair
   const cleaned = content
     .replace(/\u00A0/g, " ")
     .replace(/[\u2000-\u200B\u202F\u205F\u3000]/g, " ")
@@ -23,14 +20,20 @@ export function sanitizeMermaidBlock(content: string): string {
     .map((line) => line.trimEnd())
     .join("\n")
     .trim();
-  // 2. Apply expert normalizeMermaid (fixes IDs with spaces, unclosed blocks, quotes, etc.)
-  const fenced = "```mermaid\n" + cleaned + "\n```";
-  const normalized = normalizeMermaid(fenced);
-  // 3. Strip fences back (caller re-wraps)
-  return normalized
-    .replace(/^```mermaid\s*\n?/i, "")
-    .replace(/\n?```\s*$/i, "")
-    .trim();
+  // 2. Apply expert normalizeMermaid from shared-types (fixes IDs with spaces, unclosed blocks, quotes, etc.)
+  let normalized = cleaned;
+  try {
+    const { normalizeMermaid: expertNormalize } = require("@theforge/shared-types/mermaid");
+    const fenced = "```mermaid\n" + cleaned + "\n```";
+    const result = expertNormalize(fenced);
+    normalized = result
+      .replace(/^```mermaid\s*\n?/i, "")
+      .replace(/\n?```\s*$/i, "")
+      .trim();
+  } catch {
+    // Fallback: shared-types unavailable, keep basic fixes
+  }
+  return normalized;
 }
 
 /**
@@ -50,8 +53,7 @@ export function validateMermaidSyntax(content: string): { ok: boolean; error?: s
   // Expert validation via shared-types
   try {
     const { validateMermaid: expertValidate } = require("@theforge/shared-types/mermaid");
-    const fenced = "```mermaid\n" + trimmed + "\n```";
-    const errors = expertValidate(fenced);
+    const errors = expertValidate(trimmed);
     if (errors.length > 0) {
       return { ok: false, error: ERR_MERMAID_SYNTAX };
     }

@@ -10,6 +10,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
   - `sanitizeMermaidBlock` ahora llama a `normalizeMermaid` después de sus correcciones básicas — corrige IDs, cierra bloques, normaliza quotes automáticamente
   - `validateMermaidSyntax` ahora también ejecuta `validateMermaid` (experta) además del chequeo de `PK, FK`
   - Corre en cada `PATCH /projects/:id` via `mddUpdatePipeline.process()` antes de persistir
+- **`validateMermaid` de shared-types no reconocía `flowchart`:** La regex de detección de tipo solo incluía `graph`, no `flowchart`. También se pasaba el contenido con fences a `validateMermaid`, que espera el contenido crudo. Se usa `require()` dinámico para evitar errores de moduleResolution en build.
 
 ### Changed
 
