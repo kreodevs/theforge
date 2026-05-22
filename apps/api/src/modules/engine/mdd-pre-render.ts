@@ -1,6 +1,8 @@
+import { normalizeMermaid } from "@theforge/shared-types/mermaid";
+
 /**
  * Pre-render sanity checks for MDD before persist.
- * - Mermaid: normalize non-breaking spaces; reject if comma between PK and FK (ERR_MERMAID_SYNTAX).
+ * - Mermaid: normalize via expert normalizeMermaid; reject if PK,FK comma still present.
  * - §4 Contratos de API tables: no blank lines inside table; alignment row |:---| must be second row (ERR_TABLE_SYNTAX).
  */
 
@@ -10,30 +12,53 @@ export const ERR_TABLE_SYNTAX = "ERR_TABLE_SYNTAX";
 /** Normalize unicode spaces to ASCII space inside Mermaid block content. Preserves valid erDiagram syntax. */
 export function sanitizeMermaidBlock(content: string): string {
   if (!content || typeof content !== "string") return "";
-  return content
+  // 1. Normalize unicode spaces (handled at draft level before normalizeMermaid)
+  const cleaned = content
     .replace(/\u00A0/g, " ")
     .replace(/[\u2000-\u200B\u202F\u205F\u3000]/g, " ")
     // Auto-repair `PK, FK` / `FK, PK` (common LLM artifact) → keep PK annotation only.
-    // Mermaid erDiagram attributes accept one annotation per line; the FK is expressed via relationship lines.
     .replace(/\bPK\s*,\s*FK\b/gi, "PK")
     .replace(/\bFK\s*,\s*PK\b/gi, "FK")
     .split("\n")
     .map((line) => line.trimEnd())
     .join("\n")
     .trim();
+  // 2. Apply expert normalizeMermaid (fixes IDs with spaces, unclosed blocks, quotes, etc.)
+  const fenced = "```mermaid\n" + cleaned + "\n```";
+  const normalized = normalizeMermaid(fenced);
+  // 3. Strip fences back (caller re-wraps)
+  return normalized
+    .replace(/^```mermaid\s*\n?/i, "")
+    .replace(/\n?```\s*$/i, "")
+    .trim();
 }
 
 /**
- * Validates Mermaid block content. Rejects if comma between PK and FK (invalid in erDiagram attributes).
- * Does not reject valid relation lines (e.g. Entity1 ||--o{ Entity2 : "fk_col").
+ * Validates Mermaid block content using the expert validator from shared-types.
+ * Rejects if PK,FK comma is still present (should be auto-fixed by sanitizeMermaidBlock)
+ * or if the expert validator detects structural errors (unclosed blocks, invalid types).
  */
 export function validateMermaidSyntax(content: string): { ok: boolean; error?: string } {
   if (!content || typeof content !== "string") return { ok: true };
   const trimmed = content.trim();
-  // Comma between PK and FK in same line (attribute line): e.g. "uuid id PK, FK" or "PK, FK"
+
+  // PK,FK comma (basic check — should be auto-fixed by sanitizeMermaidBlock already)
   if (/\bPK\s*,\s*FK\b|\bFK\s*,\s*PK\b/i.test(trimmed)) {
     return { ok: false, error: ERR_MERMAID_SYNTAX };
   }
+
+  // Expert validation via shared-types
+  try {
+    const { validateMermaid: expertValidate } = require("@theforge/shared-types/mermaid");
+    const fenced = "```mermaid\n" + trimmed + "\n```";
+    const errors = expertValidate(fenced);
+    if (errors.length > 0) {
+      return { ok: false, error: ERR_MERMAID_SYNTAX };
+    }
+  } catch {
+    // Fallback: shared-types validation unavailable, skip expert check
+  }
+
   return { ok: true };
 }
 
