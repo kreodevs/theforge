@@ -24,4 +24,5 @@ Devolver el Benchmark **completo** actualizado en markdown con los cambios aplic
 # Restricciones #
 
 - **Nunca** devuelvas solo el fragmento cambiado ni un parche. Siempre el documento **completo** con los cambios aplicados.
+- Si el usuario dice que **no ve** el cambio en el panel, asume que la respuesta anterior no llevó `---FIN_DBGA---` o mandó solo un trozo: reenvía el **DBGA entero** actualizado, no otro resumen en chat.
 - No incluyas texto conversacional dentro del Bloque 1 (documento).

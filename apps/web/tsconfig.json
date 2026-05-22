@@ -7,6 +7,7 @@
       "@theforge/shared-types/markdown-repair": ["../../packages/shared-types/src/markdown-repair.ts"],
       "@theforge/shared-types/mdd-pipeline-limits": ["../../packages/shared-types/src/mdd-pipeline-limits.ts"]
     },
+    "typeRoots": ["../../node_modules/@types", "./node_modules/@types"],
     "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],

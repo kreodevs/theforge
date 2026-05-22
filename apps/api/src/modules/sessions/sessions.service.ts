@@ -389,7 +389,12 @@ export class SessionsService {
       session: updatedSession,
       mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
       uxUiGuideContent: hasUx ? this.parser.mergeUxUiGuideSectionOrUseFull(options?.currentUxUiGuideContent, this.parser.cleanDocumentContent(uxDocPart!)) : undefined,
-      dbgaContent: dbgaDocPart ? this.parser.cleanDocumentContent(dbgaDocPart) : undefined,
+      dbgaContent: dbgaDocPart
+        ? this.parser.mergeDbgaOrUseFull(
+            options?.currentDbgaContent,
+            this.parser.cleanDocumentContent(dbgaDocPart),
+          )
+        : undefined,
       specContent: hasSpec ? this.parser.cleanDocumentContent(specSplit!.docPart) : undefined,
       brdContent: hasBrd ? this.parser.cleanDocumentContent(brdSplit!.docPart) : undefined,
       blueprintContent: hasBlue ? this.parser.mergeDocSectionOrUseFull(options?.currentBlueprintContent, this.parser.cleanDocumentContent(blueSplit!.docPart)) : undefined,
@@ -682,7 +687,12 @@ export class SessionsService {
       session: updatedSession,
       mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
       uxUiGuideContent: hasUx ? this.parser.mergeUxUiGuideSectionOrUseFull(options?.currentUxUiGuideContent, this.parser.cleanDocumentContent(uxDocPart!)) : undefined,
-      dbgaContent: dbgaDocPart ? this.parser.cleanDocumentContent(dbgaDocPart) : undefined,
+      dbgaContent: dbgaDocPart
+        ? this.parser.mergeDbgaOrUseFull(
+            options?.currentDbgaContent,
+            this.parser.cleanDocumentContent(dbgaDocPart),
+          )
+        : undefined,
       specContent: hasSpec ? this.parser.cleanDocumentContent(specSplit!.docPart) : undefined,
       brdContent: hasBrd ? this.parser.cleanDocumentContent(brdSplit!.docPart) : undefined,
       blueprintContent: hasBlue ? this.parser.mergeDocSectionOrUseFull(options?.currentBlueprintContent, this.parser.cleanDocumentContent(blueSplit!.docPart)) : undefined,
