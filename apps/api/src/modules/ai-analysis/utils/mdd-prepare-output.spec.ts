@@ -78,6 +78,53 @@ describe("getSection6Or7Range", () => {
 });
 
 describe("replaceSection6Or7InDraft", () => {
+  it("inserta §6 antes de §7 cuando falta Seguridad (salto 5→7)", () => {
+    const draft = `# Master Design Document
+
+## 1. Contexto
+
+Contexto.
+
+## 2. Arquitectura y Stack
+
+Stack.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+
+## 4. Contratos de API
+
+Endpoints.
+
+## 5. Lógica y Edge Cases
+
+Contenido de lógica.
+
+---
+## 7. Infraestructura
+
+Kubernetes.
+
+## UI/UX Design Intent
+
+Extra.
+`;
+    const newSec6 = seguridadItemsToSection6Markdown([
+      { title: "Autenticación", content: ["JWT validado vía JWKS."] },
+    ]);
+    const updated = replaceSection6Or7InDraft(draft, 6, newSec6);
+    assert.ok(updated.includes("## 6. Seguridad"), "debe insertar §6");
+    assert.ok(updated.indexOf("## 5.") < updated.indexOf("## 6. Seguridad"));
+    assert.ok(updated.indexOf("## 6. Seguridad") < updated.indexOf("## 7. Infraestructura"));
+    assert.ok(getSection6Or7Range(updated, 6), "getSection6Or7Range debe localizar §6 tras insert");
+    const out = prepareMddForOutput({ mddDraft: updated });
+    assert.ok(out.includes("## 6. Seguridad"), "prepareMddForOutput debe conservar §6 tras normalize");
+    assert.ok(out.includes("JWT validado"), "contenido §6 preservado");
+  });
+
   it("reemplaza solo §6 preservando §1–§5 y §7", () => {
     const draft = FULL_MDD_PREFIX + EXISTING_SECTION6;
     const newSec6 = seguridadItemsToSection6Markdown([

@@ -29,6 +29,7 @@ import {
   TooltipTrigger,
 } from "../components/ui";
 import { WorkshopChatToolbarIconButton, WorkshopButtonIcon, WorkshopPanelButton } from "@/components/WorkshopButtons";
+import { ChatProviderInfoButton } from "@/components/ChatProviderInfoButton";
 import { AiGenerationChatBubble, AiGenerativeDots } from "./AiGenerationLoader";
 import {
   MDD_SECTION_COMMANDS,
@@ -279,6 +280,8 @@ interface ChatContainerProps {
   onRevaluate?: () => void | Promise<void>;
   /** Evita doble clic mientras corre re-valoración + primer mensaje */
   revaluateBusy?: boolean;
+  /** Abre ajustes desde el popover de proveedor activo */
+  onOpenSettings?: () => void;
 }
 
 export default function ChatContainer({
@@ -288,6 +291,7 @@ export default function ChatContainer({
   benchmarkMode,
   onRevaluate,
   revaluateBusy = false,
+  onOpenSettings,
 }: ChatContainerProps) {
   const { messages, loading, error, sendMessage } = useInterview(projectId, activeTab);
   const contextLabel = ACTIVE_TAB_LABELS[activeTab];
@@ -728,6 +732,7 @@ export default function ChatContainer({
               </div>
               <TooltipProvider delayDuration={280}>
                 <div className="flex shrink-0 items-center gap-1">
+                  <ChatProviderInfoButton onOpenSettings={onOpenSettings} />
                   {onRevaluate && projectId ? (
                     <Tooltip>
                       <TooltipTrigger asChild>

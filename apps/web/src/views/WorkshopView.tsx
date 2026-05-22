@@ -1888,7 +1888,7 @@ export default function WorkshopView({
         >
           <div
             className={cn(
-              "relative min-h-0 min-w-0 overflow-hidden flex flex-col border-r border-[var(--border)] lg:shrink-0",
+              "workshop-chat-column relative min-h-0 min-w-0 overflow-hidden flex flex-col border-r border-[var(--border)] lg:shrink-0",
               mobileWorkshopColumn === "chat" ? "flex-1" : "lg:h-full lg:min-h-0",
               !lgChatPanelResizing &&
                 "lg:transition-[width] lg:duration-300 lg:ease-out motion-reduce:lg:transition-none",
@@ -1914,6 +1914,7 @@ export default function WorkshopView({
                 projectId={projectId}
                 activeTab={centralPanel as import("../components/ChatContainer").ActiveTab}
                 embedded={false}
+                onOpenSettings={onOpenSettings}
                 onRevaluate={project ? handleRevaluateComplexity : undefined}
                 revaluateBusy={revaluateBusy}
                 benchmarkMode={
