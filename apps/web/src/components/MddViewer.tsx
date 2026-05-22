@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
 import { repairMarkdownFences } from "@theforge/shared-types/markdown-repair";
+import { normalizeMermaid } from "@theforge/shared-types/mermaid";
 import { parseMarkdownSections } from "../utils/markdownSections";
 
 /** Quita bloques ```mermaid vacíos para no intentar renderizarlos (evita SVG de error). */
@@ -59,6 +60,27 @@ function normalizeMermaidContent(content: string): string {
     .map(normalizeMermaidIndent)
     .join("\n")
     .trim();
+}
+
+/**
+ * Aplica la normalización experta normalizeMermaid de @theforge/shared-types/mermaid
+ * sobre contenido Mermaid crudo (sin fences). Corrige IDs con espacios, bloques sin
+ * cerrar, quotes inconsistentes, etc. Es un safety net para diagramas guardados antes
+ * del fix (el backend normaliza al persistir, pero datos viejos en DB necesitan
+ * corrección al renderizar).
+ */
+function normalizeMermaidExpert(raw: string): string {
+  if (!raw?.trim()) return raw ?? "";
+  try {
+    const fenced = "```mermaid\n" + raw + "\n```";
+    const result = normalizeMermaid(fenced);
+    return result
+      .replace(/^```mermaid\s*\n?/i, "")
+      .replace(/\n?```\s*$/i, "")
+      .trim();
+  } catch {
+    return raw;
+  }
 }
 
 /**
@@ -262,9 +284,10 @@ function MermaidBlock({ content, blockKey }: { content: string; blockKey: string
 
     setError(null);
     let cancelled = false;
-    const toRender = /erDiagram/i.test(content)
-      ? normalizeMermaidForRender(content)
-      : normalizeMermaidFirstLineKeywords(normalizeMermaidContent(content));
+    const expertNormalized = normalizeMermaidExpert(content);
+    const toRender = /erDiagram/i.test(expertNormalized)
+      ? normalizeMermaidForRender(expertNormalized)
+      : normalizeMermaidFirstLineKeywords(normalizeMermaidContent(expertNormalized));
     if (!toRender) return;
 
     const doRender = async () => {
@@ -350,9 +373,10 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
             }
             if (looksLikeMermaidBlock(source, className) && source.trim()) {
               const trimmed = source.trim();
-              const normalized = /erDiagram/i.test(trimmed)
-                ? normalizeMermaidForRender(trimmed)
-                : normalizeMermaidFirstLineKeywords(normalizeMermaidSequenceSyntax(normalizeMermaidContent(trimmed)));
+              const expertNormalized = normalizeMermaidExpert(trimmed);
+              const normalized = /erDiagram/i.test(expertNormalized)
+                ? normalizeMermaidForRender(expertNormalized)
+                : normalizeMermaidFirstLineKeywords(normalizeMermaidSequenceSyntax(normalizeMermaidContent(expertNormalized)));
               const key = mermaidKey(normalized);
               return (
                 <MermaidBlockErrorBoundary content={normalized} blockKey={key}>
