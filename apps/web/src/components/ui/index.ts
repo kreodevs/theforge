@@ -31,6 +31,7 @@ export {
   AlertDialogCancel,
 } from "./AlertDialog";
 export { EmptyState } from "./EmptyState";
+export { UnderlineTabs, type UnderlineTabItem } from "./UnderlineTabs";
 export {
   TooltipProvider,
   Tooltip,

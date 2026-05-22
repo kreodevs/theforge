@@ -86,7 +86,7 @@ export function UxUiGuidePanel({
             <Button
               type="button"
               variant="default"
-              size="lg"
+              size="default"
               className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
               onClick={onGenerate}
               disabled={isGenerating || isLoading || !canGenerate}
