@@ -12,6 +12,7 @@ import {
   FolderGit2,
   FolderOpen,
   GitBranch,
+  Heart,
   Loader2,
   Plus,
   RefreshCw,
@@ -28,6 +29,7 @@ import { ProjectFolderTile } from "./components/ProjectFolderTile";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { apiFetch, clearAccessToken, getAccessToken, API_BASE, getStoredUser } from "./utils/apiClient";
+import { cn } from "./lib/utils";
 import {
   Button,
   Card,
@@ -120,7 +122,9 @@ export default function App() {
   const [theforgeProjects, setTheForgeProjects] = useState<TheForgeProject[]>([]);
   const [theforgeAvailable, setTheForgeAvailable] = useState(false);
   const [theforgeLoading, setTheForgeLoading] = useState(false);
-  const [projectTypeFilter, setProjectTypeFilter] = useState<"all" | "NEW" | "LEGACY">("all");
+  const [projectTypeFilter, setProjectTypeFilter] = useState<
+    "all" | "NEW" | "LEGACY" | "favorites"
+  >("all");
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
 
@@ -156,13 +160,18 @@ export default function App() {
     [projects],
   );
 
-  const filteredProjects = useMemo(
-    () =>
-      projectTypeFilter === "all"
-        ? projectList
-        : projectList.filter((p) => (p.projectType ?? "NEW") === projectTypeFilter),
-    [projectList, projectTypeFilter],
+  const favoriteProjectCount = useMemo(
+    () => projectList.filter((p) => p.isFavorite).length,
+    [projectList],
   );
+
+  const filteredProjects = useMemo(() => {
+    if (projectTypeFilter === "all") return projectList;
+    if (projectTypeFilter === "favorites") {
+      return projectList.filter((p) => p.isFavorite);
+    }
+    return projectList.filter((p) => (p.projectType ?? "NEW") === projectTypeFilter);
+  }, [projectList, projectTypeFilter]);
 
   const displayedProjects = useMemo(() => {
     const q = projectSearchQuery.trim().toLowerCase();
@@ -670,6 +679,19 @@ export default function App() {
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}
+            dashboardProjects={displayedProjects.map((p) => ({
+              id: p.id,
+              name: p.name,
+              isFavorite: p.isFavorite,
+            }))}
+            projectsLoading={loading}
+            onOpenProject={(item) => {
+              const project = projectList.find((p) => p.id === item.id);
+              if (project) {
+                closePanelViews();
+                setWorkshopProject(project);
+              }
+            }}
             user={getStoredUser()}
             onLogout={logout}
             onOpenSettings={openSettings}
@@ -767,7 +789,7 @@ export default function App() {
             <div
               className="flex w-full shrink-0 gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] lg:w-auto lg:flex-wrap lg:overflow-visible [&::-webkit-scrollbar]:hidden"
               role="tablist"
-              aria-label="Filtrar proyectos por tipo"
+              aria-label="Filtrar proyectos"
             >
               <button
                 type="button"
@@ -781,6 +803,26 @@ export default function App() {
                 }`}
               >
                 Todos ({projectList.length})
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={projectTypeFilter === "favorites"}
+                onClick={() => setProjectTypeFilter("favorites")}
+                className={`shrink-0 touch-manipulation whitespace-nowrap rounded-full border px-3 py-2 text-xs font-medium transition-colors min-h-[44px] sm:min-h-9 sm:py-1.5 ${
+                  projectTypeFilter === "favorites"
+                    ? "border-rose-500 bg-rose-500/20 text-rose-700 dark:text-rose-300"
+                    : "border-[var(--border)] bg-transparent text-[var(--foreground-muted)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                }`}
+              >
+                <Heart
+                  className={cn(
+                    "mr-1 inline h-3 w-3 align-text-bottom",
+                    projectTypeFilter === "favorites" && "fill-current",
+                  )}
+                  aria-hidden
+                />
+                Favoritos ({favoriteProjectCount})
               </button>
               <button
                 type="button"
@@ -820,14 +862,18 @@ export default function App() {
                     ? "Aún no hay proyectos"
                     : projectSearchQuery.trim()
                       ? "Sin coincidencias"
-                      : "No hay proyectos de este tipo"
+                      : projectTypeFilter === "favorites"
+                        ? "Sin proyectos favoritos"
+                        : "No hay proyectos de este tipo"
                 }
                 description={
                   projectList.length === 0
                     ? "Usa «Crear nuevo proyecto» para el asistente, o Refrescar si el backend ya tiene datos."
                     : projectSearchQuery.trim()
                       ? "Prueba otras palabras o borra el buscador del panel lateral."
-                      : "Cambia el filtro o crea un proyecto nuevo desde el encabezado."
+                      : projectTypeFilter === "favorites"
+                        ? "Marca el corazón en una carpeta para añadirla a favoritos."
+                        : "Cambia el filtro o crea un proyecto nuevo desde el encabezado."
                 }
                 icon={FolderGit2}
                 action={projectList.length === 0 ? {

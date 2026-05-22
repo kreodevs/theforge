@@ -20,6 +20,7 @@ import {
   ChevronDown,
   Flame,
   FolderOpen,
+  Heart,
   LogOut,
   Menu,
   Monitor,
@@ -43,9 +44,20 @@ import { cn } from "@/lib/utils";
 import { useWorkshopStore } from "../store/workshopStore";
 import { buildWorkshopDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
 
+/** Project row shown under the dashboard “Proyectos” menu group. */
+export interface DashboardSidebarProjectItem {
+  id: string;
+  name: string;
+  isFavorite?: boolean;
+}
+
 export interface DashboardSidebarProps {
   projectSearchQuery: string;
   onProjectSearchChange: (value: string) => void;
+  /** Filtered project list for the dashboard sidebar submenu (respects search). */
+  dashboardProjects?: DashboardSidebarProjectItem[];
+  projectsLoading?: boolean;
+  onOpenProject?: (project: DashboardSidebarProjectItem) => void;
   user: TheForgeUser | null;
   onLogout: () => void;
   onOpenSettings: () => void;
@@ -244,6 +256,9 @@ function ThemeModeToggle({ compact }: { compact: boolean }) {
 export function DashboardSidebar({
   projectSearchQuery,
   onProjectSearchChange,
+  dashboardProjects = [],
+  projectsLoading = false,
+  onOpenProject,
   user,
   onLogout,
   onOpenSettings,
@@ -268,6 +283,19 @@ export function DashboardSidebar({
   const projectSearchInputRef = useRef<HTMLInputElement | null>(null);
   /** Expanded/collapsed list under the workshop project name (header toggles this). */
   const [workshopStepsExpanded, setWorkshopStepsExpanded] = useState(true);
+  /** Expanded/collapsed list under the dashboard “Proyectos” group. */
+  const [projectsNavExpanded, setProjectsNavExpanded] = useState(true);
+
+  const sortedDashboardProjects = useMemo(() => {
+    const list = [...dashboardProjects];
+    list.sort((a, b) => {
+      const favA = a.isFavorite ? 1 : 0;
+      const favB = b.isFavorite ? 1 : 0;
+      if (favB !== favA) return favB - favA;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+    return list;
+  }, [dashboardProjects]);
 
   useEffect(() => {
     setWorkshopStepsExpanded(true);
@@ -312,14 +340,6 @@ export function DashboardSidebar({
       projectSearchInputRef.current?.focus();
     });
   }, []);
-
-  const handleScrollToProjects = useCallback(() => {
-    onBeforeNavigateToProjects?.();
-    setMobileNavOpen(false);
-    requestAnimationFrame(() => {
-      document.getElementById("dashboard-projects")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, [onBeforeNavigateToProjects]);
 
   const storeProject = useWorkshopStore((s) => s.project);
   const workshopStages = useWorkshopStore((s) => s.workshopStages);
@@ -415,6 +435,19 @@ export function DashboardSidebar({
   ]);
 
   const inWorkshop = !!workshopProject && typeof onExitWorkshop === "function";
+
+  useEffect(() => {
+    if (!inWorkshop) setProjectsNavExpanded(true);
+  }, [inWorkshop, dashboardProjects.length]);
+
+  const handleOpenDashboardProject = useCallback(
+    (project: DashboardSidebarProjectItem) => {
+      closeMobileNav();
+      onBeforeNavigateToProjects?.();
+      onOpenProject?.(project);
+    },
+    [closeMobileNav, onBeforeNavigateToProjects, onOpenProject],
+  );
 
   const handleExitWorkshopNav = useCallback(() => {
     closeMobileNav();
@@ -802,22 +835,136 @@ export function DashboardSidebar({
               </div>
             </div>
           ) : (
-            <CollapsedRailHint rail={rail} label="Proyectos">
-              <button
-                type="button"
-                onClick={handleScrollToProjects}
-                title="Proyectos"
-                className={cn(
-                  "flex items-center gap-3 rounded-[var(--radius-lg)] px-3 py-2.5 text-left text-sm font-medium text-[var(--sidebar-foreground)] transition-colors",
-                  rail
-                    ? railControlActiveClass("mx-auto")
-                    : "w-full bg-[color-mix(in_oklch,var(--primary)_14%,var(--sidebar))] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_28%,transparent)] hover:bg-[color-mix(in_oklch,var(--primary)_20%,var(--sidebar))]",
-                )}
-              >
-                <FolderOpen className={cn("shrink-0 text-[var(--primary)]", rail ? "h-5 w-5" : "h-4 w-4")} aria-hidden />
-                <span className={cn(rail && "lg:hidden")}>Proyectos</span>
-              </button>
-            </CollapsedRailHint>
+            <div
+              className={cn("group/projects flex min-h-0 min-w-0 flex-col", !rail && "max-h-[min(50vh,22rem)]")}
+              role="group"
+              aria-label="Proyectos"
+            >
+              {rail ? (
+                <Tooltip delayDuration={200}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={railControlActiveClass("mx-auto")}
+                      aria-hidden
+                    >
+                      <FolderOpen className="h-5 w-5 shrink-0 text-[var(--primary)]" />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" align="center" sideOffset={10}>
+                    Proyectos ({sortedDashboardProjects.length})
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <button
+                  type="button"
+                  aria-expanded={projectsNavExpanded}
+                  aria-controls="dashboard-projects-nav-panel"
+                  title="Proyectos"
+                  onClick={() => setProjectsNavExpanded((open) => !open)}
+                  className={cn(
+                    "flex w-full shrink-0 items-center gap-2 rounded-[var(--radius-lg)] px-2 py-2 text-left",
+                    "bg-[color-mix(in_oklch,var(--primary)_14%,var(--sidebar))] text-[var(--sidebar-foreground)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_28%,transparent)]",
+                    "outline-none transition-colors hover:bg-[color-mix(in_oklch,var(--primary)_20%,var(--sidebar))] focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sidebar)]",
+                  )}
+                >
+                  <FolderOpen className="h-4 w-4 shrink-0 text-[var(--primary)]" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">Proyectos</span>
+                  <span className="shrink-0 tabular-nums text-[11px] text-[var(--muted-foreground)]">
+                    {sortedDashboardProjects.length}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-[var(--muted-foreground)] transition-transform duration-200",
+                      projectsNavExpanded ? "rotate-180" : "rotate-0",
+                    )}
+                    aria-hidden
+                  />
+                </button>
+              )}
+              {rail || projectsNavExpanded ? (
+                <div
+                  id="dashboard-projects-nav-panel"
+                  className={cn("mt-2 flex min-h-0 min-w-0 flex-col", rail ? "px-0" : "overflow-hidden px-1")}
+                >
+                  <div
+                    className={cn(
+                      "relative min-h-0 flex-1 overscroll-y-contain pb-1 [-webkit-overflow-scrolling:touch]",
+                      rail
+                        ? "scrollbar-rail flex flex-col items-center gap-1 overflow-y-auto overflow-x-visible py-0.5"
+                        : "max-h-[min(42vh,18rem)] overflow-x-hidden overflow-y-auto px-0.5 [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-1.5",
+                    )}
+                    role="list"
+                    aria-label="Lista de proyectos"
+                  >
+                    {projectsLoading ? (
+                      <p className="px-1 py-2 text-xs text-[var(--muted-foreground)]">Cargando proyectos…</p>
+                    ) : sortedDashboardProjects.length === 0 ? (
+                      <p className="px-1 py-2 text-xs text-[var(--muted-foreground)]">
+                        {projectSearchQuery.trim() ? "Sin coincidencias" : "Aún no hay proyectos"}
+                      </p>
+                    ) : (
+                      <div className="relative w-full">
+                        {!rail ? (
+                          <span
+                            className="pointer-events-none absolute bottom-1 left-[0.8125rem] top-1 w-px bg-[color-mix(in_oklch,var(--sidebar-border)_92%,transparent)]"
+                            aria-hidden
+                          />
+                        ) : null}
+                        <ul
+                          className={cn(
+                            "relative m-0 list-none p-0",
+                            rail ? "flex flex-col items-center gap-1" : "space-y-0.5 py-0.5",
+                          )}
+                        >
+                          {sortedDashboardProjects.map((project) => (
+                            <li
+                              key={project.id}
+                              className={cn("relative shrink-0", !rail && "pl-5 lg:pl-6")}
+                            >
+                              <CollapsedRailHint
+                                rail={rail}
+                                label={project.isFavorite ? `${project.name} · Favorito` : project.name}
+                              >
+                                <button
+                                  type="button"
+                                  role="listitem"
+                                  title={project.name}
+                                  onClick={() => handleOpenDashboardProject(project)}
+                                  className={cn(
+                                    "flex min-w-0 items-center font-medium transition-colors",
+                                    rail
+                                      ? railControlClass("mx-auto text-[var(--muted-foreground)]")
+                                      : "mb-px w-full gap-2 rounded-md px-2 py-1.5 text-left text-sm text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--sidebar-foreground))] last:mb-0 hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_72%,transparent)] hover:text-[var(--sidebar-accent-foreground)]",
+                                  )}
+                                >
+                                  {rail ? (
+                                    <FolderOpen className="size-4 shrink-0" aria-hidden />
+                                  ) : (
+                                    <>
+                                      <FolderOpen
+                                        className="h-4 w-4 shrink-0 text-[color-mix(in_oklch,var(--muted-foreground)_92%,var(--sidebar-foreground))]"
+                                        aria-hidden
+                                      />
+                                      <span className="min-w-0 flex-1 truncate leading-snug">{project.name}</span>
+                                      {project.isFavorite ? (
+                                        <Heart
+                                          className="h-3.5 w-3.5 shrink-0 fill-[var(--primary)] text-[var(--primary)]"
+                                          aria-hidden
+                                        />
+                                      ) : null}
+                                    </>
+                                  )}
+                                </button>
+                              </CollapsedRailHint>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           )}
         </nav>
       </div>
