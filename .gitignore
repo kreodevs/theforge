@@ -53,7 +53,6 @@ auth.json
 auth.lock
 SOUL.md
 config.yaml
-sessions/
 skills/
 tools/
 tools/registry.py
