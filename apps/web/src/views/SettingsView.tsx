@@ -1,8 +1,26 @@
-import { Settings } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Bot, Cable, Settings, Shield, Sparkles } from "lucide-react";
 import { ProviderInstancesCard } from "@/components/ProviderInstancesCard";
 import { AgentsConfigCard } from "@/components/AgentsConfigCard";
 import { McpSecretCard } from "@/components/McpSecretCard";
 import { AriadneConfigCard } from "@/components/AriadneConfigCard";
+import { UnderlineTabs } from "@/components/ui/UnderlineTabs";
+import { getStoredUser } from "@/utils/apiClient";
+
+type SettingsTab = "providers" | "agents" | "ariadne" | "account";
+
+const SETTINGS_TABS: {
+  id: SettingsTab;
+  label: string;
+  shortLabel: string;
+  icon: typeof Sparkles;
+}[] = [
+  { id: "providers", label: "Proveedores de IA", shortLabel: "Proveedores", icon: Sparkles },
+  { id: "agents", label: "Agentes", shortLabel: "Agentes", icon: Bot },
+  { id: "ariadne", label: "Ariadne", shortLabel: "Ariadne", icon: Cable },
+  { id: "account", label: "Cuenta", shortLabel: "Cuenta", icon: Shield },
+];
+
 interface SettingsViewProps {
   showIaCost: boolean;
   onToggleIaCost: () => void;
@@ -10,53 +28,113 @@ interface SettingsViewProps {
 
 /** Vista de ajustes (proveedores IA, Ariadne, cuenta). Renderizada dentro del layout con sidebar (`App.tsx`). */
 export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsViewProps) {
+  const isDeveloper = getStoredUser()?.role === "developer";
+  const visibleTabs = useMemo(
+    () => (isDeveloper ? SETTINGS_TABS.filter((tab) => tab.id === "account") : SETTINGS_TABS),
+    [isDeveloper],
+  );
+  const [activeTab, setActiveTab] = useState<SettingsTab>(isDeveloper ? "account" : "providers");
+
+  useEffect(() => {
+    if (isDeveloper && activeTab !== "account") {
+      setActiveTab("account");
+    }
+  }, [activeTab, isDeveloper]);
+
   return (
-    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6 px-4 py-6 text-[var(--foreground)] sm:px-6 lg:px-8 xl:px-10">
-      <div className="mx-auto max-w-3xl space-y-6">
-        <header className="border-b border-[var(--border)] pb-4 sm:pb-6">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden text-[var(--foreground)]">
+      <div className="mx-auto w-full max-w-[min(100%,88rem)] shrink-0 px-4 pt-6 sm:px-6 lg:px-8 xl:px-10">
+        <div className="mx-auto max-w-4xl space-y-4 pb-4 sm:space-y-6 sm:pb-6">
           <div className="min-w-0">
             <h1 className="flex items-center gap-2 text-2xl font-bold text-[var(--primary)] sm:text-3xl">
               <Settings className="h-8 w-8 shrink-0" />
               Ajustes
             </h1>
             <p className="mt-1 text-sm text-[var(--foreground-muted)] sm:text-base">
-              Proveedores de IA, agentes, Ariadne y cuenta
+              {isDeveloper
+                ? "Token MCP y preferencias de tu cuenta"
+                : "Proveedores de IA, agentes, Ariadne y cuenta"}
             </p>
           </div>
-        </header>
 
-        <ProviderInstancesCard />
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--foreground-subtle)]">
-            Agentes
-          </h2>
-          <AgentsConfigCard />
-        </section>
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--foreground-subtle)]">
-            Cuenta y herramientas
-          </h2>
-          <McpSecretCard />
-          <AriadneConfigCard />
-          <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--card)] p-3">
-            <span className="text-sm font-medium">Mostrar costo de IA en semáforo</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={showIaCost}
-              onClick={onToggleIaCost}
-              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${
-                showIaCost ? "bg-[var(--primary)]" : "bg-[var(--border)]"
-              }`}
+          {visibleTabs.length > 1 ? (
+            <UnderlineTabs
+              tabs={visibleTabs}
+              value={activeTab}
+              onValueChange={setActiveTab}
+              ariaLabel="Secciones de ajustes"
+              idPrefix="settings"
+            />
+          ) : null}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <div className="mx-auto w-full max-w-[min(100%,88rem)] px-4 pb-6 sm:px-6 lg:px-8 xl:px-10">
+          <div className="mx-auto max-w-4xl space-y-6">
+            <div
+              id="settings-panel-providers"
+              role="tabpanel"
+              aria-labelledby="settings-tab-providers"
+              hidden={activeTab !== "providers"}
+              className={activeTab === "providers" ? "space-y-6" : undefined}
             >
-              <span
-                className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                  showIaCost ? "translate-x-4" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </label>
-        </section>
+              {activeTab === "providers" ? <ProviderInstancesCard /> : null}
+            </div>
+
+            <div
+              id="settings-panel-agents"
+              role="tabpanel"
+              aria-labelledby="settings-tab-agents"
+              hidden={activeTab !== "agents"}
+              className={activeTab === "agents" ? "space-y-6" : undefined}
+            >
+              {activeTab === "agents" ? <AgentsConfigCard /> : null}
+            </div>
+
+            <div
+              id="settings-panel-ariadne"
+              role="tabpanel"
+              aria-labelledby="settings-tab-ariadne"
+              hidden={activeTab !== "ariadne"}
+              className={activeTab === "ariadne" ? "space-y-6" : undefined}
+            >
+              {activeTab === "ariadne" ? <AriadneConfigCard /> : null}
+            </div>
+
+            <div
+              id="settings-panel-account"
+              role="tabpanel"
+              aria-labelledby="settings-tab-account"
+              hidden={activeTab !== "account"}
+              className={activeTab === "account" ? "space-y-4" : undefined}
+            >
+              {activeTab === "account" ? (
+                <>
+                  <McpSecretCard />
+                  <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border)] p-3">
+                    <span className="text-sm font-medium">Mostrar costo de IA en semáforo</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={showIaCost}
+                      onClick={onToggleIaCost}
+                      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                        showIaCost ? "bg-[var(--primary)]" : "bg-[var(--border)]"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                          showIaCost ? "translate-x-4" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </label>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -11,11 +11,13 @@ import {
   useRef,
   useState,
   type MouseEvent,
+  type ComponentProps,
   type ReactElement,
   type ReactNode,
 } from "react";
 import {
   ArrowLeft,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -44,6 +46,39 @@ import { useTheme, type ThemePreference } from "@/theme/ThemeProvider";
 import { cn } from "@/lib/utils";
 import { useWorkshopStore } from "../store/workshopStore";
 import { buildWorkshopDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
+import { SIDEBAR_RAIL_ICON_BTN_IDLE, SIDEBAR_RAIL_ICON_BTN_OUTLINED } from "@/constants/workshopDocToolbar";
+import { WorkshopRailIconButton } from "@/components/WorkshopButtons";
+
+/** Esquinas del rail — redondeo suave (no círculo); el tema compacto sigue en `rounded-full`. */
+const sidebarRailButtonClass = "rounded-xl";
+
+const sidebarRailIconClass = "h-3.5 w-3.5 shrink-0";
+
+/** Separación vertical entre iconos del rail colapsado (opciones de navegación). */
+const sidebarRailStackGapClass = "gap-2";
+
+/** Separación vertical entre fases del flujo en el rail colapsado. */
+const sidebarRailPhaseStackGapClass = "gap-1";
+
+/** Línea divisoria entre opciones de navegación y fases en el rail colapsado. */
+const sidebarRailSeparatorClass =
+  "mx-auto h-px w-6 shrink-0 bg-[color-mix(in_oklch,var(--sidebar-border)_75%,var(--sidebar))]";
+
+/** Marca TheForge en el rail colapsado — borde visible, sin relleno. */
+function SidebarRailBrandMark() {
+  return (
+    <div
+      className={cn(
+        SIDEBAR_RAIL_ICON_BTN_OUTLINED,
+        sidebarRailButtonClass,
+        "pointer-events-none mx-auto",
+      )}
+      aria-hidden
+    >
+      <Flame className={cn(sidebarRailIconClass, "text-[var(--primary)]")} />
+    </div>
+  );
+}
 
 export interface DashboardSidebarProps {
   projectSearchQuery: string;
@@ -111,30 +146,71 @@ function CollapsedRailHint({
   );
 }
 
+const sidebarInsetButtonBaseClass =
+  "inline-flex shrink-0 items-center justify-center border border-transparent font-medium transition-[background-color,border-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sidebar)]";
+
+function sidebarInsetShellClass(compact: boolean) {
+  return cn(
+    "w-fit bg-[color-mix(in_oklch,var(--sidebar-foreground)_6%,var(--sidebar))] p-0.5 shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--sidebar-foreground)_8%,transparent)]",
+    compact ? "rounded-full" : "rounded-[var(--radius-lg)]",
+  );
+}
+
+const sidebarInsetButtonIdleClass =
+  "bg-transparent text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]";
+
+const sidebarAccountButtonClass = cn(
+  sidebarInsetButtonBaseClass,
+  SIDEBAR_RAIL_ICON_BTN_IDLE,
+  sidebarRailButtonClass,
+  "text-xs font-semibold text-[var(--primary)] hover:bg-[var(--sidebar-accent)]",
+  "group-open/account:border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] group-open/account:bg-[color-mix(in_oklch,var(--primary)_12%,var(--sidebar))] group-open/account:shadow-sm",
+);
+
+const sidebarInsetButtonSelectedClass =
+  "border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm";
+
+function SidebarInsetToggleButton({
+  selected,
+  compact,
+  className,
+  children,
+  ...props
+}: ComponentProps<"button"> & { selected?: boolean; compact?: boolean }) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        sidebarInsetButtonBaseClass,
+        compact ? "h-8 w-8 rounded-full" : "min-h-8 flex-1 flex-col gap-0.5 rounded-[var(--radius-md)] py-1.5 text-[10px]",
+        selected ? sidebarInsetButtonSelectedClass : sidebarInsetButtonIdleClass,
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
 function ThemeModeToggle({ compact }: { compact: boolean }) {
   const { preference, setPreference } = useTheme();
 
   const item = (value: ThemePreference, label: string, icon: ReactNode) => {
     const button = (
-      <button
-        type="button"
+      <SidebarInsetToggleButton
+        selected={preference === value}
+        compact={compact}
         onClick={() => setPreference(value)}
         title={label}
         aria-label={label}
         aria-pressed={preference === value}
-        className={cn(
-          "flex items-center justify-center rounded-[var(--radius-md)] font-medium transition-colors",
-          compact ? "w-full py-2" : "flex-1 flex-col gap-0.5 py-1.5 text-[10px]",
-          preference === value
-            ? "bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm"
-            : "text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]",
-        )}
       >
         <span className={cn("flex items-center justify-center", !compact && "flex-col gap-0.5")}>
           <span className="[&>svg]:h-4 [&>svg]:w-4">{icon}</span>
           {!compact ? <span className="leading-none">{label}</span> : null}
         </span>
-      </button>
+      </SidebarInsetToggleButton>
     );
     if (!compact) return button;
     return (
@@ -150,13 +226,14 @@ function ThemeModeToggle({ compact }: { compact: boolean }) {
   return (
     <div
       className={cn(
-        "mb-2 rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_6%,var(--sidebar))] p-0.5 shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--sidebar-foreground)_8%,transparent)]",
-        compact ? "flex flex-col gap-0.5" : "",
+        sidebarInsetShellClass(compact),
+        "mb-2",
+        compact ? "mx-auto flex flex-col gap-0.5" : "w-full max-w-none",
       )}
       role="group"
       aria-label="Tema de la interfaz"
     >
-      <div className={cn(compact ? "flex flex-col gap-0.5" : "flex gap-0.5")}>
+      <div className={cn(compact ? "flex flex-col gap-0.5" : "flex w-full gap-0.5")}>
         {item("light", "Claro", <Sun className="h-4 w-4" />)}
         {item("system", "Sistema", <Monitor className="h-4 w-4" />)}
         {item("dark", "Oscuro", <Moon className="h-4 w-4" />)}
@@ -410,15 +487,16 @@ export function DashboardSidebar({
         className={cn(
           "flex flex-col min-h-0",
           inWorkshop
-            ? "min-h-0 flex-1 gap-4 overflow-hidden"
-            : "min-h-0 gap-4 lg:flex-1 lg:overflow-hidden",
+            ? cn("min-h-0 flex-1 overflow-hidden", rail ? "gap-0" : "gap-4")
+            : cn("min-h-0 lg:flex-1 lg:overflow-hidden", rail ? sidebarRailStackGapClass : "gap-4"),
           rail ? "p-3 lg:px-2 lg:py-3" : "px-3 py-3 lg:px-3 lg:py-3",
         )}
       >
         <div
           className={cn(
             "flex w-full gap-2 max-lg:hidden",
-            rail ? "lg:flex-col lg:items-center lg:gap-2.5" : "items-center justify-between",
+            rail ? cn("lg:flex-col lg:items-center", sidebarRailStackGapClass) : "items-center justify-between",
+            rail && "lg:hidden",
           )}
         >
           <div
@@ -427,9 +505,13 @@ export function DashboardSidebar({
               rail ? "lg:flex-none lg:justify-center" : "flex-1",
             )}
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_7%,var(--sidebar))] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-foreground)_10%,transparent)]">
-              <Flame className="h-5 w-5 text-[var(--primary)]" aria-hidden />
-            </div>
+            {rail ? (
+              <SidebarRailBrandMark />
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_7%,var(--sidebar))] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-foreground)_10%,transparent)]">
+                <Flame className="h-5 w-5 text-[var(--primary)]" aria-hidden />
+              </div>
+            )}
             <div className={cn("min-w-0", rail && "lg:hidden")}>
               <p className="truncate text-base font-semibold tracking-tight text-[var(--sidebar-foreground)]">
                 TheForge
@@ -438,26 +520,74 @@ export function DashboardSidebar({
             </div>
           </div>
           <CollapsedRailHint rail={rail} label="Expandir barra lateral">
-            <button
-              type="button"
-              onClick={onToggleCollapsed}
-              title={rail ? "Expandir barra lateral" : "Contraer barra lateral"}
-              aria-expanded={!rail}
-              className={cn(
-                "hidden shrink-0 flex items-center justify-center rounded-[var(--radius-md)] border border-[color-mix(in_oklch,var(--sidebar-border)_70%,var(--sidebar))] bg-[color-mix(in_oklch,var(--sidebar-foreground)_6%,var(--sidebar))] p-2 text-[var(--sidebar-foreground)] shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--sidebar-foreground)_8%,transparent)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sidebar)] active:scale-[0.97] lg:flex",
-                rail && "lg:size-10 lg:shrink-0 lg:p-0",
-              )}
-            >
-              <ChevronLeft className={cn("h-5 w-5", rail && "hidden")} aria-hidden />
-              <ChevronRight className={cn("hidden h-5 w-5", rail && "block")} aria-hidden />
-            </button>
+            {rail ? (
+              <WorkshopRailIconButton
+                outlined
+                onClick={onToggleCollapsed}
+                title={rail ? "Expandir barra lateral" : "Contraer barra lateral"}
+                aria-expanded={!rail}
+                className={sidebarRailButtonClass}
+              >
+                <ChevronLeft className={cn(sidebarRailIconClass, rail && "hidden")} aria-hidden />
+                <ChevronRight className={cn(sidebarRailIconClass, "hidden", rail && "block")} aria-hidden />
+              </WorkshopRailIconButton>
+            ) : (
+              <WorkshopRailIconButton
+                outlined
+                onClick={onToggleCollapsed}
+                title="Contraer barra lateral"
+                aria-expanded={!rail}
+                size="default"
+                className={cn("hidden lg:inline-flex", sidebarRailButtonClass)}
+              >
+                <ChevronLeft className={sidebarRailIconClass} aria-hidden />
+              </WorkshopRailIconButton>
+            )}
           </CollapsedRailHint>
         </div>
 
+        {!inWorkshop && rail ? (
+          <div className={cn("hidden lg:flex lg:flex-col lg:items-center", sidebarRailStackGapClass)}>
+            <SidebarRailBrandMark />
+            <CollapsedRailHint rail={rail} label="Expandir barra lateral">
+              <WorkshopRailIconButton
+                outlined
+                onClick={onToggleCollapsed}
+                title="Expandir barra lateral"
+                aria-expanded={false}
+                className={sidebarRailButtonClass}
+              >
+                <ChevronRight className={sidebarRailIconClass} aria-hidden />
+              </WorkshopRailIconButton>
+            </CollapsedRailHint>
+            <CollapsedRailHint rail={rail} label="Buscar proyectos — expandir barra lateral">
+              <WorkshopRailIconButton
+                title="Expandir barra para buscar"
+                aria-label="Expandir barra lateral para buscar proyectos"
+                onClick={onToggleCollapsed}
+                className={sidebarRailButtonClass}
+              >
+                <Search className={sidebarRailIconClass} aria-hidden />
+              </WorkshopRailIconButton>
+            </CollapsedRailHint>
+            <CollapsedRailHint rail={rail} label="Proyectos">
+              <WorkshopRailIconButton
+                onClick={handleScrollToProjects}
+                title="Proyectos"
+                aria-label="Proyectos"
+                aria-current="page"
+                className={sidebarRailButtonClass}
+              >
+                <FolderOpen className={cn(sidebarRailIconClass, "text-[var(--primary)]")} aria-hidden />
+              </WorkshopRailIconButton>
+            </CollapsedRailHint>
+          </div>
+        ) : null}
+
         {!inWorkshop ? (
-          <div className={cn("relative", rail && "lg:hidden")}>
+          <div className={cn("group/project-search relative", rail && "lg:hidden")}>
             <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]"
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)] transition-colors duration-[var(--transition-base)] group-hover/project-search:text-[var(--primary)] group-focus-within/project-search:text-[var(--primary)]"
               aria-hidden
             />
             <Input
@@ -471,20 +601,6 @@ export function DashboardSidebar({
             />
           </div>
         ) : null}
-
-        <div className={cn("relative hidden", rail && "lg:block", inWorkshop && "lg:hidden")}>
-          <CollapsedRailHint rail={rail} label="Buscar proyectos — expandir barra lateral">
-            <button
-              type="button"
-              title="Expandir barra para buscar"
-              aria-label="Expandir barra lateral para buscar proyectos"
-              onClick={onToggleCollapsed}
-              className="flex w-full items-center justify-center rounded-[var(--radius-lg)] border border-[color-mix(in_oklch,var(--sidebar-border)_65%,var(--sidebar))] bg-[color-mix(in_oklch,var(--sidebar-foreground)_5%,var(--sidebar))] py-2.5 text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)]"
-            >
-              <Search className="h-5 w-5" />
-            </button>
-          </CollapsedRailHint>
-        </div>
 
         <nav
           className={cn(
@@ -503,20 +619,59 @@ export function DashboardSidebar({
           </p>
 
           {inWorkshop ? (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+            <div
+              className={cn(
+                "flex min-h-0 min-w-0 flex-1 flex-col",
+                rail ? cn(sidebarRailStackGapClass, "items-center") : "gap-2",
+              )}
+            >
+              {rail ? (
+                <>
+                  <SidebarRailBrandMark />
+                  <CollapsedRailHint rail={rail} label="Expandir barra lateral">
+                    <WorkshopRailIconButton
+                      outlined
+                      onClick={onToggleCollapsed}
+                      title="Expandir barra lateral"
+                      aria-expanded={false}
+                      className={cn("mx-auto", sidebarRailButtonClass)}
+                    >
+                      <ChevronRight className={sidebarRailIconClass} aria-hidden />
+                    </WorkshopRailIconButton>
+                  </CollapsedRailHint>
+                  <CollapsedRailHint rail={rail} label="Buscar proyectos — expandir barra lateral">
+                    <WorkshopRailIconButton
+                      title="Expandir barra para buscar"
+                      aria-label="Expandir barra lateral para buscar proyectos"
+                      onClick={onToggleCollapsed}
+                      className={cn("mx-auto", sidebarRailButtonClass)}
+                    >
+                      <Search className={sidebarRailIconClass} aria-hidden />
+                    </WorkshopRailIconButton>
+                  </CollapsedRailHint>
+                </>
+              ) : null}
               <CollapsedRailHint rail={rail} label="Volver al panel de proyectos">
-                <button
-                  type="button"
-                  onClick={handleExitWorkshopNav}
-                  title="Volver al panel de proyectos"
-                  className={cn(
-                    "flex w-full shrink-0 items-center gap-3 rounded-[var(--radius-lg)] px-3 py-2.5 text-left text-sm font-medium text-[var(--muted-foreground)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]",
-                    rail && "lg:justify-center lg:px-0",
-                  )}
-                >
-                  <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
-                  <span className={cn("truncate", rail && "lg:hidden")}>Panel de proyectos</span>
-                </button>
+                {rail ? (
+                  <WorkshopRailIconButton
+                    onClick={handleExitWorkshopNav}
+                    title="Volver al panel de proyectos"
+                    aria-label="Volver al panel de proyectos"
+                    className={cn("mx-auto", sidebarRailButtonClass)}
+                  >
+                    <ArrowLeft className={sidebarRailIconClass} aria-hidden />
+                  </WorkshopRailIconButton>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleExitWorkshopNav}
+                    title="Volver al panel de proyectos"
+                    className="flex w-full shrink-0 items-center gap-3 rounded-[var(--radius-lg)] px-3 py-2.5 text-left text-sm font-medium text-[var(--muted-foreground)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]"
+                  >
+                    <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="truncate">Panel de proyectos</span>
+                  </button>
+                )}
               </CollapsedRailHint>
 
               {/* Not <details>: flex + min-h-0 height math stays reliable; collapse is explicit state on the header button. */}
@@ -526,24 +681,15 @@ export function DashboardSidebar({
                 aria-label={`Proyecto ${workshopProject.name}`}
               >
                 {rail ? (
-                  <div
-                    className={cn(
-                      "flex shrink-0 items-center gap-2 rounded-[var(--radius-lg)] px-2 py-2",
-                      "bg-[color-mix(in_oklch,var(--primary)_14%,var(--sidebar))] text-[var(--sidebar-foreground)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_28%,transparent)]",
-                      "lg:justify-center lg:px-0",
-                    )}
-                    title={undefined}
-                  >
-                    <Tooltip delayDuration={200}>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-md)]">
-                          <FolderOpen className="h-4 w-4 shrink-0 text-[var(--primary)]" aria-hidden />
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" align="center" sideOffset={10}>
-                        Proyecto: {workshopProject.name}
-                      </TooltipContent>
-                    </Tooltip>
+                  <div className="flex shrink-0 justify-center">
+                    <CollapsedRailHint rail={rail} label={`Proyecto: ${workshopProject.name}`}>
+                      <div
+                        className={cn(SIDEBAR_RAIL_ICON_BTN_IDLE, sidebarRailButtonClass, "pointer-events-none hover:bg-transparent")}
+                        aria-hidden
+                      >
+                        <FolderOpen className={sidebarRailIconClass} />
+                      </div>
+                    </CollapsedRailHint>
                   </div>
                 ) : (
                   <button
@@ -569,10 +715,17 @@ export function DashboardSidebar({
                     />
                   </button>
                 )}
+                {rail ? (
+                  <div className={cn(sidebarRailSeparatorClass, "my-1")} role="separator" aria-hidden />
+                ) : null}
                 {(rail || workshopStepsExpanded) ? (
                 <div
                   id="workshop-deliverables-panel"
-                  className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-1"
+                  className={cn(
+                    "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+                    !rail && "mt-2 px-1",
+                    rail && "px-0",
+                  )}
                 >
                   <p
                     className={cn(
@@ -583,7 +736,10 @@ export function DashboardSidebar({
                     Pasos del flujo
                   </p>
                   <div
-                    className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-0.5 pb-1 [-webkit-overflow-scrolling:touch]"
+                    className={cn(
+                      "relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]",
+                      rail ? "sidebar-rail-phase-scroll pb-0.5" : "px-0.5 pb-1",
+                    )}
                     role="list"
                     aria-label="Pasos del workshop"
                   >
@@ -597,7 +753,12 @@ export function DashboardSidebar({
                             aria-hidden
                           />
                         ) : null}
-                        <ul className="relative m-0 list-none space-y-0.5 p-0 py-0.5">
+                        <ul
+                          className={cn(
+                            "relative m-0 list-none p-0 py-0.5",
+                            rail ? cn("flex flex-col items-center", sidebarRailPhaseStackGapClass) : "space-y-0.5",
+                          )}
+                        >
                           {workshopDeliverables.map((item) => {
                             const done = workshopTabDocHasContent(item.id, item.content);
                             const Icon = item.Icon;
@@ -608,7 +769,7 @@ export function DashboardSidebar({
                                 className={cn(
                                   "relative",
                                   !rail && "pl-5 lg:pl-6",
-                                  rail && "flex justify-center py-0.5",
+                                  rail && "flex justify-center py-0",
                                 )}
                               >
                                 {!rail && isCurrent ? (
@@ -623,67 +784,72 @@ export function DashboardSidebar({
                                     done ? `${item.label} · Con contenido · ${item.title}` : `${item.label} · ${item.title}`
                                   }
                                 >
-                                  <button
-                                    type="button"
-                                    role="listitem"
-                                    title={`${item.title}${done ? " — con contenido" : ""}`}
-                                    aria-current={isCurrent ? "page" : undefined}
-                                    onClick={() => {
-                                      closeMobileNav();
-                                      onBeforeNavigateToWorkshopDoc?.();
-                                      setWorkshopActiveDocPanel(item.id);
-                                    }}
-                                    className={cn(
-                                      "flex min-w-0 items-center font-medium transition-colors",
-                                      rail
-                                        ? cn(
-                                            "mx-auto box-border h-9 w-9 shrink-0 items-center justify-center rounded-lg p-0",
-                                            "mb-0.5 last:mb-0",
-                                            isCurrent
-                                              ? "bg-[color-mix(in_oklch,var(--sidebar-accent)_100%,transparent)] text-[var(--primary)]"
-                                              : "text-[var(--muted-foreground)] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_88%,transparent)] hover:text-[var(--sidebar-accent-foreground)]",
-                                          )
-                                        : cn(
-                                            "mb-px w-full gap-2.5 rounded-md px-2 py-1.5 text-left text-sm last:mb-0",
-                                            isCurrent
-                                              ? "bg-[color-mix(in_oklch,var(--sidebar-accent)_100%,transparent)] text-[var(--sidebar-accent-foreground)]"
-                                              : "text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--sidebar-foreground))] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_72%,transparent)]",
-                                          ),
-                                    )}
-                                  >
-                                    {rail ? (
-                                      <span className="relative flex h-5 w-5 items-center justify-center" aria-hidden>
-                                        <Icon
-                                          className={cn(
-                                            "h-4 w-4",
-                                            isCurrent ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]",
-                                          )}
-                                        />
+                                  {rail ? (
+                                    <WorkshopRailIconButton
+                                      selected={isCurrent}
+                                      role="listitem"
+                                      title={`${item.title}${done ? " — con contenido" : ""}`}
+                                      aria-current={isCurrent ? "page" : undefined}
+                                      onClick={() => {
+                                        closeMobileNav();
+                                        onBeforeNavigateToWorkshopDoc?.();
+                                        setWorkshopActiveDocPanel(item.id);
+                                      }}
+                                      className={cn("mx-auto", sidebarRailButtonClass)}
+                                    >
+                                      <span className="relative flex h-3.5 w-3.5 items-center justify-center" aria-hidden>
+                                        <Icon className="h-3.5 w-3.5 shrink-0" />
                                         {done ? (
-                                          <CheckCircle2 className="pointer-events-none absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 text-[color-mix(in_oklch,var(--success)_90%,var(--sidebar-foreground))] [filter:drop-shadow(0_0_1px_var(--sidebar))]" />
+                                          <span
+                                            className={cn(
+                                              "pointer-events-none absolute -bottom-[3px] -right-[3px] flex h-[9px] w-[9px] items-center justify-center rounded-full bg-[var(--success)] text-[var(--success-foreground)]",
+                                              isCurrent
+                                                ? "ring-1 ring-[var(--primary-foreground)]"
+                                                : "ring-1 ring-[var(--sidebar)]",
+                                            )}
+                                            aria-hidden
+                                          >
+                                            <Check className="h-[5px] w-[5px]" strokeWidth={3} />
+                                          </span>
                                         ) : null}
                                       </span>
-                                    ) : (
-                                      <>
-                                        <Icon
-                                          className={cn(
-                                            "h-4 w-4 shrink-0 opacity-90",
-                                            isCurrent
-                                              ? "text-[var(--primary)]"
-                                              : "text-[color-mix(in_oklch,var(--muted-foreground)_92%,var(--sidebar-foreground))]",
-                                          )}
+                                    </WorkshopRailIconButton>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      role="listitem"
+                                      title={`${item.title}${done ? " — con contenido" : ""}`}
+                                      aria-current={isCurrent ? "page" : undefined}
+                                      onClick={() => {
+                                        closeMobileNav();
+                                        onBeforeNavigateToWorkshopDoc?.();
+                                        setWorkshopActiveDocPanel(item.id);
+                                      }}
+                                      className={cn(
+                                        "mb-px flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors last:mb-0",
+                                        isCurrent
+                                          ? "bg-[color-mix(in_oklch,var(--sidebar-accent)_100%,transparent)] text-[var(--sidebar-accent-foreground)]"
+                                          : "text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--sidebar-foreground))] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_72%,transparent)]",
+                                      )}
+                                    >
+                                      <Icon
+                                        className={cn(
+                                          "h-4 w-4 shrink-0 opacity-90",
+                                          isCurrent
+                                            ? "text-[var(--primary)]"
+                                            : "text-[color-mix(in_oklch,var(--muted-foreground)_92%,var(--sidebar-foreground))]",
+                                        )}
+                                        aria-hidden
+                                      />
+                                      <span className="min-w-0 flex-1 text-left leading-snug">{item.label}</span>
+                                      {done ? (
+                                        <CheckCircle2
+                                          className="h-3.5 w-3.5 shrink-0 text-[color-mix(in_oklch,var(--success)_78%,var(--sidebar-foreground))] opacity-90"
                                           aria-hidden
                                         />
-                                        <span className="min-w-0 flex-1 text-left leading-snug">{item.label}</span>
-                                        {done ? (
-                                          <CheckCircle2
-                                            className="h-3.5 w-3.5 shrink-0 text-[color-mix(in_oklch,var(--success)_78%,var(--sidebar-foreground))] opacity-90"
-                                            aria-hidden
-                                          />
-                                        ) : null}
-                                      </>
-                                    )}
-                                  </button>
+                                      ) : null}
+                                    </button>
+                                  )}
                                 </CollapsedRailHint>
                               </li>
                             );
@@ -698,18 +864,27 @@ export function DashboardSidebar({
             </div>
           ) : (
             <CollapsedRailHint rail={rail} label="Proyectos">
-              <button
-                type="button"
-                onClick={handleScrollToProjects}
-                title="Proyectos"
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--primary)_14%,var(--sidebar))] px-3 py-2.5 text-left text-sm font-medium text-[var(--sidebar-foreground)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_28%,transparent)] transition-colors hover:bg-[color-mix(in_oklch,var(--primary)_20%,var(--sidebar))]",
-                  rail && "lg:justify-center lg:px-0",
-                )}
-              >
-                <FolderOpen className="h-4 w-4 shrink-0 text-[var(--primary)]" aria-hidden />
-                <span className={cn(rail && "lg:hidden")}>Proyectos</span>
-              </button>
+              {rail ? (
+                <WorkshopRailIconButton
+                  onClick={handleScrollToProjects}
+                  title="Proyectos"
+                  aria-label="Proyectos"
+                  aria-current="page"
+                  className={cn("mx-auto lg:hidden", sidebarRailButtonClass)}
+                >
+                  <FolderOpen className={cn(sidebarRailIconClass, "text-[var(--primary)]")} aria-hidden />
+                </WorkshopRailIconButton>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleScrollToProjects}
+                  title="Proyectos"
+                  className="flex w-full items-center gap-3 rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--primary)_14%,var(--sidebar))] px-3 py-2.5 text-left text-sm font-medium text-[var(--sidebar-foreground)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_28%,transparent)] transition-colors hover:bg-[color-mix(in_oklch,var(--primary)_20%,var(--sidebar))]"
+                >
+                  <FolderOpen className="h-4 w-4 shrink-0 text-[var(--primary)]" aria-hidden />
+                  <span>Proyectos</span>
+                </button>
+              )}
             </CollapsedRailHint>
           )}
         </nav>
@@ -718,11 +893,11 @@ export function DashboardSidebar({
       <div
         className={cn(
           "mt-auto shrink-0 border-t border-[color-mix(in_oklch,var(--sidebar-border)_75%,var(--sidebar))] p-2",
-          rail && "lg:relative lg:z-[1] lg:px-1.5",
+          rail && cn("lg:relative lg:z-[1] lg:flex lg:flex-col lg:items-center lg:px-1.5", sidebarRailStackGapClass),
         )}
       >
         <ThemeModeToggle compact={rail} />
-        <details className="group relative">
+        <details className={cn("group/account relative", rail && "lg:w-fit")}>
           <summary
             aria-label={
               rail
@@ -730,21 +905,15 @@ export function DashboardSidebar({
                 : undefined
             }
             className={cn(
-              "flex cursor-pointer list-none items-center gap-3 rounded-[var(--radius-lg)] px-2 py-2 marker:content-none [&::-webkit-details-marker]:hidden hover:bg-[var(--sidebar-accent)]",
-              rail && "lg:flex-col lg:justify-center lg:gap-1 lg:px-0",
+              "flex cursor-pointer list-none items-center gap-3 rounded-[var(--radius-lg)] px-2 py-2 marker:content-none [&::-webkit-details-marker]:hidden",
+              !rail && "hover:bg-[var(--sidebar-accent)]",
+              rail && "lg:inline-flex lg:justify-center lg:p-0",
             )}
           >
             {rail ? (
               <Tooltip delayDuration={200}>
                 <TooltipTrigger asChild>
-                  <span className="inline-flex shrink-0 rounded-full outline-none ring-offset-2 ring-offset-[var(--sidebar)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--sidebar-foreground)_9%,var(--sidebar))] text-xs font-semibold text-[var(--primary)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-foreground)_12%,transparent)]"
-                      aria-hidden
-                    >
-                      {getUserInitials(user)}
-                    </span>
-                  </span>
+                  <span className={sidebarAccountButtonClass}>{getUserInitials(user)}</span>
                 </TooltipTrigger>
                 <TooltipContent side="right" align="end" sideOffset={10} className="max-w-[14rem]">
                   <span className="block font-medium text-[var(--popover-foreground)]">{getDisplayName(user)}</span>
@@ -756,26 +925,25 @@ export function DashboardSidebar({
                 </TooltipContent>
               </Tooltip>
             ) : (
-              <div
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--sidebar-foreground)_9%,var(--sidebar))] text-xs font-semibold text-[var(--primary)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-foreground)_12%,transparent)]"
-                aria-hidden
-              >
-                {getUserInitials(user)}
-              </div>
+              <>
+                <div
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-transparent bg-transparent text-xs font-semibold text-[var(--primary)]"
+                  aria-hidden
+                >
+                  {getUserInitials(user)}
+                </div>
+                <div className="min-w-0 flex-1 text-left">
+                  <p className="truncate text-sm font-medium text-[var(--sidebar-foreground)]">
+                    {getDisplayName(user)}
+                  </p>
+                  <p className="truncate text-xs text-[var(--muted-foreground)]">{user?.email || ""}</p>
+                </div>
+                <ChevronDown
+                  className="h-4 w-4 shrink-0 text-[var(--muted-foreground)] transition-transform group-open/account:rotate-180"
+                  aria-hidden
+                />
+              </>
             )}
-            <div className={cn("min-w-0 flex-1 text-left", rail && "lg:hidden")}>
-              <p className="truncate text-sm font-medium text-[var(--sidebar-foreground)]">
-                {getDisplayName(user)}
-              </p>
-              <p className="truncate text-xs text-[var(--muted-foreground)]">{user?.email || ""}</p>
-            </div>
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 shrink-0 text-[var(--muted-foreground)] transition-transform group-open:rotate-180",
-                rail && "lg:hidden",
-              )}
-              aria-hidden
-            />
           </summary>
           <div
             className={cn(

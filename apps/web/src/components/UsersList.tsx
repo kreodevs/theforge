@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   Loader2,
+  User,
   UserPlus,
   Trash2,
   X,
@@ -14,6 +15,9 @@ import {
 import { apiFetch, API_BASE, getStoredUser } from "@/utils/apiClient";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { ListAddButton } from "@/components/ListAddButton";
+import { ListRowIconButton, ListRowSelect, listRowSelectClass } from "@/components/ListRowIconButton";
+import { cn } from "@/lib/utils";
 
 interface UserRow {
   id: string;
@@ -27,7 +31,6 @@ interface UserRow {
 
 interface UsersListPayload {
   users: UserRow[];
-  assignableChatModels: string[];
 }
 
 interface SecretState {
@@ -80,21 +83,15 @@ async function copyToClipboard(text: string): Promise<void> {
   }
 }
 
-function parseUsersResponse(
-  raw: UserRow[] | UsersListPayload,
-): { users: UserRow[]; assignableChatModels: string[] } {
+function parseUsersResponse(raw: UserRow[] | UsersListPayload): UserRow[] {
   if (Array.isArray(raw)) {
-    return { users: raw, assignableChatModels: [] };
+    return raw;
   }
-  return {
-    users: raw.users ?? [],
-    assignableChatModels: raw.assignableChatModels ?? [],
-  };
+  return raw.users ?? [];
 }
 
 export function UsersList() {
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [assignableChatModels, setAssignableChatModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newEmail, setNewEmail] = useState("");
@@ -126,13 +123,14 @@ export function UsersList() {
       const r = await apiFetch(`${API_BASE}/users`);
       if (r.ok) {
         const raw = (await r.json()) as UserRow[] | UsersListPayload;
-        const { users: list, assignableChatModels: pool } = parseUsersResponse(raw);
+        const list = parseUsersResponse(raw);
         setUsers(list);
-        setAssignableChatModels(pool);
         if (isSuperAdmin) {
           const modelDraft: Record<string, string> = {};
           for (const u of list) {
-            modelDraft[u.id] = (u.allowedChatModels ?? []).join(", ");
+            if (u.role === "admin") {
+              modelDraft[u.id] = (u.allowedChatModels ?? []).join(", ");
+            }
           }
           setModelDrafts(modelDraft);
         }
@@ -162,7 +160,6 @@ export function UsersList() {
       }
       const data = (await r.json()) as {
         allowedChatModels: string[];
-        assignableChatModels?: string[];
       };
       setUsers((prev) =>
         prev.map((u) =>
@@ -173,9 +170,6 @@ export function UsersList() {
         ...prev,
         [userId]: data.allowedChatModels.join(", "),
       }));
-      if (data.assignableChatModels?.length) {
-        setAssignableChatModels(data.assignableChatModels);
-      }
     } catch (e) {
       setModelsActionError(e instanceof Error ? e.message : "Error al guardar modelos");
     } finally {
@@ -304,7 +298,7 @@ export function UsersList() {
   };
 
   return (
-    <div className="space-y-4 overflow-y-auto flex-1 min-h-0 py-2">
+    <div className="space-y-4 py-2">
       {showCreate ? (
         <form onSubmit={handleCreate} className="rounded-lg border border-[var(--border)] p-3 space-y-3">
           <div className="flex items-center justify-between">
@@ -366,17 +360,14 @@ export function UsersList() {
           </p>
         </form>
       ) : (
-        <button
-          type="button"
+        <ListAddButton
+          icon={UserPlus}
+          label="Nuevo usuario"
           onClick={() => {
             setShowCreate(true);
             setRoleActionError(null);
           }}
-          className="w-full flex items-center gap-2 rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:border-[var(--primary)]/40 transition-colors"
-        >
-          <UserPlus className="w-4 h-4" />
-          Nuevo usuario
-        </button>
+        />
       )}
 
       {roleActionError && (
@@ -404,26 +395,31 @@ export function UsersList() {
           const isSelf = u.id === myId;
           return (
             <div key={u.id} className="rounded-lg border border-[var(--border)]">
-              <div className="flex items-center justify-between p-3">
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm truncate">{u.name ?? u.email}</p>
-                  {u.name && (
-                    <p className="text-xs text-[var(--foreground-muted)] truncate">{u.email}</p>
-                  )}
-                  <p className="text-xs text-[var(--foreground-muted)] mt-0.5">
-                    {u.hasMcpSecret ? "API key configurada" : "Sin API key"}
-                  </p>
+              <div className="flex items-center justify-between gap-2 p-3">
+                <div className="flex min-w-0 flex-1 items-start gap-2">
+                  <User className="mt-0.5 h-5 w-5 shrink-0 text-[var(--primary)]" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-[var(--foreground)]">
+                      {u.name ?? u.email}
+                    </p>
+                    {u.name ? (
+                      <p className="truncate text-xs text-[var(--foreground-muted)]">{u.email}</p>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                <div className="ml-2 flex shrink-0 items-center gap-1">
                   {isSelf ? (
                     <span
-                      className="text-sm rounded-md border border-[var(--border)] bg-[var(--muted)]/40 px-2 py-1 font-medium capitalize text-[var(--foreground)]"
+                      className={cn(
+                        listRowSelectClass,
+                        "inline-flex items-center bg-[var(--muted)]/40 px-2 font-medium capitalize text-[var(--foreground)]",
+                      )}
                       title="Tu rol solo puede cambiarlo otro administrador"
                     >
                       {formatRoleLabel(u.role)}
                     </span>
                   ) : canEditUserRole(isSelf) ? (
-                    <select
+                    <ListRowSelect
                       value={u.role}
                       onChange={(e) =>
                         handleRoleChange(
@@ -431,51 +427,53 @@ export function UsersList() {
                           e.target.value as "super_admin" | "admin" | "developer",
                         )
                       }
-                      className="text-sm rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1"
+                      aria-label={`Rol de ${u.email}`}
                     >
                       <option value="super_admin">Super admin</option>
                       <option value="admin">Admin</option>
                       <option value="developer">Developer</option>
-                    </select>
+                    </ListRowSelect>
                   ) : (
-                    <span className="text-sm rounded-md border border-[var(--border)] bg-[var(--muted)]/40 px-2 py-1 font-medium text-[var(--foreground)]">
+                    <span
+                      className={cn(
+                        listRowSelectClass,
+                        "inline-flex items-center bg-[var(--muted)]/40 px-2 font-medium text-[var(--foreground)]",
+                      )}
+                    >
                       {formatRoleLabel(u.role)}
                     </span>
                   )}
-                  <button
-                    onClick={() => toggleSecret(u.id)}
-                    className={`p-1.5 rounded-md transition-colors ${
-                      isOpen
-                        ? "bg-[var(--accent)]/15 text-[var(--accent)]"
-                        : "text-[var(--foreground-muted)] hover:text-[var(--accent)]"
-                    }`}
+                  <ListRowIconButton
+                    variant={isOpen ? "default" : "outline"}
                     title="API key"
+                    aria-label="API key"
+                    aria-pressed={isOpen}
+                    onClick={() => void toggleSecret(u.id)}
                   >
-                    <KeyRound className="w-4 h-4" />
-                  </button>
+                    <KeyRound className="h-4 w-4" />
+                  </ListRowIconButton>
                   {isSelf ? (
-                    <span
-                      className="p-1.5 text-[var(--foreground-muted)] opacity-45 cursor-not-allowed"
+                    <ListRowIconButton
+                      disabled
                       title="No puedes eliminar tu propia cuenta"
-                      aria-hidden
+                      aria-label="Eliminar usuario"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </span>
+                      <Trash2 className="h-4 w-4" />
+                    </ListRowIconButton>
                   ) : (
-                    <button
-                      onClick={() => handleDelete(u.id, u.email)}
-                      className="p-1.5 text-[var(--foreground-muted)] hover:text-[var(--destructive)] transition-colors"
+                    <ListRowIconButton
                       title="Eliminar usuario"
-                      type="button"
+                      aria-label="Eliminar usuario"
+                      onClick={() => void handleDelete(u.id, u.email)}
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                      <Trash2 className="h-4 w-4" />
+                    </ListRowIconButton>
                   )}
                 </div>
               </div>
 
-              {isSuperAdmin && u.role !== "super_admin" ? (
-                <div className="border-t border-[var(--border)] px-3 py-3 space-y-2 bg-[var(--muted)]/20">
+              {isSuperAdmin && u.role === "admin" ? (
+                <div className="border-t border-[var(--border)] space-y-2 bg-[var(--muted)]/20 px-3 py-3">
                   <label
                     htmlFor={`models-${u.id}`}
                     className="block text-xs font-medium text-[var(--foreground)]"
@@ -483,9 +481,7 @@ export function UsersList() {
                     Modelos de chat permitidos (compartidos)
                   </label>
                   <p className="text-[11px] text-[var(--foreground-muted)]">
-                    Separa con comas. Puedes escribir cualquier identificador de modelo; el usuario
-                    solo podrá usar los que guardes aquí (debe coincidir con el modelo del
-                    proveedor activo en Ajustes).
+                    Separa identificadores con comas. El usuario solo podrá usar los que guardes aquí.
                   </p>
                   <Input
                     id={`models-${u.id}`}
@@ -497,14 +493,6 @@ export function UsersList() {
                     disabled={savingModelsFor === u.id}
                     className="text-xs font-mono"
                   />
-                  {assignableChatModels.length > 0 ? (
-                    <details className="text-[10px] text-[var(--foreground-muted)]">
-                      <summary className="cursor-pointer select-none">
-                        Sugerencias del sistema ({assignableChatModels.length}, opcional)
-                      </summary>
-                      <p className="mt-1 break-words">{assignableChatModels.join(", ")}</p>
-                    </details>
-                  ) : null}
                   <Button
                     type="button"
                     size="sm"
@@ -518,7 +506,7 @@ export function UsersList() {
               ) : null}
 
               {isOpen && (
-                <div className="border-t border-[var(--border)] p-3 space-y-3 bg-[var(--muted)]/30">
+                <div className="space-y-3 border-t border-[var(--border)] bg-[var(--muted)]/30 p-3">
                   {secret.error && (
                     <p className="text-xs text-[var(--destructive)]">{secret.error}</p>
                   )}

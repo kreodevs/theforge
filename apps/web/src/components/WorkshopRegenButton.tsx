@@ -1,6 +1,8 @@
 import { Loader2, RefreshCw } from "lucide-react";
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui";
-import { WORKSHOP_DOC_TOOLBAR_ICON_BTN } from "@/constants/workshopDocToolbar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui";
+import { WorkshopDocToolbarIcon, WorkshopDocToolbarIconButton } from "@/components/WorkshopButtons";
+import { WORKSHOP_DOC_TOOLBAR_ICON } from "@/constants/workshopDocToolbar";
+import { cn } from "@/lib/utils";
 
 interface WorkshopRegenButtonProps {
   onClick: () => void;
@@ -21,21 +23,17 @@ export function WorkshopRegenButton({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
+        <WorkshopDocToolbarIconButton
           onClick={onClick}
           disabled={disabled || loading}
-          className={WORKSHOP_DOC_TOOLBAR_ICON_BTN}
           aria-label={ariaLabel}
         >
           {loading ? (
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
+            <Loader2 className={cn(WORKSHOP_DOC_TOOLBAR_ICON, "animate-spin")} strokeWidth={2} aria-hidden />
           ) : (
-            <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
+            <WorkshopDocToolbarIcon icon={RefreshCw} />
           )}
-        </Button>
+        </WorkshopDocToolbarIconButton>
       </TooltipTrigger>
       <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
         {tooltip ?? ariaLabel}
