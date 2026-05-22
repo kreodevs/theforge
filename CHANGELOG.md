@@ -11,6 +11,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
   - `validateMermaidSyntax` ahora también ejecuta `validateMermaid` (experta) además del chequeo de `PK, FK`
   - Corre en cada `PATCH /projects/:id` via `mddUpdatePipeline.process()` antes de persistir
 - **`validateMermaid` de shared-types no reconocía `flowchart`:** La regex de detección de tipo solo incluía `graph`, no `flowchart`. También se pasaba el contenido con fences a `validateMermaid`, que espera el contenido crudo. Se usa `require()` dinámico para evitar errores de moduleResolution en build.
+- **Frontend no normalizaba diagramas viejos con la experta al renderizar:** El backend ya aplica `normalizeMermaid` de shared-types al persistir (PATCH), pero diagramas guardados antes del fix quedan con errores en DB. El frontend solo aplicaba normalización básica (unicode spaces, indent, keyword casing) sin usar la experta. Se importa `normalizeMermaid` de `@theforge/shared-types/mermaid` y se aplica como pre-paso en ambos paths de render (useEffect y ReactMarkdown custom renderer), cubriendo todos los tipos de diagrama (graph, flowchart, sequenceDiagram, erDiagram, etc.).
 
 ### Changed
 
