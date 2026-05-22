@@ -62,6 +62,56 @@ function normalizeMermaidContent(content: string): string {
 }
 
 /**
+ * Inline de normalizeMermaid desde shared-types para evitar dependencia build-time
+ * que rompe el Docker build (el dist/ local viejo se copia al contenedor).
+ * Corrige IDs con espacios, bloques sin cerrar, quotes inconsistentes, etc.
+ */
+function normalizeMermaidExpert(raw: string): string {
+  if (!raw?.trim()) return raw ?? "";
+  try {
+    const lines = raw.split("\n");
+    const out: string[] = [];
+    let openBlocks = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i]!;
+
+      // Skip the graph/flowchart declaration (pass through)
+      if (/^(graph|flowchart)\s/i.test(line.trim())) {
+        out.push(line);
+        continue;
+      }
+
+      const trimmed = line.trim();
+
+      // Track subgraph openings
+      if (/^subgraph\s/.test(trimmed)) openBlocks++;
+      // Track alt/opt/loop/par/critical/break openings
+      if (/^(alt|opt|loop|par|critical|break)\s/.test(trimmed)) openBlocks++;
+      // Track end closings
+      if (/^end\s*$/.test(trimmed)) openBlocks = Math.max(0, openBlocks - 1);
+
+      // Fix IDs with spaces in node definitions: "Client Browser[" → "Client_Browser["
+      line = line.replace(/(\w+)\s+(\w+)(\[|\()/g, (_m, p1: string, p2: string, p3: string) => {
+        return `${p1.replace(/\s+/g, "_")}_${p2.replace(/\s+/g, "_")}${p3}`;
+      });
+
+      out.push(line);
+    }
+
+    // Close unclosed blocks
+    for (let i = 0; i < openBlocks; i++) out.push("  end");
+
+    let result = out.join("\n");
+    // Remove excessive blank lines
+    result = result.replace(/\n{3,}/g, "\n\n");
+    return result.trim();
+  } catch {
+    return raw;
+  }
+}
+
+/**
  * Corrige errores sintácticos comunes en sequenceDiagram generados por IA:
  * 1. Si falta "sequenceDiagram" pero empieza con participant → lo agrega.
  * 2. `F -->U` (espacio + dash simple) → `F-->>U` (doble dash + arrow).
@@ -262,9 +312,10 @@ function MermaidBlock({ content, blockKey }: { content: string; blockKey: string
 
     setError(null);
     let cancelled = false;
-    const toRender = /erDiagram/i.test(content)
-      ? normalizeMermaidForRender(content)
-      : normalizeMermaidFirstLineKeywords(normalizeMermaidContent(content));
+    const expertNormalized = normalizeMermaidExpert(content);
+    const toRender = /erDiagram/i.test(expertNormalized)
+      ? normalizeMermaidForRender(expertNormalized)
+      : normalizeMermaidFirstLineKeywords(normalizeMermaidContent(expertNormalized));
     if (!toRender) return;
 
     const doRender = async () => {
@@ -350,9 +401,10 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
             }
             if (looksLikeMermaidBlock(source, className) && source.trim()) {
               const trimmed = source.trim();
-              const normalized = /erDiagram/i.test(trimmed)
-                ? normalizeMermaidForRender(trimmed)
-                : normalizeMermaidFirstLineKeywords(normalizeMermaidSequenceSyntax(normalizeMermaidContent(trimmed)));
+              const expertNormalized = normalizeMermaidExpert(trimmed);
+              const normalized = /erDiagram/i.test(expertNormalized)
+                ? normalizeMermaidForRender(expertNormalized)
+                : normalizeMermaidFirstLineKeywords(normalizeMermaidSequenceSyntax(normalizeMermaidContent(expertNormalized)));
               const key = mermaidKey(normalized);
               return (
                 <MermaidBlockErrorBoundary content={normalized} blockKey={key}>

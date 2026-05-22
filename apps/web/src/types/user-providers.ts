@@ -52,6 +52,8 @@ export interface UserProviderConfigSummary {
 export interface UserAISettings {
   activeProvider: ProviderId | null;
   activeTenantInstanceId: string | null;
+  /** Instancia dedicada para el Auditor MDD; null = instancia activa. */
+  mddAuditorTenantInstanceId: string | null;
   embeddingProvider: ProviderId | null;
   embeddingsEnabled: boolean;
   allowedChatModels?: string[];
@@ -64,6 +66,7 @@ export interface ProviderInstanceSummary {
   displayName: string;
   chatModel: string;
   chatModelFallbacks: string[];
+  auditorChatModel: string | null;
   embeddingModel: string | null;
   embeddingDimension: number | null;
   sttModel: string | null;
@@ -87,6 +90,7 @@ export interface UpsertProviderInstanceBody {
   apiKey: string;
   chatModel?: string;
   chatModelFallbacks?: string[];
+  auditorChatModel?: string | null;
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
   sttModel?: string | null;
@@ -114,6 +118,7 @@ export interface UpsertProviderConfigBody {
 export interface UpdateAISettingsBody {
   activeProvider?: ProviderId;
   activeTenantInstanceId?: string | null;
+  mddAuditorTenantInstanceId?: string | null;
   embeddingProvider?: ProviderId | null;
   embeddingsEnabled?: boolean;
 }

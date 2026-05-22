@@ -37,12 +37,10 @@ import {
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { UnderlineTabs } from "@/components/ui/UnderlineTabs";
 import {
+  WORKSHOP_DOC_TOOLBAR_ICON,
   WORKSHOP_DOC_TOOLBAR_ICON_BTN,
-  WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER,
-  WORKSHOP_PANEL_ACTION_DANGER,
-  WORKSHOP_PANEL_ACTION_PRIMARY,
-  WORKSHOP_PANEL_ACTION_SECONDARY,
 } from "../constants/workshopDocToolbar";
 import {
   WORKSHOP_HEADER_CTL,
@@ -68,6 +66,16 @@ import { StandardDocPanel } from "../components/StandardDocPanel";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
 import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
+import {
+  WorkshopDirtySaveBar,
+  WorkshopDocToolbarIcon,
+  WorkshopDocToolbarIconButton,
+  WorkshopHeaderIconButton,
+  WorkshopMddActionButton,
+  WorkshopPanelActionRegion,
+  WorkshopPanelButton,
+  WorkshopButtonIcon,
+} from "../components/WorkshopButtons";
 import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AdrsPanel } from "../components/AdrsPanel";
@@ -90,9 +98,6 @@ import {
   LEGACY_DELIVERABLES_STEPS,
   LEGACY_MDD_STEPS,
 } from "../constants/legacy-workshop-loading-steps";
-
-const WORKSHOP_MDD_ACTION_PRIMARY =
-  "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color-mix(in_oklch,var(--card)_40%,var(--background))] disabled:cursor-not-allowed disabled:opacity-50";
 
 /** Desktop workshop: chat column width (px). Al soltar el resize por debajo del mínimo, el panel se colapsa al rail. */
 const LG_CHAT_PANEL_WIDTH_MIN_PX = 260;
@@ -1552,7 +1557,7 @@ export default function WorkshopView({
                     className={cn(
                       WORKSHOP_HEADER_CTL,
                       WORKSHOP_HEADER_CTL_HOVER,
-                      "w-full min-w-0 cursor-pointer appearance-none py-0 pl-3 pr-10 leading-10 sm:leading-9",
+                      "w-full min-w-0 cursor-pointer appearance-none py-0 pl-3 pr-10 leading-9",
                     )}
                     value={activeStageId ?? workshopStagesList[0]?.id ?? ""}
                     onChange={(e) => setActiveStageId(e.target.value)}
@@ -1573,18 +1578,16 @@ export default function WorkshopView({
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button
-                      type="button"
+                    <WorkshopHeaderIconButton
                       onClick={() => {
                         setNewStageName("");
                         setCopyMddSourceStageId(activeStageId ?? "");
                         setShowStageModal(true);
                       }}
-                      className={WORKSHOP_HEADER_ICON_BTN}
                       aria-label="Nueva etapa"
                     >
                       <Plus className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                    </button>
+                    </WorkshopHeaderIconButton>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">Nueva etapa</TooltipContent>
                 </Tooltip>
@@ -1614,8 +1617,7 @@ export default function WorkshopView({
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button
-                      type="button"
+                    <WorkshopHeaderIconButton
                       onClick={() => {
                         if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
                         launchHermes(projectId)
@@ -1625,10 +1627,7 @@ export default function WorkshopView({
                           .catch((err: Error) => setError(err.message));
                       }}
                       disabled={loading || hermesConfigured === false}
-                      className={cn(
-                        WORKSHOP_HEADER_ICON_BTN,
-                        hermesConfigured === false && "cursor-not-allowed opacity-60",
-                      )}
+                      className={hermesConfigured === false ? "cursor-not-allowed opacity-60" : undefined}
                       title={
                         hermesConfigured === null
                           ? "Verificando configuración…"
@@ -1649,7 +1648,7 @@ export default function WorkshopView({
                       ) : (
                         <Rocket className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
                       )}
-                    </button>
+                    </WorkshopHeaderIconButton>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">
                     {hermesConfigured === null
@@ -1662,15 +1661,13 @@ export default function WorkshopView({
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button
-                      type="button"
+                    <WorkshopHeaderIconButton
                       onClick={() => setShowHelpModal(true)}
-                      className={WORKSHOP_HEADER_ICON_BTN}
                       title="Manual de uso del Workshop"
                       aria-label="Ayuda — manual del Workshop"
                     >
                       <HelpCircle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                    </button>
+                    </WorkshopHeaderIconButton>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">Manual del Workshop</TooltipContent>
                 </Tooltip>
@@ -1704,8 +1701,7 @@ export default function WorkshopView({
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button
-                      type="button"
+                    <WorkshopHeaderIconButton
                       onClick={() => {
                         if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
                         launchHermes(projectId)
@@ -1715,10 +1711,7 @@ export default function WorkshopView({
                           .catch((err: Error) => setError(err.message));
                       }}
                       disabled={loading || hermesConfigured === false}
-                      className={cn(
-                        WORKSHOP_HEADER_ICON_BTN,
-                        hermesConfigured === false && "cursor-not-allowed opacity-60",
-                      )}
+                      className={hermesConfigured === false ? "cursor-not-allowed opacity-60" : undefined}
                       title={
                         hermesConfigured === null
                           ? "Verificando configuración…"
@@ -1739,7 +1732,7 @@ export default function WorkshopView({
                       ) : (
                         <Rocket className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
                       )}
-                    </button>
+                    </WorkshopHeaderIconButton>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">
                     {hermesConfigured === null
@@ -1752,15 +1745,13 @@ export default function WorkshopView({
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button
-                      type="button"
+                    <WorkshopHeaderIconButton
                       onClick={() => setShowHelpModal(true)}
-                      className={WORKSHOP_HEADER_ICON_BTN}
                       title="Manual de uso del Workshop"
                       aria-label="Ayuda — manual del Workshop"
                     >
                       <HelpCircle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                    </button>
+                    </WorkshopHeaderIconButton>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">Manual del Workshop</TooltipContent>
                 </Tooltip>
@@ -2028,7 +2019,7 @@ export default function WorkshopView({
                         aria-label="Mostrar conversación"
                         onClick={() => handleSetLgWorkshopChatCollapsed(false)}
                       >
-                        <MessageSquare className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                        <MessageSquare className={WORKSHOP_DOC_TOOLBAR_ICON} strokeWidth={2} aria-hidden />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[14rem]">
@@ -2084,7 +2075,7 @@ export default function WorkshopView({
                         aria-label={docToggleTooltip}
                         onClick={() => toggleDocViewMode(centralPanel)}
                           >
-                            <DocToggleIcon className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                            <DocToggleIcon className={WORKSHOP_DOC_TOOLBAR_ICON} strokeWidth={2} aria-hidden />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="bottom" align="end" className="max-w-[14rem]">
@@ -2105,7 +2096,7 @@ export default function WorkshopView({
                         aria-label="Ver orden completo de flujo"
                         onClick={() => setFlowOrderModalOpen(true)}
                       >
-                        <ListOrdered className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                        <ListOrdered className={WORKSHOP_DOC_TOOLBAR_ICON} strokeWidth={2} aria-hidden />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
@@ -2137,7 +2128,7 @@ export default function WorkshopView({
                             }}
                           >
                             <BenchmarkToggleIcon
-                              className="h-4 w-4 shrink-0 text-[var(--primary)]"
+                              className={WORKSHOP_DOC_TOOLBAR_ICON}
                               strokeWidth={2}
                               aria-hidden
                             />
@@ -2159,7 +2150,7 @@ export default function WorkshopView({
                       aria-label="Imprimir documento"
                       onClick={handlePrintDocument}
                     >
-                      <Printer className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                      <Printer className={WORKSHOP_DOC_TOOLBAR_ICON} strokeWidth={2} aria-hidden />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" align="end" className="max-w-[10rem]">
@@ -2231,19 +2222,17 @@ export default function WorkshopView({
                   !!(activeLegacyState?.codebaseDoc ?? mddInicialLocalContent ?? "").trim() && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
-                        type="button"
+                      <WorkshopDocToolbarIconButton
                         onClick={() => void handleRegenerateLegacyCodebaseDoc()}
                         disabled={loading}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
                         aria-label="Regenerar documentación de partida del codebase (AriadneSpecs)"
                       >
                         {loading && loadingReason === "legacy-codebase-doc" ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                          <Loader2 className={cn(WORKSHOP_DOC_TOOLBAR_ICON, "animate-spin")} strokeWidth={2} aria-hidden />
                         ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                          <WorkshopDocToolbarIcon icon={RefreshCw} />
                         )}
-                      </button>
+                      </WorkshopDocToolbarIconButton>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
                       Regenerar documentación de partida del codebase vía AriadneSpecs
@@ -2253,23 +2242,21 @@ export default function WorkshopView({
                 {centralPanel === "mdd-inicial" && mddInicialViewMode === "source" && (mddInicialLocalContent || activeLegacyState?.codebaseDoc) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
-                        type="button"
+                      <WorkshopDocToolbarIconButton
                         onClick={async () => {
                           setMddInicialSaving(true);
                           await legacyUpdateCodebaseDoc(projectId, mddInicialLocalContent);
                           setMddInicialSaving(false);
                         }}
                         disabled={mddInicialSaving || mddInicialLocalContent === (activeLegacyState?.codebaseDoc ?? "")}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
                         aria-label="Guardar cambios en la documentación de partida"
                       >
                         {mddInicialSaving ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                          <Loader2 className={cn(WORKSHOP_DOC_TOOLBAR_ICON, "animate-spin")} strokeWidth={2} aria-hidden />
                         ) : (
-                          <Save className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                          <WorkshopDocToolbarIcon icon={Save} />
                         )}
-                      </button>
+                      </WorkshopDocToolbarIconButton>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
                       Guardar cambios en la documentación
@@ -2279,19 +2266,17 @@ export default function WorkshopView({
                 {centralPanel === "brd" && brdDocViewMode === "source" && activeStageId && brdWorkshopDirty && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
-                        type="button"
+                      <WorkshopDocToolbarIconButton
                         onClick={() => void persistBrdWorkshopDraft()}
                         disabled={brdTobePersistBusy}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
                         aria-label="Guardar BRD en la etapa activa"
                       >
                         {brdTobePersistBusy ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                          <Loader2 className={cn(WORKSHOP_DOC_TOOLBAR_ICON, "animate-spin")} strokeWidth={2} aria-hidden />
                         ) : (
-                          <Save className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                          <WorkshopDocToolbarIcon icon={Save} />
                         )}
-                      </button>
+                      </WorkshopDocToolbarIconButton>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
                       Guardar BRD en la etapa activa
@@ -2318,15 +2303,13 @@ export default function WorkshopView({
                 {centralPanel === "ux-ui-guide" && !!uxUiGuideContent?.trim() && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
-                        type="button"
+                      <WorkshopDocToolbarIconButton
                         onClick={repairUxGuide}
                         disabled={uxGenerating || loading}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
                         aria-label="Reparar YAML frontmatter de la design system desde el contenido existente"
                       >
-                        <Wrench className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
-                      </button>
+                        <WorkshopDocToolbarIcon icon={Wrench} />
+                      </WorkshopDocToolbarIconButton>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
                       Reparar YAML frontmatter — regenera tokens de diseño desde el MDD
@@ -2336,19 +2319,17 @@ export default function WorkshopView({
                 {centralPanel === "ux-ui-guide" && !!uxUiGuideContent?.trim() && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
-                        type="button"
+                      <WorkshopDocToolbarIconButton
                         onClick={generateUxGuideSequential}
                         disabled={uxGenerating || loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
-                        className={WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER}
                         aria-label={uxGenProgress ?? "Regenerar design system desde MDD y Blueprint"}
                       >
                         {uxGenerating ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                          <Loader2 className={cn(WORKSHOP_DOC_TOOLBAR_ICON, "animate-spin")} strokeWidth={2} aria-hidden />
                         ) : (
-                          <RefreshCw className="h-4 w-4 shrink-0 text-[var(--primary)]" strokeWidth={2} aria-hidden />
+                          <WorkshopDocToolbarIcon icon={RefreshCw} />
                         )}
-                      </button>
+                      </WorkshopDocToolbarIconButton>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
                       {uxGenProgress ?? "Regenerar design system desde MDD y Blueprint"}
@@ -2772,33 +2753,16 @@ export default function WorkshopView({
             )}
             {centralPanel === "benchmark" && (
               <>
-                {/* Pestañas internas: Fase 0 | Benchmark */}
-                <div className="shrink-0 flex border-b border-[var(--border)] mb-4">
-                  <button
-                    type="button"
-                    onClick={() => setBenchmarkPhaseTab("fase0")}
-                    className={cn(
-                      "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
-                      benchmarkPhaseTab === "fase0"
-                        ? "border-[var(--primary)] text-[var(--primary)]"
-                        : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:border-[var(--border)]",
-                    )}
-                  >
-                    Fase 0
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBenchmarkPhaseTab("benchmark")}
-                    className={cn(
-                      "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
-                      benchmarkPhaseTab === "benchmark"
-                        ? "border-[var(--primary)] text-[var(--primary)]"
-                        : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:border-[var(--border)]",
-                    )}
-                  >
-                    Benchmark
-                  </button>
-                </div>
+                <UnderlineTabs
+                  className="mb-4"
+                  tabs={[
+                    { id: "fase0", label: "Fase 0" },
+                    { id: "benchmark", label: "Benchmark" },
+                  ]}
+                  value={benchmarkPhaseTab}
+                  onValueChange={setBenchmarkPhaseTab}
+                  ariaLabel="Secciones de benchmark"
+                />
 
                 {benchmarkPhaseTab === "fase0" ? (
                   <>
@@ -2808,47 +2772,50 @@ export default function WorkshopView({
                         <span>Generando Deep Research… Suele tardar 1–2 minutos; no cierres la página.</span>
                       </div>
                     )}
-                    <div className="shrink-0 flex flex-wrap items-center gap-2 mb-3">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await suggestBrdFromDbga(projectId, { stageId: activeStageId ?? undefined });
-                          setCentralPanel("brd");
-                        }}
-                        disabled={loading && loadingReason === "brd-from-dbga"}
-                        className={WORKSHOP_PANEL_ACTION_PRIMARY}
-                        title="Generar BRD desde el Benchmark (DBGA); luego revisa y aprueba en el tab BRD"
-                      >
-                        {loading && loadingReason === "brd-from-dbga" ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-                        ) : (
-                          <Play className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                        )}
-                        Generar BRD con agentes
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCentralPanel("brd");
-                        }}
-                        className={WORKSHOP_PANEL_ACTION_SECONDARY}
-                        title="Ir a BRD y editar manualmente o usar el chat"
-                      >
-                        <ArrowRight className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                        Ir a BRD (editar)
-                      </button>
-                      {dbgaContent != null && dbgaContent !== "" && (
-                        <button
-                          type="button"
-                          onClick={() => projectId && clearDbgaContent(projectId)}
-                          className={WORKSHOP_PANEL_ACTION_DANGER}
-                          title="Borrar el contenido de Fase 0 (podrás generar uno nuevo después)"
+                    <WorkshopPanelActionRegion role="region" aria-label="Acciones de Fase 0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <WorkshopPanelButton
+                          tone="primary"
+                          onClick={async () => {
+                            await suggestBrdFromDbga(projectId, { stageId: activeStageId ?? undefined });
+                            setCentralPanel("brd");
+                          }}
+                          disabled={loading && loadingReason === "brd-from-dbga"}
+                          loading={loading && loadingReason === "brd-from-dbga"}
+                          title="Generar BRD desde el Benchmark (DBGA); luego revisa y aprueba en el tab BRD"
                         >
-                          <Trash2 className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                          Borrar Fase 0
-                        </button>
-                      )}
-                    </div>
+                          {!loading || loadingReason !== "brd-from-dbga" ? (
+                            <WorkshopButtonIcon icon={Play} tone="primary" />
+                          ) : null}
+                          Generar BRD con agentes
+                        </WorkshopPanelButton>
+                        <WorkshopPanelButton
+                          tone="secondary"
+                          onClick={() => {
+                            setCentralPanel("brd");
+                          }}
+                          title="Ir a BRD y editar manualmente o usar el chat"
+                        >
+                          <WorkshopButtonIcon icon={ArrowRight} tone="secondary" />
+                          Ir a BRD (editar)
+                        </WorkshopPanelButton>
+                        {dbgaContent != null && dbgaContent !== "" && (
+                          <WorkshopPanelButton
+                            tone="danger"
+                            onClick={() => projectId && clearDbgaContent(projectId)}
+                            title="Borrar el contenido de Fase 0 (podrás generar uno nuevo después)"
+                          >
+                            <WorkshopButtonIcon icon={Trash2} tone="danger" />
+                            Borrar Fase 0
+                          </WorkshopPanelButton>
+                        )}
+                      </div>
+                      {!dbgaContent?.trim() ? (
+                        <p className="text-sm leading-relaxed text-[var(--foreground-subtle)]">
+                          Escribe tu idea en el chat y pulsa <strong>Generar</strong> para crear el análisis DBGA.
+                        </p>
+                      ) : null}
+                    </WorkshopPanelActionRegion>
 
                     <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] pt-4">
                         <h3 className="shrink-0 text-sm font-medium text-[var(--muted-foreground)] mb-2">Análisis (DBGA) — Fase 0</h3>
@@ -2879,43 +2846,55 @@ export default function WorkshopView({
                         </div>
                       )}
                       {phase0SummaryViewMode === "preview" ? (
-                        <div className="shrink-0 flex items-center gap-2 mb-3">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await phase0DeepResearch(projectId, {
-                                userIdea: lastBenchmarkIdea.trim() || undefined,
-                                includeBenchmark: true,
-                              });
-                            }}
-                            disabled={loading}
-                            className={WORKSHOP_PANEL_ACTION_PRIMARY}
-                            title="Generar Benchmark & Deep Research desde el análisis de Fase 0"
+                        <WorkshopPanelActionRegion role="region" aria-label="Acciones de Benchmark">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <WorkshopPanelButton
+                              tone="primary"
+                              onClick={async () => {
+                                await phase0DeepResearch(projectId, {
+                                  userIdea: lastBenchmarkIdea.trim() || undefined,
+                                  includeBenchmark: true,
+                                });
+                              }}
+                              disabled={loading}
+                              loading={loading && loadingReason === "phase0-deep-research"}
+                              title="Generar Benchmark & Deep Research desde el análisis de Fase 0"
+                            >
+                              {!loading || loadingReason !== "phase0-deep-research" ? (
+                                <WorkshopButtonIcon icon={Rocket} tone="primary" />
+                              ) : null}
+                              {loading && loadingReason === "phase0-deep-research" ? "Generando…" : "Generar Benchmark"}
+                            </WorkshopPanelButton>
+                            {phase0SummaryContent != null && phase0SummaryContent !== "" ? (
+                              <WorkshopPanelButton
+                                tone="danger"
+                                onClick={() => projectId && clearPhase0SummaryContent(projectId)}
+                                title="Borrar el resumen Benchmark (podrás generar uno nuevo desde Fase 0)"
+                              >
+                                <WorkshopButtonIcon icon={Trash2} tone="danger" />
+                                Borrar benchmark
+                              </WorkshopPanelButton>
+                            ) : null}
+                          </div>
+                          <p className="text-sm leading-relaxed text-[var(--foreground-subtle)]">
+                            {phase0SummaryContent?.trim()
+                              ? "Deep Research a partir del DBGA de Fase 0."
+                              : "Completa el análisis en Fase 0 y genera el Benchmark aquí. Suele tardar 1–2 min."}
+                          </p>
+                        </WorkshopPanelActionRegion>
+                      ) : phase0SummaryContent != null && phase0SummaryContent !== "" ? (
+                        <WorkshopPanelActionRegion className="items-end" role="region" aria-label="Acciones de Benchmark">
+                          <WorkshopPanelButton
+                            tone="danger"
+                            onClick={() => projectId && clearPhase0SummaryContent(projectId)}
+                            title="Borrar el resumen Benchmark (podrás generar uno nuevo desde Fase 0)"
                           >
-                            {loading && loadingReason === "phase0-deep-research" ? (
-                              <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-                            ) : (
-                              <Rocket className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                            )}
-                            {loading && loadingReason === "phase0-deep-research" ? "Generando…" : "Generar Benchmark"}
-                          </button>
-                          <span className="text-[var(--foreground-subtle)] text-xs">(puede tardar 1–2 min)</span>
-                        </div>
+                            <WorkshopButtonIcon icon={Trash2} tone="danger" />
+                            Borrar benchmark
+                          </WorkshopPanelButton>
+                        </WorkshopPanelActionRegion>
                       ) : null}
                       <div className="flex-1 flex flex-col min-h-0">
-                        {phase0SummaryContent != null && phase0SummaryContent !== "" ? (
-                          <div className="shrink-0 flex items-center justify-end gap-2 mb-3 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => projectId && clearPhase0SummaryContent(projectId)}
-                              className={WORKSHOP_PANEL_ACTION_DANGER}
-                              title="Borrar el resumen Benchmark (podrás generar uno nuevo desde Fase 0)"
-                            >
-                              <Trash2 className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                              Borrar benchmark
-                            </button>
-                          </div>
-                        ) : null}
                         <div className="flex-1 flex flex-col min-h-0">
                           {phase0SummaryViewMode === "preview" && phase0SummaryContent != null && phase0SummaryContent !== "" ? (
                             <div className="flex-1 min-h-[200px] overflow-auto">
@@ -2964,11 +2943,7 @@ export default function WorkshopView({
                     </button>
                   </div>
                 )}
-                <div
-                  className="mb-3 flex flex-col gap-3 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_38%,var(--background))] p-3 sm:p-4"
-                  role="region"
-                  aria-label="Generar o regenerar el MDD"
-                >
+                <WorkshopPanelActionRegion role="region" aria-label="Generar o regenerar el MDD">
                   {loading &&
                   (loadingReason === "mdd" ||
                     loadingReason === "legacy-mdd" ||
@@ -2994,8 +2969,8 @@ export default function WorkshopView({
                   ) : (
                     <>
                       <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
-                        <button
-                          type="button"
+                        <WorkshopMddActionButton
+                          tone="primary"
                           onClick={() =>
                             void (legacyMddPanelIsAsIsOnly
                               ? handleRegenerateLegacyCodebaseDoc()
@@ -3009,46 +2984,36 @@ export default function WorkshopView({
                               loadingReason === "legacy-mdd" ||
                               loadingReason === "legacy-codebase-doc")
                           }
-                          className={cn(
-                            WORKSHOP_MDD_ACTION_PRIMARY,
-                            "w-full justify-center lg:w-auto lg:min-w-0",
-                            "bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]",
-                          )}
                         >
                           {legacyMddPanelIsAsIsOnly ? (
                             (activeLegacyState?.codebaseDoc ?? mddInicialLocalContent)?.trim() ? (
                               <>
-                                <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
+                                <WorkshopButtonIcon icon={RefreshCw} tone="primary" />
                                 Regenerar MDD Inicial
                               </>
                             ) : (
                               <>
-                                <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
+                                <WorkshopButtonIcon icon={RefreshCw} tone="primary" />
                                 Generar MDD Inicial
                               </>
                             )
                           ) : mddContent?.trim() ? (
                             <>
-                              <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
+                              <WorkshopButtonIcon icon={RefreshCw} tone="primary" />
                               Regenerar MDD
                             </>
                           ) : (
                             <>
-                              <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
+                              <WorkshopButtonIcon icon={RefreshCw} tone="primary" />
                               Generar MDD
                             </>
                           )}
-                        </button>
+                        </WorkshopMddActionButton>
                         {effectiveMddTrimmed.length > 200 && (
-                          <button
-                            type="button"
+                          <WorkshopMddActionButton
+                            tone="success"
                             onClick={handleGenerateDeliverables}
                             disabled={!canGenerate || cascadeRunning || mddReviewing}
-                            className={cn(
-                              WORKSHOP_MDD_ACTION_PRIMARY,
-                              "w-full justify-center lg:w-auto lg:min-w-0",
-                              "bg-[var(--success)] text-[var(--success-foreground)] hover:bg-[color-mix(in_oklch,var(--success)_88%,black)]",
-                            )}
                           >
                             {cascadeRunning ? (
                               <span className="inline-flex items-center gap-2">
@@ -3057,14 +3022,14 @@ export default function WorkshopView({
                                 </span>
                               </span>
                             ) : (
-                              <Layers className="h-4 w-4 shrink-0" aria-hidden />
+                              <WorkshopButtonIcon icon={Layers} tone="success" />
                             )}
                             {cascadeRunning
                               ? cascadeCompleted > 0
                                 ? `Generando documentos (${cascadeCompleted}/${cascadeTotal})`
                                 : "Generando documentos…"
                               : "Generar todos los documentos"}
-                          </button>
+                          </WorkshopMddActionButton>
                         )}
                       </div>
                       <p className="text-sm leading-relaxed text-[var(--foreground-subtle)]">
@@ -3076,35 +3041,16 @@ export default function WorkshopView({
                       </p>
                     </>
                   )}
-                </div>
+                </WorkshopPanelActionRegion>
                 {mddDirty && (
-                  <div className="shrink-0 flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] mb-3">
-                    <span className="text-sm text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">Tienes cambios sin guardar. Graba para revisar consistencia (ER, etc.).</span>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => revertMddContent()}
-                        disabled={mddReviewing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] hover:text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <X className="w-4 h-4" />
-                        Cancelar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => persistAndReviewMdd()}
-                        disabled={mddReviewing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {mddReviewing ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Save className="w-4 h-4" />
-                        )}
-                        {mddReviewing ? "Grabando y revisando…" : "Grabar"}
-                      </button>
-                    </div>
-                  </div>
+                  <WorkshopDirtySaveBar
+                    message="Tienes cambios sin guardar. Graba para revisar consistencia (ER, etc.)."
+                    onCancel={() => revertMddContent()}
+                    onSave={() => persistAndReviewMdd()}
+                    saving={mddReviewing}
+                    disabled={mddReviewing}
+                    savingLabel="Grabando y revisando…"
+                  />
                 )}
                 {mddViewMode === "preview" ? (
                   <MddViewer content={mddContent || ""} />
@@ -3238,48 +3184,31 @@ export default function WorkshopView({
                     <span className="text-sm text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
                       Documenta requisitos AS-IS desde el codebase existente.
                     </span>
-                    <button
-                      type="button"
+                    <WorkshopPanelButton
+                      tone="primary"
                       onClick={async () => {
                         const res = await legacySuggestBrdFromCodebaseDoc(projectId, activeStageId ?? undefined);
                         if (res?.brdContent) setBrdWorkshopDraft(res.brdContent);
                       }}
                       disabled={loading && loadingReason === "legacy-brd-suggest"}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-sm font-medium text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                      loading={loading && loadingReason === "legacy-brd-suggest"}
                     >
-                      {loading && loadingReason === "legacy-brd-suggest" ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Play className="h-4 w-4" />
-                      )}
+                      {!loading || loadingReason !== "legacy-brd-suggest" ? (
+                        <WorkshopButtonIcon icon={Play} tone="primary" />
+                      ) : null}
                       Generar BRD desde MDD Inicial
-                    </button>
+                    </WorkshopPanelButton>
                   </div>
                 )}
                 {brdWorkshopDirty && (
-                  <div className="shrink-0 flex items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] px-3 py-2">
-                    <span className="text-sm text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">Cambios sin guardar en el BRD de esta etapa.</span>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setBrdWorkshopDraft(activeWorkshopStage?.brdContent ?? "")}
-                        disabled={brdTobePersistBusy}
-                        className="flex items-center gap-1.5 rounded px-2 py-1 text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] hover:bg-[var(--muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <X className="h-4 w-4" />
-                        Cancelar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void persistBrdWorkshopDraft()}
-                        disabled={brdTobePersistBusy}
-                        className="flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {brdTobePersistBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                        Grabar
-                      </button>
-                    </div>
-                  </div>
+                  <WorkshopDirtySaveBar
+                    message="Cambios sin guardar en el BRD de esta etapa."
+                    onCancel={() => setBrdWorkshopDraft(activeWorkshopStage?.brdContent ?? "")}
+                    onSave={() => void persistBrdWorkshopDraft()}
+                    saving={brdTobePersistBusy}
+                    disabled={brdTobePersistBusy}
+                    className="py-2"
+                  />
                 )}
                 <BrdStagePanel
                   projectId={projectId}

@@ -545,7 +545,7 @@ export function validateMermaid(raw: string): string[] {
   const firstLine = lines[0]!.trim();
 
   // Detectar tipo
-  const typeMatch = firstLine.match(/^(graph|sequenceDiagram|classDiagram|erDiagram|stateDiagram|stateDiagram-v2|gantt|pie|gitGraph|quadrantChart|mindmap|timeline|xychart|block|packet)/);
+  const typeMatch = firstLine.match(/^(graph|flowchart|sequenceDiagram|classDiagram|erDiagram|stateDiagram|stateDiagram-v2|gantt|pie|gitGraph|quadrantChart|mindmap|timeline|xychart|block|packet)/);
   if (!typeMatch) {
     errors.push(`Unknown diagram type. First line: "${firstLine}". Must start with a valid mermaid type.`);
   }

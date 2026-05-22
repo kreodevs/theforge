@@ -29,6 +29,7 @@ export interface UpsertProviderInstanceDto {
   apiKey: string;
   chatModel?: string;
   chatModelFallbacks?: string[];
+  auditorChatModel?: string | null;
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
   sttModel?: string | null;
@@ -53,6 +54,7 @@ function mapInstanceRow(
     displayName: string;
     chatModel: string;
     chatModelFallbacks: string[];
+    auditorChatModel: string | null;
     embeddingModel: string | null;
     embeddingDimension: number | null;
     sttModel: string | null;
@@ -77,6 +79,7 @@ function mapInstanceRow(
     createdByUserId: row.createdByUserId,
     chatModel: row.chatModel,
     chatModelFallbacks: row.chatModelFallbacks,
+    auditorChatModel: row.auditorChatModel,
     embeddingModel: row.embeddingModel,
     embeddingDimension: row.embeddingDimension,
     sttModel: row.sttModel,
@@ -155,6 +158,7 @@ export class ProviderInstancesService {
         displayName: true,
         chatModel: true,
         chatModelFallbacks: true,
+        auditorChatModel: true,
         embeddingModel: true,
         embeddingDimension: true,
         sttModel: true,
@@ -217,6 +221,7 @@ export class ProviderInstancesService {
         apiKey: dto.apiKey ?? "",
         chatModel: dto.chatModel,
         chatModelFallbacks: dto.chatModelFallbacks,
+        auditorChatModel: dto.auditorChatModel,
         embeddingModel: dto.embeddingModel,
         embeddingDimension: dto.embeddingDimension,
         sttModel: dto.sttModel,
@@ -243,6 +248,10 @@ export class ProviderInstancesService {
     await this.prisma.userAISettings.updateMany({
       where: { activeTenantInstanceId: id },
       data: { activeTenantInstanceId: null },
+    });
+    await this.prisma.userAISettings.updateMany({
+      where: { mddAuditorTenantInstanceId: id },
+      data: { mddAuditorTenantInstanceId: null },
     });
     await this.prisma.providerInstance.delete({ where: { id } });
     if (existing.isTenantDefault) {
@@ -307,6 +316,7 @@ export class ProviderInstancesService {
       await this.userProviders.validateUserMayUseChatModels(actorUserId, providerType, [
         models.chatModel,
         ...models.chatModelFallbacks,
+        ...(models.auditorChatModel ? [models.auditorChatModel] : []),
       ]);
     }
     const extras = normalizeProviderExtras(providerType, dto.extras ?? (existing?.extras as Record<string, unknown>));

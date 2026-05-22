@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { CheckCircle2, ChevronDown, Loader2, XCircle, Layers } from "lucide-react";
+import { CheckCircle2, ChevronDown, XCircle, Layers } from "lucide-react";
 import { useWorkshopStore, type ComplexityPending } from "../store/workshopStore";
 import { cn } from "@/lib/utils";
+import { WorkshopPanelButton, WorkshopButtonIcon } from "@/components/WorkshopButtons";
 
 function levelLabel(level: ComplexityPending["level"]): string {
   switch (level) {
@@ -66,30 +67,29 @@ export default function ComplexityPendingBanner() {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-          <button
-            type="button"
+          <WorkshopPanelButton
+            tone="success"
             disabled={disabled}
+            loading={busy}
             onClick={() => run(confirmComplexityProposal)}
-            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-9 sm:py-1.5 dark:bg-emerald-600 dark:hover:bg-emerald-500"
           >
-            {busy ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden /> : <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />}
+            {!busy ? <WorkshopButtonIcon icon={CheckCircle2} tone="success" /> : null}
             Confirmar y aplicar nivel
-          </button>
-          <button
-            type="button"
+          </WorkshopPanelButton>
+          <WorkshopPanelButton
+            tone="secondary"
             disabled={disabled}
             onClick={() => run(dismissComplexityProposal)}
-            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_88%,var(--background))] px-3 py-2 text-sm font-medium text-[var(--foreground)] shadow-sm hover:bg-[color-mix(in_oklch,var(--muted)_55%,var(--card))] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-9 sm:py-1.5"
           >
-            <XCircle className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" aria-hidden />
+            <WorkshopButtonIcon icon={XCircle} tone="secondary" />
             Descartar propuesta
-          </button>
+          </WorkshopPanelButton>
         </div>
       </div>
 
       {hasDetailBody ? (
-        <details className="group/details mt-2 rounded-lg border border-[color-mix(in_oklch,var(--border)_90%,var(--warning))] bg-[color-mix(in_oklch,var(--background)_55%,transparent)] open:bg-[color-mix(in_oklch,var(--background)_70%,var(--card))] dark:bg-[color-mix(in_oklch,var(--card)_35%,transparent)] dark:open:bg-[color-mix(in_oklch,var(--card)_50%,transparent)]">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[var(--foreground)] marker:content-none [&::-webkit-details-marker]:hidden hover:bg-[color-mix(in_oklch,var(--muted)_35%,transparent)]">
+        <details className="group/details mt-2 overflow-hidden rounded-lg border border-[color-mix(in_oklch,var(--border)_90%,var(--warning))] bg-[color-mix(in_oklch,var(--background)_55%,transparent)] shadow-none open:bg-[color-mix(in_oklch,var(--background)_70%,var(--card))] dark:bg-[color-mix(in_oklch,var(--card)_35%,transparent)] dark:open:bg-[color-mix(in_oklch,var(--card)_50%,transparent)]">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[var(--foreground)] shadow-none marker:content-none hover:shadow-none hover:text-[color-mix(in_oklch,var(--warning)_45%,var(--foreground))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-1 focus-visible:ring-offset-[color-mix(in_oklch,var(--card)_40%,var(--background))] [&::-webkit-details-marker]:hidden">
             <ChevronDown
               className="h-3.5 w-3.5 shrink-0 text-[var(--muted-foreground)] transition-transform group-open/details:rotate-180"
               aria-hidden

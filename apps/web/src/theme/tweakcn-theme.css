@@ -31,8 +31,11 @@
   --muted-foreground: oklch(0.5341 0.0078 97.4503);
   --accent: oklch(0.9245 0.0138 92.9892);
   --accent-foreground: oklch(0.2671 0.0196 98.939);
-  --destructive: oklch(0.1908 0.002 106.5859);
+  --destructive: oklch(0.55 0.2 25.3313);
   --destructive-foreground: oklch(1 0 0);
+  --destructive-soft: color-mix(in oklch, var(--destructive) 10%, var(--popover));
+  --destructive-soft-border: color-mix(in oklch, var(--destructive) 28%, var(--popover));
+  --destructive-hover: color-mix(in oklch, var(--destructive) 88%, black);
   --border: oklch(0.8847 0.0069 97.3627);
   /* Field surface: lighter than registry default so inputs match cards/muted (was ~L0.76, too heavy). */
   --input: oklch(0.956 0.0134 97.35);
@@ -100,8 +103,11 @@
   --muted-foreground: oklch(0.7713 0.0169 99.0657);
   --accent: oklch(0.213 0.0078 95.4245);
   --accent-foreground: oklch(0.9663 0.008 98.8792);
-  --destructive: oklch(0.6368 0.2078 25.3313);
-  --destructive-foreground: oklch(1 0 0);
+  --destructive: oklch(0.58 0.14 25.3313);
+  --destructive-foreground: oklch(0.98 0.01 25);
+  --destructive-soft: color-mix(in oklch, var(--destructive) 8%, var(--card));
+  --destructive-soft-border: color-mix(in oklch, var(--destructive) 20%, var(--card));
+  --destructive-hover: oklch(0.48 0.13 25.3313);
   --border: oklch(0.3618 0.0101 106.8928);
   /* Slightly lifted vs previous (~L0.43) for clearer fields without looking muddy. */
   --input: oklch(0.5 0.0115 100.15);

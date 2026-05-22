@@ -225,6 +225,26 @@ export function ProviderConfigFormFields({
         />
       </FormField>
 
+      <FormField
+        id={`${idPrefix}-auditor-model`}
+        label="Modelo de auditor (opcional)"
+        hint="Solo para el agente Auditor del MDD (revisión final). Vacío = mismo que modelo de chat. Misma clave API."
+        error={showError("auditorChatModel")}
+      >
+        <Input
+          id={`${idPrefix}-auditor-model`}
+          value={form.auditorChatModel}
+          onChange={(e) => {
+            onPatch({ auditorChatModel: e.target.value });
+            onClearFieldError("auditorChatModel");
+          }}
+          onBlur={() => onBlurField("auditorChatModel")}
+          placeholder="p. ej. anthropic/claude-opus-4"
+          aria-invalid={!!showError("auditorChatModel")}
+          className={cn("font-mono text-xs", inputErrorClass("auditorChatModel"))}
+        />
+      </FormField>
+
       {catalog.supportsEmbeddings ? (
         <ModelInput
           id={`${idPrefix}-embedding`}

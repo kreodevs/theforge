@@ -98,6 +98,7 @@ export function ProviderInstanceModal({
     apiKey: "",
     chatModel: "",
     chatModelFallbacks: "",
+    auditorChatModel: "",
     embeddingModel: "",
     sttModel: "",
     visionModel: "",
@@ -211,6 +212,7 @@ export function ProviderInstanceModal({
         apiKey: true,
         chatModel: true,
         chatModelFallbacks: true,
+        auditorChatModel: true,
         embeddingModel: true,
         sttModel: true,
         visionModel: true,
@@ -285,6 +287,7 @@ export function ProviderInstanceModal({
         apiKey: configForm.apiKey.trim(),
         chatModel: configForm.chatModel.trim(),
         chatModelFallbacks: parseFallbacks(configForm.chatModelFallbacks),
+        auditorChatModel: configForm.auditorChatModel.trim() || null,
         embeddingModel: activeCatalog.supportsEmbeddings
           ? configForm.embeddingModel.trim() || null
           : null,
@@ -332,15 +335,16 @@ export function ProviderInstanceModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent size="xl" className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+      <DialogContent size="xl" className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 p-0">
         <form
           id="provider-instance-form"
           key={isEditing ? `edit-${editingId}` : "create"}
+          className="flex min-h-0 flex-1 flex-col"
           noValidate
           autoComplete="off"
           onSubmit={(e) => void handleSubmit(e)}
         >
-          <DialogHeader>
+          <DialogHeader className="shrink-0 px-6 pt-6">
             <DialogTitle>
               {isEditing ? "Editar instancia" : "Nueva instancia de proveedor"}
             </DialogTitle>
@@ -349,7 +353,8 @@ export function ProviderInstanceModal({
               el taller.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 [scrollbar-gutter:stable]">
+          <div className="space-y-4">
             {catalogError && !activeCatalog ? (
               <p
                 className="rounded-md border border-[color-mix(in_oklch,var(--destructive)_42%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_10%,var(--card))] px-3 py-2 text-sm text-[var(--destructive)]"
@@ -550,7 +555,8 @@ export function ProviderInstanceModal({
               </div>
             ) : null}
           </div>
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0 border-t border-[var(--border)] px-6 py-4">
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={saving}>
               Cancelar
             </Button>
