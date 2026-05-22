@@ -47,7 +47,7 @@ import {
   isInsufficientDbgaIdea,
 } from "./utils/dbga-idea-validation.util.js";
 import { resolveLangGraphRecursionLimit } from "./utils/langgraph-recursion.util.js";
-import { prepareMddForOutput } from "./utils/mdd-prepare-output.js";
+import { prepareMddForOutput, draftHasSection6Heading } from "./utils/mdd-prepare-output.js";
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
 
@@ -1356,6 +1356,14 @@ export class AiAnalysisService {
         const result = await securityNode(state as MDDStateType);
         const finalDraft = (result.mddDraft ?? mddContent).trim();
         const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
+        if (!draftHasSection6Heading(markdown)) {
+          yield {
+            type: "error",
+            message:
+              "La regeneración de §6 no produjo el heading ## 6. Seguridad en el documento. Reintenta con /seguridad o revisa el borrador.",
+          };
+          return;
+        }
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         yield {
           type: "done",
