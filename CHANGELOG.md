@@ -2,6 +2,21 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
+## [0.9.2] — 2026-05-22
+
+### Fixed
+
+- **Diagramas Mermaid con errores de sintaxis en el MDD:** El pipeline de normalización interna (`sanitizeMermaidBlock`) solo corregía espacios unicode y comas `PK, FK`, pero no los errores estructurales más comunes que el LLM genera: IDs con espacios, bloques alt/opt/loop sin cerrar, subgraphs sin `end`, quotes inconsistentes, etc. Estos sí los corrige la herramienta experta `normalizeMermaid` de `@theforge/shared-types/mermaid`, pero no estaba integrada en el pipeline de persistencia.
+  - `sanitizeMermaidBlock` ahora llama a `normalizeMermaid` después de sus correcciones básicas — corrige IDs, cierra bloques, normaliza quotes automáticamente
+  - `validateMermaidSyntax` ahora también ejecuta `validateMermaid` (experta) además del chequeo de `PK, FK`
+  - Corre en cada `PATCH /projects/:id` via `mddUpdatePipeline.process()` antes de persistir
+
+### Changed
+
+- **BUILD_CACHE_BUST**: 76 → 77
+
+---
+
 ## [0.9.1] — 2026-05-22
 
 ### Fixed
