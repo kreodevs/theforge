@@ -1,6 +1,7 @@
 # Dependencies
 node_modules
 .pnpm-store
+package-lock.json
 
 # Build
 dist
@@ -53,7 +54,6 @@ auth.json
 auth.lock
 SOUL.md
 config.yaml
-sessions/
 skills/
 tools/
 tools/registry.py

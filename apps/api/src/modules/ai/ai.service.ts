@@ -152,6 +152,7 @@ export class AiService {
         // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
         const tagMap: Record<string, string> = {
           mdd: "MDD",
+          benchmark: "DBGA",
           spec: "SPEC",
           brd: "BRD",
           architecture: "ARCH",
@@ -166,6 +167,10 @@ export class AiService {
         const tag = tagMap[at];
         if (tag && !options?.welcomeBrief) {
           systemPrompt += `\n\n**Instrucción DE delimitador (OBLIGATORIO):** Cuando generes o actualices el documento de ${label} (completo o solo una sección), DEBES escribir el contenido y TERMINAR con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Sin ese delimitador, el sistema NO persiste ningún cambio y el usuario no ve nada en el panel del documento.`;
+          if (at === "benchmark") {
+            systemPrompt +=
+              "\n\n**OBLIGATORIO — Benchmark (DBGA):** Si el usuario pide **añadir, modificar o corregir** el análisis, devuelve el **DBGA COMPLETO** (todo lo que ya existía en el contexto más tus cambios), no solo el párrafo nuevo. Termina con `---FIN_DBGA---` y un mensaje breve después. **Nunca** respondas solo \"He añadido…\" sin el markdown completo antes del delimitador.";
+          }
           if (at === "mdd") {
             systemPrompt +=
               "\n\n**\u26a0\ufe0f REGLA ABSOLUTA \u2014 MDD:** Cada vez que el usuario pida **agregar, cambiar, modificar, actualizar, corregir o eliminar** algo del MDD (ej. \"agrega X\", \"cambia Y por Z\", \"falta W\", \"actualiza la secci\u00f3n N\"), **DEBES** devolver el **MDD COMPLETO ACTUALIZADO** (conservando TODO el contenido existente m\u00e1s los cambios) terminando con `---FIN_MDD---`. **NUNCA** respondas solo con un mensaje como \"MDD actualizado\" o \"Hecho\" \u2014 si lo haces, el sistema NO persiste ning\u00fan cambio y el usuario cree que se aplic\u00f3 cuando no es as\u00ed. Siempre incluye un mensaje breve resumiendo el cambio DESPU\u00c9S de `---FIN_MDD---`.";
@@ -312,6 +317,7 @@ export class AiService {
       // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
       const tagMap: Record<string, string> = {
         mdd: "MDD",
+        benchmark: "DBGA",
         spec: "SPEC",
         brd: "BRD",
         architecture: "ARCH",
@@ -326,6 +332,10 @@ export class AiService {
       const tag = tagMap[at];
       if (tag && !options?.welcomeBrief) {
         systemPrompt += `\n\nSi decides generar o actualizar el documento de ${label} (completo o solo una sección), escribe el contenido y TERMINA con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Así el sistema aplicará los cambios al documento del proyecto.`;
+        if (at === "benchmark") {
+          systemPrompt +=
+            "\n\n**OBLIGATORIO — Benchmark (DBGA):** Devuelve el **DBGA COMPLETO** (contexto actual + cambios), no solo el fragmento nuevo. Termina con `---FIN_DBGA---`. Sin delimitador no se persiste nada en el panel.";
+        }
         if (at === "mdd") {
             systemPrompt +=
               "\n\n**\u26a0\ufe0f REGLA ABSOLUTA \u2014 MDD:** Cada vez que el usuario pida **agregar, cambiar, modificar, actualizar, corregir o eliminar** algo del MDD (ej. \"agrega X\", \"cambia Y por Z\", \"falta W\", \"actualiza la secci\u00f3n N\"), **DEBES** devolver el **MDD COMPLETO ACTUALIZADO** (conservando TODO el contenido existente m\u00e1s los cambios) terminando con `---FIN_MDD---`. **NUNCA** respondas solo con un mensaje como \"MDD actualizado\" o \"Hecho\" \u2014 si lo haces, el sistema NO persiste ning\u00fan cambio y el usuario cree que se aplic\u00f3 cuando no es as\u00ed. Siempre incluye un mensaje breve resumiendo el cambio DESPU\u00c9S de `---FIN_MDD---`.";
