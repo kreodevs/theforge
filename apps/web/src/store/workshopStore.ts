@@ -7,6 +7,7 @@ import {
 } from "../utils/httpError";
 import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
 import { parseNdjsonLine } from "../utils/ndjson";
+import { mddHasSection6Heading } from "../utils/mddSectionRegen";
 
 /**
  * Convierte mensajes de error de fetch del navegador (Safari "Load failed", Chrome "Failed to fetch")
@@ -1258,19 +1259,33 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 } else if (ev.type === "done") {
                   const merged = (ev.markdown ?? "").trim();
                   if (merged.length > 80) {
+                    if (regenerateSection === 6 && !mddHasSection6Heading(merged)) {
+                      set({
+                        error:
+                          "El servidor respondió OK pero el MDD no incluye ## 6. Seguridad. Reintenta /seguridad; si persiste, recarga la página.",
+                        loading: false,
+                        loadingReason: null,
+                        agentProgress: [],
+                        evaluatorCritique: null,
+                      });
+                      return;
+                    }
                     set({ mddContent: merged });
                     const { persistMddContent, fetchProject, fetchEstimation, fetchConformance } = get();
                     await persistMddContent(merged, { force: true });
+                    const persistErr = get().error;
                     await fetchProject(projectId);
                     fetchEstimation(projectId).catch(() => { });
                     fetchConformance(projectId).catch(() => { });
                     const current = get();
                     set({
                       project: current.project ? { ...current.project, mddContent: merged } : null,
+                      mddContent: merged,
                       loading: false,
                       loadingReason: null,
                       agentProgress: [],
                       evaluatorCritique: null,
+                      ...(persistErr ? {} : { error: null }),
                     });
                     const assistantRes = await apiFetch(`${API_BASE}/sessions/${session.id}/messages`, {
                       method: "POST",

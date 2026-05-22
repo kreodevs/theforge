@@ -2649,6 +2649,18 @@ function sanitizeArquitecturaStackBody(body: string): string {
   return body;
 }
 
+/** Número canónico 1–7 a partir del heading ## N. … */
+function canonicalSectionNumber(heading: string): number | null {
+  const m = heading.match(/^##\s+(\d+)\./);
+  if (m) {
+    const n = parseInt(m[1]!, 10);
+    return n >= 1 && n <= 7 ? n : null;
+  }
+  if (/^##\s+Seguridad\b/i.test(heading)) return 6;
+  if (/^##\s+(?:Infraestructura|Integraci[oó]n)\b/i.test(heading)) return 7;
+  return null;
+}
+
 /**
  * Reordena el MDD a 1..7 y elimina secciones duplicadas.
  * No parte en ## que estén dentro de bloques ```. Si la sección 2 contiene ## 3/## 4 embebidos, la reemplaza por placeholder.
@@ -2681,8 +2693,36 @@ export function deduplicateAndReorderMddSections(draft: string): string {
     const best = candidates.reduce((a, b) => (a.body.length >= b.body.length ? a : b));
     sections.push(best);
   }
-  if (sections.length === 0) return draft;
-  const out = [title, "", ...sections.flatMap((s) => ["---", s.heading, "", s.body, ""])];
+  // El escaneo por SECTION_ORDER puede perder §6/§7 recién insertadas (p. ej. tras /seguridad).
+  // Recuperarlas del borrador original con getSection6Or7Range antes de reconstruir.
+  for (const sectionNum of [6, 7] as const) {
+    const range = getSection6Or7Range(trimmed, sectionNum);
+    if (!range) continue;
+    const canonical = sectionNum === 6 ? "## 6. Seguridad" : "## 7. Infraestructura";
+    const already = sections.some((s) =>
+      sectionNum === 6
+        ? /^##\s+(?:6\.\s+)?Seguridad\b/i.test(s.heading)
+        : /^##\s+(?:7\.\s+)?(?:Infraestructura|Integraci[oó]n)\b/i.test(s.heading),
+    );
+    if (already) continue;
+    const body = trimmed
+      .slice(range.start + range.heading.length, range.end)
+      .replace(/^\s*\n+/, "")
+      .trim();
+    if (body.length > 0) sections.push({ heading: canonical, body });
+  }
+  const byNumber = new Map<number, { heading: string; body: string }>();
+  for (const s of sections) {
+    const num = canonicalSectionNumber(s.heading);
+    if (num == null) continue;
+    const prev = byNumber.get(num);
+    if (!prev || s.body.length >= prev.body.length) byNumber.set(num, s);
+  }
+  const orderedSections = [...byNumber.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, s]) => s);
+  if (orderedSections.length === 0) return draft;
+  const out = [title, "", ...orderedSections.flatMap((s) => ["---", s.heading, "", s.body, ""])];
   const result = out.join("\n").trim();
   if (result.length < trimmed.length * 0.5) return draft;
   return result;
