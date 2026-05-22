@@ -4,6 +4,12 @@ import type { BaseMessage } from "@langchain/core/messages";
 import type { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
 import { ChatOpenAI, type ChatOpenAICallOptions } from "@langchain/openai";
 import { isModelExhaustionError, runWithModelFallback } from "../../ai/config/llm-model-fallback.js";
+import {
+  bindToolsOnChatModel,
+  invokeAsChatResult,
+  streamAsChatChunks,
+  type BoundToolsConfig,
+} from "./chat-model-generate.js";
 
 /**
  * ChatOpenAI con cadena de modelos: solo hace fallback en errores de agotamiento (quota, 429 opcional, etc.).
@@ -12,12 +18,17 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
   constructor(
     private readonly buildLlm: (model: string) => ChatOpenAI,
     private readonly models: string[],
+    private readonly toolsConfig?: BoundToolsConfig,
   ) {
     super({});
   }
 
   _llmType(): string {
     return "openrouter-chat-fallback";
+  }
+
+  private resolveLlm(model: string) {
+    return bindToolsOnChatModel(this.buildLlm(model), this.toolsConfig);
   }
 
   async _generate(
@@ -29,10 +40,7 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
     return runWithModelFallback({
       models: this.models,
       label: "OpenRouterFallbackChatModel._generate",
-      run: async (model) => {
-        const llm = this.buildLlm(model);
-        return llm._generate(messages, openAiOptions, runManager);
-      },
+      run: async (model) => invokeAsChatResult(this.resolveLlm(model), messages, openAiOptions, runManager),
     });
   }
 
@@ -52,8 +60,7 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
           models: [model],
           label: `OpenRouterFallbackChatModel._stream[${model}]`,
           run: async () => {
-            const llm = this.buildLlm(model);
-            const iter = llm._streamResponseChunks(messages, openAiOptions, runManager);
+            const iter = streamAsChatChunks(this.resolveLlm(model), messages, openAiOptions, runManager);
             const first = await iter.next();
             if (first.done) throw new Error(`empty stream from ${model}`);
             firstChunk = first.value;
@@ -83,9 +90,6 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
     tools: Parameters<ChatOpenAI["bindTools"]>[0],
     kwargs?: Parameters<ChatOpenAI["bindTools"]>[1],
   ): BaseChatModel {
-    return new OpenRouterFallbackChatModel(
-      (model) => this.buildLlm(model).bindTools(tools, kwargs) as unknown as ChatOpenAI,
-      this.models,
-    );
+    return new OpenRouterFallbackChatModel(this.buildLlm, this.models, { tools, kwargs });
   }
 }

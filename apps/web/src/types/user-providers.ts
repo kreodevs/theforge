@@ -52,7 +52,7 @@ export interface UserProviderConfigSummary {
 export interface UserAISettings {
   activeProvider: ProviderId | null;
   activeTenantInstanceId: string | null;
-  /** Instancia dedicada para el agente Auditor MDD; null = mismo que proveedor activo. */
+  /** Instancia dedicada para el Auditor MDD; null = instancia activa. */
   mddAuditorTenantInstanceId: string | null;
   embeddingProvider: ProviderId | null;
   embeddingsEnabled: boolean;

@@ -369,15 +369,23 @@ export default function App() {
   if (!authed) {
     if (needsSetup === null) {
       return (
-        <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex items-center justify-center p-6">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto bg-[var(--background)] p-6 text-[var(--foreground)]">
           <p className="text-sm text-[var(--foreground-muted)]">Cargando...</p>
         </div>
       );
     }
     if (needsSetup) {
-      return <SetupView onComplete={() => setNeedsSetup(false)} />;
+      return (
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <SetupView onComplete={() => setNeedsSetup(false)} />
+        </div>
+      );
     }
-    return <LoginView onLoggedIn={() => window.location.reload()} />;
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <LoginView onLoggedIn={() => window.location.reload()} />
+      </div>
+    );
   }
 
   function logout() {
@@ -405,6 +413,7 @@ export default function App() {
   ) : null;
 
   return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
     <ErrorBoundary>
       <CreateProjectWizardDialog
         open={showCreateWizard}
@@ -584,8 +593,9 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {workshopProject ? (
-        <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 min-w-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row">
+        <div className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row">
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}
@@ -603,11 +613,11 @@ export default function App() {
           />
           <div className="flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col overflow-hidden">
             {settingsViewOpen ? (
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 {settingsPanel}
               </div>
             ) : usersViewOpen && isAdmin ? (
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <UsersView />
               </div>
             ) : (
@@ -621,7 +631,7 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 min-w-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row">
+        <div className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row">
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}
@@ -635,12 +645,15 @@ export default function App() {
             onBeforeNavigateToProjects={closePanelViews}
           />
 
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {settingsViewOpen ? (
-          settingsPanel
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{settingsPanel}</div>
         ) : usersViewOpen && isAdmin ? (
-          <UsersView />
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <UsersView />
+          </div>
         ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6 px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
         <header className="flex flex-col gap-3 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4 sm:pb-5">
           <div className="min-w-0 flex-1">
@@ -855,10 +868,13 @@ export default function App() {
           </div>
         ) : null}
         </div>
+        </div>
         )}
       </main>
         </div>
       )}
+      </div>
     </ErrorBoundary>
+    </div>
   );
 }

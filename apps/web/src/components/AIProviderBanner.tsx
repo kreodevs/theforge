@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { fetchProviderStatus } from "@/lib/user-providers-api";
+import { getStoredUser } from "@/utils/apiClient";
 
 interface AIProviderBannerProps {
   onOpenSettings?: () => void;
@@ -11,6 +12,7 @@ interface AIProviderBannerProps {
  */
 export function AIProviderBanner({ onOpenSettings }: AIProviderBannerProps) {
   const [missing, setMissing] = useState(false);
+  const isDeveloper = getStoredUser()?.role === "developer";
 
   useEffect(() => {
     let cancelled = false;
@@ -38,10 +40,11 @@ export function AIProviderBanner({ onOpenSettings }: AIProviderBannerProps) {
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--warning)]" />
         <span className="text-[var(--foreground)]">
-          Configura un proveedor de IA del equipo o tu clave API personal en
-          ajustes para usar generación y análisis.
+          {isDeveloper
+            ? "No hay proveedor de IA disponible. Pide a un administrador que configure uno para el equipo."
+            : "Configura un proveedor de IA del equipo o tu clave API personal en ajustes para usar generación y análisis."}
         </span>
-        {onOpenSettings ? (
+        {onOpenSettings && !isDeveloper ? (
           <button
             type="button"
             className="font-medium text-[var(--primary)] underline-offset-2 hover:underline"

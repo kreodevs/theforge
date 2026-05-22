@@ -4,6 +4,12 @@ import type { BaseMessage } from "@langchain/core/messages";
 import type { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { isModelExhaustionError, runWithModelFallback } from "../../ai/config/llm-model-fallback.js";
+import {
+  bindToolsOnChatModel,
+  invokeAsChatResult,
+  streamAsChatChunks,
+  type BoundToolsConfig,
+} from "./chat-model-generate.js";
 
 /**
  * Cadena de modelos sobre cualquier BaseChatModel: fallback solo en agotamiento (quota, 429, etc.).
@@ -12,6 +18,7 @@ export class ChainedFallbackChatModel extends BaseChatModel {
   constructor(
     private readonly buildLlm: (model: string) => BaseChatModel,
     private readonly models: string[],
+    private readonly toolsConfig?: BoundToolsConfig,
     params?: BaseChatModelParams,
   ) {
     super(params ?? {});
@@ -19,6 +26,10 @@ export class ChainedFallbackChatModel extends BaseChatModel {
 
   _llmType(): string {
     return "chained-chat-fallback";
+  }
+
+  private resolveLlm(model: string) {
+    return bindToolsOnChatModel(this.buildLlm(model), this.toolsConfig);
   }
 
   async _generate(
@@ -29,10 +40,7 @@ export class ChainedFallbackChatModel extends BaseChatModel {
     return runWithModelFallback({
       models: this.models,
       label: "ChainedFallbackChatModel._generate",
-      run: async (model) => {
-        const llm = this.buildLlm(model);
-        return llm._generate(messages, options, runManager);
-      },
+      run: async (model) => invokeAsChatResult(this.resolveLlm(model), messages, options, runManager),
     });
   }
 
@@ -51,8 +59,7 @@ export class ChainedFallbackChatModel extends BaseChatModel {
           models: [model],
           label: `ChainedFallbackChatModel._stream[${model}]`,
           run: async () => {
-            const llm = this.buildLlm(model);
-            const iter = llm._streamResponseChunks(messages, options, runManager);
+            const iter = streamAsChatChunks(this.resolveLlm(model), messages, options, runManager);
             const first = await iter.next();
             if (first.done) throw new Error(`empty stream from ${model}`);
             firstChunk = first.value;
@@ -82,15 +89,6 @@ export class ChainedFallbackChatModel extends BaseChatModel {
     tools: StructuredToolInterface[],
     kwargs?: Record<string, unknown>,
   ): BaseChatModel {
-    return new ChainedFallbackChatModel(
-      (model) => {
-        const llm = this.buildLlm(model);
-        if (!llm.bindTools) {
-          throw new Error(`El modelo ${model} no soporta bindTools`);
-        }
-        return llm.bindTools(tools, kwargs) as BaseChatModel;
-      },
-      this.models,
-    );
+    return new ChainedFallbackChatModel(this.buildLlm, this.models, { tools, kwargs });
   }
 }

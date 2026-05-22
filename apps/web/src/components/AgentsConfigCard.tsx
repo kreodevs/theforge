@@ -20,6 +20,11 @@ function canPickInstances(role: string | undefined) {
   return role === "admin" || role === "super_admin";
 }
 
+function auditorModelLabel(inst: ProviderInstanceSummary): string {
+  const model = inst.auditorChatModel?.trim() || inst.chatModel;
+  return `${inst.displayName} — ${model}`;
+}
+
 export function AgentsConfigCard() {
   const role = getStoredUser()?.role;
   const canPick = canPickInstances(role);
@@ -80,10 +85,12 @@ export function AgentsConfigCard() {
   }
 
   const selected = instances.find((i) => i.id === auditorInstanceId);
+  const selectedModel =
+    selected?.auditorChatModel?.trim() || selected?.chatModel;
 
   return (
-    <Card variant="bordered">
-      <CardHeader>
+    <Card variant="ghost">
+      <CardHeader className="border-b-0">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--primary)]/10">
             <Bot className="h-5 w-5 text-[var(--primary)]" />
@@ -133,13 +140,14 @@ export function AgentsConfigCard() {
               </option>
               {instances.map((inst) => (
                 <option key={inst.id} value={inst.id}>
-                  {inst.displayName} — {inst.chatModel}
+                  {auditorModelLabel(inst)}
                 </option>
               ))}
             </select>
             {selected ? (
               <p className="text-xs text-[var(--foreground-muted)]">
-                {selected.providerType}/{selected.slug} · {selected.chatModel}
+                {selected.providerType}/{selected.slug} · {selectedModel}
+                {selected.auditorChatModel?.trim() ? " (modelo de auditor)" : ""}
                 {selected.apiKeyHint ? ` · ${selected.apiKeyHint}` : ""}
               </p>
             ) : (
@@ -175,6 +183,8 @@ export function AgentsConfigCard() {
         <p className="text-xs text-[var(--foreground-subtle)]">
           Útil para usar un modelo más capaz solo en la revisión final (p. ej. Opus)
           mientras Clarifier, Arquitecto y Seguridad usan un modelo más rápido/económico.
+          Opcional: en el modal de la instancia puedes definir un «Modelo de auditor»
+          distinto al de chat.
         </p>
       </CardContent>
     </Card>

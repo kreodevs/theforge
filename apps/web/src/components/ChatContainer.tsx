@@ -8,7 +8,7 @@ import {
 } from "../constants/legacy-workshop-loading-steps";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil, X, RefreshCw, ImagePlus, Mic, ChevronDown } from "lucide-react";
+import { MessageSquare, Send, Loader2, Trash2, Target, Check, Play, Pencil, X, RefreshCw, ImagePlus, Mic, ChevronDown, Rocket } from "lucide-react";
 import { useInterview } from "../hooks/useInterview";
 import { useWorkshopStore } from "../store/workshopStore";
 import type { ChatImagePart } from "@theforge/shared-types";
@@ -28,6 +28,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../components/ui";
+import { WorkshopChatToolbarIconButton, WorkshopButtonIcon, WorkshopPanelButton } from "@/components/WorkshopButtons";
 import { AiGenerationChatBubble, AiGenerativeDots } from "./AiGenerationLoader";
 import {
   MDD_SECTION_COMMANDS,
@@ -116,6 +117,54 @@ const AI_COMPOSER_ATTACH_BTN =
 
 const AI_COMPOSER_SEND_BTN =
   "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] shadow-none transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-0";
+
+function ChatComposerSubmit({
+  isBenchmarkFirstAction,
+  loading,
+  disabled,
+  onSend,
+  onGenerateBenchmark,
+}: {
+  isBenchmarkFirstAction: boolean;
+  loading: boolean;
+  disabled: boolean;
+  onSend: () => void;
+  onGenerateBenchmark: () => void;
+}) {
+  if (isBenchmarkFirstAction) {
+    return (
+      <WorkshopPanelButton
+        tone="primary"
+        onClick={onGenerateBenchmark}
+        disabled={disabled}
+        loading={loading}
+        className="mb-0.5 shrink-0 self-end"
+        title="Generar Benchmark & Gap Analysis"
+        aria-label="Generar Benchmark & Gap Analysis"
+      >
+        {!loading ? <WorkshopButtonIcon icon={Rocket} tone="primary" /> : null}
+        Generar
+      </WorkshopPanelButton>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={AI_COMPOSER_SEND_BTN}
+      onClick={onSend}
+      disabled={disabled}
+      title="Enviar"
+      aria-label="Enviar mensaje"
+    >
+      {loading ? (
+        <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
+      ) : (
+        <Send className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+      )}
+    </button>
+  );
+}
 
 async function readFilesAsChatParts(files: Iterable<File>): Promise<ChatImagePart[]> {
   const list = Array.from(files).slice(0, 6);
@@ -639,19 +688,16 @@ export default function ChatContainer({
                 spellCheck={false}
                 disabled={loading}
               />
-              <button
-                type="button"
-                className={AI_COMPOSER_SEND_BTN}
-                onClick={() => (isBenchmarkFirstAction ? void handleGenerateBenchmark() : void handleSend())}
+              <ChatComposerSubmit
+                isBenchmarkFirstAction={isBenchmarkFirstAction}
+                loading={loading}
                 disabled={
                   loading ||
                   (isBenchmarkFirstAction ? !inputValue.trim() : !inputValue.trim() && !pendingFiles.length)
                 }
-                title={isBenchmarkFirstAction ? "Generar Benchmark & Gap Analysis" : "Enviar"}
-                aria-label={isBenchmarkFirstAction ? "Generar Benchmark & Gap Analysis" : "Enviar mensaje"}
-              >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden /> : <Send className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />}
-              </button>
+                onSend={() => void handleSend()}
+                onGenerateBenchmark={() => void handleGenerateBenchmark()}
+              />
             </div>
           </div>
         </div>
@@ -686,11 +732,9 @@ export default function ChatContainer({
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span className="inline-flex">
-                          <button
-                            type="button"
+                          <WorkshopChatToolbarIconButton
                             onClick={() => void onRevaluate()}
                             disabled={loading || revaluateBusy}
-                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--primary)_12%,var(--card))] hover:text-[var(--primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color-mix(in_oklch,var(--card)_45%,var(--background))] disabled:pointer-events-none disabled:opacity-40"
                             aria-label="Re-Valorar complejidad"
                           >
                           {revaluateBusy ? (
@@ -698,7 +742,7 @@ export default function ChatContainer({
                           ) : (
                             <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
                           )}
-                          </button>
+                          </WorkshopChatToolbarIconButton>
                         </span>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" align="end" className="max-w-[11rem]">
@@ -708,17 +752,16 @@ export default function ChatContainer({
                   ) : null}
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex">
-                        <button
-                          type="button"
-                          onClick={() => setShowClearConfirm(true)}
-                          disabled={loading || messages.length === 0}
-                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--destructive)_12%,transparent)] hover:text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color-mix(in_oklch,var(--card)_45%,var(--background))] disabled:pointer-events-none disabled:opacity-40"
-                          aria-label="Borrar historial del chat"
-                        >
+                        <span className="inline-flex">
+                          <WorkshopChatToolbarIconButton
+                            tone="danger"
+                            onClick={() => setShowClearConfirm(true)}
+                            disabled={loading || messages.length === 0}
+                            aria-label="Borrar historial del chat"
+                          >
                           <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
-                        </button>
-                      </span>
+                          </WorkshopChatToolbarIconButton>
+                        </span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[11rem]">
                       {messages.length === 0
@@ -1062,19 +1105,16 @@ export default function ChatContainer({
                 spellCheck={false}
                 disabled={loading}
               />
-              <button
-                type="button"
-                className={AI_COMPOSER_SEND_BTN}
-                onClick={() => (isBenchmarkFirstAction ? void handleGenerateBenchmark() : void handleSend())}
+              <ChatComposerSubmit
+                isBenchmarkFirstAction={isBenchmarkFirstAction}
+                loading={loading}
                 disabled={
                   loading ||
                   (isBenchmarkFirstAction ? !inputValue.trim() : !inputValue.trim() && !pendingFiles.length)
                 }
-                title={isBenchmarkFirstAction ? "Generar Benchmark & Gap Analysis" : "Enviar"}
-                aria-label={isBenchmarkFirstAction ? "Generar Benchmark & Gap Analysis" : "Enviar mensaje"}
-              >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden /> : <Send className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />}
-              </button>
+                onSend={() => void handleSend()}
+                onGenerateBenchmark={() => void handleGenerateBenchmark()}
+              />
             </div>
           </div>
         </>

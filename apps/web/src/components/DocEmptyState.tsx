@@ -56,7 +56,7 @@ export function DocEmptyState({
         <Button
           type="button"
           variant="default"
-          size="lg"
+          size="default"
           className={cn("w-full", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
           onClick={onGenerate}
           disabled={loading || !hasMdd || blocked}
@@ -81,7 +81,7 @@ export function DocEmptyState({
             type="button"
             variant="outline"
             size="default"
-            className="h-11 w-full gap-2 rounded-xl font-medium"
+            className="h-9 min-h-9 w-full gap-2 rounded-xl font-medium"
             onClick={onLegacyGenerate}
             disabled={legacyGenerateLoading}
             loading={legacyGenerateLoading}

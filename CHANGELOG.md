@@ -2,6 +2,40 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
+## [0.9.2] — 2026-05-22
+
+### Fixed
+
+- **Diagramas Mermaid con errores de sintaxis en el MDD:** El pipeline de normalización interna (`sanitizeMermaidBlock`) solo corregía espacios unicode y comas `PK, FK`, pero no los errores estructurales más comunes que el LLM genera: IDs con espacios, bloques alt/opt/loop sin cerrar, subgraphs sin `end`, quotes inconsistentes, etc. Estos sí los corrige la herramienta experta `normalizeMermaid` de `@theforge/shared-types/mermaid`, pero no estaba integrada en el pipeline de persistencia.
+  - `sanitizeMermaidBlock` ahora llama a `normalizeMermaid` después de sus correcciones básicas — corrige IDs, cierra bloques, normaliza quotes automáticamente
+  - `validateMermaidSyntax` ahora también ejecuta `validateMermaid` (experta) además del chequeo de `PK, FK`
+  - Corre en cada `PATCH /projects/:id` via `mddUpdatePipeline.process()` antes de persistir
+- **`validateMermaid` de shared-types no reconocía `flowchart`:** La regex de detección de tipo solo incluía `graph`, no `flowchart`. También se pasaba el contenido con fences a `validateMermaid`, que espera el contenido crudo. Se usa `require()` dinámico para evitar errores de moduleResolution en build.
+- **Frontend no normalizaba diagramas viejos con la experta al renderizar:** El backend ya aplica `normalizeMermaid` de shared-types al persistir (PATCH), pero diagramas guardados antes del fix quedan con errores en DB. El frontend solo aplicaba normalización básica (unicode spaces, indent, keyword casing) sin usar la experta. Se importa `normalizeMermaid` de `@theforge/shared-types/mermaid` y se aplica como pre-paso en ambos paths de render (useEffect y ReactMarkdown custom renderer), cubriendo todos los tipos de diagrama (graph, flowchart, sequenceDiagram, erDiagram, etc.).
+
+### Changed
+
+- **BUILD_CACHE_BUST**: 78 → 79
+
+---
+
+## [0.9.1] — 2026-05-22
+
+### Fixed
+
+- **§6 Seguridad no se generaba con DeepSeek/Claude:** `stripThinkingTags()` solo limpiaba tags HTML-style (``), ignorando los formatos nativos de DeepSeek (`` ```think``` ``) y Claude. El texto con razonamiento llegaba a `isCorruptedSecurityLlmText()` que lo descartaba como corrupto, eliminando toda la sección 6.
+  - `stripThinkingTags` ahora también remueve fenced code blocks con "think/thought/reasoning"
+  - Patrón `"6\.\s*Seguridad"\s*:` removido de `CORRUPTED_SECURITY_TEXT_PATTERNS` — matcheaba falsos positivos dentro de valores JSON válidos
+  - `parseSecurityLlmResponse` ahora prueba legacy JSON (`{ securitySection }`) antes del chequeo de corrupción, alineado con el formato del prompt default
+- **Prompts MDD con supresión de razonamiento explícito:** Software Architect, Security, Integration y MDD Auditor ahora incluyen "NO uses tags de razonamiento ni pienses en voz alta. Devuelve ÚNICAMENTE el JSON." para prevenir thinking output desde la fuente.
+- **`prepareMddForOutput` pierde §6 al reconstruir desde structured:** Nueva guarda en `shouldPreferDraftOverStructured`: si el draft tiene contenido real en §6 (>15 chars, no "Pendiente") pero el structured solo tiene placeholder, se preserva el draft.
+
+### Changed
+
+- **BUILD_CACHE_BUST**: 75 → 76
+
+---
+
 ## [0.9.0] — 2026-05-22
 
 ### Added

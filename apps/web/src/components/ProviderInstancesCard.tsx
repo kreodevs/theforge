@@ -7,8 +7,9 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Badge,
 } from "./ui";
+import { ListAddButton } from "./ListAddButton";
+import { ListRowIconButton } from "./ListRowIconButton";
 import { getProviderIcon } from "@/constants/provider-icons";
 import { getStoredUser } from "@/utils/apiClient";
 import type { ProviderInstanceSummary, UserAISettings } from "@/types/user-providers";
@@ -49,8 +50,6 @@ export function ProviderInstancesCard() {
     setError("");
     try {
       const settingsPromise = fetchUserAISettings();
-      // Admin y super_admin: GET /provider-instances (equipo + propias).
-      // Developer: GET /provider-instances/enabled (solo las que puede usar).
       const fetchInstances = canManage
         ? fetchAllProviderInstances
         : fetchEnabledProviderInstances;
@@ -141,168 +140,146 @@ export function ProviderInstancesCard() {
     return inst.createdByUserId === user?.id;
   }
 
+  function openCreateModal() {
+    setEditing(null);
+    setModalOpen(true);
+  }
+
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <div className="min-w-0">
-            <CardTitle>Gestionar instancias</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </div>
-          {canManage ? (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setEditing(null);
-                setModalOpen(true);
-              }}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              Agregar instancia
-            </Button>
-          ) : null}
+      <Card variant="ghost">
+        <CardHeader className="border-b-0">
+          <CardTitle>Gestionar instancias</CardTitle>
+          <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="flex items-center gap-2 py-6 text-sm text-[var(--foreground-muted)]">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Cargando…
-            </div>
-          ) : null}
-          {error ? <p className="mb-3 text-sm text-[var(--destructive)]">{error}</p> : null}
-          {!loading && instances.length === 0 ? (
-            <div className="py-6 text-center text-sm text-[var(--foreground-muted)]">
-              {canManage
-                ? "No hay instancias. Crea la primera con el botón de arriba."
-                : "No hay instancias disponibles. Pide a un administrador que configure una."}
-            </div>
-          ) : null}
-          <ul className="space-y-2">
-            {instances.map((inst) => {
-              const Icon = getProviderIcon(inst.providerType);
-              const isActive = activeInstanceId === inst.id;
-              const isPersonal = !inst.enabledForUsers;
-              return (
-                <li
-                  key={inst.id}
-                  className={cn(
-                    "flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3",
-                    isActive
-                      ? "border-[var(--primary)] bg-[var(--primary)]/5"
-                      : "border-[var(--border)]",
-                  )}
-                >
-                  <div className="flex min-w-0 items-start gap-2">
-                    <Icon className="mt-0.5 h-5 w-5 shrink-0 text-[var(--primary)]" />
-                    <div className="min-w-0">
-                      <p className="font-medium text-[var(--foreground)]">{inst.displayName}</p>
-                      <p className="text-xs text-[var(--foreground-muted)]">
-                        {inst.providerType}/{inst.slug} · {inst.chatModel}
-                        {inst.auditorChatModel
-                          ? ` · auditor: ${inst.auditorChatModel}`
-                          : ""}
-                        {inst.apiKeyHint ? ` · ${inst.apiKeyHint}` : ""}
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        {isActive ? (
-                          <Badge className="text-xs">Activa</Badge>
-                        ) : null}
-                        {isPersonal ? (
-                          <Badge variant="secondary" className="text-xs">
-                            Personal
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-xs">
-                            Equipo
-                          </Badge>
-                        )}
-                        {inst.isTenantDefault ? (
-                          <Badge variant="outline" className="text-xs">
-                            Default equipo
-                          </Badge>
-                        ) : null}
-                        {isSuperAdmin && canManage ? (
-                          <label className="flex cursor-pointer items-center gap-2 text-xs text-[var(--foreground-muted)]">
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={inst.enabledForUsers}
-                              aria-label="Visible para el equipo"
-                              disabled={togglingId === inst.id}
-                              onClick={() => void handleToggleVisibleForTeam(inst)}
-                              className={cn(
-                                "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors disabled:opacity-50",
-                                inst.enabledForUsers
-                                  ? "bg-[var(--primary)]"
-                                  : "bg-[color-mix(in_oklch,var(--muted-foreground)_25%,var(--border))]",
-                              )}
-                            >
-                              <span
+          <div className="min-h-0 flex-1 space-y-4 py-2">
+            {canManage ? (
+              <ListAddButton
+                icon={Plus}
+                label="Agregar instancia"
+                onClick={openCreateModal}
+                disabled={loading}
+              />
+            ) : null}
+
+            {error ? (
+              <p className="rounded-md border border-[var(--destructive)]/30 bg-[var(--destructive)]/10 px-3 py-2 text-sm text-[var(--destructive)]">
+                {error}
+              </p>
+            ) : null}
+
+            {loading ? (
+              <div className="flex items-center gap-2 py-4 text-sm text-[var(--foreground-muted)]">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Cargando instancias…
+              </div>
+            ) : instances.length === 0 ? (
+              <p className="py-2 text-sm text-[var(--foreground-muted)]">
+                {canManage
+                  ? "No hay instancias. Crea la primera con el botón de arriba."
+                  : "No hay instancias disponibles. Pide a un administrador que configure una."}
+              </p>
+            ) : (
+              instances.map((inst) => {
+                const Icon = getProviderIcon(inst.providerType);
+                const isActive = activeInstanceId === inst.id;
+                return (
+                  <div
+                    key={inst.id}
+                    className={cn(
+                      "rounded-lg border border-[var(--border)]",
+                      isActive && "border-[var(--primary)]/50",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2 p-3">
+                      <div className="flex min-w-0 flex-1 items-start gap-2">
+                        <Icon className="mt-0.5 h-5 w-5 shrink-0 text-[var(--primary)]" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-[var(--foreground)]">
+                            {inst.displayName}
+                          </p>
+                          <p className="truncate text-xs text-[var(--foreground-muted)]">
+                            {inst.chatModel}
+                          </p>
+                          {isSuperAdmin && canManage ? (
+                            <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-[var(--foreground-muted)]">
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={inst.enabledForUsers}
+                                aria-label="Visible para el equipo"
+                                disabled={togglingId === inst.id}
+                                onClick={() => void handleToggleVisibleForTeam(inst)}
                                 className={cn(
-                                  "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
-                                  inst.enabledForUsers ? "translate-x-4" : "translate-x-0",
+                                  "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors disabled:opacity-50",
+                                  inst.enabledForUsers
+                                    ? "bg-[var(--primary)]"
+                                    : "bg-[color-mix(in_oklch,var(--muted-foreground)_25%,var(--border))]",
                                 )}
-                              />
-                            </button>
-                            <span className="select-none">Visible para el equipo</span>
-                            {togglingId === inst.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                            ) : null}
-                          </label>
+                              >
+                                <span
+                                  className={cn(
+                                    "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
+                                    inst.enabledForUsers ? "translate-x-4" : "translate-x-0",
+                                  )}
+                                />
+                              </button>
+                              <span className="select-none">Visible para el equipo</span>
+                              {togglingId === inst.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                              ) : null}
+                            </label>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="ml-2 flex shrink-0 items-center gap-1">
+                        {!isDeveloper ? (
+                          <Button
+                            type="button"
+                            variant={isActive ? "default" : "outline"}
+                            size="sm"
+                            disabled={isActive || activatingId === inst.id}
+                            onClick={() => void handleSetActive(inst)}
+                          >
+                            {activatingId === inst.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Star className="h-4 w-4" />
+                            )}
+                            {isActive ? "Activa" : "Usar"}
+                          </Button>
+                        ) : isActive ? (
+                          <span className="rounded-md border border-[var(--border)] bg-[var(--muted)]/40 px-2 py-1 text-sm font-medium text-[var(--foreground)]">
+                            Predeterminado
+                          </span>
+                        ) : null}
+                        {canMutateInstance(inst) ? (
+                          <>
+                            <ListRowIconButton
+                              aria-label="Editar"
+                              onClick={() => {
+                                setEditing(inst);
+                                setModalOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </ListRowIconButton>
+                            <ListRowIconButton
+                              aria-label="Eliminar"
+                              onClick={() => void handleDelete(inst.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </ListRowIconButton>
+                          </>
                         ) : null}
                       </div>
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-1">
-                    {!isDeveloper ? (
-                      <Button
-                        type="button"
-                        variant={isActive ? "default" : "outline"}
-                        size="sm"
-                        disabled={isActive || activatingId === inst.id}
-                        onClick={() => void handleSetActive(inst)}
-                      >
-                        {activatingId === inst.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Star className="h-4 w-4" />
-                        )}
-                        {isActive ? "Activa" : "Usar"}
-                      </Button>
-                    ) : isActive ? (
-                      <Badge className="text-xs">Predeterminado</Badge>
-                    ) : null}
-                    {canMutateInstance(inst) ? (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          aria-label="Editar"
-                          onClick={() => {
-                            setEditing(inst);
-                            setModalOpen(true);
-                          }}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          aria-label="Eliminar"
-                          onClick={() => void handleDelete(inst.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                );
+              })
+            )}
+          </div>
         </CardContent>
       </Card>
       {canManage ? (

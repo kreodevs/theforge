@@ -1,6 +1,6 @@
 import { Download } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui";
-import { WORKSHOP_HEADER_ICON_BTN } from "@/constants/workshopHeaderToolbar";
+import { WorkshopHeaderIconButton } from "@/components/WorkshopButtons";
 
 interface DownloadZipButtonProps {
   onClick: () => void;
@@ -11,14 +11,12 @@ export function WorkshopDownloadZipButton({ onClick }: DownloadZipButtonProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
-          type="button"
+        <WorkshopHeaderIconButton
           onClick={onClick}
-          className={WORKSHOP_HEADER_ICON_BTN}
           aria-label="Descargar todos los documentos del proyecto en ZIP"
         >
           <Download className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-        </button>
+        </WorkshopHeaderIconButton>
       </TooltipTrigger>
       <TooltipContent side="bottom">Descargar ZIP del proyecto</TooltipContent>
     </Tooltip>

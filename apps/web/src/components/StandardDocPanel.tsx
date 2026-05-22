@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import MddViewer from "@/components/MddViewer";
 import { DocEmptyState } from "@/components/DocEmptyState";
 import { AiDocumentBuildingPlaceholder } from "@/components/AiGenerationLoader";
-import { WorkshopDocSourceSaveBar } from "@/components/WorkshopDocSourceSaveBar";
+import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "@/components/WorkshopDocSourceSaveBar";
 
 export interface StandardDocPanelProps {
   icon: LucideIcon;
@@ -120,8 +120,8 @@ export function StandardDocPanel({
                 <Button
                   type="button"
                   variant="default"
-                  size="lg"
-                  className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", "h-12 gap-2 rounded-xl text-base font-semibold shadow-md shadow-[color-mix(in_oklch,var(--primary)_42%,transparent)] hover:shadow-lg hover:shadow-[color-mix(in_oklch,var(--primary)_48%,transparent)]")}
+                  size="default"
+                  className={cn("w-full max-w-md sm:w-auto sm:min-w-[280px]", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
                   onClick={onGenerate}
                   disabled={!canGenerate}
                 >
