@@ -249,6 +249,11 @@ export class AiOrchestratorService {
     if (dbgaFromResponse != null && dbgaFromResponse.length > 0) {
       console.log("[Orchestrator] persisting dbgaContent (Benchmark refinado) length:", dbgaFromResponse.length);
       updatedProject = await this.projects.update(projectId, { dbgaContent: dbgaFromResponse });
+      // Fase 0 es sub-tab de Benchmark — mirror a phase0SummaryContent para que el panel lo muestre
+      if (activeTab?.trim() === "benchmark" && !phase0FromResponse) {
+        console.log("[Orchestrator] mirroring dbgaContent to phase0SummaryContent (benchmark→Fase0)");
+        updatedProject = await this.projects.update(projectId, { phase0SummaryContent: dbgaFromResponse });
+      }
     }
     if (mddFromResponse == null && dbgaFromResponse == null) {
       // Phase0 document from chat — persist if it came back
@@ -461,6 +466,10 @@ export class AiOrchestratorService {
         }
         if (msg.dbgaContent != null && msg.dbgaContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { dbgaContent: msg.dbgaContent });
+          // Fase 0 sub-tab — mirror a phase0SummaryContent
+          if (activeTab?.trim() === "benchmark") {
+            updatedProject = await this.projects.update(projectId, { phase0SummaryContent: msg.dbgaContent });
+          }
         }
         if (msg.specContent != null && msg.specContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { specContent: msg.specContent });
