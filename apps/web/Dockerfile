@@ -1,26 +1,28 @@
 # Build stage — context = repo root
 FROM node:20-alpine AS builder
 
-ARG BUILD_CACHE_BUST=79
+ARG BUILD_CACHE_BUST=87
 RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
 WORKDIR /app
 RUN apk add --no-cache gcompat
 
-COPY package.json turbo.json .npmrc ./
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json .npmrc ./
 COPY packages/config/package.json packages/config/
 COPY packages/shared-types/package.json packages/shared-types/
 COPY packages/business-rules/package.json packages/business-rules/
 COPY apps/web/package.json apps/web/
 
-RUN npm install
+RUN pnpm install --frozen-lockfile
 
 COPY packages/config packages/config
 COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
 COPY apps/web apps/web
 
-RUN npx turbo run build --filter=@theforge/web
+RUN pnpm exec turbo run build --filter=@theforge/web
 
 # Production stage — Nginx
 FROM nginx:alpine AS runner

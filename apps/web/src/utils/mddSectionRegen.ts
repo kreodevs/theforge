@@ -32,3 +32,8 @@ export function detectNaturalRegenerateSection(msg: string): number | null {
 export function resolveRegenerateSectionFromChatMessage(msg: string): number | null {
   return getRegenerateSectionFromSlashCommand(msg) ?? detectNaturalRegenerateSection(msg);
 }
+
+/** Heading canónico §6 presente (semáforo + validación tras /seguridad). */
+export function mddHasSection6Heading(content: string): boolean {
+  return /(?:^|\n)##\s+(?:6\.\s+)?Seguridad\b/im.test((content ?? "").trim());
+}

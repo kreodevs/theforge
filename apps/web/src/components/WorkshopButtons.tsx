@@ -297,14 +297,16 @@ type WorkshopChatToolbarIconButtonProps = ComponentProps<"button"> & {
 };
 
 /** Icono del sidebar de conversación (re-valorar, borrar historial). */
-export function WorkshopChatToolbarIconButton({
-  tone = "default",
-  className,
-  type = "button",
-  ...props
-}: WorkshopChatToolbarIconButtonProps) {
+export const WorkshopChatToolbarIconButton = forwardRef<
+  HTMLButtonElement,
+  WorkshopChatToolbarIconButtonProps
+>(function WorkshopChatToolbarIconButton(
+  { tone = "default", className, type = "button", ...props },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type={type}
       className={cn(
         WORKSHOP_CHAT_TOOLBAR_ICON_BTN,
@@ -314,4 +316,4 @@ export function WorkshopChatToolbarIconButton({
       {...props}
     />
   );
-}
+});

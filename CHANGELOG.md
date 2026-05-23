@@ -2,6 +2,62 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
+## [0.10.0] — 2026-05-23
+
+### Added
+
+- **Fase 0 Interactiva — Entrevistador IA guiado:** Nuevo módulo dentro del pipeline de especificación que permite al usuario describir su idea (o pegar un documento externo) y recibir un borrador inicial de 8 secciones. Luego, el entrevistador hace **una pregunta a la vez** (máx 5) para llenar gaps críticos, actualizando el borrador en vivo tras cada respuesta. Al completarse, el documento se serializa a markdown y se inyecta como `dbgaContent` para que el pipeline MDD existente lo consuma automáticamente.
+  - `ai-analysis/phase0/phase0.types.ts` — interfaces del documento (8 secciones: propósito, entidades, reglas, flujos, roles, integraciones, edge cases, pendientes)
+  - `ai-analysis/phase0/phase0-gap-analyzer.ts` — 7 reglas lógicas de validación por criticidad (sin LLM, funciona como fallback)
+  - `ai-analysis/phase0/phase0-to-markdown.ts` — serializa el JSON estructurado a markdown legible para el pipeline
+  - `ai-analysis/phase0/phase0-interview.service.ts` — orquestador del loop: start → question → answer → finalize
+  - 3 prompts en `prompts/phase0/`: arranque (idea/doc → borrador + gaps), question (una pregunta a la vez), update (respuesta → actualización)
+  - 4 endpoints REST: `POST /ai-analysis/phase0/start`, `GET phase0/question/:threadId`, `POST phase0/answer`, `GET phase0/state/:threadId`
+  - DB: 3 campos nuevos en `Project` (`phase0Status`, `phase0Gaps`, `phase0Questions`) + safe-schema-sync.sql
+- **Frontend Phase0InterviewPanel:** Nuevo componente React con input inicial, indicador de progreso (5 dots), una pregunta a la vez con respuesta inline, borrador visible toggle, y estados idle/starting/interviewing/done/error. Integrado en la pestaña Fase 0 del Workshop.
+
+### Changed
+
+- **WorkshopView:** La pestaña Fase 0 ahora muestra el entrevistador interactivo cuando no hay `dbgaContent`, y el flujo legacy (DBGA) cuando ya existe contenido. La integración es transparente: al completar la entrevista, se genera `dbgaContent` y el panel legacy se muestra automáticamente.
+- **load-prompts.ts:** Registro de `PHASE0_ARRANQUE_PROMPT`, `PHASE0_QUESTION_PROMPT`, `PHASE0_UPDATE_PROMPT` en el loader central.
+- **AiAnalysisController / Module:** Import, provider, export e inyección de `Phase0InterviewService`.
+- **BUILD_CACHE_BUST**: 80 → 81
+
+## [0.10.1] — 2026-05-23
+
+### Fixed
+
+- **Phase0 build fix:** Eliminado import no usado de `Phase0QA` en `phase0-interview.service.ts` que rompía el build estricto de TypeScript en Docker.
+
+### Changed
+
+- **BUILD_CACHE_BUST**: 81 → 82
+
+## [0.10.2] — 2026-05-23
+
+### Fixed
+
+- **Prompts Fase 0 contaminados con tecnología:** Los 3 prompts (arranque, question, update) no limitaban a análisis de dominio de negocio. El LLM respondía con decisiones técnicas (AriadneSpecs, PostgreSQL, FalkorDB, BullMQ, etc.) que corresponden al MDD, no a Fase 0. Se agregaron guardrails explícitos: instrucciones de QUÉ no incluir y conversión de lenguaje técnico a concepto de negocio.
+
+### Changed
+
+- **BUILD_CACHE_BUST**: 82 → 83
+
+## [0.10.3] — 2026-05-23
+
+### Fixed
+
+- **MCP Server crash al inicio:** El Dockerfile del MCP copiaba `package.json` del mcp-server a la raíz (`./`) en vez de a su ruta correcta (`./packages/mcp-server/`), lo que rompía la resolución del workspace `@theforge/shared-types` desde node_modules hoisted.
+
+### Changed
+
+- **BUILD_CACHE_BUST**: 83 → 84
+
+---
+
+
+---
+
 ## [0.9.2] — 2026-05-22
 
 ### Fixed
@@ -15,7 +71,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Changed
 
-- **BUILD_CACHE_BUST**: 78 → 79
+- **BUILD_CACHE_BUST**: 79 → 80
 
 ---
 
@@ -302,4 +358,30 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ---
 
-Este documento representa el estado incremental del proyecto a fecha de **20 de mayo de 2026**.
+|Este documento representa el estado incremental del proyecto a fecha de **20 de mayo de 2026**.
+
+## [0.10.2] — 2026-05-23
+
+### Added
+
+- **Chat → Phase0**: ahora el tab `phase0` soporta el delimitador `---FIN_PHASE0---` para que las ediciones en el chat se persistan correctamente a `phase0SummaryContent`.
+- **Parser**: método `splitPhase0AndChat` + `mergePhase0OrUseFull` + fallback `detectDocFallback` para tab `phase0`.
+- **SessionsService**: soporte completo de `phase0SummaryContent` en `chat()`, `chatStream()`, y su tipo de retorno.
+- **Orchestrator**: persistencia de `phase0SummaryContent` cuando vuelve del chat, tanto en `chat()` como en `chatStream()`.
+- **LLM context**: nueva opción `currentPhase0SummaryContent` en `GenerateResponseOptions` para que el LLM reciba el documento actual al editar.
+- **Controller**: `phase0SummaryContent` aceptado como parámetro desde el frontend.
+- **AI service**: tag `PHASE0` registrado en el mapa de delimitadores del sistema de prompts.
+
+### Fixed
+
+- Las conversaciones que refinaban el documento Fase 0 en el Workshop quedaban perdidas — no existía el pipeline de parseo/persistencia para `phase0SummaryContent`. Ahora el flujo completo (LLM → parser → service → persistencia) funciona igual que para MDD, DBGA, SPEC, etc.
+
+## [0.10.3] — 2026-05-23
+
+### Added
+
+- **Fallback regeneración DBGA en streaming**: cuando DeepSeek no emite el delimitador `---FIN_DBGA---` en el chat streaming del tab Benchmark, el sistema detecta la omisión y llama de nuevo al modelo con un prompt estricto que fuerza la generación completa del documento. Aplica tanto al endpoint `POST /chat` (no-streaming) como al `POST /chat/stream`.
+
+### Fixed
+
+- Las ediciones en el chat del tab Benchmark/Fase 0 que quedaban perdidas porque DeepSeek respondía conversacionalmente sin emitir `---FIN_DBGA---`. Ahora el fallback de regeneración captura esos casos y persiste el documento.

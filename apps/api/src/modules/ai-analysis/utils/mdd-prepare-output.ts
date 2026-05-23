@@ -7,6 +7,7 @@ import {
   hydrateStructuredFromDraft,
   normalizeMddFormat,
   replaceContextWhenOnlyMetadata,
+  replaceSection6Or7InDraft,
   sanitizeContextKeyValueAndObject,
   sanitizeContextSection,
 } from "./mdd-sanitize.js";
@@ -76,6 +77,27 @@ export function shouldPreferDraftOverStructured(
   return false;
 }
 
+/** Detecta heading canónico §6 (semáforo y validación post-/seguridad). */
+export function draftHasSection6Heading(draft: string): boolean {
+  return getSection6Or7Range((draft ?? "").trim(), 6) != null;
+}
+
+/**
+ * normalizeMddFormat (deduplicateAndReorderMddSections) puede eliminar §6/§7 recién insertadas.
+ * Restaura desde el borrador pre-normalize si desaparecieron.
+ */
+function restoreSections6And7AfterNormalize(source: string, normalized: string): string {
+  let out = normalized;
+  for (const section of [6, 7] as const) {
+    const srcRange = getSection6Or7Range(source, section);
+    if (!srcRange) continue;
+    if (getSection6Or7Range(out, section)) continue;
+    const sectionMd = source.slice(srcRange.start, srcRange.end).trim();
+    if (sectionMd.length > 0) out = replaceSection6Or7InDraft(out, section, sectionMd);
+  }
+  return out;
+}
+
 /**
  * Fuente del markdown a enviar. Se prefiere mddDraft cuando es sustancial para no reconstruir desde
  * mddStructured (que podría tener §3 desactualizado o solo §6). Luego sanitize, normalize e inyección.
@@ -99,7 +121,7 @@ export function prepareMddForOutput(
   }
   const sanitized =
     replaceContextWhenOnlyMetadata(sanitizeContextKeyValueAndObject(sanitizeContextSection(raw)));
-  const normalized = normalizeMddFormat(sanitized);
+  const normalized = restoreSections6And7AfterNormalize(raw, normalizeMddFormat(sanitized));
   const withDiagrams = injectMddDiagrams(normalized, suggestMddDiagrams(normalized));
   return enrichMddWithUiUxDesignIntent(withDiagrams);
 }

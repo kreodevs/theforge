@@ -44,6 +44,56 @@ export class ChatResponseParserService {
     return this.splitDocAndChat(response, "DBGA");
   }
 
+  splitPhase0AndChat(response: string): { docPart: string; chatPart: string } | null {
+    return this.splitDocAndChat(response, "PHASE0");
+  }
+
+  /** Full-replacement merge for Phase0 (documento completo, sin secciones numeradas). */
+  mergePhase0OrUseFull(currentPhase0: string | undefined, newPart: string): string {
+    const cleaned = newPart.trim();
+    if (!cleaned) return (currentPhase0 ?? "").trim();
+    const current = (currentPhase0 ?? "").trim();
+    const looksLikeFullDoc = cleaned.length >= 500;
+    if (looksLikeFullDoc) return cleaned;
+    return current || cleaned;
+  }
+
+  /**
+   * DBGA (Paso 0): el modelo suele mandar solo el fragmento nuevo + ---FIN_DBGA---.
+   * Sin merge, eso reemplaza todo el benchmark y “borra” el documento.
+   */
+  mergeDbgaOrUseFull(currentDbga: string | undefined, newPart: string): string {
+    const cleaned = newPart.trim();
+    if (!cleaned) return (currentDbga ?? "").trim();
+    const current = (currentDbga ?? "").trim();
+    if (!current) return cleaned;
+
+    const hasBenchmarkTitle = /#\s*Domain\s+Benchmark|#\s*Benchmark\s*&\s*Gap/i.test(
+      cleaned,
+    );
+    const looksLikeFullDbga =
+      hasBenchmarkTitle &&
+      cleaned.length >= Math.min(current.length * 0.5, 2000);
+
+    if (looksLikeFullDbga && cleaned.length >= current.length * 0.45) {
+      return cleaned;
+    }
+
+    const wouldWipe = current.length > 1200 && cleaned.length < current.length * 0.4;
+    if (wouldWipe) {
+      if (/^#+\s*(?:dos\s+objetivos|objetivos\s+centrales)/im.test(cleaned)) {
+        return `${cleaned}\n\n${current}`;
+      }
+      return `${current}\n\n---\n\n${cleaned}`;
+    }
+
+    if (cleaned.length >= current.length * 0.85) return cleaned;
+    if (/\n##\s+/i.test(cleaned) && cleaned.length < current.length * 0.85) {
+      return this.mergeDocSectionOrUseFull(current, cleaned);
+    }
+    return `${current}\n\n---\n\n${cleaned}`;
+  }
+
   splitUxUiGuideAndChat(response: string): { docPart: string; chatPart: string } | null {
     return this.splitDocAndChat(response, "UX_UI");
   }
@@ -195,6 +245,7 @@ export class ChatResponseParserService {
       infra: /^#\s*(?:Infraestructura|Infrastructure|Infra(?![a-z]))(?:\s|$)/im,
       benchmark: /^#\s*(?:Benchmark|Domain Benchmark|Análisis)\b/im,
       brd: /^#\s*(?:BRD|Business Requirements Document)\b/im,
+      phase0: /^#\s*(?:Fase 0|Phase 0|Especificador)/im,
     };
 
     const pattern = HEADING_PATTERNS[activeTab];
