@@ -2735,7 +2735,9 @@ export default function WorkshopView({
                   !dbgaContent?.trim() ? (
                     <Phase0InterviewPanel
                       projectId={projectId}
-                      onComplete={() => {}}
+                      onComplete={async () => {
+                        await useWorkshopStore.getState().fetchProject(projectId);
+                      }}
                     />
                   ) : (
                   <>
