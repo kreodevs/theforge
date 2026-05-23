@@ -24,7 +24,6 @@ import type {
   Phase0InterviewState,
   Phase0Gap,
   Phase0StreamEvent,
-  Phase0QA,
 } from "./phase0.types.js";
 import { GAP_WEIGHT } from "./phase0.types.js";
 
