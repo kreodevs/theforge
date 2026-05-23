@@ -2732,7 +2732,7 @@ export default function WorkshopView({
                 />
 
                 {benchmarkPhaseTab === "fase0" ? (
-                  !dbgaContent?.trim() ? (
+                  !dbgaContent?.trim() && !specContent?.trim() ? (
                     <Phase0InterviewPanel
                       projectId={projectId}
                       onComplete={async () => {
@@ -2774,7 +2774,7 @@ export default function WorkshopView({
                           <WorkshopButtonIcon icon={ArrowRight} tone="secondary" />
                           Ir a BRD (editar)
                         </WorkshopPanelButton>
-                        {dbgaContent != null && dbgaContent !== "" && (
+                        {dbgaContent != null && dbgaContent !== '' && (
                           <WorkshopPanelButton
                             tone="danger"
                             onClick={() => projectId && clearDbgaContent(projectId)}
@@ -2785,7 +2785,7 @@ export default function WorkshopView({
                           </WorkshopPanelButton>
                         )}
                       </div>
-                      {!dbgaContent?.trim() ? (
+                      {!dbgaContent?.trim() && !specContent?.trim() ? (
                         <p className="text-sm leading-relaxed text-[var(--foreground-subtle)]">
                           Escribe tu idea en el chat y pulsa <strong>Generar</strong> para crear el análisis DBGA.
                         </p>
