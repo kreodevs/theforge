@@ -24,7 +24,8 @@ COPY packages/mcp-server packages/mcp-server
 # Build: compila shared-types y config primero, luego mcp-server
 RUN pnpm exec turbo run build --filter=@theforge/config --filter=@theforge/shared-types --filter=@theforge/mcp-server
 
-# Production stage
+# Production stage — copia COMPLETA del builder (pnpm necesita 
+# node_modules hoisted con estructura de workspaces intacta)
 FROM node:20-alpine AS runner
 
 WORKDIR /app
@@ -32,17 +33,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Root package.json para que pnpm resuelva @theforge/*
-COPY --from=builder /app/package.json ./
-# node_modules raíz (hoisted; NO confiar en node_modules dentro de packages/*/)
-COPY --from=builder /app/node_modules ./node_modules
-# shared-types compilado (lo necesita @theforge/shared-types vía workspace symlink)
-COPY --from=builder /app/packages/shared-types ./packages/shared-types
-COPY --from=builder /app/packages/config ./packages/config
-
-# mcp-server compilado
-COPY --from=builder /app/packages/mcp-server/dist ./dist
-COPY --from=builder /app/packages/mcp-server/package.json ./packages/mcp-server/
+COPY --from=builder /app .
 
 EXPOSE 3100
 
