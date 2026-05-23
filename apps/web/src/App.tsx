@@ -28,7 +28,14 @@ import { CreateProjectWizardDialog } from "./components/CreateProjectWizardDialo
 import { ProjectFolderTile } from "./components/ProjectFolderTile";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { apiFetch, clearAccessToken, getAccessToken, API_BASE, getStoredUser } from "./utils/apiClient";
+import {
+  apiFetch,
+  clearAccessToken,
+  getAccessToken,
+  API_BASE,
+  getStoredUser,
+  refreshStoredUserFromApi,
+} from "./utils/apiClient";
 import { cn } from "./lib/utils";
 import {
   Button,
@@ -332,6 +339,11 @@ export default function App() {
     const allowed = new Set(displayedProjects.map((p) => p.id));
     setSelectedProjectIds((prev) => prev.filter((id) => allowed.has(id)));
   }, [displayedProjects]);
+
+  useEffect(() => {
+    if (!authed) return;
+    void refreshStoredUserFromApi();
+  }, [authed]);
 
   useEffect(() => {
     if (!authed || workshopProject) return;
