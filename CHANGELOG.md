@@ -23,6 +23,16 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - **AiAnalysisController / Module:** Import, provider, export e inyección de `Phase0InterviewService`.
 - **BUILD_CACHE_BUST**: 80 → 81
 
+## [0.10.1] — 2026-05-23
+
+### Fixed
+
+- **Phase0 build fix:** Eliminado import no usado de `Phase0QA` en `phase0-interview.service.ts` que rompía el build estricto de TypeScript en Docker.
+
+### Changed
+
+- **BUILD_CACHE_BUST**: 81 → 82
+
 ---
 
 ## [0.9.2] — 2026-05-22
