@@ -37,4 +37,4 @@ COPY --from=builder /app .
 
 EXPOSE 3100
 
-CMD ["node", "dist/index.js", "--http"]
+CMD ["node", "packages/mcp-server/dist/index.js", "--http"]
