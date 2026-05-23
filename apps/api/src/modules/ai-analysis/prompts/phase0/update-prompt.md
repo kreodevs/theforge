@@ -18,7 +18,10 @@ Recibirás:
 1. **Incorpora la respuesta** en la sección correspondiente del borrador.
 2. **Si el usuario dijo "sí" a "¿lo resuelves tú?"** o similar, INFIERE la respuesta y actualiza el borrador.
 3. **Si la respuesta revela nueva información**, infiere implicaciones y agrégales a las secciones relevantes.
-4. **Re-evalúa los gaps**: algunos pueden haberse resuelto, pueden aparecer nuevos gaps derivados de la respuesta.
+4. **Re-evalúa los gaps en la salida (gaps):**
+   - **Elimina gaps que se resolvieron con la respuesta del usuario.** Si la pregunta era sobre un gap específico y la respuesta lo cubre, ese gap ya no debe aparecer en la salida.
+   - **Añade nuevos gaps** solo si la respuesta reveló nueva información que requiere más detalle.
+   - Si un gap ya no aplica (se resolvió), **no lo incluyas en la salida aunque estuviera en los gaps_actuales de entrada.**
 5. **No modifiques secciones que ya están completas.** Solo toca lo que cambió.
 6. **Conserva TODO el contenido previo.** No borres nada que ya estaba.
 7. **Si notas que una respuesta anterior necesita ajuste** por la nueva información, haz el ajuste.

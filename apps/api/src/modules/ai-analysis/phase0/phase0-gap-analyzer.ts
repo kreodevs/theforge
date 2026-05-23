@@ -112,13 +112,26 @@ export function analyzeGaps(borrador: Phase0Document): Phase0Gap[] {
 }
 
 /**
- * Filtra gaps que ya no aplican basado en el contenido actual del borrador.
+ * Filtra gaps que ya no aplican basado en el contenido actual del borrador
+ * y gaps que se resolvieron (su pregunta ya fue respondida).
  */
 export function filterResolvedGaps(
   gaps: Phase0Gap[],
   borrador: Phase0Document,
+  ultimaPregunta?: string,
 ): Phase0Gap[] {
   return gaps.filter((gap) => {
+    // Si el gap tiene una sugerenciaPregunta que coincide con la última pregunta hecha,
+    // el usuario ya la respondió → gap resuelto
+    if (ultimaPregunta && gap.sugerenciaPregunta) {
+      const preguntaClean = ultimaPregunta.toLowerCase().trim();
+      const gapPreguntaClean = gap.sugerenciaPregunta.toLowerCase().trim();
+      // Si la pregunta del gap está contenida en la última pregunta (o viceversa),
+      // probablemente es el mismo gap
+      if (preguntaClean.includes(gapPreguntaClean) || gapPreguntaClean.includes(preguntaClean)) {
+        return false;
+      }
+    }
     switch (gap.seccion) {
       case "entidades":
         return !borrador.entidades || borrador.entidades.length < 2;
