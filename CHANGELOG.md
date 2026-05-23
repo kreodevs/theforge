@@ -33,6 +33,19 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 - **BUILD_CACHE_BUST**: 81 → 82
 
+## [0.10.2] — 2026-05-23
+
+### Fixed
+
+- **Prompts Fase 0 contaminados con tecnología:** Los 3 prompts (arranque, question, update) no limitaban a análisis de dominio de negocio. El LLM respondía con decisiones técnicas (AriadneSpecs, PostgreSQL, FalkorDB, BullMQ, etc.) que corresponden al MDD, no a Fase 0. Se agregaron guardrails explícitos: instrucciones de QUÉ no incluir y conversión de lenguaje técnico a concepto de negocio.
+
+### Changed
+
+- **BUILD_CACHE_BUST**: 82 → 83
+
+---
+
+
 ---
 
 ## [0.9.2] — 2026-05-22
