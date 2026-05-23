@@ -204,7 +204,7 @@ export class Phase0InterviewService {
     const llm = await this.getUserLLM(state.projectId);
     if (!llm) {
       // Fallback: solo actualizar gaps lógicos
-      state.gaps = filterResolvedGaps(analyzeGaps(state.borrador), state.borrador);
+      state.gaps = filterResolvedGaps(analyzeGaps(state.borrador), state.borrador, state.ultimaPregunta);
       if (state.preguntasRealizadas >= state.maxPreguntas) return this.finalize(state);
       await this.persistPhase0(state.projectId, state.borrador, state.gaps, state.status);
       return { type: "draft_updated", borrador: state.borrador, gaps: state.gaps };
@@ -225,7 +225,7 @@ export class Phase0InterviewService {
       // Recalcular gaps
       const logicGaps = analyzeGaps(state.borrador);
       const llmGaps: Phase0Gap[] = parsed.gaps ?? [];
-      state.gaps = filterResolvedGaps(mergeGaps(llmGaps, logicGaps), state.borrador);
+      state.gaps = filterResolvedGaps(mergeGaps(llmGaps, logicGaps), state.borrador, state.ultimaPregunta);
 
       if (state.preguntasRealizadas >= state.maxPreguntas) return this.finalize(state);
 
@@ -233,7 +233,7 @@ export class Phase0InterviewService {
       return { type: "draft_updated", borrador: state.borrador, gaps: state.gaps };
     } catch (err) {
       this.logger.error(`[Phase0] answer error: ${err}`);
-      state.gaps = filterResolvedGaps(analyzeGaps(state.borrador), state.borrador);
+      state.gaps = filterResolvedGaps(analyzeGaps(state.borrador), state.borrador, state.ultimaPregunta);
       await this.persistPhase0(state.projectId, state.borrador, state.gaps, state.status);
       return { type: "draft_updated", borrador: state.borrador, gaps: state.gaps };
     }
