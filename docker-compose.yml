@@ -133,11 +133,21 @@ services:
     expose:
       - "3000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://theforge-api:3000/health || exit 1"]
+      # CMD corre dentro del task: 127.0.0.1 = loopback del contenedor (Nest en :3000).
+      # No usar DNS theforge-api aquí — en Swarm/Dokploy el hairpin al propio servicio suele fallar.
+      # Dokploy Advanced (monitor externo): no pongas 127.0.0.1; usa localhost:3000/health dentro del task
+      # o el healthcheck de este compose. Traefik: GET /health (sin prefijo /api).
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3000/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
       interval: 30s
-      timeout: 5s
-      # wait-for-postgres + migrate deploy + Nest cold start
-      start_period: 90s
+      timeout: 10s
+      # wait-for-postgres + migrate deploy + db push + Nest cold start
+      start_period: 120s
       retries: 3
 
   # Web estáticos (nginx :80). Traefik/Dokploy: / → theforge-web:80
