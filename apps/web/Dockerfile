@@ -34,7 +34,6 @@ COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
-# HEALTHCHECK desactivado: Dokploy no lo soporta correctamente
-# HEALTHCHECK NONE
+# Healthcheck en docker-compose.yml (wget → http://theforge-web:80/). No usar 127.0.0.1 en Dokploy UI.
 
 CMD ["nginx", "-g", "daemon off;"]

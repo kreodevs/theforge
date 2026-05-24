@@ -35,6 +35,6 @@ ENV PORT=3000
 
 COPY --from=builder /app .
 
-EXPOSE 3100
+EXPOSE 3000
 
 CMD ["node", "packages/mcp-server/dist/index.js", "--http"]
