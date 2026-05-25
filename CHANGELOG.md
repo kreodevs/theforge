@@ -23,6 +23,19 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - **AiAnalysisController / Module:** Import, provider, export e inyección de `Phase0InterviewService`.
 - **BUILD_CACHE_BUST**: 80 → 81
 
+## [0.10.2] — 2026-05-25
+
+### Fixed
+
+- **Orquestador IA — cambios de usuario con prioridad sobre inferencia del LLM:** El prompt del sistema ahora incluye instrucciones explícitas para que el LLM **no evalúe cambios como "ya cubiertos" o "impacto mínimo"**. Cuando el usuario expresa un requisito explícito (ej. "necesitamos X", "queremos Y", "falta Z", "usa W"), el LLM debe tratarlo como orden y devolver el `---FIN_MDD---` con el documento actualizado. Se corrigieron 3 puntos en `ai.service.ts`: la instrucción de desambiguación (línea 150) y las 2 reglas MDD (líneas 177 y 342).
+  - `apps/api/src/modules/ai/ai.service.ts` — 3 cambios en prompts del sistema
+
+### Changed
+
+- **BUILD_CACHE_BUST**: 87 → 88 (Dockerfiles), 84 → 88 (docker-compose.yml)
+
+---
+
 ## [0.10.1] — 2026-05-23
 
 ### Fixed
