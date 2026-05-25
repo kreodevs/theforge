@@ -2,6 +2,8 @@
  * Reparaciones heurísticas para markdown pegado desde Word/Excel/chat (sin LLM).
  */
 
+import { repairFlowSectionsToMermaid } from "./repair-flow-sections.js";
+
 const SQL_GLUE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/DEFAULT_NOW\(\)/gi, "DEFAULT NOW()"],
   [/DEFAULT_gen_random_uuid\(\)/gi, "DEFAULT gen_random_uuid()"],
@@ -128,6 +130,96 @@ export function repairIndentedLists(text: string): string {
   );
 }
 
+const INDENTED_CODE_HINT =
+  /^(CREATE|ALTER|SELECT|INSERT|DELETE|DROP|DECLARE|BEGIN|END\b|```|\{|\}|--\s*Tabla|--\s*Índice)/i;
+
+/** Bloques con 4+ espacios (Word/chat) → bullets; evita que GFM los muestre como ``` code ```. */
+export function repairIndentedProseBlocks(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let inFence = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const t = line.trim();
+    if (/^```/.test(t)) {
+      inFence = t !== "```";
+      out.push(line);
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+    if (/^(\s{4,}|\t+)\S/.test(line)) {
+      const block: string[] = [];
+      while (i < lines.length && /^(\s{4,}|\t+)/.test(lines[i]!) && !/^```/.test(lines[i]!.trim())) {
+        block.push(lines[i]!.trim());
+        i++;
+      }
+      i--;
+      if (block.some((l) => INDENTED_CODE_HINT.test(l))) {
+        for (const l of block) out.push(`    ${l}`);
+      } else {
+        for (const l of block) {
+          const item = l.replace(/^ {4,}/, "");
+          out.push(item.startsWith("- ") ? item : `- ${item}`);
+        }
+        out.push("");
+      }
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+/** `**Flujo de X** **Odoo genera**` → heading + bullet */
+export function repairGluedBoldFlowTitles(text: string): string {
+  return text
+    .replace(
+      /^\*\*Flujo de procesamiento\*\*\s*\*\*Odoo genera\*\*\s*(.+)$/gim,
+      "### Flujo de procesamiento\n\n- Odoo genera $1",
+    )
+    .replace(/^\*\*Seguridad\*\*\s*\*\*API Key\*\*\s*(.+)$/gim, "### Seguridad\n\n- API Key $1")
+    .replace(/^\*\*Beneficios de las\*\*\s*tablas espejo\s*$/gim, "### Beneficios de las tablas espejo");
+}
+
+/** Cierra JSON / elimina fences vacíos antes de Response o **Beneficios** */
+export function repairJsonFenceIntegrity(text: string): string {
+  let out = text.replace(
+    /\*\*Response (\d+)[^*]*\*\*\s*:?\s*\n+```\s*\n+```json/gi,
+    "**Response $1:**\n\n```json",
+  );
+  out = out.replace(/\n```\s*\n```json/g, "\n\n```json");
+  out = out.replace(/```json\n([\s\S]*?)(\n\*\*[^\n]+\*\*)/g, (full, body: string, after: string) => {
+    const trimmed = body.trimEnd();
+    if (trimmed.endsWith("```")) return full;
+    let fixed = trimmed;
+    if (!fixed.endsWith("}")) fixed += "\n}";
+    return `\`\`\`json\n${fixed}\n\`\`\`\n${after}`;
+  });
+  out = out.replace(/(\n```json\n[\s\S]*?\n)(\n\*\*Beneficios)/g, (m, block: string, rest: string) => {
+    if (block.trimEnd().endsWith("```")) return m;
+    const inner = block.replace(/^```json\n/, "").trimEnd();
+    const closed = inner.endsWith("}") ? inner : `${inner}\n}`;
+    return `\n\`\`\`json\n${closed}\n\`\`\`\n${rest}`;
+  });
+  out = out.replace(/(\n```json\n[\s\S]*?)(\n```\s*\n```json)/g, "$1\n```\n");
+  return out;
+}
+
+/** `**Donde:** - item` en una línea → párrafo + bullets */
+export function repairDondeGluedBullets(text: string): string {
+  return text.replace(
+    /^\*\*Donde:\*\*\s*-\s*(.+)$/gim,
+    "**Donde:**\n\n- $1",
+  ).replace(
+    /(\*\*Donde:\*\*[^\n]*)\n-\s*De \*\*/g,
+    "$1\n\n- De **",
+  );
+}
+
 export function repairGluedSqlTokens(text: string): string {
   let out = text;
   for (const [re, rep] of SQL_GLUE_REPLACEMENTS) {
@@ -189,6 +281,14 @@ export function repairPromoteBareSectionHeadings(text: string): string {
     }
     if (/^Riesgos y mitigaciones/i.test(t)) {
       out.push(`## ${t}`);
+      continue;
+    }
+    if (/^Flujo de sincronización/i.test(t)) {
+      out.push(`### ${t}`);
+      continue;
+    }
+    if (/^Endpoint de recepción/i.test(t)) {
+      out.push(`### ${t}`);
       continue;
     }
     if (isBareTitle(t, prev, next)) {
@@ -280,17 +380,23 @@ export function repairTableBoundaries(text: string): string {
 
 /** Diagramas ASCII de relaciones en una sola línea → bloque text. */
 export function repairAsciiDiagramBlocks(text: string): string {
-  return text.replace(/^((?:pais|ubicacion|País).{10,200}(?:──|└|┬|┘).*)$/gim, (line) => {
+  let out = text.replace(
+    /^\*\*(OBP4MO|OBP) \([^)]+\):\*\*\s*(.+)$/gim,
+    (_m, label: string, diagram: string) =>
+      `**${label}:**\n\n\`\`\`text\n${diagram.trim()}\n\`\`\``,
+  );
+  out = out.replace(/^((?:pais|ubicacion|País).{10,200}(?:──|└|┬|┘).*)$/gim, (line) => {
     const t = line.trim();
     if (t.startsWith("```")) return line;
     return `\`\`\`text\n${t}\n\`\`\``;
   });
+  return out;
 }
 
 /** Quita ### erróneos en subtítulos de contrato API / Odoo. */
 export function repairDemoteFalseApiHeadings(text: string): string {
   let out = text.replace(
-    /^### (Headers?:|Request body \(ejemplo|Response \d+|Recibe eventos|Content-Type:|API Key|Odoo genera|Beneficios de las|Flujo de procesamiento|Seguridad$|Donde:|OBP4MO \(normalizado\):|OBP \(desnormalizado\):)\s*/gim,
+    /^### (Headers?:|Request body \(ejemplo|Response \d+|Recibe eventos|Content-Type:|API Key|Odoo genera|Beneficios de las|Donde:|OBP4MO \(normalizado\):|OBP \(desnormalizado\):)\s*/gim,
     "**$1** ",
   );
   out = out.replace(/^### (Este microservicio[^\n]+)/gim, "$1");
@@ -334,18 +440,25 @@ export function repairPastedMarkdown(text: string): string {
   if (!text?.trim()) return text ?? "";
   let out = text.replace(/\r\n/g, "\n");
   out = repairMetadataCoverTable(out);
+  out = repairGluedBoldFlowTitles(out);
+  out = repairJsonFenceIntegrity(out);
+  out = repairIndentedProseBlocks(out);
   out = repairStrayCodeFences(out);
   out = repairPromoteBareSectionHeadings(out);
   out = repairDemoteFalseApiHeadings(out);
   out = repairOrphanSqlBlocks(out);
   out = repairLooseJsonBlocks(out);
+  out = repairJsonFenceIntegrity(out);
   out = repairGluedSqlTokens(out);
   out = repairUnclosedCodeFences(out);
   out = repairStrayCodeFences(out);
   out = repairAsciiDiagramBlocks(out);
+  out = repairDondeGluedBullets(out);
   out = repairTableBoundaries(out);
   out = repairTabSeparatedTables(out);
   out = repairIndentedLists(out);
+  out = repairIndentedProseBlocks(out);
+  out = repairFlowSectionsToMermaid(out);
   out = repairTableBoundaries(out);
   out = out.replace(/\n(🔴|🟡|🟢)/g, "\n\n$1");
   out = out.replace(/\n-{3,}\n/g, "\n\n---\n\n");
