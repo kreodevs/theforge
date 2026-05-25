@@ -216,7 +216,7 @@ export class SessionsService {
         "La IA no generó texto (respuesta vacía o bloqueada). Intenta de nuevo o reformula el mensaje.",
       );
     }
-    const mddSplit = this.parser.splitMddAndChat(safeResponse);
+    let mddSplit = this.parser.splitMddAndChat(safeResponse);
     const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
     let dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
     let phase0Split = this.parser.splitPhase0AndChat(safeResponse);
@@ -231,7 +231,7 @@ export class SessionsService {
     let useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
     let storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
 
-    const hasMdd = mddSplit !== null;
+    let hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
     let hasDbga = dbgaSplit !== null;
     let hasSpec = specSplit !== null;
@@ -336,12 +336,14 @@ export class SessionsService {
           case "benchmark": dbgaSplit = fbSplit; hasDbga = true; dbgaDocPart = fbSplit.docPart; break;
           case "brd": brdSplit = fbSplit; hasBrd = true; break;
           case "phase0": phase0Split = fbSplit; hasPhase0 = true; phase0DocPart = fbSplit.docPart; break;
+          case "mdd": mddSplit = { mddPart: fbSplit.docPart, chatPart: fbSplit.chatPart }; hasMdd = true; break;
         }
         // Only apply fallback if no higher-priority document was found
-        if (!hasMdd && !hasUx) {
+        if (!hasUx) {
           // Find the matching split in the rawChat chain (lines 252-265 style)
           let fbFound = false;
-          if (hasDbga) { rawChat = dbgaSplit!.chatPart; fbFound = true; }
+          if (hasMdd) { rawChat = mddSplit!.chatPart; fbFound = true; }
+          else if (hasDbga) { rawChat = dbgaSplit!.chatPart; fbFound = true; }
           else if (hasSpec) { rawChat = specSplit!.chatPart; fbFound = true; }
           else if (hasBrd) { rawChat = brdSplit!.chatPart; fbFound = true; }
           else if (hasBlue) { rawChat = blueSplit!.chatPart; fbFound = true; }
@@ -553,7 +555,7 @@ export class SessionsService {
       );
     }
 
-    const mddSplit = this.parser.splitMddAndChat(safeResponse);
+    let mddSplit = this.parser.splitMddAndChat(safeResponse);
     const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
     let dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
     let phase0Split = this.parser.splitPhase0AndChat(safeResponse);
@@ -568,7 +570,7 @@ export class SessionsService {
     let useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
     let storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
 
-    const hasMdd = mddSplit !== null;
+    let hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
     let hasDbga = dbgaSplit !== null;
     let hasSpec = specSplit !== null;

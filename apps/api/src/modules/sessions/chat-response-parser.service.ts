@@ -246,6 +246,7 @@ export class ChatResponseParserService {
       benchmark: /^#\s*(?:Benchmark|Domain Benchmark|Análisis)\b/im,
       brd: /^#\s*(?:BRD|Business Requirements Document)\b/im,
       phase0: /^#\s*(?:Fase 0|Phase 0|Especificador)/im,
+      mdd: /^#\s*(?:Master Design Document|MDD)\b/im,
     };
 
     const pattern = HEADING_PATTERNS[activeTab];
