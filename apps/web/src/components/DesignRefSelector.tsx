@@ -271,6 +271,7 @@ export function DesignRefSelector({ currentRef, onChange, onAutoMatch }: DesignR
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
