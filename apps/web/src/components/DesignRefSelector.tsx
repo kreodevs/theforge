@@ -17,6 +17,7 @@ export interface DesignRefItem {
   category: string;
   style: string;
   tags: string[];
+  colors?: Record<string, string>;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
