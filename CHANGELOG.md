@@ -34,6 +34,14 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - Prompt `ux-ui-guide-prompt.md` actualizado con instrucciones para design references.
 - **DesignRefSelector**: Texto descriptivo de la funcionalidad visible en el componente.
 
+### Fixed
+
+- **DesignRefSelector**: Cierre de div faltante que rompía el build.
+- **DesignRefItem interface**: Agregado campo `colors` faltante (TS2339).
+- **ux-guide-llm-context.ts**: Import path corregido de `./data/` a `../design-ref/data/` (TS2307).
+- **design-ref.service.ts**: Import no usado `DESIGN_REFERENCES` eliminado (TS6133).
+- **BUILD_CACHE_BUST**: 90 → 91
+
 ## [0.10.0] — 2026-05-23
 
 ### Added
