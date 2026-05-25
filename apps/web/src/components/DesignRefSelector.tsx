@@ -113,7 +113,15 @@ export function DesignRefSelector({ currentRef, onChange, onAutoMatch }: DesignR
   }, {});
 
   return (
-    <div ref={ref} className="relative">
+    <div className="space-y-2">
+      {/* Descripción de la funcionalidad */}
+      <p className="text-xs text-zinc-500 leading-relaxed">
+        Selecciona un <span className="text-zinc-400">design system de referencia</span> para inspirar la Guía UX/UI.
+        El LLM adaptará sus colores, tipografía y estilo al dominio de tu proyecto — no los copiará textualmente.
+        Puedes elegir entre 54 sistemas reales (Stripe, Linear, Vercel…), activar <span className="text-indigo-400">auto-match</span>
+        para que el LLM infiera el diseño del MDD, o ingresar una URL personalizada.
+      </p>
+      <div ref={ref} className="relative">
       {/* Trigger button */}
       <button
         type="button"
