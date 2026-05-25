@@ -32,6 +32,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - Integración en `ai.service.ts` → `appendUxGuideStitchPolicy()` para inyectar tokens.
 - Integración en `ux-guide-llm-context.ts` para pasar el design ref a opciones del LLM.
 - Prompt `ux-ui-guide-prompt.md` actualizado con instrucciones para design references.
+- **DesignRefSelector**: Texto descriptivo de la funcionalidad visible en el componente.
 
 ## [0.10.0] — 2026-05-23
 
