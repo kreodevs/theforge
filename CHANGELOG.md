@@ -9,6 +9,30 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - **Healthchecks en docker-compose:** Reemplazados `127.0.0.1:3000` y DNS service-name (`theforge-mcp:3000`) por `localhost:3000` en los healthchecks de `theforge-api` y `theforge-mcp`. `127.0.0.1` daba falso negativo en Dokploy (monitor externo apunta al host físico, no al contenedor). DNS por service-name fallaba en Swarm por hairpin VIP. `localhost` es portable en Compose y Swarm.
 - **BUILD_CACHE_BUST**: 88 → 89
 
+## [0.11.0] — 2026-05-25
+
+### Added
+
+- **Design References**: Catálogo de 54 design systems reales (Stripe, Linear, Vercel, etc.) para inspirar la Guía UX/UI.
+  - `GET /api/design-refs` — lista todas las referencias
+  - `GET /api/design-refs/:slug` — detalle completo con tokens de diseño
+  - `POST /api/design-refs/auto-match` — matching automático por dominio del MDD
+  - `POST /api/design-refs/scan-url` — escáner de URL para extraer tokens (stub)
+
+- **uxGuideDesignRef**: Nuevo campo en el modelo Project para seleccionar design reference.
+  Soporta slugs del catálogo, "auto" para matching automático, o URL personalizada.
+
+- **Inyección en prompt UX/UI**: Cuando hay un design reference seleccionado, el LLM recibe los tokens de ese diseño como referencia visual para adaptar al proyecto. Con instrucciones explícitas de no copiar textualmente.
+
+- **DesignRefSelector**: Componente frontend con selector visual en dropdown categorizado + URL personalizada + auto-match.
+
+### Architecture
+
+- Nuevo módulo `design-ref` con service, controller y data catalog.
+- Integración en `ai.service.ts` → `appendUxGuideStitchPolicy()` para inyectar tokens.
+- Integración en `ux-guide-llm-context.ts` para pasar el design ref a opciones del LLM.
+- Prompt `ux-ui-guide-prompt.md` actualizado con instrucciones para design references.
+
 ## [0.10.0] — 2026-05-23
 
 ### Added
