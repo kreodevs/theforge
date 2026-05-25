@@ -212,6 +212,8 @@ model Project {
   projectType      ProjectType  @default(NEW)
   theforgeProjectId   String?
   hasUxTeam        Boolean      @default(false)
+  /// Referencia de diseño para la Guía UX/UI: slug del catálogo (ej. "stripe", "linear-app") o "auto" para matching automático
+  uxGuideDesignRef String?
   stages           Stage[]
   sessions         Session[]
   figmaMapping     Json?

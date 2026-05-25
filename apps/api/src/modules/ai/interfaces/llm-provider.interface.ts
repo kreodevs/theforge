@@ -59,6 +59,10 @@ export interface GenerateResponseOptions {
       string
     >
   >;
+  /** Guía UX/UI: design reference seleccionado (slug del catálogo, "auto" para matching, o JSON para URL scan). */
+  uxGuideDesignRef?: string;
+  /** Guía UX/UI: bloque de tokens del design reference (generado por DesignRefService). */
+  uxGuideDesignRefPromptBlock?: string;
   /** Imágenes del turno actual del usuario (junto con `prompt`). */
   userMessageImages?: ChatImagePart[];
   /**
