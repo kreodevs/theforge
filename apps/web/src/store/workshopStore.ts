@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { ChatImagePart, CodebaseDocResponseMode } from "@theforge/shared-types";
-import { formatDocumentMarkdown } from "@theforge/shared-types";
 import { isFormatDocumentChatCommand } from "../utils/documentFormatCommand";
+import { formatDocumentMarkdown } from "@theforge/shared-types/format-document-markdown";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue } from "../utils/apiClient";
 import {
   parseApiErrorPayloadFromResponse,

@@ -7,7 +7,7 @@ export const FORMAT_DOCUMENT_COMMAND = {
   description: "Formatear documento (fences, tablas, Mermaid)",
 } as const;
 
-const SLUG_SET = new Set([
+const SLUG_SET = new Set<string>([
   FORMAT_DOCUMENT_COMMAND.slug,
   ...FORMAT_DOCUMENT_COMMAND.aliases,
 ]);
