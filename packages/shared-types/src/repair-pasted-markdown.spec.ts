@@ -4,9 +4,15 @@ import {
   repairGluedSqlTokens,
   repairMetadataCoverTable,
   repairOrphanSqlBlocks,
+  repairPastedMarkdown,
+  repairTableBoundaries,
   repairTabSeparatedTables,
   repairUnclosedCodeFences,
 } from "./repair-pasted-markdown.js";
+import { formatDocumentMarkdown } from "./format-document-markdown.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 describe("repairGluedSqlTokens", () => {
   it("separa tipos SQL pegados con guion bajo", () => {
@@ -56,5 +62,34 @@ describe("repairUnclosedCodeFences", () => {
     const raw = "```sql\nCREATE TABLE foo (\n  id UUID\n);\n\n## Siguiente sección";
     const out = repairUnclosedCodeFences(raw);
     assert.match(out, /```\n## Siguiente sección/);
+  });
+});
+
+describe("repairTableBoundaries (tablas espejo)", () => {
+  it("separa headings de tablas en fixture OBP", () => {
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const raw = readFileSync(join(dir, "repair-mirror-tables.fixture.txt"), "utf8");
+    const out = repairTableBoundaries(raw);
+    assert.match(out, /#### Para OBP4MO[^\n]+\n\n\| Tabla espejo/);
+    assert.match(out, /\| `paises`[^\n]+\n\n#### Para OBP/);
+  });
+
+  it("formatDocumentMarkdown mantiene tablas espejo y estrategia separadas", () => {
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const raw = readFileSync(join(dir, "repair-mirror-tables.fixture.txt"), "utf8");
+    const out = formatDocumentMarkdown(raw);
+    assert.match(out, /^\| Sistema \|/m);
+    assert.match(out, /^\| Tabla espejo \|/m);
+    assert.match(out, /\| `paises`[^\n]+\n\n#### Para OBP/);
+  });
+});
+
+describe("repairPastedMarkdown SQL OBP", () => {
+  it("abre segundo bloque sql tras heading Esquema SQL OBP", () => {
+    const raw =
+      "```sql\nCREATE TABLE paises (id UUID);\n```\n### Esquema SQL para tablas espejo (OBP)\n\n-- Tabla espejo\nCREATE TABLE ubicaciones_obp (id UUID);\n";
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /### Esquema SQL[^\n]+\n\n```sql\n-- Tabla espejo/);
+    assert.match(out, /CREATE TABLE ubicaciones_obp[\s\S]*```\s*$/);
   });
 });

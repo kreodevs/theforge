@@ -7,7 +7,11 @@ import { repairMarkdownFences } from "./markdown-repair.js";
 import { normalizeAllTables } from "./markdown-table.js";
 import { normalizeMermaid } from "./mermaid.js";
 import { splitEmbeddedMddFromDbga } from "./dbga-document-structure.js";
-import { repairPastedMarkdown } from "./repair-pasted-markdown.js";
+import {
+  repairPastedMarkdown,
+  repairStrayCodeFences,
+  repairTableBoundaries,
+} from "./repair-pasted-markdown.js";
 
 export function formatDocumentMarkdown(text: string): string {
   if (!text) return "";
@@ -31,6 +35,8 @@ export function formatDocumentMarkdown(text: string): string {
   cleaned = cleaned.replace(/\s*```\s*$/i, "");
   cleaned = repairMarkdownFences(cleaned.trim());
   cleaned = normalizeAllTables(cleaned);
+  cleaned = repairTableBoundaries(cleaned);
+  cleaned = repairStrayCodeFences(cleaned);
   cleaned = normalizeMermaid(cleaned);
   return cleaned;
 }

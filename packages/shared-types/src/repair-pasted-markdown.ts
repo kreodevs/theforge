@@ -46,7 +46,7 @@ export function repairUnclosedCodeFences(text: string): string {
       out.push(line);
       continue;
     }
-    if (inFence && /^#{1,3}\s+\S/.test(trimmed)) {
+    if (inFence && /^#{1,6}\s+\S/.test(trimmed)) {
       out.push("```");
       inFence = false;
       fenceLang = "";
@@ -148,12 +148,16 @@ export function repairMetadataCoverTable(text: string): string {
   );
 }
 
+const DO_NOT_PROMOTE_TITLE =
+  /^(Headers?:|Request body|Response \d+|Recibe eventos|Content-Type|X-Odoo|Beneficios de las|Flujo de procesamiento|Seguridad|Donde:|OBP4MO \(normalizado\):|OBP \(desnormalizado\):|Este microservicio tiene|Odoo genera|Endpoint receptor de webhooks$)/i;
+
 /** Encabezados sueltos (sin #) que deberían ser sección. */
 export function repairPromoteBareSectionHeadings(text: string): string {
   const lines = text.split("\n");
   const out: string[] = [];
   const isBareTitle = (t: string, prev: string, next: string): boolean => {
     if (t.length < 4 || t.length > 100) return false;
+    if (DO_NOT_PROMOTE_TITLE.test(t)) return false;
     if (/^#{1,6}\s/.test(t)) return false;
     if (t.startsWith("|") || t.startsWith("```")) return false;
     if (/^[-*]\s/.test(t)) return false;
@@ -162,6 +166,7 @@ export function repairPromoteBareSectionHeadings(text: string): string {
     if (/^(GET|POST|PUT|PATCH|DELETE)\s+\//.test(t)) return false;
     if (/^Módulo \d+ —/.test(t)) return false;
     if (/^contexto:/i.test(t)) return false;
+    if (/:$/.test(t) && t.length < 60) return false;
     if (!/^[A-ZÁÉÍÓÚÑ0-9]/.test(t)) return false;
     if (/^[{\[]/.test(next)) return true;
     if (prev === "" && (next === "" || next.startsWith("-") || next.startsWith("|"))) return true;
@@ -228,11 +233,15 @@ export function repairOrphanSqlBlocks(text: string): string {
       out.push("```sql");
       inSqlFence = true;
     }
+    if (inSqlFence && /^#{1,6}\s/.test(t)) {
+      out.push("```");
+      inSqlFence = false;
+    }
     if (
       inSqlFence &&
       t === "" &&
       i + 1 < lines.length &&
-      /^#{1,3}\s/.test((lines[i + 1] ?? "").trim())
+      /^#{1,6}\s/.test((lines[i + 1] ?? "").trim())
     ) {
       out.push("```");
       inSqlFence = false;
@@ -243,6 +252,51 @@ export function repairOrphanSqlBlocks(text: string): string {
   return out.join("\n");
 }
 
+/** Líneas ``` huérfanas o duplicadas tras fences bien formados. */
+export function repairStrayCodeFences(text: string): string {
+  let out = text.replace(/\n```[a-z]*\s*\n```\s*\n/gi, "\n\n");
+  out = out.replace(/(\n```\s*\n){2,}/g, "\n\n");
+  const lines = out.split("\n");
+  const cleaned: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i]!.trim();
+    if (t === "```") {
+      const prev = cleaned[cleaned.length - 1]?.trim() ?? "";
+      const next = lines[i + 1]?.trim() ?? "";
+      if (prev === "```" || next === "```") continue;
+    }
+    cleaned.push(lines[i]!);
+  }
+  return cleaned.join("\n");
+}
+
+/** Línea en blanco entre headings / párrafos y tablas GFM. */
+export function repairTableBoundaries(text: string): string {
+  let out = text.replace(/^(#{1,6}\s+[^\n]+)\n(\|)/gm, "$1\n\n$2");
+  out = out.replace(/(\n\|[^\n]+\|)\n(#{1,6}\s+)/g, "$1\n\n$2");
+  out = out.replace(/^(contexto:[^\n]+)\n(\|)/gim, "$1\n\n$2");
+  return out;
+}
+
+/** Diagramas ASCII de relaciones en una sola línea → bloque text. */
+export function repairAsciiDiagramBlocks(text: string): string {
+  return text.replace(/^((?:pais|ubicacion|País).{10,200}(?:──|└|┬|┘).*)$/gim, (line) => {
+    const t = line.trim();
+    if (t.startsWith("```")) return line;
+    return `\`\`\`text\n${t}\n\`\`\``;
+  });
+}
+
+/** Quita ### erróneos en subtítulos de contrato API / Odoo. */
+export function repairDemoteFalseApiHeadings(text: string): string {
+  let out = text.replace(
+    /^### (Headers?:|Request body \(ejemplo|Response \d+|Recibe eventos|Content-Type:|API Key|Odoo genera|Beneficios de las|Flujo de procesamiento|Seguridad$|Donde:|OBP4MO \(normalizado\):|OBP \(desnormalizado\):)\s*/gim,
+    "**$1** ",
+  );
+  out = out.replace(/^### (Este microservicio[^\n]+)/gim, "$1");
+  return out;
+}
+
 /** Bloques JSON sueltos (webhook / Odoo) → fence json. */
 export function repairLooseJsonBlocks(text: string): string {
   const lines = text.split("\n");
@@ -250,7 +304,8 @@ export function repairLooseJsonBlocks(text: string): string {
   let i = 0;
   while (i < lines.length) {
     const t = (lines[i] ?? "").trim();
-    if (t === "{" && !lines[i - 1]?.trim().endsWith("```")) {
+    const prev = (lines[i - 1] ?? "").trim();
+    if (t === "{" && !prev.match(/^```/)) {
       const block: string[] = [lines[i]!];
       let j = i + 1;
       let depth = (t.match(/{/g) ?? []).length - (t.match(/}/g) ?? []).length;
@@ -279,13 +334,19 @@ export function repairPastedMarkdown(text: string): string {
   if (!text?.trim()) return text ?? "";
   let out = text.replace(/\r\n/g, "\n");
   out = repairMetadataCoverTable(out);
+  out = repairStrayCodeFences(out);
   out = repairPromoteBareSectionHeadings(out);
+  out = repairDemoteFalseApiHeadings(out);
   out = repairOrphanSqlBlocks(out);
   out = repairLooseJsonBlocks(out);
   out = repairGluedSqlTokens(out);
   out = repairUnclosedCodeFences(out);
+  out = repairStrayCodeFences(out);
+  out = repairAsciiDiagramBlocks(out);
+  out = repairTableBoundaries(out);
   out = repairTabSeparatedTables(out);
   out = repairIndentedLists(out);
+  out = repairTableBoundaries(out);
   out = out.replace(/\n(🔴|🟡|🟢)/g, "\n\n$1");
   out = out.replace(/\n-{3,}\n/g, "\n\n---\n\n");
   return out;
