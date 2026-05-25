@@ -4,13 +4,7 @@
  * Gestiona el catálogo de design references, scanning de URLs y matching automático.
  */
 import { Injectable } from "@nestjs/common";
-import {
-  DESIGN_REFERENCES,
-  getDesignBySlug,
-  getDesignReferenceList,
-  matchDesignByDomain,
-  formatDesignReferencePrompt,
-} from "./data/design-references.js";
+import { getDesignBySlug, getDesignReferenceList, matchDesignByDomain, formatDesignReferencePrompt } from "./data/design-references.js";
 
 @Injectable()
 export class DesignRefService {

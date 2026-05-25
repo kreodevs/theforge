@@ -1,5 +1,5 @@
 import type { GenerateResponseOptions } from "./interfaces/llm-provider.interface.js";
-import { getDesignBySlug, formatDesignReferencePrompt } from "./data/design-references.js";
+import { getDesignBySlug, formatDesignReferencePrompt } from "../design-ref/data/design-references.js";
 
 /** Campos de proyecto necesarios para enriquecer la Guía UX/UI y el Prompt Stitch (solo NEW). */
 export type UxGuideProjectFields = {
