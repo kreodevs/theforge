@@ -19,6 +19,12 @@ import {
   formatVisionContextBlock,
   mergeUserTextWithVisionBlock,
 } from "../ai/utils/vision-context.util.js";
+import { llmMaxTokens } from "../ai/config/llm-config.js";
+import {
+  dbgaReflectsUserEditIntent,
+  isDbgaContentNearlyIdentical,
+  looksLikeDbgaEditRequest,
+} from "./dbga-edit.util.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -1051,22 +1057,59 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
     options: { activeTab?: string; currentDbgaContent?: string } | undefined,
     dbgaDocPart: string | undefined,
   ): Promise<string | undefined> {
+    const tab = (options?.activeTab ?? "mdd").trim();
+    const current = options?.currentDbgaContent?.trim() ?? "";
+    const wantsEdit = looksLikeDbgaEditRequest(userMessage);
+
     let merged = dbgaDocPart
       ? this.parser.mergeDbgaOrUseFull(
           options?.currentDbgaContent,
           this.parser.cleanDocumentContent(dbgaDocPart),
         )
       : undefined;
-    const tab = (options?.activeTab ?? "mdd").trim();
-    const current = options?.currentDbgaContent?.trim() ?? "";
-    if ((!merged || merged.length === 0) && tab === "benchmark" && userMessage.trim() && current) {
+
+    const needsRefine =
+      tab === "benchmark" &&
+      wantsEdit &&
+      current.length > 0 &&
+      (!merged ||
+        isDbgaContentNearlyIdentical(merged, current) ||
+        !dbgaReflectsUserEditIntent(merged, userMessage));
+
+    if (needsRefine) {
       const refined = await this.refineDbgaFromUserRequest(userMessage, current);
       if (refined) {
         merged = refined;
         console.log("[Sessions] refineDbgaFromUserRequest aplicado, length:", refined.length);
+      } else if (merged && isDbgaContentNearlyIdentical(merged, current)) {
+        console.warn(
+          "[Sessions] DBGA sin cambios tras refinado; el panel puede seguir igual que antes del mensaje.",
+        );
+        merged = undefined;
       }
     }
+
     return merged && merged.length > 0 ? merged : undefined;
+  }
+
+  /**
+   * Tras el chat/stream: devuelve `candidate` si ya refleja la petición; si no, segunda pasada de refinado.
+   */
+  async maybeRefineBenchmarkDbga(
+    userMessage: string,
+    currentDbga: string,
+    candidate: string | null | undefined,
+  ): Promise<string | null> {
+    const current = currentDbga.trim();
+    const c = candidate?.trim();
+    if (
+      c &&
+      !isDbgaContentNearlyIdentical(c, current) &&
+      dbgaReflectsUserEditIntent(c, userMessage)
+    ) {
+      return c;
+    }
+    return this.refineDbgaFromUserRequest(userMessage, current);
   }
 
   async refineDbgaFromUserRequest(
@@ -1076,12 +1119,44 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
     const msg = userMessage.trim();
     const current = currentDbga.trim();
     if (!msg || !current) return null;
+
+    const refinePrompt = `Aplica OBLIGATORIAMENTE al documento completo los cambios que pide el usuario. No respondas solo en chat: devuelve el DBGA/Fase 0 COMPLETO en markdown y termina con la línea exacta ---FIN_DBGA---.
+
+Petición del usuario:
+---
+${msg}
+---`;
+
+    const llmOpts = {
+      activeTab: "benchmark" as const,
+      currentDbgaContent: current,
+      maxTokensOverride: llmMaxTokens(),
+    };
+
     try {
-      const response = await this.ai.generateResponse(msg, [], {
-        activeTab: "benchmark",
-        currentDbgaContent: current,
-      });
-      return this.extractMergedDbgaFromModelResponse(response, current);
+      let response = await this.ai.generateResponse(refinePrompt, [], llmOpts);
+      let merged = this.extractMergedDbgaFromModelResponse(response, current);
+
+      const unchanged =
+        merged != null && isDbgaContentNearlyIdentical(merged, current);
+      const missingIntent =
+        merged != null && !dbgaReflectsUserEditIntent(merged, userMessage);
+
+      if (merged && (unchanged || missingIntent)) {
+        console.warn(
+          `[Sessions] refineDbga retry (unchanged=${unchanged}, missingIntent=${missingIntent})`,
+        );
+        response = await this.ai.generateResponse(
+          `${refinePrompt}\n\nREINTENTO: la respuesta anterior NO aplicó los cambios. El documento debe reflejar explícitamente lo pedido (p. ej. tenant_id, multi-tenancy, catálogo por aplicación OBP/OBP4MO).`,
+          [],
+          llmOpts,
+        );
+        merged = this.extractMergedDbgaFromModelResponse(response, current);
+      }
+
+      if (!merged || isDbgaContentNearlyIdentical(merged, current)) return null;
+      if (!dbgaReflectsUserEditIntent(merged, userMessage)) return null;
+      return merged;
     } catch (err) {
       console.warn("[Sessions] refineDbgaFromUserRequest failed:", err);
       return null;

@@ -239,39 +239,6 @@ export class AiOrchestratorService {
     }
     if (!updatedSession) throw new NotFoundException("Session not found after chat");
 
-    // Fallback: el modelo respondió solo en chat sin ---FIN_DBGA---
-    if (
-      dbgaFromResponse == null &&
-      activeTab?.trim() === "benchmark" &&
-      message.trim() &&
-      (currentDbga?.trim() ?? "").length > 0
-    ) {
-      const log = (updatedSession.chatLog as ChatMessage[]) ?? [];
-      const lastAsst = [...log]
-        .reverse()
-        .find((m) => m.role === "assistant" && (m.tab ?? "mdd") === "benchmark");
-      if (lastAsst?.content?.trim()) {
-        const salvaged = this.sessions.salvageDbgaFromAssistantText(
-          lastAsst.content,
-          currentDbga,
-        );
-        if (salvaged) {
-          dbgaFromResponse = salvaged;
-          console.log("[Orchestrator] salvage DBGA desde chat, length:", salvaged.length);
-        }
-      }
-      if (dbgaFromResponse == null) {
-        const refined = await this.sessions.refineDbgaFromUserRequest(
-          message,
-          currentDbga!.trim(),
-        );
-        if (refined) {
-          dbgaFromResponse = refined;
-          console.log("[Orchestrator] refineDbgaFromUserRequest, length:", refined.length);
-        }
-      }
-    }
-
     let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
     if (mddFromResponse != null && mddFromResponse.length > 0) {
       updatedProject = await this.projects.update(projectId, { mddContent: mddFromResponse, stageId: route.stageId });
@@ -489,37 +456,18 @@ export class AiOrchestratorService {
         yield { event: "chunk", data: { content: msg.content } };
       } else {
         if (
-          (msg as any).dbgaContent == null &&
           activeTab?.trim() === "benchmark" &&
           message.trim() &&
           (currentDbga?.trim() ?? "").length > 0
         ) {
-          const log = ((msg as any).session?.chatLog ?? []) as ChatMessage[];
-          const lastAsst = [...log]
-            .reverse()
-            .find((m) => m.role === "assistant" && (m.tab ?? "mdd") === "benchmark");
-          if (lastAsst?.content?.trim()) {
-            const salvaged = this.sessions.salvageDbgaFromAssistantText(
-              lastAsst.content,
-              currentDbga,
-            );
-            if (salvaged) {
-              (msg as any).dbgaContent = salvaged;
-              console.log("[Orchestrator] salvage DBGA en stream, length:", salvaged.length);
-            }
-          }
-          if ((msg as any).dbgaContent == null) {
-            const refined = await this.sessions.refineDbgaFromUserRequest(
-              message,
-              currentDbga!.trim(),
-            );
-            if (refined) {
-              (msg as any).dbgaContent = refined;
-              console.log(
-                "[Orchestrator] refineDbgaFromUserRequest en stream, length:",
-                refined.length,
-              );
-            }
+          const refined = await this.sessions.maybeRefineBenchmarkDbga(
+            message,
+            currentDbga!.trim(),
+            (msg as { dbgaContent?: string | null }).dbgaContent,
+          );
+          if (refined) {
+            (msg as { dbgaContent?: string }).dbgaContent = refined;
+            console.log("[Orchestrator] maybeRefineBenchmarkDbga en stream, length:", refined.length);
           }
         }
         let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
