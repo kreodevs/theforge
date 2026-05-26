@@ -23,6 +23,15 @@ Co-authored-by: <cualquier agente IA> <agent@...>
 
 Los commits deben listar solo autor(es) humano(s) previstos.
 
+## Pull requests (OBLIGATORIO — siempre)
+
+**Prohibido** en la descripción del PR (cuerpo de `gh pr create`, plantillas o ediciones):
+
+- `Made with [Cursor](https://cursor.com)` o variantes («Made with Cursor», badge, enlace a cursor.com).
+- Cualquier atribución a Cursor, Copilot u otro agente IA en el texto del PR.
+
+Antes de crear o actualizar un PR, revisa que el cuerpo no incluya esas líneas. Si el IDE las añade, elimínalas con `gh pr edit` antes de pedir review.
+
 ## Conventional commits
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) when the repo already does: `type(scope): subject` (e.g. `fix(api): handle timeout`). Keep the subject imperative and under ~72 characters.
