@@ -20,10 +20,15 @@ import {
   mergeUserTextWithVisionBlock,
 } from "../ai/utils/vision-context.util.js";
 import { llmMaxTokens } from "../ai/config/llm-config.js";
+import { normalizeDashes } from "./document-content.util.js";
 import {
+  BENCHMARK_CHAT_ACK,
   dbgaReflectsUserEditIntent,
   isDbgaContentNearlyIdentical,
+  isPartialBenchmarkDoc,
   looksLikeDbgaEditRequest,
+  mergeBenchmarkPartialDoc,
+  parseBenchmarkResponse,
 } from "./dbga-edit.util.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
@@ -421,9 +426,19 @@ export class SessionsService {
       }
     }
 
+    ({
+      hasDbga,
+      dbgaDocPart,
+      rawChat,
+    } = this.finalizeBenchmarkTurn(activeTab, safeResponse, userMessage, {
+      hasDbga,
+      dbgaDocPart,
+      rawChat,
+    }));
+
     const assistantContent = this.parser.stripChatLabel(rawChat);
 
-    const tab = options?.activeTab ?? "mdd";
+    const tab = activeTab;
     const stageId = options?.stageId?.trim();
     const userMsgBase = {
       role: "user" as const,
@@ -589,12 +604,13 @@ export class SessionsService {
       if (documentChunksDone) {
         // Already past the delimiter — yield normally
         yield { type: "chunk", content: chunk };
-      } else if (DOC_DELIMITER_RE.test(buffer)) {
+      } else if (DOC_DELIMITER_RE.test(normalizeDashes(buffer))) {
         // Delimiter found — stop buffering document content, yield chat part
         documentChunksDone = true;
-        const match = buffer.match(DOC_DELIMITER_RE);
+        const normBuffer = normalizeDashes(buffer);
+        const match = normBuffer.match(DOC_DELIMITER_RE);
         if (match) {
-          const idx = buffer.indexOf(match[0]);
+          const idx = normBuffer.indexOf(match[0]);
           const afterDelim = buffer.slice(idx + match[0].length);
           if (afterDelim.trim()) {
             yield { type: "chunk", content: afterDelim };
@@ -747,6 +763,16 @@ export class SessionsService {
         }
       }
     }
+
+    ({
+      hasDbga,
+      dbgaDocPart,
+      rawChat,
+    } = this.finalizeBenchmarkTurn(tab, safeResponse, userMessage, {
+      hasDbga,
+      dbgaDocPart,
+      rawChat,
+    }));
 
     const assistantContent = this.parser.stripChatLabel(rawChat);
     const assistantEntry = stageId
@@ -1049,6 +1075,61 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
   }
 
   /**
+   * Separa documento vs chat en tab benchmark y evita persistir el DBGA entero en chatLog.
+   */
+  private finalizeBenchmarkTurn(
+    tab: string,
+    safeResponse: string,
+    userMessage: string,
+    state: { hasDbga: boolean; dbgaDocPart?: string; rawChat: string },
+  ): { hasDbga: boolean; dbgaDocPart?: string; rawChat: string } {
+    if (tab.trim() !== "benchmark") return state;
+
+    const parsed = parseBenchmarkResponse(safeResponse);
+    if (parsed) {
+      return {
+        hasDbga: true,
+        dbgaDocPart: parsed.docPart,
+        rawChat: parsed.chatPart || BENCHMARK_CHAT_ACK,
+      };
+    }
+
+    if (state.hasDbga && state.dbgaDocPart?.trim()) {
+      const chat = state.rawChat.trim();
+      if (chat.length > 600 && state.dbgaDocPart.length > 400) {
+        return { ...state, rawChat: BENCHMARK_CHAT_ACK };
+      }
+      return state;
+    }
+
+    const fb = this.parser.detectBenchmarkDocFallback(safeResponse.trim());
+    if (fb?.docPart?.trim()) {
+      return {
+        hasDbga: true,
+        dbgaDocPart: fb.docPart,
+        rawChat: fb.chatPart || BENCHMARK_CHAT_ACK,
+      };
+    }
+
+    if (
+      safeResponse.length > 400 &&
+      (looksLikeDbgaEditRequest(userMessage) ||
+        /\btenant_id\b|multi-?tenant|###\s+Módulos del proyecto/i.test(safeResponse))
+    ) {
+      const fb2 = this.parser.detectBenchmarkDocFallback(safeResponse.trim());
+      if (fb2?.docPart?.trim()) {
+        return {
+          hasDbga: true,
+          dbgaDocPart: fb2.docPart,
+          rawChat: fb2.chatPart || BENCHMARK_CHAT_ACK,
+        };
+      }
+    }
+
+    return state;
+  }
+
+  /**
    * Segunda pasada cuando el stream/chat no trajo `---FIN_DBGA---` pero el usuario pidió cambios.
    * Usa el mismo prompt de refinado (BENCHMARK_REFINE) con el DBGA actual en system.
    */
@@ -1061,11 +1142,14 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
     const current = options?.currentDbgaContent?.trim() ?? "";
     const wantsEdit = looksLikeDbgaEditRequest(userMessage);
 
-    let merged = dbgaDocPart
-      ? this.parser.mergeDbgaOrUseFull(
-          options?.currentDbgaContent,
-          this.parser.cleanDocumentContent(dbgaDocPart),
-        )
+    const cleanedPart = dbgaDocPart
+      ? this.parser.cleanDocumentContent(dbgaDocPart)
+      : undefined;
+
+    let merged = cleanedPart
+      ? tab === "benchmark" && isPartialBenchmarkDoc(cleanedPart, current)
+        ? this.parser.cleanDocumentContent(mergeBenchmarkPartialDoc(current, cleanedPart))
+        : this.parser.mergeDbgaOrUseFull(options?.currentDbgaContent, cleanedPart)
       : undefined;
 
     const needsRefine =
@@ -1174,6 +1258,7 @@ ${msg}
     const withoutFin = finIdx >= 0 ? trimmed.slice(0, finIdx).trim() : trimmed;
 
     const split =
+      parseBenchmarkResponse(trimmed) ??
       this.parser.splitDbgaAndChat(trimmed) ??
       this.parser.detectBenchmarkDocFallback(withoutFin) ??
       this.parser.detectBenchmarkDocFallback(trimmed);
@@ -1184,10 +1269,14 @@ ${msg}
     }
     if (!docPart) return null;
 
-    const merged = this.parser.mergeDbgaOrUseFull(
-      currentDbga,
-      this.parser.cleanDocumentContent(docPart),
-    );
+    const cleaned = this.parser.cleanDocumentContent(docPart);
+    if (currentDbga?.trim() && isPartialBenchmarkDoc(docPart, currentDbga)) {
+      const partialMerged = this.parser.cleanDocumentContent(
+        mergeBenchmarkPartialDoc(currentDbga.trim(), cleaned),
+      );
+      return partialMerged.length > 0 ? partialMerged : null;
+    }
+    const merged = this.parser.mergeDbgaOrUseFull(currentDbga, cleaned);
     return merged.length > 0 ? merged : null;
   }
 
@@ -1202,14 +1291,20 @@ ${msg}
     if (trimmed.length < 200) return null;
 
     const split =
+      parseBenchmarkResponse(trimmed) ??
       this.parser.splitDbgaAndChat(trimmed) ??
       this.parser.detectBenchmarkDocFallback(trimmed);
     if (!split?.docPart?.trim()) return null;
 
-    const merged = this.parser.mergeDbgaOrUseFull(
-      currentDbga,
-      this.parser.cleanDocumentContent(split.docPart),
-    );
+    const docPart = split.docPart.trim();
+    const cleaned = this.parser.cleanDocumentContent(docPart);
+    if (currentDbga?.trim() && isPartialBenchmarkDoc(docPart, currentDbga)) {
+      const partialMerged = this.parser.cleanDocumentContent(
+        mergeBenchmarkPartialDoc(currentDbga.trim(), cleaned),
+      );
+      return partialMerged.length > 0 ? partialMerged : null;
+    }
+    const merged = this.parser.mergeDbgaOrUseFull(currentDbga, cleaned);
     return merged.length > 0 ? merged : null;
   }
 }

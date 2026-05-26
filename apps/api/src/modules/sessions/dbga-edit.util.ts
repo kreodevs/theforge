@@ -46,3 +46,64 @@ export function dbgaReflectsUserEditIntent(doc: string, userMessage: string): bo
 
   return true;
 }
+
+export const BENCHMARK_CHAT_ACK =
+  "Benchmark actualizado. Revisa el panel de Fase 0 (DBGA).";
+
+/** Separa documento DBGA del mensaje de chat (tolerante a `---FIN_DBGA---` pegado al texto). */
+export function parseBenchmarkResponse(
+  response: string,
+): { docPart: string; chatPart: string } | null {
+  const trimmed = response.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
+  const re = /-{1,}\s*FIN_DBGA\s*-{1,}/i;
+  const match = re.exec(normalized);
+  if (!match || match.index == null) return null;
+  const idx = match.index;
+  const docPart = trimmed.slice(0, idx).trim();
+  const chatPart = trimmed.slice(idx + match[0].length).trim() || BENCHMARK_CHAT_ACK;
+  if (!docPart) return null;
+  return { docPart, chatPart };
+}
+
+/** El modelo a veces devuelve solo un fragmento (### Módulos…) sin el `# Research Report` inicial. */
+export function isPartialBenchmarkDoc(docPart: string, current?: string): boolean {
+  const p = docPart.trim();
+  const cur = (current ?? "").trim();
+  if (!p || !cur) return false;
+  return !/^#\s/m.test(p) && (/^#\s/m.test(cur) || cur.length > 800);
+}
+
+/**
+ * Integra un fragmento parcial en el DBGA completo (conserva cabecera / metadata del panel).
+ */
+export function mergeBenchmarkPartialDoc(current: string, partial: string): string {
+  const cur = current.trim();
+  const par = partial.trim();
+  if (!par) return cur;
+  if (/^#\s/m.test(par)) return par;
+
+  const anchors = [
+    /^###\s+Módulos del proyecto/im,
+    /^##\s+Dos objetivos centrales/im,
+    /^##\s+Arquitectura/im,
+    /^#\s+Research Report/im,
+    /^#\s+Domain Benchmark/im,
+  ] as const;
+
+  for (const anchor of anchors) {
+    const parMatch = par.match(anchor);
+    if (!parMatch || parMatch.index == null) continue;
+    const curIdx = cur.search(anchor);
+    if (curIdx >= 0) {
+      return `${cur.slice(0, curIdx).trimEnd()}\n\n${par.slice(parMatch.index).trim()}`.trim();
+    }
+  }
+
+  const headEnd = cur.search(/\n(?:##|###)\s+/);
+  if (headEnd > 0) {
+    return `${cur.slice(0, headEnd).trimEnd()}\n\n${par}`.trim();
+  }
+  return `${cur}\n\n---\n\n${par}`.trim();
+}

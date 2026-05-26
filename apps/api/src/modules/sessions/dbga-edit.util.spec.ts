@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import {
   dbgaReflectsUserEditIntent,
   isDbgaContentNearlyIdentical,
+  isPartialBenchmarkDoc,
   looksLikeDbgaEditRequest,
+  mergeBenchmarkPartialDoc,
+  parseBenchmarkResponse,
 } from "./dbga-edit.util.js";
 
 describe("looksLikeDbgaEditRequest", () => {
@@ -36,5 +39,46 @@ describe("isDbgaContentNearlyIdentical", () => {
     const a = "x".repeat(10_000);
     const b = a + " ";
     assert.equal(isDbgaContentNearlyIdentical(b, a), true);
+  });
+});
+
+describe("parseBenchmarkResponse", () => {
+  it("separa doc y chat con ---FIN_DBGA---", () => {
+    const text = "### Módulos\n\nContenido tenant_id.\n\n---FIN_DBGA---\nListo, revisa el panel.";
+    const split = parseBenchmarkResponse(text);
+    assert.ok(split);
+    assert.match(split!.docPart, /tenant_id/);
+    assert.match(split!.chatPart, /revisa el panel/i);
+  });
+
+  it("tolera espacios en el delimitador", () => {
+    const text = "## Arquitectura\n\n--- FIN_DBGA ---\nOk.";
+    const split = parseBenchmarkResponse(text);
+    assert.ok(split);
+    assert.match(split!.docPart, /Arquitectura/);
+  });
+});
+
+describe("mergeBenchmarkPartialDoc", () => {
+  it("conserva cabecera Research Report al recibir fragmento ### Módulos", () => {
+    const current = "# Research Report — Costos\n\n**Etapa:** principal\n\n## Intro\n\nTexto previo.";
+    const partial = "### Módulos del proyecto\n\n| 01 | Catálogo | tenant_id |";
+    const merged = mergeBenchmarkPartialDoc(current, partial);
+    assert.match(merged, /^# Research Report/);
+    assert.match(merged, /tenant_id/);
+    assert.doesNotMatch(merged, /Texto previo/);
+  });
+});
+
+describe("isPartialBenchmarkDoc", () => {
+  it("detecta fragmento sin H1", () => {
+    assert.equal(
+      isPartialBenchmarkDoc("### Módulos\n\nfoo", "# Research Report\n\nbar"),
+      true,
+    );
+    assert.equal(
+      isPartialBenchmarkDoc("# Research Report\n\nfoo", "# Research Report\n\nbar"),
+      false,
+    );
   });
 });

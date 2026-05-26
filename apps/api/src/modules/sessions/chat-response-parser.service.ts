@@ -16,7 +16,7 @@ export class ChatResponseParserService {
   splitDocAndChat(response: string, tag: string): { docPart: string; chatPart: string } | null {
     const trimmed = response.trim();
     const normalized = normalizeDashes(trimmed);
-    const regex = new RegExp(`-{1,}FIN_${tag}-{1,}`, "i");
+    const regex = new RegExp(`-{1,}\\s*FIN_${tag}\\s*-{1,}`, "i");
     const match = normalized.match(regex);
     if (match) {
       const idx = normalized.indexOf(match[0]);
@@ -278,7 +278,7 @@ export class ChatResponseParserService {
     }
 
     const sectionCount = (trimmed.match(/\n##\s+/g) ?? []).length;
-    const startsWithSection = /^##\s+/m.test(trimmed);
+    const startsWithSection = /^#{2,3}\s+/m.test(trimmed);
     const integrationCue =
       /\b(?:integraci[oó]n|OBP4?MO|tablas?\s+espejo|Gap\s+Analysis|tenant_id|multi-?tenant|catálogo\s+de\s+costos)\b/i.test(
         trimmed,

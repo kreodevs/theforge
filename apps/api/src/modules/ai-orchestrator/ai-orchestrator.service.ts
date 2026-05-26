@@ -540,6 +540,10 @@ export class AiOrchestratorService {
             session: msg.session,
             project: projectOut,
             uxUiGuideContent: uxToReturn ?? undefined,
+            dbgaContent:
+              (msg as { dbgaContent?: string | null }).dbgaContent ??
+              projectOut.dbgaContent ??
+              undefined,
             evaluatorCritique,
           },
         };
