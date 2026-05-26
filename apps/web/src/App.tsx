@@ -15,7 +15,6 @@ import {
   Heart,
   Loader2,
   Plus,
-  RefreshCw,
   Sparkles,
   Trash2,
 } from "lucide-react";

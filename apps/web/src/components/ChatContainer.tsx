@@ -295,7 +295,7 @@ function ChatComposerBar({
   return (
     <div className={AI_COMPOSER_SHELL} role="group" aria-label="Mensaje al asistente">
       <textarea
-        ref={chatInputRef}
+        ref={chatInputRef as RefObject<HTMLTextAreaElement>}
         value={inputValue}
         onChange={(e) => onInputChange(e.target.value)}
         onKeyDown={onKeyDown}
