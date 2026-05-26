@@ -16,7 +16,6 @@ import { SddIngestorService } from "../ai-analysis/sdd-ingestor.service.js";
 import { AgentEvaluatorService } from "../agent-supervisor/agent-evaluator.service.js";
 import { EpisodicMemoryKind } from "@theforge/database";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
-import { AiService } from "../ai/ai.service.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -47,7 +46,6 @@ export class AiOrchestratorService {
     private readonly agentSupervisor: AgentSupervisorService,
     private readonly sddIngestor: SddIngestorService,
     private readonly agentEvaluator: AgentEvaluatorService,
-    private readonly ai: AiService,
   ) { }
 
   private scheduleSddIngest(projectId: string, ingestMdd: boolean): void {
