@@ -16,6 +16,7 @@ import { SddIngestorService } from "../ai-analysis/sdd-ingestor.service.js";
 import { AgentEvaluatorService } from "../agent-supervisor/agent-evaluator.service.js";
 import { EpisodicMemoryKind } from "@theforge/database";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
+import { wouldShrinkDbgaDangerously } from "../sessions/dbga-edit.util.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -246,6 +247,16 @@ export class AiOrchestratorService {
     if (uxUiGuideFromResponse != null && uxUiGuideFromResponse.length > 0) {
       console.log("[Orchestrator] persisting uxUiGuideContent (Guía UX/UI) length:", uxUiGuideFromResponse.length);
       updatedProject = await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideFromResponse });
+    }
+    if (dbgaFromResponse != null && dbgaFromResponse.length > 0) {
+      const prevDbga = (currentDbga ?? project.dbgaContent ?? "").trim();
+      if (prevDbga && wouldShrinkDbgaDangerously(prevDbga, dbgaFromResponse)) {
+        console.warn(
+          "[Orchestrator] dbgaContent no persistido (reducción peligrosa)",
+          { prevLen: prevDbga.length, nextLen: dbgaFromResponse.length },
+        );
+        dbgaFromResponse = undefined;
+      }
     }
     if (dbgaFromResponse != null && dbgaFromResponse.length > 0) {
       console.log("[Orchestrator] persisting dbgaContent (Benchmark refinado) length:", dbgaFromResponse.length);
@@ -481,10 +492,20 @@ export class AiOrchestratorService {
           updatedProject = await this.projects.update(projectId, { uxUiGuideContent: msg.uxUiGuideContent });
         }
         if (msg.dbgaContent != null && msg.dbgaContent.length > 0) {
-          updatedProject = await this.projects.update(projectId, { dbgaContent: msg.dbgaContent });
-          // Fase 0 sub-tab — mirror a phase0SummaryContent
-          if (activeTab?.trim() === "benchmark") {
-            updatedProject = await this.projects.update(projectId, { phase0SummaryContent: msg.dbgaContent });
+          const prevDbga = (currentDbga ?? project.dbgaContent ?? "").trim();
+          if (prevDbga && wouldShrinkDbgaDangerously(prevDbga, msg.dbgaContent)) {
+            console.warn(
+              "[Orchestrator] dbgaContent stream no persistido (reducción peligrosa)",
+              { prevLen: prevDbga.length, nextLen: msg.dbgaContent.length },
+            );
+          } else {
+            updatedProject = await this.projects.update(projectId, { dbgaContent: msg.dbgaContent });
+            // Fase 0 sub-tab — mirror a phase0SummaryContent
+            if (activeTab?.trim() === "benchmark") {
+              updatedProject = await this.projects.update(projectId, {
+                phase0SummaryContent: msg.dbgaContent,
+              });
+            }
           }
         }
         if (msg.specContent != null && msg.specContent.length > 0) {

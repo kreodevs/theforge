@@ -7,6 +7,7 @@ import {
   looksLikeDbgaEditRequest,
   mergeBenchmarkPartialDoc,
   parseBenchmarkResponse,
+  wouldShrinkDbgaDangerously,
 } from "./dbga-edit.util.js";
 
 describe("looksLikeDbgaEditRequest", () => {
@@ -70,15 +71,10 @@ describe("mergeBenchmarkPartialDoc", () => {
   });
 });
 
-describe("isPartialBenchmarkDoc", () => {
-  it("detecta fragmento sin H1", () => {
-    assert.equal(
-      isPartialBenchmarkDoc("### Módulos\n\nfoo", "# Research Report\n\nbar"),
-      true,
-    );
-    assert.equal(
-      isPartialBenchmarkDoc("# Research Report\n\nfoo", "# Research Report\n\nbar"),
-      false,
-    );
+describe("wouldShrinkDbgaDangerously", () => {
+  it("bloquea fragmento que borra la mayor parte del doc", () => {
+    const current = "# Research Report\n\n" + "x".repeat(5000);
+    const fragment = "### Módulos\n\n" + "y".repeat(800);
+    assert.equal(wouldShrinkDbgaDangerously(current, fragment), true);
   });
 });

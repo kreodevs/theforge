@@ -80,9 +80,14 @@ export function isPartialBenchmarkDoc(docPart: string, current?: string): boolea
  */
 export function mergeBenchmarkPartialDoc(current: string, partial: string): string {
   const cur = current.trim();
-  const par = partial.trim();
+  let par = partial.trim();
   if (!par) return cur;
   if (/^#\s/m.test(par)) return par;
+
+  // El modelo a veces antepone "Etapa: …" al fragmento; no debe sobrescribir la cabecera del panel.
+  if (/^Etapa:\s*/im.test(par) && /###\s+Módulos del proyecto/im.test(par)) {
+    par = par.replace(/^Etapa:\s*[^\n]+\n+/im, "").trim();
+  }
 
   const anchors = [
     /^###\s+Módulos del proyecto/im,
@@ -106,4 +111,20 @@ export function mergeBenchmarkPartialDoc(current: string, partial: string): stri
     return `${cur.slice(0, headEnd).trimEnd()}\n\n${par}`.trim();
   }
   return `${cur}\n\n---\n\n${par}`.trim();
+}
+
+/** Rechaza persistir un DBGA que borra la mayor parte del documento actual (p. ej. fragmento sin merge). */
+export function wouldShrinkDbgaDangerously(
+  current: string,
+  next: string,
+  minRatio = 0.55,
+): boolean {
+  const c = current.trim();
+  const n = next.trim();
+  if (!c || c.length < 400) return false;
+  if (!n) return true;
+  if (n.length >= c.length * minRatio) return false;
+  // Reemplazo completo legítimo (nuevo doc largo con H1)
+  if (/^#\s/m.test(n) && n.length >= Math.min(c.length * 0.85, 2500)) return false;
+  return true;
 }

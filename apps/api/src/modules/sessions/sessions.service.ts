@@ -29,6 +29,7 @@ import {
   looksLikeDbgaEditRequest,
   mergeBenchmarkPartialDoc,
   parseBenchmarkResponse,
+  wouldShrinkDbgaDangerously,
 } from "./dbga-edit.util.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
@@ -1173,6 +1174,14 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
       }
     }
 
+    if (merged && current && wouldShrinkDbgaDangerously(current, merged)) {
+      console.warn(
+        "[Sessions] DBGA merge rechazado (reducción peligrosa); se conserva el documento anterior.",
+        { currentLen: current.length, mergedLen: merged.length },
+      );
+      merged = undefined;
+    }
+
     return merged && merged.length > 0 ? merged : undefined;
   }
 
@@ -1280,9 +1289,6 @@ ${msg}
     return merged.length > 0 ? merged : null;
   }
 
-  /**
-   * Recupera DBGA cuando el modelo lo dejó solo en el mensaje de chat (sin ---FIN_DBGA---).
-   */
   salvageDbgaFromAssistantText(
     assistantText: string,
     currentDbga?: string,
@@ -1306,5 +1312,77 @@ ${msg}
     }
     const merged = this.parser.mergeDbgaOrUseFull(currentDbga, cleaned);
     return merged.length > 0 ? merged : null;
+  }
+
+  /**
+   * Recupera el DBGA más completo encontrado en mensajes assistant del tab benchmark
+   * y lo persiste de vuelta en el proyecto (panel Fase 0).
+   */
+  async salvageAndRestoreDbgaFromChat(projectId: string) {
+    const userId = getRequestUserId();
+    const project = await this.prisma.project.findFirst({
+      where: {
+        id: projectId,
+        OR: [{ userId }, { visibility: "SHARED" }],
+      },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+
+    const sessions = await this.prisma.session.findMany({
+      where: { projectId, userId },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    const currentDbga = (project.dbgaContent ?? "").trim();
+    let best: { content: string; len: number; sessionId: string } | null = null;
+
+    for (const session of sessions) {
+      const log = (session.chatLog as ChatMessage[]) ?? [];
+      for (const msg of log) {
+        if (msg.role !== "assistant" || (msg.tab ?? "mdd") !== "benchmark") continue;
+        const raw = msg.content?.trim() ?? "";
+        if (raw.length < 400) continue;
+        if (!/# Research Report|### Módulos del proyecto|Domain Benchmark/i.test(raw)) {
+          continue;
+        }
+
+        const parsed = parseBenchmarkResponse(raw);
+        const docRaw = parsed?.docPart?.trim() ?? raw;
+        let candidate =
+          this.salvageDbgaFromAssistantText(docRaw, currentDbga || undefined) ??
+          (currentDbga && isPartialBenchmarkDoc(docRaw, currentDbga)
+            ? this.parser.cleanDocumentContent(
+                mergeBenchmarkPartialDoc(currentDbga, docRaw),
+              )
+            : this.parser.cleanDocumentContent(docRaw));
+
+        if (!candidate?.trim()) continue;
+        if (currentDbga && wouldShrinkDbgaDangerously(currentDbga, candidate)) continue;
+
+        if (candidate.length > (best?.len ?? 0)) {
+          best = { content: candidate, len: candidate.length, sessionId: session.id };
+        }
+      }
+    }
+
+    if (!best) {
+      throw new NotFoundException(
+        "No se encontró un DBGA recuperable en el historial del chat (tab benchmark).",
+      );
+    }
+
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        dbgaContent: best.content,
+        phase0SummaryContent: best.content,
+      },
+    });
+
+    return {
+      dbgaContent: best.content,
+      recoveredFromSessionId: best.sessionId,
+      length: best.len,
+    };
   }
 }
