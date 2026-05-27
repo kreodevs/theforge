@@ -6,7 +6,9 @@ import { useCallback, useEffect, useMemo } from "react";
  * Maneja:
  * 1. `isDirty` — true si el contenido local difiere del original persistido
  * 2. `handleBlur` — persiste al salir del textarea
- * 3. Auto-save — debounce de 1500ms cuando cambia el contenido
+ * 3. Auto-save — debounce de 1500ms cuando cambia el contenido.
+ *    Tras el PATCH, `persistField` no pisa el store si el usuario siguió escribiendo;
+ *    los paneles usan `WorkshopDocTextarea` para no re-sincronizar `value` con foco.
  */
 export function useAutoSaveContent(
   content: string | null,
