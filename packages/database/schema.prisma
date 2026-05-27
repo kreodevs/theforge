@@ -239,6 +239,8 @@ model Project {
   wireframesContent    String?   @db.Text
   /// Caché de bocetos HTML por hash de wireframesContent: { v, hash, sketches[] }
   wireframesSketchesCache Json?
+  /// Caché de previews MCP (componentes Orbita) por hash de wireframesContent + MCP
+  wireframesPreviewCache Json?
   phase0SummaryContent String?   @db.Text
   /// Estado del flujo Fase 0 interactivo: "idle" | "interviewing" | "done"
   phase0Status        String?   @default("idle")
