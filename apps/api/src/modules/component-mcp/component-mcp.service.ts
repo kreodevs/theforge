@@ -305,8 +305,55 @@ export class ComponentMcpService {
     }
 
     this.sessions.set(userId, { sessionId, createdAt: Date.now() });
+    await this.sendInitializedNotification(url, token, sessionId);
     this.logger.log(`MCP session initialized for user ${userId.slice(0, 8)}…`);
     return sessionId;
+  }
+
+  /** MCP Streamable HTTP: client must ack initialize before tools/call. */
+  private async sendInitializedNotification(
+    url: string,
+    token: string,
+    sessionId: string,
+  ): Promise<void> {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        "mcp-session-id": sessionId,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok && response.status !== 202) {
+      const body = await response.text().catch(() => "");
+      this.logger.warn(
+        `MCP notifications/initialized HTTP ${response.status}: ${body.slice(0, 200)}`,
+      );
+    }
+  }
+
+  /** True when the MCP server rejected our cached session (spec: HTTP 404 + re-init). */
+  private isStaleSessionResponse(status: number, bodyText: string): boolean {
+    const lower = bodyText.toLowerCase();
+    const sessionHint =
+      lower.includes("session not found") ||
+      lower.includes("session expired") ||
+      lower.includes("invalid session") ||
+      lower.includes("unknown session") ||
+      lower.includes('"code":-32001') ||
+      (lower.includes("session") && lower.includes("not found"));
+    if (sessionHint) return true;
+    if (status === 404 && lower.includes("jsonrpc")) return true;
+    if (status === 400 && (lower.includes("session") || lower.includes("initialize"))) {
+      return true;
+    }
+    return false;
   }
 
   // ─── internals ────────────────────────────────────────────
@@ -369,19 +416,15 @@ export class ComponentMcpService {
       signal: AbortSignal.timeout(30_000),
     });
 
-    if (response.status === 400 && retryOnSessionError) {
-      const text = await response.text().catch(() => "");
-      if (text.toLowerCase().includes("session") || text.toLowerCase().includes("initialize")) {
-        this.logger.warn(`MCP session expired for ${toolName}, re-initializing…`);
+    if (!response.ok) {
+      const text = await response.text().catch(() => "sin cuerpo");
+      if (retryOnSessionError && this.isStaleSessionResponse(response.status, text)) {
+        this.logger.warn(
+          `MCP session invalid for ${toolName} (HTTP ${response.status}), re-initializing…`,
+        );
         this.invalidateSession(userId);
         return this.callToolWithRetry<T>(userId, toolName, args, false);
       }
-      this.logger.error(`Component MCP ${toolName} HTTP 400: ${text.slice(0, 300)}`);
-      throw new BadRequestException(`Component MCP respondió HTTP 400`);
-    }
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "sin cuerpo");
       this.logger.error(`Component MCP ${toolName} HTTP ${response.status}: ${text.slice(0, 300)}`);
       throw new BadRequestException(
         `Component MCP respondió HTTP ${response.status}`,
