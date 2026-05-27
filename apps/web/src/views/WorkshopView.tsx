@@ -93,6 +93,7 @@ import { Phase0InterviewPanel } from "../components/Phase0InterviewPanel";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AdrsPanel } from "../components/AdrsPanel";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
+import { WorkshopDocTextarea } from "../components/WorkshopDocTextarea";
 import type { LucideIcon } from "lucide-react";
 import {
   Button,
@@ -1324,16 +1325,12 @@ export default function WorkshopView({
     return () => clearTimeout(t);
   }, [tasksContent, projectId, project?.tasksContent, project, persistTasksContent]);
 
-  // ux-ui-guide auto-save (special: replaceYamlFrontMatter before persist)
+  // ux-ui-guide auto-save (YAML frontmatter solo en blur; en debounce no mutar el editor)
   useEffect(() => {
     if (!projectId || !project || (uxUiGuideContent ?? "") === (project.uxUiGuideContent ?? "")) return;
-    const t = setTimeout(() => {
-      const content = replaceYamlFrontMatter(uxUiGuideContent ?? "", projectName);
-      if (content !== (uxUiGuideContent ?? "")) setUxUiGuideContent(content);
-      persistUxUiGuideContent(content);
-    }, 1500);
+    const t = setTimeout(() => persistUxUiGuideContent(uxUiGuideContent ?? ""), 1500);
     return () => clearTimeout(t);
-  }, [uxUiGuideContent, projectId, project?.uxUiGuideContent, project, persistUxUiGuideContent, projectName]);
+  }, [uxUiGuideContent, projectId, project?.uxUiGuideContent, project, persistUxUiGuideContent]);
 
   // ux-ui-guide blur (special: replaceYamlFrontMatter)
   const handleUxUiGuideBlur = useCallback(() => {
@@ -3115,9 +3112,9 @@ export default function WorkshopView({
                               <MddViewer content={fase0Content} />
                             </div>
                           ) : (
-                            <textarea
+                            <WorkshopDocTextarea
                               value={fase0Content ?? ""}
-                              onChange={(e) => setDbgaContent(e.target.value)}
+                              onChange={(v) => setDbgaContent(v)}
                               onBlur={handleBenchmarkBlur}
                               placeholder="# Domain Benchmark & Gap Analysis..."
                               className="flex-1 min-h-[200px] w-full bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
@@ -3213,9 +3210,9 @@ export default function WorkshopView({
                                 <MddViewer content={phase0SummaryContent ?? ""} />
                               </div>
                             ) : (
-                              <textarea
+                              <WorkshopDocTextarea
                                 value={phase0SummaryContent ?? ""}
-                                onChange={(e) => setPhase0SummaryContent(e.target.value || null)}
+                                onChange={(v) => setPhase0SummaryContent(v || null)}
                                 onBlur={handlePhase0SummaryBlur}
                                 placeholder="# Resumen Deep Research..."
                                 className="flex-1 min-h-[200px] w-full bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"

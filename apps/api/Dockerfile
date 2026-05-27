@@ -1,7 +1,8 @@
 # Build stage — context = repo root
-FROM node:20-alpine AS builder
+# Imágenes fijas en ECR Public (evita TLS timeout a Docker Hub y fallos de ARG en Dokploy).
+FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
-ARG BUILD_CACHE_BUST=88
+ARG BUILD_CACHE_BUST=94
 RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
 RUN apk add --no-cache gcompat openssl
@@ -30,7 +31,7 @@ ENV DATABASE_URL="postgresql://local:local@db:5432/theforge"
 RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
 
 # Production stage — layout pnpm hoisted desde builder
-FROM node:20-alpine AS runner
+FROM public.ecr.aws/docker/library/node:20-alpine AS runner
 
 RUN apk add --no-cache wget openssl
 

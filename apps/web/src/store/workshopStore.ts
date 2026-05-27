@@ -7,6 +7,7 @@ import {
   formatDocumentMarkdown,
 } from "@theforge/shared-types/format-document-markdown";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue } from "../utils/apiClient";
+import { shouldApplyPersistedFieldContent } from "../utils/persist-field-guard";
 import {
   parseApiErrorPayloadFromResponse,
   parseErrorMessageFromResponse,
@@ -204,6 +205,10 @@ async function persistField(
   if (content === ((project as unknown as Record<string, unknown>)[fieldName] ?? "")) return;
 
   const cleaned = cleanDoc(content) || content || "";
+  const localAtSaveStart = String(
+    ((getState() as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ??
+      "",
+  );
   setState({ synced: false, error: null });
 
   try {
@@ -214,12 +219,21 @@ async function persistField(
     });
     if (r.ok) {
       const data = (await r.json()) as unknown;
-      setState({
+      const serverRaw = ((data as Record<string, unknown>)[fieldName] as string) ?? cleaned;
+      const serverCleaned = cleanDoc(serverRaw) ?? serverRaw ?? "";
+      const localNow = String(
+        ((getState() as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ??
+          "",
+      );
+      const patch: Partial<WorkshopState> = {
         project: data as Project,
-        [fieldName]: cleanDoc(((data as Record<string, unknown>)[fieldName] as string) ?? cleaned),
         synced: true,
         error: null,
-      } as Partial<WorkshopState>);
+      };
+      if (shouldApplyPersistedFieldContent(localNow, localAtSaveStart, cleaned)) {
+        (patch as Record<string, unknown>)[fieldName] = serverCleaned;
+      }
+      setState(patch);
       // Flush offline queue oportunistically
       flushOfflineQueue().catch(() => {});
     } else {
@@ -2043,6 +2057,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                         proj?.dbgaContent ??
                         null,
                     ) ?? get().dbgaContent,
+                  phase0SummaryContent:
+                    cleanDoc(
+                      (data.phase0SummaryContent as string | null | undefined) ??
+                        proj?.phase0SummaryContent ??
+                        null,
+                    ) ?? get().phase0SummaryContent,
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   architectureContent: cleanDoc(proj?.architectureContent ?? null) ?? get().architectureContent,
                   useCasesContent: cleanDoc(proj?.useCasesContent ?? null) ?? get().useCasesContent,
@@ -2111,6 +2131,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                         proj?.dbgaContent ??
                         null,
                     ) ?? get().dbgaContent,
+                  phase0SummaryContent:
+                    cleanDoc(
+                      (data.phase0SummaryContent as string | null | undefined) ??
+                        proj?.phase0SummaryContent ??
+                        null,
+                    ) ?? get().phase0SummaryContent,
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null) ?? get().blueprintContent,
                   apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null) ?? get().apiContractsContent,

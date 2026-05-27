@@ -297,7 +297,7 @@ export class ChatResponseParserService {
       docPart,
       chatPart:
         chatTail ||
-        "Benchmark actualizado. Revisa el panel de Fase 0 (DBGA).",
+        "Fase 0 (DBGA) actualizado. Revisa el panel «Análisis (DBGA)».",
     };
   }
 

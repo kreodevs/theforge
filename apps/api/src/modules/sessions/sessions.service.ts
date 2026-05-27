@@ -23,6 +23,7 @@ import { llmMaxTokens } from "../ai/config/llm-config.js";
 import { normalizeDashes } from "./document-content.util.js";
 import {
   BENCHMARK_CHAT_ACK,
+  benchmarkAssistantChatMessage,
   dbgaReflectsUserEditIntent,
   isDbgaContentNearlyIdentical,
   isPartialBenchmarkDoc,
@@ -427,17 +428,30 @@ export class SessionsService {
       }
     }
 
+    const effectiveUserMessage = userTurn.promptForModel.trim() || userMessage.trim();
+
     ({
       hasDbga,
       dbgaDocPart,
       rawChat,
-    } = this.finalizeBenchmarkTurn(activeTab, safeResponse, userMessage, {
+    } = this.finalizeBenchmarkTurn(activeTab, safeResponse, effectiveUserMessage, {
       hasDbga,
       dbgaDocPart,
       rawChat,
     }));
 
-    const assistantContent = this.parser.stripChatLabel(rawChat);
+    const cleanedMddPart = hasMdd ? this.parser.cleanDocumentContent(mddSplit!.mddPart) : "";
+    const finalMdd = hasMdd ? this.parser.mergeMddSectionOrUseFull(options?.currentMddContent, cleanedMddPart) : undefined;
+    const finalDbga = await this.resolveDbgaContentForReturn(
+      effectiveUserMessage,
+      options,
+      dbgaDocPart,
+    );
+    const assistantContent = this.parser.stripChatLabel(
+      activeTab === "benchmark"
+        ? benchmarkAssistantChatMessage(rawChat, finalDbga)
+        : rawChat,
+    );
 
     const tab = activeTab;
     const stageId = options?.stageId?.trim();
@@ -461,19 +475,13 @@ export class SessionsService {
       mddPartLength: hasMdd ? mddSplit!.mddPart.length : 0,
       uxDocPartLength: uxDocPart?.length ?? 0,
       dbgaDocPartLength: dbgaDocPart?.length ?? 0,
+      dbgaPersistedLength: finalDbga?.length ?? 0,
       infraLength: hasInfra ? infraSplit!.docPart.length : 0,
     });
 
     const updatedSession = await this.prisma.session.findFirst({
       where: this.sessionScope(sessionId),
     });
-    const cleanedMddPart = hasMdd ? this.parser.cleanDocumentContent(mddSplit!.mddPart) : "";
-    const finalMdd = hasMdd ? this.parser.mergeMddSectionOrUseFull(options?.currentMddContent, cleanedMddPart) : undefined;
-    const finalDbga = await this.resolveDbgaContentForReturn(
-      userMessage,
-      options,
-      dbgaDocPart,
-    );
     return {
       session: updatedSession,
       mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
@@ -765,17 +773,30 @@ export class SessionsService {
       }
     }
 
+    const effectiveUserMessage = userTurn.promptForModel.trim() || userMessage.trim();
+
     ({
       hasDbga,
       dbgaDocPart,
       rawChat,
-    } = this.finalizeBenchmarkTurn(tab, safeResponse, userMessage, {
+    } = this.finalizeBenchmarkTurn(tab, safeResponse, effectiveUserMessage, {
       hasDbga,
       dbgaDocPart,
       rawChat,
     }));
 
-    const assistantContent = this.parser.stripChatLabel(rawChat);
+    const cleanedMddPart = hasMdd ? this.parser.cleanDocumentContent(mddSplit!.mddPart) : "";
+    const finalMdd = hasMdd ? this.parser.mergeMddSectionOrUseFull(options?.currentMddContent, cleanedMddPart) : undefined;
+    const finalDbga = await this.resolveDbgaContentForReturn(
+      effectiveUserMessage,
+      options,
+      dbgaDocPart,
+    );
+    const assistantContent = this.parser.stripChatLabel(
+      tab === "benchmark"
+        ? benchmarkAssistantChatMessage(rawChat, finalDbga)
+        : rawChat,
+    );
     const assistantEntry = stageId
       ? { role: "assistant" as const, content: assistantContent, tab, stageId }
       : { role: "assistant" as const, content: assistantContent, tab };
@@ -788,13 +809,6 @@ export class SessionsService {
     const updatedSession = await this.prisma.session.findFirst({
       where: this.sessionScope(sessionId),
     });
-    const cleanedMddPart = hasMdd ? this.parser.cleanDocumentContent(mddSplit!.mddPart) : "";
-    const finalMdd = hasMdd ? this.parser.mergeMddSectionOrUseFull(options?.currentMddContent, cleanedMddPart) : undefined;
-    const finalDbga = await this.resolveDbgaContentForReturn(
-      userMessage,
-      options,
-      dbgaDocPart,
-    );
     yield {
       type: "done",
       session: updatedSession,
@@ -1136,12 +1150,19 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
    */
   private async resolveDbgaContentForReturn(
     userMessage: string,
-    options: { activeTab?: string; currentDbgaContent?: string } | undefined,
+    options:
+      | {
+          activeTab?: string;
+          currentDbgaContent?: string;
+          userImages?: ChatImagePart[];
+        }
+      | undefined,
     dbgaDocPart: string | undefined,
   ): Promise<string | undefined> {
     const tab = (options?.activeTab ?? "mdd").trim();
     const current = options?.currentDbgaContent?.trim() ?? "";
     const wantsEdit = looksLikeDbgaEditRequest(userMessage);
+    const hadImages = (options?.userImages?.length ?? 0) > 0;
 
     const cleanedPart = dbgaDocPart
       ? this.parser.cleanDocumentContent(dbgaDocPart)
@@ -1159,7 +1180,8 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
       current.length > 0 &&
       (!merged ||
         isDbgaContentNearlyIdentical(merged, current) ||
-        !dbgaReflectsUserEditIntent(merged, userMessage));
+        !dbgaReflectsUserEditIntent(merged, userMessage) ||
+        (hadImages && !merged));
 
     if (needsRefine) {
       const refined = await this.refineDbgaFromUserRequest(userMessage, current);

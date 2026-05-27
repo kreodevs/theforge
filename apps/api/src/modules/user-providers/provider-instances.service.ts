@@ -281,6 +281,7 @@ export class ProviderInstancesService {
       displayName: string;
       chatModel: string;
       chatModelFallbacks: string[];
+      auditorChatModel: string | null;
       embeddingModel: string | null;
       embeddingDimension: number | null;
       sttModel: string | null;
@@ -311,7 +312,20 @@ export class ProviderInstancesService {
       throw new BadRequestException("La clave API es obligatoria");
     }
 
-    const models = buildModelFields(providerType, dto);
+    const models = buildModelFields(providerType, {
+      chatModel: dto.chatModel ?? existing?.chatModel,
+      chatModelFallbacks: dto.chatModelFallbacks ?? existing?.chatModelFallbacks,
+      auditorChatModel:
+        dto.auditorChatModel !== undefined ? dto.auditorChatModel : existing?.auditorChatModel,
+      embeddingModel:
+        dto.embeddingModel !== undefined ? dto.embeddingModel : existing?.embeddingModel,
+      embeddingDimension:
+        dto.embeddingDimension !== undefined
+          ? dto.embeddingDimension
+          : existing?.embeddingDimension,
+      sttModel: dto.sttModel !== undefined ? dto.sttModel : existing?.sttModel,
+      visionModel: dto.visionModel !== undefined ? dto.visionModel : existing?.visionModel,
+    });
     if (isProviderId(providerType)) {
       await this.userProviders.validateUserMayUseChatModels(actorUserId, providerType, [
         models.chatModel,

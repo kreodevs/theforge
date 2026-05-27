@@ -268,7 +268,9 @@ function ChatComposerBar({
   isBenchmarkFirstAction,
   showAttachTools,
   imageInputRef,
-  pendingFilesCount,
+  imageAttachDisabled,
+  imageAttachTitle,
+  imageAttachAriaLabel,
   sttMicDisabled,
   sttMicTitle,
   sttMicAriaLabel,
@@ -288,7 +290,9 @@ function ChatComposerBar({
   isBenchmarkFirstAction: boolean;
   showAttachTools: boolean;
   imageInputRef: RefObject<HTMLInputElement | null>;
-  pendingFilesCount: number;
+  imageAttachDisabled: boolean;
+  imageAttachTitle: string;
+  imageAttachAriaLabel: string;
   sttMicDisabled: boolean;
   sttMicTitle: string;
   sttMicAriaLabel: string;
@@ -319,10 +323,10 @@ function ChatComposerBar({
               <button
                 type="button"
                 onClick={() => imageInputRef.current?.click()}
-                disabled={loading || pendingFilesCount >= 6}
+                disabled={imageAttachDisabled}
                 className={AI_COMPOSER_ATTACH_BTN}
-                title="Adjuntar imagen (máx. 6, PNG/JPEG/WebP/GIF)"
-                aria-label="Adjuntar imagen"
+                title={imageAttachTitle}
+                aria-label={imageAttachAriaLabel}
               >
                 <ImagePlus className="h-[1.125rem] w-[1.125rem] shrink-0" aria-hidden />
               </button>
@@ -539,6 +543,8 @@ export default function ChatContainer({
 
   /** STT (speech‑to‑text) via mic */
   const [sttModel, setSttModel] = useState<string | null>(null);
+  const [visionModel, setVisionModel] = useState<string | null>(null);
+  const [mediaConfigLoaded, setMediaConfigLoaded] = useState(false);
   const [sttConfigLoaded, setSttConfigLoaded] = useState(false);
   const [recording, setRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -674,7 +680,7 @@ export default function ChatContainer({
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [pendingFiles]);
 
-  /** Fetch STT config on mount */
+  /** STT y visión desde instancia activa (GET /audio/config). */
   useEffect(() => {
     (async () => {
       try {
@@ -682,17 +688,31 @@ export default function ChatContainer({
           `${import.meta.env.VITE_API_URL ?? "/api"}/audio/config`,
         );
         if (r.ok) {
-          const data: { sttModel: string | null } = await r.json();
-          setSttModel(data.sttModel);
+          const data = (await r.json()) as {
+            sttModel?: string | null;
+            visionModel?: string | null;
+          };
+          setSttModel(data.sttModel ?? null);
+          setVisionModel(data.visionModel ?? null);
         }
-      } catch { /* no STT */ } finally {
+      } catch { /* sin media config */ } finally {
         setSttConfigLoaded(true);
+        setMediaConfigLoaded(true);
       }
     })();
   }, []);
 
   const sttMicEnabled = !!sttModel;
   const sttMicDisabled = loading || !sttConfigLoaded || !sttMicEnabled;
+  const imageAttachEnabled = !!visionModel?.trim();
+  const imageAttachDisabled =
+    loading || !mediaConfigLoaded || !imageAttachEnabled || pendingFiles.length >= 6;
+  const imageAttachTitle = !mediaConfigLoaded
+    ? "Comprobando modelo de visión…"
+    : !imageAttachEnabled
+      ? "Configura el modelo de visión en Ajustes → Gestionar instancias"
+      : "Adjuntar imagen (máx. 6, PNG/JPEG/WebP/GIF)";
+  const imageAttachAriaLabel = imageAttachTitle;
   const sttMicTitle = recording
     ? "Detener grabación"
     : !sttConfigLoaded
@@ -911,7 +931,9 @@ export default function ChatContainer({
               isBenchmarkFirstAction={isBenchmarkFirstAction}
               showAttachTools={!isBenchmarkFirstAction}
               imageInputRef={imageInputRef}
-              pendingFilesCount={pendingFiles.length}
+              imageAttachDisabled={imageAttachDisabled}
+              imageAttachTitle={imageAttachTitle}
+              imageAttachAriaLabel={imageAttachAriaLabel}
               sttMicDisabled={sttMicDisabled}
               sttMicTitle={sttMicTitle}
               sttMicAriaLabel={sttMicAriaLabel}
@@ -1344,7 +1366,9 @@ export default function ChatContainer({
               isBenchmarkFirstAction={isBenchmarkFirstAction}
               showAttachTools={!isBenchmarkFirstAction}
               imageInputRef={imageInputRef}
-              pendingFilesCount={pendingFiles.length}
+              imageAttachDisabled={imageAttachDisabled}
+              imageAttachTitle={imageAttachTitle}
+              imageAttachAriaLabel={imageAttachAriaLabel}
               sttMicDisabled={sttMicDisabled}
               sttMicTitle={sttMicTitle}
               sttMicAriaLabel={sttMicAriaLabel}

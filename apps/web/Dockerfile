@@ -1,7 +1,8 @@
 # Build stage — context = repo root
-FROM node:20-alpine AS builder
+# Imágenes fijas en ECR Public (evita TLS timeout a Docker Hub y fallos de ARG en Dokploy).
+FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
-ARG BUILD_CACHE_BUST=88
+ARG BUILD_CACHE_BUST=94
 RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
 WORKDIR /app
@@ -25,7 +26,7 @@ COPY apps/web apps/web
 RUN pnpm exec turbo run build --filter=@theforge/web
 
 # Production stage — Nginx
-FROM nginx:alpine AS runner
+FROM public.ecr.aws/docker/library/nginx:alpine AS runner
 
 RUN apk add --no-cache wget
 
