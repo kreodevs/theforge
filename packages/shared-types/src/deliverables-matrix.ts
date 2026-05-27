@@ -20,7 +20,7 @@ export type DeliverableKind =
  */
 export const DELIVERABLES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableKind[]> = {
   LOW: ["user_stories", "tasks"],
-  MEDIUM: ["spec", "api_contracts", "wireframes", "ux_ui_guide", "tasks"],
+  MEDIUM: ["spec", "api_contracts", "ux_ui_guide", "wireframes", "tasks"],
   HIGH: [
     "mdd_canonical",
     "blueprint",
@@ -28,8 +28,8 @@ export const DELIVERABLES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableKind
     "architecture",
     "use_cases",
     "user_stories",
-    "wireframes",
     "ux_ui_guide",
+    "wireframes",
     "api_contracts",
     "logic_flows",
     "tasks",

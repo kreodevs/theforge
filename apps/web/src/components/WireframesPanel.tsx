@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Monitor, Sparkles, ArrowRight, Check, Loader2, Circle, LayoutGrid, Blocks, CheckCircle2, AlertTriangle, XCircle, Eye, Square, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useWorkshopStore, type WireframesPreviewSession } from "../store/workshopStore";
+import { contentDigestHash } from "../utils/contentDigestHash";
+import { Monitor, Sparkles, ArrowRight, Check, Loader2, Circle, LayoutGrid, Blocks, CheckCircle2, AlertTriangle, XCircle, Square, RefreshCw } from "lucide-react";
 import { Button, Badge, UnderlineTabs } from "@/components/ui";
 import type { UnderlineTabItem } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -38,6 +40,8 @@ interface WireframesPanelProps {
   viewMode: "wireframe" | "preview" | "source";
   onGenerate: () => void;
   canGenerate: boolean;
+  /** Mensaje cuando `canGenerate` es false (p. ej. falta Design System). */
+  prerequisiteHint?: string;
   isLoading: boolean;
   isGenerating: boolean;
   placeholder?: string;
@@ -95,6 +99,8 @@ interface DsComponentMapping {
 
 interface ParsedScreen {
   name: string;
+  /** Slug interno del compositor (`**ID**: \`create-secret\``). */
+  screenId?: string;
   body: string;
   description: string;
   wireframeAscii: string;
@@ -153,14 +159,46 @@ function extractH3Section(body: string, heading: RegExp): string {
   return captured.join("\n").trim();
 }
 
-/** Normalizes screen titles so "Pantalla: Login" and "Login" match across views/API. */
+/** Normaliza títulos para unificar «Crear secreto» con slug interno `create-secret`. */
 function normalizeScreenKey(name: string): string {
-  return name.replace(/^pantalla:\s*/i, "").trim().toLowerCase();
+  return name
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .normalize("NFC")
+    .trim()
+    .toLowerCase()
+    .replace(/^pantalla:\s*/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function screenLookupKeys(screen: ParsedScreen): string[] {
+  const keys = [normalizeScreenKey(screen.name)];
+  if (screen.screenId?.trim()) keys.push(normalizeScreenKey(screen.screenId));
+  return keys;
 }
 
 function findParsedScreenByKey(parsedScreens: ParsedScreen[], key: string): ParsedScreen | undefined {
   const normalized = normalizeScreenKey(key);
-  return parsedScreens.find((s) => normalizeScreenKey(s.name) === normalized);
+  return parsedScreens.find((s) => screenLookupKeys(s).includes(normalized));
+}
+
+function dedupeScreenSketches(
+  sketches: ScreenSketchPayload[],
+  parsedScreens: ParsedScreen[],
+): ScreenSketchPayload[] {
+  const byKey = new Map<string, ScreenSketchPayload>();
+  for (const sk of sketches) {
+    const html = sk.html?.trim();
+    if (!html) continue;
+    const matched = parsedScreens.find((s) =>
+      screenLookupKeys(s).includes(normalizeScreenKey(sk.screenName)),
+    );
+    const screenName = matched?.name ?? sk.screenName;
+    const key = normalizeScreenKey(screenName);
+    if (!byKey.has(key)) byKey.set(key, { screenName, html });
+  }
+  return [...byKey.values()];
 }
 
 /**
@@ -191,10 +229,13 @@ function parseScreens(content: string): ParsedScreen[] {
 
     // Extract metadata from **Key**: value lines
     let description = "";
+    let screenId: string | undefined;
     const useCases: string[] = [];
     const userStories: string[] = [];
     for (const line of lines.slice(1)) {
       const trimmed = line.trim();
+      const idMatch = trimmed.match(/^\*\*ID\*\*:\s*`([^`]+)`/);
+      if (idMatch?.[1]) screenId = idMatch[1].trim();
       const descMatch = trimmed.match(/^\*\*Descripci[oó]n\*\*:\s*(.+)/i);
       if (descMatch?.[1]) description = descMatch[1].trim();
       const ucMatch = trimmed.match(/^\*\*Casos de uso\*\*:\s*(.+)/i);
@@ -270,7 +311,19 @@ function parseScreens(content: string): ParsedScreen[] {
       }
     }
 
-    return { name, body, description, wireframeAscii, components, dsComponents, navigatesTo, useCases, userStories, stateVariations };
+    return {
+      name,
+      screenId,
+      body,
+      description,
+      wireframeAscii,
+      components,
+      dsComponents,
+      navigatesTo,
+      useCases,
+      userStories,
+      stateVariations,
+    };
   });
 }
 
@@ -478,7 +531,19 @@ function DsComponentsTable({ mappings }: { mappings: DsComponentMapping[] }) {
   );
 }
 
-function ScreenCard({ screen, compact = false }: { screen: ParsedScreen; compact?: boolean }) {
+function ScreenCard({
+  screen,
+  compact = false,
+  onRegenerateSketch,
+  regeneratingSketch = false,
+  regenerateSketchDisabled = false,
+}: {
+  screen: ParsedScreen;
+  compact?: boolean;
+  onRegenerateSketch?: () => void;
+  regeneratingSketch?: boolean;
+  regenerateSketchDisabled?: boolean;
+}) {
   const hasStructuredContent = screen.dsComponents.length > 0 || screen.wireframeAscii || screen.description;
 
   return (
@@ -498,6 +563,15 @@ function ScreenCard({ screen, compact = false }: { screen: ParsedScreen; compact
               </p>
             )}
           </div>
+          {onRegenerateSketch && (
+            <ScreenRegenerateButton
+              className={SCREEN_CARD_REGEN_BTN}
+              onClick={onRegenerateSketch}
+              disabled={regenerateSketchDisabled || regeneratingSketch}
+              loading={regeneratingSketch}
+              label={`Regenerar boceto de ${screen.name}`}
+            />
+          )}
           {screen.dsComponents.length > 0 && (
             <Badge variant="secondary" className="shrink-0 gap-1 rounded-full text-[11px]">
               <Blocks className="h-3 w-3" aria-hidden />
@@ -780,12 +854,18 @@ function ScreenSketchCanvas({
   previewComponents,
   requirementsContext,
   agentSketchHtml,
+  onRegenerateSketch,
+  regeneratingSketch = false,
+  regenerateSketchDisabled = false,
 }: {
   screenTitle: string;
   parsedScreen?: ParsedScreen;
   previewComponents: PreviewComponentData[];
   requirementsContext: string;
   agentSketchHtml?: string;
+  onRegenerateSketch?: () => void;
+  regeneratingSketch?: boolean;
+  regenerateSketchDisabled?: boolean;
 }) {
   const dsComponents = parsedScreen?.dsComponents ?? [];
   const ordered = useMemo(
@@ -855,19 +935,36 @@ function ScreenSketchCanvas({
     return 360;
   }, [parsedScreen?.wireframeAscii]);
 
+  const traceRefs =
+    (parsedScreen?.useCases.length ?? 0) > 0 || (parsedScreen?.userStories.length ?? 0) > 0
+      ? [...(parsedScreen?.useCases ?? []), ...(parsedScreen?.userStories ?? [])].join(" · ")
+      : null;
+
   return (
     <article className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
       <div className="border-b border-neutral-100 bg-neutral-50/90 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <Monitor className="h-4 w-4 text-neutral-500" aria-hidden />
-          <h3 className="text-sm font-semibold text-neutral-800">{screenTitle}</h3>
+        <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Monitor className="h-4 w-4 shrink-0 text-neutral-500" aria-hidden />
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-neutral-800">{screenTitle}</h3>
+              {traceRefs ? (
+                <p className="mt-0.5 text-[10px] leading-snug text-neutral-500 line-clamp-2">
+                  Datos según {traceRefs}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          {onRegenerateSketch ? (
+            <ScreenRegenerateButton
+              className={cn(SCREEN_SKETCH_REGEN_BTN, "self-center")}
+              onClick={onRegenerateSketch}
+              disabled={regenerateSketchDisabled || regeneratingSketch}
+              loading={regeneratingSketch}
+              label={`Regenerar boceto de ${screenTitle}`}
+            />
+          ) : null}
         </div>
-        {(parsedScreen?.useCases.length ?? 0) > 0 || (parsedScreen?.userStories.length ?? 0) > 0 ? (
-          <p className="mt-1 text-[10px] text-neutral-500">
-            Datos según{" "}
-            {[...(parsedScreen?.useCases ?? []), ...(parsedScreen?.userStories ?? [])].join(" · ")}
-          </p>
-        ) : null}
       </div>
 
       {parsedScreen?.wireframeAscii ? (
@@ -930,6 +1027,46 @@ function ScreenSketchCanvas({
 
 const ALL_SCREENS_TAB = "__all__";
 
+/** Botón ↻ en cabecera de pantalla (evita icono blanco sobre fondo claro del boceto). */
+const SCREEN_SKETCH_REGEN_BTN =
+  "h-8 w-8 shrink-0 p-0 border-neutral-300 bg-white text-neutral-700 shadow-sm hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700";
+
+const SCREEN_CARD_REGEN_BTN =
+  "h-8 w-8 shrink-0 p-0 text-[var(--foreground)] border-[var(--border)] bg-[var(--card)] hover:bg-[var(--muted)]";
+
+function ScreenRegenerateButton({
+  onClick,
+  disabled,
+  loading,
+  label,
+  className,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  label: string;
+  className: string;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={cn(className)}
+      disabled={disabled}
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+    >
+      {loading ? (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-current" strokeWidth={2} aria-hidden />
+      ) : (
+        <RefreshCw className="h-3.5 w-3.5 shrink-0 text-current" strokeWidth={2} aria-hidden />
+      )}
+    </Button>
+  );
+}
+
 export function WireframesPanel({
   content,
   onContentChange,
@@ -938,6 +1075,7 @@ export function WireframesPanel({
   viewMode,
   onGenerate,
   canGenerate,
+  prerequisiteHint,
   isLoading,
   isGenerating,
   placeholder,
@@ -956,26 +1094,92 @@ export function WireframesPanel({
 
   const [activeScreenTab, setActiveScreenTab] = useState(ALL_SCREENS_TAB);
 
+  const wireframesPreviewSession = useWorkshopStore((s) => s.wireframesPreviewSession);
+  const setWireframesPreviewSession = useWorkshopStore((s) => s.setWireframesPreviewSession);
+
+  const [wireframesHash, setWireframesHash] = useState<string | null>(null);
   const [previewSnippets, setPreviewSnippets] = useState<PreviewScreenData[] | null>(null);
   const [screenSketches, setScreenSketches] = useState<ScreenSketchPayload[]>([]);
   const [sketchesStale, setSketchesStale] = useState(false);
   const [sketchesStaleReason, setSketchesStaleReason] = useState<"mdd" | "screens" | "missing" | undefined>();
   const [sketchesRegenerating, setSketchesRegenerating] = useState(false);
+  const [regeneratingScreenKeys, setRegeneratingScreenKeys] = useState<Set<string>>(() => new Set());
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [previewSubTab, setPreviewSubTab] = useState<"components" | "screen">("screen");
+
+  useEffect(() => {
+    let cancelled = false;
+    void contentDigestHash(content ?? "").then((hash) => {
+      if (!cancelled) setWireframesHash(hash || null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [content]);
 
   useEffect(() => {
     setPreviewSnippets(null);
     setScreenSketches([]);
     setSketchesStale(false);
     setSketchesStaleReason(undefined);
-  }, [content]);
+    setPreviewError(null);
+  }, [wireframesHash, projectId]);
 
   const previewLoadingRef = useRef(false);
+  const screenRegenInFlightRef = useRef<Set<string>>(new Set());
+
+  type SketchesStatus = {
+    screenSketches?: ScreenSketchPayload[];
+    sketchesStale?: boolean;
+    sketchesStaleReason?: "mdd" | "screens" | "missing";
+    syncing?: boolean;
+    accepted?: boolean;
+  };
+
+  const applySketchStatus = useCallback(
+    (data: SketchesStatus) => {
+    const sketches = dedupeScreenSketches(data.screenSketches ?? [], screens);
+    setScreenSketches(sketches);
+    setSketchesStale(data.sketchesStale === true);
+    setSketchesStaleReason(data.sketchesStaleReason);
+    return sketches.length;
+  },
+    [screens],
+  );
+
+  const refreshSketchesQuietly = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const { apiFetch, API_BASE } = await import("../utils/apiClient");
+      const res = await apiFetch(
+        `${API_BASE}/ai-analysis/wireframes/sketches?projectId=${encodeURIComponent(projectId)}`,
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as SketchesStatus;
+      applySketchStatus(data);
+    } catch {
+      /* best-effort */
+    }
+  }, [projectId, applySketchStatus]);
 
   useEffect(() => {
-    if (viewMode !== "preview" || !projectId || previewSnippets !== null || previewLoadingRef.current) return;
+    if (viewMode !== "preview" || !projectId || !wireframesHash) return;
+
+    const sessionHit =
+      wireframesPreviewSession?.projectId === projectId &&
+      wireframesPreviewSession.wireframesHash === wireframesHash;
+
+    if (sessionHit && previewSnippets === null) {
+      setPreviewSnippets(wireframesPreviewSession.screens as PreviewScreenData[]);
+      setScreenSketches(dedupeScreenSketches(wireframesPreviewSession.screenSketches, screens));
+      setSketchesStale(wireframesPreviewSession.sketchesStale);
+      setSketchesStaleReason(wireframesPreviewSession.sketchesStaleReason);
+      void refreshSketchesQuietly();
+      return;
+    }
+
+    if (previewSnippets !== null || previewLoadingRef.current) return;
+
     let cancelled = false;
     previewLoadingRef.current = true;
     setPreviewLoading(true);
@@ -984,97 +1188,151 @@ export function WireframesPanel({
     (async () => {
       try {
         const { apiFetch, API_BASE } = await import("../utils/apiClient");
-        console.log("[WireframesPreview] POST preview-snippets", { projectId });
         const res = await apiFetch(`${API_BASE}/ai-analysis/wireframes/preview-snippets`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId }),
         });
-        console.log("[WireframesPreview] status", res.status);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json() as {
+        const data = (await res.json()) as {
           screens?: PreviewScreenData[];
           screenSketches?: ScreenSketchPayload[];
           sketchesStale?: boolean;
           sketchesStaleReason?: "mdd" | "screens" | "missing";
+          wireframesHash?: string;
+          fromCache?: boolean;
         };
-        const screens = data.screens ?? [];
-        const sketches = data.screenSketches ?? [];
-        const total = screens.reduce((n, s) => n + (s.components?.length ?? 0), 0);
-        const errors = screens.reduce(
-          (n, s) => n + (s.components?.filter((c) => c.error).length ?? 0),
-          0,
-        );
-        console.log("[WireframesPreview] loaded", {
-          screens: screens.length,
-          components: total,
-          errors,
-          sketches: sketches.length,
-        });
+        const previewScreens = data.screens ?? [];
+        const sketches = dedupeScreenSketches(data.screenSketches ?? [], screens);
+        const hash = data.wireframesHash ?? wireframesHash;
         if (!cancelled) {
-          setPreviewSnippets(screens);
+          setPreviewSnippets(previewScreens);
           setScreenSketches(sketches);
           setSketchesStale(data.sketchesStale === true);
           setSketchesStaleReason(data.sketchesStaleReason);
+          const session: WireframesPreviewSession = {
+            projectId,
+            wireframesHash: hash,
+            screens: previewScreens,
+            screenSketches: sketches,
+            sketchesStale: data.sketchesStale === true,
+            sketchesStaleReason: data.sketchesStaleReason,
+          };
+          setWireframesPreviewSession(session);
         }
       } catch (e) {
-        console.error("[WireframesPreview] failed", e);
-        if (!cancelled) setPreviewError(e instanceof Error ? e.message : "Error al cargar preview");
+        if (!cancelled) {
+          setPreviewError(e instanceof Error ? e.message : "Error al cargar preview");
+        }
       } finally {
         previewLoadingRef.current = false;
         if (!cancelled) setPreviewLoading(false);
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [viewMode, projectId, previewSnippets]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    viewMode,
+    projectId,
+    wireframesHash,
+    wireframesPreviewSession,
+    previewSnippets,
+    refreshSketchesQuietly,
+    setWireframesPreviewSession,
+  ]);
+
+  const pollSketchSync = useCallback(
+    async (maxWaitMs: number, pollMs = 3000) => {
+      if (!projectId) return null;
+      const { apiFetch, API_BASE } = await import("../utils/apiClient");
+      const started = Date.now();
+      let last: SketchesStatus | null = null;
+      while (Date.now() - started < maxWaitMs) {
+        await new Promise((r) => setTimeout(r, pollMs));
+        const pollRes = await apiFetch(
+          `${API_BASE}/ai-analysis/wireframes/sketches?projectId=${encodeURIComponent(projectId)}`,
+        );
+        if (!pollRes.ok) continue;
+        last = (await pollRes.json()) as SketchesStatus;
+        applySketchStatus(last);
+        if (!last.syncing) return last;
+      }
+      return last;
+    },
+    [projectId, applySketchStatus],
+  );
+
+  const sketchRegenDisabled = sketchesRegenerating || !projectId;
+
+  const regenerateScreenBoceto = useCallback(
+    async (screenName: string) => {
+      if (!projectId || sketchRegenDisabled) return;
+      const key = normalizeScreenKey(screenName);
+      if (screenRegenInFlightRef.current.has(key)) return;
+      screenRegenInFlightRef.current.add(key);
+      setRegeneratingScreenKeys((prev) => new Set(prev).add(key));
+      setPreviewError(null);
+      try {
+        const { apiFetch, API_BASE } = await import("../utils/apiClient");
+        const res = await apiFetch(`${API_BASE}/ai-analysis/wireframes/sync-sketches`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, async: true, screenNames: [screenName] }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const final = await pollSketchSync(10 * 60 * 1000);
+        if (final?.syncing) {
+          setPreviewError(`El boceto de «${screenName}» sigue generándose en el servidor.`);
+        }
+      } catch (e) {
+        console.error("[WireframesPreview] sync-screen failed", e);
+        setPreviewError(
+          e instanceof Error ? e.message : `Error al regenerar boceto de ${screenName}`,
+        );
+      } finally {
+        screenRegenInFlightRef.current.delete(key);
+        setRegeneratingScreenKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
+    },
+    [projectId, sketchRegenDisabled, pollSketchSync],
+  );
 
   const regenerateBocetos = async () => {
     if (!projectId || sketchesRegenerating) return;
     setSketchesRegenerating(true);
     setPreviewError(null);
-    console.log("[WireframesPreview] sync-sketches start", { projectId, forceAll: true });
+    console.log("[WireframesPreview] sync-sketches start", { projectId, forceAll: true, async: true });
     try {
       const { apiFetch, API_BASE } = await import("../utils/apiClient");
       const res = await apiFetch(`${API_BASE}/ai-analysis/wireframes/sync-sketches`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, forceAll: true }),
+        body: JSON.stringify({ projectId, forceAll: true, async: true }),
       });
-      console.log("[WireframesPreview] sync-sketches status", res.status);
       if (!res.ok) {
         const errBody = await res.text().catch(() => "");
         console.error("[WireframesPreview] sync-sketches error body", errBody.slice(0, 500));
         throw new Error(`HTTP ${res.status}`);
       }
-      const data = await res.json() as {
-        screenSketches?: ScreenSketchPayload[];
-        sketchesStale?: boolean;
-        debug?: {
-          parsedSections?: number;
-          withWireframe?: number;
-          toGenerate?: number;
-          llmGenerated?: number;
-          savedToCache?: number;
-          batches?: Array<{ index: number; expected: number; parsed: number; rawLength: number }>;
-          error?: string;
-        };
-      };
-      console.log("[WireframesPreview] sync-sketches result", {
-        sketches: data.screenSketches?.length ?? 0,
-        stale: data.sketchesStale,
-        debug: data.debug,
-        screenNames: data.screenSketches?.map((s) => s.screenName),
-      });
-      setScreenSketches(data.screenSketches ?? []);
-      setSketchesStale(data.sketchesStale === true);
-      setSketchesStaleReason(data.sketchesStale ? (data.debug?.error ? "missing" : "screens") : undefined);
-      if ((data.screenSketches?.length ?? 0) === 0) {
+
+      const initial = (await res.json()) as SketchesStatus;
+      applySketchStatus(initial);
+
+      const finalStatus = (await pollSketchSync(45 * 60 * 1000)) ?? initial;
+      const finalCount = applySketchStatus(finalStatus);
+
+      if (finalStatus.syncing) {
         setPreviewError(
-          data.debug?.error
-            ? `No se generaron bocetos: ${data.debug.error}`
-            : "No se generaron bocetos. Revisa la consola del API (SketchSync).",
+          "La generación sigue en curso en el servidor. Los bocetos aparecerán al terminar; recarga en unos minutos.",
         );
+      } else if (finalCount === 0) {
+        setPreviewError("No se generaron bocetos. Revisa la consola del API (SketchSync).");
       }
     } catch (e) {
       console.error("[WireframesPreview] sync-sketches failed", e);
@@ -1095,41 +1353,47 @@ export function WireframesPanel({
 
   const allScreenEntries = useMemo<ScreenPreviewEntry[]>(() => {
     const map = new Map<string, ScreenPreviewEntry>();
+    const register = (entry: ScreenPreviewEntry, aliasKeys: string[]) => {
+      for (const alias of aliasKeys) map.set(alias, entry);
+    };
+
     for (const s of screens) {
       const key = normalizeScreenKey(s.name);
       const title = s.name.replace(/^Pantalla:\s*/i, "").trim() || s.name;
-      map.set(key, {
-        key,
-        title,
-        parsed: s,
-        screenSketchHtml: sketchByScreenKey.get(key),
-      });
+      const sketch =
+        sketchByScreenKey.get(key) ??
+        (s.screenId ? sketchByScreenKey.get(normalizeScreenKey(s.screenId)) : undefined);
+      register(
+        { key, title, parsed: s, screenSketchHtml: sketch },
+        screenLookupKeys(s),
+      );
     }
     for (const p of previewSnippets ?? []) {
       const key = normalizeScreenKey(p.screenName);
+      const matched = screens.find((s) => screenLookupKeys(s).includes(key));
+      const canonicalKey = matched ? normalizeScreenKey(matched.name) : key;
       const sketch =
-        p.screenSketchHtml?.trim() || sketchByScreenKey.get(key);
-      const existing = map.get(key);
+        p.screenSketchHtml?.trim() ||
+        sketchByScreenKey.get(canonicalKey) ||
+        sketchByScreenKey.get(key);
+      const existing = map.get(canonicalKey) ?? map.get(key);
       if (existing) {
         existing.preview = p;
         if (sketch) existing.screenSketchHtml = sketch;
       } else {
-        map.set(key, {
-          key,
-          title: p.screenName,
-          preview: p,
-          screenSketchHtml: sketch,
-        });
+        register(
+          {
+            key: canonicalKey,
+            title: matched?.name ?? p.screenName,
+            preview: p,
+            screenSketchHtml: sketch,
+          },
+          matched ? screenLookupKeys(matched) : [key],
+        );
       }
     }
-    for (const [key, html] of sketchByScreenKey) {
-      if (!map.has(key)) {
-        const title = screenSketches.find((s) => normalizeScreenKey(s.screenName) === key)?.screenName ?? key;
-        map.set(key, { key, title, screenSketchHtml: html });
-      }
-    }
-    return Array.from(map.values());
-  }, [screens, previewSnippets, sketchByScreenKey, screenSketches]);
+    return [...new Set(map.values())];
+  }, [screens, previewSnippets, sketchByScreenKey]);
 
   const hasPreviewContent = useMemo(() => {
     const componentCount = (previewSnippets ?? []).reduce(
@@ -1194,12 +1458,15 @@ export function WireframesPanel({
       <DocEmptyState
         icon={Monitor}
         title="Wireframes"
-        description="Mapeo visual de pantallas, componentes del design system y flujo de navegación. Se genera desde los casos de uso y las historias de usuario."
+        description="Mapeo visual de pantallas con componentes del design system (MCP). Requiere Design System generado y casos de uso o historias de usuario."
         onGenerate={onGenerate}
         loading={isGenerating || isLoading}
         hasMdd={canGenerate}
         generateButtonLabel="Generar Wireframes"
-        prerequisiteHint="Necesitas tener casos de uso o historias de usuario para generar wireframes."
+        prerequisiteHint={
+          prerequisiteHint ??
+          "Genera el Design System antes de crear wireframes."
+        }
       />
     );
   }
@@ -1245,13 +1512,36 @@ export function WireframesPanel({
             {visibleScreens.length > 0 ? (
               activeScreenTab === ALL_SCREENS_TAB ? (
                 <div className="grid gap-4 p-1 pt-3 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
-                  {visibleScreens.map((screen) => (
-                    <ScreenCard key={screen.name} screen={screen} compact />
-                  ))}
+                  {visibleScreens.map((screen) => {
+                    const screenKey = normalizeScreenKey(screen.name);
+                    return (
+                      <ScreenCard
+                        key={screen.name}
+                        screen={screen}
+                        compact
+                        onRegenerateSketch={
+                          projectId ? () => void regenerateScreenBoceto(screen.name) : undefined
+                        }
+                        regeneratingSketch={regeneratingScreenKeys.has(screenKey)}
+                        regenerateSketchDisabled={sketchRegenDisabled}
+                      />
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="mx-auto max-w-4xl p-1 pt-3">
-                  <ScreenCard screen={visibleScreens[0]} />
+                  <ScreenCard
+                    screen={visibleScreens[0]}
+                    onRegenerateSketch={
+                      projectId
+                        ? () => void regenerateScreenBoceto(visibleScreens[0]!.name)
+                        : undefined
+                    }
+                    regeneratingSketch={regeneratingScreenKeys.has(
+                      normalizeScreenKey(visibleScreens[0]!.name),
+                    )}
+                    regenerateSketchDisabled={sketchRegenDisabled}
+                  />
                 </div>
               )
             ) : (
@@ -1266,7 +1556,7 @@ export function WireframesPanel({
               <Loader2 className="h-6 w-6 animate-spin text-[var(--primary)]" />
               <span className="text-sm">Cargando vista previa…</span>
               <span className="text-xs text-[var(--muted-foreground)]">
-                Componentes MCP y bocetos en caché (sin llamadas IA)
+                Cargando previews y bocetos guardados…
               </span>
             </div>
           ) : previewError ? (
@@ -1280,142 +1570,103 @@ export function WireframesPanel({
               </div>
             </div>
           ) : previewSnippets !== null && hasPreviewContent ? (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div className="shrink-0 px-1">
                 <UnderlineTabs
-                  tabs={[
-                    { id: "components", label: "Componentes", icon: Blocks },
-                    { id: "screen", label: "Pantalla", icon: Monitor },
-                  ]}
-                  value={previewSubTab}
-                  onValueChange={(v) => setPreviewSubTab(v as "components" | "screen")}
+                  tabs={[{ id: "pantallas", label: "pantallas", icon: Monitor }]}
+                  value="pantallas"
+                  onValueChange={() => {}}
                   ariaLabel="Vista de preview"
                   idPrefix="wf-preview"
                 />
               </div>
-
-              <div className="min-h-0 flex-1 overflow-auto">
-                {previewSubTab === "components" ? (
-                  <div className="space-y-6 p-1 pt-3">
-                    {previewSnippets.map((screenData) => (
-                      <section key={screenData.screenName}>
-                        <div className="mb-3 flex items-center gap-2">
-                          <Eye className="h-4 w-4 text-[var(--primary)]" />
-                          <h3 className="text-sm font-semibold text-[var(--foreground)]">{screenData.screenName}</h3>
-                          <Badge variant="secondary" className="rounded-full text-[11px]">
-                            {screenData.components.length}
-                          </Badge>
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                          {screenData.components.map((comp) => (
-                            <div
-                              key={`${screenData.screenName}-${comp.name}`}
-                              className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-[0_4px_16px_rgba(0,0,0,0.06)]"
-                            >
-                              <div className="border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_22%,var(--card))] px-4 py-2.5">
-                                <p className="text-sm font-semibold text-[var(--foreground)]">{comp.name}</p>
-                                <p className="text-[11px] font-mono text-[var(--muted-foreground)]">{comp.moduleId}</p>
-                              </div>
-                              <div className="p-2">
-                                {comp.error && comp.previewKind !== "unavailable" ? (
-                                  <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-400">
-                                    <XCircle className="h-3.5 w-3.5 shrink-0" />
-                                    {comp.error}
-                                  </div>
-                                ) : (
-                                  <ComponentPreviewRenderer comp={comp} />
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
+                {sketchesStale ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {sketchesStaleReason === "mdd"
+                      ? "El MDD cambió: los bocetos pueden estar desactualizados."
+                      : sketchesStaleReason === "missing"
+                        ? "Aún no hay bocetos generados para este documento."
+                        : "Algunas pantallas cambiaron en el markdown."}
+                  </p>
                 ) : (
-                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
-                      {sketchesStale ? (
-                        <p className="text-xs text-amber-700 dark:text-amber-300">
-                          {sketchesStaleReason === "mdd"
-                            ? "El MDD cambió: los bocetos pueden estar desactualizados."
-                            : sketchesStaleReason === "missing"
-                              ? "Aún no hay bocetos generados para este documento."
-                              : "Algunas pantallas cambiaron en el markdown."}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-[var(--muted-foreground)]">
-                          Bocetos generados al crear o guardar wireframes.
-                        </p>
-                      )}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1.5 text-xs"
-                        disabled={sketchesRegenerating || !projectId}
-                        onClick={() => void regenerateBocetos()}
-                      >
-                        {sketchesRegenerating ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-3.5 w-3.5" />
-                        )}
-                        Regenerar bocetos
-                      </Button>
-                    </div>
-                    {screenTabs.length > 1 && (
-                      <div className="shrink-0 border-b border-[var(--border)] px-1 pb-2">
-                        <UnderlineTabs
-                          tabs={screenTabs}
-                          value={activeScreenTab}
-                          onValueChange={setActiveScreenTab}
-                          ariaLabel="Pantallas del boceto"
-                          idPrefix="wf-preview-screen"
-                        />
-                      </div>
-                    )}
-                    <div className="min-h-0 flex-1 overflow-auto">
-                      <div className="mx-auto max-w-4xl space-y-6 p-1 pt-3">
-                        {visiblePreviewEntries.map((entry) => {
-                          const parsedScreen =
-                            entry.parsed ?? findParsedScreenByKey(screens, entry.title);
-                          const requirementsContext = collectRequirementsContext(
-                            useCasesContent ?? "",
-                            userStoriesContent ?? "",
-                            [
-                              ...(parsedScreen?.useCases ?? []),
-                              ...(parsedScreen?.userStories ?? []),
-                            ],
-                            specContent ?? "",
-                          );
-                          return (
-                            <div key={entry.key} className="space-y-3">
-                              <ScreenSketchCanvas
-                                screenTitle={entry.title}
-                                parsedScreen={parsedScreen}
-                                previewComponents={entry.preview?.components ?? []}
-                                requirementsContext={requirementsContext}
-                                agentSketchHtml={entry.screenSketchHtml}
-                              />
-                              {!parsedScreen?.wireframeAscii && (
-                                <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-                                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                                  Sin wireframe ASCII en el markdown para {entry.title}.
-                                </div>
-                              )}
-                              {parsedScreen && parsedScreen.dsComponents.length > 0 && (
-                                <DsComponentsTable mappings={parsedScreen.dsComponents} />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Bocetos generados al crear o guardar wireframes.
+                  </p>
                 )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs"
+                  disabled={sketchesRegenerating || !projectId}
+                  onClick={() => void regenerateBocetos()}
+                >
+                  {sketchesRegenerating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  Regenerar bocetos
+                </Button>
               </div>
-            </>
+              {screenTabs.length > 1 && (
+                <div className="shrink-0 border-b border-[var(--border)] px-1 pb-2">
+                  <UnderlineTabs
+                    tabs={screenTabs}
+                    value={activeScreenTab}
+                    onValueChange={setActiveScreenTab}
+                    ariaLabel="pantallas"
+                    idPrefix="wf-preview-screen"
+                  />
+                </div>
+              )}
+              <div className="min-h-0 flex-1 overflow-auto">
+                <div className="mx-auto max-w-4xl space-y-6 p-1 pt-3">
+                  {visiblePreviewEntries.map((entry) => {
+                    const parsedScreen =
+                      entry.parsed ?? findParsedScreenByKey(screens, entry.title);
+                    const requirementsContext = collectRequirementsContext(
+                      useCasesContent ?? "",
+                      userStoriesContent ?? "",
+                      [
+                        ...(parsedScreen?.useCases ?? []),
+                        ...(parsedScreen?.userStories ?? []),
+                      ],
+                      specContent ?? "",
+                    );
+                    const screenKey = entry.key;
+                    return (
+                      <div key={entry.key} className="space-y-3">
+                        <ScreenSketchCanvas
+                          screenTitle={entry.title}
+                          parsedScreen={parsedScreen}
+                          previewComponents={entry.preview?.components ?? []}
+                          requirementsContext={requirementsContext}
+                          agentSketchHtml={entry.screenSketchHtml}
+                          onRegenerateSketch={
+                            projectId
+                              ? () => void regenerateScreenBoceto(entry.title)
+                              : undefined
+                          }
+                          regeneratingSketch={regeneratingScreenKeys.has(screenKey)}
+                          regenerateSketchDisabled={sketchRegenDisabled}
+                        />
+                        {!parsedScreen?.wireframeAscii && (
+                          <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            Sin wireframe ASCII en el markdown para {entry.title}.
+                          </div>
+                        )}
+                        {parsedScreen && parsedScreen.dsComponents.length > 0 && (
+                          <DsComponentsTable mappings={parsedScreen.dsComponents} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="flex min-h-0 flex-1 flex-col gap-3">
               <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">

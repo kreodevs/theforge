@@ -144,15 +144,6 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       content: ctx.userStoriesContent,
     });
   }
-  if (visible("wireframes")) {
-    items.push({
-      id: "wireframes",
-      label: "Wireframes",
-      title: "Wireframes: mapeo de pantallas y componentes del design system",
-      Icon: Monitor,
-      content: ctx.wireframesContent,
-    });
-  }
   if (visible("blueprint")) {
     items.push({
       id: "blueprint",
@@ -169,6 +160,15 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       title: "Design System (DESIGN.md)",
       Icon: Palette,
       content: ctx.uxUiGuideContent,
+    });
+  }
+  if (visible("wireframes")) {
+    items.push({
+      id: "wireframes",
+      label: "Wireframes",
+      title: "Wireframes: mapeo de pantallas y componentes del design system",
+      Icon: Monitor,
+      content: ctx.wireframesContent,
     });
   }
   if (visible("aem")) {

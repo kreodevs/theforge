@@ -32,16 +32,16 @@ export const HIGH_GREENFIELD_FLOW_STEPS = [
     description: "Historias de usuario priorizables para el equipo de entrega.",
   },
   {
-    label: "Wireframes",
-    description: "Mapeo visual de pantallas con componentes del design system vía MCP.",
-  },
-  {
     label: "Blueprint",
     description: "Blueprint técnico alineado al modelo de datos y servicios del MDD.",
   },
   {
     label: "Design System",
     description: "Tokens de diseño y UI Kit de ejemplo para una interfaz coherente.",
+  },
+  {
+    label: "Wireframes",
+    description: "Mapeo visual de pantallas con componentes del design system vía MCP.",
   },
   {
     label: "API",

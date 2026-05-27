@@ -57,8 +57,8 @@ export function isTabVisibleForComplexity(
         "mdd",
         "spec",
         "api-contracts",
-        "wireframes",
         "ux-ui-guide",
+        "wireframes",
         "tasks",
       ];
       return allow.includes(tab);
@@ -68,8 +68,8 @@ export function isTabVisibleForComplexity(
       "spec",
       "brd",
       "api-contracts",
-      "wireframes",
       "ux-ui-guide",
+      "wireframes",
       "tasks",
       "adrs",
     ];

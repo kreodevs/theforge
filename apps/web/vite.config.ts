@@ -46,6 +46,9 @@ export default defineConfig({
         target: "http://localhost:3000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
+        // sync-sketches puede tardar varios minutos (LLM por lote de pantallas).
+        timeout: 0,
+        proxyTimeout: 0,
       },
     },
   },

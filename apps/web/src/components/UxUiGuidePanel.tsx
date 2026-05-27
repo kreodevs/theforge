@@ -12,6 +12,8 @@ interface UxUiGuidePanelProps {
   onContentChange: (value: string | null) => void;
   onSave: () => void;
   isDirty: boolean;
+  /** Fuerza remount de la vista visual tras guardar en modo fuente. */
+  designPreviewKey?: number;
   viewMode: "preview" | "source" | "design";
   onGenerate: () => void;
   canGenerate: boolean;
@@ -29,6 +31,7 @@ export function UxUiGuidePanel({
   onContentChange,
   onSave,
   isDirty,
+  designPreviewKey = 0,
   viewMode,
   onGenerate,
   canGenerate,
@@ -56,7 +59,7 @@ export function UxUiGuidePanel({
     <>
       {viewMode === "design" ? (
         <div key="design-view" className="flex min-h-0 flex-1 flex-col overflow-auto">
-          <DesignMdPreview content={content ?? ""} />
+          <DesignMdPreview key={designPreviewKey} content={content ?? ""} />
         </div>
       ) : viewMode === "preview" ? (
         <div key="preview-view" className="min-h-0 flex-1">

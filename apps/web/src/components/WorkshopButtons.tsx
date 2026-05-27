@@ -282,12 +282,13 @@ export function WorkshopDocToolbarIcon({
 }
 
 /** Icono del toolbar de documentos (preview, print, regen). */
-export function WorkshopDocToolbarIconButton({
-  className,
-  ...props
-}: ComponentProps<typeof Button>) {
+export const WorkshopDocToolbarIconButton = forwardRef<
+  HTMLButtonElement,
+  ComponentProps<typeof Button>
+>(function WorkshopDocToolbarIconButton({ className, ...props }, ref) {
   return (
     <Button
+      ref={ref}
       type="button"
       variant="outline"
       size="icon"
@@ -295,7 +296,7 @@ export function WorkshopDocToolbarIconButton({
       {...props}
     />
   );
-}
+});
 
 type WorkshopChatToolbarIconButtonProps = ComponentProps<"button"> & {
   tone?: "default" | "danger";

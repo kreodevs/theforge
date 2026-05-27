@@ -567,6 +567,28 @@ export interface Session {
   updatedAt: string;
 }
 
+export type WireframesPreviewComponent = {
+  name: string;
+  moduleId: string;
+  previewKind?: "html" | "url" | "unavailable" | "error" | "legacy";
+  document?: string;
+  previewUrl?: string;
+  recommendedHeight?: number;
+  sandbox?: string;
+  snippet?: string;
+  error?: string;
+  fallback?: { kind: string; url?: string; screenshotUrl?: string };
+};
+
+export type WireframesPreviewSession = {
+  projectId: string;
+  wireframesHash: string;
+  screens: Array<{ screenName: string; components: WireframesPreviewComponent[] }>;
+  screenSketches: Array<{ screenName: string; html: string }>;
+  sketchesStale: boolean;
+  sketchesStaleReason?: "mdd" | "screens" | "missing";
+};
+
 interface WorkshopState {
   projectId: string | null;
   project: Project | null;
@@ -722,6 +744,9 @@ interface WorkshopState {
   generateInfra: (projectId: string, options?: { gapsFeedback?: string }) => Promise<Project | null>;
   setWireframesContent: (content: string | null) => void;
   persistWireframesContent: (content: string) => Promise<void>;
+  /** Caché en memoria de preview wireframes (evita refetch al cambiar de pestaña). */
+  wireframesPreviewSession: WireframesPreviewSession | null;
+  setWireframesPreviewSession: (session: WireframesPreviewSession | null) => void;
 
   setArchitectureContent: (content: string | null) => void;
   persistArchitectureContent: (content: string) => Promise<void>;
@@ -821,6 +846,7 @@ const initialState = {
   userStoriesContent: null as string | null,
   infraContent: null as string | null,
   wireframesContent: null as string | null,
+  wireframesPreviewSession: null as WireframesPreviewSession | null,
   aemContent: null as string | null,
   conformance: null as {
     blueprint: ConformanceResult;
@@ -881,13 +907,21 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setWorkshopActiveDocPanel: (panel) => set({ workshopActiveDocPanel: panel }),
   setProject: (p) => {
     if (!p) {
-      set({ project: null, activeStageId: null, workshopStages: [], lastLegacyDeliverablesDebug: null });
+      set({
+        project: null,
+        activeStageId: null,
+        workshopStages: [],
+        lastLegacyDeliverablesDebug: null,
+        wireframesPreviewSession: null,
+      });
       return;
     }
     const stages = p.stages ?? [];
     const prev = get().activeStageId;
+    const prevProjectId = get().projectId;
     const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
     const flat = workshopFlatFromStage(p, activeStageId);
+    const nextProjectId = p.id;
     set({
       project: { ...p, ...flat, stages },
       workshopStages: stages,
@@ -895,6 +929,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       mddContent: cleanDoc(flat.mddContent) ?? "",
       uxUiGuideContent: p.uxUiGuideContent ?? null,
       wireframesContent: p.wireframesContent ?? null,
+      wireframesPreviewSession:
+        prevProjectId === nextProjectId ? get().wireframesPreviewSession : null,
       dbgaContent: p.dbgaContent ?? null,
       phase0SummaryContent: p.phase0SummaryContent ?? null,
       blueprintContent: p.blueprintContent ?? null,
@@ -2266,10 +2302,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     finally { set({ loading: false }); }
   },
 
-  setWireframesContent: (content) => set({ wireframesContent: content }),
+  setWireframesContent: (content) =>
+    set({
+      wireframesContent: content,
+      wireframesPreviewSession: null,
+    }),
   persistWireframesContent: async (content) => {
+    set({ wireframesPreviewSession: null });
     await persistField("wireframesContent", content, get, set);
   },
+  setWireframesPreviewSession: (session) => set({ wireframesPreviewSession: session }),
 
   setArchitectureContent: (content) => set({ architectureContent: content }),
   persistArchitectureContent: async (content) => {

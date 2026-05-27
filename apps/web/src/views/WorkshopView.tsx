@@ -55,7 +55,7 @@ import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import { AIProviderBanner } from "../components/AIProviderBanner";
 import { ModelsUnavailableDialog } from "../components/ModelsUnavailableDialog";
 import MddViewer from "../components/MddViewer";
-import { replaceYamlFrontMatter } from "../components/DesignMdPreview";
+import { invalidateDesignMdCache, replaceYamlFrontMatter } from "../components/DesignMdPreview";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
 import { WorkshopMetricsColumnInner } from "./WorkshopMetricsColumnInner";
 import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
@@ -192,7 +192,7 @@ function WorkshopDocToolbarHint({
           : "Complejidad media (producto nuevo): sin MDD en barra — insumo Paso 0 / Spec. Entregables: Spec → API → Design System → Tasks."
         : _isLegacyProject
           ? "Legacy: MDD Inicial opcional (Ariadne → doc. de partida); luego Modificación + MDD de cambio y entregables. Cada etapa del taller = una modificación con doc actualizada vía Ariadne."
-          : "Orden: Paso 0 → BRD → To-Be → MDD → Spec → Arq. → Casos → H.U. → Blueprint → Design System → API → Flujos → Tasks → Infra";
+          : "Orden: Paso 0 → BRD → To-Be → MDD → Spec → Arq. → Casos → H.U. → Blueprint → Design System → Wireframes → API → Flujos → Tasks → Infra";
 
   const summaryLine =
     tier === "LOW"
@@ -317,6 +317,29 @@ export default function WorkshopView({
   const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
   const wireframesContent = wireframesContentField ?? project?.wireframesContent ?? null;
   const aemContent = aemContentField ?? project?.aemContent ?? null;
+
+  const effectiveUxUiGuideTrimmed = useMemo(
+    () => (uxUiGuideContent ?? "").trim(),
+    [uxUiGuideContent],
+  );
+
+  const canGenerateUxUiGuide = useMemo(
+    () => !!(effectiveMddTrimmed && blueprintContent?.trim()),
+    [effectiveMddTrimmed, blueprintContent],
+  );
+
+  /** Wireframes: requiere Design System generado y casos de uso o historias (insumo del grafo). */
+  const canGenerateWireframes = useMemo(() => {
+    if (!effectiveUxUiGuideTrimmed) return false;
+    return !!(useCasesContent?.trim() || userStoriesContent?.trim());
+  }, [effectiveUxUiGuideTrimmed, useCasesContent, userStoriesContent]);
+
+  const wireframesPrerequisiteHint = useMemo(() => {
+    if (!effectiveUxUiGuideTrimmed) {
+      return "Genera el Design System antes de crear wireframes (requiere MDD y Blueprint activos, igual que en la pestaña Design System).";
+    }
+    return "Necesitas tener casos de uso o historias de usuario para generar wireframes.";
+  }, [effectiveUxUiGuideTrimmed]);
 
   const projectStatus: Status = project?.status ?? "ROJO";
   const semaphoreGreen = liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
@@ -836,6 +859,7 @@ export default function WorkshopView({
   const [logicFlowsViewMode, setLogicFlowsViewMode] = useState<"preview" | "source">("preview");
   const [infraViewMode, setInfraViewMode] = useState<"preview" | "source">("preview");
   const [uxUiGuideViewMode, setUxUiGuideViewMode] = useState<"design" | "preview" | "source">("design");
+  const [uxUiGuidePreviewKey, setUxUiGuidePreviewKey] = useState(0);
   const [wireframesViewMode, setWireframesViewMode] = useState<"wireframe" | "preview" | "source">("wireframe");
   const [architectureViewMode, setArchitectureViewMode] = useState<"preview" | "source">("preview");
   const [useCasesViewMode, setUseCasesViewMode] = useState<"preview" | "source">("preview");
@@ -1493,6 +1517,17 @@ export default function WorkshopView({
       persistUxUiGuideContent(content);
     }
   }, [uxUiGuideContent, persistUxUiGuideContent, projectName]);
+
+  const handleUxUiGuideSave = useCallback(async () => {
+    const previous = uxUiGuideContent ?? "";
+    const content = replaceYamlFrontMatter(previous, projectName);
+    invalidateDesignMdCache(previous);
+    invalidateDesignMdCache(content);
+    setUxUiGuideContent(content);
+    await persistUxUiGuideContent(content);
+    setUxUiGuidePreviewKey((k) => k + 1);
+    setUxUiGuideViewMode("design");
+  }, [uxUiGuideContent, projectName, setUxUiGuideContent, persistUxUiGuideContent]);
 
   // Consultar si Hermes Agent está configurado en el backend
   useEffect(() => {
@@ -2408,9 +2443,9 @@ export default function WorkshopView({
                 {centralPanel === "wireframes" && (wireframesGenerating || !!wireframesContent?.trim()) && (
                   <WorkshopRegenButton
                     onClick={() => void generateWireframes()}
-                    disabled={wireframesGenerating || loading || !(useCasesContent?.trim() || userStoriesContent?.trim())}
+                    disabled={wireframesGenerating || loading || !canGenerateWireframes}
                     loading={wireframesGenerating}
-                    ariaLabel="Regenerar wireframes desde casos de uso e historias"
+                    ariaLabel="Regenerar wireframes (requiere Design System y casos de uso o historias)"
                     onCancel={() => void cancelWireframes()}
                     cancelTooltip="Detener generación y descartar wireframes parciales"
                   />
@@ -3223,15 +3258,12 @@ export default function WorkshopView({
                 key={uxUiGuideContent ? "populated" : "empty"}
                 content={uxUiGuideContent}
                 onContentChange={(v) => setUxUiGuideContent(v)}
-                onSave={() => {
-                  const content = replaceYamlFrontMatter(uxUiGuideContent ?? "", projectName);
-                  if (content !== (uxUiGuideContent ?? "")) setUxUiGuideContent(content);
-                  void persistUxUiGuideContent(content);
-                }}
+                onSave={() => void handleUxUiGuideSave()}
                 isDirty={uxUiGuideDirty}
+                designPreviewKey={uxUiGuidePreviewKey}
                 viewMode={uxUiGuideViewMode}
                 onGenerate={generateUxGuideSequential}
-                canGenerate={!!(effectiveMddTrimmed && blueprintContent?.trim())}
+                canGenerate={canGenerateUxUiGuide}
                 isLoading={loading}
                 isGenerating={uxGenerating}
                 placeholder="# Design System\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
@@ -3248,7 +3280,8 @@ export default function WorkshopView({
                   isDirty={wireframesDirty}
                   viewMode={wireframesViewMode}
                   onGenerate={() => void generateWireframes()}
-                  canGenerate={!!(useCasesContent?.trim() || userStoriesContent?.trim())}
+                  canGenerate={canGenerateWireframes}
+                  prerequisiteHint={wireframesPrerequisiteHint}
                   isLoading={loading}
                   isGenerating={wireframesGenerating}
                   placeholder="# Wireframes\n\nPantallas, componentes y flujo de navegación del producto..."

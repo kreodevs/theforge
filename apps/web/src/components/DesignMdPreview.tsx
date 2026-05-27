@@ -15,6 +15,15 @@ export type { ComponentToken, DesignTokens, TypographyToken };
 
 const DESIGN_MD_CACHE = new Map<string, DesignTokens | null>();
 
+/** Invalida entradas del parser markdown (p. ej. tras guardar el YAML en modo fuente). */
+export function invalidateDesignMdCache(content?: string): void {
+  if (content != null) {
+    DESIGN_MD_CACHE.delete(content);
+    return;
+  }
+  DESIGN_MD_CACHE.clear();
+}
+
 function parseDesignMdContent(content: string): DesignTokens | null {
   const cached = DESIGN_MD_CACHE.get(content);
   if (cached !== undefined) return cached;
