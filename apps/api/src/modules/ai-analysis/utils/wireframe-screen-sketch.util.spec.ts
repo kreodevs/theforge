@@ -13,6 +13,7 @@ import {
   resolveScreensToRegenerate,
   sanitizeSketchHtml,
   screenSectionHash,
+  type WireframesSketchesCachePayloadV2,
 } from "./wireframe-screen-sketch.util.js";
 
 describe("wireframe-screen-sketch.util", () => {
@@ -53,6 +54,31 @@ describe("wireframe-screen-sketch.util", () => {
     const changed = { ...section, body: section.body + "\n**Nuevo**" };
     const stale = resolveScreensToRegenerate([changed], cache, mddHash, { forceAll: false });
     expect(stale.toGenerate).toHaveLength(1);
+  });
+
+  it("screenNames regenera solo las pantallas indicadas", () => {
+    const login = sampleSection();
+    const dashboard = {
+      ...sampleSection(),
+      screenName: "Dashboard",
+      body: "## Pantalla: Dashboard\n\n```\n| nav |\n```",
+      wireframeAscii: "| nav | stats |",
+    };
+    const cache = buildSketchesCachePayloadV2(
+      contentDigestHash("mdd"),
+      new Map([
+        [normalizeScreenCacheKey(login.screenName), { screenName: login.screenName, html: "<html>login</html>" }],
+        [normalizeScreenCacheKey(dashboard.screenName), { screenName: dashboard.screenName, html: "<html>dash</html>" }],
+      ]),
+      [login, dashboard],
+    );
+    const r = resolveScreensToRegenerate([login, dashboard], cache, contentDigestHash("mdd"), {
+      screenNames: ["Login"],
+    });
+    expect(r.toGenerate).toHaveLength(1);
+    expect(r.toGenerate[0]?.screenName).toBe("Login");
+    expect(r.merged.size).toBe(1);
+    expect(r.merged.get(normalizeScreenCacheKey(dashboard.screenName))?.html).toContain("dash");
   });
 
   it("cambio de MDD regenera todas", () => {
@@ -128,6 +154,68 @@ describe("wireframe-screen-sketch.util", () => {
   it("matchSketchToSection tolera prefijo CU", () => {
     const section = sampleSection();
     expect(matchSketchToSection("Login", [{ ...section, screenName: "CU-12 — Login" }])).toBeDefined();
+  });
+
+  it("matchSketchToSection empareja slug **ID** con nombre legible", () => {
+    const md = `## Pantalla: Crear secreto
+
+**ID**: \`create-secret\`
+
+### Wireframe
+
+\`\`\`
+┌─────┐
+│ form│
+└─────┘
+\`\`\`
+`;
+    const section = parseWireframeScreensFromMarkdown(md)[0]!;
+    expect(matchSketchToSection("create-secret", [section])?.screenName).toBe("Crear secreto");
+  });
+
+  it("buildSketchesCachePayloadV2 no conserva bocetos huérfanos sin sección markdown", () => {
+    const section = sampleSection();
+    const cache = buildSketchesCachePayloadV2(
+      "mdd",
+      new Map([
+        [normalizeScreenCacheKey(section.screenName), { screenName: section.screenName, html: "<html/>" }],
+        ["create-secret", { screenName: "create-secret", html: "<html>orphan</html>" }],
+      ]),
+      [section],
+    );
+    expect(cacheToSketchList(cache)).toHaveLength(1);
+    expect(cacheToSketchList(cache)[0]?.screenName).toBe("Login");
+  });
+
+  it("resolveScreensToRegenerate reutiliza caché guardada bajo slug interno", () => {
+    const md = `## Pantalla: Crear secreto
+
+**ID**: \`create-secret\`
+
+### Wireframe
+
+\`\`\`
+┌─────┐
+│ form│
+└─────┘
+\`\`\`
+`;
+    const section = parseWireframeScreensFromMarkdown(md)[0]!;
+    const mddHash = contentDigestHash("mdd");
+    const orphanCache: WireframesSketchesCachePayloadV2 = {
+      v: 2,
+      mddHash,
+      screens: {
+        "create-secret": {
+          screenName: "create-secret",
+          screenHash: screenSectionHash(section),
+          html: "<html/>",
+        },
+      },
+    };
+    const r = resolveScreensToRegenerate([section], orphanCache, mddHash, { forceAll: false });
+    expect(r.toGenerate).toHaveLength(0);
+    expect(r.merged.get(normalizeScreenCacheKey(section.screenName))?.html).toContain("html");
   });
 
   it("parseBatchSketchResponse alinea nombres distintos al esperado", () => {

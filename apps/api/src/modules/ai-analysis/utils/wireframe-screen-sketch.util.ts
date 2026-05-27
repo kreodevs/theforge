@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { HumanMessage } from "@langchain/core/messages";
 import { SCREEN_SKETCH_AGENT_PROMPT } from "../prompts/wireframes/wireframes-prompts.js";
+import { formatDesignSystemContextBlock } from "./wireframe-design-system-context.util.js";
 
 /** Pantallas por llamada LLM (evita contexto/ salida enorme). */
 export const SKETCH_LLM_BATCH_SIZE = 6;
@@ -51,17 +52,32 @@ export function wireframesContentHash(markdown: string): string {
 }
 
 export function normalizeScreenCacheKey(screenName: string): string {
+  return slugifyScreenLabel(screenName);
+}
+
+/** Quita acentos y unifica guiones/espacios para emparejar título vs slug interno. */
+export function slugifyScreenLabel(screenName: string): string {
   return screenName
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
     .normalize("NFC")
     .trim()
     .toLowerCase()
     .replace(/^pantalla:\s*/i, "")
+    .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ");
 }
 
 /** Clave laxa para emparejar nombres del LLM con `## Pantalla:` del markdown. */
 export function sketchNameMatchKey(screenName: string): string {
-  return normalizeScreenCacheKey(screenName).replace(/^cu[- ]?\d+[a-z0-9]*\s*[-–—:|]\s*/i, "");
+  return slugifyScreenLabel(screenName).replace(/^cu[- ]?\d+[a-z0-9]*\s*[-–—:|]\s*/i, "");
+}
+
+export function extractScreenIdFromSection(
+  section: ParsedWireframeScreenSection,
+): string | undefined {
+  const m = section.body.match(/\*\*ID\*\*:\s*`([^`]+)`/);
+  return m?.[1]?.trim() || undefined;
 }
 
 export function matchSketchToSection(
@@ -73,12 +89,46 @@ export function matchSketchToSection(
 
   for (const section of sections) {
     if (sketchNameMatchKey(section.screenName) === genKey) return section;
+    const screenId = extractScreenIdFromSection(section);
+    if (screenId && sketchNameMatchKey(screenId) === genKey) return section;
   }
   for (const section of sections) {
     const secKey = sketchNameMatchKey(section.screenName);
+    const idKey = extractScreenIdFromSection(section);
     if (secKey.includes(genKey) || genKey.includes(secKey)) return section;
+    if (idKey && (sketchNameMatchKey(idKey).includes(genKey) || genKey.includes(sketchNameMatchKey(idKey)))) {
+      return section;
+    }
   }
   return undefined;
+}
+
+function findCachedScreenEntry(
+  section: ParsedWireframeScreenSection,
+  cache: WireframesSketchesCachePayloadV2,
+): WireframesSketchesCacheScreenEntry | undefined {
+  const key = normalizeScreenCacheKey(section.screenName);
+  const direct = cache.screens[key];
+  if (direct?.html?.trim()) return direct;
+
+  for (const entry of Object.values(cache.screens)) {
+    if (!entry.html?.trim()) continue;
+    if (matchSketchToSection(entry.screenName, [section])) return entry;
+  }
+  return undefined;
+}
+
+function isCachedSectionHit(
+  section: ParsedWireframeScreenSection,
+  cache: WireframesSketchesCachePayloadV2,
+  cached: WireframesSketchesCacheScreenEntry,
+): boolean {
+  if (!cached.html?.trim()) return false;
+  const hash = screenSectionHash(section);
+  const key = normalizeScreenCacheKey(section.screenName);
+  const direct = cache.screens[key];
+  if (direct === cached && cached.screenHash === hash) return true;
+  return matchSketchToSection(cached.screenName, [section]) != null;
 }
 
 export function screenSectionHash(section: ParsedWireframeScreenSection): string {
@@ -269,13 +319,6 @@ function normalizeSketchNames(
     }
     if (hit) out.push({ screenName: expected, html: hit.html });
   }
-  for (const r of results) {
-    const rKey = sketchNameMatchKey(r.screenName);
-    if (usedKeys.has(rKey)) continue;
-    if (!out.some((o) => sketchNameMatchKey(o.screenName) === rKey)) {
-      out.push(r);
-    }
-  }
   return out;
 }
 
@@ -322,6 +365,7 @@ export type GenerateScreenSketchesBatchResult = {
 export async function generateScreenSketchesBatch(
   llm: BaseChatModel,
   sections: ParsedWireframeScreenSection[],
+  designSystemContext?: string,
 ): Promise<GenerateScreenSketchesBatchResult> {
   const targets = sections.filter((s) => s.wireframeAscii.trim().length > 10);
   if (targets.length === 0) {
@@ -330,8 +374,9 @@ export async function generateScreenSketchesBatch(
 
   const expectedNames = targets.map((s) => s.screenName);
   const payload = buildBatchSketchUserPayload(targets);
+  const dsBlock = formatDesignSystemContextBlock(designSystemContext);
   const response = await llm.invoke([
-    new HumanMessage(`${SCREEN_SKETCH_AGENT_PROMPT}\n\n---\n${payload}`),
+    new HumanMessage(`${SCREEN_SKETCH_AGENT_PROMPT}${dsBlock}\n\n---\n${payload}`),
   ]);
   const raw =
     typeof response.content === "string"
@@ -360,6 +405,7 @@ export async function generateAllScreenSketches(
   llm: BaseChatModel,
   sections: ParsedWireframeScreenSection[],
   onBatch?: (info: GenerateScreenSketchesBatchResult & { batchIndex: number }) => void,
+  designSystemContext?: string,
 ): Promise<Array<{ screenName: string; html: string }>> {
   const targets = sections.filter((s) => s.wireframeAscii.trim().length > 10);
   const results: Array<{ screenName: string; html: string }> = [];
@@ -367,7 +413,7 @@ export async function generateAllScreenSketches(
   for (let i = 0; i < targets.length; i += SKETCH_LLM_BATCH_SIZE) {
     const chunk = targets.slice(i, i + SKETCH_LLM_BATCH_SIZE);
     const batchIndex = Math.floor(i / SKETCH_LLM_BATCH_SIZE);
-    const batch = await generateScreenSketchesBatch(llm, chunk);
+    const batch = await generateScreenSketchesBatch(llm, chunk, designSystemContext);
     onBatch?.({ ...batch, batchIndex });
     results.push(...batch.generated);
 
@@ -375,7 +421,7 @@ export async function generateAllScreenSketches(
     const missing = chunk.filter((s) => !gotKeys.has(sketchNameMatchKey(s.screenName)));
     for (let ri = 0; ri < missing.length; ri++) {
       const solo = missing[ri]!;
-      const retry = await generateScreenSketchesBatch(llm, [solo]);
+      const retry = await generateScreenSketchesBatch(llm, [solo], designSystemContext);
       onBatch?.({ ...retry, batchIndex: batchIndex * 100 + ri + 1 });
       results.push(...retry.generated);
     }
@@ -392,17 +438,48 @@ export function readSketchesCacheV2(raw: unknown): WireframesSketchesCachePayloa
   return c as WireframesSketchesCachePayloadV2;
 }
 
+function sectionMatchesScreenNames(
+  section: ParsedWireframeScreenSection,
+  screenNames: string[],
+): boolean {
+  const key = normalizeScreenCacheKey(section.screenName);
+  return screenNames.some(
+    (n) => normalizeScreenCacheKey(n) === key || matchSketchToSection(n, [section]) != null,
+  );
+}
+
 export function resolveScreensToRegenerate(
   sections: ParsedWireframeScreenSection[],
   cache: WireframesSketchesCachePayloadV2 | null,
   mddHash: string,
-  options: { forceAll?: boolean },
+  options: { forceAll?: boolean; screenNames?: string[] },
 ): {
   toGenerate: ParsedWireframeScreenSection[];
   merged: Map<string, { screenName: string; html: string }>;
 } {
   const merged = new Map<string, { screenName: string; html: string }>();
   const forceAll = options.forceAll === true;
+  const onlyScreenNames = (options.screenNames ?? []).map((n) => n.trim()).filter(Boolean);
+
+  if (onlyScreenNames.length > 0) {
+    const toGenerate: ParsedWireframeScreenSection[] = [];
+    for (const section of sections) {
+      const key = normalizeScreenCacheKey(section.screenName);
+      if (sectionMatchesScreenNames(section, onlyScreenNames)) {
+        if (section.wireframeAscii.trim().length > 10) {
+          toGenerate.push(section);
+        }
+        continue;
+      }
+      if (cache && cache.mddHash === mddHash) {
+        const cached = findCachedScreenEntry(section, cache);
+        if (cached && isCachedSectionHit(section, cache, cached)) {
+          merged.set(key, { screenName: section.screenName, html: cached.html });
+        }
+      }
+    }
+    return { toGenerate, merged };
+  }
 
   if (forceAll || !cache || cache.mddHash !== mddHash) {
     return {
@@ -414,9 +491,8 @@ export function resolveScreensToRegenerate(
   const toGenerate: ParsedWireframeScreenSection[] = [];
   for (const section of sections) {
     const key = normalizeScreenCacheKey(section.screenName);
-    const hash = screenSectionHash(section);
-    const cached = cache.screens[key];
-    if (cached?.screenHash === hash && cached.html?.trim()) {
+    const cached = findCachedScreenEntry(section, cache);
+    if (cached && isCachedSectionHit(section, cache, cached)) {
       merged.set(key, { screenName: section.screenName, html: cached.html });
     } else if (section.wireframeAscii.trim().length > 10) {
       toGenerate.push(section);
@@ -456,27 +532,6 @@ export function buildSketchesCachePayloadV2(
       screenHash: screenSectionHash(section),
       html: entry.html,
     };
-  }
-
-  for (const [mKey, entry] of merged) {
-    if (consumed.has(mKey) || !entry.html?.trim()) continue;
-    const section = matchSketchToSection(entry.screenName, sections);
-    if (section) {
-      const key = normalizeScreenCacheKey(section.screenName);
-      if (screens[key]?.html?.trim()) continue;
-      screens[key] = {
-        screenName: section.screenName,
-        screenHash: screenSectionHash(section),
-        html: entry.html,
-      };
-    } else {
-      screens[mKey] = {
-        screenName: entry.screenName,
-        screenHash: contentDigestHash(entry.html),
-        html: entry.html,
-      };
-    }
-    consumed.add(mKey);
   }
 
   return { v: 2, mddHash, screens };

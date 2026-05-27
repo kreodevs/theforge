@@ -20,10 +20,13 @@ import {
   readSketchesCacheV2,
   resolveScreensToRegenerate,
 } from "./utils/wireframe-screen-sketch.util.js";
+import { prepareDesignSystemContextForWireframes } from "./utils/wireframe-design-system-context.util.js";
 
 export type SyncWireframeSketchesOptions = {
   forceAll?: boolean;
   mddChanged?: boolean;
+  /** Regenera solo estas pantallas; el resto se conserva en caché. */
+  screenNames?: string[];
 };
 
 export type SyncWireframeSketchesResult = {
@@ -46,11 +49,18 @@ export type SyncWireframeSketchesResult = {
 @Injectable()
 export class WireframeSketchesSyncService {
   private readonly logger = new Logger(WireframeSketchesSyncService.name);
+  /** Evita sync duplicados y permite polling de estado. */
+  private readonly inFlight = new Map<string, Promise<SyncWireframeSketchesResult>>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiFactory: AIFactory,
   ) {}
+
+  isSyncInFlight(projectId: string): boolean {
+    const pid = projectId?.trim();
+    return pid ? this.inFlight.has(pid) : false;
+  }
 
   private log(step: string, detail: Record<string, unknown>) {
     this.logger.log(`[SketchSync] ${step} ${JSON.stringify(detail)}`);
@@ -75,6 +85,48 @@ export class WireframeSketchesSyncService {
     options?: SyncWireframeSketchesOptions,
   ): Promise<SyncWireframeSketchesResult> {
     const pid = projectId?.trim();
+    if (!pid) {
+      return {
+        screenSketches: [],
+        sketchesStale: true,
+        debug: {
+          parsedSections: 0,
+          withWireframe: 0,
+          toGenerate: 0,
+          keptFromCache: 0,
+          llmGenerated: 0,
+          savedToCache: 0,
+          forceAll: false,
+          cacheVersion: null,
+          batches: [],
+          error: "projectId vacío",
+        },
+      };
+    }
+
+    const existing = this.inFlight.get(pid);
+    if (existing) return existing;
+
+    const work = this.runSyncWireframeScreenSketches(pid, options).finally(() => {
+      this.inFlight.delete(pid);
+    });
+    this.inFlight.set(pid, work);
+    return work;
+  }
+
+  /** Arranca sync en background (idempotente si ya hay uno en curso). */
+  startSyncInBackground(projectId: string, options?: SyncWireframeSketchesOptions): void {
+    void this.syncWireframeScreenSketches(projectId, options).catch((err) => {
+      this.logger.warn(
+        `[SketchSync] background failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+  }
+
+  private async runSyncWireframeScreenSketches(
+    pid: string,
+    options?: SyncWireframeSketchesOptions,
+  ): Promise<SyncWireframeSketchesResult> {
     const debug: NonNullable<SyncWireframeSketchesResult["debug"]> = {
       parsedSections: 0,
       withWireframe: 0,
@@ -86,10 +138,6 @@ export class WireframeSketchesSyncService {
       cacheVersion: null,
       batches: [],
     };
-
-    if (!pid) {
-      return { screenSketches: [], sketchesStale: true, debug: { ...debug, error: "projectId vacío" } };
-    }
 
     this.log("start", { projectId: pid.slice(0, 8), ...debug });
 
@@ -108,11 +156,12 @@ export class WireframeSketchesSyncService {
     debug.parsedSections = parsedSections.length;
     debug.withWireframe = parsedSections.filter((s) => s.wireframeAscii.trim().length > 10).length;
 
+    const screenNames = (options?.screenNames ?? []).map((n) => n.trim()).filter(Boolean);
     const { toGenerate, merged } = resolveScreensToRegenerate(
       parsedSections,
       existingCache,
       mddHash,
-      { forceAll },
+      { forceAll, screenNames: screenNames.length > 0 ? screenNames : undefined },
     );
     debug.toGenerate = toGenerate.length;
     debug.keptFromCache = merged.size;
@@ -140,6 +189,14 @@ export class WireframeSketchesSyncService {
       };
     }
 
+    const uxRow = await this.prisma.project.findUnique({
+      where: { id: pid },
+      select: { uxUiGuideContent: true },
+    });
+    const designSystemContext = prepareDesignSystemContextForWireframes(
+      uxRow?.uxUiGuideContent ?? "",
+    );
+
     let llmError: string | undefined;
     try {
       const runtime = await this.aiFactory.resolveRuntime(row!.userId);
@@ -149,9 +206,23 @@ export class WireframeSketchesSyncService {
         model: runtime.chatModel,
         batchSize: SKETCH_LLM_BATCH_SIZE,
         screens: toGenerate.length,
+        designSystemChars: designSystemContext.length,
       });
 
-      const generated = await generateAllScreenSketches(llm, toGenerate, (batch) => {
+      const persistPartialCache = async () => {
+        const partialPayload = buildSketchesCachePayloadV2(mddHash, merged, parsedSections);
+        const writeResult = await writeWireframesSketchesCacheRaw(this.prisma, pid, partialPayload);
+        if (!writeResult.ok) {
+          const wErr = writeResult.error ?? "write cache failed";
+          this.logger.warn(`[SketchSync] partial cache write failed: ${wErr}`);
+        }
+        debug.savedToCache = cacheToSketchList(partialPayload).length;
+      };
+
+      const generated = await generateAllScreenSketches(
+        llm,
+        toGenerate,
+        (batch) => {
         debug.batches.push({
           index: batch.batchIndex,
           expected: batch.expectedCount,
@@ -169,19 +240,22 @@ export class WireframeSketchesSyncService {
             `[SketchSync] batch ${batch.batchIndex} parse incompleto (${batch.parsedCount}/${batch.expectedCount})`,
           );
         }
-      });
+        for (const g of batch.generated) {
+          const section = matchSketchToSection(g.screenName, parsedSections);
+          const key = section
+            ? normalizeScreenCacheKey(section.screenName)
+            : normalizeScreenCacheKey(g.screenName);
+          merged.set(key, {
+            screenName: section?.screenName ?? g.screenName,
+            html: g.html,
+          });
+        }
+        void persistPartialCache();
+        },
+        designSystemContext,
+      );
 
       debug.llmGenerated = generated.length;
-      for (const g of generated) {
-        const section = matchSketchToSection(g.screenName, parsedSections);
-        const key = section
-          ? normalizeScreenCacheKey(section.screenName)
-          : normalizeScreenCacheKey(g.screenName);
-        merged.set(key, {
-          screenName: section?.screenName ?? g.screenName,
-          html: g.html,
-        });
-      }
     } catch (err) {
       llmError = err instanceof Error ? err.message : String(err);
       this.logger.warn(`[SketchSync] LLM failed: ${llmError}`);
@@ -242,9 +316,7 @@ export class WireframeSketchesSyncService {
     });
 
     const screenSketches = cacheToSketchList(
-      cache && cache.mddHash === mddHash
-        ? cache
-        : buildSketchesCachePayloadV2(mddHash, merged, sections),
+      buildSketchesCachePayloadV2(mddHash, merged, sections),
     );
 
     if (cacheRaw == null || !cache) {
@@ -260,10 +332,6 @@ export class WireframeSketchesSyncService {
   }
 
   scheduleSync(projectId: string, options?: SyncWireframeSketchesOptions): void {
-    void this.syncWireframeScreenSketches(projectId, options).catch((err) => {
-      this.logger.warn(
-        `[SketchSync] background failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
+    this.startSyncInBackground(projectId, options);
   }
 }
