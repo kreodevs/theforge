@@ -101,14 +101,17 @@ function chatModelChain(runtime: UserLLMRuntime): string[] {
 }
 
 function visionModelChain(runtime: UserLLMRuntime): string[] {
-  const primary = runtime.visionModel || runtime.chatModel;
+  const primary = (runtime.visionModel?.trim() || runtime.chatModel?.trim() || "").trim();
+  if (!primary) return [];
   const vf =
     typeof runtime.extras?.visionModelFallback === "string"
       ? runtime.extras.visionModelFallback.trim()
       : "";
-  if (vf) return [primary, vf].filter((m, i, a) => a.indexOf(m) === i);
+  const dedupe = (models: string[]) =>
+    models.filter((m, i, a) => Boolean(m) && a.indexOf(m) === i);
+  if (vf) return dedupe([primary, vf]);
   const chain = chatModelChain(runtime);
-  if (chain.length > 1) return [primary, ...chain.slice(1)].filter((m, i, a) => a.indexOf(m) === i);
+  if (chain.length > 1) return dedupe([primary, ...chain.slice(1)]);
   return [primary];
 }
 

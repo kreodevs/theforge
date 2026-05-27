@@ -5,6 +5,7 @@
 export const OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api/v1";
 export const OPENROUTER_DEFAULT_CHAT_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
 export const OPENROUTER_DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small";
+/** Referencia de catálogo OpenRouter; el runtime usa `ProviderInstance.visionModel` (BYOK). */
 export const OPENROUTER_DEFAULT_VISION_MODEL = "openai/gpt-4o";
 
 export function llmMaxTokens(): number {

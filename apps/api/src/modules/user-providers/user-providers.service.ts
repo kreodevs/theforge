@@ -486,10 +486,65 @@ export class UserProvidersService {
     const sttModel = runtime.sttModel?.trim() || catalog.defaultSttModel || null;
     if (!sttModel) {
       throw new BadRequestException(
-        "Configura el modelo de transcripción (STT) en tu proveedor activo en Ajustes (p. ej. whisper-1)",
+        "Configura el modelo de transcripción (STT) en la instancia activa en Ajustes → Gestionar instancias.",
       );
     }
     return { ...runtime, sttModel };
+  }
+
+  /**
+   * Modelo de visión de la instancia activa (columna `visionModel` o respaldo en extras).
+   * No usa variables de entorno; misma resolución que el runtime de chat.
+   */
+  async resolveVisionRuntime(userId: string): Promise<UserLLMRuntime & { visionModel: string }> {
+    const runtime = await this.resolveRuntime(userId);
+    const catalog = PROVIDER_CATALOG[runtime.providerId];
+    if (!catalog.supportsVision) {
+      throw new BadRequestException(
+        `El proveedor activo «${runtime.providerId}» no soporta imágenes. Usa OpenRouter, OpenAI, Anthropic o Gemini.`,
+      );
+    }
+    const visionModel = runtime.visionModel?.trim();
+    if (!visionModel) {
+      throw new BadRequestException(
+        "Configura el modelo de visión en la instancia activa (Ajustes → Gestionar instancias → Modelo de visión).",
+      );
+    }
+    return { ...runtime, visionModel };
+  }
+
+  /** STT y visión resueltos desde instancia tenant o BYOK (para UI del chat). */
+  async getRuntimeMediaConfig(userId: string): Promise<{
+    sttModel: string | null;
+    visionModel: string | null;
+    supportsVision: boolean;
+    supportsStt: boolean;
+  }> {
+    try {
+      const runtime = await this.resolveRuntime(userId);
+      const catalog = PROVIDER_CATALOG[runtime.providerId];
+      let sttModel: string | null = null;
+      if (catalog.supportsStt) {
+        sttModel = runtime.sttModel?.trim() || catalog.defaultSttModel || null;
+      }
+      let visionModel: string | null = null;
+      if (catalog.supportsVision) {
+        visionModel = runtime.visionModel?.trim() || null;
+      }
+      return {
+        sttModel,
+        visionModel,
+        supportsVision: catalog.supportsVision,
+        supportsStt: catalog.supportsStt,
+      };
+    } catch {
+      return {
+        sttModel: null,
+        visionModel: null,
+        supportsVision: false,
+        supportsStt: false,
+      };
+    }
   }
 
   /** super_admin y admin: eligen proveedor activo sin restricción por grants de Usuarios. */

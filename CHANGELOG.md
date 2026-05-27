@@ -2,6 +2,37 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
+## [0.11.1] — 2026-05-26
+
+### Added
+
+- **Media runtime desde instancia de provider (BYOK/tenant):** STT y modelo de visión se resuelven desde `ProviderInstance` / `UserProviderConfig` (`visionModel`, `sttModel`, respaldo en `extras`), no desde variables de entorno del servidor.
+  - `UserProvidersService.resolveVisionRuntime`, `getRuntimeMediaConfig` y `resolveVisionModelForRuntime` en `provider-config.helpers.ts`.
+  - `GET /audio/config` devuelve `{ sttModel, visionModel, supportsVision, supportsStt }` para el chat.
+  - `AiService.describeImagesForChat` usa `resolveVisionRuntime` antes de describir imágenes.
+- **Autoguardado no invasivo en Workshop:** `persist-field-guard` evita que un PATCH tardío pise texto si el usuario siguió escribiendo; `WorkshopDocTextarea` no aplica `value` externo con foco; guía UX/UI deja de mutar YAML en debounce (solo en blur).
+- **Reparación Mermaid — flujo webhook aplanado:** `looksLikeJsonFlattenFlowchart`, `repairFlattenedWebhookFlowchart` y `webhookSyncFlowchartBody()` en `@theforge/shared-types`; las secciones «Flujo de…» con bloque existente se reparan en lugar de borrarse (`repair-flow-sections`).
+
+### Changed
+
+- **Chat (web):** `ChatContainer` consulta `/audio/config` y deshabilita adjuntar imagen o micrófono solo cuando la instancia activa no expone modelo (mensaje apunta a Ajustes → Gestionar instancias). Ambos layouts del compositor reciben las mismas props de visión.
+- **Upsert de instancias:** `buildModelFields` con `visionModel: undefined` ya no fuerza el default del catálogo al actualizar; `provider-instances.service` conserva `existing.visionModel` si el DTO no lo envía.
+- **Chat Fase 0 / Benchmark:** El asistente en pestaña benchmark persiste en `dbgaContent` (panel Análisis DBGA), no en Deep Research; mensajes con imagen (p. ej. ERD) refinan DBGA con contexto de visión; `done` del stream expone `dbgaContent` y `phase0SummaryContent`; eliminado mirror incorrecto DBGA → `phase0SummaryContent` en orquestador.
+- **BUILD_CACHE_BUST**: 91 → 92 (`docker-compose.yml`, Dockerfiles api/web/mcp)
+
+### Fixed
+
+- **Falso «sin modelo de visión»** con instancia ya configurada (`llama/…-vision-instruct:floor`, etc.): el runtime y la UI leían env o columna sin merge; ahora la cadena instancia → `resolveVisionModelForRuntime` → `/audio/config` alimenta el adapter (`visionModelChain` sin modelos vacíos).
+- **Benchmark chat sin cambio visible en Fase 0:** heurística `dbgaReflectsUserEditIntent`, `effectiveUserMessage` con bloque de visión, orden de persistencia del log tras resolver DBGA, y ack `BENCHMARK_CHAT_NO_CHANGE` cuando no aplica edición.
+- **Cursor al final del textarea** tras autoguardado en paneles de documento estándar, DBGA, Benchmark y guía UX/UI.
+- **Formateo `/formatear`:** diagramas `flowchart TD` con cadena `s0→s1→…` (JSON del webhook aplanado) y texto de Beneficios dentro del bloque Mermaid.
+
+### Architecture
+
+- `openai-compatible.adapter.ts`: cadena de modelos de visión desde runtime de instancia (`visionModel`, fallback en `extras.visionModelFallback`, chat).
+- `OPENROUTER_DEFAULT_VISION_MODEL` en `llm-config.ts` queda como referencia de catálogo al crear config vacía, no como override de servidor.
+- Tests: `provider-config.helpers.spec.ts`, `resolveVisionRuntime` en `user-providers.service.spec.ts`, `dbga-edit.util.spec.ts`, `persist-field-guard.spec.ts`, `repair-flow-sections.spec.ts`.
+
 ## [0.10.1] — 2026-05-25
 
 ### Fixed

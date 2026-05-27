@@ -215,6 +215,39 @@ test("UserProvidersService.resolveSttRuntime — openai con sttModel", async () 
   assert.equal(runtime.sttModel, "whisper-1");
 });
 
+test("UserProvidersService.resolveVisionRuntime — instancia con visionModel", async () => {
+  const prisma = mockPrisma();
+  const store = (prisma as { __store: { instances: Map<string, Record<string, unknown>> } })
+    .__store;
+  store.instances.set("vision-inst", {
+    id: "vision-inst",
+    providerType: "openrouter",
+    displayName: "OR Vision",
+    createdByUserId: USER_ID,
+    enabledForUsers: true,
+    isTenantDefault: true,
+    tokenCiphertext: "enc:sk-vision-key-1234567890",
+    tokenKeyVersion: 1,
+    chatModel: "deepseek/deepseek-v4-flash:floor",
+    chatModelFallbacks: [],
+    embeddingModel: "openai/text-embedding-3-small",
+    embeddingDimension: 1536,
+    sttModel: null,
+    visionModel: "llama/llama-3.2-11b-vision-instruct:floor",
+    baseUrl: null,
+    extras: {},
+    allowedChatModels: [],
+    allowedEmbeddingModels: [],
+  });
+  const svc = new UserProvidersService(prisma, mockCrypto());
+  await svc.updateSettings({ activeTenantInstanceId: "vision-inst" }, USER_ID);
+  const runtime = await svc.resolveVisionRuntime(USER_ID);
+  assert.equal(runtime.visionModel, "llama/llama-3.2-11b-vision-instruct:floor");
+  const media = await svc.getRuntimeMediaConfig(USER_ID);
+  assert.equal(media.visionModel, "llama/llama-3.2-11b-vision-instruct:floor");
+  assert.equal(media.supportsVision, true);
+});
+
 test("UserProvidersService — cloudflare requiere accountId", async () => {
   const svc = new UserProvidersService(mockPrisma(), mockCrypto());
   await assert.rejects(
