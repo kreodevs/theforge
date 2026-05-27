@@ -25,6 +25,8 @@ packages/database/src/generated
 .cursor/*
 !.cursor/rules/
 !.cursor/rules/**
+!.cursor/skills/
+!.cursor/skills/**
 .gemini/
 *.code-workspace
 *.swp
@@ -55,6 +57,8 @@ auth.lock
 SOUL.md
 config.yaml
 skills/
+!.cursor/skills/
+!.cursor/skills/**
 tools/
 tools/registry.py
 cache/
