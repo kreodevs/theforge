@@ -1,4 +1,14 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Query, Res } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Query,
+  Res,
+} from "@nestjs/common";
 import { Response } from "express";
 import { Readable } from "node:stream";
 import { PrismaService } from "../../prisma/prisma.service.js";
@@ -8,6 +18,7 @@ import { Phase0InterviewService } from "./phase0/phase0-interview.service.js";
 import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
 import { writeWireframesSketchesCacheRaw } from "./wireframe-sketches-cache.store.js";
+import { writeWireframesPreviewCacheRaw } from "./wireframe-preview-cache.store.js";
 
 @Controller("ai-analysis")
 export class AiAnalysisController {
@@ -483,6 +494,7 @@ export class AiAnalysisController {
       data: { wireframesContent: null },
     });
     await writeWireframesSketchesCacheRaw(this.prisma, id, null);
+    await writeWireframesPreviewCacheRaw(this.prisma, id, null);
     return { ok: true };
   }
 
@@ -496,25 +508,56 @@ export class AiAnalysisController {
       throw new BadRequestException("projectId is required");
     }
     const result = await this.aiAnalysis.getWireframePreviewSnippets(projectId);
-    console.log(`[PreviewSnippets:Controller] result screens=${result.screens?.length}`);
+    console.log(
+      `[PreviewSnippets:Controller] result screens=${result.screens?.length} fromCache=${(result as { fromCache?: boolean }).fromCache === true}`,
+    );
     return result;
+  }
+
+  /** Estado de bocetos en caché (rápido; para polling tras sync async). */
+  @Get("wireframes/sketches")
+  async getWireframeSketches(@Query("projectId") projectIdRaw?: string) {
+    const projectId = typeof projectIdRaw === "string" ? projectIdRaw.trim() : "";
+    if (!projectId) {
+      throw new BadRequestException("projectId is required");
+    }
+    return this.aiAnalysis.getWireframeSketchesStatus(projectId);
   }
 
   /** Regenera bocetos HTML (incremental salvo forceAll o cambio de MDD). */
   @Post("wireframes/sync-sketches")
   async syncWireframeSketches(
-    @Body() body: { projectId?: string; forceAll?: boolean },
+    @Body()
+    body: { projectId?: string; forceAll?: boolean; async?: boolean; screenNames?: string[] },
   ) {
     const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
     if (!projectId) {
       throw new BadRequestException("projectId is required");
     }
+    const forceAll = body?.forceAll === true;
+    const screenNames = Array.isArray(body?.screenNames)
+      ? body.screenNames.map((n) => (typeof n === "string" ? n.trim() : "")).filter(Boolean)
+      : undefined;
     console.log("[SketchSync:Controller] request", {
       projectId: projectId.slice(0, 8),
-      forceAll: body?.forceAll === true,
+      forceAll,
+      async: body?.async === true,
+      screenNames: screenNames?.length ?? 0,
     });
+
+    if (body?.async === true) {
+      this.aiAnalysis.startWireframeSketchesSync(projectId, { forceAll, screenNames });
+      const status = await this.aiAnalysis.getWireframeSketchesStatus(projectId);
+      console.log("[SketchSync:Controller] async accepted", {
+        syncing: status.syncing,
+        sketches: status.screenSketches?.length ?? 0,
+      });
+      return { accepted: true, ...status };
+    }
+
     const result = await this.aiAnalysis.syncWireframeScreenSketches(projectId, {
-      forceAll: body?.forceAll === true,
+      forceAll,
+      screenNames,
     });
     console.log("[SketchSync:Controller] response", {
       sketches: result.screenSketches?.length ?? 0,

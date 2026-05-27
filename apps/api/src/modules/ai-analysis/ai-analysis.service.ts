@@ -69,6 +69,18 @@ import {
 } from "./utils/wireframes-mcp-resolve.util.js";
 import { WireframeSketchesSyncService } from "./wireframe-sketches-sync.service.js";
 import { writeWireframesSketchesCacheRaw } from "./wireframe-sketches-cache.store.js";
+import {
+  readWireframesPreviewCacheRaw,
+  writeWireframesPreviewCacheRaw,
+} from "./wireframe-preview-cache.store.js";
+import {
+  buildWireframesPreviewCachePayload,
+  isWireframesPreviewCacheValid,
+  readWireframesPreviewCacheV1,
+  wireframesPreviewCacheKeys,
+  type WireframesPreviewCacheScreen,
+} from "./utils/wireframe-preview-cache.util.js";
+import { prepareDesignSystemContextForWireframes } from "./utils/wireframe-design-system-context.util.js";
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
 
@@ -1463,10 +1475,19 @@ export class AiAnalysisService {
 
     const project = await this.prisma.project.findUnique({
       where: { id: pid },
-      select: { useCasesContent: true, userStoriesContent: true },
+      select: { useCasesContent: true, userStoriesContent: true, uxUiGuideContent: true },
     });
     if (!project) {
       yield { type: "error", message: "Proyecto no encontrado." };
+      return;
+    }
+
+    const uxUiGuide = (project.uxUiGuideContent ?? "").trim();
+    if (!uxUiGuide) {
+      yield {
+        type: "error",
+        message: "No hay Design System en el proyecto. Genera la guía UX/UI (Design System) antes de los wireframes.",
+      };
       return;
     }
 
@@ -1494,10 +1515,13 @@ export class AiAnalysisService {
       return;
     }
 
+    const designSystemContext = prepareDesignSystemContextForWireframes(uxUiGuide);
+
     const initialState: WireframesState = {
       ...defaultWireframesState,
       useCases,
       userStories,
+      designSystemContext: designSystemContext || undefined,
     };
 
     const nodeStepMeta: Record<string, { baseStep: number; label: string }> = {
@@ -1683,6 +1707,18 @@ export class AiAnalysisService {
 
   // ─── Wireframe Preview Snippets ──────────────────────────
 
+  private maybeScheduleStaleWireframeSketches(
+    projectId: string,
+    sketchRead: { sketchesStale: boolean },
+  ): void {
+    if (
+      sketchRead.sketchesStale &&
+      !this.wireframeSketchesSync.isSyncInFlight(projectId)
+    ) {
+      this.wireframeSketchesSync.scheduleSync(projectId);
+    }
+  }
+
   async getWireframePreviewSnippets(projectId: string) {
     const stripMd = stripMarkdownCell;
     this.logger.log(`[PreviewSnippets] start projectId=${projectId}`);
@@ -1695,8 +1731,16 @@ export class AiAnalysisService {
     this.logger.log(`[PreviewSnippets] wireframesContent length=${markdown.length}`);
     if (!markdown.trim()) {
       this.logger.log(`[PreviewSnippets] empty wireframesContent, returning []`);
-      return { screens: [], screenSketches: [], sketchesStale: false };
+      return { screens: [], screenSketches: [], sketchesStale: false, fromCache: false };
     }
+
+    const userId = await this.resolveUserId(projectId);
+    const mcpUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { componentMcpUrl: true },
+    });
+    const mcpUrl = mcpUser?.componentMcpUrl?.trim() ?? "";
+    const { wireframesHash, mcpKey } = wireframesPreviewCacheKeys(markdown, mcpUrl || null);
 
     let sketchRead: Awaited<ReturnType<WireframeSketchesSyncService["readCachedSketches"]>> = {
       screenSketches: [],
@@ -1711,13 +1755,31 @@ export class AiAnalysisService {
       );
     }
 
-    const userId = await this.resolveUserId(projectId);
-    const mcpUser = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { componentMcpUrl: true },
-    });
+    try {
+      const previewRaw = await readWireframesPreviewCacheRaw(this.prisma, projectId);
+      const previewCached = readWireframesPreviewCacheV1(previewRaw);
+      if (isWireframesPreviewCacheValid(previewCached, wireframesHash, mcpKey)) {
+        this.maybeScheduleStaleWireframeSketches(projectId, sketchRead);
+        this.logger.log(
+          `[PreviewSnippets] cache hit screens=${previewCached.screens.length} sketches=${sketchRead.screenSketches.length} stale=${sketchRead.sketchesStale}`,
+        );
+        return {
+          screens: previewCached.screens,
+          screenSketches: sketchRead.screenSketches,
+          sketchesStale: sketchRead.sketchesStale,
+          sketchesStaleReason: sketchRead.staleReason,
+          fromCache: true,
+          wireframesHash,
+        };
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[PreviewSnippets] preview cache read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     this.logger.log(
-      `[PreviewSnippets] userId=${userId.slice(0, 8)}… mcpConfigured=${!!mcpUser?.componentMcpUrl?.trim()}`,
+      `[PreviewSnippets] userId=${userId.slice(0, 8)}… mcpConfigured=${!!mcpUrl}`,
     );
 
     const screens: Array<{
@@ -2057,27 +2119,71 @@ export class AiAnalysisService {
         else if (c.previewKind === "html" || c.previewKind === "url" || c.snippet?.trim()) okPreviews++;
       }
     }
+    const previewScreens: WireframesPreviewCacheScreen[] = screens.map((s) => ({
+      screenName: s.screenName,
+      components: s.components.map((c) => ({ ...c })),
+    }));
+    try {
+      const payload = buildWireframesPreviewCachePayload(wireframesHash, mcpKey, previewScreens);
+      const wrote = await writeWireframesPreviewCacheRaw(this.prisma, projectId, payload);
+      if (!wrote.ok) {
+        this.logger.warn(`[PreviewSnippets] preview cache write: ${wrote.error ?? "unknown"}`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[PreviewSnippets] preview cache write failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    this.maybeScheduleStaleWireframeSketches(projectId, sketchRead);
+
     this.logger.log(
-      `[PreviewSnippets] returning screens=${screens.length} components=${screens.reduce((a, s) => a + s.components.length, 0)} ok=${okPreviews} errors=${errPreviews} hosted=${hostedPreviewSupported} sketches=${sketchRead.screenSketches.length} stale=${sketchRead.sketchesStale}`,
+      `[PreviewSnippets] returning screens=${screens.length} components=${screens.reduce((a, s) => a + s.components.length, 0)} ok=${okPreviews} errors=${errPreviews} hosted=${hostedPreviewSupported} sketches=${sketchRead.screenSketches.length} stale=${sketchRead.sketchesStale} fromCache=false`,
     );
     return {
       screens,
       screenSketches: sketchRead.screenSketches,
       sketchesStale: sketchRead.sketchesStale,
       sketchesStaleReason: sketchRead.staleReason,
+      fromCache: false,
+      wireframesHash,
     };
   }
 
   async syncWireframeScreenSketches(
     projectId: string,
-    options?: { forceAll?: boolean },
+    options?: { forceAll?: boolean; screenNames?: string[] },
   ) {
     const result = await this.wireframeSketchesSync.syncWireframeScreenSketches(projectId, {
       forceAll: options?.forceAll,
+      screenNames: options?.screenNames,
     });
     this.logger.log(
       `[SketchSync:API] project=${projectId.slice(0, 8)}… sketches=${result.screenSketches.length} stale=${result.sketchesStale}`,
     );
     return result;
+  }
+
+  startWireframeSketchesSync(
+    projectId: string,
+    options?: { forceAll?: boolean; screenNames?: string[] },
+  ): void {
+    this.wireframeSketchesSync.startSyncInBackground(projectId, {
+      forceAll: options?.forceAll,
+      screenNames: options?.screenNames,
+    });
+  }
+
+  async getWireframeSketchesStatus(projectId: string): Promise<{
+    screenSketches: Array<{ screenName: string; html: string }>;
+    sketchesStale: boolean;
+    sketchesStaleReason?: "mdd" | "screens" | "missing";
+    syncing: boolean;
+  }> {
+    const read = await this.wireframeSketchesSync.readCachedSketches(projectId);
+    return {
+      ...read,
+      syncing: this.wireframeSketchesSync.isSyncInFlight(projectId),
+    };
   }
 }
