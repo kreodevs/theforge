@@ -44,11 +44,48 @@ export function dbgaReflectsUserEditIntent(doc: string, userMessage: string): bo
     if (!/módulo\s*0?1|modulo\s*0?1|catálogo de costos/.test(d)) return false;
   }
 
+  const geoMirror =
+    /\b(pa[ií]s|paises|estados?|ciudades?|colonias?|c[oó]digos?\s*postales?|geograf|espejo)\b/i.test(
+      u,
+    );
+  if (geoMirror) {
+    const needsPaises = /\bpa[ií]s|paises\b/i.test(u);
+    const needsEstados = /\bestados?\b/i.test(u);
+    const needsCiudades = /\bciudades?\b/i.test(u);
+    if (needsPaises && !/\bpaises\b|\bpa[ií]s\b/i.test(d)) return false;
+    if (needsEstados && !/\bestados?\b/i.test(d)) return false;
+    if (needsCiudades && !/\bciudades?\b/i.test(d)) return false;
+    if (/\bespejo\b/i.test(u) && !/\bespejo\b|CREATE\s+TABLE/i.test(d)) return false;
+  }
+
   return true;
 }
 
 export const BENCHMARK_CHAT_ACK =
-  "Benchmark actualizado. Revisa el panel de Fase 0 (DBGA).";
+  "Fase 0 (DBGA) actualizado. Revisa el panel «Análisis (DBGA)».";
+
+export const BENCHMARK_CHAT_NO_CHANGE =
+  "No se guardaron cambios en Fase 0 (DBGA). La respuesta no incluyó el documento completo con ---FIN_DBGA---. Repite la petición (p. ej. integrar el diagrama en tablas espejo con tenant_id) o edita el panel directamente.";
+
+/** Evita mensaje de éxito en chat cuando el panel no se persistió. */
+export function benchmarkAssistantChatMessage(
+  rawChat: string,
+  finalDbga: string | undefined,
+): string {
+  const chat = rawChat.trim();
+  if (finalDbga?.trim()) {
+    return !chat || chat === BENCHMARK_CHAT_ACK ? BENCHMARK_CHAT_ACK : chat;
+  }
+  if (
+    !chat ||
+    chat === BENCHMARK_CHAT_ACK ||
+    /^benchmark actualizado/i.test(chat) ||
+    /^fase 0 \(dbga\) actualizado/i.test(chat)
+  ) {
+    return BENCHMARK_CHAT_NO_CHANGE;
+  }
+  return chat;
+}
 
 /** Separa documento DBGA del mensaje de chat (tolerante a `---FIN_DBGA---` pegado al texto). */
 export function parseBenchmarkResponse(

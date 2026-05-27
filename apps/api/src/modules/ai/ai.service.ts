@@ -503,9 +503,13 @@ export class AiService {
         : tab === "ux-ui-guide"
           ? "Guía UX/UI y design system"
           : tab === "benchmark"
-            ? "Benchmark & Gap Analysis"
+            ? "Fase 0 — Domain Benchmark & Gap Analysis (DBGA); tablas espejo, catálogo OBP/OBP4MO, tenant_id"
             : `documento o pestaña «${tab}» del Workshop`;
-    const prompt = `El usuario trabaja en ${tabHint}. Mensaje o petición asociada:\n---\n${hint}\n---\n\nDescribe con precisión lo que muestran las imágenes (UI, diagramas, datos, flujos, stack, texto visible, etc.). Responde en español, en viñetas; indica partes ilegibles o ambiguas.`;
+    const benchmarkExtra =
+      tab === "benchmark"
+        ? " Si es un ERD o diagrama relacional, lista tablas, columnas, PK/FK y jerarquía (país→estado→ciudad→colonia, etc.)."
+        : "";
+    const prompt = `El usuario trabaja en ${tabHint}. Mensaje o petición asociada:\n---\n${hint}\n---\n\nDescribe con precisión lo que muestran las imágenes (UI, diagramas, datos, flujos, stack, texto visible, etc.). Responde en español, en viñetas; indica partes ilegibles o ambiguas.${benchmarkExtra}`;
     const out = await this.generateResponse(prompt, [], {
       systemPrompt:
         "Eres arquitecto de software: extrae solo información sustentada en las imágenes; no inventes.",
