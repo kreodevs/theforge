@@ -262,10 +262,6 @@ export class AiOrchestratorService {
       console.log("[Orchestrator] persisting dbgaContent (Benchmark refinado) length:", dbgaFromResponse.length);
       updatedProject = await this.projects.update(projectId, { dbgaContent: dbgaFromResponse });
       // Fase 0 es sub-tab de Benchmark — mirror a phase0SummaryContent para que el panel lo muestre
-      if (activeTab?.trim() === "benchmark" && !phase0FromResponse) {
-        console.log("[Orchestrator] mirroring dbgaContent to phase0SummaryContent (benchmark→Fase0)");
-        updatedProject = await this.projects.update(projectId, { phase0SummaryContent: dbgaFromResponse });
-      }
     }
     if (mddFromResponse == null && dbgaFromResponse == null) {
       // Phase0 document from chat — persist if it came back
@@ -303,6 +299,9 @@ export class AiOrchestratorService {
       session: updatedSession,
       project: finalProject,
       uxUiGuideContent: uxToReturn ?? undefined,
+      dbgaContent: dbgaFromResponse ?? finalProject?.dbgaContent ?? undefined,
+      phase0SummaryContent:
+        phase0FromResponse ?? finalProject?.phase0SummaryContent ?? undefined,
       evaluatorCritique,
     };
   }
@@ -466,21 +465,6 @@ export class AiOrchestratorService {
       if (msg.type === "chunk") {
         yield { event: "chunk", data: { content: msg.content } };
       } else {
-        if (
-          activeTab?.trim() === "benchmark" &&
-          message.trim() &&
-          (currentDbga?.trim() ?? "").length > 0
-        ) {
-          const refined = await this.sessions.maybeRefineBenchmarkDbga(
-            message,
-            currentDbga!.trim(),
-            (msg as { dbgaContent?: string | null }).dbgaContent,
-          );
-          if (refined) {
-            (msg as { dbgaContent?: string }).dbgaContent = refined;
-            console.log("[Orchestrator] maybeRefineBenchmarkDbga en stream, length:", refined.length);
-          }
-        }
         let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
         if (msg.mddContent != null && msg.mddContent.length > 0) {
           updatedProject = await this.projects.update(projectId, {
@@ -500,13 +484,12 @@ export class AiOrchestratorService {
             );
           } else {
             updatedProject = await this.projects.update(projectId, { dbgaContent: msg.dbgaContent });
-            // Fase 0 sub-tab — mirror a phase0SummaryContent
-            if (activeTab?.trim() === "benchmark") {
-              updatedProject = await this.projects.update(projectId, {
-                phase0SummaryContent: msg.dbgaContent,
-              });
-            }
           }
+        }
+        if (msg.phase0SummaryContent != null && msg.phase0SummaryContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, {
+            phase0SummaryContent: msg.phase0SummaryContent,
+          });
         }
         if (msg.specContent != null && msg.specContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { specContent: msg.specContent });
@@ -514,9 +497,6 @@ export class AiOrchestratorService {
         if (msg.brdContent != null && msg.brdContent.length > 0) {
           await this.projects.patchStage(projectId, routeStream.stageId, { brdContent: msg.brdContent });
           updatedProject = await this.projects.findOne(projectId);
-        }
-        if (msg.phase0SummaryContent != null && msg.phase0SummaryContent.length > 0) {
-          updatedProject = await this.projects.update(projectId, { phase0SummaryContent: msg.phase0SummaryContent });
         }
         if (msg.blueprintContent != null && msg.blueprintContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { blueprintContent: msg.blueprintContent });
@@ -564,6 +544,10 @@ export class AiOrchestratorService {
             dbgaContent:
               (msg as { dbgaContent?: string | null }).dbgaContent ??
               projectOut.dbgaContent ??
+              undefined,
+            phase0SummaryContent:
+              (msg as { phase0SummaryContent?: string | null }).phase0SummaryContent ??
+              projectOut.phase0SummaryContent ??
               undefined,
             evaluatorCritique,
           },

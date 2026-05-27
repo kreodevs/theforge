@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  BENCHMARK_CHAT_ACK,
+  benchmarkAssistantChatMessage,
   dbgaReflectsUserEditIntent,
   isDbgaContentNearlyIdentical,
   isPartialBenchmarkDoc,
@@ -32,6 +34,25 @@ describe("dbgaReflectsUserEditIntent", () => {
     const doc = "## Multi-tenancy\n`tenant_id` en catálogo y tablas espejo.";
     const user = "multi tenant con tenant_id";
     assert.equal(dbgaReflectsUserEditIntent(doc, user), true);
+  });
+
+  it("falla si piden tablas espejo geográficas y el doc no las menciona", () => {
+    const doc = "# Research Report\n\n## Catálogo\nSolo costos.";
+    const user =
+      "diagrama con paises, estados, ciudades; debemos tener espejo con tenant_id";
+    assert.equal(dbgaReflectsUserEditIntent(doc, user), false);
+  });
+});
+
+describe("benchmarkAssistantChatMessage", () => {
+  it("no afirma éxito si no hubo persistencia", () => {
+    const msg = benchmarkAssistantChatMessage(BENCHMARK_CHAT_ACK, undefined);
+    assert.match(msg, /No se guardaron cambios/i);
+  });
+
+  it("mantiene ack cuando sí hubo doc", () => {
+    const msg = benchmarkAssistantChatMessage(BENCHMARK_CHAT_ACK, "# DBGA\n\ntenant_id");
+    assert.equal(msg, BENCHMARK_CHAT_ACK);
   });
 });
 

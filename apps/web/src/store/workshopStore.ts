@@ -2051,6 +2051,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                         proj?.dbgaContent ??
                         null,
                     ) ?? get().dbgaContent,
+                  phase0SummaryContent:
+                    cleanDoc(
+                      (data.phase0SummaryContent as string | null | undefined) ??
+                        proj?.phase0SummaryContent ??
+                        null,
+                    ) ?? get().phase0SummaryContent,
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   architectureContent: cleanDoc(proj?.architectureContent ?? null) ?? get().architectureContent,
                   useCasesContent: cleanDoc(proj?.useCasesContent ?? null) ?? get().useCasesContent,
@@ -2119,6 +2125,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                         proj?.dbgaContent ??
                         null,
                     ) ?? get().dbgaContent,
+                  phase0SummaryContent:
+                    cleanDoc(
+                      (data.phase0SummaryContent as string | null | undefined) ??
+                        proj?.phase0SummaryContent ??
+                        null,
+                    ) ?? get().phase0SummaryContent,
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null) ?? get().blueprintContent,
                   apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null) ?? get().apiContractsContent,
