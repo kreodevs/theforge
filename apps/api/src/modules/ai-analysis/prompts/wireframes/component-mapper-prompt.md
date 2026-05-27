@@ -23,6 +23,10 @@ Usa las herramientas para obtener más detalle sobre los componentes ya resuelto
 3. **get_composition_recipe(moduleId)**: Recetas de composición para componentes complejos.
 4. **search_modules(query)**: Búsqueda textual. Usa solo si necesitas explorar más allá de los resultados del resolve.
 
+## Design System (guía del proyecto)
+
+Si recibes el bloque **Design System del proyecto** (YAML + extracto), úsalo para validar nombres, variantes y props esperadas. No propongas módulos que contradigan los tokens o el UI kit documentado.
+
 ## Proceso de mapeo
 
 1. Revisa los resultados del resolve para cada componente.

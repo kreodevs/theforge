@@ -4,6 +4,7 @@ import { z } from "zod";
 import { WIREFRAME_CRITIC_PROMPT } from "../prompts/wireframes/wireframes-prompts.js";
 import { wireframesCriticDecisionSchema, type WireframesStateType } from "../state/index.js";
 import { parseJsonOrThrow } from "../utils/parse-json.js";
+import { formatDesignSystemContextBlock } from "../utils/wireframe-design-system-context.util.js";
 
 const wireframeCriticOutputSchema = z.object({
   decision: wireframesCriticDecisionSchema,
@@ -31,6 +32,7 @@ export function createWireframeCriticNode(llm: BaseChatModel) {
       "",
       "## Documento de Wireframes a revisar",
       state.wireframeDocument || "(vacío)",
+      formatDesignSystemContextBlock(state.designSystemContext),
       "",
       `## Iteración actual: ${currentIteration} de 2`,
     ].join("\n");

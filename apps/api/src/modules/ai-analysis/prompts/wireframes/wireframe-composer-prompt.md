@@ -83,6 +83,7 @@ Genera un diagrama `flowchart LR` o `flowchart TD` que muestre:
 
 ## Reglas
 
+- Si recibes el bloque **Design System del proyecto**, alinea nombres de componentes y descripciones visuales con esa guía (tokens, UI kit). No contradigas colores ni tipografías del YAML.
 - Cubre TODAS las pantallas sin excepción.
 - Cada pantalla debe tener wireframe ASCII, tabla de componentes y variaciones de estado.
 - En la columna **Módulo DS** usa **exactamente** el `mcpModuleId` del JSON de mapeo (p. ej. `Input`, `Button`). **No inventes** rutas como `forms/text-input` ni prefijos `forms/`, `buttons/`, `navigation/`.

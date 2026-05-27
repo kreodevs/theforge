@@ -3,6 +3,7 @@ import { HumanMessage } from "@langchain/core/messages";
 import { WIREFRAME_COMPOSER_PROMPT } from "../prompts/wireframes/wireframes-prompts.js";
 import type { WireframesStateType } from "../state/index.js";
 import { injectWireframeComponentTables } from "../utils/wireframes-mcp-resolve.util.js";
+import { formatDesignSystemContextBlock } from "../utils/wireframe-design-system-context.util.js";
 
 /** Creates the Wireframe Composer node: generates the full Markdown wireframe document. */
 export function createWireframeComposerNode(llm: BaseChatModel) {
@@ -30,6 +31,7 @@ export function createWireframeComposerNode(llm: BaseChatModel) {
       "",
       "## Mapeo de componentes del Design System",
       mappingsJson,
+      formatDesignSystemContextBlock(state.designSystemContext),
     ];
 
     if (state.criticFeedback?.trim()) {

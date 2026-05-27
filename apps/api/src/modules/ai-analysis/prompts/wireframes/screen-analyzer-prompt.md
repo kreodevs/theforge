@@ -41,6 +41,7 @@ Responde **ÚNICAMENTE** con un objeto JSON válido (sin markdown, sin explicaci
 
 ## Reglas
 
+- Si recibes el bloque **Design System del proyecto**, usa nombres de componentes coherentes con el UI kit / tokens (p. ej. los definidos en `components:` del YAML).
 - Cada pantalla debe tener al menos un `sourceUseCases` o `sourceUserStories`.
 - `requiredComponents` debe listar los componentes UI genéricos necesarios (inputs, botones, tablas, cards, etc.).
 - `navigationFlow` indica a qué otras pantallas se puede navegar desde esta.

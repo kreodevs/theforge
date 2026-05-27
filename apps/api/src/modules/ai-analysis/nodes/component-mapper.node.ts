@@ -13,6 +13,7 @@ import {
   resolutionToModuleId,
   unwrapMcpToolText,
 } from "../utils/wireframes-mcp-resolve.util.js";
+import { formatDesignSystemContextBlock } from "../utils/wireframe-design-system-context.util.js";
 import type { ComponentMcpService } from "../../component-mcp/component-mcp.service.js";
 import type { McpToolResult } from "../../component-mcp/component-mcp-client-contract.js";
 
@@ -205,6 +206,8 @@ export function createComponentMapperNode(
       .join("\n");
 
     let prompt = `${COMPONENT_MAPPER_PROMPT}\n\n---\n## Pantallas y componentes requeridos\n${screensContext}`;
+
+    prompt += formatDesignSystemContextBlock(state.designSystemContext);
 
     if (moduleCatalog) {
       prompt += `\n\n## Catálogo completo de módulos del Design System\nEstos son TODOS los módulos disponibles en el design system. Solo puedes usar moduleId de esta lista:\n\n${moduleCatalog}`;

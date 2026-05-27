@@ -4,6 +4,7 @@ import { z } from "zod";
 import { SCREEN_ANALYZER_PROMPT } from "../prompts/wireframes/wireframes-prompts.js";
 import { screenDefinitionSchema, type WireframesStateType } from "../state/index.js";
 import { parseJsonOrThrow } from "../utils/parse-json.js";
+import { formatDesignSystemContextBlock } from "../utils/wireframe-design-system-context.util.js";
 
 const screenAnalyzerOutputSchema = z.object({
   screens: z.array(screenDefinitionSchema),
@@ -21,6 +22,7 @@ export function createScreenAnalyzerNode(llm: BaseChatModel) {
       "",
       "## Historias de Usuario",
       state.userStories || "(vacío)",
+      formatDesignSystemContextBlock(state.designSystemContext),
     ].join("\n");
 
     const prompt = `${SCREEN_ANALYZER_PROMPT}\n\n---\n${context}`;
