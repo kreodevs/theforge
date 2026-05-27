@@ -21,16 +21,25 @@ export class AudioController {
   constructor(private readonly audio: AudioService) {}
 
   /**
-   * Config STT del usuario autenticado (sttModel en BYOK del proveedor activo).
-   * Sin sesión devuelve sttModel null.
+   * STT y visión de la instancia activa (tenant o BYOK). Sin auth devuelve todo null.
    */
   @Get("config")
-  async getConfig(): Promise<{ sttModel: string | null }> {
+  async getConfig(): Promise<{
+    sttModel: string | null;
+    visionModel: string | null;
+    supportsVision: boolean;
+    supportsStt: boolean;
+  }> {
     try {
       const userId = getRequestUserId();
-      return await this.audio.getSttConfigForUser(userId);
+      return await this.audio.getMediaConfigForUser(userId);
     } catch {
-      return { sttModel: null };
+      return {
+        sttModel: null,
+        visionModel: null,
+        supportsVision: false,
+        supportsStt: false,
+      };
     }
   }
 

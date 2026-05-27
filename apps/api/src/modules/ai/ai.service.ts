@@ -495,6 +495,7 @@ export class AiService {
     activeTab?: string,
   ): Promise<string> {
     if (!images.length) return "";
+    await this.aiFactory.resolveVisionRuntime(getRequestUserId());
     const tab = (activeTab ?? "mdd").trim() || "mdd";
     const hint = (userText ?? "").trim().slice(0, 4000) || "(sin texto adicional)";
     const tabHint =

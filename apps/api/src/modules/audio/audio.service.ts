@@ -110,16 +110,13 @@ export class AudioService {
     return transcription.text ?? "";
   }
 
-  /** Indica si el usuario autenticado puede usar STT con su configuración actual. */
-  async getSttConfigForUser(userId: string): Promise<{ sttModel: string | null }> {
-    try {
-      const runtime = await this.aiFactory.resolveSttRuntime(userId);
-      return { sttModel: runtime.sttModel };
-    } catch (err) {
-      if (err instanceof BadRequestException) {
-        return { sttModel: null };
-      }
-      throw err;
-    }
+  /** STT y visión desde la instancia activa del usuario (no env). */
+  async getMediaConfigForUser(userId: string): Promise<{
+    sttModel: string | null;
+    visionModel: string | null;
+    supportsVision: boolean;
+    supportsStt: boolean;
+  }> {
+    return this.aiFactory.getRuntimeMediaConfig(userId);
   }
 }

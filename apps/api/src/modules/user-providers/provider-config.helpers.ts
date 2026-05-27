@@ -144,10 +144,14 @@ export function buildModelFields(
   if (sttModel && !catalog.supportsStt) {
     throw new BadRequestException(`El proveedor «${provider}» no soporta transcripción de audio`);
   }
-  const visionModel =
-    dto.visionModel === null
-      ? null
-      : (dto.visionModel?.trim() || catalog.defaultVisionModel);
+  let visionModel: string | null | undefined;
+  if (dto.visionModel === undefined) {
+    visionModel = undefined;
+  } else if (dto.visionModel === null) {
+    visionModel = null;
+  } else {
+    visionModel = dto.visionModel.trim() || catalog.defaultVisionModel;
+  }
   if (visionModel && !catalog.supportsVision) {
     throw new BadRequestException(`El proveedor «${provider}» no soporta visión (imágenes)`);
   }
