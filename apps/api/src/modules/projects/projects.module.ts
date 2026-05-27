@@ -10,9 +10,10 @@ import { ScraperModule } from "../scraper/scraper.module.js";
 import { TheForgeModule } from "../theforge/theforge.module.js";
 import { GraphMemoryModule } from "../ai-analysis/graph-memory/graph-memory.module.js";
 import { ChangeLogModule } from "../change-log/change-log.module.js";
+import { WireframeSketchesModule } from "../ai-analysis/wireframe-sketches.module.js";
 
 @Module({
-  imports: [EngineModule, AiModule, ScraperModule, TheForgeModule, GraphMemoryModule, ChangeLogModule],
+  imports: [EngineModule, AiModule, ScraperModule, TheForgeModule, GraphMemoryModule, ChangeLogModule, WireframeSketchesModule],
   controllers: [ProjectsController],
   providers: [
     ProjectsService,

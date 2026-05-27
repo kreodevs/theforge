@@ -2,7 +2,11 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOpenAI } from "@langchain/openai";
-import { llmMaxTokens, resolveLangChainChatTemperature } from "../../ai/config/llm-config.js";
+import {
+  llmMaxTokens,
+  llmWireframeSketchMaxTokens,
+  resolveLangChainChatTemperature,
+} from "../../ai/config/llm-config.js";
 import type { AIFactory } from "../../ai/ai.factory.js";
 import type { UserLLMRuntime } from "../../ai/providers/llm-runtime.types.js";
 import type { ProviderId } from "../../ai/providers/provider-catalog.js";
@@ -24,18 +28,26 @@ function chatModelChain(runtime: UserLLMRuntime): string[] {
   });
 }
 
-function buildChatOpenAI(runtime: UserLLMRuntime, model: string): ChatOpenAI {
+function buildChatOpenAI(
+  runtime: UserLLMRuntime,
+  model: string,
+  maxTokens = llmMaxTokens(),
+): ChatOpenAI {
   return new ChatOpenAI({
     model,
     temperature: resolveLangChainChatTemperature(),
-    maxTokens: llmMaxTokens(),
+    maxTokens,
     timeout: LLM_TIMEOUT_MS,
     openAIApiKey: runtime.apiKey,
     configuration: { baseURL: runtime.baseURL },
   });
 }
 
-function buildLangChainChat(runtime: UserLLMRuntime, model: string): BaseChatModel {
+function buildLangChainChat(
+  runtime: UserLLMRuntime,
+  model: string,
+  maxTokens = llmMaxTokens(),
+): BaseChatModel {
   const temperature = resolveLangChainChatTemperature();
   switch (runtime.providerId as ProviderId) {
     case "anthropic":
@@ -43,7 +55,7 @@ function buildLangChainChat(runtime: UserLLMRuntime, model: string): BaseChatMod
         model,
         apiKey: runtime.apiKey,
         temperature,
-        maxTokens: llmMaxTokens(),
+        maxTokens,
         clientOptions: { timeout: LLM_TIMEOUT_MS },
       });
     case "gemini":
@@ -57,7 +69,7 @@ function buildLangChainChat(runtime: UserLLMRuntime, model: string): BaseChatMod
     case "cloudflare":
     case "groq":
     default:
-      return buildChatOpenAI(runtime, model);
+      return buildChatOpenAI(runtime, model, maxTokens);
   }
 }
 
@@ -86,6 +98,22 @@ function buildWithFallbacks(
 export function createDbgaLLMFromRuntime(runtime: UserLLMRuntime): BaseChatModel {
   const models = chatModelChain(runtime);
   return buildWithFallbacks(runtime, models, (model) => buildLangChainChat(runtime, model));
+}
+
+/** Mismo proveedor/modelos BYOK del usuario; salida acotada para bocetos HTML. */
+export function createWireframeSketchLLMFromRuntime(runtime: UserLLMRuntime): BaseChatModel {
+  const models = chatModelChain(runtime);
+  return buildWithFallbacks(runtime, models, (model) =>
+    buildLangChainChat(runtime, model, llmWireframeSketchMaxTokens()),
+  );
+}
+
+export async function createWireframeSketchLLM(
+  aiFactory: AIFactory,
+  userId: string,
+): Promise<BaseChatModel> {
+  const runtime = await aiFactory.resolveRuntime(userId);
+  return createWireframeSketchLLMFromRuntime(runtime);
 }
 
 /**

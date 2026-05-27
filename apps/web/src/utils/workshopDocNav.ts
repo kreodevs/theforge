@@ -12,6 +12,7 @@ import { Brain,
   LayoutTemplate,
   ListOrdered,
   ListTodo,
+  Monitor,
   Package,
   Palette,
   Server,
@@ -41,6 +42,7 @@ export interface WorkshopDocNavBuildContext {
   userStoriesContent: string | null | undefined;
   blueprintContent: string | null | undefined;
   uxUiGuideContent: string | null | undefined;
+  wireframesContent: string | null | undefined;
   aemContent: string | null | undefined;
   apiContractsContent: string | null | undefined;
   logicFlowsContent: string | null | undefined;
@@ -140,6 +142,15 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       title: "Historias de usuario",
       Icon: Package,
       content: ctx.userStoriesContent,
+    });
+  }
+  if (visible("wireframes")) {
+    items.push({
+      id: "wireframes",
+      label: "Wireframes",
+      title: "Wireframes: mapeo de pantallas y componentes del design system",
+      Icon: Monitor,
+      content: ctx.wireframesContent,
     });
   }
   if (visible("blueprint")) {

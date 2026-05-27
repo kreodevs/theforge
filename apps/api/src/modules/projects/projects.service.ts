@@ -54,6 +54,7 @@ import {
 import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.util.js";
 
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
+import { WireframeSketchesSyncService } from "../ai-analysis/wireframe-sketches-sync.service.js";
 
 /** System prompt para sintetizar BRD/To-Be desde DBGA (greenfield); más ligero que el coordinador legacy + KNOWLEDGE. */
 const DBGA_BRD_TOBE_SUGGEST_SYSTEM =
@@ -106,6 +107,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly theforge: TheForgeService,
     private readonly graphMemory: GraphMemoryService,
     private readonly changeLog: ChangeLogService,
+    private readonly wireframeSketchesSync: WireframeSketchesSyncService,
   ) {}
 
   private buildSemaphoreBase(
@@ -404,6 +406,9 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         },
       });
       await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
+      if ((existing.wireframesContent ?? "").trim()) {
+        this.wireframeSketchesSync.scheduleSync(id, { mddChanged: true });
+      }
     }
 
     const mddForRecalc =
@@ -432,12 +437,15 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         "dbgaContent", "specContent", "architectureContent", "useCasesContent",
         "userStoriesContent", "blueprintContent", "tasksContent",
         "apiContractsContent", "logicFlowsContent", "infraContent",
-        "uxUiGuideContent", "phase0SummaryContent", "aemContent",
+        "uxUiGuideContent", "wireframesContent", "phase0SummaryContent", "aemContent",
       ] as const;
       for (const field of documentFields) {
         if ((rest as Record<string, unknown>)[field] !== undefined) {
           await this.changeLog.log(id, field, (rest as Record<string, string | null | undefined>)[field]);
         }
+      }
+      if (rest.wireframesContent !== undefined && (rest.wireframesContent ?? "").trim()) {
+        this.wireframeSketchesSync.scheduleSync(id);
       }
     }
 
@@ -998,6 +1006,8 @@ name: ${JSON.stringify(name)}
         return;
       case "infra":
         await this.generateInfra(projectId, gaps);
+        return;
+      case "wireframes":
         return;
       default: {
         const _exhaustive: never = kind;

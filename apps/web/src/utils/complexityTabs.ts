@@ -7,6 +7,7 @@ export type WorkshopDocTab =
   | "brd"
   | "mdd"
   | "ux-ui-guide"
+  | "wireframes"
   | "blueprint"
   | "tasks"
   | "api-contracts"
@@ -56,6 +57,7 @@ export function isTabVisibleForComplexity(
         "mdd",
         "spec",
         "api-contracts",
+        "wireframes",
         "ux-ui-guide",
         "tasks",
       ];
@@ -66,6 +68,7 @@ export function isTabVisibleForComplexity(
       "spec",
       "brd",
       "api-contracts",
+      "wireframes",
       "ux-ui-guide",
       "tasks",
       "adrs",

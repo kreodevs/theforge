@@ -14,6 +14,14 @@ export function llmMaxTokens(): number {
   return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : 120_000;
 }
 
+/** Límite de salida para bocetos HTML en lote (preview wireframes). */
+export function llmWireframeSketchMaxTokens(): number {
+  const raw = process.env.WIREFRAME_SKETCH_MAX_TOKENS?.trim();
+  if (raw === undefined || raw === "") return 16_384;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 65_536) : 16_384;
+}
+
 /**
  * Dimensión de embeddings: preferir runtime BYOK; env solo como fallback de servidor.
  * @deprecated Preferir `runtime.embeddingDimension` desde `resolveEmbeddingRuntime`.

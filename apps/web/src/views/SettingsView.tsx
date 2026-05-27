@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Cable, Settings, Shield, Sparkles } from "lucide-react";
+import { Blocks, Cable, Settings, Shield, Sparkles } from "lucide-react";
 import { ProviderInstancesCard } from "@/components/ProviderInstancesCard";
 import { AccountConfigCard } from "@/components/AccountConfigCard";
 import { AriadneConfigCard } from "@/components/AriadneConfigCard";
+import { ComponentMcpConfigCard } from "@/components/ComponentMcpConfigCard";
 import { UnderlineTabs, type UnderlineTabItem } from "@/components/ui/UnderlineTabs";
 import { getStoredUser } from "@/utils/apiClient";
 
-type SettingsTab = "providers" | "ariadne" | "account";
+type SettingsTab = "providers" | "ariadne" | "components" | "account";
 
 const SETTINGS_TABS: UnderlineTabItem<SettingsTab>[] = [
   { id: "providers", label: "Proveedores de IA", shortLabel: "Proveedores", icon: Sparkles },
   { id: "ariadne", label: "Ariadne", shortLabel: "Ariadne", icon: Cable },
+  { id: "components", label: "Componentes", shortLabel: "Componentes", icon: Blocks },
   { id: "account", label: "Cuenta", shortLabel: "Cuenta", icon: Shield },
 ];
 
@@ -46,7 +48,7 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
             <p className="mt-1 text-sm text-[var(--foreground-muted)] sm:text-base">
               {isDeveloper
                 ? "Token MCP y preferencias de tu cuenta"
-                : "Proveedores de IA, Ariadne y cuenta"}
+                : "Proveedores de IA, Ariadne, Componentes y cuenta"}
             </p>
           </div>
 
@@ -83,6 +85,16 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
               className={activeTab === "ariadne" ? "space-y-6" : undefined}
             >
               {activeTab === "ariadne" ? <AriadneConfigCard /> : null}
+            </div>
+
+            <div
+              id="settings-panel-components"
+              role="tabpanel"
+              aria-labelledby="settings-tab-components"
+              hidden={activeTab !== "components"}
+              className={activeTab === "components" ? "space-y-6" : undefined}
+            >
+              {activeTab === "components" ? <ComponentMcpConfigCard /> : null}
             </div>
 
             <div

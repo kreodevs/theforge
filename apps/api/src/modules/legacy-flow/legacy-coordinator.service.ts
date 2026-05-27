@@ -2046,6 +2046,8 @@ export class LegacyCoordinatorService {
           p = await load();
           return;
         }
+        case "wireframes":
+          return;
         default: {
           const _exhaustive: never = kind;
           return _exhaustive;

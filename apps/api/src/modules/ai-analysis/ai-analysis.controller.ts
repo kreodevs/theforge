@@ -7,6 +7,7 @@ import { EstimationService } from "./estimation/estimation.service.js";
 import { Phase0InterviewService } from "./phase0/phase0-interview.service.js";
 import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
+import { writeWireframesSketchesCacheRaw } from "./wireframe-sketches-cache.store.js";
 
 @Controller("ai-analysis")
 export class AiAnalysisController {
@@ -424,6 +425,103 @@ export class AiAnalysisController {
       throw new BadRequestException("projectId is required");
     }
     return this.aiAnalysis.getProjectDecisions(id);
+  }
+
+  // ─── Wireframes — Multi-agent wireframe generation ──────────────
+
+  /**
+   * Streams the Wireframes pipeline: Screen Analyzer → Component Mapper → Wireframe Composer → Critic.
+   * NDJSON: { type: "progress"|"done"|"error", agent?, message?, markdown? }.
+   * Body: { projectId: string }.
+   */
+  @Post("wireframes/stream")
+  async streamWireframes(
+    @Body() body: { projectId?: string },
+    @Res() res: Response,
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) {
+      throw new BadRequestException("projectId is required");
+    }
+
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    try {
+      for await (const event of this.aiAnalysis.streamWireframes(projectId)) {
+        if (res.destroyed) break;
+        res.write(JSON.stringify(event) + "\n");
+        if (typeof (res as any).flush === "function") (res as any).flush();
+      }
+    } catch (err) {
+      if (!res.destroyed) {
+        const payload = formatDbgaStreamError(err);
+        console.error("[Wireframes stream] error:", payload.message);
+        res.write(JSON.stringify({ type: "error", ...payload }) + "\n");
+        if (typeof (res as any).flush === "function") (res as any).flush();
+      }
+    } finally {
+      if (!res.destroyed) res.end();
+    }
+  }
+
+  /**
+   * Cancela / limpia el wireframesContent parcial de un proyecto.
+   * Usado cuando el usuario detiene la generación en curso.
+   */
+  @Delete("wireframes/content")
+  async clearWireframesContent(@Query("projectId") projectId: string) {
+    const id = typeof projectId === "string" ? projectId.trim() : "";
+    if (!id) {
+      throw new BadRequestException("projectId is required");
+    }
+    await this.prisma.project.update({
+      where: { id },
+      data: { wireframesContent: null },
+    });
+    await writeWireframesSketchesCacheRaw(this.prisma, id, null);
+    return { ok: true };
+  }
+
+  @Post("wireframes/preview-snippets")
+  async getWireframePreviewSnippets(
+    @Body() body: { projectId?: string },
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    console.log(`[PreviewSnippets:Controller] projectId="${projectId}"`);
+    if (!projectId) {
+      throw new BadRequestException("projectId is required");
+    }
+    const result = await this.aiAnalysis.getWireframePreviewSnippets(projectId);
+    console.log(`[PreviewSnippets:Controller] result screens=${result.screens?.length}`);
+    return result;
+  }
+
+  /** Regenera bocetos HTML (incremental salvo forceAll o cambio de MDD). */
+  @Post("wireframes/sync-sketches")
+  async syncWireframeSketches(
+    @Body() body: { projectId?: string; forceAll?: boolean },
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) {
+      throw new BadRequestException("projectId is required");
+    }
+    console.log("[SketchSync:Controller] request", {
+      projectId: projectId.slice(0, 8),
+      forceAll: body?.forceAll === true,
+    });
+    const result = await this.aiAnalysis.syncWireframeScreenSketches(projectId, {
+      forceAll: body?.forceAll === true,
+    });
+    console.log("[SketchSync:Controller] response", {
+      sketches: result.screenSketches?.length ?? 0,
+      stale: result.sketchesStale,
+      debug: result.debug,
+    });
+    return result;
   }
 
   // ─── Fase 0 — Entrevista Interactiva ─────────────────────────────

@@ -1,7 +1,10 @@
 import { Controller, Post, Body } from "@nestjs/common";
+import { getRequestUserId } from "../../common/request-user.store.js";
+import { ComponentMcpService } from "../component-mcp/component-mcp.service.js";
 
 @Controller("admin")
 export class AdminController {
+  constructor(private readonly componentMcp: ComponentMcpService) {}
 
   @Post("ariadne-config/test")
   async testAriadneConnection(
@@ -69,6 +72,21 @@ export class AdminController {
         };
       }
       return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Error de conexión" };
+    }
+  }
+
+  @Post("component-mcp-config/test")
+  async testComponentMcpConnection(): Promise<{ ok: boolean; service?: string; error?: string }> {
+    const userId = getRequestUserId();
+    try {
+      const health = await this.componentMcp.checkHealth(userId);
+      if (!health.ok) {
+        return { ok: false, error: health.error ?? "Health check falló" };
+      }
+      await this.componentMcp.catalogHealth(userId);
+      return { ok: true, service: health.service };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "Error de conexión" };
     }

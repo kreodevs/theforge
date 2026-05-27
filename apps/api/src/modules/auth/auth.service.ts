@@ -16,6 +16,7 @@ import nodemailer from "nodemailer";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { isSuperAdmin } from "../../common/roles.js";
 import { UserProvidersService } from "../user-providers/user-providers.service.js";
+import { TokenCryptoService } from "../crypto/token-crypto.service.js";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_RESEND_MS = 60 * 1000;
@@ -60,6 +61,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly userProviders: UserProvidersService,
+    private readonly tokenCrypto: TokenCryptoService,
   ) {}
 
   private smtpConfig():
@@ -497,6 +499,43 @@ export class AuthService {
       },
     });
     this.logger.log(`Ariadne MCP config actualizada para usuario ${userId}`);
+    return { ok: true };
+  }
+
+  /** Obtiene la configuración del MCP de componentes (nunca devuelve el token real). */
+  async getComponentMcpConfig(userId: string): Promise<{ name: string; url: string; hasToken: boolean }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { componentMcpName: true, componentMcpUrl: true, componentMcpTokenCipher: true },
+    });
+    return {
+      name: user?.componentMcpName ?? "",
+      url: user?.componentMcpUrl ?? "",
+      hasToken: !!user?.componentMcpTokenCipher,
+    };
+  }
+
+  /** Guarda la configuración del MCP de componentes. Cifra el token con AES-256-GCM. */
+  async setComponentMcpConfig(
+    userId: string,
+    name: string,
+    url: string,
+    token?: string,
+  ): Promise<{ ok: boolean }> {
+    const data: Record<string, unknown> = {
+      componentMcpName: name.trim() || null,
+      componentMcpUrl: url.trim() || null,
+    };
+    if (token !== undefined && token.trim()) {
+      const { ciphertext, keyVersion } = this.tokenCrypto.encrypt(token.trim());
+      data.componentMcpTokenCipher = ciphertext;
+      data.componentMcpTokenKeyVersion = keyVersion;
+    } else if (token !== undefined) {
+      data.componentMcpTokenCipher = null;
+      data.componentMcpTokenKeyVersion = null;
+    }
+    await this.prisma.user.update({ where: { id: userId }, data });
+    this.logger.log(`Component MCP config actualizada para usuario ${userId}`);
     return { ok: true };
   }
 

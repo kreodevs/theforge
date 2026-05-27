@@ -11,6 +11,7 @@ export interface DocumentsForZip {
   logicFlowsContent: string | null;
   tasksContent: string | null;
   infraContent: string | null;
+  wireframesContent: string | null;
   aemContent: string | null;
 }
 
@@ -37,6 +38,7 @@ export async function downloadDocumentsZip(
     ["logic-flows.md", documents.logicFlowsContent ?? ""],
     ["tasks.md", documents.tasksContent ?? ""],
     ["infra.md", documents.infraContent ?? ""],
+    ["wireframes.md", documents.wireframesContent ?? ""],
     ["aem.md", documents.aemContent ?? ""],
   ];
 

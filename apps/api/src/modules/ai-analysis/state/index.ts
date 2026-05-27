@@ -42,3 +42,23 @@ export {
   type MDDStateType,
   type MDDStateUpdate,
 } from "./mdd-state.annotation.js";
+
+export {
+  componentMappingSchema,
+  defaultWireframesState,
+  screenDefinitionSchema,
+  wireframesCriticDecisionSchema,
+  wireframesStateSchema,
+  wireframesStatusSchema,
+  type ComponentMapping,
+  type ScreenDefinition,
+  type WireframesCriticDecision,
+  type WireframesState,
+  type WireframesStatus,
+} from "./wireframes-state.schema.js";
+
+export {
+  WireframesStateAnnotation,
+  type WireframesStateType,
+  type WireframesStateUpdate,
+} from "./wireframes-state.annotation.js";

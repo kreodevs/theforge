@@ -4,6 +4,7 @@ import { AiModule } from "../ai/ai.module.js";
 import { ProjectsModule } from "../projects/projects.module.js";
 import { TheForgeModule } from "../theforge/theforge.module.js";
 import { AgentSupervisorModule } from "../agent-supervisor/agent-supervisor.module.js";
+import { ComponentMcpModule } from "../component-mcp/component-mcp.module.js";
 import { AiAnalysisController } from "./ai-analysis.controller.js";
 import { AiAnalysisService } from "./ai-analysis.service.js";
 import { CheckpointerService } from "./checkpoint/checkpointer.service.js";
@@ -12,11 +13,12 @@ import { EstimationService } from "./estimation/estimation.service.js";
 import { SddIngestorService } from "./sdd-ingestor.service.js";
 import { Phase0InterviewService } from "./phase0/phase0-interview.service.js";
 import { GraphMemoryModule } from "./graph-memory/graph-memory.module.js";
+import { WireframeSketchesModule } from "./wireframe-sketches.module.js";
 
 @Module({
-  imports: [PrismaModule, AiModule, ProjectsModule, TheForgeModule, AgentSupervisorModule, GraphMemoryModule],
+  imports: [PrismaModule, AiModule, ProjectsModule, TheForgeModule, AgentSupervisorModule, GraphMemoryModule, ComponentMcpModule, WireframeSketchesModule],
   controllers: [AiAnalysisController],
   providers: [NodeCacheService, CheckpointerService, EstimationService, AiAnalysisService, SddIngestorService, Phase0InterviewService],
-  exports: [AiAnalysisService, EstimationService, GraphMemoryModule, SddIngestorService, Phase0InterviewService],
+  exports: [AiAnalysisService, EstimationService, GraphMemoryModule, SddIngestorService, Phase0InterviewService, WireframeSketchesModule],
 })
 export class AiAnalysisModule { }

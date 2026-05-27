@@ -7,8 +7,10 @@ import { DiscoveryService } from "../ai/discovery.service.js";
 import { Command, isGraphInterrupt } from "@langchain/langgraph";
 import { createDbgaGraph } from "./graph/dbga-graph.js";
 import { createMddGraph, createMddGraphWithManager } from "./graph/mdd-graph.js";
+import { createWireframesGraph } from "./graph/wireframes-graph.js";
 import { defaultDBGAState, type DBGAState } from "./state/index.js";
 import { defaultMDDState, type MDDState, type MDDStateType } from "./state/index.js";
+import { defaultWireframesState, type WireframesState } from "./state/index.js";
 import {
   composeBrdPreamble,
 } from "./utils/brd-tobe-gate.util.js";
@@ -49,6 +51,24 @@ import {
 } from "./utils/dbga-idea-validation.util.js";
 import { resolveLangGraphRecursionLimit } from "./utils/langgraph-recursion.util.js";
 import { prepareMddForOutput, draftHasSection6Heading } from "./utils/mdd-prepare-output.js";
+import { ComponentMcpService } from "../component-mcp/component-mcp.service.js";
+import {
+  extractCatalogModuleIds,
+  fetchHostedPreviewCapabilities,
+  fetchHostedPreviewsBatch,
+  fetchPreviewSnippet,
+  formatPreviewError,
+  pickPreviewExportName,
+  previewCacheKey,
+  resolveComponentNamesToHits,
+  resolvePreviewModuleId,
+  stripMarkdownCell,
+  type ComponentResolveHit,
+  type HostedPreviewCacheEntry,
+  unwrapMcpToolText,
+} from "./utils/wireframes-mcp-resolve.util.js";
+import { WireframeSketchesSyncService } from "./wireframe-sketches-sync.service.js";
+import { writeWireframesSketchesCacheRaw } from "./wireframe-sketches-cache.store.js";
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
 
@@ -69,6 +89,13 @@ export type StreamProgressEvent =
     auditTrail?: string[];
   }
   | { type: "error"; message: string; code?: string; replanning?: boolean };
+
+/** Eventos del flujo Wireframes: progreso paso a paso + resultado final. */
+export type StreamWireframesEvent =
+  | { type: "progress"; step: number; totalSteps: number; label: string; status: "running" | "done"; detail?: string; durationMs?: number }
+  | { type: "wireframe"; content: string }
+  | { type: "done" }
+  | { type: "error"; message: string; code?: string };
 
 /** Eventos del flujo MDD con Manager; interrupt puede ser reply (conversación) o questions (entrevista). */
 export type StreamMddManagerEvent =
@@ -140,6 +167,8 @@ export class AiAnalysisService {
     private readonly ai: AiService,
     private readonly discovery: DiscoveryService,
     private readonly aiFactory: AIFactory,
+    private readonly componentMcp: ComponentMcpService,
+    private readonly wireframeSketchesSync: WireframeSketchesSyncService,
     @Optional() createDbgaGraphFn?: typeof createDbgaGraph,
   ) {
     this.createDbgaGraphFn = createDbgaGraphFn ?? createDbgaGraph;
@@ -1416,5 +1445,639 @@ export class AiAnalysisService {
    */
   async getProjectDecisions(projectId: string) {
     return this.graphMemory.getDecisionsByProject(projectId);
+  }
+
+  /**
+   * Streams the Wireframes pipeline: Screen Analyzer → Component Mapper → Wireframe Composer → Critic.
+   * Lee useCasesContent y userStoriesContent del stage principal del proyecto.
+   * NDJSON: StreamWireframesEvent (progress step-by-step, wireframe content, done, error).
+   */
+  async *streamWireframes(
+    projectId: string,
+  ): AsyncGenerator<StreamWireframesEvent> {
+    const pid = projectId?.trim();
+    if (!pid) {
+      yield { type: "error", message: "projectId es requerido" };
+      return;
+    }
+
+    const project = await this.prisma.project.findUnique({
+      where: { id: pid },
+      select: { useCasesContent: true, userStoriesContent: true },
+    });
+    if (!project) {
+      yield { type: "error", message: "Proyecto no encontrado." };
+      return;
+    }
+
+    const useCases = (project.useCasesContent ?? "").trim();
+    const userStories = (project.userStoriesContent ?? "").trim();
+
+    if (!useCases && !userStories) {
+      yield {
+        type: "error",
+        message: "No hay Casos de Uso ni Historias de Usuario en el proyecto. Genera estos documentos primero.",
+      };
+      return;
+    }
+
+    let graph: Awaited<ReturnType<typeof createWireframesGraph>>;
+    try {
+      const userId = await this.resolveUserId(pid);
+      graph = await createWireframesGraph(
+        this.aiFactory,
+        userId,
+        this.componentMcp,
+      );
+    } catch (err) {
+      yield { type: "error", ...formatDbgaStreamError(err) };
+      return;
+    }
+
+    const initialState: WireframesState = {
+      ...defaultWireframesState,
+      useCases,
+      userStories,
+    };
+
+    const nodeStepMeta: Record<string, { baseStep: number; label: string }> = {
+      screen_analyzer: { baseStep: 1, label: "Analizando pantallas" },
+      component_mapper: { baseStep: 2, label: "Mapeando componentes" },
+      wireframe_composer: { baseStep: 3, label: "Componiendo wireframes" },
+      wireframe_critic: { baseStep: 4, label: "Revisión del crítico" },
+    };
+
+    let lastState: Record<string, unknown> = {};
+    let totalSteps = 4;
+    const pipelineStart = performance.now();
+
+    const nextNodeInPipeline: Record<string, string> = {
+      screen_analyzer: "component_mapper",
+      component_mapper: "wireframe_composer",
+      wireframe_composer: "wireframe_critic",
+    };
+
+    function computeStepNum(node: string, iteration: number): number {
+      const revisionNode = node !== "screen_analyzer" && iteration > 0 &&
+        (node === "component_mapper" || node === "wireframe_composer");
+      if (node === "screen_analyzer") return 1;
+      if (revisionNode && node === "component_mapper") return 4 + (iteration - 1) * 2 + 1;
+      if (revisionNode && node === "wireframe_composer") return 4 + (iteration - 1) * 2 + 2;
+      if (node === "wireframe_critic" && iteration > 1) return 4 + (iteration - 1) * 2;
+      return nodeStepMeta[node]?.baseStep ?? 1;
+    }
+
+    function computeLabel(node: string, iteration: number): string {
+      const revisionNode = node !== "screen_analyzer" && iteration > 0 &&
+        (node === "component_mapper" || node === "wireframe_composer");
+      if (revisionNode && node === "component_mapper") return "Re-mapeando componentes";
+      if (revisionNode && node === "wireframe_composer") return "Re-componiendo wireframes";
+      if (node === "wireframe_critic" && iteration > 0) return `Revisión del crítico (iteración ${iteration + 1}/2)`;
+      return nodeStepMeta[node]?.label ?? node;
+    }
+
+    yield {
+      type: "progress",
+      step: 1,
+      totalSteps,
+      label: nodeStepMeta.screen_analyzer.label,
+      status: "running",
+    };
+    let nodeStartTime = performance.now();
+
+    try {
+      const stream = await graph.stream(initialState, {
+        recursionLimit: LANGGRAPH_RECURSION_LIMIT,
+        streamMode: ["updates", "values"] as const,
+      });
+
+      for await (const raw of stream) {
+        const [mode, data] = Array.isArray(raw) ? (raw as [string, unknown]) : ["values", raw];
+
+        if (mode === "updates" && data && typeof data === "object" && !Array.isArray(data)) {
+          const nodeName = Object.keys(data as Record<string, unknown>)[0];
+          if (!nodeName) continue;
+
+          const meta = nodeStepMeta[nodeName];
+          if (!meta) continue;
+
+          const nodeUpdate = (data as Record<string, unknown>)[nodeName] as Partial<WireframesState> | undefined;
+          const iteration = (nodeUpdate?.iterationCount ?? (lastState as WireframesState)?.iterationCount ?? 0);
+
+          if (iteration > 0) {
+            totalSteps = 4 + iteration * 2;
+          }
+
+          const stepNum = computeStepNum(nodeName, iteration);
+          const durationMs = Math.round(performance.now() - nodeStartTime);
+
+          let detail: string | undefined;
+          if (nodeName === "screen_analyzer") {
+            const screens = (nodeUpdate?.screens ?? []) as unknown[];
+            detail = `${screens.length} pantallas identificadas`;
+          } else if (nodeName === "component_mapper") {
+            const mappings = (nodeUpdate?.componentMappings ?? []) as unknown[];
+            detail = `${mappings.length} componentes mapeados`;
+          } else if (nodeName === "wireframe_composer") {
+            detail = "Documento generado";
+          } else if (nodeName === "wireframe_critic") {
+            detail = nodeUpdate?.criticDecision === "approved" ? "Aprobado" : "Revisión solicitada";
+          }
+
+          yield {
+            type: "progress",
+            step: stepNum,
+            totalSteps,
+            label: computeLabel(nodeName, iteration),
+            status: "done",
+            detail,
+            durationMs,
+          };
+
+          let nextNode: string | null = nextNodeInPipeline[nodeName] ?? null;
+          if (nodeName === "wireframe_critic") {
+            nextNode = (nodeUpdate?.criticDecision === "needs_revision" && iteration < 2)
+              ? "component_mapper"
+              : null;
+          }
+
+          if (nextNode) {
+            const nextIteration = iteration;
+            const nextStep = computeStepNum(nextNode, nextIteration);
+            yield {
+              type: "progress",
+              step: nextStep,
+              totalSteps,
+              label: computeLabel(nextNode, nextIteration),
+              status: "running",
+            };
+            nodeStartTime = performance.now();
+          }
+        }
+
+        if (mode === "values" && data && typeof data === "object") {
+          lastState = data as Record<string, unknown>;
+        }
+      }
+
+      const finalState = lastState as WireframesState;
+
+      const markdown =
+        finalState.wireframeDocument?.trim() ||
+        "# Wireframes\n\n(Sin contenido generado.)";
+
+      const pipelineMs = Math.round(performance.now() - pipelineStart);
+      this.logger.log(`[Wireframes] Pipeline completado en ${(pipelineMs / 1000).toFixed(1)}s`);
+
+      yield {
+        type: "progress",
+        step: totalSteps,
+        totalSteps,
+        label: "Guardando documento",
+        status: "running",
+      };
+
+      if (markdown.trim()) {
+        try {
+          await this.prisma.project.update({
+            where: { id: pid },
+            data: { wireframesContent: markdown },
+          });
+          await writeWireframesSketchesCacheRaw(this.prisma, pid, null);
+        } catch (e) {
+          this.logger.warn(`[Wireframes] Failed to persist wireframesContent: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      yield {
+        type: "progress",
+        step: totalSteps,
+        totalSteps,
+        label: "Guardando documento",
+        status: "done",
+        detail: "Wireframes listos",
+      };
+
+      yield { type: "wireframe", content: markdown };
+      yield { type: "done" };
+
+      // Bocetos por pantalla (LLM) en segundo plano: no bloquear el stream NDJSON del cliente.
+      if (markdown.trim()) {
+        void this.wireframeSketchesSync
+          .syncWireframeScreenSketches(pid)
+          .then((r) => {
+            this.logger.log(
+              `[Wireframes] sketch sync en background: screens=${r.screenSketches.length} stale=${r.sketchesStale}`,
+            );
+          })
+          .catch((sketchErr) => {
+            this.logger.warn(
+              `[Wireframes] sketch sync after generation: ${sketchErr instanceof Error ? sketchErr.message : String(sketchErr)}`,
+            );
+          });
+      }
+    } catch (err) {
+      yield { type: "error", ...formatDbgaStreamError(err) };
+    }
+  }
+
+  // ─── Wireframe Preview Snippets ──────────────────────────
+
+  async getWireframePreviewSnippets(projectId: string) {
+    const stripMd = stripMarkdownCell;
+    this.logger.log(`[PreviewSnippets] start projectId=${projectId}`);
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { wireframesContent: true },
+    });
+
+    const markdown = project?.wireframesContent ?? "";
+    this.logger.log(`[PreviewSnippets] wireframesContent length=${markdown.length}`);
+    if (!markdown.trim()) {
+      this.logger.log(`[PreviewSnippets] empty wireframesContent, returning []`);
+      return { screens: [], screenSketches: [], sketchesStale: false };
+    }
+
+    let sketchRead: Awaited<ReturnType<WireframeSketchesSyncService["readCachedSketches"]>> = {
+      screenSketches: [],
+      sketchesStale: true,
+      staleReason: "missing",
+    };
+    try {
+      sketchRead = await this.wireframeSketchesSync.readCachedSketches(projectId);
+    } catch (err) {
+      this.logger.warn(
+        `[PreviewSnippets] readCachedSketches failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    const userId = await this.resolveUserId(projectId);
+    const mcpUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { componentMcpUrl: true },
+    });
+    this.logger.log(
+      `[PreviewSnippets] userId=${userId.slice(0, 8)}… mcpConfigured=${!!mcpUser?.componentMcpUrl?.trim()}`,
+    );
+
+    const screens: Array<{
+      screenName: string;
+      components: Array<{
+        name: string;
+        moduleId: string;
+        previewKind: "html" | "url" | "unavailable" | "error" | "legacy";
+        document?: string;
+        previewUrl?: string;
+        recommendedHeight?: number;
+        sandbox?: string;
+        snippet?: string;
+        error?: string;
+        fallback?: { kind: string; url?: string; screenshotUrl?: string };
+      }>;
+    }> = [];
+
+    const screenRegex = /^## Pantalla:\s*(.+)$/gm;
+    const dsTableHeaderRegex =
+      /### Componentes del Design System/;
+    const tableRowRegex =
+      /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|$/;
+
+    const screenSections: Array<{ name: string; body: string }> = [];
+    let match: RegExpExecArray | null;
+    const screenStarts: Array<{ name: string; index: number }> = [];
+
+    while ((match = screenRegex.exec(markdown)) !== null) {
+      screenStarts.push({ name: match[1].trim(), index: match.index });
+    }
+    this.logger.log(`[PreviewSnippets] screenRegex matched ${screenStarts.length} screens: ${screenStarts.map(s => s.name).join(", ")}`);
+
+    for (let i = 0; i < screenStarts.length; i++) {
+      const start = screenStarts[i].index;
+      const end = i + 1 < screenStarts.length ? screenStarts[i + 1].index : markdown.length;
+      screenSections.push({ name: screenStarts[i].name, body: markdown.slice(start, end) });
+    }
+
+    const screenComponentMap: Array<{
+      screenName: string;
+      components: Array<{ name: string; moduleId: string; exportName?: string }>;
+    }> = [];
+
+    for (const section of screenSections) {
+      const hasDsTable = dsTableHeaderRegex.test(section.body);
+      this.logger.log(`[PreviewSnippets] screen="${section.name}" hasDsTable=${hasDsTable} bodyLen=${section.body.length}`);
+      if (!hasDsTable) {
+        // Log first 300 chars of body to see actual heading structure
+        this.logger.log(`[PreviewSnippets] screen="${section.name}" body preview: ${section.body.slice(0, 300).replace(/\n/g, "\\n")}`);
+        continue;
+      }
+
+      const lines = section.body.split("\n");
+      const components: Array<{ name: string; moduleId: string; exportName?: string }> = [];
+
+      let inTable = false;
+      for (const line of lines) {
+        if (line.includes("Componente requerido") && line.includes("Módulo DS")) {
+          inTable = true;
+          continue;
+        }
+        if (inTable && line.trim().startsWith("|---") || inTable && line.trim().startsWith("| ---")) {
+          continue;
+        }
+        if (inTable && line.trim().startsWith("|")) {
+          const rowMatch = tableRowRegex.exec(line);
+          if (rowMatch) {
+            const name = stripMd(rowMatch[1]);
+            const moduleId = stripMd(rowMatch[2]);
+            const exportName = stripMd(rowMatch[3]);
+            const confidenceRaw = stripMd(rowMatch[4]).toLowerCase();
+            const confidence =
+              confidenceRaw.match(/^(exact|partial|none)/)?.[1] ?? confidenceRaw;
+            this.logger.log(`[PreviewSnippets] table row: name="${name}" moduleId="${moduleId}" export="${exportName}" confidence="${confidence}"`);
+
+            if (confidence !== "none" && moduleId) {
+              components.push({
+                name,
+                moduleId,
+                exportName: exportName && exportName !== "—" ? exportName : undefined,
+              });
+            }
+          } else {
+            this.logger.log(`[PreviewSnippets] table row no match: "${line.trim().slice(0, 120)}"`);
+          }
+        } else if (inTable && !line.trim().startsWith("|")) {
+          inTable = false;
+        }
+      }
+
+      const screenName = stripMd(section.name);
+      this.logger.log(`[PreviewSnippets] screen="${screenName}" components=${components.length}`);
+      screenComponentMap.push({ screenName, components });
+    }
+
+    this.logger.log(`[PreviewSnippets] screenComponentMap=${screenComponentMap.length}`);
+
+    const allNames = [
+      ...new Set(
+        screenComponentMap.flatMap((s) =>
+          s.components.flatMap((c) => [c.name, c.exportName].filter((x): x is string => !!x?.trim())),
+        ),
+      ),
+    ];
+    let catalogIds = new Set<string>();
+    let resolveMap = new Map<string, string>();
+    let resolveHits = new Map<string, ComponentResolveHit>();
+
+    if (mcpUser?.componentMcpUrl?.trim()) {
+      try {
+        const listResult = await this.componentMcp.listModules(userId);
+        catalogIds = extractCatalogModuleIds(unwrapMcpToolText(listResult));
+      } catch (err) {
+        this.logger.warn(
+          `[PreviewSnippets] list_modules failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      resolveHits = await resolveComponentNamesToHits(this.componentMcp, userId, allNames);
+      for (const [query, hit] of resolveHits) {
+        resolveMap.set(query, hit.moduleId);
+      }
+      this.logger.log(
+        `[PreviewSnippets] catalogIds=${catalogIds.size} resolveMap=${resolveMap.size} names=${allNames.length}`,
+      );
+    }
+
+    const searchCache = new Map<string, string | null>();
+
+    type ResolvedRow = {
+      name: string;
+      tableModuleId: string;
+      tableExportName?: string;
+      fetchModuleId: string;
+      fetchExportName?: string;
+    };
+
+    const resolvedByScreen: Array<{ screenName: string; components: ResolvedRow[] }> = [];
+    for (const entry of screenComponentMap) {
+      const components: ResolvedRow[] = [];
+      for (const c of entry.components) {
+        let fetchModuleId = "";
+        let source = "none";
+        if (mcpUser?.componentMcpUrl?.trim()) {
+          const resolved = await resolvePreviewModuleId(
+            this.componentMcp,
+            userId,
+            {
+              componentName: c.name,
+              tableModuleId: c.moduleId,
+              exportName: c.exportName,
+            },
+            resolveMap,
+            catalogIds,
+            searchCache,
+          );
+          fetchModuleId = resolved.moduleId;
+          source = resolved.source;
+        } else {
+          const tableId = stripMd(c.moduleId);
+          if (tableId) fetchModuleId = tableId;
+        }
+
+        if (!fetchModuleId) {
+          this.logger.warn(
+            `[PreviewSnippets] no MCP module for "${c.name}" (table="${c.moduleId}" export="${c.exportName ?? ""}")`,
+          );
+        } else if (fetchModuleId !== c.moduleId) {
+          this.logger.log(
+            `[PreviewSnippets] resolved "${c.name}": table="${c.moduleId}" → fetch="${fetchModuleId}" (${source})`,
+          );
+        }
+        const fetchExportName = fetchModuleId
+          ? pickPreviewExportName(
+              c.name,
+              fetchModuleId,
+              c.exportName,
+              resolveHits.get(c.name.trim()),
+            )
+          : undefined;
+        components.push({
+          name: c.name,
+          tableModuleId: c.moduleId,
+          tableExportName: c.exportName,
+          fetchModuleId,
+          fetchExportName,
+        });
+      }
+      resolvedByScreen.push({ screenName: entry.screenName, components });
+    }
+
+    const fetchKeys = new Set<string>();
+    for (const entry of resolvedByScreen) {
+      for (const c of entry.components) {
+        if (c.fetchModuleId) {
+          fetchKeys.add(previewCacheKey(c.fetchModuleId, c.fetchExportName));
+        }
+      }
+    }
+    this.logger.log(`[PreviewSnippets] fetchKeys=${fetchKeys.size} searchCacheHits=${searchCache.size}`);
+
+    const previewCache = new Map<string, HostedPreviewCacheEntry>();
+    let hostedPreviewSupported = false;
+    let previewMode: "html" | "url" = "html";
+
+    if (mcpUser?.componentMcpUrl?.trim() && fetchKeys.size > 0) {
+      const capabilities = await fetchHostedPreviewCapabilities(this.componentMcp, userId);
+      hostedPreviewSupported = capabilities.supported;
+      previewMode = capabilities.defaultMode;
+      this.logger.log(
+        `[PreviewSnippets] hostedPreview supported=${hostedPreviewSupported} mode=${previewMode}`,
+      );
+
+      if (hostedPreviewSupported) {
+        const items = Array.from(fetchKeys).map((key) => {
+          const sep = key.indexOf("::");
+          return {
+            moduleId: key.slice(0, sep),
+            exportName: key.slice(sep + 2) || undefined,
+          };
+        });
+        const hosted = await fetchHostedPreviewsBatch(
+          this.componentMcp,
+          userId,
+          items,
+          previewMode,
+        );
+        for (const [k, v] of hosted) previewCache.set(k, v);
+      }
+    }
+
+    const legacySnippetCache = new Map<string, { snippet: string; error?: string }>();
+    if (!hostedPreviewSupported && fetchKeys.size > 0 && mcpUser?.componentMcpUrl?.trim()) {
+      await Promise.all(
+        Array.from(fetchKeys).map(async (key) => {
+          const sep = key.indexOf("::");
+          const moduleId = key.slice(0, sep);
+          const exportName = key.slice(sep + 2) || undefined;
+          try {
+            const result = await fetchPreviewSnippet(
+              this.componentMcp,
+              userId,
+              moduleId,
+              exportName,
+            );
+            legacySnippetCache.set(key, result);
+          } catch (err) {
+            legacySnippetCache.set(key, {
+              snippet: "",
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }),
+      );
+    }
+
+    const toComponentResponse = (c: ResolvedRow) => {
+      if (!c.fetchModuleId) {
+        return {
+          name: c.name,
+          moduleId: c.tableModuleId,
+          previewKind: "error" as const,
+          error: formatPreviewError(`No se encontró módulo MCP para "${c.name}"`),
+        };
+      }
+
+      const key = previewCacheKey(c.fetchModuleId, c.fetchExportName);
+      const hosted = previewCache.get(key);
+
+      if (hosted) {
+        if (hosted.previewKind === "html" && hosted.document) {
+          return {
+            name: c.name,
+            moduleId: c.fetchModuleId,
+            previewKind: "html" as const,
+            document: hosted.document,
+            recommendedHeight: hosted.recommendedHeight,
+            sandbox: hosted.sandbox,
+          };
+        }
+        if (hosted.previewKind === "url" && hosted.previewUrl) {
+          return {
+            name: c.name,
+            moduleId: c.fetchModuleId,
+            previewKind: "url" as const,
+            previewUrl: hosted.previewUrl,
+            recommendedHeight: hosted.recommendedHeight,
+            sandbox: hosted.sandbox,
+          };
+        }
+        if (hosted.previewKind === "unavailable") {
+          return {
+            name: c.name,
+            moduleId: c.fetchModuleId,
+            previewKind: "unavailable" as const,
+            error: formatPreviewError(hosted.error ?? "Preview no disponible"),
+            fallback: hosted.fallback,
+          };
+        }
+        return {
+          name: c.name,
+          moduleId: c.fetchModuleId,
+          previewKind: "error" as const,
+          error: formatPreviewError(hosted.error ?? "Error de preview"),
+        };
+      }
+
+      const legacy = legacySnippetCache.get(key);
+      if (legacy?.snippet?.trim()) {
+        return {
+          name: c.name,
+          moduleId: c.fetchModuleId,
+          previewKind: "legacy" as const,
+          snippet: legacy.snippet,
+        };
+      }
+      return {
+        name: c.name,
+        moduleId: c.fetchModuleId,
+        previewKind: "error" as const,
+        error: formatPreviewError(legacy?.error ?? "Sin preview"),
+      };
+    };
+
+    for (const entry of resolvedByScreen) {
+      screens.push({
+        screenName: entry.screenName,
+        components: entry.components.map(toComponentResponse),
+      });
+    }
+
+    let okPreviews = 0;
+    let errPreviews = 0;
+    for (const s of screens) {
+      for (const c of s.components) {
+        if (c.error || c.previewKind === "error" || c.previewKind === "unavailable") errPreviews++;
+        else if (c.previewKind === "html" || c.previewKind === "url" || c.snippet?.trim()) okPreviews++;
+      }
+    }
+    this.logger.log(
+      `[PreviewSnippets] returning screens=${screens.length} components=${screens.reduce((a, s) => a + s.components.length, 0)} ok=${okPreviews} errors=${errPreviews} hosted=${hostedPreviewSupported} sketches=${sketchRead.screenSketches.length} stale=${sketchRead.sketchesStale}`,
+    );
+    return {
+      screens,
+      screenSketches: sketchRead.screenSketches,
+      sketchesStale: sketchRead.sketchesStale,
+      sketchesStaleReason: sketchRead.staleReason,
+    };
+  }
+
+  async syncWireframeScreenSketches(
+    projectId: string,
+    options?: { forceAll?: boolean },
+  ) {
+    const result = await this.wireframeSketchesSync.syncWireframeScreenSketches(projectId, {
+      forceAll: options?.forceAll,
+    });
+    this.logger.log(
+      `[SketchSync:API] project=${projectId.slice(0, 8)}… sketches=${result.screenSketches.length} stale=${result.sketchesStale}`,
+    );
+    return result;
   }
 }

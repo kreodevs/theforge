@@ -440,6 +440,7 @@ export interface Project {
   useCasesContent: string | null;
   userStoriesContent: string | null;
   infraContent: string | null;
+  wireframesContent: string | null;
   aemContent: string | null;
   legacyFlowState?: LegacyFlowState | null;
   estimation: Estimation | null;
@@ -530,6 +531,7 @@ function projectWithUxAfterStream(
           ? proj.complexityPending
           : p.complexityPending ?? null,
       uxUiGuideContent: cleanDoc(uxFromApi ?? p.uxUiGuideContent ?? null),
+      wireframesContent: cleanDoc(p.wireframesContent ?? null),
       blueprintContent: cleanDoc(p.blueprintContent ?? null),
       dbgaContent: cleanDoc(p.dbgaContent ?? null),
       specContent: cleanDoc(p.specContent ?? null),
@@ -583,6 +585,7 @@ interface WorkshopState {
   useCasesContent: string | null;
   userStoriesContent: string | null;
   infraContent: string | null;
+  wireframesContent: string | null;
   aemContent: string | null;
   /** Conformance (SDD Fase 2): Blueprint/API/Flujos/Infra vs MDD; `blueprintDataModel` = §3 vs Blueprint (gating API). */
   conformance: {
@@ -717,6 +720,8 @@ interface WorkshopState {
   setInfraContent: (content: string | null) => void;
   persistInfraContent: (content: string) => Promise<void>;
   generateInfra: (projectId: string, options?: { gapsFeedback?: string }) => Promise<Project | null>;
+  setWireframesContent: (content: string | null) => void;
+  persistWireframesContent: (content: string) => Promise<void>;
 
   setArchitectureContent: (content: string | null) => void;
   persistArchitectureContent: (content: string) => Promise<void>;
@@ -815,6 +820,7 @@ const initialState = {
   useCasesContent: null as string | null,
   userStoriesContent: null as string | null,
   infraContent: null as string | null,
+  wireframesContent: null as string | null,
   aemContent: null as string | null,
   conformance: null as {
     blueprint: ConformanceResult;
@@ -888,6 +894,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       activeStageId,
       mddContent: cleanDoc(flat.mddContent) ?? "",
       uxUiGuideContent: p.uxUiGuideContent ?? null,
+      wireframesContent: p.wireframesContent ?? null,
       dbgaContent: p.dbgaContent ?? null,
       phase0SummaryContent: p.phase0SummaryContent ?? null,
       blueprintContent: p.blueprintContent ?? null,
@@ -1067,6 +1074,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         activeStageId,
         mddContent: cleanDoc(flat.mddContent) ?? "",
         uxUiGuideContent: cleanDoc(data.uxUiGuideContent ?? null),
+        wireframesContent: cleanDoc(data.wireframesContent ?? null),
         dbgaContent: cleanDoc(data.dbgaContent ?? null),
         specContent: cleanDoc(data.specContent ?? null),
         phase0SummaryContent: data.phase0SummaryContent ?? null,
@@ -1148,6 +1156,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         activeStageId,
         mddContent: cleanDoc(flat.mddContent ?? null) ?? get().mddContent,
         uxUiGuideContent: cleanDoc(p.uxUiGuideContent ?? null),
+        wireframesContent: cleanDoc(p.wireframesContent ?? null),
         dbgaContent: cleanDoc(p.dbgaContent ?? null),
         specContent: cleanDoc(p.specContent ?? null),
         phase0SummaryContent: p.phase0SummaryContent ?? null,
@@ -1350,6 +1359,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           "uxUiGuideContent",
           get().uxUiGuideContent ?? project?.uxUiGuideContent,
           "Guía UX/UI",
+        );
+      case "wireframes":
+        return persistProjectField(
+          "wireframesContent",
+          get().wireframesContent ?? project?.wireframesContent,
+          "Wireframes",
         );
       case "blueprint":
         return persistProjectField("blueprintContent", get().blueprintContent, "Blueprint");
@@ -2031,6 +2046,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   mddContent: packed?.mddContent ?? get().mddContent,
                   workshopStages: nextStages && nextStages.length > 0 ? nextStages : get().workshopStages,
                   uxUiGuideContent: freshUx,
+                  wireframesContent: cleanDoc(proj?.wireframesContent ?? null) ?? get().wireframesContent,
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null) ?? get().dbgaContent,
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   architectureContent: cleanDoc(proj?.architectureContent ?? null) ?? get().architectureContent,
@@ -2094,6 +2110,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   mddContent: packed?.mddContent ?? get().mddContent,
                   workshopStages: nextStagesB && nextStagesB.length > 0 ? nextStagesB : get().workshopStages,
                   uxUiGuideContent: freshUx,
+                  wireframesContent: cleanDoc(proj?.wireframesContent ?? null) ?? get().wireframesContent,
                   dbgaContent: cleanDoc(proj?.dbgaContent ?? null) ?? get().dbgaContent,
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null) ?? get().blueprintContent,
@@ -2247,6 +2264,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return proj;
     } catch (e) { set({ error: friendlyFetchError(e) }); return null; }
     finally { set({ loading: false }); }
+  },
+
+  setWireframesContent: (content) => set({ wireframesContent: content }),
+  persistWireframesContent: async (content) => {
+    await persistField("wireframesContent", content, get, set);
   },
 
   setArchitectureContent: (content) => set({ architectureContent: content }),

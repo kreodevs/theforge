@@ -120,6 +120,19 @@ export class AuthController {
     return this.auth.setAriadneConfig(userId, body.url ?? "", body.token ?? "");
   }
 
+  @Get("component-mcp-config")
+  getComponentMcpConfig() {
+    const userId = getRequestUserId();
+    return this.auth.getComponentMcpConfig(userId);
+  }
+
+  @Put("component-mcp-config")
+  @HttpCode(200)
+  async setComponentMcpConfig(@Body() body: { name?: string; url?: string; token?: string }) {
+    const userId = getRequestUserId();
+    return this.auth.setComponentMcpConfig(userId, body.name ?? "", body.url ?? "", body.token);
+  }
+
   /** GET /auth/has-users — verifica si hay usuarios registrados (público). */
   @Get("has-users")
   @Public()

@@ -34,6 +34,7 @@ import {
   Globe,
   Lock,
   Pencil,
+  Monitor,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,7 @@ import {
   WorkshopButtonIcon,
 } from "../components/WorkshopButtons";
 import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
+import { WireframesPanel } from "../components/WireframesPanel";
 import { Phase0InterviewPanel } from "../components/Phase0InterviewPanel";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AdrsPanel } from "../components/AdrsPanel";
@@ -123,6 +125,7 @@ type WorkshopDocToolbarViewModes = {
   useCasesViewMode: "preview" | "source";
   userStoriesViewMode: "preview" | "source";
   uxUiGuideViewMode: "design" | "preview" | "source";
+  wireframesViewMode: "wireframe" | "preview" | "source";
   aemViewMode: "preview" | "source";
   blueprintViewMode: "preview" | "source";
   apiContractsViewMode: "preview" | "source";
@@ -142,6 +145,7 @@ function getWorkshopDocToolbarActiveViewMode(
   if (centralPanel === "use-cases") return modes.useCasesViewMode;
   if (centralPanel === "user-stories") return modes.userStoriesViewMode;
   if (centralPanel === "ux-ui-guide") return modes.uxUiGuideViewMode;
+  if (centralPanel === "wireframes") return modes.wireframesViewMode;
   if (centralPanel === "aem") return modes.aemViewMode;
   if (centralPanel === "blueprint") return modes.blueprintViewMode;
   if (centralPanel === "api-contracts") return modes.apiContractsViewMode;
@@ -159,6 +163,11 @@ function workshopDocSourceTogglePresentation(
     if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Ver markdown" };
     if (activeViewMode === "design") return { Icon: Palette, tooltip: "Ver UI Kit y tokens" };
     return { Icon: FileText, tooltip: "Ver documento DESIGN.md" };
+  }
+  if (centralPanel === "wireframes") {
+    if (activeViewMode === "wireframe") return { Icon: Monitor, tooltip: "Vista wireframe (tarjetas)" };
+    if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Ver markdown" };
+    return { Icon: FileText, tooltip: "Ver wireframes" };
   }
   if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Editar" };
   return { Icon: FileText, tooltip: "Ver previsualización" };
@@ -285,9 +294,12 @@ export default function WorkshopView({
   const userStoriesContentField = useWorkshopStore((s) => s.userStoriesContent);
   const phase0SummaryContentField = useWorkshopStore((s) => s.phase0SummaryContent);
   const uxUiGuideContentField = useWorkshopStore((s) => s.uxUiGuideContent);
+  const wireframesContentField = useWorkshopStore((s) => s.wireframesContent);
   const aemContentField = useWorkshopStore((s) => s.aemContent);
   const setAemContent = useWorkshopStore((s) => s.setAemContent);
   const persistAemContent = useWorkshopStore((s) => s.persistAemContent);
+  const setWireframesContent = useWorkshopStore((s) => s.setWireframesContent);
+  const persistWireframesContent = useWorkshopStore((s) => s.persistWireframesContent);
 
   const specContent = specContentField ?? project?.specContent ?? null;
   const dbgaContent = dbgaContentField ?? project?.dbgaContent ?? null;
@@ -303,6 +315,7 @@ export default function WorkshopView({
   const userStoriesContent = userStoriesContentField ?? project?.userStoriesContent ?? null;
   const phase0SummaryContent = phase0SummaryContentField ?? project?.phase0SummaryContent ?? null;
   const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
+  const wireframesContent = wireframesContentField ?? project?.wireframesContent ?? null;
   const aemContent = aemContentField ?? project?.aemContent ?? null;
 
   const projectStatus: Status = project?.status ?? "ROJO";
@@ -314,6 +327,19 @@ export default function WorkshopView({
   // ─── Generación secuencial multi-sección del DESIGN.md ─────
   const [uxGenerating, setUxGenerating] = useState(false);
   const [uxGenProgress, setUxGenProgress] = useState<string | null>(null);
+  const [wireframesGenerating, setWireframesGenerating] = useState(false);
+  const [wireframesProgress, setWireframesProgress] = useState<{
+    step: number;
+    totalSteps: number;
+    label: string;
+    status: "running" | "done";
+    detail?: string;
+    durationMs?: number;
+  } | null>(null);
+  const [wireframesStepsHistory, setWireframesStepsHistory] = useState<
+    Array<{ step: number; totalSteps: number; label: string; status: "running" | "done"; detail?: string; durationMs?: number }>
+  >([]);
+  const wireframesAbortRef = useRef<AbortController | null>(null);
 
   const isReverseEngineering =
     isLegacyProject &&
@@ -652,6 +678,140 @@ export default function WorkshopView({
     }
   }, [projectId, uxUiGuideContent, projectName, persistUxUiGuideContent, setUxGenerating, setUxGenProgress]);
 
+  const generateWireframes = useCallback(async () => {
+    if (!projectId) return;
+    wireframesAbortRef.current?.abort();
+    const abortController = new AbortController();
+    wireframesAbortRef.current = abortController;
+    setWireframesGenerating(true);
+    setWireframesProgress(null);
+    setWireframesStepsHistory([]);
+    let streamFinished = false;
+    const finishWireframesGeneration = () => {
+      if (streamFinished) return;
+      streamFinished = true;
+      setWireframesGenerating(false);
+      setWireframesProgress(null);
+      setWireframesStepsHistory([]);
+    };
+    try {
+      const { apiFetch, API_BASE } = await import("../utils/apiClient");
+      const r = await apiFetch(`${API_BASE}/ai-analysis/wireframes/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+        signal: abortController.signal,
+      });
+      if (!r.ok) throw new Error(`Error: ${r.status}`);
+
+      const reader = r.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error("No reader");
+
+      let buffer = "";
+      let finalContent = "";
+
+      const processLine = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        try {
+          const ev = JSON.parse(trimmed) as {
+            type: string;
+            step?: number;
+            totalSteps?: number;
+            label?: string;
+            status?: "running" | "done";
+            detail?: string;
+            durationMs?: number;
+            content?: string;
+            message?: string;
+          };
+          if (ev.type === "progress" && ev.step != null && ev.totalSteps != null && ev.label != null && ev.status != null) {
+            const progressEntry = {
+              step: ev.step,
+              totalSteps: ev.totalSteps,
+              label: ev.label,
+              status: ev.status,
+              detail: ev.detail,
+              durationMs: ev.durationMs,
+            };
+            setWireframesProgress(progressEntry);
+            setWireframesStepsHistory((prev) => {
+              const existing = prev.findIndex((s) => s.step === ev.step);
+              if (existing >= 0) {
+                const updated = [...prev];
+                updated[existing] = progressEntry;
+                return updated;
+              }
+              return [...prev, progressEntry];
+            });
+          } else if (ev.type === "wireframe" && typeof ev.content === "string") {
+            finalContent = ev.content;
+            setWireframesContent(finalContent);
+          } else if (ev.type === "done") {
+            if (finalContent.trim()) {
+              persistWireframesContent(finalContent).catch(() => {});
+            }
+            finishWireframesGeneration();
+          } else if (ev.type === "error") {
+            console.error("Wireframes generation error:", ev.message);
+            finishWireframesGeneration();
+          }
+        } catch { /* ignore parse errors */ }
+      };
+
+      while (true) {
+        if (abortController.signal.aborted) break;
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) processLine(line);
+      }
+
+      if (!abortController.signal.aborted) {
+        buffer += decoder.decode();
+        if (buffer.trim()) processLine(buffer);
+
+        if (finalContent.trim()) {
+          setWireframesContent(finalContent);
+          persistWireframesContent(finalContent).catch(() => {});
+        }
+        finishWireframesGeneration();
+      }
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return;
+      console.error("Wireframes generation error:", e);
+      finishWireframesGeneration();
+    } finally {
+      if (!streamFinished && !abortController.signal.aborted) {
+        finishWireframesGeneration();
+      }
+      if (wireframesAbortRef.current === abortController) {
+        wireframesAbortRef.current = null;
+      }
+    }
+  }, [projectId, setWireframesContent, persistWireframesContent]);
+
+  const cancelWireframes = useCallback(async () => {
+    wireframesAbortRef.current?.abort();
+    wireframesAbortRef.current = null;
+    setWireframesGenerating(false);
+    setWireframesProgress(null);
+    setWireframesStepsHistory([]);
+    setWireframesContent(null);
+    if (projectId) {
+      try {
+        const { apiFetch, API_BASE } = await import("../utils/apiClient");
+        await apiFetch(
+          `${API_BASE}/ai-analysis/wireframes/content?projectId=${encodeURIComponent(projectId)}`,
+          { method: "DELETE" },
+        );
+      } catch { /* best-effort cleanup */ }
+    }
+  }, [projectId, setWireframesContent]);
+
   const persistArchitectureContent = useWorkshopStore((s) => s.persistArchitectureContent);
   const persistUseCasesContent = useWorkshopStore((s) => s.persistUseCasesContent);
   const persistUserStoriesContent = useWorkshopStore((s) => s.persistUserStoriesContent);
@@ -676,6 +836,7 @@ export default function WorkshopView({
   const [logicFlowsViewMode, setLogicFlowsViewMode] = useState<"preview" | "source">("preview");
   const [infraViewMode, setInfraViewMode] = useState<"preview" | "source">("preview");
   const [uxUiGuideViewMode, setUxUiGuideViewMode] = useState<"design" | "preview" | "source">("design");
+  const [wireframesViewMode, setWireframesViewMode] = useState<"wireframe" | "preview" | "source">("wireframe");
   const [architectureViewMode, setArchitectureViewMode] = useState<"preview" | "source">("preview");
   const [useCasesViewMode, setUseCasesViewMode] = useState<"preview" | "source">("preview");
   const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
@@ -703,6 +864,7 @@ export default function WorkshopView({
     else if (panel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "user-stories") setUserStoriesViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "ux-ui-guide") setUxUiGuideViewMode((m) => m === "design" ? "preview" : m === "preview" ? "source" : "design");
+    else if (panel === "wireframes") setWireframesViewMode((m) => m === "wireframe" ? "preview" : m === "preview" ? "source" : "wireframe");
     else if (panel === "aem") setAemViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
@@ -731,6 +893,7 @@ export default function WorkshopView({
     | "brd"
     | "mdd"
     | "ux-ui-guide"
+    | "wireframes"
     | "blueprint"
     | "tasks"
     | "api-contracts"
@@ -1296,6 +1459,7 @@ export default function WorkshopView({
   const { handleBlur: handleArchitectureBlur, isDirty: architectureDirty } = useAutoSaveContent(architectureContent, project?.architectureContent, persistArchitectureContent, projectId);
   const { handleBlur: handleUseCasesBlur, isDirty: useCasesDirty } = useAutoSaveContent(useCasesContent, project?.useCasesContent, persistUseCasesContent, projectId);
   const { handleBlur: handleUserStoriesBlur, isDirty: userStoriesDirty } = useAutoSaveContent(userStoriesContent, project?.userStoriesContent, persistUserStoriesContent, projectId);
+  const { handleBlur: handleWireframesBlur, isDirty: wireframesDirty } = useAutoSaveContent(wireframesContent, project?.wireframesContent, persistWireframesContent, projectId);
   const { handleBlur: handleBlueprintBlur, isDirty: blueprintDirty } = useAutoSaveContent(blueprintContent, project?.blueprintContent, persistBlueprintContent, projectId);
   const { handleBlur: handleApiContractsBlur, isDirty: apiContractsDirty } = useAutoSaveContent(apiContractsContent, project?.apiContractsContent, persistApiContractsContent, projectId);
   const { handleBlur: handleLogicFlowsBlur, isDirty: logicFlowsDirty } = useAutoSaveContent(logicFlowsContent, project?.logicFlowsContent, persistLogicFlowsContent, projectId);
@@ -1602,6 +1766,7 @@ export default function WorkshopView({
                         logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
                         tasksContent: tasksContent ?? project?.tasksContent ?? null,
                         infraContent: infraContent ?? project?.infraContent ?? null,
+                        wireframesContent: wireframesContent ?? project?.wireframesContent ?? null,
                         aemContent: aemContent ?? project?.aemContent ?? null,
                       },
                       projectName ?? project?.name ?? "Workshop",
@@ -1669,6 +1834,7 @@ export default function WorkshopView({
                         logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
                         tasksContent: tasksContent ?? project?.tasksContent ?? null,
                         infraContent: infraContent ?? project?.infraContent ?? null,
+                        wireframesContent: wireframesContent ?? project?.wireframesContent ?? null,
                         aemContent: aemContent ?? project?.aemContent ?? null,
                       },
                       projectName ?? project?.name ?? "Workshop",
@@ -1928,12 +2094,13 @@ export default function WorkshopView({
                     </TooltipContent>
                   </Tooltip>
                 ) : null}
-                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd"] as const).includes(
+                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "wireframes", "aem", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd"] as const).includes(
                   centralPanel as any,
                 ) && (
                     (centralPanel === "spec" ||
                       centralPanel === "mdd" ||
                       centralPanel === "ux-ui-guide" ||
+                      centralPanel === "wireframes" ||
                       centralPanel === "aem" ||
                       (centralPanel === "blueprint" && blueprintContent) ||
                       (centralPanel === "tasks" && tasksContent) ||
@@ -1954,6 +2121,7 @@ export default function WorkshopView({
                         useCasesViewMode,
                         userStoriesViewMode,
                         uxUiGuideViewMode,
+                        wireframesViewMode,
                         aemViewMode,
                         blueprintViewMode,
                         apiContractsViewMode,
@@ -2236,6 +2404,16 @@ export default function WorkshopView({
                       {uxGenProgress ?? "Regenerar design system desde MDD y Blueprint"}
                     </TooltipContent>
                   </Tooltip>
+                )}
+                {centralPanel === "wireframes" && (wireframesGenerating || !!wireframesContent?.trim()) && (
+                  <WorkshopRegenButton
+                    onClick={() => void generateWireframes()}
+                    disabled={wireframesGenerating || loading || !(useCasesContent?.trim() || userStoriesContent?.trim())}
+                    loading={wireframesGenerating}
+                    ariaLabel="Regenerar wireframes desde casos de uso e historias"
+                    onCancel={() => void cancelWireframes()}
+                    cancelTooltip="Detener generación y descartar wireframes parciales"
+                  />
                 )}
               </div>
             </div>
@@ -3061,6 +3239,30 @@ export default function WorkshopView({
               />
               </ErrorBoundary>
             )}
+            {centralPanel === "wireframes" && (
+              <ErrorBoundary>
+                <WireframesPanel
+                  content={wireframesContent}
+                  onContentChange={(v) => setWireframesContent(v)}
+                  onSave={() => void persistWireframesContent(wireframesContent ?? "")}
+                  isDirty={wireframesDirty}
+                  viewMode={wireframesViewMode}
+                  onGenerate={() => void generateWireframes()}
+                  canGenerate={!!(useCasesContent?.trim() || userStoriesContent?.trim())}
+                  isLoading={loading}
+                  isGenerating={wireframesGenerating}
+                  placeholder="# Wireframes\n\nPantallas, componentes y flujo de navegación del producto..."
+                  onBlur={handleWireframesBlur}
+                  progress={wireframesProgress}
+                  stepsHistory={wireframesStepsHistory}
+                  projectId={projectId}
+                  onCancel={wireframesGenerating ? () => void cancelWireframes() : undefined}
+                  useCasesContent={useCasesContent}
+                  userStoriesContent={userStoriesContent}
+                  specContent={specContent}
+                />
+              </ErrorBoundary>
+            )}
             {centralPanel === "spec" && (
               <StandardDocPanel
                 icon={ListOrdered}
@@ -3372,6 +3574,7 @@ export default function WorkshopView({
             useCasesViewMode,
             userStoriesViewMode,
             uxUiGuideViewMode,
+            wireframesViewMode,
             aemViewMode,
             blueprintViewMode,
             apiContractsViewMode,
@@ -3394,10 +3597,11 @@ export default function WorkshopView({
           const showDocToggle =
             centralPanel !== "benchmark" &&
             centralPanel !== "tasks" &&
-            (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "mdd-inicial"] as const).includes(centralPanel as any) &&
+            (["spec", "mdd", "ux-ui-guide", "wireframes", "aem", "blueprint", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "mdd-inicial"] as const).includes(centralPanel as any) &&
             (centralPanel === "spec" ||
               centralPanel === "mdd" ||
               centralPanel === "ux-ui-guide" ||
+              centralPanel === "wireframes" ||
               centralPanel === "aem" ||
               (centralPanel === "blueprint" && blueprintContent) ||
               (centralPanel === "api-contracts" && apiContractsContent) ||
