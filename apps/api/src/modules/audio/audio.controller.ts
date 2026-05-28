@@ -29,6 +29,7 @@ export class AudioController {
     visionModel: string | null;
     supportsVision: boolean;
     supportsStt: boolean;
+    activeInstanceId: string | null;
   }> {
     try {
       const userId = getRequestUserId();
@@ -39,6 +40,7 @@ export class AudioController {
         visionModel: null,
         supportsVision: false,
         supportsStt: false,
+        activeInstanceId: null,
       };
     }
   }
