@@ -18,7 +18,6 @@ import { apiFetch, API_BASE } from "../utils/apiClient";
 import {
   formatUserFacingThrownError,
   parseApiErrorPayloadFromResponse,
-  parseUserFacingErrorMessageFromResponse,
 } from "../utils/httpError";
 import {
   isModelsUnavailableStreamError,
