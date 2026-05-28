@@ -88,7 +88,7 @@ export type Phase0StreamEvent =
   | { type: "question"; question: string; n: number; total: number }
   | { type: "draft_updated"; borrador: Phase0Document; gaps: Phase0Gap[] }
   | { type: "done"; borrador: Phase0Document; gaps: Phase0Gap[] }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; code?: string };
 
 /** Respuesta del prompt de arranque */
 export interface StarterPromptOutput {
