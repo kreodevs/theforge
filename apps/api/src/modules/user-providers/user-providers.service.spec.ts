@@ -217,8 +217,9 @@ test("UserProvidersService.resolveSttRuntime — openai con sttModel", async () 
 
 test("UserProvidersService.resolveVisionRuntime — instancia con visionModel", async () => {
   const prisma = mockPrisma();
-  const store = (prisma as { __store: { instances: Map<string, Record<string, unknown>> } })
+  const store = (prisma as { __store: { instances: Map<string, Record<string, unknown>>; userRole: string } })
     .__store;
+  store.userRole = "super_admin";
   store.instances.set("vision-inst", {
     id: "vision-inst",
     providerType: "openrouter",

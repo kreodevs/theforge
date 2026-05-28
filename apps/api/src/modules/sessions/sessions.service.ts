@@ -76,13 +76,23 @@ export class SessionsService {
     return { id: sessionId, userId: getRequestUserId() };
   }
 
+  /** Misma regla que ProjectsService.assertProjectAccess: owner o SHARED. */
+  private async assertProjectAccess(projectId: string): Promise<void> {
+    const userId = getRequestUserId();
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId },
+      select: { userId: true, visibility: true },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    const isOwner = project.userId === userId;
+    const isShared = project.visibility === "SHARED";
+    if (!isOwner && !isShared) throw new NotFoundException("Project not found");
+  }
+
   async create(data: { projectId: string; contextStep?: string; chatLog?: ChatMessage[] }) {
     const parsed = createSessionSchema.parse(data);
     const userId = getRequestUserId();
-    const project = await this.prisma.project.findFirst({
-      where: { id: parsed.projectId, userId },
-    });
-    if (!project) throw new NotFoundException("Project not found");
+    await this.assertProjectAccess(parsed.projectId);
     return this.prisma.session.create({
       data: {
         userId,

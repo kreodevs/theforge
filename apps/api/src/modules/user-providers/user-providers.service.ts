@@ -202,12 +202,13 @@ export class UserProvidersService {
         );
       }
     }
+    const superAdmin = isSuperAdmin(user?.role ?? "developer");
     for (const instanceId of [dto.activeTenantInstanceId]) {
       if (instanceId === undefined || instanceId === null) continue;
       const inst = await this.prisma.providerInstance.findFirst({
         where: {
           id: instanceId,
-          ...this.instanceAccessibleByUser(userId),
+          ...(superAdmin ? {} : this.instanceAccessibleByUser(userId)),
         },
       });
       if (!inst) {
@@ -547,14 +548,17 @@ export class UserProvidersService {
     }
   }
 
-  /** super_admin y admin: eligen proveedor activo sin restricción por grants de Usuarios. */
+  /** super_admin: sin límites de grants, whitelist ni filtrado de respaldos. */
   private async userBypassesModelPolicy(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { role: true },
     });
-    const role = user?.role ?? "developer";
-    return role === "super_admin" || role === "admin";
+    return isSuperAdmin(user?.role ?? "developer");
+  }
+
+  private async isSuperAdminUser(userId: string): Promise<boolean> {
+    return this.userBypassesModelPolicy(userId);
   }
 
   private instanceAccessibleByUser(userId: string): Prisma.ProviderInstanceWhereInput {
@@ -575,7 +579,8 @@ export class UserProvidersService {
    */
   async resolveEffectiveTenantInstanceForUser(userId: string): Promise<ProviderInstance | null> {
     const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
-    const access = this.instanceAccessibleByUser(userId);
+    const superAdmin = await this.isSuperAdminUser(userId);
+    const access = superAdmin ? {} : this.instanceAccessibleByUser(userId);
     if (settings?.activeTenantInstanceId) {
       const chosen = await this.prisma.providerInstance.findFirst({
         where: { id: settings.activeTenantInstanceId, ...access },
@@ -605,15 +610,17 @@ export class UserProvidersService {
       throw new BadRequestException("Instancia tenant con tipo de proveedor no válido");
     }
     const provider = instance.providerType;
-    const bypass = await this.userBypassesModelPolicy(userId);
-    const catalog = PROVIDER_CATALOG[provider];
-    const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { role: true },
     });
+    const role = user?.role ?? "developer";
+    const superAdmin = isSuperAdmin(role);
+    const bypass = superAdmin;
+    const catalog = PROVIDER_CATALOG[provider];
+    const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
     const userGrants =
-      user?.role === "developer" ? [] : (settings?.allowedChatModels ?? []);
+      superAdmin || role === "developer" ? [] : (settings?.allowedChatModels ?? []);
     const chatModel = opts?.chatModelOverride?.trim() || instance.chatModel;
     const modelRole = opts?.chatModelOverride ? "auditor" : "activo";
 
@@ -662,9 +669,9 @@ export class UserProvidersService {
           : [];
 
     const effectiveFallbacks =
-      userGrants.length > 0
-        ? chatModelFallbacks.filter((m) => userGrants.includes(m))
-        : chatModelFallbacks;
+      superAdmin || userGrants.length === 0
+        ? chatModelFallbacks
+        : chatModelFallbacks.filter((m) => userGrants.includes(m));
     for (const fallbackModel of effectiveFallbacks) {
       if (
         !isChatModelAllowedForTenantUser(
