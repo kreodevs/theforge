@@ -26,6 +26,11 @@ import type {
   Phase0StreamEvent,
 } from "./phase0.types.js";
 import { GAP_WEIGHT } from "./phase0.types.js";
+import {
+  isPhase0FatalLlmError,
+  phase0ProviderUnavailableEvent,
+  toPhase0ErrorEvent,
+} from "./phase0-llm-error.util.js";
 
 const MAX_PREGUNTAS = 5;
 
@@ -64,7 +69,7 @@ export class Phase0InterviewService {
     // Cargar LLM del usuario
     const llm = await this.getUserLLM(projectId);
     if (!llm) {
-      return { type: "error", message: "No se pudo configurar el modelo LLM del usuario. Verifica tu proveedor de IA." };
+      return phase0ProviderUnavailableEvent();
     }
 
     // Detectar tipo de input
@@ -112,9 +117,8 @@ export class Phase0InterviewService {
 
       return { type: "init", threadId, borrador };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error desconocido al iniciar Fase 0";
-      this.logger.error(`[Phase0] start error: ${msg}`);
-      return { type: "error", message: msg };
+      this.logger.error(`[Phase0] start error: ${err}`);
+      return toPhase0ErrorEvent(err);
     }
   }
 
@@ -141,7 +145,7 @@ export class Phase0InterviewService {
     // Intentar con LLM; fallback a gap analyzer lógico
     const llm = await this.getUserLLM(state.projectId);
     if (!llm) {
-      return this.fallbackQuestion(state);
+      return phase0ProviderUnavailableEvent();
     }
 
     try {
@@ -169,6 +173,9 @@ export class Phase0InterviewService {
       };
     } catch (err) {
       this.logger.error(`[Phase0] question LLM error: ${err}`);
+      if (isPhase0FatalLlmError(err)) {
+        return toPhase0ErrorEvent(err);
+      }
       return this.fallbackQuestion(state);
     }
   }
@@ -203,11 +210,7 @@ export class Phase0InterviewService {
     // Intentar actualizar con LLM
     const llm = await this.getUserLLM(state.projectId);
     if (!llm) {
-      // Fallback: solo actualizar gaps lógicos
-      state.gaps = filterResolvedGaps(analyzeGaps(state.borrador), state.borrador, state.ultimaPregunta);
-      if (state.preguntasRealizadas >= state.maxPreguntas) return this.finalize(state);
-      await this.persistPhase0(state.projectId, state.borrador, state.gaps, state.status);
-      return { type: "draft_updated", borrador: state.borrador, gaps: state.gaps };
+      return phase0ProviderUnavailableEvent();
     }
 
     try {
@@ -233,6 +236,9 @@ export class Phase0InterviewService {
       return { type: "draft_updated", borrador: state.borrador, gaps: state.gaps };
     } catch (err) {
       this.logger.error(`[Phase0] answer error: ${err}`);
+      if (isPhase0FatalLlmError(err)) {
+        return toPhase0ErrorEvent(err);
+      }
       state.gaps = filterResolvedGaps(analyzeGaps(state.borrador), state.borrador, state.ultimaPregunta);
       await this.persistPhase0(state.projectId, state.borrador, state.gaps, state.status);
       return { type: "draft_updated", borrador: state.borrador, gaps: state.gaps };

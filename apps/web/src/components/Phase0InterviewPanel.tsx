@@ -15,9 +15,44 @@ import {
   ChevronDown, ChevronUp, MessageSquare,
 } from "lucide-react";
 import { apiFetch, API_BASE } from "../utils/apiClient";
+import {
+  formatUserFacingThrownError,
+  parseApiErrorPayloadFromResponse,
+  parseUserFacingErrorMessageFromResponse,
+} from "../utils/httpError";
+import {
+  isModelsUnavailableStreamError,
+  resolvePhase0ErrorMessage,
+} from "../utils/llm-stream-error";
+import { useWorkshopStore } from "../store/workshopStore";
 import { WorkshopPanelActionRegion, WorkshopPanelButton, WorkshopButtonIcon } from "./WorkshopButtons";
 
 type Phase0Status = "idle" | "starting" | "interviewing" | "done" | "error";
+
+type Phase0StreamPayload = {
+  type?: string;
+  message?: string;
+  code?: string;
+  threadId?: string;
+  borrador?: unknown;
+  question?: string;
+  n?: number;
+};
+
+function applyPhase0StreamError(
+  data: Phase0StreamPayload,
+  setError: (msg: string | null) => void,
+  setStatus: (s: Phase0Status) => void,
+): boolean {
+  if (data.type !== "error") return false;
+  const message = resolvePhase0ErrorMessage(data);
+  if (isModelsUnavailableStreamError(data)) {
+    useWorkshopStore.getState().setModelsUnavailableModalOpen(true);
+  }
+  setError(message);
+  setStatus("error");
+  return true;
+}
 
 interface Props {
   projectId: string;
@@ -49,22 +84,37 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
         body: JSON.stringify({ idea: ideaInput.trim(), projectId }),
       });
       if (!res.ok) {
-        const errText = await res.text().catch(() => "Error al iniciar");
-        throw new Error(errText);
+        const { message, code } = await parseApiErrorPayloadFromResponse(
+          res,
+          "No se pudo iniciar la Fase 0",
+        );
+        const payload = { message, code };
+        if (isModelsUnavailableStreamError(payload)) {
+          useWorkshopStore.getState().setModelsUnavailableModalOpen(true);
+        }
+        throw new Error(resolvePhase0ErrorMessage(payload));
       }
-      const data = await res.json();
-      setThreadId(data.threadId);
-      // Si ya no hay preguntas críticas, terminó
-      if (data.type === "init") {
+      const data = (await res.json()) as Phase0StreamPayload;
+      if (applyPhase0StreamError(data, setError, setStatus)) return;
+
+      if (data.type === "init" && data.threadId) {
+        setThreadId(data.threadId);
         setBorrador(JSON.stringify(data.borrador, null, 2));
-        // Obtener la primera pregunta
         await fetchQuestion(data.threadId);
-      } else {
+        return;
+      }
+
+      if (data.type === "done") {
+        if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
         setStatus("done");
         onComplete();
+        return;
       }
+
+      setError(resolvePhase0ErrorMessage({ message: "Respuesta inesperada al iniciar Fase 0" }));
+      setStatus("error");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error desconocido");
+      setError(formatUserFacingThrownError(e, "No se pudo iniciar la Fase 0"));
       setStatus("error");
     }
   }, [ideaInput, projectId, onComplete]);
@@ -73,21 +123,40 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
   const fetchQuestion = useCallback(async (tid: string) => {
     try {
       const res = await apiFetch(`${API_BASE}/ai-analysis/phase0/question/${tid}`);
-      if (!res.ok) throw new Error("Error al obtener pregunta");
-      const data = await res.json();
+      if (!res.ok) {
+        const { message, code } = await parseApiErrorPayloadFromResponse(
+          res,
+          "No se pudo obtener la siguiente pregunta",
+        );
+        const payload = { message, code };
+        if (isModelsUnavailableStreamError(payload)) {
+          useWorkshopStore.getState().setModelsUnavailableModalOpen(true);
+        }
+        throw new Error(resolvePhase0ErrorMessage(payload));
+      }
+      const data = (await res.json()) as Phase0StreamPayload;
+      if (applyPhase0StreamError(data, setError, setStatus)) return;
+
       if (data.type === "done") {
         setStatus("done");
         if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
         onComplete();
         return;
       }
+
+      if (data.type !== "question" || !data.question) {
+        setError(resolvePhase0ErrorMessage({ message: "No se recibió una pregunta válida" }));
+        setStatus("error");
+        return;
+      }
+
       setQuestion(data.question);
-      setPreguntaN(data.n);
+      setPreguntaN(data.n ?? 0);
       setStatus("interviewing");
       setAnswer("");
       setTimeout(() => inputRef.current?.focus(), 100);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al obtener pregunta");
+      setError(formatUserFacingThrownError(e, "No se pudo obtener la siguiente pregunta"));
       setStatus("error");
     }
   }, [onComplete]);
@@ -104,8 +173,20 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId, answer: currentAnswer }),
       });
-      if (!res.ok) throw new Error("Error al enviar respuesta");
-      const data = await res.json();
+      if (!res.ok) {
+        const { message, code } = await parseApiErrorPayloadFromResponse(
+          res,
+          "No se pudo enviar tu respuesta",
+        );
+        const payload = { message, code };
+        if (isModelsUnavailableStreamError(payload)) {
+          useWorkshopStore.getState().setModelsUnavailableModalOpen(true);
+        }
+        throw new Error(resolvePhase0ErrorMessage(payload));
+      }
+      const data = (await res.json()) as Phase0StreamPayload;
+
+      if (applyPhase0StreamError(data, setError, setStatus)) return;
 
       if (data.type === "done") {
         setStatus("done");
@@ -120,10 +201,10 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       // Siguiente pregunta
       await fetchQuestion(threadId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al enviar respuesta");
+      setError(formatUserFacingThrownError(e, "No se pudo enviar tu respuesta"));
       setStatus("error");
     }
-  }, [answer, threadId, fetchQuestion]);
+  }, [answer, threadId, fetchQuestion, onComplete]);
 
   /** Manejar Enter para enviar */
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -262,9 +343,20 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
 
       {/* Error */}
       {status === "error" && (
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <AlertTriangle className="w-6 h-6 text-red-500" />
-          <p className="text-sm text-red-500">{error || "Error en la entrevista"}</p>
+        <div
+          className="flex flex-col items-center gap-3 py-8 text-center max-w-md mx-auto"
+          role="alert"
+          aria-live="polite"
+        >
+          <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+            <AlertTriangle className="w-6 h-6 text-red-500" aria-hidden />
+          </div>
+          <p className="text-sm font-medium text-[var(--foreground)]">
+            No se pudo completar la entrevista
+          </p>
+          <p className="text-sm text-[var(--foreground-subtle)] leading-relaxed">
+            {error || "Ha ocurrido un error inesperado. Puedes volver a intentarlo."}
+          </p>
           <WorkshopPanelButton tone="secondary" onClick={handleReset}>
             Reintentar
           </WorkshopPanelButton>

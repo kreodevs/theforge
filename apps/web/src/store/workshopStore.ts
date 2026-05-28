@@ -7,6 +7,7 @@ import {
   formatDocumentMarkdown,
 } from "@theforge/shared-types/format-document-markdown";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue } from "../utils/apiClient";
+import { shouldApplyPersistedFieldContent } from "../utils/persist-field-guard";
 import {
   parseApiErrorPayloadFromResponse,
   parseErrorMessageFromResponse,
@@ -204,6 +205,10 @@ async function persistField(
   if (content === ((project as unknown as Record<string, unknown>)[fieldName] ?? "")) return;
 
   const cleaned = cleanDoc(content) || content || "";
+  const localAtSaveStart = String(
+    ((getState() as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ??
+      "",
+  );
   setState({ synced: false, error: null });
 
   try {
@@ -214,12 +219,21 @@ async function persistField(
     });
     if (r.ok) {
       const data = (await r.json()) as unknown;
-      setState({
+      const serverRaw = ((data as Record<string, unknown>)[fieldName] as string) ?? cleaned;
+      const serverCleaned = cleanDoc(serverRaw) ?? serverRaw ?? "";
+      const localNow = String(
+        ((getState() as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ??
+          "",
+      );
+      const patch: Partial<WorkshopState> = {
         project: data as Project,
-        [fieldName]: cleanDoc(((data as Record<string, unknown>)[fieldName] as string) ?? cleaned),
         synced: true,
         error: null,
-      } as Partial<WorkshopState>);
+      };
+      if (shouldApplyPersistedFieldContent(localNow, localAtSaveStart, cleaned)) {
+        (patch as Record<string, unknown>)[fieldName] = serverCleaned;
+      }
+      setState(patch);
       // Flush offline queue oportunistically
       flushOfflineQueue().catch(() => {});
     } else {
@@ -791,6 +805,12 @@ interface WorkshopState {
     opts: { userIdea?: string; urls?: string[]; includeBenchmark?: boolean },
   ) => Promise<Project | null>;
   clearPhase0SummaryContent: (projectId: string) => Promise<void>;
+  /** Clears the active workshop document tab content (PATCH null / empty). */
+  clearWorkshopDocumentContent: (
+    projectId: string,
+    panel: string,
+    options?: { benchmarkPhaseTab?: "fase0" | "benchmark"; stageId?: string },
+  ) => Promise<boolean>;
   /** Flujo legacy: documentación de partida (opcional); puede incluir `mcpDebugTrace` si el API tiene debug activo. */
   legacyGenerateCodebaseDoc: (
     projectId: string,
@@ -2082,8 +2102,24 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   mddContent: packed?.mddContent ?? get().mddContent,
                   workshopStages: nextStages && nextStages.length > 0 ? nextStages : get().workshopStages,
                   uxUiGuideContent: freshUx,
-                  wireframesContent: cleanDoc(proj?.wireframesContent ?? null) ?? get().wireframesContent,
-                  dbgaContent: cleanDoc(proj?.dbgaContent ?? null) ?? get().dbgaContent,
+                  wireframesContent:
+                    cleanDoc(
+                      (data.wireframesContent as string | null | undefined) ??
+                        proj?.wireframesContent ??
+                        null,
+                    ) ?? get().wireframesContent,
+                  dbgaContent:
+                    cleanDoc(
+                      (data.dbgaContent as string | null | undefined) ??
+                        proj?.dbgaContent ??
+                        null,
+                    ) ?? get().dbgaContent,
+                  phase0SummaryContent:
+                    cleanDoc(
+                      (data.phase0SummaryContent as string | null | undefined) ??
+                        proj?.phase0SummaryContent ??
+                        null,
+                    ) ?? get().phase0SummaryContent,
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   architectureContent: cleanDoc(proj?.architectureContent ?? null) ?? get().architectureContent,
                   useCasesContent: cleanDoc(proj?.useCasesContent ?? null) ?? get().useCasesContent,
@@ -2146,8 +2182,24 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   mddContent: packed?.mddContent ?? get().mddContent,
                   workshopStages: nextStagesB && nextStagesB.length > 0 ? nextStagesB : get().workshopStages,
                   uxUiGuideContent: freshUx,
-                  wireframesContent: cleanDoc(proj?.wireframesContent ?? null) ?? get().wireframesContent,
-                  dbgaContent: cleanDoc(proj?.dbgaContent ?? null) ?? get().dbgaContent,
+                  wireframesContent:
+                    cleanDoc(
+                      (data.wireframesContent as string | null | undefined) ??
+                        proj?.wireframesContent ??
+                        null,
+                    ) ?? get().wireframesContent,
+                  dbgaContent:
+                    cleanDoc(
+                      (data.dbgaContent as string | null | undefined) ??
+                        proj?.dbgaContent ??
+                        null,
+                    ) ?? get().dbgaContent,
+                  phase0SummaryContent:
+                    cleanDoc(
+                      (data.phase0SummaryContent as string | null | undefined) ??
+                        proj?.phase0SummaryContent ??
+                        null,
+                    ) ?? get().phase0SummaryContent,
                   specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null) ?? get().blueprintContent,
                   apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null) ?? get().apiContractsContent,
@@ -2961,6 +3013,90 @@ if (prog && prog.step && prog.step !== "done") {
       }
     } catch {
       // ignore
+    }
+  },
+
+  clearWorkshopDocumentContent: async (projectId, panel, options) => {
+    if (!projectId?.trim()) return false;
+    const pid = projectId.trim();
+
+    try {
+      if (panel === "benchmark") {
+        if (options?.benchmarkPhaseTab === "benchmark") {
+          await get().clearPhase0SummaryContent(pid);
+        } else {
+          await get().clearDbgaContent(pid);
+        }
+        return true;
+      }
+
+      if (panel === "brd") {
+        const stageId = options?.stageId?.trim() ?? get().activeStageId?.trim();
+        if (!stageId) return false;
+        const ok = await get().patchWorkshopStage(stageId, { brdContent: "" });
+        if (ok) set({ error: null });
+        return ok;
+      }
+
+      if (panel === "mdd-inicial") {
+        const ok = await get().legacyUpdateCodebaseDoc(pid, "");
+        if (ok) await get().fetchProject(pid);
+        return ok;
+      }
+
+      const fieldByPanel: Record<string, string> = {
+        spec: "specContent",
+        mdd: "mddContent",
+        "ux-ui-guide": "uxUiGuideContent",
+        blueprint: "blueprintContent",
+        "api-contracts": "apiContractsContent",
+        "logic-flows": "logicFlowsContent",
+        tasks: "tasksContent",
+        infra: "infraContent",
+        architecture: "architectureContent",
+        "use-cases": "useCasesContent",
+        "user-stories": "userStoriesContent",
+        aem: "aemContent",
+      };
+
+      const fieldName = fieldByPanel[panel];
+      if (!fieldName) return false;
+
+      if (panel === "mdd") {
+        const stageId = options?.stageId?.trim() ?? get().activeStageId?.trim();
+        const r = await apiFetch(`${API_BASE}/projects/${pid}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mddContent: "", ...(stageId ? { stageId } : {}) }),
+        });
+        if (!r.ok) return false;
+        const data: Project = await r.json();
+        set({
+          project: data,
+          mddContent: data.mddContent ?? "",
+          synced: true,
+          error: null,
+        });
+        return true;
+      }
+
+      const r = await apiFetch(`${API_BASE}/projects/${pid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [fieldName]: null }),
+      });
+      if (!r.ok) return false;
+      const data: Project = await r.json();
+      set({
+        project: data,
+        [fieldName]: (data as unknown as Record<string, unknown>)[fieldName] ?? null,
+        synced: true,
+        error: null,
+      } as Partial<WorkshopState>);
+      return true;
+    } catch {
+      set({ error: "No se pudo limpiar el documento" });
+      return false;
     }
   },
 

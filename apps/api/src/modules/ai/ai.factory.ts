@@ -51,6 +51,14 @@ export class AIFactory {
   async resolveSttRuntime(userId: string): Promise<UserLLMRuntime & { sttModel: string }> {
     return this.userProviders.resolveSttRuntime(userId);
   }
+
+  async resolveVisionRuntime(userId: string): Promise<UserLLMRuntime & { visionModel: string }> {
+    return this.userProviders.resolveVisionRuntime(userId);
+  }
+
+  async getRuntimeMediaConfig(userId: string) {
+    return this.userProviders.getRuntimeMediaConfig(userId);
+  }
 }
 
 /** @deprecated Use AIFactory.createForUser */

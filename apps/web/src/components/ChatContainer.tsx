@@ -42,6 +42,10 @@ import {
   TooltipTrigger,
 } from "../components/ui";
 import { WorkshopChatToolbarIconButton, WorkshopButtonIcon, WorkshopPanelButton } from "@/components/WorkshopButtons";
+import {
+  WORKSHOP_COLUMN_HEADER_ICON,
+  WORKSHOP_COLUMN_HEADER_ICON_SLOT,
+} from "@/constants/workshopDocToolbar";
 import { ChatProviderInfoButton } from "@/components/ChatProviderInfoButton";
 import { AiGenerationChatBubble, AiGenerativeDots } from "./AiGenerationLoader";
 import {
@@ -187,6 +191,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
 /** Single bordered “AI bar”: attach + textarea + send share one surface (Claude/ChatGPT-style unified chrome). */
 /** Máx. altura del textarea antes de scroll interno (solo pegas enormes); el shell crece hacia arriba con el contenido. */
 const AI_COMPOSER_TEXTAREA_MAX_HEIGHT_PX = 420;
+/** Una línea (min-h 1.75rem + py); evita inflar scrollHeight con input vacío. */
+const AI_COMPOSER_TEXTAREA_MIN_HEIGHT_PX = 28;
 
 const AI_COMPOSER_SHELL =
   "flex w-full min-w-0 flex-col gap-1 rounded-[1.25rem] border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_92%,var(--muted))] px-3 py-2.5 shadow-sm transition-[border-color,background-color] focus-within:border-[color-mix(in_oklch,var(--primary)_30%,var(--border))] focus-within:bg-[color-mix(in_oklch,var(--card)_96%,var(--muted))] dark:bg-[color-mix(in_oklch,var(--card)_62%,var(--muted))] dark:focus-within:bg-[color-mix(in_oklch,var(--card)_72%,var(--muted))]";
@@ -262,7 +268,9 @@ function ChatComposerBar({
   isBenchmarkFirstAction,
   showAttachTools,
   imageInputRef,
-  pendingFilesCount,
+  imageAttachDisabled,
+  imageAttachTitle,
+  imageAttachAriaLabel,
   sttMicDisabled,
   sttMicTitle,
   sttMicAriaLabel,
@@ -282,7 +290,9 @@ function ChatComposerBar({
   isBenchmarkFirstAction: boolean;
   showAttachTools: boolean;
   imageInputRef: RefObject<HTMLInputElement | null>;
-  pendingFilesCount: number;
+  imageAttachDisabled: boolean;
+  imageAttachTitle: string;
+  imageAttachAriaLabel: string;
   sttMicDisabled: boolean;
   sttMicTitle: string;
   sttMicAriaLabel: string;
@@ -313,10 +323,10 @@ function ChatComposerBar({
               <button
                 type="button"
                 onClick={() => imageInputRef.current?.click()}
-                disabled={loading || pendingFilesCount >= 6}
+                disabled={imageAttachDisabled}
                 className={AI_COMPOSER_ATTACH_BTN}
-                title="Adjuntar imagen (máx. 6, PNG/JPEG/WebP/GIF)"
-                aria-label="Adjuntar imagen"
+                title={imageAttachTitle}
+                aria-label={imageAttachAriaLabel}
               >
                 <ImagePlus className="h-[1.125rem] w-[1.125rem] shrink-0" aria-hidden />
               </button>
@@ -533,6 +543,8 @@ export default function ChatContainer({
 
   /** STT (speech‑to‑text) via mic */
   const [sttModel, setSttModel] = useState<string | null>(null);
+  const [visionModel, setVisionModel] = useState<string | null>(null);
+  const [mediaConfigLoaded, setMediaConfigLoaded] = useState(false);
   const [sttConfigLoaded, setSttConfigLoaded] = useState(false);
   const [recording, setRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -593,20 +605,39 @@ export default function ChatContainer({
     function syncHeight() {
       const t = chatInputRef.current;
       if (!t) return;
-      t.style.height = "auto";
+
+      if (inputValue.trim().length === 0) {
+        t.style.height = "";
+        t.style.overflowY = "hidden";
+        return;
+      }
+
+      t.style.height = "0px";
       const viewportCap =
         typeof window !== "undefined"
           ? Math.floor(window.innerHeight * 0.45)
           : AI_COMPOSER_TEXTAREA_MAX_HEIGHT_PX;
       const maxH = Math.min(AI_COMPOSER_TEXTAREA_MAX_HEIGHT_PX, Math.max(160, viewportCap));
-      const next = Math.min(t.scrollHeight, maxH);
+      const scrollH = t.scrollHeight;
+      const next = Math.max(
+        AI_COMPOSER_TEXTAREA_MIN_HEIGHT_PX,
+        Math.min(scrollH, maxH),
+      );
       t.style.height = `${next}px`;
-      t.style.overflowY = t.scrollHeight > maxH ? "auto" : "hidden";
+      t.style.overflowY = scrollH > maxH ? "auto" : "hidden";
     }
     syncHeight();
-    window.addEventListener("resize", syncHeight);
-    return () => window.removeEventListener("resize", syncHeight);
-  }, [inputValue]);
+    let resizeRaf = 0;
+    const onWindowResize = () => {
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => syncHeight());
+    };
+    window.addEventListener("resize", onWindowResize);
+    return () => {
+      window.removeEventListener("resize", onWindowResize);
+      cancelAnimationFrame(resizeRaf);
+    };
+  }, [inputValue, activeTab]);
 
   const isBenchmarkFirstAction =
     activeTab === "benchmark" && !!benchmarkMode && !benchmarkMode.hasBenchmark;
@@ -649,7 +680,7 @@ export default function ChatContainer({
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [pendingFiles]);
 
-  /** Fetch STT config on mount */
+  /** STT y visión desde instancia activa (GET /audio/config). */
   useEffect(() => {
     (async () => {
       try {
@@ -657,17 +688,31 @@ export default function ChatContainer({
           `${import.meta.env.VITE_API_URL ?? "/api"}/audio/config`,
         );
         if (r.ok) {
-          const data: { sttModel: string | null } = await r.json();
-          setSttModel(data.sttModel);
+          const data = (await r.json()) as {
+            sttModel?: string | null;
+            visionModel?: string | null;
+          };
+          setSttModel(data.sttModel ?? null);
+          setVisionModel(data.visionModel ?? null);
         }
-      } catch { /* no STT */ } finally {
+      } catch { /* sin media config */ } finally {
         setSttConfigLoaded(true);
+        setMediaConfigLoaded(true);
       }
     })();
   }, []);
 
   const sttMicEnabled = !!sttModel;
   const sttMicDisabled = loading || !sttConfigLoaded || !sttMicEnabled;
+  const imageAttachEnabled = !!visionModel?.trim();
+  const imageAttachDisabled =
+    loading || !mediaConfigLoaded || !imageAttachEnabled || pendingFiles.length >= 6;
+  const imageAttachTitle = !mediaConfigLoaded
+    ? "Comprobando modelo de visión…"
+    : !imageAttachEnabled
+      ? "Configura el modelo de visión en Ajustes → Gestionar instancias"
+      : "Adjuntar imagen (máx. 6, PNG/JPEG/WebP/GIF)";
+  const imageAttachAriaLabel = imageAttachTitle;
   const sttMicTitle = recording
     ? "Detener grabación"
     : !sttConfigLoaded
@@ -886,7 +931,9 @@ export default function ChatContainer({
               isBenchmarkFirstAction={isBenchmarkFirstAction}
               showAttachTools={!isBenchmarkFirstAction}
               imageInputRef={imageInputRef}
-              pendingFilesCount={pendingFiles.length}
+              imageAttachDisabled={imageAttachDisabled}
+              imageAttachTitle={imageAttachTitle}
+              imageAttachAriaLabel={imageAttachAriaLabel}
               sttMicDisabled={sttMicDisabled}
               sttMicTitle={sttMicTitle}
               sttMicAriaLabel={sttMicAriaLabel}
@@ -906,11 +953,8 @@ export default function ChatContainer({
           <header className="shrink-0 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_45%,var(--background))] px-3 py-2.5 sm:px-4 sm:py-3 lg:flex lg:h-16 lg:min-h-16 lg:max-h-16 lg:items-center lg:overflow-hidden lg:py-0 lg:pl-4 lg:pr-4">
             <div className="flex min-h-0 min-w-0 flex-1 items-start justify-between gap-4 lg:items-center">
               <div className="flex min-w-0 flex-1 items-start gap-2.5 lg:items-center">
-                <div
-                  className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--muted)] text-[var(--primary)] ring-1 ring-[color-mix(in_oklch,var(--border)_70%,transparent)] lg:mt-0"
-                  aria-hidden
-                >
-                  <MessageSquare className="h-4 w-4" strokeWidth={2} />
+                <div className={cn(WORKSHOP_COLUMN_HEADER_ICON_SLOT, "mt-0.5 lg:mt-0")} aria-hidden>
+                  <MessageSquare className={WORKSHOP_COLUMN_HEADER_ICON} strokeWidth={2} aria-hidden />
                 </div>
                 <div className="min-w-0 flex-1 pt-0.5 lg:pt-0">
                   <h2 className="text-sm font-semibold leading-tight tracking-tight text-[var(--foreground)]">
@@ -1322,7 +1366,9 @@ export default function ChatContainer({
               isBenchmarkFirstAction={isBenchmarkFirstAction}
               showAttachTools={!isBenchmarkFirstAction}
               imageInputRef={imageInputRef}
-              pendingFilesCount={pendingFiles.length}
+              imageAttachDisabled={imageAttachDisabled}
+              imageAttachTitle={imageAttachTitle}
+              imageAttachAriaLabel={imageAttachAriaLabel}
               sttMicDisabled={sttMicDisabled}
               sttMicTitle={sttMicTitle}
               sttMicAriaLabel={sttMicAriaLabel}

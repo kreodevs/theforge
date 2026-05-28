@@ -6,6 +6,7 @@ import { DesignMdPreview } from "@/components/DesignMdPreview";
 import MddViewer from "@/components/MddViewer";
 import { AiDocumentBuildingPlaceholder } from "@/components/AiGenerationLoader";
 import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "@/components/WorkshopDocSourceSaveBar";
+import { WorkshopDocTextarea } from "@/components/WorkshopDocTextarea";
 
 interface UxUiGuidePanelProps {
   content: string | null;
@@ -68,9 +69,9 @@ export function UxUiGuidePanel({
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-2">
           <WorkshopDocSourceSaveBar onSave={onSave} disabled={!isDirty} />
-          <textarea
+          <WorkshopDocTextarea
             value={content ?? ""}
-            onChange={(e) => onContentChange(e.target.value || null)}
+            onChange={(v) => onContentChange(v || null)}
             onBlur={onBlur}
             placeholder={
               placeholder ??
