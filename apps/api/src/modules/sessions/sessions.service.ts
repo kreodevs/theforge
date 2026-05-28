@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
 import type { Session } from "@theforge/database";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
@@ -20,6 +20,7 @@ import {
   mergeUserTextWithVisionBlock,
 } from "../ai/utils/vision-context.util.js";
 import { llmMaxTokens } from "../ai/config/llm-config.js";
+import { ModelsUnavailableError } from "../ai/config/llm-model-fallback.js";
 import { normalizeDashes } from "./document-content.util.js";
 import {
   BENCHMARK_CHAT_ACK,
@@ -167,6 +168,9 @@ export class SessionsService {
       if (!block) return userMessage.trim() || "(Imagen adjunta)";
       return mergeUserTextWithVisionBlock(userMessage, block);
     } catch (err) {
+      if (err instanceof ModelsUnavailableError || err instanceof BadRequestException) {
+        throw err;
+      }
       console.warn("[Sessions] enrichUserContentWithVision failed:", err);
       return userMessage.trim() || "(Imagen adjunta)";
     }

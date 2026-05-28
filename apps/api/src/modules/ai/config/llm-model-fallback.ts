@@ -38,6 +38,9 @@ export const MODELS_UNAVAILABLE_CODE = "MODELS_UNAVAILABLE" as const;
 export const MODELS_UNAVAILABLE_MESSAGE =
   "No hay un modelo disponible configurado. Revisa el modelo principal y los respaldos en Ajustes → Gestionar instancias.";
 
+export const VISION_MODELS_UNAVAILABLE_MESSAGE =
+  "El modelo de visión de la instancia activa no respondió (OpenRouter lo rechazó o no admite imágenes). Revisa «Modelo de visión» en Ajustes → Gestionar instancias o prueba otro modelo multimodal.";
+
 /** Todos los modelos de la cadena fallaron (inválidos, agotados o no encontrados). */
 export class ModelsUnavailableError extends Error {
   readonly code = MODELS_UNAVAILABLE_CODE;
