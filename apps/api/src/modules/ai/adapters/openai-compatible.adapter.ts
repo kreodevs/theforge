@@ -7,6 +7,7 @@ import type {
 import type { ChatImagePart, ChecklistResult } from "@theforge/shared-types";
 import type { UserLLMRuntime } from "../providers/llm-runtime.types.js";
 import { llmMaxTokens } from "../config/llm-config.js";
+import { llmDebug } from "../config/llm-debug.util.js";
 import { runWithModelFallback } from "../config/llm-model-fallback.js";
 
 function buildOpenAiUserMessage(
@@ -130,6 +131,12 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     this.label = `OpenAICompatibleAdapter(${runtime.providerId})`;
     this.chatModels = chatModelChain(runtime);
     this.visionModels = visionModelChain(runtime);
+    llmDebug("OpenAICompatibleAdapter", "adapter creado", {
+      providerId: runtime.providerId,
+      chatModels: this.chatModels,
+      visionModels: this.visionModels,
+      baseURL: runtime.baseURL ?? null,
+    });
     this.embeddingModel = runtime.embeddingModel;
     this.embeddingsEnabled = runtime.embeddingsEnabled && !!runtime.embeddingModel;
     const headers = optionalDefaultHeaders(runtime);
@@ -184,6 +191,14 @@ export class OpenAICompatibleAdapter implements LLMProvider {
   ): Promise<AsyncIterable<string>> {
     const hasImages = options?.userMessageImages != null && options.userMessageImages.length > 0;
     const models = hasImages ? this.visionModels : this.chatModels;
+
+    llmDebug("OpenAICompatibleAdapter", "generateResponseStream", {
+      label: this.label,
+      hasImages,
+      models,
+      activeTab: options?.activeTab ?? null,
+      historyTurns: history.length,
+    });
 
     const stream = await runWithModelFallback({
       models,

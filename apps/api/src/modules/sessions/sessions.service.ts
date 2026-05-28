@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, Logger } from "@nestjs/common";
 import type { Session } from "@theforge/database";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
@@ -32,6 +32,8 @@ import {
   parseBenchmarkResponse,
   wouldShrinkDbgaDangerously,
 } from "./dbga-edit.util.js";
+import { llmDebug, llmWarn } from "../ai/config/llm-debug.util.js";
+import { ModelsUnavailableError } from "../ai/config/llm-model-fallback.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -65,6 +67,8 @@ function isGeminiRateLimitError(err: unknown): boolean {
 
 @Injectable()
 export class SessionsService {
+  private readonly logger = new Logger(SessionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AiService,
@@ -592,6 +596,13 @@ export class SessionsService {
 
     const learningHistory = await this.preferences.getPreferencesForContext(session.projectId, 5);
     const llmHistory = sessionHistoryToLlm(history);
+    llmDebug("ChatStream", "inicio generateResponseStream", {
+      sessionId,
+      projectId: session.projectId,
+      activeTab: options?.activeTab ?? "mdd",
+      userId: getRequestUserId(),
+      historyTurns: llmHistory.length,
+    });
     let stream: AsyncIterable<string>;
     try {
       stream = await this.ai.generateResponseStream(userTurn.promptForModel, llmHistory, {
@@ -611,7 +622,23 @@ export class SessionsService {
         userMessageImages: userTurn.imagesForLlm,
       });
     } catch (err) {
-      console.error("[ChatStream] ai.generateResponseStream error:", err);
+      if (err instanceof ModelsUnavailableError) {
+        llmWarn("ChatStream", "ModelsUnavailableError", {
+          sessionId,
+          projectId: session.projectId,
+          activeTab: options?.activeTab ?? "mdd",
+          message: err.message,
+          details: err.details,
+        });
+      } else {
+        llmWarn("ChatStream", "generateResponseStream error", {
+          sessionId,
+          projectId: session.projectId,
+          activeTab: options?.activeTab ?? "mdd",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      this.logger.error("[ChatStream] ai.generateResponseStream error:", err);
       throw err;
     }
 

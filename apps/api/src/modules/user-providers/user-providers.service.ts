@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@theforge/database";
@@ -31,6 +32,20 @@ import {
   resolveRuntimeBaseUrl,
   resolveVisionModelForRuntime,
 } from "./provider-config.helpers.js";
+import { isLlmDebugEnabled, llmDebug, summarizeRuntimeForLog } from "../ai/config/llm-debug.util.js";
+
+export interface ProviderStatusResult {
+  usable: boolean;
+  configured: boolean;
+  resolveError?: string;
+  runtime?: {
+    providerId: string;
+    chatModel: string;
+    fallbacks: string[];
+    source: "tenant" | "byok";
+    instanceName?: string;
+  };
+}
 
 export interface UpsertProviderConfigDto {
   apiKey: string;
@@ -55,6 +70,8 @@ export interface UpdateAISettingsDto {
 
 @Injectable()
 export class UserProvidersService {
+  private readonly logger = new Logger(UserProvidersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokenCrypto: TokenCryptoService,
@@ -393,23 +410,83 @@ export class UserProvidersService {
     return { ok: true };
   }
 
-  /** Indica si el usuario tiene proveedor usable (tenant o BYOK personal). */
-  async hasUsableProvider(userId: string): Promise<boolean> {
-    try {
-      await this.resolveRuntime(userId);
-      return true;
-    } catch {
-      return false;
+  /** Indica si el usuario tiene proveedor configurado y si el runtime resuelve. */
+  async getProviderStatus(userId: string): Promise<ProviderStatusResult> {
+    const configured = await this.hasProviderConfiguration(userId);
+    if (!configured) {
+      this.logger.debug(`[ProviderStatus] userId=${userId} sin instancia tenant ni BYOK`);
+      return { usable: false, configured: false };
     }
+    try {
+      const tenant = await this.resolveTenantInstanceForUser(userId);
+      const runtime = tenant
+        ? await this.runtimeFromTenantInstance(userId, tenant)
+        : await this.resolveRuntimeForProvider(userId, await this.activeProviderId(userId));
+      const result: ProviderStatusResult = {
+        usable: true,
+        configured: true,
+        runtime: {
+          providerId: runtime.providerId,
+          chatModel: runtime.chatModel,
+          fallbacks: runtime.chatModelFallbacks ?? [],
+          source: tenant ? "tenant" : "byok",
+          instanceName: tenant?.displayName,
+        },
+      };
+      this.logger.debug(
+        `[ProviderStatus] OK userId=${userId} ${JSON.stringify(result.runtime)}`,
+      );
+      llmDebug("UserProviders", "getProviderStatus OK", { userId, ...result.runtime });
+      return result;
+    } catch (err) {
+      const resolveError = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `[ProviderStatus] userId=${userId} configurado pero resolveRuntime falló: ${resolveError}`,
+      );
+      llmDebug("UserProviders", "getProviderStatus resolveRuntime error", { userId, resolveError });
+      // Hay configuración: no mostrar banner «configura proveedor» por un fallo de modelo/permiso.
+      return { usable: false, configured: true, resolveError };
+    }
+  }
+
+  /** @deprecated Usar getProviderStatus. Mantenido por compatibilidad interna. */
+  async hasUsableProvider(userId: string): Promise<boolean> {
+    const status = await this.getProviderStatus(userId);
+    return status.configured;
+  }
+
+  private async hasProviderConfiguration(userId: string): Promise<boolean> {
+    const tenant = await this.resolveEffectiveTenantInstanceForUser(userId);
+    if (tenant) return true;
+    const count = await this.prisma.userProviderConfig.count({ where: { userId } });
+    return count > 0;
   }
 
   /** Runtime para chat/visión: tenant primero, luego BYOK personal. */
   async resolveRuntime(userId: string): Promise<UserLLMRuntime> {
+    llmDebug("UserProviders", "resolveRuntime inicio", { userId });
     const tenant = await this.resolveTenantInstanceForUser(userId);
     if (tenant) {
-      return this.runtimeFromTenantInstance(userId, tenant);
+      this.logger.debug(
+        `[resolveRuntime] userId=${userId} tenant=${tenant.displayName} (${tenant.id}) chatModel=${tenant.chatModel} fallbacks=[${tenant.chatModelFallbacks.join(",")}]`,
+      );
+      const runtime = await this.runtimeFromTenantInstance(userId, tenant);
+      llmDebug("UserProviders", "resolveRuntime tenant OK", {
+        userId,
+        instanceId: tenant.id,
+        instanceName: tenant.displayName,
+        ...summarizeRuntimeForLog(runtime),
+      });
+      return runtime;
     }
-    return this.resolveRuntimeForProvider(userId, await this.activeProviderId(userId));
+    const provider = await this.activeProviderId(userId);
+    this.logger.debug(`[resolveRuntime] userId=${userId} BYOK provider=${provider}`);
+    const runtime = await this.resolveRuntimeForProvider(userId, provider);
+    llmDebug("UserProviders", "resolveRuntime BYOK OK", {
+      userId,
+      ...summarizeRuntimeForLog(runtime),
+    });
+    return runtime;
   }
 
   /**
@@ -672,6 +749,22 @@ export class UserProvidersService {
       superAdmin || userGrants.length === 0
         ? chatModelFallbacks
         : chatModelFallbacks.filter((m) => userGrants.includes(m));
+
+    if (isLlmDebugEnabled()) {
+      llmDebug("UserProviders", "runtimeFromTenantInstance", {
+        userId,
+        instanceId: instance.id,
+        instanceName: instance.displayName,
+        role,
+        superAdmin,
+        chatModel,
+        chatModelFallbacks,
+        effectiveFallbacks,
+        userGrants,
+        bypass,
+      });
+    }
+
     for (const fallbackModel of effectiveFallbacks) {
       if (
         !isChatModelAllowedForTenantUser(
