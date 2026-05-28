@@ -159,9 +159,14 @@ function extractH3Section(body: string, heading: RegExp): string {
   return captured.join("\n").trim();
 }
 
+/** Quita negrita/cursiva markdown del título (`**Login**` → `Login`). */
+function stripInlineMarkdown(name: string): string {
+  return name.trim().replace(/^[`*_]+|[`*_]+$/g, "").trim();
+}
+
 /** Normaliza títulos para unificar «Crear secreto» con slug interno `create-secret`. */
 function normalizeScreenKey(name: string): string {
-  return name
+  return stripInlineMarkdown(name)
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .normalize("NFC")
@@ -194,7 +199,7 @@ function dedupeScreenSketches(
     const matched = parsedScreens.find((s) =>
       screenLookupKeys(s).includes(normalizeScreenKey(sk.screenName)),
     );
-    const screenName = matched?.name ?? sk.screenName;
+    const screenName = matched?.name ?? stripInlineMarkdown(sk.screenName);
     const key = normalizeScreenKey(screenName);
     if (!byKey.has(key)) byKey.set(key, { screenName, html });
   }
@@ -224,7 +229,9 @@ function parseScreens(content: string): ParsedScreen[] {
   return sections.map((section) => {
     const lines = section.split("\n");
     const headerMatch = (lines[0] ?? "").match(/^## Pantalla:\s*(.+)$/i);
-    const name = headerMatch?.[1]?.trim() ?? (lines[0] ?? "").trim();
+    const name =
+      stripInlineMarkdown(headerMatch?.[1]?.trim() ?? (lines[0] ?? "").trim()) ||
+      (lines[0] ?? "").trim();
     const body = lines.slice(1).join("\n").trim();
 
     // Extract metadata from **Key**: value lines
@@ -1102,6 +1109,7 @@ export function WireframesPanel({
   const [screenSketches, setScreenSketches] = useState<ScreenSketchPayload[]>([]);
   const [sketchesStale, setSketchesStale] = useState(false);
   const [sketchesStaleReason, setSketchesStaleReason] = useState<"mdd" | "screens" | "missing" | undefined>();
+  const [sketchesSyncing, setSketchesSyncing] = useState(false);
   const [sketchesRegenerating, setSketchesRegenerating] = useState(false);
   const [regeneratingScreenKeys, setRegeneratingScreenKeys] = useState<Set<string>>(() => new Set());
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -1127,6 +1135,7 @@ export function WireframesPanel({
 
   const previewLoadingRef = useRef(false);
   const screenRegenInFlightRef = useRef<Set<string>>(new Set());
+  const sketchAutoPollRef = useRef(false);
 
   type SketchesStatus = {
     screenSketches?: ScreenSketchPayload[];
@@ -1138,13 +1147,24 @@ export function WireframesPanel({
 
   const applySketchStatus = useCallback(
     (data: SketchesStatus) => {
-    const sketches = dedupeScreenSketches(data.screenSketches ?? [], screens);
-    setScreenSketches(sketches);
-    setSketchesStale(data.sketchesStale === true);
-    setSketchesStaleReason(data.sketchesStaleReason);
-    return sketches.length;
-  },
-    [screens],
+      const sketches = dedupeScreenSketches(data.screenSketches ?? [], screens);
+      setScreenSketches(sketches);
+      setSketchesStale(data.sketchesStale === true);
+      setSketchesStaleReason(data.sketchesStaleReason);
+      setSketchesSyncing(data.syncing === true);
+      if (projectId && wireframesHash && previewSnippets !== null) {
+        setWireframesPreviewSession({
+          projectId,
+          wireframesHash,
+          screens: previewSnippets,
+          screenSketches: sketches,
+          sketchesStale: data.sketchesStale === true,
+          sketchesStaleReason: data.sketchesStaleReason,
+        });
+      }
+      return sketches.length;
+    },
+    [screens, projectId, wireframesHash, previewSnippets, setWireframesPreviewSession],
   );
 
   const refreshSketchesQuietly = useCallback(async () => {
@@ -1219,6 +1239,9 @@ export function WireframesPanel({
             sketchesStaleReason: data.sketchesStaleReason,
           };
           setWireframesPreviewSession(session);
+          if (data.sketchesStale === true) {
+            void refreshSketchesQuietly();
+          }
         }
       } catch (e) {
         if (!cancelled) {
@@ -1249,20 +1272,56 @@ export function WireframesPanel({
       const { apiFetch, API_BASE } = await import("../utils/apiClient");
       const started = Date.now();
       let last: SketchesStatus | null = null;
+      setSketchesSyncing(true);
       while (Date.now() - started < maxWaitMs) {
-        await new Promise((r) => setTimeout(r, pollMs));
         const pollRes = await apiFetch(
           `${API_BASE}/ai-analysis/wireframes/sketches?projectId=${encodeURIComponent(projectId)}`,
         );
-        if (!pollRes.ok) continue;
+        if (!pollRes.ok) {
+          await new Promise((r) => setTimeout(r, pollMs));
+          continue;
+        }
         last = (await pollRes.json()) as SketchesStatus;
         applySketchStatus(last);
-        if (!last.syncing) return last;
+        if (!last.syncing) {
+          setSketchesSyncing(false);
+          return last;
+        }
+        await new Promise((r) => setTimeout(r, pollMs));
       }
+      setSketchesSyncing(last?.syncing === true);
       return last;
     },
     [projectId, applySketchStatus],
   );
+
+  useEffect(() => {
+    if (viewMode !== "preview" || !projectId || previewLoading || previewSnippets === null) return;
+    if (!sketchesStale && !sketchesSyncing) return;
+    if (sketchAutoPollRef.current || sketchesRegenerating) return;
+
+    sketchAutoPollRef.current = true;
+    let cancelled = false;
+
+    void pollSketchSync(45 * 60 * 1000).finally(() => {
+      if (!cancelled) sketchAutoPollRef.current = false;
+    });
+
+    return () => {
+      cancelled = true;
+      sketchAutoPollRef.current = false;
+    };
+  }, [
+    viewMode,
+    projectId,
+    previewLoading,
+    previewSnippets,
+    sketchesStale,
+    sketchesSyncing,
+    sketchesRegenerating,
+    wireframesHash,
+    pollSketchSync,
+  ]);
 
   const sketchRegenDisabled = sketchesRegenerating || !projectId;
 
@@ -1581,7 +1640,12 @@ export function WireframesPanel({
                 />
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
-                {sketchesStale ? (
+                {sketchesSyncing ? (
+                  <p className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--primary)]" aria-hidden />
+                    Generando bocetos en el servidor…
+                  </p>
+                ) : sketchesStale ? (
                   <p className="text-xs text-amber-700 dark:text-amber-300">
                     {sketchesStaleReason === "mdd"
                       ? "El MDD cambió: los bocetos pueden estar desactualizados."

@@ -128,6 +128,35 @@ describe("wireframe-screen-sketch.util", () => {
     expect(cacheToSketchList(cache)).toHaveLength(1);
   });
 
+  it("slugifyScreenLabel ignora negrita markdown en títulos", () => {
+    expect(normalizeScreenCacheKey("**Pantalla de inicio de sesión**")).toBe(
+      "pantalla de inicio de sesion",
+    );
+    expect(
+      matchSketchToSection("**Login**", [
+        { ...sampleSection(), screenName: "Login" } as ReturnType<typeof sampleSection>,
+      ]),
+    ).toBeDefined();
+  });
+
+  it("parseWireframeScreensFromMarkdown limpia negrita del título", () => {
+    const md = `## Pantalla: **Pantalla de inicio de sesión**
+
+**Descripción**: Acceso
+
+### Wireframe
+
+\`\`\`
+┌─────┐
+│ LOGO│
+└─────┘
+\`\`\`
+`;
+    const section = parseWireframeScreensFromMarkdown(md)[0]!;
+    expect(section.screenName).toBe("Pantalla de inicio de sesión");
+    expect(normalizeScreenCacheKey(section.screenName)).toBe("pantalla de inicio de sesion");
+  });
+
   it("buildSketchesCachePayloadV2 empareja nombre corto del LLM con sección markdown", () => {
     const md = `## Pantalla: CU-01 — Login de usuario
 

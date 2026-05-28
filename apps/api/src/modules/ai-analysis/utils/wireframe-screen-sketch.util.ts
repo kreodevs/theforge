@@ -3,6 +3,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage } from "@langchain/core/messages";
 import { SCREEN_SKETCH_AGENT_PROMPT } from "../prompts/wireframes/wireframes-prompts.js";
 import { formatDesignSystemContextBlock } from "./wireframe-design-system-context.util.js";
+import { stripMarkdownCell } from "./wireframes-mcp-resolve.util.js";
 
 /** Pantallas por llamada LLM (evita contexto/ salida enorme). */
 export const SKETCH_LLM_BATCH_SIZE = 6;
@@ -57,7 +58,7 @@ export function normalizeScreenCacheKey(screenName: string): string {
 
 /** Quita acentos y unifica guiones/espacios para emparejar título vs slug interno. */
 export function slugifyScreenLabel(screenName: string): string {
-  return screenName
+  return stripMarkdownCell(screenName)
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .normalize("NFC")
@@ -128,7 +129,13 @@ function isCachedSectionHit(
   const key = normalizeScreenCacheKey(section.screenName);
   const direct = cache.screens[key];
   if (direct === cached && cached.screenHash === hash) return true;
-  return matchSketchToSection(cached.screenName, [section]) != null;
+  if (
+    matchSketchToSection(cached.screenName, [section]) != null &&
+    cached.screenHash === hash
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function screenSectionHash(section: ParsedWireframeScreenSection): string {
@@ -150,7 +157,8 @@ export function parseWireframeScreensFromMarkdown(markdown: string): ParsedWiref
     const end = i + 1 < starts.length ? starts[i + 1].index : markdown.length;
     const chunk = markdown.slice(start, end);
     const lines = chunk.split("\n");
-    const screenName = starts[i].name.replace(/^Pantalla:\s*/i, "").trim() || starts[i].name;
+    const screenName =
+      stripMarkdownCell(starts[i].name.replace(/^Pantalla:\s*/i, "").trim()) || starts[i].name;
 
     let description = "";
     const useCases: string[] = [];

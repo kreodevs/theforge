@@ -1620,6 +1620,7 @@ export default function WorkshopView({
       useCasesViewMode,
       userStoriesViewMode,
       uxUiGuideViewMode,
+      wireframesViewMode,
       aemViewMode,
       blueprintViewMode,
       apiContractsViewMode,
@@ -1636,6 +1637,7 @@ export default function WorkshopView({
       "spec",
       "mdd",
       "ux-ui-guide",
+      "wireframes",
       "aem",
       "blueprint",
       "api-contracts",
@@ -1652,6 +1654,7 @@ export default function WorkshopView({
       (centralPanel === "spec" ||
         centralPanel === "mdd" ||
         centralPanel === "ux-ui-guide" ||
+        centralPanel === "wireframes" ||
         centralPanel === "aem" ||
         (centralPanel === "blueprint" && blueprintContent) ||
         (centralPanel === "api-contracts" && apiContractsContent) ||
@@ -1675,6 +1678,7 @@ export default function WorkshopView({
       mddInicialContent: mddInicialLocalContent || activeLegacyState?.codebaseDoc || "",
       brdContent: brdWorkshopDraft,
       uxUiGuideContent,
+      wireframesContent,
       blueprintContent,
       apiContractsContent,
       logicFlowsContent,
@@ -1787,6 +1791,14 @@ export default function WorkshopView({
         disabled: uxGenerating || loading || !effectiveMddTrimmed || !blueprintContent?.trim() || !projectId,
         onClick: () => void generateUxGuideSequential(),
       };
+    } else if (centralPanel === "wireframes" && (wireframesGenerating || !!wireframesContent?.trim())) {
+      regenItem = {
+        id: "regen",
+        label: "Regenerar wireframes",
+        icon: RefreshCw,
+        disabled: wireframesGenerating || loading || !canGenerateWireframes || !projectId,
+        onClick: () => void generateWireframes(),
+      };
     }
 
     const panelClearLabels: Record<string, string> = {
@@ -1799,6 +1811,7 @@ export default function WorkshopView({
       "mdd-inicial": "Initial Master Design Document",
       brd: "Business Requirements Document",
       "ux-ui-guide": "Design System",
+      wireframes: "Wireframes",
       blueprint: "Technical Blueprint",
       "api-contracts": "API Contracts",
       "logic-flows": "Logic Flows",
@@ -1899,6 +1912,11 @@ export default function WorkshopView({
     useCasesViewMode,
     userStoriesViewMode,
     uxUiGuideViewMode,
+    wireframesViewMode,
+    wireframesContent,
+    wireframesGenerating,
+    canGenerateWireframes,
+    generateWireframes,
     aemViewMode,
     blueprintViewMode,
     apiContractsViewMode,
