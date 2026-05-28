@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import type {
   GenerateResponseOptions,
   ChatMessage as LlmChatMessage,
@@ -65,6 +65,8 @@ function prependTheForgePrompt(prompt: string, theforgeContext: string): string 
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(private readonly aiFactory: AIFactory) {}
 
   private async provider() {
@@ -483,6 +485,17 @@ export class AiService {
           "\n\n**MDD no destructivo (obligatorio si ya hay MDD en contexto):** El bloque \"Contenido actual del MDD\" incluye **todas** las secciones. Si el usuario pide revisar, alinear o ampliar (p. ej. tras un diagrama), **no sustituyas el proyecto por un solo fragmento**: devuelve el **MDD completo** actualizado (copia el contenido existente y aplica cambios), terminando con `---FIN_MDD---`. Si optas por enviar **solo una sección**, debe empezar por el **mismo patrón de encabezado** que ya usa el documento para esa sección (`## N.` recomendado, mismo `N` que corresponda). Nunca envíes solo tablas o JSON sueltos sin el título de sección reconocible.";
       }
     }
+    const userId = getRequestUserId();
+    try {
+      const runtime = await this.aiFactory.resolveRuntime(userId);
+      this.logger.debug(
+        `[generateResponseStream] userId=${userId} tab=${options?.activeTab ?? "mdd"} provider=${runtime.providerId} model=${runtime.chatModel} fallbacks=[${(runtime.chatModelFallbacks ?? []).join(",")}]`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `[generateResponseStream] resolveRuntime falló userId=${userId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     return (await this.provider()).generateResponseStream(prompt, history, { ...options, systemPrompt });
   }
 
@@ -495,7 +508,8 @@ export class AiService {
     activeTab?: string,
   ): Promise<string> {
     if (!images.length) return "";
-    await this.aiFactory.resolveVisionRuntime(getRequestUserId());
+    const userId = getRequestUserId();
+    const visionProvider = await this.aiFactory.createForVisionUser(userId);
     const tab = (activeTab ?? "mdd").trim() || "mdd";
     const hint = (userText ?? "").trim().slice(0, 4000) || "(sin texto adicional)";
     const tabHint =
@@ -511,7 +525,7 @@ export class AiService {
         ? " Si es un ERD o diagrama relacional, lista tablas, columnas, PK/FK y jerarquía (país→estado→ciudad→colonia, etc.)."
         : "";
     const prompt = `El usuario trabaja en ${tabHint}. Mensaje o petición asociada:\n---\n${hint}\n---\n\nDescribe con precisión lo que muestran las imágenes (UI, diagramas, datos, flujos, stack, texto visible, etc.). Responde en español, en viñetas; indica partes ilegibles o ambiguas.${benchmarkExtra}`;
-    const out = await this.generateResponse(prompt, [], {
+    const out = await visionProvider.generateResponse(prompt, [], {
       systemPrompt:
         "Eres arquitecto de software: extrae solo información sustentada en las imágenes; no inventes.",
       userMessageImages: images,
