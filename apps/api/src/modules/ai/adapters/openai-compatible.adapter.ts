@@ -101,7 +101,7 @@ function chatModelChain(runtime: UserLLMRuntime): string[] {
 }
 
 function visionModelChain(runtime: UserLLMRuntime): string[] {
-  const primary = runtime.visionModel?.trim() || "";
+  const primary = (runtime.visionModel?.trim() || runtime.chatModel?.trim() || "").trim();
   if (!primary) return [];
   const vf =
     typeof runtime.extras?.visionModelFallback === "string"
@@ -109,7 +109,10 @@ function visionModelChain(runtime: UserLLMRuntime): string[] {
       : "";
   const dedupe = (models: string[]) =>
     models.filter((m, i, a) => Boolean(m) && a.indexOf(m) === i);
-  return vf ? dedupe([primary, vf]) : [primary];
+  if (vf) return dedupe([primary, vf]);
+  const chain = chatModelChain(runtime);
+  if (chain.length > 1) return dedupe([primary, ...chain.slice(1)]);
+  return [primary];
 }
 
 export class OpenAICompatibleAdapter implements LLMProvider {

@@ -2086,10 +2086,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 }
               } else if (event === "error" && data.error) {
                 set({
-                  ...streamErrorPatch({
-                    message: String(data.error),
-                    code: typeof data.code === "string" ? data.code : undefined,
-                  }),
+                  error: String(data.error),
                   streamingUserMessage: null,
                   streamingUserImages: null,
                   streamingContent: null,
@@ -2163,10 +2160,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 }
               } else if (event === "error" && data.error) {
                 set({
-                  ...streamErrorPatch({
-                    message: String(data.error),
-                    code: typeof data.code === "string" ? data.code : undefined,
-                  }),
+                  error: String(data.error),
                   streamingUserMessage: null,
                   streamingUserImages: null,
                   streamingContent: null,

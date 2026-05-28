@@ -134,9 +134,6 @@ export class AiOrchestratorController {
     } catch (err) {
       const payload = JSON.stringify({
         error: err instanceof Error ? err.message : "Error en el stream",
-        ...("code" in (err as object) && typeof (err as { code?: string }).code === "string"
-          ? { code: (err as { code: string }).code }
-          : {}),
       });
       res.write(`event: error\ndata: ${payload}\n\n`);
     } finally {

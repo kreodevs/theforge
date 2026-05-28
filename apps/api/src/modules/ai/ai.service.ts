@@ -4,10 +4,6 @@ import type {
   ChatMessage as LlmChatMessage,
 } from "./interfaces/llm-provider.interface.js";
 import { AIFactory } from "./ai.factory.js";
-import {
-  ModelsUnavailableError,
-  VISION_MODELS_UNAVAILABLE_MESSAGE,
-} from "./config/llm-model-fallback.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import type { ChatImagePart } from "@theforge/shared-types";
 import { MASTER_PROMPT } from "./prompts/master-prompt.js";
@@ -499,8 +495,7 @@ export class AiService {
     activeTab?: string,
   ): Promise<string> {
     if (!images.length) return "";
-    const userId = getRequestUserId();
-    const visionProvider = await this.aiFactory.createForVisionUser(userId);
+    await this.aiFactory.resolveVisionRuntime(getRequestUserId());
     const tab = (activeTab ?? "mdd").trim() || "mdd";
     const hint = (userText ?? "").trim().slice(0, 4000) || "(sin texto adicional)";
     const tabHint =
@@ -516,19 +511,12 @@ export class AiService {
         ? " Si es un ERD o diagrama relacional, lista tablas, columnas, PK/FK y jerarquía (país→estado→ciudad→colonia, etc.)."
         : "";
     const prompt = `El usuario trabaja en ${tabHint}. Mensaje o petición asociada:\n---\n${hint}\n---\n\nDescribe con precisión lo que muestran las imágenes (UI, diagramas, datos, flujos, stack, texto visible, etc.). Responde en español, en viñetas; indica partes ilegibles o ambiguas.${benchmarkExtra}`;
-    try {
-      const out = await visionProvider.generateResponse(prompt, [], {
-        systemPrompt:
-          "Eres arquitecto de software: extrae solo información sustentada en las imágenes; no inventes.",
-        userMessageImages: images,
-      });
-      return out.trim().slice(0, 12000);
-    } catch (err) {
-      if (err instanceof ModelsUnavailableError) {
-        throw new ModelsUnavailableError(VISION_MODELS_UNAVAILABLE_MESSAGE);
-      }
-      throw err;
-    }
+    const out = await this.generateResponse(prompt, [], {
+      systemPrompt:
+        "Eres arquitecto de software: extrae solo información sustentada en las imágenes; no inventes.",
+      userMessageImages: images,
+    });
+    return out.trim().slice(0, 12000);
   }
 
   /** Alias del pipeline MDD (Manager LangGraph). */
