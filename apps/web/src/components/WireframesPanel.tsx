@@ -1239,9 +1239,6 @@ export function WireframesPanel({
             sketchesStaleReason: data.sketchesStaleReason,
           };
           setWireframesPreviewSession(session);
-          if (data.sketchesStale === true) {
-            void refreshSketchesQuietly();
-          }
         }
       } catch (e) {
         if (!cancelled) {
@@ -1272,7 +1269,6 @@ export function WireframesPanel({
       const { apiFetch, API_BASE } = await import("../utils/apiClient");
       const started = Date.now();
       let last: SketchesStatus | null = null;
-      setSketchesSyncing(true);
       while (Date.now() - started < maxWaitMs) {
         const pollRes = await apiFetch(
           `${API_BASE}/ai-analysis/wireframes/sketches?projectId=${encodeURIComponent(projectId)}`,
@@ -1297,7 +1293,7 @@ export function WireframesPanel({
 
   useEffect(() => {
     if (viewMode !== "preview" || !projectId || previewLoading || previewSnippets === null) return;
-    if (!sketchesStale && !sketchesSyncing) return;
+    if (!sketchesSyncing) return;
     if (sketchAutoPollRef.current || sketchesRegenerating) return;
 
     sketchAutoPollRef.current = true;
@@ -1316,7 +1312,6 @@ export function WireframesPanel({
     projectId,
     previewLoading,
     previewSnippets,
-    sketchesStale,
     sketchesSyncing,
     sketchesRegenerating,
     wireframesHash,

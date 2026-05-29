@@ -1707,18 +1707,6 @@ export class AiAnalysisService {
 
   // ─── Wireframe Preview Snippets ──────────────────────────
 
-  private maybeScheduleStaleWireframeSketches(
-    projectId: string,
-    sketchRead: { sketchesStale: boolean },
-  ): void {
-    if (
-      sketchRead.sketchesStale &&
-      !this.wireframeSketchesSync.isSyncInFlight(projectId)
-    ) {
-      this.wireframeSketchesSync.scheduleSync(projectId);
-    }
-  }
-
   async getWireframePreviewSnippets(projectId: string) {
     const stripMd = stripMarkdownCell;
     this.logger.log(`[PreviewSnippets] start projectId=${projectId}`);
@@ -1759,7 +1747,6 @@ export class AiAnalysisService {
       const previewRaw = await readWireframesPreviewCacheRaw(this.prisma, projectId);
       const previewCached = readWireframesPreviewCacheV1(previewRaw);
       if (isWireframesPreviewCacheValid(previewCached, wireframesHash, mcpKey)) {
-        this.maybeScheduleStaleWireframeSketches(projectId, sketchRead);
         this.logger.log(
           `[PreviewSnippets] cache hit screens=${previewCached.screens.length} sketches=${sketchRead.screenSketches.length} stale=${sketchRead.sketchesStale}`,
         );
@@ -2134,8 +2121,6 @@ export class AiAnalysisService {
         `[PreviewSnippets] preview cache write failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-
-    this.maybeScheduleStaleWireframeSketches(projectId, sketchRead);
 
     this.logger.log(
       `[PreviewSnippets] returning screens=${screens.length} components=${screens.reduce((a, s) => a + s.components.length, 0)} ok=${okPreviews} errors=${errPreviews} hosted=${hostedPreviewSupported} sketches=${sketchRead.screenSketches.length} stale=${sketchRead.sketchesStale} fromCache=false`,
