@@ -319,7 +319,7 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
       const sum = getMddDraftSummary(mddDraft);
       LOG("ok integracion §7 en mddDraft len=%s section2=%s", sum.length, sum.section2);
       logMddNodeOutput("Integration", mddDraft);
-      return { mddStructured: merged, mddDraft, ...meshUpdate };
+      return { mddStructured: merged, mddDraft, integrationSectionMd: section7Md, ...meshUpdate };
     } catch (err) {
       LOG("error: %s", err instanceof Error ? err.message : String(err));
       throw err;

@@ -117,11 +117,12 @@ export function createMddSecurityNode(llm: BaseChatModel) {
       const seguridad = resolveSeguridadSlice(state, llmItems);
       const slice = { seguridad };
       const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");
+      const securitySectionMd = seguridadItemsToSection6Markdown(merged.seguridad ?? seguridad);
       const mddDraft = buildMddDraftWithSection6(state, merged.seguridad ?? seguridad);
       const sum = getMddDraftSummary(mddDraft);
       LOG("ok seguridad §6 actualizada mddDraftLen=%s section2=%s", sum.length, sum.section2);
       logMddNodeOutput("Security", mddDraft);
-      return { mddStructured: merged, mddDraft };
+      return { mddStructured: merged, mddDraft, securitySectionMd };
     } catch (err) {
       LOG("error: %s", err instanceof Error ? err.message : String(err));
       throw err;

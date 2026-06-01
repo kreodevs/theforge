@@ -17,6 +17,7 @@ import { createMddExecutorNode } from "../nodes/mdd-executor.node.js";
 import { createMddMergeSection1Node } from "../nodes/mdd-merge-section1.node.js";
 import { createMddGraphPopulatorNode } from "../nodes/mdd-graph-populator.node.js";
 import { createMddCrossConsistencyNode } from "../nodes/mdd-cross-consistency.node.js";
+import { createMddFormatSecIntNode } from "../nodes/mdd-format-sec-int.node.js";
 import { createMddBlackboardNode } from "../nodes/mdd-blackboard.node.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { createDbgaLLM, createMddAuditorLLM } from "../llm/create-dbga-llm.js";
@@ -99,6 +100,7 @@ export async function createMddGraph(
   const formatterNode = createMddFormatterNode();
   const securityNode = wrapCache(nodeCache, "security", securityInput, createMddSecurityNode(llm));
   const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(llm));
+  const formatSecIntNode = createMddFormatSecIntNode();
   const diagramInjectorNode = createMddDiagramInjectorNode();
   const consistencyNode = wrapCache(nodeCache, "cross_consistency", crossConsistencyInput, createMddCrossConsistencyNode(llm));
   const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
@@ -118,6 +120,7 @@ export async function createMddGraph(
     .addNode("format_after_architect", formatterNode)
     .addNode("security", securityNode)
     .addNode("integration", integrationNode)
+    .addNode("format_sec_int", formatSecIntNode)
     .addNode("format_after_redactor", formatterNode)
     .addNode("llm_formatter", llmFormatterNode)
     .addNode("cross_consistency_checker", consistencyNode)
@@ -127,10 +130,13 @@ export async function createMddGraph(
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
     .addEdge("software_architect", "format_after_architect")
-    // Security → Integration secuencial: ambos escriben a mddStructured (LastValue reducer)
+    // Security + Integration en PARALELO: cada nodo escribe su sección en staging fields
+    // (securitySectionMd / integrationSectionMd). El nodo format_sec_int aplica ambas.
     .addEdge("format_after_architect", "security")
-    .addEdge("security", "integration")
-    .addEdge("integration", "format_after_redactor")
+    .addEdge("format_after_architect", "integration")
+    .addEdge("security", "format_sec_int")
+    .addEdge("integration", "format_sec_int")
+    .addEdge("format_sec_int", "format_after_redactor")
     .addEdge("format_after_redactor", "llm_formatter")
     // [PARALELO] CrossConsistency: solo produce internalDirectives (read-only mddDraft)
     // DiagramInjector inyecta diagramas en mddDraft (code-only, <3s).

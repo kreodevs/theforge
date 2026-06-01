@@ -84,13 +84,18 @@ export function createMddAuditorNode(
       if (validation.missingSections.length > 0) {
         shortcutScore = Math.min(shortcutScore, 94);
         shortcutScore -= validation.missingSections.length * 5;
+      } else if (validation.section3HasPayloads && validation.hasTechnicalMetadata) {
+        // Draft completo: 7 secciones + payloads + metadata → aprobado sin segunda iteración.
+        shortcutScore = 88;
       }
       shortcutScore = Math.max(0, Math.min(100, shortcutScore));
       const shortcutDecision = shortcutScore >= AUDIT_PASS_THRESHOLD && validation.missingSections.length === 0 ? "done" as const : "clarifier" as const;
       const shortcutIteration = (state.mddIteration ?? 0) + (shortcutDecision === "clarifier" ? 1 : 0);
       const shortcutFeedback = validation.issues.length > 0
         ? validation.issues.join(" ")
-        : "Revisión completada: el MDD tiene estructura base.";
+        : shortcutDecision === "done"
+          ? "MDD completo: todas las secciones, contratos y metadatos técnicos presentes."
+          : "Revisión completada: el MDD tiene estructura base.";
       LOG("shortcut score=%s decision=%s", shortcutScore, shortcutDecision);
       return {
         auditorScore: shortcutScore,
