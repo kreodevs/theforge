@@ -73,9 +73,9 @@ export function createMddAuditorNode(
     LOG("entry mddDraftLen=%s tools=%s (allowed=%s)", (state.mddDraft ?? "").length, toolsToUse.length, allowed?.length ?? "all");
     const draft = (state.mddDraft ?? "").trim();
 
-    // Shortcut: si el draft ya es grande (>5000 chars), evitar llamada LLM del Auditor
+    // Shortcut: si el draft tiene contenido suficiente (>2000 chars), evitar llamada LLM del Auditor
     // que tarda demasiado y causa timeout del proxy/frontend. Usar validación determinística.
-    if (draft.length > 5000) {
+    if (draft.length > 2000) {
       LOG("draft grande (%s chars) → shortcut determinístico", draft.length);
       const validation = validateMddStructure(draft);
       let shortcutScore = 80;

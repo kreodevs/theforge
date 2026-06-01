@@ -56,9 +56,7 @@ ${mddDraft.slice(0, 15000)}
 
         const parsed = parseJsonOrThrow(jsonStr, adrExtractionSchema);
 
-        for (const adr of parsed.decisions) {
-            await graphMemory.saveDecision(projectId, adr);
-        }
+        await Promise.all(parsed.decisions.map(adr => graphMemory.saveDecision(projectId, adr)));
 
         console.log(`[ADRLogger] Extraídas y guardadas ${parsed.decisions.length} decisiones para el proyecto ${projectId}`);
     } catch (err) {
