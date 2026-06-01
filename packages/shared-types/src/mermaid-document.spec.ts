@@ -19,6 +19,26 @@ describe("stripMarkdownLeakFromMermaidDiagramBody", () => {
 });
 
 describe("normalizeMermaidInDocument", () => {
+  it("saca viñetas SSO pegadas dentro del fence mermaid", () => {
+    const doc = `#### Flujo de autenticación
+
+\`\`\`mermaid
+flowchart TD
+  evt["Evento"]
+  post["POST"]
+  evt --> post
+- Usuario → Frontend sin token
+- Al cargar la app, verificar token
+\`\`\`
+
+#### Integración backend`;
+    const out = normalizeMermaidInDocument(doc);
+    assert.match(out, /evt --> post/);
+    assert.doesNotMatch(out, /post\n- Usuario/);
+    assert.match(out, /```\n\n- Usuario → Frontend/);
+    assert.match(out, /#### Integración backend/);
+  });
+
   it("no fusiona markdown tras el cierre del bloque mermaid", () => {
     const doc = `### Flujo de sincronización
 
