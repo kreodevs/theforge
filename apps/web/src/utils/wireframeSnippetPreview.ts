@@ -1,4 +1,4 @@
-import { ORBITA_PREVIEW_BASE_CSS } from "./wireframePreviewStyles";
+import { COMPONENT_PREVIEW_BASE_CSS } from "./wireframePreviewStyles";
 
 /** Mirrors API parseProductionSnippetText — unwrap MCP JSON envelopes in the iframe. */
 export function parseProductionSnippetText(
@@ -300,7 +300,7 @@ function mountPreviewApp() {
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: ${bodyPadding}; background: ${bodyBg}; }
     #root-error { color: #b91c1c; font-size: 12px; white-space: pre-wrap; }
-    ${ORBITA_PREVIEW_BASE_CSS}
+    ${COMPONENT_PREVIEW_BASE_CSS}
   </style>
 </head>
 <body>

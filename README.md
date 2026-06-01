@@ -21,7 +21,7 @@
 
 <div align="center">
 
-**[Arquitectura](./docs/notebooklm/THEFORGE-INDEX.md)** · **[Blueprint](./blueprint.md)** · **[Contribuir](./CONTRIBUTING.md)** · **[Changelog](./CHANGELOG.md)**
+**[Arquitectura](./docs/notebooklm/THEFORGE-INDEX.md)** · **[Blueprint](./blueprint.md)** · **[Plugins de componentes](./docs/component-source-plugins.md)** · **[Contribuir](./CONTRIBUTING.md)** · **[Changelog](./CHANGELOG.md)**
 
 </div>
 

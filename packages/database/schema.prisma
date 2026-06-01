@@ -27,14 +27,16 @@ model User {
   /// Es el MCP Secret del usuario en Ariadne que actuará como base de conocimientos.
   /// No confundir con mcpSecret (token de TheForge).
   ariadneMcpToken String?
-  /// Nombre del MCP de componentes (ej. "Orbita"). Configurado por el usuario.
-  componentMcpName String?
+  /// Component Source activo para wireframes (MCP multi-plugin).
+  componentSourceEnabled Boolean @default(false)
+  /// Plugin de component source (ej. "orbita"). Null si no configurado.
+  componentSourcePluginId String?
   /// URL del MCP de componentes (ej. "https://componentes.obp.mx/mcp").
-  componentMcpUrl  String?
+  componentSourceUrl String?
   /// Token del MCP de componentes cifrado con AES-256-GCM (TokenCryptoService).
-  componentMcpTokenCipher String?
-  /// Versión de la master key usada al cifrar componentMcpTokenCipher.
-  componentMcpTokenKeyVersion Int?
+  componentSourceTokenCipher String?
+  /// Versión de la master key usada al cifrar componentSourceTokenCipher.
+  componentSourceTokenKeyVersion Int?
   projects  Project[]
   sessions  Session[]
   changeLogs ChangeLog[]
@@ -237,6 +239,8 @@ model Project {
   infraContent         String?   @db.Text
   uxUiGuideContent     String?   @db.Text
   wireframesContent    String?   @db.Text
+  /// Component mapper output persisted with wireframes (preview-snippets reads this first).
+  wireframesComponentMappings Json?
   /// Caché de bocetos HTML por hash de wireframesContent: { v, hash, sketches[] }
   wireframesSketchesCache Json?
   /// Caché de previews MCP (componentes Orbita) por hash de wireframesContent + MCP

@@ -1,10 +1,11 @@
-import { Controller, Post, Body } from "@nestjs/common";
+import { Controller, Post, Body, ForbiddenException } from "@nestjs/common";
 import { getRequestUserId } from "../../common/request-user.store.js";
-import { ComponentMcpService } from "../component-mcp/component-mcp.service.js";
+import { ComponentSourceRegistry } from "../component-source/component-source.registry.js";
+import { runComponentSourceDiagnostic } from "../component-source/component-source-diagnose.util.js";
 
 @Controller("admin")
 export class AdminController {
-  constructor(private readonly componentMcp: ComponentMcpService) {}
+  constructor(private readonly componentSourceRegistry: ComponentSourceRegistry) {}
 
   @Post("ariadne-config/test")
   async testAriadneConnection(
@@ -77,18 +78,45 @@ export class AdminController {
     }
   }
 
-  @Post("component-mcp-config/test")
-  async testComponentMcpConnection(): Promise<{ ok: boolean; service?: string; error?: string }> {
+  @Post("component-source/test")
+  async testComponentSourceConnection(
+    @Body()
+    body: {
+      pluginId?: string;
+      url?: string;
+      token?: string;
+      useSaved?: boolean;
+    },
+  ): Promise<{ ok: boolean; service?: string; error?: string }> {
     const userId = getRequestUserId();
-    try {
-      const health = await this.componentMcp.checkHealth(userId);
-      if (!health.ok) {
-        return { ok: false, error: health.error ?? "Health check falló" };
-      }
-      await this.componentMcp.catalogHealth(userId);
-      return { ok: true, service: health.service };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : "Error de conexión" };
+    return this.componentSourceRegistry.testConnection({ userId, ...body });
+  }
+
+  /** @deprecated Usar POST /admin/component-source/test */
+  @Post("component-mcp-config/test")
+  async testComponentMcpConnection(
+    @Body()
+    body: {
+      pluginId?: string;
+      url?: string;
+      token?: string;
+      useSaved?: boolean;
+    },
+  ): Promise<{ ok: boolean; service?: string; error?: string }> {
+    const userId = getRequestUserId();
+    return this.componentSourceRegistry.testConnection({ userId, ...body });
+  }
+
+  /** Dev-only: log MCP shapes for component source debugging. */
+  @Post("component-source/diagnose")
+  async diagnoseComponentSource(): Promise<unknown> {
+    if (process.env.NODE_ENV === "production") {
+      throw new ForbiddenException("Diagnóstico no disponible en producción");
     }
+    const userId = getRequestUserId();
+    const source = await this.componentSourceRegistry.resolveForUser(userId);
+    const report = await runComponentSourceDiagnostic(source, userId);
+    console.log("[ComponentSource/Diagnose]", JSON.stringify(report, null, 2));
+    return report;
   }
 }

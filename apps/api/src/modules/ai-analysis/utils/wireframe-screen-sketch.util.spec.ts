@@ -5,15 +5,21 @@ import {
   cacheToSketchList,
   contentDigestHash,
   extractHtmlFromLlmResponse,
+  mergeWireframesMarkdownOrUseFull,
+  wouldShrinkWireframesDangerously,
   matchSketchToSection,
   normalizeScreenCacheKey,
   parseBatchSketchResponse,
   parseWireframeScreensFromMarkdown,
+  readSketchesCache,
   readSketchesCacheV2,
   resolveScreensToRegenerate,
   sanitizeSketchHtml,
   screenSectionHash,
+  screenSectionSemanticHash,
+  wireframesHasParseableScreens,
   type WireframesSketchesCachePayloadV2,
+  type WireframesSketchesCachePayloadV3,
 } from "./wireframe-screen-sketch.util.js";
 
 describe("wireframe-screen-sketch.util", () => {
@@ -38,7 +44,7 @@ describe("wireframe-screen-sketch.util", () => {
     expect(s.wireframeAscii).toContain("LOGO");
   });
 
-  it("resolveScreensToRegenerate solo marca pantallas cambiadas", () => {
+  it("resolveScreensToRegenerate solo marca pantallas cambiadas (hash semántico)", () => {
     const section = sampleSection();
     const mddHash = contentDigestHash("mdd");
     const key = normalizeScreenCacheKey(section.screenName);
@@ -51,7 +57,13 @@ describe("wireframe-screen-sketch.util", () => {
     expect(same.toGenerate).toHaveLength(0);
     expect(same.merged.size).toBe(1);
 
-    const changed = { ...section, body: section.body + "\n**Nuevo**" };
+    // Cambio cosmético del body (fuera de wireframe/descripción) → no regenera
+    const cosmetic = { ...section, body: section.body + "\n<!-- comentario -->" };
+    const notStale = resolveScreensToRegenerate([cosmetic], cache, mddHash, { forceAll: false });
+    expect(notStale.toGenerate).toHaveLength(0);
+
+    // Cambio real del wireframeAscii → sí regenera
+    const changed = { ...section, wireframeAscii: "┌──────────┐\n│ CAMBIADO │\n└──────────┘" };
     const stale = resolveScreensToRegenerate([changed], cache, mddHash, { forceAll: false });
     expect(stale.toGenerate).toHaveLength(1);
   });
@@ -81,16 +93,30 @@ describe("wireframe-screen-sketch.util", () => {
     expect(r.merged.get(normalizeScreenCacheKey(dashboard.screenName))?.html).toContain("dash");
   });
 
-  it("cambio de MDD regenera todas", () => {
+  it("cambio de MDD NO regenera bocetos sin cambio semántico (A3)", () => {
     const section = sampleSection();
     const cache = buildSketchesCachePayloadV2(
       contentDigestHash("mdd-viejo"),
       new Map([[normalizeScreenCacheKey(section.screenName), { screenName: section.screenName, html: "<html></html>" }]]),
       [section],
     );
+    // mddHash distinto pero pantalla sin cambios → preservar boceto
     const r = resolveScreensToRegenerate([section], cache, contentDigestHash("mdd-nuevo"), {
       forceAll: false,
     });
+    expect(r.toGenerate).toHaveLength(0);
+    expect(r.merged.size).toBe(1);
+  });
+
+  it("forceAll regenera todas ignorando caché", () => {
+    const section = sampleSection();
+    const mddHash = contentDigestHash("mdd");
+    const cache = buildSketchesCachePayloadV2(
+      mddHash,
+      new Map([[normalizeScreenCacheKey(section.screenName), { screenName: section.screenName, html: "<html></html>" }]]),
+      [section],
+    );
+    const r = resolveScreensToRegenerate([section], cache, mddHash, { forceAll: true });
     expect(r.toGenerate).toHaveLength(1);
     expect(r.merged.size).toBe(0);
   });
@@ -107,10 +133,45 @@ describe("wireframe-screen-sketch.util", () => {
     expect(readSketchesCacheV2({ v: 1, hash: "x", sketches: [] })).toBeNull();
   });
 
+  it("readSketchesCache migra v2 a v3 preservando HTML (A2 migration)", () => {
+    const section = sampleSection();
+    const key = normalizeScreenCacheKey(section.screenName);
+    const v2: WireframesSketchesCachePayloadV2 = {
+      v: 2,
+      mddHash: "abc",
+      screens: {
+        [key]: { screenName: section.screenName, screenHash: "old-hash", html: "<html>AI</html>" },
+      },
+    };
+    const migrated = readSketchesCache(v2) as WireframesSketchesCachePayloadV3;
+    expect(migrated.v).toBe(3);
+    expect(migrated.screens[key]?.html).toBe("<html>AI</html>");
+    expect(migrated.screens[key]?.screenHash).toBe(""); // legacy hit
+    expect(migrated.mddHash).toBe("abc");
+
+    // Migrated entry debe ser HIT (preservar HTML sin regenerar)
+    const r = resolveScreensToRegenerate([section], migrated, "any-mdd-hash", { forceAll: false });
+    expect(r.toGenerate).toHaveLength(0);
+    expect(r.merged.size).toBe(1);
+  });
+
   it("screenSectionHash es estable por body", () => {
     const a = sampleSection();
     const b = sampleSection();
     expect(screenSectionHash(a)).toBe(screenSectionHash(b));
+  });
+
+  it("screenSectionSemanticHash es estable y difiere con cambio de wireframe", () => {
+    const a = sampleSection();
+    const b = sampleSection();
+    expect(screenSectionSemanticHash(a)).toBe(screenSectionSemanticHash(b));
+
+    const changed = { ...a, wireframeAscii: "diferente" };
+    expect(screenSectionSemanticHash(changed)).not.toBe(screenSectionSemanticHash(a));
+
+    // Cambio cosmético del body → mismo hash semántico
+    const cosmetic = { ...a, body: a.body + "\n<!-- noop -->" };
+    expect(screenSectionSemanticHash(cosmetic)).toBe(screenSectionSemanticHash(a));
   });
 
   it("buildBatchSketchUserPayload es compacto", () => {
@@ -216,7 +277,7 @@ describe("wireframe-screen-sketch.util", () => {
     expect(cacheToSketchList(cache)[0]?.screenName).toBe("Login");
   });
 
-  it("resolveScreensToRegenerate reutiliza caché guardada bajo slug interno", () => {
+  it("resolveScreensToRegenerate reutiliza caché guardada bajo slug interno (migra v2→v3)", () => {
     const md = `## Pantalla: Crear secreto
 
 **ID**: \`create-secret\`
@@ -231,18 +292,20 @@ describe("wireframe-screen-sketch.util", () => {
 `;
     const section = parseWireframeScreensFromMarkdown(md)[0]!;
     const mddHash = contentDigestHash("mdd");
-    const orphanCache: WireframesSketchesCachePayloadV2 = {
+    const orphanCacheV2: WireframesSketchesCachePayloadV2 = {
       v: 2,
       mddHash,
       screens: {
         "create-secret": {
           screenName: "create-secret",
-          screenHash: screenSectionHash(section),
+          screenHash: screenSectionHash(section), // hash de body viejo
           html: "<html/>",
         },
       },
     };
-    const r = resolveScreensToRegenerate([section], orphanCache, mddHash, { forceAll: false });
+    // En producción, el sync service llama readSketchesCache primero (migra v2→v3)
+    const migrated = readSketchesCache(orphanCacheV2);
+    const r = resolveScreensToRegenerate([section], migrated, mddHash, { forceAll: false });
     expect(r.toGenerate).toHaveLength(0);
     expect(r.merged.get(normalizeScreenCacheKey(section.screenName))?.html).toContain("html");
   });
@@ -263,5 +326,30 @@ describe("wireframe-screen-sketch.util", () => {
 
   it("extractHtmlFromLlmResponse quita fences", () => {
     expect(extractHtmlFromLlmResponse("```html\n<!DOCTYPE html><html></html>\n```")).toContain("DOCTYPE");
+  });
+
+  it("mergeWireframesMarkdownOrUseFull conserva doc grande ante fragmento corto", () => {
+    const screenA = "## Pantalla: Login\n\nDesc\n\n```\n+----+\n| OK |\n+----+\n```\n";
+    const screenB = "## Pantalla: Dashboard\n\nOtra pantalla larga ".repeat(20) + "\n```\n| dash |\n```\n";
+    const current = `# Wireframes\n\n${screenA}${screenB}`;
+    const fragment = `# Wireframes\n\n## Pantalla: Login\n\nBotón renombrado a Entrar\n\n\`\`\`\n| Entrar |\n\`\`\`\n`;
+    const merged = mergeWireframesMarkdownOrUseFull(current, fragment);
+    expect(merged).toContain("Dashboard");
+    expect(merged).toContain("Entrar");
+    expect(merged.length).toBeGreaterThan(current.length * 0.8);
+  });
+
+  it("wouldShrinkWireframesDangerously bloquea reemplazo masivo", () => {
+    const current = `# Wireframes\n\n${"## Pantalla: P\n\nx\n```\n| a |\n```\n".repeat(30)}`;
+    const tiny = "# Wireframes\n\n## Pantalla: Login\n\nsolo una\n";
+    expect(wouldShrinkWireframesDangerously(current, tiny)).toBe(true);
+    expect(wouldShrinkWireframesDangerously(current, current)).toBe(false);
+  });
+
+  it("wireframesHasParseableScreens detecta doc truncado (solo índice)", () => {
+    const indexOnly = "# Wireframes\n\n## Índice de Pantallas\n\n1. Login\n";
+    const full = "## Pantalla: Login\n\n**Descripción**: x\n";
+    expect(wireframesHasParseableScreens(indexOnly)).toBe(false);
+    expect(wireframesHasParseableScreens(full)).toBe(true);
   });
 });

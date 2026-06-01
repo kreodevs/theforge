@@ -1,10 +1,11 @@
 import { Module } from "@nestjs/common";
-import { PrismaModule } from "../../prisma/prisma.module.js";
+import { ComponentSourceModule } from "../component-source/component-source.module.js";
 import { ComponentMcpService } from "./component-mcp.service.js";
 
+/** @deprecated Import ComponentSourceModule instead. Re-exports registry for legacy imports. */
 @Module({
-  imports: [PrismaModule],
+  imports: [ComponentSourceModule],
   providers: [ComponentMcpService],
-  exports: [ComponentMcpService],
+  exports: [ComponentSourceModule, ComponentMcpService],
 })
 export class ComponentMcpModule {}

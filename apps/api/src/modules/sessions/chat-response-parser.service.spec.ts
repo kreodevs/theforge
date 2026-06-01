@@ -70,6 +70,44 @@ El país define formatos de medio asociados a cada medio.`;
   });
 });
 
+describe("splitDocAndChat WIREFRAMES", () => {
+  it("separa documento y chat con ---FIN_WIREFRAMES---", () => {
+    const text = `# Wireframes — CRM Demo
+
+## Pantalla: Inicio de sesión
+**ID**: \`login\`
+
+\`\`\`
++----------------------------+
+|  [ Login ]                 |
++----------------------------+
+\`\`\`
+---FIN_WIREFRAMES---
+Cambié el botón a «Login».`;
+    const split = parser.splitDocAndChat(text, "WIREFRAMES");
+    assert.ok(split);
+    assert.ok(split!.docPart.includes("Inicio de sesión"));
+    assert.ok(split!.docPart.includes("[ Login ]"));
+    assert.equal(split!.chatPart.trim(), "Cambié el botón a «Login».");
+  });
+});
+
+describe("detectDocFallback wireframes", () => {
+  it("detecta documento wireframes por encabezado # Wireframes", () => {
+    const text = `# Wireframes — Proyecto X
+
+## Índice de Pantallas
+1. Login
+
+## Pantalla: Login
+Contenido extenso del wireframe con ASCII art y tablas de componentes para superar el umbral mínimo de detección del parser en tests automatizados y validar la ruta detectDocFallback con tab wireframes cuando el modelo omite el delimitador.`.repeat(2);
+    const split = parser.detectDocFallback(text, "wireframes");
+    assert.ok(split);
+    assert.ok(split!.docPart.includes("# Wireframes"));
+    assert.ok(split!.docPart.includes("Pantalla: Login"));
+  });
+});
+
 describe("salvage path via detectDocFallback benchmark", () => {
   it("ruta benchmark delega a detectBenchmarkDocFallback", () => {
     const text = `# Domain Benchmark & Gap Analysis

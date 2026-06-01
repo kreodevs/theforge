@@ -406,8 +406,11 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         },
       });
       await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
-      if ((existing.wireframesContent ?? "").trim()) {
-        this.wireframeSketchesSync.scheduleSync(id, { mddChanged: true });
+      const prevMdd = (targetStage.mddContent ?? "").trim();
+      const nextMdd = result.sanitizedMdd.trim();
+      if ((existing.wireframesContent ?? "").trim() && prevMdd !== nextMdd) {
+        // Solo refrescar metadatos mddHash; sync incremental (sin forceAll)
+        this.wireframeSketchesSync.scheduleSync(id);
       }
     }
 
@@ -445,7 +448,11 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         }
       }
       if (rest.wireframesContent !== undefined && (rest.wireframesContent ?? "").trim()) {
-        this.wireframeSketchesSync.scheduleSync(id);
+        const prevWf = (existing.wireframesContent ?? "").trim();
+        const nextWf = (rest.wireframesContent ?? "").trim();
+        if (!prevWf || prevWf !== nextWf) {
+          this.wireframeSketchesSync.scheduleSync(id);
+        }
       }
     }
 

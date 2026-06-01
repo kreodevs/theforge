@@ -23,6 +23,22 @@ export function llmWireframeSketchMaxTokens(): number {
   return Number.isFinite(n) && n > 0 ? Math.min(n, 65_536) : 16_384;
 }
 
+/** Pantallas por llamada LLM de bocetos (menos llamadas = menos prompt repetido). */
+export function sketchLlmBatchSize(): number {
+  const raw = process.env.WIREFRAME_SKETCH_BATCH_SIZE?.trim();
+  if (raw === undefined || raw === "") return 8;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 12) : 8;
+}
+
+/** Lotes LLM en paralelo (misma facturación; acota memoria en vuelo). */
+export function sketchLlmConcurrency(): number {
+  const raw = process.env.WIREFRAME_SKETCH_CONCURRENCY?.trim();
+  if (raw === undefined || raw === "") return 2;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 4) : 2;
+}
+
 /**
  * Dimensión de embeddings: preferir runtime BYOK; env solo como fallback de servidor.
  * @deprecated Preferir `runtime.embeddingDimension` desde `resolveEmbeddingRuntime`.

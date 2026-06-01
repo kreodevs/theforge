@@ -28,7 +28,7 @@ import { ChangeLogModule } from "./modules/change-log/change-log.module.js";
 import { CryptoModule } from "./modules/crypto/crypto.module.js";
 import { UserProvidersModule } from "./modules/user-providers/user-providers.module.js";
 import { DesignRefModule } from "./modules/design-ref/design-ref.module.js";
-import { ComponentMcpModule } from "./modules/component-mcp/component-mcp.module.js";
+import { ComponentSourceModule } from "./modules/component-source/component-source.module.js";
 
 @Module({
   controllers: [HealthController],
@@ -50,7 +50,7 @@ import { ComponentMcpModule } from "./modules/component-mcp/component-mcp.module
     AdminModule,
     ChangeLogModule,
     DesignRefModule,
-    ComponentMcpModule,
+    ComponentSourceModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

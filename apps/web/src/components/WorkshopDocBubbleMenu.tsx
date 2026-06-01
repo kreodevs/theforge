@@ -86,18 +86,22 @@ export function WorkshopDocBubbleMenu({
   triggerLabel = "Acciones del documento",
 }: WorkshopDocBubbleMenuProps) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<WorkshopDocBubbleMenuItem | null>(null);
 
-  const handleClose = useCallback(() => setOpen(false), []);
+  const closeMenu = useCallback(() => {
+    triggerRef.current?.focus({ preventScroll: true });
+    setOpen(false);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") handleClose();
+      if (event.key === "Escape") closeMenu();
     };
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) handleClose();
+      if (!rootRef.current?.contains(event.target as Node)) closeMenu();
     };
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("pointerdown", onPointerDown);
@@ -105,14 +109,14 @@ export function WorkshopDocBubbleMenu({
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [open, handleClose]);
+  }, [open, closeMenu]);
 
   const runItem = useCallback(
     (item: WorkshopDocBubbleMenuItem) => {
       item.onClick();
-      handleClose();
+      closeMenu();
     },
-    [handleClose],
+    [closeMenu],
   );
 
   const handleItemClick = useCallback(
@@ -217,6 +221,7 @@ export function WorkshopDocBubbleMenu({
 
           {/* Trigger / close — always aligned with panel width */}
           <button
+            ref={triggerRef}
             type="button"
             className={cn(
               open
@@ -230,7 +235,7 @@ export function WorkshopDocBubbleMenu({
             aria-label={open ? "Cerrar menú de acciones" : triggerLabel}
             aria-expanded={open}
             aria-haspopup="menu"
-            onClick={() => setOpen((value) => !value)}
+            onClick={() => (open ? closeMenu() : setOpen(true))}
           >
             {open ? (
               <>

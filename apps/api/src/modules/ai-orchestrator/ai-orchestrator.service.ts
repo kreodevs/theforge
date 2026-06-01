@@ -17,6 +17,7 @@ import { AgentEvaluatorService } from "../agent-supervisor/agent-evaluator.servi
 import { EpisodicMemoryKind } from "@theforge/database";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
 import { wouldShrinkDbgaDangerously } from "../sessions/dbga-edit.util.js";
+import { wouldShrinkWireframesDangerously } from "../ai-analysis/utils/wireframe-screen-sketch.util.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -125,6 +126,7 @@ export class AiOrchestratorService {
     brdContentFromClient?: string,
     stageIdFromClient?: string,
     userImages: ChatImagePart[] = [],
+    wireframesContentFromClient?: string,
   ) {
     let project = await this.projects.findOne(projectId);
     const hitlLine = message.trim() || (userImages.length ? "(Imagen adjunta)" : "");
@@ -171,7 +173,9 @@ export class AiOrchestratorService {
       uxUiGuideContentFromClient ?? project.uxUiGuideContent ?? undefined;
     const currentBrd =
       stageBrdContent(project, route.stageId) ?? brdContentFromClient ?? undefined;
-    if (mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
+    const currentWireframes =
+      wireframesContentFromClient ?? (project as { wireframesContent?: string | null }).wireframesContent ?? undefined;
+    if (activeTab?.trim() === "mdd" && mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: route.stageId });
     }
     if (uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
@@ -206,6 +210,7 @@ export class AiOrchestratorService {
     let dbgaFromResponse: string | null | undefined;
     let phase0FromResponse: string | null | undefined;
     let brdFromResponse: string | null | undefined;
+    let wireframesFromResponse: string | null | undefined;
     try {
       const chatResult = await this.sessions.chat(session.id, message, {
         currentMddContent: currentMdd,
@@ -216,6 +221,7 @@ export class AiOrchestratorService {
           : undefined,
         currentBlueprintContent: (isUxUiGuide || activeTab?.trim() === "api-contracts") ? (project.blueprintContent ?? undefined) : undefined,
       currentBrdContent: activeTab?.trim() === "brd" ? currentBrd : undefined,
+      currentWireframesContent: activeTab?.trim() === "wireframes" ? currentWireframes : undefined,
       activeTab,
         systemPrompt,
         stageId: route.stageId,
@@ -229,6 +235,7 @@ export class AiOrchestratorService {
       dbgaFromResponse = chatResult.dbgaContent;
       phase0FromResponse = chatResult.phase0SummaryContent;
       brdFromResponse = chatResult.brdContent;
+      wireframesFromResponse = chatResult.wireframesContent;
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Error al generar la respuesta";
@@ -275,6 +282,19 @@ export class AiOrchestratorService {
       await this.projects.patchStage(projectId, route.stageId, { brdContent: brdFromResponse });
       updatedProject = await this.projects.findOne(projectId);
     }
+    if (wireframesFromResponse != null && wireframesFromResponse.length > 0) {
+      const prevWf = (currentWireframes ?? (project as { wireframesContent?: string | null }).wireframesContent ?? "").trim();
+      if (prevWf && wouldShrinkWireframesDangerously(prevWf, wireframesFromResponse)) {
+        console.warn(
+          "[Orchestrator] wireframesContent no persistido (reducción peligrosa)",
+          { prevLen: prevWf.length, nextLen: wireframesFromResponse.length },
+        );
+        wireframesFromResponse = undefined;
+      }
+    }
+    if (wireframesFromResponse != null && wireframesFromResponse.length > 0) {
+      updatedProject = await this.projects.update(projectId, { wireframesContent: wireframesFromResponse } as any);
+    }
     if (!updatedProject) {
       updatedProject = await this.projects.findOne(projectId);
     }
@@ -288,10 +308,19 @@ export class AiOrchestratorService {
     if (uxToReturn != null && finalProject && "uxUiGuideContent" in finalProject) {
       (finalProject as { uxUiGuideContent: string | null }).uxUiGuideContent = uxToReturn;
     }
+    const wireframesToReturn =
+      wireframesFromResponse != null && wireframesFromResponse.length > 0
+        ? wireframesFromResponse
+        : (finalProject as { wireframesContent?: string | null })?.wireframesContent ?? null;
+    if (wireframesToReturn != null && finalProject && "wireframesContent" in finalProject) {
+      (finalProject as { wireframesContent: string | null }).wireframesContent = wireframesToReturn;
+    }
 
     const shouldIngestMdd =
       (mddFromResponse != null && mddFromResponse.length > 0) ||
-      (mddContentFromClient != null && mddContentFromClient.trim().length > 0);
+      (activeTab?.trim() === "mdd" &&
+        mddContentFromClient != null &&
+        mddContentFromClient.trim().length > 0);
     this.scheduleSddIngest(projectId, shouldIngestMdd);
     const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, route, hitlLine);
 
@@ -302,6 +331,7 @@ export class AiOrchestratorService {
       dbgaContent: dbgaFromResponse ?? finalProject?.dbgaContent ?? undefined,
       phase0SummaryContent:
         phase0FromResponse ?? finalProject?.phase0SummaryContent ?? undefined,
+      wireframesContent: wireframesToReturn ?? undefined,
       evaluatorCritique,
     };
   }
@@ -322,6 +352,7 @@ export class AiOrchestratorService {
       dbgaContentFromClient?: string;
       phase0SummaryContentFromClient?: string;
       brdContentFromClient?: string;
+      wireframesContentFromClient?: string;
       stageIdFromClient?: string;
     },
   ) {
@@ -337,6 +368,7 @@ export class AiOrchestratorService {
       args.brdContentFromClient,
       args.stageIdFromClient,
       args.userImages ?? [],
+      args.wireframesContentFromClient,
     );
   }
 
@@ -355,6 +387,7 @@ export class AiOrchestratorService {
     brdContentFromClient?: string,
     stageIdFromClient?: string,
     userImages: ChatImagePart[] = [],
+    wireframesContentFromClient?: string,
   ): AsyncGenerator<{ event: string; data: unknown }> {
     let project = await this.projects.findOne(projectId);
     const hitlLineStream = message.trim() || (userImages.length ? "(Imagen adjunta)" : "");
@@ -407,7 +440,8 @@ export class AiOrchestratorService {
     const currentLogicFlows = (project as any).logicFlowsContent ?? undefined;
     const currentTasks = (project as any).tasksContent ?? undefined;
     const currentInfra = (project as any).infraContent ?? undefined;
-    if (mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
+    const currentWireframes = wireframesContentFromClient ?? (project as any).wireframesContent ?? undefined;
+    if (activeTab?.trim() === "mdd" && mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: routeStream.stageId });
     }
     if (uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
@@ -453,6 +487,7 @@ export class AiOrchestratorService {
       currentLogicFlowsContent: activeTab?.trim() === "logic-flows" ? currentLogicFlows : undefined,
       currentTasksContent: activeTab?.trim() === "tasks" ? currentTasks : undefined,
       currentInfraContent: activeTab?.trim() === "infra" ? currentInfra : undefined,
+      currentWireframesContent: activeTab?.trim() === "wireframes" ? currentWireframes : undefined,
       activeTab,
       systemPrompt: systemPromptStream,
       stageId: routeStream.stageId,
@@ -522,6 +557,23 @@ export class AiOrchestratorService {
         if (msg.userStoriesContent != null && msg.userStoriesContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { userStoriesContent: msg.userStoriesContent } as any);
         }
+        let wireframesToReturn: string | null =
+          (currentWireframes ?? (project as { wireframesContent?: string | null }).wireframesContent ?? null);
+        if ((msg as { wireframesContent?: string | null }).wireframesContent != null &&
+            (msg as { wireframesContent?: string | null }).wireframesContent!.length > 0) {
+          const newWireframes = (msg as { wireframesContent: string }).wireframesContent;
+          const prevWf = (currentWireframes ?? (project as { wireframesContent?: string | null }).wireframesContent ?? "").trim();
+          if (prevWf && wouldShrinkWireframesDangerously(prevWf, newWireframes)) {
+            console.warn(
+              "[Orchestrator] wireframesContent stream no persistido (reducción peligrosa)",
+              { prevLen: prevWf.length, nextLen: newWireframes.length },
+            );
+            wireframesToReturn = prevWf;
+          } else {
+            updatedProject = await this.projects.update(projectId, { wireframesContent: newWireframes } as any);
+            wireframesToReturn = newWireframes;
+          }
+        }
         const finalProject =
           updatedProject ?? (await this.projects.findOne(projectId)) ?? project;
         const uxToReturn =
@@ -530,9 +582,14 @@ export class AiOrchestratorService {
             : finalProject?.uxUiGuideContent ?? null;
         const projectOut = { ...finalProject } as typeof finalProject & { uxUiGuideContent?: string | null };
         if (uxToReturn != null) projectOut.uxUiGuideContent = uxToReturn;
+        if (wireframesToReturn != null) {
+          (projectOut as { wireframesContent: string | null }).wireframesContent = wireframesToReturn;
+        }
         const shouldIngestMddStream =
           (msg.mddContent != null && msg.mddContent.length > 0) ||
-          (mddContentFromClient != null && mddContentFromClient.trim().length > 0);
+          (activeTab?.trim() === "mdd" &&
+            mddContentFromClient != null &&
+            mddContentFromClient.trim().length > 0);
         this.scheduleSddIngest(projectId, shouldIngestMddStream);
         const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, routeStream, hitlLineStream);
         yield {
@@ -549,6 +606,7 @@ export class AiOrchestratorService {
               (msg as { phase0SummaryContent?: string | null }).phase0SummaryContent ??
               projectOut.phase0SummaryContent ??
               undefined,
+            wireframesContent: wireframesToReturn ?? undefined,
             evaluatorCritique,
           },
         };

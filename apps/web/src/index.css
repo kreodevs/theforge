@@ -266,3 +266,17 @@ body.printing-design-system .design-system-preview [style*="background"] {
     opacity: 0 !important;
   }
 }
+
+/* Design System preview canvas — scoped token appearance (not app shell primary) */
+.design-system-print-canvas[data-ds-mode="light"] {
+  color-scheme: light;
+}
+
+.design-system-print-canvas[data-ds-mode="dark"] {
+  color-scheme: dark;
+}
+
+.design-system-print-canvas ::selection {
+  background-color: var(--ds-accent);
+  color: var(--ds-accent-fg);
+}

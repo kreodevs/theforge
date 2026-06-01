@@ -228,6 +228,7 @@ export class SessionsService {
       currentBlueprintContent?: string;
       currentSpecContent?: string;
       currentBrdContent?: string;
+      currentWireframesContent?: string;
       activeTab?: string;
       /** Override system prompt (ej. modo legacy con TheForge). */
       systemPrompt?: string;
@@ -258,6 +259,7 @@ export class SessionsService {
     architectureContent?: string | null;
     useCasesContent?: string | null;
     userStoriesContent?: string | null;
+    wireframesContent?: string | null;
   }> {
     const session = await this.prisma.session.findFirst({
       where: this.sessionScope(sessionId),
@@ -324,6 +326,7 @@ export class SessionsService {
         currentBlueprintContent: options?.currentBlueprintContent,
         currentSpecContent: options?.currentSpecContent,
         currentBrdContent: options?.currentBrdContent,
+        currentWireframesContent: options?.currentWireframesContent,
         activeTab: options?.activeTab,
         learningHistory: learningHistory || undefined,
         systemPrompt: options?.systemPrompt,
@@ -361,6 +364,7 @@ export class SessionsService {
     let archSplit = this.parser.splitDocAndChat(safeResponse, "ARCH");
     let useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
     let storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
+    let wireframesSplit = this.parser.splitDocAndChat(safeResponse, "WIREFRAMES");
 
     let hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
@@ -373,6 +377,7 @@ export class SessionsService {
     let hasFlows = flowsSplit !== null;
     let hasTasks = tasksSplit !== null;
     let hasInfra = infraSplit !== null;
+    let hasWireframes = wireframesSplit !== null;
     let hasArch = archSplit !== null;
     let hasUseCases = useCasesSplit !== null;
     let hasStories = storiesSplit !== null;
@@ -396,6 +401,7 @@ export class SessionsService {
     else if (hasArch) rawChat = archSplit!.chatPart;
     else if (hasUseCases) rawChat = useCasesSplit!.chatPart;
     else if (hasStories) rawChat = storiesSplit!.chatPart;
+    else if (hasWireframes) rawChat = wireframesSplit!.chatPart;
 
     // Fallback: tab ux-ui-guide sin delimitador ---FIN_UX_UI---
     const isUxTab = (options?.activeTab ?? "mdd").trim() === "ux-ui-guide";
@@ -468,6 +474,7 @@ export class SessionsService {
           case "brd": brdSplit = fbSplit; hasBrd = true; break;
           case "phase0": phase0Split = fbSplit; hasPhase0 = true; phase0DocPart = fbSplit.docPart; break;
           case "mdd": mddSplit = { mddPart: fbSplit.docPart, chatPart: fbSplit.chatPart }; hasMdd = true; break;
+          case "wireframes": wireframesSplit = fbSplit; hasWireframes = true; break;
         }
         // Only apply fallback if no higher-priority document was found
         if (!hasUx) {
@@ -482,6 +489,7 @@ export class SessionsService {
           else if (hasTasks) { rawChat = tasksSplit!.chatPart; fbFound = true; }
           else if (hasInfra) { rawChat = infraSplit!.chatPart; fbFound = true; }
           else if (hasArch) { rawChat = archSplit!.chatPart; fbFound = true; }
+          else if (hasWireframes) { rawChat = wireframesSplit!.chatPart; fbFound = true; }
           else if (hasUseCases) { rawChat = useCasesSplit!.chatPart; fbFound = true; }
           else if (hasStories) { rawChat = storiesSplit!.chatPart; fbFound = true; }
           if (fbFound) {
@@ -566,6 +574,12 @@ export class SessionsService {
       architectureContent: hasArch ? this.parser.cleanDocumentContent(archSplit!.docPart) : undefined,
       useCasesContent: hasUseCases ? this.parser.cleanDocumentContent(useCasesSplit!.docPart) : undefined,
       userStoriesContent: hasStories ? this.parser.cleanDocumentContent(storiesSplit!.docPart) : undefined,
+      wireframesContent: hasWireframes
+        ? this.parser.mergeWireframesOrUseFull(
+            options?.currentWireframesContent,
+            this.parser.cleanDocumentContent(wireframesSplit!.docPart),
+          )
+        : undefined,
     };
   }
 
@@ -590,6 +604,7 @@ export class SessionsService {
       currentLogicFlowsContent?: string;
       currentTasksContent?: string;
       currentInfraContent?: string;
+      currentWireframesContent?: string;
       activeTab?: string;
       systemPrompt?: string;
       stageId?: string;
@@ -618,6 +633,7 @@ export class SessionsService {
       architectureContent?: string | null;
       useCasesContent?: string | null;
       userStoriesContent?: string | null;
+      wireframesContent?: string | null;
     }
   > {
     const session = await this.prisma.session.findFirst({
@@ -691,6 +707,7 @@ export class SessionsService {
         currentBlueprintContent: options?.currentBlueprintContent,
         currentSpecContent: options?.currentSpecContent,
         currentBrdContent: options?.currentBrdContent,
+        currentWireframesContent: options?.currentWireframesContent,
         activeTab: options?.activeTab,
         learningHistory: learningHistory || undefined,
         systemPrompt: options?.systemPrompt,
@@ -720,7 +737,7 @@ export class SessionsService {
       throw err;
     }
 
-    const DOC_DELIMITER_RE = /-{1,}\s*FIN_(?:MDD|UX_UI|DBGA|PHASE0|SPEC|BRD|BLUEPRINT|API|FLOWS|TASKS|INFRA|ARCH|USECASES|STORIES)\s*-{1,}/i;
+    const DOC_DELIMITER_RE = /-{1,}\s*FIN_(?:MDD|UX_UI|DBGA|PHASE0|SPEC|BRD|BLUEPRINT|API|FLOWS|TASKS|INFRA|ARCH|USECASES|STORIES|WIREFRAMES)\s*-{1,}/i;
     let buffer = "";
     let documentChunksDone = false;
     for await (const chunk of stream) {
@@ -765,6 +782,7 @@ export class SessionsService {
     let archSplit = this.parser.splitDocAndChat(safeResponse, "ARCH");
     let useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
     let storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
+    let wireframesSplit = this.parser.splitDocAndChat(safeResponse, "WIREFRAMES");
 
     let hasMdd = mddSplit !== null;
     let hasUx = uxSplit !== null;
@@ -777,6 +795,7 @@ export class SessionsService {
     let hasFlows = flowsSplit !== null;
     let hasTasks = tasksSplit !== null;
     let hasInfra = infraSplit !== null;
+    let hasWireframes = wireframesSplit !== null;
     let hasArch = archSplit !== null;
     let hasUseCases = useCasesSplit !== null;
     let hasStories = storiesSplit !== null;
@@ -800,6 +819,7 @@ export class SessionsService {
     else if (hasArch) rawChat = archSplit!.chatPart;
     else if (hasUseCases) rawChat = useCasesSplit!.chatPart;
     else if (hasStories) rawChat = storiesSplit!.chatPart;
+    else if (hasWireframes) rawChat = wireframesSplit!.chatPart;
 
     const isUxTab = (options?.activeTab ?? "mdd").trim() === "ux-ui-guide";
     const looksLikeUxGuide =
@@ -867,6 +887,7 @@ export class SessionsService {
           case "benchmark": dbgaSplit = fbSplit; hasDbga = true; dbgaDocPart = fbSplit.docPart; break;
           case "brd": brdSplit = fbSplit; hasBrd = true; break;
           case "phase0": phase0Split = fbSplit; hasPhase0 = true; phase0DocPart = fbSplit.docPart; break;
+          case "wireframes": wireframesSplit = fbSplit; hasWireframes = true; break;
         }
         if (!hasMdd && !hasUx) {
           let fbFound = false;
@@ -881,6 +902,7 @@ export class SessionsService {
           else if (hasArch) { rawChat = archSplit!.chatPart; fbFound = true; }
           else if (hasUseCases) { rawChat = useCasesSplit!.chatPart; fbFound = true; }
           else if (hasStories) { rawChat = storiesSplit!.chatPart; fbFound = true; }
+          else if (hasWireframes) { rawChat = wireframesSplit!.chatPart; fbFound = true; }
           if (fbFound) {
             console.log("[ChatStream] fallback genérico detectado para tab:", fbTab);
           }
@@ -946,6 +968,12 @@ export class SessionsService {
       architectureContent: hasArch ? this.parser.cleanDocumentContent(archSplit!.docPart) : undefined,
       useCasesContent: hasUseCases ? this.parser.cleanDocumentContent(useCasesSplit!.docPart) : undefined,
       userStoriesContent: hasStories ? this.parser.cleanDocumentContent(storiesSplit!.docPart) : undefined,
+      wireframesContent: hasWireframes
+        ? this.parser.mergeWireframesOrUseFull(
+            options?.currentWireframesContent,
+            this.parser.cleanDocumentContent(wireframesSplit!.docPart),
+          )
+        : undefined,
     };
   }
 

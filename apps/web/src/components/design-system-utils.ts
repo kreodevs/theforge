@@ -25,41 +25,110 @@ export function resolveRef(value: string, tokens: DesignTokens): string {
   return typeof obj === "string" ? obj : value;
 }
 
-export function hexValue(value: string, tokens: DesignTokens): string {
-  const resolved = resolveRef(value, tokens);
-  if (resolved.startsWith("#")) return resolved;
-  if (/^[A-Fa-f0-9]{6}$/.test(resolved)) return `#${resolved}`;
-  return resolved;
-}
+/** Parse #hex, bare hex, rgb(), rgba() into sRGB channels. */
+export function parseCssColor(input: string): { r: number; g: number; b: number } | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
 
-export function normalizeHex(hex: string): string {
-  const h = hex.replace("#", "").trim();
-  if (h.length === 6) return `#${h.toUpperCase()}`;
-  return hex;
-}
+  if (trimmed.startsWith("#")) {
+    let h = trimmed.slice(1);
+    if (h.length === 3) {
+      h = h
+        .split("")
+        .map((c) => c + c)
+        .join("");
+    }
+    if (h.length === 6 && /^[A-Fa-f0-9]{6}$/.test(h)) {
+      return {
+        r: parseInt(h.slice(0, 2), 16),
+        g: parseInt(h.slice(2, 4), 16),
+        b: parseInt(h.slice(4, 6), 16),
+      };
+    }
+    return null;
+  }
 
-export function isLightColor(hex: string): boolean {
-  const c = hex.replace("#", "");
-  if (c.length < 6) return true;
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return r * 0.299 + g * 0.587 + b * 0.114 > 150;
-}
+  if (/^[A-Fa-f0-9]{6}$/.test(trimmed)) {
+    return {
+      r: parseInt(trimmed.slice(0, 2), 16),
+      g: parseInt(trimmed.slice(2, 4), 16),
+      b: parseInt(trimmed.slice(4, 6), 16),
+    };
+  }
 
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const c = hex.replace("#", "");
-  if (c.length !== 6) return null;
-  return {
-    r: parseInt(c.slice(0, 2), 16),
-    g: parseInt(c.slice(2, 4), 16),
-    b: parseInt(c.slice(4, 6), 16),
-  };
+  if (/^[A-Fa-f0-9]{3}$/.test(trimmed)) {
+    return {
+      r: parseInt(trimmed[0]! + trimmed[0]!, 16),
+      g: parseInt(trimmed[1]! + trimmed[1]!, 16),
+      b: parseInt(trimmed[2]! + trimmed[2]!, 16),
+    };
+  }
+
+  const rgbMatch = trimmed.match(
+    /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*[\d.]+)?\s*\)$/i,
+  );
+  if (rgbMatch) {
+    return {
+      r: Math.max(0, Math.min(255, Math.round(Number(rgbMatch[1])))),
+      g: Math.max(0, Math.min(255, Math.round(Number(rgbMatch[2])))),
+      b: Math.max(0, Math.min(255, Math.round(Number(rgbMatch[3])))),
+    };
+  }
+
+  return null;
 }
 
 function rgbToHex(r: number, g: number, b: number): string {
   const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
   return `#${[r, g, b].map((v) => clamp(v).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+/** Normalize any supported CSS color to #RRGGBB (Orbita MCP emits rgb()). */
+export function toHexColor(input: string, fallback = "#808080"): string {
+  const parsed = parseCssColor(input);
+  if (parsed) return rgbToHex(parsed.r, parsed.g, parsed.b);
+  return fallback;
+}
+
+export function hexValue(value: string, tokens: DesignTokens): string {
+  const resolved = resolveRef(value, tokens).trim();
+  if (!resolved || resolved.startsWith("{")) return resolved;
+  return toHexColor(resolved, resolved);
+}
+
+export function normalizeHex(hex: string): string {
+  const parsed = parseCssColor(hex);
+  if (parsed) return rgbToHex(parsed.r, parsed.g, parsed.b);
+  return hex.trim();
+}
+
+function relativeLuminance(r: number, g: number, b: number): number {
+  const channel = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function contrastRatio(fg: string, bg: string): number {
+  const fgRgb = parseCssColor(toHexColor(fg));
+  const bgRgb = parseCssColor(toHexColor(bg));
+  if (!fgRgb || !bgRgb) return 1;
+  const l1 = relativeLuminance(fgRgb.r, fgRgb.g, fgRgb.b);
+  const l2 = relativeLuminance(bgRgb.r, bgRgb.g, bgRgb.b);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+export function isLightColor(color: string): boolean {
+  const rgb = parseCssColor(toHexColor(color, "#808080"));
+  if (!rgb) return true;
+  return relativeLuminance(rgb.r, rgb.g, rgb.b) > 0.179;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  return parseCssColor(toHexColor(hex, ""));
 }
 
 export function lighten(hex: string, factor: number): string {
@@ -84,7 +153,7 @@ export function generateColorScale(
   steps = 12,
   mode: PreviewMode = "light",
 ): string[] {
-  const base = normalizeHex(baseHex);
+  const base = toHexColor(baseHex, "#808080");
 
   if (mode === "dark") {
     const anchor = "#111111";
@@ -109,14 +178,49 @@ export function generateColorScale(
     return colors;
   }
 
+  // Light mode scales
+  const baseIsLight = isLightColor(base);
+  const anchor = "#FFFFFF";
   const colors: string[] = [];
+
+  if (baseIsLight) {
+    // Pale neutrals: avoid washing steps 1–8 to white; keep mid-tones for borders.
+    for (let i = 1; i <= steps; i++) {
+      if (i <= 2) {
+        colors.push(mixHex(anchor, base, 0.14 + (2 - i) * 0.1));
+      } else if (i <= 5) {
+        const amount = (i - 2) / 3;
+        colors.push(mixHex(anchor, base, 0.32 + amount * 0.42));
+      } else if (i <= 8) {
+        const amount = (i - 5) / 3;
+        colors.push(darken(base, 0.04 + amount * 0.24));
+      } else if (i <= 10) {
+        const amount = (i - 8) / 2;
+        colors.push(darken(base, 0.3 + amount * 0.38));
+      } else {
+        const amount = (i - 10) / 2;
+        colors.push(darken(base, 0.68 + amount * 0.28));
+      }
+    }
+    return colors;
+  }
+
+  // Saturated accents: Radix-style — anchor on white.
   for (let i = 1; i <= steps; i++) {
-    if (i <= 6) {
-      const amount = (6 - i) / 5;
-      colors.push(lighten(base, 0.06 + amount * 0.48));
+    if (i <= 2) {
+      colors.push(mixHex(anchor, base, 0.018 + (2 - i) * 0.015));
+    } else if (i <= 5) {
+      const amount = (i - 2) / 3;
+      colors.push(mixHex(anchor, base, 0.05 + amount * 0.2));
+    } else if (i <= 8) {
+      const amount = (i - 5) / 3;
+      colors.push(mixHex(anchor, base, 0.22 + amount * 0.28));
+    } else if (i <= 10) {
+      const amount = (i - 8) / 2;
+      colors.push(darken(base, 0.05 + amount * 0.35));
     } else {
-      const amount = (i - 6) / 6;
-      colors.push(darken(base, 0.12 + amount * 0.72));
+      const amount = (i - 10) / 2;
+      colors.push(darken(base, 0.42 + amount * 0.48));
     }
   }
   return colors;
@@ -139,14 +243,54 @@ export function fallbackFromColors(tokens: DesignTokens): {
 } {
   const c = tokens.colors ?? {};
   return {
-    primary: normalizeHex(c.primary ?? c.tertiary ?? "#3D63DD"),
-    secondary: normalizeHex(c.secondary ?? c.primary ?? "#1A5F7A"),
-    foreground: normalizeHex(c.foreground ?? c["on-surface"] ?? "#1C1B1F"),
-    surface: normalizeHex(c.surface ?? c.background ?? c.neutral ?? "#FAF9F6"),
-    muted: normalizeHex(c.muted ?? c["surface-alt"] ?? "#E8ECF0"),
-    accent: normalizeHex(c.tertiary ?? c.accent ?? c.primary ?? "#F4A261"),
-    border: normalizeHex(c.border ?? c.muted ?? "#E0E0E0"),
+    primary: toHexColor(c.primary ?? c.tertiary ?? "#3D63DD"),
+    secondary: toHexColor(c.secondary ?? c.primary ?? "#1A5F7A"),
+    foreground: toHexColor(c.foreground ?? c["on-surface"] ?? "#1C1B1F"),
+    surface: toHexColor(c.surface ?? c.background ?? c.neutral ?? "#FAF9F6"),
+    muted: toHexColor(c.muted ?? c["surface-alt"] ?? "#E8ECF0"),
+    accent: toHexColor(c.tertiary ?? c.accent ?? c.primary ?? "#F4A261"),
+    border: toHexColor(c.border ?? c.muted ?? "#E0E0E0"),
   };
+}
+
+/** Convert rgb()/hex color strings in parsed DESIGN.md tokens to #RRGGBB. */
+export function normalizeDesignTokenColors(tokens: DesignTokens): DesignTokens {
+  const out: DesignTokens = { ...tokens };
+
+  if (out.colors) {
+    out.colors = Object.fromEntries(
+      Object.entries(out.colors).map(([k, v]) => [k, v.startsWith("{") ? v : toHexColor(v, v)]),
+    );
+  }
+
+  if (out.components) {
+    out.components = Object.fromEntries(
+      Object.entries(out.components).map(([name, comp]) => {
+        const next = { ...comp };
+        if (next.backgroundColor && !next.backgroundColor.startsWith("{")) {
+          next.backgroundColor = toHexColor(next.backgroundColor, next.backgroundColor);
+        }
+        if (next.textColor && !next.textColor.startsWith("{")) {
+          next.textColor = toHexColor(next.textColor, next.textColor);
+        }
+        return [name, next];
+      }),
+    );
+  }
+
+  return out;
+}
+
+/** Ensure text token contrasts with its surface (handles rgb() from Orbita). */
+function ensureReadableForeground(
+  foreground: string,
+  background: string,
+  minContrast = 4.5,
+): string {
+  const fgHex = toHexColor(foreground, "#1C1B1F");
+  const bgHex = toHexColor(background, "#FFFFFF");
+  if (contrastRatio(fgHex, bgHex) >= minContrast) return fgHex;
+  return isLightColor(bgHex) ? "#1C1B1F" : "#F5F5F5";
 }
 
 function mixHex(base: string, overlay: string, amount: number): string {
@@ -339,6 +483,9 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
     const accentBorder = mixHex(scaleAt(accentScale, 6), bg, 0.5);
     const playgroundBg = scaleAt(grayScale, 1);
 
+    const cardFg = ensureReadableForeground(fg, card);
+    const cardMutedFg = ensureReadableForeground(mutedFg, card, 3);
+
     return {
       mode,
       accent: accentSolid,
@@ -348,6 +495,8 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
         "--ds-bg": bg,
         "--ds-fg": fg,
         "--ds-muted-fg": mutedFg,
+        "--ds-card-fg": cardFg,
+        "--ds-card-muted-fg": cardMutedFg,
         "--ds-border": border,
         "--ds-card": card,
         "--ds-muted": muted,
@@ -368,38 +517,47 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
     };
   }
 
-  const accentSubtle = scaleAt(accentScale, 3);
-  const accentBorder = scaleAt(accentScale, 5);
-  const mutedFg = scaleAt(grayScale, 10);
-  const border = scaleAt(grayScale, 7);
-  const card = hexValue(c.white ?? c.background ?? "#FFFFFF", tokens);
-  const inputBg = hexValue(
-    c["surface-alt"] ?? c.background ?? card,
+  const surfaceBg = hexValue(
+    c.surface ?? c.neutral ?? c.background ?? palette.surface,
     tokens,
   );
-  const playgroundBg = mixHex(scaleAt(grayScale, 2), palette.surface, 0.5);
+  const accentSubtle = scaleAt(accentScale, 3);
+  const accentBorder = scaleAt(accentScale, 5);
+  const mutedFg = scaleAt(grayScale, 11);
+  const border = scaleAt(grayScale, 7);
+  const card = hexValue(c.white ?? "#FFFFFF", tokens);
+  const inputBg = hexValue(c["surface-alt"] ?? c.background ?? card, tokens);
+  const muted = scaleAt(grayScale, 3);
+  const playgroundBg = scaleAt(grayScale, 4);
+  const fg = ensureReadableForeground(palette.foreground, surfaceBg);
+  const cardFg = ensureReadableForeground(palette.foreground, card);
+  const cardMutedFg = ensureReadableForeground(mutedFg, card, 3);
 
   return {
     mode,
     accent: accentSolid,
     gray,
-    background: palette.surface,
+    background: surfaceBg,
     cssVars: {
-      "--ds-bg": palette.surface,
-      "--ds-fg": palette.foreground,
+      "--ds-bg": surfaceBg,
+      "--ds-fg": fg,
       "--ds-muted-fg": mutedFg,
+      "--ds-card-fg": cardFg,
+      "--ds-card-muted-fg": cardMutedFg,
       "--ds-border": border,
       "--ds-card": card,
-      "--ds-muted": scaleAt(grayScale, 2),
+      "--ds-muted": muted,
       "--ds-input-bg": inputBg,
       "--ds-accent": accentSolid,
-      "--ds-accent-fg": isLightColor(accentSolid) ? palette.foreground : "#FFFFFF",
+      "--ds-accent-fg": isLightColor(accentSolid)
+        ? ensureReadableForeground(palette.foreground, accentSolid)
+        : "#FFFFFF",
       "--ds-accent-subtle": accentSubtle,
       "--ds-accent-border": accentBorder,
-      "--ds-surface": palette.surface,
+      "--ds-surface": surfaceBg,
       "--ds-shadow-md": elevationMd,
       "--ds-shadow-sm":
-        elevationVars["--ds-shadow-sm"] ?? "0 1px 2px rgba(0,0,0,0.06)",
+        elevationVars["--ds-shadow-sm"] ?? "0 1px 2px rgba(0,0,0,0.08)",
       "--ds-playground-bg": playgroundBg,
       ...scaleVars("accent", accentScale),
       ...scaleVars("gray", grayScale),
@@ -461,10 +619,10 @@ export function parseInlineTokenProps(inner: string): Record<string, string> {
 
 /** Default elevation shadows (light preview). */
 export const ELEVATION_PRESETS: Record<string, string> = {
-  card: "0 1px 2px rgba(0,0,0,0.06), 0 2px 10px rgba(0,0,0,0.10)",
-  dropdown: "0 4px 16px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08)",
+  card: "0 1px 2px rgba(0,0,0,0.07), 0 4px 14px rgba(0,0,0,0.12)",
+  dropdown: "0 4px 18px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08)",
   modal: "0 20px 50px rgba(0,0,0,0.22), 0 10px 24px rgba(0,0,0,0.14)",
-  sticky: "0 2px 10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)",
+  sticky: "0 2px 12px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06)",
 };
 
 /** Stronger shadows for dark canvas preview. */

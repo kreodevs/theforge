@@ -38,6 +38,8 @@ export interface GenerateResponseOptions {
   currentTasksContent?: string;
   /** Infra actual del proyecto; tab `infra` */
   currentInfraContent?: string;
+  /** Wireframes del proyecto; tab `wireframes` */
+  currentWireframesContent?: string;
   /** Activar para que el LLM use más tokens de salida en respuestas extensas (default 65535). */
   maxTokensOverride?: number;
   /** Tab activo en el Workshop: benchmark | mdd | ux-ui-guide | blueprint | api-contracts | logic-flows | infra */

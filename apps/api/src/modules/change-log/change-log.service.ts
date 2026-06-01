@@ -76,6 +76,7 @@ export class ChangeLogService {
       aemContent: "AEM",
       brdContent: "BRD",
       codebaseDoc: "Documentación Codebase",
+      wireframesContent: "Wireframes",
     };
     return labels[field] ?? field;
   }

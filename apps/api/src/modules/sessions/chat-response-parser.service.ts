@@ -4,6 +4,7 @@ import {
   stripChatLabel as stripChatLabelUtil,
   cleanDocumentContent as cleanDocumentContentUtil,
 } from "./document-content.util.js";
+import { mergeWireframesMarkdownOrUseFull } from "../ai-analysis/utils/wireframe-screen-sketch.util.js";
 
 /**
  * Responsabilidad única: parsear respuestas del chat que contienen documentos
@@ -198,6 +199,11 @@ export class ChatResponseParserService {
     return current;
   }
 
+  /** Fusiona wireframes parciales (p. ej. una pantalla) con el documento actual. */
+  mergeWireframesOrUseFull(currentDoc: string | undefined, newPart: string): string {
+    return mergeWireframesMarkdownOrUseFull(currentDoc, newPart);
+  }
+
   /**
    * Split document and chat with a flexible delimiter regex.
    * Unlike splitDocAndChat (requires -{1,}FIN_TAG-{1,}), this also handles
@@ -254,6 +260,7 @@ export class ChatResponseParserService {
       brd: /^#\s*(?:BRD|Business Requirements Document)\b/im,
       phase0: /^#\s*(?:Fase 0|Phase 0|Especificador)/im,
       mdd: /^#\s*(?:Master Design Document|MDD)\b/im,
+      wireframes: /^#\s*Wireframes\b/im,
     };
 
     const pattern = HEADING_PATTERNS[activeTab];

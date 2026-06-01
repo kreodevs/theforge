@@ -190,7 +190,7 @@ function TypographyPanel({
   const sans = typography["font-sans"]?.fontFamily;
   if (entries.length === 0) {
     return (
-      <p className="text-xs text-[var(--ds-muted-fg)]">
+      <p className="text-xs text-[var(--ds-card-muted-fg)]">
         No type scale tokens found. Add h1, body-md, etc. in DESIGN.md typography.
       </p>
     );
@@ -199,14 +199,14 @@ function TypographyPanel({
   return (
     <div className="space-y-0 divide-y divide-[var(--ds-border)]">
       {sans && (
-        <p className="pb-3 text-[10px] text-[var(--ds-muted-fg)]">
+        <p className="pb-3 text-[10px] text-[var(--ds-card-muted-fg)]">
           <span className="font-medium uppercase tracking-wide">Font family</span>
-          <span className="mt-1 block font-mono text-[var(--ds-fg)]">{sans}</span>
+          <span className="mt-1 block font-mono text-[var(--ds-card-fg)]">{sans}</span>
         </p>
       )}
       {entries.map(([key, token]) => {
         const style: React.CSSProperties = {
-          color: "var(--ds-fg)",
+          color: "var(--ds-card-fg)",
           fontFamily: token.fontFamily,
           fontSize: token.fontSize ?? "16px",
           fontWeight: token.fontWeight ?? 400,
@@ -216,10 +216,10 @@ function TypographyPanel({
         return (
           <div key={key} className="space-y-1.5 py-3 first:pt-0 last:pb-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-[var(--ds-muted)] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-[var(--ds-fg)]">
+              <span className="rounded-md bg-[var(--ds-muted)] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-[var(--ds-card-fg)]">
                 {key}
               </span>
-              <span className="font-mono text-[10px] text-[var(--ds-muted-fg)]">
+              <span className="font-mono text-[10px] text-[var(--ds-card-muted-fg)]">
                 {token.fontSize ?? "—"} · w{token.fontWeight ?? "—"} · lh{" "}
                 {token.lineHeight ?? "—"}
               </span>
@@ -248,7 +248,7 @@ function SpacingPanel({ spacing }: { spacing: Record<string, string> }) {
         const barPct = Number.isNaN(px) ? 20 : Math.max(8, (px / maxPx) * 100);
         return (
           <div key={key} className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-3">
-            <span className="font-mono text-[10px] font-medium uppercase tracking-wide text-[var(--ds-muted-fg)]">
+            <span className="font-mono text-[10px] font-medium uppercase tracking-wide text-[var(--ds-card-muted-fg)]">
               {key}
             </span>
             <div className="h-2 overflow-hidden rounded-full bg-[var(--ds-muted)]">
@@ -257,7 +257,7 @@ function SpacingPanel({ spacing }: { spacing: Record<string, string> }) {
                 style={{ width: `${barPct}%`, opacity: 0.75 }}
               />
             </div>
-            <span className="min-w-[2.5rem] text-right font-mono text-[10px] tabular-nums text-[var(--ds-muted-fg)]">
+            <span className="min-w-[2.5rem] text-right font-mono text-[10px] tabular-nums text-[var(--ds-card-muted-fg)]">
               {val}
             </span>
           </div>
@@ -277,8 +277,8 @@ function RadiusPanel({ rounded }: { rounded: Record<string, string> }) {
             style={{ borderRadius: val }}
             aria-hidden
           />
-          <span className="font-mono text-[10px] font-medium text-[var(--ds-muted-fg)]">{key}</span>
-          <span className="font-mono text-[9px] text-[var(--ds-muted-fg)] opacity-70">{val}</span>
+          <span className="font-mono text-[10px] font-medium text-[var(--ds-card-muted-fg)]">{key}</span>
+          <span className="font-mono text-[9px] text-[var(--ds-card-muted-fg)] opacity-70">{val}</span>
         </div>
       ))}
     </div>
@@ -311,16 +311,19 @@ function ElevationPanel({
                   style={{
                     height: cardHeight,
                     boxShadow: shadow,
-                    border: "1px solid color-mix(in oklch, var(--ds-border) 65%, transparent)",
+                    border:
+                      mode === "light"
+                        ? "1px solid color-mix(in oklch, var(--ds-border) 88%, var(--ds-fg))"
+                        : "1px solid color-mix(in oklch, var(--ds-border) 65%, transparent)",
                   }}
                   title={shadow}
                 />
               </div>
-              <p className="mt-2.5 text-xs font-semibold capitalize tracking-tight text-[var(--ds-fg)]">
+              <p className="mt-2.5 text-xs font-semibold capitalize tracking-tight text-[var(--ds-card-fg)]">
                 {key}
               </p>
               <p
-                className="mt-0.5 line-clamp-2 max-w-full px-0.5 font-mono text-[8px] leading-tight text-[var(--ds-muted-fg)]"
+                className="mt-0.5 line-clamp-2 max-w-full px-0.5 font-mono text-[8px] leading-tight text-[var(--ds-card-muted-fg)]"
                 title={shadow}
               >
                 {shadow.length > 42 ? `${shadow.slice(0, 40)}…` : shadow}
@@ -343,9 +346,9 @@ function TokenPanel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-[var(--ds-border)] bg-[var(--ds-card)] p-4 shadow-sm">
-      <h4 className="text-xs font-semibold text-[var(--ds-fg)]">{title}</h4>
-      <p className="mt-0.5 text-[10px] text-[var(--ds-muted-fg)]">{subtitle}</p>
+    <div className="rounded-xl border border-[var(--ds-border)] bg-[var(--ds-card)] p-4 text-[var(--ds-card-fg)] shadow-sm">
+      <h4 className="text-xs font-semibold text-[var(--ds-card-fg)]">{title}</h4>
+      <p className="mt-0.5 text-[10px] text-[var(--ds-card-muted-fg)]">{subtitle}</p>
       <div className="mt-3">{children}</div>
     </div>
   );
@@ -404,6 +407,7 @@ export function DesignSystemCustomizer({
 
       {/* Themed preview canvas (Radix-style) */}
       <div
+        data-ds-mode={previewMode}
         className="design-system-print-canvas min-h-[480px] bg-[var(--ds-bg)] text-[var(--ds-fg)] transition-[background-color,color] duration-300 ease-out print:min-h-0"
         style={previewTheme.cssVars as React.CSSProperties}
       >
@@ -437,11 +441,11 @@ export function DesignSystemCustomizer({
                       className="h-10"
                       style={{ backgroundColor: hexValue(hex, tokens) }}
                     />
-                    <div className="bg-[var(--ds-card)] px-2 py-1.5">
-                      <p className="truncate text-[9px] font-medium capitalize text-[var(--ds-fg)]">
+                    <div className="bg-[var(--ds-card)] px-2 py-1.5 text-[var(--ds-card-fg)]">
+                      <p className="truncate text-[9px] font-medium capitalize text-[var(--ds-card-fg)]">
                         {name.replace(/-/g, " ")}
                       </p>
-                      <p className="truncate font-mono text-[8px] text-[var(--ds-muted-fg)]">
+                      <p className="truncate font-mono text-[8px] text-[var(--ds-card-muted-fg)]">
                         {hexValue(hex, tokens)}
                       </p>
                     </div>

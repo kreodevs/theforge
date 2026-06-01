@@ -25,6 +25,7 @@ export class AiOrchestratorController {
       uxUiGuideContent?: string | null;
       dbgaContent?: string | null;
       brdContent?: string | null;
+      wireframesContent?: string | null;
       activeTab?: string;
       stageId?: string;
       images?: unknown;
@@ -38,6 +39,7 @@ export class AiOrchestratorController {
       uxUiGuideContent,
       dbgaContent,
       brdContent,
+      wireframesContent,
       activeTab,
       stageId,
     } = body;
@@ -57,6 +59,7 @@ export class AiOrchestratorController {
       brdContent?.trim() || undefined,
       stageId?.trim() || undefined,
       images,
+      wireframesContent?.trim() || undefined,
     );
   }
 
@@ -80,6 +83,7 @@ export class AiOrchestratorController {
       logicFlowsContent?: string | null;
       tasksContent?: string | null;
       infraContent?: string | null;
+      wireframesContent?: string | null;
       activeTab?: string;
       stageId?: string;
       images?: unknown;
@@ -95,6 +99,7 @@ export class AiOrchestratorController {
       dbgaContent,
       specContent,
       brdContent,
+      wireframesContent,
       activeTab,
       stageId,
     } = body;
@@ -123,6 +128,7 @@ export class AiOrchestratorController {
         brdContent?.trim() || undefined,
         stageId?.trim() || undefined,
         images,
+        wireframesContent?.trim() || undefined,
       );
       for await (const ev of stream) {
         const data = JSON.stringify(ev.data);

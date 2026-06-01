@@ -38,6 +38,7 @@ import {
   Monitor,
   Wrench,
   BrushCleaning,
+  CloudDownload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UnderlineTabs } from "@/components/ui/UnderlineTabs";
@@ -749,7 +750,7 @@ export default function WorkshopView({
       let buffer = "";
       let finalContent = "";
 
-      const processLine = (line: string) => {
+      const processLine = async (line: string) => {
         const trimmed = line.trim();
         if (!trimmed) return;
         try {
@@ -788,7 +789,11 @@ export default function WorkshopView({
             setWireframesContent(finalContent);
           } else if (ev.type === "done") {
             if (finalContent.trim()) {
-              persistWireframesContent(finalContent).catch(() => {});
+              try {
+                await persistWireframesContent(finalContent);
+              } catch {
+                /* preview puede leer store local si falla persist */
+              }
             }
             finishWireframesGeneration();
           } else if (ev.type === "error") {
@@ -805,16 +810,20 @@ export default function WorkshopView({
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-        for (const line of lines) processLine(line);
+        for (const line of lines) await processLine(line);
       }
 
       if (!abortController.signal.aborted) {
         buffer += decoder.decode();
-        if (buffer.trim()) processLine(buffer);
+        if (buffer.trim()) await processLine(buffer);
 
         if (finalContent.trim()) {
           setWireframesContent(finalContent);
-          persistWireframesContent(finalContent).catch(() => {});
+          try {
+            await persistWireframesContent(finalContent);
+          } catch {
+            /* local store ya tiene el contenido */
+          }
         }
         finishWireframesGeneration();
       }
@@ -875,6 +884,8 @@ export default function WorkshopView({
   const [infraViewMode, setInfraViewMode] = useState<"preview" | "source">("preview");
   const [uxUiGuideViewMode, setUxUiGuideViewMode] = useState<"design" | "preview" | "source">("design");
   const [uxUiGuidePreviewKey, setUxUiGuidePreviewKey] = useState(0);
+  const [componentSourceActive, setComponentSourceActive] = useState<boolean | null>(null);
+  const [fetchingOrbitaDesignSystem, setFetchingOrbitaDesignSystem] = useState(false);
   const [wireframesViewMode, setWireframesViewMode] = useState<"wireframe" | "preview" | "source">("wireframe");
   const [architectureViewMode, setArchitectureViewMode] = useState<"preview" | "source">("preview");
   const [useCasesViewMode, setUseCasesViewMode] = useState<"preview" | "source">("preview");
@@ -970,6 +981,82 @@ export default function WorkshopView({
     activeStageId,
     setCentralPanel,
   ]);
+
+  useEffect(() => {
+    if (centralPanel !== "ux-ui-guide") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { api } = await import("@/lib/api");
+        const res = await api.get("/api/auth/component-source/config");
+        if (!res.ok || cancelled) return;
+        const cfg = (await res.json()) as {
+          enabled?: boolean;
+          pluginId?: string;
+          url?: string;
+          hasToken?: boolean;
+        };
+        if (!cancelled) {
+          setComponentSourceActive(
+            !!(cfg.enabled && cfg.pluginId?.trim() && cfg.url?.trim() && cfg.hasToken),
+          );
+        }
+      } catch {
+        if (!cancelled) setComponentSourceActive(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [centralPanel]);
+
+  /** Importa design system desde Orbita MCP (SSOT) y reemplaza la guía UX/UI del proyecto. */
+  const fetchOrbitaDesignSystem = useCallback(async () => {
+    if (!projectId || !componentSourceActive) return;
+    setFetchingOrbitaDesignSystem(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/auth/component-source/design-system`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        let message = `Error al obtener design system (${res.status})`;
+        try {
+          const body = (await res.json()) as { message?: string | string[] };
+          const raw = body.message;
+          if (typeof raw === "string" && raw.trim()) message = raw;
+          else if (Array.isArray(raw) && typeof raw[0] === "string") message = raw[0];
+        } catch {
+          /* keep default */
+        }
+        throw new Error(message);
+      }
+      const data = (await res.json()) as { designMd?: string };
+      const designMd = data.designMd?.trim();
+      if (!designMd) {
+        throw new Error("La fuente de componentes no devolvió contenido de design system.");
+      }
+      invalidateDesignMdCache(uxUiGuideContent ?? "");
+      invalidateDesignMdCache(designMd);
+      setUxUiGuideContent(designMd);
+      await persistUxUiGuideContent(designMd);
+      setUxUiGuidePreviewKey((k) => k + 1);
+      setError("✅ Design system importado desde Orbita");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Error al obtener design system: ${msg}`);
+      console.error("[fetchOrbitaDesignSystem]", e);
+    } finally {
+      setFetchingOrbitaDesignSystem(false);
+    }
+  }, [
+    projectId,
+    componentSourceActive,
+    uxUiGuideContent,
+    setUxUiGuideContent,
+    persistUxUiGuideContent,
+    setError,
+  ]);
+
   const [conformanceUseLlm, setConformanceUseLlm] = useState(false);
   /** Por debajo de `lg`: una columna con control de Chat / Documentos / Semáforo. */
   type WorkshopMobileColumn = "chat" | "workspace" | "metrics";
@@ -1854,6 +1941,21 @@ export default function WorkshopView({
       });
     }
 
+    if (centralPanel === "ux-ui-guide") {
+      ordered.push({
+        id: "orbita-design-system",
+        label: "Obtener design system",
+        icon: CloudDownload,
+        disabled:
+          !componentSourceActive ||
+          fetchingOrbitaDesignSystem ||
+          uxGenerating ||
+          loading ||
+          !projectId,
+        onClick: () => void fetchOrbitaDesignSystem(),
+      });
+    }
+
     if (regenItem) ordered.push(regenItem);
 
     ordered.push({
@@ -1969,6 +2071,9 @@ export default function WorkshopView({
     generateInfra,
     generateTasks,
     generateUxGuideSequential,
+    fetchOrbitaDesignSystem,
+    componentSourceActive,
+    fetchingOrbitaDesignSystem,
     clearWorkshopDocumentContent,
   ]);
 
@@ -2778,6 +2883,37 @@ export default function WorkshopView({
                     loading={loading}
                     ariaLabel="Regenerar Tasks desde MDD y Blueprint"
                   />
+                )}
+                {centralPanel === "ux-ui-guide" && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <WorkshopPanelButton
+                        tone="secondary"
+                        onClick={() => void fetchOrbitaDesignSystem()}
+                        disabled={
+                          componentSourceActive !== true ||
+                          fetchingOrbitaDesignSystem ||
+                          uxGenerating ||
+                          loading ||
+                          !projectId
+                        }
+                        loading={fetchingOrbitaDesignSystem}
+                        aria-label="Obtener design system desde Orbita MCP"
+                      >
+                        {!fetchingOrbitaDesignSystem ? (
+                          <WorkshopButtonIcon icon={CloudDownload} tone="secondary" />
+                        ) : null}
+                        Obtener design system
+                      </WorkshopPanelButton>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" align="end" className="max-w-[18rem]">
+                      {componentSourceActive === false
+                        ? "Configura la fuente de componentes en Ajustes → Componentes para importar desde Orbita."
+                        : componentSourceActive === null
+                          ? "Comprobando fuente de componentes…"
+                          : "Importar design system desde Orbita MCP (reemplaza la guía UX/UI del proyecto)."}
+                    </TooltipContent>
+                  </Tooltip>
                 )}
                 {centralPanel === "ux-ui-guide" && !!uxUiGuideContent?.trim() && (
                   <Tooltip>

@@ -1,4 +1,4 @@
-import { ORBITA_PREVIEW_BASE_CSS } from "./wireframePreviewStyles";
+import { COMPONENT_PREVIEW_BASE_CSS } from "./wireframePreviewStyles";
 import {
   parseCell,
   parseWireframeAscii,
@@ -323,7 +323,7 @@ export function buildWireframeHtmlSketchSrcDoc(options: {
       -webkit-font-smoothing: antialiased;
     }
     #app { min-height: 100%; padding: 8px; }
-    ${ORBITA_PREVIEW_BASE_CSS}
+    ${COMPONENT_PREVIEW_BASE_CSS}
   </style>
 </head>
 <body>

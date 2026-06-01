@@ -32,13 +32,16 @@ export function previewCacheMcpKey(componentMcpUrl: string | null | undefined): 
   return createHash("sha256").update(url).digest("hex").slice(0, 16);
 }
 
+/** Clave MCP fija: preview de pantallas sin HTML embebido del plugin (solo bocetos IA). */
+export const WIREFRAMES_PREVIEW_SKETCH_ONLY_MCP_KEY = "sketch-only-v2";
+
 export function wireframesPreviewCacheKeys(
   markdown: string,
-  componentMcpUrl: string | null | undefined,
+  _componentMcpUrl?: string | null,
 ): { wireframesHash: string; mcpKey: string } {
   return {
     wireframesHash: contentDigestHash(markdown),
-    mcpKey: previewCacheMcpKey(componentMcpUrl),
+    mcpKey: WIREFRAMES_PREVIEW_SKETCH_ONLY_MCP_KEY,
   };
 }
 

@@ -12,7 +12,7 @@ import {
   type ZonedCell,
 } from "@/utils/wireframeLayoutZones";
 
-export interface OrbitaPreviewComponent {
+export interface HostedPreviewComponent {
   name: string;
   moduleId: string;
   previewKind?: "html" | "url" | "unavailable" | "error" | "legacy";
@@ -31,7 +31,7 @@ interface DsMapping {
   props: string;
 }
 
-function previewQuality(comp: OrbitaPreviewComponent): number {
+function previewQuality(comp: HostedPreviewComponent): number {
   if (comp.error && comp.previewKind !== "unavailable") return 0;
   if (comp.previewKind === "html" && comp.document?.trim()) return 3;
   if (comp.previewKind === "url" && comp.previewUrl?.trim()) return 2;
@@ -39,11 +39,11 @@ function previewQuality(comp: OrbitaPreviewComponent): number {
   return 0;
 }
 
-export function hasOrbitaPreview(comp: OrbitaPreviewComponent): boolean {
+export function hasHostedPreview(comp: HostedPreviewComponent): boolean {
   return previewQuality(comp) > 0;
 }
 
-export function hasStyledOrbitaPreview(comp: OrbitaPreviewComponent): boolean {
+export function hasStyledHostedPreview(comp: HostedPreviewComponent): boolean {
   return previewQuality(comp) >= 2;
 }
 
@@ -64,17 +64,17 @@ function tokensMatch(a: string, b: string): boolean {
 
 function findPreviewForCell(
   cell: WireframeCell,
-  ordered: OrbitaPreviewComponent[],
+  ordered: HostedPreviewComponent[],
   dsComponents: DsMapping[],
   used: Set<string>,
-): OrbitaPreviewComponent | undefined {
+): HostedPreviewComponent | undefined {
   const cellText = `${cell.raw} ${cell.buttons.join(" ")}`.toLowerCase();
 
-  const pickBest = (candidates: OrbitaPreviewComponent[]) =>
+  const pickBest = (candidates: HostedPreviewComponent[]) =>
     [...candidates].sort((a, b) => previewQuality(b) - previewQuality(a))[0];
 
   for (const comp of ordered) {
-    if (used.has(comp.name) || !hasOrbitaPreview(comp)) continue;
+    if (used.has(comp.name) || !hasHostedPreview(comp)) continue;
     if (tokensMatch(cellText, comp.name)) return comp;
     const ds = dsComponents.find(
       (d) => d.requiredComponent.toLowerCase() === comp.name.toLowerCase(),
@@ -85,9 +85,9 @@ function findPreviewForCell(
   }
 
   const pickByKind = (pred: (name: string, ds?: DsMapping) => boolean) => {
-    const matches: OrbitaPreviewComponent[] = [];
+    const matches: HostedPreviewComponent[] = [];
     for (const comp of ordered) {
-      if (used.has(comp.name) || !hasOrbitaPreview(comp)) continue;
+      if (used.has(comp.name) || !hasHostedPreview(comp)) continue;
       const ds = dsComponents.find(
         (d) => d.requiredComponent.toLowerCase() === comp.name.toLowerCase(),
       );
@@ -135,7 +135,7 @@ function findPreviewForCell(
     if (found) return found;
   }
 
-  const remaining = ordered.filter((c) => !used.has(c.name) && hasOrbitaPreview(c));
+  const remaining = ordered.filter((c) => !used.has(c.name) && hasHostedPreview(c));
   return remaining.length > 0 ? pickBest(remaining) : undefined;
 }
 
@@ -145,22 +145,22 @@ function findDsProps(dsComponents: DsMapping[], compName: string): string | unde
   )?.props;
 }
 
-export interface WireframeOrbitaBocetoProps {
+export interface WireframeComponentPreviewProps {
   screenTitle: string;
   description?: string;
   wireframeAscii?: string;
   dsComponents: DsMapping[];
-  previewComponents: OrbitaPreviewComponent[];
+  previewComponents: HostedPreviewComponent[];
   requirementsContext: string;
   renderPreview: (
-    comp: OrbitaPreviewComponent,
+    comp: HostedPreviewComponent,
     propsLiteral: string,
     className?: string,
   ) => ReactNode;
   className?: string;
 }
 
-function OrbitaSlot({
+function PreviewSlot({
   comp,
   screenTitle,
   description,
@@ -170,16 +170,15 @@ function OrbitaSlot({
   renderPreview,
   className,
 }: {
-  comp: OrbitaPreviewComponent;
+  comp: HostedPreviewComponent;
   screenTitle: string;
   description?: string;
   requirementsContext: string;
   dsComponents: DsMapping[];
   screenCtx: { inputIndex?: number; buttonIndex?: number };
-  renderPreview: WireframeOrbitaBocetoProps["renderPreview"];
+  renderPreview: WireframeComponentPreviewProps["renderPreview"];
   className?: string;
 }) {
-  const lower = comp.name.toLowerCase();
   const propsLiteral = buildComponentPreviewPropsLiteral(
     comp.name,
     findDsProps(dsComponents, comp.name),
@@ -199,7 +198,7 @@ function OrbitaSlot({
   );
 }
 
-function OrbitaWireframeRow({
+function PreviewWireframeRow({
   row,
   ordered,
   dsComponents,
@@ -212,12 +211,12 @@ function OrbitaWireframeRow({
   buttonIdxRef,
 }: {
   row: WireframeRow;
-  ordered: OrbitaPreviewComponent[];
+  ordered: HostedPreviewComponent[];
   dsComponents: DsMapping[];
   screenTitle: string;
   description?: string;
   requirementsContext: string;
-  renderPreview: WireframeOrbitaBocetoProps["renderPreview"];
+  renderPreview: WireframeComponentPreviewProps["renderPreview"];
   used: Set<string>;
   inputIdxRef: { current: number };
   buttonIdxRef: { current: number };
@@ -232,7 +231,7 @@ function OrbitaWireframeRow({
       buttonIndex: /button|botón|link/i.test(lower) ? buttonIdxRef.current++ : undefined,
     };
     return (
-      <OrbitaSlot
+      <PreviewSlot
         key={`${row.kind}-${comp.name}-${used.size}`}
         comp={comp}
         screenTitle={screenTitle}
@@ -301,7 +300,7 @@ function OrbitaWireframeRow({
   }
 }
 
-export function WireframeOrbitaBoceto({
+export function WireframeComponentPreview({
   screenTitle,
   description,
   wireframeAscii,
@@ -310,16 +309,16 @@ export function WireframeOrbitaBoceto({
   requirementsContext,
   renderPreview,
   className,
-}: WireframeOrbitaBocetoProps) {
+}: WireframeComponentPreviewProps) {
   const ordered = useMemo(
     () => orderPreviewComponentsByDsTable(previewComponents, dsComponents),
     [previewComponents, dsComponents],
   );
 
-  const orbitaCount = ordered.filter(hasOrbitaPreview).length;
+  const hostedPreviewCount = ordered.filter(hasHostedPreview).length;
 
   const layout = useMemo(() => {
-    if (orbitaCount === 0) return null;
+    if (hostedPreviewCount === 0) return null;
     const rows = wireframeAscii?.trim() ? parseWireframeAscii(wireframeAscii) : [];
     const used = new Set<string>();
     const inputIdxRef = { current: 0 };
@@ -329,7 +328,7 @@ export function WireframeOrbitaBoceto({
       return (
         <div className="flex min-h-[280px] flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white">
           {rows.map((row, i) => (
-            <OrbitaWireframeRow
+            <PreviewWireframeRow
               key={`row-${i}-${row.kind}`}
               row={row}
               ordered={ordered}
@@ -344,13 +343,13 @@ export function WireframeOrbitaBoceto({
             />
           ))}
           {ordered
-            .filter((c) => !used.has(c.name) && hasOrbitaPreview(c))
+            .filter((c) => !used.has(c.name) && hasHostedPreview(c))
             .map((comp) => {
               used.add(comp.name);
               const lower = comp.name.toLowerCase();
               return (
                 <div key={`extra-${comp.name}`} className="border-t border-neutral-100 px-4 py-2">
-                  <OrbitaSlot
+                  <PreviewSlot
                     comp={comp}
                     screenTitle={screenTitle}
                     description={description}
@@ -371,10 +370,10 @@ export function WireframeOrbitaBoceto({
 
     return (
       <div className="mx-auto flex w-full max-w-md flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-6">
-        {ordered.filter(hasOrbitaPreview).map((comp) => {
+        {ordered.filter(hasHostedPreview).map((comp) => {
           const lower = comp.name.toLowerCase();
           return (
-            <OrbitaSlot
+            <PreviewSlot
               key={comp.name}
               comp={comp}
               screenTitle={screenTitle}
@@ -392,7 +391,7 @@ export function WireframeOrbitaBoceto({
       </div>
     );
   }, [
-    orbitaCount,
+    hostedPreviewCount,
     wireframeAscii,
     ordered,
     dsComponents,
@@ -408,9 +407,9 @@ export function WireframeOrbitaBoceto({
     <div className={className}>
       {layout}
       <p className="mt-2 text-center text-[10px] text-neutral-400">
-        Orbita (MCP) · {orbitaCount} componente{orbitaCount === 1 ? "" : "s"}
-        {ordered.filter(hasStyledOrbitaPreview).length > 0
-          ? ` · ${ordered.filter(hasStyledOrbitaPreview).length} con preview HTML del DS`
+        Componentes (MCP) · {hostedPreviewCount} componente{hostedPreviewCount === 1 ? "" : "s"}
+        {ordered.filter(hasStyledHostedPreview).length > 0
+          ? ` · ${ordered.filter(hasStyledHostedPreview).length} con preview HTML del DS`
           : " · snippets con estilos base"}
       </p>
     </div>

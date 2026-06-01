@@ -86,6 +86,7 @@ export class AiService {
     "logic-flows": "Flujos de lógica",
     infra: "Infraestructura",
     tasks: "Tareas (Breakdown)",
+    wireframes: "Wireframes",
   };
 
   /** Política Google Stitch + fragmentos SDD para Guía UX/UI (según projectType). */
@@ -175,6 +176,7 @@ export class AiService {
           tasks: "TASKS",
           infra: "INFRA",
           phase0: "PHASE0",
+          wireframes: "WIREFRAMES",
         };
         const tag = tagMap[at];
         if (tag && !options?.welcomeBrief) {
@@ -202,6 +204,10 @@ export class AiService {
           if (at === "ux-ui-guide") {
             systemPrompt +=
               "\n\n**OBLIGATORIO - Guía UX/UI:** Cuando el usuario pida **agregar, modificar o regenerar** la Guía UX/UI, **debes** devolver la **Guía UX/UI completa actualizada** (conservando TODO el contenido existente) terminando con `---FIN_UX_UI---`. Si solo envías un fragmento sin el documento completo, el sistema ignora el cambio y el usuario no ve nada. **Siempre incluye la guía COMPLETA antes del delimitador.**";
+          }
+          if (at === "wireframes") {
+            systemPrompt +=
+              "\n\n**OBLIGATORIO - Wireframes:** Cuando el usuario pida **agregar, modificar o eliminar** algo de los wireframes (texto, componente, pantalla), **debes** devolver el **documento de wireframes COMPLETO actualizado** (conservando TODO el contenido existente más los cambios) terminando con `---FIN_WIREFRAMES---`. NO respondas solo con un mensaje tipo \"El wireframe ha sido actualizado\" — el sistema solo persiste cuando encuentra el markdown completo seguido de `---FIN_WIREFRAMES---`. El mensaje de chat va DESPUÉS del delimitador.";
           }
         }
       }
@@ -247,6 +253,12 @@ export class AiService {
           systemPrompt +=
             "\n\n[BRD actual de la etapa del Workshop. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_BRD---.]\n---\n" +
             options.currentBrdContent.trim().slice(0, 8000) +
+            "\n---";
+        }
+        if (options?.activeTab?.trim() === "wireframes" && options?.currentWireframesContent?.trim()) {
+          systemPrompt +=
+            "\n\n[Contenido actual del documento Wireframes del proyecto. Contiene las pantallas con sus wireframes ASCII, descripciones y componentes DS. Al modificar, conserva TODAS las pantallas existentes más los cambios; termina con ---FIN_WIREFRAMES---.]\n---\n" +
+            options.currentWireframesContent.trim().slice(0, 20000) +
             "\n---";
         }
         if (options?.learningHistory?.trim()) {
@@ -340,6 +352,7 @@ export class AiService {
         "logic-flows": "FLOWS",
         tasks: "TASKS",
         infra: "INFRA",
+        wireframes: "WIREFRAMES",
       };
       const tag = tagMap[at];
       if (tag && !options?.welcomeBrief) {
@@ -363,6 +376,10 @@ export class AiService {
           if (at === "blueprint") {
             systemPrompt +=
               "\n\n**OBLIGATORIO - Blueprint:** Cuando el usuario pida **agregar, modificar o eliminar** algo del Blueprint, **debes** devolver el **Blueprint completo actualizado** (conservando TODO el contenido existente) terminando con `---FIN_BLUEPRINT---`. Si solo envías una sección, el sistema la **fusiona** automáticamente con el contenido actual. Nunca respondas solo con un mensaje tipo \"El Blueprint ha sido actualizado\" — el sistema solo persiste cuando encuentra el contenido del documento seguido de `---FIN_BLUEPRINT---`.";
+          }
+          if (at === "wireframes") {
+            systemPrompt +=
+              "\n\n**OBLIGATORIO - Wireframes:** Cuando el usuario pida **agregar, modificar o eliminar** algo de los wireframes (texto, componente, pantalla), **debes** devolver el **documento de wireframes COMPLETO actualizado** (conservando TODO el contenido existente más los cambios) terminando con `---FIN_WIREFRAMES---`. NO respondas solo con un mensaje tipo \"El wireframe ha sido actualizado\" — el sistema solo persiste cuando encuentra el markdown completo seguido de `---FIN_WIREFRAMES---`. El mensaje de chat va DESPUÉS del delimitador.";
           }
         }
     }
@@ -456,6 +473,12 @@ export class AiService {
         systemPrompt +=
           "\n\n[Contenido actual de Infraestructura del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_INFRA---.]\n---\n" +
           (options as any).currentInfraContent.trim().slice(0, 12000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "wireframes" && options?.currentWireframesContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual del documento Wireframes del proyecto. Contiene las pantallas con sus wireframes ASCII, descripciones y componentes DS. Al modificar, conserva TODAS las pantallas existentes más los cambios; termina con ---FIN_WIREFRAMES---.]\n---\n" +
+          options.currentWireframesContent.trim().slice(0, 20000) +
           "\n---";
       }
       if (options?.learningHistory?.trim()) {

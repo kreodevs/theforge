@@ -1,9 +1,29 @@
-import type { ComponentMcpService } from "../../component-mcp/component-mcp.service.js";
-import type { ComponentResolution, McpToolResult } from "../../component-mcp/component-mcp-client-contract.js";
+import type { ComponentSourcePort, ComponentResolution, McpToolResult } from "@theforge/component-source";
 import type { ComponentMapping } from "../state/index.js";
 
 export function stripMarkdownCell(value: string): string {
   return value.trim().replace(/^[`*_]+|[`*_]+$/g, "").trim();
+}
+
+/** Normalizes component display names for resolve/map lookups (trim + collapse whitespace). */
+export function normalizeComponentKey(name: string): string {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+function lookupResolveModuleId(
+  map: Map<string, string>,
+  ...queries: Array<string | undefined>
+): string | undefined {
+  for (const q of queries) {
+    if (!q?.trim()) continue;
+    const trimmed = q.trim();
+    const id =
+      map.get(trimmed) ??
+      map.get(normalizeComponentKey(trimmed)) ??
+      map.get(normalizeComponentKey(trimmed).toLowerCase());
+    if (id) return id;
+  }
+  return undefined;
 }
 
 /** Normalizes get_production_snippet MCP text → executable React source or error. */
@@ -125,7 +145,7 @@ export type ComponentResolveHit = {
 
 /** Batch resolve component names → moduleId + optional export from MCP. */
 export async function resolveComponentNamesToHits(
-  componentMcp: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
   names: string[],
 ): Promise<Map<string, ComponentResolveHit>> {
@@ -134,16 +154,20 @@ export async function resolveComponentNamesToHits(
   if (unique.length === 0) return map;
 
   try {
-    const result = await componentMcp.resolveComponents(userId, unique);
+    const result = await componentSource.resolveComponents(userId, unique);
     const text = unwrapMcpToolText(result);
     for (const res of parseResolveComponentsText(text)) {
       const moduleId = resolutionToModuleId(res);
       if (moduleId && res.query) {
-        map.set(res.query.trim(), {
+        const key = normalizeComponentKey(res.query);
+        const hit: ComponentResolveHit = {
           moduleId,
           exportName: res.exportName?.trim() || undefined,
           status: res.status,
-        });
+        };
+        map.set(key, hit);
+        map.set(res.query.trim(), hit);
+        map.set(key.toLowerCase(), hit);
       }
     }
   } catch {
@@ -154,7 +178,7 @@ export async function resolveComponentNamesToHits(
 
 /**
  * Export for hosted preview: only when it exists on the module.
- * Aliases like TextInput→Input must omit exportName (Orbita uses primary export).
+ * Aliases like TextInput→Input must omit exportName (MCP uses primary export).
  */
 export function pickPreviewExportName(
   componentName: string,
@@ -177,7 +201,7 @@ export function pickPreviewExportName(
 
 /** Batch resolve component display names → real MCP moduleId. */
 export async function resolveComponentNamesToModuleIds(
-  componentMcp: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
   names: string[],
 ): Promise<Map<string, string>> {
@@ -185,7 +209,7 @@ export async function resolveComponentNamesToModuleIds(
   const map = new Map<string, string>();
   if (unique.length === 0) return map;
 
-  const hits = await resolveComponentNamesToHits(componentMcp, userId, names);
+  const hits = await resolveComponentNamesToHits(componentSource, userId, names);
   for (const [query, hit] of hits) {
     map.set(query, hit.moduleId);
   }
@@ -203,20 +227,16 @@ export function pickModuleIdForPreview(
     (q): q is string => !!q?.trim(),
   );
 
-  for (const q of queries) {
-    const fromResolve = resolveMap.get(q.trim());
-    if (fromResolve && catalogIds.has(fromResolve)) {
-      return { moduleId: fromResolve, source: "resolve" };
-    }
+  const fromResolve = lookupResolveModuleId(resolveMap, ...queries);
+  if (fromResolve) {
+    return {
+      moduleId: fromResolve,
+      source: catalogIds.has(fromResolve) ? "resolve" : "resolve",
+    };
   }
 
   const tableId = stripMarkdownCell(tableModuleId);
   if (tableId && catalogIds.has(tableId)) return { moduleId: tableId, source: "catalog" };
-
-  for (const q of queries) {
-    const fromResolve = resolveMap.get(q.trim());
-    if (fromResolve) return { moduleId: fromResolve, source: "resolve" };
-  }
 
   return { moduleId: "", source: "none" };
 }
@@ -278,7 +298,7 @@ export function pickBestSearchHit(
 
 /** Resolve moduleId for preview: resolve_components → catalog table → search_modules. */
 export async function resolvePreviewModuleId(
-  componentMcp: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
   input: { componentName: string; tableModuleId: string; exportName?: string },
   resolveMap: Map<string, string>,
@@ -310,7 +330,7 @@ export async function resolvePreviewModuleId(
       continue;
     }
     try {
-      const result = await componentMcp.searchModules(userId, query);
+      const result = await componentSource.searchModules(userId, query);
       const hit = pickBestSearchHit(query, unwrapMcpToolText(result), catalogIds);
       searchCache.set(query, hit);
       if (hit) return { moduleId: hit, exportName, source: "search" };
@@ -392,7 +412,7 @@ export function formatPreviewError(message: string): string {
     return "Sin plantilla standalone; no se pudo obtener código alternativo del MCP.";
   }
   if (/standalone/i.test(m)) {
-    return "Componente compuesto sin preview standalone en Orbita.";
+    return "Componente compuesto sin preview standalone en el catálogo MCP.";
   }
   return m;
 }
@@ -401,7 +421,7 @@ export function previewCacheKey(moduleId: string, exportName?: string): string {
   return `${moduleId}::${exportName?.trim() ?? ""}`;
 }
 
-/** Match batch row when request omitted exportName but Orbita returns exportName=moduleId. */
+/** Match batch row when request omitted exportName but MCP returns exportName=moduleId. */
 export function findBatchPreviewEntry(
   batchMap: Map<string, HostedPreviewCacheEntry>,
   moduleId: string,
@@ -427,12 +447,44 @@ export function findBatchPreviewEntry(
   return undefined;
 }
 
-/** Drop allow-same-origin (sandbox escape with allow-scripts). */
-export function sanitizePreviewSandbox(sandbox?: string): string {
+/** Drop allow-same-origin unless url preview from a trusted plugin origin. */
+export function isTrustedPreviewUrl(previewUrl: string, trustedOrigins: string[]): boolean {
+  if (!previewUrl.trim() || trustedOrigins.length === 0) return false;
+  try {
+    const origin = new URL(previewUrl).origin;
+    return trustedOrigins.some((t) => t === origin);
+  } catch {
+    return false;
+  }
+}
+
+export function trustedOriginsFromComponentSourceUrl(mcpUrl?: string | null): string[] {
+  const url = mcpUrl?.trim();
+  if (!url) return [];
+  try {
+    return [new URL(url).origin];
+  } catch {
+    return [];
+  }
+}
+
+export function sanitizePreviewSandbox(
+  sandbox?: string,
+  opts?: {
+    previewKind?: HostedPreviewKind;
+    previewUrl?: string;
+    trustedOrigins?: string[];
+  },
+): string {
+  const allowSameOrigin =
+    opts?.previewKind === "url" &&
+    opts.previewUrl &&
+    isTrustedPreviewUrl(opts.previewUrl, opts.trustedOrigins ?? []);
+
   const tokens = (sandbox ?? "allow-scripts")
     .trim()
     .split(/\s+/)
-    .filter((t) => t && t !== "allow-same-origin");
+    .filter((t) => t && (allowSameOrigin || t !== "allow-same-origin"));
   if (!tokens.includes("allow-scripts")) tokens.unshift("allow-scripts");
   return [...new Set(tokens)].join(" ");
 }
@@ -446,10 +498,25 @@ export function parseCatalogPreviewCapabilities(healthText: string): {
     return { supported: false, defaultMode: "html" };
   }
   try {
-    const parsed = JSON.parse(trimmed) as { preview?: { supported?: boolean; defaultMode?: string } };
+    const parsed = JSON.parse(trimmed) as {
+      preview?: {
+        supported?: boolean;
+        defaultMode?: string;
+        modes?: unknown[];
+      };
+      tools?: Record<string, boolean>;
+    };
     const preview = parsed.preview;
+    const tools = parsed.tools;
+    const hasPreviewTool =
+      tools?.get_component_preview === true || tools?.get_component_previews === true;
+    const modesSupported =
+      Array.isArray(preview?.modes) &&
+      preview.modes.some((m) => m === "html" || m === "url");
+    const supported =
+      preview?.supported === true || hasPreviewTool || modesSupported;
     return {
-      supported: preview?.supported === true,
+      supported,
       defaultMode: preview?.defaultMode === "url" ? "url" : "html",
     };
   } catch {
@@ -459,6 +526,7 @@ export function parseCatalogPreviewCapabilities(healthText: string): {
 
 export function normalizeHostedPreviewRow(
   row: Record<string, unknown>,
+  trustedOrigins: string[] = [],
 ): HostedPreviewCacheEntry {
   if (typeof row.error === "string") {
     const msg =
@@ -484,6 +552,7 @@ export function normalizeHostedPreviewRow(
         typeof preview.recommendedHeight === "number" ? preview.recommendedHeight : 240,
       sandbox: sanitizePreviewSandbox(
         typeof preview.sandbox === "string" ? preview.sandbox : undefined,
+        { previewKind: "html", trustedOrigins },
       ),
     };
   }
@@ -500,6 +569,7 @@ export function normalizeHostedPreviewRow(
         typeof preview.recommendedHeight === "number" ? preview.recommendedHeight : 240,
       sandbox: sanitizePreviewSandbox(
         typeof preview.sandbox === "string" ? preview.sandbox : undefined,
+        { previewKind: "url", previewUrl: url, trustedOrigins },
       ),
     };
   }
@@ -526,7 +596,10 @@ export function normalizeHostedPreviewRow(
   return { previewKind: "error", error: `Preview kind desconocido: ${kind}` };
 }
 
-export function parseHostedPreviewBatchText(text: string): Map<string, HostedPreviewCacheEntry> {
+export function parseHostedPreviewBatchText(
+  text: string,
+  trustedOrigins: string[] = [],
+): Map<string, HostedPreviewCacheEntry> {
   const map = new Map<string, HostedPreviewCacheEntry>();
   const trimmed = text.trim();
   if (!trimmed || trimmed.startsWith("[MCP_ERROR]")) {
@@ -554,7 +627,7 @@ export function parseHostedPreviewBatchText(text: string): Map<string, HostedPre
       const moduleId = String(row.moduleId ?? "");
       const exportName = typeof row.exportName === "string" ? row.exportName : undefined;
       if (!moduleId) continue;
-      const entry = normalizeHostedPreviewRow(row);
+      const entry = normalizeHostedPreviewRow(row, trustedOrigins);
       const mod = moduleId.trim();
       const exp = exportName?.trim();
       map.set(previewCacheKey(mod, exp), entry);
@@ -570,23 +643,24 @@ export function parseHostedPreviewBatchText(text: string): Map<string, HostedPre
 }
 
 export async function fetchHostedPreviewCapabilities(
-  componentMcp: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
 ): Promise<{ supported: boolean; defaultMode: "html" | "url" }> {
   try {
-    const health = await componentMcp.catalogHealth(userId);
+    const health = await componentSource.catalogHealth(userId);
     return parseCatalogPreviewCapabilities(unwrapMcpToolText(health));
   } catch {
     return { supported: false, defaultMode: "html" };
   }
 }
 
-/** Batch hosted previews from Orbita (html by default). */
+/** Batch hosted previews from component source MCP (html by default). */
 export async function fetchHostedPreviewsBatch(
-  componentMcp: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
   items: Array<{ moduleId: string; exportName?: string }>,
   mode: "html" | "url" = "html",
+  trustedOrigins: string[] = [],
 ): Promise<Map<string, HostedPreviewCacheEntry>> {
   const cache = new Map<string, HostedPreviewCacheEntry>();
   if (items.length === 0) return cache;
@@ -601,7 +675,7 @@ export async function fetchHostedPreviewsBatch(
   for (let i = 0; i < list.length; i += PREVIEW_BATCH_MAX) {
     const chunk = list.slice(i, i + PREVIEW_BATCH_MAX);
     try {
-      const result = await componentMcp.getComponentPreviews(userId, {
+      const result = await componentSource.getComponentPreviews(userId, {
         items: chunk.map((c) => ({
           moduleId: c.moduleId,
           ...(c.exportName ? { exportName: c.exportName } : {}),
@@ -609,7 +683,7 @@ export async function fetchHostedPreviewsBatch(
         mode,
         theme: "light",
       });
-      const batchMap = parseHostedPreviewBatchText(unwrapMcpToolText(result));
+      const batchMap = parseHostedPreviewBatchText(unwrapMcpToolText(result), trustedOrigins);
       const batchErr = batchMap.get("__batch__");
       if (batchErr) {
         for (const item of chunk) {
@@ -633,13 +707,13 @@ export async function fetchHostedPreviewsBatch(
             continue;
           }
           try {
-            const single = await componentMcp.getComponentPreview(userId, {
+            const single = await componentSource.getComponentPreview(userId, {
               moduleId: item.moduleId,
               mode,
               theme: "light",
             });
             const row = JSON.parse(unwrapMcpToolText(single)) as Record<string, unknown>;
-            entry = normalizeHostedPreviewRow(row);
+            entry = normalizeHostedPreviewRow(row, trustedOrigins);
             cache.set(retryKey, entry);
             cache.set(key, entry);
             continue;
@@ -653,14 +727,14 @@ export async function fetchHostedPreviewsBatch(
       const msg = err instanceof Error ? err.message : String(err);
       for (const item of chunk) {
         try {
-          const single = await componentMcp.getComponentPreview(userId, {
+          const single = await componentSource.getComponentPreview(userId, {
             moduleId: item.moduleId,
             exportName: item.exportName,
             mode,
             theme: "light",
           });
           const row = JSON.parse(unwrapMcpToolText(single)) as Record<string, unknown>;
-          cache.set(previewCacheKey(item.moduleId, item.exportName), normalizeHostedPreviewRow(row));
+          cache.set(previewCacheKey(item.moduleId, item.exportName), normalizeHostedPreviewRow(row, trustedOrigins));
         } catch (singleErr) {
           cache.set(previewCacheKey(item.moduleId, item.exportName), {
             previewKind: "error",
@@ -686,14 +760,14 @@ export function shouldFallbackFromProductionSnippet(errorMsg: string | undefined
 
 /** get_production_snippet first; on missing/standalone → get_component. */
 export async function fetchPreviewSnippet(
-  componentMcp: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
   moduleId: string,
   exportName?: string,
 ): Promise<{ snippet: string; error?: string }> {
   let rawProduction = "";
   try {
-    const result = await componentMcp.getProductionSnippet(userId, moduleId);
+    const result = await componentSource.getProductionSnippet(userId, moduleId);
     rawProduction = unwrapMcpToolText(result);
     const { code, error: prodError } = parseProductionSnippetText(rawProduction, moduleId);
     if (code && !prodError) {
@@ -710,7 +784,7 @@ export async function fetchPreviewSnippet(
   }
 
   try {
-    const compResult = await componentMcp.getComponent(
+    const compResult = await componentSource.getComponent(
       userId,
       moduleId,
       exportName?.trim() || undefined,
@@ -818,18 +892,20 @@ export function injectWireframeComponentTables(
 
 /** Align mapper output with catalog + resolve_components. */
 export async function reconcileComponentMappings(
-  componentMcp: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
   mappings: ComponentMapping[],
   catalogText: string,
 ): Promise<ComponentMapping[]> {
   const catalogIds = extractCatalogModuleIds(catalogText);
   const names = mappings.map((m) => m.requiredComponent).filter(Boolean);
-  const resolveMap = await resolveComponentNamesToModuleIds(componentMcp, userId, names);
+  const resolveMap = await resolveComponentNamesToModuleIds(componentSource, userId, names);
 
   return mappings.map((m) => {
-    const name = m.requiredComponent.trim();
-    const resolved = resolveMap.get(name);
+    const name = normalizeComponentKey(m.requiredComponent);
+    const resolved =
+      lookupResolveModuleId(resolveMap, m.requiredComponent, name) ??
+      resolveMap.get(name.toLowerCase());
     const current = m.mcpModuleId?.trim() ?? "";
 
     let mcpModuleId = current;
@@ -847,4 +923,65 @@ export async function reconcileComponentMappings(
 
     return { ...m, mcpModuleId: mcpModuleId || null, matchConfidence };
   });
+}
+
+/** Maps screenId → display name from wireframes markdown sections. */
+export function parseScreenIdNameMap(markdown: string): Map<string, string> {
+  const map = new Map<string, string>();
+  const screenRegex = /^## Pantalla:\s*(.+)$/gm;
+  const starts: number[] = [];
+  let headerMatch: RegExpExecArray | null;
+  while ((headerMatch = screenRegex.exec(markdown)) !== null) {
+    starts.push(headerMatch.index);
+  }
+  for (let i = 0; i < starts.length; i++) {
+    const start = starts[i];
+    const end = i + 1 < starts.length ? starts[i + 1] : markdown.length;
+    const section = markdown.slice(start, end);
+    const nameMatch = section.match(/^## Pantalla:\s*(.+)$/m);
+    const idMatch = section.match(/\*\*ID\*\*:\s*`([^`]+)`/);
+    const screenId = idMatch?.[1]?.trim();
+    const screenName = stripMarkdownCell(nameMatch?.[1] ?? "");
+    if (screenId && screenName) map.set(screenId, screenName);
+  }
+  return map;
+}
+
+/** Build preview component rows from persisted mapper JSON (fallback: markdown tables). */
+export function buildScreenComponentMapFromMappings(
+  markdown: string,
+  mappings: ComponentMapping[],
+): Array<{ screenName: string; components: Array<{ name: string; moduleId: string; exportName?: string }> }> {
+  if (!mappings.length) return [];
+
+  const idToName = parseScreenIdNameMap(markdown);
+  const byScreen = new Map<string, ComponentMapping[]>();
+  for (const m of mappings) {
+    const sid = m.screenId?.trim();
+    if (!sid) continue;
+    const list = byScreen.get(sid) ?? [];
+    list.push(m);
+    byScreen.set(sid, list);
+  }
+
+  const result: Array<{
+    screenName: string;
+    components: Array<{ name: string; moduleId: string; exportName?: string }>;
+  }> = [];
+
+  for (const [screenId, screenMappings] of byScreen) {
+    const screenName = idToName.get(screenId) ?? screenId;
+    const components = screenMappings
+      .filter((m) => m.matchConfidence !== "none" && m.mcpModuleId?.trim())
+      .map((m) => ({
+        name: m.requiredComponent.trim(),
+        moduleId: m.mcpModuleId!.trim(),
+        exportName: m.mcpExportName?.trim() || undefined,
+      }));
+    if (components.length > 0) {
+      result.push({ screenName, components });
+    }
+  }
+
+  return result;
 }

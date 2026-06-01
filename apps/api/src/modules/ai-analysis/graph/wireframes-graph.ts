@@ -8,7 +8,7 @@ import { createWireframeCriticNode } from "../nodes/wireframe-critic.node.js";
 import { createDbgaLLM } from "../llm/create-dbga-llm.js";
 import { routeWireframesAfterCritic } from "./wireframes-critic-routing.js";
 import type { AIFactory } from "../../ai/ai.factory.js";
-import type { ComponentMcpService } from "../../component-mcp/component-mcp.service.js";
+import type { ComponentSourcePort } from "@theforge/component-source";
 
 /**
  * Builds and compiles the Wireframes StateGraph.
@@ -20,15 +20,15 @@ import type { ComponentMcpService } from "../../component-mcp/component-mcp.serv
 export async function createWireframesGraph(
   aiFactory: AIFactory,
   userId: string,
-  componentMcpService: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   checkpointer?: BaseCheckpointSaver | null,
 ) {
   const llm = await createDbgaLLM(aiFactory, userId);
 
-  const mcpTools = createComponentMcpTools(componentMcpService, userId);
+  const mcpTools = createComponentMcpTools(componentSource, userId);
   console.log(`[Wireframes/Graph] build userId=${userId.slice(0, 8)}… mcpTools=${mcpTools.length}`);
   const screenAnalyzerNode = createScreenAnalyzerNode(llm);
-  const componentMapperNode = createComponentMapperNode(llm, mcpTools, componentMcpService, userId);
+  const componentMapperNode = createComponentMapperNode(llm, mcpTools, componentSource, userId);
   const wireframeComposerNode = createWireframeComposerNode(llm);
   const wireframeCriticNode = createWireframeCriticNode(llm);
 

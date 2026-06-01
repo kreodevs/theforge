@@ -14,8 +14,7 @@ import {
   unwrapMcpToolText,
 } from "../utils/wireframes-mcp-resolve.util.js";
 import { formatDesignSystemContextBlock } from "../utils/wireframe-design-system-context.util.js";
-import type { ComponentMcpService } from "../../component-mcp/component-mcp.service.js";
-import type { McpToolResult } from "../../component-mcp/component-mcp-client-contract.js";
+import type { ComponentSourcePort, McpToolResult } from "@theforge/component-source";
 
 const componentMapperOutputSchema = z.object({
   componentMappings: z.array(componentMappingSchema),
@@ -50,9 +49,9 @@ function extractAIContent(msg: AIMessage): string {
   return "";
 }
 
-/** Creates DynamicStructuredTool wrappers around the ComponentMcpService methods. */
+/** Creates DynamicStructuredTool wrappers around ComponentSourcePort methods. */
 export function createComponentMcpTools(
-  componentMcpService: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
 ): DynamicStructuredTool[] {
   const logTool = (name: string, args: Record<string, unknown>, text: string) => {
@@ -65,7 +64,7 @@ export function createComponentMcpTools(
       description: "Busca módulos en el design system por query. Devuelve JSON con array 'hits'.",
       schema: z.object({ query: z.string().describe("Término de búsqueda") }),
       func: async ({ query }) => {
-        const result = await componentMcpService.searchModules(userId, query);
+        const result = await componentSource.searchModules(userId, query);
         const text = unwrapMcpResult(result);
         logTool("search_modules", { query }, text);
         return text;
@@ -79,7 +78,7 @@ export function createComponentMcpTools(
         exportName: z.string().nullable().optional().describe("Nombre del export específico"),
       }),
       func: async ({ moduleId, exportName }) => {
-        const result = await componentMcpService.getComponent(userId, moduleId, exportName ?? undefined);
+        const result = await componentSource.getComponent(userId, moduleId, exportName ?? undefined);
         const text = unwrapMcpResult(result);
         logTool("get_component", { moduleId, exportName }, text);
         return text;
@@ -93,7 +92,7 @@ export function createComponentMcpTools(
         exportName: z.string().nullable().optional().describe("Nombre del export específico"),
       }),
       func: async ({ moduleId, exportName }) => {
-        const result = await componentMcpService.getProps(userId, moduleId, exportName ?? undefined);
+        const result = await componentSource.getProps(userId, moduleId, exportName ?? undefined);
         const text = unwrapMcpResult(result);
         logTool("get_props", { moduleId, exportName }, text);
         return text;
@@ -106,7 +105,7 @@ export function createComponentMcpTools(
         moduleId: z.string().describe("moduleId exacto del design system"),
       }),
       func: async ({ moduleId }) => {
-        const result = await componentMcpService.getCompositionRecipe(userId, moduleId);
+        const result = await componentSource.getCompositionRecipe(userId, moduleId);
         const text = unwrapMcpResult(result);
         logTool("get_composition_recipe", { moduleId }, text);
         return text;
@@ -119,11 +118,11 @@ export function createComponentMcpTools(
  * Fetches the full module catalog via list_modules so the LLM knows what actually exists.
  */
 async function fetchModuleCatalog(
-  componentMcpService: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
 ): Promise<string> {
   try {
-    const result = await componentMcpService.listModules(userId);
+    const result = await componentSource.listModules(userId);
     const text = unwrapMcpToolText(result);
     const sampleIds = [...extractCatalogModuleIds(text)].slice(0, 25);
     console.log(
@@ -145,7 +144,7 @@ async function fetchModuleCatalog(
  * Returns a formatted string with resolution results ready for the LLM context.
  */
 async function batchResolveComponents(
-  componentMcpService: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
   screens: WireframesStateType["screens"],
 ): Promise<string> {
@@ -159,7 +158,7 @@ async function batchResolveComponents(
   console.log(`\x1b[36m[Wireframes/MCP] Batch resolving ${uniqueNames.length} component names…\x1b[0m`);
 
   try {
-    const result = await componentMcpService.resolveComponents(userId, uniqueNames);
+    const result = await componentSource.resolveComponents(userId, uniqueNames);
     const text = unwrapMcpToolText(result);
     console.log(`\x1b[32m[Wireframes/MCP] Batch resolve OK (${text.length} chars)\x1b[0m`);
     return text;
@@ -174,7 +173,7 @@ async function batchResolveComponents(
 export function createComponentMapperNode(
   llm: BaseChatModel,
   mcpTools: StructuredToolInterface[],
-  componentMcpService: ComponentMcpService,
+  componentSource: ComponentSourcePort,
   userId: string,
 ) {
   const toolsByName = buildToolsByName(mcpTools);
@@ -190,8 +189,8 @@ export function createComponentMapperNode(
     console.log(`\x1b[36m[Wireframes] ▶ Step ${stepNum}/${totalSteps}: ${label} (userId=${userId.slice(0, 8)}…, screens=${state.screens.length})\x1b[0m`);
 
     const [resolveResult, moduleCatalog] = await Promise.all([
-      batchResolveComponents(componentMcpService, userId, state.screens),
-      fetchModuleCatalog(componentMcpService, userId),
+      batchResolveComponents(componentSource, userId, state.screens),
+      fetchModuleCatalog(componentSource, userId),
     ]);
 
     console.log(
@@ -315,7 +314,7 @@ export function createComponentMapperNode(
     }
 
     componentMappings = await reconcileComponentMappings(
-      componentMcpService,
+      componentSource,
       userId,
       componentMappings,
       moduleCatalog,

@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import {
   findBatchPreviewEntry,
+  normalizeComponentKey,
   normalizeHostedPreviewRow,
   parseCatalogPreviewCapabilities,
   parseComponentCodeText,
@@ -21,14 +23,25 @@ describe("wireframes-mcp-resolve", () => {
     const resolveMap = new Map([["Chart", "chart"]]);
     catalog.add("chart");
     const picked = pickModuleIdForPreview("Chart", "data/chart", resolveMap, catalog);
-    expect(picked.moduleId).toBe("chart");
-    expect(picked.source).toBe("resolve");
+    assert.equal(picked.moduleId, "chart");
+    assert.equal(picked.source, "resolve");
+  });
+
+  it("pickModuleIdForPreview trusts resolve when module not in catalog", () => {
+    const resolveMap = new Map([["Menu", "menu-v2"]]);
+    const picked = pickModuleIdForPreview("Menu", "navigation/menu", resolveMap, catalog);
+    assert.equal(picked.moduleId, "menu-v2");
+    assert.equal(picked.source, "resolve");
   });
 
   it("pickModuleIdForPreview ignores uncatalogued table id", () => {
     const picked = pickModuleIdForPreview("Menu", "navigation/menu", new Map(), catalog);
-    expect(picked.source).toBe("none");
-    expect(picked.moduleId).toBe("");
+    assert.equal(picked.source, "none");
+    assert.equal(picked.moduleId, "");
+  });
+
+  it("normalizeComponentKey collapses whitespace", () => {
+    assert.equal(normalizeComponentKey("  Text   Input  "), "Text Input");
   });
 
   it("pickBestSearchHit finds catalogued module", () => {
@@ -40,7 +53,7 @@ describe("wireframes-mcp-resolve", () => {
     });
     catalog.add("menu");
     const hit = pickBestSearchHit("Menu", searchJson, catalog);
-    expect(hit).toBe("menu");
+    assert.equal(hit, "menu");
   });
 
   it("parseProductionSnippetText detects standalone false", () => {
@@ -50,17 +63,17 @@ describe("wireframes-mcp-resolve", () => {
       message: "No standalone template available for Table.",
     });
     const { error } = parseProductionSnippetText(raw, "table");
-    expect(error).toContain("standalone");
+    assert.match(error ?? "", /standalone/i);
   });
 
   it("parseComponentCodeText extracts code field", () => {
     const raw = JSON.stringify({ code: "function Table() { return null; }" });
     const { code } = parseComponentCodeText(raw, "table");
-    expect(code).toContain("function Table");
+    assert.match(code, /function Table/);
   });
 
   it("shouldFallbackFromProductionSnippet for module not found", () => {
-    expect(shouldFallbackFromProductionSnippet("Module not found: x", "")).toBe(true);
+    assert.equal(shouldFallbackFromProductionSnippet("Module not found: x", ""), true);
   });
 
   it("parseCatalogPreviewCapabilities reads preview block", () => {
@@ -69,8 +82,17 @@ describe("wireframes-mcp-resolve", () => {
         preview: { supported: true, defaultMode: "html", modes: ["url", "html"] },
       }),
     );
-    expect(caps.supported).toBe(true);
-    expect(caps.defaultMode).toBe("html");
+    assert.equal(caps.supported, true);
+    assert.equal(caps.defaultMode, "html");
+  });
+
+  it("parseCatalogPreviewCapabilities detects preview tools", () => {
+    const caps = parseCatalogPreviewCapabilities(
+      JSON.stringify({
+        tools: { get_component_preview: true },
+      }),
+    );
+    assert.equal(caps.supported, true);
   });
 
   it("normalizeHostedPreviewRow parses html preview", () => {
@@ -83,23 +105,35 @@ describe("wireframes-mcp-resolve", () => {
         sandbox: "allow-scripts",
       },
     });
-    expect(row.previewKind).toBe("html");
-    expect(row.document).toContain("<!DOCTYPE html>");
-    expect(row.recommendedHeight).toBe(120);
+    assert.equal(row.previewKind, "html");
+    assert.match(row.document ?? "", /<!DOCTYPE html>/);
+    assert.equal(row.recommendedHeight, 120);
   });
 
   it("pickPreviewExportName omits alias names like TextInput on Input", () => {
-    expect(
+    assert.equal(
       pickPreviewExportName("TextInput", "Input", "TextInput", {
         moduleId: "Input",
         status: "alias",
       }),
-    ).toBeUndefined();
-    expect(pickPreviewExportName("Button", "Button", "Button")).toBe("Button");
+      undefined,
+    );
+    assert.equal(pickPreviewExportName("Button", "Button", "Button"), "Button");
   });
 
-  it("sanitizePreviewSandbox removes allow-same-origin", () => {
-    expect(sanitizePreviewSandbox("allow-scripts allow-same-origin")).toBe("allow-scripts");
+  it("sanitizePreviewSandbox removes allow-same-origin for html", () => {
+    assert.equal(sanitizePreviewSandbox("allow-scripts allow-same-origin"), "allow-scripts");
+  });
+
+  it("sanitizePreviewSandbox keeps allow-same-origin for trusted url preview", () => {
+    assert.equal(
+      sanitizePreviewSandbox("allow-scripts allow-same-origin", {
+        previewKind: "url",
+        previewUrl: "https://preview.example/page",
+        trustedOrigins: ["https://preview.example"],
+      }),
+      "allow-scripts allow-same-origin",
+    );
   });
 
   it("parseHostedPreviewBatchText maps results by cache key", () => {
@@ -114,7 +148,7 @@ describe("wireframes-mcp-resolve", () => {
         ],
       }),
     );
-    expect(batch.get(previewCacheKey("Button", "Button"))?.previewKind).toBe("html");
+    assert.equal(batch.get(previewCacheKey("Button", "Button"))?.previewKind, "html");
   });
 
   it("findBatchPreviewEntry matches Input without requested exportName", () => {
@@ -130,6 +164,6 @@ describe("wireframes-mcp-resolve", () => {
       }),
     );
     const hit = findBatchPreviewEntry(batch, "Input", undefined);
-    expect(hit?.previewKind).toBe("html");
+    assert.equal(hit?.previewKind, "html");
   });
 });

@@ -75,6 +75,12 @@ importers:
       '@theforge/business-rules':
         specifier: workspace:*
         version: link:../../packages/business-rules
+      '@theforge/component-source':
+        specifier: file:../../../theforge-component-source/packages/component-source
+        version: file:../theforge-component-source/packages/component-source
+      '@theforge/component-source-orbita':
+        specifier: file:../../../theforge-component-source/packages/component-source-orbita
+        version: file:../theforge-component-source/packages/component-source-orbita
       '@theforge/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -2188,6 +2194,12 @@ packages:
     resolution: {integrity: sha512-9g9dWI4gsSVe8bNLlb+lMkBYsnIKCZTmvqvDG+Avnn69XfmHZKiaMrx7cgTaddq7aTPPmXiTsbFcUy0xgI4+wA==}
     peerDependencies:
       react: '>= 16.3.0'
+
+  '@theforge/component-source-orbita@file:../theforge-component-source/packages/component-source-orbita':
+    resolution: {directory: ../theforge-component-source/packages/component-source-orbita, type: directory}
+
+  '@theforge/component-source@file:../theforge-component-source/packages/component-source':
+    resolution: {directory: ../theforge-component-source/packages/component-source, type: directory}
 
   '@tokenizer/inflate@0.2.7':
     resolution: {integrity: sha512-MADQgmZT1eKjp06jpI2yozxaU9uVs4GzzgSL+uEq7bVcJ9V1ZXQkeGNql1fsSI0gMy1vhvNTNbUqrx+pZfJVmg==}
@@ -8066,6 +8078,12 @@ snapshots:
   '@stitches/react@1.2.8(react@18.3.1)':
     dependencies:
       react: 18.3.1
+
+  '@theforge/component-source-orbita@file:../theforge-component-source/packages/component-source-orbita':
+    dependencies:
+      '@theforge/component-source': file:../theforge-component-source/packages/component-source
+
+  '@theforge/component-source@file:../theforge-component-source/packages/component-source': {}
 
   '@tokenizer/inflate@0.2.7':
     dependencies:

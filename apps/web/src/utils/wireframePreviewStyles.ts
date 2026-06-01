@@ -1,5 +1,5 @@
-/** Estilos base tipo Shadcn/Orbita para previews en iframe (snippets legacy sin CSS embebido). */
-export const ORBITA_PREVIEW_BASE_CSS = `
+/** Estilos base para previews de componentes en iframe (snippets legacy sin CSS embebido). */
+export const COMPONENT_PREVIEW_BASE_CSS = `
   *, *::before, *::after { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -50,7 +50,49 @@ export const ORBITA_PREVIEW_BASE_CSS = `
   .font-semibold { font-weight: 600; }
 `.trim();
 
-/** Asegura documento HTML completo para srcDoc (hosted Orbita o fragmentos). */
+export function isTrustedPreviewUrl(previewUrl: string, trustedOrigins: string[]): boolean {
+  if (!previewUrl.trim() || trustedOrigins.length === 0) return false;
+  try {
+    const origin = new URL(previewUrl).origin;
+    return trustedOrigins.some((t) => t === origin);
+  } catch {
+    return false;
+  }
+}
+
+export function trustedOriginsFromComponentSourceUrl(mcpUrl?: string | null): string[] {
+  const url = mcpUrl?.trim();
+  if (!url) return [];
+  try {
+    return [new URL(url).origin];
+  } catch {
+    return [];
+  }
+}
+
+/** Aligns with API sanitizePreviewSandbox — allow-same-origin only for trusted url previews. */
+export function parseIframeSandbox(
+  sandbox?: string,
+  opts?: {
+    previewKind?: "html" | "url" | "unavailable" | "error" | "legacy";
+    previewUrl?: string;
+    trustedOrigins?: string[];
+  },
+): string {
+  const allowSameOrigin =
+    opts?.previewKind === "url" &&
+    opts.previewUrl &&
+    isTrustedPreviewUrl(opts.previewUrl, opts.trustedOrigins ?? []);
+
+  const tokens = (sandbox ?? "allow-scripts")
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t && (allowSameOrigin || t !== "allow-same-origin"));
+  if (!tokens.includes("allow-scripts")) tokens.unshift("allow-scripts");
+  return [...new Set(tokens)].join(" ");
+}
+
+/** Asegura documento HTML completo para srcDoc (hosted preview o fragmentos). */
 export function ensureFullHtmlDocument(html: string, injectBaseCss = false): string {
   const trimmed = html.trim();
   if (!trimmed) return trimmed;
@@ -63,10 +105,10 @@ export function ensureFullHtmlDocument(html: string, injectBaseCss = false): str
     if (/<style[\s>]/i.test(trimmed) || /<link[^>]+stylesheet/i.test(trimmed)) {
       return trimmed;
     }
-    return trimmed.replace(/<head([^>]*)>/i, `<head$1><style>${ORBITA_PREVIEW_BASE_CSS}</style>`);
+    return trimmed.replace(/<head([^>]*)>/i, `<head$1><style>${COMPONENT_PREVIEW_BASE_CSS}</style>`);
   }
 
-  const cssBlock = injectBaseCss ? `<style>${ORBITA_PREVIEW_BASE_CSS}</style>` : "";
+  const cssBlock = injectBaseCss ? `<style>${COMPONENT_PREVIEW_BASE_CSS}</style>` : "";
   return `<!DOCTYPE html>
 <html lang="es">
 <head>

@@ -8,8 +8,8 @@ import {
   readWireframesSketchesCacheRaw,
   writeWireframesSketchesCacheRaw,
 } from "./wireframe-sketches-cache.store.js";
+import { sketchLlmBatchSize, sketchLlmConcurrency } from "../ai/config/llm-config.js";
 import {
-  SKETCH_LLM_BATCH_SIZE,
   buildSketchesCachePayloadV2,
   cacheToSketchList,
   contentDigestHash,
@@ -17,10 +17,12 @@ import {
   matchSketchToSection,
   normalizeScreenCacheKey,
   parseWireframeScreensFromMarkdown,
-  readSketchesCacheV2,
+  readSketchesCache,
   resolveScreensToRegenerate,
+  wireframesHasParseableScreens,
 } from "./utils/wireframe-screen-sketch.util.js";
-import { prepareDesignSystemContextForWireframes } from "./utils/wireframe-design-system-context.util.js";
+import { ComponentSourceRegistry } from "../component-source/component-source.registry.js";
+import { buildWireframeDesignSystemContext } from "./utils/wireframe-design-system-context.util.js";
 
 export type SyncWireframeSketchesOptions = {
   forceAll?: boolean;
@@ -55,6 +57,7 @@ export class WireframeSketchesSyncService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiFactory: AIFactory,
+    private readonly componentSourceRegistry: ComponentSourceRegistry,
   ) {}
 
   isSyncInFlight(projectId: string): boolean {
@@ -134,7 +137,8 @@ export class WireframeSketchesSyncService {
       keptFromCache: 0,
       llmGenerated: 0,
       savedToCache: 0,
-      forceAll: options?.forceAll === true || options?.mddChanged === true,
+      // v3: mddChanged ya no fuerza forceAll — invalidación por screenHash semántico
+      forceAll: options?.forceAll === true,
       cacheVersion: null,
       batches: [],
     };
@@ -149,7 +153,7 @@ export class WireframeSketchesSyncService {
     }
 
     const mddHash = await this.resolveMddHash(pid);
-    const existingCache = readSketchesCacheV2(row?.cache);
+    const existingCache = readSketchesCache(row?.cache);
     debug.cacheVersion = existingCache?.v ?? null;
     const forceAll = debug.forceAll;
     const parsedSections = parseWireframeScreensFromMarkdown(markdown);
@@ -176,12 +180,19 @@ export class WireframeSketchesSyncService {
 
     if (toGenerate.length === 0) {
       const payload =
-        existingCache && existingCache.mddHash === mddHash
+        parsedSections.length === 0 && existingCache
           ? existingCache
-          : buildSketchesCachePayloadV2(mddHash, merged, parsedSections);
+          : existingCache && existingCache.mddHash === mddHash
+            ? existingCache
+            : buildSketchesCachePayloadV2(mddHash, merged, parsedSections);
       const list = cacheToSketchList(payload);
       debug.savedToCache = list.length;
-      this.log("skip-llm", { screens: list.length });
+      if (parsedSections.length === 0 && forceAll) {
+        debug.error =
+          "wireframesContent sin secciones ## Pantalla: — restaura el documento completo antes de regenerar";
+        this.logger.warn(`[SketchSync] ${debug.error}`);
+      }
+      this.log("skip-llm", { screens: list.length, parsedSections: parsedSections.length });
       return {
         screenSketches: list,
         sketchesStale: list.length === 0,
@@ -193,8 +204,26 @@ export class WireframeSketchesSyncService {
       where: { id: pid },
       select: { uxUiGuideContent: true },
     });
-    const designSystemContext = prepareDesignSystemContextForWireframes(
+    const userId = row!.userId;
+    const mcpUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        componentSourceEnabled: true,
+        componentSourcePluginId: true,
+        componentSourceUrl: true,
+      },
+    });
+    const componentSourceActive = !!(
+      mcpUser?.componentSourceEnabled &&
+      mcpUser.componentSourcePluginId?.trim() &&
+      mcpUser.componentSourceUrl?.trim()
+    );
+    const componentSource = await this.componentSourceRegistry.resolveForUser(userId);
+    const designSystemContext = await buildWireframeDesignSystemContext(
+      componentSource,
+      userId,
       uxRow?.uxUiGuideContent ?? "",
+      componentSourceActive,
     );
 
     let llmError: string | undefined;
@@ -204,7 +233,8 @@ export class WireframeSketchesSyncService {
       this.log("llm-start", {
         provider: runtime.providerId,
         model: runtime.chatModel,
-        batchSize: SKETCH_LLM_BATCH_SIZE,
+        batchSize: sketchLlmBatchSize(),
+        concurrency: sketchLlmConcurrency(),
         screens: toGenerate.length,
         designSystemChars: designSystemContext.length,
       });
@@ -217,6 +247,39 @@ export class WireframeSketchesSyncService {
           this.logger.warn(`[SketchSync] partial cache write failed: ${wErr}`);
         }
         debug.savedToCache = cacheToSketchList(partialPayload).length;
+      };
+
+      let partialCacheTimer: ReturnType<typeof setTimeout> | undefined;
+      let partialCacheWriteInFlight = false;
+      const schedulePartialCacheWrite = () => {
+        if (partialCacheTimer) return;
+        partialCacheTimer = setTimeout(() => {
+          partialCacheTimer = undefined;
+          if (partialCacheWriteInFlight) {
+            schedulePartialCacheWrite();
+            return;
+          }
+          partialCacheWriteInFlight = true;
+          void persistPartialCache()
+            .catch((err) => {
+              this.logger.warn(
+                `[SketchSync] partial cache write failed: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            })
+            .finally(() => {
+              partialCacheWriteInFlight = false;
+            });
+        }, 1500);
+      };
+      const flushPartialCacheWrite = async () => {
+        if (partialCacheTimer) {
+          clearTimeout(partialCacheTimer);
+          partialCacheTimer = undefined;
+        }
+        while (partialCacheWriteInFlight) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        await persistPartialCache();
       };
 
       const generated = await generateAllScreenSketches(
@@ -250,10 +313,12 @@ export class WireframeSketchesSyncService {
             html: g.html,
           });
         }
-        void persistPartialCache();
+        schedulePartialCacheWrite();
         },
         designSystemContext,
       );
+
+      await flushPartialCacheWrite();
 
       debug.llmGenerated = generated.length;
     } catch (err) {
@@ -309,8 +374,21 @@ export class WireframeSketchesSyncService {
 
     const cacheRaw = await readWireframesSketchesCacheRaw(this.prisma, projectId);
     const mddHash = await this.resolveMddHash(projectId);
+    const cache = readSketchesCache(cacheRaw);
     const sections = parseWireframeScreensFromMarkdown(markdown);
-    const cache = readSketchesCacheV2(cacheRaw);
+
+    if (!wireframesHasParseableScreens(markdown)) {
+      const fromCache = cache ? cacheToSketchList(cache) : [];
+      if (fromCache.length > 0) {
+        return {
+          screenSketches: fromCache,
+          sketchesStale: true,
+          staleReason: "screens",
+        };
+      }
+      return { screenSketches: [], sketchesStale: true, staleReason: "missing" };
+    }
+
     const { toGenerate, merged } = resolveScreensToRegenerate(sections, cache, mddHash, {
       forceAll: false,
     });
@@ -322,6 +400,7 @@ export class WireframeSketchesSyncService {
     if (cacheRaw == null || !cache) {
       return { screenSketches: [], sketchesStale: true, staleReason: "missing" };
     }
+    // mddHash como metadato UX — no invalida bocetos, solo muestra banner informativo
     if (cache.mddHash !== mddHash) {
       return { screenSketches, sketchesStale: true, staleReason: "mdd" };
     }

@@ -4,6 +4,7 @@ import type { ComponentToken, DesignTokens, TypographyToken } from "@/components
 import {
   ELEVATION_PRESETS,
   mergeTypographyTokens,
+  normalizeDesignTokenColors,
   normalizeElevationTokens,
   parseInlineTokenProps,
 } from "@/components/design-system-utils";
@@ -432,7 +433,7 @@ const DEFAULT_SPACING: Record<string, string> = {
 
 export function fillDesignMdDefaults(tokens: DesignTokens | null): DesignTokens | null {
   if (!tokens) return null;
-  const t = { ...tokens };
+  const t = normalizeDesignTokenColors({ ...tokens });
 
   // Fill colors
   if (t.colors && Object.keys(t.colors).length > 0) {

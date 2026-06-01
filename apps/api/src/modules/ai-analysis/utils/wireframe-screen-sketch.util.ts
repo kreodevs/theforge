@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { HumanMessage } from "@langchain/core/messages";
+import { sketchLlmBatchSize, sketchLlmConcurrency } from "../../ai/config/llm-config.js";
 import { SCREEN_SKETCH_AGENT_PROMPT } from "../prompts/wireframes/wireframes-prompts.js";
 import { formatDesignSystemContextBlock } from "./wireframe-design-system-context.util.js";
 import { stripMarkdownCell } from "./wireframes-mcp-resolve.util.js";
 
-/** Pantallas por llamada LLM (evita contexto/ salida enorme). */
-export const SKETCH_LLM_BATCH_SIZE = 6;
+/** @deprecated Preferir `sketchLlmBatchSize()` (configurable vía env). */
+export const SKETCH_LLM_BATCH_SIZE = sketchLlmBatchSize();
 const MAX_WIREFRAME_LINES = 48;
 const MAX_DESC_CHARS = 280;
 const MAX_REFS_CHARS = 160;
@@ -41,6 +42,17 @@ export interface WireframesSketchesCachePayloadV1 {
   v: 1;
   hash: string;
   sketches: Array<{ screenName: string; html: string }>;
+}
+
+/**
+ * V3: hash por pantalla semántico (wireframeAscii+descripción+DS), mddHash como
+ * metadato UX únicamente — ya no es gate de invalidación global.
+ */
+export interface WireframesSketchesCachePayloadV3 {
+  v: 3;
+  /** Metadato para mostrar banner "MDD cambió" en UI. NO invalida caché globalmente. */
+  mddHash?: string;
+  screens: Record<string, WireframesSketchesCacheScreenEntry>;
 }
 
 export function contentDigestHash(content: string): string {
@@ -104,9 +116,11 @@ export function matchSketchToSection(
   return undefined;
 }
 
+type AnyVersionCache = WireframesSketchesCachePayloadV2 | WireframesSketchesCachePayloadV3;
+
 function findCachedScreenEntry(
   section: ParsedWireframeScreenSection,
-  cache: WireframesSketchesCachePayloadV2,
+  cache: AnyVersionCache,
 ): WireframesSketchesCacheScreenEntry | undefined {
   const key = normalizeScreenCacheKey(section.screenName);
   const direct = cache.screens[key];
@@ -121,11 +135,13 @@ function findCachedScreenEntry(
 
 function isCachedSectionHit(
   section: ParsedWireframeScreenSection,
-  cache: WireframesSketchesCachePayloadV2,
+  cache: AnyVersionCache,
   cached: WireframesSketchesCacheScreenEntry,
 ): boolean {
   if (!cached.html?.trim()) return false;
-  const hash = screenSectionHash(section);
+  // Legacy migrated entry (screenHash vacío) — preservar HTML sin verificar hash
+  if (!cached.screenHash) return true;
+  const hash = screenSectionSemanticHash(section);
   const key = normalizeScreenCacheKey(section.screenName);
   const direct = cache.screens[key];
   if (direct === cached && cached.screenHash === hash) return true;
@@ -138,8 +154,24 @@ function isCachedSectionHit(
   return false;
 }
 
+/** @deprecated Usar screenSectionSemanticHash — este hash incluye partes no relevantes del body. */
 export function screenSectionHash(section: ParsedWireframeScreenSection): string {
   return contentDigestHash(section.body);
+}
+
+/**
+ * Hash semántico por pantalla: solo wireframeAscii + descripción + tabla DS.
+ * Cambios cosméticos del markdown (reformateo, comentarios, orden de campos fuera
+ * del wireframe) no invalidan el boceto.
+ */
+export function screenSectionSemanticHash(section: ParsedWireframeScreenSection): string {
+  const ascii = section.wireframeAscii
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .join("\n")
+    .trim();
+  const normalized = `${ascii}\n||||\n${section.description.trim()}\n||||\n${section.dsTableMarkdown.trim()}`;
+  return contentDigestHash(normalized);
 }
 
 export function parseWireframeScreensFromMarkdown(markdown: string): ParsedWireframeScreenSection[] {
@@ -369,11 +401,33 @@ export type GenerateScreenSketchesBatchResult = {
   parsedCount: number;
 };
 
-/** Una llamada LLM para un lote de pantallas (máx. SKETCH_LLM_BATCH_SIZE). */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const workers = Math.max(1, Math.min(concurrency, items.length));
+  const results: R[] = new Array(items.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) break;
+      results[i] = await fn(items[i]!, i);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return results;
+}
+
+/** Una llamada LLM para un lote de pantallas. */
 export async function generateScreenSketchesBatch(
   llm: BaseChatModel,
   sections: ParsedWireframeScreenSection[],
-  designSystemContext?: string,
+  designSystemBlock = "",
 ): Promise<GenerateScreenSketchesBatchResult> {
   const targets = sections.filter((s) => s.wireframeAscii.trim().length > 10);
   if (targets.length === 0) {
@@ -382,9 +436,8 @@ export async function generateScreenSketchesBatch(
 
   const expectedNames = targets.map((s) => s.screenName);
   const payload = buildBatchSketchUserPayload(targets);
-  const dsBlock = formatDesignSystemContextBlock(designSystemContext);
   const response = await llm.invoke([
-    new HumanMessage(`${SCREEN_SKETCH_AGENT_PROMPT}${dsBlock}\n\n---\n${payload}`),
+    new HumanMessage(`${SCREEN_SKETCH_AGENT_PROMPT}${designSystemBlock}\n\n---\n${payload}`),
   ]);
   const raw =
     typeof response.content === "string"
@@ -408,7 +461,7 @@ export async function generateScreenSketchesBatch(
   };
 }
 
-/** Varias llamadas LLM si hay más pantallas que SKETCH_LLM_BATCH_SIZE. */
+/** Varias llamadas LLM en lotes paralelos (concurrencia acotada). */
 export async function generateAllScreenSketches(
   llm: BaseChatModel,
   sections: ParsedWireframeScreenSection[],
@@ -416,27 +469,41 @@ export async function generateAllScreenSketches(
   designSystemContext?: string,
 ): Promise<Array<{ screenName: string; html: string }>> {
   const targets = sections.filter((s) => s.wireframeAscii.trim().length > 10);
-  const results: Array<{ screenName: string; html: string }> = [];
+  if (targets.length === 0) return [];
 
-  for (let i = 0; i < targets.length; i += SKETCH_LLM_BATCH_SIZE) {
-    const chunk = targets.slice(i, i + SKETCH_LLM_BATCH_SIZE);
-    const batchIndex = Math.floor(i / SKETCH_LLM_BATCH_SIZE);
-    const batch = await generateScreenSketchesBatch(llm, chunk, designSystemContext);
+  const batchSize = sketchLlmBatchSize();
+  const concurrency = sketchLlmConcurrency();
+  const designSystemBlock = formatDesignSystemContextBlock(designSystemContext);
+
+  const chunks: ParsedWireframeScreenSection[][] = [];
+  for (let i = 0; i < targets.length; i += batchSize) {
+    chunks.push(targets.slice(i, i + batchSize));
+  }
+
+  const batchOutputs = await mapWithConcurrency(chunks, concurrency, async (chunk, batchIndex) => {
+    const batch = await generateScreenSketchesBatch(llm, chunk, designSystemBlock);
     onBatch?.({ ...batch, batchIndex });
-    results.push(...batch.generated);
 
     const gotKeys = new Set(batch.generated.map((g) => sketchNameMatchKey(g.screenName)));
     const missing = chunk.filter((s) => !gotKeys.has(sketchNameMatchKey(s.screenName)));
-    for (let ri = 0; ri < missing.length; ri++) {
-      const solo = missing[ri]!;
-      const retry = await generateScreenSketchesBatch(llm, [solo], designSystemContext);
-      onBatch?.({ ...retry, batchIndex: batchIndex * 100 + ri + 1 });
-      results.push(...retry.generated);
-    }
-  }
-  return results;
+    if (missing.length === 0) return batch.generated;
+
+    const retryOutputs = await mapWithConcurrency(
+      missing,
+      Math.min(concurrency, missing.length),
+      async (solo, ri) => {
+        const retry = await generateScreenSketchesBatch(llm, [solo], designSystemBlock);
+        onBatch?.({ ...retry, batchIndex: batchIndex * 100 + ri + 1 });
+        return retry.generated;
+      },
+    );
+    return [...batch.generated, ...retryOutputs.flat()];
+  });
+
+  return batchOutputs.flat();
 }
 
+/** @deprecated Usar readSketchesCache — soporta v2 y v3. */
 export function readSketchesCacheV2(raw: unknown): WireframesSketchesCachePayloadV2 | null {
   if (!raw || typeof raw !== "object") return null;
   const c = raw as Partial<WireframesSketchesCachePayloadV2>;
@@ -444,6 +511,33 @@ export function readSketchesCacheV2(raw: unknown): WireframesSketchesCachePayloa
     return null;
   }
   return c as WireframesSketchesCachePayloadV2;
+}
+
+/**
+ * Lee caché v2 o v3. V2 se migra a v3 en memoria: todos los screens con HTML se
+ * preservan con `screenHash=""` (legacy hit) — no se genera ningún boceto extra al
+ * desplegar con el nuevo formato.
+ */
+export function readSketchesCache(raw: unknown): WireframesSketchesCachePayloadV3 | null {
+  if (!raw || typeof raw !== "object") return null;
+  const c = raw as Record<string, unknown>;
+
+  if (c["v"] === 3 && c["screens"] && typeof c["screens"] === "object") {
+    return c as unknown as WireframesSketchesCachePayloadV3;
+  }
+
+  if (c["v"] === 2 && typeof c["mddHash"] === "string" && c["screens"] && typeof c["screens"] === "object") {
+    const screens: Record<string, WireframesSketchesCacheScreenEntry> = {};
+    for (const [key, entry] of Object.entries(c["screens"] as Record<string, unknown>)) {
+      const e = entry as Partial<WireframesSketchesCacheScreenEntry>;
+      if (e?.html?.trim() && e.screenName) {
+        screens[key] = { screenName: e.screenName, html: e.html, screenHash: "" };
+      }
+    }
+    return { v: 3, mddHash: c["mddHash"] as string, screens };
+  }
+
+  return null;
 }
 
 function sectionMatchesScreenNames(
@@ -456,10 +550,15 @@ function sectionMatchesScreenNames(
   );
 }
 
+/**
+ * Determina qué pantallas necesitan regeneración comparando hash semántico por
+ * pantalla contra la caché. mddHash ya NO es gate global — un cambio de MDD no
+ * invalida bocetos cuyo wireframeAscii/descripción no cambió.
+ */
 export function resolveScreensToRegenerate(
   sections: ParsedWireframeScreenSection[],
-  cache: WireframesSketchesCachePayloadV2 | null,
-  mddHash: string,
+  cache: WireframesSketchesCachePayloadV2 | WireframesSketchesCachePayloadV3 | null,
+  _mddHash: string,
   options: { forceAll?: boolean; screenNames?: string[] },
 ): {
   toGenerate: ParsedWireframeScreenSection[];
@@ -479,7 +578,8 @@ export function resolveScreensToRegenerate(
         }
         continue;
       }
-      if (cache && cache.mddHash === mddHash) {
+      // Pantallas no solicitadas: preservar desde caché si existe HTML válido
+      if (cache) {
         const cached = findCachedScreenEntry(section, cache);
         if (cached && isCachedSectionHit(section, cache, cached)) {
           merged.set(key, { screenName: section.screenName, html: cached.html });
@@ -489,13 +589,14 @@ export function resolveScreensToRegenerate(
     return { toGenerate, merged };
   }
 
-  if (forceAll || !cache || cache.mddHash !== mddHash) {
+  if (forceAll || !cache) {
     return {
       toGenerate: sections.filter((s) => s.wireframeAscii.trim().length > 10),
       merged,
     };
   }
 
+  // Gate per-pantalla: solo regenera si screenHash semántico cambió
   const toGenerate: ParsedWireframeScreenSection[] = [];
   for (const section of sections) {
     const key = normalizeScreenCacheKey(section.screenName);
@@ -509,11 +610,17 @@ export function resolveScreensToRegenerate(
   return { toGenerate, merged };
 }
 
+/**
+ * Construye payload v3 con hash semántico por pantalla.
+ * mddHash se guarda como metadato para detectar staleness en UI pero ya no
+ * se usa como invalidador global.
+ * @deprecated Nombre mantenido por compatibilidad; escribe formato v3.
+ */
 export function buildSketchesCachePayloadV2(
   mddHash: string,
   merged: Map<string, { screenName: string; html: string }>,
   sections: ParsedWireframeScreenSection[],
-): WireframesSketchesCachePayloadV2 {
+): WireframesSketchesCachePayloadV3 {
   const screens: Record<string, WireframesSketchesCacheScreenEntry> = {};
   const consumed = new Set<string>();
 
@@ -537,18 +644,109 @@ export function buildSketchesCachePayloadV2(
     consumed.add(mergedKey);
     screens[key] = {
       screenName: section.screenName,
-      screenHash: screenSectionHash(section),
+      screenHash: screenSectionSemanticHash(section),
       html: entry.html,
     };
   }
 
-  return { v: 2, mddHash, screens };
+  return { v: 3, mddHash, screens };
 }
 
 export function cacheToSketchList(
-  cache: WireframesSketchesCachePayloadV2,
+  cache: WireframesSketchesCachePayloadV2 | WireframesSketchesCachePayloadV3,
 ): Array<{ screenName: string; html: string }> {
   return Object.values(cache.screens)
     .filter((s) => s.html?.trim())
     .map((s) => ({ screenName: s.screenName, html: s.html }));
+}
+
+/** True si el markdown tiene al menos una sección `## Pantalla:`. */
+export function wireframesHasParseableScreens(markdown: string): boolean {
+  return /^## Pantalla:\s*.+$/m.test(markdown.trim());
+}
+
+function countWireframeScreens(markdown: string): number {
+  return (markdown.match(/^## Pantalla:\s*.+$/gm) ?? []).length;
+}
+
+function replaceWireframeScreenSection(current: string, newScreenChunk: string): string | null {
+  const nameMatch = newScreenChunk.match(/^## Pantalla:\s*(.+)$/m);
+  if (!nameMatch?.[1]) return null;
+  const newKey = sketchNameMatchKey(nameMatch[1]);
+  if (!newKey) return null;
+
+  const screenRegex = /^## Pantalla:\s*(.+)$/gm;
+  const starts: Array<{ name: string; index: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = screenRegex.exec(current)) !== null) {
+    starts.push({ name: m[1].trim(), index: m.index });
+  }
+  for (let i = 0; i < starts.length; i++) {
+    const start = starts[i].index;
+    const end = i + 1 < starts.length ? starts[i + 1].index : current.length;
+    if (sketchNameMatchKey(starts[i].name) !== newKey) continue;
+    const before = current.slice(0, start).trimEnd();
+    const after = current.slice(end).trimStart();
+    return [before, newScreenChunk.trim(), after].filter(Boolean).join("\n\n");
+  }
+  return null;
+}
+
+/**
+ * Fusiona respuestas parciales del chat con el documento wireframes existente.
+ * Evita reemplazar 40k chars por un fragmento cuando el LLM omite ---FIN_WIREFRAMES---.
+ */
+export function mergeWireframesMarkdownOrUseFull(
+  currentDoc: string | undefined,
+  newPart: string,
+): string {
+  const cleaned = newPart.trim();
+  if (!cleaned) return (currentDoc ?? "").trim();
+  const current = (currentDoc ?? "").trim();
+  if (!current) return cleaned;
+
+  const newScreens = countWireframeScreens(cleaned);
+  const curScreens = countWireframeScreens(current);
+  const hasWireframesH1 = /^#\s*Wireframes\b/im.test(cleaned);
+
+  if (
+    hasWireframesH1 &&
+    newScreens >= Math.max(1, Math.floor(curScreens * 0.5)) &&
+    cleaned.length >= current.length * 0.55
+  ) {
+    return cleaned;
+  }
+
+  if (newScreens === 1 && curScreens >= 1) {
+    const merged = replaceWireframeScreenSection(current, cleaned);
+    if (merged) return merged;
+  }
+
+  if (hasWireframesH1 && cleaned.length >= current.length * 0.85) {
+    return cleaned;
+  }
+
+  if (cleaned.length < current.length * 0.55) {
+    return current;
+  }
+
+  return cleaned.length >= current.length ? cleaned : current;
+}
+
+/** Rechaza persistir wireframes que borran la mayor parte del documento (fragmento sin merge). */
+export function wouldShrinkWireframesDangerously(
+  current: string,
+  next: string,
+  minRatio = 0.55,
+): boolean {
+  const c = current.trim();
+  const n = next.trim();
+  if (!c || c.length < 400) return false;
+  if (!n) return true;
+  if (n.length >= c.length * minRatio) return false;
+  if (/^#\s*Wireframes\b/im.test(n) && n.length >= Math.min(c.length * 0.85, 2500)) return false;
+  const curScreens = countWireframeScreens(c);
+  const nextScreens = countWireframeScreens(n);
+  if (nextScreens >= Math.max(1, Math.floor(curScreens * 0.5))) return false;
+  return true;
 }

@@ -2003,10 +2003,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           projectId,
           sessionId: session?.id,
           message: msg || "",
-          mddContent: get().mddContent || undefined,
           uxUiGuideContent: get().uxUiGuideContent ?? get().project?.uxUiGuideContent ?? undefined,
           activeTab: tab,
         };
+        if (tab === "mdd") {
+          body.mddContent = get().mddContent || undefined;
+        }
         {
           const sf = get().activeStageId;
           if (sf) body.stageId = sf;
@@ -2056,6 +2058,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           const ic = get().infraContent;
           if (ic != null && String(ic).trim()) body.infraContent = ic;
         }
+        if (tab === "wireframes") {
+          const wc = get().wireframesContent;
+          if (wc != null && String(wc).trim()) body.wireframesContent = wc;
+        }
         if (images.length) body.images = images;
         const r = await apiFetch(`${API_BASE}/ai-orchestrator/chat/stream`, {
           method: "POST",
@@ -2096,6 +2102,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 const nextStages = packed?.project?.stages ?? proj?.stages;
                 const freshUx = cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null);
+                const freshWireframes = cleanDoc(
+                  (data.wireframesContent as string | null | undefined) ??
+                    proj?.wireframesContent ??
+                    null,
+                ) ?? get().wireframesContent;
                 set({
                   session: sess ?? get().session,
                   project: packed?.project ?? get().project,
@@ -2103,12 +2114,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   mddContent: packed?.mddContent ?? get().mddContent,
                   workshopStages: nextStages && nextStages.length > 0 ? nextStages : get().workshopStages,
                   uxUiGuideContent: freshUx,
-                  wireframesContent:
-                    cleanDoc(
-                      (data.wireframesContent as string | null | undefined) ??
-                        proj?.wireframesContent ??
-                        null,
-                    ) ?? get().wireframesContent,
+                  wireframesContent: freshWireframes,
+                  wireframesPreviewSession:
+                    tab === "wireframes" && freshWireframes ? null : get().wireframesPreviewSession,
                   dbgaContent:
                     cleanDoc(
                       (data.dbgaContent as string | null | undefined) ??
@@ -2142,6 +2150,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 if (tab === "ux-ui-guide" && freshUx) {
                   get().persistUxUiGuideContent(freshUx).catch(() => {});
                 }
+                // wireframes: el orchestrator ya persiste vía projects.update; solo invalidar preview en store
               } else if (event === "error" && data.error) {
                 set({
                   error: String(data.error),
@@ -2176,6 +2185,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 const nextStagesB = packed?.project?.stages ?? proj?.stages;
                 const freshUx = cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null);
+                const freshWireframes = cleanDoc(
+                  (data.wireframesContent as string | null | undefined) ??
+                    proj?.wireframesContent ??
+                    null,
+                ) ?? get().wireframesContent;
                 set({
                   session: sess ?? get().session,
                   project: packed?.project ?? get().project,
@@ -2183,12 +2197,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   mddContent: packed?.mddContent ?? get().mddContent,
                   workshopStages: nextStagesB && nextStagesB.length > 0 ? nextStagesB : get().workshopStages,
                   uxUiGuideContent: freshUx,
-                  wireframesContent:
-                    cleanDoc(
-                      (data.wireframesContent as string | null | undefined) ??
-                        proj?.wireframesContent ??
-                        null,
-                    ) ?? get().wireframesContent,
+                  wireframesContent: freshWireframes,
+                  wireframesPreviewSession:
+                    tab === "wireframes" && freshWireframes ? null : get().wireframesPreviewSession,
                   dbgaContent:
                     cleanDoc(
                       (data.dbgaContent as string | null | undefined) ??
@@ -2222,6 +2233,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 if (tab === "ux-ui-guide" && freshUx) {
                   get().persistUxUiGuideContent(freshUx).catch(() => {});
                 }
+                // wireframes: el orchestrator ya persiste vía projects.update; solo invalidar preview en store
               } else if (event === "error" && data.error) {
                 set({
                   error: String(data.error),

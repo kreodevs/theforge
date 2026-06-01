@@ -120,12 +120,37 @@ export class AuthController {
     return this.auth.setAriadneConfig(userId, body.url ?? "", body.token ?? "");
   }
 
+  @Get("component-source/config")
+  getComponentSourceConfig() {
+    const userId = getRequestUserId();
+    return this.auth.getComponentSourceConfig(userId);
+  }
+
+  @Put("component-source/config")
+  @HttpCode(200)
+  async setComponentSourceConfig(
+    @Body() body: { enabled?: boolean; pluginId?: string; url?: string; token?: string },
+  ) {
+    const userId = getRequestUserId();
+    return this.auth.setComponentSourceConfig(userId, body);
+  }
+
+  /** POST /auth/component-source/design-system — Orbita MCP get_design_system (format=full). */
+  @Post("component-source/design-system")
+  @HttpCode(200)
+  fetchComponentSourceDesignSystem() {
+    const userId = getRequestUserId();
+    return this.auth.fetchComponentSourceDesignSystem(userId);
+  }
+
+  /** @deprecated Usar GET /auth/component-source/config */
   @Get("component-mcp-config")
   getComponentMcpConfig() {
     const userId = getRequestUserId();
     return this.auth.getComponentMcpConfig(userId);
   }
 
+  /** @deprecated Usar PUT /auth/component-source/config */
   @Put("component-mcp-config")
   @HttpCode(200)
   async setComponentMcpConfig(@Body() body: { name?: string; url?: string; token?: string }) {

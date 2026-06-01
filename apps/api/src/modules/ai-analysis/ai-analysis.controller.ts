@@ -11,6 +11,7 @@ import {
 } from "@nestjs/common";
 import { Response } from "express";
 import { Readable } from "node:stream";
+import { Prisma } from "@theforge/database";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiAnalysisService } from "./ai-analysis.service.js";
 import { EstimationService } from "./estimation/estimation.service.js";
@@ -491,7 +492,7 @@ export class AiAnalysisController {
     }
     await this.prisma.project.update({
       where: { id },
-      data: { wireframesContent: null },
+      data: { wireframesContent: null, wireframesComponentMappings: Prisma.JsonNull },
     });
     await writeWireframesSketchesCacheRaw(this.prisma, id, null);
     await writeWireframesPreviewCacheRaw(this.prisma, id, null);

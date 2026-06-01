@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkshopStore, type WireframesPreviewSession } from "../store/workshopStore";
 import { contentDigestHash } from "../utils/contentDigestHash";
+import { formatDurationMs } from "../utils/formatDuration";
 import { Monitor, Sparkles, ArrowRight, Check, Loader2, Circle, LayoutGrid, Blocks, CheckCircle2, AlertTriangle, XCircle, Square, RefreshCw } from "lucide-react";
 import { Button, Badge, UnderlineTabs } from "@/components/ui";
 import type { UnderlineTabItem } from "@/components/ui";
@@ -20,8 +21,8 @@ import {
   orderPreviewComponentsByDsTable,
 } from "@/utils/wireframeScreenPreview";
 import { buildWireframeHtmlSketchSrcDoc } from "@/utils/wireframeHtmlSketch";
-import { ensureFullHtmlDocument } from "@/utils/wireframePreviewStyles";
-import { hasOrbitaPreview, WireframeOrbitaBoceto } from "@/components/WireframeOrbitaBoceto";
+import { ensureFullHtmlDocument, parseIframeSandbox, trustedOriginsFromComponentSourceUrl } from "@/utils/wireframePreviewStyles";
+import { hasHostedPreview, WireframeComponentPreview } from "@/components/WireframeComponentPreview";
 
 export interface WireframesProgressStep {
   step: number;
@@ -434,7 +435,7 @@ function WireframesProgressStepper({
               </span>
               {entry.state === "done" && entry.durationMs != null && (
                 <span className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)]">
-                  {(entry.durationMs / 1000).toFixed(1)}s
+                  {formatDurationMs(entry.durationMs)}
                 </span>
               )}
               {entry.state === "running" && (
@@ -682,14 +683,16 @@ function ScreenCard({
   );
 }
 
-/** Orbita may return allow-same-origin; strip it — with allow-scripts that pair can escape sandbox (Chrome warning). */
-function parseIframeSandbox(sandbox?: string): string {
-  const tokens = (sandbox ?? "allow-scripts")
-    .trim()
-    .split(/\s+/)
-    .filter((t) => t && t !== "allow-same-origin");
-  if (!tokens.includes("allow-scripts")) tokens.unshift("allow-scripts");
-  return [...new Set(tokens)].join(" ");
+/** Strip allow-same-origin unless url preview from trusted component-source origin. */
+function resolvePreviewSandbox(
+  comp: PreviewComponentData,
+  trustedOrigins: string[],
+): string {
+  return parseIframeSandbox(comp.sandbox, {
+    previewKind: comp.previewKind,
+    previewUrl: comp.previewUrl,
+    trustedOrigins,
+  });
 }
 
 function LegacySnippetIframeRenderer({
@@ -732,7 +735,7 @@ function LegacySnippetIframeRenderer({
   );
 }
 
-function HostedOrbitaPreviewIframe({
+function HostedComponentPreviewIframe({
   documentHtml,
   sandbox,
   frameClass,
@@ -762,23 +765,25 @@ function ComponentPreviewRenderer({
   className,
   previewPropsLiteral,
   embeddedInSketch = false,
+  trustedOrigins = [],
 }: {
   comp: PreviewComponentData;
   className?: string;
   previewPropsLiteral?: string;
   embeddedInSketch?: boolean;
+  trustedOrigins?: string[];
 }) {
   const defaultEmbedded =
     comp.previewKind === "html" || comp.previewKind === "url" ? 120 : 80;
   const height = comp.recommendedHeight ?? (embeddedInSketch ? defaultEmbedded : 240);
-  const sandbox = parseIframeSandbox(comp.sandbox);
+  const sandbox = resolvePreviewSandbox(comp, trustedOrigins);
   const frameClass = embeddedInSketch
     ? cn("w-full border-0 bg-transparent", className)
     : cn("w-full rounded-xl border border-[var(--border)]", className);
 
   if (comp.previewKind === "html" && comp.document?.trim()) {
     return (
-      <HostedOrbitaPreviewIframe
+      <HostedComponentPreviewIframe
         documentHtml={comp.document}
         sandbox={sandbox}
         frameClass={frameClass}
@@ -861,6 +866,8 @@ function ScreenSketchCanvas({
   previewComponents,
   requirementsContext,
   agentSketchHtml,
+  showComponentPreviews = true,
+  trustedOrigins = [],
   onRegenerateSketch,
   regeneratingSketch = false,
   regenerateSketchDisabled = false,
@@ -870,6 +877,8 @@ function ScreenSketchCanvas({
   previewComponents: PreviewComponentData[];
   requirementsContext: string;
   agentSketchHtml?: string;
+  showComponentPreviews?: boolean;
+  trustedOrigins?: string[];
   onRegenerateSketch?: () => void;
   regeneratingSketch?: boolean;
   regenerateSketchDisabled?: boolean;
@@ -879,7 +888,7 @@ function ScreenSketchCanvas({
     () => orderPreviewComponentsByDsTable(previewComponents, dsComponents),
     [previewComponents, dsComponents],
   );
-  const orbitaAvailable = ordered.some(hasOrbitaPreview);
+  const hostedPreviewAvailable = showComponentPreviews && ordered.some(hasHostedPreview);
 
   const agentSrcDoc = useMemo(() => {
     const raw = agentSketchHtml?.trim();
@@ -903,10 +912,11 @@ function ScreenSketchCanvas({
     dsComponents,
     parsedScreen?.description,
     requirementsContext,
+    showComponentPreviews,
   ]);
 
   const composedLegacySrcDoc = useMemo(() => {
-    if (orbitaAvailable) return null;
+    if (!showComponentPreviews || hostedPreviewAvailable) return null;
     let inputIdx = 0;
     let buttonIdx = 0;
     const items = ordered
@@ -933,7 +943,7 @@ function ScreenSketchCanvas({
         };
       });
     return items.length > 0 ? buildComposedScreenPreviewSrcDoc(items) : null;
-  }, [orbitaAvailable, ordered, dsComponents, requirementsContext, screenTitle, parsedScreen?.description]);
+  }, [hostedPreviewAvailable, ordered, dsComponents, requirementsContext, screenTitle, parsedScreen?.description]);
 
   const sketchHeight = useMemo(() => {
     const rows = (parsedScreen?.wireframeAscii?.split("\n") ?? []).filter((l) => /[│|]/.test(l)).length;
@@ -996,8 +1006,8 @@ function ScreenSketchCanvas({
               Boceto generado por IA según wireframe ASCII y requisitos
             </p>
           </>
-        ) : orbitaAvailable ? (
-          <WireframeOrbitaBoceto
+        ) : hostedPreviewAvailable ? (
+          <WireframeComponentPreview
             screenTitle={screenTitle}
             description={parsedScreen?.description}
             wireframeAscii={parsedScreen?.wireframeAscii}
@@ -1009,6 +1019,7 @@ function ScreenSketchCanvas({
                 comp={comp}
                 previewPropsLiteral={propsLiteral}
                 embeddedInSketch
+                trustedOrigins={trustedOrigins}
               />
             )}
           />
@@ -1016,14 +1027,16 @@ function ScreenSketchCanvas({
           <>
             <ComposedScreenIframe srcDoc={composedLegacySrcDoc} height={sketchHeight} />
             <p className="mt-2 text-center text-[10px] text-neutral-400">
-              Snippets Orbita (legacy) compuestos según CU/HU
+              Snippets de componentes (legacy) compuestos según CU/HU
             </p>
           </>
         ) : (
           <>
             <ComposedScreenIframe srcDoc={htmlSketchSrcDoc} height={sketchHeight} />
             <p className="mt-2 text-center text-[10px] text-amber-600 dark:text-amber-400">
-              Sin boceto IA ni preview Orbita. Regenera wireframes o configura el MCP en Ajustes.
+              {showComponentPreviews
+                ? "Sin boceto IA ni preview de componentes. Regenera wireframes o activa la fuente de componentes en Ajustes."
+                : "Sin boceto IA para esta pantalla. Regenera wireframes o los bocetos del servidor."}
             </p>
           </>
         )}
@@ -1096,6 +1109,8 @@ export function WireframesPanel({
   specContent,
 }: WireframesPanelProps) {
   const isEmpty = !content?.trim();
+  const wireframesDocIncomplete =
+    !isEmpty && !/^## Pantalla:/m.test(content ?? "");
   const screens = useMemo(() => (content ? parseScreens(content) : []), [content]);
   const showStepper = isGenerating && stepsHistory != null && stepsHistory.length > 0;
 
@@ -1105,15 +1120,21 @@ export function WireframesPanel({
   const setWireframesPreviewSession = useWorkshopStore((s) => s.setWireframesPreviewSession);
 
   const [wireframesHash, setWireframesHash] = useState<string | null>(null);
+  const [stableWireframesHash, setStableWireframesHash] = useState<string | null>(null);
   const [previewSnippets, setPreviewSnippets] = useState<PreviewScreenData[] | null>(null);
   const [screenSketches, setScreenSketches] = useState<ScreenSketchPayload[]>([]);
   const [sketchesStale, setSketchesStale] = useState(false);
   const [sketchesStaleReason, setSketchesStaleReason] = useState<"mdd" | "screens" | "missing" | undefined>();
-  const [sketchesSyncing, setSketchesSyncing] = useState(false);
   const [sketchesRegenerating, setSketchesRegenerating] = useState(false);
   const [regeneratingScreenKeys, setRegeneratingScreenKeys] = useState<Set<string>>(() => new Set());
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [componentSourceActive, setComponentSourceActive] = useState<boolean | null>(null);
+  const [componentSourceUrl, setComponentSourceUrl] = useState<string | null>(null);
+  const previewTrustedOrigins = useMemo(
+    () => trustedOriginsFromComponentSourceUrl(componentSourceUrl),
+    [componentSourceUrl],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1125,17 +1146,43 @@ export function WireframesPanel({
     };
   }, [content]);
 
+  /** Evita invalidar preview en cada chunk del stream; estabiliza tras generar/editar. */
+  useEffect(() => {
+    if (isGenerating) return;
+    const t = window.setTimeout(() => setStableWireframesHash(wireframesHash), 450);
+    return () => window.clearTimeout(t);
+  }, [wireframesHash, isGenerating]);
+
+  useEffect(() => {
+    if (isGenerating) setStableWireframesHash(null);
+  }, [isGenerating]);
+
+  // C1: Al cambiar hash limpiamos snippets de componentes (necesitan refresh) pero
+  // PRESERVAMOS screenSketches AI — evita caída a boceto básico durante regen.
+  // Solo projectId vacía los sketches por completo (proyecto distinto).
+  useEffect(() => {
+    if (isGenerating) return;
+    setPreviewSnippets(null);
+    setSketchesStale(true);
+    setSketchesStaleReason(undefined);
+    setPreviewError(null);
+    setComponentSourceActive(null);
+    setComponentSourceUrl(null);
+  }, [stableWireframesHash, isGenerating]);
+
   useEffect(() => {
     setPreviewSnippets(null);
     setScreenSketches([]);
     setSketchesStale(false);
     setSketchesStaleReason(undefined);
     setPreviewError(null);
-  }, [wireframesHash, projectId]);
+    setComponentSourceActive(null);
+    setComponentSourceUrl(null);
+  }, [projectId]);
 
   const previewLoadingRef = useRef(false);
+  const previewLoadIdRef = useRef(0);
   const screenRegenInFlightRef = useRef<Set<string>>(new Set());
-  const sketchAutoPollRef = useRef(false);
 
   type SketchesStatus = {
     screenSketches?: ScreenSketchPayload[];
@@ -1147,22 +1194,36 @@ export function WireframesPanel({
 
   const applySketchStatus = useCallback(
     (data: SketchesStatus) => {
-      const sketches = dedupeScreenSketches(data.screenSketches ?? [], screens);
-      setScreenSketches(sketches);
+      const incoming = dedupeScreenSketches(data.screenSketches ?? [], screens);
+      let effectiveCount = 0;
+      setScreenSketches((prev) => {
+        if (incoming.length === 0) {
+          effectiveCount = prev.filter((s) => s.html?.trim()).length;
+          return prev;
+        }
+        const byKey = new Map(prev.map((s) => [normalizeScreenKey(s.screenName), s]));
+        for (const s of incoming) {
+          if (s.html?.trim()) {
+            byKey.set(normalizeScreenKey(s.screenName), s);
+          }
+        }
+        const merged = [...byKey.values()];
+        effectiveCount = merged.filter((s) => s.html?.trim()).length;
+        return merged;
+      });
       setSketchesStale(data.sketchesStale === true);
       setSketchesStaleReason(data.sketchesStaleReason);
-      setSketchesSyncing(data.syncing === true);
-      if (projectId && wireframesHash && previewSnippets !== null) {
+      if (projectId && wireframesHash && previewSnippets !== null && incoming.length > 0) {
         setWireframesPreviewSession({
           projectId,
           wireframesHash,
           screens: previewSnippets,
-          screenSketches: sketches,
+          screenSketches: incoming,
           sketchesStale: data.sketchesStale === true,
           sketchesStaleReason: data.sketchesStaleReason,
         });
       }
-      return sketches.length;
+      return effectiveCount;
     },
     [screens, projectId, wireframesHash, previewSnippets, setWireframesPreviewSession],
   );
@@ -1183,11 +1244,11 @@ export function WireframesPanel({
   }, [projectId, applySketchStatus]);
 
   useEffect(() => {
-    if (viewMode !== "preview" || !projectId || !wireframesHash) return;
+    if (viewMode !== "preview" || !projectId || !stableWireframesHash || isGenerating) return;
 
     const sessionHit =
       wireframesPreviewSession?.projectId === projectId &&
-      wireframesPreviewSession.wireframesHash === wireframesHash;
+      wireframesPreviewSession.wireframesHash === stableWireframesHash;
 
     if (sessionHit && previewSnippets === null) {
       setPreviewSnippets(wireframesPreviewSession.screens as PreviewScreenData[]);
@@ -1200,6 +1261,7 @@ export function WireframesPanel({
 
     if (previewSnippets !== null || previewLoadingRef.current) return;
 
+    const loadId = ++previewLoadIdRef.current;
     let cancelled = false;
     previewLoadingRef.current = true;
     setPreviewLoading(true);
@@ -1208,6 +1270,7 @@ export function WireframesPanel({
     (async () => {
       try {
         const { apiFetch, API_BASE } = await import("../utils/apiClient");
+
         const res = await apiFetch(`${API_BASE}/ai-analysis/wireframes/preview-snippets`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1215,6 +1278,7 @@ export function WireframesPanel({
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as {
+          componentSourceActive?: boolean;
           screens?: PreviewScreenData[];
           screenSketches?: ScreenSketchPayload[];
           sketchesStale?: boolean;
@@ -1224,8 +1288,10 @@ export function WireframesPanel({
         };
         const previewScreens = data.screens ?? [];
         const sketches = dedupeScreenSketches(data.screenSketches ?? [], screens);
-        const hash = data.wireframesHash ?? wireframesHash;
+        const hash = data.wireframesHash ?? stableWireframesHash;
         if (!cancelled) {
+          setComponentSourceActive(data.componentSourceActive ?? false);
+          setComponentSourceUrl(null);
           setPreviewSnippets(previewScreens);
           setScreenSketches(sketches);
           setSketchesStale(data.sketchesStale === true);
@@ -1245,22 +1311,30 @@ export function WireframesPanel({
           setPreviewError(e instanceof Error ? e.message : "Error al cargar preview");
         }
       } finally {
-        previewLoadingRef.current = false;
-        if (!cancelled) setPreviewLoading(false);
+        if (loadId === previewLoadIdRef.current) {
+          previewLoadingRef.current = false;
+          if (!cancelled) setPreviewLoading(false);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
+      if (loadId === previewLoadIdRef.current) {
+        previewLoadingRef.current = false;
+      }
     };
   }, [
     viewMode,
     projectId,
-    wireframesHash,
+    stableWireframesHash,
+    isGenerating,
     wireframesPreviewSession,
     previewSnippets,
     refreshSketchesQuietly,
     setWireframesPreviewSession,
+    screens,
+    applySketchStatus,
   ]);
 
   const pollSketchSync = useCallback(
@@ -1280,45 +1354,19 @@ export function WireframesPanel({
         last = (await pollRes.json()) as SketchesStatus;
         applySketchStatus(last);
         if (!last.syncing) {
-          setSketchesSyncing(false);
           return last;
         }
         await new Promise((r) => setTimeout(r, pollMs));
       }
-      setSketchesSyncing(last?.syncing === true);
       return last;
     },
     [projectId, applySketchStatus],
   );
 
-  useEffect(() => {
-    if (viewMode !== "preview" || !projectId || previewLoading || previewSnippets === null) return;
-    if (!sketchesSyncing) return;
-    if (sketchAutoPollRef.current || sketchesRegenerating) return;
-
-    sketchAutoPollRef.current = true;
-    let cancelled = false;
-
-    void pollSketchSync(45 * 60 * 1000).finally(() => {
-      if (!cancelled) sketchAutoPollRef.current = false;
-    });
-
-    return () => {
-      cancelled = true;
-      sketchAutoPollRef.current = false;
-    };
-  }, [
-    viewMode,
-    projectId,
-    previewLoading,
-    previewSnippets,
-    sketchesSyncing,
-    sketchesRegenerating,
-    wireframesHash,
-    pollSketchSync,
-  ]);
-
   const sketchRegenDisabled = sketchesRegenerating || !projectId;
+
+  const bocetosRegeneratingActive =
+    sketchesRegenerating || regeneratingScreenKeys.size > 0;
 
   const regenerateScreenBoceto = useCallback(
     async (screenName: string) => {
@@ -1357,17 +1405,23 @@ export function WireframesPanel({
     [projectId, sketchRegenDisabled, pollSketchSync],
   );
 
-  const regenerateBocetos = async () => {
+  // C3: incremental por defecto — solo regenera pantallas con screenHash cambiado.
+  // forceAll=true solo si el usuario lo pide explícitamente.
+  const regenerateBocetos = async (forceAll = false) => {
     if (!projectId || sketchesRegenerating) return;
+    if (wireframesDocIncomplete) {
+      setPreviewError(null);
+      return;
+    }
     setSketchesRegenerating(true);
     setPreviewError(null);
-    console.log("[WireframesPreview] sync-sketches start", { projectId, forceAll: true, async: true });
+    console.log("[WireframesPreview] sync-sketches start", { projectId, forceAll, async: true });
     try {
       const { apiFetch, API_BASE } = await import("../utils/apiClient");
       const res = await apiFetch(`${API_BASE}/ai-analysis/wireframes/sync-sketches`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, forceAll: true, async: true }),
+        body: JSON.stringify({ projectId, forceAll, async: true }),
       });
       if (!res.ok) {
         const errBody = await res.text().catch(() => "");
@@ -1386,7 +1440,12 @@ export function WireframesPanel({
           "La generación sigue en curso en el servidor. Los bocetos aparecerán al terminar; recarga en unos minutos.",
         );
       } else if (finalCount === 0) {
-        setPreviewError("No se generaron bocetos. Revisa la consola del API (SketchSync).");
+        const hasScreenSections = /^## Pantalla:/m.test(content ?? "");
+        setPreviewError(
+          hasScreenSections
+            ? "No se generaron bocetos. Revisa la consola del API (SketchSync)."
+            : "El documento wireframes solo tiene índice (sin ## Pantalla:). Usa «Generar wireframes» en el panel para reconstruir el markdown desde el MDD; la bitácora no guarda el texto completo.",
+        );
       }
     } catch (e) {
       console.error("[WireframesPreview] sync-sketches failed", e);
@@ -1450,12 +1509,13 @@ export function WireframesPanel({
   }, [screens, previewSnippets, sketchByScreenKey]);
 
   const hasPreviewContent = useMemo(() => {
-    const componentCount = (previewSnippets ?? []).reduce(
-      (n, s) => n + (s.components?.length ?? 0),
-      0,
-    );
-    return componentCount > 0 || screenSketches.length > 0 || screens.length > 0;
+    const hasSketches = screenSketches.some((s) => s.html?.trim());
+    const hasScreenMap = (previewSnippets ?? []).length > 0 || screens.length > 0;
+    return hasSketches || hasScreenMap;
   }, [previewSnippets, screenSketches, screens]);
+
+  /** Bocetos IA únicamente; sin HTML embebido del MCP get_component_previews. */
+  const showComponentPreviews = false;
 
   const screenTabs = useMemo<UnderlineTabItem[]>(() => {
     if (allScreenEntries.length === 0) return [];
@@ -1512,7 +1572,7 @@ export function WireframesPanel({
       <DocEmptyState
         icon={Monitor}
         title="Wireframes"
-        description="Mapeo visual de pantallas con componentes del design system (MCP). Requiere Design System generado y casos de uso o historias de usuario."
+        description="Mapeo visual de pantallas con componentes del design system. Requiere Design System generado y casos de uso o historias de usuario."
         onGenerate={onGenerate}
         loading={isGenerating || isLoading}
         hasMdd={canGenerate}
@@ -1525,8 +1585,37 @@ export function WireframesPanel({
     );
   }
 
+  const incompleteBanner = wireframesDocIncomplete ? (
+    <div
+      className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100"
+      role="status"
+    >
+      <p className="min-w-0 flex-1 text-pretty">
+        El documento wireframes quedó reducido a un índice (sin secciones{" "}
+        <code className="text-xs">## Pantalla:</code>). Hay que reconstruirlo desde el MDD; la
+        bitácora no guarda el markdown completo.
+      </p>
+      <Button
+        type="button"
+        size="sm"
+        className={cn("shrink-0 gap-1.5", WORKSHOP_DOC_EMPTY_PRIMARY_BTN)}
+        disabled={isGenerating || isLoading || !canGenerate}
+        onClick={onGenerate}
+        title={!canGenerate ? prerequisiteHint : undefined}
+      >
+        {isGenerating ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        ) : (
+          <Sparkles className="h-3.5 w-3.5" aria-hidden />
+        )}
+        Reconstruir wireframes
+      </Button>
+    </div>
+  ) : null;
+
   return (
     <>
+      {incompleteBanner}
       {showStepper && (
         <div className="mb-4 px-1">
           <WireframesProgressStepper
@@ -1605,12 +1694,22 @@ export function WireframesPanel({
         </div>
       ) : viewMode === "preview" ? (
         <div key="preview-view" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {previewLoading ? (
+          {isGenerating && previewSnippets === null ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
+              <Loader2 className="h-6 w-6 animate-spin text-[var(--primary)]" />
+              <span className="text-sm">Generando wireframes…</span>
+              <span className="max-w-sm text-center text-xs">
+                La vista previa se cargará cuando termine la generación y se guarde el documento.
+              </span>
+            </div>
+          ) : previewLoading ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
               <Loader2 className="h-6 w-6 animate-spin text-[var(--primary)]" />
               <span className="text-sm">Cargando vista previa…</span>
               <span className="text-xs text-[var(--muted-foreground)]">
-                Cargando previews y bocetos guardados…
+                {stableWireframesHash
+                  ? "Cargando pantallas y bocetos…"
+                  : "Preparando documento…"}
               </span>
             </div>
           ) : previewError ? (
@@ -1635,12 +1734,7 @@ export function WireframesPanel({
                 />
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
-                {sketchesSyncing ? (
-                  <p className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--primary)]" aria-hidden />
-                    Generando bocetos en el servidor…
-                  </p>
-                ) : sketchesStale ? (
+                {sketchesStale && !bocetosRegeneratingActive ? (
                   <p className="text-xs text-amber-700 dark:text-amber-300">
                     {sketchesStaleReason === "mdd"
                       ? "El MDD cambió: los bocetos pueden estar desactualizados."
@@ -1648,25 +1742,54 @@ export function WireframesPanel({
                         ? "Aún no hay bocetos generados para este documento."
                         : "Algunas pantallas cambiaron en el markdown."}
                   </p>
-                ) : (
+                ) : !bocetosRegeneratingActive ? (
                   <p className="text-xs text-[var(--muted-foreground)]">
                     Bocetos generados al crear o guardar wireframes.
                   </p>
+                ) : (
+                  <span className="text-xs text-[var(--muted-foreground)]" aria-hidden />
                 )}
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   className="h-8 gap-1.5 text-xs"
-                  disabled={sketchesRegenerating || !projectId}
-                  onClick={() => void regenerateBocetos()}
+                  disabled={sketchesRegenerating || !projectId || wireframesDocIncomplete}
+                  title={
+                    wireframesDocIncomplete
+                      ? "Reconstruye el documento wireframes antes de regenerar bocetos"
+                      : sketchesRegenerating
+                        ? "Generando bocetos en el servidor"
+                        : "Regenera solo los bocetos con cambios (incremental)"
+                  }
+                  onClick={() => void regenerateBocetos(false)}
                 >
                   {sketchesRegenerating ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Generando bocetos en el servidor…
+                    </>
                   ) : (
-                    <RefreshCw className="h-3.5 w-3.5" />
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Regenerar bocetos
+                    </>
                   )}
-                  Regenerar bocetos
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1 text-xs text-muted-foreground"
+                  disabled={sketchesRegenerating || !projectId || wireframesDocIncomplete}
+                  title={
+                    wireframesDocIncomplete
+                      ? "Reconstruye el documento wireframes antes de regenerar bocetos"
+                      : "Regenera todos los bocetos desde cero"
+                  }
+                  onClick={() => void regenerateBocetos(true)}
+                >
+                  Regenerar todo
                 </Button>
               </div>
               {screenTabs.length > 1 && (
@@ -1703,6 +1826,8 @@ export function WireframesPanel({
                           previewComponents={entry.preview?.components ?? []}
                           requirementsContext={requirementsContext}
                           agentSketchHtml={entry.screenSketchHtml}
+                          showComponentPreviews={showComponentPreviews}
+                          trustedOrigins={previewTrustedOrigins}
                           onRegenerateSketch={
                             projectId
                               ? () => void regenerateScreenBoceto(entry.title)
@@ -1728,10 +1853,14 @@ export function WireframesPanel({
             </div>
           ) : (
             <div className="flex min-h-0 flex-1 flex-col gap-3">
-              <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                No se encontraron snippets de componentes. Verifica que el MCP del design system esté configurado.
-              </div>
+              {sketchesStale && !bocetosRegeneratingActive ? (
+                <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {sketchesStaleReason === "missing"
+                    ? "Aún no hay bocetos. Usa «Regenerar bocetos» o espera a que termine la generación en segundo plano."
+                    : "Los bocetos pueden estar desactualizados respecto al documento."}
+                </div>
+              ) : null}
               <div className="min-h-0 flex-1 overflow-auto">
                 <MddViewer content={content ?? ""} />
               </div>

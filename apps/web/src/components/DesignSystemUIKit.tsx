@@ -53,6 +53,8 @@ interface ThemeStyles {
   accent: string;
   fg: string;
   mutedFg: string;
+  cardFg: string;
+  cardMutedFg: string;
   card: string;
   bg: string;
   border: string;
@@ -94,6 +96,8 @@ function useThemeStyles(tokens: DesignTokens, useDesignVars: boolean): ThemeStyl
         accent: "var(--ds-accent)",
         fg: "var(--ds-fg)",
         mutedFg: "var(--ds-muted-fg)",
+        cardFg: "var(--ds-card-fg, var(--ds-fg))",
+        cardMutedFg: "var(--ds-card-muted-fg, var(--ds-muted-fg))",
         card: "var(--ds-card)",
         bg: "var(--ds-bg)",
         border: "var(--ds-border)",
@@ -114,6 +118,8 @@ function useThemeStyles(tokens: DesignTokens, useDesignVars: boolean): ThemeStyl
       accent: palette.accent,
       fg: "var(--foreground)",
       mutedFg: "var(--foreground-muted)",
+      cardFg: "var(--foreground)",
+      cardMutedFg: "var(--foreground-muted)",
       card: "var(--card)",
       bg: "var(--background)",
       border: "var(--border)",
@@ -194,7 +200,7 @@ function ActionsMenu({ t }: { t: ThemeStyles }) {
         onClick={() => setOpen((v) => !v)}
         className={cn(
           "flex h-9 items-center gap-1 border bg-[var(--ds-card)] px-2.5 text-sm font-medium transition-colors",
-          "border-[var(--ds-border)] text-[var(--ds-fg)]",
+          "border-[var(--ds-border)] text-[var(--ds-card-fg,var(--ds-fg))]",
           "hover:bg-[color-mix(in_oklch,var(--ds-muted)_55%,var(--ds-card))]",
           open && "bg-[color-mix(in_oklch,var(--ds-muted)_55%,var(--ds-card))]",
         )}
@@ -222,7 +228,7 @@ function ActionsMenu({ t }: { t: ThemeStyles }) {
                 "flex w-full px-3 py-1.5 text-left text-xs transition-colors",
                 item.danger
                   ? "text-red-600 hover:bg-red-500/10 dark:text-red-400"
-                  : "text-[var(--ds-fg)] hover:bg-[color-mix(in_oklch,var(--ds-muted)_50%,var(--ds-card))]",
+                  : "text-[var(--ds-card-fg,var(--ds-fg))] hover:bg-[color-mix(in_oklch,var(--ds-muted)_50%,var(--ds-card))]",
               )}
             >
               {item.label}
@@ -260,14 +266,14 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
   const [treeOpen, setTreeOpen] = useState<Record<string, boolean>>({ grid: true });
 
   const inputBg = "var(--ds-input-bg)";
-  const inputFg = "var(--ds-fg)";
+  const inputFg = "var(--ds-card-fg, var(--ds-fg))";
   const inputRadius =
     "var(--ds-input-radius, var(--ds-radius-md, 12px))";
 
   const badgeFilledBg =
     "var(--ds-button-secondary-bg, var(--ds-color-primary, var(--ds-accent-subtle)))";
   const badgeFilledFg =
-    "var(--ds-button-secondary-fg, var(--ds-color-foreground, var(--ds-fg)))";
+    "var(--ds-button-secondary-fg, var(--ds-color-foreground, var(--ds-card-fg, var(--ds-fg))))";
 
   function toggleIcon(key: string) {
     setIconActive((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -303,7 +309,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
   const columnBlock = "w-full min-w-0";
   const columnPanel = cn(
     columnBlock,
-    "rounded-lg border border-[var(--ds-border)] bg-[var(--ds-card)]",
+    "rounded-lg border border-[var(--ds-border)] bg-[var(--ds-card)] text-[var(--ds-card-fg,var(--ds-fg))]",
   );
   /**
    * Column shell: grows/shrinks with flex-wrap parent so columns stack when the
@@ -330,7 +336,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
         <div
           className={cn(
             columnBlock,
-            "flex flex-col overflow-hidden border bg-[var(--ds-card)] transition-[border-color,box-shadow] min-[400px]:flex-row min-[400px]:items-center",
+            "flex flex-col overflow-hidden border bg-[var(--ds-card)] text-[var(--ds-card-fg,var(--ds-fg))] transition-[border-color,box-shadow] min-[400px]:flex-row min-[400px]:items-center",
             searchFocused && "ring-2 ring-[color-mix(in_oklch,var(--ds-accent)_35%,transparent)]",
           )}
           style={{
@@ -339,7 +345,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
           }}
         >
           <div className="flex min-w-0 flex-1 items-center">
-            <span className="flex shrink-0 items-center pl-3 text-[var(--ds-muted-fg)]">
+            <span className="flex shrink-0 items-center pl-3 text-[var(--ds-card-muted-fg,var(--ds-muted-fg))]">
               <Search className="h-4 w-4" strokeWidth={2} />
             </span>
             <input
@@ -349,7 +355,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setSearchFocused(false)}
               placeholder="Search the docs…"
-              className="h-9 min-w-0 flex-1 bg-transparent px-2 text-sm text-[var(--ds-fg)] outline-none placeholder:text-[var(--ds-muted-fg)]"
+              className="h-9 min-w-0 flex-1 bg-transparent px-2 text-sm text-[var(--ds-card-fg,var(--ds-fg))] outline-none placeholder:text-[var(--ds-card-muted-fg,var(--ds-muted-fg))]"
             />
           </div>
           <button
@@ -375,7 +381,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
             }}
           >
             <Info className="mt-0.5 h-4 w-4 shrink-0" style={{ color: t.primary }} strokeWidth={2} />
-            <p className="text-sm text-[var(--ds-fg)]">Please upgrade to the new version.</p>
+            <p className="text-sm text-[var(--ds-card-fg,var(--ds-fg))]">Please upgrade to the new version.</p>
           </div>
 
           <TreePanel treeOpen={treeOpen} setTreeOpen={setTreeOpen} t={t} />
@@ -396,7 +402,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
                 <button
                   key={label}
                   type="button"
-                  className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium text-[var(--ds-fg)] transition-colors hover:border-[color-mix(in_oklch,var(--ds-accent)_40%,var(--ds-border))] hover:bg-[color-mix(in_oklch,var(--ds-muted)_35%,var(--ds-card))]"
+                  className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium text-[var(--ds-card-fg,var(--ds-fg))] transition-colors hover:border-[color-mix(in_oklch,var(--ds-accent)_40%,var(--ds-border))] hover:bg-[color-mix(in_oklch,var(--ds-muted)_35%,var(--ds-card))]"
                   style={{ borderColor: t.border, borderRadius: t.radiusSm }}
                 >
                   {label}
@@ -431,7 +437,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
                         : "var(--ds-card)",
                       color: filled
                         ? "var(--ds-button-primary-fg, var(--ds-accent-fg))"
-                        : "var(--ds-muted-fg)",
+                        : "var(--ds-card-muted-fg, var(--ds-muted-fg))",
                       borderColor: filled
                         ? "var(--ds-button-primary-bg, var(--ds-accent))"
                         : "var(--ds-border)",
@@ -463,7 +469,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
             "flex w-full flex-col gap-2 min-[360px]:flex-row min-[360px]:items-center",
           )}
         >
-          <div className="flex min-w-0 w-full min-[360px]:flex-1 items-center justify-between gap-0.5 overflow-x-auto rounded-full border border-[var(--ds-border)] bg-[var(--ds-card)] p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-0 w-full min-[360px]:flex-1 items-center justify-between gap-0.5 overflow-x-auto rounded-full border border-[var(--ds-border)] bg-[var(--ds-card)] p-1 text-[var(--ds-card-fg,var(--ds-fg))] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {toolbarIcons.map(({ Icon, label }) => {
               const active = activeToolbar === label.toLowerCase();
               return (
@@ -476,8 +482,8 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
                   className={cn(
                     "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
                     active
-                      ? "bg-[color-mix(in_oklch,var(--ds-muted)_70%,var(--ds-card))] text-[var(--ds-fg)]"
-                      : "text-[var(--ds-muted-fg)] hover:bg-[color-mix(in_oklch,var(--ds-muted)_60%,var(--ds-card))] hover:text-[var(--ds-fg)]",
+                      ? "bg-[color-mix(in_oklch,var(--ds-muted)_70%,var(--ds-card))] text-[var(--ds-card-fg,var(--ds-fg))]"
+                      : "text-[var(--ds-card-muted-fg,var(--ds-muted-fg))] hover:bg-[color-mix(in_oklch,var(--ds-muted)_60%,var(--ds-card))] hover:text-[var(--ds-card-fg,var(--ds-fg))]",
                   )}
                   style={{ borderRadius: t.radiusSm }}
                 >
@@ -538,7 +544,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
             style={{ borderRadius: t.radiusMd }}
           >
             <blockquote
-              className="border-l-4 py-1 pl-3 text-sm leading-relaxed text-[var(--ds-fg)]"
+              className="border-l-4 py-1 pl-3 text-sm leading-relaxed text-[var(--ds-card-fg,var(--ds-fg))]"
               style={{ borderColor: t.primary }}
             >
               A modal dialog that interrupts the user with important content and expects a
@@ -553,7 +559,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
               </a>{" "}
               inline.
             </blockquote>
-            <p className="text-sm leading-relaxed text-[var(--ds-muted-fg)]">
+            <p className="text-sm leading-relaxed text-[var(--ds-card-muted-fg,var(--ds-muted-fg))]">
               A modal dialog that interrupts the user with important content and expects a
               response. You can embed links inline.
             </p>
@@ -571,7 +577,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
               { id: "invoice", label: "Review invoice #3456" },
             ].map(({ id, label }) => (
               <li key={id} className="w-full">
-                <label className="flex w-full cursor-pointer items-center gap-2.5 text-sm text-[var(--ds-fg)]">
+                <label className="flex w-full cursor-pointer items-center gap-2.5 text-sm text-[var(--ds-card-fg,var(--ds-fg))]">
                   <Checkbox checked={checks[id] ?? false} onChange={() => toggleCheck(id)} t={t} />
                   <span className={checks[id] ? "line-through opacity-60" : ""}>{label}</span>
                 </label>
@@ -652,23 +658,23 @@ function TreePanel({
 }) {
   return (
     <div
-      className="w-full min-w-0 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-card)] p-2 text-sm"
+      className="w-full min-w-0 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-card)] p-2 text-sm text-[var(--ds-card-fg,var(--ds-fg))]"
       style={{ borderRadius: t.radiusMd }}
     >
       <button
         type="button"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[var(--ds-fg)] hover:bg-[color-mix(in_oklch,var(--ds-muted)_50%,var(--ds-card))]"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[var(--ds-card-fg,var(--ds-fg))] hover:bg-[color-mix(in_oklch,var(--ds-muted)_50%,var(--ds-card))]"
         onClick={() => setTreeOpen((o) => ({ ...o, box: !o.box }))}
       >
-        <Box className="h-4 w-4 text-[var(--ds-muted-fg)]" />
+        <Box className="h-4 w-4 text-[var(--ds-card-muted-fg,var(--ds-muted-fg))]" />
         <span className="font-medium">Box</span>
       </button>
       <button
         type="button"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[var(--ds-fg)] hover:bg-[color-mix(in_oklch,var(--ds-muted)_50%,var(--ds-card))]"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[var(--ds-card-fg,var(--ds-fg))] hover:bg-[color-mix(in_oklch,var(--ds-muted)_50%,var(--ds-card))]"
         onClick={() => setTreeOpen((o) => ({ ...o, grid: !o.grid }))}
       >
-        <Grid3X3 className="h-4 w-4 text-[var(--ds-muted-fg)]" />
+        <Grid3X3 className="h-4 w-4 text-[var(--ds-card-muted-fg,var(--ds-muted-fg))]" />
         <span className="font-medium">Grid</span>
         <ChevronDown
           className={`ml-auto h-3.5 w-3.5 transition-transform ${treeOpen.grid ? "rotate-180" : ""}`}
@@ -684,7 +690,7 @@ function TreePanel({
             <button
               key={`${label}-${i}`}
               type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[var(--ds-muted-fg)] transition-colors hover:bg-[color-mix(in_oklch,var(--ds-muted)_50%,var(--ds-card))] hover:text-[var(--ds-fg)]"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[var(--ds-card-muted-fg,var(--ds-muted-fg))] transition-colors hover:bg-[color-mix(in_oklch,var(--ds-muted)_50%,var(--ds-card))] hover:text-[var(--ds-card-fg,var(--ds-fg))]"
             >
               <Icon className="h-3.5 w-3.5" />
               <span>{label}</span>
@@ -699,7 +705,7 @@ function TreePanel({
 function UserCard({ t, name, email }: { t: ThemeStyles; name: string; email: string }) {
   return (
     <div
-      className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-card)] p-3 transition-colors hover:bg-[color-mix(in_oklch,var(--ds-muted)_25%,var(--ds-card))]"
+      className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-card)] p-3 text-[var(--ds-card-fg,var(--ds-fg))] transition-colors hover:bg-[color-mix(in_oklch,var(--ds-muted)_25%,var(--ds-card))]"
       style={{ borderRadius: t.radiusMd, boxShadow: t.shadowMd }}
     >
       <div
@@ -713,8 +719,8 @@ function UserCard({ t, name, email }: { t: ThemeStyles; name: string; email: str
           .slice(0, 2)}
       </div>
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-[var(--ds-fg)]">{name}</p>
-        <p className="truncate text-xs text-[var(--ds-muted-fg)]">{email}</p>
+        <p className="truncate text-sm font-medium text-[var(--ds-card-fg,var(--ds-fg))]">{name}</p>
+        <p className="truncate text-xs text-[var(--ds-card-muted-fg,var(--ds-muted-fg))]">{email}</p>
       </div>
     </div>
   );
@@ -750,12 +756,12 @@ function SignUpCard({
     <div
       className={cn(
         fieldBlock,
-        "box-border flex w-full flex-col gap-4 border border-[var(--ds-border)] bg-[var(--ds-card)] p-4 sm:p-6 min-[300px]:min-h-0 min-[300px]:flex-1",
+        "box-border flex w-full flex-col gap-4 border border-[var(--ds-border)] bg-[var(--ds-card)] p-4 text-[var(--ds-card-fg,var(--ds-fg))] sm:p-6 min-[300px]:min-h-0 min-[300px]:flex-1",
       )}
       style={{ borderRadius: t.radiusLg, boxShadow: t.shadowMd }}
     >
       <h3
-        className={cn(fieldBlock, "text-lg font-semibold text-[var(--ds-fg)]")}
+        className={cn(fieldBlock, "text-lg font-semibold text-[var(--ds-card-fg,var(--ds-fg))]")}
         style={headingStyle(tokens)}
       >
         Sign up
@@ -769,7 +775,7 @@ function SignUpCard({
           ] as const
         ).map(({ key, label, placeholder, type }) => (
           <div key={key} className={fieldBlock}>
-            <label className="mb-1.5 block w-full text-sm font-medium text-[var(--ds-fg)]">
+            <label className="mb-1.5 block w-full text-sm font-medium text-[var(--ds-card-fg,var(--ds-fg))]">
               {label}
             </label>
             <input
@@ -777,7 +783,7 @@ function SignUpCard({
               value={signup[key]}
               onChange={(e) => setSignup((s) => ({ ...s, [key]: e.target.value }))}
               placeholder={placeholder}
-              className="box-border h-10 w-full min-w-0 px-3 text-sm text-[var(--ds-fg)] outline-none placeholder:text-[var(--ds-muted-fg)] transition-[border-color,box-shadow] hover:border-[color-mix(in_oklch,var(--ds-accent)_30%,var(--ds-border))] focus:border-[var(--ds-accent)] focus:ring-2 focus:ring-[color-mix(in_oklch,var(--ds-accent)_35%,transparent)]"
+              className="box-border h-10 w-full min-w-0 px-3 text-sm text-[var(--ds-card-fg,var(--ds-fg))] outline-none placeholder:text-[var(--ds-card-muted-fg,var(--ds-muted-fg))] transition-[border-color,box-shadow] hover:border-[color-mix(in_oklch,var(--ds-accent)_30%,var(--ds-border))] focus:border-[var(--ds-accent)] focus:ring-2 focus:ring-[color-mix(in_oklch,var(--ds-accent)_35%,transparent)]"
               style={inputBaseStyle}
             />
           </div>
@@ -799,7 +805,7 @@ function SignUpCard({
       </button>
       <div className={cn(fieldBlock, "flex items-center gap-3")}>
         <div className="min-h-px min-w-0 flex-1 border-t border-[var(--ds-border)]" />
-        <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-[var(--ds-muted-fg)]">
+        <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-[var(--ds-card-muted-fg,var(--ds-muted-fg))]">
           OR
         </span>
         <div className="min-h-px min-w-0 flex-1 border-t border-[var(--ds-border)]" />
@@ -812,7 +818,7 @@ function SignUpCard({
         )}
         style={{
           backgroundColor: "var(--ds-button-ghost-bg, var(--ds-card))",
-          color: "var(--ds-button-ghost-fg, var(--ds-fg))",
+          color: "var(--ds-button-ghost-fg, var(--ds-card-fg, var(--ds-fg)))",
           borderColor: "var(--ds-border)",
           borderRadius: "var(--ds-button-ghost-radius, var(--ds-radius-sm))",
         }}
@@ -850,7 +856,7 @@ function AvatarGroup({ t }: { t: ThemeStyles; tokens: DesignTokens }) {
           }}
         >
           {a.type === "icon" ? (
-            <User className="h-4 w-4 text-[var(--ds-muted-fg)]" />
+            <User className="h-4 w-4 text-[var(--ds-card-muted-fg,var(--ds-muted-fg))]" />
           ) : (
             a.text
           )}
