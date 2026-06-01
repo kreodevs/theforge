@@ -12,6 +12,8 @@ const SQL_GLUE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/UUID\s+NOT\s+NULL_REFERENCES/gi, "UUID NOT NULL REFERENCES"],
   [/UUID_REFERENCES/gi, "UUID REFERENCES"],
   [/REFERENCES_([a-z_]+)/gi, "REFERENCES $1"],
+  [/regiON\s+estado\s*\(/gi, "region_estado("],
+  [/REFERENCES\s+regi[oó]n_estado/gi, "REFERENCES region_estado"],
   [/([a-z])_(VARCHAR|TEXT|JSONB|BOOLEAN|INTEGER|BIGINT|DECIMAL|TIMESTAMPTZ|INET)\b/gi, "$1 $2"],
   [/(?<![a-z])_(UUID)\b/g, " UUID"],
   [/_(NOT\s+NULL)\b/gi, " $1"],
@@ -20,7 +22,7 @@ const SQL_GLUE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/_(REFERENCES)([a-z_])/gi, " REFERENCES$2"],
   [/_(REFERENCES)\b/gi, " REFERENCES"],
   [/([a-z_])_(ON|DEFAULT)\b/gi, "$1 $2"],
-  [/ON_([a-z_]+)\(/gi, "ON $1("],
+  [/\bON_(DELETE|UPDATE|CASCADE|RESTRICT|SET|NO\s+ACTION)\b/gi, "ON $1"],
   [/^_(CREATE|INDEX)\b/gim, "$1"],
 ];
 
@@ -36,11 +38,16 @@ export function repairUnclosedCodeFences(text: string): string {
     const trimmed = line.trim();
     const openMatch = trimmed.match(/^```(\w*)\s*$/);
     if (openMatch) {
+      const nextLang = openMatch[1] ?? "";
       if (inFence) {
+        // JSON partido en dos fences consecutivos — no insertar cierre artificial
+        if (fenceLang === "json" && nextLang === "json") {
+          continue;
+        }
         out.push("```");
       }
       inFence = true;
-      fenceLang = openMatch[1] ?? "";
+      fenceLang = nextLang;
       out.push(line);
       continue;
     }
@@ -187,13 +194,31 @@ export function repairGluedBoldFlowTitles(text: string): string {
     .replace(/^\*\*Beneficios de las\*\*\s*tablas espejo\s*$/gim, "### Beneficios de las tablas espejo");
 }
 
+/** ` ``` ` sueltos antes de ```json / ```env y fences duplicados. */
+export function repairStackedCodeFences(text: string): string {
+  let out = text.replace(/\n```\s*\n```\s*\n```(json|env|sql)\b/gi, "\n\n```$1");
+  out = out.replace(/\n```\s*\n```(json|env|sql)\b/gi, "\n\n```$1");
+  out = out.replace(/(\n```json\n[\s\S]*?\n```)\s*\n```json\n/gi, "$1\n");
+  out = out.replace(/(\n```env\n[\s\S]*?\n```)\s*\n```env\n/gi, "$1\n");
+  out = out.replace(/\n```\s*\n\n```json/g, "\n\n```json");
+  out = out.replace(/\n```\s*\n\n```env/g, "\n\n```env");
+  out = out.replace(/^```\s*\n(\*\*Response)/gim, "$1");
+  out = out.replace(/(\*\*Response \d+:\*\*)\s*\n+```\s*\n+(?=\{)/gi, "$1\n\n```json\n");
+  out = out.replace(/(\*\*Response \d+:\*\*)\s*\n+```\s*\n+```json/gi, "$1\n\n```json");
+  out = out.replace(/\n\}\s*```\s*\n/g, "\n```\n\n");
+  out = out.replace(/\n###[^\n]+\n\}\s*\n```/g, (m) => m.replace(/\n\}\s*\n```/, "\n\n"));
+  out = out.replace(/(#{1,6}[^\n]*\n)\}\s*\n+(?=\*\*|```)/g, "$1");
+  out = out.replace(/\n\}\s*\n+(?=\*\*Backend|\*\*Frontends|```env\b)/gi, "\n\n");
+  return out;
+}
+
 /** Cierra JSON / elimina fences vacíos antes de Response o **Beneficios** */
 export function repairJsonFenceIntegrity(text: string): string {
-  let out = text.replace(
+  let out = text;
+  out = out.replace(
     /\*\*Response (\d+)[^*]*\*\*\s*:?\s*\n+```\s*\n+```json/gi,
     "**Response $1:**\n\n```json",
   );
-  out = out.replace(/\n```\s*\n```json/g, "\n\n```json");
   out = out.replace(/```json\n([\s\S]*?)(\n\*\*[^\n]+\*\*)/g, (full, body: string, after: string) => {
     const trimmed = body.trimEnd();
     if (trimmed.endsWith("```")) return full;
@@ -207,7 +232,7 @@ export function repairJsonFenceIntegrity(text: string): string {
     const closed = inner.endsWith("}") ? inner : `${inner}\n}`;
     return `\n\`\`\`json\n${closed}\n\`\`\`\n${rest}`;
   });
-  out = out.replace(/(\n```json\n[\s\S]*?)(\n```\s*\n```json)/g, "$1\n```\n");
+  out = repairSplitJsonFragments(out);
   return out;
 }
 
@@ -442,11 +467,40 @@ export function repairLooseJsonBlocks(text: string): string {
   return out.join("\n");
 }
 
+function jsonBraceBalance(chunk: string): { braces: number; brackets: number } {
+  let braces = 0;
+  let brackets = 0;
+  for (const ch of chunk) {
+    if (ch === "{") braces++;
+    else if (ch === "}") braces--;
+    else if (ch === "[") brackets++;
+    else if (ch === "]") brackets--;
+  }
+  return { braces, brackets };
+}
+
+/** Une fragmentos JSON partidos por fences intermedios (```json … ```json). */
+export function repairSplitJsonFragments(text: string): string {
+  return text.replace(
+    /```json\n([\s\S]*?)\n```\s*\n+```json\n([\s\S]*?)\n```/gi,
+    (_m, a: string, b: string) => {
+      const bal = jsonBraceBalance(a);
+      if (bal.braces <= 0 && bal.brackets <= 0) return _m;
+      const aTrim = a.trimEnd();
+      const bTrim = b.trim();
+      const sep = aTrim.endsWith("[") || aTrim.endsWith(",") ? "\n" : ",\n";
+      return `\`\`\`json\n${aTrim}${sep}${bTrim}\n\`\`\``;
+    },
+  );
+}
+
 export function repairPastedMarkdown(text: string): string {
   if (!text?.trim()) return text ?? "";
   let out = text.replace(/\r\n/g, "\n");
   out = repairMetadataCoverTable(out);
   out = repairGluedBoldFlowTitles(out);
+  out = repairStackedCodeFences(out);
+  out = repairSplitJsonFragments(out);
   out = repairJsonFenceIntegrity(out);
   out = repairIndentedProseBlocks(out);
   out = repairStrayCodeFences(out);
@@ -468,6 +522,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairIndentedProseBlocks(out);
   out = repairFlowSectionsToMermaid(out);
   out = repairTableBoundaries(out);
+  out = repairSplitJsonFragments(out);
   out = out.replace(/\n(🔴|🟡|🟢)/g, "\n\n$1");
   out = out.replace(/\n-{3,}\n/g, "\n\n---\n\n");
   return out;
