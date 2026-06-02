@@ -420,14 +420,7 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
               </pre>
             );
           },
-          code({ node, className, children, inline, ...props }) {
-            if (inline) {
-              return (
-                <code className={className} {...props}>
-                  {children}
-                </code>
-              );
-            }
+          code({ node, className, children, ...props }) {
             // mdast: node.value; hast: node.children[].value; React children (v10 puede pasar nodos)
             const fromNode =
               node && typeof node === "object" && "value" in node && typeof (node as { value?: string }).value === "string"
@@ -450,6 +443,15 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
                   ? children
                   : String(children ?? "");
             const source = (fromNode || fromHast || fromChildren).replace(/\n$/, "").trim();
+            const isInlineCode =
+              !/\blanguage-[\w-]+\b/i.test(className ?? "") && !source.includes("\n");
+            if (isInlineCode) {
+              return (
+                <code className={className} {...props}>
+                  {children}
+                </code>
+              );
+            }
             const looksLikeMetadataOnly = /^\[\w+\](\s+\[\w+\])*$/.test(source.trim());
             if (looksLikeMetadataOnly) {
               return (
