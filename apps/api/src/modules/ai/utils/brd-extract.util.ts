@@ -43,7 +43,7 @@ function looksLikeBrdMarkdown(text: string): boolean {
   if (t.length < MIN_BRD_BODY_CHARS) return false;
   const hasHeading = /^#{1,3}\s+\S/m.test(t);
   const hasBrdSignals =
-    /pain\s*points|problem\s*statement|alcance|requisitos|business\s+requirements|métricas\s+de\s+éxito|supuestos/i.test(
+    /pain\s*points|problem\s*statement|alcance|requisitos|business\s+requirements|métricas\s+de\s+éxito|supuestos|matriz\s+de\s+permisos|requisitos\s+no\s+funcionales|contratos\s+de\s+datos|decision\s+log|flujos\s+de\s+negocio/i.test(
       t,
     );
   return hasHeading && hasBrdSignals;
