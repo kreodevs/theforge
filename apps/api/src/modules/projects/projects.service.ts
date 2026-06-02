@@ -55,9 +55,10 @@ import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.u
 
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 
-/** System prompt para sintetizar BRD/To-Be desde DBGA (greenfield); más ligero que el coordinador legacy + KNOWLEDGE. */
-const DBGA_BRD_TOBE_SUGGEST_SYSTEM =
-  "Eres analista de producto y arquitecto de soluciones en español. Produces BRD en markdown coherentes con el benchmark de dominio (DBGA). El BRD DEBE incluir la sección «Pain Points & Problem Statement» al inicio, detallando dolores del cliente, soluciones actuales y validación de demanda. No inventes requisitos que contradigan el texto; usa «no consta» cuando falte evidencia.";
+import {
+  BRD_GENERATION_SYSTEM,
+  buildBrdUserPrompt,
+} from "../ai/prompts/brd-generation-prompt.js";
 
 type StageWithEst = Stage & { estimation: Estimation | null };
 
@@ -1589,20 +1590,11 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     }
     const { text: dbgaForPrompt, truncated: dbgaTruncated } = truncateSourceDocForBrdPrompt(effectiveDbga);
 
-    const brdPromptBase =
-      "Eres analista de negocio. A partir del **Domain Benchmark / guía de dominio (DBGA)** siguiente, " +
-      "genera **solo el BRD** en español, en markdown.\n\n" +
-      "El BRD DEBE comenzar con la sección **«Pain Points & Problem Statement»** que incluya:\n" +
-      "1. **Mapa de dolores** — tabla con: dolor, quién lo siente, frecuencia/impacto, solución actual (workaround), gap/precio.\n" +
-      "2. **Validación de demanda** — señales de mercado, menciones en comunidades, competidores directos.\n" +
-      "3. **Perfil del cliente objetivo** — tamaño de empresa, stack, presupuesto mensual estimado.\n" +
-      "4. **Consecuencias de no actuar** — qué pierde el cliente si no existe esta solución, cuánto gasta hoy en workarounds.\n\n" +
-      "Luego continúa con: problema, alcance de producto, supuestos, riesgos y métricas de éxito alineadas con el DBGA.\n" +
-      "Extrae la información de Pain Points del DBGA; si algún dato no está disponible, indícalo como «Por validar».\n\n" +
-      "Responde **solo** con este formato exacto (delimitadores literales):\n" +
-      "<<<BRD>>>\n(markdown BRD)\n<<<END_BRD>>>\n\n" +
-      "--- DBGA ---\n\n" +
-      dbgaForPrompt;
+    const brdPromptBase = buildBrdUserPrompt({
+      mode: "greenfield-from-dbga",
+      sourceLabel: "DBGA",
+      sourceDocument: dbgaForPrompt,
+    });
 
     let brd = "";
     let lastFailure: BrdExtractFailure = "no_delimiter";
@@ -1613,7 +1605,7 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
           ? "\n\n**IMPORTANTE:** El intento anterior no siguió el formato. Responde ÚNICAMENTE con:\n<<<BRD>>>\n(markdown BRD completo)\n<<<END_BRD>>>\nSin texto antes ni después de los delimitadores."
           : "";
       const raw = await this.ai.generateResponse(brdPromptBase + formatReminder, [], {
-        systemPrompt: DBGA_BRD_TOBE_SUGGEST_SYSTEM,
+        systemPrompt: BRD_GENERATION_SYSTEM,
       });
       lastRawLength = (raw ?? "").length;
       const extracted = extractBrdFromLlmResponse(raw ?? "");
