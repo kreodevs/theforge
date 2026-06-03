@@ -435,6 +435,10 @@ export interface Project {
   projectType?: "NEW" | "LEGACY";
   /** Privado (solo owner) o compartido (todos los usuarios). */
   visibility?: "PRIVATE" | "SHARED";
+  /** Owner del proyecto (API Prisma userId). */
+  userId?: string;
+  /** Perfil MCP de componentes elegido por el owner (sin default). */
+  componentSourceProfileId?: string | null;
   /** Si true, el API bloquea MDD técnico hasta BRD + To-Be aprobados (configurable en el panel). */
   requireBrdTobeGate?: boolean;
   theforgeProjectId?: string | null;

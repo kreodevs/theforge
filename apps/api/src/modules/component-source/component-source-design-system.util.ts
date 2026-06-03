@@ -65,6 +65,10 @@ export async function fetchFullDesignSystemFromPort(
   componentSource: ComponentSourcePort,
   userId: string,
 ): Promise<ComponentSourceDesignSystemPayload> {
+  if (!componentSource.capabilities?.designSystem?.get) {
+    throw new Error("designSystem.get no mapeado en el perfil de componentes");
+  }
+
   const result: McpToolResult<DesignSystemResult> = await componentSource.getDesignSystem(userId, {
     format: "full",
     includeMarkdown: true,

@@ -54,7 +54,7 @@ import {
 import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.util.js";
 
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
-import { WireframeSketchesSyncService } from "../ai-analysis/wireframe-sketches-sync.service.js";
+import { ComponentSourceRegenerationService } from "../component-source/component-source-regeneration.service.js";
 
 /** System prompt para sintetizar BRD/To-Be desde DBGA (greenfield); más ligero que el coordinador legacy + KNOWLEDGE. */
 const DBGA_BRD_TOBE_SUGGEST_SYSTEM =
@@ -107,7 +107,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly theforge: TheForgeService,
     private readonly graphMemory: GraphMemoryService,
     private readonly changeLog: ChangeLogService,
-    private readonly wireframeSketchesSync: WireframeSketchesSyncService,
+    private readonly componentSourceRegeneration: ComponentSourceRegenerationService,
   ) {}
 
   private buildSemaphoreBase(
@@ -406,12 +406,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         },
       });
       await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
-      const prevMdd = (targetStage.mddContent ?? "").trim();
-      const nextMdd = result.sanitizedMdd.trim();
-      if ((existing.wireframesContent ?? "").trim() && prevMdd !== nextMdd) {
-        // Solo refrescar metadatos mddHash; sync incremental (sin forceAll)
-        this.wireframeSketchesSync.scheduleSync(id);
-      }
     }
 
     const mddForRecalc =
@@ -431,6 +425,18 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       clearComplexityPending === true ||
       cpInput !== undefined;
     if (hasProjectFieldUpdates) {
+      if (rest.componentSourceProfileId !== undefined) {
+        if (existingRaw.userId !== getRequestUserId()) {
+          throw new BadRequestException("Only the project owner can change the MCP profile");
+        }
+        this.componentSourceRegeneration.enqueueProjectProfileChange(
+          id,
+          rest.componentSourceProfileId ?? null,
+          getRequestUserId(),
+          existingRaw.componentSourceProfileId ?? null,
+        );
+      }
+
       await this.prisma.project.update({
         where: { id },
         data: updatePayload,
@@ -445,13 +451,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       for (const field of documentFields) {
         if ((rest as Record<string, unknown>)[field] !== undefined) {
           await this.changeLog.log(id, field, (rest as Record<string, string | null | undefined>)[field]);
-        }
-      }
-      if (rest.wireframesContent !== undefined && (rest.wireframesContent ?? "").trim()) {
-        const prevWf = (existing.wireframesContent ?? "").trim();
-        const nextWf = (rest.wireframesContent ?? "").trim();
-        if (!prevWf || prevWf !== nextWf) {
-          this.wireframeSketchesSync.scheduleSync(id);
         }
       }
     }

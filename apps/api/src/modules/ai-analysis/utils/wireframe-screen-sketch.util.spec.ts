@@ -3,6 +3,7 @@ import {
   buildBatchSketchUserPayload,
   buildSketchesCachePayloadV2,
   cacheToSketchList,
+  compactDsComponentsForSketch,
   contentDigestHash,
   extractHtmlFromLlmResponse,
   mergeWireframesMarkdownOrUseFull,
@@ -177,6 +178,33 @@ describe("wireframe-screen-sketch.util", () => {
   it("buildBatchSketchUserPayload es compacto", () => {
     const payload = buildBatchSketchUserPayload([sampleSection()]);
     expect(payload.length).toBeLessThan(600);
+  });
+
+  it("buildBatchSketchUserPayload incluye componentes DS compactos", () => {
+    const md = `## Pantalla: Login
+
+**Descripción**: Acceso
+
+### Wireframe
+
+\`\`\`
+┌─────┐
+│ LOGO│
+└─────┘
+\`\`\`
+
+### Componentes del Design System
+
+| Componente requerido | Módulo DS | Export | Confianza | Props |
+| --- | --- | --- | --- | --- |
+| Botón entrar | Button | Button | exact | variant=primary |
+`;
+    const section = parseWireframeScreensFromMarkdown(md)[0]!;
+    const compact = compactDsComponentsForSketch(section.dsTableMarkdown);
+    expect(compact).toContain("Botón entrar");
+    const payload = buildBatchSketchUserPayload([section]);
+    expect(payload).toContain("Componentes DS:");
+    expect(payload).toContain("Botón entrar");
   });
 
   it("cacheToSketchList devuelve pantallas", () => {

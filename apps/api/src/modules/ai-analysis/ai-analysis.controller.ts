@@ -16,6 +16,7 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiAnalysisService } from "./ai-analysis.service.js";
 import { EstimationService } from "./estimation/estimation.service.js";
 import { Phase0InterviewService } from "./phase0/phase0-interview.service.js";
+import { ComponentSourceProfileService } from "../component-source/component-source-profile.service.js";
 import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
 import { writeWireframesSketchesCacheRaw } from "./wireframe-sketches-cache.store.js";
@@ -28,6 +29,7 @@ export class AiAnalysisController {
     private readonly estimationService: EstimationService,
     private readonly phase0Interview: Phase0InterviewService,
     private readonly prisma: PrismaService,
+    private readonly componentSourceProfiles: ComponentSourceProfileService,
   ) { }
 
   /**
@@ -455,6 +457,7 @@ export class AiAnalysisController {
     if (!projectId) {
       throw new BadRequestException("projectId is required");
     }
+    await this.componentSourceProfiles.assertProjectHasProfile(projectId);
 
     res.setHeader("Content-Type", "application/x-ndjson");
     res.setHeader("Cache-Control", "no-cache");
@@ -492,7 +495,11 @@ export class AiAnalysisController {
     }
     await this.prisma.project.update({
       where: { id },
-      data: { wireframesContent: null, wireframesComponentMappings: Prisma.JsonNull },
+      data: {
+        wireframesContent: null,
+        wireframesComponentMappings: Prisma.JsonNull,
+        wireframesPipelineCache: Prisma.JsonNull,
+      },
     });
     await writeWireframesSketchesCacheRaw(this.prisma, id, null);
     await writeWireframesPreviewCacheRaw(this.prisma, id, null);
@@ -508,6 +515,7 @@ export class AiAnalysisController {
     if (!projectId) {
       throw new BadRequestException("projectId is required");
     }
+    await this.componentSourceProfiles.assertProjectHasProfile(projectId);
     const result = await this.aiAnalysis.getWireframePreviewSnippets(projectId);
     console.log(
       `[PreviewSnippets:Controller] result screens=${result.screens?.length} fromCache=${(result as { fromCache?: boolean }).fromCache === true}`,
@@ -535,6 +543,7 @@ export class AiAnalysisController {
     if (!projectId) {
       throw new BadRequestException("projectId is required");
     }
+    await this.componentSourceProfiles.assertProjectHasProfile(projectId);
     const forceAll = body?.forceAll === true;
     const screenNames = Array.isArray(body?.screenNames)
       ? body.screenNames.map((n) => (typeof n === "string" ? n.trim() : "")).filter(Boolean)

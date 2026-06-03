@@ -3,80 +3,76 @@ import type { ComponentSourcePort } from "@theforge/component-source";
 import { ComponentSourceRegistry } from "../component-source/component-source.registry.js";
 
 /**
- * @deprecated Use ComponentSourceRegistry.resolveForUser() instead.
- * Thin facade kept for backward-compatible imports.
+ * @deprecated Use ComponentSourceRegistry.resolveForProject() instead.
+ * Thin facade kept for backward-compatible imports; not wired in AppModule.
  */
 @Injectable()
 export class ComponentMcpService {
   constructor(private readonly registry: ComponentSourceRegistry) {}
 
-  private async port(userId: string): Promise<ComponentSourcePort> {
-    return this.registry.resolveForUser(userId);
+  private async portForProject(projectId: string): Promise<ComponentSourcePort> {
+    const ctx = await this.registry.resolveForProject(projectId);
+    return ctx.port;
   }
 
-  async searchModules(userId: string, query: string) {
-    return (await this.port(userId)).searchModules(userId, query);
+  async searchModules(projectId: string, userId: string, query: string) {
+    return (await this.portForProject(projectId)).searchModules(userId, query);
   }
 
-  async resolveComponents(userId: string, names: string[]) {
-    return (await this.port(userId)).resolveComponents(userId, names);
+  async resolveComponents(projectId: string, userId: string, names: string[]) {
+    return (await this.portForProject(projectId)).resolveComponents(userId, names);
   }
 
-  async getComponent(userId: string, moduleId: string, exportName?: string) {
-    return (await this.port(userId)).getComponent(userId, moduleId, exportName);
+  async getComponent(projectId: string, userId: string, moduleId: string, exportName?: string) {
+    return (await this.portForProject(projectId)).getComponent(userId, moduleId, exportName);
   }
 
-  async getProps(userId: string, moduleId: string, exportName?: string) {
-    return (await this.port(userId)).getProps(userId, moduleId, exportName);
+  async getProps(projectId: string, userId: string, moduleId: string, exportName?: string) {
+    return (await this.portForProject(projectId)).getProps(userId, moduleId, exportName);
   }
 
-  async getCompositionRecipe(userId: string, moduleId: string) {
-    return (await this.port(userId)).getCompositionRecipe(userId, moduleId);
+  async getCompositionRecipe(projectId: string, userId: string, moduleId: string) {
+    return (await this.portForProject(projectId)).getCompositionRecipe(userId, moduleId);
   }
 
-  async listModules(userId: string) {
-    return (await this.port(userId)).listModules(userId);
+  async listModules(projectId: string, userId: string) {
+    return (await this.portForProject(projectId)).listModules(userId);
   }
 
-  async catalogHealth(userId: string) {
-    return (await this.port(userId)).catalogHealth(userId);
+  async catalogHealth(projectId: string, userId: string) {
+    return (await this.portForProject(projectId)).catalogHealth(userId);
   }
 
-  async getStyleRules(userId: string) {
-    return (await this.port(userId)).getStyleRules(userId);
+  async getStyleRules(projectId: string, userId: string) {
+    return (await this.portForProject(projectId)).getStyleRules(userId);
   }
 
   async getDesignSystem(
+    projectId: string,
     userId: string,
     args?: Parameters<ComponentSourcePort["getDesignSystem"]>[1],
   ) {
-    return (await this.port(userId)).getDesignSystem(userId, args);
+    return (await this.portForProject(projectId)).getDesignSystem(userId, args);
   }
 
   async getComponentPreview(
+    projectId: string,
     userId: string,
     args: Parameters<ComponentSourcePort["getComponentPreview"]>[1],
   ) {
-    return (await this.port(userId)).getComponentPreview(userId, args);
+    return (await this.portForProject(projectId)).getComponentPreview(userId, args);
   }
 
   async getComponentPreviews(
+    projectId: string,
     userId: string,
     args: Parameters<ComponentSourcePort["getComponentPreviews"]>[1],
   ) {
-    return (await this.port(userId)).getComponentPreviews(userId, args);
+    return (await this.portForProject(projectId)).getComponentPreviews(userId, args);
   }
 
-  async getProductionSnippet(
-    userId: string,
-    moduleId: string,
-    options?: Parameters<ComponentSourcePort["getProductionSnippet"]>[2],
-  ) {
-    return (await this.port(userId)).getProductionSnippet(userId, moduleId, options);
-  }
-
-  async checkHealth(userId: string) {
-    return (await this.port(userId)).checkHealth(userId);
+  async checkHealth(projectId: string, userId: string) {
+    return (await this.portForProject(projectId)).checkHealth(userId);
   }
 
   async testConnection(opts: Parameters<ComponentSourceRegistry["testConnection"]>[0]) {

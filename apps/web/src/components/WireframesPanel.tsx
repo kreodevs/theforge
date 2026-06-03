@@ -10,19 +10,7 @@ import { DocEmptyState } from "@/components/DocEmptyState";
 import MddViewer from "@/components/MddViewer";
 import { AiDocumentBuildingPlaceholder } from "@/components/AiGenerationLoader";
 import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "@/components/WorkshopDocSourceSaveBar";
-import {
-  buildComposedScreenPreviewSrcDoc,
-  buildSnippetPreviewSrcDoc,
-  prepareSnippetForIframe,
-} from "@/utils/wireframeSnippetPreview";
-import {
-  buildComponentPreviewPropsLiteral,
-  collectRequirementsContext,
-  orderPreviewComponentsByDsTable,
-} from "@/utils/wireframeScreenPreview";
-import { buildWireframeHtmlSketchSrcDoc } from "@/utils/wireframeHtmlSketch";
-import { ensureFullHtmlDocument, parseIframeSandbox, trustedOriginsFromComponentSourceUrl } from "@/utils/wireframePreviewStyles";
-import { hasHostedPreview, WireframeComponentPreview } from "@/components/WireframeComponentPreview";
+import { ensureFullHtmlDocument } from "@/utils/wireframePreviewStyles";
 
 export interface WireframesProgressStep {
   step: number;
@@ -683,171 +671,6 @@ function ScreenCard({
   );
 }
 
-/** Strip allow-same-origin unless url preview from trusted component-source origin. */
-function resolvePreviewSandbox(
-  comp: PreviewComponentData,
-  trustedOrigins: string[],
-): string {
-  return parseIframeSandbox(comp.sandbox, {
-    previewKind: comp.previewKind,
-    previewUrl: comp.previewUrl,
-    trustedOrigins,
-  });
-}
-
-function LegacySnippetIframeRenderer({
-  code,
-  height = 300,
-  className,
-  previewPropsLiteral,
-  embeddedInSketch = false,
-  componentName,
-}: {
-  code: string;
-  height?: number;
-  className?: string;
-  previewPropsLiteral?: string;
-  embeddedInSketch?: boolean;
-  componentName?: string;
-}) {
-  const srcDoc = useMemo(() => {
-    const prepared = prepareSnippetForIframe(code, {
-      propsLiteral: previewPropsLiteral,
-      componentName,
-    });
-    return buildSnippetPreviewSrcDoc(prepared, { transparentBg: embeddedInSketch });
-  }, [code, previewPropsLiteral, embeddedInSketch, componentName]);
-
-  return (
-    <iframe
-      srcDoc={srcDoc}
-      sandbox="allow-scripts"
-      className={cn(
-        "w-full",
-        embeddedInSketch
-          ? "border-0 bg-transparent"
-          : "rounded-xl border border-[var(--border)]",
-        className,
-      )}
-      style={{ height }}
-      title="Component preview"
-    />
-  );
-}
-
-function HostedComponentPreviewIframe({
-  documentHtml,
-  sandbox,
-  frameClass,
-  height,
-  title,
-}: {
-  documentHtml: string;
-  sandbox: string;
-  frameClass: string;
-  height: number;
-  title: string;
-}) {
-  const srcDoc = useMemo(() => ensureFullHtmlDocument(documentHtml), [documentHtml]);
-  return (
-    <iframe
-      srcDoc={srcDoc}
-      sandbox={sandbox}
-      className={frameClass}
-      style={{ height }}
-      title={title}
-    />
-  );
-}
-
-function ComponentPreviewRenderer({
-  comp,
-  className,
-  previewPropsLiteral,
-  embeddedInSketch = false,
-  trustedOrigins = [],
-}: {
-  comp: PreviewComponentData;
-  className?: string;
-  previewPropsLiteral?: string;
-  embeddedInSketch?: boolean;
-  trustedOrigins?: string[];
-}) {
-  const defaultEmbedded =
-    comp.previewKind === "html" || comp.previewKind === "url" ? 120 : 80;
-  const height = comp.recommendedHeight ?? (embeddedInSketch ? defaultEmbedded : 240);
-  const sandbox = resolvePreviewSandbox(comp, trustedOrigins);
-  const frameClass = embeddedInSketch
-    ? cn("w-full border-0 bg-transparent", className)
-    : cn("w-full rounded-xl border border-[var(--border)]", className);
-
-  if (comp.previewKind === "html" && comp.document?.trim()) {
-    return (
-      <HostedComponentPreviewIframe
-        documentHtml={comp.document}
-        sandbox={sandbox}
-        frameClass={frameClass}
-        height={height}
-        title={`Preview ${comp.name}`}
-      />
-    );
-  }
-
-  if (comp.previewKind === "url" && comp.previewUrl?.trim()) {
-    return (
-      <iframe
-        src={comp.previewUrl}
-        sandbox={sandbox}
-        className={frameClass}
-        style={{ height }}
-        title={`Preview ${comp.name}`}
-      />
-    );
-  }
-
-  if (comp.previewKind === "unavailable") {
-    return (
-      <div
-        className={cn(
-          "space-y-2 px-3 py-2 text-xs text-amber-900 dark:text-amber-200",
-          embeddedInSketch
-            ? "rounded-lg bg-amber-50"
-            : "rounded-xl border border-amber-500/30 bg-amber-500/10",
-        )}
-      >
-        <p>{comp.error ?? "Preview no disponible para este componente."}</p>
-        {comp.fallback?.screenshotUrl && (
-          <img
-            src={comp.fallback.screenshotUrl}
-            alt=""
-            className="max-h-40 w-full rounded-lg object-contain"
-          />
-        )}
-        {comp.fallback?.url && (
-          <a href={comp.fallback.url} target="_blank" rel="noreferrer" className="underline">
-            Ver documentación
-          </a>
-        )}
-      </div>
-    );
-  }
-
-  if (comp.snippet?.trim()) {
-    return (
-      <LegacySnippetIframeRenderer
-        code={comp.snippet}
-        height={height}
-        className={className}
-        previewPropsLiteral={previewPropsLiteral}
-        embeddedInSketch={embeddedInSketch}
-        componentName={comp.name}
-      />
-    );
-  }
-
-  return null;
-}
-
 function ComposedScreenIframe({ srcDoc, height = 360 }: { srcDoc: string; height?: number }) {
   return (
     <iframe
@@ -863,87 +686,23 @@ function ComposedScreenIframe({ srcDoc, height = 360 }: { srcDoc: string; height
 function ScreenSketchCanvas({
   screenTitle,
   parsedScreen,
-  previewComponents,
-  requirementsContext,
   agentSketchHtml,
-  showComponentPreviews = true,
-  trustedOrigins = [],
   onRegenerateSketch,
   regeneratingSketch = false,
   regenerateSketchDisabled = false,
 }: {
   screenTitle: string;
   parsedScreen?: ParsedScreen;
-  previewComponents: PreviewComponentData[];
-  requirementsContext: string;
   agentSketchHtml?: string;
-  showComponentPreviews?: boolean;
-  trustedOrigins?: string[];
   onRegenerateSketch?: () => void;
   regeneratingSketch?: boolean;
   regenerateSketchDisabled?: boolean;
 }) {
-  const dsComponents = parsedScreen?.dsComponents ?? [];
-  const ordered = useMemo(
-    () => orderPreviewComponentsByDsTable(previewComponents, dsComponents),
-    [previewComponents, dsComponents],
-  );
-  const hostedPreviewAvailable = showComponentPreviews && ordered.some(hasHostedPreview);
-
   const agentSrcDoc = useMemo(() => {
     const raw = agentSketchHtml?.trim();
     if (!raw) return null;
     return ensureFullHtmlDocument(raw);
   }, [agentSketchHtml]);
-
-  const htmlSketchSrcDoc = useMemo(() => {
-    if (agentSketchHtml?.trim()) return "";
-    return buildWireframeHtmlSketchSrcDoc({
-      screenTitle,
-      wireframeAscii: parsedScreen?.wireframeAscii,
-      dsComponents,
-      requirementsContext,
-      description: parsedScreen?.description,
-    });
-  }, [
-    agentSketchHtml,
-    screenTitle,
-    parsedScreen?.wireframeAscii,
-    dsComponents,
-    parsedScreen?.description,
-    requirementsContext,
-    showComponentPreviews,
-  ]);
-
-  const composedLegacySrcDoc = useMemo(() => {
-    if (!showComponentPreviews || hostedPreviewAvailable) return null;
-    let inputIdx = 0;
-    let buttonIdx = 0;
-    const items = ordered
-      .filter((c) => c.snippet?.trim() && !c.error)
-      .map((comp) => {
-        const lower = comp.name.toLowerCase();
-        const isInput = lower.includes("input") || lower.includes("field");
-        const isButton = lower.includes("button") || lower.includes("botón");
-        return {
-          componentName: comp.name,
-          snippet: comp.snippet!,
-          propsLiteral: buildComponentPreviewPropsLiteral(
-            comp.name,
-            dsComponents.find((d) => d.requiredComponent === comp.name)?.props,
-            requirementsContext,
-            comp.snippet ?? "",
-            {
-              title: screenTitle,
-              description: parsedScreen?.description,
-              inputIndex: isInput ? inputIdx++ : undefined,
-              buttonIndex: isButton ? buttonIdx++ : undefined,
-            },
-          ),
-        };
-      });
-    return items.length > 0 ? buildComposedScreenPreviewSrcDoc(items) : null;
-  }, [hostedPreviewAvailable, ordered, dsComponents, requirementsContext, screenTitle, parsedScreen?.description]);
 
   const sketchHeight = useMemo(() => {
     const rows = (parsedScreen?.wireframeAscii?.split("\n") ?? []).filter((l) => /[│|]/.test(l)).length;
@@ -997,7 +756,7 @@ function ScreenSketchCanvas({
 
       <section className="p-2 sm:p-3">
         <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
-          Boceto (preview)
+          Boceto
         </p>
         {agentSrcDoc ? (
           <>
@@ -1006,39 +765,33 @@ function ScreenSketchCanvas({
               Boceto generado por IA según wireframe ASCII y requisitos
             </p>
           </>
-        ) : hostedPreviewAvailable ? (
-          <WireframeComponentPreview
-            screenTitle={screenTitle}
-            description={parsedScreen?.description}
-            wireframeAscii={parsedScreen?.wireframeAscii}
-            dsComponents={dsComponents}
-            previewComponents={previewComponents}
-            requirementsContext={requirementsContext}
-            renderPreview={(comp, propsLiteral) => (
-              <ComponentPreviewRenderer
-                comp={comp}
-                previewPropsLiteral={propsLiteral}
-                embeddedInSketch
-                trustedOrigins={trustedOrigins}
-              />
-            )}
-          />
-        ) : composedLegacySrcDoc ? (
-          <>
-            <ComposedScreenIframe srcDoc={composedLegacySrcDoc} height={sketchHeight} />
-            <p className="mt-2 text-center text-[10px] text-neutral-400">
-              Snippets de componentes (legacy) compuestos según CU/HU
-            </p>
-          </>
+        ) : regeneratingSketch ? (
+          <div
+            className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_12%,var(--card))] px-4 py-8 text-center"
+            role="status"
+          >
+            <Loader2 className="h-5 w-5 animate-spin text-[var(--primary)]" aria-hidden />
+            <p className="text-sm text-[var(--muted-foreground)]">Generando boceto con IA…</p>
+          </div>
         ) : (
-          <>
-            <ComposedScreenIframe srcDoc={htmlSketchSrcDoc} height={sketchHeight} />
-            <p className="mt-2 text-center text-[10px] text-amber-600 dark:text-amber-400">
-              {showComponentPreviews
-                ? "Sin boceto IA ni preview de componentes. Regenera wireframes o activa la fuente de componentes en Ajustes."
-                : "Sin boceto IA para esta pantalla. Regenera wireframes o los bocetos del servidor."}
+          <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_12%,var(--card))] px-4 py-8 text-center">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Sin boceto IA para esta pantalla.
             </p>
-          </>
+            {onRegenerateSketch ? (
+              <ScreenRegenerateButton
+                className="h-9 gap-1.5 border-neutral-300 bg-white px-3 text-neutral-700 shadow-sm hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
+                onClick={onRegenerateSketch}
+                disabled={regenerateSketchDisabled || regeneratingSketch}
+                loading={regeneratingSketch}
+                label={`Regenerar boceto de ${screenTitle}`}
+                showLabel
+              />
+            ) : null}
+            <p className="max-w-sm text-xs text-[var(--muted-foreground)]">
+              Solo se generan con el modelo de IA (no hay vista previa compuesta por componentes).
+            </p>
+          </div>
         )}
       </section>
     </article>
@@ -1060,19 +813,21 @@ function ScreenRegenerateButton({
   loading,
   label,
   className,
+  showLabel = false,
 }: {
   onClick: () => void;
   disabled?: boolean;
   loading?: boolean;
   label: string;
   className: string;
+  showLabel?: boolean;
 }) {
   return (
     <Button
       type="button"
       variant="outline"
       size="sm"
-      className={cn(className)}
+      className={cn(showLabel ? "gap-1.5" : undefined, className)}
       disabled={disabled}
       onClick={onClick}
       aria-label={label}
@@ -1083,6 +838,7 @@ function ScreenRegenerateButton({
       ) : (
         <RefreshCw className="h-3.5 w-3.5 shrink-0 text-current" strokeWidth={2} aria-hidden />
       )}
+      {showLabel ? <span>Regenerar boceto</span> : null}
     </Button>
   );
 }
@@ -1131,10 +887,6 @@ export function WireframesPanel({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [componentSourceActive, setComponentSourceActive] = useState<boolean | null>(null);
   const [componentSourceUrl, setComponentSourceUrl] = useState<string | null>(null);
-  const previewTrustedOrigins = useMemo(
-    () => trustedOriginsFromComponentSourceUrl(componentSourceUrl),
-    [componentSourceUrl],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1514,9 +1266,6 @@ export function WireframesPanel({
     return hasSketches || hasScreenMap;
   }, [previewSnippets, screenSketches, screens]);
 
-  /** Bocetos IA únicamente; sin HTML embebido del MCP get_component_previews. */
-  const showComponentPreviews = false;
-
   const screenTabs = useMemo<UnderlineTabItem[]>(() => {
     if (allScreenEntries.length === 0) return [];
     const tabs: UnderlineTabItem[] = [
@@ -1739,12 +1488,12 @@ export function WireframesPanel({
                     {sketchesStaleReason === "mdd"
                       ? "El MDD cambió: los bocetos pueden estar desactualizados."
                       : sketchesStaleReason === "missing"
-                        ? "Aún no hay bocetos generados para este documento."
+                        ? "Aún no hay bocetos. Genera con «Regenerar bocetos» o ↻ por pantalla."
                         : "Algunas pantallas cambiaron en el markdown."}
                   </p>
                 ) : !bocetosRegeneratingActive ? (
                   <p className="text-xs text-[var(--muted-foreground)]">
-                    Bocetos generados al crear o guardar wireframes.
+                    Los bocetos solo se generan manualmente (incremental o «Regenerar todo»).
                   </p>
                 ) : (
                   <span className="text-xs text-[var(--muted-foreground)]" aria-hidden />
@@ -1808,26 +1557,13 @@ export function WireframesPanel({
                   {visiblePreviewEntries.map((entry) => {
                     const parsedScreen =
                       entry.parsed ?? findParsedScreenByKey(screens, entry.title);
-                    const requirementsContext = collectRequirementsContext(
-                      useCasesContent ?? "",
-                      userStoriesContent ?? "",
-                      [
-                        ...(parsedScreen?.useCases ?? []),
-                        ...(parsedScreen?.userStories ?? []),
-                      ],
-                      specContent ?? "",
-                    );
                     const screenKey = entry.key;
                     return (
                       <div key={entry.key} className="space-y-3">
                         <ScreenSketchCanvas
                           screenTitle={entry.title}
                           parsedScreen={parsedScreen}
-                          previewComponents={entry.preview?.components ?? []}
-                          requirementsContext={requirementsContext}
                           agentSketchHtml={entry.screenSketchHtml}
-                          showComponentPreviews={showComponentPreviews}
-                          trustedOrigins={previewTrustedOrigins}
                           onRegenerateSketch={
                             projectId
                               ? () => void regenerateScreenBoceto(entry.title)
@@ -1857,7 +1593,7 @@ export function WireframesPanel({
                 <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   {sketchesStaleReason === "missing"
-                    ? "Aún no hay bocetos. Usa «Regenerar bocetos» o espera a que termine la generación en segundo plano."
+                    ? "Aún no hay bocetos. Usa «Regenerar bocetos» o el botón ↻ en cada pantalla."
                     : "Los bocetos pueden estar desactualizados respecto al documento."}
                 </div>
               ) : null}

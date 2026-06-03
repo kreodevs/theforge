@@ -12,9 +12,22 @@ import {
   normalizeComponentSourcePluginId,
 } from "./component-source.plugins.js";
 import { ComponentSourceCredentialService } from "./component-source-credential.service.js";
+import {
+  isConfirmedToolMapping,
+  parseToolMappingFromJson,
+} from "./parse-tool-mapping.util.js";
 
 /** Nest DI token for ComponentSourceRegistry (optional injection in tests). */
 export const COMPONENT_SOURCE_REGISTRY = Symbol("COMPONENT_SOURCE_REGISTRY");
+
+export type ProjectComponentSourceContext = {
+  profileId: string | null;
+  active: boolean;
+  port: ComponentSourcePort;
+  ownerUserId: string;
+  /** Profile has mappingConfirmedAt and valid catalog.list mapping. */
+  mappingConfirmed: boolean;
+};
 
 @Injectable()
 export class ComponentSourceRegistry {
@@ -26,7 +39,7 @@ export class ComponentSourceRegistry {
     private readonly prisma: PrismaService,
     private readonly credentialService: ComponentSourceCredentialService,
   ) {
-    this.registerPlugins(buildComponentSourcePlugins({ credentialService: this.credentialService }));
+    this.registerPlugins(buildComponentSourcePlugins());
   }
 
   registerPlugins(plugins: ComponentSourcePlugin[]): void {
@@ -40,51 +53,112 @@ export class ComponentSourceRegistry {
     return [...this.plugins.values()].map((p) => p.meta);
   }
 
-  async resolveForUser(userId: string): Promise<ComponentSourcePort> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+  /**
+   * Resolves component source from the project's assigned profile (preferred path).
+   * Returns inactive NullComponentSource when no profile is assigned.
+   */
+  async resolveForProject(projectId: string): Promise<ProjectComponentSourceContext> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
       select: {
-        componentSourceEnabled: true,
-        componentSourcePluginId: true,
-        componentSourceUrl: true,
+        userId: true,
+        componentSourceProfileId: true,
+        componentSourceProfile: {
+          select: {
+            id: true,
+            pluginId: true,
+            url: true,
+            toolMapping: true,
+            mappingConfirmedAt: true,
+          },
+        },
       },
     });
 
-    if (
-      !user?.componentSourceEnabled ||
-      !user.componentSourcePluginId?.trim() ||
-      !user.componentSourceUrl?.trim()
-    ) {
-      return this.nullSource;
+    if (!project) {
+      return {
+        profileId: null,
+        active: false,
+        port: this.nullSource,
+        ownerUserId: "",
+        mappingConfirmed: false,
+      };
     }
 
-    const pluginId = normalizeComponentSourcePluginId(user.componentSourcePluginId);
-    const plugin = pluginId ? this.plugins.get(pluginId) : undefined;
-    if (!plugin) {
+    const profile = project.componentSourceProfile;
+    if (!project.componentSourceProfileId || !profile?.url?.trim()) {
+      return {
+        profileId: null,
+        active: false,
+        port: this.nullSource,
+        ownerUserId: project.userId,
+        mappingConfirmed: false,
+      };
+    }
+
+    const pluginId = normalizeComponentSourcePluginId(profile.pluginId);
+    if (!pluginId || !this.plugins.has(pluginId)) {
       this.logger.warn(
-        `Unknown component source plugin "${user.componentSourcePluginId}" for user ${userId.slice(0, 8)}…`,
+        `Unknown component source plugin "${profile.pluginId}" for profile ${profile.id.slice(0, 8)}…`,
       );
-      return this.nullSource;
+      return {
+        profileId: profile.id,
+        active: false,
+        port: this.nullSource,
+        ownerUserId: project.userId,
+        mappingConfirmed: false,
+      };
     }
 
-    return plugin.create();
+    const toolMapping = parseToolMappingFromJson(profile.toolMapping);
+    const mappingConfirmed = isConfirmedToolMapping(profile.mappingConfirmedAt, profile.toolMapping);
+
+    if (!mappingConfirmed || !toolMapping) {
+      this.logger.warn(
+        `Profile ${profile.id.slice(0, 8)}… assigned but tool mapping not confirmed or missing catalog.list`,
+      );
+      return {
+        profileId: profile.id,
+        active: false,
+        port: this.nullSource,
+        ownerUserId: project.userId,
+        mappingConfirmed: false,
+      };
+    }
+
+    const resolver = this.credentialService.createProfileResolver(profile.id);
+    const port = createPluginInstance(pluginId, resolver, toolMapping);
+    return {
+      profileId: profile.id,
+      active: true,
+      port,
+      ownerUserId: project.userId,
+      mappingConfirmed: true,
+    };
   }
 
   async testConnection(opts: {
     userId: string;
+    profileId?: string;
     pluginId?: string;
     url?: string;
     token?: string;
     useSaved?: boolean;
   }): Promise<{ ok: boolean; service?: string; error?: string }> {
     let pluginId = normalizeComponentSourcePluginId(opts.pluginId);
-    if (!pluginId) {
-      const user = await this.prisma.user.findUnique({
-        where: { id: opts.userId },
-        select: { componentSourcePluginId: true },
+    const profileId = opts.profileId?.trim();
+
+    if (!pluginId && profileId) {
+      const profile = await this.prisma.componentSourceProfile.findUnique({
+        where: { id: profileId },
+        select: { pluginId: true, userId: true },
       });
-      pluginId = normalizeComponentSourcePluginId(user?.componentSourcePluginId);
+      if (profile && profile.userId !== opts.userId) {
+        return { ok: false, error: "Perfil no encontrado" };
+      }
+      pluginId = normalizeComponentSourcePluginId(profile?.pluginId);
     }
+
     if (!pluginId) {
       pluginId = this.listPlugins()[0]?.id;
     }
@@ -93,8 +167,18 @@ export class ComponentSourceRegistry {
     }
 
     let credentials;
+    let testToolMapping;
     try {
       credentials = await this.credentialService.resolveForTest(opts);
+      if (profileId) {
+        const profileRow = await this.prisma.componentSourceProfile.findUnique({
+          where: { id: profileId },
+          select: { toolMapping: true, mappingConfirmedAt: true },
+        });
+        if (isConfirmedToolMapping(profileRow?.mappingConfirmedAt, profileRow?.toolMapping)) {
+          testToolMapping = parseToolMappingFromJson(profileRow?.toolMapping) ?? undefined;
+        }
+      }
     } catch (err) {
       return {
         ok: false,
@@ -109,7 +193,7 @@ export class ComponentSourceRegistry {
     const testResolver = async () => credentials;
     let source: ComponentSourcePort;
     try {
-      source = createPluginInstance(pluginId, testResolver);
+      source = createPluginInstance(pluginId, testResolver, testToolMapping);
     } catch (err) {
       return {
         ok: false,

@@ -4,6 +4,9 @@ import { ProviderInstancesCard } from "@/components/ProviderInstancesCard";
 import { AccountConfigCard } from "@/components/AccountConfigCard";
 import { AriadneConfigCard } from "@/components/AriadneConfigCard";
 import { ComponentSourceConfigCard } from "@/components/ComponentSourceConfigCard";
+import { RegenerationProgressBanner } from "@/components/RegenerationProgressBanner";
+import { RegenerationProgressOverlay } from "@/components/RegenerationProgressOverlay";
+import { useComponentSourceRegenerationEvents } from "@/hooks/useComponentSourceRegenerationEvents";
 import { UnderlineTabs, type UnderlineTabItem } from "@/components/ui/UnderlineTabs";
 import { getStoredUser } from "@/utils/apiClient";
 
@@ -12,7 +15,7 @@ type SettingsTab = "providers" | "ariadne" | "components" | "account";
 const SETTINGS_TABS: UnderlineTabItem<SettingsTab>[] = [
   { id: "providers", label: "Proveedores de IA", shortLabel: "Proveedores", icon: Sparkles },
   { id: "ariadne", label: "Ariadne", shortLabel: "Ariadne", icon: Cable },
-  { id: "components", label: "Fuente de componentes", shortLabel: "Componentes", icon: Blocks },
+  { id: "components", label: "Perfiles MCP", shortLabel: "MCP", icon: Blocks },
   { id: "account", label: "Cuenta", shortLabel: "Cuenta", icon: Shield },
 ];
 
@@ -29,6 +32,14 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
     [isDeveloper],
   );
   const [activeTab, setActiveTab] = useState<SettingsTab>(isDeveloper ? "account" : "providers");
+  const {
+    isRegenerating: mcpRegenerating,
+    isActive: mcpRegenActive,
+    progress: mcpRegenProgress,
+    stepsHistory: mcpRegenSteps,
+    error: mcpRegenError,
+    reset: resetMcpRegen,
+  } = useComponentSourceRegenerationEvents(true);
 
   useEffect(() => {
     if (isDeveloper && activeTab !== "account") {
@@ -37,7 +48,15 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
   }, [activeTab, isDeveloper]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden text-[var(--foreground)]">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden text-[var(--foreground)]">
+      {mcpRegenerating ? (
+        <RegenerationProgressOverlay
+          progress={mcpRegenProgress}
+          stepsHistory={mcpRegenSteps}
+          error={mcpRegenError}
+        />
+      ) : null}
+
       <div className="mx-auto w-full max-w-[min(100%,88rem)] shrink-0 px-4 pt-6 sm:px-6 lg:px-8 xl:px-10">
         <div className="mx-auto max-w-4xl space-y-4 pb-4 sm:space-y-6 sm:pb-6">
           <div className="min-w-0">
@@ -48,7 +67,7 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
             <p className="mt-1 text-sm text-[var(--foreground-muted)] sm:text-base">
               {isDeveloper
                 ? "Token MCP y preferencias de tu cuenta"
-                : "Proveedores de IA, Ariadne, fuente de componentes y cuenta"}
+                : "Proveedores de IA, Ariadne, perfiles MCP de componentes y cuenta"}
             </p>
           </div>
 
@@ -94,7 +113,19 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
               hidden={activeTab !== "components"}
               className={activeTab === "components" ? "space-y-6" : undefined}
             >
-              {activeTab === "components" ? <ComponentSourceConfigCard /> : null}
+              {activeTab === "components" ? (
+                <>
+                  {!mcpRegenerating && mcpRegenActive ? (
+                    <RegenerationProgressBanner
+                      progress={mcpRegenProgress}
+                      stepsHistory={mcpRegenSteps}
+                      error={mcpRegenError}
+                      onDismiss={resetMcpRegen}
+                    />
+                  ) : null}
+                  <ComponentSourceConfigCard />
+                </>
+              ) : null}
             </div>
 
             <div

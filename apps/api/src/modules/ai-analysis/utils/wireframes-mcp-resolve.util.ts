@@ -143,36 +143,91 @@ export type ComponentResolveHit = {
   status?: ComponentResolution["status"];
 };
 
+/** Fuzzy match a display name against catalog list/search JSON. */
+export function fuzzyMatchModuleInCatalog(
+  name: string,
+  catalogText: string,
+): ComponentResolveHit | undefined {
+  const q = normalizeComponentKey(name).toLowerCase();
+  if (!q) return undefined;
+
+  const hits = parseSearchModulesHits(catalogText);
+  for (const hit of hits) {
+    const id = hit.id.toLowerCase();
+    const label = (hit.name ?? "").toLowerCase();
+    if (id === q || label === q) {
+      return { moduleId: hit.id, exportName: hit.name, status: "exact_module" };
+    }
+  }
+
+  for (const hit of hits) {
+    const id = hit.id.toLowerCase();
+    const label = (hit.name ?? "").toLowerCase();
+    if (id.includes(q) || label.includes(q) || q.includes(id) || (label && q.includes(label))) {
+      return { moduleId: hit.id, exportName: hit.name, status: "similar" };
+    }
+  }
+
+  return undefined;
+}
+
 /** Batch resolve component names → moduleId + optional export from MCP. */
 export async function resolveComponentNamesToHits(
   componentSource: ComponentSourcePort,
   userId: string,
   names: string[],
+  catalogText?: string,
 ): Promise<Map<string, ComponentResolveHit>> {
   const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
   const map = new Map<string, ComponentResolveHit>();
   if (unique.length === 0) return map;
 
-  try {
-    const result = await componentSource.resolveComponents(userId, unique);
-    const text = unwrapMcpToolText(result);
-    for (const res of parseResolveComponentsText(text)) {
-      const moduleId = resolutionToModuleId(res);
-      if (moduleId && res.query) {
-        const key = normalizeComponentKey(res.query);
-        const hit: ComponentResolveHit = {
-          moduleId,
-          exportName: res.exportName?.trim() || undefined,
-          status: res.status,
-        };
-        map.set(key, hit);
-        map.set(res.query.trim(), hit);
-        map.set(key.toLowerCase(), hit);
+  const storeHit = (query: string, hit: ComponentResolveHit) => {
+    const key = normalizeComponentKey(query);
+    map.set(key, hit);
+    map.set(query.trim(), hit);
+    map.set(key.toLowerCase(), hit);
+  };
+
+  if (componentSource.capabilities?.catalog?.resolve) {
+    try {
+      const result = await componentSource.resolveComponents(userId, unique);
+      const text = unwrapMcpToolText(result);
+      for (const res of parseResolveComponentsText(text)) {
+        const moduleId = resolutionToModuleId(res);
+        if (moduleId && res.query) {
+          storeHit(res.query, {
+            moduleId,
+            exportName: res.exportName?.trim() || undefined,
+            status: res.status,
+          });
+        }
       }
+    } catch {
+      /* fall through to catalog list */
     }
-  } catch {
-    /* caller logs */
   }
+
+  const unresolved = unique.filter((name) => !map.has(normalizeComponentKey(name)));
+  if (unresolved.length === 0) return map;
+
+  let catalog = catalogText?.trim() ?? "";
+  if (!catalog && componentSource.capabilities?.catalog?.list) {
+    try {
+      const listResult = await componentSource.listModules(userId);
+      catalog = unwrapMcpToolText(listResult);
+    } catch {
+      return map;
+    }
+  }
+
+  if (!catalog) return map;
+
+  for (const name of unresolved) {
+    const hit = fuzzyMatchModuleInCatalog(name, catalog);
+    if (hit) storeHit(name, hit);
+  }
+
   return map;
 }
 
@@ -204,12 +259,13 @@ export async function resolveComponentNamesToModuleIds(
   componentSource: ComponentSourcePort,
   userId: string,
   names: string[],
+  catalogText?: string,
 ): Promise<Map<string, string>> {
   const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
   const map = new Map<string, string>();
   if (unique.length === 0) return map;
 
-  const hits = await resolveComponentNamesToHits(componentSource, userId, names);
+  const hits = await resolveComponentNamesToHits(componentSource, userId, names, catalogText);
   for (const [query, hit] of hits) {
     map.set(query, hit.moduleId);
   }
@@ -327,6 +383,10 @@ export async function resolvePreviewModuleId(
     if (searchCache.has(query)) {
       const cached = searchCache.get(query);
       if (cached) return { moduleId: cached, exportName, source: "search-cache" };
+      continue;
+    }
+    if (!componentSource.capabilities?.catalog?.search) {
+      searchCache.set(query, null);
       continue;
     }
     try {
@@ -646,12 +706,21 @@ export async function fetchHostedPreviewCapabilities(
   componentSource: ComponentSourcePort,
   userId: string,
 ): Promise<{ supported: boolean; defaultMode: "html" | "url" }> {
-  try {
-    const health = await componentSource.catalogHealth(userId);
-    return parseCatalogPreviewCapabilities(unwrapMcpToolText(health));
-  } catch {
+  const caps = componentSource.capabilities;
+  if (!caps?.preview?.batch && !caps?.preview?.single) {
     return { supported: false, defaultMode: "html" };
   }
+
+  if (caps.catalog?.health) {
+    try {
+      const health = await componentSource.catalogHealth(userId);
+      return parseCatalogPreviewCapabilities(unwrapMcpToolText(health));
+    } catch {
+      return { supported: true, defaultMode: "html" };
+    }
+  }
+
+  return { supported: true, defaultMode: "html" };
 }
 
 /** Batch hosted previews from component source MCP (html by default). */
@@ -665,6 +734,11 @@ export async function fetchHostedPreviewsBatch(
   const cache = new Map<string, HostedPreviewCacheEntry>();
   if (items.length === 0) return cache;
 
+  const caps = componentSource.capabilities;
+  if (!caps?.preview?.batch && !caps?.preview?.single) {
+    return cache;
+  }
+
   const unique = new Map<string, { moduleId: string; exportName?: string }>();
   for (const item of items) {
     if (!item.moduleId.trim()) continue;
@@ -675,6 +749,31 @@ export async function fetchHostedPreviewsBatch(
   for (let i = 0; i < list.length; i += PREVIEW_BATCH_MAX) {
     const chunk = list.slice(i, i + PREVIEW_BATCH_MAX);
     try {
+      if (!caps?.preview?.batch) {
+        for (const item of chunk) {
+          if (!caps?.preview?.single) continue;
+          try {
+            const single = await componentSource.getComponentPreview(userId, {
+              moduleId: item.moduleId,
+              exportName: item.exportName,
+              mode,
+              theme: "light",
+            });
+            const row = JSON.parse(unwrapMcpToolText(single)) as Record<string, unknown>;
+            cache.set(
+              previewCacheKey(item.moduleId, item.exportName),
+              normalizeHostedPreviewRow(row, trustedOrigins),
+            );
+          } catch (singleErr) {
+            cache.set(previewCacheKey(item.moduleId, item.exportName), {
+              previewKind: "error",
+              error: singleErr instanceof Error ? singleErr.message : String(singleErr),
+            });
+          }
+        }
+        continue;
+      }
+
       const result = await componentSource.getComponentPreviews(userId, {
         items: chunk.map((c) => ({
           moduleId: c.moduleId,
@@ -725,6 +824,15 @@ export async function fetchHostedPreviewsBatch(
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (!caps?.preview?.single) {
+        for (const item of chunk) {
+          cache.set(previewCacheKey(item.moduleId, item.exportName), {
+            previewKind: "error",
+            error: msg,
+          });
+        }
+        continue;
+      }
       for (const item of chunk) {
         try {
           const single = await componentSource.getComponentPreview(userId, {
@@ -758,29 +866,15 @@ export function shouldFallbackFromProductionSnippet(errorMsg: string | undefined
   );
 }
 
-/** get_production_snippet first; on missing/standalone → get_component. */
+/** Fetches executable component source via catalog.get (formerly fell back from production snippet). */
 export async function fetchPreviewSnippet(
   componentSource: ComponentSourcePort,
   userId: string,
   moduleId: string,
   exportName?: string,
 ): Promise<{ snippet: string; error?: string }> {
-  let rawProduction = "";
-  try {
-    const result = await componentSource.getProductionSnippet(userId, moduleId);
-    rawProduction = unwrapMcpToolText(result);
-    const { code, error: prodError } = parseProductionSnippetText(rawProduction, moduleId);
-    if (code && !prodError) {
-      return { snippet: code };
-    }
-    if (!shouldFallbackFromProductionSnippet(prodError, rawProduction)) {
-      return { snippet: "", error: prodError ?? "Sin snippet de producción" };
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!shouldFallbackFromProductionSnippet(msg, rawProduction)) {
-      return { snippet: "", error: msg };
-    }
+  if (!componentSource.capabilities?.catalog?.get) {
+    return { snippet: "", error: "catalog.get no mapeado en el perfil" };
   }
 
   try {
@@ -794,16 +888,11 @@ export async function fetchPreviewSnippet(
     if (code) {
       return { snippet: code };
     }
-    const prodParsed = parseProductionSnippetText(rawProduction, moduleId);
-    return {
-      snippet: "",
-      error: compError ?? prodParsed.error ?? "Sin código ejecutable",
-    };
+    return { snippet: "", error: compError ?? "Sin código ejecutable" };
   } catch (err) {
-    const prodParsed = parseProductionSnippetText(rawProduction, moduleId);
     return {
       snippet: "",
-      error: prodParsed.error ?? (err instanceof Error ? err.message : String(err)),
+      error: err instanceof Error ? err.message : String(err),
     };
   }
 }
@@ -899,7 +988,12 @@ export async function reconcileComponentMappings(
 ): Promise<ComponentMapping[]> {
   const catalogIds = extractCatalogModuleIds(catalogText);
   const names = mappings.map((m) => m.requiredComponent).filter(Boolean);
-  const resolveMap = await resolveComponentNamesToModuleIds(componentSource, userId, names);
+  const resolveMap = await resolveComponentNamesToModuleIds(
+    componentSource,
+    userId,
+    names,
+    catalogText,
+  );
 
   return mappings.map((m) => {
     const name = normalizeComponentKey(m.requiredComponent);

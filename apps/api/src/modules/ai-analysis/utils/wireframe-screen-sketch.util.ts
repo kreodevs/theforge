@@ -3,14 +3,18 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage } from "@langchain/core/messages";
 import { sketchLlmBatchSize, sketchLlmConcurrency } from "../../ai/config/llm-config.js";
 import { SCREEN_SKETCH_AGENT_PROMPT } from "../prompts/wireframes/wireframes-prompts.js";
-import { formatDesignSystemContextBlock } from "./wireframe-design-system-context.util.js";
+import { formatSketchDesignSystemContextBlock } from "./wireframe-design-system-context.util.js";
 import { stripMarkdownCell } from "./wireframes-mcp-resolve.util.js";
 
 /** @deprecated Preferir `sketchLlmBatchSize()` (configurable vía env). */
 export const SKETCH_LLM_BATCH_SIZE = sketchLlmBatchSize();
 const MAX_WIREFRAME_LINES = 48;
 const MAX_DESC_CHARS = 280;
-const MAX_REFS_CHARS = 160;
+const MAX_REFS_CHARS = 100;
+const MAX_DS_COMPONENTS_LINE = 320;
+
+const DS_TABLE_ROW_RE =
+  /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|$/;
 
 export const SCREEN_BLOCK_START = /^<<<SCREEN\s+(.+?)>>>\s*$/m;
 export const SCREEN_BLOCK_END = /^<<<END>>>\s*$/m;
@@ -260,17 +264,59 @@ function compactScreenRefs(section: ParsedWireframeScreenSection): string {
   return refs.length > MAX_REFS_CHARS ? `${refs.slice(0, MAX_REFS_CHARS)}…` : refs;
 }
 
+/** Lista compacta de componentes DS de la pantalla para el prompt de boceto. */
+export function compactDsComponentsForSketch(dsTableMarkdown: string): string {
+  const table = dsTableMarkdown.trim();
+  if (!table) return "";
+
+  const parts: string[] = [];
+  let inTable = false;
+
+  for (const line of table.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.includes("Componente requerido") && trimmed.includes("Módulo DS")) {
+      inTable = true;
+      continue;
+    }
+    if (inTable && (trimmed.startsWith("|---") || trimmed.startsWith("| ---"))) {
+      continue;
+    }
+    if (inTable && trimmed.startsWith("|")) {
+      const rowMatch = DS_TABLE_ROW_RE.exec(trimmed);
+      if (!rowMatch) continue;
+      const name = stripMarkdownCell(rowMatch[1]);
+      const moduleId = stripMarkdownCell(rowMatch[2]);
+      const exportName = stripMarkdownCell(rowMatch[3]);
+      const confidenceRaw = stripMarkdownCell(rowMatch[4]).toLowerCase();
+      const confidence = confidenceRaw.match(/^(exact|partial|none)/)?.[1] ?? confidenceRaw;
+      if (confidence === "none" || !moduleId || moduleId === "—") continue;
+      const label = exportName && exportName !== "—" ? `${name} (${exportName})` : `${name} (${moduleId})`;
+      parts.push(label);
+    } else if (inTable && !trimmed.startsWith("|")) {
+      inTable = false;
+    }
+  }
+
+  if (parts.length === 0) return "";
+  const joined = parts.join(", ");
+  return joined.length > MAX_DS_COMPONENTS_LINE
+    ? `${joined.slice(0, MAX_DS_COMPONENTS_LINE)}…`
+    : joined;
+}
+
 export function buildBatchSketchUserPayload(sections: ParsedWireframeScreenSection[]): string {
   const blocks = sections
     .filter((s) => s.wireframeAscii.trim().length > 10)
     .map((s) => {
       const desc = s.description.slice(0, MAX_DESC_CHARS);
       const refs = compactScreenRefs(s);
+      const dsComponents = compactDsComponentsForSketch(s.dsTableMarkdown);
       const wf = truncateWireframeAscii(s.wireframeAscii);
       return [
         `Pantalla: ${s.screenName}`,
         desc ? `Descripción: ${desc}` : "",
         refs ? `Refs: ${refs}` : "",
+        dsComponents ? `Componentes DS: ${dsComponents}` : "",
         "Wireframe:",
         wf,
         "",
@@ -473,7 +519,7 @@ export async function generateAllScreenSketches(
 
   const batchSize = sketchLlmBatchSize();
   const concurrency = sketchLlmConcurrency();
-  const designSystemBlock = formatDesignSystemContextBlock(designSystemContext);
+  const designSystemBlock = formatSketchDesignSystemContextBlock(designSystemContext);
 
   const chunks: ParsedWireframeScreenSection[][] = [];
   for (let i = 0; i < targets.length; i += batchSize) {

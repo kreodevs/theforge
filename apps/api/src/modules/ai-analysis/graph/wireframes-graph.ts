@@ -10,33 +10,69 @@ import { routeWireframesAfterCritic } from "./wireframes-critic-routing.js";
 import type { AIFactory } from "../../ai/ai.factory.js";
 import type { ComponentSourcePort } from "@theforge/component-source";
 
+export type WireframesGraphOptions = {
+  /** Punto de entrada; `component_mapper` omite screen_analyzer (refresh DS). */
+  entryPoint?: "screen_analyzer" | "component_mapper";
+  /** Omite crítico y revisiones (refresh DS con insumos sin cambios). */
+  skipCritic?: boolean;
+};
+
 /**
  * Builds and compiles the Wireframes StateGraph.
- * Edges: screen_analyzer → component_mapper → wireframe_composer → wireframe_critic
- * wireframe_critic → component_mapper (needs_revision, iterations < 2)
- * wireframe_critic → END (approved or iterations >= 2)
- * LLM: runtime BYOK del usuario (OpenAI-compatible).
+ * Full: screen_analyzer → component_mapper → wireframe_composer → wireframe_critic
+ * DS refresh: component_mapper → wireframe_composer → END
  */
 export async function createWireframesGraph(
   aiFactory: AIFactory,
   userId: string,
   componentSource: ComponentSourcePort,
   checkpointer?: BaseCheckpointSaver | null,
+  graphOptions?: WireframesGraphOptions,
 ) {
+  const dsRefresh = graphOptions?.entryPoint === "component_mapper";
+  const skipCritic = graphOptions?.skipCritic === true;
   const llm = await createDbgaLLM(aiFactory, userId);
 
   const mcpTools = createComponentMcpTools(componentSource, userId);
   console.log(`[Wireframes/Graph] build userId=${userId.slice(0, 8)}… mcpTools=${mcpTools.length}`);
-  const screenAnalyzerNode = createScreenAnalyzerNode(llm);
+
   const componentMapperNode = createComponentMapperNode(llm, mcpTools, componentSource, userId);
   const wireframeComposerNode = createWireframeComposerNode(llm);
+  const compileOpts = checkpointer ? { checkpointer } : undefined;
+
+  if (dsRefresh && skipCritic) {
+    console.log("[Wireframes/Graph] mode=ds-refresh skipCritic=true");
+    return new StateGraph(WireframesStateAnnotation)
+      .addNode("component_mapper", componentMapperNode)
+      .addNode("wireframe_composer", wireframeComposerNode)
+      .addEdge(START, "component_mapper")
+      .addEdge("component_mapper", "wireframe_composer")
+      .addEdge("wireframe_composer", END)
+      .compile(compileOpts);
+  }
+
+  const screenAnalyzerNode = createScreenAnalyzerNode(llm);
   const wireframeCriticNode = createWireframeCriticNode(llm);
 
   function routeCritic(state: WireframesStateType): string {
     return routeWireframesAfterCritic(state);
   }
 
-  const builder = new StateGraph(WireframesStateAnnotation)
+  console.log(`[Wireframes/Graph] mode=full skipCritic=${skipCritic}`);
+
+  if (skipCritic) {
+    return new StateGraph(WireframesStateAnnotation)
+      .addNode("screen_analyzer", screenAnalyzerNode)
+      .addNode("component_mapper", componentMapperNode)
+      .addNode("wireframe_composer", wireframeComposerNode)
+      .addEdge(START, "screen_analyzer")
+      .addEdge("screen_analyzer", "component_mapper")
+      .addEdge("component_mapper", "wireframe_composer")
+      .addEdge("wireframe_composer", END)
+      .compile(compileOpts);
+  }
+
+  return new StateGraph(WireframesStateAnnotation)
     .addNode("screen_analyzer", screenAnalyzerNode)
     .addNode("component_mapper", componentMapperNode)
     .addNode("wireframe_composer", wireframeComposerNode)
@@ -49,8 +85,5 @@ export async function createWireframesGraph(
       component_mapper: "component_mapper",
       __end__: END,
     })
-
-  return builder.compile(
-    checkpointer ? { checkpointer } : undefined,
-  );
+    .compile(compileOpts);
 }

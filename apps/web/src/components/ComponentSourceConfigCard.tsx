@@ -1,209 +1,220 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Blocks,
-  Check,
-  Eye,
-  EyeOff,
-  Globe,
-  KeyRound,
+  CheckCircle2,
   Loader2,
-  Palette,
+  Pencil,
   PlugZap,
+  Plus,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
-import { Button, Input } from "./ui";
-import { api } from "@/lib/api";
+import { Button } from "./ui";
 import { cn } from "@/lib/utils";
-
-type AuthField = "url" | "token";
-
-interface ComponentSourcePluginMeta {
-  id: string;
-  label: string;
-  description?: string;
-  authFields?: AuthField[];
-}
-
-interface ComponentSourceConfig {
-  enabled: boolean;
-  pluginId: string;
-  url: string;
-  hasToken: boolean;
-  plugins: ComponentSourcePluginMeta[];
-}
-
-const DEFAULT_AUTH_FIELDS: AuthField[] = ["url", "token"];
+import { CapabilityStatusBox } from "@/components/CapabilityStatusBox";
+import { ComponentSourceProfileModal } from "@/components/ComponentSourceProfileModal";
+import {
+  confirmComponentSourceProfileMapping,
+  deleteComponentSourceProfile,
+  fetchComponentSourceProfiles,
+  formatProfileInUseError,
+  testComponentSourceProfile,
+} from "@/lib/component-source-profiles-api";
+import type {
+  ComponentSourceProfileSummary,
+  ComponentSourceProfileTestResult,
+  ComponentSourceProposedToolMapping,
+} from "@/types/component-source-profiles";
+import { formatProposedMappingSummary } from "@/types/component-source-profiles";
 
 const FEATURES = [
   {
     icon: Blocks,
     title: "Componentes UI",
-    desc: "Catálogo de componentes del design system",
+    desc: "Catálogo del design system vía MCP",
   },
   {
     icon: PlugZap,
-    title: "MCP HTTPS",
-    desc: "Protocolo estándar de herramientas",
+    title: "Perfiles reutilizables",
+    desc: "Varias conexiones MCP por usuario",
   },
   {
-    icon: Palette,
-    title: "Design System",
-    desc: "Tokens, variantes y documentación",
+    icon: Blocks,
+    title: "Por proyecto",
+    desc: "El owner elige el perfil en el taller",
   },
 ] as const;
 
+interface PendingMappingState {
+  proposedMapping: ComponentSourceProposedToolMapping;
+  capabilities?: ComponentSourceProfileSummary["capabilities"];
+}
+
 export function ComponentSourceConfigCard() {
-  const [config, setConfig] = useState<ComponentSourceConfig>({
-    enabled: false,
-    pluginId: "",
-    url: "",
-    hasToken: false,
-    plugins: [],
-  });
-  const [initial, setInitial] = useState<ComponentSourceConfig>({
-    enabled: false,
-    pluginId: "",
-    url: "",
-    hasToken: false,
-    plugins: [],
-  });
-  const [tokenInput, setTokenInput] = useState("");
-  const [tokenTouched, setTokenTouched] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [profiles, setProfiles] = useState<ComponentSourceProfileSummary[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [tokenVisible, setTokenVisible] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<ComponentSourceProfileSummary | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingMappings, setPendingMappings] = useState<Record<string, PendingMappingState>>({});
+  const [healthOkId, setHealthOkId] = useState<string | null>(null);
 
-  const activePlugin = useMemo(() => {
-    const id = config.pluginId.trim();
-    if (!id) return null;
-    return config.plugins.find((p) => p.id === id) ?? null;
-  }, [config.pluginId, config.plugins]);
-
-  const authFields = activePlugin?.authFields?.length
-    ? activePlugin.authFields
-    : DEFAULT_AUTH_FIELDS;
-
-  const showUrlField = authFields.includes("url");
-  const showTokenField = authFields.includes("token");
-
-  const fetchConfig = useCallback(async () => {
+  const loadProfiles = useCallback(async () => {
     setLoading(true);
     setError("");
     setSuccess("");
     try {
-      const res = await api.get("/api/auth/component-source/config");
-      if (!res.ok) throw new Error("No se pudo obtener la configuración");
-      const data = (await res.json()) as ComponentSourceConfig;
-      setConfig(data);
-      setInitial(data);
-      setTokenInput("");
-      setTokenTouched(false);
-    } catch {
-      setError("Error al cargar configuración de la fuente de componentes");
+      const list = await fetchComponentSourceProfiles();
+      setProfiles(list);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al cargar perfiles MCP");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void fetchConfig();
-  }, [fetchConfig]);
+    void loadProfiles();
+  }, [loadProfiles]);
 
-  const hasChanges =
-    config.enabled !== initial.enabled ||
-    config.pluginId !== initial.pluginId ||
-    config.url !== initial.url ||
-    tokenTouched;
+  function clearProfileFeedback(profileId: string) {
+    setPendingMappings((prev) => {
+      if (!prev[profileId]) return prev;
+      const next = { ...prev };
+      delete next[profileId];
+      return next;
+    });
+    if (healthOkId === profileId) setHealthOkId(null);
+  }
 
-  const handleSave = async () => {
-    setSaving(true);
+  async function handleTest(profile: ComponentSourceProfileSummary) {
+    setTestingId(profile.id);
     setError("");
     setSuccess("");
+    clearProfileFeedback(profile.id);
     try {
-      const body: Record<string, unknown> = {
-        enabled: config.enabled,
-        pluginId: config.pluginId || undefined,
-        url: config.url || undefined,
-      };
-      if (tokenTouched) body.token = tokenInput || undefined;
-      const res = await api.put("/api/auth/component-source/config", body);
-      if (!res.ok) throw new Error("Error al guardar");
-      const data = (await res.json()) as ComponentSourceConfig;
-      setConfig(data);
-      setInitial(data);
-      setTokenInput("");
-      setTokenTouched(false);
-      setSuccess("Configuración guardada");
-      window.setTimeout(() => setSuccess(""), 3200);
-    } catch {
-      setError("Error al guardar configuración");
-    } finally {
-      setSaving(false);
-    }
-  };
+      const result: ComponentSourceProfileTestResult = await testComponentSourceProfile(profile.id, {
+        useSaved: true,
+      });
 
-  const handleTestConnection = async () => {
-    setTesting(true);
-    setError("");
-    setSuccess("");
-    try {
-      const body: Record<string, unknown> = {
-        pluginId: config.pluginId.trim() || undefined,
-        url: config.url.trim() || undefined,
-      };
-      if (tokenTouched) {
-        if (tokenInput.trim()) body.token = tokenInput.trim();
-      } else if (config.hasToken) {
-        body.useSaved = true;
-      } else if (tokenInput.trim()) {
-        body.token = tokenInput.trim();
+      if (!result.ok) {
+        throw new Error(result.error);
       }
-      const res = await api.post("/api/admin/component-source/test", body);
-      const data = (await res.json()) as { ok?: boolean; error?: string; service?: string };
-      if (!res.ok || !data.ok) throw new Error(data.error ?? "Conexión fallida");
-      const serviceHint = data.service ? ` (${data.service})` : "";
-      setSuccess(`Conexión exitosa con la fuente de componentes${serviceHint}`);
-      window.setTimeout(() => setSuccess(""), 4000);
+
+      if (result.mode === "mapping") {
+        setPendingMappings((prev) => ({
+          ...prev,
+          [profile.id]: {
+            proposedMapping: result.proposedMapping,
+            capabilities: result.capabilities,
+          },
+        }));
+        setSuccess(
+          `Conexión OK. Revisa el mapeo propuesto para «${profile.name}» y confírmalo para activar wireframes.`,
+        );
+      } else {
+        setHealthOkId(profile.id);
+        const hint = result.service ? ` (${result.service})` : "";
+        setSuccess(`Conexión OK con «${profile.name}»${hint}`);
+        window.setTimeout(() => setHealthOkId((id) => (id === profile.id ? null : id)), 5000);
+      }
+      window.setTimeout(() => setSuccess(""), 6000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al probar conexión");
     } finally {
-      setTesting(false);
+      setTestingId(null);
     }
-  };
+  }
 
-  const handlePluginChange = (pluginId: string) => {
-    setConfig((c) => ({ ...c, pluginId }));
-  };
+  async function handleConfirmMapping(profile: ComponentSourceProfileSummary) {
+    const pending = pendingMappings[profile.id];
+    if (!pending) return;
+    setConfirmingId(profile.id);
+    setError("");
+    setSuccess("");
+    try {
+      await confirmComponentSourceProfileMapping(profile.id, {
+        toolMapping: pending.proposedMapping,
+      });
+      setSuccess(`Mapeo confirmado para «${profile.name}». Capacidades actualizadas.`);
+      clearProfileFeedback(profile.id);
+      window.setTimeout(() => setSuccess(""), 5000);
+      await loadProfiles();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo confirmar el mapeo");
+    } finally {
+      setConfirmingId(null);
+    }
+  }
 
-  const canTestConnection =
-    showUrlField && config.url.trim().length > 0 && (!showTokenField || config.hasToken || tokenInput.trim());
+  async function handleDelete(profile: ComponentSourceProfileSummary) {
+    if (!window.confirm(`¿Eliminar el perfil «${profile.name}»?`)) return;
+    setDeletingId(profile.id);
+    setError("");
+    setSuccess("");
+    try {
+      await deleteComponentSourceProfile(profile.id);
+      clearProfileFeedback(profile.id);
+      setSuccess("Perfil eliminado");
+      window.setTimeout(() => setSuccess(""), 3200);
+      await loadProfiles();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "No se pudo eliminar";
+      setError(formatProfileInUseError(msg));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  function openCreate() {
+    setEditing(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(profile: ComponentSourceProfileSummary) {
+    setEditing(profile);
+    setModalOpen(true);
+  }
 
   return (
     <section className="space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h2 className="text-base font-semibold tracking-tight text-[var(--foreground)] sm:text-lg">
-            Fuente de componentes
+            Perfiles MCP de componentes
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[var(--foreground-muted)]">
-            Conecta TheForge con un servidor MCP de componentes para importar el catálogo de tu
-            design system en la generación de wireframes.
+            Guarda conexiones al design system MCP (nombre, URL, token). En el taller, el owner del
+            proyecto elige qué perfil usar — no hay perfil predeterminado.
           </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-10 shrink-0 gap-2 rounded-xl max-sm:w-full"
-          disabled={loading}
-          onClick={() => void fetchConfig()}
-        >
-          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} aria-hidden />
-          Recargar
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-10 gap-2 rounded-xl max-sm:w-full"
+            disabled={loading}
+            onClick={() => void loadProfiles()}
+          >
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} aria-hidden />
+            Recargar
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="h-10 gap-2 rounded-xl max-sm:w-full"
+            disabled={loading}
+            onClick={openCreate}
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            Nuevo perfil
+          </Button>
+        </div>
       </div>
 
       {!loading ? (
@@ -242,199 +253,151 @@ export function ComponentSourceConfigCard() {
       {loading ? (
         <div className="flex items-center justify-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--card)] py-14 text-sm text-[var(--foreground-muted)]">
           <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-          Cargando configuración…
+          Cargando perfiles…
+        </div>
+      ) : profiles.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_20%,var(--card))] px-6 py-10 text-center">
+          <p className="text-sm text-[var(--foreground-muted)]">
+            No hay perfiles MCP. Crea uno para conectar el design system y selecciónalo en el taller.
+          </p>
+          <Button type="button" className="mt-4 gap-2 rounded-xl" onClick={openCreate}>
+            <Plus className="h-4 w-4" aria-hidden />
+            Nuevo perfil
+          </Button>
         </div>
       ) : (
-        <article className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-[0_8px_32px_rgba(0,0,0,0.08)]">
-          <div className="border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_22%,var(--card))] px-4 py-4 sm:px-5 sm:py-5">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--primary)_12%,var(--card))] text-[var(--primary)]">
-                <Blocks className="h-5 w-5" aria-hidden />
-              </span>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-base font-semibold tracking-tight text-[var(--foreground)]">
-                  Conexión MCP
-                </h3>
-                <p className="mt-0.5 text-sm text-[var(--foreground-muted)]">
-                  Plugin, URL y credenciales del servidor de componentes.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-[var(--foreground)]">Activar</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={config.enabled}
-                  aria-label="Activar fuente de componentes"
-                  onClick={() => setConfig((c) => ({ ...c, enabled: !c.enabled }))}
-                  className={cn(
-                    "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors",
-                    config.enabled
-                      ? "bg-[var(--primary)]"
-                      : "bg-[color-mix(in_oklch,var(--muted-foreground)_25%,var(--border))]",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
-                      config.enabled ? "translate-x-5" : "translate-x-0",
-                    )}
-                  />
-                </button>
-              </div>
-            </div>
-          </div>
+        <ul className="space-y-4">
+          {profiles.map((profile) => {
+            const pending = pendingMappings[profile.id];
+            const mappingRows = pending ? formatProposedMappingSummary(pending.proposedMapping) : [];
+            const mappingPending = !profile.mappingConfirmedAt;
 
-          <div className="space-y-5 p-4 sm:p-5">
-            {config.plugins.length === 0 ? (
-              <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200">
-                Ningún plugin registrado en el servidor. Puedes indicar un identificador manual
-                hasta que el administrador registre plugins.
-              </p>
-            ) : null}
-
-            <div className="space-y-2">
-              <label
-                htmlFor="component-source-plugin"
-                className="flex items-center gap-2 text-sm font-medium text-[var(--foreground)]"
+            return (
+              <li
+                key={profile.id}
+                className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
               >
-                <Blocks className="h-4 w-4 text-[var(--foreground-muted)]" aria-hidden />
-                Plugin
-              </label>
-              {config.plugins.length > 0 ? (
-                <select
-                  id="component-source-plugin"
-                  className="flex h-11 w-full rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_15%,var(--input))] px-3 text-sm text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  value={config.pluginId}
-                  onChange={(e) => handlePluginChange(e.target.value)}
-                >
-                  <option value="">Selecciona un plugin…</option>
-                  {!config.plugins.some((p) => p.id === config.pluginId) && config.pluginId ? (
-                    <option value={config.pluginId}>{config.pluginId}</option>
-                  ) : null}
-                  {config.plugins.map((plugin) => (
-                    <option key={plugin.id} value={plugin.id}>
-                      {plugin.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <Input
-                  id="component-source-plugin"
-                  className="h-11 rounded-xl border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_15%,var(--input))] text-sm"
-                  placeholder="component-source-plugin-id"
-                  value={config.pluginId}
-                  onChange={(e) => handlePluginChange(e.target.value)}
-                  autoComplete="off"
-                />
-              )}
-              {activePlugin?.description ? (
-                <p className="text-xs text-[var(--foreground-muted)]">{activePlugin.description}</p>
-              ) : null}
-            </div>
-
-            {showUrlField ? (
-              <div className="space-y-2">
-                <label
-                  htmlFor="component-source-url"
-                  className="flex items-center gap-2 text-sm font-medium text-[var(--foreground)]"
-                >
-                  <Globe className="h-4 w-4 text-[var(--foreground-muted)]" aria-hidden />
-                  URL del MCP
-                </label>
-                <Input
-                  id="component-source-url"
-                  className="h-11 rounded-xl border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_15%,var(--input))] font-mono text-sm"
-                  placeholder="https://tu-mcp.ejemplo.com/mcp"
-                  value={config.url}
-                  onChange={(e) => setConfig((c) => ({ ...c, url: e.target.value }))}
-                  autoComplete="url"
-                />
-              </div>
-            ) : null}
-
-            {showTokenField ? (
-              <div className="space-y-2">
-                <label
-                  htmlFor="component-source-token"
-                  className="flex items-center gap-2 text-sm font-medium text-[var(--foreground)]"
-                >
-                  <KeyRound className="h-4 w-4 text-[var(--foreground-muted)]" aria-hidden />
-                  Token
-                </label>
-                <div className="relative">
-                  <Input
-                    id="component-source-token"
-                    type={tokenVisible ? "text" : "password"}
-                    className="h-11 rounded-xl border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_15%,var(--input))] pr-11 font-mono text-sm"
-                    placeholder={
-                      config.hasToken && !tokenTouched ? "••••••••" : "token_de_acceso"
-                    }
-                    value={tokenInput}
-                    onChange={(e) => {
-                      setTokenInput(e.target.value);
-                      setTokenTouched(true);
-                    }}
-                    autoComplete="off"
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-[var(--foreground-muted)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-                    onClick={() => setTokenVisible((v) => !v)}
-                    aria-label={tokenVisible ? "Ocultar token" : "Mostrar token"}
-                  >
-                    {tokenVisible ? (
-                      <EyeOff className="h-4 w-4" aria-hidden />
-                    ) : (
-                      <Eye className="h-4 w-4" aria-hidden />
-                    )}
-                  </button>
+                <div className="flex flex-col gap-3 border-b border-[var(--border)] px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-semibold text-[var(--foreground)]">{profile.name}</h3>
+                    <p className="mt-0.5 truncate font-mono text-xs text-[var(--foreground-muted)]">
+                      {profile.url}
+                    </p>
+                    {typeof profile.projectCount === "number" && profile.projectCount > 0 ? (
+                      <p className="mt-1 text-xs text-[var(--foreground-muted)]">
+                        En uso en {profile.projectCount} proyecto
+                        {profile.projectCount === 1 ? "" : "s"}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded-xl"
+                      loading={testingId === profile.id}
+                      disabled={testingId === profile.id || !profile.url.trim()}
+                      onClick={() => void handleTest(profile)}
+                    >
+                      <PlugZap className="h-3.5 w-3.5" aria-hidden />
+                      Probar conexión
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded-xl"
+                      onClick={() => openEdit(profile)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden />
+                      Editar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded-xl text-[var(--destructive)] hover:bg-[var(--destructive)]/10"
+                      loading={deletingId === profile.id}
+                      disabled={deletingId === profile.id}
+                      onClick={() => void handleDelete(profile)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      Eliminar
+                    </Button>
+                  </div>
                 </div>
-                {config.hasToken && !tokenTouched ? (
-                  <p className="text-xs text-[var(--foreground-muted)]">
-                    Token guardado. Déjalo en blanco para conservarlo o escribe uno nuevo para
-                    rotarlo.
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-              <Button
-                type="button"
-                size="sm"
-                className="h-11 w-full gap-2 rounded-xl sm:w-auto"
-                onClick={() => void handleSave()}
-                loading={saving}
-                disabled={saving || !hasChanges}
-              >
-                {!saving ? <Check className="h-4 w-4" aria-hidden /> : null}
-                {hasChanges ? "Guardar cambios" : "Sin cambios"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-11 w-full gap-2 rounded-xl sm:w-auto"
-                onClick={() => void handleTestConnection()}
-                loading={testing}
-                disabled={testing || !canTestConnection}
-              >
-                {!testing ? <PlugZap className="h-4 w-4" aria-hidden /> : null}
-                Probar conexión
-              </Button>
-            </div>
-          </div>
-        </article>
+                {healthOkId === profile.id && !pending ? (
+                  <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--success)_10%,var(--card))] px-4 py-2.5 text-sm text-[color-mix(in_oklch,var(--success)_85%,var(--foreground))] sm:px-5">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+                    Conexión OK — el servidor MCP respondió correctamente.
+                  </div>
+                ) : null}
+
+                {pending ? (
+                  <div className="space-y-3 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--amber-500)_8%,var(--card))] px-4 py-4 sm:px-5">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--foreground)]">
+                        Mapeo propuesto de herramientas
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--foreground-muted)]">
+                        Revisa cómo se mapean los roles internos a las herramientas del MCP remoto.
+                        Confirma para persistir capacidades y habilitar wireframes en proyectos que usen
+                        este perfil.
+                      </p>
+                    </div>
+                    <ul className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--card)] p-2">
+                      {mappingRows.map((row) => (
+                        <li
+                          key={row.role}
+                          className="flex flex-col gap-0.5 rounded-lg px-2 py-1.5 text-xs sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <span className="font-medium text-[var(--foreground)]">{row.role}</span>
+                          <span className="font-mono text-[var(--foreground-muted)]">{row.toolName}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded-xl"
+                      loading={confirmingId === profile.id}
+                      disabled={confirmingId === profile.id}
+                      onClick={() => void handleConfirmMapping(profile)}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                      Confirmar mapeo
+                    </Button>
+                  </div>
+                ) : null}
+
+                <div className="p-4 sm:p-5">
+                  <CapabilityStatusBox
+                    capabilities={pending?.capabilities ?? profile.capabilities}
+                    mappingPending={mappingPending && !pending}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
 
       <div className="rounded-2xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_18%,var(--card))] px-4 py-3.5 sm:px-5">
         <p className="text-xs leading-relaxed text-[var(--foreground-muted)]">
           <span className="font-medium text-[var(--foreground)]">Importante:</span> las credenciales
-          son exclusivas del servidor MCP de componentes. No las compartas ni las reutilices en
-          otros servicios.
+          son exclusivas del servidor MCP de componentes. No las compartas ni las reutilices en otros
+          servicios.
         </p>
       </div>
+
+      <ComponentSourceProfileModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        editing={editing}
+        onSaved={() => void loadProfiles()}
+      />
     </section>
   );
 }

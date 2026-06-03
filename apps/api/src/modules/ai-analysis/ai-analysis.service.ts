@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from "@nestjs/common";
+import { forwardRef, Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { PreferencesService } from "../ai/preferences.service.js";
@@ -69,6 +69,15 @@ import {
   type WireframesPreviewCacheScreen,
 } from "./utils/wireframe-preview-cache.util.js";
 import { buildWireframeDesignSystemContext } from "./utils/wireframe-design-system-context.util.js";
+import {
+  buildWireframesPipelineCache,
+  resolveReusableScreens,
+  wireframesInputsHash,
+  type StreamWireframesOptions,
+} from "./utils/wireframes-pipeline-cache.util.js";
+import { loadWireframesPipelineCache } from "./wireframe-pipeline-cache.store.js";
+
+export type { StreamWireframesOptions };
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
 
@@ -161,6 +170,7 @@ export class AiAnalysisService {
     private readonly estimationService: EstimationService,
     private readonly graphMemory: GraphMemoryService,
     private readonly nodeCacheService: NodeCacheService,
+    @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
     private readonly theforge: TheForgeService,
     private readonly agentSupervisor: AgentSupervisorService,
@@ -1454,6 +1464,7 @@ export class AiAnalysisService {
    */
   async *streamWireframes(
     projectId: string,
+    options?: StreamWireframesOptions,
   ): AsyncGenerator<StreamWireframesEvent> {
     const pid = projectId?.trim();
     if (!pid) {
@@ -1463,7 +1474,13 @@ export class AiAnalysisService {
 
     const project = await this.prisma.project.findUnique({
       where: { id: pid },
-      select: { useCasesContent: true, userStoriesContent: true, uxUiGuideContent: true },
+      select: {
+        useCasesContent: true,
+        userStoriesContent: true,
+        uxUiGuideContent: true,
+        wireframesContent: true,
+        wireframesComponentMappings: true,
+      },
     });
     if (!project) {
       yield { type: "error", message: "Proyecto no encontrado." };
@@ -1481,6 +1498,7 @@ export class AiAnalysisService {
 
     const useCases = (project.useCasesContent ?? "").trim();
     const userStories = (project.userStoriesContent ?? "").trim();
+    const inputsHash = wireframesInputsHash(useCases, userStories);
 
     if (!useCases && !userStories) {
       yield {
@@ -1490,28 +1508,77 @@ export class AiAnalysisService {
       return;
     }
 
+    const dsOnly = options?.dsOnly === true;
+    const existingWireframes = (project.wireframesContent ?? "").trim();
+    if (dsOnly && !existingWireframes) {
+      yield {
+        type: "error",
+        message:
+          "No hay wireframes previos. Genera wireframes completos antes de refrescar solo el design system.",
+      };
+      return;
+    }
+
+    const persistedMappingsRaw = project.wireframesComponentMappings;
+    const persistedMappings =
+      Array.isArray(persistedMappingsRaw)
+        ? persistedMappingsRaw.flatMap((row) => {
+            const parsed = componentMappingSchema.safeParse(row);
+            return parsed.success ? [parsed.data] : [];
+          })
+        : [];
+
+    const pipelineCache = await loadWireframesPipelineCache(this.prisma, pid);
+    const reusableScreens = dsOnly
+      ? resolveReusableScreens({
+          inputsHash,
+          cache: pipelineCache,
+          wireframesMarkdown: existingWireframes,
+          componentMappings: persistedMappings,
+        })
+      : null;
+
+    if (dsOnly && !reusableScreens?.length) {
+      const message =
+        "No se pudieron reutilizar las pantallas existentes (insumos de casos/HU cambiaron o wireframes incompletos). Regenera wireframes completos.";
+      this.logger.warn(`[Wireframes] dsOnly abortado project=${pid}: sin pantallas reutilizables`);
+      yield { type: "error", message };
+      return;
+    }
+
+    const dsRefresh = dsOnly && (reusableScreens?.length ?? 0) > 0;
+
     let graph: Awaited<ReturnType<typeof createWireframesGraph>>;
     let designSystemContext = "";
     try {
-      const userId = await this.resolveUserId(pid);
-      const mcpUser = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          componentSourceEnabled: true,
-          componentSourcePluginId: true,
-          componentSourceUrl: true,
-        },
-      });
-      const componentSourceActive = !!(
-        mcpUser?.componentSourceEnabled &&
-        mcpUser.componentSourcePluginId?.trim() &&
-        mcpUser.componentSourceUrl?.trim()
-      );
-      const componentSource = await this.componentSourceRegistry.resolveForUser(userId);
+      const sourceCtx = await this.componentSourceRegistry.resolveForProject(pid);
+      if (!sourceCtx.profileId) {
+        yield {
+          type: "error",
+          message:
+            "Asigna un perfil de fuente de componentes al proyecto antes de generar wireframes.",
+        };
+        return;
+      }
+      if (!sourceCtx.mappingConfirmed || !sourceCtx.active) {
+        yield {
+          type: "error",
+          message:
+            "Confirma el mapeo de herramientas MCP del perfil de componentes (catalog.list obligatorio) antes de generar wireframes.",
+        };
+        return;
+      }
+      const userId = sourceCtx.ownerUserId;
+      const componentSource = sourceCtx.port;
+      const componentSourceActive = sourceCtx.active;
       graph = await createWireframesGraph(
         this.aiFactory,
         userId,
         componentSource,
+        undefined,
+        dsRefresh
+          ? { entryPoint: "component_mapper", skipCritic: true }
+          : undefined,
       );
       designSystemContext = await buildWireframeDesignSystemContext(
         componentSource,
@@ -1520,7 +1587,9 @@ export class AiAnalysisService {
         componentSourceActive,
       );
     } catch (err) {
-      yield { type: "error", ...formatDbgaStreamError(err) };
+      const formatted = formatDbgaStreamError(err);
+      this.logger.error(`[Wireframes] Setup error project=${pid}: ${formatted.message}`);
+      yield { type: "error", ...formatted };
       return;
     }
 
@@ -1529,24 +1598,40 @@ export class AiAnalysisService {
       useCases,
       userStories,
       designSystemContext: designSystemContext || undefined,
+      ...(dsRefresh && reusableScreens ? { screens: reusableScreens, status: "mapping" as const } : {}),
     };
 
-    const nodeStepMeta: Record<string, { baseStep: number; label: string }> = {
-      screen_analyzer: { baseStep: 1, label: "Analizando pantallas" },
-      component_mapper: { baseStep: 2, label: "Mapeando componentes" },
-      wireframe_composer: { baseStep: 3, label: "Componiendo wireframes" },
-      wireframe_critic: { baseStep: 4, label: "Revisión del crítico" },
-    };
+    if (dsRefresh) {
+      this.logger.log(
+        `[Wireframes] Modo refresh DS: reutilizando ${reusableScreens!.length} pantallas (sin screen analyzer ni crítico)`,
+      );
+    }
+
+    const nodeStepMeta: Record<string, { baseStep: number; label: string }> = dsRefresh
+      ? {
+          component_mapper: { baseStep: 1, label: "Re-mapeando componentes (DS)" },
+          wireframe_composer: { baseStep: 2, label: "Actualizando wireframes" },
+        }
+      : {
+          screen_analyzer: { baseStep: 1, label: "Analizando pantallas" },
+          component_mapper: { baseStep: 2, label: "Mapeando componentes" },
+          wireframe_composer: { baseStep: 3, label: "Componiendo wireframes" },
+          wireframe_critic: { baseStep: 4, label: "Revisión del crítico" },
+        };
 
     let lastState: Record<string, unknown> = {};
-    let totalSteps = 4;
+    let totalSteps = dsRefresh ? 2 : 4;
     const pipelineStart = performance.now();
 
-    const nextNodeInPipeline: Record<string, string> = {
-      screen_analyzer: "component_mapper",
-      component_mapper: "wireframe_composer",
-      wireframe_composer: "wireframe_critic",
-    };
+    const nextNodeInPipeline: Record<string, string> = dsRefresh
+      ? {
+          component_mapper: "wireframe_composer",
+        }
+      : {
+          screen_analyzer: "component_mapper",
+          component_mapper: "wireframe_composer",
+          wireframe_composer: "wireframe_critic",
+        };
 
     function computeStepNum(node: string, iteration: number): number {
       const revisionNode = node !== "screen_analyzer" && iteration > 0 &&
@@ -1567,11 +1652,12 @@ export class AiAnalysisService {
       return nodeStepMeta[node]?.label ?? node;
     }
 
+    const firstRunningNode = dsRefresh ? "component_mapper" : "screen_analyzer";
     yield {
       type: "progress",
       step: 1,
       totalSteps,
-      label: nodeStepMeta.screen_analyzer.label,
+      label: nodeStepMeta[firstRunningNode].label,
       status: "running",
     };
     let nodeStartTime = performance.now();
@@ -1671,6 +1757,11 @@ export class AiAnalysisService {
       if (markdown.trim()) {
         try {
           const componentMappings = finalState.componentMappings ?? [];
+          const screensForCache = finalState.screens ?? [];
+          const pipelineCachePayload =
+            screensForCache.length > 0
+              ? buildWireframesPipelineCache(inputsHash, screensForCache)
+              : null;
           await this.prisma.project.update({
             where: { id: pid },
             data: {
@@ -1679,6 +1770,9 @@ export class AiAnalysisService {
                 componentMappings.length > 0
                   ? (componentMappings as Prisma.InputJsonValue)
                   : Prisma.JsonNull,
+              wireframesPipelineCache: pipelineCachePayload
+                ? (pipelineCachePayload as Prisma.InputJsonValue)
+                : Prisma.JsonNull,
             },
           });
           // A1: No borrar caché — el sync incremental posterior solo regenera
@@ -1699,24 +1793,10 @@ export class AiAnalysisService {
 
       yield { type: "wireframe", content: markdown };
       yield { type: "done" };
-
-      // Bocetos por pantalla (LLM) en segundo plano: no bloquear el stream NDJSON del cliente.
-      if (markdown.trim()) {
-        void this.wireframeSketchesSync
-          .syncWireframeScreenSketches(pid)
-          .then((r) => {
-            this.logger.log(
-              `[Wireframes] sketch sync en background: screens=${r.screenSketches.length} stale=${r.sketchesStale}`,
-            );
-          })
-          .catch((sketchErr) => {
-            this.logger.warn(
-              `[Wireframes] sketch sync after generation: ${sketchErr instanceof Error ? sketchErr.message : String(sketchErr)}`,
-            );
-          });
-      }
     } catch (err) {
-      yield { type: "error", ...formatDbgaStreamError(err) };
+      const formatted = formatDbgaStreamError(err);
+      this.logger.error(`[Wireframes] Stream error project=${pid}: ${formatted.message}`);
+      yield { type: "error", ...formatted };
     }
   }
 
@@ -1733,20 +1813,8 @@ export class AiAnalysisService {
     const markdown = project?.wireframesContent ?? "";
     this.logger.log(`[PreviewSnippets] wireframesContent length=${markdown.length}`);
 
-    const userId = await this.resolveUserId(projectId);
-    const mcpUser = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        componentSourceEnabled: true,
-        componentSourcePluginId: true,
-        componentSourceUrl: true,
-      },
-    });
-    const componentSourceActive = !!(
-      mcpUser?.componentSourceEnabled &&
-      mcpUser.componentSourcePluginId?.trim() &&
-      mcpUser.componentSourceUrl?.trim()
-    );
+    const sourceCtx = await this.componentSourceRegistry.resolveForProject(projectId);
+    const componentSourceActive = sourceCtx.active;
 
     let sketchesSyncing = this.wireframeSketchesSync.isSyncInFlight(projectId);
 

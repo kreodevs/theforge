@@ -22,7 +22,7 @@ import {
   wireframesHasParseableScreens,
 } from "./utils/wireframe-screen-sketch.util.js";
 import { ComponentSourceRegistry } from "../component-source/component-source.registry.js";
-import { buildWireframeDesignSystemContext } from "./utils/wireframe-design-system-context.util.js";
+import { buildSketchDesignSystemContext } from "./utils/wireframe-design-system-context.util.js";
 
 export type SyncWireframeSketchesOptions = {
   forceAll?: boolean;
@@ -53,6 +53,12 @@ export class WireframeSketchesSyncService {
   private readonly logger = new Logger(WireframeSketchesSyncService.name);
   /** Evita sync duplicados y permite polling de estado. */
   private readonly inFlight = new Map<string, Promise<SyncWireframeSketchesResult>>();
+  /** Caché en memoria del contexto DS para bocetos (evita MCP repetido por pantalla). */
+  private readonly sketchDesignSystemCache = new Map<
+    string,
+    { context: string; expiresAt: number }
+  >();
+  private static readonly SKETCH_DS_CACHE_TTL_MS = 5 * 60 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -67,6 +73,45 @@ export class WireframeSketchesSyncService {
 
   private log(step: string, detail: Record<string, unknown>) {
     this.logger.log(`[SketchSync] ${step} ${JSON.stringify(detail)}`);
+  }
+
+  private sketchDesignSystemCacheKey(
+    projectId: string,
+    profileId: string | null | undefined,
+    uxUiGuide: string,
+  ): string {
+    return `${projectId}:${profileId ?? "none"}:${contentDigestHash(uxUiGuide || "(sin-ux)")}`;
+  }
+
+  private async resolveSketchDesignSystemContext(
+    projectId: string,
+    userId: string,
+    uxUiGuide: string,
+    componentSourceActive: boolean,
+    profileId: string | null | undefined,
+    componentSource: Awaited<
+      ReturnType<ComponentSourceRegistry["resolveForProject"]>
+    >["port"],
+  ): Promise<string> {
+    const cacheKey = this.sketchDesignSystemCacheKey(projectId, profileId, uxUiGuide);
+    const hit = this.sketchDesignSystemCache.get(cacheKey);
+    if (hit && hit.expiresAt > Date.now()) {
+      this.log("ds-cache-hit", { projectId: projectId.slice(0, 8), chars: hit.context.length });
+      return hit.context;
+    }
+
+    const context = await buildSketchDesignSystemContext(
+      componentSource,
+      userId,
+      uxUiGuide,
+      componentSourceActive,
+    );
+    this.sketchDesignSystemCache.set(cacheKey, {
+      context,
+      expiresAt: Date.now() + WireframeSketchesSyncService.SKETCH_DS_CACHE_TTL_MS,
+    });
+    this.log("ds-cache-miss", { projectId: projectId.slice(0, 8), chars: context.length });
+    return context;
   }
 
   private async resolveMddHash(projectId: string): Promise<string> {
@@ -205,25 +250,16 @@ export class WireframeSketchesSyncService {
       select: { uxUiGuideContent: true },
     });
     const userId = row!.userId;
-    const mcpUser = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        componentSourceEnabled: true,
-        componentSourcePluginId: true,
-        componentSourceUrl: true,
-      },
-    });
-    const componentSourceActive = !!(
-      mcpUser?.componentSourceEnabled &&
-      mcpUser.componentSourcePluginId?.trim() &&
-      mcpUser.componentSourceUrl?.trim()
-    );
-    const componentSource = await this.componentSourceRegistry.resolveForUser(userId);
-    const designSystemContext = await buildWireframeDesignSystemContext(
-      componentSource,
+    const sourceCtx = await this.componentSourceRegistry.resolveForProject(pid);
+    const componentSourceActive = sourceCtx.active;
+    const componentSource = sourceCtx.port;
+    const designSystemContext = await this.resolveSketchDesignSystemContext(
+      pid,
       userId,
       uxRow?.uxUiGuideContent ?? "",
       componentSourceActive,
+      sourceCtx.profileId,
+      componentSource,
     );
 
     let llmError: string | undefined;

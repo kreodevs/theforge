@@ -20,9 +20,9 @@ export default [
         {
           paths: [
             {
-              name: "@theforge/component-source-orbita",
+              name: "@theforge/component-source-mcp",
               message:
-                "Import @theforge/component-source-orbita only from component-source.plugins.ts",
+                "Import @theforge/component-source-mcp only from component-source.plugins.ts",
             },
           ],
         },

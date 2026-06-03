@@ -16,11 +16,6 @@ import nodemailer from "nodemailer";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { isSuperAdmin } from "../../common/roles.js";
 import { UserProvidersService } from "../user-providers/user-providers.service.js";
-import { TokenCryptoService } from "../crypto/token-crypto.service.js";
-import { ComponentSourceRegistry } from "../component-source/component-source.registry.js";
-import { normalizeComponentSourcePluginId } from "../component-source/component-source.plugins.js";
-import { fetchFullDesignSystemFromPort } from "../component-source/component-source-design-system.util.js";
-import type { ComponentSourcePluginMeta, DesignSystemMeta, DesignSystemTokens } from "@theforge/component-source";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_RESEND_MS = 60 * 1000;
@@ -65,8 +60,6 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly userProviders: UserProvidersService,
-    private readonly tokenCrypto: TokenCryptoService,
-    private readonly componentSourceRegistry: ComponentSourceRegistry,
   ) {}
 
   private smtpConfig():
@@ -505,127 +498,6 @@ export class AuthService {
     });
     this.logger.log(`Ariadne MCP config actualizada para usuario ${userId}`);
     return { ok: true };
-  }
-
-  /** Shape público de configuración Component Source (multi-plugin). */
-  async getComponentSourceConfig(userId: string): Promise<{
-    enabled: boolean;
-    pluginId: string;
-    url: string;
-    hasToken: boolean;
-    plugins: ComponentSourcePluginMeta[];
-  }> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        componentSourceEnabled: true,
-        componentSourcePluginId: true,
-        componentSourceUrl: true,
-        componentSourceTokenCipher: true,
-      },
-    });
-    return {
-      enabled: user?.componentSourceEnabled ?? false,
-      pluginId: normalizeComponentSourcePluginId(user?.componentSourcePluginId) ?? "",
-      url: user?.componentSourceUrl ?? "",
-      hasToken: !!user?.componentSourceTokenCipher,
-      plugins: this.componentSourceRegistry.listPlugins(),
-    };
-  }
-
-  /**
-   * Guarda configuración Component Source (parcial).
-   * Cifra el token solo si viene presente; enabled:false no borra credenciales.
-   */
-  async setComponentSourceConfig(
-    userId: string,
-    patch: { enabled?: boolean; pluginId?: string; url?: string; token?: string },
-  ): Promise<{
-    enabled: boolean;
-    pluginId: string;
-    url: string;
-    hasToken: boolean;
-    plugins: ComponentSourcePluginMeta[];
-  }> {
-    const data: Record<string, unknown> = {};
-    if (patch.enabled !== undefined) {
-      data.componentSourceEnabled = patch.enabled;
-    }
-    if (patch.pluginId !== undefined) {
-      data.componentSourcePluginId = normalizeComponentSourcePluginId(patch.pluginId) ?? null;
-    }
-    if (patch.url !== undefined) {
-      data.componentSourceUrl = patch.url.trim() || null;
-    }
-    if (patch.token !== undefined && patch.token.trim()) {
-      const { ciphertext, keyVersion } = this.tokenCrypto.encrypt(patch.token.trim());
-      data.componentSourceTokenCipher = ciphertext;
-      data.componentSourceTokenKeyVersion = keyVersion;
-    }
-    if (Object.keys(data).length > 0) {
-      await this.prisma.user.update({ where: { id: userId }, data });
-      this.logger.log(`Component Source config actualizada para usuario ${userId}`);
-    }
-    return this.getComponentSourceConfig(userId);
-  }
-
-  /** Design system completo desde Orbita MCP (`get_design_system`, format=full). */
-  async fetchComponentSourceDesignSystem(userId: string): Promise<{
-    designMd: string;
-    tokens?: DesignSystemTokens;
-    meta?: DesignSystemMeta;
-  }> {
-    const config = await this.getComponentSourceConfig(userId);
-    if (!config.enabled || !config.pluginId?.trim() || !config.url?.trim() || !config.hasToken) {
-      throw new BadRequestException(
-        "Fuente de componentes no configurada. Actívala en Ajustes → Componentes.",
-      );
-    }
-
-    const source = await this.componentSourceRegistry.resolveForUser(userId);
-    const health = await source.checkHealth(userId);
-    if (!health.ok) {
-      throw new ServiceUnavailableException(
-        health.error ?? "No se pudo conectar con la fuente de componentes (MCP).",
-      );
-    }
-
-    try {
-      return await fetchFullDesignSystemFromPort(source, userId);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`fetchComponentSourceDesignSystem failed for ${userId.slice(0, 8)}…: ${message}`);
-      throw new ServiceUnavailableException(message);
-    }
-  }
-
-  /** @deprecated Alias legacy — usar getComponentSourceConfig */
-  async getComponentMcpConfig(userId: string): Promise<{ name: string; url: string; hasToken: boolean }> {
-    const config = await this.getComponentSourceConfig(userId);
-    return {
-      name: config.pluginId,
-      url: config.url,
-      hasToken: config.hasToken,
-    };
-  }
-
-  /** @deprecated Alias legacy — usar setComponentSourceConfig */
-  async setComponentMcpConfig(
-    userId: string,
-    name: string,
-    url: string,
-    token?: string,
-  ): Promise<{ name: string; url: string; hasToken: boolean }> {
-    const config = await this.setComponentSourceConfig(userId, {
-      pluginId: name,
-      url,
-      token,
-    });
-    return {
-      name: config.pluginId,
-      url: config.url,
-      hasToken: config.hasToken,
-    };
   }
 
   // ─── SSO ───

@@ -8,6 +8,7 @@ import { componentMappingSchema, type WireframesStateType } from "../state/index
 import { parseJsonOrThrow } from "../utils/parse-json.js";
 import {
   extractCatalogModuleIds,
+  fuzzyMatchModuleInCatalog,
   parseResolveComponentsText,
   reconcileComponentMappings,
   resolutionToModuleId,
@@ -21,6 +22,30 @@ const componentMapperOutputSchema = z.object({
 });
 
 const MAX_TOOL_LOOPS = 10;
+
+/** Coerce LLM output where compositionRecipe arrives as object instead of string. */
+function normalizeComponentMapperJson(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const obj = raw as { componentMappings?: unknown[] };
+  if (!Array.isArray(obj.componentMappings)) return raw;
+  return {
+    ...obj,
+    componentMappings: obj.componentMappings.map((item) => {
+      if (!item || typeof item !== "object") return item;
+      const mapping = { ...(item as Record<string, unknown>) };
+      const recipe = mapping.compositionRecipe;
+      if (recipe != null && typeof recipe === "object") {
+        mapping.compositionRecipe = JSON.stringify(recipe);
+      }
+      return mapping;
+    }),
+  };
+}
+
+function parseComponentMapperOutput(content: string): z.infer<typeof componentMapperOutputSchema> {
+  const parsed = parseJsonOrThrow(content, z.unknown());
+  return componentMapperOutputSchema.parse(normalizeComponentMapperJson(parsed));
+}
 
 function buildToolsByName(tools: StructuredToolInterface[]): Record<string, StructuredToolInterface> {
   const byName: Record<string, StructuredToolInterface> = {};
@@ -49,104 +74,136 @@ function extractAIContent(msg: AIMessage): string {
   return "";
 }
 
-/** Creates DynamicStructuredTool wrappers around ComponentSourcePort methods. */
+/** Creates DynamicStructuredTool wrappers around ComponentSourcePort methods (only mapped capabilities). */
 export function createComponentMcpTools(
   componentSource: ComponentSourcePort,
   userId: string,
 ): DynamicStructuredTool[] {
+  const caps = componentSource.capabilities;
   const logTool = (name: string, args: Record<string, unknown>, text: string) => {
     console.log(`\x1b[35m[Wireframes/MCP] ${name}(${JSON.stringify(args)}) → ${text.slice(0, 300)}\x1b[0m`);
   };
 
-  return [
-    new DynamicStructuredTool({
-      name: "search_modules",
-      description: "Busca módulos en el design system por query. Devuelve JSON con array 'hits'.",
-      schema: z.object({ query: z.string().describe("Término de búsqueda") }),
-      func: async ({ query }) => {
-        const result = await componentSource.searchModules(userId, query);
-        const text = unwrapMcpResult(result);
-        logTool("search_modules", { query }, text);
-        return text;
-      },
-    }),
-    new DynamicStructuredTool({
-      name: "get_component",
-      description: "Obtiene código fuente y detalles de un componente. Usa el moduleId exacto del resolve/search.",
-      schema: z.object({
-        moduleId: z.string().describe("moduleId exacto del design system"),
-        exportName: z.string().nullable().optional().describe("Nombre del export específico"),
+  const tools: DynamicStructuredTool[] = [];
+
+  if (caps?.catalog?.search) {
+    tools.push(
+      new DynamicStructuredTool({
+        name: "search_modules",
+        description: "Busca módulos en el design system por query. Devuelve JSON con array 'hits'.",
+        schema: z.object({ query: z.string().describe("Término de búsqueda") }),
+        func: async ({ query }) => {
+          const result = await componentSource.searchModules(userId, query);
+          const text = unwrapMcpResult(result);
+          logTool("search_modules", { query }, text);
+          return text;
+        },
       }),
-      func: async ({ moduleId, exportName }) => {
-        const result = await componentSource.getComponent(userId, moduleId, exportName ?? undefined);
-        const text = unwrapMcpResult(result);
-        logTool("get_component", { moduleId, exportName }, text);
-        return text;
-      },
-    }),
-    new DynamicStructuredTool({
-      name: "get_props",
-      description: "Obtiene las props de un componente. Usa el moduleId exacto del resolve/search.",
-      schema: z.object({
-        moduleId: z.string().describe("moduleId exacto del design system"),
-        exportName: z.string().nullable().optional().describe("Nombre del export específico"),
+    );
+  }
+
+  if (caps?.catalog?.get) {
+    tools.push(
+      new DynamicStructuredTool({
+        name: "get_component",
+        description: "Obtiene código fuente y detalles de un componente. Usa el moduleId exacto del resolve/search.",
+        schema: z.object({
+          moduleId: z.string().describe("moduleId exacto del design system"),
+          exportName: z.string().nullable().optional().describe("Nombre del export específico"),
+        }),
+        func: async ({ moduleId, exportName }) => {
+          const result = await componentSource.getComponent(userId, moduleId, exportName ?? undefined);
+          const text = unwrapMcpResult(result);
+          logTool("get_component", { moduleId, exportName }, text);
+          return text;
+        },
       }),
-      func: async ({ moduleId, exportName }) => {
-        const result = await componentSource.getProps(userId, moduleId, exportName ?? undefined);
-        const text = unwrapMcpResult(result);
-        logTool("get_props", { moduleId, exportName }, text);
-        return text;
-      },
-    }),
-    new DynamicStructuredTool({
-      name: "get_composition_recipe",
-      description: "Obtiene recetas de composición para componentes complejos. Usa el moduleId exacto.",
-      schema: z.object({
-        moduleId: z.string().describe("moduleId exacto del design system"),
+    );
+  }
+
+  if (caps?.catalog?.props) {
+    tools.push(
+      new DynamicStructuredTool({
+        name: "get_props",
+        description: "Obtiene las props de un componente. Usa el moduleId exacto del resolve/search.",
+        schema: z.object({
+          moduleId: z.string().describe("moduleId exacto del design system"),
+          exportName: z.string().nullable().optional().describe("Nombre del export específico"),
+        }),
+        func: async ({ moduleId, exportName }) => {
+          const result = await componentSource.getProps(userId, moduleId, exportName ?? undefined);
+          const text = unwrapMcpResult(result);
+          logTool("get_props", { moduleId, exportName }, text);
+          return text;
+        },
       }),
-      func: async ({ moduleId }) => {
-        const result = await componentSource.getCompositionRecipe(userId, moduleId);
-        const text = unwrapMcpResult(result);
-        logTool("get_composition_recipe", { moduleId }, text);
-        return text;
-      },
-    }),
-  ];
+    );
+  }
+
+  if (caps?.catalog?.recipe) {
+    tools.push(
+      new DynamicStructuredTool({
+        name: "get_composition_recipe",
+        description: "Obtiene recetas de composición para componentes complejos. Usa el moduleId exacto.",
+        schema: z.object({
+          moduleId: z.string().describe("moduleId exacto del design system"),
+        }),
+        func: async ({ moduleId }) => {
+          const result = await componentSource.getCompositionRecipe(userId, moduleId);
+          const text = unwrapMcpResult(result);
+          logTool("get_composition_recipe", { moduleId }, text);
+          return text;
+        },
+      }),
+    );
+  }
+
+  return tools;
 }
 
 /**
- * Fetches the full module catalog via list_modules so the LLM knows what actually exists.
+ * Fetches the full module catalog via catalog.list (required role).
+ * Throws when catalog.list is unavailable or returns no module ids.
  */
 async function fetchModuleCatalog(
   componentSource: ComponentSourcePort,
   userId: string,
 ): Promise<string> {
-  try {
-    const result = await componentSource.listModules(userId);
-    const text = unwrapMcpToolText(result);
-    const sampleIds = [...extractCatalogModuleIds(text)].slice(0, 25);
-    console.log(
-      `\x1b[32m[Wireframes/MCP] list_modules OK (${text.length} chars, sampleIds=${sampleIds.length}: ${sampleIds.slice(0, 12).join(", ")}${sampleIds.length > 12 ? "…" : ""})\x1b[0m`,
+  if (!componentSource.capabilities?.catalog?.list) {
+    throw new Error(
+      "El perfil no tiene mapeada la herramienta obligatoria catalog.list. Confirma el mapeo MCP del perfil.",
     );
-    if (sampleIds.length === 0) {
-      console.log(`\x1b[33m[Wireframes/MCP] list_modules: no se pudieron extraer ids del catálogo. preview=${text.slice(0, 200)}\x1b[0m`);
-    }
-    return text;
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    console.log(`\x1b[31m[Wireframes/MCP] list_modules failed: ${errMsg}\x1b[0m`);
-    return "";
   }
+
+  const result = await componentSource.listModules(userId);
+  const text = unwrapMcpToolText(result);
+  if (text.startsWith("[MCP_ERROR]")) {
+    throw new Error(
+      `No se pudo obtener el catálogo de componentes (${text.replace(/^\[MCP_ERROR\]\s*/, "").slice(0, 200)}).`,
+    );
+  }
+
+  const sampleIds = [...extractCatalogModuleIds(text)].slice(0, 25);
+  console.log(
+    `\x1b[32m[Wireframes/MCP] list_modules OK (${text.length} chars, sampleIds=${sampleIds.length}: ${sampleIds.slice(0, 12).join(", ")}${sampleIds.length > 12 ? "…" : ""})\x1b[0m`,
+  );
+  if (sampleIds.length === 0) {
+    console.log(`\x1b[33m[Wireframes/MCP] list_modules: no se pudieron extraer ids del catálogo. preview=${text.slice(0, 200)}\x1b[0m`);
+    throw new Error(
+      "El catálogo MCP no devolvió módulos reconocibles. Revisa el mapeo catalog.list del perfil.",
+    );
+  }
+  return text;
 }
 
 /**
- * Pre-resolves all required component names via batch MCP resolve_components.
- * Returns a formatted string with resolution results ready for the LLM context.
+ * Pre-resolves required component names via catalog.resolve or catalog.list fuzzy match.
  */
 async function batchResolveComponents(
   componentSource: ComponentSourcePort,
   userId: string,
   screens: WireframesStateType["screens"],
+  moduleCatalog: string,
 ): Promise<string> {
   const allNames = new Set<string>();
   for (const s of screens) {
@@ -157,16 +214,36 @@ async function batchResolveComponents(
 
   console.log(`\x1b[36m[Wireframes/MCP] Batch resolving ${uniqueNames.length} component names…\x1b[0m`);
 
-  try {
-    const result = await componentSource.resolveComponents(userId, uniqueNames);
-    const text = unwrapMcpToolText(result);
-    console.log(`\x1b[32m[Wireframes/MCP] Batch resolve OK (${text.length} chars)\x1b[0m`);
-    return text;
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    console.log(`\x1b[31m[Wireframes/MCP] Batch resolve failed: ${errMsg}\x1b[0m`);
-    return `[MCP_ERROR] resolve_components falló: ${errMsg}. Usa search_modules como fallback.`;
+  if (componentSource.capabilities?.catalog?.resolve) {
+    try {
+      const result = await componentSource.resolveComponents(userId, uniqueNames);
+      const text = unwrapMcpToolText(result);
+      console.log(`\x1b[32m[Wireframes/MCP] Batch resolve OK (${text.length} chars)\x1b[0m`);
+      return text;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.log(`\x1b[31m[Wireframes/MCP] Batch resolve failed: ${errMsg}\x1b[0m`);
+    }
   }
+
+  const results = uniqueNames.map((query) => {
+    const hit = fuzzyMatchModuleInCatalog(query, moduleCatalog);
+    if (!hit) {
+      return { query, status: "not_found" as const };
+    }
+    return {
+      query,
+      moduleId: hit.moduleId,
+      exportName: hit.exportName,
+      status: hit.status ?? "exact_module",
+    };
+  });
+
+  const resolvedCount = results.filter((r) => r.status !== "not_found").length;
+  console.log(
+    `\x1b[32m[Wireframes/MCP] Catalog list resolve OK (${resolvedCount}/${uniqueNames.length} matches)\x1b[0m`,
+  );
+  return JSON.stringify({ results });
 }
 
 /** Creates the Component Mapper node with MCP tools bound to the LLM. */
@@ -188,10 +265,21 @@ export function createComponentMapperNode(
     const t0 = performance.now();
     console.log(`\x1b[36m[Wireframes] ▶ Step ${stepNum}/${totalSteps}: ${label} (userId=${userId.slice(0, 8)}…, screens=${state.screens.length})\x1b[0m`);
 
-    const [resolveResult, moduleCatalog] = await Promise.all([
-      batchResolveComponents(componentSource, userId, state.screens),
-      fetchModuleCatalog(componentSource, userId),
-    ]);
+    let moduleCatalog = "";
+    let resolveResult = "No hay componentes para resolver.";
+    try {
+      moduleCatalog = await fetchModuleCatalog(componentSource, userId);
+      resolveResult = await batchResolveComponents(
+        componentSource,
+        userId,
+        state.screens,
+        moduleCatalog,
+      );
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.log(`\x1b[31m[Wireframes/MCP] catalog step failed: ${errMsg}\x1b[0m`);
+      throw err;
+    }
 
     console.log(
       `\x1b[36m[Wireframes/MCP] context: catalogLen=${moduleCatalog.length} resolveLen=${resolveResult.length} resolvePreview=${resolveResult.slice(0, 280).replace(/\n/g, " ")}\x1b[0m`,
@@ -212,7 +300,7 @@ export function createComponentMapperNode(
       prompt += `\n\n## Catálogo completo de módulos del Design System\nEstos son TODOS los módulos disponibles en el design system. Solo puedes usar moduleId de esta lista:\n\n${moduleCatalog}`;
     }
 
-    prompt += `\n\n## Resolución de componentes del Design System (pre-calculada)\nA continuación los resultados de \`resolve_components\` para todos los componentes requeridos. Usa estos moduleId para tus llamadas a \`get_component\`, \`get_props\` y \`get_composition_recipe\`:\n\n${resolveResult}`;
+    prompt += `\n\n## Resolución de componentes del Design System (pre-calculada)\nA continuación los resultados de resolución de nombres → moduleId para todos los componentes requeridos. Usa estos moduleId para tus llamadas a herramientas de catálogo disponibles (\`get_component\`, \`get_props\`, \`get_composition_recipe\`):\n\n${resolveResult}`;
 
     if (state.criticFeedback?.trim()) {
       prompt += `\n\n## Feedback del crítico (corregir)\n${state.criticFeedback}`;
@@ -232,27 +320,29 @@ export function createComponentMapperNode(
 
       if (toolCalls.length === 0) break;
 
-      const toolMessages: ToolMessage[] = [];
-      for (const tc of toolCalls) {
-        const tool = toolsByName[tc.name];
-        const toolCallId = tc.id ?? `tc-${loopCount}-${tc.name}`;
-        if (!tool) {
-          console.log(`\x1b[31m[Wireframes/MCP] Unknown tool called: ${tc.name}\x1b[0m`);
-          toolMessages.push(new ToolMessage({ content: `Unknown tool: ${tc.name}`, tool_call_id: toolCallId, status: "error" }));
-          continue;
-        }
-        try {
-          const result = await tool.invoke(tc);
-          const msg = result instanceof ToolMessage
-            ? result
-            : new ToolMessage({ content: typeof result === "string" ? result : JSON.stringify(result), tool_call_id: toolCallId });
-          toolMessages.push(msg);
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          console.log(`\x1b[31m[Wireframes/MCP] Tool ${tc.name} threw: ${errMsg}\x1b[0m`);
-          toolMessages.push(new ToolMessage({ content: `Error: ${errMsg}`, tool_call_id: toolCallId, status: "error" }));
-        }
-      }
+      const toolMessages: ToolMessage[] = await Promise.all(
+        toolCalls.map(async (tc) => {
+          const tool = toolsByName[tc.name];
+          const toolCallId = tc.id ?? `tc-${loopCount}-${tc.name}`;
+          if (!tool) {
+            console.log(`\x1b[31m[Wireframes/MCP] Unknown tool called: ${tc.name}\x1b[0m`);
+            return new ToolMessage({ content: `Unknown tool: ${tc.name}`, tool_call_id: toolCallId, status: "error" });
+          }
+          try {
+            const result = await tool.invoke(tc);
+            return result instanceof ToolMessage
+              ? result
+              : new ToolMessage({
+                  content: typeof result === "string" ? result : JSON.stringify(result),
+                  tool_call_id: toolCallId,
+                });
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            console.log(`\x1b[31m[Wireframes/MCP] Tool ${tc.name} threw: ${errMsg}\x1b[0m`);
+            return new ToolMessage({ content: `Error: ${errMsg}`, tool_call_id: toolCallId, status: "error" });
+          }
+        }),
+      );
 
       messages.push(aiMsg, ...toolMessages);
       loopCount++;
@@ -279,7 +369,7 @@ export function createComponentMapperNode(
 
     let componentMappings: z.infer<typeof componentMapperOutputSchema>["componentMappings"] = [];
     try {
-      const parsed = parseJsonOrThrow(lastContent, componentMapperOutputSchema);
+      const parsed = parseComponentMapperOutput(lastContent);
       componentMappings = parsed.componentMappings;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);

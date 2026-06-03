@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { DeliverablesQueueService } from "./deliverables-queue.service.js";
 import { PROJECTS_ORCHESTRATOR_PORT } from "./projects-service.port.js";
 import { ProjectsService } from "./projects.service.js";
@@ -10,10 +10,10 @@ import { ScraperModule } from "../scraper/scraper.module.js";
 import { TheForgeModule } from "../theforge/theforge.module.js";
 import { GraphMemoryModule } from "../ai-analysis/graph-memory/graph-memory.module.js";
 import { ChangeLogModule } from "../change-log/change-log.module.js";
-import { WireframeSketchesModule } from "../ai-analysis/wireframe-sketches.module.js";
+import { ComponentSourceModule } from "../component-source/component-source.module.js";
 
 @Module({
-  imports: [EngineModule, AiModule, ScraperModule, TheForgeModule, GraphMemoryModule, ChangeLogModule, WireframeSketchesModule],
+  imports: [EngineModule, AiModule, ScraperModule, TheForgeModule, GraphMemoryModule, ChangeLogModule, forwardRef(() => ComponentSourceModule)],
   controllers: [ProjectsController],
   providers: [
     ProjectsService,

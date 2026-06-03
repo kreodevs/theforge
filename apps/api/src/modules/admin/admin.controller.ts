@@ -1,4 +1,4 @@
-import { Controller, Post, Body, ForbiddenException } from "@nestjs/common";
+import { Controller, Post, Body, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { ComponentSourceRegistry } from "../component-source/component-source.registry.js";
 import { runComponentSourceDiagnostic } from "../component-source/component-source-diagnose.util.js";
@@ -82,6 +82,7 @@ export class AdminController {
   async testComponentSourceConnection(
     @Body()
     body: {
+      profileId?: string;
       pluginId?: string;
       url?: string;
       token?: string;
@@ -97,6 +98,7 @@ export class AdminController {
   async testComponentMcpConnection(
     @Body()
     body: {
+      profileId?: string;
       pluginId?: string;
       url?: string;
       token?: string;
@@ -109,13 +111,24 @@ export class AdminController {
 
   /** Dev-only: log MCP shapes for component source debugging. */
   @Post("component-source/diagnose")
-  async diagnoseComponentSource(): Promise<unknown> {
+  async diagnoseComponentSource(
+    @Body() body: { projectId?: string },
+  ): Promise<unknown> {
     if (process.env.NODE_ENV === "production") {
       throw new ForbiddenException("Diagnóstico no disponible en producción");
     }
+    const projectId = body.projectId?.trim();
+    if (!projectId) {
+      throw new BadRequestException("projectId es requerido");
+    }
     const userId = getRequestUserId();
-    const source = await this.componentSourceRegistry.resolveForUser(userId);
-    const report = await runComponentSourceDiagnostic(source, userId);
+    const ctx = await this.componentSourceRegistry.resolveForProject(projectId);
+    if (!ctx.active) {
+      throw new BadRequestException(
+        "El proyecto no tiene perfil de fuente de componentes activo o el mapeo no está confirmado.",
+      );
+    }
+    const report = await runComponentSourceDiagnostic(ctx.port, ctx.ownerUserId || userId);
     console.log("[ComponentSource/Diagnose]", JSON.stringify(report, null, 2));
     return report;
   }

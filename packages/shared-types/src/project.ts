@@ -68,6 +68,7 @@ export const updateProjectSchema = z.object({
   phase0SummaryContent: z.string().optional().nullable(),
   aemContent: z.string().optional().nullable(),
   figmaMapping: z.record(z.unknown()).optional().nullable(),
+  componentSourceProfileId: z.string().uuid().nullable().optional(),
 });
 
 /** Body para POST /projects/:id/phase0-deep-research */

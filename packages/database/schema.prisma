@@ -27,16 +27,18 @@ model User {
   /// Es el MCP Secret del usuario en Ariadne que actuará como base de conocimientos.
   /// No confundir con mcpSecret (token de TheForge).
   ariadneMcpToken String?
-  /// Component Source activo para wireframes (MCP multi-plugin).
+  /// @deprecated Legacy user-level component source (Phase 1). Migrated to ComponentSourceProfile;
+  /// columns kept for historical data — do not write from application code.
   componentSourceEnabled Boolean @default(false)
-  /// Plugin de component source (ej. "orbita"). Null si no configurado.
+  /// @deprecated Legacy — use ComponentSourceProfile.pluginId.
   componentSourcePluginId String?
-  /// URL del MCP de componentes (ej. "https://componentes.obp.mx/mcp").
+  /// @deprecated Legacy — use ComponentSourceProfile.url.
   componentSourceUrl String?
-  /// Token del MCP de componentes cifrado con AES-256-GCM (TokenCryptoService).
+  /// @deprecated Legacy — use ComponentSourceProfile.tokenCipher.
   componentSourceTokenCipher String?
-  /// Versión de la master key usada al cifrar componentSourceTokenCipher.
+  /// @deprecated Legacy — use ComponentSourceProfile.tokenKeyVersion.
   componentSourceTokenKeyVersion Int?
+  componentSourceProfiles ComponentSourceProfile[]
   projects  Project[]
   sessions  Session[]
   changeLogs ChangeLog[]
@@ -245,6 +247,8 @@ model Project {
   wireframesSketchesCache Json?
   /// Caché de previews MCP (componentes Orbita) por hash de wireframesContent + MCP
   wireframesPreviewCache Json?
+  /// Pantallas del screen analyzer cacheadas (hash casos/HU) para refresh DS sin re-analizar.
+  wireframesPipelineCache Json?
   phase0SummaryContent String?   @db.Text
   /// Estado del flujo Fase 0 interactivo: "idle" | "interviewing" | "done"
   phase0Status        String?   @default("idle")
@@ -260,6 +264,35 @@ model Project {
   favoritedBy          FavoriteProject[]
   createdAt            DateTime  @default(now())
 
+  /// Perfil MCP de fuente de componentes elegido explícitamente por el owner (sin default).
+  componentSourceProfileId String?
+  componentSourceProfile   ComponentSourceProfile? @relation(fields: [componentSourceProfileId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([componentSourceProfileId])
+}
+
+/// Perfil reutilizable de MCP de componentes (credenciales + metadatos de mapeo LLM).
+model ComponentSourceProfile {
+  id                   String    @id @default(uuid())
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                 String
+  /// Plugin registrado en ComponentSourceRegistry (ej. "mcp", legacy "orbita").
+  pluginId             String
+  url                  String
+  tokenCipher          String?
+  tokenKeyVersion      Int?
+  toolMapping          Json?
+  capabilities         Json?
+  toolsListHash        String?
+  mappedAt             DateTime?
+  mappingConfirmedAt   DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  projects             Project[]
+
+  @@unique([userId, name])
   @@index([userId])
 }
 

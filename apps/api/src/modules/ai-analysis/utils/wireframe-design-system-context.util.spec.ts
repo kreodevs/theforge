@@ -1,9 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import type { ComponentSourcePort } from "@theforge/component-source";
 import {
+  fetchOrbitaDesignSystemContext,
   formatDesignSystemContextBlock,
   formatDesignSystemTokens,
+  formatDesignSystemTokensCompact,
+  formatSketchDesignSystemContextBlock,
   mergeDesignSystemContext,
+  mergeDesignSystemContextForSketches,
+  prepareDesignSystemContextForSketches,
   prepareDesignSystemContextForWireframes,
 } from "./wireframe-design-system-context.util.js";
 
@@ -58,5 +64,66 @@ Texto largo ${"x".repeat(500)}`;
     } as Parameters<typeof formatDesignSystemTokens>[0]);
     assert.ok(formatted.includes("colors"));
     assert.ok(formatted.includes("--color-primary"));
+  });
+
+  it("fetchOrbitaDesignSystemContext degrada sin designSystem.get", async () => {
+    const port = {
+      capabilities: { catalog: { list: true } },
+      checkHealth: async () => ({ ok: true }),
+      getDesignSystem: async () => {
+        throw new Error("should not be called");
+      },
+    } as unknown as ComponentSourcePort;
+    const ctx = await fetchOrbitaDesignSystemContext(port, "user-1");
+    assert.equal(ctx, undefined);
+  });
+
+  it("fetchOrbitaDesignSystemContext usa getDesignSystem cuando está mapeado", async () => {
+    const port = {
+      capabilities: { catalog: { list: true }, designSystem: { get: true } },
+      checkHealth: async () => ({ ok: true }),
+      getDesignSystem: async () => ({
+        content: [{ type: "text", text: JSON.stringify({ designMd: "# DS tokens" }) }],
+      }),
+    } as unknown as ComponentSourcePort;
+    const ctx = await fetchOrbitaDesignSystemContext(port, "user-1");
+    assert.equal(ctx, "# DS tokens");
+  });
+
+  it("prepareDesignSystemContextForSketches omite secciones no visuales", () => {
+    const md = `---
+colors:
+  primary: "#112233"
+---
+
+## Colores
+Primario.
+
+## Arquitectura
+${"x".repeat(800)}`;
+    const ctx = prepareDesignSystemContextForSketches(md, 2000);
+    assert.ok(ctx.includes("primary"));
+    assert.ok(ctx.includes("Colores"));
+    assert.ok(!ctx.includes("Arquitectura"));
+  });
+
+  it("mergeDesignSystemContextForSketches usa solo Orbita si basta", () => {
+    const orbita = `---\ncolors:\n  primary: "#abc"\n---\n## Colores\nAzul.`;
+    const merged = mergeDesignSystemContextForSketches("guía ux larga", orbita);
+    assert.equal(merged, orbita);
+  });
+
+  it("formatSketchDesignSystemContextBlock es compacto", () => {
+    const block = formatSketchDesignSystemContextBlock("tokens");
+    assert.ok(block.includes("tokens"));
+    assert.ok(!block.includes("No inventes colores hex"));
+  });
+
+  it("formatDesignSystemTokensCompact no pretty-print", () => {
+    const compact = formatDesignSystemTokensCompact({
+      tokens: { colors: { primary: "#abc" }, meta: { version: 1 } },
+    } as Parameters<typeof formatDesignSystemTokensCompact>[0]);
+    assert.ok(compact.includes('"primary":"#abc"') || compact.includes('"primary": "#abc"'));
+    assert.ok(!compact.includes("meta"));
   });
 });

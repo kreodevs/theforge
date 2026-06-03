@@ -2,9 +2,9 @@
  * Dev-only: log component source MCP shapes (list_modules, resolve, catalog_health, previews).
  *
  * Usage (from repo root):
- *   pnpm exec tsx apps/api/scripts/diagnose-component-source.ts [userId]
+ *   pnpm exec tsx apps/api/scripts/diagnose-component-source.ts [projectId]
  *
- * Requires DATABASE_URL and saved component-source config for the user (enabled + url + token).
+ * Requires DATABASE_URL and a project with an assigned, confirmed component-source profile.
  */
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "../src/app.module.js";
@@ -13,7 +13,7 @@ import { runComponentSourceDiagnostic } from "../src/modules/component-source/co
 import { PrismaService } from "../src/prisma/prisma.service.js";
 
 async function main() {
-  const userIdArg = process.argv[2]?.trim();
+  const projectIdArg = process.argv[2]?.trim();
 
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ["error", "warn"],
@@ -23,28 +23,38 @@ async function main() {
     const prisma = app.get(PrismaService);
     const registry = app.get(ComponentSourceRegistry);
 
-    let userId = userIdArg;
-    if (!userId) {
-      const user = await prisma.user.findFirst({
+    let projectId = projectIdArg;
+    if (!projectId) {
+      const project = await prisma.project.findFirst({
         where: {
-          componentSourceEnabled: true,
-          componentSourceUrl: { not: null },
+          componentSourceProfileId: { not: null },
+          componentSourceProfile: {
+            mappingConfirmedAt: { not: null },
+            url: { not: null },
+          },
         },
-        select: { id: true, email: true },
+        select: { id: true, name: true, userId: true },
         orderBy: { updatedAt: "desc" },
       });
-      if (!user) {
+      if (!project) {
         console.error(
-          "No user with component source enabled. Pass userId: tsx apps/api/scripts/diagnose-component-source.ts <uuid>",
+          "No project with an active component source profile. Pass projectId: tsx apps/api/scripts/diagnose-component-source.ts <uuid>",
         );
         process.exit(1);
       }
-      userId = user.id;
-      console.log(`Using user ${user.email ?? user.id}`);
+      projectId = project.id;
+      console.log(`Using project ${project.name ?? project.id}`);
     }
 
-    const source = await registry.resolveForUser(userId);
-    const report = await runComponentSourceDiagnostic(source, userId);
+    const ctx = await registry.resolveForProject(projectId);
+    if (!ctx.active) {
+      console.error(
+        "Project profile inactive or mapping not confirmed. Assign a profile with confirmed tool mapping in the workshop.",
+      );
+      process.exit(1);
+    }
+
+    const report = await runComponentSourceDiagnostic(ctx.port, ctx.ownerUserId);
     console.log(JSON.stringify(report, null, 2));
   } finally {
     await app.close();

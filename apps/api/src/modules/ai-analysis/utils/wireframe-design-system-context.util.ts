@@ -4,6 +4,33 @@ import { unwrapMcpToolText } from "./wireframes-mcp-resolve.util.js";
 /** Máximo de caracteres del Design System enviados a agentes de wireframes / bocetos. */
 export const WIREFRAME_DESIGN_SYSTEM_CONTEXT_MAX = 8_000;
 
+/** Presupuesto DS para bocetos HTML (tokens + secciones visuales; sin narrativa UX). */
+export const WIREFRAME_SKETCH_DESIGN_SYSTEM_CONTEXT_MAX = 4_000;
+
+const VISUAL_DS_SECTION_RE =
+  /color|tipograf|typography|token|button|component|espaciado|spacing|rounded|sombra|shadow|ui kit|design system/i;
+
+const SKETCH_TOKEN_TOP_KEYS = new Set([
+  "colors",
+  "color",
+  "typography",
+  "font",
+  "fonts",
+  "spacing",
+  "radius",
+  "radii",
+  "shadow",
+  "shadows",
+  "border",
+  "borders",
+]);
+
+function trimDesignSystemContext(text: string, maxChars: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxChars) return trimmed;
+  return `${trimmed.slice(0, maxChars - 20)}\n\n… (recortado)`;
+}
+
 function parseDesignSystemPayload(text: string): DesignSystemResult | undefined {
   const trimmed = text.trim();
   if (!trimmed || trimmed.startsWith("[MCP_ERROR]")) return undefined;
@@ -27,6 +54,36 @@ function resolveDesignSystemResult(
     return result._parsed;
   }
   return parseDesignSystemPayload(text);
+}
+
+/** Tokens MCP en JSON compacto (solo claves visuales relevantes para bocetos). */
+export function formatDesignSystemTokensCompact(result: DesignSystemResult): string {
+  const parts: string[] = [];
+
+  if (result.tokens && typeof result.tokens === "object") {
+    const picked: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(result.tokens)) {
+      if (SKETCH_TOKEN_TOP_KEYS.has(key.toLowerCase())) {
+        picked[key] = value;
+      }
+    }
+    const payload = Object.keys(picked).length > 0 ? picked : result.tokens;
+    parts.push("### Tokens\n```json\n" + JSON.stringify(payload) + "\n```");
+  }
+
+  if (result.cssVars && Object.keys(result.cssVars).length > 0) {
+    const entries = Object.entries(result.cssVars).slice(0, 24);
+    const lines = entries.map(([k, v]) => `${k}:${v}`);
+    parts.push("### CSS vars\n" + lines.join("; "));
+  }
+
+  if (Array.isArray(result.styleRules) && result.styleRules.length > 0) {
+    parts.push(
+      "### Style rules\n```json\n" + JSON.stringify(result.styleRules.slice(0, 8)) + "\n```",
+    );
+  }
+
+  return parts.join("\n\n").trim();
 }
 
 /** Formatea tokens/cssVars cuando format=context no devuelve designMd. */
@@ -58,13 +115,17 @@ export function formatDesignSystemTokens(result: DesignSystemResult): string {
 }
 
 /**
- * Obtiene contexto de design system vía Orbita MCP (format=context).
- * Degrada a undefined si la tool falla o la fuente no está activa.
+ * Obtiene contexto de design system vía MCP (format=context) cuando el perfil lo mapea.
+ * Degrada a undefined si la tool falla, no está mapeada o la fuente no está activa.
  */
 export async function fetchOrbitaDesignSystemContext(
   componentSource: ComponentSourcePort,
   userId: string,
 ): Promise<string | undefined> {
+  if (!componentSource.capabilities?.designSystem?.get) {
+    return undefined;
+  }
+
   try {
     const health = await componentSource.checkHealth(userId);
     if (!health.ok) return undefined;
@@ -82,7 +143,7 @@ export async function fetchOrbitaDesignSystemContext(
     if (parsed?.designMd?.trim()) return parsed.designMd.trim();
 
     if (parsed) {
-      const formatted = formatDesignSystemTokens(parsed);
+      const formatted = formatDesignSystemTokensCompact(parsed);
       if (formatted) return formatted;
     }
 
@@ -145,8 +206,7 @@ export function prepareDesignSystemContextForWireframes(
 
   if (body) {
     const sections = body.split(/\n(?=##\s)/);
-    const visualRe = /color|tipograf|typography|token|button|component|espaciado|spacing|rounded|sombra|shadow|ui kit|design system/i;
-    const prioritized = sections.filter((s) => visualRe.test(s));
+    const prioritized = sections.filter((s) => VISUAL_DS_SECTION_RE.test(s));
     const rest = sections.filter((s) => !prioritized.includes(s));
     const orderedBody = [...prioritized, ...rest].join("\n\n");
     const used = parts.join("\n\n").length;
@@ -161,6 +221,95 @@ export function prepareDesignSystemContextForWireframes(
   const combined = parts.join("\n\n\n").trim();
   if (combined.length <= maxChars) return combined;
   return `${combined.slice(0, maxChars - 20)}\n\n… (recortado)`;
+}
+
+/**
+ * Guía UX recortada para bocetos: YAML + solo secciones visuales (sin el resto del documento).
+ */
+export function prepareDesignSystemContextForSketches(
+  uxUiGuideMarkdown: string,
+  maxChars: number = WIREFRAME_SKETCH_DESIGN_SYSTEM_CONTEXT_MAX,
+): string {
+  const trimmed = uxUiGuideMarkdown.trim();
+  if (!trimmed) return "";
+
+  const parts: string[] = [];
+
+  const fmMatch = trimmed.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (fmMatch?.[1]) {
+    parts.push(
+      "### Tokens (YAML)\n```yaml\n" + fmMatch[1].trim() + "\n```",
+    );
+  }
+
+  let body = trimmed;
+  if (fmMatch) {
+    body = trimmed.slice(fmMatch[0].length).trim();
+  }
+
+  if (body) {
+    const sections = body.split(/\n(?=##\s)/);
+    const visualOnly = sections.filter((s) => VISUAL_DS_SECTION_RE.test(s));
+    if (visualOnly.length > 0) {
+      const used = parts.join("\n\n").length;
+      const budget = Math.max(400, maxChars - used - 80);
+      const slice = visualOnly.join("\n\n");
+      parts.push(
+        "### Guía visual (extracto)\n" +
+          (slice.length > budget ? `${slice.slice(0, budget)}\n\n… (recortado)` : slice),
+      );
+    }
+  }
+
+  return trimDesignSystemContext(parts.join("\n\n\n").trim(), maxChars);
+}
+
+function orbitaSketchContextIsSufficient(orbita: string): boolean {
+  const o = orbita.trim();
+  if (o.length < 40) return false;
+  return (
+    o.includes("---") ||
+    /colors?|typography|primary|token|--color/i.test(o)
+  );
+}
+
+/** Orbita SSOT cuando basta; UX solo si Orbita no alcanza. */
+export function mergeDesignSystemContextForSketches(
+  uxUiGuideContext: string,
+  orbitaContext?: string,
+): string {
+  const orbita = orbitaContext?.trim() ?? "";
+  const ux = uxUiGuideContext.trim();
+
+  if (orbita && orbitaSketchContextIsSufficient(orbita)) {
+    return orbita;
+  }
+
+  if (orbita && ux) {
+    return trimDesignSystemContext([orbita, "", ux].join("\n\n"), WIREFRAME_SKETCH_DESIGN_SYSTEM_CONTEXT_MAX);
+  }
+  return ux || orbita;
+}
+
+/** UX + Orbita MCP optimizado para generación de bocetos HTML. */
+export async function buildSketchDesignSystemContext(
+  componentSource: ComponentSourcePort,
+  userId: string,
+  uxUiGuideMarkdown: string,
+  componentSourceActive: boolean,
+  maxChars: number = WIREFRAME_SKETCH_DESIGN_SYSTEM_CONTEXT_MAX,
+): Promise<string> {
+  if (componentSourceActive) {
+    const orbitaContext = await fetchOrbitaDesignSystemContext(componentSource, userId);
+    if (orbitaContext && orbitaSketchContextIsSufficient(orbitaContext)) {
+      return trimDesignSystemContext(orbitaContext, maxChars);
+    }
+    const uxContext = prepareDesignSystemContextForSketches(uxUiGuideMarkdown, maxChars);
+    const merged = mergeDesignSystemContextForSketches(uxContext, orbitaContext);
+    return trimDesignSystemContext(merged, maxChars);
+  }
+
+  return prepareDesignSystemContextForSketches(uxUiGuideMarkdown, maxChars);
 }
 
 /** UX guide + Orbita MCP cuando la fuente de componentes está activa. */
@@ -194,4 +343,11 @@ export function formatDesignSystemContextBlock(designSystemContext?: string): st
     "",
     ctx,
   ].join("\n");
+}
+
+/** Bloque DS compacto para bocetos (sin repetir instrucciones del agent prompt). */
+export function formatSketchDesignSystemContextBlock(designSystemContext?: string): string {
+  const ctx = designSystemContext?.trim();
+  if (!ctx) return "";
+  return ["", "## Design System (tokens — obligatorio)", ctx].join("\n");
 }

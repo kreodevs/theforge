@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   findBatchPreviewEntry,
+  fuzzyMatchModuleInCatalog,
   normalizeComponentKey,
   normalizeHostedPreviewRow,
   parseCatalogPreviewCapabilities,
@@ -12,6 +13,7 @@ import {
   pickModuleIdForPreview,
   pickPreviewExportName,
   previewCacheKey,
+  resolveComponentNamesToHits,
   sanitizePreviewSandbox,
   shouldFallbackFromProductionSnippet,
 } from "./wireframes-mcp-resolve.util.js";
@@ -165,5 +167,29 @@ describe("wireframes-mcp-resolve", () => {
     );
     const hit = findBatchPreviewEntry(batch, "Input", undefined);
     assert.equal(hit?.previewKind, "html");
+  });
+
+  it("fuzzyMatchModuleInCatalog matches exact and partial names", () => {
+    const catalog = JSON.stringify({
+      modules: [
+        { id: "Button", name: "Button" },
+        { id: "TextField", name: "Text Field" },
+      ],
+    });
+    assert.equal(fuzzyMatchModuleInCatalog("Button", catalog)?.moduleId, "Button");
+    assert.equal(fuzzyMatchModuleInCatalog("Text Field", catalog)?.moduleId, "TextField");
+  });
+
+  it("resolveComponentNamesToHits falls back to catalog.list when resolve missing", async () => {
+    const catalog = JSON.stringify({ modules: [{ id: "Alert", name: "Alert" }] });
+    const port = {
+      capabilities: { catalog: { list: true } },
+      listModules: async () => ({
+        content: [{ type: "text", text: catalog }],
+      }),
+    } as unknown as import("@theforge/component-source").ComponentSourcePort;
+
+    const hits = await resolveComponentNamesToHits(port, "user-1", ["Alert"]);
+    assert.equal(hits.get("Alert")?.moduleId, "Alert");
   });
 });

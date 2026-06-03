@@ -1,0 +1,28 @@
+{
+  "name": "@theforge/component-source-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "author": "Jorge Correa <jcorrea@e-personal.net>",
+  "license": "Apache-2.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node --import tsx --test 'src/**/*.spec.ts'"
+  },
+  "dependencies": {
+    "@theforge/component-source": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

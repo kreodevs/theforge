@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { PrismaModule } from "../../prisma/prisma.module.js";
 import { AiModule } from "../ai/ai.module.js";
 import { ProjectsModule } from "../projects/projects.module.js";
@@ -16,9 +16,18 @@ import { GraphMemoryModule } from "./graph-memory/graph-memory.module.js";
 import { WireframeSketchesModule } from "./wireframe-sketches.module.js";
 
 @Module({
-  imports: [PrismaModule, AiModule, ProjectsModule, TheForgeModule, AgentSupervisorModule, GraphMemoryModule, ComponentSourceModule, WireframeSketchesModule],
+  imports: [
+    PrismaModule,
+    AiModule,
+    forwardRef(() => ProjectsModule),
+    TheForgeModule,
+    AgentSupervisorModule,
+    GraphMemoryModule,
+    forwardRef(() => ComponentSourceModule),
+    forwardRef(() => WireframeSketchesModule),
+  ],
   controllers: [AiAnalysisController],
   providers: [NodeCacheService, CheckpointerService, EstimationService, AiAnalysisService, SddIngestorService, Phase0InterviewService],
-  exports: [AiAnalysisService, EstimationService, GraphMemoryModule, SddIngestorService, Phase0InterviewService, WireframeSketchesModule],
+  exports: [AiAnalysisService, EstimationService, GraphMemoryModule, SddIngestorService, Phase0InterviewService],
 })
 export class AiAnalysisModule { }

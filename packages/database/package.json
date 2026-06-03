@@ -8,8 +8,8 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "prisma generate && tsc && node -e \"require('fs').cpSync('src/generated', 'dist/generated', { recursive: true })\"",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push",
+    "db:generate": "dotenv -e ../../.env -- prisma generate",
+    "db:push": "dotenv -e ../../.env -- prisma db push",
     "db:migrate": "dotenv -e ../../.env -- prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:resolve-project-type": "prisma migrate resolve --applied 20250311000000_add_project_type_relic",
