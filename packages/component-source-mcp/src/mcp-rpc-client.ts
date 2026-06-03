@@ -13,6 +13,10 @@ import {
   probeHttpHealthEndpoint,
   shouldFallbackHealthToMcpTools,
 } from "./mcp-health-probe.js";
+import {
+  buildMcpHttpHeaders,
+  initializeMcpHttpSession,
+} from "./mcp-transport.util.js";
 
 export interface McpToolDefinition {
   name: string;
@@ -109,68 +113,15 @@ export class McpRpcClient {
 
   private async initializeSession(): Promise<string> {
     const { url, token } = this.credentials;
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: this.buildHeaders(),
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2025-03-26",
-          capabilities: {},
-          clientInfo: { name: this.clientName, version: this.clientVersion },
-        },
-      }),
-      signal: AbortSignal.timeout(15_000),
+    const sessionId = await initializeMcpHttpSession({
+      url,
+      token,
+      clientName: this.clientName,
+      clientVersion: this.clientVersion,
+      logger: this.logger,
     });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "sin cuerpo");
-      this.logger.error(`MCP initialize HTTP ${response.status}: ${body.slice(0, 300)}`);
-      throw new ComponentSourceError(`Component MCP initialize respondió HTTP ${response.status}`);
-    }
-
-    const sessionId = response.headers.get("mcp-session-id");
-    if (!sessionId) {
-      throw new ComponentSourceError(
-        "Component MCP no devolvió mcp-session-id en la respuesta de initialize",
-      );
-    }
-
     this.session = { sessionId, createdAt: Date.now() };
-    await this.sendInitializedNotification(sessionId);
     return sessionId;
-  }
-
-  private async sendInitializedNotification(sessionId: string): Promise<void> {
-    const { token } = this.credentials;
-    const response = await fetch(this.credentials.url, {
-      method: "POST",
-      headers: this.buildHeaders(sessionId),
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "notifications/initialized",
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok && response.status !== 202) {
-      const body = await response.text().catch(() => "");
-      this.logger.warn(
-        `MCP notifications/initialized HTTP ${response.status}: ${body.slice(0, 200)}`,
-      );
-    }
-  }
-
-  private buildHeaders(sessionId?: string): Record<string, string> {
-    const { token } = this.credentials;
-    return {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-      ...(sessionId ? { "mcp-session-id": sessionId } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
   }
 
   private isStaleSessionResponse(status: number, bodyText: string): boolean {
@@ -200,7 +151,7 @@ export class McpRpcClient {
 
     const response = await fetch(this.credentials.url, {
       method: "POST",
-      headers: this.buildHeaders(sessionId),
+      headers: buildMcpHttpHeaders(sessionId, this.credentials.token),
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: rpcId,

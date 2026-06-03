@@ -26,6 +26,10 @@ import {
   type McpComponentSourceOptions,
 } from "./options.js";
 import { McpRpcClient } from "./mcp-rpc-client.js";
+import {
+  buildMcpHttpHeaders,
+  initializeMcpHttpSession,
+} from "./mcp-transport.util.js";
 
 interface CacheEntry<T> {
   value: T;
@@ -286,72 +290,16 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
 
   private async initializeSession(userId: string): Promise<string> {
     const { url, token } = await this.requireCredentials(userId);
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2025-03-26",
-          capabilities: {},
-          clientInfo: { name: this.clientName, version: this.clientVersion },
-        },
-      }),
-      signal: AbortSignal.timeout(15_000),
+    const sessionId = await initializeMcpHttpSession({
+      url,
+      token,
+      clientName: this.clientName,
+      clientVersion: this.clientVersion,
+      logger: this.logger,
     });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "sin cuerpo");
-      this.logger.error(`MCP initialize HTTP ${response.status}: ${body.slice(0, 300)}`);
-      throw new ComponentSourceError(`Component MCP initialize respondió HTTP ${response.status}`);
-    }
-
-    const sessionId = response.headers.get("mcp-session-id");
-    if (!sessionId) {
-      this.logger.warn("MCP initialize succeeded but no mcp-session-id header returned");
-      throw new ComponentSourceError(
-        "Component MCP no devolvió mcp-session-id en la respuesta de initialize",
-      );
-    }
-
     this.sessions.set(userId, { sessionId, createdAt: Date.now() });
-    await this.sendInitializedNotification(url, token, sessionId);
     this.logger.log(`MCP session initialized for user ${userId.slice(0, 8)}…`);
     return sessionId;
-  }
-
-  private async sendInitializedNotification(
-    url: string,
-    token: string | undefined,
-    sessionId: string,
-  ): Promise<void> {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-        "mcp-session-id": sessionId,
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "notifications/initialized",
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok && response.status !== 202) {
-      const body = await response.text().catch(() => "");
-      this.logger.warn(
-        `MCP notifications/initialized HTTP ${response.status}: ${body.slice(0, 200)}`,
-      );
-    }
   }
 
   private isStaleSessionResponse(status: number, bodyText: string): boolean {
@@ -391,12 +339,7 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
     const rpcId = Date.now();
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-        "mcp-session-id": sessionId,
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: buildMcpHttpHeaders(sessionId, token),
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: rpcId,
