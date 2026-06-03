@@ -25,6 +25,7 @@ import {
   type ComponentSourceLogger,
   type McpComponentSourceOptions,
 } from "./options.js";
+import { McpRpcClient } from "./mcp-rpc-client.js";
 
 interface CacheEntry<T> {
   value: T;
@@ -245,35 +246,13 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
   }
 
   async checkHealth(userId: string): Promise<{ ok: boolean; service?: string; error?: string }> {
-    const { url, token } = await this.requireCredentials(userId);
-    const healthUrl = url.replace(/\/mcp\/?$/, "/health").replace(/\/+$/, "");
-    try {
-      const res = await fetch(healthUrl, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
-      }
-      const raw = await res.text();
-      try {
-        const data = JSON.parse(raw) as Record<string, unknown>;
-        return { ok: true, service: typeof data.service === "string" ? data.service : undefined };
-      } catch {
-        const trimmed = raw.trim().toLowerCase();
-        if (trimmed === "ok" || trimmed.includes("ok")) {
-          return { ok: true, service: "component-mcp" };
-        }
-        return { ok: false, error: `Respuesta inesperada: ${raw.slice(0, 100)}` };
-      }
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : "Error de conexión" };
-    }
+    const credentials = await this.requireCredentials(userId);
+    const client = new McpRpcClient(credentials, {
+      logger: this.logger,
+      clientName: this.clientName,
+      clientVersion: this.clientVersion,
+    });
+    return client.checkHealth();
   }
 
   private getValidSession(userId: string): string | null {

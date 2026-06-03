@@ -3,6 +3,11 @@ export { DEFAULT_MCP_TOOL_MAPPING } from "./default-tool-mapping.js";
 export { McpComponentSource } from "./mcp-component-source.js";
 export { McpRpcClient, type McpToolDefinition } from "./mcp-rpc-client.js";
 export { computeToolsListHash } from "./tools-list-hash.js";
+export {
+  deriveMcpHealthUrl,
+  probeHttpHealthEndpoint,
+  shouldFallbackHealthToMcpTools,
+} from "./mcp-health-probe.js";
 export { createMcpPlugin, createOrbitaPlugin } from "./create-mcp-plugin.js";
 export type { ComponentSourceLogger, McpComponentSourceOptions } from "./options.js";
 export { defaultComponentSourceLogger } from "./options.js";

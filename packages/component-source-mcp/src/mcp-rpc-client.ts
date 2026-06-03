@@ -9,6 +9,10 @@ import {
   type ComponentSourceLogger,
   type McpComponentSourceOptions,
 } from "./options.js";
+import {
+  probeHttpHealthEndpoint,
+  shouldFallbackHealthToMcpTools,
+} from "./mcp-health-probe.js";
 
 export interface McpToolDefinition {
   name: string;
@@ -45,33 +49,23 @@ export class McpRpcClient {
 
   async checkHealth(): Promise<ComponentHealthCheck> {
     const { url, token } = this.credentials;
-    const healthUrl = url.replace(/\/mcp\/?$/, "/health").replace(/\/+$/, "");
+    const http = await probeHttpHealthEndpoint(url, token);
+    if (http.ok) return http;
+    if (!shouldFallbackHealthToMcpTools(http.error)) return http;
+
     try {
-      const res = await fetch(healthUrl, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
+      const tools = await this.listTools();
+      if (tools.length === 0) {
+        return {
+          ok: false,
+          error: "MCP respondió pero tools/list no devolvió herramientas",
+        };
       }
-      const raw = await res.text();
-      try {
-        const data = JSON.parse(raw) as Record<string, unknown>;
-        return { ok: true, service: typeof data.service === "string" ? data.service : undefined };
-      } catch {
-        const trimmed = raw.trim().toLowerCase();
-        if (trimmed === "ok" || trimmed.includes("ok")) {
-          return { ok: true, service: "component-mcp" };
-        }
-        return { ok: false, error: `Respuesta inesperada: ${raw.slice(0, 100)}` };
-      }
+      return { ok: true, service: "mcp-tools" };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : "Error de conexión" };
+      const mcpErr = err instanceof Error ? err.message : String(err);
+      const prefix = http.error ? `${http.error}; ` : "";
+      return { ok: false, error: `${prefix}MCP tools/list: ${mcpErr}` };
     }
   }
 

@@ -297,7 +297,24 @@ export class ComponentSourceProfileService {
       mappingConfirmed && !urlChanged && !tokenChanged && hashMatches;
 
     if (useHealthOnlyMode) {
-      return { mode: "health", ok: true, service: health.service };
+      const mapping = parseToolMappingFromJson(profile.toolMapping);
+      if (mapping) {
+        try {
+          this.toolMappingService.validateAndNormalize(
+            mapping,
+            listed.tools.map((t) => t.name),
+          );
+        } catch (err) {
+          const message =
+            err instanceof BadRequestException
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : "Mapeo inválido respecto a tools/list";
+          return { mode: "health", ok: false, error: message };
+        }
+      }
+      return { mode: "health", ok: true, service: health.service ?? "mcp-tools" };
     }
 
     try {
