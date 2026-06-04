@@ -51,7 +51,8 @@ import {
   WORKSHOP_HEADER_CTL_HOVER,
 } from "../constants/workshopHeaderToolbar";
 import type { CodebaseDocResponseMode } from "@theforge/shared-types";
-import { useWorkshopStore, type Status } from "../store/workshopStore";
+import { shouldUseMcpDesignSystem } from "@theforge/shared-types/design-system-import";
+import { useWorkshopStore, type Status, type Project } from "../store/workshopStore";
 import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
@@ -96,7 +97,7 @@ import { Phase0InterviewPanel } from "../components/Phase0InterviewPanel";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AdrsPanel } from "../components/AdrsPanel";
 import {
-  ProjectComponentSourceProfileSelector,
+  WorkshopMcpProfileBar,
   isProjectComponentSourceActive,
 } from "../components/ProjectComponentSourceProfileSelector";
 import { RegenerationProgressBanner } from "../components/RegenerationProgressBanner";
@@ -153,7 +154,7 @@ type WorkshopDocToolbarViewModes = {
   useCasesViewMode: "preview" | "source";
   userStoriesViewMode: "preview" | "source";
   uxUiGuideViewMode: "design" | "preview" | "source";
-  wireframesViewMode: "wireframe" | "preview" | "source";
+  wireframesViewMode: "wireframe" | "source";
   aemViewMode: "preview" | "source";
   blueprintViewMode: "preview" | "source";
   apiContractsViewMode: "preview" | "source";
@@ -193,9 +194,8 @@ function workshopDocSourceTogglePresentation(
     return { Icon: FileText, tooltip: "Ver documento DESIGN.md" };
   }
   if (centralPanel === "wireframes") {
-    if (activeViewMode === "wireframe") return { Icon: Monitor, tooltip: "Vista wireframe (tarjetas)" };
-    if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Ver markdown" };
-    return { Icon: FileText, tooltip: "Ver wireframes" };
+    if (activeViewMode === "wireframe") return { Icon: Pencil, tooltip: "Editar markdown" };
+    return { Icon: Monitor, tooltip: "Ver wireframes" };
   }
   if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Editar" };
   return { Icon: FileText, tooltip: "Ver previsualización" };
@@ -351,9 +351,16 @@ export default function WorkshopView({
     [uxUiGuideContent],
   );
 
+  /** Guía MCP válida: priorizar DS del MCP; si no, el LLM puede generar/reparar desde MDD. */
+  const hasValidMcpUxGuide = useMemo(
+    () => shouldUseMcpDesignSystem({ uxUiGuideContent }),
+    [uxUiGuideContent],
+  );
+
   const canGenerateUxUiGuide = useMemo(
-    () => !!(effectiveMddTrimmed && blueprintContent?.trim()),
-    [effectiveMddTrimmed, blueprintContent],
+    () =>
+      !!(effectiveMddTrimmed && blueprintContent?.trim()) && !hasValidMcpUxGuide,
+    [effectiveMddTrimmed, blueprintContent, hasValidMcpUxGuide],
   );
 
   /** Wireframes: requiere Design System generado y casos de uso o historias (insumo del grafo). */
@@ -499,6 +506,12 @@ export default function WorkshopView({
   const legacyGenerateDeliverables = useWorkshopStore((s) => s.legacyGenerateDeliverables);
   const persistUxUiGuideContent = useWorkshopStore((s) => s.persistUxUiGuideContent);
   const generateUxGuideSequential = useCallback(async () => {
+    if (hasValidMcpUxGuide) {
+      setError(
+        "Hay un design system MCP válido en la guía. Regenera el MDD sin tocar estilos; para actualizar el DS usa «Obtener design system MCP».",
+      );
+      return;
+    }
     const { apiFetch, API_BASE } = await import("../utils/apiClient");
     const mdd = effectiveMddTrimmed || "";
     const blueprint = blueprintContent?.trim() || "";
@@ -687,13 +700,29 @@ export default function WorkshopView({
       setError(`Error al generar design system: ${msg}`);
       console.error("Error generating UX guide:", e);
     }
-  }, [projectId, project, effectiveMddTrimmed, blueprintContent, specContent, setUxUiGuideContent, persistUxUiGuideContent, setError]);
+  }, [
+    projectId,
+    project,
+    effectiveMddTrimmed,
+    blueprintContent,
+    specContent,
+    hasValidMcpUxGuide,
+    setUxUiGuideContent,
+    persistUxUiGuideContent,
+    setError,
+  ]);
 
   /** Repara/regenera el YAML frontmatter de la guía UX/UI usando el MDD como contexto vía API.
    * Si falla la API, hace reparación local (útil con contenido pegado sin frontmatter). */
   const repairUxGuide = useCallback(async () => {
     const current = uxUiGuideContent ?? "";
     if (!projectId || !current.trim()) return;
+    if (hasValidMcpUxGuide) {
+      setError(
+        "La guía tiene un design system MCP válido. Usa «Obtener design system MCP» para actualizar tokens.",
+      );
+      return;
+    }
     setUxGenerating(true);
     setUxGenProgress("Reparando YAML frontmatter…");
     try {
@@ -728,7 +757,16 @@ export default function WorkshopView({
       setUxGenerating(false);
       setUxGenProgress(null);
     }
-  }, [projectId, uxUiGuideContent, projectName, persistUxUiGuideContent, setUxGenerating, setUxGenProgress]);
+  }, [
+    projectId,
+    uxUiGuideContent,
+    projectName,
+    hasValidMcpUxGuide,
+    persistUxUiGuideContent,
+    setUxGenerating,
+    setUxGenProgress,
+    setError,
+  ]);
 
   const generateWireframes = useCallback(async () => {
     if (!projectId) return;
@@ -900,7 +938,11 @@ export default function WorkshopView({
   const [componentSourceProfiles, setComponentSourceProfiles] = useState<ComponentSourceProfileSummary[]>([]);
   const [componentSourceActive, setComponentSourceActive] = useState<boolean | null>(null);
   const [fetchingDesignSystemMcp, setFetchingDesignSystemMcp] = useState(false);
-  const [wireframesViewMode, setWireframesViewMode] = useState<"wireframe" | "preview" | "source">("wireframe");
+  const [wireframesViewMode, setWireframesViewMode] = useState<"wireframe" | "source">("wireframe");
+  const [wireframesToolbarSlot, setWireframesToolbarSlot] = useState<HTMLElement | null>(null);
+  const bindWireframesToolbarSlot = useCallback((node: HTMLDivElement | null) => {
+    setWireframesToolbarSlot(node);
+  }, []);
   const [architectureViewMode, setArchitectureViewMode] = useState<"preview" | "source">("preview");
   const [useCasesViewMode, setUseCasesViewMode] = useState<"preview" | "source">("preview");
   const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
@@ -928,7 +970,7 @@ export default function WorkshopView({
     else if (panel === "use-cases") setUseCasesViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "user-stories") setUserStoriesViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "ux-ui-guide") setUxUiGuideViewMode((m) => m === "design" ? "preview" : m === "preview" ? "source" : "design");
-    else if (panel === "wireframes") setWireframesViewMode((m) => m === "wireframe" ? "preview" : m === "preview" ? "source" : "wireframe");
+    else if (panel === "wireframes") setWireframesViewMode((m) => (m === "wireframe" ? "source" : "wireframe"));
     else if (panel === "aem") setAemViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
@@ -1044,9 +1086,23 @@ export default function WorkshopView({
   }, [wireframesDocReady, wireframesPrerequisiteHintBase, wireframeMcpGate]);
 
   useEffect(() => {
-    if (centralPanel !== "ux-ui-guide" && centralPanel !== "wireframes") return;
     setComponentSourceActive(isProjectComponentSourceActive(project, componentSourceProfiles));
-  }, [centralPanel, project, componentSourceProfiles]);
+  }, [project, componentSourceProfiles]);
+
+  const handleMcpProfileProjectUpdated = useCallback(
+    (data: Project) => {
+      useWorkshopStore.getState().setProject(data);
+      setComponentSourceActive(isProjectComponentSourceActive(data, componentSourceProfiles));
+    },
+    [componentSourceProfiles],
+  );
+
+  const handleMcpProfileChangeCommitted = useCallback(() => {
+    beginMcpRegen();
+    reconnectMcpRegen();
+  }, [beginMcpRegen, reconnectMcpRegen]);
+
+  const persistMddContent = useWorkshopStore((s) => s.persistMddContent);
 
   /** Importa design system desde el MCP del perfil del proyecto y reemplaza la guía UX/UI. */
   const fetchDesignSystemMcp = useCallback(async () => {
@@ -1063,7 +1119,26 @@ export default function WorkshopView({
       setUxUiGuideContent(designMd);
       await persistUxUiGuideContent(designMd);
       setUxUiGuidePreviewKey((k) => k + 1);
-      setError("✅ Design system importado desde MCP");
+
+      if (data.mddContent?.trim()) {
+        setMddContent(data.mddContent);
+        await persistMddContent(data.mddContent, { force: true });
+      }
+      if (data.brdContent?.trim()) {
+        const stageId = activeStageId ?? workshopStagesList[0]?.id;
+        if (stageId) {
+          setBrdWorkshopDraft(data.brdContent);
+          await patchWorkshopStage(stageId, { brdContent: data.brdContent });
+        }
+      }
+
+      const docNote =
+        data.docSync?.target === "mdd"
+          ? " Sección «Design System (MCP)» actualizada en el MDD."
+          : data.docSync?.target === "brd"
+            ? " Sección «Design System (MCP)» actualizada en el BRD."
+            : "";
+      setError(`✅ Design system importado desde MCP.${docNote}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Error al obtener design system MCP: ${msg}`);
@@ -1077,6 +1152,12 @@ export default function WorkshopView({
     uxUiGuideContent,
     setUxUiGuideContent,
     persistUxUiGuideContent,
+    setMddContent,
+    persistMddContent,
+    activeStageId,
+    workshopStagesList,
+    patchWorkshopStage,
+    setBrdWorkshopDraft,
     setError,
   ]);
 
@@ -2439,23 +2520,6 @@ export default function WorkshopView({
 
         </div>
 
-        {project ? (
-          <div className="mt-3 border-t border-[color-mix(in_oklch,var(--border)_65%,transparent)] pt-3">
-            <ProjectComponentSourceProfileSelector
-              project={project}
-              compact
-              onProjectUpdated={(data) => {
-                useWorkshopStore.getState().setProject(data);
-                setComponentSourceActive(isProjectComponentSourceActive(data, componentSourceProfiles));
-              }}
-              onProfileChangeCommitted={() => {
-                beginMcpRegen();
-                reconnectMcpRegen();
-              }}
-            />
-          </div>
-        ) : null}
-
         {project?.projectType === "LEGACY" && project?.theforgeProjectId?.trim() ? (
           <div className="mt-3 rounded-lg border border-[color-mix(in_oklch,var(--border)_70%,transparent)] bg-[color-mix(in_oklch,var(--muted)_25%,transparent)] px-2.5 py-1.5 sm:mt-3">
             <span
@@ -2653,20 +2717,37 @@ export default function WorkshopView({
               : "hidden lg:flex lg:h-full lg:min-h-0 lg:flex-col",
           )}
         >
-          <div className="flex shrink-0 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_45%,var(--background))] px-3 py-2.5 text-sm text-[var(--muted-foreground)] sm:px-4 sm:py-3 lg:h-16 lg:min-h-16 lg:max-h-16 lg:items-center lg:overflow-hidden lg:py-0 lg:pl-4 lg:pr-4">
+          <div
+            className={cn(
+              "flex shrink-0 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_45%,var(--background))] px-3 py-2.5 text-sm text-[var(--muted-foreground)] sm:px-4 sm:py-3 lg:min-h-16 lg:items-center lg:overflow-hidden lg:py-0 lg:pl-4 lg:pr-4",
+              centralPanel === "wireframes" && wireframesViewMode === "wireframe"
+                ? "lg:h-auto lg:max-h-none lg:py-2"
+                : "lg:h-16 lg:max-h-16",
+            )}
+          >
             <TooltipProvider delayDuration={280}>
             <div className="flex min-h-0 w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3 lg:flex-nowrap lg:items-center lg:justify-between">
-              <div className="min-w-0 flex-1 lg:hidden">
-                <WorkshopDocToolbarHint
-                  tier={effectiveComplexityForTabs as WorkshopComplexityTier}
-                  isLegacyProject={isLegacyProject}
+              <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-3">
+                <div className="min-w-0 shrink-0 lg:hidden">
+                  <WorkshopDocToolbarHint
+                    tier={effectiveComplexityForTabs as WorkshopComplexityTier}
+                    isLegacyProject={isLegacyProject}
+                  />
+                </div>
+                <WorkshopDocPanelHeader
+                  className="hidden shrink-0 lg:flex"
+                  panel={centralPanel}
+                  benchmarkPhaseTab={benchmarkPhaseTab}
+                />
+                <div
+                  ref={bindWireframesToolbarSlot}
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center overflow-hidden",
+                    !(centralPanel === "wireframes" && wireframesViewMode === "wireframe") && "hidden",
+                  )}
+                  aria-live="polite"
                 />
               </div>
-              <WorkshopDocPanelHeader
-                className="hidden lg:flex"
-                panel={centralPanel}
-                benchmarkPhaseTab={benchmarkPhaseTab}
-              />
               <div className="flex flex-wrap items-center gap-1.5 shrink-0 sm:justify-end sm:gap-2 sm:pt-0.5 lg:hidden">
                 {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "wireframes", "aem", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd"] as const).includes(
                   centralPanel as any,
@@ -2967,10 +3048,10 @@ export default function WorkshopView({
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[18rem]">
                       {componentSourceActive === false
-                        ? "Selecciona un perfil MCP en el encabezado del taller (o crea uno en Ajustes → Componentes)."
+                        ? "Selecciona un perfil MCP en la barra superior de esta pestaña (o crea uno en Ajustes → Componentes)."
                         : componentSourceActive === null
                           ? "Comprobando perfil MCP…"
-                          : "Importar design system MCP (reemplaza la guía UX/UI del proyecto)."}
+                          : "Importar design system MCP (guía UX/UI + sección «Design System (MCP)» en MDD o BRD)."}
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -2979,14 +3060,16 @@ export default function WorkshopView({
                     <TooltipTrigger asChild>
                       <WorkshopDocToolbarIconButton
                         onClick={repairUxGuide}
-                        disabled={uxGenerating || loading}
+                        disabled={uxGenerating || loading || hasValidMcpUxGuide}
                         aria-label="Reparar YAML frontmatter de la design system desde el contenido existente"
                       >
                         <WorkshopDocToolbarIcon icon={Wrench} />
                       </WorkshopDocToolbarIconButton>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      Reparar YAML frontmatter — regenera tokens de diseño desde el MDD
+                      {hasValidMcpUxGuide
+                        ? "Design system MCP válido: actualízalo con «Obtener design system MCP»."
+                        : "Reparar YAML frontmatter — regenera tokens de diseño desde el MDD"}
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -2995,8 +3078,16 @@ export default function WorkshopView({
                     <TooltipTrigger asChild>
                       <WorkshopDocToolbarIconButton
                         onClick={generateUxGuideSequential}
-                        disabled={uxGenerating || loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
-                        aria-label={uxGenProgress ?? "Regenerar design system desde MDD y Blueprint"}
+                        disabled={
+                          uxGenerating ||
+                          loading ||
+                          !canGenerateUxUiGuide
+                        }
+                        aria-label={
+                          hasValidMcpUxGuide
+                            ? "Design system MCP válido — usar Obtener design system MCP"
+                            : (uxGenProgress ?? "Regenerar design system desde MDD y Blueprint")
+                        }
                       >
                         {uxGenerating ? (
                           <Loader2 className={cn(WORKSHOP_DOC_TOOLBAR_ICON, "animate-spin")} strokeWidth={2} aria-hidden />
@@ -3006,7 +3097,9 @@ export default function WorkshopView({
                       </WorkshopDocToolbarIconButton>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="end" className="max-w-[16rem]">
-                      {uxGenProgress ?? "Regenerar design system desde MDD y Blueprint"}
+                      {hasValidMcpUxGuide
+                        ? "Design system MCP válido. Regenera el MDD aquí; para estilos usa «Obtener design system MCP»."
+                        : (uxGenProgress ?? "Regenerar design system desde MDD y Blueprint (LLM si no hay DS MCP válido)")}
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -3045,6 +3138,14 @@ export default function WorkshopView({
             </div>
             </TooltipProvider>
           </div>
+          {centralPanel === "ux-ui-guide" && project ? (
+            <WorkshopMcpProfileBar
+              project={project}
+              selectId="workshop-mcp-profile-ds"
+              onProjectUpdated={handleMcpProfileProjectUpdated}
+              onProfileChangeCommitted={handleMcpProfileChangeCommitted}
+            />
+          ) : null}
           <div
             ref={workspaceScrollRef}
             className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-4"
@@ -3884,6 +3985,7 @@ export default function WorkshopView({
                   useCasesContent={useCasesContent}
                   userStoriesContent={userStoriesContent}
                   specContent={specContent}
+                  sketchesToolbarPortalTarget={wireframesToolbarSlot}
                 />
               </ErrorBoundary>
             )}

@@ -566,7 +566,12 @@ export default function ChatContainer({
     const welcomeTabs: ActiveTab[] = ["brd", "ux-ui-guide", "benchmark"];
     if (!welcomeTabs.includes(tab)) return;
     const count = (session.chatLog ?? []).filter((m: { tab?: string }) => (m.tab ?? "mdd") === tab).length;
-    if (count > 0) return;
+    if (count > 0) {
+      // Tab ya tiene historial: marcar como «atendido» para que, tras borrar chat, no duplique
+      // la bienvenida que dispara clearChat → fetchWelcome.
+      welcomedTabRef.current = tab;
+      return;
+    }
     // Evitar bucle infinito: si ya intentamos welcome para este tab sin éxito (sin mensaje agregado),
     // no reintentar. Ocurre cuando el backend decide no generar burbuja (ej. benchmark sin contenido).
     if (welcomedTabRef.current === tab) return;
@@ -849,6 +854,8 @@ export default function ChatContainer({
   const handleClearChat = async () => {
     if (!projectId) return;
     setShowClearConfirm(false);
+    // clearChat llama fetchWelcome; marcar el tab evita que el useEffect dispare otra bienvenida.
+    welcomedTabRef.current = activeTab ?? "mdd";
     await clearChat(projectId, activeTab);
   };
 

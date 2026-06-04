@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useWorkshopStore, type WireframesPreviewSession } from "../store/workshopStore";
 import { contentDigestHash } from "../utils/contentDigestHash";
 import { formatDurationMs } from "../utils/formatDuration";
-import { Monitor, Sparkles, ArrowRight, Check, Loader2, Circle, LayoutGrid, Blocks, CheckCircle2, AlertTriangle, XCircle, Square, RefreshCw } from "lucide-react";
-import { Button, Badge, UnderlineTabs } from "@/components/ui";
+import { Monitor, Sparkles, Check, Loader2, Circle, LayoutGrid, Blocks, CheckCircle2, AlertTriangle, XCircle, Square, RefreshCw } from "lucide-react";
+import { Button, UnderlineTabs } from "@/components/ui";
 import type { UnderlineTabItem } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { DocEmptyState } from "@/components/DocEmptyState";
 import MddViewer from "@/components/MddViewer";
 import { AiDocumentBuildingPlaceholder } from "@/components/AiGenerationLoader";
 import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "@/components/WorkshopDocSourceSaveBar";
+import { WorkshopPanelButton } from "@/components/WorkshopButtons";
 import { ensureFullHtmlDocument } from "@/utils/wireframePreviewStyles";
 
 export interface WireframesProgressStep {
@@ -26,7 +28,7 @@ interface WireframesPanelProps {
   onContentChange: (value: string | null) => void;
   onSave: () => void;
   isDirty: boolean;
-  viewMode: "wireframe" | "preview" | "source";
+  viewMode: "wireframe" | "source";
   onGenerate: () => void;
   canGenerate: boolean;
   /** Mensaje cuando `canGenerate` es false (p. ej. falta Design System). */
@@ -42,6 +44,8 @@ interface WireframesPanelProps {
   useCasesContent?: string | null;
   userStoriesContent?: string | null;
   specContent?: string | null;
+  /** Destino en el encabezado del taller (título wireframes) para mensaje y botones de bocetos. */
+  sketchesToolbarPortalTarget?: HTMLElement | null;
 }
 
 interface ScreenPreviewEntry {
@@ -323,12 +327,7 @@ function parseScreens(content: string): ParsedScreen[] {
   });
 }
 
-const DEFAULT_STEP_LABELS = [
-  "Analizando pantallas",
-  "Mapeando componentes",
-  "Componiendo wireframes",
-  "Revisión del crítico",
-];
+import { WIREFRAME_PIPELINE_STEP_LABELS } from "@/constants/wireframe-progress-labels";
 
 function WireframesProgressStepper({
   stepsHistory,
@@ -361,7 +360,7 @@ function WireframesProgressStepper({
       state = "done";
     }
 
-    const label = historyEntry?.label ?? (isCurrent ? currentProgress?.label : undefined) ?? DEFAULT_STEP_LABELS[i - 1] ?? `Paso ${i}`;
+    const label = historyEntry?.label ?? (isCurrent ? currentProgress?.label : undefined) ?? WIREFRAME_PIPELINE_STEP_LABELS[i - 1] ?? `Paso ${i}`;
     const detail = historyEntry?.status === "done" ? historyEntry.detail : undefined;
     const durationMs = historyEntry?.status === "done" ? historyEntry.durationMs : undefined;
 
@@ -527,150 +526,6 @@ function DsComponentsTable({ mappings }: { mappings: DsComponentMapping[] }) {
   );
 }
 
-function ScreenCard({
-  screen,
-  compact = false,
-  onRegenerateSketch,
-  regeneratingSketch = false,
-  regenerateSketchDisabled = false,
-}: {
-  screen: ParsedScreen;
-  compact?: boolean;
-  onRegenerateSketch?: () => void;
-  regeneratingSketch?: boolean;
-  regenerateSketchDisabled?: boolean;
-}) {
-  const hasStructuredContent = screen.dsComponents.length > 0 || screen.wireframeAscii || screen.description;
-
-  return (
-    <article className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
-      <div className="border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_22%,var(--card))] px-4 py-3 sm:px-5">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--primary)_12%,var(--card))] text-[var(--primary)]">
-            <Monitor className="h-4 w-4" aria-hidden />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold tracking-tight text-[var(--foreground)]">
-              {screen.name}
-            </h3>
-            {screen.description && (
-              <p className="mt-0.5 text-xs text-[var(--muted-foreground)] line-clamp-2">
-                {screen.description}
-              </p>
-            )}
-          </div>
-          {onRegenerateSketch && (
-            <ScreenRegenerateButton
-              className={SCREEN_CARD_REGEN_BTN}
-              onClick={onRegenerateSketch}
-              disabled={regenerateSketchDisabled || regeneratingSketch}
-              loading={regeneratingSketch}
-              label={`Regenerar boceto de ${screen.name}`}
-            />
-          )}
-          {screen.dsComponents.length > 0 && (
-            <Badge variant="secondary" className="shrink-0 gap-1 rounded-full text-[11px]">
-              <Blocks className="h-3 w-3" aria-hidden />
-              {screen.dsComponents.length}
-            </Badge>
-          )}
-        </div>
-        {(screen.useCases.length > 0 || screen.userStories.length > 0) && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {screen.useCases.map((uc, idx) => (
-              <span
-                key={`uc-${idx}-${uc}`}
-                className="rounded-md bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] px-1.5 py-0.5 text-[10px] font-medium text-[var(--primary)]"
-              >
-                {uc}
-              </span>
-            ))}
-            {screen.userStories.map((us, idx) => (
-              <span
-                key={`us-${idx}-${us}`}
-                className="rounded-md bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] px-1.5 py-0.5 text-[10px] font-medium text-[var(--muted-foreground)]"
-              >
-                {us}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-4 p-4 sm:p-5">
-        {screen.wireframeAscii && !compact && (
-          <div className="space-y-1.5">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
-              Wireframe
-            </p>
-            <pre className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_20%,var(--card))] p-3 font-mono text-xs leading-relaxed text-[var(--foreground)]">
-              {screen.wireframeAscii}
-            </pre>
-          </div>
-        )}
-
-        {screen.dsComponents.length > 0 && (
-          <DsComponentsTable mappings={screen.dsComponents} />
-        )}
-
-        {screen.dsComponents.length === 0 && screen.components.length > 0 && (
-          <div className="space-y-1.5">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
-              Componentes
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {screen.components.map((comp, idx) => (
-                <span
-                  key={`comp-${idx}-${comp}`}
-                  className="inline-flex items-center rounded-full border border-[color-mix(in_oklch,var(--primary)_25%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-2.5 py-0.5 text-xs font-medium text-[color-mix(in_oklch,var(--primary)_78%,var(--foreground))]"
-                >
-                  {comp}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {screen.navigatesTo.length > 0 && (
-          <div className="space-y-1.5">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
-              Navegación
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {screen.navigatesTo.map((target, idx) => (
-                <span
-                  key={`nav-${idx}-${target}`}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_15%,var(--card))] px-2 py-1 text-xs text-[var(--foreground)]"
-                >
-                  <ArrowRight className="h-3 w-3 shrink-0 text-[var(--primary)]" aria-hidden />
-                  {target}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {screen.stateVariations && !compact && (
-          <div className="space-y-1.5">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
-              Variaciones de estado
-            </p>
-            <div className="rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_15%,var(--card))] p-3">
-              <MddViewer content={screen.stateVariations} />
-            </div>
-          </div>
-        )}
-
-        {!hasStructuredContent && screen.body && (
-          <div className="rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_15%,var(--card))] p-3">
-            <MddViewer content={screen.body} />
-          </div>
-        )}
-      </div>
-    </article>
-  );
-}
-
 function ComposedScreenIframe({ srcDoc, height = 360 }: { srcDoc: string; height?: number }) {
   return (
     <iframe
@@ -717,34 +572,25 @@ function ScreenSketchCanvas({
       : null;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
-      <div className="border-b border-neutral-100 bg-neutral-50/90 px-4 py-2.5">
+    <article className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-[0_4px_16px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
+      <div className="border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_22%,var(--card))] px-4 py-2.5">
         <div className="flex items-center gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Monitor className="h-4 w-4 shrink-0 text-neutral-500" aria-hidden />
+            <Monitor className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" aria-hidden />
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-neutral-800">{screenTitle}</h3>
+              <h3 className="text-sm font-semibold text-[var(--foreground)]">{screenTitle}</h3>
               {traceRefs ? (
-                <p className="mt-0.5 text-[10px] leading-snug text-neutral-500 line-clamp-2">
+                <p className="mt-0.5 text-[10px] leading-snug text-[var(--muted-foreground)] line-clamp-2">
                   Datos según {traceRefs}
                 </p>
               ) : null}
             </div>
           </div>
-          {onRegenerateSketch ? (
-            <ScreenRegenerateButton
-              className={cn(SCREEN_SKETCH_REGEN_BTN, "self-center")}
-              onClick={onRegenerateSketch}
-              disabled={regenerateSketchDisabled || regeneratingSketch}
-              loading={regeneratingSketch}
-              label={`Regenerar boceto de ${screenTitle}`}
-            />
-          ) : null}
         </div>
       </div>
 
       {parsedScreen?.wireframeAscii ? (
-        <section className="border-b border-neutral-100 px-4 py-3">
+        <section className="border-b border-[var(--border)] px-4 py-3">
           <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
             Wireframe
           </p>
@@ -755,13 +601,27 @@ function ScreenSketchCanvas({
       ) : null}
 
       <section className="p-2 sm:p-3">
-        <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
-          Boceto
-        </p>
+        <div className="mb-2 flex items-center justify-between gap-2 px-1">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
+            Boceto
+          </p>
+          {onRegenerateSketch ? (
+            <ScreenRegenerateButton
+              className="h-8 shrink-0 gap-1.5 px-2.5 text-xs shadow-sm"
+              onClick={onRegenerateSketch}
+              disabled={regenerateSketchDisabled || regeneratingSketch}
+              loading={regeneratingSketch}
+              label={`Regenerar boceto de ${screenTitle}`}
+              showLabel
+            />
+          ) : null}
+        </div>
         {agentSrcDoc ? (
           <>
-            <ComposedScreenIframe srcDoc={agentSrcDoc} height={sketchHeight} />
-            <p className="mt-2 text-center text-[10px] text-neutral-400">
+            <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
+              <ComposedScreenIframe srcDoc={agentSrcDoc} height={sketchHeight} />
+            </div>
+            <p className="mt-2 text-center text-[10px] text-[var(--muted-foreground)]">
               Boceto generado por IA según wireframe ASCII y requisitos
             </p>
           </>
@@ -778,18 +638,8 @@ function ScreenSketchCanvas({
             <p className="text-sm text-[var(--muted-foreground)]">
               Sin boceto IA para esta pantalla.
             </p>
-            {onRegenerateSketch ? (
-              <ScreenRegenerateButton
-                className="h-9 gap-1.5 border-neutral-300 bg-white px-3 text-neutral-700 shadow-sm hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
-                onClick={onRegenerateSketch}
-                disabled={regenerateSketchDisabled || regeneratingSketch}
-                loading={regeneratingSketch}
-                label={`Regenerar boceto de ${screenTitle}`}
-                showLabel
-              />
-            ) : null}
             <p className="max-w-sm text-xs text-[var(--muted-foreground)]">
-              Solo se generan con el modelo de IA (no hay vista previa compuesta por componentes).
+              Usa «Regenerar boceto» arriba o «Regenerar bocetos» / «Regenerar todo» en el encabezado.
             </p>
           </div>
         )}
@@ -799,13 +649,6 @@ function ScreenSketchCanvas({
 }
 
 const ALL_SCREENS_TAB = "__all__";
-
-/** Botón ↻ en cabecera de pantalla (evita icono blanco sobre fondo claro del boceto). */
-const SCREEN_SKETCH_REGEN_BTN =
-  "h-8 w-8 shrink-0 p-0 border-neutral-300 bg-white text-neutral-700 shadow-sm hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700";
-
-const SCREEN_CARD_REGEN_BTN =
-  "h-8 w-8 shrink-0 p-0 text-[var(--foreground)] border-[var(--border)] bg-[var(--card)] hover:bg-[var(--muted)]";
 
 function ScreenRegenerateButton({
   onClick,
@@ -843,6 +686,86 @@ function ScreenRegenerateButton({
   );
 }
 
+interface WireframesSketchesToolbarProps {
+  sketchesStale: boolean;
+  sketchesStaleReason?: "mdd" | "screens" | "missing";
+  bocetosRegeneratingActive: boolean;
+  sketchesRegenerating: boolean;
+  wireframesDocIncomplete: boolean;
+  projectId?: string;
+  onRegenerateIncremental: () => void;
+  onRegenerateAll: () => void;
+}
+
+/** Mensaje y acciones de bocetos — se renderiza en el encabezado del taller vía portal. */
+export function WireframesSketchesToolbar({
+  sketchesStale,
+  sketchesStaleReason,
+  bocetosRegeneratingActive,
+  sketchesRegenerating,
+  wireframesDocIncomplete,
+  projectId,
+  onRegenerateIncremental,
+  onRegenerateAll,
+}: WireframesSketchesToolbarProps) {
+  const regenDisabled = sketchesRegenerating || !projectId || wireframesDocIncomplete;
+  const regenTitle = wireframesDocIncomplete
+    ? "Reconstruye el documento wireframes antes de regenerar bocetos"
+    : sketchesRegenerating
+      ? "Generando bocetos en el servidor"
+      : "Regenera solo los bocetos con cambios (incremental)";
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-2 gap-y-1">
+      {sketchesStale && !bocetosRegeneratingActive ? (
+        <p className="mr-auto min-w-0 flex-1 truncate text-xs text-amber-700 dark:text-amber-300">
+          {sketchesStaleReason === "mdd"
+            ? "El MDD cambió: los bocetos pueden estar desactualizados."
+            : sketchesStaleReason === "missing"
+              ? "Aún no hay bocetos. Genera con «Regenerar bocetos» o «Regenerar boceto» en cada pantalla."
+              : "Algunas pantallas cambiaron en el markdown."}
+        </p>
+      ) : !bocetosRegeneratingActive ? (
+        <p className="mr-auto hidden min-w-0 flex-1 truncate text-xs text-[var(--muted-foreground)] lg:block">
+          Los bocetos solo se generan manualmente (incremental o «Regenerar todo»).
+        </p>
+      ) : null}
+      <WorkshopPanelButton
+        tone="secondary"
+        className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
+        disabled={regenDisabled}
+        title={regenTitle}
+        onClick={onRegenerateIncremental}
+      >
+        {sketchesRegenerating ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            Generando bocetos…
+          </>
+        ) : (
+          <>
+            <RefreshCw className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+            Regenerar bocetos
+          </>
+        )}
+      </WorkshopPanelButton>
+      <WorkshopPanelButton
+        tone="primary"
+        className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
+        disabled={regenDisabled}
+        title={
+          wireframesDocIncomplete
+            ? "Reconstruye el documento wireframes antes de regenerar bocetos"
+            : "Regenera todos los bocetos desde cero"
+        }
+        onClick={onRegenerateAll}
+      >
+        Regenerar todo
+      </WorkshopPanelButton>
+    </div>
+  );
+}
+
 export function WireframesPanel({
   content,
   onContentChange,
@@ -863,6 +786,7 @@ export function WireframesPanel({
   useCasesContent,
   userStoriesContent,
   specContent,
+  sketchesToolbarPortalTarget,
 }: WireframesPanelProps) {
   const isEmpty = !content?.trim();
   const wireframesDocIncomplete =
@@ -996,7 +920,7 @@ export function WireframesPanel({
   }, [projectId, applySketchStatus]);
 
   useEffect(() => {
-    if (viewMode !== "preview" || !projectId || !stableWireframesHash || isGenerating) return;
+    if (viewMode !== "wireframe" || !projectId || !stableWireframesHash || isGenerating) return;
 
     const sessionHit =
       wireframesPreviewSession?.projectId === projectId &&
@@ -1281,12 +1205,6 @@ export function WireframesPanel({
     return tabs;
   }, [allScreenEntries]);
 
-  const visibleScreens = useMemo(() => {
-    if (activeScreenTab === ALL_SCREENS_TAB) return screens;
-    const found = findParsedScreenByKey(screens, activeScreenTab);
-    return found ? [found] : screens;
-  }, [screens, activeScreenTab]);
-
   const visiblePreviewEntries = useMemo(() => {
     if (activeScreenTab === ALL_SCREENS_TAB) return allScreenEntries;
     const one = allScreenEntries.find((e) => e.key === activeScreenTab);
@@ -1316,7 +1234,7 @@ export function WireframesPanel({
     );
   }
 
-  if (isEmpty && (viewMode === "wireframe" || viewMode === "preview")) {
+  if (isEmpty && viewMode === "wireframe") {
     return (
       <DocEmptyState
         icon={Monitor}
@@ -1362,8 +1280,34 @@ export function WireframesPanel({
     </div>
   ) : null;
 
+  const showSketchesToolbar =
+    viewMode === "wireframe" &&
+    sketchesToolbarPortalTarget != null &&
+    (screens.length > 0 || hasPreviewContent) &&
+    !previewLoading &&
+    !previewError &&
+    !(isGenerating && previewSnippets === null && screens.length === 0);
+
+  const sketchesToolbarPortal =
+    showSketchesToolbar && sketchesToolbarPortalTarget
+      ? createPortal(
+          <WireframesSketchesToolbar
+            sketchesStale={sketchesStale}
+            sketchesStaleReason={sketchesStaleReason}
+            bocetosRegeneratingActive={bocetosRegeneratingActive}
+            sketchesRegenerating={sketchesRegenerating}
+            wireframesDocIncomplete={wireframesDocIncomplete}
+            projectId={projectId}
+            onRegenerateIncremental={() => void regenerateBocetos(false)}
+            onRegenerateAll={() => void regenerateBocetos(true)}
+          />,
+          sketchesToolbarPortalTarget,
+        )
+      : null;
+
   return (
     <>
+      {sketchesToolbarPortal}
       {incompleteBanner}
       {showStepper && (
         <div className="mb-4 px-1">
@@ -1389,72 +1333,18 @@ export function WireframesPanel({
       )}
       {viewMode === "wireframe" ? (
         <div key="wireframe-view" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {screenTabs.length > 0 && (
-            <div className="shrink-0 px-1">
-              <UnderlineTabs
-                tabs={screenTabs}
-                value={activeScreenTab}
-                onValueChange={setActiveScreenTab}
-                ariaLabel="Pantallas del wireframe"
-                idPrefix="wf-screen"
-              />
-            </div>
-          )}
-          <div className="min-h-0 flex-1 overflow-auto">
-            {visibleScreens.length > 0 ? (
-              activeScreenTab === ALL_SCREENS_TAB ? (
-                <div className="grid gap-4 p-1 pt-3 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
-                  {visibleScreens.map((screen) => {
-                    const screenKey = normalizeScreenKey(screen.name);
-                    return (
-                      <ScreenCard
-                        key={screen.name}
-                        screen={screen}
-                        compact
-                        onRegenerateSketch={
-                          projectId ? () => void regenerateScreenBoceto(screen.name) : undefined
-                        }
-                        regeneratingSketch={regeneratingScreenKeys.has(screenKey)}
-                        regenerateSketchDisabled={sketchRegenDisabled}
-                      />
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="mx-auto max-w-4xl p-1 pt-3">
-                  <ScreenCard
-                    screen={visibleScreens[0]}
-                    onRegenerateSketch={
-                      projectId
-                        ? () => void regenerateScreenBoceto(visibleScreens[0]!.name)
-                        : undefined
-                    }
-                    regeneratingSketch={regeneratingScreenKeys.has(
-                      normalizeScreenKey(visibleScreens[0]!.name),
-                    )}
-                    regenerateSketchDisabled={sketchRegenDisabled}
-                  />
-                </div>
-              )
-            ) : (
-              <MddViewer content={content ?? ""} />
-            )}
-          </div>
-        </div>
-      ) : viewMode === "preview" ? (
-        <div key="preview-view" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {isGenerating && previewSnippets === null ? (
+          {isGenerating && previewSnippets === null && screens.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
               <Loader2 className="h-6 w-6 animate-spin text-[var(--primary)]" />
               <span className="text-sm">Generando wireframes…</span>
               <span className="max-w-sm text-center text-xs">
-                La vista previa se cargará cuando termine la generación y se guarde el documento.
+                La vista se cargará cuando termine la generación y se guarde el documento.
               </span>
             </div>
-          ) : previewLoading ? (
+          ) : previewLoading && previewSnippets === null ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
               <Loader2 className="h-6 w-6 animate-spin text-[var(--primary)]" />
-              <span className="text-sm">Cargando vista previa…</span>
+              <span className="text-sm">Cargando wireframes…</span>
               <span className="text-xs text-[var(--muted-foreground)]">
                 {stableWireframesHash
                   ? "Cargando pantallas y bocetos…"
@@ -1471,84 +1361,16 @@ export function WireframesPanel({
                 <MddViewer content={content ?? ""} />
               </div>
             </div>
-          ) : previewSnippets !== null && hasPreviewContent ? (
+          ) : screens.length > 0 || hasPreviewContent ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="shrink-0 px-1">
-                <UnderlineTabs
-                  tabs={[{ id: "pantallas", label: "pantallas", icon: Monitor }]}
-                  value="pantallas"
-                  onValueChange={() => {}}
-                  ariaLabel="Vista de preview"
-                  idPrefix="wf-preview"
-                />
-              </div>
-              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-3 py-2">
-                {sketchesStale && !bocetosRegeneratingActive ? (
-                  <p className="text-xs text-amber-700 dark:text-amber-300">
-                    {sketchesStaleReason === "mdd"
-                      ? "El MDD cambió: los bocetos pueden estar desactualizados."
-                      : sketchesStaleReason === "missing"
-                        ? "Aún no hay bocetos. Genera con «Regenerar bocetos» o ↻ por pantalla."
-                        : "Algunas pantallas cambiaron en el markdown."}
-                  </p>
-                ) : !bocetosRegeneratingActive ? (
-                  <p className="text-xs text-[var(--muted-foreground)]">
-                    Los bocetos solo se generan manualmente (incremental o «Regenerar todo»).
-                  </p>
-                ) : (
-                  <span className="text-xs text-[var(--muted-foreground)]" aria-hidden />
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs"
-                  disabled={sketchesRegenerating || !projectId || wireframesDocIncomplete}
-                  title={
-                    wireframesDocIncomplete
-                      ? "Reconstruye el documento wireframes antes de regenerar bocetos"
-                      : sketchesRegenerating
-                        ? "Generando bocetos en el servidor"
-                        : "Regenera solo los bocetos con cambios (incremental)"
-                  }
-                  onClick={() => void regenerateBocetos(false)}
-                >
-                  {sketchesRegenerating ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Generando bocetos en el servidor…
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      Regenerar bocetos
-                    </>
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1 text-xs text-muted-foreground"
-                  disabled={sketchesRegenerating || !projectId || wireframesDocIncomplete}
-                  title={
-                    wireframesDocIncomplete
-                      ? "Reconstruye el documento wireframes antes de regenerar bocetos"
-                      : "Regenera todos los bocetos desde cero"
-                  }
-                  onClick={() => void regenerateBocetos(true)}
-                >
-                  Regenerar todo
-                </Button>
-              </div>
-              {screenTabs.length > 1 && (
+              {screenTabs.length > 0 && (
                 <div className="shrink-0 border-b border-[var(--border)] px-1 pb-2">
                   <UnderlineTabs
                     tabs={screenTabs}
                     value={activeScreenTab}
                     onValueChange={setActiveScreenTab}
-                    ariaLabel="pantallas"
-                    idPrefix="wf-preview-screen"
+                    ariaLabel="Pantallas del wireframe"
+                    idPrefix="wf-screen"
                   />
                 </div>
               )}
@@ -1593,7 +1415,7 @@ export function WireframesPanel({
                 <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   {sketchesStaleReason === "missing"
-                    ? "Aún no hay bocetos. Usa «Regenerar bocetos» o el botón ↻ en cada pantalla."
+                    ? "Aún no hay bocetos. Usa «Regenerar bocetos» o «Regenerar boceto» en la sección Boceto de cada pantalla."
                     : "Los bocetos pueden estar desactualizados respecto al documento."}
                 </div>
               ) : null}
