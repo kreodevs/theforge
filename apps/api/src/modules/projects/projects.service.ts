@@ -9,6 +9,7 @@ import { enrichBlueprintWithUiDesignSystem } from "../engine/blueprint-enrich-ui
 import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
+import { enforceMddGovernancePatternsOnPersist } from "@theforge/shared-types/mdd-governance-patterns";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
 import type { ApiConformanceResult, ConformanceResult } from "../engine/conformance.service.js";
 import {
@@ -335,6 +336,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const {
       mddContent: parsedMdd,
       stageId: parsedStageId,
+      allowGovernancePatternChange,
       clearComplexityPending,
       complexityPending: cpInput,
       ...rest
@@ -354,6 +356,18 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       (parsedStageId?.trim() && existingRaw.stages.find((s) => s.id === parsedStageId.trim())) ||
       pickPrimaryStage(existingRaw.stages);
     if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
+
+    let mddGovernancePatternsReverted = false;
+    let mddForPipeline: string | null | undefined = parsedMdd;
+    if (parsedMdd !== undefined && parsedMdd !== null) {
+      const enforced = enforceMddGovernancePatternsOnPersist(
+        parsedMdd,
+        targetStage.mddContent,
+        { allowPatternChange: allowGovernancePatternChange === true },
+      );
+      mddForPipeline = enforced.markdown;
+      mddGovernancePatternsReverted = enforced.patternsReverted;
+    }
 
     const mergedForSemaphore = this.mergeProjectForSemaphore(existingRaw, rest);
 
@@ -379,9 +393,9 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const infraContentForRecalc = rest.infraContent ?? existing.infraContent ?? null;
 
     let pipelineResult: { sanitizedMdd: string; status: Status; precisionScore: number } | null = null;
-    if (parsedMdd !== undefined && parsedMdd !== null) {
+    if (mddForPipeline !== undefined && mddForPipeline !== null) {
       const result = await this.mddUpdatePipeline.process(
-        parsedMdd,
+        mddForPipeline,
         this.buildSemaphoreBase(mergedForSemaphore),
         { projectId: id, stageId: targetStage.id },
       );
@@ -411,7 +425,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       pipelineResult?.sanitizedMdd ?? targetStage.mddContent ?? null;
     const statusForRecalc = pipelineResult?.status ?? targetStage.status;
 
-    if (mddForRecalc != null && (parsedMdd !== undefined || rest.infraContent !== undefined)) {
+    if (mddForRecalc != null && (mddForPipeline !== undefined || rest.infraContent !== undefined)) {
       await this.estimationRecalc.recalcAndUpsert(targetStage.id, {
         mddContent: mddForRecalc,
         infraContent: infraContentForRecalc,
@@ -443,7 +457,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     }
 
     const shouldRefreshSemaphoreWithoutMdd =
-      (parsedMdd === undefined || parsedMdd === null) &&
+      (mddForPipeline === undefined || mddForPipeline === null) &&
       (rest.complexity !== undefined ||
         rest.hasUxTeam !== undefined ||
         rest.figmaMapping !== undefined ||
@@ -460,7 +474,11 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       await this.refreshStageSemaphoreFromProject(id);
     }
 
-    return this.findOne(id);
+    const project = await this.findOne(id);
+    if (mddGovernancePatternsReverted) {
+      return { ...project, mddGovernancePatternsReverted: true as const };
+    }
+    return project;
   }
 
   async remove(id: string) {

@@ -28,6 +28,7 @@ import { VERIFY_DELIVERABLE_PROMPT } from "./prompts/verify-deliverable-prompt.j
 import { CONFORMANCE_CHECK_PROMPT } from "./prompts/conformance-check-prompt.js";
 import { DOCUMENT_CHANGELOG_CHAT_INSTRUCTION } from "./prompts/with-document-changelog-instructions.js";
 import { BRD_CHAT_REFINE_BUSINESS_RULES } from "./prompts/brd-generation-prompt.js";
+import { appendMddGovernancePatternsToPrompt } from "./utils/mdd-governance-prompt.util.js";
 
 /** Instrucción fija para que ningún documento generado use "militar" (se añade al system prompt en generación de docs). */
 const NO_MILITAR_INSTRUCTION =
@@ -584,6 +585,9 @@ export class AiService {
           (phase0 ? `\n\nResumen fase 0 / alcance:\n---\n${phase0}\n---` : "")
         : "No hay Benchmark ni MDD. Genera un Spec genérico (objetivos, alcance, criterios de éxito, user journeys) en markdown.";
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    if (source === "mdd" && content.length > 0) {
+      prompt = appendMddGovernancePatternsToPrompt(prompt, content);
+    }
     return this.generateResponse(prompt, [], { systemPrompt: SPEC_PROMPT });
   }
 
@@ -605,6 +609,7 @@ export class AiService {
       prompt += "\n\n## Mapa de Navegación del Proyecto\n\n" + navMap;
     }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     return this.generateResponse(prompt, [], { systemPrompt: TASKS_PROMPT + NO_MILITAR_INSTRUCTION });
   }
 
@@ -619,6 +624,7 @@ export class AiService {
         (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
         : "No hay MDD. Genera un documento breve de arquitectura genérica (capas, trade-offs) sin inventar dominio ni agentes.";
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     return this.generateResponse(prompt, [], { systemPrompt: ARCHITECTURE_PROMPT + NO_MILITAR_INSTRUCTION });
   }
 
@@ -641,6 +647,7 @@ export class AiService {
       "\n---\n\n" +
       (spec ? "Spec (what/why):\n---\n" + spec + "\n---" : "");
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     return this.generateResponse(prompt, [], { systemPrompt: USE_CASES_PROMPT });
   }
 
@@ -666,6 +673,7 @@ export class AiService {
         "# Historias de Usuario y un párrafo indicando que se requiere el MDD (y opcionalmente Spec y Casos de Uso) para derivar historias de usuario alineadas al alcance del proyecto.";
     }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     return this.generateResponse(prompt, [], { systemPrompt: USER_STORIES_PROMPT });
   }
 
@@ -683,6 +691,9 @@ export class AiService {
     if (gapsFeedback?.trim()) {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
+    }
+    if (mddContent.trim().length > 0) {
+      prompt = appendMddGovernancePatternsToPrompt(prompt, mddContent);
     }
     if (options?.theforgeContext?.trim()) {
       prompt = prependTheForgePrompt(prompt, options.theforgeContext);
@@ -725,6 +736,7 @@ export class AiService {
         specsBlock +
         "\n---";
     }
+    if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     return this.generateResponse(prompt, [], {
       systemPrompt: API_CONTRACTS_PROMPT + NO_MILITAR_INSTRUCTION,
     });
@@ -747,6 +759,7 @@ export class AiService {
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     return this.generateResponse(prompt, [], {
       systemPrompt: LOGIC_FLOWS_PROMPT + NO_MILITAR_INSTRUCTION,
     });
@@ -771,6 +784,7 @@ export class AiService {
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     return this.generateResponse(prompt, [], {
       systemPrompt: INFRA_PROMPT + NO_MILITAR_INSTRUCTION,
     });
