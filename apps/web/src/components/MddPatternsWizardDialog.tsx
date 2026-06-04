@@ -111,8 +111,9 @@ export function MddPatternsWizardDialog({
               </>
             ) : (
               <>
-                Revisa la preselección inferida de tus documentos. Solo los patrones marcados aparecerán en
-                el MDD y se registrarán como ADRs.
+                Primera vez: preselección desde Fase 0 / Benchmark / BRD. Solo los patrones marcados van al
+                MDD. Para regenerar sin volver a elegir, usa «Regenerar MDD»; para empezar de cero, «Limpiar
+                MDD».
               </>
             )}
           </DialogDescription>

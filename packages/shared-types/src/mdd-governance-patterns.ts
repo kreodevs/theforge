@@ -309,6 +309,24 @@ export function mddHasSubstantialBody(md: string): boolean {
   return body.length > 80;
 }
 
+/** Solo sección SSOT con al menos un patrón [X] (sin §1–§7). */
+export function mddHasGovernanceSeed(md: string): boolean {
+  return hasGovernanceSection(md) && selectedPatternIdsFromMdd(md).size > 0;
+}
+
+/** Listo para lanzar generación MDD (cuerpo canónico o semilla de patrones). */
+export function mddReadyForGeneration(md: string): boolean {
+  return mddHasSubstantialBody(md) || mddHasGovernanceSeed(md);
+}
+
+/**
+ * Wizard de patrones solo al empezar de cero (MDD vacío).
+ * Si hay cualquier contenido guardado, «Regenerar MDD» no vuelve a preguntar — usar «Limpiar MDD».
+ */
+export function mddNeedsPatternWizard(md: string): boolean {
+  return (md ?? "").trim().length === 0;
+}
+
 function patternIdSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) return false;
   for (const id of a) if (!b.has(id)) return false;
@@ -328,10 +346,14 @@ export type EnforceMddGovernancePatternsResult = {
 export function enforceMddGovernancePatternsOnPersist(
   incomingMd: string,
   previousSavedMd: string | null | undefined,
-  options?: { allowPatternChange?: boolean },
+  options?: { allowPatternChange?: boolean; clearMddCompletely?: boolean },
 ): EnforceMddGovernancePatternsResult {
   const incoming = (incomingMd ?? "").trim();
   const previous = (previousSavedMd ?? "").trim();
+
+  if (options?.clearMddCompletely) {
+    return { markdown: "", patternsReverted: false };
+  }
 
   if (options?.allowPatternChange) {
     const ids = selectedPatternIdsFromMdd(incoming);

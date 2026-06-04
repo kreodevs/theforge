@@ -9,7 +9,10 @@ import { enrichBlueprintWithUiDesignSystem } from "../engine/blueprint-enrich-ui
 import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
-import { enforceMddGovernancePatternsOnPersist } from "@theforge/shared-types/mdd-governance-patterns";
+import {
+  enforceMddGovernancePatternsOnPersist,
+  mddHasSubstantialBody,
+} from "@theforge/shared-types/mdd-governance-patterns";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
 import type { ApiConformanceResult, ConformanceResult } from "../engine/conformance.service.js";
 import {
@@ -337,6 +340,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       mddContent: parsedMdd,
       stageId: parsedStageId,
       allowGovernancePatternChange,
+      clearMddCompletely,
+      mddGovernanceSeedOnly,
       clearComplexityPending,
       complexityPending: cpInput,
       ...rest
@@ -363,7 +368,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       const enforced = enforceMddGovernancePatternsOnPersist(
         parsedMdd,
         targetStage.mddContent,
-        { allowPatternChange: allowGovernancePatternChange === true },
+        {
+          allowPatternChange: allowGovernancePatternChange === true,
+          clearMddCompletely: clearMddCompletely === true,
+        },
       );
       mddForPipeline = enforced.markdown;
       mddGovernancePatternsReverted = enforced.patternsReverted;
@@ -394,31 +402,47 @@ export class ProjectsService implements IOrchestratorProjectsPort {
 
     let pipelineResult: { sanitizedMdd: string; status: Status; precisionScore: number } | null = null;
     if (mddForPipeline !== undefined && mddForPipeline !== null) {
-      const result = await this.mddUpdatePipeline.process(
-        mddForPipeline,
-        this.buildSemaphoreBase(mergedForSemaphore),
-        { projectId: id, stageId: targetStage.id },
-      );
-      if (!result.ok) {
-        throw new BadRequestException({
-          code: result.code,
-          message: result.message,
+      const skipPipelineForSeed =
+        clearMddCompletely === true ||
+        (mddGovernanceSeedOnly === true && !mddHasSubstantialBody(mddForPipeline));
+      if (skipPipelineForSeed) {
+        await this.prisma.stage.update({
+          where: { id: targetStage.id },
+          data: { mddContent: mddForPipeline },
         });
-      }
-      pipelineResult = {
-        sanitizedMdd: result.sanitizedMdd,
-        status: result.status,
-        precisionScore: result.precisionScore,
-      };
-      await this.prisma.stage.update({
-        where: { id: targetStage.id },
-        data: {
-          mddContent: result.sanitizedMdd,
+        await this.changeLog.log(id, "mddContent", mddForPipeline);
+        pipelineResult = {
+          sanitizedMdd: mddForPipeline,
+          status: targetStage.status,
+          precisionScore: targetStage.precisionScore,
+        };
+      } else {
+        const result = await this.mddUpdatePipeline.process(
+          mddForPipeline,
+          this.buildSemaphoreBase(mergedForSemaphore),
+          { projectId: id, stageId: targetStage.id },
+        );
+        if (!result.ok) {
+          throw new BadRequestException({
+            code: result.code,
+            message: result.message,
+          });
+        }
+        pipelineResult = {
+          sanitizedMdd: result.sanitizedMdd,
           status: result.status,
           precisionScore: result.precisionScore,
-        },
-      });
-      await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
+        };
+        await this.prisma.stage.update({
+          where: { id: targetStage.id },
+          data: {
+            mddContent: result.sanitizedMdd,
+            status: result.status,
+            precisionScore: result.precisionScore,
+          },
+        });
+        await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
+      }
     }
 
     const mddForRecalc =
