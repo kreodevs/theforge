@@ -4,6 +4,7 @@
 
 import { repairCollapsedSqlParagraphs, repairCollapsedSqlInsideFences } from "./repair-collapsed-sql.js";
 import { repairFlowSectionsToMermaid } from "./repair-flow-sections.js";
+import { repairInfraMarkdown } from "./repair-infra-markdown.js";
 
 const SQL_GLUE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/DEFAULT_NOW\(\)/gi, "DEFAULT NOW()"],
@@ -617,6 +618,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairIndentedLists(out);
   out = repairIndentedProseBlocks(out);
   out = repairFlowSectionsToMermaid(out);
+  out = repairInfraMarkdown(out);
   out = repairTableBoundaries(out);
   out = repairApiContractJsonFences(out);
   out = repairStackedCodeFences(out);
