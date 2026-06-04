@@ -1,5 +1,9 @@
 import { Check, Circle, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  resolveRegenerationStepLabel,
+  resolveRegenerationTotalSteps,
+} from "@/utils/regenerationStepLabels";
 import { formatDurationMs } from "@/utils/formatDuration";
 import type { ComponentSourceRegenerationStep } from "@/types/component-source-profiles";
 
@@ -28,16 +32,9 @@ function stepState(
   return "pending";
 }
 
-const DEFAULT_LABELS = [
-  "Validando perfil MCP",
-  "Mapeando herramientas",
-  "Regenerando wireframes",
-  "Actualizando previews",
-];
-
 /**
  * Reusable step banner for MCP profile change regeneration (Settings + Workshop).
- * Matches WireframesPanel stepper visual language.
+ * Labels come from SSE (`progress` / `stepsHistory`); fallbacks align with WireframesPanel.
  */
 export function RegenerationProgressBanner({
   title = "Regeneración por cambio de MCP",
@@ -47,8 +44,7 @@ export function RegenerationProgressBanner({
   onDismiss,
   className,
 }: RegenerationProgressBannerProps) {
-  const totalSteps =
-    progress?.totalSteps ?? stepsHistory[stepsHistory.length - 1]?.totalSteps ?? DEFAULT_LABELS.length;
+  const totalSteps = resolveRegenerationTotalSteps(progress, stepsHistory);
   const currentStep = progress?.step ?? 0;
   const visible = Boolean(progress) || stepsHistory.length > 0 || Boolean(error);
 
@@ -58,11 +54,7 @@ export function RegenerationProgressBanner({
     const num = i + 1;
     const historyEntry = stepsHistory.find((s) => s.step === num);
     const state = stepState(num, progress, stepsHistory);
-    const label =
-      historyEntry?.label ??
-      (progress?.step === num ? progress.label : undefined) ??
-      DEFAULT_LABELS[i] ??
-      `Paso ${num}`;
+    const label = resolveRegenerationStepLabel(num, progress, stepsHistory);
     return {
       num,
       label,

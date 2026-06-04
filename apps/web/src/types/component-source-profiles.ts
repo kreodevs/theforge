@@ -19,12 +19,18 @@ export interface ComponentSourceCapabilities {
   };
 }
 
+export type ComponentSourceTransportType = "http" | "stdio";
+
 export interface ComponentSourceProfileSummary {
   id: string;
   name: string;
   /** Backend normalizes legacy ids to `mcp`. */
   pluginId: string;
+  transportType?: ComponentSourceTransportType;
   url: string;
+  command?: string | null;
+  args?: string[] | null;
+  cwd?: string | null;
   hasToken: boolean;
   capabilities?: ComponentSourceCapabilities | null;
   toolMapping?: Record<string, unknown> | null;
@@ -38,7 +44,11 @@ export interface ComponentSourceProfileSummary {
 
 export interface UpsertComponentSourceProfileBody {
   name: string;
-  url: string;
+  transportType?: ComponentSourceTransportType;
+  url?: string;
+  command?: string;
+  args?: string[];
+  cwd?: string;
   token?: string;
   /** Omitted in UI — backend defaults to generic MCP plugin. */
   pluginId?: string;
@@ -160,6 +170,14 @@ export type ComponentSourceProposedToolMapping = Record<
   { toolName: string; description?: string }
 >;
 
+export type ComponentSourceCatalogProbe = {
+  ok: boolean;
+  moduleCount: number;
+  shape: string;
+  preview: string;
+  reason?: string;
+};
+
 export type ComponentSourceProfileTestResult =
   | { ok: true; mode: "health"; service?: string }
   | {
@@ -168,6 +186,7 @@ export type ComponentSourceProfileTestResult =
       proposedMapping: ComponentSourceProposedToolMapping;
       capabilities?: ComponentSourceCapabilities;
       toolsListHash?: string;
+      catalogProbe?: ComponentSourceCatalogProbe;
     }
   | { ok: false; error: string };
 
@@ -176,18 +195,45 @@ export interface ProjectComponentSourceProfileAssignment {
   profile: ComponentSourceProfileSummary | null;
 }
 
+/** True when the profile has enough config to attempt an MCP connection (Bearer token optional). */
+export function profileHasConnectionConfig(
+  profile: ComponentSourceProfileSummary | null | undefined,
+): boolean {
+  if (!profile) return false;
+  if (profile.transportType === "stdio") {
+    return Boolean(profile.command?.trim());
+  }
+  return Boolean(profile.url?.trim());
+}
+
+export function isStdioComponentSourceProfile(
+  profile: ComponentSourceProfileSummary | null | undefined,
+): boolean {
+  return profile?.transportType === "stdio";
+}
+
+const DISALLOWED_CATALOG_LIST_TOOL =
+  /^(fetch_.*(documentation|docs?)|search_.*(documentation|docs?|code|ui)|get_.*(documentation|docs?))$/i;
+
+export function isDisallowedCatalogListToolName(toolName: string): boolean {
+  const normalized = toolName.trim();
+  return normalized.length > 0 && DISALLOWED_CATALOG_LIST_TOOL.test(normalized);
+}
+
 /** Whether the profile has a user-confirmed tool mapping with mandatory catalog.list. */
 export function hasConfirmedCatalogMapping(
   profile: ComponentSourceProfileSummary | null | undefined,
 ): boolean {
   if (!profile?.mappingConfirmedAt) return false;
-  if (profile.capabilities?.catalog?.list === true) return true;
   const mapping = profile.toolMapping;
   if (!mapping || typeof mapping !== "object") return false;
   const list = (mapping as Record<string, unknown>)["catalog.list"];
   if (!list || typeof list !== "object") return false;
   const toolName = (list as { toolName?: unknown }).toolName;
-  return typeof toolName === "string" && toolName.trim().length > 0;
+  if (typeof toolName !== "string" || !toolName.trim()) return false;
+  if (isDisallowedCatalogListToolName(toolName)) return false;
+  if (profile.capabilities?.catalog?.list === true) return true;
+  return true;
 }
 
 export function formatProposedMappingSummary(
@@ -217,7 +263,7 @@ export function getProjectWireframeMcpGate(
   if (!profileId) return { ready: false, reason: "no-profile" };
   const profile = profiles.find((p) => p.id === profileId);
   if (!profile) return { ready: false, reason: "profile-missing" };
-  if (!profile.url.trim() || !profile.hasToken) return { ready: false, reason: "credentials" };
+  if (!profileHasConnectionConfig(profile)) return { ready: false, reason: "credentials" };
   if (!hasConfirmedCatalogMapping(profile)) return { ready: false, reason: "mapping-unconfirmed" };
   return { ready: true };
 }
@@ -226,13 +272,13 @@ export function wireframeMcpGateMessage(gate: ProjectMcpWireframeGate): string {
   if (gate.ready) return "";
   switch (gate.reason) {
     case "no-profile":
-      return "Selecciona un perfil MCP en el encabezado del taller (Ajustes → Componentes para crear uno).";
+      return "Selecciona un perfil MCP en la pestaña Design System (Ajustes → Componentes para crear uno).";
     case "profile-missing":
-      return "El perfil MCP asignado ya no existe. Elige otro perfil en el encabezado del taller.";
+      return "El perfil MCP asignado ya no existe. Elige otro perfil en la pestaña Design System.";
     case "credentials":
-      return "El perfil MCP asignado no tiene URL o token válidos. Complétalo en Ajustes → Componentes.";
+      return "El perfil MCP asignado no tiene URL (HTTP) o command (stdio) configurado. Complétalo en Ajustes → Componentes.";
     case "mapping-unconfirmed":
-      return "El perfil MCP necesita conexión probada y mapeo confirmado (Ajustes → Componentes → Probar conexión).";
+      return "El perfil MCP necesita un mapeo válido de catalog.list. En Ajustes → Componentes, pulsa Probar conexión y Confirma (p. ej. list_items_in_registries para shadcn, no fetch_ui_documentation / GitMCP).";
     default:
       return "";
   }

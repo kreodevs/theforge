@@ -15,11 +15,16 @@ interface RegenerationEventPayload {
   profileId?: string;
 }
 
-/** Optimistic first step shown immediately after profile PUT (before SSE replay). */
+import { MCP_DS_IMPORT_LABEL } from "@/constants/wireframe-progress-labels";
+
+/**
+ * Optimistic first step shown immediately after profile PUT (before SSE replay).
+ * `totalSteps` stays minimal until the stream reports the real count (1 DS + N wireframe sub-steps).
+ */
 export const MCP_REGENERATION_OPTIMISTIC_STEP: ComponentSourceRegenerationStep = {
   step: 1,
-  totalSteps: 2,
-  label: "Importando design system",
+  totalSteps: 1,
+  label: MCP_DS_IMPORT_LABEL,
   status: "running",
 };
 

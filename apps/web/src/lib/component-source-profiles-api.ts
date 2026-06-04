@@ -4,6 +4,7 @@ import type {
   ComponentSourceProfileSummary,
   ComponentSourceProfileTestResult,
   ComponentSourceProposedToolMapping,
+  ComponentSourceCatalogProbe,
   ProjectComponentSourceProfileAssignment,
   UpsertComponentSourceProfileBody,
 } from "@/types/component-source-profiles";
@@ -51,7 +52,15 @@ export async function deleteComponentSourceProfile(id: string): Promise<void> {
 
 export async function testComponentSourceProfile(
   id: string,
-  body?: { url?: string; token?: string; useSaved?: boolean },
+  body?: {
+    url?: string;
+    token?: string;
+    useSaved?: boolean;
+    transportType?: "http" | "stdio";
+    command?: string;
+    args?: string[];
+    cwd?: string;
+  },
 ): Promise<ComponentSourceProfileTestResult> {
   const res = await api.post(`${PROFILES_BASE}/${id}/test`, body ?? { useSaved: true });
   const data = (await res.json()) as {
@@ -63,6 +72,7 @@ export async function testComponentSourceProfile(
     proposedMapping?: ComponentSourceProposedToolMapping;
     capabilities?: ComponentSourceProfileSummary["capabilities"];
     toolsListHash?: string;
+    catalogProbe?: ComponentSourceCatalogProbe;
   };
 
   if (!res.ok) {
@@ -76,6 +86,7 @@ export async function testComponentSourceProfile(
       proposedMapping: data.proposedMapping,
       capabilities: data.capabilities ?? undefined,
       toolsListHash: data.toolsListHash,
+      catalogProbe: data.catalogProbe,
     };
   }
 
@@ -104,13 +115,23 @@ export async function setProjectComponentSourceProfile(
   return res.json() as Promise<ProjectComponentSourceProfileAssignment>;
 }
 
+export type ProjectDesignSystemMcpResponse = {
+  designMd: string;
+  tokens?: unknown;
+  meta?: unknown;
+  uxUiGuideContent?: string;
+  mddContent?: string;
+  brdContent?: string;
+  docSync?: { target: "mdd" | "brd"; sectionHeading: string };
+};
+
 /** Fetches full design system markdown from the project's assigned MCP profile. */
 export async function fetchProjectDesignSystemFromMcp(
   projectId: string,
-): Promise<{ designMd: string; tokens?: unknown; meta?: unknown }> {
+): Promise<ProjectDesignSystemMcpResponse> {
   const res = await api.post(`/api/auth/component-source/projects/${projectId}/design-system`);
   await ensureOk(res, "No se pudo importar el design system desde MCP");
-  return res.json() as Promise<{ designMd: string; tokens?: unknown; meta?: unknown }>;
+  return res.json() as Promise<ProjectDesignSystemMcpResponse>;
 }
 
 /** Returns a user-facing message when delete is blocked because projects reference the profile. */

@@ -8,6 +8,7 @@ import {
 } from "@/lib/component-source-profiles-api";
 import {
   hasConfirmedCatalogMapping,
+  profileHasConnectionConfig,
   type ComponentSourceProfileSummary,
 } from "@/types/component-source-profiles";
 import type { Project } from "@/store/workshopStore";
@@ -29,6 +30,8 @@ interface ProjectComponentSourceProfileSelectorProps {
   onProfileChangeCommitted?: () => void;
   className?: string;
   compact?: boolean;
+  /** Stable id for the select (evita duplicados si hay selector en header y en panel). */
+  selectId?: string;
 }
 
 /**
@@ -41,6 +44,7 @@ export function ProjectComponentSourceProfileSelector({
   onProfileChangeCommitted,
   className,
   compact = false,
+  selectId = "workshop-mcp-profile",
 }: ProjectComponentSourceProfileSelectorProps) {
   const user = getStoredUser();
   const isOwner = Boolean(project?.userId && user?.id && project.userId === user.id);
@@ -137,7 +141,7 @@ export function ProjectComponentSourceProfileSelector({
     <>
       <div className={cn("min-w-0", className)}>
         <label
-          htmlFor="workshop-mcp-profile"
+          htmlFor={selectId}
           className={cn(
             "flex items-center gap-1.5 text-[var(--foreground-muted)]",
             compact ? "sr-only" : "mb-1 text-xs font-medium",
@@ -149,10 +153,10 @@ export function ProjectComponentSourceProfileSelector({
         <div className="flex min-w-0 items-center gap-2">
           <select
             ref={selectRef}
-            id="workshop-mcp-profile"
+            id={selectId}
             className={cn(
               "min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
-              compact ? "h-8 max-w-[14rem] px-2 text-xs" : "h-10 px-3 text-sm",
+              compact ? "h-8 max-w-[14rem] px-2 text-xs" : "h-10 max-w-md px-3 text-sm",
             )}
             value={selectedId}
             disabled={loadingProfiles || saving}
@@ -171,12 +175,13 @@ export function ProjectComponentSourceProfileSelector({
         </div>
         {!selectedId ? (
           <p className={cn("text-[var(--foreground-muted)]", compact ? "mt-1 text-[10px]" : "mt-1 text-xs")}>
-            Sin perfil: wireframes y design system MCP quedan desactivados hasta que elijas uno en
-            Ajustes → Componentes.
+            Sin perfil: wireframes y design system MCP quedan desactivados. Crea perfiles en Ajustes →
+            Componentes.
           </p>
-        ) : selectedProfile && !selectedProfile.hasToken ? (
+        ) : selectedProfile && !profileHasConnectionConfig(selectedProfile) ? (
           <p className={cn("text-amber-700 dark:text-amber-300", compact ? "mt-1 text-[10px]" : "mt-1 text-xs")}>
-            El perfil «{selectedProfile.name}» no tiene token configurado.
+            El perfil «{selectedProfile.name}» no tiene{" "}
+            {selectedProfile.transportType === "stdio" ? "command stdio" : "URL MCP"} configurado.
           </p>
         ) : selectedProfile && !hasConfirmedCatalogMapping(selectedProfile) ? (
           <p className={cn("text-amber-700 dark:text-amber-300", compact ? "mt-1 text-[10px]" : "mt-1 text-xs")}>
@@ -217,6 +222,28 @@ export function ProjectComponentSourceProfileSelector({
   );
 }
 
+/** Barra contextual en la pestaña Design System. */
+export function WorkshopMcpProfileBar(
+  props: Omit<ProjectComponentSourceProfileSelectorProps, "compact" | "selectId"> & {
+    selectId?: string;
+  },
+) {
+  if (!props.project) return null;
+  return (
+    <div
+      className={cn(
+        "shrink-0 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_32%,var(--background))] px-3 py-2.5 sm:px-4",
+        props.className,
+      )}
+    >
+      <ProjectComponentSourceProfileSelector
+        {...props}
+        selectId={props.selectId ?? "workshop-mcp-profile-panel"}
+      />
+    </div>
+  );
+}
+
 /** Whether the project has a usable MCP profile selected (for gating design system actions). */
 export function isProjectComponentSourceActive(
   project: Project | null,
@@ -227,5 +254,5 @@ export function isProjectComponentSourceActive(
   if (!profileId) return false;
   const profile = profiles.find((p) => p.id === profileId);
   if (!profile) return false;
-  return Boolean(profile.url.trim() && profile.hasToken);
+  return profileHasConnectionConfig(profile);
 }

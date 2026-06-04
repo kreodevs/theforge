@@ -5,8 +5,10 @@ import {
   buildPreviewTheme,
   generateColorScale,
   isLightColor,
+  mergeDesignTokenColors,
   normalizeDesignTokenColors,
   parseCssColor,
+  pickReadableTextColor,
   toHexColor,
 } from "./design-system-utils.js";
 import type { DesignTokens } from "./design-system-types.js";
@@ -49,12 +51,64 @@ describe("design-system-utils colors", () => {
     assert.ok(contrastRatio(cardMuted, card) >= 3, `card-muted contrast too low: ${cardMuted} on ${card}`);
   });
 
-  it("normalizeDesignTokenColors converts yaml rgb palette to hex", () => {
-    const normalized = normalizeDesignTokenColors({
-      colors: { primary: "rgb(54, 88, 194)", background: "rgb(247, 247, 250)" },
-    });
-    assert.equal(normalized.colors?.primary, "#3658C2");
-    assert.equal(normalized.colors?.background, "#F7F7FA");
+  it("mergeDesignTokenColors: markdown ## Colors overrides stale YAML primary", () => {
+    const merged = mergeDesignTokenColors(
+      { primary: "#3B82F6", neutral: "#E2ECFE" },
+      { primary: "#182A4A", secondary: "#1E6F4F" },
+    );
+    assert.equal(merged?.primary, "#182A4A");
+    assert.equal(merged?.secondary, "#1E6F4F");
+    assert.equal(merged?.neutral, "#E2ECFE");
+  });
+
+  it("buildPreviewTheme dark mode derives canvas background from gray scale when token is light", () => {
+    const tokens: DesignTokens = {
+      colors: {
+        primary: "#182A4A",
+        background: "#FFFFFF",
+        muted: "#F5F6FA",
+      },
+    };
+    const theme = buildPreviewTheme(tokens, "dark");
+    assert.notEqual(theme.background, "#FFFFFF");
+    assert.equal(isLightColor(theme.background), false);
+    assert.equal(theme.cssVars["--ds-bg"], theme.background);
+  });
+
+  it("buildPreviewTheme dark mode keeps explicit dark background token", () => {
+    const tokens: DesignTokens = {
+      colors: {
+        primary: "#182A4A",
+        background: "#1A1C1E",
+        muted: "#2C2C2E",
+      },
+    };
+    const theme = buildPreviewTheme(tokens, "dark");
+    assert.equal(theme.background, "#1A1C1E");
+  });
+
+  it("buildPreviewTheme dark keeps readable card text when Card component token sets dark textColor", () => {
+    const tokens: DesignTokens = {
+      colors: {
+        primary: "#0F2B4A",
+        foreground: "#1E2024",
+        background: "#FFFFFF",
+        muted: "#DBDFE4",
+      },
+      components: {
+        Card: { backgroundColor: "#FFFFFF", textColor: "#1E2024" },
+      },
+    };
+    const theme = buildPreviewTheme(tokens, "dark");
+    assert.ok(
+      contrastRatio(theme.cssVars["--ds-card-fg"]!, theme.cssVars["--ds-card"]!) >= 4.5,
+      `card text should contrast with card surface: ${theme.cssVars["--ds-card-fg"]} on ${theme.cssVars["--ds-card"]}`,
+    );
+  });
+
+  it("pickReadableTextColor prefers dark text on light swatches", () => {
+    assert.match(pickReadableTextColor("#F4F5F8"), /rgba\(0,/);
+    assert.match(pickReadableTextColor("#1A1C1E"), /rgba\(255,/);
   });
 });
 

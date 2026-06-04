@@ -9,7 +9,7 @@ import {
   generateColorScale,
   getTypographyScaleEntries,
   hexValue,
-  isLightColor,
+  pickReadableTextColor,
   normalizeHex,
   typographySampleText,
   getElevationPreviewItems,
@@ -140,7 +140,8 @@ function ColorScaleStrip({
       >
         {scale.map((color, i) => {
           const step = i + 1;
-          const light = isLightColor(color);
+          const labelColor = pickReadableTextColor(color);
+          const labelOnDark = labelColor.startsWith("rgba(255");
           return (
             <div
               key={step}
@@ -151,10 +152,10 @@ function ColorScaleStrip({
               <span
                 className="absolute bottom-1.5 left-2 font-mono text-[9px] font-semibold tabular-nums sm:text-[10px]"
                 style={{
-                  color: light ? "rgba(0,0,0,0.52)" : "rgba(255,255,255,0.88)",
-                  textShadow: light
-                    ? "0 1px 0 rgba(255,255,255,0.35)"
-                    : "0 1px 1px rgba(0,0,0,0.25)",
+                  color: labelColor,
+                  textShadow: labelOnDark
+                    ? "0 1px 1px rgba(0,0,0,0.25)"
+                    : "0 1px 0 rgba(255,255,255,0.35)",
                 }}
               >
                 {step}
@@ -166,8 +167,8 @@ function ColorScaleStrip({
                 <span
                   className="rounded px-1.5 py-0.5 font-mono text-[8px] font-medium sm:text-[9px]"
                   style={{
-                    backgroundColor: light ? "rgba(0,0,0,0.65)" : "rgba(255,255,255,0.92)",
-                    color: light ? "#fff" : "#111",
+                    backgroundColor: labelOnDark ? "rgba(0,0,0,0.65)" : "rgba(255,255,255,0.92)",
+                    color: labelOnDark ? "#fff" : "#111",
                   }}
                 >
                   {color}
@@ -383,8 +384,14 @@ export function DesignSystemCustomizer({
   const rounded = tokens.rounded ?? {};
   const elevation = tokens.elevation ?? {};
 
-  const accentHex = hexValue(palette.primary, tokens);
-  const grayHex = hexValue(palette.muted, tokens);
+  const accentHex = hexValue(
+    colors.primary ?? colors.accent ?? palette.primary,
+    tokens,
+  );
+  const grayHex = hexValue(
+    colors.muted ?? colors.neutral ?? palette.muted,
+    tokens,
+  );
   return (
     <div
       data-design-system-print-root

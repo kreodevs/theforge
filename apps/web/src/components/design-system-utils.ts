@@ -232,6 +232,21 @@ export function scaleAt(scale: string[], step: number): string {
   return scale[idx] ?? scale[0] ?? "#000000";
 }
 
+/**
+ * Fusiona colores YAML + tabla/sección ## Colors del markdown.
+ * El cuerpo del documento gana en claves repetidas (p. ej. chat o edición en Colors
+ * sin actualizar el front matter de Orbit).
+ */
+export function mergeDesignTokenColors(
+  yamlColors: Record<string, string> | undefined,
+  bodyColors: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!yamlColors && !bodyColors) return undefined;
+  if (!yamlColors) return bodyColors ? { ...bodyColors } : undefined;
+  if (!bodyColors) return { ...yamlColors };
+  return { ...yamlColors, ...bodyColors };
+}
+
 export function fallbackFromColors(tokens: DesignTokens): {
   primary: string;
   secondary: string;
@@ -279,6 +294,17 @@ export function normalizeDesignTokenColors(tokens: DesignTokens): DesignTokens {
   }
 
   return out;
+}
+
+/** Pick #FFF vs #111 (or soft rgba) for labels on arbitrary swatch backgrounds. */
+export function pickReadableTextColor(background: string): string {
+  const bg = toHexColor(background, "#808080");
+  const whiteScore = contrastRatio("#FFFFFF", bg);
+  const blackScore = contrastRatio("#1C1B1F", bg);
+  if (whiteScore >= blackScore) {
+    return whiteScore >= 3 ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.78)";
+  }
+  return blackScore >= 3 ? "rgba(0,0,0,0.78)" : "rgba(0,0,0,0.62)";
 }
 
 /** Ensure text token contrasts with its surface (handles rgb() from Orbita). */
@@ -472,7 +498,12 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
   const c = tokens.colors ?? {};
 
   if (mode === "dark") {
-    const bg = "#111111";
+    const tokenBg = hexValue(
+      c.background ?? c.surface ?? c.neutral ?? palette.surface,
+      tokens,
+    );
+    // Light-mode background tokens (#FFFFFF, etc.) must not paint the dark canvas.
+    const bg = isLightColor(tokenBg) ? scaleAt(grayScale, 1) : tokenBg;
     const card = scaleAt(grayScale, 2);
     const muted = scaleAt(grayScale, 3);
     const inputBg = scaleAt(grayScale, 4);
@@ -492,9 +523,13 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
       gray,
       background: bg,
       cssVars: {
+        ...scaleVars("accent", accentScale),
+        ...scaleVars("gray", grayScale),
+        ...tokenCssVars,
+        // Semantic preview vars last — component tokens (e.g. Card.textColor) must not override readable fg.
         "--ds-bg": bg,
-        "--ds-fg": fg,
-        "--ds-muted-fg": mutedFg,
+        "--ds-fg": ensureReadableForeground(fg, bg),
+        "--ds-muted-fg": ensureReadableForeground(mutedFg, bg, 3),
         "--ds-card-fg": cardFg,
         "--ds-card-muted-fg": cardMutedFg,
         "--ds-border": border,
@@ -502,7 +537,9 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
         "--ds-muted": muted,
         "--ds-input-bg": inputBg,
         "--ds-accent": accentSolid,
-        "--ds-accent-fg": isLightColor(accentSolid) ? palette.foreground : "#FFFFFF",
+        "--ds-accent-fg": isLightColor(accentSolid)
+          ? ensureReadableForeground(palette.foreground, accentSolid)
+          : "#FFFFFF",
         "--ds-accent-subtle": accentSubtle,
         "--ds-accent-border": accentBorder,
         "--ds-surface": card,
@@ -510,9 +547,6 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
         "--ds-shadow-sm":
           elevationVars["--ds-shadow-sm"] ?? "0 1px 3px rgba(0,0,0,0.35)",
         "--ds-playground-bg": playgroundBg,
-        ...scaleVars("accent", accentScale),
-        ...scaleVars("gray", grayScale),
-        ...tokenCssVars,
       },
     };
   }
@@ -539,9 +573,12 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
     gray,
     background: surfaceBg,
     cssVars: {
+      ...scaleVars("accent", accentScale),
+      ...scaleVars("gray", grayScale),
+      ...tokenCssVars,
       "--ds-bg": surfaceBg,
       "--ds-fg": fg,
-      "--ds-muted-fg": mutedFg,
+      "--ds-muted-fg": ensureReadableForeground(mutedFg, surfaceBg, 3),
       "--ds-card-fg": cardFg,
       "--ds-card-muted-fg": cardMutedFg,
       "--ds-border": border,
@@ -559,9 +596,6 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
       "--ds-shadow-sm":
         elevationVars["--ds-shadow-sm"] ?? "0 1px 2px rgba(0,0,0,0.08)",
       "--ds-playground-bg": playgroundBg,
-      ...scaleVars("accent", accentScale),
-      ...scaleVars("gray", grayScale),
-      ...tokenCssVars,
     },
   };
 }

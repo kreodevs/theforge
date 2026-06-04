@@ -273,7 +273,7 @@ function DesignSystemPlayground({ tokens, t, typographyStyle }: PlaygroundProps)
   const badgeFilledBg =
     "var(--ds-button-secondary-bg, var(--ds-color-primary, var(--ds-accent-subtle)))";
   const badgeFilledFg =
-    "var(--ds-button-secondary-fg, var(--ds-color-foreground, var(--ds-card-fg, var(--ds-fg))))";
+    "var(--ds-button-secondary-fg, var(--ds-card-fg, var(--ds-fg)))";
 
   function toggleIcon(key: string) {
     setIconActive((prev) => ({ ...prev, [key]: !prev[key] }));

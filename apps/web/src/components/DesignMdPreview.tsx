@@ -4,6 +4,7 @@ import type { ComponentToken, DesignTokens, TypographyToken } from "@/components
 import {
   ELEVATION_PRESETS,
   mergeTypographyTokens,
+  mergeDesignTokenColors,
   normalizeDesignTokenColors,
   normalizeElevationTokens,
   parseInlineTokenProps,
@@ -438,7 +439,8 @@ export function fillDesignMdDefaults(tokens: DesignTokens | null): DesignTokens 
   // Fill colors
   if (t.colors && Object.keys(t.colors).length > 0) {
     const c = { ...t.colors };
-    const p = c["primary"] || c["primary"] || "#3B82F6";
+    const firstHex = Object.values(c).find((v) => /^#[0-9A-Fa-f]{6}$/.test(String(v).trim()));
+    const p = c["primary"] || c["accent"] || firstHex || "#3B82F6";
     c["primary"] ??= p;
     c["secondary"] ??= p !== "#3B82F6" ? p : "#2E8B57";
     c["tertiary"] ??= p !== "#F4A261" ? "#F4A261" : lighten(p, 0.3);
@@ -507,13 +509,7 @@ export function DesignMdPreview({ content }: { content: string }) {
       // Merge body tokens into YAML — each section independently
       // (YAML may have typography but no colors, or vice versa)
       if (bodyTokens?.colors) {
-        if (yaml.colors) {
-          for (const [k, v] of Object.entries(bodyTokens.colors)) {
-            if (!(k in yaml.colors)) yaml.colors[k] = v;
-          }
-        } else {
-          yaml.colors = { ...bodyTokens.colors };
-        }
+        yaml.colors = mergeDesignTokenColors(yaml.colors, bodyTokens.colors);
       }
       if (bodyTokens?.typography) {
         if (yaml.typography) {
@@ -579,13 +575,7 @@ export function extractDesignMdFrontMatter(content: string): DesignTokens | null
   if (yaml && (yaml.colors || yaml.typography || yaml.components)) {
     // Merge body tokens into YAML — each section independently
     if (bodyTokens?.colors) {
-      if (yaml.colors) {
-        for (const [k, v] of Object.entries(bodyTokens.colors)) {
-          if (!(k in yaml.colors)) yaml.colors[k] = v;
-        }
-      } else {
-        yaml.colors = { ...bodyTokens.colors };
-      }
+      yaml.colors = mergeDesignTokenColors(yaml.colors, bodyTokens.colors);
     }
     if (bodyTokens?.typography) {
       if (yaml.typography) {

@@ -24,6 +24,7 @@ import type {
   ComponentSourceProfileSummary,
   ComponentSourceProfileTestResult,
   ComponentSourceProposedToolMapping,
+  ComponentSourceCatalogProbe,
 } from "@/types/component-source-profiles";
 import { formatProposedMappingSummary } from "@/types/component-source-profiles";
 
@@ -48,6 +49,7 @@ const FEATURES = [
 interface PendingMappingState {
   proposedMapping: ComponentSourceProposedToolMapping;
   capabilities?: ComponentSourceProfileSummary["capabilities"];
+  catalogProbe?: ComponentSourceCatalogProbe;
 }
 
 export function ComponentSourceConfigCard() {
@@ -111,10 +113,15 @@ export function ComponentSourceConfigCard() {
           [profile.id]: {
             proposedMapping: result.proposedMapping,
             capabilities: result.capabilities,
+            catalogProbe: result.catalogProbe,
           },
         }));
+        const catalogHint =
+          result.catalogProbe && !result.catalogProbe.ok
+            ? " El catálogo probado no es válido para wireframes — revisa el mapeo de catalog.list."
+            : "";
         setSuccess(
-          `Conexión OK. Revisa el mapeo propuesto para «${profile.name}» y confírmalo para activar wireframes.`,
+          `Conexión OK. Revisa el mapeo propuesto para «${profile.name}» y confírmalo para activar wireframes.${catalogHint}`,
         );
       } else {
         setHealthOkId(profile.id);
@@ -281,7 +288,9 @@ export function ComponentSourceConfigCard() {
                   <div className="min-w-0">
                     <h3 className="text-base font-semibold text-[var(--foreground)]">{profile.name}</h3>
                     <p className="mt-0.5 truncate font-mono text-xs text-[var(--foreground-muted)]">
-                      {profile.url}
+                      {profile.transportType === "stdio"
+                        ? `${profile.command ?? "stdio"} ${Array.isArray(profile.args) ? profile.args.join(" ") : ""}`.trim()
+                        : profile.url}
                     </p>
                     {typeof profile.projectCount === "number" && profile.projectCount > 0 ? (
                       <p className="mt-1 text-xs text-[var(--foreground-muted)]">
@@ -297,7 +306,7 @@ export function ComponentSourceConfigCard() {
                       size="sm"
                       className="h-9 gap-1.5 rounded-xl"
                       loading={testingId === profile.id}
-                      disabled={testingId === profile.id || !profile.url.trim()}
+                      disabled={testingId === profile.id || !(profile.url.trim() || profile.command?.trim())}
                       onClick={() => void handleTest(profile)}
                     >
                       <PlugZap className="h-3.5 w-3.5" aria-hidden />
@@ -358,12 +367,26 @@ export function ComponentSourceConfigCard() {
                         </li>
                       ))}
                     </ul>
+                    {pending.catalogProbe && !pending.catalogProbe.ok ? (
+                      <p className="rounded-xl border border-[var(--destructive)]/30 bg-[var(--destructive)]/10 px-3 py-2.5 text-xs leading-relaxed text-[var(--destructive)]">
+                        {pending.catalogProbe.reason ??
+                          "catalog.list no devolvió módulos reconocibles. Este MCP no sirve como catálogo DS para wireframes."}
+                      </p>
+                    ) : pending.catalogProbe?.ok ? (
+                      <p className="rounded-xl border border-[var(--success)]/30 bg-[color-mix(in_oklch,var(--success)_10%,var(--card))] px-3 py-2.5 text-xs text-[color-mix(in_oklch,var(--success)_85%,var(--foreground))]">
+                        Catálogo OK — {pending.catalogProbe.moduleCount} módulo
+                        {pending.catalogProbe.moduleCount === 1 ? "" : "s"} detectados.
+                      </p>
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"
                       className="h-9 gap-1.5 rounded-xl"
                       loading={confirmingId === profile.id}
-                      disabled={confirmingId === profile.id}
+                      disabled={
+                        confirmingId === profile.id ||
+                        Boolean(pending.catalogProbe && !pending.catalogProbe.ok)
+                      }
                       onClick={() => void handleConfirmMapping(profile)}
                     >
                       <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
