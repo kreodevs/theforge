@@ -9,6 +9,7 @@ import {
 import { ComplexityLevel, type Project as DbProject } from "@theforge/database";
 import {
   DELIVERABLES_BY_COMPLEXITY,
+  shouldUseMcpDesignSystem,
   type DeliverableKind,
   type GenerateCodebaseDocRequest,
 } from "@theforge/shared-types";
@@ -1888,6 +1889,12 @@ export class LegacyCoordinatorService {
           return;
         }
         case "ux_ui_guide": {
+          if (shouldUseMcpDesignSystem({ uxUiGuideContent: p.uxUiGuideContent })) {
+            this.logger.log(
+              `[LegacyDeliverables] ux_ui_guide omitido: guía MCP válida (${projectId})`,
+            );
+            return;
+          }
           const bpUx = String(p.blueprintContent ?? "").trim() || (await ensureBlueprint());
           const smUx = await trySectionMergeDeliverable(
             this.ai,

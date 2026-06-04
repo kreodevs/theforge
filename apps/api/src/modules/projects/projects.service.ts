@@ -44,8 +44,10 @@ import {
   type CreateProjectDto,
   type UpdateProjectDto,
 } from "@theforge/shared-types";
+import { preserveImportedDesignSystemInMdd } from "../component-source/sync-design-system-doc-section.util.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
+import { shouldUseMcpDesignSystem } from "@theforge/shared-types";
 import {
   brdGenerationErrorMessage,
   extractBrdFromLlmResponse,
@@ -392,20 +394,26 @@ export class ProjectsService implements IOrchestratorProjectsPort {
           message: result.message,
         });
       }
+      const brdForDs = targetStage.brdContent ?? null;
+      const mddWithImportedDs = preserveImportedDesignSystemInMdd(result.sanitizedMdd, {
+        designMd: existing.uxUiGuideContent ?? "",
+        mddContent: result.sanitizedMdd,
+        brdContent: brdForDs,
+      });
       pipelineResult = {
-        sanitizedMdd: result.sanitizedMdd,
+        sanitizedMdd: mddWithImportedDs,
         status: result.status,
         precisionScore: result.precisionScore,
       };
       await this.prisma.stage.update({
         where: { id: targetStage.id },
         data: {
-          mddContent: result.sanitizedMdd,
+          mddContent: mddWithImportedDs,
           status: result.status,
           precisionScore: result.precisionScore,
         },
       });
-      await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
+      await this.changeLog.log(id, "mddContent", mddWithImportedDs);
     }
 
     const mddForRecalc =
@@ -826,6 +834,12 @@ export class ProjectsService implements IOrchestratorProjectsPort {
    */
   async generateUxUiGuide(projectId: string) {
     const project = await this.assertProjectAccess(projectId);
+    if (shouldUseMcpDesignSystem({ uxUiGuideContent: project.uxUiGuideContent })) {
+      this.logger.log(
+        `[generateUxUiGuide] omitido: guía MCP válida en proyecto ${projectId}`,
+      );
+      return project;
+    }
     const mdd = this.constitutionMarkdown(project);
     const bp = (project.blueprintContent ?? "").trim();
     const uxPrompt =
@@ -862,6 +876,11 @@ name: ${JSON.stringify(name)}
    */
   async repairUxUiGuideYaml(projectId: string): Promise<string> {
     const project = await this.assertProjectAccess(projectId);
+    if (shouldUseMcpDesignSystem({ uxUiGuideContent: project.uxUiGuideContent })) {
+      throw new BadRequestException(
+        "La guía UX/UI tiene un design system MCP válido. Actualízala con «Obtener design system MCP», no con reparar YAML desde el MDD.",
+      );
+    }
     const mdd = this.constitutionMarkdown(project);
     const bp = (project.blueprintContent ?? "").trim();
     const spec = (project.specContent ?? "").trim();
@@ -1001,9 +1020,17 @@ name: ${JSON.stringify(name)}
       case "logic_flows":
         await this.generateLogicFlows(projectId, gaps);
         return;
-      case "ux_ui_guide":
+      case "ux_ui_guide": {
+        const pUx = await this.assertProjectAccess(projectId);
+        if (shouldUseMcpDesignSystem({ uxUiGuideContent: pUx.uxUiGuideContent })) {
+          this.logger.log(
+            `[generateDocument] ux_ui_guide omitido: guía MCP válida (${projectId})`,
+          );
+          return;
+        }
         await this.generateUxUiGuide(projectId);
         return;
+      }
       case "user_stories":
         await this.generateUserStories(projectId);
         return;
