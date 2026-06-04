@@ -15,6 +15,28 @@ import {
 import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
 import { parseNdjsonLine } from "../utils/ndjson";
 import { mddHasSection6Heading } from "../utils/mddSectionRegen";
+import { isWorkshopAgentsBusy } from "../utils/workshopAgentsBusy";
+import { listGovernancePatternOptions } from "@theforge/shared-types/mdd-governance-patterns";
+
+function workshopScopeProjectId(get: () => WorkshopState): string {
+  return (get().projectId ?? get().project?.id ?? "").trim();
+}
+
+function shouldApplyWorkshopUpdate(get: () => WorkshopState, requestedProjectId: string): boolean {
+  const id = requestedProjectId.trim();
+  if (!id) return false;
+  return workshopScopeProjectId(get) === id;
+}
+
+export const selectWorkshopAgentsBusy = (s: WorkshopState) => isWorkshopAgentsBusy(s);
+
+/** MDD persistido en BD para la etapa activa (baseline del aviso «sin guardar»). */
+export const selectPersistedMddBaseline = (s: WorkshopState): string => {
+  const stages = s.workshopStages.length > 0 ? s.workshopStages : (s.project?.stages ?? []);
+  const st = stages.find((x) => x.id === s.activeStageId);
+  const raw = st?.mddContent ?? s.project?.mddContent ?? null;
+  return cleanDoc(raw) ?? raw ?? "";
+};
 
 /**
  * Convierte mensajes de error de fetch del navegador (Safari "Load failed", Chrome "Failed to fetch")
@@ -212,25 +234,33 @@ async function persistField(
   setState({ synced: false, error: null });
 
   try {
+    const stageId = getState().activeStageId;
     const r = await fetchWithRetry(`${API_BASE}/projects/${projectId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [fieldName]: cleaned }),
+      body: JSON.stringify({
+        [fieldName]: cleaned,
+        ...(fieldName === "mddContent" && stageId ? { stageId } : {}),
+      }),
     });
     if (r.ok) {
-      const data = (await r.json()) as unknown;
-      const serverRaw = ((data as Record<string, unknown>)[fieldName] as string) ?? cleaned;
+      const data = (await r.json()) as Project & { mddGovernancePatternsReverted?: boolean };
+      const serverRaw = (data[fieldName as keyof Project] as string | undefined) ?? cleaned;
       const serverCleaned = cleanDoc(serverRaw) ?? serverRaw ?? "";
+      const patternsReverted =
+        fieldName === "mddContent" && data.mddGovernancePatternsReverted === true;
       const localNow = String(
         ((getState() as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ??
           "",
       );
       const patch: Partial<WorkshopState> = {
-        project: data as Project,
+        project: data,
         synced: true,
-        error: null,
+        error: patternsReverted
+          ? "Patrones SSOT restaurados: solo puedes cambiarlos con «Editar patrones (SSOT)»."
+          : null,
       };
-      if (shouldApplyPersistedFieldContent(localNow, localAtSaveStart, cleaned)) {
+      if (shouldApplyPersistedFieldContent(localNow, localAtSaveStart, cleaned) || patternsReverted) {
         (patch as Record<string, unknown>)[fieldName] = serverCleaned;
       }
       setState(patch);
@@ -278,7 +308,12 @@ export interface LiveMetricsResult {
   roles: Record<string, number>;
   rolesHours: Record<string, number>;
   status: "red" | "yellow" | "green";
+  /** @deprecated Usar mddReadinessHints */
   readinessHints?: string[];
+  mddReadinessHints?: string[];
+  traceabilityHints?: string[];
+  consistencyScore?: number;
+  crossDocumentGaps?: CrossDocumentGap[];
 }
 
 /** Calificación por sección/agente (0–100) en el evento done del stream MDD. */
@@ -315,6 +350,11 @@ export interface CrossDocumentGap {
   to: string;
   concept: string;
   severity: "missing" | "partial" | "contradiction";
+  brdSection?: string;
+  brdSubsection?: string;
+  kind?: "capability" | "rule" | "entity" | "formula" | "uat" | "permission" | "flow";
+  missingTerms?: string[];
+  hint?: string;
 }
 
 /** Resultado de conformance (Blueprint/Infra vs MDD). */
@@ -745,7 +785,17 @@ interface WorkshopState {
   /** `/formatear` — normaliza markdown del documento del tab (sin LLM). */
   formatDocumentForActiveTab: (activeTab?: string) => Promise<{ ok: boolean; message: string }>;
   updateMddContent: (content: string) => void;
-  persistMddContent: (content: string, options?: { force?: boolean }) => Promise<void>;
+  persistMddContent: (
+    content: string,
+    options?: {
+      force?: boolean;
+      allowGovernancePatternChange?: boolean;
+      mddGovernanceSeedOnly?: boolean;
+      clearMddCompletely?: boolean;
+    },
+  ) => Promise<void>;
+  /** Vacía el MDD (sin reinyectar patrones SSOT). */
+  clearMddContentCompletely: (projectId: string) => Promise<boolean>;
   revertMddContent: () => void;
   persistAndReviewMdd: () => Promise<void>;
   setBlueprintContent: (content: string | null) => void;
@@ -847,6 +897,14 @@ interface WorkshopState {
   legacyGenerateDeliverables: (projectId: string) => Promise<boolean>;
   fetchEstimation: (projectId: string) => Promise<LiveMetricsResult | null>;
   fetchAdrs: (projectId: string) => Promise<void>;
+  suggestGovernancePatterns: (
+    projectId: string,
+    stageId?: string | null,
+  ) => Promise<{ patternIds: string[]; rationale?: string }>;
+  recordGovernancePatternAdrs: (
+    projectId: string,
+    patternIds: ReadonlySet<string>,
+  ) => Promise<void>;
   /** Notifica a Hermes Agent que el proyecto está listo para desarrollo. */
   launchHermes: (projectId: string) => Promise<{ success: boolean; status: number } | undefined>;
   reset: () => void;
@@ -1119,15 +1177,36 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   },
 
   fetchProject: async (projectId) => {
+    const requestedId = projectId.trim();
+    if (!requestedId) return null;
     try {
-      set({ session: null, managerThreadId: null });
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`);
+      const switchingProject =
+        !!get().projectId?.trim() && get().projectId!.trim() !== requestedId;
+      set({
+        session: null,
+        managerThreadId: null,
+        streamingUserMessage: null,
+        streamingUserImages: null,
+        streamingContent: null,
+        streamingTab: null,
+        agentProgress: [],
+        ...(switchingProject
+          ? {
+              loading: false,
+              loadingReason: null,
+              pendingPlanApproval: null,
+              evaluatorCritique: null,
+            }
+          : {}),
+      });
+      const r = await apiFetch(`${API_BASE}/projects/${requestedId}`);
       if (!r.ok) throw new Error("Proyecto no encontrado");
       const data: Project = await r.json();
       const stages = data.stages ?? [];
       const prev = get().activeStageId;
       const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
       const flat = workshopFlatFromStage(data, activeStageId);
+      if (!shouldApplyWorkshopUpdate(get, requestedId)) return null;
       set({
         project: { ...data, ...flat, stages },
         workshopStages: stages,
@@ -1150,25 +1229,29 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         error: null,
         legacyMcpDebugTrace: null,
       });
-      const sessionsRes = await apiFetch(`${API_BASE}/sessions/project/${projectId}`);
+      const sessionsRes = await apiFetch(`${API_BASE}/sessions/project/${requestedId}`);
       if (sessionsRes.ok) {
         const sessions: Session[] = await sessionsRes.json();
-        set({ session: sessions.length > 0 ? sessions[0] : null });
+        if (!shouldApplyWorkshopUpdate(get, requestedId)) return null;
+        const scoped = sessions.filter((s) => s.projectId === requestedId);
+        set({ session: scoped.length > 0 ? scoped[0] : null });
       }
+      if (!shouldApplyWorkshopUpdate(get, requestedId)) return null;
       const sid = get().activeStageId;
-      const threadQs = new URLSearchParams({ projectId });
+      const threadQs = new URLSearchParams({ projectId: requestedId });
       if (sid) threadQs.set("stageId", sid);
       const threadRes = await apiFetch(`${API_BASE}/ai-analysis/mdd/thread?${threadQs.toString()}`).catch(() => null);
       if (threadRes?.ok) {
         const threadData = (await threadRes.json()) as { threadId?: string | null };
-        if (threadData.threadId) {
+        if (shouldApplyWorkshopUpdate(get, requestedId) && threadData.threadId) {
           set({ managerThreadId: threadData.threadId });
         }
       }
       // Break stack to avoid recursion
       setTimeout(() => {
-        get().fetchEstimation(projectId).catch(() => { });
-        get().fetchAdrs(projectId).catch(() => { });
+        if (!shouldApplyWorkshopUpdate(get, requestedId)) return;
+        get().fetchEstimation(requestedId).catch(() => { });
+        get().fetchAdrs(requestedId).catch(() => { });
       }, 0);
       return data;
     } catch (e) {
@@ -1205,6 +1288,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         return;
       }
       const data: { session: Session; project: Project } = await r.json();
+      if (
+        !shouldApplyWorkshopUpdate(get, pid) ||
+        data.session.projectId !== pid ||
+        data.project.id !== pid
+      ) {
+        return;
+      }
       const p = data.project;
       const stages = p.stages ?? [];
       const prev = get().activeStageId;
@@ -1451,7 +1541,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   sendMessage: async (message, activeTab, options) => {
     const { projectId, session } = get();
     const images = options?.images ?? [];
-    if (!projectId?.trim() || (!message.trim() && !images.length)) return;
+    const requestProjectId = projectId?.trim() ?? "";
+    if (!requestProjectId || (!message.trim() && !images.length)) return;
     const tab = activeTab ?? "mdd";
     const msg = message.trim();
     const regenerateSection = options?.regenerateSection;
@@ -1515,7 +1606,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            projectId,
+            projectId: requestProjectId,
             section: regenerateSection,
             mddContent: mddContent || undefined,
             ...(regStage ? { stageId: regStage } : {}),
@@ -1559,9 +1650,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     const { persistMddContent, fetchProject, fetchEstimation, fetchConformance } = get();
                     await persistMddContent(merged, { force: true });
                     const persistErr = get().error;
-                    await fetchProject(projectId);
-                    fetchEstimation(projectId).catch(() => { });
-                    fetchConformance(projectId).catch(() => { });
+                    if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
+                    await fetchProject(requestProjectId);
+                    fetchEstimation(requestProjectId).catch(() => { });
+                    fetchConformance(requestProjectId).catch(() => { });
                     const current = get();
                     set({
                       project: current.project ? { ...current.project, mddContent: merged } : null,
@@ -1724,14 +1816,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           const body =
             managerThreadId != null
               ? {
-                projectId,
+                projectId: requestProjectId,
                 threadId: managerThreadId,
                 userMessage: managerText,
                 mddContent: draftForMdd,
                 ...(imagesForManager.length ? { images: imagesForManager } : {}),
               }
               : {
-                projectId,
+                projectId: requestProjectId,
                 dbgaContent: (get().dbgaContent ?? get().project?.dbgaContent ?? "").trim() || undefined,
                 initialMessage: managerText,
                 mddContent: draftForMdd,
@@ -1778,10 +1870,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     code?: string;
                   };
                   if (event.type === "progress" && event.agent != null && event.message != null) {
-                    set((s) => ({
-                      agentProgress: [...s.agentProgress, { agent: event.agent!, message: event.message! }],
-                    }));
+                    set((s) => {
+                      if ((s.projectId ?? s.project?.id ?? "").trim() !== requestProjectId) return s;
+                      return {
+                        agentProgress: [...s.agentProgress, { agent: event.agent!, message: event.message! }],
+                      };
+                    });
                   } else if (event.type === "draft" && event.markdown != null && event.markdown.trim().length > 80) {
+                    if (!shouldApplyWorkshopUpdate(get, requestProjectId)) continue;
                     set({ mddContent: event.markdown });
                   } else if (event.type === "interrupt") {
                     set({
@@ -1796,14 +1892,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                       const { persistMddContent, fetchProject, fetchEstimation } = get();
                       await persistMddContent(event.markdown);
                       const errBeforeFetch = get().error;
-                      await fetchProject(projectId);
-                      if (errBeforeFetch) set({ error: errBeforeFetch });
-                      await fetchEstimation(projectId);
-                      const current = get();
-                      set({
-                        mddContent: event.markdown,
-                        project: current.project ? { ...current.project, mddContent: event.markdown } : null,
-                      });
+                      if (shouldApplyWorkshopUpdate(get, requestProjectId)) {
+                        await fetchProject(requestProjectId);
+                        if (errBeforeFetch) set({ error: errBeforeFetch });
+                        await fetchEstimation(requestProjectId);
+                        const current = get();
+                        set({
+                          mddContent: event.markdown,
+                          project: current.project ? { ...current.project, mddContent: event.markdown } : null,
+                        });
+                      }
                     }
                     // No sobrescribir mddContent con markdown vacío (auditar puede venir de checkpoint sin draft)
 
@@ -1875,9 +1973,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     const { persistMddContent, fetchProject, fetchEstimation } = get();
                     if (markdownOk) await persistMddContent(event.markdown);
                     const errorBeforeFetch = get().error;
-                    await fetchProject(projectId);
-                    if (errorBeforeFetch) set({ error: errorBeforeFetch });
-                    await fetchEstimation(projectId);
+                    if (shouldApplyWorkshopUpdate(get, requestProjectId)) {
+                      await fetchProject(requestProjectId);
+                      if (errorBeforeFetch) set({ error: errorBeforeFetch });
+                      await fetchEstimation(requestProjectId);
+                    }
                     if (markdownOk) {
                       const current = get();
                       set({
@@ -2004,7 +2104,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       });
       try {
         const body: Record<string, unknown> = {
-          projectId,
+          projectId: requestProjectId,
           sessionId: session?.id,
           message: msg || "",
           uxUiGuideContent: get().uxUiGuideContent ?? get().project?.uxUiGuideContent ?? undefined,
@@ -2098,10 +2198,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             try {
               const data = JSON.parse(dataStr) as Record<string, unknown>;
               if (event === "chunk" && typeof data.content === "string") {
-                set((s) => ({ streamingContent: (s.streamingContent ?? "") + data.content }));
+                set((s) => {
+                  if ((s.projectId ?? s.project?.id ?? "").trim() !== requestProjectId) return s;
+                  return { streamingContent: (s.streamingContent ?? "") + data.content };
+                });
               } else if (event === "done") {
+                if (!shouldApplyWorkshopUpdate(get, requestProjectId)) continue;
                 const sess = data.session as Session | undefined;
+                if (sess && sess.projectId !== requestProjectId) continue;
                 const proj = data.project as Project | undefined;
+                if (proj && proj.id !== requestProjectId) continue;
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
                 const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 const nextStages = packed?.project?.stages ?? proj?.stages;
@@ -2181,61 +2287,72 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             try {
               const data = JSON.parse(dataStr) as Record<string, unknown>;
               if (event === "chunk" && typeof data.content === "string") {
-                set((s) => ({ streamingContent: (s.streamingContent ?? "") + data.content }));
-              } else if (event === "done") {
-                const sess = data.session as Session | undefined;
-                const proj = data.project as Project | undefined;
-                const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
-                const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
-                const nextStagesB = packed?.project?.stages ?? proj?.stages;
-                const freshUx = cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null);
-                const freshWireframes = cleanDoc(
-                  (data.wireframesContent as string | null | undefined) ??
-                    proj?.wireframesContent ??
-                    null,
-                ) ?? get().wireframesContent;
-                set({
-                  session: sess ?? get().session,
-                  project: packed?.project ?? get().project,
-                  activeStageId: packed?.activeStageId ?? get().activeStageId,
-                  mddContent: packed?.mddContent ?? get().mddContent,
-                  workshopStages: nextStagesB && nextStagesB.length > 0 ? nextStagesB : get().workshopStages,
-                  uxUiGuideContent: freshUx,
-                  wireframesContent: freshWireframes,
-                  wireframesPreviewSession:
-                    tab === "wireframes" && freshWireframes ? null : get().wireframesPreviewSession,
-                  dbgaContent:
-                    cleanDoc(
-                      (data.dbgaContent as string | null | undefined) ??
-                        proj?.dbgaContent ??
-                        null,
-                    ) ?? get().dbgaContent,
-                  phase0SummaryContent:
-                    cleanDoc(
-                      (data.phase0SummaryContent as string | null | undefined) ??
-                        proj?.phase0SummaryContent ??
-                        null,
-                    ) ?? get().phase0SummaryContent,
-                  specContent: cleanDoc(proj?.specContent ?? null) ?? get().specContent,
-                  blueprintContent: cleanDoc(proj?.blueprintContent ?? null) ?? get().blueprintContent,
-                  apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null) ?? get().apiContractsContent,
-                  logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null) ?? get().logicFlowsContent,
-                  tasksContent: cleanDoc(proj?.tasksContent ?? null) ?? get().tasksContent,
-                  architectureContent: cleanDoc(proj?.architectureContent ?? null) ?? get().architectureContent,
-                  useCasesContent: cleanDoc(proj?.useCasesContent ?? null) ?? get().useCasesContent,
-                  userStoriesContent: cleanDoc(proj?.userStoriesContent ?? null) ?? get().userStoriesContent,
-                  infraContent: cleanDoc(proj?.infraContent ?? null) ?? get().infraContent,
-                  streamingUserMessage: null,
-                  streamingUserImages: null,
-                  streamingContent: null,
-                  streamingTab: null,
-                  synced: true,
-                  error: null,
-                  evaluatorCritique: pickEvaluatorCritique(data),
+                set((s) => {
+                  if ((s.projectId ?? s.project?.id ?? "").trim() !== requestProjectId) return s;
+                  return { streamingContent: (s.streamingContent ?? "") + data.content };
                 });
-                // Auto-persist UX/UI guide when the orchestrator returns content on its tab
-                if (tab === "ux-ui-guide" && freshUx) {
-                  get().persistUxUiGuideContent(freshUx).catch(() => {});
+              } else if (event === "done") {
+                const sessTail = data.session as Session | undefined;
+                const projTail = data.project as Project | undefined;
+                const scopeOk =
+                  shouldApplyWorkshopUpdate(get, requestProjectId) &&
+                  (!sessTail?.projectId || sessTail.projectId === requestProjectId) &&
+                  (!projTail?.id || projTail.id === requestProjectId);
+                if (scopeOk) {
+                  const uxFromApi = (data.uxUiGuideContent ?? projTail?.uxUiGuideContent) as
+                    | string
+                    | null
+                    | undefined;
+                  const packed = projectWithUxAfterStream(projTail, uxFromApi, get().activeStageId);
+                  const nextStagesB = packed?.project?.stages ?? projTail?.stages;
+                  const freshUx = cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null);
+                  const freshWireframes = cleanDoc(
+                    (data.wireframesContent as string | null | undefined) ??
+                      projTail?.wireframesContent ??
+                      null,
+                  ) ?? get().wireframesContent;
+                  set({
+                    session: sessTail ?? get().session,
+                    project: packed?.project ?? get().project,
+                    activeStageId: packed?.activeStageId ?? get().activeStageId,
+                    mddContent: packed?.mddContent ?? get().mddContent,
+                    workshopStages: nextStagesB && nextStagesB.length > 0 ? nextStagesB : get().workshopStages,
+                    uxUiGuideContent: freshUx,
+                    wireframesContent: freshWireframes,
+                    wireframesPreviewSession:
+                      tab === "wireframes" && freshWireframes ? null : get().wireframesPreviewSession,
+                    dbgaContent:
+                      cleanDoc(
+                        (data.dbgaContent as string | null | undefined) ??
+                          projTail?.dbgaContent ??
+                          null,
+                      ) ?? get().dbgaContent,
+                    phase0SummaryContent:
+                      cleanDoc(
+                        (data.phase0SummaryContent as string | null | undefined) ??
+                          projTail?.phase0SummaryContent ??
+                          null,
+                      ) ?? get().phase0SummaryContent,
+                    specContent: cleanDoc(projTail?.specContent ?? null) ?? get().specContent,
+                    blueprintContent: cleanDoc(projTail?.blueprintContent ?? null) ?? get().blueprintContent,
+                    apiContractsContent: cleanDoc(projTail?.apiContractsContent ?? null) ?? get().apiContractsContent,
+                    logicFlowsContent: cleanDoc(projTail?.logicFlowsContent ?? null) ?? get().logicFlowsContent,
+                    tasksContent: cleanDoc(projTail?.tasksContent ?? null) ?? get().tasksContent,
+                    architectureContent: cleanDoc(projTail?.architectureContent ?? null) ?? get().architectureContent,
+                    useCasesContent: cleanDoc(projTail?.useCasesContent ?? null) ?? get().useCasesContent,
+                    userStoriesContent: cleanDoc(projTail?.userStoriesContent ?? null) ?? get().userStoriesContent,
+                    infraContent: cleanDoc(projTail?.infraContent ?? null) ?? get().infraContent,
+                    streamingUserMessage: null,
+                    streamingUserImages: null,
+                    streamingContent: null,
+                    streamingTab: null,
+                    synced: true,
+                    error: null,
+                    evaluatorCritique: pickEvaluatorCritique(data),
+                  });
+                  if (tab === "ux-ui-guide" && freshUx) {
+                    get().persistUxUiGuideContent(freshUx).catch(() => {});
+                  }
                 }
                 // wireframes: el orchestrator ya persiste vía projects.update; solo invalidar preview en store
               } else if (event === "error" && data.error) {
@@ -2877,8 +2994,14 @@ if (prog && prog.step && prog.step !== "done") {
           set({ loading: false, loadingReason: null, agentProgress: [] });
           return data ?? get().project;
         }
-        set({ loading: false, loadingReason: null, agentProgress: [] });
-        return get().project;
+        set({
+          loading: false,
+          loadingReason: null,
+          agentProgress: [],
+          error:
+            "La generación del MDD no devolvió contenido. Comprueba el Benchmark en Paso 0 y reintenta.",
+        });
+        break;
       } catch (e) {
         const patch = errorStateFromCaught(e);
         lastError = patch.error;
@@ -3001,14 +3124,29 @@ if (prog && prog.step && prog.step !== "done") {
         }),
       });
       if (!r.ok) return null;
-      const data = (await r.json()) as LiveMetricsResult & { precisionBreakdown?: PrecisionBreakdown; completeness?: DocumentCompleteness; crossDocumentGaps?: CrossDocumentGap[]; consistencyScore?: number };
-      const { precisionBreakdown, completeness, crossDocumentGaps, consistencyScore, ...metrics } = data;
+      const data = (await r.json()) as LiveMetricsResult & {
+        precisionBreakdown?: PrecisionBreakdown;
+        completeness?: DocumentCompleteness;
+        crossDocumentGaps?: CrossDocumentGap[];
+        consistencyScore?: number;
+        auditTrail?: string[];
+        lastAuditAt?: string;
+      };
+      const {
+        precisionBreakdown,
+        completeness,
+        crossDocumentGaps,
+        consistencyScore,
+        auditTrail,
+        ...metrics
+      } = data;
       set({
         liveMetrics: metrics,
         ...(precisionBreakdown != null ? { precisionBreakdown } : {}),
         ...(completeness != null ? { documentCompleteness: completeness } : {}),
         ...(crossDocumentGaps != null ? { crossDocumentGaps } : {}),
         ...(consistencyScore != null ? { consistencyScore } : {}),
+        ...(auditTrail?.length ? { auditTrail } : {}),
       });
       return metrics;
     } catch {
@@ -3080,21 +3218,7 @@ if (prog && prog.step && prog.step !== "done") {
       if (!fieldName) return false;
 
       if (panel === "mdd") {
-        const stageId = options?.stageId?.trim() ?? get().activeStageId?.trim();
-        const r = await apiFetch(`${API_BASE}/projects/${pid}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mddContent: "", ...(stageId ? { stageId } : {}) }),
-        });
-        if (!r.ok) return false;
-        const data: Project = await r.json();
-        set({
-          project: data,
-          mddContent: data.mddContent ?? "",
-          synced: true,
-          error: null,
-        });
-        return true;
+        return get().clearMddContentCompletely(pid);
       }
 
       const r = await apiFetch(`${API_BASE}/projects/${pid}`, {
@@ -3432,18 +3556,30 @@ if (prog && prog.step && prog.step !== "done") {
       const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mddContent: content, ...(stageId ? { stageId } : {}) }),
+        body: JSON.stringify({
+          mddContent: content,
+          ...(stageId ? { stageId } : {}),
+          ...(options?.allowGovernancePatternChange ? { allowGovernancePatternChange: true } : {}),
+          ...(options?.mddGovernanceSeedOnly ? { mddGovernanceSeedOnly: true } : {}),
+          ...(options?.clearMddCompletely ? { clearMddCompletely: true } : {}),
+        }),
       });
       if (r.ok) {
-        const data: Project = await r.json();
+        const data = (await r.json()) as Project & { mddGovernancePatternsReverted?: boolean };
         const packed = projectWithUxAfterStream(data, data.uxUiGuideContent, get().activeStageId);
         const savedContent = packed?.mddContent ?? data.mddContent ?? content;
+        const patternsReverted = data.mddGovernancePatternsReverted === true;
+        const nextProject = packed?.project ?? data;
+        const nextStages = nextProject.stages ?? get().workshopStages;
         set({
-          project: packed?.project ?? data,
+          project: nextProject,
+          workshopStages: nextStages.length > 0 ? nextStages : get().workshopStages,
           activeStageId: packed?.activeStageId ?? get().activeStageId,
           mddContent: savedContent,
           synced: true,
-          error: null,
+          error: patternsReverted
+            ? "Patrones SSOT restaurados: solo puedes cambiarlos con «Editar patrones (SSOT)»."
+            : null,
         });
         await apiFetch(`${API_BASE}/ai-analysis/estimation/clear-draft`, {
           method: "POST",
@@ -3469,20 +3605,63 @@ if (prog && prog.step && prog.step !== "done") {
     set({ mddContent: project?.mddContent ?? "" });
   },
 
+  clearMddContentCompletely: async (projectId) => {
+    const pid = projectId?.trim();
+    if (!pid) return false;
+    const stageId = get().activeStageId;
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${pid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mddContent: "",
+          ...(stageId ? { stageId } : {}),
+          clearMddCompletely: true,
+        }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        set({
+          error: (err as { message?: string }).message ?? "No se pudo limpiar el MDD",
+        });
+        return false;
+      }
+      const data = (await r.json()) as Project;
+      const packed = projectWithUxAfterStream(data, data.uxUiGuideContent, get().activeStageId);
+      const nextProject = packed?.project ?? data;
+      set({
+        project: nextProject,
+        workshopStages: nextProject.stages ?? get().workshopStages,
+        mddContent: "",
+        managerThreadId: null,
+        synced: true,
+        error: null,
+        mddJustGeneratedFromBenchmark: false,
+      });
+      return true;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al limpiar el MDD" });
+      return false;
+    }
+  },
+
   /** Persiste el MDD y refresca estimación/semáforo. No reemplaza el contenido por la respuesta del review
    *  para que las ediciones manuales del usuario se respeten. */
   persistAndReviewMdd: async () => {
     const { projectId, project, mddContent, persistMddContent, fetchEstimation } = get();
     if (!projectId?.trim() || !project) return;
     const content = (mddContent ?? "").trim();
-    if (content === (project.mddContent ?? "")) return;
+    const baseline = selectPersistedMddBaseline(get());
+    if (content === baseline) return;
     set({ mddReviewing: true });
     try {
-      await persistMddContent(content);
+      await persistMddContent(content, { force: true });
+      const saved = selectPersistedMddBaseline(get());
+      set({ mddContent: saved });
       await apiFetch(`${API_BASE}/ai-analysis/mdd/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: projectId.trim(), mddContent: content }),
+        body: JSON.stringify({ projectId: projectId.trim(), mddContent: saved || content }),
       });
       fetchEstimation(projectId).catch(() => { });
     } finally {
@@ -3500,6 +3679,49 @@ if (prog && prog.step && prog.step !== "done") {
     } catch (err) {
       console.error("Error fetching ADRs:", err);
     }
+  },
+
+  suggestGovernancePatterns: async (projectId, stageId) => {
+    const pid = projectId?.trim();
+    if (!pid) return { patternIds: [] };
+    const body: Record<string, string> = { projectId: pid };
+    const sid = (stageId ?? get().activeStageId)?.trim();
+    if (sid) body.stageId = sid;
+    const r = await apiFetch(`${API_BASE}/ai-analysis/mdd/suggest-governance-patterns`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error((err as { message?: string }).message ?? "No se pudo analizar documentos para patrones");
+    }
+    return (await r.json()) as { patternIds: string[]; rationale?: string };
+  },
+
+  recordGovernancePatternAdrs: async (projectId, patternIds) => {
+    const pid = projectId?.trim();
+    if (!pid || patternIds.size === 0) return;
+    const patterns = listGovernancePatternOptions()
+      .filter((o) => patternIds.has(o.id))
+      .map((o) => ({
+        label: o.label,
+        group: o.group,
+        affects: o.affects,
+        description: o.description,
+      }));
+    if (patterns.length === 0) return;
+    const r = await apiFetch(`${API_BASE}/ai-analysis/mdd/record-governance-pattern-adrs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: pid, patterns }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error((err as { message?: string }).message ?? "No se pudieron registrar ADRs de patrones");
+    }
+    const adrs = await r.json();
+    set({ adrs });
   },
   launchHermes: async (projectId: string) => {
     if (!projectId?.trim()) return;

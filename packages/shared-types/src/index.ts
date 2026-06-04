@@ -23,3 +23,5 @@ export * from "./dbga-document-structure.js";
 export * from "./orchestrator.js";
 export * from "./legacy-codebase-doc.js";
 export * from "./design-system-import.js";
+export * from "./document-changelog.js";
+export * from "./mdd-governance-patterns.js";

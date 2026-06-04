@@ -17,6 +17,7 @@ import {
 import { CheckpointerService } from "./checkpoint/checkpointer.service.js";
 import { NodeCacheService } from "./checkpoint/node-cache.service.js";
 import { EstimationService } from "./estimation/estimation.service.js";
+import type { AuditorGaps } from "./estimation/estimation.types.js";
 import { stateToMarkdown, getAgentLabel } from "./state/state-to-markdown.js";
 import {
   extractContextSectionBody,
@@ -50,7 +51,17 @@ import {
   isInsufficientDbgaIdea,
 } from "./utils/dbga-idea-validation.util.js";
 import { resolveLangGraphRecursionLimit } from "./utils/langgraph-recursion.util.js";
-import { prepareMddForOutput, draftHasSection6Heading } from "./utils/mdd-prepare-output.js";
+import {
+  prepareMddForOutput,
+  draftHasSection6Heading,
+  type PrepareMddForOutputOptions,
+} from "./utils/mdd-prepare-output.js";
+import {
+  buildMddWithGovernanceSkeleton,
+  ensureMddGovernanceSection,
+  extractGovernanceSection,
+  mddHasSubstantialBody,
+} from "@theforge/shared-types/mdd-governance-patterns";
 import { ComponentSourceRegistry } from "../component-source/component-source.registry.js";
 import {
   buildScreenComponentMapFromMappings,
@@ -473,6 +484,8 @@ export class AiAnalysisService {
   ): AsyncGenerator<StreamProgressEvent> {
     let estimationStage: string | undefined;
     let brdContent: string | null = null;
+    let preservedGovernance: string | null = null;
+    let existingStageMdd = "";
     if (projectId?.trim()) {
       const p = await this.prisma.project.findUnique({
         where: { id: projectId.trim() },
@@ -487,11 +500,17 @@ export class AiAnalysisService {
           p.complexity as EstimationComplexity,
         );
         if (estimationStage?.trim()) {
-          const stage = await this.prisma.stage.findUnique({ where: { id: estimationStage.trim() } });
+          const stage = await this.prisma.stage.findUnique({
+            where: { id: estimationStage.trim() },
+            select: { brdContent: true, mddContent: true },
+          });
           brdContent = stage?.brdContent ?? null;
+          existingStageMdd = (stage?.mddContent ?? "").trim();
+          preservedGovernance = extractGovernanceSection(existingStageMdd);
         }
       }
     }
+    const prepareOpts: PrepareMddForOutputOptions = { preservedGovernance };
     let graph: Awaited<ReturnType<typeof createMddGraph>>;
     try {
       const userId = await this.resolveUserId(projectId);
@@ -515,6 +534,13 @@ export class AiAnalysisService {
       dbgaContent: dbgaEffective,
       projectId: projectId?.trim(),
       ...agentCtx,
+      ...(preservedGovernance
+        ? {
+            mddDraft: mddHasSubstantialBody(existingStageMdd)
+              ? ensureMddGovernanceSection(existingStageMdd, preservedGovernance)
+              : buildMddWithGovernanceSkeleton("Master Design Document", preservedGovernance),
+          }
+        : {}),
     };
 
     const mddOrder: Array<{ node: string; message: string }> = [
@@ -530,6 +556,7 @@ export class AiAnalysisService {
     ];
 
     let lastState: MDDState = initialState;
+    const auditTrail: string[] = [];
 
     try {
       const stream = await graph.stream(initialState, {
@@ -540,8 +567,16 @@ export class AiAnalysisService {
       for await (const raw of stream) {
         const [mode, data] = Array.isArray(raw) ? (raw as [string, unknown]) : ["values", raw];
         if (mode === "updates" && data && typeof data === "object" && !Array.isArray(data)) {
-          const nodeName = Object.keys(data as Record<string, unknown>)[0];
+          const dataRecord = data as Record<string, unknown>;
+          const nodeName = Object.keys(dataRecord)[0];
           if (nodeName) {
+            const nodeData = dataRecord[nodeName] as Partial<MDDState> | undefined;
+            const draftLen = nodeData?.mddDraft?.length;
+            const scopeLen = nodeData?.clarifiedScope?.length;
+            const extra: string[] = [];
+            if (draftLen) extra.push(`draft=${draftLen}`);
+            if (scopeLen) extra.push(`scope=${scopeLen}`);
+            auditTrail.push(`${nodeName}(${extra.join(" ")})`);
             const entry = mddOrder.find((e) => e.node === nodeName);
             const label = nodeName === "auditor" ? getAgentLabel("auditor", "mdd") : getAgentLabel(nodeName);
             yield { type: "progress", agent: label, message: entry?.message ?? nodeName };
@@ -559,16 +594,35 @@ export class AiAnalysisService {
       }
 
       const raw = (lastState.mddDraft || "").trim() || "# Master Design Document\n\n(Sin contenido generado.)";
-      const markdown = prepareMddForOutput({
-        mddStructured: lastState.mddStructured,
-        mddDraft: raw || lastState.mddDraft,
-      });
+      const markdown = prepareMddForOutput(
+        {
+          mddStructured: lastState.mddStructured,
+          mddDraft: raw || lastState.mddDraft,
+        },
+        prepareOpts,
+      );
       const mddDraftRaw = (lastState.mddDraft ?? "").trim();
       this.logger.log(`[MDD:PersistCheck] mddDraft len=${mddDraftRaw.length} first200=${JSON.stringify(mddDraftRaw.slice(0, 200))}`);
       this.logger.log(`[MDD:PersistCheck] markdown post-prepare len=${markdown.length} first200=${JSON.stringify(markdown.slice(0, 200))}`);
       logSection3Debug("final (stream done)", markdown);
       if (projectId?.trim()) this.estimationService.clearLiveDraft(projectId.trim(), estimationStage);
-      yield { type: "done", markdown };
+      const estOptsDone = estimationOpts(projectId, estimationStage, lastState);
+      const metrics = this.estimationService.calculateLiveMetrics(markdown, estOptsDone);
+      const precisionBreakdown = this.estimationService.getPrecisionBreakdown(markdown, estOptsDone);
+      this.persistMddAuditSnapshot(projectId, estimationStage, {
+        auditTrail,
+        precisionBreakdown,
+        auditorGaps: lastState.auditorGaps ?? undefined,
+      });
+      yield {
+        type: "done",
+        markdown,
+        precision: metrics.precision,
+        status: metrics.status,
+        auditorFeedback: lastState.auditorFeedback?.trim() || undefined,
+        precisionBreakdown,
+        auditTrail,
+      };
     } catch (err) {
       if (projectId?.trim()) this.estimationService.clearLiveDraft(projectId.trim(), estimationStage);
       const formatted = formatDbgaStreamError(err);
@@ -658,6 +712,9 @@ export class AiAnalysisService {
     }
     const agentCtx = await this.buildMddAgentContext(projectId, stageIdFromClient);
     const existingMdd = (initialMddDraft ?? "").trim();
+    const managerPrepareOpts: PrepareMddForOutputOptions = {
+      preservedGovernance: extractGovernanceSection(existingMdd),
+    };
     const rawInitial = (initialMessage ?? "").trim();
     const looksLikeMddDocument =
       rawInitial.length > 500 &&
@@ -754,12 +811,15 @@ export class AiAnalysisService {
             }
             const plan = value?.type === "plan_approval" && Array.isArray(value?.plan) ? value.plan : undefined;
             const planMessage = value?.type === "plan_approval" && typeof value?.message === "string" ? value.message : undefined;
-            let draftOnInterrupt = prepareMddForOutput({
-              mddStructured: lastState?.mddStructured,
-              mddDraft: (lastState?.mddDraft ?? "").trim(),
-            });
+            let draftOnInterrupt = prepareMddForOutput(
+              {
+                mddStructured: lastState?.mddStructured,
+                mddDraft: (lastState?.mddDraft ?? "").trim(),
+              },
+              managerPrepareOpts,
+            );
             if (draftOnInterrupt.length < 200 && existingMdd.length >= 200) {
-              draftOnInterrupt = prepareMddForOutput(existingMdd);
+              draftOnInterrupt = prepareMddForOutput(existingMdd, managerPrepareOpts);
             }
             const estOpts = estimationOpts(projectId, estimationStageId, lastState);
             const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOpts);
@@ -767,6 +827,11 @@ export class AiAnalysisService {
             if (reply && /Estamos al \d+%/.test(reply)) {
               reply = reply.replace(/\bEstamos al \d+%/, `Estamos al ${metrics.precision}%`);
             }
+            this.persistMddAuditSnapshot(projectId, estimationStageId, {
+              auditTrail,
+              precisionBreakdown,
+              auditorGaps: lastState?.auditorGaps ?? undefined,
+            });
             this.logger.log(`[MDD stream/manager] interrupt (from stream) reply=${reply ? "(presente)" : "(no)"} questions=${questions?.length ?? 0} plan=${plan?.length ?? 0} markdownLen=${draftOnInterrupt.length}`);
             yield {
               type: "interrupt",
@@ -800,10 +865,13 @@ export class AiAnalysisService {
             if (lastState.auditorGaps) {
               this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps, estimationStageId);
             }
-            const prepared = prepareMddForOutput({
-              mddStructured: lastState?.mddStructured,
-              mddDraft: draft,
-            });
+            const prepared = prepareMddForOutput(
+              {
+                mddStructured: lastState?.mddStructured,
+                mddDraft: draft,
+              },
+              managerPrepareOpts,
+            );
             if (prepared.length > 80) yield { type: "draft", markdown: prepared };
           }
         }
@@ -817,10 +885,13 @@ export class AiAnalysisService {
       if (rawMarkdown.length < 200 && existingMdd.length >= 200) {
         rawMarkdown = existingMdd;
       }
-      let markdown = prepareMddForOutput({
-        mddStructured: lastState?.mddStructured,
-        mddDraft: rawMarkdown,
-      });
+      let markdown = prepareMddForOutput(
+        {
+          mddStructured: lastState?.mddStructured,
+          mddDraft: rawMarkdown,
+        },
+        managerPrepareOpts,
+      );
       logSection3Debug("final (stream/manager done)", markdown);
       
       if (projectId?.trim()) {
@@ -831,6 +902,11 @@ export class AiAnalysisService {
       const metrics = this.estimationService.calculateLiveMetrics(markdown, estOptsDone);
       const precisionBreakdown = this.estimationService.getPrecisionBreakdown(markdown, estOptsDone);
       this.logger.log(`[MDD stream/manager] done markdownLen=${markdown.length} finalDraftLen=${finalDraft.length} lastNonEmptyLen=${lastNonEmptyDraft.length} auditTrail=${auditTrail.length}`);
+      this.persistMddAuditSnapshot(projectId, estimationStageId, {
+        auditTrail,
+        precisionBreakdown,
+        auditorGaps: lastState?.auditorGaps ?? undefined,
+      });
       yield {
         type: "done",
         markdown,
@@ -859,12 +935,15 @@ export class AiAnalysisService {
         }
         const plan = value?.type === "plan_approval" && Array.isArray(value?.plan) ? value.plan : undefined;
         const planMessage = value?.type === "plan_approval" && typeof value?.message === "string" ? value.message : undefined;
-        let draftOnInterrupt = prepareMddForOutput({
-          mddStructured: lastState?.mddStructured,
-          mddDraft: (lastState?.mddDraft ?? "").trim(),
-        });
+        let draftOnInterrupt = prepareMddForOutput(
+          {
+            mddStructured: lastState?.mddStructured,
+            mddDraft: (lastState?.mddDraft ?? "").trim(),
+          },
+          managerPrepareOpts,
+        );
         if (draftOnInterrupt.length < 200 && existingMdd.length >= 200) {
-          draftOnInterrupt = prepareMddForOutput(existingMdd);
+          draftOnInterrupt = prepareMddForOutput(existingMdd, managerPrepareOpts);
         }
         const estOptsCatch = estimationOpts(projectId, estimationStageId, lastState);
         const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOptsCatch);
@@ -1013,6 +1092,9 @@ export class AiAnalysisService {
       mddContentFromClient?.trim() && mddContentFromClient.trim().length > 80
         ? mddContentFromClient.trim()
         : undefined;
+    const resumePrepareOpts: PrepareMddForOutputOptions = {
+      preservedGovernance: extractGovernanceSection(clientDraft ?? ""),
+    };
 
     try {
       // `resume` entrega el texto a interrupt(); el nodo reanudado aplica su propio update (p. ej. lastUserMessage).
@@ -1078,12 +1160,17 @@ export class AiAnalysisService {
             } catch {
               // mantener lastState
             }
-            let draftOnInterrupt = prepareMddForOutput({
-              mddStructured: stateForMarkdown?.mddStructured,
-              mddDraft: (stateForMarkdown?.mddDraft ?? "").trim(),
-            });
+            let draftOnInterrupt = prepareMddForOutput(
+              {
+                mddStructured: stateForMarkdown?.mddStructured,
+                mddDraft: (stateForMarkdown?.mddDraft ?? "").trim(),
+              },
+              resumePrepareOpts,
+            );
             const isBroken = draftOnInterrupt.startsWith("## useMermaidForDiagrams") || draftOnInterrupt.startsWith("## leaveUncovered") || (draftOnInterrupt.includes("## document") && !draftOnInterrupt.includes("## 1. Contexto"));
-            if (isBroken && lastNonEmptyDraft && lastNonEmptyDraft.length > 80) draftOnInterrupt = prepareMddForOutput(lastNonEmptyDraft.trim());
+            if (isBroken && lastNonEmptyDraft && lastNonEmptyDraft.length > 80) {
+              draftOnInterrupt = prepareMddForOutput(lastNonEmptyDraft.trim(), resumePrepareOpts);
+            }
             const estOptsResume = estimationOpts(projectId, estimationStage, stateForMarkdown ?? lastState);
             const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOptsResume);
             const precisionBreakdown = this.estimationService.getPrecisionBreakdown(draftOnInterrupt, estOptsResume);
@@ -1134,10 +1221,13 @@ export class AiAnalysisService {
                 this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps, estimationStage);
               }
             }
-            const prepared = prepareMddForOutput({
-              mddStructured: lastState?.mddStructured,
-              mddDraft: draft,
-            });
+            const prepared = prepareMddForOutput(
+              {
+                mddStructured: lastState?.mddStructured,
+                mddDraft: draft,
+              },
+              resumePrepareOpts,
+            );
             if (prepared.length > 80) yield { type: "draft", markdown: prepared };
           }
         }
@@ -1173,10 +1263,13 @@ export class AiAnalysisService {
         if (isBrokenMetadataDocument && lastNonEmptyDraft && lastNonEmptyDraft.length > 80) {
           raw = lastNonEmptyDraft;
         }
-        let markdown = prepareMddForOutput({
-          mddStructured: lastState?.mddStructured,
-          mddDraft: raw,
-        });
+        let markdown = prepareMddForOutput(
+          {
+            mddStructured: lastState?.mddStructured,
+            mddDraft: raw,
+          },
+          resumePrepareOpts,
+        );
         logSection3Debug("final (stream/resume done)", markdown);
         
         if (projectId?.trim()) {
@@ -1188,6 +1281,11 @@ export class AiAnalysisService {
         const precisionBreakdown = this.estimationService.getPrecisionBreakdown(markdown, estOptsResumeDone);
         this.logger.log(`[MDD stream/resume] done markdownLen=${markdown.length} finalDraftLen=${finalDraft.length}`);
         this.logger.log(`[MDD stream/resume] Audit Trail: ${auditTrail.join(" -> ")}`);
+        this.persistMddAuditSnapshot(projectId, estimationStage, {
+          auditTrail,
+          precisionBreakdown,
+          auditorGaps: lastState?.auditorGaps ?? undefined,
+        });
         yield {
           type: "done",
           markdown,
@@ -1305,6 +1403,10 @@ export class AiAnalysisService {
       return;
     }
 
+    const regenPrepareOpts: PrepareMddForOutputOptions = {
+      preservedGovernance: extractGovernanceSection(mddContent),
+    };
+
     // regenEstimationStage desde pid + stageId (To-Be/As-Is eliminados)
     const regenCx = "HIGH" as EstimationComplexity;
     const regenEstimationStage = stageId?.trim() || undefined;
@@ -1355,7 +1457,7 @@ export class AiAnalysisService {
           .replace(/\n?```\s*$/, "")
           .trim() || newBody;
         const finalDraft = replaceSection1BodyFromAnyHeading(mddContent, newBody);
-        const markdown = prepareMddForOutput(finalDraft);
+        const markdown = prepareMddForOutput(finalDraft, regenPrepareOpts);
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         yield {
           type: "done",
@@ -1386,7 +1488,10 @@ export class AiAnalysisService {
         const integrationNode = createMddIntegrationNode(llm);
         const result = await integrationNode(state as MDDStateType);
         const finalDraft = (result.mddDraft ?? mddContent).trim();
-        const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
+        const markdown = prepareMddForOutput(
+          { mddStructured: result.mddStructured, mddDraft: finalDraft },
+          regenPrepareOpts,
+        );
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         yield {
           type: "done",
@@ -1401,7 +1506,10 @@ export class AiAnalysisService {
         const securityNode = createMddSecurityNode(llm);
         const result = await securityNode(state as MDDStateType);
         const finalDraft = (result.mddDraft ?? mddContent).trim();
-        const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
+        const markdown = prepareMddForOutput(
+          { mddStructured: result.mddStructured, mddDraft: finalDraft },
+          regenPrepareOpts,
+        );
         if (!draftHasSection6Heading(markdown)) {
           yield {
             type: "error",
@@ -1431,7 +1539,10 @@ export class AiAnalysisService {
           content25 != null
             ? replaceSections2To5InDraft(mddContent, content25)
             : architectDraft || mddContent;
-        const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
+        const markdown = prepareMddForOutput(
+          { mddStructured: result.mddStructured, mddDraft: finalDraft },
+          regenPrepareOpts,
+        );
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         yield {
           type: "done",
@@ -2048,5 +2159,65 @@ export class AiAnalysisService {
       ...read,
       syncing: this.wireframeSketchesSync.isSyncInFlight(projectId),
     };
+  }
+
+  /** Preselección de patrones SSOT a partir de DBGA (Fase 0), resumen benchmark y BRD. */
+  async suggestGovernancePatterns(projectId: string, stageId?: string) {
+    const project = await this.projects.findOne(projectId);
+    const stages = project.stages ?? [];
+    const stage =
+      (stageId?.trim() && stages.find((s) => s.id === stageId.trim())) ||
+      pickPrimaryStage(stages);
+    const { suggestGovernancePatternIds } = await import(
+      "./utils/suggest-mdd-governance-patterns.util.js"
+    );
+    const userId = await this.resolveUserId(projectId);
+    const llm = await createDbgaLLM(this.aiFactory, userId);
+    return suggestGovernancePatternIds(llm, {
+      dbgaContent: (project.dbgaContent ?? "").trim(),
+      phase0SummaryContent: (project.phase0SummaryContent ?? "").trim(),
+      brdContent: (stage?.brdContent ?? "").trim(),
+    });
+  }
+
+  /** Registra cada patrón [X] del wizard como ADR en el grafo del proyecto. */
+  async recordGovernancePatternAdrs(
+    projectId: string,
+    patterns: Array<{ label: string; group: string; affects: string; description: string }>,
+  ) {
+    for (const p of patterns) {
+      await this.graphMemory.saveDecision(projectId, {
+        title: `Patrón SSOT: ${p.label}`,
+        context: `Selección en el wizard del MDD (grupo: ${p.group}). Derivada del análisis de Fase 0 / Benchmark / BRD.`,
+        consequence: [
+          p.description,
+          p.affects ? `Afecta a: ${p.affects}` : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .slice(0, 2000),
+        status: "Accepted",
+      });
+    }
+    return this.graphMemory.getDecisionsByProject(projectId);
+  }
+
+  /** Persiste trail/breakdown/gaps del pipeline MDD para rehidratar el modal tras recargar. */
+  private persistMddAuditSnapshot(
+    projectId: string | undefined,
+    stageId: string | null | undefined,
+    payload: {
+      auditTrail?: string[];
+      precisionBreakdown?: PrecisionBreakdown;
+      auditorGaps?: AuditorGaps;
+    },
+  ): void {
+    const pid = projectId?.trim();
+    if (!pid) return;
+    void this.estimationService.saveMddAuditSnapshot(pid, stageId, payload).catch((err) => {
+      this.logger.warn(
+        `[MDD audit] persist snapshot failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
   }
 }

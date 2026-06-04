@@ -46,6 +46,11 @@
       "types": "./dist/design-system-import.d.ts",
       "import": "./dist/design-system-import.js",
       "require": "./dist/design-system-import.js"
+    },
+    "./mdd-governance-patterns": {
+      "types": "./dist/mdd-governance-patterns.d.ts",
+      "import": "./dist/mdd-governance-patterns.js",
+      "require": "./dist/mdd-governance-patterns.js"
     }
   },
   "scripts": {

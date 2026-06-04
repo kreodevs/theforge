@@ -11,6 +11,7 @@ Punto de entrada para humanos y agentes. **Arquitectura y producto (NotebookLM):
 | Etapas `Stage`, API aplanada, Falkor | [notebooklm/STAGE-SDD.md](notebooklm/STAGE-SDD.md) |
 | Cliente HTTP The Forge ↔ MCP AriadneSpecs | [notebooklm/integracion-theforge/README.md](notebooklm/integracion-theforge/README.md) |
 | Crear y registrar plugins de fuente de componentes | [component-source-plugins.md](component-source-plugins.md) |
+| Despliegue Coolify (override compose) | [DEPLOY-COOLIFY.md](DEPLOY-COOLIFY.md) |
 | Histórico / roadmaps no prioritarios | [archive/README.md](archive/README.md) |
 
 ## Raíz del monorepo (no están en `docs/`)
