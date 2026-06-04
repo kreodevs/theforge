@@ -758,8 +758,15 @@ interface WorkshopState {
   updateMddContent: (content: string) => void;
   persistMddContent: (
     content: string,
-    options?: { force?: boolean; allowGovernancePatternChange?: boolean },
+    options?: {
+      force?: boolean;
+      allowGovernancePatternChange?: boolean;
+      mddGovernanceSeedOnly?: boolean;
+      clearMddCompletely?: boolean;
+    },
   ) => Promise<void>;
+  /** Vacía el MDD (sin reinyectar patrones SSOT). */
+  clearMddContentCompletely: (projectId: string) => Promise<boolean>;
   revertMddContent: () => void;
   persistAndReviewMdd: () => Promise<void>;
   setBlueprintContent: (content: string | null) => void;
@@ -2897,8 +2904,14 @@ if (prog && prog.step && prog.step !== "done") {
           set({ loading: false, loadingReason: null, agentProgress: [] });
           return data ?? get().project;
         }
-        set({ loading: false, loadingReason: null, agentProgress: [] });
-        return get().project;
+        set({
+          loading: false,
+          loadingReason: null,
+          agentProgress: [],
+          error:
+            "La generación del MDD no devolvió contenido. Comprueba el Benchmark en Paso 0 y reintenta.",
+        });
+        break;
       } catch (e) {
         const patch = errorStateFromCaught(e);
         lastError = patch.error;
@@ -3115,21 +3128,7 @@ if (prog && prog.step && prog.step !== "done") {
       if (!fieldName) return false;
 
       if (panel === "mdd") {
-        const stageId = options?.stageId?.trim() ?? get().activeStageId?.trim();
-        const r = await apiFetch(`${API_BASE}/projects/${pid}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mddContent: "", ...(stageId ? { stageId } : {}) }),
-        });
-        if (!r.ok) return false;
-        const data: Project = await r.json();
-        set({
-          project: data,
-          mddContent: data.mddContent ?? "",
-          synced: true,
-          error: null,
-        });
-        return true;
+        return get().clearMddContentCompletely(pid);
       }
 
       const r = await apiFetch(`${API_BASE}/projects/${pid}`, {
@@ -3471,6 +3470,8 @@ if (prog && prog.step && prog.step !== "done") {
           mddContent: content,
           ...(stageId ? { stageId } : {}),
           ...(options?.allowGovernancePatternChange ? { allowGovernancePatternChange: true } : {}),
+          ...(options?.mddGovernanceSeedOnly ? { mddGovernanceSeedOnly: true } : {}),
+          ...(options?.clearMddCompletely ? { clearMddCompletely: true } : {}),
         }),
       });
       if (r.ok) {
@@ -3512,6 +3513,46 @@ if (prog && prog.step && prog.step !== "done") {
   revertMddContent: () => {
     const { project } = get();
     set({ mddContent: project?.mddContent ?? "" });
+  },
+
+  clearMddContentCompletely: async (projectId) => {
+    const pid = projectId?.trim();
+    if (!pid) return false;
+    const stageId = get().activeStageId;
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${pid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mddContent: "",
+          ...(stageId ? { stageId } : {}),
+          clearMddCompletely: true,
+        }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        set({
+          error: (err as { message?: string }).message ?? "No se pudo limpiar el MDD",
+        });
+        return false;
+      }
+      const data = (await r.json()) as Project;
+      const packed = projectWithUxAfterStream(data, data.uxUiGuideContent, get().activeStageId);
+      const nextProject = packed?.project ?? data;
+      set({
+        project: nextProject,
+        workshopStages: nextProject.stages ?? get().workshopStages,
+        mddContent: "",
+        managerThreadId: null,
+        synced: true,
+        error: null,
+        mddJustGeneratedFromBenchmark: false,
+      });
+      return true;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al limpiar el MDD" });
+      return false;
+    }
   },
 
   /** Persiste el MDD y refresca estimación/semáforo. No reemplaza el contenido por la respuesta del review

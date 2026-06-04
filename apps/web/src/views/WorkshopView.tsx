@@ -67,7 +67,10 @@ import {
   MddPatternsWizardDialog,
   type MddPatternsWizardMode,
 } from "../components/MddPatternsWizardDialog";
-import { mddHasSubstantialBody } from "@theforge/shared-types/mdd-governance-patterns";
+import {
+  mddNeedsPatternWizard,
+  selectedPatternIdsFromMdd,
+} from "@theforge/shared-types/mdd-governance-patterns";
 import { replaceYamlFrontMatter } from "../components/DesignMdPreview";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
 import { WorkshopMetricsColumnInner } from "./WorkshopMetricsColumnInner";
@@ -456,6 +459,7 @@ export default function WorkshopView({
   const phase0DeepResearch = useWorkshopStore((s) => s.phase0DeepResearch);
   const clearPhase0SummaryContent = useWorkshopStore((s) => s.clearPhase0SummaryContent);
   const clearWorkshopDocumentContent = useWorkshopStore((s) => s.clearWorkshopDocumentContent);
+  const clearMddContentCompletely = useWorkshopStore((s) => s.clearMddContentCompletely);
   const setPhase0SummaryContent = useWorkshopStore((s) => s.setPhase0SummaryContent);
   const persistPhase0SummaryContent = useWorkshopStore((s) => s.persistPhase0SummaryContent);
   const legacyGenerateCodebaseDoc = useWorkshopStore((s) => s.legacyGenerateCodebaseDoc);
@@ -466,32 +470,32 @@ export default function WorkshopView({
   const legacyStart = useWorkshopStore((s) => s.legacyStart);
   const legacyAnswer = useWorkshopStore((s) => s.legacyAnswer);
   const legacyGenerateMdd = useWorkshopStore((s) => s.legacyGenerateMdd);
-  const openPatternsWizardWithAnalysis = useCallback(
-    async (mode: MddPatternsWizardMode) => {
-      if (!projectId?.trim()) return;
-      setMddPatternsWizardMode(mode);
+  const openPatternsWizardInitial = useCallback(async () => {
+    if (!projectId?.trim()) return;
+    setMddPatternsWizardMode("initial");
+    setPatternsWizardPreselected(null);
+    setPatternsAnalyzeRationale(null);
+    setMddPatternsWizardOpen(true);
+    setPatternsWizardAnalyzing(true);
+    try {
+      const { patternIds, rationale } = await suggestGovernancePatterns(
+        projectId,
+        activeStageId,
+      );
+      setPatternsWizardPreselected(new Set(patternIds));
+      setPatternsAnalyzeRationale(
+        rationale ??
+          "Preselección a partir de Fase 0, Benchmark y BRD (puede variar si cambias esos documentos).",
+      );
+    } catch (e) {
+      setPatternsAnalyzeRationale(
+        e instanceof Error ? e.message : "No se pudo analizar; elige patrones manualmente.",
+      );
       setPatternsWizardPreselected(null);
-      setPatternsAnalyzeRationale(null);
-      setPatternsWizardAnalyzing(true);
-      setMddPatternsWizardOpen(true);
-      try {
-        const { patternIds, rationale } = await suggestGovernancePatterns(
-          projectId,
-          activeStageId,
-        );
-        setPatternsWizardPreselected(new Set(patternIds));
-        setPatternsAnalyzeRationale(rationale ?? null);
-      } catch (e) {
-        setPatternsAnalyzeRationale(
-          e instanceof Error ? e.message : "No se pudo analizar; elige patrones manualmente.",
-        );
-        setPatternsWizardPreselected(null);
-      } finally {
-        setPatternsWizardAnalyzing(false);
-      }
-    },
-    [projectId, activeStageId, suggestGovernancePatterns],
-  );
+    } finally {
+      setPatternsWizardAnalyzing(false);
+    }
+  }, [projectId, activeStageId, suggestGovernancePatterns]);
 
   const requestGenerateMdd = useCallback(() => {
     if (!projectId?.trim()) return;
@@ -499,8 +503,8 @@ export default function WorkshopView({
       void legacyGenerateMdd(projectId, activeStageId ?? undefined);
       return;
     }
-    if (!mddHasSubstantialBody(effectiveMddTrimmed)) {
-      void openPatternsWizardWithAnalysis("initial");
+    if (mddNeedsPatternWizard(effectiveMddTrimmed)) {
+      void openPatternsWizardInitial();
       return;
     }
     void generateMddFromBenchmark(projectId);
@@ -511,12 +515,16 @@ export default function WorkshopView({
     activeStageId,
     effectiveMddTrimmed,
     generateMddFromBenchmark,
-    openPatternsWizardWithAnalysis,
+    openPatternsWizardInitial,
   ]);
 
   const openEditMddPatterns = useCallback(() => {
-    void openPatternsWizardWithAnalysis("edit");
-  }, [openPatternsWizardWithAnalysis]);
+    setMddPatternsWizardMode("edit");
+    setPatternsWizardPreselected(new Set(selectedPatternIdsFromMdd(effectiveMddTrimmed)));
+    setPatternsAnalyzeRationale(null);
+    setPatternsWizardAnalyzing(false);
+    setMddPatternsWizardOpen(true);
+  }, [effectiveMddTrimmed]);
 
   const handleMddPatternsWizardConfirm = useCallback(
     async (markdown: string, selectedIds: ReadonlySet<string>) => {
@@ -537,14 +545,19 @@ export default function WorkshopView({
         }
         return;
       }
+      setMddContent(markdown);
       await persistMddContent(markdown, {
         force: true,
         allowGovernancePatternChange: true,
+        mddGovernanceSeedOnly: true,
       });
-      if (!useWorkshopStore.getState().error?.includes("restaurados") && projectId?.trim()) {
-        await recordGovernancePatternAdrs(projectId, selectedIds).catch(() => {});
-        void generateMddFromBenchmark(projectId);
+      const storeAfterPersist = useWorkshopStore.getState();
+      if (storeAfterPersist.error?.includes("restaurados") || storeAfterPersist.error) {
+        return;
       }
+      if (!projectId?.trim()) return;
+      await recordGovernancePatternAdrs(projectId, selectedIds).catch(() => {});
+      await generateMddFromBenchmark(projectId);
     },
     [
       mddPatternsWizardMode,
@@ -3436,6 +3449,27 @@ export default function WorkshopView({
                             Editar patrones (SSOT)
                           </WorkshopPanelButton>
                         )}
+                        {effectiveMddTrimmed.length > 0 && !legacyMddPanelIsAsIsOnly && (
+                          <WorkshopPanelButton
+                            tone="secondary"
+                            onClick={() => {
+                              if (!projectId?.trim()) return;
+                              if (
+                                !window.confirm(
+                                  "¿Vaciar todo el MDD? Se borra el documento y la sección de patrones sin validación.",
+                                )
+                              ) {
+                                return;
+                              }
+                              void clearMddContentCompletely(projectId);
+                            }}
+                            disabled={loading || mddReviewing}
+                            className="w-full justify-center lg:w-auto"
+                          >
+                            <WorkshopButtonIcon icon={Trash2} tone="secondary" />
+                            Limpiar MDD
+                          </WorkshopPanelButton>
+                        )}
                         {effectiveMddTrimmed.length > 200 && (
                           <WorkshopMddActionButton
                             tone="success"
@@ -3466,8 +3500,8 @@ export default function WorkshopView({
                             ? "Genera el MDD desde BRD y To-Be de la etapa activa (y doc. de partida si aplica)."
                             : "Genera el MDD a partir del DBGA / Benchmark guardado en Paso 0."}
                         {" "}
-                        Los patrones SSOT solo se cambian con «Editar patrones»; si los marcas a mano en el
-                        markdown, al grabar se restauran.
+                        El wizard de patrones solo aparece con MDD vacío (o tras «Limpiar MDD»). Al
+                        regenerar se conservan los patrones actuales; cámbialos con «Editar patrones».
                       </p>
                     </>
                   )}

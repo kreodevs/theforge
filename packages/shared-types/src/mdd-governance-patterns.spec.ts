@@ -10,6 +10,7 @@ import {
   hasGovernanceSection,
   listGovernancePatternOptions,
   mddHasSubstantialBody,
+  mddNeedsPatternWizard,
   MDD_GOVERNANCE_WIZARD_BODY,
   parseActivePatternsFromMdd,
   stripGovernanceSection,
@@ -34,6 +35,13 @@ describe("mdd-governance-patterns", () => {
     assert.ok(active[0]!.label.includes("Hexagonal"));
     const block = formatActivePatternsPromptBlock(mdd);
     assert.match(block, /Hexagonal/);
+  });
+
+  it("mddNeedsPatternWizard solo con MDD vacío", () => {
+    assert.equal(mddNeedsPatternWizard(""), true);
+    assert.equal(mddNeedsPatternWizard("   "), true);
+    const seeded = buildMddWithGovernanceSkeleton("X", buildGovernanceBodySelectedOnly(new Set([optsId("Repository")])));
+    assert.equal(mddNeedsPatternWizard(seeded), false);
   });
 
   it("buildGovernanceBodySelectedOnly omite patrones no seleccionados", () => {
