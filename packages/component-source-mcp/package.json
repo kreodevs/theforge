@@ -19,6 +19,7 @@
     "test": "node --import tsx --test 'src/**/*.spec.ts'"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@theforge/component-source": "workspace:*"
   },
   "devDependencies": {

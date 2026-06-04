@@ -1,8 +1,10 @@
 import {
   ComponentSourceError,
+  isHttpCredentials,
+  isStdioCredentials,
   parseMcpResponse,
   type ComponentHealthCheck,
-  type ComponentSourceUrlTokenCredentials,
+  type ComponentSourceCredentials,
 } from "@theforge/component-source";
 import {
   defaultComponentSourceLogger,
@@ -13,6 +15,7 @@ import {
   probeHttpHealthEndpoint,
   shouldFallbackHealthToMcpTools,
 } from "./mcp-health-probe.js";
+import { McpStdioTransport } from "./mcp-stdio-transport.js";
 import {
   buildMcpHttpHeaders,
   initializeMcpHttpSession,
@@ -32,7 +35,7 @@ interface McpSession {
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
 /**
- * Lightweight MCP Streamable HTTP client for initialize, tools/list and JSON-RPC calls.
+ * MCP client for Streamable HTTP or stdio subprocess transport.
  * Session state is scoped to this client instance (not keyed by userId).
  */
 export class McpRpcClient {
@@ -41,9 +44,10 @@ export class McpRpcClient {
   private readonly clientVersion: string;
   private session: McpSession | null = null;
   private sessionInitLock: Promise<string> | null = null;
+  private stdioTransport: McpStdioTransport | null = null;
 
   constructor(
-    private readonly credentials: ComponentSourceUrlTokenCredentials,
+    private readonly credentials: ComponentSourceCredentials,
     options: McpComponentSourceOptions = {},
   ) {
     this.logger = options.logger ?? defaultComponentSourceLogger;
@@ -52,6 +56,24 @@ export class McpRpcClient {
   }
 
   async checkHealth(): Promise<ComponentHealthCheck> {
+    if (isStdioCredentials(this.credentials)) {
+      try {
+        const tools = await this.listTools();
+        if (tools.length === 0) {
+          return {
+            ok: false,
+            error: "MCP stdio respondió pero tools/list no devolvió herramientas",
+          };
+        }
+        return { ok: true, service: "mcp-stdio" };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+
     const { url, token } = this.credentials;
     const http = await probeHttpHealthEndpoint(url, token);
     if (http.ok) return http;
@@ -83,7 +105,33 @@ export class McpRpcClient {
   }
 
   async callRpc(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
-    return this.callRpcWithRetry(method, params, true);
+    if (isStdioCredentials(this.credentials)) {
+      return this.getStdioTransport().callRpc(method, params);
+    }
+    return this.callHttpRpcWithRetry(method, params, true);
+  }
+
+  async close(): Promise<void> {
+    if (this.stdioTransport) {
+      await this.stdioTransport.close();
+      this.stdioTransport = null;
+    }
+    this.session = null;
+    this.sessionInitLock = null;
+  }
+
+  private getStdioTransport(): McpStdioTransport {
+    if (!this.stdioTransport) {
+      if (!isStdioCredentials(this.credentials)) {
+        throw new ComponentSourceError("Transporte stdio no configurado");
+      }
+      this.stdioTransport = new McpStdioTransport(
+        this.credentials,
+        { name: this.clientName, version: this.clientVersion },
+        this.logger,
+      );
+    }
+    return this.stdioTransport;
   }
 
   private getValidSession(): string | null {
@@ -100,18 +148,21 @@ export class McpRpcClient {
     this.sessionInitLock = null;
   }
 
-  private async ensureSession(): Promise<string> {
+  private async ensureHttpSession(): Promise<string> {
     const existing = this.getValidSession();
     if (existing) return existing;
     if (this.sessionInitLock) return this.sessionInitLock;
 
-    this.sessionInitLock = this.initializeSession().finally(() => {
+    this.sessionInitLock = this.initializeHttpSession().finally(() => {
       this.sessionInitLock = null;
     });
     return this.sessionInitLock;
   }
 
-  private async initializeSession(): Promise<string> {
+  private async initializeHttpSession(): Promise<string> {
+    if (!isHttpCredentials(this.credentials)) {
+      throw new ComponentSourceError("Transporte HTTP no configurado");
+    }
     const { url, token } = this.credentials;
     const sessionId = await initializeMcpHttpSession({
       url,
@@ -141,12 +192,16 @@ export class McpRpcClient {
     return false;
   }
 
-  private async callRpcWithRetry(
+  private async callHttpRpcWithRetry(
     method: string,
     params: Record<string, unknown>,
     retryOnSessionError: boolean,
   ): Promise<unknown> {
-    const sessionId = await this.ensureSession();
+    if (!isHttpCredentials(this.credentials)) {
+      throw new ComponentSourceError("Transporte HTTP no configurado");
+    }
+
+    const sessionId = await this.ensureHttpSession();
     const rpcId = Date.now();
 
     const response = await fetch(this.credentials.url, {
@@ -166,7 +221,7 @@ export class McpRpcClient {
       if (retryOnSessionError && this.isStaleSessionResponse(response.status, text)) {
         this.logger.warn(`MCP session invalid for ${method} (HTTP ${response.status}), re-initializing…`);
         this.invalidateSession();
-        return this.callRpcWithRetry(method, params, false);
+        return this.callHttpRpcWithRetry(method, params, false);
       }
       throw new ComponentSourceError(`Component MCP ${method} HTTP ${response.status}`);
     }

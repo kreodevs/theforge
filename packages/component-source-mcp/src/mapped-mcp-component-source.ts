@@ -1,7 +1,7 @@
 import {
   ComponentSourceError,
   inferCapabilitiesFromMapping,
-  parseMcpResponse,
+  isStdioCredentials,
   type CatalogHealthResult,
   type ComponentCode,
   type ComponentModule,
@@ -9,6 +9,7 @@ import {
   type ComponentProps,
   type ComponentPreviewsBatchResult,
   type ComponentResolution,
+  type ComponentSourceCredentials,
   type ComponentSourcePort,
   type ComponentSourceRole,
   type ComponentSourceToolMapping,
@@ -27,22 +28,36 @@ import {
 } from "./options.js";
 import { McpRpcClient } from "./mcp-rpc-client.js";
 import {
-  buildMcpHttpHeaders,
-  initializeMcpHttpSession,
-} from "./mcp-transport.util.js";
+  buildShadcnExamplesArgs,
+  buildShadcnListModulesArgs,
+  buildShadcnSearchModulesArgs,
+  buildShadcnViewItemsArgs,
+  isShadcnRegistryListTool,
+  isShadcnRegistryViewTool,
+  parseRegistriesFromProjectRegistriesText,
+  resolveShadcnProjectRegistriesToolName,
+  SHADCN_DEFAULT_REGISTRIES,
+} from "./shadcn-registry-tools.js";
+import {
+  buildMagicUiGetComponentArgs,
+  buildMagicUiListModulesArgs,
+  buildMagicUiSearchModulesArgs,
+  isMagicUiListTool,
+  isMagicUiSearchTool,
+} from "./magic-ui-registry-tools.js";
 
 interface CacheEntry<T> {
   value: T;
   expiresAt: number;
 }
 
-interface McpSession {
-  sessionId: string;
+interface RpcClientEntry {
+  client: McpRpcClient;
   createdAt: number;
 }
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const SESSION_TTL_MS = 30 * 60 * 1000;
+const RPC_CLIENT_TTL_MS = 30 * 60 * 1000;
 
 /**
  * MCP client that resolves {@link ComponentSourcePort} methods via a role → tool name mapping.
@@ -53,8 +68,7 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
   private readonly clientName: string;
   private readonly clientVersion: string;
   private readonly cache = new Map<string, CacheEntry<unknown>>();
-  private readonly sessions = new Map<string, McpSession>();
-  private readonly sessionInitLocks = new Map<string, Promise<string>>();
+  private readonly rpcClients = new Map<string, RpcClientEntry>();
 
   constructor(
     private readonly resolveCredentials: ComponentSourceCredentialResolver,
@@ -78,18 +92,55 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
     return toolName;
   }
 
-  private async requireCredentials(userId: string): Promise<{ url: string; token?: string }> {
+  private async requireCredentials(userId: string): Promise<ComponentSourceCredentials> {
     const creds = await this.resolveCredentials(userId);
-    if (!creds?.url?.trim()) {
+    if (!creds) {
+      throw new ComponentSourceError("Component Source no configurado para este usuario");
+    }
+    if (isStdioCredentials(creds)) {
+      if (!creds.command?.trim()) {
+        throw new ComponentSourceError("Perfil MCP stdio sin command configurado");
+      }
+      return creds;
+    }
+    if (!creds.url?.trim()) {
       throw new ComponentSourceError("Component Source no configurado para este usuario");
     }
     return creds;
   }
 
+  private async getRpcClient(userId: string): Promise<McpRpcClient> {
+    const existing = this.rpcClients.get(userId);
+    if (existing && Date.now() - existing.createdAt <= RPC_CLIENT_TTL_MS) {
+      return existing.client;
+    }
+    if (existing) {
+      await existing.client.close().catch(() => undefined);
+    }
+    const credentials = await this.requireCredentials(userId);
+    const client = new McpRpcClient(credentials, {
+      logger: this.logger,
+      clientName: this.clientName,
+      clientVersion: this.clientVersion,
+    });
+    this.rpcClients.set(userId, { client, createdAt: Date.now() });
+    return client;
+  }
+
   async searchModules(userId: string, query: string): Promise<McpToolResult<ComponentModule[]>> {
     const toolName = this.mappedToolName("catalog.search");
     this.logger.log(`[ComponentMCP] ${toolName} userId=${userId.slice(0, 8)}… query="${query}"`);
-    const result = await this.callTool<ComponentModule[]>(userId, toolName, { query });
+    const result = await this.callTool<ComponentModule[]>(
+      userId,
+      toolName,
+      isMagicUiSearchTool(toolName)
+        ? buildMagicUiSearchModulesArgs(toolName, query)
+        : buildShadcnSearchModulesArgs(
+            toolName,
+            await this.resolveShadcnRegistries(userId),
+            query,
+          ),
+    );
     this.logger.log(`[ComponentMCP] ${toolName} done contentItems=${result.content?.length ?? 0}`);
     return result;
   }
@@ -107,9 +158,12 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
     }
 
     this.logger.log(`[ComponentMCP] ${toolName} userId=${userId.slice(0, 8)}… names=${names.length}`);
-    const result = await this.callTool<{ results: ComponentResolution[] }>(userId, toolName, {
-      names,
-    });
+    const registries = await this.resolveShadcnRegistries(userId);
+    const result = await this.callTool<{ results: ComponentResolution[] }>(
+      userId,
+      toolName,
+      buildShadcnViewItemsArgs(toolName, names, registries),
+    );
     const preview = result.content?.find((c) => c.type === "text")?.text?.slice(0, 400) ?? "";
     this.logger.log(`[ComponentMCP] ${toolName} done preview=${JSON.stringify(preview)}`);
     this.writeCache(cacheKey, result);
@@ -126,10 +180,13 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
     const cached = this.readCache<McpToolResult<ComponentCode>>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.callTool<ComponentCode>(userId, toolName, {
-      moduleId,
-      ...(exportName ? { exportName } : {}),
-    });
+    const result = await this.callTool<ComponentCode>(
+      userId,
+      toolName,
+      isShadcnRegistryViewTool(toolName)
+        ? buildShadcnViewItemsArgs(toolName, [moduleId], await this.resolveShadcnRegistries(userId))
+        : buildMagicUiGetComponentArgs(toolName, moduleId, exportName),
+    );
     this.writeCache(cacheKey, result);
     return result;
   }
@@ -151,7 +208,12 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
     moduleId: string,
   ): Promise<McpToolResult<CompositionRecipe>> {
     const toolName = this.mappedToolName("catalog.recipe");
-    return this.callTool<CompositionRecipe>(userId, toolName, { moduleId });
+    const registries = await this.resolveShadcnRegistries(userId);
+    return this.callTool<CompositionRecipe>(
+      userId,
+      toolName,
+      buildShadcnExamplesArgs(toolName, moduleId, registries),
+    );
   }
 
   async listModules(userId: string): Promise<McpToolResult<ComponentModule[]>> {
@@ -164,7 +226,17 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
     }
 
     this.logger.log(`[ComponentMCP] ${toolName} userId=${userId.slice(0, 8)}…`);
-    const result = await this.callTool<ComponentModule[]>(userId, toolName, {});
+    let args: Record<string, unknown> = {};
+    if (isShadcnRegistryListTool(toolName)) {
+      const registries = await this.resolveShadcnRegistries(userId);
+      args = buildShadcnListModulesArgs(toolName, registries);
+      this.logger.log(
+        `[ComponentMCP] ${toolName} shadcn registries=${JSON.stringify(registries)}`,
+      );
+    } else if (isMagicUiListTool(toolName)) {
+      args = buildMagicUiListModulesArgs(toolName);
+    }
+    const result = await this.callTool<ComponentModule[]>(userId, toolName, args);
     const text = result.content?.find((c) => c.type === "text")?.text ?? "";
     this.logger.log(
       `[ComponentMCP] ${toolName} done textLen=${text.length} preview=${JSON.stringify(text.slice(0, 300))}`,
@@ -250,73 +322,31 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
   }
 
   async checkHealth(userId: string): Promise<{ ok: boolean; service?: string; error?: string }> {
-    const credentials = await this.requireCredentials(userId);
-    const client = new McpRpcClient(credentials, {
-      logger: this.logger,
-      clientName: this.clientName,
-      clientVersion: this.clientVersion,
-    });
+    const client = await this.getRpcClient(userId);
     return client.checkHealth();
   }
 
-  private getValidSession(userId: string): string | null {
-    const entry = this.sessions.get(userId);
-    if (!entry) return null;
-    if (Date.now() - entry.createdAt > SESSION_TTL_MS) {
-      this.sessions.delete(userId);
-      return null;
+  private async resolveShadcnRegistries(userId: string): Promise<string[]> {
+    const cacheKey = `shadcnRegistries:${userId}`;
+    const cached = this.readCache<string[]>(cacheKey);
+    if (cached?.length) return cached;
+
+    const probeTool = resolveShadcnProjectRegistriesToolName(this.toolMapping);
+    try {
+      const result = await this.callTool<unknown>(userId, probeTool, {});
+      const text = result.content?.find((c) => c.type === "text")?.text ?? "";
+      const parsed = parseRegistriesFromProjectRegistriesText(text);
+      if (parsed.length > 0) {
+        this.writeCache(cacheKey, parsed);
+        return parsed;
+      }
+    } catch {
+      /* fall through to default */
     }
-    return entry.sessionId;
-  }
 
-  private invalidateSession(userId: string): void {
-    this.sessions.delete(userId);
-    this.sessionInitLocks.delete(userId);
-  }
-
-  private async ensureSession(userId: string): Promise<string> {
-    const existing = this.getValidSession(userId);
-    if (existing) return existing;
-
-    const pending = this.sessionInitLocks.get(userId);
-    if (pending) return pending;
-
-    const initPromise = this.initializeSession(userId).finally(() => {
-      this.sessionInitLocks.delete(userId);
-    });
-    this.sessionInitLocks.set(userId, initPromise);
-    return initPromise;
-  }
-
-  private async initializeSession(userId: string): Promise<string> {
-    const { url, token } = await this.requireCredentials(userId);
-    const sessionId = await initializeMcpHttpSession({
-      url,
-      token,
-      clientName: this.clientName,
-      clientVersion: this.clientVersion,
-      logger: this.logger,
-    });
-    this.sessions.set(userId, { sessionId, createdAt: Date.now() });
-    this.logger.log(`MCP session initialized for user ${userId.slice(0, 8)}…`);
-    return sessionId;
-  }
-
-  private isStaleSessionResponse(status: number, bodyText: string): boolean {
-    const lower = bodyText.toLowerCase();
-    const sessionHint =
-      lower.includes("session not found") ||
-      lower.includes("session expired") ||
-      lower.includes("invalid session") ||
-      lower.includes("unknown session") ||
-      lower.includes('"code":-32001') ||
-      (lower.includes("session") && lower.includes("not found"));
-    if (sessionHint) return true;
-    if (status === 404 && lower.includes("jsonrpc")) return true;
-    if (status === 400 && (lower.includes("session") || lower.includes("initialize"))) {
-      return true;
-    }
-    return false;
+    const fallback = [...SHADCN_DEFAULT_REGISTRIES];
+    this.writeCache(cacheKey, fallback);
+    return fallback;
   }
 
   private async callTool<T>(
@@ -324,56 +354,12 @@ export class MappedMcpComponentSource implements ComponentSourcePort {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<McpToolResult<T>> {
-    return this.callToolWithRetry<T>(userId, toolName, args, true);
-  }
-
-  private async callToolWithRetry<T>(
-    userId: string,
-    toolName: string,
-    args: Record<string, unknown>,
-    retryOnSessionError: boolean,
-  ): Promise<McpToolResult<T>> {
-    const { url, token } = await this.requireCredentials(userId);
-    const sessionId = await this.ensureSession(userId);
-
-    const rpcId = Date.now();
-    const response = await fetch(url, {
-      method: "POST",
-      headers: buildMcpHttpHeaders(sessionId, token),
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: rpcId,
-        method: "tools/call",
-        params: { name: toolName, arguments: args },
-      }),
-      signal: AbortSignal.timeout(30_000),
+    const client = await this.getRpcClient(userId);
+    const result = await client.callRpc("tools/call", {
+      name: toolName,
+      arguments: args,
     });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "sin cuerpo");
-      if (retryOnSessionError && this.isStaleSessionResponse(response.status, text)) {
-        this.logger.warn(
-          `MCP session invalid for ${toolName} (HTTP ${response.status}), re-initializing…`,
-        );
-        this.invalidateSession(userId);
-        return this.callToolWithRetry<T>(userId, toolName, args, false);
-      }
-      this.logger.error(`Component MCP ${toolName} HTTP ${response.status}: ${text.slice(0, 300)}`);
-      throw new ComponentSourceError(`Component MCP respondió HTTP ${response.status}`);
-    }
-
-    const raw = await response.text();
-    const parsed = parseMcpResponse(raw) as Record<string, unknown> | null;
-    if (!parsed) {
-      throw new ComponentSourceError("Respuesta MCP inválida (no se pudo parsear JSON-RPC)");
-    }
-    if (parsed.error) {
-      const errMsg =
-        typeof parsed.error === "object" ? JSON.stringify(parsed.error) : String(parsed.error);
-      throw new ComponentSourceError(`Component MCP error: ${errMsg}`);
-    }
-
-    return (parsed.result ?? parsed) as McpToolResult<T>;
+    return result as McpToolResult<T>;
   }
 
   private readCache<T>(key: string): T | undefined {
