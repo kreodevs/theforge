@@ -6,13 +6,17 @@ import { injectWireframeComponentTables } from "../utils/wireframes-mcp-resolve.
 import { formatDesignSystemContextBlock } from "../utils/wireframe-design-system-context.util.js";
 
 /** Creates the Wireframe Composer node: generates the full Markdown wireframe document. */
-export function createWireframeComposerNode(llm: BaseChatModel) {
+export function createWireframeComposerNode(llm: BaseChatModel, dsRefresh = false) {
   return async (state: WireframesStateType): Promise<Partial<WireframesStateType>> => {
     const iteration = state.iterationCount ?? 0;
     const isRevision = iteration > 0;
-    const stepNum = isRevision ? 4 + iteration * 2 - 1 : 3;
-    const totalSteps = isRevision ? 4 + iteration * 2 : 4;
-    const label = isRevision ? "Re-componiendo wireframes" : "Componiendo wireframes visuales";
+    const stepNum = dsRefresh ? 2 : isRevision ? 4 + iteration * 2 - 1 : 3;
+    const totalSteps = dsRefresh ? 2 : isRevision ? 4 + iteration * 2 : 4;
+    const label = dsRefresh
+      ? "Actualizando wireframes"
+      : isRevision
+        ? "Re-componiendo wireframes"
+        : "Componiendo wireframes visuales";
     const t0 = performance.now();
     console.log(`\x1b[36m[Wireframes] ▶ Step ${stepNum}/${totalSteps}: ${label}...\x1b[0m`);
 
@@ -51,7 +55,11 @@ export function createWireframeComposerNode(llm: BaseChatModel) {
 
     if (wireframeDocument && (state.componentMappings?.length ?? 0) > 0) {
       const before = wireframeDocument.length;
-      wireframeDocument = injectWireframeComponentTables(wireframeDocument, state.componentMappings);
+      wireframeDocument = injectWireframeComponentTables(
+        wireframeDocument,
+        state.componentMappings,
+        state.screens,
+      );
       console.log(
         `\x1b[36m[Wireframes] composer: tablas DS inyectadas desde mappings (${before} → ${wireframeDocument.length} chars)\x1b[0m`,
       );

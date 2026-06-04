@@ -36,8 +36,14 @@ export async function createWireframesGraph(
   const mcpTools = createComponentMcpTools(componentSource, userId);
   console.log(`[Wireframes/Graph] build userId=${userId.slice(0, 8)}… mcpTools=${mcpTools.length}`);
 
-  const componentMapperNode = createComponentMapperNode(llm, mcpTools, componentSource, userId);
-  const wireframeComposerNode = createWireframeComposerNode(llm);
+  const componentMapperNode = createComponentMapperNode(
+    llm,
+    mcpTools,
+    componentSource,
+    userId,
+    dsRefresh,
+  );
+  const wireframeComposerNode = createWireframeComposerNode(llm, dsRefresh);
   const compileOpts = checkpointer ? { checkpointer } : undefined;
 
   if (dsRefresh && skipCritic) {

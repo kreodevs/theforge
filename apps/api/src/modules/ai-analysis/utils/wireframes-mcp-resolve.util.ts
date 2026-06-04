@@ -1,5 +1,5 @@
 import type { ComponentSourcePort, ComponentResolution, McpToolResult } from "@theforge/component-source";
-import type { ComponentMapping } from "../state/index.js";
+import type { ComponentMapping, ScreenDefinition } from "../state/index.js";
 
 export function stripMarkdownCell(value: string): string {
   return value.trim().replace(/^[`*_]+|[`*_]+$/g, "").trim();
@@ -8,6 +8,133 @@ export function stripMarkdownCell(value: string): string {
 /** Normalizes component display names for resolve/map lookups (trim + collapse whitespace). */
 export function normalizeComponentKey(name: string): string {
   return name.trim().replace(/\s+/g, " ");
+}
+
+/** Case-insensitive alias lookup key (collapse spaces, hyphens, underscores). */
+export function normalizeWireframeAliasKey(name: string): string {
+  return normalizeComponentKey(name).toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+/**
+ * Wireframe / product names → ordered registry module id candidates (shadcn, Magic UI, etc.).
+ * Keys are normalized via {@link normalizeWireframeAliasKey}.
+ */
+export const WIREFRAME_COMPONENT_ALIAS_MAP: Readonly<Record<string, readonly string[]>> = {
+  modal: ["dialog", "alert-dialog"],
+  confirmdialog: ["alert-dialog"],
+  confirm: ["alert-dialog"],
+  confirmation: ["alert-dialog"],
+  confirmationdialog: ["alert-dialog"],
+  popup: ["dialog", "popover"],
+  datepicker: ["calendar", "popover"],
+  datetimepicker: ["calendar", "popover"],
+  timepicker: ["calendar", "popover"],
+  textinput: ["input"],
+  textfield: ["input", "textarea"],
+  inputfield: ["input"],
+  passwordinput: ["input"],
+  searchinput: ["input", "command"],
+  searchbar: ["input", "command"],
+  datatable: ["table", "data-table"],
+  grid: ["table", "data-table"],
+  breadcrumbs: ["breadcrumb"],
+  dropdown: ["dropdown-menu", "select"],
+  dropdownmenu: ["dropdown-menu"],
+  select: ["select"],
+  combobox: ["combobox", "command"],
+  autocomplete: ["combobox", "command"],
+  spinner: ["spinner"],
+  loader: ["spinner", "skeleton"],
+  loading: ["spinner", "skeleton"],
+  loadingindicator: ["spinner"],
+  toast: ["sonner", "toast"],
+  notification: ["sonner", "alert"],
+  notifications: ["sonner", "alert"],
+  snackbar: ["sonner"],
+  navbar: ["navigation-menu"],
+  nav: ["navigation-menu"],
+  navigation: ["navigation-menu"],
+  menubar: ["menubar", "navigation-menu"],
+  drawer: ["drawer", "sheet"],
+  sidebarpanel: ["sheet", "sidebar"],
+  toggle: ["toggle", "switch"],
+  togglebutton: ["toggle"],
+  radiobutton: ["radio-group"],
+  radiogroup: ["radio-group"],
+  progressbar: ["progress"],
+  scrollarea: ["scroll-area"],
+  divider: ["separator"],
+  tag: ["badge"],
+  chip: ["badge"],
+  collapse: ["accordion", "collapsible"],
+  emptystate: ["empty"],
+  illustration: [],
+};
+
+/** Ordered alias candidates for a wireframe name (empty when none or explicitly skipped). */
+export function getWireframeAliasCandidates(name: string): readonly string[] {
+  const key = normalizeWireframeAliasKey(name);
+  return WIREFRAME_COMPONENT_ALIAS_MAP[key] ?? [];
+}
+
+/** PascalCase / spaced labels → kebab-case module id guess (Alert → alert, DatePicker → date-picker). */
+export function wireframeNameToKebabModuleId(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "";
+  return trimmed
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1-$2")
+    .toLowerCase();
+}
+
+/**
+ * Expand a display name into ordered resolve/search queries: original, kebab id, then aliases.
+ */
+export function expandWireframeResolveQueries(name: string): string[] {
+  const trimmed = name.trim();
+  if (!trimmed) return [];
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (q: string) => {
+    const key = q.toLowerCase();
+    if (!q || seen.has(key)) return;
+    seen.add(key);
+    out.push(q);
+  };
+
+  push(trimmed);
+  push(wireframeNameToKebabModuleId(trimmed));
+  for (const candidate of getWireframeAliasCandidates(trimmed)) {
+    push(candidate);
+  }
+  return out;
+}
+
+function buildWireframeQueryToNames(names: string[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const name of names) {
+    for (const query of expandWireframeResolveQueries(name)) {
+      const key = query.toLowerCase();
+      const list = map.get(key) ?? [];
+      if (!list.includes(name)) list.push(name);
+      map.set(key, list);
+    }
+  }
+  return map;
+}
+
+function lookupWireframeQueryNames(
+  queryToNames: Map<string, string[]>,
+  query: string,
+): string[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  return (
+    queryToNames.get(trimmed.toLowerCase()) ??
+    queryToNames.get(normalizeWireframeAliasKey(trimmed)) ??
+    [trimmed]
+  );
 }
 
 function lookupResolveModuleId(
@@ -79,6 +206,157 @@ export function unwrapMcpToolText(result: McpToolResult): string {
   return isError ? `[MCP_ERROR] ${payload}` : payload;
 }
 
+export type CatalogListValidation = {
+  ok: boolean;
+  moduleCount: number;
+  shape: "array" | "modules" | "hits" | "unknown" | "empty" | "error";
+  preview: string;
+  reason?: string;
+};
+
+/** Markdown registry listings (p. ej. shadcn `list_items_in_registries`). */
+export function parseRegistryMarkdownCatalogHits(
+  text: string,
+): Array<{ id: string; name?: string }> {
+  const hits: Array<{ id: string; name?: string }> = [];
+  const re = /^-\s+([a-z0-9][a-z0-9-]*)\s+\(registry:([^)]+)\)/gim;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const id = match[1].trim();
+    const registryKind = match[2].trim().toLowerCase();
+    if (!id || registryKind !== "ui") continue;
+    hits.push({
+      id,
+      name: id
+        .split("-")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" "),
+    });
+  }
+  return hits;
+}
+
+function extractRegistryMarkdownModuleIds(catalogText: string, max = 500): Set<string> {
+  const ids = new Set<string>();
+  for (const hit of parseRegistryMarkdownCatalogHits(catalogText)) {
+    ids.add(hit.id);
+    if (ids.size >= max) break;
+  }
+  return ids;
+}
+
+const CATALOG_LIST_ARRAY_KEYS = ["modules", "hits", "items"] as const;
+
+/** Reads a catalog entry id from IMJ (`id`/`moduleId`) or Magic UI (`name`). */
+export function readCatalogEntryId(entry: unknown): string | null {
+  if (!entry || typeof entry !== "object") return null;
+  const row = entry as Record<string, unknown>;
+  for (const field of ["id", "moduleId", "name"] as const) {
+    const value = row[field];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+/** Extracts the list payload from catalog.list JSON (Orbita, Magic UI, etc.). */
+export function extractCatalogListArray(parsed: unknown): unknown[] | null {
+  if (Array.isArray(parsed)) return parsed;
+  if (!parsed || typeof parsed !== "object") return null;
+  const record = parsed as Record<string, unknown>;
+  for (const key of CATALOG_LIST_ARRAY_KEYS) {
+    const list = record[key];
+    if (Array.isArray(list)) return list;
+  }
+  return null;
+}
+
+/** Detects JSON shape returned by catalog.list / list_modules. */
+export function detectCatalogListShape(text: string): CatalogListValidation["shape"] {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.startsWith("[MCP_ERROR]")) return trimmed ? "error" : "empty";
+  if (parseRegistryMarkdownCatalogHits(trimmed).length > 0) return "modules";
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed)) return "array";
+    if (parsed && typeof parsed === "object") {
+      if (Array.isArray((parsed as { modules?: unknown }).modules)) return "modules";
+      if (Array.isArray((parsed as { hits?: unknown }).hits)) return "hits";
+      if (Array.isArray((parsed as { items?: unknown }).items)) return "modules";
+    }
+  } catch {
+    /* ignore */
+  }
+  return "unknown";
+}
+
+/**
+ * Validates that catalog.list text contains recognizable module ids.
+ * Used before confirming MCP profiles and when wireframes fetch the catalog.
+ */
+export function validateCatalogListText(text: string): CatalogListValidation {
+  const trimmed = text.trim();
+  const preview = trimmed.slice(0, 200);
+  const shape = detectCatalogListShape(trimmed);
+
+  if (!trimmed || trimmed.startsWith("[MCP_ERROR]")) {
+    const errBody = trimmed.replace(/^\[MCP_ERROR\]\s*/, "");
+    const registriesRequired = /registries:\s*Required/i.test(errBody);
+    return {
+      ok: false,
+      moduleCount: 0,
+      shape: shape === "empty" ? "empty" : "error",
+      preview,
+      reason: trimmed.startsWith("[MCP_ERROR]")
+        ? registriesRequired
+          ? "catalog.list (list_items_in_registries) requiere registries. Reinicia la API si acabas de actualizar The Forge; si persiste, revisa que el perfil stdio tenga cwd con components.json."
+          : `catalog.list falló: ${errBody.slice(0, 160)}`
+        : "catalog.list devolvió respuesta vacía.",
+    };
+  }
+
+  if (/Invalid input parameters/i.test(trimmed) && /registries:\s*Required/i.test(trimmed)) {
+    return {
+      ok: false,
+      moduleCount: 0,
+      shape: "error",
+      preview,
+      reason:
+        "list_items_in_registries exige registries (p. ej. [\"@shadcn\"]). Actualiza/reinicia la API de The Forge o confirma el mapeo tras un Probar conexión exitoso.",
+    };
+  }
+
+  const moduleCount = extractCatalogModuleIds(trimmed).size;
+  if (moduleCount > 0) {
+    return { ok: true, moduleCount, shape, preview };
+  }
+
+  const looksLikeJson = trimmed.startsWith("{") || trimmed.startsWith("[");
+  if (!looksLikeJson) {
+    const isDocsMcp =
+      /no documentation found/i.test(trimmed) ||
+      /code search results/i.test(trimmed) ||
+      /documentation/i.test(trimmed.slice(0, 120));
+    return {
+      ok: false,
+      moduleCount: 0,
+      shape: "unknown",
+      preview,
+      reason: isDocsMcp
+        ? 'catalog.list está mapeado a una herramienta de documentación (p. ej. fetch_ui_documentation / GitMCP). En Ajustes → Componentes, prueba de nuevo la conexión y confirma el mapeo con list_modules o list_items_in_registries (perfil shadcn stdio).'
+        : `catalog.list devolvió texto plano sin ids de módulo ("${trimmed.slice(0, 80)}${trimmed.length > 80 ? "…" : ""}"). Esperado: JSON con array, modules[] o hits[] con id/moduleId, o listado registry markdown (shadcn).`,
+    };
+  }
+
+  return {
+    ok: false,
+    moduleCount: 0,
+    shape,
+    preview,
+      reason:
+      "El JSON del catálogo no incluye ids de módulo reconocibles (campos id, moduleId o name en array, modules[], hits[] o items[]).",
+  };
+}
+
 /** Best-effort: module ids from list_modules JSON text. */
 export function extractCatalogModuleIds(catalogText: string, max = 500): Set<string> {
   const ids = new Set<string>();
@@ -86,31 +364,29 @@ export function extractCatalogModuleIds(catalogText: string, max = 500): Set<str
 
   try {
     const parsed = JSON.parse(catalogText) as unknown;
-    const list = Array.isArray(parsed)
-      ? parsed
-      : parsed && typeof parsed === "object" && Array.isArray((parsed as { modules?: unknown }).modules)
-        ? (parsed as { modules: unknown[] }).modules
-        : parsed && typeof parsed === "object" && Array.isArray((parsed as { hits?: unknown }).hits)
-          ? (parsed as { hits: unknown[] }).hits
-          : null;
+    const list = extractCatalogListArray(parsed);
     if (list) {
       for (const item of list) {
-        if (item && typeof item === "object") {
-          const id =
-            (item as { id?: string; moduleId?: string }).id ??
-            (item as { moduleId?: string }).moduleId;
-          if (typeof id === "string" && id.trim()) ids.add(id.trim());
-        }
+        const id = readCatalogEntryId(item);
+        if (id) ids.add(id);
         if (ids.size >= max) break;
       }
     }
   } catch {
-    const re = /"id"\s*:\s*"([^"]+)"/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(catalogText)) !== null && ids.size < max) {
-      ids.add(m[1]);
+    for (const re of [/"(?:id|moduleId|name)"\s*:\s*"([^"]+)"/g] as const) {
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(catalogText)) !== null && ids.size < max) {
+        ids.add(m[1]);
+      }
     }
   }
+
+  if (ids.size === 0) {
+    for (const id of extractRegistryMarkdownModuleIds(catalogText, max)) {
+      ids.add(id);
+    }
+  }
+
   return ids;
 }
 
@@ -171,6 +447,22 @@ export function fuzzyMatchModuleInCatalog(
   return undefined;
 }
 
+/** Fuzzy match with alias expansion; tries each candidate until one hits. */
+export function fuzzyMatchModuleWithAliases(
+  name: string,
+  catalogText: string,
+): ComponentResolveHit | undefined {
+  for (const query of expandWireframeResolveQueries(name)) {
+    const hit = fuzzyMatchModuleInCatalog(query, catalogText);
+    if (hit) {
+      return hit.status === "exact_module"
+        ? hit
+        : { ...hit, status: hit.status ?? "similar" };
+    }
+  }
+  return undefined;
+}
+
 /** Batch resolve component names → moduleId + optional export from MCP. */
 export async function resolveComponentNamesToHits(
   componentSource: ComponentSourcePort,
@@ -182,16 +474,24 @@ export async function resolveComponentNamesToHits(
   const map = new Map<string, ComponentResolveHit>();
   if (unique.length === 0) return map;
 
+  const queryToNames = buildWireframeQueryToNames(unique);
+  const expandedQueries = [...new Set(
+    unique.flatMap((name) => expandWireframeResolveQueries(name)),
+  )];
+
   const storeHit = (query: string, hit: ComponentResolveHit) => {
-    const key = normalizeComponentKey(query);
-    map.set(key, hit);
-    map.set(query.trim(), hit);
-    map.set(key.toLowerCase(), hit);
+    const originals = lookupWireframeQueryNames(queryToNames, query);
+    for (const original of originals) {
+      const key = normalizeComponentKey(original);
+      map.set(key, hit);
+      map.set(original.trim(), hit);
+      map.set(key.toLowerCase(), hit);
+    }
   };
 
   if (componentSource.capabilities?.catalog?.resolve) {
     try {
-      const result = await componentSource.resolveComponents(userId, unique);
+      const result = await componentSource.resolveComponents(userId, expandedQueries);
       const text = unwrapMcpToolText(result);
       for (const res of parseResolveComponentsText(text)) {
         const moduleId = resolutionToModuleId(res);
@@ -224,7 +524,7 @@ export async function resolveComponentNamesToHits(
   if (!catalog) return map;
 
   for (const name of unresolved) {
-    const hit = fuzzyMatchModuleInCatalog(name, catalog);
+    const hit = fuzzyMatchModuleWithAliases(name, catalog);
     if (hit) storeHit(name, hit);
   }
 
@@ -305,29 +605,27 @@ export function parseSearchModulesHits(
 
   try {
     const parsed = JSON.parse(trimmed) as unknown;
-    const list = Array.isArray(parsed)
-      ? parsed
-      : parsed && typeof parsed === "object" && Array.isArray((parsed as { hits?: unknown }).hits)
-        ? (parsed as { hits: unknown[] }).hits
-        : parsed && typeof parsed === "object" && Array.isArray((parsed as { modules?: unknown }).modules)
-          ? (parsed as { modules: unknown[] }).modules
-          : [];
+    const list = extractCatalogListArray(parsed) ?? [];
     const hits: Array<{ id: string; name?: string }> = [];
     for (const item of list) {
-      if (!item || typeof item !== "object") continue;
-      const id =
-        (item as { id?: string; moduleId?: string }).id ??
-        (item as { moduleId?: string }).moduleId;
-      if (typeof id === "string" && id.trim()) {
-        hits.push({
-          id: id.trim(),
-          name: typeof (item as { name?: string }).name === "string" ? (item as { name: string }).name : undefined,
-        });
-      }
+      const id = readCatalogEntryId(item);
+      if (!id) continue;
+      const title =
+        item && typeof item === "object" && typeof (item as { title?: string }).title === "string"
+          ? (item as { title: string }).title
+          : undefined;
+      const label =
+        item && typeof item === "object" && typeof (item as { name?: string }).name === "string"
+          ? (item as { name: string }).name
+          : undefined;
+      hits.push({
+        id,
+        name: title ?? (label !== id ? label : undefined),
+      });
     }
     return hits;
   } catch {
-    return [];
+    return parseRegistryMarkdownCatalogHits(trimmed);
   }
 }
 
@@ -348,6 +646,19 @@ export function pickBestSearchHit(
   }
   for (const hit of hits) {
     if (catalogIds.has(hit.id)) return hit.id;
+  }
+  return null;
+}
+
+/** pickBestSearchHit with alias expansion (tries each candidate query). */
+export function pickBestSearchHitWithAliases(
+  name: string,
+  searchText: string,
+  catalogIds: Set<string>,
+): string | null {
+  for (const query of expandWireframeResolveQueries(name)) {
+    const hit = pickBestSearchHit(query, searchText, catalogIds);
+    if (hit) return hit;
   }
   return null;
 }
@@ -373,11 +684,20 @@ export async function resolvePreviewModuleId(
     return { moduleId: picked.moduleId, exportName, source: picked.source };
   }
 
-  const searchQueries = [
-    componentName.trim(),
-    exportName?.trim(),
-    stripMarkdownCell(tableModuleId),
-  ].filter((q, i, arr) => q && arr.indexOf(q) === i) as string[];
+  const searchQueries: string[] = [];
+  const seenQueries = new Set<string>();
+  const pushSearchQuery = (q: string) => {
+    const trimmed = q.trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seenQueries.has(key)) return;
+    seenQueries.add(key);
+    searchQueries.push(trimmed);
+  };
+  for (const q of expandWireframeResolveQueries(componentName)) pushSearchQuery(q);
+  if (exportName?.trim()) {
+    for (const q of expandWireframeResolveQueries(exportName.trim())) pushSearchQuery(q);
+  }
+  pushSearchQuery(stripMarkdownCell(tableModuleId));
 
   for (const query of searchQueries) {
     if (searchCache.has(query)) {
@@ -907,6 +1227,69 @@ function formatPropsCell(props: unknown): string {
   }
 }
 
+/** Hyphen slug from a screen title (matches `reconstructScreensFromWireframes` fallback ids). */
+export function wireframeScreenIdSlug(name: string): string {
+  return (
+    stripMarkdownCell(name)
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "screen"
+  );
+}
+
+/** Normalized display name for matching `## Pantalla:` headers to analyzer screen names. */
+export function wireframeScreenNameKey(name: string): string {
+  return stripMarkdownCell(name)
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .normalize("NFC")
+    .trim()
+    .toLowerCase()
+    .replace(/^pantalla:\s*/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function lookupScreenMappings(
+  byScreenId: Map<string, ComponentMapping[]>,
+  options: {
+    markdownScreenId?: string;
+    pantallaName?: string;
+    screens?: ScreenDefinition[];
+  },
+): ComponentMapping[] | undefined {
+  const { markdownScreenId, pantallaName, screens } = options;
+
+  if (markdownScreenId) {
+    const hit = byScreenId.get(markdownScreenId);
+    if (hit?.length) return hit;
+  }
+
+  if (pantallaName?.trim()) {
+    const slugFromTitle = wireframeScreenIdSlug(pantallaName);
+    const bySlug = byScreenId.get(slugFromTitle);
+    if (bySlug?.length) return bySlug;
+
+    const nameKey = wireframeScreenNameKey(pantallaName);
+    for (const screen of screens ?? []) {
+      if (wireframeScreenNameKey(screen.name) === nameKey) {
+        const hit = byScreenId.get(screen.id.trim());
+        if (hit?.length) return hit;
+      }
+    }
+
+    for (const [screenId, list] of byScreenId) {
+      if (wireframeScreenNameKey(screenId.replace(/-/g, " ")) === nameKey) {
+        return list;
+      }
+    }
+  }
+
+  return undefined;
+}
+
 function buildDsTableMarkdown(mappings: ComponentMapping[]): string {
   const lines = [
     "### Componentes del Design System",
@@ -931,6 +1314,7 @@ function buildDsTableMarkdown(mappings: ComponentMapping[]): string {
 export function injectWireframeComponentTables(
   markdown: string,
   mappings: ComponentMapping[],
+  screens?: ScreenDefinition[],
 ): string {
   if (!mappings.length) return markdown;
 
@@ -956,9 +1340,15 @@ export function injectWireframeComponentTables(
     const start = starts[i];
     const end = i + 1 < starts.length ? starts[i + 1] : markdown.length;
     let section = markdown.slice(start, end);
+    const titleMatch = section.match(/^## Pantalla:\s*(.+)$/m);
+    const pantallaName = titleMatch?.[1]?.trim() ?? "";
     const idMatch = section.match(/\*\*ID\*\*:\s*`([^`]+)`/);
-    const screenId = idMatch?.[1]?.trim();
-    const screenMappings = screenId ? byScreenId.get(screenId) : undefined;
+    const markdownScreenId = idMatch?.[1]?.trim();
+    const screenMappings = lookupScreenMappings(byScreenId, {
+      markdownScreenId,
+      pantallaName,
+      screens,
+    });
 
     if (screenMappings?.length) {
       const tableBlock = buildDsTableMarkdown(screenMappings);
@@ -997,7 +1387,7 @@ export async function reconcileComponentMappings(
 
   return mappings.map((m) => {
     const name = normalizeComponentKey(m.requiredComponent);
-    const resolved =
+    let resolved =
       lookupResolveModuleId(resolveMap, m.requiredComponent, name) ??
       resolveMap.get(name.toLowerCase());
     const current = m.mcpModuleId?.trim() ?? "";
@@ -1005,14 +1395,39 @@ export async function reconcileComponentMappings(
     let mcpModuleId = current;
     let matchConfidence = m.matchConfidence;
 
+    const aliasHit =
+      !resolved && name
+        ? fuzzyMatchModuleWithAliases(name, catalogText)
+        : undefined;
+    if (!resolved && aliasHit?.moduleId) {
+      resolved = aliasHit.moduleId;
+    }
+
     if (resolved) {
       mcpModuleId = resolved;
-      if (matchConfidence === "none") matchConfidence = catalogIds.has(resolved) ? "exact" : "partial";
-    } else if (current && !catalogIds.has(current)) {
-      matchConfidence = "none";
+      if (matchConfidence === "none") {
+        matchConfidence = catalogIds.has(resolved) ? "exact" : "partial";
+      }
+    } else if (current && catalogIds.has(current)) {
       mcpModuleId = current;
+      if (matchConfidence === "none") {
+        matchConfidence = "exact";
+      }
+    } else if (current && !catalogIds.has(current)) {
+      if (aliasHit?.moduleId && catalogIds.has(aliasHit.moduleId)) {
+        mcpModuleId = aliasHit.moduleId;
+        matchConfidence = aliasHit.status === "exact_module" ? "exact" : "partial";
+      } else {
+        matchConfidence = "none";
+        mcpModuleId = current;
+      }
     } else if (!current && !resolved) {
-      matchConfidence = "none";
+      if (aliasHit?.moduleId && catalogIds.has(aliasHit.moduleId)) {
+        mcpModuleId = aliasHit.moduleId;
+        matchConfidence = aliasHit.status === "exact_module" ? "exact" : "partial";
+      } else {
+        matchConfidence = "none";
+      }
     }
 
     return { ...m, mcpModuleId: mcpModuleId || null, matchConfidence };

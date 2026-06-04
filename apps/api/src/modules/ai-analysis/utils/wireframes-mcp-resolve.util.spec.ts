@@ -1,21 +1,31 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  expandWireframeResolveQueries,
   findBatchPreviewEntry,
   fuzzyMatchModuleInCatalog,
+  fuzzyMatchModuleWithAliases,
+  getWireframeAliasCandidates,
+  injectWireframeComponentTables,
   normalizeComponentKey,
   normalizeHostedPreviewRow,
+  normalizeWireframeAliasKey,
   parseCatalogPreviewCapabilities,
   parseComponentCodeText,
   parseHostedPreviewBatchText,
   parseProductionSnippetText,
   pickBestSearchHit,
+  pickBestSearchHitWithAliases,
   pickModuleIdForPreview,
   pickPreviewExportName,
   previewCacheKey,
+  reconcileComponentMappings,
   resolveComponentNamesToHits,
   sanitizePreviewSandbox,
   shouldFallbackFromProductionSnippet,
+  validateCatalogListText,
+  wireframeNameToKebabModuleId,
+  wireframeScreenIdSlug,
 } from "./wireframes-mcp-resolve.util.js";
 
 describe("wireframes-mcp-resolve", () => {
@@ -180,6 +190,61 @@ describe("wireframes-mcp-resolve", () => {
     assert.equal(fuzzyMatchModuleInCatalog("Text Field", catalog)?.moduleId, "TextField");
   });
 
+  it("validateCatalogListText accepts modules JSON with ids", () => {
+    const result = validateCatalogListText(
+      JSON.stringify({ modules: [{ id: "Button" }, { id: "Input" }] }),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.moduleCount, 2);
+  });
+
+  it("validateCatalogListText rejects GitMCP plain-text documentation response", () => {
+    const result = validateCatalogListText("No documentation found.");
+    assert.equal(result.ok, false);
+    assert.match(result.reason ?? "", /fetch_ui_documentation|documentación/i);
+  });
+
+  it("validateCatalogListText accepts shadcn registry markdown", () => {
+    const sample = `Found 414 items in registries @shadcn:
+
+- button (registry:ui) [@shadcn]
+- alert-dialog (registry:ui) [@shadcn]
+- index (registry:style) [@shadcn]
+`;
+    const result = validateCatalogListText(sample);
+    assert.equal(result.ok, true);
+    assert.equal(result.moduleCount, 2);
+  });
+
+  it("fuzzyMatchModuleInCatalog matches shadcn kebab ids", () => {
+    const sample = "- button (registry:ui) [@shadcn]\n- alert (registry:ui) [@shadcn]\n";
+    assert.equal(fuzzyMatchModuleInCatalog("Button", sample)?.moduleId, "button");
+    assert.equal(fuzzyMatchModuleInCatalog("Alert", sample)?.moduleId, "alert");
+  });
+
+  it("validateCatalogListText rejects JSON without module ids", () => {
+    const result = validateCatalogListText(JSON.stringify({ fileUsed: "unknown" }));
+    assert.equal(result.ok, false);
+    assert.match(result.reason ?? "", /ids de módulo/i);
+  });
+
+  it("validateCatalogListText accepts Magic UI listRegistryItems JSON (items[].name)", () => {
+    const sample = JSON.stringify({
+      total: 2,
+      limit: 25,
+      offset: 0,
+      hasMore: false,
+      items: [
+        { name: "marquee", title: "Marquee", kind: "component" },
+        { name: "bento-grid", title: "Bento Grid", kind: "component" },
+      ],
+    });
+    const result = validateCatalogListText(sample);
+    assert.equal(result.ok, true);
+    assert.equal(result.moduleCount, 2);
+    assert.equal(fuzzyMatchModuleInCatalog("Marquee", sample)?.moduleId, "marquee");
+  });
+
   it("resolveComponentNamesToHits falls back to catalog.list when resolve missing", async () => {
     const catalog = JSON.stringify({ modules: [{ id: "Alert", name: "Alert" }] });
     const port = {
@@ -191,5 +256,210 @@ describe("wireframes-mcp-resolve", () => {
 
     const hits = await resolveComponentNamesToHits(port, "user-1", ["Alert"]);
     assert.equal(hits.get("Alert")?.moduleId, "Alert");
+  });
+
+  describe("wireframe component aliases", () => {
+    const shadcnCatalog = `- dialog (registry:ui) [@shadcn]
+- alert-dialog (registry:ui) [@shadcn]
+- calendar (registry:ui) [@shadcn]
+- popover (registry:ui) [@shadcn]
+- input (registry:ui) [@shadcn]
+- table (registry:ui) [@shadcn]
+- breadcrumb (registry:ui) [@shadcn]
+- spinner (registry:ui) [@shadcn]
+- alert (registry:ui) [@shadcn]
+`;
+
+    it("normalizeWireframeAliasKey is case-insensitive and strips separators", () => {
+      assert.equal(normalizeWireframeAliasKey("DatePicker"), "datepicker");
+      assert.equal(normalizeWireframeAliasKey("Text Input"), "textinput");
+      assert.equal(normalizeWireframeAliasKey("data-table"), "datatable");
+    });
+
+    it("wireframeNameToKebabModuleId converts PascalCase", () => {
+      assert.equal(wireframeNameToKebabModuleId("DatePicker"), "date-picker");
+      assert.equal(wireframeNameToKebabModuleId("Alert"), "alert");
+    });
+
+    it("expandWireframeResolveQueries includes original, kebab, and aliases", () => {
+      const modalQueries = expandWireframeResolveQueries("Modal");
+      assert.ok(modalQueries.includes("Modal"));
+      assert.ok(modalQueries.includes("dialog"));
+      assert.ok(modalQueries.includes("alert-dialog"));
+
+      const dateQueries = expandWireframeResolveQueries("DatePicker");
+      assert.ok(dateQueries.includes("DatePicker"));
+      assert.ok(dateQueries.includes("date-picker"));
+      assert.ok(dateQueries.includes("calendar"));
+    });
+
+    it("getWireframeAliasCandidates returns ordered candidates", () => {
+      assert.deepEqual(getWireframeAliasCandidates("DatePicker"), ["calendar", "popover"]);
+      assert.deepEqual(getWireframeAliasCandidates("Illustration"), []);
+    });
+
+    it("fuzzyMatchModuleWithAliases maps Modal → dialog", () => {
+      assert.equal(fuzzyMatchModuleWithAliases("Modal", shadcnCatalog)?.moduleId, "dialog");
+    });
+
+    it("fuzzyMatchModuleWithAliases maps DatePicker → calendar", () => {
+      assert.equal(fuzzyMatchModuleWithAliases("DatePicker", shadcnCatalog)?.moduleId, "calendar");
+    });
+
+    it("fuzzyMatchModuleWithAliases maps TextInput → input", () => {
+      assert.equal(fuzzyMatchModuleWithAliases("TextInput", shadcnCatalog)?.moduleId, "input");
+    });
+
+    it("fuzzyMatchModuleWithAliases maps DataTable → table", () => {
+      assert.equal(fuzzyMatchModuleWithAliases("DataTable", shadcnCatalog)?.moduleId, "table");
+    });
+
+    it("fuzzyMatchModuleWithAliases maps Breadcrumbs → breadcrumb", () => {
+      assert.equal(fuzzyMatchModuleWithAliases("Breadcrumbs", shadcnCatalog)?.moduleId, "breadcrumb");
+    });
+
+    it("fuzzyMatchModuleWithAliases resolves PascalCase Alert via kebab", () => {
+      assert.equal(fuzzyMatchModuleWithAliases("Alert", shadcnCatalog)?.moduleId, "alert");
+    });
+
+    it("pickBestSearchHitWithAliases tries alias candidates", () => {
+      const catalogIds = new Set(["dialog", "calendar", "input"]);
+      const searchJson = JSON.stringify({
+        hits: [{ id: "dialog", name: "Dialog" }],
+      });
+      assert.equal(pickBestSearchHitWithAliases("Modal", searchJson, catalogIds), "dialog");
+    });
+
+    it("resolveComponentNamesToHits maps aliases back to original name", async () => {
+      const catalog = shadcnCatalog;
+      const port = {
+        capabilities: { catalog: { list: true } },
+        listModules: async () => ({
+          content: [{ type: "text", text: catalog }],
+        }),
+      } as unknown as import("@theforge/component-source").ComponentSourcePort;
+
+      const hits = await resolveComponentNamesToHits(port, "user-1", ["Modal", "TextInput"]);
+      assert.equal(hits.get("Modal")?.moduleId, "dialog");
+      assert.equal(hits.get("TextInput")?.moduleId, "input");
+    });
+  });
+
+  describe("injectWireframeComponentTables", () => {
+    const modalMapping = {
+      screenId: "crear-clave-maestra",
+      requiredComponent: "Modal",
+      mcpModuleId: "dialog",
+      mcpExportName: "Dialog",
+      mcpProps: null,
+      compositionRecipe: null,
+      matchConfidence: "exact" as const,
+      fallbackSuggestion: null,
+    };
+
+    const baseMarkdown = `## Pantalla: Crear clave maestra
+**ID**: \`create-master-key\`
+**Descripción**: Pantalla de alta de clave maestra
+
+### Wireframe
+\`\`\`
+┌──────────────┐
+│   Modal      │
+└──────────────┘
+\`\`\`
+
+### Componentes del Design System
+| Componente requerido | Módulo DS | Export | Confianza | Props principales |
+|---|---|---|---|---|
+| Modal | — | — | none | — |
+
+### Navegación
+- → dashboard: Continuar
+`;
+
+    it("wireframeScreenIdSlug matches Spanish screen titles", () => {
+      assert.equal(wireframeScreenIdSlug("Crear clave maestra"), "crear-clave-maestra");
+    });
+
+    it("replaces LLM table when markdown ID differs but title slug matches mapping screenId", () => {
+      const result = injectWireframeComponentTables(baseMarkdown, [modalMapping]);
+      assert.match(result, /\| Modal \| dialog \| Dialog \| exact \|/);
+      assert.doesNotMatch(result, /\| Modal \| — \|/);
+    });
+
+    it("resolves mappings via analyzer screen name when IDs differ entirely", () => {
+      const mapping = { ...modalMapping, screenId: "screen-analyzer-42" };
+      const screens = [
+        {
+          id: "screen-analyzer-42",
+          name: "Crear clave maestra",
+          description: "",
+          sourceUseCases: [],
+          sourceUserStories: [],
+          requiredComponents: ["Modal"],
+          navigationFlow: [],
+        },
+      ];
+      const result = injectWireframeComponentTables(baseMarkdown, [mapping], screens);
+      assert.match(result, /\| Modal \| dialog \| Dialog \| exact \|/);
+    });
+  });
+
+  describe("reconcileComponentMappings", () => {
+    const shadcnCatalog = `- dialog (registry:ui) [@shadcn]
+- input (registry:ui) [@shadcn]
+- alert (registry:ui) [@shadcn]
+`;
+
+    const port = {
+      capabilities: { catalog: { list: true } },
+      listModules: async () => ({
+        content: [{ type: "text", text: shadcnCatalog }],
+      }),
+    } as unknown as import("@theforge/component-source").ComponentSourcePort;
+
+    it("upgrades none → exact when mcpModuleId is already in catalog", async () => {
+      const reconciled = await reconcileComponentMappings(
+        port,
+        "user-1",
+        [
+          {
+            screenId: "crear-clave-maestra",
+            requiredComponent: "Modal",
+            mcpModuleId: "dialog",
+            mcpExportName: "Dialog",
+            mcpProps: null,
+            compositionRecipe: null,
+            matchConfidence: "none",
+            fallbackSuggestion: null,
+          },
+        ],
+        shadcnCatalog,
+      );
+      assert.equal(reconciled[0]?.mcpModuleId, "dialog");
+      assert.equal(reconciled[0]?.matchConfidence, "exact");
+    });
+
+    it("resolves Modal → dialog via alias when module id is missing", async () => {
+      const reconciled = await reconcileComponentMappings(
+        port,
+        "user-1",
+        [
+          {
+            screenId: "crear-clave-maestra",
+            requiredComponent: "Modal",
+            mcpModuleId: null,
+            mcpExportName: null,
+            mcpProps: null,
+            compositionRecipe: null,
+            matchConfidence: "none",
+            fallbackSuggestion: null,
+          },
+        ],
+        shadcnCatalog,
+      );
+      assert.equal(reconciled[0]?.mcpModuleId, "dialog");
+      assert.equal(reconciled[0]?.matchConfidence, "exact");
+    });
   });
 });

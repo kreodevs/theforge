@@ -7,12 +7,14 @@ import { COMPONENT_MAPPER_PROMPT } from "../prompts/wireframes/wireframes-prompt
 import { componentMappingSchema, type WireframesStateType } from "../state/index.js";
 import { parseJsonOrThrow } from "../utils/parse-json.js";
 import {
+  expandWireframeResolveQueries,
   extractCatalogModuleIds,
-  fuzzyMatchModuleInCatalog,
+  fuzzyMatchModuleWithAliases,
   parseResolveComponentsText,
   reconcileComponentMappings,
   resolutionToModuleId,
   unwrapMcpToolText,
+  validateCatalogListText,
 } from "../utils/wireframes-mcp-resolve.util.js";
 import { formatDesignSystemContextBlock } from "../utils/wireframe-design-system-context.util.js";
 import type { ComponentSourcePort, McpToolResult } from "@theforge/component-source";
@@ -183,14 +185,19 @@ async function fetchModuleCatalog(
     );
   }
 
+  const validation = validateCatalogListText(text);
   const sampleIds = [...extractCatalogModuleIds(text)].slice(0, 25);
-  console.log(
-    `\x1b[32m[Wireframes/MCP] list_modules OK (${text.length} chars, sampleIds=${sampleIds.length}: ${sampleIds.slice(0, 12).join(", ")}${sampleIds.length > 12 ? "…" : ""})\x1b[0m`,
-  );
-  if (sampleIds.length === 0) {
-    console.log(`\x1b[33m[Wireframes/MCP] list_modules: no se pudieron extraer ids del catálogo. preview=${text.slice(0, 200)}\x1b[0m`);
+  if (validation.ok) {
+    console.log(
+      `\x1b[32m[Wireframes/MCP] list_modules OK (${text.length} chars, sampleIds=${sampleIds.length}: ${sampleIds.slice(0, 12).join(", ")}${sampleIds.length > 12 ? "…" : ""})\x1b[0m`,
+    );
+  } else {
+    console.log(
+      `\x1b[33m[Wireframes/MCP] list_modules: catálogo inválido. preview=${validation.preview}\x1b[0m`,
+    );
     throw new Error(
-      "El catálogo MCP no devolvió módulos reconocibles. Revisa el mapeo catalog.list del perfil.",
+      validation.reason ??
+        "El catálogo MCP no devolvió módulos reconocibles. Revisa el mapeo catalog.list del perfil.",
     );
   }
   return text;
@@ -214,12 +221,36 @@ async function batchResolveComponents(
 
   console.log(`\x1b[36m[Wireframes/MCP] Batch resolving ${uniqueNames.length} component names…\x1b[0m`);
 
+  const expandedQueries = [...new Set(
+    uniqueNames.flatMap((name) => expandWireframeResolveQueries(name)),
+  )];
+
   if (componentSource.capabilities?.catalog?.resolve) {
     try {
-      const result = await componentSource.resolveComponents(userId, uniqueNames);
+      const result = await componentSource.resolveComponents(userId, expandedQueries);
       const text = unwrapMcpToolText(result);
       console.log(`\x1b[32m[Wireframes/MCP] Batch resolve OK (${text.length} chars)\x1b[0m`);
-      return text;
+      const resolvedByQuery = new Map(
+        parseResolveComponentsText(text)
+          .filter((r) => r.query?.trim())
+          .map((r) => [r.query!.trim().toLowerCase(), r]),
+      );
+      const results = uniqueNames.map((query) => {
+        for (const candidate of expandWireframeResolveQueries(query)) {
+          const hit = resolvedByQuery.get(candidate.toLowerCase());
+          const moduleId = hit ? resolutionToModuleId(hit) : null;
+          if (moduleId) {
+            return {
+              query,
+              moduleId,
+              exportName: hit!.exportName,
+              status: hit!.status ?? ("exact_module" as const),
+            };
+          }
+        }
+        return { query, status: "not_found" as const };
+      });
+      return JSON.stringify({ results });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.log(`\x1b[31m[Wireframes/MCP] Batch resolve failed: ${errMsg}\x1b[0m`);
@@ -227,7 +258,7 @@ async function batchResolveComponents(
   }
 
   const results = uniqueNames.map((query) => {
-    const hit = fuzzyMatchModuleInCatalog(query, moduleCatalog);
+    const hit = fuzzyMatchModuleWithAliases(query, moduleCatalog);
     if (!hit) {
       return { query, status: "not_found" as const };
     }
@@ -252,6 +283,7 @@ export function createComponentMapperNode(
   mcpTools: StructuredToolInterface[],
   componentSource: ComponentSourcePort,
   userId: string,
+  dsRefresh = false,
 ) {
   const toolsByName = buildToolsByName(mcpTools);
   const llmWithTools = llm.bindTools ? (mcpTools.length > 0 ? llm.bindTools(mcpTools) : llm) : llm;
@@ -259,9 +291,13 @@ export function createComponentMapperNode(
   return async (state: WireframesStateType): Promise<Partial<WireframesStateType>> => {
     const iteration = state.iterationCount ?? 0;
     const isRevision = iteration > 0;
-    const stepNum = isRevision ? 4 + iteration : 2;
-    const totalSteps = isRevision ? 4 + iteration * 2 : 4;
-    const label = isRevision ? "Re-mapeando componentes" : "Mapeando componentes del design system vía MCP";
+    const stepNum = dsRefresh ? 1 : isRevision ? 4 + iteration : 2;
+    const totalSteps = dsRefresh ? 2 : isRevision ? 4 + iteration * 2 : 4;
+    const label = dsRefresh
+      ? "Re-mapeando componentes (DS)"
+      : isRevision
+        ? "Re-mapeando componentes"
+        : "Mapeando componentes del design system vía MCP";
     const t0 = performance.now();
     console.log(`\x1b[36m[Wireframes] ▶ Step ${stepNum}/${totalSteps}: ${label} (userId=${userId.slice(0, 8)}…, screens=${state.screens.length})\x1b[0m`);
 
