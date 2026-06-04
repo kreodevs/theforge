@@ -5,7 +5,7 @@
 | **WorkshopDocTextarea** | Editor markdown del Workshop: no aplica `value` externo mientras tiene foco (autoguardado transparente). Usado en Fase 0, Benchmark, `StandardDocPanel`, `UxUiGuidePanel`. |
 | **MddViewer** | Preview markdown (Fase 0, MDD, BRD): normaliza bloques `mermaid` al pintar (`normalizeMermaidInDocument`), render sin `<pre>` envolviendo el SVG, y `prepareMermaidForRender` separa viñetas pegadas dentro del fence. |
 | **DashboardSidebar** | En Workshop, «Panel de proyectos» queda `disabled` mientras `selectWorkshopAgentsBusy` (mismo criterio que el chat). |
-| **MddPatternsWizardDialog** | Wizard SSOT de patrones (`mode: initial \| edit`). **initial:** antes de la primera generación; persiste skeleton y lanza el stream. **edit:** fusiona solo `[ARQUITECTURA - SECCIÓN INMUTABLE]` vía `updateMddGovernancePatterns` sin regenerar §1–§7; dispara `persistAndReviewMdd`. Acceso: botón «Editar patrones (SSOT)» y menú ⋮ en pestaña MDD. |
+| **MddPatternsWizardDialog** | Wizard SSOT (`initial \| edit`). Antes de abrir: `POST …/mdd/suggest-governance-patterns` (DBGA, benchmark, BRD). Al confirmar: MDD solo con patrones `[X]` + `POST …/mdd/record-governance-pattern-adrs`. |
 | **ProviderInstancesCard** | CRUD/listado de instancias de proveedor IA; marca la instancia **Activa** (runtime del grafo MDD y chat). En el modal, **Modelo de auditor** opcional (`auditorChatModel`) para el nodo Auditor MDD. |
 | **AccountConfigCard** | Ajustes → Cuenta: secret MCP rotable y preferencias del taller. |
 | **McpSecretCard** | Re-export de `AccountConfigCard` (compat). |

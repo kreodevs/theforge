@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   applyPatternSelectionsToWizardBody,
+  buildGovernanceBodySelectedOnly,
   buildMddWithGovernanceSkeleton,
   ensureMddGovernanceSection,
   extractGovernanceSection,
@@ -33,6 +34,16 @@ describe("mdd-governance-patterns", () => {
     assert.ok(active[0]!.label.includes("Hexagonal"));
     const block = formatActivePatternsPromptBlock(mdd);
     assert.match(block, /Hexagonal/);
+  });
+
+  it("buildGovernanceBodySelectedOnly omite patrones no seleccionados", () => {
+    const hex = optsId("Arquitectura Hexagonal (Ports & Adapters)");
+    const micro = optsId("Microservicios");
+    const body = buildGovernanceBodySelectedOnly(new Set([hex, micro]));
+    assert.ok(!body.includes("[ ]"));
+    assert.match(body, /Hexagonal/);
+    assert.match(body, /Microservicios/);
+    assert.ok(!body.includes("Singleton"));
   });
 
   it("updateMddGovernancePatterns conserva §1–§7 y cambia solo [X]", () => {

@@ -1529,6 +1529,47 @@ export class AiAnalysisService {
     return this.graphMemory.getDecisionsByProject(projectId);
   }
 
+  /** Preselección de patrones SSOT a partir de DBGA (Fase 0), resumen benchmark y BRD. */
+  async suggestGovernancePatterns(projectId: string, stageId?: string) {
+    const project = await this.projects.findOne(projectId);
+    const stages = project.stages ?? [];
+    const stage =
+      (stageId?.trim() && stages.find((s) => s.id === stageId.trim())) ||
+      pickPrimaryStage(stages);
+    const { suggestGovernancePatternIds } = await import(
+      "./utils/suggest-mdd-governance-patterns.util.js"
+    );
+    const userId = await this.resolveUserId(projectId);
+    const llm = await createDbgaLLM(this.aiFactory, userId);
+    return suggestGovernancePatternIds(llm, {
+      dbgaContent: (project.dbgaContent ?? "").trim(),
+      phase0SummaryContent: (project.phase0SummaryContent ?? "").trim(),
+      brdContent: (stage?.brdContent ?? "").trim(),
+    });
+  }
+
+  /** Registra cada patrón [X] del wizard como ADR en el grafo del proyecto. */
+  async recordGovernancePatternAdrs(
+    projectId: string,
+    patterns: Array<{ label: string; group: string; affects: string; description: string }>,
+  ) {
+    for (const p of patterns) {
+      await this.graphMemory.saveDecision(projectId, {
+        title: `Patrón SSOT: ${p.label}`,
+        context: `Selección en el wizard del MDD (grupo: ${p.group}). Derivada del análisis de Fase 0 / Benchmark / BRD.`,
+        consequence: [
+          p.description,
+          p.affects ? `Afecta a: ${p.affects}` : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .slice(0, 2000),
+        status: "Accepted",
+      });
+    }
+    return this.graphMemory.getDecisionsByProject(projectId);
+  }
+
   /** Persiste trail/breakdown/gaps del pipeline MDD para rehidratar el modal tras recargar. */
   private persistMddAuditSnapshot(
     projectId: string | undefined,
