@@ -1,11 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   repairBulletedYamlLines,
   repairFalseDockerfileHeadings,
   repairInfraMarkdown,
 } from "./repair-infra-markdown.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
+
+const fixtureDir = dirname(fileURLToPath(import.meta.url));
+const infraFixture = readFileSync(join(fixtureDir, "repair-infra-markdown.fixture.txt"), "utf8");
 
 describe("repairFalseDockerfileHeadings", () => {
   it("convierte ### WORKDIR en instrucción Docker", () => {
@@ -90,5 +96,20 @@ NODE_ENV=development`;
     const out = formatDocumentMarkdown(doc);
     assert.match(out, /```yaml[\s\S]*backend:[\s\S]*image: node:20-alpine/);
     assert.match(out, /```env[\s\S]*NODE_ENV=development/);
+  });
+
+  it("repara fixture realista LLM (dockerfile/nginx/compose/env)", () => {
+    const out = repairInfraMarkdown(infraFixture);
+    assert.match(out, /```dockerfile[\s\S]*CMD \["node"[\s\S]*```[\s\S]*\*\*Características/);
+    assert.match(out, /```nginx[\s\S]*proxy_pass[\s\S]*```[\s\S]*---/);
+    assert.match(out, /```yaml[\s\S]*postgres:[\s\S]*image: postgres:16-alpine/);
+    assert.match(out, /^\s{2}redis:/m);
+    assert.match(out, /depends_on:/);
+    assert.doesNotMatch(out, /\*\*Notas:\*\*[\s\S]*```yaml/);
+    assert.match(out, /```env[\s\S]*NODE_ENV=development[\s\S]*```/);
+    for (const block of out.match(/```dockerfile[\s\S]*?```/g) ?? []) {
+      assert.doesNotMatch(block, /NODE_ENV=/);
+    }
+    assert.match(out, /```yaml[\s\S]*postgres_data:[\s\S]*```[\s\S]*- \*\*postgres_data/);
   });
 });
