@@ -1,9 +1,13 @@
 export type { ComponentSourcePort } from "./port.js";
 export { COMPONENT_SOURCE_PORT } from "./symbol.js";
 export type {
+  ComponentSourceCredentials,
+  ComponentSourceHttpCredentials,
+  ComponentSourceStdioCredentials,
   ComponentSourceUrlTokenCredentials,
   ComponentSourceCredentialResolver,
 } from "./credentials.js";
+export { isHttpCredentials, isStdioCredentials } from "./credentials.js";
 export type { ComponentSourcePlugin, ComponentSourcePluginMeta } from "./plugin.js";
 export { ComponentSourceError } from "./error.js";
 export { NullComponentSource, assertComponentSourceConfigured } from "./null-component-source.js";
