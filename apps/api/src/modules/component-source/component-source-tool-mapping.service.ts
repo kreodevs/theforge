@@ -9,6 +9,10 @@ import type { McpToolDefinition } from "@theforge/component-source-mcp";
 import { z } from "zod";
 import { AiService } from "../ai/ai.service.js";
 import { parseJsonOrThrow } from "../ai-analysis/utils/parse-json.js";
+import {
+  isDisallowedCatalogListTool,
+  resolveCatalogListToolName,
+} from "./catalog-list-tool.util.js";
 
 const COMPONENT_SOURCE_ROLES: ComponentSourceRole[] = [
   "catalog.list",
@@ -55,7 +59,9 @@ Responde SOLO con un objeto JSON válido (sin markdown ni texto extra).
 Cada rol presente debe tener { "toolName": "<nombre exacto en tools/list>", "description": "..." }.
 Usa únicamente nombres que existan en la lista de herramientas proporcionada.
 Si no hay herramienta equivalente para un rol opcional, omite esa clave.
-NUNCA omitas catalog.list si existe alguna herramienta de listado/catálogo.`;
+NUNCA omitas catalog.list si existe alguna herramienta de listado/catálogo.
+NUNCA mapees catalog.list a herramientas de documentación o búsqueda en repos (p. ej. fetch_*_documentation, search_*_documentation, search_*_code de GitMCP). Esas tools devuelven markdown o resultados de búsqueda, no un catálogo JSON con ids de módulos.
+catalog.list debe apuntar solo a tools que listen componentes/módulos del design system (list_modules, list_components, catalog, etc.).`;
 
 @Injectable()
 export class ComponentSourceToolMappingService {
@@ -117,11 +123,38 @@ Devuelve el JSON de mapeo role → { toolName, description? }.`;
     return this.validateAndNormalize(parsed, toolNames);
   }
 
+  /** Applies catalog.list heuristics before schema validation (doc/search tools are rejected). */
+  applyCatalogListHeuristic(
+    mapping: ComponentSourceToolMapping,
+    availableToolNames: string[],
+  ): ComponentSourceToolMapping {
+    const resolved = resolveCatalogListToolName(
+      mapping["catalog.list"]?.toolName,
+      availableToolNames,
+    );
+    if (!resolved.ok) {
+      throw new BadRequestException(resolved.reason);
+    }
+    if (resolved.correctedFrom) {
+      this.logger.warn(
+        `catalog.list corregido: "${resolved.correctedFrom}" → "${resolved.toolName}"`,
+      );
+    }
+    return {
+      ...mapping,
+      "catalog.list": {
+        ...mapping["catalog.list"],
+        toolName: resolved.toolName,
+      },
+    };
+  }
+
   validateAndNormalize(
     mapping: ComponentSourceToolMapping,
     availableToolNames: string[],
   ): ComponentSourceToolMapping {
-    const listTool = mapping["catalog.list"]?.toolName?.trim();
+    const withCatalog = this.applyCatalogListHeuristic(mapping, availableToolNames);
+    const listTool = withCatalog["catalog.list"]?.toolName?.trim();
     if (!listTool) {
       throw new BadRequestException(
         "El mapeo debe incluir catalog.list con toolName. No se encontró herramienta de listado en el MCP.",
@@ -135,16 +168,22 @@ Devuelve el JSON de mapeo role → { toolName, description? }.`;
       );
     }
 
+    if (isDisallowedCatalogListTool(listTool)) {
+      throw new BadRequestException(
+        `catalog.list no puede usar "${listTool}": es documentación o búsqueda en repo, no un catálogo de módulos DS.`,
+      );
+    }
+
     const normalized: ComponentSourceToolMapping = {
       "catalog.list": {
         toolName: listTool,
-        description: mapping["catalog.list"]?.description,
+        description: withCatalog["catalog.list"]?.description,
       },
     };
 
     for (const role of COMPONENT_SOURCE_ROLES) {
       if (role === "catalog.list") continue;
-      const entry = mapping[role];
+      const entry = withCatalog[role];
       const toolName = entry?.toolName?.trim();
       if (!toolName) continue;
       if (!available.has(toolName)) {

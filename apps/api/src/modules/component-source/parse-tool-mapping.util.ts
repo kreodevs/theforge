@@ -1,4 +1,5 @@
 import type { ComponentSourceRole, ComponentSourceToolMapping } from "@theforge/component-source";
+import { isDisallowedCatalogListTool } from "./catalog-list-tool.util.js";
 
 const OPTIONAL_ROLES: Exclude<ComponentSourceRole, "catalog.list">[] = [
   "catalog.search",
@@ -31,7 +32,7 @@ export function parseToolMappingFromJson(value: unknown): ComponentSourceToolMap
   if (!value || typeof value !== "object") return null;
 
   const catalogList = readMappedTool((value as Record<string, unknown>)["catalog.list"]);
-  if (!catalogList) return null;
+  if (!catalogList || isDisallowedCatalogListTool(catalogList.toolName)) return null;
 
   const mapping: ComponentSourceToolMapping = {
     "catalog.list": catalogList,

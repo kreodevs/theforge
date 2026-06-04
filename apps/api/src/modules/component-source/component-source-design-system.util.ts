@@ -14,6 +14,16 @@ export type ComponentSourceDesignSystemPayload = {
   designMd: string;
   tokens?: DesignSystemTokens;
   meta?: DesignSystemMeta;
+  /** Guía UX/UI persistida (mismo valor que designMd tras import). */
+  uxUiGuideContent?: string;
+  /** MDD actualizado solo en `## Design System (MCP)` si aplica. */
+  mddContent?: string;
+  /** BRD de etapa actualizado solo en esa sección si no hay MDD sustancial. */
+  brdContent?: string;
+  docSync?: {
+    target: "mdd" | "brd";
+    sectionHeading: string;
+  };
 };
 
 export function parseDesignSystemMcpPayload(

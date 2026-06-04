@@ -1,6 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 import {
   NullComponentSource,
+  isHttpCredentials,
+  isStdioCredentials,
   type ComponentSourcePlugin,
   type ComponentSourcePluginMeta,
   type ComponentSourcePort,
@@ -16,6 +18,18 @@ import {
   isConfirmedToolMapping,
   parseToolMappingFromJson,
 } from "./parse-tool-mapping.util.js";
+import { isDisallowedCatalogListTool } from "./catalog-list-tool.util.js";
+
+function profileHasConnection(profile: {
+  transportType: string;
+  url: string;
+  command: string | null;
+}): boolean {
+  if (profile.transportType?.trim() === "stdio") {
+    return Boolean(profile.command?.trim());
+  }
+  return Boolean(profile.url?.trim());
+}
 
 /** Nest DI token for ComponentSourceRegistry (optional injection in tests). */
 export const COMPONENT_SOURCE_REGISTRY = Symbol("COMPONENT_SOURCE_REGISTRY");
@@ -67,7 +81,9 @@ export class ComponentSourceRegistry {
           select: {
             id: true,
             pluginId: true,
+            transportType: true,
             url: true,
+            command: true,
             toolMapping: true,
             mappingConfirmedAt: true,
           },
@@ -86,9 +102,9 @@ export class ComponentSourceRegistry {
     }
 
     const profile = project.componentSourceProfile;
-    if (!project.componentSourceProfileId || !profile?.url?.trim()) {
+    if (!project.componentSourceProfileId || !profile || !profileHasConnection(profile)) {
       return {
-        profileId: null,
+        profileId: profile?.id ?? null,
         active: false,
         port: this.nullSource,
         ownerUserId: project.userId,
@@ -112,6 +128,25 @@ export class ComponentSourceRegistry {
 
     const toolMapping = parseToolMappingFromJson(profile.toolMapping);
     const mappingConfirmed = isConfirmedToolMapping(profile.mappingConfirmedAt, profile.toolMapping);
+    const catalogListTool = toolMapping?.["catalog.list"]?.toolName?.trim() ?? "";
+
+    if (
+      mappingConfirmed &&
+      toolMapping &&
+      catalogListTool &&
+      isDisallowedCatalogListTool(catalogListTool)
+    ) {
+      this.logger.warn(
+        `Profile ${profile.id.slice(0, 8)}… catalog.list="${catalogListTool}" is doc/search — re-map in settings`,
+      );
+      return {
+        profileId: profile.id,
+        active: false,
+        port: this.nullSource,
+        ownerUserId: project.userId,
+        mappingConfirmed: false,
+      };
+    }
 
     if (!mappingConfirmed || !toolMapping) {
       this.logger.warn(
@@ -186,8 +221,11 @@ export class ComponentSourceRegistry {
       };
     }
 
-    if (!credentials.url) {
+    if (isHttpCredentials(credentials) && !credentials.url.trim()) {
       return { ok: false, error: "URL es requerida" };
+    }
+    if (isStdioCredentials(credentials) && !credentials.command.trim()) {
+      return { ok: false, error: "Command es requerido para MCP stdio" };
     }
 
     const testResolver = async () => credentials;

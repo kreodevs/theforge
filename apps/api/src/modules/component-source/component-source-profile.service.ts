@@ -27,19 +27,27 @@ import { ComponentSourceMcpToolsService } from "./component-source-mcp-tools.ser
 import { ComponentSourceRegenerationService } from "./component-source-regeneration.service.js";
 import { ComponentSourceToolMappingService } from "./component-source-tool-mapping.service.js";
 import { parseToolMappingFromJson } from "./parse-tool-mapping.util.js";
-import type { ComponentSourceToolMapping } from "@theforge/component-source";
+import type { ComponentSourceCredentialResolver, ComponentSourceCredentials, ComponentSourceToolMapping } from "@theforge/component-source";
+import { createPluginInstance } from "./component-source.plugins.js";
+import { probeCatalogList } from "./catalog-list-probe.util.js";
+import type { CatalogListValidation } from "../ai-analysis/utils/wireframes-mcp-resolve.util.js";
 import { ComponentSourceRegistry } from "./component-source.registry.js";
 import {
   fetchFullDesignSystemFromPort,
   type ComponentSourceDesignSystemPayload,
 } from "./component-source-design-system.util.js";
+import { applyDesignSystemMcpToProjectDocs } from "./sync-design-system-doc-section.util.js";
 
 const profileSelect = {
   id: true,
   userId: true,
   name: true,
   pluginId: true,
+  transportType: true,
   url: true,
+  command: true,
+  args: true,
+  cwd: true,
   tokenCipher: true,
   tokenKeyVersion: true,
   toolMapping: true,
@@ -79,22 +87,37 @@ export class ComponentSourceProfileService {
     userId = getRequestUserId(),
   ): Promise<ComponentSourceProfilePublic> {
     const name = dto.name?.trim();
-    const url = dto.url?.trim();
     if (!name) throw new BadRequestException("El nombre del perfil es obligatorio");
-    if (!url) throw new BadRequestException("La URL del MCP es obligatoria");
 
+    const transportType = dto.transportType === "stdio" ? "stdio" : "http";
     const pluginId = normalizeComponentSourcePluginId(dto.pluginId) ?? "mcp";
     const data: Prisma.ComponentSourceProfileCreateInput = {
       user: { connect: { id: userId } },
       name,
       pluginId,
-      url,
+      transportType,
+      url: "",
       toolMapping: dto.toolMapping ?? undefined,
       capabilities: dto.capabilities ?? undefined,
       toolsListHash: dto.toolsListHash?.trim() || null,
       mappedAt: this.parseOptionalDate(dto.mappedAt),
       mappingConfirmedAt: this.parseOptionalDate(dto.mappingConfirmedAt),
     };
+
+    if (transportType === "stdio") {
+      const command = dto.command?.trim();
+      if (!command) {
+        throw new BadRequestException("El command es obligatorio para MCP stdio");
+      }
+      data.command = command;
+      data.args = this.normalizeArgsInput(dto.args);
+      data.cwd = dto.cwd?.trim() || null;
+      data.url = "";
+    } else {
+      const url = dto.url?.trim();
+      if (!url) throw new BadRequestException("La URL del MCP es obligatoria");
+      data.url = url;
+    }
 
     if (dto.token?.trim()) {
       const { ciphertext, keyVersion } = this.tokenCrypto.encrypt(dto.token.trim());
@@ -132,10 +155,36 @@ export class ComponentSourceProfileService {
     if (dto.pluginId !== undefined) {
       data.pluginId = normalizeComponentSourcePluginId(dto.pluginId) ?? "mcp";
     }
+    if (dto.transportType !== undefined) {
+      data.transportType = dto.transportType === "stdio" ? "stdio" : "http";
+    }
+    const effectiveTransport =
+      dto.transportType ??
+      (await this.prisma.componentSourceProfile.findUnique({
+        where: { id: profileId },
+        select: { transportType: true },
+      }))?.transportType ??
+      "http";
+
     if (dto.url !== undefined) {
       const url = dto.url.trim();
-      if (!url) throw new BadRequestException("La URL del MCP es obligatoria");
+      if (effectiveTransport === "http" && !url) {
+        throw new BadRequestException("La URL del MCP es obligatoria");
+      }
       data.url = url;
+    }
+    if (dto.command !== undefined) {
+      const command = dto.command.trim();
+      if (effectiveTransport === "stdio" && !command) {
+        throw new BadRequestException("El command es obligatorio para MCP stdio");
+      }
+      data.command = command || null;
+    }
+    if (dto.args !== undefined) {
+      data.args = this.normalizeArgsInput(dto.args);
+    }
+    if (dto.cwd !== undefined) {
+      data.cwd = dto.cwd?.trim() || null;
     }
     if (dto.token !== undefined && dto.token.trim()) {
       const { ciphertext, keyVersion } = this.tokenCrypto.encrypt(dto.token.trim());
@@ -268,6 +317,10 @@ export class ComponentSourceProfileService {
       url: dto.url,
       token: dto.token,
       useSaved: dto.useSaved ?? true,
+      transportType: dto.transportType,
+      command: dto.command,
+      args: dto.args,
+      cwd: dto.cwd,
     });
 
     const health = await this.mcpTools.checkHealth(credentials);
@@ -277,6 +330,22 @@ export class ComponentSourceProfileService {
 
     const urlChanged = Boolean(dto.url?.trim() && dto.url.trim() !== profile.url.trim());
     const tokenChanged = Boolean(dto.token?.trim());
+    const transportChanged = Boolean(
+      dto.transportType?.trim() && dto.transportType.trim() !== profile.transportType,
+    );
+    const commandChanged = Boolean(
+      dto.command?.trim() && dto.command.trim() !== (profile.command ?? "").trim(),
+    );
+    const argsChanged = Boolean(
+      dto.args &&
+        JSON.stringify(this.normalizeArgsInput(dto.args)) !==
+          JSON.stringify(this.normalizeArgsInput(this.parseStoredArgs(profile.args))),
+    );
+    const cwdChanged = Boolean(
+      dto.cwd !== undefined && (dto.cwd?.trim() ?? "") !== (profile.cwd ?? "").trim(),
+    );
+    const connectionChanged =
+      urlChanged || tokenChanged || transportChanged || commandChanged || argsChanged || cwdChanged;
 
     let listed;
     try {
@@ -294,7 +363,7 @@ export class ComponentSourceProfileService {
     );
     const mappingConfirmed = Boolean(profile.mappingConfirmedAt);
     const useHealthOnlyMode =
-      mappingConfirmed && !urlChanged && !tokenChanged && hashMatches;
+      mappingConfirmed && !connectionChanged && hashMatches;
 
     if (useHealthOnlyMode) {
       const mapping = parseToolMappingFromJson(profile.toolMapping);
@@ -324,6 +393,11 @@ export class ComponentSourceProfileService {
         previousMapping,
       });
       const capabilities = this.toolMappingService.inferCapabilities(proposedMapping);
+      const catalogProbe = await this.probeCatalogListForMapping(
+        credentials,
+        proposedMapping,
+        userId,
+      );
 
       return {
         mode: "mapping",
@@ -332,6 +406,7 @@ export class ComponentSourceProfileService {
         capabilities: capabilities as unknown as Record<string, unknown>,
         toolsListHash: listed.toolsListHash,
         service: health.service,
+        catalogProbe,
       };
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
@@ -358,6 +433,13 @@ export class ComponentSourceProfileService {
       dto.toolMapping as ComponentSourceToolMapping,
       availableToolNames,
     );
+    const catalogProbe = await this.probeCatalogListForMapping(credentials, mapping, userId);
+    if (!catalogProbe.ok) {
+      throw new BadRequestException(
+        catalogProbe.reason ??
+          "catalog.list no devolvió módulos reconocibles. Elige otra herramienta de catálogo.",
+      );
+    }
     const capabilities = this.toolMappingService.inferCapabilities(mapping);
     const toolsListHash = dto.toolsListHash?.trim() || listed.toolsListHash;
     const now = new Date();
@@ -398,8 +480,71 @@ export class ComponentSourceProfileService {
     }
 
     try {
-      return await fetchFullDesignSystemFromPort(ctx.port, ctx.ownerUserId);
+      const payload = await fetchFullDesignSystemFromPort(ctx.port, ctx.ownerUserId);
+      const project = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: {
+          componentSourceProfile: { select: { name: true } },
+          stages: {
+            orderBy: { ordinal: "asc" },
+            take: 1,
+            select: { id: true, mddContent: true, brdContent: true },
+          },
+        },
+      });
+      if (!project) throw new NotFoundException("Proyecto no encontrado");
+
+      const mainStage = project.stages[0];
+      const docSync = applyDesignSystemMcpToProjectDocs({
+        designMd: payload.designMd,
+        tokens: payload.tokens,
+        meta: payload.meta,
+        profileName: project.componentSourceProfile?.name ?? undefined,
+        mddContent: mainStage?.mddContent,
+        brdContent: mainStage?.brdContent,
+      });
+
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { uxUiGuideContent: payload.designMd },
+      });
+
+      if (mainStage) {
+        const stageData: { mddContent?: string; brdContent?: string } = {};
+        if (docSync.mddContent !== undefined) stageData.mddContent = docSync.mddContent;
+        if (docSync.brdContent !== undefined) stageData.brdContent = docSync.brdContent;
+        if (Object.keys(stageData).length > 0) {
+          await this.prisma.stage.update({
+            where: { id: mainStage.id },
+            data: stageData,
+          });
+        }
+      }
+
+      const result: ComponentSourceDesignSystemPayload = {
+        ...payload,
+        uxUiGuideContent: payload.designMd,
+        ...(docSync.mddContent !== undefined ? { mddContent: docSync.mddContent } : {}),
+        ...(docSync.brdContent !== undefined ? { brdContent: docSync.brdContent } : {}),
+        ...(docSync.target
+          ? {
+              docSync: {
+                target: docSync.target,
+                sectionHeading: docSync.sectionHeading,
+              },
+            }
+          : {}),
+      };
+
+      if (docSync.target) {
+        this.logger.log(
+          `fetchProjectDesignSystem: synced MCP section to ${docSync.target} project=${projectId.slice(0, 8)}…`,
+        );
+      }
+
+      return result;
     } catch (err) {
+      if (err instanceof NotFoundException) throw err;
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(
         `fetchProjectDesignSystem failed for project ${projectId.slice(0, 8)}…: ${message}`,
@@ -419,6 +564,27 @@ export class ComponentSourceProfileService {
       throw new BadRequestException(
         "Asigna un perfil de fuente de componentes al proyecto antes de usar wireframes.",
       );
+    }
+  }
+
+  private async probeCatalogListForMapping(
+    credentials: ComponentSourceCredentials,
+    mapping: ComponentSourceToolMapping,
+    userId: string,
+  ): Promise<CatalogListValidation> {
+    const resolver: ComponentSourceCredentialResolver = async () => credentials;
+    const port = createPluginInstance("mcp", resolver, mapping);
+    try {
+      return await probeCatalogList(port, userId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        moduleCount: 0,
+        shape: "error",
+        preview: "",
+        reason: `No se pudo ejecutar catalog.list: ${message}`,
+      };
     }
   }
 
@@ -451,11 +617,24 @@ export class ComponentSourceProfileService {
   private toPublic(
     row: Prisma.ComponentSourceProfileGetPayload<{ select: typeof profileSelect }>,
   ): ComponentSourceProfilePublic {
-    const { tokenCipher, tokenKeyVersion, userId: _userId, ...rest } = row;
+    const { tokenCipher, tokenKeyVersion, userId: _userId, args, ...rest } = row;
     return {
       ...rest,
+      args: this.parseStoredArgs(args),
       hasToken: !!tokenCipher,
     };
+  }
+
+  private normalizeArgsInput(args: string[] | undefined): string[] {
+    if (!args?.length) return [];
+    return args.map((entry) => entry.trim()).filter(Boolean);
+  }
+
+  private parseStoredArgs(value: Prisma.JsonValue | null | undefined): string[] {
+    if (!value || !Array.isArray(value)) return [];
+    return value
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter(Boolean);
   }
 
   private parseOptionalDate(value: string | null | undefined): Date | null {

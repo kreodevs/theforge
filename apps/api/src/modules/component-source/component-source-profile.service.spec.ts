@@ -10,6 +10,7 @@ import type { ComponentSourceMcpToolsService } from "./component-source-mcp-tool
 import type { ComponentSourceToolMappingService } from "./component-source-tool-mapping.service.js";
 import type { ComponentSourceRegenerationService } from "./component-source-regeneration.service.js";
 import type { ComponentSourceCredentialService } from "./component-source-credential.service.js";
+import type { ComponentSourceRegistry } from "./component-source.registry.js";
 
 const USER_ID = "user-cs-1";
 const PROFILE_ID = "profile-1";
@@ -33,7 +34,11 @@ function baseProfile(overrides: Record<string, unknown> = {}) {
     userId: USER_ID,
     name: "Orbita dev",
     pluginId: "mcp",
+    transportType: "http",
     url: "https://mcp.example.com",
+    command: null,
+    args: null,
+    cwd: null,
     tokenCipher: "cipher",
     tokenKeyVersion: 1,
     toolMapping: CONFIRMED_MAPPING,
@@ -104,13 +109,17 @@ function createMocks(options: {
   } as unknown as ComponentSourceRegenerationService;
 
   const credentialService = {
-    resolveForTest: async () => ({ url: "https://mcp.example.com", token: "tok" }),
-    resolveFromProfile: async () => ({ url: "https://mcp.example.com", token: "tok" }),
+    resolveForTest: async () =>
+      ({ transport: "http", url: "https://mcp.example.com", token: "tok" }) as const,
+    resolveFromProfile: async () =>
+      ({ transport: "http", url: "https://mcp.example.com", token: "tok" }) as const,
   } as unknown as ComponentSourceCredentialService;
 
   const tokenCrypto = {
     encrypt: (plain: string) => ({ ciphertext: `enc:${plain}`, keyVersion: 1 }),
   } as unknown as TokenCryptoService;
+
+  const registry = {} as unknown as ComponentSourceRegistry;
 
   const service = new ComponentSourceProfileService(
     prisma,
@@ -119,6 +128,7 @@ function createMocks(options: {
     toolMappingService,
     regeneration,
     credentialService,
+    registry,
   );
 
   return { service, getDeleted: () => deleted };

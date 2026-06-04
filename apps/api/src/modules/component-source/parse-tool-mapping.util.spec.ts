@@ -60,3 +60,15 @@ test("isConfirmedToolMapping — false when mapping JSON is invalid", () => {
 test("isConfirmedToolMapping — true when confirmed and catalog.list present", () => {
   assert.equal(isConfirmedToolMapping(new Date(), VALID_MAPPING), true);
 });
+
+test("parseToolMappingFromJson — rejects doc/search tools for catalog.list", () => {
+  assert.equal(
+    parseToolMappingFromJson({
+      "catalog.list": { toolName: "fetch_ui_documentation" },
+    }),
+    null,
+  );
+  assert.equal(isConfirmedToolMapping(new Date(), {
+    "catalog.list": { toolName: "fetch_ui_documentation" },
+  }), false);
+});

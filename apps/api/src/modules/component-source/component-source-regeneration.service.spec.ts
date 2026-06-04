@@ -35,7 +35,7 @@ function mockQueue(overrides: Partial<ComponentSourceRegenerationQueueService> =
 
 function createService(options: {
   profile?: Record<string, unknown> | null;
-  wireframeEvents?: Array<{ type: string; message?: string }>;
+  wireframeEvents?: Array<Record<string, unknown>>;
   queue?: Partial<ComponentSourceRegenerationQueueService>;
   streamWireframesOptions?: { dsOnly?: boolean };
 } = {}) {
@@ -66,7 +66,23 @@ function createService(options: {
     resolveForProject: async () => ({ active: false, port: null, ownerUserId: USER_ID }),
   } as unknown as ComponentSourceRegistry;
 
-  const wireframeEvents = options.wireframeEvents ?? [{ type: "done" }];
+  const wireframeEvents = options.wireframeEvents ?? [
+    {
+      type: "progress",
+      step: 1,
+      totalSteps: 2,
+      label: "Re-mapeando componentes (DS)",
+      status: "running",
+    },
+    {
+      type: "progress",
+      step: 1,
+      totalSteps: 2,
+      label: "Re-mapeando componentes (DS)",
+      status: "done",
+    },
+    { type: "done" },
+  ];
   let capturedStreamOptions: { dsOnly?: boolean } | undefined;
 
   const aiAnalysis = {
@@ -176,9 +192,112 @@ test("ComponentSourceRegenerationService.executeJob — wireframe refresh uses d
   assert.deepEqual(getCapturedStreamOptions(), { dsOnly: true });
 });
 
-test("ComponentSourceRegenerationService.executeJob — wireframe step reports error event", async () => {
+test("ComponentSourceRegenerationService.executeJob — forwards wireframe progress with step offset", async () => {
   const { service } = createService({
-    wireframeEvents: [{ type: "error", message: "Wireframe stream failed" }],
+    wireframeEvents: [
+      {
+        type: "progress",
+        step: 1,
+        totalSteps: 2,
+        label: "Re-mapeando componentes (DS)",
+        status: "running",
+      },
+      {
+        type: "progress",
+        step: 1,
+        totalSteps: 2,
+        label: "Re-mapeando componentes (DS)",
+        status: "done",
+        detail: "3 componentes mapeados",
+      },
+      { type: "done" },
+    ],
+  });
+  const events: RegenerationEvent[] = [];
+
+  await service.executeJob(
+    { projectId: PROJECT_ID, profileId: PROFILE_ID, userId: USER_ID },
+    (event) => events.push(event),
+  );
+
+  const progress = events.filter((e) => e.type === "progress");
+  assert.ok(
+    progress.some(
+      (e) =>
+        e.label === "Re-mapeando componentes (DS)" &&
+        e.step === 1 &&
+        e.totalSteps === 2 &&
+        e.status === "running",
+    ),
+  );
+  assert.ok(
+    progress.some(
+      (e) =>
+        e.label === "Re-mapeando componentes (DS)" &&
+        e.status === "done" &&
+        e.detail === "3 componentes mapeados",
+    ),
+  );
+});
+
+test("ComponentSourceRegenerationService.executeJob — wireframe error marks last progress step", async () => {
+  const { service } = createService({
+    wireframeEvents: [
+      {
+        type: "progress",
+        step: 2,
+        totalSteps: 2,
+        label: "Actualizando wireframes",
+        status: "running",
+      },
+      { type: "error", message: "Wireframe stream failed" },
+    ],
+  });
+  const events: RegenerationEvent[] = [];
+  const unsubscribe = service.subscribe(USER_ID, (event) => events.push(event));
+
+  await service.executeJob(
+    { projectId: PROJECT_ID, profileId: PROFILE_ID, userId: USER_ID },
+    (event) => events.push(event),
+  );
+
+  unsubscribe();
+
+  assert.ok(
+    events.some(
+      (e) =>
+        e.type === "progress" &&
+        e.label === "Actualizando wireframes" &&
+        e.step === 2 &&
+        e.status === "error" &&
+        e.detail === "Wireframe stream failed",
+    ),
+  );
+  assert.ok(
+    events.some(
+      (e) => e.type === "error" && e.message === "Wireframe stream failed",
+    ),
+  );
+});
+
+test("ComponentSourceRegenerationService.executeJob — offsets wireframe steps after design system import", async () => {
+  const { service } = createService({
+    profile: {
+      toolMapping: {
+        "catalog.list": { toolName: "list_modules" },
+        "designSystem.get": { toolName: "get_design_system" },
+      },
+    },
+    wireframeEvents: [
+      {
+        type: "progress",
+        step: 1,
+        totalSteps: 2,
+        label: "Re-mapeando componentes (DS)",
+        status: "running",
+      },
+      { type: "done" },
+    ],
   });
   const events: RegenerationEvent[] = [];
 
@@ -191,8 +310,19 @@ test("ComponentSourceRegenerationService.executeJob — wireframe step reports e
     events.some(
       (e) =>
         e.type === "progress" &&
-        e.label === "Regenerando wireframes" &&
-        e.status === "error",
+        e.label === "Importando design system" &&
+        e.step === 1 &&
+        e.totalSteps === 3,
+    ),
+  );
+  assert.ok(
+    events.some(
+      (e) =>
+        e.type === "progress" &&
+        e.label === "Re-mapeando componentes (DS)" &&
+        e.step === 2 &&
+        e.totalSteps === 3 &&
+        e.status === "running",
     ),
   );
 });

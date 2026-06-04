@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import {
   ComponentSourceError,
-  type ComponentSourceUrlTokenCredentials,
+  type ComponentSourceCredentials,
 } from "@theforge/component-source";
 import {
   computeToolsListHash,
@@ -11,12 +11,12 @@ import {
 
 @Injectable()
 export class ComponentSourceMcpToolsService {
-  async checkHealth(credentials: ComponentSourceUrlTokenCredentials) {
+  async checkHealth(credentials: ComponentSourceCredentials) {
     const client = new McpRpcClient(credentials);
     return client.checkHealth();
   }
 
-  async fetchToolsList(credentials: ComponentSourceUrlTokenCredentials): Promise<{
+  async fetchToolsList(credentials: ComponentSourceCredentials): Promise<{
     tools: McpToolDefinition[];
     toolsListHash: string;
   }> {

@@ -11,6 +11,7 @@ import Redis from "ioredis";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiAnalysisService } from "../ai-analysis/ai-analysis.service.js";
 import { fetchFullDesignSystemFromPort } from "./component-source-design-system.util.js";
+import { applyDesignSystemMcpToProjectDocs } from "./sync-design-system-doc-section.util.js";
 import { ComponentSourceRegenerationQueueService } from "./component-source-regeneration-queue.service.js";
 import { ComponentSourceRegistry } from "./component-source.registry.js";
 import { parseToolMappingFromJson } from "./parse-tool-mapping.util.js";
@@ -220,7 +221,10 @@ export class ComponentSourceRegenerationService implements OnModuleInit, OnModul
 
       const mapping = parseToolMappingFromJson(profile.toolMapping);
       const hasDesignSystem = Boolean(mapping?.["designSystem.get"]?.toolName?.trim());
-      const totalSteps = hasDesignSystem ? 2 : 1;
+      /** dsOnly wireframe pipeline emits 2 node steps (+ save reuses step 2). */
+      const wireframePipelineSteps = 2;
+      const dsStepOffset = hasDesignSystem ? 1 : 0;
+      const totalSteps = dsStepOffset + wireframePipelineSteps;
       let step = 0;
 
       if (hasDesignSystem) {
@@ -230,11 +234,48 @@ export class ComponentSourceRegenerationService implements OnModuleInit, OnModul
           const sourceCtx = await this.registry.resolveForProject(projectId);
           if (sourceCtx.active) {
             const payload = await fetchFullDesignSystemFromPort(sourceCtx.port, sourceCtx.ownerUserId);
+            const projectRow = await this.prisma.project.findUnique({
+              where: { id: projectId },
+              select: {
+                componentSourceProfile: { select: { name: true } },
+                stages: {
+                  orderBy: { ordinal: "asc" },
+                  take: 1,
+                  select: { id: true, mddContent: true, brdContent: true },
+                },
+              },
+            });
+            const mainStage = projectRow?.stages[0];
+            const docSync = applyDesignSystemMcpToProjectDocs({
+              designMd: payload.designMd,
+              tokens: payload.tokens,
+              meta: payload.meta,
+              profileName: projectRow?.componentSourceProfile?.name,
+              mddContent: mainStage?.mddContent,
+              brdContent: mainStage?.brdContent,
+            });
             await this.prisma.project.update({
               where: { id: projectId },
               data: { uxUiGuideContent: payload.designMd },
             });
-            await emitProgress(step, totalSteps, "Importando design system", "done", "Design system actualizado");
+            if (mainStage) {
+              const stageData: { mddContent?: string; brdContent?: string } = {};
+              if (docSync.mddContent !== undefined) stageData.mddContent = docSync.mddContent;
+              if (docSync.brdContent !== undefined) stageData.brdContent = docSync.brdContent;
+              if (Object.keys(stageData).length > 0) {
+                await this.prisma.stage.update({
+                  where: { id: mainStage.id },
+                  data: stageData,
+                });
+              }
+            }
+            const detail =
+              docSync.target === "mdd"
+                ? "Guía UX/UI + sección MCP en MDD"
+                : docSync.target === "brd"
+                  ? "Guía UX/UI + sección MCP en BRD"
+                  : "Guía UX/UI actualizada";
+            await emitProgress(step, totalSteps, "Importando design system", "done", detail);
           } else {
             await emitProgress(
               step,
@@ -250,29 +291,53 @@ export class ComponentSourceRegenerationService implements OnModuleInit, OnModul
         }
       }
 
-      step += 1;
-      await emitProgress(step, totalSteps, "Regenerando wireframes", "running");
       try {
         let wireframeDone = false;
         let wireframeError: string | undefined;
+        let lastProgress: { step: number; totalSteps: number; label: string } | null = null;
+
         for await (const event of this.aiAnalysis.streamWireframes(projectId, { dsOnly: true })) {
+          if (event.type === "progress") {
+            const regenStep = event.step + dsStepOffset;
+            const regenTotalSteps = event.totalSteps + dsStepOffset;
+            lastProgress = { step: regenStep, totalSteps: regenTotalSteps, label: event.label };
+            await emitProgress(
+              regenStep,
+              regenTotalSteps,
+              event.label,
+              event.status,
+              event.detail,
+            );
+            continue;
+          }
           if (event.type === "error") {
             wireframeError = event.message;
             this.logger.error(
               `[Regeneration] wireframes dsOnly failed project=${projectId}: ${event.message}`,
             );
-            await emitProgress(step, totalSteps, "Regenerando wireframes", "error", event.message);
-            wireframeDone = true;
+            if (lastProgress) {
+              await emitProgress(
+                lastProgress.step,
+                lastProgress.totalSteps,
+                lastProgress.label,
+                "error",
+                event.message,
+              );
+            } else {
+              await emitProgress(
+                1 + dsStepOffset,
+                totalSteps,
+                "Re-mapeando componentes (DS)",
+                "error",
+                event.message,
+              );
+            }
             break;
           }
           if (event.type === "done") {
-            await emitProgress(step, totalSteps, "Regenerando wireframes", "done");
             wireframeDone = true;
             break;
           }
-        }
-        if (!wireframeDone) {
-          await emitProgress(step, totalSteps, "Regenerando wireframes", "done", "Sin cambios");
         }
         if (wireframeError) {
           await this.publishEvent(
@@ -282,9 +347,20 @@ export class ComponentSourceRegenerationService implements OnModuleInit, OnModul
           );
           return;
         }
+        if (!wireframeDone) {
+          this.logger.warn(
+            `[Regeneration] wireframes dsOnly ended without done project=${projectId}`,
+          );
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        await emitProgress(step, totalSteps, "Regenerando wireframes", "error", message);
+        await emitProgress(
+          1 + dsStepOffset,
+          totalSteps,
+          "Re-mapeando componentes (DS)",
+          "error",
+          message,
+        );
         await this.publishEvent(userId, { type: "error", message, projectId, profileId }, jobKey);
         return;
       }
