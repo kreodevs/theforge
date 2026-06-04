@@ -438,6 +438,33 @@ export class AiAnalysisController {
     return this.aiAnalysis.getProjectDecisions(id);
   }
 
+  @Post("mdd/suggest-governance-patterns")
+  async suggestGovernancePatterns(
+    @Body() body: { projectId?: string; stageId?: string },
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    const stageId = typeof body?.stageId === "string" ? body.stageId.trim() : undefined;
+    return this.aiAnalysis.suggestGovernancePatterns(projectId, stageId);
+  }
+
+  @Post("mdd/record-governance-pattern-adrs")
+  async recordGovernancePatternAdrs(
+    @Body()
+    body: {
+      projectId?: string;
+      patterns?: Array<{ label: string; group: string; affects: string; description: string }>;
+    },
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    const patterns = Array.isArray(body?.patterns) ? body.patterns : [];
+    if (patterns.length === 0) {
+      throw new BadRequestException("patterns is required");
+    }
+    return this.aiAnalysis.recordGovernancePatternAdrs(projectId, patterns);
+  }
+
   // ─── Fase 0 — Entrevista Interactiva ─────────────────────────────
 
   /**

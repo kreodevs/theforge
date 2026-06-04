@@ -16,6 +16,7 @@ import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
 import { parseNdjsonLine } from "../utils/ndjson";
 import { mddHasSection6Heading } from "../utils/mddSectionRegen";
 import { isWorkshopAgentsBusy } from "../utils/workshopAgentsBusy";
+import { listGovernancePatternOptions } from "@theforge/shared-types/mdd-governance-patterns";
 
 function workshopScopeProjectId(get: () => WorkshopState): string {
   return (get().projectId ?? get().project?.id ?? "").trim();
@@ -28,6 +29,14 @@ function shouldApplyWorkshopUpdate(get: () => WorkshopState, requestedProjectId:
 }
 
 export const selectWorkshopAgentsBusy = (s: WorkshopState) => isWorkshopAgentsBusy(s);
+
+/** MDD persistido en BD para la etapa activa (baseline del aviso «sin guardar»). */
+export const selectPersistedMddBaseline = (s: WorkshopState): string => {
+  const stages = s.workshopStages.length > 0 ? s.workshopStages : (s.project?.stages ?? []);
+  const st = stages.find((x) => x.id === s.activeStageId);
+  const raw = st?.mddContent ?? s.project?.mddContent ?? null;
+  return cleanDoc(raw) ?? raw ?? "";
+};
 
 /**
  * Convierte mensajes de error de fetch del navegador (Safari "Load failed", Chrome "Failed to fetch")
@@ -847,6 +856,14 @@ interface WorkshopState {
   legacyGenerateDeliverables: (projectId: string) => Promise<boolean>;
   fetchEstimation: (projectId: string) => Promise<LiveMetricsResult | null>;
   fetchAdrs: (projectId: string) => Promise<void>;
+  suggestGovernancePatterns: (
+    projectId: string,
+    stageId?: string | null,
+  ) => Promise<{ patternIds: string[]; rationale?: string }>;
+  recordGovernancePatternAdrs: (
+    projectId: string,
+    patternIds: ReadonlySet<string>,
+  ) => Promise<void>;
   /** Notifica a Hermes Agent que el proyecto está listo para desarrollo. */
   launchHermes: (projectId: string) => Promise<{ success: boolean; status: number } | undefined>;
   reset: () => void;
@@ -3461,8 +3478,11 @@ if (prog && prog.step && prog.step !== "done") {
         const packed = projectWithUxAfterStream(data, data.uxUiGuideContent, get().activeStageId);
         const savedContent = packed?.mddContent ?? data.mddContent ?? content;
         const patternsReverted = data.mddGovernancePatternsReverted === true;
+        const nextProject = packed?.project ?? data;
+        const nextStages = nextProject.stages ?? get().workshopStages;
         set({
-          project: packed?.project ?? data,
+          project: nextProject,
+          workshopStages: nextStages.length > 0 ? nextStages : get().workshopStages,
           activeStageId: packed?.activeStageId ?? get().activeStageId,
           mddContent: savedContent,
           synced: true,
@@ -3500,14 +3520,17 @@ if (prog && prog.step && prog.step !== "done") {
     const { projectId, project, mddContent, persistMddContent, fetchEstimation } = get();
     if (!projectId?.trim() || !project) return;
     const content = (mddContent ?? "").trim();
-    if (content === (project.mddContent ?? "")) return;
+    const baseline = selectPersistedMddBaseline(get());
+    if (content === baseline) return;
     set({ mddReviewing: true });
     try {
-      await persistMddContent(content);
+      await persistMddContent(content, { force: true });
+      const saved = selectPersistedMddBaseline(get());
+      set({ mddContent: saved });
       await apiFetch(`${API_BASE}/ai-analysis/mdd/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: projectId.trim(), mddContent: content }),
+        body: JSON.stringify({ projectId: projectId.trim(), mddContent: saved || content }),
       });
       fetchEstimation(projectId).catch(() => { });
     } finally {
@@ -3525,6 +3548,49 @@ if (prog && prog.step && prog.step !== "done") {
     } catch (err) {
       console.error("Error fetching ADRs:", err);
     }
+  },
+
+  suggestGovernancePatterns: async (projectId, stageId) => {
+    const pid = projectId?.trim();
+    if (!pid) return { patternIds: [] };
+    const body: Record<string, string> = { projectId: pid };
+    const sid = (stageId ?? get().activeStageId)?.trim();
+    if (sid) body.stageId = sid;
+    const r = await apiFetch(`${API_BASE}/ai-analysis/mdd/suggest-governance-patterns`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error((err as { message?: string }).message ?? "No se pudo analizar documentos para patrones");
+    }
+    return (await r.json()) as { patternIds: string[]; rationale?: string };
+  },
+
+  recordGovernancePatternAdrs: async (projectId, patternIds) => {
+    const pid = projectId?.trim();
+    if (!pid || patternIds.size === 0) return;
+    const patterns = listGovernancePatternOptions()
+      .filter((o) => patternIds.has(o.id))
+      .map((o) => ({
+        label: o.label,
+        group: o.group,
+        affects: o.affects,
+        description: o.description,
+      }));
+    if (patterns.length === 0) return;
+    const r = await apiFetch(`${API_BASE}/ai-analysis/mdd/record-governance-pattern-adrs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: pid, patterns }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error((err as { message?: string }).message ?? "No se pudieron registrar ADRs de patrones");
+    }
+    const adrs = await r.json();
+    set({ adrs });
   },
   launchHermes: async (projectId: string) => {
     if (!projectId?.trim()) return;

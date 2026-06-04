@@ -161,6 +161,55 @@ export function stripGovernanceSection(md: string): string {
   return `${before}\n\n${tail}`.trim();
 }
 
+/** Intro del wizard (sin líneas de patrón ni grupos ####). */
+function governanceIntroBlock(wizardBody: string = MDD_GOVERNANCE_WIZARD_BODY): string {
+  const lines: string[] = [];
+  for (const line of wizardBody.split("\n")) {
+    if (line.match(/^####\s+/) || line.match(PATTERN_LINE_RE)) break;
+    lines.push(line);
+  }
+  return lines
+    .join("\n")
+    .replace(
+      /### 🧙‍♂️ WIZARD DE SELECCIÓN DE PATRONES COMPLETO[\s\S]*$/m,
+      "### Patrones activos (SSOT)\n\n*Selección vigente del proyecto. Para cambiarla usa «Editar patrones (SSOT)» en el Workshop.*",
+    )
+    .trim();
+}
+
+/**
+ * Sección de gobernanza mostrada en el MDD: solo patrones seleccionados (marcados [X]).
+ * No lista el catálogo completo con casillas vacías.
+ */
+export function buildGovernanceBodySelectedOnly(
+  selectedIds: ReadonlySet<string>,
+  wizardBody: string = MDD_GOVERNANCE_WIZARD_BODY,
+): string {
+  const intro = governanceIntroBlock(wizardBody);
+  const byGroup = new Map<string, MddGovernancePatternOption[]>();
+  for (const o of listGovernancePatternOptions(wizardBody)) {
+    if (!selectedIds.has(o.id)) continue;
+    const list = byGroup.get(o.group) ?? [];
+    list.push(o);
+    byGroup.set(o.group, list);
+  }
+  const parts = [intro];
+  if (byGroup.size === 0) {
+    parts.push("", "_Ningún patrón seleccionado. Usa «Editar patrones (SSOT)»._");
+  } else {
+    for (const [group, items] of byGroup) {
+      parts.push("", `#### ${group}`);
+      for (const item of items) {
+        const aff = item.affects ? ` *(Afecta a: ${item.affects})*` : "";
+        const desc = item.description ? ` ${item.description}` : "";
+        parts.push(`- [X] **${item.label}:**${desc}${aff}`);
+      }
+    }
+  }
+  parts.push("", "---");
+  return parts.join("\n").trim();
+}
+
 /** Marca [X] en las líneas cuyo id (slug del label) está en selectedIds. */
 export function applyPatternSelectionsToWizardBody(
   wizardBody: string,
@@ -233,7 +282,7 @@ export function updateMddGovernancePatterns(
   md: string,
   selectedIds: ReadonlySet<string>,
 ): string {
-  const updatedGov = applyPatternSelectionsToWizardBody(MDD_GOVERNANCE_WIZARD_BODY, selectedIds);
+  const updatedGov = buildGovernanceBodySelectedOnly(selectedIds);
   return ensureMddGovernanceSection(md, updatedGov);
 }
 

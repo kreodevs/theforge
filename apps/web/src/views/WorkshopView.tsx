@@ -50,7 +50,12 @@ import {
   WORKSHOP_HEADER_CTL_HOVER,
 } from "../constants/workshopHeaderToolbar";
 import type { CodebaseDocResponseMode } from "@theforge/shared-types";
-import { selectWorkshopAgentsBusy, useWorkshopStore, type Status } from "../store/workshopStore";
+import {
+  selectPersistedMddBaseline,
+  selectWorkshopAgentsBusy,
+  useWorkshopStore,
+  type Status,
+} from "../store/workshopStore";
 import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
@@ -282,6 +287,11 @@ export default function WorkshopView({
   const [mddPatternsWizardOpen, setMddPatternsWizardOpen] = useState(false);
   const [mddPatternsWizardMode, setMddPatternsWizardMode] =
     useState<MddPatternsWizardMode>("initial");
+  const [patternsWizardAnalyzing, setPatternsWizardAnalyzing] = useState(false);
+  const [patternsWizardPreselected, setPatternsWizardPreselected] = useState<Set<string> | null>(
+    null,
+  );
+  const [patternsAnalyzeRationale, setPatternsAnalyzeRationale] = useState<string | null>(null);
   /** Estado legacy efectivo: lee de la etapa activa primero, con fallback a project.legacyFlowState */
   const activeLegacyState = useMemo(() => {
     if (project?.projectType === "LEGACY" && activeWorkshopStage?.legacyChangeState) {
@@ -407,6 +417,9 @@ export default function WorkshopView({
   const adrsRaw = useWorkshopStore((s) => s.adrs);
   const adrs = useMemo(() => adrsRaw || [], [adrsRaw]);
   const fetchAdrs = useWorkshopStore((s) => s.fetchAdrs);
+  const suggestGovernancePatterns = useWorkshopStore((s) => s.suggestGovernancePatterns);
+  const recordGovernancePatternAdrs = useWorkshopStore((s) => s.recordGovernancePatternAdrs);
+  const persistedMddBaseline = useWorkshopStore(selectPersistedMddBaseline);
   const sendMessage = useWorkshopStore((s) => s.sendMessage);
   const setMddContent = useWorkshopStore((s) => s.setMddContent);
   const revertMddContent = useWorkshopStore((s) => s.revertMddContent);
@@ -453,6 +466,33 @@ export default function WorkshopView({
   const legacyStart = useWorkshopStore((s) => s.legacyStart);
   const legacyAnswer = useWorkshopStore((s) => s.legacyAnswer);
   const legacyGenerateMdd = useWorkshopStore((s) => s.legacyGenerateMdd);
+  const openPatternsWizardWithAnalysis = useCallback(
+    async (mode: MddPatternsWizardMode) => {
+      if (!projectId?.trim()) return;
+      setMddPatternsWizardMode(mode);
+      setPatternsWizardPreselected(null);
+      setPatternsAnalyzeRationale(null);
+      setPatternsWizardAnalyzing(true);
+      setMddPatternsWizardOpen(true);
+      try {
+        const { patternIds, rationale } = await suggestGovernancePatterns(
+          projectId,
+          activeStageId,
+        );
+        setPatternsWizardPreselected(new Set(patternIds));
+        setPatternsAnalyzeRationale(rationale ?? null);
+      } catch (e) {
+        setPatternsAnalyzeRationale(
+          e instanceof Error ? e.message : "No se pudo analizar; elige patrones manualmente.",
+        );
+        setPatternsWizardPreselected(null);
+      } finally {
+        setPatternsWizardAnalyzing(false);
+      }
+    },
+    [projectId, activeStageId, suggestGovernancePatterns],
+  );
+
   const requestGenerateMdd = useCallback(() => {
     if (!projectId?.trim()) return;
     if (isLegacyProject) {
@@ -460,8 +500,7 @@ export default function WorkshopView({
       return;
     }
     if (!mddHasSubstantialBody(effectiveMddTrimmed)) {
-      setMddPatternsWizardMode("initial");
-      setMddPatternsWizardOpen(true);
+      void openPatternsWizardWithAnalysis("initial");
       return;
     }
     void generateMddFromBenchmark(projectId);
@@ -472,15 +511,18 @@ export default function WorkshopView({
     activeStageId,
     effectiveMddTrimmed,
     generateMddFromBenchmark,
+    openPatternsWizardWithAnalysis,
   ]);
+
   const openEditMddPatterns = useCallback(() => {
-    setMddPatternsWizardMode("edit");
-    setMddPatternsWizardOpen(true);
-  }, []);
+    void openPatternsWizardWithAnalysis("edit");
+  }, [openPatternsWizardWithAnalysis]);
+
   const handleMddPatternsWizardConfirm = useCallback(
-    async (markdown: string) => {
+    async (markdown: string, selectedIds: ReadonlySet<string>) => {
       setMddPatternsWizardOpen(false);
-      if (mddPatternsWizardMode === "edit") {
+      const mode = mddPatternsWizardMode;
+      if (mode === "edit") {
         setMddContent(markdown);
         await persistMddContent(markdown, {
           force: true,
@@ -488,7 +530,10 @@ export default function WorkshopView({
         });
         if (!useWorkshopStore.getState().error?.includes("restaurados")) {
           const { projectId: pid, fetchEstimation } = useWorkshopStore.getState();
-          if (pid?.trim()) void fetchEstimation(pid);
+          if (pid?.trim()) {
+            await recordGovernancePatternAdrs(pid, selectedIds).catch(() => {});
+            void fetchEstimation(pid);
+          }
         }
         return;
       }
@@ -497,18 +542,17 @@ export default function WorkshopView({
         allowGovernancePatternChange: true,
       });
       if (!useWorkshopStore.getState().error?.includes("restaurados") && projectId?.trim()) {
-        if (mddPatternsWizardMode === "initial") {
-          void generateMddFromBenchmark(projectId);
-        }
+        await recordGovernancePatternAdrs(projectId, selectedIds).catch(() => {});
+        void generateMddFromBenchmark(projectId);
       }
     },
     [
       mddPatternsWizardMode,
       setMddContent,
-      persistAndReviewMdd,
       persistMddContent,
       generateMddFromBenchmark,
       projectId,
+      recordGovernancePatternAdrs,
     ],
   );
   const legacyGenerateDeliverables = useWorkshopStore((s) => s.legacyGenerateDeliverables);
@@ -1812,7 +1856,7 @@ export default function WorkshopView({
     clearWorkshopDocumentContent,
   ]);
 
-  const mddDirty = (mddContent ?? "") !== (project?.mddContent ?? "");
+  const mddDirty = (mddContent ?? "").trim() !== persistedMddBaseline.trim();
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
 
   if (error && !project) {
@@ -4159,6 +4203,9 @@ export default function WorkshopView({
         onOpenChange={setMddPatternsWizardOpen}
         mode={mddPatternsWizardMode}
         initialMddContent={effectiveMddTrimmed || null}
+        preselectedIds={patternsWizardPreselected}
+        analyzing={patternsWizardAnalyzing}
+        analyzeMessage={patternsAnalyzeRationale}
         loading={
           (loading && loadingReason === "mdd") ||
           (mddPatternsWizardMode === "edit" && mddReviewing)

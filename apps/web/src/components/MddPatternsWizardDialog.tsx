@@ -4,10 +4,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
-  applyPatternSelectionsToWizardBody,
+  buildGovernanceBodySelectedOnly,
   buildMddWithGovernanceSkeleton,
   listGovernancePatternOptions,
-  MDD_GOVERNANCE_WIZARD_BODY,
   selectedPatternIdsFromMdd,
   updateMddGovernancePatterns,
 } from "@theforge/shared-types/mdd-governance-patterns";
@@ -30,8 +29,13 @@ export interface MddPatternsWizardDialogProps {
   mode?: MddPatternsWizardMode;
   /** MDD actual (preselección de [X] y, en modo edit, documento a fusionar). */
   initialMddContent?: string | null;
+  /** Preselección tras análisis Fase 0 / Benchmark / BRD (prioridad sobre initialMddContent). */
+  preselectedIds?: ReadonlySet<string> | null;
+  /** Analizando documentos antes de mostrar opciones. */
+  analyzing?: boolean;
+  analyzeMessage?: string | null;
   loading?: boolean;
-  onConfirm: (markdown: string) => void | Promise<void>;
+  onConfirm: (markdown: string, selectedIds: ReadonlySet<string>) => void | Promise<void>;
 }
 
 export function MddPatternsWizardDialog({
@@ -39,6 +43,9 @@ export function MddPatternsWizardDialog({
   onOpenChange,
   mode = "initial",
   initialMddContent,
+  preselectedIds = null,
+  analyzing = false,
+  analyzeMessage,
   loading = false,
   onConfirm,
 }: MddPatternsWizardDialogProps) {
@@ -58,10 +65,13 @@ export function MddPatternsWizardDialog({
   );
 
   useEffect(() => {
-    if (open) {
-      setSelected(selectedPatternIdsFromMdd(initialMddContent ?? ""));
+    if (!open || analyzing) return;
+    if (preselectedIds && preselectedIds.size > 0) {
+      setSelected(new Set(preselectedIds));
+      return;
     }
-  }, [open, initialMddContent]);
+    setSelected(selectedPatternIdsFromMdd(initialMddContent ?? ""));
+  }, [open, analyzing, initialMddContent, preselectedIds]);
 
   const toggle = useCallback((id: string) => {
     setSelected((prev) => {
@@ -73,80 +83,101 @@ export function MddPatternsWizardDialog({
   }, []);
 
   const handleConfirm = useCallback(async () => {
-    const body = applyPatternSelectionsToWizardBody(MDD_GOVERNANCE_WIZARD_BODY, selected);
+    const body = buildGovernanceBodySelectedOnly(selected);
     const markdown =
       mode === "edit"
         ? updateMddGovernancePatterns((initialMddContent ?? "").trim(), selected)
         : buildMddWithGovernanceSkeleton("Master Design Document", body);
-    await onConfirm(markdown);
+    await onConfirm(markdown, selected);
   }, [mode, onConfirm, selected, initialMddContent]);
 
   const isEdit = mode === "edit";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={loading || analyzing ? undefined : onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl flex flex-col gap-0 p-0">
         <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle>
             {isEdit ? "Editar patrones de desarrollo (SSOT)" : "Patrones de desarrollo (SSOT)"}
           </DialogTitle>
           <DialogDescription>
-            {isEdit ? (
+            {analyzing ? (
+              analyzeMessage ??
+              "Analizando Fase 0, Benchmark y BRD para proponer patrones…"
+            ) : isEdit ? (
               <>
                 Solo se actualiza la sección <strong>[ARQUITECTURA - SECCIÓN INMUTABLE]</strong>. Las
                 secciones §1–§7 del MDD no se regeneran.
               </>
             ) : (
               <>
-                Marca los patrones que gobernarán el MDD y todos los entregables (Spec, Arq, API, Flujos,
-                Tasks, Infra). Esta sección queda <strong>inmutable</strong> en el documento; al regenerar el
-                MDD se conserva.
+                Revisa la preselección inferida de tus documentos. Solo los patrones marcados aparecerán en
+                el MDD y se registrarán como ADRs.
               </>
             )}
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto px-6 py-2 space-y-6 min-h-0">
-          {grouped.map(([group, items]) => (
-            <section key={group}>
-              <h3 className="text-sm font-semibold text-foreground mb-2">{group}</h3>
-              <ul className="space-y-2">
-                {items.map((item) => (
-                  <li key={item.id}>
-                    <label
-                      className={cn(
-                        "flex gap-3 rounded-md border border-border/60 p-3 cursor-pointer hover:bg-muted/40",
-                        selected.has(item.id) && "border-primary/50 bg-primary/5",
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-1 shrink-0"
-                        checked={selected.has(item.id)}
-                        onChange={() => toggle(item.id)}
-                      />
-                      <span className="text-sm leading-snug">
-                        <span className="font-medium">{item.label}</span>
-                        {item.description ? (
-                          <span className="text-muted-foreground"> — {item.description}</span>
-                        ) : null}
-                        {item.affects ? (
-                          <span className="block text-xs text-muted-foreground mt-1">
-                            Afecta a: {item.affects}
-                          </span>
-                        ) : null}
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+          {analyzing ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />
+              <p className="text-sm text-center max-w-md">
+                {analyzeMessage ??
+                  "Analizando DBGA (Fase 0), resumen de benchmark y BRD para preseleccionar patrones…"}
+              </p>
+            </div>
+          ) : (
+            grouped.map(([group, items]) => (
+              <section key={group}>
+                <h3 className="text-sm font-semibold text-foreground mb-2">{group}</h3>
+                <ul className="space-y-2">
+                  {items.map((item) => (
+                    <li key={item.id}>
+                      <label
+                        className={cn(
+                          "flex gap-3 rounded-md border border-border/60 p-3 cursor-pointer hover:bg-muted/40",
+                          selected.has(item.id) && "border-primary/50 bg-primary/5",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1 shrink-0"
+                          checked={selected.has(item.id)}
+                          onChange={() => toggle(item.id)}
+                        />
+                        <span className="text-sm leading-snug">
+                          <span className="font-medium">{item.label}</span>
+                          {item.description ? (
+                            <span className="text-muted-foreground"> — {item.description}</span>
+                          ) : null}
+                          {item.affects ? (
+                            <span className="block text-xs text-muted-foreground mt-1">
+                              Afecta a: {item.affects}
+                            </span>
+                          ) : null}
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          )}
         </div>
         <DialogFooter className="px-6 py-4 shrink-0 border-t border-border/60">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={loading || analyzing}
+          >
             Cancelar
           </Button>
-          <Button type="button" onClick={() => void handleConfirm()} disabled={loading}>
+          <Button
+            type="button"
+            onClick={() => void handleConfirm()}
+            disabled={loading || analyzing || selected.size === 0}
+          >
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
