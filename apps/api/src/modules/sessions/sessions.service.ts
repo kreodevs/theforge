@@ -22,6 +22,19 @@ import {
 import { llmMaxTokens } from "../ai/config/llm-config.js";
 import { normalizeDashes } from "./document-content.util.js";
 import {
+  gateUxGuideSplitResult,
+  tryUxGuideDocFallback,
+  uxGuideAssistantChatMessage,
+  shouldPersistUxGuideFromChat,
+  isUxGuideConfirmationMessage,
+} from "./ux-ui-guide-chat-intent.util.js";
+import {
+  responseClaimsUxGuideAppliedWithoutDoc,
+  tryApplyUxGuideLocalPatch,
+  getLastAssistantChatContent,
+  UX_GUIDE_CHAT_NO_CHANGE,
+} from "./ux-ui-guide-local-patch.util.js";
+import {
   BENCHMARK_CHAT_ACK,
   benchmarkAssistantChatMessage,
   dbgaReflectsUserEditIntent,
@@ -403,55 +416,71 @@ export class SessionsService {
     else if (hasStories) rawChat = storiesSplit!.chatPart;
     else if (hasWireframes) rawChat = wireframesSplit!.chatPart;
 
-    // Fallback: tab ux-ui-guide sin delimitador ---FIN_UX_UI---
     const isUxTab = (options?.activeTab ?? "mdd").trim() === "ux-ui-guide";
-    const looksLikeUxGuide =
-      safeResponse.length > 200 &&
-      (/#\s*Guía\s*UX\/UI/i.test(safeResponse) ||
-       /^#?\s*Guía\s*UX\/UI/im.test(safeResponse) ||
-       // YAML frontmatter (---\nname: ... o name: ...)
-       /^---\s*\n/i.test(safeResponse.trim()) ||
-       /^name:\s*["']?[A-Z]/i.test(safeResponse.trim()) ||
-       // Design token patterns
-       /colors:\s*\n/i.test(safeResponse) ||
-       /typography:\s*\n/i.test(safeResponse) ||
-       /components:\s*\n/i.test(safeResponse));
-    if (isUxTab && !hasUx && looksLikeUxGuide) {
-      hasUx = true;
-      const trimmed = safeResponse.trim();
-      const docStartMatch = trimmed.match(/#\s*Guía\s*UX\/UI/i);
-      const yamlStartMatch = trimmed.match(/^---\s*\n/);
-      const yamlInlineStart =
-        !docStartMatch &&
-        !yamlStartMatch &&
-        /^name:\s*["']?[A-Z]/i.test(trimmed);
-      const docStartIdx = docStartMatch?.index ?? 0;
-      const hasIntro = docStartIdx > 0 && trimmed.slice(0, docStartIdx).trim().length > 0;
-      let docSection: string;
-      let chatParts: string[] = [];
-
-      if (docStartMatch) {
-        // Has # Guía UX/UI heading — doc starts there
-        docSection = docStartIdx > 0 ? trimmed.slice(docStartIdx) : trimmed;
-        if (hasIntro) chatParts.push(trimmed.slice(0, docStartIdx).trim());
-        const hrMatch = docSection.match(/\n\s*[-*_]{3,}\s*\n/);
-        if (hrMatch && hrMatch.index != null) {
-          uxDocPart = docSection.slice(0, hrMatch.index).trim();
-          const afterHr = docSection.slice(hrMatch.index + hrMatch[0].length).trim();
-          if (afterHr.length > 0) chatParts.push(afterHr);
-        } else {
-          uxDocPart = docSection.trim();
-        }
-      } else if (yamlStartMatch || yamlInlineStart) {
-        // YAML frontmatter: TODO EL RESPONSE es el documento.
-        // NO buscar separador (---) porque el --- de cierre del YAML se confunde.
-        // El chat se reemplaza por mensaje por defecto.
-        uxDocPart = trimmed;
-      } else {
-        uxDocPart = trimmed;
+    const uxUserMsg = userMessage.trim();
+    const hasExistingUxGuide = (options?.currentUxUiGuideContent?.trim() ?? "").length > 0;
+    if (isUxTab && hasUx && uxSplit) {
+      const gated = gateUxGuideSplitResult(
+        uxUserMsg,
+        hasExistingUxGuide,
+        hasUx,
+        uxDocPart,
+        uxSplit,
+        safeResponse,
+        rawChat,
+      );
+      hasUx = gated.hasUx;
+      uxDocPart = gated.uxDocPart;
+      rawChat = gated.rawChat;
+      if (!gated.hasUx) {
+        console.log("[Chat] ux-ui-guide: turno consulta — no se persiste documento");
       }
-      rawChat = chatParts.length > 0 ? chatParts.join("\n\n") : "Guía UX/UI generada. Revisa el panel del documento.";
-      console.log("[Chat] fallback (mejorado): uxUiGuideContent length:", uxDocPart?.length ?? 0, "chat length:", rawChat.length, "match type:", docStartMatch ? "h1" : yamlStartMatch ? "yaml" : yamlInlineStart ? "yaml-inline" : "other");
+    }
+    if (isUxTab) {
+      const hadUxBeforeFallback = hasUx;
+      const fb = tryUxGuideDocFallback(
+        safeResponse,
+        uxUserMsg,
+        hasExistingUxGuide,
+        hasUx,
+        uxDocPart,
+        rawChat,
+      );
+      if (fb.hasUx && !hadUxBeforeFallback) {
+        console.log(
+          "[Chat] fallback ux-ui-guide: uxUiGuideContent length:",
+          fb.uxDocPart?.length ?? 0,
+          "chat length:",
+          fb.rawChat.length,
+        );
+      }
+      hasUx = fb.hasUx;
+      uxDocPart = fb.uxDocPart;
+      rawChat = fb.rawChat;
+    }
+    if (
+      isUxTab &&
+      !hasUx &&
+      (shouldPersistUxGuideFromChat(uxUserMsg, hasExistingUxGuide) ||
+        isUxGuideConfirmationMessage(uxUserMsg))
+    ) {
+      const priorAssistant = getLastAssistantChatContent(history);
+      const patched = tryApplyUxGuideLocalPatch(
+        options?.currentUxUiGuideContent ?? "",
+        uxUserMsg,
+        priorAssistant,
+      );
+      if (patched) {
+        console.log("[Chat] ux-ui-guide: parche local aplicado (sin FIN_UX_UI del modelo)");
+        hasUx = true;
+        uxDocPart = patched.content;
+        rawChat = patched.message;
+      } else if (
+        responseClaimsUxGuideAppliedWithoutDoc(safeResponse) ||
+        isUxGuideConfirmationMessage(uxUserMsg)
+      ) {
+        rawChat = UX_GUIDE_CHAT_NO_CHANGE;
+      }
     }
 
     // Fallback genérico para tabs de documento (architecture, use-cases, etc.) sin ---FIN_TAG---
@@ -518,6 +547,15 @@ export class SessionsService {
       options,
       dbgaDocPart,
     );
+    const finalUx = hasUx
+      ? this.parser.mergeUxUiGuideSectionOrUseFull(
+          options?.currentUxUiGuideContent,
+          this.parser.cleanDocumentContent(uxDocPart!),
+        )
+      : undefined;
+    if (activeTab === "ux-ui-guide") {
+      rawChat = uxGuideAssistantChatMessage(rawChat, finalUx, effectiveUserMessage);
+    }
     const assistantContent = this.parser.stripChatLabel(
       activeTab === "benchmark"
         ? benchmarkAssistantChatMessage(rawChat, finalDbga)
@@ -556,7 +594,7 @@ export class SessionsService {
     return {
       session: updatedSession,
       mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
-      uxUiGuideContent: hasUx ? this.parser.mergeUxUiGuideSectionOrUseFull(options?.currentUxUiGuideContent, this.parser.cleanDocumentContent(uxDocPart!)) : undefined,
+      uxUiGuideContent: finalUx,
       dbgaContent: finalDbga,
       phase0SummaryContent: hasPhase0
         ? this.parser.mergePhase0OrUseFull(
@@ -740,10 +778,12 @@ export class SessionsService {
     const DOC_DELIMITER_RE = /-{1,}\s*FIN_(?:MDD|UX_UI|DBGA|PHASE0|SPEC|BRD|BLUEPRINT|API|FLOWS|TASKS|INFRA|ARCH|USECASES|STORIES|WIREFRAMES)\s*-{1,}/i;
     let buffer = "";
     let documentChunksDone = false;
+    let chatStreamed = false;
     for await (const chunk of stream) {
       buffer += chunk;
       if (documentChunksDone) {
         // Already past the delimiter — yield normally
+        chatStreamed = true;
         yield { type: "chunk", content: chunk };
       } else if (DOC_DELIMITER_RE.test(normalizeDashes(buffer))) {
         // Delimiter found — stop buffering document content, yield chat part
@@ -754,6 +794,7 @@ export class SessionsService {
           const idx = normBuffer.indexOf(match[0]);
           const afterDelim = buffer.slice(idx + match[0].length);
           if (afterDelim.trim()) {
+            chatStreamed = true;
             yield { type: "chunk", content: afterDelim };
           }
         }
@@ -822,51 +863,70 @@ export class SessionsService {
     else if (hasWireframes) rawChat = wireframesSplit!.chatPart;
 
     const isUxTab = (options?.activeTab ?? "mdd").trim() === "ux-ui-guide";
-    const looksLikeUxGuide =
-      safeResponse.length > 200 &&
-      (/#\s*Guía\s*UX\/UI/i.test(safeResponse) ||
-       /^#?\s*Guía\s*UX\/UI/im.test(safeResponse) ||
-       // YAML frontmatter (---\nname: ... o name: ...)
-       /^---\s*\n/i.test(safeResponse.trim()) ||
-       /^name:\s*["']?[A-Z]/i.test(safeResponse.trim()) ||
-       // Design token patterns
-       /colors:\s*\n/i.test(safeResponse) ||
-       /typography:\s*\n/i.test(safeResponse) ||
-       /components:\s*\n/i.test(safeResponse));
-    if (isUxTab && !hasUx && looksLikeUxGuide) {
-      hasUx = true;
-      const trimmed = safeResponse.trim();
-      const docStartMatch = trimmed.match(/#\s*Guía\s*UX\/UI/i);
-      const yamlStartMatch = trimmed.match(/^---\s*\n/);
-      const yamlInlineStart =
-        !docStartMatch &&
-        !yamlStartMatch &&
-        /^name:\s*["']?[A-Z]/i.test(trimmed);
-      const docStartIdx = docStartMatch?.index ?? 0;
-      const hasIntro = docStartIdx > 0 && trimmed.slice(0, docStartIdx).trim().length > 0;
-      let docSection: string;
-      let chatParts: string[] = [];
-
-      if (docStartMatch) {
-        docSection = docStartIdx > 0 ? trimmed.slice(docStartIdx) : trimmed;
-        if (hasIntro) chatParts.push(trimmed.slice(0, docStartIdx).trim());
-        const hrMatch = docSection.match(/\n\s*[-*_]{3,}\s*\n/);
-        if (hrMatch && hrMatch.index != null) {
-          uxDocPart = docSection.slice(0, hrMatch.index).trim();
-          const afterHr = docSection.slice(hrMatch.index + hrMatch[0].length).trim();
-          if (afterHr.length > 0) chatParts.push(afterHr);
-        } else {
-          uxDocPart = docSection.trim();
-        }
-      } else if (yamlStartMatch || yamlInlineStart) {
-        // YAML frontmatter: TODO EL RESPONSE es el documento.
-        // NO buscar separador porque el --- de cierre del YAML se confunde.
-        uxDocPart = trimmed;
-      } else {
-        uxDocPart = trimmed;
+    const uxUserMsg = userMessage.trim();
+    const hasExistingUxGuide = (options?.currentUxUiGuideContent?.trim() ?? "").length > 0;
+    if (isUxTab && hasUx && uxSplit) {
+      const gated = gateUxGuideSplitResult(
+        uxUserMsg,
+        hasExistingUxGuide,
+        hasUx,
+        uxDocPart,
+        uxSplit,
+        safeResponse,
+        rawChat,
+      );
+      hasUx = gated.hasUx;
+      uxDocPart = gated.uxDocPart;
+      rawChat = gated.rawChat;
+      if (!gated.hasUx) {
+        console.log("[ChatStream] ux-ui-guide: turno consulta — no se persiste documento");
       }
-      rawChat = chatParts.length > 0 ? chatParts.join("\n\n") : "Guía UX/UI generada. Revisa el panel del documento.";
-      console.log("[ChatStream] fallback (mejorado): uxUiGuideContent length:", uxDocPart?.length ?? 0, "chat length:", rawChat.length, "match type:", docStartMatch ? "h1" : yamlStartMatch ? "yaml" : yamlInlineStart ? "yaml-inline" : "other");
+    }
+    if (isUxTab) {
+      const hadUxBeforeFallback = hasUx;
+      const fb = tryUxGuideDocFallback(
+        safeResponse,
+        uxUserMsg,
+        hasExistingUxGuide,
+        hasUx,
+        uxDocPart,
+        rawChat,
+      );
+      if (fb.hasUx && !hadUxBeforeFallback) {
+        console.log(
+          "[ChatStream] fallback ux-ui-guide: uxUiGuideContent length:",
+          fb.uxDocPart?.length ?? 0,
+          "chat length:",
+          fb.rawChat.length,
+        );
+      }
+      hasUx = fb.hasUx;
+      uxDocPart = fb.uxDocPart;
+      rawChat = fb.rawChat;
+    }
+    if (
+      isUxTab &&
+      !hasUx &&
+      (shouldPersistUxGuideFromChat(uxUserMsg, hasExistingUxGuide) ||
+        isUxGuideConfirmationMessage(uxUserMsg))
+    ) {
+      const priorAssistant = getLastAssistantChatContent(history);
+      const patched = tryApplyUxGuideLocalPatch(
+        options?.currentUxUiGuideContent ?? "",
+        uxUserMsg,
+        priorAssistant,
+      );
+      if (patched) {
+        console.log("[ChatStream] ux-ui-guide: parche local aplicado (sin FIN_UX_UI del modelo)");
+        hasUx = true;
+        uxDocPart = patched.content;
+        rawChat = patched.message;
+      } else if (
+        responseClaimsUxGuideAppliedWithoutDoc(safeResponse) ||
+        isUxGuideConfirmationMessage(uxUserMsg)
+      ) {
+        rawChat = UX_GUIDE_CHAT_NO_CHANGE;
+      }
     }
 
     // Fallback genérico para tabs de documento (architecture, use-cases, etc.) sin ---FIN_TAG---
@@ -929,11 +989,23 @@ export class SessionsService {
       options,
       dbgaDocPart,
     );
+    const finalUx = hasUx
+      ? this.parser.mergeUxUiGuideSectionOrUseFull(
+          options?.currentUxUiGuideContent,
+          this.parser.cleanDocumentContent(uxDocPart!),
+        )
+      : undefined;
+    if (tab === "ux-ui-guide") {
+      rawChat = uxGuideAssistantChatMessage(rawChat, finalUx, effectiveUserMessage);
+    }
     const assistantContent = this.parser.stripChatLabel(
       tab === "benchmark"
         ? benchmarkAssistantChatMessage(rawChat, finalDbga)
         : rawChat,
     );
+    if (tab === "ux-ui-guide" && finalUx?.trim() && !chatStreamed && assistantContent.trim()) {
+      yield { type: "chunk", content: assistantContent };
+    }
     const assistantEntry = stageId
       ? { role: "assistant" as const, content: assistantContent, tab, stageId }
       : { role: "assistant" as const, content: assistantContent, tab };
@@ -950,7 +1022,7 @@ export class SessionsService {
       type: "done",
       session: updatedSession,
       mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
-      uxUiGuideContent: hasUx ? this.parser.mergeUxUiGuideSectionOrUseFull(options?.currentUxUiGuideContent, this.parser.cleanDocumentContent(uxDocPart!)) : undefined,
+      uxUiGuideContent: finalUx,
       dbgaContent: finalDbga,
       phase0SummaryContent: hasPhase0
         ? this.parser.mergePhase0OrUseFull(
@@ -1039,6 +1111,12 @@ export class SessionsService {
       where: this.sessionScope(sessionId),
     });
     if (!session) throw new NotFoundException("Session not found");
+
+    const tabForWelcome = (context.activeTab ?? "mdd").trim();
+    const liveForTab = filterChatByTab((session.chatLog ?? []) as ChatMessage[], tabForWelcome);
+    if (liveForTab.length > 0) {
+      return session;
+    }
 
     const chatLogForTab = (context.chatLog ?? []) as ChatMessage[];
     const mddContent = (context.mddContent ?? "").trim();

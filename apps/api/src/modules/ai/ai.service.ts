@@ -14,6 +14,13 @@ const WELCOME_BRIEF_SYSTEM_PROMPT = `Eres el asistente del Workshop **The Forge*
 - No inventes requisitos que contradigan el texto del **mensaje de usuario** (puede traer fragmentos de Benchmark, BRD u otros documentos).
 - Si el mensaje pide **un solo** mensaje de bienvenida u orientación inicial, cumple sin divagar ni copiar el enunciado entero.`;
 import { UX_UI_GUIDE_PROMPT } from "./prompts/ux-ui-guide-prompt.js";
+import {
+  buildCriticalChangeDetectionForTab,
+  UX_UI_GUIDE_DELIMITER_INSTRUCTION,
+  UX_UI_GUIDE_EXISTING_DOC_MODE,
+  UX_UI_GUIDE_MODIFY_RULE,
+  UX_UI_GUIDE_STREAM_DELIMITER_HINT,
+} from "./prompts/ux-ui-guide-chat-policy.js";
 import { BENCHMARK_REFINE_PROMPT } from "./prompts/phase0-benchmark-refine-prompt.js";
 import { BLUEPRINT_PROMPT } from "./prompts/blueprint-prompt.js";
 import { API_CONTRACTS_PROMPT } from "./prompts/api-contracts-prompt.js";
@@ -159,7 +166,7 @@ export class AiService {
       if (options?.activeTab?.trim()) {
         const at = options.activeTab.trim();
         const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
-        systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).\n\n**INSTRUCCIÓN CRÍTICA — DETECCIÓN DE CAMBIOS:** Cualquier afirmación del usuario sobre lo que el proyecto **debe incluir, tener, usar o cambiar** (ej. "necesitamos X", "queremos Y", "falta Z", "usa W", "debe tener V", "agrega", "cambia", "modifica", "actualiza", "corrige", "elimina") es una **solicitud de modificación del documento actual**. **NO** preguntes si es consulta o cambio — el usuario ya lo dijo. Si hay ambigüedad genuina (que no sea sobre el documento actual), pregunta UNA VEZ. Cuando el usuario responda "sí", "dale", "aplica", "correcto" o similar a una pregunta tuya, **_DEBES_ devolver el documento actualizado con su delimitador ---FIN_TAG--- inmediatamente.** Nunca respondas solo "Hecho" o "MDD generado" sin el contenido del documento antes del delimitador.`;
+        systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).\n\n${buildCriticalChangeDetectionForTab(at)}`;
 
         // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
         const tagMap: Record<string, string> = {
@@ -177,6 +184,7 @@ export class AiService {
           infra: "INFRA",
           phase0: "PHASE0",
           wireframes: "WIREFRAMES",
+          "ux-ui-guide": "UX_UI",
         };
         const tag = tagMap[at];
         if (tag && !options?.welcomeBrief) {
@@ -202,8 +210,7 @@ export class AiService {
               "\n\n**OBLIGATORIO - Blueprint:** Cuando el usuario pida **agregar, modificar o eliminar** algo del Blueprint, **debes** devolver el **Blueprint completo actualizado** (conservando TODO el contenido existente) terminando con `---FIN_BLUEPRINT---`. Si solo envías una sección, el sistema la **fusiona** automáticamente con el contenido actual. Nunca respondas solo con un mensaje tipo \"El Blueprint ha sido actualizado\" — el sistema solo persiste cuando encuentra el contenido del documento seguido de `---FIN_BLUEPRINT---`.";
           }
           if (at === "ux-ui-guide") {
-            systemPrompt +=
-              "\n\n**OBLIGATORIO - Guía UX/UI:** Cuando el usuario pida **agregar, modificar o regenerar** la Guía UX/UI, **debes** devolver la **Guía UX/UI completa actualizada** (conservando TODO el contenido existente) terminando con `---FIN_UX_UI---`. Si solo envías un fragmento sin el documento completo, el sistema ignora el cambio y el usuario no ve nada. **Siempre incluye la guía COMPLETA antes del delimitador.**";
+            systemPrompt += `\n\n${UX_UI_GUIDE_DELIMITER_INSTRUCTION}\n\n${UX_UI_GUIDE_MODIFY_RULE}`;
           }
           if (at === "wireframes") {
             systemPrompt +=
@@ -239,7 +246,7 @@ export class AiService {
         }
         if (options?.currentUxUiGuideContent?.trim()) {
           systemPrompt +=
-            "\n\n[Contenido actual de la Guía UX/UI del proyecto (puede incluir ediciones del usuario)]\n---\n" +
+            `\n\n${UX_UI_GUIDE_EXISTING_DOC_MODE}\n\n[Contenido actual de la Guía UX/UI del proyecto (puede incluir ediciones del usuario)]\n---\n` +
             options.currentUxUiGuideContent.trim().slice(0, 6000) +
             "\n---";
         }
@@ -336,7 +343,7 @@ export class AiService {
     if (options?.activeTab?.trim()) {
       const at = options.activeTab.trim();
       const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
-      systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).`;
+      systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).\n\n${buildCriticalChangeDetectionForTab(at)}`;
 
       // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
       const tagMap: Record<string, string> = {
@@ -353,10 +360,15 @@ export class AiService {
         tasks: "TASKS",
         infra: "INFRA",
         wireframes: "WIREFRAMES",
+        "ux-ui-guide": "UX_UI",
       };
       const tag = tagMap[at];
       if (tag && !options?.welcomeBrief) {
-        systemPrompt += `\n\nSi decides generar o actualizar el documento de ${label} (completo o solo una sección), escribe el contenido y TERMINA con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Así el sistema aplicará los cambios al documento del proyecto.`;
+        if (at === "ux-ui-guide") {
+          systemPrompt += `\n\n${UX_UI_GUIDE_STREAM_DELIMITER_HINT}\n\n${UX_UI_GUIDE_MODIFY_RULE}`;
+        } else {
+          systemPrompt += `\n\nSi decides generar o actualizar el documento de ${label} (completo o solo una sección), escribe el contenido y TERMINA con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Así el sistema aplicará los cambios al documento del proyecto.`;
+        }
         if (at === "benchmark") {
           systemPrompt +=
             "\n\n**OBLIGATORIO — Benchmark (DBGA):** Devuelve el **DBGA COMPLETO** (contexto actual + cambios), no solo el fragmento nuevo. Termina con `---FIN_DBGA---`. Sin delimitador no se persiste nada en el panel.";
@@ -411,7 +423,7 @@ export class AiService {
       }
       if (options?.currentUxUiGuideContent?.trim()) {
         systemPrompt +=
-          "\n\n[Contenido actual de la Guía UX/UI del proyecto (puede incluir ediciones del usuario)]\n---\n" +
+          `\n\n${UX_UI_GUIDE_EXISTING_DOC_MODE}\n\n[Contenido actual de la Guía UX/UI del proyecto (puede incluir ediciones del usuario)]\n---\n` +
           options.currentUxUiGuideContent.trim().slice(0, 6000) +
           "\n---";
       }
