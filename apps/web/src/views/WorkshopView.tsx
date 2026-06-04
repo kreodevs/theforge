@@ -21,6 +21,7 @@ import {
   Play,
   ListOrdered,
   ListTodo,
+  ListChecks,
   ArrowDown,
   ArrowRight,
   ArrowUp,
@@ -49,13 +50,19 @@ import {
   WORKSHOP_HEADER_CTL_HOVER,
 } from "../constants/workshopHeaderToolbar";
 import type { CodebaseDocResponseMode } from "@theforge/shared-types";
-import { useWorkshopStore, type Status } from "../store/workshopStore";
+import { selectWorkshopAgentsBusy, useWorkshopStore, type Status } from "../store/workshopStore";
+import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import { AIProviderBanner } from "../components/AIProviderBanner";
 import { ModelsUnavailableDialog } from "../components/ModelsUnavailableDialog";
 import MddViewer from "../components/MddViewer";
+import {
+  MddPatternsWizardDialog,
+  type MddPatternsWizardMode,
+} from "../components/MddPatternsWizardDialog";
+import { mddHasSubstantialBody } from "@theforge/shared-types/mdd-governance-patterns";
 import { replaceYamlFrontMatter } from "../components/DesignMdPreview";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
 import { WorkshopMetricsColumnInner } from "./WorkshopMetricsColumnInner";
@@ -70,8 +77,8 @@ import {
 } from "../components/WorkshopDocBubbleMenu";
 import { WorkshopDocPanelHeader } from "../components/WorkshopDocPanelHeader";
 import {
-  collectDocumentStylesForPrint,
   printDesignSystemDocument,
+  printMarkdownDocument,
 } from "../utils/printDocument";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
 import { StandardDocPanel } from "../components/StandardDocPanel";
@@ -271,6 +278,10 @@ export default function WorkshopView({
   );
   const patchWorkshopStage = useWorkshopStore((s) => s.patchWorkshopStage);
   const generateMddFromBenchmark = useWorkshopStore((s) => s.generateMddFromBenchmark);
+  const persistMddContent = useWorkshopStore((s) => s.persistMddContent);
+  const [mddPatternsWizardOpen, setMddPatternsWizardOpen] = useState(false);
+  const [mddPatternsWizardMode, setMddPatternsWizardMode] =
+    useState<MddPatternsWizardMode>("initial");
   /** Estado legacy efectivo: lee de la etapa activa primero, con fallback a project.legacyFlowState */
   const activeLegacyState = useMemo(() => {
     if (project?.projectType === "LEGACY" && activeWorkshopStage?.legacyChangeState) {
@@ -401,6 +412,7 @@ export default function WorkshopView({
   const revertMddContent = useWorkshopStore((s) => s.revertMddContent);
   const persistAndReviewMdd = useWorkshopStore((s) => s.persistAndReviewMdd);
   const mddReviewing = useWorkshopStore((s) => s.mddReviewing);
+  const workshopAgentsBusy = useWorkshopStore(selectWorkshopAgentsBusy);
 
   const setBlueprintContent = useWorkshopStore((s) => s.setBlueprintContent);
   const persistBlueprintContent = useWorkshopStore((s) => s.persistBlueprintContent);
@@ -441,6 +453,64 @@ export default function WorkshopView({
   const legacyStart = useWorkshopStore((s) => s.legacyStart);
   const legacyAnswer = useWorkshopStore((s) => s.legacyAnswer);
   const legacyGenerateMdd = useWorkshopStore((s) => s.legacyGenerateMdd);
+  const requestGenerateMdd = useCallback(() => {
+    if (!projectId?.trim()) return;
+    if (isLegacyProject) {
+      void legacyGenerateMdd(projectId, activeStageId ?? undefined);
+      return;
+    }
+    if (!mddHasSubstantialBody(effectiveMddTrimmed)) {
+      setMddPatternsWizardMode("initial");
+      setMddPatternsWizardOpen(true);
+      return;
+    }
+    void generateMddFromBenchmark(projectId);
+  }, [
+    projectId,
+    isLegacyProject,
+    legacyGenerateMdd,
+    activeStageId,
+    effectiveMddTrimmed,
+    generateMddFromBenchmark,
+  ]);
+  const openEditMddPatterns = useCallback(() => {
+    setMddPatternsWizardMode("edit");
+    setMddPatternsWizardOpen(true);
+  }, []);
+  const handleMddPatternsWizardConfirm = useCallback(
+    async (markdown: string) => {
+      setMddPatternsWizardOpen(false);
+      if (mddPatternsWizardMode === "edit") {
+        setMddContent(markdown);
+        await persistMddContent(markdown, {
+          force: true,
+          allowGovernancePatternChange: true,
+        });
+        if (!useWorkshopStore.getState().error?.includes("restaurados")) {
+          const { projectId: pid, fetchEstimation } = useWorkshopStore.getState();
+          if (pid?.trim()) void fetchEstimation(pid);
+        }
+        return;
+      }
+      await persistMddContent(markdown, {
+        force: true,
+        allowGovernancePatternChange: true,
+      });
+      if (!useWorkshopStore.getState().error?.includes("restaurados") && projectId?.trim()) {
+        if (mddPatternsWizardMode === "initial") {
+          void generateMddFromBenchmark(projectId);
+        }
+      }
+    },
+    [
+      mddPatternsWizardMode,
+      setMddContent,
+      persistAndReviewMdd,
+      persistMddContent,
+      generateMddFromBenchmark,
+      projectId,
+    ],
+  );
   const legacyGenerateDeliverables = useWorkshopStore((s) => s.legacyGenerateDeliverables);
   const persistUxUiGuideContent = useWorkshopStore((s) => s.persistUxUiGuideContent);
   const generateUxGuideSequential = useCallback(async () => {
@@ -1377,44 +1447,13 @@ export default function WorkshopView({
     const mdPreview = document.querySelector<HTMLElement>(".markdown-preview");
     if (!mdPreview) return;
 
-    const printContent = mdPreview.cloneNode(true) as HTMLElement;
-    const printWin = window.open("", "_blank");
-    if (!printWin) {
-      document.body.classList.add("printing-md-content");
-      const cleanup = () => document.body.classList.remove("printing-md-content");
-      window.addEventListener("afterprint", cleanup, { once: true });
-      window.print();
-      return;
-    }
-
-    const styles = collectDocumentStylesForPrint();
-    const docStyles = `
-    body { padding: 2rem; background: #fff; color: #111; }
-    * { color: #111 !important; background: transparent !important; }
-    .markdown-preview { max-width: 900px; margin: 0 auto; }
-    img { max-width: 100%; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 8px; }
-    pre { overflow-x: auto; border: 1px solid #ddd; padding: 12px; background: #f5f5f5; }
-    code { background: #f5f5f5; padding: 2px 4px; }
-    @page { margin: 2cm; }
-  `;
-    printWin.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Imprimir documento</title>
-  <style>${styles}</style>
-  <style>${docStyles}</style>
-</head>
-<body>
-  ${printContent.innerHTML}
-</body>
-</html>`);
-    printWin.document.close();
-    printWin.focus();
-    setTimeout(() => printWin.print(), 500);
+    const docTitle =
+      centralPanel === "mdd"
+        ? "Master Design Document"
+        : centralPanel === "brd"
+          ? "Business Requirements Document"
+          : "Documento";
+    printMarkdownDocument(mdPreview, { title: docTitle });
   }, [centralPanel, uxUiGuideViewMode]);
 
   const docBubbleMenuItems = useMemo((): WorkshopDocBubbleMenuItem[] => {
@@ -1503,11 +1542,18 @@ export default function WorkshopView({
         icon: RefreshCw,
         disabled: loading || !projectId,
         onClick: () => {
-          void (isLegacyProject
-            ? legacyGenerateMdd(projectId, activeStageId ?? undefined)
-            : generateMddFromBenchmark(projectId));
+          requestGenerateMdd();
         },
       };
+      if (effectiveMddTrimmed.length > 0 && !legacyMddPanelIsAsIsOnly) {
+        ordered.push({
+          id: "edit-patterns",
+          label: "Editar patrones (SSOT)",
+          icon: ListChecks,
+          disabled: loading || mddReviewing || !projectId,
+          onClick: openEditMddPatterns,
+        });
+      }
     } else if (centralPanel === "mdd-inicial" && !!(activeLegacyState?.codebaseDoc ?? mddInicialLocalContent ?? "").trim()) {
       regenItem = {
         id: "regen",
@@ -1747,6 +1793,9 @@ export default function WorkshopView({
     uxGenerating,
     effectiveComplexityForTabs,
     generateMddFromBenchmark,
+    requestGenerateMdd,
+    openEditMddPatterns,
+    legacyMddPanelIsAsIsOnly,
     legacyGenerateMdd,
     handleRegenerateLegacyCodebaseDoc,
     toggleDocViewMode,
@@ -1773,8 +1822,16 @@ export default function WorkshopView({
           <p className="text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))] mb-4">{error}</p>
           {onBack && (
             <button
-              onClick={onBack}
-              className="text-[var(--primary)] hover:underline"
+              type="button"
+              onClick={() => {
+                if (!workshopAgentsBusy) onBack();
+              }}
+              disabled={workshopAgentsBusy}
+              title={workshopAgentsBusy ? WORKSHOP_EXIT_BLOCKED_TITLE : undefined}
+              className={cn(
+                "text-[var(--primary)] hover:underline",
+                workshopAgentsBusy && "cursor-not-allowed opacity-45 no-underline hover:no-underline",
+              )}
             >
               Volver
             </button>
@@ -1791,8 +1848,16 @@ export default function WorkshopView({
         <p className="text-[var(--muted-foreground)]">Cargando proyecto…</p>
         {onBack && (
           <button
-            onClick={onBack}
-            className="text-[var(--primary)] hover:underline text-sm"
+            type="button"
+            onClick={() => {
+              if (!workshopAgentsBusy) onBack();
+            }}
+            disabled={workshopAgentsBusy}
+            title={workshopAgentsBusy ? WORKSHOP_EXIT_BLOCKED_TITLE : undefined}
+            className={cn(
+              "text-[var(--primary)] hover:underline text-sm",
+              workshopAgentsBusy && "cursor-not-allowed opacity-45 no-underline hover:no-underline",
+            )}
           >
             Volver
           </button>
@@ -3283,9 +3348,7 @@ export default function WorkshopView({
                           onClick={() =>
                             void (legacyMddPanelIsAsIsOnly
                               ? handleRegenerateLegacyCodebaseDoc()
-                              : isLegacyProject
-                                ? legacyGenerateMdd(projectId, activeStageId ?? undefined)
-                                : generateMddFromBenchmark(projectId))
+                              : requestGenerateMdd())
                           }
                           disabled={
                             loading &&
@@ -3318,6 +3381,17 @@ export default function WorkshopView({
                             </>
                           )}
                         </WorkshopMddActionButton>
+                        {effectiveMddTrimmed.length > 0 && !legacyMddPanelIsAsIsOnly && (
+                          <WorkshopPanelButton
+                            tone="secondary"
+                            onClick={openEditMddPatterns}
+                            disabled={loading || mddReviewing}
+                            className="w-full justify-center lg:w-auto"
+                          >
+                            <WorkshopButtonIcon icon={ListChecks} tone="secondary" />
+                            Editar patrones (SSOT)
+                          </WorkshopPanelButton>
+                        )}
                         {effectiveMddTrimmed.length > 200 && (
                           <WorkshopMddActionButton
                             tone="success"
@@ -3347,6 +3421,9 @@ export default function WorkshopView({
                           : isLegacyProject
                             ? "Genera el MDD desde BRD y To-Be de la etapa activa (y doc. de partida si aplica)."
                             : "Genera el MDD a partir del DBGA / Benchmark guardado en Paso 0."}
+                        {" "}
+                        Los patrones SSOT solo se cambian con «Editar patrones»; si los marcas a mano en el
+                        markdown, al grabar se restauran.
                       </p>
                     </>
                   )}
@@ -4077,6 +4154,17 @@ export default function WorkshopView({
             </div>
           )
         }
+      <MddPatternsWizardDialog
+        open={mddPatternsWizardOpen}
+        onOpenChange={setMddPatternsWizardOpen}
+        mode={mddPatternsWizardMode}
+        initialMddContent={effectiveMddTrimmed || null}
+        loading={
+          (loading && loadingReason === "mdd") ||
+          (mddPatternsWizardMode === "edit" && mddReviewing)
+        }
+        onConfirm={handleMddPatternsWizardConfirm}
+      />
       </div >
     </div >
   );

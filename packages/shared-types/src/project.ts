@@ -58,6 +58,8 @@ export const updateProjectSchema = z.object({
   useCasesContent: z.string().optional().nullable(),
   userStoriesContent: z.string().optional().nullable(),
   mddContent: z.string().optional().nullable(),
+  /** true solo al guardar desde el wizard «Editar patrones (SSOT)»; si no, el backend restaura la selección [X] previa. */
+  allowGovernancePatternChange: z.boolean().optional(),
   blueprintContent: z.string().optional().nullable(),
   tasksContent: z.string().optional().nullable(),
   apiContractsContent: z.string().optional().nullable(),

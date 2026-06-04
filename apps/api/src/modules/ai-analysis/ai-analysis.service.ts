@@ -49,7 +49,17 @@ import {
   isInsufficientDbgaIdea,
 } from "./utils/dbga-idea-validation.util.js";
 import { resolveLangGraphRecursionLimit } from "./utils/langgraph-recursion.util.js";
-import { prepareMddForOutput, draftHasSection6Heading } from "./utils/mdd-prepare-output.js";
+import {
+  prepareMddForOutput,
+  draftHasSection6Heading,
+  type PrepareMddForOutputOptions,
+} from "./utils/mdd-prepare-output.js";
+import {
+  buildMddWithGovernanceSkeleton,
+  ensureMddGovernanceSection,
+  extractGovernanceSection,
+  mddHasSubstantialBody,
+} from "@theforge/shared-types/mdd-governance-patterns";
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
 
@@ -435,6 +445,8 @@ export class AiAnalysisService {
   ): AsyncGenerator<StreamProgressEvent> {
     let estimationStage: string | undefined;
     let brdContent: string | null = null;
+    let preservedGovernance: string | null = null;
+    let existingStageMdd = "";
     if (projectId?.trim()) {
       const p = await this.prisma.project.findUnique({
         where: { id: projectId.trim() },
@@ -449,11 +461,17 @@ export class AiAnalysisService {
           p.complexity as EstimationComplexity,
         );
         if (estimationStage?.trim()) {
-          const stage = await this.prisma.stage.findUnique({ where: { id: estimationStage.trim() } });
+          const stage = await this.prisma.stage.findUnique({
+            where: { id: estimationStage.trim() },
+            select: { brdContent: true, mddContent: true },
+          });
           brdContent = stage?.brdContent ?? null;
+          existingStageMdd = (stage?.mddContent ?? "").trim();
+          preservedGovernance = extractGovernanceSection(existingStageMdd);
         }
       }
     }
+    const prepareOpts: PrepareMddForOutputOptions = { preservedGovernance };
     let graph: Awaited<ReturnType<typeof createMddGraph>>;
     try {
       const userId = await this.resolveUserId(projectId);
@@ -477,6 +495,13 @@ export class AiAnalysisService {
       dbgaContent: dbgaEffective,
       projectId: projectId?.trim(),
       ...agentCtx,
+      ...(preservedGovernance
+        ? {
+            mddDraft: mddHasSubstantialBody(existingStageMdd)
+              ? ensureMddGovernanceSection(existingStageMdd, preservedGovernance)
+              : buildMddWithGovernanceSkeleton("Master Design Document", preservedGovernance),
+          }
+        : {}),
     };
 
     const mddOrder: Array<{ node: string; message: string }> = [
@@ -530,10 +555,13 @@ export class AiAnalysisService {
       }
 
       const raw = (lastState.mddDraft || "").trim() || "# Master Design Document\n\n(Sin contenido generado.)";
-      const markdown = prepareMddForOutput({
-        mddStructured: lastState.mddStructured,
-        mddDraft: raw || lastState.mddDraft,
-      });
+      const markdown = prepareMddForOutput(
+        {
+          mddStructured: lastState.mddStructured,
+          mddDraft: raw || lastState.mddDraft,
+        },
+        prepareOpts,
+      );
       const mddDraftRaw = (lastState.mddDraft ?? "").trim();
       this.logger.log(`[MDD:PersistCheck] mddDraft len=${mddDraftRaw.length} first200=${JSON.stringify(mddDraftRaw.slice(0, 200))}`);
       this.logger.log(`[MDD:PersistCheck] markdown post-prepare len=${markdown.length} first200=${JSON.stringify(markdown.slice(0, 200))}`);
@@ -645,6 +673,9 @@ export class AiAnalysisService {
     }
     const agentCtx = await this.buildMddAgentContext(projectId, stageIdFromClient);
     const existingMdd = (initialMddDraft ?? "").trim();
+    const managerPrepareOpts: PrepareMddForOutputOptions = {
+      preservedGovernance: extractGovernanceSection(existingMdd),
+    };
     const rawInitial = (initialMessage ?? "").trim();
     const looksLikeMddDocument =
       rawInitial.length > 500 &&
@@ -741,12 +772,15 @@ export class AiAnalysisService {
             }
             const plan = value?.type === "plan_approval" && Array.isArray(value?.plan) ? value.plan : undefined;
             const planMessage = value?.type === "plan_approval" && typeof value?.message === "string" ? value.message : undefined;
-            let draftOnInterrupt = prepareMddForOutput({
-              mddStructured: lastState?.mddStructured,
-              mddDraft: (lastState?.mddDraft ?? "").trim(),
-            });
+            let draftOnInterrupt = prepareMddForOutput(
+              {
+                mddStructured: lastState?.mddStructured,
+                mddDraft: (lastState?.mddDraft ?? "").trim(),
+              },
+              managerPrepareOpts,
+            );
             if (draftOnInterrupt.length < 200 && existingMdd.length >= 200) {
-              draftOnInterrupt = prepareMddForOutput(existingMdd);
+              draftOnInterrupt = prepareMddForOutput(existingMdd, managerPrepareOpts);
             }
             const estOpts = estimationOpts(projectId, estimationStageId, lastState);
             const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOpts);
@@ -792,10 +826,13 @@ export class AiAnalysisService {
             if (lastState.auditorGaps) {
               this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps, estimationStageId);
             }
-            const prepared = prepareMddForOutput({
-              mddStructured: lastState?.mddStructured,
-              mddDraft: draft,
-            });
+            const prepared = prepareMddForOutput(
+              {
+                mddStructured: lastState?.mddStructured,
+                mddDraft: draft,
+              },
+              managerPrepareOpts,
+            );
             if (prepared.length > 80) yield { type: "draft", markdown: prepared };
           }
         }
@@ -809,10 +846,13 @@ export class AiAnalysisService {
       if (rawMarkdown.length < 200 && existingMdd.length >= 200) {
         rawMarkdown = existingMdd;
       }
-      let markdown = prepareMddForOutput({
-        mddStructured: lastState?.mddStructured,
-        mddDraft: rawMarkdown,
-      });
+      let markdown = prepareMddForOutput(
+        {
+          mddStructured: lastState?.mddStructured,
+          mddDraft: rawMarkdown,
+        },
+        managerPrepareOpts,
+      );
       logSection3Debug("final (stream/manager done)", markdown);
       
       if (projectId?.trim()) {
@@ -856,12 +896,15 @@ export class AiAnalysisService {
         }
         const plan = value?.type === "plan_approval" && Array.isArray(value?.plan) ? value.plan : undefined;
         const planMessage = value?.type === "plan_approval" && typeof value?.message === "string" ? value.message : undefined;
-        let draftOnInterrupt = prepareMddForOutput({
-          mddStructured: lastState?.mddStructured,
-          mddDraft: (lastState?.mddDraft ?? "").trim(),
-        });
+        let draftOnInterrupt = prepareMddForOutput(
+          {
+            mddStructured: lastState?.mddStructured,
+            mddDraft: (lastState?.mddDraft ?? "").trim(),
+          },
+          managerPrepareOpts,
+        );
         if (draftOnInterrupt.length < 200 && existingMdd.length >= 200) {
-          draftOnInterrupt = prepareMddForOutput(existingMdd);
+          draftOnInterrupt = prepareMddForOutput(existingMdd, managerPrepareOpts);
         }
         const estOptsCatch = estimationOpts(projectId, estimationStageId, lastState);
         const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOptsCatch);
@@ -1010,6 +1053,9 @@ export class AiAnalysisService {
       mddContentFromClient?.trim() && mddContentFromClient.trim().length > 80
         ? mddContentFromClient.trim()
         : undefined;
+    const resumePrepareOpts: PrepareMddForOutputOptions = {
+      preservedGovernance: extractGovernanceSection(clientDraft ?? ""),
+    };
 
     try {
       // `resume` entrega el texto a interrupt(); el nodo reanudado aplica su propio update (p. ej. lastUserMessage).
@@ -1075,12 +1121,17 @@ export class AiAnalysisService {
             } catch {
               // mantener lastState
             }
-            let draftOnInterrupt = prepareMddForOutput({
-              mddStructured: stateForMarkdown?.mddStructured,
-              mddDraft: (stateForMarkdown?.mddDraft ?? "").trim(),
-            });
+            let draftOnInterrupt = prepareMddForOutput(
+              {
+                mddStructured: stateForMarkdown?.mddStructured,
+                mddDraft: (stateForMarkdown?.mddDraft ?? "").trim(),
+              },
+              resumePrepareOpts,
+            );
             const isBroken = draftOnInterrupt.startsWith("## useMermaidForDiagrams") || draftOnInterrupt.startsWith("## leaveUncovered") || (draftOnInterrupt.includes("## document") && !draftOnInterrupt.includes("## 1. Contexto"));
-            if (isBroken && lastNonEmptyDraft && lastNonEmptyDraft.length > 80) draftOnInterrupt = prepareMddForOutput(lastNonEmptyDraft.trim());
+            if (isBroken && lastNonEmptyDraft && lastNonEmptyDraft.length > 80) {
+              draftOnInterrupt = prepareMddForOutput(lastNonEmptyDraft.trim(), resumePrepareOpts);
+            }
             const estOptsResume = estimationOpts(projectId, estimationStage, stateForMarkdown ?? lastState);
             const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOptsResume);
             const precisionBreakdown = this.estimationService.getPrecisionBreakdown(draftOnInterrupt, estOptsResume);
@@ -1131,10 +1182,13 @@ export class AiAnalysisService {
                 this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps, estimationStage);
               }
             }
-            const prepared = prepareMddForOutput({
-              mddStructured: lastState?.mddStructured,
-              mddDraft: draft,
-            });
+            const prepared = prepareMddForOutput(
+              {
+                mddStructured: lastState?.mddStructured,
+                mddDraft: draft,
+              },
+              resumePrepareOpts,
+            );
             if (prepared.length > 80) yield { type: "draft", markdown: prepared };
           }
         }
@@ -1170,10 +1224,13 @@ export class AiAnalysisService {
         if (isBrokenMetadataDocument && lastNonEmptyDraft && lastNonEmptyDraft.length > 80) {
           raw = lastNonEmptyDraft;
         }
-        let markdown = prepareMddForOutput({
-          mddStructured: lastState?.mddStructured,
-          mddDraft: raw,
-        });
+        let markdown = prepareMddForOutput(
+          {
+            mddStructured: lastState?.mddStructured,
+            mddDraft: raw,
+          },
+          resumePrepareOpts,
+        );
         logSection3Debug("final (stream/resume done)", markdown);
         
         if (projectId?.trim()) {
@@ -1307,6 +1364,10 @@ export class AiAnalysisService {
       return;
     }
 
+    const regenPrepareOpts: PrepareMddForOutputOptions = {
+      preservedGovernance: extractGovernanceSection(mddContent),
+    };
+
     // regenEstimationStage desde pid + stageId (To-Be/As-Is eliminados)
     const regenCx = "HIGH" as EstimationComplexity;
     const regenEstimationStage = stageId?.trim() || undefined;
@@ -1357,7 +1418,7 @@ export class AiAnalysisService {
           .replace(/\n?```\s*$/, "")
           .trim() || newBody;
         const finalDraft = replaceSection1BodyFromAnyHeading(mddContent, newBody);
-        const markdown = prepareMddForOutput(finalDraft);
+        const markdown = prepareMddForOutput(finalDraft, regenPrepareOpts);
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         yield {
           type: "done",
@@ -1388,7 +1449,10 @@ export class AiAnalysisService {
         const integrationNode = createMddIntegrationNode(llm);
         const result = await integrationNode(state as MDDStateType);
         const finalDraft = (result.mddDraft ?? mddContent).trim();
-        const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
+        const markdown = prepareMddForOutput(
+          { mddStructured: result.mddStructured, mddDraft: finalDraft },
+          regenPrepareOpts,
+        );
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         yield {
           type: "done",
@@ -1403,7 +1467,10 @@ export class AiAnalysisService {
         const securityNode = createMddSecurityNode(llm);
         const result = await securityNode(state as MDDStateType);
         const finalDraft = (result.mddDraft ?? mddContent).trim();
-        const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
+        const markdown = prepareMddForOutput(
+          { mddStructured: result.mddStructured, mddDraft: finalDraft },
+          regenPrepareOpts,
+        );
         if (!draftHasSection6Heading(markdown)) {
           yield {
             type: "error",
@@ -1433,7 +1500,10 @@ export class AiAnalysisService {
           content25 != null
             ? replaceSections2To5InDraft(mddContent, content25)
             : architectDraft || mddContent;
-        const markdown = prepareMddForOutput({ mddStructured: result.mddStructured, mddDraft: finalDraft });
+        const markdown = prepareMddForOutput(
+          { mddStructured: result.mddStructured, mddDraft: finalDraft },
+          regenPrepareOpts,
+        );
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         yield {
           type: "done",

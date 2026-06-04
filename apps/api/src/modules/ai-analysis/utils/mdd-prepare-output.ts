@@ -13,6 +13,7 @@ import {
 } from "./mdd-sanitize.js";
 import { enrichMddWithUiUxDesignIntent } from "./mdd-enrich-uiux-intent.js";
 import { isPlaceholderSeguridad } from "./mdd-security-parse.js";
+import { ensureMddGovernanceSection, extractGovernanceSection } from "@theforge/shared-types/mdd-governance-patterns";
 
 export function hasStructuredContent(mdd: MddStructured | null | undefined): boolean {
   if (!mdd || typeof mdd !== "object") return false;
@@ -102,8 +103,14 @@ function restoreSections6And7AfterNormalize(source: string, normalized: string):
  * Fuente del markdown a enviar. Se prefiere mddDraft cuando es sustancial para no reconstruir desde
  * mddStructured (que podría tener §3 desactualizado o solo §6). Luego sanitize, normalize e inyección.
  */
+export type PrepareMddForOutputOptions = {
+  /** Sección inmutable del wizard; si no se pasa, se extrae del borrador de entrada. */
+  preservedGovernance?: string | null;
+};
+
 export function prepareMddForOutput(
   input: { mddStructured?: MddStructured; mddDraft?: string } | string,
+  options?: PrepareMddForOutputOptions,
 ): string {
   let raw: string;
   if (typeof input === "string") {
@@ -119,9 +126,14 @@ export function prepareMddForOutput(
       raw = draft;
     }
   }
+  const preserved =
+    options?.preservedGovernance?.trim() ||
+    extractGovernanceSection(raw) ||
+    null;
   const sanitized =
     replaceContextWhenOnlyMetadata(sanitizeContextKeyValueAndObject(sanitizeContextSection(raw)));
   const normalized = restoreSections6And7AfterNormalize(raw, normalizeMddFormat(sanitized));
   const withDiagrams = injectMddDiagrams(normalized, suggestMddDiagrams(normalized));
-  return enrichMddWithUiUxDesignIntent(withDiagrams);
+  const enriched = enrichMddWithUiUxDesignIntent(withDiagrams);
+  return ensureMddGovernanceSection(enriched, preserved);
 }
