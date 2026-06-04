@@ -1249,8 +1249,6 @@ export default function WorkshopView({
     reconnectMcpRegen();
   }, [beginMcpRegen, reconnectMcpRegen]);
 
-  const persistMddContent = useWorkshopStore((s) => s.persistMddContent);
-
   /** Importa design system desde el MCP del perfil del proyecto y reemplaza la guía UX/UI. */
   const fetchDesignSystemMcp = useCallback(async () => {
     if (!projectId || !componentSourceActive) return;
