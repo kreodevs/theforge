@@ -1,7 +1,48 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeMermaidInDocument, stripMarkdownLeakFromMermaidDiagramBody } from "./mermaid.js";
+import {
+  isOrphanSequenceDiagramLine,
+  normalizeMermaidInDocument,
+  repairFragmentedSequenceMermaidInDocument,
+  stripMarkdownLeakFromMermaidDiagramBody,
+} from "./mermaid.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
+
+describe("isOrphanSequenceDiagramLine", () => {
+  it("detecta flechas con prefijo ### o viñeta", () => {
+    assert.equal(isOrphanSequenceDiagramLine("### PrecioService->>CostoRepo: findActivo()"), true);
+    assert.equal(isOrphanSequenceDiagramLine("- API-->>Consumidor: 200 OK"), true);
+    assert.equal(isOrphanSequenceDiagramLine("### 1.2 Flujo de Cron"), false);
+    assert.equal(isOrphanSequenceDiagramLine("| Paso | Acción |"), false);
+  });
+});
+
+describe("repairFragmentedSequenceMermaidInDocument", () => {
+  it("fusiona sequenceDiagram partido por cierre prematuro del fence", () => {
+    const doc = `### 1.1 Flujo
+
+\`\`\`mermaid
+sequenceDiagram
+    participant API
+    participant Svc
+    API->>Svc: calcular()
+\`\`\`
+### Svc->>Repo: findActivo()
+    Repo-->>Svc: datos
+    alt error
+    Svc-->>API: 422
+    end
+- Svc-->>API: OK
+- API-->>Cliente: 200
+
+### 1.2 Siguiente sección`;
+    const out = repairFragmentedSequenceMermaidInDocument(doc);
+    assert.match(out, /calcular\(\)\n\s*Svc->>Repo: findActivo/);
+    assert.match(out, /API-->>Cliente: 200\n\`\`\`/);
+    assert.doesNotMatch(out, /```\n### Svc->>/);
+    assert.match(out, /### 1\.2 Siguiente sección/);
+  });
+});
 
 describe("stripMarkdownLeakFromMermaidDiagramBody", () => {
   it("trunca TechnicalMetadata filtrado en sequenceDiagram", () => {
@@ -73,6 +114,28 @@ flowchart TD
     const out = normalizeMermaidInDocument(doc);
     assert.doesNotMatch(out, /s1 --> s2\n- 1\./);
     assert.match(out, /```\n\n- 1\. \*\*Evento/);
+  });
+
+  it("repara sequenceDiagram con ### y viñetas fuera del fence", () => {
+    const doc = `### 1.1 Cálculo
+
+\`\`\`mermaid
+sequenceDiagram
+    participant C as Consumidor
+    participant API
+    C->>API: POST /precio/calcular
+    API->>Auth: Validar JWT
+    Auth-->>API: OK
+\`\`\`
+### API->>Svc: calcularPrecio(dto)
+    Svc-->>API: resultado
+- API-->>C: 200 OK
+
+### 1.2 Cron`;
+    const out = normalizeMermaidInDocument(doc);
+    assert.match(out, /Auth-->>API: OK[\s\S]*API->>Svc: calcularPrecio/);
+    assert.match(out, /API-->>C: 200 OK[\s\S]*```/);
+    assert.doesNotMatch(out, /```\n### API->>/);
   });
 });
 
