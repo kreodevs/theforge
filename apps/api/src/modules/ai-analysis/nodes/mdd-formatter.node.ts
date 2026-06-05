@@ -7,12 +7,14 @@ import {
   getSectionsToPreserveFromExecutorPlan,
   hydrateStructuredFromDraft,
   logMddNodeOutput,
+  finalizeMddDeliverable,
   normalizeMddFormat,
   preserveUntouchedMddSectionsFromBaseline,
   replaceContextWhenOnlyMetadata,
   sanitizeContextKeyValueAndObject,
   sanitizeContextSection,
 } from "../utils/mdd-sanitize.js";
+import { reconcileUiUxDesignIntent } from "../utils/mdd-enrich-uiux-intent.js";
 import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js";
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:Formatter] ${msg}`, ...args);
@@ -66,7 +68,9 @@ export function createMddFormatterNode(): (state: MDDStateType) => Promise<Parti
         const hydrated = hydrateStructuredFromDraft(state.mddStructured, state.mddDraft ?? "");
         const rendered = mddStructuredToMarkdown(hydrated);
         if (rendered.trim().length > 0) {
-          const markdown = normalizeMddFormat(rendered);
+          const markdown = reconcileUiUxDesignIntent(
+            finalizeMddDeliverable(normalizeMddFormat(rendered)),
+          );
           if (currentDraftLen > markdown.length * 1.35 || draftHasSubstantialSection3) {
             if (draftHasSubstantialSection3) LOG("draft tiene §3 sustancial; no reemplazar por mddStructured, se normaliza draft");
             else LOG("draft entrante (%s) mucho más largo que mddStructured (%s); se preserva draft y solo se normaliza", currentDraftLen, markdown.length);
@@ -90,9 +94,13 @@ export function createMddFormatterNode(): (state: MDDStateType) => Promise<Parti
       return {};
     }
     try {
-      let formatted = normalizeMddFormat(
-        ensureContratosSection(
-          replaceContextWhenOnlyMetadata(sanitizeContextKeyValueAndObject(sanitizeContextSection(draft))),
+      let formatted = reconcileUiUxDesignIntent(
+        finalizeMddDeliverable(
+          normalizeMddFormat(
+            ensureContratosSection(
+              replaceContextWhenOnlyMetadata(sanitizeContextKeyValueAndObject(sanitizeContextSection(draft))),
+            ),
+          ),
         ),
       );
       if (state.executorControlled === true && state.previousMddDraftForMerge?.trim()) {

@@ -18,11 +18,13 @@ import {
   ensureContratosSection,
   hydrateStructuredFromDraft,
   logMddNodeOutput,
+  finalizeMddDeliverable,
   normalizeMddFormat,
   replaceContextWhenOnlyMetadata,
   sanitizeContextKeyValueAndObject,
   sanitizeContextSection,
 } from "../utils/mdd-sanitize.js";
+import { reconcileUiUxDesignIntent } from "../utils/mdd-enrich-uiux-intent.js";
 import { z } from "zod";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { generateImpactAnalysis } from "../utils/mdd-impact-analysis.js";
@@ -627,9 +629,13 @@ export function createMddManagerNode(
           formatted = mddStructuredToMarkdown(hydrated);
         } else {
           const draft = (state.mddDraft ?? "").trim();
-          formatted = normalizeMddFormat(
-            ensureContratosSection(
-              replaceContextWhenOnlyMetadata(sanitizeContextKeyValueAndObject(sanitizeContextSection(draft))),
+          formatted = reconcileUiUxDesignIntent(
+            finalizeMddDeliverable(
+              normalizeMddFormat(
+                ensureContratosSection(
+                  replaceContextWhenOnlyMetadata(sanitizeContextKeyValueAndObject(sanitizeContextSection(draft))),
+                ),
+              ),
             ),
           );
         }
