@@ -3833,7 +3833,7 @@ export default function WorkshopView({
             <div
               className={cn(
                 "overflow-hidden min-h-0 min-w-0 shrink-0 self-stretch max-h-[min(calc(100dvh-2.5rem),90dvh)]",
-                "transition-[max-width] duration-300 ease-[cubic-bezier(0.33,1,0.68,1)] will-change-[max-width]",
+                "transition-[max-width] duration-300 ease-forge-smooth will-change-[max-width]",
                 lgMetricsFlyoutOpen ? "pointer-events-auto" : "pointer-events-none",
                 lgMetricsFlyoutOpen
                   ? "max-w-[calc(2rem+min(40rem,calc(100vw-3rem)))]"
