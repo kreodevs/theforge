@@ -933,6 +933,22 @@ export default function WorkshopView({
   /** Por debajo de `lg`: una columna con control de Chat / Documentos / Semáforo. */
   type WorkshopMobileColumn = "chat" | "workspace" | "metrics";
   const [mobileWorkshopColumn, setMobileWorkshopColumn] = useState<WorkshopMobileColumn>("workspace");
+
+  /** Tras vaciar el MDD: vista por defecto (previsualización con «Sin contenido aún.»), no el editor. */
+  const handleClearMddCompletely = useCallback(async () => {
+    if (!projectId?.trim()) return false;
+    const ok = await clearMddContentCompletely(projectId);
+    if (!ok) return false;
+    setMddPatternsWizardOpen(false);
+    setCentralPanel("mdd");
+    setMobileWorkshopColumn("workspace");
+    setMddViewMode("preview");
+    requestAnimationFrame(() => {
+      workspaceScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    return true;
+  }, [projectId, clearMddContentCompletely, setCentralPanel]);
+
   const [isLgLayout, setIsLgLayout] = useState(() =>
     typeof globalThis.matchMedia === "function"
       ? globalThis.matchMedia("(min-width: 1024px)").matches
@@ -1747,6 +1763,10 @@ export default function WorkshopView({
           confirmLabel: "Sí, limpiar",
         },
         onClick: () => {
+          if (centralPanel === "mdd") {
+            void handleClearMddCompletely();
+            return;
+          }
           void clearWorkshopDocumentContent(projectId, centralPanel, {
             benchmarkPhaseTab,
             stageId: activeStageId ?? undefined,
@@ -1878,6 +1898,7 @@ export default function WorkshopView({
     generateTasks,
     generateUxGuideSequential,
     clearWorkshopDocumentContent,
+    handleClearMddCompletely,
   ]);
 
   const mddDirty = (mddContent ?? "").trim() !== persistedMddBaseline.trim();
@@ -4250,7 +4271,10 @@ export default function WorkshopView({
             <AlertDialogAction
               className="bg-[var(--destructive)] hover:bg-[var(--destructive-hover)]"
               onClick={() => {
-                if (projectId?.trim()) void clearMddContentCompletely(projectId);
+                void (async () => {
+                  const ok = await handleClearMddCompletely();
+                  if (ok) setClearMddConfirmOpen(false);
+                })();
               }}
             >
               Limpiar MDD
