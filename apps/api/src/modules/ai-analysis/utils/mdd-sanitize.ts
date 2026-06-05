@@ -1999,8 +1999,8 @@ export function normalizeMddFormat(draft: string): string {
   out = out.replace(/(##\s*6\.\s*Seguridad)\s*\{\s*\n/gi, "$1\n\n");
   // "6. Seguridad- Aspectos generales" → ## 6 + ## Aspectos Generales (formato canónico)
   out = out.replace(/(?:#+\s*)?6\.\s*Seguridad\s*-\s*Aspectos\s+generales:?\s*/gi, "## 6. Seguridad\n\n## Aspectos Generales\n\n");
-  // Despegar "6. Seguridad-" genérico
-  out = out.replace(/(?:#+\s*)?6\.\s*Seguridad\s*-\s*/gi, "## 6. Seguridad\n\n");
+  // Despegar "6. Seguridad-" genérico (solo en la misma línea; no tocar viñetas "- item" en líneas siguientes)
+  out = out.replace(/(?:#+\s*)?6\.\s*Seguridad[^\S\n]*-\s*/gi, "## 6. Seguridad\n\n");
   // Corregir doble guion
   out = out.replace(/(##\s*6\.\s*Seguridad\n\n)-\s*-\s*/gi, "$1- ");
   // Si queda "## 6. Seguridad" o "6. Seguridad" pegado a "###", insertar salto (varias formas por si falla el regex anterior)
@@ -2754,10 +2754,10 @@ const SECTION_ORDER = [
   { pattern: /^##\s+3\.\s*Modelo\s+(?:de\s+)?datos/i, heading: "## 3. Modelo de Datos" },
   { pattern: /^##\s+4\.\s*Contratos\s+de\s+API/i, heading: "## 4. Contratos de API" },
   { pattern: /^##\s+5\.\s*Lógica\s+y\s*Edge\s+Cases/i, heading: "## 5. Lógica y Edge Cases" },
-  { pattern: /^##\s+6\.\s*Seguridad\b/i, heading: "## 6. Seguridad" },
-  { pattern: /^##\s+7\.\s*Infraestructura\b/i, heading: "## 7. Infraestructura" },
-  { pattern: /^##\s+Seguridad\b/i, heading: "## 6. Seguridad" },
-  { pattern: /^##\s+Integración\b/i, heading: "## 7. Infraestructura" },
+  // §6: acepta numbered (## 6. Seguridad) y bare (## Seguridad)
+  { pattern: /^##\s+(?:6\.\s*)?Seguridad\b/i, heading: "## 6. Seguridad" },
+  // §7: acepta Infraestructura o Integración, con o sin número
+  { pattern: /^##\s+(?:7\.\s*)?(?:Infraestructura|Integración)\b/i, heading: "## 7. Infraestructura" },
 ];
 
 /**
@@ -2818,12 +2818,30 @@ function canonicalSectionNumber(heading: string): number | null {
   return null;
 }
 
+const SECTION6_MISSING_PLACEHOLDER = "(Pendiente: Arquitecto de Seguridad)";
+
+/**
+ * Si hay §7 (o §5) pero falta el heading canónico ## 6. Seguridad, lo inserta antes de §7.
+ * Evita el salto visible 5 → 7 cuando el plan omitió al agente security o el LLM no emitió §6.
+ */
+export function ensureSection6WhenSection7Present(draft: string): string {
+  const trimmed = (draft ?? "").trim();
+  if (!trimmed || getSection6Or7Range(trimmed, 6)) return draft;
+  if (!getSection6Or7Range(trimmed, 7)) return draft;
+  if (!/\n##\s+5\.\s*Lógica\s+y\s*Edge\s+Cases\b/i.test(trimmed)) return draft;
+  return replaceSection6Or7InDraft(
+    trimmed,
+    6,
+    `## 6. Seguridad\n\n${SECTION6_MISSING_PLACEHOLDER}`,
+  );
+}
+
 /**
  * Reordena el MDD a 1..7 y elimina secciones duplicadas.
  * No parte en ## que estén dentro de bloques ```. Si la sección 2 contiene ## 3/## 4 embebidos, la reemplaza por placeholder.
  */
 export function deduplicateAndReorderMddSections(draft: string): string {
-  let trimmed = (draft || "").trim();
+  let trimmed = ensureSection6WhenSection7Present((draft || "").trim());
   if (!trimmed) return draft;
   // Corregir §6 pegada a ### antes de extraer (evita que extractSection tome "## 6. Seguridad###..." como una sola línea)
   trimmed = trimmed.replace(/(6\.\s*Seguridad)\s*(#{1,6})/gi, "$1\n\n$2");
@@ -2882,7 +2900,7 @@ export function deduplicateAndReorderMddSections(draft: string): string {
   const out = [title, "", ...orderedSections.flatMap((s) => ["---", s.heading, "", s.body, ""])];
   const result = out.join("\n").trim();
   if (result.length < trimmed.length * 0.5) return draft;
-  return result;
+  return ensureSection6WhenSection7Present(result);
 }
 
 /** Inserta `---` antes de cada `##` que no tenga ya una línea `---` inmediatamente anterior. */

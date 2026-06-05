@@ -1053,7 +1053,7 @@ export function createMddManagerNode(
       const minimalPlan = { tail: "minimal" as const };
       let sectionsToRun = expandSectionsToRun(inferSectionsFromMessage(userMessage), minimalPlan);
       if (sectionsToRun.length === 0) {
-        sectionsToRun = expandSectionsToRun(["software_architect", "integration"], minimalPlan);
+        sectionsToRun = expandSectionsToRun(["software_architect", "security", "integration"], minimalPlan);
       }
       let mddPlan = await generateMddPlanWithLLM(llm, state, "sections", sectionsToRun);
       if (!mddPlan.length) {
@@ -1351,7 +1351,7 @@ export function createMddManagerNode(
       delegateTarget = "sections";
       sectionsToRun = expandSectionsToRun(inferSectionsFromMessage(userMessage));
       if (sectionsToRun.length === 0) {
-        sectionsToRun = expandSectionsToRun(["software_architect", "integration"]);
+        sectionsToRun = expandSectionsToRun(["software_architect", "security", "integration"]);
       }
     }
 

@@ -1497,8 +1497,8 @@ export class AiAnalysisService {
     projectId: string,
     patterns: Array<{ label: string; group: string; affects: string; description: string }>,
   ) {
-    for (const p of patterns) {
-      await this.graphMemory.saveDecision(projectId, {
+    await Promise.all(patterns.map((p) =>
+      this.graphMemory.saveDecision(projectId, {
         title: `Patrón SSOT: ${p.label}`,
         context: `Selección en el wizard del MDD (grupo: ${p.group}). Derivada del análisis de Fase 0 / Benchmark / BRD.`,
         consequence: [
@@ -1509,8 +1509,8 @@ export class AiAnalysisService {
           .join(" ")
           .slice(0, 2000),
         status: "Accepted",
-      });
-    }
+      }),
+    ));
     return this.graphMemory.getDecisionsByProject(projectId);
   }
 

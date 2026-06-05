@@ -2,8 +2,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
   applyDeploymentStackDirectiveToDraft,
+  deduplicateAndReorderMddSections,
+  ensureSection6WhenSection7Present,
   getSectionsToPreserveFromExecutorPlan,
   isMddSectionPlaceholderBody,
+  normalizeMddFormat,
   normalizeMddEnglishSubheadings,
   preserveUntouchedMddSectionsFromBaseline,
   sanitizeSeguridadIntegracionRawJson,
@@ -118,6 +121,66 @@ describe("isMddSectionPlaceholderBody", () => {
   it("trata (Pendiente: Arquitecto de Seguridad) como placeholder", () => {
     assert.ok(isMddSectionPlaceholderBody("(Pendiente: Arquitecto de Seguridad)"));
     assert.ok(!isMddSectionPlaceholderBody("### A. Autenticación\n\n- JWT con rotación de claves."));
+  });
+});
+
+describe("normalizeMddFormat §6 bullets", () => {
+  it("conserva viñetas bajo ## 6. Seguridad (no las confunde con 6. Seguridad- pegado)", () => {
+    const draft = `# Master Design Document
+
+## 5. Lógica y Edge Cases
+
+Lógica.
+
+## 6. Seguridad
+
+- Autenticación:
+    - JWT validado vía JWKS.
+
+## 7. Infraestructura
+
+Docker.
+`;
+    const out = normalizeMddFormat(draft);
+    assert.ok(out.includes("JWT validado vía JWKS."));
+  });
+});
+
+describe("ensureSection6WhenSection7Present", () => {
+  it("inserta §6 placeholder cuando el documento salta de §5 a §7", () => {
+    const draft = `# Master Design Document
+
+## 5. Lógica y Edge Cases
+
+Reglas de negocio y middleware JWT.
+
+## 7. Infraestructura
+
+Docker y SSO.
+`;
+    const fixed = ensureSection6WhenSection7Present(draft);
+    assert.ok(fixed.includes("## 6. Seguridad"));
+    assert.ok(fixed.indexOf("## 5.") < fixed.indexOf("## 6. Seguridad"));
+    assert.ok(fixed.indexOf("## 6. Seguridad") < fixed.indexOf("## 7. Infraestructura"));
+    const normalized = deduplicateAndReorderMddSections(fixed);
+    assert.ok(normalized.includes("## 6. Seguridad"), "deduplicate debe conservar §6");
+    assert.ok(normalized.includes("Pendiente: Arquitecto de Seguridad"));
+  });
+
+  it("no altera el documento si §6 ya existe", () => {
+    const draft = `## 5. Lógica y Edge Cases
+
+Lógica.
+
+## 6. Seguridad
+
+JWT.
+
+## 7. Infraestructura
+
+K8s.
+`;
+    assert.strictEqual(ensureSection6WhenSection7Present(draft), draft);
   });
 });
 

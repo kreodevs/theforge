@@ -11,6 +11,7 @@ import { getUserBrief } from "../utils/mdd-user-brief.js";
 import {
   buildNewFormatManifestFromIdentifiedTerms,
   extractIdentifiedInfraFromText,
+  ensureSection6WhenSection7Present,
   fixIntegrationSectionBullets,
   getMddDraftSummary,
   integracionToSection7Markdown,
@@ -330,7 +331,8 @@ export function createMddIntegrationNode(llm: BaseChatModel) {
         ? { subsections: merged.integracion }
         : (merged.integracion ?? slice.integracion);
       const section7Md = integracionToSection7Markdown(integracionForMd);
-      let mddDraft = replaceSection6Or7InDraft(state.mddDraft ?? "", 7, section7Md);
+      const draftWithSection6 = ensureSection6WhenSection7Present(state.mddDraft ?? "");
+      let mddDraft = replaceSection6Or7InDraft(draftWithSection6, 7, section7Md);
       if (state.executorControlled === true && state.previousMddDraftForMerge?.trim()) {
         const preserve = getSectionsToPreserveFromExecutorPlan(state.sectionsToRun);
         if (preserve.length > 0) {
