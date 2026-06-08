@@ -21,6 +21,10 @@ import {
   serializePhase0GapsEnvelope,
 } from "./phase0-interview-persist.util.js";
 import { phase0ToMarkdown } from "./phase0-to-markdown.js";
+import {
+  hasBorradorContent,
+  loadProjectBorrador,
+} from "./phase0-load-borrador.util.js";
 import type {
   Phase0Document,
   Phase0InterviewState,
@@ -55,13 +59,11 @@ function emptyDocument(): Phase0Document {
   };
 }
 
-function parseBorradorFromProject(raw: string | null | undefined): Phase0Document {
-  if (!raw?.trim()) return emptyDocument();
-  try {
-    return JSON.parse(raw) as Phase0Document;
-  } catch {
-    return emptyDocument();
-  }
+function parseBorradorFromProject(
+  dbgaContent: string | null | undefined,
+  phase0SummaryContent: string | null | undefined,
+): Phase0Document {
+  return loadProjectBorrador(dbgaContent, phase0SummaryContent);
 }
 
 @Injectable()
@@ -237,12 +239,8 @@ export class Phase0InterviewService {
       return { markdown: project.dbgaContent.trim() };
     }
 
-    const borrador = parseBorradorFromProject(project.phase0SummaryContent);
-    const hasContent =
-      borrador.proposito.problema.trim().length > 0 ||
-      borrador.entidades.length > 0 ||
-      borrador.reglasNegocio.length > 0;
-    if (!hasContent) return { markdown: null };
+    const borrador = parseBorradorFromProject(project.dbgaContent, project.phase0SummaryContent);
+    if (!hasBorradorContent(borrador)) return { markdown: null };
 
     const markdown = await this.finalizePhase0FromBorrador(pid, borrador);
     return { markdown };
@@ -259,19 +257,15 @@ export class Phase0InterviewService {
 
     const project = await this.prisma.project.findUnique({
       where: { id: pid },
-      select: { phase0SummaryContent: true, phase0Gaps: true },
+      select: { phase0SummaryContent: true, phase0Gaps: true, dbgaContent: true },
     });
     if (!project) {
       return { type: "error", message: "Proyecto no encontrado" };
     }
 
-    const borrador = parseBorradorFromProject(project.phase0SummaryContent);
-    const hasContent =
-      borrador.proposito.problema.trim().length > 0 ||
-      borrador.entidades.length > 0 ||
-      borrador.reglasNegocio.length > 0;
+    const borrador = parseBorradorFromProject(project.dbgaContent, project.phase0SummaryContent);
 
-    if (!hasContent) {
+    if (!hasBorradorContent(borrador)) {
       return {
         type: "error",
         message: "No hay borrador de Paso 0. Completa la entrevista inicial antes de auditar.",
@@ -282,16 +276,12 @@ export class Phase0InterviewService {
     const askable = gaps.filter(isAskableGap);
 
     if (askable.length === 0) {
-      const remainingOptional = gaps.filter((g) => g.criticidad === "opcional");
-      borrador.preguntasPendientes = remainingOptional.map((g) => g.descripcion);
-      const markdown = phase0ToMarkdown(borrador);
+      // Solo validación: no sobrescribir dbgaContent ni el borrador editado por el usuario
       await this.prisma.project.update({
         where: { id: pid },
         data: {
-          phase0SummaryContent: JSON.stringify(borrador, null, 2),
           phase0Gaps: JSON.stringify({ v: 1, gaps }),
           phase0Status: "done",
-          dbgaContent: markdown,
         },
       });
       return {
@@ -397,14 +387,14 @@ export class Phase0InterviewService {
 
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { phase0SummaryContent: true, phase0Gaps: true },
+      select: { phase0SummaryContent: true, phase0Gaps: true, dbgaContent: true },
     });
     if (!project) return null;
 
     const envelope = parsePhase0GapsEnvelope(project.phase0Gaps);
     if (!envelope?.interview) return null;
 
-    const borrador = parseBorradorFromProject(project.phase0SummaryContent);
+    const borrador = parseBorradorFromProject(project.dbgaContent, project.phase0SummaryContent);
     const rehydrated = rehydrateInterviewState(projectId, borrador, envelope, threadId);
     if (!rehydrated) return null;
 
@@ -442,6 +432,7 @@ export class Phase0InterviewService {
 
   private async persistInterviewState(state: Phase0InterviewState): Promise<void> {
     try {
+      const markdown = phase0ToMarkdown(state.borrador);
       await this.prisma.project.update({
         where: { id: state.projectId },
         data: {
@@ -449,6 +440,7 @@ export class Phase0InterviewService {
           phase0Gaps: serializePhase0GapsEnvelope(state),
           phase0Status: state.status,
           phase0Questions: state.preguntasRealizadas,
+          dbgaContent: markdown,
         },
       });
     } catch (err) {
