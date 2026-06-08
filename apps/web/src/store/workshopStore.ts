@@ -1801,6 +1801,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
               : `${API_BASE}/ai-analysis/mdd/stream/manager`;
           const mddStage = get().activeStageId;
           const draftForMdd = (get().mddContent ?? get().project?.mddContent ?? "").trim() || undefined;
+          const mddSnapshotBeforeStream = draftForMdd ?? "";
           const body =
             managerThreadId != null
               ? {
@@ -1879,19 +1880,39 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                           : null,
                     });
                     if (event.markdown != null && event.markdown.trim().length > 80) {
-                      set({ mddContent: event.markdown });
-                      const { persistMddContent, fetchProject, fetchEstimation } = get();
-                      await persistMddContent(event.markdown);
-                      const errBeforeFetch = get().error;
-                      if (shouldApplyWorkshopUpdate(get, requestProjectId)) {
-                        await fetchProject(requestProjectId);
-                        if (errBeforeFetch) set({ error: errBeforeFetch });
-                        await fetchEstimation(requestProjectId);
-                        const current = get();
+                      const incoming = event.markdown.trim();
+                      const unchanged =
+                        mddSnapshotBeforeStream.length > 80 && incoming === mddSnapshotBeforeStream;
+                      const replyClaimsEdit =
+                        typeof event.reply === "string" &&
+                        /\b(ajust|elimin|actualiz|modific|ya no contiene|sin referencias)\b/i.test(
+                          event.reply,
+                        );
+                      if (unchanged && replyClaimsEdit) {
                         set({
-                          mddContent: event.markdown,
-                          project: current.project ? { ...current.project, mddContent: event.markdown } : null,
+                          error:
+                            "El chat indicó cambios pero el MDD no se actualizó. Revisa si hay un plan pendiente de aprobar, o usa /infraestructura o /seguridad para forzar la regeneración.",
                         });
+                      }
+                      set({ mddContent: incoming });
+                      const { persistMddContent, fetchProject, fetchEstimation } = get();
+                      if (!unchanged) {
+                        await persistMddContent(incoming, { force: true });
+                      }
+                      if (!unchanged) {
+                        const errBeforeFetch = get().error;
+                        if (shouldApplyWorkshopUpdate(get, requestProjectId)) {
+                          await fetchProject(requestProjectId);
+                          if (errBeforeFetch) set({ error: errBeforeFetch });
+                          await fetchEstimation(requestProjectId);
+                          const current = get();
+                          set({
+                            mddContent: incoming,
+                            project: current.project
+                              ? { ...current.project, mddContent: incoming }
+                              : null,
+                          });
+                        }
                       }
                     }
                     // No sobrescribir mddContent con markdown vacío (auditar puede venir de checkpoint sin draft)
