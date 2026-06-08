@@ -959,7 +959,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   ...initialState,
 
   setProjectId: (id) => set({ projectId: id }),
-  setWorkshopActiveDocPanel: (panel) => set({ workshopActiveDocPanel: panel }),
+  setWorkshopActiveDocPanel: (panel) => {
+    const state = get();
+    if (isWorkshopAgentsBusy(state)) return;
+    set({ workshopActiveDocPanel: panel });
+  },
   setProject: (p) => {
     if (!p) {
       set({ project: null, activeStageId: null, workshopStages: [], lastLegacyDeliverablesDebug: null });
@@ -2127,10 +2131,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           projectId: requestProjectId,
           sessionId: session?.id,
           message: msg || "",
-          mddContent: get().mddContent || undefined,
-          uxUiGuideContent: get().uxUiGuideContent ?? get().project?.uxUiGuideContent ?? undefined,
           activeTab: tab,
         };
+        if (tab === "mdd") {
+          body.mddContent = get().mddContent || undefined;
+        }
+        if (tab === "ux-ui-guide") {
+          body.uxUiGuideContent = get().uxUiGuideContent ?? get().project?.uxUiGuideContent ?? undefined;
+        }
         {
           const sf = get().activeStageId;
           if (sf) body.stageId = sf;
@@ -2149,7 +2157,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           if (sc != null && String(sc).trim()) body.specContent = sc;
         }
         if (tab === "architecture") {
-          const ac = get().architectureContent;
+          const ac = get().architectureContent ?? get().project?.architectureContent;
           if (ac != null && String(ac).trim()) body.architectureContent = ac;
         }
         if (tab === "blueprint") {

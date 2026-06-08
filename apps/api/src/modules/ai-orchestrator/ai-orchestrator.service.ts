@@ -18,6 +18,30 @@ import { EpisodicMemoryKind } from "@theforge/database";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
 import { wouldShrinkDbgaDangerously } from "../sessions/dbga-edit.util.js";
 
+export type OrchestratorClientDeliverables = {
+  architectureContent?: string;
+  blueprintContent?: string;
+  useCasesContent?: string;
+  userStoriesContent?: string;
+  apiContractsContent?: string;
+  logicFlowsContent?: string;
+  tasksContent?: string;
+  infraContent?: string;
+};
+
+function docForActiveTab(
+  activeTab: string | undefined,
+  expectedTab: string,
+  fromClient: string | undefined,
+  fromProject: string | null | undefined,
+): string | undefined {
+  if ((activeTab ?? "mdd").trim() !== expectedTab) return undefined;
+  const client = fromClient?.trim();
+  if (client) return client;
+  const persisted = fromProject?.trim();
+  return persisted || undefined;
+}
+
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
 }
@@ -152,8 +176,11 @@ export class AiOrchestratorService {
       }
     }
 
+    const tab = activeTab?.trim() ?? "mdd";
     const currentMdd =
-      mddContentFromClient ?? mddForRouteStage(project, route.stageId) ?? undefined;
+      tab === "mdd"
+        ? (mddContentFromClient ?? mddForRouteStage(project, route.stageId) ?? undefined)
+        : undefined;
     const isBenchmarkTab = activeTab?.trim() === "benchmark";
     const hasComplexityPending =
       project.complexityPending != null && typeof project.complexityPending === "object";
@@ -171,13 +198,13 @@ export class AiOrchestratorService {
       uxUiGuideContentFromClient ?? project.uxUiGuideContent ?? undefined;
     const currentBrd =
       stageBrdContent(project, route.stageId) ?? brdContentFromClient ?? undefined;
-    if (mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
+    if (tab === "mdd" && mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: route.stageId });
     }
-    if (uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
+    if (tab === "ux-ui-guide" && uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideContentFromClient });
     }
-    if (brdContentFromClient != null && brdContentFromClient.trim().length > 0) {
+    if (tab === "brd" && brdContentFromClient != null && brdContentFromClient.trim().length > 0) {
       const persistedBrd = stageBrdContent(project, route.stageId);
       // Solo persiste si no hay un valor más reciente en BD
       if (!persistedBrd || persistedBrd !== brdContentFromClient) {
@@ -241,10 +268,10 @@ export class AiOrchestratorService {
     if (!updatedSession) throw new NotFoundException("Session not found after chat");
 
     let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
-    if (mddFromResponse != null && mddFromResponse.length > 0) {
+    if (tab === "mdd" && mddFromResponse != null && mddFromResponse.length > 0) {
       updatedProject = await this.projects.update(projectId, { mddContent: mddFromResponse, stageId: route.stageId });
     }
-    if (uxUiGuideFromResponse != null && uxUiGuideFromResponse.length > 0) {
+    if (tab === "ux-ui-guide" && uxUiGuideFromResponse != null && uxUiGuideFromResponse.length > 0) {
       console.log("[Orchestrator] persisting uxUiGuideContent (Guía UX/UI) length:", uxUiGuideFromResponse.length);
       updatedProject = await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideFromResponse });
     }
@@ -290,8 +317,9 @@ export class AiOrchestratorService {
     }
 
     const shouldIngestMdd =
-      (mddFromResponse != null && mddFromResponse.length > 0) ||
-      (mddContentFromClient != null && mddContentFromClient.trim().length > 0);
+      tab === "mdd" &&
+      ((mddFromResponse != null && mddFromResponse.length > 0) ||
+        (mddContentFromClient != null && mddContentFromClient.trim().length > 0));
     this.scheduleSddIngest(projectId, shouldIngestMdd);
     const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, route, hitlLine);
 
@@ -354,6 +382,7 @@ export class AiOrchestratorService {
     specContentFromClient?: string,
     brdContentFromClient?: string,
     stageIdFromClient?: string,
+    clientDeliverables?: OrchestratorClientDeliverables,
     userImages: ChatImagePart[] = [],
   ): AsyncGenerator<{ event: string; data: unknown }> {
     let project = await this.projects.findOne(projectId);
@@ -382,8 +411,12 @@ export class AiOrchestratorService {
       }
     }
 
-    const currentMdd = mddContentFromClient ?? mddForRouteStage(project, routeStream.stageId) ?? undefined;
-    const isBenchmarkTab = activeTab?.trim() === "benchmark";
+    const tab = activeTab?.trim() ?? "mdd";
+    const currentMdd =
+      tab === "mdd"
+        ? (mddContentFromClient ?? mddForRouteStage(project, routeStream.stageId) ?? undefined)
+        : undefined;
+    const isBenchmarkTab = tab === "benchmark";
     const hasComplexityPendingStream =
       project.complexityPending != null && typeof project.complexityPending === "object";
     const complexityInterviewContext =
@@ -397,29 +430,74 @@ export class AiOrchestratorService {
           ? project.dbgaContent
           : undefined;
     const currentUxUiGuide = uxUiGuideContentFromClient ?? project.uxUiGuideContent ?? undefined;
-    const currentSpec = specContentFromClient ?? (project as { specContent?: string | null }).specContent ?? undefined;
-    const currentBrdStream =
-      stageBrdContent(project, routeStream.stageId) ?? brdContentFromClient ?? undefined;
-    const currentArchitecture = (project as any).architectureContent ?? undefined;
-    const currentUseCases = (project as any).useCasesContent ?? undefined;
-    const currentUserStories = (project as any).userStoriesContent ?? undefined;
-    const currentApiContracts = (project as any).apiContractsContent ?? undefined;
-    const currentLogicFlows = (project as any).logicFlowsContent ?? undefined;
-    const currentTasks = (project as any).tasksContent ?? undefined;
-    const currentInfra = (project as any).infraContent ?? undefined;
-    if (mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
+    const currentSpec = docForActiveTab(tab, "spec", specContentFromClient, (project as { specContent?: string | null }).specContent);
+    const currentBrdStream = docForActiveTab(
+      tab,
+      "brd",
+      brdContentFromClient,
+      stageBrdContent(project, routeStream.stageId),
+    );
+    const currentArchitecture = docForActiveTab(
+      tab,
+      "architecture",
+      clientDeliverables?.architectureContent,
+      (project as { architectureContent?: string | null }).architectureContent,
+    );
+    const currentBlueprint = docForActiveTab(
+      tab,
+      "blueprint",
+      clientDeliverables?.blueprintContent,
+      project.blueprintContent,
+    );
+    const currentUseCases = docForActiveTab(
+      tab,
+      "use-cases",
+      clientDeliverables?.useCasesContent,
+      (project as { useCasesContent?: string | null }).useCasesContent,
+    );
+    const currentUserStories = docForActiveTab(
+      tab,
+      "user-stories",
+      clientDeliverables?.userStoriesContent,
+      (project as { userStoriesContent?: string | null }).userStoriesContent,
+    );
+    const currentApiContracts = docForActiveTab(
+      tab,
+      "api-contracts",
+      clientDeliverables?.apiContractsContent,
+      (project as { apiContractsContent?: string | null }).apiContractsContent,
+    );
+    const currentLogicFlows = docForActiveTab(
+      tab,
+      "logic-flows",
+      clientDeliverables?.logicFlowsContent,
+      (project as { logicFlowsContent?: string | null }).logicFlowsContent,
+    );
+    const currentTasks = docForActiveTab(
+      tab,
+      "tasks",
+      clientDeliverables?.tasksContent,
+      (project as { tasksContent?: string | null }).tasksContent,
+    );
+    const currentInfra = docForActiveTab(
+      tab,
+      "infra",
+      clientDeliverables?.infraContent,
+      (project as { infraContent?: string | null }).infraContent,
+    );
+    if (tab === "mdd" && mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: routeStream.stageId });
     }
-    if (uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
+    if (tab === "ux-ui-guide" && uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideContentFromClient });
     }
-    if (brdContentFromClient != null && brdContentFromClient.trim().length > 0) {
+    if (tab === "brd" && brdContentFromClient != null && brdContentFromClient.trim().length > 0) {
       const persistedBrdStream = stageBrdContent(project, routeStream.stageId);
       if (!persistedBrdStream || persistedBrdStream !== brdContentFromClient) {
         await this.projects.patchStage(projectId, routeStream.stageId, { brdContent: brdContentFromClient });
       }
     }
-    const isUxUiGuide = activeTab?.trim() === "ux-ui-guide";
+    const isUxUiGuide = tab === "ux-ui-guide";
     let systemPromptStream: string | undefined;
     if (routeStream.flow === "LEGACY" && routeStream.theforgeProjectId) {
       const theforgeProjectId = routeStream.theforgeProjectId;
@@ -439,21 +517,27 @@ export class AiOrchestratorService {
     const stream = this.sessions.chatStream(session.id, message, {
       currentMddContent: currentMdd,
       currentDbgaContent: currentDbga,
-      currentUxUiGuideContent: currentUxUiGuide,
-      currentPhase0SummaryContent: activeTab?.trim() === "phase0"
-        ? (specContentFromClient ?? (project as any).phase0SummaryContent ?? "").trim() || undefined
-        : undefined,
-      currentBlueprintContent: (isUxUiGuide || activeTab?.trim() === "api-contracts") ? (project.blueprintContent ?? undefined) : undefined,
-      currentSpecContent: activeTab?.trim() === "spec" ? currentSpec : undefined,
-      currentBrdContent: activeTab?.trim() === "brd" ? currentBrdStream : undefined,
-      currentArchitectureContent: activeTab?.trim() === "architecture" ? currentArchitecture : undefined,
-      currentUseCasesContent: activeTab?.trim() === "use-cases" ? currentUseCases : undefined,
-      currentUserStoriesContent: activeTab?.trim() === "user-stories" ? currentUserStories : undefined,
-      currentApiContractsContent: activeTab?.trim() === "api-contracts" ? currentApiContracts : undefined,
-      currentLogicFlowsContent: activeTab?.trim() === "logic-flows" ? currentLogicFlows : undefined,
-      currentTasksContent: activeTab?.trim() === "tasks" ? currentTasks : undefined,
-      currentInfraContent: activeTab?.trim() === "infra" ? currentInfra : undefined,
-      activeTab,
+      currentUxUiGuideContent: tab === "ux-ui-guide" ? currentUxUiGuide : undefined,
+      currentPhase0SummaryContent:
+        tab === "phase0"
+          ? (specContentFromClient ?? (project as { phase0SummaryContent?: string | null }).phase0SummaryContent ?? "").trim() || undefined
+          : undefined,
+      currentBlueprintContent:
+        tab === "blueprint"
+          ? currentBlueprint
+          : isUxUiGuide || tab === "api-contracts"
+            ? (project.blueprintContent ?? undefined)
+            : undefined,
+      currentSpecContent: currentSpec,
+      currentBrdContent: currentBrdStream,
+      currentArchitectureContent: currentArchitecture,
+      currentUseCasesContent: currentUseCases,
+      currentUserStoriesContent: currentUserStories,
+      currentApiContractsContent: currentApiContracts,
+      currentLogicFlowsContent: currentLogicFlows,
+      currentTasksContent: currentTasks,
+      currentInfraContent: currentInfra,
+      activeTab: tab,
       systemPrompt: systemPromptStream,
       stageId: routeStream.stageId,
       complexityInterviewContext,
@@ -466,16 +550,16 @@ export class AiOrchestratorService {
         yield { event: "chunk", data: { content: msg.content } };
       } else {
         let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
-        if (msg.mddContent != null && msg.mddContent.length > 0) {
+        if (tab === "mdd" && msg.mddContent != null && msg.mddContent.length > 0) {
           updatedProject = await this.projects.update(projectId, {
             mddContent: msg.mddContent,
             stageId: routeStream.stageId,
           });
         }
-        if (msg.uxUiGuideContent != null && msg.uxUiGuideContent.length > 0) {
+        if (tab === "ux-ui-guide" && msg.uxUiGuideContent != null && msg.uxUiGuideContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { uxUiGuideContent: msg.uxUiGuideContent });
         }
-        if (msg.dbgaContent != null && msg.dbgaContent.length > 0) {
+        if (tab === "benchmark" && msg.dbgaContent != null && msg.dbgaContent.length > 0) {
           const prevDbga = (currentDbga ?? project.dbgaContent ?? "").trim();
           if (prevDbga && wouldShrinkDbgaDangerously(prevDbga, msg.dbgaContent)) {
             console.warn(
@@ -486,40 +570,40 @@ export class AiOrchestratorService {
             updatedProject = await this.projects.update(projectId, { dbgaContent: msg.dbgaContent });
           }
         }
-        if (msg.phase0SummaryContent != null && msg.phase0SummaryContent.length > 0) {
+        if (tab === "phase0" && msg.phase0SummaryContent != null && msg.phase0SummaryContent.length > 0) {
           updatedProject = await this.projects.update(projectId, {
             phase0SummaryContent: msg.phase0SummaryContent,
           });
         }
-        if (msg.specContent != null && msg.specContent.length > 0) {
+        if (tab === "spec" && msg.specContent != null && msg.specContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { specContent: msg.specContent });
         }
-        if (msg.brdContent != null && msg.brdContent.length > 0) {
+        if (tab === "brd" && msg.brdContent != null && msg.brdContent.length > 0) {
           await this.projects.patchStage(projectId, routeStream.stageId, { brdContent: msg.brdContent });
           updatedProject = await this.projects.findOne(projectId);
         }
-        if (msg.blueprintContent != null && msg.blueprintContent.length > 0) {
+        if (tab === "blueprint" && msg.blueprintContent != null && msg.blueprintContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { blueprintContent: msg.blueprintContent });
         }
-        if (msg.apiContractsContent != null && msg.apiContractsContent.length > 0) {
+        if (tab === "api-contracts" && msg.apiContractsContent != null && msg.apiContractsContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { apiContractsContent: msg.apiContractsContent });
         }
-        if (msg.logicFlowsContent != null && msg.logicFlowsContent.length > 0) {
+        if (tab === "logic-flows" && msg.logicFlowsContent != null && msg.logicFlowsContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { logicFlowsContent: msg.logicFlowsContent });
         }
-        if (msg.tasksContent != null && msg.tasksContent.length > 0) {
+        if (tab === "tasks" && msg.tasksContent != null && msg.tasksContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { tasksContent: msg.tasksContent });
         }
-        if (msg.infraContent != null && msg.infraContent.length > 0) {
+        if (tab === "infra" && msg.infraContent != null && msg.infraContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { infraContent: msg.infraContent });
         }
-        if (msg.architectureContent != null && msg.architectureContent.length > 0) {
+        if (tab === "architecture" && msg.architectureContent != null && msg.architectureContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { architectureContent: msg.architectureContent } as any);
         }
-        if (msg.useCasesContent != null && msg.useCasesContent.length > 0) {
+        if (tab === "use-cases" && msg.useCasesContent != null && msg.useCasesContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { useCasesContent: msg.useCasesContent } as any);
         }
-        if (msg.userStoriesContent != null && msg.userStoriesContent.length > 0) {
+        if (tab === "user-stories" && msg.userStoriesContent != null && msg.userStoriesContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { userStoriesContent: msg.userStoriesContent } as any);
         }
         const finalProject =
@@ -531,8 +615,9 @@ export class AiOrchestratorService {
         const projectOut = { ...finalProject } as typeof finalProject & { uxUiGuideContent?: string | null };
         if (uxToReturn != null) projectOut.uxUiGuideContent = uxToReturn;
         const shouldIngestMddStream =
-          (msg.mddContent != null && msg.mddContent.length > 0) ||
-          (mddContentFromClient != null && mddContentFromClient.trim().length > 0);
+          tab === "mdd" &&
+          ((msg.mddContent != null && msg.mddContent.length > 0) ||
+            (mddContentFromClient != null && mddContentFromClient.trim().length > 0));
         this.scheduleSddIngest(projectId, shouldIngestMddStream);
         const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, routeStream, hitlLineStream);
         yield {

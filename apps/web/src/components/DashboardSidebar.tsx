@@ -44,7 +44,7 @@ import { useTheme, type ThemePreference } from "@/theme/ThemeProvider";
 import { cn } from "@/lib/utils";
 import { getProjectMonogram } from "@/utils/projectMonogram";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "../store/workshopStore";
-import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
+import { WORKSHOP_EXIT_BLOCKED_TITLE, WORKSHOP_DOC_NAV_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { buildWorkshopDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
 
 /** Project row shown under the dashboard “Proyectos” menu group. */
@@ -807,7 +807,14 @@ export function DashboardSidebar({
                                     role="listitem"
                                     title={`${item.title}${item.required ? " — paso obligatorio" : ""}${done ? " — con contenido" : ""}`}
                                     aria-current={isCurrent ? "page" : undefined}
+                                    disabled={workshopAgentsBusy}
+                                    title={
+                                      workshopAgentsBusy
+                                        ? WORKSHOP_DOC_NAV_BLOCKED_TITLE
+                                        : `${item.title}${item.required ? " — paso obligatorio" : ""}${done ? " — con contenido" : ""}`
+                                    }
                                     onClick={() => {
+                                      if (workshopAgentsBusy) return;
                                       closeMobileNav();
                                       onBeforeNavigateToWorkshopDoc?.();
                                       setWorkshopActiveDocPanel(item.id);

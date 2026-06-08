@@ -226,7 +226,7 @@ export class AiService {
               "\n---";
           }
         }
-        if (options?.currentMddContent?.trim()) {
+        if (options?.activeTab?.trim() === "mdd" && options?.currentMddContent?.trim()) {
           systemPrompt +=
             "\n\n[Contenido actual del MDD del proyecto (puede incluir ediciones del usuario)]\n---\n" +
             options.currentMddContent.trim() +
@@ -408,7 +408,7 @@ export class AiService {
             "\n---";
         }
       }
-      if (options?.currentMddContent?.trim()) {
+      if (options?.activeTab?.trim() === "mdd" && options?.currentMddContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual del MDD del proyecto (puede incluir ediciones del usuario)]\n---\n" +
           options.currentMddContent.trim() +

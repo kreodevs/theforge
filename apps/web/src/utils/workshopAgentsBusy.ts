@@ -47,3 +47,6 @@ export function isWorkshopAgentsBusy(s: WorkshopAgentsBusySlice): boolean {
 
 export const WORKSHOP_EXIT_BLOCKED_TITLE =
   "Los agentes siguen trabajando. Espera a que terminen antes de volver al panel de proyectos.";
+
+export const WORKSHOP_DOC_NAV_BLOCKED_TITLE =
+  "El chat está procesando un documento. Espera a que termine antes de cambiar de pestaña.";
