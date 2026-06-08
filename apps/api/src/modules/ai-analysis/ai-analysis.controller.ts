@@ -493,6 +493,13 @@ export class AiAnalysisController {
     return this.phase0Interview.getQuestion(threadId, pid);
   }
 
+  @Post("phase0/audit")
+  async auditPhase0(@Body() body: { projectId?: string }) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    return this.phase0Interview.audit(projectId);
+  }
+
   /**
    * Envía respuesta a la última pregunta y recibe borrador actualizado.
    */

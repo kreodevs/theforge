@@ -25,6 +25,7 @@ import {
 } from "../utils/llm-stream-error";
 import { useWorkshopStore } from "../store/workshopStore";
 import { WorkshopPanelActionRegion, WorkshopPanelButton, WorkshopButtonIcon } from "./WorkshopButtons";
+import { Phase0ManualAudit } from "./Phase0ManualAudit";
 
 type Phase0Status = "idle" | "starting" | "interviewing" | "done" | "error";
 
@@ -374,6 +375,7 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
           <p className="text-xs text-[var(--muted-foreground)]">
             El borrador se ha guardado y está listo para el Benchmark y MDD.
           </p>
+          <Phase0ManualAudit projectId={projectId} onUpdated={onComplete} variant="inline" />
           <WorkshopPanelButton tone="secondary" onClick={handleReset}>
             Reiniciar Fase 0
           </WorkshopPanelButton>

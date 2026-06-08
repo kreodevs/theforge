@@ -2,7 +2,8 @@
 
 | Componente | Rol |
 |------------|-----|
-| **WorkshopDocTextarea** | Editor markdown del Workshop: no aplica `value` externo mientras tiene foco (autoguardado transparente). Usado en Fase 0, Benchmark, `StandardDocPanel`, `UxUiGuidePanel`. |
+| **Phase0ManualAudit** | Botón **Auditar Paso 0**: `POST …/phase0/audit` re-analiza gaps; si falta info lanza preguntas (mismo flujo `answer`); si está completo muestra mensaje sin gaps críticos/importantes. Usado en `Phase0InterviewPanel` (post-entrevista) y pestaña Fase 0 con borrador guardado. |
+| **Phase0InterviewPanel** | Entrevistador interactivo Paso 0 (`start` → preguntas → `answer`). Incluye auditoría manual al completar. |
 | **MddViewer** | Preview markdown (Fase 0, MDD, BRD): normaliza bloques `mermaid` al pintar (`normalizeMermaidInDocument`, incl. fusión de `sequenceDiagram` partidos con `###`/`viñetas` fuera del fence), render sin `<pre>` envolviendo el SVG, y `prepareMermaidForRender` separa viñetas pegadas dentro del fence. |
 | **DashboardSidebar** | En Workshop, «Panel de proyectos» queda `disabled` mientras `selectWorkshopAgentsBusy` (mismo criterio que el chat). |
 | **MddPatternsWizardDialog** | Selector SSOT con pestañas verticales (`initial \| edit`): títulos = categorías del wizard MDD (emoji + texto original). Antes de abrir: `POST …/mdd/suggest-governance-patterns` (DBGA, benchmark, BRD). Al confirmar: MDD solo con patrones `[X]` + `POST …/mdd/record-governance-pattern-adrs`. |

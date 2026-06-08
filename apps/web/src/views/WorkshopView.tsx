@@ -119,6 +119,7 @@ import {
 } from "../components/WorkshopButtons";
 import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
 import { Phase0InterviewPanel } from "../components/Phase0InterviewPanel";
+import { Phase0ManualAudit } from "../components/Phase0ManualAudit";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AdrsPanel } from "../components/AdrsPanel";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
@@ -3319,7 +3320,14 @@ export default function WorkshopView({
                       ) : null}
                     </WorkshopPanelActionRegion>
 
-                    <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] pt-4">
+                    <Phase0ManualAudit
+                      projectId={projectId}
+                      onUpdated={async () => {
+                        await useWorkshopStore.getState().fetchProject(projectId);
+                      }}
+                    />
+
+                    <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] pt-4 mt-4">
                         <h3 className="shrink-0 text-sm font-medium text-[var(--muted-foreground)] mb-2">Análisis (DBGA) — Fase 0</h3>
                         <div className="flex-1 flex flex-col min-h-0">
                           {benchmarkViewMode === "preview" && fase0Content != null && fase0Content !== "" ? (

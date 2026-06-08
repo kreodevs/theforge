@@ -13,7 +13,7 @@ import { AIFactory } from "../../ai/ai.factory.js";
 import { PrismaService } from "../../../prisma/prisma.service.js";
 import { createDbgaLLM } from "../llm/create-dbga-llm.js";
 import { PHASE0_ARRANQUE_PROMPT, PHASE0_UPDATE_PROMPT } from "../prompts/load-prompts.js";
-import { analyzeGaps, buildQuestionPlan, filterResolvedGaps } from "./phase0-gap-analyzer.js";
+import { analyzeGaps, buildQuestionPlan, filterResolvedGaps, isAskableGap } from "./phase0-gap-analyzer.js";
 import { parsePhase0LlmJson } from "./phase0-llm-json.util.js";
 import {
   parsePhase0GapsEnvelope,
@@ -35,6 +35,12 @@ import {
 } from "./phase0-llm-error.util.js";
 
 const MAX_PREGUNTAS = 5;
+
+const AUDIT_COMPLETE_MESSAGE =
+  "No quedan gaps críticos ni importantes por definir en Paso 0. El documento está listo para Benchmark y MDD.";
+
+const AUDIT_DONE_MESSAGE =
+  "Auditoría completada. El borrador de Paso 0 se actualizó con tus respuestas.";
 
 function emptyDocument(): Phase0Document {
   return {
@@ -118,6 +124,7 @@ export class Phase0InterviewService {
         inputRaw: idea,
         inputType,
         historial: [],
+        mode: "interview",
       };
 
       this.rememberState(state);
@@ -213,6 +220,95 @@ export class Phase0InterviewService {
     return next;
   }
 
+  /**
+   * Auditoría manual del borrador guardado: si hay gaps, lanza preguntas; si no, confirma 100%.
+   */
+  async audit(projectId: string): Promise<Phase0StreamEvent> {
+    const pid = projectId?.trim();
+    if (!pid) {
+      return { type: "error", message: "projectId es requerido" };
+    }
+
+    const project = await this.prisma.project.findUnique({
+      where: { id: pid },
+      select: { phase0SummaryContent: true, phase0Gaps: true },
+    });
+    if (!project) {
+      return { type: "error", message: "Proyecto no encontrado" };
+    }
+
+    const borrador = parseBorradorFromProject(project.phase0SummaryContent);
+    const hasContent =
+      borrador.proposito.problema.trim().length > 0 ||
+      borrador.entidades.length > 0 ||
+      borrador.reglasNegocio.length > 0;
+
+    if (!hasContent) {
+      return {
+        type: "error",
+        message: "No hay borrador de Paso 0. Completa la entrevista inicial antes de auditar.",
+      };
+    }
+
+    const gaps = analyzeGaps(borrador);
+    const askable = gaps.filter(isAskableGap);
+
+    if (askable.length === 0) {
+      const remainingOptional = gaps.filter((g) => g.criticidad === "opcional");
+      borrador.preguntasPendientes = remainingOptional.map((g) => g.descripcion);
+      await this.prisma.project.update({
+        where: { id: pid },
+        data: {
+          phase0SummaryContent: JSON.stringify(borrador, null, 2),
+          phase0Gaps: JSON.stringify({ v: 1, gaps }),
+          phase0Status: "done",
+        },
+      });
+      return {
+        type: "audit_complete",
+        message: AUDIT_COMPLETE_MESSAGE,
+        borrador,
+        gaps,
+      };
+    }
+
+    const questionPlan = buildQuestionPlan(gaps, MAX_PREGUNTAS);
+    const threadId = randomUUID();
+    const state: Phase0InterviewState = {
+      projectId: pid,
+      threadId,
+      borrador,
+      gaps,
+      preguntasRealizadas: 0,
+      maxPreguntas: questionPlan.length,
+      questionPlan,
+      planCursor: 0,
+      status: "interviewing",
+      inputRaw: "",
+      inputType: "idea",
+      historial: [],
+      mode: "audit",
+    };
+
+    this.rememberState(state);
+    await this.persistInterviewState(state);
+
+    const first = this.questionForCurrentPlan(state);
+    if (first.type !== "question") {
+      return { type: "error", message: "No se pudo iniciar la auditoría de Paso 0" };
+    }
+
+    return {
+      type: "audit_started",
+      threadId,
+      borrador: state.borrador,
+      gaps: askable,
+      question: first.question,
+      n: first.n,
+      total: first.total,
+    };
+  }
+
   private questionForCurrentPlan(state: Phase0InterviewState): Phase0StreamEvent {
     if (state.preguntasRealizadas >= state.maxPreguntas) {
       return this.finalizeSync(state);
@@ -245,7 +341,13 @@ export class Phase0InterviewService {
     state.borrador.preguntasPendientes = remainingGaps.map((g) => g.descripcion);
     state.status = "done";
     void this.finalizePhase0(state);
-    return { type: "done", borrador: state.borrador, gaps: state.gaps };
+    const message =
+      state.mode === "audit"
+        ? state.gaps.filter(isAskableGap).length === 0
+          ? AUDIT_COMPLETE_MESSAGE
+          : AUDIT_DONE_MESSAGE
+        : undefined;
+    return { type: "done", borrador: state.borrador, gaps: state.gaps, message };
   }
 
   private rememberState(state: Phase0InterviewState): void {
