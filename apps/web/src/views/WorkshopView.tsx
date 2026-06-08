@@ -3264,7 +3264,22 @@ export default function WorkshopView({
                     <Phase0InterviewPanel
                       projectId={projectId}
                       onComplete={async () => {
-                        await useWorkshopStore.getState().fetchProject(projectId);
+                        const store = useWorkshopStore.getState();
+                        const dbga = (store.dbgaContent ?? store.project?.dbgaContent ?? "").trim();
+                        if (!dbga) {
+                          const res = await apiFetch(`${API_BASE}/ai-analysis/phase0/sync-markdown`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ projectId }),
+                          });
+                          if (res.ok) {
+                            const data = (await res.json()) as { markdown?: string | null };
+                            if (data.markdown?.trim()) {
+                              store.setDbgaContent(data.markdown.trim());
+                            }
+                          }
+                        }
+                        await store.fetchProject(projectId);
                       }}
                     />
                   ) : (

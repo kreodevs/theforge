@@ -93,7 +93,14 @@ export type Phase0StreamEvent =
   | { type: "init"; threadId: string; borrador: Phase0Document }
   | { type: "question"; question: string; n: number; total: number; borrador?: Phase0Document; gaps?: Phase0Gap[] }
   | { type: "draft_updated"; borrador: Phase0Document; gaps: Phase0Gap[] }
-  | { type: "done"; borrador: Phase0Document; gaps: Phase0Gap[]; message?: string }
+  | {
+      type: "done";
+      borrador: Phase0Document;
+      gaps: Phase0Gap[];
+      message?: string;
+      /** Markdown DBGA generado al finalizar (también persistido en dbgaContent) */
+      markdown?: string;
+    }
   | {
       type: "audit_complete";
       message: string;
