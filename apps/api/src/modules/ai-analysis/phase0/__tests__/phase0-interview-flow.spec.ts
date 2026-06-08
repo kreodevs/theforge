@@ -56,6 +56,7 @@ describe("phase0 interview persist", () => {
       inputRaw: "idea",
       inputType: "idea",
       historial: [],
+      mode: "interview",
     };
 
     const raw = serializePhase0GapsEnvelope(state);

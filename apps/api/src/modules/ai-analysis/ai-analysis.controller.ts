@@ -493,6 +493,21 @@ export class AiAnalysisController {
     return this.phase0Interview.getQuestion(threadId, pid);
   }
 
+  @Post("phase0/audit")
+  async auditPhase0(@Body() body: { projectId?: string }) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    return this.phase0Interview.audit(projectId);
+  }
+
+  /** Genera dbgaContent (markdown) desde phase0SummaryContent si falta. */
+  @Post("phase0/sync-markdown")
+  async syncPhase0Markdown(@Body() body: { projectId?: string }) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    return this.phase0Interview.syncMarkdown(projectId);
+  }
+
   /**
    * Envía respuesta a la última pregunta y recibe borrador actualizado.
    */

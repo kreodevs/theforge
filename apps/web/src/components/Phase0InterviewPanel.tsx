@@ -25,8 +25,9 @@ import {
 } from "../utils/llm-stream-error";
 import { useWorkshopStore } from "../store/workshopStore";
 import { WorkshopPanelActionRegion, WorkshopPanelButton, WorkshopButtonIcon } from "./WorkshopButtons";
+import { Phase0ManualAudit } from "./Phase0ManualAudit";
 
-type Phase0Status = "idle" | "starting" | "interviewing" | "done" | "error";
+type Phase0Status = "idle" | "starting" | "interviewing" | "finalizing" | "done" | "error";
 
 type Phase0StreamPayload = {
   type?: string;
@@ -38,7 +39,27 @@ type Phase0StreamPayload = {
   question?: string;
   n?: number;
   total?: number;
+  markdown?: string;
 };
+
+async function applyPhase0Done(
+  data: Phase0StreamPayload,
+  onComplete: () => void | Promise<void>,
+  setBorrador: (v: string) => void,
+  setStatus: (s: Phase0Status) => void,
+): Promise<void> {
+  if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
+  if (typeof data.markdown === "string" && data.markdown.trim()) {
+    useWorkshopStore.getState().setDbgaContent(data.markdown.trim());
+  }
+  setStatus("finalizing");
+  try {
+    await onComplete();
+  } finally {
+    const dbga = (useWorkshopStore.getState().dbgaContent ?? "").trim();
+    if (!dbga) setStatus("done");
+  }
+}
 
 function applyQuestionPayload(
   data: Phase0StreamPayload,
@@ -74,7 +95,7 @@ function applyPhase0StreamError(
 
 interface Props {
   projectId: string;
-  onComplete: () => void;
+  onComplete: () => void | Promise<void>;
 }
 
 export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
@@ -124,9 +145,7 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       }
 
       if (data.type === "done") {
-        if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
-        setStatus("done");
-        onComplete();
+        await applyPhase0Done(data, onComplete, setBorrador, setStatus);
         return;
       }
 
@@ -159,9 +178,7 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       if (applyPhase0StreamError(data, setError, setStatus)) return;
 
       if (data.type === "done") {
-        setStatus("done");
-        if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
-        onComplete();
+        await applyPhase0Done(data, onComplete, setBorrador, setStatus);
         return;
       }
 
@@ -209,9 +226,7 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       if (applyPhase0StreamError(data, setError, setStatus)) return;
 
       if (data.type === "done") {
-        setStatus("done");
-        if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
-        onComplete();
+        await applyPhase0Done(data, onComplete, setBorrador, setStatus);
         return;
       }
 
@@ -245,6 +260,18 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       else if (status === "idle") handleStart();
     }
   };
+
+  /** Sincroniza markdown y refresca proyecto (repara estado atascado o tras completar) */
+  const syncPhase0Document = useCallback(async () => {
+    setStatus("finalizing");
+    setError(null);
+    try {
+      await onComplete();
+    } finally {
+      const dbga = (useWorkshopStore.getState().dbgaContent ?? "").trim();
+      if (!dbga) setStatus("done");
+    }
+  }, [onComplete]);
 
   /** Resetear */
   const handleReset = () => {
@@ -362,6 +389,14 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
         </>
       )}
 
+      {/* Preparando documento */}
+      {status === "finalizing" && (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--primary)]" />
+          <p className="text-sm text-[var(--foreground-subtle)]">Preparando documento de Fase 0…</p>
+        </div>
+      )}
+
       {/* Completado */}
       {status === "done" && (
         <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -374,6 +409,10 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
           <p className="text-xs text-[var(--muted-foreground)]">
             El borrador se ha guardado y está listo para el Benchmark y MDD.
           </p>
+          <WorkshopPanelButton tone="primary" onClick={() => void syncPhase0Document()}>
+            Ver documento generado
+          </WorkshopPanelButton>
+          <Phase0ManualAudit projectId={projectId} onUpdated={onComplete} variant="inline" />
           <WorkshopPanelButton tone="secondary" onClick={handleReset}>
             Reiniciar Fase 0
           </WorkshopPanelButton>
