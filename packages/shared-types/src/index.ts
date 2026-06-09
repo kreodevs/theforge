@@ -9,6 +9,7 @@ export * from "./status.js";
 export * from "./checklist.js";
 export * from "./project.js";
 export * from "./deliverables-matrix.js";
+export * from "./agent-governance.js";
 export * from "./stage.js";
 export * from "./session.js";
 export * from "./estimation.js";

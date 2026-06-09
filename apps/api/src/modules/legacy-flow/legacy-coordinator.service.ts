@@ -48,6 +48,11 @@ import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import {
+  parseAgentGovernanceResponse,
+  serializeAgentGovernanceScaffold,
+} from "../ai/utils/agent-governance.util.js";
+import { suggestAgentGovernanceArtifacts } from "../ai/utils/suggest-agent-governance-artifacts.js";
+import {
   brdGenerationErrorMessage,
   extractBrdFromLlmResponse,
   type BrdExtractFailure,
@@ -427,6 +432,7 @@ const DELIVERABLE_PROJECT_FIELD: Partial<Record<DeliverableKind, keyof DbProject
   logic_flows: "logicFlowsContent",
   ux_ui_guide: "uxUiGuideContent",
   user_stories: "userStoriesContent",
+  agent_governance: "agentGovernanceContent",
   tasks: "tasksContent",
   infra: "infraContent",
 };
@@ -1971,6 +1977,25 @@ export class LegacyCoordinatorService {
             legacyOpts,
           );
           await update({ userStoriesContent: cleanDocumentContent(userStoriesContent) });
+          p = await load();
+          return;
+        }
+        case "agent_governance": {
+          const bpGov = p.blueprintContent?.trim() || undefined;
+          const govSuggestions = suggestAgentGovernanceArtifacts({
+            mddMarkdown: mddForLlm,
+            blueprintMarkdown: bpGov,
+            complexity,
+          });
+          const raw = await this.ai.generateAgentGovernance(mddForLlm, bpGov, complexity, {
+            ...legacyOpts,
+            suggestions: govSuggestions,
+          });
+          const scaffold = parseAgentGovernanceResponse(raw, complexity, {
+            suggestions: govSuggestions,
+            mddMarkdown: mddForLlm,
+          });
+          await update({ agentGovernanceContent: serializeAgentGovernanceScaffold(scaffold) });
           p = await load();
           return;
         }

@@ -204,6 +204,21 @@ export class ProjectsController {
     return this.queueOrSync(id, "tasks", {}, queue);
   }
 
+  @Post(":id/generate-agent-governance")
+  generateAgentGovernance(
+    @Param("id") id: string,
+    @Body() body: { preview?: boolean },
+    @Query("queue") queue?: string,
+  ) {
+    if (body?.preview) return this.projects.generateAgentGovernancePreview(id);
+    return this.queueOrSync(id, "agent-governance", { preview: false }, queue);
+  }
+
+  @Get(":id/agent-governance-export")
+  getAgentGovernanceExport(@Param("id") id: string) {
+    return this.projects.getAgentGovernanceForExport(id);
+  }
+
   @Post(":id/repair-ux-ui-guide")
   repairUxUiGuide(@Param("id") id: string) {
     return this.projects.repairUxUiGuideYaml(id);
@@ -344,6 +359,8 @@ export class ProjectsController {
         return this.projects.generateLogicFlows(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
       case "tasks":
         return this.projects.generateTasks(projectId);
+      case "agent-governance":
+        return this.projects.generateAgentGovernance(projectId);
       case "infra":
         return this.projects.generateInfra(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
       case "architecture":

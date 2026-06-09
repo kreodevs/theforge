@@ -227,6 +227,8 @@ model Project {
   apiContractsContent  String?   @db.Text
   logicFlowsContent    String?   @db.Text
   infraContent         String?   @db.Text
+  /// Scaffold agent-governance/ (JSON: AgentGovernanceScaffold)
+  agentGovernanceContent String? @db.Text
   uxUiGuideContent     String?   @db.Text
   phase0SummaryContent String?   @db.Text
   /// Estado del flujo Fase 0 interactivo: "idle" | "interviewing" | "done"

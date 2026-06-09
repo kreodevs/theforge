@@ -24,6 +24,10 @@ import { ARCHITECTURE_PROMPT } from "./prompts/architecture-prompt.js";
 import { USE_CASES_PROMPT } from "./prompts/use-cases-prompt.js";
 import { USER_STORIES_PROMPT } from "./prompts/user-stories-prompt.js";
 import { TASKS_PROMPT } from "./prompts/tasks-prompt.js";
+import { AGENT_GOVERNANCE_PROMPT } from "./prompts/agent-governance-prompt.js";
+import { formatSuggestedArtifactsPromptBlock } from "./utils/suggest-agent-governance-artifacts.js";
+import type { AgentGovernanceSuggestions } from "./utils/suggest-agent-governance-artifacts.js";
+import type { ComplexityLevel } from "@theforge/shared-types";
 import { VERIFY_DELIVERABLE_PROMPT } from "./prompts/verify-deliverable-prompt.js";
 import { CONFORMANCE_CHECK_PROMPT } from "./prompts/conformance-check-prompt.js";
 import { DOCUMENT_CHANGELOG_CHAT_INSTRUCTION } from "./prompts/with-document-changelog-instructions.js";
@@ -40,6 +44,11 @@ export interface LegacyGenerateOptions {
   theforgeContext?: string;
   /** Contratos de API reales obtenidos vía get_contract_specs del MCP de Ariadne. Props/firmas reales de componentes para alinear endpoints. */
   contractSpecs?: string;
+}
+
+export interface AgentGovernanceGenerateOptions extends LegacyGenerateOptions {
+  /** Sugerencias del detector pre-LLM (rules/skills del catálogo). */
+  suggestions?: AgentGovernanceSuggestions;
 }
 
 /** Instrucción fija para toda documentación legacy: complementar sin inventar. */
@@ -623,6 +632,34 @@ export class AiService {
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     return this.generateResponse(prompt, [], { systemPrompt: TASKS_PROMPT + NO_MILITAR_INSTRUCTION });
+  }
+
+  /**
+   * Genera el scaffold agent-governance/ (JSON con árbol de archivos) desde MDD + Blueprint.
+   */
+  async generateAgentGovernance(
+    mddContent: string,
+    blueprintContent: string | null | undefined,
+    complexity: ComplexityLevel,
+    options?: AgentGovernanceGenerateOptions,
+  ): Promise<string> {
+    const mdd = (mddContent?.trim() ?? "").slice(0, 30000);
+    const blueprint = (blueprintContent?.trim() ?? "").slice(0, 15000);
+    const constitutionNote =
+      "El siguiente documento es la **Constitución del proyecto** (MDD, 7 secciones). " +
+      "Deriva gobernanza de agentes únicamente de §1–§7 y patrones [X] del Wizard.\n\n";
+    const suggestionsBlock = options?.suggestions
+      ? formatSuggestedArtifactsPromptBlock(options.suggestions) + "\n\n"
+      : "";
+    let prompt =
+      `Genera el scaffold **agent-governance/** según el system prompt.\n\n**complexity:** ${complexity}\n\n` +
+      suggestionsBlock +
+      (mdd.length > 0
+        ? constitutionNote + "MDD:\n---\n" + mdd + "\n---\n\n" + (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
+        : "No hay MDD. Genera un scaffold mínimo LOW (AGENTS.md, CLAUDE.md, docs/agent-onboarding.md, 1 rule git-commits).");
+    if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
+    return this.generateResponse(prompt, [], { systemPrompt: AGENT_GOVERNANCE_PROMPT + NO_MILITAR_INSTRUCTION });
   }
 
   async generateArchitecture(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {

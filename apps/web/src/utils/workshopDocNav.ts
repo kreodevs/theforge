@@ -4,6 +4,7 @@
  */
 import type { LucideIcon } from "lucide-react";
 import { Brain,
+  Bot,
   ClipboardList,
   Edit3,
   FileCode,
@@ -17,6 +18,7 @@ import { Brain,
   Server,
   Target,
 } from "lucide-react";
+import { agentGovernanceScaffoldHasContent } from "@theforge/shared-types";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "./complexityTabs";
 
 /** Greenfield (NEW) steps required before generating downstream deliverables. */
@@ -61,13 +63,25 @@ export interface WorkshopDocNavBuildContext {
   apiContractsContent: string | null | undefined;
   logicFlowsContent: string | null | undefined;
   tasksContent: string | null | undefined;
+  agentGovernanceContent: string | null | undefined;
   infraContent: string | null | undefined;
   adrs: unknown[] | null | undefined;
 }
 
 export function workshopTabDocHasContent(tabId: string, content: unknown): boolean {
   if (tabId === "adrs") return Array.isArray(content) && content.length > 0;
+  if (tabId === "agent-governance") return agentGovernanceScaffoldHasContent(content as string | null);
   return !!String(content ?? "").trim();
+}
+
+function agentGovernanceNavItem(ctx: WorkshopDocNavBuildContext): WorkshopDocNavItem {
+  return {
+    id: "agent-governance",
+    label: "Gobernanza IA",
+    title: "Scaffold AGENTS.md + .cursor/** para agentes implementadores",
+    Icon: Bot,
+    content: ctx.agentGovernanceContent,
+  };
 }
 
 export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): WorkshopDocNavItem[] {
@@ -206,6 +220,10 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       content: ctx.logicFlowsContent,
     });
   }
+  const agentGovBeforeTasks = ctx.effectiveComplexityForTabs !== "LOW";
+  if (visible("agent-governance") && agentGovBeforeTasks) {
+    items.push(agentGovernanceNavItem(ctx));
+  }
   if (visible("tasks")) {
     items.push({
       id: "tasks",
@@ -214,6 +232,9 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       Icon: ListTodo,
       content: ctx.tasksContent,
     });
+  }
+  if (visible("agent-governance") && !agentGovBeforeTasks) {
+    items.push(agentGovernanceNavItem(ctx));
   }
   if (!ctx.isLegacyProject && visible("adrs")) {
     items.push({
@@ -335,6 +356,11 @@ export function getWorkshopDocPanelHeader(
       title: "Task Breakdown",
       subtitle: "Desglose ejecutable desde MDD y Blueprint",
       Icon: ListTodo,
+    },
+    "agent-governance": {
+      title: "Gobernanza de agentes IA",
+      subtitle: "AGENTS.md, .cursor/rules, skills y workflows derivados del MDD",
+      Icon: Bot,
     },
     infra: {
       title: "Infrastructure",

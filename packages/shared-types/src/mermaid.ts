@@ -210,11 +210,6 @@ export interface GitBranch {
 
 // ─── Validation Helpers ────────────────────────────────────────────────
 
-const ALLOWED_TYPES: MermaidDiagramType[] = [
-  "flowchart", "sequenceDiagram", "classDiagram", "erDiagram",
-  "stateDiagram", "stateDiagram-v2", "gantt", "pie", "gitGraph",
-  "quadrantChart", "mindmap", "timeline", "xychart", "block", "packet",
-];
 
 function cleanId(id: string): string {
   // Node IDs cannot have spaces. Replace with underscore.
@@ -418,7 +413,7 @@ function generateGantt(opts: GanttOptions): string[] {
 
   for (const task of opts.tasks) {
     const dep = task.dependsOn ? ` after ${cleanId(task.dependsOn)}` : "";
-    lines.push(`  ${q(task.label)} : ${cleanId(task.id)}, ${task.start}, ${task.end}`);
+    lines.push(`  ${q(task.label)} : ${cleanId(task.id)}, ${task.start}, ${task.end}${dep}`);
   }
 
   return lines;
