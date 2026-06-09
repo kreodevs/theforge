@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
+import { useAutosizeTextarea } from "../hooks/useAutosizeTextarea";
 import {
   Loader2, Send, Check, AlertTriangle,
   ChevronDown, ChevronUp, MessageSquare,
@@ -110,7 +111,17 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
   const [ideaInput, setIdeaInput] = useState("");
   const [borradorVisible, setBorradorVisible] = useState(false);
   const [borrador, setBorrador] = useState<string>("");
+  const ideaTextareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useAutosizeTextarea(ideaTextareaRef, ideaInput, {
+    minHeightPx: 100,
+    bottomReservePx: 140,
+  });
+  useAutosizeTextarea(inputRef, answer, {
+    minHeightPx: 72,
+    bottomReservePx: 200,
+  });
 
   /** Iniciar Fase 0: enviar idea al backend */
   const handleStart = useCallback(async () => {
@@ -289,22 +300,26 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       {/* Estado inicial: input de idea */}
       {status === "idle" && (
         <>
-          <WorkshopPanelActionRegion role="region" aria-label="Inicio de Fase 0">
-            <div className="flex flex-col gap-3">
-              <p className="text-sm leading-relaxed text-[var(--foreground-subtle)]">
+          <WorkshopPanelActionRegion
+            role="region"
+            aria-label="Inicio de Fase 0"
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <p className="shrink-0 text-sm leading-relaxed text-[var(--foreground-subtle)]">
                 Describe tu idea o pega un documento existente. El entrevistador IA hará preguntas
                 para construir una especificación completa antes de pasar al Benchmark y MDD.
               </p>
               <textarea
-                ref={inputRef as any}
+                ref={ideaTextareaRef}
                 value={ideaInput}
                 onChange={(e) => setIdeaInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ej: 'Un sistema de gestión de proyectos con roles, facturación y reportes...'"
-                className="w-full min-h-[100px] bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
+                className="w-full shrink-0 overflow-x-hidden bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-3 text-sm leading-relaxed text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
                 spellCheck={false}
               />
-              <div className="flex gap-2">
+              <div className="flex shrink-0 gap-2">
                 <WorkshopPanelButton
                   tone="primary"
                   onClick={handleStart}
@@ -365,14 +380,13 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
           {/* Input de respuesta */}
           <div className="flex gap-2">
             <textarea
-              ref={inputRef as any}
+              ref={inputRef}
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={isSubmitting}
               placeholder="Escribe tu respuesta (Enter para enviar, Shift+Enter para nueva línea)..."
-              className="flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] outline-none resize-none"
-              rows={3}
+              className="w-full overflow-x-hidden bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-3 text-sm leading-relaxed text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] outline-none resize-none"
             />
           </div>
           <div className="flex justify-end">

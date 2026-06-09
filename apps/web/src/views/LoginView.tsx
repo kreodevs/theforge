@@ -31,6 +31,14 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
     const ssoToken = params.get("sso_token");
     if (ssoToken) {
       handleSsoLogin(ssoToken);
+      return;
+    }
+
+    const emailFromUrl = params.get("email")?.trim().toLowerCase() ?? "";
+    if (emailFromUrl) {
+      setEmail(emailFromUrl);
+      setStep("code");
+      window.history.replaceState(null, "", window.location.pathname);
     }
   }, []);
 
@@ -274,8 +282,13 @@ export default function LoginView({ onLoggedIn }: LoginViewProps) {
                     pattern="\d{6}"
                     value={code}
                     onChange={(ev) => setCode(ev.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onPaste={(ev) => {
+                      ev.preventDefault();
+                      const pasted = ev.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+                      setCode(pasted);
+                    }}
                     required
-                    className="h-12 min-h-[48px] rounded-xl text-center text-base tracking-[0.28em] sm:h-11 sm:min-h-0 sm:text-lg sm:tracking-[0.3em]"
+                    className="h-12 min-h-[48px] rounded-xl text-center font-mono text-base tracking-[0.28em] sm:h-11 sm:min-h-0 sm:text-lg sm:tracking-[0.3em]"
                     disabled={loading}
                   />
                 </div>

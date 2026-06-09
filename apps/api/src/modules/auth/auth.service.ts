@@ -16,6 +16,7 @@ import nodemailer from "nodemailer";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { isSuperAdmin } from "../../common/roles.js";
 import { UserProvidersService } from "../user-providers/user-providers.service.js";
+import { buildOtpEmailContent } from "./otp-email.template.js";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_RESEND_MS = 60 * 1000;
@@ -168,115 +169,32 @@ export class AuthService {
     return display;
   }
 
-  /** Host público de la web (Safari) para @domain #code y magic link. Lee WEB_DOMAIN del env. */
-  private resolveWebAppHostname(): string | null {
-    const raw = stripEnvQuotes(this.config.get<string>("WEB_DOMAIN"))?.trim();
-    if (!raw) return null;
-    let host = raw.toLowerCase();
-    host = host.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].replace(/^\./, '');
-    if (!host || host.length > 253 || !/^[\w.-]+$/.test(host)) return null;
-    if (host.includes('..')) return null;
-    return host;
-  }
-
   /**
-   * Cuerpo HTML y texto del OTP (plantilla alineada al diseño de producto: fondo cálido, tarjeta, código espaciado).
-   * Mantiene primera línea con dígitos en texto plano para autofill iOS donde aplique.
+   * URL pública del front para enlaces del correo OTP.
+   * Usa WEB_DOMAIN si existe; si no, el primer origen de CORS_ORIGINS (sin env extra).
    */
-  private buildOtpEmailParts(args: {
-    code: string;
-    email: string;
-    appHost: string | null;
-  }): { subject: string; text: string; html: string } {
-    const { code, email, appHost } = args;
-    const spacedDigits = code.split("").join(" ");
-    const domainLine = appHost ? `@${appHost} #${code}` : null;
-    const magicLink = appHost
-      ? `https://${appHost}/auth/magic-link?otp=${code}&email=${encodeURIComponent(email)}`
-      : null;
+  private resolveWebAppBaseUrl(): string | null {
+    const webDomain = stripEnvQuotes(this.config.get<string>("WEB_DOMAIN"))?.trim();
+    if (webDomain) {
+      const normalized = webDomain.replace(/\/$/, "");
+      if (/^https?:\/\//i.test(normalized)) return normalized;
+      return `https://${normalized}`;
+    }
 
-    const accent = "#a0522d";
-    const pageBg = "#f5f0e8";
-    const muted = "#6b6b6b";
-    const textDark = "#2d2d2d";
-    const codeBoxBg = "#f8f8f8";
+    const cors =
+      stripEnvQuotes(this.config.get<string>("CORS_ORIGINS"))?.trim() ??
+      stripEnvQuotes(process.env.CORS_ORIGINS)?.trim();
+    if (cors) {
+      for (const part of cors.split(",")) {
+        const origin = part.trim().replace(/\/$/, "");
+        if (!origin) continue;
+        if (/^https?:\/\//i.test(origin)) return origin;
+        return `https://${origin}`;
+      }
+    }
 
-    const textLines: string[] = [
-      code,
-      "",
-      "La Forja · Acceso sin contraseña",
-      "",
-      "Hola,",
-      "",
-      "Usa este código de un solo uso para iniciar sesión:",
-      "",
-      "TU CÓDIGO",
-      spacedDigits,
-      "",
-      "Caduca en 10 minutos. Si no solicitaste este acceso, ignora este mensaje.",
-      "",
-      "—",
-      "Proyecto de código abierto · Apache License 2.0",
-    ];
-    if (domainLine) textLines.push("", domainLine);
-    if (magicLink) textLines.push("", `Acceso directo: ${magicLink}`);
-    const textBody = textLines.join("\n");
-
-    const magicBlock = magicLink
-      ? `
-          <div style="margin:24px 0 0;text-align:center;">
-            <a href="${magicLink}" style="display:inline-block;padding:12px 22px;border-radius:999px;border:1px solid ${accent};color:${accent};font-size:14px;font-weight:600;text-decoration:none;background:#fff;">
-              Abrir en el navegador
-            </a>
-          </div>`
-      : "";
-    const iosHint = domainLine
-      ? `<p style="margin:16px 0 0;font-size:11px;color:#a8a8a8;word-break:break-all;font-family:ui-monospace,monospace;line-height:1.4;">${domainLine}</p>`
-      : "";
-
-    const htmlBody = `
-<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width"/></head>
-<body style="margin:0;padding:0;background:${pageBg};">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${pageBg};padding:28px 16px 40px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;border-radius:16px;background:#ffffff;border:1px solid #e8e4dc;overflow:hidden;box-shadow:0 2px 12px rgba(74,44,28,0.06);">
-          <tr><td style="height:3px;background:linear-gradient(90deg,${accent},#c4896e);"></td></tr>
-          <tr>
-            <td style="padding:28px 26px 26px;font-family:'Segoe UI',Roboto,-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;">
-              <p style="margin:0;font-size:22px;font-weight:700;color:${accent};letter-spacing:-0.02em;">La Forja</p>
-              <p style="margin:6px 0 22px;font-size:14px;color:${muted};">Acceso sin contraseña</p>
-              <p style="margin:0 0 8px;font-size:15px;color:${textDark};line-height:1.5;">Hola,</p>
-              <p style="margin:0 0 22px;font-size:15px;color:${textDark};line-height:1.55;">Usa este código de un solo uso para iniciar sesión:</p>
-              <div style="background:${codeBoxBg};border-radius:12px;padding:20px 16px 22px;text-align:center;border:1px solid #eeeae4;">
-                <p style="margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#888888;">TU CÓDIGO</p>
-                <p style="margin:0;font-size:30px;font-weight:700;letter-spacing:0.35em;color:#111111;font-variant-numeric:tabular-nums;">${spacedDigits}</p>
-              </div>
-              <p style="margin:22px 0 0;font-size:14px;color:#4a4a4a;line-height:1.55;">
-                Caduca en <strong style="color:${textDark};">10 minutos</strong>. Si no solicitaste este acceso, ignora este mensaje.
-              </p>
-              ${magicBlock}
-              ${iosHint}
-              <hr style="border:none;border-top:1px solid #e8e4dc;margin:26px 0 18px;"/>
-              <p style="margin:0;font-size:12px;color:#9a9a9a;line-height:1.45;text-align:center;">
-                Proyecto de código abierto · Apache License 2.0
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-
-    return {
-      subject: `Código de acceso — La Forja (${code})`,
-      text: textBody,
-      html: htmlBody.trim(),
-    };
+    if (!isProduction()) return "http://localhost:5173";
+    return null;
   }
 
   /**
@@ -338,22 +256,31 @@ export class AuthService {
       }
 
       const from = this.mailFromHeader();
-      const appHost = this.resolveWebAppHostname();
-      const { subject, text, html } = this.buildOtpEmailParts({
+      const appBaseUrl = this.resolveWebAppBaseUrl();
+      const { subject, text, html } = buildOtpEmailContent({
         code,
         email,
-        appHost,
+        appBaseUrl,
       });
 
       try {
-        await transport.sendMail({
+        const info = await transport.sendMail({
           from,
           to: email,
           subject,
           text,
           html,
+          headers: {
+            "X-Priority": "1",
+            Importance: "high",
+            "X-Auto-Response-Suppress": "All",
+          },
         });
-        this.logger.log(`OTP enviado por SMTP a ${email}`);
+        const messageId =
+          typeof info.messageId === "string" ? info.messageId : String(info.messageId ?? "");
+        this.logger.log(
+          `OTP enviado por SMTP a ${email}${messageId ? ` (messageId=${messageId})` : ""}`,
+        );
       } catch (err) {
         this.otpByEmail.delete(email);
         this.lastOtpRequestAt.delete(email);
@@ -384,7 +311,7 @@ export class AuthService {
     if (!email) {
       throw new BadRequestException("email requerido");
     }
-    const code = rawCode.trim();
+    const code = rawCode.replace(/\D/g, "").trim();
 
     const entry = this.otpByEmail.get(email);
     if (!entry || Date.now() > entry.expiresAt || entry.code !== code) {

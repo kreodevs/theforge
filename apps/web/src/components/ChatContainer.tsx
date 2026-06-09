@@ -211,36 +211,21 @@ const AI_COMPOSER_ATTACH_BTN =
 const AI_COMPOSER_SEND_BTN =
   "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] shadow-none transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-0";
 
+/** Matches Phase0InterviewPanel and other workshop panel textareas. */
+const WORKSHOP_COMPOSER_TEXTAREA =
+  "w-full shrink-0 overflow-x-hidden bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-3 text-sm leading-relaxed text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none";
+
+const BENCHMARK_COMPOSER_TEXTAREA_MIN_HEIGHT_PX = 100;
+
 function ChatComposerSubmit({
-  isBenchmarkFirstAction,
   loading,
   disabled,
   onSend,
-  onGenerateBenchmark,
 }: {
-  isBenchmarkFirstAction: boolean;
   loading: boolean;
   disabled: boolean;
   onSend: () => void;
-  onGenerateBenchmark: () => void;
 }) {
-  if (isBenchmarkFirstAction) {
-    return (
-      <WorkshopPanelButton
-        tone="primary"
-        onClick={onGenerateBenchmark}
-        disabled={disabled}
-        loading={loading}
-        className="shrink-0"
-        title="Generar Benchmark & Gap Analysis"
-        aria-label="Generar Benchmark & Gap Analysis"
-      >
-        {!loading ? <WorkshopButtonIcon icon={Rocket} tone="primary" /> : null}
-        Generar
-      </WorkshopPanelButton>
-    );
-  }
-
   return (
     <button
       type="button"
@@ -304,6 +289,38 @@ function ChatComposerBar({
   onSend: () => void;
   onGenerateBenchmark: () => void;
 }) {
+  if (isBenchmarkFirstAction) {
+    return (
+      <div className="flex flex-col gap-3" role="group" aria-label="Idea para benchmark">
+        <textarea
+          ref={chatInputRef as RefObject<HTMLTextAreaElement>}
+          value={inputValue}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          title={inputTitle}
+          rows={3}
+          className={WORKSHOP_COMPOSER_TEXTAREA}
+          spellCheck={false}
+          disabled={loading}
+        />
+        <div className="flex shrink-0 gap-2">
+          <WorkshopPanelButton
+            tone="primary"
+            onClick={onGenerateBenchmark}
+            disabled={submitDisabled}
+            loading={loading}
+            title="Generar Benchmark & Gap Analysis"
+            aria-label="Generar Benchmark & Gap Analysis"
+          >
+            {!loading ? <WorkshopButtonIcon icon={Rocket} tone="primary" /> : null}
+            Generar
+          </WorkshopPanelButton>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={AI_COMPOSER_SHELL} role="group" aria-label="Mensaje al asistente">
       <textarea
@@ -355,11 +372,9 @@ function ChatComposerBar({
           ) : null}
         </div>
         <ChatComposerSubmit
-          isBenchmarkFirstAction={isBenchmarkFirstAction}
           loading={loading}
           disabled={submitDisabled}
           onSend={onSend}
-          onGenerateBenchmark={onGenerateBenchmark}
         />
       </div>
     </div>
@@ -597,29 +612,35 @@ export default function ChatContainer({
     return () => clearInterval(id);
   }, [isLegacyLongRun, legacyRotatingSteps]);
 
+  const isBenchmarkFirstAction =
+    activeTab === "benchmark" && !!benchmarkMode && !benchmarkMode.hasBenchmark;
+
   /** Auto-resize: crece con el texto (el shell en el pie sube = sensación de “crecer hacia arriba”). Scroll solo si supera el techo. */
   useLayoutEffect(() => {
     function syncHeight() {
       const t = chatInputRef.current;
       if (!t) return;
 
-      if (inputValue.trim().length === 0) {
+      const isBenchComposer =
+        activeTab === "benchmark" && !!benchmarkMode && !benchmarkMode.hasBenchmark;
+      const minH = isBenchComposer
+        ? BENCHMARK_COMPOSER_TEXTAREA_MIN_HEIGHT_PX
+        : AI_COMPOSER_TEXTAREA_MIN_HEIGHT_PX;
+      const viewportCap =
+        typeof window !== "undefined"
+          ? Math.floor(window.innerHeight * 0.45)
+          : AI_COMPOSER_TEXTAREA_MAX_HEIGHT_PX;
+      const maxH = Math.min(AI_COMPOSER_TEXTAREA_MAX_HEIGHT_PX, Math.max(160, viewportCap));
+
+      if (!isBenchComposer && inputValue.trim().length === 0) {
         t.style.height = "";
         t.style.overflowY = "hidden";
         return;
       }
 
       t.style.height = "0px";
-      const viewportCap =
-        typeof window !== "undefined"
-          ? Math.floor(window.innerHeight * 0.45)
-          : AI_COMPOSER_TEXTAREA_MAX_HEIGHT_PX;
-      const maxH = Math.min(AI_COMPOSER_TEXTAREA_MAX_HEIGHT_PX, Math.max(160, viewportCap));
       const scrollH = t.scrollHeight;
-      const next = Math.max(
-        AI_COMPOSER_TEXTAREA_MIN_HEIGHT_PX,
-        Math.min(scrollH, maxH),
-      );
+      const next = Math.max(minH, Math.min(scrollH, maxH));
       t.style.height = `${next}px`;
       t.style.overflowY = scrollH > maxH ? "auto" : "hidden";
     }
@@ -634,10 +655,7 @@ export default function ChatContainer({
       window.removeEventListener("resize", onWindowResize);
       cancelAnimationFrame(resizeRaf);
     };
-  }, [inputValue, activeTab]);
-
-  const isBenchmarkFirstAction =
-    activeTab === "benchmark" && !!benchmarkMode && !benchmarkMode.hasBenchmark;
+  }, [inputValue, activeTab, benchmarkMode?.hasBenchmark]);
 
   /** En Paso 0: "sin contenido" = sin mensajes del usuario; si solo hay burbujas del asistente, mostramos el texto instructivo. */
   const benchmarkEmpty =

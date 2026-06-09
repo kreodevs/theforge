@@ -6,6 +6,7 @@
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
  */
+import { join } from "node:path";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
@@ -32,7 +33,10 @@ import { DesignRefModule } from "./modules/design-ref/design-ref.module.js";
 @Module({
   controllers: [HealthController],
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [join(__dirname, "../../.env"), join(__dirname, "../../../.env"), ".env"],
+    }),
     CryptoModule,
     AuthModule,
     PrismaModule,

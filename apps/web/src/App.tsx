@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import WorkshopView from "./views/WorkshopView";
 import LoginView from "./views/LoginView";
+import OtpEmailHandoffView from "./views/OtpEmailHandoffView";
 import SetupView from "./views/SetupView";
 import SettingsView from "./views/SettingsView";
 import UsersView from "./views/UsersView";
@@ -101,6 +102,11 @@ function readSidebarCollapsed(): boolean {
   } catch {
     return false;
   }
+}
+
+function isOtpEmailHandoffPath(): boolean {
+  const path = window.location.pathname.replace(/\/$/, "");
+  return path === "/auth/otp" || path === "/auth/magic-link";
 }
 
 export default function App() {
@@ -410,6 +416,13 @@ export default function App() {
       return (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <SetupView onComplete={() => setNeedsSetup(false)} />
+        </div>
+      );
+    }
+    if (isOtpEmailHandoffPath()) {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <OtpEmailHandoffView />
         </div>
       );
     }
