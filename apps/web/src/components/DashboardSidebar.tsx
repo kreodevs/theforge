@@ -377,6 +377,7 @@ export function DashboardSidebar({
   const apiContractsContent = useWorkshopStore((s) => s.apiContractsContent);
   const logicFlowsContent = useWorkshopStore((s) => s.logicFlowsContent);
   const tasksContent = useWorkshopStore((s) => s.tasksContent);
+  const agentGovernanceContent = useWorkshopStore((s) => s.agentGovernanceContent);
   const infraContent = useWorkshopStore((s) => s.infraContent);
   const adrs = useWorkshopStore((s) => s.adrs);
   const workshopAgentsBusy = useWorkshopStore(selectWorkshopAgentsBusy);
@@ -426,6 +427,7 @@ export function DashboardSidebar({
       apiContractsContent,
       logicFlowsContent,
       tasksContent,
+      agentGovernanceContent,
       adrs,
       infraContent,
     });
@@ -449,6 +451,7 @@ export function DashboardSidebar({
     apiContractsContent,
     logicFlowsContent,
     tasksContent,
+    agentGovernanceContent,
     adrs,
     infraContent,
   ]);

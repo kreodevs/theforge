@@ -43,11 +43,19 @@ import {
   patchStageBodySchema,
   updateProjectSchema,
   DELIVERABLES_BY_COMPLEXITY,
+  parseAgentGovernanceScaffold,
   type DeliverableKind,
   type ComplexityPending,
   type CreateProjectDto,
   type UpdateProjectDto,
 } from "@theforge/shared-types";
+import {
+  parseAgentGovernanceResponse,
+  reconcileAgentGovernanceScaffold,
+  serializeAgentGovernanceScaffold,
+  suggestionsFromManifest,
+} from "../ai/utils/agent-governance.util.js";
+import { suggestAgentGovernanceArtifacts } from "../ai/utils/suggest-agent-governance-artifacts.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
 import {
@@ -481,6 +489,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         "dbgaContent", "specContent", "architectureContent", "useCasesContent",
         "userStoriesContent", "blueprintContent", "tasksContent",
         "apiContractsContent", "logicFlowsContent", "infraContent",
+        "agentGovernanceContent",
         "uxUiGuideContent", "phase0SummaryContent", "aemContent",
       ] as const;
       for (const field of documentFields) {
@@ -1046,6 +1055,9 @@ name: ${JSON.stringify(name)}
       case "user_stories":
         await this.generateUserStories(projectId);
         return;
+      case "agent_governance":
+        await this.generateAgentGovernance(projectId);
+        return;
       case "tasks":
         await this.generateTasks(projectId);
         return;
@@ -1103,6 +1115,7 @@ name: ${JSON.stringify(name)}
       ux_ui_guide: "Guía UX/UI",
       api_contracts: "Contratos API",
       logic_flows: "Flujos de Lógica",
+      agent_governance: "Gobernanza Agentes IA",
       tasks: "Tareas",
       infra: "Infraestructura",
     };
@@ -1231,6 +1244,75 @@ name: ${JSON.stringify(name)}
       dbga.length === 0 && rawMdd.length > 0 ? "mdd" : "dbga",
     );
     return this.update(projectId, { specContent: cleanDocumentContent(specContent) });
+  }
+
+  async generateAgentGovernance(projectId: string) {
+    const project = await this.assertProjectAccess(projectId);
+    const complexity = project.complexity ?? ComplexityLevel.HIGH;
+    const mdd = this.constitutionMarkdown(project);
+    const suggestions = suggestAgentGovernanceArtifacts({
+      mddMarkdown: mdd,
+      blueprintMarkdown: project.blueprintContent,
+      complexity,
+    });
+    const raw = await this.ai.generateAgentGovernance(mdd, project.blueprintContent, complexity, {
+      suggestions,
+    });
+    const scaffold = parseAgentGovernanceResponse(raw, complexity, {
+      suggestions,
+      mddMarkdown: mdd,
+    });
+    return this.update(projectId, {
+      agentGovernanceContent: serializeAgentGovernanceScaffold(scaffold),
+    });
+  }
+
+  async generateAgentGovernancePreview(projectId: string): Promise<{ content: string }> {
+    const project = await this.assertProjectAccess(projectId);
+    const complexity = project.complexity ?? ComplexityLevel.HIGH;
+    const mdd = this.constitutionMarkdown(project);
+    const suggestions = suggestAgentGovernanceArtifacts({
+      mddMarkdown: mdd,
+      blueprintMarkdown: project.blueprintContent,
+      complexity,
+    });
+    const raw = await this.ai.generateAgentGovernance(mdd, project.blueprintContent, complexity, {
+      suggestions,
+    });
+    const scaffold = parseAgentGovernanceResponse(raw, complexity, {
+      suggestions,
+      mddMarkdown: mdd,
+    });
+    return { content: serializeAgentGovernanceScaffold(scaffold) };
+  }
+
+  /** Scaffold listo para ZIP: reconcilia sugerencias y rutas obligatorias sin re-llamar al LLM. */
+  async getAgentGovernanceForExport(projectId: string) {
+    const project = await this.assertProjectAccess(projectId);
+    const raw = project.agentGovernanceContent;
+    if (!raw?.trim()) {
+      throw new BadRequestException("No hay gobernanza de agentes generada para este proyecto.");
+    }
+
+    const scaffold = parseAgentGovernanceScaffold(raw);
+    if (!scaffold) {
+      throw new BadRequestException("El scaffold de gobernanza no contiene archivos válidos.");
+    }
+
+    const complexity = project.complexity ?? ComplexityLevel.HIGH;
+    const mdd = this.constitutionMarkdown(project);
+    const suggestions =
+      suggestionsFromManifest(scaffold.manifest?.suggestions) ??
+      suggestAgentGovernanceArtifacts({
+        mddMarkdown: mdd,
+        blueprintMarkdown: project.blueprintContent,
+        complexity,
+      });
+
+    return reconcileAgentGovernanceScaffold(scaffold, complexity, {
+      suggestions,
+      mddMarkdown: mdd,
+    });
   }
 
   async generateTasks(projectId: string) {

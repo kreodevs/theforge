@@ -21,6 +21,7 @@ import {
   buildPlanApprovalChatContents,
   isPlanApprovalResumeMessage,
 } from "../utils/planApprovalChat";
+import { deliverableStepLabelsForComplexity } from "@theforge/shared-types";
 import { listGovernancePatternOptions } from "@theforge/shared-types/mdd-governance-patterns";
 import {
   orchestratorDocSnapshot,
@@ -504,6 +505,7 @@ export interface Project {
   userStoriesContent: string | null;
   infraContent: string | null;
   aemContent: string | null;
+  agentGovernanceContent: string | null;
   legacyFlowState?: LegacyFlowState | null;
   estimation: Estimation | null;
   /** Presente en respuesta API completa; el front usa `activeStageId` para foco MDD. */
@@ -647,6 +649,7 @@ interface WorkshopState {
   userStoriesContent: string | null;
   infraContent: string | null;
   aemContent: string | null;
+  agentGovernanceContent: string | null;
   /** Conformance (SDD Fase 2): Blueprint/API/Flujos/Infra vs MDD; `blueprintDataModel` = §3 vs Blueprint (gating API). */
   conformance: {
     blueprint: ConformanceResult;
@@ -810,6 +813,9 @@ interface WorkshopState {
   setTasksContent: (content: string | null) => void;
   persistTasksContent: (content: string) => Promise<void>;
   generateTasks: (projectId: string) => Promise<Project | null>;
+  generateAgentGovernance: (projectId: string) => Promise<Project | null>;
+  /** GET reconciled scaffold para ZIP (materializa sugerencias omitidas en `files[]`). */
+  fetchAgentGovernanceExport: (projectId: string) => Promise<import("@theforge/shared-types").AgentGovernanceScaffold | null>;
   /** POST /projects/:id/generate-deliverables — cascada según complexity. */
   generateDeliverablesCascade: (projectId: string) => Promise<Project | null>;
   /** HITL: aplica propuesta pendiente a `complexity` y limpia `complexityPending`. */
@@ -903,6 +909,7 @@ const initialState = {
   userStoriesContent: null as string | null,
   infraContent: null as string | null,
   aemContent: null as string | null,
+  agentGovernanceContent: null as string | null,
   conformance: null as {
     blueprint: ConformanceResult;
     blueprintDataModel: ConformanceResult;
@@ -1191,6 +1198,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         userStoriesContent: cleanDoc(data.userStoriesContent ?? null),
         infraContent: cleanDoc(data.infraContent ?? null),
         aemContent: cleanDoc(data.aemContent ?? null),
+        agentGovernanceContent: data.agentGovernanceContent ?? null,
         error: null,
         legacyMcpDebugTrace: null,
       });
@@ -2611,6 +2619,49 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ loading: false });
     }
   },
+  generateAgentGovernance: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}/generate-agent-governance`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al generar gobernanza de agentes");
+      }
+      const data: Project = await r.json();
+      set({
+        project: data,
+        agentGovernanceContent: data.agentGovernanceContent ?? null,
+        error: null,
+      });
+      return data;
+    } catch (e) {
+      set({
+        error: e instanceof Error ? e.message : "Error al generar gobernanza de agentes",
+      });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
+  },
+  fetchAgentGovernanceExport: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}/agent-governance-export`);
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al preparar ZIP de gobernanza");
+      }
+      return (await r.json()) as import("@theforge/shared-types").AgentGovernanceScaffold;
+    } catch (e) {
+      set({
+        error: e instanceof Error ? e.message : "Error al preparar ZIP de gobernanza",
+      });
+      return null;
+    }
+  },
   generateDeliverablesCascade: async (projectId) => {
     if (!projectId?.trim()) return null;
     const pid = projectId.trim();
@@ -2625,12 +2676,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (data.queued === true && typeof data.jobId === "string") {
         const deadline = Date.now() + 45 * 60 * 1000;
 
-        // Inicializar agentProgress con los 11 docs en "Generando…"
-        const allStepLabels = [
-          "MDD Canonical", "Blueprint", "Spec", "Arquitectura",
-          "Casos de Uso", "Historias de Usuario", "Guía UX/UI",
-          "Contratos API", "Flujos de Lógica", "Tareas", "Infraestructura",
-        ];
+        const complexity = get().project?.complexity ?? "HIGH";
+        const allStepLabels = deliverableStepLabelsForComplexity(complexity);
         set({
           agentProgress: allStepLabels.map((label) => ({
             agent: "Entregables",
@@ -3231,6 +3278,7 @@ if (prog && prog.step && prog.step !== "done") {
         "use-cases": "useCasesContent",
         "user-stories": "userStoriesContent",
         aem: "aemContent",
+        "agent-governance": "agentGovernanceContent",
       };
 
       const fieldName = fieldByPanel[panel];

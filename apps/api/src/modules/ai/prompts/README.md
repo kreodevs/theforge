@@ -17,6 +17,7 @@ Prompts del módulo AI. Están estructurados según marcos de ingeniería de pro
 | **infra-prompt.md** | Infra / Docker / env / volúmenes al MDD; pie **Proyecto legacy** (stack real del índice). |
 | **logic-flows-prompt.md** | Flujos y secuencias Mermaid al MDD; pie **Proyecto legacy** (archivos/servicios citables). |
 | **tasks-prompt.md** | Breakdown Backend / Front / Infra / QA; clasificación capas (Strapi schema vs lifecycles, rutas SPA vs API); pie **Proyecto legacy** con rutas del índice. |
+| **agent-governance-prompt.md** | Scaffold `agent-governance/` (JSON `files`) desde MDD §1–§7 + Blueprint; plantillas LOW/MEDIUM/HIGH; derivación stack-agnóstica; `generateAgentGovernance()`. |
 | **spec-prompt.md** | Spec what/why desde DBGA/alcance; pie **Proyecto legacy** (superficies reales del índice). |
 | **use-cases-prompt.md** | Casos de uso desde MDD+Spec; reglas anti-alucinación; pie **Proyecto legacy**. |
 | **api-contracts-prompt.md** | Contratos API al MDD; pie **Proyecto legacy** (handlers/rutas del MCP). |

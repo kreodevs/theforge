@@ -20,6 +20,7 @@ export type GenerateJobType =
   | "api-contracts"
   | "logic-flows"
   | "tasks"
+  | "agent-governance"
   | "infra"
   | "architecture"
   | "use-cases"
@@ -132,6 +133,9 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
               return this.projects.generateLogicFlows(projectId, gapsFeedback);
             case "tasks":
               return this.projects.generateTasks(projectId);
+            case "agent-governance":
+              if (preview) return this.projects.generateAgentGovernancePreview(projectId);
+              return this.projects.generateAgentGovernance(projectId);
             case "infra":
               if (preview) return this.projects.generateInfraPreview(projectId, gapsFeedback);
               return this.projects.generateInfra(projectId, gapsFeedback);

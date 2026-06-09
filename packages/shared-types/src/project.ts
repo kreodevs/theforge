@@ -69,6 +69,8 @@ export const updateProjectSchema = z.object({
   apiContractsContent: z.string().optional().nullable(),
   logicFlowsContent: z.string().optional().nullable(),
   infraContent: z.string().optional().nullable(),
+  /** JSON (`AgentGovernanceScaffold`) del entregable agent-governance. */
+  agentGovernanceContent: z.string().optional().nullable(),
   uxUiGuideContent: z.string().optional().nullable(),
   phase0SummaryContent: z.string().optional().nullable(),
   aemContent: z.string().optional().nullable(),
@@ -104,6 +106,7 @@ export const projectResponseSchema = z.object({
   apiContractsContent: z.string().nullable(),
   logicFlowsContent: z.string().nullable(),
   infraContent: z.string().nullable(),
+  agentGovernanceContent: z.string().nullable(),
   uxUiGuideContent: z.string().nullable(),
   phase0SummaryContent: z.string().nullable(),
   aemContent: z.string().nullable(),

@@ -21,6 +21,7 @@ import {
   Play,
   ListOrdered,
   ListTodo,
+  Bot,
   ListChecks,
   ArrowDown,
   ArrowRight,
@@ -59,7 +60,11 @@ import {
   WORKSHOP_HEADER_CTL,
   WORKSHOP_HEADER_CTL_HOVER,
 } from "../constants/workshopHeaderToolbar";
-import type { CodebaseDocResponseMode } from "@theforge/shared-types";
+import {
+  agentGovernanceScaffoldHasContent,
+  parseAgentGovernanceScaffold,
+  type CodebaseDocResponseMode,
+} from "@theforge/shared-types";
 import {
   selectPersistedMddBaseline,
   selectWorkshopAgentsBusy,
@@ -90,6 +95,8 @@ import WorkshopHelpModal from "../components/WorkshopHelpModal";
 import { WorkshopMetricsColumnInner } from "./WorkshopMetricsColumnInner";
 import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
 import { BrdStagePanel } from "../components/BrdStagePanel";
+import { AgentGovernancePanel } from "../components/AgentGovernancePanel";
+import { downloadAgentGovernanceZip } from "../utils/downloadAgentGovernanceZip";
 import { downloadDocumentsZip } from "../utils/downloadDocumentsZip";
 import { downloadMarkdownFile } from "../utils/downloadMarkdownFile";
 import { resolveWorkshopActiveDocumentDownload } from "../utils/workshopActiveDocumentDownload";
@@ -174,6 +181,7 @@ type WorkshopDocToolbarViewModes = {
   logicFlowsViewMode: "preview" | "source";
   brdDocViewMode: "preview" | "source";
   infraViewMode: "preview" | "source";
+  agentGovernanceViewMode: "preview" | "source";
 };
 
 function getWorkshopDocToolbarActiveViewMode(
@@ -192,6 +200,7 @@ function getWorkshopDocToolbarActiveViewMode(
   if (centralPanel === "api-contracts") return modes.apiContractsViewMode;
   if (centralPanel === "logic-flows") return modes.logicFlowsViewMode;
   if (centralPanel === "brd") return modes.brdDocViewMode;
+  if (centralPanel === "agent-governance") return modes.agentGovernanceViewMode;
   return modes.infraViewMode;
 }
 
@@ -335,6 +344,7 @@ export default function WorkshopView({
   const logicFlowsContentField = useWorkshopStore((s) => s.logicFlowsContent);
   const infraContentField = useWorkshopStore((s) => s.infraContent);
   const tasksContentField = useWorkshopStore((s) => s.tasksContent);
+  const agentGovernanceContentField = useWorkshopStore((s) => s.agentGovernanceContent);
   const architectureContentField = useWorkshopStore((s) => s.architectureContent);
   const useCasesContentField = useWorkshopStore((s) => s.useCasesContent);
   const userStoriesContentField = useWorkshopStore((s) => s.userStoriesContent);
@@ -353,6 +363,13 @@ export default function WorkshopView({
   const logicFlowsContent = logicFlowsContentField ?? project?.logicFlowsContent ?? null;
   const infraContent = infraContentField ?? project?.infraContent ?? null;
   const tasksContent = tasksContentField ?? project?.tasksContent ?? null;
+  const agentGovernanceContent =
+    agentGovernanceContentField ?? project?.agentGovernanceContent ?? null;
+  const agentGovernanceScaffold = useMemo(
+    () => parseAgentGovernanceScaffold(agentGovernanceContent),
+    [agentGovernanceContent],
+  );
+  const hasAgentGovernance = agentGovernanceScaffoldHasContent(agentGovernanceContent);
   const architectureContent = architectureContentField ?? project?.architectureContent ?? null;
   const useCasesContent = useCasesContentField ?? project?.useCasesContent ?? null;
   const userStoriesContent = userStoriesContentField ?? project?.userStoriesContent ?? null;
@@ -461,6 +478,8 @@ export default function WorkshopView({
   const generateInfra = useWorkshopStore((s) => s.generateInfra);
   const generateSpec = useWorkshopStore((s) => s.generateSpec);
   const generateTasks = useWorkshopStore((s) => s.generateTasks);
+  const generateAgentGovernance = useWorkshopStore((s) => s.generateAgentGovernance);
+  const fetchAgentGovernanceExport = useWorkshopStore((s) => s.fetchAgentGovernanceExport);
   const persistTasksContent = useWorkshopStore((s) => s.persistTasksContent);
   const persistSpecContent = useWorkshopStore((s) => s.persistSpecContent);
   const setSpecContent = useWorkshopStore((s) => s.setSpecContent);
@@ -848,6 +867,7 @@ export default function WorkshopView({
   const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
   const [mddInicialViewMode, setMddInicialViewMode] = useState<"preview" | "source">("preview");
   const [aemViewMode, setAemViewMode] = useState<"preview" | "source">("preview");
+  const [agentGovernanceViewMode, setAgentGovernanceViewMode] = useState<"preview" | "source">("preview");
   const [hermesConfigured, setHermesConfigured] = useState<boolean | null>(null);
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
@@ -876,6 +896,7 @@ export default function WorkshopView({
     else if (panel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "brd") setBrdDocViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "agent-governance") setAgentGovernanceViewMode((m) => (m === "preview" ? "source" : "preview"));
   };
 
   const copyMddInicialMarkdown = useCallback(async () => {
@@ -907,6 +928,7 @@ export default function WorkshopView({
     | "user-stories"
     | "infra"
     | "aem"
+    | "agent-governance"
     | "adrs";
   const centralPanel = useWorkshopStore((s) => s.workshopActiveDocPanel) as DocPanel;
   const setCentralPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
@@ -1442,7 +1464,7 @@ export default function WorkshopView({
     if (activeWorkshopStage?.ordinal === 1) return;
     const emptyLegacyPanels: DocPanel[] = [
       "spec", "architecture", "use-cases", "user-stories", "blueprint",
-      "api-contracts", "logic-flows", "tasks", "infra",
+      "api-contracts", "logic-flows", "tasks", "agent-governance", "infra",
     ];
     if (!emptyLegacyPanels.includes(centralPanel as DocPanel)) return;
     const contentByPanel: Record<string, string | null> = {
@@ -1454,6 +1476,7 @@ export default function WorkshopView({
       "api-contracts": apiContractsContent ?? null,
       "logic-flows": logicFlowsContent ?? null,
       tasks: tasksContent ?? null,
+      "agent-governance": hasAgentGovernance ? "ok" : null,
       infra: infraContent ?? null,
     };
     const content = contentByPanel[centralPanel as string];
@@ -1470,6 +1493,7 @@ export default function WorkshopView({
     apiContractsContent,
     logicFlowsContent,
     tasksContent,
+    hasAgentGovernance,
     infraContent,
   ]);
 
@@ -1564,6 +1588,7 @@ export default function WorkshopView({
       "infra",
       "brd",
       "mdd-inicial",
+      "agent-governance",
     ]);
     const showDocEdit =
       editableDocPanels.has(centralPanel) &&
@@ -1578,6 +1603,7 @@ export default function WorkshopView({
         (centralPanel === "user-stories" && userStoriesContent) ||
         (centralPanel === "logic-flows" && logicFlowsContent) ||
         (centralPanel === "infra" && infraContent) ||
+        (centralPanel === "agent-governance" && hasAgentGovernance) ||
         (centralPanel === "mdd-inicial" && (activeLegacyState?.codebaseDoc || mddInicialLocalContent)) ||
         (centralPanel === "brd" && !!activeStageId));
     const showBenchmarkEdit = centralPanel === "benchmark";
@@ -1614,6 +1640,7 @@ export default function WorkshopView({
       logicFlowsViewMode,
       brdDocViewMode,
       infraViewMode,
+      agentGovernanceViewMode,
     });
     const { Icon, tooltip } = workshopDocSourceTogglePresentation(centralPanel, activeDocViewMode);
     return {
@@ -1636,6 +1663,8 @@ export default function WorkshopView({
     logicFlowsViewMode,
     brdDocViewMode,
     infraViewMode,
+    agentGovernanceViewMode,
+    hasAgentGovernance,
     benchmarkPhaseTab,
     benchmarkViewMode,
     phase0SummaryViewMode,
@@ -1778,6 +1807,14 @@ export default function WorkshopView({
         disabled: loading || !effectiveMddTrimmed || !blueprintContent?.trim() || !projectId,
         onClick: () => void generateTasks(projectId),
       };
+    } else if (centralPanel === "agent-governance" && hasAgentGovernance) {
+      regenItem = {
+        id: "regen",
+        label: "Regenerar gobernanza de agentes",
+        icon: RefreshCw,
+        disabled: loading || !effectiveMddTrimmed || !projectId,
+        onClick: () => void generateAgentGovernance(projectId),
+      };
     } else if (centralPanel === "ux-ui-guide" && !!uxUiGuideContent?.trim()) {
       regenItem = {
         id: "regen",
@@ -1807,9 +1844,10 @@ export default function WorkshopView({
       "use-cases": "Use Cases",
       "user-stories": "User Stories",
       aem: "Análisis y Estrategia de Mercado",
+      "agent-governance": "Gobernanza de agentes IA",
     };
 
-    if (downloadPayload && projectId && panelClearLabels[centralPanel]) {
+    if ((downloadPayload || (centralPanel === "agent-governance" && agentGovernanceScaffold)) && projectId && panelClearLabels[centralPanel]) {
       const docLabel = panelClearLabels[centralPanel];
       ordered.push({
         id: "clear",
@@ -1848,10 +1886,21 @@ export default function WorkshopView({
 
     ordered.push({
       id: "download",
-      label: "Descargar documento",
+      label: centralPanel === "agent-governance" ? "Descargar ZIP" : "Descargar documento",
       icon: Download,
-      disabled: !downloadPayload,
+      disabled: centralPanel === "agent-governance" ? !agentGovernanceScaffold : !downloadPayload,
       onClick: () => {
+        if (centralPanel === "agent-governance" && agentGovernanceScaffold && projectId) {
+          void (async () => {
+            const exportScaffold =
+              (await fetchAgentGovernanceExport(projectId)) ?? agentGovernanceScaffold;
+            await downloadAgentGovernanceZip(
+              exportScaffold,
+              projectName ?? project?.name ?? "Workshop",
+            );
+          })();
+          return;
+        }
         if (downloadPayload) downloadMarkdownFile(downloadPayload.filename, downloadPayload.content);
       },
     });
@@ -1900,6 +1949,9 @@ export default function WorkshopView({
     brdWorkshopDraft,
     uxUiGuideContent,
     tasksContent,
+    hasAgentGovernance,
+    agentGovernanceScaffold,
+    agentGovernanceViewMode,
     aemContent,
     isLegacyProject,
     projectId,
@@ -1926,6 +1978,8 @@ export default function WorkshopView({
     generateLogicFlows,
     generateInfra,
     generateTasks,
+    generateAgentGovernance,
+    fetchAgentGovernanceExport,
     generateUxGuideSequential,
     clearWorkshopDocumentContent,
     handleClearMddCompletely,
@@ -2502,7 +2556,7 @@ export default function WorkshopView({
                 </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-1.5 shrink-0 sm:justify-end sm:gap-2 sm:pt-0.5 lg:hidden">
-                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd"] as const).includes(
+                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "agent-governance", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd"] as const).includes(
                   centralPanel as any,
                 ) && (
                     (centralPanel === "spec" ||
@@ -2511,6 +2565,7 @@ export default function WorkshopView({
                       centralPanel === "aem" ||
                       (centralPanel === "blueprint" && blueprintContent) ||
                       (centralPanel === "tasks" && tasksContent) ||
+                      (centralPanel === "agent-governance" && hasAgentGovernance) ||
                       (centralPanel === "api-contracts" && apiContractsContent) ||
                       (centralPanel === "architecture" && architectureContent) ||
                       (centralPanel === "use-cases" && useCasesContent) ||
@@ -2534,6 +2589,7 @@ export default function WorkshopView({
                         logicFlowsViewMode,
                         brdDocViewMode,
                         infraViewMode,
+                        agentGovernanceViewMode,
                       });
                       const { Icon: DocToggleIcon, tooltip: docToggleTooltip } = workshopDocSourceTogglePresentation(
                         centralPanel,
@@ -2773,6 +2829,14 @@ export default function WorkshopView({
                     disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
                     loading={loading}
                     ariaLabel="Regenerar Tasks desde MDD y Blueprint"
+                  />
+                )}
+                {centralPanel === "agent-governance" && hasAgentGovernance && (
+                  <WorkshopRegenButton
+                    onClick={() => generateAgentGovernance(projectId)}
+                    disabled={loading || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar scaffold de gobernanza de agentes desde el MDD"
                   />
                 )}
                 {centralPanel === "ux-ui-guide" && !!uxUiGuideContent?.trim() && (
@@ -3835,6 +3899,24 @@ export default function WorkshopView({
                 />
               )
             )}
+            {centralPanel === "agent-governance" && (
+              hasAgentGovernance ? (
+                <AgentGovernancePanel
+                  rawContent={agentGovernanceContent}
+                  viewMode={agentGovernanceViewMode}
+                />
+              ) : (
+                <DocEmptyState
+                  icon={Bot}
+                  title="Gobernanza de agentes"
+                  description="Scaffold AGENTS.md, .cursor/rules, skills y workflows derivados del MDD (7 §)."
+                  onGenerate={() => generateAgentGovernance(projectId)}
+                  loading={loading}
+                  hasMdd={!!effectiveMddTrimmed}
+                  generateButtonLabel="Generar gobernanza de agentes desde MDD"
+                />
+              )
+            )}
             {centralPanel === "api-contracts" && (
               <StandardDocPanel
                 icon={FileCode}
@@ -4045,6 +4127,7 @@ export default function WorkshopView({
             logicFlowsViewMode,
             brdDocViewMode,
             infraViewMode,
+            agentGovernanceViewMode,
           });
           const { Icon: DocToggleIcon, tooltip: docToggleTooltip } = workshopDocSourceTogglePresentation(
             centralPanel,

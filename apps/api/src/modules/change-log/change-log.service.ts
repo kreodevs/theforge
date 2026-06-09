@@ -71,6 +71,7 @@ export class ChangeLogService {
       userStoriesContent: "Historias de Usuario",
       logicFlowsContent: "Flujos de Lógica",
       tasksContent: "Tasks",
+      agentGovernanceContent: "Gobernanza Agentes IA",
       infraContent: "Infraestructura",
       phase0SummaryContent: "Resumen Fase 0",
       aemContent: "AEM",
