@@ -31,4 +31,12 @@ describe("formatDocumentMarkdown — fences KMS ISD (3ª corrida)", () => {
     const out = formatDocumentMarkdown(raw);
     assert.equal(out, raw.trim());
   });
+
+  it("4ª corrida KMS §1: aristas del grafo dentro del bloque mermaid", () => {
+    const raw = readFixture("kms-isd-graph-edges-outside.fixture.txt");
+    const out = formatDocumentMarkdown(raw);
+    assert.match(out, /KMS_CLI -->|llamadas API REST| KMS_GW\n```/);
+    assert.doesNotMatch(out, /```\n### KMS_GW -->/);
+    assert.match(out, /\| Sistema\s+\| Dirección/);
+  });
 });

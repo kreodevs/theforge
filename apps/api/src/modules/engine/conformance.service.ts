@@ -751,6 +751,23 @@ function checkIntegrationSpecFenceFormat(document: string): string[] {
     }
   }
 
+  const fusedLangTokenRe =
+    /\)(mermaid|json|sql|dockerfile|yaml|bash)$/i;
+  const fusedLangAfterLetterRe =
+    /[a-záéíóúñ](mermaid|json|sql|dockerfile|yaml|bash)$/i;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!/^#{1,6}\s/.test(trimmed)) continue;
+    if (
+      fusedLangTokenRe.test(trimmed) ||
+      fusedLangAfterLetterRe.test(trimmed)
+    ) {
+      gaps.push(
+        `Formato: posible delimitador de código fusionado con el encabezado «${trimmed.slice(0, 60)}»`,
+      );
+    }
+  }
+
   return gaps;
 }
 

@@ -199,6 +199,63 @@ sequenceDiagram
   assert.ok(!result.gaps.some((g) => /Formato:/i.test(g)), result.gaps.join("; "));
 });
 
+test("formato: encabezado con token mermaid fusionado → gap #7c", () => {
+  const isd = `# Integration Spec
+
+## 4. Secuencias
+### 4.2 Autenticación de aplicación corporativa (OAuth2 client_credentials)mermaid
+sequenceDiagram
+  A->>B: call
+
+---FIN_INTEGRATION_SPEC---
+`;
+  const result = checkIntegrationSpecVsMdd(MDD_NO_INTEGRATIONS, isd);
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.gaps.some((g) => /posible delimitador de código fusionado/i.test(g)),
+  );
+});
+
+test("formato: encabezado legítimo que termina en palabra mermaid → sin gap #7c", () => {
+  const isd = `# Integration Spec
+
+## 4. Secuencias
+### 4.2 Flujo documentado en mermaid
+
+Texto descriptivo del flujo.
+
+---FIN_INTEGRATION_SPEC---
+`;
+  const result = checkIntegrationSpecVsMdd(MDD_NO_INTEGRATIONS, isd);
+  assert.ok(
+    !result.gaps.some((g) => /posible delimitador de código fusionado/i.test(g)),
+    result.gaps.join("; "),
+  );
+});
+
+test("formato: fence impar + encabezado tragado + token fusionado → todos los gaps", () => {
+  const isd = `# Integration Spec
+
+## 4. Secuencias
+\`\`\`mermaid
+sequenceDiagram
+  A->>B: call
+### 4.2 Título tragado
+  B->>C: fail
+
+### 4.3 OAuth (client_credentials)mermaid
+sequenceDiagram
+  X->>Y: z
+
+---FIN_INTEGRATION_SPEC---
+`;
+  const result = checkIntegrationSpecVsMdd(MDD_NO_INTEGRATIONS, isd);
+  assert.equal(result.ok, false);
+  assert.ok(result.gaps.some((g) => /encabezado dentro de bloque de código/i.test(g)));
+  assert.ok(result.gaps.some((g) => /sin balancear/i.test(g)));
+  assert.ok(result.gaps.some((g) => /posible delimitador de código fusionado/i.test(g)));
+});
+
 test("formato: fence impar + encabezado tragado → ambos gaps", () => {
   const isd = `# Integration Spec
 

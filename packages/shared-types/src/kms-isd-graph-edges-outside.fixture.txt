@@ -1,0 +1,39 @@
+## 1. Mapa de sistemas
+
+```mermaid
+graph LR
+    subgraph "KMS Corporativo (Plataforma)"
+        KMS_BACKEND[Backend NestJS]
+        KMS_GW[API Gateway Kong]
+        KMS_CLI[CLI Commander]
+    end
+
+    subgraph "Sistemas colindantes"
+        AD[Active Directory<br/>LDAP/AD]
+        SIEM[SIEM Corporativo]
+        APP_CORP[Aplicaciones Corporativas]
+        DB_EXT[BD Relacional Externa<br/>Conector MVP]
+        WH[Webhooks Corporativos]
+        AWSKMS[AWS KMS]
+    end
+
+```
+### KMS_GW -->|autenticación LDAP| AD
+    KMS_GW -->|OAuth2 / mTLS| APP_CORP
+    KMS_BACKEND -->|exportación NDJSON| SIEM
+    KMS_BACKEND -->|conexión SQL| DB_EXT
+    KMS_BACKEND -->|notificaciones HTTP| WH
+    KMS_BACKEND -->|GenerateDataKey / Encrypt| AWSKMS
+    APP_CORP -->|llamadas API REST| KMS_GW
+    KMS_CLI -->|llamadas API REST| KMS_GW
+
+### Inventario de sistemas colindantes
+
+| Sistema                                             | Dirección                | Rol                                                               | Protocolo                      | Dueño organizacional                   |
+| :-------------------------------------------------- | :----------------------- | :---------------------------------------------------------------- | :----------------------------- | :------------------------------------- |
+| **Active Directory (LDAP/AD) corporativo**          | Saliente (KMS → AD)      | Fuente de verdad de identidad de usuarios humanos                 | LDAPS (LDAP sobre TLS)         | Equipo de Identidad Corporativa        |
+| **SIEM corporativo**                                | Saliente (KMS → SIEM)    | Consumidor de eventos de auditoría                                | HTTPS (NDJSON)                 | Equipo de SOC / Ciberseguridad         |
+| **Aplicaciones corporativas**                       | Entrante (App → KMS)     | Consumidor de operaciones criptográficas y secretos               | HTTPS (REST)                   | Equipos dueños de cada aplicación      |
+| **Base de datos relacional externa** (conector MVP) | Saliente (KMS → BD)      | Fuente de datos para integración CRUD externa                     | PostgreSQL wire protocol (TLS) | Equipo de Plataforma (a definir)       |
+| **Webhooks corporativos**                           | Saliente (KMS → Webhook) | Consumidor de notificaciones (rotación, vencimiento, exportación) | HTTPS POST (JSON)              | Equipo de Operaciones / Notificaciones |
+| **AWS KMS**                                         | Saliente (KMS → AWS KMS) | Proveedor de cifrado asimétrico para clave maestra (wrapping)     | AWS SDK (API HTTPS, TLS 1.3)   | Infraestructura (CloudOps)             |

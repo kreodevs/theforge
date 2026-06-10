@@ -1,12 +1,20 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  isOrphanGraphEdgeLine,
   isOrphanSequenceDiagramLine,
   normalizeMermaidInDocument,
+  repairFragmentedGraphMermaidInDocument,
   repairFragmentedSequenceMermaidInDocument,
   stripMarkdownLeakFromMermaidDiagramBody,
 } from "./mermaid.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const dir = dirname(fileURLToPath(import.meta.url));
+const readFixture = (name: string) => readFileSync(join(dir, name), "utf8");
 
 describe("isOrphanSequenceDiagramLine", () => {
   it("detecta flechas con prefijo ### o viñeta", () => {
@@ -14,6 +22,40 @@ describe("isOrphanSequenceDiagramLine", () => {
     assert.equal(isOrphanSequenceDiagramLine("- API-->>Consumidor: 200 OK"), true);
     assert.equal(isOrphanSequenceDiagramLine("### 1.2 Flujo de Cron"), false);
     assert.equal(isOrphanSequenceDiagramLine("| Paso | Acción |"), false);
+  });
+});
+
+describe("isOrphanGraphEdgeLine", () => {
+  it("detecta aristas con prefijo ### o viñeta", () => {
+    assert.equal(isOrphanGraphEdgeLine("### KMS_GW -->|autenticación LDAP| AD"), true);
+    assert.equal(isOrphanGraphEdgeLine("- KMS_BACKEND -->|exportación NDJSON| SIEM"), true);
+    assert.equal(isOrphanGraphEdgeLine("### Inventario de sistemas colindantes"), false);
+    assert.equal(isOrphanGraphEdgeLine("| Sistema | Dirección |"), false);
+  });
+});
+
+describe("repairFragmentedGraphMermaidInDocument", () => {
+  it("fusiona aristas graph partidas por cierre prematuro del fence (KMS §1)", () => {
+    const doc = readFixture("kms-isd-graph-edges-outside.fixture.txt");
+    const out = repairFragmentedGraphMermaidInDocument(doc);
+    assert.match(out, /KMS_CLI -->|llamadas API REST| KMS_GW\n```\n\n### Inventario/);
+    assert.match(out, /KMS_GW -->|autenticación LDAP| AD[\s\S]*KMS_CLI -->|llamadas API REST| KMS_GW/);
+    assert.doesNotMatch(out, /```\n### KMS_GW -->/);
+    assert.doesNotMatch(out, /### KMS_GW -->/);
+  });
+
+  it("no absorbe tabla markdown tras el grafo", () => {
+    const doc = readFixture("kms-isd-graph-edges-outside.fixture.txt");
+    const out = repairFragmentedGraphMermaidInDocument(doc);
+    assert.match(out, /\| Sistema\s+\| Dirección/);
+    assert.match(out, /### Inventario de sistemas colindantes/);
+  });
+
+  it("es idempotente en documento ya reparado", () => {
+    const doc = readFixture("kms-isd-graph-edges-outside.fixture.txt");
+    const once = repairFragmentedGraphMermaidInDocument(doc);
+    const twice = repairFragmentedGraphMermaidInDocument(once);
+    assert.equal(twice, once);
   });
 });
 

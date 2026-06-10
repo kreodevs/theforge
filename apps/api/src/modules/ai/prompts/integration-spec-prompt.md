@@ -1,4 +1,4 @@
-# integration-spec-prompt.md (v1.3 — alineado al repo + ajustes de smoke tests KMS)
+# integration-spec-prompt.md (v1.3.1 — alineado al repo + ajustes de smoke tests KMS)
 # Generador del Integration Spec — The Forge
 
 ## Objetivo
@@ -81,7 +81,10 @@ si la sección 9 tiene bloqueantes, decláralo ahí, no como workflow paralelo.)
 Inventario de TODO sistema colindante nombrado en §1/§4.B del MDD. Por sistema:
 dirección (entrante/saliente/bidireccional), rol (fuente de verdad / consumidor /
 identidad / tercero), protocolo, dueño organizacional. Diagrama de contexto
-(mermaid graph) solo sistemas y direcciones.
+(mermaid graph o flowchart): incluye TODOS los nodos Y TODAS las aristas (flechas
+y etiquetas) dentro del MISMO bloque ```mermaid — cierra el fence inmediatamente
+después de la última arista; PROHIBIDO dejar aristas como texto suelto, viñetas
+o encabezados (###, -) fuera del bloque.
 
 ### 2. Ownership de datos en la frontera
 Tabla: dato compartido | sistema dueño | qué hace el otro lado.
