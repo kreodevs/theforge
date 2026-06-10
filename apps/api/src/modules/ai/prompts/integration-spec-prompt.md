@@ -81,10 +81,11 @@ si la sección 9 tiene bloqueantes, decláralo ahí, no como workflow paralelo.)
 Inventario de TODO sistema colindante nombrado en §1/§4.B del MDD. Por sistema:
 dirección (entrante/saliente/bidireccional), rol (fuente de verdad / consumidor /
 identidad / tercero), protocolo, dueño organizacional. Diagrama de contexto
-(mermaid graph o flowchart): incluye TODOS los nodos Y TODAS las aristas (flechas
-y etiquetas) dentro del MISMO bloque ```mermaid — cierra el fence inmediatamente
-después de la última arista; PROHIBIDO dejar aristas como texto suelto, viñetas
-o encabezados (###, -) fuera del bloque.
+(mermaid graph) solo sistemas y direcciones. El diagrama lleva nodos Y aristas
+dentro del MISMO bloque ```mermaid: no cierres el fence después de los
+nodos/subgraphs — las aristas (`-->`) van dentro del bloque y el fence se cierra
+solo después de la última arista. Nunca escribas aristas como texto o encabezados
+fuera del bloque.
 
 ### 2. Ownership de datos en la frontera
 Tabla: dato compartido | sistema dueño | qué hace el otro lado.
