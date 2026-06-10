@@ -1,4 +1,4 @@
-# integration-spec-prompt.md (v1 — alineado al repo)
+# integration-spec-prompt.md (v1.2 — alineado al repo + ajustes del smoke test KMS)
 # Generador del Integration Spec — The Forge
 
 ## Objetivo
@@ -47,6 +47,11 @@ con una fila "No aplica ☑". No inventes fronteras, no generes ruido, no bloque
 - Hueco o contradicción EN EL MDD (entidad sin mecanismo de alimentación, flujo sin
   endpoint, supuesto sin fuente): NO lo arregles aquí. Regístralo como DISCREPANCIA
   con destino "corrección al MDD" (mismo modelo que `propose_mdd_amendment`).
+- No documentes endpoints que no existan en el MDD §4. Si un flujo de integración
+  declarado en el MDD (p. ej. "OAuth2 client credentials para sistemas") carece del
+  endpoint que lo implementa, NO inventes su contrato como si existiera: marca esa
+  subsección de §3 como **PROPUESTO (no existe en MDD §4)** y emite la DISCREPANCIA
+  correspondiente en §9 pidiendo que el MDD lo defina.
 - Distingue tres tipos de frontera: (a) nos llaman (webhooks/consumidores),
   (b) llamamos (terceros), (c) identidad transversal (SSO). Política distinta cada una.
 - Auth: SOLO autenticación ENTRE sistemas (M2M, mTLS, API keys, client credentials).
@@ -87,9 +92,11 @@ TODOS los caminos de error con lo que ve el sistema externo en cada fallo.
 Si un flujo ya está en logic-flows, referéncialo y dibuja SOLO el tramo entre sistemas.
 
 ### 5. Mapeo interacción ↔ sistema
-Tabla maestra: endpoint o evento | dirección | origen | destino | auth | clave de
-idempotencia | contrato (§3.x). Debe cubrir todas las integraciones de §4.B y los
-endpoints de frontera identificados.
+Tabla maestra: interacción o evento | dirección | origen | destino | auth | clave de
+idempotencia | contrato (§3.x). La fila describe la interacción QUE CRUZA la frontera,
+no el endpoint del producto que la dispara: el login humano que internamente hace un
+BIND LDAP se mapea como "BIND LDAP, saliente, KMS→AD", no como "POST /auth/login".
+Debe cubrir todas las integraciones de §4.B y los endpoints de frontera identificados.
 
 ### 6. Resiliencia por frontera
 Tabla por sistema: timeout | retries (n, backoff) | circuit breaker | fallback |
@@ -116,7 +123,15 @@ Esta sección alimenta el semáforo del Stage; no introduce compuerta propia en 
 ## Convenciones de salida
 - Markdown puro en un solo documento (campo `integrationSpecContent`). Schemas inline
   en bloques ```json; nada de archivos externos ni carpetas `contracts/` en v1.
-- Tono declarativo: el ISD es contrato; el análisis vive en la sección 9.
+- Fences balanceados SIEMPRE: todo bloque ``` se cierra antes de iniciar cualquier
+  blockquote, tabla, lista o encabezado. Las notas `[NEEDS CLARIFICATION]` y los
+  blockquotes van FUERA de los bloques de código, nunca dentro. Antes de terminar,
+  verifica que el número de fences de apertura y cierre sea par en todo el documento.
+- Tono declarativo: el ISD es contrato; el análisis vive en la sección 9. En §3 y §4
+  está prohibida la deliberación visible (frases del tipo "podría", "considerar",
+  "quizás", "a definir", "pendiente de acordar" en el cuerpo del contrato). Lo no
+  demostrable se declara como `SUPUESTO: …` y se registra en §9 (PENDIENTES o
+  DISCREPANCIAS), nunca como narración exploratoria en §3/§4.
 - Changelog: NO lo generes manualmente — lo inyecta `withDocumentChangelogInstructions`.
 - Termina el documento con el marcador: ---FIN_INTEGRATION_SPEC---
 - En chat con actualización del documento, termina igualmente con

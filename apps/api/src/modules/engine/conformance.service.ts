@@ -716,6 +716,42 @@ function extractIntegrationReferences(section4B: string): string[] {
   return refs.filter((r) => r.length > 2);
 }
 
+/** Heurística #7: fences markdown balanceados y sin delimitadores fusionados con texto. */
+function checkIntegrationSpecFenceFormat(document: string): string[] {
+  const gaps: string[] = [];
+  const lines = document.split(/\r?\n/);
+
+  let fenceCount = 0;
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) {
+      fenceCount++;
+    }
+  }
+  if (fenceCount % 2 !== 0) {
+    gaps.push(
+      `Formato: bloques de código sin balancear (${fenceCount} delimitadores \`\`\` — debe ser par)`,
+    );
+  }
+
+  for (const line of lines) {
+    if (/\S`{3}/.test(line) || /^#{1,6} .*```/.test(line)) {
+      const truncated = line.trim().slice(0, 80);
+      gaps.push(
+        `Formato: delimitador \`\`\` fusionado con texto en la línea: «${truncated}»`,
+      );
+    }
+  }
+
+  return gaps;
+}
+
+function finalizeIntegrationSpecResult(gaps: string[], isd: string): ConformanceResult {
+  if (isd) {
+    gaps.push(...checkIntegrationSpecFenceFormat(isd));
+  }
+  return { ok: gaps.length === 0, gaps };
+}
+
 /** Keywords de flujo/resiliencia en MDD §7. */
 function extractIntegrationFlowSignals(mddContent: string): string[] {
   const section7 = extractSection(
@@ -758,21 +794,24 @@ export function checkIntegrationSpecVsMdd(
 
   if (!hasIntegrations) {
     if (!isd) {
-      return { ok: false, gaps: ["Falta Integration Spec mínimo (No aplica) para MDD sin integraciones"] };
+      return finalizeIntegrationSpecResult(
+        ["Falta Integration Spec mínimo (No aplica) para MDD sin integraciones"],
+        isd,
+      );
     }
     const isMinimal = isd.length < 600 && /no\s+aplica\s*[☑✓]/i.test(isd);
-    if (isMinimal) return { ok: true, gaps: [] };
+    if (isMinimal) return finalizeIntegrationSpecResult([], isd);
     if (isd.length >= MIN_DOC_LENGTH) {
-      return {
-        ok: false,
-        gaps: ["MDD sin §4.B ni sistemas colindantes en §1, pero el Integration Spec es extenso (sobre-generación)"],
-      };
+      return finalizeIntegrationSpecResult(
+        ["MDD sin §4.B ni sistemas colindantes en §1, pero el Integration Spec es extenso (sobre-generación)"],
+        isd,
+      );
     }
-    return { ok: true, gaps: [] };
+    return finalizeIntegrationSpecResult([], isd);
   }
 
   if (!isd || isd.length < MIN_DOC_LENGTH) {
-    return { ok: false, gaps: ["Falta contenido del Integration Spec"] };
+    return finalizeIntegrationSpecResult(["Falta contenido del Integration Spec"], isd);
   }
 
   const section1Mdd = extractSection(
@@ -833,7 +872,7 @@ export function checkIntegrationSpecVsMdd(
     }
   }
 
-  return { ok: gaps.length === 0, gaps };
+  return finalizeIntegrationSpecResult(gaps, isd);
 }
 
 @Injectable()

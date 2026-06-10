@@ -118,3 +118,43 @@ sequenceDiagram
   const result = checkIntegrationSpecVsMdd(MDD_WITH_INTEGRATIONS, isd);
   assert.equal(result.ok, true, result.gaps.join("; "));
 });
+
+test("formato: número impar de fences → gap sin balancear", () => {
+  const isd = `# Integration Spec
+
+## 4. Secuencias
+\`\`\`mermaid
+sequenceDiagram
+  A->>B: call
+\`\`\`
+\`\`\`json
+{ "open": true }
+
+---FIN_INTEGRATION_SPEC---
+`;
+  const result = checkIntegrationSpecVsMdd(MDD_NO_INTEGRATIONS, isd);
+  assert.equal(result.ok, false);
+  assert.ok(result.gaps.some((g) => /sin balancear/i.test(g)));
+});
+
+test("formato: fence fusionado con texto → gap fusionado", () => {
+  const isd = `# Integration Spec
+
+## 4. Secuencias
+texto\`\`\`mermaid
+sequenceDiagram
+  A->>B: call
+\`\`\`
+
+---FIN_INTEGRATION_SPEC---
+`;
+  const result = checkIntegrationSpecVsMdd(MDD_NO_INTEGRATIONS, isd);
+  assert.equal(result.ok, false);
+  assert.ok(result.gaps.some((g) => /fusionado/i.test(g)));
+});
+
+test("formato: ISD mínimo N/A sin fences sigue pasando", () => {
+  const result = checkIntegrationSpecVsMdd(MDD_NO_INTEGRATIONS, ISD_MINIMAL_NA);
+  assert.equal(result.ok, true);
+  assert.ok(!result.gaps.some((g) => /Formato:/i.test(g)));
+});
