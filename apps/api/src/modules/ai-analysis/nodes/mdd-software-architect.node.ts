@@ -610,7 +610,7 @@ export function createMddSoftwareArchitectNode(
       if (toolsToUse.length > 0) {
         const forgeHint =
           forgeTools.length > 0
-            ? " **TheForge (legacy):** Tienes `get_c4_model`, `get_contract_specs`, `get_implementation_details` y `get_legacy_impact`. Para interfaces UI o firmas backend **con nombre ya fijado en el índice**, usa `get_contract_specs` / `get_implementation_details` antes que deducir desde texto. Antes de cerrar §3 y §4, valida símbolos que cites. Si una tool devuelve NOT_FOUND_IN_GRAPH o vacío, no inventes: documenta «Bloqueante de negocio» en §1 o §5."
+            ? " **TheForge (legacy):** Tienes `get_contract_specs`, `get_implementation_details` y `get_legacy_impact`. Para interfaces UI o firmas backend **con nombre ya fijado en el índice**, usa `get_contract_specs` / `get_implementation_details` antes que deducir desde texto. Antes de cerrar §3 y §4, valida símbolos que cites. Si una tool devuelve NOT_FOUND_IN_GRAPH o vacío, no inventes: documenta «Bloqueante de negocio» en §1 o §5."
             : "";
         contextParts.push(
           "",

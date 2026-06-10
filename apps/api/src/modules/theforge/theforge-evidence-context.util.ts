@@ -303,7 +303,7 @@ export interface LegacyIndexSignalsGathered {
 /**
  * Recopila señales del índice MCP (sin llamadas a LLM).
  * - **Puerta SDD** (`assertLegacyIndexSddGate` / `evaluateLegacyIndexSddGate`): debe seguir usando esta función para no depender del LLM.
- * - **`buildLegacyEvidenceMarkdown`**: pipeline monolítico opcional (p. ej. `getContextForDeliverables` en TheForgeService) — independiente del descubrimiento escalonado del coordinador legacy.
+ * - **`buildLegacyEvidenceMarkdown`**: pipeline monolítico para señales de índice (`gatherLegacyIndexSignals`); entregables usan MCP `generate_legacy_documentation`.
  */
 export async function gatherLegacyIndexSignals(
   api: TheForgeEvidenceApi,

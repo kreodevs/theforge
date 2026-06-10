@@ -14,12 +14,8 @@ import {
 } from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
-import type { AskCodebaseOptions, TheForgeFileToModify } from "../theforge/theforge.service.js";
+import type { TheForgeFileToModify } from "../theforge/theforge.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
-import {
-  mergeAriadneCodebaseScope,
-  resolveAriadneCodebaseMcpTarget,
-} from "../theforge/ariadne-mcp-scope.util.js";
 import {
   DEFAULT_SEMANTIC_QUERIES,
   askCodebaseOptionsForCodebaseDoc,
@@ -837,18 +833,7 @@ export class LegacyCoordinatorService {
       );
     }
 
-    const catalog = await this.theforge.listKnownProjects();
-    const resolved = resolveAriadneCodebaseMcpTarget(theforgeId, catalog);
-    let scope = resolved.scopeForScopedTools;
-    const repoIds = scope?.repoIds ?? [];
-    const narrowMulti = String(process.env.LEGACY_INGEST_MDD_NARROW_MULTI_ROOT ?? "1").trim() !== "0";
-    if (repoIds.length > 1 && narrowMulti && resolved.graphProjectId?.trim()) {
-      const primary = resolved.graphProjectId.trim();
-      scope = mergeAriadneCodebaseScope(scope, { repoIds: [primary] });
-      this.logger.log(
-        `[Legacy] generate_legacy_documentation: workspace multi-root (${repoIds.length} repos) → scope.repoIds=[${primary.slice(0, 8)}…]`,
-      );
-    }
+    const scope = await this.theforge.resolveLegacyDocumentationScope(theforgeId);
 
     let codebaseDoc = "";
     const raw =

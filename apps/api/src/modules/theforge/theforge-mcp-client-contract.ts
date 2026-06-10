@@ -49,8 +49,6 @@ export const THEFORGE_MCP_CLIENT_ARG_KEYS: Readonly<Record<string, ReadonlySet<s
   get_project_standards: new Set(["projectId", "currentFilePath"]),
   get_file_context: new Set(["filePath", "projectId", "currentFilePath", "ref"]),
   get_project_analysis: new Set(["projectId", "currentFilePath", "mode"]),
-  /** Paridad explorador; solo si el despliegue MCP tiene JWT Nest (`ARIADNE_API_*`). */
-  get_c4_model: new Set(["projectId"]),
   analyze_local_changes: new Set(["projectId", "currentFilePath", "workspaceRoot", "stagedDiff"]),
 };
 
