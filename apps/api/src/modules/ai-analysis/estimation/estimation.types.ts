@@ -167,6 +167,7 @@ export type PlanningDocumentFields = {
   userStoriesContent?: string;
   blueprintContent?: string;
   apiContractsContent?: string;
+  integrationSpecContent?: string;
   logicFlowsContent?: string;
   infraContent?: string;
   tasksContent?: string;

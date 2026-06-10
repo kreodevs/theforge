@@ -6,6 +6,7 @@ export const ORCHESTRATOR_DOC_TABS = new Set([
   "user-stories",
   "blueprint",
   "api-contracts",
+  "integration-spec",
   "logic-flows",
   "tasks",
   "infra",
@@ -40,6 +41,7 @@ export type OrchestratorDocSnapshotSource = {
   userStoriesContent?: string | null;
   blueprintContent?: string | null;
   apiContractsContent?: string | null;
+  integrationSpecContent?: string | null;
   logicFlowsContent?: string | null;
   tasksContent?: string | null;
   infraContent?: string | null;
@@ -53,6 +55,7 @@ export type OrchestratorDocSnapshotSource = {
     userStoriesContent?: string | null;
     blueprintContent?: string | null;
     apiContractsContent?: string | null;
+    integrationSpecContent?: string | null;
     logicFlowsContent?: string | null;
     tasksContent?: string | null;
     infraContent?: string | null;
@@ -79,6 +82,8 @@ export function orchestratorDocSnapshot(source: OrchestratorDocSnapshotSource, t
       return (source.blueprintContent ?? p?.blueprintContent ?? "").trim();
     case "api-contracts":
       return (source.apiContractsContent ?? p?.apiContractsContent ?? "").trim();
+    case "integration-spec":
+      return (source.integrationSpecContent ?? p?.integrationSpecContent ?? "").trim();
     case "logic-flows":
       return (source.logicFlowsContent ?? p?.logicFlowsContent ?? "").trim();
     case "tasks":
@@ -107,6 +112,7 @@ const TAB_LABELS: Record<string, string> = {
   "user-stories": "Historias de usuario",
   blueprint: "Blueprint",
   "api-contracts": "Contratos API",
+  "integration-spec": "Integration Spec",
   "logic-flows": "Flujos lógicos",
   tasks: "Tasks",
   infra: "Infraestructura",
@@ -123,6 +129,7 @@ const FIN_TAGS: Record<string, string> = {
   "user-stories": "STORIES",
   blueprint: "BLUEPRINT",
   "api-contracts": "API",
+  "integration-spec": "INTEGRATION_SPEC",
   "logic-flows": "FLOWS",
   tasks: "TASKS",
   infra: "INFRA",
@@ -157,6 +164,8 @@ export function extractOrchestratorDocFromDone(
       return clean((data.blueprintContent as string | undefined) ?? p?.blueprintContent);
     case "api-contracts":
       return clean((data.apiContractsContent as string | undefined) ?? p?.apiContractsContent);
+    case "integration-spec":
+      return clean((data.integrationSpecContent as string | undefined) ?? p?.integrationSpecContent);
     case "logic-flows":
       return clean((data.logicFlowsContent as string | undefined) ?? p?.logicFlowsContent);
     case "tasks":

@@ -19,6 +19,7 @@ export type GenerateJobType =
   | "blueprint"
   | "api-contracts"
   | "logic-flows"
+  | "integration-spec"
   | "tasks"
   | "agent-governance"
   | "infra"
@@ -131,6 +132,8 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
               return this.projects.generateApiContracts(projectId, gapsFeedback);
             case "logic-flows":
               return this.projects.generateLogicFlows(projectId, gapsFeedback);
+            case "integration-spec":
+              return this.projects.generateIntegrationSpec(projectId, gapsFeedback);
             case "tasks":
               return this.projects.generateTasks(projectId);
             case "agent-governance":

@@ -12,6 +12,7 @@ import {
   RefreshCw,
   FileCode,
   GitBranch,
+  Share2,
   Server,
   Target,
   Palette,
@@ -178,6 +179,7 @@ type WorkshopDocToolbarViewModes = {
   aemViewMode: "preview" | "source";
   blueprintViewMode: "preview" | "source";
   apiContractsViewMode: "preview" | "source";
+  integrationSpecViewMode: "preview" | "source";
   logicFlowsViewMode: "preview" | "source";
   brdDocViewMode: "preview" | "source";
   infraViewMode: "preview" | "source";
@@ -198,6 +200,7 @@ function getWorkshopDocToolbarActiveViewMode(
   if (centralPanel === "aem") return modes.aemViewMode;
   if (centralPanel === "blueprint") return modes.blueprintViewMode;
   if (centralPanel === "api-contracts") return modes.apiContractsViewMode;
+  if (centralPanel === "integration-spec") return modes.integrationSpecViewMode;
   if (centralPanel === "logic-flows") return modes.logicFlowsViewMode;
   if (centralPanel === "brd") return modes.brdDocViewMode;
   if (centralPanel === "agent-governance") return modes.agentGovernanceViewMode;
@@ -353,6 +356,7 @@ export default function WorkshopView({
   // dbgaContentCharCount eliminado
   const blueprintContentField = useWorkshopStore((s) => s.blueprintContent);
   const apiContractsContentField = useWorkshopStore((s) => s.apiContractsContent);
+  const integrationSpecContentField = useWorkshopStore((s) => s.integrationSpecContent);
   const logicFlowsContentField = useWorkshopStore((s) => s.logicFlowsContent);
   const infraContentField = useWorkshopStore((s) => s.infraContent);
   const tasksContentField = useWorkshopStore((s) => s.tasksContent);
@@ -372,6 +376,7 @@ export default function WorkshopView({
   const fase0Content = dbgaContent ?? specContent ?? null;
   const blueprintContent = blueprintContentField ?? project?.blueprintContent ?? null;
   const apiContractsContent = apiContractsContentField ?? project?.apiContractsContent ?? null;
+  const integrationSpecContent = integrationSpecContentField ?? project?.integrationSpecContent ?? null;
   const logicFlowsContent = logicFlowsContentField ?? project?.logicFlowsContent ?? null;
   const infraContent = infraContentField ?? project?.infraContent ?? null;
   const tasksContent = tasksContentField ?? project?.tasksContent ?? null;
@@ -488,6 +493,9 @@ export default function WorkshopView({
   const setApiContractsContent = useWorkshopStore((s) => s.setApiContractsContent);
   const persistApiContractsContent = useWorkshopStore((s) => s.persistApiContractsContent);
   const generateApiContracts = useWorkshopStore((s) => s.generateApiContracts);
+  const setIntegrationSpecContent = useWorkshopStore((s) => s.setIntegrationSpecContent);
+  const persistIntegrationSpecContent = useWorkshopStore((s) => s.persistIntegrationSpecContent);
+  const generateIntegrationSpec = useWorkshopStore((s) => s.generateIntegrationSpec);
   const setLogicFlowsContent = useWorkshopStore((s) => s.setLogicFlowsContent);
   const persistLogicFlowsContent = useWorkshopStore((s) => s.persistLogicFlowsContent);
   const generateLogicFlows = useWorkshopStore((s) => s.generateLogicFlows);
@@ -877,6 +885,7 @@ export default function WorkshopView({
   const [benchmarkPhaseTab, setBenchmarkPhaseTab] = useState<"fase0" | "benchmark">("fase0");
   const [blueprintViewMode, setBlueprintViewMode] = useState<"preview" | "source">("preview");
   const [apiContractsViewMode, setApiContractsViewMode] = useState<"preview" | "source">("preview");
+  const [integrationSpecViewMode, setIntegrationSpecViewMode] = useState<"preview" | "source">("preview");
   const [logicFlowsViewMode, setLogicFlowsViewMode] = useState<"preview" | "source">("preview");
   const [infraViewMode, setInfraViewMode] = useState<"preview" | "source">("preview");
   const [uxUiGuideViewMode, setUxUiGuideViewMode] = useState<"design" | "preview" | "source">("design");
@@ -908,6 +917,8 @@ export default function WorkshopView({
     else if (panel === "aem") setAemViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "blueprint") setBlueprintViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "api-contracts") setApiContractsViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "integration-spec") setIntegrationSpecViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "brd") setBrdDocViewMode((m) => (m === "preview" ? "source" : "preview"));
@@ -937,6 +948,7 @@ export default function WorkshopView({
     | "blueprint"
     | "tasks"
     | "api-contracts"
+    | "integration-spec"
     | "logic-flows"
     | "architecture"
     | "use-cases"
@@ -1477,7 +1489,7 @@ export default function WorkshopView({
     if (activeWorkshopStage?.ordinal === 1) return;
     const emptyLegacyPanels: DocPanel[] = [
       "spec", "architecture", "use-cases", "user-stories", "blueprint",
-      "api-contracts", "logic-flows", "tasks", "agent-governance", "infra",
+      "api-contracts", "integration-spec", "logic-flows", "tasks", "agent-governance", "infra",
     ];
     if (!emptyLegacyPanels.includes(centralPanel as DocPanel)) return;
     const contentByPanel: Record<string, string | null> = {
@@ -1487,6 +1499,7 @@ export default function WorkshopView({
       "user-stories": userStoriesContent ?? null,
       blueprint: blueprintContent ?? null,
       "api-contracts": apiContractsContent ?? null,
+      "integration-spec": integrationSpecContent ?? null,
       "logic-flows": logicFlowsContent ?? null,
       tasks: tasksContent ?? null,
       "agent-governance": hasAgentGovernance ? "ok" : null,
@@ -1504,6 +1517,7 @@ export default function WorkshopView({
     userStoriesContent,
     blueprintContent,
     apiContractsContent,
+    integrationSpecContent,
     logicFlowsContent,
     tasksContent,
     hasAgentGovernance,
@@ -1518,6 +1532,7 @@ export default function WorkshopView({
   const { handleBlur: handleUserStoriesBlur, isDirty: userStoriesDirty } = useAutoSaveContent(userStoriesContent, project?.userStoriesContent, persistUserStoriesContent, projectId);
   const { handleBlur: handleBlueprintBlur, isDirty: blueprintDirty } = useAutoSaveContent(blueprintContent, project?.blueprintContent, persistBlueprintContent, projectId);
   const { handleBlur: handleApiContractsBlur, isDirty: apiContractsDirty } = useAutoSaveContent(apiContractsContent, project?.apiContractsContent, persistApiContractsContent, projectId);
+  const { handleBlur: handleIntegrationSpecBlur, isDirty: integrationSpecDirty } = useAutoSaveContent(integrationSpecContent, project?.integrationSpecContent, persistIntegrationSpecContent, projectId);
   const { handleBlur: handleLogicFlowsBlur, isDirty: logicFlowsDirty } = useAutoSaveContent(logicFlowsContent, project?.logicFlowsContent, persistLogicFlowsContent, projectId);
   const { handleBlur: handleInfraBlur, isDirty: infraDirty } = useAutoSaveContent(infraContent, project?.infraContent, persistInfraContent, projectId);
   const { handleBlur: handleBenchmarkBlur } = useAutoSaveContent(dbgaContent, project?.dbgaContent, persistDbgaContent, projectId);
@@ -1594,6 +1609,7 @@ export default function WorkshopView({
       "aem",
       "blueprint",
       "api-contracts",
+      "integration-spec",
       "logic-flows",
       "architecture",
       "use-cases",
@@ -1611,6 +1627,7 @@ export default function WorkshopView({
         centralPanel === "aem" ||
         (centralPanel === "blueprint" && blueprintContent) ||
         (centralPanel === "api-contracts" && apiContractsContent) ||
+        (centralPanel === "integration-spec" && integrationSpecContent) ||
         (centralPanel === "architecture" && architectureContent) ||
         (centralPanel === "use-cases" && useCasesContent) ||
         (centralPanel === "user-stories" && userStoriesContent) ||
@@ -1650,6 +1667,7 @@ export default function WorkshopView({
       aemViewMode,
       blueprintViewMode,
       apiContractsViewMode,
+      integrationSpecViewMode,
       logicFlowsViewMode,
       brdDocViewMode,
       infraViewMode,
@@ -1796,6 +1814,14 @@ export default function WorkshopView({
         disabled: loading || mddReviewing || !effectiveMddTrimmed || apiBlueprintDmBlocked || !projectId,
         onClick: () => void generateApiContracts(projectId),
       };
+    } else if (centralPanel === "integration-spec" && !!integrationSpecContent?.trim()) {
+      regenItem = {
+        id: "regen",
+        label: "Regenerar Integration Spec",
+        icon: RefreshCw,
+        disabled: loading || mddReviewing || !effectiveMddTrimmed || !projectId,
+        onClick: () => void generateIntegrationSpec(projectId),
+      };
     } else if (centralPanel === "logic-flows" && !!logicFlowsContent?.trim()) {
       regenItem = {
         id: "regen",
@@ -1850,6 +1876,7 @@ export default function WorkshopView({
       "ux-ui-guide": "Design System",
       blueprint: "Technical Blueprint",
       "api-contracts": "API Contracts",
+      "integration-spec": "Integration Spec",
       "logic-flows": "Logic Flows",
       tasks: "Task Breakdown",
       infra: "Infrastructure",
@@ -2238,6 +2265,7 @@ export default function WorkshopView({
                         uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
                         blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
                         apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
+                        integrationSpecContent: integrationSpecContent ?? project?.integrationSpecContent ?? null,
                         logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
                         tasksContent: tasksContent ?? project?.tasksContent ?? null,
                         infraContent: infraContent ?? project?.infraContent ?? null,
@@ -2305,6 +2333,7 @@ export default function WorkshopView({
                         uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
                         blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
                         apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
+                        integrationSpecContent: integrationSpecContent ?? project?.integrationSpecContent ?? null,
                         logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
                         tasksContent: tasksContent ?? project?.tasksContent ?? null,
                         infraContent: infraContent ?? project?.infraContent ?? null,
@@ -2580,7 +2609,7 @@ export default function WorkshopView({
                 </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-1.5 shrink-0 sm:justify-end sm:gap-2 sm:pt-0.5 lg:hidden">
-                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "agent-governance", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd"] as const).includes(
+                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "agent-governance", "api-contracts", "integration-spec", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd"] as const).includes(
                   centralPanel as any,
                 ) && (
                     (centralPanel === "spec" ||
@@ -2753,6 +2782,17 @@ export default function WorkshopView({
                     ariaLabel={apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API desde el MDD"}
                     tooltip={apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API desde el MDD"}
                   />
+                )}
+                {centralPanel === "integration-spec" && !!integrationSpecContent?.trim() && (
+                  <button
+                    type="button"
+                    className="workshop-doc-header-action"
+                    onClick={() => generateIntegrationSpec(projectId)}
+                    disabled={loading || mddReviewing || !effectiveMddTrimmed}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                    Regenerar
+                  </button>
                 )}
                 {centralPanel === "logic-flows" && !!logicFlowsContent?.trim() && (
                   <WorkshopRegenButton
@@ -3900,6 +3940,23 @@ export default function WorkshopView({
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
               />
             )}
+            {centralPanel === "integration-spec" && (
+              <StandardDocPanel
+                icon={Share2}
+                title="Integration Spec"
+                description="Contratos de integración entre sistemas colindantes (SSO, webhooks, terceros)."
+                content={integrationSpecContent}
+                onContentChange={(v) => setIntegrationSpecContent(v)}
+                onSave={() => void persistIntegrationSpecContent(integrationSpecContent ?? "")}
+                isDirty={integrationSpecDirty}
+                viewMode={integrationSpecViewMode}
+                onGenerate={() => generateIntegrationSpec(projectId)}
+                canGenerate={!!effectiveMddTrimmed}
+                isLoading={loading || mddReviewing}
+                placeholder="# Integration Spec\n\n..."
+                onBlur={handleIntegrationSpecBlur}
+              />
+            )}
             {centralPanel === "logic-flows" && (
               <StandardDocPanel
                 icon={GitBranch}
@@ -4105,7 +4162,7 @@ export default function WorkshopView({
           const showDocToggle =
             centralPanel !== "benchmark" &&
             centralPanel !== "tasks" &&
-            (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "mdd-inicial"] as const).includes(centralPanel as any) &&
+            (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "api-contracts", "integration-spec", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "mdd-inicial"] as const).includes(centralPanel as any) &&
             (centralPanel === "spec" ||
               centralPanel === "mdd" ||
               centralPanel === "ux-ui-guide" ||

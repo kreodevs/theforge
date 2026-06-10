@@ -17,7 +17,15 @@ export function stripChatLabel(text: string): string {
   return removed.trim();
 }
 
+/**
+ * Quita delimitador ---FIN_*--- y texto de chat posterior (p. ej. one-shot o UX/UI).
+ * Mismo criterio que projects.service generateUxUiGuide y conformance ISD.
+ */
+export function stripDeliverableFinDelimiter(text: string): string {
+  return text.replace(/\n?-{1,}\s*FIN_[A-Z0-9_]+\s*-{1,}[\s\S]*$/i, "").trim();
+}
+
 /** Quita intros de chat y vallas de markdown (fences) de documentos generados por IA. */
 export function cleanDocumentContent(text: string): string {
-  return ensureDocumentChangelog(formatDocumentMarkdown(text));
+  return ensureDocumentChangelog(formatDocumentMarkdown(stripDeliverableFinDelimiter(text)));
 }

@@ -32,6 +32,8 @@ export interface GenerateResponseOptions {
   currentPhase0SummaryContent?: string;
   /** API Contracts actual del proyecto; tab `api-contracts` */
   currentApiContractsContent?: string;
+  /** Integration Spec actual del proyecto; tab `integration-spec` */
+  currentIntegrationSpecContent?: string;
   /** Logic Flows actual del proyecto; tab `logic-flows` */
   currentLogicFlowsContent?: string;
   /** Tasks actual del proyecto; tab `tasks` */
@@ -40,7 +42,7 @@ export interface GenerateResponseOptions {
   currentInfraContent?: string;
   /** Activar para que el LLM use más tokens de salida en respuestas extensas (default 65535). */
   maxTokensOverride?: number;
-  /** Tab activo en el Workshop: benchmark | mdd | ux-ui-guide | blueprint | api-contracts | logic-flows | infra */
+  /** Tab activo en el Workshop: benchmark | mdd | ux-ui-guide | blueprint | api-contracts | integration-spec | logic-flows | infra */
   activeTab?: string;
   /** Memoria semántica: preferencias arquitectónicas de proyectos previos (HISTORIAL_DE_APRENDIZAJE) */
   learningHistory?: string;

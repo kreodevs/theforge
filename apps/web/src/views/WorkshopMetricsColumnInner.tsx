@@ -198,6 +198,7 @@ export function WorkshopMetricsColumnInner({
   const generateBlueprint = useWorkshopStore((s) => s.generateBlueprint);
   const generateApiContracts = useWorkshopStore((s) => s.generateApiContracts);
   const generateLogicFlows = useWorkshopStore((s) => s.generateLogicFlows);
+  const generateIntegrationSpec = useWorkshopStore((s) => s.generateIntegrationSpec);
   const generateInfra = useWorkshopStore((s) => s.generateInfra);
   const legacyGenerateDeliverables = useWorkshopStore((s) => s.legacyGenerateDeliverables);
   const generateDeliverablesCascade = useWorkshopStore((s) => s.generateDeliverablesCascade);
@@ -554,6 +555,55 @@ export function WorkshopMetricsColumnInner({
                     </div>
                   </details>
                 )}
+                {conformance.integrationSpec.ok ? (
+                  <div className="flex flex-col gap-1 px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate font-medium text-[var(--foreground)]">Integración</span>
+                      <span className={WORKSHOP_METRICS_BADGE_OK}>Cumple</span>
+                    </div>
+                  </div>
+                ) : (
+                  <details className="group min-w-0">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-2 py-1.5 marker:content-none [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-1 focus-visible:ring-offset-[color-mix(in_oklch,var(--card)_40%,var(--background))]">
+                      <span className="min-w-0 truncate font-medium text-[var(--foreground)]">Integración</span>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {conformance.integrationSpec.gaps.length > 0 ? (
+                          <span
+                            className="hidden max-w-[9rem] truncate text-[10px] font-normal text-[var(--muted-foreground)] group-open:hidden sm:inline"
+                            aria-hidden
+                          >
+                            {conformance.integrationSpec.gaps.length}{" "}
+                            {conformance.integrationSpec.gaps.length === 1 ? "hallazgo" : "hallazgos"}
+                          </span>
+                        ) : null}
+                        <span className={WORKSHOP_METRICS_BADGE_WARN}>Gaps</span>
+                        <ChevronDown
+                          className="h-3.5 w-3.5 shrink-0 text-[var(--muted-foreground)] transition-transform duration-200 group-open:rotate-180"
+                          aria-hidden
+                        />
+                      </span>
+                    </summary>
+                    <div className="space-y-2 border-t border-[color-mix(in_oklch,var(--border)_70%,transparent)] bg-[color-mix(in_oklch,var(--background)_30%,transparent)] px-2 pb-2 pt-1.5">
+                      <p className="text-[11px] leading-snug text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--foreground))]">
+                        {conformance.integrationSpec.gaps.join("; ")}
+                      </p>
+                      {conformance.integrationSpec.gaps.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            generateIntegrationSpec(projectId!, {
+                              gapsFeedback: conformance!.integrationSpec.gaps.join("\n"),
+                            })
+                          }
+                          disabled={loading || mddReviewing}
+                          className="self-start text-[11px] font-medium text-[var(--primary)] underline-offset-2 hover:underline disabled:opacity-50"
+                        >
+                          Regenerar Integration Spec con gaps
+                        </button>
+                      ) : null}
+                    </div>
+                  </details>
+                )}
                 {conformance.logicFlows.ok ? (
                   <div className="flex flex-col gap-1 px-2 py-1.5">
                     <div className="flex items-center justify-between gap-2">
@@ -679,6 +729,8 @@ export function WorkshopMetricsColumnInner({
                         ["userStoriesContent", "H.U."],
                         ["blueprintContent", "BP"],
                         ["apiContractsContent", "API"],
+                        ["apiContractsContent", "API"],
+                        ["integrationSpecContent", "Integración"],
                         ["logicFlowsContent", "Flujos"],
                         ["infraContent", "Infra"],
                         ["tasksContent", "Tasks"],

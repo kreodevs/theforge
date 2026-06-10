@@ -15,6 +15,7 @@ import { Brain,
   ListTodo,
   Package,
   Palette,
+  Share2,
   Server,
   Target,
 } from "lucide-react";
@@ -61,6 +62,7 @@ export interface WorkshopDocNavBuildContext {
   uxUiGuideContent: string | null | undefined;
   aemContent: string | null | undefined;
   apiContractsContent: string | null | undefined;
+  integrationSpecContent: string | null | undefined;
   logicFlowsContent: string | null | undefined;
   tasksContent: string | null | undefined;
   agentGovernanceContent: string | null | undefined;
@@ -211,6 +213,15 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       content: ctx.apiContractsContent,
     });
   }
+  if (visible("integration-spec")) {
+    items.push({
+      id: "integration-spec",
+      label: "Integración",
+      title: "Integration Spec",
+      Icon: Share2,
+      content: ctx.integrationSpecContent,
+    });
+  }
   if (visible("logic-flows")) {
     items.push({
       id: "logic-flows",
@@ -346,6 +357,11 @@ export function getWorkshopDocPanelHeader(
       title: "API Contracts",
       subtitle: "Contratos de interfaz entre servicios",
       Icon: FileCode,
+    },
+    "integration-spec": {
+      title: "Integration Spec",
+      subtitle: "Contratos de integración entre sistemas colindantes",
+      Icon: Share2,
     },
     "logic-flows": {
       title: "Logic Flows",

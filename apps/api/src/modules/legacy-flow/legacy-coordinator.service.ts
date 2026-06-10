@@ -383,6 +383,7 @@ const DELIVERABLE_PROJECT_FIELD: Partial<Record<DeliverableKind, keyof DbProject
   use_cases: "useCasesContent",
   blueprint: "blueprintContent",
   api_contracts: "apiContractsContent",
+  integration_spec: "integrationSpecContent",
   logic_flows: "logicFlowsContent",
   ux_ui_guide: "uxUiGuideContent",
   user_stories: "userStoriesContent",
@@ -1652,6 +1653,20 @@ export class LegacyCoordinatorService {
           }
           const apiContractsContent = await this.ai.generateApiContracts(mddForLlm, bp, undefined, undefined, legacyOpts);
           await update({ apiContractsContent: cleanDocumentContent(apiContractsContent) });
+          p = await load();
+          return;
+        }
+        case "integration_spec": {
+          const bp = String(p.blueprintContent ?? "").trim() || (await ensureBlueprint());
+          const api = String(p.apiContractsContent ?? "").trim();
+          const integrationSpecContent = await this.ai.generateIntegrationSpec(
+            mddForLlm,
+            bp,
+            api || null,
+            undefined,
+            legacyOpts,
+          );
+          await update({ integrationSpecContent: cleanDocumentContent(integrationSpecContent) });
           p = await load();
           return;
         }

@@ -6,6 +6,7 @@ describe("computeDocumentCompleteness", () => {
   it("returns 100 when all docs have >=300 chars", () => {
     const fill = (n: number) => "x".repeat(n);
     const docs = {
+      mddContent: fill(300),
       brdContent: fill(300),
       toBeManualContent: fill(300),
       asIsManualContent: fill(300),
@@ -15,6 +16,7 @@ describe("computeDocumentCompleteness", () => {
       userStoriesContent: fill(300),
       blueprintContent: fill(300),
       apiContractsContent: fill(300),
+      integrationSpecContent: fill(300),
       logicFlowsContent: fill(300),
       infraContent: fill(300),
       tasksContent: fill(300),

@@ -987,7 +987,7 @@ const handlers: Record<string, Handler> = {
       const p = projectResult as Record<string, unknown>;
       const docFields = [
         "specContent", "architectureContent", "blueprintContent",
-        "apiContractsContent", "useCasesContent", "userStoriesContent",
+        "apiContractsContent", "integrationSpecContent", "useCasesContent", "userStoriesContent",
         "logicFlowsContent", "infraContent", "tasksContent",
         "uxUiGuideContent", "dbgaContent", "phase0SummaryContent",
         "aemContent",
@@ -1013,6 +1013,7 @@ const handlers: Record<string, Handler> = {
       { key: "architectureContent", label: "Architecture" },
       { key: "blueprintContent", label: "Blueprint" },
       { key: "apiContractsContent", label: "API Contracts" },
+      { key: "integrationSpecContent", label: "Integration Spec" },
       { key: "useCasesContent", label: "Use Cases" },
       { key: "userStoriesContent", label: "User Stories" },
       { key: "logicFlowsContent", label: "Logic Flows" },

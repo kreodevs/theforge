@@ -67,6 +67,7 @@ export const updateProjectSchema = z.object({
   blueprintContent: z.string().optional().nullable(),
   tasksContent: z.string().optional().nullable(),
   apiContractsContent: z.string().optional().nullable(),
+  integrationSpecContent: z.string().optional().nullable(),
   logicFlowsContent: z.string().optional().nullable(),
   infraContent: z.string().optional().nullable(),
   /** JSON (`AgentGovernanceScaffold`) del entregable agent-governance. */
@@ -104,6 +105,7 @@ export const projectResponseSchema = z.object({
   blueprintContent: z.string().nullable(),
   tasksContent: z.string().nullable(),
   apiContractsContent: z.string().nullable(),
+  integrationSpecContent: z.string().nullable(),
   logicFlowsContent: z.string().nullable(),
   infraContent: z.string().nullable(),
   agentGovernanceContent: z.string().nullable(),

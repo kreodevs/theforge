@@ -11,6 +11,7 @@ export type WorkshopDocTab =
   | "tasks"
   | "agent-governance"
   | "api-contracts"
+  | "integration-spec"
   | "logic-flows"
   | "architecture"
   | "use-cases"
@@ -57,6 +58,7 @@ export function isTabVisibleForComplexity(
         "mdd",
         "spec",
         "api-contracts",
+        "integration-spec",
         "ux-ui-guide",
         "agent-governance",
         "tasks",
@@ -68,6 +70,7 @@ export function isTabVisibleForComplexity(
       "spec",
       "brd",
       "api-contracts",
+      "integration-spec",
       "ux-ui-guide",
       "agent-governance",
       "tasks",

@@ -6,6 +6,7 @@ export const ORCHESTRATOR_DOC_TABS = new Set([
   "user-stories",
   "blueprint",
   "api-contracts",
+  "integration-spec",
   "logic-flows",
   "tasks",
   "infra",
@@ -30,6 +31,7 @@ const FIN_TAGS: Record<string, string> = {
   "user-stories": "STORIES",
   blueprint: "BLUEPRINT",
   "api-contracts": "API",
+  "integration-spec": "INTEGRATION_SPEC",
   "logic-flows": "FLOWS",
   tasks: "TASKS",
   infra: "INFRA",
@@ -59,6 +61,7 @@ export type DocPersistFlags = {
   hasStories?: boolean;
   hasBlue?: boolean;
   hasApi?: boolean;
+  hasIntegrationSpec?: boolean;
   hasFlows?: boolean;
   hasTasks?: boolean;
   hasInfra?: boolean;
@@ -84,6 +87,8 @@ export function docWasPersistedForTab(tab: string, flags: DocPersistFlags): bool
       return Boolean(flags.hasBlue);
     case "api-contracts":
       return Boolean(flags.hasApi);
+    case "integration-spec":
+      return Boolean(flags.hasIntegrationSpec);
     case "logic-flows":
       return Boolean(flags.hasFlows);
     case "tasks":
@@ -113,6 +118,7 @@ export function currentDocLengthForTab(
     currentUserStoriesContent?: string;
     currentBlueprintContent?: string;
     currentApiContractsContent?: string;
+    currentIntegrationSpecContent?: string;
     currentLogicFlowsContent?: string;
     currentTasksContent?: string;
     currentInfraContent?: string;
@@ -138,6 +144,8 @@ export function currentDocLengthForTab(
       return pick(options?.currentBlueprintContent);
     case "api-contracts":
       return pick(options?.currentApiContractsContent);
+    case "integration-spec":
+      return pick(options?.currentIntegrationSpecContent);
     case "logic-flows":
       return pick(options?.currentLogicFlowsContent);
     case "tasks":

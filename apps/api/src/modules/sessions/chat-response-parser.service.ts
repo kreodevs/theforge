@@ -248,6 +248,7 @@ export class ChatResponseParserService {
       spec: /^#\s*Spec\b/i,
       blueprint: /^#\s*Blueprint\b/i,
       "api-contracts": /^#\s*(?:Contratos de API|API Contracts)\b/im,
+      "integration-spec": /^#\s*(?:Integration Spec|Especificaci[oó]n de Integraci[oó]n)\b/im,
       "logic-flows": /^#\s*(?:Flujos de L.gica|Logic Flows)\b/im,
       tasks: /^#\s*(?:Tareas|Tasks)\b/i,
       infra: /^#\s*(?:Infraestructura|Infrastructure|Infra(?![a-z]))(?:\s|$)/im,

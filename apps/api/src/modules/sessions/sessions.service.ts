@@ -239,6 +239,7 @@ export class SessionsService {
       currentUseCasesContent?: string;
       currentUserStoriesContent?: string;
       currentApiContractsContent?: string;
+      currentIntegrationSpecContent?: string;
       currentLogicFlowsContent?: string;
       currentTasksContent?: string;
       currentInfraContent?: string;
@@ -266,6 +267,7 @@ export class SessionsService {
     toBeManualContent?: string | null;
     blueprintContent?: string | null;
     apiContractsContent?: string | null;
+    integrationSpecContent?: string | null;
     logicFlowsContent?: string | null;
     tasksContent?: string | null;
     infraContent?: string | null;
@@ -369,6 +371,7 @@ export class SessionsService {
     let brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
     let blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
     let apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
+    let integrationSpecSplit = this.parser.splitDocAndChat(safeResponse, "INTEGRATION_SPEC");
     let flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
     let tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
     let infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
@@ -384,6 +387,7 @@ export class SessionsService {
     let hasPhase0 = phase0Split !== null;
     let hasBlue = blueSplit !== null;
     let hasApi = apiSplit !== null;
+    let hasIntegrationSpec = integrationSpecSplit !== null;
     let hasFlows = flowsSplit !== null;
     let hasTasks = tasksSplit !== null;
     let hasInfra = infraSplit !== null;
@@ -404,6 +408,7 @@ export class SessionsService {
     else if (hasBrd) rawChat = brdSplit!.chatPart;
     else if (hasBlue) rawChat = blueSplit!.chatPart;
     else if (hasApi) rawChat = apiSplit!.chatPart;
+    else if (hasIntegrationSpec) rawChat = integrationSpecSplit!.chatPart;
     else if (hasFlows) rawChat = flowsSplit!.chatPart;
     else if (hasTasks) rawChat = tasksSplit!.chatPart;
     else if (hasInfra) rawChat = infraSplit!.chatPart;
@@ -472,6 +477,7 @@ export class SessionsService {
           case "spec": specSplit = fbSplit; hasSpec = true; break;
           case "blueprint": blueSplit = fbSplit; hasBlue = true; break;
           case "api-contracts": apiSplit = fbSplit; hasApi = true; break;
+          case "integration-spec": integrationSpecSplit = fbSplit; hasIntegrationSpec = true; break;
           case "logic-flows": flowsSplit = fbSplit; hasFlows = true; break;
           case "tasks": tasksSplit = fbSplit; hasTasks = true; break;
           case "infra": infraSplit = fbSplit; hasInfra = true; break;
@@ -492,6 +498,7 @@ export class SessionsService {
           else if (hasBrd) { rawChat = brdSplit!.chatPart; fbFound = true; }
           else if (hasBlue) { rawChat = blueSplit!.chatPart; fbFound = true; }
           else if (hasApi) { rawChat = apiSplit!.chatPart; fbFound = true; }
+          else if (hasIntegrationSpec) { rawChat = integrationSpecSplit!.chatPart; fbFound = true; }
           else if (hasFlows) { rawChat = flowsSplit!.chatPart; fbFound = true; }
           else if (hasTasks) { rawChat = tasksSplit!.chatPart; fbFound = true; }
           else if (hasInfra) { rawChat = infraSplit!.chatPart; fbFound = true; }
@@ -541,6 +548,7 @@ export class SessionsService {
         hasStories,
         hasBlue,
         hasApi,
+        hasIntegrationSpec,
         hasFlows,
         hasTasks,
         hasInfra,
@@ -615,6 +623,13 @@ export class SessionsService {
         apiSplit?.docPart,
         options?.currentApiContractsContent,
       ),
+      integrationSpecContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "integration-spec",
+        hasIntegrationSpec,
+        integrationSpecSplit?.docPart,
+        options?.currentIntegrationSpecContent,
+      ),
       logicFlowsContent: this.finalizeDeliverableDocForTab(
         tab,
         "logic-flows",
@@ -666,6 +681,7 @@ export class SessionsService {
       currentUseCasesContent?: string;
       currentUserStoriesContent?: string;
       currentApiContractsContent?: string;
+      currentIntegrationSpecContent?: string;
       currentLogicFlowsContent?: string;
       currentTasksContent?: string;
       currentInfraContent?: string;
@@ -691,6 +707,7 @@ export class SessionsService {
       toBeManualContent?: string | null;
       blueprintContent?: string | null;
       apiContractsContent?: string | null;
+      integrationSpecContent?: string | null;
       logicFlowsContent?: string | null;
       tasksContent?: string | null;
       infraContent?: string | null;
@@ -799,7 +816,7 @@ export class SessionsService {
       throw err;
     }
 
-    const DOC_DELIMITER_RE = /-{1,}\s*FIN_(?:MDD|UX_UI|DBGA|PHASE0|SPEC|BRD|BLUEPRINT|API|FLOWS|TASKS|INFRA|ARCH|USECASES|STORIES)\s*-{1,}/i;
+    const DOC_DELIMITER_RE = /-{1,}\s*FIN_(?:MDD|UX_UI|DBGA|PHASE0|SPEC|BRD|BLUEPRINT|API|INTEGRATION_SPEC|FLOWS|TASKS|INFRA|ARCH|USECASES|STORIES)\s*-{1,}/i;
     let buffer = "";
     let documentChunksDone = false;
     for await (const chunk of stream) {
@@ -838,6 +855,7 @@ export class SessionsService {
     let brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
     let blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
     let apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
+    let integrationSpecSplit = this.parser.splitDocAndChat(safeResponse, "INTEGRATION_SPEC");
     let flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
     let tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
     let infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
@@ -853,6 +871,7 @@ export class SessionsService {
     let hasPhase0 = phase0Split !== null;
     let hasBlue = blueSplit !== null;
     let hasApi = apiSplit !== null;
+    let hasIntegrationSpec = integrationSpecSplit !== null;
     let hasFlows = flowsSplit !== null;
     let hasTasks = tasksSplit !== null;
     let hasInfra = infraSplit !== null;
@@ -873,6 +892,7 @@ export class SessionsService {
     else if (hasBrd) rawChat = brdSplit!.chatPart;
     else if (hasBlue) rawChat = blueSplit!.chatPart;
     else if (hasApi) rawChat = apiSplit!.chatPart;
+    else if (hasIntegrationSpec) rawChat = integrationSpecSplit!.chatPart;
     else if (hasFlows) rawChat = flowsSplit!.chatPart;
     else if (hasTasks) rawChat = tasksSplit!.chatPart;
     else if (hasInfra) rawChat = infraSplit!.chatPart;
@@ -937,6 +957,7 @@ export class SessionsService {
           case "spec": specSplit = fbSplit; hasSpec = true; break;
           case "blueprint": blueSplit = fbSplit; hasBlue = true; break;
           case "api-contracts": apiSplit = fbSplit; hasApi = true; break;
+          case "integration-spec": integrationSpecSplit = fbSplit; hasIntegrationSpec = true; break;
           case "logic-flows": flowsSplit = fbSplit; hasFlows = true; break;
           case "tasks": tasksSplit = fbSplit; hasTasks = true; break;
           case "infra": infraSplit = fbSplit; hasInfra = true; break;
@@ -954,6 +975,7 @@ export class SessionsService {
           else if (hasBrd) { rawChat = brdSplit!.chatPart; fbFound = true; }
           else if (hasBlue) { rawChat = blueSplit!.chatPart; fbFound = true; }
           else if (hasApi) { rawChat = apiSplit!.chatPart; fbFound = true; }
+          else if (hasIntegrationSpec) { rawChat = integrationSpecSplit!.chatPart; fbFound = true; }
           else if (hasFlows) { rawChat = flowsSplit!.chatPart; fbFound = true; }
           else if (hasTasks) { rawChat = tasksSplit!.chatPart; fbFound = true; }
           else if (hasInfra) { rawChat = infraSplit!.chatPart; fbFound = true; }
@@ -1003,6 +1025,7 @@ export class SessionsService {
         hasStories,
         hasBlue,
         hasApi,
+        hasIntegrationSpec,
         hasFlows,
         hasTasks,
         hasInfra,
@@ -1059,6 +1082,13 @@ export class SessionsService {
         hasApi,
         apiSplit?.docPart,
         options?.currentApiContractsContent,
+      ),
+      integrationSpecContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "integration-spec",
+        hasIntegrationSpec,
+        integrationSpecSplit?.docPart,
+        options?.currentIntegrationSpecContent,
       ),
       logicFlowsContent: this.finalizeDeliverableDocForTab(
         tab,
@@ -1721,6 +1751,7 @@ ${msg}
       currentUserStoriesContent?: string;
       currentBlueprintContent?: string;
       currentApiContractsContent?: string;
+      currentIntegrationSpecContent?: string;
       currentLogicFlowsContent?: string;
       currentTasksContent?: string;
       currentInfraContent?: string;

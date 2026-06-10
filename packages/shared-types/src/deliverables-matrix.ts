@@ -8,6 +8,7 @@ export type DeliverableKind =
   | "use_cases"
   | "blueprint"
   | "api_contracts"
+  | "integration_spec"
   | "logic_flows"
   | "ux_ui_guide"
   | "user_stories"
@@ -23,6 +24,7 @@ export const DELIVERABLE_STEP_LABELS: Record<DeliverableKind, string> = {
   use_cases: "Casos de Uso",
   blueprint: "Blueprint",
   api_contracts: "Contratos API",
+  integration_spec: "Integration Spec",
   logic_flows: "Flujos de Lógica",
   ux_ui_guide: "Guía UX/UI",
   user_stories: "Historias de Usuario",
@@ -43,7 +45,7 @@ export function deliverableStepLabelsForComplexity(
  */
 export const DELIVERABLES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableKind[]> = {
   LOW: ["user_stories", "tasks", "agent_governance"],
-  MEDIUM: ["spec", "api_contracts", "ux_ui_guide", "agent_governance", "tasks"],
+  MEDIUM: ["spec", "api_contracts", "integration_spec", "ux_ui_guide", "agent_governance", "tasks"],
   HIGH: [
     "mdd_canonical",
     "blueprint",
@@ -53,6 +55,7 @@ export const DELIVERABLES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableKind
     "user_stories",
     "ux_ui_guide",
     "api_contracts",
+    "integration_spec",
     "logic_flows",
     "agent_governance",
     "tasks",

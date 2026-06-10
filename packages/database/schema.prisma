@@ -225,6 +225,7 @@ model Project {
   blueprintContent     String?   @db.Text
   tasksContent         String?   @db.Text
   apiContractsContent  String?   @db.Text
+  integrationSpecContent String? @db.Text
   logicFlowsContent    String?   @db.Text
   infraContent         String?   @db.Text
   /// Scaffold agent-governance/ (JSON: AgentGovernanceScaffold)

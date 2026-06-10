@@ -293,6 +293,16 @@ export class ProjectsController {
     return this.queueOrSync(id, "logic-flows", { gapsFeedback: gaps ?? null }, queue);
   }
 
+  @Post(":id/generate-integration-spec")
+  generateIntegrationSpec(
+    @Param("id") id: string,
+    @Body() body: { gapsFeedback?: string },
+    @Query("queue") queue?: string,
+  ) {
+    const gaps = typeof body?.gapsFeedback === "string" ? body.gapsFeedback.trim() || undefined : undefined;
+    return this.queueOrSync(id, "integration-spec", { gapsFeedback: gaps ?? null }, queue);
+  }
+
   @Post(":id/generate-infra")
   generateInfra(
     @Param("id") id: string,
@@ -364,6 +374,8 @@ export class ProjectsController {
         return this.projects.generateApiContracts(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
       case "logic-flows":
         return this.projects.generateLogicFlows(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
+      case "integration-spec":
+        return this.projects.generateIntegrationSpec(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
       case "tasks":
         return this.projects.generateTasks(projectId);
       case "agent-governance":

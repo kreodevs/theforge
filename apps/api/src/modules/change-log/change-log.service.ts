@@ -70,6 +70,7 @@ export class ChangeLogService {
       useCasesContent: "Casos de Uso",
       userStoriesContent: "Historias de Usuario",
       logicFlowsContent: "Flujos de Lógica",
+      integrationSpecContent: "Integration Spec",
       tasksContent: "Tasks",
       agentGovernanceContent: "Gobernanza Agentes IA",
       infraContent: "Infraestructura",

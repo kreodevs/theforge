@@ -375,6 +375,7 @@ export function DashboardSidebar({
   const uxUiGuideContent = useWorkshopStore((s) => s.uxUiGuideContent);
   const aemContent = useWorkshopStore((s) => s.aemContent);
   const apiContractsContent = useWorkshopStore((s) => s.apiContractsContent);
+  const integrationSpecContent = useWorkshopStore((s) => s.integrationSpecContent);
   const logicFlowsContent = useWorkshopStore((s) => s.logicFlowsContent);
   const tasksContent = useWorkshopStore((s) => s.tasksContent);
   const agentGovernanceContent = useWorkshopStore((s) => s.agentGovernanceContent);
@@ -425,6 +426,7 @@ export function DashboardSidebar({
       uxUiGuideContent,
       aemContent,
       apiContractsContent,
+      integrationSpecContent,
       logicFlowsContent,
       tasksContent,
       agentGovernanceContent,

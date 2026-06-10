@@ -26,6 +26,7 @@ import {
   checkBlueprintTableFormat,
   checkApiVsMdd,
   checkLogicFlowsVsMdd,
+  checkIntegrationSpecVsMdd,
   checkInfraVsMdd,
   extractEntities,
   extractSection,
@@ -492,7 +493,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       const documentFields = [
         "dbgaContent", "specContent", "architectureContent", "useCasesContent",
         "userStoriesContent", "blueprintContent", "tasksContent",
-        "apiContractsContent", "logicFlowsContent", "infraContent",
+        "apiContractsContent", "integrationSpecContent", "logicFlowsContent", "infraContent",
         "agentGovernanceContent",
         "uxUiGuideContent", "phase0SummaryContent", "aemContent",
       ] as const;
@@ -1050,6 +1051,9 @@ name: ${JSON.stringify(name)}
         await this.ensureBlueprintForApi(projectId);
         await this.generateApiContracts(projectId, gaps);
         return;
+      case "integration_spec":
+        await this.generateIntegrationSpec(projectId, gaps);
+        return;
       case "logic_flows":
         await this.generateLogicFlows(projectId, gaps);
         return;
@@ -1118,6 +1122,7 @@ name: ${JSON.stringify(name)}
       user_stories: "Historias de Usuario",
       ux_ui_guide: "Guía UX/UI",
       api_contracts: "Contratos API",
+      integration_spec: "Integration Spec",
       logic_flows: "Flujos de Lógica",
       agent_governance: "Gobernanza Agentes IA",
       tasks: "Tareas",
@@ -1150,6 +1155,12 @@ name: ${JSON.stringify(name)}
           const apiGaps = [...apiCheck.missingInApi, ...apiCheck.extraInApi];
           if (apiGaps.length > 0) gapsMap.set("api_contracts", apiGaps.join("\n"));
         }
+      } else if (stepKey === "integration_spec") {
+        const isd = projectFresh?.integrationSpecContent ?? "";
+        if (isd.trim().length > 80) {
+          const isdCheck = checkIntegrationSpecVsMdd(mddContent, isd);
+          if (isdCheck.gaps.length > 0) gapsMap.set("integration_spec", isdCheck.gaps.join("\n"));
+        }
       } else if (stepKey === "logic_flows") {
         const lf = projectFresh?.logicFlowsContent ?? "";
         if (lf.trim().length > 80) {
@@ -1165,7 +1176,9 @@ name: ${JSON.stringify(name)}
       }
     }
     let completedCount = 0;
-    const stepList = [...deliverablesToRun];
+    const sequentialAfterParallel: DeliverableKind[] = ["integration_spec"];
+    const stepList = deliverablesToRun.filter((s) => !sequentialAfterParallel.includes(s));
+    const runIntegrationSpec = deliverablesToRun.includes("integration_spec");
     await Promise.allSettled(
       stepList.map(async (step) => {
         try {
@@ -1181,6 +1194,26 @@ name: ${JSON.stringify(name)}
         onProgress?.({ step: label as DeliverableKind, index: completedCount - 1, total });
       }),
     );
+    if (runIntegrationSpec) {
+      try {
+        const stepGaps = gapsMap.get("integration_spec") ?? undefined;
+        await this.runDeliverableStep(
+          "integration_spec",
+          projectId,
+          stepGaps ? { gapsFeedback: stepGaps } : undefined,
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Error desconocido";
+        this.logger.warn(`[Cascade] Paso integration_spec saltado: ${message}.`);
+        errors.push({ step: "integration_spec", error: message });
+      }
+      completedCount++;
+      onProgress?.({
+        step: (stepLabel.integration_spec ?? "integration_spec") as DeliverableKind,
+        index: completedCount - 1,
+        total,
+      });
+    }
     // Señal de finalización: reportar un paso "done" para que el frontend sepa que terminó
     onProgress?.({ step: "done" as DeliverableKind, index: total, total });
     if (errors.length > 0) {
@@ -1628,6 +1661,31 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     return this.update(projectId, { logicFlowsContent: cleanDocumentContent(content) });
   }
 
+  async generateIntegrationSpec(projectId: string, gapsFeedback?: string | null) {
+    const project = await this.assertProjectAccess(projectId);
+    let legacyOpts: import("../ai/ai.service.js").LegacyGenerateOptions | undefined;
+    if (project.projectType === "LEGACY" && project.theforgeProjectId) {
+      const [theforgeContext, contractSpecs] = await Promise.all([
+        this.theforge.getContextForDeliverables(project.theforgeProjectId),
+        this.theforge.gatherContractSpecsForApi(project.theforgeProjectId),
+      ]);
+      if (theforgeContext.trim() || contractSpecs.trim()) {
+        legacyOpts = {
+          ...(theforgeContext.trim() ? { theforgeContext } : {}),
+          ...(contractSpecs.trim() ? { contractSpecs } : {}),
+        };
+      }
+    }
+    const content = await this.ai.generateIntegrationSpec(
+      this.constitutionMarkdown(project),
+      project.blueprintContent,
+      project.apiContractsContent,
+      gapsFeedback,
+      legacyOpts,
+    );
+    return this.update(projectId, { integrationSpecContent: cleanDocumentContent(content) });
+  }
+
   async generateInfra(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
     const content = await this.ai.generateInfra(
@@ -1646,6 +1704,7 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     blueprintDataModel: ConformanceResult;
     api: ApiConformanceResult;
     logicFlows: ConformanceResult;
+    integrationSpec: ConformanceResult;
     infra: ConformanceResult;
   }> {
     const p = await this.assertProjectAccess(projectId);
@@ -1657,6 +1716,7 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
       blueprintDataModel,
       api: this.conformance.checkApi(mdd, p.apiContractsContent),
       logicFlows: this.conformance.checkLogicFlows(mdd, p.logicFlowsContent),
+      integrationSpec: this.conformance.checkIntegrationSpec(mdd, p.integrationSpecContent),
       infra: this.conformance.checkInfra(mdd, p.infraContent),
     };
 
@@ -1665,10 +1725,11 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     const mddTrim = mdd.trim();
     if (mddTrim.length < 200) return heuristic;
 
-    const [blueprintLlm, apiLlm, logicFlowsLlm, infraLlm] = await Promise.all([
+    const [blueprintLlm, apiLlm, logicFlowsLlm, integrationSpecLlm, infraLlm] = await Promise.all([
       this.ai.conformanceCheck(mddTrim, (p.blueprintContent ?? "").trim(), "blueprint"),
       this.ai.conformanceCheck(mddTrim, (p.apiContractsContent ?? "").trim(), "api"),
       this.ai.conformanceCheck(mddTrim, (p.logicFlowsContent ?? "").trim(), "logicFlows"),
+      this.ai.conformanceCheck(mddTrim, (p.integrationSpecContent ?? "").trim(), "integrationSpec"),
       this.ai.conformanceCheck(mddTrim, (p.infraContent ?? "").trim(), "infra"),
     ]);
 
@@ -1679,6 +1740,9 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
         ? { ok: true, missingInApi: [], extraInApi: [] }
         : { ok: false, missingInApi: apiLlm.gaps, extraInApi: [] },
       logicFlows: logicFlowsLlm.ok ? { ok: true, gaps: [] } : { ok: false, gaps: logicFlowsLlm.gaps },
+      integrationSpec: integrationSpecLlm.ok
+        ? { ok: true, gaps: [] }
+        : { ok: false, gaps: integrationSpecLlm.gaps },
       infra: infraLlm.ok ? { ok: true, gaps: [] } : { ok: false, gaps: infraLlm.gaps },
     };
   }

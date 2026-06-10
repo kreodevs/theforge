@@ -348,6 +348,7 @@ export interface DocumentCompleteness {
   userStoriesContent: number;
   blueprintContent: number;
   apiContractsContent: number;
+  integrationSpecContent: number;
   logicFlowsContent: number;
   infraContent: number;
   tasksContent: number;
@@ -499,6 +500,7 @@ export interface Project {
   blueprintContent: string | null;
   tasksContent: string | null;
   apiContractsContent: string | null;
+  integrationSpecContent: string | null;
   logicFlowsContent: string | null;
   architectureContent: string | null;
   useCasesContent: string | null;
@@ -599,6 +601,7 @@ function projectWithUxAfterStream(
       dbgaContent: cleanDoc(p.dbgaContent ?? null),
       specContent: cleanDoc(p.specContent ?? null),
       apiContractsContent: cleanDoc(p.apiContractsContent ?? null),
+      integrationSpecContent: cleanDoc(p.integrationSpecContent ?? null),
       logicFlowsContent: cleanDoc(p.logicFlowsContent ?? null),
       tasksContent: cleanDoc(p.tasksContent ?? null),
       architectureContent: cleanDoc(p.architectureContent ?? null),
@@ -643,6 +646,7 @@ interface WorkshopState {
   blueprintContent: string | null;
   tasksContent: string | null;
   apiContractsContent: string | null;
+  integrationSpecContent: string | null;
   logicFlowsContent: string | null;
   architectureContent: string | null;
   useCasesContent: string | null;
@@ -656,6 +660,7 @@ interface WorkshopState {
     blueprintDataModel: ConformanceResult;
     api: ApiConformanceResult;
     logicFlows: ConformanceResult;
+    integrationSpec: ConformanceResult;
     infra: ConformanceResult;
   } | null;
   /** Vista previa de entregable eliminada — regeneración directa sin modal */
@@ -790,6 +795,9 @@ interface WorkshopState {
   setLogicFlowsContent: (content: string | null) => void;
   persistLogicFlowsContent: (content: string) => Promise<void>;
   generateLogicFlows: (projectId: string, options?: { gapsFeedback?: string }) => Promise<Project | null>;
+  setIntegrationSpecContent: (content: string | null) => void;
+  persistIntegrationSpecContent: (content: string) => Promise<void>;
+  generateIntegrationSpec: (projectId: string, options?: { gapsFeedback?: string }) => Promise<Project | null>;
   setInfraContent: (content: string | null) => void;
   persistInfraContent: (content: string) => Promise<void>;
   generateInfra: (projectId: string, options?: { gapsFeedback?: string }) => Promise<Project | null>;
@@ -903,6 +911,7 @@ const initialState = {
   blueprintContent: null as string | null,
   tasksContent: null as string | null,
   apiContractsContent: null as string | null,
+  integrationSpecContent: null as string | null,
   logicFlowsContent: null as string | null,
   architectureContent: null as string | null,
   useCasesContent: null as string | null,
@@ -915,6 +924,7 @@ const initialState = {
     blueprintDataModel: ConformanceResult;
     api: ApiConformanceResult;
     logicFlows: ConformanceResult;
+    integrationSpec: ConformanceResult;
     infra: ConformanceResult;
   } | null,
   loading: false,
@@ -990,6 +1000,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       phase0SummaryContent: p.phase0SummaryContent ?? null,
       blueprintContent: p.blueprintContent ?? null,
       apiContractsContent: p.apiContractsContent ?? null,
+      integrationSpecContent: p.integrationSpecContent ?? null,
       logicFlowsContent: p.logicFlowsContent ?? null,
       architectureContent: p.architectureContent ?? null,
       useCasesContent: p.useCasesContent ?? null,
@@ -1192,6 +1203,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         blueprintContent: cleanDoc(data.blueprintContent ?? null),
         tasksContent: cleanDoc(data.tasksContent ?? null),
         apiContractsContent: cleanDoc(data.apiContractsContent ?? null),
+        integrationSpecContent: cleanDoc(data.integrationSpecContent ?? null),
         logicFlowsContent: cleanDoc(data.logicFlowsContent ?? null),
         architectureContent: cleanDoc(data.architectureContent ?? null),
         useCasesContent: cleanDoc(data.useCasesContent ?? null),
@@ -1286,6 +1298,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         blueprintContent: cleanDoc(p.blueprintContent ?? null),
         tasksContent: cleanDoc(p.tasksContent ?? null),
         apiContractsContent: cleanDoc(p.apiContractsContent ?? null),
+        integrationSpecContent: cleanDoc(p.integrationSpecContent ?? null),
         logicFlowsContent: cleanDoc(p.logicFlowsContent ?? null),
         architectureContent: cleanDoc(p.architectureContent ?? null),
         useCasesContent: cleanDoc(p.useCasesContent ?? null),
@@ -1489,6 +1502,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         return persistProjectField("tasksContent", get().tasksContent, "Tasks");
       case "api-contracts":
         return persistProjectField("apiContractsContent", get().apiContractsContent, "Contratos API");
+      case "integration-spec":
+        return persistProjectField("integrationSpecContent", get().integrationSpecContent, "Integration Spec");
       case "logic-flows":
         return persistProjectField("logicFlowsContent", get().logicFlowsContent, "Flujos");
       case "architecture":
@@ -2184,6 +2199,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           const ac = get().apiContractsContent;
           if (ac != null && String(ac).trim()) body.apiContractsContent = ac;
         }
+        if (tab === "integration-spec") {
+          const isd = get().integrationSpecContent;
+          if (isd != null && String(isd).trim()) body.integrationSpecContent = isd;
+        }
         if (tab === "logic-flows") {
           const lf = get().logicFlowsContent;
           if (lf != null && String(lf).trim()) body.logicFlowsContent = lf;
@@ -2275,6 +2294,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   userStoriesContent: cleanDoc(proj?.userStoriesContent ?? null) ?? get().userStoriesContent,
                   blueprintContent: cleanDoc(proj?.blueprintContent ?? null) ?? get().blueprintContent,
                   apiContractsContent: cleanDoc(proj?.apiContractsContent ?? null) ?? get().apiContractsContent,
+                  integrationSpecContent: cleanDoc(proj?.integrationSpecContent ?? null) ?? get().integrationSpecContent,
                   logicFlowsContent: cleanDoc(proj?.logicFlowsContent ?? null) ?? get().logicFlowsContent,
                   tasksContent: cleanDoc(proj?.tasksContent ?? null) ?? get().tasksContent,
                   infraContent: cleanDoc(proj?.infraContent ?? null) ?? get().infraContent,
@@ -2365,6 +2385,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     specContent: cleanDoc(projTail?.specContent ?? null) ?? get().specContent,
                     blueprintContent: cleanDoc(projTail?.blueprintContent ?? null) ?? get().blueprintContent,
                     apiContractsContent: cleanDoc(projTail?.apiContractsContent ?? null) ?? get().apiContractsContent,
+                    integrationSpecContent: cleanDoc(projTail?.integrationSpecContent ?? null) ?? get().integrationSpecContent,
                     logicFlowsContent: cleanDoc(projTail?.logicFlowsContent ?? null) ?? get().logicFlowsContent,
                     tasksContent: cleanDoc(projTail?.tasksContent ?? null) ?? get().tasksContent,
                     architectureContent: cleanDoc(projTail?.architectureContent ?? null) ?? get().architectureContent,
@@ -2491,6 +2512,24 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (options?.gapsFeedback?.trim()) body.gapsFeedback = options.gapsFeedback.trim();
       const data = await queueAndPoll<Project>(`${API_BASE}/projects/${projectId}/generate-logic-flows`, body);
       set({ project: data, logicFlowsContent: data.logicFlowsContent ?? null, error: null });
+      get().fetchConformance(projectId).catch(() => { });
+      return data;
+    } catch (e) { set({ error: friendlyFetchError(e) }); return null; }
+    finally { set({ loading: false }); }
+  },
+
+  setIntegrationSpecContent: (content) => set({ integrationSpecContent: content }),
+  persistIntegrationSpecContent: async (content) => {
+    await persistField("integrationSpecContent", content, get, set);
+  },
+  generateIntegrationSpec: async (projectId, options) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const body: Record<string, unknown> = {};
+      if (options?.gapsFeedback?.trim()) body.gapsFeedback = options.gapsFeedback.trim();
+      const data = await queueAndPoll<Project>(`${API_BASE}/projects/${projectId}/generate-integration-spec`, body);
+      set({ project: data, integrationSpecContent: data.integrationSpecContent ?? null, error: null });
       get().fetchConformance(projectId).catch(() => { });
       return data;
     } catch (e) { set({ error: friendlyFetchError(e) }); return null; }
@@ -2837,12 +2876,14 @@ if (prog && prog.step && prog.step !== "done") {
           blueprintDataModel?: ConformanceResult;
           api: ApiConformanceResult;
           logicFlows: ConformanceResult;
+          integrationSpec: ConformanceResult;
           infra: ConformanceResult;
         };
         set({
           conformance: {
             ...data,
             blueprintDataModel: data.blueprintDataModel ?? { ok: true, gaps: [] },
+            integrationSpec: data.integrationSpec ?? { ok: true, gaps: [] },
           },
         });
       }
@@ -3271,6 +3312,8 @@ if (prog && prog.step && prog.step !== "done") {
         "ux-ui-guide": "uxUiGuideContent",
         blueprint: "blueprintContent",
         "api-contracts": "apiContractsContent",
+        "api-contracts": "apiContractsContent",
+        "integration-spec": "integrationSpecContent",
         "logic-flows": "logicFlowsContent",
         tasks: "tasksContent",
         infra: "infraContent",

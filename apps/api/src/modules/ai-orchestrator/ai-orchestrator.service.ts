@@ -24,6 +24,7 @@ export type OrchestratorClientDeliverables = {
   useCasesContent?: string;
   userStoriesContent?: string;
   apiContractsContent?: string;
+  integrationSpecContent?: string;
   logicFlowsContent?: string;
   tasksContent?: string;
   infraContent?: string;
@@ -467,6 +468,12 @@ export class AiOrchestratorService {
       clientDeliverables?.apiContractsContent,
       (project as { apiContractsContent?: string | null }).apiContractsContent,
     );
+    const currentIntegrationSpec = docForActiveTab(
+      tab,
+      "integration-spec",
+      clientDeliverables?.integrationSpecContent,
+      (project as { integrationSpecContent?: string | null }).integrationSpecContent,
+    );
     const currentLogicFlows = docForActiveTab(
       tab,
       "logic-flows",
@@ -525,7 +532,7 @@ export class AiOrchestratorService {
       currentBlueprintContent:
         tab === "blueprint"
           ? currentBlueprint
-          : isUxUiGuide || tab === "api-contracts"
+          : isUxUiGuide || tab === "api-contracts" || tab === "integration-spec"
             ? (project.blueprintContent ?? undefined)
             : undefined,
       currentSpecContent: currentSpec,
@@ -534,6 +541,7 @@ export class AiOrchestratorService {
       currentUseCasesContent: currentUseCases,
       currentUserStoriesContent: currentUserStories,
       currentApiContractsContent: currentApiContracts,
+      currentIntegrationSpecContent: currentIntegrationSpec,
       currentLogicFlowsContent: currentLogicFlows,
       currentTasksContent: currentTasks,
       currentInfraContent: currentInfra,
@@ -587,6 +595,9 @@ export class AiOrchestratorService {
         }
         if (tab === "api-contracts" && msg.apiContractsContent != null && msg.apiContractsContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { apiContractsContent: msg.apiContractsContent });
+        }
+        if (tab === "integration-spec" && msg.integrationSpecContent != null && msg.integrationSpecContent.length > 0) {
+          updatedProject = await this.projects.update(projectId, { integrationSpecContent: msg.integrationSpecContent });
         }
         if (tab === "logic-flows" && msg.logicFlowsContent != null && msg.logicFlowsContent.length > 0) {
           updatedProject = await this.projects.update(projectId, { logicFlowsContent: msg.logicFlowsContent });

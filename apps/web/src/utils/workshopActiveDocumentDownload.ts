@@ -8,6 +8,7 @@ const PANEL_DOWNLOAD_FILENAME: Record<string, string> = {
   "ux-ui-guide": "design-system.md",
   blueprint: "blueprint.md",
   "api-contracts": "api-contracts.md",
+  "integration-spec": "integration-spec.md",
   "logic-flows": "logic-flows.md",
   tasks: "tasks.md",
   infra: "infra.md",
@@ -29,6 +30,7 @@ export interface WorkshopActiveDocumentDownloadInput {
   uxUiGuideContent?: string | null;
   blueprintContent?: string | null;
   apiContractsContent?: string | null;
+  integrationSpecContent?: string | null;
   logicFlowsContent?: string | null;
   tasksContent?: string | null;
   infraContent?: string | null;
@@ -65,6 +67,7 @@ export function resolveWorkshopActiveDocumentDownload(
     "ux-ui-guide": input.uxUiGuideContent,
     blueprint: input.blueprintContent,
     "api-contracts": input.apiContractsContent,
+    "integration-spec": input.integrationSpecContent,
     "logic-flows": input.logicFlowsContent,
     tasks: input.tasksContent,
     infra: input.infraContent,

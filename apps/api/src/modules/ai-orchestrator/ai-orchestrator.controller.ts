@@ -77,6 +77,7 @@ export class AiOrchestratorController {
       useCasesContent?: string | null;
       userStoriesContent?: string | null;
       apiContractsContent?: string | null;
+      integrationSpecContent?: string | null;
       logicFlowsContent?: string | null;
       tasksContent?: string | null;
       infraContent?: string | null;
@@ -102,6 +103,7 @@ export class AiOrchestratorController {
       useCasesContent,
       userStoriesContent,
       apiContractsContent,
+      integrationSpecContent,
       logicFlowsContent,
       tasksContent,
       infraContent,
@@ -136,6 +138,7 @@ export class AiOrchestratorController {
           useCasesContent: useCasesContent?.trim() || undefined,
           userStoriesContent: userStoriesContent?.trim() || undefined,
           apiContractsContent: apiContractsContent?.trim() || undefined,
+          integrationSpecContent: integrationSpecContent?.trim() || undefined,
           logicFlowsContent: logicFlowsContent?.trim() || undefined,
           tasksContent: tasksContent?.trim() || undefined,
           infraContent: infraContent?.trim() || undefined,

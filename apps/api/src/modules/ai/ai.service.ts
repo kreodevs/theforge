@@ -18,6 +18,7 @@ import { BENCHMARK_REFINE_PROMPT } from "./prompts/phase0-benchmark-refine-promp
 import { BLUEPRINT_PROMPT } from "./prompts/blueprint-prompt.js";
 import { API_CONTRACTS_PROMPT } from "./prompts/api-contracts-prompt.js";
 import { LOGIC_FLOWS_PROMPT } from "./prompts/logic-flows-prompt.js";
+import { INTEGRATION_SPEC_PROMPT } from "./prompts/integration-spec-prompt.js";
 import { INFRA_PROMPT } from "./prompts/infra-prompt.js";
 import { SPEC_PROMPT } from "./prompts/spec-prompt.js";
 import { ARCHITECTURE_PROMPT } from "./prompts/architecture-prompt.js";
@@ -107,6 +108,7 @@ export class AiService {
     "ux-ui-guide": "Guía UX/UI",
     blueprint: "Blueprint",
     "api-contracts": "Contratos de API",
+    "integration-spec": "Integration Spec",
     "logic-flows": "Flujos de lógica",
     infra: "Infraestructura",
     tasks: "Tareas (Breakdown)",
@@ -195,6 +197,7 @@ export class AiService {
           "user-stories": "STORIES",
           blueprint: "BLUEPRINT",
           "api-contracts": "API",
+          "integration-spec": "INTEGRATION_SPEC",
           "logic-flows": "FLOWS",
           tasks: "TASKS",
           infra: "INFRA",
@@ -365,6 +368,7 @@ export class AiService {
         "user-stories": "STORIES",
         blueprint: "BLUEPRINT",
         "api-contracts": "API",
+        "integration-spec": "INTEGRATION_SPEC",
         "logic-flows": "FLOWS",
         tasks: "TASKS",
         infra: "INFRA",
@@ -408,7 +412,7 @@ export class AiService {
           systemPrompt +=
             "\n\n**OBLIGATORIO — Infraestructura:** Devuelve el documento **Infra completo** actualizado terminando con `---FIN_INFRA---`. Sin delimitador no se persiste.";
         }
-        if (at === "use-cases" || at === "user-stories" || at === "api-contracts" || at === "logic-flows" || at === "tasks") {
+        if (at === "use-cases" || at === "user-stories" || at === "api-contracts" || at === "integration-spec" || at === "logic-flows" || at === "tasks") {
           systemPrompt +=
             `\n\n**OBLIGATORIO — ${label}:** Devuelve el documento **completo** actualizado terminando con \`---FIN_${tag}---\`. Nunca afirmes cambios en el chat sin incluir el markdown antes del delimitador.`;
         }
@@ -487,6 +491,12 @@ export class AiService {
         systemPrompt +=
           "\n\n[Contenido actual de API Contracts del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_API---.]\n---\n" +
           (options as any).currentApiContractsContent.trim().slice(0, 12000) +
+          "\n---";
+      }
+      if (options?.activeTab?.trim() === "integration-spec" && (options as any).currentIntegrationSpecContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Contenido actual del Integration Spec del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_INTEGRATION_SPEC---.]\n---\n" +
+          (options as any).currentIntegrationSpecContent.trim().slice(0, 12000) +
           "\n---";
       }
       if (options?.activeTab?.trim() === "logic-flows" && (options as any).currentLogicFlowsContent?.trim()) {
@@ -840,6 +850,50 @@ export class AiService {
     });
   }
 
+  async generateIntegrationSpec(
+    mddContent: string,
+    blueprintContent?: string | null,
+    apiContractsContent?: string | null,
+    gapsFeedback?: string | null,
+    options?: LegacyGenerateOptions,
+  ): Promise<string> {
+    const mdd = mddContent?.trim() ?? "";
+    const blueprint = (blueprintContent?.trim() ?? "").slice(0, 6000);
+    const apiContracts = (apiContractsContent?.trim() ?? "").slice(0, 12000);
+    const constitutionNote =
+      "El siguiente documento es la **Constitución del proyecto** (MDD). Tu salida debe adherirse a él en todo momento.\n\n";
+    let prompt =
+      mdd.length > 0
+        ? "Genera el Integration Spec según las instrucciones del system prompt.\n\n" +
+        constitutionNote +
+        "MDD:\n---\n" +
+        mdd +
+        "\n---\n\n" +
+        (blueprint ? "Blueprint (estructura / servicios):\n---\n" + blueprint + "\n---\n\n" : "") +
+        (apiContracts
+          ? "Contratos de API (referencia endpoints de frontera; no redefinir internos):\n---\n" +
+            apiContracts +
+            "\n---"
+          : "**Nota:** No hay Contratos de API generados aún. Deriva integraciones solo del MDD §4.B y §1.")
+        : "No hay MDD. Genera un Integration Spec mínimo indicando sin integraciones externas.";
+    if (gapsFeedback?.trim()) {
+      prompt +=
+        "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
+    }
+    if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    if (options?.contractSpecs?.trim()) {
+      const specsBlock = options.contractSpecs.trim().slice(0, 12000);
+      prompt +=
+        "\n\n**Contratos reales desde el codebase (get_contract_specs):** Usa estas firmas y tipos reales para alinear fronteras. No inventes tipos que contradigan esta evidencia.\n---\n" +
+        specsBlock +
+        "\n---";
+    }
+    if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
+    return this.generateResponse(prompt, [], {
+      systemPrompt: INTEGRATION_SPEC_PROMPT + NO_MILITAR_INSTRUCTION,
+    });
+  }
+
   async generateInfra(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mdd = buildMddContextForInfra(mddContent?.trim() ?? "");
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 6000);
@@ -912,9 +966,15 @@ export class AiService {
   async conformanceCheck(
     mddContent: string,
     documentContent: string,
-    kind: "blueprint" | "api" | "logicFlows" | "infra",
+    kind: "blueprint" | "api" | "logicFlows" | "integrationSpec" | "infra",
   ): Promise<{ ok: boolean; gaps: string[] }> {
-    const kindLabel = { blueprint: "Blueprint", api: "Contratos de API", logicFlows: "Flujos de lógica", infra: "Infraestructura" }[kind];
+    const kindLabel = {
+      blueprint: "Blueprint",
+      api: "Contratos de API",
+      logicFlows: "Flujos de lógica",
+      integrationSpec: "Integration Spec",
+      infra: "Infraestructura",
+    }[kind];
     const prompt = `¿El siguiente documento **${kindLabel}** cumple el MDD?\n\nMDD:\n---\n${(mddContent || "").trim().slice(0, 6000)}\n---\n\nDocumento ${kindLabel}:\n---\n${(documentContent || "").trim().slice(0, 4000)}\n---`;
     try {
       const raw = await this.generateResponse(prompt, [], { systemPrompt: CONFORMANCE_CHECK_PROMPT });

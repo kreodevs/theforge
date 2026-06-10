@@ -633,6 +633,209 @@ export function checkLogicFlowsVsMdd(mddContent: string | null, logicFlowsConten
   return { ok: gaps.length === 0, gaps };
 }
 
+/** Extrae nombres de sistemas de un bloque MDD (negritas, encabezados ###, primera columna de tablas). */
+function extractSystemNames(text: string): string[] {
+  const names = new Set<string>();
+  const bold = /\*\*([^*]{2,64})\*\*/g;
+  let m: RegExpExecArray | null;
+  while ((m = bold.exec(text)) !== null) {
+    const name = m[1]?.trim();
+    if (name && !/^(m2m|sso|api|rest|http)$/i.test(name)) names.add(name);
+  }
+  for (const line of text.split("\n")) {
+    const h3 = /^###\s+(.+)$/.exec(line.trim());
+    if (h3?.[1]) names.add(h3[1].trim().replace(/\s*\(.+\)$/, ""));
+    const row = /^\|\s*([^|]+)\s*\|/.exec(line.trim());
+    if (row?.[1] && !/^[-:]+$/.test(row[1].trim()) && !/^(sistema|dato|endpoint|item)/i.test(row[1].trim())) {
+      const cell = row[1].trim();
+      if (cell.length >= 2 && cell.length <= 64) names.add(cell);
+    }
+  }
+  return Array.from(names).filter((n) => n.length >= 2);
+}
+
+/** Señales de integración externa en MDD (§4.B o colindantes en §1). */
+function mddHasExternalIntegrations(mddContent: string): boolean {
+  const section4B = extractSection(
+    mddContent,
+    /^#+\s*(?:4\.?\s*B\.?|4\.B)\s*.*integraciones?\s+externas/im,
+  );
+  if (section4B.trim().length > 20) return true;
+  const section1 = extractSection(
+    mddContent,
+    /^#+\s*(?:1\.?\s*)?(?:contexto|alcance|visi[oó]n)/im,
+  );
+  return /\b(sso|erp|webhook|cola|queue|tercero|externo|integraci[oó]n|sistema\s+colindante|api\s+externa)\b/i.test(
+    section1,
+  );
+}
+
+/** Extrae subsección numerada del ISD por título (p. ej. "## 1." … "## 2."). */
+function extractIsdSection(isd: string, sectionNum: number): string {
+  const pattern = new RegExp(`^#+\\s*${sectionNum}\\.\\s*`, "im");
+  const m = isd.match(pattern);
+  if (!m || m.index == null) return "";
+  const start = m.index + m[0].length;
+  const rest = isd.slice(start);
+  const next = rest.match(/\n##\s*\d+\./m);
+  const end = next?.index != null ? next.index + 1 : rest.length;
+  return rest.slice(0, end).trim();
+}
+
+function countSequenceDiagrams(text: string): number {
+  return (text.match(/sequenceDiagram/gi) ?? []).length;
+}
+
+function countMarkdownTableDataRows(text: string): number {
+  const lines = text.split("\n").filter((l) => /^\|/.test(l.trim()));
+  let dataRows = 0;
+  let passedHeader = false;
+  for (const line of lines) {
+    const cells = line.split("|").map((c) => c.trim()).filter(Boolean);
+    if (cells.length === 0) continue;
+    if (cells.every((c) => /^:?-+:?$/.test(c))) {
+      passedHeader = true;
+      continue;
+    }
+    if (passedHeader) dataRows++;
+  }
+  return dataRows;
+}
+
+/** Referencias de contrato listadas en MDD §4.B (filas de tabla o viñetas). */
+function extractIntegrationReferences(section4B: string): string[] {
+  const refs: string[] = [];
+  for (const line of section4B.split("\n")) {
+    const bullet = /^\s*[-*]\s+(.+)$/.exec(line.trim());
+    if (bullet?.[1] && bullet[1].length > 3) refs.push(bullet[1].trim().slice(0, 120));
+    const row = /^\|\s*([^|]+)\s*\|/.exec(line.trim());
+    if (row?.[1] && !/^[-:]+$/.test(row[1].trim()) && !/^(contrato|referencia|integraci)/i.test(row[1].trim())) {
+      refs.push(row[1].trim().slice(0, 120));
+    }
+  }
+  return refs.filter((r) => r.length > 2);
+}
+
+/** Keywords de flujo/resiliencia en MDD §7. */
+function extractIntegrationFlowSignals(mddContent: string): string[] {
+  const section7 = extractSection(
+    mddContent,
+    /^#+\s*(?:7\.?\s*)?(?:infraestructura|infra|integraci[oó]n)/im,
+  );
+  const signals: string[] = [];
+  const patterns = [
+    /\b(flujo\s+de\s+integraci[oó]n|integraci[oó]n\s+entre\s+sistemas)\b/gi,
+    /\bwebhook\b/gi,
+    /\bcron\s+externo\b/gi,
+    /\bcircuit\s+breaker\b/gi,
+    /\bresiliencia\b/gi,
+    /\breintento\b/gi,
+  ];
+  for (const p of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = p.exec(section7)) !== null) {
+      signals.push((match[1] ?? match[0]).toLowerCase());
+    }
+  }
+  return [...new Set(signals)];
+}
+
+/**
+ * Comprueba conformidad del Integration Spec con el MDD (§1, §4.B, §7).
+ * Heurísticas del anexo del prompt — sin parser Auth.
+ */
+export function checkIntegrationSpecVsMdd(
+  mddContent: string | null,
+  integrationSpecContent: string | null,
+): ConformanceResult {
+  const gaps: string[] = [];
+  if (!mddContent?.trim()) {
+    return { ok: true, gaps: [] };
+  }
+
+  const hasIntegrations = mddHasExternalIntegrations(mddContent);
+  const isd = (integrationSpecContent ?? "").trim().replace(/\n---FIN_INTEGRATION_SPEC---[\s\S]*$/i, "").trim();
+
+  if (!hasIntegrations) {
+    if (!isd) {
+      return { ok: false, gaps: ["Falta Integration Spec mínimo (No aplica) para MDD sin integraciones"] };
+    }
+    const isMinimal = isd.length < 600 && /no\s+aplica\s*[☑✓]/i.test(isd);
+    if (isMinimal) return { ok: true, gaps: [] };
+    if (isd.length >= MIN_DOC_LENGTH) {
+      return {
+        ok: false,
+        gaps: ["MDD sin §4.B ni sistemas colindantes en §1, pero el Integration Spec es extenso (sobre-generación)"],
+      };
+    }
+    return { ok: true, gaps: [] };
+  }
+
+  if (!isd || isd.length < MIN_DOC_LENGTH) {
+    return { ok: false, gaps: ["Falta contenido del Integration Spec"] };
+  }
+
+  const section1Mdd = extractSection(
+    mddContent,
+    /^#+\s*(?:1\.?\s*)?(?:contexto|alcance|visi[oó]n)/im,
+  );
+  const section4B = extractSection(
+    mddContent,
+    /^#+\s*(?:4\.?\s*B\.?|4\.B)\s*.*integraciones?\s+externas/im,
+  );
+  const isdSection1 = extractIsdSection(isd, 1);
+  const isdSection3 = extractIsdSection(isd, 3);
+  const isdSection4 = extractIsdSection(isd, 4);
+  const isdSection6 = extractIsdSection(isd, 6);
+
+  const mddSystems = extractSystemNames(section1Mdd + "\n" + section4B);
+  for (const sys of mddSystems) {
+    if (sys.length > 2 && !isdSection1.toLowerCase().includes(sys.toLowerCase())) {
+      gaps.push(`MDD menciona sistema "${sys}" pero no aparece en ISD §1`);
+    }
+  }
+
+  const integrationRefs = extractIntegrationReferences(section4B);
+  for (const ref of integrationRefs) {
+    const token = ref.slice(0, 40).toLowerCase();
+    if (token.length > 4 && !isdSection3.toLowerCase().includes(token)) {
+      gaps.push(`Referencia de integración del MDD §4.B no tiene subsección en ISD §3: "${ref.slice(0, 60)}"`);
+    }
+  }
+
+  const flowSignals = extractIntegrationFlowSignals(mddContent);
+  for (const signal of flowSignals) {
+    const inIsd =
+      isdSection4.toLowerCase().includes(signal) ||
+      isdSection6.toLowerCase().includes(signal) ||
+      /\bsequenceDiagram\b/i.test(isdSection4);
+    if (!inIsd) {
+      gaps.push(`MDD §7 señala "${signal}" pero no hay secuencia en ISD §4 ni fila en ISD §6`);
+    }
+  }
+
+  const seqCount = countSequenceDiagrams(isdSection4);
+  const resilienceRows = countMarkdownTableDataRows(isdSection6);
+  if (seqCount > 0 && resilienceRows < seqCount) {
+    gaps.push(
+      `Resiliencia incompleta: ISD §4 tiene ${seqCount} secuencia(s) pero ISD §6 solo ${resilienceRows} fila(s)`,
+    );
+  }
+
+  const isdSystems = extractSystemNames(isdSection1);
+  const isdSystemLower = isdSystems.map((s) => s.toLowerCase());
+  for (const h3 of isdSection3.match(/^###\s+(.+)$/gm) ?? []) {
+    const name = h3.replace(/^###\s+/, "").trim();
+    if (name.length > 2 && !isdSystemLower.some((s) => name.toLowerCase().includes(s) || s.includes(name.toLowerCase()))) {
+      if (!isdSection1.toLowerCase().includes(name.toLowerCase())) {
+        gaps.push(`Contrato ISD §3 "${name}" no referencia un sistema de ISD §1 (huérfano)`);
+      }
+    }
+  }
+
+  return { ok: gaps.length === 0, gaps };
+}
+
 @Injectable()
 export class ConformanceService {
   checkBlueprintDataModel(mddContent: string | null, blueprintContent: string | null): ConformanceResult {
@@ -649,6 +852,10 @@ export class ConformanceService {
 
   checkLogicFlows(mddContent: string | null, logicFlowsContent: string | null): ConformanceResult {
     return checkLogicFlowsVsMdd(mddContent, logicFlowsContent);
+  }
+
+  checkIntegrationSpec(mddContent: string | null, integrationSpecContent: string | null): ConformanceResult {
+    return checkIntegrationSpecVsMdd(mddContent, integrationSpecContent);
   }
 
   checkInfra(mddContent: string | null, infraContent: string | null): ConformanceResult {

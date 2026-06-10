@@ -9,6 +9,10 @@ Evalúa el documento según su tipo:
 - **Blueprint:** Debe reflejar stack §2 y entidades §3; si §4 lista API, debe haber mapeo a módulos/capas; componentes §1/§2 (IA, pipeline, grafo) no deben omitirse sin motivo.
 - **Contratos de API:** Debe incluir los endpoints que el MDD §4 exige.
 - **Flujos de lógica:** Debe cubrir lógica y edge cases del MDD §5.
+- **Integration Spec:** Debe cubrir sistemas colindantes del MDD §1/§4.B, flujos de integración §7 y resiliencia; no duplicar Infra ni logic-flows internos. Además evalúa:
+  - ¿Supuestos sobre sistemas externos sin evidencia ni marca?
+  - ¿Políticas de §6 del ISD contradicen edge cases del MDD §5?
+  - ¿El ISD redefine contenido que pertenece al MDD, a Infra o a logic-flows?
 - **Infraestructura:** Debe incluir lo que el MDD §7 exige (env, Docker, CI/CD).
 
 Solo indica gaps concretos y accionables (máximo 5). Si cumple razonablemente, responde con `ok: true` y `gaps: []`.
