@@ -888,6 +888,34 @@ export function repairFlattenedWebhookFlowchart(body: string): string | null {
   return webhookSyncFlowchartBody();
 }
 
+const MERMAID_BODY_HEAD_RE = /^\s*(sequenceDiagram|graph |stateDiagram|erDiagram)/im;
+
+/** Bloque con sintaxis sequenceDiagram sin cabecera (p. ej. dockerfile mal etiquetado). */
+function looksLikeSequenceDiagramBody(body: string): boolean {
+  if (MERMAID_BODY_HEAD_RE.test(body)) return true;
+  return /->>/.test(body) && /\b(alt|participant|Note over|end)\b/i.test(body);
+}
+
+/**
+ * Retag: fences cuyo cuerpo es Mermaid pero la etiqueta no es `mermaid` → ```mermaid.
+ * Incluye bloques `dockerfile` con flechas sequenceDiagram.
+ */
+export function retagMislabeledMermaidFences(document: string): string {
+  if (!document?.trim()) return document ?? "";
+
+  return document.replace(/```(\w*)\s*\n([\s\S]*?)```/g, (full, lang: string, inner: string) => {
+    const tag = (lang ?? "").toLowerCase();
+    if (tag === "mermaid") return full;
+    if (!looksLikeSequenceDiagramBody(inner)) return full;
+
+    let body = inner.trim();
+    if (!/^\s*sequenceDiagram\b/im.test(body)) {
+      body = `sequenceDiagram\n${body}`;
+    }
+    return `\`\`\`mermaid\n${body}\n\`\`\``;
+  });
+}
+
 /** Un solo bloque ```mermaid … ``` (entrada puede incluir fences). */
 export function normalizeMermaid(raw: string): string {
   if (!raw?.trim()) return raw ?? "";

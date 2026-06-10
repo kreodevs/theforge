@@ -1,0 +1,11 @@
+# Integration Spec — KMS (extracto sano §0 Metadata)
+
+## 0. Metadata
+
+| Campo                    | Valor                                                                                                                                                                           |
+| :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Proyecto**             | KMS Corporativo                                                                                                                                                                 |
+| **Clasificación**        | Greenfield (new development)                                                                                                                                                    |
+| **Sistemas colindantes** | Active Directory corporativo, SIEM corporativo, Aplicaciones corporativas (consumidores API), Sistemas de notificación (webhooks), Base de datos relacional externa (conector). |
+| **Fuentes de evidencia** | MDD v1.0 (secciones §1 Contexto, §4 Contratos de API, §5 Lógica y Edge Cases, §6 Seguridad, §7 Infraestructura); Blueprint v1.0 (estructura de proyecto, stack)                 |
+| **Versión del MDD**      | 1.0 (documento proporcionado)                                                                                                                                                   |

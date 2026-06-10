@@ -610,7 +610,6 @@ export function repairPastedMarkdown(text: string): string {
   out = repairStackedCodeFences(out);
   out = repairSplitJsonFragments(out);
   out = repairJsonFenceIntegrity(out);
-  out = repairUnclosedCodeFences(out);
   out = repairStrayCodeFences(out);
   out = repairAsciiDiagramBlocks(out);
   out = repairDirectoryTreeBlocks(out);

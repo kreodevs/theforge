@@ -1,0 +1,16 @@
+```dockerfile
+User->>GW: POST /api/v1/auth/login {email, password}
+    GW->>Auth: Reenvía request
+    Auth->>LDAP: LDAP BIND (DN construido, password)
+    alt LDAP success (0)
+    LDAP-->>Auth: Resultado éxito + atributos (mail, memberOf)
+    Auth->>Auth: Crear access_token JWT + refresh_token
+    Auth-->>GW: 200 {access_token, refresh_token, expires_in}
+    GW-->>User: Respuesta 200
+    else LDAP failure (49)
+    LDAP-->>Auth: Invalid credentials
+    Auth-->>GW: 401 {error: "invalid_credentials"}
+    GW-->>User: Respuesta 401
+    end
+    Note over Auth: El evento de login exitoso/fallido se registra en audit_events
+```
