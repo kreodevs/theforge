@@ -1,0 +1,12 @@
+```mermaid
+graph LR
+    subgraph "KMS Corporativo"
+        KMS[API Gateway / Backend]
+    end
+```
+
+### Inventario de sistemas colindantes
+
+| Sistema | Dirección |
+| :------ | :-------- |
+| AD      | Saliente  |

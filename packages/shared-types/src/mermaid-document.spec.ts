@@ -2,9 +2,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   isOrphanGraphEdgeLine,
+  isOrphanGraphStyleLine,
   isOrphanSequenceDiagramLine,
   normalizeMermaidInDocument,
   repairFragmentedGraphMermaidInDocument,
+  repairFragmentedMermaidInDocument,
   repairFragmentedSequenceMermaidInDocument,
   stripMarkdownLeakFromMermaidDiagramBody,
 } from "./mermaid.js";
@@ -34,28 +36,62 @@ describe("isOrphanGraphEdgeLine", () => {
   });
 });
 
+describe("isOrphanGraphStyleLine", () => {
+  it("detecta style/classDef fuera del fence con prefijo ### o viñeta", () => {
+    assert.equal(isOrphanGraphStyleLine("    style KMS fill:#e0f7fa,stroke:#00796b"), true);
+    assert.equal(isOrphanGraphStyleLine("### style AD fill:#ffe0b2"), true);
+    assert.equal(isOrphanGraphStyleLine("### Inventario de sistemas colindantes"), false);
+    assert.equal(isOrphanGraphStyleLine("AD --> KMS"), false);
+  });
+});
+
 describe("repairFragmentedGraphMermaidInDocument", () => {
-  it("fusiona aristas graph partidas por cierre prematuro del fence (KMS §1)", () => {
+  it("T1: fusiona aristas y style graph partidos (golden KMS §1 5/5)", () => {
+    const doc = readFixture("kms-isd-graph-styles-outside.fixture.txt");
+    const expected = readFixture("kms-isd-graph-styles-outside.expected.txt");
+    const out = repairFragmentedGraphMermaidInDocument(doc);
+    assert.equal(out, expected);
+  });
+
+  it("T2: absorbe aristas pero no inventario/tabla tras el grafo", () => {
     const doc = readFixture("kms-isd-graph-edges-outside.fixture.txt");
     const out = repairFragmentedGraphMermaidInDocument(doc);
     assert.match(out, /KMS_CLI -->|llamadas API REST| KMS_GW\n```\n\n### Inventario/);
     assert.match(out, /KMS_GW -->|autenticación LDAP| AD[\s\S]*KMS_CLI -->|llamadas API REST| KMS_GW/);
     assert.doesNotMatch(out, /```\n### KMS_GW -->/);
     assert.doesNotMatch(out, /### KMS_GW -->/);
-  });
-
-  it("no absorbe tabla markdown tras el grafo", () => {
-    const doc = readFixture("kms-isd-graph-edges-outside.fixture.txt");
-    const out = repairFragmentedGraphMermaidInDocument(doc);
     assert.match(out, /\| Sistema\s+\| Dirección/);
     assert.match(out, /### Inventario de sistemas colindantes/);
   });
 
-  it("es idempotente en documento ya reparado", () => {
-    const doc = readFixture("kms-isd-graph-edges-outside.fixture.txt");
+  it("T2b: grafo cerrado solo con nodos + inventario → diff vacío", () => {
+    const doc = readFixture("kms-isd-graph-nodes-only.fixture.txt");
+    const out = repairFragmentedGraphMermaidInDocument(doc);
+    assert.equal(out, doc);
+  });
+
+  it("T3: es idempotente en documento ya reparado (T1)", () => {
+    const doc = readFixture("kms-isd-graph-styles-outside.fixture.txt");
     const once = repairFragmentedGraphMermaidInDocument(doc);
     const twice = repairFragmentedGraphMermaidInDocument(once);
     assert.equal(twice, once);
+  });
+
+  it("T4: no modifica sequenceDiagram fragmentado", () => {
+    const doc = `### 1.1 Flujo
+
+\`\`\`mermaid
+sequenceDiagram
+    participant API
+    participant Svc
+    API->>Svc: calcular()
+\`\`\`
+### Svc->>Repo: findActivo()
+    Repo-->>Svc: datos
+
+### 1.2 Siguiente sección`;
+    const out = repairFragmentedGraphMermaidInDocument(doc);
+    assert.equal(out, doc);
   });
 });
 
@@ -174,7 +210,7 @@ sequenceDiagram
 - API-->>C: 200 OK
 
 ### 1.2 Cron`;
-    const out = normalizeMermaidInDocument(doc);
+    const out = normalizeMermaidInDocument(repairFragmentedMermaidInDocument(doc));
     assert.match(out, /Auth-->>API: OK[\s\S]*API->>Svc: calcularPrecio/);
     assert.match(out, /API-->>C: 200 OK[\s\S]*```/);
     assert.doesNotMatch(out, /```\n### API->>/);
@@ -193,5 +229,19 @@ flowchart TD
 ## Siguiente`;
     const out = formatDocumentMarkdown(doc);
     assert.match(out, /```mermaid[\s\S]*?```[\s\S]*## Siguiente/);
+  });
+
+  it("T5: §1 literal 5ª corrida KMS — grafo completo y fences balanceados", () => {
+    const raw = readFixture("kms-isd-graph-styles-outside.fixture.txt");
+    const out = formatDocumentMarkdown(raw);
+    assert.match(out, /^```mermaid\ngraph LR[\s\S]*```\s*$/m);
+    assert.doesNotMatch(out, /### AD\[/);
+    assert.match(out, /AD\[Active Directory\] -- LDAPS --> KMS/);
+    assert.match(out, /style KMS fill:#e0f7fa,stroke:#00796b/);
+    assert.match(out, /style AD fill:#ffe0b2,stroke:#e65100/);
+    const opens = (out.match(/```mermaid/gi) ?? []).length;
+    const closes = (out.match(/^```\s*$/gm) ?? []).length;
+    assert.equal(opens, closes, "fences balanceados");
+    assert.equal(opens, 1);
   });
 });

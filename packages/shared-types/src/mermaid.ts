@@ -610,9 +610,27 @@ export function isOrphanGraphEdgeLine(trimmed: string): boolean {
   return GRAPH_EDGE_OPERATOR_RE.test(core);
 }
 
-function normalizeOrphanGraphEdgeLine(line: string): string {
+/** Línea fuera del fence con estilo Mermaid (style, classDef, linkStyle, class). */
+export function isOrphanGraphStyleLine(trimmed: string): boolean {
+  if (!trimmed) return false;
+  if (/^```/.test(trimmed)) return false;
+  if (/^#{1,2}\s+\d+\.\s/.test(trimmed)) return false;
+  if (/^#{1,6}\s+\d+\.\d+\s/.test(trimmed)) return false;
+  if (/^\|/.test(trimmed)) return false;
+  if (/^---+\s*$/.test(trimmed)) return false;
+
+  const core = graphEdgeLineCore(trimmed);
+  if (!core) return false;
+  return /^(style|classDef|linkStyle|class)\s+\S/.test(core);
+}
+
+function isAbsorbableGraphFragmentLine(trimmed: string): boolean {
+  return isOrphanGraphEdgeLine(trimmed) || isOrphanGraphStyleLine(trimmed);
+}
+
+function normalizeOrphanGraphFragmentLine(line: string): string {
   let s = line.replace(/^(\s*)#{1,6}\s+/, "$1");
-  if (/^(\s*)[-*]\s+/.test(s) && GRAPH_EDGE_OPERATOR_RE.test(s)) {
+  if (/^(\s*)[-*]\s+/.test(s) && isAbsorbableGraphFragmentLine(s)) {
     s = s.replace(/^(\s*)[-*]\s+/, "$1    ");
   }
   return s;
@@ -750,14 +768,15 @@ export function repairFragmentedGraphMermaidInDocument(document: string): string
         if (!trimmed) {
           let j = i + 1;
           while (j < lines.length && !lines[j]!.trim()) j++;
-          if (j < lines.length && isOrphanGraphEdgeLine(lines[j]!.trim())) {
+          if (j < lines.length && isAbsorbableGraphFragmentLine(lines[j]!.trim())) {
+            bodyLines.push(lines[i]!);
             i++;
             continue;
           }
           break;
         }
-        if (!isOrphanGraphEdgeLine(trimmed)) break;
-        bodyLines.push(normalizeOrphanGraphEdgeLine(lines[i]!));
+        if (!isAbsorbableGraphFragmentLine(trimmed)) break;
+        bodyLines.push(normalizeOrphanGraphFragmentLine(lines[i]!));
         i++;
       }
     } else {
@@ -773,8 +792,8 @@ export function repairFragmentedGraphMermaidInDocument(document: string): string
 
 /** Repara sequenceDiagram y graph/flowchart partidos fuera del fence. */
 export function repairFragmentedMermaidInDocument(document: string): string {
-  return repairFragmentedSequenceMermaidInDocument(
-    repairFragmentedGraphMermaidInDocument(document),
+  return repairFragmentedGraphMermaidInDocument(
+    repairFragmentedSequenceMermaidInDocument(document),
   );
 }
 
@@ -1030,8 +1049,7 @@ export function normalizeMermaid(raw: string): string {
 /** Normaliza cada bloque mermaid del documento sin tocar el resto del markdown. */
 export function normalizeMermaidInDocument(document: string): string {
   if (!document?.trim()) return document ?? "";
-  const merged = repairFragmentedMermaidInDocument(document);
-  return merged.replace(/```mermaid\s*\n([\s\S]*?)```/gi, (_block, inner: string) => {
+  return document.replace(/```mermaid\s*\n([\s\S]*?)```/gi, (_block, inner: string) => {
     const { diagram: rawDiagram, trailing } = splitMermaidBodyAndTrailingProse(inner);
     const body =
       repairFlattenedWebhookFlowchart(rawDiagram) ?? normalizeMermaidDiagramBody(rawDiagram);

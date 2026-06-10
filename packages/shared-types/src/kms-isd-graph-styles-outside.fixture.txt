@@ -1,0 +1,13 @@
+```mermaid
+graph LR
+    subgraph "KMS Corporativo"
+        KMS[API Gateway / Backend]
+    end
+
+```
+### AD[Active Directory] -- LDAPS --> KMS
+    KMS -- HTTPS (AWS KMS API) --> AWSKMS[AWS KMS]
+    SIEM[SIEM Corporativo] -- HTTPS (GET /audit/export) --> KMS
+
+    style KMS fill:#e0f7fa,stroke:#00796b
+    style AD fill:#ffe0b2,stroke:#e65100

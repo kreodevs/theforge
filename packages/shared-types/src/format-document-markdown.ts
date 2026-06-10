@@ -5,7 +5,12 @@
 
 import { repairMarkdownFences } from "./markdown-repair.js";
 import { normalizeAllTables } from "./markdown-table.js";
-import { normalizeMermaidInDocument, retagMislabeledMermaidFences } from "./mermaid.js";
+import {
+  normalizeMermaidInDocument,
+  repairFragmentedGraphMermaidInDocument,
+  repairFragmentedSequenceMermaidInDocument,
+  retagMislabeledMermaidFences,
+} from "./mermaid.js";
 import { splitEmbeddedMddFromDbga } from "./dbga-document-structure.js";
 import {
   repairPastedMarkdown,
@@ -48,6 +53,8 @@ export function formatDocumentMarkdown(text: string): string {
   cleaned = repairTableBoundaries(cleaned);
   cleaned = repairStrayCodeFences(cleaned);
   cleaned = retagMislabeledMermaidFences(cleaned);
+  cleaned = repairFragmentedSequenceMermaidInDocument(cleaned);
+  cleaned = repairFragmentedGraphMermaidInDocument(cleaned);
   cleaned = normalizeMermaidInDocument(cleaned);
   cleaned = repairUnclosedCodeFences(cleaned);
   cleaned = repairStrayCodeFences(cleaned);
