@@ -31,6 +31,7 @@ import type { AgentGovernanceSuggestions } from "./utils/suggest-agent-governanc
 import type { ComplexityLevel } from "@theforge/shared-types";
 import { VERIFY_DELIVERABLE_PROMPT } from "./prompts/verify-deliverable-prompt.js";
 import { CONFORMANCE_CHECK_PROMPT } from "./prompts/conformance-check-prompt.js";
+import { truncateForConformanceLlm } from "./utils/conformance-llm-context.util.js";
 import { DOCUMENT_CHANGELOG_CHAT_INSTRUCTION } from "./prompts/with-document-changelog-instructions.js";
 import { BRD_CHAT_REFINE_BUSINESS_RULES } from "./prompts/brd-generation-prompt.js";
 import { appendMddGovernancePatternsToPrompt } from "./utils/mdd-governance-prompt.util.js";
@@ -975,7 +976,9 @@ export class AiService {
       integrationSpec: "Integration Spec",
       infra: "Infraestructura",
     }[kind];
-    const prompt = `¿El siguiente documento **${kindLabel}** cumple el MDD?\n\nMDD:\n---\n${(mddContent || "").trim().slice(0, 6000)}\n---\n\nDocumento ${kindLabel}:\n---\n${(documentContent || "").trim().slice(0, 4000)}\n---`;
+    const mddForPrompt = truncateForConformanceLlm(mddContent);
+    const docForPrompt = truncateForConformanceLlm(documentContent);
+    const prompt = `¿El siguiente documento **${kindLabel}** cumple el MDD?\n\nMDD:\n---\n${mddForPrompt}\n---\n\nDocumento ${kindLabel}:\n---\n${docForPrompt}\n---`;
     try {
       const raw = await this.generateResponse(prompt, [], { systemPrompt: CONFORMANCE_CHECK_PROMPT });
       const trimmed = raw.trim().replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
