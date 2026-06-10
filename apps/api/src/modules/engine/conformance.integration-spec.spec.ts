@@ -158,3 +158,61 @@ test("formato: ISD mínimo N/A sin fences sigue pasando", () => {
   assert.equal(result.ok, true);
   assert.ok(!result.gaps.some((g) => /Formato:/i.test(g)));
 });
+
+test("formato: encabezado dentro de fence abierto → gap heading-in-fence", () => {
+  const isd = `# Integration Spec
+
+## 4. Secuencias
+\`\`\`mermaid
+sequenceDiagram
+  A->>B: call
+### 4.2 Título de flujo SIEM
+  B->>C: fail
+\`\`\`
+
+---FIN_INTEGRATION_SPEC---
+`;
+  const result = checkIntegrationSpecVsMdd(MDD_NO_INTEGRATIONS, isd);
+  assert.equal(result.ok, false);
+  assert.ok(result.gaps.some((g) => /encabezado dentro de bloque de código/i.test(g)));
+});
+
+test("formato: fences pares y encabezados fuera de fences → sin gaps de formato", () => {
+  const isd = `# Integration Spec
+
+## 4. Secuencias
+### 4.1 Flujo A
+\`\`\`mermaid
+sequenceDiagram
+  A->>B: call
+\`\`\`
+
+### 4.2 Flujo B
+\`\`\`mermaid
+sequenceDiagram
+  B->>C: call
+\`\`\`
+
+---FIN_INTEGRATION_SPEC---
+`;
+  const result = checkIntegrationSpecVsMdd(MDD_NO_INTEGRATIONS, isd);
+  assert.ok(!result.gaps.some((g) => /Formato:/i.test(g)), result.gaps.join("; "));
+});
+
+test("formato: fence impar + encabezado tragado → ambos gaps", () => {
+  const isd = `# Integration Spec
+
+## 4. Secuencias
+\`\`\`mermaid
+sequenceDiagram
+  A->>B: call
+### 4.2 Título tragado
+  B->>C: fail
+
+---FIN_INTEGRATION_SPEC---
+`;
+  const result = checkIntegrationSpecVsMdd(MDD_NO_INTEGRATIONS, isd);
+  assert.equal(result.ok, false);
+  assert.ok(result.gaps.some((g) => /encabezado dentro de bloque de código/i.test(g)));
+  assert.ok(result.gaps.some((g) => /sin balancear/i.test(g)));
+});

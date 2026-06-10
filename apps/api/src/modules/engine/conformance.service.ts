@@ -722,9 +722,18 @@ function checkIntegrationSpecFenceFormat(document: string): string[] {
   const lines = document.split(/\r?\n/);
 
   let fenceCount = 0;
+  let fenceOpen = false;
   for (const line of lines) {
     if (/^\s*```/.test(line)) {
       fenceCount++;
+      fenceOpen = !fenceOpen;
+      continue;
+    }
+    if (fenceOpen && /^#{1,6}\s/.test(line)) {
+      const truncated = line.trim().slice(0, 60);
+      gaps.push(
+        `Formato: encabezado dentro de bloque de código — la sección «${truncated}» queda oculta`,
+      );
     }
   }
   if (fenceCount % 2 !== 0) {

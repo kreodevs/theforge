@@ -1,4 +1,4 @@
-# integration-spec-prompt.md (v1.2 — alineado al repo + ajustes del smoke test KMS)
+# integration-spec-prompt.md (v1.3 — alineado al repo + ajustes de smoke tests KMS)
 # Generador del Integration Spec — The Forge
 
 ## Objetivo
@@ -47,11 +47,19 @@ con una fila "No aplica ☑". No inventes fronteras, no generes ruido, no bloque
 - Hueco o contradicción EN EL MDD (entidad sin mecanismo de alimentación, flujo sin
   endpoint, supuesto sin fuente): NO lo arregles aquí. Regístralo como DISCREPANCIA
   con destino "corrección al MDD" (mismo modelo que `propose_mdd_amendment`).
-- No documentes endpoints que no existan en el MDD §4. Si un flujo de integración
-  declarado en el MDD (p. ej. "OAuth2 client credentials para sistemas") carece del
-  endpoint que lo implementa, NO inventes su contrato como si existiera: marca esa
-  subsección de §3 como **PROPUESTO (no existe en MDD §4)** y emite la DISCREPANCIA
+- No documentes endpoints que no existan en el MDD §4. Esta regla aplica a TODO el
+  documento: subsecciones de §3, diagramas mermaid de §4, tablas de §5 — un endpoint
+  inventado dentro de un sequenceDiagram es la misma violación que uno en un contrato.
+  Si un flujo de integración declarado en el MDD (p. ej. "OAuth2 client credentials
+  para sistemas") carece del endpoint que lo implementa, NO inventes su contrato como
+  si existiera: marca esa subsección de §3 como **PROPUESTO (no existe en MDD §4)**,
+  usa esa misma marca en las secuencias que lo referencien, y emite la DISCREPANCIA
   correspondiente en §9 pidiendo que el MDD lo defina.
+- Usa EXCLUSIVAMENTE las tecnologías declaradas en el MDD §2 (stack) y §7 (infra).
+  Nombrar un broker, base de datos, cola o herramienta ausente del stack (p. ej.
+  escribir "Kafka" cuando el MDD declara RabbitMQ) es una violación de la constitución
+  del proyecto. Si una necesidad de integración no tiene tecnología asignada en el
+  stack, decláralo como pendiente en §9 — no asignes una tú.
 - Distingue tres tipos de frontera: (a) nos llaman (webhooks/consumidores),
   (b) llamamos (terceros), (c) identidad transversal (SSO). Política distinta cada una.
 - Auth: SOLO autenticación ENTRE sistemas (M2M, mTLS, API keys, client credentials).
@@ -127,11 +135,11 @@ Esta sección alimenta el semáforo del Stage; no introduce compuerta propia en 
   blockquote, tabla, lista o encabezado. Las notas `[NEEDS CLARIFICATION]` y los
   blockquotes van FUERA de los bloques de código, nunca dentro. Antes de terminar,
   verifica que el número de fences de apertura y cierre sea par en todo el documento.
-- Tono declarativo: el ISD es contrato; el análisis vive en la sección 9. En §3 y §4
-  está prohibida la deliberación visible (frases del tipo "podría", "considerar",
-  "quizás", "a definir", "pendiente de acordar" en el cuerpo del contrato). Lo no
-  demostrable se declara como `SUPUESTO: …` y se registra en §9 (PENDIENTES o
-  DISCREPANCIAS), nunca como narración exploratoria en §3/§4.
+- Tono declarativo: el ISD es contrato; el análisis vive en la sección 9. PROHIBIDO en
+  §3 y §4: preguntas retóricas, deliberación visible ("¿push o pull?", "Asumo que…",
+  "Según el MDD podría ser…") o razonamiento en voz alta. Cuando debas elegir entre
+  alternativas no definidas, declara la elegida con la marca **SUPUESTO:** en una sola
+  línea y referencia su pendiente de §9 (ej. "SUPUESTO: entrega push KMS→SIEM — ver P3").
 - Changelog: NO lo generes manualmente — lo inyecta `withDocumentChangelogInstructions`.
 - Termina el documento con el marcador: ---FIN_INTEGRATION_SPEC---
 - En chat con actualización del documento, termina igualmente con
