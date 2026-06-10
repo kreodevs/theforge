@@ -3312,7 +3312,6 @@ if (prog && prog.step && prog.step !== "done") {
         "ux-ui-guide": "uxUiGuideContent",
         blueprint: "blueprintContent",
         "api-contracts": "apiContractsContent",
-        "api-contracts": "apiContractsContent",
         "integration-spec": "integrationSpecContent",
         "logic-flows": "logicFlowsContent",
         tasks: "tasksContent",

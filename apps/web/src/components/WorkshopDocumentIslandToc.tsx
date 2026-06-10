@@ -12,6 +12,7 @@ export type WorkshopDocToolbarViewModes = {
   aemViewMode: "preview" | "source";
   blueprintViewMode: "preview" | "source";
   apiContractsViewMode: "preview" | "source";
+  integrationSpecViewMode: "preview" | "source";
   logicFlowsViewMode: "preview" | "source";
   brdDocViewMode: "preview" | "source";
   infraViewMode: "preview" | "source";
@@ -36,6 +37,7 @@ function getWorkshopDocToolbarActiveViewMode(
   if (centralPanel === "aem") return modes.aemViewMode;
   if (centralPanel === "blueprint") return modes.blueprintViewMode;
   if (centralPanel === "api-contracts") return modes.apiContractsViewMode;
+  if (centralPanel === "integration-spec") return modes.integrationSpecViewMode;
   if (centralPanel === "logic-flows") return modes.logicFlowsViewMode;
   if (centralPanel === "brd") return modes.brdDocViewMode;
   return modes.infraViewMode;
