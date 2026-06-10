@@ -1,12 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import {
-  buildLegacyEvidenceMarkdown,
-  clipLegacySemanticSection,
-  DEFAULT_SEMANTIC_QUERIES,
-  getLegacyAskCodebaseOptions,
-  getLegacySemanticSearchLimit,
-  isLegacyEvidenceFirstEnabled,
-} from "./theforge-evidence-context.util.js";
+import { getLegacySemanticSearchLimit } from "./theforge-evidence-context.util.js";
 import type { IOrchestratorTheForgePort } from "./theforge-service.port.js";
 import { appendMcpUiDebug, isMcpUiDebugActive } from "./mcp-ui-debug.context.js";
 import { TheForgeContextCacheService } from "./theforge-context-cache.service.js";
@@ -502,123 +495,62 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   /**
+   * Scope para `generate_legacy_documentation` (multi-root → repo primario si `LEGACY_INGEST_MDD_NARROW_MULTI_ROOT`).
+   */
+  async resolveLegacyDocumentationScope(
+    storedProjectId: string,
+  ): Promise<AskCodebaseOptions["scope"]> {
+    const catalog = await this.getProjectsCatalog();
+    const resolved = resolveAriadneCodebaseMcpTarget(storedProjectId, catalog);
+    let scope = resolved.scopeForScopedTools;
+    const repoIds = scope?.repoIds ?? [];
+    const narrowMulti = String(process.env.LEGACY_INGEST_MDD_NARROW_MULTI_ROOT ?? "1").trim() !== "0";
+    if (repoIds.length > 1 && narrowMulti && resolved.graphProjectId?.trim()) {
+      const primary = resolved.graphProjectId.trim();
+      scope = mergeAriadneCodebaseScope(scope, { repoIds: [primary] });
+      this.logger.log(
+        `[TheForge] generate_legacy_documentation: workspace multi-root (${repoIds.length} repos) → scope.repoIds=[${primary.slice(0, 8)}…]`,
+      );
+    }
+    return scope;
+  }
+
+  /**
    * Contexto amplio del codebase para generación de entregables (Blueprint, API, etc.).
-   * Incluye modelos/rutas, arquitectura y stack + estructura real para no inventar plataformas.
+   * Modo único: MCP `generate_legacy_documentation`.
    * @param projectId - ID de proyecto o repo en TheForge.
    */
   async getContextForDeliverables(projectId: string): Promise<string> {
     if (!this.isConfigured()) return "";
-    const c4Block = await this.fetchC4ContextBlock(projectId);
-    if (isLegacyEvidenceFirstEnabled()) {
-      try {
-        if (this.contextCache.isEnabled()) {
-          const probeLimit = Math.min(48, getLegacySemanticSearchLimit());
-          const probe = await this.semanticSearch(DEFAULT_SEMANTIC_QUERIES[0], projectId, probeLimit);
-          const fp = this.contextCache.fingerprintFromSemanticSlice(projectId, probe);
-          const key = this.contextCache.cacheKey(projectId, fp);
-          const hit = this.contextCache.get(key);
-          if (hit) {
-            this.logger.log(`[TheForge] getContextForDeliverables: cache hit (${projectId.slice(0, 8)}…)`);
-            return this.mergeC4WithDeliverableContext(c4Block, hit);
-          }
-          const built = await buildLegacyEvidenceMarkdown(this, projectId, { includeSynthesis: true });
-          if (built.trim()) {
-            this.contextCache.set(key, built);
-            return this.mergeC4WithDeliverableContext(c4Block, built);
-          }
-        } else {
-          const built = await buildLegacyEvidenceMarkdown(this, projectId, { includeSynthesis: true });
-          if (built.trim()) return this.mergeC4WithDeliverableContext(c4Block, built);
-        }
-      } catch (err) {
-        this.logger.warn(
-          `[TheForge] getContextForDeliverables: evidencia-primero falló, modo clásico. ${err instanceof Error ? err.message : String(err)}`,
-        );
+    const fp = this.contextCache.legacyDocumentationFingerprint();
+    if (this.contextCache.isEnabled()) {
+      const key = this.contextCache.cacheKey(projectId, fp);
+      const hit = this.contextCache.get(key);
+      if (hit) {
+        this.logger.log(`[TheForge] getContextForDeliverables: cache hit (${projectId.slice(0, 8)}…)`);
+        return hit;
       }
     }
-    const parts: string[] = [];
-    const lim = getLegacySemanticSearchLimit();
-    const legacyAsk = getLegacyAskCodebaseOptions();
-    const [q1, q2, q3, searchModels, searchApi, searchUi] = await Promise.all([
-      this.askCodebase(
-        "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
-        projectId,
-        legacyAsk,
-      ),
-      this.askCodebase(
-        "Describe architecture: folder structure, modules, how backend and frontend connect, existing patterns and conventions. Include file paths for key areas.",
-        projectId,
-        legacyAsk,
-      ),
-      this.askCodebase(
-        "What is the EXACT tech stack and directory structure of this project? List only what exists in the codebase: backend runtime and framework (e.g. Node/Express, Node/NestJS, Python/Django), frontend framework (e.g. React, Vue), database, build tools. If the project has multiple repositories, list them and their main folders. Do NOT assume or invent; only state what the codebase contains.",
-        projectId,
-        legacyAsk,
-      ),
-      this.semanticSearch("data models entities database schema", projectId, lim),
-      this.semanticSearch("API routes endpoints controllers", projectId, lim),
-      this.semanticSearch("UI components screens pages", projectId, lim),
-    ]);
-    if (q1.trim()) parts.push("Modelos, rutas y configuración:\n" + q1.trim());
-    if (q2.trim()) parts.push("Arquitectura y carpetas:\n" + q2.trim());
-    if (q3.trim()) parts.push("Stack y estructura real (solo lo que existe):\n" + q3.trim());
-    const searchParts: string[] = [];
-    if (searchModels.trim()) searchParts.push("Búsqueda semántica modelos: " + clipLegacySemanticSection(searchModels.trim()));
-    if (searchApi.trim()) searchParts.push("Búsqueda semántica API: " + clipLegacySemanticSection(searchApi.trim()));
-    if (searchUi.trim()) searchParts.push("Búsqueda semántica UI: " + clipLegacySemanticSection(searchUi.trim()));
-    if (searchParts.length > 0) parts.push("Índice semántico:\n" + searchParts.join("\n"));
-    return this.mergeC4WithDeliverableContext(c4Block, parts.join("\n\n---\n\n"));
-  }
 
-  /**
-   * Modelo C4 agregado (MCP `get_c4_model` → API Nest GraphService). Requiere JWT Nest en el **proceso** MCP, no en el cliente The Forge.
-   */
-  async getC4Model(projectId: string): Promise<string> {
-    if (!this.isConfigured()) return "";
-    const ident = await this.resolveStoredToMcp(projectId);
-    /** C4 agregado a nivel proyecto (GraphService); alinear con `ask_codebase` → `workspaceProjectId`, no solo un shard/repo. */
-    const out = await this.callToolInternal("get_c4_model", { projectId: ident.workspaceProjectId });
-    return (out ?? "").trim();
-  }
-
-  private isC4ContextEnabled(): boolean {
-    const v = process.env.LEGACY_C4_CONTEXT?.trim().toLowerCase();
-    if (v === undefined || v === "") return true;
-    return !["0", "false", "off", "no"].includes(v);
-  }
-
-  private c4ContextMaxChars(): number {
-    const n = parseInt(process.env.LEGACY_C4_MAX_CHARS ?? "5000", 10);
-    return Number.isFinite(n) && n > 0 ? n : 5000;
-  }
-
-  private async fetchC4ContextBlock(projectId: string): Promise<string> {
-    if (!this.isC4ContextEnabled()) return "";
     try {
-      const raw = await this.getC4Model(projectId);
-      return raw;
+      const scope = await this.resolveLegacyDocumentationScope(projectId);
+      const mdd = (await this.generateLegacyDocumentation(projectId, { scope }))?.trim() ?? "";
+      if (mdd) {
+        if (this.contextCache.isEnabled()) {
+          this.contextCache.set(this.contextCache.cacheKey(projectId, fp), mdd);
+        }
+        return mdd;
+      }
+      this.logger.warn(
+        `[TheForge] getContextForDeliverables: generate_legacy_documentation vacío (${projectId.slice(0, 8)}…)`,
+      );
     } catch (err) {
       this.logger.warn(
-        `[TheForge] get_c4_model omitido: ${err instanceof Error ? err.message : String(err)}`,
+        `[TheForge] getContextForDeliverables: generate_legacy_documentation falló. ${err instanceof Error ? err.message : String(err)}`,
       );
-      return "";
     }
-  }
 
-  /** Antepone C4 al contexto de entregables (Blueprint); prioridad ante el recorte global del prompt. */
-  private mergeC4WithDeliverableContext(c4Markdown: string, rest: string): string {
-    const c4 = (c4Markdown ?? "").trim();
-    if (!c4) return rest;
-    const max = this.c4ContextMaxChars();
-    const clipped =
-      c4.length > max ? c4.slice(0, max) + "\n… [recortado por LEGACY_C4_MAX_CHARS]" : c4;
-    return (
-      "## Modelo C4 (sistemas, contenedores, comunicación)\n\n" +
-      "_Fuente: índice Ariadne / GraphService (`get_c4_model`). Usa como verdad de contenedores y relaciones `COMMUNICATES_WITH` entre sistemas._\n\n" +
-      clipped +
-      "\n\n---\n\n" +
-      rest
-    );
+    return "";
   }
 
   /**
