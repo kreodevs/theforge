@@ -49,7 +49,7 @@ export class TheForgeContextCacheService {
 
   /** Huella fija para contexto vía MCP `generate_legacy_documentation` (invalidar con `THEFORGE_CONTEXT_REVISION`). */
   legacyDocumentationFingerprint(): string {
-    return "generate_legacy_documentation_v1";
+    return "generate_legacy_documentation_v2_multi_repo";
   }
 
   get(key: string): string | undefined {

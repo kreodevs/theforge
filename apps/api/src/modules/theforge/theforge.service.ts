@@ -9,6 +9,11 @@ import {
   resolveAriadneCodebaseMcpTarget,
   type AriadneCodebaseResolution,
 } from "./ariadne-mcp-scope.util.js";
+import {
+  legacyDocumentationRepoIds,
+  mergeLegacyDocumentationByRepo,
+  repoLabelFromProjectsCatalog,
+} from "./legacy-documentation-merge.util.js";
 import { formatRawEvidenceObjectToMarkdown } from "./theforge-raw-evidence-markdown.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
@@ -495,24 +500,15 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   /**
-   * Scope para `generate_legacy_documentation` (multi-root → repo primario si `LEGACY_INGEST_MDD_NARROW_MULTI_ROOT`).
+   * Scope resuelto para `generate_legacy_documentation` (todos los `roots[].id` del workspace cuando aplica).
+   * La generación multi-repo se hace en `generateLegacyDocumentation` (una llamada MCP por repo).
    */
   async resolveLegacyDocumentationScope(
     storedProjectId: string,
   ): Promise<AskCodebaseOptions["scope"]> {
     const catalog = await this.getProjectsCatalog();
     const resolved = resolveAriadneCodebaseMcpTarget(storedProjectId, catalog);
-    let scope = resolved.scopeForScopedTools;
-    const repoIds = scope?.repoIds ?? [];
-    const narrowMulti = String(process.env.LEGACY_INGEST_MDD_NARROW_MULTI_ROOT ?? "1").trim() !== "0";
-    if (repoIds.length > 1 && narrowMulti && resolved.graphProjectId?.trim()) {
-      const primary = resolved.graphProjectId.trim();
-      scope = mergeAriadneCodebaseScope(scope, { repoIds: [primary] });
-      this.logger.log(
-        `[TheForge] generate_legacy_documentation: workspace multi-root (${repoIds.length} repos) → scope.repoIds=[${primary.slice(0, 8)}…]`,
-      );
-    }
-    return scope;
+    return resolved.scopeForScopedTools;
   }
 
   /**
@@ -533,8 +529,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     }
 
     try {
-      const scope = await this.resolveLegacyDocumentationScope(projectId);
-      const mdd = (await this.generateLegacyDocumentation(projectId, { scope }))?.trim() ?? "";
+      const mdd = (await this.generateLegacyDocumentation(projectId))?.trim() ?? "";
       if (mdd) {
         if (this.contextCache.isEnabled()) {
           this.contextCache.set(this.contextCache.cacheKey(projectId, fp), mdd);
@@ -784,7 +779,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
 
   /**
    * Documentación legacy de partida — modo único MCP (`generate_legacy_documentation`).
-   * Evidencia MDD determinista desde Falkor (sin los 4 modos ask_codebase + síntesis Nest).
+   * Multi-root: una llamada por `roots[].id` y fusión en markdown (todos los repos del scope).
    */
   async generateLegacyDocumentation(
     projectId: string,
@@ -794,47 +789,85 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     try {
       const ident = await this.resolveStoredToMcp(projectId);
       const scope = mergeAriadneCodebaseScope(ident.scopeForScopedTools, opts?.scope);
-      const args: Record<string, unknown> = { projectId: ident.workspaceProjectId };
-      if (opts?.currentFilePath?.trim()) args.currentFilePath = opts.currentFilePath.trim();
-      if (scope && Object.keys(scope).length > 0) args.scope = scope;
-      const response = await this.postTheForgeMcp(
-        {
-          jsonrpc: "2.0",
-          id: "generate-legacy-doc-1",
-          method: "tools/call",
-          params: { name: "generate_legacy_documentation", arguments: args },
-        },
-        { timeoutMs: this.theforgeMcpAskCodebaseTimeoutMs() },
-      );
-      if (!response.ok) return "";
-      const raw = await response.text();
-      const data = parseMcpResponse(raw) as {
-        result?: { content?: Array<{ type: string; text?: string }>; isError?: boolean };
-        error?: { message: string };
-      } | null;
-      if (!data || data.error || data.result?.isError) return "";
-      const text = data.result?.content?.find((c) => c.type === "text")?.text ?? "";
-      if (!text.trim()) return "";
-      try {
-        const jsonStr = extractJsonFromToolContent(text.trim());
-        const envelope = JSON.parse(jsonStr) as {
-          format?: string;
-          answer?: string;
-          mddDocument?: unknown;
-        };
-        if (envelope.format === "legacy_mdd_v1" && typeof envelope.answer === "string") {
-          return normalizeAskCodebaseEvidenceFirstContent(envelope.answer);
-        }
-      } catch {
-        /* fall through */
+      const repoIds = legacyDocumentationRepoIds(scope, ident.graphProjectId);
+      if (repoIds.length <= 1) {
+        return await this.invokeGenerateLegacyDocumentationMcp(ident, scope, opts?.currentFilePath);
       }
-      return normalizeAskCodebaseEvidenceFirstContent(text);
+
+      this.logger.log(
+        `[TheForge] generate_legacy_documentation: multi-root (${repoIds.length} repos) → una llamada por repo`,
+      );
+      const catalog = await this.getProjectsCatalog();
+      const parts = await Promise.all(
+        repoIds.map(async (rid) => {
+          const perRepoScope = mergeAriadneCodebaseScope(scope, { repoIds: [rid] });
+          const markdown = await this.invokeGenerateLegacyDocumentationMcp(
+            ident,
+            perRepoScope,
+            opts?.currentFilePath,
+            rid,
+          );
+          return {
+            repoId: rid,
+            label: repoLabelFromProjectsCatalog(catalog, rid),
+            markdown,
+          };
+        }),
+      );
+      return mergeLegacyDocumentationByRepo(parts);
     } catch (err) {
       this.logger.error(
         `TheForge generateLegacyDocumentation failed: ${err instanceof Error ? err.message : String(err)}`,
       );
       return "";
     }
+  }
+
+  private parseGenerateLegacyDocumentationToolText(text: string): string {
+    if (!text.trim()) return "";
+    try {
+      const jsonStr = extractJsonFromToolContent(text.trim());
+      const envelope = JSON.parse(jsonStr) as {
+        format?: string;
+        answer?: string;
+        mddDocument?: unknown;
+      };
+      if (envelope.format === "legacy_mdd_v1" && typeof envelope.answer === "string") {
+        return normalizeAskCodebaseEvidenceFirstContent(envelope.answer);
+      }
+    } catch {
+      /* fall through */
+    }
+    return normalizeAskCodebaseEvidenceFirstContent(text);
+  }
+
+  private async invokeGenerateLegacyDocumentationMcp(
+    ident: AriadneCodebaseResolution,
+    scope: AskCodebaseOptions["scope"],
+    currentFilePath?: string,
+    rpcSuffix?: string,
+  ): Promise<string> {
+    const args: Record<string, unknown> = { projectId: ident.workspaceProjectId };
+    if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
+    if (scope && Object.keys(scope).length > 0) args.scope = scope;
+    const response = await this.postTheForgeMcp(
+      {
+        jsonrpc: "2.0",
+        id: `generate-legacy-doc-${rpcSuffix?.slice(0, 8) ?? "1"}`,
+        method: "tools/call",
+        params: { name: "generate_legacy_documentation", arguments: args },
+      },
+      { timeoutMs: this.theforgeMcpAskCodebaseTimeoutMs() },
+    );
+    if (!response.ok) return "";
+    const raw = await response.text();
+    const data = parseMcpResponse(raw) as {
+      result?: { content?: Array<{ type: string; text?: string }>; isError?: boolean };
+      error?: { message: string };
+    } | null;
+    if (!data || data.error || data.result?.isError) return "";
+    const text = data.result?.content?.find((c) => c.type === "text")?.text ?? "";
+    return this.parseGenerateLegacyDocumentationToolText(text);
   }
 
   /**
@@ -1040,11 +1073,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
    * Resuelve etiqueta legible para un `roots[].id` usando el catálogo MCP (multi-root).
    */
   private repoLabelFromCatalog(catalog: TheForgeProject[], repoId: string): string {
-    for (const p of catalog) {
-      const r = p.roots?.find((x) => x.id === repoId);
-      if (r?.name?.trim()) return r.name.trim();
-    }
-    return `repo:${repoId.slice(0, 8)}…`;
+    return repoLabelFromProjectsCatalog(catalog, repoId);
   }
 
   /**

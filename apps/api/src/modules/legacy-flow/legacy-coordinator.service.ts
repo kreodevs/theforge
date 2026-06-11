@@ -773,11 +773,8 @@ export class LegacyCoordinatorService {
       );
     }
 
-    const scope = await this.theforge.resolveLegacyDocumentationScope(theforgeId);
-
     let codebaseDoc = "";
-    const raw =
-      (await this.theforge.generateLegacyDocumentation(theforgeId, { scope }))?.trim() ?? "";
+    const raw = (await this.theforge.generateLegacyDocumentation(theforgeId))?.trim() ?? "";
     if (raw && legacyAnalyzerIndicatesEmptyIndex(raw)) {
       this.logger.warn(
         `generateCodebaseDoc: generate_legacy_documentation señaló índice vacío. theforgeId=${theforgeId}`,

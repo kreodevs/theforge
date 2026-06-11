@@ -4,7 +4,7 @@ Flujo separado para **proyectos legacy** (documentados en TheForge): modificacio
 
 ## Endpoints
 
-- `POST /projects/:projectId/legacy/generate-codebase-doc` — body opcional `{ stageId?: string }`. **Una sola llamada MCP:** `generate_legacy_documentation` (MDD determinista desde Falkor, sin modos `ask_codebase`). El campo `responseMode` en el body está **deprecado** e ignorado.
+- `POST /projects/:projectId/legacy/generate-codebase-doc` — body opcional `{ stageId?: string }`. MCP **`generate_legacy_documentation`** (MDD determinista desde Falkor). **Multi-root:** una llamada MCP **por cada** `roots[].id` del workspace (si `theforgeProjectId` es el workspace) y fusión en markdown con cabecera por repo. El campo `responseMode` en el body está **deprecado** e ignorado.
 - `PATCH /projects/:projectId/legacy/codebase-doc` — body `{ codebaseDoc?: string }`. Actualiza la documentación de partida (edición manual). Devuelve `{ codebaseDoc }`.
 - `POST /projects/:projectId/legacy/start` — body `{ description: string }`. Llama a TheForge **`get_modification_plan`** (SPEC-MCP-001); si no está disponible, fallback a `ask_codebase`. Devuelve `{ filesToModify, questions }` y persiste en `legacyFlowState`.
 - `POST /projects/:projectId/legacy/answer` — body `{ answers: Record<string, string> }`. Guarda respuestas del usuario.
