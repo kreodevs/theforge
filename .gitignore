@@ -27,6 +27,8 @@ packages/database/src/generated
 !.cursor/rules/**
 !.cursor/skills/
 !.cursor/skills/**
+.cursor/skills/.DS_Store
+.cursor/skills/**/.DS_Store
 .gemini/
 *.code-workspace
 *.swp
@@ -59,6 +61,8 @@ config.yaml
 skills/
 !.cursor/skills/
 !.cursor/skills/**
+.cursor/skills/.DS_Store
+.cursor/skills/**/.DS_Store
 tools/
 tools/registry.py
 cache/
