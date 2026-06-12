@@ -119,18 +119,12 @@ fi
 echo "Running prisma db push (schema sync)..."
 npx prisma db push --accept-data-loss || true
 
-# Fallback SQL directo por si db push no creó la columna
+# Fallback vía Prisma (imagen Alpine no incluye psql)
 echo "Checking mcpSecret column via SQL..."
-DB_HOST="$(db_host_from_url)"
-DB_USER="$(db_user_from_url)"
-DB_PASS="$(db_password_from_url)"
-DB_NAME="$(db_name_from_url)"
-if [ -n "$DB_HOST" ] && [ -n "$DB_USER" ] && [ -n "$DB_NAME" ]; then
-  PGPASSWORD="${DB_PASS}" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" \
-    -c 'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mcpSecret" TEXT;' 2>&1 || true
-  PGPASSWORD="${DB_PASS}" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" \
-    -c 'CREATE UNIQUE INDEX IF NOT EXISTS "User_mcpSecret_key" ON "User"("mcpSecret");' 2>&1 || true
-fi
+npx prisma db execute --stdin <<'SQL' 2>&1 || true
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mcpSecret" TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS "User_mcpSecret_key" ON "User"("mcpSecret");
+SQL
 
 cd /app/apps/api
 MAIN_JS="$(find . -name main.js -type f 2>/dev/null | head -1)"

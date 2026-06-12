@@ -7,14 +7,14 @@ import { ProjectsController } from "./projects.controller.js";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
 import { EngineModule } from "../engine/engine.module.js";
 import { AiModule } from "../ai/ai.module.js";
-import { AiAnalysisModule } from "../ai-analysis/ai-analysis.module.js";
+import { Phase0Module } from "../ai-analysis/phase0/phase0.module.js";
 import { ScraperModule } from "../scraper/scraper.module.js";
 import { TheForgeModule } from "../theforge/theforge.module.js";
 import { GraphMemoryModule } from "../ai-analysis/graph-memory/graph-memory.module.js";
 import { ChangeLogModule } from "../change-log/change-log.module.js";
 
 @Module({
-  imports: [EngineModule, AiModule, AiAnalysisModule, ScraperModule, TheForgeModule, GraphMemoryModule, ChangeLogModule],
+  imports: [EngineModule, AiModule, Phase0Module, ScraperModule, TheForgeModule, GraphMemoryModule, ChangeLogModule],
   controllers: [ProjectsController],
   providers: [
     ProjectsService,
