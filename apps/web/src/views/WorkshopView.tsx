@@ -272,6 +272,14 @@ interface WorkshopViewProps {
   projectName?: string;
   onBack?: () => void;
   onOpenSettings?: () => void;
+  mergeAudit?: {
+    type: string;
+    threadId?: string;
+    question?: string;
+    n?: number;
+    total?: number;
+    message?: string;
+  } | null;
 }
 
 /** First vertically scrollable region under `root` (BFS) for mobile scroll FAB targeting. */
@@ -296,6 +304,7 @@ export default function WorkshopView({
   projectName,
   onBack,
   onOpenSettings,
+  mergeAudit,
 }: WorkshopViewProps) {
   const project = useWorkshopStore((s) => s.project);
   const activeStageId = useWorkshopStore((s) => s.activeStageId);
@@ -3316,6 +3325,7 @@ export default function WorkshopView({
 
                     <Phase0ManualAudit
                       projectId={projectId}
+                      initialAudit={mergeAudit}
                       onUpdated={async () => {
                         await useWorkshopStore.getState().fetchProject(projectId);
                       }}

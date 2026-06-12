@@ -787,6 +787,35 @@ const TOOLS: Tool[] = [
       required: ["name", "idea"],
     },
   },
+  {
+    name: "merge_projects",
+    description:
+      "Fusiona 2 o más proyectos en Paso 0 (DBGA): sintetiza borrador Fase 0, opcional benchmark, suite de sub-productos, archivado de fuentes y auditoría automática.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sourceProjectIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "IDs de proyectos fuente (mínimo 2)",
+        },
+        name: { type: "string", description: "Nombre si targetMode=new" },
+        targetMode: { type: "string", enum: ["new", "existing"], description: "Default: new" },
+        targetProjectId: { type: "string", description: "Requerido si targetMode=existing" },
+        deleteSources: {
+          type: "string",
+          enum: ["keep", "archive", "delete"],
+          description: "Qué hacer con las fuentes (excepto destino)",
+        },
+        resetDownstream: { type: "boolean", description: "Limpiar MDD y entregables en destino (default true)" },
+        createSuite: { type: "boolean", description: "Vincular fuentes como sub-productos" },
+        includeBenchmark: { type: "boolean", description: "Incluir benchmark/deep research en la fusión" },
+        autoAudit: { type: "boolean", description: "Lanzar auditoría Paso 0 tras fusionar" },
+        preview: { type: "boolean", description: "Solo vista previa, sin persistir" },
+      },
+      required: ["sourceProjectIds"],
+    },
+  },
   // ── TheForge Integration ──
   {
     name: "set_aem_content",
@@ -1330,6 +1359,30 @@ const handlers: Record<string, Handler> = {
     };
 
     return JSON.stringify(summary);
+  },
+  async merge_projects(args) {
+    const sourceProjectIds = args.sourceProjectIds as string[];
+    if (!Array.isArray(sourceProjectIds) || sourceProjectIds.length < 2) {
+      throw new Error("merge_projects requiere sourceProjectIds con al menos 2 IDs");
+    }
+    const body: Record<string, unknown> = {
+      sourceProjectIds,
+      targetMode: (args.targetMode as string) ?? "new",
+      deleteSources: (args.deleteSources as string) ?? "keep",
+      resetDownstream: args.resetDownstream !== false,
+      createSuite: args.createSuite === true,
+      autoAudit: args.autoAudit !== false,
+      preview: args.preview === true,
+      sourceOptions: {
+        includeDbga: true,
+        includePhase0Json: true,
+        includeBenchmark: args.includeBenchmark === true,
+      },
+    };
+    if (typeof args.name === "string") body.name = args.name;
+    if (typeof args.targetProjectId === "string") body.targetProjectId = args.targetProjectId;
+    const result = await apiPost("/projects/merge", body);
+    return JSON.stringify(result, null, 2);
   },
   // TheForge
   async set_aem_content(args) {

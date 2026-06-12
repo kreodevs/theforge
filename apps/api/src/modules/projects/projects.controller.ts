@@ -14,6 +14,7 @@ import {
 import type { Response } from "express";
 import { requireAdmin } from "../../common/guards/role.helpers.js";
 import { DeliverablesQueueService, type GenerateJobType } from "./deliverables-queue.service.js";
+import { ProjectMergeService } from "./project-merge.service.js";
 import { ProjectsService } from "./projects.service.js";
 import {
   createProjectSchema,
@@ -25,8 +26,14 @@ import {
 export class ProjectsController {
   constructor(
     private readonly projects: ProjectsService,
+    private readonly projectMerge: ProjectMergeService,
     private readonly deliverablesQueue: DeliverablesQueueService,
   ) {}
+
+  @Post("merge")
+  mergeProjects(@Body() body: unknown) {
+    return this.projectMerge.merge(body);
+  }
 
   @Post()
   create(@Body() body: unknown) {

@@ -278,6 +278,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const userId = getRequestUserId();
     const rows = await this.prisma.project.findMany({
       where: {
+        archivedAt: null,
         OR: [
           { userId },                          // mis proyectos PRIVATE
           { visibility: "SHARED" },            // todos los SHARED
