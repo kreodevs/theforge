@@ -7,17 +7,19 @@
  */
 
 import { isPhase0StructuredMarkdown, markdownToPhase0Document } from "./phase0-from-markdown.js";
+import { normalizePhase0Document } from "./phase0-normalize.util.js";
 import type { Phase0Document } from "./phase0.types.js";
 
 export const MIN_DBGA_AUDIT_CHARS = 150;
 
 export function hasBorradorContent(borrador: Phase0Document): boolean {
+  const doc = normalizePhase0Document(borrador);
   return (
-    borrador.proposito.problema.trim().length > 0 ||
-    borrador.entidades.length > 0 ||
-    borrador.reglasNegocio.length > 0 ||
-    borrador.flujos.length > 0 ||
-    borrador.roles.length > 0
+    doc.proposito.problema.trim().length > 0 ||
+    doc.entidades.length > 0 ||
+    doc.reglasNegocio.length > 0 ||
+    doc.flujos.length > 0 ||
+    doc.roles.length > 0
   );
 }
 
@@ -43,9 +45,8 @@ export function isFreeformDbgaContent(dbgaContent: string | null | undefined): b
 function parseBorradorJson(raw: string | null | undefined): Phase0Document | null {
   if (!raw?.trim()) return null;
   try {
-    const parsed = JSON.parse(raw) as Phase0Document;
-    if (parsed?.proposito && Array.isArray(parsed.entidades)) return parsed;
-    return null;
+    const parsed = JSON.parse(raw) as unknown;
+    return normalizePhase0Document(parsed);
   } catch {
     return null;
   }

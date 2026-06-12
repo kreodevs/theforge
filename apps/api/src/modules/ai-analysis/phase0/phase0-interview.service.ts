@@ -20,6 +20,11 @@ import {
   rehydrateInterviewState,
   serializePhase0GapsEnvelope,
 } from "./phase0-interview-persist.util.js";
+import {
+  emptyPhase0Document,
+  mergePhase0Borrador,
+  normalizePhase0Document,
+} from "./phase0-normalize.util.js";
 import { phase0ToMarkdown } from "./phase0-to-markdown.js";
 import {
   hasAuditDocument,
@@ -48,19 +53,6 @@ const AUDIT_COMPLETE_MESSAGE =
 
 const AUDIT_DONE_MESSAGE =
   "Auditoría completada. El borrador de Paso 0 se actualizó con tus respuestas.";
-
-function emptyDocument(): Phase0Document {
-  return {
-    proposito: { problema: "", usuarios: [], outOfScope: [] },
-    entidades: [],
-    reglasNegocio: [],
-    flujos: [],
-    roles: [],
-    integraciones: [],
-    edgeCases: [],
-    preguntasPendientes: [],
-  };
-}
 
 function parseBorradorFromProject(
   dbgaContent: string | null | undefined,
@@ -108,7 +100,7 @@ export class Phase0InterviewService {
         typeof response.content === "string" ? response.content : JSON.stringify(response.content);
       const parsed = parsePhase0LlmJson(content);
 
-      const borrador = (parsed.borrador as Phase0Document | undefined) ?? emptyDocument();
+      const borrador = normalizePhase0Document(parsed.borrador ?? emptyPhase0Document());
       const llmGaps = (parsed.gaps as Phase0Gap[] | undefined) ?? [];
 
       const logicGaps = analyzeGaps(borrador);
@@ -185,7 +177,12 @@ export class Phase0InterviewService {
           typeof response.content === "string" ? response.content : JSON.stringify(response.content);
         const parsed = parsePhase0LlmJson(content);
 
-        state.borrador = (parsed.borrador as Phase0Document | undefined) ?? state.borrador;
+        if (parsed.borrador) {
+          state.borrador = mergePhase0Borrador(
+            state.borrador,
+            normalizePhase0Document(parsed.borrador),
+          );
+        }
 
         const logicGaps = analyzeGaps(state.borrador);
         const llmGaps = (parsed.gaps as Phase0Gap[] | undefined) ?? [];
@@ -474,7 +471,7 @@ export class Phase0InterviewService {
       const content =
         typeof response.content === "string" ? response.content : JSON.stringify(response.content);
       const parsed = parsePhase0LlmJson(content);
-      const borrador = (parsed.borrador as Phase0Document | undefined) ?? emptyDocument();
+      const borrador = normalizePhase0Document(parsed.borrador ?? emptyPhase0Document());
       if (hasBorradorContent(borrador)) return borrador;
     } catch (err) {
       this.logger.warn(`[Phase0] extract DBGA LLM failed for ${projectId}: ${err}`);
