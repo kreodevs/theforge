@@ -323,7 +323,7 @@ export class ProjectMergeService {
           phase0Gaps: null,
           phase0Questions: 0,
           mergedFrom: lineage as unknown as Prisma.InputJsonValue,
-          ...(reset ? this.resetProjectFields() : {}),
+          ...(reset ? this.clearedDeliverableFieldsForCreate() : {}),
           stages: {
             create: {
               ordinal: 1,
@@ -368,6 +368,39 @@ export class ProjectMergeService {
     const updated = await this.prisma.project.findFirst({ where: { id: targetId } });
     if (!updated) throw new NotFoundException("Proyecto destino no encontrado");
     return updated;
+  }
+
+  private clearedDeliverableFieldsForCreate(): Pick<
+    Prisma.ProjectCreateInput,
+    | "specContent"
+    | "architectureContent"
+    | "useCasesContent"
+    | "userStoriesContent"
+    | "blueprintContent"
+    | "tasksContent"
+    | "apiContractsContent"
+    | "logicFlowsContent"
+    | "infraContent"
+    | "agentGovernanceContent"
+    | "uxUiGuideContent"
+    | "aemContent"
+    | "complexityPending"
+  > {
+    return {
+      specContent: null,
+      architectureContent: null,
+      useCasesContent: null,
+      userStoriesContent: null,
+      blueprintContent: null,
+      tasksContent: null,
+      apiContractsContent: null,
+      logicFlowsContent: null,
+      infraContent: null,
+      agentGovernanceContent: null,
+      uxUiGuideContent: null,
+      aemContent: null,
+      complexityPending: Prisma.JsonNull,
+    };
   }
 
   private resetProjectFields(): Prisma.ProjectUpdateInput {
