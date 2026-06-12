@@ -97,6 +97,26 @@ La migración `stage_sdd_deliverables` asumía nombres fijos de FK/UNIQUE en `Es
 
 Tras un fallo **P3018**, vuelve a ejecutar `migrate resolve --rolled-back` para esa migración (el entrypoint de la API lo intenta solo) y redeploy con el SQL actualizado.
 
+### P3009 — `20260609120000_add_agent_governance_content` o `20260612120000_project_merge_suite` failed
+
+Suele ocurrir cuando **`db push` del entrypoint ya creó la columna** pero la migración versionada no está en `_prisma_migrations` (deploy de imagen nuevo tras builds fallidos, o `ADD COLUMN` sin `IF NOT EXISTS`).
+
+El **entrypoint** (imagen reciente):
+
+1. Ejecuta `safe-schema-sync.sql` (DDL idempotente, incluye merge + agent governance).
+2. `migrate resolve --rolled-back` para esas migraciones si quedaron en estado fallido.
+3. Si la columna ya existe, `migrate resolve --applied <nombre>` antes de `deploy`.
+
+Manual:
+
+```bash
+cd packages/database
+export DATABASE_URL="postgresql://..."
+npx prisma migrate resolve --rolled-back 20260609120000_add_agent_governance_content   # si falló
+npx prisma migrate resolve --applied 20260609120000_add_agent_governance_content    # si la columna ya existe
+npx prisma migrate deploy
+```
+
 ### P3009 — `20260319130000_agent_checkpoint_mdd_stage` failed
 
 El entrypoint ya incluye `resolve --rolled-back` para esta migración. Si falla de nuevo tras redeploy:

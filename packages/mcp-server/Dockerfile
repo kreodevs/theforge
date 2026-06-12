@@ -1,7 +1,7 @@
 # Build stage — context = repo root (necesario para resolver @theforge/shared-types workspace)
 FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
-ARG BUILD_CACHE_BUST=94
+ARG BUILD_CACHE_BUST=95
 RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
 WORKDIR /app

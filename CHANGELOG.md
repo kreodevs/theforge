@@ -2,6 +2,13 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
+## [Unreleased]
+
+### Fixed
+
+- **Deploy Dokploy — API exit 1 tras build OK:** Entrypoint endurecido: `safe-schema-sync.sql` antes de `migrate deploy`, `resolve --applied` cuando `db push` adelantó columnas (`agentGovernanceContent`, merge suite), host Postgres desde `DATABASE_URL` (no `localhost`), validación explícita de `TOKEN_MASTER_KEYS` / `CORS_ORIGINS` vacío, log en `bootstrap().catch`.
+- **BUILD_CACHE_BUST**: 94 → 95
+
 ## [0.12.0] — 2026-06-12
 
 ### Added
