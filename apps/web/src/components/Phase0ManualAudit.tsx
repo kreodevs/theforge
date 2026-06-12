@@ -2,7 +2,7 @@
  * Auditoría manual de Paso 0 — re-analiza gaps y lanza preguntas si falta información.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ClipboardCheck, Loader2, Send, AlertTriangle } from "lucide-react";
 import { apiFetch, API_BASE } from "../utils/apiClient";
 import {
@@ -35,9 +35,18 @@ interface Props {
   onUpdated?: () => void | Promise<void>;
   /** inline = debajo del mensaje de Fase 0 completada; panel = bloque en vista con borrador */
   variant?: "inline" | "panel";
+  /** Auditoría ya iniciada (p. ej. tras fusión de proyectos). */
+  initialAudit?: {
+    type: string;
+    threadId?: string;
+    question?: string;
+    n?: number;
+    total?: number;
+    message?: string;
+  } | null;
 }
 
-export function Phase0ManualAudit({ projectId, onUpdated, variant = "panel" }: Props) {
+export function Phase0ManualAudit({ projectId, onUpdated, variant = "panel", initialAudit }: Props) {
   const [status, setStatus] = useState<AuditUiStatus>("idle");
   const [threadId, setThreadId] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
@@ -48,6 +57,22 @@ export function Phase0ManualAudit({ projectId, onUpdated, variant = "panel" }: P
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!initialAudit || !projectId?.trim()) return;
+    if (initialAudit.type === "audit_started" && initialAudit.threadId) {
+      setThreadId(initialAudit.threadId);
+      setQuestion(initialAudit.question ?? "");
+      setPreguntaN(initialAudit.n ?? 1);
+      setTotalPreguntas(initialAudit.total ?? 5);
+      setStatus("interviewing");
+      setError(null);
+      setCompleteMessage(null);
+    } else if (initialAudit.type === "audit_complete") {
+      setStatus("complete");
+      setCompleteMessage(initialAudit.message ?? "Auditoría completada.");
+    }
+  }, [initialAudit, projectId]);
 
   const startAudit = useCallback(async () => {
     if (!projectId?.trim()) return;

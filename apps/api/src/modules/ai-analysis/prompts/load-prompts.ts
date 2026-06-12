@@ -161,6 +161,12 @@ export const PHASE0_EXTRACT_DBGA_PROMPT = loadPrompt(
   "Extrae borrador Fase 0 + gaps desde un DBGA markdown existente. JSON: { borrador: {...}, gaps: [...] }.",
 );
 
+export const PHASE0_MERGE_PROMPT = loadPrompt(
+  "phase0",
+  "merge-phase0-prompt.md",
+  "Fusiona varios borradores Fase 0 en uno. JSON: { borrador, conflicts, benchmarkMerged? }.",
+);
+
 export const MDD_AUDIT_UPDATE_PROMPT = loadPrompt(
   "mdd",
   "mdd-audit-update-prompt.md",

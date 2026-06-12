@@ -12,6 +12,7 @@ import {
   FolderGit2,
   FolderOpen,
   GitBranch,
+  GitMerge,
   Heart,
   Loader2,
   Plus,
@@ -24,6 +25,7 @@ import SetupView from "./views/SetupView";
 import SettingsView from "./views/SettingsView";
 import UsersView from "./views/UsersView";
 import { CreateProjectWizardDialog } from "./components/CreateProjectWizardDialog";
+import { ProjectMergeDialog } from "./components/ProjectMergeDialog";
 import { ProjectFolderTile } from "./components/ProjectFolderTile";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { DashboardPanelHeader } from "./components/DashboardPanelHeader";
@@ -112,6 +114,15 @@ export default function App() {
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [mergeAuditHint, setMergeAuditHint] = useState<{
+    type: string;
+    threadId?: string;
+    question?: string;
+    n?: number;
+    total?: number;
+    message?: string;
+  } | null>(null);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
   const [usersViewOpen, setUsersViewOpen] = useState(false);
@@ -290,6 +301,42 @@ export default function App() {
     setSelectedProjectIds([]);
   }, []);
 
+  const openMergeDialog = useCallback(() => {
+    if (selectedProjectIds.length < 2) return;
+    setMergeDialogOpen(true);
+  }, [selectedProjectIds.length]);
+
+  const handleMergeCompleted = useCallback(
+    async (result: {
+      project?: Record<string, unknown>;
+      audit?: {
+        type: string;
+        threadId?: string;
+        question?: string;
+        n?: number;
+        total?: number;
+        message?: string;
+      } | null;
+    }) => {
+      setMergeDialogOpen(false);
+      setSelectedProjectIds([]);
+      setMergeAuditHint(result.audit ?? null);
+      await loadProjects();
+      const merged = result.project;
+      if (merged && typeof merged.id === "string") {
+        setWorkshopProject({
+          id: merged.id,
+          name: typeof merged.name === "string" ? merged.name : "Proyecto fusionado",
+          status: (merged.status as Status) ?? "ROJO",
+          precisionScore: typeof merged.precisionScore === "number" ? merged.precisionScore : 0,
+          hasUxTeam: Boolean(merged.hasUxTeam),
+          createdAt: typeof merged.createdAt === "string" ? merged.createdAt : new Date().toISOString(),
+        });
+      }
+    },
+    [loadProjects],
+  );
+
   const openBulkDeleteConfirm = useCallback(() => {
     const targets = displayedProjects.filter((p) => selectedProjectIds.includes(p.id));
     if (targets.length === 0) return;
@@ -388,6 +435,7 @@ export default function App() {
     if (selectWorkshopAgentsBusy(store)) return;
     store.reset();
     store.setWorkshopActiveDocPanel("mdd");
+    setMergeAuditHint(null);
     setWorkshopProject(null);
     setUsersViewOpen(false);
     setSettingsViewOpen(false);
@@ -453,6 +501,16 @@ export default function App() {
         loading={loading}
         onCreateNew={createProject}
         onContinueLegacy={openTheForgeModal}
+      />
+
+      <ProjectMergeDialog
+        open={mergeDialogOpen}
+        onOpenChange={setMergeDialogOpen}
+        sources={projectList
+          .filter((p) => selectedProjectIds.includes(p.id))
+          .map((p) => ({ id: p.id, name: p.name }))}
+        loading={loading}
+        onMerged={handleMergeCompleted}
       />
 
       <AlertDialog
@@ -688,6 +746,7 @@ export default function App() {
                 projectName={workshopProject.name}
                 onBack={handleExitWorkshop}
                 onOpenSettings={openSettings}
+                mergeAudit={mergeAuditHint}
               />
             )}
           </div>
@@ -856,7 +915,7 @@ export default function App() {
     projectType={p.projectType}
     visibility={p.visibility}
     selected={selectedProjectIds.includes(p.id)}
-    selectable={isAdmin}
+    selectable
     isFavorite={p.isFavorite}
     onToggleFavorite={handleToggleFavorite}
     onOpen={() => setWorkshopProject(p)}
@@ -869,7 +928,7 @@ export default function App() {
           </CardContent>
         </Card>
 
-        {isAdmin && selectedProjectIds.length > 0 ? (
+        {selectedProjectIds.length > 0 ? (
           <div
             className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2"
             role="presentation"
@@ -888,17 +947,32 @@ export default function App() {
                 <Button type="button" variant="outline" size="sm" onClick={handleClearProjectSelection} disabled={loading}>
                   Quitar selección
                 </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  onClick={openBulkDeleteConfirm}
-                  disabled={loading}
-                  className="touch-manipulation"
-                >
-                  <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
-                  Borrar
-                </Button>
+                {selectedProjectIds.length >= 2 ? (
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={openMergeDialog}
+                    disabled={loading}
+                    className="touch-manipulation"
+                  >
+                    <GitMerge className="h-4 w-4 shrink-0" aria-hidden />
+                    Fusionar
+                  </Button>
+                ) : null}
+                {isAdmin ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={openBulkDeleteConfirm}
+                    disabled={loading}
+                    className="touch-manipulation"
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                    Borrar
+                  </Button>
+                ) : null}
               </div>
             </div>
           </div>
