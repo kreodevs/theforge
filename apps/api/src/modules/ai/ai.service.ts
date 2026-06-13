@@ -33,6 +33,7 @@ import { CONFORMANCE_CHECK_PROMPT } from "./prompts/conformance-check-prompt.js"
 import { DOCUMENT_CHANGELOG_CHAT_INSTRUCTION } from "./prompts/with-document-changelog-instructions.js";
 import { BRD_CHAT_REFINE_BUSINESS_RULES } from "./prompts/brd-generation-prompt.js";
 import { appendMddGovernancePatternsToPrompt } from "./utils/mdd-governance-prompt.util.js";
+import { buildMddContextForUserStories } from "./utils/mdd-user-stories-context.util.js";
 
 /** Instrucción fija para que ningún documento generado use "militar" (se añade al system prompt en generación de docs). */
 const NO_MILITAR_INSTRUCTION =
@@ -701,9 +702,9 @@ export class AiService {
   }
 
   async generateUserStories(mddContent: string, specContent?: string | null, useCasesContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
-    const mdd = (mddContent?.trim() ?? "").slice(0, 30000);
+    const mdd = buildMddContextForUserStories(mddContent?.trim() ?? "");
     const spec = (specContent?.trim() ?? "").slice(0, 15000);
-    const useCases = (useCasesContent?.trim() ?? "").slice(0, 15000);
+    const useCases = (useCasesContent?.trim() ?? "").slice(0, 20000);
     const constitutionNote =
       "El **MDD es la Constitución del proyecto**. Las historias de usuario deben derivarse **únicamente** del MDD, Spec y Casos de Uso. No inventes funcionalidades no descritas en estos documentos.\n\n";
     let prompt: string;
