@@ -33,7 +33,7 @@ import { CONFORMANCE_CHECK_PROMPT } from "./prompts/conformance-check-prompt.js"
 import { DOCUMENT_CHANGELOG_CHAT_INSTRUCTION } from "./prompts/with-document-changelog-instructions.js";
 import { BRD_CHAT_REFINE_BUSINESS_RULES } from "./prompts/brd-generation-prompt.js";
 import { appendMddGovernancePatternsToPrompt } from "./utils/mdd-governance-prompt.util.js";
-import { buildMddContextForUserStories } from "./utils/mdd-user-stories-context.util.js";
+import { buildMddContextForUserStories, buildMddContextForUseCases } from "./utils/mdd-user-stories-context.util.js";
 
 /** Instrucción fija para que ningún documento generado use "militar" (se añade al system prompt en generación de docs). */
 const NO_MILITAR_INSTRUCTION =
@@ -687,10 +687,11 @@ export class AiService {
         "Completa el MDD y, si aplica, el **Spec**; luego vuelve a ejecutar **Generar casos de uso** desde el Workshop.\n"
       );
     }
-    const mdd = mddRaw.slice(0, 30000);
-    const spec = (specContent?.trim() ?? "").slice(0, 15000);
+    const mdd = buildMddContextForUseCases(mddRaw);
+    const spec = (specContent?.trim() ?? "").slice(0, 20000);
     let prompt =
       "Genera el documento de Casos de Uso según las instrucciones del system prompt. " +
+      "Cubre de forma exhaustiva cada capacidad MVP, actor, criterio UAT y dominio API del MDD. " +
       "Cada flujo debe alinearse al texto del MDD y del Spec; no cites archivos ni entidades que no aparezcan en esos documentos.\n\n" +
       "MDD:\n---\n" +
       mdd +
