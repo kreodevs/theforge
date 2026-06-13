@@ -33,7 +33,18 @@ import { CONFORMANCE_CHECK_PROMPT } from "./prompts/conformance-check-prompt.js"
 import { DOCUMENT_CHANGELOG_CHAT_INSTRUCTION } from "./prompts/with-document-changelog-instructions.js";
 import { BRD_CHAT_REFINE_BUSINESS_RULES } from "./prompts/brd-generation-prompt.js";
 import { appendMddGovernancePatternsToPrompt } from "./utils/mdd-governance-prompt.util.js";
-import { buildMddContextForUserStories, buildMddContextForUseCases } from "./utils/mdd-user-stories-context.util.js";
+import {
+  buildMddContextForUserStories,
+  buildMddContextForUseCases,
+  buildMddContextForBlueprint,
+  buildMddContextForApiContracts,
+  buildMddContextForLogicFlows,
+  buildMddContextForArchitecture,
+  buildMddContextForTasks,
+  buildMddContextForInfra,
+  buildMddContextForSpec,
+  buildMddContextForAgentGovernance,
+} from "./utils/mdd-user-stories-context.util.js";
 
 /** Instrucción fija para que ningún documento generado use "militar" (se añade al system prompt en generación de docs). */
 const NO_MILITAR_INSTRUCTION =
@@ -598,12 +609,18 @@ export class AiService {
     source: "dbga" | "mdd" = "dbga",
     options?: LegacyGenerateOptions,
   ): Promise<string> {
-    const content = (inputContent?.trim() ?? "").slice(0, 12000);
+    const raw = inputContent?.trim() ?? "";
+    const content =
+      source === "mdd" && raw.length > 0 ? buildMddContextForSpec(raw) : raw.slice(0, 12000);
     const phase0 = (phase0Summary?.trim() ?? "").slice(0, 4000);
     const label = source === "mdd" ? "MDD" : "Benchmark (DBGA)";
     let prompt =
       content.length > 0
-        ? `Genera el documento Spec según las instrucciones del system prompt.\n\n${label}:\n---\n${content}\n---` +
+        ? `Genera el documento Spec según las instrucciones del system prompt.${
+            source === "mdd"
+              ? " Refleja de forma exhaustiva todas las capacidades, actores y criterios UAT del MDD §1; recorre el CHECKLIST DE COBERTURA si aparece."
+              : ""
+          }\n\n${label}:\n---\n${content}\n---` +
           (phase0 ? `\n\nResumen fase 0 / alcance:\n---\n${phase0}\n---` : "")
         : "No hay Benchmark ni MDD. Genera un Spec genérico (objetivos, alcance, criterios de éxito, user journeys) en markdown.";
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
@@ -617,12 +634,13 @@ export class AiService {
    * Genera el documento Tasks (breakdown) desde MDD + Blueprint.
    */
   async generateTasks(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions & { navigationMap?: string }): Promise<string> {
-    const mdd = (mddContent?.trim() ?? "").slice(0, 30000);
+    const mdd = buildMddContextForTasks(mddContent?.trim() ?? "");
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 15000);
     const navMap = (options?.navigationMap?.trim() ?? "").slice(0, 8000);
     let prompt =
       mdd.length > 0
-        ? "Genera el documento Tasks según las instrucciones del system prompt.\n\nMDD:\n---\n" +
+        ? "Genera el documento Tasks según las instrucciones del system prompt. " +
+        "Deriva tareas comprobables para **cada** capacidad MVP, dominio API y entidad del MDD; recorre el CHECKLIST DE COBERTURA si aparece en el mensaje.\n\nMDD:\n---\n" +
         mdd +
         "\n---\n\n" +
         (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
@@ -644,7 +662,7 @@ export class AiService {
     complexity: ComplexityLevel,
     options?: AgentGovernanceGenerateOptions,
   ): Promise<string> {
-    const mdd = (mddContent?.trim() ?? "").slice(0, 30000);
+    const mdd = buildMddContextForAgentGovernance(mddContent?.trim() ?? "");
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 15000);
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD, 7 secciones). " +
@@ -664,11 +682,13 @@ export class AiService {
   }
 
   async generateArchitecture(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
-    const mdd = (mddContent?.trim() ?? "").slice(0, 30000);
+    const mdd = buildMddContextForArchitecture(mddContent?.trim() ?? "");
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 15000);
     let prompt =
       mdd.length > 0
-        ? "Genera el documento de **Arquitectura del sistema** (producto del MDD) según el system prompt. Describe el software legacy real o planificado: módulos, datos, APIs, flujos — **no** diseño multi-agente ni nombre TheForge como producto.\n\nMDD:\n---\n" +
+        ? "Genera el documento de **Arquitectura del sistema** (producto del MDD) según el system prompt. " +
+        "Cubre de forma exhaustiva módulos, datos, APIs e integraciones del MDD; recorre el CHECKLIST DE COBERTURA si aparece. " +
+        "Describe el software legacy real o planificado — **no** diseño multi-agente ni nombre TheForge como producto.\n\nMDD:\n---\n" +
         mdd +
         "\n---\n\n" +
         (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
@@ -729,22 +749,24 @@ export class AiService {
   }
 
   async generateBlueprint(mddContent: string, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
+    const mdd = buildMddContextForBlueprint(mddContent?.trim() ?? "");
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD). Tu salida debe adherirse a él en todo momento.\n\n";
     let prompt =
-      mddContent.trim().length > 0
+      mdd.length > 0
         ? "Genera el blueprint.md según las instrucciones del system prompt. " +
+        "Lista **todas** las entidades de §3 y **todos** los endpoints de §4; recorre el CHECKLIST DE COBERTURA si aparece. " +
         constitutionNote +
         "MDD:\n\n---\n" +
-        mddContent.trim() +
+        mdd +
         "\n---"
         : "No hay MDD aún. Genera un blueprint.md genérico para un monorepo Turborepo con NestJS, React, Prisma y PostgreSQL.";
     if (gapsFeedback?.trim()) {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
-    if (mddContent.trim().length > 0) {
-      prompt = appendMddGovernancePatternsToPrompt(prompt, mddContent);
+    if (mdd.length > 0) {
+      prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     }
     if (options?.theforgeContext?.trim()) {
       prompt = prependTheForgePrompt(prompt, options.theforgeContext);
@@ -760,14 +782,15 @@ export class AiService {
   }
 
   async generateApiContracts(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, brdContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
-    const mdd = mddContent?.trim() ?? "";
+    const mdd = buildMddContextForApiContracts(mddContent?.trim() ?? "");
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 16000);
     const brd = (brdContent?.trim() ?? "").slice(0, 8000);
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD). Tu salida debe adherirse a él en todo momento.\n\n";
     let prompt =
       mdd.length > 0
-        ? "Genera el documento de Contratos de API según las instrucciones del system prompt.\n\n" +
+        ? "Genera el documento de Contratos de API según las instrucciones del system prompt. " +
+        "Documenta **cada** endpoint de la tabla §4 del MDD (una fila por ruta); recorre el CHECKLIST DE COBERTURA si aparece.\n\n" +
         constitutionNote +
         "MDD:\n---\n" +
         mdd +
@@ -794,12 +817,13 @@ export class AiService {
   }
 
   async generateLogicFlows(mddContent: string, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
-    const mdd = mddContent?.trim() ?? "";
+    const mdd = buildMddContextForLogicFlows(mddContent?.trim() ?? "");
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD). Tu salida debe adherirse a él en todo momento.\n\n";
     let prompt =
       mdd.length > 0
         ? "Genera el documento de Casos de Uso y Flujos de Lógica según las instrucciones del system prompt. " +
+        "Cubre de forma exhaustiva cada criterio UAT, edge case y flujo de seguridad del MDD; recorre el CHECKLIST DE COBERTURA si aparece. " +
         constitutionNote +
         "MDD:\n\n---\n" +
         mdd +
@@ -817,13 +841,14 @@ export class AiService {
   }
 
   async generateInfra(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
-    const mdd = mddContent?.trim() ?? "";
+    const mdd = buildMddContextForInfra(mddContent?.trim() ?? "");
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 6000);
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD). Tu salida debe adherirse a él en todo momento.\n\n";
     let prompt =
       mdd.length > 0
-        ? "Genera el documento de Infraestructura y Despliegue según las instrucciones del system prompt.\n\n" +
+        ? "Genera el documento de Infraestructura y Despliegue según las instrucciones del system prompt. " +
+        "Cubre **todos** los servicios, volúmenes y variables que §7 y el stack del MDD exigen; recorre el CHECKLIST DE COBERTURA si aparece.\n\n" +
         constitutionNote +
         "MDD:\n---\n" +
         mdd +

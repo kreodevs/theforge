@@ -11,16 +11,16 @@ Prompts del módulo AI. Están estructurados según marcos de ingeniería de pro
 | **phase0-deep-research-prompt.md**    | Prompt para Deep Research (Paso 0). Usado por `DiscoveryService.generatePhase0DeepResearch`; salida en `Project.phase0SummaryContent`.                                                                                                                                                    |
 | **phase0-benchmark-refine-prompt.md** | Prompt para refinar el Benchmark desde el chat (Paso 0). Cuando el usuario envía mensajes en el tab benchmark con DBGA existente, la IA devuelve el documento actualizado y termina con `---FIN_DBGA---`. Usado por `AiService.generateResponse` con `activeTab === "benchmark"`.         |
 | **ux-ui-guide-prompt.md**             | Guía UX/UI (tab Guía UX/UI). Prioridad de reglas (UI/UX Pro Max); **NEW:** `## Prompt para Google Stitch (producto)`; **LEGACY:** sin Stitch. Pie **Proyecto legacy** si hay contexto MCP. Salida `---FIN_UX_UI---`. Ver `ux-guide-llm-context.ts` + `AiService.appendUxGuideStitchPolicy`. |
-| **blueprint-prompt.md**               | Blueprint desde MDD (`AiService.generateBlueprint`): anti-redundancia con §3; **mapa §4→módulos**; árbol de directorios en bloque ```text (una ruta por línea); transversales; trazabilidad §5; SSO/Bearer vs §6; fases ejemplo. Rol senior + ciberseguridad. **Legacy:** "Contexto del codebase (TheForge)". |
+| **blueprint-prompt.md**               | Blueprint desde MDD: cobertura exhaustiva §3/§4; `buildMddContextForBlueprint` + `enrichMddWithEntities`. Árbol ```text; verificador automático. **Legacy:** contexto TheForge. |
 | **user-stories-prompt.md**            | Historias de usuario y backlog: tres tipos de ítem (**Epic**, **Historia de usuario**, **Tarea técnica**) con plantilla fija. Cobertura exhaustiva de capacidades MVP, actores, UAT y dominios API del MDD. `buildMddContextForUserStories` / `mdd-deliverable-context.util` prioriza §1/§4/§5/§6 en MDD largos. |
-| **architecture-prompt.md** | Entregable **Arquitectura del sistema**: **producto** del MDD (módulos, datos, APIs, Mermaid); no titular como TheForge; sin “agentes” inventados. Pie **Proyecto legacy** si hay contexto TheForge. |
-| **infra-prompt.md** | Infra / Docker / env / volúmenes al MDD; pie **Proyecto legacy** (stack real del índice). |
-| **logic-flows-prompt.md** | Flujos y secuencias Mermaid al MDD; pie **Proyecto legacy** (archivos/servicios citables). |
-| **tasks-prompt.md** | Breakdown Backend / Front / Infra / QA; clasificación capas (Strapi schema vs lifecycles, rutas SPA vs API); pie **Proyecto legacy** con rutas del índice. |
+| **architecture-prompt.md** | Entregable **Arquitectura del sistema**: cobertura exhaustiva de capacidades, entidades y dominios API; `buildMddContextForArchitecture`. Pie **Proyecto legacy** si hay contexto TheForge. |
+| **infra-prompt.md** | Infra / Docker / env / volúmenes al MDD; cobertura exhaustiva §7; `buildMddContextForInfra`. Pie **Proyecto legacy**. |
+| **logic-flows-prompt.md** | Flujos y secuencias Mermaid al MDD; cobertura exhaustiva UAT/edge cases; `buildMddContextForLogicFlows`. Pie **Proyecto legacy**. |
+| **tasks-prompt.md** | Breakdown Backend / Front / Infra / QA; cobertura exhaustiva; `buildMddContextForTasks`. Pie **Proyecto legacy**. |
 | **agent-governance-prompt.md** | Scaffold `agent-governance/` (JSON `files`) desde MDD §1–§7 + Blueprint; plantillas LOW/MEDIUM/HIGH; derivación stack-agnóstica; `generateAgentGovernance()`. |
-| **spec-prompt.md** | Spec what/why desde DBGA/alcance; pie **Proyecto legacy** (superficies reales del índice). |
-| **use-cases-prompt.md** | Casos de uso desde MDD+Spec; cobertura exhaustiva de capacidades MVP, actores, UAT y dominios API; `buildMddContextForUseCases` prioriza §1/§4/§5/§6 en MDD largos. Pie **Proyecto legacy**. |
-| **api-contracts-prompt.md** | Contratos API al MDD; pie **Proyecto legacy** (handlers/rutas del MCP). |
+| **spec-prompt.md** | Spec what/why desde DBGA o MDD (`buildMddContextForSpec`); cobertura §1 cuando fuente es MDD. |
+| **use-cases-prompt.md** | Casos de uso desde MDD+Spec; cobertura exhaustiva; `buildMddContextForUseCases`. Pie **Proyecto legacy**. |
+| **api-contracts-prompt.md** | Contratos API al MDD; cobertura exhaustiva §4; `buildMddContextForApiContracts`. Pie **Proyecto legacy**. |
 | **with-document-changelog-instructions.ts** | Helper `withDocumentChangelogInstructions()` — inyecta la sección obligatoria «Registro de cambios del documento» en todos los `*-prompt.ts` de generación. `cleanDocumentContent` en API añade fila 1.0 si falta al persistir. |
 | **complexity-inference-prompt.ts** | JSON `complexity` + `planSummary` + `reason` (HITL); MEDIUM incluye Historias de Usuario en el ejemplo de entregables. |
 

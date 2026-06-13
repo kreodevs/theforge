@@ -13,6 +13,10 @@ Generar el **documento Spec** (especificación) del proyecto en markdown. Debe c
 3. **Criterios de éxito:** Cómo se medirá que el proyecto cumple (métricas o condiciones de aceptación).
 4. **User journeys (resumidos):** 3–7 flujos de usuario principales en una o dos frases cada uno (ej. "Usuario inicia sesión con SSO, pasa MFA si está activo, accede al dashboard").
 
+# Cobertura desde MDD (cuando el Benchmark es el MDD) #
+
+Si el insumo es el **MDD** (no solo DBGA), el Spec debe reflejar **todas** las capacidades MVP, actores y criterios UAT de §1 — no un resumen de 3 ítems. Recorre el CHECKLIST DE COBERTURA si aparece en el mensaje.
+
 # Estilo #
 
 Conciso y orientado a decisiones. Nivel "what/why", no "how".

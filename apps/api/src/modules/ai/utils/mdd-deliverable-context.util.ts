@@ -1,10 +1,22 @@
-/** Presupuesto de caracteres del MDD para entregables de backlog (HU, casos de uso). */
+import { extractEntities } from "../../engine/conformance.service.js";
+
+/** Presupuesto de caracteres del MDD para entregables derivados de la Constitución. */
 export const MDD_DELIVERABLE_BUDGET = 50_000;
 
 /** @deprecated Usar MDD_DELIVERABLE_BUDGET */
 export const USER_STORIES_MDD_BUDGET = MDD_DELIVERABLE_BUDGET;
 
-export type MddDeliverableKind = "user-stories" | "use-cases";
+export type MddDeliverableKind =
+  | "user-stories"
+  | "use-cases"
+  | "blueprint"
+  | "api-contracts"
+  | "logic-flows"
+  | "architecture"
+  | "tasks"
+  | "infra"
+  | "spec"
+  | "agent-governance";
 
 /** Extrae el cuerpo de la primera sección cuyo título coincide con pattern (hasta el siguiente ##). */
 function extractSection(md: string, pattern: RegExp): string {
@@ -66,8 +78,38 @@ function extractApiRouteSummary(md: string, maxRoutes = 80): string[] {
   return routes;
 }
 
+function extractEntitiesFromMdd(md: string, maxEntities = 80): string[] {
+  const section3 = extractSection(
+    md,
+    /^##\s*(?:3\.\s*)?(?:modelo\s+de\s+datos|datos\s*\/\s*entidades)/im,
+  );
+  if (!section3) return [];
+  return [...extractEntities(section3)].sort().slice(0, maxEntities);
+}
+
 function deliverableItemLabel(kind: MddDeliverableKind): string {
-  return kind === "use-cases" ? "Caso de uso" : "HU o Tarea técnica";
+  switch (kind) {
+    case "use-cases":
+      return "Caso de uso";
+    case "blueprint":
+      return "Entrada en §2 Persistencia (### o viñeta)";
+    case "api-contracts":
+      return "Fila en tabla de endpoints";
+    case "logic-flows":
+      return "Flujo o diagrama Mermaid";
+    case "architecture":
+      return "Subsección o módulo documentado";
+    case "tasks":
+      return "Tarea comprobable (- [ ])";
+    case "infra":
+      return "Servicio o variable documentada";
+    case "spec":
+      return "Ítem en alcance o user journey";
+    case "agent-governance":
+      return "Artefacto en scaffold";
+    default:
+      return "HU o Tarea técnica";
+  }
 }
 
 function buildCoverageChecklist(md: string, kind: MddDeliverableKind): string {
@@ -85,36 +127,79 @@ function buildCoverageChecklist(md: string, kind: MddDeliverableKind): string {
     /(?:^|\n)#{1,4}\s*criterios\s+de\s+aceptación\s*\(uat\)/im,
   );
   const routes = extractApiRouteSummary(md);
+  const entities = extractEntitiesFromMdd(md);
+  const infraItems = extractBulletsAfterHeading(
+    md,
+    /(?:^|\n)#{1,4}\s*(?:infraestructura|despliegue|servicios)/im,
+    16,
+  );
+  const edgeCases = extractBulletsAfterHeading(
+    md,
+    /(?:^|\n)#{1,4}\s*(?:edge\s+cases|casos\s+de\s+borde|riesgos)/im,
+    16,
+  );
 
   const lines: string[] = [
     `**CHECKLIST DE COBERTURA OBLIGATORIA (derivado del MDD — cada ítem debe mapear a al menos un ${itemLabel}):**`,
     "",
   ];
 
-  if (capabilities.length) {
+  if (kind === "blueprint" && entities.length) {
+    lines.push("**Entidades / tablas (MDD §3) — cada una en ### nombre_tabla o viñeta -:**");
+    for (const e of entities) lines.push(`- [ ] ${e}`);
+    lines.push("");
+  }
+
+  if (capabilities.length && kind !== "blueprint") {
     lines.push("**Capacidades MVP (§1):**");
     for (const c of capabilities) lines.push(`- [ ] ${c}`);
     lines.push("");
   }
-  if (actors.length) {
+
+  if (actors.length && ["user-stories", "use-cases", "spec", "architecture"].includes(kind)) {
     lines.push("**Actores / casos de uso clave (§1):**");
     for (const a of actors) lines.push(`- [ ] ${a}`);
     lines.push("");
   }
+
   if (uat.length) {
     lines.push("**Criterios UAT (§1 / §5):**");
     for (const u of uat) lines.push(`- [ ] ${u}`);
     lines.push("");
   }
-  if (routes.length) {
-    lines.push(`**Grupos API (§4) — agrupa por dominio y cubre con ${itemLabel}:**`);
-    const groups = new Set<string>();
-    for (const r of routes) {
-      const path = r.split(/\s+/)[1] ?? "";
-      const seg = path.split("/").filter(Boolean).slice(2, 3)[0] ?? "core";
-      groups.add(seg);
+
+  if (routes.length && ["api-contracts", "blueprint", "tasks", "user-stories", "use-cases"].includes(kind)) {
+    if (kind === "api-contracts") {
+      lines.push("**Endpoints (§4) — una fila por ruta:**");
+      for (const r of routes) lines.push(`- [ ] ${r}`);
+    } else {
+      lines.push(`**Grupos API (§4) — cubrir con ${itemLabel}:**`);
+      const groups = new Set<string>();
+      for (const r of routes) {
+        const path = r.split(/\s+/)[1] ?? "";
+        const seg = path.split("/").filter(Boolean).slice(2, 3)[0] ?? "core";
+        groups.add(seg);
+      }
+      for (const g of [...groups].sort()) lines.push(`- [ ] /api/v1/${g}/*`);
     }
-    for (const g of [...groups].sort()) lines.push(`- [ ] /api/v1/${g}/*`);
+    lines.push("");
+  }
+
+  if (edgeCases.length && ["logic-flows", "architecture"].includes(kind)) {
+    lines.push("**Edge cases / riesgos (§5):**");
+    for (const e of edgeCases) lines.push(`- [ ] ${e}`);
+    lines.push("");
+  }
+
+  if (infraItems.length && kind === "infra") {
+    lines.push("**Infra / servicios (§7):**");
+    for (const i of infraItems) lines.push(`- [ ] ${i}`);
+    lines.push("");
+  }
+
+  if (capabilities.length && kind === "blueprint") {
+    lines.push("**Capacidades → módulos / transversales (§1):**");
+    for (const c of capabilities) lines.push(`- [ ] ${c}`);
     lines.push("");
   }
 
@@ -127,14 +212,42 @@ const PRIORITY_SECTIONS: Array<{ label: string; pattern: RegExp }> = [
   { label: "§4 Contratos de API", pattern: /^##\s*(?:4\.\s*)?(?:contratos\s+de\s+api|api\s+contracts|endpoints)/im },
   { label: "§5 Lógica y edge cases", pattern: /^##\s*(?:5\.\s*)?(?:lógica\s+y\s+edge\s+cases|lógica\b|edge\s+cases)/im },
   { label: "§6 Seguridad", pattern: /^##\s*(?:6\.\s*)?(?:seguridad|security)/im },
-  { label: "§2 Arquitectura", pattern: /^##\s*(?:2\.\s*)?(?:arquitectura\s+y\s+stack|arquitectura\b)/im },
   { label: "§3 Modelo de datos", pattern: /^##\s*(?:3\.\s*)?(?:modelo\s+de\s+datos|datos\s*\/\s*entidades)/im },
+  { label: "§2 Arquitectura", pattern: /^##\s*(?:2\.\s*)?(?:arquitectura\s+y\s+stack|arquitectura\b)/im },
+  { label: "§7 Infraestructura", pattern: /^##\s*(?:7\.\s*)?(?:infraestructura|despliegue)/im },
 ];
 
+/** Orden de secciones según entregable (§3 antes para blueprint, etc.). */
+function prioritySectionsFor(kind: MddDeliverableKind): typeof PRIORITY_SECTIONS {
+  if (kind === "blueprint" || kind === "api-contracts") {
+    return [
+      PRIORITY_SECTIONS[0]!,
+      PRIORITY_SECTIONS[4]!,
+      PRIORITY_SECTIONS[1]!,
+      PRIORITY_SECTIONS[2]!,
+      PRIORITY_SECTIONS[3]!,
+      PRIORITY_SECTIONS[5]!,
+      PRIORITY_SECTIONS[6]!,
+    ];
+  }
+  if (kind === "infra") {
+    return [
+      PRIORITY_SECTIONS[6]!,
+      PRIORITY_SECTIONS[5]!,
+      PRIORITY_SECTIONS[0]!,
+      PRIORITY_SECTIONS[3]!,
+      PRIORITY_SECTIONS[1]!,
+      PRIORITY_SECTIONS[2]!,
+      PRIORITY_SECTIONS[4]!,
+    ];
+  }
+  return PRIORITY_SECTIONS;
+}
+
 /**
- * Construye contexto MDD priorizado para entregables de backlog.
+ * Construye contexto MDD priorizado para entregables SDD.
  * Si el MDD cabe en el presupuesto, lo devuelve íntegro; si no, antepone checklist de cobertura
- * y secciones críticas (§1, §4, §5, §6) antes que §2/§3 extensos.
+ * y secciones críticas antes que bloques extensos de §2/§3.
  */
 export function buildMddContextForDeliverable(mddContent: string, kind: MddDeliverableKind): string {
   const trimmed = (mddContent ?? "").trim();
@@ -150,7 +263,7 @@ export function buildMddContextForDeliverable(mddContent: string, kind: MddDeliv
     budget -= checklist.length + 2;
   }
 
-  for (const { label, pattern } of PRIORITY_SECTIONS) {
+  for (const { label, pattern } of prioritySectionsFor(kind)) {
     const body = extractSection(trimmed, pattern);
     if (!body) continue;
     const block = `### Extracto MDD — ${label}\n\n${body}`;
@@ -165,7 +278,7 @@ export function buildMddContextForDeliverable(mddContent: string, kind: MddDeliv
   if (parts.length === 0) return trimmed.slice(0, MDD_DELIVERABLE_BUDGET);
 
   parts.push(
-    "\n---\n*Nota: MDD completo truncado; se priorizaron capacidades, actores, UAT, API, reglas, seguridad y checklist de cobertura.*",
+    "\n---\n*Nota: MDD completo truncado; se priorizaron checklist de cobertura y secciones críticas del MDD.*",
   );
   return parts.join("\n\n").slice(0, MDD_DELIVERABLE_BUDGET);
 }
@@ -176,4 +289,36 @@ export function buildMddContextForUserStories(mddContent: string): string {
 
 export function buildMddContextForUseCases(mddContent: string): string {
   return buildMddContextForDeliverable(mddContent, "use-cases");
+}
+
+export function buildMddContextForBlueprint(mddContent: string): string {
+  return buildMddContextForDeliverable(mddContent, "blueprint");
+}
+
+export function buildMddContextForApiContracts(mddContent: string): string {
+  return buildMddContextForDeliverable(mddContent, "api-contracts");
+}
+
+export function buildMddContextForLogicFlows(mddContent: string): string {
+  return buildMddContextForDeliverable(mddContent, "logic-flows");
+}
+
+export function buildMddContextForArchitecture(mddContent: string): string {
+  return buildMddContextForDeliverable(mddContent, "architecture");
+}
+
+export function buildMddContextForTasks(mddContent: string): string {
+  return buildMddContextForDeliverable(mddContent, "tasks");
+}
+
+export function buildMddContextForInfra(mddContent: string): string {
+  return buildMddContextForDeliverable(mddContent, "infra");
+}
+
+export function buildMddContextForSpec(mddContent: string): string {
+  return buildMddContextForDeliverable(mddContent, "spec");
+}
+
+export function buildMddContextForAgentGovernance(mddContent: string): string {
+  return buildMddContextForDeliverable(mddContent, "agent-governance");
 }

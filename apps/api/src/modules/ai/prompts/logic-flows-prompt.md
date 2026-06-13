@@ -13,6 +13,13 @@ Generar el **documento de Casos de Uso y Flujos de Lógica** (Logic & Flows) en 
 3. **Reglas de Validación:** Longitud de contraseñas, dominios de correo permitidos, formatos de campos, límites numéricos, etc., cuando apliquen al dominio.
 4. **Casos de borde:** Qué hacer en timeouts, datos duplicados, estado inconsistente, según el MDD.
 
+# Cobertura exhaustiva (obligatoria cuando el MDD describe MVP completo) #
+
+1. **Un diagrama Mermaid** (secuencia o flowchart) por **criterio UAT** relevante del MDD §1/§5 (auth/MFA, pagos, multicanal, ARCO, etc.).
+2. **Reglas de validación** alineadas a §5 y §6 — no un único flujo genérico de login.
+3. **Volumen orientativo:** 8+ criterios UAT → espera **8+ flujos** o subsecciones con diagrama/pasos.
+4. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]`.
+
 # Estilo #
 
 Técnico y secuencial. Diagramas y pasos claros para implementación y QA.

@@ -3,6 +3,8 @@ import assert from "node:assert";
 import {
   buildMddContextForUseCases,
   buildMddContextForUserStories,
+  buildMddContextForBlueprint,
+  buildMddContextForApiContracts,
   MDD_DELIVERABLE_BUDGET,
 } from "./mdd-deliverable-context.util.js";
 
@@ -22,6 +24,16 @@ const SAMPLE_MDD = (filler: string) => `## 1. Contexto y alcance
 
 1. **Onboarding Zero-Form:** Pipeline de 4+ etapas.
 2. **Seguridad MFA:** Usuario sin MFA recibe 403.
+
+## 3. Modelo de datos
+
+### tenants
+### users
+### leads
+### tickets
+
+CREATE TABLE tenants (id uuid);
+CREATE TABLE users (id uuid);
 
 ## 4. Contratos de API
 
@@ -58,5 +70,20 @@ describe("buildMddContextForDeliverable", () => {
     assert.ok(out.includes("Caso de uso"));
     assert.ok(out.includes("MFA TOTP"));
     assert.ok(!out.includes(filler.slice(0, 200)));
+  });
+
+  it("prioriza entidades §3 para blueprint", () => {
+    const filler = "x".repeat(MDD_DELIVERABLE_BUDGET + 5000);
+    const out = buildMddContextForBlueprint(SAMPLE_MDD(filler));
+    assert.ok(out.includes("tenants"));
+    assert.ok(out.includes("tickets"));
+    assert.ok(out.includes("Entrada en §2 Persistencia"));
+  });
+
+  it("prioriza rutas §4 para api-contracts", () => {
+    const filler = "x".repeat(MDD_DELIVERABLE_BUDGET + 5000);
+    const out = buildMddContextForApiContracts(SAMPLE_MDD(filler));
+    assert.ok(out.includes("GET /api/v1/auth/login"));
+    assert.ok(out.includes("Fila en tabla de endpoints"));
   });
 });
