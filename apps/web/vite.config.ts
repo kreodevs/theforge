@@ -56,6 +56,13 @@ export default defineConfig({
           "../../packages/shared-types/src/mdd-governance-patterns.ts",
         ),
       },
+      {
+        find: "@theforge/shared-types/repair-directory-tree",
+        replacement: path.resolve(
+          __dirname,
+          "../../packages/shared-types/src/repair-directory-tree.ts",
+        ),
+      },
       // Exact match only — object-style alias would prefix-match subpaths to index.ts/….
       {
         find: /^@theforge\/shared-types$/,

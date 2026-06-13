@@ -12,6 +12,7 @@ import {
   repairStrayCodeFences,
   repairTableBoundaries,
 } from "./repair-pasted-markdown.js";
+import { repairDirectoryTreeBlocks } from "./repair-directory-tree.js";
 
 export function formatDocumentMarkdown(text: string): string {
   if (!text) return "";
@@ -46,6 +47,7 @@ export function formatDocumentMarkdown(text: string): string {
   cleaned = repairTableBoundaries(cleaned);
   cleaned = repairStrayCodeFences(cleaned);
   cleaned = normalizeMermaidInDocument(cleaned);
+  cleaned = repairDirectoryTreeBlocks(cleaned);
   return cleaned;
 }
 

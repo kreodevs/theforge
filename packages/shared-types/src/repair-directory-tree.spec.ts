@@ -4,6 +4,7 @@ import {
   isCollapsedDirectoryTreeLine,
   splitCollapsedDirectoryTree,
   repairDirectoryTreeBlocks,
+  looksLikeDirectoryTreeParagraph,
 } from "./repair-directory-tree.js";
 
 describe("repairDirectoryTreeBlocks", () => {
@@ -32,6 +33,18 @@ describe("repairDirectoryTreeBlocks", () => {
     assert.ok(out.includes("apps/"));
     assert.ok(out.includes("\n"));
     assert.ok(!out.includes("/— apps/— backend/— src/— modules/"));
+  });
+
+  it("detecta ((Root)) con rutas en una línea", () => {
+    const line =
+      "((Root))— apps/— backend/— src/— core/— domain/ # Puro —|— application/ # Casos de uso —|— infrastructure/";
+    assert.equal(isCollapsedDirectoryTreeLine(line), true);
+  });
+
+  it("looksLikeDirectoryTreeParagraph en párrafo colapsado", () => {
+    const line =
+      "((Root))— apps/— backend/— src/— core/— modules/— auth/— crm/— ticketing/";
+    assert.equal(looksLikeDirectoryTreeParagraph(line), true);
   });
 
   it("envuelve árbol multilínea sin fence tras encabezado", () => {

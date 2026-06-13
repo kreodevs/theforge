@@ -17,6 +17,7 @@ import {
   isCollapsedDirectoryTreeLine,
   splitCollapsedDirectoryTree,
   repairDirectoryTreeBlocks,
+  looksLikeDirectoryTreeParagraph,
 } from "@theforge/shared-types/repair-directory-tree";
 import {
   normalizeMermaidInDocument,
@@ -423,13 +424,13 @@ function flattenMarkdownChildren(children: ReactNode): string {
 }
 
 function paragraphLooksLikeDirectoryTree(text: string): boolean {
-  const collapsed = text.replace(/\s+/g, " ").trim();
-  if (isCollapsedDirectoryTreeLine(collapsed)) return true;
-  return /[├└│]/.test(collapsed) && /(?:apps|packages|src|backend|frontend)\//i.test(collapsed);
+  return looksLikeDirectoryTreeParagraph(text);
 }
 
 const TREE_PRE_CLASS =
   "my-2 overflow-x-auto rounded-md border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_78%,var(--card))] p-3 font-mono text-xs whitespace-pre text-[var(--foreground)]";
+
+const FENCED_PRE_CLASS = TREE_PRE_CLASS;
 
 const MdSection = memo(function MdSection({ content }: { content: string }) {
   return (
@@ -453,7 +454,7 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
               return <>{children}</>;
             }
             return (
-              <pre className="my-2 overflow-x-auto rounded-md border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_78%,var(--card))] p-3 text-sm text-[var(--foreground)]">
+              <pre className={FENCED_PRE_CLASS}>
                 {children}
               </pre>
             );
@@ -481,6 +482,14 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
                   ? children
                   : String(children ?? "");
             const source = (fromNode || fromHast || fromChildren).replace(/\n$/, "").trim();
+            const isTextLang = /\blanguage-text\b/i.test(className ?? "");
+            if (isTextLang) {
+              return (
+                <code className={`${className ?? ""} font-mono text-xs whitespace-pre`} {...props}>
+                  {normalizeCodeBlockToAsciiSpaces(source)}
+                </code>
+              );
+            }
             const isInlineCode =
               !/\blanguage-[\w-]+\b/i.test(className ?? "") && !source.includes("\n");
             if (isInlineCode) {

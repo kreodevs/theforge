@@ -4,21 +4,38 @@
 
 const TREE_BRANCH_RE = /(?:├──|└──|├─|└─|│\s|—\s*\|)/;
 const TREE_PATH_RE = /(?:^|[^\w/])(?:apps|packages|src|backend|frontend|docker|deploy|\.github)[/\\]/i;
+const TREE_DASH_CLASS = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g;
+
+function normalizeTreeLine(line: string): string {
+  return line.replace(TREE_DASH_CLASS, "—");
+}
 
 /** Línea única con varios conectores de árbol o rutas típicas de monorepo. */
 export function isCollapsedDirectoryTreeLine(line: string): boolean {
-  const t = line.trim();
-  if (t.length < 72) return false;
+  const t = normalizeTreeLine(line.trim());
+  if (t.length < 40) return false;
   if (t.startsWith("|") || t.startsWith("```")) return false;
+  if (/\(\(Root\)\)/i.test(t) && TREE_PATH_RE.test(t)) return true;
   const markers = (t.match(/(?:├──|└──|│|—\s*\||\/—|—\s+(?=apps\/|packages\/|docker|deploy|\.github))/gi) ?? [])
     .length;
   const paths = (t.match(TREE_PATH_RE) ?? []).length;
-  return markers >= 3 || (markers >= 1 && paths >= 2);
+  return markers >= 3 || (markers >= 1 && paths >= 2) || paths >= 3;
+}
+
+/** Párrafo markdown que debería mostrarse como árbol (preview sin fence). */
+export function looksLikeDirectoryTreeParagraph(text: string): boolean {
+  const collapsed = normalizeTreeLine(text.replace(/\s+/g, " ").trim());
+  if (!collapsed) return false;
+  if (isCollapsedDirectoryTreeLine(collapsed)) return true;
+  if (/\(\(Root\)\)/i.test(collapsed) && TREE_PATH_RE.test(collapsed)) return true;
+  if (/[├└│]/.test(collapsed) && TREE_PATH_RE.test(collapsed)) return true;
+  const pathHits = (collapsed.match(TREE_PATH_RE) ?? []).length;
+  return pathHits >= 2 && /(?:—\s*\||\/—|—\s+apps\/)/i.test(collapsed);
 }
 
 /** Parte una línea colapsada en entradas de árbol (una por línea). */
 export function splitCollapsedDirectoryTree(line: string): string[] {
-  let s = line.trim();
+  let s = normalizeTreeLine(line.trim());
   s = s.replace(/\(\(Root\)\)\s*/gi, "/\n");
   s = s.replace(/\s*—\s*\|\s*—\s*/g, "\n");
   s = s.replace(/\s*\/\s*—\s*/g, "/\n");
@@ -69,7 +86,8 @@ function repairAfterTreeHeading(text: string): string {
       /^#{1,4}\s+.*(?:árbol de directorios|estructura del (?:proyecto|monorepo)|directory tree)/i.test(
         line.trim(),
       ) ||
-      /^\*\*Árbol de directorios/i.test(line.trim());
+      /^\*\*Árbol de directorios/i.test(line.trim()) ||
+      /^(?:\*\*)?Árbol de directorios(?:\*\*)?(?:\s*\([^)]+\))?\s*$/i.test(line.trim());
 
     if (!isTreeHeading) {
       i++;
