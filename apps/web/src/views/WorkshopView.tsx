@@ -272,6 +272,8 @@ interface WorkshopViewProps {
   projectName?: string;
   onBack?: () => void;
   onOpenSettings?: () => void;
+  /** Abre el diálogo de renombrar (solo si el usuario es propietario). */
+  onRenameProject?: () => void;
   mergeAudit?: {
     type: string;
     threadId?: string;
@@ -304,6 +306,7 @@ export default function WorkshopView({
   projectName,
   onBack,
   onOpenSettings,
+  onRenameProject,
   mergeAudit,
 }: WorkshopViewProps) {
   const project = useWorkshopStore((s) => s.project);
@@ -2061,6 +2064,17 @@ export default function WorkshopView({
               <h1 className="min-w-0 flex-1 truncate text-base font-semibold tracking-tight text-[var(--foreground)] max-sm:text-[0.9375rem] max-sm:leading-tight sm:flex-1 sm:text-lg">
                 {projectName ?? project?.name ?? "Workshop"}
               </h1>
+              {onRenameProject ? (
+                <button
+                  type="button"
+                  onClick={onRenameProject}
+                  className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border)] text-[var(--foreground-muted)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  title="Renombrar proyecto"
+                  aria-label="Renombrar proyecto"
+                >
+                  <Pencil className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              ) : null}
               {project?.projectType === "LEGACY" && (
                 <span
                   className="shrink-0 rounded border border-[var(--border)] bg-[var(--muted)] px-2 py-0.5 text-xs font-medium text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))]"

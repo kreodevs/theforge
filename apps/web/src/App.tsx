@@ -15,6 +15,7 @@ import {
   GitMerge,
   Heart,
   Loader2,
+  Pencil,
   Plus,
   Sparkles,
   Trash2,
@@ -26,6 +27,7 @@ import SettingsView from "./views/SettingsView";
 import UsersView from "./views/UsersView";
 import { CreateProjectWizardDialog } from "./components/CreateProjectWizardDialog";
 import { ProjectMergeDialog } from "./components/ProjectMergeDialog";
+import { RenameProjectDialog } from "./components/RenameProjectDialog";
 import { ProjectFolderTile } from "./components/ProjectFolderTile";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { DashboardPanelHeader } from "./components/DashboardPanelHeader";
@@ -65,6 +67,7 @@ type Status = "ROJO" | "AMARILLO" | "VERDE";
 interface Project {
   id: string;
   name: string;
+  userId?: string;
   status: Status;
   precisionScore: number;
   hasUxTeam: boolean;
@@ -115,6 +118,9 @@ export default function App() {
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<Project | null>(null);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameLoading, setRenameLoading] = useState(false);
   const [mergeAuditHint, setMergeAuditHint] = useState<{
     type: string;
     threadId?: string;
@@ -375,6 +381,52 @@ export default function App() {
     }
   }, [bulkDeleteTargets, loadProjects]);
 
+  const currentUserId = getStoredUser()?.id;
+
+  const canRenameProject = useCallback(
+    (project: Project) => !project.userId || project.userId === currentUserId,
+    [currentUserId],
+  );
+
+  const openRenameDialog = useCallback((project: Project) => {
+    if (!canRenameProject(project)) return;
+    setRenameTarget(project);
+    setRenameDialogOpen(true);
+  }, [canRenameProject]);
+
+  const submitRenameProject = useCallback(
+    async (projectId: string, name: string) => {
+      setRenameLoading(true);
+      try {
+        const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!r.ok) {
+          const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+          const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+          throw new Error(
+            r.status === 403
+              ? "Solo el propietario puede renombrar este proyecto"
+              : msg ?? "Error al renombrar",
+          );
+        }
+        const updated = (await r.json()) as Project;
+        const nextName = updated.name ?? name;
+        setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, name: nextName } : p)));
+        setWorkshopProject((prev) => (prev?.id === projectId ? { ...prev, name: nextName } : prev));
+        const store = useWorkshopStore.getState();
+        if (store.project?.id === projectId) {
+          store.setProject({ ...store.project, name: nextName });
+        }
+      } finally {
+        setRenameLoading(false);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     const allowed = new Set(displayedProjects.map((p) => p.id));
     setSelectedProjectIds((prev) => prev.filter((id) => allowed.has(id)));
@@ -511,6 +563,15 @@ export default function App() {
           .map((p) => ({ id: p.id, name: p.name }))}
         loading={loading}
         onMerged={handleMergeCompleted}
+      />
+
+      <RenameProjectDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        projectId={renameTarget?.id ?? null}
+        currentName={renameTarget?.name ?? ""}
+        loading={renameLoading}
+        onSubmit={submitRenameProject}
       />
 
       <AlertDialog
@@ -746,6 +807,11 @@ export default function App() {
                 projectName={workshopProject.name}
                 onBack={handleExitWorkshop}
                 onOpenSettings={openSettings}
+                onRenameProject={
+                  canRenameProject(workshopProject)
+                    ? () => openRenameDialog(workshopProject)
+                    : undefined
+                }
                 mergeAudit={mergeAuditHint}
               />
             )}
@@ -918,6 +984,7 @@ export default function App() {
     selectable
     isFavorite={p.isFavorite}
     onToggleFavorite={handleToggleFavorite}
+    onRename={canRenameProject(p) ? () => openRenameDialog(p) : undefined}
     onOpen={() => setWorkshopProject(p)}
     onToggleSelect={() => handleToggleProjectSelect(p.id)}
 />
@@ -947,6 +1014,22 @@ export default function App() {
                 <Button type="button" variant="outline" size="sm" onClick={handleClearProjectSelection} disabled={loading}>
                   Quitar selección
                 </Button>
+                {selectedProjectIds.length === 1 ? (() => {
+                  const single = projectList.find((p) => p.id === selectedProjectIds[0]);
+                  return single && canRenameProject(single) ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openRenameDialog(single)}
+                      disabled={loading || renameLoading}
+                      className="touch-manipulation"
+                    >
+                      <Pencil className="h-4 w-4 shrink-0" aria-hidden />
+                      Renombrar
+                    </Button>
+                  ) : null;
+                })() : null}
                 {selectedProjectIds.length >= 2 ? (
                   <Button
                     type="button"
