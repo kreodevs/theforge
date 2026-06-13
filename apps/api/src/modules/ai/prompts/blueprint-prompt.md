@@ -47,6 +47,26 @@ A continuación genera EXACTAMENTE las siguientes secciones. NO omitas ninguna. 
 - **Stack técnico (explícito):** Base de datos, runtime, frameworks **como en el MDD §2** o, con contexto TheForge, **solo lo real** del codebase.
 - **Árbol de directorios / repos:** Proyecto nuevo: estructura coherente con el dominio (p. ej. NestJS por módulos de dominio). Proyecto existente (TheForge): solo rutas reales del contexto.
 
+**Formato obligatorio del árbol de directorios** (CRÍTICO — el verificador y el Workshop reparan árboles mal formateados, pero debes generarlo bien):
+
+- Usa un bloque **```text** con **una ruta o entrada por línea** (saltos de línea reales, no texto continuo).
+- Usa caracteres de árbol: `├──`, `└──`, `│` (o indentación de 2–4 espacios por nivel).
+- **Prohibido:** árbol en un solo párrafo, separadores `—|` en línea continua, o listar todo el monorepo sin saltos de línea.
+
+Ejemplo correcto:
+
+```text
+/
+├── apps/
+│   ├── backend/          # NestJS API
+│   │   └── src/
+│   │       ├── modules/
+│   │       └── main.ts
+│   └── frontend/         # React SPA
+├── packages/
+└── docker-compose.yml
+```
+
 ### 2. Persistencia y datos (OBLIGATORIO — NO OMITIR)
  
 - **Cobertura §3:** Lista COMPLETA de TODAS las tablas que aparecen en §3 del MDD. Copia los nombres exactos del MDD. **Formato obligatorio: cabeceras markdown `### nombre_tabla` (una por línea) o viñetas `- nombre_tabla`.** Prohibido lista inline en medio de un párrafo (como "Las tablas developers, users..." dentro de un párrafo de texto). El verificador automático NO reconoce entidades dentro de párrafos, solo como cabeceras o viñetas independientes. Ejemplo:

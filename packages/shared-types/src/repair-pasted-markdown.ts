@@ -3,6 +3,7 @@
  */
 
 import { repairCollapsedSqlParagraphs, repairCollapsedSqlInsideFences } from "./repair-collapsed-sql.js";
+import { repairDirectoryTreeBlocks } from "./repair-directory-tree.js";
 import { repairFlowSectionsToMermaid } from "./repair-flow-sections.js";
 import { repairInfraMarkdown } from "./repair-infra-markdown.js";
 
@@ -612,6 +613,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairUnclosedCodeFences(out);
   out = repairStrayCodeFences(out);
   out = repairAsciiDiagramBlocks(out);
+  out = repairDirectoryTreeBlocks(out);
   out = repairDondeGluedBullets(out);
   out = repairTableBoundaries(out);
   out = repairTabSeparatedTables(out);
