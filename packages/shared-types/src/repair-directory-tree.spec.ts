@@ -33,4 +33,19 @@ describe("repairDirectoryTreeBlocks", () => {
     assert.ok(out.includes("\n"));
     assert.ok(!out.includes("/— apps/— backend/— src/— modules/"));
   });
+
+  it("envuelve árbol multilínea sin fence tras encabezado", () => {
+    const raw = `### Árbol de directorios
+
+/
+apps/
+  backend/
+  frontend/
+
+### 2. Persistencia`;
+    const out = repairDirectoryTreeBlocks(raw);
+    assert.ok(out.includes("```text"));
+    assert.ok(out.includes("apps/"));
+    assert.ok(out.includes("backend/"));
+  });
 });

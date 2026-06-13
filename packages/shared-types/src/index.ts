@@ -17,6 +17,7 @@ export * from "./estimation.js";
 export * from "./mdd.js";
 export * from "./mdd-pipeline-limits.js";
 export * from "./markdown-repair.js";
+export * from "./repair-directory-tree.js";
 export * from "./markdown-table.js";
 export * from "./mermaid.js";
 export * from "./format-document-markdown.js";

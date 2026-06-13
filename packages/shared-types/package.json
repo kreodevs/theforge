@@ -22,6 +22,11 @@
       "import": "./dist/markdown-repair.js",
       "require": "./dist/markdown-repair.js"
     },
+    "./repair-directory-tree": {
+      "types": "./dist/repair-directory-tree.d.ts",
+      "import": "./dist/repair-directory-tree.js",
+      "require": "./dist/repair-directory-tree.js"
+    },
     "./mdd-pipeline-limits": {
       "types": "./dist/mdd-pipeline-limits.d.ts",
       "import": "./dist/mdd-pipeline-limits.js",

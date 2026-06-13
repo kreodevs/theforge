@@ -40,6 +40,21 @@ function repairCollapsedLine(line: string): string {
   return wrapAsTextFence(splitCollapsedDirectoryTree(line));
 }
 
+function isDirectoryTreeBlock(lines: string[]): boolean {
+  if (lines.length < 2) return false;
+  const pathish = lines.filter((l) => {
+    const t = l.trim();
+    if (!t || t.startsWith("```")) return false;
+    return (
+      t === "/" ||
+      TREE_BRANCH_RE.test(t) ||
+      /[/\\]/.test(t) ||
+      /^[a-z0-9_.-]+\/$/i.test(t)
+    );
+  }).length;
+  return pathish >= 2;
+}
+
 /** Repara árbol colapsado tras encabezado «Árbol de directorios» / «Estructura del proyecto». */
 function repairAfterTreeHeading(text: string): string {
   const lines = text.split("\n");
@@ -86,9 +101,9 @@ function repairAfterTreeHeading(text: string): string {
     }
 
     const inFence = block[0]?.trim().startsWith("```");
-    if (!inFence && block.some((l) => TREE_BRANCH_RE.test(l))) {
+    if (!inFence && (block.some((l) => TREE_BRANCH_RE.test(l)) || isDirectoryTreeBlock(block))) {
       out.push("");
-      out.push(wrapAsTextFence(block.map((l) => l.trim())));
+      out.push(wrapAsTextFence(block.map((l) => l.trimEnd())));
       out.push("");
       continue;
     }
