@@ -165,7 +165,7 @@ function formatBusinessLogicTable(rows: unknown): string {
     const o = row as Record<string, unknown>;
     const service = typeof o.service === "string" ? o.service : "—";
     const deps = Array.isArray(o.dependencies)
-      ? o.dependencies.map((d) => String(d)).slice(0, 4).join(", ")
+      ? o.dependencies.map((d) => String(d)).join("; ")
       : "—";
     lines.push(`| ${escapeMdCell(service)} | ${escapeMdCell(deps)} |`);
   }

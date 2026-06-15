@@ -84,6 +84,7 @@ export class LegacyReviewerService {
         "PROHIBIDO lenguaje de modificación, MVP pendiente, «incorporar funcionalidades del BRD» o delta de cambio. " +
         "**§3 Modelo de Datos:** debe ser exhaustivo — tablas por entidad (Entidad | Origen | Atributos). " +
         "Elimina bloques «Otras entidades significativas (N+ adicionales)» o listas por comas que sustituyan filas de tabla. " +
+        "**§5 Lógica y Edge Cases:** inventario exhaustivo de servicios (Servicio | Dependencias paths); elimina «Además, servicios para cada Content Type restante». " +
         "Responde ÚNICAMENTE con el markdown del MDD revisado (sin comentarios adicionales).\n\nMDD borrador:\n---\n" +
         mddDraft +
         "\n---"

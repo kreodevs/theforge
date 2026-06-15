@@ -4,6 +4,7 @@ import {
   buildAsIsSection3BodyFromCodebaseDoc,
   injectAsIsCodebaseEvidenceIntoMdd,
   stripEntitySummaryPlaceholders,
+  stripServiceSummaryPlaceholders,
 } from "./legacy-as-is-mdd-inject.util.js";
 
 const ERP_SNIPPET = `
@@ -20,6 +21,14 @@ const ERP_SNIPPET = `
 | Ruta | Métodos | Fuente |
 | --- | --- | --- |
 | /campanias | GET, POST | strapi |
+
+### Lógica de negocio
+| Servicio | Dependencias (paths) |
+| --- | --- |
+| strapi:campania | src/api/campania/services/campania.js |
+| strapi:pauta | src/api/pauta/services/pauta.js |
+| strapi:cotizador | src/api/cotizador/services/cotizador.js |
+| strapi:agencia | src/api/agencia/services/agencia.js |
 `;
 
 const OOH_SNIPPET = `
@@ -34,6 +43,11 @@ const OOH_SNIPPET = `
 | Ruta | Métodos | Fuente |
 | --- | --- | --- |
 | /api/campanias | GET | ast |
+
+### Lógica de negocio
+| Servicio | Dependencias (paths) |
+| --- | --- |
+| frontend:CampaniaQuerys | src/api/CampaniaQuerys.tsx |
 `;
 
 describe("buildAsIsSection3BodyFromCodebaseDoc", () => {
@@ -59,6 +73,16 @@ describe("stripEntitySummaryPlaceholders", () => {
   });
 });
 
+describe("stripServiceSummaryPlaceholders", () => {
+  it("elimina listas resumidas de servicios Strapi", () => {
+    const raw =
+      "### Servicios de backend (Strapi)\n\n| campania | path | CRUD |\n\n(Además, servicios para cada Content Type restante: agencia, cotizador, pauta)";
+    const out = stripServiceSummaryPlaceholders(raw);
+    assert.doesNotMatch(out, /Además,\s*servicios/i);
+    assert.match(out, /Servicios de backend/);
+  });
+});
+
 describe("injectAsIsCodebaseEvidenceIntoMdd", () => {
   it("reemplaza §3 resumido por inventario del codebaseDoc", () => {
     const mdd = `## 1. Contexto
@@ -81,7 +105,9 @@ Algunos endpoints.
 
 ## 5. Lógica y Edge Cases
 
-Reglas.
+Servicios de backend (Strapi)
+
+(Además, servicios para cada Content Type restante: agencia, cotizador, pauta)
 
 ## 6. Seguridad
 
@@ -95,6 +121,9 @@ Docker.
     assert.doesNotMatch(out, /Otras entidades significativas/i);
     assert.match(out, /## 3\. Modelo de Datos[\s\S]*\| pauta \|/);
     assert.match(out, /## 4\. Contratos de API[\s\S]*\| \/campanias \|/);
-    assert.match(out, /## 5\. Lógica/);
+    assert.doesNotMatch(out, /\(Además,\s*servicios para cada Content Type restante/i);
+    assert.match(out, /## 5\. Lógica[\s\S]*\| strapi:agencia \|/);
+    assert.match(out, /## 5\. Lógica[\s\S]*\| strapi:cotizador \|/);
+    assert.match(out, /## 6\. Seguridad/);
   });
 });
