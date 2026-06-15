@@ -3,10 +3,14 @@ import { describe, it } from "node:test";
 import {
   buildAsIsSection2BodyFromCodebaseDoc,
   buildAsIsSection3BodyFromCodebaseDoc,
+  buildAsIsSection5BodyFromCodebaseDoc,
+  buildAsIsSection7BodyFromCodebaseDoc,
   injectAsIsCodebaseEvidenceIntoMdd,
   stripEntitySummaryPlaceholders,
   stripServiceSummaryPlaceholders,
 } from "./legacy-as-is-mdd-inject.util.js";
+
+const ARIADNE_RESUMEN_ERP = `Consulta: Documentación de partida (MDD) del código indexado en el ámbito actual. Cumple el contrato MDD evidence_first del orchestrator/ingest. Evidencia anclada a 407 ruta(s) verificada(s). Contrato OpenAPI priorizado: src/api/campania/documentation/1.0.0/campania.json. 66 entidad(es) Strapi. 167 contrato(s) API desde StrapiRoute.`;
 
 const ERP_SNIPPET = `
 ## Repositorio: desarrollo_imj/erp
@@ -25,6 +29,11 @@ Backend Strapi con content-types de campañas y cotizador.
 | Ruta | Métodos | Fuente |
 | --- | --- | --- |
 | /campanias | GET, POST | strapi |
+| /obtener-dispo-imj | GET | strapi |
+| /createCampaniaWDetalles | POST | strapi |
+| /pautas/calculaBolsa | POST | strapi |
+| /lista-precios/crear-o-editar | POST | strapi |
+| /medios/search-medios | POST | strapi |
 
 ### Lógica de negocio
 | Servicio | Dependencias (paths) |
@@ -33,11 +42,18 @@ Backend Strapi con content-types de campañas y cotizador.
 | strapi:pauta | src/api/pauta/services/pauta.js |
 | strapi:cotizador | src/api/cotizador/services/cotizador.js |
 | strapi:agencia | src/api/agencia/services/agencia.js |
+| strapi:obtener-dispo-imj | src/api/detailpauta/services/detailspautas/obtener-dispo-imj.js |
+| strapi:search-medios | src/api/medio/services/medios/search-medios.js |
 
 ### Infraestructura
 \`\`\`json
 { "orm": "strapi", "env_vars": ["DATABASE_URL", "REDIS_URL"] }
 \`\`\`
+
+### Rutas de evidencia
+- \`config/env/production/database.js\`
+- \`src/admin/webpack.config.example.js\`
+- \`package.json\`
 `;
 
 const OOH_SNIPPET = `
@@ -68,6 +84,8 @@ SPA React consumiendo API Strapi.
 
 ### Rutas de evidencia
 - \`package.json\`
+- \`vite-env.d.ts\`
+- \`tsconfig.json\`
 - \`src/Models/CampaniaModel.tsx\`
 `;
 
@@ -83,6 +101,36 @@ describe("buildAsIsSection2BodyFromCodebaseDoc", () => {
     assert.doesNotMatch(body!, /Vue 3 \+ Inertia/i);
     assert.match(body!, /Prohibido.*Laravel/i);
   });
+
+  it("sanitiza metadata Ariadne en Resumen (sin dump de Consulta:/evidence_first)", () => {
+    const snippet = `
+## Repositorio: desarrollo_imj/erp
+
+### Resumen
+${ARIADNE_RESUMEN_ERP}
+
+### Entidades y modelo de datos
+| Entidad | Origen | Atributos (muestra) |
+| --- | --- | --- |
+| campania | strapi | uid:api::campania.campania |
+
+### Contratos API
+| Ruta | Métodos | Fuente |
+| --- | --- | --- |
+| /campanias | GET | strapi |
+
+### Lógica de negocio
+| Servicio | Dependencias (paths) |
+| --- | --- |
+| strapi:campania | src/api/campania/services/campania.js |
+`;
+    const body = buildAsIsSection2BodyFromCodebaseDoc(snippet);
+    assert.ok(body);
+    assert.doesNotMatch(body!, /Consulta:\s*Documentación de partida/i);
+    assert.doesNotMatch(body!, /evidence_first/i);
+    assert.match(body!, /407 rutas de evidencia indexadas/);
+    assert.match(body!, /167 contratos API indexados/);
+  });
 });
 
 describe("buildAsIsSection3BodyFromCodebaseDoc", () => {
@@ -94,6 +142,30 @@ describe("buildAsIsSection3BodyFromCodebaseDoc", () => {
     assert.match(body!, /cotizador/);
     assert.match(body!, /CampaniaModel/);
     assert.match(body!, /Prohibido.*adicionales/i);
+  });
+});
+
+describe("buildAsIsSection5BodyFromCodebaseDoc", () => {
+  it("añade edge cases verificables desde servicios/rutas críticos", () => {
+    const body = buildAsIsSection5BodyFromCodebaseDoc(ERP_SNIPPET + OOH_SNIPPET);
+    assert.ok(body);
+    assert.match(body!, /### Reglas y edge cases/);
+    assert.match(body!, /obtener-dispo-imj/);
+    assert.match(body!, /calculaBolsa/);
+    assert.match(body!, /search-medios/);
+    assert.doesNotMatch(body!, /Documentar aquí reglas de negocio verificables no inferidas del índice/);
+  });
+});
+
+describe("buildAsIsSection7BodyFromCodebaseDoc", () => {
+  it("infiera PostgreSQL y Vite desde evidence_paths, no Webpack admin como frontend", () => {
+    const body = buildAsIsSection7BodyFromCodebaseDoc(ERP_SNIPPET + OOH_SNIPPET);
+    assert.ok(body);
+    assert.match(body!, /PostgreSQL/);
+    assert.match(body!, /database\.js/);
+    assert.match(body!, /Build frontend: Vite/);
+    assert.match(body!, /Panel admin Strapi: Webpack/);
+    assert.doesNotMatch(body!, /Frontend build.*webpack\.config\.example/i);
   });
 });
 
@@ -173,6 +245,9 @@ Docker.
     assert.doesNotMatch(out, /\(Además,\s*servicios para cada Content Type restante/i);
     assert.match(out, /## 5\. Lógica[\s\S]*\| strapi:agencia \|/);
     assert.match(out, /## 5\. Lógica[\s\S]*\| strapi:cotizador \|/);
+    assert.match(out, /## 5\. Lógica[\s\S]*obtener-dispo-imj/);
     assert.match(out, /## 6\. Seguridad/);
+    assert.match(out, /## 7\. Infraestructura[\s\S]*Build frontend: Vite/);
+    assert.doesNotMatch(out, /## 7\. Infraestructura[\s\S]*Docker\.\s*\n/);
   });
 });
