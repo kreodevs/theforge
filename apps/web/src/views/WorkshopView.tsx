@@ -948,11 +948,8 @@ export default function WorkshopView({
   const centralPanel = useWorkshopStore((s) => s.workshopActiveDocPanel) as DocPanel;
   const setCentralPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
 
-  /** Etapa 1 sin modificación: el MDD de la pestaña «MDD» no aplica; doc. partida = MDD Inicial (`codebaseDoc`). */
-  const legacyMddPanelIsAsIsOnly =
-    isLegacyProject &&
-    isStage1Legacy &&
-    !(activeLegacyState?.description ?? "").trim();
+  /** En pestaña MDD legacy: regenerar siempre vía `generate-mdd` (desde codebaseDoc / etapa), nunca `generate-codebase-doc`. */
+  const legacyMddNeedsCodebaseDoc = isLegacyProject && !hasCodebaseDoc;
 
   const handleRegenerateLegacyCodebaseDoc = useCallback(async () => {
     if (!projectId) return null;
@@ -1731,7 +1728,7 @@ export default function WorkshopView({
           requestGenerateMdd();
         },
       };
-      if (effectiveMddTrimmed.length > 0 && !legacyMddPanelIsAsIsOnly) {
+      if (effectiveMddTrimmed.length > 0) {
         ordered.push({
           id: "edit-patterns",
           label: "Editar patrones (SSOT)",
@@ -1979,7 +1976,6 @@ export default function WorkshopView({
     generateMddFromBenchmark,
     requestGenerateMdd,
     openEditMddPatterns,
-    legacyMddPanelIsAsIsOnly,
     legacyGenerateMdd,
     handleRegenerateLegacyCodebaseDoc,
     generateSpec,
@@ -3509,26 +3505,17 @@ export default function WorkshopView({
                   </div>
                 )}
                 <WorkshopPanelActionRegion role="region" aria-label="Generar o regenerar el MDD">
-                  {loading &&
-                  (loadingReason === "mdd" ||
-                    loadingReason === "legacy-mdd" ||
-                    (legacyMddPanelIsAsIsOnly && loadingReason === "legacy-codebase-doc")) ? (
+                  {loading && (loadingReason === "mdd" || loadingReason === "legacy-mdd") ? (
                     <AiGenerationPanel
                       title={
-                        legacyMddPanelIsAsIsOnly
-                          ? (activeLegacyState?.codebaseDoc ?? mddInicialLocalContent)?.trim()
-                            ? "Regenerando MDD Inicial…"
-                            : "Generando MDD Inicial…"
-                          : mddContent?.trim()
-                            ? "Regenerando el MDD…"
-                            : "Generando el MDD…"
+                        mddContent?.trim() ? "Regenerando el MDD…" : "Generando el MDD…"
                       }
                       subtitle={
-                        legacyMddPanelIsAsIsOnly
-                          ? "Documentación de partida (codebase) vía Ariadne — se guarda en MDD Inicial, no en la pestaña MDD."
-                          : isLegacyProject
-                            ? "A partir de BRD y To-Be de la etapa activa (y documentación de partida si aplica)."
-                            : "A partir del DBGA / Benchmark guardado en Paso 0. Puede tardar unos minutos."
+                        isLegacyProject
+                          ? isStage1Legacy
+                            ? "A partir de la documentación de partida (MDD Inicial). No vuelve a llamar a Ariadne."
+                            : "A partir de BRD, doc. de partida y descripción del cambio de la etapa activa."
+                          : "A partir del DBGA / Benchmark guardado en Paso 0. Puede tardar unos minutos."
                       }
                     />
                   ) : (
@@ -3536,31 +3523,16 @@ export default function WorkshopView({
                       <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
                         <WorkshopMddActionButton
                           tone="primary"
-                          onClick={() =>
-                            void (legacyMddPanelIsAsIsOnly
-                              ? handleRegenerateLegacyCodebaseDoc()
-                              : requestGenerateMdd())
-                          }
+                          onClick={() => void requestGenerateMdd()}
                           disabled={
-                            loading &&
-                            (loadingReason === "mdd" ||
-                              loadingReason === "legacy-mdd" ||
-                              loadingReason === "legacy-codebase-doc")
+                            legacyMddNeedsCodebaseDoc ||
+                            (loading &&
+                              (loadingReason === "mdd" ||
+                                loadingReason === "legacy-mdd" ||
+                                loadingReason === "legacy-codebase-doc"))
                           }
                         >
-                          {legacyMddPanelIsAsIsOnly ? (
-                            (activeLegacyState?.codebaseDoc ?? mddInicialLocalContent)?.trim() ? (
-                              <>
-                                <WorkshopButtonIcon icon={RefreshCw} tone="primary" />
-                                Regenerar MDD Inicial
-                              </>
-                            ) : (
-                              <>
-                                <WorkshopButtonIcon icon={RefreshCw} tone="primary" />
-                                Generar MDD Inicial
-                              </>
-                            )
-                          ) : mddContent?.trim() ? (
+                          {mddContent?.trim() ? (
                             <>
                               <WorkshopButtonIcon icon={RefreshCw} tone="primary" />
                               Regenerar MDD
@@ -3572,7 +3544,7 @@ export default function WorkshopView({
                             </>
                           )}
                         </WorkshopMddActionButton>
-                        {effectiveMddTrimmed.length > 0 && !legacyMddPanelIsAsIsOnly && (
+                        {effectiveMddTrimmed.length > 0 && (
                           <WorkshopPanelButton
                             tone="secondary"
                             onClick={openEditMddPatterns}
@@ -3583,7 +3555,7 @@ export default function WorkshopView({
                             Editar patrones (SSOT)
                           </WorkshopPanelButton>
                         )}
-                        {effectiveMddTrimmed.length > 0 && !legacyMddPanelIsAsIsOnly && (
+                        {effectiveMddTrimmed.length > 0 && (
                           <WorkshopPanelButton
                             tone="secondary"
                             onClick={() => {
@@ -3621,19 +3593,34 @@ export default function WorkshopView({
                         )}
                       </div>
                       <p className="text-sm leading-relaxed text-[var(--foreground-subtle)]">
-                        {legacyMddPanelIsAsIsOnly
-                          ? "En etapa 1 (AS-IS) la documentación de partida va en la pestaña MDD Inicial. Este botón regenera ahí (no en MDD de cambio)."
-                          : isLegacyProject
-                            ? "Genera el MDD desde BRD y To-Be de la etapa activa (y doc. de partida si aplica)."
-                            : "Genera el MDD a partir del DBGA / Benchmark guardado en Paso 0."}
-                        {" "}
+                        {legacyMddNeedsCodebaseDoc ? (
+                          <>
+                            Genera primero la documentación de partida en la pestaña{" "}
+                            <strong>MDD Inicial</strong> (Ariadne). Luego aquí sintetizas el MDD
+                            canónico (7 secciones) a partir de ese contenido.
+                          </>
+                        ) : isLegacyProject ? (
+                          isStage1Legacy ? (
+                            <>
+                              Regenera el MDD canónico desde el <strong>MDD Inicial</strong> ya
+                              guardado. Para re-indexar Ariadne, usa la pestaña MDD Inicial.
+                            </>
+                          ) : (
+                            <>
+                              Genera el MDD de cambio desde BRD, doc. de partida y la descripción
+                              en Modificación.
+                            </>
+                          )
+                        ) : (
+                          "Genera el MDD a partir del DBGA / Benchmark guardado en Paso 0."
+                        )}{" "}
                         El wizard de patrones solo aparece con MDD vacío (o tras «Limpiar MDD»). Al
                         regenerar se conservan los patrones actuales; cámbialos con «Editar patrones».
                       </p>
                     </>
                   )}
                 </WorkshopPanelActionRegion>
-                {!legacyMddPanelIsAsIsOnly && (mddContent ?? "").trim().length > 0 ? (
+                {(mddContent ?? "").trim().length > 0 ? (
                   <MddManualAudit
                     projectId={projectId}
                     stageId={activeStageId}
