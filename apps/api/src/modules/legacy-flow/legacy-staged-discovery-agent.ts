@@ -53,6 +53,8 @@ function buildHumanInstruction(mode: StagedDiscoveryMode, changeDescription?: st
       "PROHIBIDO como propósito: modificar, incorporar funcionalidades pendientes del BRD/MVP, alcance de cambio o objetivos futuros. " +
       "En **§3 Modelo de Datos** documenta **cada entidad** indexada en tablas (Entidad | Origen | Atributos); " +
       "PROHIBIDO resumir con «Otras entidades significativas» o listas por comas. " +
+      "En **§5 Lógica y Edge Cases** documenta **cada servicio** en tablas (Servicio | Dependencias paths); " +
+      "PROHIBIDO «Además, servicios para cada Content Type restante». " +
       "Las lagunas de evidencia van como «Brechas de información», no como meta de modificación.";
   }
   if (mode === "change") {

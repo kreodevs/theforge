@@ -1,6 +1,6 @@
 /**
- * Inyecta evidencia estructurada del `codebaseDoc` (Ariadne) en §3–§4 del MDD AS-IS (etapa 1).
- * Evita que el LLM resuma entidades/API en listas tipo «Otras entidades (60+ adicionales)».
+ * Inyecta evidencia estructurada del `codebaseDoc` (Ariadne) en §3–§5 del MDD AS-IS (etapa 1).
+ * Evita que el LLM resuma entidades, API o servicios en listas tipo «N adicionales».
  */
 
 const REPO_HEADER_RE = /^##\s+Repositorio:\s*(.+?)(?:\s*\(|$)/gim;
@@ -10,6 +10,14 @@ const ENTITY_SUMMARY_PATTERNS = [
   /\(\d+\+\s*adicionales?\)/gi,
   /y\s+\d+\+\s*entidades?\s+m[aá]s[^\n]*/gi,
   /(?:^|\n)(?:[-*]\s*)?(?:Entidades?\s+)?(?:adicionales?|restantes?)\s*:\s*[^\n]+\n(?:[-*]\s*[^\n]+\n)*/gi,
+];
+
+const SERVICE_SUMMARY_PATTERNS = [
+  /\(Además,\s*servicios[^\n]*\)/gi,
+  /Además,\s*servicios para cada[^\n]*/gi,
+  /servicios para cada Content Type restante[^\n]*/gi,
+  /(?:^|\n)\(Además,[^\)]+\)/gi,
+  /(?:^|\n)(?:[-*]\s*)?Servicios?\s+(?:adicionales?|restantes?)[^\n]*/gi,
 ];
 
 function extractSubsectionBody(chunk: string, heading: string): string {
@@ -97,6 +105,24 @@ export function buildAsIsSection4BodyFromCodebaseDoc(codebaseDoc: string): strin
   );
 }
 
+/** Markdown de servicios / lógica de negocio listo para §5 (desde codebaseDoc). */
+export function buildAsIsSection5BodyFromCodebaseDoc(codebaseDoc: string): string | null {
+  const chunks = splitCodebaseDocByRepo(codebaseDoc);
+  const block = buildRepoScopedBlock(chunks, "Lógica de negocio", "");
+  if (!block.trim()) {
+    const single = extractSubsectionBody(codebaseDoc, "Lógica de negocio");
+    if (!single.trim()) return null;
+    return `### Lógica de negocio\n\n${single}`;
+  }
+  return (
+    "_Servicios indexados (Strapi/Nest/frontend). Una fila por servicio con paths de dependencia; " +
+    "no omitir content-types en listas comprimidas por comas._\n\n" +
+    block +
+    "\n\n### Reglas y edge cases\n\n" +
+    "_Documentar aquí reglas de negocio verificables no inferidas del índice; lo no evidenciado va en «Brechas de información»._"
+  );
+}
+
 function findMddSectionBounds(mdd: string, sectionNum: number): { start: number; bodyStart: number; end: number } | null {
   const headerRe = new RegExp(`^##\\s*${sectionNum}\\.\\s*[^\\n]*`, "gim");
   const headerMatch = headerRe.exec(mdd);
@@ -129,8 +155,17 @@ export function stripEntitySummaryPlaceholders(section3: string): string {
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** Elimina resúmenes LLM de servicios (listas «Además, servicios para…»). */
+export function stripServiceSummaryPlaceholders(section5: string): string {
+  let out = section5;
+  for (const re of SERVICE_SUMMARY_PATTERNS) {
+    out = out.replace(re, "");
+  }
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /**
- * Sustituye §3 y §4 del MDD AS-IS con tablas completas del `codebaseDoc` cuando existen.
+ * Sustituye §3–§5 del MDD AS-IS con tablas completas del `codebaseDoc` cuando existen.
  * Idempotente: re-ejecutar mantiene el mismo inventario (no duplica bloques).
  */
 export function injectAsIsCodebaseEvidenceIntoMdd(mddContent: string, codebaseDoc: string): string {
@@ -156,6 +191,20 @@ export function injectAsIsCodebaseEvidenceIntoMdd(mddContent: string, codebaseDo
   const section4 = buildAsIsSection4BodyFromCodebaseDoc(doc);
   if (section4) {
     out = replaceMddSectionBody(out, 4, section4);
+  }
+
+  const section5 = buildAsIsSection5BodyFromCodebaseDoc(doc);
+  if (section5) {
+    out = replaceMddSectionBody(out, 5, section5);
+  } else {
+    const bounds = findMddSectionBounds(out, 5);
+    if (bounds) {
+      const currentBody = out.slice(bounds.bodyStart, bounds.end);
+      const cleaned = stripServiceSummaryPlaceholders(currentBody);
+      if (cleaned !== currentBody.trim()) {
+        out = out.slice(0, bounds.bodyStart) + `\n\n${cleaned}\n\n` + out.slice(bounds.end);
+      }
+    }
   }
 
   return out;

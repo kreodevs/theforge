@@ -1172,6 +1172,9 @@ export class LegacyCoordinatorService {
         "(Entidad | Origen | Atributos). PROHIBIDO resumir con «Otras entidades significativas», «N+ adicionales» " +
         "o listas separadas por comas en lugar de filas de tabla. Agrupa por repo si hay multi-root.\n\n" +
         "**§4 Contratos de API:** tablas completas de rutas/métodos por repo; no omitir endpoints listados en la doc. de partida.\n\n" +
+        "**§5 Lógica y Edge Cases (AS-IS exhaustivo):** tabla **Servicio | Dependencias (paths)** por repo desde la doc. de partida " +
+        "(sección «Lógica de negocio»). PROHIBIDO «Además, servicios para cada Content Type restante» o listas por comas. " +
+        "Las reglas no indexadas van en «Brechas de información».\n\n" +
         pathGroundingRulesBaseline +
         "**Prioridad:** Recupera y usa en su totalidad el conocimiento del codebase (TheForge) que se te proporciona. " +
         "Usa TODO ese contexto para describir fielmente la aplicación existente. " +
