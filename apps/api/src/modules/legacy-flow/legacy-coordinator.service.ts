@@ -155,6 +155,57 @@ export interface LegacyDeliverablesDebugReport {
   sectionMergeTraces?: LegacySectionMergeTrace[];
   /** Una entrada por intento de entregable: política env, envelope y estimación de tokens (motor de estrategia). */
   strategyDecisions?: LegacyDeliverablesStrategyResolution[];
+  /** Pipeline bulk alineado con regen individual del Workshop. */
+  pipelineMode?: LegacyDeliverablesPipelineMode;
+}
+
+/** Modo de generación en cascada bulk — paridad con endpoints individuales. */
+export type LegacyDeliverablesPipelineMode =
+  | "projects_generate_document"
+  | "generate_from_codebase"
+  | "legacy_run_step_fallback";
+
+/** Entregable → tipo `POST …/legacy/generate-from-codebase` (kebab-case). */
+const DELIVERABLE_KIND_TO_CODEBASE_DOC_TYPE: Partial<Record<DeliverableKind, string>> = {
+  spec: "spec",
+  architecture: "architecture",
+  use_cases: "use-cases",
+  user_stories: "user-stories",
+  blueprint: "blueprint",
+  api_contracts: "api-contracts",
+  logic_flows: "logic-flows",
+  tasks: "tasks",
+  infra: "infra",
+};
+
+const REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS = 120_000;
+
+function buildReverseEngineeringMddForLegacySteps(
+  codebaseDoc: string,
+  report: LegacyDeliverablesDebugReport,
+): string {
+  const compact = compactCodebaseDocForMddPrompt(codebaseDoc);
+  const wrapped =
+    "[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n" +
+    compact;
+  report.mddRollupWindows = 0;
+  report.mddRollupFailed = false;
+  if (wrapped.length <= REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS) {
+    report.mddLlmStrategy = "full";
+    report.mddCharsSentToLlm = wrapped.length;
+    report.mddClippedForLlm = false;
+    return wrapped;
+  }
+  report.mddLlmStrategy = "truncate";
+  report.mddClippedForLlm = true;
+  const footer =
+    "\n\n---\n\n> **Nota (The Forge — entregables legacy):** El codebaseDoc superó " +
+    String(REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS) +
+    " caracteres. **Solo se envió el inicio** al modelo; el final fue omitido.\n";
+  const budget = Math.max(0, REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS - footer.length);
+  const clipped = wrapped.slice(0, budget) + footer;
+  report.mddCharsSentToLlm = clipped.length;
+  return clipped;
 }
 
 export interface LegacyFlowState {
@@ -1395,7 +1446,6 @@ export class LegacyCoordinatorService {
     projectId: string,
     stageId?: string,
   ): Promise<{ ok: boolean; lastDeliverablesDebug: LegacyDeliverablesDebugReport }> {
-    void stageId; // reservado para futuro per-stage deliverables
     const report: LegacyDeliverablesDebugReport = {
       startedAt: new Date().toISOString(),
       mddSource: "none",
@@ -1442,7 +1492,6 @@ export class LegacyCoordinatorService {
     }
 
     // enforceLegacyBrdTobeGate eliminado — To-Be y As-Is removidos
-    await this.prisma
     const codebaseDoc = String((project as { legacyFlowState?: LegacyFlowState }).legacyFlowState?.codebaseDoc ?? "").trim();
     const mddContent = String(project.mddContent ?? "").trim();
     report.codebaseDocChars = codebaseDoc.length;
@@ -1451,20 +1500,22 @@ export class LegacyCoordinatorService {
     const mdd =
       mddContent || (codebaseDoc ? `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}` : "");
     report.mddChars = mdd.length;
-    const mddForLlm = await this.buildLegacyDeliverablesMddForLlm(mdd, report);
-    if (isLegacyDeliverablesDebugVerbose()) {
-      this.logger.log(
-        `[LegacyDeliverables] mdd_llm strategy=${report.mddLlmStrategy ?? "?"} originalChars=${report.mddChars} sentChars=${report.mddCharsSentToLlm ?? mddForLlm.length} rollupWindows=${report.mddRollupWindows ?? 0} clipped=${report.mddClippedForLlm ?? false} rollupFailed=${report.mddRollupFailed ?? false}`,
-      );
-    }
 
     const isReverseEngineering = !mddContent && !!codebaseDoc;
+    report.pipelineMode = isReverseEngineering ? "generate_from_codebase" : "projects_generate_document";
+    if (!isReverseEngineering) {
+      report.mddLlmStrategy = "full";
+      report.mddCharsSentToLlm = mddContent.length;
+      report.mddClippedForLlm = false;
+      report.mddRollupWindows = 0;
+    }
+
     pushStep({
       kind: "preflight",
       durationMs: 0,
       ok: !!mdd,
       detail:
-        `reverseEngineering=${isReverseEngineering} mddSource=${report.mddSource} mddLlmStrategy=${report.mddLlmStrategy ?? "?"} rollupWindows=${report.mddRollupWindows ?? 0} clipped=${report.mddClippedForLlm ?? false} rollupFailed=${report.mddRollupFailed ?? false}`,
+        `reverseEngineering=${isReverseEngineering} pipelineMode=${report.pipelineMode} mddSource=${report.mddSource} mddLlmStrategy=${report.mddLlmStrategy ?? "?"} rollupWindows=${report.mddRollupWindows ?? 0} clipped=${report.mddClippedForLlm ?? false} rollupFailed=${report.mddRollupFailed ?? false}`,
     });
 
     if (!mdd) {
@@ -1527,10 +1578,11 @@ export class LegacyCoordinatorService {
 
     const resolveSectionMergeAttempt = async (
       kind: DeliverableKind,
+      mddText: string,
       fields: Partial<Pick<LegacyDeliverablesStrategyContext, "blueprintText" | "specText" | "useCasesText">>,
     ): Promise<boolean> => {
       const d = await this.legacyDeliverablesStrategy.resolveSectionMergeAttempt(kind, {
-        mddText: mddForLlm,
+        mddText,
         theforgeContextText: theforgeContext,
         ...fields,
       });
@@ -1554,7 +1606,7 @@ export class LegacyCoordinatorService {
     report.complexityEffective = complexity;
     report.deliverablesOrder = [...deliverablesToRun];
 
-    const ensureBlueprint = async (): Promise<string> => {
+    const ensureBlueprint = async (mddForLlm: string): Promise<string> => {
       let bp = String(p.blueprintContent ?? "").trim();
       if (bp.length > 48) return bp;
       bp = await this.ai.generateBlueprint(mddForLlm, undefined, legacyOpts);
@@ -1563,13 +1615,13 @@ export class LegacyCoordinatorService {
       return String(p.blueprintContent ?? "").trim();
     };
 
-    const runStep = async (kind: DeliverableKind): Promise<void> => {
+    const runStepWithMdd = async (kind: DeliverableKind, mddForLlm: string): Promise<void> => {
       switch (kind) {
         case "mdd_canonical":
           return;
         case "spec": {
           const sm = await trySectionMergeDeliverable(this.ai, "spec", mddForLlm, legacyOpts, {}, run429, this.logger, {
-            attemptSectionMerge: await resolveSectionMergeAttempt("spec", {}),
+            attemptSectionMerge: await resolveSectionMergeAttempt("spec", mddForLlm, {}),
           });
           if (sm) {
             pushSectionMergeTrace(sm.trace);
@@ -1592,7 +1644,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("architecture", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("architecture", mddForLlm, {
                 blueprintText: p.blueprintContent ?? undefined,
               }),
             },
@@ -1622,7 +1674,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("use_cases", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("use_cases", mddForLlm, {
                 specText: p.specContent ?? undefined,
               }),
             },
@@ -1640,7 +1692,7 @@ export class LegacyCoordinatorService {
         }
         case "blueprint": {
           const smBp = await trySectionMergeDeliverable(this.ai, "blueprint", mddForLlm, legacyOpts, {}, run429, this.logger, {
-            attemptSectionMerge: await resolveSectionMergeAttempt("blueprint", {}),
+            attemptSectionMerge: await resolveSectionMergeAttempt("blueprint", mddForLlm, {}),
           });
           if (smBp) {
             pushSectionMergeTrace(smBp.trace);
@@ -1654,7 +1706,7 @@ export class LegacyCoordinatorService {
           return;
         }
         case "api_contracts": {
-          const bp = await ensureBlueprint();
+          const bp = await ensureBlueprint(mddForLlm);
           const smApi = await trySectionMergeDeliverable(
             this.ai,
             "api_contracts",
@@ -1664,7 +1716,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("api_contracts", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("api_contracts", mddForLlm, {
                 blueprintText: bp,
               }),
             },
@@ -1689,7 +1741,7 @@ export class LegacyCoordinatorService {
             {},
             run429,
             this.logger,
-            { attemptSectionMerge: await resolveSectionMergeAttempt("logic_flows", {}) },
+            { attemptSectionMerge: await resolveSectionMergeAttempt("logic_flows", mddForLlm, {}) },
           );
           if (smLf) {
             pushSectionMergeTrace(smLf.trace);
@@ -1703,7 +1755,7 @@ export class LegacyCoordinatorService {
           return;
         }
         case "ux_ui_guide": {
-          const bpUx = String(p.blueprintContent ?? "").trim() || (await ensureBlueprint());
+          const bpUx = String(p.blueprintContent ?? "").trim() || (await ensureBlueprint(mddForLlm));
           const smUx = await trySectionMergeDeliverable(
             this.ai,
             "ux_ui_guide",
@@ -1713,7 +1765,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("ux_ui_guide", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("ux_ui_guide", mddForLlm, {
                 blueprintText: bpUx,
               }),
             },
@@ -1785,7 +1837,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("user_stories", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("user_stories", mddForLlm, {
                 specText: p.specContent ?? undefined,
                 useCasesText: p.useCasesContent ?? undefined,
               }),
@@ -1837,7 +1889,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("tasks", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("tasks", mddForLlm, {
                 blueprintText: bpTasks || undefined,
               }),
             },
@@ -1854,7 +1906,7 @@ export class LegacyCoordinatorService {
           return;
         }
         case "infra": {
-          const bpInf = await ensureBlueprint();
+          const bpInf = await ensureBlueprint(mddForLlm);
           const smIf = await trySectionMergeDeliverable(
             this.ai,
             "infra",
@@ -1864,7 +1916,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("infra", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("infra", mddForLlm, {
                 blueprintText: bpInf,
               }),
             },
@@ -1885,6 +1937,35 @@ export class LegacyCoordinatorService {
           return _exhaustive;
         }
       }
+    };
+
+    let reverseEngineeringMddForLegacySteps: string | null = null;
+    const getReverseEngineeringMddForLegacySteps = (): string => {
+      if (reverseEngineeringMddForLegacySteps === null) {
+        reverseEngineeringMddForLegacySteps = buildReverseEngineeringMddForLegacySteps(codebaseDoc, report);
+        if (isLegacyDeliverablesDebugVerbose()) {
+          this.logger.log(
+            `[LegacyDeliverables] reverse_engineering_fallback strategy=${report.mddLlmStrategy ?? "?"} sentChars=${report.mddCharsSentToLlm ?? reverseEngineeringMddForLegacySteps.length}`,
+          );
+        }
+      }
+      return reverseEngineeringMddForLegacySteps;
+    };
+
+    /** Bulk alineado con regen individual: ProjectsService o generate-from-codebase. */
+    const runDeliverableStep = async (kind: DeliverableKind): Promise<void> => {
+      if (kind === "mdd_canonical") return;
+      if (!isReverseEngineering) {
+        await this.projects.generateDocument(kind, projectId);
+        return;
+      }
+      const docType = DELIVERABLE_KIND_TO_CODEBASE_DOC_TYPE[kind];
+      if (docType) {
+        await this.generateFromCodebase(projectId, docType, stageId);
+        return;
+      }
+      report.pipelineMode = "legacy_run_step_fallback";
+      await runStepWithMdd(kind, getReverseEngineeringMddForLegacySteps());
     };
 
     const largeMddCooldown = legacyDeliverablesLargeMddCooldownMs(report.mddChars);
@@ -1914,7 +1995,7 @@ export class LegacyCoordinatorService {
 
       const t0 = Date.now();
       try {
-        await runWithLegacy429Retries(() => runStep(kind), { logger: this.logger, step: kind });
+        await runWithLegacy429Retries(() => runDeliverableStep(kind), { logger: this.logger, step: kind });
         p = await load();
         const outChars = deliverableFieldCharCount(p as Record<string, unknown>, kind);
         const short = outChars < 48;
