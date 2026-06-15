@@ -9,6 +9,9 @@ import {
 import { ComplexityLevel, type Project as DbProject } from "@theforge/database";
 import {
   DELIVERABLES_BY_COMPLEXITY,
+  DELIVERABLE_STEP_LABELS,
+  DELIVERABLE_PROJECT_CONTENT_FIELD,
+  planLegacyDeliverablesToGenerate,
   type DeliverableKind,
   type GenerateCodebaseDocRequest,
 } from "@theforge/shared-types";
@@ -108,6 +111,7 @@ export type LegacyIndexSddResolutionChoice = "trust_index" | "trust_sdd" | "proc
 /** Paso de la cascada legacy de entregables (telemetría / depuración). */
 export type LegacyDeliverablesDebugStepKind =
   | "preflight"
+  | "preflight_plan"
   | "index_sdd_gate"
   | "theforge_context"
   | DeliverableKind;
@@ -266,18 +270,6 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 /**
- * Pausa entre cada paso LLM de la cascada (mitiga TPM/RPM en Gemini/Moonshot).
- * Default 5000 ms. `0` o vacío desactiva (solo tras al menos un paso LLM previo).
- */
-function legacyDeliverablesInterStepDelayMs(): number {
-  const raw = process.env.LEGACY_DELIVERABLES_INTER_STEP_DELAY_MS?.trim();
-  if (raw === undefined || raw === "") return 15000;
-  const n = parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 0) return 0;
-  return Math.min(n, 180_000);
-}
-
-/**
  * Cooldown único antes del primer `runStep` cuando el MDD inyectado es muy largo (p. ej. `codebaseDoc_fallback`).
  * Default: si `mddChars` > 80000 → espera 20000 ms una vez.
  */
@@ -363,6 +355,16 @@ function deliverableFieldCharCount(p: Record<string, unknown>, kind: Deliverable
   const field = DELIVERABLE_PROJECT_FIELD[kind];
   if (!field) return 0;
   return String(p[field] ?? "").length;
+}
+
+function legacyContentLengthsFromProject(p: Record<string, unknown>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const field of new Set(
+    Object.values(DELIVERABLE_PROJECT_CONTENT_FIELD).filter((f): f is string => !!f),
+  )) {
+    out[field] = String(p[field] ?? "").length;
+  }
+  return out;
 }
 
 function clipDebug(s: string, max: number): string {
@@ -1486,7 +1488,6 @@ export class LegacyCoordinatorService {
     const complexity = isReverseEngineering ? ComplexityLevel.HIGH : (row.complexity ?? ComplexityLevel.HIGH);
     const deliverablesToRun = DELIVERABLES_BY_COMPLEXITY[complexity];
     report.complexityEffective = complexity;
-    report.deliverablesOrder = [...deliverablesToRun];
 
     const ensureBlueprint = async (mddForLlm: string): Promise<string> => {
       let bp = String(p.blueprintContent ?? "").trim();
@@ -1834,21 +1835,51 @@ export class LegacyCoordinatorService {
       return reverseEngineeringMddForLegacySteps;
     };
 
-    /** Bulk alineado con regen individual: ProjectsService o generate-from-codebase. */
+    /** Bulk legacy: `runStepWithMdd` (ProjectsService bloquea LEGACY en spec) o generate-from-codebase. */
+    const mddForLlmSteps = (): string => mddContent || getReverseEngineeringMddForLegacySteps();
+
     const runDeliverableStep = async (kind: DeliverableKind): Promise<void> => {
       if (kind === "mdd_canonical") return;
-      if (!isReverseEngineering) {
-        await this.projects.generateDocument(kind, projectId);
+      if (isReverseEngineering) {
+        const docType = DELIVERABLE_KIND_TO_CODEBASE_DOC_TYPE[kind];
+        if (docType) {
+          await this.generateFromCodebase(projectId, docType, stageId);
+          return;
+        }
+        report.pipelineMode = "legacy_run_step_fallback";
+        await runStepWithMdd(kind, mddForLlmSteps());
         return;
       }
-      const docType = DELIVERABLE_KIND_TO_CODEBASE_DOC_TYPE[kind];
-      if (docType) {
-        await this.generateFromCodebase(projectId, docType, stageId);
-        return;
-      }
-      report.pipelineMode = "legacy_run_step_fallback";
-      await runStepWithMdd(kind, getReverseEngineeringMddForLegacySteps());
+      await runStepWithMdd(kind, mddForLlmSteps());
     };
+
+    const deliverablesPlanned = planLegacyDeliverablesToGenerate({
+      complexity,
+      hasMddContent: !!mddContent,
+      contentLengthByField: legacyContentLengthsFromProject(p as Record<string, unknown>),
+    });
+    report.deliverablesOrder = [...deliverablesPlanned];
+
+    if (deliverablesPlanned.length === 0) {
+      pushStep({
+        kind: "preflight_plan",
+        durationMs: 0,
+        ok: true,
+        detail: "all_deliverables_already_present",
+      });
+      report.finishedAt = new Date().toISOString();
+      report.ok = true;
+      await this.persistDeliverablesDebugReport(projectId, report);
+      options?.onProgress?.({ step: "done", index: 0, total: 0 });
+      return { ok: true, lastDeliverablesDebug: report };
+    }
+
+    pushStep({
+      kind: "preflight_plan",
+      durationMs: 0,
+      ok: true,
+      detail: `planned=${deliverablesPlanned.length} skipped=${deliverablesToRun.length - deliverablesPlanned.length} parallel=true`,
+    });
 
     const largeMddCooldown = legacyDeliverablesLargeMddCooldownMs(report.mddChars);
     if (largeMddCooldown > 0) {
@@ -1860,59 +1891,64 @@ export class LegacyCoordinatorService {
       await sleepMs(largeMddCooldown);
     }
 
-    let didRunLlmDeliverableStep = false;
-    for (let i = 0; i < deliverablesToRun.length; i++) {
-      const kind = deliverablesToRun[i]!;
-      options?.onProgress?.({ step: kind, index: i, total: deliverablesToRun.length });
-      if (kind === "mdd_canonical") {
-        pushStep({ kind: "mdd_canonical", durationMs: 0, ok: true, detail: "noop" });
-        continue;
-      }
-      const interStepMs = legacyDeliverablesInterStepDelayMs();
-      if (didRunLlmDeliverableStep && interStepMs > 0) {
-        if (isLegacyDeliverablesDebugVerbose()) {
-          this.logger.log(`[LegacyDeliverables] throttle inter_step_ms=${interStepMs} before=${kind}`);
-        }
-        await sleepMs(interStepMs);
-      }
-      didRunLlmDeliverableStep = true;
+    const stepErrors: Array<{ step: string; error: string }> = [];
+    let completedCount = 0;
+    const totalPlanned = deliverablesPlanned.length;
 
-      const t0 = Date.now();
-      try {
-        await runWithLegacy429Retries(() => runDeliverableStep(kind), { logger: this.logger, step: kind });
-        p = await load();
-        const outChars = deliverableFieldCharCount(p as Record<string, unknown>, kind);
-        const short = outChars < 48;
-        pushStep({
-          kind,
-          durationMs: Date.now() - t0,
-          ok: true,
-          outChars,
-          detail: short ? "output_under_48_chars" : undefined,
-        });
-      } catch (err) {
-        pushStep({
-          kind,
-          durationMs: Date.now() - t0,
-          ok: false,
-          error: clipDebug(err instanceof Error ? err.message : String(err), 800),
-        });
-        markFatal(err);
-        this.logger.error(`[LegacyDeliverables] FATAL step=${kind} — ${err instanceof Error ? err.message : String(err)}${err instanceof Error && err.stack ? `\n${err.stack.slice(0, 2000)}` : ""}`);
-        if (isLegacy429Like(err)) {
-          report.upstreamRateLimited = true;
-          report.retryAfterSeconds = readRetryAfterSecondsFromErrorHeaders(err) ?? 60;
+    await Promise.allSettled(
+      deliverablesPlanned.map(async (kind) => {
+        const t0 = Date.now();
+        try {
+          await runWithLegacy429Retries(() => runDeliverableStep(kind), { logger: this.logger, step: kind });
+          const fresh = await load();
+          const outChars = deliverableFieldCharCount(fresh as Record<string, unknown>, kind);
+          const short = outChars < 48;
+          pushStep({
+            kind,
+            durationMs: Date.now() - t0,
+            ok: true,
+            outChars,
+            detail: short ? "output_under_48_chars" : undefined,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          pushStep({
+            kind,
+            durationMs: Date.now() - t0,
+            ok: false,
+            error: clipDebug(msg, 800),
+          });
+          stepErrors.push({ step: kind, error: msg });
+          if (isLegacy429Like(err)) {
+            report.upstreamRateLimited = true;
+            report.retryAfterSeconds = readRetryAfterSecondsFromErrorHeaders(err) ?? 60;
+          }
         }
-        await this.persistDeliverablesDebugReport(projectId, report);
-        if (isLegacyDeliverablesDebugVerbose()) this.logger.error(err);
-        const rateLimited = upstreamLlmRateLimitHttpException(err, report);
-        if (rateLimited) throw rateLimited;
-        throw err;
-      }
+        completedCount++;
+        const label = DELIVERABLE_STEP_LABELS[kind] ?? kind;
+        options?.onProgress?.({ step: label, index: completedCount - 1, total: totalPlanned });
+      }),
+    );
+
+    options?.onProgress?.({ step: "done", index: totalPlanned, total: totalPlanned });
+
+    p = await load();
+
+    if (stepErrors.length > 0) {
+      this.logger.warn(
+        `[LegacyDeliverables] Completada con ${stepErrors.length}/${totalPlanned} paso(s) fallido(s): ${stepErrors.map((e) => `${e.step}: ${e.error}`).join("; ")}`,
+      );
+    }
+
+    if (report.upstreamRateLimited) {
+      markFatal(new Error("UPSTREAM_LLM_RATE_LIMIT"));
+      await this.persistDeliverablesDebugReport(projectId, report);
+      const rateLimited = upstreamLlmRateLimitHttpException(new Error("UPSTREAM_LLM_RATE_LIMIT"), report);
+      if (rateLimited) throw rateLimited;
     }
 
     report.finishedAt = new Date().toISOString();
-    report.ok = true;
+    report.ok = stepErrors.length === 0;
     report.deliverablesWithBody = report.steps.filter(
       (s) =>
         typeof s.outChars === "number" &&

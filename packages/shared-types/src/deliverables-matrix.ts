@@ -31,11 +31,50 @@ export const DELIVERABLE_STEP_LABELS: Record<DeliverableKind, string> = {
   infra: "Infraestructura",
 };
 
+/** Campo `Project` donde persiste cada entregable (null = no aplica). */
+export const DELIVERABLE_PROJECT_CONTENT_FIELD: Record<DeliverableKind, string | null> = {
+  mdd_canonical: "mddContent",
+  spec: "specContent",
+  architecture: "architectureContent",
+  use_cases: "useCasesContent",
+  blueprint: "blueprintContent",
+  api_contracts: "apiContractsContent",
+  logic_flows: "logicFlowsContent",
+  ux_ui_guide: "uxUiGuideContent",
+  user_stories: "userStoriesContent",
+  agent_governance: "agentGovernanceContent",
+  tasks: "tasksContent",
+  infra: "infraContent",
+};
+
 /** Labels de pasos de cascada según complejidad (orden de `DELIVERABLES_BY_COMPLEXITY`). */
 export function deliverableStepLabelsForComplexity(
   complexity: ComplexityLevel,
 ): string[] {
   return DELIVERABLES_BY_COMPLEXITY[complexity].map((k) => DELIVERABLE_STEP_LABELS[k]);
+}
+
+/**
+ * Entregables legacy que faltan por generar: omite `mdd_canonical` si ya hay MDD
+ * y cualquier paso cuyo campo en proyecto supere `minContentChars`.
+ */
+export function planLegacyDeliverablesToGenerate(params: {
+  complexity: ComplexityLevel;
+  hasMddContent: boolean;
+  contentLengthByField: Record<string, number>;
+  minContentChars?: number;
+}): DeliverableKind[] {
+  const min = params.minContentChars ?? 48;
+  return DELIVERABLES_BY_COMPLEXITY[params.complexity].filter((kind) => {
+    if (kind === "mdd_canonical") return !params.hasMddContent;
+    const field = DELIVERABLE_PROJECT_CONTENT_FIELD[kind];
+    if (!field) return true;
+    return (params.contentLengthByField[field] ?? 0) <= min;
+  });
+}
+
+export function deliverableStepLabelsForKinds(kinds: readonly DeliverableKind[]): string[] {
+  return kinds.map((k) => DELIVERABLE_STEP_LABELS[k]);
 }
 
 /**
