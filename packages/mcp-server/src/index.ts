@@ -12,6 +12,7 @@
  * @license Apache-2.0
  */
 
+import { parseAgentGovernanceScaffold } from "@theforge/shared-types";
 import { generateTable, normalizeTable, normalizeAllTables, parseTable } from "@theforge/shared-types/markdown-table";
 import { generateMermaid, normalizeMermaid, validateMermaid } from "@theforge/shared-types/mermaid";
 
@@ -152,10 +153,31 @@ function apiDelete(path: string): Promise<unknown> {
   return apiFetch("DELETE", path);
 }
 
-// ── Tool Definitions (43 tools) ────────────────────────────────────────
+function summarizeAgentGovernanceField(raw: unknown): {
+  exists: boolean;
+  wordCount: number;
+  content: string | null;
+} {
+  const text = typeof raw === "string" ? raw : "";
+  const scaffold = text.trim() ? parseAgentGovernanceScaffold(text) : null;
+  if (scaffold) {
+    const wordCount = scaffold.files.reduce(
+      (acc, file) => acc + (file.content.trim() ? file.content.trim().split(/\s+/).length : 0),
+      0,
+    );
+    return { exists: true, wordCount, content: text };
+  }
+  return {
+    exists: text.trim().length > 0,
+    wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+    content: text.trim().length > 0 ? text : null,
+  };
+}
+
+// ── Tool Definitions (45 tools) ────────────────────────────────────────
 
 /**
- * Manifiesto MCP: 43 herramientas que reflejan la API REST The Forge (proyectos, entregables, análisis,
+ * Manifiesto MCP: 45 herramientas que reflejan la API REST The Forge (proyectos, entregables, análisis,
  * orquestador, sesiones, flujo legacy e integración Ariadne). Cada `name` debe existir como método en
  * {@link handlers}.
  *
@@ -204,7 +226,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_project_deliverables",
     description:
-      "Devuelve un resumen estructurado de todos los documentos de la cascada (Spec, Blueprint, API Contracts, Architecture, Use Cases, User Stories, Logic Flows, Infra, UX/UI Guide, DBGA). Cada doc incluye 'exists', 'wordCount' y 'content' completo si existe. Los docs de stage (BRD, To-Be, As-Is, MDD) están en get_project_stages.",
+      "Devuelve un resumen estructurado de todos los documentos de la cascada (Spec, Blueprint, API Contracts, Architecture, Use Cases, User Stories, Logic Flows, Infra, UX/UI Guide, DBGA, Agent Governance). Cada doc incluye 'exists', 'wordCount' y 'content' completo si existe. agentGovernanceContent es JSON scaffold (rules/skills/AGENTS.md). Los docs de stage (BRD, To-Be, As-Is, MDD) están en get_project_stages.",
     inputSchema: {
       type: "object",
       properties: { projectId: { type: "string", description: "ID del proyecto" } },
@@ -390,6 +412,36 @@ const TOOLS: Tool[] = [
         preview: { type: "boolean" },
         gapsFeedback: { type: "string" },
       },
+      required: ["projectId"],
+    },
+  },
+  {
+    name: "generate_agent_governance",
+    description:
+      "Genera el scaffold de Gobernanza IA (AGENTS.md, rules, skills, mcp.json.example) desde MDD + Blueprint + complejidad",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        preview: {
+          type: "boolean",
+          description: "Si true, no persiste; devuelve { content } con el JSON scaffold",
+        },
+        queue: {
+          type: "boolean",
+          description: "Si true y la cola de entregables está activa, encola el job async",
+        },
+      },
+      required: ["projectId"],
+    },
+  },
+  {
+    name: "get_agent_governance_export",
+    description:
+      "Devuelve el scaffold de Gobernanza IA reconciliado para export/ZIP (sin re-llamar al LLM)",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string" } },
       required: ["projectId"],
     },
   },
@@ -990,11 +1042,19 @@ const handlers: Record<string, Handler> = {
         "apiContractsContent", "useCasesContent", "userStoriesContent",
         "logicFlowsContent", "infraContent", "tasksContent",
         "uxUiGuideContent", "dbgaContent", "phase0SummaryContent",
-        "aemContent",
+        "aemContent", "agentGovernanceContent",
       ];
       const projectDocuments: Record<string, { exists: boolean; wordCount: number }> = {};
       for (const field of docFields) {
         const content = p[field];
+        if (field === "agentGovernanceContent") {
+          const summary = summarizeAgentGovernanceField(content);
+          projectDocuments[field] = {
+            exists: summary.exists,
+            wordCount: summary.wordCount,
+          };
+          continue;
+        }
         const text = typeof content === "string" ? content : "";
         projectDocuments[field] = {
           exists: text.trim().length > 0,
@@ -1022,10 +1082,16 @@ const handlers: Record<string, Handler> = {
       { key: "dbgaContent", label: "DBGA" },
       { key: "phase0SummaryContent", label: "Phase 0 Summary" },
       { key: "aemContent", label: "AEM" },
+      { key: "agentGovernanceContent", label: "Agent Governance / Gobernanza IA" },
     ];
     const deliverables: Record<string, { label: string; exists: boolean; wordCount: number; content: string | null }> = {};
     for (const { key, label } of docFields) {
       const content = project[key];
+      if (key === "agentGovernanceContent") {
+        const summary = summarizeAgentGovernanceField(content);
+        deliverables[key] = { label, ...summary };
+        continue;
+      }
       const text = typeof content === "string" ? content : "";
       deliverables[key] = {
         label,
@@ -1123,6 +1189,17 @@ const handlers: Record<string, Handler> = {
         gapsFeedback: (args.gapsFeedback as string) ?? "",
       }),
     );
+  },
+  async generate_agent_governance(args) {
+    const queue = args.queue === true ? "?queue=true" : "";
+    return JSON.stringify(
+      await apiPost(`/projects/${args.projectId}/generate-agent-governance${queue}`, {
+        preview: args.preview ?? false,
+      }),
+    );
+  },
+  async get_agent_governance_export(args) {
+    return JSON.stringify(await apiGet(`/projects/${args.projectId}/agent-governance-export`));
   },
   async confirm_complexity(args) {
     return JSON.stringify(await apiPost(`/projects/${args.projectId}/confirm-complexity`));
