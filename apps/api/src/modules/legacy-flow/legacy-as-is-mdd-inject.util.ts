@@ -1,7 +1,12 @@
 /**
- * Inyecta evidencia estructurada del `codebaseDoc` (Ariadne) en §3–§5 del MDD AS-IS (etapa 1).
- * Evita que el LLM resuma entidades, API o servicios en listas tipo «N adicionales».
+ * Inyecta evidencia estructurada del `codebaseDoc` (Ariadne) en §2–§5 del MDD AS-IS (etapa 1).
+ * Evita alucinaciones LLM de stack (Laravel/Vue) y resúmenes «N adicionales» en entidades/API/servicios.
  */
+
+import {
+  parseLegacyCodebaseDocEvidence,
+  type LegacyRepoEvidence,
+} from "./legacy-component-diagram.util.js";
 
 const REPO_HEADER_RE = /^##\s+Repositorio:\s*(.+?)(?:\s*\(|$)/gim;
 
@@ -49,6 +54,189 @@ function splitCodebaseDocByRepo(codebaseDoc: string): Array<{ label: string; bod
     chunks.push({ label: h.label, body: doc.slice(h.start, end).trim() });
   }
   return chunks;
+}
+
+function escapeMdCell(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+function parseInfraFromChunk(chunk: string): { orm?: string; envVars: string[] } {
+  const body = extractSubsectionBody(chunk, "Infraestructura");
+  if (!body) return { envVars: [] };
+  const jsonMatch = body.match(/```json\s*([\s\S]*?)```/i);
+  if (!jsonMatch?.[1]) return { envVars: [] };
+  try {
+    const o = JSON.parse(jsonMatch[1].trim()) as { orm?: string; env_vars?: string[] };
+    return {
+      orm: typeof o.orm === "string" && o.orm.trim() ? o.orm.trim() : undefined,
+      envVars: Array.isArray(o.env_vars)
+        ? o.env_vars.filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+        : [],
+    };
+  } catch {
+    return { envVars: [] };
+  }
+}
+
+function repoShortLabel(label: string): string {
+  const parts = label.split("/").filter(Boolean);
+  return (parts[parts.length - 1] ?? label) || "codebase";
+}
+
+function componentNameForRepo(repo: LegacyRepoEvidence): string {
+  const short = repoShortLabel(repo.label);
+  if (repo.kind === "frontend") return `Frontend ${short}`;
+  if (repo.kind === "strapi") return `Backend ${short} (Strapi)`;
+  if (repo.kind === "nest") return `API ${short} (NestJS)`;
+  return `Repositorio ${short}`;
+}
+
+function inferFrontendStackHints(chunkBody: string): string[] {
+  const hints: string[] = [];
+  const blob = chunkBody.toLowerCase();
+  if (/react|src\/models|src\/api|frontend:/i.test(chunkBody)) hints.push("React SPA");
+  if (/vite\.config|@vite\//.test(blob)) hints.push("Vite");
+  if (/react-router/.test(blob)) hints.push("React Router");
+  if (/tanstack\/react-query|react-query/.test(blob)) hints.push("TanStack Query");
+  return hints.length ? hints : ["SPA cliente (frontend indexado)"];
+}
+
+function describeRepoTechnology(repo: LegacyRepoEvidence, chunkBody: string): string {
+  const infra = parseInfraFromChunk(chunkBody);
+  const orm = repo.orm ?? infra.orm;
+  const parts: string[] = [];
+
+  if (repo.kind === "strapi") {
+    parts.push("Strapi CMS");
+    if (repo.entityCount > 0) parts.push(`${repo.entityCount} content-type(s)`);
+    if (repo.apiRouteCount > 0) parts.push(`${repo.apiRouteCount} rutas REST`);
+    if (orm && orm !== "none") parts.push(`persistencia: ${orm}`);
+  } else if (repo.kind === "frontend") {
+    parts.push(inferFrontendStackHints(chunkBody).join(" · "));
+    if (repo.apiRouteCount > 0) parts.push(`${repo.apiRouteCount} clientes API`);
+  } else if (repo.kind === "nest") {
+    parts.push("NestJS");
+    if (repo.apiRouteCount > 0) parts.push(`${repo.apiRouteCount} endpoints`);
+    if (orm && orm !== "none") parts.push(`ORM: ${orm}`);
+  } else if (repo.entityCount > 0 || repo.apiRouteCount > 0) {
+    parts.push(`${repo.entityCount} entidades · ${repo.apiRouteCount} rutas API`);
+  } else {
+    parts.push("Rol/stack no inferido en índice");
+  }
+  return parts.join(" · ");
+}
+
+function inferSharedInfraTableRow(chunks: Array<{ body: string }>): string | null {
+  const envVars = new Set<string>();
+  const orms = new Set<string>();
+  for (const chunk of chunks) {
+    const infra = parseInfraFromChunk(chunk.body);
+    if (infra.orm && infra.orm !== "none") orms.add(infra.orm);
+    for (const v of infra.envVars) envVars.add(v);
+  }
+  if (envVars.size === 0 && orms.size === 0) return null;
+
+  const techParts: string[] = [];
+  if (orms.size > 0) techParts.push([...orms].join(", "));
+
+  const services: string[] = [];
+  for (const v of envVars) {
+    const u = v.toUpperCase();
+    if (u.includes("REDIS")) services.push("Redis");
+    if (u.includes("MYSQL") || u === "DATABASE_URL" || u.includes("POSTGRES")) {
+      services.push(u.includes("POSTGRES") ? "PostgreSQL" : "MySQL/PostgreSQL");
+    }
+    if (u.includes("HORIZON") || u.includes("QUEUE")) services.push("Colas (env indexada)");
+  }
+  const uniqueServices = [...new Set(services)];
+  if (uniqueServices.length > 0) techParts.push(uniqueServices.join(", "));
+
+  const envSample = [...envVars].slice(0, 6);
+  if (envSample.length > 0) {
+    techParts.push(
+      `env: ${envSample.join(", ")}${envVars.size > envSample.length ? "…" : ""}`,
+    );
+  }
+
+  return `| Infraestructura compartida | ${escapeMdCell(techParts.join(" · "))} | _\`### Infraestructura\` doc. partida_ |`;
+}
+
+function detectPatternsFromEvidence(doc: string): string[] {
+  const patterns: string[] = [];
+  const lower = doc.toLowerCase();
+  if (lower.includes("app/repositories/") || lower.includes("/repositories/")) {
+    patterns.push("Repository pattern (`app/Repositories/` o equivalente indexado)");
+  }
+  if (lower.includes("app/services/") || lower.includes("src/api/") || /strapi:[a-z0-9_-]+/i.test(doc)) {
+    patterns.push("Service layer (Strapi services, `app/Services/` o `src/api` frontend)");
+  }
+  if (lower.includes("swagger") || lower.includes("openapi")) {
+    patterns.push("API REST documentada (OpenAPI/Swagger en índice)");
+  }
+  if (/\|\s*[^\|]+\s*\|\s*strapi\s*\|/i.test(doc)) {
+    patterns.push("API REST Strapi (content-types + routes indexados)");
+  }
+  return patterns;
+}
+
+function extractComponentDiagramSubsection(section2Body: string): string {
+  const m = section2Body.match(
+    /###\s+Diagrama de Componentes[\s\S]*?(?=\n###\s+(?!Diagrama)|\n##\s+|$)/i,
+  );
+  return m?.[0]?.trim() ?? "";
+}
+
+/** Markdown de stack §2 anclado al índice (sin Laravel/Vue inventados). */
+export function buildAsIsSection2BodyFromCodebaseDoc(codebaseDoc: string): string | null {
+  const doc = codebaseDoc.trim();
+  if (!doc) return null;
+
+  const evidence = parseLegacyCodebaseDocEvidence(doc);
+  const chunks = splitCodebaseDocByRepo(doc);
+  const repos = evidence.repos.filter(
+    (r) =>
+      r.kind !== "unknown" ||
+      r.entityCount > 0 ||
+      r.apiRouteCount > 0 ||
+      r.serviceLabels.length > 0,
+  );
+  if (repos.length === 0) return null;
+
+  const chunkByLabel = new Map(chunks.map((c) => [c.label, c.body]));
+  const tableLines = [
+    "| Componente | Tecnología | Repositorio / Ruta |",
+    "| --- | --- | --- |",
+  ];
+
+  for (const repo of repos) {
+    const chunkBody =
+      chunkByLabel.get(repo.label) ?? (repo.label === "codebase" ? doc : chunks[0]?.body ?? "");
+    const repoPath = repo.label.replace(/`/g, "\\`") || "codebase";
+    tableLines.push(
+      `| ${escapeMdCell(componentNameForRepo(repo))} | ${escapeMdCell(describeRepoTechnology(repo, chunkBody))} | \`${repoPath}\` |`,
+    );
+  }
+
+  const sharedInfra = inferSharedInfraTableRow(chunks);
+  if (sharedInfra) tableLines.push(sharedInfra);
+
+  const parts: string[] = [
+    "_Stack derivado del índice Ariadne (`codebaseDoc`). **Prohibido** inventar PHP/Laravel/Vue/Inertia u otras tecnologías que no consten en Resumen, Infraestructura o rutas indexadas._",
+    "",
+    tableLines.join("\n"),
+  ];
+
+  const resumenBlocks = buildRepoScopedBlock(chunks, "Resumen", "");
+  if (resumenBlocks.trim()) {
+    parts.push("", "### Resumen por repositorio", "", resumenBlocks);
+  }
+
+  const patterns = detectPatternsFromEvidence(doc);
+  if (patterns.length > 0) {
+    parts.push("", "### Patrones (evidencia indexada)", "", patterns.map((p) => `- ${p}`).join("\n"));
+  }
+
+  return parts.join("\n");
 }
 
 function buildRepoScopedBlock(
@@ -165,8 +353,9 @@ export function stripServiceSummaryPlaceholders(section5: string): string {
 }
 
 /**
- * Sustituye §3–§5 del MDD AS-IS con tablas completas del `codebaseDoc` cuando existen.
+ * Sustituye §2–§5 del MDD AS-IS con evidencia del `codebaseDoc` cuando existe.
  * Idempotente: re-ejecutar mantiene el mismo inventario (no duplica bloques).
+ * Preserva `### Diagrama de Componentes` ya inyectado en §2.
  */
 export function injectAsIsCodebaseEvidenceIntoMdd(mddContent: string, codebaseDoc: string): string {
   const mdd = mddContent.trim();
@@ -174,6 +363,17 @@ export function injectAsIsCodebaseEvidenceIntoMdd(mddContent: string, codebaseDo
   if (!mdd || !doc) return mddContent;
 
   let out = mdd;
+
+  const section2 = buildAsIsSection2BodyFromCodebaseDoc(doc);
+  if (section2) {
+    const bounds2 = findMddSectionBounds(out, 2);
+    const diagram =
+      bounds2 != null
+        ? extractComponentDiagramSubsection(out.slice(bounds2.bodyStart, bounds2.end))
+        : "";
+    out = replaceMddSectionBody(out, 2, diagram ? `${section2}\n\n${diagram}` : section2);
+  }
+
   const section3 = buildAsIsSection3BodyFromCodebaseDoc(doc);
   if (section3) {
     out = replaceMddSectionBody(out, 3, section3);
