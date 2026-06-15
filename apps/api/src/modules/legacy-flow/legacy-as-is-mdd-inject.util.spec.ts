@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildAsIsSection2BodyFromCodebaseDoc,
   buildAsIsSection3BodyFromCodebaseDoc,
   injectAsIsCodebaseEvidenceIntoMdd,
   stripEntitySummaryPlaceholders,
@@ -9,6 +10,9 @@ import {
 
 const ERP_SNIPPET = `
 ## Repositorio: desarrollo_imj/erp
+
+### Resumen
+Backend Strapi con content-types de campañas y cotizador.
 
 ### Entidades y modelo de datos
 | Entidad | Origen | Atributos (muestra) |
@@ -29,10 +33,18 @@ const ERP_SNIPPET = `
 | strapi:pauta | src/api/pauta/services/pauta.js |
 | strapi:cotizador | src/api/cotizador/services/cotizador.js |
 | strapi:agencia | src/api/agencia/services/agencia.js |
+
+### Infraestructura
+\`\`\`json
+{ "orm": "strapi", "env_vars": ["DATABASE_URL", "REDIS_URL"] }
+\`\`\`
 `;
 
 const OOH_SNIPPET = `
 ## Repositorio: desarrollo_imj/oohbp2
+
+### Resumen
+SPA React consumiendo API Strapi.
 
 ### Entidades y modelo de datos
 | Entidad | Origen | Atributos (muestra) |
@@ -48,7 +60,30 @@ const OOH_SNIPPET = `
 | Servicio | Dependencias (paths) |
 | --- | --- |
 | frontend:CampaniaQuerys | src/api/CampaniaQuerys.tsx |
+
+### Infraestructura
+\`\`\`json
+{ "orm": "none", "env_vars": ["VITE_API_URL"] }
+\`\`\`
+
+### Rutas de evidencia
+- \`package.json\`
+- \`src/Models/CampaniaModel.tsx\`
 `;
+
+describe("buildAsIsSection2BodyFromCodebaseDoc", () => {
+  it("describe Strapi + React desde índice, sin Laravel/Vue inventados", () => {
+    const body = buildAsIsSection2BodyFromCodebaseDoc(ERP_SNIPPET + OOH_SNIPPET);
+    assert.ok(body);
+    assert.match(body!, /Strapi CMS/i);
+    assert.match(body!, /React SPA/i);
+    assert.match(body!, /desarrollo_imj\/erp/);
+    assert.match(body!, /desarrollo_imj\/oohbp2/);
+    assert.doesNotMatch(body!, /PHP 8\.1 \+ Laravel/i);
+    assert.doesNotMatch(body!, /Vue 3 \+ Inertia/i);
+    assert.match(body!, /Prohibido.*Laravel/i);
+  });
+});
 
 describe("buildAsIsSection3BodyFromCodebaseDoc", () => {
   it("incluye tablas de todos los repos", () => {
@@ -84,14 +119,22 @@ describe("stripServiceSummaryPlaceholders", () => {
 });
 
 describe("injectAsIsCodebaseEvidenceIntoMdd", () => {
-  it("reemplaza §3 resumido por inventario del codebaseDoc", () => {
+  it("reemplaza §2 alucinado y §3–§5 resumidos por evidencia del codebaseDoc", () => {
     const mdd = `## 1. Contexto
 
 Sistema OBP.
 
 ## 2. Arquitectura y Stack
 
-Strapi + React.
+| Backend ERP | PHP 8.1 + Laravel 10 | desarrollo_imj/erp |
+| Frontend OOHBP2 | Vue 3 + Inertia | desarrollo_imj/oohbp2 |
+
+### Diagrama de Componentes
+
+\`\`\`mermaid
+flowchart TB
+  FE[Vue SPA]
+\`\`\`
 
 ## 3. Modelo de Datos
 
@@ -118,6 +161,12 @@ Auth.
 Docker.
 `;
     const out = injectAsIsCodebaseEvidenceIntoMdd(mdd, ERP_SNIPPET + OOH_SNIPPET);
+    assert.doesNotMatch(out, /PHP 8\.1 \+ Laravel/i);
+    assert.doesNotMatch(out, /Vue 3 \+ Inertia/i);
+    assert.doesNotMatch(out, /\| Backend ERP \| PHP/i);
+    assert.match(out, /## 2\. Arquitectura[\s\S]*Strapi CMS/);
+    assert.match(out, /## 2\. Arquitectura[\s\S]*React SPA/);
+    assert.match(out, /### Diagrama de Componentes[\s\S]*flowchart TB/);
     assert.doesNotMatch(out, /Otras entidades significativas/i);
     assert.match(out, /## 3\. Modelo de Datos[\s\S]*\| pauta \|/);
     assert.match(out, /## 4\. Contratos de API[\s\S]*\| \/campanias \|/);
