@@ -23,6 +23,7 @@
  * - **`create_project`**: `POST /projects` (body: name, projectType NEW|LEGACY, hasUxTeam, theforgeProjectId si LEGACY)
  * - **`delete_project`**: `DELETE /projects/:projectId`
  * - **`get_project_stages`**: `GET /projects/:projectId/stages`
+ * - **`get_project_deliverables`**: `GET /projects/:projectId` (resumen cascada + `agentGovernanceContent`)
  * - **`get_conformance`**: `GET /projects/:projectId/conformance?useLlm=`
  * - **`patch_project`**: `PATCH /projects/:projectId` (body parcial MDD/blueprint/spec/…)
  * - **`generate_benchmark`**: `POST /projects/:projectId/generate-benchmark`
@@ -40,6 +41,8 @@
  * - **`generate_user_stories`**: `POST /projects/:projectId/generate-user-stories`
  * - **`generate_logic_flows`**: `POST /projects/:projectId/generate-logic-flows`
  * - **`generate_infra`**: `POST /projects/:projectId/generate-infra`
+ * - **`generate_agent_governance`**: `POST /projects/:projectId/generate-agent-governance` (preview, queue)
+ * - **`get_agent_governance_export`**: `GET /projects/:projectId/agent-governance-export`
  * - **`confirm_complexity`**: `POST /projects/:projectId/confirm-complexity`
  * - **`reassess_complexity`**: `POST /projects/:projectId/reassess-complexity`
  *
@@ -87,4 +90,4 @@
  * Revisión del catálogo; incrementar si cambia el conjunto de tools.
  * @constant
  */
-export const MCP_THEFORGE_TOOLS_DOC_REVISION = 1;
+export const MCP_THEFORGE_TOOLS_DOC_REVISION = 2;
