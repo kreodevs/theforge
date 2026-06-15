@@ -21,7 +21,12 @@ import {
   buildPlanApprovalChatContents,
   isPlanApprovalResumeMessage,
 } from "../utils/planApprovalChat";
-import { deliverableStepLabelsForComplexity, DELIVERABLE_STEP_LABELS } from "@theforge/shared-types";
+import {
+  DELIVERABLE_PROJECT_CONTENT_FIELD,
+  deliverableStepLabelsForComplexity,
+  deliverableStepLabelsForKinds,
+  planLegacyDeliverablesToGenerate,
+} from "@theforge/shared-types";
 import { listGovernancePatternOptions } from "@theforge/shared-types/mdd-governance-patterns";
 import {
   orchestratorDocSnapshot,
@@ -3597,28 +3602,47 @@ if (prog && prog.step && prog.step !== "done") {
     if (!projectId?.trim()) return false;
     const pid = projectId.trim();
     const stageId = get().activeStageId?.trim() || undefined;
-    const complexity = get().project?.complexity ?? "HIGH";
-    const allStepLabels = deliverableStepLabelsForComplexity(complexity);
+    const project = get().project;
+    const complexity = project?.complexity ?? "HIGH";
+    const contentLengthByField: Record<string, number> = {};
+    for (const field of new Set(
+      Object.values(DELIVERABLE_PROJECT_CONTENT_FIELD).filter((f): f is string => !!f),
+    )) {
+      const raw = project?.[field as keyof typeof project];
+      contentLengthByField[field] = typeof raw === "string" ? raw.length : 0;
+    }
+    const plannedKinds = planLegacyDeliverablesToGenerate({
+      complexity,
+      hasMddContent: !!project?.mddContent?.trim(),
+      contentLengthByField,
+    });
+    const stepLabels = deliverableStepLabelsForKinds(plannedKinds);
+
+    if (stepLabels.length === 0) {
+      await get().fetchProject(pid);
+      return true;
+    }
 
     set({
       loading: true,
       loadingReason: "legacy-deliverables",
       error: null,
-      agentProgress: allStepLabels.map((label) => ({
+      agentProgress: stepLabels.map((label) => ({
         agent: "Entregables",
         message: `⚪ ${label} — Generando…`,
         step: label,
         status: "generando" as const,
       })),
-      cascadeTotal: allStepLabels.length,
+      cascadeTotal: stepLabels.length,
       cascadeCompleted: 0,
     });
 
     const pollLegacyDeliverablesJob = async (jobId: string): Promise<boolean> => {
       const deadline = Date.now() + 90 * 60 * 1000;
       const completedSteps = new Set<string>();
+      let lastActiveStep: string | null = null;
       while (Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await new Promise((resolve) => setTimeout(resolve, 1200));
         const st = await apiFetch(`${API_BASE}/projects/${pid}/legacy/deliverables-jobs/${jobId}`);
         if (!st.ok) {
           const err = await st.json().catch(() => ({}));
@@ -3640,19 +3664,29 @@ if (prog && prog.step && prog.step !== "done") {
           return true;
         }
         const prog = j.progress;
-        if (prog?.step && prog.step !== "preflight") {
-          const label =
-            DELIVERABLE_STEP_LABELS[prog.step as keyof typeof DELIVERABLE_STEP_LABELS] ?? prog.step;
-          if (!completedSteps.has(label)) {
-            completedSteps.add(label);
+        if (prog?.step && prog.step !== "done") {
+          if (!completedSteps.has(prog.step)) {
+            completedSteps.add(prog.step);
             set((s) => ({
               agentProgress: s.agentProgress.map((item) =>
-                item.step === label
-                  ? { ...item, message: `⚡ ${label} — Generando…`, status: "generando" }
+                item.step === prog.step
+                  ? { ...item, message: `✅ ${prog.step} — Terminado`, status: "terminado" }
                   : item,
               ),
-              cascadeCompleted: Math.min(completedSteps.size, allStepLabels.length),
+              cascadeCompleted: completedSteps.size,
             }));
+          }
+          if (prog.step !== lastActiveStep) {
+            lastActiveStep = prog.step;
+            if (!completedSteps.has(prog.step)) {
+              set((s) => ({
+                agentProgress: s.agentProgress.map((item) =>
+                  item.step === prog.step
+                    ? { ...item, message: `⚡ ${prog.step} — Generando…`, status: "generando" }
+                    : item,
+                ),
+              }));
+            }
           }
         }
       }
@@ -3696,6 +3730,16 @@ if (prog && prog.step && prog.step !== "done") {
         set({ lastLegacyDeliverablesDebug: data.lastDeliverablesDebug ?? null });
       }
 
+      set((s) => ({
+        agentProgress: s.agentProgress.map((item) =>
+          item.status === "generando"
+            ? { ...item, message: `✅ ${item.step} — Terminado`, status: "terminado" }
+            : item,
+        ),
+        cascadeCompleted: stepLabels.length,
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+
       const proj = await get().fetchProject(pid);
       await get().fetchEstimation(pid).catch(() => {});
       set({
@@ -3703,7 +3747,6 @@ if (prog && prog.step && prog.step !== "done") {
         loadingReason: null,
         error: null,
         agentProgress: [],
-        cascadeCompleted: allStepLabels.length,
       });
       return proj != null;
     } catch (e) {
