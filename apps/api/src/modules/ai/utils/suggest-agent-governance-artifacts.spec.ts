@@ -115,6 +115,15 @@ describe("suggestAgentGovernanceArtifacts", () => {
       "debe mencionar monorepo o HIGH",
     );
   });
+
+  it("sugiere auth-oauth2-jwt cuando el arquetipo auth-jwt está activo", () => {
+    const result = suggestAgentGovernanceArtifacts({
+      mddMarkdown: NEST_REACT_MDD,
+      complexity: "MEDIUM",
+    });
+    assert.ok(result.archetypes.includes("auth-jwt"));
+    assert.ok(result.suggestedSkills.some((s) => s.id === "auth-oauth2-jwt"));
+  });
 });
 
 describe("inferStacks", () => {
@@ -226,6 +235,28 @@ Backend NestJS.
     });
     assert.equal(title, "Portal Clientes");
   });
+
+  it("extrae KMS Corporativo desde Propósito aunque §1 empiece con problema de negocio", () => {
+    const title = extractProjectTitle({
+      mddMarkdown: `# Master Design Document
+
+## 1. Propósito
+
+### Problema de negocio
+
+Las empresas no centralizan el conocimiento documental.
+
+### Propósito
+
+**Plataforma de Gestión Documental (KMS Corporativo)** — API-first sin dashboard MVP.
+
+## 2. Stack
+Backend NestJS API-only.
+`,
+      complexity: "MEDIUM",
+    });
+    assert.equal(title, "KMS Corporativo");
+  });
 });
 
 describe("extractProjectGovernanceFacts", () => {
@@ -294,6 +325,28 @@ describe("extractProjectGovernanceFacts", () => {
     assert.equal(boxes.length, 2);
     assert.match(boxes[0], /Configurar monorepo/);
   });
+
+  it("omite Frontend en Hechos cuando el proyecto es API-only", () => {
+    const facts = extractProjectGovernanceFacts({
+      mddMarkdown: KMS_MDD,
+      specMarkdown: "CLI-only; sin interfaz web.",
+      blueprintMarkdown: KMS_BLUEPRINT,
+      complexity: "HIGH",
+    });
+    assert.equal(facts.hasUiSurface, false);
+    assert.equal(facts.frontendStack, undefined);
+    const scaffold = parseAgentGovernanceResponse('{"files":{}}', "MEDIUM", {
+      governanceInput: {
+        mddMarkdown: KMS_MDD,
+        specMarkdown: "CLI-only; sin interfaz web.",
+        blueprintMarkdown: KMS_BLUEPRINT,
+        complexity: "MEDIUM",
+      },
+    });
+    const agents = scaffold.files.find((f) => f.path === "AGENTS.md");
+    assert.ok(agents?.content.includes("Hechos del proyecto (KMS Corporativo)"));
+    assert.equal(agents?.content.includes("**Frontend:**"), false);
+  });
 });
 
 describe("isValidBlueprintModulePath", () => {
@@ -303,6 +356,8 @@ describe("isValidBlueprintModulePath", () => {
     assert.equal(isValidBlueprintModulePath("apps/api"), true);
     assert.equal(isValidBlueprintModulePath("**Autenticación/Autorización:** OAuth2"), false);
     assert.equal(isValidBlueprintModulePath("Observabilidad: logs"), false);
+    assert.equal(isValidBlueprintModulePath("Entidades"), false);
+    assert.equal(isValidBlueprintModulePath("Schemas"), false);
   });
 });
 

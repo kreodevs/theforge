@@ -366,6 +366,29 @@ export const SKILL_CATALOG: SkillCatalogEntry[] = [
       "- Probes y recursos alineados al MDD §7.\n",
   },
   {
+    id: "auth-oauth2-jwt",
+    folder: "auth",
+    path: "docs/agent-governance/skills/auth/SKILL.md",
+    description: "JWT, OAuth2 y flujos de sesión según MDD §6",
+    triggers: "Auth: JWT, OAuth2, refresh tokens y guards según MDD §6.",
+    minComplexity: "MEDIUM",
+    signals: [/\bjwt\b/i, /oauth/i, /refresh\s+token/i, /§\s*6/i],
+    archetypes: ["auth-jwt"],
+    template: () =>
+      skillFrontmatter(
+        "auth-oauth2-jwt",
+        "JWT/OAuth2: guards, refresh tokens y secretos según MDD §6.",
+      ) +
+      "# Auth OAuth2 / JWT\n\n" +
+      "## Cuándo cargar\n\n" +
+      "- Endpoints protegidos, guards o middleware de auth.\n" +
+      "- Flujos OAuth2, refresh tokens o MFA del MDD §6.\n\n" +
+      "## Checklist\n\n" +
+      "- No commitear secretos ni claves JWT en el repo.\n" +
+      "- Respeta scopes, roles y expiración del MDD.\n" +
+      "- Tests de auth para rutas protegidas.\n",
+  },
+  {
     id: "mcp-ariadne",
     folder: "mcp-ariadne",
     path: "docs/agent-governance/skills/mcp-ariadne/SKILL.md",

@@ -14,6 +14,7 @@ import {
   type RuleCatalogEntry,
   type SkillCatalogEntry,
 } from "./agent-governance-catalog.js";
+import { extractFirstJsonObject } from "../../ai-analysis/utils/parse-json.js";
 import {
   buildArtifactTemplateContext,
   extractProjectGovernanceFacts,
@@ -131,8 +132,34 @@ export const AGENT_GOVERNANCE_REQUIRED_MEDIUM = [
   "scripts/install-agent-governance.sh",
 ] as const;
 
-function stripJsonFences(raw: string): string {
-  return raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+/** Quita todos los bloques ```json ... ``` y deja el contenido interno concatenado. */
+function stripAllJsonFences(raw: string): string {
+  const withoutBlocks = raw.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (_, block: string) =>
+    block.trim(),
+  );
+  return withoutBlocks.trim();
+}
+
+function parseAgentGovernanceJson(raw: string): unknown {
+  const trimmed = raw.trim();
+  const stripped = stripAllJsonFences(trimmed);
+  try {
+    return JSON.parse(stripped) as unknown;
+  } catch {
+    const extracted =
+      extractFirstJsonObject(trimmed) ?? extractFirstJsonObject(stripped);
+    if (extracted) {
+      try {
+        return JSON.parse(extracted) as unknown;
+      } catch {
+        // fall through
+      }
+    }
+    console.warn(
+      `[agent-gov] parseAgentGovernanceResponse jsonParseFailed trimmedLength=${stripped.length}`,
+    );
+    return {};
+  }
 }
 
 function defaultClaudeShim(): string {
@@ -453,8 +480,12 @@ function defaultMcpJson(): string {
 function formatStackSection(facts: ProjectGovernanceFacts): string {
   const lines: string[] = [];
   if (facts.backendStack) lines.push(`- **Backend:** ${facts.backendStack}`);
-  if (facts.frontendStack) lines.push(`- **Frontend:** ${facts.frontendStack}`);
-  if (facts.mobileStack) lines.push(`- **Mobile:** ${facts.mobileStack}`);
+  if (facts.hasUiSurface && facts.frontendStack) {
+    lines.push(`- **Frontend:** ${facts.frontendStack}`);
+  }
+  if (facts.hasUiSurface && facts.mobileStack) {
+    lines.push(`- **Mobile:** ${facts.mobileStack}`);
+  }
   if (facts.infraStack) lines.push(`- **Infra / deploy:** ${facts.infraStack}`);
   return lines.length > 0 ? lines.join("\n") : "- Deriva el stack del MDD §2 y del Blueprint.";
 }
@@ -1341,13 +1372,7 @@ export function parseAgentGovernanceResponse(
   complexity: ComplexityLevel,
   options?: ParseAgentGovernanceOptions,
 ): AgentGovernanceScaffold {
-  const trimmed = stripJsonFences(raw);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed) as unknown;
-  } catch {
-    parsed = {};
-  }
+  const parsed = parseAgentGovernanceJson(raw);
 
   const suggestions = options?.suggestions ?? null;
   const governanceInput: SuggestAgentGovernanceInput =

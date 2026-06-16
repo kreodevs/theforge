@@ -84,6 +84,24 @@ describe("parseAgentGovernanceResponse", () => {
     assert.equal(scaffold.manifest.templateVersion.length > 0, true);
   });
 
+  it("parsea JSON con preamble y fences markdown", () => {
+    const inner = JSON.stringify({
+      files: {
+        "AGENTS.md": "# Agent governance\n",
+        "CLAUDE.md": "@AGENTS.md\n",
+        "docs/agent-governance/rules/git-commits.mdc": "# Git\n",
+      },
+    });
+    const raw =
+      "Aquí está el scaffold solicitado:\n\n```json\n" + inner + "\n```\n\nFin.";
+    const scaffold = parseAgentGovernanceResponse(raw, "LOW");
+    assert.ok(scaffold.files.length >= 3, `expected llm files, got ${scaffold.files.length}`);
+    assert.ok(scaffold.files.some((f) => f.path === "AGENTS.md"));
+    assert.ok(
+      scaffold.files.some((f) => f.path === "docs/agent-governance/rules/git-commits.mdc"),
+    );
+  });
+
   it("no incluye MANIFEST.json en files (lo genera el ZIP)", () => {
     const scaffold = parseAgentGovernanceResponse('{"files":{}}', "LOW");
     assert.equal(scaffold.files.some((f) => f.path === "MANIFEST.json"), false);

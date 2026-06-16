@@ -107,6 +107,12 @@ function extractTitleFromSection1(mdd: string): string | null {
   if (!sec1Match?.[1]) return null;
   const sec1 = sec1Match[1];
 
+  const boldWithParen = sec1.match(/\*\*[^*]*\(([^)]+)\)[^*]*\*\*/);
+  if (boldWithParen?.[1]) {
+    const fromParen = boldWithParen[1].trim();
+    if (fromParen && fromParen.length >= 3) return fromParen.slice(0, 120);
+  }
+
   const boldParen = sec1.match(/\*\*\(([^)]+)\)\*\*|\*\(([^)]+)\)\*/);
   if (boldParen) {
     const fromParen = (boldParen[1] ?? boldParen[2])?.trim();
@@ -127,7 +133,17 @@ function extractTitleFromSection1(mdd: string): string | null {
 function extractTitleFromSection1Fallback(mdd: string): string | null {
   const sec1Match = mdd.match(/##\s*1\.[^\n]*\n([\s\S]*?)(?=\n##\s|\n#\s|$)/i);
   if (!sec1Match?.[1]) return null;
+  let skipProblema = false;
   for (const line of sec1Match[1].split("\n")) {
+    const trimmed = line.trim();
+    if (/^###\s+problema de negocio/i.test(trimmed)) {
+      skipProblema = true;
+      continue;
+    }
+    if (/^###\s+/.test(trimmed)) {
+      skipProblema = false;
+    }
+    if (skipProblema) continue;
     const candidate = normalizeProjectTitleCandidate(line);
     if (candidate) return candidate;
   }
@@ -144,6 +160,8 @@ export function extractProjectTitle(input: SuggestAgentGovernanceInput): string 
     const fromH1 = normalizeProjectTitleCandidate(h1);
     if (fromH1 && !/^mdd\b|master design document$/i.test(fromH1)) return fromH1;
   }
+  const fromProject = input.projectName?.trim();
+  if (fromProject) return fromProject.slice(0, 120);
   const fromSec1Fallback = extractTitleFromSection1Fallback(mdd);
   if (fromSec1Fallback) return fromSec1Fallback;
   const named = mdd.match(/(?:nombre|proyecto|project)[:\s]+([^\n]+)/i)?.[1]?.trim();
@@ -151,8 +169,6 @@ export function extractProjectTitle(input: SuggestAgentGovernanceInput): string 
     const fromNamed = normalizeProjectTitleCandidate(named);
     if (fromNamed) return fromNamed;
   }
-  const fromProject = input.projectName?.trim();
-  if (fromProject) return fromProject.slice(0, 120);
   return "Proyecto TheForge";
 }
 
@@ -396,6 +412,17 @@ function inferDomainSkillFolder(text: string, blueprintModules: string[]): strin
   return undefined;
 }
 
+const BLUEPRINT_PROSE_TOKENS = new Set([
+  "entidades",
+  "historiales",
+  "todos",
+  "schemas",
+  "en",
+  "antes",
+  "si",
+  "tabla",
+]);
+
 /** Valid repo path: kms-backend/, packages/foo/, apps/api/ — not prose bullets. */
 export function isValidBlueprintModulePath(raw: string): boolean {
   const clean = raw.replace(/[`'"\\]/g, "").trim().replace(/\/$/, "");
@@ -408,6 +435,7 @@ export function isValidBlueprintModulePath(raw: string): boolean {
   if (segments.length === 0) return false;
   const validSegment = (s: string) => /^[a-z0-9][a-z0-9._-]*$/i.test(s);
   if (!segments.every(validSegment)) return false;
+  if (segments.some((s) => BLUEPRINT_PROSE_TOKENS.has(s.toLowerCase()))) return false;
 
   if (segments[0] === "apps" || segments[0] === "packages") {
     return segments.length >= 2;
@@ -440,7 +468,16 @@ function extractBlueprintModules(bpText: string): string[] {
   const tree: string[] = [];
   const bullets: string[] = [];
 
-  for (const line of bpText.split("\n")) {
+  let rest = bpText;
+  for (const match of bpText.matchAll(/```(?:[\w-]*)?\n([\s\S]*?)```/g)) {
+    for (const line of match[1].split("\n")) {
+      const mod = extractBlueprintModuleFromLine(line);
+      if (mod) tree.push(mod);
+    }
+    rest = rest.replace(match[0], "\n");
+  }
+
+  for (const line of rest.split("\n")) {
     const mod = extractBlueprintModuleFromLine(line);
     if (!mod) continue;
     const isTreeLine =
