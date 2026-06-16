@@ -522,6 +522,19 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "get_job_status",
+    description:
+      "Consulta el estado de un job asíncrono de generación (blueprint, agent-governance, etc.). Usar después de generate_agent_governance con queue=true para saber cuándo terminó.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        jobId: { type: "string", description: "ID del job devuelto por generate_agent_governance (o cualquier endpoint con ?queue=true)" },
+      },
+      required: ["projectId", "jobId"],
+    },
+  },
+  {
     name: "confirm_complexity",
     description: "Confirma la complejidad propuesta del proyecto",
     inputSchema: {
@@ -1275,14 +1288,19 @@ const handlers: Record<string, Handler> = {
     );
   },
   async generate_agent_governance(args) {
-    const queue = args.queue === true ? "?queue=true" : "";
     const target = resolveGovernanceTarget(args.target as string | undefined);
+
+    // OpenHands y Hermes timeoutan durante la generación LLM (30-90s).
+    // Forzar queue async: respuesta instantánea (~100 bytes), polling con get_job_status.
+    const needsAsync = target !== "cursor";
+    const queue = needsAsync || args.queue === true ? "?queue=true" : "";
+
     const raw = await apiPost(`/projects/${args.projectId}/generate-agent-governance${queue}`, {
       preview: args.preview ?? false,
       target,
     });
 
-    // OpenHands y Hermes tienen timeouts bajos → respuesta compacta (sin contenido de archivos)
+    // Queue ya es compacto, y la respuesta completa se compacta también
     const needsCompact = target !== "cursor";
     const response = needsCompact
       ? compactifyGovernanceResponse(raw, args.projectId as string)
@@ -1292,6 +1310,11 @@ const handlers: Record<string, Handler> = {
   },
   async get_agent_governance_export(args) {
     return JSON.stringify(await apiGet(`/projects/${args.projectId}/agent-governance-export`));
+  },
+  async get_job_status(args) {
+    return JSON.stringify(
+      await apiGet(`/projects/${args.projectId}/deliverables-jobs/${args.jobId}`),
+    );
   },
   async confirm_complexity(args) {
     return JSON.stringify(await apiPost(`/projects/${args.projectId}/confirm-complexity`));
