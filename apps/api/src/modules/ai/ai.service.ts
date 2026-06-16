@@ -44,6 +44,7 @@ import {
   buildMddContextForInfra,
   buildMddContextForSpec,
   buildMddContextForAgentGovernance,
+  buildLogicFlowsDiagramHint,
 } from "./utils/mdd-user-stories-context.util.js";
 
 /** Instrucción fija para que ningún documento generado use "militar" (se añade al system prompt en generación de docs). */
@@ -833,6 +834,8 @@ export class AiService {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
+    const diagramHint = buildLogicFlowsDiagramHint(mddContent?.trim() ?? "");
+    if (diagramHint) prompt += `\n\n${diagramHint}\n`;
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     return this.generateResponse(prompt, [], {

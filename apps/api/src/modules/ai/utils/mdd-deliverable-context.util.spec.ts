@@ -5,6 +5,7 @@ import {
   buildMddContextForUserStories,
   buildMddContextForBlueprint,
   buildMddContextForApiContracts,
+  buildLogicFlowsDiagramHint,
   MDD_DELIVERABLE_BUDGET,
 } from "./mdd-deliverable-context.util.js";
 
@@ -85,5 +86,16 @@ describe("buildMddContextForDeliverable", () => {
     const out = buildMddContextForApiContracts(SAMPLE_MDD(filler));
     assert.ok(out.includes("GET /api/v1/auth/login"));
     assert.ok(out.includes("Fila en tabla de endpoints"));
+  });
+
+  it("buildLogicFlowsDiagramHint cuando §5 menciona flowchart", () => {
+    const mdd = `${SAMPLE_MDD("")}
+
+## 5. Lógica y edge cases
+
+Usar flowchart para onboarding.
+`;
+    const hint = buildLogicFlowsDiagramHint(mdd);
+    assert.ok(hint.includes("flowchart"));
   });
 });
