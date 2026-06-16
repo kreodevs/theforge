@@ -25,9 +25,12 @@ import {
 
 /** Rutas que siempre se regeneran desde plantillas canónicas (inmunes al LLM). */
 const LLM_PROOF_CANONICAL_PATHS = [
+  "AGENTS.md",
   `${GOVERNANCE_DOCS_PREFIX}INSTALACION.md`,
   "scripts/install-agent-governance.sh",
 ] as const;
+
+const LEGACY_AUTH_SKILL_PATH_RE = /docs\/agent-governance\/skills\/auth-jwt\//i;
 
 const DUPLICATE_PROMPT_PATHS = [
   `${GOVERNANCE_DOCS_PREFIX}PROMPT-INICIAL.md`,
@@ -204,7 +207,12 @@ function defaultAgentsMd(): string {
     "El ZIP **no incluye** la carpeta oculta `.cursor/` (macOS/Finder la oculta al extraer). " +
     "Los artefactos viven en `docs/agent-governance/`; instálalos en el repo destino así:\n\n" +
     "1. Lee `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md` y `docs/agent-governance/INSTALACION.md`.\n" +
-    "2. Copia o mapea cada archivo según la tabla (o ejecuta `scripts/install-agent-governance.sh`).\n\n" +
+    "2. Copia o mapea cada archivo según la tabla (o ejecuta el script de instalación).\n\n" +
+    "### Instalación rápida (script)\n\n" +
+    "```bash\n" +
+    "chmod +x scripts/install-agent-governance.sh\n" +
+    "./scripts/install-agent-governance.sh\n" +
+    "```\n\n" +
     "| Archivo en ZIP | Destino en repo destino |\n" +
     "|----------------|-------------------------|\n" +
     defaultInstallMapTableRows() +
@@ -490,9 +498,14 @@ function formatStackSection(facts: ProjectGovernanceFacts): string {
   return lines.length > 0 ? lines.join("\n") : "- Deriva el stack del MDD §2 y del Blueprint.";
 }
 
+function isUiArchitectureLayer(layer: string): boolean {
+  const text = layer.trim();
+  return /frontend|dashboard|\bui\b|capa ui|presentaci[oó]n|cliente web|^mobile\b/i.test(text);
+}
+
 function filterArchitectureLayersForUi(layers: string[], hasUi: boolean): string[] {
   if (hasUi) return layers;
-  return layers.filter((l) => !/^(frontend|ui|capa ui|presentaci[oó]n|cliente web|mobile)/i.test(l.trim()));
+  return layers.filter((l) => !isUiArchitectureLayer(l));
 }
 
 function buildSddConflictSection(facts: ProjectGovernanceFacts): string {
@@ -527,6 +540,27 @@ function ruleHasCatalogStackEnrichment(content: string): boolean {
     /\*\*Módulos Blueprint:\*\*/i.test(content) &&
     (/\*\*Globs backend:\*\*/i.test(content) || /\*\*Globs frontend:\*\*/i.test(content))
   );
+}
+
+function isGovernanceSkillPath(path?: string): boolean {
+  return (
+    !!path?.includes(`${GOVERNANCE_DOCS_PREFIX}skills/`) && path.endsWith("SKILL.md")
+  );
+}
+
+/** Overlay mínimo para skills: globs/módulos, sin bloque Hechos ni conflictos SDD. */
+function buildSkillProjectOverlay(facts: ProjectGovernanceFacts): string {
+  const parts: string[] = ["## Contexto del proyecto\n"];
+  if (facts.blueprintModules.length > 0) {
+    parts.push("**Módulos Blueprint:**", ...facts.blueprintModules.map((m) => `- \`${m}\``), "");
+  }
+  if (facts.backendGlobs.length > 0) {
+    parts.push("**Globs backend:**", ...facts.backendGlobs.map((g) => `- \`${g}\``), "");
+  }
+  if (facts.hasUiSurface && facts.frontendGlobs.length > 0) {
+    parts.push("**Globs frontend:**", ...facts.frontendGlobs.map((g) => `- \`${g}\``), "");
+  }
+  return parts.length > 1 ? parts.join("\n") : "";
 }
 
 function buildProjectFactsBlock(
@@ -774,6 +808,29 @@ function shouldReplaceGovernanceArtifact(
   return false;
 }
 
+function stripSkillProjectContextSection(content: string): string {
+  const lines = content.split("\n");
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^## Contexto del proyecto/i.test(lines[i] ?? "")) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return content;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^## [^#]/.test(lines[i] ?? "")) {
+      end = i;
+      break;
+    }
+  }
+  const before = lines.slice(0, start).join("\n").trimEnd();
+  const after = lines.slice(end).join("\n").trimStart();
+  if (before && after) return `${before}\n\n${after}`;
+  return before || after || "";
+}
+
 function overlayProjectFacts(
   content: string,
   facts: ProjectGovernanceFacts,
@@ -781,11 +838,28 @@ function overlayProjectFacts(
   artifactPath?: string,
 ): string {
   const forceFreshOverlay = overlayOptions?.forceFreshOverlay === true;
+
+  if (isGovernanceSkillPath(artifactPath)) {
+    const block = buildSkillProjectOverlay(facts);
+    if (!block.trim()) return stripSkillHeavyOverlaySections(content);
+    let base = stripSkillHeavyOverlaySections(content);
+    if (/## Contexto del proyecto/i.test(base)) {
+      if (forceFreshOverlay) {
+        base = stripSkillProjectContextSection(base);
+        return base.trim() ? `${base.trimEnd()}\n\n${block}` : block;
+      }
+      return base;
+    }
+    return `${base.trimEnd()}\n\n${block}`;
+  }
+
   const compact =
     ruleHasCatalogStackEnrichment(content) &&
     (artifactPath?.includes("/rules/stack-backend") ||
       artifactPath?.includes("/rules/stack-frontend"));
-  const includeSddConflicts = !contentHasSddConflicts(content, facts);
+  const includeSddConflicts =
+    artifactPath !== "AGENTS.md" &&
+    !contentHasSddConflicts(content, facts);
   const block = buildProjectFactsBlock(facts, { compact, includeSddConflicts });
   let base = stripSddConflictSections(content);
   if (/## Hechos del proyecto \(/i.test(base)) {
@@ -801,11 +875,39 @@ function overlayProjectFacts(
   return `${base.trimEnd()}\n\n${block}`;
 }
 
+function stripSkillHeavyOverlaySections(content: string): string {
+  return stripSkillProjectContextSection(stripProjectFactsSection(stripSddConflictSections(content)));
+}
+
+function dropLegacyAuthJwtSkillPaths(fileMap: Record<string, string>): void {
+  for (const path of Object.keys(fileMap)) {
+    if (LEGACY_AUTH_SKILL_PATH_RE.test(path)) delete fileMap[path];
+  }
+}
+
+function normalizeAuthSkillReferences(content: string): string {
+  return content
+    .replace(/docs\/agent-governance\/skills\/auth-jwt\b/g, "docs/agent-governance/skills/auth")
+    .replace(/\.cursor\/skills\/auth-jwt\b/g, ".cursor/skills/auth")
+    .replace(/skills\/auth-jwt\b/g, "skills/auth")
+    .replace(/`auth-jwt`/g, "`auth-oauth2-jwt`")
+    .replace(/Activa auth-jwt/gi, "Activa auth-oauth2-jwt")
+    .replace(/skill auth-jwt/gi, "skill auth-oauth2-jwt");
+}
+
+function sanitizeGovernanceScaffoldContent(fileMap: Record<string, string>): void {
+  dropLegacyAuthJwtSkillPaths(fileMap);
+  for (const [path, content] of Object.entries(fileMap)) {
+    if (/auth-jwt/i.test(content)) {
+      fileMap[path] = normalizeAuthSkillReferences(content);
+    }
+  }
+}
+
 function appendSddConflictToAgents(content: string, facts: ProjectGovernanceFacts): string {
   const section = buildSddConflictSection(facts);
-  if (!section.trim()) return stripSddConflictSections(content);
-  if (contentHasSddConflicts(content, facts)) return stripSddConflictSections(content);
   const base = stripSddConflictSections(content);
+  if (!section.trim()) return base;
   return `${base.trimEnd()}\n\n${section.trim()}\n`;
 }
 
@@ -961,7 +1063,7 @@ const FALLBACK_BY_PATH: Record<string, FallbackFactory> = {
     const base = defaultAgentsMd();
     if (!input) return base;
     const facts = extractProjectGovernanceFacts(input);
-    return overlayProjectFacts(base, facts);
+    return appendSddConflictToAgents(overlayProjectFacts(base, facts), facts);
   },
   "CLAUDE.md": () => defaultClaudeShim(),
   "PROMPT-INICIAL.md": (c, _s, input) =>
@@ -1096,11 +1198,12 @@ function enrichGovernanceArtifacts(
     );
   }
   for (const [path, content] of Object.entries(fileMap)) {
+    const isSkill = isGovernanceSkillPath(path);
     const isRuleOrSkill =
-      path.startsWith(`${GOVERNANCE_DOCS_PREFIX}rules/`) ||
-      path.includes(`${GOVERNANCE_DOCS_PREFIX}skills/`);
+      path.startsWith(`${GOVERNANCE_DOCS_PREFIX}rules/`) || isSkill;
     const forceFresh = overlayOptions?.forceFreshOverlay === true;
     if (
+      !isSkill &&
       isRuleOrSkill &&
       content.trim() &&
       /## Hechos del proyecto \(/i.test(content) &&
@@ -1112,7 +1215,8 @@ function enrichGovernanceArtifacts(
     if (
       isRuleOrSkill &&
       content.trim() &&
-      shouldReplaceGovernanceArtifact(content, facts, forceFresh)
+      (isSkill ||
+        shouldReplaceGovernanceArtifact(content, facts, forceFresh))
     ) {
       fileMap[path] = overlayProjectFacts(content, facts, overlayOpts, path);
     }
@@ -1341,6 +1445,7 @@ export function reconcileAgentGovernanceScaffold(
   injectDynamicCursorArtifacts(fileMap, facts, complexity);
   appendSuggestionsToComoUsar(fileMap, suggestions);
   applyCanonicalGovernanceDefaults(fileMap, complexity, suggestions, governanceInput);
+  sanitizeGovernanceScaffoldContent(fileMap);
 
   const files = recordToFileEntries(fileMap);
   const paths = files.map((f) => f.path);
@@ -1424,6 +1529,7 @@ export function parseAgentGovernanceResponse(
   enrichGovernanceArtifacts(fileMap, complexity, governanceInput, overlayOptions);
   injectDynamicCursorArtifacts(fileMap, facts, complexity);
   appendSuggestionsToComoUsar(fileMap, suggestions);
+  sanitizeGovernanceScaffoldContent(fileMap);
 
   const files = recordToFileEntries(fileMap);
 

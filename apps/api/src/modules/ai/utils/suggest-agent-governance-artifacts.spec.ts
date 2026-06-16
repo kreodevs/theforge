@@ -116,13 +116,20 @@ describe("suggestAgentGovernanceArtifacts", () => {
     );
   });
 
-  it("sugiere auth-oauth2-jwt cuando el arquetipo auth-jwt está activo", () => {
+  it("sugiere auth-oauth2-jwt en skills/auth cuando el arquetipo auth-jwt está activo", () => {
     const result = suggestAgentGovernanceArtifacts({
       mddMarkdown: NEST_REACT_MDD,
       complexity: "MEDIUM",
     });
     assert.ok(result.archetypes.includes("auth-jwt"));
-    assert.ok(result.suggestedSkills.some((s) => s.id === "auth-oauth2-jwt"));
+    const authSkill = result.suggestedSkills.find((s) => s.id === "auth-oauth2-jwt");
+    assert.ok(authSkill);
+    assert.equal(authSkill.path, "docs/agent-governance/skills/auth/SKILL.md");
+    assert.equal(authSkill.folder, "auth");
+    assert.equal(
+      result.suggestedSkills.some((s) => /skills\/auth-jwt\//i.test(s.path)),
+      false,
+    );
   });
 });
 

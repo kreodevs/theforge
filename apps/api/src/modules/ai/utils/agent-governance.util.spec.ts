@@ -22,6 +22,21 @@ Backend NestJS. MVP API-only sin dashboard ni frontend.
 Monorepo kms-backend/ y packages/shared.
 `;
 
+const NEST_REACT_MDD = `
+# MDD Proyecto Demo
+
+## 2. Stack técnico
+- Backend: NestJS con TypeScript
+- Frontend: React 18 + Vite
+- Monorepo con packages/api y packages/web
+
+## 4. Contratos de API
+REST con validación Zod y OpenAPI.
+
+## 6. Seguridad
+JWT y OAuth2 para sesiones.
+`;
+
 const KMS_BLUEPRINT = `
 ## Estructura del repositorio
 
@@ -401,7 +416,17 @@ Backend NestJS con TypeORM en borrador; Prisma en blueprint.
         ],
       },
       "MEDIUM",
-      { suggestions, governanceInput: { mddMarkdown: "TypeORM Prisma NestJS", complexity: "MEDIUM" } },
+      {
+        suggestions,
+        governanceInput: {
+          mddMarkdown: `
+# MDD
+## 2. Stack
+Backend NestJS con TypeORM en borrador; Prisma en blueprint.
+`,
+          complexity: "MEDIUM",
+        },
+      },
     );
     const agents = reconciled.files.find((f) => f.path === "AGENTS.md");
     assert.ok(agents?.content.includes("Resolución de conflictos SDD"));
@@ -491,6 +516,105 @@ Backend NestJS API-only sin dashboard ni frontend.
     assert.ok(prompt?.content.includes("Capa API"));
     assert.ok(prompt?.content.includes("Capa Dominio"));
     assert.equal(prompt?.content.includes("Capa UI"), false);
+  });
+
+  it("filtra capas numeradas Frontend/Dashboard en API-only (AGENTS y rules)", () => {
+    const architectureMarkdown = `
+## 2.1 Capa API
+## 2.2 Capa Dominio
+## 2.3 Frontend (Dashboard UI)
+`;
+    const governanceInput = {
+      mddMarkdown: KMS_MDD,
+      specMarkdown: "CLI-only; sin interfaz web.",
+      blueprintMarkdown: KMS_BLUEPRINT,
+      architectureMarkdown,
+      complexity: "MEDIUM" as const,
+    };
+    const scaffold = parseAgentGovernanceResponse('{"files":{}}', "MEDIUM", {
+      governanceInput,
+    });
+    const agents = scaffold.files.find((f) => f.path === "AGENTS.md");
+    const prompt = scaffold.files.find((f) => f.path === "PROMPT-INICIAL.md");
+    assert.ok(agents?.content.includes("2.1 Capa API"));
+    assert.equal(agents?.content.includes("2.3 Frontend (Dashboard UI)"), false);
+    assert.equal(agents?.content.includes("Dashboard UI"), false);
+    assert.equal(prompt?.content.includes("2.3 Frontend (Dashboard UI)"), false);
+  });
+
+  it("elimina skill duplicada auth-jwt y normaliza referencias a auth-oauth2-jwt", () => {
+    const suggestions = suggestAgentGovernanceArtifacts({
+      mddMarkdown: NEST_REACT_MDD,
+      complexity: "MEDIUM",
+    });
+    const scaffold = parseAgentGovernanceResponse(
+      JSON.stringify({
+        files: {
+          "docs/agent-governance/references/workflows.md":
+            "# Workflows\n\n- Activa auth-jwt para endpoints protegidos.\n",
+          "docs/agent-governance/skills/auth-jwt/SKILL.md": "# Auth JWT legacy\n",
+        },
+      }),
+      "MEDIUM",
+      {
+        suggestions,
+        governanceInput: { mddMarkdown: NEST_REACT_MDD, complexity: "MEDIUM" },
+      },
+    );
+    const paths = scaffold.files.map((f) => f.path);
+    assert.equal(paths.some((p) => /skills\/auth-jwt\//i.test(p)), false);
+    assert.ok(paths.includes("docs/agent-governance/skills/auth/SKILL.md"));
+    const workflows = scaffold.files.find(
+      (f) => f.path === "docs/agent-governance/references/workflows.md",
+    );
+    assert.ok(workflows?.content.includes("auth-oauth2-jwt"));
+    assert.equal(/auth-jwt/i.test(workflows?.content ?? ""), false);
+  });
+
+  it("skills no reciben overlay Hechos ni Conflictos SDD", () => {
+    const suggestions = suggestAgentGovernanceArtifacts({
+      mddMarkdown: NEST_REACT_MDD,
+      complexity: "MEDIUM",
+    });
+    const scaffold = parseAgentGovernanceResponse(
+      JSON.stringify({
+        files: {
+          "docs/agent-governance/skills/auth/SKILL.md":
+            "# Auth\n\n## Hechos del proyecto (TheForge)\n\n**Docs SDD:**\n\n## Resolución de conflictos SDD\n\n- conflicto\n",
+        },
+      }),
+      "MEDIUM",
+      {
+        suggestions,
+        governanceInput: { mddMarkdown: NEST_REACT_MDD, complexity: "MEDIUM" },
+      },
+    );
+    const authSkill = scaffold.files.find(
+      (f) => f.path === "docs/agent-governance/skills/auth/SKILL.md",
+    );
+    assert.ok(authSkill);
+    assert.equal(authSkill.content.includes("## Hechos del proyecto"), false);
+    assert.equal(/Resolución de conflictos SDD/i.test(authSkill.content), false);
+    assert.ok(authSkill.content.includes("## Contexto del proyecto"));
+  });
+
+  it("AGENTS incluye bloque bash con fence markdown valido en instalacion", () => {
+    const scaffold = parseAgentGovernanceResponse(
+      JSON.stringify({
+        files: {
+          "AGENTS.md":
+            "# AGENTS\n\n## Instalación de gobernanza\n\nbash\nchmod +x scripts/install-agent-governance.sh\n",
+        },
+      }),
+      "MEDIUM",
+      {
+        governanceInput: { mddMarkdown: KMS_MDD, complexity: "MEDIUM" },
+      },
+    );
+    const agents = scaffold.files.find((f) => f.path === "AGENTS.md");
+    assert.ok(agents?.content.includes("Instalación de gobernanza"));
+    assert.match(agents?.content ?? "", /```bash\n[\s\S]*?\n```/);
+    assert.equal(/^bash$/m.test(agents?.content ?? ""), false);
   });
 });
 
