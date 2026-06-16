@@ -1307,13 +1307,9 @@ name: ${JSON.stringify(name)}
 
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const mdd = this.constitutionMarkdown(project);
-    const suggestions =
-      suggestionsFromManifest(scaffold.manifest?.suggestions) ??
-      suggestAgentGovernanceArtifacts({
-        mddMarkdown: mdd,
-        blueprintMarkdown: project.blueprintContent,
-        complexity,
-      });
+    // NO llamar a suggestAgentGovernanceArtifacts() aquí — es un LLM call que timeouta.
+    // reconcileAgentGovernanceScaffold ya tiene el fallback suggestionsFromManifest → null.
+    const suggestions = suggestionsFromManifest(scaffold.manifest?.suggestions) ?? null;
 
     return reconcileAgentGovernanceScaffold(scaffold, complexity, {
       suggestions,
