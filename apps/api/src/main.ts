@@ -65,4 +65,9 @@ async function bootstrap() {
   await app.listen(port);
 }
 
-bootstrap();
+bootstrap().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[bootstrap] API failed to start: ${message}`);
+  if (err instanceof Error && err.stack) console.error(err.stack);
+  process.exit(1);
+});

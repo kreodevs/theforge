@@ -1,12 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import {
-  buildLegacyEvidenceMarkdown,
-  clipLegacySemanticSection,
-  DEFAULT_SEMANTIC_QUERIES,
-  getLegacyAskCodebaseOptions,
-  getLegacySemanticSearchLimit,
-  isLegacyEvidenceFirstEnabled,
-} from "./theforge-evidence-context.util.js";
+import { getLegacySemanticSearchLimit } from "./theforge-evidence-context.util.js";
 import type { IOrchestratorTheForgePort } from "./theforge-service.port.js";
 import { appendMcpUiDebug, isMcpUiDebugActive } from "./mcp-ui-debug.context.js";
 import { TheForgeContextCacheService } from "./theforge-context-cache.service.js";
@@ -16,7 +9,13 @@ import {
   resolveAriadneCodebaseMcpTarget,
   type AriadneCodebaseResolution,
 } from "./ariadne-mcp-scope.util.js";
+import {
+  legacyDocumentationRepoIds,
+  mergeLegacyDocumentationByRepo,
+  repoLabelFromProjectsCatalog,
+} from "./legacy-documentation-merge.util.js";
 import { formatRawEvidenceObjectToMarkdown } from "./theforge-raw-evidence-markdown.js";
+import { normalizeLegacyMddToolText } from "./legacy-mdd-v1-markdown.util.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
 
@@ -92,93 +91,8 @@ function extractJsonFromToolContent(text: string): string {
   return jsonBlock ? jsonBlock[1].trim() : t;
 }
 
-/** Claves del JSON MDD que el ingest puede devolver con `ask_codebase` + `responseMode: evidence_first` (Ariadne mcp_server_specs). */
-const MDD_EVIDENCE_JSON_KEYS = [
-  "summary",
-  "openapi_spec",
-  "entities",
-  "api_contracts",
-  "business_logic",
-  "infrastructure",
-  "risk_report",
-  "evidence_paths",
-] as const;
-
-const MDD_EVIDENCE_SECTION_TITLE: Record<(typeof MDD_EVIDENCE_JSON_KEYS)[number], string> = {
-  summary: "Resumen",
-  openapi_spec: "OpenAPI / especificación",
-  entities: "Entidades y modelo de datos",
-  api_contracts: "Contratos API",
-  business_logic: "Lógica de negocio",
-  infrastructure: "Infraestructura",
-  risk_report: "Riesgos",
-  evidence_paths: "Rutas de evidencia",
-};
-
-function mddEvidencePayloadHasContent(o: Record<string, unknown>): boolean {
-  for (const k of MDD_EVIDENCE_JSON_KEYS) {
-    const v = o[k];
-    if (v === undefined || v === null) continue;
-    if (typeof v === "string" && v.trim().length > 0) return true;
-    if (Array.isArray(v) && v.length > 0) return true;
-    if (typeof v === "object" && !Array.isArray(v) && Object.keys(v as object).length > 0) return true;
-  }
-  return false;
-}
-
-function unwrapMddEvidenceJson(parsed: unknown): Record<string, unknown> | null {
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const root = parsed as Record<string, unknown>;
-  const nested = root.mddDocument;
-  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-    const n = nested as Record<string, unknown>;
-    if (mddEvidencePayloadHasContent(n)) return n;
-  }
-  if (mddEvidencePayloadHasContent(root)) return root;
-  return null;
-}
-
-function formatMddEvidenceSectionValue(key: (typeof MDD_EVIDENCE_JSON_KEYS)[number], v: unknown): string {
-  if (v === undefined || v === null) return "";
-  if (typeof v === "string") return v.trim();
-  if (Array.isArray(v)) {
-    if (key === "evidence_paths") {
-      return v
-        .map((x) => {
-          const s = String(x).trim();
-          return s ? `- \`${s.replace(/`/g, "\\`")}\`` : "";
-        })
-        .filter(Boolean)
-        .join("\n");
-    }
-    return v.map((x) => `- ${typeof x === "string" ? x : JSON.stringify(x)}`).join("\n");
-  }
-  return "```json\n" + JSON.stringify(v, null, 2).slice(0, 16000) + "\n```";
-}
-
-/**
- * Convierte JSON MDD de `evidence_first` a markdown legible para Legacy Analyzer / prompts.
- * Si no es JSON MDD, devuelve el texto original.
- */
 function normalizeAskCodebaseEvidenceFirstContent(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed) return "";
-  try {
-    const jsonStr = extractJsonFromToolContent(trimmed);
-    const parsed = JSON.parse(jsonStr) as unknown;
-    const payload = unwrapMddEvidenceJson(parsed);
-    if (!payload) return text;
-
-    const parts: string[] = ["## Evidencia (MDD estructurado — ingest / LLM)\n"];
-    for (const key of MDD_EVIDENCE_JSON_KEYS) {
-      const body = formatMddEvidenceSectionValue(key, payload[key]);
-      if (!body) continue;
-      parts.push(`### ${MDD_EVIDENCE_SECTION_TITLE[key]}\n\n${body}`);
-    }
-    return parts.join("\n\n").trim();
-  } catch {
-    return text;
-  }
+  return normalizeLegacyMddToolText(text);
 }
 
 /**
@@ -502,123 +416,52 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   /**
+   * Scope resuelto para `generate_legacy_documentation` (todos los `roots[].id` del workspace cuando aplica).
+   * La generación multi-repo se hace en `generateLegacyDocumentation` (una llamada MCP por repo).
+   */
+  async resolveLegacyDocumentationScope(
+    storedProjectId: string,
+  ): Promise<AskCodebaseOptions["scope"]> {
+    const catalog = await this.getProjectsCatalog();
+    const resolved = resolveAriadneCodebaseMcpTarget(storedProjectId, catalog);
+    return resolved.scopeForScopedTools;
+  }
+
+  /**
    * Contexto amplio del codebase para generación de entregables (Blueprint, API, etc.).
-   * Incluye modelos/rutas, arquitectura y stack + estructura real para no inventar plataformas.
+   * Modo único: MCP `generate_legacy_documentation`.
    * @param projectId - ID de proyecto o repo en TheForge.
    */
   async getContextForDeliverables(projectId: string): Promise<string> {
     if (!this.isConfigured()) return "";
-    const c4Block = await this.fetchC4ContextBlock(projectId);
-    if (isLegacyEvidenceFirstEnabled()) {
-      try {
-        if (this.contextCache.isEnabled()) {
-          const probeLimit = Math.min(48, getLegacySemanticSearchLimit());
-          const probe = await this.semanticSearch(DEFAULT_SEMANTIC_QUERIES[0], projectId, probeLimit);
-          const fp = this.contextCache.fingerprintFromSemanticSlice(projectId, probe);
-          const key = this.contextCache.cacheKey(projectId, fp);
-          const hit = this.contextCache.get(key);
-          if (hit) {
-            this.logger.log(`[TheForge] getContextForDeliverables: cache hit (${projectId.slice(0, 8)}…)`);
-            return this.mergeC4WithDeliverableContext(c4Block, hit);
-          }
-          const built = await buildLegacyEvidenceMarkdown(this, projectId, { includeSynthesis: true });
-          if (built.trim()) {
-            this.contextCache.set(key, built);
-            return this.mergeC4WithDeliverableContext(c4Block, built);
-          }
-        } else {
-          const built = await buildLegacyEvidenceMarkdown(this, projectId, { includeSynthesis: true });
-          if (built.trim()) return this.mergeC4WithDeliverableContext(c4Block, built);
-        }
-      } catch (err) {
-        this.logger.warn(
-          `[TheForge] getContextForDeliverables: evidencia-primero falló, modo clásico. ${err instanceof Error ? err.message : String(err)}`,
-        );
+    const fp = this.contextCache.legacyDocumentationFingerprint();
+    if (this.contextCache.isEnabled()) {
+      const key = this.contextCache.cacheKey(projectId, fp);
+      const hit = this.contextCache.get(key);
+      if (hit) {
+        this.logger.log(`[TheForge] getContextForDeliverables: cache hit (${projectId.slice(0, 8)}…)`);
+        return hit;
       }
     }
-    const parts: string[] = [];
-    const lim = getLegacySemanticSearchLimit();
-    const legacyAsk = getLegacyAskCodebaseOptions();
-    const [q1, q2, q3, searchModels, searchApi, searchUi] = await Promise.all([
-      this.askCodebase(
-        "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
-        projectId,
-        legacyAsk,
-      ),
-      this.askCodebase(
-        "Describe architecture: folder structure, modules, how backend and frontend connect, existing patterns and conventions. Include file paths for key areas.",
-        projectId,
-        legacyAsk,
-      ),
-      this.askCodebase(
-        "What is the EXACT tech stack and directory structure of this project? List only what exists in the codebase: backend runtime and framework (e.g. Node/Express, Node/NestJS, Python/Django), frontend framework (e.g. React, Vue), database, build tools. If the project has multiple repositories, list them and their main folders. Do NOT assume or invent; only state what the codebase contains.",
-        projectId,
-        legacyAsk,
-      ),
-      this.semanticSearch("data models entities database schema", projectId, lim),
-      this.semanticSearch("API routes endpoints controllers", projectId, lim),
-      this.semanticSearch("UI components screens pages", projectId, lim),
-    ]);
-    if (q1.trim()) parts.push("Modelos, rutas y configuración:\n" + q1.trim());
-    if (q2.trim()) parts.push("Arquitectura y carpetas:\n" + q2.trim());
-    if (q3.trim()) parts.push("Stack y estructura real (solo lo que existe):\n" + q3.trim());
-    const searchParts: string[] = [];
-    if (searchModels.trim()) searchParts.push("Búsqueda semántica modelos: " + clipLegacySemanticSection(searchModels.trim()));
-    if (searchApi.trim()) searchParts.push("Búsqueda semántica API: " + clipLegacySemanticSection(searchApi.trim()));
-    if (searchUi.trim()) searchParts.push("Búsqueda semántica UI: " + clipLegacySemanticSection(searchUi.trim()));
-    if (searchParts.length > 0) parts.push("Índice semántico:\n" + searchParts.join("\n"));
-    return this.mergeC4WithDeliverableContext(c4Block, parts.join("\n\n---\n\n"));
-  }
 
-  /**
-   * Modelo C4 agregado (MCP `get_c4_model` → API Nest GraphService). Requiere JWT Nest en el **proceso** MCP, no en el cliente The Forge.
-   */
-  async getC4Model(projectId: string): Promise<string> {
-    if (!this.isConfigured()) return "";
-    const ident = await this.resolveStoredToMcp(projectId);
-    /** C4 agregado a nivel proyecto (GraphService); alinear con `ask_codebase` → `workspaceProjectId`, no solo un shard/repo. */
-    const out = await this.callToolInternal("get_c4_model", { projectId: ident.workspaceProjectId });
-    return (out ?? "").trim();
-  }
-
-  private isC4ContextEnabled(): boolean {
-    const v = process.env.LEGACY_C4_CONTEXT?.trim().toLowerCase();
-    if (v === undefined || v === "") return true;
-    return !["0", "false", "off", "no"].includes(v);
-  }
-
-  private c4ContextMaxChars(): number {
-    const n = parseInt(process.env.LEGACY_C4_MAX_CHARS ?? "5000", 10);
-    return Number.isFinite(n) && n > 0 ? n : 5000;
-  }
-
-  private async fetchC4ContextBlock(projectId: string): Promise<string> {
-    if (!this.isC4ContextEnabled()) return "";
     try {
-      const raw = await this.getC4Model(projectId);
-      return raw;
+      const mdd = (await this.generateLegacyDocumentation(projectId))?.trim() ?? "";
+      if (mdd) {
+        if (this.contextCache.isEnabled()) {
+          this.contextCache.set(this.contextCache.cacheKey(projectId, fp), mdd);
+        }
+        return mdd;
+      }
+      this.logger.warn(
+        `[TheForge] getContextForDeliverables: generate_legacy_documentation vacío (${projectId.slice(0, 8)}…)`,
+      );
     } catch (err) {
       this.logger.warn(
-        `[TheForge] get_c4_model omitido: ${err instanceof Error ? err.message : String(err)}`,
+        `[TheForge] getContextForDeliverables: generate_legacy_documentation falló. ${err instanceof Error ? err.message : String(err)}`,
       );
-      return "";
     }
-  }
 
-  /** Antepone C4 al contexto de entregables (Blueprint); prioridad ante el recorte global del prompt. */
-  private mergeC4WithDeliverableContext(c4Markdown: string, rest: string): string {
-    const c4 = (c4Markdown ?? "").trim();
-    if (!c4) return rest;
-    const max = this.c4ContextMaxChars();
-    const clipped =
-      c4.length > max ? c4.slice(0, max) + "\n… [recortado por LEGACY_C4_MAX_CHARS]" : c4;
-    return (
-      "## Modelo C4 (sistemas, contenedores, comunicación)\n\n" +
-      "_Fuente: índice Ariadne / GraphService (`get_c4_model`). Usa como verdad de contenedores y relaciones `COMMUNICATES_WITH` entre sistemas._\n\n" +
-      clipped +
-      "\n\n---\n\n" +
-      rest
-    );
+    return "";
   }
 
   /**
@@ -851,6 +694,86 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   /**
+   * Documentación legacy de partida — modo único MCP (`generate_legacy_documentation`).
+   * Multi-root: una llamada por `roots[].id` y fusión en markdown (todos los repos del scope).
+   */
+  async generateLegacyDocumentation(
+    projectId: string,
+    opts?: Pick<AskCodebaseOptions, "scope" | "currentFilePath">,
+  ): Promise<string> {
+    if (!this.isConfigured()) return "";
+    try {
+      const ident = await this.resolveStoredToMcp(projectId);
+      const scope = mergeAriadneCodebaseScope(ident.scopeForScopedTools, opts?.scope);
+      const repoIds = legacyDocumentationRepoIds(scope, ident.graphProjectId);
+      if (repoIds.length <= 1) {
+        return await this.invokeGenerateLegacyDocumentationMcp(ident, scope, opts?.currentFilePath);
+      }
+
+      this.logger.log(
+        `[TheForge] generate_legacy_documentation: multi-root (${repoIds.length} repos) → una llamada por repo`,
+      );
+      const catalog = await this.getProjectsCatalog();
+      const parts = await Promise.all(
+        repoIds.map(async (rid) => {
+          const perRepoScope = mergeAriadneCodebaseScope(scope, { repoIds: [rid] });
+          const markdown = await this.invokeGenerateLegacyDocumentationMcp(
+            ident,
+            perRepoScope,
+            opts?.currentFilePath,
+            rid,
+          );
+          return {
+            repoId: rid,
+            label: repoLabelFromProjectsCatalog(catalog, rid),
+            markdown,
+          };
+        }),
+      );
+      return mergeLegacyDocumentationByRepo(parts);
+    } catch (err) {
+      this.logger.error(
+        `TheForge generateLegacyDocumentation failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return "";
+    }
+  }
+
+  private parseGenerateLegacyDocumentationToolText(text: string): string {
+    if (!text.trim()) return "";
+    return normalizeLegacyMddToolText(text);
+  }
+
+  private async invokeGenerateLegacyDocumentationMcp(
+    ident: AriadneCodebaseResolution,
+    scope: AskCodebaseOptions["scope"],
+    currentFilePath?: string,
+    rpcSuffix?: string,
+  ): Promise<string> {
+    const args: Record<string, unknown> = { projectId: ident.workspaceProjectId };
+    if (currentFilePath?.trim()) args.currentFilePath = currentFilePath.trim();
+    if (scope && Object.keys(scope).length > 0) args.scope = scope;
+    const response = await this.postTheForgeMcp(
+      {
+        jsonrpc: "2.0",
+        id: `generate-legacy-doc-${rpcSuffix?.slice(0, 8) ?? "1"}`,
+        method: "tools/call",
+        params: { name: "generate_legacy_documentation", arguments: args },
+      },
+      { timeoutMs: this.theforgeMcpAskCodebaseTimeoutMs() },
+    );
+    if (!response.ok) return "";
+    const raw = await response.text();
+    const data = parseMcpResponse(raw) as {
+      result?: { content?: Array<{ type: string; text?: string }>; isError?: boolean };
+      error?: { message: string };
+    } | null;
+    if (!data || data.error || data.result?.isError) return "";
+    const text = data.result?.content?.find((c) => c.type === "text")?.text ?? "";
+    return this.parseGenerateLegacyDocumentationToolText(text);
+  }
+
+  /**
    * Extrae tokens de diseño del codebase (herramienta MCP extract_design_tokens).
    * @param projectId - `theforgeProjectId` persistido.
    * @returns JSON con tokens de diseño (tailwindTokens, cssTokens, etc.) o string vacío si falla.
@@ -1053,11 +976,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
    * Resuelve etiqueta legible para un `roots[].id` usando el catálogo MCP (multi-root).
    */
   private repoLabelFromCatalog(catalog: TheForgeProject[], repoId: string): string {
-    for (const p of catalog) {
-      const r = p.roots?.find((x) => x.id === repoId);
-      if (r?.name?.trim()) return r.name.trim();
-    }
-    return `repo:${repoId.slice(0, 8)}…`;
+    return repoLabelFromProjectsCatalog(catalog, repoId);
   }
 
   /**

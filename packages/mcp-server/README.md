@@ -16,3 +16,9 @@ Variables típicas: `THEFORGE_API_URL`, `MCP_M2M_SECRET` (header del cliente en 
 **Dokploy Advanced → Swarm health:** `curl -f http://localhost:3000/health` (corre **dentro** del task). No pongas `http://127.0.0.1:3000` como URL de monitor externo.
 
 MCP JSON-RPC: `POST /` con header `MCP_M2M_SECRET`. Traefik: path `/mcp` → raíz del contenedor.
+
+**Fusión:** tool `merge_projects` → `POST /projects/merge` (2+ `sourceProjectIds`, preview, suite, benchmark, archivado).
+
+**Gobernanza IA:** `generate_agent_governance` (persiste `agentGovernanceContent` o preview), `get_agent_governance_export` (scaffold reconciliado para ZIP). También expuesto en `get_project_deliverables` / `get_project_stages` → `agentGovernanceContent`.
+
+**Legacy MDD:** `legacy_generate_mdd` devuelve respuesta ligera; usar `get_project` para el markdown. `?includeContent=true` vía arg MCP `includeContent`.

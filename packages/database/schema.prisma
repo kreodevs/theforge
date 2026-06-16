@@ -227,6 +227,8 @@ model Project {
   apiContractsContent  String?   @db.Text
   logicFlowsContent    String?   @db.Text
   infraContent         String?   @db.Text
+  /// Scaffold agent-governance/ (JSON: AgentGovernanceScaffold)
+  agentGovernanceContent String? @db.Text
   uxUiGuideContent     String?   @db.Text
   phase0SummaryContent String?   @db.Text
   /// Estado del flujo Fase 0 interactivo: "idle" | "interviewing" | "done"
@@ -241,9 +243,19 @@ model Project {
   agentCheckpoints     AgentStateCheckpoint[]
   changeLogs           ChangeLog[]
   favoritedBy          FavoriteProject[]
+  /// Oculto del dashboard por defecto (fusión archivada, etc.).
+  archivedAt           DateTime?
+  /// Linaje: [{ projectId, name, mergedAt }] de proyectos fusionados en este.
+  mergedFrom           Json?
+  /// Suite: sub-proyecto vinculado al producto padre (spec independiente).
+  parentProjectId      String?
+  parentProject        Project?  @relation("ProjectSuite", fields: [parentProjectId], references: [id], onDelete: SetNull)
+  childProjects        Project[] @relation("ProjectSuite")
   createdAt            DateTime  @default(now())
 
   @@index([userId])
+  @@index([archivedAt])
+  @@index([parentProjectId])
 }
 
 model FavoriteProject {

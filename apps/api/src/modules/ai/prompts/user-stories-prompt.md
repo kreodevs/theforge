@@ -15,12 +15,26 @@ Cada ítem debe poder justificarse con una sección del MDD, un requisito del Sp
 # Reglas críticas (obligatorias) #
 
 1. **Deducción estricta:** Solo incluyes ítems que se **deduzcan directamente** del MDD, Spec o Casos de Uso. Si algo no aparece, **no lo incluyas**.
-2. **Sin inventar:** Prohibido rellenar con login, perfil, dashboard, etc. si no están en alcance.
+2. **Sin inventar genéricos:** Prohibido rellenar con funcionalidades genéricas (login, perfil, dashboard) **que no figuren en el MDD**. Si el MDD las declara explícitamente (p. ej. MFA TOTP, RBAC, facturación Stripe, consentimientos LFPDPPP, base de conocimiento), **debes** cubrirlas con HU o tarea técnica.
 3. **Contexto legacy/cambio:** Si el MDD describe un **cambio** en un sistema existente, el backlog refleja **solo ese cambio** y lo que el MDD dice tocar, no un producto entero. Si el MDD documenta el sistema **tal como existe hoy** (documentación inicial / AS-IS, sin proyecto de modificación), el backlog describe **capacidades de producto que ya están en uso** (usuarios de negocio, flujos existentes); **no** conviertas el inventario técnico del código en epics de refactorización, Storybook, linters ni deuda técnica salvo que MDD/Spec lo declaren como objetivo explícito.
 4. **Trazabilidad:** Cada Epic, historia o tarea debe poder mapearse a MDD/Spec/CU. Si no puedes señalar el origen, no la escribas.
 5. **Plantillas obligatorias:** Para **cada** Epic, **cada** historia y **cada** tarea técnica debes usar la plantilla correspondiente de esta misma especificación (mismos encabezados y orden de bloques). No mezcles secciones de una plantilla dentro de otra.
 6. **Jerarquía sugerida:** Agrupa bajo un Epic los ítems que el MDD/Spec agrupen lógicamente. Orden: primero bloque del Epic (plantilla Epic), luego las **Historias de usuario** de ese epic (cada una con su plantilla), luego las **Tareas técnicas** ligadas a ese epic (cada una con su plantilla). Si el alcance es mínimo, puede haber solo historias y/o tareas sin epic padre; en ese caso omite el Epic **solo si** el documento de entrada no sugiere agrupación.
 7. **Opcionales dentro de plantillas:** En subsecciones marcadas *(opcional)*, si no hay datos en los insumos, escribe una línea `*N/A (no especificado en MDD/Spec/CU).*`
+
+# Cobertura exhaustiva (obligatoria cuando el MDD describe un MVP o producto completo) #
+
+Cuando el MDD §1 lista **capacidades funcionales**, **actores** y **criterios UAT**, el backlog debe ser **exhaustivo**, no un subconjunto representativo.
+
+1. **Capacidades MVP (§1):** Cada viñeta bajo «Capacidades funcionales del producto (MVP)» → al menos **1 HU** (o **tarea técnica** si es puramente infra/patrón: Outbox, job CQRS, etc.).
+2. **Actores (§1):** Cada rol en «Usuarios y casos de uso clave» → al menos **1 HU** desde su perspectiva.
+3. **UAT (§1 / §5):** Cada criterio numerado de aceptación UAT → trazado a una HU (en sus AC) o a una tarea técnica verificable.
+4. **Dominios API (§4):** Agrupa endpoints por prefijo de recurso (`/auth`, `/leads`, `/customers`, `/tickets`, `/consents`, `/invoices`, etc.) → al menos **1 HU por grupo** con flujo de negocio (no una HU por endpoint).
+5. **Reglas de negocio (§1 / §5):** Multi-tenencia, MFA obligatorio, LFPDPPP/ARCO, auditoría 90 días, rate limiting, Health Score — si afectan UX o actor, **HU dedicada**; si son solo infra, **tarea técnica**.
+6. **Casos de Uso:** Si se proveen, cada caso de uso principal → al menos **1 HU** trazable (`US-XXX` referenciada en notas).
+7. **Volumen orientativo:** MVP con 12+ capacidades y 5+ actores → espera **~20–35 HU**, **~8–12 epics** y **tareas técnicas** para patrones arquitectónicos explícitos (Outbox, CQRS snapshot job, etc.). Un backlog de solo 10–11 HU para un MDD de este tamaño indica **cobertura insuficiente**.
+8. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]` y asegura cobertura antes de cerrar el documento.
+9. **Matriz final:** Cierra el documento con `## Matriz de trazabilidad` — tabla markdown: `Origen (capacidad/UAT/actor)` | `Epic` | `US/T` | `Estado`.
 
 # Entrada #
 

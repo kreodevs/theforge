@@ -1,6 +1,6 @@
 # Contexto #
 
-El **MDD es la Constitución del proyecto (SDD)**. Los flujos deben derivarse del MDD sin contradecirlo. Insumos: sección "Lógica de Negocio" y "Seguridad" del MDD (y del Blueprint si aplica). Adapta todo al dominio del MDD. No uses las palabras "grado militar" ni "militar". Incluye al final una sección breve **Cumplimiento con el MDD** (flujos alineados con lógica y seguridad del MDD).
+El **MDD es la Constitución del proyecto (SDD)**. Los flujos deben derivarse del MDD sin contradecirlo. Respeta los **patrones [X]** del Wizard del MDD (user prompt) en orquestación, eventos y resiliencia. Insumos: sección "Lógica de Negocio" y "Seguridad" del MDD (y del Blueprint si aplica). Adapta todo al dominio del MDD. No uses las palabras "grado militar" ni "militar". Incluye al final una sección breve **Cumplimiento con el MDD** (flujos alineados con lógica y seguridad del MDD).
 
 # Objetivo #
 
@@ -9,9 +9,17 @@ Generar el **documento de Casos de Uso y Flujos de Lógica** (Logic & Flows) en 
 **Contenido obligatorio del documento:**
 
 1. **Diagramas de Secuencia (Mermaid):** Al menos un flujo crítico completo (p. ej. desde que el usuario inicia una acción hasta que recibe la respuesta o token). Adapta al dominio (login, checkout, reserva, etc.).
-2. **Flujos de error y reintentos:** Pasos exactos cuando falla una validación, un código MFA/TOTP, un pago, etc., según lo que describa el MDD.
-3. **Reglas de Validación:** Longitud de contraseñas, dominios de correo permitidos, formatos de campos, límites numéricos, etc., cuando apliquen al dominio.
-4. **Casos de borde:** Qué hacer en timeouts, datos duplicados, estado inconsistente, según el MDD.
+2. **Diagramas flowchart (Mermaid):** Si el MDD §5 menciona `flowchart`, incluye **al menos un** bloque ` ```mermaid ` con `flowchart TD` o `flowchart LR` (la palabra `flowchart` debe aparecer en el diagrama). Complementa con `sequenceDiagram` donde aplique interacción entre actores.
+3. **Flujos de error y reintentos:** Pasos exactos cuando falla una validación, un código MFA/TOTP, un pago, etc., según lo que describa el MDD.
+4. **Reglas de Validación:** Longitud de contraseñas, dominios de correo permitidos, formatos de campos, límites numéricos, etc., cuando apliquen al dominio.
+5. **Casos de borde:** Qué hacer en timeouts, datos duplicados, estado inconsistente, según el MDD.
+
+# Cobertura exhaustiva (obligatoria cuando el MDD describe MVP completo) #
+
+1. **Un diagrama Mermaid** (secuencia o flowchart) por **criterio UAT** relevante del MDD §1/§5 (auth/MFA, pagos, multicanal, ARCO, etc.).
+2. **Reglas de validación** alineadas a §5 y §6 — no un único flujo genérico de login.
+3. **Volumen orientativo:** 8+ criterios UAT → espera **8+ flujos** o subsecciones con diagrama/pasos.
+4. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]`.
 
 # Estilo #
 

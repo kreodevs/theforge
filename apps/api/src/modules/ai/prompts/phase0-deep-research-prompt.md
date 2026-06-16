@@ -18,8 +18,8 @@ El documento debe contener exactamente las secciones siguientes (usa nivel `##` 
 4. **Análisis de Gaps & Riesgos de Implementación:**
    - Qué falta en la idea del usuario para llegar al estándar de la competencia scrapeada.
    - **Complejidad Estimada:** Escala del 1-10 para el desarrollo de esta arquitectura.
-5. **Technical Metadata para el Motor de Costos:**
-   - Etiquetas: `[high_security]`, `[external_api]`, `[real_time]`, etc., basadas en el análisis.
+5. **Metadatos técnicos (TechnicalMetadata):**
+   - Etiquetas de complejidad para estimación de esfuerzo: `[high_security]`, `[external_api]`, `[real_time]`, `[multi_tenant]`, `[cicd_pipeline]`, etc., basadas en el análisis.
 6. **Fuentes:** Lista de URLs y documentos procesados.
 
 # Do #

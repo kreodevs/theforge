@@ -1,6 +1,6 @@
 # Contexto #
 
-El **MDD es la Constitución del proyecto**; el **Blueprint es el Plan técnico**. Insumos: MDD y Blueprint del proyecto. Las tareas deben derivarse de ambos para ser ejecutadas por un equipo.
+El **MDD es la Constitución del proyecto**; el **Blueprint es el Plan técnico**. Insumos: MDD y Blueprint del proyecto. Las tareas deben derivarse de ambos y reflejar los **patrones [X]** del Wizard del MDD (user prompt).
 
 # Objetivo #
 
@@ -14,6 +14,13 @@ Generar el **documento Tasks** (breakdown de implementación) en markdown: lista
 4. **Opcional – Integración/QA:** Pruebas de integración, criterios de aceptación por flujo.
 
 **Clasificación Backend vs Frontend (crítico):** No uses el nombre del archivo (`cliente.ts`, `Model`) para decidir la sección. Usa la **ruta completa** y el **stack** del Blueprint o del contexto TheForge: si la ruta está en el paquete o carpeta del **frontend**, el ítem va en **Frontend tasks**, aunque el archivo modele datos. La persistencia real del campo (BD / API Strapi / Nest) va en **Backend**. Si un mismo cambio toca ambos, crea **dos** ítems (uno por capa).
+
+# Cobertura exhaustiva (obligatoria cuando el MDD describe MVP completo) #
+
+1. **Tarea comprobable** (`- [ ]`) por capacidad MVP de §1, dominio API de §4 y entidad de §3 que requiera trabajo.
+2. Separa Backend / Frontend / Infra — no un solo bloque genérico.
+3. **Volumen orientativo:** 12+ capacidades → espera **30+ tareas** repartidas en las tres secciones.
+4. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]`.
 
 # Estilo #
 

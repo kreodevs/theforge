@@ -214,7 +214,7 @@ Si hay error en la ejecución de la herramienta:
 
 Los nombres de argumentos deben coincidir con el esquema devuelto por `tools/list` (ver [SPEC-MCP-001-THEFORGE.md](./SPEC-MCP-001-THEFORGE.md) y en Ariadne `docs/mcp_server_specs.md`).
 
-**Grafo vía API Nest:** `get_component_graph`, `get_legacy_impact` y `get_c4_model` intentan primero el API Nest (`GraphService`) si el proceso MCP tiene JWT hacia `ARIADNE_API_URL`; el Markdown indica fuente o fallback. No es configurable por cabecera desde el cliente HTTP del §1.
+**Grafo vía API Nest:** `get_component_graph` y `get_legacy_impact` intentan primero el API Nest (`GraphService`) si el proceso MCP tiene JWT hacia `ARIADNE_API_URL`; el Markdown indica fuente o fallback. No es configurable por cabecera desde el cliente HTTP del §1.
 
 | Herramienta                     | Argumentos requeridos   | Argumentos opcionales                                                                 |
 | ------------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
@@ -222,7 +222,6 @@ Los nombres de argumentos deben coincidir con el esquema devuelto por `tools/lis
 | `get_legacy_impact`             | `nodeName`              | `projectId`, `currentFilePath`                                                       |
 | `get_contract_specs`            | `componentName`         | `projectId`, `currentFilePath`                                                       |
 | `get_component_graph`           | `componentName`         | `depth`, `projectId`, `currentFilePath`                                                |
-| `get_c4_model`                  | `projectId`             | — (requiere API Nest + JWT en el servidor MCP)                                        |
 | `get_file_content`              | `path` + (`projectId` **o** `currentFilePath`) | `ref`                                                                              |
 | `semantic_search`             | `query`; con sharding también **`projectId`** | `limit`; **`projectId`** opcional sin sharding (acota al UUID proyecto o `roots[].id`). **No** admite `scope` ni `currentFilePath`. |
 | `validate_before_edit`        | `nodeName`              | `projectId`, `currentFilePath`                                                       |
@@ -401,4 +400,4 @@ La aplicación **no** usa stdio: el servicio `TheForgeService` (`apps/api/src/mo
 
 ---
 
-*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-05-22 (pnpm). Rutas relativas al monorepo `theforge`.*
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-06-10 (pnpm). Rutas relativas al monorepo `theforge`.*

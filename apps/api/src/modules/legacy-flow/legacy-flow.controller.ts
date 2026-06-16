@@ -1,6 +1,7 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { generateCodebaseDocRequestSchema } from "@theforge/shared-types";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
+import { LegacyDeliverablesQueueService } from "./legacy-deliverables-queue.service.js";
 import { ResolveChangeToFilesService } from "./resolve-change-to-files.service.js";
 import { CheckNavigationImpactService } from "./check-navigation-impact.service.js";
 import { LegacyTransitionService } from "./legacy-transition.service.js";
@@ -12,6 +13,7 @@ import { LegacyTransitionService } from "./legacy-transition.service.js";
 export class LegacyFlowController {
   constructor(
     private readonly coordinator: LegacyCoordinatorService,
+    private readonly legacyDeliverablesQueue: LegacyDeliverablesQueueService,
     private readonly resolveChange: ResolveChangeToFilesService,
     private readonly navImpact: CheckNavigationImpactService,
     private readonly legacyTransition: LegacyTransitionService,
@@ -147,15 +149,17 @@ export class LegacyFlowController {
 
   /**
    * Genera el MDD de cambio a partir del estado del flujo (descripción, archivos, respuestas) y contexto AriadneSpecs. Persiste en mddContent.
-   * @param projectId - ID del proyecto.
-   * @returns Contenido Markdown del MDD generado.
+   * Respuesta ligera por defecto (`ok`, `mddLength`, `wordCount`); `?includeContent=true` incluye el markdown (evitar en UI).
    */
   @Post("generate-mdd")
   async generateMdd(
     @Param("projectId") projectId: string,
     @Body() body: { stageId?: string } = {},
+    @Query("includeContent") includeContent?: string,
   ) {
-    return this.coordinator.generateMdd(projectId, body.stageId);
+    return this.coordinator.generateMdd(projectId, body.stageId, {
+      includeContent: includeContent === "true",
+    });
   }
 
   /**
@@ -179,7 +183,32 @@ export class LegacyFlowController {
     @Param("projectId") projectId: string,
     @Body() body: { stageId?: string } = {},
   ) {
+    if (this.legacyDeliverablesQueue.isEnabled()) {
+      const jobId = await this.legacyDeliverablesQueue.enqueue({
+        projectId,
+        stageId: body.stageId?.trim() || undefined,
+      });
+      return {
+        queued: true,
+        jobId,
+        statusPath: `/projects/${projectId}/legacy/deliverables-jobs/${jobId}`,
+      };
+    }
     return this.coordinator.generateDeliverables(projectId, body.stageId);
+  }
+
+  /** Polling de cascada legacy encolada (BullMQ). */
+  @Get("deliverables-jobs/:jobId")
+  getLegacyDeliverablesJobStatus(
+    @Param("projectId") projectId: string,
+    @Param("jobId") jobId: string,
+  ) {
+    return this.legacyDeliverablesQueue.getJobStatus(jobId).then((status) => {
+      if (status.projectId && status.projectId !== projectId) {
+        throw new BadRequestException("jobId no pertenece a este proyecto");
+      }
+      return status;
+    });
   }
 
   /**

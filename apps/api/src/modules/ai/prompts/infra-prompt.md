@@ -1,6 +1,6 @@
 # Contexto #
 
-El **MDD es la Constitución del proyecto (SDD)**. La infraestructura debe cumplir lo definido en la sección Infraestructura del MDD. Insumos: sección "Infraestructura" (o equivalente) del MDD y la estructura de carpetas del Blueprint (si está disponible). Adapta todo al dominio y stack del MDD (NestJS, React, Postgres, Redis, etc.). No uses las palabras "grado militar" ni "militar". Incluye al final una sección breve **Cumplimiento con el MDD** (servicios, env y volúmenes alineados con el MDD).
+El **MDD es la Constitución del proyecto (SDD)**. La infraestructura debe cumplir lo definido en la sección Infraestructura del MDD y los **patrones [X]** del Wizard (user prompt) cuando afecten despliegue o integración. Insumos: sección "Infraestructura" (o equivalente) del MDD y la estructura de carpetas del Blueprint (si está disponible). Adapta todo al dominio y stack del MDD (NestJS, React, Postgres, Redis, etc.). No uses las palabras "grado militar" ni "militar". Incluye al final una sección breve **Cumplimiento con el MDD** (servicios, env y volúmenes alineados con el MDD).
 
 # Objetivo #
 
@@ -15,6 +15,12 @@ Generar el **documento de Infraestructura y Despliegue** (DevOps / Docker Spec) 
    - **Dependencias:** `depends_on` entre servicios cuando corresponda.
 3. **Variables de entorno:** Archivo `.env.example` con todas las variables necesarias para que el sistema arranque (DATABASE_URL, API keys, feature flags, etc.), sin valores sensibles.
 4. **Volúmenes y persistencia:** Configuración de volúmenes para datos persistentes (BD, archivos subidos, etc.) para que no se pierdan al reiniciar contenedores.
+
+# Cobertura exhaustiva (obligatoria cuando §7 define servicios) #
+
+1. **Un servicio en docker-compose** por componente que §7 o §2 nombren (API, Postgres, Redis, workers, Stripe webhooks, etc.).
+2. **Variable en `.env.example`** por secreto o flag citado en §6/§7.
+3. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]`.
 
 # Estilo #
 

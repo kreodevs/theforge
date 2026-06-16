@@ -65,6 +65,10 @@ export interface Phase0InterviewState {
   gaps: Phase0Gap[];
   preguntasRealizadas: number;
   maxPreguntas: number;  // default 5
+  /** Cola fija de gaps a entrevistar (máx. maxPreguntas), definida al arrancar */
+  questionPlan: Phase0Gap[];
+  /** Índice del siguiente gap planificado en questionPlan */
+  planCursor: number;
   status: "idle" | "starting" | "interviewing" | "done" | "error";
   /** Input original del usuario (idea cruda o documento externo) */
   inputRaw: string;
@@ -74,6 +78,13 @@ export interface Phase0InterviewState {
   ultimaPregunta?: string;
   /** Historial de preguntas y respuestas */
   historial: Phase0QA[];
+  /** Entrevista inicial vs auditoría manual posterior */
+  mode: "interview" | "audit";
+  /**
+   * structured = borrador entrevista / markdown Fase 0 canónico.
+   * freeform_dbga = dbgaContent libre (lo que muestra el Workshop en pestaña Fase 0).
+   */
+  sourceFormat?: "structured" | "freeform_dbga";
 }
 
 export interface Phase0QA {
@@ -85,9 +96,31 @@ export interface Phase0QA {
 /** Eventos del streaming NDJSON */
 export type Phase0StreamEvent =
   | { type: "init"; threadId: string; borrador: Phase0Document }
-  | { type: "question"; question: string; n: number; total: number }
+  | { type: "question"; question: string; n: number; total: number; borrador?: Phase0Document; gaps?: Phase0Gap[] }
   | { type: "draft_updated"; borrador: Phase0Document; gaps: Phase0Gap[] }
-  | { type: "done"; borrador: Phase0Document; gaps: Phase0Gap[] }
+  | {
+      type: "done";
+      borrador: Phase0Document;
+      gaps: Phase0Gap[];
+      message?: string;
+      /** Markdown DBGA generado al finalizar (también persistido en dbgaContent) */
+      markdown?: string;
+    }
+  | {
+      type: "audit_complete";
+      message: string;
+      borrador: Phase0Document;
+      gaps: Phase0Gap[];
+    }
+  | {
+      type: "audit_started";
+      threadId: string;
+      borrador: Phase0Document;
+      gaps: Phase0Gap[];
+      question: string;
+      n: number;
+      total: number;
+    }
   | { type: "error"; message: string; code?: string };
 
 /** Respuesta del prompt de arranque */

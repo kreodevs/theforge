@@ -9,6 +9,7 @@ export type WorkshopDocTab =
   | "ux-ui-guide"
   | "blueprint"
   | "tasks"
+  | "agent-governance"
   | "api-contracts"
   | "logic-flows"
   | "architecture"
@@ -22,7 +23,7 @@ export type ProjectTypeForTabs = "NEW" | "LEGACY";
 
 /**
  * Visibilidad de pestañas según `Project.complexity` y tipo de proyecto.
- * Alineado con `DELIVERABLES_BY_COMPLEXITY` (MEDIUM: spec, api_contracts, ux_ui_guide, tasks).
+ * Alineado con `DELIVERABLES_BY_COMPLEXITY` (incl. `agent_governance` en LOW/MEDIUM/HIGH).
  *
  * - **LOW:** oculta MDD, Blueprint y API (constitución vía DBGA / Spec).
  * - **MEDIUM + NEW:** solo Paso 0, Spec, API, Guía UX/UI, Tasks, ADRs — sin MDD en barra (insumo: DBGA/Spec); sin Arq., Casos, H.U., Blueprint, Flujos, Infra.
@@ -57,6 +58,7 @@ export function isTabVisibleForComplexity(
         "spec",
         "api-contracts",
         "ux-ui-guide",
+        "agent-governance",
         "tasks",
       ];
       return allow.includes(tab);
@@ -67,6 +69,7 @@ export function isTabVisibleForComplexity(
       "brd",
       "api-contracts",
       "ux-ui-guide",
+      "agent-governance",
       "tasks",
       "adrs",
     ];

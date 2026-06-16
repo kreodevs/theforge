@@ -5,6 +5,7 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiAnalysisService } from "./ai-analysis.service.js";
 import { EstimationService } from "./estimation/estimation.service.js";
 import { Phase0InterviewService } from "./phase0/phase0-interview.service.js";
+import { MddManualAuditService } from "./mdd/mdd-manual-audit.service.js";
 import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
 
@@ -14,6 +15,7 @@ export class AiAnalysisController {
     private readonly aiAnalysis: AiAnalysisService,
     private readonly estimationService: EstimationService,
     private readonly phase0Interview: Phase0InterviewService,
+    private readonly mddManualAudit: MddManualAuditService,
     private readonly prisma: PrismaService,
   ) { }
 
@@ -34,11 +36,17 @@ export class AiAnalysisController {
     const sid = typeof stageId === "string" ? stageId.trim() || undefined : undefined;
     const metrics = await this.estimationService.getLiveMetricsForProject(id, undefined, sid);
     const mddContent = await this.estimationService.getMddContentForProject(id, sid);
+    const snapshot = await this.estimationService.getMddAuditSnapshot(id, sid);
     const precisionBreakdown =
       mddContent && mddContent.trim().length > 80
         ? this.estimationService.getPrecisionBreakdown(mddContent, { projectId: id, stageId: sid ?? null })
-        : undefined;
-    return { ...metrics, precisionBreakdown };
+        : snapshot?.precisionBreakdown;
+    return {
+      ...metrics,
+      precisionBreakdown,
+      auditTrail: snapshot?.auditTrail,
+      lastAuditAt: snapshot?.updatedAt,
+    };
   }
 
   @Post("estimation")
@@ -53,11 +61,17 @@ export class AiAnalysisController {
     const metrics = await this.estimationService.getLiveMetricsForProject(id, mddContent, sid);
     const contentForBreakdown =
       mddContent ?? (await this.estimationService.getMddContentForProject(id, sid));
+    const snapshot = await this.estimationService.getMddAuditSnapshot(id, sid);
     const precisionBreakdown =
       contentForBreakdown && contentForBreakdown.trim().length > 80
         ? this.estimationService.getPrecisionBreakdown(contentForBreakdown, { projectId: id, stageId: sid ?? null })
-        : undefined;
-    return { ...metrics, precisionBreakdown };
+        : snapshot?.precisionBreakdown;
+    return {
+      ...metrics,
+      precisionBreakdown,
+      auditTrail: snapshot?.auditTrail,
+      lastAuditAt: snapshot?.updatedAt,
+    };
   }
 
   /**
@@ -162,6 +176,32 @@ export class AiAnalysisController {
       typeof body?.mddContent === "string" ? body.mddContent.trim() || undefined : undefined;
     const updated = await this.aiAnalysis.reviewMddConsistency(id, mddContent);
     return { mddContent: updated };
+  }
+
+  /** Auditoría manual del MDD visible en el Workshop. */
+  @Post("mdd/audit")
+  async auditMdd(
+    @Body() body: { projectId?: string; stageId?: string; mddContent?: string },
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    const stageId = typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined;
+    const mddContent =
+      typeof body?.mddContent === "string" ? body.mddContent.trim() || undefined : undefined;
+    return this.mddManualAudit.audit(projectId, stageId, mddContent);
+  }
+
+  @Post("mdd/audit/answer")
+  async answerMddAudit(
+    @Body() body: { threadId?: string; answer?: string; projectId?: string; stageId?: string },
+  ) {
+    const threadId = typeof body?.threadId === "string" ? body.threadId.trim() : "";
+    const answer = typeof body?.answer === "string" ? body.answer.trim() : "";
+    if (!threadId) throw new BadRequestException("threadId is required");
+    if (!answer) throw new BadRequestException("answer is required");
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() || undefined : undefined;
+    const stageId = typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined;
+    return this.mddManualAudit.processAnswer(threadId, answer, projectId, stageId);
   }
 
   /**
@@ -426,6 +466,33 @@ export class AiAnalysisController {
     return this.aiAnalysis.getProjectDecisions(id);
   }
 
+  @Post("mdd/suggest-governance-patterns")
+  async suggestGovernancePatterns(
+    @Body() body: { projectId?: string; stageId?: string },
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    const stageId = typeof body?.stageId === "string" ? body.stageId.trim() : undefined;
+    return this.aiAnalysis.suggestGovernancePatterns(projectId, stageId);
+  }
+
+  @Post("mdd/record-governance-pattern-adrs")
+  async recordGovernancePatternAdrs(
+    @Body()
+    body: {
+      projectId?: string;
+      patterns?: Array<{ label: string; group: string; affects: string; description: string }>;
+    },
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    const patterns = Array.isArray(body?.patterns) ? body.patterns : [];
+    if (patterns.length === 0) {
+      throw new BadRequestException("patterns is required");
+    }
+    return this.aiAnalysis.recordGovernancePatternAdrs(projectId, patterns);
+  }
+
   // ─── Fase 0 — Entrevista Interactiva ─────────────────────────────
 
   /**
@@ -445,21 +512,41 @@ export class AiAnalysisController {
    * Obtiene la siguiente pregunta del entrevistador.
    */
   @Get("phase0/question/:threadId")
-  async getPhase0Question(@Param("threadId") threadId: string) {
+  async getPhase0Question(
+    @Param("threadId") threadId: string,
+    @Query("projectId") projectId?: string,
+  ) {
     if (!threadId) throw new BadRequestException("threadId is required");
-    return this.phase0Interview.getQuestion(threadId);
+    const pid = typeof projectId === "string" ? projectId.trim() || undefined : undefined;
+    return this.phase0Interview.getQuestion(threadId, pid);
+  }
+
+  @Post("phase0/audit")
+  async auditPhase0(@Body() body: { projectId?: string }) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    return this.phase0Interview.audit(projectId);
+  }
+
+  /** Genera dbgaContent (markdown) desde phase0SummaryContent si falta. */
+  @Post("phase0/sync-markdown")
+  async syncPhase0Markdown(@Body() body: { projectId?: string }) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    return this.phase0Interview.syncMarkdown(projectId);
   }
 
   /**
    * Envía respuesta a la última pregunta y recibe borrador actualizado.
    */
   @Post("phase0/answer")
-  async answerPhase0(@Body() body: { threadId?: string; answer?: string }) {
+  async answerPhase0(@Body() body: { threadId?: string; answer?: string; projectId?: string }) {
     const threadId = typeof body?.threadId === "string" ? body.threadId.trim() : "";
     const answer = typeof body?.answer === "string" ? body.answer.trim() : "";
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() || undefined : undefined;
     if (!threadId) throw new BadRequestException("threadId is required");
     if (!answer) throw new BadRequestException("answer is required");
-    return this.phase0Interview.processAnswer(threadId, answer);
+    return this.phase0Interview.processAnswer(threadId, answer, projectId);
   }
 
   /**

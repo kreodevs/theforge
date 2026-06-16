@@ -22,6 +22,11 @@
       "import": "./dist/markdown-repair.js",
       "require": "./dist/markdown-repair.js"
     },
+    "./repair-directory-tree": {
+      "types": "./dist/repair-directory-tree.d.ts",
+      "import": "./dist/repair-directory-tree.js",
+      "require": "./dist/repair-directory-tree.js"
+    },
     "./mdd-pipeline-limits": {
       "types": "./dist/mdd-pipeline-limits.d.ts",
       "import": "./dist/mdd-pipeline-limits.js",
@@ -41,6 +46,11 @@
       "types": "./dist/format-document-markdown.d.ts",
       "import": "./dist/format-document-markdown.js",
       "require": "./dist/format-document-markdown.js"
+    },
+    "./mdd-governance-patterns": {
+      "types": "./dist/mdd-governance-patterns.d.ts",
+      "import": "./dist/mdd-governance-patterns.js",
+      "require": "./dist/mdd-governance-patterns.js"
     }
   },
   "scripts": {

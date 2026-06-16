@@ -21,6 +21,8 @@ import {
   Play,
   ListOrdered,
   ListTodo,
+  Bot,
+  ListChecks,
   ArrowDown,
   ArrowRight,
   ArrowUp,
@@ -41,6 +43,16 @@ import {
 import { cn } from "@/lib/utils";
 import { UnderlineTabs } from "@/components/ui/UnderlineTabs";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/AlertDialog";
+import {
   WORKSHOP_DOC_TOOLBAR_ICON,
   WORKSHOP_DOC_TOOLBAR_ICON_BTN,
 } from "../constants/workshopDocToolbar";
@@ -48,19 +60,43 @@ import {
   WORKSHOP_HEADER_CTL,
   WORKSHOP_HEADER_CTL_HOVER,
 } from "../constants/workshopHeaderToolbar";
-import type { CodebaseDocResponseMode } from "@theforge/shared-types";
-import { useWorkshopStore, type Status } from "../store/workshopStore";
+import {
+  agentGovernanceScaffoldHasContent,
+  isPhase0BorradorJson,
+  parseAgentGovernanceScaffold,
+} from "@theforge/shared-types";
+import {
+  selectPersistedMddBaseline,
+  selectWorkshopAgentsBusy,
+  useWorkshopStore,
+  type Status,
+} from "../store/workshopStore";
+import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import { AIProviderBanner } from "../components/AIProviderBanner";
 import { ModelsUnavailableDialog } from "../components/ModelsUnavailableDialog";
 import MddViewer from "../components/MddViewer";
+import {
+  MddPatternsWizardDialog,
+  type MddPatternsWizardMode,
+} from "../components/MddPatternsWizardDialog";
+import {
+  mddNeedsPatternWizard,
+  selectedPatternIdsFromMdd,
+} from "@theforge/shared-types/mdd-governance-patterns";
+import {
+  WorkshopDocumentIslandToc,
+  isWorkshopMarkdownPreviewActive,
+} from "../components/WorkshopDocumentIslandToc";
 import { replaceYamlFrontMatter } from "../components/DesignMdPreview";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
 import { WorkshopMetricsColumnInner } from "./WorkshopMetricsColumnInner";
 import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
 import { BrdStagePanel } from "../components/BrdStagePanel";
+import { AgentGovernancePanel } from "../components/AgentGovernancePanel";
+import { downloadAgentGovernanceZip } from "../utils/downloadAgentGovernanceZip";
 import { downloadDocumentsZip } from "../utils/downloadDocumentsZip";
 import { downloadMarkdownFile } from "../utils/downloadMarkdownFile";
 import { resolveWorkshopActiveDocumentDownload } from "../utils/workshopActiveDocumentDownload";
@@ -70,8 +106,8 @@ import {
 } from "../components/WorkshopDocBubbleMenu";
 import { WorkshopDocPanelHeader } from "../components/WorkshopDocPanelHeader";
 import {
-  collectDocumentStylesForPrint,
   printDesignSystemDocument,
+  printMarkdownDocument,
 } from "../utils/printDocument";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
 import { StandardDocPanel } from "../components/StandardDocPanel";
@@ -90,6 +126,8 @@ import {
 } from "../components/WorkshopButtons";
 import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
 import { Phase0InterviewPanel } from "../components/Phase0InterviewPanel";
+import { Phase0ManualAudit } from "../components/Phase0ManualAudit";
+import { MddManualAudit } from "../components/MddManualAudit";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AdrsPanel } from "../components/AdrsPanel";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
@@ -143,6 +181,7 @@ type WorkshopDocToolbarViewModes = {
   logicFlowsViewMode: "preview" | "source";
   brdDocViewMode: "preview" | "source";
   infraViewMode: "preview" | "source";
+  agentGovernanceViewMode: "preview" | "source";
 };
 
 function getWorkshopDocToolbarActiveViewMode(
@@ -161,6 +200,7 @@ function getWorkshopDocToolbarActiveViewMode(
   if (centralPanel === "api-contracts") return modes.apiContractsViewMode;
   if (centralPanel === "logic-flows") return modes.logicFlowsViewMode;
   if (centralPanel === "brd") return modes.brdDocViewMode;
+  if (centralPanel === "agent-governance") return modes.agentGovernanceViewMode;
   return modes.infraViewMode;
 }
 
@@ -233,6 +273,16 @@ interface WorkshopViewProps {
   projectName?: string;
   onBack?: () => void;
   onOpenSettings?: () => void;
+  /** Abre el diálogo de renombrar (solo si el usuario es propietario). */
+  onRenameProject?: () => void;
+  mergeAudit?: {
+    type: string;
+    threadId?: string;
+    question?: string;
+    n?: number;
+    total?: number;
+    message?: string;
+  } | null;
 }
 
 /** First vertically scrollable region under `root` (BFS) for mobile scroll FAB targeting. */
@@ -257,6 +307,8 @@ export default function WorkshopView({
   projectName,
   onBack,
   onOpenSettings,
+  onRenameProject,
+  mergeAudit,
 }: WorkshopViewProps) {
   const project = useWorkshopStore((s) => s.project);
   const activeStageId = useWorkshopStore((s) => s.activeStageId);
@@ -271,6 +323,16 @@ export default function WorkshopView({
   );
   const patchWorkshopStage = useWorkshopStore((s) => s.patchWorkshopStage);
   const generateMddFromBenchmark = useWorkshopStore((s) => s.generateMddFromBenchmark);
+  const persistMddContent = useWorkshopStore((s) => s.persistMddContent);
+  const [mddPatternsWizardOpen, setMddPatternsWizardOpen] = useState(false);
+  const [clearMddConfirmOpen, setClearMddConfirmOpen] = useState(false);
+  const [mddPatternsWizardMode, setMddPatternsWizardMode] =
+    useState<MddPatternsWizardMode>("initial");
+  const [patternsWizardAnalyzing, setPatternsWizardAnalyzing] = useState(false);
+  const [patternsWizardPreselected, setPatternsWizardPreselected] = useState<Set<string> | null>(
+    null,
+  );
+  const [patternsAnalyzeRationale, setPatternsAnalyzeRationale] = useState<string | null>(null);
   /** Estado legacy efectivo: lee de la etapa activa primero, con fallback a project.legacyFlowState */
   const activeLegacyState = useMemo(() => {
     if (project?.projectType === "LEGACY" && activeWorkshopStage?.legacyChangeState) {
@@ -294,6 +356,7 @@ export default function WorkshopView({
   const logicFlowsContentField = useWorkshopStore((s) => s.logicFlowsContent);
   const infraContentField = useWorkshopStore((s) => s.infraContent);
   const tasksContentField = useWorkshopStore((s) => s.tasksContent);
+  const agentGovernanceContentField = useWorkshopStore((s) => s.agentGovernanceContent);
   const architectureContentField = useWorkshopStore((s) => s.architectureContent);
   const useCasesContentField = useWorkshopStore((s) => s.useCasesContent);
   const userStoriesContentField = useWorkshopStore((s) => s.userStoriesContent);
@@ -312,10 +375,23 @@ export default function WorkshopView({
   const logicFlowsContent = logicFlowsContentField ?? project?.logicFlowsContent ?? null;
   const infraContent = infraContentField ?? project?.infraContent ?? null;
   const tasksContent = tasksContentField ?? project?.tasksContent ?? null;
+  const agentGovernanceContent =
+    agentGovernanceContentField ?? project?.agentGovernanceContent ?? null;
+  const agentGovernanceScaffold = useMemo(
+    () => parseAgentGovernanceScaffold(agentGovernanceContent),
+    [agentGovernanceContent],
+  );
+  const hasAgentGovernance = agentGovernanceScaffoldHasContent(agentGovernanceContent);
   const architectureContent = architectureContentField ?? project?.architectureContent ?? null;
   const useCasesContent = useCasesContentField ?? project?.useCasesContent ?? null;
   const userStoriesContent = userStoriesContentField ?? project?.userStoriesContent ?? null;
   const phase0SummaryContent = phase0SummaryContentField ?? project?.phase0SummaryContent ?? null;
+  /** Deep Research markdown; ignora JSON de borrador que pudo quedar en phase0SummaryContent. */
+  const benchmarkMarkdown =
+    phase0SummaryContent?.trim() && !isPhase0BorradorJson(phase0SummaryContent)
+      ? phase0SummaryContent
+      : null;
+  const benchmarkNeedsRegenerate = isPhase0BorradorJson(phase0SummaryContent);
   const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
   const aemContent = aemContentField ?? project?.aemContent ?? null;
 
@@ -368,7 +444,15 @@ export default function WorkshopView({
 
   const precisionBreakdownRaw = useWorkshopStore((s) => s.precisionBreakdown);
   const precisionBreakdown = useMemo(() => precisionBreakdownRaw, [precisionBreakdownRaw]);
-  const readinessHints = useMemo(() => liveMetrics?.readinessHints ?? null, [liveMetrics?.readinessHints]);
+  const mddReadinessHints = useMemo(
+    () => liveMetrics?.mddReadinessHints ?? liveMetrics?.readinessHints ?? null,
+    [liveMetrics?.mddReadinessHints, liveMetrics?.readinessHints],
+  );
+  const traceabilityHints = useMemo(
+    () => liveMetrics?.traceabilityHints ?? null,
+    [liveMetrics?.traceabilityHints],
+  );
+  const consistencyScore = useWorkshopStore((s) => s.consistencyScore);
 
   const auditTrailRaw = useWorkshopStore((s) => s.auditTrail);
   const auditTrail = useMemo(() => auditTrailRaw || [], [auditTrailRaw]);
@@ -388,11 +472,15 @@ export default function WorkshopView({
   const adrsRaw = useWorkshopStore((s) => s.adrs);
   const adrs = useMemo(() => adrsRaw || [], [adrsRaw]);
   const fetchAdrs = useWorkshopStore((s) => s.fetchAdrs);
+  const suggestGovernancePatterns = useWorkshopStore((s) => s.suggestGovernancePatterns);
+  const recordGovernancePatternAdrs = useWorkshopStore((s) => s.recordGovernancePatternAdrs);
+  const persistedMddBaseline = useWorkshopStore(selectPersistedMddBaseline);
   const sendMessage = useWorkshopStore((s) => s.sendMessage);
   const setMddContent = useWorkshopStore((s) => s.setMddContent);
   const revertMddContent = useWorkshopStore((s) => s.revertMddContent);
   const persistAndReviewMdd = useWorkshopStore((s) => s.persistAndReviewMdd);
   const mddReviewing = useWorkshopStore((s) => s.mddReviewing);
+  const workshopAgentsBusy = useWorkshopStore(selectWorkshopAgentsBusy);
 
   const setBlueprintContent = useWorkshopStore((s) => s.setBlueprintContent);
   const persistBlueprintContent = useWorkshopStore((s) => s.persistBlueprintContent);
@@ -408,6 +496,8 @@ export default function WorkshopView({
   const generateInfra = useWorkshopStore((s) => s.generateInfra);
   const generateSpec = useWorkshopStore((s) => s.generateSpec);
   const generateTasks = useWorkshopStore((s) => s.generateTasks);
+  const generateAgentGovernance = useWorkshopStore((s) => s.generateAgentGovernance);
+  const fetchAgentGovernanceExport = useWorkshopStore((s) => s.fetchAgentGovernanceExport);
   const persistTasksContent = useWorkshopStore((s) => s.persistTasksContent);
   const persistSpecContent = useWorkshopStore((s) => s.persistSpecContent);
   const setSpecContent = useWorkshopStore((s) => s.setSpecContent);
@@ -423,6 +513,7 @@ export default function WorkshopView({
   const phase0DeepResearch = useWorkshopStore((s) => s.phase0DeepResearch);
   const clearPhase0SummaryContent = useWorkshopStore((s) => s.clearPhase0SummaryContent);
   const clearWorkshopDocumentContent = useWorkshopStore((s) => s.clearWorkshopDocumentContent);
+  const clearMddContentCompletely = useWorkshopStore((s) => s.clearMddContentCompletely);
   const setPhase0SummaryContent = useWorkshopStore((s) => s.setPhase0SummaryContent);
   const persistPhase0SummaryContent = useWorkshopStore((s) => s.persistPhase0SummaryContent);
   const legacyGenerateCodebaseDoc = useWorkshopStore((s) => s.legacyGenerateCodebaseDoc);
@@ -433,6 +524,104 @@ export default function WorkshopView({
   const legacyStart = useWorkshopStore((s) => s.legacyStart);
   const legacyAnswer = useWorkshopStore((s) => s.legacyAnswer);
   const legacyGenerateMdd = useWorkshopStore((s) => s.legacyGenerateMdd);
+  const openPatternsWizardInitial = useCallback(async () => {
+    if (!projectId?.trim()) return;
+    setMddPatternsWizardMode("initial");
+    setPatternsWizardPreselected(null);
+    setPatternsAnalyzeRationale(null);
+    setMddPatternsWizardOpen(true);
+    setPatternsWizardAnalyzing(true);
+    try {
+      const { patternIds, rationale } = await suggestGovernancePatterns(
+        projectId,
+        activeStageId,
+      );
+      setPatternsWizardPreselected(new Set(patternIds));
+      setPatternsAnalyzeRationale(
+        rationale ??
+          "Preselección a partir de Fase 0, Benchmark y BRD (puede variar si cambias esos documentos).",
+      );
+    } catch (e) {
+      setPatternsAnalyzeRationale(
+        e instanceof Error ? e.message : "No se pudo analizar; elige patrones manualmente.",
+      );
+      setPatternsWizardPreselected(null);
+    } finally {
+      setPatternsWizardAnalyzing(false);
+    }
+  }, [projectId, activeStageId, suggestGovernancePatterns]);
+
+  const requestGenerateMdd = useCallback(() => {
+    if (!projectId?.trim()) return;
+    if (isLegacyProject) {
+      void legacyGenerateMdd(projectId, activeStageId ?? undefined);
+      return;
+    }
+    if (mddNeedsPatternWizard(effectiveMddTrimmed)) {
+      void openPatternsWizardInitial();
+      return;
+    }
+    void generateMddFromBenchmark(projectId);
+  }, [
+    projectId,
+    isLegacyProject,
+    legacyGenerateMdd,
+    activeStageId,
+    effectiveMddTrimmed,
+    generateMddFromBenchmark,
+    openPatternsWizardInitial,
+  ]);
+
+  const openEditMddPatterns = useCallback(() => {
+    setMddPatternsWizardMode("edit");
+    setPatternsWizardPreselected(new Set(selectedPatternIdsFromMdd(effectiveMddTrimmed)));
+    setPatternsAnalyzeRationale(null);
+    setPatternsWizardAnalyzing(false);
+    setMddPatternsWizardOpen(true);
+  }, [effectiveMddTrimmed]);
+
+  const handleMddPatternsWizardConfirm = useCallback(
+    async (markdown: string, selectedIds: ReadonlySet<string>) => {
+      setMddPatternsWizardOpen(false);
+      const mode = mddPatternsWizardMode;
+      if (mode === "edit") {
+        setMddContent(markdown);
+        await persistMddContent(markdown, {
+          force: true,
+          allowGovernancePatternChange: true,
+        });
+        if (!useWorkshopStore.getState().error?.includes("restaurados")) {
+          const { projectId: pid, fetchEstimation } = useWorkshopStore.getState();
+          if (pid?.trim()) {
+            await recordGovernancePatternAdrs(pid, selectedIds).catch(() => {});
+            void fetchEstimation(pid);
+          }
+        }
+        return;
+      }
+      setMddContent(markdown);
+      await persistMddContent(markdown, {
+        force: true,
+        allowGovernancePatternChange: true,
+        mddGovernanceSeedOnly: true,
+      });
+      const storeAfterPersist = useWorkshopStore.getState();
+      if (storeAfterPersist.error?.includes("restaurados") || storeAfterPersist.error) {
+        return;
+      }
+      if (!projectId?.trim()) return;
+      await recordGovernancePatternAdrs(projectId, selectedIds).catch(() => {});
+      await generateMddFromBenchmark(projectId);
+    },
+    [
+      mddPatternsWizardMode,
+      setMddContent,
+      persistMddContent,
+      generateMddFromBenchmark,
+      projectId,
+      recordGovernancePatternAdrs,
+    ],
+  );
   const legacyGenerateDeliverables = useWorkshopStore((s) => s.legacyGenerateDeliverables);
   const persistUxUiGuideContent = useWorkshopStore((s) => s.persistUxUiGuideContent);
   const generateUxGuideSequential = useCallback(async () => {
@@ -696,6 +885,7 @@ export default function WorkshopView({
   const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
   const [mddInicialViewMode, setMddInicialViewMode] = useState<"preview" | "source">("preview");
   const [aemViewMode, setAemViewMode] = useState<"preview" | "source">("preview");
+  const [agentGovernanceViewMode, setAgentGovernanceViewMode] = useState<"preview" | "source">("preview");
   const [hermesConfigured, setHermesConfigured] = useState<boolean | null>(null);
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
@@ -706,9 +896,6 @@ export default function WorkshopView({
   const [brdWorkshopDraft, setBrdWorkshopDraft] = useState("");
   const [brdDocViewMode, setBrdDocViewMode] = useState<"preview" | "source">("preview");
   const [brdTobePersistBusy, setBrdTobePersistBusy] = useState(false);
-  /** `ask_codebase` / Ariadne al generar doc. partida (`POST …/legacy/generate-codebase-doc`). Default `raw_evidence`. `ingest_mdd` = una sola pasada `evidence_first` (MDD ingest), sin agente escalonado ni síntesis Nest. */
-  const [codebaseDocResponseMode, setCodebaseDocResponseMode] = useState<CodebaseDocResponseMode>("raw_evidence");
-
   /** Alterna preview/source/design del panel de documento activo. */
   const toggleDocViewMode = (panel: string) => {
     if (panel === "mdd") setMddViewMode((m) => (m === "preview" ? "source" : "preview"));
@@ -724,6 +911,7 @@ export default function WorkshopView({
     else if (panel === "logic-flows") setLogicFlowsViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "brd") setBrdDocViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "agent-governance") setAgentGovernanceViewMode((m) => (m === "preview" ? "source" : "preview"));
   };
 
   const copyMddInicialMarkdown = useCallback(async () => {
@@ -755,20 +943,17 @@ export default function WorkshopView({
     | "user-stories"
     | "infra"
     | "aem"
+    | "agent-governance"
     | "adrs";
   const centralPanel = useWorkshopStore((s) => s.workshopActiveDocPanel) as DocPanel;
   const setCentralPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
 
-  /** Etapa 1 sin modificación: el MDD de la pestaña «MDD» no aplica; doc. partida = MDD Inicial (`codebaseDoc`). */
-  const legacyMddPanelIsAsIsOnly =
-    isLegacyProject &&
-    isStage1Legacy &&
-    !(activeLegacyState?.description ?? "").trim();
+  /** En pestaña MDD legacy: regenerar siempre vía `generate-mdd` (desde codebaseDoc / etapa), nunca `generate-codebase-doc`. */
+  const legacyMddNeedsCodebaseDoc = isLegacyProject && !hasCodebaseDoc;
 
   const handleRegenerateLegacyCodebaseDoc = useCallback(async () => {
     if (!projectId) return null;
     const res = await legacyGenerateCodebaseDoc(projectId, {
-      responseMode: codebaseDocResponseMode,
       stageId: activeStageId ?? undefined,
     });
     if (res?.codebaseDoc) {
@@ -779,7 +964,6 @@ export default function WorkshopView({
   }, [
     projectId,
     legacyGenerateCodebaseDoc,
-    codebaseDocResponseMode,
     activeStageId,
     setCentralPanel,
   ]);
@@ -787,6 +971,22 @@ export default function WorkshopView({
   /** Por debajo de `lg`: una columna con control de Chat / Documentos / Semáforo. */
   type WorkshopMobileColumn = "chat" | "workspace" | "metrics";
   const [mobileWorkshopColumn, setMobileWorkshopColumn] = useState<WorkshopMobileColumn>("workspace");
+
+  /** Tras vaciar el MDD: vista por defecto (previsualización con «Sin contenido aún.»), no el editor. */
+  const handleClearMddCompletely = useCallback(async () => {
+    if (!projectId?.trim()) return false;
+    const ok = await clearMddContentCompletely(projectId);
+    if (!ok) return false;
+    setMddPatternsWizardOpen(false);
+    setCentralPanel("mdd");
+    setMobileWorkshopColumn("workspace");
+    setMddViewMode("preview");
+    requestAnimationFrame(() => {
+      workspaceScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    return true;
+  }, [projectId, clearMddContentCompletely, setCentralPanel]);
+
   const [isLgLayout, setIsLgLayout] = useState(() =>
     typeof globalThis.matchMedia === "function"
       ? globalThis.matchMedia("(min-width: 1024px)").matches
@@ -1274,7 +1474,7 @@ export default function WorkshopView({
     if (activeWorkshopStage?.ordinal === 1) return;
     const emptyLegacyPanels: DocPanel[] = [
       "spec", "architecture", "use-cases", "user-stories", "blueprint",
-      "api-contracts", "logic-flows", "tasks", "infra",
+      "api-contracts", "logic-flows", "tasks", "agent-governance", "infra",
     ];
     if (!emptyLegacyPanels.includes(centralPanel as DocPanel)) return;
     const contentByPanel: Record<string, string | null> = {
@@ -1286,6 +1486,7 @@ export default function WorkshopView({
       "api-contracts": apiContractsContent ?? null,
       "logic-flows": logicFlowsContent ?? null,
       tasks: tasksContent ?? null,
+      "agent-governance": hasAgentGovernance ? "ok" : null,
       infra: infraContent ?? null,
     };
     const content = contentByPanel[centralPanel as string];
@@ -1302,6 +1503,7 @@ export default function WorkshopView({
     apiContractsContent,
     logicFlowsContent,
     tasksContent,
+    hasAgentGovernance,
     infraContent,
   ]);
 
@@ -1369,69 +1571,18 @@ export default function WorkshopView({
     const mdPreview = document.querySelector<HTMLElement>(".markdown-preview");
     if (!mdPreview) return;
 
-    const printContent = mdPreview.cloneNode(true) as HTMLElement;
-    const printWin = window.open("", "_blank");
-    if (!printWin) {
-      document.body.classList.add("printing-md-content");
-      const cleanup = () => document.body.classList.remove("printing-md-content");
-      window.addEventListener("afterprint", cleanup, { once: true });
-      window.print();
-      return;
-    }
-
-    const styles = collectDocumentStylesForPrint();
-    const docStyles = `
-    body { padding: 2rem; background: #fff; color: #111; }
-    * { color: #111 !important; background: transparent !important; }
-    .markdown-preview { max-width: 900px; margin: 0 auto; }
-    img { max-width: 100%; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 8px; }
-    pre { overflow-x: auto; border: 1px solid #ddd; padding: 12px; background: #f5f5f5; }
-    code { background: #f5f5f5; padding: 2px 4px; }
-    @page { margin: 2cm; }
-  `;
-    printWin.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Imprimir documento</title>
-  <style>${styles}</style>
-  <style>${docStyles}</style>
-</head>
-<body>
-  ${printContent.innerHTML}
-</body>
-</html>`);
-    printWin.document.close();
-    printWin.focus();
-    setTimeout(() => printWin.print(), 500);
+    const docTitle =
+      centralPanel === "mdd"
+        ? "Master Design Document"
+        : centralPanel === "brd"
+          ? "Business Requirements Document"
+          : "Documento";
+    printMarkdownDocument(mdPreview, { title: docTitle });
   }, [centralPanel, uxUiGuideViewMode]);
 
-  const docBubbleMenuItems = useMemo((): WorkshopDocBubbleMenuItem[] => {
-    if (centralPanel === "legacy" || centralPanel === "adrs") return [];
-
-    const ordered: WorkshopDocBubbleMenuItem[] = [];
-    const activeDocViewMode = getWorkshopDocToolbarActiveViewMode(centralPanel, {
-      mddViewMode,
-      mddInicialViewMode,
-      specViewMode,
-      architectureViewMode,
-      useCasesViewMode,
-      userStoriesViewMode,
-      uxUiGuideViewMode,
-      aemViewMode,
-      blueprintViewMode,
-      apiContractsViewMode,
-      logicFlowsViewMode,
-      brdDocViewMode,
-      infraViewMode,
-    });
-    const { Icon: DocToggleIcon, tooltip: docToggleTooltip } = workshopDocSourceTogglePresentation(
-      centralPanel,
-      activeDocViewMode,
-    );
+  /** Preview/source (or design) toggle — header toolbar on desktop; not in the bubble menu. */
+  const docEditToolbarToggle = useMemo(() => {
+    if (centralPanel === "legacy" || centralPanel === "adrs") return null;
 
     const editableDocPanels = new Set([
       "spec",
@@ -1447,6 +1598,7 @@ export default function WorkshopView({
       "infra",
       "brd",
       "mdd-inicial",
+      "agent-governance",
     ]);
     const showDocEdit =
       editableDocPanels.has(centralPanel) &&
@@ -1461,10 +1613,88 @@ export default function WorkshopView({
         (centralPanel === "user-stories" && userStoriesContent) ||
         (centralPanel === "logic-flows" && logicFlowsContent) ||
         (centralPanel === "infra" && infraContent) ||
+        (centralPanel === "agent-governance" && hasAgentGovernance) ||
         (centralPanel === "mdd-inicial" && (activeLegacyState?.codebaseDoc || mddInicialLocalContent)) ||
         (centralPanel === "brd" && !!activeStageId));
-
     const showBenchmarkEdit = centralPanel === "benchmark";
+    if (!showDocEdit && !showBenchmarkEdit) return null;
+
+    if (showBenchmarkEdit) {
+      const benchmarkViewModeActive =
+        benchmarkPhaseTab === "fase0" ? benchmarkViewMode : phase0SummaryViewMode;
+      const { Icon, tooltip } = workshopDocSourceTogglePresentation("mdd", benchmarkViewModeActive);
+      return {
+        Icon,
+        tooltip,
+        onClick: () => {
+          if (benchmarkPhaseTab === "fase0") {
+            setBenchmarkViewMode((m) => (m === "preview" ? "source" : "preview"));
+          } else {
+            setPhase0SummaryViewMode((m) => (m === "preview" ? "source" : "preview"));
+          }
+        },
+      };
+    }
+
+    const activeDocViewMode = getWorkshopDocToolbarActiveViewMode(centralPanel, {
+      mddViewMode,
+      mddInicialViewMode,
+      specViewMode,
+      architectureViewMode,
+      useCasesViewMode,
+      userStoriesViewMode,
+      uxUiGuideViewMode,
+      aemViewMode,
+      blueprintViewMode,
+      apiContractsViewMode,
+      logicFlowsViewMode,
+      brdDocViewMode,
+      infraViewMode,
+      agentGovernanceViewMode,
+    });
+    const { Icon, tooltip } = workshopDocSourceTogglePresentation(centralPanel, activeDocViewMode);
+    return {
+      Icon,
+      tooltip,
+      onClick: () => toggleDocViewMode(centralPanel),
+    };
+  }, [
+    centralPanel,
+    mddViewMode,
+    mddInicialViewMode,
+    specViewMode,
+    architectureViewMode,
+    useCasesViewMode,
+    userStoriesViewMode,
+    uxUiGuideViewMode,
+    aemViewMode,
+    blueprintViewMode,
+    apiContractsViewMode,
+    logicFlowsViewMode,
+    brdDocViewMode,
+    infraViewMode,
+    agentGovernanceViewMode,
+    hasAgentGovernance,
+    benchmarkPhaseTab,
+    benchmarkViewMode,
+    phase0SummaryViewMode,
+    blueprintContent,
+    apiContractsContent,
+    architectureContent,
+    useCasesContent,
+    userStoriesContent,
+    logicFlowsContent,
+    infraContent,
+    activeLegacyState?.codebaseDoc,
+    mddInicialLocalContent,
+    activeStageId,
+    toggleDocViewMode,
+  ]);
+
+  const docBubbleMenuItems = useMemo((): WorkshopDocBubbleMenuItem[] => {
+    if (centralPanel === "legacy" || centralPanel === "adrs") return [];
+
+    const ordered: WorkshopDocBubbleMenuItem[] = [];
 
     const downloadPayload = resolveWorkshopActiveDocumentDownload({
       panel: centralPanel,
@@ -1495,11 +1725,18 @@ export default function WorkshopView({
         icon: RefreshCw,
         disabled: loading || !projectId,
         onClick: () => {
-          void (isLegacyProject
-            ? legacyGenerateMdd(projectId, activeStageId ?? undefined)
-            : generateMddFromBenchmark(projectId));
+          requestGenerateMdd();
         },
       };
+      if (effectiveMddTrimmed.length > 0) {
+        ordered.push({
+          id: "edit-patterns",
+          label: "Editar patrones (SSOT)",
+          icon: ListChecks,
+          disabled: loading || mddReviewing || !projectId,
+          onClick: openEditMddPatterns,
+        });
+      }
     } else if (centralPanel === "mdd-inicial" && !!(activeLegacyState?.codebaseDoc ?? mddInicialLocalContent ?? "").trim()) {
       regenItem = {
         id: "regen",
@@ -1580,6 +1817,14 @@ export default function WorkshopView({
         disabled: loading || !effectiveMddTrimmed || !blueprintContent?.trim() || !projectId,
         onClick: () => void generateTasks(projectId),
       };
+    } else if (centralPanel === "agent-governance" && hasAgentGovernance) {
+      regenItem = {
+        id: "regen",
+        label: "Regenerar gobernanza de agentes",
+        icon: RefreshCw,
+        disabled: loading || !effectiveMddTrimmed || !projectId,
+        onClick: () => void generateAgentGovernance(projectId),
+      };
     } else if (centralPanel === "ux-ui-guide" && !!uxUiGuideContent?.trim()) {
       regenItem = {
         id: "regen",
@@ -1609,9 +1854,10 @@ export default function WorkshopView({
       "use-cases": "Use Cases",
       "user-stories": "User Stories",
       aem: "Análisis y Estrategia de Mercado",
+      "agent-governance": "Gobernanza de agentes IA",
     };
 
-    if (downloadPayload && projectId && panelClearLabels[centralPanel]) {
+    if ((downloadPayload || (centralPanel === "agent-governance" && agentGovernanceScaffold)) && projectId && panelClearLabels[centralPanel]) {
       const docLabel = panelClearLabels[centralPanel];
       ordered.push({
         id: "clear",
@@ -1625,6 +1871,10 @@ export default function WorkshopView({
           confirmLabel: "Sí, limpiar",
         },
         onClick: () => {
+          if (centralPanel === "mdd") {
+            void handleClearMddCompletely();
+            return;
+          }
           void clearWorkshopDocumentContent(projectId, centralPanel, {
             benchmarkPhaseTab,
             stageId: activeStageId ?? undefined,
@@ -1646,10 +1896,21 @@ export default function WorkshopView({
 
     ordered.push({
       id: "download",
-      label: "Descargar documento",
+      label: centralPanel === "agent-governance" ? "Descargar ZIP" : "Descargar documento",
       icon: Download,
-      disabled: !downloadPayload,
+      disabled: centralPanel === "agent-governance" ? !agentGovernanceScaffold : !downloadPayload,
       onClick: () => {
+        if (centralPanel === "agent-governance" && agentGovernanceScaffold && projectId) {
+          void (async () => {
+            const exportScaffold =
+              (await fetchAgentGovernanceExport(projectId)) ?? agentGovernanceScaffold;
+            await downloadAgentGovernanceZip(
+              exportScaffold,
+              projectName ?? project?.name ?? "Workshop",
+            );
+          })();
+          return;
+        }
         if (downloadPayload) downloadMarkdownFile(downloadPayload.filename, downloadPayload.content);
       },
     });
@@ -1660,35 +1921,6 @@ export default function WorkshopView({
       icon: Printer,
       onClick: handlePrintDocument,
     });
-
-    if (showDocEdit || showBenchmarkEdit) {
-      ordered.push({
-        id: "edit",
-        label: showBenchmarkEdit
-          ? workshopDocSourceTogglePresentation(
-              "mdd",
-              benchmarkPhaseTab === "fase0" ? benchmarkViewMode : phase0SummaryViewMode,
-            ).tooltip
-          : docToggleTooltip,
-        icon: showBenchmarkEdit
-          ? workshopDocSourceTogglePresentation(
-              "mdd",
-              benchmarkPhaseTab === "fase0" ? benchmarkViewMode : phase0SummaryViewMode,
-            ).Icon
-          : DocToggleIcon,
-        onClick: () => {
-          if (centralPanel === "benchmark") {
-            if (benchmarkPhaseTab === "fase0") {
-              setBenchmarkViewMode((m) => (m === "preview" ? "source" : "preview"));
-            } else {
-              setPhase0SummaryViewMode((m) => (m === "preview" ? "source" : "preview"));
-            }
-            return;
-          }
-          toggleDocViewMode(centralPanel);
-        },
-      });
-    }
 
     return ordered;
   }, [
@@ -1727,6 +1959,9 @@ export default function WorkshopView({
     brdWorkshopDraft,
     uxUiGuideContent,
     tasksContent,
+    hasAgentGovernance,
+    agentGovernanceScaffold,
+    agentGovernanceViewMode,
     aemContent,
     isLegacyProject,
     projectId,
@@ -1739,9 +1974,10 @@ export default function WorkshopView({
     uxGenerating,
     effectiveComplexityForTabs,
     generateMddFromBenchmark,
+    requestGenerateMdd,
+    openEditMddPatterns,
     legacyGenerateMdd,
     handleRegenerateLegacyCodebaseDoc,
-    toggleDocViewMode,
     generateSpec,
     generateArchitecture,
     generateUseCases,
@@ -1751,11 +1987,14 @@ export default function WorkshopView({
     generateLogicFlows,
     generateInfra,
     generateTasks,
+    generateAgentGovernance,
+    fetchAgentGovernanceExport,
     generateUxGuideSequential,
     clearWorkshopDocumentContent,
+    handleClearMddCompletely,
   ]);
 
-  const mddDirty = (mddContent ?? "") !== (project?.mddContent ?? "");
+  const mddDirty = (mddContent ?? "").trim() !== persistedMddBaseline.trim();
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
 
   if (error && !project) {
@@ -1765,8 +2004,16 @@ export default function WorkshopView({
           <p className="text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))] mb-4">{error}</p>
           {onBack && (
             <button
-              onClick={onBack}
-              className="text-[var(--primary)] hover:underline"
+              type="button"
+              onClick={() => {
+                if (!workshopAgentsBusy) onBack();
+              }}
+              disabled={workshopAgentsBusy}
+              title={workshopAgentsBusy ? WORKSHOP_EXIT_BLOCKED_TITLE : undefined}
+              className={cn(
+                "text-[var(--primary)] hover:underline",
+                workshopAgentsBusy && "cursor-not-allowed opacity-45 no-underline hover:no-underline",
+              )}
             >
               Volver
             </button>
@@ -1783,8 +2030,16 @@ export default function WorkshopView({
         <p className="text-[var(--muted-foreground)]">Cargando proyecto…</p>
         {onBack && (
           <button
-            onClick={onBack}
-            className="text-[var(--primary)] hover:underline text-sm"
+            type="button"
+            onClick={() => {
+              if (!workshopAgentsBusy) onBack();
+            }}
+            disabled={workshopAgentsBusy}
+            title={workshopAgentsBusy ? WORKSHOP_EXIT_BLOCKED_TITLE : undefined}
+            className={cn(
+              "text-[var(--primary)] hover:underline text-sm",
+              workshopAgentsBusy && "cursor-not-allowed opacity-45 no-underline hover:no-underline",
+            )}
           >
             Volver
           </button>
@@ -1812,6 +2067,17 @@ export default function WorkshopView({
               <h1 className="min-w-0 flex-1 truncate text-base font-semibold tracking-tight text-[var(--foreground)] max-sm:text-[0.9375rem] max-sm:leading-tight sm:flex-1 sm:text-lg">
                 {projectName ?? project?.name ?? "Workshop"}
               </h1>
+              {onRenameProject ? (
+                <button
+                  type="button"
+                  onClick={onRenameProject}
+                  className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border)] text-[var(--foreground-muted)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  title="Renombrar proyecto"
+                  aria-label="Renombrar proyecto"
+                >
+                  <Pencil className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              ) : null}
               {project?.projectType === "LEGACY" && (
                 <span
                   className="shrink-0 rounded border border-[var(--border)] bg-[var(--muted)] px-2 py-0.5 text-xs font-medium text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))]"
@@ -2284,8 +2550,33 @@ export default function WorkshopView({
                 panel={centralPanel}
                 benchmarkPhaseTab={benchmarkPhaseTab}
               />
+              {docEditToolbarToggle ? (
+                <div className="hidden shrink-0 items-center gap-1.5 lg:flex">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className={WORKSHOP_DOC_TOOLBAR_ICON_BTN}
+                        aria-label={docEditToolbarToggle.tooltip}
+                        onClick={docEditToolbarToggle.onClick}
+                      >
+                        <docEditToolbarToggle.Icon
+                          className={WORKSHOP_DOC_TOOLBAR_ICON}
+                          strokeWidth={2}
+                          aria-hidden
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" align="end" className="max-w-[14rem]">
+                      {docEditToolbarToggle.tooltip}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center gap-1.5 shrink-0 sm:justify-end sm:gap-2 sm:pt-0.5 lg:hidden">
-                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd"] as const).includes(
+                {centralPanel !== "benchmark" && (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "agent-governance", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd"] as const).includes(
                   centralPanel as any,
                 ) && (
                     (centralPanel === "spec" ||
@@ -2294,6 +2585,7 @@ export default function WorkshopView({
                       centralPanel === "aem" ||
                       (centralPanel === "blueprint" && blueprintContent) ||
                       (centralPanel === "tasks" && tasksContent) ||
+                      (centralPanel === "agent-governance" && hasAgentGovernance) ||
                       (centralPanel === "api-contracts" && apiContractsContent) ||
                       (centralPanel === "architecture" && architectureContent) ||
                       (centralPanel === "use-cases" && useCasesContent) ||
@@ -2317,6 +2609,7 @@ export default function WorkshopView({
                         logicFlowsViewMode,
                         brdDocViewMode,
                         infraViewMode,
+                        agentGovernanceViewMode,
                       });
                       const { Icon: DocToggleIcon, tooltip: docToggleTooltip } = workshopDocSourceTogglePresentation(
                         centralPanel,
@@ -2558,6 +2851,14 @@ export default function WorkshopView({
                     ariaLabel="Regenerar Tasks desde MDD y Blueprint"
                   />
                 )}
+                {centralPanel === "agent-governance" && hasAgentGovernance && (
+                  <WorkshopRegenButton
+                    onClick={() => generateAgentGovernance(projectId)}
+                    disabled={loading || !effectiveMddTrimmed}
+                    loading={loading}
+                    ariaLabel="Regenerar scaffold de gobernanza de agentes desde el MDD"
+                  />
+                )}
                 {centralPanel === "ux-ui-guide" && !!uxUiGuideContent?.trim() && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -2654,86 +2955,8 @@ export default function WorkshopView({
                     ) : null}
                   </div>
                   <p className="text-[var(--foreground-subtle)] text-xs leading-relaxed max-w-3xl">
-                    Reconstrucción AS-IS desde el índice AriadneSpecs (equivalente al “primer paso” de documentación). Opcional: puedes ir directo a <strong>Modificación</strong> si solo quieres un cambio puntual; para volcar todo el conocimiento del repo aquí, usa el botón de abajo.
+                    Reconstrucción AS-IS desde el índice Ariadne (`generate_legacy_documentation`): MDD determinista desde Falkor, sin modos alternos de `ask_codebase`. Opcional: puedes ir directo a <strong>Modificación</strong> si solo quieres un cambio puntual.
                   </p>
-                  <details className="w-full min-w-0 rounded-lg border border-[var(--border)]/60 bg-[color-mix(in_oklch,var(--background)_35%,var(--muted))] text-left [&_summary::-webkit-details-marker]:hidden open:[&_summary_.ingest-mode-chevron]:rotate-180">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-left text-[11px] font-medium text-[var(--muted-foreground)] hover:bg-[color-mix(in_oklch,var(--card)_75%,var(--background))] sm:px-4">
-                      <span>Modo ingest (ask_codebase)</span>
-                      <ChevronDown
-                        className="ingest-mode-chevron h-4 w-4 shrink-0 text-[var(--foreground-subtle)] transition-transform duration-200"
-                        aria-hidden
-                      />
-                    </summary>
-                    <fieldset
-                      disabled={loading && loadingReason === "legacy-codebase-doc"}
-                      className="m-0 min-w-0 border-0 p-0 px-3 pb-3 pt-1 sm:px-4 sm:pb-4"
-                    >
-                      <div className="space-y-2">
-                        <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-[var(--card)]/60 sm:px-2">
-                          <input
-                            type="radio"
-                            name="codebase-doc-response-mode"
-                            className="mt-1 shrink-0 accent-[var(--primary)]"
-                            checked={codebaseDocResponseMode === "default"}
-                            onChange={() => setCodebaseDocResponseMode("default")}
-                          />
-                          <span className="min-w-0">
-                            <span className="text-sm text-[var(--foreground)]">Chat normal</span>
-                            <span className="mt-0.5 block text-xs text-[var(--foreground-subtle)] leading-relaxed">
-                              Prosa; ReAct en retrieve (hasta 4 vueltas LLM en backend).
-                            </span>
-                          </span>
-                        </label>
-                        <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-[var(--card)]/60 sm:px-2">
-                          <input
-                            type="radio"
-                            name="codebase-doc-response-mode"
-                            className="mt-1 shrink-0 accent-[var(--primary)]"
-                            checked={codebaseDocResponseMode === "evidence_first"}
-                            onChange={() => setCodebaseDocResponseMode("evidence_first")}
-                          />
-                          <span className="min-w-0">
-                            <span className="text-sm text-[var(--foreground)]">MDD / SDD (pesado)</span>
-                            <span className="mt-0.5 block text-xs text-[var(--foreground-subtle)] leading-relaxed">
-                              JSON MDD 7§ vía orchestrator/ingest: puede tardar muchos minutos en repos grandes.
-                            </span>
-                          </span>
-                        </label>
-                        <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-[var(--card)]/60 sm:px-2">
-                          <input
-                            type="radio"
-                            name="codebase-doc-response-mode"
-                            className="mt-1 shrink-0 accent-[var(--primary)]"
-                            checked={codebaseDocResponseMode === "raw_evidence"}
-                            onChange={() => setCodebaseDocResponseMode("raw_evidence")}
-                          />
-                          <span className="min-w-0">
-                            <span className="text-sm text-[var(--foreground)]">Evidencia bruta (recomendado)</span>
-                            <span className="mt-0.5 block text-xs text-[var(--foreground-subtle)] leading-relaxed">
-                              Retrieve determinista; suele ser el mejor equilibrio tiempo/calidad para doc. partida.
-                            </span>
-                          </span>
-                        </label>
-                        <label className="flex cursor-pointer gap-2.5 items-start rounded-md px-1 py-1.5 hover:bg-[var(--card)]/60 sm:px-2">
-                          <input
-                            type="radio"
-                            name="codebase-doc-response-mode"
-                            className="mt-1 shrink-0 accent-[var(--primary)]"
-                            checked={codebaseDocResponseMode === "ingest_mdd"}
-                            onChange={() => setCodebaseDocResponseMode("ingest_mdd")}
-                          />
-                          <span className="min-w-0">
-                            <span className="text-sm text-[var(--foreground)]">MDD ingest (solo Ariadne)</span>
-                            <span className="mt-0.5 block text-xs text-[var(--foreground-subtle)] leading-relaxed">
-                              Una llamada <code className="text-[var(--muted-foreground)]">evidence_first</code>: salida normalizada del
-                              orchestrator. Sin agente escalonado ni segunda pasada en The Forge; si falla, fallback
-                              clásico <code className="text-[var(--muted-foreground)]">raw_evidence</code>.
-                            </span>
-                          </span>
-                        </label>
-                      </div>
-                    </fieldset>
-                  </details>
                 </div>
                 {activeLegacyState?.codebaseDoc || mddInicialLocalContent ? (
                   <>
@@ -2827,7 +3050,6 @@ export default function WorkshopView({
                           type="button"
                           onClick={async () => {
                             const res = await legacyGenerateCodebaseDoc(projectId, {
-                              responseMode: codebaseDocResponseMode,
                               stageId: activeStageId ?? undefined,
                             });
                             if (res?.codebaseDoc) setCentralPanel("mdd-inicial");
@@ -2865,7 +3087,6 @@ export default function WorkshopView({
                         type="button"
                         onClick={async () => {
                           const res = await legacyGenerateCodebaseDoc(projectId, {
-                            responseMode: codebaseDocResponseMode,
                             stageId: activeStageId ?? undefined,
                           });
                           if (res?.codebaseDoc?.trim()) setCentralPanel("mdd-inicial");
@@ -3048,7 +3269,22 @@ export default function WorkshopView({
                     <Phase0InterviewPanel
                       projectId={projectId}
                       onComplete={async () => {
-                        await useWorkshopStore.getState().fetchProject(projectId);
+                        const store = useWorkshopStore.getState();
+                        const dbga = (store.dbgaContent ?? store.project?.dbgaContent ?? "").trim();
+                        if (!dbga) {
+                          const res = await apiFetch(`${API_BASE}/ai-analysis/phase0/sync-markdown`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ projectId }),
+                          });
+                          if (res.ok) {
+                            const data = (await res.json()) as { markdown?: string | null };
+                            if (data.markdown?.trim()) {
+                              store.setDbgaContent(data.markdown.trim());
+                            }
+                          }
+                        }
+                        await store.fetchProject(projectId);
                       }}
                     />
                   ) : (
@@ -3104,7 +3340,15 @@ export default function WorkshopView({
                       ) : null}
                     </WorkshopPanelActionRegion>
 
-                    <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] pt-4">
+                    <Phase0ManualAudit
+                      projectId={projectId}
+                      initialAudit={mergeAudit}
+                      onUpdated={async () => {
+                        await useWorkshopStore.getState().fetchProject(projectId);
+                      }}
+                    />
+
+                    <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] pt-4 mt-4">
                         <h3 className="shrink-0 text-sm font-medium text-[var(--muted-foreground)] mb-2">Análisis (DBGA) — Fase 0</h3>
                         <div className="flex-1 flex flex-col min-h-0">
                           {benchmarkViewMode === "preview" && fase0Content != null && fase0Content !== "" ? (
@@ -3126,8 +3370,16 @@ export default function WorkshopView({
                   </>
                   )) : (
                   <>
-                    {phase0SummaryViewMode === "preview" && !phase0SummaryContent?.trim() ? (
+                    {phase0SummaryViewMode === "preview" && !benchmarkMarkdown?.trim() ? (
                       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                        {benchmarkNeedsRegenerate ? (
+                          <div className="shrink-0 rounded-lg bg-[color-mix(in_oklch,var(--warning)_12%,var(--card))] border border-[color-mix(in_oklch,var(--warning)_35%,var(--border))] px-4 py-2 mb-3 text-sm text-[color-mix(in_oklch,var(--warning)_75%,var(--foreground))] flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 shrink-0" />
+                            <span>
+                              Actualizaste Fase 0 y el benchmark anterior quedó desincronizado. Pulsa «Generar Benchmark» para volver a formatearlo.
+                            </span>
+                          </div>
+                        ) : null}
                         <DocEmptyState
                           icon={Globe}
                           title="Benchmark"
@@ -3154,6 +3406,14 @@ export default function WorkshopView({
                         )}
                         {phase0SummaryViewMode === "preview" ? (
                           <WorkshopPanelActionRegion role="region" aria-label="Acciones de Benchmark">
+                            {benchmarkNeedsRegenerate ? (
+                              <div className="w-full shrink-0 rounded-lg bg-[color-mix(in_oklch,var(--warning)_12%,var(--card))] border border-[color-mix(in_oklch,var(--warning)_35%,var(--border))] px-4 py-2 mb-2 text-sm text-[color-mix(in_oklch,var(--warning)_75%,var(--foreground))] flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 shrink-0" />
+                                <span>
+                                  El benchmark mostraba JSON del borrador tras editar Fase 0. Regenera para recuperar el markdown de Deep Research.
+                                </span>
+                              </div>
+                            ) : null}
                             <div className="flex flex-wrap items-center gap-2">
                               <WorkshopPanelButton
                                 tone="primary"
@@ -3174,7 +3434,7 @@ export default function WorkshopView({
                                   ? "Generando…"
                                   : "Regenerar Benchmark"}
                               </WorkshopPanelButton>
-                              {phase0SummaryContent != null && phase0SummaryContent !== "" ? (
+                              {benchmarkMarkdown != null && benchmarkMarkdown !== "" ? (
                                 <WorkshopPanelButton
                                   tone="danger"
                                   onClick={() => projectId && clearPhase0SummaryContent(projectId)}
@@ -3189,7 +3449,7 @@ export default function WorkshopView({
                               Deep Research a partir del DBGA de Fase 0.
                             </p>
                           </WorkshopPanelActionRegion>
-                        ) : phase0SummaryContent != null && phase0SummaryContent !== "" ? (
+                        ) : benchmarkMarkdown != null && benchmarkMarkdown !== "" ? (
                           <WorkshopPanelActionRegion className="items-end" role="region" aria-label="Acciones de Benchmark">
                             <WorkshopPanelButton
                               tone="danger"
@@ -3204,14 +3464,14 @@ export default function WorkshopView({
                         <div className="flex-1 flex flex-col min-h-0">
                           <div className="flex-1 flex flex-col min-h-0">
                             {phase0SummaryViewMode === "preview" &&
-                            phase0SummaryContent != null &&
-                            phase0SummaryContent !== "" ? (
+                            benchmarkMarkdown != null &&
+                            benchmarkMarkdown !== "" ? (
                               <div className="flex-1 min-h-[200px] overflow-auto">
-                                <MddViewer content={phase0SummaryContent ?? ""} />
+                                <MddViewer content={benchmarkMarkdown} />
                               </div>
                             ) : (
                               <WorkshopDocTextarea
-                                value={phase0SummaryContent ?? ""}
+                                value={benchmarkNeedsRegenerate ? "" : (phase0SummaryContent ?? "")}
                                 onChange={(v) => setPhase0SummaryContent(v || null)}
                                 onBlur={handlePhase0SummaryBlur}
                                 placeholder="# Resumen Deep Research..."
@@ -3245,26 +3505,17 @@ export default function WorkshopView({
                   </div>
                 )}
                 <WorkshopPanelActionRegion role="region" aria-label="Generar o regenerar el MDD">
-                  {loading &&
-                  (loadingReason === "mdd" ||
-                    loadingReason === "legacy-mdd" ||
-                    (legacyMddPanelIsAsIsOnly && loadingReason === "legacy-codebase-doc")) ? (
+                  {loading && (loadingReason === "mdd" || loadingReason === "legacy-mdd") ? (
                     <AiGenerationPanel
                       title={
-                        legacyMddPanelIsAsIsOnly
-                          ? (activeLegacyState?.codebaseDoc ?? mddInicialLocalContent)?.trim()
-                            ? "Regenerando MDD Inicial…"
-                            : "Generando MDD Inicial…"
-                          : mddContent?.trim()
-                            ? "Regenerando el MDD…"
-                            : "Generando el MDD…"
+                        mddContent?.trim() ? "Regenerando el MDD…" : "Generando el MDD…"
                       }
                       subtitle={
-                        legacyMddPanelIsAsIsOnly
-                          ? "Documentación de partida (codebase) vía Ariadne — se guarda en MDD Inicial, no en la pestaña MDD."
-                          : isLegacyProject
-                            ? "A partir de BRD y To-Be de la etapa activa (y documentación de partida si aplica)."
-                            : "A partir del DBGA / Benchmark guardado en Paso 0. Puede tardar unos minutos."
+                        isLegacyProject
+                          ? isStage1Legacy
+                            ? "A partir de la documentación de partida (MDD Inicial). No vuelve a llamar a Ariadne."
+                            : "A partir de BRD, doc. de partida y descripción del cambio de la etapa activa."
+                          : "A partir del DBGA / Benchmark guardado en Paso 0. Puede tardar unos minutos."
                       }
                     />
                   ) : (
@@ -3272,33 +3523,16 @@ export default function WorkshopView({
                       <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
                         <WorkshopMddActionButton
                           tone="primary"
-                          onClick={() =>
-                            void (legacyMddPanelIsAsIsOnly
-                              ? handleRegenerateLegacyCodebaseDoc()
-                              : isLegacyProject
-                                ? legacyGenerateMdd(projectId, activeStageId ?? undefined)
-                                : generateMddFromBenchmark(projectId))
-                          }
+                          onClick={() => void requestGenerateMdd()}
                           disabled={
-                            loading &&
-                            (loadingReason === "mdd" ||
-                              loadingReason === "legacy-mdd" ||
-                              loadingReason === "legacy-codebase-doc")
+                            legacyMddNeedsCodebaseDoc ||
+                            (loading &&
+                              (loadingReason === "mdd" ||
+                                loadingReason === "legacy-mdd" ||
+                                loadingReason === "legacy-codebase-doc"))
                           }
                         >
-                          {legacyMddPanelIsAsIsOnly ? (
-                            (activeLegacyState?.codebaseDoc ?? mddInicialLocalContent)?.trim() ? (
-                              <>
-                                <WorkshopButtonIcon icon={RefreshCw} tone="primary" />
-                                Regenerar MDD Inicial
-                              </>
-                            ) : (
-                              <>
-                                <WorkshopButtonIcon icon={RefreshCw} tone="primary" />
-                                Generar MDD Inicial
-                              </>
-                            )
-                          ) : mddContent?.trim() ? (
+                          {mddContent?.trim() ? (
                             <>
                               <WorkshopButtonIcon icon={RefreshCw} tone="primary" />
                               Regenerar MDD
@@ -3310,6 +3544,31 @@ export default function WorkshopView({
                             </>
                           )}
                         </WorkshopMddActionButton>
+                        {effectiveMddTrimmed.length > 0 && (
+                          <WorkshopPanelButton
+                            tone="secondary"
+                            onClick={openEditMddPatterns}
+                            disabled={loading || mddReviewing}
+                            className="w-full justify-center lg:w-auto"
+                          >
+                            <WorkshopButtonIcon icon={ListChecks} tone="secondary" />
+                            Editar patrones (SSOT)
+                          </WorkshopPanelButton>
+                        )}
+                        {effectiveMddTrimmed.length > 0 && (
+                          <WorkshopPanelButton
+                            tone="secondary"
+                            onClick={() => {
+                              if (!projectId?.trim()) return;
+                              setClearMddConfirmOpen(true);
+                            }}
+                            disabled={loading || mddReviewing}
+                            className="w-full justify-center lg:w-auto"
+                          >
+                            <WorkshopButtonIcon icon={Trash2} tone="secondary" />
+                            Limpiar MDD
+                          </WorkshopPanelButton>
+                        )}
                         {effectiveMddTrimmed.length > 200 && (
                           <WorkshopMddActionButton
                             tone="success"
@@ -3334,15 +3593,45 @@ export default function WorkshopView({
                         )}
                       </div>
                       <p className="text-sm leading-relaxed text-[var(--foreground-subtle)]">
-                        {legacyMddPanelIsAsIsOnly
-                          ? "En etapa 1 (AS-IS) la documentación de partida va en la pestaña MDD Inicial. Este botón regenera ahí (no en MDD de cambio)."
-                          : isLegacyProject
-                            ? "Genera el MDD desde BRD y To-Be de la etapa activa (y doc. de partida si aplica)."
-                            : "Genera el MDD a partir del DBGA / Benchmark guardado en Paso 0."}
+                        {legacyMddNeedsCodebaseDoc ? (
+                          <>
+                            Genera primero la documentación de partida en la pestaña{" "}
+                            <strong>MDD Inicial</strong> (Ariadne). Luego aquí sintetizas el MDD
+                            canónico (7 secciones) a partir de ese contenido.
+                          </>
+                        ) : isLegacyProject ? (
+                          isStage1Legacy ? (
+                            <>
+                              Regenera el MDD canónico desde el <strong>MDD Inicial</strong> ya
+                              guardado. Para re-indexar Ariadne, usa la pestaña MDD Inicial.
+                            </>
+                          ) : (
+                            <>
+                              Genera el MDD de cambio desde BRD, doc. de partida y la descripción
+                              en Modificación.
+                            </>
+                          )
+                        ) : (
+                          "Genera el MDD a partir del DBGA / Benchmark guardado en Paso 0."
+                        )}{" "}
+                        El wizard de patrones solo aparece con MDD vacío (o tras «Limpiar MDD»). Al
+                        regenerar se conservan los patrones actuales; cámbialos con «Editar patrones».
                       </p>
                     </>
                   )}
                 </WorkshopPanelActionRegion>
+                {(mddContent ?? "").trim().length > 0 ? (
+                  <MddManualAudit
+                    projectId={projectId}
+                    stageId={activeStageId}
+                    mddContent={mddContent}
+                    onUpdated={async () => {
+                      const store = useWorkshopStore.getState();
+                      await store.fetchProject(projectId);
+                      await store.fetchEstimation(projectId);
+                    }}
+                  />
+                ) : null}
                 {mddDirty && (
                   <WorkshopDirtySaveBar
                     message="Tienes cambios sin guardar. Graba para revisar consistencia (ER, etc.)."
@@ -3558,6 +3847,24 @@ export default function WorkshopView({
                 />
               )
             )}
+            {centralPanel === "agent-governance" && (
+              hasAgentGovernance ? (
+                <AgentGovernancePanel
+                  rawContent={agentGovernanceContent}
+                  viewMode={agentGovernanceViewMode}
+                />
+              ) : (
+                <DocEmptyState
+                  icon={Bot}
+                  title="Gobernanza de agentes"
+                  description="Scaffold AGENTS.md, .cursor/rules, skills y workflows derivados del MDD (7 §)."
+                  onGenerate={() => generateAgentGovernance(projectId)}
+                  loading={loading}
+                  hasMdd={!!effectiveMddTrimmed}
+                  generateButtonLabel="Generar gobernanza de agentes desde MDD"
+                />
+              )
+            )}
             {centralPanel === "api-contracts" && (
               <StandardDocPanel
                 icon={FileCode}
@@ -3666,7 +3973,7 @@ export default function WorkshopView({
             <div
               className={cn(
                 "overflow-hidden min-h-0 min-w-0 shrink-0 self-stretch max-h-[min(calc(100dvh-2.5rem),90dvh)]",
-                "transition-[max-width] duration-300 ease-[cubic-bezier(0.33,1,0.68,1)] will-change-[max-width]",
+                "transition-[max-width] duration-300 ease-forge-smooth will-change-[max-width]",
                 lgMetricsFlyoutOpen ? "pointer-events-auto" : "pointer-events-none",
                 lgMetricsFlyoutOpen
                   ? "max-w-[calc(2rem+min(40rem,calc(100vw-3rem)))]"
@@ -3768,6 +4075,7 @@ export default function WorkshopView({
             logicFlowsViewMode,
             brdDocViewMode,
             infraViewMode,
+            agentGovernanceViewMode,
           });
           const { Icon: DocToggleIcon, tooltip: docToggleTooltip } = workshopDocSourceTogglePresentation(
             centralPanel,
@@ -3886,6 +4194,36 @@ export default function WorkshopView({
           );
         })()}
 
+        <WorkshopDocumentIslandToc
+          scrollContainerRef={workspaceScrollRef}
+          enabled={
+            isLgLayout &&
+            isWorkshopMarkdownPreviewActive(
+              centralPanel,
+              {
+                mddViewMode,
+                mddInicialViewMode,
+                specViewMode,
+                architectureViewMode,
+                useCasesViewMode,
+                userStoriesViewMode,
+                uxUiGuideViewMode,
+                aemViewMode,
+                blueprintViewMode,
+                apiContractsViewMode,
+                logicFlowsViewMode,
+                brdDocViewMode,
+                infraViewMode,
+              },
+              benchmarkPhaseTab,
+              benchmarkViewMode,
+              phase0SummaryViewMode,
+            )
+          }
+          centralPanel={centralPanel}
+          contentKey={centralPanel}
+        />
+
         <nav
           className="lg:hidden shrink-0 sticky bottom-0 z-10 grid grid-cols-3 border-t border-[var(--border)] bg-[color-mix(in_oklch,var(--background)_92%,black)] pb-[max(4px,env(safe-area-inset-bottom))]"
           aria-label="Cambiar panel del workshop"
@@ -3940,16 +4278,21 @@ export default function WorkshopView({
                 <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] shrink-0">
                   <h2 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
                     <FileText className="w-5 h-5 text-[var(--primary)]" />
-                    Detalles de Auditoría
+                    Detalles de Auditoría MDD
                   </h2>
                   <button onClick={() => setShowAuditModal(false)} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-                  {/* Sección Desglose */}
+                  {/* Sección Desglose MDD */}
                   <div>
-                    <h3 className="text-sm font-medium text-[var(--muted-foreground)] mb-3 uppercase tracking-wider">Desglose de Calificación</h3>
+                    <h3 className="text-sm font-medium text-[var(--muted-foreground)] mb-1 uppercase tracking-wider">
+                      Calidad MDD (Constitución)
+                    </h3>
+                    <p className="text-xs text-[var(--foreground-subtle)] mb-3">
+                      Evalúa §1 Contexto, §3 Modelo, §4 API, §6 Seguridad y §7 Integración del Master Design Document.
+                    </p>
                     {precisionBreakdown ? (
                       <div className="overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0 rounded-lg border border-[var(--border)]">
                         <table className="w-full text-sm text-left">
@@ -3990,17 +4333,41 @@ export default function WorkshopView({
                       <p className="text-[var(--foreground-subtle)] italic">No hay desglose disponible aún.</p>
                     )}
 
-                    {/* Siguientes pasos / readiness hints */}
-                    {readinessHints && readinessHints.length > 0 && (
+                    {mddReadinessHints && mddReadinessHints.length > 0 && (
                       <div className="mt-4">
                         <h4 className="text-sm font-medium text-[var(--primary)] mb-2 flex items-center gap-2">
                           <Target className="w-3.5 h-3.5" />
-                          Pendiente para llegar a 100%
+                          Pendientes MDD
                         </h4>
                         <ul className="space-y-1.5">
-                          {readinessHints.map((hint: string, i: number) => (
+                          {mddReadinessHints.map((hint: string, i: number) => (
                             <li key={i} className="flex items-start gap-2 text-xs text-[var(--muted-foreground)]">
                               <span className="text-[var(--primary)] mt-0.5 shrink-0">▶</span>
+                              <span>{hint}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {traceabilityHints && traceabilityHints.length > 0 && (
+                      <div className="mt-4">
+                        <h4 className="text-sm font-medium text-[color-mix(in_oklch,var(--warning)_75%,var(--foreground))] mb-2 flex items-center gap-2">
+                          <Target className="w-3.5 h-3.5" />
+                          Trazabilidad BRD → MDD
+                          {consistencyScore != null && (
+                            <span className="text-[10px] font-normal text-[var(--foreground-subtle)]">
+                              ({consistencyScore}% cubierto)
+                            </span>
+                          )}
+                        </h4>
+                        <p className="text-[10px] text-[var(--foreground-subtle)] mb-2">
+                          Capacidades de negocio del BRD que aún no se reflejan en §1, §4 o §5 del MDD.
+                        </p>
+                        <ul className="space-y-1.5">
+                          {traceabilityHints.map((hint: string, i: number) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-[var(--muted-foreground)]">
+                              <span className="text-[color-mix(in_oklch,var(--warning)_75%,var(--foreground))] mt-0.5 shrink-0">▶</span>
                               <span>{hint}</span>
                             </li>
                           ))}
@@ -4022,7 +4389,9 @@ export default function WorkshopView({
                         </pre>
                       </div>
                     ) : (
-                      <p className="text-[var(--foreground-subtle)] italic">No hay logs de auditoría disponibles aún.</p>
+                      <p className="text-[var(--foreground-subtle)] italic">
+                        No hay logs de auditoría disponibles aún. Ejecuta el pipeline MDD (Manager) o recarga tras generar el documento.
+                      </p>
                     )}
                   </div>
                 </div>
@@ -4038,6 +4407,45 @@ export default function WorkshopView({
             </div>
           )
         }
+      <AlertDialog open={clearMddConfirmOpen} onOpenChange={setClearMddConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Vaciar todo el MDD?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se borra el documento completo y la sección de patrones. No se valida contra ER ni otros
+              artefactos del proyecto.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-[var(--destructive)] hover:bg-[var(--destructive-hover)]"
+              onClick={() => {
+                void (async () => {
+                  const ok = await handleClearMddCompletely();
+                  if (ok) setClearMddConfirmOpen(false);
+                })();
+              }}
+            >
+              Limpiar MDD
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <MddPatternsWizardDialog
+        open={mddPatternsWizardOpen}
+        onOpenChange={setMddPatternsWizardOpen}
+        mode={mddPatternsWizardMode}
+        initialMddContent={effectiveMddTrimmed || null}
+        preselectedIds={patternsWizardPreselected}
+        analyzing={patternsWizardAnalyzing}
+        analyzeMessage={patternsAnalyzeRationale}
+        loading={
+          (loading && loadingReason === "mdd") ||
+          (mddPatternsWizardMode === "edit" && mddReviewing)
+        }
+        onConfirm={handleMddPatternsWizardConfirm}
+      />
       </div >
     </div >
   );

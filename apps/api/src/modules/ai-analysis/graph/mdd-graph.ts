@@ -37,6 +37,9 @@ import {
 
 const MAX_MDD_ITERATIONS = 2;
 
+/** Temperatura baja para nodos estructurales (architect/security/integration): reproducibilidad de diseño. */
+const STRUCTURAL_TEMPERATURE = 0.2;
+
 // ---------------------------------------------------------------------------
 // Cache wrapper — wraps an LLM node function so it checks the in-memory
 // cache before executing.  On a cache hit the LLM call is skipped entirely.
@@ -85,6 +88,9 @@ export async function createMddGraph(
   options?: MddGraphCompileOptions,
 ) {
   const llm = await createDbgaLLM(aiFactory, userId);
+  // LLM estructural (temp baja) para architect/security/integration → decisiones de diseño
+  // reproducibles (stack, modelo de datos, aprobación dual) entre generaciones.
+  const structuralLlm = await createDbgaLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const auditorLlm = await createMddAuditorLLM(aiFactory, userId);
   const nodeCache = options?.nodeCache ?? null;
 
@@ -93,16 +99,23 @@ export async function createMddGraph(
     nodeCache,
     "software_architect",
     softwareArchitectInput,
-    createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
+    createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
       theforge: options?.theforge ?? null,
     }),
   );
   const formatterNode = createMddFormatterNode();
-  const securityNode = wrapCache(nodeCache, "security", securityInput, createMddSecurityNode(llm));
-  const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(llm));
+  // Security + Integration en paralelo: cada nodo escribe su sección en staging fields
+  // (securitySectionMd / integrationSectionMd). format_sec_int aplica ambas sin conflicto LastValue.
+  const securityNode = wrapCache(nodeCache, "security", securityInput, createMddSecurityNode(structuralLlm));
+  const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(structuralLlm));
   const formatSecIntNode = createMddFormatSecIntNode();
   const diagramInjectorNode = createMddDiagramInjectorNode();
-  const consistencyNode = wrapCache(nodeCache, "cross_consistency", crossConsistencyInput, createMddCrossConsistencyNode(llm));
+  const consistencyNode = wrapCache(
+    nodeCache,
+    "cross_consistency",
+    crossConsistencyInput,
+    createMddCrossConsistencyNode(structuralLlm),
+  );
   const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
   const auditorNode = createMddAuditorNode(auditorLlm, getMddAuditorTools(), null);
   const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
@@ -123,6 +136,7 @@ export async function createMddGraph(
     .addNode("format_sec_int", formatSecIntNode)
     .addNode("format_after_redactor", formatterNode)
     .addNode("llm_formatter", llmFormatterNode)
+    // [PARALELO] CrossConsistency (skip si draft completo) + DiagramInjector (code-only, <3s)
     .addNode("cross_consistency_checker", consistencyNode)
     .addNode("diagram_injector", diagramInjectorNode)
     .addNode("auditor", auditorNode)
@@ -130,17 +144,12 @@ export async function createMddGraph(
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
     .addEdge("software_architect", "format_after_architect")
-    // Security + Integration en PARALELO: cada nodo escribe su sección en staging fields
-    // (securitySectionMd / integrationSectionMd). El nodo format_sec_int aplica ambas.
     .addEdge("format_after_architect", "security")
     .addEdge("format_after_architect", "integration")
     .addEdge("security", "format_sec_int")
     .addEdge("integration", "format_sec_int")
     .addEdge("format_sec_int", "format_after_redactor")
     .addEdge("format_after_redactor", "llm_formatter")
-    // [PARALELO] CrossConsistency: solo produce internalDirectives (read-only mddDraft)
-    // DiagramInjector inyecta diagramas en mddDraft (code-only, <3s).
-    // Auditor usa shortcut code-only (99% casos). Corren en paralelo sin conflicto.
     .addEdge("llm_formatter", "cross_consistency_checker")
     .addEdge("llm_formatter", "diagram_injector")
     .addEdge("cross_consistency_checker", "auditor")
@@ -171,6 +180,8 @@ export async function createMddGraphWithManager(
   compileOptions?: MddGraphCompileOptions,
 ) {
   const llm = await createDbgaLLM(aiFactory, userId);
+  // LLM estructural (temp baja) para architect/security/integration → reproducibilidad de diseño.
+  const structuralLlm = await createDbgaLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const auditorLlm = await createMddAuditorLLM(aiFactory, userId);
   const nodeCache = compileOptions?.nodeCache ?? null;
   const managerNode = createMddManagerNode(llm, graphMemory, precisionCalculator, managerToolDeps ?? null);
@@ -181,17 +192,22 @@ export async function createMddGraphWithManager(
     nodeCache,
     "software_architect",
     softwareArchitectInput,
-    createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
+    createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
       theforge: theForgeForArchitect,
     }),
   );
   const architectCriticNode = createMddArchitectCriticNode(llm);
   const formatterNode = createMddFormatterNode();
-  const securityNode = wrapCache(nodeCache, "security", securityInput, createMddSecurityNode(llm));
-  const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(llm));
+  const securityNode = wrapCache(nodeCache, "security", securityInput, createMddSecurityNode(structuralLlm));
+  const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(structuralLlm));
   const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
   const diagramInjectorNode = createMddDiagramInjectorNode();
-  const consistencyNode = wrapCache(nodeCache, "cross_consistency", crossConsistencyInput, createMddCrossConsistencyNode(llm));
+  const consistencyNode = wrapCache(
+    nodeCache,
+    "cross_consistency",
+    crossConsistencyInput,
+    createMddCrossConsistencyNode(structuralLlm),
+  );
   const auditorNode = createMddAuditorNode(
     auditorLlm,
     getMddAuditorTools(),

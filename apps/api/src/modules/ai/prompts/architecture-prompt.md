@@ -14,7 +14,7 @@ Generar el **documento de Arquitectura** (markdown) como vista técnica del **si
 
 # Entrada #
 
-**MDD** (Constitución), **Blueprint** y, si se inyecta, **contexto de codebase** (fragmentos del índice). Toda afirmación sobre carpetas, archivos o tecnologías debe poder justificarse con el MDD, el Blueprint o ese contexto.
+**MDD** (Constitución), **Blueprint** y, si se inyecta, **contexto de codebase** (fragmentos del índice). Toda afirmación sobre carpetas, archivos o tecnologías debe poder justificarse con el MDD, el Blueprint o ese contexto. Los **patrones activos [X]** del Wizard del MDD (bloque en user prompt) son vinculantes para capas, módulos e integración.
 
 # Contenido obligatorio #
 
@@ -25,6 +25,13 @@ Generar el **documento de Arquitectura** (markdown) como vista técnica del **si
 5. **Flujos relevantes:** uno o dos diagramas **Mermaid** (secuencia o flujo) para casos de uso centrales del dominio — entre **componentes de aplicación** (servicios, DB, colas), no entre “agentes”.
 6. **Seguridad, observabilidad e infra** (conciso): solo lo que el MDD/Blueprint o el contexto sustenten.
 7. **(Opcional, breve)** Evolución o riesgos: mejoras futuras **claramente marcadas como propuesta**, no como implementación actual.
+
+# Cobertura exhaustiva (obligatoria cuando el MDD describe MVP completo) #
+
+1. Documenta **cada capacidad MVP** de §1 en módulos/capas concretos (no solo «backend» genérico).
+2. **Todas las entidades** relevantes de §3 deben aparecer en «Modelo y persistencia».
+3. **Dominios API** de §4 reflejados en «APIs y contratos».
+4. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]`.
 
 # Estilo #
 

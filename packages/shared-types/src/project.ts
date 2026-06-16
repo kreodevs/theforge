@@ -58,11 +58,19 @@ export const updateProjectSchema = z.object({
   useCasesContent: z.string().optional().nullable(),
   userStoriesContent: z.string().optional().nullable(),
   mddContent: z.string().optional().nullable(),
+  /** true solo al guardar desde el wizard «Editar patrones (SSOT)»; si no, el backend restaura la selección [X] previa. */
+  allowGovernancePatternChange: z.boolean().optional(),
+  /** Vacía el MDD por completo (sin reinyectar wizard de patrones). */
+  clearMddCompletely: z.boolean().optional(),
+  /** Semilla SSOT sin §1–§7: omite pipeline de validación al persistir. */
+  mddGovernanceSeedOnly: z.boolean().optional(),
   blueprintContent: z.string().optional().nullable(),
   tasksContent: z.string().optional().nullable(),
   apiContractsContent: z.string().optional().nullable(),
   logicFlowsContent: z.string().optional().nullable(),
   infraContent: z.string().optional().nullable(),
+  /** JSON (`AgentGovernanceScaffold`) del entregable agent-governance. */
+  agentGovernanceContent: z.string().optional().nullable(),
   uxUiGuideContent: z.string().optional().nullable(),
   phase0SummaryContent: z.string().optional().nullable(),
   aemContent: z.string().optional().nullable(),
@@ -98,6 +106,7 @@ export const projectResponseSchema = z.object({
   apiContractsContent: z.string().nullable(),
   logicFlowsContent: z.string().nullable(),
   infraContent: z.string().nullable(),
+  agentGovernanceContent: z.string().nullable(),
   uxUiGuideContent: z.string().nullable(),
   phase0SummaryContent: z.string().nullable(),
   aemContent: z.string().nullable(),

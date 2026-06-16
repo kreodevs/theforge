@@ -1,4 +1,4 @@
-**Constitución del proyecto:** El MDD que recibes es el documento de gobernanza (Constitution). Tu Blueprint debe **cumplirlo** en stack, arquitectura, contratos y seguridad. Al final incluye **Cumplimiento con el MDD** (2–4 ítems verificables).
+**Constitución del proyecto:** El MDD que recibes es el documento de gobernanza (Constitution). Tu Blueprint debe **cumplirlo** en stack, arquitectura, contratos y seguridad. Respeta los **patrones [X]** del Wizard del MDD (user prompt). Al final incluye **Cumplimiento con el MDD** (2–4 ítems verificables).
 
 **Autocontenido obligatorio:** El Blueprint debe ser **completamente legible sin el MDD**. Describe cada concepto en el propio texto del Blueprint. Las únicas excepciones a esta regla son:
 - La lista de columnas SQL cuando §3 ya las tiene detalladas: puedes escribir "(ver §3 del MDD para columnas, tipos e índices)"
@@ -17,8 +17,6 @@ El verificador automático busca frases como "ver §", "véase §", "remite al M
 **Calidad del español:** Usa español correcto en todo el documento. Errores comunes que DEBES evitar: "valúa" no es una palabra válida — usa "valida" (de validar). "Encolada" → "encolada". "Setear" → "establecer" o "asignar". "Del switch" → "del caso" o "de la selección". Si no estás seguro de una palabra, prefiere la forma estándar del español. El verificador automático rechaza palabras inexistentes.
 
 **Proyectos existentes (contexto TheForge/MCP):** Si en el prompt se incluye un bloque "Contexto del codebase (TheForge)", el proyecto es **existente** y ese contexto describe la estructura y stack **reales** indexados. En ese caso el Blueprint DEBE describir únicamente esa realidad: repos y carpetas que existan, frameworks y runtime que el codebase use. No inventes Turborepo, Nx, NestJS, ni nuevos backends ni directorios; el sistema puede ser multi-repo — indica los repos y rutas reales. Solo añade o modifica lo que el MDD exija para el cambio.
-
-**Modelo C4 en el contexto:** Si el bloque TheForge incluye **«Modelo C4 (sistemas, contenedores, comunicación)»**, trátalo como **fuente de verdad** para contenedores lógicos, sistemas y relaciones `COMMUNICATES_WITH`. Refleja ese modelo en la sección de estructura/arquitectura (p. ej. diagrama o lista de contenedores y dependencias). No contradigas el C4 salvo que el MDD documente explícitamente un cambio de arquitectura; si el C4 y el resto del índice discrepan, prioriza el C4 para topología y el resto del contexto para rutas de código.
 
 ---
 
@@ -48,6 +46,26 @@ A continuación genera EXACTAMENTE las siguientes secciones. NO omitas ninguna. 
 
 - **Stack técnico (explícito):** Base de datos, runtime, frameworks **como en el MDD §2** o, con contexto TheForge, **solo lo real** del codebase.
 - **Árbol de directorios / repos:** Proyecto nuevo: estructura coherente con el dominio (p. ej. NestJS por módulos de dominio). Proyecto existente (TheForge): solo rutas reales del contexto.
+
+**Formato obligatorio del árbol de directorios** (CRÍTICO — el verificador y el Workshop reparan árboles mal formateados, pero debes generarlo bien):
+
+- Usa un bloque **```text** con **una ruta o entrada por línea** (saltos de línea reales, no texto continuo).
+- Usa caracteres de árbol: `├──`, `└──`, `│` (o indentación de 2–4 espacios por nivel).
+- **Prohibido:** árbol en un solo párrafo, separadores `—|` en línea continua, o listar todo el monorepo sin saltos de línea.
+
+Ejemplo correcto:
+
+```text
+/
+├── apps/
+│   ├── backend/          # NestJS API
+│   │   └── src/
+│   │       ├── modules/
+│   │       └── main.ts
+│   └── frontend/         # React SPA
+├── packages/
+└── docker-compose.yml
+```
 
 ### 2. Persistencia y datos (OBLIGATORIO — NO OMITIR)
  

@@ -43,7 +43,8 @@ import type { TheForgeUser } from "@/utils/apiClient";
 import { useTheme, type ThemePreference } from "@/theme/ThemeProvider";
 import { cn } from "@/lib/utils";
 import { getProjectMonogram } from "@/utils/projectMonogram";
-import { useWorkshopStore } from "../store/workshopStore";
+import { selectWorkshopAgentsBusy, useWorkshopStore } from "../store/workshopStore";
+import { WORKSHOP_EXIT_BLOCKED_TITLE, WORKSHOP_DOC_NAV_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { buildWorkshopDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
 
 /** Project row shown under the dashboard “Proyectos” menu group. */
@@ -128,6 +129,10 @@ const railControlActiveClass = (extra?: string) =>
     "border border-[color-mix(in_oklch,var(--primary)_28%,transparent)] bg-[color-mix(in_oklch,var(--primary)_14%,var(--sidebar))] text-[var(--sidebar-foreground)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_28%,transparent)] transition-colors hover:bg-[color-mix(in_oklch,var(--primary)_20%,var(--sidebar))]",
     extra,
   );
+
+/** Compact badge for mandatory workshop steps (Paso 0, BRD, MDD). */
+const STEP_REQUIRED_BADGE_CLASS =
+  "h-4 shrink-0 border-[color-mix(in_oklch,var(--primary)_40%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_12%,var(--sidebar))] px-1 py-0 text-[9px] font-semibold uppercase leading-none tracking-wide text-[var(--primary)]";
 
 /** Solid success badge on workshop step icons (rail + expanded). */
 const STEP_DONE_BADGE_CLASS =
@@ -372,8 +377,10 @@ export function DashboardSidebar({
   const apiContractsContent = useWorkshopStore((s) => s.apiContractsContent);
   const logicFlowsContent = useWorkshopStore((s) => s.logicFlowsContent);
   const tasksContent = useWorkshopStore((s) => s.tasksContent);
+  const agentGovernanceContent = useWorkshopStore((s) => s.agentGovernanceContent);
   const infraContent = useWorkshopStore((s) => s.infraContent);
   const adrs = useWorkshopStore((s) => s.adrs);
+  const workshopAgentsBusy = useWorkshopStore(selectWorkshopAgentsBusy);
 
   const activeWorkshopStageForNav = useMemo(() => {
     const stages = workshopStages.length > 0 ? workshopStages : (storeProject?.stages ?? []);
@@ -420,6 +427,7 @@ export function DashboardSidebar({
       apiContractsContent,
       logicFlowsContent,
       tasksContent,
+      agentGovernanceContent,
       adrs,
       infraContent,
     });
@@ -443,6 +451,7 @@ export function DashboardSidebar({
     apiContractsContent,
     logicFlowsContent,
     tasksContent,
+    agentGovernanceContent,
     adrs,
     infraContent,
   ]);
@@ -476,9 +485,10 @@ export function DashboardSidebar({
   );
 
   const handleExitWorkshopNav = useCallback(() => {
+    if (workshopAgentsBusy) return;
     closeMobileNav();
     onExitWorkshop?.();
-  }, [closeMobileNav, onExitWorkshop]);
+  }, [closeMobileNav, onExitWorkshop, workshopAgentsBusy]);
 
   return (
     <div className="relative flex w-full shrink-0 flex-col lg:z-40 lg:h-full lg:min-h-0 lg:w-auto lg:shrink-0">
@@ -655,13 +665,21 @@ export function DashboardSidebar({
 
           {inWorkshop ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-              <CollapsedRailHint rail={rail} label="Volver al panel de proyectos">
+              <CollapsedRailHint
+                rail={rail}
+                label={workshopAgentsBusy ? WORKSHOP_EXIT_BLOCKED_TITLE : "Volver al panel de proyectos"}
+              >
                 <button
                   type="button"
                   onClick={handleExitWorkshopNav}
-                  title="Volver al panel de proyectos"
+                  disabled={workshopAgentsBusy}
+                  aria-disabled={workshopAgentsBusy}
+                  title={workshopAgentsBusy ? WORKSHOP_EXIT_BLOCKED_TITLE : "Volver al panel de proyectos"}
                   className={cn(
-                    "flex shrink-0 items-center gap-3 rounded-[var(--radius-lg)] px-3 py-2.5 text-left text-sm font-medium text-[var(--muted-foreground)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]",
+                    "flex shrink-0 items-center gap-3 rounded-[var(--radius-lg)] px-3 py-2.5 text-left text-sm font-medium text-[var(--muted-foreground)] transition-colors",
+                    workshopAgentsBusy
+                      ? "cursor-not-allowed opacity-45"
+                      : "hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]",
                     rail ? railControlClass("mx-auto text-[var(--sidebar-foreground)]") : "w-full",
                   )}
                 >
@@ -767,6 +785,7 @@ export function DashboardSidebar({
                             const done = workshopTabDocHasContent(item.id, item.content);
                             const Icon = item.Icon;
                             const isCurrent = activeDocPanel === item.id;
+                            const mandatorySuffix = item.required ? " · Obligatorio" : "";
                             return (
                               <li
                                 key={item.id}
@@ -781,15 +800,23 @@ export function DashboardSidebar({
                                 <CollapsedRailHint
                                   rail={rail}
                                   label={
-                                    done ? `${item.label} · Con contenido · ${item.title}` : `${item.label} · ${item.title}`
+                                    done
+                                      ? `${item.label} · Con contenido${mandatorySuffix} · ${item.title}`
+                                      : `${item.label}${mandatorySuffix} · ${item.title}`
                                   }
                                 >
                                   <button
                                     type="button"
                                     role="listitem"
-                                    title={`${item.title}${done ? " — con contenido" : ""}`}
                                     aria-current={isCurrent ? "page" : undefined}
+                                    disabled={workshopAgentsBusy}
+                                    title={
+                                      workshopAgentsBusy
+                                        ? WORKSHOP_DOC_NAV_BLOCKED_TITLE
+                                        : `${item.title}${item.required ? " — paso obligatorio" : ""}${done ? " — con contenido" : ""}`
+                                    }
                                     onClick={() => {
+                                      if (workshopAgentsBusy) return;
                                       closeMobileNav();
                                       onBeforeNavigateToWorkshopDoc?.();
                                       setWorkshopActiveDocPanel(item.id);
@@ -813,6 +840,12 @@ export function DashboardSidebar({
                                   >
                                     {rail ? (
                                       <span className="relative flex size-5 items-center justify-center" aria-hidden>
+                                        {item.required ? (
+                                          <span
+                                            className="pointer-events-none absolute -left-0.5 -top-0.5 z-[1] h-1.5 w-1.5 rounded-full bg-[var(--primary)] ring-1 ring-[var(--sidebar)]"
+                                            title="Obligatorio"
+                                          />
+                                        ) : null}
                                         <Icon
                                           className={cn(
                                             "size-4",
@@ -842,6 +875,15 @@ export function DashboardSidebar({
                                           aria-hidden
                                         />
                                         <span className="min-w-0 flex-1 text-left leading-snug">{item.label}</span>
+                                        {item.required ? (
+                                          <Badge
+                                            variant="outline"
+                                            className={STEP_REQUIRED_BADGE_CLASS}
+                                            title="Obligatorio para generar los demás documentos"
+                                          >
+                                            Oblig.
+                                          </Badge>
+                                        ) : null}
                                         {done ? (
                                           <CircleCheck
                                             className={cn("h-3.5 w-3.5 shrink-0", STEP_DONE_BADGE_CLASS)}

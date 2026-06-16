@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { prepareMddForOutput, shouldPreferDraftOverStructured } from "./mdd-prepare-output.js";
+import { mddHasDuplicateSectionHeadings } from "./mdd-sanitize.js";
 import { getSection6Or7Range, replaceSection6Or7InDraft, seguridadItemsToSection6Markdown } from "./mdd-sanitize.js";
 import { mddSeguridadItemSchema } from "../state/mdd-structured.schema.js";
 
@@ -55,6 +56,13 @@ describe("shouldPreferDraftOverStructured", () => {
 });
 
 describe("prepareMddForOutput", () => {
+  it("inyecta Diagrama de componentes propuesto en §2 para MDD greenfield", () => {
+    const out = prepareMddForOutput({ mddDraft: FULL_MDD_PREFIX });
+    assert.match(out, /### Diagrama de componentes propuesto/);
+    assert.match(out, /```mermaid/);
+    assert.match(out, /NestJS/);
+  });
+
   it("conserva §1–§5 del draft cuando structured es parcial tras fallo de §6", () => {
     const draft = FULL_MDD_PREFIX + EXISTING_SECTION6;
     const structured = {
@@ -65,6 +73,28 @@ describe("prepareMddForOutput", () => {
     assert.ok(out.includes("CREATE TABLE users"), "debe conservar §3");
     assert.ok(out.includes("Argon2id"), "debe conservar §6 previa, no Pendiente");
     assert.ok(!/## 1\. Contexto[\s\S]*\(Pendiente\)[\s\S]*## 2\./.test(out), "§2 no debe ser solo Pendiente");
+    assert.strictEqual(mddHasDuplicateSectionHeadings(out), false);
+  });
+
+  it("no reintroduce duplicados desde source corrupto y quita directivas mesh", () => {
+    const good = FULL_MDD_PREFIX + EXISTING_SECTION6;
+    const corrupted =
+      good +
+      `
+---
+## 5. Lógica y Edge Cases
+
+Cola duplicada.
+
+## 6. Seguridad
+
+- [DIRECTIVE: software_architect] Campo totp_secret en users.
+`;
+    const out = prepareMddForOutput({ mddDraft: corrupted });
+    assert.strictEqual(mddHasDuplicateSectionHeadings(out), false);
+    assert.ok(!out.includes("[DIRECTIVE:"));
+    assert.ok(!out.includes("Cola duplicada"));
+    assert.ok(out.includes("Argon2id"));
   });
 });
 

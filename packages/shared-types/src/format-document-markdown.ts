@@ -12,6 +12,7 @@ import {
   repairStrayCodeFences,
   repairTableBoundaries,
 } from "./repair-pasted-markdown.js";
+import { repairDirectoryTreeBlocks } from "./repair-directory-tree.js";
 
 export function formatDocumentMarkdown(text: string): string {
   if (!text) return "";
@@ -30,13 +31,13 @@ export function formatDocumentMarkdown(text: string): string {
   const searchStart = yamlMatch ? yamlMatch[0].length : 0;
   if (searchStart > 0) {
     const body = cleaned.slice(searchStart);
-    const bodyHeader = body.match(/^#+|(?<=\n)\s*#+/);
+    const bodyHeader = body.match(/^#{1,2}\s+/m);
     if (bodyHeader && bodyHeader.index !== undefined && bodyHeader.index > 0) {
       cleaned = cleaned.slice(0, searchStart) + body.slice(bodyHeader.index).trimStart();
     }
   } else {
-    const headerMatch = cleaned.match(/^#+|(?<=\n)\s*#+/);
-    // Solo quita preámbulo sin #; si ya empieza en # no recorta nada
+    // Solo recorta preámbulo antes del primer H1/H2; no ante ### (contratos API, Beneficios, etc.)
+    const headerMatch = cleaned.match(/^#{1,2}\s+/m);
     if (headerMatch?.index != null && headerMatch.index > 0) {
       cleaned = cleaned.slice(headerMatch.index).trim();
     }
@@ -46,6 +47,7 @@ export function formatDocumentMarkdown(text: string): string {
   cleaned = repairTableBoundaries(cleaned);
   cleaned = repairStrayCodeFences(cleaned);
   cleaned = normalizeMermaidInDocument(cleaned);
+  cleaned = repairDirectoryTreeBlocks(cleaned);
   return cleaned;
 }
 

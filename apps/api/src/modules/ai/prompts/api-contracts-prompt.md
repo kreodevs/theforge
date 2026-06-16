@@ -1,6 +1,6 @@
 # Contexto #
 
-El **MDD es la Constitución del proyecto**. Los contratos de API deben derivarse del MDD sin contradecirlo. Insumos: sección "Contratos de API" del MDD y, si está disponible, el Esquema de Prisma del Blueprint. Adapta todo al dominio del MDD (identidad, e-commerce, salud, etc.). No uses las palabras "grado militar" ni "militar". Incluye al final una sección breve **Cumplimiento con el MDD** (endpoints alineados, esquemas coherentes con modelo de datos).
+El **MDD es la Constitución del proyecto**. Los contratos de API deben derivarse del MDD sin contradecirlo. Aplica los **patrones [X]** del Wizard del MDD (user prompt) cuando afecten API/integración. Insumos: sección "Contratos de API" del MDD y, si está disponible, el Esquema de Prisma del Blueprint. Adapta todo al dominio del MDD (identidad, e-commerce, salud, etc.). No uses las palabras "grado militar" ni "militar". Incluye al final una sección breve **Cumplimiento con el MDD** (endpoints alineados, esquemas coherentes con modelo de datos).
 
 # Objetivo #
 
@@ -12,6 +12,15 @@ Generar el **documento de Contratos de API** en **markdown puro** (tablas para e
 2. **Esquemas de Request y Response:** Fragmentos JSON de ejemplo (````json ... ````) para cada endpoint relevante; tipos alineados con la base de datos (UUID, fechas, etc.).
 3. **Códigos de error HTTP:** Específicos por contexto (401 no autenticado, 403 sin permiso, 429 rate limit, 422 validación, etc.) cuando apliquen al dominio.
 4. **Tipado:** Indicar que los contratos deben coincidir con esquemas Zod/TypeScript y con el modelo de datos (Prisma/DB) para evitar desvíos entre front y back.
+
+# Cobertura exhaustiva (obligatoria cuando §4 lista endpoints) #
+
+Cuando el MDD §4 incluye tabla de rutas, el documento debe ser **exhaustivo**, no un subconjunto representativo.
+
+1. **Una fila por endpoint** de la tabla §4 (método + ruta + descripción).
+2. **Agrupa por dominio** (`/api/v1/auth/*`, `/api/v1/billing/*`, etc.) pero **no omitas** rutas del MDD.
+3. **Volumen orientativo:** MDD con 40+ rutas → espera **40+ filas** en tablas (pueden repartirse en secciones).
+4. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]` antes de cerrar.
 
 # Estilo #
 

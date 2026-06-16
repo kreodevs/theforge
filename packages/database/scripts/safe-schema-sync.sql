@@ -14,6 +14,9 @@ DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'FavoriteProject_userId_projectId_key'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'FavoriteProject_userId_projectId_key'
   ) THEN
     ALTER TABLE "FavoriteProject"
       ADD CONSTRAINT "FavoriteProject_userId_projectId_key" UNIQUE ("userId", "projectId");
@@ -116,3 +119,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS "User_mcpSecret_key" ON "User"("mcpSecret");
 ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "phase0Gaps" TEXT;
 ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "phase0Status" TEXT NOT NULL DEFAULT 'idle';
 ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "phase0Questions" INTEGER NOT NULL DEFAULT 0;
+
+-- 6. Project: gobernanza de agentes (migración 20260609120000; db push puede adelantarla)
+ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "agentGovernanceContent" TEXT;
+
+-- 7. Project: fusión / suite (migración 20260612120000)
+ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "archivedAt" TIMESTAMP(3);
+ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "mergedFrom" JSONB;
+ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "parentProjectId" TEXT;
+
+CREATE INDEX IF NOT EXISTS "Project_archivedAt_idx" ON "Project"("archivedAt");
+CREATE INDEX IF NOT EXISTS "Project_parentProjectId_idx" ON "Project"("parentProjectId");
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'Project_parentProjectId_fkey'
+  ) THEN
+    ALTER TABLE "Project"
+      ADD CONSTRAINT "Project_parentProjectId_fkey"
+      FOREIGN KEY ("parentProjectId") REFERENCES "Project"("id")
+      ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END
+$$;

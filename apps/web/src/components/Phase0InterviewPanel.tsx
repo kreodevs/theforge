@@ -25,8 +25,9 @@ import {
 } from "../utils/llm-stream-error";
 import { useWorkshopStore } from "../store/workshopStore";
 import { WorkshopPanelActionRegion, WorkshopPanelButton, WorkshopButtonIcon } from "./WorkshopButtons";
+import { Phase0ManualAudit } from "./Phase0ManualAudit";
 
-type Phase0Status = "idle" | "starting" | "interviewing" | "done" | "error";
+type Phase0Status = "idle" | "starting" | "interviewing" | "finalizing" | "done" | "error";
 
 type Phase0StreamPayload = {
   type?: string;
@@ -34,9 +35,48 @@ type Phase0StreamPayload = {
   code?: string;
   threadId?: string;
   borrador?: unknown;
+  gaps?: unknown;
   question?: string;
   n?: number;
+  total?: number;
+  markdown?: string;
 };
+
+async function applyPhase0Done(
+  data: Phase0StreamPayload,
+  onComplete: () => void | Promise<void>,
+  setBorrador: (v: string) => void,
+  setStatus: (s: Phase0Status) => void,
+): Promise<void> {
+  if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
+  if (typeof data.markdown === "string" && data.markdown.trim()) {
+    useWorkshopStore.getState().setDbgaContent(data.markdown.trim());
+  }
+  setStatus("finalizing");
+  try {
+    await onComplete();
+  } finally {
+    const dbga = (useWorkshopStore.getState().dbgaContent ?? "").trim();
+    if (!dbga) setStatus("done");
+  }
+}
+
+function applyQuestionPayload(
+  data: Phase0StreamPayload,
+  setQuestion: (q: string) => void,
+  setPreguntaN: (n: number) => void,
+  setTotalPreguntas: (t: number) => void,
+  setStatus: (s: Phase0Status) => void,
+): boolean {
+  if (data.type !== "question" || !data.question?.trim()) return false;
+  setQuestion(data.question.trim());
+  setPreguntaN(data.n ?? 1);
+  if (typeof data.total === "number" && data.total > 0) {
+    setTotalPreguntas(data.total);
+  }
+  setStatus("interviewing");
+  return true;
+}
 
 function applyPhase0StreamError(
   data: Phase0StreamPayload,
@@ -55,7 +95,7 @@ function applyPhase0StreamError(
 
 interface Props {
   projectId: string;
-  onComplete: () => void;
+  onComplete: () => void | Promise<void>;
 }
 
 export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
@@ -64,8 +104,9 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
   const [question, setQuestion] = useState<string>("");
   const [answer, setAnswer] = useState("");
   const [preguntaN, setPreguntaN] = useState(0);
-  const [totalPreguntas] = useState(5);
+  const [totalPreguntas, setTotalPreguntas] = useState(5);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [ideaInput, setIdeaInput] = useState("");
   const [borradorVisible, setBorradorVisible] = useState(false);
   const [borrador, setBorrador] = useState<string>("");
@@ -104,9 +145,7 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       }
 
       if (data.type === "done") {
-        if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
-        setStatus("done");
-        onComplete();
+        await applyPhase0Done(data, onComplete, setBorrador, setStatus);
         return;
       }
 
@@ -121,7 +160,9 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
   /** Obtener siguiente pregunta */
   const fetchQuestion = useCallback(async (tid: string) => {
     try {
-      const res = await apiFetch(`${API_BASE}/ai-analysis/phase0/question/${tid}`);
+      const res = await apiFetch(
+        `${API_BASE}/ai-analysis/phase0/question/${encodeURIComponent(tid)}?projectId=${encodeURIComponent(projectId)}`,
+      );
       if (!res.ok) {
         const { message, code } = await parseApiErrorPayloadFromResponse(
           res,
@@ -137,40 +178,37 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       if (applyPhase0StreamError(data, setError, setStatus)) return;
 
       if (data.type === "done") {
-        setStatus("done");
-        if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
-        onComplete();
+        await applyPhase0Done(data, onComplete, setBorrador, setStatus);
         return;
       }
 
-      if (data.type !== "question" || !data.question) {
+      if (!applyQuestionPayload(data, setQuestion, setPreguntaN, setTotalPreguntas, setStatus)) {
         setError(resolvePhase0ErrorMessage({ message: "No se recibió una pregunta válida" }));
         setStatus("error");
         return;
       }
 
-      setQuestion(data.question);
-      setPreguntaN(data.n ?? 0);
-      setStatus("interviewing");
       setAnswer("");
       setTimeout(() => inputRef.current?.focus(), 100);
     } catch (e) {
       setError(formatUserFacingThrownError(e, "No se pudo obtener la siguiente pregunta"));
       setStatus("error");
     }
-  }, [onComplete]);
+  }, [onComplete, projectId]);
 
   /** Enviar respuesta */
   const handleAnswer = useCallback(async () => {
-    if (!answer.trim() || !threadId) return;
+    if (!answer.trim() || !threadId || isSubmitting) return;
     const currentAnswer = answer.trim();
     setAnswer("");
+    setIsSubmitting(true);
+    setError(null);
 
     try {
       const res = await apiFetch(`${API_BASE}/ai-analysis/phase0/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId, answer: currentAnswer }),
+        body: JSON.stringify({ threadId, answer: currentAnswer, projectId }),
       });
       if (!res.ok) {
         const { message, code } = await parseApiErrorPayloadFromResponse(
@@ -188,22 +226,31 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       if (applyPhase0StreamError(data, setError, setStatus)) return;
 
       if (data.type === "done") {
-        setStatus("done");
-        if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
-        onComplete();
+        await applyPhase0Done(data, onComplete, setBorrador, setStatus);
         return;
       }
 
-      // Actualizar borrador
       if (data.borrador) setBorrador(JSON.stringify(data.borrador, null, 2));
 
-      // Siguiente pregunta
-      await fetchQuestion(threadId);
+      if (applyQuestionPayload(data, setQuestion, setPreguntaN, setTotalPreguntas, setStatus)) {
+        setTimeout(() => inputRef.current?.focus(), 100);
+        return;
+      }
+
+      if (data.type === "draft_updated") {
+        await fetchQuestion(threadId);
+        return;
+      }
+
+      setError(resolvePhase0ErrorMessage({ message: "Respuesta inesperada al enviar tu respuesta" }));
+      setStatus("error");
     } catch (e) {
       setError(formatUserFacingThrownError(e, "No se pudo enviar tu respuesta"));
       setStatus("error");
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [answer, threadId, fetchQuestion, onComplete]);
+  }, [answer, threadId, fetchQuestion, onComplete, isSubmitting]);
 
   /** Manejar Enter para enviar */
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -213,6 +260,18 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       else if (status === "idle") handleStart();
     }
   };
+
+  /** Sincroniza markdown y refresca proyecto (repara estado atascado o tras completar) */
+  const syncPhase0Document = useCallback(async () => {
+    setStatus("finalizing");
+    setError(null);
+    try {
+      await onComplete();
+    } finally {
+      const dbga = (useWorkshopStore.getState().dbgaContent ?? "").trim();
+      if (!dbga) setStatus("done");
+    }
+  }, [onComplete]);
 
   /** Resetear */
   const handleReset = () => {
@@ -271,6 +330,12 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
       {/* Modo entrevista */}
       {status === "interviewing" && (
         <>
+          {isSubmitting && (
+            <div className="flex items-center gap-2 text-sm text-[var(--foreground-subtle)]">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              <span>Procesando tu respuesta y preparando la siguiente pregunta…</span>
+            </div>
+          )}
           {/* Progreso */}
           <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
             <span className="font-medium text-[var(--foreground)]">
@@ -304,6 +369,7 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               onKeyDown={handleKeyDown}
+              disabled={isSubmitting}
               placeholder="Escribe tu respuesta (Enter para enviar, Shift+Enter para nueva línea)..."
               className="flex-1 bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] outline-none resize-none"
               rows={3}
@@ -313,13 +379,22 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
             <WorkshopPanelButton
               tone="primary"
               onClick={handleAnswer}
-              disabled={!answer.trim()}
+              disabled={!answer.trim() || isSubmitting}
+              loading={isSubmitting}
             >
               <WorkshopButtonIcon icon={Send} tone="primary" />
               Enviar respuesta
             </WorkshopPanelButton>
           </div>
         </>
+      )}
+
+      {/* Preparando documento */}
+      {status === "finalizing" && (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--primary)]" />
+          <p className="text-sm text-[var(--foreground-subtle)]">Preparando documento de Fase 0…</p>
+        </div>
       )}
 
       {/* Completado */}
@@ -334,6 +409,10 @@ export function Phase0InterviewPanel({ projectId, onComplete }: Props) {
           <p className="text-xs text-[var(--muted-foreground)]">
             El borrador se ha guardado y está listo para el Benchmark y MDD.
           </p>
+          <WorkshopPanelButton tone="primary" onClick={() => void syncPhase0Document()}>
+            Ver documento generado
+          </WorkshopPanelButton>
+          <Phase0ManualAudit projectId={projectId} onUpdated={onComplete} variant="inline" />
           <WorkshopPanelButton tone="secondary" onClick={handleReset}>
             Reiniciar Fase 0
           </WorkshopPanelButton>
