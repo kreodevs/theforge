@@ -1818,18 +1818,26 @@ export class LegacyCoordinatorService {
         }
         case "agent_governance": {
           const bpGov = p.blueprintContent?.trim() || undefined;
-          const govSuggestions = suggestAgentGovernanceArtifacts({
+          const governanceInput = {
             mddMarkdown: mddForLlm,
             blueprintMarkdown: bpGov,
+            tasksMarkdown: p.tasksContent?.trim() || undefined,
+            architectureMarkdown: p.architectureContent?.trim() || undefined,
+            specMarkdown: p.specContent?.trim() || undefined,
             complexity,
-          });
+          };
+          const govSuggestions = suggestAgentGovernanceArtifacts(governanceInput);
           const raw = await this.ai.generateAgentGovernance(mddForLlm, bpGov, complexity, {
             ...legacyOpts,
             suggestions: govSuggestions,
+            tasksContent: p.tasksContent,
+            architectureContent: p.architectureContent,
+            specContent: p.specContent,
           });
           const scaffold = parseAgentGovernanceResponse(raw, complexity, {
             suggestions: govSuggestions,
-            mddMarkdown: mddForLlm,
+            governanceInput,
+            forceFreshOverlay: true,
           });
           await update({ agentGovernanceContent: serializeAgentGovernanceScaffold(scaffold) });
           p = await load();

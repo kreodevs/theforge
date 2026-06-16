@@ -23,6 +23,76 @@ const TIMEOUT_MS = Number(process.env.THEFORGE_MCP_TIMEOUT) || 120_000;
 const PORT = Number(process.env.PORT) || 3000;
 const USE_HTTP = process.argv.includes("--http");
 
+// ── Client auto-detection ─────────────────────────────────────────────
+/** Nombre del cliente detectado en `initialize` (\"hermes\", \"openhands\", etc.). */
+let clientName = "";
+
+/** Resuelve el target de gobernanza: explícito > auto-detectado > "cursor". */
+function resolveGovernanceTarget(explicit?: string): string {
+  if (explicit) return explicit;
+  const name = clientName.toLowerCase();
+  if (name.includes("hermes")) return "hermes";
+  if (name.includes("openhands")) return "openhands";
+  return "cursor";
+}
+
+/**
+ * Compacta la respuesta de agent-governance para clientes con timeout bajo (OpenHands/Hermes).
+ * Reemplaza el contenido de cada archivo con metadata ({path, size, charCount}),
+ * reduciendo la respuesta de ~100KB a ~3KB.
+ */
+function compactifyGovernanceResponse(raw: unknown, projectId: string): unknown {
+  if (raw == null || typeof raw !== "object") return raw;
+
+  const obj = raw as Record<string, unknown>;
+
+  // Queue mode: ya es pequeño, devolver tal cual
+  if (obj.queued) return raw;
+
+  // Extraer el scaffold JSON (puede venir en .content para preview o en .agentGovernanceContent)
+  let scaffoldStr = "";
+  if (typeof obj.content === "string") {
+    scaffoldStr = obj.content;
+  } else if (typeof obj.agentGovernanceContent === "string") {
+    scaffoldStr = obj.agentGovernanceContent;
+  } else {
+    return raw; // no reconocible, devolver tal cual
+  }
+
+  let scaffold: Record<string, unknown>;
+  try {
+    scaffold = JSON.parse(scaffoldStr) as Record<string, unknown>;
+  } catch {
+    return raw;
+  }
+
+  // Compactar files: reemplazar contenido con metadata
+  const files = scaffold.files as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(files)) {
+    const compactFiles = files.map((f) => {
+      const content = typeof f.content === "string" ? f.content : "";
+      return {
+        path: f.path ?? "",
+        charCount: content.length,
+        sizeEstimate: `${Math.round(content.length / 1024)}KB`,
+      };
+    });
+
+    scaffold.files = compactFiles;
+
+    // Agregar nota y referencias a tools para obtener contenido completo
+    scaffold._compact = true;
+    scaffold._note =
+      "Contenido completo almacenado en el servidor. Usa get_agent_governance_export para obtener el ZIP completo, o get_project_deliverables con filePath para archivos individuales.";
+    scaffold._fullContentTools = {
+      export_zip: `get_agent_governance_export(projectId: "${projectId}")`,
+      individual_file: `get_project_deliverables(projectId: "${projectId}", filePath: "<ruta del archivo>")`,
+    };
+  }
+
+  return { ...obj, content: JSON.stringify(scaffold), agentGovernanceContent: undefined, _compact: true };
+}
+
 // ── Local Types ────────────────────────────────────────────────────────
 
 interface Tool {
@@ -418,7 +488,7 @@ const TOOLS: Tool[] = [
   {
     name: "generate_agent_governance",
     description:
-      "Genera el scaffold de Gobernanza IA (AGENTS.md, rules, skills, mcp.json.example) desde MDD + Blueprint + complejidad",
+      "Genera el scaffold de Gobernanza IA (AGENTS.md, rules, skills, mcp.json.example) desde MDD + Blueprint + complejidad. Auto-detecta el cliente (cursor, openhands, hermes) vía initialize; usa 'target' para forzar.",
     inputSchema: {
       type: "object",
       properties: {
@@ -430,6 +500,12 @@ const TOOLS: Tool[] = [
         queue: {
           type: "boolean",
           description: "Si true y la cola de entregables está activa, encola el job async",
+        },
+        target: {
+          type: "string",
+          enum: ["cursor", "openhands", "hermes"],
+          description:
+            "Target para el scaffold: 'cursor' (.cursor/rules/, .cursor/skills/), 'openhands' (.openhands/instructions.md), 'hermes' (.hermes/skills/). Si se omite, se auto-detecta del clientInfo enviado en initialize.",
         },
       },
       required: ["projectId"],
@@ -443,6 +519,19 @@ const TOOLS: Tool[] = [
       type: "object",
       properties: { projectId: { type: "string" } },
       required: ["projectId"],
+    },
+  },
+  {
+    name: "get_job_status",
+    description:
+      "Consulta el estado de un job asíncrono de generación (blueprint, agent-governance, etc.). Usar después de generate_agent_governance con queue=true para saber cuándo terminó.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        jobId: { type: "string", description: "ID del job devuelto por generate_agent_governance (o cualquier endpoint con ?queue=true)" },
+      },
+      required: ["projectId", "jobId"],
     },
   },
   {
@@ -1199,15 +1288,33 @@ const handlers: Record<string, Handler> = {
     );
   },
   async generate_agent_governance(args) {
-    const queue = args.queue === true ? "?queue=true" : "";
-    return JSON.stringify(
-      await apiPost(`/projects/${args.projectId}/generate-agent-governance${queue}`, {
-        preview: args.preview ?? false,
-      }),
-    );
+    const target = resolveGovernanceTarget(args.target as string | undefined);
+
+    // OpenHands y Hermes timeoutan durante la generación LLM (30-90s).
+    // Forzar queue async: respuesta instantánea (~100 bytes), polling con get_job_status.
+    const needsAsync = target !== "cursor";
+    const queue = needsAsync || args.queue === true ? "?queue=true" : "";
+
+    const raw = await apiPost(`/projects/${args.projectId}/generate-agent-governance${queue}`, {
+      preview: args.preview ?? false,
+      target,
+    });
+
+    // Queue ya es compacto, y la respuesta completa se compacta también
+    const needsCompact = target !== "cursor";
+    const response = needsCompact
+      ? compactifyGovernanceResponse(raw, args.projectId as string)
+      : raw;
+
+    return JSON.stringify(response);
   },
   async get_agent_governance_export(args) {
     return JSON.stringify(await apiGet(`/projects/${args.projectId}/agent-governance-export`));
+  },
+  async get_job_status(args) {
+    return JSON.stringify(
+      await apiGet(`/projects/${args.projectId}/deliverables-jobs/${args.jobId}`),
+    );
   },
   async confirm_complexity(args) {
     return JSON.stringify(await apiPost(`/projects/${args.projectId}/confirm-complexity`));
@@ -1570,6 +1677,9 @@ async function handleJSONRPC(request: JSONRPCRequest): Promise<JSONRPCResponse> 
   try {
     switch (method) {
       case "initialize": {
+        // Guardar clientInfo para auto-detección
+        const info = (params as any)?.clientInfo as { name?: string; version?: string } | undefined;
+        if (info?.name) clientName = info.name;
         return {
           jsonrpc: "2.0",
           id,
@@ -1682,8 +1792,16 @@ async function main(): Promise<void> {
       // Read body
       const body = await readBody(req);
 
-      // Auth: extraer MCP_M2M_SECRET del header del cliente
-      const clientSecret = (req.headers["mcp_m2m_secret"] as string) || "";
+      // Auth: extraer MCP_M2M_SECRET del header del cliente.
+      // Fallback: Authorization: Bearer <token> (soporta clientes como OpenHands SHTTP).
+      let clientSecret = (req.headers["mcp_m2m_secret"] as string) || "";
+      if (!clientSecret) {
+        const authHeader = (req.headers["authorization"] as string) || "";
+        const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+        if (bearerMatch) {
+          clientSecret = bearerMatch[1];
+        }
+      }
       if (!clientSecret) {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(

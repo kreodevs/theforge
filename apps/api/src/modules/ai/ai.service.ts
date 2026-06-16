@@ -44,6 +44,7 @@ import {
   buildMddContextForInfra,
   buildMddContextForSpec,
   buildMddContextForAgentGovernance,
+  buildLogicFlowsDiagramHint,
 } from "./utils/mdd-user-stories-context.util.js";
 import {
   appendLegacyBaselineDetailPrompt,
@@ -112,6 +113,9 @@ export interface LegacyGenerateOptions {
 export interface AgentGovernanceGenerateOptions extends LegacyGenerateOptions {
   /** Sugerencias del detector pre-LLM (rules/skills del catálogo). */
   suggestions?: AgentGovernanceSuggestions;
+  tasksContent?: string | null;
+  architectureContent?: string | null;
+  specContent?: string | null;
 }
 
 /** Instrucción fija para toda documentación legacy: complementar sin inventar. */
@@ -727,6 +731,9 @@ export class AiService {
   ): Promise<string> {
     const mdd = buildMddContextForAgentGovernance(mddContent?.trim() ?? "", mddDeliverableCtx(options));
     const blueprint = capTextForLegacyBaseline(blueprintContent ?? "", 15000, options?.legacyBaselineStage);
+    const tasks = capTextForLegacyBaseline(options?.tasksContent ?? "", 12000, options?.legacyBaselineStage);
+    const architecture = capTextForLegacyBaseline(options?.architectureContent ?? "", 12000, options?.legacyBaselineStage);
+    const spec = capTextForLegacyBaseline(options?.specContent ?? "", 8000, options?.legacyBaselineStage);
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD, 7 secciones). " +
       "Deriva gobernanza de agentes únicamente de §1–§7 y patrones [X] del Wizard.\n\n";
@@ -737,11 +744,24 @@ export class AiService {
       `Genera el scaffold **agent-governance/** según el system prompt.\n\n**complexity:** ${complexity}\n\n` +
       suggestionsBlock +
       (mdd.length > 0
-        ? constitutionNote + "MDD:\n---\n" + mdd + "\n---\n\n" + (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
+        ? constitutionNote +
+          "MDD:\n---\n" +
+          mdd +
+          "\n---\n\n" +
+          (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---\n\n" : "") +
+          (architecture ? "Architecture:\n---\n" + architecture + "\n---\n\n" : "") +
+          (tasks ? "Tasks (checklist de implementación — usar para PROMPT-INICIAL y PROGRESO):\n---\n" + tasks + "\n---\n\n" : "") +
+          (spec ? "Spec:\n---\n" + spec + "\n---" : "")
         : "No hay MDD. Genera un scaffold mínimo LOW (AGENTS.md, CLAUDE.md, docs/agent-onboarding.md, 1 rule git-commits).");
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
+    const suggestionsCount = options?.suggestions
+      ? options.suggestions.suggestedRules.length + options.suggestions.suggestedSkills.length
+      : 0;
+    console.warn(
+      `[agent-gov] ai.generateAgentGovernance promptLen=${prompt.length} suggestions=${suggestionsCount} archetypes=${options?.suggestions?.archetypes.length ?? 0} complexity=${complexity}`,
+    );
     return this.generateResponse(prompt, [], { systemPrompt: AGENT_GOVERNANCE_PROMPT + NO_MILITAR_INSTRUCTION });
   }
 
@@ -1027,6 +1047,8 @@ export class AiService {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
+    const diagramHint = buildLogicFlowsDiagramHint(mddContent?.trim() ?? "");
+    if (diagramHint) prompt += `\n\n${diagramHint}\n`;
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (mdd.length > 0 && !legacyAsIsLogicFlows) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);

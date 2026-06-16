@@ -16,17 +16,111 @@ import {
 } from "./agent-governance-catalog.js";
 import {
   buildArtifactTemplateContext,
+  extractProjectGovernanceFacts,
   type AgentGovernanceSuggestions,
+  type ProjectGovernanceFacts,
+  type SuggestAgentGovernanceInput,
 } from "./suggest-agent-governance-artifacts.js";
+
+/** Rutas que siempre se regeneran desde plantillas canónicas (inmunes al LLM). */
+const LLM_PROOF_CANONICAL_PATHS = [
+  `${GOVERNANCE_DOCS_PREFIX}INSTALACION.md`,
+  "scripts/install-agent-governance.sh",
+] as const;
+
+const DUPLICATE_PROMPT_PATHS = [
+  `${GOVERNANCE_DOCS_PREFIX}PROMPT-INICIAL.md`,
+  "docs/agent-governance/PROMPT-INICIAL.md",
+] as const;
+
+const DOC_CONSUMPTION_GUIDE_PATH = `${GOVERNANCE_DOCS_PREFIX}references/THEFORGE-DOC-CONSUMPTION-GUIDE.md`;
 
 /** Rutas obligatorias en todos los niveles de complejidad. */
 export const AGENT_GOVERNANCE_REQUIRED_ALL = [
   "AGENTS.md",
   "CLAUDE.md",
+  "PROMPT-INICIAL.md",
   `${GOVERNANCE_DOCS_PREFIX}agent-onboarding.md`,
   `${GOVERNANCE_DOCS_PREFIX}COMO-USAR-GOBERNANZA-IA.md`,
   `${GOVERNANCE_DOCS_PREFIX}INSTALACION.md`,
+  "docs/sdd/PROGRESO.md",
 ] as const;
+
+// ── Multi-target path mapping ────────────────────────────────────────
+
+export type GovernanceTarget = "cursor" | "openhands" | "hermes";
+
+/** Reglas de renombre de paths por target. Se aplican en orden. */
+const TARGET_PATH_MAP: Record<GovernanceTarget, Array<{ from: RegExp; to: string | ((match: RegExpMatchArray) => string) }>> = {
+  cursor: [
+    // Cursor es el default — solo normaliza paths de LLM
+    { from: /^\.cursor\//, to: `${GOVERNANCE_DOCS_PREFIX}` },
+  ],
+  openhands: [
+    // OpenHands: reglas → .openhands/rules/, skills → .openhands/skills/
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}rules/(.+\\.mdc)$`), to: ".openhands/rules/$1" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}skills/(.+)/SKILL\\.md$`), to: ".openhands/skills/$1/SKILL.md" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}references/`), to: ".openhands/references/" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}mcp\\.json\\.example$`), to: ".openhands/mcp.json" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}`), to: ".openhands/" },
+    // Omitir shims de Cursor
+    { from: /^CLAUDE\.md$/, to: "" }, // omitido
+    { from: /^\.cursor\//, to: ".openhands/" },
+  ],
+  hermes: [
+    // Hermes: skills → .hermes/skills/, reglas se convierten en skills
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}rules/(.+)\\.mdc$`), to: ".hermes/skills/$1/SKILL.md" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}skills/(.+)/SKILL\\.md$`), to: ".hermes/skills/$1/SKILL.md" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}references/`), to: ".hermes/references/" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}mcp\\.json\\.example$`), to: ".hermes/mcp.json.example" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}`), to: ".hermes/" },
+    // Omitir shims de Cursor
+    { from: /^CLAUDE\.md$/, to: "" }, // omitido
+    { from: /^\.cursor\//, to: ".hermes/" },
+  ],
+};
+
+/** Aplica el mapeo de paths según el target. Retorna nuevo path (o "" para omitir). */
+function remapPathForTarget(rawPath: string, target: GovernanceTarget): string {
+  const normalized = rawPath.trim();
+  const rules = TARGET_PATH_MAP[target];
+  for (const rule of rules) {
+    const match = normalized.match(rule.from);
+    if (match) {
+      if (typeof rule.to === "function") return rule.to(match);
+      return rule.to; // "" => omitir
+    }
+  }
+  // Sin match = mantener el path original
+  return normalized;
+}
+
+/**
+ * Transforma todos los paths de un scaffold al target especificado.
+ * Omite archivos cuyo path queda vacío (ej. CLAUDE.md en openhands/hermes).
+ */
+function remapGovernanceScaffold(scaffold: AgentGovernanceScaffold, target: GovernanceTarget): AgentGovernanceScaffold {
+  if (target === "cursor") return scaffold; // no-op
+
+  const remappedFiles: AgentGovernanceFile[] = [];
+  const remappedManifestPaths: string[] = [];
+
+  for (const file of scaffold.files) {
+    const newPath = remapPathForTarget(file.path, target);
+    if (!newPath) continue; // omitir
+    remappedFiles.push({ ...file, path: newPath });
+    remappedManifestPaths.push(newPath);
+  }
+
+  return {
+    ...scaffold,
+    manifest: {
+      ...scaffold.manifest,
+      files: remappedManifestPaths,
+    },
+    files: remappedFiles,
+  };
+}
 
 /** Rutas obligatorias a partir de MEDIUM. */
 export const AGENT_GOVERNANCE_REQUIRED_MEDIUM = [
@@ -50,7 +144,28 @@ function defaultInstallMapTableRows(): string {
     "| `docs/agent-governance/rules/*.mdc` | `.cursor/rules/*.mdc` |\n" +
     "| `docs/agent-governance/skills/*/SKILL.md` | `.cursor/skills/*/SKILL.md` |\n" +
     "| `docs/agent-governance/references/*` | `.cursor/references/*` |\n" +
+    "| `docs/agent-governance/agents/*` | `.cursor/agents/*` |\n" +
+    "| `docs/agent-governance/commands/*` | `.cursor/commands/*` |\n" +
     "| `docs/agent-governance/mcp.json.example` | `.cursor/mcp.json` |\n"
+  );
+}
+
+function defaultDocConsumptionGuide(): string {
+  return (
+    "# Guía de consumo de documentos TheForge\n\n" +
+    "Resumen para agentes que implementan desde entregables SDD incluidos en este ZIP.\n\n" +
+    "## Orden de lectura\n\n" +
+    "1. **`docs/sdd/mdd.md`** — Constitución (stack, entidades, reglas, auth).\n" +
+    "2. **`docs/sdd/blueprint.md`** — Estructura del repo, convenciones, §8 UI si aplica.\n" +
+    "3. **`docs/sdd/spec.md`** — Requisitos y criterios de aceptación.\n" +
+    "4. **`docs/sdd/tasks.md`** — Checklist de implementación (contrastar siempre con MDD).\n" +
+    "5. Entregables opcionales si existen: `api-contracts.md`, `logic-flows.md`, `architecture.md`, `infra.md`.\n\n" +
+    "## Prioridad ante conflictos\n\n" +
+    "**El MDD manda.** Si un entregable contradice otro, sigue MDD §2–§6 y documenta la resolución en `docs/sdd/PROGRESO.md`.\n\n" +
+    "## Gates antes de cerrar tareas\n\n" +
+    "- Lint, typecheck y tests del paquete tocado.\n" +
+    "- Contratos API alineados a `docs/sdd/api-contracts.md` cuando exista.\n" +
+    "- Actualizar `docs/sdd/PROGRESO.md` al completar ítems de Tasks.\n"
   );
 }
 
@@ -79,7 +194,7 @@ function defaultAgentOnboarding(): string {
     "1. Lee **`docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md`** (guía principal).\n" +
     "2. Si aún no instalaste gobernanza en `.cursor/`, sigue **`docs/agent-governance/INSTALACION.md`**.\n" +
     "3. Lee el **MDD** (Constitución) y el **Blueprint** si existe.\n" +
-    "4. Consulta la guía de consumo de documentos TheForge: `THEFORGE-DOC-CONSUMPTION-GUIDE.md`.\n" +
+    "4. Consulta la guía de consumo de documentos: `" + DOC_CONSUMPTION_GUIDE_PATH + "`.\n" +
     "5. Carga `AGENTS.md` y las rules/skills en `.cursor/` según la tarea.\n" +
     "6. Antes de implementar, confirma gates (lint, typecheck, tests) definidos en workflows.\n"
   );
@@ -102,13 +217,15 @@ function defaultInstalacion(): string {
     "|----------------|-------------------------|\n" +
     defaultInstallMapTableRows() +
     "\n" +
-    "Crea las carpetas si no existen: `.cursor/rules/`, `.cursor/skills/`, `.cursor/references/`.\n\n" +
+    "Crea las carpetas si no existen: `.cursor/rules/`, `.cursor/skills/`, `.cursor/references/`, `.cursor/agents/`, `.cursor/commands/`.\n\n" +
     "## Opción C — One-liner\n\n" +
     "```bash\n" +
-    "mkdir -p .cursor/{rules,skills,references} && \\\n" +
+    "mkdir -p .cursor/{rules,skills,references,agents,commands} && \\\n" +
     "cp docs/agent-governance/rules/*.mdc .cursor/rules/ 2>/dev/null; \\\n" +
     "cp -R docs/agent-governance/skills/* .cursor/skills/ 2>/dev/null; \\\n" +
     "cp docs/agent-governance/references/* .cursor/references/ 2>/dev/null; \\\n" +
+    "cp -R docs/agent-governance/agents/* .cursor/agents/ 2>/dev/null; \\\n" +
+    "cp -R docs/agent-governance/commands/* .cursor/commands/ 2>/dev/null; \\\n" +
     "cp docs/agent-governance/mcp.json.example .cursor/mcp.json 2>/dev/null\n" +
     "```\n\n" +
     "## Verificación\n\n" +
@@ -125,12 +242,14 @@ function defaultInstallScript(): string {
     "set -euo pipefail\n" +
     'ROOT="$(cd "$(dirname "$0")/.." && pwd)"\n' +
     'SRC="$ROOT/docs/agent-governance"\n' +
-    'mkdir -p "$ROOT/.cursor/rules" "$ROOT/.cursor/skills" "$ROOT/.cursor/references"\n' +
+    'mkdir -p "$ROOT/.cursor/rules" "$ROOT/.cursor/skills" "$ROOT/.cursor/references" "$ROOT/.cursor/agents" "$ROOT/.cursor/commands"\n' +
     'if [[ -d "$SRC/rules" ]]; then cp -f "$SRC/rules/"*.mdc "$ROOT/.cursor/rules/" 2>/dev/null || true; fi\n' +
     'if [[ -d "$SRC/skills" ]]; then cp -R "$SRC/skills/"* "$ROOT/.cursor/skills/" 2>/dev/null || true; fi\n' +
     'if [[ -d "$SRC/references" ]]; then cp -f "$SRC/references/"* "$ROOT/.cursor/references/" 2>/dev/null || true; fi\n' +
+    'if [[ -d "$SRC/agents" ]]; then cp -R "$SRC/agents/"* "$ROOT/.cursor/agents/" 2>/dev/null || true; fi\n' +
+    'if [[ -d "$SRC/commands" ]]; then cp -R "$SRC/commands/"* "$ROOT/.cursor/commands/" 2>/dev/null || true; fi\n' +
     'if [[ -f "$SRC/mcp.json.example" ]]; then cp -f "$SRC/mcp.json.example" "$ROOT/.cursor/mcp.json"; fi\n' +
-    'echo "Gobernanza instalada en .cursor/ (rules, skills, references, mcp.json)."\n'
+    'echo "Gobernanza instalada en .cursor/ (rules, skills, references, agents, commands, mcp.json)."\n'
   );
 }
 
@@ -226,7 +345,8 @@ function defaultComoUsarGovernanza(suggestions?: AgentGovernanceSuggestions | nu
     "- Nuevas rules/skills: `references/CURSOR_SKILLS_Y_RULES.md`.\n" +
     "- Handoff: `references/PROMPT_HANDOFF_AGENTE.md`.\n\n" +
     "## 7. Consumo de documentación TheForge\n\n" +
-    "Consulta **`THEFORGE-DOC-CONSUMPTION-GUIDE.md`**; no dupliques esa guía aquí.\n" +
+    "Consulta **`references/THEFORGE-DOC-CONSUMPTION-GUIDE.md`** " +
+    "(incluida en este paquete bajo `docs/agent-governance/references/`).\n" +
     formatSuggestionsRationaleTable(suggestions)
   );
 }
@@ -287,7 +407,7 @@ function defaultWorkflows(complexity: ComplexityLevel): string {
     "- **Cargar:** rules de stack, `workflows.md`\n\n",
     "## Consumo docs TheForge\n\n",
     "- **Trigger:** implementar desde entregables SDD\n",
-    "- **Cargar:** MDD, Blueprint, `THEFORGE-DOC-CONSUMPTION-GUIDE.md`\n\n",
+    "- **Cargar:** MDD, Blueprint, `" + DOC_CONSUMPTION_GUIDE_PATH + "`\n\n",
   ];
   if (complexity !== "LOW") {
     lines.push(
@@ -328,6 +448,401 @@ function defaultMcpJson(): string {
     null,
     2,
   );
+}
+
+function formatStackSection(facts: ProjectGovernanceFacts): string {
+  const lines: string[] = [];
+  if (facts.backendStack) lines.push(`- **Backend:** ${facts.backendStack}`);
+  if (facts.frontendStack) lines.push(`- **Frontend:** ${facts.frontendStack}`);
+  if (facts.mobileStack) lines.push(`- **Mobile:** ${facts.mobileStack}`);
+  if (facts.infraStack) lines.push(`- **Infra / deploy:** ${facts.infraStack}`);
+  return lines.length > 0 ? lines.join("\n") : "- Deriva el stack del MDD §2 y del Blueprint.";
+}
+
+function buildSddConflictSection(facts: ProjectGovernanceFacts): string {
+  if (facts.sddConflicts.length === 0) return "";
+  const lines = [
+    "## Resolución de conflictos SDD\n\n",
+    "El detector encontró posibles contradicciones entre entregables. **Prioriza el MDD** y documenta la decisión en `docs/sdd/PROGRESO.md`.\n\n",
+  ];
+  for (const c of facts.sddConflicts) lines.push(`- ${c}\n`);
+  lines.push("\n");
+  return lines.join("");
+}
+
+function stripSddConflictSections(content: string): string {
+  return content
+    .replace(/## Resolución de conflictos SDD[\s\S]*?(?=\n## [^#]|\n#\s|$)/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function contentHasSddConflicts(content: string, facts: ProjectGovernanceFacts): boolean {
+  if (!/Resolución de conflictos SDD/i.test(content)) return false;
+  if (facts.sddConflicts.length === 0) return true;
+  return facts.sddConflicts.every((c) => {
+    const key = c.split(":")[0]?.trim();
+    return key ? content.includes(key) : content.includes(c.slice(0, 40));
+  });
+}
+
+function ruleHasCatalogStackEnrichment(content: string): boolean {
+  return (
+    /\*\*Módulos Blueprint:\*\*/i.test(content) &&
+    (/\*\*Globs backend:\*\*/i.test(content) || /\*\*Globs frontend:\*\*/i.test(content))
+  );
+}
+
+function buildProjectFactsBlock(
+  facts: ProjectGovernanceFacts,
+  options?: { includeSddConflicts?: boolean; compact?: boolean },
+): string {
+  const parts: string[] = [`## Hechos del proyecto (${facts.projectTitle})\n`];
+  const stack = formatStackSection(facts);
+  if (stack) parts.push(stack, "");
+  if (!options?.compact) {
+    if (facts.blueprintModules.length > 0) {
+      parts.push("**Módulos Blueprint:**", ...facts.blueprintModules.map((m) => `- \`${m}\``), "");
+    }
+    if (facts.backendGlobs.length > 0) {
+      parts.push("**Globs backend:**", ...facts.backendGlobs.map((g) => `- \`${g}\``), "");
+    }
+    if (facts.hasUiSurface && facts.frontendGlobs.length > 0) {
+      parts.push("**Globs frontend:**", ...facts.frontendGlobs.map((g) => `- \`${g}\``), "");
+    }
+    if (facts.npmScripts.length > 0) {
+      parts.push("**Scripts npm/pnpm:**", ...facts.npmScripts.map((s) => `- \`${s}\``), "");
+    }
+  }
+  if (facts.architectureLayers.length > 0) {
+    parts.push("**Capas:**", ...facts.architectureLayers.map((l) => `- ${l}`), "");
+  }
+  if (facts.taskCheckboxes.length > 0) {
+    parts.push("**Tasks (extracto):**", ...facts.taskCheckboxes.slice(0, 5), "");
+  } else if (facts.taskHeadings.length > 0) {
+    parts.push("**Tasks (extracto):**", ...facts.taskHeadings.slice(0, 6).map((t) => `- ${t}`), "");
+  }
+  parts.push(
+    "**Docs SDD:**",
+    ...facts.docPaths.filter((p) => p.startsWith("docs/sdd/")).map((p) => `- \`${p}\``),
+    "",
+  );
+  if (facts.sddConflicts.length > 0 && options?.includeSddConflicts !== false) {
+    parts.push(buildSddConflictSection(facts).trim(), "");
+  }
+  return parts.join("\n");
+}
+
+function buildPromptInicialMd(facts: ProjectGovernanceFacts, complexity: ComplexityLevel): string {
+  const docList = facts.docPaths.map((p) => `- \`${p}\``).join("\n");
+  const tasksPreview =
+    facts.taskCheckboxes.length > 0
+      ? facts.taskCheckboxes.slice(0, 5).join("\n")
+      : facts.taskHeadings.length > 0
+        ? facts.taskHeadings.slice(0, 5).map((h) => `- [ ] ${h}`).join("\n")
+        : "- Consulta `docs/sdd/tasks.md` para el checklist completo.";
+  const archPreview =
+    facts.architectureLayers.length > 0
+      ? facts.architectureLayers.map((l) => `- ${l}`).join("\n")
+      : "- Consulta `docs/sdd/architecture.md` si existe.";
+  const modulesPreview =
+    facts.blueprintModules.length > 0
+      ? facts.blueprintModules.map((m) => `- \`${m}\``).join("\n")
+      : "- Consulta `docs/sdd/blueprint.md` para módulos y rutas.";
+
+  return (
+    "# Prompt inicial — implementación\n\n" +
+    "Bootstrap **específico de este proyecto** (generado por TheForge). " +
+    "No uses plantillas genéricas de otros repos.\n\n" +
+    "## Documentos del proyecto\n\n" +
+    docList +
+    "\n\n## Stack detectado\n\n" +
+    formatStackSection(facts) +
+    "\n\n## Módulos / rutas (Blueprint)\n\n" +
+    modulesPreview +
+    "\n\n## Capas de arquitectura\n\n" +
+    archPreview +
+    "\n\n## Primeras tareas (desde Tasks)\n\n" +
+    tasksPreview +
+    "\n\n" +
+    buildSddConflictSection(facts) +
+    "## Instrucciones para el agente\n\n" +
+    "1. Instala gobernanza: `docs/agent-governance/INSTALACION.md` (o `./scripts/install-agent-governance.sh`).\n" +
+    "2. Lee `AGENTS.md`, `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md` y el MDD en `docs/sdd/mdd.md`.\n" +
+    "3. Implementa siguiendo **Tasks** (`docs/sdd/tasks.md`) y **Blueprint**; actualiza `docs/sdd/PROGRESO.md` al cerrar ítems.\n" +
+    (complexity !== "LOW"
+      ? "4. Respeta subflujos en `docs/agent-governance/references/workflows.md`.\n"
+      : "4. Ejecuta lint/typecheck/tests del paquete tocado antes de cerrar.\n")
+  );
+}
+
+function buildProgresoMd(facts: ProjectGovernanceFacts, tasksMarkdown?: string | null): string {
+  const lines = [
+    "# Progreso de implementación\n\n",
+    "Checklist derivado de **Tasks** del proyecto. Marca `[x]` al completar cada ítem.\n\n",
+    "## Referencias\n\n",
+    "- Tasks completo: `docs/sdd/tasks.md`\n",
+    "- Blueprint: `docs/sdd/blueprint.md`\n",
+    "- MDD: `docs/sdd/mdd.md`\n\n",
+  ];
+
+  const tasks = (tasksMarkdown ?? "").trim();
+  if (tasks.length > 0) {
+    lines.push("## Checklist (desde Tasks)\n\n", tasks, "\n");
+  } else if (facts.taskHeadings.length > 0) {
+    lines.push("## Checklist\n\n");
+    for (const h of facts.taskHeadings) lines.push(`- [ ] ${h}\n`);
+    lines.push("\n");
+  } else {
+    lines.push(
+      "## Checklist\n\n",
+      "- [ ] Revisar MDD y Blueprint\n",
+      "- [ ] Configurar entorno local según §2 del MDD\n",
+      "- [ ] Implementar primera tarea de `docs/sdd/tasks.md`\n\n",
+    );
+  }
+
+  lines.push("## Notas\n\n", "_Actualiza este archivo al cerrar tareas o hitos._\n");
+  return lines.join("");
+}
+
+function buildCursorAgentMd(role: string, description: string, loadPaths: string[]): string {
+  return (
+    `# Subagente: ${role}\n\n` +
+    `${description}\n\n` +
+    "## Cuándo delegar\n\n" +
+    `- Tareas acotadas de ${role.toLowerCase()} sin tocar otras capas.\n\n` +
+    "## Cargar antes de actuar\n\n" +
+    loadPaths.map((p) => `- \`${p}\``).join("\n") +
+    "\n\n## Gates\n\n" +
+    "- Lint, typecheck y tests del paquete tocado.\n" +
+    "- Respeta contratos y auth del MDD.\n"
+  );
+}
+
+function buildDynamicCursorAgents(facts: ProjectGovernanceFacts): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (facts.mobileStack) {
+    out[`${GOVERNANCE_DOCS_PREFIX}agents/mobile-implementer.md`] = buildCursorAgentMd(
+      "Mobile",
+      `Implementación ${facts.mobileStack} según MDD §2 y Blueprint.`,
+      ["AGENTS.md", "docs/sdd/mdd.md", "docs/sdd/blueprint.md", "docs/sdd/tasks.md"],
+    );
+  }
+  if (facts.backendStack) {
+    out[`${GOVERNANCE_DOCS_PREFIX}agents/backend-implementer.md`] = buildCursorAgentMd(
+      "Backend",
+      `API y lógica ${facts.backendStack} según MDD §4 y Architecture.`,
+      ["AGENTS.md", "docs/sdd/mdd.md", "docs/sdd/architecture.md", "docs/sdd/api-contracts.md"],
+    );
+  }
+  if (facts.hasUiSurface && (facts.frontendStack || facts.mobileStack)) {
+    const stack = facts.frontendStack ?? facts.mobileStack ?? "UI";
+    out[`${GOVERNANCE_DOCS_PREFIX}agents/frontend-implementer.md`] = buildCursorAgentMd(
+      "Frontend",
+      `UI ${stack} alineada a UX/UI guide y design system del MDD.`,
+      ["AGENTS.md", "docs/sdd/mdd.md", "docs/sdd/ux-ui-guide.md", "docs/sdd/blueprint.md"],
+    );
+  }
+  return out;
+}
+
+function buildDynamicCursorCommands(facts: ProjectGovernanceFacts): Record<string, string> {
+  const out: Record<string, string> = {};
+  out[`${GOVERNANCE_DOCS_PREFIX}commands/implementar-tarea.md`] =
+    "# Implementar tarea\n\n" +
+    "1. Lee `PROMPT-INICIAL.md` y la tarea pendiente en `docs/sdd/tasks.md`.\n" +
+    "2. Actualiza `docs/sdd/PROGRESO.md` al terminar.\n" +
+    "3. Ejecuta gates del paquete (lint, typecheck, tests).\n";
+
+  if (facts.backendStack) {
+    out[`${GOVERNANCE_DOCS_PREFIX}commands/revisar-api.md`] =
+      "# Revisar contratos API\n\n" +
+      "Valida cambios contra `docs/sdd/api-contracts.md` y MDD §4.\n";
+  }
+  return out;
+}
+
+const THIN_CONTENT_MIN_CHARS = 140;
+
+/** Opciones para reconciliar/parsear sin reutilizar bloques genéricos obsoletos. */
+export interface AgentGovernanceOverlayOptions {
+  forceFreshOverlay?: boolean;
+}
+
+function isThinGovernanceContent(content: string): boolean {
+  const trimmed = content.trim();
+  if (trimmed.length < THIN_CONTENT_MIN_CHARS) return true;
+  if (/parametrizar desde MDD/i.test(trimmed) && trimmed.length < 420) return true;
+  if (/^#\s+\w+\s*\n\nDeriva comandos exactos/i.test(trimmed)) return true;
+  return false;
+}
+
+function isStaleProjectFactsSection(content: string, facts: ProjectGovernanceFacts): boolean {
+  const match = content.match(/## Hechos del proyecto \(([^)]+)\)/i);
+  if (!match) return false;
+  const embeddedTitle = match[1].trim();
+  if (/^theforge$/i.test(embeddedTitle) || /^proyecto theforge$/i.test(embeddedTitle)) {
+    return true;
+  }
+  if (facts.projectTitle && embeddedTitle !== facts.projectTitle) return true;
+  if (/parametrizar desde MDD/i.test(content)) return true;
+  if (facts.backendGlobs.length > 0 && /\*\*Globs backend:\*\*/i.test(content)) {
+    const hasCurrentGlob = facts.backendGlobs.some((g) => content.includes(g));
+    if (!hasCurrentGlob) return true;
+  }
+  if (facts.blueprintModules.length > 0 && /\*\*Módulos Blueprint:\*\*/i.test(content)) {
+    const hasModule = facts.blueprintModules.some((m) => content.includes(m));
+    if (!hasModule) return true;
+  }
+  return false;
+}
+
+function stripProjectFactsSection(content: string): string {
+  const lines = content.split("\n");
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^## Hechos del proyecto \(/i.test(lines[i] ?? "")) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return content;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^## [^#]/.test(lines[i] ?? "")) {
+      end = i;
+      break;
+    }
+  }
+  const before = lines.slice(0, start).join("\n").trimEnd();
+  const after = lines.slice(end).join("\n").trimStart();
+  if (before && after) return `${before}\n\n${after}`;
+  return before || after || "";
+}
+
+function shouldReplaceGovernanceArtifact(
+  existing: string | undefined,
+  facts: ProjectGovernanceFacts,
+  forceFreshOverlay: boolean,
+): boolean {
+  if (!existing?.trim()) return true;
+  if (forceFreshOverlay) return true;
+  if (isThinGovernanceContent(existing)) return true;
+  if (/Hechos del proyecto \(TheForge\)/i.test(existing)) return true;
+  if (isStaleProjectFactsSection(existing, facts)) return true;
+  return false;
+}
+
+function overlayProjectFacts(
+  content: string,
+  facts: ProjectGovernanceFacts,
+  overlayOptions?: AgentGovernanceOverlayOptions,
+  artifactPath?: string,
+): string {
+  const forceFreshOverlay = overlayOptions?.forceFreshOverlay === true;
+  const compact =
+    ruleHasCatalogStackEnrichment(content) &&
+    (artifactPath?.includes("/rules/stack-backend") ||
+      artifactPath?.includes("/rules/stack-frontend"));
+  const includeSddConflicts = !contentHasSddConflicts(content, facts);
+  const block = buildProjectFactsBlock(facts, { compact, includeSddConflicts });
+  let base = stripSddConflictSections(content);
+  if (/## Hechos del proyecto \(/i.test(base)) {
+    if (forceFreshOverlay || isStaleProjectFactsSection(base, facts)) {
+      console.warn(
+        `[agent-gov] overlayProjectFacts replacing stale TheForge block projectTitle=${facts.projectTitle} forceFreshOverlay=${forceFreshOverlay}`,
+      );
+      base = stripProjectFactsSection(base);
+      return base.trim() ? `${base.trimEnd()}\n\n${block}` : block;
+    }
+    return base;
+  }
+  return `${base.trimEnd()}\n\n${block}`;
+}
+
+function appendSddConflictToAgents(content: string, facts: ProjectGovernanceFacts): string {
+  const section = buildSddConflictSection(facts);
+  if (!section.trim()) return stripSddConflictSections(content);
+  if (contentHasSddConflicts(content, facts)) return stripSddConflictSections(content);
+  const base = stripSddConflictSections(content);
+  return `${base.trimEnd()}\n\n${section.trim()}\n`;
+}
+
+function dropDuplicateGovernancePromptPaths(fileMap: Record<string, string>): void {
+  for (const path of DUPLICATE_PROMPT_PATHS) {
+    delete fileMap[path];
+  }
+}
+
+/** Entregables SDD opcionales para incluir en export ZIP bajo docs/sdd/. */
+export interface ProjectDeliverableExportInput {
+  mddMarkdown?: string | null;
+  blueprintMarkdown?: string | null;
+  specMarkdown?: string | null;
+  architectureMarkdown?: string | null;
+  tasksMarkdown?: string | null;
+  useCasesMarkdown?: string | null;
+  userStoriesMarkdown?: string | null;
+  apiContractsMarkdown?: string | null;
+  logicFlowsMarkdown?: string | null;
+  uxUiGuideMarkdown?: string | null;
+  infraMarkdown?: string | null;
+}
+
+const SDD_EXPORT_ENTRIES: Array<{
+  key: keyof ProjectDeliverableExportInput;
+  path: string;
+}> = [
+  { key: "mddMarkdown", path: "docs/sdd/mdd.md" },
+  { key: "blueprintMarkdown", path: "docs/sdd/blueprint.md" },
+  { key: "specMarkdown", path: "docs/sdd/spec.md" },
+  { key: "architectureMarkdown", path: "docs/sdd/architecture.md" },
+  { key: "tasksMarkdown", path: "docs/sdd/tasks.md" },
+  { key: "useCasesMarkdown", path: "docs/sdd/use-cases.md" },
+  { key: "userStoriesMarkdown", path: "docs/sdd/user-stories.md" },
+  { key: "apiContractsMarkdown", path: "docs/sdd/api-contracts.md" },
+  { key: "logicFlowsMarkdown", path: "docs/sdd/logic-flows.md" },
+  { key: "uxUiGuideMarkdown", path: "docs/sdd/ux-ui-guide.md" },
+  { key: "infraMarkdown", path: "docs/sdd/infra.md" },
+];
+
+/** Añade entregables del proyecto al scaffold de export (docs/sdd/*). */
+export function appendProjectDeliverablesToScaffold(
+  scaffold: AgentGovernanceScaffold,
+  deliverables: ProjectDeliverableExportInput,
+): AgentGovernanceScaffold {
+  const fileMap: Record<string, string> = {};
+  for (const file of scaffold.files) {
+    fileMap[normalizePath(file.path)] = file.content;
+  }
+
+  const written: string[] = [];
+  const skipped: string[] = [];
+  for (const { key, path } of SDD_EXPORT_ENTRIES) {
+    const content = deliverables[key]?.trim();
+    if (!content) {
+      skipped.push(path);
+      continue;
+    }
+    const hadExisting = Boolean(fileMap[path]?.trim());
+    fileMap[path] = content;
+    written.push(hadExisting ? `${path} (overwrite)` : path);
+  }
+  console.warn(
+    `[agent-gov] appendProjectDeliverablesToScaffold written=${written.join(", ") || "none"} skipped=${skipped.join(", ") || "none"}`,
+  );
+
+  const files = recordToFileEntries(fileMap);
+  const paths = files.map((f) => f.path);
+  return {
+    manifest: {
+      ...scaffold.manifest,
+      files: paths,
+      installMap: buildGovernanceInstallMap(paths),
+    },
+    files,
+  };
 }
 
 /** Rutas obligatorias según complejidad (sin MANIFEST.json). */
@@ -398,20 +913,88 @@ function parseLlmFilesPayload(parsed: unknown): Record<string, string> {
 type FallbackFactory = (
   complexity: ComplexityLevel,
   suggestions?: AgentGovernanceSuggestions | null,
+  governanceInput?: SuggestAgentGovernanceInput,
 ) => string;
 
 const FALLBACK_BY_PATH: Record<string, FallbackFactory> = {
-  "AGENTS.md": () => defaultAgentsMd(),
+  "AGENTS.md": (_c, _s, input) => {
+    const base = defaultAgentsMd();
+    if (!input) return base;
+    const facts = extractProjectGovernanceFacts(input);
+    return overlayProjectFacts(base, facts);
+  },
   "CLAUDE.md": () => defaultClaudeShim(),
-  [`${GOVERNANCE_DOCS_PREFIX}agent-onboarding.md`]: () => defaultAgentOnboarding(),
+  "PROMPT-INICIAL.md": (c, _s, input) =>
+    buildPromptInicialMd(
+      input
+        ? extractProjectGovernanceFacts(input)
+        : {
+            projectTitle: "Proyecto TheForge",
+            docPaths: ["docs/sdd/mdd.md"],
+            taskHeadings: [],
+            taskCheckboxes: [],
+            architectureLayers: [],
+            blueprintModules: [],
+            backendGlobs: [],
+            frontendGlobs: [],
+            npmScripts: [],
+            sddConflicts: [],
+            hasUiSurface: false,
+          },
+      c,
+    ),
+  "docs/sdd/PROGRESO.md": (_c, _s, input) =>
+    buildProgresoMd(
+      input
+        ? extractProjectGovernanceFacts(input)
+        : {
+            projectTitle: "Proyecto TheForge",
+            docPaths: [],
+            taskHeadings: [],
+            taskCheckboxes: [],
+            architectureLayers: [],
+            blueprintModules: [],
+            backendGlobs: [],
+            frontendGlobs: [],
+            npmScripts: [],
+            sddConflicts: [],
+            hasUiSurface: false,
+          },
+      input?.tasksMarkdown,
+    ),
+  [`${GOVERNANCE_DOCS_PREFIX}agent-onboarding.md`]: (_c, _s, input) => {
+    const base = defaultAgentOnboarding();
+    if (!input) return base;
+    return overlayProjectFacts(base, extractProjectGovernanceFacts(input));
+  },
   [`${GOVERNANCE_DOCS_PREFIX}COMO-USAR-GOBERNANZA-IA.md`]: (_c, s) => defaultComoUsarGovernanza(s),
   [`${GOVERNANCE_DOCS_PREFIX}INSTALACION.md`]: () => defaultInstalacion(),
   [`${GOVERNANCE_DOCS_PREFIX}references/workflows.md`]: (c) => defaultWorkflows(c),
   [`${GOVERNANCE_DOCS_PREFIX}references/CURSOR_SKILLS_Y_RULES.md`]: () => defaultCursorSkillsYRules(),
   [`${GOVERNANCE_DOCS_PREFIX}references/PROMPT_HANDOFF_AGENTE.md`]: () => defaultPromptHandoff(),
+  [DOC_CONSUMPTION_GUIDE_PATH]: () => defaultDocConsumptionGuide(),
   [`${GOVERNANCE_DOCS_PREFIX}mcp.json.example`]: () => defaultMcpJson(),
   "scripts/install-agent-governance.sh": () => defaultInstallScript(),
 };
+
+function applyCanonicalGovernanceDefaults(
+  fileMap: Record<string, string>,
+  complexity: ComplexityLevel,
+  suggestions?: AgentGovernanceSuggestions | null,
+  governanceInput?: SuggestAgentGovernanceInput,
+): void {
+  for (const path of LLM_PROOF_CANONICAL_PATHS) {
+    const factory = FALLBACK_BY_PATH[path];
+    if (factory) fileMap[path] = factory(complexity, suggestions, governanceInput);
+  }
+  dropDuplicateGovernancePromptPaths(fileMap);
+}
+
+function ensureDocConsumptionGuide(fileMap: Record<string, string>): void {
+  if (!fileMap[DOC_CONSUMPTION_GUIDE_PATH]?.trim()) {
+    fileMap[DOC_CONSUMPTION_GUIDE_PATH] = defaultDocConsumptionGuide();
+  }
+}
 
 function ensureAgentsInstallSection(fileMap: Record<string, string>): void {
   const path = "AGENTS.md";
@@ -425,17 +1008,87 @@ function applyRequiredFileFallbacks(
   fileMap: Record<string, string>,
   complexity: ComplexityLevel,
   suggestions?: AgentGovernanceSuggestions | null,
+  governanceInput?: SuggestAgentGovernanceInput,
 ): string[] {
   const missing: string[] = [];
   for (const required of getRequiredAgentGovernancePaths(complexity)) {
     if (!fileMap[required]?.trim()) {
       missing.push(required);
       const factory = FALLBACK_BY_PATH[required];
-      if (factory) fileMap[required] = factory(complexity, suggestions);
+      if (factory) fileMap[required] = factory(complexity, suggestions, governanceInput);
     }
   }
   ensureAgentsInstallSection(fileMap);
+  ensureDocConsumptionGuide(fileMap);
   return missing;
+}
+
+function injectDynamicCursorArtifacts(
+  fileMap: Record<string, string>,
+  facts: ProjectGovernanceFacts,
+  complexity: ComplexityLevel,
+): void {
+  if (complexity === "LOW") return;
+  for (const [path, content] of Object.entries(buildDynamicCursorAgents(facts))) {
+    if (!fileMap[path]?.trim()) fileMap[path] = content;
+  }
+  for (const [path, content] of Object.entries(buildDynamicCursorCommands(facts))) {
+    if (!fileMap[path]?.trim()) fileMap[path] = content;
+  }
+}
+
+function enrichGovernanceArtifacts(
+  fileMap: Record<string, string>,
+  complexity: ComplexityLevel,
+  governanceInput: SuggestAgentGovernanceInput,
+  overlayOptions?: AgentGovernanceOverlayOptions,
+): void {
+  const facts = extractProjectGovernanceFacts(governanceInput);
+  const overlayOpts = overlayOptions;
+  console.warn(
+    `[agent-gov] enrichGovernanceArtifacts projectTitle=${facts.projectTitle} forceFreshOverlay=${overlayOptions?.forceFreshOverlay === true} fileCount=${Object.keys(fileMap).length}`,
+  );
+  const agentsPath = "AGENTS.md";
+  if (fileMap[agentsPath]?.trim()) {
+    fileMap[agentsPath] = appendSddConflictToAgents(
+      overlayProjectFacts(fileMap[agentsPath], facts, overlayOpts),
+      facts,
+    );
+  }
+  for (const [path, content] of Object.entries(fileMap)) {
+    const isRuleOrSkill =
+      path.startsWith(`${GOVERNANCE_DOCS_PREFIX}rules/`) ||
+      path.includes(`${GOVERNANCE_DOCS_PREFIX}skills/`);
+    const forceFresh = overlayOptions?.forceFreshOverlay === true;
+    if (
+      isRuleOrSkill &&
+      content.trim() &&
+      /## Hechos del proyecto \(/i.test(content) &&
+      !isStaleProjectFactsSection(content, facts) &&
+      !forceFresh
+    ) {
+      continue;
+    }
+    if (
+      isRuleOrSkill &&
+      content.trim() &&
+      shouldReplaceGovernanceArtifact(content, facts, forceFresh)
+    ) {
+      fileMap[path] = overlayProjectFacts(content, facts, overlayOpts, path);
+    }
+  }
+  const promptPath = "PROMPT-INICIAL.md";
+  if (
+    shouldReplaceGovernanceArtifact(fileMap[promptPath], facts, overlayOptions?.forceFreshOverlay === true)
+  ) {
+    fileMap[promptPath] = buildPromptInicialMd(facts, complexity);
+  }
+  const progresoPath = "docs/sdd/PROGRESO.md";
+  if (
+    shouldReplaceGovernanceArtifact(fileMap[progresoPath], facts, overlayOptions?.forceFreshOverlay === true)
+  ) {
+    fileMap[progresoPath] = buildProgresoMd(facts, governanceInput.tasksMarkdown);
+  }
 }
 
 function renderRuleFromCatalog(
@@ -463,28 +1116,46 @@ function mergeSuggestedArtifacts(
   fileMap: Record<string, string>,
   complexity: ComplexityLevel,
   suggestions: AgentGovernanceSuggestions | null | undefined,
-  mddMarkdown: string,
+  governanceInput: SuggestAgentGovernanceInput,
+  overlayOptions?: AgentGovernanceOverlayOptions,
 ): string[] {
   if (!suggestions) return [];
 
   const added: string[] = [];
-  const ctx = buildArtifactTemplateContext(suggestions, complexity, mddMarkdown);
+  const ctx = buildArtifactTemplateContext(suggestions, complexity, governanceInput);
+  const facts = ctx.projectFacts ?? extractProjectGovernanceFacts(governanceInput);
+  const forceFreshOverlay = overlayOptions?.forceFreshOverlay === true;
+  const overlayOpts = overlayOptions;
 
   for (const spec of suggestions.suggestedRules) {
     const path = normalizePath(spec.path);
-    if (fileMap[path]?.trim()) continue;
     const rule = getRuleById(spec.id);
     if (!rule) continue;
-    fileMap[path] = renderRuleFromCatalog(rule, ctx);
+    const catalogContent = overlayProjectFacts(
+      renderRuleFromCatalog(rule, ctx),
+      facts,
+      overlayOpts,
+      path,
+    );
+    const existing = fileMap[path]?.trim();
+    if (existing && !shouldReplaceGovernanceArtifact(existing, facts, forceFreshOverlay)) continue;
+    fileMap[path] = catalogContent;
     added.push(path);
   }
 
   for (const spec of suggestions.suggestedSkills) {
     const path = normalizePath(spec.path);
-    if (fileMap[path]?.trim()) continue;
     const skill = getSkillById(spec.id);
     if (!skill) continue;
-    fileMap[path] = renderSkillFromCatalog(skill, ctx, spec.folder);
+    const catalogContent = overlayProjectFacts(
+      renderSkillFromCatalog(skill, ctx, spec.folder),
+      facts,
+      overlayOpts,
+      path,
+    );
+    const existing = fileMap[path]?.trim();
+    if (existing && !shouldReplaceGovernanceArtifact(existing, facts, forceFreshOverlay)) continue;
+    fileMap[path] = catalogContent;
     added.push(path);
   }
 
@@ -579,34 +1250,65 @@ export function reconcileAgentGovernanceScaffold(
   complexity: ComplexityLevel,
   options?: {
     suggestions?: AgentGovernanceSuggestions | null;
+    governanceInput?: SuggestAgentGovernanceInput;
+    /** @deprecated use governanceInput */
     mddMarkdown?: string;
+    target?: GovernanceTarget;
+    forceFreshOverlay?: boolean;
   },
 ): AgentGovernanceScaffold {
   const suggestions =
     options?.suggestions ??
     suggestionsFromManifest(scaffold.manifest.suggestions) ??
     null;
-  const mddMarkdown = options?.mddMarkdown ?? "";
+  const governanceInput: SuggestAgentGovernanceInput =
+    options?.governanceInput ??
+    ({
+      mddMarkdown: options?.mddMarkdown ?? "",
+      complexity,
+    } satisfies SuggestAgentGovernanceInput);
+  const target = options?.target ?? "cursor";
+  const overlayOptions: AgentGovernanceOverlayOptions = {
+    forceFreshOverlay: options?.forceFreshOverlay === true,
+  };
+  const filesBefore = scaffold.files.length;
 
   const fileMap: Record<string, string> = {};
   for (const file of scaffold.files) {
     fileMap[normalizePath(file.path)] = file.content;
   }
 
-  const merged = mergeSuggestedArtifacts(fileMap, complexity, suggestions, mddMarkdown);
+  const facts = extractProjectGovernanceFacts(governanceInput);
+  const merged = mergeSuggestedArtifacts(
+    fileMap,
+    complexity,
+    suggestions,
+    governanceInput,
+    overlayOptions,
+  );
   if (merged.length > 0) {
     console.warn(
-      `[agent-governance] Reconcile: artefactos añadidos desde catálogo: ${merged.join(", ")}`,
+      `[agent-gov] reconcileAgentGovernanceScaffold addedPaths=${merged.join(", ")} forceFreshOverlay=${overlayOptions.forceFreshOverlay}`,
+    );
+  } else {
+    console.warn(
+      `[agent-gov] reconcileAgentGovernanceScaffold no catalog paths added forceFreshOverlay=${overlayOptions.forceFreshOverlay} filesBefore=${filesBefore}`,
     );
   }
 
-  applyRequiredFileFallbacks(fileMap, complexity, suggestions);
+  applyRequiredFileFallbacks(fileMap, complexity, suggestions, governanceInput);
+  enrichGovernanceArtifacts(fileMap, complexity, governanceInput, overlayOptions);
+  injectDynamicCursorArtifacts(fileMap, facts, complexity);
   appendSuggestionsToComoUsar(fileMap, suggestions);
+  applyCanonicalGovernanceDefaults(fileMap, complexity, suggestions, governanceInput);
 
   const files = recordToFileEntries(fileMap);
   const paths = files.map((f) => f.path);
+  console.warn(
+    `[agent-gov] reconcileAgentGovernanceScaffold filesBefore=${filesBefore} filesAfter=${files.length}`,
+  );
 
-  return {
+  const reconciled: AgentGovernanceScaffold = {
     manifest: {
       ...scaffold.manifest,
       templateVersion: scaffold.manifest.templateVersion || AGENT_GOVERNANCE_TEMPLATE_VERSION,
@@ -616,6 +1318,9 @@ export function reconcileAgentGovernanceScaffold(
     },
     files,
   };
+
+  // Aplicar adaptador multi-target
+  return remapGovernanceScaffold(reconciled, target);
 }
 
 /**
@@ -624,7 +1329,11 @@ export function reconcileAgentGovernanceScaffold(
  */
 export interface ParseAgentGovernanceOptions {
   suggestions?: AgentGovernanceSuggestions | null;
+  governanceInput?: SuggestAgentGovernanceInput;
+  /** @deprecated use governanceInput */
   mddMarkdown?: string;
+  target?: string;
+  forceFreshOverlay?: boolean;
 }
 
 export function parseAgentGovernanceResponse(
@@ -641,23 +1350,45 @@ export function parseAgentGovernanceResponse(
   }
 
   const suggestions = options?.suggestions ?? null;
-  const mddMarkdown = options?.mddMarkdown ?? "";
+  const governanceInput: SuggestAgentGovernanceInput =
+    options?.governanceInput ??
+    ({
+      mddMarkdown: options?.mddMarkdown ?? "",
+      complexity,
+    } satisfies SuggestAgentGovernanceInput);
+  const target = (options?.target as GovernanceTarget) ?? "cursor";
+  const overlayOptions: AgentGovernanceOverlayOptions = {
+    forceFreshOverlay: options?.forceFreshOverlay === true,
+  };
 
   const fileMap = capRulesAndSkills(parseLlmFilesPayload(parsed));
-  const merged = mergeSuggestedArtifacts(fileMap, complexity, suggestions, mddMarkdown);
+  const llmFileCount = Object.keys(fileMap).length;
+  const facts = extractProjectGovernanceFacts(governanceInput);
+  const merged = mergeSuggestedArtifacts(
+    fileMap,
+    complexity,
+    suggestions,
+    governanceInput,
+    overlayOptions,
+  );
+  console.warn(
+    `[agent-gov] parseAgentGovernanceResponse llmFiles=${llmFileCount} forceFreshOverlay=${overlayOptions.forceFreshOverlay} mergedCatalog=${merged.join(", ") || "none"}`,
+  );
   if (merged.length > 0) {
     console.warn(
-      `[agent-governance] Artefactos sugeridos añadidos desde catálogo (LLM omitió): ${merged.join(", ")}`,
+      `[agent-gov] parseAgentGovernanceResponse catalog paths added: ${merged.join(", ")}`,
     );
   }
 
-  const missing = applyRequiredFileFallbacks(fileMap, complexity, suggestions);
+  const missing = applyRequiredFileFallbacks(fileMap, complexity, suggestions, governanceInput);
   if (missing.length > 0) {
     console.warn(
-      `[agent-governance] Rutas obligatorias omitidas por LLM (${complexity}); fallback aplicado: ${missing.join(", ")}`,
+      `[agent-gov] parseAgentGovernanceResponse required fallbacks (${complexity}): ${missing.join(", ")}`,
     );
   }
 
+  enrichGovernanceArtifacts(fileMap, complexity, governanceInput, overlayOptions);
+  injectDynamicCursorArtifacts(fileMap, facts, complexity);
   appendSuggestionsToComoUsar(fileMap, suggestions);
 
   const files = recordToFileEntries(fileMap);
@@ -673,7 +1404,7 @@ export function parseAgentGovernanceResponse(
       files,
     },
     complexity,
-    { suggestions, mddMarkdown },
+    { suggestions, governanceInput, target, forceFreshOverlay: overlayOptions.forceFreshOverlay },
   );
 }
 

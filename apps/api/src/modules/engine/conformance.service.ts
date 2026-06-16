@@ -600,6 +600,35 @@ function extractLogicKeywords(text: string): Set<string> {
   return keywords;
 }
 
+/** ¿El documento Flujos cubre un término de lógica extraído del MDD §5? */
+function flowsCoversLogicKeyword(
+  kw: string,
+  flowsLogic: Set<string>,
+  logicFlowsContent: string,
+): boolean {
+  if (!kw || kw.length <= 2) return true;
+  if (flowsLogic.has(kw)) return true;
+  if (Array.from(flowsLogic).some((f) => f.includes(kw) || kw.includes(f))) return true;
+
+  const hasMermaidFence = /```mermaid/i.test(logicFlowsContent);
+  const hasSequence = /\bsequenceDiagram\b/i.test(logicFlowsContent);
+  const hasFlowchart = /\bflowchart\b/i.test(logicFlowsContent);
+  const hasDiagramWord = /\b(diagrama|flujo)\b/i.test(logicFlowsContent);
+
+  const diagramKeywords = new Set([
+    "flowchart",
+    "sequencediagram",
+    "sequence",
+    "mermaid",
+    "diagrama",
+    "flujo",
+  ]);
+  if (diagramKeywords.has(kw)) {
+    return hasMermaidFence || hasSequence || hasFlowchart || hasDiagramWord;
+  }
+  return false;
+}
+
 /**
  * Comprueba conformidad del documento de Flujos de lógica con el MDD (§5 Lógica y Edge Cases).
  */
@@ -619,11 +648,8 @@ export function checkLogicFlowsVsMdd(mddContent: string | null, logicFlowsConten
   const mddLogic = extractLogicKeywords(section5);
   const flowsLogic = extractLogicKeywords(logicFlowsContent);
   for (const kw of mddLogic) {
-    if (kw && kw.length > 2 && !flowsLogic.has(kw)) {
-      const inFlows = Array.from(flowsLogic).some((f) => f.includes(kw) || kw.includes(f));
-      if (!inFlows) {
-        gaps.push(`MDD §5 menciona "${kw}" pero no aparece en Flujos`);
-      }
+    if (!flowsCoversLogicKeyword(kw, flowsLogic, logicFlowsContent)) {
+      gaps.push(`MDD §5 menciona "${kw}" pero no aparece en Flujos`);
     }
   }
   const mddMentionsDiagrams = /\b(mermaid|diagrama|flowchart|sequence|flujo)\b/i.test(section5);

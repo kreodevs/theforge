@@ -9,7 +9,6 @@ import { createMddFormatterNode } from "../nodes/mdd-formatter.node.js";
 import { createMddDiagramInjectorNode } from "../nodes/mdd-diagram-injector.node.js";
 import { createMddSecurityNode } from "../nodes/mdd-security.node.js";
 import { createMddIntegrationNode } from "../nodes/mdd-integration.node.js";
-import { createMddSecurityIntegrationNode } from "../nodes/mdd-security-integration.node.js";
 import { createMddLlmFormatterNode } from "../nodes/mdd-llm-formatter.node.js";
 import { createMddAuditorNode } from "../nodes/mdd-auditor.node.js";
 import { createMddManagerNode, type MddManagerToolDeps } from "../nodes/mdd-manager.node.js";
@@ -18,6 +17,7 @@ import { createMddExecutorNode } from "../nodes/mdd-executor.node.js";
 import { createMddMergeSection1Node } from "../nodes/mdd-merge-section1.node.js";
 import { createMddGraphPopulatorNode } from "../nodes/mdd-graph-populator.node.js";
 import { createMddCrossConsistencyNode } from "../nodes/mdd-cross-consistency.node.js";
+import { createMddFormatSecIntNode } from "../nodes/mdd-format-sec-int.node.js";
 import { createMddBlackboardNode } from "../nodes/mdd-blackboard.node.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { createDbgaLLM, createMddAuditorLLM } from "../llm/create-dbga-llm.js";
@@ -104,9 +104,11 @@ export async function createMddGraph(
     }),
   );
   const formatterNode = createMddFormatterNode();
-  // Security + Integration combinados en un solo nodo que ejecuta ambos en paralelo (Promise.all).
-  // Ahorra ~60s vs secuencial; Security genera §6 e Integration §7 desde el mismo state base.
-  const securityIntegrationNode = createMddSecurityIntegrationNode(structuralLlm);
+  // Security + Integration en paralelo: cada nodo escribe su sección en staging fields
+  // (securitySectionMd / integrationSectionMd). format_sec_int aplica ambas sin conflicto LastValue.
+  const securityNode = wrapCache(nodeCache, "security", securityInput, createMddSecurityNode(structuralLlm));
+  const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(structuralLlm));
+  const formatSecIntNode = createMddFormatSecIntNode();
   const diagramInjectorNode = createMddDiagramInjectorNode();
   const consistencyNode = wrapCache(
     nodeCache,
@@ -129,8 +131,9 @@ export async function createMddGraph(
     .addNode("clarifier", clarifierNode)
     .addNode("software_architect", softwareArchitectNode)
     .addNode("format_after_architect", formatterNode)
-    // [PARALELO] Security + Integration corren en Promise.all dentro del nodo combinado
-    .addNode("security_integration", securityIntegrationNode)
+    .addNode("security", securityNode)
+    .addNode("integration", integrationNode)
+    .addNode("format_sec_int", formatSecIntNode)
     .addNode("format_after_redactor", formatterNode)
     .addNode("llm_formatter", llmFormatterNode)
     // [PARALELO] CrossConsistency (skip si draft completo) + DiagramInjector (code-only, <3s)
@@ -141,8 +144,11 @@ export async function createMddGraph(
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
     .addEdge("software_architect", "format_after_architect")
-    .addEdge("format_after_architect", "security_integration")
-    .addEdge("security_integration", "format_after_redactor")
+    .addEdge("format_after_architect", "security")
+    .addEdge("format_after_architect", "integration")
+    .addEdge("security", "format_sec_int")
+    .addEdge("integration", "format_sec_int")
+    .addEdge("format_sec_int", "format_after_redactor")
     .addEdge("format_after_redactor", "llm_formatter")
     .addEdge("llm_formatter", "cross_consistency_checker")
     .addEdge("llm_formatter", "diagram_injector")

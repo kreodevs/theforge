@@ -60,12 +60,15 @@ import {
   type UpdateProjectDto,
 } from "@theforge/shared-types";
 import {
+  appendProjectDeliverablesToScaffold,
   parseAgentGovernanceResponse,
   reconcileAgentGovernanceScaffold,
   serializeAgentGovernanceScaffold,
-  suggestionsFromManifest,
 } from "../ai/utils/agent-governance.util.js";
-import { suggestAgentGovernanceArtifacts } from "../ai/utils/suggest-agent-governance-artifacts.js";
+import {
+  suggestAgentGovernanceArtifacts,
+  type SuggestAgentGovernanceInput,
+} from "../ai/utils/suggest-agent-governance-artifacts.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
 import {
@@ -1298,47 +1301,82 @@ name: ${JSON.stringify(name)}
     return this.update(projectId, { specContent: cleanDocumentContent(specContent) });
   }
 
-  async generateAgentGovernance(projectId: string) {
+  /** Limpia gobernanza persistida antes de regenerar (polling y UI). */
+  async clearAgentGovernanceContent(projectId: string) {
+    return this.update(projectId, { agentGovernanceContent: null });
+  }
+
+  async generateAgentGovernance(
+    projectId: string,
+    target?: string,
+    options?: { forceRegenerate?: boolean },
+  ) {
+    const forceRegenerate = options?.forceRegenerate !== false;
     const project = await this.assertProjectAccess(projectId);
+    const beforeLen = (project.agentGovernanceContent ?? "").length;
+    console.warn(
+      `[agent-gov] generateAgentGovernance start projectId=${projectId} force=${forceRegenerate} beforeLen=${beforeLen}`,
+    );
+    if (forceRegenerate) {
+      console.warn(`[agent-gov] generateAgentGovernance clearing agentGovernanceContent projectId=${projectId}`);
+      await this.clearAgentGovernanceContent(projectId);
+    }
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const mdd = this.constitutionMarkdown(project);
-    const suggestions = suggestAgentGovernanceArtifacts({
-      mddMarkdown: mdd,
-      blueprintMarkdown: project.blueprintContent,
-      complexity,
-    });
+    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
+    const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
+    console.warn(
+      `[agent-gov] generateAgentGovernance input keys=${Object.keys(governanceInput).join(",")} archetypes=${suggestions.archetypes.length} rules=${suggestions.suggestedRules.length} skills=${suggestions.suggestedSkills.length}`,
+    );
     const raw = await this.ai.generateAgentGovernance(mdd, project.blueprintContent, complexity, {
       suggestions,
+      tasksContent: project.tasksContent,
+      architectureContent: project.architectureContent,
+      specContent: project.specContent,
     });
+    const forceFreshOverlay = forceRegenerate;
     const scaffold = parseAgentGovernanceResponse(raw, complexity, {
       suggestions,
-      mddMarkdown: mdd,
+      governanceInput,
+      target,
+      forceFreshOverlay,
     });
+    const serialized = serializeAgentGovernanceScaffold(scaffold);
+    console.warn(
+      `[agent-gov] generateAgentGovernance done projectId=${projectId} beforeLen=${beforeLen} afterLen=${serialized.length} files=${scaffold.files.length} rawPreview=${raw.slice(0, 80)}`,
+    );
     return this.update(projectId, {
-      agentGovernanceContent: serializeAgentGovernanceScaffold(scaffold),
+      agentGovernanceContent: serialized,
     });
   }
 
-  async generateAgentGovernancePreview(projectId: string): Promise<{ content: string }> {
+  async generateAgentGovernancePreview(
+    projectId: string,
+    target?: string,
+    options?: { forceRegenerate?: boolean },
+  ): Promise<{ content: string }> {
     const project = await this.assertProjectAccess(projectId);
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const mdd = this.constitutionMarkdown(project);
-    const suggestions = suggestAgentGovernanceArtifacts({
-      mddMarkdown: mdd,
-      blueprintMarkdown: project.blueprintContent,
-      complexity,
-    });
+    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
+    const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
     const raw = await this.ai.generateAgentGovernance(mdd, project.blueprintContent, complexity, {
       suggestions,
+      tasksContent: project.tasksContent,
+      architectureContent: project.architectureContent,
+      specContent: project.specContent,
     });
+    const forceFreshOverlay = options?.forceRegenerate !== false;
     const scaffold = parseAgentGovernanceResponse(raw, complexity, {
       suggestions,
-      mddMarkdown: mdd,
+      governanceInput,
+      target,
+      forceFreshOverlay,
     });
     return { content: serializeAgentGovernanceScaffold(scaffold) };
   }
 
-  /** Scaffold listo para ZIP: reconcilia sugerencias y rutas obligatorias sin re-llamar al LLM. */
+  /** Scaffold listo para ZIP: reconcilia sugerencias, rutas obligatorias y entregables SDD. */
   async getAgentGovernanceForExport(projectId: string) {
     const project = await this.assertProjectAccess(projectId);
     const raw = project.agentGovernanceContent;
@@ -1351,20 +1389,68 @@ name: ${JSON.stringify(name)}
       throw new BadRequestException("El scaffold de gobernanza no contiene archivos válidos.");
     }
 
+    const filesBefore = scaffold.files.length;
+    console.warn(
+      `[agent-gov] getAgentGovernanceForExport start projectId=${projectId} rawLen=${raw.length} filesBefore=${filesBefore}`,
+    );
+
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const mdd = this.constitutionMarkdown(project);
-    const suggestions =
-      suggestionsFromManifest(scaffold.manifest?.suggestions) ??
-      suggestAgentGovernanceArtifacts({
-        mddMarkdown: mdd,
-        blueprintMarkdown: project.blueprintContent,
-        complexity,
-      });
+    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
+    const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
 
-    return reconcileAgentGovernanceScaffold(scaffold, complexity, {
+    const reconciled = reconcileAgentGovernanceScaffold(scaffold, complexity, {
       suggestions,
-      mddMarkdown: mdd,
+      governanceInput,
+      forceFreshOverlay: true,
     });
+
+    const exportScaffold = appendProjectDeliverablesToScaffold(reconciled, {
+      mddMarkdown: mdd,
+      blueprintMarkdown: project.blueprintContent,
+      specMarkdown: project.specContent,
+      architectureMarkdown: project.architectureContent,
+      tasksMarkdown: project.tasksContent,
+      useCasesMarkdown: project.useCasesContent,
+      userStoriesMarkdown: project.userStoriesContent,
+      apiContractsMarkdown: project.apiContractsContent,
+      logicFlowsMarkdown: project.logicFlowsContent,
+      uxUiGuideMarkdown: project.uxUiGuideContent,
+      infraMarkdown: project.infraContent,
+    });
+
+    const serialized = serializeAgentGovernanceScaffold(exportScaffold);
+    const persisted = serialized !== raw;
+    console.warn(
+      `[agent-gov] getAgentGovernanceForExport done projectId=${projectId} filesAfter=${exportScaffold.files.length} serializedLen=${serialized.length} persisted=${persisted}`,
+    );
+    if (persisted) {
+      await this.update(projectId, { agentGovernanceContent: serialized });
+    }
+
+    return exportScaffold;
+  }
+
+    private buildAgentGovernanceInput(
+    project: Project,
+    mddMarkdown: string,
+    complexity: ComplexityLevel,
+  ): SuggestAgentGovernanceInput {
+    return {
+      mddMarkdown,
+      blueprintMarkdown: project.blueprintContent,
+      tasksMarkdown: project.tasksContent,
+      architectureMarkdown: project.architectureContent,
+      specMarkdown: project.specContent,
+      apiContractsMarkdown: project.apiContractsContent,
+      logicFlowsMarkdown: project.logicFlowsContent,
+      uxUiGuideMarkdown: project.uxUiGuideContent,
+      infraMarkdown: project.infraContent,
+      useCasesMarkdown: project.useCasesContent,
+      userStoriesMarkdown: project.userStoriesContent,
+      projectName: project.name,
+      complexity,
+    };
   }
 
   async generateTasks(projectId: string) {

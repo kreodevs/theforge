@@ -9,9 +9,10 @@ Generar el **documento de Casos de Uso y Flujos de Lógica** (Logic & Flows) en 
 **Contenido obligatorio del documento:**
 
 1. **Diagramas de Secuencia (Mermaid):** Al menos un flujo crítico completo (p. ej. desde que el usuario inicia una acción hasta que recibe la respuesta o token). Adapta al dominio (login, checkout, reserva, etc.).
-2. **Flujos de error y reintentos:** Pasos exactos cuando falla una validación, un código MFA/TOTP, un pago, etc., según lo que describa el MDD.
-3. **Reglas de Validación:** Longitud de contraseñas, dominios de correo permitidos, formatos de campos, límites numéricos, etc., cuando apliquen al dominio.
-4. **Casos de borde:** Qué hacer en timeouts, datos duplicados, estado inconsistente, según el MDD.
+2. **Diagramas flowchart (Mermaid):** Si el MDD §5 menciona `flowchart`, incluye **al menos un** bloque ` ```mermaid ` con `flowchart TD` o `flowchart LR` (la palabra `flowchart` debe aparecer en el diagrama). Complementa con `sequenceDiagram` donde aplique interacción entre actores.
+3. **Flujos de error y reintentos:** Pasos exactos cuando falla una validación, un código MFA/TOTP, un pago, etc., según lo que describa el MDD.
+4. **Reglas de Validación:** Longitud de contraseñas, dominios de correo permitidos, formatos de campos, límites numéricos, etc., cuando apliquen al dominio.
+5. **Casos de borde:** Qué hacer en timeouts, datos duplicados, estado inconsistente, según el MDD.
 
 # Cobertura exhaustiva (obligatoria cuando el MDD describe MVP completo) #
 

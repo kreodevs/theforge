@@ -303,6 +303,19 @@ export function buildMddContextForDeliverable(
   return parts.join("\n\n").slice(0, budget);
 }
 
+/** Hint explícito si §5 menciona flowchart (evita gap de conformidad). */
+export function buildLogicFlowsDiagramHint(mddContent: string): string {
+  const section5 = extractSection(
+    mddContent,
+    /^##\s*(?:5\.\s*)?(?:l[oó]gica\s+y\s+edge\s+cases|l[oó]gica\b|edge\s+cases)/im,
+  );
+  if (!/\bflowchart\b/i.test(section5)) return "";
+  return (
+    "**OBLIGATORIO (MDD §5):** Incluye al menos un bloque ```mermaid con `flowchart TD` o `flowchart LR` " +
+    "(la palabra `flowchart` debe figurar en el diagrama), además de sequenceDiagram si aplica."
+  );
+}
+
 export function buildMddContextForUserStories(
   mddContent: string,
   options?: MddDeliverableContextOptions,

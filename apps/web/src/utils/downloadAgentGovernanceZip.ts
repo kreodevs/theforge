@@ -47,6 +47,12 @@ function governanceInstallTarget(source: string): string | null {
   if (source === `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`) {
     return ".cursor/mcp.json";
   }
+  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}agents/`)) {
+    return `.cursor/agents/${source.slice(`${GOVERNANCE_DOCS_PREFIX}agents/`.length)}`;
+  }
+  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}commands/`)) {
+    return `.cursor/commands/${source.slice(`${GOVERNANCE_DOCS_PREFIX}commands/`.length)}`;
+  }
   return null;
 }
 
