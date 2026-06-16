@@ -7,6 +7,7 @@ import {
   formatDocumentMarkdown,
 } from "@theforge/shared-types/format-document-markdown";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue } from "../utils/apiClient";
+import { queueAndPoll } from "../utils/queueAndPoll";
 import { shouldApplyPersistedFieldContent } from "../utils/persist-field-guard";
 import {
   parseApiErrorPayloadFromResponse,
@@ -110,53 +111,6 @@ function errorStateFromCaught(e: unknown) {
     return streamErrorPatch({ message: e.message, code });
   }
   return streamErrorPatch({ message: String(e) });
-}
-
-/**
- * POST a un generate-* endpoint con ?queue=true y hace polling al job hasta completar.
- * Si el backend no tiene cola (respuesta síncrona directa), retorna el dato directamente.
- */
-async function queueAndPoll<T>(
-  url: string,
-  body: Record<string, unknown>,
-  signal?: AbortSignal,
-): Promise<T> {
-  const r = await apiFetch(`${url}?queue=true`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error((err as { message?: string }).message ?? "Error");
-  }
-  const data = (await r.json()) as Record<string, unknown>;
-
-  // Si el backend respondió síncrono (sin cola), devolver el dato directamente
-  if (!data.queued) return data as unknown as T;
-
-  // Polling: GET /projects/jobs/:jobId cada 2s
-  const jobId = data.jobId as string;
-  const pollUrl = `${API_BASE}/projects/jobs/${jobId}`;
-  for (let attempt = 0; attempt < 150; attempt++) {
-    if (signal?.aborted) throw new Error("Cancelado por el usuario");
-    await new Promise((r) => setTimeout(r, 2_000));
-    const pr = await apiFetch(pollUrl);
-    if (!pr.ok) {
-      if (pr.status === 404) throw new Error("Job no encontrado");
-      continue;
-    }
-    const status = (await pr.json()) as {
-      status: string;
-      result?: unknown;
-      error?: string;
-      retrying_at?: string;
-    };
-    if (status.status === "completed") return status.result as T;
-    if (status.status === "failed") throw new Error(status.error ?? "Error en la generación");
-    // "queued", "active", "retrying" → seguir esperando
-  }
-  throw new Error("Tiempo de espera agotado (5 min)");
 }
 
 function pickEvaluatorCritique(data: Record<string, unknown>): string | null {
