@@ -3,6 +3,7 @@ import assert from "node:assert";
 import {
   AGENT_GOVERNANCE_REQUIRED_ALL,
   AGENT_GOVERNANCE_REQUIRED_MEDIUM,
+  appendProjectDeliverablesToScaffold,
   getRequiredAgentGovernancePaths,
   parseAgentGovernanceResponse,
   reconcileAgentGovernanceScaffold,
@@ -44,6 +45,8 @@ describe("parseAgentGovernanceResponse", () => {
     assert.ok(paths.includes("docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md"));
     assert.ok(paths.includes("docs/agent-governance/agent-onboarding.md"));
     assert.ok(paths.includes("docs/agent-governance/INSTALACION.md"));
+    assert.ok(paths.includes("PROMPT-INICIAL.md"));
+    assert.ok(paths.includes("docs/sdd/PROGRESO.md"));
     const agents = scaffold.files.find((f) => f.path === "AGENTS.md");
     assert.ok(agents?.content.includes("Instalación de gobernanza"));
     const comoUsar = scaffold.files.find(
@@ -61,6 +64,11 @@ describe("parseAgentGovernanceResponse", () => {
     assert.ok(paths.includes("docs/agent-governance/references/PROMPT_HANDOFF_AGENTE.md"));
     assert.ok(paths.includes("docs/agent-governance/mcp.json.example"));
     assert.ok(paths.includes("scripts/install-agent-governance.sh"));
+    const installScript = scaffold.files.find(
+      (f) => f.path === "scripts/install-agent-governance.sh",
+    );
+    assert.ok(installScript?.content.includes(".cursor/agents"));
+    assert.ok(installScript?.content.includes(".cursor/commands"));
     assert.equal(paths.some((p) => p.startsWith(".cursor/")), false);
     assert.ok(scaffold.manifest.installMap?.length);
   });
@@ -117,6 +125,37 @@ REST OpenAPI Zod.
     assert.equal(
       scaffold.files.some((f) => f.path.startsWith(".cursor/")),
       false,
+    );
+  });
+
+  it("enriquece contenido fino del LLM con hechos del proyecto", () => {
+    const suggestions = suggestAgentGovernanceArtifacts({
+      mddMarkdown: `
+# MDD
+## 2. Stack
+Backend FastAPI, frontend React Native Expo.
+`,
+      complexity: "MEDIUM",
+    });
+    const raw = JSON.stringify({
+      files: {
+        "docs/agent-governance/rules/stack-backend.mdc": "# Stack backend\n\nCorto.\n",
+      },
+    });
+    const scaffold = parseAgentGovernanceResponse(raw, "MEDIUM", {
+      suggestions,
+      governanceInput: {
+        mddMarkdown: "Backend FastAPI, mobile Expo",
+        tasksMarkdown: "## Sprint 1\n",
+        complexity: "MEDIUM",
+      },
+    });
+    const rule = scaffold.files.find(
+      (f) => f.path === "docs/agent-governance/rules/stack-backend.mdc",
+    );
+    assert.ok(rule?.content.includes("Hechos del proyecto (TheForge)"));
+    assert.ok(
+      scaffold.files.some((f) => f.path === "docs/agent-governance/agents/mobile-implementer.md"),
     );
   });
 });
@@ -201,5 +240,20 @@ REST con validación Zod y OpenAPI.
     assert.ok(paths.includes("docs/agent-governance/mcp.json.example"));
     assert.ok(paths.includes("docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md"));
     assert.equal(paths.some((p) => p.startsWith(".cursor/")), false);
+  });
+});
+
+describe("appendProjectDeliverablesToScaffold", () => {
+  it("añade entregables SDD bajo docs/sdd/ en export", () => {
+    const base = parseAgentGovernanceResponse('{"files":{}}', "LOW");
+    const enriched = appendProjectDeliverablesToScaffold(base, {
+      mddMarkdown: "# MDD\n",
+      tasksMarkdown: "# Tasks\n",
+      blueprintMarkdown: "# Blueprint\n",
+    });
+    const paths = enriched.files.map((f) => f.path);
+    assert.ok(paths.includes("docs/sdd/mdd.md"));
+    assert.ok(paths.includes("docs/sdd/tasks.md"));
+    assert.ok(paths.includes("docs/sdd/blueprint.md"));
   });
 });

@@ -51,12 +51,16 @@ import {
   type UpdateProjectDto,
 } from "@theforge/shared-types";
 import {
+  appendProjectDeliverablesToScaffold,
   parseAgentGovernanceResponse,
   reconcileAgentGovernanceScaffold,
   serializeAgentGovernanceScaffold,
   suggestionsFromManifest,
 } from "../ai/utils/agent-governance.util.js";
-import { suggestAgentGovernanceArtifacts } from "../ai/utils/suggest-agent-governance-artifacts.js";
+import {
+  suggestAgentGovernanceArtifacts,
+  type SuggestAgentGovernanceInput,
+} from "../ai/utils/suggest-agent-governance-artifacts.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
 import {
@@ -1254,17 +1258,17 @@ name: ${JSON.stringify(name)}
     const project = await this.assertProjectAccess(projectId);
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const mdd = this.constitutionMarkdown(project);
-    const suggestions = suggestAgentGovernanceArtifacts({
-      mddMarkdown: mdd,
-      blueprintMarkdown: project.blueprintContent,
-      complexity,
-    });
+    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
+    const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
     const raw = await this.ai.generateAgentGovernance(mdd, project.blueprintContent, complexity, {
       suggestions,
+      tasksContent: project.tasksContent,
+      architectureContent: project.architectureContent,
+      specContent: project.specContent,
     });
     const scaffold = parseAgentGovernanceResponse(raw, complexity, {
       suggestions,
-      mddMarkdown: mdd,
+      governanceInput,
       target,
     });
     return this.update(projectId, {
@@ -1276,23 +1280,23 @@ name: ${JSON.stringify(name)}
     const project = await this.assertProjectAccess(projectId);
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const mdd = this.constitutionMarkdown(project);
-    const suggestions = suggestAgentGovernanceArtifacts({
-      mddMarkdown: mdd,
-      blueprintMarkdown: project.blueprintContent,
-      complexity,
-    });
+    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
+    const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
     const raw = await this.ai.generateAgentGovernance(mdd, project.blueprintContent, complexity, {
       suggestions,
+      tasksContent: project.tasksContent,
+      architectureContent: project.architectureContent,
+      specContent: project.specContent,
     });
     const scaffold = parseAgentGovernanceResponse(raw, complexity, {
       suggestions,
-      mddMarkdown: mdd,
+      governanceInput,
       target,
     });
     return { content: serializeAgentGovernanceScaffold(scaffold) };
   }
 
-  /** Scaffold listo para ZIP: reconcilia sugerencias y rutas obligatorias sin re-llamar al LLM. */
+  /** Scaffold listo para ZIP: reconcilia sugerencias, rutas obligatorias y entregables SDD. */
   async getAgentGovernanceForExport(projectId: string) {
     const project = await this.assertProjectAccess(projectId);
     const raw = project.agentGovernanceContent;
@@ -1307,14 +1311,43 @@ name: ${JSON.stringify(name)}
 
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const mdd = this.constitutionMarkdown(project);
+    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
     // NO llamar a suggestAgentGovernanceArtifacts() aquí — es un LLM call que timeouta.
-    // reconcileAgentGovernanceScaffold ya tiene el fallback suggestionsFromManifest → null.
     const suggestions = suggestionsFromManifest(scaffold.manifest?.suggestions) ?? null;
 
-    return reconcileAgentGovernanceScaffold(scaffold, complexity, {
+    const reconciled = reconcileAgentGovernanceScaffold(scaffold, complexity, {
       suggestions,
-      mddMarkdown: mdd,
+      governanceInput,
     });
+
+    return appendProjectDeliverablesToScaffold(reconciled, {
+      mddMarkdown: mdd,
+      blueprintMarkdown: project.blueprintContent,
+      specMarkdown: project.specContent,
+      architectureMarkdown: project.architectureContent,
+      tasksMarkdown: project.tasksContent,
+      useCasesMarkdown: project.useCasesContent,
+      userStoriesMarkdown: project.userStoriesContent,
+      apiContractsMarkdown: project.apiContractsContent,
+      logicFlowsMarkdown: project.logicFlowsContent,
+      uxUiGuideMarkdown: project.uxUiGuideContent,
+      infraMarkdown: project.infraContent,
+    });
+  }
+
+  private buildAgentGovernanceInput(
+    project: Project,
+    mddMarkdown: string,
+    complexity: ComplexityLevel,
+  ): SuggestAgentGovernanceInput {
+    return {
+      mddMarkdown,
+      blueprintMarkdown: project.blueprintContent,
+      tasksMarkdown: project.tasksContent,
+      architectureMarkdown: project.architectureContent,
+      specMarkdown: project.specContent,
+      complexity,
+    };
   }
 
   async generateTasks(projectId: string) {

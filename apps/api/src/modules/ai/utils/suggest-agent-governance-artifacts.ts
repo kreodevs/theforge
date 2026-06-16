@@ -36,11 +36,33 @@ export interface AgentGovernanceSuggestions {
 export interface SuggestAgentGovernanceInput {
   mddMarkdown: string;
   blueprintMarkdown?: string | null;
+  tasksMarkdown?: string | null;
+  architectureMarkdown?: string | null;
+  specMarkdown?: string | null;
   complexity: ComplexityLevel;
 }
 
+export interface ProjectGovernanceFacts {
+  backendStack?: string;
+  frontendStack?: string;
+  mobileStack?: string;
+  infraStack?: string;
+  docPaths: string[];
+  taskHeadings: string[];
+  architectureLayers: string[];
+  blueprintModules: string[];
+}
+
 function corpus(input: SuggestAgentGovernanceInput): string {
-  return [input.mddMarkdown, input.blueprintMarkdown ?? ""].filter(Boolean).join("\n\n");
+  return [
+    input.mddMarkdown,
+    input.blueprintMarkdown ?? "",
+    input.tasksMarkdown ?? "",
+    input.architectureMarkdown ?? "",
+    input.specMarkdown ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function matchesSignals(text: string, signals: RegExp[]): boolean {
@@ -50,13 +72,17 @@ function matchesSignals(text: string, signals: RegExp[]): boolean {
 function detectArchetypes(text: string, complexity: ComplexityLevel): string[] {
   const found = new Set<string>();
 
-  const hasBackend = /nestjs|express|fastify|django|laravel|spring/i.test(text);
+  const hasBackend =
+    /nestjs|express|fastify|fastapi|django|laravel|spring|hono|cloudflare\s+workers?|workers?\s+api/i.test(
+      text,
+    );
   const hasFrontend = /react|vue|svelte|angular|next\.js/i.test(text);
+  const hasMobile = /expo|react\s*native|react-native/i.test(text);
   const isMonorepo = /monorepo|lerna|pnpm\s+workspace|turborepo|packages\//i.test(text);
 
-  if (hasBackend && hasFrontend && isMonorepo) found.add("nestjs-react-monorepo");
-  if (hasBackend && !hasFrontend) found.add("api-only");
-  if (hasFrontend && !hasBackend) found.add("spa-only");
+  if (hasBackend && (hasFrontend || hasMobile) && isMonorepo) found.add("nestjs-react-monorepo");
+  if (hasBackend && !hasFrontend && !hasMobile) found.add("api-only");
+  if ((hasFrontend || hasMobile) && !hasBackend) found.add("spa-only");
   if (/design\s+system|paquete\s+ui|@\w+\/ui\b|storybook/i.test(text)) {
     found.add("design-system-ui");
   }
@@ -64,11 +90,21 @@ function detectArchetypes(text: string, complexity: ComplexityLevel): string[] {
     found.add("legacy-ariadne");
   }
   if (/\bjwt\b|oauth|§\s*6|autenticaci[oó]n/i.test(text)) found.add("auth-jwt");
-  if (/docker|dokploy|kubernetes|\bk8s\b|§\s*7/i.test(text)) found.add("docker-dokploy");
+  if (/docker|dokploy|kubernetes|\bk8s\b|§\s*7|serverless|cloudflare/i.test(text)) {
+    found.add("docker-dokploy");
+  }
   if (/\bmcp\b|model\s+context\s+protocol|figma\s+mcp/i.test(text)) found.add("mcp-enabled");
 
   if (complexity === "LOW" && found.size === 0) {
-    if (hasBackend || hasFrontend) found.add(hasBackend && hasFrontend ? "nestjs-react-monorepo" : hasBackend ? "api-only" : "spa-only");
+    if (hasBackend || hasFrontend || hasMobile) {
+      found.add(
+        hasBackend && (hasFrontend || hasMobile)
+          ? "nestjs-react-monorepo"
+          : hasBackend
+            ? "api-only"
+            : "spa-only",
+      );
+    }
   }
 
   return [...found].filter((a) =>
@@ -76,18 +112,69 @@ function detectArchetypes(text: string, complexity: ComplexityLevel): string[] {
   );
 }
 
-function inferStacks(text: string): { backend?: string; frontend?: string } {
+function firstMatchLabel(text: string, patterns: Array<[RegExp, string]>): string | undefined {
+  for (const [re, label] of patterns) {
+    if (re.test(text)) return label;
+  }
+  return undefined;
+}
+
+export function inferStacks(text: string): {
+  backend?: string;
+  frontend?: string;
+  mobile?: string;
+  infra?: string;
+} {
+  const backend = firstMatchLabel(text, [
+    [/fastapi/i, "FastAPI"],
+    [/nestjs/i, "NestJS"],
+    [/cloudflare\s+workers?|workers?\s+api/i, "Cloudflare Workers"],
+    [/\bhono\b/i, "Hono"],
+    [/express/i, "Express"],
+    [/fastify/i, "Fastify"],
+    [/django/i, "Django"],
+    [/laravel/i, "Laravel"],
+    [/spring\s*boot/i, "Spring Boot"],
+    [/go\s*\/\s*gin|\bgin\b.*go/i, "Go (Gin)"],
+    [/supabase\s+edge/i, "Supabase Edge Functions"],
+  ]);
+
+  const mobile = firstMatchLabel(text, [
+    [/react\s*native|react-native/i, "React Native"],
+    [/\bexpo\b/i, "Expo"],
+    [/flutter/i, "Flutter"],
+  ]);
+
+  const frontend = mobile
+    ? undefined
+    : firstMatchLabel(text, [
+        [/next\.js/i, "Next.js"],
+        [/react/i, "React"],
+        [/\bvue\b/i, "Vue"],
+        [/svelte/i, "Svelte"],
+        [/angular/i, "Angular"],
+      ]);
+
+  const infra = firstMatchLabel(text, [
+    [/serverless/i, "Serverless"],
+    [/cloudflare/i, "Cloudflare"],
+    [/dokploy/i, "Dokploy"],
+    [/kubernetes|\bk8s\b/i, "Kubernetes"],
+    [/docker/i, "Docker"],
+  ]);
+
   const backendMatch = text.match(
-    /(?:backend|servidor|api)[:\s]+([A-Za-z][A-Za-z0-9.\s]{1,40})/i,
+    /(?:backend|servidor|api)[:\s]+([A-Za-z][A-Za-z0-9.\s/]{1,48})/i,
   );
   const frontendMatch = text.match(
-    /(?:frontend|cliente|ui)[:\s]+([A-Za-z][A-Za-z0-9.\s]{1,40})/i,
+    /(?:frontend|cliente|ui|mobile)[:\s]+([A-Za-z][A-Za-z0-9.\s/]{1,48})/i,
   );
-  const nest = /nestjs/i.test(text) ? "NestJS" : undefined;
-  const react = /react/i.test(text) ? "React" : undefined;
+
   return {
-    backend: nest ?? backendMatch?.[1]?.trim().split(/\s/)[0],
-    frontend: react ?? frontendMatch?.[1]?.trim().split(/\s/)[0],
+    backend: backend ?? backendMatch?.[1]?.trim().split(/\s/)[0],
+    frontend: frontend ?? frontendMatch?.[1]?.trim().split(/\s/)[0],
+    mobile,
+    infra,
   };
 }
 
@@ -97,6 +184,61 @@ function inferDomainSkillFolder(text: string): string | undefined {
   const scope = text.match(/@([\w-]+)\/([\w-]+)/)?.[2];
   if (scope) return `${scope}-package`;
   return undefined;
+}
+
+/** Extrae hechos estructurados del proyecto para inyectar en plantillas de gobernanza. */
+export function extractProjectGovernanceFacts(
+  input: SuggestAgentGovernanceInput,
+): ProjectGovernanceFacts {
+  const text = corpus(input);
+  const stacks = inferStacks(text);
+
+  const docPaths = [
+    "docs/sdd/mdd.md",
+    input.blueprintMarkdown?.trim() ? "docs/sdd/blueprint.md" : null,
+    input.specMarkdown?.trim() ? "docs/sdd/spec.md" : null,
+    input.architectureMarkdown?.trim() ? "docs/sdd/architecture.md" : null,
+    input.tasksMarkdown?.trim() ? "docs/sdd/tasks.md" : null,
+    "docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md",
+    "AGENTS.md",
+  ].filter((p): p is string => !!p);
+
+  const taskHeadings: string[] = [];
+  const tasksText = input.tasksMarkdown ?? "";
+  for (const line of tasksText.split("\n")) {
+    const h = line.match(/^#{1,3}\s+(.+)/);
+    if (h?.[1]) taskHeadings.push(h[1].trim().slice(0, 120));
+    if (taskHeadings.length >= 12) break;
+  }
+
+  const architectureLayers: string[] = [];
+  const archText = input.architectureMarkdown ?? "";
+  for (const line of archText.split("\n")) {
+    const h = line.match(/^#{2,3}\s+(.+)/);
+    if (h?.[1]) architectureLayers.push(h[1].trim().slice(0, 100));
+    if (architectureLayers.length >= 10) break;
+  }
+
+  const blueprintModules: string[] = [];
+  const bpText = input.blueprintMarkdown ?? "";
+  for (const line of bpText.split("\n")) {
+    const bullet = line.match(/^[-*]\s+`?([^`\n]+)`?/);
+    if (bullet?.[1] && /apps\/|packages\/|src\//i.test(bullet[1])) {
+      blueprintModules.push(bullet[1].trim().slice(0, 80));
+    }
+    if (blueprintModules.length >= 8) break;
+  }
+
+  return {
+    backendStack: stacks.backend,
+    frontendStack: stacks.frontend,
+    mobileStack: stacks.mobile,
+    infraStack: stacks.infra,
+    docPaths,
+    taskHeadings,
+    architectureLayers,
+    blueprintModules,
+  };
 }
 
 function wizardArchitectureActive(mdd: string): boolean {
@@ -200,7 +342,7 @@ function resolveSkillPath(skill: SkillCatalogEntry, folder?: string): string {
 }
 
 /**
- * Detecta arquetipos y artefactos (rules/skills) sugeridos desde MDD, Blueprint y complejidad.
+ * Detecta arquetipos y artefactos (rules/skills) sugeridos desde MDD, Blueprint, Tasks, Architecture y complejidad.
  */
 export function suggestAgentGovernanceArtifacts(
   input: SuggestAgentGovernanceInput,
@@ -212,6 +354,12 @@ export function suggestAgentGovernanceArtifacts(
 
   if (archetypes.length > 0) {
     rationale.push(`Arquetipos detectados: ${archetypes.join(", ")}.`);
+  }
+
+  const stacks = inferStacks(text);
+  const stackParts = [stacks.backend, stacks.frontend, stacks.mobile, stacks.infra].filter(Boolean);
+  if (stackParts.length > 0) {
+    rationale.push(`Stack inferido: ${stackParts.join(", ")}.`);
   }
 
   const suggestedRules: RuleSpec[] = [];
@@ -255,6 +403,10 @@ export function suggestAgentGovernanceArtifacts(
     rationale.push("Complejidad HIGH + monorepo: considerar AGENTS.md anidados bajo packages/.");
   }
 
+  if (input.tasksMarkdown?.trim()) {
+    rationale.push("Tasks disponibles: PROMPT-INICIAL y PROGRESO derivados del checklist.");
+  }
+
   return {
     archetypes,
     suggestedRules: capped.rules,
@@ -271,7 +423,7 @@ export function formatSuggestedArtifactsPromptBlock(
     "## ARTEFACTOS SUGERIDOS (detector TheForge — obligatorio)",
     "",
     "Genera **exactamente** estos artefactos del catálogo (paths y propósito). " +
-      "Puedes enriquecer el contenido con datos del MDD/Blueprint; **no** inventes otros skills " +
+      "Puedes enriquecer el contenido con datos del MDD/Blueprint/Tasks/Architecture; **no** inventes otros skills " +
       "salvo **1** skill de dominio nombrada explícitamente en §1.",
     "",
   ];
@@ -309,14 +461,19 @@ export function formatSuggestedArtifactsPromptBlock(
 export function buildArtifactTemplateContext(
   suggestions: AgentGovernanceSuggestions,
   complexity: ComplexityLevel,
-  mddMarkdown: string,
+  input: SuggestAgentGovernanceInput,
 ): ArtifactTemplateContext {
-  const stacks = inferStacks(mddMarkdown);
+  const text = corpus(input);
+  const stacks = inferStacks(text);
+  const facts = extractProjectGovernanceFacts(input);
   return {
     complexity,
     archetypes: suggestions.archetypes,
-    domainSkillFolder: inferDomainSkillFolder(mddMarkdown),
+    domainSkillFolder: inferDomainSkillFolder(text),
     backendStack: stacks.backend,
-    frontendStack: stacks.frontend,
+    frontendStack: stacks.frontend ?? stacks.mobile,
+    mobileStack: stacks.mobile,
+    infraStack: stacks.infra,
+    projectFacts: facts,
   };
 }
