@@ -490,6 +490,11 @@ function formatStackSection(facts: ProjectGovernanceFacts): string {
   return lines.length > 0 ? lines.join("\n") : "- Deriva el stack del MDD §2 y del Blueprint.";
 }
 
+function filterArchitectureLayersForUi(layers: string[], hasUi: boolean): string[] {
+  if (hasUi) return layers;
+  return layers.filter((l) => !/^(frontend|ui|capa ui|presentaci[oó]n|cliente web|mobile)/i.test(l.trim()));
+}
+
 function buildSddConflictSection(facts: ProjectGovernanceFacts): string {
   if (facts.sddConflicts.length === 0) return "";
   const lines = [
@@ -546,7 +551,10 @@ function buildProjectFactsBlock(
     }
   }
   if (facts.architectureLayers.length > 0) {
-    parts.push("**Capas:**", ...facts.architectureLayers.map((l) => `- ${l}`), "");
+    const layers = filterArchitectureLayersForUi(facts.architectureLayers, facts.hasUiSurface);
+    if (layers.length > 0) {
+      parts.push("**Capas:**", ...layers.map((l) => `- ${l}`), "");
+    }
   }
   if (facts.taskCheckboxes.length > 0) {
     parts.push("**Tasks (extracto):**", ...facts.taskCheckboxes.slice(0, 5), "");
@@ -572,9 +580,10 @@ function buildPromptInicialMd(facts: ProjectGovernanceFacts, complexity: Complex
       : facts.taskHeadings.length > 0
         ? facts.taskHeadings.slice(0, 5).map((h) => `- [ ] ${h}`).join("\n")
         : "- Consulta `docs/sdd/tasks.md` para el checklist completo.";
+  const archLayers = filterArchitectureLayersForUi(facts.architectureLayers, facts.hasUiSurface);
   const archPreview =
-    facts.architectureLayers.length > 0
-      ? facts.architectureLayers.map((l) => `- ${l}`).join("\n")
+    archLayers.length > 0
+      ? archLayers.map((l) => `- ${l}`).join("\n")
       : "- Consulta `docs/sdd/architecture.md` si existe.";
   const modulesPreview =
     facts.blueprintModules.length > 0

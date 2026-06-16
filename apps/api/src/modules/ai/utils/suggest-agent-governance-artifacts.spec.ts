@@ -347,6 +347,51 @@ describe("extractProjectGovernanceFacts", () => {
     assert.ok(agents?.content.includes("Hechos del proyecto (KMS Corporativo)"));
     assert.equal(agents?.content.includes("**Frontend:**"), false);
   });
+
+  it("ignora tokens de encabezado MDD al inferir globs desde Blueprint", () => {
+    const facts = extractProjectGovernanceFacts({
+      mddMarkdown: `# Master Design Document
+
+## NOTA DE SISTEMA
+
+Esta sección describe Patrones activos vigente en el MDD.
+Monorepo kms-backend/ y packages/shared.
+
+## 2. Stack
+Backend NestJS API-only sin dashboard ni frontend.
+`,
+      specMarkdown: "CLI-only; sin interfaz web.",
+      blueprintMarkdown: "## Estructura\n- kms-backend/\n- packages/shared/\n",
+      complexity: "MEDIUM",
+    });
+    assert.ok(facts.backendGlobs.some((g) => g === "kms-backend/**"));
+    assert.ok(facts.backendGlobs.some((g) => g === "packages/shared/**"));
+    for (const bad of ["Master/**", "NOTA/**", "Esta/**", "Patrones/**", "vigente/**"]) {
+      assert.equal(
+        facts.backendGlobs.includes(bad),
+        false,
+        `no debe incluir glob contaminado ${bad}`,
+      );
+    }
+  });
+
+  it("Stack inferido omite React en proyectos API-only", () => {
+    const result = suggestAgentGovernanceArtifacts({
+      mddMarkdown: `
+# KMS Backend
+## 2. Stack
+Backend NestJS. Frontend React mencionado en roadmap post-MVP.
+API-only MVP sin dashboard ni frontend.
+`,
+      specMarkdown: "CLI-only; sin interfaz web.",
+      blueprintMarkdown: "- kms-backend/\n",
+      complexity: "MEDIUM",
+    });
+    const stackLine = result.rationale.find((r) => r.startsWith("Stack inferido:"));
+    assert.ok(stackLine);
+    assert.match(stackLine!, /NestJS/i);
+    assert.equal(/React/i.test(stackLine!), false);
+  });
 });
 
 describe("isValidBlueprintModulePath", () => {
@@ -358,6 +403,15 @@ describe("isValidBlueprintModulePath", () => {
     assert.equal(isValidBlueprintModulePath("Observabilidad: logs"), false);
     assert.equal(isValidBlueprintModulePath("Entidades"), false);
     assert.equal(isValidBlueprintModulePath("Schemas"), false);
+  });
+
+  it("rechaza tokens de encabezado MDD y palabras sueltas capitalizadas", () => {
+    assert.equal(isValidBlueprintModulePath("Master"), false);
+    assert.equal(isValidBlueprintModulePath("NOTA"), false);
+    assert.equal(isValidBlueprintModulePath("Esta"), false);
+    assert.equal(isValidBlueprintModulePath("Patrones"), false);
+    assert.equal(isValidBlueprintModulePath("vigente"), false);
+    assert.equal(isValidBlueprintModulePath("Document"), false);
   });
 });
 

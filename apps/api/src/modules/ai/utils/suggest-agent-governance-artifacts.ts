@@ -421,7 +421,40 @@ const BLUEPRINT_PROSE_TOKENS = new Set([
   "antes",
   "si",
   "tabla",
+  // MDD / SDD header prose (Spanish + English)
+  "master",
+  "nota",
+  "esta",
+  "patrones",
+  "vigente",
+  "document",
+  "design",
+  "seccion",
+  "sección",
+  "contexto",
+  "proposito",
+  "propósito",
+  "stack",
+  "arquitectura",
+  "documento",
+  "sistema",
+  "activos",
+  "descripcion",
+  "descripción",
+  "constituye",
+  "introduccion",
+  "introducción",
+  "vision",
+  "visión",
+  "section",
+  "this",
+  "note",
+  "active",
+  "patterns",
+  "current",
 ]);
+
+const KNOWN_MONOREPO_ROOTS = new Set(["apps", "packages", "services", "libs"]);
 
 /** Valid repo path: kms-backend/, packages/foo/, apps/api/ — not prose bullets. */
 export function isValidBlueprintModulePath(raw: string): boolean {
@@ -437,11 +470,22 @@ export function isValidBlueprintModulePath(raw: string): boolean {
   if (!segments.every(validSegment)) return false;
   if (segments.some((s) => BLUEPRINT_PROSE_TOKENS.has(s.toLowerCase()))) return false;
 
-  if (segments[0] === "apps" || segments[0] === "packages") {
-    return segments.length >= 2;
+  const first = segments[0]!;
+
+  // Single-word paths: known project prefix only (reject bare capitalized prose tokens).
+  if (segments.length === 1) {
+    if (/^[A-Z]/.test(first) && !/^kms-/i.test(first)) return false;
+    return /^kms-/i.test(first);
   }
-  if (/^kms-/i.test(segments[0]!) || /^[a-z0-9][a-z0-9_-]*$/i.test(segments[0]!)) {
+
+  if (KNOWN_MONOREPO_ROOTS.has(first.toLowerCase())) {
+    return segments.length >= 2 && segments.length <= 4;
+  }
+  if (/^kms-/i.test(first)) {
     return segments.length <= 3;
+  }
+  if (/^(src|lib)$/i.test(first)) {
+    return segments.length >= 2;
   }
   return false;
 }
@@ -498,37 +542,26 @@ function classifyGlobPath(path: string): "backend" | "frontend" | "both" {
   return "both";
 }
 
-function inferCodebaseGlobs(blueprintModules: string[], text: string): {
+function inferCodebaseGlobs(blueprintModules: string[], hasUi: boolean): {
   backend: string[];
   frontend: string[];
 } {
   const backend = new Set<string>();
   const frontend = new Set<string>();
-  const all = new Set<string>();
 
   for (const mod of blueprintModules) {
     const clean = mod.replace(/[`'"\\]/g, "").trim().replace(/\/$/, "");
     if (!clean || !isValidBlueprintModulePath(clean)) continue;
-    all.add(`${clean}/**`);
     const kind = classifyGlobPath(clean);
     if (kind === "backend" || kind === "both") backend.add(`${clean}/**`);
     if (kind === "frontend" || kind === "both") frontend.add(`${clean}/**`);
-  }
-
-  for (const line of text.split("\n")) {
-    const dir = line.match(/(?:^|\s|`)([a-z0-9_-]+(?:\/[a-z0-9_-]+)?)\/?(?:`|$|\s)/i)?.[1];
-    if (!dir || !isValidBlueprintModulePath(dir)) continue;
-    all.add(`${dir}/**`);
-    const kind = classifyGlobPath(dir);
-    if (kind === "backend" || kind === "both") backend.add(`${dir}/**`);
-    if (kind === "frontend" || kind === "both") frontend.add(`${dir}/**`);
   }
 
   if (backend.size === 0) {
     backend.add("src/**");
     backend.add("packages/**/src/**");
   }
-  if (frontend.size === 0 && hasUiSurface(text)) {
+  if (frontend.size === 0 && hasUi) {
     frontend.add("apps/web/**");
     frontend.add("packages/**/src/**");
   }
@@ -565,10 +598,11 @@ export function extractProjectGovernanceFacts(
 ): ProjectGovernanceFacts {
   const text = corpus(input);
   const authoritativeUiText = [input.mddMarkdown, input.specMarkdown].filter(Boolean).join("\n\n");
+  const uiSurface = hasUiSurface(text, authoritativeUiText);
   const stacks = inferStacks(text);
   const projectTitle = extractProjectTitle(input);
   const blueprintModules = extractBlueprintModules(input.blueprintMarkdown ?? "");
-  const globs = inferCodebaseGlobs(blueprintModules, text);
+  const globs = inferCodebaseGlobs(blueprintModules, uiSurface);
   const taskCheckboxes = extractTaskCheckboxes(input.tasksMarkdown);
   const sddConflicts = detectSddConflicts(text);
 
@@ -612,8 +646,8 @@ export function extractProjectGovernanceFacts(
   return {
     projectTitle,
     backendStack: stacks.backend,
-    frontendStack: stacks.frontend,
-    mobileStack: stacks.mobile,
+    frontendStack: uiSurface ? stacks.frontend : undefined,
+    mobileStack: uiSurface ? stacks.mobile : undefined,
     infraStack: stacks.infra,
     docPaths,
     taskHeadings,
@@ -624,7 +658,7 @@ export function extractProjectGovernanceFacts(
     frontendGlobs: globs.frontend,
     npmScripts: inferNpmScripts(text),
     sddConflicts,
-    hasUiSurface: hasUiSurface(text, authoritativeUiText),
+    hasUiSurface: uiSurface,
   };
 }
 
@@ -762,7 +796,13 @@ export function suggestAgentGovernanceArtifacts(
   }
 
   const stacks = inferStacks(text);
-  const stackParts = [stacks.backend, stacks.frontend, stacks.mobile, stacks.infra].filter(Boolean);
+  const uiSurface = hasUiSurface(text, authoritativeUiText);
+  const stackParts = [
+    stacks.backend,
+    uiSurface ? stacks.frontend : undefined,
+    uiSurface ? stacks.mobile : undefined,
+    stacks.infra,
+  ].filter(Boolean);
   if (stackParts.length > 0) {
     rationale.push(`Stack inferido: ${stackParts.join(", ")}.`);
   }

@@ -10,6 +10,25 @@ import {
 } from "./agent-governance.util.js";
 import { suggestAgentGovernanceArtifacts } from "./suggest-agent-governance-artifacts.js";
 
+const KMS_MDD = `# Master Design Document
+
+## 1. Contexto
+
+**(KMS Corporativo)** — plataforma documental API-first.
+
+## 2. Stack técnico
+
+Backend NestJS. MVP API-only sin dashboard ni frontend.
+Monorepo kms-backend/ y packages/shared.
+`;
+
+const KMS_BLUEPRINT = `
+## Estructura del repositorio
+
+- kms-backend/
+- packages/shared/
+`;
+
 describe("getRequiredAgentGovernancePaths", () => {
   it("LOW incluye COMO-USAR, INSTALACION y base sin references", () => {
     const paths = getRequiredAgentGovernancePaths("LOW");
@@ -424,6 +443,54 @@ Backend NestJS con TypeORM en borrador; Prisma en blueprint.
     assert.ok(rule?.content.includes("**Módulos Blueprint:**"));
     assert.equal((rule?.content.match(/\*\*Módulos Blueprint:\*\*/g) ?? []).length, 1);
     assert.equal((rule?.content.match(/\*\*Globs backend:\*\*/g) ?? []).length, 1);
+  });
+
+  it("stack-backend overlay solo incluye globs reales del Blueprint (sin tokens MDD)", () => {
+    const governanceInput = {
+      mddMarkdown: `# Master Design Document
+## NOTA DE SISTEMA
+Esta sección describe Patrones activos vigente.
+Monorepo kms-backend/ packages/shared.
+## 2. Stack
+Backend NestJS API-only sin dashboard ni frontend.
+`,
+      specMarkdown: "CLI-only; sin interfaz web.",
+      blueprintMarkdown: "## Estructura\n- kms-backend/\n- packages/shared/\n",
+      complexity: "MEDIUM" as const,
+    };
+    const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
+    const reconciled = reconcileAgentGovernanceScaffold(
+      {
+        manifest: { templateVersion: "1.0.0", files: [] },
+        files: [],
+      },
+      "MEDIUM",
+      { suggestions, governanceInput },
+    );
+    const rule = reconciled.files.find(
+      (f) => f.path === "docs/agent-governance/rules/stack-backend.mdc",
+    );
+    assert.ok(rule?.content.includes("`kms-backend/**`"));
+    assert.ok(rule?.content.includes("`packages/shared/**`"));
+    for (const bad of ["Master/**", "NOTA/**", "Esta/**", "Patrones/**", "vigente/**"]) {
+      assert.equal(rule?.content.includes(bad), false, `overlay no debe incluir ${bad}`);
+    }
+  });
+
+  it("PROMPT-INICIAL omite capas Frontend en proyectos API-only", () => {
+    const scaffold = parseAgentGovernanceResponse('{"files":{}}', "MEDIUM", {
+      governanceInput: {
+        mddMarkdown: KMS_MDD,
+        specMarkdown: "CLI-only; sin interfaz web.",
+        blueprintMarkdown: KMS_BLUEPRINT,
+        architectureMarkdown: "## Capa API\n## Capa UI\n## Capa Dominio\n",
+        complexity: "MEDIUM",
+      },
+    });
+    const prompt = scaffold.files.find((f) => f.path === "PROMPT-INICIAL.md");
+    assert.ok(prompt?.content.includes("Capa API"));
+    assert.ok(prompt?.content.includes("Capa Dominio"));
+    assert.equal(prompt?.content.includes("Capa UI"), false);
   });
 });
 
