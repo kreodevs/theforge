@@ -27,13 +27,70 @@ const USE_HTTP = process.argv.includes("--http");
 /** Nombre del cliente detectado en `initialize` (\"hermes\", \"openhands\", etc.). */
 let clientName = "";
 
-/** Resuelve el target de gobernanza: explícito > auto-detectado > \"cursor\". */
+/** Resuelve el target de gobernanza: explícito > auto-detectado > "cursor". */
 function resolveGovernanceTarget(explicit?: string): string {
   if (explicit) return explicit;
   const name = clientName.toLowerCase();
   if (name.includes("hermes")) return "hermes";
   if (name.includes("openhands")) return "openhands";
   return "cursor";
+}
+
+/**
+ * Compacta la respuesta de agent-governance para clientes con timeout bajo (OpenHands/Hermes).
+ * Reemplaza el contenido de cada archivo con metadata ({path, size, charCount}),
+ * reduciendo la respuesta de ~100KB a ~3KB.
+ */
+function compactifyGovernanceResponse(raw: unknown, projectId: string): unknown {
+  if (raw == null || typeof raw !== "object") return raw;
+
+  const obj = raw as Record<string, unknown>;
+
+  // Queue mode: ya es pequeño, devolver tal cual
+  if (obj.queued) return raw;
+
+  // Extraer el scaffold JSON (puede venir en .content para preview o en .agentGovernanceContent)
+  let scaffoldStr = "";
+  if (typeof obj.content === "string") {
+    scaffoldStr = obj.content;
+  } else if (typeof obj.agentGovernanceContent === "string") {
+    scaffoldStr = obj.agentGovernanceContent;
+  } else {
+    return raw; // no reconocible, devolver tal cual
+  }
+
+  let scaffold: Record<string, unknown>;
+  try {
+    scaffold = JSON.parse(scaffoldStr) as Record<string, unknown>;
+  } catch {
+    return raw;
+  }
+
+  // Compactar files: reemplazar contenido con metadata
+  const files = scaffold.files as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(files)) {
+    const compactFiles = files.map((f) => {
+      const content = typeof f.content === "string" ? f.content : "";
+      return {
+        path: f.path ?? "",
+        charCount: content.length,
+        sizeEstimate: `${Math.round(content.length / 1024)}KB`,
+      };
+    });
+
+    scaffold.files = compactFiles;
+
+    // Agregar nota y referencias a tools para obtener contenido completo
+    scaffold._compact = true;
+    scaffold._note =
+      "Contenido completo almacenado en el servidor. Usa get_agent_governance_export para obtener el ZIP completo, o get_project_deliverables con filePath para archivos individuales.";
+    scaffold._fullContentTools = {
+      export_zip: `get_agent_governance_export(projectId: "${projectId}")`,
+      individual_file: `get_project_deliverables(projectId: "${projectId}", filePath: "<ruta del archivo>")`,
+    };
+  }
+
+  return { ...obj, content: JSON.stringify(scaffold), agentGovernanceContent: undefined, _compact: true };
 }
 
 // ── Local Types ────────────────────────────────────────────────────────
@@ -1220,12 +1277,18 @@ const handlers: Record<string, Handler> = {
   async generate_agent_governance(args) {
     const queue = args.queue === true ? "?queue=true" : "";
     const target = resolveGovernanceTarget(args.target as string | undefined);
-    return JSON.stringify(
-      await apiPost(`/projects/${args.projectId}/generate-agent-governance${queue}`, {
-        preview: args.preview ?? false,
-        target,
-      }),
-    );
+    const raw = await apiPost(`/projects/${args.projectId}/generate-agent-governance${queue}`, {
+      preview: args.preview ?? false,
+      target,
+    });
+
+    // OpenHands y Hermes tienen timeouts bajos → respuesta compacta (sin contenido de archivos)
+    const needsCompact = target !== "cursor";
+    const response = needsCompact
+      ? compactifyGovernanceResponse(raw, args.projectId as string)
+      : raw;
+
+    return JSON.stringify(response);
   },
   async get_agent_governance_export(args) {
     return JSON.stringify(await apiGet(`/projects/${args.projectId}/agent-governance-export`));
