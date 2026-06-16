@@ -35,6 +35,9 @@ export interface ArtifactTemplateContext {
   domainSkillFolder?: string;
   backendStack?: string;
   frontendStack?: string;
+  mobileStack?: string;
+  infraStack?: string;
+  projectFacts?: import("./suggest-agent-governance-artifacts.js").ProjectGovernanceFacts;
 }
 
 export const GOVERNANCE_ARCHETYPES = [
@@ -92,6 +95,7 @@ export const RULE_CATALOG: RuleCatalogEntry[] = [
       /nestjs/i,
       /express/i,
       /fastify/i,
+      /fastapi/i,
       /django/i,
       /laravel/i,
       /spring\s*boot/i,

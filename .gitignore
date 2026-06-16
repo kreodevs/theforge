@@ -33,7 +33,7 @@ packages/database/src/generated
 *.code-workspace
 *.swp
 *.swo
-
+data-example/
 # OS
 .DS_Store
 Thumbs.db

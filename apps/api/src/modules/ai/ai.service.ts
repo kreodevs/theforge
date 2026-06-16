@@ -62,6 +62,9 @@ export interface LegacyGenerateOptions {
 export interface AgentGovernanceGenerateOptions extends LegacyGenerateOptions {
   /** Sugerencias del detector pre-LLM (rules/skills del catálogo). */
   suggestions?: AgentGovernanceSuggestions;
+  tasksContent?: string | null;
+  architectureContent?: string | null;
+  specContent?: string | null;
 }
 
 /** Instrucción fija para toda documentación legacy: complementar sin inventar. */
@@ -665,6 +668,9 @@ export class AiService {
   ): Promise<string> {
     const mdd = buildMddContextForAgentGovernance(mddContent?.trim() ?? "");
     const blueprint = (blueprintContent?.trim() ?? "").slice(0, 15000);
+    const tasks = (options?.tasksContent?.trim() ?? "").slice(0, 12000);
+    const architecture = (options?.architectureContent?.trim() ?? "").slice(0, 12000);
+    const spec = (options?.specContent?.trim() ?? "").slice(0, 8000);
     const constitutionNote =
       "El siguiente documento es la **Constitución del proyecto** (MDD, 7 secciones). " +
       "Deriva gobernanza de agentes únicamente de §1–§7 y patrones [X] del Wizard.\n\n";
@@ -675,7 +681,14 @@ export class AiService {
       `Genera el scaffold **agent-governance/** según el system prompt.\n\n**complexity:** ${complexity}\n\n` +
       suggestionsBlock +
       (mdd.length > 0
-        ? constitutionNote + "MDD:\n---\n" + mdd + "\n---\n\n" + (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
+        ? constitutionNote +
+          "MDD:\n---\n" +
+          mdd +
+          "\n---\n\n" +
+          (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---\n\n" : "") +
+          (architecture ? "Architecture:\n---\n" + architecture + "\n---\n\n" : "") +
+          (tasks ? "Tasks (checklist de implementación — usar para PROMPT-INICIAL y PROGRESO):\n---\n" + tasks + "\n---\n\n" : "") +
+          (spec ? "Spec:\n---\n" + spec + "\n---" : "")
         : "No hay MDD. Genera un scaffold mínimo LOW (AGENTS.md, CLAUDE.md, docs/agent-onboarding.md, 1 rule git-commits).");
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);

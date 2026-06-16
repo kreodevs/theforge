@@ -1,6 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { suggestAgentGovernanceArtifacts } from "./suggest-agent-governance-artifacts.js";
+import {
+  inferStacks,
+  suggestAgentGovernanceArtifacts,
+} from "./suggest-agent-governance-artifacts.js";
 import { parseAgentGovernanceResponse } from "./agent-governance.util.js";
 
 const NEST_REACT_MDD = `
@@ -83,6 +86,28 @@ describe("suggestAgentGovernanceArtifacts", () => {
   });
 });
 
+describe("inferStacks", () => {
+  it("detecta Expo, Cloudflare Workers, Hono y FastAPI", () => {
+    assert.equal(inferStacks("Mobile app con Expo SDK 52").mobile, "Expo");
+    assert.equal(inferStacks("Backend: Cloudflare Workers con Hono").backend, "Cloudflare Workers");
+    assert.equal(inferStacks("API en FastAPI con Python").backend, "FastAPI");
+    assert.equal(inferStacks("Despliegue serverless en Cloudflare").infra, "Serverless");
+  });
+});
+
+describe("suggestAgentGovernanceArtifacts con Tasks y Architecture", () => {
+  it("usa Tasks y Architecture en rationale y facts", () => {
+    const result = suggestAgentGovernanceArtifacts({
+      mddMarkdown: NEST_REACT_MDD,
+      blueprintMarkdown: "## Módulos\n- `apps/api`\n- `apps/mobile`\n",
+      tasksMarkdown: "## Fase 1\n### Configurar monorepo\n",
+      architectureMarkdown: "## Capa API\n## Capa UI\n",
+      complexity: "HIGH",
+    });
+    assert.ok(result.rationale.some((r) => /Tasks disponibles/i.test(r)));
+  });
+});
+
 describe("parseAgentGovernanceResponse + sugerencias", () => {
   it("añade rules omitidas por el LLM desde catálogo (strong y weak)", () => {
     const suggestions = suggestAgentGovernanceArtifacts({
@@ -97,7 +122,10 @@ describe("parseAgentGovernanceResponse + sugerencias", () => {
     });
     const scaffold = parseAgentGovernanceResponse(raw, "MEDIUM", {
       suggestions,
-      mddMarkdown: NEST_REACT_MDD,
+      governanceInput: {
+        mddMarkdown: NEST_REACT_MDD,
+        complexity: "MEDIUM",
+      },
     });
     const paths = scaffold.files.map((f) => f.path);
     assert.ok(
@@ -113,5 +141,7 @@ describe("parseAgentGovernanceResponse + sugerencias", () => {
       (f) => f.path === "docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md",
     );
     assert.ok(comoUsar?.content.includes("Por qué se incluyeron estos skills/rules"));
+    assert.ok(paths.includes("PROMPT-INICIAL.md"));
+    assert.ok(paths.includes("docs/sdd/PROGRESO.md"));
   });
 });

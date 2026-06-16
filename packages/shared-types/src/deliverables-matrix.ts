@@ -77,7 +77,7 @@ export function deliverableStepLabelsForKinds(kinds: readonly DeliverableKind[])
  */
 export const DELIVERABLES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableKind[]> = {
   LOW: ["user_stories", "tasks", "agent_governance"],
-  MEDIUM: ["spec", "api_contracts", "ux_ui_guide", "agent_governance", "tasks"],
+  MEDIUM: ["spec", "api_contracts", "ux_ui_guide", "tasks", "agent_governance"],
   HIGH: [
     "mdd_canonical",
     "blueprint",
@@ -88,8 +88,8 @@ export const DELIVERABLES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableKind
     "ux_ui_guide",
     "api_contracts",
     "logic_flows",
-    "agent_governance",
     "tasks",
+    "agent_governance",
     "infra",
   ],
 };
