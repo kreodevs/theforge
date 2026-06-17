@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
   buildGovernanceInstallMap,
@@ -21,6 +22,8 @@ import {
   type ProjectGovernanceFacts,
   type SuggestAgentGovernanceInput,
 } from "./suggest-agent-governance-artifacts.js";
+
+const logger = new Logger("AgentGovernanceUtil");
 
 /** Rutas que siempre se regeneran desde plantillas canónicas (inmunes al LLM). */
 const LLM_PROOF_CANONICAL_PATHS = [
@@ -750,7 +753,7 @@ function overlayProjectFacts(
   let base = stripSddConflictSections(content);
   if (/## Hechos del proyecto \(/i.test(base)) {
     if (forceFreshOverlay || isStaleProjectFactsSection(base, facts)) {
-      console.warn(
+      logger.debug(
         `[agent-gov] overlayProjectFacts replacing stale TheForge block projectTitle=${facts.projectTitle} forceFreshOverlay=${forceFreshOverlay}`,
       );
       base = stripProjectFactsSection(base);
@@ -829,7 +832,7 @@ export function appendProjectDeliverablesToScaffold(
     fileMap[path] = content;
     written.push(hadExisting ? `${path} (overwrite)` : path);
   }
-  console.warn(
+  logger.debug(
     `[agent-gov] appendProjectDeliverablesToScaffold written=${written.join(", ") || "none"} skipped=${skipped.join(", ") || "none"}`,
   );
 
@@ -1045,7 +1048,7 @@ function enrichGovernanceArtifacts(
 ): void {
   const facts = extractProjectGovernanceFacts(governanceInput);
   const overlayOpts = overlayOptions;
-  console.warn(
+  logger.debug(
     `[agent-gov] enrichGovernanceArtifacts projectTitle=${facts.projectTitle} forceFreshOverlay=${overlayOptions?.forceFreshOverlay === true} fileCount=${Object.keys(fileMap).length}`,
   );
   const agentsPath = "AGENTS.md";
@@ -1287,11 +1290,11 @@ export function reconcileAgentGovernanceScaffold(
     overlayOptions,
   );
   if (merged.length > 0) {
-    console.warn(
+    logger.debug(
       `[agent-gov] reconcileAgentGovernanceScaffold addedPaths=${merged.join(", ")} forceFreshOverlay=${overlayOptions.forceFreshOverlay}`,
     );
   } else {
-    console.warn(
+    logger.debug(
       `[agent-gov] reconcileAgentGovernanceScaffold no catalog paths added forceFreshOverlay=${overlayOptions.forceFreshOverlay} filesBefore=${filesBefore}`,
     );
   }
@@ -1304,7 +1307,7 @@ export function reconcileAgentGovernanceScaffold(
 
   const files = recordToFileEntries(fileMap);
   const paths = files.map((f) => f.path);
-  console.warn(
+  logger.debug(
     `[agent-gov] reconcileAgentGovernanceScaffold filesBefore=${filesBefore} filesAfter=${files.length}`,
   );
 
@@ -1371,18 +1374,18 @@ export function parseAgentGovernanceResponse(
     governanceInput,
     overlayOptions,
   );
-  console.warn(
+  logger.debug(
     `[agent-gov] parseAgentGovernanceResponse llmFiles=${llmFileCount} forceFreshOverlay=${overlayOptions.forceFreshOverlay} mergedCatalog=${merged.join(", ") || "none"}`,
   );
   if (merged.length > 0) {
-    console.warn(
+    logger.debug(
       `[agent-gov] parseAgentGovernanceResponse catalog paths added: ${merged.join(", ")}`,
     );
   }
 
   const missing = applyRequiredFileFallbacks(fileMap, complexity, suggestions, governanceInput);
   if (missing.length > 0) {
-    console.warn(
+    logger.debug(
       `[agent-gov] parseAgentGovernanceResponse required fallbacks (${complexity}): ${missing.join(", ")}`,
     );
   }

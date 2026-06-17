@@ -216,20 +216,72 @@ function hasUiSurface(text: string, authoritativeText?: string): boolean {
   );
 }
 
+const ARIADNE_ACTIVE_SIGNALS: RegExp[] = [
+  /\bintegraci[oó]n\s+mcp\s+ariadne\b/i,
+  /\bmcp\s+ariadne\b/i,
+  /\bAriadneSpecs\b/,
+  /\bARIADNE_API\b/,
+  /\.ariadne-project\b/,
+  /\bvalidate_before_edit\b/,
+  /\bget_component_graph\b/,
+  /\bget_legacy_impact\b/,
+  /\blist_known_projects\b/,
+];
+
+const DEFERRED_SCOPE_PATTERN =
+  /(?:fase|phase)\s*2|futur[oa]s?|roadmap|opcional|planificad[oa]|m[aá]s\s+adelante|post-?mvp|considerar\s+integrar/i;
+
+function isDeferredScopeContext(text: string, matchIndex: number, matchLength: number): boolean {
+  const start = Math.max(0, matchIndex - 180);
+  const end = Math.min(text.length, matchIndex + matchLength + 180);
+  return DEFERRED_SCOPE_PATTERN.test(text.slice(start, end));
+}
+
+function hasActiveAriadneMention(text: string): boolean {
+  for (const re of ARIADNE_ACTIVE_SIGNALS) {
+    const flags = re.flags.includes("g") ? re.flags : `${re.flags}g`;
+    const scanner = new RegExp(re.source, flags);
+    let match: RegExpExecArray | null;
+    while ((match = scanner.exec(text)) !== null) {
+      if (!isDeferredScopeContext(text, match.index, match[0].length)) return true;
+    }
+  }
+
+  const ariadneMention = /\bariadne\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = ariadneMention.exec(text)) !== null) {
+    if (!isDeferredScopeContext(text, match.index, match[0].length)) return true;
+  }
+
+  return false;
+}
+
 function hasLegacyAriadneSignals(text: string): boolean {
-  if (/ariadne/i.test(text)) return true;
-  if (/legacy|código\s+existente|strangler|validate_before_edit|refactor\s+legacy/i.test(text)) {
+  if (hasActiveAriadneMention(text)) return true;
+
+  if (
+    /strangler|código\s+existente|refactor\s+legacy/i.test(text) &&
+    /\bariadne\b/i.test(text)
+  ) {
     return true;
   }
+
   if (!/falkor/i.test(text)) return false;
-  if (/falkor[\s\S]{0,120}(?:fase|phase)\s*2/i.test(text)) {
-    const active =
-      /integraci[oó]n\s+mcp|mcp\s+ariadne|validate_before_edit|índice\s+de\s+código|grafo\s+de\s+código/i.test(
+
+  const falkorMention = /\bfalkor(?:db)?\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = falkorMention.exec(text)) !== null) {
+    if (isDeferredScopeContext(text, match.index, match[0].length)) continue;
+    if (
+      /validate_before_edit|índice\s+de\s+código|grafo\s+de\s+código|mcp\s+ariadne/i.test(
         text,
-      );
-    if (!active) return false;
+      )
+    ) {
+      return true;
+    }
   }
-  return /legacy|strangler|refactor|grafo|código\s+existente/i.test(text);
+
+  return false;
 }
 
 function matchesSignals(text: string, signals: RegExp[]): boolean {
@@ -669,7 +721,7 @@ function skillStrength(
 
   if (!signalHit && !archetypeHit) return null;
 
-  if (skill.id === "mcp-ariadne" && /ariadne/i.test(text)) return "strong";
+  if (skill.id === "mcp-ariadne" && hasLegacyAriadneSignals(text)) return "strong";
   if (skill.id === "design-system-ui" && archetypes.includes("design-system-ui")) return "strong";
 
   return signalHit && archetypeHit ? "strong" : "weak";

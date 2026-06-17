@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  agent-governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install dependencies
+        timeout-minutes: 10
+        env:
+          PRISMA_SKIP_POSTINSTALL_GENERATE: "true"
+        run: |
+          pnpm install --frozen-lockfile \
+            --filter @theforge/api... \
+            --filter @theforge/web... \
+            --filter theforge
+
+      - name: Build workspace packages for specs
+        run: pnpm --filter @theforge/shared-types build
+
+      - name: Agent governance API specs
+        working-directory: apps/api
+        run: |
+          node --import tsx --test \
+            src/modules/ai/utils/agent-governance.util.spec.ts \
+            src/modules/ai/utils/suggest-agent-governance-artifacts.spec.ts
+
+      - name: queueAndPoll web spec
+        working-directory: apps/web
+        run: node --import tsx --test src/utils/queueAndPoll.spec.ts

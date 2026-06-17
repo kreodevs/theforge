@@ -148,6 +148,37 @@ Backend NestJS API-only MVP sin dashboard.
     assert.equal(result.suggestedSkills.some((s) => s.id === "mcp-ariadne"), false);
   });
 
+  it("no activa legacy-ariadne por grafo/FalkorDB fase 2 en blueprint KMS", () => {
+    const result = suggestAgentGovernanceArtifacts({
+      mddMarkdown: KMS_MDD,
+      blueprintMarkdown: `
+## Stack
+- **Base de datos grafo (fase 2):** FalkorDB (compatible con Neo4j)
+
+# 4. Componentes transversales (pipeline, IA, grafo)
+
+11. **Fase 2 (opcional)** – Integrar FalkorDB para grafo de dependencias.
+`,
+      complexity: "MEDIUM",
+    });
+    assert.equal(result.archetypes.includes("legacy-ariadne"), false);
+    assert.equal(result.suggestedSkills.some((s) => s.id === "mcp-ariadne"), false);
+  });
+
+  it("no activa legacy-ariadne por Ariadne solo en roadmap diferido", () => {
+    const result = suggestAgentGovernanceArtifacts({
+      mddMarkdown: `
+# Proyecto
+## Roadmap
+Fase 2 (opcional): evaluar integración con Ariadne para grafo futuro.
+Backend NestJS API-only.
+`,
+      complexity: "MEDIUM",
+    });
+    assert.equal(result.archetypes.includes("legacy-ariadne"), false);
+    assert.equal(result.suggestedSkills.some((s) => s.id === "mcp-ariadne"), false);
+  });
+
   it("omite stack-frontend y design-system-ui en API-only sin UI", () => {
     const result = suggestAgentGovernanceArtifacts({
       mddMarkdown: `
