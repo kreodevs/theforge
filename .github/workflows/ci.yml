@@ -30,6 +30,9 @@ jobs:
             --filter @theforge/web... \
             --filter theforge
 
+      - name: Build workspace packages for specs
+        run: pnpm --filter @theforge/shared-types build
+
       - name: Agent governance API specs
         working-directory: apps/api
         run: |
