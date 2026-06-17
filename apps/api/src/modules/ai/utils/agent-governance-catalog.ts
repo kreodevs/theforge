@@ -372,7 +372,14 @@ export const SKILL_CATALOG: SkillCatalogEntry[] = [
     description: "MCP Ariadne / grafo de código para legacy",
     triggers: "Refactor legacy, impacto multi-archivo, validate_before_edit.",
     minComplexity: "MEDIUM",
-    signals: [/ariadne/i, /legacy/i, /código\s+existente/i, /strangler/i, /validate_before_edit/i],
+    signals: [
+      /\bariadne\b/i,
+      /validate_before_edit/i,
+      /get_component_graph/i,
+      /\.ariadne-project/i,
+      /mcp\s+ariadne/i,
+      /strangler/i,
+    ],
     archetypes: ["legacy-ariadne", "mcp-enabled"],
     template: () =>
       skillFrontmatter(
