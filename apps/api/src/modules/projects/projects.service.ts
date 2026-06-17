@@ -1314,18 +1314,18 @@ name: ${JSON.stringify(name)}
     const forceRegenerate = options?.forceRegenerate !== false;
     const project = await this.assertProjectAccess(projectId);
     const beforeLen = (project.agentGovernanceContent ?? "").length;
-    console.warn(
+    this.logger.debug(
       `[agent-gov] generateAgentGovernance start projectId=${projectId} force=${forceRegenerate} beforeLen=${beforeLen}`,
     );
     if (forceRegenerate) {
-      console.warn(`[agent-gov] generateAgentGovernance clearing agentGovernanceContent projectId=${projectId}`);
+      this.logger.debug(`[agent-gov] generateAgentGovernance clearing agentGovernanceContent projectId=${projectId}`);
       await this.clearAgentGovernanceContent(projectId);
     }
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const mdd = this.constitutionMarkdown(project);
     const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
     const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
-    console.warn(
+    this.logger.debug(
       `[agent-gov] generateAgentGovernance input keys=${Object.keys(governanceInput).join(",")} archetypes=${suggestions.archetypes.length} rules=${suggestions.suggestedRules.length} skills=${suggestions.suggestedSkills.length}`,
     );
     const raw = await this.ai.generateAgentGovernance(mdd, project.blueprintContent, complexity, {
@@ -1342,8 +1342,8 @@ name: ${JSON.stringify(name)}
       forceFreshOverlay,
     });
     const serialized = serializeAgentGovernanceScaffold(scaffold);
-    console.warn(
-      `[agent-gov] generateAgentGovernance done projectId=${projectId} beforeLen=${beforeLen} afterLen=${serialized.length} files=${scaffold.files.length} rawPreview=${raw.slice(0, 80)}`,
+    this.logger.debug(
+      `[agent-gov] generateAgentGovernance done projectId=${projectId} beforeLen=${beforeLen} afterLen=${serialized.length} files=${scaffold.files.length}`,
     );
     return this.update(projectId, {
       agentGovernanceContent: serialized,
@@ -1390,7 +1390,7 @@ name: ${JSON.stringify(name)}
     }
 
     const filesBefore = scaffold.files.length;
-    console.warn(
+    this.logger.debug(
       `[agent-gov] getAgentGovernanceForExport start projectId=${projectId} rawLen=${raw.length} filesBefore=${filesBefore}`,
     );
 
@@ -1421,7 +1421,7 @@ name: ${JSON.stringify(name)}
 
     const serialized = serializeAgentGovernanceScaffold(exportScaffold);
     const persisted = serialized !== raw;
-    console.warn(
+    this.logger.debug(
       `[agent-gov] getAgentGovernanceForExport done projectId=${projectId} filesAfter=${exportScaffold.files.length} serializedLen=${serialized.length} persisted=${persisted}`,
     );
     if (persisted) {
