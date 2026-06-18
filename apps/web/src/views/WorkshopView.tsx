@@ -103,7 +103,6 @@ import { downloadDocumentsZip } from "../utils/downloadDocumentsZip";
 import {
   downloadSpecKitBundleFromApi,
 } from "../utils/downloadSpecKitBundle";
-import { buildSpecKitBundleFiles } from "@theforge/shared-types";
 import { downloadMarkdownFile } from "../utils/downloadMarkdownFile";
 import { resolveWorkshopActiveDocumentDownload } from "../utils/workshopActiveDocumentDownload";
 import {
