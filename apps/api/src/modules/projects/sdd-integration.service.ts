@@ -1,10 +1,17 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
   buildSpecKitBundleFiles,
+  countClarificationMarkers,
+  extractTaskCheckpoints,
   filterOpenTasks,
+  getNextOpenTask,
+  parseAgentGovernanceScaffold,
   parseTasksMarkdown,
   sectionToIssueLabel,
+  specHasPendingClarificationSection,
   specKitFeatureDir,
+  type SddAnalyzeReport,
+  type SddAnalyzeStatus,
   type SpecKitBundleFile,
   type TasksToIssuesBody,
 } from "@theforge/shared-types";
@@ -17,6 +24,8 @@ import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { pickPrimaryStage } from "./stage-helpers.js";
+import { cleanDocumentContent } from "../sessions/document-content.util.js";
+import type { ClarifySpecBody } from "@theforge/shared-types";
 
 type ProjectWithStages = Project & {
   stages: Array<Stage & { estimation?: unknown }>;
@@ -37,6 +46,23 @@ export interface TasksToIssuesResult {
   planned: Array<{ title: string; labels: string[]; body: string }>;
   created: Array<{ number: number; html_url: string; title: string }>;
   errors: string[];
+}
+
+export interface ClarifySpecResult {
+  clarifiedSpec: string;
+  clarificationMarkerCount: number;
+  persisted: boolean;
+}
+
+export interface RepoHandoffExport {
+  featureDir: string;
+  projectName: string;
+  specKitFiles: SpecKitBundleFile[];
+  agentGovernance: {
+    present: boolean;
+    files: Array<{ path: string; content: string }>;
+    manifest?: Record<string, unknown>;
+  };
 }
 
 @Injectable()
@@ -107,6 +133,206 @@ export class SddIntegrationService {
       featureDir: specKitFeatureDir(stage?.ordinal ?? 1, project.name),
       projectName: project.name,
       files: this.buildBundleForProject(project),
+    };
+  }
+
+  /**
+   * Bundle completo para "Llevar al repo": spec-kit + agent governance + IMPLEMENT.md + consumption guide.
+   */
+  async getRepoHandoffExport(projectId: string): Promise<RepoHandoffExport> {
+    const project = await this.loadProject(projectId);
+    const stage = pickPrimaryStage(project.stages);
+    const specKitFiles = this.buildBundleForProject(project);
+    const rawGov = project.agentGovernanceContent?.trim() ?? "";
+    const scaffold = rawGov ? parseAgentGovernanceScaffold(rawGov) : null;
+    return {
+      featureDir: specKitFeatureDir(stage?.ordinal ?? 1, project.name),
+      projectName: project.name,
+      specKitFiles,
+      agentGovernance: {
+        present: !!(scaffold?.files?.length),
+        files: (scaffold?.files ?? []).map((f) => ({ path: f.path, content: f.content })),
+        manifest: scaffold?.manifest as Record<string, unknown> | undefined,
+      },
+    };
+  }
+
+  /**
+   * Clarify Spec pre-MDD (`/speckit.clarify` equivalent). Works on specContent without full MDD pipeline.
+   */
+  async clarifySpec(projectId: string, body: ClarifySpecBody): Promise<ClarifySpecResult> {
+    const project = await this.loadProject(projectId);
+    const stage = pickPrimaryStage(project.stages);
+    const spec = (project.specContent ?? "").trim();
+    const dbga = (project.dbgaContent ?? project.phase0SummaryContent ?? "").trim();
+    const brd = (stage?.brdContent ?? "").trim();
+
+    if (!spec && !dbga && !brd) {
+      throw new BadRequestException(
+        "Genera Spec, DBGA o BRD antes de ejecutar clarify-spec",
+      );
+    }
+
+    const clarified = cleanDocumentContent(
+      await this.ai.clarifySpec(spec, {
+        dbgaContent: dbga || null,
+        brdContent: brd || null,
+        notes: body.notes ?? null,
+      }),
+    );
+    const markerCount = countClarificationMarkers(clarified);
+    let persisted = false;
+    if (body.persist) {
+      await this.prisma.project.update({
+        where: { id: project.id },
+        data: { specContent: clarified },
+      });
+      persisted = true;
+    }
+    return { clarifiedSpec: clarified, clarificationMarkerCount: markerCount, persisted };
+  }
+
+  /**
+   * Unified cross-artifact analyze report (`/speckit.analyze` + ConformanceService).
+   */
+  async analyzeArtifacts(projectId: string): Promise<SddAnalyzeReport> {
+    const project = await this.loadProject(projectId);
+    const stage = pickPrimaryStage(project.stages);
+    const mdd = (stage?.mddContent ?? "").trim();
+    const featureDir = specKitFeatureDir(stage?.ordinal ?? 1, project.name);
+
+    const conformance = {
+      blueprint: this.conformance.checkBlueprint(mdd, project.blueprintContent),
+      blueprintDataModel: this.conformance.checkBlueprintDataModel(mdd, project.blueprintContent),
+      api: this.conformance.checkApi(mdd, project.apiContractsContent),
+      logicFlows: this.conformance.checkLogicFlows(mdd, project.logicFlowsContent),
+      infra: this.conformance.checkInfra(mdd, project.infraContent),
+    };
+
+    const tasksMd = project.tasksContent ?? "";
+    const parsed = parseTasksMarkdown(tasksMd);
+    const open = filterOpenTasks(parsed);
+    const spec = project.specContent ?? "";
+
+    const wordCount = (s: string | null | undefined) =>
+      (s ?? "").trim() ? (s ?? "").trim().split(/\s+/).length : 0;
+
+    const crossArtifactGaps: string[] = [];
+    if (!spec.trim()) crossArtifactGaps.push("Spec ausente — generar antes del plan");
+    if (!project.blueprintContent?.trim()) crossArtifactGaps.push("Blueprint/plan ausente");
+    if (!tasksMd.trim()) crossArtifactGaps.push("Tasks ausente — requerido para implementación");
+    if (countClarificationMarkers(spec) > 0) {
+      crossArtifactGaps.push(
+        `${countClarificationMarkers(spec)} marcador(es) [NEEDS CLARIFICATION] en Spec`,
+      );
+    }
+    if (!conformance.blueprint.ok) {
+      crossArtifactGaps.push(...conformance.blueprint.gaps.map((g) => `[Blueprint] ${g}`));
+    }
+    if (!conformance.blueprintDataModel.ok) {
+      crossArtifactGaps.push(
+        ...conformance.blueprintDataModel.gaps.map((g) => `[Blueprint §3] ${g}`),
+      );
+    }
+    if (!conformance.api.ok) {
+      crossArtifactGaps.push(...conformance.api.missingInApi.map((g) => `[API falta] ${g}`));
+    }
+    if (!conformance.logicFlows.ok) {
+      crossArtifactGaps.push(...conformance.logicFlows.gaps.map((g) => `[Flujos] ${g}`));
+    }
+    if (!conformance.infra.ok) {
+      crossArtifactGaps.push(...conformance.infra.gaps.map((g) => `[Infra] ${g}`));
+    }
+
+    const gapCount = crossArtifactGaps.length;
+    let status: SddAnalyzeStatus = "ok";
+    if (!mdd || gapCount > 8) status = "blocked";
+    else if (gapCount > 0) status = "warnings";
+
+    const score = Math.max(0, Math.min(100, 100 - gapCount * 8));
+
+    return {
+      generatedAt: new Date().toISOString(),
+      projectId: project.id,
+      projectName: project.name,
+      featureDir,
+      semaphore: (stage?.status as SddAnalyzeReport["semaphore"]) ?? null,
+      artifacts: {
+        mdd: { present: mdd.length > 0, wordCount: wordCount(mdd) },
+        spec: {
+          present: spec.trim().length > 0,
+          wordCount: wordCount(spec),
+          clarificationMarkerCount: countClarificationMarkers(spec),
+          hasPendingClarificationSection: specHasPendingClarificationSection(spec),
+        },
+        blueprint: {
+          present: !!(project.blueprintContent ?? "").trim(),
+          wordCount: wordCount(project.blueprintContent),
+        },
+        tasks: {
+          present: tasksMd.trim().length > 0,
+          totalTasks: parsed.length,
+          openTasks: open.length,
+          doneTasks: parsed.length - open.length,
+          parallelizableOpen: open.filter((t) => t.parallel).length,
+          checkpoints: extractTaskCheckpoints(tasksMd),
+        },
+        apiContracts: {
+          present: !!(project.apiContractsContent ?? "").trim(),
+          wordCount: wordCount(project.apiContractsContent),
+        },
+        logicFlows: {
+          present: !!(project.logicFlowsContent ?? "").trim(),
+          wordCount: wordCount(project.logicFlowsContent),
+        },
+        infra: {
+          present: !!(project.infraContent ?? "").trim(),
+          wordCount: wordCount(project.infraContent),
+        },
+      },
+      conformance,
+      crossArtifactGaps,
+      summary: {
+        status,
+        score,
+        headline:
+          status === "ok"
+            ? "Artefactos alineados — listo para implementación"
+            : status === "warnings"
+              ? `${gapCount} hallazgo(s) de consistencia`
+              : "Bloqueos críticos — resolver antes de implementar",
+      },
+    };
+  }
+
+  /** Next open task for MCP implement (lightweight `/speckit.implement` hint). */
+  getNextImplementationTask(tasksMarkdown: string): {
+    task: ReturnType<typeof getNextOpenTask>;
+    openCount: number;
+  } {
+    const items = parseTasksMarkdown(tasksMarkdown);
+    const open = filterOpenTasks(items);
+    return { task: getNextOpenTask(items), openCount: open.length };
+  }
+
+  /** Next open task for a project (MCP / GET next-task). */
+  async loadProjectForNextTask(projectId: string): Promise<{
+    projectId: string;
+    projectName: string;
+    featureDir: string;
+    openCount: number;
+    task: ReturnType<typeof getNextOpenTask>;
+  }> {
+    const project = await this.loadProject(projectId);
+    const stage = pickPrimaryStage(project.stages);
+    const tasksMd = project.tasksContent ?? "";
+    const { task, openCount } = this.getNextImplementationTask(tasksMd);
+    return {
+      projectId: project.id,
+      projectName: project.name,
+      featureDir: specKitFeatureDir(stage?.ordinal ?? 1, project.name),
+      openCount,
+      task,
     };
   }
 
@@ -220,13 +446,21 @@ export class SddIntegrationService {
     const baseLabels = body.labels ?? ["theforge", "sdd"];
     const planned = openTasks.map((t) => {
       const labels = [...new Set([...baseLabels, sectionToIssueLabel(t.section)])];
+      const pathsNote =
+        t.filePaths.length > 0 ? `\n**Archivos:** ${t.filePaths.map((p) => `\`${p}\``).join(", ")}` : "";
+      const parallelNote = t.parallel ? "\n**Paralelizable:** sí (`[P]`)" : "";
       const issueBody = [
         `**Sección:** ${t.section}`,
+        t.checkpoint ? `**Checkpoint:** ${t.checkpoint}` : "",
         `**Proyecto The Forge:** ${project.name} (\`${project.id}\`)`,
+        pathsNote,
+        parallelNote,
         "",
         "Generado desde `tasks.md` vía The Forge.",
-      ].join("\n");
-      return { title: t.title.slice(0, 240), labels, body: issueBody };
+      ]
+        .filter((line) => line !== "")
+        .join("\n");
+      return { title: (t.cleanTitle || t.title).slice(0, 240), labels, body: issueBody };
     });
 
     const created: TasksToIssuesResult["created"] = [];

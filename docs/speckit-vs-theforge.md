@@ -10,9 +10,14 @@ Comparativa técnica entre [github/spec-kit](https://github.com/github/spec-kit)
 | Recomendación | Estado | Superficie |
 |---------------|--------|------------|
 | Export spec-kit bundle | ✅ | Workshop botón «Exportar SDD local»; `GET /projects/:id/export/sdd-bundle`; `packages/shared-types/src/spec-kit-bundle.ts` |
+| **Llevar al repo (post-VERDE)** | ✅ | Wizard `LlevarAlRepoWizardDialog`; `GET /projects/:id/export/repo-handoff`; `scripts/theforge-export.mjs` |
 | Converge brownfield | ✅ | `POST /projects/:id/converge`; toolbar Tasks en Workshop |
 | Tasks → GitHub Issues | ✅ | `POST /projects/:id/tasks-to-issues`; env `GITHUB_TOKEN` |
+| **Tasks v2 spec-kit** (`[P]`, paths, checkpoints) | ✅ | `tasks-prompt.md`; `tasks-parse.ts` |
 | `[NEEDS CLARIFICATION]` en Spec/Clarifier | ✅ | `spec-prompt.md`, `clarifier-prompt.md` |
+| **Clarify pre-MDD** (`/speckit.clarify`) | ✅ | `POST /projects/:id/clarify-spec`; `ClarifySpecPanel` en Spec |
+| **Analyze dashboard** | ✅ | `GET /projects/:id/analyze`; `AnalyzeDashboard` en columna semáforo |
+| **MCP implement hint** | ✅ | `get_next_implementation_task`; `GET /projects/:id/next-task` |
 | Hermes + handoff implement | ✅ | `launch-hermes` incluye `sddBundle`; ZIP gobernanza + bundle spec-kit |
 
 ---
@@ -72,10 +77,10 @@ Flujo vía slash commands en 30+ agentes (Cursor, Copilot, Codex, etc.):
 | `data-model.md` | MDD §3 | ✅ integrado |
 | `research.md` | DBGA / Phase 0 / `phase0-deep-research` | ✅ |
 | `quickstart.md` | — | ❌ no existe |
-| `/speckit.implement` | `launch-hermes` (webhook externo) | ⚠️ delegado |
-| `/speckit.converge` | — | ❌ |
-| `/speckit.taskstoissues` | — | ❌ |
-| `/speckit.analyze` | `ConformanceService` + `verify-deliverable` | ✅ más fuerte |
+| `/speckit.implement` | `launch-hermes` + repo handoff wizard + MCP `get_next_implementation_task` | ✅ handoff + hint |
+| `/speckit.converge` | `POST /projects/:id/converge` | ✅ |
+| `/speckit.taskstoissues` | `POST /projects/:id/tasks-to-issues` | ✅ |
+| `/speckit.analyze` | `GET /projects/:id/analyze` + `ConformanceService` | ✅ |
 | `/speckit.checklist` | Semáforo + Auditor MDD | ✅ más fuerte |
 
 Jerarquía SDD: **Constitution → Spec → Plan → Tasks → Implementation**. The Forge la cumple; el plan 10/10 está marcado ✅ en `ENTREGABLES-SDD-VALIDACION.md` §7.
@@ -136,10 +141,10 @@ MDD 7 secciones con matriz de trazabilidad, contratos estrictos §3↔§4, pre-r
 
 | Gap | spec-kit | Qué haría The Forge |
 |-----|----------|---------------------|
-| **Implement in-repo** | `/speckit.implement` escribe código en el repo | Solo `launch-hermes` vía webhook (`POST /projects/:id/launch-hermes`). Falta: exportar bundle SDD + invocar agente en repo destino, o comando MCP `implement_tasks` |
-| **Converge / drift** | Compara codebase vs spec → nuevas tasks | No existe. Con Ariadne + conformance podría ser killer feature brownfield |
-| **Tasks → GitHub Issues** | `/speckit.taskstoissues` | No existe. Trivial con `gh` desde `tasksContent` |
-| **Export estructura spec-kit** | `specs/001-feature/` en el repo | Solo download individual (`apps/web/src/utils/workshopActiveDocumentDownload.ts`). Falta ZIP con `spec.md`, `plan.md`, `tasks.md`, `contracts/`, `.specify/memory/constitution.md` |
+| **Implement in-repo** | `/speckit.implement` escribe código en el repo | Wizard «Llevar al repo» + `IMPLEMENT.md` + MCP `get_next_implementation_task`; Hermes webhook para ejecución remota |
+| **Converge / drift** | Compara codebase vs spec → nuevas tasks | ✅ `POST /projects/:id/converge` (Ariadne + conformidad) |
+| **Tasks → GitHub Issues** | `/speckit.taskstoissues` | ✅ `POST /projects/:id/tasks-to-issues` |
+| **Export estructura spec-kit** | `specs/001-feature/` en el repo | ✅ `export/sdd-bundle`, `export/repo-handoff`, CLI `theforge-export.mjs` |
 
 ### Media — mejora UX SDD
 
@@ -148,8 +153,8 @@ MDD 7 secciones con matriz de trazabilidad, contratos estrictos §3↔§4, pre-r
 | **`[NEEDS CLARIFICATION]`** | Marcadores explícitos en spec | Clarifier integrado pero sin convención visible en Spec exportado |
 | **`quickstart.md`** | Escenarios de validación post-plan | No como artefacto; podría derivarse de Spec + acceptance criteria |
 | **Feature numbering + branch** | `001-chat-system` auto | Proyectos en DB sin convención git |
-| **Parallel tasks `[P]`** | En `tasks.md` | `tasksContent` sin marcado de paralelización |
-| **`/speckit.clarify` dedicado** | Pre-plan explícito | Clarifier solo dentro del pipeline MDD |
+| **Parallel tasks `[P]`** | En `tasks.md` | ✅ `tasks-prompt.md` + `tasks-parse.ts` |
+| **`/speckit.clarify` dedicado** | Pre-plan explícito | ✅ `POST /projects/:id/clarify-spec` + panel Aclarar |
 
 ### Baja — ecosistema
 

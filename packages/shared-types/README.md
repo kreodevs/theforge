@@ -12,7 +12,8 @@ DTOs e interfaces compartidas (Zod).
 - `orchestrator.ts`: `chatOrchestratorResponseSchema` (respuesta stream/orquestador; incluye `evaluatorCritique` opcional).
 - **`legacy-codebase-doc.ts`:** `codebaseDocResponseModeSchema`, `generateCodebaseDocRequestSchema` (body `POST …/legacy/generate-codebase-doc`).
 - **`spec-kit-bundle.ts`:** `buildSpecKitBundleFiles` — export layout compatible con github/spec-kit.
-- **`tasks-parse.ts`:** parseo de `tasks.md` para converge e issues.
+- **`tasks-parse.ts`:** parseo spec-kit de `tasks.md` (`[P]`, rutas, checkpoints); `getNextOpenTask` para MCP.
+- **`sdd-analyze.ts`:** tipos del reporte `GET /projects/:id/analyze`.
 - **`sdd-integrations.ts`:** Zod `convergeBodySchema`, `tasksToIssuesBodySchema`.
 
 Usado por API y (opcional) por web.

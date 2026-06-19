@@ -1,18 +1,22 @@
 /**
  * @fileoverview Semáforo, conformidad, estimación y CTA de cascada (columna derecha del workshop).
  */
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
   DollarSign,
   FileText,
+  FolderGit2,
   Lock,
   Loader2,
   Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LlevarAlRepoWizardDialog } from "@/components/LlevarAlRepoWizardDialog";
+import { AnalyzeDashboard } from "@/components/AnalyzeDashboard";
+import { agentGovernanceScaffoldHasContent } from "@theforge/shared-types";
 import { useWorkshopStore, type Status } from "../store/workshopStore";
 import { calculateCostFromMdd } from "../utils/costCalculator";
 
@@ -126,6 +130,12 @@ export function WorkshopMetricsColumnInner({
   const lastLegacyDebug = useWorkshopStore((s) => s.lastLegacyDeliverablesDebug);
   const logicFlowsDocField = useWorkshopStore((s) => s.logicFlowsContent);
   const logicFlowsDoc = (logicFlowsDocField ?? project?.logicFlowsContent ?? "").trim();
+  const agentGovernanceField = useWorkshopStore((s) => s.agentGovernanceContent);
+  const hasAgentGovernance = agentGovernanceScaffoldHasContent(
+    agentGovernanceField ?? project?.agentGovernanceContent ?? null,
+  );
+  const [repoWizardOpen, setRepoWizardOpen] = useState(false);
+  const [showAnalyze, setShowAnalyze] = useState(false);
 
   const isLegacyBaselineStage = useMemo(() => {
     if (!isLegacyProject) return false;
@@ -955,7 +965,50 @@ export function WorkshopMetricsColumnInner({
                 {cascadeCtaHint}
               </p>
             ) : null}
+            {semaphoreGreen && projectId ? (
+              <button
+                type="button"
+                onClick={() => setRepoWizardOpen(true)}
+                disabled={!effectiveMddTrimmed}
+                className={cn(
+                  "flex w-full min-h-9 items-center justify-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--success)_45%,var(--border))] px-3 text-xs font-semibold transition-colors",
+                  effectiveMddTrimmed
+                    ? "bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] text-[var(--success)] hover:bg-[color-mix(in_oklch,var(--success)_22%,var(--card))]"
+                    : "cursor-not-allowed opacity-50",
+                )}
+              >
+                <FolderGit2 className="h-4 w-4 shrink-0" aria-hidden />
+                Llevar al repo
+              </button>
+            ) : null}
+            {projectId ? (
+              <button
+                type="button"
+                onClick={() => setShowAnalyze((v) => !v)}
+                className="w-full rounded-lg px-2 py-1.5 text-[11px] font-medium text-[var(--primary)] underline-offset-2 hover:underline"
+              >
+                {showAnalyze ? "Ocultar análisis SDD" : "Analizar consistencia SDD"}
+              </button>
+            ) : null}
           </div>
+
+          {showAnalyze && projectId ? (
+            <AnalyzeDashboard
+              projectId={projectId}
+              className="rounded-lg bg-[var(--background)] shadow-sm"
+            />
+          ) : null}
+
+          <LlevarAlRepoWizardDialog
+            open={repoWizardOpen}
+            onOpenChange={setRepoWizardOpen}
+            projectId={projectId ?? ""}
+            projectName={project?.name ?? "Workshop"}
+            hasAgentGovernance={hasAgentGovernance}
+            hasMdd={!!effectiveMddTrimmed}
+            onError={(msg) => useWorkshopStore.getState().setError(msg)}
+            onSuccess={(msg) => useWorkshopStore.getState().setError(msg)}
+          />
 
           {/* Feedback del auditor debajo del semáforo (selectores Zustand → re-render al actualizar liveMetrics / auditorFeedback) */}
           {auditorFeedback ? (

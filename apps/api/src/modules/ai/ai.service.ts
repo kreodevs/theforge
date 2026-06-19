@@ -24,6 +24,7 @@ import { ARCHITECTURE_PROMPT } from "./prompts/architecture-prompt.js";
 import { USE_CASES_PROMPT } from "./prompts/use-cases-prompt.js";
 import { USER_STORIES_PROMPT } from "./prompts/user-stories-prompt.js";
 import { TASKS_PROMPT } from "./prompts/tasks-prompt.js";
+import { CLARIFY_SPEC_PROMPT } from "./prompts/clarify-spec-prompt.js";
 import { AGENT_GOVERNANCE_PROMPT } from "./prompts/agent-governance-prompt.js";
 import { formatSuggestedArtifactsPromptBlock } from "./utils/suggest-agent-governance-artifacts.js";
 import type { AgentGovernanceSuggestions } from "./utils/suggest-agent-governance-artifacts.js";
@@ -700,6 +701,27 @@ export class AiService {
     const systemPrompt =
       SPEC_PROMPT + (legacyAsIsSpec ? LEGACY_AS_IS_SPEC_SYSTEM_APPENDIX : "");
     return this.generateResponse(prompt, [], { systemPrompt });
+  }
+
+  /**
+   * Clarify Spec pre-MDD (equivalent `/speckit.clarify`): marks ambiguities with [NEEDS CLARIFICATION].
+   */
+  async clarifySpec(
+    specContent: string,
+    context?: { dbgaContent?: string | null; brdContent?: string | null; notes?: string | null },
+  ): Promise<string> {
+    const spec = (specContent ?? "").trim();
+    const dbga = (context?.dbgaContent ?? "").trim();
+    const brd = (context?.brdContent ?? "").trim();
+    const notes = (context?.notes ?? "").trim();
+    const parts = [
+      "Revisa y aclara el Spec según el system prompt. Marca ambigüedades con [NEEDS CLARIFICATION].\n",
+      spec.length > 0 ? `Spec actual:\n---\n${spec}\n---` : "Spec vacío — genera esqueleto mínimo con marcadores.",
+      dbga.length > 0 ? `\n\nContexto DBGA / Benchmark:\n---\n${dbga.slice(0, 12000)}\n---` : "",
+      brd.length > 0 ? `\n\nBRD (alcance de negocio):\n---\n${brd.slice(0, 8000)}\n---` : "",
+      notes.length > 0 ? `\n\nNotas del usuario:\n---\n${notes}\n---` : "",
+    ];
+    return this.generateResponse(parts.filter(Boolean).join("\n"), [], { systemPrompt: CLARIFY_SPEC_PROMPT });
   }
 
   /**

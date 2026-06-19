@@ -26,16 +26,33 @@ export interface SpecKitBundleInput {
   consumptionGuideContent?: string | null;
 }
 
-/** Resumen para handoff de implementación (equivalente a consumir docs The Forge en repo destino). */
-export const SDD_IMPLEMENT_README = `# Implementación desde The Forge
+/** Resumen para handoff de implementación (equivalente a `/speckit.implement` + consumo The Forge). */
+export const SDD_IMPLEMENT_README = `# Implementation from The Forge (spec-kit style)
 
-1. Lee primero \`.specify/memory/constitution.md\` (MDD) — fuente de verdad.
-2. Sigue \`spec.md\` (what/why) y \`plan.md\` (blueprint).
-3. Implementa con \`tasks.md\` como checklist; contrasta siempre con MDD y contratos.
-4. Los API contracts son vinculantes (métodos, paths, DTOs).
-5. Si hay conflicto entre documentos, **el MDD gana**.
+## Document order (mandatory)
 
-Ver \`THEFORGE-DOC-CONSUMPTION-GUIDE.md\` en este bundle para reglas completas de consumo por agentes.
+1. Read \`.specify/memory/constitution.md\` (MDD) — single source of truth.
+2. Read \`spec.md\` (what/why) and \`plan.md\` (blueprint / technical plan).
+3. Use \`tasks.md\` as the execution checklist; always cross-check MDD §3–§4 and \`contracts/\`.
+4. API contracts are binding (methods, paths, DTOs).
+5. On conflict between artifacts, **the MDD wins**.
+
+## Executing tasks (agent workflow)
+
+1. Open \`tasks.md\` and find the first open item (\`- [ ]\`).
+2. Tasks marked \`[P]\` may run **in parallel** within the same user-story **Checkpoint** block.
+3. Each task should list target **file paths** (e.g. \`src/...\`); edit only those files unless the task explicitly expands scope.
+4. After completing a Checkpoint section, run smoke checks from \`quickstart.md\` for that user story.
+5. Mark completed items as \`- [x]\` in \`tasks.md\` (or track in your agent session) before moving to the next task.
+6. If implementation diverges from spec, stop and run **converge** (The Forge) or update the MDD first — do not silently drift.
+
+## Agent governance (if bundled)
+
+If this ZIP includes \`agent-governance/\`, install rules/skills per \`INSTALACION.md\` before coding.
+
+## Full consumption rules
+
+See \`THEFORGE-DOC-CONSUMPTION-GUIDE.md\` in this bundle for complete agent consumption rules.
 `;
 
 export function slugifySpecKitFeature(name: string): string {

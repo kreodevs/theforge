@@ -16,6 +16,7 @@ export type WorkshopAgentsBusySlice = {
     | "launch-hermes"
     | "converge"
     | "tasks-to-issues"
+    | "clarify-spec"
     | null;
   streamingUserMessage: string | null;
   streamingContent: string | null;
@@ -39,6 +40,7 @@ const AGENT_LOADING_REASONS = new Set<NonNullable<WorkshopAgentsBusySlice["loadi
   "launch-hermes",
   "converge",
   "tasks-to-issues",
+  "clarify-spec",
 ]);
 
 /** Chat en streaming, Manager MDD, cascadas, benchmark, etc. */

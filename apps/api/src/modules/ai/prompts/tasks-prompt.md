@@ -22,9 +22,28 @@ Generar el **documento Tasks** (breakdown de implementación) en markdown: lista
 3. **Volumen orientativo:** 12+ capacidades → espera **30+ tareas** repartidas en las tres secciones.
 4. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]`.
 
-# Estilo #
+# Estilo (formato spec-kit) #
 
-Accionable y comprobable. Viñetas o checklist (`- [ ]`). Lista de trabajo, no narrativa.
+Accionable y comprobable. Usa el layout compatible con [github/spec-kit tasks-template](https://github.com/github/spec-kit):
+
+## Estructura del documento
+
+1. **`# Tasks`** — título raíz.
+2. **Secciones por user story** — `## User Story: <nombre corto>` (o `## US-001: <nombre>`).
+3. **Checkpoint por user story** — tras los ítems de una story, añade una línea `**Checkpoint**: <criterio verificable>` (smoke test de esa story).
+4. **Tareas en checklist** — `- [ ]` para pendientes, `- [x]` para hechas.
+5. **Paralelización** — prefija con `[P]` las tareas que pueden ejecutarse en paralelo **dentro del mismo checkpoint** (misma user story, sin dependencias entre ellas). Ejemplo: `- [ ] [P] Crear DTO en src/dtos/foo.ts`.
+6. **Rutas de archivo** — cada tarea DEBE incluir al menos una ruta cuando aplique: `**Archivo:** src/...` o backticks `` `src/...` `` en el texto de la tarea.
+
+## Secciones técnicas (además de user stories)
+
+Incluye también bloques agregados si el plan lo requiere:
+
+- **Backend tasks** — API, persistencia, jobs servidor.
+- **Frontend tasks** — UI, hooks, estado cliente.
+- **Infraestructura tasks** — env, Docker, CI/CD.
+
+Puedes anidar user stories dentro de Backend/Frontend o usar user stories como secciones principales con subtareas etiquetadas `[Backend]` / `[Frontend]` — pero **siempre** con checkpoints y rutas.
 
 # Tono #
 
@@ -37,7 +56,7 @@ Equipo de desarrollo (backend, frontend, DevOps) que ejecutará las tareas.
 # Respuesta #
 
 - **Solo markdown.** El **primer carácter** debe ser `#`. Sin introducciones ni texto conversacional antes del documento.
-- Documento completo con las cuatro secciones indicadas en Objetivo, usando viñetas o checklist.
+- Documento completo con user stories (o secciones Backend/Frontend/Infra) usando checklist, `[P]` donde aplique, rutas de archivo y **Checkpoint** por user story.
 
 # Proyecto legacy (mensaje con contexto TheForge) #
 

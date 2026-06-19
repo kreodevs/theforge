@@ -1011,6 +1011,16 @@ const TOOLS: Tool[] = [
       required: ["projectId"],
     },
   },
+  {
+    name: "get_next_implementation_task",
+    description:
+      "Returns the next open task from project tasks.md (spec-kit format). Lightweight /speckit.implement hint with file paths and [P] parallel marker.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "The Forge project ID" } },
+      required: ["projectId"],
+    },
+  },
   // ── Utility Tools (formato consistente, single source of truth) ──
   {
     name: "generate_markdown_table",
@@ -1632,6 +1642,10 @@ const handlers: Record<string, Handler> = {
       filtered: tables.length,
       tables: tables.map(t => ({ name: t.name, sql: t.sql })),
     });
+  },
+  async get_next_implementation_task(args) {
+    const projectId = args.projectId as string;
+    return JSON.stringify(await apiGet(`/projects/${projectId}/next-task`));
   },
   // ── Utility Tools ──
   async generate_markdown_table(args) {
