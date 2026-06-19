@@ -26,6 +26,7 @@ import { getRequestUserId } from "../../common/request-user.store.js";
 import { pickPrimaryStage } from "./stage-helpers.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
+import { validateDocumentForPersist } from "../sessions/document-shrink.util.js";
 import type { ClarifySpecBody, ProjectDeliverableSource } from "@theforge/shared-types";
 
 type ProjectWithStages = Project & {
@@ -184,6 +185,13 @@ export class SddIntegrationService {
     const markerCount = countClarificationMarkers(clarified);
     let persisted = false;
     if (body.persist) {
+      const validation = validateDocumentForPersist(spec, clarified, {
+        fieldLabel: "Spec",
+        minBodyChars: spec.length > 0 ? 80 : 120,
+      });
+      if (!validation.ok) {
+        throw new BadRequestException(validation.message);
+      }
       await this.prisma.project.update({
         where: { id: project.id },
         data: { specContent: clarified },
