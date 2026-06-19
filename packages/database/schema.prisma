@@ -156,6 +156,8 @@ model Stage {
   handoffImportedAt DateTime?
   /// Snapshot JSON of SDD deliverables captured for this stage (P0.1).
   deliverableSnapshot Json?
+  /// Delta change spec (markdown): AS-IS inherited summary + explicit delta for stage 2+.
+  changeSpecContent String? @db.Text
   estimation       Estimation?
   /// Redundancia intencional con `Project.projectType === LEGACY` para queries y checkpoints por etapa.
   isLegacy         Boolean      @default(false)

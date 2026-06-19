@@ -49,6 +49,7 @@ export function resolveStageDeliverables(
     ordinal: number;
     workflowStatus: string;
     deliverableSnapshot?: unknown;
+    changeSpecContent?: string | null;
   },
   mode: ResolveStageDeliverablesMode = "workshop",
 ): StageDeliverablesResponse {
@@ -65,6 +66,7 @@ export function resolveStageDeliverables(
       snapshotCapturedAt: snapshot.capturedAt,
       readOnly: true,
       deliverables: buildDeliverablesFromSnapshot(snapshot, project),
+      changeSpecContent: stage.changeSpecContent ?? null,
     };
   }
 
@@ -75,5 +77,6 @@ export function resolveStageDeliverables(
     source: "live",
     readOnly: false,
     deliverables: buildLiveDeliverables(project),
+    changeSpecContent: stage.changeSpecContent ?? null,
   };
 }

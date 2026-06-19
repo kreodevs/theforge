@@ -22,6 +22,10 @@ export const patchStageBodySchema = z.object({
   /** Poner esta etapa como única ACTIVE del proyecto */
   activate: z.boolean().optional(),
   brdContent: z.string().optional(),
+  /** Terminal or lifecycle workflow transitions */
+  workflowStatus: z
+    .enum(["DRAFT", "ACTIVE", "COMPLETED", "ARCHIVED", "SUPERSEDED"])
+    .optional(),
 });
 
 export type CreateStageBody = z.infer<typeof createStageBodySchema>;

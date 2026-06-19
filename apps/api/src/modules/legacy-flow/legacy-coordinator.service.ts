@@ -1323,7 +1323,7 @@ export class LegacyCoordinatorService {
     if (isInitialMdd && isLegacyAsIsMddEvidenceInjectEnabled() && codebaseDoc.length >= 80) {
       cleaned = injectAsIsCodebaseEvidenceIntoMdd(cleaned, codebaseDoc);
     }
-    // Dual-write durante migración: stage.legacyChangeState + project.legacyFlowState
+    // Single write: stage.legacyChangeState (project.legacyFlowState only when no stage exists)
     if (gateStage?.id) {
       await this.persistLegacyChangeState(projectId, gateStage.id, state).catch(() => {});
       await this.syncCurrentLegacyStageToGraph(projectId, gateStage.id).catch(() => {});
@@ -1446,7 +1446,8 @@ export class LegacyCoordinatorService {
     assertLegacyChangeGate(gateStage, project);
 
     // enforceLegacyBrdTobeGate eliminado — To-Be y As-Is removidos
-    const codebaseDoc = String((project as { legacyFlowState?: LegacyFlowState }).legacyFlowState?.codebaseDoc ?? "").trim();
+    const gateState = this.getLegacyChangeState(gateStage, project);
+    const codebaseDoc = String(gateState.codebaseDoc ?? "").trim();
     const mddContent = String(project.mddContent ?? "").trim();
     const legacyBaselineStage = resolveLegacyBaselineStageFlag(gateStage, mddContent);
     report.legacyBaselineStage = legacyBaselineStage;
@@ -1480,8 +1481,7 @@ export class LegacyCoordinatorService {
       throw new BadRequestException("Genera la documentación de partida (MDD Inicial) o el MDD de cambio antes de generar entregables.");
     }
 
-    const legacyState =
-      ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const legacyState = gateState;
 
     const tGate = Date.now();
     try {

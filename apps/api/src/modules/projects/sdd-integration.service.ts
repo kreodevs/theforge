@@ -1,15 +1,20 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
+  buildHandoffMicroSpecFiles,
+  buildOpenSpecChangeExport,
   buildSpecKitBundleFiles,
+  checkBrdObjectiveMentionHealth,
   countClarificationMarkers,
   extractTaskCheckpoints,
   filterOpenTasks,
   getNextOpenTask,
   parseAgentGovernanceScaffold,
+  parseIntegrationHandoff,
   parseTasksMarkdown,
   sectionToIssueLabel,
   specHasPendingClarificationSection,
   specKitFeatureDir,
+  type IntegrationHandoffItem,
   type SddAnalyzeReport,
   type SddAnalyzeStatus,
   type SpecKitBundleFile,
@@ -27,7 +32,7 @@ import { pickPrimaryStage } from "./stage-helpers.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { validateDocumentForPersist } from "../sessions/document-shrink.util.js";
-import type { ClarifySpecBody, ProjectDeliverableSource } from "@theforge/shared-types";
+import type { ClarifySpecBody, ConvergeTriggerBody, ProjectDeliverableSource } from "@theforge/shared-types";
 
 type ProjectWithStages = Project & {
   stages: Array<Stage & { estimation?: unknown }>;
@@ -78,23 +83,33 @@ export class SddIntegrationService {
     private readonly theforge: TheForgeService,
   ) {}
 
-  buildBundleForProject(project: ProjectWithStages): SpecKitBundleFile[] {
-    const stage = pickPrimaryStage(project.stages);
+  buildBundleForProject(project: ProjectWithStages, stageOverride?: Stage | null): SpecKitBundleFile[] {
+    const stage = stageOverride ?? pickPrimaryStage(project.stages);
     const mdd = stage?.mddContent ?? "";
+    const deliverables = stage
+      ? resolveStageDeliverables(project, stage, "analyze").deliverables
+      : project;
+    const spec = deliverables.specContent ?? project.specContent;
+    const acceptanceLines = (spec ?? "")
+      .split("\n")
+      .filter((l) => /aceptación|acceptance|criterio/i.test(l))
+      .slice(0, 12);
     return buildSpecKitBundleFiles({
       projectName: project.name,
       featureOrdinal: stage?.ordinal ?? 1,
       mddContent: mdd,
-      specContent: project.specContent,
-      blueprintContent: project.blueprintContent,
-      tasksContent: project.tasksContent,
-      apiContractsContent: project.apiContractsContent,
-      logicFlowsContent: project.logicFlowsContent,
-      infraContent: project.infraContent,
+      specContent: spec,
+      blueprintContent: deliverables.blueprintContent ?? project.blueprintContent,
+      tasksContent: deliverables.tasksContent ?? project.tasksContent,
+      apiContractsContent: deliverables.apiContractsContent ?? project.apiContractsContent,
+      logicFlowsContent: deliverables.logicFlowsContent ?? project.logicFlowsContent,
+      infraContent: deliverables.infraContent ?? project.infraContent,
       phase0SummaryContent: project.phase0SummaryContent,
       dbgaContent: project.dbgaContent,
-      uxUiGuideContent: project.uxUiGuideContent,
+      uxUiGuideContent: deliverables.uxUiGuideContent ?? project.uxUiGuideContent,
       consumptionGuideContent: loadConsumptionGuideMarkdown(),
+      changeSpecContent: stage?.changeSpecContent ?? null,
+      acceptanceCriteriaLines: acceptanceLines.length ? acceptanceLines : null,
     });
   }
 
@@ -144,19 +159,47 @@ export class SddIntegrationService {
   async getRepoHandoffExport(projectId: string): Promise<RepoHandoffExport> {
     const project = await this.loadProject(projectId);
     const stage = pickPrimaryStage(project.stages);
-    const specKitFiles = this.buildBundleForProject(project);
+    const specKitFiles = this.buildBundleForProject(project, stage);
     const rawGov = project.agentGovernanceContent?.trim() ?? "";
     const scaffold = rawGov ? parseAgentGovernanceScaffold(rawGov) : null;
+
+    const handoffItems = this.readHandoffItemsForStage(project, stage);
+    const legacyState = (stage?.legacyChangeState ?? null) as { description?: string } | null;
+    const openSpecFiles =
+      (stage?.ordinal ?? 1) >= 2
+        ? buildOpenSpecChangeExport({
+            stageOrdinal: stage?.ordinal ?? 1,
+            projectName: project.name,
+            changeSpecContent: stage?.changeSpecContent,
+            legacyChangeDescription: legacyState?.description ?? null,
+            handoffItems,
+          })
+        : [];
+    const microSpecs = handoffItems.length ? buildHandoffMicroSpecFiles(handoffItems) : [];
+
     return {
       featureDir: specKitFeatureDir(stage?.ordinal ?? 1, project.name),
       projectName: project.name,
-      specKitFiles,
+      specKitFiles: [...specKitFiles, ...openSpecFiles, ...microSpecs],
       agentGovernance: {
         present: !!(scaffold?.files?.length),
         files: (scaffold?.files ?? []).map((f) => ({ path: f.path, content: f.content })),
         manifest: scaffold?.manifest as Record<string, unknown> | undefined,
       },
     };
+  }
+
+  private readHandoffItemsForStage(
+    project: ProjectWithStages,
+    stage: Stage | null | undefined,
+  ): IntegrationHandoffItem[] {
+    if (!stage || stage.ordinal < 2) return [];
+    const snap = stage.handoffSnapshot as { items?: IntegrationHandoffItem[] } | null;
+    if (snap?.items?.length) return snap.items;
+    if (project.projectType === "NEW") {
+      return parseIntegrationHandoff(project.integrationHandoff).items;
+    }
+    return [];
   }
 
   /**
@@ -259,6 +302,12 @@ export class SddIntegrationService {
     if (!mdd || gapCount > 8) status = "blocked";
     else if (gapCount > 0) status = "warnings";
 
+    const brdHealth = checkBrdObjectiveMentionHealth(stage?.brdContent, mdd);
+    if (!brdHealth.ok && brdHealth.warnings.length) {
+      crossArtifactGaps.push(...brdHealth.warnings.map((w) => `[BRD health] ${w}`));
+      if (status === "ok") status = "warnings";
+    }
+
     const score = Math.max(0, Math.min(100, 100 - gapCount * 8));
 
     return {
@@ -302,6 +351,7 @@ export class SddIntegrationService {
       },
       conformance,
       crossArtifactGaps,
+      brdHealth,
       summary: {
         status,
         score,
@@ -433,6 +483,42 @@ export class SddIntegrationService {
       suggestedTasksMarkdown,
       persisted,
     };
+  }
+
+  /**
+   * Minimal CI hook: converge + optional webhook POST (env CONVERGE_WEBHOOK_URL or body override).
+   */
+  async triggerConverge(
+    projectId: string,
+    body: ConvergeTriggerBody,
+    stageId?: string,
+  ): Promise<ConvergeResult & { webhookSent: boolean; webhookUrl: string | null }> {
+    const result = await this.converge(projectId, body.persist, stageId);
+    const webhookUrl = (body.webhookUrl ?? process.env.CONVERGE_WEBHOOK_URL ?? "").trim() || null;
+    let webhookSent = false;
+    if (webhookUrl) {
+      try {
+        const res = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: "theforge.converge",
+            projectId,
+            stageId: stageId ?? null,
+            ...result,
+          }),
+        });
+        webhookSent = res.ok;
+        if (!res.ok) {
+          this.logger.warn(`converge webhook ${webhookUrl} responded ${res.status}`);
+        }
+      } catch (err) {
+        this.logger.warn(
+          `converge webhook failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    return { ...result, webhookSent, webhookUrl };
   }
 
   async tasksToIssues(projectId: string, body: TasksToIssuesBody): Promise<TasksToIssuesResult> {

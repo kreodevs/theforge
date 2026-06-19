@@ -61,6 +61,8 @@ export interface SddAnalyzeReport {
   };
   conformance: SddAnalyzeConformance;
   crossArtifactGaps: string[];
+  /** Optional BRD ↔ MDD objective alignment (legacy F2). */
+  brdHealth?: { ok: boolean; warnings: string[] };
   summary: {
     status: SddAnalyzeStatus;
     score: number;

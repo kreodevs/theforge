@@ -83,7 +83,7 @@ import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.u
 
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
-import { persistStageDeliverableSnapshotFromProject } from "./stage-deliverable-snapshot.util.js";
+import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "./stage-deliverable-snapshot.util.js";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 
 import {
@@ -584,6 +584,24 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       },
     });
     if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    const previousActive = await this.prisma.stage.findMany({
+      where: { projectId, workflowStatus: StageStatus.ACTIVE, NOT: { id: stageId } },
+      select: { id: true, ordinal: true, deliverableSnapshot: true },
+    });
+
+    for (const prev of previousActive) {
+      if (prev.ordinal >= 1) {
+        await ensureStageDeliverableSnapshotIfMissing(this.prisma, prev.id, projectId, {
+          source: "cascade",
+        }).catch((err) =>
+          this.logger.warn(
+            `[Stage] snapshot before activate: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+    }
+
     await this.prisma.$transaction([
       this.prisma.stage.updateMany({
         where: { projectId, workflowStatus: StageStatus.ACTIVE },
@@ -761,10 +779,15 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       scoreLogicFlowsSection5Coverage(mdd, logicFlowsMarkdown),
       batchCount !== undefined ? { batchCount } : undefined,
     );
-    await patchLegacyDeliverablesDebugReport(this.prisma, projectId, {
-      legacyBaselineStage: true,
-      logicFlowsSection5Coverage: coverage,
-    });
+    await patchLegacyDeliverablesDebugReport(
+      this.prisma,
+      projectId,
+      {
+        legacyBaselineStage: true,
+        logicFlowsSection5Coverage: coverage,
+      },
+      pickPrimaryStage(project.stages ?? [])?.id,
+    );
   }
 
   async patchStage(projectId: string, stageId: string, body: unknown) {
@@ -802,6 +825,27 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       });
       if (clash) throw new BadRequestException(`Ordinal ${dto.ordinal} ya está en uso`);
       data.ordinal = dto.ordinal;
+    }
+
+    const terminalStatuses: StageStatus[] = [
+      StageStatus.COMPLETED,
+      StageStatus.ARCHIVED,
+      StageStatus.SUPERSEDED,
+    ];
+    if (dto.workflowStatus !== undefined) {
+      data.workflowStatus = dto.workflowStatus as StageStatus;
+      if (terminalStatuses.includes(dto.workflowStatus as StageStatus)) {
+        await ensureStageDeliverableSnapshotIfMissing(this.prisma, stageId, projectId, {
+          source: "manual",
+        }).catch((err) =>
+          this.logger.warn(
+            `[Stage] snapshot on ${dto.workflowStatus}: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+      if (dto.workflowStatus === StageStatus.ACTIVE) {
+        await this.activateStageExclusive(projectId, stageId);
+      }
     }
 
     if (Object.keys(data).length > 0) {
@@ -1724,6 +1768,16 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
 
     // Anexar sección 8: UI Design System & Component Mapping (enriquecimiento semántico)
     blueprintContent = enrichBlueprintWithUiDesignSystem(mddContent, blueprintContent);
+
+    // Reflection loop (minimal): post-generation conformance re-check
+    const postGenCheck = this.conformance.checkBlueprintDataModel(mddContent, blueprintContent);
+    if (!postGenCheck.ok) {
+      const gapSummary = postGenCheck.gaps.slice(0, 4).join("; ");
+      this.logger.warn(`[Blueprint] Post-generation conformance gaps: ${gapSummary}`);
+      await this.changeLog
+        .log(projectId, "blueprintContent", `[conformance-recheck] ${gapSummary}`)
+        .catch(() => {});
+    }
 
     return this.update(projectId, { blueprintContent });
   }

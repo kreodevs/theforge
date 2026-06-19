@@ -79,4 +79,6 @@ export interface StageDeliverablesResponse {
   snapshotCapturedAt?: string;
   readOnly: boolean;
   deliverables: ProjectDeliverableSource;
+  /** Delta change spec for stage 2+ (when present). */
+  changeSpecContent?: string | null;
 }

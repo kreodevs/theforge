@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+export const convergeTriggerBodySchema = z.object({
+  /** If true, persist converge tasks into tasksContent (same as POST /converge). */
+  persist: z.boolean().optional().default(false),
+  /** Override webhook URL (default: process.env.CONVERGE_WEBHOOK_URL). */
+  webhookUrl: z.string().url().optional(),
+});
+
+export type ConvergeTriggerBody = z.infer<typeof convergeTriggerBodySchema>;
+
 export const convergeBodySchema = z.object({
   /** Si true, fusiona las nuevas tareas en `tasksContent` del proyecto. */
   persist: z.boolean().optional().default(false),
