@@ -33,31 +33,24 @@ describe("getRequiredAgentGovernancePaths", () => {
 });
 
 describe("parseAgentGovernanceResponse", () => {
-  it("aplica fallback COMO-USAR e INSTALACION cuando el LLM omite rutas base", () => {
-    const raw = JSON.stringify({
-      files: {
-        "AGENTS.md": "# AGENTS\n",
-        "CLAUDE.md": "@AGENTS.md\n",
-      },
-    });
-    const scaffold = parseAgentGovernanceResponse(raw, "LOW");
-    const paths = scaffold.files.map((f) => f.path);
-    assert.ok(paths.includes("docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md"));
-    assert.ok(paths.includes("docs/agent-governance/agent-onboarding.md"));
-    assert.ok(paths.includes("docs/agent-governance/INSTALACION.md"));
-    assert.ok(paths.includes("docs/agent-governance/references/THEFORGE-DOC-CONSUMPTION-GUIDE.md"));
-    assert.ok(paths.includes("PROMPT-INICIAL.md"));
-    assert.ok(paths.includes("docs/sdd/PROGRESO.md"));
+  it("plantillas canónicas mencionan layout spec-kit dual (.specify/ y specs/)", () => {
+    const scaffold = parseAgentGovernanceResponse('{"files":{}}', "LOW");
     const agents = scaffold.files.find((f) => f.path === "AGENTS.md");
-    assert.ok(agents?.content.includes("Instalación de gobernanza"));
-    const comoUsar = scaffold.files.find(
-      (f) => f.path === "docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md",
+    const guide = scaffold.files.find(
+      (f) => f.path === "docs/agent-governance/references/THEFORGE-DOC-CONSUMPTION-GUIDE.md",
     );
-    assert.ok(comoUsar?.content.includes("THEFORGE-DOC-CONSUMPTION-GUIDE"));
-    assert.ok(comoUsar?.content.includes("INSTALACION"));
+    const instalacion = scaffold.files.find(
+      (f) => f.path === "docs/agent-governance/INSTALACION.md",
+    );
+    assert.ok(agents?.content.includes(".specify/memory/constitution.md"));
+    assert.ok(agents?.content.includes("spec-kit"));
+    assert.ok(guide?.content.includes(".specify/memory/constitution.md"));
+    assert.ok(guide?.content.includes("specs/NNN-slug"));
+    assert.ok(instalacion?.content.includes("Orden de instalación"));
+    assert.ok(instalacion?.content.includes("docs/sdd"));
   });
 
-  it("aplica fallback de references en MEDIUM bajo docs/agent-governance/", () => {
+  it("aplica fallback COMO-USAR e INSTALACION cuando el LLM omite rutas base", () => {
     const scaffold = parseAgentGovernanceResponse('{"files":{}}', "MEDIUM");
     const paths = scaffold.files.map((f) => f.path);
     assert.ok(paths.includes("docs/agent-governance/references/workflows.md"));

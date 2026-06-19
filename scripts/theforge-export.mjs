@@ -7,7 +7,8 @@
  *   THEFORGE_MCP_SECRET=<m2m-secret> \
  *   node scripts/theforge-export.mjs --project <uuid> --out ./handoff
  *
- * Writes spec-kit layout at --out root and agent-governance under --out/agent-governance/.
+ * Writes spec-kit layout at --out root and reconciled agent-governance under --out/agent-governance/.
+ * API returns unified handoff (spec-kit + gobernanza reconciliada + docs/sdd mirrors).
  */
 
 import { mkdir, writeFile } from "node:fs/promises";

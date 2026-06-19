@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildSpecKitBundleFiles,
+  DOCUMENT_PATH_MAP_STATIC,
   parseTasksMarkdown,
   slugifySpecKitFeature,
   specKitFeatureDir,
@@ -25,6 +26,22 @@ describe("spec-kit-bundle", () => {
     assert.ok(paths.some((p) => p.startsWith("specs/001-taskify/spec.md")));
     assert.ok(paths.some((p) => p.endsWith("data-model.md")));
     assert.ok(paths.includes("IMPLEMENT.md"));
+  });
+
+  it("IMPLEMENT.md incluye path map y relación con agent-governance", () => {
+    const files = buildSpecKitBundleFiles({
+      projectName: "Demo",
+      mddContent: "# MDD",
+    });
+    const implement = files.find((f) => f.path === "IMPLEMENT.md");
+    assert.ok(implement?.content.includes("Path map"));
+    assert.ok(implement?.content.includes(".specify/memory/constitution.md"));
+    assert.ok(implement?.content.includes("docs/sdd/mdd.md"));
+    assert.ok(implement?.content.includes("mirror"));
+    assert.ok(implement?.content.includes("agent-governance"));
+    for (const entry of DOCUMENT_PATH_MAP_STATIC) {
+      assert.ok(implement?.content.includes(entry.mirror));
+    }
   });
 
   it("specKitFeatureDir usa ordinal", () => {

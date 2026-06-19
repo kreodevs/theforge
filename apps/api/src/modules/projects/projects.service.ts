@@ -82,6 +82,8 @@ import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.u
 
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 import { SddIntegrationService } from "./sdd-integration.service.js";
+import { reconcileExportScaffold, buildUnifiedHandoff } from "./handoff-export.util.js";
+import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
 
 import {
   BRD_GENERATION_SYSTEM,
@@ -1389,40 +1391,15 @@ name: ${JSON.stringify(name)}
       throw new BadRequestException("No hay gobernanza de agentes generada para este proyecto.");
     }
 
-    const scaffold = parseAgentGovernanceScaffold(raw);
-    if (!scaffold) {
-      throw new BadRequestException("El scaffold de gobernanza no contiene archivos válidos.");
-    }
-
-    const filesBefore = scaffold.files.length;
+    const filesBefore = parseAgentGovernanceScaffold(raw)?.files.length ?? 0;
     this.logger.debug(
       `[agent-gov] getAgentGovernanceForExport start projectId=${projectId} rawLen=${raw.length} filesBefore=${filesBefore}`,
     );
 
-    const complexity = project.complexity ?? ComplexityLevel.HIGH;
-    const mdd = this.constitutionMarkdown(project);
-    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
-    const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
-
-    const reconciled = reconcileAgentGovernanceScaffold(scaffold, complexity, {
-      suggestions,
-      governanceInput,
-      forceFreshOverlay: true,
-    });
-
-    const exportScaffold = appendProjectDeliverablesToScaffold(reconciled, {
-      mddMarkdown: mdd,
-      blueprintMarkdown: project.blueprintContent,
-      specMarkdown: project.specContent,
-      architectureMarkdown: project.architectureContent,
-      tasksMarkdown: project.tasksContent,
-      useCasesMarkdown: project.useCasesContent,
-      userStoriesMarkdown: project.userStoriesContent,
-      apiContractsMarkdown: project.apiContractsContent,
-      logicFlowsMarkdown: project.logicFlowsContent,
-      uxUiGuideMarkdown: project.uxUiGuideContent,
-      infraMarkdown: project.infraContent,
-    });
+    const exportScaffold = reconcileExportScaffold(project, { throwIfMissing: true });
+    if (!exportScaffold) {
+      throw new BadRequestException("El scaffold de gobernanza no contiene archivos válidos.");
+    }
 
     const serialized = serializeAgentGovernanceScaffold(exportScaffold);
     const persisted = serialized !== raw;
@@ -1916,10 +1893,9 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     }
 
     const stages = (project as { stages?: StageWithEst[] }).stages ?? [];
-    const sddBundle = this.sddIntegration.buildHermesSddPayload({
-      ...(project as Project),
-      stages,
-    });
+    const projectWithStages = { ...(project as Project), stages };
+    const unified = buildUnifiedHandoff(projectWithStages, loadConsumptionGuideMarkdown());
+    const sddBundle = this.sddIntegration.buildHermesSddPayload(projectWithStages);
 
     const payload = {
       event_type: "project.ready",
@@ -1933,8 +1909,12 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
       implementHandoff: {
         readme: "IMPLEMENT.md",
         consumptionGuide: "THEFORGE-DOC-CONSUMPTION-GUIDE.md",
-        agentGovernanceZip: "Descargar agent-governance desde Workshop o usar agentGovernanceContent",
+        layout: unified.layout,
+        pathMap: unified.pathMap,
+        governancePresent: unified.governancePresent,
         specKitLayout: sddBundle.featureDir,
+        fileHashes: sddBundle.files.map((f) => ({ path: f.path, sha256: f.sha256, size: f.size })),
+        cliFallback: sddBundle.cliFallback,
       },
     };
 

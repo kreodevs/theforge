@@ -3,6 +3,8 @@
  * `.specify/memory/constitution.md` + `specs/{NNN}-{slug}/`.
  */
 
+import { DOCUMENT_PATH_MAP_STATIC } from "./document-layout.js";
+
 export interface SpecKitBundleFile {
   path: string;
   content: string;
@@ -32,10 +34,24 @@ export const SDD_IMPLEMENT_README = `# Implementation from The Forge (spec-kit s
 ## Document order (mandatory)
 
 1. Read \`.specify/memory/constitution.md\` (MDD) — single source of truth.
-2. Read \`spec.md\` (what/why) and \`plan.md\` (blueprint / technical plan).
+2. Read \`spec.md\` (what/why) and \`plan.md\` (blueprint / technical plan) under \`specs/NNN-slug/\`.
 3. Use \`tasks.md\` as the execution checklist; always cross-check MDD §3–§4 and \`contracts/\`.
 4. API contracts are binding (methods, paths, DTOs).
 5. On conflict between artifacts, **the MDD wins**.
+
+## Path map (spec-kit primary ↔ governance mirror)
+
+| Document | Primary (spec-kit) | Mirror (governance) |
+|----------|-------------------|---------------------|
+${DOCUMENT_PATH_MAP_STATIC.map((e) => `| ${e.label} | \`${e.primary}\` | \`${e.mirror}\` |`).join("\n")}
+
+**The spec-kit layout is canonical.** Files under \`docs/sdd/\` mirror content for agent rules/skills — not an alternate SSOT.
+
+## Installation order
+
+1. Extract \`.specify/\` and \`specs/NNN-slug/\` at repo root.
+2. If bundled, install \`agent-governance/\` → \`.cursor/\` per \`INSTALACION.md\`.
+3. Verify \`docs/sdd/*\` mirrors match spec-kit artifacts (optional cross-check).
 
 ## Executing tasks (agent workflow)
 
@@ -49,6 +65,7 @@ export const SDD_IMPLEMENT_README = `# Implementation from The Forge (spec-kit s
 ## Agent governance (if bundled)
 
 If this ZIP includes \`agent-governance/\`, install rules/skills per \`INSTALACION.md\` before coding.
+The \`docs/sdd/\` folder inside the governance package is a **mirror** for rules that reference SDD paths — always prefer spec-kit paths when both exist.
 
 ## Full consumption rules
 

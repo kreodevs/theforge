@@ -1,15 +1,16 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ComplexityLevel } from "@theforge/database";
 import {
-  buildSpecKitBundleFiles,
+  buildNextTaskDocumentLayout,
   countClarificationMarkers,
   extractTaskCheckpoints,
   filterOpenTasks,
   getNextOpenTask,
-  parseAgentGovernanceScaffold,
   parseTasksMarkdown,
   sectionToIssueLabel,
   specHasPendingClarificationSection,
   specKitFeatureDir,
+  type NextTaskDocumentLayout,
   type SddAnalyzeReport,
   type SddAnalyzeStatus,
   type SpecKitBundleFile,
@@ -26,6 +27,14 @@ import { getRequestUserId } from "../../common/request-user.store.js";
 import { pickPrimaryStage } from "./stage-helpers.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import type { ClarifySpecBody } from "@theforge/shared-types";
+import { ComplexityLevel } from "@theforge/database";
+import {
+  analyzeAgentGovernanceSlice,
+  buildHermesHandoffPayload,
+  buildSpecKitFilesForProject,
+  buildUnifiedHandoff,
+  scaffoldToRepoHandoffGovernance,
+} from "./handoff-export.util.js";
 
 type ProjectWithStages = Project & {
   stages: Array<Stage & { estimation?: unknown }>;
@@ -52,6 +61,7 @@ export interface ClarifySpecResult {
   clarifiedSpec: string;
   clarificationMarkerCount: number;
   persisted: boolean;
+  mddSyncQueued?: boolean;
 }
 
 export interface RepoHandoffExport {
@@ -77,49 +87,13 @@ export class SddIntegrationService {
   ) {}
 
   buildBundleForProject(project: ProjectWithStages): SpecKitBundleFile[] {
-    const stage = pickPrimaryStage(project.stages);
-    const mdd = stage?.mddContent ?? "";
-    return buildSpecKitBundleFiles({
-      projectName: project.name,
-      featureOrdinal: stage?.ordinal ?? 1,
-      mddContent: mdd,
-      specContent: project.specContent,
-      blueprintContent: project.blueprintContent,
-      tasksContent: project.tasksContent,
-      apiContractsContent: project.apiContractsContent,
-      logicFlowsContent: project.logicFlowsContent,
-      infraContent: project.infraContent,
-      phase0SummaryContent: project.phase0SummaryContent,
-      dbgaContent: project.dbgaContent,
-      uxUiGuideContent: project.uxUiGuideContent,
-      consumptionGuideContent: loadConsumptionGuideMarkdown(),
-    });
+    return buildSpecKitFilesForProject(project, loadConsumptionGuideMarkdown());
   }
 
-  /** Payload SDD para webhook Hermes (truncado para límites de transporte). */
-  buildHermesSddPayload(project: ProjectWithStages): {
-    format: "spec-kit-compatible";
-    featureDir: string;
-    implementReadme: string;
-    files: Array<{ path: string; contentPreview: string; size: number }>;
-    agentGovernancePresent: boolean;
-  } {
-    const files = this.buildBundleForProject(project);
-    const stage = pickPrimaryStage(project.stages);
-    const featureDir = specKitFeatureDir(stage?.ordinal ?? 1, project.name);
-    const maxPreview = 12_000;
-    return {
-      format: "spec-kit-compatible",
-      featureDir,
-      implementReadme:
-        "Exporta el bundle SDD local desde Workshop o usa los archivos en sddBundle.files. Lee IMPLEMENT.md y THEFORGE-DOC-CONSUMPTION-GUIDE.md antes de codificar.",
-      files: files.map((f) => ({
-        path: f.path,
-        contentPreview: f.content.length > maxPreview ? `${f.content.slice(0, maxPreview)}\n\n… [truncado]` : f.content,
-        size: f.content.length,
-      })),
-      agentGovernancePresent: !!(project.agentGovernanceContent?.trim()),
-    };
+  /** Payload SDD estructurado para webhook Hermes (hashes completos, sin truncar). */
+  buildHermesSddPayload(project: ProjectWithStages) {
+    const unified = buildUnifiedHandoff(project, loadConsumptionGuideMarkdown());
+    return buildHermesHandoffPayload(unified);
   }
 
   async getExportBundle(projectId: string): Promise<{
@@ -141,19 +115,20 @@ export class SddIntegrationService {
    */
   async getRepoHandoffExport(projectId: string): Promise<RepoHandoffExport> {
     const project = await this.loadProject(projectId);
-    const stage = pickPrimaryStage(project.stages);
-    const specKitFiles = this.buildBundleForProject(project);
-    const rawGov = project.agentGovernanceContent?.trim() ?? "";
-    const scaffold = rawGov ? parseAgentGovernanceScaffold(rawGov) : null;
+    const unified = buildUnifiedHandoff(project, loadConsumptionGuideMarkdown());
+
+    if (unified.governancePersisted && unified.serializedGovernance) {
+      await this.prisma.project.update({
+        where: { id: project.id },
+        data: { agentGovernanceContent: unified.serializedGovernance },
+      });
+    }
+
     return {
-      featureDir: specKitFeatureDir(stage?.ordinal ?? 1, project.name),
-      projectName: project.name,
-      specKitFiles,
-      agentGovernance: {
-        present: !!(scaffold?.files?.length),
-        files: (scaffold?.files ?? []).map((f) => ({ path: f.path, content: f.content })),
-        manifest: scaffold?.manifest as Record<string, unknown> | undefined,
-      },
+      featureDir: unified.featureDir,
+      projectName: unified.projectName,
+      specKitFiles: unified.specKitFiles,
+      agentGovernance: scaffoldToRepoHandoffGovernance(unified.agentGovernance),
     };
   }
 
@@ -182,6 +157,7 @@ export class SddIntegrationService {
     );
     const markerCount = countClarificationMarkers(clarified);
     let persisted = false;
+    let mddSyncQueued = false;
     if (body.persist) {
       await this.prisma.project.update({
         where: { id: project.id },
@@ -189,7 +165,29 @@ export class SddIntegrationService {
       });
       persisted = true;
     }
-    return { clarifiedSpec: clarified, clarificationMarkerCount: markerCount, persisted };
+
+    if (body.syncMdd && persisted && markerCount === 0) {
+      const stage = pickPrimaryStage(project.stages);
+      if (stage?.mddContent?.trim()) {
+        const syncNote =
+          `\n\n<!-- clarify-spec-sync ${new Date().toISOString()} -->\n` +
+          `> Spec aclarado sincronizado desde clarify-spec. Revisar ambigüedades resueltas.\n`;
+        await this.prisma.stage.update({
+          where: { id: stage.id },
+          data: {
+            mddContent: `${(stage.mddContent ?? "").trim()}${syncNote}`,
+          },
+        });
+        mddSyncQueued = true;
+      }
+    }
+
+    return {
+      clarifiedSpec: clarified,
+      clarificationMarkerCount: markerCount,
+      persisted,
+      mddSyncQueued,
+    };
   }
 
   /**
@@ -244,9 +242,31 @@ export class SddIntegrationService {
       crossArtifactGaps.push(...conformance.infra.gaps.map((g) => `[Infra] ${g}`));
     }
 
+    const agentGov = analyzeAgentGovernanceSlice(project);
+    if (!agentGov.present) {
+      crossArtifactGaps.push("Gobernanza IA no generada — recomendada para handoff");
+    } else {
+      if (agentGov.missingRequiredPaths.length > 0) {
+        crossArtifactGaps.push(
+          ...agentGov.missingRequiredPaths.map((p) => `[Gobernanza] Falta ruta obligatoria: ${p}`),
+        );
+      }
+      if (!agentGov.pathAlignmentOk) {
+        crossArtifactGaps.push(
+          "Gobernanza IA: espejos docs/sdd incompletos (ejecutar export reconciliado)",
+        );
+      }
+    }
+
     const gapCount = crossArtifactGaps.length;
     let status: SddAnalyzeStatus = "ok";
-    if (!mdd || gapCount > 8) status = "blocked";
+    const complexity = project.complexity ?? ComplexityLevel.HIGH;
+    const govBlockHigh =
+      complexity === ComplexityLevel.HIGH &&
+      agentGov.present &&
+      agentGov.missingRequiredPaths.length > 0;
+
+    if (!mdd || gapCount > 8 || govBlockHigh) status = "blocked";
     else if (gapCount > 0) status = "warnings";
 
     const score = Math.max(0, Math.min(100, 100 - gapCount * 8));
@@ -289,6 +309,7 @@ export class SddIntegrationService {
           present: !!(project.infraContent ?? "").trim(),
           wordCount: wordCount(project.infraContent),
         },
+        agentGovernance: agentGov,
       },
       conformance,
       crossArtifactGaps,
@@ -322,17 +343,22 @@ export class SddIntegrationService {
     featureDir: string;
     openCount: number;
     task: ReturnType<typeof getNextOpenTask>;
-  }> {
+  } & NextTaskDocumentLayout> {
     const project = await this.loadProject(projectId);
     const stage = pickPrimaryStage(project.stages);
     const tasksMd = project.tasksContent ?? "";
     const { task, openCount } = this.getNextImplementationTask(tasksMd);
+    const featureDir = specKitFeatureDir(stage?.ordinal ?? 1, project.name);
+    const governancePresent = !!(project.agentGovernanceContent?.trim());
     return {
       projectId: project.id,
       projectName: project.name,
-      featureDir: specKitFeatureDir(stage?.ordinal ?? 1, project.name),
+      featureDir,
       openCount,
       task,
+      ...buildNextTaskDocumentLayout(featureDir, governancePresent),
+      implementHint:
+        "Lee IMPLEMENT.md → .specify/memory/constitution.md → tasks en specs/NNN-slug/tasks.md",
     };
   }
 

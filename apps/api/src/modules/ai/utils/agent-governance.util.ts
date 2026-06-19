@@ -2,6 +2,7 @@ import { Logger } from "@nestjs/common";
 import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
   buildGovernanceInstallMap,
+  DOCUMENT_PATH_MAP_STATIC,
   GOVERNANCE_DOCS_PREFIX,
   migrateGovernancePath,
   type AgentGovernanceFile,
@@ -153,21 +154,36 @@ function defaultInstallMapTableRows(): string {
   );
 }
 
+function defaultDocumentPathMapTable(): string {
+  const rows = DOCUMENT_PATH_MAP_STATIC.map(
+    (e) => `| ${e.label} | \`${e.primary}\` | \`${e.mirror}\` |`,
+  ).join("\n");
+  return (
+    "| Documento | Primario (spec-kit) | Espejo (gobernanza) |\n" +
+    "|-----------|---------------------|---------------------|\n" +
+    rows
+  );
+}
+
 function defaultDocConsumptionGuide(): string {
   return (
     "# Guía de consumo de documentos TheForge\n\n" +
     "Resumen para agentes que implementan desde entregables SDD incluidos en este ZIP.\n\n" +
-    "## Orden de lectura\n\n" +
-    "1. **`docs/sdd/mdd.md`** — Constitución (stack, entidades, reglas, auth).\n" +
-    "2. **`docs/sdd/blueprint.md`** — Estructura del repo, convenciones, §8 UI si aplica.\n" +
-    "3. **`docs/sdd/spec.md`** — Requisitos y criterios de aceptación.\n" +
-    "4. **`docs/sdd/tasks.md`** — Checklist de implementación (contrastar siempre con MDD).\n" +
-    "5. Entregables opcionales si existen: `api-contracts.md`, `logic-flows.md`, `architecture.md`, `infra.md`.\n\n" +
+    "## Orden de lectura (primario spec-kit, espejo docs/sdd)\n\n" +
+    "1. **`.specify/memory/constitution.md`** — Constitución (MDD); espejo: `docs/sdd/mdd.md`.\n" +
+    "2. **`specs/NNN-slug/plan.md`** — Blueprint / plan técnico; espejo: `docs/sdd/blueprint.md`.\n" +
+    "3. **`specs/NNN-slug/spec.md`** — Requisitos y criterios de aceptación; espejo: `docs/sdd/spec.md`.\n" +
+    "4. **`specs/NNN-slug/tasks.md`** — Checklist de implementación; espejo: `docs/sdd/tasks.md`.\n" +
+    "5. Entregables opcionales en `specs/NNN-slug/` o `docs/sdd/`: `api-contracts.md`, `logic-flows.md`, `architecture.md`, `infra.md`.\n\n" +
+    "### Mapeo de rutas\n\n" +
+    defaultDocumentPathMapTable() +
+    "\n\n" +
+    "**El layout spec-kit es canónico.** Los archivos bajo `docs/sdd/` son espejo para rules/skills de gobernanza; ante conflicto de contenido, gana el primario.\n\n" +
     "## Prioridad ante conflictos\n\n" +
     "**El MDD manda.** Si un entregable contradice otro, sigue MDD §2–§6 y documenta la resolución en `docs/sdd/PROGRESO.md`.\n\n" +
     "## Gates antes de cerrar tareas\n\n" +
     "- Lint, typecheck y tests del paquete tocado.\n" +
-    "- Contratos API alineados a `docs/sdd/api-contracts.md` cuando exista.\n" +
+    "- Contratos API alineados a `specs/NNN-slug/contracts/` o `docs/sdd/api-contracts.md` cuando exista.\n" +
     "- Actualizar `docs/sdd/PROGRESO.md` al completar ítems de Tasks.\n"
   );
 }
@@ -176,11 +192,16 @@ function defaultAgentsMd(): string {
   return (
     "# AGENTS\n\n" +
     "Punto de entrada para agentes de código (Cursor, Claude Code, Copilot, etc.).\n\n" +
+    "## Documentos SDD (layout dual)\n\n" +
+    "Lee primero el layout **spec-kit** en la raíz del repo; `docs/sdd/*` es espejo para gobernanza:\n\n" +
+    defaultDocumentPathMapTable() +
+    "\n\n" +
     "## Instalación de gobernanza\n\n" +
     "El ZIP **no incluye** la carpeta oculta `.cursor/` (macOS/Finder la oculta al extraer). " +
     "Los artefactos viven en `docs/agent-governance/`; instálalos en el repo destino así:\n\n" +
-    "1. Lee `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md` y `docs/agent-governance/INSTALACION.md`.\n" +
-    "2. Copia o mapea cada archivo según la tabla (o ejecuta `scripts/install-agent-governance.sh`).\n\n" +
+    "1. Lee `IMPLEMENT.md` y `.specify/memory/constitution.md`.\n" +
+    "2. Lee `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md` y `docs/agent-governance/INSTALACION.md`.\n" +
+    "3. Copia o mapea cada archivo según la tabla (o ejecuta `scripts/install-agent-governance.sh`).\n\n" +
     "| Archivo en ZIP | Destino en repo destino |\n" +
     "|----------------|-------------------------|\n" +
     defaultInstallMapTableRows() +
@@ -194,12 +215,13 @@ function defaultAgentsMd(): string {
 function defaultAgentOnboarding(): string {
   return (
     "# Onboarding para agentes implementadores\n\n" +
-    "1. Lee **`docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md`** (guía principal).\n" +
-    "2. Si aún no instalaste gobernanza en `.cursor/`, sigue **`docs/agent-governance/INSTALACION.md`**.\n" +
-    "3. Lee el **MDD** (Constitución) y el **Blueprint** si existe.\n" +
-    "4. Consulta la guía de consumo de documentos: `" + DOC_CONSUMPTION_GUIDE_PATH + "`.\n" +
-    "5. Carga `AGENTS.md` y las rules/skills en `.cursor/` según la tarea.\n" +
-    "6. Antes de implementar, confirma gates (lint, typecheck, tests) definidos en workflows.\n"
+    "1. Lee **`IMPLEMENT.md`** y **`.specify/memory/constitution.md`** (layout spec-kit primario).\n" +
+    "2. Lee **`docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md`** (guía principal).\n" +
+    "3. Si aún no instalaste gobernanza en `.cursor/`, sigue **`docs/agent-governance/INSTALACION.md`**.\n" +
+    "4. Abre **`specs/NNN-slug/tasks.md`** para la checklist; espejo en `docs/sdd/tasks.md`.\n" +
+    "5. Consulta la guía de consumo: `" + DOC_CONSUMPTION_GUIDE_PATH + "`.\n" +
+    "6. Carga `AGENTS.md` y las rules/skills en `.cursor/` según la tarea.\n" +
+    "7. Antes de implementar, confirma gates (lint, typecheck, tests) definidos en workflows.\n"
   );
 }
 
@@ -209,6 +231,13 @@ function defaultInstalacion(): string {
     "Este paquete TheForge entrega reglas, skills y referencias bajo **`docs/agent-governance/`** " +
     "(visible en Finder y al extraer el ZIP). En el repo destino deben vivir en **`.cursor/`** " +
     "para que Cursor y herramientas compatibles las carguen automáticamente.\n\n" +
+    "## Orden de instalación recomendado\n\n" +
+    "1. **Spec-kit en raíz** — Descomprime `.specify/` y `specs/NNN-slug/` (constitution, spec, plan, tasks).\n" +
+    "2. **Gobernanza IA** — Instala `docs/agent-governance/` → `.cursor/` (opciones A/B/C abajo).\n" +
+    "3. **Verificar espejos** — Confirma que `docs/sdd/*` refleja los mismos entregables (no es SSOT alternativo).\n\n" +
+    "### Mapeo spec-kit ↔ docs/sdd\n\n" +
+    defaultDocumentPathMapTable() +
+    "\n\n" +
     "## Opción A — Script (recomendado)\n\n" +
     "Desde la raíz del repo destino (tras copiar el ZIP):\n\n" +
     "```bash\n" +

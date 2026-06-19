@@ -879,8 +879,13 @@ interface WorkshopState {
   ) => Promise<{ created: Array<{ number: number; html_url: string }>; errors: string[] } | null>;
   clarifySpec: (
     projectId: string,
-    opts: { persist: boolean; notes?: string },
-  ) => Promise<{ clarifiedSpec: string; clarificationMarkerCount: number; persisted: boolean } | null>;
+    opts: { persist: boolean; notes?: string; syncMdd?: boolean },
+  ) => Promise<{
+    clarifiedSpec: string;
+    clarificationMarkerCount: number;
+    persisted: boolean;
+    mddSyncQueued?: boolean;
+  } | null>;
   reset: () => void;
 }
 
@@ -4053,6 +4058,7 @@ if (prog && prog.step && prog.step !== "done") {
         clarifiedSpec: string;
         clarificationMarkerCount: number;
         persisted: boolean;
+        mddSyncQueued?: boolean;
       };
       if (data.persisted) {
         set({ specContent: data.clarifiedSpec, error: null });
