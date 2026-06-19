@@ -190,6 +190,7 @@ type WorkshopDocToolbarViewModes = {
   brdDocViewMode: "preview" | "source";
   infraViewMode: "preview" | "source";
   agentGovernanceViewMode: "preview" | "source";
+  tasksViewMode: "preview" | "source";
 };
 
 function getWorkshopDocToolbarActiveViewMode(
@@ -209,6 +210,7 @@ function getWorkshopDocToolbarActiveViewMode(
   if (centralPanel === "logic-flows") return modes.logicFlowsViewMode;
   if (centralPanel === "brd") return modes.brdDocViewMode;
   if (centralPanel === "agent-governance") return modes.agentGovernanceViewMode;
+  if (centralPanel === "tasks") return modes.tasksViewMode;
   return modes.infraViewMode;
 }
 
@@ -515,6 +517,7 @@ export default function WorkshopView({
   const generateAgentGovernance = useWorkshopStore((s) => s.generateAgentGovernance);
   const fetchAgentGovernanceExport = useWorkshopStore((s) => s.fetchAgentGovernanceExport);
   const persistTasksContent = useWorkshopStore((s) => s.persistTasksContent);
+  const setTasksContent = useWorkshopStore((s) => s.setTasksContent);
   const setSpecContent = useWorkshopStore((s) => s.setSpecContent);
   const persistSpecContent = useWorkshopStore((s) => s.persistSpecContent);
   const setUxUiGuideContent = useWorkshopStore((s) => s.setUxUiGuideContent);
@@ -902,6 +905,7 @@ export default function WorkshopView({
   const [mddInicialViewMode, setMddInicialViewMode] = useState<"preview" | "source">("preview");
   const [aemViewMode, setAemViewMode] = useState<"preview" | "source">("preview");
   const [agentGovernanceViewMode, setAgentGovernanceViewMode] = useState<"preview" | "source">("preview");
+  const [tasksViewMode, setTasksViewMode] = useState<"preview" | "source">("preview");
   const [hermesConfigured, setHermesConfigured] = useState<boolean | null>(null);
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
@@ -928,6 +932,7 @@ export default function WorkshopView({
     else if (panel === "infra") setInfraViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "brd") setBrdDocViewMode((m) => (m === "preview" ? "source" : "preview"));
     else if (panel === "agent-governance") setAgentGovernanceViewMode((m) => (m === "preview" ? "source" : "preview"));
+    else if (panel === "tasks") setTasksViewMode((m) => (m === "preview" ? "source" : "preview"));
   };
 
   const copyMddInicialMarkdown = useCallback(async () => {
@@ -1535,15 +1540,9 @@ export default function WorkshopView({
   const { handleBlur: handleApiContractsBlur, isDirty: apiContractsDirty } = useAutoSaveContent(apiContractsContent, project?.apiContractsContent, persistApiContractsContent, projectId);
   const { handleBlur: handleLogicFlowsBlur, isDirty: logicFlowsDirty } = useAutoSaveContent(logicFlowsContent, project?.logicFlowsContent, persistLogicFlowsContent, projectId);
   const { handleBlur: handleInfraBlur, isDirty: infraDirty } = useAutoSaveContent(infraContent, project?.infraContent, persistInfraContent, projectId);
+  const { handleBlur: handleTasksBlur, isDirty: tasksDirty } = useAutoSaveContent(tasksContent, project?.tasksContent, persistTasksContent, projectId);
   const { handleBlur: handleBenchmarkBlur } = useAutoSaveContent(dbgaContent, project?.dbgaContent, persistDbgaContent, projectId);
   const { handleBlur: handlePhase0SummaryBlur } = useAutoSaveContent(phase0SummaryContent, project?.phase0SummaryContent, persistPhase0SummaryContent, projectId);
-
-  // tasks auto-save (view-only, no blur needed)
-  useEffect(() => {
-    if (!projectId || !project || (tasksContent ?? "") === (project.tasksContent ?? "")) return;
-    const t = setTimeout(() => persistTasksContent(tasksContent ?? ""), 1500);
-    return () => clearTimeout(t);
-  }, [tasksContent, projectId, project?.tasksContent, project, persistTasksContent]);
 
   // ux-ui-guide auto-save (YAML frontmatter solo en blur; en debounce no mutar el editor)
   useEffect(() => {
@@ -1617,6 +1616,7 @@ export default function WorkshopView({
       "brd",
       "mdd-inicial",
       "agent-governance",
+      "tasks",
     ]);
     const showDocEdit =
       editableDocPanels.has(centralPanel) &&
@@ -1625,6 +1625,7 @@ export default function WorkshopView({
         centralPanel === "ux-ui-guide" ||
         centralPanel === "aem" ||
         (centralPanel === "blueprint" && blueprintContent) ||
+        (centralPanel === "tasks" && tasksContent) ||
         (centralPanel === "api-contracts" && apiContractsContent) ||
         (centralPanel === "architecture" && architectureContent) ||
         (centralPanel === "use-cases" && useCasesContent) ||
@@ -1669,6 +1670,7 @@ export default function WorkshopView({
       brdDocViewMode,
       infraViewMode,
       agentGovernanceViewMode,
+      tasksViewMode,
     });
     const { Icon, tooltip } = workshopDocSourceTogglePresentation(centralPanel, activeDocViewMode);
     return {
@@ -1692,11 +1694,13 @@ export default function WorkshopView({
     brdDocViewMode,
     infraViewMode,
     agentGovernanceViewMode,
+    tasksViewMode,
     hasAgentGovernance,
     benchmarkPhaseTab,
     benchmarkViewMode,
     phase0SummaryViewMode,
     blueprintContent,
+    tasksContent,
     apiContractsContent,
     architectureContent,
     useCasesContent,
@@ -2677,7 +2681,7 @@ export default function WorkshopView({
                       (centralPanel === "infra" && infraContent) ||
                       (centralPanel === "mdd-inicial" && (activeLegacyState?.codebaseDoc || mddInicialLocalContent)) ||
                       (centralPanel === "brd" && !!activeStageId)) &&
-                     centralPanel !== "tasks" && (() => {
+                     (() => {
                       const activeDocViewMode = getWorkshopDocToolbarActiveViewMode(centralPanel, {
                         mddViewMode,
                         mddInicialViewMode,
@@ -2693,6 +2697,7 @@ export default function WorkshopView({
                         brdDocViewMode,
                         infraViewMode,
                         agentGovernanceViewMode,
+                        tasksViewMode,
                       });
                       const { Icon: DocToggleIcon, tooltip: docToggleTooltip } = workshopDocSourceTogglePresentation(
                         centralPanel,
@@ -4033,21 +4038,25 @@ export default function WorkshopView({
               />
             )}
             {centralPanel === "tasks" && (
-              tasksContent ? (
-                <MddViewer content={tasksContent} />
-              ) : (
-                <DocEmptyState
-                  icon={ListTodo}
-                  title="Tasks"
-                  description="Breakdown desde MDD + Blueprint."
-                  onGenerate={() => generateTasks(projectId)}
-                  loading={loading}
-                  hasMdd={!!(effectiveMddTrimmed && blueprintContent?.trim())}
-                  legacyGenerateLabel={canGenerateFromCodebase ? "Generar Tasks desde MDD Inicial" : undefined}
-                  onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "tasks", activeStageId ?? undefined) : undefined}
-                  legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                />
-              )
+              <StandardDocPanel
+                icon={ListTodo}
+                title="Task Breakdown"
+                description="Desglose ejecutable desde MDD y Blueprint."
+                content={tasksContent}
+                onContentChange={(v) => setTasksContent(v)}
+                onSave={() => void persistTasksContent(tasksContent ?? "")}
+                isDirty={tasksDirty}
+                viewMode={tasksViewMode}
+                onGenerate={() => generateTasks(projectId)}
+                canGenerate={!!(effectiveMddTrimmed && blueprintContent?.trim())}
+                isLoading={loading}
+                generateLabel="Generar Tasks desde MDD y Blueprint"
+                placeholder="# Task Breakdown\n\nUser Story: US-001 …\n\n- [ ] Tarea…"
+                onBlur={handleTasksBlur}
+                legacyGenerateLabel={canGenerateFromCodebase ? "Generar Tasks desde MDD Inicial" : undefined}
+                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "tasks", activeStageId ?? undefined) : undefined}
+                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
+              />
             )}
             {centralPanel === "agent-governance" && (
               agentGovernanceGenerating ? (
@@ -4292,6 +4301,7 @@ export default function WorkshopView({
             brdDocViewMode,
             infraViewMode,
             agentGovernanceViewMode,
+            tasksViewMode,
           });
           const { Icon: DocToggleIcon, tooltip: docToggleTooltip } = workshopDocSourceTogglePresentation(
             centralPanel,
@@ -4307,13 +4317,13 @@ export default function WorkshopView({
           const BenchmarkFabToggleIcon = benchmarkTogglePresentation.Icon;
           const showDocToggle =
             centralPanel !== "benchmark" &&
-            centralPanel !== "tasks" &&
-            (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "mdd-inicial"] as const).includes(centralPanel as any) &&
+            (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "mdd-inicial"] as const).includes(centralPanel as any) &&
             (centralPanel === "spec" ||
               centralPanel === "mdd" ||
               centralPanel === "ux-ui-guide" ||
               centralPanel === "aem" ||
               (centralPanel === "blueprint" && blueprintContent) ||
+              (centralPanel === "tasks" && tasksContent) ||
               (centralPanel === "api-contracts" && apiContractsContent) ||
               (centralPanel === "architecture" && architectureContent) ||
               (centralPanel === "use-cases" && useCasesContent) ||
@@ -4430,6 +4440,7 @@ export default function WorkshopView({
                 logicFlowsViewMode,
                 brdDocViewMode,
                 infraViewMode,
+                tasksViewMode,
               },
               benchmarkPhaseTab,
               benchmarkViewMode,
