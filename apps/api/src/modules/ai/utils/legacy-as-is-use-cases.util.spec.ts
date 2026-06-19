@@ -43,11 +43,10 @@ Plataforma OOH IMJ.
 `;
 
 describe("legacy-as-is-use-cases.util", () => {
-  it("buildMddContextForLegacyAsIsUseCases excluye rutas §4", () => {
+  it("buildMddContextForLegacyAsIsUseCases devuelve el MDD completo", () => {
     const out = buildMddContextForLegacyAsIsUseCases(SAMPLE_AS_IS_MDD);
-    assert.match(out, /Ejecutivo Comercial/);
-    assert.match(out, /campania/);
-    assert.doesNotMatch(out, /\/campanias/);
+    assert.equal(out, SAMPLE_AS_IS_MDD.trim());
+    assert.match(out, /\/campanias/);
   });
 
   it("checklist incluye actores, módulos y matriz", () => {

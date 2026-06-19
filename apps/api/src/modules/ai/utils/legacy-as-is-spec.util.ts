@@ -1,5 +1,5 @@
 /**
- * Spec what/why para legacy etapa 1 (AS-IS): contexto de negocio sin volcar §4 API al Spec.
+ * Spec what/why para legacy etapa 1 (AS-IS): MDD completo como insumo (el Spec sigue en lenguaje de negocio vía prompts).
  */
 
 import { extractEntities } from "../../engine/conformance.service.js";
@@ -54,44 +54,9 @@ export function extractModuleBullets(section1: string): string[] {
   return items;
 }
 
-/**
- * Insumo Spec AS-IS: §1 completo + dominios (entidades §3) + reglas §5 — **sin** tabla §4 API.
- */
+/** Insumo Spec AS-IS: MDD completo (sin extracto ni omisión de secciones). */
 export function buildMddContextForLegacyAsIsSpec(mddMarkdown: string): string {
-  const md = (mddMarkdown ?? "").trim();
-  if (!md) return "";
-
-  const s1 = extractSectionByNumber(md, 1).trim();
-  const s3 = extractSectionByNumber(md, 3).trim();
-  const s5 = extractSectionByNumber(md, 5).trim();
-  const entities = [...extractEntities(s3)].sort();
-  const edgeCases = extractEdgeCaseTitles(s5);
-  const modules = extractModuleBullets(s1);
-
-  const parts: string[] = [];
-  if (s1) parts.push("## Extracto MDD §1 Contexto (AS-IS)\n\n" + s1);
-
-  if (entities.length) {
-    parts.push(
-      "## Dominios de negocio (desde entidades MDD §3 — traducir a capacidades en el Spec)\n\n" +
-        entities.map((e) => `- ${e}`).join("\n"),
-    );
-  }
-
-  if (modules.length) {
-    parts.push(
-      "## Módulos / capacidades citadas en §1\n\n" + modules.map((m) => `- ${m}`).join("\n"),
-    );
-  }
-
-  if (edgeCases.length) {
-    parts.push(
-      "## Reglas y procesos críticos (MDD §5 — convertir a criterios UAT en lenguaje comercial)\n\n" +
-        edgeCases.map((t) => `- ${t}`).join("\n"),
-    );
-  }
-
-  return parts.join("\n\n---\n\n");
+  return (mddMarkdown ?? "").trim();
 }
 
 export function buildLegacyAsIsSpecCoverageChecklist(mddMarkdown: string): string {

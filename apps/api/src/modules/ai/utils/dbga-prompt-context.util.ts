@@ -17,23 +17,13 @@ export function sanitizeSourceDocForBrdPrompt(text: string): string {
 }
 
 /**
- * Limita el documento fuente para el prompt de BRD preservando inicio y cierre.
+ * Prepara el documento fuente para el prompt de BRD (sanitiza; sin recorte por presupuesto).
+ * `maxChars` se conserva por compatibilidad de firma y se ignora.
  */
 export function truncateSourceDocForBrdPrompt(
   text: string,
-  maxChars: number = DBGA_FOR_BRD_PROMPT_MAX_CHARS,
+  _maxChars: number = DBGA_FOR_BRD_PROMPT_MAX_CHARS,
 ): { text: string; truncated: boolean } {
   const sanitized = sanitizeSourceDocForBrdPrompt(text);
-  if (sanitized.length <= maxChars) return { text: sanitized, truncated: false };
-
-  const headLen = Math.floor(maxChars * 0.55);
-  const tailLen = Math.floor(maxChars * 0.35);
-  const omitted = sanitized.length - headLen - tailLen;
-  const marker =
-    `\n\n---\n\n*[Documento truncado para generación de BRD: se omitieron ~${omitted.toLocaleString("es-MX")} caracteres del centro. Usa el inicio y el cierre como referencia principal.]*\n\n---\n\n`;
-
-  return {
-    text: sanitized.slice(0, headLen) + marker + sanitized.slice(-tailLen),
-    truncated: true,
-  };
+  return { text: sanitized, truncated: false };
 }

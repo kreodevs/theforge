@@ -34,10 +34,11 @@ ${Array.from({ length: 200 }, (_, i) => `- src/file-${i}.js`).join("\n")}
 `;
 
 describe("prepareLegacyCodebaseDocForBrdPrompt", () => {
-  it("compacta evidence_paths masivos", () => {
+  it("pasa el codebaseDoc completo (sin truncar)", () => {
     const prep = prepareLegacyCodebaseDocForBrdPrompt(SAMPLE_DOC);
     assert.ok(prep.text.includes("campania"));
-    assert.ok(prep.text.includes("rutas omitidas") || !prep.text.includes("file-199"));
+    assert.ok(prep.text.includes("file-199"));
+    assert.equal(prep.truncated, false);
     assert.equal(prep.entityCount, 2);
     assert.equal(prep.serviceCount, 1);
   });

@@ -691,6 +691,8 @@ export class ProjectIntegrationService {
         status: t.status,
         title: item?.title ?? t.newLegId,
         description: item?.description ?? "",
+        actor: item?.actor ?? null,
+        acceptanceCriteria: item?.acceptanceCriteria ?? [],
       };
     });
   }
