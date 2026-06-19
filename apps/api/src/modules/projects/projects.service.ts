@@ -53,6 +53,7 @@ import { resolveUrls } from "../scraper/url-utils.js";
 import {
   createProjectSchema,
   createStageBodySchema,
+  cloneProjectBodySchema,
   patchStageBodySchema,
   updateProjectSchema,
   DELIVERABLES_BY_COMPLEXITY,
@@ -90,6 +91,11 @@ import {
 } from "./stage-deliverable-persist.util.js";
 import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
+import {
+  buildProjectCloneCreateInput,
+  resolveCloneProjectOptions,
+  type ProjectCloneSource,
+} from "./project-clone.util.js";
 
 import {
   BRD_GENERATION_SYSTEM,
@@ -298,6 +304,49 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       },
     });
     return toApiProject(created);
+  }
+
+  /**
+   * Deep-clones project documents and all stages into a new project owned by the current user.
+   * Does not copy sessions, chat, favorites, integration links, webhooks, or suite lineage.
+   */
+  async cloneProject(sourceId: string, body: unknown) {
+    const parsed = cloneProjectBodySchema.parse(body ?? {});
+    const source = (await this.assertProjectAccess(sourceId)) as ProjectCloneSource;
+    const userId = getRequestUserId();
+    const options = resolveCloneProjectOptions(source, parsed);
+
+    const created = await this.prisma.project.create({
+      data: buildProjectCloneCreateInput(source, { userId, ...options }),
+      include: {
+        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+      },
+    });
+
+    if (source.projectType === "LEGACY") {
+      const sortedStages = [...created.stages].sort((a, b) => a.ordinal - b.ordinal);
+      for (const stage of sortedStages) {
+        const parentStage =
+          stage.ordinal > 1
+            ? sortedStages.find((candidate) => candidate.ordinal === stage.ordinal - 1)
+            : undefined;
+        this.graphMemory
+          .syncLegacyStage({
+            stageId: stage.id,
+            projectId: created.id,
+            ordinal: stage.ordinal,
+            name: stage.name ?? "",
+            parentStageId: parentStage?.id,
+            theforgeProjectId: source.theforgeProjectId ?? undefined,
+          })
+          .catch(() => {});
+      }
+    }
+
+    return {
+      ...toApiProject(created),
+      clonedFromProjectId: sourceId,
+    };
   }
 
   async findAll() {

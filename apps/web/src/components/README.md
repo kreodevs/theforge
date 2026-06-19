@@ -9,6 +9,7 @@
 | **DashboardSidebar** | En Workshop, «Panel de proyectos» queda `disabled` mientras `selectWorkshopAgentsBusy` (mismo criterio que el chat). |
 | **ProjectMergeDialog** | Fusión de 2+ carpetas en Paso 0: config (destino, benchmark, suite, archivado), preview con conflictos, `POST /projects/merge`. |
 | **RenameProjectDialog** | Renombrar proyecto (`PATCH /projects/:id` con `{ name }`). Lápiz en carpeta del dashboard, barra de selección (1 carpeta) y header del Workshop. |
+| **CloneProjectDialog** | Clonar proyecto (`POST /projects/:id/clone`). Barra de selección con una carpeta: «Clonar» → nombre por defecto «Copia de …»; abre el Workshop en el clon. |
 | **Phase0ManualAudit** | Acepta `initialAudit` para reanudar auditoría tras fusión (`audit_started` / `audit_complete`). |
 | **MddPatternsWizardDialog** | Selector SSOT con pestañas verticales (`initial \| edit`): títulos = categorías del wizard MDD (emoji + texto original). Antes de abrir: `POST …/mdd/suggest-governance-patterns` (DBGA, benchmark, BRD). Al confirmar: MDD solo con patrones `[X]` + `POST …/mdd/record-governance-pattern-adrs`. |
 | **ProviderInstancesCard** | CRUD/listado de instancias de proveedor IA; marca la instancia **Activa** (runtime del grafo MDD y chat). En el modal, **Modelo de auditor** opcional (`auditorChatModel`) para el nodo Auditor MDD. |
