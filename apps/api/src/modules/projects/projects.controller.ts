@@ -229,6 +229,11 @@ export class ProjectsController {
     return this.sddIntegration.tasksToIssues(id, parsed);
   }
 
+  @Post(":id/clone")
+  cloneProject(@Param("id") id: string, @Body() body: unknown) {
+    return this.projects.cloneProject(id, body);
+  }
+
   @Patch(":id")
   update(@Param("id") id: string, @Body() body: unknown) {
     return this.projects.update(id, updateProjectSchema.partial().parse(body));

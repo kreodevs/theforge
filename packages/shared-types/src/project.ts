@@ -88,6 +88,14 @@ export const phase0DeepResearchBodySchema = z.object({
   includeBenchmark: z.boolean().optional().default(false),
 });
 
+/** Body for POST /projects/:id/clone — duplicate project documents and stages for sandbox work. */
+export const cloneProjectBodySchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    visibility: VisibilityEnum.default("PRIVATE"),
+  })
+  .strict();
+
 export const projectResponseSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -118,7 +126,13 @@ export const projectResponseSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+export const cloneProjectResultSchema = projectResponseSchema.extend({
+  clonedFromProjectId: z.string().uuid(),
+});
+
 export type Phase0DeepResearchBody = z.infer<typeof phase0DeepResearchBodySchema>;
+export type CloneProjectBody = z.infer<typeof cloneProjectBodySchema>;
+export type CloneProjectResult = z.infer<typeof cloneProjectResultSchema>;
 export type CreateProjectDto = z.infer<typeof createProjectSchema>;
 export type UpdateProjectDto = z.infer<typeof updateProjectSchema>;
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;
