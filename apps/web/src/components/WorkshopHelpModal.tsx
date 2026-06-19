@@ -21,8 +21,10 @@ import {
   Sparkles,
   Target,
   Users,
+  Webhook,
   type LucideIcon,
 } from "lucide-react";
+import convergeWebhookCiHelp from "../content/help/converge-webhook-ci.md?raw";
 import legacyNewIntegrationHelp from "../content/help/legacy-new-integration.md?raw";
 import {
   Button,
@@ -51,6 +53,7 @@ interface HelpSection {
 const SECTION_ICONS: Record<string, LucideIcon> = {
   manual: BookOpen,
   "legacy-new-integration": Link2,
+  "converge-webhook-ci": Webhook,
   sdd: Brain,
   mdd: FileText,
   spec: ClipboardList,
@@ -143,12 +146,19 @@ const SECTIONS: HelpSection[] = [
       "En el repositorio: `docs/notebooklm/STAGE-SDD.md`, `docs/notebooklm/THEFORGE-INDEX.md`, `docs/notebooklm/ENTREGABLES-SDD-VALIDACION.md`.",
       "",
       "Integración entre monolito legacy y producto nuevo: ver **Integración Legacy ↔ Nuevo** en esta misma ayuda.",
+      "",
+      "Automatizar drift brownfield en CI (Ariadne + webhook converge): ver **Webhook converge (CI)** en esta misma ayuda.",
     ].join("\n"),
   },
   {
     id: "legacy-new-integration",
     label: "Integración Legacy ↔ Nuevo",
     content: legacyNewIntegrationHelp.trim(),
+  },
+  {
+    id: "converge-webhook-ci",
+    label: "Webhook converge (CI)",
+    content: convergeWebhookCiHelp.trim(),
   },
   {
     id: "sdd",
@@ -711,7 +721,7 @@ const SECTIONS: HelpSection[] = [
 ];
 
 const NAV_GROUPS: { label: string; sectionIds: string[] }[] = [
-  { label: "Guía", sectionIds: ["manual", "legacy-new-integration"] },
+  { label: "Guía", sectionIds: ["manual", "legacy-new-integration", "converge-webhook-ci"] },
   { label: "Metodología", sectionIds: ["sdd"] },
   {
     label: "Documentos",
