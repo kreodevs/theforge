@@ -50,8 +50,6 @@ import { isLegacyBaselineStage, pickPrimaryStage } from "../projects/stage-helpe
 import {
   appendLegacyBaselineBrdDetailPrompt,
   appendLegacyBaselineDetailPrompt,
-  readLegacyBaselineBrdInventoryRefMaxChars,
-  readLegacyBaselineReverseEngineeringMaxChars,
 } from "../ai/utils/legacy-baseline-detail.util.js";
 import { resolveLegacyBaselineStageFlag } from "../ai/utils/legacy-as-is-spec.util.js";
 import {
@@ -214,12 +212,10 @@ const DELIVERABLE_KIND_TO_CODEBASE_DOC_TYPE: Partial<Record<DeliverableKind, str
   infra: "infra",
 };
 
-const REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS = 120_000;
 
 function buildReverseEngineeringMddForLegacySteps(
   codebaseDoc: string,
   report: LegacyDeliverablesDebugReport,
-  maxChars: number = REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS,
 ): string {
   const compact = compactCodebaseDocForMddPrompt(codebaseDoc);
   const wrapped =
@@ -227,22 +223,10 @@ function buildReverseEngineeringMddForLegacySteps(
     compact;
   report.mddRollupWindows = 0;
   report.mddRollupFailed = false;
-  if (wrapped.length <= maxChars) {
-    report.mddLlmStrategy = "full";
-    report.mddCharsSentToLlm = wrapped.length;
-    report.mddClippedForLlm = false;
-    return wrapped;
-  }
-  report.mddLlmStrategy = "truncate";
-  report.mddClippedForLlm = true;
-  const footer =
-    "\n\n---\n\n> **Nota (The Forge — entregables legacy):** El codebaseDoc superó " +
-    String(maxChars) +
-    " caracteres. **Solo se envió el inicio** al modelo; el final fue omitido.\n";
-  const budget = Math.max(0, maxChars - footer.length);
-  const clipped = wrapped.slice(0, budget) + footer;
-  report.mddCharsSentToLlm = clipped.length;
-  return clipped;
+  report.mddLlmStrategy = "full";
+  report.mddCharsSentToLlm = wrapped.length;
+  report.mddClippedForLlm = false;
+  return wrapped;
 }
 
 export interface LegacyFlowState {
@@ -272,9 +256,8 @@ const COORDINATOR_SYSTEM =
   KNOWLEDGE +
   "\n---";
 
-function mddTheforgeContextMaxChars(): number {
-  const n = parseInt(process.env.LEGACY_MDD_THEFORGE_CONTEXT_MAX_CHARS ?? "64000", 10);
-  return Number.isFinite(n) && n > 0 ? n : 64000;
+function mddTheforgeContextBlock(theforgeContext: string): string {
+  return theforgeContext.trim();
 }
 
 function envFlag(name: string, defaultTrue: boolean): boolean {
@@ -545,7 +528,7 @@ export class LegacyCoordinatorService {
     try {
       const content = await this.theforge.fetchNavigationMap(theforgeId);
       if (!content || content.length < 200) return undefined;
-      return content.slice(0, 6000);
+      return content;
     } catch {
       return undefined;
     }
@@ -632,7 +615,7 @@ export class LegacyCoordinatorService {
         if (baseline?.brdContent?.trim()) {
           baselineBrdBlock =
             "## Línea base — BRD de la etapa anterior (sistema sin el cambio actual)\n\n" +
-            baseline.brdContent.trim().slice(0, 15000) +
+            baseline.brdContent.trim() +
             "\n\n---\n\n**Instrucción:** El BRD debe centrarse SOLO en el cambio respecto a esta línea base. " +
             "No redescribas el sistema completo.\n\n---\n\n";
         }
@@ -661,17 +644,11 @@ export class LegacyCoordinatorService {
       );
       const inventory = cleanDocumentContent(inventoryRaw ?? "").trim();
       if (inventory.length >= 400) {
-        const refCap = readLegacyBaselineBrdInventoryRefMaxChars(24_000);
-        const refDoc =
-          refCap >= Number.MAX_SAFE_INTEGER / 2
-            ? sourcePrep.text
-            : sourcePrep.text.slice(0, Math.min(sourcePrep.text.length, refCap));
         brdSourceDocument =
           "## Inventario de negocio (extracción previa — cubrir TODO en el BRD)\n\n" +
           inventory +
           "\n\n---\n\n## Documento de partida (referencia)\n\n" +
-          refDoc;
-        sourceTruncated = sourceTruncated || refDoc.length < sourcePrep.text.length;
+          sourcePrep.text;
       }
     }
 
@@ -1198,7 +1175,7 @@ export class LegacyCoordinatorService {
       for (let i = 0; i < Math.min(2, files.length); i++) {
         const f = files[i]!;
         const content = await this.theforge.getFileContent(f.path, f.repoId || theforgeId, undefined, f.path);
-        if (content.trim()) theforgeParts.push(`Contenido de ${f.path}:\n` + content.slice(0, 3000) + (content.length > 3000 ? "\n…" : ""));
+        if (content.trim()) theforgeParts.push(`Contenido de ${f.path}:\n` + content.trim());
       }
     }
     const theforgeContext = theforgeParts.join("\n\n---\n\n");
@@ -1250,13 +1227,13 @@ export class LegacyCoordinatorService {
         (theforgeContext
           ? "Contexto del codebase (TheForge) — evidencia del índice, arquitectura, definiciones y búsqueda semántica. " +
             "Usar TODO para describir el sistema real.\n---\n" +
-            theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
+            mddTheforgeContextBlock(theforgeContext) +
             "\n---"
           : "");
     } else {
       const baselineBlock = baselineStage?.mddContent?.trim()
         ? "## Línea base — MDD de la etapa anterior (sistema sin el cambio actual)\n\n" +
-          baselineStage.mddContent.trim().slice(0, 30000) +
+          baselineStage.mddContent.trim() +
           "\n\n---\n\n" +
           "**Instrucción:** El MDD de cambio debe describir SOLO las modificaciones, adiciones o eliminaciones " +
           "respecto a esta línea base. No redescribas secciones enteras que no cambian. " +
@@ -1288,7 +1265,7 @@ export class LegacyCoordinatorService {
           ? "Contexto del codebase (TheForge) — incluye evidencia del índice, validaciones, definiciones exactas, " +
             "funciones por archivo y búsqueda semántica. Usar TODO para inferir impacto completo. " +
             "No inventes rutas ni APIs que no aparezcan en este contexto.\n---\n" +
-            theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
+            mddTheforgeContextBlock(theforgeContext) +
             "\n---"
           : "");
     }
@@ -1763,14 +1740,14 @@ export class LegacyCoordinatorService {
           }
           let uxPrompt =
             "Genera la Guía UX/UI en markdown según el system prompt. MDD:\n---\n" +
-            (legacyBaselineStage ? mddForLlm : mddForLlm.slice(0, 8000)) +
+            mddForLlm +
             "\n---\n\nBlueprint:\n---\n" +
-            (legacyBaselineStage ? bpUx : bpUx.slice(0, 4000)) +
+            bpUx +
             "\n---";
           if (theforgeContext) {
             uxPrompt =
               "**Contexto del codebase (TheForge) — priorizar y usar antes de elaborar:**\n---\n" +
-              theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
+              mddTheforgeContextBlock(theforgeContext) +
               "\n---\n\n**Regla obligatoria (legacy):** No inventes nada. Apégate al MDD y únicamente al conocimiento del codebase (TheForge) proporcionado arriba.\n\n**Instrucción:** Usa TODO el conocimiento anterior para alinear la guía con lo que ya existe. A continuación, MDD y Blueprint.\n\n" +
               uxPrompt;
           }
@@ -1791,7 +1768,7 @@ export class LegacyCoordinatorService {
                 if (hasTokens) {
                   uxPrompt =
                     "**Tokens de diseño extraídos del codebase — usar como valores reales:**\\n---\\n" +
-                    (parsed.summary ?? "").slice(0, 6000) +
+                    (parsed.summary ?? "") +
                     "\\n---\\n\\n" +
                     uxPrompt;
                 }
@@ -1960,13 +1937,9 @@ export class LegacyCoordinatorService {
     let reverseEngineeringMddForLegacySteps: string | null = null;
     const getReverseEngineeringMddForLegacySteps = (): string => {
       if (reverseEngineeringMddForLegacySteps === null) {
-        const maxChars = legacyBaselineStage
-          ? readLegacyBaselineReverseEngineeringMaxChars(REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS)
-          : REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS;
         reverseEngineeringMddForLegacySteps = buildReverseEngineeringMddForLegacySteps(
           codebaseDoc,
           report,
-          maxChars,
         );
         if (isLegacyDeliverablesDebugVerbose()) {
           this.logger.log(
@@ -2230,7 +2203,7 @@ export class LegacyCoordinatorService {
       const stageMdd = String(gateStageForMdd?.mddContent ?? "").trim();
       const mddForTasks =
         stageMdd ||
-        `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc.slice(0, REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS)}`;
+        `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}`;
       const legacyBaselineStage = resolveLegacyBaselineStageFlag(gateStageForMdd, stageMdd || mddForTasks);
       let legacyOpts:
         | { theforgeContext?: string; contractSpecs?: string; legacyBaselineStage?: boolean }
@@ -2260,8 +2233,7 @@ export class LegacyCoordinatorService {
     } else {
       // Construir prompt
       const typePrompt = LegacyCoordinatorService.DOCUMENT_TYPE_PROMPTS[documentType];
-      const codebaseChunk = codebaseDoc.slice(0, 120_000);
-      const prompt = `${typePrompt}\n\n--- codebaseDoc ---\n\n${codebaseChunk}`;
+      const prompt = `${typePrompt}\n\n--- codebaseDoc ---\n\n${codebaseDoc}`;
 
       // Llamar al LLM
       const llm = await this.aiFactory.createForUser(getRequestUserId());

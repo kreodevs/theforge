@@ -99,6 +99,32 @@ export interface IntegrationTraceRow {
   status: string;
   title: string;
   description: string;
+  actor?: string | null;
+  acceptanceCriteria?: string[];
+}
+
+/** Markdown de vista previa (integración) — no persiste en `userStoriesContent` del legacy. */
+export function formatIntegrationHandoffPreviewStory(
+  item: Pick<IntegrationHandoffItem, "id" | "title" | "description" | "actor" | "acceptanceCriteria">,
+): string {
+  const lines: string[] = [
+    `### [Integración] ${item.id} — ${item.title}`,
+    "",
+    "> Sincronizado desde el proyecto NEW. **No** forma parte del documento **Historias de Usuario** del legacy hasta promover a nueva etapa.",
+    "",
+    "### 🧾 Historia de Usuario",
+    "",
+  ];
+  if (item.actor?.trim()) {
+    lines.push(`**Como:** ${item.actor.trim()}`, "");
+  }
+  lines.push(item.description.trim(), "");
+  if (item.acceptanceCriteria?.length) {
+    lines.push("**Criterios de aceptación:**", "");
+    for (const ac of item.acceptanceCriteria) lines.push(`- ${ac}`);
+    lines.push("");
+  }
+  return lines.join("\n").trim();
 }
 
 /** Genera el siguiente id NEW-LEG-XX a partir de items existentes. */

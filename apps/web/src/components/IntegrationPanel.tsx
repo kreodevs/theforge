@@ -2,6 +2,8 @@
  * Workshop panel: cross-project integration NEW ↔ LEGACY (handoff, traces, link picker).
  */
 import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ArrowLeftRight,
   CheckCircle2,
@@ -10,6 +12,7 @@ import {
   Link2,
   Loader2,
   Plus,
+  Pencil,
   Send,
   Sparkles,
   Trash2,
@@ -20,7 +23,7 @@ import type {
   IntegrationStatusResponse,
   IntegrationTraceRow,
 } from "@theforge/shared-types";
-import { buildHandoffImportDescription } from "@theforge/shared-types";
+import { buildHandoffImportDescription, formatIntegrationHandoffPreviewStory } from "@theforge/shared-types";
 import {
   Badge,
   Button,
@@ -83,6 +86,9 @@ export function IntegrationPanel({
   const [promoteSubmitting, setPromoteSubmitting] = useState(false);
   const [convergeWebhookUrl, setConvergeWebhookUrl] = useState(initialConvergeWebhookUrl ?? "");
   const [convergeWebhookSaving, setConvergeWebhookSaving] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTrace, setPreviewTrace] = useState<IntegrationTraceRow | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const handoffTitleId = useId();
   const handoffDescriptionId = useId();
 
@@ -267,6 +273,37 @@ export function IntegrationPanel({
     [projectId, loadStatus],
   );
 
+  const updateHandoffItem = useCallback(
+    async (
+      itemId: string,
+      payload: {
+        title: string;
+        description: string;
+        actor?: string;
+        acceptanceCriteria?: string[];
+      },
+    ) => {
+      const body = {
+        title: payload.title.trim(),
+        description: payload.description.trim(),
+        actor: payload.actor?.trim() ?? "",
+        acceptanceCriteria: payload.acceptanceCriteria ?? [],
+      };
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}/integration/handoff/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        setError("No se pudo actualizar ítem handoff");
+        return false;
+      }
+      await loadStatus();
+      return true;
+    },
+    [projectId, loadStatus],
+  );
+
   const saveConvergeWebhook = useCallback(async () => {
     setConvergeWebhookSaving(true);
     setError(null);
@@ -290,6 +327,37 @@ export function IntegrationPanel({
       setConvergeWebhookSaving(false);
     }
   }, [projectId, convergeWebhookUrl, onProjectRefresh]);
+
+  const openHandoffPreview = useCallback(
+    async (trace: IntegrationTraceRow) => {
+      setPreviewTrace(trace);
+      setPreviewOpen(true);
+      setPreviewLoading(true);
+      try {
+        const r = await apiFetch(`${API_BASE}/projects/${projectId}/integration`);
+        if (r.ok) {
+          const data = (await r.json()) as IntegrationStatusResponse;
+          setStatus(data);
+          const fresh = data.traces.find((t) => t.newLegId === trace.newLegId);
+          if (fresh) setPreviewTrace(fresh);
+        }
+      } finally {
+        setPreviewLoading(false);
+      }
+    },
+    [projectId],
+  );
+
+  const previewMarkdown = useMemo(() => {
+    if (!previewTrace?.description?.trim()) return "";
+    return formatIntegrationHandoffPreviewStory({
+      id: previewTrace.newLegId,
+      title: previewTrace.title,
+      description: previewTrace.description,
+      actor: previewTrace.actor ?? undefined,
+      acceptanceCriteria: previewTrace.acceptanceCriteria,
+    });
+  }, [previewTrace]);
 
   if (loading && !status) {
     return (
@@ -397,6 +465,7 @@ export function IntegrationPanel({
               onDescriptionChange={setNewDescription}
               onAdd={() => void addHandoffItem()}
               onDelete={(id) => void deleteItem(id)}
+              onUpdate={(id, payload) => updateHandoffItem(id, payload)}
               onSend={() => void sendHandoff()}
               linked={!!linked}
             />
@@ -450,7 +519,37 @@ export function IntegrationPanel({
         ) : null}
       </ol>
 
-      <TraceMatrix traces={status?.traces ?? []} />
+      <TraceMatrix traces={status?.traces ?? []} onOpenPreview={(t) => void openHandoffPreview(t)} />
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent size="lg" className="gap-0 p-0">
+          <DialogHeader className="border-b border-[var(--border)] px-4 py-3 text-left">
+            <DialogTitle className="font-mono text-base">
+              {previewTrace?.newLegId ?? "Handoff"}
+            </DialogTitle>
+            <DialogDescription>
+              Vista previa como historia de usuario (solo integración). Se actualiza al editar el ítem en el
+              proyecto NEW. No se escribe en Historias de Usuario del legacy hasta promover a nueva etapa.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[70vh] overflow-y-auto p-4">
+            {previewLoading ? (
+              <div className="flex items-center justify-center gap-2 py-12 text-sm text-[var(--muted-foreground)]">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Sincronizando desde proyecto NEW…
+              </div>
+            ) : previewMarkdown ? (
+              <article className="prose prose-sm max-w-none text-[var(--foreground)] dark:prose-invert">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{previewMarkdown}</ReactMarkdown>
+              </article>
+            ) : (
+              <p className="py-8 text-center text-sm text-[var(--foreground-muted)]">
+                Sin descripción en el proyecto NEW. Edita el handoff allí para ver la historia aquí.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <div className="px-5 pt-5 sm:px-6 sm:pt-6">
@@ -880,6 +979,7 @@ function HandoffEditor({
   onDescriptionChange,
   onAdd,
   onDelete,
+  onUpdate,
   onSend,
   linked,
 }: {
@@ -892,10 +992,21 @@ function HandoffEditor({
   onDescriptionChange: (v: string) => void;
   onAdd: () => void;
   onDelete: (id: string) => void;
+  onUpdate: (
+    id: string,
+    payload: {
+      title: string;
+      description: string;
+      actor?: string;
+      acceptanceCriteria?: string[];
+    },
+  ) => Promise<boolean>;
   onSend: () => void;
   linked: boolean;
 }) {
   const canAdd = newTitle.trim().length > 0 && newDescription.trim().length > 0;
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   return (
     <div className="space-y-5">
@@ -914,7 +1025,7 @@ function HandoffEditor({
         </div>
         <div className="space-y-2">
           <label htmlFor={descriptionId} className="text-xs font-medium text-[var(--foreground)]">
-            Qué debe hacer el legacy
+            Historia en lenguaje natural (qué debe hacer el legacy)
           </label>
           <textarea
             id={descriptionId}
@@ -951,43 +1062,178 @@ function HandoffEditor({
         />
       ) : (
         <ul className="space-y-2" role="list">
-          {items.map((item) => (
-            <li
-              key={item.id}
-              className="rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] px-3 py-3"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs text-[var(--primary)]">{item.id}</span>
-                    <HandoffStatusBadge status={item.status} />
+          {items.map((item) =>
+            editingId === item.id ? (
+              <HandoffItemEditForm
+                key={item.id}
+                item={item}
+                saving={editSaving}
+                onCancel={() => setEditingId(null)}
+                onSave={async (payload) => {
+                  setEditSaving(true);
+                  try {
+                    const ok = await onUpdate(item.id, payload);
+                    if (ok) setEditingId(null);
+                  } finally {
+                    setEditSaving(false);
+                  }
+                }}
+              />
+            ) : (
+              <li
+                key={item.id}
+                className="rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] px-3 py-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-[var(--primary)]">{item.id}</span>
+                      <HandoffStatusBadge status={item.status} />
+                    </div>
+                    <p className="mt-1.5 font-medium text-[var(--foreground)]">{item.title}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-[var(--foreground-muted)]">
+                      {item.description}
+                    </p>
+                    {item.actor?.trim() ? (
+                      <p className="mt-1 text-xs text-[var(--foreground-muted)]">
+                        <span className="font-medium text-[var(--foreground)]">Actor:</span> {item.actor}
+                      </p>
+                    ) : null}
+                    {item.acceptanceCriteria?.length ? (
+                      <ul className="mt-2 list-inside list-disc text-xs text-[var(--foreground-muted)]">
+                        {item.acceptanceCriteria.map((ac) => (
+                          <li key={ac}>{ac}</li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
-                  <p className="mt-1.5 font-medium text-[var(--foreground)]">{item.title}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-[var(--foreground-muted)]">
-                    {item.description}
-                  </p>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-[var(--foreground-subtle)] transition-colors hover:bg-[color-mix(in_oklch,var(--muted)_50%,transparent)] hover:text-[var(--foreground)]"
+                      onClick={() => setEditingId(item.id)}
+                      aria-label={`Editar ${item.id}`}
+                      disabled={!linked}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-[var(--foreground-subtle)] transition-colors hover:bg-[color-mix(in_oklch,var(--destructive)_10%,transparent)] hover:text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]"
+                      onClick={() => onDelete(item.id)}
+                      aria-label={`Eliminar ${item.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  className="shrink-0 rounded-md p-1.5 text-[var(--foreground-subtle)] transition-colors hover:bg-[color-mix(in_oklch,var(--destructive)_10%,transparent)] hover:text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]"
-                  onClick={() => onDelete(item.id)}
-                  aria-label={`Eliminar ${item.id}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </li>
-          ))}
+              </li>
+            ),
+          )}
         </ul>
       )}
 
       {items.length > 0 ? (
         <p className="text-xs text-[var(--foreground-muted)]">
-          {items.length} solicitud{items.length === 1 ? "" : "es"} · cada módulo NEW puede evolucionar de forma
-          independiente mientras coordina cambios con el legacy.
+          {items.length} solicitud{items.length === 1 ? "" : "es"} · edita en cualquier momento; el legacy ve
+          los cambios al abrir la vista previa en la matriz de trazabilidad.
         </p>
       ) : null}
     </div>
+  );
+}
+
+function HandoffItemEditForm({
+  item,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  item: IntegrationHandoffItem;
+  saving: boolean;
+  onCancel: () => void;
+  onSave: (payload: {
+    title: string;
+    description: string;
+    actor?: string;
+    acceptanceCriteria?: string[];
+  }) => Promise<void>;
+}) {
+  const [title, setTitle] = useState(item.title);
+  const [description, setDescription] = useState(item.description);
+  const [actor, setActor] = useState(item.actor ?? "");
+  const [criteriaText, setCriteriaText] = useState((item.acceptanceCriteria ?? []).join("\n"));
+  const canSave = title.trim().length > 0 && description.trim().length > 0;
+
+  const handleSave = () => {
+    if (!canSave || saving) return;
+      const acceptanceCriteria = criteriaText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    void onSave({
+      title,
+      description,
+      actor: actor.trim(),
+      acceptanceCriteria,
+    });
+  };
+
+  return (
+    <li className="rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_4%,var(--card))] px-3 py-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="font-mono text-xs text-[var(--primary)]">{item.id}</span>
+        <HandoffStatusBadge status={item.status} />
+        <span className="text-[10px] uppercase tracking-wide text-[var(--foreground-muted)]">Editando</span>
+      </div>
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--foreground)]">Título</label>
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving} />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--foreground)]">Historia en lenguaje natural</label>
+          <textarea
+            className="flex min-h-[88px] w-full rounded-md border border-[var(--input-border)] bg-[var(--input)] px-3 py-2 text-sm text-[var(--foreground)] shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-60"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            disabled={saving}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--foreground)]">Actor (opcional)</label>
+          <Input
+            placeholder="Ej. vendedor, administrador de campañas"
+            value={actor}
+            onChange={(e) => setActor(e.target.value)}
+            disabled={saving}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--foreground)]">
+            Criterios de aceptación (opcional, uno por línea)
+          </label>
+          <textarea
+            className="flex min-h-[64px] w-full rounded-md border border-[var(--input-border)] bg-[var(--input)] px-3 py-2 text-sm text-[var(--foreground)] shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-60"
+            value={criteriaText}
+            onChange={(e) => setCriteriaText(e.target.value)}
+            rows={3}
+            disabled={saving}
+            placeholder="- Dado… cuando… entonces…"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button type="button" size="sm" disabled={!canSave || saving} onClick={handleSave}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+            Guardar
+          </Button>
+          <Button type="button" size="sm" variant="outline" disabled={saving} onClick={onCancel}>
+            Cancelar
+          </Button>
+        </div>
+      </div>
+    </li>
   );
 }
 
@@ -1013,14 +1259,21 @@ function HandoffStatusBadge({ status }: { status: string }) {
   );
 }
 
-function TraceMatrix({ traces }: { traces: IntegrationTraceRow[] }) {
+function TraceMatrix({
+  traces,
+  onOpenPreview,
+}: {
+  traces: IntegrationTraceRow[];
+  onOpenPreview: (trace: IntegrationTraceRow) => void;
+}) {
   if (!traces.length) return null;
   return (
     <Card>
       <div className="px-5 pt-5 sm:px-6 sm:pt-6">
         <CardTitle className="text-sm font-semibold">Trazabilidad NEW-LEG ↔ LEG</CardTitle>
         <CardDescription className="mt-1.5">
-          Seguimiento entre solicitudes del módulo nuevo e historias implementadas en legacy.
+          Seguimiento entre solicitudes del módulo nuevo e historias implementadas en legacy. Haz clic en un
+          NEW-LEG para ver la historia de usuario sincronizada (solo vista de integración).
         </CardDescription>
       </div>
       <CardContent className="overflow-x-auto px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
@@ -1036,12 +1289,28 @@ function TraceMatrix({ traces }: { traces: IntegrationTraceRow[] }) {
           <tbody>
             {traces.map((t) => (
               <tr key={t.id} className="border-b border-[color-mix(in_oklch,var(--border)_70%,transparent)]">
-                <td className="py-2.5 pr-3 font-mono text-[var(--primary)]">{t.newLegId}</td>
+                <td className="py-2.5 pr-3">
+                  <button
+                    type="button"
+                    className="font-mono text-[var(--primary)] underline-offset-2 hover:underline"
+                    onClick={() => onOpenPreview(t)}
+                  >
+                    {t.newLegId}
+                  </button>
+                </td>
                 <td className="py-2.5 pr-3 font-mono text-[var(--foreground)]">{t.legacyStoryId ?? "—"}</td>
                 <td className="py-2.5 pr-3">
                   <HandoffStatusBadge status={t.status} />
                 </td>
-                <td className="py-2.5 text-[var(--foreground-muted)]">{t.title}</td>
+                <td className="py-2.5 text-[var(--foreground-muted)]">
+                  <button
+                    type="button"
+                    className="text-left hover:text-[var(--foreground)] hover:underline"
+                    onClick={() => onOpenPreview(t)}
+                  >
+                    {t.title}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

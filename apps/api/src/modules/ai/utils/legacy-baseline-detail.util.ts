@@ -38,17 +38,13 @@ export function readLegacyBaselineAuxTextCap(standardCap: number): number {
   return Number.isFinite(n) && n > standardCap ? n : Number.MAX_SAFE_INTEGER;
 }
 
+/** Devuelve el texto completo (sin recorte por presupuesto). `standardCap` se conserva por compatibilidad de firma. */
 export function capTextForLegacyBaseline(
   text: string,
-  standardCap: number,
-  legacyBaselineStage?: boolean,
+  _standardCap?: number,
+  _legacyBaselineStage?: boolean,
 ): string {
-  const trimmed = (text ?? "").trim();
-  if (!trimmed) return "";
-  if (!legacyBaselineStage || !isLegacyBaselineFullDetailEnabled()) {
-    return trimmed.slice(0, standardCap);
-  }
-  return trimmed.slice(0, readLegacyBaselineAuxTextCap(standardCap));
+  return (text ?? "").trim();
 }
 
 export function appendLegacyBaselineDetailPrompt(

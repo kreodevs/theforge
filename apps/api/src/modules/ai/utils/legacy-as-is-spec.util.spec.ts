@@ -44,12 +44,10 @@ describe("legacy-as-is-spec.util", () => {
     assert.equal(isLegacyAsIsMddDocument("## 1. Contexto\n\nCambio MVP"), false);
   });
 
-  it("buildMddContextForLegacyAsIsSpec incluye §1 y entidades sin rutas §4", () => {
+  it("buildMddContextForLegacyAsIsSpec devuelve el MDD completo", () => {
     const out = buildMddContextForLegacyAsIsSpec(SAMPLE_AS_IS_MDD);
-    assert.match(out, /AS-IS \(Estado Actual\)/);
-    assert.match(out, /campania/);
-    assert.match(out, /Disponibilidad de medios/);
-    assert.doesNotMatch(out, /\/campanias/);
+    assert.equal(out, SAMPLE_AS_IS_MDD.trim());
+    assert.match(out, /\/campanias/);
   });
 
   it("checklist lista dominios §3", () => {
