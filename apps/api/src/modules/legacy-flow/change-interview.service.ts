@@ -498,16 +498,15 @@ export class ChangeInterviewService {
       const prev = (firstStage.legacyChangeState as Record<string, unknown> | null) ?? {};
       await this.prisma.stage.update({
         where: { id: firstStage.id },
-        data: { legacyChangeState: { ...prev, ...legacyPatch } },
+        data: {
+          mddContent: this.buildMddFromChangeScope(scope),
+          legacyChangeState: { ...prev, ...legacyPatch },
+        },
       });
       return;
     }
 
-    // Projects without stages: read-only fallback column on Project
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: { legacyFlowState: legacyPatch as object },
-    });
+    throw new BadRequestException("El proyecto no tiene etapas para persistir el alcance del cambio.");
   }
 
   /**

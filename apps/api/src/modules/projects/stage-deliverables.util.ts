@@ -1,5 +1,6 @@
 import {
   readStageDeliverableSnapshot,
+  resolveLiveStageDeliverables,
   resolveStageDeliverableField,
   type ProjectDeliverableSource,
   type StageDeliverablesResponse,
@@ -34,12 +35,11 @@ function buildDeliverablesFromSnapshot(
   return deliverables;
 }
 
-function buildLiveDeliverables(project: ProjectDeliverableSource): ProjectDeliverableSource {
-  const deliverables: ProjectDeliverableSource = {};
-  for (const key of DELIVERABLE_KEYS) {
-    deliverables[key] = project[key] ?? null;
-  }
-  return deliverables;
+function buildLiveDeliverables(
+  project: ProjectDeliverableSource,
+  stage: ProjectDeliverableSource | null | undefined,
+): ProjectDeliverableSource {
+  return resolveLiveStageDeliverables(stage, project);
 }
 
 export function resolveStageDeliverables(
@@ -50,7 +50,7 @@ export function resolveStageDeliverables(
     workflowStatus: string;
     deliverableSnapshot?: unknown;
     changeSpecContent?: string | null;
-  },
+  } & ProjectDeliverableSource,
   mode: ResolveStageDeliverablesMode = "workshop",
 ): StageDeliverablesResponse {
   const snapshot = readStageDeliverableSnapshot(stage.deliverableSnapshot);
@@ -76,7 +76,7 @@ export function resolveStageDeliverables(
     workflowStatus: stage.workflowStatus,
     source: "live",
     readOnly: false,
-    deliverables: buildLiveDeliverables(project),
+    deliverables: buildLiveDeliverables(project, stage),
     changeSpecContent: stage.changeSpecContent ?? null,
   };
 }

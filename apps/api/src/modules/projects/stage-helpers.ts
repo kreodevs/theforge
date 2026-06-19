@@ -1,4 +1,5 @@
 import { StageStatus, Status, type Stage, type Estimation } from "@theforge/database";
+import { resolveLiveStageDeliverables, type ProjectDeliverableSource } from "@theforge/shared-types";
 
 /** Etapa 1 legacy = línea base AS-IS (documentación del sistema actual, sin delta de cambio). */
 export function isLegacyBaselineStage(stage: { ordinal: number } | null | undefined): boolean {
@@ -24,14 +25,19 @@ export type ProjectWithStageDeliverables = {
   status: Status;
   precisionScore: number;
   estimation: Estimation | null;
-};
+} & ProjectDeliverableSource;
 
-export function flattenStageDeliverables(stages: StageWithEstimation[]): ProjectWithStageDeliverables {
+export function flattenStageDeliverables(
+  stages: StageWithEstimation[],
+  project: ProjectDeliverableSource = {},
+): ProjectWithStageDeliverables {
   const active = pickPrimaryStage(stages);
+  const deliverables = resolveLiveStageDeliverables(active ?? null, project);
   return {
     mddContent: active?.mddContent ?? null,
     status: active?.status ?? Status.ROJO,
     precisionScore: active?.precisionScore ?? 0,
     estimation: active?.estimation ?? null,
+    ...deliverables,
   };
 }

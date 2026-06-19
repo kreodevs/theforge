@@ -13,6 +13,7 @@ export * from "./deliverables-matrix.js";
 export * from "./agent-governance.js";
 export * from "./stage.js";
 export * from "./legacy-change-gate.js";
+export * from "./legacy-change-state.util.js";
 export * from "./stage-deliverable-snapshot.js";
 export * from "./session.js";
 export * from "./estimation.js";

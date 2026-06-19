@@ -84,6 +84,11 @@ import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.u
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "./stage-deliverable-snapshot.util.js";
+import {
+  persistStageAndProjectDeliverables,
+  seedActiveStageDeliverables,
+} from "./stage-deliverable-persist.util.js";
+import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 
 import {
@@ -94,7 +99,7 @@ import {
 type StageWithEst = Stage & { estimation: Estimation | null };
 
 function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unknown>>(project: P) {
-  const flat = flattenStageDeliverables(project.stages);
+  const flat = flattenStageDeliverables(project.stages, project as ProjectDeliverableSource);
   return { ...project, ...flat };
 }
 
@@ -382,7 +387,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       rest.complexity !== undefined || rest.hasUxTeam !== undefined ||
       rest.projectType !== undefined || rest.theforgeProjectId !== undefined ||
       rest.figmaMapping !== undefined || clearComplexityPending === true ||
-      cpInput !== undefined;
+      cpInput !== undefined ||
+      rest.convergeWebhookUrl !== undefined || rest.convergeWebhookSecret !== undefined;
     if (hasSettingsChange && existingRaw.userId !== getRequestUserId()) {
       throw new BadRequestException("Only the project owner can change project settings");
     }
@@ -513,10 +519,17 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       clearComplexityPending === true ||
       cpInput !== undefined;
     if (hasProjectFieldUpdates) {
+      const deliverablePatch = pickDeliverableFieldsFromSource(rest as ProjectDeliverableSource);
+      const hasDeliverablePatch = Object.keys(deliverablePatch).length > 0;
+
       await this.prisma.project.update({
         where: { id },
         data: updatePayload,
       });
+
+      if (hasDeliverablePatch) {
+        await persistStageAndProjectDeliverables(this.prisma, targetStage.id, id, deliverablePatch);
+      }
       // Bitácora de cambios para campos de contenido documental
       const documentFields = [
         "dbgaContent", "specContent", "architectureContent", "useCasesContent",
@@ -612,6 +625,15 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         data: { workflowStatus: StageStatus.ACTIVE },
       }),
     ]);
+
+    const previousStageId = previousActive.sort((a, b) => a.ordinal - b.ordinal)[0]?.id;
+    await seedActiveStageDeliverables(this.prisma, stageId, projectId, {
+      previousStageId: previousStageId ?? null,
+    }).catch((err) =>
+      this.logger.warn(
+        `[Stage] seed deliverables on activate: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
   }
 
   async createStage(projectId: string, body: unknown) {

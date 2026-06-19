@@ -1,6 +1,5 @@
 /**
  * Parches parciales a `legacyChangeState.lastDeliverablesDebug` (stage-scoped).
- * Falls back to `project.legacyFlowState` only when the project has no stages.
  */
 
 import type { PrismaService } from "../../prisma/prisma.service.js";
@@ -8,6 +7,27 @@ import type {
   LegacyDeliverablesDebugReport,
   LegacyFlowState,
 } from "./legacy-coordinator.service.js";
+
+async function resolveStageForDebug(
+  prisma: PrismaService,
+  projectId: string,
+  stageId?: string | null,
+): Promise<{ id: string; legacyChangeState: unknown } | null> {
+  if (stageId?.trim()) {
+    return prisma.stage.findUnique({
+      where: { id: stageId.trim() },
+      select: { id: true, legacyChangeState: true },
+    });
+  }
+
+  const stages = await prisma.stage.findMany({
+    where: { projectId },
+    orderBy: [{ workflowStatus: "asc" }, { ordinal: "asc" }],
+    take: 1,
+    select: { id: true, legacyChangeState: true },
+  });
+  return stages[0] ?? null;
+}
 
 export async function patchLegacyDeliverablesDebugReport(
   prisma: PrismaService,
@@ -26,41 +46,12 @@ export async function patchLegacyDeliverablesDebugReport(
     };
   };
 
-  if (stageId?.trim()) {
-    const stage = await prisma.stage.findUnique({
-      where: { id: stageId.trim() },
-      select: { legacyChangeState: true },
-    });
-    const state = (stage?.legacyChangeState as LegacyFlowState | null | undefined) ?? {};
-    await prisma.stage.update({
-      where: { id: stageId.trim() },
-      data: { legacyChangeState: applyPatch(state) as object },
-    });
-    return;
-  }
+  const stage = await resolveStageForDebug(prisma, projectId, stageId);
+  if (!stage?.id) return;
 
-  const stages = await prisma.stage.findMany({
-    where: { projectId },
-    orderBy: { ordinal: "asc" },
-    take: 1,
-    select: { id: true, legacyChangeState: true },
-  });
-  if (stages.length > 0) {
-    const state = (stages[0].legacyChangeState as LegacyFlowState | null | undefined) ?? {};
-    await prisma.stage.update({
-      where: { id: stages[0].id },
-      data: { legacyChangeState: applyPatch(state) as object },
-    });
-    return;
-  }
-
-  const row = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { legacyFlowState: true },
-  });
-  const state = (row?.legacyFlowState as LegacyFlowState | null | undefined) ?? {};
-  await prisma.project.update({
-    where: { id: projectId },
-    data: { legacyFlowState: applyPatch(state) as object },
+  const state = (stage.legacyChangeState as LegacyFlowState | null | undefined) ?? {};
+  await prisma.stage.update({
+    where: { id: stage.id },
+    data: { legacyChangeState: applyPatch(state) as object },
   });
 }

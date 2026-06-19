@@ -353,13 +353,11 @@ export default function WorkshopView({
     null,
   );
   const [patternsAnalyzeRationale, setPatternsAnalyzeRationale] = useState<string | null>(null);
-  /** Estado legacy efectivo: lee de la etapa activa primero, con fallback a project.legacyFlowState */
+  /** Estado legacy efectivo desde la etapa activa (`legacyChangeState`). */
   const activeLegacyState = useMemo(() => {
-    if (project?.projectType === "LEGACY" && activeWorkshopStage?.legacyChangeState) {
-      return activeWorkshopStage.legacyChangeState;
-    }
-    return project?.legacyFlowState ?? null;
-  }, [project?.projectType, activeWorkshopStage?.legacyChangeState, project?.legacyFlowState]);
+    if (project?.projectType !== "LEGACY") return null;
+    return activeWorkshopStage?.legacyChangeState ?? null;
+  }, [project?.projectType, activeWorkshopStage?.legacyChangeState]);
   const liveMetrics = useWorkshopStore((s) => s.liveMetrics);
   const mddContent = useWorkshopStore((s) => s.mddContent);
   /** MDD en store o persistido en proyecto (evita botones Generar/Regenerar deshabilitados si el store quedó vacío). */
@@ -3347,6 +3345,7 @@ export default function WorkshopView({
                 activeStageOrdinal={
                   workshopStagesList.find((s) => s.id === activeStageId)?.ordinal ?? 1
                 }
+                convergeWebhookUrl={project.convergeWebhookUrl ?? null}
                 onProjectRefresh={() => {
                   void fetchProject(projectId);
                 }}
