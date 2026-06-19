@@ -388,11 +388,8 @@ export function DashboardSidebar({
   }, [workshopStages, storeProject?.stages, activeStageId]);
 
   const activeLegacyStateForNav = useMemo(() => {
-    if (!storeProject) return null;
-    if (storeProject.projectType === "LEGACY" && activeWorkshopStageForNav?.legacyChangeState) {
-      return activeWorkshopStageForNav.legacyChangeState;
-    }
-    return storeProject.legacyFlowState ?? null;
+    if (!storeProject || storeProject.projectType !== "LEGACY") return null;
+    return activeWorkshopStageForNav?.legacyChangeState ?? null;
   }, [storeProject, activeWorkshopStageForNav?.legacyChangeState]);
 
   const isLegacyProject = storeProject?.projectType === "LEGACY";

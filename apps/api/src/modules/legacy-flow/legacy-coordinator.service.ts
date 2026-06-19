@@ -10,6 +10,7 @@ import { ComplexityLevel, type Project as DbProject } from "@theforge/database";
 import {
   DELIVERABLES_BY_COMPLEXITY,
   DELIVERABLE_STEP_LABELS,
+  getLegacyChangeState,
   planLegacyDeliverablesToGenerate,
   type DeliverableKind,
   type GenerateCodebaseDocRequest,
@@ -113,6 +114,7 @@ import {
 } from "../ai-analysis/utils/brd-tobe-gate.util.js";
 import { assertLegacyChangeGate } from "./legacy-change-gate.util.js";
 import { persistStageDeliverableSnapshotFromProject } from "../projects/stage-deliverable-snapshot.util.js";
+import { persistStageAndProjectDeliverables } from "../projects/stage-deliverable-persist.util.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
 
@@ -515,14 +517,10 @@ export class LegacyCoordinatorService {
   }
 
   /**
-   * Lee el estado de cambio legacy: prioriza stage.legacyChangeState (nuevo),
-   * con fallback a project.legacyFlowState (legacy) para compatibilidad.
+   * Lee el estado de cambio legacy desde `Stage.legacyChangeState`.
    */
-  private getLegacyChangeState(stage: { legacyChangeState?: unknown } | null, project: { legacyFlowState?: unknown }): LegacyFlowState {
-    if (stage?.legacyChangeState && typeof stage.legacyChangeState === "object") {
-      return stage.legacyChangeState as LegacyFlowState;
-    }
-    return ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+  private readLegacyChangeState(stage: { legacyChangeState?: unknown } | null): LegacyFlowState {
+    return getLegacyChangeState(stage) as LegacyFlowState;
   }
 
   /** Persists legacy change state on the active stage (single write). */
@@ -601,11 +599,11 @@ export class LegacyCoordinatorService {
     brdContent: string;
     stageId: string;
   }> {
-    const { project } = await this.getLegacyProject(projectId);
+    await this.getLegacyProject(projectId);
     const gateStageResolved = stageIdHint?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageIdHint.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const state = this.getLegacyChangeState(gateStageResolved, project);
+    const state = this.readLegacyChangeState(gateStageResolved);
     const codebaseDoc = String(state.codebaseDoc ?? "").trim();
     if (codebaseDoc.length < 300) {
       throw new BadRequestException(
@@ -813,15 +811,15 @@ export class LegacyCoordinatorService {
     req?: GenerateCodebaseDocRequest,
     stageId?: string,
   ): Promise<{ codebaseDoc: string; mddContent?: string } | null> {
-    const { project, theforgeId } = await this.getLegacyProject(projectId);
+    const { theforgeId } = await this.getLegacyProject(projectId);
     if (!this.theforge.isConfigured()) return null;
 
     const resolvedStage = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : null;
-    const legacyState = resolvedStage?.legacyChangeState
-      ? (resolvedStage.legacyChangeState as LegacyFlowState)
-      : ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const legacyState = resolvedStage
+      ? this.readLegacyChangeState(resolvedStage)
+      : {};
     /** Gate índice ↔ SDD Falkor local (siempre antes de doc. partida). */
     await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState);
 
@@ -856,16 +854,12 @@ export class LegacyCoordinatorService {
     const persistStage = stageId?.trim()
       ? (resolvedStage ?? await this.resolveLegacyGateStage(projectId))
       : await this.resolveLegacyGateStage(projectId);
-    const projectFromDb = await this.projects.findOne(projectId);
-    const state = this.getLegacyChangeState(persistStage, projectFromDb);
+    const state = this.readLegacyChangeState(persistStage);
     const nextLegacy = { ...state, codebaseDoc } as LegacyFlowState;
     if (persistStage?.id) {
       await this.persistLegacyChangeState(projectId, persistStage.id, nextLegacy);
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: nextLegacy as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir documentación de partida.");
     }
     const response: {
       codebaseDoc: string;
@@ -903,11 +897,10 @@ export class LegacyCoordinatorService {
     if (!allowed.includes(choice)) {
       throw new BadRequestException(`choice debe ser uno de: ${allowed.join(", ")}`);
     }
-    const project = await this.projects.findOne(projectId);
     const gateStageForResolution = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const state = this.getLegacyChangeState(gateStageForResolution, project);
+    const state = this.readLegacyChangeState(gateStageForResolution);
     const legacyIndexSddResolution: LegacyFlowState["legacyIndexSddResolution"] = {
       choice,
       resolvedAt: new Date().toISOString(),
@@ -916,10 +909,7 @@ export class LegacyCoordinatorService {
     if (gateStageForResolution?.id) {
       await this.persistLegacyChangeState(projectId, gateStageForResolution.id, next);
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: next as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir resolución índice/SDD.");
     }
     return { ok: true, legacyIndexSddResolution };
   }
@@ -935,16 +925,12 @@ export class LegacyCoordinatorService {
     const stage = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const project = await this.projects.findOne(projectId);
-    const state = this.getLegacyChangeState(stage, project);
+    const state = this.readLegacyChangeState(stage);
     const next = { ...state, codebaseDoc } as LegacyFlowState;
     if (stage?.id) {
       await this.persistLegacyChangeState(projectId, stage.id, next);
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: next as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir documentación de partida.");
     }
     return { codebaseDoc };
   }
@@ -1033,10 +1019,7 @@ export class LegacyCoordinatorService {
       await this.persistLegacyChangeState(projectId, gateStageForStart.id, state);
       await this.syncCurrentLegacyStageToGraph(projectId, gateStageForStart.id).catch(() => {});
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: state as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir el inicio del flujo legacy.");
     }
     return { filesToModify, questions, suggestedAnswers: Object.keys(suggestedAnswers).length > 0 ? suggestedAnswers : undefined };
   }
@@ -1047,20 +1030,17 @@ export class LegacyCoordinatorService {
    * @param answers - Mapa índice de pregunta → respuesta (p. ej. { "0": "10", "1": "30" }).
    */
   async answer(projectId: string, answers: Record<string, string>, stageId?: string): Promise<{ ok: boolean }> {
-    const { project } = await this.getLegacyProject(projectId);
+    await this.getLegacyProject(projectId);
     const gateStageForAnswer = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const prev = this.getLegacyChangeState(gateStageForAnswer, project);
+    const prev = this.readLegacyChangeState(gateStageForAnswer);
     const next: LegacyFlowState = { ...prev, answers };
     if (gateStageForAnswer?.id) {
       await this.persistLegacyChangeState(projectId, gateStageForAnswer.id, next);
       await this.syncCurrentLegacyStageToGraph(projectId, gateStageForAnswer.id).catch(() => {});
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: next as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir respuestas del flujo legacy.");
     }
     return { ok: true };
   }
@@ -1080,7 +1060,7 @@ export class LegacyCoordinatorService {
     const gateStage = stageId?.trim()
       ? (await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })) ?? await this.resolveLegacyGateStage(projectId)
       : await this.resolveLegacyGateStage(projectId);
-    const state = this.getLegacyChangeState(gateStage, project);
+    const state = this.readLegacyChangeState(gateStage);
     const description = state.description ?? "";
     const files = normalizeFilesToModify(state.filesToModify, theforgeId);
     const answers = state.answers ?? {};
@@ -1089,7 +1069,7 @@ export class LegacyCoordinatorService {
       .join("\n");
 
     const isInitialMdd = isLegacyBaselineStage(gateStage);
-    assertLegacyChangeGate(gateStage, project);
+    assertLegacyChangeGate(gateStage);
     if (gateStage) {
       const dbProject = await this.prisma.project.findFirst({
         where: { id: projectId },
@@ -1323,7 +1303,7 @@ export class LegacyCoordinatorService {
     if (isInitialMdd && isLegacyAsIsMddEvidenceInjectEnabled() && codebaseDoc.length >= 80) {
       cleaned = injectAsIsCodebaseEvidenceIntoMdd(cleaned, codebaseDoc);
     }
-    // Dual-write durante migración: stage.legacyChangeState + project.legacyFlowState
+    // Single write: stage.legacyChangeState (project.legacyFlowState only when no stage exists)
     if (gateStage?.id) {
       await this.persistLegacyChangeState(projectId, gateStage.id, state).catch(() => {});
       await this.syncCurrentLegacyStageToGraph(projectId, gateStage.id).catch(() => {});
@@ -1365,15 +1345,17 @@ export class LegacyCoordinatorService {
         });
         return;
       }
-      const row = await this.prisma.project.findUnique({
-        where: { id: projectId },
-        select: { legacyFlowState: true },
+      const firstStage = await this.prisma.stage.findFirst({
+        where: { projectId },
+        orderBy: { ordinal: "asc" },
+        select: { id: true, legacyChangeState: true },
       });
-      const state = (row?.legacyFlowState as LegacyFlowState | null | undefined) ?? {};
+      if (!firstStage?.id) return;
+      const state = (firstStage.legacyChangeState as LegacyFlowState | null | undefined) ?? {};
       const next = { ...state, lastDeliverablesDebug: report } as LegacyFlowState;
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: next as object },
+      await this.prisma.stage.update({
+        where: { id: firstStage.id },
+        data: { legacyChangeState: next as object },
       });
     } catch (err) {
       this.logger.warn(
@@ -1443,10 +1425,11 @@ export class LegacyCoordinatorService {
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
 
-    assertLegacyChangeGate(gateStage, project);
+    assertLegacyChangeGate(gateStage);
 
     // enforceLegacyBrdTobeGate eliminado — To-Be y As-Is removidos
-    const codebaseDoc = String((project as { legacyFlowState?: LegacyFlowState }).legacyFlowState?.codebaseDoc ?? "").trim();
+    const gateState = this.readLegacyChangeState(gateStage);
+    const codebaseDoc = String(gateState.codebaseDoc ?? "").trim();
     const mddContent = String(project.mddContent ?? "").trim();
     const legacyBaselineStage = resolveLegacyBaselineStageFlag(gateStage, mddContent);
     report.legacyBaselineStage = legacyBaselineStage;
@@ -1480,8 +1463,7 @@ export class LegacyCoordinatorService {
       throw new BadRequestException("Genera la documentación de partida (MDD Inicial) o el MDD de cambio antes de generar entregables.");
     }
 
-    const legacyState =
-      ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const legacyState = gateState;
 
     const tGate = Date.now();
     try {
@@ -1549,7 +1531,15 @@ export class LegacyCoordinatorService {
     };
 
     const update = async (data: Record<string, unknown>) => {
-      await this.prisma.project.update({ where: { id: projectId }, data: data as object });
+      if (!gateStage?.id) {
+        throw new BadRequestException("No hay etapa activa para persistir entregables.");
+      }
+      await persistStageAndProjectDeliverables(
+        this.prisma,
+        gateStage.id,
+        projectId,
+        data as import("@theforge/shared-types").ProjectDeliverableSource,
+      );
     };
 
     const load = async () => {
@@ -2224,7 +2214,7 @@ export class LegacyCoordinatorService {
     }
 
     // Obtener codebaseDoc desde stage o project
-    const state = this.getLegacyChangeState(stage, project);
+    const state = this.readLegacyChangeState(stage);
     const codebaseDoc = String(state.codebaseDoc ?? "").trim();
 
     if (codebaseDoc.length < 300) {

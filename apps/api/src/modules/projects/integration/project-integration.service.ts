@@ -1,5 +1,6 @@
 import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
+  buildStageChangeSpecContent,
   createHandoffItemBodySchema,
   integrationHandoffItemSchema,
   integrationLinkBodySchema,
@@ -20,6 +21,7 @@ import { getRequestUserId } from "../../../common/request-user.store.js";
 import { ChangeLogService } from "../../change-log/change-log.service.js";
 import { GraphMemoryService } from "../../ai-analysis/graph-memory/graph-memory.service.js";
 import { ProjectsService } from "../projects.service.js";
+import { persistStageDeliverableSnapshotFromProject } from "../stage-deliverable-snapshot.util.js";
 import {
   buildExternalLegacyContextBlock,
   buildHandoffImportDescription,
@@ -355,6 +357,7 @@ export class ProjectIntegrationService {
     await this.applyHandoffPayloadToStage(stageId, newProjectId, snapshot, handoffDesc);
     await this.syncTracesFromHandoff(newProjectId, projectId, { items: activeItems }, stageId);
     await this.persistHandoffItemsLegacyStage(newProjectId, activeItems.map((i) => i.id), stageId);
+    await this.finalizeHandoffStageSetup(projectId, stageId, newProjectId, activeItems);
     await this.changeLog.log(projectId, "handoffSnapshot", handoffDesc);
     return this.getStatus(projectId);
   }
@@ -403,6 +406,7 @@ export class ProjectIntegrationService {
     await this.applyHandoffPayloadToStage(stage.id, newProjectId, snapshot, handoffDesc);
     await this.syncTracesFromHandoff(newProjectId, projectId, { items: activeItems }, stage.id);
     await this.persistHandoffItemsLegacyStage(newProjectId, activeItems.map((i) => i.id), stage.id);
+    await this.finalizeHandoffStageSetup(projectId, stage.id, newProjectId, activeItems);
     await this.changeLog.log(projectId, "handoffSnapshot", `Promovido a etapa ${stage.ordinal}: ${handoffDesc}`);
 
     const updatedStage = await this.prisma.stage.findUniqueOrThrow({ where: { id: stage.id } });
@@ -420,6 +424,63 @@ export class ProjectIntegrationService {
       traces: updatedTraces,
       promotedItemIds: activeItems.map((i) => i.id),
     };
+  }
+
+  /** Snapshot deliverables, persist change spec, enrich Falkor graph after handoff import/promote. */
+  private async finalizeHandoffStageSetup(
+    legacyProjectId: string,
+    stageId: string,
+    newProjectId: string,
+    activeItems: IntegrationHandoffItem[],
+  ): Promise<void> {
+    const [stage, projectRow] = await Promise.all([
+      this.prisma.stage.findUnique({ where: { id: stageId } }),
+      this.prisma.project.findUnique({ where: { id: legacyProjectId } }),
+    ]);
+    if (!stage || !projectRow) return;
+
+    await persistStageDeliverableSnapshotFromProject(this.prisma, stageId, projectRow, {
+      source: "manual",
+    }).catch(() => {});
+
+    let priorMdd: string | null = null;
+    if (stage.ordinal > 1) {
+      const prior = await this.prisma.stage.findFirst({
+        where: { projectId: legacyProjectId, ordinal: stage.ordinal - 1 },
+        select: { mddContent: true },
+      });
+      priorMdd = prior?.mddContent ?? null;
+    }
+
+    const legacyState = stage.legacyChangeState as { description?: string } | null;
+    const changeSpec = buildStageChangeSpecContent({
+      stageOrdinal: stage.ordinal,
+      stageName: stage.name,
+      priorMddExcerpt: priorMdd,
+      legacyChangeDescription:
+        legacyState?.description ??
+        activeItems.map((i) => `${i.id}: ${i.title}`).join("; "),
+      handoffItems: activeItems,
+    });
+    if (changeSpec) {
+      await this.prisma.stage.update({
+        where: { id: stageId },
+        data: { changeSpecContent: changeSpec },
+      });
+    }
+
+    await this.graphMemory
+      .syncHandoffItemsToStage({
+        newProjectId,
+        legacyProjectId,
+        legacyStageId: stageId,
+        items: activeItems.map((i) => ({
+          id: i.id,
+          title: i.title,
+          description: i.description,
+        })),
+      })
+      .catch(() => {});
   }
 
   private async applyHandoffPayloadToStage(

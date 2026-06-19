@@ -69,6 +69,37 @@ export function resolveStageDeliverableField(
   return project[field] ?? null;
 }
 
+export type StageDeliverableRow = ProjectDeliverableSource;
+
+function hasNonEmptyDeliverable(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/**
+ * Resolves live deliverables for an active stage: Stage columns first, Project flat fallback.
+ */
+export function resolveLiveStageDeliverables(
+  stage: StageDeliverableRow | null | undefined,
+  project: ProjectDeliverableSource,
+): ProjectDeliverableSource {
+  const deliverables: ProjectDeliverableSource = {};
+  for (const key of DELIVERABLE_KEYS) {
+    const fromStage = stage?.[key];
+    deliverables[key] = hasNonEmptyDeliverable(fromStage) ? fromStage : (project[key] ?? null);
+  }
+  return deliverables;
+}
+
+export function pickDeliverableFieldsFromSource(
+  source: ProjectDeliverableSource,
+): ProjectDeliverableSource {
+  const picked: ProjectDeliverableSource = {};
+  for (const key of DELIVERABLE_KEYS) {
+    if (source[key] !== undefined) picked[key] = source[key] ?? null;
+  }
+  return picked;
+}
+
 export type StageDeliverablesSource = "snapshot" | "live";
 
 export interface StageDeliverablesResponse {
@@ -79,4 +110,6 @@ export interface StageDeliverablesResponse {
   snapshotCapturedAt?: string;
   readOnly: boolean;
   deliverables: ProjectDeliverableSource;
+  /** Delta change spec for stage 2+ (when present). */
+  changeSpecContent?: string | null;
 }

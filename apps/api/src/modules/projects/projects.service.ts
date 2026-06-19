@@ -83,7 +83,12 @@ import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.u
 
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
-import { persistStageDeliverableSnapshotFromProject } from "./stage-deliverable-snapshot.util.js";
+import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "./stage-deliverable-snapshot.util.js";
+import {
+  persistStageAndProjectDeliverables,
+  seedActiveStageDeliverables,
+} from "./stage-deliverable-persist.util.js";
+import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 
 import {
@@ -94,7 +99,7 @@ import {
 type StageWithEst = Stage & { estimation: Estimation | null };
 
 function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unknown>>(project: P) {
-  const flat = flattenStageDeliverables(project.stages);
+  const flat = flattenStageDeliverables(project.stages, project as ProjectDeliverableSource);
   return { ...project, ...flat };
 }
 
@@ -382,7 +387,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       rest.complexity !== undefined || rest.hasUxTeam !== undefined ||
       rest.projectType !== undefined || rest.theforgeProjectId !== undefined ||
       rest.figmaMapping !== undefined || clearComplexityPending === true ||
-      cpInput !== undefined;
+      cpInput !== undefined ||
+      rest.convergeWebhookUrl !== undefined || rest.convergeWebhookSecret !== undefined;
     if (hasSettingsChange && existingRaw.userId !== getRequestUserId()) {
       throw new BadRequestException("Only the project owner can change project settings");
     }
@@ -513,10 +519,17 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       clearComplexityPending === true ||
       cpInput !== undefined;
     if (hasProjectFieldUpdates) {
+      const deliverablePatch = pickDeliverableFieldsFromSource(rest as ProjectDeliverableSource);
+      const hasDeliverablePatch = Object.keys(deliverablePatch).length > 0;
+
       await this.prisma.project.update({
         where: { id },
         data: updatePayload,
       });
+
+      if (hasDeliverablePatch) {
+        await persistStageAndProjectDeliverables(this.prisma, targetStage.id, id, deliverablePatch);
+      }
       // Bitácora de cambios para campos de contenido documental
       const documentFields = [
         "dbgaContent", "specContent", "architectureContent", "useCasesContent",
@@ -584,6 +597,24 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       },
     });
     if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    const previousActive = await this.prisma.stage.findMany({
+      where: { projectId, workflowStatus: StageStatus.ACTIVE, NOT: { id: stageId } },
+      select: { id: true, ordinal: true, deliverableSnapshot: true },
+    });
+
+    for (const prev of previousActive) {
+      if (prev.ordinal >= 1) {
+        await ensureStageDeliverableSnapshotIfMissing(this.prisma, prev.id, projectId, {
+          source: "cascade",
+        }).catch((err) =>
+          this.logger.warn(
+            `[Stage] snapshot before activate: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+    }
+
     await this.prisma.$transaction([
       this.prisma.stage.updateMany({
         where: { projectId, workflowStatus: StageStatus.ACTIVE },
@@ -594,6 +625,15 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         data: { workflowStatus: StageStatus.ACTIVE },
       }),
     ]);
+
+    const previousStageId = previousActive.sort((a, b) => a.ordinal - b.ordinal)[0]?.id;
+    await seedActiveStageDeliverables(this.prisma, stageId, projectId, {
+      previousStageId: previousStageId ?? null,
+    }).catch((err) =>
+      this.logger.warn(
+        `[Stage] seed deliverables on activate: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
   }
 
   async createStage(projectId: string, body: unknown) {
@@ -761,10 +801,15 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       scoreLogicFlowsSection5Coverage(mdd, logicFlowsMarkdown),
       batchCount !== undefined ? { batchCount } : undefined,
     );
-    await patchLegacyDeliverablesDebugReport(this.prisma, projectId, {
-      legacyBaselineStage: true,
-      logicFlowsSection5Coverage: coverage,
-    });
+    await patchLegacyDeliverablesDebugReport(
+      this.prisma,
+      projectId,
+      {
+        legacyBaselineStage: true,
+        logicFlowsSection5Coverage: coverage,
+      },
+      pickPrimaryStage(project.stages ?? [])?.id,
+    );
   }
 
   async patchStage(projectId: string, stageId: string, body: unknown) {
@@ -802,6 +847,27 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       });
       if (clash) throw new BadRequestException(`Ordinal ${dto.ordinal} ya está en uso`);
       data.ordinal = dto.ordinal;
+    }
+
+    const terminalStatuses: StageStatus[] = [
+      StageStatus.COMPLETED,
+      StageStatus.ARCHIVED,
+      StageStatus.SUPERSEDED,
+    ];
+    if (dto.workflowStatus !== undefined) {
+      data.workflowStatus = dto.workflowStatus as StageStatus;
+      if (terminalStatuses.includes(dto.workflowStatus as StageStatus)) {
+        await ensureStageDeliverableSnapshotIfMissing(this.prisma, stageId, projectId, {
+          source: "manual",
+        }).catch((err) =>
+          this.logger.warn(
+            `[Stage] snapshot on ${dto.workflowStatus}: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+      if (dto.workflowStatus === StageStatus.ACTIVE) {
+        await this.activateStageExclusive(projectId, stageId);
+      }
     }
 
     if (Object.keys(data).length > 0) {
@@ -1724,6 +1790,16 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
 
     // Anexar sección 8: UI Design System & Component Mapping (enriquecimiento semántico)
     blueprintContent = enrichBlueprintWithUiDesignSystem(mddContent, blueprintContent);
+
+    // Reflection loop (minimal): post-generation conformance re-check
+    const postGenCheck = this.conformance.checkBlueprintDataModel(mddContent, blueprintContent);
+    if (!postGenCheck.ok) {
+      const gapSummary = postGenCheck.gaps.slice(0, 4).join("; ");
+      this.logger.warn(`[Blueprint] Post-generation conformance gaps: ${gapSummary}`);
+      await this.changeLog
+        .log(projectId, "blueprintContent", `[conformance-recheck] ${gapSummary}`)
+        .catch(() => {});
+    }
 
     return this.update(projectId, { blueprintContent });
   }

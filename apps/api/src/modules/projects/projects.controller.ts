@@ -21,6 +21,7 @@ import {
   updateProjectSchema,
   phase0DeepResearchBodySchema,
   convergeBodySchema,
+  convergeTriggerBodySchema,
   clarifySpecBodySchema,
   tasksToIssuesBodySchema,
 } from "@theforge/shared-types";
@@ -203,6 +204,19 @@ export class ProjectsController {
   ) {
     const { persist } = convergeBodySchema.parse(body ?? {});
     return this.sddIntegration.converge(id, persist, stageId?.trim() || undefined);
+  }
+
+  /**
+   * CI/webhook hook: runs converge (optional persist) and POSTs payload to CONVERGE_WEBHOOK_URL or body.webhookUrl.
+   */
+  @Post(":id/converge/trigger")
+  convergeTrigger(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Query("stageId") stageId?: string,
+  ) {
+    const parsed = convergeTriggerBodySchema.parse(body ?? {});
+    return this.sddIntegration.triggerConverge(id, parsed, stageId?.trim() || undefined);
   }
 
   /**

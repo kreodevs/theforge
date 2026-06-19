@@ -125,11 +125,11 @@ export class LegacyTransitionService {
       },
     });
 
-    // Update project type hint and legacy state
-    await this.prisma.project.update({
-      where: { id: projectId },
+    // Update project type hint and legacy state on baseline stage
+    await this.prisma.stage.update({
+      where: { id: stage.id },
       data: {
-        legacyFlowState: {
+        legacyChangeState: {
           status: "baseline_created",
           baselineStageId: stage.id,
           transitionedAt: new Date().toISOString(),
@@ -137,7 +137,7 @@ export class LegacyTransitionService {
           routeCount: navigationMap
             ? (navigationMap.match(/^##\s+\//gm) ?? []).length
             : 0,
-        } as any,
+        } as object,
       },
     });
 
