@@ -21,6 +21,7 @@ import {
   updateProjectSchema,
   phase0DeepResearchBodySchema,
   convergeBodySchema,
+  clarifySpecBodySchema,
   tasksToIssuesBodySchema,
 } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
@@ -147,6 +148,39 @@ export class ProjectsController {
   @Get(":id/export/sdd-bundle")
   exportSddBundle(@Param("id") id: string) {
     return this.sddIntegration.getExportBundle(id);
+  }
+
+  /**
+   * Handoff completo para repo destino: spec-kit + agent governance + IMPLEMENT.md + consumption guide.
+   */
+  @Get(":id/export/repo-handoff")
+  exportRepoHandoff(@Param("id") id: string) {
+    return this.sddIntegration.getRepoHandoffExport(id);
+  }
+
+  /**
+   * Análisis unificado cross-artifact (`/speckit.analyze` + conformidad MDD).
+   */
+  @Get(":id/analyze")
+  analyzeArtifacts(@Param("id") id: string) {
+    return this.sddIntegration.analyzeArtifacts(id);
+  }
+
+  /**
+   * Clarify Spec pre-MDD (`/speckit.clarify`). Body: `{ persist?: boolean, notes?: string }`.
+   */
+  @Post(":id/clarify-spec")
+  clarifySpec(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = clarifySpecBodySchema.parse(body ?? {});
+    return this.sddIntegration.clarifySpec(id, parsed);
+  }
+
+  /**
+   * Siguiente tarea abierta desde tasks.md (hint para MCP / implement).
+   */
+  @Get(":id/next-task")
+  nextImplementationTask(@Param("id") id: string) {
+    return this.sddIntegration.loadProjectForNextTask(id);
   }
 
   /**

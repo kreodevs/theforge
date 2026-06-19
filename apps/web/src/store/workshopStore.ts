@@ -653,6 +653,7 @@ interface WorkshopState {
     | "launch-hermes"
     | "converge"
     | "tasks-to-issues"
+    | "clarify-spec"
     | null;
   /** Mensaje de usuario en curso (streaming); se muestra hasta recibir "done" */
   streamingUserMessage: string | null;
@@ -876,6 +877,10 @@ interface WorkshopState {
     projectId: string,
     body: { owner: string; repo: string; milestone?: number; dryRun?: boolean },
   ) => Promise<{ created: Array<{ number: number; html_url: string }>; errors: string[] } | null>;
+  clarifySpec: (
+    projectId: string,
+    opts: { persist: boolean; notes?: string },
+  ) => Promise<{ clarifiedSpec: string; clarificationMarkerCount: number; persisted: boolean } | null>;
   reset: () => void;
 }
 
@@ -4026,6 +4031,35 @@ if (prog && prog.step && prog.step !== "done") {
       return data;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al crear issues" });
+      return null;
+    } finally {
+      set({ loading: false, loadingReason: null });
+    }
+  },
+  clarifySpec: async (projectId, opts) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "clarify-spec", error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/clarify-spec`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(opts),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error en clarify-spec");
+      }
+      const data = (await r.json()) as {
+        clarifiedSpec: string;
+        clarificationMarkerCount: number;
+        persisted: boolean;
+      };
+      if (data.persisted) {
+        set({ specContent: data.clarifiedSpec, error: null });
+      }
+      return data;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error en clarify-spec" });
       return null;
     } finally {
       set({ loading: false, loadingReason: null });

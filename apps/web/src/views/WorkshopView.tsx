@@ -121,6 +121,7 @@ import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
 import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
 import { WorkshopExportSddButton } from "../components/WorkshopExportSddButton";
+import { ClarifySpecPanel } from "../components/ClarifySpecPanel";
 import {
   WorkshopDirtySaveBar,
   WorkshopDocToolbarIcon,
@@ -509,12 +510,13 @@ export default function WorkshopView({
   const persistInfraContent = useWorkshopStore((s) => s.persistInfraContent);
   const generateInfra = useWorkshopStore((s) => s.generateInfra);
   const generateSpec = useWorkshopStore((s) => s.generateSpec);
+  const clarifySpec = useWorkshopStore((s) => s.clarifySpec);
   const generateTasks = useWorkshopStore((s) => s.generateTasks);
   const generateAgentGovernance = useWorkshopStore((s) => s.generateAgentGovernance);
   const fetchAgentGovernanceExport = useWorkshopStore((s) => s.fetchAgentGovernanceExport);
   const persistTasksContent = useWorkshopStore((s) => s.persistTasksContent);
-  const persistSpecContent = useWorkshopStore((s) => s.persistSpecContent);
   const setSpecContent = useWorkshopStore((s) => s.setSpecContent);
+  const persistSpecContent = useWorkshopStore((s) => s.persistSpecContent);
   const setUxUiGuideContent = useWorkshopStore((s) => s.setUxUiGuideContent);
   const fetchConformance = useWorkshopStore((s) => s.fetchConformance);
   const setDbgaContent = useWorkshopStore((s) => s.setDbgaContent);
@@ -2890,6 +2892,15 @@ export default function WorkshopView({
                   </Tooltip>
                 )}
                 {/* to-be save button removed */}
+                {centralPanel === "spec" && (
+                  <ClarifySpecPanel
+                    projectId={projectId}
+                    disabled={loading}
+                    onClarify={clarifySpec}
+                    onApplied={(content) => setSpecContent(content)}
+                    onMessage={(msg) => setError(msg)}
+                  />
+                )}
                 {centralPanel === "spec" && !!specContent?.trim() && (
                   <WorkshopRegenButton
                     onClick={() => generateSpec(projectId)}

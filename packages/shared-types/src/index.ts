@@ -32,3 +32,4 @@ export * from "./project-integration.js";
 export * from "./spec-kit-bundle.js";
 export * from "./tasks-parse.js";
 export * from "./sdd-integrations.js";
+export * from "./sdd-analyze.js";

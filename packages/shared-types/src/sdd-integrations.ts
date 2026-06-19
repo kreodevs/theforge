@@ -17,3 +17,12 @@ export const tasksToIssuesBodySchema = z.object({
 });
 
 export type TasksToIssuesBody = z.infer<typeof tasksToIssuesBodySchema>;
+
+export const clarifySpecBodySchema = z.object({
+  /** Si true, persiste el Spec aclarado en `specContent`. */
+  persist: z.boolean().optional().default(false),
+  /** Notas del usuario para guiar la clarificación. */
+  notes: z.string().optional(),
+});
+
+export type ClarifySpecBody = z.infer<typeof clarifySpecBodySchema>;

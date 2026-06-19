@@ -41,4 +41,13 @@ describe("tasks-parse", () => {
     assert.equal(items[1].done, true);
     assert.equal(items[0].section, "Backend tasks");
   });
+
+  it("parseTasksMarkdown detecta [P] y rutas", () => {
+    const md = `## US-1 Login\n**Checkpoint**: smoke login\n- [ ] [P] Crear vista \`src/pages/Login.tsx\`\n`;
+    const items = parseTasksMarkdown(md);
+    assert.equal(items.length, 1);
+    assert.equal(items[0].parallel, true);
+    assert.ok(items[0].filePaths.includes("src/pages/Login.tsx"));
+    assert.equal(items[0].checkpoint, "smoke login");
+  });
 });
