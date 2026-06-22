@@ -37,6 +37,56 @@ function resolveScrollHost(
   return findScrollParentForHeading(headings[0]?.element ?? null) ?? workspaceFallback;
 }
 
+function isScrollWindow(host: HTMLElement | Window): host is Window {
+  return host === window;
+}
+
+function getHostScrollTop(host: HTMLElement | Window): number {
+  return isScrollWindow(host) ? window.scrollY : host.scrollTop;
+}
+
+function getHostScrollProgress(host: HTMLElement | Window): number {
+  if (isScrollWindow(host)) {
+    const total = document.documentElement.scrollHeight - window.innerHeight;
+    return total > 0 ? Math.min(100, Math.max(0, (window.scrollY / total) * 100)) : 0;
+  }
+  const total = host.scrollHeight - host.clientHeight;
+  return total > 0 ? Math.min(100, Math.max(0, (host.scrollTop / total) * 100)) : 0;
+}
+
+/** Scroll offset of a heading inside its scroll host (stable vs. getBoundingClientRect loops). */
+function getHeadingScrollTop(headingEl: HTMLElement, host: HTMLElement | Window): number {
+  if (isScrollWindow(host)) {
+    return headingEl.getBoundingClientRect().top + window.scrollY;
+  }
+  return headingEl.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop;
+}
+
+/**
+ * Pick the section whose heading the reader has reached — not the next one peeking at the top.
+ * Walk headings from bottom to top: last heading at or above the read marker wins.
+ */
+function resolveActiveHeadingId(
+  headings: HeadingData[],
+  host: HTMLElement | Window,
+  activationOffset = 160,
+): string | null {
+  if (headings.length === 0) return null;
+
+  const readMarker = getHostScrollTop(host) + activationOffset;
+
+  for (let i = headings.length - 1; i >= 0; i--) {
+    const heading = headings[i];
+    if (!heading) continue;
+    const headingTop = getHeadingScrollTop(heading.element, host);
+    if (headingTop <= readMarker) {
+      return heading.id;
+    }
+  }
+
+  return headings[0]?.id ?? null;
+}
+
 /** Matches workshop cards / doc chrome (warm card surface + primary accent). */
 const ISLAND_SHELL_CLASS =
   "relative overflow-hidden border border-[color-mix(in_oklch,var(--primary)_24%,var(--border))] bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] text-[var(--foreground)] shadow-[var(--shadow-lg),var(--shadow-gold)]";
@@ -178,30 +228,9 @@ export function DynamicIslandTOC({
 
   useEffect(() => {
     function handleScroll() {
-      let currentActiveId: string | null = null;
-      for (const heading of headings) {
-        const top = heading.element.getBoundingClientRect().top;
-        if (top <= 120) {
-          currentActiveId = heading.id;
-        } else {
-          break;
-        }
-      }
-
-      if (!currentActiveId && headings.length > 0) {
-        currentActiveId = headings[0]?.id ?? null;
-      }
-
-      setActiveId(currentActiveId);
-
-      const host = scrollHost ?? scrollContainerRef?.current ?? null;
-      if (host) {
-        const total = host.scrollHeight - host.clientHeight;
-        setProgress(total > 0 ? Math.min(100, Math.max(0, (host.scrollTop / total) * 100)) : 0);
-      } else {
-        const total = document.documentElement.scrollHeight - window.innerHeight;
-        setProgress(total > 0 ? Math.min(100, Math.max(0, (window.scrollY / total) * 100)) : 0);
-      }
+      const host: HTMLElement | Window = scrollHost ?? scrollContainerRef?.current ?? window;
+      setActiveId(resolveActiveHeadingId(headings, host));
+      setProgress(getHostScrollProgress(host));
     }
 
     const target: HTMLElement | Window = scrollHost ?? scrollContainerRef?.current ?? window;
