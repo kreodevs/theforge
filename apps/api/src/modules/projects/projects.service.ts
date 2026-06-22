@@ -1545,14 +1545,9 @@ name: ${JSON.stringify(name)}
       throw new BadRequestException("El scaffold de gobernanza no contiene archivos válidos.");
     }
 
-    const serialized = serializeAgentGovernanceScaffold(exportScaffold);
-    const persisted = serialized !== raw;
     this.logger.debug(
-      `[agent-gov] getAgentGovernanceForExport done projectId=${projectId} filesAfter=${exportScaffold.files.length} serializedLen=${serialized.length} persisted=${persisted}`,
+      `[agent-gov] getAgentGovernanceForExport done projectId=${projectId} filesAfter=${exportScaffold.files.length} readOnly=true`,
     );
-    if (persisted) {
-      await this.update(projectId, { agentGovernanceContent: serialized });
-    }
 
     return exportScaffold;
   }

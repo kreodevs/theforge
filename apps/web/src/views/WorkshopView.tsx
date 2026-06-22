@@ -1058,20 +1058,33 @@ export default function WorkshopView({
 
   useEffect(() => {
     if (centralPanel !== "agent-governance" || !hasAgentGovernance || !projectId) {
+      setAgentGovernanceExportScaffold(null);
+      setAgentGovernanceExportLoading(false);
       return;
     }
     let cancelled = false;
     setAgentGovernanceExportLoading(true);
-    void fetchAgentGovernanceExport(projectId).then((scaffold) => {
-      if (!cancelled) {
-        setAgentGovernanceExportScaffold(scaffold);
-        setAgentGovernanceExportLoading(false);
-      }
-    });
+    void fetchAgentGovernanceExport(projectId)
+      .then((scaffold) => {
+        if (!cancelled) {
+          setAgentGovernanceExportScaffold(scaffold);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAgentGovernanceExportLoading(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [centralPanel, hasAgentGovernance, projectId, agentGovernanceContent, fetchAgentGovernanceExport]);
+  }, [
+    centralPanel,
+    hasAgentGovernance,
+    projectId,
+    agentGovernanceContentField,
+    fetchAgentGovernanceExport,
+  ]);
 
   /** En pestaña MDD legacy: regenerar siempre vía `generate-mdd` (desde codebaseDoc / etapa), nunca `generate-codebase-doc`. */
   const legacyMddNeedsCodebaseDoc = isLegacyProject && !hasCodebaseDoc;
