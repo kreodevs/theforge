@@ -34,7 +34,7 @@ const baseProject = {
 };
 
 describe("handoff-export.util", () => {
-  it("buildUnifiedHandoff incluye spec-kit files y consumption guide en raíz", () => {
+  it("buildUnifiedHandoff incluye spec-kit files, consumption guide y prompts de agente", () => {
     const unified = buildUnifiedHandoff(baseProject as never, "# Guía\n");
     assert.ok(unified.specKitFiles.some((f) => f.path === ".specify/memory/constitution.md"));
     assert.ok(unified.specKitFiles.some((f) => f.path === "THEFORGE-DOC-CONSUMPTION-GUIDE.md"));
@@ -44,6 +44,21 @@ describe("handoff-export.util", () => {
     assert.equal(unified.layout, "spec-kit-primary");
     assert.ok(unified.pathMap.length >= 4);
     assert.equal(unified.governancePresent, false);
+  });
+
+  it("reconcileExportScaffold incluye PROMPT-INICIAL y AGENT-PROMPT en gobernanza", () => {
+    const gov = serializeAgentGovernanceScaffold({
+      manifest: { templateVersion: "2.0.0", files: ["AGENTS.md"] },
+      files: [{ path: "AGENTS.md", content: "# AGENTS\n" }],
+    });
+    const project = { ...baseProject, agentGovernanceContent: gov };
+    const scaffold = reconcileExportScaffold(project as never);
+    assert.ok(scaffold);
+    const paths = scaffold!.files.map((f) => f.path);
+    assert.ok(paths.includes("PROMPT-INICIAL.md"));
+    assert.ok(paths.includes("docs/agent-governance/references/AGENT-PROMPT.md"));
+    const promptInicial = scaffold!.files.find((f) => f.path === "PROMPT-INICIAL.md");
+    assert.ok(promptInicial?.content.includes("install-agent-governance.sh"));
   });
 
   it("reconcileExportScaffold añade docs/sdd y overlay AGENTS.md dual spec-kit", () => {

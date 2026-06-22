@@ -254,7 +254,7 @@ export function detectSddConflicts(text: string): string[] {
   return conflicts;
 }
 
-/** Primeras tareas concretas (checkboxes o headings) para PROMPT-INICIAL. */
+/** Primeras tareas concretas (checkboxes o headings) para AGENT-PROMPT y PROMPT-INICIAL. */
 export function extractTaskCheckboxes(tasksMarkdown: string | null | undefined, limit = 5): string[] {
   const text = tasksMarkdown ?? "";
   const items: string[] = [];
@@ -1032,10 +1032,10 @@ export function suggestAgentGovernanceArtifacts(
   }
 
   if (input.tasksMarkdown?.trim()) {
-    rationale.push("Tasks disponibles: PROMPT-INICIAL y PROGRESO derivados del checklist.");
+    rationale.push("Tasks disponibles: PROMPT-INICIAL, AGENT-PROMPT y PROGRESO derivados del checklist.");
   }
   if (facts.sddConflicts.length > 0) {
-    rationale.push(`Conflictos SDD detectados: ${facts.sddConflicts.length} (ver AGENTS.md / PROMPT-INICIAL).`);
+    rationale.push(`Conflictos SDD detectados: ${facts.sddConflicts.length} (ver AGENTS.md / AGENT-PROMPT).`);
   }
 
   return {

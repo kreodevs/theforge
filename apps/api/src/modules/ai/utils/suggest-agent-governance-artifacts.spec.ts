@@ -421,7 +421,7 @@ Backend NestJS.
     assert.match(domain.path, /kms-backend/);
   });
 
-  it("extrae checkboxes concretos para PROMPT-INICIAL", () => {
+  it("extrae checkboxes concretos para AGENT-PROMPT y PROMPT-INICIAL", () => {
     const boxes = extractTaskCheckboxes(`
 ## Fase 1
 - [ ] Configurar monorepo pnpm
@@ -496,6 +496,7 @@ describe("parseAgentGovernanceResponse + sugerencias", () => {
     );
     assert.ok(comoUsar?.content.includes("Por qué se incluyeron estos skills/rules"));
     assert.ok(paths.includes("PROMPT-INICIAL.md"));
+    assert.ok(paths.includes("docs/agent-governance/references/AGENT-PROMPT.md"));
     assert.ok(paths.includes("docs/sdd/PROGRESO.md"));
   });
 });

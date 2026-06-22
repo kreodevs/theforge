@@ -804,7 +804,7 @@ export class AiService {
           "\n---\n\n" +
           (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---\n\n" : "") +
           (architecture ? "Architecture:\n---\n" + architecture + "\n---\n\n" : "") +
-          (tasks ? "Tasks (checklist de implementación — usar para PROMPT-INICIAL y PROGRESO):\n---\n" + tasks + "\n---\n\n" : "") +
+          (tasks ? "Tasks (checklist de implementación — usar para PROMPT-INICIAL, AGENT-PROMPT y PROGRESO):\n---\n" + tasks + "\n---\n\n" : "") +
           (spec ? "Spec:\n---\n" + spec + "\n---" : "")
         : "No hay MDD. Genera un scaffold mínimo LOW (AGENTS.md, CLAUDE.md, docs/agent-onboarding.md, 1 rule git-commits).");
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
