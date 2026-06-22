@@ -122,11 +122,9 @@ export function WorkshopMetricsColumnInner({
     [workshopStagesList, activeStageId],
   );
   const activeLegacyState = useMemo(() => {
-    if (project?.projectType === "LEGACY" && activeWorkshopStage?.legacyChangeState) {
-      return activeWorkshopStage.legacyChangeState;
-    }
-    return project?.legacyFlowState ?? null;
-  }, [project?.projectType, activeWorkshopStage?.legacyChangeState, project?.legacyFlowState]);
+    if (project?.projectType !== "LEGACY") return null;
+    return activeWorkshopStage?.legacyChangeState ?? null;
+  }, [project?.projectType, activeWorkshopStage?.legacyChangeState]);
 
   const lastLegacyDebug = useWorkshopStore((s) => s.lastLegacyDeliverablesDebug);
   const logicFlowsDocField = useWorkshopStore((s) => s.logicFlowsContent);

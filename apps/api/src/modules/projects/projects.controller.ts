@@ -21,6 +21,7 @@ import {
   updateProjectSchema,
   phase0DeepResearchBodySchema,
   convergeBodySchema,
+  convergeTriggerBodySchema,
   clarifySpecBodySchema,
   tasksToIssuesBodySchema,
 } from "@theforge/shared-types";
@@ -67,6 +68,14 @@ export class ProjectsController {
     @Body() body: unknown,
   ) {
     return this.projects.patchStage(projectId, stageId, body ?? {});
+  }
+
+  @Get(":projectId/stages/:stageId/deliverables")
+  getStageDeliverables(
+    @Param("projectId") projectId: string,
+    @Param("stageId") stageId: string,
+  ) {
+    return this.projects.getStageDeliverables(projectId, stageId);
   }
 
   /** Estado de un job de cola (polling). */
@@ -162,8 +171,8 @@ export class ProjectsController {
    * Análisis unificado cross-artifact (`/speckit.analyze` + conformidad MDD).
    */
   @Get(":id/analyze")
-  analyzeArtifacts(@Param("id") id: string) {
-    return this.sddIntegration.analyzeArtifacts(id);
+  analyzeArtifacts(@Param("id") id: string, @Query("stageId") stageId?: string) {
+    return this.sddIntegration.analyzeArtifacts(id, stageId?.trim() || undefined);
   }
 
   /**
@@ -188,9 +197,26 @@ export class ProjectsController {
    * Body opcional: `{ "persist": true }` para guardar en `tasksContent`.
    */
   @Post(":id/converge")
-  converge(@Param("id") id: string, @Body() body: unknown) {
+  converge(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Query("stageId") stageId?: string,
+  ) {
     const { persist } = convergeBodySchema.parse(body ?? {});
-    return this.sddIntegration.converge(id, persist);
+    return this.sddIntegration.converge(id, persist, stageId?.trim() || undefined);
+  }
+
+  /**
+   * CI/webhook hook: runs converge (optional persist) and POSTs payload to CONVERGE_WEBHOOK_URL or body.webhookUrl.
+   */
+  @Post(":id/converge/trigger")
+  convergeTrigger(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Query("stageId") stageId?: string,
+  ) {
+    const parsed = convergeTriggerBodySchema.parse(body ?? {});
+    return this.sddIntegration.triggerConverge(id, parsed, stageId?.trim() || undefined);
   }
 
   /**
@@ -201,6 +227,11 @@ export class ProjectsController {
   tasksToIssues(@Param("id") id: string, @Body() body: unknown) {
     const parsed = tasksToIssuesBodySchema.parse(body ?? {});
     return this.sddIntegration.tasksToIssues(id, parsed);
+  }
+
+  @Post(":id/clone")
+  cloneProject(@Param("id") id: string, @Body() body: unknown) {
+    return this.projects.cloneProject(id, body);
   }
 
   @Patch(":id")

@@ -16,12 +16,10 @@ describe("sanitizeSourceDocForBrdPrompt", () => {
 });
 
 describe("truncateSourceDocForBrdPrompt", () => {
-  it("preserva inicio y final cuando supera el máximo", () => {
+  it("devuelve el documento sanitizado completo", () => {
     const long = "INICIO-" + "x".repeat(60_000) + "-FIN";
     const { text, truncated } = truncateSourceDocForBrdPrompt(long, 10_000);
-    assert.equal(truncated, true);
-    assert.ok(text.startsWith("INICIO-"));
-    assert.ok(text.endsWith("-FIN"));
-    assert.ok(text.includes("truncado"));
+    assert.equal(truncated, false);
+    assert.equal(text, long);
   });
 });

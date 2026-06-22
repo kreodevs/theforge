@@ -38,11 +38,10 @@ Plataforma OOH IMJ.
 `;
 
 describe("legacy-as-is-user-stories.util", () => {
-  it("buildMddContextForLegacyAsIsUserStories excluye rutas §4", () => {
+  it("buildMddContextForLegacyAsIsUserStories devuelve el MDD completo", () => {
     const out = buildMddContextForLegacyAsIsUserStories(SAMPLE_AS_IS_MDD);
-    assert.match(out, /Ejecutivo Comercial/);
-    assert.match(out, /campania/);
-    assert.doesNotMatch(out, /\/campanias/);
+    assert.equal(out, SAMPLE_AS_IS_MDD.trim());
+    assert.match(out, /\/campanias/);
   });
 
   it("checklist incluye actores y matriz Epic/US", () => {

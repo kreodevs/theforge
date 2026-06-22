@@ -10,6 +10,7 @@ import { ComplexityLevel, type Project as DbProject } from "@theforge/database";
 import {
   DELIVERABLES_BY_COMPLEXITY,
   DELIVERABLE_STEP_LABELS,
+  getLegacyChangeState,
   planLegacyDeliverablesToGenerate,
   type DeliverableKind,
   type GenerateCodebaseDocRequest,
@@ -49,8 +50,6 @@ import { isLegacyBaselineStage, pickPrimaryStage } from "../projects/stage-helpe
 import {
   appendLegacyBaselineBrdDetailPrompt,
   appendLegacyBaselineDetailPrompt,
-  readLegacyBaselineBrdInventoryRefMaxChars,
-  readLegacyBaselineReverseEngineeringMaxChars,
 } from "../ai/utils/legacy-baseline-detail.util.js";
 import { resolveLegacyBaselineStageFlag } from "../ai/utils/legacy-as-is-spec.util.js";
 import {
@@ -64,6 +63,10 @@ import { AiService } from "../ai/ai.service.js";
 import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
+import {
+  documentPersistFieldLabel,
+  validateDocumentForPersist,
+} from "../sessions/document-shrink.util.js";
 import {
   parseAgentGovernanceResponse,
   serializeAgentGovernanceScaffold,
@@ -98,6 +101,7 @@ import {
 } from "../theforge/legacy-mdd-v1-markdown.util.js";
 import { trySectionMergeDeliverable } from "./legacy-section-merge-deliverables.runner.js";
 import type { LegacySectionMergeTrace } from "./legacy-section-merge.types.js";
+import { mergeLegacyTasksGenerateOptions } from "./legacy-generate-options.util.js";
 import { LegacyDeliverablesStrategyService } from "./legacy-deliverables-strategy/legacy-deliverables-strategy.service.js";
 import type {
   LegacyDeliverablesStrategyContext,
@@ -106,6 +110,9 @@ import type {
 import {
   composeBrdPreamble,
 } from "../ai-analysis/utils/brd-tobe-gate.util.js";
+import { assertLegacyChangeGate } from "./legacy-change-gate.util.js";
+import { persistStageDeliverableSnapshotFromProject } from "../projects/stage-deliverable-snapshot.util.js";
+import { persistStageAndProjectDeliverables } from "../projects/stage-deliverable-persist.util.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
 
@@ -205,12 +212,10 @@ const DELIVERABLE_KIND_TO_CODEBASE_DOC_TYPE: Partial<Record<DeliverableKind, str
   infra: "infra",
 };
 
-const REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS = 120_000;
 
 function buildReverseEngineeringMddForLegacySteps(
   codebaseDoc: string,
   report: LegacyDeliverablesDebugReport,
-  maxChars: number = REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS,
 ): string {
   const compact = compactCodebaseDocForMddPrompt(codebaseDoc);
   const wrapped =
@@ -218,22 +223,10 @@ function buildReverseEngineeringMddForLegacySteps(
     compact;
   report.mddRollupWindows = 0;
   report.mddRollupFailed = false;
-  if (wrapped.length <= maxChars) {
-    report.mddLlmStrategy = "full";
-    report.mddCharsSentToLlm = wrapped.length;
-    report.mddClippedForLlm = false;
-    return wrapped;
-  }
-  report.mddLlmStrategy = "truncate";
-  report.mddClippedForLlm = true;
-  const footer =
-    "\n\n---\n\n> **Nota (The Forge — entregables legacy):** El codebaseDoc superó " +
-    String(maxChars) +
-    " caracteres. **Solo se envió el inicio** al modelo; el final fue omitido.\n";
-  const budget = Math.max(0, maxChars - footer.length);
-  const clipped = wrapped.slice(0, budget) + footer;
-  report.mddCharsSentToLlm = clipped.length;
-  return clipped;
+  report.mddLlmStrategy = "full";
+  report.mddCharsSentToLlm = wrapped.length;
+  report.mddClippedForLlm = false;
+  return wrapped;
 }
 
 export interface LegacyFlowState {
@@ -263,9 +256,8 @@ const COORDINATOR_SYSTEM =
   KNOWLEDGE +
   "\n---";
 
-function mddTheforgeContextMaxChars(): number {
-  const n = parseInt(process.env.LEGACY_MDD_THEFORGE_CONTEXT_MAX_CHARS ?? "64000", 10);
-  return Number.isFinite(n) && n > 0 ? n : 64000;
+function mddTheforgeContextBlock(theforgeContext: string): string {
+  return theforgeContext.trim();
 }
 
 function envFlag(name: string, defaultTrue: boolean): boolean {
@@ -508,31 +500,19 @@ export class LegacyCoordinatorService {
   }
 
   /**
-   * Lee el estado de cambio legacy: prioriza stage.legacyChangeState (nuevo),
-   * con fallback a project.legacyFlowState (legacy) para compatibilidad.
+   * Lee el estado de cambio legacy desde `Stage.legacyChangeState`.
    */
-  private getLegacyChangeState(stage: { legacyChangeState?: unknown } | null, project: { legacyFlowState?: unknown }): LegacyFlowState {
-    if (stage?.legacyChangeState && typeof stage.legacyChangeState === "object") {
-      return stage.legacyChangeState as LegacyFlowState;
-    }
-    return ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+  private readLegacyChangeState(stage: { legacyChangeState?: unknown } | null): LegacyFlowState {
+    return getLegacyChangeState(stage) as LegacyFlowState;
   }
 
-  /**
-   * Persiste el estado de cambio legacy en stage.legacyChangeState Y project.legacyFlowState
-   * (dual-write durante migración; luego se eliminará project.legacyFlowState).
-   */
+  /** Persists legacy change state on the active stage (single write). */
   async persistLegacyChangeState(projectId: string, stageId: string, state: LegacyFlowState): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.stage.update({
-        where: { id: stageId },
-        data: { legacyChangeState: state as object },
-      }),
-      this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: state as object },
-      }),
-    ]);
+    void projectId;
+    await this.prisma.stage.update({
+      where: { id: stageId },
+      data: { legacyChangeState: state as object },
+    });
   }
 
   // enforceLegacyBrdTobeGate eliminado — To-Be y As-Is removidos del sistema
@@ -541,6 +521,19 @@ export class LegacyCoordinatorService {
    * Sincroniza la etapa legacy actual al grafo FalkorDB (nodo :LegacyStage).
    * No crítico — fallos se loguean como warning y no interrumpen el flujo.
    */
+  /**
+   * Navigation map from Ariadne MCP (same cap as `ProjectsService.fetchNavigationMap`).
+   */
+  private async fetchNavigationMapForTasks(theforgeId: string): Promise<string | undefined> {
+    try {
+      const content = await this.theforge.fetchNavigationMap(theforgeId);
+      if (!content || content.length < 200) return undefined;
+      return content;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async syncCurrentLegacyStageToGraph(projectId: string, stageId: string): Promise<void> {
     try {
       const [stage, project] = await Promise.all([
@@ -589,11 +582,11 @@ export class LegacyCoordinatorService {
     brdContent: string;
     stageId: string;
   }> {
-    const { project } = await this.getLegacyProject(projectId);
+    await this.getLegacyProject(projectId);
     const gateStageResolved = stageIdHint?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageIdHint.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const state = this.getLegacyChangeState(gateStageResolved, project);
+    const state = this.readLegacyChangeState(gateStageResolved);
     const codebaseDoc = String(state.codebaseDoc ?? "").trim();
     if (codebaseDoc.length < 300) {
       throw new BadRequestException(
@@ -622,7 +615,7 @@ export class LegacyCoordinatorService {
         if (baseline?.brdContent?.trim()) {
           baselineBrdBlock =
             "## Línea base — BRD de la etapa anterior (sistema sin el cambio actual)\n\n" +
-            baseline.brdContent.trim().slice(0, 15000) +
+            baseline.brdContent.trim() +
             "\n\n---\n\n**Instrucción:** El BRD debe centrarse SOLO en el cambio respecto a esta línea base. " +
             "No redescribas el sistema completo.\n\n---\n\n";
         }
@@ -651,17 +644,11 @@ export class LegacyCoordinatorService {
       );
       const inventory = cleanDocumentContent(inventoryRaw ?? "").trim();
       if (inventory.length >= 400) {
-        const refCap = readLegacyBaselineBrdInventoryRefMaxChars(24_000);
-        const refDoc =
-          refCap >= Number.MAX_SAFE_INTEGER / 2
-            ? sourcePrep.text
-            : sourcePrep.text.slice(0, Math.min(sourcePrep.text.length, refCap));
         brdSourceDocument =
           "## Inventario de negocio (extracción previa — cubrir TODO en el BRD)\n\n" +
           inventory +
           "\n\n---\n\n## Documento de partida (referencia)\n\n" +
-          refDoc;
-        sourceTruncated = sourceTruncated || refDoc.length < sourcePrep.text.length;
+          sourcePrep.text;
       }
     }
 
@@ -801,15 +788,15 @@ export class LegacyCoordinatorService {
     req?: GenerateCodebaseDocRequest,
     stageId?: string,
   ): Promise<{ codebaseDoc: string; mddContent?: string } | null> {
-    const { project, theforgeId } = await this.getLegacyProject(projectId);
+    const { theforgeId } = await this.getLegacyProject(projectId);
     if (!this.theforge.isConfigured()) return null;
 
     const resolvedStage = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : null;
-    const legacyState = resolvedStage?.legacyChangeState
-      ? (resolvedStage.legacyChangeState as LegacyFlowState)
-      : ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const legacyState = resolvedStage
+      ? this.readLegacyChangeState(resolvedStage)
+      : {};
     /** Gate índice ↔ SDD Falkor local (siempre antes de doc. partida). */
     await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState);
 
@@ -844,16 +831,12 @@ export class LegacyCoordinatorService {
     const persistStage = stageId?.trim()
       ? (resolvedStage ?? await this.resolveLegacyGateStage(projectId))
       : await this.resolveLegacyGateStage(projectId);
-    const projectFromDb = await this.projects.findOne(projectId);
-    const state = this.getLegacyChangeState(persistStage, projectFromDb);
+    const state = this.readLegacyChangeState(persistStage);
     const nextLegacy = { ...state, codebaseDoc } as LegacyFlowState;
     if (persistStage?.id) {
       await this.persistLegacyChangeState(projectId, persistStage.id, nextLegacy);
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: nextLegacy as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir documentación de partida.");
     }
     const response: {
       codebaseDoc: string;
@@ -891,11 +874,10 @@ export class LegacyCoordinatorService {
     if (!allowed.includes(choice)) {
       throw new BadRequestException(`choice debe ser uno de: ${allowed.join(", ")}`);
     }
-    const project = await this.projects.findOne(projectId);
     const gateStageForResolution = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const state = this.getLegacyChangeState(gateStageForResolution, project);
+    const state = this.readLegacyChangeState(gateStageForResolution);
     const legacyIndexSddResolution: LegacyFlowState["legacyIndexSddResolution"] = {
       choice,
       resolvedAt: new Date().toISOString(),
@@ -904,10 +886,7 @@ export class LegacyCoordinatorService {
     if (gateStageForResolution?.id) {
       await this.persistLegacyChangeState(projectId, gateStageForResolution.id, next);
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: next as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir resolución índice/SDD.");
     }
     return { ok: true, legacyIndexSddResolution };
   }
@@ -923,16 +902,12 @@ export class LegacyCoordinatorService {
     const stage = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const project = await this.projects.findOne(projectId);
-    const state = this.getLegacyChangeState(stage, project);
+    const state = this.readLegacyChangeState(stage);
     const next = { ...state, codebaseDoc } as LegacyFlowState;
     if (stage?.id) {
       await this.persistLegacyChangeState(projectId, stage.id, next);
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: next as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir documentación de partida.");
     }
     return { codebaseDoc };
   }
@@ -1021,10 +996,7 @@ export class LegacyCoordinatorService {
       await this.persistLegacyChangeState(projectId, gateStageForStart.id, state);
       await this.syncCurrentLegacyStageToGraph(projectId, gateStageForStart.id).catch(() => {});
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: state as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir el inicio del flujo legacy.");
     }
     return { filesToModify, questions, suggestedAnswers: Object.keys(suggestedAnswers).length > 0 ? suggestedAnswers : undefined };
   }
@@ -1035,20 +1007,17 @@ export class LegacyCoordinatorService {
    * @param answers - Mapa índice de pregunta → respuesta (p. ej. { "0": "10", "1": "30" }).
    */
   async answer(projectId: string, answers: Record<string, string>, stageId?: string): Promise<{ ok: boolean }> {
-    const { project } = await this.getLegacyProject(projectId);
+    await this.getLegacyProject(projectId);
     const gateStageForAnswer = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const prev = this.getLegacyChangeState(gateStageForAnswer, project);
+    const prev = this.readLegacyChangeState(gateStageForAnswer);
     const next: LegacyFlowState = { ...prev, answers };
     if (gateStageForAnswer?.id) {
       await this.persistLegacyChangeState(projectId, gateStageForAnswer.id, next);
       await this.syncCurrentLegacyStageToGraph(projectId, gateStageForAnswer.id).catch(() => {});
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: next as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir respuestas del flujo legacy.");
     }
     return { ok: true };
   }
@@ -1068,7 +1037,7 @@ export class LegacyCoordinatorService {
     const gateStage = stageId?.trim()
       ? (await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })) ?? await this.resolveLegacyGateStage(projectId)
       : await this.resolveLegacyGateStage(projectId);
-    const state = this.getLegacyChangeState(gateStage, project);
+    const state = this.readLegacyChangeState(gateStage);
     const description = state.description ?? "";
     const files = normalizeFilesToModify(state.filesToModify, theforgeId);
     const answers = state.answers ?? {};
@@ -1077,6 +1046,7 @@ export class LegacyCoordinatorService {
       .join("\n");
 
     const isInitialMdd = isLegacyBaselineStage(gateStage);
+    assertLegacyChangeGate(gateStage);
     if (gateStage) {
       const dbProject = await this.prisma.project.findFirst({
         where: { id: projectId },
@@ -1205,7 +1175,7 @@ export class LegacyCoordinatorService {
       for (let i = 0; i < Math.min(2, files.length); i++) {
         const f = files[i]!;
         const content = await this.theforge.getFileContent(f.path, f.repoId || theforgeId, undefined, f.path);
-        if (content.trim()) theforgeParts.push(`Contenido de ${f.path}:\n` + content.slice(0, 3000) + (content.length > 3000 ? "\n…" : ""));
+        if (content.trim()) theforgeParts.push(`Contenido de ${f.path}:\n` + content.trim());
       }
     }
     const theforgeContext = theforgeParts.join("\n\n---\n\n");
@@ -1257,13 +1227,13 @@ export class LegacyCoordinatorService {
         (theforgeContext
           ? "Contexto del codebase (TheForge) — evidencia del índice, arquitectura, definiciones y búsqueda semántica. " +
             "Usar TODO para describir el sistema real.\n---\n" +
-            theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
+            mddTheforgeContextBlock(theforgeContext) +
             "\n---"
           : "");
     } else {
       const baselineBlock = baselineStage?.mddContent?.trim()
         ? "## Línea base — MDD de la etapa anterior (sistema sin el cambio actual)\n\n" +
-          baselineStage.mddContent.trim().slice(0, 30000) +
+          baselineStage.mddContent.trim() +
           "\n\n---\n\n" +
           "**Instrucción:** El MDD de cambio debe describir SOLO las modificaciones, adiciones o eliminaciones " +
           "respecto a esta línea base. No redescribas secciones enteras que no cambian. " +
@@ -1295,7 +1265,7 @@ export class LegacyCoordinatorService {
           ? "Contexto del codebase (TheForge) — incluye evidencia del índice, validaciones, definiciones exactas, " +
             "funciones por archivo y búsqueda semántica. Usar TODO para inferir impacto completo. " +
             "No inventes rutas ni APIs que no aparezcan en este contexto.\n---\n" +
-            theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
+            mddTheforgeContextBlock(theforgeContext) +
             "\n---"
           : "");
     }
@@ -1310,7 +1280,7 @@ export class LegacyCoordinatorService {
     if (isInitialMdd && isLegacyAsIsMddEvidenceInjectEnabled() && codebaseDoc.length >= 80) {
       cleaned = injectAsIsCodebaseEvidenceIntoMdd(cleaned, codebaseDoc);
     }
-    // Dual-write durante migración: stage.legacyChangeState + project.legacyFlowState
+    // Single write: stage.legacyChangeState (project.legacyFlowState only when no stage exists)
     if (gateStage?.id) {
       await this.persistLegacyChangeState(projectId, gateStage.id, state).catch(() => {});
       await this.syncCurrentLegacyStageToGraph(projectId, gateStage.id).catch(() => {});
@@ -1332,36 +1302,38 @@ export class LegacyCoordinatorService {
     return response;
   }
 
-  /** Persiste `lastDeliverablesDebug` en `legacyFlowState` (no lanza si Prisma falla). */
+  /** Persists `lastDeliverablesDebug` on stage legacyChangeState (fallback: project without stages). */
   private async persistDeliverablesDebugReport(
     projectId: string,
     report: LegacyDeliverablesDebugReport,
+    stageId?: string | null,
   ): Promise<void> {
     try {
-      const row = await this.prisma.project.findUnique({
-        where: { id: projectId },
-        select: { legacyFlowState: true, stages: { orderBy: { ordinal: "asc" }, take: 1, select: { id: true } } },
-      });
-      const state = (row?.legacyFlowState as LegacyFlowState | null | undefined) ?? {};
-      const next = { ...state, lastDeliverablesDebug: report } as LegacyFlowState;
-      const stageId = row?.stages?.[0]?.id;
-      if (stageId) {
-        await this.prisma.$transaction([
-          this.prisma.stage.update({
-            where: { id: stageId },
-            data: { legacyChangeState: next as object },
-          }),
-          this.prisma.project.update({
-            where: { id: projectId },
-            data: { legacyFlowState: next as object },
-          }),
-        ]);
-      } else {
-        await this.prisma.project.update({
-          where: { id: projectId },
-          data: { legacyFlowState: next as object },
+      if (stageId?.trim()) {
+        const stage = await this.prisma.stage.findUnique({
+          where: { id: stageId.trim() },
+          select: { legacyChangeState: true },
         });
+        const state = (stage?.legacyChangeState as LegacyFlowState | null | undefined) ?? {};
+        const next = { ...state, lastDeliverablesDebug: report } as LegacyFlowState;
+        await this.prisma.stage.update({
+          where: { id: stageId.trim() },
+          data: { legacyChangeState: next as object },
+        });
+        return;
       }
+      const firstStage = await this.prisma.stage.findFirst({
+        where: { projectId },
+        orderBy: { ordinal: "asc" },
+        select: { id: true, legacyChangeState: true },
+      });
+      if (!firstStage?.id) return;
+      const state = (firstStage.legacyChangeState as LegacyFlowState | null | undefined) ?? {};
+      const next = { ...state, lastDeliverablesDebug: report } as LegacyFlowState;
+      await this.prisma.stage.update({
+        where: { id: firstStage.id },
+        data: { legacyChangeState: next as object },
+      });
     } catch (err) {
       this.logger.warn(
         `[LegacyDeliverables] persistDeliverablesDebugReport: ${err instanceof Error ? err.message : String(err)}`,
@@ -1430,8 +1402,11 @@ export class LegacyCoordinatorService {
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
 
+    assertLegacyChangeGate(gateStage);
+
     // enforceLegacyBrdTobeGate eliminado — To-Be y As-Is removidos
-    const codebaseDoc = String((project as { legacyFlowState?: LegacyFlowState }).legacyFlowState?.codebaseDoc ?? "").trim();
+    const gateState = this.readLegacyChangeState(gateStage);
+    const codebaseDoc = String(gateState.codebaseDoc ?? "").trim();
     const mddContent = String(project.mddContent ?? "").trim();
     const legacyBaselineStage = resolveLegacyBaselineStageFlag(gateStage, mddContent);
     report.legacyBaselineStage = legacyBaselineStage;
@@ -1461,12 +1436,11 @@ export class LegacyCoordinatorService {
 
     if (!mdd) {
       markFatal(new Error("missing_mdd_and_codebaseDoc"));
-      await this.persistDeliverablesDebugReport(projectId, report);
+      await this.persistDeliverablesDebugReport(projectId, report, gateStage?.id);
       throw new BadRequestException("Genera la documentación de partida (MDD Inicial) o el MDD de cambio antes de generar entregables.");
     }
 
-    const legacyState =
-      ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const legacyState = gateState;
 
     const tGate = Date.now();
     try {
@@ -1480,7 +1454,7 @@ export class LegacyCoordinatorService {
         error: clipDebug(err instanceof Error ? err.message : String(err), 800),
       });
       markFatal(err);
-      await this.persistDeliverablesDebugReport(projectId, report);
+      await this.persistDeliverablesDebugReport(projectId, report, gateStage?.id);
       if (isLegacyDeliverablesDebugVerbose()) this.logger.error(err);
       throw err;
     }
@@ -1534,7 +1508,15 @@ export class LegacyCoordinatorService {
     };
 
     const update = async (data: Record<string, unknown>) => {
-      await this.prisma.project.update({ where: { id: projectId }, data: data as object });
+      if (!gateStage?.id) {
+        throw new BadRequestException("No hay etapa activa para persistir entregables.");
+      }
+      await persistStageAndProjectDeliverables(
+        this.prisma,
+        gateStage.id,
+        projectId,
+        data as import("@theforge/shared-types").ProjectDeliverableSource,
+      );
     };
 
     const load = async () => {
@@ -1758,14 +1740,14 @@ export class LegacyCoordinatorService {
           }
           let uxPrompt =
             "Genera la Guía UX/UI en markdown según el system prompt. MDD:\n---\n" +
-            (legacyBaselineStage ? mddForLlm : mddForLlm.slice(0, 8000)) +
+            mddForLlm +
             "\n---\n\nBlueprint:\n---\n" +
-            (legacyBaselineStage ? bpUx : bpUx.slice(0, 4000)) +
+            bpUx +
             "\n---";
           if (theforgeContext) {
             uxPrompt =
               "**Contexto del codebase (TheForge) — priorizar y usar antes de elaborar:**\n---\n" +
-              theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
+              mddTheforgeContextBlock(theforgeContext) +
               "\n---\n\n**Regla obligatoria (legacy):** No inventes nada. Apégate al MDD y únicamente al conocimiento del codebase (TheForge) proporcionado arriba.\n\n**Instrucción:** Usa TODO el conocimiento anterior para alinear la guía con lo que ya existe. A continuación, MDD y Blueprint.\n\n" +
               uxPrompt;
           }
@@ -1786,7 +1768,7 @@ export class LegacyCoordinatorService {
                 if (hasTokens) {
                   uxPrompt =
                     "**Tokens de diseño extraídos del codebase — usar como valores reales:**\\n---\\n" +
-                    (parsed.summary ?? "").slice(0, 6000) +
+                    (parsed.summary ?? "") +
                     "\\n---\\n\\n" +
                     uxPrompt;
                 }
@@ -1907,7 +1889,13 @@ export class LegacyCoordinatorService {
             p = await load();
             return;
           }
-          const tasksContent = await this.ai.generateTasks(mddForLlm, bpTasks || undefined, legacyOpts);
+          const freshForTasks = await load();
+          const navigationMap = await this.fetchNavigationMapForTasks(theforgeId).catch(() => undefined);
+          const tasksContent = await this.ai.generateTasks(
+            mddForLlm,
+            freshForTasks.blueprintContent?.trim() || bpTasks || undefined,
+            mergeLegacyTasksGenerateOptions(legacyOpts, freshForTasks, navigationMap),
+          );
           await update({ tasksContent: cleanDocumentContent(tasksContent) });
           p = await load();
           return;
@@ -1949,13 +1937,9 @@ export class LegacyCoordinatorService {
     let reverseEngineeringMddForLegacySteps: string | null = null;
     const getReverseEngineeringMddForLegacySteps = (): string => {
       if (reverseEngineeringMddForLegacySteps === null) {
-        const maxChars = legacyBaselineStage
-          ? readLegacyBaselineReverseEngineeringMaxChars(REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS)
-          : REVERSE_ENGINEERING_MDD_PROMPT_MAX_CHARS;
         reverseEngineeringMddForLegacySteps = buildReverseEngineeringMddForLegacySteps(
           codebaseDoc,
           report,
-          maxChars,
         );
         if (isLegacyDeliverablesDebugVerbose()) {
           this.logger.log(
@@ -1999,7 +1983,22 @@ export class LegacyCoordinatorService {
       });
       report.finishedAt = new Date().toISOString();
       report.ok = true;
-      await this.persistDeliverablesDebugReport(projectId, report);
+      await this.persistDeliverablesDebugReport(projectId, report, gateStage?.id);
+      if (gateStage?.id) {
+        const snapProject = await this.prisma.project.findUnique({ where: { id: projectId } });
+        if (snapProject) {
+          await persistStageDeliverableSnapshotFromProject(
+            this.prisma,
+            gateStage.id,
+            snapProject,
+            { source: "cascade" },
+          ).catch((err) =>
+            this.logger.warn(
+              `[LegacyDeliverables] deliverableSnapshot: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+        }
+      }
       options?.onProgress?.({ step: "done", index: 0, total: 0 });
       return { ok: true, lastDeliverablesDebug: report };
     }
@@ -2079,7 +2078,7 @@ export class LegacyCoordinatorService {
 
     if (report.upstreamRateLimited) {
       markFatal(new Error("UPSTREAM_LLM_RATE_LIMIT"));
-      await this.persistDeliverablesDebugReport(projectId, report);
+      await this.persistDeliverablesDebugReport(projectId, report, gateStage?.id);
       const rateLimited = upstreamLlmRateLimitHttpException(new Error("UPSTREAM_LLM_RATE_LIMIT"), report);
       if (rateLimited) throw rateLimited;
     }
@@ -2096,7 +2095,16 @@ export class LegacyCoordinatorService {
         s.kind !== "mdd_canonical",
     ).length;
 
-    await this.persistDeliverablesDebugReport(projectId, report);
+    await this.persistDeliverablesDebugReport(projectId, report, gateStage?.id);
+    if (gateStage?.id) {
+      await persistStageDeliverableSnapshotFromProject(this.prisma, gateStage.id, p, {
+        source: "cascade",
+      }).catch((err) =>
+        this.logger.warn(
+          `[LegacyDeliverables] deliverableSnapshot: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+    }
     const elapsed = Date.parse(report.finishedAt) - Date.parse(report.startedAt);
     this.logger.log(
       `[LegacyDeliverables] cascade_ok project=${projectId.slice(0, 8)}… steps=${report.steps.length} withBody=${report.deliverablesWithBody} tfCtxChars=${report.theforgeContextChars} elapsedMs=${elapsed}`,
@@ -2179,7 +2187,7 @@ export class LegacyCoordinatorService {
     }
 
     // Obtener codebaseDoc desde stage o project
-    const state = this.getLegacyChangeState(stage, project);
+    const state = this.readLegacyChangeState(stage);
     const codebaseDoc = String(state.codebaseDoc ?? "").trim();
 
     if (codebaseDoc.length < 300) {
@@ -2188,19 +2196,66 @@ export class LegacyCoordinatorService {
       );
     }
 
-    // Construir prompt
-    const typePrompt = LegacyCoordinatorService.DOCUMENT_TYPE_PROMPTS[documentType];
-    const codebaseChunk = codebaseDoc.slice(0, 120_000);
-    const prompt = `${typePrompt}\n\n--- codebaseDoc ---\n\n${codebaseChunk}`;
+    let content: string;
 
-    // Llamar al LLM
-    const llm = await this.aiFactory.createForUser(getRequestUserId());
-    const raw = await llm.generateResponse(prompt, [], {
-      systemPrompt:
-        "Eres un analista de software experto. Genera documentación técnica precisa basada en el codebase proporcionado.",
+    if (documentType === "tasks") {
+      const gateStageForMdd = stage ?? pickPrimaryStage(project.stages);
+      const stageMdd = String(gateStageForMdd?.mddContent ?? "").trim();
+      const mddForTasks =
+        stageMdd ||
+        `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}`;
+      const legacyBaselineStage = resolveLegacyBaselineStageFlag(gateStageForMdd, stageMdd || mddForTasks);
+      let legacyOpts:
+        | { theforgeContext?: string; contractSpecs?: string; legacyBaselineStage?: boolean }
+        | undefined;
+      if (project.theforgeProjectId && this.theforge.isConfigured()) {
+        const [theforgeContext, contractSpecs] = await Promise.all([
+          this.theforge.getContextForDeliverables(project.theforgeProjectId),
+          this.theforge.gatherContractSpecsForApi(project.theforgeProjectId),
+        ]);
+        legacyOpts = {
+          legacyBaselineStage,
+          theforgeContext: theforgeContext?.trim() || undefined,
+          contractSpecs: contractSpecs?.trim() || undefined,
+        };
+      } else if (legacyBaselineStage) {
+        legacyOpts = { legacyBaselineStage };
+      }
+      const navigationMap = project.theforgeProjectId
+        ? await this.fetchNavigationMapForTasks(project.theforgeProjectId).catch(() => undefined)
+        : undefined;
+      const rawTasks = await this.ai.generateTasks(
+        mddForTasks,
+        project.blueprintContent,
+        mergeLegacyTasksGenerateOptions(legacyOpts, project, navigationMap),
+      );
+      content = cleanDocumentContent(rawTasks);
+    } else {
+      // Construir prompt
+      const typePrompt = LegacyCoordinatorService.DOCUMENT_TYPE_PROMPTS[documentType];
+      const prompt = `${typePrompt}\n\n--- codebaseDoc ---\n\n${codebaseDoc}`;
+
+      // Llamar al LLM
+      const llm = await this.aiFactory.createForUser(getRequestUserId());
+      const raw = await llm.generateResponse(prompt, [], {
+        systemPrompt:
+          "Eres un analista de software experto. Genera documentación técnica precisa basada en el codebase proporcionado.",
+      });
+
+      content = cleanDocumentContent(raw ?? "");
+    }
+
+    const fieldKey = String(field);
+    const currentContent = String(
+      (project as Record<string, unknown>)[fieldKey] ?? "",
+    ).trim();
+    const persistValidation = validateDocumentForPersist(currentContent, content, {
+      fieldLabel: documentPersistFieldLabel(fieldKey),
+      minBodyChars: currentContent.length > 0 ? 80 : 120,
     });
-
-    const content = cleanDocumentContent(raw ?? "");
+    if (!persistValidation.ok) {
+      throw new BadRequestException(persistValidation.message);
+    }
 
     // Persistir en el proyecto
     await this.prisma.project.update({

@@ -26,6 +26,10 @@ export interface SpecKitBundleInput {
   uxUiGuideContent?: string | null;
   /** Guía para agentes implementadores (p. ej. THEFORGE-DOC-CONSUMPTION-GUIDE). */
   consumptionGuideContent?: string | null;
+  /** Stage delta change spec (stage 2+ brownfield). */
+  changeSpecContent?: string | null;
+  /** Acceptance criteria lines from spec or change spec. */
+  acceptanceCriteriaLines?: string[] | null;
 }
 
 /** Resumen para handoff de implementación (equivalente a `/speckit.implement` + consumo The Forge). */
@@ -67,6 +71,10 @@ ${pathMapTable}
 If this ZIP includes governance docs at repo root, install rules/skills per \`docs/agent-governance/INSTALACION.md\` before coding.
 The \`docs/sdd/\` folder is a **mirror** for rules that reference SDD paths — always prefer spec-kit paths when both exist.
 
+## Git branch naming
+
+Create feature branches as \`{NNN}-{slug}\` where \`NNN\` is the 3-digit stage ordinal from The Forge (e.g. \`002-discount-module\`). One branch per stage change; see \`openspec/BRANCH-POLICY.md\` when bundled.
+
 ## Full consumption rules
 
 See \`THEFORGE-DOC-CONSUMPTION-GUIDE.md\` at repo root (next to this file) for complete agent consumption rules.
@@ -106,17 +114,49 @@ export function extractMddSection(mdd: string, sectionNumber: number): string {
   return rest.slice(0, end).trim();
 }
 
-function buildQuickstart(spec: string | null | undefined): string {
-  const s = (spec ?? "").trim();
-  if (!s) {
-    return `# Quickstart\n\n- [ ] Validar que el entorno de desarrollo arranca según plan.md\n- [ ] Ejecutar smoke test del flujo principal descrito en spec.md\n`;
+function buildQuickstart(
+  spec: string | null | undefined,
+  changeSpec?: string | null,
+  acceptanceLines?: string[] | null,
+): string {
+  const bullets: string[] = [];
+
+  if (acceptanceLines?.length) {
+    for (const line of acceptanceLines.slice(0, 10)) {
+      bullets.push(`- [ ] ${line.replace(/^[-*#\s]+/, "").trim()}`);
+    }
   }
-  const lines = s.split("\n").filter((l) => /criterio|éxito|aceptación|validar/i.test(l)).slice(0, 8);
-  const bullets =
-    lines.length > 0
-      ? lines.map((l) => `- [ ] ${l.replace(/^[-*#\s]+/, "").trim()}`).join("\n")
-      : "- [ ] Validar criterios de éxito del spec.md en entorno local";
-  return `# Quickstart\n\n## Escenarios de validación\n\n${bullets}\n`;
+
+  const s = (spec ?? "").trim();
+  if (s) {
+    const lines = s
+      .split("\n")
+      .filter((l) => /criterio|éxito|aceptación|validar|acceptance/i.test(l))
+      .slice(0, 8);
+    for (const l of lines) {
+      const b = `- [ ] ${l.replace(/^[-*#\s]+/, "").trim()}`;
+      if (!bullets.includes(b)) bullets.push(b);
+    }
+  }
+
+  const delta = (changeSpec ?? "").trim();
+  if (delta) {
+    const deltaChecks = delta
+      .split("\n")
+      .filter((l) => l.startsWith("- ") || l.startsWith("* "))
+      .slice(0, 6);
+    for (const l of deltaChecks) {
+      const b = `- [ ] Validar: ${l.replace(/^[-*]\s*/, "").trim()}`;
+      if (!bullets.includes(b)) bullets.push(b);
+    }
+  }
+
+  if (bullets.length === 0) {
+    bullets.push("- [ ] Validar criterios de éxito del spec.md en entorno local");
+    bullets.push("- [ ] Ejecutar smoke test del flujo principal descrito en plan.md");
+  }
+
+  return `# Quickstart\n\n## Escenarios de validación\n\n${bullets.join("\n")}\n`;
 }
 
 /**
@@ -157,7 +197,14 @@ export function buildSpecKitBundleFiles(input: SpecKitBundleInput): SpecKitBundl
     });
   }
 
-  files.push({ path: `${featureDir}/quickstart.md`, content: buildQuickstart(input.specContent) });
+  files.push({
+    path: `${featureDir}/quickstart.md`,
+    content: buildQuickstart(
+      input.specContent,
+      input.changeSpecContent,
+      input.acceptanceCriteriaLines,
+    ),
+  });
 
   const guide = (input.consumptionGuideContent ?? "").trim();
   if (guide) {

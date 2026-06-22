@@ -86,6 +86,8 @@ export interface IntegrationStatusResponse {
   traces: IntegrationTraceRow[];
   warnings: string[];
   handoffImportedAt: string | null;
+  promotableItemIds?: string[];
+  linkedNewHandoff?: IntegrationHandoff;
 }
 
 export interface IntegrationTraceRow {
@@ -97,6 +99,32 @@ export interface IntegrationTraceRow {
   status: string;
   title: string;
   description: string;
+  actor?: string | null;
+  acceptanceCriteria?: string[];
+}
+
+/** Markdown de vista previa (integración) — no persiste en `userStoriesContent` del legacy. */
+export function formatIntegrationHandoffPreviewStory(
+  item: Pick<IntegrationHandoffItem, "id" | "title" | "description" | "actor" | "acceptanceCriteria">,
+): string {
+  const lines: string[] = [
+    `### [Integración] ${item.id} — ${item.title}`,
+    "",
+    "> Sincronizado desde el proyecto NEW. **No** forma parte del documento **Historias de Usuario** del legacy hasta promover a nueva etapa.",
+    "",
+    "### 🧾 Historia de Usuario",
+    "",
+  ];
+  if (item.actor?.trim()) {
+    lines.push(`**Como:** ${item.actor.trim()}`, "");
+  }
+  lines.push(item.description.trim(), "");
+  if (item.acceptanceCriteria?.length) {
+    lines.push("**Criterios de aceptación:**", "");
+    for (const ac of item.acceptanceCriteria) lines.push(`- ${ac}`);
+    lines.push("");
+  }
+  return lines.join("\n").trim();
 }
 
 /** Genera el siguiente id NEW-LEG-XX a partir de items existentes. */
@@ -117,4 +145,52 @@ export function parseIntegrationHandoff(raw: unknown): IntegrationHandoff {
   const parsed = integrationHandoffSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
   return emptyIntegrationHandoff();
+}
+
+export const promoteHandoffToStageBodySchema = z.object({
+  itemIds: z.array(z.string().regex(/^NEW-LEG-\d{2,}$/)).optional(),
+  stageName: z.string().min(1).max(120).optional(),
+  activate: z.boolean().optional().default(true),
+});
+
+export type PromoteHandoffToStageBody = z.infer<typeof promoteHandoffToStageBodySchema>;
+
+export interface PromoteHandoffToStageResponse {
+  stage: {
+    id: string;
+    ordinal: number;
+    name: string | null;
+    workflowStatus: string;
+    handoffImportedAt: string | null;
+    linkedNewProjectId: string | null;
+  };
+  traces: IntegrationTraceRow[];
+  promotedItemIds: string[];
+}
+
+export function buildHandoffImportDescription(
+  items: IntegrationHandoffItem[],
+  newProjectName: string,
+): string {
+  const lines: string[] = [
+    `Integración con proyecto NEW: ${newProjectName}`,
+    "",
+    "Handoff importado:",
+    "",
+  ];
+  for (const item of items) {
+    lines.push(`- **${item.id}** — ${item.title}: ${item.description.replace(/\n/g, " ")}`);
+  }
+  return lines.join("\n");
+}
+
+export function mergeHandoffIntoLegacyDescription(
+  existing: string | undefined,
+  handoffBlock: string,
+): string {
+  const marker = "## Handoff importado";
+  const base = (existing ?? "").trim();
+  const idx = base.indexOf(marker);
+  const withoutOld = idx >= 0 ? base.slice(0, idx).trim() : base;
+  return [withoutOld, handoffBlock].filter(Boolean).join("\n\n").trim();
 }

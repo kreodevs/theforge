@@ -443,6 +443,9 @@ export interface WorkshopStage {
   estimation: Estimation | null;
   /** Estado del flujo legacy para esta etapa (cambio) */
   legacyChangeState?: LegacyFlowState | null;
+  handoffImportedAt?: string | null;
+  handoffSnapshot?: { items?: unknown[] | null } | null;
+  linkedNewProjectId?: string | null;
 }
 
 /** Propuesta HITL hasta confirmación en chat o `POST .../confirm-complexity`. */
@@ -483,10 +486,26 @@ export interface Project {
   infraContent: string | null;
   aemContent: string | null;
   agentGovernanceContent: string | null;
-  legacyFlowState?: LegacyFlowState | null;
+  convergeWebhookUrl?: string | null;
+  linkedLegacyProjectId?: string | null;
+  linkedNewProjectId?: string | null;
   estimation: Estimation | null;
   /** Presente en respuesta API completa; el front usa `activeStageId` para foco MDD. */
   stages?: WorkshopStage[];
+}
+
+function legacyDebugFromStages(stages: WorkshopStage[], activeStageId: string | null) {
+  const stage =
+    (activeStageId ? stages.find((s) => s.id === activeStageId) : null) ??
+    (pickDefaultStageId(stages) ? stages.find((s) => s.id === pickDefaultStageId(stages)) : null);
+  return stage?.legacyChangeState?.lastDeliverablesDebug ?? null;
+}
+
+function legacyCodebaseDocFromStages(stages: WorkshopStage[], activeStageId: string | null): string {
+  const stage =
+    (activeStageId ? stages.find((s) => s.id === activeStageId) : null) ??
+    (pickDefaultStageId(stages) ? stages.find((s) => s.id === pickDefaultStageId(stages)) : null);
+  return (stage?.legacyChangeState?.codebaseDoc ?? "").trim();
 }
 
 function pickDefaultStageId(stages: WorkshopStage[]): string | null {
@@ -995,7 +1014,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       userStoriesContent: p.userStoriesContent ?? null,
       infraContent: p.infraContent ?? null,
       aemContent: p.aemContent ?? null,
-      lastLegacyDeliverablesDebug: p.legacyFlowState?.lastDeliverablesDebug ?? null,
+      lastLegacyDeliverablesDebug: legacyDebugFromStages(stages, activeStageId),
     });
   },
   setSession: (s) => set({ session: s }),
@@ -1449,7 +1468,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
       case "mdd-inicial":
       case "legacy": {
-        const doc = (project?.legacyFlowState?.codebaseDoc ?? "").trim();
+        const { activeStageId, workshopStages } = get();
+        const stages = workshopStages.length > 0 ? workshopStages : (project?.stages ?? []);
+        const doc = legacyCodebaseDocFromStages(stages, activeStageId);
         if (!doc) {
           return {
             ok: false,
@@ -3767,7 +3788,9 @@ if (prog && prog.step && prog.step !== "done") {
     } catch (e) {
       try {
         const project = await get().fetchProject(pid);
-        const debug = project?.legacyFlowState?.lastDeliverablesDebug;
+        const { activeStageId, workshopStages } = get();
+        const stages = workshopStages.length > 0 ? workshopStages : (project?.stages ?? []);
+        const debug = legacyDebugFromStages(stages, activeStageId);
         const partial =
           debug?.steps?.some((s) => typeof s.outChars === "number" && s.outChars > 48) ?? false;
         if (partial || (project?.specContent?.trim()?.length ?? 0) > 48) {

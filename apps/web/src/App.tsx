@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "./store/workshopStore";
 import {
   AlertTriangle,
+  Copy,
   FolderGit2,
   FolderOpen,
   GitBranch,
@@ -28,9 +29,11 @@ import UsersView from "./views/UsersView";
 import { CreateProjectWizardDialog } from "./components/CreateProjectWizardDialog";
 import { ProjectMergeDialog } from "./components/ProjectMergeDialog";
 import { RenameProjectDialog } from "./components/RenameProjectDialog";
+import { CloneProjectDialog } from "./components/CloneProjectDialog";
 import { ProjectFolderTile } from "./components/ProjectFolderTile";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { DashboardPanelHeader } from "./components/DashboardPanelHeader";
+import { ProjectTutorialDialog } from "./components/ProjectTutorialDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import {
   apiFetch,
@@ -121,6 +124,9 @@ export default function App() {
   const [renameTarget, setRenameTarget] = useState<Project | null>(null);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameLoading, setRenameLoading] = useState(false);
+  const [cloneTarget, setCloneTarget] = useState<Project | null>(null);
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [cloneLoading, setCloneLoading] = useState(false);
   const [mergeAuditHint, setMergeAuditHint] = useState<{
     type: string;
     threadId?: string;
@@ -130,6 +136,7 @@ export default function App() {
     message?: string;
   } | null>(null);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
   const [usersViewOpen, setUsersViewOpen] = useState(false);
   const [settingsViewOpen, setSettingsViewOpen] = useState(false);
@@ -427,6 +434,36 @@ export default function App() {
     [],
   );
 
+  const openCloneDialog = useCallback((project: Project) => {
+    setCloneTarget(project);
+    setCloneDialogOpen(true);
+  }, []);
+
+  const submitCloneProject = useCallback(
+    async (projectId: string, name: string) => {
+      setCloneLoading(true);
+      try {
+        const r = await apiFetch(`${API_BASE}/projects/${projectId}/clone`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!r.ok) {
+          const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+          const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+          throw new Error(msg ?? "Error al clonar");
+        }
+        const created = (await r.json()) as Project;
+        setSelectedProjectIds([]);
+        await loadProjects();
+        setWorkshopProject(created);
+      } finally {
+        setCloneLoading(false);
+      }
+    },
+    [loadProjects],
+  );
+
   useEffect(() => {
     const allowed = new Set(displayedProjects.map((p) => p.id));
     setSelectedProjectIds((prev) => prev.filter((id) => allowed.has(id)));
@@ -555,6 +592,8 @@ export default function App() {
         onContinueLegacy={openTheForgeModal}
       />
 
+      <ProjectTutorialDialog open={showTutorial} onClose={() => setShowTutorial(false)} />
+
       <ProjectMergeDialog
         open={mergeDialogOpen}
         onOpenChange={setMergeDialogOpen}
@@ -572,6 +611,15 @@ export default function App() {
         currentName={renameTarget?.name ?? ""}
         loading={renameLoading}
         onSubmit={submitRenameProject}
+      />
+
+      <CloneProjectDialog
+        open={cloneDialogOpen}
+        onOpenChange={setCloneDialogOpen}
+        projectId={cloneTarget?.id ?? null}
+        sourceName={cloneTarget?.name ?? ""}
+        loading={cloneLoading}
+        onSubmit={submitCloneProject}
       />
 
       <AlertDialog
@@ -859,6 +907,7 @@ export default function App() {
           loading={loading}
           onCreateProject={() => setShowCreateWizard(true)}
           onRefresh={() => void loadProjects()}
+          onOpenTutorial={() => setShowTutorial(true)}
         />
 
         <Card id="dashboard-projects">
@@ -1016,19 +1065,35 @@ export default function App() {
                 </Button>
                 {selectedProjectIds.length === 1 ? (() => {
                   const single = projectList.find((p) => p.id === selectedProjectIds[0]);
-                  return single && canRenameProject(single) ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openRenameDialog(single)}
-                      disabled={loading || renameLoading}
-                      className="touch-manipulation"
-                    >
-                      <Pencil className="h-4 w-4 shrink-0" aria-hidden />
-                      Renombrar
-                    </Button>
-                  ) : null;
+                  if (!single) return null;
+                  return (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openCloneDialog(single)}
+                        disabled={loading || cloneLoading}
+                        className="touch-manipulation"
+                      >
+                        <Copy className="h-4 w-4 shrink-0" aria-hidden />
+                        Clonar
+                      </Button>
+                      {canRenameProject(single) ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openRenameDialog(single)}
+                          disabled={loading || renameLoading}
+                          className="touch-manipulation"
+                        >
+                          <Pencil className="h-4 w-4 shrink-0" aria-hidden />
+                          Renombrar
+                        </Button>
+                      ) : null}
+                    </>
+                  );
                 })() : null}
                 {selectedProjectIds.length >= 2 ? (
                   <Button

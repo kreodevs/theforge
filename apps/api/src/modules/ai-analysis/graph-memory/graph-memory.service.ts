@@ -813,4 +813,49 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             );
         }
     }
+
+    /**
+     * Post-promote/import: link HandoffItem nodes to LegacyStage and INTEGRATES_WITH project link.
+     */
+    async syncHandoffItemsToStage(params: {
+        newProjectId: string;
+        legacyProjectId: string;
+        legacyStageId: string;
+        items: Array<{ id: string; title?: string; description?: string }>;
+    }) {
+        if (!this.graph) return;
+        const ts = Date.now();
+        const { newProjectId, legacyProjectId, legacyStageId, items } = params;
+        try {
+            await this.syncProjectIntegrationLink(newProjectId, legacyProjectId);
+            for (const item of items) {
+                await this.graph.query(
+                    `
+              MERGE (h:HandoffItem {id: $newLegId, newProjectId: $newProjectId})
+              SET h.title = $title, h.description = $description, h.legacyStageId = $legacyStageId, h.updatedAt = $ts
+              MERGE (st:LegacyStage {stageId: $legacyStageId})
+              SET st.updatedAt = $ts
+              MERGE (h)-[:INTEGRATES_WITH]->(st)
+            `,
+                    {
+                        params: {
+                            newLegId: item.id,
+                            newProjectId,
+                            legacyStageId,
+                            title: item.title ?? item.id,
+                            description: (item.description ?? "").slice(0, 2000),
+                            ts,
+                        },
+                    },
+                );
+            }
+            this.logger.log(
+                `[GraphMemory] syncHandoffItemsToStage stage=${legacyStageId} items=${items.length}`,
+            );
+        } catch (err) {
+            this.logger.error(
+                `[GraphMemory] syncHandoffItemsToStage falló: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    }
 }

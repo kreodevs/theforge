@@ -5,6 +5,7 @@ import { getRequestUserId, getRequestUserRole } from "../../common/request-user.
 import { isAdminOrAbove } from "../../common/roles.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
+import { validateDocumentForPersist } from "../sessions/document-shrink.util.js";
 import { enrichBlueprintWithUiDesignSystem } from "../engine/blueprint-enrich-ui-system.js";
 import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
@@ -52,6 +53,7 @@ import { resolveUrls } from "../scraper/url-utils.js";
 import {
   createProjectSchema,
   createStageBodySchema,
+  cloneProjectBodySchema,
   patchStageBodySchema,
   updateProjectSchema,
   DELIVERABLES_BY_COMPLEXITY,
@@ -79,9 +81,21 @@ import {
 import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.util.js";
 
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
+import { resolveStageDeliverables } from "./stage-deliverables.util.js";
+import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "./stage-deliverable-snapshot.util.js";
+import {
+  persistStageAndProjectDeliverables,
+  seedActiveStageDeliverables,
+} from "./stage-deliverable-persist.util.js";
+import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { reconcileExportScaffold, buildUnifiedHandoff } from "./handoff-export.util.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
+import {
+  buildProjectCloneCreateInput,
+  resolveCloneProjectOptions,
+  type ProjectCloneSource,
+} from "./project-clone.util.js";
 
 import {
   BRD_GENERATION_SYSTEM,
@@ -91,7 +105,7 @@ import {
 type StageWithEst = Stage & { estimation: Estimation | null };
 
 function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unknown>>(project: P) {
-  const flat = flattenStageDeliverables(project.stages);
+  const flat = flattenStageDeliverables(project.stages, project as ProjectDeliverableSource);
   return { ...project, ...flat };
 }
 
@@ -292,6 +306,49 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return toApiProject(created);
   }
 
+  /**
+   * Deep-clones project documents and all stages into a new project owned by the current user.
+   * Does not copy sessions, chat, favorites, integration links, webhooks, or suite lineage.
+   */
+  async cloneProject(sourceId: string, body: unknown) {
+    const parsed = cloneProjectBodySchema.parse(body ?? {});
+    const source = (await this.assertProjectAccess(sourceId)) as ProjectCloneSource;
+    const userId = getRequestUserId();
+    const options = resolveCloneProjectOptions(source, parsed);
+
+    const created = await this.prisma.project.create({
+      data: buildProjectCloneCreateInput(source, { userId, ...options }),
+      include: {
+        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+      },
+    });
+
+    if (source.projectType === "LEGACY") {
+      const sortedStages = [...created.stages].sort((a, b) => a.ordinal - b.ordinal);
+      for (const stage of sortedStages) {
+        const parentStage =
+          stage.ordinal > 1
+            ? sortedStages.find((candidate) => candidate.ordinal === stage.ordinal - 1)
+            : undefined;
+        this.graphMemory
+          .syncLegacyStage({
+            stageId: stage.id,
+            projectId: created.id,
+            ordinal: stage.ordinal,
+            name: stage.name ?? "",
+            parentStageId: parentStage?.id,
+            theforgeProjectId: source.theforgeProjectId ?? undefined,
+          })
+          .catch(() => {});
+      }
+    }
+
+    return {
+      ...toApiProject(created),
+      clonedFromProjectId: sourceId,
+    };
+  }
+
   async findAll() {
     const userId = getRequestUserId();
     const rows = await this.prisma.project.findMany({
@@ -379,7 +436,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       rest.complexity !== undefined || rest.hasUxTeam !== undefined ||
       rest.projectType !== undefined || rest.theforgeProjectId !== undefined ||
       rest.figmaMapping !== undefined || clearComplexityPending === true ||
-      cpInput !== undefined;
+      cpInput !== undefined ||
+      rest.convergeWebhookUrl !== undefined || rest.convergeWebhookSecret !== undefined;
     if (hasSettingsChange && existingRaw.userId !== getRequestUserId()) {
       throw new BadRequestException("Only the project owner can change project settings");
     }
@@ -388,6 +446,15 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       (parsedStageId?.trim() && existingRaw.stages.find((s) => s.id === parsedStageId.trim())) ||
       pickPrimaryStage(existingRaw.stages);
     if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
+
+    if (rest.specContent !== undefined) {
+      const specValidation = validateDocumentForPersist(existingRaw.specContent, rest.specContent, {
+        fieldLabel: "Spec",
+      });
+      if (!specValidation.ok) {
+        throw new BadRequestException(specValidation.message);
+      }
+    }
 
     let mddGovernancePatternsReverted = false;
     let mddForPipeline: string | null | undefined = parsedMdd;
@@ -501,10 +568,17 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       clearComplexityPending === true ||
       cpInput !== undefined;
     if (hasProjectFieldUpdates) {
+      const deliverablePatch = pickDeliverableFieldsFromSource(rest as ProjectDeliverableSource);
+      const hasDeliverablePatch = Object.keys(deliverablePatch).length > 0;
+
       await this.prisma.project.update({
         where: { id },
         data: updatePayload,
       });
+
+      if (hasDeliverablePatch) {
+        await persistStageAndProjectDeliverables(this.prisma, targetStage.id, id, deliverablePatch);
+      }
       // Bitácora de cambios para campos de contenido documental
       const documentFields = [
         "dbgaContent", "specContent", "architectureContent", "useCasesContent",
@@ -572,6 +646,24 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       },
     });
     if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    const previousActive = await this.prisma.stage.findMany({
+      where: { projectId, workflowStatus: StageStatus.ACTIVE, NOT: { id: stageId } },
+      select: { id: true, ordinal: true, deliverableSnapshot: true },
+    });
+
+    for (const prev of previousActive) {
+      if (prev.ordinal >= 1) {
+        await ensureStageDeliverableSnapshotIfMissing(this.prisma, prev.id, projectId, {
+          source: "cascade",
+        }).catch((err) =>
+          this.logger.warn(
+            `[Stage] snapshot before activate: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+    }
+
     await this.prisma.$transaction([
       this.prisma.stage.updateMany({
         where: { projectId, workflowStatus: StageStatus.ACTIVE },
@@ -582,6 +674,15 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         data: { workflowStatus: StageStatus.ACTIVE },
       }),
     ]);
+
+    const previousStageId = previousActive.sort((a, b) => a.ordinal - b.ordinal)[0]?.id;
+    await seedActiveStageDeliverables(this.prisma, stageId, projectId, {
+      previousStageId: previousStageId ?? null,
+    }).catch((err) =>
+      this.logger.warn(
+        `[Stage] seed deliverables on activate: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
   }
 
   async createStage(projectId: string, body: unknown) {
@@ -666,16 +767,17 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         name: out.name ?? "",
         theforgeProjectId: project.theforgeProjectId ?? undefined,
       }).catch(() => {});
-      // Relacionar con Stage 1 (línea base) si no es Stage 1
+      // Relacionar con etapa anterior (ordinal N-1) para FalkorDB DERIVED_FROM
       if (out.ordinal > 1) {
-        const baselineStage = project.stages.find((s) => s.ordinal === 1);
-        if (baselineStage) {
+        const parentOrdinal = out.ordinal - 1;
+        const parentStage = project.stages.find((s) => s.ordinal === parentOrdinal);
+        if (parentStage) {
           this.graphMemory.syncLegacyStage({
             stageId: out.id,
             projectId,
             ordinal: out.ordinal,
             name: out.name ?? "",
-            parentStageId: baselineStage.id,
+            parentStageId: parentStage.id,
             theforgeProjectId: project.theforgeProjectId ?? undefined,
           }).catch(() => {});
         }
@@ -693,6 +795,13 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       include: { estimation: true },
     });
     return { stages };
+  }
+
+  async getStageDeliverables(projectId: string, stageId: string) {
+    const project = await this.assertProjectAccess(projectId);
+    const stage = project.stages.find((s) => s.id === stageId);
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+    return resolveStageDeliverables(project, stage, "workshop");
   }
 
   private assertBlueprintCoversMddDataModel(project: Project & { stages: StageWithEst[] }): void {
@@ -741,10 +850,15 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       scoreLogicFlowsSection5Coverage(mdd, logicFlowsMarkdown),
       batchCount !== undefined ? { batchCount } : undefined,
     );
-    await patchLegacyDeliverablesDebugReport(this.prisma, projectId, {
-      legacyBaselineStage: true,
-      logicFlowsSection5Coverage: coverage,
-    });
+    await patchLegacyDeliverablesDebugReport(
+      this.prisma,
+      projectId,
+      {
+        legacyBaselineStage: true,
+        logicFlowsSection5Coverage: coverage,
+      },
+      pickPrimaryStage(project.stages ?? [])?.id,
+    );
   }
 
   async patchStage(projectId: string, stageId: string, body: unknown) {
@@ -782,6 +896,27 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       });
       if (clash) throw new BadRequestException(`Ordinal ${dto.ordinal} ya está en uso`);
       data.ordinal = dto.ordinal;
+    }
+
+    const terminalStatuses: StageStatus[] = [
+      StageStatus.COMPLETED,
+      StageStatus.ARCHIVED,
+      StageStatus.SUPERSEDED,
+    ];
+    if (dto.workflowStatus !== undefined) {
+      data.workflowStatus = dto.workflowStatus as StageStatus;
+      if (terminalStatuses.includes(dto.workflowStatus as StageStatus)) {
+        await ensureStageDeliverableSnapshotIfMissing(this.prisma, stageId, projectId, {
+          source: "manual",
+        }).catch((err) =>
+          this.logger.warn(
+            `[Stage] snapshot on ${dto.workflowStatus}: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+      if (dto.workflowStatus === StageStatus.ACTIVE) {
+        await this.activateStageExclusive(projectId, stageId);
+      }
     }
 
     if (Object.keys(data).length > 0) {
@@ -1244,7 +1379,18 @@ name: ${JSON.stringify(name)}
         `[Cascade] Completada con ${errors.length}/${total} paso(s) saltado(s): ${errors.map((e) => `${e.step}: ${e.error}`).join("; ")}`,
       );
     }
-    return this.findOne(projectId);
+    const result = await this.findOne(projectId);
+    const activeStage = pickPrimaryStage(result.stages ?? []);
+    if (activeStage?.id) {
+      await persistStageDeliverableSnapshotFromProject(this.prisma, activeStage.id, result, {
+        source: "cascade",
+      }).catch((err) =>
+        this.logger.warn(
+          `[Cascade] deliverableSnapshot: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+    }
+    return result;
   }
 
   async phase0DeepResearch(
@@ -1446,7 +1592,14 @@ name: ${JSON.stringify(name)}
     const tasksContent = await this.ai.generateTasks(
       this.constitutionMarkdown(project),
       project.blueprintContent,
-      { navigationMap },
+      {
+        navigationMap,
+        specContent: project.specContent,
+        userStoriesContent: project.userStoriesContent,
+        apiContractsContent: project.apiContractsContent,
+        logicFlowsContent: project.logicFlowsContent,
+        infraContent: project.infraContent,
+      },
     );
     return this.update(projectId, { tasksContent: cleanDocumentContent(tasksContent) });
   }
@@ -1661,6 +1814,16 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
 
     // Anexar sección 8: UI Design System & Component Mapping (enriquecimiento semántico)
     blueprintContent = enrichBlueprintWithUiDesignSystem(mddContent, blueprintContent);
+
+    // Reflection loop (minimal): post-generation conformance re-check
+    const postGenCheck = this.conformance.checkBlueprintDataModel(mddContent, blueprintContent);
+    if (!postGenCheck.ok) {
+      const gapSummary = postGenCheck.gaps.slice(0, 4).join("; ");
+      this.logger.warn(`[Blueprint] Post-generation conformance gaps: ${gapSummary}`);
+      await this.changeLog
+        .log(projectId, "blueprintContent", `[conformance-recheck] ${gapSummary}`)
+        .catch(() => {});
+    }
 
     return this.update(projectId, { blueprintContent });
   }

@@ -1,11 +1,5 @@
-import { compactCodebaseDocForMddPrompt } from "../../theforge/legacy-mdd-v1-markdown.util.js";
-import { sanitizeSourceDocForBrdPrompt, truncateSourceDocForBrdPrompt } from "./dbga-prompt-context.util.js";
-import {
-  appendLegacyBaselineBrdDetailPrompt,
-  isLegacyBaselineFullDetailEnabled,
-  readLegacyBaselineBrdCodebaseDocMaxChars,
-  readLegacyBaselineBrdEvidencePathCap,
-} from "./legacy-baseline-detail.util.js";
+import { sanitizeSourceDocForBrdPrompt } from "./dbga-prompt-context.util.js";
+import { appendLegacyBaselineBrdDetailPrompt } from "./legacy-baseline-detail.util.js";
 
 export type PrepareLegacyBrdOptions = {
   /** Etapa 1 AS-IS: doc de partida completo en prompt BRD. */
@@ -73,37 +67,27 @@ export type LegacyBrdSourcePrep = {
 };
 
 /**
- * Prepara codebaseDoc para BRD legacy: compacta evidence_paths masivos y trunca con cabeza/cola
- * solo si aún supera el tope (prioriza secciones estructuradas al inicio del doc).
+ * Prepara codebaseDoc para BRD legacy: sanitiza y envía el documento completo al prompt.
  */
 export function prepareLegacyCodebaseDocForBrdPrompt(
   codebaseDoc: string,
-  options?: PrepareLegacyBrdOptions,
+  _options?: PrepareLegacyBrdOptions,
 ): LegacyBrdSourcePrep {
-  const baseline = options?.legacyBaselineStage === true && isLegacyBaselineFullDetailEnabled();
   const sanitized = sanitizeSourceDocForBrdPrompt(codebaseDoc);
-  const maxChars = baseline
-    ? readLegacyBaselineBrdCodebaseDocMaxChars(LEGACY_BRD_CODEBASE_DOC_PROMPT_MAX_CHARS)
-    : LEGACY_BRD_CODEBASE_DOC_PROMPT_MAX_CHARS;
-  const pathCap = baseline
-    ? readLegacyBaselineBrdEvidencePathCap(150)
-    : undefined;
-  const compactMax =
-    maxChars >= Number.MAX_SAFE_INTEGER / 2 ? undefined : maxChars;
-  const compacted = compactCodebaseDocForMddPrompt(sanitized, compactMax, pathCap);
-  const { text, truncated } =
-    maxChars >= Number.MAX_SAFE_INTEGER / 2
-      ? { text: compacted, truncated: false }
-      : truncateSourceDocForBrdPrompt(compacted, maxChars);
   const entityCount = countEntityTableRows(sanitized);
   const serviceCount = countBusinessLogicRows(sanitized);
   const needsInventoryPass =
-    truncated ||
-    text.length >= LEGACY_BRD_INVENTORY_THRESHOLD_CHARS ||
+    sanitized.length >= LEGACY_BRD_INVENTORY_THRESHOLD_CHARS ||
     entityCount >= 18 ||
     serviceCount >= 12;
 
-  return { text, truncated, needsInventoryPass, entityCount, serviceCount };
+  return {
+    text: sanitized,
+    truncated: false,
+    needsInventoryPass,
+    entityCount,
+    serviceCount,
+  };
 }
 
 export const BRD_BUSINESS_INVENTORY_SYSTEM =

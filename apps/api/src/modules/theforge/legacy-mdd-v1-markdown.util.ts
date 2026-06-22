@@ -320,12 +320,6 @@ export function normalizeLegacyMddV1JsonBlocksInMarkdown(md: string): string {
   return out;
 }
 
-function legacyMddCodebaseDocPromptMaxChars(): number {
-  const raw = process.env.LEGACY_MDD_CODEBASE_DOC_PROMPT_MAX_CHARS?.trim();
-  if (!raw) return 120_000;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : 120_000;
-}
 
 function legacyMddCodebaseDocPromptPathCap(): number {
   const raw = process.env.LEGACY_MDD_CODEBASE_DOC_PROMPT_PATHS?.trim();
@@ -335,19 +329,18 @@ function legacyMddCodebaseDocPromptPathCap(): number {
 }
 
 /**
- * Compacta `codebaseDoc` para prompts LLM: preserva secciones estructuradas (entidades, API, resumen)
- * y recorta solo el volcado masivo de `### Rutas de evidencia`.
+ * Compacta `codebaseDoc` para prompts LLM: opcionalmente acota `### Rutas de evidencia`;
+ * no trunca el documento por presupuesto de caracteres.
  */
 export function compactCodebaseDocForMddPrompt(
   md: string,
-  maxChars?: number,
+  _maxChars?: number,
   evidencePathCap?: number,
 ): string {
-  const limit = maxChars ?? legacyMddCodebaseDocPromptMaxChars();
   const pathCap = evidencePathCap ?? legacyMddCodebaseDocPromptPathCap();
   const sectionRe =
     /(### Rutas de evidencia\n\n)([\s\S]*?)(?=\n### |\n---\n|\n## Repositorio:|$)/g;
-  let compact = md.replace(sectionRe, (_match, head: string, body: string) => {
+  return md.replace(sectionRe, (_match, head: string, body: string) => {
     const lines = body.split("\n").filter((l: string) => l.startsWith("- "));
     if (lines.length <= pathCap) return head + body;
     const kept = lines.slice(0, pathCap).join("\n");
@@ -355,9 +348,4 @@ export function compactCodebaseDocForMddPrompt(
     const note = omitted > 0 ? `\n\n_${omitted} rutas omitidas en prompt (total sección: ${lines.length})._` : "";
     return `${head}${kept}${note}`;
   });
-  if (compact.length <= limit) return compact;
-  return (
-    compact.slice(0, limit) +
-    "\n\n> *[codebaseDoc truncado para prompt; secciones estructuradas priorizadas. Regenera doc. partida si faltan entidades/API.]*"
-  );
 }

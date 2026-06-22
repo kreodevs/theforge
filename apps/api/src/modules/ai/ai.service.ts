@@ -54,19 +54,16 @@ import {
 import {
   buildLegacyAsIsSpecCoverageChecklist,
   buildLegacyAsIsSpecUserPreamble,
-  buildMddContextForLegacyAsIsSpec,
   LEGACY_AS_IS_SPEC_SYSTEM_APPENDIX,
 } from "./utils/legacy-as-is-spec.util.js";
 import {
   buildLegacyAsIsUseCasesCoverageChecklist,
   buildLegacyAsIsUseCasesUserPreamble,
-  buildMddContextForLegacyAsIsUseCases,
   LEGACY_AS_IS_USE_CASES_SYSTEM_APPENDIX,
 } from "./utils/legacy-as-is-use-cases.util.js";
 import {
   buildLegacyAsIsUserStoriesCoverageChecklist,
   buildLegacyAsIsUserStoriesUserPreamble,
-  buildMddContextForLegacyAsIsUserStories,
   LEGACY_AS_IS_USER_STORIES_SYSTEM_APPENDIX,
 } from "./utils/legacy-as-is-user-stories.util.js";
 import {
@@ -130,9 +127,7 @@ const LEGACY_NO_INVENTAR =
   "**Regla obligatoria (legacy):** Cumple estrictamente con lo que especifican los documentos. No inventes funcionalidades nuevas ni cambies el alcance. Sin embargo, puedes y debes complementar con lo necesario para que lo especificado funcione correctamente: validaciones, manejo de errores, estados de UI, casos edge obvios, autenticación donde aplique, migraciones de DB requeridas, y cualquier boilerplate indispensable. Si algo es ambiguo o hay múltiples formas válidas de implementarlo, pregunta.";
 
 function trimTheForgeContextBlock(theforgeContext: string): string {
-  const max = parseInt(process.env.THEFORGE_CONTEXT_PREPEND_MAX_CHARS ?? "16000", 10);
-  const cap = Number.isFinite(max) && max > 2000 ? max : 16000;
-  return (theforgeContext ?? "").trim().slice(0, cap);
+  return (theforgeContext ?? "").trim();
 }
 
 function prependTheForgePrompt(prompt: string, theforgeContext: string): string {
@@ -305,7 +300,7 @@ export class AiService {
           } else if (!options?.currentMddContent?.trim()) {
             systemPrompt +=
               "\n\n[Contexto base: Domain Benchmark & Gap Analysis del usuario. Úsalo como referencia para guiar la entrevista y redactar el MDD.]\n---\n" +
-              options.currentDbgaContent.trim().slice(0, 4000) +
+              options.currentDbgaContent.trim() +
               "\n---";
           }
         }
@@ -318,37 +313,37 @@ export class AiService {
         if (isUxUiGuide && options?.currentBlueprintContent?.trim()) {
           systemPrompt +=
             "\n\n[Blueprint del proyecto: estructura, pantallas y módulos. Úsalo para alinear la Guía UX/UI con las pantallas y flujos descritos.]\n---\n" +
-            options.currentBlueprintContent.trim().slice(0, 6000) +
+            options.currentBlueprintContent.trim() +
             "\n---";
         }
         if (options?.currentUxUiGuideContent?.trim()) {
           systemPrompt +=
             "\n\n[Contenido actual de la Guía UX/UI del proyecto (puede incluir ediciones del usuario)]\n---\n" +
-            options.currentUxUiGuideContent.trim().slice(0, 6000) +
+            options.currentUxUiGuideContent.trim() +
             "\n---";
         }
         if (options?.activeTab?.trim() === "spec" && options?.currentSpecContent?.trim()) {
           systemPrompt +=
             "\n\n[Contenido actual del Spec del proyecto. Al integrar o actualizar, incluye todo esto más la nueva sección o cambios, y termina con ---FIN_SPEC---.]\n---\n" +
-            options.currentSpecContent.trim().slice(0, 12000) +
+            options.currentSpecContent.trim() +
             "\n---";
         }
         if (options?.activeTab?.trim() === "brd" && options?.currentBrdContent?.trim()) {
           systemPrompt +=
             "\n\n[BRD actual de la etapa del Workshop. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_BRD---.]\n---\n" +
-            options.currentBrdContent.trim().slice(0, 8000) +
+            options.currentBrdContent.trim() +
             "\n---";
         }
         if (options?.learningHistory?.trim()) {
           systemPrompt +=
             "\n\n**HISTORIAL_DE_APRENDIZAJE (proyectos previos del usuario):**\n---\n" +
-            options.learningHistory.trim().slice(0, 6000) +
+            options.learningHistory.trim() +
             "\n---";
         }
         if (options?.complexityInterviewContext?.trim()) {
           systemPrompt +=
             "\n\n**[Política de complejidad / entrevista Fase 0 — aplicar en esta conversación]**\n" +
-            options.complexityInterviewContext.trim().slice(0, 8000);
+            options.complexityInterviewContext.trim();
         }
       }
       systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
@@ -487,7 +482,7 @@ export class AiService {
         } else if (!options?.currentMddContent?.trim()) {
           systemPrompt +=
             "\n\n[Contexto base: Domain Benchmark & Gap Analysis del usuario. Úsalo como referencia para guiar la entrevista y redactar el MDD.]\n---\n" +
-            options.currentDbgaContent.trim().slice(0, 4000) +
+            options.currentDbgaContent.trim() +
             "\n---";
         }
       }
@@ -500,85 +495,85 @@ export class AiService {
       if (isUxUiGuide && options?.currentBlueprintContent?.trim()) {
         systemPrompt +=
           "\n\n[Blueprint del proyecto: estructura, pantallas y módulos. Úsalo para alinear la Guía UX/UI con las pantallas y flujos descritos.]\n---\n" +
-          options.currentBlueprintContent.trim().slice(0, 6000) +
+          options.currentBlueprintContent.trim() +
           "\n---";
       }
       if (options?.currentUxUiGuideContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual de la Guía UX/UI del proyecto (puede incluir ediciones del usuario)]\n---\n" +
-          options.currentUxUiGuideContent.trim().slice(0, 6000) +
+          options.currentUxUiGuideContent.trim() +
           "\n---";
       }
       if (options?.activeTab?.trim() === "spec" && options?.currentSpecContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual del Spec del proyecto. Al integrar o actualizar, incluye todo esto más la nueva sección o cambios, y termina con ---FIN_SPEC---.]\n---\n" +
-          options.currentSpecContent.trim().slice(0, 12000) +
+          options.currentSpecContent.trim() +
           "\n---";
       }
       if (options?.activeTab?.trim() === "brd" && options?.currentBrdContent?.trim()) {
         systemPrompt +=
           "\n\n[BRD actual de la etapa del Workshop. Al actualizar, conserva lo acordado y fusiona cambios; termina con ---FIN_BRD---.]\n---\n" +
-          options.currentBrdContent.trim().slice(0, 8000) +
+          options.currentBrdContent.trim() +
           "\n---";
       }
       if (options?.activeTab?.trim() === "architecture" && (options as any).currentArchitectureContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual del documento Architecture del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_ARCH---.]\n---\n" +
-          (options as any).currentArchitectureContent.trim().slice(0, 12000) +
+          (options as any).currentArchitectureContent.trim() +
           "\n---";
       }
       if (options?.activeTab?.trim() === "use-cases" && (options as any).currentUseCasesContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual de Use Cases del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_USECASES---.]\n---\n" +
-          (options as any).currentUseCasesContent.trim().slice(0, 12000) +
+          (options as any).currentUseCasesContent.trim() +
           "\n---";
       }
       if (options?.activeTab?.trim() === "user-stories" && (options as any).currentUserStoriesContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual de User Stories del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_STORIES---.]\n---\n" +
-          (options as any).currentUserStoriesContent.trim().slice(0, 12000) +
+          (options as any).currentUserStoriesContent.trim() +
           "\n---";
       }
       if (options?.activeTab?.trim() === "blueprint" && options?.currentBlueprintContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual del Blueprint del proyecto. Al actualizar, incluye todo esto más los cambios; termina con ---FIN_BLUEPRINT---.]\n---\n" +
-          options.currentBlueprintContent.trim().slice(0, 12000) +
+          options.currentBlueprintContent.trim() +
           "\n---";
       }
       if (options?.activeTab?.trim() === "api-contracts" && (options as any).currentApiContractsContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual de API Contracts del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_API---.]\n---\n" +
-          (options as any).currentApiContractsContent.trim().slice(0, 12000) +
+          (options as any).currentApiContractsContent.trim() +
           "\n---";
       }
       if (options?.activeTab?.trim() === "logic-flows" && (options as any).currentLogicFlowsContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual de Logic Flows del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_FLOWS---.]\n---\n" +
-          (options as any).currentLogicFlowsContent.trim().slice(0, 12000) +
+          (options as any).currentLogicFlowsContent.trim() +
           "\n---";
       }
       if (options?.activeTab?.trim() === "tasks" && (options as any).currentTasksContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual de Tasks del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_TASKS---.]\n---\n" +
-          (options as any).currentTasksContent.trim().slice(0, 12000) +
+          (options as any).currentTasksContent.trim() +
           "\n---";
       }
       if (options?.activeTab?.trim() === "infra" && (options as any).currentInfraContent?.trim()) {
         systemPrompt +=
           "\n\n[Contenido actual de Infraestructura del proyecto. Al actualizar, incluye el contenido completo más los cambios; termina con ---FIN_INFRA---.]\n---\n" +
-          (options as any).currentInfraContent.trim().slice(0, 12000) +
+          (options as any).currentInfraContent.trim() +
           "\n---";
       }
       if (options?.learningHistory?.trim()) {
         systemPrompt +=
           "\n\n**HISTORIAL_DE_APRENDIZAJE (proyectos previos del usuario):**\n---\n" +
-          options.learningHistory.trim().slice(0, 6000) +
+          options.learningHistory.trim() +
           "\n---";
       }
       if (options?.complexityInterviewContext?.trim()) {
         systemPrompt +=
           "\n\n**[Política de complejidad / entrevista Fase 0 — aplicar en esta conversación]**\n" +
-          options.complexityInterviewContext.trim().slice(0, 8000);
+          options.complexityInterviewContext.trim();
       }
     }
     systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
@@ -622,7 +617,7 @@ export class AiService {
     const userId = getRequestUserId();
     const visionProvider = await this.aiFactory.createForVisionUser(userId);
     const tab = (activeTab ?? "mdd").trim() || "mdd";
-    const hint = (userText ?? "").trim().slice(0, 4000) || "(sin texto adicional)";
+    const hint = (userText ?? "").trim() || "(sin texto adicional)";
     const tabHint =
       tab === "mdd"
         ? "Master Design Document"
@@ -641,7 +636,7 @@ export class AiService {
         "Eres arquitecto de software: extrae solo información sustentada en las imágenes; no inventes.",
       userMessageImages: images,
     });
-    return out.trim().slice(0, 12000);
+    return out.trim();
   }
 
   /** Alias del pipeline MDD (Manager LangGraph). */
@@ -673,13 +668,12 @@ export class AiService {
   ): Promise<string> {
     const raw = inputContent?.trim() ?? "";
     const legacyAsIsSpec = source === "mdd" && raw.length > 0 && options?.legacyBaselineStage === true;
-    const content = legacyAsIsSpec
-      ? buildMddContextForLegacyAsIsSpec(raw)
-      : source === "mdd" && raw.length > 0
+    const content =
+      source === "mdd" && raw.length > 0
         ? buildMddContextForSpec(raw, mddDeliverableCtx(options))
         : capTextForLegacyBaseline(raw, 12000, options?.legacyBaselineStage);
     const phase0 = capTextForLegacyBaseline(phase0Summary ?? "", 4000, options?.legacyBaselineStage);
-    const label = source === "mdd" ? "MDD (extracto AS-IS para Spec)" : "Benchmark (DBGA)";
+    const label = source === "mdd" ? "MDD" : "Benchmark (DBGA)";
     const checklist = legacyAsIsSpec ? buildLegacyAsIsSpecCoverageChecklist(raw) : "";
     let prompt =
       content.length > 0
@@ -717,8 +711,8 @@ export class AiService {
     const parts = [
       "Revisa y aclara el Spec según el system prompt. Marca ambigüedades con [NEEDS CLARIFICATION].\n",
       spec.length > 0 ? `Spec actual:\n---\n${spec}\n---` : "Spec vacío — genera esqueleto mínimo con marcadores.",
-      dbga.length > 0 ? `\n\nContexto DBGA / Benchmark:\n---\n${dbga.slice(0, 12000)}\n---` : "",
-      brd.length > 0 ? `\n\nBRD (alcance de negocio):\n---\n${brd.slice(0, 8000)}\n---` : "",
+      dbga.length > 0 ? `\n\nContexto DBGA / Benchmark:\n---\n${dbga}\n---` : "",
+      brd.length > 0 ? `\n\nBRD (alcance de negocio):\n---\n${brd}\n---` : "",
       notes.length > 0 ? `\n\nNotas del usuario:\n---\n${notes}\n---` : "",
     ];
     return this.generateResponse(parts.filter(Boolean).join("\n"), [], { systemPrompt: CLARIFY_SPEC_PROMPT });
@@ -727,18 +721,50 @@ export class AiService {
   /**
    * Genera el documento Tasks (breakdown) desde MDD + Blueprint.
    */
-  async generateTasks(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions & { navigationMap?: string }): Promise<string> {
+  async generateTasks(
+    mddContent: string,
+    blueprintContent?: string | null,
+    options?: LegacyGenerateOptions & {
+      navigationMap?: string;
+      specContent?: string | null;
+      userStoriesContent?: string | null;
+      apiContractsContent?: string | null;
+      logicFlowsContent?: string | null;
+      infraContent?: string | null;
+    },
+  ): Promise<string> {
     const mdd = buildMddContextForTasks(mddContent?.trim() ?? "", mddDeliverableCtx(options));
     const blueprint = capTextForLegacyBaseline(blueprintContent ?? "", 15000, options?.legacyBaselineStage);
     const navMap = capTextForLegacyBaseline(options?.navigationMap ?? "", 8000, options?.legacyBaselineStage);
+    const spec = capTextForLegacyBaseline(options?.specContent ?? "", 8000, options?.legacyBaselineStage);
+    const userStories = capTextForLegacyBaseline(options?.userStoriesContent ?? "", 10000, options?.legacyBaselineStage);
+    const apiContracts = capTextForLegacyBaseline(options?.apiContractsContent ?? "", 12000, options?.legacyBaselineStage);
+    const logicFlows = capTextForLegacyBaseline(options?.logicFlowsContent ?? "", 10000, options?.legacyBaselineStage);
+    const infra = capTextForLegacyBaseline(options?.infraContent ?? "", 8000, options?.legacyBaselineStage);
     let prompt =
       mdd.length > 0
         ? "Genera el documento Tasks según las instrucciones del system prompt. " +
-        "Deriva tareas comprobables para **cada** capacidad MVP, dominio API y entidad del MDD; recorre el CHECKLIST DE COBERTURA si aparece en el mensaje.\n\nMDD:\n---\n" +
+        "Deriva tareas comprobables para **cada** capacidad MVP, entidad §3, endpoint §4, flujo §5, control §6 e ítem §7 del MDD; recorre el CHECKLIST DE COBERTURA si aparece en el mensaje. " +
+        "Incluye trazabilidad **MDD:** y **Story:** en cada ítem.\n\nMDD:\n---\n" +
         mdd +
         "\n---\n\n" +
-        (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
+        (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---\n\n" : "")
         : "No hay MDD. Genera un documento Tasks genérico (Backend, Frontend, Infra) con ítems comprobables.";
+    if (spec.length > 0) {
+      prompt += "Spec (alcance what/why — alinear user stories):\n---\n" + spec + "\n---\n\n";
+    }
+    if (userStories.length > 0) {
+      prompt += "User Stories (backlog — una sección ## por HU cuando aplique):\n---\n" + userStories + "\n---\n\n";
+    }
+    if (apiContracts.length > 0) {
+      prompt += "Contratos API (generar tarea Backend por endpoint listado):\n---\n" + apiContracts + "\n---\n\n";
+    }
+    if (logicFlows.length > 0) {
+      prompt += "Flujos de lógica (generar tareas por flujo Mermaid o regla):\n---\n" + logicFlows + "\n---\n\n";
+    }
+    if (infra.length > 0) {
+      prompt += "Infraestructura (generar tareas Infra por servicio/env):\n---\n" + infra + "\n---\n\n";
+    }
     if (navMap.length > 0) {
       prompt += "\n\n## Mapa de Navegación del Proyecto\n\n" + navMap;
     }
@@ -821,14 +847,12 @@ export class AiService {
       );
     }
     const legacyAsIsUseCases = options?.legacyBaselineStage === true;
-    const mdd = legacyAsIsUseCases
-      ? buildMddContextForLegacyAsIsUseCases(mddRaw)
-      : buildMddContextForUseCases(mddRaw, mddDeliverableCtx(options));
+    const mdd = buildMddContextForUseCases(mddRaw, mddDeliverableCtx(options));
     const spec = capTextForLegacyBaseline(specContent ?? "", 20000, options?.legacyBaselineStage);
     const checklist = legacyAsIsUseCases ? buildLegacyAsIsUseCasesCoverageChecklist(mddRaw) : "";
     let prompt = legacyAsIsUseCases
       ? buildLegacyAsIsUseCasesUserPreamble(checklist) +
-        "MDD (extracto AS-IS para Casos de Uso):\n---\n" +
+        "MDD:\n---\n" +
         mdd +
         "\n---\n\n" +
         (spec ? "Spec (what/why — contexto, no sustituye el MDD):\n---\n" + spec + "\n---" : "")
@@ -850,9 +874,7 @@ export class AiService {
   async generateUserStories(mddContent: string, specContent?: string | null, useCasesContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mddRaw = mddContent?.trim() ?? "";
     const legacyAsIsUserStories = options?.legacyBaselineStage === true && mddRaw.length > 0;
-    const mdd = legacyAsIsUserStories
-      ? buildMddContextForLegacyAsIsUserStories(mddRaw)
-      : buildMddContextForUserStories(mddRaw, mddDeliverableCtx(options));
+    const mdd = buildMddContextForUserStories(mddRaw, mddDeliverableCtx(options));
     const spec = capTextForLegacyBaseline(specContent ?? "", 15000, options?.legacyBaselineStage);
     const useCases = capTextForLegacyBaseline(useCasesContent ?? "", 20000, options?.legacyBaselineStage);
     const checklist = legacyAsIsUserStories ? buildLegacyAsIsUserStoriesCoverageChecklist(mddRaw) : "";
@@ -862,7 +884,7 @@ export class AiService {
     if (mdd.length > 0) {
       prompt = legacyAsIsUserStories
         ? buildLegacyAsIsUserStoriesUserPreamble(checklist) +
-          "MDD (extracto AS-IS para Historias de Usuario):\n---\n" +
+          "MDD:\n---\n" +
           mdd +
           "\n---\n\n" +
           (spec ? "Spec (what/why — contexto):\n---\n" + spec + "\n---\n\n" : "") +
@@ -1155,7 +1177,7 @@ export class AiService {
     deliverableKind: "blueprint" | "api" | "infra",
   ): Promise<string> {
     const kindLabel = { blueprint: "Blueprint", api: "Contratos de API", infra: "Infraestructura" }[deliverableKind];
-    const prompt = `Verifica si el siguiente documento **${kindLabel}** cumple el MDD (Constitución) que se proporciona.\n\nMDD:\n---\n${(mddContent || "").trim().slice(0, 8000)}\n---\n\nDocumento ${kindLabel}:\n---\n${(documentContent || "").trim().slice(0, 6000)}\n---`;
+    const prompt = `Verifica si el siguiente documento **${kindLabel}** cumple el MDD (Constitución) que se proporciona.\n\nMDD:\n---\n${(mddContent || "").trim()}\n---\n\nDocumento ${kindLabel}:\n---\n${(documentContent || "").trim()}\n---`;
     return this.generateResponse(prompt, [], { systemPrompt: VERIFY_DELIVERABLE_PROMPT });
   }
 
@@ -1179,9 +1201,9 @@ export class AiService {
     const prompt =
       `Actualiza el Master Design Document (markdown) incorporando el impacto descrito. ` +
       `Modifica solo las secciones ## 3. … y/o ## 4. … según corresponda; el documento completo debe seguir siendo coherente (7 secciones canónicas).\n\n` +
-      `**Razonamiento / impacto:**\n${params.rationale.slice(0, 4000)}\n\n` +
-      `**Extracto del entregable que provoca el cambio:**\n---\n${params.artifactExcerpt.slice(0, 8000)}\n---\n\n` +
-      `**MDD actual (completo):**\n---\n${params.currentMdd.slice(0, 24000)}\n---\n\n` +
+      `**Razonamiento / impacto:**\n${params.rationale}\n\n` +
+      `**Extracto del entregable que provoca el cambio:**\n---\n${params.artifactExcerpt}\n---\n\n` +
+      `**MDD actual (completo):**\n---\n${params.currentMdd}\n---\n\n` +
       `Devuelve el MDD completo en markdown, con las secciones §${label} alineadas al extracto.`;
     const system =
       "Eres el guardián de la Constitución SDD. No contradigas el stack ni el dominio ya fijados en otras secciones. " +
@@ -1195,7 +1217,7 @@ export class AiService {
     kind: "blueprint" | "api" | "logicFlows" | "infra",
   ): Promise<{ ok: boolean; gaps: string[] }> {
     const kindLabel = { blueprint: "Blueprint", api: "Contratos de API", logicFlows: "Flujos de lógica", infra: "Infraestructura" }[kind];
-    const prompt = `¿El siguiente documento **${kindLabel}** cumple el MDD?\n\nMDD:\n---\n${(mddContent || "").trim().slice(0, 6000)}\n---\n\nDocumento ${kindLabel}:\n---\n${(documentContent || "").trim().slice(0, 4000)}\n---`;
+    const prompt = `¿El siguiente documento **${kindLabel}** cumple el MDD?\n\nMDD:\n---\n${(mddContent || "").trim()}\n---\n\nDocumento ${kindLabel}:\n---\n${(documentContent || "").trim()}\n---`;
     try {
       const raw = await this.generateResponse(prompt, [], { systemPrompt: CONFORMANCE_CHECK_PROMPT });
       const trimmed = raw.trim().replace(/^```(?:json)?\s*|\s*```$/g, "").trim();

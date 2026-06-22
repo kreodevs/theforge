@@ -154,6 +154,24 @@ model Stage {
   /// Copia congelada del handoff importado desde el proyecto NEW.
   handoffSnapshot Json?
   handoffImportedAt DateTime?
+  /// Snapshot JSON of SDD deliverables captured for this stage (P0.1).
+  deliverableSnapshot Json?
+  /// Live SDD deliverables for this stage (writable store for ACTIVE stage).
+  specContent          String? @db.Text
+  architectureContent  String? @db.Text
+  useCasesContent      String? @db.Text
+  userStoriesContent   String? @db.Text
+  blueprintContent     String? @db.Text
+  tasksContent         String? @db.Text
+  apiContractsContent  String? @db.Text
+  logicFlowsContent    String? @db.Text
+  infraContent         String? @db.Text
+  agentGovernanceContent String? @db.Text
+  uxUiGuideContent     String? @db.Text
+  phase0SummaryContent String? @db.Text
+  aemContent           String? @db.Text
+  /// Delta change spec (markdown): AS-IS inherited summary + explicit delta for stage 2+.
+  changeSpecContent String? @db.Text
   estimation       Estimation?
   /// Redundancia intencional con `Project.projectType === LEGACY` para queries y checkpoints por etapa.
   isLegacy         Boolean      @default(false)
@@ -243,8 +261,10 @@ model Project {
   /// Contador de preguntas realizadas
   phase0Questions     Int?      @default(0)
   aemContent           String?   @db.Text
-  /// Estado del flujo legacy: { description?, filesToModify?, questions?, answers? }
-  legacyFlowState      Json?
+  /// Webhook URL for POST /projects/:id/converge/trigger (falls back to CONVERGE_WEBHOOK_URL env).
+  convergeWebhookUrl   String?
+  /// Optional HMAC secret for converge webhook (header X-TheForge-Signature: sha256=…).
+  convergeWebhookSecret String?
   agentCheckpoints     AgentStateCheckpoint[]
   changeLogs           ChangeLog[]
   favoritedBy          FavoriteProject[]
