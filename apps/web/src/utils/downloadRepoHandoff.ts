@@ -5,6 +5,7 @@ import { addSpecKitBundleToZip } from "./downloadSpecKitBundle.js";
 import {
   addAgentGovernanceEntriesToZip,
   buildAgentGovernanceZipEntries,
+  buildUnifiedHandoffManifest,
   AGENT_GOVERNANCE_ZIP_ROOT,
   normalizeAgentGovernanceZipPath,
 } from "./downloadAgentGovernanceZip.js";
@@ -50,7 +51,16 @@ export async function downloadRepoHandoffFromApi(
       })),
     };
     const build = buildAgentGovernanceZipEntries(scaffold);
-    if (build) addAgentGovernanceEntriesToZip(zip, build, { flattenToZipRoot: true });
+    if (build) {
+      const handoffBuild = {
+        ...build,
+        manifest: {
+          ...build.manifest,
+          files: buildUnifiedHandoffManifest(build.manifest.files, data.specKitFiles),
+        },
+      };
+      addAgentGovernanceEntriesToZip(zip, handoffBuild, { flattenToZipRoot: true });
+    }
   }
 
   const blob = await zip.generateAsync({ type: "blob" });

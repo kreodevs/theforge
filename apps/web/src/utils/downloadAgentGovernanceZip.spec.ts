@@ -1,14 +1,29 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import JSZip from "jszip";
-import type { AgentGovernanceScaffold } from "@theforge/shared-types";
+import type { AgentGovernanceScaffold, SpecKitBundleFile } from "@theforge/shared-types";
 import {
   addAgentGovernanceEntriesToZip,
   AGENT_GOVERNANCE_ZIP_ROOT,
   buildAgentGovernanceZipEntries,
+  buildUnifiedHandoffManifest,
   logAgentGovernanceZipBuild,
   normalizeAgentGovernanceZipPath,
 } from "./downloadAgentGovernanceZip.js";
+
+function addMockSpecKitToZip(zip: JSZip, files: SpecKitBundleFile[]): void {
+  for (const file of files) {
+    zip.file(file.path, file.content, { createFolders: true });
+  }
+}
+
+const MOCK_SPEC_KIT: SpecKitBundleFile[] = [
+  { path: ".specify/memory/constitution.md", content: "# MDD\n" },
+  { path: "specs/001-demo-app/spec.md", content: "# Spec\n" },
+  { path: "specs/001-demo-app/plan.md", content: "# Plan\n" },
+  { path: "IMPLEMENT.md", content: "# Implement\n" },
+  { path: "THEFORGE-DOC-CONSUMPTION-GUIDE.md", content: "# Guía\n" },
+];
 
 const MOCK_SCAFFOLD: AgentGovernanceScaffold = {
   manifest: {
@@ -39,6 +54,58 @@ const LEGACY_SCAFFOLD: AgentGovernanceScaffold = {
     { path: "docs/COMO-USAR-GOBERNANZA-IA.md", content: "# Legacy doc\n" },
   ],
 };
+
+describe("buildUnifiedHandoffManifest", () => {
+  it("fusiona rutas de gobernanza y spec-kit sin duplicados", () => {
+    const governancePaths = ["AGENTS.md", "docs/agent-governance/rules/git-commits.mdc"];
+    const merged = buildUnifiedHandoffManifest(governancePaths, MOCK_SPEC_KIT);
+    assert.ok(merged.includes("AGENTS.md"));
+    assert.ok(merged.includes("docs/agent-governance/rules/git-commits.mdc"));
+    assert.ok(merged.includes("IMPLEMENT.md"));
+    assert.ok(merged.includes(".specify/memory/constitution.md"));
+    assert.ok(merged.includes("THEFORGE-DOC-CONSUMPTION-GUIDE.md"));
+    assert.ok(merged.some((p) => p.startsWith("specs/001-demo-app/")));
+    assert.equal(merged.includes("MANIFEST.json"), false);
+    assert.equal(merged.length, new Set(merged).size);
+    assert.deepEqual(merged, [...merged].sort((a, b) => a.localeCompare(b)));
+  });
+
+  it("sin spec-kit devuelve solo rutas de gobernanza", () => {
+    const governancePaths = ["AGENTS.md", "docs/agent-governance/INSTALACION.md"];
+    assert.deepEqual(buildUnifiedHandoffManifest(governancePaths), governancePaths);
+    assert.deepEqual(buildUnifiedHandoffManifest(governancePaths, []), governancePaths);
+  });
+});
+
+describe("implement-handoff MANIFEST", () => {
+  it("MANIFEST.json incluye spec-kit al exportar implement-handoff", async () => {
+    const build = buildAgentGovernanceZipEntries(MOCK_SCAFFOLD);
+    assert.ok(build);
+
+    const handoffBuild = {
+      ...build,
+      manifest: {
+        ...build.manifest,
+        files: buildUnifiedHandoffManifest(build.manifest.files, MOCK_SPEC_KIT),
+      },
+    };
+
+    const zip = new JSZip();
+    addMockSpecKitToZip(zip, MOCK_SPEC_KIT);
+    addAgentGovernanceEntriesToZip(zip, handoffBuild, { flattenToZipRoot: true });
+
+    const loaded = await JSZip.loadAsync(await zip.generateAsync({ type: "nodebuffer" }));
+    const manifestRaw = await loaded.file("MANIFEST.json")!.async("string");
+    const manifest = JSON.parse(manifestRaw) as { files: string[] };
+
+    assert.ok(manifest.files.includes("docs/agent-governance/rules/git-commits.mdc"));
+    assert.ok(manifest.files.includes("IMPLEMENT.md"));
+    assert.ok(manifest.files.includes(".specify/memory/constitution.md"));
+    assert.ok(manifest.files.includes("THEFORGE-DOC-CONSUMPTION-GUIDE.md"));
+    assert.ok(manifest.files.some((p) => p.startsWith("specs/001-demo-app/")));
+    assert.equal(manifest.files.includes("MANIFEST.json"), false);
+  });
+});
 
 describe("normalizeAgentGovernanceZipPath", () => {
   it("quita prefijo agent-governance/ y migra .cursor/ a docs/agent-governance/", () => {

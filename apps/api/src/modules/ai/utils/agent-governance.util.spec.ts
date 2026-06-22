@@ -389,6 +389,79 @@ Backend NestJS con TypeORM en borrador; Prisma en blueprint.
     assert.ok(reconciled.files.some((f) => f.path === "PROMPT-INICIAL.md"));
   });
 
+  it("reemplaza tabla instalación obsoleta (.cursor/specifications/) por sección canónica", () => {
+    const staleAgents =
+      "# AGENTS\n\n" +
+      "## Documentos SDD (layout dual)\n\n" +
+      "| Documento | Primario | Espejo |\n\n" +
+      "## Instalación de gobernanza\n\n" +
+      "| Archivo en ZIP | Destino en repo destino |\n" +
+      "|----------------|-------------------------|\n" +
+      "| `docs/agent-governance/references/*` | `.cursor/specifications/*` |\n" +
+      "| `docs/agent-governance/rules/*.mdc` | `.cursor/rules/*.mdc` |\n";
+
+    const reconciled = reconcileAgentGovernanceScaffold(
+      {
+        manifest: { templateVersion: "1.0.0", files: ["AGENTS.md"] },
+        files: [{ path: "AGENTS.md", content: staleAgents }],
+      },
+      "MEDIUM",
+    );
+    const agents = reconciled.files.find((f) => f.path === "AGENTS.md");
+    assert.ok(agents?.content.includes("Instalación de gobernanza"));
+    assert.ok(agents?.content.includes(".cursor/references/*"));
+    assert.ok(agents?.content.includes(".cursor/agents/*"));
+    assert.ok(agents?.content.includes(".cursor/commands/*"));
+    assert.equal(agents?.content.includes(".cursor/specifications/"), false);
+    assert.equal(
+      (agents?.content.match(/## Instalación de gobernanza/g) ?? []).length,
+      1,
+    );
+  });
+
+  it("deduplica mcp.json.example raíz → docs/agent-governance/ conservando el más específico", () => {
+    const generic = JSON.stringify(
+      {
+        mcpServers: {
+          example: { url: "{{API_URL}}", headers: { Authorization: "Bearer {{PROJECT_ID}}" } },
+        },
+      },
+      null,
+      2,
+    );
+    const specific = JSON.stringify(
+      {
+        mcpServers: {
+          "kms-api": {
+            url: "https://api.kms.example.com/mcp",
+            headers: { Authorization: "Bearer kms-project-id" },
+          },
+        },
+      },
+      null,
+      2,
+    );
+
+    const reconciled = reconcileAgentGovernanceScaffold(
+      {
+        manifest: { templateVersion: "1.0.0", files: [] },
+        files: [
+          { path: "mcp.json.example", content: specific },
+          { path: "docs/agent-governance/mcp.json.example", content: generic },
+        ],
+      },
+      "MEDIUM",
+    );
+    const paths = reconciled.files.map((f) => f.path);
+    assert.equal(paths.includes("mcp.json.example"), false);
+    assert.equal(paths.filter((p) => p.endsWith("mcp.json.example")).length, 1);
+    const mcp = reconciled.files.find(
+      (f) => f.path === "docs/agent-governance/mcp.json.example",
+    );
+    assert.ok(mcp?.content.includes("kms-api"));
+    assert.equal(mcp?.content.includes("{{API_URL}}"), false);
+  });
+
   it("no duplica Módulos/Globs en stack-backend con overlay compacto", () => {
     const suggestions = suggestAgentGovernanceArtifacts({
       mddMarkdown: "# KMS\nBackend NestJS monorepo.",

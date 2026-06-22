@@ -236,6 +236,92 @@ function buildAgentsInstallSection(): string {
   );
 }
 
+const AGENTS_INSTALL_CANONICAL_MARKERS = [
+  "docs/agent-governance/references/*",
+  ".cursor/references/*",
+  "docs/agent-governance/agents/*",
+  ".cursor/agents/*",
+  "docs/agent-governance/commands/*",
+  ".cursor/commands/*",
+] as const;
+
+function extractMarkdownSection(
+  content: string,
+  heading: string,
+): { start: number; end: number; text: string } | null {
+  const idx = content.indexOf(heading);
+  if (idx < 0) return null;
+  const afterHeading = idx + heading.length;
+  const rest = content.slice(afterHeading);
+  const nextHeading = rest.search(/\n## [^#]/);
+  const end = nextHeading >= 0 ? afterHeading + nextHeading : content.length;
+  return { start: idx, end, text: content.slice(idx, end) };
+}
+
+function replaceMarkdownSection(content: string, heading: string, replacement: string): string {
+  const section = extractMarkdownSection(content, heading);
+  if (!section) return content;
+  const before = content.slice(0, section.start).trimEnd();
+  const after = content.slice(section.end).trimStart();
+  const parts = [before, replacement.trimEnd()];
+  if (after) parts.push(after);
+  return `${parts.join("\n\n")}\n`;
+}
+
+function isStaleAgentsInstallSection(section: string): boolean {
+  if (/\.cursor\/specifications\//i.test(section)) return true;
+  if (/\.cursor\/workflows\//i.test(section)) return true;
+  return AGENTS_INSTALL_CANONICAL_MARKERS.some((marker) => !section.includes(marker));
+}
+
+function mcpJsonExampleSpecificityScore(content: string): number {
+  const trimmed = content.trim();
+  if (!trimmed) return -1;
+  let score = trimmed.length;
+  if (!/\{\{API_URL\}\}/.test(trimmed)) score += 500;
+  if (!/\{\{PROJECT_ID\}\}/.test(trimmed)) score += 200;
+  try {
+    const parsed = JSON.parse(trimmed) as { mcpServers?: Record<string, unknown> };
+    const servers = parsed.mcpServers ?? {};
+    const keys = Object.keys(servers);
+    score += keys.length * 100;
+    for (const key of keys) {
+      if (key !== "example") score += 300;
+    }
+  } catch {
+    score -= 1000;
+  }
+  return score;
+}
+
+function mergeMcpJsonExampleContent(a: string, b: string): string {
+  return mcpJsonExampleSpecificityScore(a) >= mcpJsonExampleSpecificityScore(b) ? a : b;
+}
+
+const MCP_JSON_EXAMPLE_CANONICAL = `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`;
+
+function setFileMapEntry(fileMap: Record<string, string>, path: string, content: string): void {
+  const normalized = normalizePath(path);
+  if (normalized === MCP_JSON_EXAMPLE_CANONICAL && fileMap[normalized]?.trim()) {
+    fileMap[normalized] = mergeMcpJsonExampleContent(fileMap[normalized]!, content);
+    return;
+  }
+  fileMap[normalized] = content;
+}
+
+function deduplicateMcpJsonExample(fileMap: Record<string, string>): void {
+  const rootPath = "mcp.json.example";
+  const rootContent = fileMap[rootPath]?.trim();
+  const docContent = fileMap[MCP_JSON_EXAMPLE_CANONICAL]?.trim();
+  if (!rootContent) return;
+  if (docContent) {
+    fileMap[MCP_JSON_EXAMPLE_CANONICAL] = mergeMcpJsonExampleContent(rootContent, docContent);
+  } else {
+    fileMap[MCP_JSON_EXAMPLE_CANONICAL] = rootContent;
+  }
+  delete fileMap[rootPath];
+}
+
 function defaultAgentsMd(featureDir?: string): string {
   return (
     "# AGENTS\n\n" +
@@ -882,8 +968,9 @@ export function appendProjectDeliverablesToScaffold(
 ): AgentGovernanceScaffold {
   const fileMap: Record<string, string> = {};
   for (const file of scaffold.files) {
-    fileMap[normalizePath(file.path)] = file.content;
+    setFileMapEntry(fileMap, file.path, file.content);
   }
+  deduplicateMcpJsonExample(fileMap);
 
   const written: string[] = [];
   const skipped: string[] = [];
@@ -958,8 +1045,9 @@ function parseLlmFilesPayload(parsed: unknown): Record<string, string> {
   if (root.files && typeof root.files === "object" && !Array.isArray(root.files)) {
     const out: Record<string, string> = {};
     for (const [path, value] of Object.entries(root.files as Record<string, unknown>)) {
-      if (typeof value === "string") out[normalizePath(path)] = value;
+      if (typeof value === "string") setFileMapEntry(out, path, value);
     }
+    deduplicateMcpJsonExample(out);
     return out;
   }
 
@@ -969,9 +1057,10 @@ function parseLlmFilesPayload(parsed: unknown): Record<string, string> {
       if (!item || typeof item !== "object") continue;
       const { path, content } = item as { path?: unknown; content?: unknown };
       if (typeof path === "string" && typeof content === "string") {
-        out[normalizePath(path)] = content;
+        setFileMapEntry(out, path, content);
       }
     }
+    deduplicateMcpJsonExample(out);
     return out;
   }
 
@@ -1100,7 +1189,12 @@ function ensureAgentsCanonicalSections(fileMap: Record<string, string>, featureD
   }
 
   current = fileMap[path]?.trim() ?? "";
-  if (!current.includes(AGENTS_INSTALL_SECTION)) {
+  if (current.includes(AGENTS_INSTALL_SECTION)) {
+    const installSection = extractMarkdownSection(current, AGENTS_INSTALL_SECTION);
+    if (installSection && isStaleAgentsInstallSection(installSection.text)) {
+      fileMap[path] = replaceMarkdownSection(current, AGENTS_INSTALL_SECTION, buildAgentsInstallSection());
+    }
+  } else {
     fileMap[path] = `${current.trimEnd()}\n\n${buildAgentsInstallSection().trimEnd()}\n`;
   }
 
@@ -1390,8 +1484,9 @@ export function reconcileAgentGovernanceScaffold(
 
   const fileMap: Record<string, string> = {};
   for (const file of scaffold.files) {
-    fileMap[normalizePath(file.path)] = file.content;
+    setFileMapEntry(fileMap, file.path, file.content);
   }
+  deduplicateMcpJsonExample(fileMap);
 
   const facts = extractProjectGovernanceFacts(governanceInput);
   const merged = mergeSuggestedArtifacts(

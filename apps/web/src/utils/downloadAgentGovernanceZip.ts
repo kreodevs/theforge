@@ -1,7 +1,6 @@
 import JSZip from "jszip";
 import type { AgentGovernanceInstallEntry, AgentGovernanceManifest, AgentGovernanceScaffold } from "@theforge/shared-types";
 import type { SpecKitBundleFile } from "@theforge/shared-types";
-import { addSpecKitBundleToZip } from "./downloadSpecKitBundle.js";
 
 export const AGENT_GOVERNANCE_ZIP_ROOT = "agent-governance";
 
@@ -58,6 +57,19 @@ function governanceInstallTarget(source: string): string | null {
   return null;
 }
 
+/** Fusiona rutas de gobernanza y spec-kit en `manifest.files` (implement/repo handoff). */
+export function buildUnifiedHandoffManifest(
+  governancePaths: string[],
+  specKitFiles?: SpecKitBundleFile[],
+): string[] {
+  const specKitPaths = (specKitFiles ?? [])
+    .map((f) => f.path.trim())
+    .filter((p) => p && p !== "MANIFEST.json");
+  return [...new Set([...governancePaths, ...specKitPaths])].sort((a, b) =>
+    a.localeCompare(b),
+  );
+}
+
 function buildGovernanceInstallMap(zipPaths: string[]): AgentGovernanceInstallEntry[] {
   const entries: AgentGovernanceInstallEntry[] = [];
   for (const source of zipPaths) {
@@ -94,6 +106,13 @@ function shouldIncludeMcpPlaceholder(files: AgentGovernanceScaffold["files"]): b
       path.startsWith(`${GOVERNANCE_DOCS_PREFIX}skills/`)
     );
   });
+}
+
+/** Añade archivos spec-kit en la raíz del ZIP (evita importar downloadSpecKitBundle en tests). */
+function addSpecKitBundleToZip(zip: JSZip, files: SpecKitBundleFile[]): void {
+  for (const file of files) {
+    zip.file(file.path, file.content, { createFolders: true });
+  }
 }
 
 export interface AgentGovernanceZipBuildResult {
@@ -195,7 +214,17 @@ export async function downloadAgentGovernanceZip(
   logAgentGovernanceZipBuild(build, "export");
 
   const zip = new JSZip();
-  addAgentGovernanceEntriesToZip(zip, build, { flattenToZipRoot: true, ...zipOptions });
+  const handoffBuild =
+    specKitBundle?.length
+      ? {
+          ...build,
+          manifest: {
+            ...build.manifest,
+            files: buildUnifiedHandoffManifest(build.manifest.files, specKitBundle),
+          },
+        }
+      : build;
+  addAgentGovernanceEntriesToZip(zip, handoffBuild, { flattenToZipRoot: true, ...zipOptions });
   if (specKitBundle?.length) {
     addSpecKitBundleToZip(zip, specKitBundle);
   }
