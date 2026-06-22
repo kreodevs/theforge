@@ -69,10 +69,16 @@ export const updateProjectSchema = z.object({
   apiContractsContent: z.string().optional().nullable(),
   logicFlowsContent: z.string().optional().nullable(),
   infraContent: z.string().optional().nullable(),
+  /** JSON (`AgentGovernanceScaffold`) del entregable agent-governance. */
+  agentGovernanceContent: z.string().optional().nullable(),
   uxUiGuideContent: z.string().optional().nullable(),
   phase0SummaryContent: z.string().optional().nullable(),
   aemContent: z.string().optional().nullable(),
   figmaMapping: z.record(z.unknown()).optional().nullable(),
+  /** Per-project converge webhook (POST /projects/:id/converge/trigger). */
+  convergeWebhookUrl: z.string().url().optional().nullable(),
+  /** Optional HMAC secret for converge webhook signing. */
+  convergeWebhookSecret: z.string().min(8).optional().nullable(),
 });
 
 /** Body para POST /projects/:id/phase0-deep-research */
@@ -81,6 +87,14 @@ export const phase0DeepResearchBodySchema = z.object({
   urls: z.array(z.string()).optional(),
   includeBenchmark: z.boolean().optional().default(false),
 });
+
+/** Body for POST /projects/:id/clone — duplicate project documents and stages for sandbox work. */
+export const cloneProjectBodySchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    visibility: VisibilityEnum.default("PRIVATE"),
+  })
+  .strict();
 
 export const projectResponseSchema = z.object({
   id: z.string().uuid(),
@@ -104,6 +118,7 @@ export const projectResponseSchema = z.object({
   apiContractsContent: z.string().nullable(),
   logicFlowsContent: z.string().nullable(),
   infraContent: z.string().nullable(),
+  agentGovernanceContent: z.string().nullable(),
   uxUiGuideContent: z.string().nullable(),
   phase0SummaryContent: z.string().nullable(),
   aemContent: z.string().nullable(),
@@ -111,7 +126,13 @@ export const projectResponseSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+export const cloneProjectResultSchema = projectResponseSchema.extend({
+  clonedFromProjectId: z.string().uuid(),
+});
+
 export type Phase0DeepResearchBody = z.infer<typeof phase0DeepResearchBodySchema>;
+export type CloneProjectBody = z.infer<typeof cloneProjectBodySchema>;
+export type CloneProjectResult = z.infer<typeof cloneProjectResultSchema>;
 export type CreateProjectDto = z.infer<typeof createProjectSchema>;
 export type UpdateProjectDto = z.infer<typeof updateProjectSchema>;
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;

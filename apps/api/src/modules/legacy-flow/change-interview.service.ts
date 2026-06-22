@@ -466,27 +466,47 @@ export class ChangeInterviewService {
   ): Promise<void> {
     const scopeJson = scope as object;
 
+    const legacyPatch = {
+      description: scope.description,
+      changeScope: scopeJson,
+      status: "scope_confirmed",
+      timestamp: new Date().toISOString(),
+    };
+
     if (stageId) {
+      const stage = await this.prisma.stage.findUnique({
+        where: { id: stageId },
+        select: { legacyChangeState: true },
+      });
+      const prev = (stage?.legacyChangeState as Record<string, unknown> | null) ?? {};
       await this.prisma.stage.update({
         where: { id: stageId },
         data: {
           mddContent: this.buildMddFromChangeScope(scope),
+          legacyChangeState: { ...prev, ...legacyPatch },
         },
       });
+      return;
     }
 
-    // Also update the project's legacy flow state
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        legacyFlowState: {
-          description: scope.description,
-          changeScope: scopeJson,
-          status: "scope_confirmed",
-          timestamp: new Date().toISOString(),
-        } as any,
-      },
+    const firstStage = await this.prisma.stage.findFirst({
+      where: { projectId },
+      orderBy: { ordinal: "asc" },
+      select: { id: true, legacyChangeState: true },
     });
+    if (firstStage) {
+      const prev = (firstStage.legacyChangeState as Record<string, unknown> | null) ?? {};
+      await this.prisma.stage.update({
+        where: { id: firstStage.id },
+        data: {
+          mddContent: this.buildMddFromChangeScope(scope),
+          legacyChangeState: { ...prev, ...legacyPatch },
+        },
+      });
+      return;
+    }
+
+    throw new BadRequestException("El proyecto no tiene etapas para persistir el alcance del cambio.");
   }
 
   /**

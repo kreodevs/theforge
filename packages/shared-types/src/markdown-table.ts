@@ -45,7 +45,7 @@ export interface NormalizeOptions {
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
-function resolveColumn(c: string | TableColumn, idx: number): { header: string; align: "left" | "center" | "right"; minWidth: number } {
+function resolveColumn(c: string | TableColumn): { header: string; align: "left" | "center" | "right"; minWidth: number } {
   if (typeof c === "string") {
     return { header: c, align: "left" as const, minWidth: 0 };
   }
@@ -89,23 +89,12 @@ const ALIGN_MAP: Record<string, string> = {
   right: "---:",
 };
 
-const ALIGN_REVERSE_MAP: Record<string, "left" | "center" | "right"> = {
-  ":---": "left",
-  ":---:": "center",
-  "---:": "right",
-  "----": "left",
-  ":----": "left",
-  ":----:": "center",
-  "----:": "right",
-};
 
 function detectAlign(sep: string): "left" | "center" | "right" {
   const s = sep.trim();
-  for (const [k, v] of Object.entries(ALIGN_REVERSE_MAP)) {
-    if (s.startsWith(":") && s.endsWith(":") && s.length >= 5) return "center";
-    if (s.endsWith(":") && !s.startsWith(":")) return "right";
-    if (s.startsWith(":")) return "left";
-  }
+  if (s.startsWith(":") && s.endsWith(":") && s.length >= 5) return "center";
+  if (s.endsWith(":") && !s.startsWith(":")) return "right";
+  if (s.startsWith(":")) return "left";
   return "left";
 }
 

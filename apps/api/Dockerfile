@@ -2,7 +2,7 @@
 # Imágenes fijas en ECR Public (evita TLS timeout a Docker Hub y fallos de ARG en Dokploy).
 FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
-ARG BUILD_CACHE_BUST=94
+ARG BUILD_CACHE_BUST=96
 RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
 RUN apk add --no-cache gcompat openssl
@@ -33,7 +33,7 @@ RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/sha
 # Production stage — layout pnpm hoisted desde builder
 FROM public.ecr.aws/docker/library/node:20-alpine AS runner
 
-RUN apk add --no-cache wget openssl
+RUN apk add --no-cache wget openssl postgresql-client
 
 WORKDIR /app
 

@@ -2,6 +2,37 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
+## [Unreleased]
+
+### Fixed
+
+- **Deploy Dokploy — API exit 1 tras build OK:** Entrypoint endurecido: `safe-schema-sync.sql` antes de `migrate deploy`, `resolve --applied` cuando `db push` adelantó columnas (`agentGovernanceContent`, merge suite), host Postgres desde `DATABASE_URL` (no `localhost`), validación explícita de `TOKEN_MASTER_KEYS` / `CORS_ORIGINS` vacío, log en `bootstrap().catch`.
+- **Nest circular dependency (merge):** `ProjectsModule` importaba `AiAnalysisModule` solo por `Phase0InterviewService` → `Phase0Module` dedicado; rompe ciclo `AiAnalysisModule ↔ ProjectsModule`.
+- **safe-schema-sync:** `FavoriteProject_userId_projectId_key` idempotente si ya existe como índice; `postgresql-client` en imagen API; fallback `mcpSecret` vía Prisma (sin `psql`).
+- **BUILD_CACHE_BUST**: 94 → 96
+
+## [0.12.0] — 2026-06-12
+
+### Added
+
+- **Fusión de proyectos en Paso 0:** Sintetiza el DBGA / borrador Fase 0 de **2 o más** productos en un destino (proyecto nuevo por defecto o existente), con vista previa, detección de conflictos y linaje.
+  - `POST /projects/merge` — body `projectMergeBodySchema` (`@theforge/shared-types`): `sourceProjectIds`, `targetMode`, `deleteSources` (`keep` \| `archive` \| `delete`), `resetDownstream` (limpia MDD y entregables), `createSuite` (`parentProjectId` en fuentes), `includeBenchmark`, `autoAudit`, `preview`.
+  - `ProjectMergeService` + prompt `merge-phase0-prompt.md`; conflictos deterministas (`project-merge-conflicts.util.ts`) + reporte LLM.
+  - Prisma: `archivedAt`, `mergedFrom` (JSON), `parentProjectId` (suite). Migración `20260612120000_project_merge_suite`. `findAll` excluye archivados.
+- **Dashboard — fusión multi-select:** Checkbox en carpetas para todos los usuarios; barra inferior con **Fusionar** (≥2 seleccionadas). Borrar masivo sigue solo admin.
+- **`ProjectMergeDialog`:** Configuración, preview de markdown/conflictos y confirmación; abre Workshop del proyecto resultante.
+- **Auditoría post-fusión:** `autoAudit` lanza `Phase0InterviewService.audit()`; `Phase0ManualAudit` acepta `initialAudit` para reanudar preguntas.
+- **MCP:** tool `merge_projects` → `POST /projects/merge`.
+
+### Fixed
+
+- **Paso 0 — finalize tras auditoría:** `normalizePhase0Document` / `mergePhase0Borrador` evitan crash cuando el LLM devuelve borrador parcial (`proposito` o `roles.permisos` ausentes) al serializar con `phase0ToMarkdown`.
+
+### Architecture
+
+- `ProjectsModule` importa `AiAnalysisModule` para reutilizar `Phase0InterviewService` en el merge.
+- Heurística de fallback si el LLM de fusión falla; el destino en `targetMode: existing` no recibe `deleteSources` sobre sí mismo.
+
 ## [0.11.3] — 2026-05-26
 
 ### Fixed

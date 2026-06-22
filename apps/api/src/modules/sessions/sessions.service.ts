@@ -22,6 +22,13 @@ import {
 import { llmMaxTokens } from "../ai/config/llm-config.js";
 import { normalizeDashes } from "./document-content.util.js";
 import {
+  appendOrchestratorDocNotPersistedWarning,
+  currentDocLengthForTab,
+  shouldWarnOrchestratorDocNotPersisted,
+  type DocPersistFlags,
+} from "./orchestrator-doc-guard.util.js";
+import { wouldShrinkDocDangerously } from "./document-shrink.util.js";
+import {
   BENCHMARK_CHAT_ACK,
   benchmarkAssistantChatMessage,
   dbgaReflectsUserEditIntent,
@@ -228,6 +235,13 @@ export class SessionsService {
       currentBlueprintContent?: string;
       currentSpecContent?: string;
       currentBrdContent?: string;
+      currentArchitectureContent?: string;
+      currentUseCasesContent?: string;
+      currentUserStoriesContent?: string;
+      currentApiContractsContent?: string;
+      currentLogicFlowsContent?: string;
+      currentTasksContent?: string;
+      currentInfraContent?: string;
       activeTab?: string;
       /** Override system prompt (ej. modo legacy con TheForge). */
       systemPrompt?: string;
@@ -510,10 +524,32 @@ export class SessionsService {
       options,
       dbgaDocPart,
     );
-    const assistantContent = this.parser.stripChatLabel(
+    let assistantContent = this.parser.stripChatLabel(
       activeTab === "benchmark"
         ? benchmarkAssistantChatMessage(rawChat, finalDbga)
         : rawChat,
+    );
+    assistantContent = this.maybeWarnOrchestratorDocNotPersisted(
+      activeTab,
+      effectiveUserMessage,
+      assistantContent,
+      {
+        hasMdd,
+        hasSpec,
+        hasArch,
+        hasUseCases,
+        hasStories,
+        hasBlue,
+        hasApi,
+        hasFlows,
+        hasTasks,
+        hasInfra,
+        hasBrd,
+        hasDbga,
+        hasUx,
+        hasPhase0,
+      },
+      options,
     );
 
     const tab = activeTab;
@@ -547,25 +583,68 @@ export class SessionsService {
     });
     return {
       session: updatedSession,
-      mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
-      uxUiGuideContent: hasUx ? this.parser.mergeUxUiGuideSectionOrUseFull(options?.currentUxUiGuideContent, this.parser.cleanDocumentContent(uxDocPart!)) : undefined,
-      dbgaContent: finalDbga,
-      phase0SummaryContent: hasPhase0
-        ? this.parser.mergePhase0OrUseFull(
-            undefined,
-            this.parser.cleanDocumentContent(phase0DocPart!),
-          )
-        : undefined,
-      specContent: hasSpec ? this.parser.cleanDocumentContent(specSplit!.docPart) : undefined,
-      brdContent: hasBrd ? this.parser.cleanDocumentContent(brdSplit!.docPart) : undefined,
-      blueprintContent: hasBlue ? this.parser.mergeDocSectionOrUseFull(options?.currentBlueprintContent, this.parser.cleanDocumentContent(blueSplit!.docPart)) : undefined,
-      apiContractsContent: hasApi ? this.parser.cleanDocumentContent(apiSplit!.docPart) : undefined,
-      logicFlowsContent: hasFlows ? this.parser.cleanDocumentContent(flowsSplit!.docPart) : undefined,
-      tasksContent: hasTasks ? this.parser.cleanDocumentContent(tasksSplit!.docPart) : undefined,
-      infraContent: hasInfra ? this.parser.cleanDocumentContent(infraSplit!.docPart) : undefined,
-      architectureContent: hasArch ? this.parser.cleanDocumentContent(archSplit!.docPart) : undefined,
-      useCasesContent: hasUseCases ? this.parser.cleanDocumentContent(useCasesSplit!.docPart) : undefined,
-      userStoriesContent: hasStories ? this.parser.cleanDocumentContent(storiesSplit!.docPart) : undefined,
+      mddContent: tab === "mdd" && finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
+      uxUiGuideContent:
+        tab === "ux-ui-guide" && hasUx
+          ? this.parser.mergeUxUiGuideSectionOrUseFull(
+              options?.currentUxUiGuideContent,
+              this.parser.cleanDocumentContent(uxDocPart!),
+            )
+          : undefined,
+      dbgaContent: tab === "benchmark" ? finalDbga : undefined,
+      phase0SummaryContent:
+        tab === "phase0" && hasPhase0
+          ? this.parser.mergePhase0OrUseFull(
+              undefined,
+              this.parser.cleanDocumentContent(phase0DocPart!),
+            )
+          : undefined,
+      specContent: this.finalizeDeliverableDocForTab(tab, "spec", hasSpec, specSplit?.docPart, options?.currentSpecContent),
+      brdContent: this.finalizeDeliverableDocForTab(tab, "brd", hasBrd, brdSplit?.docPart, options?.currentBrdContent),
+      blueprintContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "blueprint",
+        hasBlue,
+        blueSplit?.docPart,
+        options?.currentBlueprintContent,
+      ),
+      apiContractsContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "api-contracts",
+        hasApi,
+        apiSplit?.docPart,
+        options?.currentApiContractsContent,
+      ),
+      logicFlowsContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "logic-flows",
+        hasFlows,
+        flowsSplit?.docPart,
+        options?.currentLogicFlowsContent,
+      ),
+      tasksContent: this.finalizeDeliverableDocForTab(tab, "tasks", hasTasks, tasksSplit?.docPart, options?.currentTasksContent),
+      infraContent: this.finalizeDeliverableDocForTab(tab, "infra", hasInfra, infraSplit?.docPart, options?.currentInfraContent),
+      architectureContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "architecture",
+        hasArch,
+        archSplit?.docPart,
+        options?.currentArchitectureContent,
+      ),
+      useCasesContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "use-cases",
+        hasUseCases,
+        useCasesSplit?.docPart,
+        options?.currentUseCasesContent,
+      ),
+      userStoriesContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "user-stories",
+        hasStories,
+        storiesSplit?.docPart,
+        options?.currentUserStoriesContent,
+      ),
     };
   }
 
@@ -907,10 +986,32 @@ export class SessionsService {
       options,
       dbgaDocPart,
     );
-    const assistantContent = this.parser.stripChatLabel(
+    let assistantContent = this.parser.stripChatLabel(
       tab === "benchmark"
         ? benchmarkAssistantChatMessage(rawChat, finalDbga)
         : rawChat,
+    );
+    assistantContent = this.maybeWarnOrchestratorDocNotPersisted(
+      tab,
+      effectiveUserMessage,
+      assistantContent,
+      {
+        hasMdd,
+        hasSpec,
+        hasArch,
+        hasUseCases,
+        hasStories,
+        hasBlue,
+        hasApi,
+        hasFlows,
+        hasTasks,
+        hasInfra,
+        hasBrd,
+        hasDbga,
+        hasUx,
+        hasPhase0,
+      },
+      options,
     );
     const assistantEntry = stageId
       ? { role: "assistant" as const, content: assistantContent, tab, stageId }
@@ -927,25 +1028,68 @@ export class SessionsService {
     yield {
       type: "done",
       session: updatedSession,
-      mddContent: finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
-      uxUiGuideContent: hasUx ? this.parser.mergeUxUiGuideSectionOrUseFull(options?.currentUxUiGuideContent, this.parser.cleanDocumentContent(uxDocPart!)) : undefined,
-      dbgaContent: finalDbga,
-      phase0SummaryContent: hasPhase0
-        ? this.parser.mergePhase0OrUseFull(
-            undefined,
-            this.parser.cleanDocumentContent(phase0DocPart!),
-          )
-        : undefined,
-      specContent: hasSpec ? this.parser.cleanDocumentContent(specSplit!.docPart) : undefined,
-      brdContent: hasBrd ? this.parser.cleanDocumentContent(brdSplit!.docPart) : undefined,
-      blueprintContent: hasBlue ? this.parser.mergeDocSectionOrUseFull(options?.currentBlueprintContent, this.parser.cleanDocumentContent(blueSplit!.docPart)) : undefined,
-      apiContractsContent: hasApi ? this.parser.cleanDocumentContent(apiSplit!.docPart) : undefined,
-      logicFlowsContent: hasFlows ? this.parser.cleanDocumentContent(flowsSplit!.docPart) : undefined,
-      tasksContent: hasTasks ? this.parser.cleanDocumentContent(tasksSplit!.docPart) : undefined,
-      infraContent: hasInfra ? this.parser.cleanDocumentContent(infraSplit!.docPart) : undefined,
-      architectureContent: hasArch ? this.parser.cleanDocumentContent(archSplit!.docPart) : undefined,
-      useCasesContent: hasUseCases ? this.parser.cleanDocumentContent(useCasesSplit!.docPart) : undefined,
-      userStoriesContent: hasStories ? this.parser.cleanDocumentContent(storiesSplit!.docPart) : undefined,
+      mddContent: tab === "mdd" && finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
+      uxUiGuideContent:
+        tab === "ux-ui-guide" && hasUx
+          ? this.parser.mergeUxUiGuideSectionOrUseFull(
+              options?.currentUxUiGuideContent,
+              this.parser.cleanDocumentContent(uxDocPart!),
+            )
+          : undefined,
+      dbgaContent: tab === "benchmark" ? finalDbga : undefined,
+      phase0SummaryContent:
+        tab === "phase0" && hasPhase0
+          ? this.parser.mergePhase0OrUseFull(
+              undefined,
+              this.parser.cleanDocumentContent(phase0DocPart!),
+            )
+          : undefined,
+      specContent: this.finalizeDeliverableDocForTab(tab, "spec", hasSpec, specSplit?.docPart, options?.currentSpecContent),
+      brdContent: this.finalizeDeliverableDocForTab(tab, "brd", hasBrd, brdSplit?.docPart, options?.currentBrdContent),
+      blueprintContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "blueprint",
+        hasBlue,
+        blueSplit?.docPart,
+        options?.currentBlueprintContent,
+      ),
+      apiContractsContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "api-contracts",
+        hasApi,
+        apiSplit?.docPart,
+        options?.currentApiContractsContent,
+      ),
+      logicFlowsContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "logic-flows",
+        hasFlows,
+        flowsSplit?.docPart,
+        options?.currentLogicFlowsContent,
+      ),
+      tasksContent: this.finalizeDeliverableDocForTab(tab, "tasks", hasTasks, tasksSplit?.docPart, options?.currentTasksContent),
+      infraContent: this.finalizeDeliverableDocForTab(tab, "infra", hasInfra, infraSplit?.docPart, options?.currentInfraContent),
+      architectureContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "architecture",
+        hasArch,
+        archSplit?.docPart,
+        options?.currentArchitectureContent,
+      ),
+      useCasesContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "use-cases",
+        hasUseCases,
+        useCasesSplit?.docPart,
+        options?.currentUseCasesContent,
+      ),
+      userStoriesContent: this.finalizeDeliverableDocForTab(
+        tab,
+        "user-stories",
+        hasStories,
+        storiesSplit?.docPart,
+        options?.currentUserStoriesContent,
+      ),
     };
   }
 
@@ -1538,5 +1682,71 @@ ${msg}
       recoveredFromSessionId: best.sessionId,
       length: best.len,
     };
+  }
+
+  private finalizeDeliverableDocForTab(
+    activeTab: string,
+    expectedTab: string,
+    hasDoc: boolean,
+    rawPart: string | undefined,
+    currentDoc: string | undefined,
+  ): string | undefined {
+    if (activeTab !== expectedTab || !hasDoc || !rawPart?.trim()) return undefined;
+    const merged = this.parser.mergeDocSectionOrUseFull(
+      currentDoc,
+      this.parser.cleanDocumentContent(rawPart),
+    );
+    const prev = (currentDoc ?? "").trim();
+    if (prev && wouldShrinkDocDangerously(prev, merged)) {
+      console.warn("[Chat] documento no persistido (reducción peligrosa)", {
+        tab: expectedTab,
+        prevLen: prev.length,
+        nextLen: merged.length,
+      });
+      return undefined;
+    }
+    return merged;
+  }
+
+  private maybeWarnOrchestratorDocNotPersisted(
+    tab: string,
+    userMessage: string,
+    assistantContent: string,
+    flags: DocPersistFlags,
+    options?: {
+      currentMddContent?: string;
+      currentSpecContent?: string;
+      currentArchitectureContent?: string;
+      currentUseCasesContent?: string;
+      currentUserStoriesContent?: string;
+      currentBlueprintContent?: string;
+      currentApiContractsContent?: string;
+      currentLogicFlowsContent?: string;
+      currentTasksContent?: string;
+      currentInfraContent?: string;
+      currentBrdContent?: string;
+      currentDbgaContent?: string;
+      currentUxUiGuideContent?: string;
+      currentPhase0SummaryContent?: string;
+    },
+  ): string {
+    const currentDocLen = currentDocLengthForTab(tab, options);
+    if (
+      !shouldWarnOrchestratorDocNotPersisted({
+        tab,
+        userMessage,
+        assistantContent,
+        flags,
+        currentDocLen,
+      })
+    ) {
+      return assistantContent;
+    }
+    console.warn("[Chat] documento no persistido pese a pedido/afirmación de cambio", {
+      tab,
+      currentDocLen,
+      assistantPreview: assistantContent.slice(0, 120),
+    });
+    return appendOrchestratorDocNotPersistedWarning(assistantContent, tab);
   }
 }

@@ -7,6 +7,7 @@ import {
   formatDocumentMarkdown,
 } from "@theforge/shared-types/format-document-markdown";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue } from "../utils/apiClient";
+import { queueAndPoll } from "../utils/queueAndPoll";
 import { shouldApplyPersistedFieldContent } from "../utils/persist-field-guard";
 import {
   parseApiErrorPayloadFromResponse,
@@ -18,10 +19,24 @@ import { mddHasSection6Heading } from "../utils/mddSectionRegen";
 import { isWorkshopAgentsBusy } from "../utils/workshopAgentsBusy";
 import { appendAgentProgressDone, type AgentProgressItem } from "../utils/agentProgress";
 import {
+  advanceAgentGovernanceProgressItems,
+  completeAgentGovernanceProgressItems,
+  createAgentGovernanceProgressItems,
+} from "../constants/agent-governance-loading-steps";
+import {
   buildPlanApprovalChatContents,
   isPlanApprovalResumeMessage,
 } from "../utils/planApprovalChat";
+import {
+  deliverableStepLabelsForComplexity,
+  deliverableStepLabelsForKinds,
+  planLegacyDeliverablesToGenerate,
+} from "@theforge/shared-types";
 import { listGovernancePatternOptions } from "@theforge/shared-types/mdd-governance-patterns";
+import {
+  orchestratorDocSnapshot,
+  resolveOrchestratorDocUnchangedError,
+} from "../utils/orchestratorDocGuard";
 
 function workshopScopeProjectId(get: () => WorkshopState): string {
   return (get().projectId ?? get().project?.id ?? "").trim();
@@ -96,53 +111,6 @@ function errorStateFromCaught(e: unknown) {
     return streamErrorPatch({ message: e.message, code });
   }
   return streamErrorPatch({ message: String(e) });
-}
-
-/**
- * POST a un generate-* endpoint con ?queue=true y hace polling al job hasta completar.
- * Si el backend no tiene cola (respuesta síncrona directa), retorna el dato directamente.
- */
-async function queueAndPoll<T>(
-  url: string,
-  body: Record<string, unknown>,
-  signal?: AbortSignal,
-): Promise<T> {
-  const r = await apiFetch(`${url}?queue=true`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error((err as { message?: string }).message ?? "Error");
-  }
-  const data = (await r.json()) as Record<string, unknown>;
-
-  // Si el backend respondió síncrono (sin cola), devolver el dato directamente
-  if (!data.queued) return data as unknown as T;
-
-  // Polling: GET /projects/jobs/:jobId cada 2s
-  const jobId = data.jobId as string;
-  const pollUrl = `${API_BASE}/projects/jobs/${jobId}`;
-  for (let attempt = 0; attempt < 150; attempt++) {
-    if (signal?.aborted) throw new Error("Cancelado por el usuario");
-    await new Promise((r) => setTimeout(r, 2_000));
-    const pr = await apiFetch(pollUrl);
-    if (!pr.ok) {
-      if (pr.status === 404) throw new Error("Job no encontrado");
-      continue;
-    }
-    const status = (await pr.json()) as {
-      status: string;
-      result?: unknown;
-      error?: string;
-      retrying_at?: string;
-    };
-    if (status.status === "completed") return status.result as T;
-    if (status.status === "failed") throw new Error(status.error ?? "Error en la generación");
-    // "queued", "active", "retrying" → seguir esperando
-  }
-  throw new Error("Tiempo de espera agotado (5 min)");
 }
 
 function pickEvaluatorCritique(data: Record<string, unknown>): string | null {
@@ -405,6 +373,18 @@ export interface LegacySectionMergeTrace {
   finalChars: number;
 }
 
+/** Cobertura heurística servicios §5 vs flujos (legacy etapa 1). */
+export interface LogicFlowsSection5CoverageReport {
+  totalServices: number;
+  coveredServices: number;
+  coveragePercent: number;
+  missingServices: string[];
+  targetPercent: number;
+  metTarget: boolean;
+  batchCount?: number;
+  gapPassApplied?: boolean;
+}
+
 /** Trazabilidad de la última generación de entregables legacy (API + `legacyFlowState`). */
 export interface LegacyDeliverablesDebugReport {
   startedAt: string;
@@ -429,6 +409,8 @@ export interface LegacyDeliverablesDebugReport {
   mddRollupWindows?: number;
   mddRollupFailed?: boolean;
   sectionMergeTraces?: LegacySectionMergeTrace[];
+  legacyBaselineStage?: boolean;
+  logicFlowsSection5Coverage?: LogicFlowsSection5CoverageReport;
 }
 
 /** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por AriadneSpecs). */
@@ -461,6 +443,9 @@ export interface WorkshopStage {
   estimation: Estimation | null;
   /** Estado del flujo legacy para esta etapa (cambio) */
   legacyChangeState?: LegacyFlowState | null;
+  handoffImportedAt?: string | null;
+  handoffSnapshot?: { items?: unknown[] | null } | null;
+  linkedNewProjectId?: string | null;
 }
 
 /** Propuesta HITL hasta confirmación en chat o `POST .../confirm-complexity`. */
@@ -500,10 +485,27 @@ export interface Project {
   userStoriesContent: string | null;
   infraContent: string | null;
   aemContent: string | null;
-  legacyFlowState?: LegacyFlowState | null;
+  agentGovernanceContent: string | null;
+  convergeWebhookUrl?: string | null;
+  linkedLegacyProjectId?: string | null;
+  linkedNewProjectId?: string | null;
   estimation: Estimation | null;
   /** Presente en respuesta API completa; el front usa `activeStageId` para foco MDD. */
   stages?: WorkshopStage[];
+}
+
+function legacyDebugFromStages(stages: WorkshopStage[], activeStageId: string | null) {
+  const stage =
+    (activeStageId ? stages.find((s) => s.id === activeStageId) : null) ??
+    (pickDefaultStageId(stages) ? stages.find((s) => s.id === pickDefaultStageId(stages)) : null);
+  return stage?.legacyChangeState?.lastDeliverablesDebug ?? null;
+}
+
+function legacyCodebaseDocFromStages(stages: WorkshopStage[], activeStageId: string | null): string {
+  const stage =
+    (activeStageId ? stages.find((s) => s.id === activeStageId) : null) ??
+    (pickDefaultStageId(stages) ? stages.find((s) => s.id === pickDefaultStageId(stages)) : null);
+  return (stage?.legacyChangeState?.codebaseDoc ?? "").trim();
 }
 
 function pickDefaultStageId(stages: WorkshopStage[]): string | null {
@@ -643,6 +645,7 @@ interface WorkshopState {
   userStoriesContent: string | null;
   infraContent: string | null;
   aemContent: string | null;
+  agentGovernanceContent: string | null;
   /** Conformance (SDD Fase 2): Blueprint/API/Flujos/Infra vs MDD; `blueprintDataModel` = §3 vs Blueprint (gating API). */
   conformance: {
     blueprint: ConformanceResult;
@@ -665,7 +668,11 @@ interface WorkshopState {
     | "brd-from-dbga"
     | "legacy-deliverables"
     | "deliverables-cascade"
+    | "agent-governance"
     | "launch-hermes"
+    | "converge"
+    | "tasks-to-issues"
+    | "clarify-spec"
     | null;
   /** Mensaje de usuario en curso (streaming); se muestra hasta recibir "done" */
   streamingUserMessage: string | null;
@@ -806,6 +813,9 @@ interface WorkshopState {
   setTasksContent: (content: string | null) => void;
   persistTasksContent: (content: string) => Promise<void>;
   generateTasks: (projectId: string) => Promise<Project | null>;
+  generateAgentGovernance: (projectId: string) => Promise<Project | null>;
+  /** GET reconciled scaffold para ZIP (materializa sugerencias omitidas en `files[]`). */
+  fetchAgentGovernanceExport: (projectId: string) => Promise<import("@theforge/shared-types").AgentGovernanceScaffold | null>;
   /** POST /projects/:id/generate-deliverables — cascada según complexity. */
   generateDeliverablesCascade: (projectId: string) => Promise<Project | null>;
   /** HITL: aplica propuesta pendiente a `complexity` y limpia `complexityPending`. */
@@ -878,6 +888,23 @@ interface WorkshopState {
   ) => Promise<void>;
   /** Notifica a Hermes Agent que el proyecto está listo para desarrollo. */
   launchHermes: (projectId: string) => Promise<{ success: boolean; status: number } | undefined>;
+  convergeTasks: (
+    projectId: string,
+    persist?: boolean,
+  ) => Promise<{ convergeSection: string; persisted: boolean; openTaskCount: number } | null>;
+  tasksToIssues: (
+    projectId: string,
+    body: { owner: string; repo: string; milestone?: number; dryRun?: boolean },
+  ) => Promise<{ created: Array<{ number: number; html_url: string }>; errors: string[] } | null>;
+  clarifySpec: (
+    projectId: string,
+    opts: { persist: boolean; notes?: string; syncMdd?: boolean },
+  ) => Promise<{
+    clarifiedSpec: string;
+    clarificationMarkerCount: number;
+    persisted: boolean;
+    mddSyncQueued?: boolean;
+  } | null>;
   reset: () => void;
 }
 
@@ -899,6 +926,7 @@ const initialState = {
   userStoriesContent: null as string | null,
   infraContent: null as string | null,
   aemContent: null as string | null,
+  agentGovernanceContent: null as string | null,
   conformance: null as {
     blueprint: ConformanceResult;
     blueprintDataModel: ConformanceResult;
@@ -917,6 +945,7 @@ const initialState = {
     | "brd-from-dbga"
     | "legacy-deliverables"
     | "deliverables-cascade"
+    | "agent-governance"
     | null,
   streamingUserMessage: null as string | null,
   streamingUserImages: null as ChatImagePart[] | null,
@@ -955,7 +984,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   ...initialState,
 
   setProjectId: (id) => set({ projectId: id }),
-  setWorkshopActiveDocPanel: (panel) => set({ workshopActiveDocPanel: panel }),
+  setWorkshopActiveDocPanel: (panel) => {
+    const state = get();
+    if (isWorkshopAgentsBusy(state)) return;
+    set({ workshopActiveDocPanel: panel });
+  },
   setProject: (p) => {
     if (!p) {
       set({ project: null, activeStageId: null, workshopStages: [], lastLegacyDeliverablesDebug: null });
@@ -981,7 +1014,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       userStoriesContent: p.userStoriesContent ?? null,
       infraContent: p.infraContent ?? null,
       aemContent: p.aemContent ?? null,
-      lastLegacyDeliverablesDebug: p.legacyFlowState?.lastDeliverablesDebug ?? null,
+      lastLegacyDeliverablesDebug: legacyDebugFromStages(stages, activeStageId),
     });
   },
   setSession: (s) => set({ session: s }),
@@ -1183,6 +1216,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         userStoriesContent: cleanDoc(data.userStoriesContent ?? null),
         infraContent: cleanDoc(data.infraContent ?? null),
         aemContent: cleanDoc(data.aemContent ?? null),
+        agentGovernanceContent: data.agentGovernanceContent ?? null,
         error: null,
         legacyMcpDebugTrace: null,
       });
@@ -1434,7 +1468,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
       case "mdd-inicial":
       case "legacy": {
-        const doc = (project?.legacyFlowState?.codebaseDoc ?? "").trim();
+        const { activeStageId, workshopStages } = get();
+        const stages = workshopStages.length > 0 ? workshopStages : (project?.stages ?? []);
+        const doc = legacyCodebaseDocFromStages(stages, activeStageId);
         if (!doc) {
           return {
             ok: false,
@@ -1801,6 +1837,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
               : `${API_BASE}/ai-analysis/mdd/stream/manager`;
           const mddStage = get().activeStageId;
           const draftForMdd = (get().mddContent ?? get().project?.mddContent ?? "").trim() || undefined;
+          const mddSnapshotBeforeStream = draftForMdd ?? "";
           const body =
             managerThreadId != null
               ? {
@@ -1879,19 +1916,39 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                           : null,
                     });
                     if (event.markdown != null && event.markdown.trim().length > 80) {
-                      set({ mddContent: event.markdown });
-                      const { persistMddContent, fetchProject, fetchEstimation } = get();
-                      await persistMddContent(event.markdown);
-                      const errBeforeFetch = get().error;
-                      if (shouldApplyWorkshopUpdate(get, requestProjectId)) {
-                        await fetchProject(requestProjectId);
-                        if (errBeforeFetch) set({ error: errBeforeFetch });
-                        await fetchEstimation(requestProjectId);
-                        const current = get();
+                      const incoming = event.markdown.trim();
+                      const unchanged =
+                        mddSnapshotBeforeStream.length > 80 && incoming === mddSnapshotBeforeStream;
+                      const replyClaimsEdit =
+                        typeof event.reply === "string" &&
+                        /\b(ajust|elimin|actualiz|modific|ya no contiene|sin referencias)\b/i.test(
+                          event.reply,
+                        );
+                      if (unchanged && replyClaimsEdit) {
                         set({
-                          mddContent: event.markdown,
-                          project: current.project ? { ...current.project, mddContent: event.markdown } : null,
+                          error:
+                            "El chat indicó cambios pero el MDD no se actualizó. Revisa si hay un plan pendiente de aprobar, o usa /infraestructura o /seguridad para forzar la regeneración.",
                         });
+                      }
+                      set({ mddContent: incoming });
+                      const { persistMddContent, fetchProject, fetchEstimation } = get();
+                      if (!unchanged) {
+                        await persistMddContent(incoming, { force: true });
+                      }
+                      if (!unchanged) {
+                        const errBeforeFetch = get().error;
+                        if (shouldApplyWorkshopUpdate(get, requestProjectId)) {
+                          await fetchProject(requestProjectId);
+                          if (errBeforeFetch) set({ error: errBeforeFetch });
+                          await fetchEstimation(requestProjectId);
+                          const current = get();
+                          set({
+                            mddContent: incoming,
+                            project: current.project
+                              ? { ...current.project, mddContent: incoming }
+                              : null,
+                          });
+                        }
                       }
                     }
                     // No sobrescribir mddContent con markdown vacío (auditar puede venir de checkpoint sin draft)
@@ -2096,15 +2153,20 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         streamingTab: tab,
         evaluatorCritique: null,
       });
+      const orchestratorDocSnapshotBefore = orchestratorDocSnapshot(get(), tab);
       try {
         const body: Record<string, unknown> = {
           projectId: requestProjectId,
           sessionId: session?.id,
           message: msg || "",
-          mddContent: get().mddContent || undefined,
-          uxUiGuideContent: get().uxUiGuideContent ?? get().project?.uxUiGuideContent ?? undefined,
           activeTab: tab,
         };
+        if (tab === "mdd") {
+          body.mddContent = get().mddContent || undefined;
+        }
+        if (tab === "ux-ui-guide") {
+          body.uxUiGuideContent = get().uxUiGuideContent ?? get().project?.uxUiGuideContent ?? undefined;
+        }
         {
           const sf = get().activeStageId;
           if (sf) body.stageId = sf;
@@ -2123,7 +2185,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           if (sc != null && String(sc).trim()) body.specContent = sc;
         }
         if (tab === "architecture") {
-          const ac = get().architectureContent;
+          const ac = get().architectureContent ?? get().project?.architectureContent;
           if (ac != null && String(ac).trim()) body.architectureContent = ac;
         }
         if (tab === "blueprint") {
@@ -2196,6 +2258,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 if (sess && sess.projectId !== requestProjectId) continue;
                 const proj = data.project as Project | undefined;
                 if (proj && proj.id !== requestProjectId) continue;
+                const docUnchangedError = resolveOrchestratorDocUnchangedError({
+                  tab,
+                  snapshotBefore: orchestratorDocSnapshotBefore,
+                  data,
+                  snapshotSource: get(),
+                  userMessage: msg,
+                  session: sess,
+                });
                 const uxFromApi = (data.uxUiGuideContent ?? proj?.uxUiGuideContent) as string | null | undefined;
                 const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 const nextStages = packed?.project?.stages ?? proj?.stages;
@@ -2233,11 +2303,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   streamingContent: null,
                   streamingTab: null,
                   synced: true,
-                  error: null,
+                  error: docUnchangedError,
                   evaluatorCritique: pickEvaluatorCritique(data),
                 });
                 // Auto-persist UX/UI guide when the orchestrator returns content on its tab
-                if (tab === "ux-ui-guide" && freshUx) {
+                if (tab === "ux-ui-guide" && freshUx && !docUnchangedError) {
                   get().persistUxUiGuideContent(freshUx).catch(() => {});
                 }
               } else if (event === "error" && data.error) {
@@ -2278,6 +2348,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   (!sessTail?.projectId || sessTail.projectId === requestProjectId) &&
                   (!projTail?.id || projTail.id === requestProjectId);
                 if (scopeOk) {
+                  const docUnchangedError = resolveOrchestratorDocUnchangedError({
+                    tab,
+                    snapshotBefore: orchestratorDocSnapshotBefore,
+                    data,
+                    snapshotSource: get(),
+                    userMessage: msg,
+                    session: sessTail,
+                  });
                   const uxFromApi = (data.uxUiGuideContent ?? projTail?.uxUiGuideContent) as
                     | string
                     | null
@@ -2318,10 +2396,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     streamingContent: null,
                     streamingTab: null,
                     synced: true,
-                    error: null,
+                    error: docUnchangedError,
                     evaluatorCritique: pickEvaluatorCritique(data),
                   });
-                  if (tab === "ux-ui-guide" && freshUx) {
+                  if (tab === "ux-ui-guide" && freshUx && !docUnchangedError) {
                     get().persistUxUiGuideContent(freshUx).catch(() => {});
                   }
                 }
@@ -2434,6 +2512,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const data = await queueAndPoll<Project>(`${API_BASE}/projects/${projectId}/generate-logic-flows`, body);
       set({ project: data, logicFlowsContent: data.logicFlowsContent ?? null, error: null });
       get().fetchConformance(projectId).catch(() => { });
+      get().fetchProject(projectId).catch(() => { });
       return data;
     } catch (e) { set({ error: friendlyFetchError(e) }); return null; }
     finally { set({ loading: false }); }
@@ -2561,6 +2640,73 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ loading: false });
     }
   },
+  generateAgentGovernance: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    const beforeLen = get().agentGovernanceContent?.length ?? 0;
+    console.warn(
+      `[agent-gov] workshop generateAgentGovernance start projectId=${projectId} force=true beforeLen=${beforeLen}`,
+    );
+    set({
+      loading: true,
+      loadingReason: "agent-governance",
+      error: null,
+      agentProgress: createAgentGovernanceProgressItems(),
+    });
+
+    const stepTimer = setInterval(() => {
+      set((s) => {
+        if (s.loadingReason !== "agent-governance") return s;
+        return { agentProgress: advanceAgentGovernanceProgressItems(s.agentProgress) };
+      });
+    }, 12_000);
+
+    try {
+      const data = await queueAndPoll<Project>(
+        `${API_BASE}/projects/${projectId}/generate-agent-governance`,
+        { force: true },
+      );
+      const afterLen = data.agentGovernanceContent?.length ?? 0;
+      console.warn(
+        `[agent-gov] workshop generateAgentGovernance complete projectId=${projectId} beforeLen=${beforeLen} afterLen=${afterLen} preview=${(data.agentGovernanceContent ?? "").slice(0, 80)}`,
+      );
+      set({
+        project: data,
+        agentGovernanceContent: data.agentGovernanceContent ?? null,
+        error: null,
+        agentProgress: completeAgentGovernanceProgressItems(),
+      });
+      return data;
+    } catch (e) {
+      console.warn(
+        `[agent-gov] workshop generateAgentGovernance failed projectId=${projectId}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      set({
+        error: e instanceof Error ? e.message : "Error al generar gobernanza de agentes",
+        agentProgress: [],
+      });
+      return null;
+    } finally {
+      clearInterval(stepTimer);
+      set({ loading: false, loadingReason: null, agentProgress: [] });
+    }
+  },
+  fetchAgentGovernanceExport: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}/agent-governance-export`);
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al preparar ZIP de gobernanza");
+      }
+      const scaffold = (await r.json()) as import("@theforge/shared-types").AgentGovernanceScaffold;
+      return scaffold;
+    } catch (e) {
+      set({
+        error: e instanceof Error ? e.message : "Error al preparar ZIP de gobernanza",
+      });
+      return null;
+    }
+  },
   generateDeliverablesCascade: async (projectId) => {
     if (!projectId?.trim()) return null;
     const pid = projectId.trim();
@@ -2575,12 +2721,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (data.queued === true && typeof data.jobId === "string") {
         const deadline = Date.now() + 45 * 60 * 1000;
 
-        // Inicializar agentProgress con los 11 docs en "Generando…"
-        const allStepLabels = [
-          "MDD Canonical", "Blueprint", "Spec", "Arquitectura",
-          "Casos de Uso", "Historias de Usuario", "Guía UX/UI",
-          "Contratos API", "Flujos de Lógica", "Tareas", "Infraestructura",
-        ];
+        const complexity = get().project?.complexity ?? "HIGH";
+        const allStepLabels = deliverableStepLabelsForComplexity(complexity);
         set({
           agentProgress: allStepLabels.map((label) => ({
             agent: "Entregables",
@@ -3181,6 +3323,7 @@ if (prog && prog.step && prog.step !== "done") {
         "use-cases": "useCasesContent",
         "user-stories": "userStoriesContent",
         aem: "aemContent",
+        "agent-governance": "agentGovernanceContent",
       };
 
       const fieldName = fieldByPanel[panel];
@@ -3228,6 +3371,7 @@ if (prog && prog.step && prog.step !== "done") {
       }
       const data = (await r.json()) as {
         codebaseDoc: string;
+        mddContent?: string;
         mcpDebugTrace?: LegacyMcpDebugEntry[];
       } | null;
       await get().fetchProject(projectId);
@@ -3346,17 +3490,36 @@ if (prog && prog.step && prog.step !== "done") {
         const err = await r.json().catch(() => ({}));
         throw new Error((err as { message?: string }).message ?? "Error al generar MDD");
       }
-      const data = (await r.json()) as { mddContent: string };
-      await get().fetchProject(projectId);
+      await r.json().catch(() => ({}));
+      const project = await get().fetchProject(projectId);
+      const mddContent = project?.mddContent ?? "";
       set({
-        mddContent: data.mddContent ?? get().project?.mddContent ?? "",
+        mddContent,
         loading: false,
         loadingReason: null,
         error: null,
       });
-      return data;
+      return mddContent.trim() ? { mddContent } : null;
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : "Error al generar MDD legacy", loading: false, loadingReason: null });
+      try {
+        const project = await get().fetchProject(projectId);
+        if (project?.mddContent?.trim()) {
+          set({
+            mddContent: project.mddContent,
+            loading: false,
+            loadingReason: null,
+            error: null,
+          });
+          return { mddContent: project.mddContent };
+        }
+      } catch {
+        /* persist recovery failed */
+      }
+      set({
+        error: friendlyFetchError(e),
+        loading: false,
+        loadingReason: null,
+      });
       return null;
     }
   },
@@ -3477,11 +3640,96 @@ if (prog && prog.step && prog.step !== "done") {
 
   legacyGenerateDeliverables: async (projectId) => {
     if (!projectId?.trim()) return false;
-    set({ loading: true, loadingReason: "legacy-deliverables", error: null });
+    const pid = projectId.trim();
+    const stageId = get().activeStageId?.trim() || undefined;
+    const project = get().project;
+    const complexity = project?.complexity ?? "HIGH";
+    const plannedKinds = planLegacyDeliverablesToGenerate({
+      complexity,
+      hasMddContent: !!project?.mddContent?.trim(),
+    });
+    const stepLabels = deliverableStepLabelsForKinds(plannedKinds);
+
+    if (stepLabels.length === 0) {
+      await get().fetchProject(pid);
+      return true;
+    }
+
+    set({
+      loading: true,
+      loadingReason: "legacy-deliverables",
+      error: null,
+      agentProgress: stepLabels.map((label) => ({
+        agent: "Entregables",
+        message: `⚪ ${label} — Generando…`,
+        step: label,
+        status: "generando" as const,
+      })),
+      cascadeTotal: stepLabels.length,
+      cascadeCompleted: 0,
+    });
+
+    const pollLegacyDeliverablesJob = async (jobId: string): Promise<boolean> => {
+      const deadline = Date.now() + 90 * 60 * 1000;
+      const completedSteps = new Set<string>();
+      let lastActiveStep: string | null = null;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        const st = await apiFetch(`${API_BASE}/projects/${pid}/legacy/deliverables-jobs/${jobId}`);
+        if (!st.ok) {
+          const err = await st.json().catch(() => ({}));
+          throw new Error((err as { message?: string }).message ?? "Error al consultar cola legacy");
+        }
+        const j = (await st.json()) as {
+          status: string;
+          progress?: { step?: string; index?: number; total?: number };
+          result?: { ok?: boolean; lastDeliverablesDebug?: LegacyDeliverablesDebugReport };
+          error?: string;
+        };
+        if (j.status === "failed") {
+          throw new Error(j.error ?? "Cascada legacy fallida");
+        }
+        if (j.status === "completed") {
+          if (j.result?.lastDeliverablesDebug) {
+            set({ lastLegacyDeliverablesDebug: j.result.lastDeliverablesDebug });
+          }
+          return true;
+        }
+        const prog = j.progress;
+        if (prog?.step && prog.step !== "done") {
+          if (!completedSteps.has(prog.step)) {
+            completedSteps.add(prog.step);
+            set((s) => ({
+              agentProgress: s.agentProgress.map((item) =>
+                item.step === prog.step
+                  ? { ...item, message: `✅ ${prog.step} — Terminado`, status: "terminado" }
+                  : item,
+              ),
+              cascadeCompleted: completedSteps.size,
+            }));
+          }
+          if (prog.step !== lastActiveStep) {
+            lastActiveStep = prog.step;
+            if (!completedSteps.has(prog.step)) {
+              set((s) => ({
+                agentProgress: s.agentProgress.map((item) =>
+                  item.step === prog.step
+                    ? { ...item, message: `⚡ ${prog.step} — Generando…`, status: "generando" }
+                    : item,
+                ),
+              }));
+            }
+          }
+        }
+      }
+      throw new Error("Tiempo de espera agotado en cascada legacy (90 min). Revisa el proyecto por si hubo avance parcial.");
+    };
+
     try {
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}/legacy/generate-deliverables`, {
+      const r = await apiFetch(`${API_BASE}/projects/${pid}/legacy/generate-deliverables`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(stageId ? { stageId } : {}),
       });
       if (!r.ok) {
         const err = (await r.json().catch(() => ({}))) as {
@@ -3498,19 +3746,65 @@ if (prog && prog.step && prog.step !== "done") {
             : "";
         throw new Error((err.message ?? "Error al generar entregables") + suffix);
       }
-      const data = (await r.json()) as { ok?: boolean; lastDeliverablesDebug?: LegacyDeliverablesDebugReport };
-      if (import.meta.env.DEV && data.lastDeliverablesDebug) {
-        console.debug("[LegacyDeliverables]", data.lastDeliverablesDebug);
+      const data = (await r.json()) as {
+        queued?: boolean;
+        jobId?: string;
+        ok?: boolean;
+        lastDeliverablesDebug?: LegacyDeliverablesDebugReport;
+      };
+
+      if (data.queued === true && typeof data.jobId === "string") {
+        await pollLegacyDeliverablesJob(data.jobId);
+      } else {
+        if (import.meta.env.DEV && data.lastDeliverablesDebug) {
+          console.debug("[LegacyDeliverables]", data.lastDeliverablesDebug);
+        }
+        set({ lastLegacyDeliverablesDebug: data.lastDeliverablesDebug ?? null });
       }
-      set({ lastLegacyDeliverablesDebug: data.lastDeliverablesDebug ?? null });
-      const proj = await get().fetchProject(projectId);
-      set({ loading: false, loadingReason: null, error: null });
+
+      set((s) => ({
+        agentProgress: s.agentProgress.map((item) =>
+          item.status === "generando"
+            ? { ...item, message: `✅ ${item.step} — Terminado`, status: "terminado" }
+            : item,
+        ),
+        cascadeCompleted: stepLabels.length,
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+
+      const proj = await get().fetchProject(pid);
+      await get().fetchEstimation(pid).catch(() => {});
+      set({
+        loading: false,
+        loadingReason: null,
+        error: null,
+        agentProgress: [],
+      });
       return proj != null;
     } catch (e) {
+      try {
+        const project = await get().fetchProject(pid);
+        const { activeStageId, workshopStages } = get();
+        const stages = workshopStages.length > 0 ? workshopStages : (project?.stages ?? []);
+        const debug = legacyDebugFromStages(stages, activeStageId);
+        const partial =
+          debug?.steps?.some((s) => typeof s.outChars === "number" && s.outChars > 48) ?? false;
+        if (partial || (project?.specContent?.trim()?.length ?? 0) > 48) {
+          set({
+            lastLegacyDeliverablesDebug: debug ?? null,
+            loading: false,
+            loadingReason: null,
+            error: null,
+            agentProgress: [],
+          });
+          return true;
+        }
+      } catch {
+        /* fetchProject recovery failed */
+      }
       const msg = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
-      // Log error to console for debugging
       console.error("[workshopStore] legacyGenerateDeliverables error:", msg, e);
-      set({ error: msg, loading: false, loadingReason: null });
+      set({ error: msg, loading: false, loadingReason: null, agentProgress: [] });
       return false;
     }
   },
@@ -3705,6 +3999,98 @@ if (prog && prog.step && prog.step !== "done") {
       }
       const data = (await r.json()) as { success: boolean; status: number };
       return data;
+    } finally {
+      set({ loading: false, loadingReason: null });
+    }
+  },
+  convergeTasks: async (projectId, persist = false) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "converge", error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/converge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persist }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error en converge");
+      }
+      const data = (await r.json()) as {
+        convergeSection: string;
+        persisted: boolean;
+        openTaskCount: number;
+        suggestedTasksMarkdown: string;
+      };
+      if (data.persisted) {
+        set({ tasksContent: data.suggestedTasksMarkdown, error: null });
+      } else {
+        set({ error: null });
+      }
+      return {
+        convergeSection: data.convergeSection,
+        persisted: data.persisted,
+        openTaskCount: data.openTaskCount,
+      };
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error en converge" });
+      return null;
+    } finally {
+      set({ loading: false, loadingReason: null });
+    }
+  },
+  tasksToIssues: async (projectId, body) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "tasks-to-issues", error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/tasks-to-issues`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al crear issues");
+      }
+      const data = (await r.json()) as {
+        created: Array<{ number: number; html_url: string }>;
+        errors: string[];
+      };
+      set({ error: null });
+      return data;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al crear issues" });
+      return null;
+    } finally {
+      set({ loading: false, loadingReason: null });
+    }
+  },
+  clarifySpec: async (projectId, opts) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "clarify-spec", error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/clarify-spec`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(opts),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error en clarify-spec");
+      }
+      const data = (await r.json()) as {
+        clarifiedSpec: string;
+        clarificationMarkerCount: number;
+        persisted: boolean;
+        mddSyncQueued?: boolean;
+      };
+      if (data.persisted) {
+        set({ specContent: data.clarifiedSpec, error: null });
+      }
+      return data;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error en clarify-spec" });
+      return null;
     } finally {
       set({ loading: false, loadingReason: null });
     }

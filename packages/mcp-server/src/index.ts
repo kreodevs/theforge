@@ -12,6 +12,7 @@
  * @license Apache-2.0
  */
 
+import { parseAgentGovernanceScaffold, type ProjectNextTaskResponse } from "@theforge/shared-types";
 import { generateTable, normalizeTable, normalizeAllTables, parseTable } from "@theforge/shared-types/markdown-table";
 import { generateMermaid, normalizeMermaid, validateMermaid } from "@theforge/shared-types/mermaid";
 
@@ -21,6 +22,76 @@ const API_BASE = process.env.THEFORGE_API_URL ?? "http://theforge-api:3000";
 const TIMEOUT_MS = Number(process.env.THEFORGE_MCP_TIMEOUT) || 120_000;
 const PORT = Number(process.env.PORT) || 3000;
 const USE_HTTP = process.argv.includes("--http");
+
+// ── Client auto-detection ─────────────────────────────────────────────
+/** Nombre del cliente detectado en `initialize` (\"hermes\", \"openhands\", etc.). */
+let clientName = "";
+
+/** Resuelve el target de gobernanza: explícito > auto-detectado > "cursor". */
+function resolveGovernanceTarget(explicit?: string): string {
+  if (explicit) return explicit;
+  const name = clientName.toLowerCase();
+  if (name.includes("hermes")) return "hermes";
+  if (name.includes("openhands")) return "openhands";
+  return "cursor";
+}
+
+/**
+ * Compacta la respuesta de agent-governance para clientes con timeout bajo (OpenHands/Hermes).
+ * Reemplaza el contenido de cada archivo con metadata ({path, size, charCount}),
+ * reduciendo la respuesta de ~100KB a ~3KB.
+ */
+function compactifyGovernanceResponse(raw: unknown, projectId: string): unknown {
+  if (raw == null || typeof raw !== "object") return raw;
+
+  const obj = raw as Record<string, unknown>;
+
+  // Queue mode: ya es pequeño, devolver tal cual
+  if (obj.queued) return raw;
+
+  // Extraer el scaffold JSON (puede venir en .content para preview o en .agentGovernanceContent)
+  let scaffoldStr = "";
+  if (typeof obj.content === "string") {
+    scaffoldStr = obj.content;
+  } else if (typeof obj.agentGovernanceContent === "string") {
+    scaffoldStr = obj.agentGovernanceContent;
+  } else {
+    return raw; // no reconocible, devolver tal cual
+  }
+
+  let scaffold: Record<string, unknown>;
+  try {
+    scaffold = JSON.parse(scaffoldStr) as Record<string, unknown>;
+  } catch {
+    return raw;
+  }
+
+  // Compactar files: reemplazar contenido con metadata
+  const files = scaffold.files as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(files)) {
+    const compactFiles = files.map((f) => {
+      const content = typeof f.content === "string" ? f.content : "";
+      return {
+        path: f.path ?? "",
+        charCount: content.length,
+        sizeEstimate: `${Math.round(content.length / 1024)}KB`,
+      };
+    });
+
+    scaffold.files = compactFiles;
+
+    // Agregar nota y referencias a tools para obtener contenido completo
+    scaffold._compact = true;
+    scaffold._note =
+      "Contenido completo almacenado en el servidor. Usa get_agent_governance_export para obtener el ZIP completo, o get_project_deliverables con filePath para archivos individuales.";
+    scaffold._fullContentTools = {
+      export_zip: `get_agent_governance_export(projectId: "${projectId}")`,
+      individual_file: `get_project_deliverables(projectId: "${projectId}", filePath: "<ruta del archivo>")`,
+    };
+  }
+
+  return { ...obj, content: JSON.stringify(scaffold), agentGovernanceContent: undefined, _compact: true };
+}
 
 // ── Local Types ────────────────────────────────────────────────────────
 
@@ -139,8 +210,8 @@ async function apiFetch(
   }
 }
 
-function apiGet(path: string): Promise<unknown> {
-  return apiFetch("GET", path);
+function apiGet<T = unknown>(path: string): Promise<T> {
+  return apiFetch("GET", path) as Promise<T>;
 }
 function apiPost(path: string, body?: unknown): Promise<unknown> {
   return apiFetch("POST", path, body);
@@ -152,10 +223,31 @@ function apiDelete(path: string): Promise<unknown> {
   return apiFetch("DELETE", path);
 }
 
-// ── Tool Definitions (43 tools) ────────────────────────────────────────
+function summarizeAgentGovernanceField(raw: unknown): {
+  exists: boolean;
+  wordCount: number;
+  content: string | null;
+} {
+  const text = typeof raw === "string" ? raw : "";
+  const scaffold = text.trim() ? parseAgentGovernanceScaffold(text) : null;
+  if (scaffold) {
+    const wordCount = scaffold.files.reduce(
+      (acc, file) => acc + (file.content.trim() ? file.content.trim().split(/\s+/).length : 0),
+      0,
+    );
+    return { exists: true, wordCount, content: text };
+  }
+  return {
+    exists: text.trim().length > 0,
+    wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+    content: text.trim().length > 0 ? text : null,
+  };
+}
+
+// ── Tool Definitions (45 tools) ────────────────────────────────────────
 
 /**
- * Manifiesto MCP: 43 herramientas que reflejan la API REST The Forge (proyectos, entregables, análisis,
+ * Manifiesto MCP: 45 herramientas que reflejan la API REST The Forge (proyectos, entregables, análisis,
  * orquestador, sesiones, flujo legacy e integración Ariadne). Cada `name` debe existir como método en
  * {@link handlers}.
  *
@@ -204,7 +296,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_project_deliverables",
     description:
-      "Devuelve un resumen estructurado de todos los documentos de la cascada (Spec, Blueprint, API Contracts, Architecture, Use Cases, User Stories, Logic Flows, Infra, UX/UI Guide, DBGA). Cada doc incluye 'exists', 'wordCount' y 'content' completo si existe. Los docs de stage (BRD, To-Be, As-Is, MDD) están en get_project_stages.",
+      "Devuelve un resumen estructurado de todos los documentos de la cascada (Spec, Blueprint, API Contracts, Architecture, Use Cases, User Stories, Logic Flows, Infra, UX/UI Guide, DBGA, Agent Governance). Cada doc incluye 'exists', 'wordCount' y 'content' completo si existe. agentGovernanceContent es JSON scaffold (rules/skills/AGENTS.md). Los docs de stage (BRD, To-Be, As-Is, MDD) están en get_project_stages.",
     inputSchema: {
       type: "object",
       properties: { projectId: { type: "string", description: "ID del proyecto" } },
@@ -391,6 +483,55 @@ const TOOLS: Tool[] = [
         gapsFeedback: { type: "string" },
       },
       required: ["projectId"],
+    },
+  },
+  {
+    name: "generate_agent_governance",
+    description:
+      "Genera el scaffold de Gobernanza IA (AGENTS.md, rules, skills, mcp.json.example) desde MDD + Blueprint + complejidad. Auto-detecta el cliente (cursor, openhands, hermes) vía initialize; usa 'target' para forzar.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        preview: {
+          type: "boolean",
+          description: "Si true, no persiste; devuelve { content } con el JSON scaffold",
+        },
+        queue: {
+          type: "boolean",
+          description: "Si true y la cola de entregables está activa, encola el job async",
+        },
+        target: {
+          type: "string",
+          enum: ["cursor", "openhands", "hermes"],
+          description:
+            "Target para el scaffold: 'cursor' (.cursor/rules/, .cursor/skills/), 'openhands' (.openhands/instructions.md), 'hermes' (.hermes/skills/). Si se omite, se auto-detecta del clientInfo enviado en initialize.",
+        },
+      },
+      required: ["projectId"],
+    },
+  },
+  {
+    name: "get_agent_governance_export",
+    description:
+      "Devuelve el scaffold de Gobernanza IA reconciliado para export/ZIP (sin re-llamar al LLM)",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string" } },
+      required: ["projectId"],
+    },
+  },
+  {
+    name: "get_job_status",
+    description:
+      "Consulta el estado de un job asíncrono de generación (blueprint, agent-governance, etc.). Usar después de generate_agent_governance con queue=true para saber cuándo terminó.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        jobId: { type: "string", description: "ID del job devuelto por generate_agent_governance (o cualquier endpoint con ?queue=true)" },
+      },
+      required: ["projectId", "jobId"],
     },
   },
   {
@@ -596,10 +737,18 @@ const TOOLS: Tool[] = [
   },
   {
     name: "legacy_generate_mdd",
-    description: "Genera MDD de cambio desde el estado del flujo legacy",
+    description:
+      "Genera MDD legacy (persiste en stage). Respuesta ligera por defecto; includeContent=true devuelve markdown completo.",
     inputSchema: {
       type: "object",
-      properties: { projectId: { type: "string" } },
+      properties: {
+        projectId: { type: "string" },
+        stageId: { type: "string" },
+        includeContent: {
+          type: "boolean",
+          description: "Si true, añade ?includeContent=true (respuesta grande; preferir get_project después)",
+        },
+      },
       required: ["projectId"],
     },
   },
@@ -787,6 +936,35 @@ const TOOLS: Tool[] = [
       required: ["name", "idea"],
     },
   },
+  {
+    name: "merge_projects",
+    description:
+      "Fusiona 2 o más proyectos en Paso 0 (DBGA): sintetiza borrador Fase 0, opcional benchmark, suite de sub-productos, archivado de fuentes y auditoría automática.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sourceProjectIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "IDs de proyectos fuente (mínimo 2)",
+        },
+        name: { type: "string", description: "Nombre si targetMode=new" },
+        targetMode: { type: "string", enum: ["new", "existing"], description: "Default: new" },
+        targetProjectId: { type: "string", description: "Requerido si targetMode=existing" },
+        deleteSources: {
+          type: "string",
+          enum: ["keep", "archive", "delete"],
+          description: "Qué hacer con las fuentes (excepto destino)",
+        },
+        resetDownstream: { type: "boolean", description: "Limpiar MDD y entregables en destino (default true)" },
+        createSuite: { type: "boolean", description: "Vincular fuentes como sub-productos" },
+        includeBenchmark: { type: "boolean", description: "Incluir benchmark/deep research en la fusión" },
+        autoAudit: { type: "boolean", description: "Lanzar auditoría Paso 0 tras fusionar" },
+        preview: { type: "boolean", description: "Solo vista previa, sin persistir" },
+      },
+      required: ["sourceProjectIds"],
+    },
+  },
   // ── TheForge Integration ──
   {
     name: "set_aem_content",
@@ -830,6 +1008,17 @@ const TOOLS: Tool[] = [
           description: "Lista opcional de nombres de tablas a filtrar (ej. ['usuarios', 'pagos']). Si se omite, devuelve todas.",
         },
       },
+      required: ["projectId"],
+    },
+  },
+  {
+    name: "get_next_implementation_task",
+    description:
+      "Returns the next open task from project tasks.md (spec-kit format) plus document layout paths. " +
+      "Read IMPLEMENT.md → .specify/memory/constitution.md → tasks in specs/NNN-slug/tasks.md.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "The Forge project ID" } },
       required: ["projectId"],
     },
   },
@@ -961,11 +1150,19 @@ const handlers: Record<string, Handler> = {
         "apiContractsContent", "useCasesContent", "userStoriesContent",
         "logicFlowsContent", "infraContent", "tasksContent",
         "uxUiGuideContent", "dbgaContent", "phase0SummaryContent",
-        "aemContent",
+        "aemContent", "agentGovernanceContent",
       ];
       const projectDocuments: Record<string, { exists: boolean; wordCount: number }> = {};
       for (const field of docFields) {
         const content = p[field];
+        if (field === "agentGovernanceContent") {
+          const summary = summarizeAgentGovernanceField(content);
+          projectDocuments[field] = {
+            exists: summary.exists,
+            wordCount: summary.wordCount,
+          };
+          continue;
+        }
         const text = typeof content === "string" ? content : "";
         projectDocuments[field] = {
           exists: text.trim().length > 0,
@@ -993,10 +1190,16 @@ const handlers: Record<string, Handler> = {
       { key: "dbgaContent", label: "DBGA" },
       { key: "phase0SummaryContent", label: "Phase 0 Summary" },
       { key: "aemContent", label: "AEM" },
+      { key: "agentGovernanceContent", label: "Agent Governance / Gobernanza IA" },
     ];
     const deliverables: Record<string, { label: string; exists: boolean; wordCount: number; content: string | null }> = {};
     for (const { key, label } of docFields) {
       const content = project[key];
+      if (key === "agentGovernanceContent") {
+        const summary = summarizeAgentGovernanceField(content);
+        deliverables[key] = { label, ...summary };
+        continue;
+      }
       const text = typeof content === "string" ? content : "";
       deliverables[key] = {
         label,
@@ -1093,6 +1296,35 @@ const handlers: Record<string, Handler> = {
         preview: args.preview ?? false,
         gapsFeedback: (args.gapsFeedback as string) ?? "",
       }),
+    );
+  },
+  async generate_agent_governance(args) {
+    const target = resolveGovernanceTarget(args.target as string | undefined);
+
+    // OpenHands y Hermes timeoutan durante la generación LLM (30-90s).
+    // Forzar queue async: respuesta instantánea (~100 bytes), polling con get_job_status.
+    const needsAsync = target !== "cursor";
+    const queue = needsAsync || args.queue === true ? "?queue=true" : "";
+
+    const raw = await apiPost(`/projects/${args.projectId}/generate-agent-governance${queue}`, {
+      preview: args.preview ?? false,
+      target,
+    });
+
+    // Queue ya es compacto, y la respuesta completa se compacta también
+    const needsCompact = target !== "cursor";
+    const response = needsCompact
+      ? compactifyGovernanceResponse(raw, args.projectId as string)
+      : raw;
+
+    return JSON.stringify(response);
+  },
+  async get_agent_governance_export(args) {
+    return JSON.stringify(await apiGet(`/projects/${args.projectId}/agent-governance-export`));
+  },
+  async get_job_status(args) {
+    return JSON.stringify(
+      await apiGet(`/projects/${args.projectId}/deliverables-jobs/${args.jobId}`),
     );
   },
   async confirm_complexity(args) {
@@ -1205,7 +1437,12 @@ const handlers: Record<string, Handler> = {
     );
   },
   async legacy_generate_mdd(args) {
-    return JSON.stringify(await apiPost(`/projects/${args.projectId}/legacy/generate-mdd`));
+    const query = args.includeContent === true ? "?includeContent=true" : "";
+    const body: Record<string, unknown> = {};
+    if (args.stageId) body.stageId = args.stageId;
+    return JSON.stringify(
+      await apiPost(`/projects/${args.projectId}/legacy/generate-mdd${query}`, body),
+    );
   },
   async legacy_generate_codebase_doc(args) {
     const body: Record<string, unknown> = {};
@@ -1331,6 +1568,30 @@ const handlers: Record<string, Handler> = {
 
     return JSON.stringify(summary);
   },
+  async merge_projects(args) {
+    const sourceProjectIds = args.sourceProjectIds as string[];
+    if (!Array.isArray(sourceProjectIds) || sourceProjectIds.length < 2) {
+      throw new Error("merge_projects requiere sourceProjectIds con al menos 2 IDs");
+    }
+    const body: Record<string, unknown> = {
+      sourceProjectIds,
+      targetMode: (args.targetMode as string) ?? "new",
+      deleteSources: (args.deleteSources as string) ?? "keep",
+      resetDownstream: args.resetDownstream !== false,
+      createSuite: args.createSuite === true,
+      autoAudit: args.autoAudit !== false,
+      preview: args.preview === true,
+      sourceOptions: {
+        includeDbga: true,
+        includePhase0Json: true,
+        includeBenchmark: args.includeBenchmark === true,
+      },
+    };
+    if (typeof args.name === "string") body.name = args.name;
+    if (typeof args.targetProjectId === "string") body.targetProjectId = args.targetProjectId;
+    const result = await apiPost("/projects/merge", body);
+    return JSON.stringify(result, null, 2);
+  },
   // TheForge
   async set_aem_content(args) {
     const { projectId, content } = args as { projectId: string; content: string };
@@ -1383,6 +1644,21 @@ const handlers: Record<string, Handler> = {
       tables: tables.map(t => ({ name: t.name, sql: t.sql })),
     });
   },
+  async get_next_implementation_task(args) {
+    const projectId = args.projectId as string;
+    const data = await apiGet<ProjectNextTaskResponse>(`/projects/${projectId}/next-task`);
+    return JSON.stringify({
+      ...data,
+      agentWorkflow: [
+        "1. Read IMPLEMENT.md",
+        "2. Read .specify/memory/constitution.md (MDD)",
+        `3. Open ${data.tasksPath ?? "specs/NNN-slug/tasks.md"} for checklist`,
+        data.governancePresent
+          ? "4. Install agent-governance per INSTALACION.md if not in .cursor/"
+          : "4. (Optional) Generate agent governance in Workshop",
+      ],
+    });
+  },
   // ── Utility Tools ──
   async generate_markdown_table(args) {
     const { columns, rows, caption } = args as { columns: any[]; rows: string[][]; caption?: string };
@@ -1427,6 +1703,9 @@ async function handleJSONRPC(request: JSONRPCRequest): Promise<JSONRPCResponse> 
   try {
     switch (method) {
       case "initialize": {
+        // Guardar clientInfo para auto-detección
+        const info = (params as any)?.clientInfo as { name?: string; version?: string } | undefined;
+        if (info?.name) clientName = info.name;
         return {
           jsonrpc: "2.0",
           id,
@@ -1539,8 +1818,16 @@ async function main(): Promise<void> {
       // Read body
       const body = await readBody(req);
 
-      // Auth: extraer MCP_M2M_SECRET del header del cliente
-      const clientSecret = (req.headers["mcp_m2m_secret"] as string) || "";
+      // Auth: extraer MCP_M2M_SECRET del header del cliente.
+      // Fallback: Authorization: Bearer <token> (soporta clientes como OpenHands SHTTP).
+      let clientSecret = (req.headers["mcp_m2m_secret"] as string) || "";
+      if (!clientSecret) {
+        const authHeader = (req.headers["authorization"] as string) || "";
+        const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+        if (bearerMatch) {
+          clientSecret = bearerMatch[1];
+        }
+      }
       if (!clientSecret) {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(

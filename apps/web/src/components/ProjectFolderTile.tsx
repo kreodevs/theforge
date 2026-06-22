@@ -1,7 +1,7 @@
 /**
  * @fileoverview Folder tile with layered pocket, document peek on hover, and compact metadata.
  */
-import { Check, GitBranch, Heart, Sparkles } from "lucide-react";
+import { Check, GitBranch, Heart, Pencil, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type ProjectFolderStatus = "ROJO" | "AMARILLO" | "VERDE";
@@ -19,6 +19,7 @@ export interface ProjectFolderTileProps {
   onOpen: () => void;
   onToggleSelect: () => void;
   onToggleFavorite?: (id: string) => void;
+  onRename?: (id: string) => void;
 }
 
 const statusDotClass: Record<ProjectFolderStatus, string> = {
@@ -107,6 +108,7 @@ export function ProjectFolderTile({
   onOpen,
   onToggleSelect,
   onToggleFavorite,
+  onRename,
 }: ProjectFolderTileProps) {
   const typeIsNew = (projectType ?? "NEW") === "NEW";
   const isShared = visibility === "SHARED";
@@ -177,6 +179,28 @@ export function ProjectFolderTile({
           />
         </div>
       )}
+
+      {onRename ? (
+        <div
+          className="absolute right-2 top-10 z-30"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => onRename(id)}
+            className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-lg border shadow-md backdrop-blur-md transition-colors",
+              "border-[color-mix(in_oklch,var(--foreground)_14%,var(--border))] bg-[color-mix(in_oklch,var(--card)_88%,var(--background))]",
+              "text-[var(--foreground-muted)] hover:border-[color-mix(in_oklch,var(--primary)_55%,var(--border))] hover:text-[var(--foreground)]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]",
+            )}
+            aria-label={`Renombrar ${name}`}
+          >
+            <Pencil className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
+      ) : null}
 
       <button
         type="button"

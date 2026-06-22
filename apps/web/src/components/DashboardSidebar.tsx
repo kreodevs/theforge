@@ -44,7 +44,7 @@ import { useTheme, type ThemePreference } from "@/theme/ThemeProvider";
 import { cn } from "@/lib/utils";
 import { getProjectMonogram } from "@/utils/projectMonogram";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "../store/workshopStore";
-import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
+import { WORKSHOP_EXIT_BLOCKED_TITLE, WORKSHOP_DOC_NAV_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { buildWorkshopDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
 
 /** Project row shown under the dashboard “Proyectos” menu group. */
@@ -377,6 +377,7 @@ export function DashboardSidebar({
   const apiContractsContent = useWorkshopStore((s) => s.apiContractsContent);
   const logicFlowsContent = useWorkshopStore((s) => s.logicFlowsContent);
   const tasksContent = useWorkshopStore((s) => s.tasksContent);
+  const agentGovernanceContent = useWorkshopStore((s) => s.agentGovernanceContent);
   const infraContent = useWorkshopStore((s) => s.infraContent);
   const adrs = useWorkshopStore((s) => s.adrs);
   const workshopAgentsBusy = useWorkshopStore(selectWorkshopAgentsBusy);
@@ -387,11 +388,8 @@ export function DashboardSidebar({
   }, [workshopStages, storeProject?.stages, activeStageId]);
 
   const activeLegacyStateForNav = useMemo(() => {
-    if (!storeProject) return null;
-    if (storeProject.projectType === "LEGACY" && activeWorkshopStageForNav?.legacyChangeState) {
-      return activeWorkshopStageForNav.legacyChangeState;
-    }
-    return storeProject.legacyFlowState ?? null;
+    if (!storeProject || storeProject.projectType !== "LEGACY") return null;
+    return activeWorkshopStageForNav?.legacyChangeState ?? null;
   }, [storeProject, activeWorkshopStageForNav?.legacyChangeState]);
 
   const isLegacyProject = storeProject?.projectType === "LEGACY";
@@ -426,6 +424,7 @@ export function DashboardSidebar({
       apiContractsContent,
       logicFlowsContent,
       tasksContent,
+      agentGovernanceContent,
       adrs,
       infraContent,
     });
@@ -449,6 +448,7 @@ export function DashboardSidebar({
     apiContractsContent,
     logicFlowsContent,
     tasksContent,
+    agentGovernanceContent,
     adrs,
     infraContent,
   ]);
@@ -805,9 +805,15 @@ export function DashboardSidebar({
                                   <button
                                     type="button"
                                     role="listitem"
-                                    title={`${item.title}${item.required ? " — paso obligatorio" : ""}${done ? " — con contenido" : ""}`}
                                     aria-current={isCurrent ? "page" : undefined}
+                                    disabled={workshopAgentsBusy}
+                                    title={
+                                      workshopAgentsBusy
+                                        ? WORKSHOP_DOC_NAV_BLOCKED_TITLE
+                                        : `${item.title}${item.required ? " — paso obligatorio" : ""}${done ? " — con contenido" : ""}`
+                                    }
                                     onClick={() => {
+                                      if (workshopAgentsBusy) return;
                                       closeMobileNav();
                                       onBeforeNavigateToWorkshopDoc?.();
                                       setWorkshopActiveDocPanel(item.id);

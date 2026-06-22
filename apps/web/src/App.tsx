@@ -9,11 +9,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "./store/workshopStore";
 import {
   AlertTriangle,
+  Copy,
   FolderGit2,
   FolderOpen,
   GitBranch,
+  GitMerge,
   Heart,
   Loader2,
+  Pencil,
   Plus,
   Sparkles,
   Trash2,
@@ -25,9 +28,13 @@ import SetupView from "./views/SetupView";
 import SettingsView from "./views/SettingsView";
 import UsersView from "./views/UsersView";
 import { CreateProjectWizardDialog } from "./components/CreateProjectWizardDialog";
+import { ProjectMergeDialog } from "./components/ProjectMergeDialog";
+import { RenameProjectDialog } from "./components/RenameProjectDialog";
+import { CloneProjectDialog } from "./components/CloneProjectDialog";
 import { ProjectFolderTile } from "./components/ProjectFolderTile";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { DashboardPanelHeader } from "./components/DashboardPanelHeader";
+import { ProjectTutorialDialog } from "./components/ProjectTutorialDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import {
   apiFetch,
@@ -64,6 +71,7 @@ type Status = "ROJO" | "AMARILLO" | "VERDE";
 interface Project {
   id: string;
   name: string;
+  userId?: string;
   status: Status;
   precisionScore: number;
   hasUxTeam: boolean;
@@ -118,7 +126,23 @@ export default function App() {
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<Project | null>(null);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameLoading, setRenameLoading] = useState(false);
+  const [cloneTarget, setCloneTarget] = useState<Project | null>(null);
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [cloneLoading, setCloneLoading] = useState(false);
+  const [mergeAuditHint, setMergeAuditHint] = useState<{
+    type: string;
+    threadId?: string;
+    question?: string;
+    n?: number;
+    total?: number;
+    message?: string;
+  } | null>(null);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
   const [usersViewOpen, setUsersViewOpen] = useState(false);
   const [settingsViewOpen, setSettingsViewOpen] = useState(false);
@@ -296,6 +320,42 @@ export default function App() {
     setSelectedProjectIds([]);
   }, []);
 
+  const openMergeDialog = useCallback(() => {
+    if (selectedProjectIds.length < 2) return;
+    setMergeDialogOpen(true);
+  }, [selectedProjectIds.length]);
+
+  const handleMergeCompleted = useCallback(
+    async (result: {
+      project?: Record<string, unknown>;
+      audit?: {
+        type: string;
+        threadId?: string;
+        question?: string;
+        n?: number;
+        total?: number;
+        message?: string;
+      } | null;
+    }) => {
+      setMergeDialogOpen(false);
+      setSelectedProjectIds([]);
+      setMergeAuditHint(result.audit ?? null);
+      await loadProjects();
+      const merged = result.project;
+      if (merged && typeof merged.id === "string") {
+        setWorkshopProject({
+          id: merged.id,
+          name: typeof merged.name === "string" ? merged.name : "Proyecto fusionado",
+          status: (merged.status as Status) ?? "ROJO",
+          precisionScore: typeof merged.precisionScore === "number" ? merged.precisionScore : 0,
+          hasUxTeam: Boolean(merged.hasUxTeam),
+          createdAt: typeof merged.createdAt === "string" ? merged.createdAt : new Date().toISOString(),
+        });
+      }
+    },
+    [loadProjects],
+  );
+
   const openBulkDeleteConfirm = useCallback(() => {
     const targets = displayedProjects.filter((p) => selectedProjectIds.includes(p.id));
     if (targets.length === 0) return;
@@ -333,6 +393,82 @@ export default function App() {
       setLoading(false);
     }
   }, [bulkDeleteTargets, loadProjects]);
+
+  const currentUserId = getStoredUser()?.id;
+
+  const canRenameProject = useCallback(
+    (project: Project) => !project.userId || project.userId === currentUserId,
+    [currentUserId],
+  );
+
+  const openRenameDialog = useCallback((project: Project) => {
+    if (!canRenameProject(project)) return;
+    setRenameTarget(project);
+    setRenameDialogOpen(true);
+  }, [canRenameProject]);
+
+  const submitRenameProject = useCallback(
+    async (projectId: string, name: string) => {
+      setRenameLoading(true);
+      try {
+        const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!r.ok) {
+          const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+          const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+          throw new Error(
+            r.status === 403
+              ? "Solo el propietario puede renombrar este proyecto"
+              : msg ?? "Error al renombrar",
+          );
+        }
+        const updated = (await r.json()) as Project;
+        const nextName = updated.name ?? name;
+        setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, name: nextName } : p)));
+        setWorkshopProject((prev) => (prev?.id === projectId ? { ...prev, name: nextName } : prev));
+        const store = useWorkshopStore.getState();
+        if (store.project?.id === projectId) {
+          store.setProject({ ...store.project, name: nextName });
+        }
+      } finally {
+        setRenameLoading(false);
+      }
+    },
+    [],
+  );
+
+  const openCloneDialog = useCallback((project: Project) => {
+    setCloneTarget(project);
+    setCloneDialogOpen(true);
+  }, []);
+
+  const submitCloneProject = useCallback(
+    async (projectId: string, name: string) => {
+      setCloneLoading(true);
+      try {
+        const r = await apiFetch(`${API_BASE}/projects/${projectId}/clone`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!r.ok) {
+          const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+          const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+          throw new Error(msg ?? "Error al clonar");
+        }
+        const created = (await r.json()) as Project;
+        setSelectedProjectIds([]);
+        await loadProjects();
+        setWorkshopProject(created);
+      } finally {
+        setCloneLoading(false);
+      }
+    },
+    [loadProjects],
+  );
 
   useEffect(() => {
     const allowed = new Set(displayedProjects.map((p) => p.id));
@@ -394,6 +530,7 @@ export default function App() {
     if (selectWorkshopAgentsBusy(store)) return;
     store.reset();
     store.setWorkshopActiveDocPanel("mdd");
+    setMergeAuditHint(null);
     setWorkshopProject(null);
     setUsersViewOpen(false);
     setSettingsViewOpen(false);
@@ -466,6 +603,36 @@ export default function App() {
         loading={loading}
         onCreateNew={createProject}
         onContinueLegacy={openTheForgeModal}
+      />
+
+      <ProjectTutorialDialog open={showTutorial} onClose={() => setShowTutorial(false)} />
+
+      <ProjectMergeDialog
+        open={mergeDialogOpen}
+        onOpenChange={setMergeDialogOpen}
+        sources={projectList
+          .filter((p) => selectedProjectIds.includes(p.id))
+          .map((p) => ({ id: p.id, name: p.name }))}
+        loading={loading}
+        onMerged={handleMergeCompleted}
+      />
+
+      <RenameProjectDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        projectId={renameTarget?.id ?? null}
+        currentName={renameTarget?.name ?? ""}
+        loading={renameLoading}
+        onSubmit={submitRenameProject}
+      />
+
+      <CloneProjectDialog
+        open={cloneDialogOpen}
+        onOpenChange={setCloneDialogOpen}
+        projectId={cloneTarget?.id ?? null}
+        sourceName={cloneTarget?.name ?? ""}
+        loading={cloneLoading}
+        onSubmit={submitCloneProject}
       />
 
       <AlertDialog
@@ -701,6 +868,12 @@ export default function App() {
                 projectName={workshopProject.name}
                 onBack={handleExitWorkshop}
                 onOpenSettings={openSettings}
+                onRenameProject={
+                  canRenameProject(workshopProject)
+                    ? () => openRenameDialog(workshopProject)
+                    : undefined
+                }
+                mergeAudit={mergeAuditHint}
               />
             )}
           </div>
@@ -747,6 +920,7 @@ export default function App() {
           loading={loading}
           onCreateProject={() => setShowCreateWizard(true)}
           onRefresh={() => void loadProjects()}
+          onOpenTutorial={() => setShowTutorial(true)}
         />
 
         <Card id="dashboard-projects">
@@ -869,9 +1043,10 @@ export default function App() {
     projectType={p.projectType}
     visibility={p.visibility}
     selected={selectedProjectIds.includes(p.id)}
-    selectable={isAdmin}
+    selectable
     isFavorite={p.isFavorite}
     onToggleFavorite={handleToggleFavorite}
+    onRename={canRenameProject(p) ? () => openRenameDialog(p) : undefined}
     onOpen={() => setWorkshopProject(p)}
     onToggleSelect={() => handleToggleProjectSelect(p.id)}
 />
@@ -882,7 +1057,7 @@ export default function App() {
           </CardContent>
         </Card>
 
-        {isAdmin && selectedProjectIds.length > 0 ? (
+        {selectedProjectIds.length > 0 ? (
           <div
             className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2"
             role="presentation"
@@ -901,17 +1076,64 @@ export default function App() {
                 <Button type="button" variant="outline" size="sm" onClick={handleClearProjectSelection} disabled={loading}>
                   Quitar selección
                 </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  onClick={openBulkDeleteConfirm}
-                  disabled={loading}
-                  className="touch-manipulation"
-                >
-                  <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
-                  Borrar
-                </Button>
+                {selectedProjectIds.length === 1 ? (() => {
+                  const single = projectList.find((p) => p.id === selectedProjectIds[0]);
+                  if (!single) return null;
+                  return (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openCloneDialog(single)}
+                        disabled={loading || cloneLoading}
+                        className="touch-manipulation"
+                      >
+                        <Copy className="h-4 w-4 shrink-0" aria-hidden />
+                        Clonar
+                      </Button>
+                      {canRenameProject(single) ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openRenameDialog(single)}
+                          disabled={loading || renameLoading}
+                          className="touch-manipulation"
+                        >
+                          <Pencil className="h-4 w-4 shrink-0" aria-hidden />
+                          Renombrar
+                        </Button>
+                      ) : null}
+                    </>
+                  );
+                })() : null}
+                {selectedProjectIds.length >= 2 ? (
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={openMergeDialog}
+                    disabled={loading}
+                    className="touch-manipulation"
+                  >
+                    <GitMerge className="h-4 w-4 shrink-0" aria-hidden />
+                    Fusionar
+                  </Button>
+                ) : null}
+                {isAdmin ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={openBulkDeleteConfirm}
+                    disabled={loading}
+                    className="touch-manipulation"
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                    Borrar
+                  </Button>
+                ) : null}
               </div>
             </div>
           </div>

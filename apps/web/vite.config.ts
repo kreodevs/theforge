@@ -5,43 +5,70 @@ import path from "path";
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
+    alias: [
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
       // Evita CJS re-exports con getters (Rollup no ve named exports estáticos en dist).
-      "@theforge/business-rules": path.resolve(__dirname, "../../packages/business-rules/src/index.ts"),
-      "@theforge/shared-types/session": path.resolve(
-        __dirname,
-        "../../packages/shared-types/src/session.ts",
-      ),
-      "@theforge/shared-types/markdown-repair": path.resolve(
-        __dirname,
-        "../../packages/shared-types/src/markdown-repair.ts",
-      ),
-      "@theforge/shared-types/mdd-pipeline-limits": path.resolve(
-        __dirname,
-        "../../packages/shared-types/src/mdd-pipeline-limits.ts",
-      ),
-      "@theforge/shared-types/markdown-table": path.resolve(
-        __dirname,
-        "../../packages/shared-types/src/markdown-table.ts",
-      ),
-      "@theforge/shared-types/mermaid": path.resolve(
-        __dirname,
-        "../../packages/shared-types/src/mermaid.ts",
-      ),
-      "@theforge/shared-types/format-document-markdown": path.resolve(
-        __dirname,
-        "../../packages/shared-types/src/format-document-markdown.ts",
-      ),
-      "@theforge/shared-types/dbga-document-structure": path.resolve(
-        __dirname,
-        "../../packages/shared-types/src/dbga-document-structure.ts",
-      ),
-      "@theforge/shared-types/mdd-governance-patterns": path.resolve(
-        __dirname,
-        "../../packages/shared-types/src/mdd-governance-patterns.ts",
-      ),
-    },
+      {
+        find: "@theforge/business-rules",
+        replacement: path.resolve(__dirname, "../../packages/business-rules/src/index.ts"),
+      },
+      {
+        find: "@theforge/shared-types/session",
+        replacement: path.resolve(__dirname, "../../packages/shared-types/src/session.ts"),
+      },
+      {
+        find: "@theforge/shared-types/markdown-repair",
+        replacement: path.resolve(__dirname, "../../packages/shared-types/src/markdown-repair.ts"),
+      },
+      {
+        find: "@theforge/shared-types/mdd-pipeline-limits",
+        replacement: path.resolve(
+          __dirname,
+          "../../packages/shared-types/src/mdd-pipeline-limits.ts",
+        ),
+      },
+      {
+        find: "@theforge/shared-types/markdown-table",
+        replacement: path.resolve(__dirname, "../../packages/shared-types/src/markdown-table.ts"),
+      },
+      {
+        find: "@theforge/shared-types/mermaid",
+        replacement: path.resolve(__dirname, "../../packages/shared-types/src/mermaid.ts"),
+      },
+      {
+        find: "@theforge/shared-types/format-document-markdown",
+        replacement: path.resolve(
+          __dirname,
+          "../../packages/shared-types/src/format-document-markdown.ts",
+        ),
+      },
+      {
+        find: "@theforge/shared-types/dbga-document-structure",
+        replacement: path.resolve(
+          __dirname,
+          "../../packages/shared-types/src/dbga-document-structure.ts",
+        ),
+      },
+      {
+        find: "@theforge/shared-types/mdd-governance-patterns",
+        replacement: path.resolve(
+          __dirname,
+          "../../packages/shared-types/src/mdd-governance-patterns.ts",
+        ),
+      },
+      {
+        find: "@theforge/shared-types/repair-directory-tree",
+        replacement: path.resolve(
+          __dirname,
+          "../../packages/shared-types/src/repair-directory-tree.ts",
+        ),
+      },
+      // Exact match only — object-style alias would prefix-match subpaths to index.ts/….
+      {
+        find: /^@theforge\/shared-types$/,
+        replacement: path.resolve(__dirname, "../../packages/shared-types/src/index.ts"),
+      },
+    ],
   },
   server: {
     port: 5173,

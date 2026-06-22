@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { AIFactory } from "../../ai/ai.factory.js";
 import { PrismaService } from "../../../prisma/prisma.service.js";
 import { createDbgaLLM } from "../llm/create-dbga-llm.js";
-import { PHASE0_ARRANQUE_PROMPT, PHASE0_UPDATE_PROMPT } from "../prompts/load-prompts.js";
+import { PHASE0_ARRANQUE_PROMPT, PHASE0_EXTRACT_DBGA_PROMPT, PHASE0_UPDATE_PROMPT } from "../prompts/load-prompts.js";
 import { analyzeGaps, buildQuestionPlan, filterResolvedGaps, isAskableGap } from "./phase0-gap-analyzer.js";
 import { parsePhase0LlmJson } from "./phase0-llm-json.util.js";
 import {
@@ -20,7 +20,20 @@ import {
   rehydrateInterviewState,
   serializePhase0GapsEnvelope,
 } from "./phase0-interview-persist.util.js";
+import {
+  emptyPhase0Document,
+  mergePhase0Borrador,
+  normalizePhase0Document,
+} from "./phase0-normalize.util.js";
+import { shouldReplacePhase0SummaryWithBorrador } from "@theforge/shared-types";
 import { phase0ToMarkdown } from "./phase0-to-markdown.js";
+import {
+  hasAuditDocument,
+  hasBorradorContent,
+  heuristicBorradorFromFreeformDbga,
+  isFreeformDbgaContent,
+  loadProjectBorrador,
+} from "./phase0-load-borrador.util.js";
 import type {
   Phase0Document,
   Phase0InterviewState,
@@ -42,26 +55,11 @@ const AUDIT_COMPLETE_MESSAGE =
 const AUDIT_DONE_MESSAGE =
   "Auditoría completada. El borrador de Paso 0 se actualizó con tus respuestas.";
 
-function emptyDocument(): Phase0Document {
-  return {
-    proposito: { problema: "", usuarios: [], outOfScope: [] },
-    entidades: [],
-    reglasNegocio: [],
-    flujos: [],
-    roles: [],
-    integraciones: [],
-    edgeCases: [],
-    preguntasPendientes: [],
-  };
-}
-
-function parseBorradorFromProject(raw: string | null | undefined): Phase0Document {
-  if (!raw?.trim()) return emptyDocument();
-  try {
-    return JSON.parse(raw) as Phase0Document;
-  } catch {
-    return emptyDocument();
-  }
+function parseBorradorFromProject(
+  dbgaContent: string | null | undefined,
+  phase0SummaryContent: string | null | undefined,
+): Phase0Document {
+  return loadProjectBorrador(dbgaContent, phase0SummaryContent);
 }
 
 @Injectable()
@@ -103,7 +101,7 @@ export class Phase0InterviewService {
         typeof response.content === "string" ? response.content : JSON.stringify(response.content);
       const parsed = parsePhase0LlmJson(content);
 
-      const borrador = (parsed.borrador as Phase0Document | undefined) ?? emptyDocument();
+      const borrador = normalizePhase0Document(parsed.borrador ?? emptyPhase0Document());
       const llmGaps = (parsed.gaps as Phase0Gap[] | undefined) ?? [];
 
       const logicGaps = analyzeGaps(borrador);
@@ -125,6 +123,7 @@ export class Phase0InterviewService {
         inputType,
         historial: [],
         mode: "interview",
+        sourceFormat: "structured",
       };
 
       this.rememberState(state);
@@ -179,7 +178,12 @@ export class Phase0InterviewService {
           typeof response.content === "string" ? response.content : JSON.stringify(response.content);
         const parsed = parsePhase0LlmJson(content);
 
-        state.borrador = (parsed.borrador as Phase0Document | undefined) ?? state.borrador;
+        if (parsed.borrador) {
+          state.borrador = mergePhase0Borrador(
+            state.borrador,
+            normalizePhase0Document(parsed.borrador),
+          );
+        }
 
         const logicGaps = analyzeGaps(state.borrador);
         const llmGaps = (parsed.gaps as Phase0Gap[] | undefined) ?? [];
@@ -237,19 +241,15 @@ export class Phase0InterviewService {
       return { markdown: project.dbgaContent.trim() };
     }
 
-    const borrador = parseBorradorFromProject(project.phase0SummaryContent);
-    const hasContent =
-      borrador.proposito.problema.trim().length > 0 ||
-      borrador.entidades.length > 0 ||
-      borrador.reglasNegocio.length > 0;
-    if (!hasContent) return { markdown: null };
+    const borrador = parseBorradorFromProject(project.dbgaContent, project.phase0SummaryContent);
+    if (!hasBorradorContent(borrador)) return { markdown: null };
 
     const markdown = await this.finalizePhase0FromBorrador(pid, borrador);
     return { markdown };
   }
 
   /**
-   * Auditoría manual del borrador guardado: si hay gaps, lanza preguntas; si no, confirma 100%.
+   * Auditoría manual del documento DBGA visible (dbgaContent).
    */
   async audit(projectId: string): Promise<Phase0StreamEvent> {
     const pid = projectId?.trim();
@@ -259,39 +259,45 @@ export class Phase0InterviewService {
 
     const project = await this.prisma.project.findUnique({
       where: { id: pid },
-      select: { phase0SummaryContent: true, phase0Gaps: true },
+      select: { phase0SummaryContent: true, phase0Gaps: true, dbgaContent: true },
     });
     if (!project) {
       return { type: "error", message: "Proyecto no encontrado" };
     }
 
-    const borrador = parseBorradorFromProject(project.phase0SummaryContent);
-    const hasContent =
-      borrador.proposito.problema.trim().length > 0 ||
-      borrador.entidades.length > 0 ||
-      borrador.reglasNegocio.length > 0;
+    const dbgaMarkdown = project.dbgaContent?.trim() ?? "";
 
-    if (!hasContent) {
+    if (!hasAuditDocument(project.dbgaContent, project.phase0SummaryContent)) {
       return {
         type: "error",
-        message: "No hay borrador de Paso 0. Completa la entrevista inicial antes de auditar.",
+        message:
+          "No hay documento de Fase 0 (DBGA) para auditar. Escribe o genera el análisis en la pestaña Fase 0.",
       };
+    }
+
+    const freeform = isFreeformDbgaContent(project.dbgaContent);
+    let borrador: Phase0Document;
+    let sourceFormat: Phase0InterviewState["sourceFormat"] = "structured";
+
+    if (freeform) {
+      sourceFormat = "freeform_dbga";
+      borrador = await this.extractBorradorFromDbgaMarkdown(pid, dbgaMarkdown);
+      if (!hasBorradorContent(borrador)) {
+        borrador = heuristicBorradorFromFreeformDbga(dbgaMarkdown);
+      }
+    } else {
+      borrador = parseBorradorFromProject(project.dbgaContent, project.phase0SummaryContent);
     }
 
     const gaps = analyzeGaps(borrador);
     const askable = gaps.filter(isAskableGap);
 
     if (askable.length === 0) {
-      const remainingOptional = gaps.filter((g) => g.criticidad === "opcional");
-      borrador.preguntasPendientes = remainingOptional.map((g) => g.descripcion);
-      const markdown = phase0ToMarkdown(borrador);
       await this.prisma.project.update({
         where: { id: pid },
         data: {
-          phase0SummaryContent: JSON.stringify(borrador, null, 2),
           phase0Gaps: JSON.stringify({ v: 1, gaps }),
           phase0Status: "done",
-          dbgaContent: markdown,
         },
       });
       return {
@@ -314,10 +320,11 @@ export class Phase0InterviewService {
       questionPlan,
       planCursor: 0,
       status: "interviewing",
-      inputRaw: "",
-      inputType: "idea",
+      inputRaw: dbgaMarkdown.slice(0, 2000),
+      inputType: "external_doc",
       historial: [],
       mode: "audit",
+      sourceFormat,
     };
 
     this.rememberState(state);
@@ -397,14 +404,14 @@ export class Phase0InterviewService {
 
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { phase0SummaryContent: true, phase0Gaps: true },
+      select: { phase0SummaryContent: true, phase0Gaps: true, dbgaContent: true },
     });
     if (!project) return null;
 
     const envelope = parsePhase0GapsEnvelope(project.phase0Gaps);
     if (!envelope?.interview) return null;
 
-    const borrador = parseBorradorFromProject(project.phase0SummaryContent);
+    const borrador = parseBorradorFromProject(project.dbgaContent, project.phase0SummaryContent);
     const rehydrated = rehydrateInterviewState(projectId, borrador, envelope, threadId);
     if (!rehydrated) return null;
 
@@ -423,33 +430,105 @@ export class Phase0InterviewService {
     state?: Phase0InterviewState,
   ): Promise<string> {
     const markdown = phase0ToMarkdown(borrador);
+    const syncDbga = this.shouldSyncDbgaMarkdown(state);
     try {
+      const existing = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { phase0SummaryContent: true },
+      });
+      const data: {
+        phase0SummaryContent?: string;
+        phase0Gaps?: string;
+        phase0Status: "done";
+        phase0Questions?: number;
+        dbgaContent?: string;
+      } = {
+        phase0Gaps: state ? serializePhase0GapsEnvelope(state) : undefined,
+        phase0Status: "done",
+        phase0Questions: state?.preguntasRealizadas,
+        ...(syncDbga ? { dbgaContent: markdown } : {}),
+      };
+      if (shouldReplacePhase0SummaryWithBorrador(existing?.phase0SummaryContent)) {
+        data.phase0SummaryContent = JSON.stringify(borrador, null, 2);
+      }
       await this.prisma.project.update({
         where: { id: projectId },
-        data: {
-          phase0SummaryContent: JSON.stringify(borrador, null, 2),
-          phase0Gaps: state ? serializePhase0GapsEnvelope(state) : undefined,
-          phase0Status: "done",
-          phase0Questions: state?.preguntasRealizadas,
-          dbgaContent: markdown,
-        },
+        data,
       });
     } catch (err) {
       this.logger.warn(`[Phase0] finalize persist failed for ${projectId}: ${err}`);
     }
-    return markdown;
+    return syncDbga ? markdown : "";
   }
 
-  private async persistInterviewState(state: Phase0InterviewState): Promise<void> {
+  private shouldSyncDbgaMarkdown(state?: Phase0InterviewState): boolean {
+    if (!state) return true;
+    if (state.sourceFormat === "freeform_dbga") return false;
+    return true;
+  }
+
+  private async extractBorradorFromDbgaMarkdown(
+    projectId: string,
+    markdown: string,
+  ): Promise<Phase0Document> {
+    const llm = await this.getUserLLM(projectId);
+    if (!llm) {
+      this.logger.warn(`[Phase0] extract DBGA: no LLM, using heuristic for ${projectId}`);
+      return heuristicBorradorFromFreeformDbga(markdown);
+    }
+
     try {
+      const response = await llm.invoke([
+        { role: "system", content: PHASE0_EXTRACT_DBGA_PROMPT },
+        { role: "user", content: markdown.slice(0, 24_000) },
+      ]);
+      const content =
+        typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+      const parsed = parsePhase0LlmJson(content);
+      const borrador = normalizePhase0Document(parsed.borrador ?? emptyPhase0Document());
+      if (hasBorradorContent(borrador)) return borrador;
+    } catch (err) {
+      this.logger.warn(`[Phase0] extract DBGA LLM failed for ${projectId}: ${err}`);
+    }
+
+    return heuristicBorradorFromFreeformDbga(markdown);
+  }
+
+  private async persistInterviewState(
+    state: Phase0InterviewState,
+    existingPhase0Summary?: string | null,
+  ): Promise<void> {
+    try {
+      let existing = existingPhase0Summary;
+      if (existing === undefined) {
+        const row = await this.prisma.project.findUnique({
+          where: { id: state.projectId },
+          select: { phase0SummaryContent: true },
+        });
+        existing = row?.phase0SummaryContent;
+      }
+
+      const summaryJson = JSON.stringify(state.borrador, null, 2);
+      const data: {
+        phase0SummaryContent?: string;
+        phase0Gaps: string;
+        phase0Status: Phase0InterviewState["status"];
+        phase0Questions: number;
+        dbgaContent?: string;
+      } = {
+        phase0Gaps: serializePhase0GapsEnvelope(state),
+        phase0Status: state.status,
+        phase0Questions: state.preguntasRealizadas,
+      };
+      if (shouldReplacePhase0SummaryWithBorrador(existing)) {
+        data.phase0SummaryContent = summaryJson;
+      }
+      if (this.shouldSyncDbgaMarkdown(state)) {
+        data.dbgaContent = phase0ToMarkdown(state.borrador);
+      }
       await this.prisma.project.update({
         where: { id: state.projectId },
-        data: {
-          phase0SummaryContent: JSON.stringify(state.borrador, null, 2),
-          phase0Gaps: serializePhase0GapsEnvelope(state),
-          phase0Status: state.status,
-          phase0Questions: state.preguntasRealizadas,
-        },
+        data,
       });
     } catch (err) {
       this.logger.warn(`[Phase0] persist failed for ${state.projectId}: ${err}`);

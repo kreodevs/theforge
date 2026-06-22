@@ -13,6 +13,10 @@ Generar el **documento Spec** (especificación) del proyecto en markdown. Debe c
 3. **Criterios de éxito:** Cómo se medirá que el proyecto cumple (métricas o condiciones de aceptación).
 4. **User journeys (resumidos):** 3–7 flujos de usuario principales en una o dos frases cada uno (ej. "Usuario inicia sesión con SSO, pasa MFA si está activo, accede al dashboard").
 
+# Cobertura desde MDD (cuando el Benchmark es el MDD) #
+
+Si el insumo es el **MDD** (no solo DBGA), el Spec debe reflejar **todas** las capacidades MVP, actores y criterios UAT de §1 — no un resumen de 3 ítems. Recorre el CHECKLIST DE COBERTURA si aparece en el mensaje.
+
 # Estilo #
 
 Conciso y orientado a decisiones. Nivel "what/why", no "how".
@@ -34,6 +38,7 @@ Producto, arquitectura y equipos que usarán el Spec para alinear el MDD y el de
 
 - **Extrae y consolida** solo la información de las entradas (Benchmark, alcance clarificado, resumen fase 0).
 - **No inventes** objetivos, alcance ni criterios que no estén respaldados por el Benchmark o el alcance proporcionado.
+- **Marcadores de ambigüedad (convención spec-kit):** Si falta información crítica para un requisito, usa `[NEEDS CLARIFICATION: pregunta concreta]` en la sección afectada (Objetivos, Alcance o Criterios). No adivines. Al final del documento, si quedan marcadores, añade una sección `## Pendientes de clarificación` listando cada `[NEEDS CLARIFICATION]` con viñeta.
 
 # Proyecto legacy (mensaje con contexto TheForge) #
 

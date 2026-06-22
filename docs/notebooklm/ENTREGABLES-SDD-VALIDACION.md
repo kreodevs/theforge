@@ -45,6 +45,7 @@ En SDD la jerarquía es: **Constitution → Spec → Plan → Tasks → Implemen
 | **Logic flows / User journeys**     | **Flujos de lógica** (logicFlowsContent)   | En SDD los flujos viven en Spec (user journeys) o Plan (data flows). Tener un documento dedicado es una implementación válida (extracción explícita). Correcto.                                                                              |
 | **Infraestructura**                 | **Infra** (infraContent)                   | En SDD la infra forma parte del Plan. Tener documento dedicado (Dockerfile, docker-compose, .env) es correcto; en SDD avanzado se trata como IaC. Correcto.                                                                                  |
 | **Design system / UX**              | **Guía UX/UI** (uxUiGuideContent)          | En SDD: design system y estándares de accesibilidad en Constitution o Spec; user journeys en Spec. Nuestra Guía UX/UI actúa como contrato de handoff y design system; se construye con entrevista (chat) y recibe MDD + Blueprint. Correcto. |
+| **Gobernanza de agentes IA**        | **Agent Governance** (agentGovernanceContent) | Artefactos ejecutables (`AGENTS.md`, `.cursor/rules`, `.cursor/skills`, workflows) derivados del MDD §1–§7; scaffold JSON + ZIP en Workshop (Fase A). No sustituye la Constitución; complementa SDD en la fase Implementation. Stack-agnóstico; IMJ solo si el MDD lo menciona. |
 
 **Conclusión SDD:** Los cinco documentos (Guía UX/UI, Blueprint, API, Flujos, Infra) están justificados. Blueprint = plan técnico; API = contratos (requeridos en SDD); Flujos = flujos de lógica/journeys; Infra = parte del plan; Guía UX/UI = design system/handoff. Todos se derivan de la Constitución (MDD) y, donde aplica, del Plan (Blueprint).
 
@@ -216,6 +217,7 @@ Orden sugerido: **Fase 1** (Spec + Tasks) → **Fase 2** (conformance) → **Fas
 | ----- | --------------------------------------------------------------------------------------------- | --------------- |
 | **1** | Spec explícito (`specContent`, pestaña Spec, generateSpec desde Benchmark + phase0)           | ✅ Implementado |
 | **1** | Tasks (`tasksContent`, pestaña Tasks, generateTasks desde MDD + Blueprint)                    | ✅ Implementado |
+| **A** | Agent Governance (`agentGovernanceContent`, `generateAgentGovernance` desde MDD + Blueprint + complejidad; cascada `agent_governance` en matriz LOW/MEDIUM/HIGH) | ✅ Backend Fase A |
 | **2** | ConformanceService (Blueprint/API/Infra vs MDD), GET `:id/conformance`, UI Conformance vs MDD | ✅ Implementado |
 | **3** | Verifier/reflection (verifyDeliverable LLM), POST `:id/verify-deliverable`                    | ✅ Implementado |
 | **4** | HITL: vista previa antes de persistir (preview: true, modal Confirmar/Descartar)              | ✅ Implementado |
@@ -238,4 +240,4 @@ Orden sugerido: **Fase 1** (Spec + Tasks) → **Fase 2** (conformance) → **Fas
 
 ---
 
-*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-05-22 (pnpm). Rutas relativas al monorepo `theforge`.*
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-06-10 (pnpm). Rutas relativas al monorepo `theforge`.*

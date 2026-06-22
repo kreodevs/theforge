@@ -71,11 +71,13 @@ export class ChangeLogService {
       userStoriesContent: "Historias de Usuario",
       logicFlowsContent: "Flujos de Lógica",
       tasksContent: "Tasks",
+      agentGovernanceContent: "Gobernanza Agentes IA",
       infraContent: "Infraestructura",
       phase0SummaryContent: "Resumen Fase 0",
       aemContent: "AEM",
       brdContent: "BRD",
-      codebaseDoc: "Documentación Codebase",
+      integrationHandoff: "Handoff integración",
+      handoffSnapshot: "Handoff importado",
     };
     return labels[field] ?? field;
   }

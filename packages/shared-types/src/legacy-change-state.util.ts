@@ -1,0 +1,54 @@
+import type { LegacyChangeGateInput } from "./legacy-change-gate.js";
+
+/** Legacy flow / change state persisted on Stage.legacyChangeState. */
+export type LegacyChangeState = NonNullable<LegacyChangeGateInput["legacyChangeState"]> & {
+  codebaseDoc?: string | null;
+  suggestedAnswers?: Record<string, string> | null;
+  answers?: Record<string, string> | null;
+  lastDeliverablesDebug?: Record<string, unknown> | null;
+  legacyIndexSddResolution?: {
+    choice?: string;
+    resolvedAt?: string;
+  } | null;
+  status?: string | null;
+  baselineStageId?: string | null;
+  transitionedAt?: string | null;
+  hasNavigationMap?: boolean | null;
+  routeCount?: number | null;
+};
+
+function readLegacyChangeStateFromUnknown(raw: unknown): LegacyChangeState | null {
+  if (raw == null || typeof raw !== "object") return null;
+  return raw as LegacyChangeState;
+}
+
+/**
+ * Reads legacy change state from a stage row. Returns empty object when missing.
+ */
+export function getLegacyChangeState(
+  stage: { legacyChangeState?: unknown } | null | undefined,
+): LegacyChangeState {
+  return readLegacyChangeStateFromUnknown(stage?.legacyChangeState) ?? {};
+}
+
+/**
+ * Gate helper: legacy change input from stage only (Project.legacyFlowState removed).
+ */
+export function getLegacyChangeGateInput(
+  stage: {
+    ordinal?: number;
+    legacyChangeState?: unknown;
+    handoffImportedAt?: Date | string | null;
+    handoffSnapshot?: unknown;
+  } | null | undefined,
+): LegacyChangeGateInput {
+  return {
+    ordinal: stage?.ordinal ?? 1,
+    legacyChangeState: readLegacyChangeStateFromUnknown(stage?.legacyChangeState),
+    handoffImportedAt: stage?.handoffImportedAt ?? null,
+    handoffSnapshot:
+      stage?.handoffSnapshot != null && typeof stage.handoffSnapshot === "object"
+        ? (stage.handoffSnapshot as LegacyChangeGateInput["handoffSnapshot"])
+        : null,
+  };
+}

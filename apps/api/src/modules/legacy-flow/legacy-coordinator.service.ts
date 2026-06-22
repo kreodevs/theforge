@@ -9,50 +9,79 @@ import {
 import { ComplexityLevel, type Project as DbProject } from "@theforge/database";
 import {
   DELIVERABLES_BY_COMPLEXITY,
+  DELIVERABLE_STEP_LABELS,
+  getLegacyChangeState,
+  planLegacyDeliverablesToGenerate,
   type DeliverableKind,
   type GenerateCodebaseDocRequest,
 } from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
-import type { AskCodebaseOptions, TheForgeFileToModify } from "../theforge/theforge.service.js";
+import { ProjectIntegrationService } from "../projects/integration/project-integration.service.js";
+import { buildHandoffPromptBlockForLegacyChange } from "../projects/integration/integration-context.util.js";
+import type { TheForgeFileToModify } from "../theforge/theforge.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import {
-  mergeAriadneCodebaseScope,
-  resolveAriadneCodebaseMcpTarget,
-} from "../theforge/ariadne-mcp-scope.util.js";
-import {
   DEFAULT_SEMANTIC_QUERIES,
-  askCodebaseOptionsForCodebaseDoc,
-  askCodebaseOptionsForCodebaseDocClassicSegments,
   gatherLegacyIndexSignals,
-  getLegacyCodebaseDocSynthesisInputMaxChars,
   getLegacyAskCodebaseOptions,
   getLegacySemanticSearchLimit,
-  isDeterministicRawEvidenceClassicAsk,
-  isLegacyCodebaseDocIndexSynthesisEnabled,
   isLegacyEvidenceFirstEnabled,
   clipLegacySemanticSection,
-  clipLegacySemanticSectionForCodebaseDoc,
   legacyAnalyzerIndicatesEmptyIndex,
   legacyIndexHasUsableGraphEvidence,
   type LegacyIndexSignalsGathered,
 } from "../theforge/theforge-evidence-context.util.js";
 import { inferLegacyGraphNodeNameFromFunctionsFileText } from "./legacy-graph-node-name.util.js";
+import {
+  appendComponentDiagramToCodebaseDoc,
+  injectComponentDiagramIntoMddSection2,
+  isLegacyComponentDiagramEnabled,
+} from "./legacy-component-diagram.util.js";
+import {
+  injectAsIsCodebaseEvidenceIntoMdd,
+  isLegacyAsIsMddEvidenceInjectEnabled,
+} from "./legacy-as-is-mdd-inject.util.js";
 import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
 import { runLegacyStagedDiscoveryMddAgent } from "./legacy-staged-discovery-agent.js";
 import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.service.js";
 import { evaluateLegacyIndexSddGate } from "./legacy-index-sdd-alignment.util.js";
-import { pickPrimaryStage } from "../projects/stage-helpers.js";
+import { isLegacyBaselineStage, pickPrimaryStage } from "../projects/stage-helpers.js";
+import {
+  appendLegacyBaselineBrdDetailPrompt,
+  appendLegacyBaselineDetailPrompt,
+} from "../ai/utils/legacy-baseline-detail.util.js";
+import { resolveLegacyBaselineStageFlag } from "../ai/utils/legacy-as-is-spec.util.js";
+import {
+  extractSection5Services,
+  readLogicFlowsBatchSize,
+  scoreLogicFlowsSection5Coverage,
+  toLogicFlowsSection5CoverageReport,
+  type LogicFlowsSection5CoverageReport,
+} from "../ai/utils/legacy-as-is-logic-flows.util.js";
 import { AiService } from "../ai/ai.service.js";
 import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import {
+  documentPersistFieldLabel,
+  validateDocumentForPersist,
+} from "../sessions/document-shrink.util.js";
+import {
+  parseAgentGovernanceResponse,
+  serializeAgentGovernanceScaffold,
+} from "../ai/utils/agent-governance.util.js";
+import { suggestAgentGovernanceArtifacts } from "../ai/utils/suggest-agent-governance-artifacts.js";
+import {
   brdGenerationErrorMessage,
   extractBrdFromLlmResponse,
   type BrdExtractFailure,
 } from "../ai/utils/brd-extract.util.js";
-import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.util.js";
+import {
+  BRD_BUSINESS_INVENTORY_SYSTEM,
+  buildLegacyBrdBusinessInventoryPrompt,
+  prepareLegacyCodebaseDocForBrdPrompt,
+} from "../ai/utils/brd-legacy-source.util.js";
 import {
   BRD_GENERATION_SYSTEM,
   buildBrdUserPrompt,
@@ -66,8 +95,13 @@ import {
   type McpUiDebugEntry,
 } from "../theforge/mcp-ui-debug.context.js";
 import { normalizeRawEvidenceJsonBlocksInMarkdown } from "../theforge/theforge-raw-evidence-markdown.js";
+import {
+  normalizeLegacyMddV1JsonBlocksInMarkdown,
+  compactCodebaseDocForMddPrompt,
+} from "../theforge/legacy-mdd-v1-markdown.util.js";
 import { trySectionMergeDeliverable } from "./legacy-section-merge-deliverables.runner.js";
 import type { LegacySectionMergeTrace } from "./legacy-section-merge.types.js";
+import { mergeLegacyTasksGenerateOptions } from "./legacy-generate-options.util.js";
 import { LegacyDeliverablesStrategyService } from "./legacy-deliverables-strategy/legacy-deliverables-strategy.service.js";
 import type {
   LegacyDeliverablesStrategyContext,
@@ -76,65 +110,30 @@ import type {
 import {
   composeBrdPreamble,
 } from "../ai-analysis/utils/brd-tobe-gate.util.js";
+import { assertLegacyChangeGate } from "./legacy-change-gate.util.js";
+import { persistStageDeliverableSnapshotFromProject } from "../projects/stage-deliverable-snapshot.util.js";
+import { persistStageAndProjectDeliverables } from "../projects/stage-deliverable-persist.util.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
 
-/** Modo clásico `generate-codebase-doc`: síntesis única si las 4 rondas `ask_codebase` vienen vacías (p. ej. timeout por serie secuencial). */
-const CODEBASE_DOC_FALLBACK_SYNTHESIS_PROMPT =
-  "Documenta el repositorio indexado en Ariadne (ámbito actual). Responde en **español** en markdown con subapartados claros: " +
-  "**Propósito** del repo en el producto; **stack y tooling** (solo lo que inferas del índice: React, Vite, npm, etc.); " +
-  "**Estructura de carpetas**; **pantallas o rutas principales**; **datos y API** — si en este repo no hay modelos/Prisma y el backend está en otro servicio, dilo explícitamente. " +
-  "No inventes archivos ni endpoints. Mínimo unas 400 palabras. Si algo no consta en el índice, dilo.";
-
-/** Una sola llamada `ask_codebase` con `responseMode: evidence_first` (modo Workshop `ingest_mdd`). */
-const CODEBASE_DOC_INGEST_MDD_QUESTION =
-  "Documentación de partida (MDD) del código indexado en el ámbito actual: propósito del repo, " +
-  "superficie API y rutas, modelo de datos y persistencia, lógica de negocio deducible del grafo, infraestructura relevante, " +
-  "riesgos y lagunas del índice, y rutas de evidencia. Respeta **solo** el alcance de `scope.repoIds` de esta petición (multi-root: no mezcles archivos de otros roots del mismo workspace Ariadne). " +
-  "`evidence_paths` debe contener únicamente rutas verificadas en ese alcance; si una ruta no pertenece al árbol fuente acotado, no la incluyas. " +
-  "No inventes artefactos que no aparezcan en el índice; si algo no consta, dilo explícitamente por sección. " +
-  "Cumple el contrato MDD `evidence_first` del orchestrator/ingest.";
-
-const CODEBASE_DOC_CLASSIC_Q = {
-  q1:
-    "List exhaustively: all data models, entities, tables and their fields; all API routes and services; main UI components and screens; configuration and env. This is for documentation generation — be thorough.",
-  q2:
-    "Describe architecture: folder structure, modules, how backend and frontend connect, existing patterns and conventions. Include file paths for key areas.",
-  q3:
-    "What is the EXACT tech stack and directory structure of this project? List only what exists in the codebase: backend runtime and framework (e.g. Node/Express, Node/NestJS, Python/Django), frontend framework (e.g. React, Vue), database, build tools. If the project has multiple repositories, list them and their main folders. Do NOT assume or invent; only state what the codebase contains.",
-  q4:
-    "What are the main business rules, validations, naming conventions, and key patterns used across the codebase? Include any domain-specific logic, constants, or shared utilities.",
-} as const;
-
-/** Segunda pasada (prosa) cuando el clásico usó evidencia determinista: convierte bundle + semántica en MDD legible. */
-const CODEBASE_DOC_MDD_FROM_INDEX_PROMPT =
-  "Eres redactor técnico SDD. Recibes **EVIDENCIA** del índice Ariadne (markdown: bundle `raw_evidence` determinista y, si consta, extractos de `semantic_search`). " +
-  "Redacta un **documento de partida tipo MDD** en **español**, en **markdown claro**, con **exactamente** estos encabezados `##` en este orden. " +
-  "Si un apartado no tiene soporte en la evidencia, escribe *No consta en el índice para este repo/alcance.*\n\n" +
-  "## Resumen ejecutivo\n" +
-  "## Modelos de datos y persistencia\n" +
-  "## Rutas, API y servicios\n" +
-  "## Arquitectura y estructura de carpetas\n" +
-  "## Stack y herramientas observables\n" +
-  "## Reglas de negocio, convenciones y patrones\n" +
-  "## Riesgos y lagunas del índice\n\n" +
-  "Normas: no inventes archivos ni APIs que no aparezcan en la evidencia; cita rutas con backticks. " +
-  "No repitas tablas JSON ni bloques `cypher` ni el texto de ayuda sobre `evidence_first`: sintetiza en prosa y viñetas. " +
-  "Máximo ~1400 palabras en total.\n\n" +
-  "--- EVIDENCIA ---\n\n";
-
-/** Prefacio cuando solo se pudo rellenar la §5 (grafo); las síntesis ask_codebase quedaron vacías. */
-const CODEBASE_DOC_SEMANTIC_ONLY_PREFACE =
-  "> **Por qué ves solo el índice semántico (§5):** en esta ejecución **`ask_codebase` no devolvió texto** para las secciones 1–4 ni para la síntesis de respaldo (suele ser **timeout** del `fetch` hacia el MCP: por defecto `ask_codebase` usa **15 min** vía `THEFORGE_MCP_ASK_CODEBASE_TIMEOUT_MS` / fallback en código; el resto de herramientas sigue en `THEFORGE_MCP_TIMEOUT_MS` ~60s. Si aún corta, sube `THEFORGE_MCP_ASK_CODEBASE_TIMEOUT_MS` y alinea con `MCP_ASK_CODEBASE_TIMEOUT_MS` en el servidor MCP Ariadne / ingest. El modo clásico usa **4× `ask_codebase` secuenciales** por defecto (`LEGACY_CODEBASE_DOC_PARALLEL_ASK=0`); si reactivas paralelo (`=1`), aumenta timeouts. Lo que sigue **no es un resumen deliberado**: es la salida combinada de **`semantic_search`** por cada repo multi-root, con límite por query (`LEGACY_SEMANTIC_SEARCH_LIMIT`) y recorte global (`LEGACY_CODEBASE_DOC_SEMANTIC_MAX_CHARS`). En descubrimiento escalonado, `LEGACY_STAGED_DISCOVERY_SEMANTIC_FLOOR` evita `limit` demasiado bajo en herramientas. Activa `LEGACY_CODEBASE_DOC_MCP_DEBUG_UI` para ver las llamadas MCP o vuelve a generar cuando el orchestrator responda.";
-
 /** Respuesta de `generate-codebase-doc` cuando el API tiene trazas MCP (debug UI). */
-export type GenerateCodebaseDocResponse = { codebaseDoc: string; mcpDebugTrace?: McpUiDebugEntry[] };
+export type GenerateCodebaseDocResponse = {
+  codebaseDoc: string;
+  mddContent?: string;
+  mcpDebugTrace?: McpUiDebugEntry[];
+};
+
+function isLegacyAutoGenerateMddAfterCodebaseDocEnabled(): boolean {
+  const v = process.env.LEGACY_AUTO_GENERATE_MDD_AFTER_CODEBASE_DOC?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
 
 export type LegacyIndexSddResolutionChoice = "trust_index" | "trust_sdd" | "proceed_with_warnings";
 
 /** Paso de la cascada legacy de entregables (telemetría / depuración). */
 export type LegacyDeliverablesDebugStepKind =
   | "preflight"
+  | "preflight_plan"
   | "index_sdd_gate"
   | "theforge_context"
   | DeliverableKind;
@@ -186,6 +185,48 @@ export interface LegacyDeliverablesDebugReport {
   sectionMergeTraces?: LegacySectionMergeTrace[];
   /** Una entrada por intento de entregable: política env, envelope y estimación de tokens (motor de estrategia). */
   strategyDecisions?: LegacyDeliverablesStrategyResolution[];
+  /** Pipeline bulk alineado con regen individual del Workshop. */
+  pipelineMode?: LegacyDeliverablesPipelineMode;
+  /** Etapa 1 AS-IS: entregables con MDD completo (sin section merge ni truncado). */
+  legacyBaselineStage?: boolean;
+  /** Cobertura heurística servicios §5 vs flujos generados (etapa 1). */
+  logicFlowsSection5Coverage?: LogicFlowsSection5CoverageReport;
+}
+
+/** Modo de generación en cascada bulk — paridad con endpoints individuales. */
+export type LegacyDeliverablesPipelineMode =
+  | "projects_generate_document"
+  | "generate_from_codebase"
+  | "legacy_run_step_fallback";
+
+/** Entregable → tipo `POST …/legacy/generate-from-codebase` (kebab-case). */
+const DELIVERABLE_KIND_TO_CODEBASE_DOC_TYPE: Partial<Record<DeliverableKind, string>> = {
+  spec: "spec",
+  architecture: "architecture",
+  use_cases: "use-cases",
+  user_stories: "user-stories",
+  blueprint: "blueprint",
+  api_contracts: "api-contracts",
+  logic_flows: "logic-flows",
+  tasks: "tasks",
+  infra: "infra",
+};
+
+
+function buildReverseEngineeringMddForLegacySteps(
+  codebaseDoc: string,
+  report: LegacyDeliverablesDebugReport,
+): string {
+  const compact = compactCodebaseDocForMddPrompt(codebaseDoc);
+  const wrapped =
+    "[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n" +
+    compact;
+  report.mddRollupWindows = 0;
+  report.mddRollupFailed = false;
+  report.mddLlmStrategy = "full";
+  report.mddCharsSentToLlm = wrapped.length;
+  report.mddClippedForLlm = false;
+  return wrapped;
 }
 
 export interface LegacyFlowState {
@@ -215,9 +256,8 @@ const COORDINATOR_SYSTEM =
   KNOWLEDGE +
   "\n---";
 
-function mddTheforgeContextMaxChars(): number {
-  const n = parseInt(process.env.LEGACY_MDD_THEFORGE_CONTEXT_MAX_CHARS ?? "64000", 10);
-  return Number.isFinite(n) && n > 0 ? n : 64000;
+function mddTheforgeContextBlock(theforgeContext: string): string {
+  return theforgeContext.trim();
 }
 
 function envFlag(name: string, defaultTrue: boolean): boolean {
@@ -231,12 +271,6 @@ function isLegacySddIndexGateEnabled(): boolean {
   return envFlag("LEGACY_SDD_INDEX_GATE", true);
 }
 
-/** Modo clásico doc. partida: 4× `ask_codebase` en paralelo (más riesgo de timeout en MCP). Default: secuencial. */
-function isCodebaseDocClassicParallelAsk(): boolean {
-  const v = process.env.LEGACY_CODEBASE_DOC_PARALLEL_ASK?.trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
-}
-
 /** Logs Nest por paso en cascada entregables legacy. Activar: `LEGACY_DELIVERABLES_DEBUG=1`. */
 function isLegacyDeliverablesDebugVerbose(): boolean {
   const v = process.env.LEGACY_DELIVERABLES_DEBUG?.trim().toLowerCase();
@@ -245,18 +279,6 @@ function isLegacyDeliverablesDebugVerbose(): boolean {
 
 function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Pausa entre cada paso LLM de la cascada (mitiga TPM/RPM en Gemini/Moonshot).
- * Default 5000 ms. `0` o vacío desactiva (solo tras al menos un paso LLM previo).
- */
-function legacyDeliverablesInterStepDelayMs(): number {
-  const raw = process.env.LEGACY_DELIVERABLES_INTER_STEP_DELAY_MS?.trim();
-  if (raw === undefined || raw === "") return 15000;
-  const n = parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 0) return 0;
-  return Math.min(n, 180_000);
 }
 
 /**
@@ -277,97 +299,6 @@ function legacyDeliverablesLargeMddCooldownMs(mddChars: number): number {
       : Math.max(0, parseInt(coolRaw, 10) || 0);
   return Math.min(cool, 180_000);
 }
-
-/**
- * Tope de caracteres del MDD inyectado en cada paso LLM de entregables legacy (además de system + TheForge).
- * Default 80000: doc. partida enorme ya no manda ~200k en una sola petición (principal causa de 429 Gemini).
- */
-function legacyDeliverablesMddMaxCharsForLlm(): number {
-  const raw = process.env.LEGACY_DELIVERABLES_MDD_MAX_CHARS?.trim();
-  if (raw === undefined || raw === "") return 120_000;
-  const n = parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 12_000) return 12_000;
-  return Math.min(n, 500_000);
-}
-
-function clipMddForLegacyDeliverablesLlm(mdd: string, report: LegacyDeliverablesDebugReport): string {
-  const max = legacyDeliverablesMddMaxCharsForLlm();
-  if (mdd.length <= max) {
-    report.mddCharsSentToLlm = mdd.length;
-    report.mddClippedForLlm = false;
-    report.mddLlmStrategy = report.mddLlmStrategy ?? "full";
-    return mdd;
-  }
-  report.mddLlmStrategy = "truncate";
-  report.mddClippedForLlm = true;
-  const footer =
-    "\n\n---\n\n> **Nota (The Forge — entregables legacy):** El documento superó `LEGACY_DELIVERABLES_MDD_MAX_CHARS` (" +
-    String(max) +
-    " caracteres). **Solo se envió el inicio** al modelo; el final fue omitido. Prioriza coherencia con lo visible; no inventes secciones omitidas.\n";
-  const budget = Math.max(0, max - footer.length);
-  const clipped = mdd.slice(0, budget) + footer;
-  report.mddCharsSentToLlm = clipped.length;
-  return clipped;
-}
-
-function isLegacyDeliverablesMddRollupEnabled(): boolean {
-  const v = process.env.LEGACY_DELIVERABLES_MDD_ROLLUP?.trim().toLowerCase();
-  if (v === "0" || v === "false" || v === "off" || v === "no") return false;
-  return true;
-}
-
-function legacyDeliverablesRollupChunkChars(): number {
-  const n = parseInt(process.env.LEGACY_DELIVERABLES_ROLLUP_CHUNK_CHARS ?? "40000", 10);
-  return Number.isFinite(n) && n >= 8000 ? Math.min(n, 120_000) : 40_000;
-}
-
-function legacyDeliverablesRollupMaxChunks(): number {
-  const n = parseInt(process.env.LEGACY_DELIVERABLES_ROLLUP_MAX_CHUNKS ?? "32", 10);
-  return Number.isFinite(n) && n >= 1 ? Math.min(n, 64) : 32;
-}
-
-/** Trocea el MDD en ventanas (~chunkSize) cortando preferentemente en `\n## `. */
-function splitMddForRollupChunks(mdd: string, chunkSize: number, maxChunks: number): string[] {
-  if (mdd.length <= chunkSize) return [mdd];
-  const chunks: string[] = [];
-  let pos = 0;
-  while (pos < mdd.length && chunks.length < maxChunks) {
-    const hardEnd = Math.min(pos + chunkSize, mdd.length);
-    if (hardEnd >= mdd.length) {
-      const tail = mdd.slice(pos).trim();
-      if (tail) chunks.push(tail);
-      pos = mdd.length;
-      break;
-    }
-    const window = mdd.slice(pos, hardEnd);
-    const breakAt = window.lastIndexOf("\n## ");
-    const cut = breakAt >= Math.floor(chunkSize * 0.35) ? pos + breakAt : hardEnd;
-    const piece = mdd.slice(pos, cut).trim();
-    if (piece) chunks.push(piece);
-    pos = cut;
-    while (pos < mdd.length && (mdd[pos] === "\n" || mdd[pos] === "\r")) pos++;
-    if (piece.length === 0 && pos < mdd.length && pos < hardEnd) pos = hardEnd;
-  }
-  if (pos < mdd.length && chunks.length > 0) {
-    chunks[chunks.length - 1] =
-      (chunks[chunks.length - 1] ?? "") +
-      "\n\n> **[The Forge]** Parte del MDD no entró en más ventanas (límite `LEGACY_DELIVERABLES_ROLLUP_MAX_CHUNKS`=" +
-      String(maxChunks) +
-      "). Continúa aproximadamente desde el carácter " +
-      String(pos) +
-      " del MDD original.\n";
-  }
-  return chunks;
-}
-
-const LEGACY_MDD_ROLLUP_EXTRACTOR_SYSTEM =
-  "Eres analista SDD. Recibes UN fragmento del MDD (Markdown) de un proyecto.\n" +
-  "Extrae SOLO hechos presentes en el texto (no inventes nada que no aparezca o no se deduzca con certeza razonable): " +
-  "modelo de datos, entidades, campos; rutas/API/endpoints; reglas de negocio y validaciones; " +
-  "flujos y casos límite; seguridad; infra y despliegue; stack y convenciones si constan.\n" +
-  "Salida en **español**, markdown compacto con viñetas y `###` breves.\n" +
-  "Si el fragmento casi no aporta hechos técnicos, responde exactamente en una línea: `Sin hechos técnicos densos en este fragmento.`\n" +
-  "Límite aproximado: **4000 palabras** (~24k caracteres) — prioriza hechos concretos dentro del límite.";
 
 function isLegacy429Like(err: unknown): boolean {
   if (typeof err !== "object" || err === null) return false;
@@ -427,6 +358,7 @@ const DELIVERABLE_PROJECT_FIELD: Partial<Record<DeliverableKind, keyof DbProject
   logic_flows: "logicFlowsContent",
   ux_ui_guide: "uxUiGuideContent",
   user_stories: "userStoriesContent",
+  agent_governance: "agentGovernanceContent",
   tasks: "tasksContent",
   infra: "infraContent",
 };
@@ -501,6 +433,17 @@ function normalizeFilesToModify(raw: LegacyFlowState["filesToModify"], defaultRe
   );
 }
 
+/** Respuesta de `POST …/legacy/generate-mdd` (ligera por defecto; evita multi‑MB en el wire). */
+export type LegacyGenerateMddResponse = {
+  ok: true;
+  persisted: true;
+  mddLength: number;
+  wordCount: number;
+  stageId?: string;
+  /** Solo si `?includeContent=true` (MCP/debug). */
+  mddContent?: string;
+};
+
 /**
  * Coordinador del flujo legacy: orquesta TheForge (archivos + preguntas), respuestas del usuario,
  * generación del MDD de cambio y cascada de entregables (SPEC → Arquitectura → … → Tasks).
@@ -519,6 +462,7 @@ export class LegacyCoordinatorService {
     private readonly graphMemory: GraphMemoryService,
     private readonly agentSupervisor: AgentSupervisorService,
     private readonly legacyDeliverablesStrategy: LegacyDeliverablesStrategyService,
+    private readonly projectIntegration: ProjectIntegrationService,
   ) {}
 
   /**
@@ -556,31 +500,19 @@ export class LegacyCoordinatorService {
   }
 
   /**
-   * Lee el estado de cambio legacy: prioriza stage.legacyChangeState (nuevo),
-   * con fallback a project.legacyFlowState (legacy) para compatibilidad.
+   * Lee el estado de cambio legacy desde `Stage.legacyChangeState`.
    */
-  private getLegacyChangeState(stage: { legacyChangeState?: unknown } | null, project: { legacyFlowState?: unknown }): LegacyFlowState {
-    if (stage?.legacyChangeState && typeof stage.legacyChangeState === "object") {
-      return stage.legacyChangeState as LegacyFlowState;
-    }
-    return ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+  private readLegacyChangeState(stage: { legacyChangeState?: unknown } | null): LegacyFlowState {
+    return getLegacyChangeState(stage) as LegacyFlowState;
   }
 
-  /**
-   * Persiste el estado de cambio legacy en stage.legacyChangeState Y project.legacyFlowState
-   * (dual-write durante migración; luego se eliminará project.legacyFlowState).
-   */
+  /** Persists legacy change state on the active stage (single write). */
   async persistLegacyChangeState(projectId: string, stageId: string, state: LegacyFlowState): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.stage.update({
-        where: { id: stageId },
-        data: { legacyChangeState: state as object },
-      }),
-      this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: state as object },
-      }),
-    ]);
+    void projectId;
+    await this.prisma.stage.update({
+      where: { id: stageId },
+      data: { legacyChangeState: state as object },
+    });
   }
 
   // enforceLegacyBrdTobeGate eliminado — To-Be y As-Is removidos del sistema
@@ -589,6 +521,19 @@ export class LegacyCoordinatorService {
    * Sincroniza la etapa legacy actual al grafo FalkorDB (nodo :LegacyStage).
    * No crítico — fallos se loguean como warning y no interrumpen el flujo.
    */
+  /**
+   * Navigation map from Ariadne MCP (same cap as `ProjectsService.fetchNavigationMap`).
+   */
+  private async fetchNavigationMapForTasks(theforgeId: string): Promise<string | undefined> {
+    try {
+      const content = await this.theforge.fetchNavigationMap(theforgeId);
+      if (!content || content.length < 200) return undefined;
+      return content;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async syncCurrentLegacyStageToGraph(projectId: string, stageId: string): Promise<void> {
     try {
       const [stage, project] = await Promise.all([
@@ -637,11 +582,11 @@ export class LegacyCoordinatorService {
     brdContent: string;
     stageId: string;
   }> {
-    const { project } = await this.getLegacyProject(projectId);
+    await this.getLegacyProject(projectId);
     const gateStageResolved = stageIdHint?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageIdHint.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const state = this.getLegacyChangeState(gateStageResolved, project);
+    const state = this.readLegacyChangeState(gateStageResolved);
     const codebaseDoc = String(state.codebaseDoc ?? "").trim();
     if (codebaseDoc.length < 300) {
       throw new BadRequestException(
@@ -670,22 +615,52 @@ export class LegacyCoordinatorService {
         if (baseline?.brdContent?.trim()) {
           baselineBrdBlock =
             "## Línea base — BRD de la etapa anterior (sistema sin el cambio actual)\n\n" +
-            baseline.brdContent.trim().slice(0, 15000) +
+            baseline.brdContent.trim() +
             "\n\n---\n\n**Instrucción:** El BRD debe centrarse SOLO en el cambio respecto a esta línea base. " +
             "No redescribas el sistema completo.\n\n---\n\n";
         }
       } catch { /* non-critical */ }
     }
-    const isInitialLegacyStage = !baselineBrdBlock;
-    const { text: codebaseChunk, truncated: sourceTruncated } =
-      truncateSourceDocForBrdPrompt(codebaseDoc);
-
-    const brdPromptBase = buildBrdUserPrompt({
-      mode: isInitialLegacyStage ? "legacy-as-is" : "legacy-change",
-      sourceLabel: "DOCUMENTO",
-      sourceDocument: codebaseChunk,
-      baselineBrdBlock: baselineBrdBlock || undefined,
+    const isInitialLegacyStage = isLegacyBaselineStage(stage);
+    const sourcePrep = prepareLegacyCodebaseDocForBrdPrompt(codebaseDoc, {
+      legacyBaselineStage: isInitialLegacyStage,
     });
+    let brdSourceDocument = sourcePrep.text;
+    let sourceTruncated = sourcePrep.truncated;
+
+    if (isInitialLegacyStage && sourcePrep.needsInventoryPass) {
+      console.log(
+        `[suggestBrdFromCodebaseDoc] inventario previo (truncated=${sourcePrep.truncated} entities=${sourcePrep.entityCount} services=${sourcePrep.serviceCount} len=${sourcePrep.text.length} baseline=${isInitialLegacyStage})`,
+      );
+      const inventoryRaw = await this.ai.generateResponse(
+        buildLegacyBrdBusinessInventoryPrompt(sourcePrep.text, isInitialLegacyStage),
+        [],
+        {
+          systemPrompt: appendLegacyBaselineBrdDetailPrompt(
+            BRD_BUSINESS_INVENTORY_SYSTEM,
+            isInitialLegacyStage,
+          ),
+        },
+      );
+      const inventory = cleanDocumentContent(inventoryRaw ?? "").trim();
+      if (inventory.length >= 400) {
+        brdSourceDocument =
+          "## Inventario de negocio (extracción previa — cubrir TODO en el BRD)\n\n" +
+          inventory +
+          "\n\n---\n\n## Documento de partida (referencia)\n\n" +
+          sourcePrep.text;
+      }
+    }
+
+    const brdPromptBase = appendLegacyBaselineBrdDetailPrompt(
+      buildBrdUserPrompt({
+        mode: isInitialLegacyStage ? "legacy-as-is" : "legacy-change",
+        sourceLabel: "DOCUMENTO",
+        sourceDocument: brdSourceDocument,
+        baselineBrdBlock: baselineBrdBlock || undefined,
+      }),
+      isInitialLegacyStage,
+    );
 
     let brd = "";
     let lastFailure: BrdExtractFailure = "no_delimiter";
@@ -812,239 +787,78 @@ export class LegacyCoordinatorService {
     projectId: string,
     req?: GenerateCodebaseDocRequest,
     stageId?: string,
-  ): Promise<{ codebaseDoc: string } | null> {
-    const { project, theforgeId } = await this.getLegacyProject(projectId);
+  ): Promise<{ codebaseDoc: string; mddContent?: string } | null> {
+    const { theforgeId } = await this.getLegacyProject(projectId);
     if (!this.theforge.isConfigured()) return null;
 
     const resolvedStage = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : null;
-    const legacyState = resolvedStage?.legacyChangeState
-      ? (resolvedStage.legacyChangeState as LegacyFlowState)
-      : ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
-    /** `ingest_mdd` omite el gate por defecto: evita 3× `semantic_search` previas que no alimentan el JSON y confunden trazas; el ingest ya acota multi-root. Reactivar: `LEGACY_INDEX_SDD_GATE_INGEST_MDD=1`. */
-    const runIndexSddGateForIngest =
-      req?.responseMode !== "ingest_mdd" ||
-      String(process.env.LEGACY_INDEX_SDD_GATE_INGEST_MDD ?? "").trim() === "1";
-    const indexSignalsFromGate = runIndexSddGateForIngest
-      ? await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState)
-      : null;
+    const legacyState = resolvedStage
+      ? this.readLegacyChangeState(resolvedStage)
+      : {};
+    /** Gate índice ↔ SDD Falkor local (siempre antes de doc. partida). */
+    await this.assertLegacyIndexSddGate(projectId, theforgeId, legacyState);
+
+    if (req?.responseMode) {
+      this.logger.warn(
+        `generateCodebaseDoc: responseMode="${req.responseMode}" ignorado — doc. partida usa generate_legacy_documentation (modo único MCP).`,
+      );
+    }
 
     let codebaseDoc = "";
-    const codebaseDocAskOpts = askCodebaseOptionsForCodebaseDoc(req?.responseMode);
-
-    if (req?.responseMode === "ingest_mdd") {
-      const catalog = await this.theforge.listKnownProjects();
-      const resolved = resolveAriadneCodebaseMcpTarget(theforgeId, catalog);
-      const repoIds = resolved.scopeForScopedTools?.repoIds ?? [];
-      const narrowMulti =
-        String(process.env.LEGACY_INGEST_MDD_NARROW_MULTI_ROOT ?? "1").trim() !== "0";
-      const ingestAsk: AskCodebaseOptions = { ...askCodebaseOptionsForCodebaseDoc("ingest_mdd") };
-      if (repoIds.length > 1 && narrowMulti && resolved.graphProjectId?.trim()) {
-        const primary = resolved.graphProjectId.trim();
-        ingestAsk.scope = mergeAriadneCodebaseScope(resolved.scopeForScopedTools, { repoIds: [primary] });
-        this.logger.log(
-          `[Legacy] ingest_mdd: workspace multi-root (${repoIds.length} repos) → scope.repoIds=[${primary.slice(0, 8)}…] ` +
-            `(desactivar acotación: LEGACY_INGEST_MDD_NARROW_MULTI_ROOT=0).`,
-        );
-      }
-      const raw =
-        (await this.theforge.askCodebase(CODEBASE_DOC_INGEST_MDD_QUESTION, theforgeId, ingestAsk))?.trim() ?? "";
-      if (raw && legacyAnalyzerIndicatesEmptyIndex(raw)) {
-        this.logger.warn(
-          `generateCodebaseDoc: ingest_mdd devolvió señal de índice vacío; se intenta modo clásico. theforgeId=${theforgeId}`,
-        );
-      } else if (raw) {
-        codebaseDoc = "# MDD de partida (ingest Ariadne — evidence_first)\n\n" + raw;
-      } else {
-        this.logger.warn(
-          `generateCodebaseDoc: ingest_mdd devolvió vacío; modo clásico. theforgeId=${theforgeId.slice(0, 8)}…`,
-        );
-      }
-    }
-
-    if (isLegacyEvidenceFirstEnabled() && req?.responseMode !== "ingest_mdd") {
-      try {
-        const body = await runLegacyStagedDiscoveryMddAgent({
-          aiFactory: this.aiFactory,
-          userId: getRequestUserId(),
-          theforge: this.theforge,
-          projectId,
-          theforgeProjectId: theforgeId,
-          agentSupervisor: this.agentSupervisor,
-          mode: "initial",
-          askCodebaseOptions: codebaseDocAskOpts,
-          logger: this.logger,
-        });
-        const trimmed = body.trim();
-        if (trimmed && legacyAnalyzerIndicatesEmptyIndex(trimmed)) {
-          this.logger.warn(
-            `generateCodebaseDoc: descubrimiento escalonado devolvió «sin datos en índice» (evidencia insuficiente). ` +
-              `No se persiste ese texto; se intenta modo clásico ask_codebase. theforgeId=${theforgeId} — confirma UUID/repo en Ariadne.`,
-          );
-        } else if (trimmed) {
-          codebaseDoc = "# MDD inicial (Legacy) — documentación de partida\n\n" + trimmed;
-        } else {
-          this.logger.warn(
-            `generateCodebaseDoc: descubrimiento escalonado devolvió vacío (sin texto tras herramientas). ` +
-              `Siguiente paso: modo clásico ask_codebase. theforgeId=${theforgeId.slice(0, 8)}…`,
-          );
-        }
-      } catch (err) {
-        this.logger.warn(
-          `generateCodebaseDoc: descubrimiento escalonado falló, modo clásico. ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-
-    if (!codebaseDoc) {
-      const parts: string[] = [];
-      const semanticLim = getLegacySemanticSearchLimit();
-      const legacyAsk = askCodebaseOptionsForCodebaseDocClassicSegments(req?.responseMode);
-      const deterministicClassic = isDeterministicRawEvidenceClassicAsk(legacyAsk);
-      let r1: string;
-      let r2: string;
-      let r3: string;
-      let r4: string;
-      if (deterministicClassic) {
-        r1 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId, legacyAsk);
-        r2 = "";
-        r3 = "";
-        r4 = "";
-      } else if (isCodebaseDocClassicParallelAsk()) {
-        [r1, r2, r3, r4] = await Promise.all([
-          this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId, legacyAsk),
-          this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q2, theforgeId, legacyAsk),
-          this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q3, theforgeId, legacyAsk),
-          this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q4, theforgeId, legacyAsk),
-        ]);
-      } else {
-        r1 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q1, theforgeId, legacyAsk);
-        r2 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q2, theforgeId, legacyAsk);
-        r3 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q3, theforgeId, legacyAsk);
-        r4 = await this.theforge.askCodebase(CODEBASE_DOC_CLASSIC_Q.q4, theforgeId, legacyAsk);
-      }
-
-      let synthesisFallback = "";
-      if (!r1.trim() && !r2.trim() && !r3.trim() && !r4.trim()) {
-        this.logger.warn(
-          "generateCodebaseDoc: las cuatro rondas ask_codebase (clásico) vinieron vacías; síntesis única de respaldo (revisa THEFORGE_MCP_TIMEOUT_MS si persiste).",
-        );
-        const fb = await this.theforge.askCodebase(CODEBASE_DOC_FALLBACK_SYNTHESIS_PROMPT, theforgeId, legacyAsk);
-        synthesisFallback = fb?.trim() ?? "";
-        if (synthesisFallback) {
-          parts.unshift("## 1–4. Panorama del codebase (síntesis)\n\n" + synthesisFallback);
-        }
-      }
-
-      const gateChunks = indexSignalsFromGate?.semanticChunks;
-      const reuseGateTriple =
-        Array.isArray(gateChunks) &&
-        gateChunks.length >= 3 &&
-        gateChunks.slice(0, 3).every((c) => typeof c === "string");
-      const [searchModels, searchApi, searchUi] = reuseGateTriple
-        ? ([gateChunks[0], gateChunks[1], gateChunks[2]] as [string, string, string])
-        : await Promise.all([
-            this.theforge.semanticSearch("data models entities database schema tables", theforgeId, semanticLim),
-            this.theforge.semanticSearch("API routes endpoints controllers services", theforgeId, semanticLim),
-            this.theforge.semanticSearch("UI components screens pages views", theforgeId, semanticLim),
-          ]);
-      const searchParts: string[] = [];
-      const clipSem = (chunk: string) => clipLegacySemanticSectionForCodebaseDoc(chunk);
-      if (searchModels.trim()) {
-        searchParts.push("Modelos/entidades (búsqueda semántica):\n" + clipSem(searchModels));
-      }
-      if (searchApi.trim()) searchParts.push("API/rutas (búsqueda semántica):\n" + clipSem(searchApi));
-      if (searchUi.trim()) {
-        searchParts.push("Componentes/pantallas (búsqueda semántica):\n" + clipSem(searchUi));
-      }
-
-      let mddFromIndex = "";
-      if (
-        deterministicClassic &&
-        r1.trim() &&
-        isLegacyCodebaseDocIndexSynthesisEnabled() &&
-        !synthesisFallback
-      ) {
-        const maxIn = getLegacyCodebaseDocSynthesisInputMaxChars();
-        let bundle =
-          r1.trim() +
-          (searchParts.length > 0
-            ? "\n\n---\n\n### Fragmentos de búsqueda semántica (TheForge)\n\n" + searchParts.join("\n\n")
-            : "");
-        if (bundle.length > maxIn) {
-          bundle =
-            bundle.slice(0, maxIn) +
-            `\n\n… [recortado: LEGACY_CODEBASE_DOC_SYNTHESIS_INPUT_MAX_CHARS=${maxIn}]`;
-        }
-        const proseOpts: AskCodebaseOptions = {
-          ...legacyAsk,
-          responseMode: "default",
-          deterministicRetriever: false,
-        };
-        try {
-          mddFromIndex =
-            (await this.theforge.askCodebase(
-              CODEBASE_DOC_MDD_FROM_INDEX_PROMPT + bundle,
-              theforgeId,
-              proseOpts,
-            ))?.trim() ?? "";
-        } catch (err) {
-          this.logger.warn(
-            `generateCodebaseDoc: síntesis MDD desde índice omitida: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-      }
-
-      if (deterministicClassic && r1.trim() && !synthesisFallback) {
-        if (mddFromIndex) {
-          parts.push("## MDD de partida (síntesis desde el índice)\n\n" + mddFromIndex);
-          parts.push("## Anexo: evidencia MCP (`raw_evidence`, determinista)\n\n" + r1.trim());
-        } else {
-          parts.push("## 1–4. Evidencia del índice (determinista)\n\n" + r1.trim());
-        }
-        if (searchParts.length > 0) {
-          parts.push("## 5. Índice semántico del grafo\n\n" + searchParts.join("\n\n"));
-        }
-      } else {
-        if (r1.trim()) parts.push("## 1. Modelos, rutas y configuración\n\n" + r1.trim());
-        if (r2.trim()) parts.push("## 2. Arquitectura y carpetas\n\n" + r2.trim());
-        if (r3.trim()) parts.push("## 3. Stack y estructura\n\n" + r3.trim());
-        if (r4.trim()) parts.push("## 4. Reglas de negocio y convenciones\n\n" + r4.trim());
-        if (searchParts.length > 0) parts.push("## 5. Índice semántico del grafo\n\n" + searchParts.join("\n\n"));
-      }
-
-      const hasAskProse =
-        [r1, r2, r3, r4].some((x) => x.trim()) ||
-        synthesisFallback.length > 0 ||
-        mddFromIndex.length > 0;
-
-      let docBody = parts.length > 0 ? parts.join("\n\n---\n\n") : "";
-      if (docBody && !hasAskProse) {
-        docBody = `${CODEBASE_DOC_SEMANTIC_ONLY_PREFACE}\n\n${docBody}`;
-      }
-      codebaseDoc = docBody.length > 0 ? "# Documentación del Codebase (partida)\n\n" + docBody : "";
+    const raw = (await this.theforge.generateLegacyDocumentation(theforgeId))?.trim() ?? "";
+    if (raw && legacyAnalyzerIndicatesEmptyIndex(raw)) {
+      this.logger.warn(
+        `generateCodebaseDoc: generate_legacy_documentation señaló índice vacío. theforgeId=${theforgeId}`,
+      );
+    } else if (raw) {
+      codebaseDoc = "# MDD de partida (Ariadne — generate_legacy_documentation)\n\n" + raw;
+    } else {
+      this.logger.warn(
+        `generateCodebaseDoc: generate_legacy_documentation devolvió vacío. theforgeId=${theforgeId.slice(0, 8)}…`,
+      );
     }
 
     if (codebaseDoc.trim()) {
+      codebaseDoc = normalizeLegacyMddV1JsonBlocksInMarkdown(codebaseDoc);
       codebaseDoc = normalizeRawEvidenceJsonBlocksInMarkdown(codebaseDoc);
+      if (isLegacyComponentDiagramEnabled()) {
+        codebaseDoc = appendComponentDiagramToCodebaseDoc(codebaseDoc);
+      }
     }
 
     const persistStage = stageId?.trim()
       ? (resolvedStage ?? await this.resolveLegacyGateStage(projectId))
       : await this.resolveLegacyGateStage(projectId);
-    const projectFromDb = await this.projects.findOne(projectId);
-    const state = this.getLegacyChangeState(persistStage, projectFromDb);
+    const state = this.readLegacyChangeState(persistStage);
     const nextLegacy = { ...state, codebaseDoc } as LegacyFlowState;
     if (persistStage?.id) {
       await this.persistLegacyChangeState(projectId, persistStage.id, nextLegacy);
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: nextLegacy as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir documentación de partida.");
     }
-    return { codebaseDoc };
+    const response: {
+      codebaseDoc: string;
+      mddGenerated?: boolean;
+      mddLength?: number;
+      mddWordCount?: number;
+    } = { codebaseDoc };
+    if (isLegacyAutoGenerateMddAfterCodebaseDocEnabled() && codebaseDoc.trim().length >= 300) {
+      try {
+        const mdd = await this.generateMdd(projectId, stageId?.trim(), { includeContent: false });
+        response.mddGenerated = true;
+        response.mddLength = mdd.mddLength;
+        response.mddWordCount = mdd.wordCount;
+      } catch (err) {
+        this.logger.warn(
+          `generateCodebaseDoc: auto generateMdd falló (LEGACY_AUTO_GENERATE_MDD_AFTER_CODEBASE_DOC=1): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+    return response;
   }
 
   /**
@@ -1060,11 +874,10 @@ export class LegacyCoordinatorService {
     if (!allowed.includes(choice)) {
       throw new BadRequestException(`choice debe ser uno de: ${allowed.join(", ")}`);
     }
-    const project = await this.projects.findOne(projectId);
     const gateStageForResolution = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const state = this.getLegacyChangeState(gateStageForResolution, project);
+    const state = this.readLegacyChangeState(gateStageForResolution);
     const legacyIndexSddResolution: LegacyFlowState["legacyIndexSddResolution"] = {
       choice,
       resolvedAt: new Date().toISOString(),
@@ -1073,10 +886,7 @@ export class LegacyCoordinatorService {
     if (gateStageForResolution?.id) {
       await this.persistLegacyChangeState(projectId, gateStageForResolution.id, next);
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: next as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir resolución índice/SDD.");
     }
     return { ok: true, legacyIndexSddResolution };
   }
@@ -1092,16 +902,12 @@ export class LegacyCoordinatorService {
     const stage = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const project = await this.projects.findOne(projectId);
-    const state = this.getLegacyChangeState(stage, project);
+    const state = this.readLegacyChangeState(stage);
     const next = { ...state, codebaseDoc } as LegacyFlowState;
     if (stage?.id) {
       await this.persistLegacyChangeState(projectId, stage.id, next);
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: next as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir documentación de partida.");
     }
     return { codebaseDoc };
   }
@@ -1190,10 +996,7 @@ export class LegacyCoordinatorService {
       await this.persistLegacyChangeState(projectId, gateStageForStart.id, state);
       await this.syncCurrentLegacyStageToGraph(projectId, gateStageForStart.id).catch(() => {});
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: state as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir el inicio del flujo legacy.");
     }
     return { filesToModify, questions, suggestedAnswers: Object.keys(suggestedAnswers).length > 0 ? suggestedAnswers : undefined };
   }
@@ -1204,20 +1007,17 @@ export class LegacyCoordinatorService {
    * @param answers - Mapa índice de pregunta → respuesta (p. ej. { "0": "10", "1": "30" }).
    */
   async answer(projectId: string, answers: Record<string, string>, stageId?: string): Promise<{ ok: boolean }> {
-    const { project } = await this.getLegacyProject(projectId);
+    await this.getLegacyProject(projectId);
     const gateStageForAnswer = stageId?.trim()
       ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
       : await this.resolveLegacyGateStage(projectId);
-    const prev = this.getLegacyChangeState(gateStageForAnswer, project);
+    const prev = this.readLegacyChangeState(gateStageForAnswer);
     const next: LegacyFlowState = { ...prev, answers };
     if (gateStageForAnswer?.id) {
       await this.persistLegacyChangeState(projectId, gateStageForAnswer.id, next);
       await this.syncCurrentLegacyStageToGraph(projectId, gateStageForAnswer.id).catch(() => {});
     } else {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { legacyFlowState: next as object },
-      });
+      throw new BadRequestException("No hay etapa para persistir respuestas del flujo legacy.");
     }
     return { ok: true };
   }
@@ -1225,15 +1025,19 @@ export class LegacyCoordinatorService {
   /**
    * Genera el MDD de cambio a partir de la descripción, archivos, respuestas del usuario y contexto AriadneSpecs (múltiples ask_codebase).
    * Persiste el resultado en mddContent del proyecto.
+   * Por defecto la respuesta HTTP es **ligera** (metadatos); el cliente debe `GET /projects/:id` para el markdown.
    * @param projectId - ID del proyecto.
-   * @returns Contenido Markdown del MDD generado.
    */
-  async generateMdd(projectId: string, stageId?: string): Promise<{ mddContent: string }> {
+  async generateMdd(
+    projectId: string,
+    stageId?: string,
+    options?: { includeContent?: boolean },
+  ): Promise<LegacyGenerateMddResponse> {
     const { project, theforgeId } = await this.getLegacyProject(projectId);
     const gateStage = stageId?.trim()
       ? (await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })) ?? await this.resolveLegacyGateStage(projectId)
       : await this.resolveLegacyGateStage(projectId);
-    const state = this.getLegacyChangeState(gateStage, project);
+    const state = this.readLegacyChangeState(gateStage);
     const description = state.description ?? "";
     const files = normalizeFilesToModify(state.filesToModify, theforgeId);
     const answers = state.answers ?? {};
@@ -1241,18 +1045,44 @@ export class LegacyCoordinatorService {
       .map(([k, v]) => `${k}: ${v}`)
       .join("\n");
 
+    const isInitialMdd = isLegacyBaselineStage(gateStage);
+    assertLegacyChangeGate(gateStage);
+    if (gateStage) {
+      const dbProject = await this.prisma.project.findFirst({
+        where: { id: projectId },
+        include: { stages: { orderBy: { ordinal: "asc" } } },
+      });
+      if (dbProject) {
+        this.projectIntegration.assertHandoffGateForLegacyMdd(dbProject, {
+          ordinal: gateStage.ordinal,
+          handoffImportedAt: gateStage.handoffImportedAt ?? null,
+        });
+      }
+    }
+    const integrationPromptCtx = await this.projectIntegration.resolvePromptContext(
+      projectId,
+      gateStage?.id,
+    );
+    const handoffMddBlock =
+      !isInitialMdd && integrationPromptCtx.handoffItems.length && integrationPromptCtx.newProjectMeta
+        ? buildHandoffPromptBlockForLegacyChange({
+            newProjectId: integrationPromptCtx.newProjectMeta.id,
+            newProjectName: integrationPromptCtx.newProjectMeta.name,
+            items: integrationPromptCtx.handoffItems,
+          }) + "\n\n---\n\n"
+        : "";
     const descTermsGate = description.slice(0, 160).replace(/[^\w\s]/g, " ").trim();
     const gateSemanticQueries =
-      descTermsGate.length > 2
+      !isInitialMdd && descTermsGate.length > 2
         ? [`${descTermsGate} modules services handlers components routes`, ...DEFAULT_SEMANTIC_QUERIES]
         : [...DEFAULT_SEMANTIC_QUERIES];
     await this.assertLegacyIndexSddGate(projectId, theforgeId, state, { semanticQueries: gateSemanticQueries });
-    // enforceLegacyBrdTobeGate eliminado — To-Be y As-Is removidos
-    const brdPre = gateStage?.brdContent ? composeBrdPreamble(gateStage.brdContent) : "";
+    // Etapa 1 = AS-IS: el BRD no debe empujar lenguaje de modificación al MDD (solo etapas 2+).
+    const brdPre =
+      !isInitialMdd && gateStage?.brdContent ? composeBrdPreamble(gateStage.brdContent) : "";
 
     // Múltiples consultas a TheForge para contexto amplio (evidencia del índice + ask_codebase + refactor seguro)
     const theforgeParts: string[] = [];
-  const isInitialMdd = !description.trim();
   // Fase 5: Buscar etapa base (ordinal anterior) para contexto incremental
   let baselineStage: { mddContent?: string | null } | null = null;
   if (!isInitialMdd && gateStage && gateStage.ordinal > 1) {
@@ -1297,7 +1127,7 @@ export class LegacyCoordinatorService {
         );
       }
     }
-    if (description) {
+    if (!isInitialMdd && description.trim()) {
       const legacyAsk = getLegacyAskCodebaseOptions();
       // Búsqueda semántica con términos del cambio para descubrir archivos/símbolos relacionados
       const descTerms = description.slice(0, 200).replace(/[^\w\s]/g, " ");
@@ -1327,24 +1157,26 @@ export class LegacyCoordinatorService {
     }
     // Validación antes de editar (validate_before_edit = impacto + contrato); fallback a get_legacy_impact
     // + get_definitions (ubicación exacta); get_functions_in_file alimenta el nombre de nodo para el grafo
-    for (let i = 0; i < Math.min(3, files.length); i++) {
-      const f = files[i]!;
-      const repoId = f.repoId || theforgeId;
-      const funcs = await this.theforge.getFunctionsInFile(f.path, repoId, f.path);
-      const nodeName = inferLegacyGraphNodeNameFromFunctionsFileText(funcs, f.path);
-      const [impactBlock, defs] = await Promise.all([
-        this.theforge.validateBeforeEdit(nodeName, repoId, f.path).then((b) => b || this.theforge.getLegacyImpact(nodeName, repoId, f.path)),
-        this.theforge.getDefinitions(nodeName, repoId, f.path),
-      ]);
-      if (impactBlock?.trim()) theforgeParts.push(`Validación antes de editar "${f.path}" (nodo grafo: \`${nodeName}\`):\n` + impactBlock.trim());
-      if (defs?.trim()) theforgeParts.push(`Definición de "${nodeName}" (archivo:líneas):\n` + defs.trim());
-      if (funcs?.trim()) theforgeParts.push(`Funciones/componentes en ${f.path}:\n` + funcs.trim());
-    }
-    // Contenido de los primeros 2 archivos a modificar (get_file_content) para contexto exacto
-    for (let i = 0; i < Math.min(2, files.length); i++) {
-      const f = files[i]!;
-      const content = await this.theforge.getFileContent(f.path, f.repoId || theforgeId, undefined, f.path);
-      if (content.trim()) theforgeParts.push(`Contenido de ${f.path}:\n` + content.slice(0, 3000) + (content.length > 3000 ? "\n…" : ""));
+    if (!isInitialMdd) {
+      for (let i = 0; i < Math.min(3, files.length); i++) {
+        const f = files[i]!;
+        const repoId = f.repoId || theforgeId;
+        const funcs = await this.theforge.getFunctionsInFile(f.path, repoId, f.path);
+        const nodeName = inferLegacyGraphNodeNameFromFunctionsFileText(funcs, f.path);
+        const [impactBlock, defs] = await Promise.all([
+          this.theforge.validateBeforeEdit(nodeName, repoId, f.path).then((b) => b || this.theforge.getLegacyImpact(nodeName, repoId, f.path)),
+          this.theforge.getDefinitions(nodeName, repoId, f.path),
+        ]);
+        if (impactBlock?.trim()) theforgeParts.push(`Validación antes de editar "${f.path}" (nodo grafo: \`${nodeName}\`):\n` + impactBlock.trim());
+        if (defs?.trim()) theforgeParts.push(`Definición de "${nodeName}" (archivo:líneas):\n` + defs.trim());
+        if (funcs?.trim()) theforgeParts.push(`Funciones/componentes en ${f.path}:\n` + funcs.trim());
+      }
+      // Contenido de los primeros 2 archivos a modificar (get_file_content) para contexto exacto
+      for (let i = 0; i < Math.min(2, files.length); i++) {
+        const f = files[i]!;
+        const content = await this.theforge.getFileContent(f.path, f.repoId || theforgeId, undefined, f.path);
+        if (content.trim()) theforgeParts.push(`Contenido de ${f.path}:\n` + content.trim());
+      }
     }
     const theforgeContext = theforgeParts.join("\n\n---\n\n");
     const filesLine = files.length > 0
@@ -1354,21 +1186,40 @@ export class LegacyCoordinatorService {
     const codebaseDoc = ((state.codebaseDoc ?? "") as string).trim();
     const codebaseDocBlock = codebaseDoc.length >= 80
       ? "## Documentación de partida — MDD inicial del codebase (Ariadne)\n\n" +
-        codebaseDoc.slice(0, 40000) +
-        (codebaseDoc.length > 40000 ? "\n\n> *[Nota: El MDD inicial se truncó a 40,000 caracteres para control de contexto.]*" : "") +
+        compactCodebaseDocForMddPrompt(codebaseDoc) +
         "\n\n---\n\n"
       : "";
+    const pathGroundingRulesBaseline =
+      "**Rutas:** Usa paths **exactamente** como aparecen en la doc. de partida (`src/api/…`, `src/Models/…`, `src/…`). " +
+      "PROHIBIDO inventar prefijos (`backend/`, `frontend/`) ni bundles/API no listados en entidades, contratos API o rutas de evidencia. " +
+      "Entidades frontend (`source: frontend`) y contratos `apiDirection` cuentan como evidencia válida para el cliente OBP. " +
+      "Si falta evidencia, documéntalo como brecha — no inventes ni proyectes cambios futuros.\n\n";
+    const pathGroundingRulesChange =
+      pathGroundingRulesBaseline +
+      "Si una funcionalidad del BRD no tiene evidencia en el índice, márcala como brecha/pendiente — no la implementes en el MDD como existente.\n\n";
     let prompt: string;
     if (isInitialMdd) {
-      // Sin descripción de cambio → MDD inicial del sistema completo (no de cambio)
+      // Etapa 1 → MDD AS-IS del sistema completo (no de cambio), aunque exista description en legacyChangeState
       prompt =
-        (brdPre ? brdPre + "\n\n" : "") +
         codebaseDocBlock +
         "Genera un documento MDD inicial (Markdown) para un proyecto legacy. " +
-        "El MDD describe **el sistema existente en su totalidad**, no un cambio. " +
+        "El MDD describe **el sistema existente en su totalidad (AS-IS)**, no un cambio ni un MVP futuro. " +
         "Debe tener **exactamente 7 secciones** en este orden: " +
         "1. Contexto, 2. Arquitectura y Stack, 3. Modelo de Datos, 4. Contratos de API, 5. Lógica y Edge Cases, " +
         "6. Seguridad, 7. Infraestructura.\n\n" +
+        "**§1 Contexto (AS-IS obligatorio):** Propósito y alcance = qué es el sistema **hoy**, quién lo usa y qué hace **en producción**. " +
+        "PROHIBIDO: «modificar el sistema», «incorporar funcionalidades del BRD/MVP», alcance de cambio, objetivos de implementación futura. " +
+        "Las funcionalidades no documentadas o gaps van en «Brechas de información» o notas neutras, **no** como propósito del documento.\n\n" +
+        "**§2 obligatorio:** incluye `### Diagrama de Componentes` con un bloque ```mermaid (flowchart) " +
+        "que refleje capas reales del codebase (frontend, API/backend, persistencia) usando solo evidencia de la doc. de partida.\n\n" +
+        "**§3 Modelo de Datos (AS-IS exhaustivo):** documenta **cada entidad** de la doc. de partida en tablas " +
+        "(Entidad | Origen | Atributos). PROHIBIDO resumir con «Otras entidades significativas», «N+ adicionales» " +
+        "o listas separadas por comas en lugar de filas de tabla. Agrupa por repo si hay multi-root.\n\n" +
+        "**§4 Contratos de API:** tablas completas de rutas/métodos por repo; no omitir endpoints listados en la doc. de partida.\n\n" +
+        "**§5 Lógica y Edge Cases (AS-IS exhaustivo):** tabla **Servicio | Dependencias (paths)** por repo desde la doc. de partida " +
+        "(sección «Lógica de negocio»). PROHIBIDO «Además, servicios para cada Content Type restante» o listas por comas. " +
+        "Las reglas no indexadas van en «Brechas de información».\n\n" +
+        pathGroundingRulesBaseline +
         "**Prioridad:** Recupera y usa en su totalidad el conocimiento del codebase (TheForge) que se te proporciona. " +
         "Usa TODO ese contexto para describir fielmente la aplicación existente. " +
         "No inventes rutas, APIs, entidades ni funcionalidades que no aparezcan en el contexto. " +
@@ -1376,13 +1227,13 @@ export class LegacyCoordinatorService {
         (theforgeContext
           ? "Contexto del codebase (TheForge) — evidencia del índice, arquitectura, definiciones y búsqueda semántica. " +
             "Usar TODO para describir el sistema real.\n---\n" +
-            theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
+            mddTheforgeContextBlock(theforgeContext) +
             "\n---"
           : "");
     } else {
       const baselineBlock = baselineStage?.mddContent?.trim()
         ? "## Línea base — MDD de la etapa anterior (sistema sin el cambio actual)\n\n" +
-          baselineStage.mddContent.trim().slice(0, 30000) +
+          baselineStage.mddContent.trim() +
           "\n\n---\n\n" +
           "**Instrucción:** El MDD de cambio debe describir SOLO las modificaciones, adiciones o eliminaciones " +
           "respecto a esta línea base. No redescribas secciones enteras que no cambian. " +
@@ -1391,13 +1242,16 @@ export class LegacyCoordinatorService {
         : "";
       prompt =
         (brdPre ? brdPre + "\n\n" : "") +
+        handoffMddBlock +
         codebaseDocBlock +
         baselineBlock +
         "Genera un documento MDD de cambio (Markdown) para un proyecto legacy. " +
         "Según Specification-Driven Development, el MDD es la **Constitución del cambio** y debe tener " +
         "**exactamente 7 secciones** en este orden: 1. Contexto, 2. Arquitectura y Stack, 3. Modelo de Datos, " +
         "4. Contratos de API, 5. Lógica y Edge Cases, 6. Seguridad, 7. Infraestructura. " +
-        "Aplica cada sección al **cambio** descrito (qué se modifica en contexto, stack, modelo, API, lógica, seguridad e infra).\n\n" +
+        "Aplica cada sección al **cambio** descrito (qué se modifica en contexto, stack, modelo, API, lógica, seguridad e infra). " +
+        "En §2 incluye `### Diagrama de Componentes` (Mermaid flowchart) anclado a la doc. de partida.\n\n" +
+        pathGroundingRulesChange +
         "**Prioridad:** Recupera y usa en su totalidad el conocimiento del codebase (TheForge) que se te proporciona " +
         "antes de elaborar el documento. Usa TODO ese contexto; infiere todas las modificaciones necesarias en módulos, " +
         "entidades, APIs y pantallas existentes que el cambio afecte; no te limites al requerimiento literal. " +
@@ -1411,14 +1265,22 @@ export class LegacyCoordinatorService {
           ? "Contexto del codebase (TheForge) — incluye evidencia del índice, validaciones, definiciones exactas, " +
             "funciones por archivo y búsqueda semántica. Usar TODO para inferir impacto completo. " +
             "No inventes rutas ni APIs que no aparezcan en este contexto.\n---\n" +
-            theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
+            mddTheforgeContextBlock(theforgeContext) +
             "\n---"
           : "");
     }
     const mddDraft = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
-    const mddContent = await this.reviewer.reviewMdd(description, mddDraft?.trim() ?? "");
-    const cleaned = cleanDocumentContent(mddContent);
-    // Dual-write durante migración: stage.legacyChangeState + project.legacyFlowState
+    const mddContent = await this.reviewer.reviewMdd(description, mddDraft?.trim() ?? "", {
+      asIsBaseline: isInitialMdd,
+    });
+    let cleaned = cleanDocumentContent(mddContent);
+    if (isLegacyComponentDiagramEnabled() && codebaseDoc.length >= 80) {
+      cleaned = injectComponentDiagramIntoMddSection2(cleaned, codebaseDoc);
+    }
+    if (isInitialMdd && isLegacyAsIsMddEvidenceInjectEnabled() && codebaseDoc.length >= 80) {
+      cleaned = injectAsIsCodebaseEvidenceIntoMdd(cleaned, codebaseDoc);
+    }
+    // Single write: stage.legacyChangeState (project.legacyFlowState only when no stage exists)
     if (gateStage?.id) {
       await this.persistLegacyChangeState(projectId, gateStage.id, state).catch(() => {});
       await this.syncCurrentLegacyStageToGraph(projectId, gateStage.id).catch(() => {});
@@ -1427,130 +1289,56 @@ export class LegacyCoordinatorService {
       mddContent: cleaned,
       ...(gateStage?.id ? { stageId: gateStage.id } : {}),
     });
-    return { mddContent: cleaned };
+    const response: LegacyGenerateMddResponse = {
+      ok: true,
+      persisted: true,
+      mddLength: cleaned.length,
+      wordCount: cleaned.trim() ? cleaned.trim().split(/\s+/).length : 0,
+      ...(gateStage?.id ? { stageId: gateStage.id } : {}),
+    };
+    if (options?.includeContent) {
+      response.mddContent = cleaned;
+    }
+    return response;
   }
 
-  /** Persiste `lastDeliverablesDebug` en `legacyFlowState` (no lanza si Prisma falla). */
+  /** Persists `lastDeliverablesDebug` on stage legacyChangeState (fallback: project without stages). */
   private async persistDeliverablesDebugReport(
     projectId: string,
     report: LegacyDeliverablesDebugReport,
+    stageId?: string | null,
   ): Promise<void> {
     try {
-      const row = await this.prisma.project.findUnique({
-        where: { id: projectId },
-        select: { legacyFlowState: true, stages: { orderBy: { ordinal: "asc" }, take: 1, select: { id: true } } },
-      });
-      const state = (row?.legacyFlowState as LegacyFlowState | null | undefined) ?? {};
-      const next = { ...state, lastDeliverablesDebug: report } as LegacyFlowState;
-      const stageId = row?.stages?.[0]?.id;
-      if (stageId) {
-        await this.prisma.$transaction([
-          this.prisma.stage.update({
-            where: { id: stageId },
-            data: { legacyChangeState: next as object },
-          }),
-          this.prisma.project.update({
-            where: { id: projectId },
-            data: { legacyFlowState: next as object },
-          }),
-        ]);
-      } else {
-        await this.prisma.project.update({
-          where: { id: projectId },
-          data: { legacyFlowState: next as object },
+      if (stageId?.trim()) {
+        const stage = await this.prisma.stage.findUnique({
+          where: { id: stageId.trim() },
+          select: { legacyChangeState: true },
         });
+        const state = (stage?.legacyChangeState as LegacyFlowState | null | undefined) ?? {};
+        const next = { ...state, lastDeliverablesDebug: report } as LegacyFlowState;
+        await this.prisma.stage.update({
+          where: { id: stageId.trim() },
+          data: { legacyChangeState: next as object },
+        });
+        return;
       }
+      const firstStage = await this.prisma.stage.findFirst({
+        where: { projectId },
+        orderBy: { ordinal: "asc" },
+        select: { id: true, legacyChangeState: true },
+      });
+      if (!firstStage?.id) return;
+      const state = (firstStage.legacyChangeState as LegacyFlowState | null | undefined) ?? {};
+      const next = { ...state, lastDeliverablesDebug: report } as LegacyFlowState;
+      await this.prisma.stage.update({
+        where: { id: firstStage.id },
+        data: { legacyChangeState: next as object },
+      });
     } catch (err) {
       this.logger.warn(
         `[LegacyDeliverables] persistDeliverablesDebugReport: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }
-
-  /**
-   * Construye el texto MDD alimentado a la cascada de entregables: MDD completo, **rollup por ventanas**
-   * (varias llamadas LLM con trozos + ensamblado) si supera `LEGACY_DELIVERABLES_MDD_MAX_CHARS`, o truncado legacy
-   * si `LEGACY_DELIVERABLES_MDD_ROLLUP=0` o falla una ventana.
-   */
-  private async buildLegacyDeliverablesMddForLlm(
-    mdd: string,
-    report: LegacyDeliverablesDebugReport,
-  ): Promise<string> {
-    const max = legacyDeliverablesMddMaxCharsForLlm();
-    if (mdd.length <= max) {
-      report.mddLlmStrategy = "full";
-      report.mddCharsSentToLlm = mdd.length;
-      report.mddClippedForLlm = false;
-      report.mddRollupWindows = 0;
-      return mdd;
-    }
-    if (!isLegacyDeliverablesMddRollupEnabled()) {
-      report.mddRollupWindows = 0;
-      return clipMddForLegacyDeliverablesLlm(mdd, report);
-    }
-
-    const chunkSize = legacyDeliverablesRollupChunkChars();
-    const maxChunks = legacyDeliverablesRollupMaxChunks();
-    const chunks = splitMddForRollupChunks(mdd, chunkSize, maxChunks);
-    report.mddRollupWindows = chunks.length;
-    report.mddLlmStrategy = "rollup";
-
-    if (isLegacyDeliverablesDebugVerbose()) {
-      this.logger.log(
-        `[LegacyDeliverables] mdd_rollup windows=${chunks.length} chunkSize=${chunkSize} originalChars=${mdd.length}`,
-      );
-    }
-
-    const parts: string[] = [];
-    const prelude =
-      "# Síntesis operacional del MDD (ventanas The Forge)\n\n" +
-      "> Este documento fue **ensamblado por el backend** a partir de extracciones LLM **ventana por ventana** del MDD completo (" +
-      String(mdd.length) +
-      " caracteres). Úsalo como constitución efectiva para SPEC, Blueprint, etc. " +
-      "El MDD íntegro permanece en el proyecto; aquí se intenta **no perder secciones** frente a un único `generateContent` gigante.\n\n";
-
-    for (let i = 0; i < chunks.length; i++) {
-      if (i > 0) {
-        const gap = legacyDeliverablesInterStepDelayMs();
-        if (gap > 0) await sleepMs(gap);
-      }
-      const chunk = chunks[i]!;
-      const userPrompt =
-        `Ventana **${i + 1} de ${chunks.length}** del MDD (Markdown). Extrae hechos según el system prompt.\n\n---\n\n` +
-        chunk +
-        "\n\n---\n\nResponde solo con el markdown de extracción.";
-      try {
-        const text = await runWithLegacy429Retries(
-          () =>
-            this.ai.generateResponse(userPrompt, [], {
-              systemPrompt: LEGACY_MDD_ROLLUP_EXTRACTOR_SYSTEM,
-              activeTab: "mdd",
-            }),
-          { logger: this.logger, step: `mdd_rollup_${i + 1}/${chunks.length}` },
-        );
-        parts.push(`## Ventana ${i + 1} / ${chunks.length}\n\n${(text ?? "").trim()}`);
-      } catch (e) {
-        this.logger.warn(
-          `[LegacyDeliverables] mdd_rollup window ${i + 1}/${chunks.length} failed, fallback truncate — ${e instanceof Error ? e.message : String(e)}`,
-        );
-        report.mddRollupFailed = true;
-        return clipMddForLegacyDeliverablesLlm(mdd, report);
-      }
-    }
-
-    let rollupDoc = prelude + parts.join("\n\n---\n\n");
-    if (rollupDoc.length > max) {
-      const footer =
-        "\n\n> **Nota:** La síntesis rollup superó `LEGACY_DELIVERABLES_MDD_MAX_CHARS` (" +
-        String(max) +
-        "); se recortó el **final** del documento ensamblado (las ventanas iniciales se conservan).\n";
-      rollupDoc = rollupDoc.slice(0, Math.max(0, max - footer.length)) + footer;
-      report.mddClippedForLlm = true;
-    } else {
-      report.mddClippedForLlm = false;
-    }
-    report.mddCharsSentToLlm = rollupDoc.length;
-    return rollupDoc;
   }
 
   /**
@@ -1561,8 +1349,10 @@ export class LegacyCoordinatorService {
   async generateDeliverables(
     projectId: string,
     stageId?: string,
+    options?: {
+      onProgress?: (p: { step: string; index: number; total: number }) => void;
+    },
   ): Promise<{ ok: boolean; lastDeliverablesDebug: LegacyDeliverablesDebugReport }> {
-    void stageId; // reservado para futuro per-stage deliverables
     const report: LegacyDeliverablesDebugReport = {
       startedAt: new Date().toISOString(),
       mddSource: "none",
@@ -1608,40 +1398,49 @@ export class LegacyCoordinatorService {
       );
     }
 
+    const gateStage = stageId?.trim()
+      ? await this.prisma.stage.findUnique({ where: { id: stageId.trim() } })
+      : await this.resolveLegacyGateStage(projectId);
+
+    assertLegacyChangeGate(gateStage);
+
     // enforceLegacyBrdTobeGate eliminado — To-Be y As-Is removidos
-    await this.prisma
-    const codebaseDoc = String((project as { legacyFlowState?: LegacyFlowState }).legacyFlowState?.codebaseDoc ?? "").trim();
+    const gateState = this.readLegacyChangeState(gateStage);
+    const codebaseDoc = String(gateState.codebaseDoc ?? "").trim();
     const mddContent = String(project.mddContent ?? "").trim();
+    const legacyBaselineStage = resolveLegacyBaselineStageFlag(gateStage, mddContent);
+    report.legacyBaselineStage = legacyBaselineStage;
     report.codebaseDocChars = codebaseDoc.length;
     report.mddContentChars = mddContent.length;
     report.mddSource = mddContent ? "mddContent" : codebaseDoc ? "codebaseDoc_fallback" : "none";
     const mdd =
       mddContent || (codebaseDoc ? `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}` : "");
     report.mddChars = mdd.length;
-    const mddForLlm = await this.buildLegacyDeliverablesMddForLlm(mdd, report);
-    if (isLegacyDeliverablesDebugVerbose()) {
-      this.logger.log(
-        `[LegacyDeliverables] mdd_llm strategy=${report.mddLlmStrategy ?? "?"} originalChars=${report.mddChars} sentChars=${report.mddCharsSentToLlm ?? mddForLlm.length} rollupWindows=${report.mddRollupWindows ?? 0} clipped=${report.mddClippedForLlm ?? false} rollupFailed=${report.mddRollupFailed ?? false}`,
-      );
-    }
 
     const isReverseEngineering = !mddContent && !!codebaseDoc;
+    report.pipelineMode = isReverseEngineering ? "generate_from_codebase" : "projects_generate_document";
+    if (!isReverseEngineering) {
+      report.mddLlmStrategy = "full";
+      report.mddCharsSentToLlm = mddContent.length;
+      report.mddClippedForLlm = false;
+      report.mddRollupWindows = 0;
+    }
+
     pushStep({
       kind: "preflight",
       durationMs: 0,
       ok: !!mdd,
       detail:
-        `reverseEngineering=${isReverseEngineering} mddSource=${report.mddSource} mddLlmStrategy=${report.mddLlmStrategy ?? "?"} rollupWindows=${report.mddRollupWindows ?? 0} clipped=${report.mddClippedForLlm ?? false} rollupFailed=${report.mddRollupFailed ?? false}`,
+        `legacyBaselineStage=${legacyBaselineStage} reverseEngineering=${isReverseEngineering} pipelineMode=${report.pipelineMode} mddSource=${report.mddSource} mddLlmStrategy=${report.mddLlmStrategy ?? "?"} rollupWindows=${report.mddRollupWindows ?? 0} clipped=${report.mddClippedForLlm ?? false} rollupFailed=${report.mddRollupFailed ?? false}`,
     });
 
     if (!mdd) {
       markFatal(new Error("missing_mdd_and_codebaseDoc"));
-      await this.persistDeliverablesDebugReport(projectId, report);
+      await this.persistDeliverablesDebugReport(projectId, report, gateStage?.id);
       throw new BadRequestException("Genera la documentación de partida (MDD Inicial) o el MDD de cambio antes de generar entregables.");
     }
 
-    const legacyState =
-      ((project as { legacyFlowState?: LegacyFlowState | null }).legacyFlowState ?? {}) as LegacyFlowState;
+    const legacyState = gateState;
 
     const tGate = Date.now();
     try {
@@ -1655,7 +1454,7 @@ export class LegacyCoordinatorService {
         error: clipDebug(err instanceof Error ? err.message : String(err), 800),
       });
       markFatal(err);
-      await this.persistDeliverablesDebugReport(projectId, report);
+      await this.persistDeliverablesDebugReport(projectId, report, gateStage?.id);
       if (isLegacyDeliverablesDebugVerbose()) this.logger.error(err);
       throw err;
     }
@@ -1673,11 +1472,12 @@ export class LegacyCoordinatorService {
       outChars: theforgeContext.length,
       detail: theforgeContext.trim() ? "non_empty" : "empty_string",
     });
-    const legacyOpts: { theforgeContext?: string; contractSpecs?: string } | undefined =
-      theforgeContext.trim() || contractSpecs.trim()
+    const legacyOpts: { theforgeContext?: string; contractSpecs?: string; legacyBaselineStage?: boolean } | undefined =
+      theforgeContext.trim() || contractSpecs.trim() || legacyBaselineStage
         ? {
             ...(theforgeContext.trim() ? { theforgeContext } : {}),
             ...(contractSpecs.trim() ? { contractSpecs } : {}),
+            ...(legacyBaselineStage ? { legacyBaselineStage: true } : {}),
           }
         : undefined;
 
@@ -1694,11 +1494,13 @@ export class LegacyCoordinatorService {
 
     const resolveSectionMergeAttempt = async (
       kind: DeliverableKind,
+      mddText: string,
       fields: Partial<Pick<LegacyDeliverablesStrategyContext, "blueprintText" | "specText" | "useCasesText">>,
     ): Promise<boolean> => {
       const d = await this.legacyDeliverablesStrategy.resolveSectionMergeAttempt(kind, {
-        mddText: mddForLlm,
+        mddText,
         theforgeContextText: theforgeContext,
+        legacyBaselineStage,
         ...fields,
       });
       pushStrategyDecision(d);
@@ -1706,7 +1508,15 @@ export class LegacyCoordinatorService {
     };
 
     const update = async (data: Record<string, unknown>) => {
-      await this.prisma.project.update({ where: { id: projectId }, data: data as object });
+      if (!gateStage?.id) {
+        throw new BadRequestException("No hay etapa activa para persistir entregables.");
+      }
+      await persistStageAndProjectDeliverables(
+        this.prisma,
+        gateStage.id,
+        projectId,
+        data as import("@theforge/shared-types").ProjectDeliverableSource,
+      );
     };
 
     const load = async () => {
@@ -1719,9 +1529,8 @@ export class LegacyCoordinatorService {
     const complexity = isReverseEngineering ? ComplexityLevel.HIGH : (row.complexity ?? ComplexityLevel.HIGH);
     const deliverablesToRun = DELIVERABLES_BY_COMPLEXITY[complexity];
     report.complexityEffective = complexity;
-    report.deliverablesOrder = [...deliverablesToRun];
 
-    const ensureBlueprint = async (): Promise<string> => {
+    const ensureBlueprint = async (mddForLlm: string): Promise<string> => {
       let bp = String(p.blueprintContent ?? "").trim();
       if (bp.length > 48) return bp;
       bp = await this.ai.generateBlueprint(mddForLlm, undefined, legacyOpts);
@@ -1730,19 +1539,30 @@ export class LegacyCoordinatorService {
       return String(p.blueprintContent ?? "").trim();
     };
 
-    const runStep = async (kind: DeliverableKind): Promise<void> => {
+    const runStepWithMdd = async (kind: DeliverableKind, mddForLlm: string): Promise<void> => {
       switch (kind) {
         case "mdd_canonical":
           return;
         case "spec": {
-          const sm = await trySectionMergeDeliverable(this.ai, "spec", mddForLlm, legacyOpts, {}, run429, this.logger, {
-            attemptSectionMerge: await resolveSectionMergeAttempt("spec", {}),
-          });
-          if (sm) {
-            pushSectionMergeTrace(sm.trace);
-            await update({ specContent: cleanDocumentContent(sm.content) });
-            p = await load();
-            return;
+          if (!legacyBaselineStage) {
+            const sm = await trySectionMergeDeliverable(
+              this.ai,
+              "spec",
+              mddForLlm,
+              legacyOpts,
+              {},
+              run429,
+              this.logger,
+              {
+                attemptSectionMerge: await resolveSectionMergeAttempt("spec", mddForLlm, {}),
+              },
+            );
+            if (sm) {
+              pushSectionMergeTrace(sm.trace);
+              await update({ specContent: cleanDocumentContent(sm.content) });
+              p = await load();
+              return;
+            }
           }
           const specContent = await this.ai.generateSpec(mddForLlm, null, "mdd", legacyOpts);
           await update({ specContent: cleanDocumentContent(specContent) });
@@ -1759,7 +1579,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("architecture", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("architecture", mddForLlm, {
                 blueprintText: p.blueprintContent ?? undefined,
               }),
             },
@@ -1780,25 +1600,27 @@ export class LegacyCoordinatorService {
           return;
         }
         case "use_cases": {
-          const smUc = await trySectionMergeDeliverable(
-            this.ai,
-            "use_cases",
-            mddForLlm,
-            legacyOpts,
-            { spec: p.specContent ?? undefined },
-            run429,
-            this.logger,
-            {
-              attemptSectionMerge: await resolveSectionMergeAttempt("use_cases", {
-                specText: p.specContent ?? undefined,
-              }),
-            },
-          );
-          if (smUc) {
-            pushSectionMergeTrace(smUc.trace);
-            await update({ useCasesContent: cleanDocumentContent(smUc.content) });
-            p = await load();
-            return;
+          if (!legacyBaselineStage) {
+            const smUc = await trySectionMergeDeliverable(
+              this.ai,
+              "use_cases",
+              mddForLlm,
+              legacyOpts,
+              { spec: p.specContent ?? undefined },
+              run429,
+              this.logger,
+              {
+                attemptSectionMerge: await resolveSectionMergeAttempt("use_cases", mddForLlm, {
+                  specText: p.specContent ?? undefined,
+                }),
+              },
+            );
+            if (smUc) {
+              pushSectionMergeTrace(smUc.trace);
+              await update({ useCasesContent: cleanDocumentContent(smUc.content) });
+              p = await load();
+              return;
+            }
           }
           const useCasesContent = await this.ai.generateUseCases(mddForLlm, p.specContent, legacyOpts);
           await update({ useCasesContent: cleanDocumentContent(useCasesContent) });
@@ -1806,14 +1628,25 @@ export class LegacyCoordinatorService {
           return;
         }
         case "blueprint": {
-          const smBp = await trySectionMergeDeliverable(this.ai, "blueprint", mddForLlm, legacyOpts, {}, run429, this.logger, {
-            attemptSectionMerge: await resolveSectionMergeAttempt("blueprint", {}),
-          });
-          if (smBp) {
-            pushSectionMergeTrace(smBp.trace);
-            await update({ blueprintContent: cleanDocumentContent(smBp.content) });
-            p = await load();
-            return;
+          if (!legacyBaselineStage) {
+            const smBp = await trySectionMergeDeliverable(
+              this.ai,
+              "blueprint",
+              mddForLlm,
+              legacyOpts,
+              {},
+              run429,
+              this.logger,
+              {
+                attemptSectionMerge: await resolveSectionMergeAttempt("blueprint", mddForLlm, {}),
+              },
+            );
+            if (smBp) {
+              pushSectionMergeTrace(smBp.trace);
+              await update({ blueprintContent: cleanDocumentContent(smBp.content) });
+              p = await load();
+              return;
+            }
           }
           const blueprintContent = await this.ai.generateBlueprint(mddForLlm, undefined, legacyOpts);
           await update({ blueprintContent: cleanDocumentContent(blueprintContent) });
@@ -1821,7 +1654,7 @@ export class LegacyCoordinatorService {
           return;
         }
         case "api_contracts": {
-          const bp = await ensureBlueprint();
+          const bp = await ensureBlueprint(mddForLlm);
           const smApi = await trySectionMergeDeliverable(
             this.ai,
             "api_contracts",
@@ -1831,7 +1664,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("api_contracts", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("api_contracts", mddForLlm, {
                 blueprintText: bp,
               }),
             },
@@ -1848,29 +1681,42 @@ export class LegacyCoordinatorService {
           return;
         }
         case "logic_flows": {
-          const smLf = await trySectionMergeDeliverable(
-            this.ai,
-            "logic_flows",
-            mddForLlm,
-            legacyOpts,
-            {},
-            run429,
-            this.logger,
-            { attemptSectionMerge: await resolveSectionMergeAttempt("logic_flows", {}) },
-          );
-          if (smLf) {
-            pushSectionMergeTrace(smLf.trace);
-            await update({ logicFlowsContent: cleanDocumentContent(smLf.content) });
-            p = await load();
-            return;
+          if (!legacyBaselineStage) {
+            const smLf = await trySectionMergeDeliverable(
+              this.ai,
+              "logic_flows",
+              mddForLlm,
+              legacyOpts,
+              {},
+              run429,
+              this.logger,
+              { attemptSectionMerge: await resolveSectionMergeAttempt("logic_flows", mddForLlm, {}) },
+            );
+            if (smLf) {
+              pushSectionMergeTrace(smLf.trace);
+              await update({ logicFlowsContent: cleanDocumentContent(smLf.content) });
+              p = await load();
+              return;
+            }
           }
           const logicFlowsContent = await this.ai.generateLogicFlows(mddForLlm, undefined, legacyOpts);
-          await update({ logicFlowsContent: cleanDocumentContent(logicFlowsContent) });
+          const cleaned = cleanDocumentContent(logicFlowsContent);
+          if (legacyBaselineStage) {
+            const services = extractSection5Services(mddForLlm);
+            const batchSize = readLogicFlowsBatchSize();
+            const batchCount =
+              services.length > batchSize ? Math.ceil(services.length / batchSize) : undefined;
+            report.logicFlowsSection5Coverage = toLogicFlowsSection5CoverageReport(
+              scoreLogicFlowsSection5Coverage(mddForLlm, cleaned),
+              batchCount !== undefined ? { batchCount } : undefined,
+            );
+          }
+          await update({ logicFlowsContent: cleaned });
           p = await load();
           return;
         }
         case "ux_ui_guide": {
-          const bpUx = String(p.blueprintContent ?? "").trim() || (await ensureBlueprint());
+          const bpUx = String(p.blueprintContent ?? "").trim() || (await ensureBlueprint(mddForLlm));
           const smUx = await trySectionMergeDeliverable(
             this.ai,
             "ux_ui_guide",
@@ -1880,7 +1726,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("ux_ui_guide", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("ux_ui_guide", mddForLlm, {
                 blueprintText: bpUx,
               }),
             },
@@ -1894,14 +1740,14 @@ export class LegacyCoordinatorService {
           }
           let uxPrompt =
             "Genera la Guía UX/UI en markdown según el system prompt. MDD:\n---\n" +
-            mddForLlm.slice(0, 8000) +
+            mddForLlm +
             "\n---\n\nBlueprint:\n---\n" +
-            bpUx.slice(0, 4000) +
+            bpUx +
             "\n---";
           if (theforgeContext) {
             uxPrompt =
               "**Contexto del codebase (TheForge) — priorizar y usar antes de elaborar:**\n---\n" +
-              theforgeContext.slice(0, mddTheforgeContextMaxChars()) +
+              mddTheforgeContextBlock(theforgeContext) +
               "\n---\n\n**Regla obligatoria (legacy):** No inventes nada. Apégate al MDD y únicamente al conocimiento del codebase (TheForge) proporcionado arriba.\n\n**Instrucción:** Usa TODO el conocimiento anterior para alinear la guía con lo que ya existe. A continuación, MDD y Blueprint.\n\n" +
               uxPrompt;
           }
@@ -1922,7 +1768,7 @@ export class LegacyCoordinatorService {
                 if (hasTokens) {
                   uxPrompt =
                     "**Tokens de diseño extraídos del codebase — usar como valores reales:**\\n---\\n" +
-                    (parsed.summary ?? "").slice(0, 6000) +
+                    (parsed.summary ?? "") +
                     "\\n---\\n\\n" +
                     uxPrompt;
                 }
@@ -1932,45 +1778,92 @@ export class LegacyCoordinatorService {
             // Si falla la extracción, continuar sin tokens — no bloquear la generación
             this.logger.warn("[Legacy UX/UI] Design token extraction via MCP tool skipped (error, continuing without tokens)");
           }
-          const uxUiGuideContent = await this.ai.generateResponse(uxPrompt, [], {
-            systemPrompt: UX_UI_GUIDE_PROMPT,
-            activeTab: "ux-ui-guide",
-            projectTypeForUxGuide: "LEGACY",
-          });
+          const uxUiGuideContent = await this.ai.generateResponse(
+            appendLegacyBaselineDetailPrompt(uxPrompt, legacyBaselineStage),
+            [],
+            {
+              systemPrompt: UX_UI_GUIDE_PROMPT,
+              activeTab: "ux-ui-guide",
+              projectTypeForUxGuide: "LEGACY",
+            },
+          );
           const uxClean = (uxUiGuideContent ?? "").replace(/\n---FIN_UX_UI---.*/s, "").trim();
           await update({ uxUiGuideContent: cleanDocumentContent(uxClean) });
           p = await load();
           return;
         }
         case "user_stories": {
-          const smUs = await trySectionMergeDeliverable(
-            this.ai,
-            "user_stories",
-            mddForLlm,
-            legacyOpts,
-            { spec: p.specContent ?? undefined, useCases: p.useCasesContent ?? undefined },
-            run429,
-            this.logger,
-            {
-              attemptSectionMerge: await resolveSectionMergeAttempt("user_stories", {
-                specText: p.specContent ?? undefined,
-                useCasesText: p.useCasesContent ?? undefined,
-              }),
-            },
+          const integrationPromptCtx = await this.projectIntegration.resolvePromptContext(
+            projectId,
+            gateStage?.id ?? undefined,
           );
-          if (smUs) {
-            pushSectionMergeTrace(smUs.trace);
-            await update({ userStoriesContent: cleanDocumentContent(smUs.content) });
-            p = await load();
-            return;
+          if (!legacyBaselineStage) {
+            const smUs = await trySectionMergeDeliverable(
+              this.ai,
+              "user_stories",
+              mddForLlm,
+              legacyOpts,
+              { spec: p.specContent ?? undefined, useCases: p.useCasesContent ?? undefined },
+              run429,
+              this.logger,
+              {
+                attemptSectionMerge: await resolveSectionMergeAttempt("user_stories", mddForLlm, {
+                  specText: p.specContent ?? undefined,
+                  useCasesText: p.useCasesContent ?? undefined,
+                }),
+              },
+            );
+            if (smUs) {
+              pushSectionMergeTrace(smUs.trace);
+              await update({ userStoriesContent: cleanDocumentContent(smUs.content) });
+              p = await load();
+              return;
+            }
           }
           const userStoriesContent = await this.ai.generateUserStories(
             mddForLlm,
             p.specContent,
             p.useCasesContent,
-            legacyOpts,
+            {
+              ...legacyOpts,
+              integrationHandoffItems: integrationPromptCtx.handoffItems,
+              integrationNewProject: integrationPromptCtx.newProjectMeta,
+            },
           );
-          await update({ userStoriesContent: cleanDocumentContent(userStoriesContent) });
+          const cleanedUs = cleanDocumentContent(userStoriesContent);
+          if (gateStage?.id) {
+            await this.projectIntegration
+              .syncTracesFromUserStories(projectId, gateStage.id, cleanedUs)
+              .catch(() => {});
+          }
+          await update({ userStoriesContent: cleanedUs });
+          p = await load();
+          return;
+        }
+        case "agent_governance": {
+          const bpGov = p.blueprintContent?.trim() || undefined;
+          const governanceInput = {
+            mddMarkdown: mddForLlm,
+            blueprintMarkdown: bpGov,
+            tasksMarkdown: p.tasksContent?.trim() || undefined,
+            architectureMarkdown: p.architectureContent?.trim() || undefined,
+            specMarkdown: p.specContent?.trim() || undefined,
+            complexity,
+          };
+          const govSuggestions = suggestAgentGovernanceArtifacts(governanceInput);
+          const raw = await this.ai.generateAgentGovernance(mddForLlm, bpGov, complexity, {
+            ...legacyOpts,
+            suggestions: govSuggestions,
+            tasksContent: p.tasksContent,
+            architectureContent: p.architectureContent,
+            specContent: p.specContent,
+          });
+          const scaffold = parseAgentGovernanceResponse(raw, complexity, {
+            suggestions: govSuggestions,
+            governanceInput,
+            forceFreshOverlay: true,
+          });
+          await update({ agentGovernanceContent: serializeAgentGovernanceScaffold(scaffold) });
           p = await load();
           return;
         }
@@ -1985,7 +1878,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("tasks", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("tasks", mddForLlm, {
                 blueprintText: bpTasks || undefined,
               }),
             },
@@ -1996,13 +1889,19 @@ export class LegacyCoordinatorService {
             p = await load();
             return;
           }
-          const tasksContent = await this.ai.generateTasks(mddForLlm, bpTasks || undefined, legacyOpts);
+          const freshForTasks = await load();
+          const navigationMap = await this.fetchNavigationMapForTasks(theforgeId).catch(() => undefined);
+          const tasksContent = await this.ai.generateTasks(
+            mddForLlm,
+            freshForTasks.blueprintContent?.trim() || bpTasks || undefined,
+            mergeLegacyTasksGenerateOptions(legacyOpts, freshForTasks, navigationMap),
+          );
           await update({ tasksContent: cleanDocumentContent(tasksContent) });
           p = await load();
           return;
         }
         case "infra": {
-          const bpInf = await ensureBlueprint();
+          const bpInf = await ensureBlueprint(mddForLlm);
           const smIf = await trySectionMergeDeliverable(
             this.ai,
             "infra",
@@ -2012,7 +1911,7 @@ export class LegacyCoordinatorService {
             run429,
             this.logger,
             {
-              attemptSectionMerge: await resolveSectionMergeAttempt("infra", {
+              attemptSectionMerge: await resolveSectionMergeAttempt("infra", mddForLlm, {
                 blueprintText: bpInf,
               }),
             },
@@ -2035,6 +1934,82 @@ export class LegacyCoordinatorService {
       }
     };
 
+    let reverseEngineeringMddForLegacySteps: string | null = null;
+    const getReverseEngineeringMddForLegacySteps = (): string => {
+      if (reverseEngineeringMddForLegacySteps === null) {
+        reverseEngineeringMddForLegacySteps = buildReverseEngineeringMddForLegacySteps(
+          codebaseDoc,
+          report,
+        );
+        if (isLegacyDeliverablesDebugVerbose()) {
+          this.logger.log(
+            `[LegacyDeliverables] reverse_engineering_fallback strategy=${report.mddLlmStrategy ?? "?"} sentChars=${report.mddCharsSentToLlm ?? reverseEngineeringMddForLegacySteps.length}`,
+          );
+        }
+      }
+      return reverseEngineeringMddForLegacySteps;
+    };
+
+    /** Bulk legacy: `runStepWithMdd` (ProjectsService bloquea LEGACY en spec) o generate-from-codebase. */
+    const mddForLlmSteps = (): string => mddContent || getReverseEngineeringMddForLegacySteps();
+
+    const runDeliverableStep = async (kind: DeliverableKind): Promise<void> => {
+      if (kind === "mdd_canonical") return;
+      if (isReverseEngineering) {
+        const docType = DELIVERABLE_KIND_TO_CODEBASE_DOC_TYPE[kind];
+        if (docType) {
+          await this.generateFromCodebase(projectId, docType, stageId);
+          return;
+        }
+        report.pipelineMode = "legacy_run_step_fallback";
+        await runStepWithMdd(kind, mddForLlmSteps());
+        return;
+      }
+      await runStepWithMdd(kind, mddForLlmSteps());
+    };
+
+    const deliverablesPlanned = planLegacyDeliverablesToGenerate({
+      complexity,
+      hasMddContent: !!mddContent,
+    });
+    report.deliverablesOrder = [...deliverablesPlanned];
+
+    if (deliverablesPlanned.length === 0) {
+      pushStep({
+        kind: "preflight_plan",
+        durationMs: 0,
+        ok: true,
+        detail: "all_deliverables_already_present",
+      });
+      report.finishedAt = new Date().toISOString();
+      report.ok = true;
+      await this.persistDeliverablesDebugReport(projectId, report, gateStage?.id);
+      if (gateStage?.id) {
+        const snapProject = await this.prisma.project.findUnique({ where: { id: projectId } });
+        if (snapProject) {
+          await persistStageDeliverableSnapshotFromProject(
+            this.prisma,
+            gateStage.id,
+            snapProject,
+            { source: "cascade" },
+          ).catch((err) =>
+            this.logger.warn(
+              `[LegacyDeliverables] deliverableSnapshot: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+        }
+      }
+      options?.onProgress?.({ step: "done", index: 0, total: 0 });
+      return { ok: true, lastDeliverablesDebug: report };
+    }
+
+    pushStep({
+      kind: "preflight_plan",
+      durationMs: 0,
+      ok: true,
+      detail: `planned=${deliverablesPlanned.length} skipped=${deliverablesToRun.length - deliverablesPlanned.length} parallel=true`,
+    });
+
     const largeMddCooldown = legacyDeliverablesLargeMddCooldownMs(report.mddChars);
     if (largeMddCooldown > 0) {
       if (isLegacyDeliverablesDebugVerbose()) {
@@ -2045,57 +2020,71 @@ export class LegacyCoordinatorService {
       await sleepMs(largeMddCooldown);
     }
 
-    let didRunLlmDeliverableStep = false;
-    for (const kind of deliverablesToRun) {
-      if (kind === "mdd_canonical") {
-        pushStep({ kind: "mdd_canonical", durationMs: 0, ok: true, detail: "noop" });
-        continue;
-      }
-      const interStepMs = legacyDeliverablesInterStepDelayMs();
-      if (didRunLlmDeliverableStep && interStepMs > 0) {
-        if (isLegacyDeliverablesDebugVerbose()) {
-          this.logger.log(`[LegacyDeliverables] throttle inter_step_ms=${interStepMs} before=${kind}`);
-        }
-        await sleepMs(interStepMs);
-      }
-      didRunLlmDeliverableStep = true;
+    const stepErrors: Array<{ step: string; error: string }> = [];
+    let completedCount = 0;
+    const totalPlanned = deliverablesPlanned.length;
 
-      const t0 = Date.now();
-      try {
-        await runWithLegacy429Retries(() => runStep(kind), { logger: this.logger, step: kind });
-        p = await load();
-        const outChars = deliverableFieldCharCount(p as Record<string, unknown>, kind);
-        const short = outChars < 48;
-        pushStep({
-          kind,
-          durationMs: Date.now() - t0,
-          ok: true,
-          outChars,
-          detail: short ? "output_under_48_chars" : undefined,
-        });
-      } catch (err) {
-        pushStep({
-          kind,
-          durationMs: Date.now() - t0,
-          ok: false,
-          error: clipDebug(err instanceof Error ? err.message : String(err), 800),
-        });
-        markFatal(err);
-        this.logger.error(`[LegacyDeliverables] FATAL step=${kind} — ${err instanceof Error ? err.message : String(err)}${err instanceof Error && err.stack ? `\n${err.stack.slice(0, 2000)}` : ""}`);
-        if (isLegacy429Like(err)) {
-          report.upstreamRateLimited = true;
-          report.retryAfterSeconds = readRetryAfterSecondsFromErrorHeaders(err) ?? 60;
+    await Promise.allSettled(
+      deliverablesPlanned.map(async (kind) => {
+        const t0 = Date.now();
+        try {
+          await runWithLegacy429Retries(() => runDeliverableStep(kind), { logger: this.logger, step: kind });
+          const fresh = await load();
+          const outChars = deliverableFieldCharCount(fresh as Record<string, unknown>, kind);
+          const short = outChars < 48;
+          let detail: string | undefined = short ? "output_under_48_chars" : undefined;
+          if (kind === "logic_flows" && report.logicFlowsSection5Coverage) {
+            const c = report.logicFlowsSection5Coverage;
+            detail = `s5_coverage=${c.coveragePercent}% target=${c.targetPercent}% met=${c.metTarget}${
+              c.batchCount ? ` batches=${c.batchCount}` : ""
+            }`;
+          }
+          pushStep({
+            kind,
+            durationMs: Date.now() - t0,
+            ok: true,
+            outChars,
+            detail,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          pushStep({
+            kind,
+            durationMs: Date.now() - t0,
+            ok: false,
+            error: clipDebug(msg, 800),
+          });
+          stepErrors.push({ step: kind, error: msg });
+          if (isLegacy429Like(err)) {
+            report.upstreamRateLimited = true;
+            report.retryAfterSeconds = readRetryAfterSecondsFromErrorHeaders(err) ?? 60;
+          }
         }
-        await this.persistDeliverablesDebugReport(projectId, report);
-        if (isLegacyDeliverablesDebugVerbose()) this.logger.error(err);
-        const rateLimited = upstreamLlmRateLimitHttpException(err, report);
-        if (rateLimited) throw rateLimited;
-        throw err;
-      }
+        completedCount++;
+        const label = DELIVERABLE_STEP_LABELS[kind] ?? kind;
+        options?.onProgress?.({ step: label, index: completedCount - 1, total: totalPlanned });
+      }),
+    );
+
+    options?.onProgress?.({ step: "done", index: totalPlanned, total: totalPlanned });
+
+    p = await load();
+
+    if (stepErrors.length > 0) {
+      this.logger.warn(
+        `[LegacyDeliverables] Completada con ${stepErrors.length}/${totalPlanned} paso(s) fallido(s): ${stepErrors.map((e) => `${e.step}: ${e.error}`).join("; ")}`,
+      );
+    }
+
+    if (report.upstreamRateLimited) {
+      markFatal(new Error("UPSTREAM_LLM_RATE_LIMIT"));
+      await this.persistDeliverablesDebugReport(projectId, report, gateStage?.id);
+      const rateLimited = upstreamLlmRateLimitHttpException(new Error("UPSTREAM_LLM_RATE_LIMIT"), report);
+      if (rateLimited) throw rateLimited;
     }
 
     report.finishedAt = new Date().toISOString();
-    report.ok = true;
+    report.ok = stepErrors.length === 0;
     report.deliverablesWithBody = report.steps.filter(
       (s) =>
         typeof s.outChars === "number" &&
@@ -2106,7 +2095,16 @@ export class LegacyCoordinatorService {
         s.kind !== "mdd_canonical",
     ).length;
 
-    await this.persistDeliverablesDebugReport(projectId, report);
+    await this.persistDeliverablesDebugReport(projectId, report, gateStage?.id);
+    if (gateStage?.id) {
+      await persistStageDeliverableSnapshotFromProject(this.prisma, gateStage.id, p, {
+        source: "cascade",
+      }).catch((err) =>
+        this.logger.warn(
+          `[LegacyDeliverables] deliverableSnapshot: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+    }
     const elapsed = Date.parse(report.finishedAt) - Date.parse(report.startedAt);
     this.logger.log(
       `[LegacyDeliverables] cascade_ok project=${projectId.slice(0, 8)}… steps=${report.steps.length} withBody=${report.deliverablesWithBody} tfCtxChars=${report.theforgeContextChars} elapsedMs=${elapsed}`,
@@ -2189,7 +2187,7 @@ export class LegacyCoordinatorService {
     }
 
     // Obtener codebaseDoc desde stage o project
-    const state = this.getLegacyChangeState(stage, project);
+    const state = this.readLegacyChangeState(stage);
     const codebaseDoc = String(state.codebaseDoc ?? "").trim();
 
     if (codebaseDoc.length < 300) {
@@ -2198,19 +2196,66 @@ export class LegacyCoordinatorService {
       );
     }
 
-    // Construir prompt
-    const typePrompt = LegacyCoordinatorService.DOCUMENT_TYPE_PROMPTS[documentType];
-    const codebaseChunk = codebaseDoc.slice(0, 120_000);
-    const prompt = `${typePrompt}\n\n--- codebaseDoc ---\n\n${codebaseChunk}`;
+    let content: string;
 
-    // Llamar al LLM
-    const llm = await this.aiFactory.createForUser(getRequestUserId());
-    const raw = await llm.generateResponse(prompt, [], {
-      systemPrompt:
-        "Eres un analista de software experto. Genera documentación técnica precisa basada en el codebase proporcionado.",
+    if (documentType === "tasks") {
+      const gateStageForMdd = stage ?? pickPrimaryStage(project.stages);
+      const stageMdd = String(gateStageForMdd?.mddContent ?? "").trim();
+      const mddForTasks =
+        stageMdd ||
+        `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}`;
+      const legacyBaselineStage = resolveLegacyBaselineStageFlag(gateStageForMdd, stageMdd || mddForTasks);
+      let legacyOpts:
+        | { theforgeContext?: string; contractSpecs?: string; legacyBaselineStage?: boolean }
+        | undefined;
+      if (project.theforgeProjectId && this.theforge.isConfigured()) {
+        const [theforgeContext, contractSpecs] = await Promise.all([
+          this.theforge.getContextForDeliverables(project.theforgeProjectId),
+          this.theforge.gatherContractSpecsForApi(project.theforgeProjectId),
+        ]);
+        legacyOpts = {
+          legacyBaselineStage,
+          theforgeContext: theforgeContext?.trim() || undefined,
+          contractSpecs: contractSpecs?.trim() || undefined,
+        };
+      } else if (legacyBaselineStage) {
+        legacyOpts = { legacyBaselineStage };
+      }
+      const navigationMap = project.theforgeProjectId
+        ? await this.fetchNavigationMapForTasks(project.theforgeProjectId).catch(() => undefined)
+        : undefined;
+      const rawTasks = await this.ai.generateTasks(
+        mddForTasks,
+        project.blueprintContent,
+        mergeLegacyTasksGenerateOptions(legacyOpts, project, navigationMap),
+      );
+      content = cleanDocumentContent(rawTasks);
+    } else {
+      // Construir prompt
+      const typePrompt = LegacyCoordinatorService.DOCUMENT_TYPE_PROMPTS[documentType];
+      const prompt = `${typePrompt}\n\n--- codebaseDoc ---\n\n${codebaseDoc}`;
+
+      // Llamar al LLM
+      const llm = await this.aiFactory.createForUser(getRequestUserId());
+      const raw = await llm.generateResponse(prompt, [], {
+        systemPrompt:
+          "Eres un analista de software experto. Genera documentación técnica precisa basada en el codebase proporcionado.",
+      });
+
+      content = cleanDocumentContent(raw ?? "");
+    }
+
+    const fieldKey = String(field);
+    const currentContent = String(
+      (project as Record<string, unknown>)[fieldKey] ?? "",
+    ).trim();
+    const persistValidation = validateDocumentForPersist(currentContent, content, {
+      fieldLabel: documentPersistFieldLabel(fieldKey),
+      minBodyChars: currentContent.length > 0 ? 80 : 120,
     });
-
-    const content = cleanDocumentContent(raw ?? "");
+    if (!persistValidation.ok) {
+      throw new BadRequestException(persistValidation.message);
+    }
 
     // Persistir en el proyecto
     await this.prisma.project.update({

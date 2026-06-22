@@ -15,20 +15,20 @@ Referencia de herramientas del MCP **AriadneSpecs** alineada a **`mcp_server_spe
 
 | Herramienta | Uso (MCP) | TheForge |
 |-------------|-----------|----------|
-| **list_known_projects** | Mapear IDs a nombres (proyectos + roots). | ✅ Listado al crear proyecto legacy (proyectos y repos); `theforgeProjectId` = proyecto o repo. |
-| **get_modification_plan** | Plan: filesToModify (path + repoId) y questionsToRefine. | ✅ Inicio flujo legacy (primario); fallback con ask_codebase. |
+| **list_known_projects** | Mapear IDs a nombres (proyectos + roots). | ✅ Listado al crear proyecto legacy. |
+| **generate_legacy_documentation** | MDD de partida determinista (7 claves JSON → markdown). | ✅ **`POST …/legacy/generate-codebase-doc`** (MDD Inicial). Preferir sobre `ask_codebase` para doc. partida. |
+| **get_modification_plan** | Plan: filesToModify (path + repoId) y questionsToRefine. | ✅ Inicio flujo **cambio** (etapas 2+); fallback con ask_codebase. |
 | **ask_codebase** | Chat agéntico ingest; `responseMode: evidence_first` → JSON MDD (claves `summary`, `entities`, `evidence_paths`, … o `mddDocument`) vía LLM/orchestrator (`mdd-evidence`). | ✅ Misma herramienta; con `evidence_first`, `TheForgeService.askCodebase` **normaliza JSON → markdown** antes de devolver texto al legacy/orquestador. |
 | **get_file_content** | Contenido de un archivo (Bitbucket/GitHub; INGEST_URL). | ✅ Contexto de los 2 primeros archivos a modificar al generar MDD. |
 | **validate_before_edit** | **Obligatorio antes de editar:** impacto + contrato en un solo llamado. | ✅ Al generar MDD: validación de los 3 primeros archivos; fallback a get_legacy_impact si no disponible. |
 | **get_legacy_impact** | Qué se rompe si se modifica un nodo. | ✅ Fallback cuando validate_before_edit no existe o devuelve vacío. |
 | **get_contract_specs** | Props reales de un componente. | Disponible en TheForgeService; no usado en flujo automático. |
 | **get_component_graph** | Árbol de dependencias de un componente. | Disponible en TheForgeService; no usado en flujo automático. |
-| **get_c4_model** | Modelo C4 (sistemas, contenedores, `COMMUNICATES_WITH`) vía `GET /api/graph/c4-model` en el proceso MCP (JWT Nest). | ✅ `TheForgeService.getC4Model` / prefijo en `getContextForDeliverables` para **Blueprint** (y preview) en proyectos LEGACY. Sin JWT Nest en el MCP, la tool suele fallar (se omite el bloque). |
 | **get_functions_in_file** | Funciones y componentes que contiene un archivo. | ✅ TheForgeService; usado en generateMdd y agente ReAct. |
 | **get_import_graph** | Grafo de imports de un archivo (qué importa/exporta). | No implementado; uso futuro. |
 | **get_file_context** | Contenido + imports + exports (paso: search → get_file_context → validate). | No implementado; alternativa enriquecida a get_file_content. |
 | **get_project_standards** | Prettier, ESLint, tsconfig. | No implementado; uso futuro para que código generado siga estándares. |
-| **semantic_search** | Búsqueda por palabra clave en componentes, funciones, archivos. | ✅ TheForgeService; usado en generateCodebaseDoc, getContextForDeliverables, generateMdd y agente ReAct. |
+| **semantic_search** | Búsqueda por palabra clave en componentes, funciones, archivos. | ✅ TheForgeService; usado en generateMdd y agente ReAct. |
 | **get_project_analysis** | Modos: `diagnostico`, `duplicados`, `reingenieria`, `codigo_muerto`, **`seguridad`** (SPEC-MCP-001 / `mcp_server_specs.md`). Requiere ingest + claves en servidor. | No implementado en The Forge; uso futuro. |
 | **get_definitions** | Origen exacto (archivo, líneas) de clase/función. | ✅ TheForgeService; usado en generateMdd y agente ReAct. |
 | **get_references** | Todos los usos de un símbolo. | ✅ TheForgeService; disponible para agente ReAct. |
@@ -65,4 +65,4 @@ Referencias: [THEFORGE-COMO-INVOCA-THEFORGE-MCP.md](THEFORGE-COMO-INVOCA-THEFORG
 
 ---
 
-*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-05-22 (pnpm). Rutas relativas al monorepo `theforge`.*
+*Corpus «The Forge - by Kreo» — NotebookLM sync 2026-06-10 (pnpm). Rutas relativas al monorepo `theforge`.*

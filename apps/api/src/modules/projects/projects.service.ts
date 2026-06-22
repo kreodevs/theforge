@@ -5,10 +5,12 @@ import { getRequestUserId, getRequestUserRole } from "../../common/request-user.
 import { isAdminOrAbove } from "../../common/roles.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
+import { validateDocumentForPersist } from "../sessions/document-shrink.util.js";
 import { enrichBlueprintWithUiDesignSystem } from "../engine/blueprint-enrich-ui-system.js";
 import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
+import { shouldReplacePhase0SummaryWithBorrador } from "@theforge/shared-types";
 import {
   enforceMddGovernancePatternsOnPersist,
   mddHasSubstantialBody,
@@ -35,19 +37,40 @@ import { ScraperService } from "../scraper/scraper.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.service.js";
 import { ChangeLogService } from "../change-log/change-log.service.js";
+import type { LegacyGenerateOptions } from "../ai/ai.service.js";
+import {
+  extractSection5Services,
+  readLogicFlowsBatchSize,
+  scoreLogicFlowsSection5Coverage,
+  toLogicFlowsSection5CoverageReport,
+} from "../ai/utils/legacy-as-is-logic-flows.util.js";
+import { buildLegacyGenerateOptions } from "../legacy-flow/legacy-generate-options.util.js";
+import { ProjectIntegrationService } from "./integration/project-integration.service.js";
+import { buildHandoffUserStoriesAppendix } from "./integration/integration-context.util.js";
+import { patchLegacyDeliverablesDebugReport } from "../legacy-flow/legacy-flow-state-debug.util.js";
 import type { IOrchestratorProjectsPort } from "./projects-service.port.js";
 import { resolveUrls } from "../scraper/url-utils.js";
 import {
   createProjectSchema,
   createStageBodySchema,
+  cloneProjectBodySchema,
   patchStageBodySchema,
   updateProjectSchema,
   DELIVERABLES_BY_COMPLEXITY,
+  parseAgentGovernanceScaffold,
   type DeliverableKind,
   type ComplexityPending,
   type CreateProjectDto,
   type UpdateProjectDto,
 } from "@theforge/shared-types";
+import {
+  parseAgentGovernanceResponse,
+  serializeAgentGovernanceScaffold,
+} from "../ai/utils/agent-governance.util.js";
+import {
+  suggestAgentGovernanceArtifacts,
+  type SuggestAgentGovernanceInput,
+} from "../ai/utils/suggest-agent-governance-artifacts.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
 import {
@@ -58,6 +81,21 @@ import {
 import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.util.js";
 
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
+import { resolveStageDeliverables } from "./stage-deliverables.util.js";
+import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "./stage-deliverable-snapshot.util.js";
+import {
+  persistStageAndProjectDeliverables,
+  seedActiveStageDeliverables,
+} from "./stage-deliverable-persist.util.js";
+import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
+import { SddIntegrationService } from "./sdd-integration.service.js";
+import { reconcileExportScaffold, buildUnifiedHandoff } from "./handoff-export.util.js";
+import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
+import {
+  buildProjectCloneCreateInput,
+  resolveCloneProjectOptions,
+  type ProjectCloneSource,
+} from "./project-clone.util.js";
 
 import {
   BRD_GENERATION_SYSTEM,
@@ -67,7 +105,7 @@ import {
 type StageWithEst = Stage & { estimation: Estimation | null };
 
 function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unknown>>(project: P) {
-  const flat = flattenStageDeliverables(project.stages);
+  const flat = flattenStageDeliverables(project.stages, project as ProjectDeliverableSource);
   return { ...project, ...flat };
 }
 
@@ -111,6 +149,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly theforge: TheForgeService,
     private readonly graphMemory: GraphMemoryService,
     private readonly changeLog: ChangeLogService,
+    private readonly projectIntegration: ProjectIntegrationService,
+    private readonly sddIntegration: SddIntegrationService,
   ) {}
 
   private buildSemaphoreBase(
@@ -263,13 +303,89 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
       },
     });
-    return toApiProject(created);
+
+    const apiProject = toApiProject(created);
+
+    if (isLegacy && parsed.theforgeProjectId?.trim()) {
+      const stage = created.stages[0];
+      this.theforge
+        .wireAriadneBrownfieldConverge({
+          ariadneSourceId: parsed.theforgeProjectId.trim(),
+          workshopProjectId: created.id,
+          workshopStageId: stage?.id ?? "",
+        })
+        .then((wire) => {
+          if (wire.wired) return;
+          if (wire.skippedReason) {
+            this.logger.debug(
+              `[Projects] Ariadne brownfield auto-wire skipped: ${wire.skippedReason}`,
+            );
+            return;
+          }
+          if (wire.errors.length) {
+            this.logger.warn(
+              `[Projects] Ariadne brownfield auto-wire partial/failed: ${wire.errors.join("; ")}`,
+            );
+          }
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `[Projects] Ariadne brownfield auto-wire error: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+    }
+
+    return apiProject;
+  }
+
+  /**
+   * Deep-clones project documents and all stages into a new project owned by the current user.
+   * Does not copy sessions, chat, favorites, integration links, webhooks, or suite lineage.
+   */
+  async cloneProject(sourceId: string, body: unknown) {
+    const parsed = cloneProjectBodySchema.parse(body ?? {});
+    const source = (await this.assertProjectAccess(sourceId)) as ProjectCloneSource;
+    const userId = getRequestUserId();
+    const options = resolveCloneProjectOptions(source, parsed);
+
+    const created = await this.prisma.project.create({
+      data: buildProjectCloneCreateInput(source, { userId, ...options }),
+      include: {
+        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+      },
+    });
+
+    if (source.projectType === "LEGACY") {
+      const sortedStages = [...created.stages].sort((a, b) => a.ordinal - b.ordinal);
+      for (const stage of sortedStages) {
+        const parentStage =
+          stage.ordinal > 1
+            ? sortedStages.find((candidate) => candidate.ordinal === stage.ordinal - 1)
+            : undefined;
+        this.graphMemory
+          .syncLegacyStage({
+            stageId: stage.id,
+            projectId: created.id,
+            ordinal: stage.ordinal,
+            name: stage.name ?? "",
+            parentStageId: parentStage?.id,
+            theforgeProjectId: source.theforgeProjectId ?? undefined,
+          })
+          .catch(() => {});
+      }
+    }
+
+    return {
+      ...toApiProject(created),
+      clonedFromProjectId: sourceId,
+    };
   }
 
   async findAll() {
     const userId = getRequestUserId();
     const rows = await this.prisma.project.findMany({
       where: {
+        archivedAt: null,
         OR: [
           { userId },                          // mis proyectos PRIVATE
           { visibility: "SHARED" },            // todos los SHARED
@@ -352,7 +468,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       rest.complexity !== undefined || rest.hasUxTeam !== undefined ||
       rest.projectType !== undefined || rest.theforgeProjectId !== undefined ||
       rest.figmaMapping !== undefined || clearComplexityPending === true ||
-      cpInput !== undefined;
+      cpInput !== undefined ||
+      rest.convergeWebhookUrl !== undefined || rest.convergeWebhookSecret !== undefined;
     if (hasSettingsChange && existingRaw.userId !== getRequestUserId()) {
       throw new BadRequestException("Only the project owner can change project settings");
     }
@@ -361,6 +478,15 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       (parsedStageId?.trim() && existingRaw.stages.find((s) => s.id === parsedStageId.trim())) ||
       pickPrimaryStage(existingRaw.stages);
     if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
+
+    if (rest.specContent !== undefined) {
+      const specValidation = validateDocumentForPersist(existingRaw.specContent, rest.specContent, {
+        fieldLabel: "Spec",
+      });
+      if (!specValidation.ok) {
+        throw new BadRequestException(specValidation.message);
+      }
+    }
 
     let mddGovernancePatternsReverted = false;
     let mddForPipeline: string | null | undefined = parsedMdd;
@@ -396,6 +522,18 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     if (rest.dbgaContent !== undefined && rest.dbgaContent !== null) {
       const { ensureJsonCodeFences } = await import("../ai-analysis/state/state-to-markdown.js");
       updatePayload.dbgaContent = ensureJsonCodeFences(rest.dbgaContent);
+      const { isPhase0StructuredMarkdown, markdownToPhase0Document } = await import(
+        "../ai-analysis/phase0/phase0-from-markdown.js"
+      );
+      if (isPhase0StructuredMarkdown(rest.dbgaContent)) {
+        if (shouldReplacePhase0SummaryWithBorrador(existing.phase0SummaryContent)) {
+          updatePayload.phase0SummaryContent = JSON.stringify(
+            markdownToPhase0Document(rest.dbgaContent),
+            null,
+            2,
+          );
+        }
+      }
     }
 
     const infraContentForRecalc = rest.infraContent ?? existing.infraContent ?? null;
@@ -462,15 +600,23 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       clearComplexityPending === true ||
       cpInput !== undefined;
     if (hasProjectFieldUpdates) {
+      const deliverablePatch = pickDeliverableFieldsFromSource(rest as ProjectDeliverableSource);
+      const hasDeliverablePatch = Object.keys(deliverablePatch).length > 0;
+
       await this.prisma.project.update({
         where: { id },
         data: updatePayload,
       });
+
+      if (hasDeliverablePatch) {
+        await persistStageAndProjectDeliverables(this.prisma, targetStage.id, id, deliverablePatch);
+      }
       // Bitácora de cambios para campos de contenido documental
       const documentFields = [
         "dbgaContent", "specContent", "architectureContent", "useCasesContent",
         "userStoriesContent", "blueprintContent", "tasksContent",
         "apiContractsContent", "logicFlowsContent", "infraContent",
+        "agentGovernanceContent",
         "uxUiGuideContent", "phase0SummaryContent", "aemContent",
       ] as const;
       for (const field of documentFields) {
@@ -532,6 +678,24 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       },
     });
     if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    const previousActive = await this.prisma.stage.findMany({
+      where: { projectId, workflowStatus: StageStatus.ACTIVE, NOT: { id: stageId } },
+      select: { id: true, ordinal: true, deliverableSnapshot: true },
+    });
+
+    for (const prev of previousActive) {
+      if (prev.ordinal >= 1) {
+        await ensureStageDeliverableSnapshotIfMissing(this.prisma, prev.id, projectId, {
+          source: "cascade",
+        }).catch((err) =>
+          this.logger.warn(
+            `[Stage] snapshot before activate: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+    }
+
     await this.prisma.$transaction([
       this.prisma.stage.updateMany({
         where: { projectId, workflowStatus: StageStatus.ACTIVE },
@@ -542,6 +706,15 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         data: { workflowStatus: StageStatus.ACTIVE },
       }),
     ]);
+
+    const previousStageId = previousActive.sort((a, b) => a.ordinal - b.ordinal)[0]?.id;
+    await seedActiveStageDeliverables(this.prisma, stageId, projectId, {
+      previousStageId: previousStageId ?? null,
+    }).catch((err) =>
+      this.logger.warn(
+        `[Stage] seed deliverables on activate: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
   }
 
   async createStage(projectId: string, body: unknown) {
@@ -626,16 +799,17 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         name: out.name ?? "",
         theforgeProjectId: project.theforgeProjectId ?? undefined,
       }).catch(() => {});
-      // Relacionar con Stage 1 (línea base) si no es Stage 1
+      // Relacionar con etapa anterior (ordinal N-1) para FalkorDB DERIVED_FROM
       if (out.ordinal > 1) {
-        const baselineStage = project.stages.find((s) => s.ordinal === 1);
-        if (baselineStage) {
+        const parentOrdinal = out.ordinal - 1;
+        const parentStage = project.stages.find((s) => s.ordinal === parentOrdinal);
+        if (parentStage) {
           this.graphMemory.syncLegacyStage({
             stageId: out.id,
             projectId,
             ordinal: out.ordinal,
             name: out.name ?? "",
-            parentStageId: baselineStage.id,
+            parentStageId: parentStage.id,
             theforgeProjectId: project.theforgeProjectId ?? undefined,
           }).catch(() => {});
         }
@@ -655,6 +829,13 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return { stages };
   }
 
+  async getStageDeliverables(projectId: string, stageId: string) {
+    const project = await this.assertProjectAccess(projectId);
+    const stage = project.stages.find((s) => s.id === stageId);
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+    return resolveStageDeliverables(project, stage, "workshop");
+  }
+
   private assertBlueprintCoversMddDataModel(project: Project & { stages: StageWithEst[] }): void {
     const mdd = this.constitutionMarkdown(project);
     const dm = this.conformance.checkBlueprintDataModel(mdd, project.blueprintContent);
@@ -666,6 +847,50 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         gaps: dm.gaps,
       });
     }
+  }
+
+  /** Opciones legacy (etapa 1 AS-IS + TheForge) para regeneración individual en Workshop. */
+  private async resolveLegacyGenerateOptions(
+    project: Project & { stages: StageWithEst[] },
+  ): Promise<LegacyGenerateOptions | undefined> {
+    const p = project as { projectType?: string; theforgeProjectId?: string | null };
+    return buildLegacyGenerateOptions({
+      projectType: p.projectType,
+      theforgeProjectId: p.theforgeProjectId ?? null,
+      mddMarkdown: this.constitutionMarkdown(project),
+      stages: project.stages,
+      theforgeConfigured: this.theforge.isConfigured(),
+      getContextForDeliverables: (id) => this.theforge.getContextForDeliverables(id),
+      gatherContractSpecsForApi: (id) => this.theforge.gatherContractSpecsForApi(id),
+    });
+  }
+
+  /** Tras regen individual de flujos legacy etapa 1: telemetría §5 en `legacyFlowState`. */
+  private async persistLegacyLogicFlowsCoverageDebug(
+    projectId: string,
+    project: Project & { stages: StageWithEst[] },
+    logicFlowsMarkdown: string,
+    legacyOpts: LegacyGenerateOptions | undefined,
+  ): Promise<void> {
+    if (!legacyOpts?.legacyBaselineStage) return;
+    const mdd = this.constitutionMarkdown(project);
+    const services = extractSection5Services(mdd);
+    const batchSize = readLogicFlowsBatchSize();
+    const batchCount =
+      services.length > batchSize ? Math.ceil(services.length / batchSize) : undefined;
+    const coverage = toLogicFlowsSection5CoverageReport(
+      scoreLogicFlowsSection5Coverage(mdd, logicFlowsMarkdown),
+      batchCount !== undefined ? { batchCount } : undefined,
+    );
+    await patchLegacyDeliverablesDebugReport(
+      this.prisma,
+      projectId,
+      {
+        legacyBaselineStage: true,
+        logicFlowsSection5Coverage: coverage,
+      },
+      pickPrimaryStage(project.stages ?? [])?.id,
+    );
   }
 
   async patchStage(projectId: string, stageId: string, body: unknown) {
@@ -703,6 +928,27 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       });
       if (clash) throw new BadRequestException(`Ordinal ${dto.ordinal} ya está en uso`);
       data.ordinal = dto.ordinal;
+    }
+
+    const terminalStatuses: StageStatus[] = [
+      StageStatus.COMPLETED,
+      StageStatus.ARCHIVED,
+      StageStatus.SUPERSEDED,
+    ];
+    if (dto.workflowStatus !== undefined) {
+      data.workflowStatus = dto.workflowStatus as StageStatus;
+      if (terminalStatuses.includes(dto.workflowStatus as StageStatus)) {
+        await ensureStageDeliverableSnapshotIfMissing(this.prisma, stageId, projectId, {
+          source: "manual",
+        }).catch((err) =>
+          this.logger.warn(
+            `[Stage] snapshot on ${dto.workflowStatus}: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+      if (dto.workflowStatus === StageStatus.ACTIVE) {
+        await this.activateStageExclusive(projectId, stageId);
+      }
     }
 
     if (Object.keys(data).length > 0) {
@@ -1036,6 +1282,9 @@ name: ${JSON.stringify(name)}
       case "user_stories":
         await this.generateUserStories(projectId);
         return;
+      case "agent_governance":
+        await this.generateAgentGovernance(projectId);
+        return;
       case "tasks":
         await this.generateTasks(projectId);
         return;
@@ -1093,6 +1342,7 @@ name: ${JSON.stringify(name)}
       ux_ui_guide: "Guía UX/UI",
       api_contracts: "Contratos API",
       logic_flows: "Flujos de Lógica",
+      agent_governance: "Gobernanza Agentes IA",
       tasks: "Tareas",
       infra: "Infraestructura",
     };
@@ -1161,7 +1411,18 @@ name: ${JSON.stringify(name)}
         `[Cascade] Completada con ${errors.length}/${total} paso(s) saltado(s): ${errors.map((e) => `${e.step}: ${e.error}`).join("; ")}`,
       );
     }
-    return this.findOne(projectId);
+    const result = await this.findOne(projectId);
+    const activeStage = pickPrimaryStage(result.stages ?? []);
+    if (activeStage?.id) {
+      await persistStageDeliverableSnapshotFromProject(this.prisma, activeStage.id, result, {
+        source: "cascade",
+      }).catch((err) =>
+        this.logger.warn(
+          `[Cascade] deliverableSnapshot: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+    }
+    return result;
   }
 
   async phase0DeepResearch(
@@ -1223,6 +1484,128 @@ name: ${JSON.stringify(name)}
     return this.update(projectId, { specContent: cleanDocumentContent(specContent) });
   }
 
+  /** Limpia gobernanza persistida antes de regenerar (polling y UI). */
+  async clearAgentGovernanceContent(projectId: string) {
+    return this.update(projectId, { agentGovernanceContent: null });
+  }
+
+  async generateAgentGovernance(
+    projectId: string,
+    target?: string,
+    options?: { forceRegenerate?: boolean },
+  ) {
+    const forceRegenerate = options?.forceRegenerate !== false;
+    const project = await this.assertProjectAccess(projectId);
+    const beforeLen = (project.agentGovernanceContent ?? "").length;
+    this.logger.debug(
+      `[agent-gov] generateAgentGovernance start projectId=${projectId} force=${forceRegenerate} beforeLen=${beforeLen}`,
+    );
+    if (forceRegenerate) {
+      this.logger.debug(`[agent-gov] generateAgentGovernance clearing agentGovernanceContent projectId=${projectId}`);
+      await this.clearAgentGovernanceContent(projectId);
+    }
+    const complexity = project.complexity ?? ComplexityLevel.HIGH;
+    const mdd = this.constitutionMarkdown(project);
+    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
+    const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
+    this.logger.debug(
+      `[agent-gov] generateAgentGovernance input keys=${Object.keys(governanceInput).join(",")} archetypes=${suggestions.archetypes.length} rules=${suggestions.suggestedRules.length} skills=${suggestions.suggestedSkills.length}`,
+    );
+    const raw = await this.ai.generateAgentGovernance(mdd, project.blueprintContent, complexity, {
+      suggestions,
+      tasksContent: project.tasksContent,
+      architectureContent: project.architectureContent,
+      specContent: project.specContent,
+    });
+    const forceFreshOverlay = forceRegenerate;
+    const scaffold = parseAgentGovernanceResponse(raw, complexity, {
+      suggestions,
+      governanceInput,
+      target,
+      forceFreshOverlay,
+    });
+    const serialized = serializeAgentGovernanceScaffold(scaffold);
+    this.logger.debug(
+      `[agent-gov] generateAgentGovernance done projectId=${projectId} beforeLen=${beforeLen} afterLen=${serialized.length} files=${scaffold.files.length}`,
+    );
+    return this.update(projectId, {
+      agentGovernanceContent: serialized,
+    });
+  }
+
+  async generateAgentGovernancePreview(
+    projectId: string,
+    target?: string,
+    options?: { forceRegenerate?: boolean },
+  ): Promise<{ content: string }> {
+    const project = await this.assertProjectAccess(projectId);
+    const complexity = project.complexity ?? ComplexityLevel.HIGH;
+    const mdd = this.constitutionMarkdown(project);
+    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
+    const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
+    const raw = await this.ai.generateAgentGovernance(mdd, project.blueprintContent, complexity, {
+      suggestions,
+      tasksContent: project.tasksContent,
+      architectureContent: project.architectureContent,
+      specContent: project.specContent,
+    });
+    const forceFreshOverlay = options?.forceRegenerate !== false;
+    const scaffold = parseAgentGovernanceResponse(raw, complexity, {
+      suggestions,
+      governanceInput,
+      target,
+      forceFreshOverlay,
+    });
+    return { content: serializeAgentGovernanceScaffold(scaffold) };
+  }
+
+  /** Scaffold listo para ZIP: reconcilia sugerencias, rutas obligatorias y entregables SDD. */
+  async getAgentGovernanceForExport(projectId: string) {
+    const project = await this.assertProjectAccess(projectId);
+    const raw = project.agentGovernanceContent;
+    if (!raw?.trim()) {
+      throw new BadRequestException("No hay gobernanza de agentes generada para este proyecto.");
+    }
+
+    const filesBefore = parseAgentGovernanceScaffold(raw)?.files.length ?? 0;
+    this.logger.debug(
+      `[agent-gov] getAgentGovernanceForExport start projectId=${projectId} rawLen=${raw.length} filesBefore=${filesBefore}`,
+    );
+
+    const exportScaffold = reconcileExportScaffold(project, { throwIfMissing: true });
+    if (!exportScaffold) {
+      throw new BadRequestException("El scaffold de gobernanza no contiene archivos válidos.");
+    }
+
+    this.logger.debug(
+      `[agent-gov] getAgentGovernanceForExport done projectId=${projectId} filesAfter=${exportScaffold.files.length} readOnly=true`,
+    );
+
+    return exportScaffold;
+  }
+
+    private buildAgentGovernanceInput(
+    project: Project,
+    mddMarkdown: string,
+    complexity: ComplexityLevel,
+  ): SuggestAgentGovernanceInput {
+    return {
+      mddMarkdown,
+      blueprintMarkdown: project.blueprintContent,
+      tasksMarkdown: project.tasksContent,
+      architectureMarkdown: project.architectureContent,
+      specMarkdown: project.specContent,
+      apiContractsMarkdown: project.apiContractsContent,
+      logicFlowsMarkdown: project.logicFlowsContent,
+      uxUiGuideMarkdown: project.uxUiGuideContent,
+      infraMarkdown: project.infraContent,
+      useCasesMarkdown: project.useCasesContent,
+      userStoriesMarkdown: project.userStoriesContent,
+      projectName: project.name,
+      complexity,
+    };
+  }
+
   async generateTasks(projectId: string) {
     const project = await this.assertProjectAccess(projectId);
 
@@ -1236,7 +1619,14 @@ name: ${JSON.stringify(name)}
     const tasksContent = await this.ai.generateTasks(
       this.constitutionMarkdown(project),
       project.blueprintContent,
-      { navigationMap },
+      {
+        navigationMap,
+        specContent: project.specContent,
+        userStoriesContent: project.userStoriesContent,
+        apiContractsContent: project.apiContractsContent,
+        logicFlowsContent: project.logicFlowsContent,
+        infraContent: project.infraContent,
+      },
     );
     return this.update(projectId, { tasksContent: cleanDocumentContent(tasksContent) });
   }
@@ -1286,22 +1676,37 @@ name: ${JSON.stringify(name)}
 
   async generateUserStoriesPreview(projectId: string): Promise<{ content: string }> {
     const project = await this.assertProjectAccess(projectId);
+    const intOpts = await this.buildIntegrationGenerateOptions(projectId);
     const content = await this.ai.generateUserStories(
       this.constitutionMarkdown(project),
       project.specContent,
       project.useCasesContent,
+      intOpts,
     );
-    return { content: cleanDocumentContent(content) };
+    const appendix = buildHandoffUserStoriesAppendix(intOpts?.integrationHandoffItems ?? []);
+    return { content: cleanDocumentContent(content + appendix) };
   }
 
   async generateUserStories(projectId: string) {
     const project = await this.assertProjectAccess(projectId);
+    const intOpts = await this.buildIntegrationGenerateOptions(projectId);
     const content = await this.ai.generateUserStories(
       this.constitutionMarkdown(project),
       project.specContent,
       project.useCasesContent,
+      intOpts,
     );
-    return this.update(projectId, { userStoriesContent: cleanDocumentContent(content) });
+    const appendix = buildHandoffUserStoriesAppendix(intOpts?.integrationHandoffItems ?? []);
+    return this.update(projectId, { userStoriesContent: cleanDocumentContent(content + appendix) });
+  }
+
+  private async buildIntegrationGenerateOptions(projectId: string): Promise<LegacyGenerateOptions | undefined> {
+    const ctx = await this.projectIntegration.resolvePromptContext(projectId, null);
+    if (!ctx.externalBlock && !ctx.handoffForNew.length) return undefined;
+    return {
+      ...(ctx.externalBlock ? { externalLegacyContextBlock: ctx.externalBlock } : {}),
+      ...(ctx.handoffForNew.length ? { integrationHandoffItems: ctx.handoffForNew } : {}),
+    };
   }
 
   /** Pre-extrae entidades del MDD §3 y las agrega como texto literal en el prompt para la IA. */
@@ -1336,12 +1741,7 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     const project = await this.assertProjectAccess(projectId);
     const mddContent = this.constitutionMarkdown(project);
     const enrichedMdd = this.enrichMddWithEntities(mddContent);
-    const p = project as { projectType?: string; theforgeProjectId?: string | null };
-    let legacyOpts: { theforgeContext: string } | undefined;
-    if (p.projectType === "LEGACY" && p.theforgeProjectId && this.theforge.isConfigured()) {
-      const theforgeContext = await this.theforge.getContextForDeliverables(p.theforgeProjectId);
-      if (theforgeContext.trim()) legacyOpts = { theforgeContext };
-    }
+    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
     const content = await this.ai.generateBlueprint(enrichedMdd, gapsFeedback, legacyOpts);
     return { content: cleanDocumentContent(content) };
   }
@@ -1350,12 +1750,7 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     const project = await this.assertProjectAccess(projectId);
     const mddContent = this.constitutionMarkdown(project);
     const enrichedMdd = this.enrichMddWithEntities(mddContent);
-    const p = project as { projectType?: string; theforgeProjectId?: string | null };
-    let legacyOpts: { theforgeContext: string } | undefined;
-    if (p.projectType === "LEGACY" && p.theforgeProjectId && this.theforge.isConfigured()) {
-      const theforgeContext = await this.theforge.getContextForDeliverables(p.theforgeProjectId);
-      if (theforgeContext.trim()) legacyOpts = { theforgeContext };
-    }
+    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
     let blueprintContent = await this.ai.generateBlueprint(enrichedMdd, gapsFeedback, legacyOpts);
     blueprintContent = cleanDocumentContent(blueprintContent);
 
@@ -1447,6 +1842,16 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     // Anexar sección 8: UI Design System & Component Mapping (enriquecimiento semántico)
     blueprintContent = enrichBlueprintWithUiDesignSystem(mddContent, blueprintContent);
 
+    // Reflection loop (minimal): post-generation conformance re-check
+    const postGenCheck = this.conformance.checkBlueprintDataModel(mddContent, blueprintContent);
+    if (!postGenCheck.ok) {
+      const gapSummary = postGenCheck.gaps.slice(0, 4).join("; ");
+      this.logger.warn(`[Blueprint] Post-generation conformance gaps: ${gapSummary}`);
+      await this.changeLog
+        .log(projectId, "blueprintContent", `[conformance-recheck] ${gapSummary}`)
+        .catch(() => {});
+    }
+
     return this.update(projectId, { blueprintContent });
   }
 
@@ -1458,21 +1863,8 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     const mainStage = project.stages?.[0];
     const brdContent = mainStage?.brdContent ?? undefined;
 
-    // Para proyectos legacy con Ariadne configurado, obtener contexto y contract specs
-    const p = project as { projectType?: string; theforgeProjectId?: string | null };
-    let legacyOpts: { theforgeContext?: string; contractSpecs?: string } | undefined;
-    if (p.projectType === "LEGACY" && p.theforgeProjectId && this.theforge.isConfigured()) {
-      const [theforgeContext, contractSpecs] = await Promise.all([
-        this.theforge.getContextForDeliverables(p.theforgeProjectId),
-        this.theforge.gatherContractSpecsForApi(p.theforgeProjectId),
-      ]);
-      if (theforgeContext.trim() || contractSpecs.trim()) {
-        legacyOpts = {
-          ...(theforgeContext.trim() ? { theforgeContext } : {}),
-          ...(contractSpecs.trim() ? { contractSpecs } : {}),
-        };
-      }
-    }
+    // Legacy etapa 1 AS-IS + contexto TheForge cuando aplica
+    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
     const content = await this.ai.generateApiContracts(
       this.constitutionMarkdown(project),
       project.blueprintContent,
@@ -1485,10 +1877,12 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
 
   async generateInfraPreview(projectId: string, gapsFeedback?: string | null): Promise<{ content: string }> {
     const project = await this.assertProjectAccess(projectId);
+    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
     const content = await this.ai.generateInfra(
       this.constitutionMarkdown(project),
       project.blueprintContent,
       gapsFeedback,
+      legacyOpts,
     );
     return { content: cleanDocumentContent(content) };
   }
@@ -1501,21 +1895,8 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     const mainStage = project.stages?.[0];
     const brdContent = mainStage?.brdContent ?? undefined;
 
-    // Para proyectos legacy con Ariadne configurado, obtener contexto y contract specs
-    const p = project as { projectType?: string; theforgeProjectId?: string | null };
-    let legacyOpts: { theforgeContext?: string; contractSpecs?: string } | undefined;
-    if (p.projectType === "LEGACY" && p.theforgeProjectId && this.theforge.isConfigured()) {
-      const [theforgeContext, contractSpecs] = await Promise.all([
-        this.theforge.getContextForDeliverables(p.theforgeProjectId),
-        this.theforge.gatherContractSpecsForApi(p.theforgeProjectId),
-      ]);
-      if (theforgeContext.trim() || contractSpecs.trim()) {
-        legacyOpts = {
-          ...(theforgeContext.trim() ? { theforgeContext } : {}),
-          ...(contractSpecs.trim() ? { contractSpecs } : {}),
-        };
-      }
-    }
+    // Legacy etapa 1 AS-IS + contexto TheForge cuando aplica
+    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
     const content = await this.ai.generateApiContracts(
       this.constitutionMarkdown(project),
       project.blueprintContent,
@@ -1528,16 +1909,24 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
 
   async generateLogicFlows(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
-    const content = await this.ai.generateLogicFlows(this.constitutionMarkdown(project), gapsFeedback);
-    return this.update(projectId, { logicFlowsContent: cleanDocumentContent(content) });
+    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
+    const mdd = this.constitutionMarkdown(project);
+    const content = await this.ai.generateLogicFlows(mdd, gapsFeedback, legacyOpts);
+    const cleaned = cleanDocumentContent(content);
+    if ((project as { projectType?: string }).projectType === "LEGACY") {
+      await this.persistLegacyLogicFlowsCoverageDebug(projectId, project, cleaned, legacyOpts);
+    }
+    return this.update(projectId, { logicFlowsContent: cleaned });
   }
 
   async generateInfra(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
+    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
     const content = await this.ai.generateInfra(
       this.constitutionMarkdown(project),
       project.blueprintContent,
       gapsFeedback,
+      legacyOpts,
     );
     return this.update(projectId, { infraContent: cleanDocumentContent(content) });
   }
@@ -1691,6 +2080,11 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
       );
     }
 
+    const stages = (project as { stages?: StageWithEst[] }).stages ?? [];
+    const projectWithStages = { ...(project as Project), stages };
+    const unified = buildUnifiedHandoff(projectWithStages, loadConsumptionGuideMarkdown());
+    const sddBundle = this.sddIntegration.buildHermesSddPayload(projectWithStages);
+
     const payload = {
       event_type: "project.ready",
       project: {
@@ -1698,6 +2092,17 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
         name: project.name,
         type: project.projectType,
         sessionId: null as string | null,
+      },
+      sddBundle,
+      implementHandoff: {
+        readme: "IMPLEMENT.md",
+        consumptionGuide: "THEFORGE-DOC-CONSUMPTION-GUIDE.md",
+        layout: unified.layout,
+        pathMap: unified.pathMap,
+        governancePresent: unified.governancePresent,
+        specKitLayout: sddBundle.featureDir,
+        fileHashes: sddBundle.files.map((f) => ({ path: f.path, sha256: f.sha256, size: f.size })),
+        cliFallback: sddBundle.cliFallback,
       },
     };
 

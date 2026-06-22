@@ -15,12 +15,13 @@ export type WorkshopDocToolbarViewModes = {
   logicFlowsViewMode: "preview" | "source";
   brdDocViewMode: "preview" | "source";
   infraViewMode: "preview" | "source";
+  tasksViewMode: "preview" | "source";
 };
 
 const MARKDOWN_PREVIEW_SELECTOR =
   ".markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview [data-toc]";
 
-const NON_MARKDOWN_PANELS = new Set(["tasks", "legacy", "adrs", "wireframes"]);
+const NON_MARKDOWN_PANELS = new Set(["legacy", "adrs", "wireframes"]);
 
 function getWorkshopDocToolbarActiveViewMode(
   centralPanel: string,
@@ -38,6 +39,7 @@ function getWorkshopDocToolbarActiveViewMode(
   if (centralPanel === "api-contracts") return modes.apiContractsViewMode;
   if (centralPanel === "logic-flows") return modes.logicFlowsViewMode;
   if (centralPanel === "brd") return modes.brdDocViewMode;
+  if (centralPanel === "tasks") return modes.tasksViewMode;
   return modes.infraViewMode;
 }
 

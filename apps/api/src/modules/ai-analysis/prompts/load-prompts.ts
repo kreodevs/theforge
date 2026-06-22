@@ -155,6 +155,24 @@ export const PHASE0_UPDATE_PROMPT = loadPrompt(
   "Eres analista. Actualiza borrador + gaps con respuesta. JSON: { borrador: {...}, gaps: [...] }.",
 );
 
+export const PHASE0_EXTRACT_DBGA_PROMPT = loadPrompt(
+  "phase0",
+  "extract-dbga-prompt.md",
+  "Extrae borrador Fase 0 + gaps desde un DBGA markdown existente. JSON: { borrador: {...}, gaps: [...] }.",
+);
+
+export const PHASE0_MERGE_PROMPT = loadPrompt(
+  "phase0",
+  "merge-phase0-prompt.md",
+  "Fusiona varios borradores Fase 0 en uno. JSON: { borrador, conflicts, benchmarkMerged? }.",
+);
+
+export const MDD_AUDIT_UPDATE_PROMPT = loadPrompt(
+  "mdd",
+  "mdd-audit-update-prompt.md",
+  "Integra respuesta de auditoría en el MDD. JSON: { mddContent: string }.",
+);
+
 export const MANAGER_PLAN_GENERATOR_PROMPT = loadPrompt(
   "mdd",
   "manager-plan-generator-prompt.md",

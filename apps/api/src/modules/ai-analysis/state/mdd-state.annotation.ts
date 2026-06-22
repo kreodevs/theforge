@@ -37,7 +37,9 @@ export function reducePreferDefined<T>(left: T | undefined, right: T | undefined
 export const MDDStateAnnotation = Annotation.Root({
   dbgaContent: Annotation<string>(),
   clarifiedScope: Annotation<string>(),
-  mddStructured: Annotation<MddStructured | undefined>(),
+  mddStructured: Annotation<MddStructured | undefined>({
+    reducer: (old, newVal) => newVal !== undefined ? { ...(old ?? {}), ...newVal } : old,
+  }),
   mddDraft: Annotation<string>({
     reducer: reduceMddDraft,
     default: () => "",
@@ -94,6 +96,9 @@ export const MDDStateAnnotation = Annotation.Root({
   }),
   impactSummary: Annotation<string | undefined>(),
   blackboardReasoning: Annotation<string | undefined>(),
+  /** Staging fields for parallel Security ↔ Integration execution. */
+  securitySectionMd: Annotation<string | undefined>(),
+  integrationSectionMd: Annotation<string | undefined>(),
 });
 
 export type MDDStateType = typeof MDDStateAnnotation.State;

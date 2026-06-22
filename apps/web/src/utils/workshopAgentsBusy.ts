@@ -12,7 +12,11 @@ export type WorkshopAgentsBusySlice = {
     | "brd-from-dbga"
     | "legacy-deliverables"
     | "deliverables-cascade"
+    | "agent-governance"
     | "launch-hermes"
+    | "converge"
+    | "tasks-to-issues"
+    | "clarify-spec"
     | null;
   streamingUserMessage: string | null;
   streamingContent: string | null;
@@ -32,7 +36,11 @@ const AGENT_LOADING_REASONS = new Set<NonNullable<WorkshopAgentsBusySlice["loadi
   "brd-from-dbga",
   "legacy-deliverables",
   "deliverables-cascade",
+  "agent-governance",
   "launch-hermes",
+  "converge",
+  "tasks-to-issues",
+  "clarify-spec",
 ]);
 
 /** Chat en streaming, Manager MDD, cascadas, benchmark, etc. */
@@ -47,3 +55,6 @@ export function isWorkshopAgentsBusy(s: WorkshopAgentsBusySlice): boolean {
 
 export const WORKSHOP_EXIT_BLOCKED_TITLE =
   "Los agentes siguen trabajando. Espera a que terminen antes de volver al panel de proyectos.";
+
+export const WORKSHOP_DOC_NAV_BLOCKED_TITLE =
+  "El chat está procesando un documento. Espera a que termine antes de cambiar de pestaña.";

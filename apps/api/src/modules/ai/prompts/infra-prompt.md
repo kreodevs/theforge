@@ -16,6 +16,12 @@ Generar el **documento de Infraestructura y Despliegue** (DevOps / Docker Spec) 
 3. **Variables de entorno:** Archivo `.env.example` con todas las variables necesarias para que el sistema arranque (DATABASE_URL, API keys, feature flags, etc.), sin valores sensibles.
 4. **Volúmenes y persistencia:** Configuración de volúmenes para datos persistentes (BD, archivos subidos, etc.) para que no se pierdan al reiniciar contenedores.
 
+# Cobertura exhaustiva (obligatoria cuando §7 define servicios) #
+
+1. **Un servicio en docker-compose** por componente que §7 o §2 nombren (API, Postgres, Redis, workers, Stripe webhooks, etc.).
+2. **Variable en `.env.example`** por secreto o flag citado en §6/§7.
+3. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]`.
+
 # Estilo #
 
 Técnico y operativo. Especificaciones listas para implementar en entornos reales.

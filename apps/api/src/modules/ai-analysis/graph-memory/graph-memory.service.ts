@@ -759,4 +759,103 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             this.logger.error(`[GraphMemory] clearLegacyStage falló: ${err instanceof Error ? err.message : String(err)}`);
         }
     }
+
+    /**
+     * Enlace cross-project NEW ↔ LEGACY en grafo SDD local.
+     */
+    async syncProjectIntegrationLink(newProjectId: string, legacyProjectId: string) {
+        if (!this.graph) return;
+        const ts = Date.now();
+        try {
+            await this.graph.query(
+                `
+          MERGE (n:ForgeProject {id: $newProjectId})
+          SET n.kind = 'NEW', n.updatedAt = $ts
+          MERGE (l:ForgeProject {id: $legacyProjectId})
+          SET l.kind = 'LEGACY', l.updatedAt = $ts
+          MERGE (n)-[:INTEGRATES_WITH]->(l)
+        `,
+                { params: { newProjectId, legacyProjectId, ts } },
+            );
+            this.logger.log(`[GraphMemory] INTEGRATES_WITH ${newProjectId} → ${legacyProjectId}`);
+        } catch (err) {
+            this.logger.error(
+                `[GraphMemory] syncProjectIntegrationLink falló: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    }
+
+    /**
+     * Trazabilidad handoff NEW-LEG satisfecho por LEG-XX.
+     */
+    async syncHandoffSatisfies(
+        newProjectId: string,
+        legacyProjectId: string,
+        newLegId: string,
+        legacyStoryId: string,
+    ) {
+        if (!this.graph) return;
+        const ts = Date.now();
+        try {
+            await this.graph.query(
+                `
+          MERGE (h:HandoffItem {id: $newLegId, newProjectId: $newProjectId})
+          SET h.updatedAt = $ts
+          MERGE (s:UserStory {id: $legacyStoryId, projectId: $legacyProjectId})
+          SET s.updatedAt = $ts
+          MERGE (h)-[:SATISFIES]->(s)
+        `,
+                { params: { newProjectId, legacyProjectId, newLegId, legacyStoryId, ts } },
+            );
+        } catch (err) {
+            this.logger.error(
+                `[GraphMemory] syncHandoffSatisfies falló: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    }
+
+    /**
+     * Post-promote/import: link HandoffItem nodes to LegacyStage and INTEGRATES_WITH project link.
+     */
+    async syncHandoffItemsToStage(params: {
+        newProjectId: string;
+        legacyProjectId: string;
+        legacyStageId: string;
+        items: Array<{ id: string; title?: string; description?: string }>;
+    }) {
+        if (!this.graph) return;
+        const ts = Date.now();
+        const { newProjectId, legacyProjectId, legacyStageId, items } = params;
+        try {
+            await this.syncProjectIntegrationLink(newProjectId, legacyProjectId);
+            for (const item of items) {
+                await this.graph.query(
+                    `
+              MERGE (h:HandoffItem {id: $newLegId, newProjectId: $newProjectId})
+              SET h.title = $title, h.description = $description, h.legacyStageId = $legacyStageId, h.updatedAt = $ts
+              MERGE (st:LegacyStage {stageId: $legacyStageId})
+              SET st.updatedAt = $ts
+              MERGE (h)-[:INTEGRATES_WITH]->(st)
+            `,
+                    {
+                        params: {
+                            newLegId: item.id,
+                            newProjectId,
+                            legacyStageId,
+                            title: item.title ?? item.id,
+                            description: (item.description ?? "").slice(0, 2000),
+                            ts,
+                        },
+                    },
+                );
+            }
+            this.logger.log(
+                `[GraphMemory] syncHandoffItemsToStage stage=${legacyStageId} items=${items.length}`,
+            );
+        } catch (err) {
+            this.logger.error(
+                `[GraphMemory] syncHandoffItemsToStage falló: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    }
 }

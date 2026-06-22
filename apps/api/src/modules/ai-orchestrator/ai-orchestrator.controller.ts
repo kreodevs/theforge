@@ -97,6 +97,14 @@ export class AiOrchestratorController {
       brdContent,
       activeTab,
       stageId,
+      architectureContent,
+      blueprintContent,
+      useCasesContent,
+      userStoriesContent,
+      apiContractsContent,
+      logicFlowsContent,
+      tasksContent,
+      infraContent,
     } = body;
     const images = parseChatImageAttachments(body.images);
     const msg = typeof message === "string" ? message.trim() : "";
@@ -122,6 +130,16 @@ export class AiOrchestratorController {
         specContent?.trim() || undefined,
         brdContent?.trim() || undefined,
         stageId?.trim() || undefined,
+        {
+          architectureContent: architectureContent?.trim() || undefined,
+          blueprintContent: blueprintContent?.trim() || undefined,
+          useCasesContent: useCasesContent?.trim() || undefined,
+          userStoriesContent: userStoriesContent?.trim() || undefined,
+          apiContractsContent: apiContractsContent?.trim() || undefined,
+          logicFlowsContent: logicFlowsContent?.trim() || undefined,
+          tasksContent: tasksContent?.trim() || undefined,
+          infraContent: infraContent?.trim() || undefined,
+        },
         images,
       );
       for await (const ev of stream) {

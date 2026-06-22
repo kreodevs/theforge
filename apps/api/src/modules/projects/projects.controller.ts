@@ -14,19 +14,32 @@ import {
 import type { Response } from "express";
 import { requireAdmin } from "../../common/guards/role.helpers.js";
 import { DeliverablesQueueService, type GenerateJobType } from "./deliverables-queue.service.js";
+import { ProjectMergeService } from "./project-merge.service.js";
 import { ProjectsService } from "./projects.service.js";
 import {
   createProjectSchema,
   updateProjectSchema,
   phase0DeepResearchBodySchema,
+  convergeBodySchema,
+  convergeTriggerBodySchema,
+  clarifySpecBodySchema,
+  tasksToIssuesBodySchema,
 } from "@theforge/shared-types";
+import { SddIntegrationService } from "./sdd-integration.service.js";
 
 @Controller("projects")
 export class ProjectsController {
   constructor(
     private readonly projects: ProjectsService,
+    private readonly projectMerge: ProjectMergeService,
     private readonly deliverablesQueue: DeliverablesQueueService,
+    private readonly sddIntegration: SddIntegrationService,
   ) {}
+
+  @Post("merge")
+  mergeProjects(@Body() body: unknown) {
+    return this.projectMerge.merge(body);
+  }
 
   @Post()
   create(@Body() body: unknown) {
@@ -55,6 +68,14 @@ export class ProjectsController {
     @Body() body: unknown,
   ) {
     return this.projects.patchStage(projectId, stageId, body ?? {});
+  }
+
+  @Get(":projectId/stages/:stageId/deliverables")
+  getStageDeliverables(
+    @Param("projectId") projectId: string,
+    @Param("stageId") stageId: string,
+  ) {
+    return this.projects.getStageDeliverables(projectId, stageId);
   }
 
   /** Estado de un job de cola (polling). */
@@ -132,6 +153,87 @@ export class ProjectsController {
     return this.projects.getConformance(id, { useLlm: useLlm === "true" });
   }
 
+  /** Bundle SDD compatible con spec-kit (JSON para cliente o integraciones). */
+  @Get(":id/export/sdd-bundle")
+  exportSddBundle(@Param("id") id: string) {
+    return this.sddIntegration.getExportBundle(id);
+  }
+
+  /**
+   * Handoff completo para repo destino: spec-kit + agent governance + IMPLEMENT.md + consumption guide.
+   */
+  @Get(":id/export/repo-handoff")
+  exportRepoHandoff(@Param("id") id: string) {
+    return this.sddIntegration.getRepoHandoffExport(id);
+  }
+
+  /**
+   * Análisis unificado cross-artifact (`/speckit.analyze` + conformidad MDD).
+   */
+  @Get(":id/analyze")
+  analyzeArtifacts(@Param("id") id: string, @Query("stageId") stageId?: string) {
+    return this.sddIntegration.analyzeArtifacts(id, stageId?.trim() || undefined);
+  }
+
+  /**
+   * Clarify Spec pre-MDD (`/speckit.clarify`). Body: `{ persist?: boolean, notes?: string }`.
+   */
+  @Post(":id/clarify-spec")
+  clarifySpec(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = clarifySpecBodySchema.parse(body ?? {});
+    return this.sddIntegration.clarifySpec(id, parsed);
+  }
+
+  /**
+   * Siguiente tarea abierta desde tasks.md (hint para MCP / implement).
+   */
+  @Get(":id/next-task")
+  nextImplementationTask(@Param("id") id: string) {
+    return this.sddIntegration.loadProjectForNextTask(id);
+  }
+
+  /**
+   * Converge brownfield: tareas abiertas + conformidad + Ariadne → nuevas tareas.
+   * Body opcional: `{ "persist": true }` para guardar en `tasksContent`.
+   */
+  @Post(":id/converge")
+  converge(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Query("stageId") stageId?: string,
+  ) {
+    const { persist } = convergeBodySchema.parse(body ?? {});
+    return this.sddIntegration.converge(id, persist, stageId?.trim() || undefined);
+  }
+
+  /**
+   * CI/webhook hook: runs converge (optional persist) and POSTs payload to CONVERGE_WEBHOOK_URL or body.webhookUrl.
+   */
+  @Post(":id/converge/trigger")
+  convergeTrigger(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Query("stageId") stageId?: string,
+  ) {
+    const parsed = convergeTriggerBodySchema.parse(body ?? {});
+    return this.sddIntegration.triggerConverge(id, parsed, stageId?.trim() || undefined);
+  }
+
+  /**
+   * Crea GitHub Issues desde tareas abiertas de `tasks.md`.
+   * Requiere `GITHUB_TOKEN` en el servidor. `dryRun: true` solo planifica.
+   */
+  @Post(":id/tasks-to-issues")
+  tasksToIssues(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = tasksToIssuesBodySchema.parse(body ?? {});
+    return this.sddIntegration.tasksToIssues(id, parsed);
+  }
+
+  @Post(":id/clone")
+  cloneProject(@Param("id") id: string, @Body() body: unknown) {
+    return this.projects.cloneProject(id, body);
+  }
+
   @Patch(":id")
   update(@Param("id") id: string, @Body() body: unknown) {
     return this.projects.update(id, updateProjectSchema.partial().parse(body));
@@ -202,6 +304,33 @@ export class ProjectsController {
   @Post(":id/generate-tasks")
   generateTasks(@Param("id") id: string, @Query("queue") queue?: string) {
     return this.queueOrSync(id, "tasks", {}, queue);
+  }
+
+  @Post(":id/generate-agent-governance")
+  generateAgentGovernance(
+    @Param("id") id: string,
+    @Body() body: { preview?: boolean; target?: string; force?: boolean },
+    @Query("queue") queue?: string,
+  ) {
+    console.warn(
+      `[agent-gov] POST generate-agent-governance projectId=${id} force=${body?.force} queue=${queue ?? "(sync)"} preview=${body?.preview ?? false}`,
+    );
+    if (body?.preview) {
+      return this.projects.generateAgentGovernancePreview(id, body?.target, {
+        forceRegenerate: body?.force !== false,
+      });
+    }
+    return this.queueOrSync(
+      id,
+      "agent-governance",
+      { preview: false, target: body?.target, forceRegenerate: body?.force !== false },
+      queue,
+    );
+  }
+
+  @Get(":id/agent-governance-export")
+  getAgentGovernanceExport(@Param("id") id: string) {
+    return this.projects.getAgentGovernanceForExport(id);
   }
 
   @Post(":id/repair-ux-ui-guide")
@@ -316,7 +445,9 @@ export class ProjectsController {
   /**
    * Helper: si la cola está habilitada y el cliente envió `?queue=true`,
    * encola el job y devuelve `{ queued: true, jobId }`.
-   * Si no, ejecuta síncrono (comportamiento actual).
+   * Si no hay Redis pero el cliente pidió queue, ejecuta fire-and-forget
+   * (responde instantáneo, el job corre en background).
+   * Solo cae a síncrono si NO se pidió queue explícitamente.
    */
   private async queueOrSync(
     projectId: string,
@@ -324,17 +455,46 @@ export class ProjectsController {
     extra: Record<string, unknown>,
     queueParam?: string,
   ): Promise<unknown> {
-    const shouldQueue = queueParam === "true" && this.deliverablesQueue.isEnabled();
-    if (shouldQueue) {
+    const wantQueue = queueParam === "true";
+    const canQueue = wantQueue && this.deliverablesQueue.isEnabled();
+    if (canQueue) {
       const jobId = await this.deliverablesQueue.enqueue({
         type,
         projectId,
         preview: (extra.preview as boolean) ?? false,
         gapsFeedback: (extra.gapsFeedback as string | null) ?? null,
+        target: (extra.target as string | undefined) ?? undefined,
+        forceRegenerate: extra.forceRegenerate !== false,
       });
       return { queued: true, jobId, statusPath: `/projects/jobs/${jobId}` };
     }
-    // Fallback síncrono
+
+    // Cliente pidió queue pero Redis no está → fire-and-forget para no timeout
+    if (wantQueue) {
+      if (type === "agent-governance" && extra.forceRegenerate !== false) {
+        console.warn(
+          `[agent-gov] queueOrSync fire-and-forget clearing content projectId=${projectId} forceRegenerate=true`,
+        );
+        await this.projects.clearAgentGovernanceContent(projectId);
+      }
+      if (type === "agent-governance") {
+        console.warn(
+          `[agent-gov] queueOrSync fire-and-forget agent-governance projectId=${projectId} forceRegenerate=${extra.forceRegenerate !== false}`,
+        );
+      }
+      // Disparamos en background sin await — la respuesta HTTP sale ya
+      void this.fireAndForget(type, projectId, extra).catch((err) => {
+        console.error(`[fire-and-forget] ${type} falló para ${projectId}: ${err instanceof Error ? err.message : err}`);
+      });
+      return {
+        queued: true,
+        jobId: `bg-${Date.now()}`,
+        statusPath: null,
+        note: "Queue no disponible (sin Redis). El job se ejecuta en background. Usa get_agent_governance_export cuando termine (~60-90s).",
+      };
+    }
+
+    // Fallback síncrono (sin ?queue=true explícito)
     switch (type) {
       case "blueprint":
         return this.projects.generateBlueprint(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
@@ -344,6 +504,10 @@ export class ProjectsController {
         return this.projects.generateLogicFlows(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
       case "tasks":
         return this.projects.generateTasks(projectId);
+      case "agent-governance":
+        return this.projects.generateAgentGovernance(projectId, extra.target as string | undefined, {
+          forceRegenerate: extra.forceRegenerate !== false,
+        });
       case "infra":
         return this.projects.generateInfra(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
       case "architecture":
@@ -354,6 +518,26 @@ export class ProjectsController {
         return this.projects.generateUserStories(projectId);
       default:
         return this.projects.generateBlueprint(projectId);
+    }
+  }
+
+  /** Fire-and-forget: ejecuta la generación en background sin esperar respuesta. */
+  private async fireAndForget(type: GenerateJobType, projectId: string, extra: Record<string, unknown>): Promise<void> {
+    switch (type) {
+      case "agent-governance":
+        await this.projects.generateAgentGovernance(projectId, extra.target as string | undefined, {
+          forceRegenerate: extra.forceRegenerate !== false,
+        });
+        return;
+      case "blueprint":
+        await this.projects.generateBlueprint(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
+        return;
+      case "tasks":
+        await this.projects.generateTasks(projectId);
+        return;
+      default:
+        // Para otros tipos no críticos, ignorar
+        console.warn(`[fire-and-forget] Tipo no soportado: ${type}`);
     }
   }
 }

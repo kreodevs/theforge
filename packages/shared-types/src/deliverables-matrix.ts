@@ -11,15 +11,73 @@ export type DeliverableKind =
   | "logic_flows"
   | "ux_ui_guide"
   | "user_stories"
+  | "agent_governance"
   | "tasks"
   | "infra";
+
+/** Etiquetas legibles para progreso de cascada y UI Workshop. */
+export const DELIVERABLE_STEP_LABELS: Record<DeliverableKind, string> = {
+  mdd_canonical: "MDD Canonical",
+  spec: "Spec",
+  architecture: "Arquitectura",
+  use_cases: "Casos de Uso",
+  blueprint: "Blueprint",
+  api_contracts: "Contratos API",
+  logic_flows: "Flujos de Lógica",
+  ux_ui_guide: "Guía UX/UI",
+  user_stories: "Historias de Usuario",
+  agent_governance: "Gobernanza de agentes",
+  tasks: "Tareas",
+  infra: "Infraestructura",
+};
+
+/** Campo `Project` donde persiste cada entregable (null = no aplica). */
+export const DELIVERABLE_PROJECT_CONTENT_FIELD: Record<DeliverableKind, string | null> = {
+  mdd_canonical: "mddContent",
+  spec: "specContent",
+  architecture: "architectureContent",
+  use_cases: "useCasesContent",
+  blueprint: "blueprintContent",
+  api_contracts: "apiContractsContent",
+  logic_flows: "logicFlowsContent",
+  ux_ui_guide: "uxUiGuideContent",
+  user_stories: "userStoriesContent",
+  agent_governance: "agentGovernanceContent",
+  tasks: "tasksContent",
+  infra: "infraContent",
+};
+
+/** Labels de pasos de cascada según complejidad (orden de `DELIVERABLES_BY_COMPLEXITY`). */
+export function deliverableStepLabelsForComplexity(
+  complexity: ComplexityLevel,
+): string[] {
+  return DELIVERABLES_BY_COMPLEXITY[complexity].map((k) => DELIVERABLE_STEP_LABELS[k]);
+}
+
+/**
+ * Entregables legacy en cascada bulk: omite solo `mdd_canonical` si ya hay MDD
+ * (regeneración manual vía «Regenerar MDD»). El resto se genera o regenera siempre.
+ */
+export function planLegacyDeliverablesToGenerate(params: {
+  complexity: ComplexityLevel;
+  hasMddContent: boolean;
+}): DeliverableKind[] {
+  return DELIVERABLES_BY_COMPLEXITY[params.complexity].filter((kind) => {
+    if (kind === "mdd_canonical") return !params.hasMddContent;
+    return true;
+  });
+}
+
+export function deliverableStepLabelsForKinds(kinds: readonly DeliverableKind[]): string[] {
+  return kinds.map((k) => DELIVERABLE_STEP_LABELS[k]);
+}
 
 /**
  * Matriz por complejidad: orden de ejecución. `mdd_canonical` no invoca LLM (el MDD vive en Stage/chat).
  */
 export const DELIVERABLES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableKind[]> = {
-  LOW: ["user_stories", "tasks"],
-  MEDIUM: ["spec", "api_contracts", "ux_ui_guide", "tasks"],
+  LOW: ["user_stories", "tasks", "agent_governance"],
+  MEDIUM: ["spec", "api_contracts", "ux_ui_guide", "tasks", "agent_governance"],
   HIGH: [
     "mdd_canonical",
     "blueprint",
@@ -31,6 +89,7 @@ export const DELIVERABLES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableKind
     "api_contracts",
     "logic_flows",
     "tasks",
+    "agent_governance",
     "infra",
   ],
 };
