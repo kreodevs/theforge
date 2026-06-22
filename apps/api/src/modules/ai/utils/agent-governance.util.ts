@@ -40,11 +40,15 @@ const DUPLICATE_PROMPT_PATHS = [
 
 const DOC_CONSUMPTION_GUIDE_PATH = `${GOVERNANCE_DOCS_PREFIX}references/THEFORGE-DOC-CONSUMPTION-GUIDE.md`;
 
+/** Contexto interno del proyecto para agentes (consumido por `/implementar-tarea`). */
+export const AGENT_PROMPT_PATH = `${GOVERNANCE_DOCS_PREFIX}references/AGENT-PROMPT.md`;
+
 /** Rutas obligatorias en todos los niveles de complejidad. */
 export const AGENT_GOVERNANCE_REQUIRED_ALL = [
   "AGENTS.md",
   "CLAUDE.md",
   "PROMPT-INICIAL.md",
+  AGENT_PROMPT_PATH,
   `${GOVERNANCE_DOCS_PREFIX}agent-onboarding.md`,
   `${GOVERNANCE_DOCS_PREFIX}COMO-USAR-GOBERNANZA-IA.md`,
   `${GOVERNANCE_DOCS_PREFIX}INSTALACION.md`,
@@ -336,13 +340,14 @@ function defaultAgentsMd(featureDir?: string): string {
 function defaultAgentOnboarding(): string {
   return (
     "# Onboarding para agentes implementadores\n\n" +
-    "1. Lee **`IMPLEMENT.md`** y **`.specify/memory/constitution.md`** (layout spec-kit primario).\n" +
-    "2. Lee **`docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md`** (guía principal).\n" +
-    "3. Si aún no instalaste gobernanza en `.cursor/`, sigue **`docs/agent-governance/INSTALACION.md`**.\n" +
-    "4. Abre **`specs/NNN-slug/tasks.md`** para la checklist; espejo en `docs/sdd/tasks.md`.\n" +
-    "5. Consulta la guía de consumo: `" + DOC_CONSUMPTION_GUIDE_PATH + "`.\n" +
-    "6. Carga `AGENTS.md` y las rules/skills en `.cursor/` según la tarea.\n" +
-    "7. Antes de implementar, confirma gates (lint, typecheck, tests) definidos en workflows.\n"
+    "1. **Sesión 0:** pega o adjunta **`PROMPT-INICIAL.md`** (raíz) en tu agente.\n" +
+    "2. Lee **`IMPLEMENT.md`** y **`.specify/memory/constitution.md`** (layout spec-kit primario).\n" +
+    "3. Lee **`docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md`** (guía principal).\n" +
+    "4. Si aún no instalaste gobernanza en `.cursor/`, sigue **`docs/agent-governance/INSTALACION.md`**.\n" +
+    `5. Contexto del proyecto: **\`${AGENT_PROMPT_PATH}\`**; checklist en **\`specs/NNN-slug/tasks.md\`** (espejo \`docs/sdd/tasks.md\`).\n` +
+    "6. Consulta la guía de consumo: `" + DOC_CONSUMPTION_GUIDE_PATH + "`.\n" +
+    "7. Carga `AGENTS.md` y las rules/skills en `.cursor/` según la tarea.\n" +
+    "8. Sesiones siguientes: comando **`/implementar-tarea`** o repite pasos 3–5 de `PROMPT-INICIAL.md`.\n"
   );
 }
 
@@ -461,6 +466,7 @@ function defaultComoUsarGovernanza(suggestions?: AgentGovernanceSuggestions | nu
     "```\n" +
     "AGENTS.md\n" +
     "CLAUDE.md\n" +
+    "PROMPT-INICIAL.md\n" +
     "docs/agent-governance/\n" +
     "├── COMO-USAR-GOBERNANZA-IA.md\n" +
     "├── INSTALACION.md\n" +
@@ -477,6 +483,8 @@ function defaultComoUsarGovernanza(suggestions?: AgentGovernanceSuggestions | nu
     "|-----------|--------|\n" +
     "| `AGENTS.md` | Punto de entrada cross-tool; incluye tabla de instalación |\n" +
     "| `CLAUDE.md` | Shim que delega en `AGENTS.md` (`@AGENTS.md`) |\n" +
+    "| `PROMPT-INICIAL.md` | Prompt paste-ready sesión 0 (Cursor, Claude Code, Copilot) |\n" +
+    `| \`${AGENT_PROMPT_PATH}\` | Contexto interno del proyecto (→ \`.cursor/references/\`) |\n` +
     "| `docs/agent-governance/rules/*.mdc` | Política (se copia a `.cursor/rules/`) |\n" +
     "| `docs/agent-governance/skills/*/SKILL.md` | Guías de dominio (→ `.cursor/skills/`) |\n" +
     "| `docs/agent-governance/references/` | Workflows, handoff, mantenimiento (→ `.cursor/references/`) |\n" +
@@ -640,33 +648,59 @@ function contentHasSddConflicts(content: string, facts: ProjectGovernanceFacts):
   });
 }
 
-function ruleHasCatalogStackEnrichment(content: string): boolean {
-  return (
-    /\*\*Módulos Blueprint:\*\*/i.test(content) &&
-    (/\*\*Globs backend:\*\*/i.test(content) || /\*\*Globs frontend:\*\*/i.test(content))
-  );
+interface CatalogStackSections {
+  modules: boolean;
+  backendGlobs: boolean;
+  frontendGlobs: boolean;
+  npmScripts: boolean;
+}
+
+function detectCatalogStackSections(content: string): CatalogStackSections {
+  return {
+    modules: /\*\*Módulos Blueprint:\*\*/i.test(content),
+    backendGlobs: /\*\*Globs backend:\*\*/i.test(content),
+    frontendGlobs: /\*\*Globs frontend:\*\*/i.test(content),
+    npmScripts: /\*\*Scripts detectados:\*\*/i.test(content),
+  };
+}
+
+function shouldSkipCatalogStackSection(
+  section: keyof CatalogStackSections,
+  options?: { compact?: boolean; skipSections?: Partial<CatalogStackSections> },
+): boolean {
+  if (options?.compact) return true;
+  return options?.skipSections?.[section] === true;
 }
 
 function buildProjectFactsBlock(
   facts: ProjectGovernanceFacts,
-  options?: { includeSddConflicts?: boolean; compact?: boolean },
+  options?: {
+    includeSddConflicts?: boolean;
+    compact?: boolean;
+    skipSections?: Partial<CatalogStackSections>;
+  },
 ): string {
   const parts: string[] = [`## Hechos del proyecto (${facts.projectTitle})\n`];
   const stack = formatStackSection(facts);
   if (stack) parts.push(stack, "");
-  if (!options?.compact) {
-    if (facts.blueprintModules.length > 0) {
-      parts.push("**Módulos Blueprint:**", ...facts.blueprintModules.map((m) => `- \`${m}\``), "");
-    }
-    if (facts.backendGlobs.length > 0) {
-      parts.push("**Globs backend:**", ...facts.backendGlobs.map((g) => `- \`${g}\``), "");
-    }
-    if (facts.hasUiSurface && facts.frontendGlobs.length > 0) {
-      parts.push("**Globs frontend:**", ...facts.frontendGlobs.map((g) => `- \`${g}\``), "");
-    }
-    if (facts.npmScripts.length > 0) {
-      parts.push("**Scripts npm/pnpm:**", ...facts.npmScripts.map((s) => `- \`${s}\``), "");
-    }
+  if (
+    facts.blueprintModules.length > 0 &&
+    !shouldSkipCatalogStackSection("modules", options)
+  ) {
+    parts.push("**Módulos Blueprint:**", ...facts.blueprintModules.map((m) => `- \`${m}\``), "");
+  }
+  if (facts.backendGlobs.length > 0 && !shouldSkipCatalogStackSection("backendGlobs", options)) {
+    parts.push("**Globs backend:**", ...facts.backendGlobs.map((g) => `- \`${g}\``), "");
+  }
+  if (
+    facts.hasUiSurface &&
+    facts.frontendGlobs.length > 0 &&
+    !shouldSkipCatalogStackSection("frontendGlobs", options)
+  ) {
+    parts.push("**Globs frontend:**", ...facts.frontendGlobs.map((g) => `- \`${g}\``), "");
+  }
+  if (facts.npmScripts.length > 0 && !shouldSkipCatalogStackSection("npmScripts", options)) {
+    parts.push("**Scripts npm/pnpm:**", ...facts.npmScripts.map((s) => `- \`${s}\``), "");
   }
   if (facts.architectureLayers.length > 0) {
     parts.push("**Capas:**", ...facts.architectureLayers.map((l) => `- ${l}`), "");
@@ -687,14 +721,32 @@ function buildProjectFactsBlock(
   return parts.join("\n");
 }
 
-function buildPromptInicialMd(facts: ProjectGovernanceFacts, complexity: ComplexityLevel): string {
+function buildTasksPreview(facts: ProjectGovernanceFacts): string {
+  if (facts.taskCheckboxes.length > 0) {
+    return facts.taskCheckboxes.slice(0, 5).join("\n");
+  }
+  if (facts.taskHeadings.length > 0) {
+    return facts.taskHeadings.slice(0, 5).map((h) => `- [ ] ${h}`).join("\n");
+  }
+  return "- Consulta `docs/sdd/tasks.md` (espejo de spec-kit) para el checklist completo.";
+}
+
+function buildGatesSection(facts: ProjectGovernanceFacts, complexity: ComplexityLevel): string {
+  const scripts =
+    facts.npmScripts.length > 0
+      ? facts.npmScripts.slice(0, 4).map((s) => `- \`${s}\``).join("\n")
+      : "- Lint, typecheck y tests del paquete tocado (ver MDD §2 y scripts del repo).";
+  const workflow =
+    complexity !== "LOW"
+      ? "- Respeta subflujos en `docs/agent-governance/references/workflows.md`.\n"
+      : "";
+  return `${scripts}\n${workflow}`.trimEnd();
+}
+
+/** Contexto interno del proyecto (stack, módulos, tareas) para sesiones iterativas. */
+function buildAgentPromptMd(facts: ProjectGovernanceFacts, complexity: ComplexityLevel): string {
   const docList = facts.docPaths.map((p) => `- \`${p}\``).join("\n");
-  const tasksPreview =
-    facts.taskCheckboxes.length > 0
-      ? facts.taskCheckboxes.slice(0, 5).join("\n")
-      : facts.taskHeadings.length > 0
-        ? facts.taskHeadings.slice(0, 5).map((h) => `- [ ] ${h}`).join("\n")
-        : "- Consulta `docs/sdd/tasks.md` para el checklist completo.";
+  const tasksPreview = buildTasksPreview(facts);
   const archPreview =
     facts.architectureLayers.length > 0
       ? facts.architectureLayers.map((l) => `- ${l}`).join("\n")
@@ -705,9 +757,9 @@ function buildPromptInicialMd(facts: ProjectGovernanceFacts, complexity: Complex
       : "- Consulta `docs/sdd/blueprint.md` para módulos y rutas.";
 
   return (
-    "# Prompt inicial — implementación\n\n" +
-    "Bootstrap **específico de este proyecto** (generado por TheForge). " +
-    "No uses plantillas genéricas de otros repos.\n\n" +
+    "# Agent prompt — contexto del proyecto\n\n" +
+    "Referencia **interna** generada por TheForge. " +
+    "Úsala tras la sesión 0 (`PROMPT-INICIAL.md`) o con `/implementar-tarea`.\n\n" +
     "## Documentos del proyecto\n\n" +
     docList +
     "\n\n## Stack detectado\n\n" +
@@ -721,12 +773,68 @@ function buildPromptInicialMd(facts: ProjectGovernanceFacts, complexity: Complex
     "\n\n" +
     buildSddConflictSection(facts) +
     "## Instrucciones para el agente\n\n" +
-    "1. Instala gobernanza: `docs/agent-governance/INSTALACION.md` (o `./scripts/install-agent-governance.sh`).\n" +
+    "1. Confirma gobernanza instalada (`./scripts/install-agent-governance.sh` si aplica).\n" +
     "2. Lee `AGENTS.md`, `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md` y el MDD en `docs/sdd/mdd.md`.\n" +
     "3. Implementa siguiendo **Tasks** (`docs/sdd/tasks.md`) y **Blueprint**; actualiza `docs/sdd/PROGRESO.md` al cerrar ítems.\n" +
     (complexity !== "LOW"
       ? "4. Respeta subflujos en `docs/agent-governance/references/workflows.md`.\n"
       : "4. Ejecuta lint/typecheck/tests del paquete tocado antes de cerrar.\n")
+  );
+}
+
+/** Prompt paste-ready en raíz para Cursor, Claude Code, Copilot u otros agentes (sesión 0). */
+function buildPromptInicialMd(
+  facts: ProjectGovernanceFacts,
+  complexity: ComplexityLevel,
+  featureDir?: string,
+): string {
+  const tasksPath = featureDir?.trim()
+    ? `${featureDir.trim()}/tasks.md`
+    : "specs/NNN-slug/tasks.md";
+  const tasksPreview = buildTasksPreview(facts);
+  const projectLabel = facts.projectTitle?.trim() || "este proyecto";
+
+  return (
+    "# Prompt inicial — implementa este handoff\n\n" +
+    `**Misión:** Implementar **${projectLabel}** desde el entregable TheForge, tarea a tarea, respetando spec-kit y gobernanza IA.\n\n` +
+    "## Prerrequisitos\n\n" +
+    "- Descomprime el ZIP en la **raíz del repositorio destino** (mismo nivel que `AGENTS.md` e `IMPLEMENT.md`).\n" +
+    "- Abre el repo en tu herramienta de agente (Cursor, Claude Code, GitHub Copilot, OpenHands, etc.).\n\n" +
+    "## Paso 1 — Instalar gobernanza IA\n\n" +
+    "Desde la raíz del repo:\n\n" +
+    "```bash\n" +
+    "chmod +x scripts/install-agent-governance.sh\n" +
+    "./scripts/install-agent-governance.sh\n" +
+    "```\n\n" +
+    "Copia reglas, skills y referencias de `docs/agent-governance/` hacia `.cursor/` (o equivalente en tu herramienta).\n\n" +
+    "## Paso 2 — Orden de lectura (obligatorio)\n\n" +
+    "Lee **en este orden** antes de escribir código:\n\n" +
+    "1. **`IMPLEMENT.md`** — bootstrap spec-kit y relación con gobernanza\n" +
+    "2. **`.specify/memory/constitution.md`** — principios del proyecto\n" +
+    "3. **`AGENTS.md`** — entrada cross-tool e instalación\n" +
+    `4. **\`${AGENT_PROMPT_PATH}\`** — contexto específico (stack, módulos, conflictos SDD)\n` +
+    `5. **\`${tasksPath}\`** — checklist canónica (espejo: \`docs/sdd/tasks.md\`)\n\n` +
+    "## Paso 3 — Primera tarea abierta\n\n" +
+    "Implementa la **primera tarea pendiente** del checklist:\n\n" +
+    tasksPreview +
+    "\n\n" +
+    "Consulta Blueprint (`docs/sdd/blueprint.md`), MDD (`docs/sdd/mdd.md`) y Architecture si aplica.\n\n" +
+    "## Paso 4 — Gates antes de cerrar\n\n" +
+    buildGatesSection(facts, complexity) +
+    "\n\n" +
+    "## Paso 5 — Actualizar progreso\n\n" +
+    "Marca la tarea completada en **`docs/sdd/PROGRESO.md`** (sincronizado con Tasks).\n\n" +
+    "## Stack detectado (TheForge)\n\n" +
+    formatStackSection(facts) +
+    "\n\n" +
+    buildSddConflictSection(facts) +
+    "## Compatibilidad multi-herramienta\n\n" +
+    "- **Cursor:** adjunta `@PROMPT-INICIAL.md`, `@IMPLEMENT.md`, `@AGENTS.md` y los archivos de la tarea.\n" +
+    `- **Claude Code:** incluye este archivo, \`IMPLEMENT.md\` y \`${AGENT_PROMPT_PATH}\` en el contexto inicial.\n` +
+    "- **Copilot / otros:** pega este prompt completo y referencia rutas relativas del repo.\n\n" +
+    "## Sesiones siguientes\n\n" +
+    "Tras la sesión 0, usa el comando **`/implementar-tarea`** (Cursor) o repite pasos 3–5 leyendo " +
+    `\`${AGENT_PROMPT_PATH}\` y la siguiente tarea abierta en \`${tasksPath}\`.\n`
   );
 }
 
@@ -805,7 +913,7 @@ function buildDynamicCursorCommands(facts: ProjectGovernanceFacts): Record<strin
   const out: Record<string, string> = {};
   out[`${GOVERNANCE_DOCS_PREFIX}commands/implementar-tarea.md`] =
     "# Implementar tarea\n\n" +
-    "1. Lee `PROMPT-INICIAL.md` y la tarea pendiente en `docs/sdd/tasks.md`.\n" +
+    `1. Lee \`${AGENT_PROMPT_PATH}\` y la tarea pendiente en \`docs/sdd/tasks.md\` (espejo spec-kit).\n` +
     "2. Actualiza `docs/sdd/PROGRESO.md` al terminar.\n" +
     "3. Ejecuta gates del paquete (lint, typecheck, tests).\n";
 
@@ -905,9 +1013,10 @@ function overlayProjectFacts(
   const isStackRule =
     artifactPath?.includes("/rules/stack-backend") ||
     artifactPath?.includes("/rules/stack-frontend");
-  const compact = ruleHasCatalogStackEnrichment(content) && isStackRule;
+  const catalogSections = isStackRule ? detectCatalogStackSections(content) : {};
+  const skipSections = isStackRule ? catalogSections : undefined;
   const includeSddConflicts = !contentHasSddConflicts(content, facts);
-  const block = buildProjectFactsBlock(facts, { compact, includeSddConflicts });
+  const block = buildProjectFactsBlock(facts, { skipSections, includeSddConflicts });
   const prepareBase = (raw: string): string => {
     let base = stripSddConflictSections(raw);
     if (isStackRule) base = stripDetectedScriptsBlock(base);
@@ -1113,6 +1222,25 @@ const FALLBACK_BY_PATH: Record<string, FallbackFactory> = {
           },
       c,
     ),
+  [AGENT_PROMPT_PATH]: (c, _s, input) =>
+    buildAgentPromptMd(
+      input
+        ? extractProjectGovernanceFacts(input)
+        : {
+            projectTitle: "Proyecto TheForge",
+            docPaths: ["docs/sdd/mdd.md"],
+            taskHeadings: [],
+            taskCheckboxes: [],
+            architectureLayers: [],
+            blueprintModules: [],
+            backendGlobs: [],
+            frontendGlobs: [],
+            npmScripts: [],
+            sddConflicts: [],
+            hasUiSurface: false,
+          },
+      c,
+    ),
   "docs/sdd/PROGRESO.md": (_c, _s, input) =>
     buildProgresoMd(
       input
@@ -1261,6 +1389,7 @@ function enrichGovernanceArtifacts(
   complexity: ComplexityLevel,
   governanceInput: SuggestAgentGovernanceInput,
   overlayOptions?: AgentGovernanceOverlayOptions,
+  featureDir?: string,
 ): void {
   const facts = extractProjectGovernanceFacts(governanceInput);
   const overlayOpts = overlayOptions;
@@ -1296,11 +1425,21 @@ function enrichGovernanceArtifacts(
       fileMap[path] = overlayProjectFacts(content, facts, overlayOpts, path);
     }
   }
+  const agentPromptPath = AGENT_PROMPT_PATH;
+  if (
+    shouldReplaceGovernanceArtifact(
+      fileMap[agentPromptPath],
+      facts,
+      overlayOptions?.forceFreshOverlay === true,
+    )
+  ) {
+    fileMap[agentPromptPath] = buildAgentPromptMd(facts, complexity);
+  }
   const promptPath = "PROMPT-INICIAL.md";
   if (
     shouldReplaceGovernanceArtifact(fileMap[promptPath], facts, overlayOptions?.forceFreshOverlay === true)
   ) {
-    fileMap[promptPath] = buildPromptInicialMd(facts, complexity);
+    fileMap[promptPath] = buildPromptInicialMd(facts, complexity, featureDir);
   }
   const progresoPath = "docs/sdd/PROGRESO.md";
   if (
@@ -1520,7 +1659,7 @@ export function reconcileAgentGovernanceScaffold(
   }
 
   applyRequiredFileFallbacks(fileMap, complexity, suggestions, governanceInput, featureDir);
-  enrichGovernanceArtifacts(fileMap, complexity, governanceInput, overlayOptions);
+  enrichGovernanceArtifacts(fileMap, complexity, governanceInput, overlayOptions, featureDir);
   injectDynamicCursorArtifacts(fileMap, facts, complexity);
   appendSuggestionsToComoUsar(fileMap, suggestions);
   applyCanonicalGovernanceDefaults(fileMap, complexity, suggestions, governanceInput, featureDir);
@@ -1619,7 +1758,7 @@ export function parseAgentGovernanceResponse(
     );
   }
 
-  enrichGovernanceArtifacts(fileMap, complexity, governanceInput, overlayOptions);
+  enrichGovernanceArtifacts(fileMap, complexity, governanceInput, overlayOptions, featureDir);
   injectDynamicCursorArtifacts(fileMap, facts, complexity);
   appendSuggestionsToComoUsar(fileMap, suggestions);
 

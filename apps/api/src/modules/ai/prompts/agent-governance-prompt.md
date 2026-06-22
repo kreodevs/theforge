@@ -62,6 +62,7 @@ agent-governance/
     ├── references/
     │   ├── workflows.md
     │   ├── CURSOR_SKILLS_Y_RULES.md
+    │   ├── AGENT-PROMPT.md
     │   └── PROMPT_HANDOFF_AGENTE.md
     └── mcp.json.example       # → .cursor/mcp.json al instalar
 ```
@@ -72,7 +73,7 @@ El mensaje de usuario indica `complexity`: `LOW`, `MEDIUM` o `HIGH`. Ajusta el �
 
 ## LOW
 
-- **Obligatorio en `files`:** `AGENTS.md`, `CLAUDE.md`, `docs/agent-governance/agent-onboarding.md`, **`docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md`**, **`docs/agent-governance/INSTALACION.md`**, **`PROMPT-INICIAL.md`**, **`docs/sdd/PROGRESO.md`**.
+- **Obligatorio en `files`:** `AGENTS.md`, `CLAUDE.md`, `docs/agent-governance/agent-onboarding.md`, **`docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md`**, **`docs/agent-governance/INSTALACION.md`**, **`PROMPT-INICIAL.md`** (paste-ready sesión 0), **`docs/agent-governance/references/AGENT-PROMPT.md`** (contexto interno), **`docs/sdd/PROGRESO.md`**.
 - **Rules:** 1–2 en `docs/agent-governance/rules/` con `alwaysApply: true` (p. ej. `git-commits.mdc`, stack §2).
 - **Caps:** máximo **8** rules, máximo **5** skills; `alwaysApply` solo en 1–2 rules.
 - **Sin** skills obligatorias; **sin** `mcp.json.example` salvo MCP explícito en §1.
@@ -83,7 +84,7 @@ El mensaje de usuario indica `complexity`: `LOW`, `MEDIUM` o `HIGH`. Ajusta el �
 - Todo lo de LOW, más:
 - **Rules:** 3–5 en `docs/agent-governance/rules/`.
 - **Skills:** al menos 1 en `docs/agent-governance/skills/<nombre>-package/SKILL.md`.
-- **Referencias:** `docs/agent-governance/references/workflows.md`, `CURSOR_SKILLS_Y_RULES.md`, `PROMPT_HANDOFF_AGENTE.md`.
+- **Referencias:** `docs/agent-governance/references/workflows.md`, `CURSOR_SKILLS_Y_RULES.md`, `AGENT-PROMPT.md`, `PROMPT_HANDOFF_AGENTE.md`.
 - **`docs/agent-governance/mcp.json.example`** si §1 menciona MCP.
 - **`scripts/install-agent-governance.sh`** (copia a `.cursor/`).
 

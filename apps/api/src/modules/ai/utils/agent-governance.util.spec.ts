@@ -3,6 +3,7 @@ import assert from "node:assert";
 import {
   AGENT_GOVERNANCE_REQUIRED_ALL,
   AGENT_GOVERNANCE_REQUIRED_MEDIUM,
+  AGENT_PROMPT_PATH,
   appendProjectDeliverablesToScaffold,
   getRequiredAgentGovernancePaths,
   parseAgentGovernanceResponse,
@@ -420,6 +421,35 @@ Backend NestJS con TypeORM en borrador; Prisma en blueprint.
       false,
     );
     assert.ok(reconciled.files.some((f) => f.path === "PROMPT-INICIAL.md"));
+    assert.ok(reconciled.files.some((f) => f.path === AGENT_PROMPT_PATH));
+  });
+
+  it("PROMPT-INICIAL (raíz) es paste-ready; AGENT-PROMPT es contexto interno", () => {
+    const featureDir = "specs/001-demo-app";
+    const reconciled = reconcileAgentGovernanceScaffold(
+      {
+        manifest: { templateVersion: "2.0.0", files: [] },
+        files: [],
+      },
+      "MEDIUM",
+      {
+        governanceInput: {
+          mddMarkdown: "# Demo\n## 2. Stack\nNestJS + Prisma\n",
+          tasksMarkdown: "- [ ] Configurar monorepo\n",
+          complexity: "MEDIUM",
+        },
+        featureDir,
+      },
+    );
+    const promptInicial = reconciled.files.find((f) => f.path === "PROMPT-INICIAL.md");
+    const agentPrompt = reconciled.files.find((f) => f.path === AGENT_PROMPT_PATH);
+    assert.ok(promptInicial?.content.includes("install-agent-governance.sh"));
+    assert.ok(promptInicial?.content.includes("IMPLEMENT.md"));
+    assert.ok(promptInicial?.content.includes("/implementar-tarea"));
+    assert.ok(promptInicial?.content.includes(`${featureDir}/tasks.md`));
+    assert.ok(agentPrompt?.content.includes("Agent prompt — contexto del proyecto"));
+    assert.ok(agentPrompt?.content.includes("Configurar monorepo"));
+    assert.equal(promptInicial?.content.includes("Documentos del proyecto"), false);
   });
 
   it("reemplaza tabla instalación obsoleta (.cursor/specifications/) por sección canónica", () => {
@@ -594,6 +624,41 @@ Monorepo NestJS. Gates: npm run test, npm run lint, npm run build.
     assert.ok(rule?.content.includes("**Módulos Blueprint:**"));
     assert.equal((rule?.content.match(/\*\*Módulos Blueprint:\*\*/g) ?? []).length, 1);
     assert.equal((rule?.content.match(/\*\*Globs backend:\*\*/g) ?? []).length, 1);
+  });
+
+  it("no duplica Globs backend cuando el catálogo ya los incluye sin módulos Blueprint", () => {
+    const suggestions = suggestAgentGovernanceArtifacts({
+      mddMarkdown: `
+# Micro Servicio
+## 2. Stack
+Backend NestJS con TypeORM.
+`,
+      complexity: "MEDIUM",
+    });
+    const reconciled = reconcileAgentGovernanceScaffold(
+      {
+        manifest: { templateVersion: "1.0.0", files: [] },
+        files: [],
+      },
+      "MEDIUM",
+      {
+        suggestions,
+        governanceInput: {
+          mddMarkdown: `
+# Micro Servicio
+## 2. Stack
+Backend NestJS con TypeORM.
+`,
+          complexity: "MEDIUM",
+        },
+      },
+    );
+    const rule = reconciled.files.find(
+      (f) => f.path === "docs/agent-governance/rules/stack-backend.mdc",
+    );
+    assert.ok(rule?.content.includes("**Globs backend:**"));
+    assert.equal((rule?.content.match(/\*\*Globs backend:\*\*/g) ?? []).length, 1);
+    assert.equal((rule?.content.match(/\*\*Módulos Blueprint:\*\*/g) ?? []).length, 0);
   });
 });
 

@@ -170,13 +170,76 @@ export function extractProjectTitle(input: SuggestAgentGovernanceInput): string 
   return "Proyecto TheForge";
 }
 
+const ORM_BOILERPLATE_LINE_PATTERNS: RegExp[] = [
+  /nest\/prisma\/typeorm/i,
+  /prisma\/typeorm/i,
+  /schema\.prisma.*(?:según|cuando|typeorm)/i,
+  /typeorm.*schema\.prisma/i,
+  /no inventar ORM/i,
+  /no describas TypeORM/i,
+  /Esquema de Prisma del Blueprint/i,
+  /apunta a entidades.*schema\.prisma/i,
+  /Monorepo Turborepo con NestJS, React, Prisma/i,
+];
+
+function extractMddSection(text: string, sectionNum: number): string {
+  const re = new RegExp(
+    `##\\s*${sectionNum}\\.[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s|\\n#\\s|$)`,
+    "i",
+  );
+  return text.match(re)?.[1]?.trim() ?? "";
+}
+
+function mentionsOrm(text: string, orm: "typeorm" | "prisma"): boolean {
+  const re = orm === "typeorm" ? /\btypeorm\b/i : /\bprisma\b/i;
+  return re.test(text);
+}
+
+function isOrmBoilerplateLine(line: string): boolean {
+  return ORM_BOILERPLATE_LINE_PATTERNS.some((re) => re.test(line));
+}
+
+function stripOrmBoilerplateLines(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !isOrmBoilerplateLine(line))
+    .join("\n");
+}
+
+/** Resuelve ORM dominante desde MDD §2/§3 antes de marcar conflicto TypeORM/Prisma. */
+function resolveAuthoritativeOrm(text: string): "typeorm" | "prisma" | "conflict" | "unknown" {
+  const sec2 = extractMddSection(text, 2);
+  const sec2Typeorm = mentionsOrm(sec2, "typeorm");
+  const sec2Prisma = mentionsOrm(sec2, "prisma");
+  if (sec2Typeorm && !sec2Prisma) return "typeorm";
+  if (sec2Prisma && !sec2Typeorm) return "prisma";
+  if (sec2Typeorm && sec2Prisma) return "conflict";
+
+  const sec3 = extractMddSection(text, 3);
+  const sec3Typeorm = mentionsOrm(sec3, "typeorm");
+  const sec3Prisma = mentionsOrm(sec3, "prisma");
+  if (sec3Typeorm && !sec3Prisma) return "typeorm";
+  if (sec3Prisma && !sec3Typeorm) return "prisma";
+  if (sec3Typeorm && sec3Prisma) return "conflict";
+
+  return "unknown";
+}
+
 /** Contradicciones frecuentes entre entregables SDD. */
 export function detectSddConflicts(text: string): string[] {
   const conflicts: string[] = [];
-  if (/typeorm/i.test(text) && /prisma/i.test(text)) {
+  const ormResolution = resolveAuthoritativeOrm(text);
+  if (ormResolution === "conflict") {
     conflicts.push(
       "TypeORM vs Prisma: prioriza el ORM declarado en MDD §2/Blueprint; no mezcles ambos en el mismo servicio.",
     );
+  } else if (ormResolution === "unknown") {
+    const cleaned = stripOrmBoilerplateLines(text);
+    if (mentionsOrm(cleaned, "typeorm") && mentionsOrm(cleaned, "prisma")) {
+      conflicts.push(
+        "TypeORM vs Prisma: prioriza el ORM declarado en MDD §2/Blueprint; no mezcles ambos en el mismo servicio.",
+      );
+    }
   }
   if (/kafka/i.test(text) && /rabbitmq/i.test(text)) {
     conflicts.push(
@@ -191,7 +254,7 @@ export function detectSddConflicts(text: string): string[] {
   return conflicts;
 }
 
-/** Primeras tareas concretas (checkboxes o headings) para PROMPT-INICIAL. */
+/** Primeras tareas concretas (checkboxes o headings) para AGENT-PROMPT y PROMPT-INICIAL. */
 export function extractTaskCheckboxes(tasksMarkdown: string | null | undefined, limit = 5): string[] {
   const text = tasksMarkdown ?? "";
   const items: string[] = [];
@@ -969,10 +1032,10 @@ export function suggestAgentGovernanceArtifacts(
   }
 
   if (input.tasksMarkdown?.trim()) {
-    rationale.push("Tasks disponibles: PROMPT-INICIAL y PROGRESO derivados del checklist.");
+    rationale.push("Tasks disponibles: PROMPT-INICIAL, AGENT-PROMPT y PROGRESO derivados del checklist.");
   }
   if (facts.sddConflicts.length > 0) {
-    rationale.push(`Conflictos SDD detectados: ${facts.sddConflicts.length} (ver AGENTS.md / PROMPT-INICIAL).`);
+    rationale.push(`Conflictos SDD detectados: ${facts.sddConflicts.length} (ver AGENTS.md / AGENT-PROMPT).`);
   }
 
   return {
