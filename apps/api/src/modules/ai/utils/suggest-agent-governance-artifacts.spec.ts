@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
+  detectSddConflicts,
   extractProjectGovernanceFacts,
   extractProjectTitle,
   extractTaskCheckboxes,
@@ -496,5 +497,41 @@ describe("parseAgentGovernanceResponse + sugerencias", () => {
     assert.ok(comoUsar?.content.includes("Por qué se incluyeron estos skills/rules"));
     assert.ok(paths.includes("PROMPT-INICIAL.md"));
     assert.ok(paths.includes("docs/sdd/PROGRESO.md"));
+  });
+});
+
+describe("detectSddConflicts", () => {
+  it("no marca conflicto TypeORM/Prisma cuando MDD §2 declara solo TypeORM", () => {
+    const text = `
+# MDD
+## 2. Stack
+Backend NestJS con TypeORM y PostgreSQL.
+
+## Tasks (plantilla)
+- En Nest/Prisma/TypeORM, apunta a entidades o schema.prisma según lo que TheForge muestre.
+`;
+    assert.deepEqual(detectSddConflicts(text), []);
+  });
+
+  it("marca conflicto cuando MDD §2 menciona TypeORM y Prisma", () => {
+    const text = `
+# MDD
+## 2. Stack
+Backend NestJS con TypeORM en borrador; Prisma en blueprint.
+`;
+    const conflicts = detectSddConflicts(text);
+    assert.ok(conflicts.some((c) => /TypeORM vs Prisma/i.test(c)));
+  });
+
+  it("ignora Prisma suelto en blueprint cuando §2 es TypeORM-only", () => {
+    const text = `
+# MDD
+## 2. Stack
+Backend NestJS con TypeORM.
+
+## Modelo de datos
+- Schemas en Prisma para users y sessions
+`;
+    assert.deepEqual(detectSddConflicts(text), []);
   });
 });

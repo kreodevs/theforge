@@ -595,6 +595,41 @@ Monorepo NestJS. Gates: npm run test, npm run lint, npm run build.
     assert.equal((rule?.content.match(/\*\*Módulos Blueprint:\*\*/g) ?? []).length, 1);
     assert.equal((rule?.content.match(/\*\*Globs backend:\*\*/g) ?? []).length, 1);
   });
+
+  it("no duplica Globs backend cuando el catálogo ya los incluye sin módulos Blueprint", () => {
+    const suggestions = suggestAgentGovernanceArtifacts({
+      mddMarkdown: `
+# Micro Servicio
+## 2. Stack
+Backend NestJS con TypeORM.
+`,
+      complexity: "MEDIUM",
+    });
+    const reconciled = reconcileAgentGovernanceScaffold(
+      {
+        manifest: { templateVersion: "1.0.0", files: [] },
+        files: [],
+      },
+      "MEDIUM",
+      {
+        suggestions,
+        governanceInput: {
+          mddMarkdown: `
+# Micro Servicio
+## 2. Stack
+Backend NestJS con TypeORM.
+`,
+          complexity: "MEDIUM",
+        },
+      },
+    );
+    const rule = reconciled.files.find(
+      (f) => f.path === "docs/agent-governance/rules/stack-backend.mdc",
+    );
+    assert.ok(rule?.content.includes("**Globs backend:**"));
+    assert.equal((rule?.content.match(/\*\*Globs backend:\*\*/g) ?? []).length, 1);
+    assert.equal((rule?.content.match(/\*\*Módulos Blueprint:\*\*/g) ?? []).length, 0);
+  });
 });
 
 describe("appendProjectDeliverablesToScaffold", () => {

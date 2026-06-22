@@ -640,33 +640,59 @@ function contentHasSddConflicts(content: string, facts: ProjectGovernanceFacts):
   });
 }
 
-function ruleHasCatalogStackEnrichment(content: string): boolean {
-  return (
-    /\*\*Módulos Blueprint:\*\*/i.test(content) &&
-    (/\*\*Globs backend:\*\*/i.test(content) || /\*\*Globs frontend:\*\*/i.test(content))
-  );
+interface CatalogStackSections {
+  modules: boolean;
+  backendGlobs: boolean;
+  frontendGlobs: boolean;
+  npmScripts: boolean;
+}
+
+function detectCatalogStackSections(content: string): CatalogStackSections {
+  return {
+    modules: /\*\*Módulos Blueprint:\*\*/i.test(content),
+    backendGlobs: /\*\*Globs backend:\*\*/i.test(content),
+    frontendGlobs: /\*\*Globs frontend:\*\*/i.test(content),
+    npmScripts: /\*\*Scripts detectados:\*\*/i.test(content),
+  };
+}
+
+function shouldSkipCatalogStackSection(
+  section: keyof CatalogStackSections,
+  options?: { compact?: boolean; skipSections?: Partial<CatalogStackSections> },
+): boolean {
+  if (options?.compact) return true;
+  return options?.skipSections?.[section] === true;
 }
 
 function buildProjectFactsBlock(
   facts: ProjectGovernanceFacts,
-  options?: { includeSddConflicts?: boolean; compact?: boolean },
+  options?: {
+    includeSddConflicts?: boolean;
+    compact?: boolean;
+    skipSections?: Partial<CatalogStackSections>;
+  },
 ): string {
   const parts: string[] = [`## Hechos del proyecto (${facts.projectTitle})\n`];
   const stack = formatStackSection(facts);
   if (stack) parts.push(stack, "");
-  if (!options?.compact) {
-    if (facts.blueprintModules.length > 0) {
-      parts.push("**Módulos Blueprint:**", ...facts.blueprintModules.map((m) => `- \`${m}\``), "");
-    }
-    if (facts.backendGlobs.length > 0) {
-      parts.push("**Globs backend:**", ...facts.backendGlobs.map((g) => `- \`${g}\``), "");
-    }
-    if (facts.hasUiSurface && facts.frontendGlobs.length > 0) {
-      parts.push("**Globs frontend:**", ...facts.frontendGlobs.map((g) => `- \`${g}\``), "");
-    }
-    if (facts.npmScripts.length > 0) {
-      parts.push("**Scripts npm/pnpm:**", ...facts.npmScripts.map((s) => `- \`${s}\``), "");
-    }
+  if (
+    facts.blueprintModules.length > 0 &&
+    !shouldSkipCatalogStackSection("modules", options)
+  ) {
+    parts.push("**Módulos Blueprint:**", ...facts.blueprintModules.map((m) => `- \`${m}\``), "");
+  }
+  if (facts.backendGlobs.length > 0 && !shouldSkipCatalogStackSection("backendGlobs", options)) {
+    parts.push("**Globs backend:**", ...facts.backendGlobs.map((g) => `- \`${g}\``), "");
+  }
+  if (
+    facts.hasUiSurface &&
+    facts.frontendGlobs.length > 0 &&
+    !shouldSkipCatalogStackSection("frontendGlobs", options)
+  ) {
+    parts.push("**Globs frontend:**", ...facts.frontendGlobs.map((g) => `- \`${g}\``), "");
+  }
+  if (facts.npmScripts.length > 0 && !shouldSkipCatalogStackSection("npmScripts", options)) {
+    parts.push("**Scripts npm/pnpm:**", ...facts.npmScripts.map((s) => `- \`${s}\``), "");
   }
   if (facts.architectureLayers.length > 0) {
     parts.push("**Capas:**", ...facts.architectureLayers.map((l) => `- ${l}`), "");
@@ -905,9 +931,10 @@ function overlayProjectFacts(
   const isStackRule =
     artifactPath?.includes("/rules/stack-backend") ||
     artifactPath?.includes("/rules/stack-frontend");
-  const compact = ruleHasCatalogStackEnrichment(content) && isStackRule;
+  const catalogSections = isStackRule ? detectCatalogStackSections(content) : {};
+  const skipSections = isStackRule ? catalogSections : undefined;
   const includeSddConflicts = !contentHasSddConflicts(content, facts);
-  const block = buildProjectFactsBlock(facts, { compact, includeSddConflicts });
+  const block = buildProjectFactsBlock(facts, { skipSections, includeSddConflicts });
   const prepareBase = (raw: string): string => {
     let base = stripSddConflictSections(raw);
     if (isStackRule) base = stripDetectedScriptsBlock(base);
