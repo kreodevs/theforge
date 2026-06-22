@@ -773,7 +773,7 @@ function buildAgentPromptMd(facts: ProjectGovernanceFacts, complexity: Complexit
     "\n\n" +
     buildSddConflictSection(facts) +
     "## Instrucciones para el agente\n\n" +
-    "1. Confirma gobernanza instalada (`./scripts/install-agent-governance.sh` si aplica).\n" +
+    "1. Si `.cursor/rules/` no existe, **Ejecuta en terminal** `chmod +x scripts/install-agent-governance.sh && ./scripts/install-agent-governance.sh` y verifica la instalación. No pidas al usuario salvo que falle.\n" +
     "2. Lee `AGENTS.md`, `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md` y el MDD en `docs/sdd/mdd.md`.\n" +
     "3. Implementa siguiendo **Tasks** (`docs/sdd/tasks.md`) y **Blueprint**; actualiza `docs/sdd/PROGRESO.md` al cerrar ítems.\n" +
     (complexity !== "LOW"
@@ -797,16 +797,20 @@ function buildPromptInicialMd(
   return (
     "# Prompt inicial — implementa este handoff\n\n" +
     `**Misión:** Implementar **${projectLabel}** desde el entregable TheForge, tarea a tarea, respetando spec-kit y gobernanza IA.\n\n` +
-    "## Prerrequisitos\n\n" +
+    "## Prerrequisitos (humano)\n\n" +
     "- Descomprime el ZIP en la **raíz del repositorio destino** (mismo nivel que `AGENTS.md` e `IMPLEMENT.md`).\n" +
-    "- Abre el repo en tu herramienta de agente (Cursor, Claude Code, GitHub Copilot, OpenHands, etc.).\n\n" +
-    "## Paso 1 — Instalar gobernanza IA\n\n" +
-    "Desde la raíz del repo:\n\n" +
+    "- Abre el repo en la herramienta de agente (Cursor, Claude Code, GitHub Copilot, OpenHands, etc.).\n\n" +
+    "## Paso 1 — Instalar gobernanza IA (acción del agente)\n\n" +
+    "**Tu primera acción** en esta sesión es instalar gobernanza ejecutando el script en **terminal/shell** desde la raíz del repo. " +
+    "Cursor, Claude Code, Copilot y herramientas similares pueden correr shell si el usuario **aprueba permisos de terminal** cuando se soliciten.\n\n" +
+    "**Ejecuta en terminal:**\n\n" +
     "```bash\n" +
     "chmod +x scripts/install-agent-governance.sh\n" +
     "./scripts/install-agent-governance.sh\n" +
     "```\n\n" +
-    "Copia reglas, skills y referencias de `docs/agent-governance/` hacia `.cursor/` (o equivalente en tu herramienta).\n\n" +
+    "**Verifica** que exista `.cursor/rules/` (y `.cursor/skills/` si aplica) antes de continuar al Paso 2. " +
+    "El script copia reglas, skills y referencias de `docs/agent-governance/` hacia `.cursor/`.\n\n" +
+    "**No pidas al usuario** que ejecute el script salvo que falle por permisos, rutas inexistentes o un error que no puedas resolver.\n\n" +
     "## Paso 2 — Orden de lectura (obligatorio)\n\n" +
     "Lee **en este orden** antes de escribir código:\n\n" +
     "1. **`IMPLEMENT.md`** — bootstrap spec-kit y relación con gobernanza\n" +

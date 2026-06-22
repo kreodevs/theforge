@@ -44,6 +44,8 @@ describe("spec-kit-bundle", () => {
     assert.ok(!implement?.content.includes("specs/NNN-slug"));
     assert.ok(implement?.content.includes("mirror"));
     assert.ok(implement?.content.includes("docs/agent-governance"));
+    assert.ok(implement?.content.includes("Agent — first terminal action"));
+    assert.ok(implement?.content.includes("install-agent-governance.sh"));
     assert.equal(implement?.content, buildSddImplementReadme(featureDir));
   });
 

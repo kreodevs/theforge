@@ -444,10 +444,15 @@ Backend NestJS con TypeORM en borrador; Prisma en blueprint.
     const promptInicial = reconciled.files.find((f) => f.path === "PROMPT-INICIAL.md");
     const agentPrompt = reconciled.files.find((f) => f.path === AGENT_PROMPT_PATH);
     assert.ok(promptInicial?.content.includes("install-agent-governance.sh"));
+    assert.ok(promptInicial?.content.includes("Tu primera acción"));
+    assert.ok(promptInicial?.content.includes("Ejecuta en terminal"));
+    assert.ok(promptInicial?.content.includes("No pidas al usuario"));
+    assert.ok(promptInicial?.content.includes(".cursor/rules/"));
     assert.ok(promptInicial?.content.includes("IMPLEMENT.md"));
     assert.ok(promptInicial?.content.includes("/implementar-tarea"));
     assert.ok(promptInicial?.content.includes(`${featureDir}/tasks.md`));
     assert.ok(agentPrompt?.content.includes("Agent prompt — contexto del proyecto"));
+    assert.ok(agentPrompt?.content.includes("Ejecuta en terminal"));
     assert.ok(agentPrompt?.content.includes("Configurar monorepo"));
     assert.equal(promptInicial?.content.includes("Documentos del proyecto"), false);
   });

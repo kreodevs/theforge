@@ -53,8 +53,15 @@ ${pathMapTable}
 
 ## Installation order
 
-1. Extract all bundled files at **repo root** (\`.specify/\`, \`${featureDir}/\`, \`AGENTS.md\`, \`docs/agent-governance/\`, \`docs/sdd/\`, \`scripts/\`).
-2. Install \`docs/agent-governance/\` → \`.cursor/\` per \`docs/agent-governance/INSTALACION.md\` (or run \`scripts/install-agent-governance.sh\`).
+1. Extract all bundled files at **repo root** (\`.specify/\`, \`${featureDir}/\`, \`AGENTS.md\`, \`docs/agent-governance/\`, \`docs/sdd/\`, \`scripts/\`). The human unpacks the ZIP; the agent confirms layout at repo root.
+2. **Agent — first terminal action:** install governance (request shell permission if prompted):
+
+\`\`\`bash
+chmod +x scripts/install-agent-governance.sh
+./scripts/install-agent-governance.sh
+\`\`\`
+
+Verify \`.cursor/rules/\` exists before coding. Do not ask the user to run the script unless it fails. See \`docs/agent-governance/INSTALACION.md\` for manual fallback.
 3. Verify \`docs/sdd/*\` mirrors match spec-kit artifacts (optional cross-check).
 
 ## Executing tasks (agent workflow)
@@ -68,7 +75,7 @@ ${pathMapTable}
 
 ## Agent governance (if bundled)
 
-If this ZIP includes governance docs at repo root, install rules/skills per \`docs/agent-governance/INSTALACION.md\` before coding.
+If this ZIP includes governance docs at repo root, the **agent** must run \`scripts/install-agent-governance.sh\` (see Installation order) before coding.
 The \`docs/sdd/\` folder is a **mirror** for rules that reference SDD paths — always prefer spec-kit paths when both exist.
 
 ## Git branch naming
