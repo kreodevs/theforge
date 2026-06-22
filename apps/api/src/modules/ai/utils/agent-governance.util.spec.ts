@@ -7,6 +7,7 @@ import {
   getRequiredAgentGovernancePaths,
   parseAgentGovernanceResponse,
   reconcileAgentGovernanceScaffold,
+  serializeAgentGovernanceScaffold,
 } from "./agent-governance.util.js";
 import { suggestAgentGovernanceArtifacts } from "./suggest-agent-governance-artifacts.js";
 
@@ -301,6 +302,38 @@ Backend NestJS, frontend React, monorepo packages/api packages/web.
     assert.ok(rule?.content.includes("Hechos del proyecto ("));
     assert.equal(rule?.content.includes("(TheForge)"), false);
     assert.ok((rule?.content.length ?? 0) > 200);
+  });
+
+  it("reconcileAgentGovernanceScaffold es idempotente con conflictos SDD en AGENTS.md", () => {
+    const governanceInput = {
+      mddMarkdown: `
+# MDD Demo
+## 2. Stack
+Backend NestJS con Prisma y legacy TypeORM en docs viejos.
+`,
+      blueprintMarkdown: "# Blueprint\n- apps/api\n",
+      projectName: "Demo SDD",
+      complexity: "MEDIUM" as const,
+    };
+    const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
+    const seed = reconcileAgentGovernanceScaffold(
+      {
+        manifest: { templateVersion: "2.0.0", files: ["AGENTS.md"] },
+        files: [{ path: "AGENTS.md", content: "# AGENTS\n\nCuerpo LLM.\n" }],
+      },
+      "MEDIUM",
+      { suggestions, governanceInput, forceFreshOverlay: false },
+    );
+    const first = serializeAgentGovernanceScaffold(seed);
+    const secondPass = reconcileAgentGovernanceScaffold(seed, "MEDIUM", {
+      suggestions,
+      governanceInput,
+      forceFreshOverlay: false,
+    });
+    const second = serializeAgentGovernanceScaffold(secondPass);
+    assert.equal(second, first);
+    const agents = secondPass.files.find((f) => f.path === "AGENTS.md");
+    assert.ok(agents?.content.includes("Resolución de conflictos SDD"));
   });
 
   it("sobrescribe INSTALACION e install script aunque el LLM genere basura", () => {

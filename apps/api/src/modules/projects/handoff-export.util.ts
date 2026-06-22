@@ -126,7 +126,7 @@ function ensureRootConsumptionGuideInSpecKit(
 /** Reconcile governance scaffold + inject docs/sdd deliverables (shared by export paths). */
 export function reconcileExportScaffold(
   project: ProjectWithStages,
-  options?: { throwIfMissing?: boolean },
+  options?: { throwIfMissing?: boolean; forceFreshOverlay?: boolean },
 ): AgentGovernanceScaffold | null {
   const raw = project.agentGovernanceContent?.trim() ?? "";
   if (!raw) {
@@ -154,7 +154,7 @@ export function reconcileExportScaffold(
   const reconciled = reconcileAgentGovernanceScaffold(scaffold, complexity, {
     suggestions,
     governanceInput,
-    forceFreshOverlay: true,
+    forceFreshOverlay: options?.forceFreshOverlay === true,
     featureDir,
   });
 

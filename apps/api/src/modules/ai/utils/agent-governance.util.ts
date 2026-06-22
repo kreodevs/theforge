@@ -901,24 +901,25 @@ function overlayProjectFacts(
       artifactPath?.includes("/rules/stack-frontend"));
   const includeSddConflicts = !contentHasSddConflicts(content, facts);
   const block = buildProjectFactsBlock(facts, { compact, includeSddConflicts });
-  let base = stripSddConflictSections(content);
-  if (/## Hechos del proyecto \(/i.test(base)) {
-    if (forceFreshOverlay || isStaleProjectFactsSection(base, facts)) {
+  if (/## Hechos del proyecto \(/i.test(content)) {
+    if (forceFreshOverlay || isStaleProjectFactsSection(content, facts)) {
       logger.debug(
         `[agent-gov] overlayProjectFacts replacing stale TheForge block projectTitle=${facts.projectTitle} forceFreshOverlay=${forceFreshOverlay}`,
       );
+      let base = stripSddConflictSections(content);
       base = stripProjectFactsSection(base);
       return base.trim() ? `${base.trimEnd()}\n\n${block}` : block;
     }
-    return base;
+    return content;
   }
+  const base = stripSddConflictSections(content);
   return `${base.trimEnd()}\n\n${block}`;
 }
 
 function appendSddConflictToAgents(content: string, facts: ProjectGovernanceFacts): string {
   const section = buildSddConflictSection(facts);
   if (!section.trim()) return stripSddConflictSections(content);
-  if (contentHasSddConflicts(content, facts)) return stripSddConflictSections(content);
+  if (contentHasSddConflicts(content, facts)) return content;
   const base = stripSddConflictSections(content);
   return `${base.trimEnd()}\n\n${section.trim()}\n`;
 }

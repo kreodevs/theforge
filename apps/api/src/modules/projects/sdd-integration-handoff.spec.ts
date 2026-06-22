@@ -65,6 +65,26 @@ describe("handoff-export.util", () => {
     assert.ok(agents?.content.includes("Solo cuerpo LLM"));
   });
 
+  it("reconcileExportScaffold es idempotente al reconciliar dos veces", () => {
+    const gov = serializeAgentGovernanceScaffold({
+      manifest: { templateVersion: "2.0.0", files: ["AGENTS.md"] },
+      files: [{ path: "AGENTS.md", content: "# AGENTS personalizado\n\nSolo cuerpo LLM.\n" }],
+    });
+    const project = {
+      ...baseProject,
+      agentGovernanceContent: gov,
+      specContent: "# Spec\nTypeORM legacy mention\nPrisma en MDD.",
+    };
+    const first = reconcileExportScaffold(project as never);
+    assert.ok(first);
+    const reserialized = serializeAgentGovernanceScaffold(first!);
+    const second = reconcileExportScaffold(
+      { ...project, agentGovernanceContent: reserialized } as never,
+    );
+    assert.ok(second);
+    assert.equal(serializeAgentGovernanceScaffold(second!), reserialized);
+  });
+
   it("scaffoldToRepoHandoffGovernance mapea present/files", () => {
     const scaffold = {
       manifest: { templateVersion: "2.0.0", files: ["AGENTS.md"] },
