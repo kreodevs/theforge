@@ -162,6 +162,30 @@ export const reconcileHandoffStageBodySchema = z.object({
 
 export type ReconcileHandoffStageBody = z.infer<typeof reconcileHandoffStageBodySchema>;
 
+export const abandonIntegrationHandoffBodySchema = z.object({
+  /** Optional note stored on the abandoned stage snapshot. */
+  reason: z.string().max(500).optional(),
+  /** When true, released NEW-LEG items become `rejected` instead of `sent`. */
+  rejectReleasedItems: z.boolean().optional().default(false),
+  /** Override auto-pick of stage to activate when abandoning the ACTIVE stage. */
+  activateStageId: z.string().uuid().optional(),
+});
+
+export type AbandonIntegrationHandoffBody = z.infer<typeof abandonIntegrationHandoffBodySchema>;
+
+export interface AbandonIntegrationHandoffResponse {
+  stage: {
+    id: string;
+    ordinal: number;
+    name: string | null;
+    workflowStatus: string;
+    handoffImportedAt: string | null;
+  };
+  releasedItemIds: string[];
+  activatedStageId: string | null;
+  tracesUpdated: number;
+}
+
 export interface ReconcileHandoffStageResponse {
   stageId: string;
   description: string;

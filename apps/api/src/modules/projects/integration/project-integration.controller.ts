@@ -89,4 +89,13 @@ export class ProjectIntegrationController {
   ) {
     return this.integration.reconcileHandoffStage(projectId, stageId, body);
   }
+
+  @Post("stages/:stageId/abandon-handoff")
+  abandonHandoff(
+    @Param("projectId") projectId: string,
+    @Param("stageId") stageId: string,
+    @Body() body: unknown,
+  ) {
+    return this.integration.abandonIntegrationHandoffStage(projectId, stageId, body);
+  }
 }

@@ -11,6 +11,7 @@ Cross-project handoff, trace matrix, and stage promotion for brownfield SDD.
 | `POST` | `/projects/:projectId/integration/handoff/send` | NEW: draft → sent |
 | `POST` | `/projects/:projectId/integration/stages/:stageId/import-handoff` | LEGACY: import into existing stage 2+ |
 | `POST` | `/projects/:projectId/integration/stages/:stageId/reconcile-handoff` | LEGACY: retroactive Ariadne wire + `legacy/start` on imported stage |
+| `POST` | `/projects/:projectId/integration/stages/:stageId/abandon-handoff` | LEGACY: archive stage + release NEW-LEG for re-promotion |
 | `POST` | `/projects/:projectId/integration/promote-to-stage` | **P1:** create stage from SENT handoff batch |
 
 ## Promote to stage (hybrid C+B)
@@ -39,10 +40,25 @@ Body (`reconcileHandoffStageBodySchema`):
 - Awaits `wireAriadneBrownfieldConverge` (PATCH `theforgeStageId` on Ariadne repos) then `legacy/start` using persisted handoff description
 - Does not re-import handoff from NEW (no duplicate description merge)
 
+## Abandon handoff (revert promotion)
+
+Body (`abandonIntegrationHandoffBodySchema`):
+
+```json
+{ "reason": "alcance mal definido", "rejectReleasedItems": false, "activateStageId": "…" }
+```
+
+- LEGACY only; stage 2+ with imported handoff; sets `workflowStatus: ARCHIVED` (visible in Workshop selector)
+- Freezes deliverables snapshot if missing; keeps `handoffSnapshot` + `abandonedAt` for audit
+- Clears `legacyStageId` on NEW handoff items and `IntegrationTrace` rows
+- Released items → `sent` (re-editable / re-promotable) or `rejected` if `rejectReleasedItems`
+- If abandoning ACTIVE stage, activates etapa 1 baseline (or `activateStageId`)
+
 ## Helpers
 
 - `integration-context.util.ts` — prompt blocks, `parseSatisfiesLinksFromUserStories`
 - `promote-handoff.util.ts` — item selection for promote (unit-tested)
 - `reconcile-handoff.util.ts` — resolve description from stage snapshot (unit-tested)
+- `abandon-handoff.util.ts` — release items + pick stage to activate (unit-tested)
 
 See `docs/plans/PLAN-INTEGRATION-AS-STAGE.md`.
