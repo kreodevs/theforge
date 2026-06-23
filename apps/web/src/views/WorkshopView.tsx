@@ -77,6 +77,7 @@ import {
   type Status,
 } from "../store/workshopStore";
 import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
+import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
 import { apiFetch, API_BASE } from "../utils/apiClient";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
@@ -2389,7 +2390,8 @@ export default function WorkshopView({
                     {workshopStagesList.map((st) => (
                       <option key={st.id} value={st.id}>
                         #{st.ordinal}{" "}
-                        {(st.name ?? st.key ?? st.id.slice(0, 8)) + ` · ${st.workflowStatus}`}
+                        {(st.name ?? st.key ?? st.id.slice(0, 8)) +
+                          ` · ${stageWorkflowStatusLabel(st.workflowStatus)}`}
                       </option>
                     ))}
                   </select>
@@ -3409,6 +3411,7 @@ export default function WorkshopView({
                 convergeWebhookUrl={project.convergeWebhookUrl ?? null}
                 legacyAnalyzeDone={legacyAnalyzeDone}
                 activeStageHandoffImportedAt={activeWorkshopStage?.handoffImportedAt ?? null}
+                activeStageWorkflowStatus={activeWorkshopStage?.workflowStatus ?? null}
                 onOpenModification={() => setCentralPanel("legacy")}
                 onProjectRefresh={() => {
                   void fetchProject(projectId);

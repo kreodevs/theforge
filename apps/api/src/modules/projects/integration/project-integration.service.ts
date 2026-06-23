@@ -13,11 +13,14 @@ import {
   type IntegrationHandoff,
   type IntegrationHandoffItem,
   type IntegrationStatusResponse,
+  type AbandonIntegrationHandoffResponse,
   type IntegrationTraceRow,
   type PromoteHandoffToStageResponse,
   type ReconcileHandoffStageResponse,
+  abandonIntegrationHandoffBodySchema,
   reconcileHandoffStageBodySchema,
 } from "@theforge/shared-types";
+import { StageStatus } from "@theforge/database";
 import { PrismaService } from "../../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../../common/request-user.store.js";
 import { ChangeLogService } from "../../change-log/change-log.service.js";
@@ -26,7 +29,7 @@ import { TheForgeService } from "../../theforge/theforge.service.js";
 import { LegacyCoordinatorService } from "../../legacy-flow/legacy-coordinator.service.js";
 import { ProjectsService } from "../projects.service.js";
 import { isLegacyHandoffAutoLegacyStartEnabled } from "./legacy-handoff-auto-start.util.js";
-import { persistStageDeliverableSnapshotFromProject } from "../stage-deliverable-snapshot.util.js";
+import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "../stage-deliverable-snapshot.util.js";
 import {
   buildExternalLegacyContextBlock,
   buildHandoffImportDescription,
@@ -43,6 +46,11 @@ import {
   resolveHandoffDescriptionForStage,
   stageHasHandoffPayload,
 } from "./reconcile-handoff.util.js";
+import {
+  handoffItemIdsFromStageSnapshot,
+  pickActivateStageIdAfterAbandon,
+  releaseHandoffItemsForAbandonedStage,
+} from "./abandon-handoff.util.js";
 
 type ProjectRow = {
   id: string;
@@ -58,6 +66,8 @@ type ProjectRow = {
   stages: {
     id: string;
     ordinal: number;
+    name: string | null;
+    workflowStatus: string;
     mddContent: string | null;
     handoffSnapshot: unknown;
     handoffImportedAt: Date | null;
@@ -477,6 +487,130 @@ export class ProjectIntegrationService {
     );
 
     return { stageId, description, ariadneWire, legacyStart };
+  }
+
+  /**
+   * Abandon an integration handoff stage: ARCHIVED (visible + snapshot), release NEW-LEG items
+   * for re-promotion, clear trace stage links. Does not delete the stage or etapa 1 baseline.
+   */
+  async abandonIntegrationHandoffStage(
+    projectId: string,
+    stageId: string,
+    body: unknown,
+  ): Promise<AbandonIntegrationHandoffResponse> {
+    const dto = abandonIntegrationHandoffBodySchema.parse(body ?? {});
+    const project = await this.assertAccess(projectId);
+    if (project.projectType !== "LEGACY") {
+      throw new BadRequestException("abandon-handoff solo en proyectos LEGACY");
+    }
+    const stageRow = await this.prisma.stage.findFirst({
+      where: { id: stageId, projectId },
+    });
+    if (!stageRow) throw new NotFoundException("Stage not found");
+    if (stageRow.ordinal < 2) {
+      throw new BadRequestException("Solo puedes abandonar handoff en etapa 2 o superior");
+    }
+    if (stageRow.workflowStatus === StageStatus.ARCHIVED) {
+      throw new BadRequestException("Esta etapa ya está archivada");
+    }
+    if (!stageHasHandoffPayload(stageRow)) {
+      throw new BadRequestException("La etapa no tiene handoff importado para abandonar");
+    }
+
+    const newProjectId = stageRow.linkedNewProjectId ?? project.linkedNewProjectId;
+    if (!newProjectId) {
+      throw new BadRequestException("Vincula un proyecto NEW antes de abandonar handoff");
+    }
+
+    const snapshotItemIds = handoffItemIdsFromStageSnapshot(stageRow.handoffSnapshot);
+    const wasActive = stageRow.workflowStatus === StageStatus.ACTIVE;
+    const abandonedAt = new Date().toISOString();
+    const reason = dto.reason?.trim() || undefined;
+
+    await ensureStageDeliverableSnapshotIfMissing(this.prisma, stageId, projectId, {
+      source: "manual",
+    }).catch(() => {});
+
+    const prevLegacyState = stageRow.legacyChangeState as Record<string, unknown> | null;
+    const prevSnapshot = stageRow.handoffSnapshot as Record<string, unknown> | null;
+    const nextLegacyState = {
+      ...(prevLegacyState && typeof prevLegacyState === "object" ? prevLegacyState : {}),
+      abandonedAt,
+      ...(reason ? { abandonReason: reason } : {}),
+    };
+    const nextHandoffSnapshot = {
+      ...(prevSnapshot && typeof prevSnapshot === "object" ? prevSnapshot : {}),
+      abandonedAt,
+      ...(reason ? { abandonReason: reason } : {}),
+    };
+
+    await this.prisma.stage.update({
+      where: { id: stageId },
+      data: {
+        workflowStatus: StageStatus.ARCHIVED,
+        legacyChangeState: nextLegacyState,
+        handoffSnapshot: nextHandoffSnapshot,
+      },
+    });
+
+    const newProject = await this.assertAccess(newProjectId);
+    const handoff = this.handoffFromProject(newProject);
+    const { items: releasedHandoffItems, releasedIds } = releaseHandoffItemsForAbandonedStage(
+      handoff.items,
+      stageId,
+      snapshotItemIds,
+      dto.rejectReleasedItems,
+    );
+    if (releasedIds.length) {
+      handoff.items = releasedHandoffItems;
+      await this.persistHandoff(newProjectId, handoff);
+    }
+
+    const traceUpdate = await this.prisma.integrationTrace.updateMany({
+      where: { legacyStageId: stageId },
+      data: { legacyStageId: null },
+    });
+
+    let activatedStageId: string | null = null;
+    if (wasActive) {
+      const allStages = await this.prisma.stage.findMany({
+        where: { projectId },
+        select: { id: true, ordinal: true, workflowStatus: true },
+        orderBy: { ordinal: "asc" },
+      });
+      const nextActiveId = pickActivateStageIdAfterAbandon(
+        allStages,
+        stageId,
+        dto.activateStageId,
+      );
+      if (nextActiveId) {
+        await this.projectsService.patchStage(projectId, nextActiveId, { activate: true });
+        activatedStageId = nextActiveId;
+      }
+    }
+
+    await this.changeLog.log(
+      projectId,
+      "integrationHandoff",
+      `Handoff abandonado etapa ${stageRow.ordinal}: released=${releasedIds.join(",") || "none"} activated=${activatedStageId ?? "none"}`,
+    );
+    if (releasedIds.length) {
+      await this.changeLog.log(newProjectId, "integrationHandoff", `Ítems liberados de etapa archivada: ${releasedIds.join(", ")}`);
+    }
+
+    const updated = await this.prisma.stage.findUniqueOrThrow({ where: { id: stageId } });
+    return {
+      stage: {
+        id: updated.id,
+        ordinal: updated.ordinal,
+        name: updated.name,
+        workflowStatus: updated.workflowStatus,
+        handoffImportedAt: updated.handoffImportedAt?.toISOString() ?? null,
+      },
+      releasedItemIds: releasedIds,
+      activatedStageId,
+      tracesUpdated: traceUpdate.count,
+    };
   }
 
   async promoteHandoffToStage(

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  Archive,
   ArrowLeftRight,
   CheckCircle2,
   Download,
@@ -62,6 +63,7 @@ export interface IntegrationPanelProps {
   legacyAnalyzeDone?: boolean;
   /** Active stage handoff import timestamp (preferred over global integration status). */
   activeStageHandoffImportedAt?: string | null;
+  activeStageWorkflowStatus?: string | null;
   onOpenModification?: () => void;
   onProjectRefresh: () => void | Promise<void>;
 }
@@ -77,6 +79,7 @@ export function IntegrationPanel({
   convergeWebhookUrl: initialConvergeWebhookUrl,
   legacyAnalyzeDone = false,
   activeStageHandoffImportedAt = null,
+  activeStageWorkflowStatus = null,
   onOpenModification,
   onProjectRefresh,
 }: IntegrationPanelProps) {
@@ -94,6 +97,10 @@ export function IntegrationPanel({
   const [promoteSelectedIds, setPromoteSelectedIds] = useState<string[]>([]);
   const [promoteSubmitting, setPromoteSubmitting] = useState(false);
   const [reconcileSubmitting, setReconcileSubmitting] = useState(false);
+  const [abandonOpen, setAbandonOpen] = useState(false);
+  const [abandonReason, setAbandonReason] = useState("");
+  const [abandonRejectItems, setAbandonRejectItems] = useState(false);
+  const [abandonSubmitting, setAbandonSubmitting] = useState(false);
   const [convergeWebhookUrl, setConvergeWebhookUrl] = useState(initialConvergeWebhookUrl ?? "");
   const [convergeWebhookSaving, setConvergeWebhookSaving] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -229,6 +236,46 @@ export function IntegrationPanel({
   }, [projectId, activeStageId, loadStatus, onProjectRefresh]);
 
   const handoffImportedOnActiveStage = activeStageHandoffImportedAt ?? status?.handoffImportedAt;
+  const activeStageIsArchived = activeStageWorkflowStatus === "ARCHIVED";
+
+  const abandonHandoffStage = useCallback(async () => {
+    if (!activeStageId) return;
+    setAbandonSubmitting(true);
+    setError(null);
+    try {
+      const r = await apiFetch(
+        `${API_BASE}/projects/${projectId}/integration/stages/${activeStageId}/abandon-handoff`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reason: abandonReason.trim() || undefined,
+            rejectReleasedItems: abandonRejectItems,
+          }),
+        },
+      );
+      if (!r.ok) {
+        const err = (await r.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(err?.message ?? "Abandonar handoff falló");
+      }
+      setAbandonOpen(false);
+      setAbandonReason("");
+      setAbandonRejectItems(false);
+      await loadStatus();
+      await onProjectRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Abandonar handoff falló");
+    } finally {
+      setAbandonSubmitting(false);
+    }
+  }, [
+    projectId,
+    activeStageId,
+    abandonReason,
+    abandonRejectItems,
+    loadStatus,
+    onProjectRefresh,
+  ]);
 
   const reconcileHandoff = useCallback(async () => {
     if (!activeStageId) return;
@@ -324,18 +371,19 @@ export function IntegrationPanel({
     async (
       itemId: string,
       payload: {
-        title: string;
-        description: string;
+        title?: string;
+        description?: string;
         actor?: string;
         acceptanceCriteria?: string[];
+        status?: IntegrationHandoffItem["status"];
       },
     ) => {
-      const body = {
-        title: payload.title.trim(),
-        description: payload.description.trim(),
-        actor: payload.actor?.trim() ?? "",
-        acceptanceCriteria: payload.acceptanceCriteria ?? [],
-      };
+      const body: Record<string, unknown> = {};
+      if (payload.title !== undefined) body.title = payload.title.trim();
+      if (payload.description !== undefined) body.description = payload.description.trim();
+      if (payload.actor !== undefined) body.actor = payload.actor.trim();
+      if (payload.acceptanceCriteria !== undefined) body.acceptanceCriteria = payload.acceptanceCriteria;
+      if (payload.status !== undefined) body.status = payload.status;
       const r = await apiFetch(`${API_BASE}/projects/${projectId}/integration/handoff/items/${itemId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -349,6 +397,14 @@ export function IntegrationPanel({
       return true;
     },
     [projectId, loadStatus],
+  );
+
+  const rejectHandoffItem = useCallback(
+    async (itemId: string) => {
+      const ok = await updateHandoffItem(itemId, { status: "rejected" });
+      if (!ok) setError("No se pudo rechazar ítem handoff");
+    },
+    [updateHandoffItem],
   );
 
   const saveConvergeWebhook = useCallback(async () => {
@@ -513,6 +569,7 @@ export function IntegrationPanel({
               onAdd={() => void addHandoffItem()}
               onDelete={(id) => void deleteItem(id)}
               onUpdate={(id, payload) => updateHandoffItem(id, payload)}
+              onReject={(id) => void rejectHandoffItem(id)}
               onSend={() => void sendHandoff()}
               linked={!!linked}
             />
@@ -541,12 +598,27 @@ export function IntegrationPanel({
         {projectType === "LEGACY" && activeStageOrdinal >= 2 ? (
           <IntegrationStep
             step={promotableIds.length > 0 ? 3 : 2}
-            status={handoffImportedOnActiveStage ? "done" : linked ? "active" : "pending"}
+            status={
+              activeStageIsArchived
+                ? "done"
+                : handoffImportedOnActiveStage
+                  ? "done"
+                  : linked
+                    ? "active"
+                    : "pending"
+            }
             title={`Recibir handoff · etapa ${activeStageOrdinal}`}
             description="Importa las solicitudes del proyecto NEW enlazado en esta etapa. Tras importar o promover, The Forge analiza el cambio en Modificación (Ariadne)."
           >
             <div className="space-y-4">
-              {handoffImportedOnActiveStage ? (
+              {activeStageIsArchived ? (
+                <p className="flex items-center gap-2.5 text-sm leading-relaxed text-[var(--foreground-muted)]">
+                  <Archive className="h-4 w-4 shrink-0" aria-hidden />
+                  Etapa <strong className="text-[var(--foreground)]">archivada</strong> — intento de integración
+                  revertido. Sigue visible en el selector de etapas; entregables congelados en snapshot.
+                </p>
+              ) : null}
+              {handoffImportedOnActiveStage && !activeStageIsArchived ? (
                 <p className="flex items-center gap-2.5 text-sm leading-relaxed text-[color-mix(in_oklch,var(--success)_88%,var(--foreground))]">
                   <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
                   Importado: {new Date(handoffImportedOnActiveStage).toLocaleString()}
@@ -563,6 +635,7 @@ export function IntegrationPanel({
                   <strong className="text-[var(--foreground)]">Re-sincronizar Ariadne</strong>.
                 </p>
               ) : null}
+              {!activeStageIsArchived ? (
               <div className="flex flex-wrap gap-2">
                 <WorkshopPanelButton
                   tone="primary"
@@ -574,18 +647,29 @@ export function IntegrationPanel({
                   Importar handoff del proyecto NEW
                 </WorkshopPanelButton>
                 {handoffImportedOnActiveStage ? (
-                  <WorkshopPanelButton
-                    tone="secondary"
-                    disabled={!linked || reconcileSubmitting}
-                    className="inline-flex items-center gap-2"
-                    onClick={() => void reconcileHandoff()}
-                  >
-                    <RefreshCw
-                      className={`h-3.5 w-3.5 ${reconcileSubmitting ? "animate-spin" : ""}`}
-                      aria-hidden
-                    />
-                    {reconcileSubmitting ? "Sincronizando…" : "Re-sincronizar Ariadne"}
-                  </WorkshopPanelButton>
+                  <>
+                    <WorkshopPanelButton
+                      tone="secondary"
+                      disabled={!linked || reconcileSubmitting}
+                      className="inline-flex items-center gap-2"
+                      onClick={() => void reconcileHandoff()}
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${reconcileSubmitting ? "animate-spin" : ""}`}
+                        aria-hidden
+                      />
+                      {reconcileSubmitting ? "Sincronizando…" : "Re-sincronizar Ariadne"}
+                    </WorkshopPanelButton>
+                    <WorkshopPanelButton
+                      tone="secondary"
+                      disabled={!linked || abandonSubmitting}
+                      className="inline-flex items-center gap-2"
+                      onClick={() => setAbandonOpen(true)}
+                    >
+                      <Archive className="h-3.5 w-3.5" aria-hidden />
+                      Revertir promoción
+                    </WorkshopPanelButton>
+                  </>
                 ) : null}
                 {onOpenModification ? (
                   <WorkshopPanelButton
@@ -598,12 +682,75 @@ export function IntegrationPanel({
                   </WorkshopPanelButton>
                 ) : null}
               </div>
+              ) : null}
+              {handoffImportedOnActiveStage && !activeStageIsArchived && promotableIds.length > 0 ? (
+                <p className="text-xs text-[var(--foreground-muted)]">
+                  Tras revertir, corrige ítems en el NEW y usa{" "}
+                  <strong className="text-[var(--foreground)]">Nueva etapa desde integración</strong> para un lote
+                  limpio.
+                </p>
+              ) : null}
             </div>
           </IntegrationStep>
         ) : null}
       </ol>
 
       <TraceMatrix traces={status?.traces ?? []} onOpenPreview={(t) => void openHandoffPreview(t)} />
+
+      <Dialog open={abandonOpen} onOpenChange={setAbandonOpen}>
+        <DialogContent size="md" className="gap-0 p-0">
+          <DialogHeader className="border-b border-[var(--border)] px-4 py-3 text-left">
+            <DialogTitle>Revertir promoción de handoff</DialogTitle>
+            <DialogDescription>
+              Archiva la etapa {activeStageOrdinal} (visible como ARCHIVED + snapshot). Libera los NEW-LEG para
+              promover de nuevo en otra etapa. La etapa 1 AS-IS no se modifica.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 p-4">
+            <div className="space-y-2">
+              <label htmlFor="abandon-reason" className="text-xs font-medium text-[var(--foreground)]">
+                Motivo (opcional)
+              </label>
+              <textarea
+                id="abandon-reason"
+                className="flex min-h-[72px] w-full rounded-md border border-[var(--input-border)] bg-[var(--input)] px-3 py-2 text-sm"
+                value={abandonReason}
+                onChange={(e) => setAbandonReason(e.target.value)}
+                placeholder="Ej. alcance mal definido, redefinir handoff desde cero"
+              />
+            </div>
+            <label className="flex items-start gap-2 text-sm text-[var(--foreground-muted)] cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={abandonRejectItems}
+                onChange={(e) => setAbandonRejectItems(e.target.checked)}
+              />
+              <span>
+                Marcar ítems NEW-LEG liberados como <strong className="text-[var(--foreground)]">rejected</strong>{" "}
+                (si no, vuelven a <code className="text-xs">sent</code> y podés editarlos en el NEW).
+              </span>
+            </label>
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setAbandonOpen(false)}>
+                Cancelar
+              </Button>
+              <WorkshopPanelButton
+                tone="primary"
+                disabled={abandonSubmitting}
+                onClick={() => void abandonHandoffStage()}
+              >
+                {abandonSubmitting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <Archive className="h-3.5 w-3.5" aria-hidden />
+                )}
+                Archivar etapa y liberar handoff
+              </WorkshopPanelButton>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent size="lg" className="gap-0 p-0">
@@ -1064,6 +1211,7 @@ function HandoffEditor({
   onAdd,
   onDelete,
   onUpdate,
+  onReject,
   onSend,
   linked,
 }: {
@@ -1085,6 +1233,7 @@ function HandoffEditor({
       acceptanceCriteria?: string[];
     },
   ) => Promise<boolean>;
+  onReject: (id: string) => void;
   onSend: () => void;
   linked: boolean;
 }) {
@@ -1192,6 +1341,16 @@ function HandoffEditor({
                     ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-0.5">
+                    {(item.status === "sent" || item.status === "accepted") && linked ? (
+                      <button
+                        type="button"
+                        className="rounded-md px-1.5 py-1 text-[10px] font-medium uppercase tracking-wide text-[color-mix(in_oklch,var(--destructive)_80%,var(--foreground))] transition-colors hover:bg-[color-mix(in_oklch,var(--destructive)_10%,transparent)]"
+                        onClick={() => onReject(item.id)}
+                        aria-label={`Rechazar ${item.id}`}
+                      >
+                        Rechazar
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="rounded-md p-1.5 text-[var(--foreground-subtle)] transition-colors hover:bg-[color-mix(in_oklch,var(--muted)_50%,transparent)] hover:text-[var(--foreground)]"
@@ -1333,6 +1492,13 @@ function HandoffStatusBadge({ status }: { status: string }) {
     return (
       <Badge variant="default" className="text-[10px] uppercase">
         {status}
+      </Badge>
+    );
+  }
+  if (status === "rejected") {
+    return (
+      <Badge variant="destructive" className="text-[10px] uppercase">
+        rejected
       </Badge>
     );
   }
