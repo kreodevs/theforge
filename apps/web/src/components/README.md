@@ -8,7 +8,8 @@
 | **MddViewer** | Preview markdown (Fase 0, MDD, BRD, Blueprint): `repairDirectoryTreeBlocks` + detección `((Root))`/`— apps/` envuelve árboles en ` ```text `; párrafos colapsados → `<pre>` monoespaciado. Normaliza `mermaid`. |
 | **DashboardSidebar** | En Workshop, «Panel de proyectos» queda `disabled` mientras `selectWorkshopAgentsBusy` (mismo criterio que el chat). |
 | **DashboardPanelHeader** | Panel de proyectos: acciones Crear / Tutorial / Refrescar. |
-| **ProjectTutorialDialog** | Tutorial **Greenfield** vs **Brownfield** (`content/tutorial/*.md`). |
+| **ProjectTutorialDialog** | Tutorial **Greenfield** vs **Brownfield** (`content/tutorial/*.md`). Renderiza bloques ` ```mermaid ` como SVG vía `MarkdownMermaid.tsx`. |
+| **MarkdownMermaid** | Bloques Mermaid en markdown de tutorial/ayuda (modales). |
 | **ProjectMergeDialog** | Fusión de 2+ carpetas en Paso 0: config (destino, benchmark, suite, archivado), preview con conflictos, `POST /projects/merge`. |
 | **RenameProjectDialog** | Renombrar proyecto (`PATCH /projects/:id` con `{ name }`). Lápiz en carpeta del dashboard, barra de selección (1 carpeta) y header del Workshop. |
 | **CloneProjectDialog** | Clonar proyecto (`POST /projects/:id/clone`). Barra de selección con una carpeta: «Clonar» → nombre por defecto «Copia de …»; abre el Workshop en el clon. |
@@ -19,5 +20,5 @@
 | **McpSecretCard** | Re-export de `AccountConfigCard` (compat). |
 | **AriadneConfigCard** | URL/token MCP de Ariadne (base de conocimientos). |
 | **LegacyMcpDebugPanel/** | Panel colapsable (MDD Inicial, LEGACY): traza petición↔respuesta JSON-RPC con Ariadne cuando el API envía `mcpDebugTrace` (`LEGACY_CODEBASE_DOC_MCP_DEBUG_UI=1`); botón **Copiar traza**. En **WorkshopView**, **Copiar MDD** junto al título copia el markdown de partida. Ver README en la carpeta. |
-| **WorkshopHelpModal** | Modal **Ayuda — TheForge** (Workshop): manual, **Integración Legacy ↔ Nuevo**, SDD y referencia por documento. |
+| **WorkshopHelpModal** | Modal **Ayuda — TheForge** (Workshop): manual, **Integración Legacy ↔ Nuevo**, SDD y referencia por documento. Renderiza Mermaid en markdown. |
 | **IntegrationPanel** | Pestaña **Integración**: enlace NEW↔LEGACY, handoff NEW-LEG, import en etapa 2+, matriz trazabilidad. |
