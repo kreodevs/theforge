@@ -1,4 +1,4 @@
-import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, forwardRef, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
   buildStageChangeSpecContent,
   createHandoffItemBodySchema,
@@ -21,7 +21,9 @@ import { getRequestUserId } from "../../../common/request-user.store.js";
 import { ChangeLogService } from "../../change-log/change-log.service.js";
 import { GraphMemoryService } from "../../ai-analysis/graph-memory/graph-memory.service.js";
 import { TheForgeService } from "../../theforge/theforge.service.js";
+import { LegacyCoordinatorService } from "../../legacy-flow/legacy-coordinator.service.js";
 import { ProjectsService } from "../projects.service.js";
+import { isLegacyHandoffAutoLegacyStartEnabled } from "./legacy-handoff-auto-start.util.js";
 import { persistStageDeliverableSnapshotFromProject } from "../stage-deliverable-snapshot.util.js";
 import {
   buildExternalLegacyContextBlock,
@@ -52,11 +54,15 @@ type ProjectRow = {
 
 @Injectable()
 export class ProjectIntegrationService {
+  private readonly logger = new Logger(ProjectIntegrationService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly changeLog: ChangeLogService,
     private readonly graphMemory: GraphMemoryService,
     private readonly theforge: TheForgeService,
+    @Inject(forwardRef(() => LegacyCoordinatorService))
+    private readonly legacyCoordinator: LegacyCoordinatorService,
     @Inject(forwardRef(() => ProjectsService))
     private readonly projectsService: ProjectsService,
   ) {}
@@ -362,6 +368,7 @@ export class ProjectIntegrationService {
     await this.persistHandoffItemsLegacyStage(newProjectId, activeItems.map((i) => i.id), stageId);
     await this.finalizeHandoffStageSetup(projectId, stageId, newProjectId, activeItems);
     await this.changeLog.log(projectId, "handoffSnapshot", handoffDesc);
+    await this.tryAutoLegacyStartAfterHandoff(projectId, stageId, handoffDesc);
     return this.getStatus(projectId);
   }
 
@@ -422,6 +429,8 @@ export class ProjectIntegrationService {
         "Integration",
       );
     }
+
+    await this.tryAutoLegacyStartAfterHandoff(projectId, stage.id, handoffDesc);
 
     const updatedStage = await this.prisma.stage.findUniqueOrThrow({ where: { id: stage.id } });
     const updatedTraces = await this.listTraceRows(projectId, handoff);
@@ -709,5 +718,26 @@ export class ProjectIntegrationService {
         acceptanceCriteria: item?.acceptanceCriteria ?? [],
       };
     });
+  }
+
+  /** Runs legacy/start (Ariadne get_modification_plan) after handoff lands on a stage. */
+  private async tryAutoLegacyStartAfterHandoff(
+    projectId: string,
+    stageId: string,
+    description: string,
+  ): Promise<void> {
+    if (!isLegacyHandoffAutoLegacyStartEnabled()) return;
+    const desc = description.trim();
+    if (!desc) return;
+    try {
+      await this.legacyCoordinator.start(projectId, desc, stageId);
+      this.logger.log(
+        `[Integration] legacy/start OK after handoff (project=${projectId}, stage=${stageId})`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `[Integration] legacy/start after handoff failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }

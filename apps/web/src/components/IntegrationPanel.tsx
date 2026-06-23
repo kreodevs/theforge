@@ -57,6 +57,9 @@ export interface IntegrationPanelProps {
   activeStageId: string | null;
   activeStageOrdinal: number;
   convergeWebhookUrl?: string | null;
+  /** Stage legacyChangeState: Ariadne analyze already ran (files or questions). */
+  legacyAnalyzeDone?: boolean;
+  onOpenModification?: () => void;
   onProjectRefresh: () => void | Promise<void>;
 }
 
@@ -69,6 +72,8 @@ export function IntegrationPanel({
   activeStageId,
   activeStageOrdinal,
   convergeWebhookUrl: initialConvergeWebhookUrl,
+  legacyAnalyzeDone = false,
+  onOpenModification,
   onProjectRefresh,
 }: IntegrationPanelProps) {
   const [status, setStatus] = useState<IntegrationStatusResponse | null>(null);
@@ -496,7 +501,7 @@ export function IntegrationPanel({
             step={promotableIds.length > 0 ? 3 : 2}
             status={status?.handoffImportedAt ? "done" : linked ? "active" : "pending"}
             title={`Recibir handoff · etapa ${activeStageOrdinal}`}
-            description="Importa las solicitudes del proyecto NEW enlazado y genera el MDD de cambio con trazabilidad."
+            description="Importa las solicitudes del proyecto NEW enlazado en esta etapa. Tras importar o promover, The Forge analiza el cambio en Modificación (Ariadne)."
           >
             <div className="space-y-4">
               {status?.handoffImportedAt ? (
@@ -505,15 +510,38 @@ export function IntegrationPanel({
                   Importado: {new Date(status.handoffImportedAt).toLocaleString()}
                 </p>
               ) : null}
-              <WorkshopPanelButton
-                tone="primary"
-                disabled={!linked}
-                className="inline-flex items-center gap-2"
-                onClick={() => void importHandoff()}
-              >
-                <Download className="h-3.5 w-3.5" aria-hidden />
-                Importar handoff del proyecto NEW
-              </WorkshopPanelButton>
+              {status?.handoffImportedAt && legacyAnalyzeDone ? (
+                <p className="text-sm leading-relaxed text-[var(--foreground-muted)]">
+                  Análisis Ariadne listo — revisa archivos y preguntas en{" "}
+                  <strong className="text-[var(--foreground)]">Modificación</strong>.
+                </p>
+              ) : status?.handoffImportedAt ? (
+                <p className="text-sm leading-relaxed text-[var(--foreground-muted)]">
+                  Handoff en la etapa. Si acabas de promover, el análisis puede tardar unos segundos; refresca o abre
+                  Modificación.
+                </p>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <WorkshopPanelButton
+                  tone="primary"
+                  disabled={!linked}
+                  className="inline-flex items-center gap-2"
+                  onClick={() => void importHandoff()}
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden />
+                  Importar handoff del proyecto NEW
+                </WorkshopPanelButton>
+                {onOpenModification ? (
+                  <WorkshopPanelButton
+                    tone="secondary"
+                    className="inline-flex items-center gap-2"
+                    onClick={onOpenModification}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                    Ir a Modificación
+                  </WorkshopPanelButton>
+                ) : null}
+              </div>
             </div>
           </IntegrationStep>
         ) : null}

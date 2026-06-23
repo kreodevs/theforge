@@ -23,6 +23,7 @@ Body (`promoteHandoffToStageBodySchema` in `@theforge/shared-types`):
 - LEGACY only; requires `linkedNewProjectId`
 - Default items: SENT traces without `legacyStageId`, else all SENT
 - Creates stage via `ProjectsService.createStage`, applies `handoffSnapshot` + `legacyChangeState.description` (`buildHandoffImportDescription`)
+- After import/promote: **`legacy/start`** (Ariadne `get_modification_plan`) when `LEGACY_HANDOFF_AUTO_LEGACY_START` is enabled (default)
 - Updates `IntegrationTrace.legacyStageId` and NEW handoff JSON item `legacyStageId`
 
 ## Helpers
