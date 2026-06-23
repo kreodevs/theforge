@@ -80,7 +80,7 @@ function flattenMarkdownChildren(children: ReactNode): string {
 }
 
 function extractCodeBlockSource(
-  className: string | undefined,
+  _className: string | undefined,
   children: ReactNode,
   node?: unknown,
 ): string {
