@@ -15,6 +15,8 @@ import {
   type IntegrationStatusResponse,
   type IntegrationTraceRow,
   type PromoteHandoffToStageResponse,
+  type ReconcileHandoffStageResponse,
+  reconcileHandoffStageBodySchema,
 } from "@theforge/shared-types";
 import { PrismaService } from "../../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../../common/request-user.store.js";
@@ -37,6 +39,10 @@ import {
   pickHandoffItemsForPromotion,
   selectPromotableHandoffItemIds,
 } from "./promote-handoff.util.js";
+import {
+  resolveHandoffDescriptionForStage,
+  stageHasHandoffPayload,
+} from "./reconcile-handoff.util.js";
 
 type ProjectRow = {
   id: string;
@@ -49,7 +55,15 @@ type ProjectRow = {
   theforgeProjectId: string | null;
   integrationHandoff: unknown;
   integrationHandoffUpdatedAt: Date | null;
-  stages: { id: string; ordinal: number; mddContent: string | null; handoffSnapshot: unknown; handoffImportedAt: Date | null; linkedNewProjectId: string | null }[];
+  stages: {
+    id: string;
+    ordinal: number;
+    mddContent: string | null;
+    handoffSnapshot: unknown;
+    handoffImportedAt: Date | null;
+    linkedNewProjectId: string | null;
+    legacyChangeState: unknown;
+  }[];
 };
 
 @Injectable()
@@ -370,6 +384,99 @@ export class ProjectIntegrationService {
     await this.changeLog.log(projectId, "handoffSnapshot", handoffDesc);
     await this.tryAutoLegacyStartAfterHandoff(projectId, stageId, handoffDesc);
     return this.getStatus(projectId);
+  }
+
+  /**
+   * Retroactive Ariadne wire + legacy/start for stages promoted/imported before auto-handoff
+   * or when wire/analyze failed silently.
+   */
+  async reconcileHandoffStage(
+    projectId: string,
+    stageId: string,
+    body: unknown,
+  ): Promise<ReconcileHandoffStageResponse> {
+    const dto = reconcileHandoffStageBodySchema.parse(body ?? {});
+    const project = await this.assertAccess(projectId);
+    if (project.projectType !== "LEGACY") {
+      throw new BadRequestException("reconcile-handoff solo en proyectos LEGACY");
+    }
+    const stage = project.stages.find((s) => s.id === stageId);
+    if (!stage) throw new NotFoundException("Stage not found");
+    if (stage.ordinal < 2) {
+      throw new BadRequestException("Reconcilia handoff en etapa 2 o superior");
+    }
+    if (!stageHasHandoffPayload(stage)) {
+      throw new BadRequestException(
+        "La etapa no tiene handoff importado — usa import-handoff o promote-to-stage primero",
+      );
+    }
+
+    const newProjectId = stage.linkedNewProjectId ?? project.linkedNewProjectId;
+    if (!newProjectId) {
+      throw new BadRequestException("Vincula un proyecto NEW antes de reconciliar handoff");
+    }
+    const newProject = await this.assertAccess(newProjectId);
+    const description = resolveHandoffDescriptionForStage(stage, newProject.name);
+    if (!description.trim()) {
+      throw new BadRequestException("No hay descripción de cambio en la etapa para legacy/start");
+    }
+
+    const ariadneWire = {
+      attempted: false,
+      wired: false,
+      repositoryIds: [] as string[],
+      patched: [] as string[],
+      skippedReason: undefined as string | undefined,
+      errors: [] as string[],
+    };
+    const legacyStart = {
+      attempted: false,
+      ok: false,
+      filesCount: 0,
+      questionsCount: 0,
+      error: undefined as string | undefined,
+    };
+
+    if (dto.wireAriadne && project.theforgeProjectId?.trim()) {
+      ariadneWire.attempted = true;
+      try {
+        const wireResult = await this.theforge.wireAriadneBrownfieldConverge({
+          ariadneSourceId: project.theforgeProjectId.trim(),
+          workshopProjectId: projectId,
+          workshopStageId: stageId,
+        });
+        ariadneWire.wired = wireResult.wired;
+        ariadneWire.repositoryIds = wireResult.repositoryIds;
+        ariadneWire.patched = wireResult.patched;
+        ariadneWire.skippedReason = wireResult.skippedReason;
+        ariadneWire.errors = wireResult.errors;
+      } catch (err) {
+        ariadneWire.errors.push(err instanceof Error ? err.message : String(err));
+      }
+    } else if (dto.wireAriadne && !project.theforgeProjectId?.trim()) {
+      ariadneWire.attempted = true;
+      ariadneWire.skippedReason = "no_theforge_project_id";
+    }
+
+    if (dto.legacyStart) {
+      legacyStart.attempted = true;
+      try {
+        const result = await this.legacyCoordinator.start(projectId, description, stageId);
+        legacyStart.ok = true;
+        legacyStart.filesCount = result.filesToModify.length;
+        legacyStart.questionsCount = result.questions.length;
+      } catch (err) {
+        legacyStart.error = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    await this.changeLog.log(
+      projectId,
+      "integrationHandoff",
+      `Reconcile handoff etapa ${stage.ordinal}: wire=${ariadneWire.wired} legacyStart=${legacyStart.ok}`,
+    );
+
+    return { stageId, description, ariadneWire, legacyStart };
   }
 
   async promoteHandoffToStage(

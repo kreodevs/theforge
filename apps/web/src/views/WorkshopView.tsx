@@ -3408,6 +3408,7 @@ export default function WorkshopView({
                 }
                 convergeWebhookUrl={project.convergeWebhookUrl ?? null}
                 legacyAnalyzeDone={legacyAnalyzeDone}
+                activeStageHandoffImportedAt={activeWorkshopStage?.handoffImportedAt ?? null}
                 onOpenModification={() => setCentralPanel("legacy")}
                 onProjectRefresh={() => {
                   void fetchProject(projectId);
