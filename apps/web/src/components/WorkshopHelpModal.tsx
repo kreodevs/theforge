@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { MarkdownMermaidPre, tryRenderMarkdownMermaid } from "./MarkdownMermaid";
 
 type WorkshopHelpModalProps = {
   open: boolean;
@@ -800,11 +801,15 @@ const mdComponents = {
   strong: (props: ComponentPropsWithoutRef<"strong">) => (
     <strong className="font-semibold text-[var(--foreground)]" {...props} />
   ),
-  code: ({ className, children, ...props }: ComponentPropsWithoutRef<"code">) => {
+  code: (props: ComponentPropsWithoutRef<"code"> & { node?: unknown }) => {
+    const mermaidBlock = tryRenderMarkdownMermaid(props);
+    if (mermaidBlock) return mermaidBlock;
+
+    const { className, children, ...rest } = props;
     const isBlock = Boolean(className?.startsWith("language-"));
     if (isBlock) {
       return (
-        <code className={cn("font-mono text-sm", className)} {...props}>
+        <code className={cn("font-mono text-sm", className)} {...rest}>
           {children}
         </code>
       );
@@ -816,14 +821,14 @@ const mdComponents = {
     return (
       <code
         className="rounded-[calc(var(--radius)-2px)] border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 text-[0.85em] text-[var(--foreground)]"
-        {...props}
+        {...rest}
       >
         {children}
       </code>
     );
   },
   pre: (props: ComponentPropsWithoutRef<"pre">) => (
-    <pre
+    <MarkdownMermaidPre
       className="mb-4 overflow-x-auto rounded-[var(--radius)] border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_45%,var(--card))] p-4 text-sm leading-relaxed text-[var(--foreground)] shadow-sm [scrollbar-color:var(--muted-foreground)_transparent]"
       {...props}
     />

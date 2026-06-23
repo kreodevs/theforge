@@ -3,15 +3,10 @@ import {
   Component,
   isValidElement,
   memo,
-  useEffect,
-  useId,
-  useRef,
-  useState,
   type ReactNode,
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import mermaid from "mermaid";
 import { repairMarkdownFences } from "@theforge/shared-types/markdown-repair";
 import {
   isCollapsedDirectoryTreeLine,
@@ -25,6 +20,12 @@ import {
   stripMarkdownLeakFromMermaidDiagramBody,
 } from "@theforge/shared-types/mermaid";
 import { parseMarkdownSections } from "../utils/markdownSections";
+import {
+  MermaidBlockErrorBoundary,
+  MermaidDiagramBlock,
+  mermaidKey,
+  preWrapsMermaidBlock,
+} from "./MarkdownMermaid";
 
 /** Quita bloques ```mermaid vacíos para no intentar renderizarlos (evita SVG de error). */
 function stripBrokenMermaidBlocks(content: string): string {
@@ -283,133 +284,6 @@ function looksLikeMermaidBlock(source: string, _className?: string): boolean {
 const MARKDOWN_CLASS =
   "text-sm text-[var(--foreground)] [&_h1]:text-xl [&_h1]:font-semibold [&_h1]:text-[var(--foreground)] [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:text-[var(--foreground)] [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-[var(--foreground)] [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-2 [&_strong]:font-semibold [&_strong]:text-[var(--foreground)] [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-[var(--border)] [&_pre]:bg-[color-mix(in_oklch,var(--muted)_78%,var(--card))] [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:whitespace-pre [&_pre]:text-[var(--foreground)] [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:font-mono [&_pre_code]:text-[var(--foreground)] [&_p_code]:rounded [&_p_code]:bg-[color-mix(in_oklch,var(--muted)_62%,var(--card))] [&_p_code]:px-1 [&_p_code]:py-0.5 [&_p_code]:text-[var(--foreground)] [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-[var(--border)] [&_th]:bg-[color-mix(in_oklch,var(--muted)_42%,var(--card))] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-[var(--foreground)] [&_td]:border [&_td]:border-[var(--border)] [&_td]:px-3 [&_td]:py-2 [&_td]:text-[var(--foreground)]";
 
-let mermaidInit = false;
-function initMermaid() {
-  if (mermaidInit) return;
-  mermaidInit = true;
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: "dark",
-    securityLevel: "loose",
-  });
-}
-
-/** Clave estable por contenido para que React no reutilice el mismo ref entre diagramas (evita solapamiento). */
-function mermaidKey(content: string): string {
-  let h = 0;
-  for (let i = 0; i < Math.min(content.length, 256); i++) h = (h << 5) - h + content.charCodeAt(i);
-  return `mermaid-${h >>> 0}`;
-}
-
-/** Evita que un fallo en Mermaid (parse/render) rompa todo el documento: solo este bloque muestra fallback. */
-class MermaidBlockErrorBoundary extends Component<
-  { content: string; blockKey: string; children: React.ReactNode },
-  { hasError: boolean }
-> {
-  state = { hasError: false };
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-  componentDidCatch(err: unknown) {
-    console.error("MermaidBlockErrorBoundary:", err);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <pre className="my-6 overflow-x-auto rounded-md border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_78%,var(--card))] p-3 text-sm text-[var(--foreground)]">
-          <code>{this.props.content}</code>
-          <p className="mt-2 text-xs text-[var(--muted-foreground)]" aria-live="polite">
-            No se pudo mostrar el diagrama (código fuente arriba).
-          </p>
-        </pre>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-const MERMAID_BLOCK_MARKER = "data-theforge-mermaid";
-
-function MermaidBlock({ content, blockKey }: { content: string; blockKey: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const instanceId = useId();
-  const [error, setError] = useState<string | null>(null);
-  const renderIdRef = useRef<string>("");
-  if (!renderIdRef.current) {
-    renderIdRef.current =
-      "m" +
-      instanceId.replace(/[^a-zA-Z0-9]/g, "") +
-      blockKey.replace(/[^a-zA-Z0-9]/g, "") +
-      "-" +
-      Math.random().toString(36).slice(2, 9);
-  }
-  const renderId = renderIdRef.current;
-
-  useEffect(() => {
-    initMermaid();
-    const el = ref.current;
-    if (!el || !content.trim()) return;
-
-    setError(null);
-    let cancelled = false;
-    const toRender = prepareMermaidForRender(content);
-    if (!toRender) return;
-
-    const doRender = async () => {
-      try {
-        const { svg, bindFunctions } = await mermaid.render(renderId, toRender);
-        if (cancelled || !el) return;
-        el.innerHTML = svg;
-        bindFunctions?.(el);
-      } catch (e) {
-        if (!cancelled) {
-          console.error("Mermaid render error:", e);
-          setError("render_failed");
-        }
-      }
-    };
-
-    doRender();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [content, blockKey, renderId]);
-
-  if (error) {
-    return (
-      <pre className="overflow-x-auto rounded-md border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_78%,var(--card))] p-3 text-sm text-[var(--foreground)]">
-        <code>{content}</code>
-        <p className="mt-2 text-xs text-[var(--muted-foreground)]" aria-live="polite">
-          No se pudo mostrar el diagrama (código fuente arriba).
-        </p>
-      </pre>
-    );
-  }
-  return (
-    <div
-      {...{ [MERMAID_BLOCK_MARKER]: "1" }}
-      className="my-6 block w-full min-w-0 [isolation:isolate] overflow-x-auto"
-      aria-label="Diagrama Mermaid"
-    >
-      <div
-        ref={ref}
-        className="flex justify-center min-h-[120px] [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:min-w-0"
-      />
-    </div>
-  );
-}
-
-function preWrapsMermaidBlock(children: ReactNode): boolean {
-  return Children.toArray(children).some(
-    (child) =>
-      isValidElement(child) &&
-      typeof child.props === "object" &&
-      child.props !== null &&
-      MERMAID_BLOCK_MARKER in (child.props as Record<string, unknown>),
-  );
-}
-
 function flattenMarkdownChildren(children: ReactNode): string {
   return Children.toArray(children)
     .map((child) => {
@@ -521,7 +395,12 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
               const key = mermaidKey(normalized);
               return (
                 <MermaidBlockErrorBoundary content={normalized} blockKey={key}>
-                  <MermaidBlock key={key} blockKey={key} content={normalized} />
+                  <MermaidDiagramBlock
+                    key={key}
+                    blockKey={key}
+                    content={normalized}
+                    prepareContent={prepareMermaidForRender}
+                  />
                 </MermaidBlockErrorBoundary>
               );
             }

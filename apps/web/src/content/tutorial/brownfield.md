@@ -84,14 +84,14 @@ Cadena: `push → Ariadne reindex → converge/trigger → webhook (Slack/n8n)`.
 
 ## 3. Flujo mínimo (sin converge automático)
 
-```text
-Ariadne: repo + resync
-    ↓
-TF API: THEFORGE_MCP_URL
-    ↓
-TF UI: Crear → Legacy → elegir repo/proyecto Ariadne
-    ↓
-Workshop: MDD Inicial → MDD → entregables
+```mermaid
+flowchart TB
+  A["Ariadne: repo + Resync"]
+  B["TF API: THEFORGE_MCP_URL"]
+  C["TF UI: Crear → Legacy → elegir repo Ariadne"]
+  D["Workshop: MDD Inicial → MDD → entregables"]
+  E["Converge manual / webhook CI (opcional)"]
+  A --> B --> C --> D --> E
 ```
 
 Converge manual (Workshop → Tasks → Converge) y webhook CI son capas extra cuando ya hay `tasks.md`.
@@ -134,6 +134,41 @@ Cuando un **producto nuevo** pide cambios al **monolito**:
 |-----|--------|
 | Proyecto **NEW** | Pestaña **Integración** → handoff `NEW-LEG-01`, `NEW-LEG-02`… |
 | Proyecto **LEGACY** | Importar handoff → etapa 2+ → historias `LEG-xx` propias |
+
+### Diagrama del flujo
+
+```mermaid
+flowchart TB
+  subgraph NEW["Proyecto NEW"]
+    N1[Enlazar LEGACY]
+    N2["NEW-LEG draft"]
+    N3[Enviar handoff]
+    N1 --> N2 --> N3
+  end
+
+  subgraph LEGACY["Proyecto LEGACY"]
+    L1["Etapa 1: AS-IS baseline"]
+    L2["Etapa 2+: promote / import handoff"]
+    L3["Modificación + Generar MDD cambio"]
+    L4["Historias LEG-* + implementar"]
+    L1 --> L2 --> L3 --> L4
+  end
+
+  N3 -->|"handoff SENT"| L2
+
+  L2 -->|mal definido| AB[abandon-handoff]
+  AB --> AR["Etapa ARCHIVED + snapshot"]
+  AB --> RL[NEW-LEG liberados]
+  RL --> N2
+  RL --> L5["Nueva etapa 3 promote limpio"]
+```
+
+**Notas:**
+
+- **Etapa 1** = foto AS-IS; **etapa 2+** = solo delta encadenado (`DERIVED_FROM`).
+- En **Modificación**, escribir respuestas no basta: pulsa **Guardar respuestas** o **Generar MDD** (guarda + genera + tab MDD).
+- **Promote** a etapa 3+ es manual; no se crea sola.
+- **Revertir promoción** (`abandon-handoff`): archiva la etapa legacy mal promovida, libera ítems NEW-LEG y deja el enlace NEW intacto.
 
 Ver ayuda Workshop → **Integración Legacy ↔ Nuevo**.
 
