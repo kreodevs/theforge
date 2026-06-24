@@ -30,6 +30,9 @@ describe("getRequiredAgentGovernancePaths", () => {
     }
     assert.ok(paths.includes("docs/agent-governance/references/workflows.md"));
     assert.ok(paths.includes("docs/agent-governance/mcp.json.example"));
+    assert.ok(paths.includes("docs/agent-governance/references/THEFORGE-LINK.md"));
+    assert.ok(paths.includes("docs/agent-governance/rules/theforge-doc-sync.mdc"));
+    assert.ok(paths.includes("docs/agent-governance/skills/theforge-doc-sync/SKILL.md"));
     assert.ok(paths.includes("scripts/install-agent-governance.sh"));
   });
 });

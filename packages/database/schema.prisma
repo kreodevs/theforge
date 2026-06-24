@@ -180,6 +180,8 @@ model Stage {
   /// Memoria de trabajo (corto plazo): último contexto / scratch del agente (JSON).
   shortTermContext Json?
   episodicMemories EpisodicMemory[]
+  documentationGaps DocumentationGap[]
+  agentSessionLogs AgentSessionLog[]
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
@@ -214,6 +216,24 @@ enum EpisodicMemoryKind {
   REFLEXION_FEEDBACK
   EVALUATOR_REJECTION
   TOOL_OUTPUT
+}
+
+/// Estado de un gap de documentación reportado por un agente implementador.
+enum DocumentationGapStatus {
+  OPEN
+  QUEUED
+  RECONCILING
+  RESOLVED
+  REJECTED
+  DUPLICATE
+}
+
+/// Eventos en la línea de tiempo de sesión agéntica (separada del chat Workshop).
+enum AgentSessionLogKind {
+  GAP_REPORTED
+  RECONCILE_QUEUED
+  ARTIFACT_UPDATED
+  RECONCILE_REJECTED
 }
 
 enum Visibility {
@@ -411,6 +431,48 @@ model ChangeLog {
   createdAt DateTime @default(now())
 
   @@index([projectId, createdAt(sort: Desc)])
+}
+
+/// Gap de documentación SDD reportado vía MCP por un agente implementador.
+model DocumentationGap {
+  id                String                 @id @default(uuid())
+  projectId         String
+  stageId           String
+  stage             Stage                  @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  status            DocumentationGapStatus @default(OPEN)
+  /// Artefactos SDD afectados (ej. ["blueprint","tasks"]).
+  affectedArtifacts Json
+  description       String                 @db.Text
+  /// Evidencia: reference (§, T-, docs/sdd/, tasks.md), codePaths, snippet.
+  evidence          Json
+  /// Hash dedup: project+stage+reference+description normalizado.
+  dedupHash         String
+  jobId             String?
+  createdAt         DateTime               @default(now())
+  resolvedAt        DateTime?
+  agentSessionLogs  AgentSessionLog[]
+
+  @@index([projectId, createdAt(sort: Desc)])
+  @@index([stageId, createdAt(sort: Desc)])
+  @@index([dedupHash, createdAt(sort: Desc)])
+  @@index([status])
+}
+
+/// Línea de tiempo de sesión agéntica (gaps, reconciliaciones, artefactos actualizados).
+model AgentSessionLog {
+  id        String              @id @default(uuid())
+  projectId String
+  stageId   String
+  stage     Stage               @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  kind      AgentSessionLogKind
+  gapId     String?
+  gap       DocumentationGap?   @relation(fields: [gapId], references: [id], onDelete: SetNull)
+  summary   String              @db.Text
+  payload   Json?
+  createdAt DateTime            @default(now())
+
+  @@index([projectId, stageId, createdAt(sort: Desc)])
+  @@index([gapId])
 }
 
 model AppConfig {

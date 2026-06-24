@@ -42,6 +42,7 @@ import {
   buildHermesHandoffPayload,
   buildUnifiedHandoff,
   scaffoldToRepoHandoffGovernance,
+  theforgeProjectJsonSpecKitFile,
 } from "./handoff-export.util.js";
 
 type ProjectWithStages = Project & {
@@ -177,7 +178,12 @@ export class SddIntegrationService {
     return {
       featureDir: unified.featureDir,
       projectName: unified.projectName,
-      specKitFiles: [...specKitBase, ...openSpecFiles, ...microSpecs],
+      specKitFiles: [
+        ...specKitBase,
+        theforgeProjectJsonSpecKitFile(project),
+        ...openSpecFiles,
+        ...microSpecs,
+      ],
       agentGovernance: scaffoldToRepoHandoffGovernance(unified.agentGovernance),
     };
   }

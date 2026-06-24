@@ -1902,6 +1902,55 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     return this.update(projectId, { logicFlowsContent: cleaned });
   }
 
+  /** Parchea el MDD de la etapa según feedback de un documentation gap (reconciliación parcial). */
+  async patchMddFromGapFeedback(
+    projectId: string,
+    stageId: string,
+    gapsFeedback: string,
+  ): Promise<void> {
+    const project = await this.assertProjectAccess(projectId);
+    const stage = project.stages.find((s) => s.id === stageId);
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    const currentMdd = (stage.mddContent ?? "").trim();
+    if (!currentMdd) {
+      throw new BadRequestException("MDD vacío: no se puede aplicar parche desde gap");
+    }
+
+    const patched = await this.ai.patchMddFromGapFeedback(currentMdd, gapsFeedback);
+    if (!patched?.trim()) {
+      throw new BadRequestException("Parche MDD inválido o vacío");
+    }
+
+    const enforced = enforceMddGovernancePatternsOnPersist(patched, stage.mddContent);
+    const result = await this.mddUpdatePipeline.process(
+      enforced.markdown,
+      this.buildSemaphoreBase(project),
+      { projectId, stageId },
+    );
+    if (!result.ok) {
+      throw new BadRequestException({
+        code: result.code,
+        message: result.message,
+      });
+    }
+
+    await this.prisma.stage.update({
+      where: { id: stageId },
+      data: {
+        mddContent: result.sanitizedMdd,
+        status: result.status,
+        precisionScore: result.precisionScore,
+      },
+    });
+    await this.changeLog.log(projectId, "mddContent", result.sanitizedMdd);
+    await this.estimationRecalc.recalcAndUpsert(stageId, {
+      mddContent: result.sanitizedMdd,
+      infraContent: project.infraContent ?? null,
+      status: result.status,
+    });
+  }
+
   async generateInfra(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
     const legacyOpts = await this.resolveLegacyGenerateOptions(project);

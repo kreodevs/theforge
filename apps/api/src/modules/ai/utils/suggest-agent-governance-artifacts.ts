@@ -48,11 +48,17 @@ export interface SuggestAgentGovernanceInput {
   userStoriesMarkdown?: string | null;
   /** Nombre del proyecto en TheForge (fallback si MDD §1 no tiene título). */
   projectName?: string | null;
+  projectId?: string | null;
+  stageId?: string | null;
+  stageOrdinal?: number | null;
   complexity: ComplexityLevel;
 }
 
 export interface ProjectGovernanceFacts {
   projectTitle: string;
+  projectId?: string;
+  stageId?: string;
+  stageOrdinal?: number;
   backendStack?: string;
   frontendStack?: string;
   mobileStack?: string;
@@ -834,6 +840,9 @@ export function extractProjectGovernanceFacts(
 
   return {
     projectTitle,
+    projectId: input.projectId ?? undefined,
+    stageId: input.stageId ?? undefined,
+    stageOrdinal: input.stageOrdinal ?? undefined,
     backendStack: stacks.backend,
     frontendStack: stacks.frontend,
     mobileStack: stacks.mobile,

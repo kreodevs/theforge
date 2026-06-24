@@ -26,6 +26,7 @@ import { LegacyFlowModule } from "./modules/legacy-flow/legacy-flow.module.js";
 import { AudioModule } from "./modules/audio/audio.module.js";
 import { AdminModule } from "./modules/admin/admin.module.js";
 import { ChangeLogModule } from "./modules/change-log/change-log.module.js";
+import { DocumentationGapModule } from "./modules/documentation-gap/documentation-gap.module.js";
 import { CryptoModule } from "./modules/crypto/crypto.module.js";
 import { UserProvidersModule } from "./modules/user-providers/user-providers.module.js";
 import { DesignRefModule } from "./modules/design-ref/design-ref.module.js";
@@ -52,6 +53,7 @@ import { DesignRefModule } from "./modules/design-ref/design-ref.module.js";
     AudioModule,
     AdminModule,
     ChangeLogModule,
+    DocumentationGapModule,
     DesignRefModule,
   ],
   providers: [

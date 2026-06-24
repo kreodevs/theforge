@@ -31,6 +31,9 @@ import type { AgentGovernanceSuggestions } from "./utils/suggest-agent-governanc
 import type { ComplexityLevel } from "@theforge/shared-types";
 import { VERIFY_DELIVERABLE_PROMPT } from "./prompts/verify-deliverable-prompt.js";
 import { CONFORMANCE_CHECK_PROMPT } from "./prompts/conformance-check-prompt.js";
+import { MDD_DOC_GAP_PATCH_PROMPT } from "./prompts/mdd-doc-gap-patch-prompt.js";
+import { parseJsonOrThrow } from "../ai-analysis/utils/parse-json.js";
+import { z } from "zod";
 import { DOCUMENT_CHANGELOG_CHAT_INSTRUCTION } from "./prompts/with-document-changelog-instructions.js";
 import { BRD_CHAT_REFINE_BUSINESS_RULES } from "./prompts/brd-generation-prompt.js";
 import { appendMddGovernancePatternsToPrompt } from "./utils/mdd-governance-prompt.util.js";
@@ -1187,6 +1190,41 @@ export class AiService {
   /**
    * Enmienda constitucional (SDD): alinea §3 y/o §4 con un delta detectado en entregables (Blueprint/API).
    */
+  private static readonly mddGapPatchOutputSchema = z.object({
+    mddContent: z.string().min(1),
+  });
+
+  /**
+   * Parche focalizado del MDD tras un documentation gap (referencia §N + evidencia).
+   */
+  async patchMddFromGapFeedback(currentMdd: string, gapsFeedback: string): Promise<string | null> {
+    const draft = currentMdd.trim();
+    const feedback = gapsFeedback.trim();
+    if (!draft || !feedback) return null;
+
+    const payload = JSON.stringify(
+      {
+        mdd_actual: draft.slice(0, 48_000),
+        gap_feedback: feedback,
+      },
+      null,
+      2,
+    );
+
+    try {
+      const raw = await this.generateResponse(payload, [], { systemPrompt: MDD_DOC_GAP_PATCH_PROMPT });
+      const parsed = parseJsonOrThrow(raw, AiService.mddGapPatchOutputSchema);
+      const next = parsed.mddContent.trim();
+      if (!next || next.length < Math.min(200, draft.length * 0.5)) return null;
+      return next;
+    } catch (err) {
+      this.logger.warn(
+        `[patchMddFromGapFeedback] falló: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
+  }
+
   async proposeMddAmendment(params: {
     currentMdd: string;
     targetSections: number[];

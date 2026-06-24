@@ -126,6 +126,7 @@ import {
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
 import { StandardDocPanel } from "../components/StandardDocPanel";
 import { IntegrationPanel } from "../components/IntegrationPanel";
+import { AgentSessionLogPanel } from "../components/AgentSessionLogPanel";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
 import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
@@ -3400,6 +3401,7 @@ export default function WorkshopView({
               </div>
             )}
             {centralPanel === "integration" && projectId && project && (
+              <div className="space-y-4">
               <IntegrationPanel
                 projectId={projectId}
                 projectName={project.name}
@@ -3417,6 +3419,8 @@ export default function WorkshopView({
                   void fetchProject(projectId);
                 }}
               />
+              <AgentSessionLogPanel projectId={projectId} stageId={activeStageId} />
+              </div>
             )}
             {centralPanel === "legacy" && project?.projectType === "LEGACY" && projectId && (
               <div className="rounded-lg bg-[color-mix(in_oklch,var(--card)_88%,transparent)] border border-[var(--border)] p-6 text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] text-sm space-y-6">
