@@ -89,7 +89,9 @@
  *
  * ### Doc gap multi-agent
  *
- * - **`report_documentation_gap`**: `POST /projects/:projectId/stages/:stageId/documentation-gaps`
+ * - **`report_documentation_gap`**: `POST /projects/:projectId/stages/:stageId/documentation-gaps` — por defecto queda `PENDING_APPROVAL` hasta aprobar en Workshop; con `DOC_GAP_AUTO_APPLY=1` reconcilia al instante. Respuesta incluye `pendingApproval` cuando aplica.
+ * - **`GET /projects/:projectId/stages/:stageId/documentation-gaps?status=pending`**: listar gaps pendientes de aprobación
+ * - **`POST …/documentation-gaps/:gapId/approve`** / **`reject`**: HITL en Workshop
  * - **`get_agent_session_log`**: `GET /projects/:projectId/stages/:stageId/agent-session-log`
  * - **`get_change_log`**: `GET /projects/:projectId/change-log`
  *
@@ -100,4 +102,4 @@
  * Revisión del catálogo; incrementar si cambia el conjunto de tools.
  * @constant
  */
-export const MCP_THEFORGE_TOOLS_DOC_REVISION = 5;
+export const MCP_THEFORGE_TOOLS_DOC_REVISION = 6;

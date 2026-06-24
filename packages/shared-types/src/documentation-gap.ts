@@ -53,6 +53,7 @@ export type ReportDocumentationGapBody = z.infer<typeof reportDocumentationGapBo
 
 export const documentationGapStatusSchema = z.enum([
   "OPEN",
+  "PENDING_APPROVAL",
   "QUEUED",
   "RECONCILING",
   "RESOLVED",
@@ -89,7 +90,31 @@ export interface ReportDocumentationGapResponse {
   gap: DocumentationGapResponse;
   duplicate: boolean;
   queued: boolean;
+  /** Gap creado pero reconciliación diferida hasta aprobación en Workshop. */
+  pendingApproval?: boolean;
   jobId?: string;
+}
+
+export const rejectDocumentationGapBodySchema = z
+  .object({
+    reason: z.string().max(2000).optional(),
+  })
+  .strict();
+
+export type RejectDocumentationGapBody = z.infer<typeof rejectDocumentationGapBodySchema>;
+
+export interface DocumentationGapListResponse {
+  gaps: DocumentationGapResponse[];
+}
+
+export interface ApproveDocumentationGapResponse {
+  gap: DocumentationGapResponse;
+  queued: boolean;
+  jobId?: string;
+}
+
+export interface RejectDocumentationGapResponse {
+  gap: DocumentationGapResponse;
 }
 
 export interface AgentSessionLogEntry {

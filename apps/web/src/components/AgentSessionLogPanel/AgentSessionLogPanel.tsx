@@ -85,7 +85,8 @@ export function AgentSessionLogPanel({ projectId, stageId, className }: AgentSes
         </button>
       </div>
       <p className="text-xs text-[color-mix(in_oklch,var(--foreground-subtle)_85%,var(--background))]">
-        Gaps de documentación reportados vía MCP y reconciliaciones automáticas (separado del chat Workshop).
+        Gaps de documentación reportados vía MCP y reconciliaciones (separado del chat Workshop). Los pendientes de
+        aprobación aparecen en el panel «Cambios pendientes».
       </p>
       {error ? (
         <p className="text-xs text-[color-mix(in_oklch,var(--destructive)_85%,var(--foreground))]" role="alert">

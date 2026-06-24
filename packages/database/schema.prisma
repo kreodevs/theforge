@@ -221,6 +221,7 @@ enum EpisodicMemoryKind {
 /// Estado de un gap de documentación reportado por un agente implementador.
 enum DocumentationGapStatus {
   OPEN
+  PENDING_APPROVAL
   QUEUED
   RECONCILING
   RESOLVED
