@@ -4,11 +4,14 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
   forwardRef,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Queue, Worker, type Job } from "bullmq";
+import type { AffectedArtifact } from "@theforge/shared-types";
 import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-user.store.js";
+import { DocReconcileService } from "../documentation-gap/doc-reconcile.service.js";
 import { ProjectsService } from "./projects.service.js";
 
 export const DELIVERABLES_QUEUE_NAME = "theforge-deliverables";
@@ -24,7 +27,8 @@ export type GenerateJobType =
   | "infra"
   | "architecture"
   | "use-cases"
-  | "user-stories";
+  | "user-stories"
+  | "doc-reconcile-partial";
 
 export interface GenerateJobData {
   type: GenerateJobType;
@@ -34,6 +38,9 @@ export interface GenerateJobData {
   gapsFeedback?: string | null;
   target?: string;
   forceRegenerate?: boolean;
+  gapId?: string;
+  stageId?: string;
+  affectedArtifacts?: AffectedArtifact[];
 }
 
 /** Estado público de un job para polling del frontend. */
@@ -86,6 +93,9 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
+    @Optional()
+    @Inject(forwardRef(() => DocReconcileService))
+    private readonly docReconcile: DocReconcileService | null,
   ) {}
 
   isEnabled(): boolean {
@@ -113,7 +123,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker(
       DELIVERABLES_QUEUE_NAME,
       async (job: Job<GenerateJobData>) => {
-        const { type, projectId, userId, preview, gapsFeedback, target, forceRegenerate } = job.data;
+        const { type, projectId, userId, preview, gapsFeedback, target, forceRegenerate, gapId, stageId, affectedArtifacts } = job.data;
         return runWithRequestUserAsync(userId ?? "system", async () => {
           this.logger.log(
             `BullMQ worker: iniciando job ${job.id} type=${type} projectId=${projectId} attempt=${job.attemptsMade + 1}/${this.MAX_ATTEMPTS}`,
@@ -156,6 +166,18 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
             case "user-stories":
               if (preview) return this.projects.generateUserStoriesPreview(projectId);
               return this.projects.generateUserStories(projectId);
+            case "doc-reconcile-partial": {
+              if (!this.docReconcile || !gapId || !stageId || !affectedArtifacts?.length) {
+                throw new Error("doc-reconcile-partial requiere DocReconcileService, gapId, stageId y affectedArtifacts");
+              }
+              return this.docReconcile.executeReconcile({
+                projectId,
+                stageId,
+                gapId,
+                affectedArtifacts,
+                gapsFeedback: gapsFeedback ?? "",
+              });
+            }
             default:
               throw new Error(`Tipo de job desconocido: ${type}`);
           }
