@@ -127,6 +127,7 @@ import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complex
 import { StandardDocPanel } from "../components/StandardDocPanel";
 import { IntegrationPanel } from "../components/IntegrationPanel";
 import { AgentSessionLogPanel } from "../components/AgentSessionLogPanel";
+import { PendingDocumentationGapsPanel } from "../components/PendingDocumentationGapsPanel";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
 import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
@@ -3416,6 +3417,13 @@ export default function WorkshopView({
                 activeStageWorkflowStatus={activeWorkshopStage?.workflowStatus ?? null}
                 onOpenModification={() => setCentralPanel("legacy")}
                 onProjectRefresh={() => {
+                  void fetchProject(projectId);
+                }}
+              />
+              <PendingDocumentationGapsPanel
+                projectId={projectId}
+                stageId={activeStageId}
+                onResolved={() => {
                   void fetchProject(projectId);
                 }}
               />

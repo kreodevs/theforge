@@ -993,7 +993,7 @@ const TOOLS: Tool[] = [
   {
     name: "report_documentation_gap",
     description:
-      "Reporta un gap de documentación SDD (doc incorrecta/incompleta) y encola reconciliación parcial auto-aplicada.",
+      "Reporta un gap de documentación SDD (doc incorrecta/incompleta). Por defecto queda pendiente de aprobación humana en Workshop (`pendingApproval` en la respuesta); con DOC_GAP_AUTO_APPLY=1 reconcilia al instante.",
     inputSchema: {
       type: "object",
       properties: {
