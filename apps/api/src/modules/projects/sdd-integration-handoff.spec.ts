@@ -38,6 +38,7 @@ describe("handoff-export.util", () => {
     const unified = buildUnifiedHandoff(baseProject as never, "# Guía\n");
     assert.ok(unified.specKitFiles.some((f) => f.path === ".specify/memory/constitution.md"));
     assert.ok(unified.specKitFiles.some((f) => f.path === "THEFORGE-DOC-CONSUMPTION-GUIDE.md"));
+    assert.ok(unified.specKitFiles.some((f) => f.path === ".theforge-project.json"));
     assert.ok(unified.specKitFiles.some((f) => f.path === "IMPLEMENT.md"));
     const implement = unified.specKitFiles.find((f) => f.path === "IMPLEMENT.md");
     assert.ok(implement?.content.includes(unified.featureDir));
@@ -59,6 +60,7 @@ describe("handoff-export.util", () => {
     assert.ok(paths.includes("docs/agent-governance/references/AGENT-PROMPT.md"));
     const promptInicial = scaffold!.files.find((f) => f.path === "PROMPT-INICIAL.md");
     assert.ok(promptInicial?.content.includes("install-agent-governance.sh"));
+    assert.ok(promptInicial?.content.includes("Paso 1.5"));
   });
 
   it("reconcileExportScaffold añade docs/sdd y overlay AGENTS.md dual spec-kit", () => {

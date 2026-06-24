@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LlevarAlRepoWizardDialog } from "@/components/LlevarAlRepoWizardDialog";
+import { AgentSessionLogPanel } from "@/components/AgentSessionLogPanel";
 import { AnalyzeDashboard } from "@/components/AnalyzeDashboard";
 import type { SddAnalyzeReport } from "@theforge/shared-types";
 import { agentGovernanceScaffoldHasContent } from "@theforge/shared-types";
@@ -1021,6 +1022,8 @@ export function WorkshopMetricsColumnInner({
               {auditorFeedback}
             </div>
           ) : null}
+
+          <AgentSessionLogPanel projectId={projectId} stageId={activeStageId} />
       </div>
     </div>
   );

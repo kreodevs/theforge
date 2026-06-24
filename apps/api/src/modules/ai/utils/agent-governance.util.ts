@@ -43,6 +43,15 @@ const DOC_CONSUMPTION_GUIDE_PATH = `${GOVERNANCE_DOCS_PREFIX}references/THEFORGE
 /** Contexto interno del proyecto para agentes (consumido por `/implementar-tarea`). */
 export const AGENT_PROMPT_PATH = `${GOVERNANCE_DOCS_PREFIX}references/AGENT-PROMPT.md`;
 
+/** Enlace MCP The Forge para agentes implementadores. */
+export const THEFORGE_LINK_PATH = `${GOVERNANCE_DOCS_PREFIX}references/THEFORGE-LINK.md`;
+
+/** Rule alwaysApply: sincronizar docs SDD vía MCP cuando el código contradice la documentación. */
+export const THEFORGE_DOC_SYNC_RULE_PATH = `${GOVERNANCE_DOCS_PREFIX}rules/theforge-doc-sync.mdc`;
+
+/** Skill: reportar gaps de documentación vía MCP The Forge. */
+export const THEFORGE_DOC_SYNC_SKILL_PATH = `${GOVERNANCE_DOCS_PREFIX}skills/theforge-doc-sync/SKILL.md`;
+
 /** Rutas obligatorias en todos los niveles de complejidad. */
 export const AGENT_GOVERNANCE_REQUIRED_ALL = [
   "AGENTS.md",
@@ -136,6 +145,9 @@ export const AGENT_GOVERNANCE_REQUIRED_MEDIUM = [
   `${GOVERNANCE_DOCS_PREFIX}references/workflows.md`,
   `${GOVERNANCE_DOCS_PREFIX}references/CURSOR_SKILLS_Y_RULES.md`,
   `${GOVERNANCE_DOCS_PREFIX}references/PROMPT_HANDOFF_AGENTE.md`,
+  THEFORGE_LINK_PATH,
+  THEFORGE_DOC_SYNC_RULE_PATH,
+  THEFORGE_DOC_SYNC_SKILL_PATH,
   `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`,
   "scripts/install-agent-governance.sh",
 ] as const;
@@ -283,7 +295,8 @@ function mcpJsonExampleSpecificityScore(content: string): number {
   if (!trimmed) return -1;
   let score = trimmed.length;
   if (!/\{\{API_URL\}\}/.test(trimmed)) score += 500;
-  if (!/\{\{PROJECT_ID\}\}/.test(trimmed)) score += 200;
+  if (!/\{\{MCP_M2M_SECRET\}\}/.test(trimmed)) score += 200;
+  if (!/\{\{PROJECT_ID\}\}/.test(trimmed)) score += 50;
   try {
     const parsed = JSON.parse(trimmed) as { mcpServers?: Record<string, unknown> };
     const servers = parsed.mcpServers ?? {};
@@ -592,6 +605,14 @@ function defaultWorkflows(complexity: ComplexityLevel): string {
       "- **Gates:** QA humano + checklist de release del proyecto\n\n",
     );
   }
+  lines.push(
+    "## Doc gap sync (The Forge MCP)\n\n",
+    "- **Trigger:** el código implementado contradice MDD, Blueprint, Tasks u otro SDD\n",
+    "- **Roles:** Dev implementador\n",
+    "- **Gates:** evidencia con referencia (§, T-, `docs/sdd/`, `tasks.md`); descripción ≥40 chars\n",
+    "- **Acción:** MCP `report_documentation_gap` → reconciliación parcial auto-aplicada (el MDD se parchea siempre primero)\n",
+    "- **Cargar:** `.theforge-project.json`, `" + THEFORGE_LINK_PATH + "`, skill `theforge-doc-sync`\n\n",
+  );
   return lines.join("");
 }
 
@@ -599,16 +620,69 @@ function defaultMcpJson(): string {
   return JSON.stringify(
     {
       mcpServers: {
-        example: {
-          url: "{{API_URL}}",
+        theforge: {
+          url: "{{API_URL}}/mcp",
           headers: {
-            Authorization: "Bearer {{PROJECT_ID}}",
+            Authorization: "Bearer {{MCP_M2M_SECRET}}",
           },
         },
       },
     },
     null,
     2,
+  );
+}
+
+function defaultTheforgeLinkMd(facts: ProjectGovernanceFacts): string {
+  const projectId = facts.projectId ?? "<projectId>";
+  const stageId = facts.stageId ?? "<stageId>";
+  return (
+    "# Enlace The Forge\n\n" +
+    "Este handoff está vinculado a un proyecto The Forge. Usa el MCP server con tu **Secret MCP** (M2M).\n\n" +
+    "## Identificadores\n\n" +
+    `| Campo | Valor |\n| --- | --- |\n| projectId | \`${projectId}\` |\n| stageId | \`${stageId}\` |\n\n` +
+    "## Herramientas MCP relevantes\n\n" +
+    "- `report_documentation_gap` — reporta cuando la documentación SDD es incorrecta/incompleta (actualiza el MDD y regenera artefactos afectados)\n" +
+    "- `get_agent_session_log` — timeline de gaps y reconciliaciones\n" +
+    "- `get_change_log` — bitácora de cambios en documentos\n\n" +
+    "## Configuración\n\n" +
+    "Copia `docs/agent-governance/mcp.json.example` → `.cursor/mcp.json` y sustituye `{{API_URL}}` y `{{MCP_M2M_SECRET}}`.\n" +
+    "Obtén el secret en The Forge → Perfil → Secret MCP.\n"
+  );
+}
+
+function defaultTheforgeDocSyncRule(): string {
+  return (
+    "---\n" +
+    "description: Sincronizar documentación SDD cuando el código contradice entregables The Forge\n" +
+    "alwaysApply: true\n" +
+    "---\n\n" +
+    "# The Forge doc sync\n\n" +
+    "Si durante la implementación descubres que un entregable SDD (MDD, Blueprint, Tasks, etc.) es **incorrecto o incompleto**:\n\n" +
+    "1. **No** parches silenciosamente la doc sin reportar.\n" +
+    "2. Llama MCP `report_documentation_gap` con descripción ≥40 chars y `evidence.reference` (§, T-, `docs/sdd/`, `tasks.md`).\n" +
+    "3. Indica `affectedArtifacts` (ej. `[\"blueprint\",\"tasks\"]`); el **MDD se actualiza siempre**.\n" +
+    "4. Continúa con el código correcto; la reconciliación parcial se aplica automáticamente.\n" +
+    "5. Consulta `get_agent_session_log` para ver el estado.\n"
+  );
+}
+
+function defaultTheforgeDocSyncSkill(): string {
+  return (
+    "---\n" +
+    "name: theforge-doc-sync\n" +
+    "description: Reporta gaps de documentación SDD vía MCP The Forge cuando el código contradice entregables.\n" +
+    "---\n\n" +
+    "# The Forge doc sync\n\n" +
+    "## Cuándo usar\n\n" +
+    "El código que implementaste es correcto pero el MDD, Blueprint, Tasks u otro SDD no refleja la realidad.\n\n" +
+    "## Pasos\n\n" +
+    "1. Lee `.theforge-project.json` para `projectId` y `stageId`.\n" +
+    "2. Llama `report_documentation_gap` con:\n" +
+    "   - `description`: qué está mal y por qué (≥40 caracteres)\n" +
+    "   - `evidence.reference`: cita §, T-, ruta `docs/sdd/` o `tasks.md`\n" +
+    "   - `affectedArtifacts`: lista de artefactos a regenerar (el MDD se parchea siempre)\n" +
+    "3. Opcional: `get_agent_session_log` para confirmar reconciliación.\n"
   );
 }
 
@@ -811,6 +885,12 @@ function buildPromptInicialMd(
     "**Verifica** que exista `.cursor/rules/` (y `.cursor/skills/` si aplica) antes de continuar al Paso 2. " +
     "El script copia reglas, skills y referencias de `docs/agent-governance/` hacia `.cursor/`.\n\n" +
     "**No pidas al usuario** que ejecute el script salvo que falle por permisos, rutas inexistentes o un error que no puedas resolver.\n\n" +
+    "## Paso 1.5 — Vincular The Forge MCP (si aplica)\n\n" +
+    "Si existe **`.theforge-project.json`** en la raíz del repo:\n\n" +
+    "1. Copia `docs/agent-governance/mcp.json.example` → `.cursor/mcp.json` (si no lo hizo el script).\n" +
+    "2. Sustituye `{{API_URL}}` y `{{MCP_M2M_SECRET}}` con tu Secret MCP de The Forge.\n" +
+    "3. Lee `" + THEFORGE_LINK_PATH + "` para `projectId` y `stageId`.\n" +
+    "4. Si la documentación SDD contradice el código correcto, usa MCP **`report_documentation_gap`** (ver skill `theforge-doc-sync`).\n\n" +
     "## Paso 2 — Orden de lectura (obligatorio)\n\n" +
     "Lee **en este orden** antes de escribir código:\n\n" +
     "1. **`IMPLEMENT.md`** — bootstrap spec-kit y relación con gobernanza\n" +
@@ -1276,6 +1356,14 @@ const FALLBACK_BY_PATH: Record<string, FallbackFactory> = {
   [`${GOVERNANCE_DOCS_PREFIX}references/PROMPT_HANDOFF_AGENTE.md`]: () => defaultPromptHandoff(),
   [DOC_CONSUMPTION_GUIDE_PATH]: () => defaultDocConsumptionGuide(),
   [`${GOVERNANCE_DOCS_PREFIX}mcp.json.example`]: () => defaultMcpJson(),
+  [THEFORGE_LINK_PATH]: (_c, _s, input) =>
+    defaultTheforgeLinkMd(
+      input
+        ? extractProjectGovernanceFacts(input)
+        : { projectTitle: "Proyecto TheForge", docPaths: [], taskHeadings: [], taskCheckboxes: [], architectureLayers: [], blueprintModules: [], backendGlobs: [], frontendGlobs: [], npmScripts: [], sddConflicts: [], hasUiSurface: false },
+    ),
+  [THEFORGE_DOC_SYNC_RULE_PATH]: () => defaultTheforgeDocSyncRule(),
+  [THEFORGE_DOC_SYNC_SKILL_PATH]: () => defaultTheforgeDocSyncSkill(),
   "scripts/install-agent-governance.sh": () => defaultInstallScript(),
 };
 

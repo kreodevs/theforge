@@ -1,18 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Project, Stage } from "@theforge/database";
 import {
-  buildSpecKitBundleFiles,
-  GOVERNANCE_DOCS_PREFIX,
-  parseAgentGovernanceScaffold,
-  resolveDocumentPathMap,
-  specKitFeatureDir,
-  type AgentGovernanceScaffold,
-  type ComplexityLevel,
-  type DocumentPathEntry,
-  type SddAgentGovernanceAnalyzeSlice,
-  type SpecKitBundleFile,
-} from "@theforge/shared-types";
-import {
   appendProjectDeliverablesToScaffold,
   getRequiredAgentGovernancePaths,
   reconcileAgentGovernanceScaffold,
@@ -23,6 +11,20 @@ import {
   type SuggestAgentGovernanceInput,
 } from "../ai/utils/suggest-agent-governance-artifacts.js";
 import { pickPrimaryStage } from "./stage-helpers.js";
+import {
+  AGENT_GOVERNANCE_TEMPLATE_VERSION,
+  buildSpecKitBundleFiles,
+  GOVERNANCE_DOCS_PREFIX,
+  parseAgentGovernanceScaffold,
+  resolveDocumentPathMap,
+  specKitFeatureDir,
+  type AgentGovernanceScaffold,
+  type ComplexityLevel,
+  type DocumentPathEntry,
+  type SddAgentGovernanceAnalyzeSlice,
+  type SpecKitBundleFile,
+  type TheforgeProjectJson,
+} from "@theforge/shared-types";
 
 type ProjectWithStages = Project & { stages: Stage[] };
 
@@ -86,6 +88,7 @@ export function buildAgentGovernanceInput(
   project: Project,
   mddMarkdown: string,
   complexity: ComplexityLevel,
+  stage?: Stage | null,
 ): SuggestAgentGovernanceInput {
   return {
     mddMarkdown,
@@ -100,6 +103,9 @@ export function buildAgentGovernanceInput(
     useCasesMarkdown: project.useCasesContent,
     userStoriesMarkdown: project.userStoriesContent,
     projectName: project.name,
+    projectId: project.id,
+    stageId: stage?.id ?? null,
+    stageOrdinal: stage?.ordinal ?? null,
     complexity,
   };
 }
@@ -146,9 +152,9 @@ export function reconcileExportScaffold(
 
   const complexity = (project.complexity ?? "HIGH") as ComplexityLevel;
   const mdd = projectConstitutionMarkdown(project);
-  const governanceInput = buildAgentGovernanceInput(project, mdd, complexity);
-  const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
   const stage = pickPrimaryStage(project.stages);
+  const governanceInput = buildAgentGovernanceInput(project, mdd, complexity, stage);
+  const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
   const featureDir = specKitFeatureDir(stage?.ordinal ?? 1, project.name);
 
   const reconciled = reconcileAgentGovernanceScaffold(scaffold, complexity, {
@@ -222,6 +228,8 @@ export function buildUnifiedHandoff(
     agentGovernance,
     consumptionGuideContent,
   );
+
+  specKitFiles.push(theforgeProjectJsonSpecKitFile(project));
 
   return {
     featureDir,
@@ -297,6 +305,41 @@ export function analyzeAgentGovernanceSlice(
 
 export function hashHandoffContent(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/** JSON raíz del handoff para vincular repo destino con The Forge MCP. */
+export function buildTheforgeProjectJson(
+  project: ProjectWithStages,
+  options?: { handoffVersion?: string },
+): TheforgeProjectJson {
+  const stage = pickPrimaryStage(project.stages);
+  const featureDir = specKitFeatureDir(stage?.ordinal ?? 1, project.name);
+  const pathMap = resolveDocumentPathMap(featureDir);
+  const artifactPaths: Record<string, string> = {};
+  for (const entry of pathMap) {
+    artifactPaths[entry.label] = entry.mirror;
+  }
+  return {
+    projectId: project.id,
+    stageId: stage?.id ?? "",
+    projectName: project.name,
+    stageOrdinal: stage?.ordinal ?? 1,
+    handoffVersion: options?.handoffVersion ?? AGENT_GOVERNANCE_TEMPLATE_VERSION,
+    exportedAt: new Date().toISOString(),
+    artifactPaths,
+    mcp: { tool: "report_documentation_gap" },
+  };
+}
+
+export function theforgeProjectJsonSpecKitFile(
+  project: ProjectWithStages,
+  options?: { handoffVersion?: string },
+): SpecKitBundleFile {
+  const json = buildTheforgeProjectJson(project, options);
+  return {
+    path: ".theforge-project.json",
+    content: `${JSON.stringify(json, null, 2)}\n`,
+  };
 }
 
 export function toHandoffFilesWithHash(

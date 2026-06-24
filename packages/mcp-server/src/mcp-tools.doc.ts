@@ -87,6 +87,12 @@
  *
  * - **`get_next_implementation_task`**: `GET /projects/:projectId/next-task` (siguiente tarea abierta en tasks.md; `[P]`, rutas, checkpoint)
  *
+ * ### Doc gap multi-agent
+ *
+ * - **`report_documentation_gap`**: `POST /projects/:projectId/stages/:stageId/documentation-gaps`
+ * - **`get_agent_session_log`**: `GET /projects/:projectId/stages/:stageId/agent-session-log`
+ * - **`get_change_log`**: `GET /projects/:projectId/change-log`
+ *
  * @see {@link ./index.ts} constantes `TOOLS` y `handlers`
  */
 
@@ -94,4 +100,4 @@
  * Revisión del catálogo; incrementar si cambia el conjunto de tools.
  * @constant
  */
-export const MCP_THEFORGE_TOOLS_DOC_REVISION = 4;
+export const MCP_THEFORGE_TOOLS_DOC_REVISION = 5;

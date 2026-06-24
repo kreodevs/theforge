@@ -991,6 +991,70 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "report_documentation_gap",
+    description:
+      "Reporta un gap de documentación SDD (doc incorrecta/incompleta) y encola reconciliación parcial auto-aplicada.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "ID del proyecto The Forge" },
+        stageId: { type: "string", description: "ID de la etapa activa" },
+        description: {
+          type: "string",
+          description: "Descripción del gap (mín. 40 caracteres, accionable)",
+        },
+        evidence: {
+          type: "object",
+          properties: {
+            reference: {
+              type: "string",
+              description: "Referencia SDD: §, T-, docs/sdd/, tasks.md, etc.",
+            },
+            codePaths: { type: "array", items: { type: "string" } },
+            snippet: { type: "string" },
+          },
+          required: ["reference"],
+        },
+        affectedArtifacts: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: [
+              "mdd",
+              "spec",
+              "architecture",
+              "blueprint",
+              "useCases",
+              "userStories",
+              "tasks",
+              "apiContracts",
+              "logicFlows",
+              "infra",
+              "uxUiGuide",
+              "agentGovernance",
+            ],
+          },
+          description: "Artefactos SDD a regenerar parcialmente",
+        },
+      },
+      required: ["projectId", "stageId", "description", "evidence", "affectedArtifacts"],
+    },
+  },
+  {
+    name: "get_agent_session_log",
+    description:
+      "Timeline de sesión agéntica (gaps reportados, reconciliaciones, artefactos actualizados) — separada del chat Workshop.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "ID del proyecto" },
+        stageId: { type: "string", description: "ID de la etapa" },
+        limit: { type: "number", description: "Máximo de entradas (default 100)" },
+      },
+      required: ["projectId", "stageId"],
+    },
+  },
+  {
     name: "list_theforge_projects",
     description: "Lista proyectos indexados en TheForge/Ariadne (multi-root)",
     inputSchema: { type: "object", properties: {}, required: [] },
@@ -1601,6 +1665,32 @@ const handlers: Record<string, Handler> = {
   async get_change_log(args) {
     const { projectId, limit } = args as { projectId: string; limit?: number };
     let path = `/projects/${projectId}/change-log`;
+    if (limit != null) path += `?limit=${limit}`;
+    return JSON.stringify(await apiGet(path));
+  },
+  async report_documentation_gap(args) {
+    const { projectId, stageId, description, evidence, affectedArtifacts } = args as {
+      projectId: string;
+      stageId: string;
+      description: string;
+      evidence: { reference: string; codePaths?: string[]; snippet?: string };
+      affectedArtifacts: string[];
+    };
+    return JSON.stringify(
+      await apiPost(`/projects/${projectId}/stages/${stageId}/documentation-gaps`, {
+        description,
+        evidence,
+        affectedArtifacts,
+      }),
+    );
+  },
+  async get_agent_session_log(args) {
+    const { projectId, stageId, limit } = args as {
+      projectId: string;
+      stageId: string;
+      limit?: number;
+    };
+    let path = `/projects/${projectId}/stages/${stageId}/agent-session-log`;
     if (limit != null) path += `?limit=${limit}`;
     return JSON.stringify(await apiGet(path));
   },
