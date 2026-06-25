@@ -725,24 +725,58 @@ function isMermaidStatementCore(core: string): boolean {
 }
 
 /**
- * El cuerpo de un SEGUNDO fence es continuación del diagrama Mermaid anterior
- * (el LLM cerró el fence antes de tiempo y volcó el resto en otro bloque con lenguaje
- * arbitrario, p. ej. ```dockerfile). NO es continuación si arranca su propia declaración
- * de diagrama (flowchart/erDiagram/…): eso son dos diagramas distintos, no se fusionan.
+ * Separa el cuerpo de un SEGUNDO fence en (continuación del diagrama anterior) + (resto que es
+ * prosa de la sección siguiente). Causa: el LLM cierra el fence tras los `participant` y vuelca el
+ * resto en otro bloque con lenguaje arbitrario (```dockerfile), un bloque que frecuentemente además
+ * envuelve prosa que NO pertenece al diagrama. Tomamos solo el prefijo de líneas que son sintaxis
+ * Mermaid y devolvemos el remanente para re-emitirlo como markdown.
+ *
+ * Devuelve null si el segundo fence no es continuación (arranca su propia declaración de diagrama,
+ * o su primera línea con contenido no es sintaxis Mermaid): en ese caso son dos diagramas distintos.
  */
-function isMermaidContinuationBody(body: string): boolean {
-  const rawLines = body.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (!rawLines.length) return false;
+function splitMermaidContinuationPrefix(
+  body: string,
+): { continuation: string[]; remainder: string[] } | null {
+  const lines = body.split("\n");
+
+  let f = 0;
+  while (f < lines.length && !lines[f]!.trim()) f++;
+  if (f >= lines.length) return null;
   if (
     /^(flowchart|graph|sequenceDiagram|erDiagram|classDiagram|stateDiagram(?:-v2)?|gantt|pie|gitGraph|mindmap|timeline|journey|quadrantChart|xychart)\b/i.test(
-      rawLines[0]!,
+      lines[f]!.trim(),
     )
   ) {
-    return false;
+    return null;
   }
-  const cores = rawLines.map((l) => sequenceLineCore(l));
-  const hits = cores.filter(isMermaidStatementCore).length;
-  return hits >= 1 && hits >= cores.length * 0.5;
+
+  const continuation: string[] = [];
+  let hits = 0;
+  let stop = -1;
+  for (let idx = 0; idx < lines.length; idx++) {
+    const t = lines[idx]!.trim();
+    if (!t) {
+      let j = idx + 1;
+      while (j < lines.length && !lines[j]!.trim()) j++;
+      if (j < lines.length && isMermaidStatementCore(sequenceLineCore(lines[j]!.trim()))) {
+        continuation.push(lines[idx]!);
+        continue;
+      }
+      stop = idx;
+      break;
+    }
+    if (isMermaidStatementCore(sequenceLineCore(t))) {
+      continuation.push(lines[idx]!);
+      hits++;
+      continue;
+    }
+    stop = idx;
+    break;
+  }
+
+  if (hits < 1) return null;
+  const remainder = stop >= 0 ? lines.slice(stop) : [];
+  return { continuation, remainder };
 }
 
 /** Quita prefijo de lista/encabezado fugado (`- `, `* `, `### `) de una línea de continuación. */
@@ -765,14 +799,17 @@ export function mergeSplitMermaidContinuationFences(document: string): string {
   while (prev !== cur && guard < 30) {
     prev = cur;
     cur = cur.replace(re, (match, b1: string, b2: string) => {
-      if (!isMermaidContinuationBody(b2)) return match;
-      const continuation = b2
-        .split("\n")
+      const split = splitMermaidContinuationPrefix(b2);
+      if (!split) return match;
+      const cont = split.continuation
         .map(stripLeakedMermaidLinePrefix)
         .join("\n")
         .replace(/^\n+|\n+$/g, "");
-      const merged = `${b1.replace(/[ \t\n]+$/, "")}\n${continuation}`.replace(/\n{3,}/g, "\n\n");
-      return "```mermaid\n" + merged + "\n```";
+      const merged = `${b1.replace(/[ \t\n]+$/, "")}\n${cont}`.replace(/\n{3,}/g, "\n\n");
+      const fence = "```mermaid\n" + merged + "\n```";
+      // El remanente era prosa atrapada dentro del wrapper: re-emitir como markdown normal.
+      const rest = split.remainder.join("\n").replace(/^\n+/, "").replace(/\n+$/, "");
+      return rest ? `${fence}\n\n${rest}` : fence;
     });
     guard++;
   }
@@ -902,6 +939,9 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
  * - Quotes inconsistentes → normaliza a double quotes
  * - Líneas en blanco excesivas → compacta
  */
+/** Tope de longitud de etiqueta Mermaid: alto a propósito (solo corta prosa desbocada). */
+const MAX_MERMAID_LABEL_CHARS = 120;
+
 /** Normaliza solo el cuerpo del diagrama (sin fences). */
 export function normalizeMermaidDiagramBody(raw: string): string {
   const stripped = stripMarkdownLeakFromMermaidDiagramBody(raw);
@@ -957,9 +997,11 @@ export function normalizeMermaidDiagramBody(raw: string): string {
       (_m, label: string) => `|"${label.trim()}"|`,
     );
 
-    // Labels entre comillas: quitar markdown ** y recortar
+    // Labels entre comillas: quitar markdown ** y compactar espacios. Tope alto (120) solo para
+    // cortar prosa desbocada: un tope bajo (p. ej. 56) mutila etiquetas legítimas con `<br/>` y
+    // rutas (`"Microservicio … (Node/Express)"`, `"… /{id}/limites"`).
     line = line.replace(/"([^"]*)"/g, (_m, label: string) => {
-      const cleaned = label.replace(/\*\*/g, "").replace(/\s+/g, " ").trim().slice(0, 56);
+      const cleaned = label.replace(/\*\*/g, "").replace(/\s+/g, " ").trim().slice(0, MAX_MERMAID_LABEL_CHARS);
       return `"${cleaned}"`;
     });
 

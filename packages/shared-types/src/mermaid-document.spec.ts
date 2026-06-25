@@ -142,6 +142,75 @@ flowchart LR
   });
 });
 
+describe("normalizeMermaidInDocument — split sequence into unclosed ```dockerfile (real handoff-spec)", () => {
+  it("absorbe los mensajes del 2.º fence sin cerrar y no se traga la siguiente sección", () => {
+    const doc = `### NEW-LEG-01 — Cotizador
+
+- **Diagrama(s):** (sequence)
+
+\`\`\`mermaid
+sequenceDiagram
+    participant User as Ejecutivo Ventas
+    participant FE as Cotizador (RentaUrbano.tsx)
+    participant BE as Microservicio Costos
+\`\`\`
+
+\`\`\`dockerfile
+User->>FE: Selecciona medio
+    FE->>BE: GET /api/v1/site-costs?ubicacion_ooh_id={id}
+    BE-->>FE: [{nombre: "Instalación"}] o []
+    alt tiene costos
+    FE->>User: Tooltip con nombres
+    else sin costos
+    FE->>User: Tooltip "Sin costos"
+    end
+
+### NEW-LEG-02 — Alertamiento y bloqueo por margen mínimo
+- **Propuesta (NEW):** texto de la siguiente sección.
+- **Diagrama(s):** (flowchart) Proceso.
+
+\`\`\`
+
+\`\`\`mermaid
+flowchart TD
+    A[Inicio] --> B{Margen ok?}
+    B -->|Sí| C[Continuar]
+    B -->|No| D[Bloquear]
+\`\`\``;
+    const out = normalizeMermaidInDocument(doc);
+    // No queda ningún fence dockerfile.
+    assert.doesNotMatch(out, /```dockerfile/);
+    // Los mensajes quedaron dentro del bloque del sequenceDiagram.
+    assert.match(out, /participant BE as[\s\S]*User->>FE: Selecciona medio/);
+    assert.match(out, /FE->>User: Tooltip "Sin costos"[\s\S]*?end[\s\S]*?```/);
+    // La prosa de NEW-LEG-02 quedó FUERA del diagrama (como markdown, no como código).
+    assert.match(out, /### NEW-LEG-02 — Alertamiento y bloqueo por margen mínimo/);
+    assert.match(out, /- \*\*Propuesta \(NEW\):\*\* texto de la siguiente sección\./);
+    // El flowchart de NEW-LEG-02 sigue siendo un bloque mermaid válido propio.
+    assert.match(out, /```mermaid\nflowchart TD/);
+    // Exactamente 2 bloques mermaid (sequence + flowchart), sin huérfanos.
+    assert.equal((out.match(/```mermaid/g) ?? []).length, 2);
+    // El ``` huérfano (cierre del dockerfile) fue eliminado: no hay un fence vacío suelto.
+    assert.doesNotMatch(out, /\n```\n+```mermaid\nflowchart TD/);
+  });
+});
+
+describe("normalizeMermaidDiagramBody — no trunca etiquetas legítimas largas", () => {
+  it("preserva subgraph y aristas con <br/> y rutas (no corta a 56 chars)", () => {
+    const doc = `\`\`\`mermaid
+flowchart LR
+    subgraph Microservicio_NEW["Microservicio Costos y Listas de Precios<br/>(Node/Express)"]
+        API["GET /api/v1/listas-precios"]
+    end
+    FE -->|"POST/GET/PUT/DELETE costos asociados<br/>(endpoint a crear)"| API
+\`\`\``;
+    const out = normalizeMermaidInDocument(doc);
+    assert.match(out, /\(Node\/Express\)"\]/);
+    assert.doesNotMatch(out, /\(Node\/Expre"\]/);
+    assert.match(out, /\(endpoint a crear\)"\|/);
+  });
+});
+
 describe("stripMarkdownLeakFromMermaidDiagramBody", () => {
   it("trunca TechnicalMetadata filtrado en sequenceDiagram", () => {
     const body = `sequenceDiagram
