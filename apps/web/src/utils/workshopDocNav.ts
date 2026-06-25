@@ -61,6 +61,7 @@ export interface WorkshopDocNavBuildContext {
   blueprintContent: string | null | undefined;
   uxUiGuideContent: string | null | undefined;
   aemContent: string | null | undefined;
+  handoffSpecContent: string | null | undefined;
   apiContractsContent: string | null | undefined;
   logicFlowsContent: string | null | undefined;
   tasksContent: string | null | undefined;
@@ -212,6 +213,15 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       content: "integration-panel",
     });
   }
+  if (visible("handoff-spec")) {
+    items.push({
+      id: "handoff-spec",
+      label: "Handoff Spec",
+      title: "Handoff Spec (handoff-spec.md)",
+      Icon: FileCode,
+      content: ctx.handoffSpecContent,
+    });
+  }
   if (visible("api-contracts")) {
     items.push({
       id: "api-contracts",
@@ -351,6 +361,11 @@ export function getWorkshopDocPanelHeader(
       title: "Análisis y Estrategia de Mercado",
       subtitle: "Contexto de negocio y mercado (opcional)",
       Icon: FileText,
+    },
+    "handoff-spec": {
+      title: "Handoff Spec",
+      subtitle: "Requerimientos técnicos NEW→LEGACY (IntegrationAgent)",
+      Icon: FileCode,
     },
     "api-contracts": {
       title: "API Contracts",

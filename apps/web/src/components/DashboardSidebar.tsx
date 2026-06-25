@@ -374,6 +374,7 @@ export function DashboardSidebar({
   const blueprintContent = useWorkshopStore((s) => s.blueprintContent);
   const uxUiGuideContent = useWorkshopStore((s) => s.uxUiGuideContent);
   const aemContent = useWorkshopStore((s) => s.aemContent);
+  const handoffSpecContent = useWorkshopStore((s) => s.handoffSpecContent);
   const apiContractsContent = useWorkshopStore((s) => s.apiContractsContent);
   const logicFlowsContent = useWorkshopStore((s) => s.logicFlowsContent);
   const tasksContent = useWorkshopStore((s) => s.tasksContent);
@@ -421,6 +422,7 @@ export function DashboardSidebar({
       blueprintContent,
       uxUiGuideContent,
       aemContent,
+      handoffSpecContent,
       apiContractsContent,
       logicFlowsContent,
       tasksContent,
@@ -445,6 +447,7 @@ export function DashboardSidebar({
     blueprintContent,
     uxUiGuideContent,
     aemContent,
+    handoffSpecContent,
     apiContractsContent,
     logicFlowsContent,
     tasksContent,

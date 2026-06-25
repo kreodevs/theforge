@@ -15,6 +15,7 @@ const PANEL_DOWNLOAD_FILENAME: Record<string, string> = {
   "use-cases": "use-cases.md",
   "user-stories": "user-stories.md",
   aem: "aem.md",
+  "handoff-spec": "handoff-spec.md",
 };
 
 export interface WorkshopActiveDocumentDownloadInput {
@@ -36,6 +37,7 @@ export interface WorkshopActiveDocumentDownloadInput {
   useCasesContent?: string | null;
   userStoriesContent?: string | null;
   aemContent?: string | null;
+  handoffSpecContent?: string | null;
 }
 
 /**
@@ -72,6 +74,7 @@ export function resolveWorkshopActiveDocumentDownload(
     "use-cases": input.useCasesContent,
     "user-stories": input.userStoriesContent,
     aem: input.aemContent,
+    "handoff-spec": input.handoffSpecContent,
   };
 
   const content = contentByPanel[panel] ?? "";

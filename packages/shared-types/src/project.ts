@@ -74,6 +74,7 @@ export const updateProjectSchema = z.object({
   uxUiGuideContent: z.string().optional().nullable(),
   phase0SummaryContent: z.string().optional().nullable(),
   aemContent: z.string().optional().nullable(),
+  handoffSpecContent: z.string().optional().nullable(),
   figmaMapping: z.record(z.unknown()).optional().nullable(),
   /** Per-project converge webhook (POST /projects/:id/converge/trigger). */
   convergeWebhookUrl: z.string().url().optional().nullable(),
@@ -122,6 +123,7 @@ export const projectResponseSchema = z.object({
   uxUiGuideContent: z.string().nullable(),
   phase0SummaryContent: z.string().nullable(),
   aemContent: z.string().nullable(),
+  handoffSpecContent: z.string().nullable(),
   figmaMapping: z.record(z.unknown()).nullable(),
   createdAt: z.string().datetime(),
 });

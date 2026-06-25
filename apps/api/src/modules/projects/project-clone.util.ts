@@ -38,6 +38,7 @@ function buildStageCloneCreateInput(stage: StageWithEst): Prisma.StageCreateWith
     phase0SummaryContent: stage.phase0SummaryContent,
     aemContent: stage.aemContent,
     changeSpecContent: stage.changeSpecContent,
+    handoffSpecContent: stage.handoffSpecContent,
     isLegacy: stage.isLegacy,
     theforgeProjectId: stage.theforgeProjectId,
     shortTermContext: jsonValue(stage.shortTermContext),
@@ -87,6 +88,7 @@ export function buildProjectCloneCreateInput(
     phase0Gaps: source.phase0Gaps,
     phase0Questions: source.phase0Questions,
     aemContent: source.aemContent,
+    handoffSpecContent: source.handoffSpecContent,
     stages: {
       create: stages.map((stage) => buildStageCloneCreateInput(stage)),
     },
