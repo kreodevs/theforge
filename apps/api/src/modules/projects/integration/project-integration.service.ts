@@ -837,8 +837,9 @@ export class ProjectIntegrationService {
 
     let handoffItems: IntegrationHandoffItem[] = [];
     let newProjectMeta: { id: string; name: string } | undefined;
-    if (project.projectType === "LEGACY" && stageId) {
-      const stage = project.stages.find((s) => s.id === stageId);
+    if (project.projectType === "LEGACY") {
+      // Preferred (closed scope): the promoted stage's handoff snapshot (stage 2+).
+      const stage = stageId ? project.stages.find((s) => s.id === stageId) : undefined;
       if (stage && stage.ordinal >= 2) {
         const snap = stage.handoffSnapshot as { items?: IntegrationHandoffItem[] } | null;
         if (snap?.items?.length) {
@@ -849,6 +850,15 @@ export class ProjectIntegrationService {
             if (np) newProjectMeta = np;
           }
         }
+      }
+      // Fallback (pre-promotion): read SENT/ACCEPTED items from the linked NEW project so both
+      // teams can produce the handoff-spec for mutual agreement before a stage is promoted.
+      if (handoffItems.length === 0 && project.linkedNewProjectId) {
+        const np = await this.assertAccess(project.linkedNewProjectId);
+        handoffItems = this.handoffFromProject(np).items.filter(
+          (i) => i.status === "sent" || i.status === "accepted",
+        );
+        newProjectMeta = { id: np.id, name: np.name };
       }
     }
     if (project.projectType === "NEW") {
