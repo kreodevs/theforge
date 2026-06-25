@@ -386,6 +386,8 @@ export default function WorkshopView({
   const aemContentField = useWorkshopStore((s) => s.aemContent);
   const setAemContent = useWorkshopStore((s) => s.setAemContent);
   const persistAemContent = useWorkshopStore((s) => s.persistAemContent);
+  const handoffSpecContentField = useWorkshopStore((s) => s.handoffSpecContent);
+  const syncHandoffSpec = useWorkshopStore((s) => s.syncHandoffSpec);
 
   const specContent = resolveWorkshopDeliverableContent(
     "specContent",
@@ -439,6 +441,7 @@ export default function WorkshopView({
   const benchmarkNeedsRegenerate = isPhase0BorradorJson(phase0SummaryContent);
   const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
   const aemContent = aemContentField ?? project?.aemContent ?? null;
+  const handoffSpecContent = handoffSpecContentField ?? project?.handoffSpecContent ?? null;
 
   const projectStatus: Status = project?.status ?? "ROJO";
   const semaphoreGreen = liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
@@ -1053,6 +1056,7 @@ export default function WorkshopView({
     | "user-stories"
     | "infra"
     | "aem"
+    | "handoff-spec"
     | "agent-governance"
     | "adrs"
     | "integration";
@@ -1879,6 +1883,7 @@ export default function WorkshopView({
       useCasesContent,
       userStoriesContent,
       aemContent,
+      handoffSpecContent,
     });
 
     let regenItem: WorkshopDocBubbleMenuItem | null = null;
@@ -2440,6 +2445,7 @@ export default function WorkshopView({
                         tasksContent: tasksContent ?? project?.tasksContent ?? null,
                         infraContent: infraContent ?? project?.infraContent ?? null,
                         aemContent: aemContent ?? project?.aemContent ?? null,
+                        handoffSpecContent: handoffSpecContent ?? project?.handoffSpecContent ?? null,
                       },
                       projectName ?? project?.name ?? "Workshop",
                     );
@@ -2520,6 +2526,7 @@ export default function WorkshopView({
                         tasksContent: tasksContent ?? project?.tasksContent ?? null,
                         infraContent: infraContent ?? project?.infraContent ?? null,
                         aemContent: aemContent ?? project?.aemContent ?? null,
+                        handoffSpecContent: handoffSpecContent ?? project?.handoffSpecContent ?? null,
                       },
                       projectName ?? project?.name ?? "Workshop",
                     );
@@ -4252,6 +4259,41 @@ export default function WorkshopView({
                 onBlur={handleAemBlur}
                 hideGenerate
               />
+            )}
+            {centralPanel === "handoff-spec" && (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+                <div className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-3 py-2.5">
+                  <p className="min-w-0 flex-1 text-xs leading-relaxed text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
+                    <strong>Handoff Spec</strong> — el IntegrationAgent traduce los items NEW-LEG registrados en la pestaña <em>Integración</em> en requerimientos técnicos (§3 Modelo / §4 API) para el equipo legacy. No crea items: solo los organiza y profundiza con evidencia del grafo.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={() => void syncHandoffSpec(projectId, activeStageId ?? undefined)}
+                    disabled={loading}
+                    aria-label="Sincronizar Especificación de Handoff"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                    Sincronizar Especificación de Handoff
+                  </Button>
+                </div>
+                <StandardDocPanel
+                  icon={FileCode}
+                  title="Handoff Spec"
+                  description="Requerimientos técnicos NEW→LEGACY derivados de la Matriz de Trazabilidad. Pulsa «Sincronizar Especificación de Handoff» para (re)generarlo con el IntegrationAgent."
+                  content={handoffSpecContent}
+                  onContentChange={() => {}}
+                  onSave={() => {}}
+                  isDirty={false}
+                  viewMode="preview"
+                  onGenerate={() => void syncHandoffSpec(projectId, activeStageId ?? undefined)}
+                  canGenerate={!loading}
+                  isLoading={loading}
+                  generateLabel="Sincronizar Especificación de Handoff"
+                  readOnly
+                />
+              </div>
             )}
             {centralPanel === "brd" && projectId && (
               <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">

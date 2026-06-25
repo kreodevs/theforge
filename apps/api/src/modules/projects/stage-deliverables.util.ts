@@ -20,6 +20,7 @@ const DELIVERABLE_KEYS: (keyof ProjectDeliverableSource)[] = [
   "uxUiGuideContent",
   "phase0SummaryContent",
   "aemContent",
+  "handoffSpecContent",
 ];
 
 export type ResolveStageDeliverablesMode = "workshop" | "analyze";

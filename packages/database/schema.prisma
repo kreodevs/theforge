@@ -172,6 +172,8 @@ model Stage {
   aemContent           String? @db.Text
   /// Delta change spec (markdown): AS-IS inherited summary + explicit delta for stage 2+.
   changeSpecContent String? @db.Text
+  /// Handoff Spec (markdown): NEW-LEG items expandidos a requerimientos técnicos para legacy (IntegrationAgent), stage 2+.
+  handoffSpecContent String? @db.Text
   estimation       Estimation?
   /// Redundancia intencional con `Project.projectType === LEGACY` para queries y checkpoints por etapa.
   isLegacy         Boolean      @default(false)
@@ -275,6 +277,8 @@ model Project {
   agentGovernanceContent String? @db.Text
   uxUiGuideContent     String?   @db.Text
   phase0SummaryContent String?   @db.Text
+  /// Handoff Spec (markdown): NEW-LEG items expandidos a requerimientos técnicos para el equipo legacy (IntegrationAgent).
+  handoffSpecContent   String?   @db.Text
   /// Estado del flujo Fase 0 interactivo: "idle" | "interviewing" | "done"
   phase0Status        String?   @default("idle")
   /// Gaps pendientes (JSON)

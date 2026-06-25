@@ -485,6 +485,7 @@ export interface Project {
   userStoriesContent: string | null;
   infraContent: string | null;
   aemContent: string | null;
+  handoffSpecContent: string | null;
   agentGovernanceContent: string | null;
   convergeWebhookUrl?: string | null;
   linkedLegacyProjectId?: string | null;
@@ -645,6 +646,7 @@ interface WorkshopState {
   userStoriesContent: string | null;
   infraContent: string | null;
   aemContent: string | null;
+  handoffSpecContent: string | null;
   agentGovernanceContent: string | null;
   /** Conformance (SDD Fase 2): Blueprint/API/Flujos/Infra vs MDD; `blueprintDataModel` = §3 vs Blueprint (gating API). */
   conformance: {
@@ -809,6 +811,9 @@ interface WorkshopState {
   persistSpecContent: (content: string) => Promise<void>;
   setAemContent: (content: string | null) => void;
   persistAemContent: (content: string) => Promise<void>;
+  setHandoffSpecContent: (content: string | null) => void;
+  /** IntegrationAgent: regenerate handoff-spec.md from the registered NEW-LEG items. */
+  syncHandoffSpec: (projectId: string, stageId?: string | null) => Promise<string | null>;
   generateSpec: (projectId: string) => Promise<Project | null>;
   setTasksContent: (content: string | null) => void;
   persistTasksContent: (content: string) => Promise<void>;
@@ -926,6 +931,7 @@ const initialState = {
   userStoriesContent: null as string | null,
   infraContent: null as string | null,
   aemContent: null as string | null,
+  handoffSpecContent: null as string | null,
   agentGovernanceContent: null as string | null,
   conformance: null as {
     blueprint: ConformanceResult;
@@ -1014,6 +1020,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       userStoriesContent: p.userStoriesContent ?? null,
       infraContent: p.infraContent ?? null,
       aemContent: p.aemContent ?? null,
+      handoffSpecContent: p.handoffSpecContent ?? null,
       lastLegacyDeliverablesDebug: legacyDebugFromStages(stages, activeStageId),
     });
   },
@@ -1216,6 +1223,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         userStoriesContent: cleanDoc(data.userStoriesContent ?? null),
         infraContent: cleanDoc(data.infraContent ?? null),
         aemContent: cleanDoc(data.aemContent ?? null),
+        handoffSpecContent: cleanDoc(data.handoffSpecContent ?? null),
         agentGovernanceContent: data.agentGovernanceContent ?? null,
         error: null,
         legacyMcpDebugTrace: null,
@@ -1310,6 +1318,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         userStoriesContent: cleanDoc(p.userStoriesContent ?? null),
         infraContent: cleanDoc(p.infraContent ?? null),
         aemContent: cleanDoc(p.aemContent ?? null),
+        handoffSpecContent: cleanDoc(p.handoffSpecContent ?? null),
         synced: true,
         error: null,
       });
@@ -2593,6 +2602,34 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   persistAemContent: async (content) => {
     await persistField("aemContent", content, get, set);
   },
+  setHandoffSpecContent: (content) => set({ handoffSpecContent: content }),
+  syncHandoffSpec: async (projectId, stageId) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const url = stageId?.trim()
+        ? `${API_BASE}/projects/${projectId}/integration/stages/${stageId}/sync-handoff-spec`
+        : `${API_BASE}/projects/${projectId}/integration/sync-handoff-spec`;
+      const r = await apiFetch(url, { method: "POST" });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.message ?? "Error al sincronizar la especificación de handoff");
+      }
+      const data = (await r.json()) as { handoffSpecContent?: string | null };
+      const content = data.handoffSpecContent ?? null;
+      const current = get().project;
+      set({
+        handoffSpecContent: content,
+        project: current ? { ...current, handoffSpecContent: content } : current,
+      });
+      return content;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al sincronizar handoff spec" });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
+  },
   generateSpec: async (projectId) => {
     if (!projectId?.trim()) return null;
     set({ loading: true, error: null });
@@ -3323,6 +3360,7 @@ if (prog && prog.step && prog.step !== "done") {
         "use-cases": "useCasesContent",
         "user-stories": "userStoriesContent",
         aem: "aemContent",
+        "handoff-spec": "handoffSpecContent",
         "agent-governance": "agentGovernanceContent",
       };
 

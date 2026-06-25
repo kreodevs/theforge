@@ -18,7 +18,8 @@ export type WorkshopDocTab =
   | "infra"
   | "adrs"
   | "aem"
-  | "integration";
+  | "integration"
+  | "handoff-spec";
 
 export type ProjectTypeForTabs = "NEW" | "LEGACY";
 
@@ -44,6 +45,9 @@ export function isTabVisibleForComplexity(
 
   // Integración cross-project NEW ↔ LEGACY
   if (tab === "integration") return true;
+
+  // Handoff Spec: artefacto técnico que consume el equipo LEGACY (Brownfield).
+  if (tab === "handoff-spec") return pt === "LEGACY";
 
   if (c === "HIGH") return true;
 

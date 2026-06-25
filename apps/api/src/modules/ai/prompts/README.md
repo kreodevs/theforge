@@ -23,6 +23,8 @@ Prompts del módulo AI. Están estructurados según marcos de ingeniería de pro
 | **api-contracts-prompt.md** | Contratos API al MDD; cobertura exhaustiva §4; `buildMddContextForApiContracts`. Pie **Proyecto legacy**. |
 | **with-document-changelog-instructions.ts** | Helper `withDocumentChangelogInstructions()` — inyecta la sección obligatoria «Registro de cambios del documento» en todos los `*-prompt.ts` de generación. `cleanDocumentContent` en API añade fila 1.0 si falta al persistir. |
 | **complexity-inference-prompt.ts** | JSON `complexity` + `planSummary` + `reason` (HITL); MEDIUM incluye Historias de Usuario en el ejemplo de entregables. |
+| **integration-agent-prompt.md** | **IntegrationAgent** (redactor de `handoff-spec.md`): traduce items NEW-LEG en requerimientos técnicos para legacy (§3 Modelo / §4 API), anclado en evidencia de AriadneSpecs. Regla de Oro: no inventa items. Usado por `IntegrationAgentService` vía `runIntegrationAgent` (`ai-analysis/nodes/integration-agent.node.ts`). |
+| **integration-agent-prompt.ts** | Carga `integration-agent-prompt.md` y lo exporta como `INTEGRATION_AGENT_PROMPT`. |
 
 El build copia `*.md` a `dist/modules/ai/prompts/` para que la API lea el archivo en runtime. El `AiService` usa `MASTER_PROMPT` por defecto al llamar a `generateResponse`.
 

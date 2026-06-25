@@ -6,6 +6,7 @@ import { ProjectMergeService } from "./project-merge.service.js";
 import { ProjectsController } from "./projects.controller.js";
 import { ProjectIntegrationController } from "./integration/project-integration.controller.js";
 import { ProjectIntegrationService } from "./integration/project-integration.service.js";
+import { IntegrationAgentService } from "./integration/integration-agent.service.js";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
 import { EngineModule } from "../engine/engine.module.js";
 import { AiModule } from "../ai/ai.module.js";
@@ -34,12 +35,13 @@ import { SddIntegrationService } from "./sdd-integration.service.js";
   providers: [
     ProjectsService,
     ProjectIntegrationService,
+    IntegrationAgentService,
     ProjectMergeService,
     SddIntegrationService,
     { provide: PROJECTS_ORCHESTRATOR_PORT, useExisting: ProjectsService },
     ProjectEstimationRecalcService,
     DeliverablesQueueService,
   ],
-  exports: [ProjectsService, ProjectIntegrationService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService],
+  exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService],
 })
 export class ProjectsModule { }

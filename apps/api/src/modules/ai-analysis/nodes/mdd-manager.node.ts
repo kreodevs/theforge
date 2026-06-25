@@ -28,6 +28,7 @@ import { reconcileUiUxDesignIntent } from "../utils/mdd-enrich-uiux-intent.js";
 import { z } from "zod";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { generateImpactAnalysis } from "../utils/mdd-impact-analysis.js";
+import { detectLegacyIntegrationIntent, HANDOFF_SPEC_SUGGESTION } from "../utils/integration-intent.util.js";
 import { getAgenticRagToolset } from "../tools/tool-registry.js";
 import { runAgentToolsRound } from "../utils/mdd-agent-tools-invoke.js";
 import type { ProjectsService } from "../../projects/projects.service.js";
@@ -1402,6 +1403,14 @@ export function createMddManagerNode(
     }
 
     if (action === "reply") {
+      // Prepared hook: surface IntegrationAgent (handoff-spec) when a legacy integration need is detected.
+      if (
+        state.isLegacyProject === true &&
+        detectLegacyIntegrationIntent(userMessage) &&
+        !replyContent.includes("Sincronizar Especificación de Handoff")
+      ) {
+        replyContent = `${replyContent ?? ""}${HANDOFF_SPEC_SUGGESTION}`.trim();
+      }
       LOG("interrupt reply");
       const resumeValue = interrupt({ type: "reply", reply: replyContent });
       const newMsg = typeof resumeValue === "string" ? resumeValue : String(resumeValue ?? "").trim();

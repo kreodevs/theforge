@@ -13,6 +13,8 @@ Cross-project handoff, trace matrix, and stage promotion for brownfield SDD.
 | `POST` | `/projects/:projectId/integration/stages/:stageId/reconcile-handoff` | LEGACY: retroactive Ariadne wire + `legacy/start` on imported stage |
 | `POST` | `/projects/:projectId/integration/stages/:stageId/abandon-handoff` | LEGACY: archive stage + release NEW-LEG for re-promotion |
 | `POST` | `/projects/:projectId/integration/promote-to-stage` | **P1:** create stage from SENT handoff batch |
+| `POST` | `/projects/:projectId/integration/stages/:stageId/sync-handoff-spec` | **IntegrationAgent:** (re)generate `handoff-spec.md` for a stage |
+| `POST` | `/projects/:projectId/integration/sync-handoff-spec` | **IntegrationAgent:** same for the primary (active) stage |
 
 ## Promote to stage (hybrid C+B)
 
@@ -53,6 +55,15 @@ Body (`abandonIntegrationHandoffBodySchema`):
 - Clears `legacyStageId` on NEW handoff items and `IntegrationTrace` rows
 - Released items → `sent` (re-editable / re-promotable) or `rejected` if `rejectReleasedItems`
 - If abandoning ACTIVE stage, activates etapa 1 baseline (or `activateStageId`)
+
+## IntegrationAgent — handoff-spec.md (dynamic)
+
+`integration-agent.service.ts` (`IntegrationAgentService`) turns the registered NEW-LEG items into a dynamic **`handoff-spec.md`** (Brownfield technical breakdown), persisted as `Stage.handoffSpecContent` (flattened to Project like other deliverables) and shown in the Workshop **Handoff Spec** tab.
+
+- **Governance ("Regla de Oro"):** only structures/deepens existing items; never creates handoff items.
+- **Plan-then-Execute redactor:** `apps/api/src/modules/ai-analysis/nodes/integration-agent.node.ts` (`runIntegrationAgent`) — probes the LEGACY graph per item (`validate_before_edit` / `semantic_search`) and synthesizes the doc against MDD §3 (Model) / §4 (API).
+- **Prompt:** `apps/api/src/modules/ai/prompts/integration-agent-prompt.md`.
+- **Manager hook (prepared):** `ai-analysis/utils/integration-intent.util.ts` (`detectLegacyIntegrationIntent`) — the MDD Manager suggests running the sync when it detects a legacy-integration message (it does not call the service inline, to avoid a circular module dependency).
 
 ## Helpers
 

@@ -1,10 +1,14 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { integrationProjectPickerQuerySchema } from "@theforge/shared-types";
 import { ProjectIntegrationService } from "./project-integration.service.js";
+import { IntegrationAgentService } from "./integration-agent.service.js";
 
 @Controller("projects/:projectId/integration")
 export class ProjectIntegrationController {
-  constructor(private readonly integration: ProjectIntegrationService) {}
+  constructor(
+    private readonly integration: ProjectIntegrationService,
+    private readonly integrationAgent: IntegrationAgentService,
+  ) {}
 
   @Get()
   getStatus(@Param("projectId") projectId: string) {
@@ -97,5 +101,20 @@ export class ProjectIntegrationController {
     @Body() body: unknown,
   ) {
     return this.integration.abandonIntegrationHandoffStage(projectId, stageId, body);
+  }
+
+  /** IntegrationAgent: (re)generate handoff-spec.md for a specific stage. */
+  @Post("stages/:stageId/sync-handoff-spec")
+  syncHandoffSpecForStage(
+    @Param("projectId") projectId: string,
+    @Param("stageId") stageId: string,
+  ) {
+    return this.integrationAgent.syncHandoffSpec(projectId, stageId);
+  }
+
+  /** IntegrationAgent: (re)generate handoff-spec.md for the primary (active) stage. */
+  @Post("sync-handoff-spec")
+  syncHandoffSpec(@Param("projectId") projectId: string) {
+    return this.integrationAgent.syncHandoffSpec(projectId);
   }
 }

@@ -25,6 +25,7 @@ const DELIVERABLE_KEYS = [
   "uxUiGuideContent",
   "phase0SummaryContent",
   "aemContent",
+  "handoffSpecContent",
 ] as const satisfies readonly (keyof ProjectDeliverableSource)[];
 
 function buildStageUpdateData(fields: ProjectDeliverableSource): Record<string, string | null> {
@@ -82,6 +83,7 @@ export async function seedActiveStageDeliverables(
         uxUiGuideContent: true,
         phase0SummaryContent: true,
         aemContent: true,
+        handoffSpecContent: true,
       },
     }),
     prisma.project.findUnique({ where: { id: projectId } }),
