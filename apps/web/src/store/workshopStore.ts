@@ -1505,6 +1505,20 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         await get().persistMddContent(formatted, { force: true });
         return { ok: true, message: "MDD formateado (fences, tablas y Mermaid). Revisa el panel." };
       }
+      case "handoff-spec": {
+        const source = (get().handoffSpecContent ?? project?.handoffSpecContent ?? "").trim();
+        if (!source) return { ok: false, message: "No hay Handoff Spec para formatear." };
+        const formatted = fmt(source);
+        if (formatted === source) {
+          return { ok: true, message: "Handoff Spec: ya estaba bien formateado (sin cambios)." };
+        }
+        await get().persistHandoffSpecContent(formatted);
+        return {
+          ok: true,
+          message:
+            "Handoff Spec formateado (fences, tablas y Mermaid; repara diagramas con subgraph). Revisa el panel.",
+        };
+      }
       case "spec":
         return persistProjectField("specContent", get().specContent ?? project?.specContent, "Spec");
       case "ux-ui-guide":
