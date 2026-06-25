@@ -195,6 +195,36 @@ flowchart TD
   });
 });
 
+describe("normalizeMermaidInDocument — auto-repara subgraph_ID corrupto ya persistido", () => {
+  it("restaura `subgraph_NEW[...]` → `subgraph NEW[...]` (documento viejo, sin re-sync)", () => {
+    const doc = `## Diagrama de integración (Mermaid)
+
+\`\`\`mermaid
+flowchart LR
+    subgraph_NEW["Microservicio Costos y Listas de Precios"]
+        CC["GET /api/v1/catalogo-costos"]
+        LP["GET /api/v1/listas-precios/{id}/limites"]
+    end
+
+    subgraph_LEGACY["OBP (Legacy)"]
+        FE["Frontend Cotizador"]
+        DE["OBP Data Editor"]
+    end
+
+    FE -->|"NEW-LEG-01: hover tooltip"| CC
+    DE -->|"NEW-LEG-03: asignar costos"| LP
+\`\`\``;
+    const out = normalizeMermaidInDocument(doc);
+    assert.doesNotMatch(out, /subgraph_NEW/);
+    assert.doesNotMatch(out, /subgraph_LEGACY/);
+    assert.match(out, /subgraph NEW\["Microservicio Costos y Listas de Precios"\]/);
+    assert.match(out, /subgraph LEGACY\["OBP \(Legacy\)"\]/);
+    // No re-corrompe ni rompe los nodos hijos ni las aristas.
+    assert.match(out, /CC\["GET \/api\/v1\/catalogo-costos"\]/);
+    assert.match(out, /FE -->\|"NEW-LEG-01: hover tooltip"\| CC/);
+  });
+});
+
 describe("normalizeMermaidDiagramBody — no trunca etiquetas legítimas largas", () => {
   it("preserva subgraph y aristas con <br/> y rutas (no corta a 56 chars)", () => {
     const doc = `\`\`\`mermaid
