@@ -961,6 +961,12 @@ export function normalizeMermaidDiagramBody(raw: string): string {
       line = normalizeOrphanSequenceDiagramLine(line);
     }
 
+    // Auto-reparación de corrupción ya persistida por normalizadores antiguos: un header de subgraph
+    // que quedó como `subgraph_NEW["…"]` (el join de IDs unió la palabra clave con el id) rompe el
+    // parser. El render re-normaliza en cada carga, así que restaurarlo aquí arregla documentos viejos
+    // sin re-sincronizar. Solo aplica cuando tras `subgraph_<id>` viene `[`, `(` o `"` (header claro).
+    line = line.replace(/^(\s*)subgraph_(\w+)(?=\s*["[(])/i, "$1subgraph $2");
+
     if (/^(graph|flowchart)\s/i.test(line.trim())) {
       out.push(line);
       continue;
