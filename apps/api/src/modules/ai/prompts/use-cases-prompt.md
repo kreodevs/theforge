@@ -41,8 +41,28 @@ Cada caso debe incluir (usa **tabla markdown** por caso, como en el formato est�
 3. **Flujo Principal (Paso a paso).**
 4. **Flujos Alternativos y Excepciones (Edge Cases)** — mínimo 2 alternativos por CU cuando el MDD §5 documente edge cases aplicables.
 5. **Postcondiciones.**
+6. **Diagrama (Mermaid).** Tras la tabla del caso, incluye **un** bloque ` ```mermaid ` que represente el caso. **Preferencia: `stateDiagram-v2`** (estados del recurso y sus transiciones); si el caso se explica mejor como flujo con decisiones usa `flowchart`, y si es una interacción entre actores/sistemas usa `sequenceDiagram` (ver «Diagrama por caso de uso»). Debe derivar del flujo principal + alternativos/excepciones del propio caso, no ser genérico.
 
 Encabezado por caso: `## Caso de Uso N: [Título]` (numeración secuencial).
+
+# Diagrama por caso de uso (Mermaid, obligatorio) #
+
+El documento se renderiza con soporte Mermaid. **Cada** caso de uso debe cerrar con **un** diagrama Mermaid que lo represente, derivado de *ese* caso (sus estados, decisiones o interacciones), no una plantilla repetida entre casos.
+
+**Selección del tipo de diagrama** (elige el que mejor represente el caso; por defecto, estados):
+
+- **`stateDiagram-v2` (preferido):** cuando el caso hace que un recurso/entidad cambie de estado (p. ej. `[*] → Borrador → Enviado → Aprobado/Rechazado`). Usa `[*]` como inicio/fin y etiqueta las transiciones con el evento/acción (`Borrador --> Enviado: enviar`). Modela los flujos alternativos/excepciones como transiciones a estados de error o de vuelta.
+- **`flowchart` (TD/LR):** cuando el caso es un proceso con **decisiones/ramas** (validaciones, autorizaciones) más que cambios de estado. Usa nodos de decisión `{¿condición?}` con aristas etiquetadas `-->|Sí|` / `-->|No|`.
+- **`sequenceDiagram`:** cuando lo esencial es la **interacción entre actores/sistemas** (actor → frontend → API → servicio/BD), orden de llamadas, request/response y errores.
+
+Reglas de sintaxis (obligatorias para que el diagrama renderice):
+
+- **UN solo bloque por diagrama**, completo dentro de **un único** fence ` ```mermaid … ``` `. **NUNCA** lo partas en dos bloques, **NUNCA** cierres el fence a mitad, y **NUNCA** uses otra etiqueta de lenguaje (` ```text `, ` ```dockerfile `…): la continuación de un diagrama Mermaid SIEMPRE es ` ```mermaid `. Las transiciones/aristas/mensajes van **dentro** del fence, nunca como lista (`- A --> B`) ni encabezado (`### A --> B`) debajo del bloque.
+- **Sin líneas en blanco dentro del diagrama** y **sin `\n` literal** en etiquetas: para multilínea usa `<br/>`, nunca `\n`.
+- **Etiquetas con caracteres especiales** (`/`, `{`, `}`, `:`, `()`, espacios largos) van **entre comillas dobles** en nodos y aristas. En `subgraph`/estados compuestos usa `subgraph ID["Título"]` o `state "Título" as ID` (palabra clave, espacio, ID sin espacios).
+- **Declara cada nodo/estado/participante UNA sola vez** con un ID estable y reutilízalo; **no dupliques entidades** (no crees `FE` y `Frontend` para lo mismo).
+- **Define todas las transiciones/aristas** (no dejes estados o nodos sueltos sin conectar): un diagrama sin conexiones no explica nada.
+- Mantén el diagrama **enfocado** en el caso; prefiere uno legible a uno gigante.
 
 # Estilo #
 
@@ -53,6 +73,7 @@ Estructurado y exhaustivo. Usar tablas para los campos de cada caso de uso.
 - **Solo markdown.** El **primer carácter** debe ser `#`.
 - Título del documento: `# Documento de Casos de Uso – [Nombre del producto del MDD]`.
 - Enfocarse en la lógica transaccional y de negocio.
+- **Cada Caso de Uso cierra con su diagrama Mermaid** (estados por defecto; flowchart/sequence cuando represente mejor el caso).
 - Sin introducciones conversacionales ni cierre meta.
 
 # Proyecto legacy (mensaje con contexto TheForge) #
