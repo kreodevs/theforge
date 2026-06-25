@@ -4,6 +4,11 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+### Added
+
+- **Integración — revertir promoción de handoff (`abandon-handoff`):** `POST /projects/:id/integration/stages/:stageId/abandon-handoff` archiva una etapa legacy promovida por error (`workflowStatus: ARCHIVED`, visible en el selector del Workshop), congela el snapshot de entregables si falta, conserva `handoffSnapshot` + `abandonedAt` para auditoría, limpia `legacyStageId` en los ítems NEW-LEG y en las filas `IntegrationTrace`, y libera los ítems a `sent` (re-promovible) o `rejected` (`rejectReleasedItems`). Si la etapa abandonada estaba activa, activa la etapa 1 baseline (o `activateStageId`); el enlace NEW↔LEGACY se mantiene. UI: botón **Revertir promoción** en `IntegrationPanel`. `abandon-handoff.util.ts` (+ spec), schemas en `@theforge/shared-types`.
+- **Diagramas Mermaid en tutorial/ayuda + visor a pantalla completa:** los bloques ` ```mermaid ` del tutorial brownfield (`ProjectTutorialDialog`) y de la ayuda del Workshop (`WorkshopHelpModal`) se renderizan como SVG mediante `MarkdownMermaid.tsx`, compartido también por `MddViewer`. Cada diagrama incluye botón **Pantalla completa** (overlay `100dvh` con scroll; Esc / cerrar para volver al documento), útil para diagramas ER densos en el MDD. Diagramas de flujo NEW↔LEGACY añadidos en `apps/web/src/content/tutorial/brownfield.md`.
+
 ### Fixed
 
 - **Deploy Dokploy — API exit 1 tras build OK:** Entrypoint endurecido: `safe-schema-sync.sql` antes de `migrate deploy`, `resolve --applied` cuando `db push` adelantó columnas (`agentGovernanceContent`, merge suite), host Postgres desde `DATABASE_URL` (no `localhost`), validación explícita de `TOKEN_MASTER_KEYS` / `CORS_ORIGINS` vacío, log en `bootstrap().catch`.

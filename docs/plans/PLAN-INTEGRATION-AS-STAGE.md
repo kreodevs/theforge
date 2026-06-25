@@ -15,6 +15,9 @@ Permite promover ítems de handoff del proyecto NEW a una **nueva etapa legacy**
 | **P1** | `promote-handoff.util.ts` + spec | ✅ |
 | **P1** | Handoff import → `handoffImportedAt` / `handoffSnapshot` en Stage | ✅ |
 | **P1** | Gate legacy: handoff import cuenta como cambio válido (`isLegacyChangeGateSatisfied`) | ✅ |
+| **P1.1** | `POST …/stages/:stageId/reconcile-handoff` (Ariadne wire + `legacy/start` retroactivo) | ✅ |
+| **P1.2** | `POST …/stages/:stageId/abandon-handoff` (archivar etapa + liberar NEW-LEG) + `abandon-handoff.util.ts` + spec | ✅ |
+| **P1.2** | Botón **Revertir promoción** en `IntegrationPanel.tsx` | ✅ |
 
 ## Flujo usuario
 
@@ -36,7 +39,21 @@ Permite promover ítems de handoff del proyecto NEW a una **nueva etapa legacy**
 ```
 POST /projects/:id/integration/promote-to-stage
 Body: { name?, itemIds?, activate? }
+
+POST /projects/:id/integration/stages/:stageId/reconcile-handoff
+Body: { wireAriadne?, legacyStart? }   # retroactivo: Ariadne wire + legacy/start
+
+POST /projects/:id/integration/stages/:stageId/abandon-handoff
+Body: { reason?, rejectReleasedItems?, activateStageId? }
 ```
+
+### abandon-handoff (revertir promoción)
+
+- Solo LEGACY, etapa 2+ con handoff importado. Marca `workflowStatus: ARCHIVED`.
+- Congela snapshot de entregables si falta; conserva `handoffSnapshot` + `abandonedAt`.
+- Limpia `legacyStageId` en ítems NEW-LEG y en `IntegrationTrace`; libera ítems a `sent` (o `rejected`).
+- Si la etapa era ACTIVE, activa etapa 1 baseline (o `activateStageId`). Enlace NEW↔LEGACY intacto.
+- Recovery: abandon etapa N → corregir NEW-LEG → promote limpio a etapa N+1.
 
 ## Relacionado
 

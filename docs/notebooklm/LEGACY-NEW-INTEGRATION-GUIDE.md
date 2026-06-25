@@ -132,6 +132,26 @@ Si el producto nuevo cambia el alcance: actualizá la lista, volvé a **Enviar a
 
 ---
 
+## Revertir una promoción mal hecha (abandon-handoff)
+
+A veces se **promueve** una etapa legacy desde el handoff y luego se ve que el alcance estaba mal definido o se eligieron los ítems equivocados. En vez de arrastrar una etapa rota, se puede **revertir la promoción**.
+
+En el Workshop **Legacy**, pestaña **Integración**, con la etapa promovida seleccionada: botón **Revertir promoción**.
+
+Qué pasa al revertir:
+
+- La etapa pasa a estado **Archivada** (sigue visible en el selector, pero ya no es el plan vigente). Se conserva el snapshot de entregables y el `handoffSnapshot` para auditoría.
+- Los ítems **NEW-LEG** que se habían promovido se **liberan**: vuelven a quedar disponibles para promover de nuevo (estado *enviado*), o se marcan como *rechazados* si elegís esa opción.
+- La **matriz de trazabilidad** se limpia para esos ítems (dejan de apuntar a la etapa archivada).
+- Si la etapa archivada era la **activa**, se activa la **etapa 1** (o la que indiques).
+- El **enlace** NEW↔LEGACY **no** se rompe.
+
+Recuperación típica de un handoff mal definido: **revertir** la etapa 2 → corregir la lista NEW-LEG en el proyecto nuevo → **promover de nuevo** a una etapa limpia (p. ej. etapa 3).
+
+> Técnico: `POST /projects/:id/integration/stages/:stageId/abandon-handoff` (body `{ reason?, rejectReleasedItems?, activateStageId? }`). Ver `apps/api/src/modules/projects/integration/README.md`.
+
+---
+
 ## Errores habituales (y qué hacer)
 
 | Evitá | Mejor |
