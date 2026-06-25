@@ -39,6 +39,7 @@ Devuelve **solo** el markdown del documento, sin texto antes ni después, sin va
 - Items en alcance: <n>
 - Impacto principal: <1–2 frases tras analizar la evidencia>
 - Riesgos / preguntas abiertas: <n>
+- Gaps bloqueantes: <n> (ver «Gaps y decisiones pendientes»)
 
 ## Matriz de Trazabilidad (resumen)
 | NEW-LEG | Título | Impacto §3 (Modelo) | Impacto §4 (API) | Estado |
@@ -61,6 +62,13 @@ Devuelve **solo** el markdown del documento, sin texto antes ni después, sin va
 - **Criterios de aceptación:** <derivados de acceptanceCriteria del item>
 - **Riesgos / preguntas abiertas:** <si el item es ambiguo o la evidencia es insuficiente>
 - **Diagrama(s):** **uno o más** bloques ` ```mermaid ` que expliquen visualmente *este* item. Elige el tipo que mejor lo represente (ver «Selección de diagrama por item»). Incluye al menos uno por item salvo que el item sea puramente textual/configuración sin estructura ni flujo (en ese caso, indícalo explícitamente con «Sin diagrama: no aporta»).
+
+## Gaps y decisiones pendientes
+<tabla consolidada con TODO lo que bloquea o debe acordarse antes de implementar: endpoints inexistentes, contratos/DTO sin definir, tablas/relaciones por crear, decisiones de diseño abiertas. Un gap por fila, accionable y con dueño sugerido>
+
+| ID | Item(s) | Tipo | Descripción del gap | Bloquea | Acción / decisión requerida | Dueño sugerido |
+|----|---------|------|---------------------|---------|------------------------------|----------------|
+| GAP-01 | NEW-LEG-01, NEW-LEG-04 | Endpoint faltante | El microservicio NEW no expone una ruta para "costos asociados a un medio"; solo `GET /api/v1/site-costs` (por `ubicacion_ooh_id`) y `GET /api/v1/catalogo-costos` (por `tipo_formato_id`) | Implementación FE de tooltip/preview | Definir si se reutiliza `site-costs` por medio o se crea `GET /api/v1/medios/{id}/costos` | Equipo NEW |
 
 ## Notas de implementación
 <convenciones, orden sugerido de ejecución, dependencias entre items>
@@ -99,6 +107,7 @@ Reglas para los diagramas:
 
 - **Usa la evidencia provista:** cada item incluye un bloque «Evidencia AriadneSpecs» con resultados reales de `ask_codebase`, `semantic_search` y `validate_before_edit` sobre el grafo del código LEGACY. **Cuando ese bloque tenga contenido, basa en él** los impactos §3/§4 (cita tablas, columnas, endpoints, archivos reales que aparezcan). **No** escribas “se requiere verificar manualmente” ni “sin evidencia” si la evidencia sí trae información: solo usa esa fórmula cuando el bloque esté realmente vacío o no responda a la pregunta. Si la evidencia confirma que algo **no existe**, dilo afirmativamente (“No existe la tabla `medio_costo` en el grafo; debe crearse”) en vez de pedir verificación.
 - **Cita el endpoint EXACTO:** cuando un item proponga consumir, llamar o exponer un endpoint (p. ej. «consumiendo el endpoint del microservicio»), **busca su definición en el contexto «CONTRATOS DE API DEL PROYECTO NEW»** y escribe el **método + ruta concretos** (p. ej. `GET /api/v1/listas-precios/{id}/margen-minimo`), más el DTO/campo relevante (`margen_minimo`). **Prohibido** dejar la frase genérica «el endpoint del microservicio» si la ruta está (o puede derivarse) de ese contexto. Si el endpoint **no** aparece en los contratos NEW, dilo explícitamente como pregunta abierta («El contrato de API del proyecto NEW no define aún la ruta para `margen_minimo`; pendiente de especificar») en vez de inventar la ruta.
+- **Consolida los gaps:** toda «pregunta abierta», endpoint inexistente, contrato/DTO sin definir, tabla/relación por crear o decisión de diseño que detectes en los items **debe** aparecer además en la sección **«Gaps y decisiones pendientes»** como una fila de tabla accionable (ID `GAP-NN`, item(s) afectados, tipo, descripción, qué bloquea, acción/decisión requerida, dueño sugerido: `Equipo NEW`, `Equipo LEGACY` o `Ambos`). Un gap por fila; agrupa los gaps compartidos por varios items en una sola fila (no los repitas). Si **no hay** gaps, escribe una única fila «Sin gaps detectados — todos los items tienen endpoints y modelo resueltos en la evidencia». No inventes gaps: solo los que se deriven de la evidencia o de la ausencia comprobada de un contrato/endpoint en el contexto del proyecto NEW.
 - **Precisión sobre genérico:** prohibido texto de relleno tipo “se deben hacer los cambios necesarios”. Cada tarea debe nombrar entidad, endpoint, archivo o contrato concreto, anclado en la evidencia.
 - Si la evidencia menciona un contrato/prop existente, **respétalo** y documenta la modificación mínima.
 - Mantén el orden de los items por su `NEW-LEG-*`.
