@@ -812,6 +812,7 @@ interface WorkshopState {
   setAemContent: (content: string | null) => void;
   persistAemContent: (content: string) => Promise<void>;
   setHandoffSpecContent: (content: string | null) => void;
+  persistHandoffSpecContent: (content: string) => Promise<void>;
   /** IntegrationAgent: regenerate handoff-spec.md from the registered NEW-LEG items. */
   syncHandoffSpec: (projectId: string, stageId?: string | null) => Promise<string | null>;
   generateSpec: (projectId: string) => Promise<Project | null>;
@@ -2603,6 +2604,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     await persistField("aemContent", content, get, set);
   },
   setHandoffSpecContent: (content) => set({ handoffSpecContent: content }),
+  persistHandoffSpecContent: async (content) => {
+    await persistField("handoffSpecContent", content, get, set);
+  },
   syncHandoffSpec: async (projectId, stageId) => {
     if (!projectId?.trim()) return null;
     set({ loading: true, error: null });

@@ -44,6 +44,9 @@ Devuelve **solo** el markdown del documento, sin texto antes ni después, sin va
 |---------|--------|----------------------|-------------------|--------|
 | NEW-LEG-01 | … | … | … | … |
 
+## Diagrama de integración (Mermaid)
+<un diagrama `flowchart LR` que muestre cómo el sistema NEW se integra con el LEGACY a través de los items NEW-LEG (servicios, endpoints clave, base de datos legacy)>
+
 ## Requerimientos técnicos por item
 
 ### NEW-LEG-01 — <título>
@@ -56,10 +59,24 @@ Devuelve **solo** el markdown del documento, sin texto antes ni después, sin va
   2. …
 - **Criterios de aceptación:** <derivados de acceptanceCriteria del item>
 - **Riesgos / preguntas abiertas:** <si el item es ambiguo o la evidencia es insuficiente>
+- **Diagrama (cuando aporte):** para items con cambios de esquema (§3) incluye un `erDiagram`; para items con cambios de flujo/API (§4) incluye un `sequenceDiagram` o `flowchart`.
 
 ## Notas de implementación
 <convenciones, orden sugerido de ejecución, dependencias entre items>
 ```
+
+## Diagramas Mermaid (obligatorio cuando haya impacto estructural)
+
+El documento se renderiza con soporte Mermaid: **debes** incluir diagramas en bloques ` ```mermaid ` cuando aporten claridad.
+
+- **Visión de integración:** un `flowchart LR` en la sección «Diagrama de integración» mostrando NEW → endpoints/servicios → LEGACY (incl. BD legacy). Úsalo siempre que haya ≥1 item.
+- **Cambios de Modelo (§3):** `erDiagram` con las tablas/relaciones nuevas o modificadas (basado en la evidencia del grafo; no inventes tablas no implicadas por los items).
+- **Cambios de API/flujo (§4):** `sequenceDiagram` (actor → frontend → API legacy → BD) o `flowchart` para el flujo afectado.
+
+Reglas para los diagramas:
+- Sintaxis Mermaid válida y autocontenida (sin texto fuera de los nodos que rompa el parser).
+- Nombres de entidades/endpoints **reales** según la evidencia; si no hay evidencia, no dibujes la tabla y márcalo como pregunta abierta en su lugar.
+- Mantén cada diagrama enfocado (un objetivo por bloque); evita diagramas gigantes ilegibles.
 
 ## Reglas de redacción
 
