@@ -59,7 +59,7 @@ Devuelve **solo** el markdown del documento, sin texto antes ni después, sin va
   2. …
 - **Criterios de aceptación:** <derivados de acceptanceCriteria del item>
 - **Riesgos / preguntas abiertas:** <si el item es ambiguo o la evidencia es insuficiente>
-- **Diagrama (cuando aporte):** para items con cambios de esquema (§3) incluye un `erDiagram`; para items con cambios de flujo/API (§4) incluye un `sequenceDiagram` o `flowchart`.
+- **Diagrama(s):** **uno o más** bloques ` ```mermaid ` que expliquen visualmente *este* item. Elige el tipo que mejor lo represente (ver «Selección de diagrama por item»). Incluye al menos uno por item salvo que el item sea puramente textual/configuración sin estructura ni flujo (en ese caso, indícalo explícitamente con «Sin diagrama: no aporta»).
 
 ## Notas de implementación
 <convenciones, orden sugerido de ejecución, dependencias entre items>
@@ -69,14 +69,27 @@ Devuelve **solo** el markdown del documento, sin texto antes ni después, sin va
 
 El documento se renderiza con soporte Mermaid: **debes** incluir diagramas en bloques ` ```mermaid ` cuando aporten claridad.
 
-- **Visión de integración:** un `flowchart LR` en la sección «Diagrama de integración» mostrando NEW → endpoints/servicios → LEGACY (incl. BD legacy). Úsalo siempre que haya ≥1 item.
-- **Cambios de Modelo (§3):** `erDiagram` con las tablas/relaciones nuevas o modificadas (basado en la evidencia del grafo; no inventes tablas no implicadas por los items).
-- **Cambios de API/flujo (§4):** `sequenceDiagram` (actor → frontend → API legacy → BD) o `flowchart` para el flujo afectado.
+- **Visión de integración (global):** un `flowchart LR` en la sección «Diagrama de integración» mostrando NEW → endpoints/servicios → LEGACY (incl. BD legacy). Úsalo siempre que haya ≥1 item.
+- **Por cada item NEW-LEG (obligatorio salvo excepción textual):** incluye en su subsección «Diagrama(s)» el/los diagrama(s) que mejor expliquen *ese* requerimiento concreto, no una repetición del global.
+
+### Selección de diagrama por item
+
+Analiza la naturaleza de cada NEW-LEG y elige (puedes combinar varios si el item lo amerita):
+
+- **Cambio de Modelo / esquema (§3)** — tablas, columnas, relaciones, migraciones → **`erDiagram`** con las entidades/relaciones reales o propuestas (marca como propuesta lo que no exista en la evidencia).
+- **Interacción / contrato de API (§4)** — quién llama a quién, orden de llamadas, request/response, validaciones, errores (p. ej. 403 por margen) → **`sequenceDiagram`** (actor → frontend → API legacy → BD/servicio externo).
+- **Flujo de proceso con decisiones / ramas** — pasos, condiciones, alternativas (p. ej. bloqueo/autorización) → **`flowchart`** (TD o LR) con nodos de decisión.
+- **Transiciones de estado** — un recurso que cambia de estado (borrador→enviado→aprobado, etc.) → **`stateDiagram-v2`**.
+- **Sincronización / eventos / tiempo real** (webhooks, polling, recálculo) → **`sequenceDiagram`** o **`flowchart`** mostrando el disparador y la propagación.
+
+Si un item toca modelo **y** flujo, incluye dos diagramas (un `erDiagram` + un `sequenceDiagram`/`flowchart`).
 
 Reglas para los diagramas:
 - Sintaxis Mermaid válida y autocontenida (sin texto fuera de los nodos que rompa el parser).
-- Nombres de entidades/endpoints **reales** según la evidencia; si no hay evidencia, no dibujes la tabla y márcalo como pregunta abierta en su lugar.
-- Mantén cada diagrama enfocado (un objetivo por bloque); evita diagramas gigantes ilegibles.
+- **Etiquetas con caracteres especiales** (`/`, `{`, `}`, `:`, `()`, espacios largos) van **entre comillas dobles**: `API["GET /api/v1/.../{id}"]`. En `subgraph` usa `subgraph ID["Título con espacios"]` (palabra clave `subgraph`, espacio, ID sin espacios, título entre comillas).
+- **Define las aristas/relaciones** (no dejes nodos sueltos sin conectar): un diagrama sin conexiones no explica nada.
+- Nombres de entidades/endpoints **reales** según la evidencia; si no hay evidencia, dibújalo como **propuesta** y márcalo (no afirmes que existe).
+- Mantén cada diagrama enfocado (un objetivo por bloque); prefiere 2 diagramas pequeños a uno gigante ilegible.
 
 ## Reglas de redacción
 
