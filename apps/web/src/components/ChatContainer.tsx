@@ -76,6 +76,7 @@ export type ActiveTab =
   | "use-cases"
   | "user-stories"
   | "infra"
+  | "handoff-spec"
   | "adrs";
 
 const ACTIVE_TAB_LABELS: Record<ActiveTab, string> = {
@@ -94,6 +95,7 @@ const ACTIVE_TAB_LABELS: Record<ActiveTab, string> = {
   "use-cases": "Casos de Uso",
   "user-stories": "Historias de Usuario",
   infra: "Infraestructura",
+  "handoff-spec": "Handoff Spec",
   adrs: "Decisiones Arquitectónicas (ADRs)",
 };
 
@@ -116,6 +118,7 @@ const CHAT_COMPOSER_PLACEHOLDER: Record<ActiveTab, string> = {
   "use-cases": "Escenarios o actores…",
   "user-stories": "Historias o criterios…",
   infra: "Despliegue o infra…",
+  "handoff-spec": "Mensaje sobre el Handoff Spec…",
   adrs: "Decisiones técnicas…",
 };
 
@@ -135,6 +138,7 @@ const TABS_WITH_FORMAT_COMMAND: ReadonlySet<ActiveTab> = new Set([
   "use-cases",
   "user-stories",
   "infra",
+  "handoff-spec",
 ]);
 
 function getChatComposerPlaceholder(isBenchmarkFirstAction: boolean, activeTab: ActiveTab): string {
