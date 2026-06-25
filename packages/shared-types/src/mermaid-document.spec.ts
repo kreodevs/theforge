@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  isOrphanFlowchartLine,
   isOrphanSequenceDiagramLine,
+  mergeSplitMermaidContinuationFences,
   normalizeMermaidInDocument,
   repairFragmentedSequenceMermaidInDocument,
   stripMarkdownLeakFromMermaidDiagramBody,
@@ -41,6 +43,102 @@ sequenceDiagram
     assert.match(out, /API-->>Cliente: 200\n\`\`\`/);
     assert.doesNotMatch(out, /```\n### Svc->>/);
     assert.match(out, /### 1\.2 Siguiente sección/);
+  });
+});
+
+describe("isOrphanFlowchartLine", () => {
+  it("detecta aristas flowchart con prefijo ### o viñeta", () => {
+    assert.equal(isOrphanFlowchartLine("### ODOO[Odoo ERP] -->|Webhook| NEW"), true);
+    assert.equal(isOrphanFlowchartLine("- FE -->|GET /site-costs| NEW"), true);
+    assert.equal(isOrphanFlowchartLine("- BE --> NEW"), true);
+    assert.equal(isOrphanFlowchartLine("subgraph LEGACY[OBP]"), true);
+    assert.equal(isOrphanFlowchartLine("end"), true);
+    assert.equal(isOrphanFlowchartLine("- Evento en sistema origen: texto largo"), false);
+    assert.equal(isOrphanFlowchartLine("## Requerimientos técnicos por item"), false);
+  });
+});
+
+describe("mergeSplitMermaidContinuationFences", () => {
+  it("fusiona sequenceDiagram volcado en un 2.º fence ```dockerfile", () => {
+    const doc = `## Flujo
+
+\`\`\`mermaid
+sequenceDiagram
+    participant User as Ejecutivo
+    participant FE as Frontend OBP
+    participant API as Microservicio NEW
+\`\`\`
+
+\`\`\`dockerfile
+User->>FE: Aplica descuento
+- FE->>API: GET /precios/calcular
+- API-->>FE: 403 (margen < minimo)
+\`\`\`
+
+### Siguiente`;
+    const out = mergeSplitMermaidContinuationFences(doc);
+    assert.doesNotMatch(out, /```dockerfile/);
+    assert.match(out, /participant API as Microservicio NEW\n\s*User->>FE: Aplica descuento/);
+    assert.match(out, /API-->>FE: 403[\s\S]*```/);
+    // Un solo fence mermaid resultante.
+    assert.equal((out.match(/```mermaid/g) ?? []).length, 1);
+    assert.match(out, /### Siguiente/);
+  });
+
+  it("NO fusiona dos diagramas mermaid distintos (erDiagram + flowchart)", () => {
+    const doc = `\`\`\`mermaid
+erDiagram
+  MEDIO {
+    uuid id
+  }
+\`\`\`
+\`\`\`mermaid
+flowchart LR
+  A --> B
+\`\`\``;
+    const out = mergeSplitMermaidContinuationFences(doc);
+    assert.equal((out.match(/```mermaid/g) ?? []).length, 2);
+    assert.match(out, /erDiagram/);
+    assert.match(out, /flowchart LR/);
+  });
+});
+
+describe("normalizeMermaidInDocument — flowchart leak + split fence", () => {
+  it("re-absorbe aristas flowchart fugadas tras cierre prematuro del fence", () => {
+    const doc = `## Diagrama de integración
+
+\`\`\`mermaid
+flowchart LR
+    subgraph NEW["Microservicio Costos"]
+        API[API REST]
+    end
+    subgraph LEGACY["OBP"]
+        FE[Frontend OBP]
+    end
+\`\`\`
+### ODOO[Odoo ERP] -->|Webhook| NEW
+- FE -->|GET /site-costs| NEW
+- BE --> NEW
+
+## Requerimientos`;
+    const out = normalizeMermaidInDocument(doc);
+    assert.doesNotMatch(out, /```\n### ODOO/);
+    assert.match(out, /ODOO\[Odoo ERP\] -->\|Webhook\| NEW/);
+    assert.match(out, /FE -->\|GET \/site-costs\| NEW/);
+    assert.match(out, /BE --> NEW/);
+    assert.equal((out.match(/```mermaid/g) ?? []).length, 1);
+    assert.match(out, /## Requerimientos/);
+  });
+
+  it("limpia \\n literal y entrecomilla llaves en etiquetas de arista", () => {
+    const doc = `\`\`\`mermaid
+flowchart LR
+    BE[Backend OBP\\n(Node/Express)]
+    FE -->|GET /listas-precios/{id}/limites| NEW
+\`\`\``;
+    const out = normalizeMermaidInDocument(doc);
+    assert.doesNotMatch(out, /\\n/);
+    assert.match(out, /\|"GET \/listas-precios\/\{id\}\/limites"\|/);
   });
 });
 

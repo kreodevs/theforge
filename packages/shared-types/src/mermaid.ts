@@ -610,10 +610,34 @@ export function isOrphanSequenceDiagramLine(trimmed: string): boolean {
 
 function normalizeOrphanSequenceDiagramLine(line: string): string {
   let s = line.replace(/^(\s*)#{1,6}\s+/, "$1");
-  if (/^(\s*)[-*]\s+/.test(s) && /(-+>>|->>|--x|-x>)/.test(s)) {
+  // Drop a leaked markdown list prefix when the line is actually a diagram statement
+  // (sequence arrow OR flowchart arrow). Indentation is cosmetic in Mermaid.
+  if (/^(\s*)[-*]\s+/.test(s) && /(-+>>|->>|--x|-x>|--+>|==+>|-\.-+>|---)/.test(s)) {
     s = s.replace(/^(\s*)[-*]\s+/, "$1    ");
   }
   return s;
+}
+
+/**
+ * Línea markdown fuera del fence que en realidad es sintaxis flowchart/graph
+ * (aristas `A --> B`, `A -->|label| B`, `subgraph`, `end`). Permite re-absorber aristas
+ * que el LLM dejó tras cerrar el fence prematuramente (`### A -->|x| B`, `- A --> B`).
+ */
+export function isOrphanFlowchartLine(trimmed: string): boolean {
+  if (!trimmed) return false;
+  if (/^```/.test(trimmed)) return false;
+  if (/^#{1,2}\s+\d+[.)]/.test(trimmed)) return false;
+  if (/^#{1,6}\s+\d+\.\d+\s/.test(trimmed)) return false;
+  if (/^\|/.test(trimmed)) return false;
+  if (/^---+\s*$/.test(trimmed)) return false;
+
+  const core = sequenceLineCore(trimmed);
+  if (!core) return false;
+  if (/^(flowchart|graph)\b/i.test(core)) return false;
+  if (/^(subgraph|end|direction)\b/i.test(core)) return true;
+  // Edge: a node token followed by a flowchart arrow (-->, ---, ==>, -.->), optionally with |label|.
+  if (/^[A-Za-z0-9_]/.test(core) && /(--+>|==+>|-\.-+>|---)/.test(core)) return true;
+  return false;
 }
 
 /**
@@ -650,21 +674,27 @@ export function repairFragmentedSequenceMermaidInDocument(document: string): str
 
     const bodyText = bodyLines.join("\n");
     const isSequence = /sequenceDiagram/i.test(bodyText);
+    const isFlowchart = /^\s*(flowchart|graph)\b/im.test(bodyText);
+    const orphanPred = isSequence
+      ? isOrphanSequenceDiagramLine
+      : isFlowchart
+        ? isOrphanFlowchartLine
+        : null;
 
-    if (isSequence) {
+    if (orphanPred) {
       i++;
       while (i < lines.length) {
         const trimmed = lines[i]!.trim();
         if (!trimmed) {
           let j = i + 1;
           while (j < lines.length && !lines[j]!.trim()) j++;
-          if (j < lines.length && isOrphanSequenceDiagramLine(lines[j]!.trim())) {
+          if (j < lines.length && orphanPred(lines[j]!.trim())) {
             i++;
             continue;
           }
           break;
         }
-        if (!isOrphanSequenceDiagramLine(trimmed)) break;
+        if (!orphanPred(trimmed)) break;
         bodyLines.push(normalizeOrphanSequenceDiagramLine(lines[i]!));
         i++;
       }
@@ -677,6 +707,76 @@ export function repairFragmentedSequenceMermaidInDocument(document: string): str
   }
 
   return out.join("\n");
+}
+
+/** Una línea (sin prefijo de lista/encabezado) parece sintaxis de continuación Mermaid. */
+function isMermaidStatementCore(core: string): boolean {
+  if (!core) return false;
+  if (/(-+>>|->>|--x|-x>)/.test(core)) return true;
+  if (/(--+>|==+>|-\.-+>|---)/.test(core) && /^[A-Za-z0-9_]/.test(core)) return true;
+  if (
+    /^(participant|actor|Note\b|alt\b|opt\b|loop\b|par\b|critical\b|break\b|else\b|and\b|end\b|subgraph\b|direction\b|rect\b)/i.test(
+      core,
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * El cuerpo de un SEGUNDO fence es continuación del diagrama Mermaid anterior
+ * (el LLM cerró el fence antes de tiempo y volcó el resto en otro bloque con lenguaje
+ * arbitrario, p. ej. ```dockerfile). NO es continuación si arranca su propia declaración
+ * de diagrama (flowchart/erDiagram/…): eso son dos diagramas distintos, no se fusionan.
+ */
+function isMermaidContinuationBody(body: string): boolean {
+  const rawLines = body.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!rawLines.length) return false;
+  if (
+    /^(flowchart|graph|sequenceDiagram|erDiagram|classDiagram|stateDiagram(?:-v2)?|gantt|pie|gitGraph|mindmap|timeline|journey|quadrantChart|xychart)\b/i.test(
+      rawLines[0]!,
+    )
+  ) {
+    return false;
+  }
+  const cores = rawLines.map((l) => sequenceLineCore(l));
+  const hits = cores.filter(isMermaidStatementCore).length;
+  return hits >= 1 && hits >= cores.length * 0.5;
+}
+
+/** Quita prefijo de lista/encabezado fugado (`- `, `* `, `### `) de una línea de continuación. */
+function stripLeakedMermaidLinePrefix(line: string): string {
+  return line.replace(/^(\s*)(?:#{1,6}\s+|[-*]\s+)(?=\S)/, "$1    ").replace(/[ \t]+$/, "");
+}
+
+/**
+ * Fusiona un fence ```mermaid seguido de OTRO fence (lenguaje arbitrario o vacío) cuyo cuerpo es
+ * continuación del mismo diagrama. Causa típica: el LLM parte un sequenceDiagram/flowchart en dos
+ * bloques y etiqueta el segundo como ```dockerfile / ```text. Itera para cadenas de >2 fences.
+ */
+export function mergeSplitMermaidContinuationFences(document: string): string {
+  if (!document?.trim()) return document ?? "";
+  const re =
+    /```mermaid[ \t]*\n([\s\S]*?)\n?```[ \t]*\n+```[a-zA-Z0-9_+#.-]*[ \t]*\n([\s\S]*?)\n?```/;
+  let prev: string | null = null;
+  let cur = document;
+  let guard = 0;
+  while (prev !== cur && guard < 30) {
+    prev = cur;
+    cur = cur.replace(re, (match, b1: string, b2: string) => {
+      if (!isMermaidContinuationBody(b2)) return match;
+      const continuation = b2
+        .split("\n")
+        .map(stripLeakedMermaidLinePrefix)
+        .join("\n")
+        .replace(/^\n+|\n+$/g, "");
+      const merged = `${b1.replace(/[ \t\n]+$/, "")}\n${continuation}`.replace(/\n{3,}/g, "\n\n");
+      return "```mermaid\n" + merged + "\n```";
+    });
+    guard++;
+  }
+  return cur;
 }
 
 function mermaidMarkdownLeakLine(trimmed: string): boolean {
@@ -839,11 +939,22 @@ export function normalizeMermaidDiagramBody(raw: string): string {
       });
     }
 
+    // `\n` literal (dos caracteres backslash+n) dentro de un cuerpo Mermaid rompe el render
+    // (aparece como texto). Mermaid usa `<br/>` para salto de línea; aquí basta un espacio.
+    line = line.replace(/\\n/g, " ");
+
     // Etiquetas de nodo `[...]` / `(...)` con llaves (paths tipo `/{id}`) rompen el parser:
     // entrecomillar el texto si aún no lo está. No afecta nodos diamante `id{texto}` (open ≠ [ ( ).
     line = line.replace(
       /(\[|\()(?!["(])([^"\]\)]*[{}][^"\]\)]*)(\]|\))/g,
       (_m, open: string, label: string, close: string) => `${open}"${label.trim()}"${close}`,
+    );
+
+    // Etiquetas de arista `|...|` con llaves (paths tipo `/{id}`) también rompen el parser:
+    // entrecomillar si aún no lo está.
+    line = line.replace(
+      /\|(?!")([^"|]*[{}][^"|]*)\|/g,
+      (_m, label: string) => `|"${label.trim()}"|`,
     );
 
     // Labels entre comillas: quitar markdown ** y recortar
@@ -915,7 +1026,10 @@ export function normalizeMermaid(raw: string): string {
 /** Normaliza cada bloque mermaid del documento sin tocar el resto del markdown. */
 export function normalizeMermaidInDocument(document: string): string {
   if (!document?.trim()) return document ?? "";
-  const merged = repairFragmentedSequenceMermaidInDocument(document);
+  // 1) Fusiona diagramas partidos en un 2.º fence con lenguaje arbitrario (```dockerfile, ```text…).
+  let merged = mergeSplitMermaidContinuationFences(document);
+  // 2) Re-absorbe líneas (sequence/flowchart) que quedaron fuera tras un cierre prematuro del fence.
+  merged = repairFragmentedSequenceMermaidInDocument(merged);
   return merged.replace(/```mermaid\s*\n([\s\S]*?)```/gi, (_block, inner: string) => {
     const { diagram: rawDiagram, trailing } = splitMermaidBodyAndTrailingProse(inner);
     const body =
