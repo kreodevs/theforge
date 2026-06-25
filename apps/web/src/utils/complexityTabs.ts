@@ -46,8 +46,10 @@ export function isTabVisibleForComplexity(
   // Integración cross-project NEW ↔ LEGACY
   if (tab === "integration") return true;
 
-  // Handoff Spec: artefacto técnico que consume el equipo LEGACY (Brownfield).
-  if (tab === "handoff-spec") return pt === "LEGACY";
+  // Handoff Spec: artefacto de acuerdo mutuo NEW ↔ LEGACY. El NEW (greenfield) valida que está
+  // modelando bien la integración; el LEGACY (brownfield) corrobora el impacto. Visible en ambos
+  // lados, igual que la pestaña Integración.
+  if (tab === "handoff-spec") return true;
 
   if (c === "HIGH") return true;
 

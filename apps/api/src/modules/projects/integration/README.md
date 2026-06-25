@@ -60,6 +60,8 @@ Body (`abandonIntegrationHandoffBodySchema`):
 
 `integration-agent.service.ts` (`IntegrationAgentService`) turns the registered NEW-LEG items into a dynamic **`handoff-spec.md`** (Brownfield technical breakdown), persisted as `Stage.handoffSpecContent` (flattened to Project like other deliverables) and shown in the Workshop **Handoff Spec** tab.
 
+- **Mutual-agreement artifact (both sides):** the **Handoff Spec** tab is visible on **NEW and LEGACY** projects (like the *Integración* tab). NEW (greenfield) validates it is modeling the integration correctly; LEGACY (brownfield) corroborates the impact. Each side persists its own `handoffSpecContent` and re-syncs independently.
+- **Item resolution (`resolvePromptContext`):** NEW reads items from its own `integrationHandoff`. LEGACY reads them from the **promoted stage snapshot** (stage 2+); **before promotion** it falls back to the linked NEW project's **SENT/ACCEPTED** items, so the spec can be produced on stage 1 (AS-IS) for early agreement.
 - **Governance ("Regla de Oro"):** only structures/deepens existing items; never creates handoff items.
 - **Plan-then-Execute redactor:** `apps/api/src/modules/ai-analysis/nodes/integration-agent.node.ts` (`runIntegrationAgent`) — probes the LEGACY graph per item (`validate_before_edit` / `semantic_search`) and synthesizes the doc against MDD §3 (Model) / §4 (API).
 - **Prompt:** `apps/api/src/modules/ai/prompts/integration-agent-prompt.md`.

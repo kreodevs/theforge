@@ -4264,7 +4264,7 @@ export default function WorkshopView({
               <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
                 <div className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-3 py-2.5">
                   <p className="min-w-0 flex-1 text-xs leading-relaxed text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
-                    <strong>Handoff Spec</strong> — el IntegrationAgent traduce los items NEW-LEG registrados en la pestaña <em>Integración</em> en requerimientos técnicos (§3 Modelo / §4 API) para el equipo legacy. No crea items: solo los organiza y profundiza con evidencia del grafo.
+                    <strong>Handoff Spec</strong> — el IntegrationAgent traduce los items NEW-LEG registrados en la pestaña <em>Integración</em> en requerimientos técnicos (§3 Modelo / §4 API). Artefacto de acuerdo mutuo: el equipo NEW valida que modela bien la integración y el legacy corrobora el impacto. No crea items: solo los organiza y profundiza con evidencia del grafo.
                   </p>
                   <Button
                     type="button"

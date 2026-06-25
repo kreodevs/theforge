@@ -12,6 +12,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Fixed
 
+- **IntegrationAgent — handoff-spec visible y generable en ambos proyectos:** la pestaña **Handoff Spec** ahora aparece en proyectos **NEW y LEGACY** (no solo LEGACY), como artefacto de acuerdo mutuo (el NEW valida el modelado de la integración; el LEGACY corrobora el impacto). Además, `resolvePromptContext` ya no devuelve «sin items» en la etapa 1 (AS-IS) del legacy: cuando no hay snapshot de etapa promovida (2+), usa como *fallback* los items **SENT/ACCEPTED** del proyecto NEW enlazado, permitiendo sincronizar antes de promover una etapa.
 - **Deploy Dokploy — API exit 1 tras build OK:** Entrypoint endurecido: `safe-schema-sync.sql` antes de `migrate deploy`, `resolve --applied` cuando `db push` adelantó columnas (`agentGovernanceContent`, merge suite), host Postgres desde `DATABASE_URL` (no `localhost`), validación explícita de `TOKEN_MASTER_KEYS` / `CORS_ORIGINS` vacío, log en `bootstrap().catch`.
 - **Nest circular dependency (merge):** `ProjectsModule` importaba `AiAnalysisModule` solo por `Phase0InterviewService` → `Phase0Module` dedicado; rompe ciclo `AiAnalysisModule ↔ ProjectsModule`.
 - **safe-schema-sync:** `FavoriteProject_userId_projectId_key` idempotente si ya existe como índice; `postgresql-client` en imagen API; fallback `mcpSecret` vía Prisma (sin `psql`).
