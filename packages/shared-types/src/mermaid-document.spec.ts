@@ -116,6 +116,43 @@ flowchart TD
     assert.match(out, /```\n\n- 1\. \*\*Evento/);
   });
 
+  it("no rompe `subgraph ID[Título con espacios]` (no lo pega como subgraph_ID)", () => {
+    const doc = `## Diagrama
+
+\`\`\`mermaid
+flowchart LR
+    subgraph NEW[Microservicio Costos y Listas de Precios]
+        MC1[(DB costos)]
+        API_CostTypes[GET /api/v1/cost-types]
+    end
+    subgraph LEGACY[OBP]
+        FE[Frontend oohbp2]
+    end
+    API_CostTypes --> FE
+\`\`\`
+`;
+    const out = normalizeMermaidInDocument(doc);
+    assert.match(out, /subgraph NEW\[Microservicio Costos y Listas de Precios\]/);
+    assert.match(out, /subgraph LEGACY\[OBP\]/);
+    assert.doesNotMatch(out, /subgraph_NEW/);
+    assert.doesNotMatch(out, /subgraph_LEGACY/);
+  });
+
+  it("entrecomilla etiquetas con llaves (paths /{id}) que rompen el parser", () => {
+    const doc = `## Diagrama
+
+\`\`\`mermaid
+flowchart LR
+    API_ListasPrecios[GET /api/v1/listas-precios/{id}/limites]
+    MC1[(DB costos)]
+\`\`\`
+`;
+    const out = normalizeMermaidInDocument(doc);
+    assert.match(out, /API_ListasPrecios\["GET \/api\/v1\/listas-precios\/\{id\}\/limites"\]/);
+    // El nodo cilindro sin llaves no se entrecomilla.
+    assert.match(out, /MC1\[\(DB costos\)\]/);
+  });
+
   it("repara sequenceDiagram con ### y viñetas fuera del fence", () => {
     const doc = `### 1.1 Cálculo
 
