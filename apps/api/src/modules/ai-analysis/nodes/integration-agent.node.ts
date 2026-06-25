@@ -38,6 +38,11 @@ export interface IntegrationAgentInput {
   mddSection3?: string;
   /** MDD §4 (API / contracts) excerpt for the active stage. */
   mddSection4?: string;
+  /**
+   * NEW project's API contracts (and §4 excerpt) where the proposed endpoints are defined.
+   * The redactor must cite the exact method+path from here instead of writing "el endpoint del microservicio".
+   */
+  newApiContext?: string;
   /** AS-IS legacy context block (optional). */
   asIsContext?: string;
 }
@@ -51,7 +56,10 @@ export interface IntegrationAgentResult {
 
 const MAX_ITEMS_PROBED = 12;
 const MAX_SYMBOLS_PER_ITEM = 2;
-const MAX_EVIDENCE_CHARS_PER_ITEM = 2400;
+const MAX_EVIDENCE_CHARS_PER_ITEM = 3600;
+const MAX_ASK_CODEBASE_CHARS = 1800;
+const MAX_SEMANTIC_CHARS = 1200;
+const MAX_VALIDATE_CHARS = 1200;
 
 /** PascalCase / camelCase identifiers and back-tick / quoted symbols from free text. */
 export function extractCandidateSymbols(text: string): string[] {
@@ -77,39 +85,128 @@ export function extractCandidateSymbols(text: string): string[] {
   return [...found].slice(0, MAX_SYMBOLS_PER_ITEM);
 }
 
+const KEYWORD_STOPWORDS = new Set([
+  "para",
+  "desde",
+  "como",
+  "cada",
+  "este",
+  "esta",
+  "esto",
+  "debe",
+  "deben",
+  "sobre",
+  "entre",
+  "donde",
+  "cuando",
+  "todos",
+  "todas",
+  "asociados",
+  "asociadas",
+  "nuevo",
+  "nueva",
+  "visualizacion",
+  "configuracion",
+]);
+
 /**
- * EXECUTE phase: probe the legacy graph for real technical impact of one item.
- * Tries `validate_before_edit` per candidate symbol; falls back to `semantic_search`.
+ * Domain keywords for `semantic_search`: snake_case identifiers (e.g. `medio_costo`, `catalogo_costos`),
+ * API path segments, and significant nouns. Complements `extractCandidateSymbols` (PascalCase only),
+ * which misses data-model tokens that matter for §3 (¿existe la tabla X?).
+ */
+export function extractDomainKeywords(text: string): string[] {
+  if (!text) return [];
+  const found = new Set<string>();
+
+  const snake = text.match(/\b[a-z][a-z0-9]+_[a-z0-9_]+\b/g);
+  if (snake) snake.forEach((s) => found.add(s));
+
+  const pathSegments = text.match(/\/[a-z][a-z0-9-]{2,}(?:\/[a-z0-9{}-]+)*/gi);
+  if (pathSegments) {
+    for (const p of pathSegments) {
+      p.split("/")
+        .map((seg) => seg.replace(/[{}]/g, "").trim())
+        .filter((seg) => seg.length >= 3 && !/^v\d+$/i.test(seg) && seg !== "api")
+        .forEach((seg) => found.add(seg));
+    }
+  }
+
+  const words = text.toLowerCase().match(/\b[a-záéíóúñ][a-záéíóúñ0-9]{4,}\b/gi);
+  if (words) {
+    for (const w of words) {
+      const lw = w.toLowerCase();
+      if (!KEYWORD_STOPWORDS.has(lw)) found.add(lw);
+    }
+  }
+
+  return [...found].slice(0, 8);
+}
+
+/** Targeted ask_codebase question to ground §3 (model) and §4 (API) impact for one item. */
+export function buildItemQuestion(item: IntegrationHandoffItem, legacyProjectName: string): string {
+  return [
+    `En el sistema legacy "${legacyProjectName}", analiza el impacto técnico de este requerimiento propuesto por el equipo nuevo:`,
+    `"${item.title}". ${item.description}`,
+    "Responde con evidencia del código y el modelo de datos indexados:",
+    "1) ¿Qué tablas, columnas o relaciones EXISTENTES están implicadas? ¿Ya existe una relación/tabla para esto o hay que crearla?",
+    "2) ¿Qué endpoints, servicios o contratos actuales se ven afectados o deben crearse?",
+    "3) ¿Qué archivos/símbolos concretos son los puntos de integración?",
+    "Si algo NO existe en el código indexado, dilo explícitamente en lugar de suponerlo.",
+  ].join("\n");
+}
+
+/**
+ * EXECUTE phase: probe the legacy graph for the real technical impact of one item, combining
+ * several AriadneSpecs tools so the redactor can ground §3/§4 instead of guessing:
+ * - `ask_codebase`: natural-language Q&A (best for "¿existe la tabla/relación X?").
+ * - `semantic_search`: domain keywords incl. snake_case table-like tokens.
+ * - `validate_before_edit`: per PascalCase symbol detected in the item text.
+ * All tools run in parallel and failures degrade gracefully (empty evidence → flagged in the doc).
  */
 async function gatherEvidenceForItem(
   item: IntegrationHandoffItem,
   theforge: TheForgeService,
   theforgeProjectId: string,
+  legacyProjectName: string,
 ): Promise<HandoffItemEvidence> {
-  const symbols = extractCandidateSymbols(`${item.title}\n${item.description}`);
-  const parts: string[] = [];
+  const itemText = `${item.title}\n${item.description}`;
+  const symbols = extractCandidateSymbols(itemText);
+  const keywords = extractDomainKeywords(itemText);
 
-  for (const symbol of symbols) {
+  const askPromise = (async () => {
+    try {
+      const out = await theforge.askCodebase(buildItemQuestion(item, legacyProjectName), theforgeProjectId);
+      const t = out?.trim();
+      return t ? `#### ask_codebase\n${t.slice(0, MAX_ASK_CODEBASE_CHARS)}` : "";
+    } catch {
+      return "";
+    }
+  })();
+
+  const semanticPromise = (async () => {
+    try {
+      const query = (keywords.length ? keywords.join(" ") : `${item.title} ${item.description}`).slice(0, 240);
+      const out = await theforge.semanticSearch(query, theforgeProjectId, 6);
+      const t = out?.trim();
+      return t ? `#### semantic_search (${keywords.join(", ") || "—"})\n${t.slice(0, MAX_SEMANTIC_CHARS)}` : "";
+    } catch {
+      return "";
+    }
+  })();
+
+  const validatePromises = symbols.map(async (symbol) => {
     try {
       const out = await theforge.validateBeforeEdit(symbol, theforgeProjectId);
-      if (out?.trim()) parts.push(`#### validate_before_edit(${symbol})\n${out.trim()}`);
+      const t = out?.trim();
+      return t ? `#### validate_before_edit(${symbol})\n${t.slice(0, MAX_VALIDATE_CHARS)}` : "";
     } catch {
-      // Tool unavailable for this symbol — continue.
+      return "";
     }
-  }
+  });
 
-  if (parts.length === 0) {
-    try {
-      const query = `${item.title}. ${item.description}`.slice(0, 240);
-      const out = await theforge.semanticSearch(query, theforgeProjectId, 6);
-      if (out?.trim()) parts.push(`#### semantic_search\n${out.trim()}`);
-    } catch {
-      // No evidence available.
-    }
-  }
-
-  const evidence = parts.join("\n\n").slice(0, MAX_EVIDENCE_CHARS_PER_ITEM);
-  return { newLegId: item.id, probedSymbols: symbols, evidence };
+  const results = await Promise.all([askPromise, semanticPromise, ...validatePromises]);
+  const evidence = results.filter(Boolean).join("\n\n").slice(0, MAX_EVIDENCE_CHARS_PER_ITEM);
+  return { newLegId: item.id, probedSymbols: [...symbols, ...keywords], evidence };
 }
 
 function renderItemBlock(item: IntegrationHandoffItem, ev: HandoffItemEvidence | undefined): string {
@@ -150,6 +247,11 @@ export function buildIntegrationAgentContext(
   if (input.mddSection4?.trim()) {
     sections.push(`## MDD §4 — API / Contratos (etapa activa)\n${input.mddSection4.trim()}`);
   }
+  if (input.newApiContext?.trim()) {
+    sections.push(
+      `## CONTRATOS DE API DEL PROYECTO NEW (fuente de endpoints — cita el método y ruta EXACTOS)\n${input.newApiContext.trim()}`,
+    );
+  }
   if (input.asIsContext?.trim()) {
     sections.push(`## Contexto AS-IS del legacy\n${input.asIsContext.trim()}`);
   }
@@ -186,7 +288,9 @@ export async function runIntegrationAgent(input: IntegrationAgentInput): Promise
   const canProbe = !!input.theforge?.isConfigured() && !!input.theforgeProjectId?.trim();
   if (canProbe) {
     const tfPid = input.theforgeProjectId!.trim();
-    evidence = await Promise.all(items.map((item) => gatherEvidenceForItem(item, input.theforge!, tfPid)));
+    evidence = await Promise.all(
+      items.map((item) => gatherEvidenceForItem(item, input.theforge!, tfPid, input.legacyProjectName)),
+    );
   }
 
   const itemsWithoutEvidence = items

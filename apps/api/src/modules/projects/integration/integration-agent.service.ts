@@ -75,6 +75,9 @@ export class IntegrationAgentService {
     const mddSection3 = extractMddSection(mdd, 3);
     const mddSection4 = extractMddSection(mdd, 4);
 
+    // Endpoints the NEW team proposes live in the NEW project's docs, not the legacy graph.
+    const newApiContext = await this.gatherNewApiContext(isLegacy, project, stage);
+
     const llm = await this.aiFactory.createForUser(userId);
     const result = await runIntegrationAgent({
       llm,
@@ -85,6 +88,7 @@ export class IntegrationAgentService {
       newProjectName,
       mddSection3,
       mddSection4,
+      newApiContext,
     });
 
     const content = cleanDocumentContent(result.markdown);
@@ -104,7 +108,56 @@ export class IntegrationAgentService {
       itemsWithoutEvidence: result.itemsWithoutEvidence,
     };
   }
+
+  /**
+   * Gathers the NEW project's API contracts (deliverable) + MDD §4 so the redactor can cite the
+   * exact endpoint each handoff item proposes to consume, instead of writing a generic phrase.
+   * - LEGACY sync: reads the linked NEW project (stage → project deliverable fallback).
+   * - NEW sync: reads the project being synced itself.
+   * Returns undefined when no NEW API document is available.
+   */
+  private async gatherNewApiContext(
+    isLegacy: boolean,
+    project: { linkedNewProjectId: string | null; apiContractsContent: string | null },
+    stage: { linkedNewProjectId: string | null; apiContractsContent: string | null; mddContent: string | null },
+  ): Promise<string | undefined> {
+    let apiContracts = "";
+    let newMdd = "";
+
+    if (isLegacy) {
+      const newProjectId = stage.linkedNewProjectId ?? project.linkedNewProjectId;
+      if (!newProjectId) return undefined;
+      const np = await this.prisma.project.findUnique({
+        where: { id: newProjectId },
+        select: {
+          apiContractsContent: true,
+          stages: {
+            orderBy: { ordinal: "asc" },
+            select: { ordinal: true, workflowStatus: true, apiContractsContent: true, mddContent: true },
+          },
+        },
+      });
+      if (!np) return undefined;
+      const npStage = pickPrimaryStage(np.stages);
+      apiContracts = (npStage?.apiContractsContent ?? np.apiContractsContent ?? "").trim();
+      newMdd = npStage?.mddContent ?? "";
+    } else {
+      apiContracts = (stage.apiContractsContent ?? project.apiContractsContent ?? "").trim();
+      newMdd = stage.mddContent ?? "";
+    }
+
+    const newMddSection4 = extractMddSection(newMdd, 4);
+    const blocks: string[] = [];
+    if (apiContracts) blocks.push(`### Contratos de API (proyecto NEW)\n${apiContracts.slice(0, MAX_NEW_API_CONTRACTS_CHARS)}`);
+    if (newMddSection4?.trim()) {
+      blocks.push(`### MDD §4 — API (proyecto NEW)\n${newMddSection4.trim().slice(0, MAX_NEW_API_MDD_CHARS)}`);
+    }
+    return blocks.length ? blocks.join("\n\n") : undefined;
+  }
 }
+
+const MAX_NEW_API_CONTRACTS_CHARS = 9000;
+const MAX_NEW_API_MDD_CHARS = 4000;
 
 /**
  * Extracts a numbered MDD section (e.g. "## 3. Modelo de Datos") up to the next numbered heading.
