@@ -830,9 +830,21 @@ export function normalizeMermaidDiagramBody(raw: string): string {
     if (/^\s*(alt|opt|loop|par|critical|break)\s/.test(line.trim())) openBlocks++;
     if (/^\s*end\s*$/.test(line.trim())) openBlocks = Math.max(0, openBlocks - 1);
 
-    line = line.replace(/(\w+)\s+(\w+)(\[|\()/g, (_match, p1: string, p2: string, p3: string) => {
-      return `${cleanId(p1)}_${cleanId(p2)}${p3}`;
-    });
+    // Node IDs con espacios → underscore (`My Node[x]` → `My_Node[x]`), PERO no en líneas de
+    // bloque cuyo primer token es una palabra clave: `subgraph NEW[Título]` debe seguir siendo
+    // `subgraph NEW[...]`, no `subgraph_NEW[...]` (esto último rompe el parser de Mermaid).
+    if (!/^\s*(subgraph|state|class|namespace|direction)\b/i.test(line)) {
+      line = line.replace(/(\w+)\s+(\w+)(\[|\()/g, (_match, p1: string, p2: string, p3: string) => {
+        return `${cleanId(p1)}_${cleanId(p2)}${p3}`;
+      });
+    }
+
+    // Etiquetas de nodo `[...]` / `(...)` con llaves (paths tipo `/{id}`) rompen el parser:
+    // entrecomillar el texto si aún no lo está. No afecta nodos diamante `id{texto}` (open ≠ [ ( ).
+    line = line.replace(
+      /(\[|\()(?!["(])([^"\]\)]*[{}][^"\]\)]*)(\]|\))/g,
+      (_m, open: string, label: string, close: string) => `${open}"${label.trim()}"${close}`,
+    );
 
     // Labels entre comillas: quitar markdown ** y recortar
     line = line.replace(/"([^"]*)"/g, (_m, label: string) => {
