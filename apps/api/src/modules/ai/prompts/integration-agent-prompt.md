@@ -86,11 +86,14 @@ Analiza la naturaleza de cada NEW-LEG y elige (puedes combinar varios si el item
 Si un item toca modelo **y** flujo, incluye dos diagramas (un `erDiagram` + un `sequenceDiagram`/`flowchart`).
 
 Reglas para los diagramas:
+- **UN solo bloque por diagrama.** Cada diagrama va completo dentro de **un único** fence ` ```mermaid … ``` `. **NUNCA** lo partas en dos bloques, **NUNCA** cierres el fence a mitad del diagrama, y **NUNCA** uses otra etiqueta de lenguaje (` ```dockerfile `, ` ```text `, ` ```bash `…): la continuación de un diagrama Mermaid SIEMPRE es ` ```mermaid `. Las aristas/mensajes van **dentro** del fence, nunca como lista (`- A --> B`) ni como encabezado (`### A --> B`) debajo del bloque.
+- **Sin líneas en blanco dentro del diagrama** y **sin `\n` literal** en las etiquetas: para texto multilínea usa `<br/>` (p. ej. `BE["Backend OBP<br/>Node/Express"]`), nunca `\n`.
 - Sintaxis Mermaid válida y autocontenida (sin texto fuera de los nodos que rompa el parser).
-- **Etiquetas con caracteres especiales** (`/`, `{`, `}`, `:`, `()`, espacios largos) van **entre comillas dobles**: `API["GET /api/v1/.../{id}"]`. En `subgraph` usa `subgraph ID["Título con espacios"]` (palabra clave `subgraph`, espacio, ID sin espacios, título entre comillas).
+- **Etiquetas con caracteres especiales** (`/`, `{`, `}`, `:`, `()`, espacios largos) van **entre comillas dobles**, tanto en nodos como en aristas: `API["GET /api/v1/.../{id}"]`, `FE -->|"GET /listas-precios/{id}/limites"| NEW`. En `subgraph` usa `subgraph ID["Título con espacios"]` (palabra clave `subgraph`, espacio, ID sin espacios, título entre comillas).
+- **Declara cada nodo/participante UNA sola vez** con un ID estable y reutilízalo en las aristas; **no dupliques entidades** (no crees `FE` y `Frontend` y `FrontendOBP` para lo mismo). En `erDiagram` cada entidad aparece una vez; las tablas puente (N:M) se declaran una vez y se relacionan con ambas entidades.
 - **Define las aristas/relaciones** (no dejes nodos sueltos sin conectar): un diagrama sin conexiones no explica nada.
 - Nombres de entidades/endpoints **reales** según la evidencia; si no hay evidencia, dibújalo como **propuesta** y márcalo (no afirmes que existe).
-- Mantén cada diagrama enfocado (un objetivo por bloque); prefiere 2 diagramas pequeños a uno gigante ilegible.
+- Mantén cada diagrama enfocado (un objetivo por bloque); prefiere 2 diagramas pequeños (cada uno en su propio fence ` ```mermaid `) a uno gigante ilegible.
 
 ## Reglas de redacción
 
