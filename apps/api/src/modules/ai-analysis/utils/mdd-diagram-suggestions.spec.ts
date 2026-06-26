@@ -26,6 +26,17 @@ describe("sqlToErDiagramContent", () => {
     assert.doesNotMatch(out!, /uuid default/i);
     assert.match(out!, /tenants \|\|--o\{ tenant_users/);
   });
+
+  it("no emite PK FK cuando la columna es PK y FK", () => {
+    const sql = `CREATE TABLE users (
+  id UUID PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_id UUID NOT NULL REFERENCES tenants(id)
+);`;
+    const out = sqlToErDiagramContent(sql);
+    assert.ok(out);
+    assert.doesNotMatch(out!, /\bPK\s+FK\b/i);
+    assert.match(out!, /uuid id PK/);
+  });
 });
 
 describe("wrapErDiagramAsMermaidFence", () => {

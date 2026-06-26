@@ -36,7 +36,7 @@ Comparar bloques **CREATE TABLE** con el **erDiagram**.
 
 - **Nombres:** Tablas y columnas deben ser **idénticos**. No usar abreviaturas en el diagrama si no están en el SQL.
 - **Tipos:** Si un ID es UUID en SQL, en Mermaid debe ser `uuid`. Tipos alineados.
-- **Sintaxis (CRÍTICO):** En Mermaid **no** uses comas entre PK y FK. Correcto: `uuid user_id PK FK`. Incorrecto: `user_id PK, FK`.
+- **Sintaxis (CRÍTICO):** En erDiagram Mermaid admite **un solo** marcador por atributo (`PK` **o** `FK`). Si la columna es PK y FK, usa solo `PK`. Incorrecto: `user_id PK, FK` o `user_id PK FK`.
 - **Relaciones:** Las líneas de relación (`||--o{`) deben usar las **columnas FOREIGN KEY** definidas en el SQL (ej. `user_id`, `application_id`), no campos de texto como "nombre".
 
 Registra en `critical_gaps` desincronizaciones y en `syntax_errors` errores de sintaxis Mermaid (ej. "Mermaid: comas entre PK y FK en atributos; usar formato sin comas").
@@ -120,7 +120,7 @@ Responde **solo** con un JSON válido. **Todos los textos en español.**
     }
   ],
   "syntax_errors": [
-    "Mermaid: no usar comas entre PK y FK; en la línea del erDiagram usar por ejemplo uuid user_id PK FK"
+    "Mermaid erDiagram: un solo marcador PK o FK por atributo; si es PK+FK usar solo PK (nunca PK FK ni PK, FK)"
   ],
   "infrastructure_ready": false
 }

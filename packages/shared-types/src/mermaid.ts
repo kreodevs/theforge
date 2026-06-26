@@ -532,15 +532,17 @@ function normalizeMermaidCommas(text: string): string {
 }
 
 /**
- * erDiagram: `uuid user_id PK, FK` (coma) rompe el render; la forma válida es `PK FK` (espacio).
- * Repara variantes comunes del LLM sin perder la anotación FK.
+ * erDiagram: Mermaid admite un solo marcador PK o FK por atributo.
+ * `uuid user_id PK, FK` y `uuid id PK FK` rompen el parser; si la columna es PK+FK, conservamos PK.
  */
 export function repairErDiagramPkFkCommas(content: string): string {
   if (!content?.trim()) return content ?? "";
   const normalized = normalizeMermaidCommas(content);
   return normalized
-    .replace(/\bPK\s*,\s*FK\b/gi, "PK FK")
-    .replace(/\bFK\s*,\s*PK\b/gi, "PK FK");
+    .replace(/\bPK\s*,\s*FK\b/gi, "PK")
+    .replace(/\bFK\s*,\s*PK\b/gi, "PK")
+    .replace(/\bPK\s+FK\b/gi, "PK")
+    .replace(/\bFK\s+PK\b/gi, "PK");
 }
 
 /** Si el cuerpo parece erDiagram pero falta la declaración inicial, la antepone. */
@@ -577,8 +579,8 @@ export function normalizeErDiagramPgTypes(content: string): string {
     .replace(/\btimestamp\b/gi, "datetime")
     .replace(/\binet\b/gi, "string")
     .replace(/\bjsonb\b/gi, "json")
-    .replace(/\b(PK)\s*,\s*FK\b/gi, "PK FK")
-    .replace(/\b(FK)\s*,\s*PK\b/gi, "PK FK");
+    .replace(/\bPK\s*,\s*FK\b/gi, "PK")
+    .replace(/\bFK\s*,\s*PK\b/gi, "PK");
 }
 
 /**

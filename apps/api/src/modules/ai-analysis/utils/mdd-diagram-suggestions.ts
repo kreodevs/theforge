@@ -171,7 +171,7 @@ function buildErDiagram(
     lines.push(`${indentEntity}${entityName} {`);
     for (const c of t.columns) {
       const isFk = relations.some((r) => r.from === t.name && r.fkColumn === c.name);
-      const keySuffix = c.pk && isFk ? " PK FK" : c.pk ? " PK" : isFk ? " FK" : "";
+      const keySuffix = c.pk ? " PK" : isFk ? " FK" : "";
       lines.push(`${indentAttr}${c.type} ${c.name}${keySuffix}`);
     }
     lines.push(`${indentEntity}}`);
@@ -212,7 +212,7 @@ function suggestAuthStateDiagram(section3Body: string): DiagramSuggestion | null
 }
 
 /**
- * Normaliza diagrama erDiagram: timestamptz→datetime, PK,F → PK FK, 2 espacios ASCII.
+ * Normaliza diagrama erDiagram: timestamptz→datetime, PK/FK dobles→PK, 2 espacios ASCII.
  */
 export function normalizeErDiagramForMermaid(content: string): string {
   if (!content?.trim()) return content;

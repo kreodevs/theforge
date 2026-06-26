@@ -411,10 +411,34 @@ describe("validateMermaid flowchart subgraph", () => {
   });
 });
 
+describe("normalizeMermaidDiagramBody erDiagram PK/FK", () => {
+  it("repara diagrama auth con id PK FK persistido", () => {
+    const raw = `erDiagram
+  tenants {
+    uuid id PK
+    string name
+  }
+  users {
+    uuid id PK FK
+    uuid tenant_id FK
+    string email
+  }
+  sessions {
+    uuid id PK FK
+    uuid user_id FK
+    datetime expires_at
+  }`;
+    const out = normalizeMermaidDiagramBody(raw);
+    assert.doesNotMatch(out, /\bPK\s+FK\b/i);
+    assert.match(out, /uuid id PK/);
+  });
+});
+
 describe("repairErDiagramPkFkCommas", () => {
-  it("convierte PK, FK en PK FK", () => {
-    const out = repairErDiagramPkFkCommas("uuid tenant_id PK, FK");
-    assert.equal(out, "uuid tenant_id PK FK");
+  it("colapsa PK, FK y PK FK a un solo marcador PK", () => {
+    assert.equal(repairErDiagramPkFkCommas("uuid tenant_id PK, FK"), "uuid tenant_id PK");
+    assert.equal(repairErDiagramPkFkCommas("uuid id PK FK"), "uuid id PK");
+    assert.equal(repairErDiagramPkFkCommas("uuid id FK PK"), "uuid id PK");
   });
 
   it("ensureErDiagramHeader antepone erDiagram si falta", () => {
@@ -432,13 +456,13 @@ describe("stripErDiagramSqlDefaultArtifacts", () => {
     string email
   }
   tenant_users {
-    uuid id PK FK
+    uuid id PK
     uuid default FK
     uuid tenant_id FK
   }`;
     const out = stripErDiagramSqlDefaultArtifacts(raw);
     assert.doesNotMatch(out, /uuid default/i);
-    assert.match(out, /uuid id PK FK/);
+    assert.match(out, /uuid id PK/);
     assert.match(out, /string email/);
   });
 });

@@ -7,14 +7,15 @@ import {
 } from "./mdd-pre-render.js";
 
 describe("sanitizeMermaidBlock erDiagram PK/FK", () => {
-  it("repara PK, FK con coma a PK FK", () => {
+  it("repara PK, FK con coma a un solo PK", () => {
     const raw = `erDiagram
   users {
     uuid user_id PK, FK
   }`;
     const out = sanitizeMermaidBlock(raw);
-    assert.match(out, /user_id PK FK/);
+    assert.match(out, /user_id PK/);
     assert.doesNotMatch(out, /PK\s*,\s*FK/);
+    assert.doesNotMatch(out, /\bPK\s+FK\b/i);
   });
 
   it("preRenderMddSanity acepta erDiagram reparado", () => {
