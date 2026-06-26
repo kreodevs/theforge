@@ -6,6 +6,8 @@ import {
   isOrphanSequenceDiagramLine,
   mergeSplitMermaidContinuationFences,
   normalizeMermaidInDocument,
+  normalizeMermaidDiagramBody,
+  quoteFlowchartLabelsWithParens,
   repairErDiagramPkFkCommas,
   repairFragmentedSequenceMermaidInDocument,
   stripErDiagramSqlDefaultArtifacts,
@@ -438,5 +440,30 @@ describe("stripErDiagramSqlDefaultArtifacts", () => {
     assert.doesNotMatch(out, /uuid default/i);
     assert.match(out, /uuid id PK FK/);
     assert.match(out, /string email/);
+  });
+});
+
+describe("quoteFlowchartLabelsWithParens", () => {
+  it("entrecomilla nodos con paréntesis sin romper cilindros [(\"…\")]", () => {
+    const raw = `flowchart TB
+  API[NestJS API (Contenedor)]
+  DB[("PostgreSQL · 29 tablas")]`;
+    const out = quoteFlowchartLabelsWithParens(raw);
+    assert.match(out, /API\["NestJS API \(Contenedor\)"\]/);
+    assert.match(out, /DB\[\("PostgreSQL · 29 tablas"\)\]/);
+    assert.doesNotMatch(out, /DB\["\("PostgreSQL/);
+  });
+
+  it("normalizeMermaidDiagramBody preserva diagrama de componentes propuesto", () => {
+    const raw = `flowchart TB
+  subgraph be_NestJS["NestJS · Servidor"]
+    BE_SQL[("PostgreSQL · 29 tablas")]
+    BE_GRAPH[("FalkorDB")]
+  end
+  BE_DOMAIN --> BE_SQL
+_Propuesta derivada de §2–§4: nota markdown.`;
+    const out = normalizeMermaidDiagramBody(raw);
+    assert.match(out, /BE_SQL\[\("PostgreSQL · 29 tablas"\)\]/);
+    assert.doesNotMatch(out, /Propuesta derivada/);
   });
 });

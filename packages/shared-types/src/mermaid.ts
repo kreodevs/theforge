@@ -581,6 +581,19 @@ export function normalizeErDiagramPgTypes(content: string): string {
     .replace(/\b(FK)\s*,\s*PK\b/gi, "PK FK");
 }
 
+/**
+ * flowchart/graph: `C[NestJS API (Contenedor)]` → `C["NestJS API (Contenedor)"]`.
+ * Preserva nodos cilíndricos `[("PostgreSQL · N tablas")]` — no convertir a `["("…")"]`.
+ */
+export function quoteFlowchartLabelsWithParens(content: string): string {
+  if (!content?.trim()) return content ?? "";
+  return content.replace(/\[([^\[\]"]*\([^()]*\)[^\[\]"]*)\]/g, (match, inner: string) => {
+    const t = inner.trim();
+    if (/^\(\s*"/.test(t) && /"\s*\)$/.test(t)) return match;
+    return `["${inner}"]`;
+  });
+}
+
 export function erDiagramHasPkFkComma(content: string): boolean {
   const repaired = repairErDiagramPkFkCommas(content);
   return /\bPK\s*,\s*FK\b|\bFK\s*,\s*PK\b/i.test(repaired);
@@ -879,6 +892,10 @@ export function mergeSplitMermaidContinuationFences(document: string): string {
 function mermaidMarkdownLeakLine(trimmed: string): boolean {
   if (!trimmed) return false;
   if (/^```/.test(trimmed)) return true;
+  // Prosa markdown (p. ej. nota _Propuesta derivada…_ bajo el fence mal cerrado)
+  if (/^_[^_\n]+(?:_.*)?$/.test(trimmed) && !/^(flowchart|graph|erDiagram|sequenceDiagram)\b/i.test(trimmed)) {
+    return true;
+  }
   if (/^#{1,6}\s/.test(trimmed)) {
     if (isOrphanSequenceDiagramLine(trimmed)) return false;
     return true;
@@ -1086,7 +1103,11 @@ export function normalizeMermaidDiagramBody(raw: string): string {
 
   for (let i = 0; i < openBlocks; i++) out.push("  end");
 
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  let result = out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (!isErDiagram && /^(flowchart|graph)\s/i.test(result)) {
+    result = quoteFlowchartLabelsWithParens(result);
+  }
+  return result;
 }
 
 /** Diagrama lineal s0→s1→s2 al volcar JSON del webhook (no es un flujo legible). */
