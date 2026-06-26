@@ -24,6 +24,12 @@ describe("orchestrator-doc-guard.util", () => {
       ),
       true,
     );
+    assert.equal(
+      chatClaimsDocumentWasModified(
+        "He actualizado el documento completo integrando el Kill Switch. El cambio ya está reflejado en el panel.",
+      ),
+      true,
+    );
   });
 
   it("avisa cuando architecture no persistió pero el chat afirma cambio", () => {
@@ -51,5 +57,30 @@ describe("orchestrator-doc-guard.util", () => {
       false,
     );
     assert.equal(docWasPersistedForTab("architecture", { hasArch: true }), true);
+  });
+
+  it("usa docPersisted real en benchmark aunque hasDbga del parser sea true", () => {
+    assert.equal(
+      shouldWarnOrchestratorDocNotPersisted({
+        tab: "benchmark",
+        userMessage: "integrar kill switch al documento",
+        assistantContent: "He integrado el Kill Switch en el DBGA.",
+        flags: { hasDbga: true },
+        currentDocLen: 1200,
+        docPersisted: false,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldWarnOrchestratorDocNotPersisted({
+        tab: "benchmark",
+        userMessage: "integrar kill switch",
+        assistantContent: "Listo.",
+        flags: { hasDbga: false },
+        currentDocLen: 1200,
+        docPersisted: true,
+      }),
+      false,
+    );
   });
 });

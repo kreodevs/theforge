@@ -269,7 +269,7 @@ export class AiService {
           systemPrompt += `\n\n**Instrucción DE delimitador (OBLIGATORIO):** Cuando generes o actualices el documento de ${label} (completo o solo una sección), DEBES escribir el contenido y TERMINAR con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Sin ese delimitador, el sistema NO persiste ningún cambio y el usuario no ve nada en el panel del documento.`;
           if (at === "benchmark") {
             systemPrompt +=
-              "\n\n**OBLIGATORIO — Benchmark (DBGA):** Si el usuario pide **añadir, modificar o corregir** el análisis, devuelve el **DBGA COMPLETO** (todo lo que ya existía en el contexto más tus cambios), no solo el párrafo nuevo. Termina con `---FIN_DBGA---` y un mensaje breve después. **Nunca** respondas solo \"He añadido…\" sin el markdown completo antes del delimitador.";
+              "\n\n**OBLIGATORIO — Benchmark (DBGA):** Si el usuario pide **añadir, modificar, integrar o corregir** el análisis (p. ej. Kill Switch, tablero de aprobación, reglas de negocio, flujos), devuelve el **DBGA COMPLETO** (todo lo que ya existía en el contexto más tus cambios), no solo el párrafo nuevo. Termina con `---FIN_DBGA---` y un mensaje breve después. **Nunca** respondas solo \"He actualizado…\", \"He integrado…\" o \"El cambio ya está reflejado en el panel\" sin el markdown completo antes del delimitador — sin `---FIN_DBGA---` el panel NO cambia.";
           }
           if (at === "mdd") {
             systemPrompt +=
@@ -439,7 +439,7 @@ export class AiService {
         systemPrompt += `\n\n**Instrucción DE delimitador (OBLIGATORIO):** Cuando generes o actualices el documento de ${label} (completo o solo una sección), DEBES escribir el contenido y TERMINAR con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Sin ese delimitador, el sistema NO persiste ningún cambio y el usuario no ve nada en el panel del documento.`;
         if (at === "benchmark") {
           systemPrompt +=
-            "\n\n**OBLIGATORIO — Benchmark (DBGA):** Devuelve el **DBGA COMPLETO** (contexto actual + cambios), no solo el fragmento nuevo. Termina con `---FIN_DBGA---`. Sin delimitador no se persiste nada en el panel.";
+            "\n\n**OBLIGATORIO — Benchmark (DBGA):** Devuelve el **DBGA COMPLETO** (contexto actual + cambios), no solo el fragmento nuevo. Termina con `---FIN_DBGA---`. Sin delimitador no se persiste nada en el panel. **Prohibido** afirmar en chat que integraste o actualizaste el documento si no incluyes el markdown completo antes de `---FIN_DBGA---`.";
         }
         if (at === "mdd") {
             systemPrompt +=

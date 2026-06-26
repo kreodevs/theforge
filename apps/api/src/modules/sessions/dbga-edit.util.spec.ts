@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   BENCHMARK_CHAT_ACK,
   benchmarkAssistantChatMessage,
+  dbgaContainsUserEditKeywords,
   dbgaReflectsUserEditIntent,
+  extractDbgaEditKeywords,
   isDbgaContentNearlyIdentical,
   isPartialBenchmarkDoc,
   looksLikeDbgaEditRequest,
@@ -17,6 +19,14 @@ describe("looksLikeDbgaEditRequest", () => {
     assert.ok(
       looksLikeDbgaEditRequest(
         "Hay que hacer modificaciones. El catálogo debe ser multi tenant con tenant_id en OBP y OBP4MO",
+      ),
+    );
+  });
+
+  it("detecta integrar Kill Switch al documento", () => {
+    assert.ok(
+      looksLikeDbgaEditRequest(
+        "Haz las modificaciones al documento. Integrar Kill Switch y tablero de aprobación humana.",
       ),
     );
   });
@@ -51,6 +61,20 @@ describe("dbgaReflectsUserEditIntent", () => {
       "En todas las tablas espejo necesitamos el id de origen y el id propio de la tabla espejo";
     assert.equal(dbgaReflectsUserEditIntent(doc, user), true);
   });
+
+  it("falla si piden Kill Switch y el doc no lo menciona", () => {
+    const doc = "# Research Report\n\n## Propósito\nAutomatización básica.";
+    const user =
+      "Integrar Kill Switch con tablero de aprobación humana y firma digital antes de Google Ads";
+    assert.equal(dbgaReflectsUserEditIntent(doc, user), false);
+  });
+
+  it("pasa si piden Kill Switch y el doc lo incluye", () => {
+    const doc =
+      "# Research Report\n\n## Kill Switch\nTablero de aprobación humana con firma digital antes de montar Google Ads.";
+    const user = "Integrar Kill Switch y tablero de aprobación";
+    assert.equal(dbgaReflectsUserEditIntent(doc, user), true);
+  });
 });
 
 describe("looksLikeDbgaEditRequest — ajustes", () => {
@@ -72,6 +96,33 @@ describe("benchmarkAssistantChatMessage", () => {
   it("mantiene ack cuando sí hubo doc", () => {
     const msg = benchmarkAssistantChatMessage(BENCHMARK_CHAT_ACK, "# DBGA\n\ntenant_id");
     assert.equal(msg, BENCHMARK_CHAT_ACK);
+  });
+
+  it("rechaza afirmación falsa de documento actualizado", () => {
+    const msg = benchmarkAssistantChatMessage(
+      "He actualizado el documento completo integrando el Kill Switch en el panel.",
+      undefined,
+    );
+    assert.match(msg, /No se guardaron cambios/i);
+  });
+});
+
+describe("extractDbgaEditKeywords", () => {
+  it("extrae conceptos relevantes del pedido", () => {
+    const keys = extractDbgaEditKeywords(
+      "Integrar Kill Switch con tablero de aprobación humana y firma digital",
+    );
+    assert.ok(keys.includes("kill"));
+    assert.ok(keys.includes("switch") || keys.some((k) => k.includes("kill")));
+    assert.ok(keys.includes("tablero") || keys.includes("aprobación") || keys.includes("aprobacion"));
+  });
+});
+
+describe("dbgaContainsUserEditKeywords", () => {
+  it("detecta solapamiento doc vs pedido", () => {
+    const doc = "## Kill Switch\nTablero de aprobación con firma digital.";
+    const user = "Integrar Kill Switch y tablero de aprobación";
+    assert.equal(dbgaContainsUserEditKeywords(doc, user), true);
   });
 });
 

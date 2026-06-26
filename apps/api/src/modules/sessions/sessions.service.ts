@@ -32,6 +32,8 @@ import {
   BENCHMARK_CHAT_ACK,
   benchmarkAssistantChatMessage,
   dbgaReflectsUserEditIntent,
+  extractDbgaEditKeywords,
+  dbgaContainsUserEditKeywords,
   isDbgaContentNearlyIdentical,
   isPartialBenchmarkDoc,
   looksLikeDbgaEditRequest,
@@ -192,20 +194,44 @@ export class SessionsService {
   }
 
   /**
-   * Peticiones de edición al DBGA: refinado dedicado (BENCHMARK_REFINE) antes del chat genérico.
-   * Devuelve el DBGA persistible o null si debe seguir el flujo normal (stream/chat).
+   * Peticiones de edición al DBGA: refinado dedicado (BENCHMARK_REFINE) sin chat genérico.
+   * Evita respuestas conversacionales sin `---FIN_DBGA---` que no persisten en el panel.
    */
-  private async tryRefineBenchmarkDbgaFirst(
+  private async tryBenchmarkDbgaEditTurn(
     tab: string,
     userMessage: string,
     currentDbga: string | undefined,
-  ): Promise<string | null> {
+    options?: { userImages?: ChatImagePart[] },
+  ): Promise<{ finalDbga?: string; assistantContent: string } | null> {
     const current = (currentDbga ?? "").trim();
     const msg = userMessage.trim();
     if (tab !== "benchmark" || !current || !msg || !looksLikeDbgaEditRequest(msg)) {
       return null;
     }
-    return this.refineDbgaFromUserRequest(msg, current);
+
+    const finalDbga = await this.resolveDbgaContentForReturn(
+      msg,
+      {
+        activeTab: "benchmark",
+        currentDbgaContent: current,
+        userImages: options?.userImages,
+      },
+      undefined,
+    );
+
+    let assistantContent = this.parser.stripChatLabel(
+      benchmarkAssistantChatMessage("", finalDbga),
+    );
+    assistantContent = this.maybeWarnOrchestratorDocNotPersisted(
+      tab,
+      msg,
+      assistantContent,
+      { hasDbga: Boolean(finalDbga?.trim()) },
+      { currentDbgaContent: current },
+      Boolean(finalDbga?.trim()),
+    );
+
+    return { finalDbga, assistantContent };
   }
 
   private async resolveUserTurnForLlm(
@@ -295,17 +321,16 @@ export class SessionsService {
       activeTab,
     );
 
-    const refinedDbgaEarly = await this.tryRefineBenchmarkDbgaFirst(
+    const dbgaEditTurn = await this.tryBenchmarkDbgaEditTurn(
       activeTab,
       userTurn.promptForModel,
       options?.currentDbgaContent,
+      { userImages: options?.userImages },
     );
-    if (refinedDbgaEarly) {
+    if (dbgaEditTurn) {
       const tab = activeTab;
       const stageId = options?.stageId?.trim();
-      const assistantContent = this.parser.stripChatLabel(
-        benchmarkAssistantChatMessage("", refinedDbgaEarly),
-      );
+      const assistantContent = dbgaEditTurn.assistantContent;
       const userMsgBase = {
         role: "user" as const,
         content: userTurn.contentForLog,
@@ -324,7 +349,7 @@ export class SessionsService {
       });
       return {
         session: updatedSession,
-        dbgaContent: refinedDbgaEarly,
+        dbgaContent: dbgaEditTurn.finalDbga,
       };
     }
 
@@ -550,6 +575,7 @@ export class SessionsService {
         hasPhase0,
       },
       options,
+      activeTab === "benchmark" ? Boolean(finalDbga?.trim()) : undefined,
     );
 
     const tab = activeTab;
@@ -722,15 +748,14 @@ export class SessionsService {
     };
     const userEntry = stageId ? { ...userEntryBase, stageId } : userEntryBase;
 
-    const refinedDbgaEarly = await this.tryRefineBenchmarkDbgaFirst(
+    const dbgaEditTurn = await this.tryBenchmarkDbgaEditTurn(
       tab,
       userTurn.promptForModel,
       options?.currentDbgaContent,
+      { userImages: options?.userImages },
     );
-    if (refinedDbgaEarly) {
-      const assistantContent = this.parser.stripChatLabel(
-        benchmarkAssistantChatMessage("", refinedDbgaEarly),
-      );
+    if (dbgaEditTurn) {
+      const assistantContent = dbgaEditTurn.assistantContent;
       const assistantEntry = stageId
         ? { role: "assistant" as const, content: assistantContent, tab, stageId }
         : { role: "assistant" as const, content: assistantContent, tab };
@@ -746,7 +771,7 @@ export class SessionsService {
       yield {
         type: "done",
         session: updatedSession,
-        dbgaContent: refinedDbgaEarly,
+        dbgaContent: dbgaEditTurn.finalDbga,
       };
       return;
     }
@@ -1012,6 +1037,7 @@ export class SessionsService {
         hasPhase0,
       },
       options,
+      tab === "benchmark" ? Boolean(finalDbga?.trim()) : undefined,
     );
     const assistantEntry = stageId
       ? { role: "assistant" as const, content: assistantContent, tab, stageId }
@@ -1532,6 +1558,23 @@ ${msg}
         merged = this.extractMergedDbgaFromModelResponse(response, current);
       }
 
+      const stillBad =
+        !merged ||
+        isDbgaContentNearlyIdentical(merged, current) ||
+        !dbgaReflectsUserEditIntent(merged, userMessage);
+      if (stillBad) {
+        const keywords = extractDbgaEditKeywords(userMessage, 10);
+        if (keywords.length > 0) {
+          console.warn("[Sessions] refineDbga final retry with keywords:", keywords.join(", "));
+          response = await this.ai.generateResponse(
+            `${refinePrompt}\n\nREINTENTO FINAL (obligatorio): incorpora explícitamente en el DBGA COMPLETO estos conceptos: ${keywords.join(", ")}. Termina con ---FIN_DBGA---.`,
+            [],
+            llmOpts,
+          );
+          merged = this.extractMergedDbgaFromModelResponse(response, current);
+        }
+      }
+
       if (!merged || isDbgaContentNearlyIdentical(merged, current)) return null;
       if (!dbgaReflectsUserEditIntent(merged, userMessage)) {
         const grew = merged.length > current.length + 80;
@@ -1539,9 +1582,10 @@ ${msg}
           /\borigen_id\b|\bsource_id\b|\bid_origen\b|\bid_espejo\b|\bmirror_id\b|\bid_propio\b|\btenant_id\b/i;
         if (
           !(
-            grew &&
-            mirrorCols.test(merged) &&
-            /\bespejo|origen|propio/i.test(userMessage)
+            (grew &&
+              mirrorCols.test(merged) &&
+              /\bespejo|origen|propio/i.test(userMessage)) ||
+            (grew && dbgaContainsUserEditKeywords(merged, userMessage))
           )
         ) {
           return null;
@@ -1729,6 +1773,7 @@ ${msg}
       currentUxUiGuideContent?: string;
       currentPhase0SummaryContent?: string;
     },
+    docPersisted?: boolean,
   ): string {
     const currentDocLen = currentDocLengthForTab(tab, options);
     if (
@@ -1738,6 +1783,7 @@ ${msg}
         assistantContent,
         flags,
         currentDocLen,
+        docPersisted,
       })
     ) {
       return assistantContent;

@@ -16,10 +16,10 @@ export const ORCHESTRATOR_DOC_TABS = new Set([
 ]);
 
 const DOC_CLAIMS_EDIT_RE =
-  /\b(ajust(?:e|é|amos|ado)|elimin(?:e|é|amos|ado)|actualic(?:e|é|amos|ado)|modifiqu(?:e|é|amos|ado)|reescrib(?:i|í|imos|ido)|ya\s+no\s+(contiene|menciona|incluye)|sin\s+referencias|sin\s+menciones|qued[oó]\s+(ajustad|actualizad)|hemos\s+(ajustad|actualizad|eliminad|modificad)|no\s+(contiene|menciona|incluye)\s+(ya|más)|se\s+(ajust|actualiz|modific|elimin)[oa]|documento\s+(est[aá]|qued[oó])|he\s+(actualizado|modificado|eliminado|ajustado)|actualizaci[oó]n\s+(complet|realiz)|cambios?\s+(aplicad|realizad|incorporad))\b/i;
+  /\b(ajust(?:e|é|amos|ado)|elimin(?:e|é|amos|ado)|actualic(?:e|é|amos|ado)|modifiqu(?:e|é|amos|ado)|reescrib(?:i|í|imos|ido)|integr(?:e|é|amos|ado|ando)|incorpor(?:e|é|amos|ado|ando)|ya\s+no\s+(contiene|menciona|incluye)|sin\s+referencias|sin\s+menciones|qued[oó]\s+(ajustad|actualizad)|hemos\s+(ajustad|actualizad|eliminad|modificad|integrad|incorporad)|no\s+(contiene|menciona|incluye)\s+(ya|más)|se\s+(ajust|actualiz|modific|elimin|integr)[oa]|documento\s+(est[aá]|qued[oó])|he\s+(actualizado|modificado|eliminado|ajustado|integrado|incorporado)|actualizaci[oó]n\s+(complet|realiz)|cambios?\s+(aplicad|realizad|incorporad)|el\s+cambio\s+ya\s+est[aá]\s+reflejado|reflejado\s+en\s+el\s+panel)\b/i;
 
 const CHANGE_INTENT_RE =
-  /\b(no\s+veo\s+(los\s+)?cambios|sigue\s+(haciendo\s+)?menci|a[uú]n\s+(dice|menciona|tiene|aparece|contiene)|no\s+se\s+(reflej|aplic|guard)|documento\s+sigue|persiste|sigue\s+igual|no\s+se\s+usar[aá]?|cambiar|cambio|reemplaz|sustitu|modific|actualiz|eliminar|quita(?:r|n|do)?|en\s+vez\s+de|en\s+lugar\s+de|ajust|agrega|añade|corrige|usa[r]?\s+(dokploy|docker|kubernetes))\b/i;
+  /\b(no\s+veo\s+(los\s+)?cambios|sigue\s+(haciendo\s+)?menci|a[uú]n\s+(dice|menciona|tiene|aparece|contiene)|no\s+se\s+(reflej|aplic|guard)|documento\s+sigue|persiste|sigue\s+igual|no\s+se\s+usar[aá]?|cambiar|cambio|reemplaz|sustitu|modific|actualiz|eliminar|quita(?:r|n|do)?|en\s+vez\s+de|en\s+lugar\s+de|ajust|agrega|añade|corrige|integra|incorpor|aplica(?:r)?\s+(los\s+)?cambios|al\s+documento|haz\s+las\s+modific|kill\s*switch|tablero|aprobaci[oó]n|usa[r]?\s+(dokploy|docker|kubernetes))\b/i;
 
 export function chatClaimsDocumentWasModified(text: string): boolean {
   const t = (text ?? "").trim();

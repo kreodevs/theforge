@@ -1,10 +1,74 @@
+const DBGA_EDIT_STOPWORDS = new Set([
+  "para",
+  "como",
+  "este",
+  "esta",
+  "esto",
+  "todo",
+  "toda",
+  "todos",
+  "todas",
+  "debe",
+  "deben",
+  "hacer",
+  "haz",
+  "las",
+  "los",
+  "una",
+  "uno",
+  "con",
+  "sin",
+  "que",
+  "del",
+  "documento",
+  "panel",
+  "benchmark",
+  "fase",
+  "etapa",
+  "principal",
+  "cambios",
+  "cambio",
+]);
+
 /** Heurística: el usuario pide cambiar el DBGA / Fase 0 (no solo preguntar). */
 export function looksLikeDbgaEditRequest(message: string): boolean {
   const m = message.trim();
   if (!m) return false;
-  return /\b(modific|actualiz|añad|agreg|quitar|cambiar|ajustes?|hay que|debe|necesit|incorpor|espej|tenant|multi-?tenant|catálogo|mantenimiento|obp4?mo)\b/i.test(
+  if (
+    /\b(modific|actualiz|añad|agreg|quitar|cambiar|ajustes?|integrar|incorpor|reescrib|eliminar|corrige|aplica|aplicar|persist|documento|secci[oó]n|tablero|aprobaci[oó]n|kill\s*switch|firma|reglas?\s+de\s+negocio|flujos?|edge\s*cases?|haz\s+las|al\s+documento|al\s+panel)\b/i.test(
+      m,
+    )
+  ) {
+    return true;
+  }
+  return /\b(hay que|debe|necesit|espej|tenant|multi-?tenant|catálogo|mantenimiento|obp4?mo)\b/i.test(
     m,
   );
+}
+
+/** Palabras significativas del pedido del usuario (para reintentos y validación laxa). */
+export function extractDbgaEditKeywords(message: string, max = 10): string[] {
+  const words =
+    message
+      .toLowerCase()
+      .match(/\b[\p{L}\p{N}]{4,}\b/gu) ?? [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const w of words) {
+    if (DBGA_EDIT_STOPWORDS.has(w) || seen.has(w)) continue;
+    seen.add(w);
+    out.push(w);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+export function dbgaContainsUserEditKeywords(doc: string, userMessage: string): boolean {
+  const d = doc.toLowerCase();
+  const keywords = extractDbgaEditKeywords(userMessage, 12);
+  if (keywords.length === 0) return false;
+  const matched = keywords.filter((k) => d.includes(k)).length;
+  return matched >= Math.min(2, keywords.length);
 }
 
 export function normalizeDbgaForCompare(content: string): string {
@@ -66,6 +130,20 @@ export function dbgaReflectsUserEditIntent(doc: string, userMessage: string): bo
     if (/\bespejo\b/i.test(u) && !/\bespejo\b|CREATE\s+TABLE/i.test(d)) return false;
   }
 
+  if (/kill\s*switch|tablero\s+de\s+aprob|aprobaci[oó]n\s+humana|firma\s+digital|google\s+ads/i.test(u)) {
+    if (
+      !/kill\s*switch|tablero\s+de\s+aprob|aprobaci[oó]n\s+humana|firma\s+digital|validaci[oó]n\s+previa/i.test(
+        d,
+      )
+    ) {
+      return false;
+    }
+  }
+
+  if (extractDbgaEditKeywords(userMessage, 8).length >= 2 && !dbgaContainsUserEditKeywords(doc, userMessage)) {
+    return false;
+  }
+
   return true;
 }
 
@@ -88,7 +166,11 @@ export function benchmarkAssistantChatMessage(
     !chat ||
     chat === BENCHMARK_CHAT_ACK ||
     /^benchmark actualizado/i.test(chat) ||
-    /^fase 0 \(dbga\) actualizado/i.test(chat)
+    /^fase 0 \(dbga\) actualizado/i.test(chat) ||
+    /\b(he|hemos)\s+(actualizado|modificado|integrado|incorporado|añadido)\b.*\b(documento|benchmark|dbga|fase\s*0|panel)\b/i.test(
+      chat,
+    ) ||
+    /\bel\s+cambio\s+ya\s+est[aá]\s+reflejado\b/i.test(chat)
   ) {
     return BENCHMARK_CHAT_NO_CHANGE;
   }
