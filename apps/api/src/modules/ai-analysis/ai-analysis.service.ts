@@ -45,6 +45,7 @@ import { createMddSoftwareArchitectNode } from "./nodes/mdd-software-architect.n
 import { getMddArchitectTools } from "./tools/tool-registry.js";
 import { contextSynthesizerComplexityAppendix } from "./utils/mdd-complexity-rigor.js";
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
+import { awaitWithNdjsonHeartbeat } from "./utils/ndjson-heartbeat.util.js";
 import {
   INSUFFICIENT_DBGA_IDEA_MESSAGE,
   isInsufficientDbgaIdea,
@@ -65,6 +66,24 @@ import {
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
 
 const LANGGRAPH_RECURSION_LIMIT = resolveLangGraphRecursionLimit();
+
+async function* runRegenWithHeartbeat<T>(
+  work: Promise<T>,
+  agent: string,
+  label: string,
+): AsyncGenerator<StreamProgressEvent, T, undefined> {
+  yield { type: "progress", agent, message: label };
+  const heartbeat = awaitWithNdjsonHeartbeat(work, () => ({
+    type: "progress" as const,
+    agent,
+    message: `${label} (LLM en curso)`,
+  }));
+  while (true) {
+    const step = await heartbeat.next();
+    if (step.done) return step.value;
+    yield step.value;
+  }
+}
 
 export type StreamProgressEvent =
   | { type: "progress"; agent: string; message: string }
@@ -1346,7 +1365,11 @@ export class AiAnalysisService {
     try {
       if (section === 1) {
         const prompt = `${CONTEXT_SYNTHESIZER_PROMPT}${contextSynthesizerComplexityAppendix(regenCx)}\n\n---\n\n**Documento MDD (usa las secciones 2–7 para sintetizar la sección 1):**\n\n${mddContent}`;
-        const response = await llm.invoke([new HumanMessage(prompt)]);
+        const response = yield* runRegenWithHeartbeat(
+          llm.invoke([new HumanMessage(prompt)]),
+          "Contexto",
+          "Regenerando §1…",
+        );
         const text = (typeof response.content === "string" ? response.content : "").trim();
         let newBody = (text && extractContextSectionBody(text)) || text || "(Contexto sintetizado desde el documento.)";
         const firstOtherSection = newBody.search(/\n##\s+(?:2|3|4|5|6|7)[.\s]/);
@@ -1392,7 +1415,11 @@ export class AiAnalysisService {
 
       if (section === 7) {
         const integrationNode = createMddIntegrationNode(llm);
-        const result = await integrationNode(state as MDDStateType);
+        const result = yield* runRegenWithHeartbeat(
+          integrationNode(state as MDDStateType),
+          getAgentLabel("integration"),
+          "Regenerando §7 Infraestructura…",
+        );
         const finalDraft = (result.mddDraft ?? mddContent).trim();
         const markdown = prepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
@@ -1410,7 +1437,11 @@ export class AiAnalysisService {
       }
       if (section === 6) {
         const securityNode = createMddSecurityNode(llm);
-        const result = await securityNode(state as MDDStateType);
+        const result = yield* runRegenWithHeartbeat(
+          securityNode(state as MDDStateType),
+          getAgentLabel("security"),
+          "Regenerando §6 Seguridad…",
+        );
         const finalDraft = (result.mddDraft ?? mddContent).trim();
         const markdown = prepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
@@ -1438,7 +1469,11 @@ export class AiAnalysisService {
         const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
           theforge: this.theforge,
         });
-        const result = await softwareArchitectNode(state as MDDStateType);
+        const result = yield* runRegenWithHeartbeat(
+          softwareArchitectNode(state as MDDStateType),
+          getAgentLabel("software_architect"),
+          `Regenerando §${section}…`,
+        );
         const architectDraft = (result.mddDraft ?? "").trim();
         const content25 = extractSections2To5Content(architectDraft);
         const finalDraft =

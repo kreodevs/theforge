@@ -1663,16 +1663,20 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }
         const mddContent = effectiveMddContentForSectionRegen(get);
         const regStage = get().activeStageId;
-        const r = await apiFetch(`${API_BASE}/ai-analysis/mdd/stream/regenerate-section`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            projectId: requestProjectId,
-            section: regenerateSection,
-            mddContent: mddContent || undefined,
-            ...(regStage ? { stageId: regStage } : {}),
-          }),
-        });
+        const r = await fetchWithRetry(
+          `${API_BASE}/ai-analysis/mdd/stream/regenerate-section`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectId: requestProjectId,
+              section: regenerateSection,
+              mddContent: mddContent || undefined,
+              ...(regStage ? { stageId: regStage } : {}),
+            }),
+          },
+          2,
+        );
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
           throw new Error(err.message ?? "Error al regenerar sección");
