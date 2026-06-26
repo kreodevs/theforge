@@ -110,7 +110,8 @@ import { BrdStagePanel } from "../components/BrdStagePanel";
 import { AgentGovernancePanel } from "../components/AgentGovernancePanel";
 import { WorkshopAgentProgressPanel } from "../components/WorkshopAgentProgressPanel";
 import { downloadAgentGovernanceZip } from "../utils/downloadAgentGovernanceZip";
-import { downloadDocumentsZip } from "../utils/downloadDocumentsZip";
+import { type DocumentsForZip } from "../utils/downloadDocumentsZip";
+import { downloadWorkshopProjectZip } from "../utils/downloadRepoHandoff";
 import {
   downloadSpecKitBundleFromApi,
 } from "../utils/downloadSpecKitBundle";
@@ -2258,6 +2259,117 @@ export default function WorkshopView({
     handleClearMddCompletely,
   ]);
 
+  const workshopDocumentsForZip = useMemo(
+    (): DocumentsForZip => ({
+      dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
+      phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
+      specContent: specContent ?? project?.specContent ?? null,
+      mddContent: mddContent ?? project?.mddContent ?? "",
+      uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
+      blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
+      apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
+      logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
+      tasksContent: tasksContent ?? project?.tasksContent ?? null,
+      infraContent: infraContent ?? project?.infraContent ?? null,
+      aemContent: aemContent ?? project?.aemContent ?? null,
+      handoffSpecContent: handoffSpecContent ?? project?.handoffSpecContent ?? null,
+    }),
+    [
+      dbgaContent,
+      project?.dbgaContent,
+      phase0SummaryContent,
+      project?.phase0SummaryContent,
+      specContent,
+      project?.specContent,
+      mddContent,
+      project?.mddContent,
+      uxUiGuideContent,
+      project?.uxUiGuideContent,
+      blueprintContent,
+      project?.blueprintContent,
+      apiContractsContent,
+      project?.apiContractsContent,
+      logicFlowsContent,
+      project?.logicFlowsContent,
+      tasksContent,
+      project?.tasksContent,
+      infraContent,
+      project?.infraContent,
+      aemContent,
+      project?.aemContent,
+      handoffSpecContent,
+      project?.handoffSpecContent,
+    ],
+  );
+
+  const handleDownloadProjectZip = useCallback(async () => {
+    const name = projectName ?? project?.name ?? "Workshop";
+    const result = await downloadWorkshopProjectZip({
+      projectId,
+      projectName: name,
+      hasAgentGovernance,
+      documents: workshopDocumentsForZip,
+      governanceScaffold: agentGovernanceScaffold,
+      fetchGovernanceExport: fetchAgentGovernanceExport,
+      specKitInput: hasAgentGovernance
+        ? {
+            projectName: name,
+            featureOrdinal: activeWorkshopStage?.ordinal ?? 1,
+            mddContent: effectiveMddTrimmed || mddContent || "",
+            specContent: specContent ?? project?.specContent,
+            blueprintContent: blueprintContent ?? project?.blueprintContent,
+            tasksContent: tasksContent ?? project?.tasksContent,
+            apiContractsContent: apiContractsContent ?? project?.apiContractsContent,
+            logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent,
+            infraContent: infraContent ?? project?.infraContent,
+            phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent,
+            dbgaContent: dbgaContent ?? project?.dbgaContent,
+            uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent,
+          }
+        : null,
+    });
+
+    if (result.ok) {
+      setError(null);
+      return;
+    }
+
+    setError(
+      hasAgentGovernance
+        ? "No se pudo exportar el ZIP handoff (spec-kit + gobernanza)."
+        : "No hay documentos con contenido para descargar.",
+    );
+  }, [
+    projectId,
+    projectName,
+    project?.name,
+    hasAgentGovernance,
+    workshopDocumentsForZip,
+    agentGovernanceScaffold,
+    fetchAgentGovernanceExport,
+    activeWorkshopStage?.ordinal,
+    effectiveMddTrimmed,
+    mddContent,
+    specContent,
+    project?.specContent,
+    blueprintContent,
+    project?.blueprintContent,
+    tasksContent,
+    project?.tasksContent,
+    apiContractsContent,
+    project?.apiContractsContent,
+    logicFlowsContent,
+    project?.logicFlowsContent,
+    infraContent,
+    project?.infraContent,
+    phase0SummaryContent,
+    project?.phase0SummaryContent,
+    dbgaContent,
+    project?.dbgaContent,
+    uxUiGuideContent,
+    project?.uxUiGuideContent,
+  ]);
+
   const mddDirty = (mddContent ?? "").trim() !== persistedMddBaseline.trim();
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
 
@@ -2498,26 +2610,9 @@ export default function WorkshopView({
                 </Tooltip>
 
                 <WorkshopDownloadZipButton
-                  onClick={async () => {
-                    const ok = await downloadDocumentsZip(
-                      {
-                        dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
-                        phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
-                        specContent: specContent ?? project?.specContent ?? null,
-                        mddContent: mddContent ?? project?.mddContent ?? "",
-                        uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
-                        blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
-                        apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
-                        logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
-                        tasksContent: tasksContent ?? project?.tasksContent ?? null,
-                        infraContent: infraContent ?? project?.infraContent ?? null,
-                        aemContent: aemContent ?? project?.aemContent ?? null,
-                        handoffSpecContent: handoffSpecContent ?? project?.handoffSpecContent ?? null,
-                      },
-                      projectName ?? project?.name ?? "Workshop",
-                    );
-                    if (ok) setError(null);
-                    else setError("No hay documentos con contenido para descargar.");
+                  hasAgentGovernance={hasAgentGovernance}
+                  onClick={() => {
+                    void handleDownloadProjectZip();
                   }}
                 />
 
@@ -2579,26 +2674,9 @@ export default function WorkshopView({
             <TooltipProvider delayDuration={280}>
               <div className="flex min-w-0 flex-nowrap items-center justify-end gap-1.5 sm:justify-self-end">
                 <WorkshopDownloadZipButton
-                  onClick={async () => {
-                    const ok = await downloadDocumentsZip(
-                      {
-                        dbgaContent: dbgaContent ?? project?.dbgaContent ?? null,
-                        phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent ?? null,
-                        specContent: specContent ?? project?.specContent ?? null,
-                        mddContent: mddContent ?? project?.mddContent ?? "",
-                        uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
-                        blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
-                        apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
-                        logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
-                        tasksContent: tasksContent ?? project?.tasksContent ?? null,
-                        infraContent: infraContent ?? project?.infraContent ?? null,
-                        aemContent: aemContent ?? project?.aemContent ?? null,
-                        handoffSpecContent: handoffSpecContent ?? project?.handoffSpecContent ?? null,
-                      },
-                      projectName ?? project?.name ?? "Workshop",
-                    );
-                    if (ok) setError(null);
-                    else setError("No hay documentos con contenido para descargar.");
+                  hasAgentGovernance={hasAgentGovernance}
+                  onClick={() => {
+                    void handleDownloadProjectZip();
                   }}
                 />
 

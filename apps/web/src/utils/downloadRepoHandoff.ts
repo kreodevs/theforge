@@ -1,6 +1,13 @@
 import JSZip from "jszip";
-import type { SpecKitBundleFile } from "@theforge/shared-types";
+import {
+  buildSpecKitBundleFiles,
+  type AgentGovernanceScaffold,
+  type SpecKitBundleFile,
+  type SpecKitBundleInput,
+} from "@theforge/shared-types";
 import { apiFetch, API_BASE } from "./apiClient.js";
+import { downloadAgentGovernanceZip } from "./downloadAgentGovernanceZip.js";
+import { downloadDocumentsZip, type DocumentsForZip } from "./downloadDocumentsZip.js";
 import { addSpecKitBundleToZip } from "./downloadSpecKitBundle.js";
 import {
   addAgentGovernanceEntriesToZip,
@@ -9,7 +16,18 @@ import {
   AGENT_GOVERNANCE_ZIP_ROOT,
   normalizeAgentGovernanceZipPath,
 } from "./downloadAgentGovernanceZip.js";
-import type { AgentGovernanceScaffold } from "@theforge/shared-types";
+
+export type WorkshopProjectZipKind = "repo-handoff" | "governance-fallback" | "documents" | "none";
+
+export interface DownloadWorkshopProjectZipOptions {
+  projectId: string | null | undefined;
+  projectName: string;
+  hasAgentGovernance: boolean;
+  documents: DocumentsForZip;
+  governanceScaffold?: AgentGovernanceScaffold | null;
+  specKitInput?: SpecKitBundleInput | null;
+  fetchGovernanceExport?: (projectId: string) => Promise<AgentGovernanceScaffold | null>;
+}
 
 export interface RepoHandoffApiResponse {
   featureDir: string;
@@ -77,6 +95,50 @@ export async function downloadRepoHandoffFromApi(
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
   return true;
+}
+
+/**
+ * Descarga del header Workshop: handoff completo (spec-kit + gobernanza + docs/sdd) cuando
+ * hay gobernanza; si falla el API, fallback client-side; sin gobernanza, solo documentos planos.
+ */
+export async function downloadWorkshopProjectZip(
+  options: DownloadWorkshopProjectZipOptions,
+): Promise<{ ok: boolean; kind: WorkshopProjectZipKind }> {
+  const pid = options.projectId?.trim();
+  const name = options.projectName || "Workshop";
+
+  if (pid && options.hasAgentGovernance) {
+    if (await downloadRepoHandoffFromApi(pid, name)) {
+      return { ok: true, kind: "repo-handoff" };
+    }
+
+    if (options.specKitInput) {
+      let scaffold = options.governanceScaffold ?? null;
+      if (options.fetchGovernanceExport) {
+        scaffold = (await options.fetchGovernanceExport(pid)) ?? scaffold;
+      }
+      if (scaffold) {
+        const consumptionGuideContent =
+          scaffold.files.find((f) => f.path.endsWith("THEFORGE-DOC-CONSUMPTION-GUIDE.md"))
+            ?.content ?? null;
+        const zipOk = await downloadAgentGovernanceZip(
+          scaffold,
+          name,
+          buildSpecKitBundleFiles({
+            ...options.specKitInput,
+            consumptionGuideContent:
+              options.specKitInput.consumptionGuideContent ?? consumptionGuideContent,
+          }),
+        );
+        if (zipOk) return { ok: true, kind: "governance-fallback" };
+      }
+    }
+
+    return { ok: false, kind: "none" };
+  }
+
+  const docsOk = await downloadDocumentsZip(options.documents, name);
+  return { ok: docsOk, kind: docsOk ? "documents" : "none" };
 }
 
 export { AGENT_GOVERNANCE_ZIP_ROOT };
