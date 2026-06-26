@@ -1,64 +1,71 @@
 /**
  * Pre-render sanity checks for MDD before persist.
- * - Mermaid: normalize via expert normalizeMermaid from shared-types; reject if PK,FK comma still present.
+ * - Mermaid: normalize via expert normalizeMermaid from shared-types; auto-repair PK,F comma in erDiagram.
  * - §4 Contratos de API tables: no blank lines inside table; alignment row |:---| must be second row (ERR_TABLE_SYNTAX).
  */
 
+import {
+  ensureErDiagramHeader,
+  erDiagramHasPkFkComma,
+  normalizeMermaid,
+  repairErDiagramPkFkCommas,
+  validateMermaid,
+} from "@theforge/shared-types/mermaid";
+
 export const ERR_MERMAID_SYNTAX = "ERR_MERMAID_SYNTAX";
 export const ERR_TABLE_SYNTAX = "ERR_TABLE_SYNTAX";
-/** Normalize unicode spaces to ASCII space inside Mermaid block content. Preserves valid erDiagram syntax. */
+
+/** Normalize unicode spaces + PK/FK comma repair + expert normalizeMermaid. */
 export function sanitizeMermaidBlock(content: string): string {
   if (!content || typeof content !== "string") return "";
-  // 1. Normalize unicode spaces + PK,FK repair
-  const cleaned = content
+
+  let cleaned = content
     .replace(/\u00A0/g, " ")
     .replace(/[\u2000-\u200B\u202F\u205F\u3000]/g, " ")
-    // Auto-repair `PK, FK` / `FK, PK` (common LLM artifact) → keep PK annotation only.
-    .replace(/\bPK\s*,\s*FK\b/gi, "PK")
-    .replace(/\bFK\s*,\s*PK\b/gi, "FK")
     .split("\n")
     .map((line) => line.trimEnd())
     .join("\n")
     .trim();
-  // 2. Apply expert normalizeMermaid from shared-types (fixes IDs with spaces, unclosed blocks, quotes, etc.)
-  let normalized = cleaned;
+
+  cleaned = repairErDiagramPkFkCommas(cleaned);
+  cleaned = ensureErDiagramHeader(cleaned);
+
   try {
-    const { normalizeMermaid: expertNormalize } = require("@theforge/shared-types/mermaid");
     const fenced = "```mermaid\n" + cleaned + "\n```";
-    const result = expertNormalize(fenced);
-    normalized = result
+    const result = normalizeMermaid(fenced);
+    return result
       .replace(/^```mermaid\s*\n?/i, "")
       .replace(/\n?```\s*$/i, "")
       .trim();
   } catch {
-    // Fallback: shared-types unavailable, keep basic fixes
+    return cleaned;
   }
-  return normalized;
 }
 
-/**
- * Validates Mermaid block content using the expert validator from shared-types.
- * Rejects if PK,FK comma is still present (should be auto-fixed by sanitizeMermaidBlock)
- * or if the expert validator detects structural errors (unclosed blocks, invalid types).
- */
-export function validateMermaidSyntax(content: string): { ok: boolean; error?: string } {
+export function validateMermaidSyntax(content: string): { ok: boolean; error?: string; message?: string } {
   if (!content || typeof content !== "string") return { ok: true };
   const trimmed = content.trim();
 
-  // PK,FK comma (basic check — should be auto-fixed by sanitizeMermaidBlock already)
-  if (/\bPK\s*,\s*FK\b|\bFK\s*,\s*PK\b/i.test(trimmed)) {
-    return { ok: false, error: ERR_MERMAID_SYNTAX };
+  if (erDiagramHasPkFkComma(trimmed)) {
+    return {
+      ok: false,
+      error: ERR_MERMAID_SYNTAX,
+      message:
+        "Diagrama Mermaid inválido: no se permite coma entre PK y FK en atributos. Corrija el bloque erDiagram.",
+    };
   }
 
-  // Expert validation via shared-types
-  try {
-    const { validateMermaid: expertValidate } = require("@theforge/shared-types/mermaid");
-    const errors = expertValidate(trimmed);
-    if (errors.length > 0) {
-      return { ok: false, error: ERR_MERMAID_SYNTAX };
-    }
-  } catch {
-    // Fallback: shared-types validation unavailable, skip expert check
+  const errors = validateMermaid(trimmed);
+  if (errors.length > 0) {
+    const first = errors[0] ?? "sintaxis Mermaid inválida";
+    const isPkFkHint = /PK.*FK|erDiagram/i.test(first);
+    return {
+      ok: false,
+      error: ERR_MERMAID_SYNTAX,
+      message: isPkFkHint
+        ? "Diagrama Mermaid inválido: no se permite coma entre PK y FK en atributos. Corrija el bloque erDiagram."
+        : `Diagrama Mermaid inválido: ${first}`,
+    };
   }
 
   return { ok: true };
@@ -88,36 +95,32 @@ function sanitizeApiTablesSyntax(section4Body: string): string | null {
       i++;
       continue;
     }
-    // Found a table header row
     i++;
     if (i >= lines.length) break;
     const secondRow = lines[i]!.trim();
     const isAlignmentRow = /^\|[\s:\-]+(\|[\s:\-]+)*\|$/.test(secondRow);
     if (!isAlignmentRow) {
-      // Insert alignment row based on header columns
-      const headerCols = trimmedLine.split('|').filter(c => c.trim()).length;
-      const alignRow = '|' + Array(headerCols).fill(':---').join('|') + '|';
+      const headerCols = trimmedLine.split("|").filter((c) => c.trim()).length;
+      const alignRow = "|" + Array(headerCols).fill(":---").join("|") + "|";
       lines.splice(i, 0, alignRow);
       changed = true;
-      i++; // skip the inserted alignment row
+      i++;
     }
     i++;
-    // Scan body rows until blank line or non-table line
     while (i < lines.length) {
       const next = lines[i]!;
       const nextTrim = next.trim();
       if (nextTrim === "") {
-        // Remove blank line inside table
         lines.splice(i, 1);
         changed = true;
-        continue; // re-check the same index
+        continue;
       }
       if (!/^\|[\s\S]*\|$/.test(nextTrim)) break;
       i++;
     }
     while (i < lines.length && !lines[i]!.trim()) i++;
   }
-  return changed ? lines.join('\n') : null;
+  return changed ? lines.join("\n") : null;
 }
 
 /**
@@ -164,8 +167,6 @@ export interface PreRenderResult {
 
 /**
  * Runs pre-render sanity: Mermaid blocks + §4 tables. If any check fails, returns { ok: false, code, message }.
- * Does not modify the draft; use sanitizeMermaidInDraft separately if you want to apply sanitization before save.
- * For §4 tables: auto-repairs common issues (missing alignment row, blank lines inside table) instead of rejecting.
  */
 export function preRenderMddSanity(draft: string): PreRenderResult {
   const trimmed = (draft || "").trim();
@@ -179,14 +180,15 @@ export function preRenderMddSanity(draft: string): PreRenderResult {
     if (!validation.ok) {
       return {
         ok: false,
-        code: ERR_MERMAID_SYNTAX,
-        message: "Diagrama Mermaid inválido: no se permite coma entre PK y FK en atributos. Corrija el bloque erDiagram.",
+        code: validation.error ?? ERR_MERMAID_SYNTAX,
+        message:
+          validation.message ??
+          "Diagrama Mermaid inválido: no se permite coma entre PK y FK en atributos. Corrija el bloque erDiagram.",
       };
     }
   }
 
   const section4 = getSection4Body(trimmed);
-  // Auto-repair tables instead of rejecting — ensures alignment row and removes blank lines
   if (section4) {
     sanitizeApiTablesSyntax(section4);
   }
@@ -196,7 +198,6 @@ export function preRenderMddSanity(draft: string): PreRenderResult {
 
 /**
  * Applies sanitizeMermaidBlock to every ```mermaid block in the draft and returns the modified draft.
- * Use after preRenderMddSanity returns ok if you want to persist a normalized version.
  */
 export function sanitizeMermaidInDraft(draft: string): string {
   if (!draft || typeof draft !== "string") return draft;
@@ -208,7 +209,6 @@ export function sanitizeMermaidInDraft(draft: string): string {
 
 /**
  * Sanitizes §4 tables in the full draft: ensures alignment row and removes blank lines inside tables.
- * Returns the modified draft (or the original if no fixes needed).
  */
 export function sanitizeSection4TablesInDraft(draft: string): string {
   if (!draft || typeof draft !== "string") return draft;
@@ -216,8 +216,6 @@ export function sanitizeSection4TablesInDraft(draft: string): string {
   if (!section4) return draft;
   const fixed = sanitizeApiTablesSyntax(section4);
   if (!fixed) return draft;
-  // Replace the old §4 body with the fixed version in the full draft
-  // We need to re-find the exact match to replace in the original
   const fullSectionRegex = /##\s*4\.\s*Contratos\s+de\s+API[\s\S]*?(?=\n##\s+|$)/i;
   return draft.replace(fullSectionRegex, (match) => {
     const headingMatch = match.match(/^##\s*4\.\s*Contratos\s+de\s+API\s*/i);

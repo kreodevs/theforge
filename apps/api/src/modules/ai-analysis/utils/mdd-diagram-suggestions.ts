@@ -3,6 +3,8 @@
  * y genera bloques Mermaid basados en el contenido del documento.
  */
 
+import { ensureErDiagramHeader, repairErDiagramPkFkCommas } from "@theforge/shared-types/mermaid";
+
 export interface DiagramSuggestion {
   /** Sección donde insertar (ej. "2. Modelo de datos") */
   section: string;
@@ -165,8 +167,7 @@ function buildErDiagram(
     lines.push(`${indentEntity}${entityName} {`);
     for (const c of t.columns) {
       const isFk = relations.some((r) => r.from === t.name && r.fkColumn === c.name);
-      // Un solo key por atributo (PK o FK): evita "PK, FK" que rompe en algunas versiones de Mermaid
-      const keySuffix = c.pk ? " PK" : isFk ? " FK" : "";
+      const keySuffix = c.pk && isFk ? " PK FK" : c.pk ? " PK" : isFk ? " FK" : "";
       lines.push(`${indentAttr}${c.type} ${c.name}${keySuffix}`);
     }
     lines.push(`${indentEntity}}`);
@@ -207,23 +208,24 @@ function suggestAuthStateDiagram(section3Body: string): DiagramSuggestion | null
 }
 
 /**
- * Normaliza diagrama erDiagram: timestamptz→datetime, un solo key por atributo (PK, FK→PK), 2 espacios ASCII.
+ * Normaliza diagrama erDiagram: timestamptz→datetime, PK,F → PK FK, 2 espacios ASCII.
  */
 export function normalizeErDiagramForMermaid(content: string): string {
   if (!content?.trim()) return content;
-  const base = content
-    .replace(/\btimestamptz\b/gi, "datetime")
-    .replace(/\\n/g, "\n")
-    .replace(/\\r/g, "\r")
-    .replace(/\t/g, " ")
-    .replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, " ")
-    .replace(/\b(PK)\s*,\s*FK\b/gi, "$1")
-    .replace(/\b(FK)\s*,\s*PK\b/gi, "$1")
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .join("\n")
-    .trim();
-  return base
+  const base = repairErDiagramPkFkCommas(
+    content
+      .replace(/\btimestamptz\b/gi, "datetime")
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\t/g, " ")
+      .replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, " ")
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .join("\n")
+      .trim(),
+  );
+  const withHeader = ensureErDiagramHeader(base);
+  return withHeader
     .split("\n")
     .map((line) => {
       const m = line.match(/^(\s*)/);

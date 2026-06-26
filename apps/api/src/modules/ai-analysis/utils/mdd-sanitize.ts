@@ -2869,7 +2869,7 @@ function stripJsonFromMermaidBlocks(body: string): string {
 
 /**
  * Dentro de bloques ```mermaid con erDiagram: relaciones : "id" con el nombre de FK correcto.
- * PK, FK se mantienen con coma (sintaxis oficial de Mermaid).
+ * Anotaciones PK/FK sin coma (usar `PK FK`); ver repairErDiagramPkFkCommas en shared-types.
  */
 function sanitizeErDiagramInMermaidBlocks(body: string): string {
   return body.replace(/```mermaid\s*([\s\S]*?)```/gi, (_match, inner) => {

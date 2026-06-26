@@ -526,6 +526,37 @@ export function generateMermaid(input: MermaidInput): string {
 
 // ─── Validate & Fix ─────────────────────────────────────────────────────
 
+/** Comas tipográficas → ASCII antes de reparar anotaciones PK/FK. */
+function normalizeMermaidCommas(text: string): string {
+  return text.replace(/[\uFF0C\u201A\uFE50\uFE51\u3001]/g, ",");
+}
+
+/**
+ * erDiagram: `uuid user_id PK, FK` (coma) rompe el render; la forma válida es `PK FK` (espacio).
+ * Repara variantes comunes del LLM sin perder la anotación FK.
+ */
+export function repairErDiagramPkFkCommas(content: string): string {
+  if (!content?.trim()) return content ?? "";
+  const normalized = normalizeMermaidCommas(content);
+  return normalized
+    .replace(/\bPK\s*,\s*FK\b/gi, "PK FK")
+    .replace(/\bFK\s*,\s*PK\b/gi, "PK FK");
+}
+
+/** Si el cuerpo parece erDiagram pero falta la declaración inicial, la antepone. */
+export function ensureErDiagramHeader(content: string): string {
+  const t = (content ?? "").trim();
+  if (!t) return t;
+  if (/^erDiagram\b/i.test(t)) return t;
+  if (/^\s*\w[\w]*\s*\{/m.test(t)) return `erDiagram\n\n${t}`;
+  return t;
+}
+
+export function erDiagramHasPkFkComma(content: string): boolean {
+  const repaired = repairErDiagramPkFkCommas(content);
+  return /\bPK\s*,\s*FK\b|\bFK\s*,\s*PK\b/i.test(repaired);
+}
+
 /**
  * Valida un diagrama Mermaid existente y devuelve errores encontrados.
  * No modifica el input — solo reporta qué arreglar.
@@ -540,7 +571,7 @@ export function validateMermaid(raw: string): string[] {
   const firstLine = lines[0]!.trim();
 
   // Detectar tipo
-  const typeMatch = firstLine.match(/^(graph|flowchart|sequenceDiagram|classDiagram|erDiagram|stateDiagram|stateDiagram-v2|gantt|pie|gitGraph|quadrantChart|mindmap|timeline|xychart|block|packet)/);
+  const typeMatch = firstLine.match(/^(graph|flowchart|sequenceDiagram|classDiagram|erDiagram|stateDiagram|stateDiagram-v2|gantt|pie|gitGraph|quadrantChart|mindmap|timeline|xychart|block|packet)/i);
   if (!typeMatch) {
     errors.push(`Unknown diagram type. First line: "${firstLine}". Must start with a valid mermaid type.`);
   }
@@ -944,8 +975,10 @@ const MAX_MERMAID_LABEL_CHARS = 120;
 
 /** Normaliza solo el cuerpo del diagrama (sin fences). */
 export function normalizeMermaidDiagramBody(raw: string): string {
-  const stripped = stripMarkdownLeakFromMermaidDiagramBody(raw);
+  let stripped = stripMarkdownLeakFromMermaidDiagramBody(raw);
   if (!stripped?.trim()) return "";
+  stripped = repairErDiagramPkFkCommas(stripped);
+  stripped = ensureErDiagramHeader(stripped);
 
   const lines = stripped.trim().split("\n");
   const out: string[] = [];

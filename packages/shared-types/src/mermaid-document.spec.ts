@@ -1,10 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ensureErDiagramHeader,
   isOrphanFlowchartLine,
   isOrphanSequenceDiagramLine,
   mergeSplitMermaidContinuationFences,
   normalizeMermaidInDocument,
+  repairErDiagramPkFkCommas,
   repairFragmentedSequenceMermaidInDocument,
   stripMarkdownLeakFromMermaidDiagramBody,
 } from "./mermaid.js";
@@ -385,5 +387,17 @@ flowchart TD
 ## Siguiente`;
     const out = formatDocumentMarkdown(doc);
     assert.match(out, /```mermaid[\s\S]*?```[\s\S]*## Siguiente/);
+  });
+});
+
+describe("repairErDiagramPkFkCommas", () => {
+  it("convierte PK, FK en PK FK", () => {
+    const out = repairErDiagramPkFkCommas("uuid tenant_id PK, FK");
+    assert.equal(out, "uuid tenant_id PK FK");
+  });
+
+  it("ensureErDiagramHeader antepone erDiagram si falta", () => {
+    const out = ensureErDiagramHeader("users {\n  uuid id PK\n}");
+    assert.match(out, /^erDiagram/);
   });
 });
