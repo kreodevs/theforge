@@ -6,6 +6,7 @@ import {
   looksLikeOrchestratorDocModificationRequest,
   shouldWarnOrchestratorDocNotPersisted,
 } from "../orchestrator-doc-guard.util.js";
+import { looksLikeDbgaEditRequest } from "@theforge/shared-types";
 
 describe("orchestrator-doc-guard.util", () => {
   it("detecta queja de documento sin cambios", () => {
@@ -29,6 +30,12 @@ describe("orchestrator-doc-guard.util", () => {
         "He actualizado el documento completo integrando el Kill Switch. El cambio ya está reflejado en el panel.",
       ),
       true,
+    );
+    assert.equal(
+      chatClaimsDocumentWasModified(
+        "¿Prefieres que profundice en esta arquitectura y la incorpore al DBGA como una sección?",
+      ),
+      false,
     );
   });
 
@@ -59,6 +66,25 @@ describe("orchestrator-doc-guard.util", () => {
     assert.equal(docWasPersistedForTab("architecture", { hasArch: true }), true);
   });
 
+  it("no avisa en benchmark por plática + pregunta del asistente", () => {
+    const userMsg =
+      "Tenemos que aislar el núcleo del negocio de las APIs. Vamos a usar adaptadores.";
+    const assistantMsg =
+      "¿Prefieres que profundice en esta arquitectura y la incorpore al DBGA como una sección?";
+    assert.equal(looksLikeDbgaEditRequest(userMsg), false);
+    assert.equal(
+      shouldWarnOrchestratorDocNotPersisted({
+        tab: "benchmark",
+        userMessage: userMsg,
+        assistantContent: assistantMsg,
+        flags: { hasDbga: false },
+        currentDocLen: 1200,
+        docPersisted: false,
+      }),
+      false,
+    );
+  });
+
   it("usa docPersisted real en benchmark aunque hasDbga del parser sea true", () => {
     assert.equal(
       shouldWarnOrchestratorDocNotPersisted({
@@ -70,17 +96,6 @@ describe("orchestrator-doc-guard.util", () => {
         docPersisted: false,
       }),
       true,
-    );
-    assert.equal(
-      shouldWarnOrchestratorDocNotPersisted({
-        tab: "benchmark",
-        userMessage: "integrar kill switch",
-        assistantContent: "Listo.",
-        flags: { hasDbga: false },
-        currentDocLen: 1200,
-        docPersisted: true,
-      }),
-      false,
     );
   });
 });

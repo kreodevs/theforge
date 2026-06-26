@@ -1,3 +1,7 @@
+import { looksLikeDbgaEditRequest } from "@theforge/shared-types";
+
+export { looksLikeDbgaEditRequest };
+
 const DBGA_EDIT_STOPWORDS = new Set([
   "para",
   "como",
@@ -29,22 +33,6 @@ const DBGA_EDIT_STOPWORDS = new Set([
   "cambios",
   "cambio",
 ]);
-
-/** Heurística: el usuario pide cambiar el DBGA / Fase 0 (no solo preguntar). */
-export function looksLikeDbgaEditRequest(message: string): boolean {
-  const m = message.trim();
-  if (!m) return false;
-  if (
-    /\b(modific|actualiz|añad|agreg|quitar|cambiar|ajustes?|integrar|incorpor|reescrib|eliminar|corrige|aplica|aplicar|persist|documento|secci[oó]n|tablero|aprobaci[oó]n|kill\s*switch|firma|reglas?\s+de\s+negocio|flujos?|edge\s*cases?|haz\s+las|al\s+documento|al\s+panel)\b/i.test(
-      m,
-    )
-  ) {
-    return true;
-  }
-  return /\b(hay que|debe|necesit|espej|tenant|multi-?tenant|catálogo|mantenimiento|obp4?mo)\b/i.test(
-    m,
-  );
-}
 
 /** Palabras significativas del pedido del usuario (para reintentos y validación laxa). */
 export function extractDbgaEditKeywords(message: string, max = 10): string[] {

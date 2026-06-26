@@ -1,3 +1,8 @@
+import {
+  isHypotheticalDocumentEditOffer,
+  looksLikeDbgaEditRequest,
+} from "@theforge/shared-types";
+
 /** Tabs cuyo chat usa orquestador y persiste documento vía ---FIN_TAG---. */
 export const ORCHESTRATOR_DOC_TABS = new Set([
   "spec",
@@ -23,7 +28,9 @@ const CHANGE_INTENT_RE =
 
 export function chatClaimsDocumentWasModified(text: string): boolean {
   const t = (text ?? "").trim();
-  return t.length >= 20 && DOC_CLAIMS_EDIT_RE.test(t);
+  if (t.length < 20) return false;
+  if (isHypotheticalDocumentEditOffer(t)) return false;
+  return DOC_CLAIMS_EDIT_RE.test(t);
 }
 
 export function looksLikeOrchestratorDocModificationRequest(msg: string): boolean {
@@ -209,7 +216,10 @@ export function detectOrchestratorDocUnchanged(params: {
   if (!ORCHESTRATOR_DOC_TABS.has(tab)) return false;
   if (snapshotBefore.length < 80) return false;
   if (docAfter !== snapshotBefore) return false;
-  const userWantsEdit = looksLikeOrchestratorDocModificationRequest(userMessage);
+  const userWantsEdit =
+    tab === "benchmark"
+      ? looksLikeDbgaEditRequest(userMessage)
+      : looksLikeOrchestratorDocModificationRequest(userMessage);
   const assistantClaims = chatClaimsDocumentWasModified(assistantReply);
   return userWantsEdit || assistantClaims;
 }

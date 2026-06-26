@@ -78,11 +78,20 @@ describe("dbgaReflectsUserEditIntent", () => {
 });
 
 describe("looksLikeDbgaEditRequest — ajustes", () => {
-  it("detecta «haz los ajustes»", () => {
+  it("detecta «haz los ajustes» con contexto espejo", () => {
     assert.ok(
       looksLikeDbgaEditRequest(
         "En todas las tablas espejo necesitamos el id de origen y el id propio, haz los ajustes",
       ),
+    );
+  });
+
+  it("no trata brainstorming de arquitectura como edición", () => {
+    assert.equal(
+      looksLikeDbgaEditRequest(
+        "Tenemos que aislar el núcleo del negocio de las APIs. Vamos a usar adaptadores.",
+      ),
+      false,
     );
   });
 });
