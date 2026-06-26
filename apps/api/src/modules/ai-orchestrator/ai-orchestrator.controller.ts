@@ -1,11 +1,11 @@
 import { BadRequestException, Body, Controller, Post, Res } from "@nestjs/common";
 import { AiOrchestratorService } from "./ai-orchestrator.service.js";
 import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
+import { writeSseFromAsyncGenerator, type SseWritable } from "./sse-stream.util.js";
 
 /** Minimal type for SSE response (avoids express types). */
-interface SseResponse {
+interface SseResponse extends SseWritable {
   setHeader(name: string, value: string | number): void;
-  write(chunk: string, encoding?: unknown): void;
   end(cb?: () => void): void;
   flushHeaders(): void;
 }
@@ -142,13 +142,7 @@ export class AiOrchestratorController {
         },
         images,
       );
-      for await (const ev of stream) {
-        const data = JSON.stringify(ev.data);
-        res.write(`event: ${ev.event}\ndata: ${data}\n\n`);
-        if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
-          (res as unknown as { flush: () => void }).flush();
-        }
-      }
+      await writeSseFromAsyncGenerator(res, stream);
     } catch (err) {
       const payload = JSON.stringify({
         error: err instanceof Error ? err.message : "Error en el stream",
