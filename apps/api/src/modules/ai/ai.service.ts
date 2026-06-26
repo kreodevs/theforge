@@ -28,6 +28,7 @@ import { TASKS_PROMPT } from "./prompts/tasks-prompt.js";
 import { CLARIFY_SPEC_PROMPT } from "./prompts/clarify-spec-prompt.js";
 import { AGENT_GOVERNANCE_PROMPT } from "./prompts/agent-governance-prompt.js";
 import { AEM_PROMPT } from "./prompts/aem-prompt.js";
+import { AEM_INVESTMENT_ADVISOR_PROMPT } from "./prompts/aem-investment-advisor-prompt.js";
 import { formatSuggestedArtifactsPromptBlock } from "./utils/suggest-agent-governance-artifacts.js";
 import type { AgentGovernanceSuggestions } from "./utils/suggest-agent-governance-artifacts.js";
 import type { ComplexityLevel } from "@theforge/shared-types";
@@ -1317,5 +1318,54 @@ export class AiService {
     }
 
     return this.generateResponse(parts.join("\n\n"), [], { systemPrompt: AEM_PROMPT });
+  }
+
+  /** Dictamen de inversión digital que complementa el AEM generado. */
+  async generateAemInvestmentAdvisory(input: {
+    aemContent: string;
+    marketScope: AemMarketScope;
+    projectName?: string | null;
+    benchmarkContent?: string | null;
+    phase0Content?: string | null;
+    brdContent?: string | null;
+  }): Promise<string> {
+    const cap = (raw: string | null | undefined, max: number) => {
+      const t = (raw ?? "").trim();
+      if (t.length <= max) return t;
+      return `${t.slice(0, max)}\n\n[... contenido truncado ...]`;
+    };
+
+    const aem = cap(input.aemContent, 45000);
+    if (!aem) {
+      return (
+        "# Dictamen de inversión digital\n\n" +
+        "No hay AEM para analizar. Genera primero el Análisis y Estudio de Mercado.\n"
+      );
+    }
+
+    const scopeLabel =
+      input.marketScope === "global"
+        ? "Global"
+        : input.marketScope === "mexico"
+          ? "México"
+          : "LATAM";
+
+    const benchmark = cap(input.benchmarkContent, 8000);
+    const phase0 = cap(input.phase0Content, 8000);
+    const brd = cap(input.brdContent, 8000);
+
+    const parts = [
+      "Analiza el **AEM** adjunto y genera el **Dictamen de inversión digital** según el system prompt.",
+      `**Alcance geográfico del estudio:** ${scopeLabel}.`,
+      input.projectName?.trim() ? `**Proyecto:** ${input.projectName.trim()}` : "",
+      `AEM (documento a analizar):\n---\n${aem}\n---`,
+      benchmark.length > 0 ? `Contexto adicional — Benchmark:\n---\n${benchmark}\n---` : "",
+      phase0.length > 0 ? `Contexto adicional — Fase 0:\n---\n${phase0}\n---` : "",
+      brd.length > 0 ? `Contexto adicional — BRD:\n---\n${brd}\n---` : "",
+    ].filter(Boolean);
+
+    return this.generateResponse(parts.join("\n\n"), [], {
+      systemPrompt: AEM_INVESTMENT_ADVISOR_PROMPT,
+    });
   }
 }

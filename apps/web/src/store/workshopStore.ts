@@ -2622,7 +2622,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   persistAemContent: async (content) => {
     await persistField("aemContent", content, get, set);
   },
-  /** POST …/projects/:id/generate-aem — Benchmark + Fase 0 + BRD → AEM (alcance geográfico). */
+  /** POST …/projects/:id/generate-aem — Benchmark + Fase 0 + BRD → AEM + dictamen inversión digital. */
   generateAem: async (projectId, opts) => {
     if (!projectId?.trim()) return null;
     set({ loading: true, loadingReason: "aem", error: null });

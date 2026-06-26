@@ -4290,7 +4290,7 @@ export default function WorkshopView({
               <StandardDocPanel
                 icon={FileText}
                 title="AEM"
-                description="Análisis y Estudio de Mercado — inteligencia de mercado, competencia, monetización y glosario a partir de Benchmark, Fase 0 y BRD."
+                description="Análisis y Estudio de Mercado — inteligencia de mercado, competencia, monetización, glosario y dictamen de inversión digital (SEGUIR / NO SEGUIR / SEGUIR CON CONDICIONES)."
                 content={aemContent}
                 onContentChange={(v) => setAemContent(v)}
                 onSave={() => void persistAemContent(aemContent ?? "")}

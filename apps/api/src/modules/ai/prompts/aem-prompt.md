@@ -50,3 +50,4 @@ Usa exactamente estas secciones principales (`##`). El título del documento es 
 - No inventes competidores o regulaciones sin marcarlas como inferencia o hipótesis.
 - No omitas monetización ni glosario.
 - No incluyas detalle técnico de implementación (APIs, esquemas BD) — eso pertenece al MDD/Blueprint.
+- No generes el dictamen de inversión digital en este paso; se añade en un segundo paso automático.

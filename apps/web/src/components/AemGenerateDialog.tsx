@@ -40,7 +40,8 @@ export function AemGenerateDialog({
           <DialogTitle>Generar Análisis y Estudio de Mercado</DialogTitle>
           <DialogDescription>
             Se usarán Benchmark (Deep Research), Fase 0 (DBGA) y BRD disponibles. El documento incluirá
-            glosario de términos y planes de monetización.
+            glosario, planes de monetización y un dictamen de inversión digital (SEGUIR / NO SEGUIR / SEGUIR CON
+            CONDICIONES) que analiza el AEM.
           </DialogDescription>
         </DialogHeader>
 

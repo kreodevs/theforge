@@ -359,7 +359,7 @@ export function getWorkshopDocPanelHeader(
     },
     aem: {
       title: "Análisis y Estudio de Mercado",
-      subtitle: "Mercado, competencia, monetización y glosario",
+      subtitle: "Mercado, monetización, glosario y dictamen de inversión",
       Icon: FileText,
     },
     "handoff-spec": {

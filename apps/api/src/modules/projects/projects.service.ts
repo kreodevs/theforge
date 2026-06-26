@@ -1480,13 +1480,22 @@ name: ${JSON.stringify(name)}
 
     let content: string;
     try {
-      content = await this.ai.generateAem({
+      const aemMarkdown = await this.ai.generateAem({
         marketScope: parsed.marketScope,
         benchmarkContent,
         phase0Content,
         brdContent,
         projectName: project.name,
       });
+      const advisory = await this.ai.generateAemInvestmentAdvisory({
+        aemContent: aemMarkdown,
+        marketScope: parsed.marketScope,
+        projectName: project.name,
+        benchmarkContent,
+        phase0Content,
+        brdContent,
+      });
+      content = `${aemMarkdown.trim()}\n\n${advisory.trim()}`;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error al generar AEM";
       throw new Error(`Falló la generación del AEM. ${message.slice(0, 200)}`);
