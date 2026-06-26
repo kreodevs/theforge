@@ -3,7 +3,11 @@
  * y genera bloques Mermaid basados en el contenido del documento.
  */
 
-import { ensureErDiagramHeader, repairErDiagramPkFkCommas } from "@theforge/shared-types/mermaid";
+import {
+  ensureErDiagramHeader,
+  repairErDiagramPkFkCommas,
+  stripErDiagramSqlDefaultArtifacts,
+} from "@theforge/shared-types/mermaid";
 
 export interface DiagramSuggestion {
   /** Sección donde insertar (ej. "2. Modelo de datos") */
@@ -212,17 +216,19 @@ function suggestAuthStateDiagram(section3Body: string): DiagramSuggestion | null
  */
 export function normalizeErDiagramForMermaid(content: string): string {
   if (!content?.trim()) return content;
-  const base = repairErDiagramPkFkCommas(
-    content
-      .replace(/\btimestamptz\b/gi, "datetime")
-      .replace(/\\n/g, "\n")
-      .replace(/\\r/g, "\r")
-      .replace(/\t/g, " ")
-      .replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, " ")
-      .split("\n")
-      .map((line) => line.trimEnd())
-      .join("\n")
-      .trim(),
+  const base = stripErDiagramSqlDefaultArtifacts(
+    repairErDiagramPkFkCommas(
+      content
+        .replace(/\btimestamptz\b/gi, "datetime")
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\t/g, " ")
+        .replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, " ")
+        .split("\n")
+        .map((line) => line.trimEnd())
+        .join("\n")
+        .trim(),
+    ),
   );
   const withHeader = ensureErDiagramHeader(base);
   return withHeader
@@ -336,7 +342,26 @@ export function sqlToErDiagramContent(sql: string): string | null {
   if (!sql?.trim() || !/CREATE\s+TABLE/i.test(sql)) return null;
   const { tables, relations } = extractTablesAndRelations(sql);
   if (tables.length === 0) return null;
-  return buildErDiagram(tables, relations);
+  return normalizeErDiagramForMermaid(buildErDiagram(tables, relations));
+}
+
+/** Bloque ```mermaid con un solo encabezado erDiagram (sin ###). */
+export function wrapErDiagramAsMermaidFence(diagramContent: string): string {
+  const body = normalizeErDiagramForMermaid(
+    (diagramContent ?? "")
+      .replace(/^```mermaid\s*/i, "")
+      .replace(/```\s*$/i, "")
+      .trim(),
+  );
+  if (!body) return "";
+  return `\`\`\`mermaid\n${body}\n\`\`\``;
+}
+
+/** Bloque completo §3: heading + fence mermaid derivado del SQL. */
+export function buildErDiagramSectionBlockFromSql(sql: string): string | null {
+  const diagram = sqlToErDiagramContent(sql);
+  if (!diagram) return null;
+  return `\n\n### Diagrama entidad-relación\n\n${wrapErDiagramAsMermaidFence(diagram)}\n\n`;
 }
 
 /** Sugiere erDiagram derivado del SQL (siempre que haya CREATE TABLE). insertAfterMarker debe coincidir con el heading real del draft (## 2 o ## 3. Modelo de datos). */
@@ -344,13 +369,13 @@ function suggestErDiagram(
   sectionBody: string,
   insertAfterMarker: string = "## 3. Modelo de Datos",
 ): DiagramSuggestion | null {
-  const mermaid = sqlToErDiagramContent(sectionBody);
-  if (!mermaid) return null;
+  const block = buildErDiagramSectionBlockFromSql(sectionBody);
+  if (!block) return null;
   return {
     section: "3. Modelo de Datos",
     type: "erDiagram",
-    reason: "Hay tablas definidas con CREATE TABLE; un diagrama entidad-relación complementa el SQL.",
-    mermaidBlock: "\n\n### Diagrama entidad-relación\n\n```mermaid\n" + mermaid + "\n```\n\n",
+    reason: "Hay tablas definidas con CREATE TABLE; el erDiagram se deriva del SQL (no del LLM).",
+    mermaidBlock: block,
     insertAfterMarker,
     insertAt: "end",
   };
@@ -409,20 +434,6 @@ export function suggestMddDiagrams(draft: string): DiagramSuggestion[] {
   return suggestions;
 }
 
-/** Devuelve true si el bloque erDiagram existente es "mínimo" (solo una columna por entidad, sin relaciones). No reemplazar si ya tiene contenido completo. */
-function isMinimalErDiagram(sectionBody: string): boolean {
-  const match = sectionBody.match(/```mermaid\s*([\s\S]*?)```/i);
-  if (!match?.[1]) return true;
-  const inner = match[1].trim();
-  if (!/erDiagram/i.test(inner)) return true;
-  const hasRelations = /}[o|]*\s*--\s*[o|]*\s*[a-zA-Z_]+/.test(inner);
-  if (hasRelations) return false;
-  const attrLines = inner.match(/^\s*(string|int|datetime|float|boolean)\s+\S+/gm) ?? [];
-  const entityCount = (inner.match(/\n\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\{/g) ?? []).length;
-  if (entityCount === 0) return true;
-  return attrLines.length <= entityCount;
-}
-
 /** Reemplaza el primer bloque ```mermaid ... erDiagram ... ``` en sectionBody por newBlock. Quita ### anterior si existe. */
 function replaceErDiagramBlock(sectionBody: string, newBlock: string): string {
   const open = sectionBody.search(/```mermaid\s*/i);
@@ -475,7 +486,7 @@ export function regenerateErDiagramFromSql(draft: string): string | null {
 
 /**
  * Inserta los bloques Mermaid: "start" = justo después del heading; "end" = al final del cuerpo.
- * Para erDiagram: solo reemplaza si el existente es mínimo (una columna por tabla, sin relaciones). Si ya está completo, no lo pisa.
+ * erDiagram: siempre se regenera desde SQL cuando hay sugerencia (pisa salida del LLM).
  */
 export function injectMddDiagrams(draft: string, suggestions: DiagramSuggestion[]): string {
   let out = draft;
@@ -490,7 +501,6 @@ export function injectMddDiagrams(draft: string, suggestions: DiagramSuggestion[
     const sectionBody = nextH2 !== -1 ? afterMarker.slice(0, nextH2) : afterMarker;
 
     if (s.type === "erDiagram" && /```mermaid\s*[\s\S]*?erDiagram/i.test(sectionBody)) {
-      if (!isMinimalErDiagram(sectionBody)) continue;
       const newSectionBody = replaceErDiagramBlock(sectionBody, s.mermaidBlock);
       const sectionEnd = nextH2 !== -1 ? sectionStart + nextH2 : out.length;
       out = out.slice(0, sectionStart) + newSectionBody + out.slice(sectionEnd);

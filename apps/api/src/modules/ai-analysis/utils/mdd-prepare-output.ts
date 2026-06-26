@@ -1,7 +1,11 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
 import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js";
 import { injectProposedComponentDiagramIntoSection2 } from "./mdd-component-diagram.util.js";
-import { injectMddDiagrams, suggestMddDiagrams } from "./mdd-diagram-suggestions.js";
+import {
+  injectMddDiagrams,
+  regenerateErDiagramFromSql,
+  suggestMddDiagrams,
+} from "./mdd-diagram-suggestions.js";
 import {
   extractSection3Body,
   finalizeMddDeliverable,
@@ -142,7 +146,8 @@ export function prepareMddForOutput(
     replaceContextWhenOnlyMetadata(sanitizeContextKeyValueAndObject(sanitizeContextSection(raw)));
   const normalized = restoreSections6And7AfterNormalize(raw, normalizeMddFormat(sanitized));
   const withDiagrams = injectMddDiagrams(normalized, suggestMddDiagrams(normalized));
-  const withComponentDiagram = injectProposedComponentDiagramIntoSection2(withDiagrams);
+  const withErFromSql = regenerateErDiagramFromSql(withDiagrams) ?? withDiagrams;
+  const withComponentDiagram = injectProposedComponentDiagramIntoSection2(withErFromSql);
   const enriched = enrichMddWithUiUxDesignIntent(withComponentDiagram);
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
   return reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance));

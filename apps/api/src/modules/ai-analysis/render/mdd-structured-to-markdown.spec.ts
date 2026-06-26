@@ -60,6 +60,20 @@ describe("mddStructuredToMarkdown", () => {
     assert.ok(md.includes("```mermaid") && md.includes("erDiagram"), "debe contener bloque mermaid");
   });
 
+  it("prefiere erDiagram derivado del SQL sobre diagramaEr del LLM", () => {
+    const md = mddStructuredToMarkdown({
+      ...referenceMdd,
+      modeloDatos: {
+        sql: "CREATE TABLE users (id UUID PRIMARY KEY, email VARCHAR(255));\nCREATE TABLE sessions (id UUID PRIMARY KEY, user_id UUID REFERENCES users(id));",
+        diagramaEr:
+          "erDiagram\n  users { uuid id PK uuid default string email FK }\n  sessions ||--o{ users : \"wrong\"",
+        technicalMetadata: ["[high_security]"],
+      },
+    });
+    assert.doesNotMatch(md, /uuid default/i);
+    assert.match(md, /users \|\|--o\{ sessions/);
+  });
+
   it("generates markdown with metadata (high_security)", () => {
     const md = mddStructuredToMarkdown(referenceMdd);
     assert.ok(md.includes("Metadata") && md.includes("high_security"), "debe contener metadata high_security");

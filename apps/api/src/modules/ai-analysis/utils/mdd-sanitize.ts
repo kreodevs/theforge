@@ -1,4 +1,5 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
+import { sqlToErDiagramContent } from "./mdd-diagram-suggestions.js";
 
 /** Convierte objeto con subsections (array de {title, description: string[]}) a markdown legible. */
 function subsectionsToMarkdown(val: unknown): string | null {
@@ -3772,8 +3773,6 @@ export function parseModeloDatosFromSection3Markdown(markdown: string): {
   let sql = sqlMatch?.[1]?.trim() ?? "";
   if (!sql && /CREATE\s+TABLE/i.test(trimmed)) sql = extractSqlFromSection3Fallback(trimmed);
   if (!sql) return null;
-  const mermaidMatch = trimmed.match(/```mermaid\s*([\s\S]*?)```/i);
-  const diagramaEr = mermaidMatch?.[1]?.trim();
   const metaMatch = trimmed.match(/```TechnicalMetadata\s*([\s\S]*?)```/i);
   const metaRaw = metaMatch?.[1]?.trim();
   const technicalMetadata = metaRaw
@@ -3782,6 +3781,8 @@ export function parseModeloDatosFromSection3Markdown(markdown: string): {
       .map((s) => s.trim())
       .filter((s) => /^\[.*\]$/.test(s))
     : ["[high_security]"];
+  // diagramaEr: derivado del SQL (no del bloque mermaid del LLM).
+  const diagramaEr = sqlToErDiagramContent(sql) ?? undefined;
   return { sql, diagramaEr, technicalMetadata };
 }
 

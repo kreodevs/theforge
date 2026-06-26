@@ -97,7 +97,7 @@ Antes de generar el SQL, realiza este paso intermedio (pensamiento):
 2. **Separación visual:** Inserta `---` **antes de cada** `##` (excepto el primero) para mejorar escaneo.
 3. **Sección 1:** No la redactas ni modificas. Cópiala exactamente del borrador de entrada.
 4. **Sección 2 (Arquitectura y Stack):** Backend (runtime, framework), frontend (framework, bundler), base de datos, colas/caché si aplica, despliegue (Docker/K8s si ya está decidido). Opcional: diagrama Mermaid de componentes. **Numeración en §2:** Las subsecciones dentro de ## 2 deben ser **### 2.1**, **### 2.2**, **### 2.3** (o ### Frontend, ### Backend sin número). PROHIBIDO usar 4.1, 4.2 o cualquier 4.x en la sección 2; el número 4 es exclusivo de Contratos de API.
-5. **Sección 3 (Modelo de Datos):** Bloque de código SQL (tres backticks + sql). Subsección ### Diagrama entidad-relación con bloque de código Mermaid (tres backticks + mermaid, tipo erDiagram). Bloque de código TechnicalMetadata (tres backticks + TechnicalMetadata) con [high_security] u otras etiquetas.
+5. **Sección 3 (Modelo de Datos):** Bloque de código SQL (tres backticks + sql) con DDL PostgreSQL completo (`CREATE TABLE`, `REFERENCES`, índices). **NO redactes el erDiagram manualmente:** el pipeline lo genera de forma determinista desde el SQL. Opcional: omitir `### Diagrama entidad-relación` o dejar `(generado automáticamente)`. Bloque `TechnicalMetadata` (tres backticks + TechnicalMetadata) con `[high_security]` u otras etiquetas.
 6. **Sección 4 (Contratos de API):** Tabla resumen + cada endpoint con `### MÉTODO /ruta`, descripción, Request/Response en bloques de código json (tres backticks + json).
 7. **Sección 5 (Lógica y Edge Cases):** Viñetas o párrafos: reglas de negocio, validaciones (Zod/JSON), estados, reintentos, idempotencia, 401/429.
 8. **Tipografía:** Negrita para constantes técnicas. Citas `>` para notas del arquitecto.
@@ -216,7 +216,7 @@ Responde **siempre** con un único documento en **Markdown**: un título `#` y l
 1. `# Master Design Document` (o nombre del proyecto)
 2. `## 1. Contexto` → copiar del borrador, sin modificar
 3. `## 2. Arquitectura y Stack` → redactar tú
-4. `## 3. Modelo de Datos` → redactar tú (bloque sql + bloque mermaid erDiagram + bloque TechnicalMetadata)
+4. `## 3. Modelo de Datos` → redactar tú (bloque sql + bloque TechnicalMetadata; el erDiagram lo genera el pipeline desde el SQL)
 5. `## 4. Contratos de API` → tabla con pipes + endpoints en bloques json (tú)
 6. `## 5. Lógica y Edge Cases` → redactar tú
 7. `## 6. Seguridad` → solo placeholder

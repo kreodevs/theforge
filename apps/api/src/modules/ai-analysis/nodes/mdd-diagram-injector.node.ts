@@ -2,10 +2,12 @@ import type { MDDStateType } from "../state/index.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
 import { injectProposedComponentDiagramIntoSection2 } from "../utils/mdd-component-diagram.util.js";
 import {
-  injectErDiagramBlockIntoDraft,
   injectMddDiagrams,
+  regenerateErDiagramFromSql,
   suggestMddDiagrams,
   sqlToErDiagramContent,
+  wrapErDiagramAsMermaidFence,
+  injectErDiagramBlockIntoDraft,
 } from "../utils/mdd-diagram-suggestions.js";
 import { getMddDraftSummary, logMddNodeOutput } from "../utils/mdd-sanitize.js";
 
@@ -27,8 +29,7 @@ function finalizeDiagramInjection(
 
 /**
  * Nodo que detecta puntos del MDD donde enriquecer con diagramas Mermaid (ER, estados, flujo).
- * Prioridad: generar el diagrama ER desde el §3 del draft actual (no desde mddStructured) para no
- * inyectar un diagrama viejo si structured quedó desactualizado. Solo usa mddStructured si el draft no tiene §3 con SQL.
+ * El erDiagram se deriva siempre del SQL (CREATE TABLE): la salida del LLM se pisa en §3.
  */
 export function createMddDiagramInjectorNode(): (state: MDDStateType) => Promise<Partial<MDDStateType>> {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
@@ -43,40 +44,45 @@ export function createMddDiagramInjectorNode(): (state: MDDStateType) => Promise
     if (suggestions.length > 0) {
       try {
         workingDraft = injectMddDiagrams(workingDraft, suggestions);
-        if (workingDraft !== draft) {
-          LOG("inyectados %s diagrama(s) desde draft §3", suggestions.length);
-        }
       } catch (err) {
         LOG("error inyectando diagramas desde draft: %s", err instanceof Error ? err.message : String(err));
       }
     }
 
+    try {
+      const regenerated = regenerateErDiagramFromSql(workingDraft);
+      if (regenerated) workingDraft = regenerated;
+    } catch (err) {
+      LOG("error regenerando ER desde SQL: %s", err instanceof Error ? err.message : String(err));
+    }
+
+    let mergedStructured = state.mddStructured;
     const md = state.mddStructured?.modeloDatos;
-    if (md?.sql?.trim() && !md.diagramaEr?.trim()) {
+    if (md?.sql?.trim() && /CREATE\s+TABLE/i.test(md.sql)) {
       try {
         const diagramaEr = sqlToErDiagramContent(md.sql);
         if (diagramaEr) {
-          const mermaidBlock = "```mermaid\nerDiagram\n" + diagramaEr + "\n```";
+          const mermaidBlock = wrapErDiagramAsMermaidFence(diagramaEr);
           workingDraft = injectErDiagramBlockIntoDraft(workingDraft, mermaidBlock);
-          const merged = mergeMddStructured(
+          mergedStructured = mergeMddStructured(
             state.mddStructured,
             {
               modeloDatos: { sql: md.sql, diagramaEr, technicalMetadata: md.technicalMetadata },
             },
             state.mddDraft ?? "",
           );
-          const out = finalizeDiagramInjection(draft, workingDraft, "inyectado diagramaEr + componentes propuestos");
-          if (out) return { ...out, mddStructured: merged };
         }
       } catch (err) {
-        LOG("error generando diagramaEr desde structured: %s", err instanceof Error ? err.message : String(err));
+        LOG("error sincronizando diagramaEr desde structured SQL: %s", err instanceof Error ? err.message : String(err));
       }
     }
 
-    const out = finalizeDiagramInjection(draft, workingDraft, "inyectados diagramas / componentes propuestos");
-    if (out) return out;
+    const out = finalizeDiagramInjection(draft, workingDraft, "diagramas ER/SQL + componentes propuestos");
+    if (out) {
+      return mergedStructured !== state.mddStructured ? { ...out, mddStructured: mergedStructured } : out;
+    }
 
-    LOG("sin sugerencias de diagramas o sin cambios");
+    LOG("sin cambios tras inyección de diagramas");
     return {};
   };
 }

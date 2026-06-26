@@ -1,6 +1,6 @@
 import json2md from "json2md";
 import type { MddStructured } from "../state/mdd-structured.schema.js";
-import { erDiagramToSql, normalizeErDiagramForMermaid, sqlToErDiagramContent } from "../utils/mdd-diagram-suggestions.js";
+import { normalizeErDiagramForMermaid, sqlToErDiagramContent } from "../utils/mdd-diagram-suggestions.js";
 import { normalizeContratosTableSummary } from "../utils/mdd-sanitize.js";
 
 /** Solo espacios ASCII (0x20). Nunca &nbsp; ni espacios Unicode en bloques de código. */
@@ -14,9 +14,6 @@ function normalizeCodeBlockToAsciiSpaces(s: string): string {
     .trim();
 }
 
-function countCreateTables(sql: string): number {
-  return (sql.match(/CREATE\s+TABLE/gi) || []).length;
-}
 
 type Json2mdNode = Record<string, unknown>;
 
@@ -66,21 +63,17 @@ function structuredToJson2mdNodes(mdd: MddStructured): Json2mdNode[] {
   nodes.push({ p: "" });
   const sqlRaw = mdd.modeloDatos?.sql?.trim();
   const diagramaRaw = mdd.modeloDatos?.diagramaEr?.trim();
-  let diagramaNormalized = diagramaRaw
-    ? normalizeErDiagramForMermaid(
-        diagramaRaw.replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\t/g, "\t"),
-      )
-    : "";
-  if (!diagramaNormalized && sqlRaw && /CREATE\s+TABLE/i.test(sqlRaw)) {
+  // SQL es SSOT: el erDiagram del LLM suele incluir uuid default / FK erróneos → derivar siempre del DDL.
+  let diagramaNormalized = "";
+  if (sqlRaw && /CREATE\s+TABLE/i.test(sqlRaw)) {
     const fromSql = sqlToErDiagramContent(sqlRaw);
     if (fromSql) diagramaNormalized = fromSql;
+  } else if (diagramaRaw) {
+    diagramaNormalized = normalizeErDiagramForMermaid(
+      diagramaRaw.replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\t/g, "\t"),
+    );
   }
-  const sqlFromDiagram = diagramaNormalized ? erDiagramToSql(diagramaNormalized) : null;
-  const useDiagramSql =
-    sqlFromDiagram &&
-    diagramaRaw &&
-    countCreateTables(sqlFromDiagram) > countCreateTables(sqlRaw ?? "");
-  const content = useDiagramSql ? sqlFromDiagram! : (sqlRaw ?? "");
+  const content = sqlRaw ?? "";
   const hasSection3 = content || diagramaNormalized;
   if (hasSection3) {
     if (content) {
