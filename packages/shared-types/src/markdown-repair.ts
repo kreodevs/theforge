@@ -6,6 +6,24 @@
 
 import { looksLikeMermaidDiagramBody, splitMermaidFenceBodyAtDocumentLeak } from "./mermaid.js";
 
+/** Elimina ``` huérfano que envuelve el heading + ```mermaid como bloque plano (MDD LLM). */
+export function stripOrphanFenceLineBeforeMermaid(document: string): string {
+  if (!document?.trim()) return document ?? "";
+  return document
+    .replace(/(^|\n)```\s*\n(\s*#{1,6}\s[^\n]+\n+\s*```mermaid\s*\n)/g, "$1$2")
+    .replace(/(^|\n)```\s*\n(\s*```mermaid\s*\n)/g, "$1$2");
+}
+
+/** Fence sin lenguaje cuyo cuerpo es heading + ```mermaid literal → markdown válido. */
+export function unwrapEmbeddedMermaidFence(body: string): string | null {
+  const m = body.match(/^(\s*#{1,6}\s[^\n]*\n+)?\s*```mermaid\s*\n([\s\S]*)$/i);
+  if (!m) return null;
+  const diagram = m[2]!.trim();
+  if (!looksLikeMermaidDiagramBody(diagram)) return null;
+  const heading = m[1] ?? "";
+  return `${heading}\`\`\`mermaid\n${diagram}\n\`\`\``;
+}
+
 function markdownLikeDocFragment(t: string): boolean {
   const s = t.trim();
   if (s.length < 40) return false;
@@ -21,7 +39,8 @@ function markdownLikeDocFragment(t: string): boolean {
  */
 export function repairMarkdownFences(raw: string): string {
   if (!raw?.trim()) return raw ?? "";
-  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const preprocessed = stripOrphanFenceLineBeforeMermaid(raw);
+  const lines = preprocessed.replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   let i = 0;
 
@@ -41,9 +60,13 @@ export function repairMarkdownFences(raw: string): string {
       if (hasClose) i++;
       const body = inner.join("\n");
       const isMermaidDiagram = lang === "mermaid" && looksLikeMermaidDiagramBody(body);
+      const embeddedMermaid = !lang && hasClose ? unwrapEmbeddedMermaidFence(body) : null;
       // LLMs sometimes fence BRD/MDD prose as ```mermaid; unwrap when body is markdown, not a diagram.
       const unwrapLang = !lang || lang === "markdown" || lang === "md" || lang === "mermaid";
-      if (!hasClose && isMermaidDiagram) {
+      if (embeddedMermaid) {
+        if (out.length > 0 && (out[out.length - 1] ?? "").trim() !== "") out.push("");
+        out.push(...embeddedMermaid.split("\n"));
+      } else if (!hasClose && isMermaidDiagram) {
         const { diagram, remainder } = splitMermaidFenceBodyAtDocumentLeak(body);
         out.push(openLine);
         if (diagram) out.push(...diagram.split("\n"));
