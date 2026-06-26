@@ -924,6 +924,47 @@ function mermaidMarkdownLeakLine(trimmed: string): boolean {
   return false;
 }
 
+const MERMAID_BODY_START =
+  /^\s*(erDiagram|flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|classDiagram|gantt|pie|gitGraph|mindmap|timeline|journey|quadrantChart|xychart|blockDiagram|requirementDiagram)\b/i;
+
+/** True si el cuerpo de un fence ```mermaid empieza con sintaxis de diagrama reconocible. */
+export function looksLikeMermaidDiagramBody(body: string): boolean {
+  return MERMAID_BODY_START.test((body ?? "").trim());
+}
+
+/**
+ * Parte un fence ```mermaid sin cerrar: diagrama válido vs markdown del MDD colado (## 4., notas _…_, etc.).
+ */
+export function splitMermaidFenceBodyAtDocumentLeak(body: string): { diagram: string; remainder: string } {
+  if (!body?.trim()) return { diagram: "", remainder: "" };
+
+  const lines = body.split("\n");
+  const diagramLines: string[] = [];
+  const remainderLines: string[] = [];
+  let seenDiagramStart = false;
+  let inRemainder = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!inRemainder) {
+      if (MERMAID_BODY_START.test(trimmed)) seenDiagramStart = true;
+      if (seenDiagramStart && mermaidMarkdownLeakLine(trimmed)) {
+        inRemainder = true;
+        remainderLines.push(line);
+        continue;
+      }
+      diagramLines.push(line);
+    } else {
+      remainderLines.push(line);
+    }
+  }
+
+  return {
+    diagram: diagramLines.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+    remainder: remainderLines.join("\n").replace(/^\n+/, "").trim(),
+  };
+}
+
 /**
  * Trunca cuerpo Mermaid cuando el LLM no cerró el fence y filtró markdown
  * (TechnicalMetadata, encabezados ##, fences ```, viñetas con backticks).

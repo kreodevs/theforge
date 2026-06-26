@@ -4,6 +4,8 @@
  * (sin wrap, texto cortado a la derecha).
  */
 
+import { looksLikeMermaidDiagramBody, splitMermaidFenceBodyAtDocumentLeak } from "./mermaid.js";
+
 function markdownLikeDocFragment(t: string): boolean {
   const s = t.trim();
   if (s.length < 40) return false;
@@ -38,12 +40,22 @@ export function repairMarkdownFences(raw: string): string {
       const hasClose = i < lines.length && /^```\s*$/.test(lines[i]!.trim());
       if (hasClose) i++;
       const body = inner.join("\n");
+      const isMermaidDiagram = lang === "mermaid" && looksLikeMermaidDiagramBody(body);
       // LLMs sometimes fence BRD/MDD prose as ```mermaid; unwrap when body is markdown, not a diagram.
       const unwrapLang = !lang || lang === "markdown" || lang === "md" || lang === "mermaid";
-      if (hasClose && unwrapLang && markdownLikeDocFragment(body)) {
+      if (!hasClose && isMermaidDiagram) {
+        const { diagram, remainder } = splitMermaidFenceBodyAtDocumentLeak(body);
+        out.push(openLine);
+        if (diagram) out.push(...diagram.split("\n"));
+        out.push("```");
+        if (remainder.trim()) {
+          if ((out[out.length - 1] ?? "").trim() !== "") out.push("");
+          out.push(...remainder.split("\n"));
+        }
+      } else if (hasClose && unwrapLang && markdownLikeDocFragment(body) && !isMermaidDiagram) {
         if (out.length > 0 && (out[out.length - 1] ?? "").trim() !== "") out.push("");
         out.push(...body.split("\n"));
-      } else if (!hasClose && unwrapLang && markdownLikeDocFragment(body)) {
+      } else if (!hasClose && unwrapLang && markdownLikeDocFragment(body) && !isMermaidDiagram) {
         if (out.length > 0 && (out[out.length - 1] ?? "").trim() !== "") out.push("");
         out.push(...body.split("\n"));
       } else {
