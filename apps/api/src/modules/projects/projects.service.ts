@@ -10,11 +10,13 @@ import { enrichBlueprintWithUiDesignSystem } from "../engine/blueprint-enrich-ui
 import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
-import { shouldReplacePhase0SummaryWithBorrador } from "@theforge/shared-types";
+import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson } from "@theforge/shared-types";
 import {
   enforceMddGovernancePatternsOnPersist,
   mddHasSubstantialBody,
 } from "@theforge/shared-types/mdd-governance-patterns";
+import { loadProjectBorrador, hasBorradorContent } from "../ai-analysis/phase0/phase0-load-borrador.util.js";
+import { phase0ToMarkdown } from "../ai-analysis/phase0/phase0-to-markdown.js";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
 import type { ApiConformanceResult, ConformanceResult } from "../engine/conformance.service.js";
 import {
@@ -1448,6 +1450,49 @@ name: ${JSON.stringify(name)}
       throw new Error("El proveedor de IA devolvió un formato inesperado");
     }
     return this.update(projectId, { phase0SummaryContent: summary.trim() });
+  }
+
+  async generateAem(projectId: string, body: unknown) {
+    const parsed = generateAemBodySchema.parse(body ?? {});
+    const project = await this.assertProjectAccess(projectId);
+
+    const dbga = (project.dbgaContent ?? "").trim();
+    const summaryRaw = (project.phase0SummaryContent ?? "").trim();
+    const benchmarkContent =
+      summaryRaw && !isPhase0BorradorJson(summaryRaw) ? summaryRaw : "";
+
+    let phase0Content = dbga;
+    if (!phase0Content) {
+      const borrador = loadProjectBorrador(project.dbgaContent, project.phase0SummaryContent);
+      if (hasBorradorContent(borrador)) {
+        phase0Content = phase0ToMarkdown(borrador);
+      }
+    }
+
+    const stage = pickPrimaryStage(project.stages ?? []);
+    const brdContent = (stage?.brdContent ?? "").trim();
+
+    if (!benchmarkContent && !phase0Content && !brdContent) {
+      throw new BadRequestException(
+        "Se requiere al menos Benchmark (Deep Research), Fase 0 (DBGA) o BRD para generar el AEM.",
+      );
+    }
+
+    let content: string;
+    try {
+      content = await this.ai.generateAem({
+        marketScope: parsed.marketScope,
+        benchmarkContent,
+        phase0Content,
+        brdContent,
+        projectName: project.name,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Error al generar AEM";
+      throw new Error(`Falló la generación del AEM. ${message.slice(0, 200)}`);
+    }
+
+    return this.update(projectId, { aemContent: cleanDocumentContent(content) });
   }
 
   async generateSpec(projectId: string) {

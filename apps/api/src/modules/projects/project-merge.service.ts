@@ -82,9 +82,6 @@ export class ProjectMergeService {
     const sources = await this.loadSources(parsed.sourceProjectIds, userId, opts);
 
     if (parsed.targetMode === "existing" && parsed.targetProjectId) {
-      if (parsed.sourceProjectIds.includes(parsed.targetProjectId)) {
-        throw new BadRequestException("El proyecto destino no puede ser fuente");
-      }
       await this.assertOwner(parsed.targetProjectId, userId);
     }
 

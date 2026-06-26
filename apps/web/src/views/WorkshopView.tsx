@@ -134,6 +134,8 @@ import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
 import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
 import { WorkshopExportSddButton } from "../components/WorkshopExportSddButton";
 import { ClarifySpecPanel } from "../components/ClarifySpecPanel";
+import { AemGenerateDialog } from "../components/AemGenerateDialog";
+import type { AemMarketScope } from "@theforge/shared-types";
 import {
   WorkshopDirtySaveBar,
   WorkshopDocToolbarIcon,
@@ -442,6 +444,15 @@ export default function WorkshopView({
       ? phase0SummaryContent
       : null;
   const benchmarkNeedsRegenerate = isPhase0BorradorJson(phase0SummaryContent);
+  const canGenerateAem = useMemo(
+    () =>
+      !!(
+        dbgaContent?.trim() ||
+        benchmarkMarkdown?.trim() ||
+        (activeWorkshopStage?.brdContent ?? "").trim()
+      ),
+    [dbgaContent, benchmarkMarkdown, activeWorkshopStage?.brdContent],
+  );
   const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
   const aemContent = aemContentField ?? project?.aemContent ?? null;
   const handoffSpecContent = handoffSpecContentField ?? project?.handoffSpecContent ?? null;
@@ -604,6 +615,7 @@ export default function WorkshopView({
   const persistInfraContent = useWorkshopStore((s) => s.persistInfraContent);
   const generateInfra = useWorkshopStore((s) => s.generateInfra);
   const generateSpec = useWorkshopStore((s) => s.generateSpec);
+  const generateAem = useWorkshopStore((s) => s.generateAem);
   const clarifySpec = useWorkshopStore((s) => s.clarifySpec);
   const generateTasks = useWorkshopStore((s) => s.generateTasks);
   const generateAgentGovernance = useWorkshopStore((s) => s.generateAgentGovernance);
@@ -1279,6 +1291,7 @@ export default function WorkshopView({
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [flowOrderModalOpen, setFlowOrderModalOpen] = useState(false);
   const [clarifySpecDialogOpen, setClarifySpecDialogOpen] = useState(false);
+  const [aemGenerateDialogOpen, setAemGenerateDialogOpen] = useState(false);
   const [showStageModal, setShowStageModal] = useState(false);
   const initialPanelSetForProject = useRef<string | null>(null);
   /** Flujo legacy: descripción y respuestas locales antes de enviar */
@@ -1384,6 +1397,15 @@ export default function WorkshopView({
     await patchWorkshopStage(activeStageId, { brdContent: brdWorkshopDraft });
     setBrdTobePersistBusy(false);
   }, [activeStageId, brdWorkshopDirty, brdWorkshopDraft, patchWorkshopStage]);
+
+  const handleGenerateAem = useCallback(
+    async (marketScope: AemMarketScope) => {
+      if (!projectId) return;
+      const res = await generateAem(projectId, { marketScope });
+      if (res) setAemGenerateDialogOpen(false);
+    },
+    [projectId, generateAem],
+  );
 
   /** Desktop: chat column collapsed + width (resize). */
   const lgChatCollapsedStorageKey = projectId
@@ -2008,6 +2030,14 @@ export default function WorkshopView({
         disabled: loading || !effectiveMddTrimmed || !projectId,
         onClick: () => void generateAgentGovernance(projectId),
       };
+    } else if (centralPanel === "aem" && !!aemContent?.trim()) {
+      regenItem = {
+        id: "regen",
+        label: "Regenerar AEM",
+        icon: RefreshCw,
+        disabled: loading || !canGenerateAem || !projectId,
+        onClick: () => setAemGenerateDialogOpen(true),
+      };
     } else if (centralPanel === "ux-ui-guide" && !!uxUiGuideContent?.trim()) {
       regenItem = {
         id: "regen",
@@ -2036,7 +2066,7 @@ export default function WorkshopView({
       architecture: "Software Architecture",
       "use-cases": "Use Cases",
       "user-stories": "User Stories",
-      aem: "Análisis y Estrategia de Mercado",
+      aem: "Análisis y Estudio de Mercado",
       "agent-governance": "Gobernanza de agentes IA",
     };
 
@@ -2165,6 +2195,7 @@ export default function WorkshopView({
     agentGovernanceScaffold,
     agentGovernanceViewMode,
     aemContent,
+    canGenerateAem,
     isLegacyProject,
     projectId,
     loading,
@@ -3114,6 +3145,14 @@ export default function WorkshopView({
                     disabled={loading}
                     loading={loading}
                     ariaLabel="Regenerar Spec desde Benchmark y alcance"
+                  />
+                )}
+                {centralPanel === "aem" && !!aemContent?.trim() && (
+                  <WorkshopRegenButton
+                    onClick={() => setAemGenerateDialogOpen(true)}
+                    disabled={loading || !canGenerateAem}
+                    loading={loading && loadingReason === "aem"}
+                    ariaLabel="Regenerar Análisis y Estudio de Mercado"
                   />
                 )}
                 {centralPanel === "tasks" && !!tasksContent?.trim() && (
@@ -4251,18 +4290,20 @@ export default function WorkshopView({
               <StandardDocPanel
                 icon={FileText}
                 title="AEM"
-                description="Análisis y Estrategia de Mercado — define el mercado, competencia, posicionamiento y estrategia comercial del proyecto."
+                description="Análisis y Estudio de Mercado — inteligencia de mercado, competencia, monetización y glosario a partir de Benchmark, Fase 0 y BRD."
                 content={aemContent}
                 onContentChange={(v) => setAemContent(v)}
                 onSave={() => void persistAemContent(aemContent ?? "")}
                 isDirty={aemDirty}
                 viewMode={aemViewMode}
-                onGenerate={() => {}}
-                canGenerate={false}
-                isLoading={false}
-                placeholder="# AEM\n\nAnálisis y Estrategia de Mercado — contenido sobre mercado, competencia, posicionamiento..."
+                onGenerate={() => setAemGenerateDialogOpen(true)}
+                canGenerate={canGenerateAem}
+                isLoading={loading && loadingReason === "aem"}
+                generateLabel="Generar AEM"
+                placeholder="# Análisis y Estudio de Mercado (AEM)\n\nMercado, competencia, planes de monetización y glosario..."
                 onBlur={handleAemBlur}
-                hideGenerate
+                generateBlocked={!canGenerateAem}
+                generateBlockedReason="Completa al menos Benchmark (Deep Research), Fase 0 (DBGA) o BRD antes de generar."
               />
             )}
             {centralPanel === "handoff-spec" && (
@@ -5031,6 +5072,12 @@ export default function WorkshopView({
           (mddPatternsWizardMode === "edit" && mddReviewing)
         }
         onConfirm={handleMddPatternsWizardConfirm}
+      />
+      <AemGenerateDialog
+        open={aemGenerateDialogOpen}
+        onOpenChange={setAemGenerateDialogOpen}
+        loading={loading && loadingReason === "aem"}
+        onGenerate={handleGenerateAem}
       />
       </div >
     </div >

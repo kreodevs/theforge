@@ -20,6 +20,7 @@ import {
   createProjectSchema,
   updateProjectSchema,
   phase0DeepResearchBodySchema,
+  generateAemBodySchema,
   convergeBodySchema,
   convergeTriggerBodySchema,
   clarifySpecBodySchema,
@@ -267,6 +268,13 @@ export class ProjectsController {
       urls: parsed.urls,
       includeBenchmark: parsed.includeBenchmark,
     });
+  }
+
+  /** Genera AEM (Análisis y Estudio de Mercado) desde Benchmark, Fase 0 y BRD. */
+  @Post(":id/generate-aem")
+  generateAem(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = generateAemBodySchema.parse(body ?? {});
+    return this.projects.generateAem(id, parsed);
   }
 
   /**

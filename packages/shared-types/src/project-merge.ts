@@ -36,13 +36,6 @@ export const projectMergeBodySchema = z
         path: ["name"],
       });
     }
-    if (data.targetProjectId && data.sourceProjectIds.includes(data.targetProjectId)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "targetProjectId no puede ser una de las fuentes",
-        path: ["targetProjectId"],
-      });
-    }
   });
 
 export const mergeConflictSchema = z.object({

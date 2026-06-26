@@ -227,7 +227,12 @@ export function ProjectMergeDialog({
                   type="radio"
                   name="targetMode"
                   checked={targetMode === "existing"}
-                  onChange={() => setTargetMode("existing")}
+                  onChange={() => {
+                    setTargetMode("existing");
+                    if (!targetProjectId && sources[0]) {
+                      setTargetProjectId(sources[0].id);
+                    }
+                  }}
                 />
                 Fusionar en proyecto existente
               </label>
@@ -253,6 +258,11 @@ export function ProjectMergeDialog({
                     </option>
                   ))}
                 </select>
+                {deleteSources === "delete" && targetProjectId ? (
+                  <p className="text-xs text-[var(--foreground-muted)]">
+                    El proyecto destino se conserva; solo se eliminan las demás fuentes.
+                  </p>
+                ) : null}
               </label>
             )}
 

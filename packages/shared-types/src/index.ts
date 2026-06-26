@@ -41,3 +41,4 @@ export * from "./brd-health.util.js";
 export * from "./stage-change-spec.util.js";
 export * from "./openspec-export.util.js";
 export * from "./documentation-gap.js";
+export * from "./aem.js";

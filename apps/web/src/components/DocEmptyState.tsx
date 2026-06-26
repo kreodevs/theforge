@@ -73,7 +73,7 @@ export function DocEmptyState({
           {!loading ? <Sparkles className="h-4 w-4 shrink-0 opacity-95" strokeWidth={2} aria-hidden /> : null}
           {generateButtonLabel ?? `Generar ${title} desde MDD`}
         </Button>
-        {!hasMdd && (
+        {!hasMdd && !blocked && (
           <p className="text-xs leading-relaxed text-[var(--muted-foreground)]">
             {prerequisiteHint ??
               "Necesitas tener contenido en el MDD para generar este documento."}

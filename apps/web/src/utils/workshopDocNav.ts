@@ -358,8 +358,8 @@ export function getWorkshopDocPanelHeader(
       Icon: Palette,
     },
     aem: {
-      title: "Análisis y Estrategia de Mercado",
-      subtitle: "Contexto de negocio y mercado (opcional)",
+      title: "Análisis y Estudio de Mercado",
+      subtitle: "Mercado, competencia, monetización y glosario",
       Icon: FileText,
     },
     "handoff-spec": {

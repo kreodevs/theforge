@@ -675,6 +675,7 @@ interface WorkshopState {
     | "converge"
     | "tasks-to-issues"
     | "clarify-spec"
+    | "aem"
     | null;
   /** Mensaje de usuario en curso (streaming); se muestra hasta recibir "done" */
   streamingUserMessage: string | null;
@@ -816,6 +817,10 @@ interface WorkshopState {
   /** IntegrationAgent: regenerate handoff-spec.md from the registered NEW-LEG items. */
   syncHandoffSpec: (projectId: string, stageId?: string | null) => Promise<string | null>;
   generateSpec: (projectId: string) => Promise<Project | null>;
+  generateAem: (
+    projectId: string,
+    opts: { marketScope: import("@theforge/shared-types").AemMarketScope },
+  ) => Promise<Project | null>;
   setTasksContent: (content: string | null) => void;
   persistTasksContent: (content: string) => Promise<void>;
   generateTasks: (projectId: string) => Promise<Project | null>;
@@ -2616,6 +2621,42 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setAemContent: (content) => set({ aemContent: content }),
   persistAemContent: async (content) => {
     await persistField("aemContent", content, get, set);
+  },
+  /** POST …/projects/:id/generate-aem — Benchmark + Fase 0 + BRD → AEM (alcance geográfico). */
+  generateAem: async (projectId, opts) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "aem", error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}/generate-aem`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ marketScope: opts.marketScope }),
+      });
+      const raw = await r.text();
+      if (!r.ok) {
+        let errMessage = "Error al generar AEM";
+        try {
+          const err = JSON.parse(raw) as { message?: string };
+          if (err?.message) errMessage = err.message;
+        } catch {
+          if (raw.trim().length > 0 && raw.length < 500) errMessage = raw;
+        }
+        throw new Error(errMessage);
+      }
+      let data: Project;
+      try {
+        data = JSON.parse(raw) as Project;
+      } catch {
+        throw new Error("El servidor devolvió una respuesta inválida al generar AEM.");
+      }
+      set({ project: data, aemContent: data.aemContent ?? null, error: null });
+      return data;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al generar AEM" });
+      return null;
+    } finally {
+      set({ loading: false, loadingReason: null });
+    }
   },
   setHandoffSpecContent: (content) => set({ handoffSpecContent: content }),
   persistHandoffSpecContent: async (content) => {

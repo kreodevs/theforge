@@ -91,6 +91,7 @@ export function StandardDocPanel({
           legacyGenerateLabel={legacyGenerateLabel}
           onLegacyGenerate={onLegacyGenerate}
           legacyGenerateLoading={legacyGenerateLoading}
+          generateButtonLabel={generateLabel}
         />
       </div>
     );

@@ -6,6 +6,7 @@ import type {
 import { AIFactory } from "./ai.factory.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import type { ChatImagePart } from "@theforge/shared-types";
+import type { AemMarketScope } from "@theforge/shared-types";
 import { MASTER_PROMPT } from "./prompts/master-prompt.js";
 
 /** System corto solo para bienvenidas: evita ~6k+ chars de MASTER en cada `POST …/welcome`. */
@@ -26,6 +27,7 @@ import { USER_STORIES_PROMPT } from "./prompts/user-stories-prompt.js";
 import { TASKS_PROMPT } from "./prompts/tasks-prompt.js";
 import { CLARIFY_SPEC_PROMPT } from "./prompts/clarify-spec-prompt.js";
 import { AGENT_GOVERNANCE_PROMPT } from "./prompts/agent-governance-prompt.js";
+import { AEM_PROMPT } from "./prompts/aem-prompt.js";
 import { formatSuggestedArtifactsPromptBlock } from "./utils/suggest-agent-governance-artifacts.js";
 import type { AgentGovernanceSuggestions } from "./utils/suggest-agent-governance-artifacts.js";
 import type { ComplexityLevel } from "@theforge/shared-types";
@@ -1266,5 +1268,54 @@ export class AiService {
     } catch {
       return { ok: true, gaps: [] };
     }
+  }
+
+  async generateAem(input: {
+    marketScope: AemMarketScope;
+    benchmarkContent?: string | null;
+    phase0Content?: string | null;
+    brdContent?: string | null;
+    projectName?: string | null;
+  }): Promise<string> {
+    const cap = (raw: string | null | undefined, max: number) => {
+      const t = (raw ?? "").trim();
+      if (t.length <= max) return t;
+      return `${t.slice(0, max)}\n\n[... contenido truncado ...]`;
+    };
+
+    const benchmark = cap(input.benchmarkContent, 28000);
+    const phase0 = cap(input.phase0Content, 28000);
+    const brd = cap(input.brdContent, 22000);
+    const scopeLabel =
+      input.marketScope === "global"
+        ? "Global (mundial)"
+        : input.marketScope === "mexico"
+          ? "México"
+          : "LATAM (América Latina)";
+
+    const scopeInstruction =
+      input.marketScope === "global"
+        ? "Enfoca todo el estudio a nivel **global/internacional**."
+        : input.marketScope === "mexico"
+          ? "Enfoca todo el estudio al mercado **mexicano** (competidores, regulación y pricing en MXN cuando aplique)."
+          : "Enfoca todo el estudio a **LATAM** (comparar mercados regionales clave; pricing en moneda local o USD según segmento).";
+
+    const parts = [
+      `Genera el documento **AEM — Análisis y Estudio de Mercado** según el system prompt.`,
+      `**Alcance geográfico obligatorio:** ${scopeLabel}. ${scopeInstruction}`,
+      input.projectName?.trim() ? `**Proyecto:** ${input.projectName.trim()}` : "",
+      benchmark.length > 0 ? `Benchmark / Deep Research:\n---\n${benchmark}\n---` : "",
+      phase0.length > 0 ? `Fase 0 (DBGA / borrador):\n---\n${phase0}\n---` : "",
+      brd.length > 0 ? `BRD (alcance de negocio):\n---\n${brd}\n---` : "",
+    ].filter(Boolean);
+
+    if (!benchmark && !phase0 && !brd) {
+      return (
+        "# Análisis y Estudio de Mercado (AEM)\n\n" +
+        "No hay Benchmark, Fase 0 ni BRD disponibles. Completa al menos uno de esos documentos y vuelve a generar el AEM.\n"
+      );
+    }
+
+    return this.generateResponse(parts.join("\n\n"), [], { systemPrompt: AEM_PROMPT });
   }
 }
