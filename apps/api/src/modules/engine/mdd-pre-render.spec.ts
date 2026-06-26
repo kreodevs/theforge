@@ -30,8 +30,22 @@ erDiagram
   }
 \`\`\`
 `;
-    const sanity = preRenderMddSanity(draft);
-    assert.equal(sanity.ok, true);
+    assert.equal(preRenderMddSanity(draft).ok, true);
+  });
+
+  it("preRenderMddSanity acepta flowchart con subgraph", () => {
+    const draft = `# MDD
+
+## 2. Arquitectura
+
+\`\`\`mermaid
+flowchart TD
+  subgraph fe_React["Frontend React"]
+    UI[Panel] --> API[API Gateway]
+  end
+\`\`\`
+`;
+    assert.equal(preRenderMddSanity(draft).ok, true);
   });
 });
 

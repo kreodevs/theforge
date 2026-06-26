@@ -9,6 +9,7 @@ import {
   repairErDiagramPkFkCommas,
   repairFragmentedSequenceMermaidInDocument,
   stripMarkdownLeakFromMermaidDiagramBody,
+  validateMermaid,
 } from "./mermaid.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
 
@@ -387,6 +388,23 @@ flowchart TD
 ## Siguiente`;
     const out = formatDocumentMarkdown(doc);
     assert.match(out, /```mermaid[\s\S]*?```[\s\S]*## Siguiente/);
+  });
+});
+
+describe("validateMermaid flowchart subgraph", () => {
+  it("no marca subgraph ID[label] como node ID con espacios", () => {
+    const body = `flowchart TD
+  subgraph fe_React["Frontend React"]
+    A --> B
+  end`;
+    assert.deepEqual(validateMermaid(body), []);
+  });
+
+  it("sí detecta node ID real con espacio antes de [", () => {
+    const body = `flowchart TD
+  My Node[Etiqueta]`;
+    const errors = validateMermaid(body);
+    assert.ok(errors.some((e) => /contains spaces/i.test(e)));
   });
 });
 

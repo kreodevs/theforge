@@ -14,7 +14,7 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from "react";
-import { Maximize2 } from "lucide-react";
+import { Maximize2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import mermaid from "mermaid";
 import {
   normalizeMermaidDiagramBody,
@@ -219,6 +219,199 @@ function MermaidSvgCanvas({
   );
 }
 
+const PAN_ZOOM_MIN = 0.15;
+const PAN_ZOOM_MAX = 4;
+
+function clampPanZoomScale(scale: number): number {
+  return Math.min(PAN_ZOOM_MAX, Math.max(PAN_ZOOM_MIN, scale));
+}
+
+type PanZoomState = { scale: number; x: number; y: number };
+
+/** Vista fullscreen: arrastrar para desplazar, rueda para zoom hacia el cursor. */
+function MermaidPanZoomViewport({
+  children,
+  resetKey,
+}: {
+  children: ReactNode;
+  resetKey: string;
+}) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [state, setState] = useState<PanZoomState>({ scale: 1, x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
+
+  const applyState = useCallback((next: PanZoomState) => {
+    setState(next);
+  }, []);
+
+  const resetView = useCallback(() => {
+    applyState({ scale: 1, x: 0, y: 0 });
+  }, [applyState]);
+
+  const zoomAt = useCallback((factor: number, anchorX: number, anchorY: number) => {
+    setState((prev) => {
+      const nextScale = clampPanZoomScale(prev.scale * factor);
+      const ratio = nextScale / prev.scale;
+      return {
+        scale: nextScale,
+        x: anchorX - (anchorX - prev.x) * ratio,
+        y: anchorY - (anchorY - prev.y) * ratio,
+      };
+    });
+  }, []);
+
+  const zoomCenter = useCallback(
+    (factor: number) => {
+      const el = viewportRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      zoomAt(factor, rect.width / 2, rect.height / 2);
+    },
+    [zoomAt],
+  );
+
+  useEffect(() => {
+    resetView();
+  }, [resetKey, resetView]);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const factor = e.deltaY > 0 ? 0.92 : 1.08;
+      zoomAt(factor, mx, my);
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomAt]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        zoomCenter(1.15);
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        zoomCenter(1 / 1.15);
+      } else if (e.key === "0") {
+        e.preventDefault();
+        resetView();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [resetView, zoomCenter]);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setState((prev) => {
+      dragRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        panX: prev.x,
+        panY: prev.y,
+      };
+      return prev;
+    });
+    setDragging(true);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    setState((prev) => ({
+      ...prev,
+      x: drag.panX + (e.clientX - drag.startX),
+      y: drag.panY + (e.clientY - drag.startY),
+    }));
+  };
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  return (
+    <div
+      ref={viewportRef}
+      className={cn(
+        "relative h-full w-full overflow-hidden touch-none select-none bg-[var(--background)]",
+        dragging ? "cursor-grabbing" : "cursor-grab",
+      )}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onDoubleClick={resetView}
+      role="application"
+      aria-label="Diagrama con zoom y desplazamiento"
+    >
+      <div className="pointer-events-none absolute bottom-4 right-4 z-[1] flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)]/95 p-1 shadow-sm">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="pointer-events-auto h-8 w-8"
+          onClick={() => zoomCenter(1 / 1.2)}
+          aria-label="Alejar"
+        >
+          <ZoomOut className="h-4 w-4" aria-hidden />
+        </Button>
+        <span className="min-w-[3rem] px-1 text-center text-xs tabular-nums text-[var(--muted-foreground)]">
+          {Math.round(state.scale * 100)}%
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="pointer-events-auto h-8 w-8"
+          onClick={() => zoomCenter(1.2)}
+          aria-label="Acercar"
+        >
+          <ZoomIn className="h-4 w-4" aria-hidden />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="pointer-events-auto h-8 w-8"
+          onClick={resetView}
+          aria-label="Restablecer zoom"
+        >
+          <RotateCcw className="h-4 w-4" aria-hidden />
+        </Button>
+      </div>
+      <div
+        className="inline-block min-w-min p-4 will-change-transform"
+        style={{
+          transform: `translate(${state.x}px, ${state.y}px) scale(${state.scale})`,
+          transformOrigin: "0 0",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /** Inline Mermaid block with optional fullscreen overlay. */
 export function MermaidDiagramBlock({
   content,
@@ -291,19 +484,29 @@ export function MermaidDiagramBlock({
         >
           <DialogTitle className="sr-only">Diagrama Mermaid — pantalla completa</DialogTitle>
           <DialogDescription id="mermaid-fullscreen-desc" className="sr-only">
-            Vista ampliada del diagrama. Pulsa Esc o Cerrar para volver al documento.
+            Vista ampliada del diagrama con zoom y desplazamiento. Arrastra para mover, usa la rueda
+            del ratón para zoom, o Esc para cerrar.
           </DialogDescription>
           <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_22%,var(--card))] px-4 py-3">
-            <p className="text-sm font-medium text-[var(--foreground)]">Diagrama Mermaid</p>
-            <p className="hidden text-xs text-[var(--muted-foreground)] sm:block">Esc para cerrar</p>
+            <div>
+              <p className="text-sm font-medium text-[var(--foreground)]">Diagrama Mermaid</p>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Arrastrar para desplazar · Rueda para zoom · Doble clic restablece
+              </p>
+            </div>
+            <p className="hidden shrink-0 text-xs text-[var(--muted-foreground)] sm:block">Esc para cerrar</p>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto overscroll-contain bg-[var(--background)] p-4 sm:p-6">
-            <MermaidSvgCanvas
-              content={content}
-              renderId={fullscreenRenderIdRef.current}
-              prepareContent={prepareContent}
-              className="min-h-full [&_svg]:max-w-none [&_svg]:min-w-max"
-            />
+          <div className="min-h-0 flex-1">
+            {fullscreenOpen ? (
+              <MermaidPanZoomViewport resetKey={blockKey}>
+                <MermaidSvgCanvas
+                  content={content}
+                  renderId={fullscreenRenderIdRef.current}
+                  prepareContent={prepareContent}
+                  className="min-h-full [&_svg]:max-w-none [&_svg]:min-w-max"
+                />
+              </MermaidPanZoomViewport>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>

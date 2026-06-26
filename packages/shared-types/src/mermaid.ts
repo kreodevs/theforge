@@ -600,11 +600,11 @@ export function validateMermaid(raw: string): string[] {
     }
   }
 
-  // ID sin espacios
+  // ID sin espacios (nodos flowchart; no aplicar a headers `subgraph ID["…"]`)
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]!;
-    // Check node IDs with spaces in flowchart
     if (mermaidType === "flowchart" || mermaidType?.startsWith("graph")) {
+      if (/^\s*subgraph\s/i.test(l)) continue;
       const nodeIdMatch = l.match(/^\s*([A-Za-z]\w*\s+\w+)\[/);
       if (nodeIdMatch) {
         errors.push(`Line ${i + 1}: Node ID "${nodeIdMatch[1]}" contains spaces`);
