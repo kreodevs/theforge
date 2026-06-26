@@ -9,7 +9,7 @@
 | **DashboardSidebar** | En Workshop, «Panel de proyectos» queda `disabled` mientras `selectWorkshopAgentsBusy` (mismo criterio que el chat). |
 | **DashboardPanelHeader** | Panel de proyectos: acciones Crear / Tutorial / Refrescar. |
 | **ProjectTutorialDialog** | Tutorial **Greenfield** vs **Brownfield** (`content/tutorial/*.md`). Renderiza bloques ` ```mermaid ` como SVG vía `MarkdownMermaid.tsx`. |
-| **MarkdownMermaid** | Bloques Mermaid en markdown (MDD, tutorial, ayuda). Botón **Pantalla completa** + modal con **zoom** (rueda / +/-) y **pan** (arrastrar en cualquier dirección). |
+| **MarkdownMermaid** | Bloques Mermaid en markdown (MDD, tutorial, ayuda). Botón **Pantalla completa** + modal con **fit-to-view** al abrir, **zoom** (rueda / +/-) y **pan** (arrastrar). Doble clic o ↺ restablece encuadre. |
 | **ProjectMergeDialog** | Fusión de 2+ carpetas en Paso 0: config (destino, benchmark, suite, archivado), preview con conflictos, `POST /projects/merge`. |
 | **AemGenerateDialog** | Modal **Generar AEM**: elige alcance geográfico (Global / México / LATAM) y llama `POST /projects/:id/generate-aem` (Benchmark + Fase 0 + BRD + dictamen de inversión digital). |
 | **RenameProjectDialog** | Renombrar proyecto (`PATCH /projects/:id` con `{ name }`). Lápiz en carpeta del dashboard, barra de selección (1 carpeta) y header del Workshop. |

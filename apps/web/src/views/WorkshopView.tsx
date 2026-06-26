@@ -79,7 +79,8 @@ import {
 } from "../store/workshopStore";
 import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
-import { apiFetch, API_BASE } from "../utils/apiClient";
+import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
+import { isWorkshopConnectionError, isSsotPatternsNotice } from "../utils/workshopSyncStatus";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import { AIProviderBanner } from "../components/AIProviderBanner";
@@ -582,7 +583,13 @@ export default function WorkshopView({
   const cascadeCompleted = useWorkshopStore((s) => s.cascadeCompleted);
   const cascadeTotal = useWorkshopStore((s) => s.cascadeTotal);
   const error = useWorkshopStore((s) => s.error);
+  const notice = useWorkshopStore((s) => s.notice);
   const setError = useWorkshopStore((s) => s.setError);
+  const setNotice = useWorkshopStore((s) => s.setNotice);
+  const retryWorkshopSync = useWorkshopStore((s) => s.retryWorkshopSync);
+  const connectionError = isWorkshopConnectionError(error);
+  const bannerNotice = notice ?? (isSsotPatternsNotice(error) ? error : null);
+  const bannerError = error && !isSsotPatternsNotice(error) ? error : null;
   const modelsUnavailableModalOpen = useWorkshopStore((s) => s.modelsUnavailableModalOpen);
   const setModelsUnavailableModalOpen = useWorkshopStore((s) => s.setModelsUnavailableModalOpen);
   const launchHermes = useWorkshopStore((s) => s.launchHermes);
@@ -713,7 +720,7 @@ export default function WorkshopView({
           force: true,
           allowGovernancePatternChange: true,
         });
-        if (!useWorkshopStore.getState().error?.includes("restaurados")) {
+        if (!useWorkshopStore.getState().notice && !isSsotPatternsNotice(useWorkshopStore.getState().error)) {
           const { projectId: pid, fetchEstimation } = useWorkshopStore.getState();
           if (pid?.trim()) {
             await recordGovernancePatternAdrs(pid, selectedIds).catch(() => {});
@@ -729,7 +736,11 @@ export default function WorkshopView({
         mddGovernanceSeedOnly: true,
       });
       const storeAfterPersist = useWorkshopStore.getState();
-      if (storeAfterPersist.error?.includes("restaurados") || storeAfterPersist.error) {
+      if (
+        storeAfterPersist.notice ||
+        isSsotPatternsNotice(storeAfterPersist.error) ||
+        storeAfterPersist.error
+      ) {
         return;
       }
       if (!projectId?.trim()) return;
@@ -1078,6 +1089,26 @@ export default function WorkshopView({
     | "integration";
   const centralPanel = useWorkshopStore((s) => s.workshopActiveDocPanel) as DocPanel;
   const setCentralPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
+
+  useEffect(() => {
+    const tryReconnect = () => {
+      const { error: err, projectId: pid } = useWorkshopStore.getState();
+      if (!pid?.trim()) return;
+      if (isWorkshopConnectionError(err) || getOfflineQueue().length > 0) {
+        void useWorkshopStore.getState().retryWorkshopSync();
+      }
+    };
+    const onOnline = () => tryReconnect();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tryReconnect();
+    };
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   useEffect(() => {
     if (centralPanel !== "agent-governance" || !hasAgentGovernance || !projectId) {
@@ -2359,7 +2390,7 @@ export default function WorkshopView({
                 role="status"
                 aria-live="polite"
                 aria-label={
-                  error
+                  connectionError
                     ? `Error de sincronización: ${error}`
                     : synced
                       ? "Sincronizado con el servidor"
@@ -2370,16 +2401,16 @@ export default function WorkshopView({
                   "max-sm:rounded-full max-sm:border max-sm:border-[color-mix(in_oklch,var(--border)_80%,transparent)] max-sm:bg-[color-mix(in_oklch,var(--card)_40%,transparent)] max-sm:px-2 max-sm:py-1",
                 )}
                 title={
-                  error
+                  connectionError
                     ? `Sin conexión — toca para reintentar`
                     : synced
                       ? "Sincronizado"
                       : "Sincronizando"
                 }
-                onClick={error ? () => { setError(null); apiFetch(`${API_BASE}/projects/${projectId ?? ""}`).catch(() => {}); } : undefined}
-                style={error ? { cursor: "pointer" } : undefined}
+                onClick={connectionError ? () => { void retryWorkshopSync(); } : undefined}
+                style={connectionError ? { cursor: "pointer" } : undefined}
               >
-                {error ? (
+                {connectionError ? (
                   <>
                     <AlertTriangle className="h-3.5 w-3.5 text-[var(--warning)]" aria-hidden />
                     <span className="hidden sm:inline">Sin conexión</span>
@@ -2659,13 +2690,38 @@ export default function WorkshopView({
         isLegacyProject={isLegacyProject}
       />
 
-      {error && (
-        <div className="shrink-0 px-4 py-2 bg-[color-mix(in_oklch,var(--destructive)_12%,transparent)] border-b border-[color-mix(in_oklch,var(--destructive)_35%,var(--border))] flex items-center justify-between gap-2">
-          <p className="text-sm text-[color-mix(in_oklch,var(--destructive)_65%,white)]">{error}</p>
+      {(bannerError || bannerNotice) && (
+        <div
+          className={cn(
+            "shrink-0 px-4 py-2 border-b flex items-center justify-between gap-2",
+            bannerNotice && !bannerError
+              ? "bg-[color-mix(in_oklch,var(--warning)_12%,transparent)] border-[color-mix(in_oklch,var(--warning)_35%,var(--border))]"
+              : "bg-[color-mix(in_oklch,var(--destructive)_12%,transparent)] border-[color-mix(in_oklch,var(--destructive)_35%,var(--border))]",
+          )}
+        >
+          <p
+            className={cn(
+              "text-sm",
+              bannerNotice && !bannerError
+                ? "text-[color-mix(in_oklch,var(--warning)_75%,white)]"
+                : "text-[color-mix(in_oklch,var(--destructive)_65%,white)]",
+            )}
+          >
+            {bannerError ?? bannerNotice}
+          </p>
           <button
             type="button"
-            onClick={() => setError(null)}
-            className="text-[color-mix(in_oklch,var(--destructive)_75%,white)] hover:text-[var(--foreground)] text-xs"
+            onClick={() => {
+              if (bannerError) setError(null);
+              if (bannerNotice) setNotice(null);
+              if (isSsotPatternsNotice(error)) setError(null);
+            }}
+            className={cn(
+              "hover:text-[var(--foreground)] text-xs",
+              bannerNotice && !bannerError
+                ? "text-[color-mix(in_oklch,var(--warning)_85%,white)]"
+                : "text-[color-mix(in_oklch,var(--destructive)_75%,white)]",
+            )}
             aria-label="Cerrar"
           >
             <X className="w-4 h-4" />

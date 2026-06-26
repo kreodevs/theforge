@@ -552,6 +552,35 @@ export function ensureErDiagramHeader(content: string): string {
   return t;
 }
 
+/**
+ * El LLM vuelca `DEFAULT` de SQL como columna ficticia (`uuid default`, `uuid default FK`).
+ * Mermaid erDiagram no admite el identificador `default` y el render falla → texto plano.
+ */
+export function stripErDiagramSqlDefaultArtifacts(content: string): string {
+  if (!/^erDiagram\b/im.test((content ?? "").trim())) return content ?? "";
+  return content
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return true;
+      if (t === "}" || /^\w[\w]*\s*\{$/.test(t)) return true;
+      if (/^\w[\w]*\s+\|\|/.test(t) || /\|\|--/.test(t) || /:\s/.test(t)) return true;
+      return !/^\w+\s+default(\s+(?:PK|FK|UK))*\s*$/i.test(t);
+    })
+    .join("\n");
+}
+
+/** Tipos PostgreSQL → tipos Mermaid seguros en erDiagram. */
+export function normalizeErDiagramPgTypes(content: string): string {
+  return content
+    .replace(/\btimestamptz\b/gi, "datetime")
+    .replace(/\btimestamp\b/gi, "datetime")
+    .replace(/\binet\b/gi, "string")
+    .replace(/\bjsonb\b/gi, "json")
+    .replace(/\b(PK)\s*,\s*FK\b/gi, "PK FK")
+    .replace(/\b(FK)\s*,\s*PK\b/gi, "PK FK");
+}
+
 export function erDiagramHasPkFkComma(content: string): boolean {
   const repaired = repairErDiagramPkFkCommas(content);
   return /\bPK\s*,\s*FK\b|\bFK\s*,\s*PK\b/i.test(repaired);
@@ -979,6 +1008,11 @@ export function normalizeMermaidDiagramBody(raw: string): string {
   if (!stripped?.trim()) return "";
   stripped = repairErDiagramPkFkCommas(stripped);
   stripped = ensureErDiagramHeader(stripped);
+  const isErDiagram = /^erDiagram\b/i.test(stripped.trim());
+  if (isErDiagram) {
+    stripped = stripErDiagramSqlDefaultArtifacts(stripped);
+    stripped = normalizeErDiagramPgTypes(stripped);
+  }
 
   const lines = stripped.trim().split("\n");
   const out: string[] = [];
@@ -1009,10 +1043,11 @@ export function normalizeMermaidDiagramBody(raw: string): string {
     if (/^\s*(alt|opt|loop|par|critical|break)\s/.test(line.trim())) openBlocks++;
     if (/^\s*end\s*$/.test(line.trim())) openBlocks = Math.max(0, openBlocks - 1);
 
-    // Node IDs con espacios → underscore (`My Node[x]` → `My_Node[x]`), PERO no en líneas de
-    // bloque cuyo primer token es una palabra clave: `subgraph NEW[Título]` debe seguir siendo
-    // `subgraph NEW[...]`, no `subgraph_NEW[...]` (esto último rompe el parser de Mermaid).
-    if (!/^\s*(subgraph|state|class|namespace|direction)\b/i.test(line)) {
+    // Node IDs con espacios → underscore (flowchart/graph; no aplicar a erDiagram).
+    if (
+      !isErDiagram &&
+      !/^\s*(subgraph|state|class|namespace|direction)\b/i.test(line)
+    ) {
       line = line.replace(/(\w+)\s+(\w+)(\[|\()/g, (_match, p1: string, p2: string, p3: string) => {
         return `${cleanId(p1)}_${cleanId(p2)}${p3}`;
       });
@@ -1022,19 +1057,21 @@ export function normalizeMermaidDiagramBody(raw: string): string {
     // (aparece como texto). Mermaid usa `<br/>` para salto de línea; aquí basta un espacio.
     line = line.replace(/\\n/g, " ");
 
-    // Etiquetas de nodo `[...]` / `(...)` con llaves (paths tipo `/{id}`) rompen el parser:
-    // entrecomillar el texto si aún no lo está. No afecta nodos diamante `id{texto}` (open ≠ [ ( ).
-    line = line.replace(
-      /(\[|\()(?!["(])([^"\]\)]*[{}][^"\]\)]*)(\]|\))/g,
-      (_m, open: string, label: string, close: string) => `${open}"${label.trim()}"${close}`,
-    );
+    if (!isErDiagram) {
+      // Etiquetas de nodo `[...]` / `(...)` con llaves (paths tipo `/{id}`) rompen el parser:
+      // entrecomillar el texto si aún no lo está. No afecta nodos diamante `id{texto}` (open ≠ [ ( ).
+      line = line.replace(
+        /(\[|\()(?!["(])([^"\]\)]*[{}][^"\]\)]*)(\]|\))/g,
+        (_m, open: string, label: string, close: string) => `${open}"${label.trim()}"${close}`,
+      );
 
-    // Etiquetas de arista `|...|` con llaves (paths tipo `/{id}`) también rompen el parser:
-    // entrecomillar si aún no lo está.
-    line = line.replace(
-      /\|(?!")([^"|]*[{}][^"|]*)\|/g,
-      (_m, label: string) => `|"${label.trim()}"|`,
-    );
+      // Etiquetas de arista `|...|` con llaves (paths tipo `/{id}`) también rompen el parser:
+      // entrecomillar si aún no lo está.
+      line = line.replace(
+        /\|(?!")([^"|]*[{}][^"|]*)\|/g,
+        (_m, label: string) => `|"${label.trim()}"|`,
+      );
+    }
 
     // Labels entre comillas: quitar markdown ** y compactar espacios. Tope alto (120) solo para
     // cortar prosa desbocada: un tope bajo (p. ej. 56) mutila etiquetas legítimas con `<br/>` y

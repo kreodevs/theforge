@@ -8,6 +8,7 @@ import {
   normalizeMermaidInDocument,
   repairErDiagramPkFkCommas,
   repairFragmentedSequenceMermaidInDocument,
+  stripErDiagramSqlDefaultArtifacts,
   stripMarkdownLeakFromMermaidDiagramBody,
   validateMermaid,
 } from "./mermaid.js";
@@ -417,5 +418,25 @@ describe("repairErDiagramPkFkCommas", () => {
   it("ensureErDiagramHeader antepone erDiagram si falta", () => {
     const out = ensureErDiagramHeader("users {\n  uuid id PK\n}");
     assert.match(out, /^erDiagram/);
+  });
+});
+
+describe("stripErDiagramSqlDefaultArtifacts", () => {
+  it("elimina columnas ficticias uuid default del LLM", () => {
+    const raw = `erDiagram
+  superadmins {
+    uuid id PK
+    uuid default
+    string email
+  }
+  tenant_users {
+    uuid id PK FK
+    uuid default FK
+    uuid tenant_id FK
+  }`;
+    const out = stripErDiagramSqlDefaultArtifacts(raw);
+    assert.doesNotMatch(out, /uuid default/i);
+    assert.match(out, /uuid id PK FK/);
+    assert.match(out, /string email/);
   });
 });

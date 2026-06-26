@@ -6,7 +6,7 @@ import {
   formatDbgaDocument,
   formatDocumentMarkdown,
 } from "@theforge/shared-types/format-document-markdown";
-import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue } from "../utils/apiClient";
+import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue, getOfflineQueue } from "../utils/apiClient";
 import { queueAndPoll } from "../utils/queueAndPoll";
 import { shouldApplyPersistedFieldContent } from "../utils/persist-field-guard";
 import {
@@ -37,6 +37,10 @@ import {
   orchestratorDocSnapshot,
   resolveOrchestratorDocUnchangedError,
 } from "../utils/orchestratorDocGuard";
+import {
+  isWorkshopConnectionError,
+  SSOT_PATTERNS_RESTORED_NOTICE,
+} from "../utils/workshopSyncStatus";
 
 function workshopScopeProjectId(get: () => WorkshopState): string {
   return (get().projectId ?? get().project?.id ?? "").trim();
@@ -204,7 +208,7 @@ async function persistField(
     ((getState() as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ??
       "",
   );
-  setState({ synced: false, error: null });
+  setState({ synced: false, error: null, notice: null });
 
   try {
     const stageId = getState().activeStageId;
@@ -229,9 +233,8 @@ async function persistField(
       const patch: Partial<WorkshopState> = {
         project: data,
         synced: true,
-        error: patternsReverted
-          ? "Patrones SSOT restaurados: solo puedes cambiarlos con «Editar patrones (SSOT)»."
-          : null,
+        error: null,
+        notice: patternsReverted ? SSOT_PATTERNS_RESTORED_NOTICE : null,
       };
       if (shouldApplyPersistedFieldContent(localNow, localAtSaveStart, cleaned) || patternsReverted) {
         (patch as Record<string, unknown>)[fieldName] = serverCleaned;
@@ -698,6 +701,8 @@ interface WorkshopState {
   mddReviewing: boolean;
   synced: boolean;
   error: string | null;
+  /** Avisos informativos (p. ej. patrones SSOT); no bloquean ni marcan «Sin conexión». */
+  notice: string | null;
   /** Modal: ningún modelo de la cadena (principal + respaldos) respondió. */
   modelsUnavailableModalOpen: boolean;
   setModelsUnavailableModalOpen: (open: boolean) => void;
@@ -758,6 +763,9 @@ interface WorkshopState {
   setLoading: (v: boolean) => void;
   setSynced: (v: boolean) => void;
   setError: (e: string | null) => void;
+  setNotice: (n: string | null) => void;
+  /** Reintenta cola offline y valida conexión con el API. */
+  retryWorkshopSync: () => Promise<void>;
 
   fetchProject: (projectId: string) => Promise<Project | null>;
   fetchWelcome: (projectId: string, activeTab?: string) => Promise<void>;
@@ -971,6 +979,7 @@ const initialState = {
   mddReviewing: false,
   synced: true,
   error: null as string | null,
+  notice: null as string | null,
   modelsUnavailableModalOpen: false,
   auditTrail: null as string[] | null,
   precisionBreakdown: null as PrecisionBreakdown | null,
@@ -1035,6 +1044,37 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setLoading: (v) => set({ loading: v }),
   setSynced: (v) => set({ synced: v }),
   setError: (e) => set({ error: e }),
+  setNotice: (n) => set({ notice: n }),
+  retryWorkshopSync: async () => {
+    const { projectId, error } = get();
+    const pid = projectId?.trim();
+    if (!pid) return;
+    const hadConnectionError = isWorkshopConnectionError(error);
+    if (hadConnectionError) set({ error: null, synced: false });
+    try {
+      await flushOfflineQueue();
+      const r = await fetchWithRetry(`${API_BASE}/projects/${pid}`, undefined, 1);
+      if (r.ok) {
+        const data = (await r.json()) as Project;
+        get().setProject(data);
+        set({ synced: true, error: null });
+        return;
+      }
+      if (hadConnectionError) {
+        set({
+          synced: true,
+          error: "Sin conexión con el servidor. Reintenta en unos segundos.",
+        });
+      }
+    } catch {
+      if (hadConnectionError || getOfflineQueue().length > 0) {
+        set({
+          synced: true,
+          error: "Sin conexión: cambios pendientes en cola local. Reintenta al reconectar.",
+        });
+      }
+    }
+  },
   setModelsUnavailableModalOpen: (open) => set({ modelsUnavailableModalOpen: open }),
   clearEvaluatorCritique: () => set({ evaluatorCritique: null }),
   clearLegacyMcpDebugTrace: () => set({ legacyMcpDebugTrace: null }),
@@ -3910,7 +3950,7 @@ if (prog && prog.step && prog.step !== "done") {
     const { projectId, project, fetchEstimation } = get();
     if (!projectId || !project) return;
     if (!options?.force && content === (project.mddContent ?? "")) return;
-    set({ synced: false, error: null });
+    set({ synced: false, error: null, notice: null });
     try {
       const stageId = get().activeStageId;
       const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
@@ -3937,9 +3977,8 @@ if (prog && prog.step && prog.step !== "done") {
           activeStageId: packed?.activeStageId ?? get().activeStageId,
           mddContent: savedContent,
           synced: true,
-          error: patternsReverted
-            ? "Patrones SSOT restaurados: solo puedes cambiarlos con «Editar patrones (SSOT)»."
-            : null,
+          error: null,
+          notice: patternsReverted ? SSOT_PATTERNS_RESTORED_NOTICE : null,
         });
         await apiFetch(`${API_BASE}/ai-analysis/estimation/clear-draft`, {
           method: "POST",

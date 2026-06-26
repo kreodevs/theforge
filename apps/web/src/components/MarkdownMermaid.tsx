@@ -221,6 +221,7 @@ function MermaidSvgCanvas({
 
 const PAN_ZOOM_MIN = 0.15;
 const PAN_ZOOM_MAX = 4;
+const PAN_ZOOM_FIT_PADDING = 40;
 
 function clampPanZoomScale(scale: number): number {
   return Math.min(PAN_ZOOM_MAX, Math.max(PAN_ZOOM_MIN, scale));
@@ -228,15 +229,67 @@ function clampPanZoomScale(scale: number): number {
 
 type PanZoomState = { scale: number; x: number; y: number };
 
+/** Mermaid suele emitir width="100%"; dentro de un inline-block colapsa — usar viewBox/intrínseco. */
+export function normalizeMermaidSvgSizing(container: HTMLElement): { width: number; height: number } | null {
+  const svg = container.querySelector("svg");
+  if (!svg) return null;
+
+  svg.style.maxWidth = "none";
+  svg.style.width = "auto";
+  svg.style.height = "auto";
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+
+  const viewBox = svg.getAttribute("viewBox");
+  if (viewBox) {
+    const parts = viewBox.split(/[\s,]+/).map(Number);
+    if (parts.length === 4 && parts.every((n) => Number.isFinite(n))) {
+      const w = parts[2]!;
+      const h = parts[3]!;
+      if (w > 0 && h > 0) {
+        svg.setAttribute("width", String(w));
+        svg.setAttribute("height", String(h));
+      }
+    }
+  }
+
+  const width = svg.getBoundingClientRect().width || svg.clientWidth || 0;
+  const height = svg.getBoundingClientRect().height || svg.clientHeight || 0;
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+export function computeMermaidFitTransform(
+  viewportW: number,
+  viewportH: number,
+  contentW: number,
+  contentH: number,
+  padding = PAN_ZOOM_FIT_PADDING,
+): PanZoomState {
+  if (viewportW <= 0 || viewportH <= 0 || contentW <= 0 || contentH <= 0) {
+    return { scale: 1, x: 0, y: 0 };
+  }
+  const availW = Math.max(1, viewportW - padding * 2);
+  const availH = Math.max(1, viewportH - padding * 2);
+  const scale = clampPanZoomScale(Math.min(availW / contentW, availH / contentH));
+  return {
+    scale,
+    x: (viewportW - contentW * scale) / 2,
+    y: (viewportH - contentH * scale) / 2,
+  };
+}
+
 /** Vista fullscreen: arrastrar para desplazar, rueda para zoom hacia el cursor. */
 function MermaidPanZoomViewport({
   children,
   resetKey,
+  contentReady,
 }: {
   children: ReactNode;
   resetKey: string;
+  contentReady: boolean;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<PanZoomState>({ scale: 1, x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{
@@ -251,9 +304,26 @@ function MermaidPanZoomViewport({
     setState(next);
   }, []);
 
-  const resetView = useCallback(() => {
-    applyState({ scale: 1, x: 0, y: 0 });
+  const fitToView = useCallback(() => {
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+    if (!viewport || !content) return;
+    normalizeMermaidSvgSizing(content);
+    const contentW = content.scrollWidth || content.offsetWidth;
+    const contentH = content.scrollHeight || content.offsetHeight;
+    applyState(
+      computeMermaidFitTransform(
+        viewport.clientWidth,
+        viewport.clientHeight,
+        contentW,
+        contentH,
+      ),
+    );
   }, [applyState]);
+
+  const resetView = useCallback(() => {
+    fitToView();
+  }, [fitToView]);
 
   const zoomAt = useCallback((factor: number, anchorX: number, anchorY: number) => {
     setState((prev) => {
@@ -278,8 +348,19 @@ function MermaidPanZoomViewport({
   );
 
   useEffect(() => {
-    resetView();
-  }, [resetKey, resetView]);
+    if (!contentReady) return;
+    let cancelled = false;
+    const runFit = () => {
+      if (!cancelled) fitToView();
+    };
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(runFit);
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [resetKey, contentReady, fitToView]);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -353,7 +434,7 @@ function MermaidPanZoomViewport({
     <div
       ref={viewportRef}
       className={cn(
-        "relative h-full w-full overflow-hidden touch-none select-none bg-[var(--background)]",
+        "absolute inset-0 overflow-hidden touch-none select-none bg-[var(--background)]",
         dragging ? "cursor-grabbing" : "cursor-grab",
       )}
       onPointerDown={onPointerDown}
@@ -364,7 +445,10 @@ function MermaidPanZoomViewport({
       role="application"
       aria-label="Diagrama con zoom y desplazamiento"
     >
-      <div className="pointer-events-none absolute bottom-4 right-4 z-[1] flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)]/95 p-1 shadow-sm">
+      <div
+        className="pointer-events-auto absolute bottom-4 right-4 z-[1] flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)]/95 p-1 shadow-sm"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <Button
           type="button"
           variant="ghost"
@@ -400,7 +484,8 @@ function MermaidPanZoomViewport({
         </Button>
       </div>
       <div
-        className="inline-block min-w-min p-4 will-change-transform"
+        ref={contentRef}
+        className="absolute left-0 top-0 inline-block will-change-transform"
         style={{
           transform: `translate(${state.x}px, ${state.y}px) scale(${state.scale})`,
           transformOrigin: "0 0",
@@ -423,6 +508,7 @@ export function MermaidDiagramBlock({
   const instanceId = useId();
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const [inlineReady, setInlineReady] = useState(false);
+  const [fullscreenReady, setFullscreenReady] = useState(false);
 
   const inlineRenderIdRef = useRef("");
   if (!inlineRenderIdRef.current) {
@@ -444,7 +530,12 @@ export function MermaidDiagramBlock({
   }, []);
 
   const handleOpenFullscreen = useCallback(() => {
+    setFullscreenReady(false);
     setFullscreenOpen(true);
+  }, []);
+
+  const handleFullscreenReady = useCallback((ready: boolean) => {
+    setFullscreenReady(ready);
   }, []);
 
   return (
@@ -496,14 +587,15 @@ export function MermaidDiagramBlock({
             </div>
             <p className="hidden shrink-0 text-xs text-[var(--muted-foreground)] sm:block">Esc para cerrar</p>
           </div>
-          <div className="min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             {fullscreenOpen ? (
-              <MermaidPanZoomViewport resetKey={blockKey}>
+              <MermaidPanZoomViewport resetKey={blockKey} contentReady={fullscreenReady}>
                 <MermaidSvgCanvas
                   content={content}
                   renderId={fullscreenRenderIdRef.current}
                   prepareContent={prepareContent}
-                  className="min-h-full [&_svg]:max-w-none [&_svg]:min-w-max"
+                  className="block [&_svg]:block [&_svg]:h-auto [&_svg]:max-w-none [&_svg]:w-auto"
+                  onReadyChange={handleFullscreenReady}
                 />
               </MermaidPanZoomViewport>
             ) : null}

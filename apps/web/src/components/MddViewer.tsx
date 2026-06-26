@@ -16,6 +16,7 @@ import {
 } from "@theforge/shared-types/repair-directory-tree";
 import {
   normalizeMermaidInDocument,
+  normalizeMermaidDiagramBody,
   splitMermaidBodyAndTrailingProse,
   stripMarkdownLeakFromMermaidDiagramBody,
 } from "@theforge/shared-types/mermaid";
@@ -84,56 +85,6 @@ function normalizeMermaidContent(content: string): string {
 }
 
 /**
- * Inline de normalizeMermaid desde shared-types para evitar dependencia build-time
- * que rompe el Docker build (el dist/ local viejo se copia al contenedor).
- * Corrige IDs con espacios, bloques sin cerrar, quotes inconsistentes, etc.
- */
-function normalizeMermaidExpert(raw: string): string {
-  if (!raw?.trim()) return raw ?? "";
-  try {
-    const lines = raw.split("\n");
-    const out: string[] = [];
-    let openBlocks = 0;
-
-    for (let i = 0; i < lines.length; i++) {
-      let line = lines[i]!;
-
-      // Skip the graph/flowchart declaration (pass through)
-      if (/^(graph|flowchart)\s/i.test(line.trim())) {
-        out.push(line);
-        continue;
-      }
-
-      const trimmed = line.trim();
-
-      // Track subgraph openings
-      if (/^subgraph\s/.test(trimmed)) openBlocks++;
-      // Track alt/opt/loop/par/critical/break openings
-      if (/^(alt|opt|loop|par|critical|break)\s/.test(trimmed)) openBlocks++;
-      // Track end closings
-      if (/^end\s*$/.test(trimmed)) openBlocks = Math.max(0, openBlocks - 1);
-
-      // Fix IDs with spaces in node definitions: "Client Browser[" → "Client_Browser["
-      line = line.replace(/(\w+)\s+(\w+)(\[|\()/g, (_m, p1: string, p2: string, p3: string) => {
-        return `${p1.replace(/\s+/g, "_")}_${p2.replace(/\s+/g, "_")}${p3}`;
-      });
-
-      out.push(line);
-    }
-
-    // Close unclosed blocks
-    for (let i = 0; i < openBlocks; i++) out.push("  end");
-
-    let result = out.join("\n");
-    // Remove excessive blank lines
-    result = result.replace(/\n{3,}/g, "\n\n");
-    return result.trim();
-  } catch {
-    return raw;
-  }
-}
-
-/**
  * Corrige errores sintácticos comunes en sequenceDiagram generados por IA:
  * 1. Si falta "sequenceDiagram" pero empieza con participant → lo agrega.
  * 2. `F -->U` (espacio + dash simple) → `F-->>U` (doble dash + arrow).
@@ -145,13 +96,22 @@ function normalizeMermaidExpert(raw: string): string {
 function prepareMermaidForRender(content: string): string {
   const { diagram } = splitMermaidBodyAndTrailingProse(content);
   const stripped = stripMarkdownLeakFromMermaidDiagramBody(diagram);
-  const expertNormalized = normalizeMermaidExpert(stripped);
-  const sequenced = /sequenceDiagram/i.test(expertNormalized)
-    ? normalizeMermaidSequenceSyntax(expertNormalized)
-    : expertNormalized;
-  return /erDiagram/i.test(sequenced)
-    ? normalizeMermaidForRender(sequenced)
-    : normalizeMermaidFirstLineKeywords(normalizeMermaidContent(sequenced));
+  if (!stripped.trim()) return "";
+
+  let body = normalizeMermaidDiagramBody(stripped);
+  if (!body.trim()) return "";
+
+  if (/sequenceDiagram/i.test(body)) {
+    body = normalizeMermaidSequenceSyntax(body);
+  }
+
+  if (/^erDiagram\b/i.test(body)) {
+    return normalizeMermaidContent(body);
+  }
+
+  return normalizeMermaidFirstLineKeywords(
+    normalizeMermaidContent(normalizeParensInBrackets(body)),
+  );
 }
 
 function normalizeMermaidSequenceSyntax(content: string): string {
@@ -231,21 +191,6 @@ function normalizeMermaidSequenceSyntax(content: string): string {
   }
 
   return out.join("\n");
-}
-
-/** Normalización exclusiva para erDiagram: tipos PostgreSQL → tipos Mermaid seguros. */
-function normalizeErDiagramTypes(content: string): string {
-  return content
-    .replace(/\btimestamptz\b/gi, "datetime")
-    .replace(/\binet\b/gi, "string")
-    .replace(/\bjsonb\b/gi, "json")
-    .replace(/\b(PK)\s*,\s*FK\b/gi, "$1")
-    .replace(/\b(FK)\s*,\s*PK\b/gi, "$1");
-}
-
-/** Sanitiza Mermaid erDiagram: content + PG types + indent. */
-function normalizeMermaidForRender(content: string): string {
-  return normalizeMermaidContent(normalizeErDiagramTypes(content));
 }
 
 /**
