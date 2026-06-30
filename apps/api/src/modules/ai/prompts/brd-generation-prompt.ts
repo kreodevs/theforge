@@ -23,7 +23,8 @@ export type BrdGenerationMode = "greenfield-from-dbga" | "legacy-as-is" | "legac
 export const BRD_CHAT_REFINE_BUSINESS_RULES =
   "**BRD 100 % negocio:** Prohibido métodos HTTP, rutas `/api/...`, payloads JSON, tipos SQL, nombres de tablas, tokens M2M/JWKS y detalle de infra. " +
   "Traduce lo técnico a lenguaje corporativo (procesos, políticas, entidades de negocio, UAT). " +
-  "Estructura: Contexto y Objetivos → Usuarios y Casos de Uso → Capacidades Funcionales → Alcance In/Out → Reglas y Políticas → Experiencia y Operación → Riesgos y Métricas.";
+  "Estructura: Contexto → Usuarios → Capacidades → **Diagramas Mermaid (§4: ecosistema, ER de negocio, 2–3 flujos críticos)** → Alcance → Reglas → Experiencia → Riesgos. " +
+  "Los diagramas usan entidades/sistemas de negocio (no tablas ni endpoints); un fence ` ```mermaid ` por diagrama, sintaxis válida.";
 
 const BRD_DELIMITERS =
   "Responde **solo** con este formato exacto (delimitadores literales):\n" +
@@ -60,7 +61,20 @@ Perfiles (comercial, trade, gerencia, operaciones, finanzas, admin); tamaño de 
 
 Describir **qué puede hacer el sistema** como **procesos de negocio** (cotizar, calcular precio, solicitar autorización, sincronizar costos desde ERP, auditar decisiones). Subsecciones ### por capacidad. **Prohibido** nombrar módulos de software, endpoints o tablas.
 
-## 4. Límites del Alcance (In / Out of Scope)
+## 4. Diagramas de referencia (Mermaid)
+
+Diagramas **obligatorios** en lenguaje de negocio (sin HTTP, tablas SQL ni payloads). El documento se renderiza con Mermaid.
+
+### 4.1 Arquitectura de integración (el ecosistema)
+Un bloque \`\`\`mermaid con \`flowchart LR\` o \`flowchart TB\`: sistemas externos (ERP, legacy, servicios corporativos), actores de negocio y flujos de datos entre ellos. Etiquetas corporativas en las aristas.
+
+### 4.2 Diagrama entidad-relación (estructura de datos de negocio)
+Un bloque \`\`\`mermaid con \`erDiagram\`: entidades de negocio clave (las mismas que desarrollarás en §6) y relaciones (1:N, N:M). Solo nombres corporativos, no tablas físicas.
+
+### 4.3 Flujos críticos (2–3 diagramas)
+Elige los **2–3 procesos más importantes** del producto. Una subsección \`### Flujo N: [nombre]\` por flujo, cada una con **un** diagrama Mermaid (\`stateDiagram-v2\` preferido para ciclos de vida; \`flowchart\` para decisiones; \`sequenceDiagram\` para interacción entre actores/sistemas). Sintaxis: un solo fence por diagrama, etiquetas entrecomilladas si llevan caracteres especiales, sin nodos duplicados.
+
+## 5. Límites del Alcance (In / Out of Scope)
 
 ### Dentro del alcance (MVP)
 Lista de capacidades comerciales incluidas.
@@ -68,7 +82,7 @@ Lista de capacidades comerciales incluidas.
 ### Fuera de alcance
 Explícito: qué NO se construye en esta fase (evita scope creep).
 
-## 5. Reglas de Negocio, Políticas y Fórmulas
+## 6. Reglas de Negocio, Políticas y Fórmulas
 
 ### Reglas de operación y políticas comerciales
 Jerarquías de precios, lógicas de márgenes, niveles de aprobación, quién autoriza qué, qué queda bloqueado hasta resolución.
@@ -83,16 +97,16 @@ Fórmulas conceptuales (ej. precio de venta = costo ÷ (1 − margen)); variable
 Tabla: | Capacidad de negocio | [roles] | Nivel de acceso | Notas de confidencialidad |
 
 ### Flujos de negocio críticos
-Por cada flujo (autorizaciones, sincronización de costos, cotización): Origen → Estados comerciales → Notificaciones → Resolución → Efecto en operación (sin HTTP ni webhooks).
+Resumen en prosa de los flujos ya diagramados en §4.3: Origen → Estados comerciales → Notificaciones → Resolución → Efecto en operación (sin HTTP ni webhooks). No repitas el diagrama aquí; complementa con reglas y excepciones.
 
 ### Criterios de aceptación de negocio (UAT)
 Escenarios verificables por negocio antes de dar por cerrada la funcionalidad (formato: Dado / Cuando / Entonces en lenguaje comercial).
 
-## 6. Requisitos de Experiencia y Operación
+## 7. Requisitos de Experiencia y Operación
 
 Reglas de visualización financiera (máscaras, separadores, confirmaciones ante variaciones), reportería para roles comerciales, trazabilidad de auditoría (quién tomó qué decisión comercial y cuándo). Accesibilidad si aplica.
 
-## 7. Riesgos de Negocio y Métricas de Éxito
+## 8. Riesgos de Negocio y Métricas de Éxito
 
 ### Riesgos
 Riesgos comerciales, operativos y de adopción (no riesgos técnicos de infraestructura).
