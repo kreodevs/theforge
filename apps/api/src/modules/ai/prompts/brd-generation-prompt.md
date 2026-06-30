@@ -57,6 +57,27 @@ Si el fuente menciona estos detalles, **absorbe la intención de negocio** y des
 3. **«Por validar»** solo si la decisión es de negocio y falta el dueño/dato. Añade fila en **Pendientes de validación (decision log)** con: tema, dueño sugerido (rol), impacto, plazo sugerido.
 4. Máximo **5** ítems «Por validar» sueltos; el resto va al decision log o se infiere con supuesto explícito.
 
+# Diagramas Mermaid (obligatorios)
+
+El BRD se renderiza con soporte Mermaid. Incluye **exactamente** estos diagramas en la sección **§4 Diagramas de referencia (Mermaid)** del outline (ver mensaje de usuario):
+
+1. **Arquitectura de integración (el ecosistema):** un `flowchart LR` o `flowchart TB` con los **sistemas y actores de negocio** (ERP, herramienta legacy, microservicio de costos, usuarios comerciales, etc.), las **integraciones de datos** entre ellos y qué capacidades del producto dependen de cada sistema. **Prohibido** rutas HTTP, métodos ni nombres de tablas; usa etiquetas corporativas («Sincronización de costos reales desde ERP», «Consulta de precio para cotización»).
+
+2. **Diagrama entidad-relación (estructura de datos de negocio):** un `erDiagram` con las **entidades de negocio** clave del producto (Campaña, Medio, Lista de Precios, Costo Real, etc.) y sus relaciones cardinalidad (1:N, N:M). Usa **nombres corporativos** (los mismos que desarrollarás en §6 Definición de entidades), **no** nombres físicos de tablas/columnas ni tipos SQL.
+
+3. **Dos o tres flujos críticos:** elige los **2–3 procesos de negocio más importantes** del producto (p. ej. cotización con validación de margen, sincronización de costos, autorización comercial). **Un diagrama Mermaid por flujo**, en subsección `### Flujo N: [nombre]`. Preferencia **`stateDiagram-v2`** si el flujo es ciclo de vida de un recurso; **`flowchart`** si hay decisiones/autorizaciones; **`sequenceDiagram`** si lo esencial es interacción entre actores/sistemas (sin endpoints técnicos en las etiquetas).
+
+Reglas de sintaxis (obligatorias para que renderice):
+
+- **UN solo bloque ` ```mermaid ` por diagrama**, completo dentro de un único fence. **NUNCA** lo partas, **NUNCA** uses otra etiqueta de lenguaje (` ```text `, ` ```dockerfile `…).
+- **Sin líneas en blanco dentro del diagrama** y **sin `\n` literal** en etiquetas; multilínea con `<br/>`.
+- **Etiquetas con `/`, `{`, `}`, `:`, `()` entre comillas dobles** en nodos y aristas. En `subgraph` usa `subgraph ID["Título"]` (palabra clave + espacio + ID, no `subgraph_ID`).
+- **Declara cada nodo/estado/participante UNA sola vez**; no dupliques entidades bajo distintos IDs.
+- **Define todas las transiciones/aristas**; no dejes nodos sueltos.
+- Mantén cada diagrama **legible** (preferible 2 diagramas pequeños a uno ilegible).
+
+Los diagramas deben **derivar del contenido** de §3 Capacidades y §6 Reglas/entidades — no plantillas genéricas repetidas entre proyectos.
+
 # Estilo
 
 Markdown claro: `##` / `###`, tablas GFM, listas numeradas para flujos de negocio. Lenguaje corporativo, sin jerga de desarrollo. Sin bloques `<<<BRD>>>` en el cuerpo (los delimitadores los pone el mensaje de usuario).

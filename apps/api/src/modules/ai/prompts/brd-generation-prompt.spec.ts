@@ -15,6 +15,10 @@ describe("buildBrdUserPrompt", () => {
     assert.match(prompt, /<<<BRD>>>/);
     assert.match(prompt, /Contexto y Objetivos/);
     assert.match(prompt, /Capacidades Funcionales del Producto/);
+    assert.match(prompt, /Diagramas de referencia \(Mermaid\)/);
+    assert.match(prompt, /Arquitectura de integración \(el ecosistema\)/);
+    assert.match(prompt, /Diagrama entidad-relación/);
+    assert.match(prompt, /Flujos críticos \(2–3 diagramas\)/);
     assert.match(prompt, /Criterios de aceptación de negocio/);
     assert.match(prompt, /entidades de negocio/i);
     assert.match(prompt, /Pendientes de validación/);
@@ -37,7 +41,11 @@ describe("buildBrdUserPrompt", () => {
 });
 
 describe("BRD_SECTION_OUTLINE", () => {
-  it("cubre UAT, entidades de negocio y riesgos comerciales", () => {
+  it("cubre UAT, entidades de negocio, diagramas Mermaid y riesgos comerciales", () => {
+    assert.match(BRD_SECTION_OUTLINE, /Diagramas de referencia \(Mermaid\)/);
+    assert.match(BRD_SECTION_OUTLINE, /Arquitectura de integración/);
+    assert.match(BRD_SECTION_OUTLINE, /entidad-relación/);
+    assert.match(BRD_SECTION_OUTLINE, /Flujos críticos/);
     assert.match(BRD_SECTION_OUTLINE, /Flujos de negocio críticos/);
     assert.match(BRD_SECTION_OUTLINE, /Requisitos de Experiencia y Operación/);
     assert.match(BRD_SECTION_OUTLINE, /Riesgos de Negocio y Métricas de Éxito/);
