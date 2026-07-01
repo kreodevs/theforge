@@ -11,6 +11,7 @@ import {
   quoteFlowchartLabelsWithParens,
   repairErDiagramPkFkCommas,
   repairFragmentedSequenceMermaidInDocument,
+  repairMermaidFenceClosedWithMermaidTag,
   repairUnfencedMermaidInDocument,
   stripErDiagramSqlDefaultArtifacts,
   stripMarkdownLeakFromMermaidDiagramBody,
@@ -619,6 +620,39 @@ erDiagram
     const out = normalizeMermaidDiagramBody(body);
     assert.match(out, /A -->|"sync"| B/);
     assert.doesNotMatch(out, /^• /m);
+  });
+});
+
+describe("repairMermaidFenceClosedWithMermaidTag", () => {
+  const ssoFlow = `### Flujo de Autenticación SSO (Frontend — JWT)
+
+\`\`\`mermaid
+sequenceDiagram
+    participant Usuario
+    participant Frontend
+    participant SSO
+    participant BackendChat
+Usuario->>Frontend: Accede a la app
+    Frontend->>SSO: Redirect a /auth/sso?applicationId=...
+    SSO-->>BackendChat: Validación exitosa
+    BackendChat-->>Frontend: Respuesta
+\`\`\`mermaid
+sequenceDiagram
+    participant BackendChat
+    participant SSO
+    participant MCP
+    BackendChat->>SSO: GET /auth/validate
+    SSO-->>BackendChat: { valid: true, user: {...} }
+    BackendChat-->>Usuario: Respuesta
+\`\`\``;
+
+  it("fusiona dos sequenceDiagram cerrados erróneamente con ```mermaid", () => {
+    const out = normalizeMermaidInDocument(ssoFlow);
+    assert.equal((out.match(/```mermaid/gi) ?? []).length, 1);
+    assert.doesNotMatch(out, /```mermaid[\s\S]*```mermaid/);
+    assert.match(out, /BackendChat-->>Usuario/);
+    assert.match(out, /"\{ valid: true/);
+    assert.doesNotMatch(out, /\nsequenceDiagram\n[\s\S]*```\nsequenceDiagram/m);
   });
 });
 
