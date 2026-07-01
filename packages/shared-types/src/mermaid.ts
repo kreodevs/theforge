@@ -591,6 +591,8 @@ export function quoteFlowchartLabelsWithParens(content: string): string {
   if (!content?.trim()) return content ?? "";
   return content.replace(/\[([^\[\]"]*\([^()]*\)[^\[\]"]*)\]/g, (match, inner: string) => {
     const t = inner.trim();
+    // Cylinder nodes: [(DB costos)] or [("PostgreSQL · N tablas")]
+    if (/^\([^()]*\)$/.test(t)) return match;
     if (/^\(\s*"/.test(t) && /"\s*\)$/.test(t)) return match;
     return `["${inner}"]`;
   });
@@ -666,6 +668,9 @@ const MERMAID_LEAKED_LIST_PREFIX_RE =
 /** Flechas flowchart/sequence o cardinalidad erDiagram en una línea. */
 const MERMAID_ARROW_OR_ER_RE =
   /(-+>>|->>|--x|-x>|--+>|==+>|-\.-+>|---|\}\|\-{1,2}|\|\|\-{1,2}|\|\|\-\-o\{|\}o\-\-|\-\-o\{|\}o\-\-o\{|o\-\-o\{)/;
+
+/** Tope de longitud de etiqueta Mermaid: alto a propósito (solo corta prosa desbocada). */
+const MAX_MERMAID_LABEL_CHARS = 120;
 
 /** Línea markdown fuera del fence que en realidad es sintaxis sequenceDiagram. */
 function sequenceLineCore(trimmed: string): string {
@@ -1083,6 +1088,69 @@ function stripLeakedMermaidLinePrefix(line: string): string {
   return line.replace(MERMAID_LEAKED_LIST_PREFIX_RE, "$1    ").replace(/[ \t]+$/, "");
 }
 
+/** Entrecomilla mensajes de sequenceDiagram/Note con llaves u objetos JSON que rompen el parser. */
+function quoteSequenceDiagramMessageLine(line: string): string {
+  const trimmed = line.trim();
+  if (/^Note over\b/i.test(trimmed)) {
+    return line.replace(/^(Note over\s+[\w,\s]+:\s*)(?!")(.+)$/i, (_m, prefix: string, msg: string) => {
+      const t = msg.trim();
+      if (!/[{}]/.test(t)) return line;
+      return `${prefix}"${t.replace(/"/g, "'").slice(0, MAX_MERMAID_LABEL_CHARS)}"`;
+    });
+  }
+  const m = trimmed.match(
+    /^(\s*)([\w-]+)\s*(-+>>|->>|-->>|--x|-x>|--+>|==+>)\s*([\w-]+)\s*:\s*(.+)$/,
+  );
+  if (!m) return line;
+  const [, indent = "", from, arrow, to, msg = ""] = m;
+  const message = msg.trim();
+  if (!message || /^"/.test(message)) return line;
+  if (/[{}]/.test(message) || /\?\w+=/.test(message)) {
+    const cleaned = message.replace(/"/g, "'").slice(0, MAX_MERMAID_LABEL_CHARS);
+    return `${indent}${from}${arrow}${to}: "${cleaned}"`;
+  }
+  return line;
+}
+
+/**
+ * Repara cierre erróneo ` ```mermaid ` en lugar de ` ``` ` (segundo bloque pegado al primero).
+ * Típico en sequenceDiagram largos partidos por el LLM.
+ */
+export function repairMermaidFenceClosedWithMermaidTag(document: string): string {
+  if (!document?.trim()) return document ?? "";
+
+  const re = /```mermaid[ \t]*\n([\s\S]*?)```mermaid[ \t]*\n([\s\S]*?)```/gi;
+  let prev: string | null = null;
+  let cur = document;
+  let guard = 0;
+  while (prev !== cur && guard < 30) {
+    prev = cur;
+    cur = cur.replace(re, (match, b1: string, b2: string) => {
+      // Dos bloques mermaid legítimos separados por otro fence (p. ej. ```dockerfile): no fusionar.
+      if (/\n```[ \t]*(?:\n|$)/.test(b1)) return match;
+      const t1 = b1.trim();
+      const t2 = b2.trim();
+      const sameSequence =
+        /^sequenceDiagram\b/im.test(t1) && /^sequenceDiagram\b/im.test(t2);
+      if (sameSequence) {
+        const cont = t2.replace(/^sequenceDiagram\s*\n?/i, "").trim();
+        const merged = `${t1}\n${cont}`.replace(/\n{3,}/g, "\n\n").trim();
+        return `\`\`\`mermaid\n${merged}\n\`\`\``;
+      }
+      const sameFlowchart =
+        /^(flowchart|graph)\b/im.test(t1) && /^(flowchart|graph)\b/im.test(t2);
+      if (sameFlowchart) {
+        const cont = t2.replace(/^(flowchart|graph)\s+(?:TD|LR|BT|RL|TB)\s*\n?/i, "").trim();
+        const merged = `${t1}\n${cont}`.replace(/\n{3,}/g, "\n\n").trim();
+        return `\`\`\`mermaid\n${merged}\n\`\`\``;
+      }
+      return `\`\`\`mermaid\n${t1}\n\`\`\`\n\n\`\`\`mermaid\n${t2}\n\`\`\``;
+    });
+    guard++;
+  }
+  return cur;
+}
+
 /**
  * Fusiona un fence ```mermaid seguido de OTRO fence (lenguaje arbitrario o vacío) cuyo cuerpo es
  * continuación del mismo diagrama. Causa típica: el LLM parte un sequenceDiagram/flowchart en dos
@@ -1283,9 +1351,6 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
  * - Quotes inconsistentes → normaliza a double quotes
  * - Líneas en blanco excesivas → compacta
  */
-/** Tope de longitud de etiqueta Mermaid: alto a propósito (solo corta prosa desbocada). */
-const MAX_MERMAID_LABEL_CHARS = 120;
-
 /** Normaliza solo el cuerpo del diagrama (sin fences). */
 export function normalizeMermaidDiagramBody(raw: string): string {
   let stripped = stripMarkdownLeakFromMermaidDiagramBody(raw);
@@ -1293,6 +1358,7 @@ export function normalizeMermaidDiagramBody(raw: string): string {
   stripped = repairErDiagramPkFkCommas(stripped);
   stripped = ensureErDiagramHeader(stripped);
   const isErDiagram = /^erDiagram\b/i.test(stripped.trim());
+  const isSequence = /^sequenceDiagram\b/im.test(stripped.trim());
   if (isErDiagram) {
     stripped = stripErDiagramSqlDefaultArtifacts(stripped);
     stripped = normalizeErDiagramPgTypes(stripped);
@@ -1369,6 +1435,10 @@ export function normalizeMermaidDiagramBody(raw: string): string {
       return `"${cleaned}"`;
     });
 
+    if (isSequence) {
+      line = quoteSequenceDiagramMessageLine(line);
+    }
+
     out.push(line);
   }
 
@@ -1436,8 +1506,10 @@ export function normalizeMermaid(raw: string): string {
 /** Normaliza cada bloque mermaid del documento sin tocar el resto del markdown. */
 export function normalizeMermaidInDocument(document: string): string {
   if (!document?.trim()) return document ?? "";
-  // 0) Diagramas volcados sin fence ```mermaid (texto plano + listas markdown).
-  let merged = repairUnfencedMermaidInDocument(document);
+  // 0) Cierre erróneo ```mermaid en lugar de ``` (debe ir antes de unfenced repair).
+  let merged = repairMermaidFenceClosedWithMermaidTag(document);
+  // 0b) Diagramas volcados sin fence ```mermaid (texto plano + listas markdown).
+  merged = repairUnfencedMermaidInDocument(merged);
   // 1) Fusiona diagramas partidos en un 2.º fence con lenguaje arbitrario (```dockerfile, ```text…).
   merged = mergeSplitMermaidContinuationFences(merged);
   // 2) Re-absorbe líneas (sequence/flowchart) que quedaron fuera tras un cierre prematuro del fence.
