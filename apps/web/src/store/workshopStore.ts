@@ -1516,9 +1516,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         if (!brd) return { ok: false, message: "No hay BRD en la etapa activa." };
         if (!sid) return { ok: false, message: "Selecciona una etapa para formatear el BRD." };
         const formatted = fmt(brd);
+        if (formatted === brd) {
+          return { ok: true, message: "BRD: sin cambios detectables tras formatear." };
+        }
         const ok = await get().patchWorkshopStage(sid, { brdContent: formatted });
         return ok
-          ? { ok: true, message: "BRD formateado. Revisa el panel." }
+          ? { ok: true, message: "BRD formateado (tablas, Mermaid, fences). Revisa el panel." }
           : { ok: false, message: "No se pudo guardar el BRD formateado." };
       }
       case "mdd-inicial":

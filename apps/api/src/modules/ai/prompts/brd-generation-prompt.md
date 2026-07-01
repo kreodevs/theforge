@@ -69,7 +69,7 @@ El BRD se renderiza con soporte Mermaid. Incluye **exactamente** estos diagramas
 
 Reglas de sintaxis (obligatorias para que renderice):
 
-- **UN solo bloque ` ```mermaid ` por diagrama**, completo dentro de un único fence. **NUNCA** lo partas, **NUNCA** uses otra etiqueta de lenguaje (` ```text `, ` ```dockerfile `…).
+- **UN solo bloque ` ```mermaid ` por diagrama**, completo dentro de un único fence. **NUNCA** emitas `flowchart`, `erDiagram`, `sequenceDiagram` ni `stateDiagram-v2` como texto plano sin fence. **NUNCA** lo partas, **NUNCA** uses otra etiqueta de lenguaje (` ```text `, ` ```dockerfile `…).
 - **Todas las aristas, relaciones y bloques de entidad van DENTRO del fence**, como líneas Mermaid planas. **Prohibido** listas markdown (`-`, `*`, `•`, numeradas) para conexiones; **prohibido** dejar `A --> B` o `ENTIDAD }o--o{ OTRA` fuera del bloque.
 - En **`erDiagram`**: **una entidad por bloque** (`ENTIDAD {` … `}` en líneas separadas) y **una relación por línea** (`A ||--|| B : "label"`). No concatenes varias entidades ni relaciones en una sola línea.
 - **Sin líneas en blanco dentro del diagrama** y **sin `\n` literal** en etiquetas; multilínea con `<br/>`.

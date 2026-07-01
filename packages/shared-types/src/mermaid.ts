@@ -697,9 +697,15 @@ export function isOrphanSequenceDiagramLine(trimmed: string): boolean {
 
 function normalizeOrphanSequenceDiagramLine(line: string): string {
   let s = line.replace(/^(\s*)#{1,6}\s+/, "$1");
-  // Drop a leaked markdown list prefix when the line is actually a diagram statement
-  // (sequence/flowchart arrow OR erDiagram relationship). Indentation is cosmetic in Mermaid.
-  if (MERMAID_LEAKED_LIST_PREFIX_RE.test(s) && MERMAID_ARROW_OR_ER_RE.test(s)) {
+  const trimmed = s.trim();
+  if (
+    MERMAID_LEAKED_LIST_PREFIX_RE.test(s) &&
+    (MERMAID_ARROW_OR_ER_RE.test(s) ||
+      isOrphanSequenceDiagramLine(trimmed) ||
+      isOrphanFlowchartLine(trimmed) ||
+      isOrphanErDiagramLine(trimmed) ||
+      isOrphanStateDiagramLine(trimmed))
+  ) {
     s = s.replace(MERMAID_LEAKED_LIST_PREFIX_RE, "$1    ");
   }
   return s;
@@ -748,6 +754,182 @@ export function isOrphanErDiagramLine(trimmed: string): boolean {
 }
 
 /**
+ * Línea markdown fuera del fence que en realidad es sintaxis stateDiagram(-v2)
+ * (`[*] --> Idle`, `Idle --> Calculando: evento`, transiciones con viñeta `-`).
+ */
+export function isOrphanStateDiagramLine(trimmed: string): boolean {
+  if (!trimmed) return false;
+  if (/^```/.test(trimmed)) return false;
+  if (/^#{1,2}\s+\d+[.)]/.test(trimmed)) return false;
+  if (/^#{1,6}\s+\d+\.\d+\s/.test(trimmed)) return false;
+  if (/^\|/.test(trimmed)) return false;
+  if (/^---+\s*$/.test(trimmed)) return false;
+  // Encabezados markdown (#### Flujo N:) no son transiciones de estado.
+  if (/^#{1,6}\s+/.test(trimmed) && !/(-->|--+)/.test(trimmed)) return false;
+
+  const core = sequenceLineCore(trimmed);
+  if (!core) return false;
+  if (/^stateDiagram(?:-v2)?\b/i.test(core)) return false;
+  if (/^\[\*\]/.test(core)) return true;
+  if (/([\w[\]*]+)\s*-->/.test(core)) return true;
+  if (/^(note|direction|state)\b/i.test(core)) return true;
+  return false;
+}
+
+type UnfencedDiagramKind = "flowchart" | "erDiagram" | "sequenceDiagram" | "stateDiagram";
+
+function parseUnfencedDiagramHeader(trimmed: string): UnfencedDiagramKind | null {
+  const core = sequenceLineCore(trimmed);
+  if (/^erDiagram\b/i.test(core)) return "erDiagram";
+  if (/^sequenceDiagram\b/i.test(core)) return "sequenceDiagram";
+  if (/^stateDiagram-v2\b/i.test(core)) return "stateDiagram";
+  if (/^stateDiagram\b/i.test(core)) return "stateDiagram";
+  if (/^(flowchart|graph)\b/i.test(core)) return "flowchart";
+  return null;
+}
+
+function isUnfencedMermaidBlockTerminator(trimmed: string): boolean {
+  if (!trimmed) return false;
+  if (/^#{1,6}\s+/.test(trimmed)) {
+    if (
+      isOrphanSequenceDiagramLine(trimmed) ||
+      isOrphanFlowchartLine(trimmed) ||
+      isOrphanErDiagramLine(trimmed) ||
+      isOrphanStateDiagramLine(trimmed)
+    ) {
+      return false;
+    }
+    return true;
+  }
+  if (/^\|/.test(trimmed)) return true;
+  if (/^---+\s*$/.test(trimmed)) return true;
+  return false;
+}
+
+function isUnfencedMermaidBodyLine(trimmed: string, kind: UnfencedDiagramKind): boolean {
+  if (!trimmed) return false;
+  if (
+    isOrphanFlowchartLine(trimmed) ||
+    isOrphanSequenceDiagramLine(trimmed) ||
+    isOrphanErDiagramLine(trimmed) ||
+    isOrphanStateDiagramLine(trimmed)
+  ) {
+    return true;
+  }
+  const core = sequenceLineCore(trimmed);
+  if (!core) return false;
+
+  if (kind === "flowchart") {
+    if (/^[A-Za-z0-9_][\w]*(\[|\(|\{)/.test(core)) return true;
+    if (/^[A-Za-z0-9_]/.test(core) && /[\]\)"']?\s*(--+>|==+>|-\.-+>)/.test(core)) return true;
+  }
+  if (kind === "erDiagram") {
+    if (/^\}\s*$/.test(core)) return true;
+    if (/^[a-zA-Z_][\w]*\s+[a-zA-Z_][\w]*/.test(core) && !/(--+>|->>|--x)/.test(core)) return true;
+  }
+  if (kind === "sequenceDiagram") {
+    if (/^\s{2,}\S/.test(trimmed) && /(-+>>|->>|--x|-x>)/.test(trimmed)) return true;
+    if (/^(alt|opt|loop|par|critical|break|else|and|end|rect)\b/i.test(core)) return true;
+  }
+  if (kind === "stateDiagram") {
+    if (/^[\w[\]*\s-]+\s*-->/.test(core)) return true;
+  }
+  return false;
+}
+
+function collectUnfencedMermaidBlock(
+  lines: string[],
+  startIdx: number,
+  kind: UnfencedDiagramKind,
+): { endIdx: number; rawLines: string[] } {
+  const rawLines = [lines[startIdx]!];
+  let i = startIdx + 1;
+  while (i < lines.length) {
+    const trimmed = lines[i]!.trim();
+    if (/^```/.test(trimmed)) break;
+    if (i > startIdx && parseUnfencedDiagramHeader(trimmed)) break;
+    if (isUnfencedMermaidBlockTerminator(trimmed)) break;
+    if (!trimmed) {
+      let k = i + 1;
+      while (k < lines.length && !lines[k]!.trim()) k++;
+      const next = k < lines.length ? lines[k]!.trim() : "";
+      if (!next || isUnfencedMermaidBlockTerminator(next) || parseUnfencedDiagramHeader(next)) break;
+    }
+    if (!trimmed || isUnfencedMermaidBodyLine(trimmed, kind)) {
+      rawLines.push(lines[i]!);
+      i++;
+      continue;
+    }
+    break;
+  }
+  return { endIdx: i, rawLines };
+}
+
+function normalizeUnfencedMermaidLine(line: string): string {
+  const trimmed = line.trim();
+  if (
+    MERMAID_LEAKED_LIST_PREFIX_RE.test(line) &&
+    (MERMAID_ARROW_OR_ER_RE.test(line) ||
+      isOrphanSequenceDiagramLine(trimmed) ||
+      isOrphanFlowchartLine(trimmed) ||
+      isOrphanErDiagramLine(trimmed) ||
+      isOrphanStateDiagramLine(trimmed))
+  ) {
+    return line.replace(MERMAID_LEAKED_LIST_PREFIX_RE, "$1    ");
+  }
+  return normalizeOrphanSequenceDiagramLine(line);
+}
+
+/**
+ * Envuelve diagramas Mermaid volcados como markdown plano (sin fence ```mermaid).
+ * Patrón recurrente del LLM: `flowchart LR` / `erDiagram` / `stateDiagram-v2` como texto,
+ * aristas como listas `- A --> B`, relaciones ER como viñetas fuera de cualquier fence.
+ */
+export function repairUnfencedMermaidInDocument(document: string): string {
+  if (!document?.trim()) return document ?? "";
+
+  const lines = document.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  let inFence = false;
+
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const trimmed = line.trim();
+
+    if (/^```/.test(trimmed)) {
+      inFence = !inFence;
+      out.push(line);
+      i++;
+      continue;
+    }
+
+    const kind = !inFence ? parseUnfencedDiagramHeader(trimmed) : null;
+    if (kind) {
+      const { endIdx, rawLines } = collectUnfencedMermaidBlock(lines, i, kind);
+      const body = rawLines.map(normalizeUnfencedMermaidLine).join("\n").trim();
+      const normalized = normalizeMermaidDiagramBody(body);
+      if (normalized) {
+        if (out.length > 0 && out[out.length - 1]!.trim() !== "") out.push("");
+        out.push("```mermaid");
+        out.push(normalized);
+        out.push("```");
+        if (endIdx < lines.length && lines[endIdx]?.trim()) out.push("");
+      } else {
+        out.push(...rawLines);
+      }
+      i = endIdx;
+      continue;
+    }
+
+    out.push(line);
+    i++;
+  }
+
+  return out.join("\n");
+}
+
+/**
  * Fusiona líneas sequenceDiagram rotas fuera del fence (### Foo->>Bar, viñetas con flechas)
  * en el bloque ```mermaid precedente.
  */
@@ -783,13 +965,16 @@ export function repairFragmentedSequenceMermaidInDocument(document: string): str
     const isSequence = /sequenceDiagram/i.test(bodyText);
     const isFlowchart = /^\s*(flowchart|graph)\b/im.test(bodyText);
     const isErDiagram = /^erDiagram\b/im.test(bodyText.trim());
+    const isStateDiagram = /^stateDiagram(?:-v2)?\b/im.test(bodyText.trim());
     const orphanPred = isSequence
       ? isOrphanSequenceDiagramLine
       : isFlowchart
         ? isOrphanFlowchartLine
         : isErDiagram
           ? isOrphanErDiagramLine
-          : null;
+          : isStateDiagram
+            ? isOrphanStateDiagramLine
+            : null;
 
     if (orphanPred) {
       i++;
@@ -826,6 +1011,8 @@ function isMermaidStatementCore(core: string): boolean {
   if (/(--+>|==+>|-\.-+>|---)/.test(core) && /^[A-Za-z0-9_]/.test(core)) return true;
   if (MERMAID_ARROW_OR_ER_RE.test(core) && /^[A-Za-z0-9_]/.test(core)) return true;
   if (/^[A-Za-z][\w\s]*\s*\{/.test(core)) return true;
+  if (/^[\w[\]\s-]+\s*-->/.test(core)) return true;
+  if (/^[\w[\]\s-]+\s*:\s*\S/.test(core) && /-->/.test(core)) return true;
   if (
     /^(participant|actor|Note\b|alt\b|opt\b|loop\b|par\b|critical\b|break\b|else\b|and\b|end\b|subgraph\b|direction\b|rect\b)/i.test(
       core,
@@ -1123,7 +1310,8 @@ export function normalizeMermaidDiagramBody(raw: string): string {
       MERMAID_LEAKED_LIST_PREFIX_RE.test(trimmed) &&
       (isOrphanSequenceDiagramLine(trimmed) ||
         isOrphanFlowchartLine(trimmed) ||
-        isOrphanErDiagramLine(trimmed))
+        isOrphanErDiagramLine(trimmed) ||
+        isOrphanStateDiagramLine(trimmed))
     ) {
       line = normalizeOrphanSequenceDiagramLine(line);
     }
@@ -1248,8 +1436,10 @@ export function normalizeMermaid(raw: string): string {
 /** Normaliza cada bloque mermaid del documento sin tocar el resto del markdown. */
 export function normalizeMermaidInDocument(document: string): string {
   if (!document?.trim()) return document ?? "";
+  // 0) Diagramas volcados sin fence ```mermaid (texto plano + listas markdown).
+  let merged = repairUnfencedMermaidInDocument(document);
   // 1) Fusiona diagramas partidos en un 2.º fence con lenguaje arbitrario (```dockerfile, ```text…).
-  let merged = mergeSplitMermaidContinuationFences(document);
+  merged = mergeSplitMermaidContinuationFences(merged);
   // 2) Re-absorbe líneas (sequence/flowchart) que quedaron fuera tras un cierre prematuro del fence.
   merged = repairFragmentedSequenceMermaidInDocument(merged);
   return merged.replace(/```mermaid\s*\n([\s\S]*?)```/gi, (_block, inner: string) => {

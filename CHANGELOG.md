@@ -6,6 +6,8 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Fixed
 
+- **Mermaid — diagramas sin fence ` ```mermaid ` (solución general):** el LLM a veces vuelca diagramas como markdown plano (`flowchart LR`, `erDiagram`, `stateDiagram-v2`, `sequenceDiagram` en línea suelta) con aristas en listas `- A --> B`. El normalizador solo procesaba bloques ya cercados, por lo que `/format` no cambiaba nada. Nuevo paso `repairUnfencedMermaidInDocument` detecta declaraciones de diagrama fuera de fences, absorbe el cuerpo (incl. viñetas, `### Foo->>Bar`, líneas indentadas de sequence), envuelve en ` ```mermaid ` y normaliza. Cubre flowchart, erDiagram, stateDiagram y sequenceDiagram. BRD `/format` ahora informa «sin cambios» cuando no hay diff.
+
 - **Mermaid BRD — viñetas unicode y `erDiagram` fugado:** el LLM suele volcar aristas de `flowchart` y relaciones de `erDiagram` como listas markdown (`•`, `-`, numeradas) **fuera** del fence ` ```mermaid `; el normalizador ya reparaba `sequenceDiagram` y flowchart con `-`/`*` pero no `•` ni cardinalidad ER. `repairFragmentedSequenceMermaidInDocument` ahora detecta `erDiagram` y re-absorbe relaciones huérfanas; `sequenceLineCore`/`normalizeMermaidDiagramBody` limpian viñetas unicode y listas numeradas dentro y fuera del fence. Prompt BRD reforzado: prohibido listas para conexiones; una entidad/relación por línea en `erDiagram`. Tests BRD-style en `mermaid-document.spec.ts`.
 
 ### Added
