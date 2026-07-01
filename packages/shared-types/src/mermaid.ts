@@ -659,9 +659,21 @@ export function validateMermaid(raw: string): string[] {
   return errors;
 }
 
+/** Prefijos markdown que el LLM suele anteponer a líneas Mermaid fugadas (incl. viñeta unicode •). */
+const MERMAID_LEAKED_LIST_PREFIX_RE =
+  /^(\s*)(?:#{1,6}\s+|[-*•\u2022\u2023\u25E6\u2043\u2219]\s+|\d+[.)]\s+)/;
+
+/** Flechas flowchart/sequence o cardinalidad erDiagram en una línea. */
+const MERMAID_ARROW_OR_ER_RE =
+  /(-+>>|->>|--x|-x>|--+>|==+>|-\.-+>|---|\}\|\-{1,2}|\|\|\-{1,2}|\|\|\-\-o\{|\}o\-\-|\-\-o\{|\}o\-\-o\{|o\-\-o\{)/;
+
 /** Línea markdown fuera del fence que en realidad es sintaxis sequenceDiagram. */
 function sequenceLineCore(trimmed: string): string {
-  return trimmed.replace(/^#{1,6}\s+/, "").replace(/^[-*]\s+/, "").trim();
+  return trimmed
+    .replace(/^(\s*)#{1,6}\s+/, "$1")
+    .replace(/^(\s*)[-*•\u2022\u2023\u25E6\u2043\u2219]\s+/, "$1")
+    .replace(/^(\s*)\d+[.)]\s+/, "$1")
+    .trim();
 }
 
 export function isOrphanSequenceDiagramLine(trimmed: string): boolean {
@@ -686,9 +698,9 @@ export function isOrphanSequenceDiagramLine(trimmed: string): boolean {
 function normalizeOrphanSequenceDiagramLine(line: string): string {
   let s = line.replace(/^(\s*)#{1,6}\s+/, "$1");
   // Drop a leaked markdown list prefix when the line is actually a diagram statement
-  // (sequence arrow OR flowchart arrow). Indentation is cosmetic in Mermaid.
-  if (/^(\s*)[-*]\s+/.test(s) && /(-+>>|->>|--x|-x>|--+>|==+>|-\.-+>|---)/.test(s)) {
-    s = s.replace(/^(\s*)[-*]\s+/, "$1    ");
+  // (sequence/flowchart arrow OR erDiagram relationship). Indentation is cosmetic in Mermaid.
+  if (MERMAID_LEAKED_LIST_PREFIX_RE.test(s) && MERMAID_ARROW_OR_ER_RE.test(s)) {
+    s = s.replace(MERMAID_LEAKED_LIST_PREFIX_RE, "$1    ");
   }
   return s;
 }
@@ -712,6 +724,26 @@ export function isOrphanFlowchartLine(trimmed: string): boolean {
   if (/^(subgraph|end|direction)\b/i.test(core)) return true;
   // Edge: a node token followed by a flowchart arrow (-->, ---, ==>, -.->), optionally with |label|.
   if (/^[A-Za-z0-9_]/.test(core) && /(--+>|==+>|-\.-+>|---)/.test(core)) return true;
+  return false;
+}
+
+/**
+ * Línea markdown fuera del fence que en realidad es sintaxis erDiagram
+ * (bloque de entidad `ENTIDAD {` o relación `A }o--o{ B : "label"`).
+ */
+export function isOrphanErDiagramLine(trimmed: string): boolean {
+  if (!trimmed) return false;
+  if (/^```/.test(trimmed)) return false;
+  if (/^#{1,2}\s+\d+[.)]/.test(trimmed)) return false;
+  if (/^#{1,6}\s+\d+\.\d+\s/.test(trimmed)) return false;
+  if (/^\|/.test(trimmed)) return false;
+  if (/^---+\s*$/.test(trimmed)) return false;
+
+  const core = sequenceLineCore(trimmed);
+  if (!core) return false;
+  if (/^erDiagram\b/i.test(core)) return false;
+  if (/^[A-Za-z][\w\s]*\s*\{/.test(core)) return true;
+  if (MERMAID_ARROW_OR_ER_RE.test(core) && /[A-Za-z0-9_]/.test(core)) return true;
   return false;
 }
 
@@ -750,11 +782,14 @@ export function repairFragmentedSequenceMermaidInDocument(document: string): str
     const bodyText = bodyLines.join("\n");
     const isSequence = /sequenceDiagram/i.test(bodyText);
     const isFlowchart = /^\s*(flowchart|graph)\b/im.test(bodyText);
+    const isErDiagram = /^erDiagram\b/im.test(bodyText.trim());
     const orphanPred = isSequence
       ? isOrphanSequenceDiagramLine
       : isFlowchart
         ? isOrphanFlowchartLine
-        : null;
+        : isErDiagram
+          ? isOrphanErDiagramLine
+          : null;
 
     if (orphanPred) {
       i++;
@@ -789,6 +824,8 @@ function isMermaidStatementCore(core: string): boolean {
   if (!core) return false;
   if (/(-+>>|->>|--x|-x>)/.test(core)) return true;
   if (/(--+>|==+>|-\.-+>|---)/.test(core) && /^[A-Za-z0-9_]/.test(core)) return true;
+  if (MERMAID_ARROW_OR_ER_RE.test(core) && /^[A-Za-z0-9_]/.test(core)) return true;
+  if (/^[A-Za-z][\w\s]*\s*\{/.test(core)) return true;
   if (
     /^(participant|actor|Note\b|alt\b|opt\b|loop\b|par\b|critical\b|break\b|else\b|and\b|end\b|subgraph\b|direction\b|rect\b)/i.test(
       core,
@@ -854,9 +891,9 @@ function splitMermaidContinuationPrefix(
   return { continuation, remainder };
 }
 
-/** Quita prefijo de lista/encabezado fugado (`- `, `* `, `### `) de una línea de continuación. */
+/** Quita prefijo de lista/encabezado fugado (`- `, `* `, `• `, `### `) de una línea de continuación. */
 function stripLeakedMermaidLinePrefix(line: string): string {
-  return line.replace(/^(\s*)(?:#{1,6}\s+|[-*]\s+)(?=\S)/, "$1    ").replace(/[ \t]+$/, "");
+  return line.replace(MERMAID_LEAKED_LIST_PREFIX_RE, "$1    ").replace(/[ \t]+$/, "");
 }
 
 /**
@@ -1082,9 +1119,12 @@ export function normalizeMermaidDiagramBody(raw: string): string {
     let line = lines[i]!;
     const trimmed = line.trim();
 
-    if (/^#{1,6}\s+/.test(trimmed) && isOrphanSequenceDiagramLine(trimmed)) {
-      line = normalizeOrphanSequenceDiagramLine(line);
-    } else if (/^[-*]\s+/.test(trimmed) && isOrphanSequenceDiagramLine(trimmed)) {
+    if (
+      MERMAID_LEAKED_LIST_PREFIX_RE.test(trimmed) &&
+      (isOrphanSequenceDiagramLine(trimmed) ||
+        isOrphanFlowchartLine(trimmed) ||
+        isOrphanErDiagramLine(trimmed))
+    ) {
       line = normalizeOrphanSequenceDiagramLine(line);
     }
 
