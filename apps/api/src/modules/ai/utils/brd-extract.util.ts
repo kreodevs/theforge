@@ -67,8 +67,11 @@ function extractMarkdownBrd(cleaned: string): string | null {
   return null;
 }
 
-function stripCodeFences(text: string): string {
-  return text.replace(/```\w*\s*\n?/g, "").replace(/\s*```\s*$/g, "").trim();
+function stripOuterMarkdownWrapperFence(text: string): string {
+  const t = text.trim();
+  const wrapped = t.match(/^```(?:markdown|md)?\s*\n([\s\S]*)\n```\s*$/i);
+  if (wrapped?.[1]) return wrapped[1]!.trim();
+  return t;
 }
 
 /**
@@ -80,7 +83,7 @@ export function extractBrdFromLlmResponse(raw: string): BrdExtractResult {
   if (!trimmed) return { ok: false, failure: "empty" };
   if (isCorruptedBrdLlmText(trimmed)) return { ok: false, failure: "corrupted" };
 
-  const cleaned = stripCodeFences(normalizeDashes(trimmed));
+  const cleaned = stripOuterMarkdownWrapperFence(normalizeDashes(trimmed));
 
   const delimited = cleaned.match(/<<<\s*BRD\s*>>>\s*([\s\S]*?)\s*<<<_?END_BRD_?>>>/i);
   if (delimited?.[1]?.trim()) {

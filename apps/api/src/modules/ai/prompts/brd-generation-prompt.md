@@ -69,7 +69,7 @@ El BRD se renderiza con soporte Mermaid. Incluye **exactamente** estos diagramas
 
 Reglas de sintaxis (obligatorias para que renderice):
 
-- **UN solo bloque ` ```mermaid ` por diagrama**, completo dentro de un único fence. **NUNCA** lo partas, **NUNCA** uses otra etiqueta de lenguaje (` ```text `, ` ```dockerfile `…).
+- **UN solo bloque ` ```mermaid ` por diagrama**, completo dentro de un único fence. **NUNCA** emitas `flowchart`, `erDiagram`, `sequenceDiagram` ni `stateDiagram-v2` como texto plano sin fence. **NUNCA** lo partas, **NUNCA** uses otra etiqueta de lenguaje (` ```text `, ` ```dockerfile `…).
 - **Todas las aristas, relaciones y bloques de entidad van DENTRO del fence**, como líneas Mermaid planas. **Prohibido** listas markdown (`-`, `*`, `•`, numeradas) para conexiones; **prohibido** dejar `A --> B` o `ENTIDAD }o--o{ OTRA` fuera del bloque.
 - En **`erDiagram`**: **una entidad por bloque** (`ENTIDAD {` … `}` en líneas separadas) y **una relación por línea** (`A ||--|| B : "label"`). No concatenes varias entidades ni relaciones en una sola línea.
 - **Sin líneas en blanco dentro del diagrama** y **sin `\n` literal** en etiquetas; multilínea con `<br/>`.
@@ -82,7 +82,13 @@ Los diagramas deben **derivar del contenido** de §3 Capacidades y §6 Reglas/en
 
 # Estilo
 
-Markdown claro: `##` / `###`, tablas GFM, listas numeradas para flujos de negocio. Lenguaje corporativo, sin jerga de desarrollo. Sin bloques `<<<BRD>>>` en el cuerpo (los delimitadores los pone el mensaje de usuario).
+Markdown claro: `##` / `###`, tablas GFM. **Listas numeradas o con viñetas** solo para prosa de negocio (capacidades, alcance, UAT, riesgos) — **nunca** para aristas, relaciones ni transiciones de diagramas (§4 usa **solo** fences ` ```mermaid `). Lenguaje corporativo, sin jerga de desarrollo. Sin bloques `<<<BRD>>>` en el cuerpo (los delimitadores los pone el mensaje de usuario).
+
+# Anti-patrones Mermaid (causa rechazo / render roto)
+
+- **Incorrecto:** `flowchart LR` / `erDiagram` como texto plano y conexiones en listas `- A --> B` debajo.
+- **Correcto:** abrir ` ```mermaid `, declaración del diagrama, nodos/aristas/relaciones en líneas planas (sin `-` de lista), cerrar ` ``` `.
+- Las transiciones **nunca** van como viñetas markdown fuera del fence (igual que en Casos de Uso / Handoff Spec).
 
 # Tono
 

@@ -63,6 +63,40 @@ describe("extractBrdFromLlmResponse", () => {
     assert.equal(r.ok, false);
     if (!r.ok) assert.equal(r.failure, "empty");
   });
+
+  it("preserva bloques ```mermaid dentro del BRD (no los elimina al extraer)", () => {
+    const body = `# BRD — Producto
+
+## 1. Contexto y Objetivos
+
+Resumen de negocio con suficiente extensión para validación de extracción del documento.
+
+## 4. Diagramas de referencia (Mermaid)
+
+\`\`\`mermaid
+flowchart LR
+  OBP["OBP"] --> CAT["Catálogo"]
+\`\`\`
+
+## 5. Límites del Alcance
+
+Alcance MVP descrito en prosa para superar el mínimo de caracteres del validador de extracción.`;
+    const raw = `<<<BRD>>>\n${body}\n<<<END_BRD>>>`;
+    const r = extractBrdFromLlmResponse(raw);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.match(r.content, /```mermaid[\s\S]*OBP\[.*\] --> CAT/);
+      assert.equal((r.content.match(/```mermaid/gi) ?? []).length, 1);
+    }
+  });
+
+  it("solo quita fence markdown exterior si envuelve toda la respuesta", () => {
+    const inner = `<<<BRD>>>\n# BRD — Test\n## 1. Contexto y Objetivos\nContexto comercial con extensión mínima para extracción válida del documento generado.\n\`\`\`mermaid\nflowchart TD\n  A --> B\n\`\`\`\n<<<END_BRD>>>`;
+    const wrapped = "```markdown\n" + inner + "\n```";
+    const r = extractBrdFromLlmResponse(wrapped);
+    assert.equal(r.ok, true);
+    if (r.ok) assert.match(r.content, /```mermaid/);
+  });
 });
 
 describe("brdGenerationErrorMessage", () => {

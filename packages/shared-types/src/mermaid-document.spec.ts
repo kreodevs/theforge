@@ -11,6 +11,7 @@ import {
   quoteFlowchartLabelsWithParens,
   repairErDiagramPkFkCommas,
   repairFragmentedSequenceMermaidInDocument,
+  repairUnfencedMermaidInDocument,
   stripErDiagramSqlDefaultArtifacts,
   stripMarkdownLeakFromMermaidDiagramBody,
   validateMermaid,
@@ -478,6 +479,89 @@ describe("isOrphanErDiagramLine", () => {
     );
     assert.equal(isOrphanErDiagramLine("FORMATO_MEDIO }|--|| TIPO_MEDIO : pertenece a"), true);
     assert.equal(isOrphanErDiagramLine("## 5. Alcance"), false);
+  });
+});
+
+describe("repairUnfencedMermaidInDocument — BRD sin fences", () => {
+  const unfencedBrdSection4 = `## 4. Diagramas de referencia (Mermaid)
+
+### 4.1 Arquitectura de integración (el ecosistema)
+
+flowchart LR
+    subgraph ORIGEN["Sistemas Origen"]
+    OBP["One Business Platform (OBP)"]
+    ODOO["ERP Odoo (Costos reales)"]
+    end
+    subgraph MC["Sistema de Márgenes y Costos"]
+    CAT["Catálogo de costos base"]
+    end
+- OBP -->|"Sincronización de costos base"| CAT
+- ODOO -->|"Costos reales de órdenes de compra"| CAT
+
+### 4.2 Diagrama entidad-relación (estructura de datos de negocio)
+
+erDiagram
+    COSTO_BASE {
+    string nombre
+    decimal valor_base
+    }
+    FORMATO_MEDIO {
+    string nombre
+    }
+- COSTO_BASE }o--o{ FORMATO_MEDIO : "asignado opcionalmente"
+- FORMATO_MEDIO }|--|| TIPO_MEDIO : "pertenece a"
+
+### 4.3 Flujos críticos
+
+#### Flujo 1: Actualización automática
+
+stateDiagram-v2
+- [*] --> Idle: Inicio del día
+- Idle --> CalculandoPromedio: Cron diario ejecutado
+- CalculandoPromedio --> Idle: Sin cambios
+
+#### Flujo 2: Creación de lista de precios
+
+flowchart TD
+- A["Admin Trade inicia sesión"] --> B["Crea catálogo de niveles"]
+- B --> C["Selecciona crear lista"]
+
+#### Flujo 3: Cálculo de precio
+
+sequenceDiagram
+- participant Comercial as Comercial (OBP)
+- participant OBP as Sistema Consumidor (OBP)
+- participant SMC as Sistema Márgenes y Costos
+
+### Comercial->>OBP: Selecciona formato y nivel
+    OBP->>SMC: Solicita precio de venta
+    SMC-->>OBP: Devuelve precio calculado
+    OBP-->>Comercial: Muestra precio en cotización
+
+---
+
+## 5. Límites del Alcance`;
+
+  it("envuelve flowchart/erDiagram/state/sequence sin fence y quita viñetas", () => {
+    const out = normalizeMermaidInDocument(unfencedBrdSection4);
+    const blocks = out.match(/```mermaid[\s\S]*?```/g) ?? [];
+    assert.ok(blocks.length >= 5, `expected >=5 mermaid blocks, got ${blocks.length}`);
+    assert.match(out, /```mermaid\nflowchart LR[\s\S]*OBP -->|"Sincronización de costos base"| CAT/);
+    assert.match(out, /```mermaid\nerDiagram[\s\S]*COSTO_BASE \}o--o\{ FORMATO_MEDIO/);
+    assert.match(out, /```mermaid\nstateDiagram-v2[\s\S]*\[\*\] --> Idle/);
+    assert.match(out, /Comercial->>OBP: Selecciona formato/);
+    assert.doesNotMatch(out, /^- OBP -->/m);
+    for (const block of blocks) {
+      assert.doesNotMatch(block, /Flujo 2: Creación/);
+      assert.doesNotMatch(block, /Flujo 3: Cálculo/);
+    }
+  });
+
+  it("formatDocumentMarkdown repara sección §4 BRD pegada sin fences", () => {
+    const out = formatDocumentMarkdown(unfencedBrdSection4);
+    assert.notEqual(out, unfencedBrdSection4);
+    assert.match(out, /```mermaid[\s\S]*```/);
+    assert.doesNotMatch(out, /^- COSTO_BASE \}o--o\{/m);
   });
 });
 

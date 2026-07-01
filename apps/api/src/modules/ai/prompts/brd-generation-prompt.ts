@@ -24,7 +24,83 @@ export const BRD_CHAT_REFINE_BUSINESS_RULES =
   "**BRD 100 % negocio:** Prohibido métodos HTTP, rutas `/api/...`, payloads JSON, tipos SQL, nombres de tablas, tokens M2M/JWKS y detalle de infra. " +
   "Traduce lo técnico a lenguaje corporativo (procesos, políticas, entidades de negocio, UAT). " +
   "Estructura: Contexto → Usuarios → Capacidades → **Diagramas Mermaid (§4: ecosistema, ER de negocio, 2–3 flujos críticos)** → Alcance → Reglas → Experiencia → Riesgos. " +
-  "Los diagramas usan entidades/sistemas de negocio (no tablas ni endpoints); un fence ` ```mermaid ` por diagrama, sintaxis válida.";
+  "§4: **exactamente** un fence ` ```mermaid … ``` ` por diagrama (mín. 4 bloques). **Prohibido** `flowchart`/`erDiagram`/`sequenceDiagram`/`stateDiagram-v2` como texto plano; **prohibido** aristas en listas `- A --> B` fuera del fence.";
+
+/** Contrato de salida Mermaid — va en user prompt y en reintentos de generación. */
+export const BRD_MERMAID_OUTPUT_CONTRACT = `# Contrato de salida Mermaid (§4) — OBLIGATORIO
+
+El Workshop **solo renderiza** diagramas dentro de fences \`\`\`mermaid. Copia esta estructura literal en §4:
+
+### 4.1 Arquitectura de integración (el ecosistema)
+
+\`\`\`mermaid
+flowchart LR
+  subgraph ORIGEN["Sistemas Origen"]
+    OBP["OBP"]
+  end
+  subgraph MC["Sistema de Márgenes y Costos"]
+    CAT["Catálogo de costos"]
+  end
+  OBP -->|"Sincronización de costos base"| CAT
+\`\`\`
+
+### 4.2 Diagrama entidad-relación (estructura de datos de negocio)
+
+\`\`\`mermaid
+erDiagram
+  COSTO_BASE {
+    string nombre
+    decimal valor_base
+  }
+  FORMATO_MEDIO {
+    string nombre
+  }
+  COSTO_BASE }o--o{ FORMATO_MEDIO : "asignado opcionalmente"
+\`\`\`
+
+### 4.3 Flujos críticos
+
+#### Flujo 1: [nombre]
+
+\`\`\`mermaid
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Procesando: evento
+  Procesando --> Idle: fin
+\`\`\`
+
+**Anti-patrones PROHIBIDOS (rompen el render y serán rechazados):**
+- \`flowchart LR\` o \`erDiagram\` **sin** fence \`\`\`mermaid
+- Aristas como listas markdown: \`- OBP -->|"sync"| CAT\` **fuera** del bloque
+- Partir un diagrama en dos fences o cerrar el fence antes de las aristas
+
+**Listas markdown (-, *, numeradas)** solo en prosa de negocio (§1–§3, §5–§8), **nunca** para conexiones de diagrama.`;
+
+export function buildBrdGenerationRetryReminder(opts: {
+  delimiterRetry?: boolean;
+  mermaidRetry?: boolean;
+  mermaidHint?: string;
+}): string {
+  const parts: string[] = [];
+  if (opts.delimiterRetry) {
+    parts.push(
+      "**IMPORTANTE — delimitadores:** Responde ÚNICAMENTE con:\n<<<BRD>>>\n(markdown BRD completo)\n<<<END_BRD>>>\nSin texto antes ni después.",
+    );
+  }
+  if (opts.mermaidRetry) {
+    parts.push(
+      "**IMPORTANTE — diagramas §4:** La salida anterior no cumplió el contrato Mermaid. " +
+        "Incluye **al menos 4** bloques ` ```mermaid ` (§4.1 ecosistema, §4.2 ER, §4.3 dos o tres flujos). " +
+        "Todas las aristas, relaciones, participantes y transiciones **dentro** del fence, **sin** listas `- A --> B` fuera del bloque. " +
+        "No emitas `flowchart`/`erDiagram`/`sequenceDiagram`/`stateDiagram-v2` como texto plano.",
+    );
+    if (opts.mermaidHint?.trim()) {
+      parts.push(`Problemas detectados: ${opts.mermaidHint.trim()}`);
+    }
+    parts.push(BRD_MERMAID_OUTPUT_CONTRACT);
+  }
+  return parts.length ? `\n\n${parts.join("\n\n")}` : "";
+}
 
 const BRD_DELIMITERS =
   "Responde **solo** con este formato exacto (delimitadores literales):\n" +
@@ -72,7 +148,7 @@ Un bloque \`\`\`mermaid con \`flowchart LR\` o \`flowchart TB\`: sistemas extern
 Un bloque \`\`\`mermaid con \`erDiagram\`: entidades de negocio clave (las mismas que desarrollarás en §6) y relaciones (1:N, N:M). Solo nombres corporativos, no tablas físicas.
 
 ### 4.3 Flujos críticos (2–3 diagramas)
-Elige los **2–3 procesos más importantes** del producto. Una subsección \`### Flujo N: [nombre]\` por flujo, cada una con **un** diagrama Mermaid (\`stateDiagram-v2\` preferido para ciclos de vida; \`flowchart\` para decisiones; \`sequenceDiagram\` para interacción entre actores/sistemas). Sintaxis: un solo fence por diagrama, etiquetas entrecomilladas si llevan caracteres especiales, sin nodos duplicados.
+Elige los **2–3 procesos más importantes** del producto. Una subsección \`#### Flujo N: [nombre]\` por flujo, cada una con **un** bloque \`\`\`mermaid … \`\`\` (\`stateDiagram-v2\` preferido para ciclos de vida; \`flowchart\` para decisiones; \`sequenceDiagram\` para interacción entre actores/sistemas). **Copia la estructura del contrato Mermaid del mensaje** (fence + cuerpo, aristas dentro, sin listas markdown).
 
 ## 5. Límites del Alcance (In / Out of Scope)
 
@@ -164,6 +240,8 @@ export function buildBrdUserPrompt(params: BuildBrdUserPromptParams): string {
   return (
     modePreamble(params.mode) +
     BRD_SECTION_OUTLINE +
+    "\n\n" +
+    BRD_MERMAID_OUTPUT_CONTRACT +
     "\n\n" +
     baseline +
     BRD_DELIMITERS +
