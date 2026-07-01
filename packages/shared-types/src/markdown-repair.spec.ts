@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { repairMarkdownFences, stripOrphanFenceLineBeforeMermaid, unwrapEmbeddedMermaidFence } from "./markdown-repair.js";
 import { normalizeMermaidDiagramBody } from "./mermaid.js";
+import { formatDocumentMarkdown } from "./format-document-markdown.js";
 
 describe("stripOrphanFenceLineBeforeMermaid", () => {
   it("elimina ``` huérfano entre sql y ### Diagrama entidad-relación", () => {
@@ -19,6 +20,55 @@ erDiagram
     const out = stripOrphanFenceLineBeforeMermaid(broken);
     assert.doesNotMatch(out, /```sql[\s\S]*```\s*\n```\s*\n### Diagrama entidad-relación/);
     assert.match(out, /### Diagrama entidad-relación[\s\S]*```mermaid[\s\S]*erDiagram/);
+  });
+
+  it("conserva ``` que cierra mermaid antes de otro heading + ```mermaid (BRD §4)", () => {
+    const brdSection4 = `\`\`\`mermaid
+flowchart LR
+  A --> B
+\`\`\`
+
+### 4.2 Diagrama entidad-relación
+
+\`\`\`mermaid
+erDiagram
+  CANAL ||--o{ MENSAJE : "contiene"
+\`\`\`
+### 4.3 Flujos críticos
+
+#### Flujo 1
+
+\`\`\`mermaid
+stateDiagram-v2
+  [*] --> Idle
+\`\`\`
+
+#### Flujo 2
+
+\`\`\`mermaid
+stateDiagram-v2
+  Idle --> Done
+\`\`\`
+
+---
+
+## 5. Límites del Alcance`;
+
+    const out = stripOrphanFenceLineBeforeMermaid(brdSection4);
+    assert.equal((out.match(/^```$/gm) ?? []).length, 4);
+    assert.equal((out.match(/```mermaid/gi) ?? []).length, 4);
+
+    let inFence = false;
+    for (const line of out.split("\n")) {
+      const t = line.trim();
+      if (/^```/.test(t)) {
+        if (!inFence) inFence = true;
+        else inFence = false;
+      }
+      if (/^## 5\./.test(line)) {
+        assert.equal(inFence, false, "section 5 must not be inside a code fence");
+      }
+    }
   });
 });
 
@@ -116,5 +166,68 @@ erDiagram
     );
     assert.doesNotMatch(norm, /uuid default/i);
     assert.match(norm, /tenants \|\|--o\{/);
+  });
+});
+
+describe("repairMarkdownFences — BRD §4 múltiples diagramas mermaid", () => {
+  const brdSection4 = `## 4. Diagramas de referencia (Mermaid)
+
+### 4.1 Arquitectura
+
+\`\`\`mermaid
+flowchart LR
+  USUARIO --> SSO
+\`\`\`
+
+### 4.2 Diagrama entidad-relación
+
+\`\`\`mermaid
+erDiagram
+  CANAL ||--o{ MENSAJE : "contiene"
+\`\`\`
+### 4.3 Flujos críticos
+
+#### Flujo 1
+
+\`\`\`mermaid
+stateDiagram-v2
+  [*] --> Idle
+\`\`\`
+
+#### Flujo 2
+
+\`\`\`mermaid
+stateDiagram-v2
+  Idle --> Done
+\`\`\`
+
+---
+
+## 5. Límites del Alcance (In / Out of Scope)
+
+- Item uno
+`;
+
+  it("no traga el §5 dentro de un fence mermaid", () => {
+    const out = repairMarkdownFences(brdSection4);
+    assert.equal((out.match(/```mermaid/gi) ?? []).length, 4);
+    let inFence = false;
+    for (const line of out.split("\n")) {
+      const t = line.trim();
+      if (t === "```") inFence = !inFence;
+      if (/^## 5\./.test(line)) assert.equal(inFence, false);
+    }
+    assert.match(out, /## 5\. Límites del Alcance[\s\S]*- Item uno/);
+  });
+
+  it("formatDocumentMarkdown preserva fences entre diagramas BRD", () => {
+    const out = formatDocumentMarkdown(brdSection4);
+    assert.equal((out.match(/```mermaid/gi) ?? []).length, 4);
+    let inFence = false;
+    for (const line of out.split("\n")) {
+      const t = line.trim();
+      if (t === "```") inFence = !inFence;
+      if (/^## 5\./.test(line)) assert.equal(inFence, false);
+    }
   });
 });
