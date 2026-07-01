@@ -6,12 +6,57 @@
 
 import { looksLikeMermaidDiagramBody, splitMermaidFenceBodyAtDocumentLeak } from "./mermaid.js";
 
-/** Elimina ``` huérfano que envuelve el heading + ```mermaid como bloque plano (MDD LLM). */
+/** Idioma del fence abierto antes de `lineIndex` (null = ninguno). */
+function openFenceLangBeforeLine(lines: string[], lineIndex: number): string | null {
+  let openLang: string | null = null;
+  for (let i = 0; i < lineIndex; i++) {
+    const trimmed = (lines[i] ?? "").trim();
+    const openMatch = trimmed.match(/^```([a-zA-Z0-9_-]*)?$/);
+    if (!openMatch) continue;
+    if (openLang === null) {
+      openLang = (openMatch[1] ?? "").toLowerCase();
+    } else {
+      openLang = null;
+    }
+  }
+  return openLang;
+}
+
+/**
+ * Elimina ``` huérfano que envuelve el heading + ```mermaid como bloque plano (MDD LLM).
+ * No quita un ``` que cierra un bloque ```mermaid real (BRD §4: varios diagramas seguidos).
+ */
 export function stripOrphanFenceLineBeforeMermaid(document: string): string {
   if (!document?.trim()) return document ?? "";
-  return document
-    .replace(/(^|\n)```\s*\n(\s*#{1,6}\s[^\n]+\n+\s*```mermaid\s*\n)/g, "$1$2")
-    .replace(/(^|\n)```\s*\n(\s*```mermaid\s*\n)/g, "$1$2");
+
+  const normalized = document.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  const dropLine = new Set<number>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = (lines[i] ?? "").trim();
+    if (trimmed !== "```") continue;
+
+    const openLang = openFenceLangBeforeLine(lines, i);
+    if (openLang === "mermaid") continue;
+
+    const rest = lines.slice(i + 1);
+    let j = 0;
+    while (j < rest.length && (rest[j] ?? "").trim() === "") j++;
+
+    const afterBlank = (rest[j] ?? "").trim();
+    const headingThenMermaid =
+      /^#{1,6}\s+\S/.test(afterBlank) &&
+      rest.slice(j + 1).some((l) => /^```mermaid[ \t]*$/i.test((l ?? "").trim()));
+    const directMermaid = /^```mermaid[ \t]*$/i.test(afterBlank);
+
+    if (headingThenMermaid || directMermaid) {
+      dropLine.add(i);
+    }
+  }
+
+  if (dropLine.size === 0) return normalized;
+  return lines.filter((_line, idx) => !dropLine.has(idx)).join("\n");
 }
 
 /** Fence sin lenguaje cuyo cuerpo es heading + ```mermaid literal → markdown válido. */
