@@ -4,6 +4,10 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+### Fixed
+
+- **Mermaid BRD — viñetas unicode y `erDiagram` fugado:** el LLM suele volcar aristas de `flowchart` y relaciones de `erDiagram` como listas markdown (`•`, `-`, numeradas) **fuera** del fence ` ```mermaid `; el normalizador ya reparaba `sequenceDiagram` y flowchart con `-`/`*` pero no `•` ni cardinalidad ER. `repairFragmentedSequenceMermaidInDocument` ahora detecta `erDiagram` y re-absorbe relaciones huérfanas; `sequenceLineCore`/`normalizeMermaidDiagramBody` limpian viñetas unicode y listas numeradas dentro y fuera del fence. Prompt BRD reforzado: prohibido listas para conexiones; una entidad/relación por línea en `erDiagram`. Tests BRD-style en `mermaid-document.spec.ts`.
+
 ### Added
 
 - **BRD — diagramas Mermaid obligatorios (§4):** el prompt de generación (`brd-generation-prompt.md` + `BRD_SECTION_OUTLINE`) ahora exige una nueva sección **§4 Diagramas de referencia (Mermaid)** con: (1) **Arquitectura de integración (el ecosistema)** — `flowchart` con sistemas/actores de negocio sin HTTP ni tablas; (2) **Diagrama entidad-relación** — `erDiagram` con entidades corporativas; (3) **2–3 flujos críticos** — un diagrama por flujo (`stateDiagram-v2`/`flowchart`/`sequenceDiagram`). Guardas de sintaxis alineadas con casos de uso/handoff (un fence por diagrama, etiquetas entrecomilladas, sin `subgraph_ID`). Secciones posteriores renumeradas (Alcance §5, Reglas §6, …). Aplica a `suggest-brd-from-dbga`, legacy BRD y refinamiento chat (`BRD_CHAT_REFINE_BUSINESS_RULES`).

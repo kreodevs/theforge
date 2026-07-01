@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   ensureErDiagramHeader,
+  isOrphanErDiagramLine,
   isOrphanFlowchartLine,
   isOrphanSequenceDiagramLine,
   mergeSplitMermaidContinuationFences,
@@ -61,6 +62,8 @@ describe("isOrphanFlowchartLine", () => {
     assert.equal(isOrphanFlowchartLine("end"), true);
     assert.equal(isOrphanFlowchartLine("- Evento en sistema origen: texto largo"), false);
     assert.equal(isOrphanFlowchartLine("## Requerimientos técnicos por item"), false);
+    assert.equal(isOrphanFlowchartLine('• OBP -->|"Sincronización de costos base"| CAT'), true);
+    assert.equal(isOrphanFlowchartLine("1. ODOO -->|Costos reales| CAT"), true);
   });
 });
 
@@ -464,6 +467,74 @@ describe("stripErDiagramSqlDefaultArtifacts", () => {
     assert.doesNotMatch(out, /uuid default/i);
     assert.match(out, /uuid id PK/);
     assert.match(out, /string email/);
+  });
+});
+
+describe("isOrphanErDiagramLine", () => {
+  it("detecta relaciones erDiagram con viñeta fuera del fence", () => {
+    assert.equal(
+      isOrphanErDiagramLine('• COSTO_BASE }o--o{ FORMATO_MEDIO : "asignado opcionalmente"'),
+      true,
+    );
+    assert.equal(isOrphanErDiagramLine("FORMATO_MEDIO }|--|| TIPO_MEDIO : pertenece a"), true);
+    assert.equal(isOrphanErDiagramLine("## 5. Alcance"), false);
+  });
+});
+
+describe("repairFragmentedSequenceMermaidInDocument BRD-style", () => {
+  it("repara flowchart §4.1 con aristas en viñetas fuera del fence", () => {
+    const doc = `### 4.1 Arquitectura de integración
+
+\`\`\`mermaid
+flowchart LR
+  subgraph ORIGEN["Sistemas Origen"]
+    OBP["One Business Platform (OBP)"]
+    ODOO["ERP Odoo"]
+  end
+  subgraph MC["Sistema de Márgenes y Costos"]
+    CAT["Catálogo de costos"]
+  end
+\`\`\`
+• OBP -->|"Sincronización de costos base"| CAT
+• ODOO -->|"Costos reales de órdenes de compra"| CAT
+
+### 4.2 Diagrama entidad-relación`;
+    const out = repairFragmentedSequenceMermaidInDocument(doc);
+    assert.match(out, /OBP -->|"Sincronización de costos base"| CAT[\s\S]*ODOO -->|"Costos reales/);
+    assert.doesNotMatch(out, /• OBP/);
+    assert.match(out, /```mermaid[\s\S]*ODOO -->[\s\S]*```/);
+  });
+
+  it("repara erDiagram §4.2 con relaciones en viñetas fuera del fence", () => {
+    const doc = `### 4.2 Diagrama entidad-relación
+
+\`\`\`mermaid
+erDiagram
+  COSTO_BASE {
+    string tipo
+    decimal monto
+  }
+  FORMATO_MEDIO {
+    string nombre
+  }
+\`\`\`
+• COSTO_BASE }o--o{ FORMATO_MEDIO : "asignado opcionalmente"
+• FORMATO_MEDIO }|--|| TIPO_MEDIO : "pertenece a"
+
+## 5. Alcance`;
+    const out = normalizeMermaidInDocument(doc);
+    assert.match(out, /COSTO_BASE \}o--o\{ FORMATO_MEDIO/);
+    assert.match(out, /FORMATO_MEDIO \}\|--\|\| TIPO_MEDIO/);
+    assert.doesNotMatch(out, /```\n[\s\S]*```\n• COSTO_BASE/);
+  });
+
+  it("normaliza viñetas dentro del fence flowchart", () => {
+    const body = `flowchart LR
+  A["Origen"]
+• A -->|"sync"| B["Destino"]`;
+    const out = normalizeMermaidDiagramBody(body);
+    assert.match(out, /A -->|"sync"| B/);
+    assert.doesNotMatch(out, /^• /m);
   });
 });
 
