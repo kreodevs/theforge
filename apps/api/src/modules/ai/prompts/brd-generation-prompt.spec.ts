@@ -23,6 +23,8 @@ describe("buildBrdUserPrompt", () => {
     assert.match(prompt, /entidades de negocio/i);
     assert.match(prompt, /Pendientes de validación/);
     assert.match(prompt, /Traduce.*técnico/i);
+    assert.match(prompt, /Contrato de salida Mermaid/);
+    assert.match(prompt, /Anti-patrones PROHIBIDOS/);
     assert.match(prompt, /--- DBGA ---/);
     assert.doesNotMatch(prompt, /Contratos de datos/);
     assert.doesNotMatch(prompt, /Requisitos no funcionales/);

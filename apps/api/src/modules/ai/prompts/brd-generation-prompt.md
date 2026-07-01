@@ -82,7 +82,13 @@ Los diagramas deben **derivar del contenido** de §3 Capacidades y §6 Reglas/en
 
 # Estilo
 
-Markdown claro: `##` / `###`, tablas GFM, listas numeradas para flujos de negocio. Lenguaje corporativo, sin jerga de desarrollo. Sin bloques `<<<BRD>>>` en el cuerpo (los delimitadores los pone el mensaje de usuario).
+Markdown claro: `##` / `###`, tablas GFM. **Listas numeradas o con viñetas** solo para prosa de negocio (capacidades, alcance, UAT, riesgos) — **nunca** para aristas, relaciones ni transiciones de diagramas (§4 usa **solo** fences ` ```mermaid `). Lenguaje corporativo, sin jerga de desarrollo. Sin bloques `<<<BRD>>>` en el cuerpo (los delimitadores los pone el mensaje de usuario).
+
+# Anti-patrones Mermaid (causa rechazo / render roto)
+
+- **Incorrecto:** `flowchart LR` / `erDiagram` como texto plano y conexiones en listas `- A --> B` debajo.
+- **Correcto:** abrir ` ```mermaid `, declaración del diagrama, nodos/aristas/relaciones en líneas planas (sin `-` de lista), cerrar ` ``` `.
+- Las transiciones **nunca** van como viñetas markdown fuera del fence (igual que en Casos de Uso / Handoff Spec).
 
 # Tono
 
