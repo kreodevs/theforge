@@ -8,6 +8,7 @@ export interface UiMcpInstanceSummary {
   isActive: boolean;
   teamVisible: boolean;
   compatible: boolean;
+  adapterId: string | null;
   contractVersion: string | null;
   libraryName: string | null;
   libraryVersion: string | null;
@@ -33,4 +34,6 @@ export interface UiMcpCompatibilityResult {
   libraryVersion?: string;
   missingTools: string[];
   error?: string;
+  adapterId?: string | null;
+  nativeCompatible?: boolean;
 }

@@ -220,9 +220,15 @@ export interface UiMcpCompatibility {
   libraryName?: string;
   libraryVersion?: string;
   supports?: DescribeCapabilitiesResult["supports"];
-  /** Tools obligatorios que faltan (vacío si compatible). */
+  /** Tools obligatorios que faltan (vacío si compatible nativo o vía adaptador). */
   missingTools: string[];
   error?: string;
+  /** `null` = contrato nativo The Forge; id del adaptador si se usa shim genérico. */
+  adapterId?: string | null;
+  /** `true` si el MCP expone el contrato The Forge sin adaptador. */
+  nativeCompatible?: boolean;
+  /** Tools detectados en la última prueba (`tools/list`). */
+  detectedTools?: string[];
 }
 
 /**

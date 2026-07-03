@@ -28,6 +28,8 @@ import {
   callUiMcpToolJson,
   listUiMcpTools,
 } from "./ui-mcp-transport.util.js";
+import { matchUiMcpAdapter } from "./adapters/ui-mcp-adapter.registry.js";
+import type { UiMcpAdapter } from "./adapters/ui-mcp-adapter.types.js";
 
 export interface UpsertUiMcpInstanceDto {
   displayName: string;
@@ -50,6 +52,7 @@ interface UiMcpInstanceRow {
   isActive: boolean;
   teamVisible: boolean;
   compatible: boolean;
+  adapterId: string | null;
   contractVersion: string | null;
   libraryName: string | null;
   libraryVersion: string | null;
@@ -71,6 +74,7 @@ function mapRow(row: UiMcpInstanceRow) {
     isActive: row.isActive,
     teamVisible: row.teamVisible,
     compatible: row.compatible,
+    adapterId: row.adapterId,
     contractVersion: row.contractVersion,
     libraryName: row.libraryName,
     libraryVersion: row.libraryVersion,
@@ -194,6 +198,7 @@ export class UiMcpService {
     }
     if (urlChanged || token) {
       data.compatible = false;
+      data.adapterId = null;
       data.contractVersion = null;
       data.libraryName = null;
       data.libraryVersion = null;
@@ -236,7 +241,8 @@ export class UiMcpService {
 
   /**
    * Detecta compatibilidad de un MCP arbitrario (URL/token en claro, sin persistir).
-   * Usado por el botón "Probar / Detectar compatibilidad" antes de guardar.
+   * 1. Contrato nativo The Forge (`describe_capabilities` + tools obligatorios).
+   * 2. Si falla, intenta un adaptador genérico por `tools/list` (p. ej. Kreo UI MCP).
    */
   async detectCompatibility(url: string, token?: string | null): Promise<UiMcpCompatibility> {
     const conn: UiMcpConnection = { url, token };
@@ -255,11 +261,41 @@ export class UiMcpService {
       const raw = await callUiMcpToolJson(conn, "describe_capabilities", {});
       if (raw) capabilities = describeCapabilitiesResultSchema.parse(raw);
     } catch (err) {
-      this.logger.warn(
-        `[UiMcp] describe_capabilities falló: ${err instanceof Error ? err.message : String(err)}`,
+      this.logger.debug(
+        `[UiMcp] describe_capabilities nativo no disponible: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    return evaluateUiMcpCompatibility({ toolNames, capabilities });
+    const native = evaluateUiMcpCompatibility({ toolNames, capabilities });
+    if (native.compatible) {
+      return { ...native, adapterId: null, nativeCompatible: true, detectedTools: toolNames };
+    }
+
+    const adapter = matchUiMcpAdapter(toolNames);
+    if (!adapter) return { ...native, detectedTools: toolNames };
+
+    try {
+      const adaptedCaps = await adapter.describeCapabilities(conn);
+      return {
+        compatible: true,
+        adapterId: adapter.id,
+        nativeCompatible: false,
+        contractVersion: adaptedCaps.contractVersion,
+        libraryName: adaptedCaps.componentLibrary.name,
+        libraryVersion: adaptedCaps.componentLibrary.version,
+        supports: adaptedCaps.supports,
+        missingTools: [],
+        detectedTools: toolNames,
+      };
+    } catch (err) {
+      return {
+        compatible: false,
+        adapterId: adapter.id,
+        nativeCompatible: false,
+        missingTools: native.missingTools,
+        detectedTools: toolNames,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   /** Detecta compatibilidad de una instancia guardada y persiste el resultado. */
@@ -279,6 +315,7 @@ export class UiMcpService {
       where: { id },
       data: {
         compatible: result.compatible,
+        adapterId: result.adapterId ?? null,
         contractVersion: result.contractVersion ?? null,
         libraryName: result.libraryName ?? null,
         libraryVersion: result.libraryVersion ?? null,
@@ -296,6 +333,7 @@ export class UiMcpService {
   async getActiveCompatibleConnection(): Promise<{
     connection: UiMcpConnection;
     supports: { resolveComponent: boolean; listScreens: boolean; designTokens: boolean };
+    adapter: UiMcpAdapter | null;
   } | null> {
     const row = await this.prisma.uiMcpInstance.findFirst({
       where: { isActive: true, enabled: true, compatible: true },
@@ -305,7 +343,20 @@ export class UiMcpService {
       ? this.tokenCrypto.decrypt(row.tokenCiphertext, row.tokenKeyVersion ?? 1)
       : undefined;
     const caps = this.readSupports(row.capabilitiesJson);
-    return { connection: { url: row.url, token }, supports: caps };
+    const adapter = row.adapterId ? this.resolveAdapterById(row.adapterId, row.capabilitiesJson) : null;
+    return { connection: { url: row.url, token }, supports: caps, adapter };
+  }
+
+  private resolveAdapterById(adapterId: string, capabilitiesJson: unknown): UiMcpAdapter | null {
+    if (adapterId !== "kreo") return null;
+    const toolNames = this.readDetectedToolNames(capabilitiesJson);
+    return matchUiMcpAdapter(toolNames.length > 0 ? toolNames : ["resolve_component_for_entity", "get_ui_component_catalog"]);
+  }
+
+  private readDetectedToolNames(capabilitiesJson: unknown): string[] {
+    if (!capabilitiesJson || typeof capabilitiesJson !== "object") return [];
+    const tools = (capabilitiesJson as { detectedTools?: unknown }).detectedTools;
+    return Array.isArray(tools) ? tools.filter((t): t is string => typeof t === "string") : [];
   }
 
   /** Metadatos (librería/versión/contrato) de la instancia activa compatible, o `null`. */

@@ -108,6 +108,8 @@ model UiMcpInstance {
   teamVisible      Boolean   @default(true)
   /// Resultado de la última detección de compatibilidad contra el contrato UI de The Forge.
   compatible       Boolean   @default(false)
+  /// Adaptador genérico usado cuando el MCP no expone el contrato nativo (p. ej. "kreo").
+  adapterId        String?
   contractVersion  String?
   libraryName      String?
   libraryVersion   String?

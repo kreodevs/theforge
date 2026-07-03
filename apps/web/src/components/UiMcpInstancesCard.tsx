@@ -128,8 +128,11 @@ export function UiMcpInstancesCard() {
     try {
       const res = await detectUiMcpInstance(inst.id);
       if (res.detection.compatible) {
+        const viaAdapter = res.detection.adapterId && !res.detection.nativeCompatible;
         flashSuccess(
-          `Compatible: ${res.libraryName ?? "librería"} ${res.libraryVersion ?? ""} (contrato ${res.contractVersion ?? "?"})`,
+          viaAdapter
+            ? `Compatible vía adaptador ${res.detection.adapterId}: ${res.libraryName ?? "librería"} ${res.libraryVersion ?? ""}`
+            : `Compatible: ${res.libraryName ?? "librería"} ${res.libraryVersion ?? ""} (contrato ${res.contractVersion ?? "?"})`,
         );
       } else {
         setError(
@@ -335,7 +338,7 @@ export function UiMcpInstancesCard() {
                       {inst.compatible ? (
                         <Badge variant="secondary" className="gap-1 text-[var(--success)]">
                           <CheckCircle2 className="h-3 w-3" aria-hidden />
-                          Compatible
+                          {inst.adapterId ? `Compatible (${inst.adapterId})` : "Compatible"}
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="gap-1 text-[var(--foreground-muted)]">

@@ -27,7 +27,12 @@ function buildHeaders(token?: string | null): Record<string, string> {
     Accept: "application/json, text/event-stream",
     "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
   };
-  if (token && token.trim()) headers["X-M2M-Token"] = token.trim();
+  const trimmed = token?.trim();
+  if (trimmed) {
+    // Alineado con Ariadne/TheForge MCP: algunos servidores usan X-M2M-Token, otros Bearer (p. ej. Kreo UI).
+    headers["X-M2M-Token"] = trimmed;
+    headers.Authorization = `Bearer ${trimmed}`;
+  }
   return headers;
 }
 

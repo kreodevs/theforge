@@ -44,6 +44,7 @@ describe("ui-mcp-transport — listUiMcpTools", () => {
     assert.equal(lastCall?.url, "https://mcp.example.com/rpc");
     const headers = lastCall?.init.headers as Record<string, string>;
     assert.equal(headers["X-M2M-Token"], "t");
+    assert.equal(headers.Authorization, "Bearer t");
   });
 
   it("parsea respuesta SSE (líneas data:)", async () => {

@@ -7,16 +7,21 @@ y generar el deliverable **«Pantallas / UI Screens Spec»** (texto, sin TSX).
 
 ## Contrato de compatibilidad
 
-Un MCP es **compatible** cuando `tools/list` expone los tools obligatorios y `describe_capabilities`
-declara un `contractVersion` reconocido:
+Un MCP es **compatible** cuando:
 
-- **Obligatorios:** `describe_capabilities`, `list_components`, `resolve_component`.
-- **Opcionales:** `list_screens` (deliverable Pantallas), `get_design_tokens` (design system).
+1. **Nativo:** `tools/list` expone `describe_capabilities`, `list_components`, `resolve_component` y
+   `describe_capabilities` declara un `contractVersion` reconocido, **o**
+2. **Adaptador genérico:** no cumple el contrato nativo pero `tools/list` coincide con un adaptador
+   registrado (p. ej. **Kreo UI MCP** → `resolve_component_for_entity` + `get_ui_component_catalog`).
+
+Tools opcionales del contrato nativo: `list_screens`, `get_design_tokens`.
 
 ## Piezas
 
 | Archivo | Rol |
 |---------|-----|
+| `adapters/kreo-ui-mcp.adapter.ts` | Shim Kreo → contrato The Forge (resolve, catálogo, tokens DTCG). |
+| `adapters/ui-mcp-adapter.registry.ts` | Matching de adaptadores por `tools/list`. |
 | `ui-mcp.service.ts` | CRUD de `UiMcpInstance` (team-wide), activación exclusiva, detección de compatibilidad (persistida) y token cifrado con `TokenCryptoService`. Expone `getActiveCompatibleConnection` / `hasActiveCompatible` / `getActiveCompatibleMeta`. |
 | `ui-mcp-client.service.ts` | Cliente de alto nivel del MCP activo+compatible. Tools parseados con Zod; cualquier error → `null` para fallback heurístico. |
 | `ui-mcp-transport.util.ts` | Transporte JSON-RPC sobre HTTP/SSE con URL/token explícitos (evita el bug de `baseUrl` de `TheForgeService`). |

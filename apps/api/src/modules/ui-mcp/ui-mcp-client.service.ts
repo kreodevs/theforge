@@ -5,6 +5,8 @@
  * los tools del contrato UI parseados con Zod. Cualquier error devuelve `null` para permitir el
  * fallback por-entidad al resolver heurístico.
  *
+ * Si la instancia usa un adaptador genérico (p. ej. Kreo), las llamadas se enrutan por el adaptador.
+ *
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
  */
@@ -24,6 +26,7 @@ import {
   resolveComponentArgsSchema,
   resolveComponentResultSchema,
 } from "@theforge/shared-types";
+import type { UiMcpAdapter } from "./adapters/ui-mcp-adapter.types.js";
 import { UiMcpService } from "./ui-mcp.service.js";
 import { UiMcpConnection, callUiMcpToolJson } from "./ui-mcp-transport.util.js";
 
@@ -38,18 +41,23 @@ export class UiMcpClientService {
     return this.uiMcp.hasActiveCompatible();
   }
 
-  private async connection(): Promise<{
+  private async session(): Promise<{
     connection: UiMcpConnection;
     supports: { resolveComponent: boolean; listScreens: boolean; designTokens: boolean };
+    adapter: UiMcpAdapter | null;
   } | null> {
     return this.uiMcp.getActiveCompatibleConnection();
   }
 
   /** Catálogo de componentes del MCP (`list_components`). Devuelve [] ante error. */
   async listComponents(): Promise<UiComponentDescriptor[]> {
-    const active = await this.connection();
+    const active = await this.session();
     if (!active) return [];
     try {
+      if (active.adapter) {
+        const parsed: ListComponentsResult = await active.adapter.listComponents(active.connection);
+        return parsed.components;
+      }
       const raw = await callUiMcpToolJson<unknown>(active.connection, "list_components", {});
       if (!raw) return [];
       const parsed: ListComponentsResult = listComponentsResultSchema.parse(raw);
@@ -62,10 +70,13 @@ export class UiMcpClientService {
 
   /** Resuelve un componente real para una entidad (`resolve_component`). `null` → fallback heurístico. */
   async resolveComponent(args: ResolveComponentArgs): Promise<ResolveComponentResult | null> {
-    const active = await this.connection();
+    const active = await this.session();
     if (!active || !active.supports.resolveComponent) return null;
     try {
       const payload = resolveComponentArgsSchema.parse(args);
+      if (active.adapter) {
+        return await active.adapter.resolveComponent(active.connection, payload);
+      }
       const raw = await callUiMcpToolJson<unknown>(active.connection, "resolve_component", payload);
       if (!raw) return null;
       return resolveComponentResultSchema.parse(raw);
@@ -77,10 +88,14 @@ export class UiMcpClientService {
 
   /** Lista de pantallas (`list_screens`). `null` si el MCP no soporta o falla. */
   async listScreens(args: ListScreensArgs): Promise<ScreenSpec[] | null> {
-    const active = await this.connection();
+    const active = await this.session();
     if (!active || !active.supports.listScreens) return null;
     try {
       const payload = listScreensArgsSchema.parse(args);
+      if (active.adapter?.listScreens) {
+        const result = await active.adapter.listScreens(active.connection, payload);
+        return result?.screens ?? null;
+      }
       const raw = await callUiMcpToolJson<unknown>(active.connection, "list_screens", payload);
       if (!raw) return null;
       return listScreensResultSchema.parse(raw).screens;
@@ -92,9 +107,12 @@ export class UiMcpClientService {
 
   /** Tokens de design system (`get_design_tokens`). `null` si el MCP no soporta o falla. */
   async getDesignTokens(): Promise<GetDesignTokensResult | null> {
-    const active = await this.connection();
+    const active = await this.session();
     if (!active || !active.supports.designTokens) return null;
     try {
+      if (active.adapter?.getDesignTokens) {
+        return await active.adapter.getDesignTokens(active.connection);
+      }
       const raw = await callUiMcpToolJson<unknown>(active.connection, "get_design_tokens", {});
       if (!raw) return null;
       return getDesignTokensResultSchema.parse(raw);
