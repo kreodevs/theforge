@@ -12,6 +12,7 @@ import {
   Shield,
   Search,
   Users,
+  Pencil,
 } from "lucide-react";
 import { apiFetch, API_BASE, getStoredUser } from "@/utils/apiClient";
 import {
@@ -159,6 +160,11 @@ export function UsersList() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; email: string } | null>(null);
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [editTarget, setEditTarget] = useState<UserRow | null>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const me = getStoredUser();
   const myId = me?.id ?? "";
@@ -368,6 +374,73 @@ export function UsersList() {
     }
   };
 
+  const openEditDialog = (user: UserRow) => {
+    setEditTarget(user);
+    setEditEmail(user.email);
+    setEditName(user.name ?? "");
+    setEditError(null);
+    setRoleActionError(null);
+  };
+
+  const handleCloseEditModal = useCallback(() => {
+    if (savingEdit) return;
+    setEditTarget(null);
+    setEditEmail("");
+    setEditName("");
+    setEditError(null);
+  }, [savingEdit]);
+
+  const handleEditDialogOpenChange = useCallback(
+    (open: boolean) => {
+      if (savingEdit) return;
+      if (!open) handleCloseEditModal();
+    },
+    [savingEdit, handleCloseEditModal],
+  );
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTarget) return;
+    const trimmedEmail = editEmail.trim().toLowerCase();
+    const trimmedName = editName.trim();
+    if (!trimmedEmail) {
+      setEditError("El email es requerido");
+      return;
+    }
+    const body: { email?: string; name?: string | null } = {};
+    if (trimmedEmail !== editTarget.email) body.email = trimmedEmail;
+    if (trimmedName !== (editTarget.name ?? "")) body.name = trimmedName || null;
+    if (Object.keys(body).length === 0) {
+      handleCloseEditModal();
+      return;
+    }
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      const r = await apiFetch(`${API_BASE}/users/${editTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const data = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+        const msg = Array.isArray(data.message) ? data.message.join(", ") : data.message;
+        throw new Error(msg ?? "No se pudo actualizar el usuario");
+      }
+      const updated = (await r.json()) as { id: string; email: string; name: string | null };
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === updated.id ? { ...u, email: updated.email, name: updated.name } : u,
+        ),
+      );
+      handleCloseEditModal();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Error al actualizar el usuario");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const fetchSecret = async (userId: string) => {
     updateSecret(userId, { loading: true, error: null });
     try {
@@ -548,6 +621,95 @@ export function UsersList() {
                   </>
                 ) : (
                   "Crear usuario"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editTarget !== null} onOpenChange={handleEditDialogOpenChange}>
+        <DialogContent
+          size="md"
+          className={cn(
+            "gap-0 p-0 sm:max-w-md",
+            "max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:left-0 max-sm:max-h-[min(92dvh,640px)] max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0",
+            "max-sm:rounded-t-2xl max-sm:rounded-b-none max-sm:border-b-0 max-sm:pb-[max(1rem,env(safe-area-inset-bottom))]",
+            "max-sm:data-[state=open]:slide-in-from-bottom-8 max-sm:data-[state=closed]:slide-out-to-bottom-8",
+            "max-sm:data-[state=open]:slide-in-from-left-0 max-sm:data-[state=open]:slide-in-from-top-0",
+            "max-sm:data-[state=closed]:slide-out-to-left-0 max-sm:data-[state=closed]:slide-out-to-top-0",
+            "max-sm:data-[state=open]:zoom-in-100 max-sm:data-[state=closed]:zoom-out-100",
+          )}
+        >
+          <form onSubmit={handleUpdateProfile} className="flex max-h-[inherit] flex-col">
+            <div
+              className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-[var(--border)] sm:hidden"
+              aria-hidden
+            />
+            <DialogHeader className="space-y-1.5 border-b border-[var(--border)] px-4 py-4 text-left sm:px-6 sm:py-5">
+              <DialogTitle className="text-left text-base sm:text-lg">Editar usuario</DialogTitle>
+              <DialogDescription className="text-left text-xs leading-relaxed sm:text-sm">
+                Actualiza el nombre o el correo. El rol y la API key MCP se gestionan desde la lista.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
+              <div className="space-y-2">
+                <label htmlFor="edit-user-email" className="text-sm font-medium text-[var(--foreground)]">
+                  Email <span className="text-[var(--destructive)]">*</span>
+                </label>
+                <Input
+                  id="edit-user-email"
+                  placeholder="usuario@empresa.com"
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  required
+                  autoFocus
+                  disabled={savingEdit}
+                  className="h-11 rounded-xl border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_40%,var(--card))] text-[15px] focus-visible:ring-[var(--ring)]"
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="edit-user-name" className="text-sm font-medium text-[var(--foreground)]">
+                  Nombre
+                </label>
+                <Input
+                  id="edit-user-name"
+                  placeholder="Opcional"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  disabled={savingEdit}
+                  className="h-11 rounded-xl border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_40%,var(--card))] text-[15px]"
+                />
+              </div>
+              {editError ? (
+                <p className="rounded-xl border border-[var(--destructive)]/30 bg-[var(--destructive)]/10 px-3 py-2 text-sm text-[var(--destructive)]" role="alert">
+                  {editError}
+                </p>
+              ) : null}
+            </div>
+            <DialogFooter className="shrink-0 flex flex-col gap-2 border-t border-[var(--border)] px-4 py-4 sm:flex-row sm:justify-end sm:gap-2 sm:px-6">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={savingEdit}
+                className="h-11 w-full rounded-xl sm:order-1 sm:w-auto"
+                onClick={handleCloseEditModal}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={savingEdit || !editEmail.trim()}
+                className="h-11 w-full rounded-xl sm:order-2 sm:w-auto"
+              >
+                {savingEdit ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Guardando…
+                  </>
+                ) : (
+                  "Guardar cambios"
                 )}
               </Button>
             </DialogFooter>
@@ -860,7 +1022,7 @@ export function UsersList() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 divide-x divide-[var(--border)] border-t border-[var(--border)]">
+                      <div className="grid grid-cols-3 divide-x divide-[var(--border)] border-t border-[var(--border)]">
                         <button
                           type="button"
                           className={cn(
@@ -874,6 +1036,14 @@ export function UsersList() {
                         >
                           <KeyRound className="h-5 w-5" aria-hidden />
                           {isOpen ? "Ocultar MCP" : "Ver MCP"}
+                        </button>
+                        <button
+                          type="button"
+                          className="flex min-h-[3.25rem] flex-col items-center justify-center gap-1 py-3 text-xs font-medium text-[var(--foreground-muted)] transition-colors active:bg-[var(--muted)]"
+                          onClick={() => openEditDialog(u)}
+                        >
+                          <Pencil className="h-5 w-5" aria-hidden />
+                          Editar
                         </button>
                         {isSelf ? (
                           <button
@@ -1044,7 +1214,7 @@ export function UsersList() {
             />
           ) : (
             <>
-              <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_8.5rem_5.5rem] gap-3 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_25%,var(--card))] px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--foreground-muted)]">
+              <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_9rem_8.25rem] gap-3 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_25%,var(--card))] px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--foreground-muted)]">
                 <span>Usuario</span>
                 <span>Rol</span>
                 <span className="text-right">Acciones</span>
@@ -1056,7 +1226,7 @@ export function UsersList() {
                   const isSelf = u.id === myId;
                   return (
                     <li key={u.id}>
-                      <div className="grid grid-cols-[minmax(0,1fr)_9rem_5.75rem] items-center gap-4 p-4">
+                      <div className="grid grid-cols-[minmax(0,1fr)_9rem_8.25rem] items-center gap-4 p-4">
                         <div className="flex min-w-0 items-center gap-3">
                           <div
                             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--primary)_12%,var(--card))] text-xs font-semibold text-[var(--primary)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_22%,transparent)]"
@@ -1116,6 +1286,12 @@ export function UsersList() {
                             onClick={() => void toggleSecret(u.id)}
                           >
                             <KeyRound className="h-4 w-4" />
+                          </ListRowIconButton>
+                          <ListRowIconButton
+                            tooltip="Editar nombre o email"
+                            onClick={() => openEditDialog(u)}
+                          >
+                            <Pencil className="h-4 w-4" />
                           </ListRowIconButton>
                           {isSelf ? (
                             <ListRowIconButton

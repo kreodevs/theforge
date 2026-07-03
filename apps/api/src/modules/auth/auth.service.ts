@@ -716,6 +716,46 @@ export class AuthService {
     return { id: targetUserId, email: user.email, role };
   }
 
+  /**
+   * PATCH /users/:id — actualizar nombre y/o email de un usuario (admin-only).
+   * El email se normaliza (trim + lowercase) y debe ser único.
+   */
+  async updateUserProfile(
+    targetUserId: string,
+    patch: { email?: string; name?: string | null },
+  ): Promise<{ id: string; email: string; role: string; name: string | null }> {
+    const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    const data: { email?: string; name?: string | null } = {};
+
+    if (patch.email !== undefined) {
+      const normalized = patch.email.trim().toLowerCase();
+      if (normalized !== user.email) {
+        const existing = await this.prisma.user.findUnique({ where: { email: normalized } });
+        if (existing && existing.id !== targetUserId) {
+          throw new BadRequestException("El email ya está registrado");
+        }
+        data.email = normalized;
+      }
+    }
+
+    if (patch.name !== undefined) {
+      const trimmed = patch.name?.trim() ?? "";
+      data.name = trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return { id: user.id, email: user.email, role: user.role, name: user.name };
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: targetUserId },
+      data,
+    });
+    return { id: updated.id, email: updated.email, role: updated.role, name: updated.name };
+  }
+
   /** GET /auth/has-users — verifica si hay usuarios registrados. */
   async hasUsers(): Promise<{ hasUsers: boolean }> {
     const count = await this.prisma.user.count();

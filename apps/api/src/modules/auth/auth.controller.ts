@@ -36,6 +36,17 @@ const ssoLoginSchema = z.object({
   token: z.string().min(1),
 }).strict();
 
+const updateUserProfileSchema = z
+  .object({
+    email: z.string().email(),
+    name: z.string().max(200).nullable(),
+  })
+  .partial()
+  .strict()
+  .refine((d) => d.email !== undefined || d.name !== undefined, {
+    message: "Debes enviar 'email' o 'name'",
+  });
+
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const r = schema.safeParse(body);
   if (!r.success) {
@@ -177,6 +188,13 @@ export class UsersController {
     requireAdmin();
     if (!body?.email) throw new BadRequestException("email requerido");
     return this.auth.createUser(body.email, body.name, body.role);
+  }
+
+  @Patch(":id")
+  updateProfile(@Param("id") id: string, @Body() body: unknown) {
+    requireAdmin();
+    const parsed = parseBody(updateUserProfileSchema, body);
+    return this.auth.updateUserProfile(id, parsed);
   }
 
   @Delete(":id")
