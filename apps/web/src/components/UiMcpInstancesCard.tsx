@@ -38,6 +38,11 @@ interface DraftForm {
 
 const EMPTY_DRAFT: DraftForm = { id: null, displayName: "", url: "", token: "" };
 
+/** Notifica al Workshop que cambió el MCP gráfico activo (p. ej. tras Activar). */
+function notifyUiMcpChanged() {
+  window.dispatchEvent(new Event("theforge:ui-mcp-changed"));
+}
+
 /** Sección de Ajustes "MCP gráfico": instancias team-wide de MCPs de componentes UI. */
 export function UiMcpInstancesCard() {
   const role = getStoredUser()?.role;
@@ -114,6 +119,7 @@ export function UiMcpInstancesCard() {
     setError("");
     try {
       await activateUiMcpInstance(inst.id, !inst.isActive);
+      notifyUiMcpChanged();
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo cambiar la activación");
@@ -144,6 +150,7 @@ export function UiMcpInstancesCard() {
         );
       }
       await load();
+      if (res.detection.compatible) notifyUiMcpChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo detectar compatibilidad");
     } finally {
@@ -354,6 +361,11 @@ export function UiMcpInstancesCard() {
                       <p className="mt-0.5 text-xs text-[var(--foreground-muted)]">
                         {inst.libraryName} {inst.libraryVersion ?? ""} · contrato{" "}
                         {inst.contractVersion ?? "?"}
+                      </p>
+                    ) : null}
+                    {inst.compatible && !inst.isActive ? (
+                      <p className="mt-1 text-xs text-[color-mix(in_oklch,var(--primary)_75%,var(--foreground))]">
+                        Pulsa <strong>Activar</strong> para habilitar la pestaña Pantallas en el Workshop.
                       </p>
                     ) : null}
                   </div>

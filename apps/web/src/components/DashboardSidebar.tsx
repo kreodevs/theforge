@@ -392,15 +392,27 @@ export function DashboardSidebar({
       return;
     }
     let cancelled = false;
-    void fetchUiMcpActive()
-      .then((r) => {
-        if (!cancelled) setUiMcpActive(r.hasActiveCompatible);
-      })
-      .catch(() => {
-        if (!cancelled) setUiMcpActive(false);
-      });
+    const refreshUiMcpActive = () => {
+      void fetchUiMcpActive()
+        .then((r) => {
+          if (!cancelled) setUiMcpActive(r.hasActiveCompatible);
+        })
+        .catch(() => {
+          if (!cancelled) setUiMcpActive(false);
+        });
+    };
+    refreshUiMcpActive();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refreshUiMcpActive();
+    };
+    window.addEventListener("focus", refreshUiMcpActive);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("theforge:ui-mcp-changed", refreshUiMcpActive);
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", refreshUiMcpActive);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("theforge:ui-mcp-changed", refreshUiMcpActive);
     };
   }, [storeProject?.id]);
 
