@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Cable, Settings, Shield, Sparkles } from "lucide-react";
+import { Cable, LayoutTemplate, Settings, Shield, Sparkles } from "lucide-react";
 import { ProviderInstancesCard } from "@/components/ProviderInstancesCard";
 import { AccountConfigCard } from "@/components/AccountConfigCard";
 import { AriadneConfigCard } from "@/components/AriadneConfigCard";
+import { UiMcpInstancesCard } from "@/components/UiMcpInstancesCard";
 import { UnderlineTabs, type UnderlineTabItem } from "@/components/ui/UnderlineTabs";
 import { getStoredUser } from "@/utils/apiClient";
 
-type SettingsTab = "providers" | "ariadne" | "account";
+type SettingsTab = "providers" | "ariadne" | "ui-mcp" | "account";
 
 const SETTINGS_TABS: UnderlineTabItem<SettingsTab>[] = [
   { id: "providers", label: "Proveedores de IA", shortLabel: "Proveedores", icon: Sparkles },
   { id: "ariadne", label: "Ariadne", shortLabel: "Ariadne", icon: Cable },
+  { id: "ui-mcp", label: "MCP gráfico", shortLabel: "MCP gráfico", icon: LayoutTemplate },
   { id: "account", label: "Cuenta", shortLabel: "Cuenta", icon: Shield },
 ];
 
@@ -83,6 +85,16 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
               className={activeTab === "ariadne" ? "space-y-6" : undefined}
             >
               {activeTab === "ariadne" ? <AriadneConfigCard /> : null}
+            </div>
+
+            <div
+              id="settings-panel-ui-mcp"
+              role="tabpanel"
+              aria-labelledby="settings-tab-ui-mcp"
+              hidden={activeTab !== "ui-mcp"}
+              className={activeTab === "ui-mcp" ? "space-y-6" : undefined}
+            >
+              {activeTab === "ui-mcp" ? <UiMcpInstancesCard /> : null}
             </div>
 
             <div

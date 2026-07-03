@@ -22,6 +22,10 @@ import {
   enrichMddWithUiUxDesignIntent,
   reconcileUiUxDesignIntent,
 } from "./mdd-enrich-uiux-intent.js";
+import {
+  heuristicUiComponentResolver,
+  type UiComponentResolver,
+} from "../../ui-mcp/ui-component-resolver.js";
 import { isPlaceholderSeguridad } from "./mdd-security-parse.js";
 import { ensureMddGovernanceSection, extractGovernanceSection } from "@theforge/shared-types/mdd-governance-patterns";
 
@@ -118,12 +122,19 @@ function restoreSections6And7AfterNormalize(source: string, normalized: string):
 export type PrepareMddForOutputOptions = {
   /** Sección inmutable del wizard; si no se pasa, se extrae del borrador de entrada. */
   preservedGovernance?: string | null;
+  /**
+   * Resolver de componentes UI para la sección "UI/UX Design Intent". Por defecto heurístico
+   * (comportamiento previo). Con un `McpUiComponentResolver` se usan componentes reales del MCP
+   * gráfico activo, con fallback por-entidad al heurístico.
+   */
+  resolver?: UiComponentResolver;
 };
 
-export function prepareMddForOutput(
+export async function prepareMddForOutput(
   input: { mddStructured?: MddStructured; mddDraft?: string } | string,
   options?: PrepareMddForOutputOptions,
-): string {
+): Promise<string> {
+  const resolver = options?.resolver ?? heuristicUiComponentResolver;
   let raw: string;
   if (typeof input === "string") {
     raw = input;
@@ -148,7 +159,7 @@ export function prepareMddForOutput(
   const withDiagrams = injectMddDiagrams(normalized, suggestMddDiagrams(normalized));
   const withErFromSql = regenerateErDiagramFromSql(withDiagrams) ?? withDiagrams;
   const withComponentDiagram = injectProposedComponentDiagramIntoSection2(withErFromSql);
-  const enriched = enrichMddWithUiUxDesignIntent(withComponentDiagram);
+  const enriched = await enrichMddWithUiUxDesignIntent(withComponentDiagram, resolver);
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
-  return reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance));
+  return reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
 }

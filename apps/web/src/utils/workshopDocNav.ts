@@ -14,6 +14,7 @@ import { Brain,
   Link2,
   ListOrdered,
   ListTodo,
+  MonitorSmartphone,
   Package,
   Palette,
   Server,
@@ -68,6 +69,10 @@ export interface WorkshopDocNavBuildContext {
   agentGovernanceContent: string | null | undefined;
   infraContent: string | null | undefined;
   adrs: unknown[] | null | undefined;
+  /** Deliverable "Pantallas" (texto) generado vía MCP gráfico. */
+  uiScreensContent: string | null | undefined;
+  /** Hay un MCP gráfico compatible activo (gate de visibilidad de la pestaña "Pantallas"). */
+  uiMcpActive: boolean;
 }
 
 export function workshopTabDocHasContent(tabId: string, content: unknown): boolean {
@@ -193,6 +198,16 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       title: "Design System (DESIGN.md)",
       Icon: Palette,
       content: ctx.uxUiGuideContent,
+    });
+  }
+  // Pantallas: solo visible cuando hay un MCP gráfico compatible activo.
+  if (ctx.uiMcpActive && visible("ui-screens")) {
+    items.push({
+      id: "ui-screens",
+      label: "Pantallas",
+      title: "Pantallas / UI Screens Spec — componentes reales del MCP gráfico conectado",
+      Icon: MonitorSmartphone,
+      content: ctx.uiScreensContent,
     });
   }
   if (visible("aem")) {
@@ -356,6 +371,11 @@ export function getWorkshopDocPanelHeader(
       title: "Design System",
       subtitle: "Guía UX/UI y tokens (DESIGN.md)",
       Icon: Palette,
+    },
+    "ui-screens": {
+      title: "Pantallas / UI Screens Spec",
+      subtitle: "Pantallas con componentes reales del MCP gráfico conectado",
+      Icon: MonitorSmartphone,
     },
     aem: {
       title: "Análisis y Estudio de Mercado",

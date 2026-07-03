@@ -19,7 +19,8 @@ export type WorkshopDocTab =
   | "adrs"
   | "aem"
   | "integration"
-  | "handoff-spec";
+  | "handoff-spec"
+  | "ui-screens";
 
 export type ProjectTypeForTabs = "NEW" | "LEGACY";
 
@@ -50,6 +51,10 @@ export function isTabVisibleForComplexity(
   // modelando bien la integración; el LEGACY (brownfield) corrobora el impacto. Visible en ambos
   // lados, igual que la pestaña Integración.
   if (tab === "handoff-spec") return true;
+
+  // Pantallas: gate real es "hay MCP gráfico compatible activo" (se aplica en buildWorkshopDocNavItems).
+  // A nivel de complejidad no se oculta.
+  if (tab === "ui-screens") return true;
 
   if (c === "HIGH") return true;
 

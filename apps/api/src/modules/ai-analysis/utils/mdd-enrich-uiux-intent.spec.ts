@@ -23,8 +23,8 @@ CREATE TABLE customers (id UUID PRIMARY KEY, email TEXT NOT NULL);
 `;
 
 describe("enrichMddWithUiUxDesignIntent", () => {
-  it("anexa ## UI/UX Design Intent cuando hay entidades en §3", () => {
-    const out = enrichMddWithUiUxDesignIntent(MDD_WITH_ENTITIES);
+  it("anexa ## UI/UX Design Intent cuando hay entidades en §3", async () => {
+    const out = await enrichMddWithUiUxDesignIntent(MDD_WITH_ENTITIES);
     assert.match(out, /^## UI\/UX Design Intent/im);
     assert.match(out, /Entity Classification/);
     assert.match(out, /`orders`/);
@@ -33,22 +33,22 @@ describe("enrichMddWithUiUxDesignIntent", () => {
     assert.ok(out.includes("CREATE TABLE orders"), "no debe borrar §3 previa");
   });
 
-  it("no duplica la sección si ya existe", () => {
+  it("no duplica la sección si ya existe", async () => {
     const withIntent = `${MDD_WITH_ENTITIES.trim()}\n\n## UI/UX Design Intent\n\nPrevio.\n`;
-    const out = enrichMddWithUiUxDesignIntent(withIntent);
+    const out = await enrichMddWithUiUxDesignIntent(withIntent);
     assert.equal(out, withIntent);
     assert.equal((out.match(/## UI\/UX Design Intent/g) ?? []).length, 1);
   });
 
-  it("devuelve el markdown sin cambios si falta §3", () => {
+  it("devuelve el markdown sin cambios si falta §3", async () => {
     const sinModelo = `## 1. Contexto\n\nSolo texto.\n`;
-    const out = enrichMddWithUiUxDesignIntent(sinModelo);
+    const out = await enrichMddWithUiUxDesignIntent(sinModelo);
     assert.equal(out, sinModelo);
   });
 
-  it("devuelve vacío o entrada sin tocar cuando no hay contenido útil", () => {
-    assert.equal(enrichMddWithUiUxDesignIntent(""), "");
+  it("devuelve vacío o entrada sin tocar cuando no hay contenido útil", async () => {
+    assert.equal(await enrichMddWithUiUxDesignIntent(""), "");
     const soloEspacios = "   \n";
-    assert.equal(enrichMddWithUiUxDesignIntent(soloEspacios), soloEspacios);
+    assert.equal(await enrichMddWithUiUxDesignIntent(soloEspacios), soloEspacios);
   });
 });

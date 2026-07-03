@@ -52,10 +52,16 @@ import {
 } from "./utils/dbga-idea-validation.util.js";
 import { resolveLangGraphRecursionLimit } from "./utils/langgraph-recursion.util.js";
 import {
-  prepareMddForOutput,
+  prepareMddForOutput as prepareMddForOutputCore,
   draftHasSection6Heading,
   type PrepareMddForOutputOptions,
 } from "./utils/mdd-prepare-output.js";
+import { UiMcpClientService } from "../ui-mcp/ui-mcp-client.service.js";
+import {
+  McpUiComponentResolver,
+  heuristicUiComponentResolver,
+  type UiComponentResolver,
+} from "../ui-mcp/ui-component-resolver.js";
 import {
   buildMddWithGovernanceSkeleton,
   ensureMddGovernanceSection,
@@ -172,9 +178,42 @@ export class AiAnalysisService {
     private readonly ai: AiService,
     private readonly discovery: DiscoveryService,
     private readonly aiFactory: AIFactory,
+    private readonly uiMcpClient: UiMcpClientService,
     @Optional() createDbgaGraphFn?: typeof createDbgaGraph,
   ) {
     this.createDbgaGraphFn = createDbgaGraphFn ?? createDbgaGraph;
+  }
+
+  /** Resolver de componentes UI memoizado (TTL corto): MCP compatible activo o heurístico. */
+  private uiResolverCache?: { at: number; resolver: UiComponentResolver };
+
+  private async getUiResolver(): Promise<UiComponentResolver> {
+    const now = Date.now();
+    if (this.uiResolverCache && now - this.uiResolverCache.at < 30_000) {
+      return this.uiResolverCache.resolver;
+    }
+    let resolver: UiComponentResolver = heuristicUiComponentResolver;
+    try {
+      if (await this.uiMcpClient.isActive()) {
+        resolver = new McpUiComponentResolver(this.uiMcpClient);
+      }
+    } catch {
+      resolver = heuristicUiComponentResolver;
+    }
+    this.uiResolverCache = { at: now, resolver };
+    return resolver;
+  }
+
+  /**
+   * Wrapper async de `prepareMddForOutput` que inyecta el resolver de componentes UI
+   * (MCP compatible activo con fallback por-entidad al heurístico). Reemplaza las llamadas directas.
+   */
+  private async runPrepareMddForOutput(
+    input: Parameters<typeof prepareMddForOutputCore>[0],
+    options?: PrepareMddForOutputOptions,
+  ): Promise<string> {
+    const resolver = options?.resolver ?? (await this.getUiResolver());
+    return prepareMddForOutputCore(input, { ...options, resolver });
   }
 
   private async resolveUserId(projectId?: string): Promise<string> {
@@ -262,7 +301,7 @@ export class AiAnalysisService {
         : (await this.estimationService.getMddContentForProject(projectId)) ?? "";
     const draft = (content || "").trim();
     if (draft.length < 200) return draft;
-    return prepareMddForOutput(draft);
+    return await this.runPrepareMddForOutput(draft);
   }
 
   /**
@@ -563,7 +602,7 @@ export class AiAnalysisService {
       }
 
       const raw = (lastState.mddDraft || "").trim() || "# Master Design Document\n\n(Sin contenido generado.)";
-      const markdown = prepareMddForOutput(
+      const markdown = await this.runPrepareMddForOutput(
         {
           mddStructured: lastState.mddStructured,
           mddDraft: raw || lastState.mddDraft,
@@ -762,7 +801,7 @@ export class AiAnalysisService {
             }
             const plan = value?.type === "plan_approval" && Array.isArray(value?.plan) ? value.plan : undefined;
             const planMessage = value?.type === "plan_approval" && typeof value?.message === "string" ? value.message : undefined;
-            let draftOnInterrupt = prepareMddForOutput(
+            let draftOnInterrupt = await this.runPrepareMddForOutput(
               {
                 mddStructured: lastState?.mddStructured,
                 mddDraft: (lastState?.mddDraft ?? "").trim(),
@@ -770,7 +809,7 @@ export class AiAnalysisService {
               managerPrepareOpts,
             );
             if (draftOnInterrupt.length < 200 && existingMdd.length >= 200) {
-              draftOnInterrupt = prepareMddForOutput(existingMdd, managerPrepareOpts);
+              draftOnInterrupt = await this.runPrepareMddForOutput(existingMdd, managerPrepareOpts);
             }
             const estOpts = estimationOpts(projectId, estimationStageId, lastState);
             const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOpts);
@@ -815,7 +854,7 @@ export class AiAnalysisService {
             if (lastState.auditorGaps) {
               this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps, estimationStageId);
             }
-            const prepared = prepareMddForOutput(
+            const prepared = await this.runPrepareMddForOutput(
               {
                 mddStructured: lastState?.mddStructured,
                 mddDraft: draft,
@@ -835,7 +874,7 @@ export class AiAnalysisService {
       if (rawMarkdown.length < 200 && existingMdd.length >= 200) {
         rawMarkdown = existingMdd;
       }
-      let markdown = prepareMddForOutput(
+      let markdown = await this.runPrepareMddForOutput(
         {
           mddStructured: lastState?.mddStructured,
           mddDraft: rawMarkdown,
@@ -885,7 +924,7 @@ export class AiAnalysisService {
         }
         const plan = value?.type === "plan_approval" && Array.isArray(value?.plan) ? value.plan : undefined;
         const planMessage = value?.type === "plan_approval" && typeof value?.message === "string" ? value.message : undefined;
-        let draftOnInterrupt = prepareMddForOutput(
+        let draftOnInterrupt = await this.runPrepareMddForOutput(
           {
             mddStructured: lastState?.mddStructured,
             mddDraft: (lastState?.mddDraft ?? "").trim(),
@@ -893,7 +932,7 @@ export class AiAnalysisService {
           managerPrepareOpts,
         );
         if (draftOnInterrupt.length < 200 && existingMdd.length >= 200) {
-          draftOnInterrupt = prepareMddForOutput(existingMdd, managerPrepareOpts);
+          draftOnInterrupt = await this.runPrepareMddForOutput(existingMdd, managerPrepareOpts);
         }
         const estOptsCatch = estimationOpts(projectId, estimationStageId, lastState);
         const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOptsCatch);
@@ -1097,7 +1136,7 @@ export class AiAnalysisService {
             } catch {
               // mantener lastState
             }
-            let draftOnInterrupt = prepareMddForOutput(
+            let draftOnInterrupt = await this.runPrepareMddForOutput(
               {
                 mddStructured: stateForMarkdown?.mddStructured,
                 mddDraft: (stateForMarkdown?.mddDraft ?? "").trim(),
@@ -1106,7 +1145,7 @@ export class AiAnalysisService {
             );
             const isBroken = draftOnInterrupt.startsWith("## useMermaidForDiagrams") || draftOnInterrupt.startsWith("## leaveUncovered") || (draftOnInterrupt.includes("## document") && !draftOnInterrupt.includes("## 1. Contexto"));
             if (isBroken && lastNonEmptyDraft && lastNonEmptyDraft.length > 80) {
-              draftOnInterrupt = prepareMddForOutput(lastNonEmptyDraft.trim(), resumePrepareOpts);
+              draftOnInterrupt = await this.runPrepareMddForOutput(lastNonEmptyDraft.trim(), resumePrepareOpts);
             }
             const estOptsResume = estimationOpts(projectId, estimationStage, stateForMarkdown ?? lastState);
             const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOptsResume);
@@ -1157,7 +1196,7 @@ export class AiAnalysisService {
                 this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps, estimationStage);
               }
             }
-            const prepared = prepareMddForOutput(
+            const prepared = await this.runPrepareMddForOutput(
               {
                 mddStructured: lastState?.mddStructured,
                 mddDraft: draft,
@@ -1199,7 +1238,7 @@ export class AiAnalysisService {
         if (isBrokenMetadataDocument && lastNonEmptyDraft && lastNonEmptyDraft.length > 80) {
           raw = lastNonEmptyDraft;
         }
-        let markdown = prepareMddForOutput(
+        let markdown = await this.runPrepareMddForOutput(
           {
             mddStructured: lastState?.mddStructured,
             mddDraft: raw,
@@ -1260,7 +1299,7 @@ export class AiAnalysisService {
         } catch {
           // mantener lastState
         }
-        const draftOnInterrupt = prepareMddForOutput({
+        const draftOnInterrupt = await this.runPrepareMddForOutput({
           mddStructured: stateForMarkdown?.mddStructured,
           mddDraft: (stateForMarkdown?.mddDraft ?? "").trim(),
         });
@@ -1386,7 +1425,7 @@ export class AiAnalysisService {
           .replace(/\n?```\s*$/, "")
           .trim() || newBody;
         const finalDraft = replaceSection1BodyFromAnyHeading(mddContent, newBody);
-        const markdown = prepareMddForOutput(finalDraft, regenPrepareOpts);
+        const markdown = await this.runPrepareMddForOutput(finalDraft, regenPrepareOpts);
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         yield {
           type: "done",
@@ -1421,7 +1460,7 @@ export class AiAnalysisService {
           "Regenerando §7 Infraestructura…",
         );
         const finalDraft = (result.mddDraft ?? mddContent).trim();
-        const markdown = prepareMddForOutput(
+        const markdown = await this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
           regenPrepareOpts,
         );
@@ -1443,7 +1482,7 @@ export class AiAnalysisService {
           "Regenerando §6 Seguridad…",
         );
         const finalDraft = (result.mddDraft ?? mddContent).trim();
-        const markdown = prepareMddForOutput(
+        const markdown = await this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
           regenPrepareOpts,
         );
@@ -1480,7 +1519,7 @@ export class AiAnalysisService {
           content25 != null
             ? replaceSections2To5InDraft(mddContent, content25)
             : architectDraft || mddContent;
-        const markdown = prepareMddForOutput(
+        const markdown = await this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
           regenPrepareOpts,
         );

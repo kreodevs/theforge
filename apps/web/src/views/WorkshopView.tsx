@@ -9,6 +9,7 @@ import {
   Package,
   LayoutTemplate,
   Loader2,
+  MonitorSmartphone,
   RefreshCw,
   FileCode,
   GitBranch,
@@ -395,6 +396,8 @@ export default function WorkshopView({
   const setHandoffSpecContent = useWorkshopStore((s) => s.setHandoffSpecContent);
   const persistHandoffSpecContent = useWorkshopStore((s) => s.persistHandoffSpecContent);
   const syncHandoffSpec = useWorkshopStore((s) => s.syncHandoffSpec);
+  const uiScreensContentField = useWorkshopStore((s) => s.uiScreensContent);
+  const syncUiScreens = useWorkshopStore((s) => s.syncUiScreens);
 
   const specContent = resolveWorkshopDeliverableContent(
     "specContent",
@@ -458,6 +461,7 @@ export default function WorkshopView({
   const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
   const aemContent = aemContentField ?? project?.aemContent ?? null;
   const handoffSpecContent = handoffSpecContentField ?? project?.handoffSpecContent ?? null;
+  const uiScreensContent = uiScreensContentField ?? project?.uiScreensContent ?? null;
 
   const projectStatus: Status = project?.status ?? "ROJO";
   const semaphoreGreen = liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
@@ -1085,6 +1089,7 @@ export default function WorkshopView({
     | "infra"
     | "aem"
     | "handoff-spec"
+    | "ui-screens"
     | "agent-governance"
     | "adrs"
     | "integration";
@@ -4498,6 +4503,44 @@ export default function WorkshopView({
                   generateLabel="Sincronizar Especificación de Handoff"
                   placeholder="# Handoff Spec\n\nRequerimientos técnicos NEW→LEGACY. Pulsa «Sincronizar» para generarlo o escríbelo manualmente..."
                   onBlur={handleHandoffSpecBlur}
+                />
+              </div>
+            )}
+            {centralPanel === "ui-screens" && (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+                <div className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-3 py-2.5">
+                  <p className="min-w-0 flex-1 text-xs leading-relaxed text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
+                    <strong>Pantallas / UI Screens Spec</strong> — documento de texto generado desde el MCP gráfico compatible activo. Lista las pantallas con los componentes reales de la librería conectada, la entidad de dominio asociada y el binding a endpoints. Se regenera al sincronizar (deriva de las entidades del §3 del MDD).
+                  </p>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={() => void syncUiScreens(projectId)}
+                      disabled={loading}
+                      aria-label="Sincronizar Pantallas"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                      Sincronizar Pantallas
+                    </Button>
+                  </div>
+                </div>
+                <StandardDocPanel
+                  icon={MonitorSmartphone}
+                  title="Pantallas / UI Screens Spec"
+                  description="Pantallas con componentes reales del MCP gráfico conectado. Pulsa «Sincronizar Pantallas» para (re)generarlo desde las entidades del MDD."
+                  content={uiScreensContent}
+                  onContentChange={() => {}}
+                  onSave={() => {}}
+                  isDirty={false}
+                  viewMode="preview"
+                  readOnly
+                  onGenerate={() => void syncUiScreens(projectId)}
+                  canGenerate={!loading}
+                  isLoading={loading}
+                  generateLabel="Sincronizar Pantallas"
+                  placeholder="# Pantallas\n\nPulsa «Sincronizar Pantallas» para generarlo desde el MCP gráfico conectado."
                 />
               </div>
             )}

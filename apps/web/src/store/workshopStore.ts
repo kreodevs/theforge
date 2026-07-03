@@ -489,6 +489,7 @@ export interface Project {
   infraContent: string | null;
   aemContent: string | null;
   handoffSpecContent: string | null;
+  uiScreensContent: string | null;
   agentGovernanceContent: string | null;
   convergeWebhookUrl?: string | null;
   linkedLegacyProjectId?: string | null;
@@ -650,6 +651,7 @@ interface WorkshopState {
   infraContent: string | null;
   aemContent: string | null;
   handoffSpecContent: string | null;
+  uiScreensContent: string | null;
   agentGovernanceContent: string | null;
   /** Conformance (SDD Fase 2): Blueprint/API/Flujos/Infra vs MDD; `blueprintDataModel` = §3 vs Blueprint (gating API). */
   conformance: {
@@ -824,6 +826,9 @@ interface WorkshopState {
   persistHandoffSpecContent: (content: string) => Promise<void>;
   /** IntegrationAgent: regenerate handoff-spec.md from the registered NEW-LEG items. */
   syncHandoffSpec: (projectId: string, stageId?: string | null) => Promise<string | null>;
+  setUiScreensContent: (content: string | null) => void;
+  /** Genera el deliverable "Pantallas" desde el MCP gráfico compatible activo. */
+  syncUiScreens: (projectId: string) => Promise<string | null>;
   generateSpec: (projectId: string) => Promise<Project | null>;
   generateAem: (
     projectId: string,
@@ -946,6 +951,7 @@ const initialState = {
   infraContent: null as string | null,
   aemContent: null as string | null,
   handoffSpecContent: null as string | null,
+  uiScreensContent: null as string | null,
   agentGovernanceContent: null as string | null,
   conformance: null as {
     blueprint: ConformanceResult;
@@ -1036,6 +1042,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       infraContent: p.infraContent ?? null,
       aemContent: p.aemContent ?? null,
       handoffSpecContent: p.handoffSpecContent ?? null,
+      uiScreensContent: p.uiScreensContent ?? null,
       lastLegacyDeliverablesDebug: legacyDebugFromStages(stages, activeStageId),
     });
   },
@@ -1270,6 +1277,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         infraContent: cleanDoc(data.infraContent ?? null),
         aemContent: cleanDoc(data.aemContent ?? null),
         handoffSpecContent: cleanDoc(data.handoffSpecContent ?? null),
+        uiScreensContent: cleanDoc(data.uiScreensContent ?? null),
         agentGovernanceContent: data.agentGovernanceContent ?? null,
         error: null,
         legacyMcpDebugTrace: null,
@@ -1365,6 +1373,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         infraContent: cleanDoc(p.infraContent ?? null),
         aemContent: cleanDoc(p.aemContent ?? null),
         handoffSpecContent: cleanDoc(p.handoffSpecContent ?? null),
+        uiScreensContent: cleanDoc(p.uiScreensContent ?? null),
         synced: true,
         error: null,
       });
@@ -2708,6 +2717,33 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setHandoffSpecContent: (content) => set({ handoffSpecContent: content }),
   persistHandoffSpecContent: async (content) => {
     await persistField("handoffSpecContent", content, get, set);
+  },
+  setUiScreensContent: (content) => set({ uiScreensContent: content }),
+  syncUiScreens: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}/ui-screens/sync`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.message ?? "Error al sincronizar Pantallas");
+      }
+      const data = (await r.json()) as { content?: string | null };
+      const content = data.content ?? null;
+      const current = get().project;
+      set({
+        uiScreensContent: content,
+        project: current ? { ...current, uiScreensContent: content } : current,
+      });
+      return content;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al sincronizar Pantallas" });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
   },
   syncHandoffSpec: async (projectId, stageId) => {
     if (!projectId?.trim()) return null;

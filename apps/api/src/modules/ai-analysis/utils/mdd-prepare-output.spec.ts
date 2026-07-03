@@ -56,19 +56,19 @@ describe("shouldPreferDraftOverStructured", () => {
 });
 
 describe("prepareMddForOutput", () => {
-  it("inyecta Diagrama de componentes propuesto en §2 para MDD greenfield", () => {
-    const out = prepareMddForOutput({ mddDraft: FULL_MDD_PREFIX });
+  it("inyecta Diagrama de componentes propuesto en §2 para MDD greenfield", async () => {
+    const out = await prepareMddForOutput({ mddDraft: FULL_MDD_PREFIX });
     assert.match(out, /### Diagrama de componentes propuesto/);
     assert.match(out, /```mermaid/);
     assert.match(out, /NestJS/);
   });
 
-  it("conserva §1–§5 del draft cuando structured es parcial tras fallo de §6", () => {
+  it("conserva §1–§5 del draft cuando structured es parcial tras fallo de §6", async () => {
     const draft = FULL_MDD_PREFIX + EXISTING_SECTION6;
     const structured = {
       seguridad: [mddSeguridadItemSchema.parse({ title: "Seguridad", content: ["(Pendiente de definir.)"] })],
     };
-    const out = prepareMddForOutput({ mddDraft: draft, mddStructured: structured });
+    const out = await prepareMddForOutput({ mddDraft: draft, mddStructured: structured });
     assert.ok(out.includes("## 1. Contexto"), "debe conservar §1");
     assert.ok(out.includes("CREATE TABLE users"), "debe conservar §3");
     assert.ok(out.includes("Argon2id"), "debe conservar §6 previa, no Pendiente");
@@ -76,7 +76,7 @@ describe("prepareMddForOutput", () => {
     assert.strictEqual(mddHasDuplicateSectionHeadings(out), false);
   });
 
-  it("no reintroduce duplicados desde source corrupto y quita directivas mesh", () => {
+  it("no reintroduce duplicados desde source corrupto y quita directivas mesh", async () => {
     const good = FULL_MDD_PREFIX + EXISTING_SECTION6;
     const corrupted =
       good +
@@ -90,7 +90,7 @@ Cola duplicada.
 
 - [DIRECTIVE: software_architect] Campo totp_secret en users.
 `;
-    const out = prepareMddForOutput({ mddDraft: corrupted });
+    const out = await prepareMddForOutput({ mddDraft: corrupted });
     assert.strictEqual(mddHasDuplicateSectionHeadings(out), false);
     assert.ok(!out.includes("[DIRECTIVE:"));
     assert.ok(!out.includes("Cola duplicada"));
@@ -108,7 +108,7 @@ describe("getSection6Or7Range", () => {
 });
 
 describe("replaceSection6Or7InDraft", () => {
-  it("inserta §6 antes de §7 cuando falta Seguridad (salto 5→7)", () => {
+  it("inserta §6 antes de §7 cuando falta Seguridad (salto 5→7)", async () => {
     const draft = `# Master Design Document
 
 ## 1. Contexto
@@ -150,7 +150,7 @@ Extra.
     assert.ok(updated.indexOf("## 5.") < updated.indexOf("## 6. Seguridad"));
     assert.ok(updated.indexOf("## 6. Seguridad") < updated.indexOf("## 7. Infraestructura"));
     assert.ok(getSection6Or7Range(updated, 6), "getSection6Or7Range debe localizar §6 tras insert");
-    const out = prepareMddForOutput({ mddDraft: updated });
+    const out = await prepareMddForOutput({ mddDraft: updated });
     assert.ok(out.includes("## 6. Seguridad"), "prepareMddForOutput debe conservar §6 tras normalize");
     assert.ok(out.includes("JWT validado"), "contenido §6 preservado");
   });
