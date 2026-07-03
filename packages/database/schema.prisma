@@ -34,6 +34,7 @@ model User {
   aiSettings UserAISettings?
   providerConfigs UserProviderConfig[]
   providerInstancesCreated ProviderInstance[] @relation("ProviderInstanceCreatedBy")
+  uiMcpInstancesCreated UiMcpInstance[] @relation("UiMcpInstanceCreatedBy")
 }
 
 /// Preferencias de IA por usuario (proveedor activo, embeddings).
@@ -87,6 +88,39 @@ model ProviderInstance {
   @@unique([providerType, slug])
   @@index([providerType])
   @@index([enabledForUsers])
+}
+
+/// Instancia team-wide de un **MCP gráfico** (componentes UI). Gestionada por admin/super_admin.
+/// Cuando `isActive && compatible`, The Forge la usa para resolver componentes reales en las
+/// secciones UI/UX (MDD/Blueprint), inferir el design system y generar el deliverable "Pantallas".
+model UiMcpInstance {
+  id               String    @id @default(uuid())
+  displayName      String
+  url              String
+  /// Token M2M cifrado (opcional; algunos MCP no requieren auth).
+  tokenCiphertext  String?   @db.Text
+  tokenKeyVersion  Int?
+  /// Habilitada para el equipo (no borrada/deshabilitada manualmente).
+  enabled          Boolean   @default(true)
+  /// Instancia activa (solo una a la vez; se usa en generación).
+  isActive         Boolean   @default(false)
+  /// Visible/seleccionable por el equipo.
+  teamVisible      Boolean   @default(true)
+  /// Resultado de la última detección de compatibilidad contra el contrato UI de The Forge.
+  compatible       Boolean   @default(false)
+  contractVersion  String?
+  libraryName      String?
+  libraryVersion   String?
+  /// describe_capabilities crudo + tools detectados (JSON).
+  capabilitiesJson Json?
+  lastCheckedAt    DateTime?
+  createdByUserId  String
+  createdByUser    User      @relation("UiMcpInstanceCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([enabled])
 }
 
 /// Configuración BYOK por proveedor (token cifrado + modelos).
@@ -174,6 +208,8 @@ model Stage {
   changeSpecContent String? @db.Text
   /// Handoff Spec (markdown): NEW-LEG items expandidos a requerimientos técnicos para legacy (IntegrationAgent), stage 2+.
   handoffSpecContent String? @db.Text
+  /// UI Screens Spec (markdown): pantallas + componentes reales + props, generado vía MCP gráfico compatible.
+  uiScreensContent String? @db.Text
   estimation       Estimation?
   /// Redundancia intencional con `Project.projectType === LEGACY` para queries y checkpoints por etapa.
   isLegacy         Boolean      @default(false)
@@ -279,6 +315,8 @@ model Project {
   phase0SummaryContent String?   @db.Text
   /// Handoff Spec (markdown): NEW-LEG items expandidos a requerimientos técnicos para el equipo legacy (IntegrationAgent).
   handoffSpecContent   String?   @db.Text
+  /// UI Screens Spec (markdown): pantallas + componentes reales + props, generado vía MCP gráfico compatible.
+  uiScreensContent     String?   @db.Text
   /// Estado del flujo Fase 0 interactivo: "idle" | "interviewing" | "done"
   phase0Status        String?   @default("idle")
   /// Gaps pendientes (JSON)

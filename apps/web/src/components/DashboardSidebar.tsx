@@ -46,6 +46,7 @@ import { getProjectMonogram } from "@/utils/projectMonogram";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "../store/workshopStore";
 import { WORKSHOP_EXIT_BLOCKED_TITLE, WORKSHOP_DOC_NAV_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { buildWorkshopDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
+import { fetchUiMcpActive } from "@/lib/ui-mcp-api";
 
 /** Project row shown under the dashboard “Proyectos” menu group. */
 export interface DashboardSidebarProjectItem {
@@ -375,6 +376,7 @@ export function DashboardSidebar({
   const uxUiGuideContent = useWorkshopStore((s) => s.uxUiGuideContent);
   const aemContent = useWorkshopStore((s) => s.aemContent);
   const handoffSpecContent = useWorkshopStore((s) => s.handoffSpecContent);
+  const uiScreensContent = useWorkshopStore((s) => s.uiScreensContent);
   const apiContractsContent = useWorkshopStore((s) => s.apiContractsContent);
   const logicFlowsContent = useWorkshopStore((s) => s.logicFlowsContent);
   const tasksContent = useWorkshopStore((s) => s.tasksContent);
@@ -382,6 +384,25 @@ export function DashboardSidebar({
   const infraContent = useWorkshopStore((s) => s.infraContent);
   const adrs = useWorkshopStore((s) => s.adrs);
   const workshopAgentsBusy = useWorkshopStore(selectWorkshopAgentsBusy);
+
+  const [uiMcpActive, setUiMcpActive] = useState(false);
+  useEffect(() => {
+    if (!storeProject?.id) {
+      setUiMcpActive(false);
+      return;
+    }
+    let cancelled = false;
+    void fetchUiMcpActive()
+      .then((r) => {
+        if (!cancelled) setUiMcpActive(r.hasActiveCompatible);
+      })
+      .catch(() => {
+        if (!cancelled) setUiMcpActive(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [storeProject?.id]);
 
   const activeWorkshopStageForNav = useMemo(() => {
     const stages = workshopStages.length > 0 ? workshopStages : (storeProject?.stages ?? []);
@@ -429,6 +450,8 @@ export function DashboardSidebar({
       agentGovernanceContent,
       adrs,
       infraContent,
+      uiScreensContent,
+      uiMcpActive,
     });
   }, [
     workshopProject,
@@ -448,6 +471,8 @@ export function DashboardSidebar({
     uxUiGuideContent,
     aemContent,
     handoffSpecContent,
+    uiScreensContent,
+    uiMcpActive,
     apiContractsContent,
     logicFlowsContent,
     tasksContent,

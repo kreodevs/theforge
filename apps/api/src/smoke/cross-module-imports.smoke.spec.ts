@@ -42,8 +42,8 @@ describe("smoke API: ai-analysis", () => {
     assert.equal(isInsufficientDbgaIdea("Hola"), true);
   });
 
-  it("mdd-enrich-uiux-intent es invocable", () => {
-    const out = enrichMddWithUiUxDesignIntent("## 1. Contexto\n\nSolo contexto.\n");
+  it("mdd-enrich-uiux-intent es invocable", async () => {
+    const out = await enrichMddWithUiUxDesignIntent("## 1. Contexto\n\nSolo contexto.\n");
     assert.match(out, /Contexto/);
   });
 
@@ -56,10 +56,10 @@ describe("smoke API: ai-analysis", () => {
 });
 
 describe("smoke API: engine ↔ ai-analysis", () => {
-  it("blueprint-enrich resuelve mdd-sanitize (ruta ../ai-analysis)", () => {
+  it("blueprint-enrich resuelve mdd-sanitize (ruta ../ai-analysis)", async () => {
     const mdd = `## 3. Modelo de Datos\n\n\`\`\`sql\nCREATE TABLE orders (id UUID);\n\`\`\`\n`;
     const bp = "## 1. Visión\n\nBase.\n";
-    const out = enrichBlueprintWithUiDesignSystem(mdd, bp);
+    const out = await enrichBlueprintWithUiDesignSystem(mdd, bp);
     assert.match(out, /UI Design System/);
     assert.match(out, /`orders`/);
   });

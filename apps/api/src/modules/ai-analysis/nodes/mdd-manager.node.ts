@@ -654,7 +654,7 @@ export function createMddManagerNode(
           formatted = mddStructuredToMarkdown(hydrated);
         } else {
           const draft = (state.mddDraft ?? "").trim();
-          formatted = reconcileUiUxDesignIntent(
+          formatted = await reconcileUiUxDesignIntent(
             finalizeMddDeliverable(
               normalizeMddFormat(
                 ensureContratosSection(

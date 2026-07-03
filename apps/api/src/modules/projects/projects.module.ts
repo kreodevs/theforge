@@ -18,6 +18,7 @@ import { ChangeLogModule } from "../change-log/change-log.module.js";
 import { LegacyFlowModule } from "../legacy-flow/legacy-flow.module.js";
 import { DocumentationGapModule } from "../documentation-gap/documentation-gap.module.js";
 import { SddIntegrationService } from "./sdd-integration.service.js";
+import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { SddIntegrationService } from "./sdd-integration.service.js";
     ChangeLogModule,
     forwardRef(() => LegacyFlowModule),
     forwardRef(() => DocumentationGapModule),
+    UiMcpModule,
   ],
   controllers: [ProjectsController, ProjectIntegrationController],
   providers: [

@@ -68,7 +68,7 @@ export function createMddFormatterNode(): (state: MDDStateType) => Promise<Parti
         const hydrated = hydrateStructuredFromDraft(state.mddStructured, state.mddDraft ?? "");
         const rendered = mddStructuredToMarkdown(hydrated);
         if (rendered.trim().length > 0) {
-          const markdown = reconcileUiUxDesignIntent(
+          const markdown = await reconcileUiUxDesignIntent(
             finalizeMddDeliverable(normalizeMddFormat(rendered)),
           );
           if (currentDraftLen > markdown.length * 1.35 || draftHasSubstantialSection3) {
@@ -94,7 +94,7 @@ export function createMddFormatterNode(): (state: MDDStateType) => Promise<Parti
       return {};
     }
     try {
-      let formatted = reconcileUiUxDesignIntent(
+      let formatted = await reconcileUiUxDesignIntent(
         finalizeMddDeliverable(
           normalizeMddFormat(
             ensureContratosSection(

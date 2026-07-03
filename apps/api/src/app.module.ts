@@ -30,6 +30,7 @@ import { DocumentationGapModule } from "./modules/documentation-gap/documentatio
 import { CryptoModule } from "./modules/crypto/crypto.module.js";
 import { UserProvidersModule } from "./modules/user-providers/user-providers.module.js";
 import { DesignRefModule } from "./modules/design-ref/design-ref.module.js";
+import { UiMcpModule } from "./modules/ui-mcp/ui-mcp.module.js";
 
 @Module({
   controllers: [HealthController],
@@ -55,6 +56,7 @@ import { DesignRefModule } from "./modules/design-ref/design-ref.module.js";
     ChangeLogModule,
     DocumentationGapModule,
     DesignRefModule,
+    UiMcpModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
