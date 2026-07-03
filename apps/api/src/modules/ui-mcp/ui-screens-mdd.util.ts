@@ -4,7 +4,7 @@
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
  */
-import { ComplexityLevel } from "@theforge/database";
+import { ComplexityLevel, StageStatus } from "@theforge/database";
 import {
   extractSection3Body,
   parseModeloDatosFromSection3Markdown,
@@ -57,7 +57,7 @@ interface ProjectMddSource {
   dbgaContent?: string | null;
   phase0SummaryContent?: string | null;
   specContent?: string | null;
-  stages?: Array<{ ordinal: number; workflowStatus: string; mddContent?: string | null }>;
+  stages?: Array<{ ordinal: number; workflowStatus: StageStatus; mddContent?: string | null }>;
 }
 
 /** Misma fuente que `ProjectsService.constitutionMarkdown` (insumo canónico del MDD). */

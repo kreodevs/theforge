@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { StageStatus } from "@theforge/database";
 import {
   extractEntityNamesFromMdd,
   normalizeGluedSection3Headings,
@@ -45,7 +46,7 @@ describe("ui-screens-mdd — resolveConstitutionMarkdown", () => {
       stages: [
         {
           ordinal: 1,
-          workflowStatus: "ACTIVE",
+          workflowStatus: StageStatus.ACTIVE,
           mddContent: "## 3. Modelo de Datos\n\nCREATE TABLE tenants (id UUID);",
         },
       ],
