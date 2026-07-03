@@ -41,6 +41,9 @@ Thumbs.db
 # Snippets / pegados locales
 pastes/
 
+# Local scratch / temp
+tmp/
+
 # Logs
 *.log
 npm-debug.log*
