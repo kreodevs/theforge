@@ -2,9 +2,9 @@
  * @fileoverview **UiScreensService** — genera el deliverable "Pantallas / UI Screens Spec" (texto)
  * a partir del MCP gráfico compatible activo.
  *
- * Estrategia: `list_screens` (spec estructurada de pantallas) con respaldo por-entidad vía
- * `resolve_component` cuando el MCP no soporta `list_screens`. Ensambla markdown de texto (sin TSX ni
- * preview) y lo persiste en `Project.uiScreensContent`.
+ * Estrategia: cruza entidades §3 MDD con Historias de Usuario; `list_screens` con respaldo
+ * por-entidad vía `resolve_component` cuando el MCP no soporta `list_screens`. Ensambla markdown
+ * de texto (sin TSX ni preview) y lo persiste en `Project.uiScreensContent`.
  *
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
@@ -12,22 +12,11 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { ListScreensEntity, ScreenSpec } from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
-import { extractSection3Body } from "../ai-analysis/utils/mdd-sanitize.js";
 import { UiMcpClientService } from "./ui-mcp-client.service.js";
 import { UiMcpService } from "./ui-mcp.service.js";
 import { buildUiScreensMarkdown } from "./ui-screens-markdown.util.js";
-
-/** Extrae nombres de entidades (CREATE TABLE) del cuerpo de §3. */
-function parseEntities(section3: string): string[] {
-  const entities: string[] = [];
-  const regex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`|"|')?(\w+)(?:`|"|')?/gi;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(section3)) !== null) {
-    const name = match[1];
-    if (name && !entities.includes(name)) entities.push(name);
-  }
-  return entities;
-}
+import { resolveConstitutionMarkdown } from "./ui-screens-mdd.util.js";
+import { buildPantallasPlan, type PantallaPlanItem } from "./ui-screens-plan.util.js";
 
 @Injectable()
 export class UiScreensService {
@@ -44,7 +33,18 @@ export class UiScreensService {
   async syncUiScreens(projectId: string): Promise<{ content: string; screens: number }> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { id: true, specContent: true },
+      select: {
+        id: true,
+        complexity: true,
+        dbgaContent: true,
+        phase0SummaryContent: true,
+        specContent: true,
+        userStoriesContent: true,
+        stages: {
+          select: { ordinal: true, workflowStatus: true, mddContent: true },
+          orderBy: { ordinal: "asc" },
+        },
+      },
     });
     if (!project) throw new NotFoundException("Proyecto no encontrado");
 
@@ -54,23 +54,28 @@ export class UiScreensService {
       );
     }
 
-    const mdd = project.specContent ?? "";
-    const section3 = extractSection3Body(mdd);
-    const entityNames = section3 ? parseEntities(section3) : [];
-    if (entityNames.length === 0) {
+    const mdd = resolveConstitutionMarkdown(project);
+    const plan = buildPantallasPlan(mdd, project.userStoriesContent);
+    const entityPlan = plan.filter((p) => p.source !== "hu-only");
+
+    if (entityPlan.length === 0) {
       throw new BadRequestException(
         "El MDD del proyecto no tiene entidades en §3 (Modelo de Datos) para derivar pantallas.",
       );
     }
 
-    const entities: ListScreensEntity[] = entityNames.map((name) => ({
+    const entities: ListScreensEntity[] = plan.map(({ name, classification, keyFields, restEndpoint }) => ({
       name,
-      restEndpoint: `GET /api/v1/${name}`,
+      classification,
+      keyFields,
+      restEndpoint,
     }));
 
     let screens = await this.uiMcpClient.listScreens({ entities });
     if (!screens) {
-      screens = await this.buildScreensFromResolve(entities);
+      screens = await this.buildScreensFromResolve(plan);
+    } else {
+      screens = await this.enrichScreensFromPlan(screens, plan);
     }
     if (!screens || screens.length === 0) {
       throw new BadRequestException(
@@ -97,30 +102,67 @@ export class UiScreensService {
     return { content, screens: screens.length };
   }
 
-  /** Respaldo: una pantalla por entidad usando `resolve_component`. */
-  private async buildScreensFromResolve(entities: ListScreensEntity[]): Promise<ScreenSpec[]> {
+  /** Aplica nombres y propósitos del plan (HU + §3) sobre pantallas de `list_screens`. */
+  private async enrichScreensFromPlan(
+    screens: ScreenSpec[],
+    plan: PantallaPlanItem[],
+  ): Promise<ScreenSpec[]> {
+    const byEntity = new Map(plan.map((p) => [p.name, p]));
+    const enriched = screens.map((screen) => {
+      const entity = screen.components[0]?.entity ?? screen.name;
+      const item = byEntity.get(entity);
+      if (!item) return screen;
+      return {
+        ...screen,
+        name: item.screenName,
+        purpose: this.formatPurposeWithHuRefs(item),
+      };
+    });
+
+    const listedEntities = new Set(
+      enriched.flatMap((s) => s.components.map((c) => c.entity).filter(Boolean) as string[]),
+    );
+    const missingHuOnly = plan.filter((p) => p.source === "hu-only" && !listedEntities.has(p.name));
+    if (missingHuOnly.length === 0) return enriched;
+
+    const huOnlyScreens = await this.buildScreensFromResolve(missingHuOnly);
+    return [...enriched, ...huOnlyScreens];
+  }
+
+  private formatPurposeWithHuRefs(item: PantallaPlanItem): string {
+    let purpose = item.purpose;
+    if (item.userStoryRefs && item.userStoryRefs.length > 1) {
+      purpose += `\n\n**Historias relacionadas:** ${item.userStoryRefs.join("; ")}`;
+    }
+    return purpose;
+  }
+
+  /** Respaldo: una pantalla por ítem del plan usando `resolve_component`. */
+  private async buildScreensFromResolve(plan: PantallaPlanItem[]): Promise<ScreenSpec[]> {
     const screens: ScreenSpec[] = [];
-    for (const entity of entities) {
+    for (const item of plan) {
       const resolved = await this.uiMcpClient.resolveComponent({
-        entityName: entity.name,
-        classification: entity.classification,
-        keyFields: entity.keyFields,
-        restEndpoint: entity.restEndpoint,
+        entityName: item.name,
+        classification: item.classification,
+        keyFields: item.keyFields,
+        restEndpoint: item.restEndpoint,
+        uiHint: item.uiHint,
+        context: item.resolveContext,
       });
       if (!resolved) continue;
       screens.push({
-        name: `Gestión de ${entity.name}`,
-        purpose: `Pantalla para administrar la entidad \`${entity.name}\`.`,
+        name: item.screenName,
+        purpose: this.formatPurposeWithHuRefs(item),
         components: [
           {
             component: resolved.component,
             package: resolved.package,
             version: resolved.version,
-            entity: entity.name,
+            entity: item.source === "hu-only" ? undefined : item.name,
             props: resolved.propMapping ?? {},
           },
         ],
-        endpoints: entity.restEndpoint ? [entity.restEndpoint] : [],
+        endpoints: item.restEndpoint ? [item.restEndpoint] : [],
       });
     }
     return screens;

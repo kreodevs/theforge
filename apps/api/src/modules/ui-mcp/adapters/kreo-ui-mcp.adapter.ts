@@ -128,6 +128,8 @@ const kreoRuntimeAdapter: Omit<UiMcpAdapter, "describeCapabilities"> = {
     const text = await callKreoText(conn, "resolve_component_for_entity", {
       entity_name: args.entityName,
       entity_type: entityType,
+      ui_hint: args.uiHint,
+      context: args.context,
       properties: args.keyFields?.map((name) => ({ name, type: "string" })),
     });
     if (!text) throw new Error("resolve_component_for_entity sin respuesta");

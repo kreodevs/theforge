@@ -27,7 +27,9 @@ Tools opcionales del contrato nativo: `list_screens`, `get_design_tokens`.
 | `ui-mcp-transport.util.ts` | Transporte JSON-RPC sobre HTTP/SSE con URL/token explícitos (evita el bug de `baseUrl` de `TheForgeService`). |
 | `ui-mcp.controller.ts` | REST `/api/ui-mcp` (list/create/update/delete/activate/detect/test/active). Solo admin/super_admin para mutaciones. |
 | `ui-component-resolver.ts` | `UiComponentResolver` pluggable: `HeuristicUiComponentResolver` (comportamiento previo) y `McpUiComponentResolver` (MCP con **fallback por-entidad**). |
-| `ui-screens.service.ts` + `ui-screens.controller.ts` | Deliverable «Pantallas»: `syncUiScreens` (usa `list_screens`, respaldo `resolve_component`) → `POST /api/projects/:id/ui-screens/sync`; persiste en `Project.uiScreensContent`. |
+| `ui-screens.service.ts` + `ui-screens.controller.ts` | Deliverable «Pantallas»: `syncUiScreens` (cruce §3 + HU, `list_screens`, respaldo `resolve_component`) → `POST /api/projects/:id/ui-screens/sync`; persiste en `Project.uiScreensContent`. Lee MDD del stage activo y `userStoriesContent`. |
+| `ui-screens-mdd.util.ts` | Extracción tolerante de entidades §3 (`CREATE TABLE`) con headings pegados o SQL sin fence ```sql. |
+| `ui-screens-plan.util.ts` | Cruce §3 + Historias de Usuario → plan de pantallas (nombre, propósito, `uiHint`, clasificación). |
 | `ui-screens-markdown.util.ts` | Ensambla la spec de pantallas en markdown de texto (sin TSX ni preview). |
 | `ui-design-system-section.util.ts` | Construye la sección de design system inferido del MCP para la Guía UX/UI. |
 

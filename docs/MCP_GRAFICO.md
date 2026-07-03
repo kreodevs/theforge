@@ -174,9 +174,10 @@ Si el MCP falla al resolver **una** entidad (timeout, error, JSON inválido), es
 Genera markdown de texto (sin TSX, sin preview, sin iframe).
 
 1. Lee entidades de **§3 Modelo de Datos** del MDD (`CREATE TABLE …`).
-2. Intenta `list_screens` si el MCP lo soporta nativamente.
-3. Si no, **fallback:** `resolve_component` por cada entidad y arma pantallas sintéticas.
-4. Persiste en `Project.uiScreensContent` (y `Stage.uiScreensContent` cuando aplica).
+2. Cruza con **Historias de Usuario** (`userStoriesContent`): vincula HU por nombre de entidad, enriquece nombre/propósito/`uiHint`/clasificación y añade pantallas para HU sin tabla (p. ej. dashboard).
+3. Intenta `list_screens` si el MCP lo soporta nativamente.
+4. Si no, **fallback:** `resolve_component` por cada ítem del plan (Kreo recibe `ui_hint` y `context` de la HU).
+5. Persiste en `Project.uiScreensContent` (y `Stage.uiScreensContent` cuando aplica).
 
 En Workshop: acción de generar/sincronizar pantallas (requiere MCP activo y entidades en §3).
 

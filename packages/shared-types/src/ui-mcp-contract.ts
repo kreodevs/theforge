@@ -130,6 +130,10 @@ export const resolveComponentArgsSchema = z.object({
   keyFields: z.array(z.string()).optional(),
   lifecycleStates: z.array(z.string()).optional(),
   restEndpoint: z.string().optional(),
+  /** Hint explícito para MCPs que lo soporten (p. ej. Kreo: kanban, form, table). */
+  uiHint: z.string().optional(),
+  /** Contexto de negocio adicional (p. ej. texto de la HU). */
+  context: z.string().optional(),
 });
 export type ResolveComponentArgs = z.infer<typeof resolveComponentArgsSchema>;
 
