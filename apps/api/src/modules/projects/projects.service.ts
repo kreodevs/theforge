@@ -7,6 +7,17 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { validateDocumentForPersist } from "../sessions/document-shrink.util.js";
 import { enrichBlueprintWithUiDesignSystem } from "../engine/blueprint-enrich-ui-system.js";
+import { UiMcpClientService } from "../ui-mcp/ui-mcp-client.service.js";
+import { UiMcpService } from "../ui-mcp/ui-mcp.service.js";
+import {
+  McpUiComponentResolver,
+  heuristicUiComponentResolver,
+  type UiComponentResolver,
+} from "../ui-mcp/ui-component-resolver.js";
+import {
+  UI_MCP_DESIGN_SYSTEM_HEADING,
+  buildUiMcpDesignSystemSection,
+} from "../ui-mcp/ui-design-system-section.util.js";
 import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
@@ -155,7 +166,47 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly changeLog: ChangeLogService,
     private readonly projectIntegration: ProjectIntegrationService,
     private readonly sddIntegration: SddIntegrationService,
+    private readonly uiMcpClient: UiMcpClientService,
+    private readonly uiMcp: UiMcpService,
   ) {}
+
+  /**
+   * Anexa la sección de design system inferida del MCP gráfico compatible activo, si lo hay.
+   * Fallback: si no hay MCP activo o falla, devuelve el contenido sin cambios (design system del LLM/Ariadne).
+   */
+  private async appendUiMcpDesignSystem(content: string): Promise<string> {
+    try {
+      if (!(await this.uiMcpClient.isActive())) return content;
+      if (content.includes(UI_MCP_DESIGN_SYSTEM_HEADING)) return content;
+      const [tokens, meta, components] = await Promise.all([
+        this.uiMcpClient.getDesignTokens(),
+        this.uiMcp.getActiveCompatibleMeta(),
+        this.uiMcpClient.listComponents(),
+      ]);
+      const section = buildUiMcpDesignSystemSection({
+        tokens,
+        components,
+        libraryName: meta?.libraryName,
+        libraryVersion: meta?.libraryVersion,
+      });
+      if (!section) return content;
+      return `${content.trimEnd()}\n\n${section}`;
+    } catch {
+      return content;
+    }
+  }
+
+  /** Resolver de componentes UI: MCP compatible activo o heurístico (fallback por-entidad). */
+  private async getUiResolver(): Promise<UiComponentResolver> {
+    try {
+      if (await this.uiMcpClient.isActive()) {
+        return new McpUiComponentResolver(this.uiMcpClient);
+      }
+    } catch {
+      /* fallback heurístico */
+    }
+    return heuristicUiComponentResolver;
+  }
 
   private buildSemaphoreBase(
     p: Pick<
@@ -1115,6 +1166,8 @@ name: ${JSON.stringify(name)}
 ---
 \n\n${finalContent}`;
     }
+    // Design system inferido del MCP gráfico compatible activo (fallback: heurístico/Ariadne del LLM).
+    finalContent = await this.appendUiMcpDesignSystem(finalContent);
     return this.update(projectId, { uxUiGuideContent: finalContent });
   }
 
@@ -1880,7 +1933,11 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     }
 
     // Anexar sección 8: UI Design System & Component Mapping (enriquecimiento semántico)
-    blueprintContent = enrichBlueprintWithUiDesignSystem(mddContent, blueprintContent);
+    blueprintContent = await enrichBlueprintWithUiDesignSystem(
+      mddContent,
+      blueprintContent,
+      await this.getUiResolver(),
+    );
 
     // Reflection loop (minimal): post-generation conformance re-check
     const postGenCheck = this.conformance.checkBlueprintDataModel(mddContent, blueprintContent);

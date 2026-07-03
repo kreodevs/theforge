@@ -1,4 +1,8 @@
 import { extractSection3Body } from "../ai-analysis/utils/mdd-sanitize.js";
+import {
+  heuristicUiComponentResolver,
+  type UiComponentResolver,
+} from "../ui-mcp/ui-component-resolver.js";
 
 // ---------------------------------------------------------------------------
 // UI Design System & Component Mapping — Blueprint Section 8
@@ -10,6 +14,10 @@ interface EntityAnalysis {
   name: string;
   type: EntityType;
   component: string;
+  /** Paquete/versión reales cuando el componente proviene de un MCP compatible. */
+  componentPackage?: string;
+  componentVersion?: string;
+  componentSource?: "heuristic" | "mcp";
   description: string;
   lifecycleStates?: string[];
 }
@@ -115,10 +123,11 @@ function parseEntitiesFromSection3(section3: string): string[] {
  * NO altera las secciones anteriores del Blueprint.
  * Simplemente entrega el bloque de texto Markdown listo para concatenar.
  */
-export function enrichBlueprintWithUiDesignSystem(
+export async function enrichBlueprintWithUiDesignSystem(
   mddContent: string,
   existingBlueprint: string,
-): string {
+  resolver: UiComponentResolver = heuristicUiComponentResolver,
+): Promise<string> {
   // Si ya tiene la sección, no duplicar
   if (/^##\s*[89]\.?\s*UI\s+Design\s+System/im.test(existingBlueprint)) return existingBlueprint;
 
@@ -128,16 +137,32 @@ export function enrichBlueprintWithUiDesignSystem(
   const entityNames = parseEntitiesFromSection3(section3);
   if (entityNames.length === 0) return existingBlueprint;
 
-  const analyses: EntityAnalysis[] = entityNames.map((name) => {
-    const type = classifyEntity(name);
-    const component = suggestComponent(type, name);
-    const description = suggestDescription(type, name);
-    const a: EntityAnalysis = { name, type, component, description };
-    if (type === "WorkflowProcess") {
-      a.lifecycleStates = inferLifecycleStates(name);
-    }
-    return a;
-  });
+  const analyses: EntityAnalysis[] = await Promise.all(
+    entityNames.map(async (name) => {
+      const type = classifyEntity(name);
+      const heuristicComponent = suggestComponent(type, name);
+      const description = suggestDescription(type, name);
+      const lifecycleStates = type === "WorkflowProcess" ? inferLifecycleStates(name) : undefined;
+      const resolved = await resolver.resolve({
+        name,
+        classification: type,
+        lifecycleStates,
+        restEndpoint: `GET /api/v1/${name}`,
+        heuristicComponent,
+      });
+      const a: EntityAnalysis = {
+        name,
+        type,
+        component: resolved.componentType,
+        componentPackage: resolved.package,
+        componentVersion: resolved.version,
+        componentSource: resolved.source,
+        description,
+      };
+      if (lifecycleStates) a.lifecycleStates = lifecycleStates;
+      return a;
+    }),
+  );
 
   // Ordenar: WorkflowProcess primero, luego DataRegistry, luego Configuration
   analyses.sort((a, b) => {
@@ -172,7 +197,11 @@ export function enrichBlueprintWithUiDesignSystem(
           ? `dataSource=GET /api/v1/${entity.name}, columns=fields[]`
           : `sections=configGroups[], fields=entity.attributes`;
     const semantic = entity.type === "WorkflowProcess" ? `Proceso (${lifecycle})` : entity.type === "DataRegistry" ? "Registro CRUD" : "Configuración";
-    lines.push(`| \`${entity.name}\` | ${semantic} | \`${entity.component}\` | ${props} |`);
+    const componentCell =
+      entity.componentSource === "mcp" && entity.componentPackage
+        ? `\`${entity.component}\` (\`${entity.componentPackage}${entity.componentVersion ? `@${entity.componentVersion}` : ""}\`)`
+        : `\`${entity.component}\``;
+    lines.push(`| \`${entity.name}\` | ${semantic} | ${componentCell} | ${props} |`);
   }
   lines.push("");
 

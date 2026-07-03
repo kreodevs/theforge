@@ -25,7 +25,7 @@ if (!inputPath) {
 const abs = resolve(inputPath);
 const raw = readFileSync(abs, "utf8");
 const beforeIssues = detectCrossConsistencyIssues(raw);
-const fixed = reconcileUiUxDesignIntent(finalizeMddDeliverable(raw));
+const fixed = await reconcileUiUxDesignIntent(finalizeMddDeliverable(raw));
 const afterIssues = detectCrossConsistencyIssues(fixed);
 const structure = validateMddStructure(fixed);
 

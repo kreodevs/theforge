@@ -1,4 +1,8 @@
 import { extractSection3Body } from "./mdd-sanitize.js";
+import {
+  heuristicUiComponentResolver,
+  type UiComponentResolver,
+} from "../../ui-mcp/ui-component-resolver.js";
 
 // ---------------------------------------------------------------------------
 // UI/UX Design Intent Enrichment
@@ -21,8 +25,14 @@ interface EntitySemanticAnalysis {
   lifecycleStates?: string[];
   /** Colores sugeridos (solo para WorkflowProcess) */
   lifecycleColors?: Record<string, string>;
-  /** Tipo de componente UI sugerido */
+  /** Tipo de componente UI sugerido (real del MCP si se resolvió, si no genérico heurístico) */
   componentType: string;
+  /** Paquete npm del componente cuando proviene de un MCP compatible */
+  componentPackage?: string;
+  /** Versión del componente cuando proviene de un MCP compatible */
+  componentVersion?: string;
+  /** Procedencia del componente: heurístico o MCP */
+  componentSource?: "heuristic" | "mcp";
   /** Propiedades relevantes del modelo */
   keyFields?: string[];
   /** Nota adicional */
@@ -311,31 +321,63 @@ function parseEntitiesFromSection3(section3: string): string[] {
 
 /**
  * Analiza semánticamente una entidad del modelo de datos.
+ *
+ * El componente UI se calcula primero por heurística (`suggestComponentType`) y luego se delega al
+ * `resolver`: con el resolver heurístico (por defecto) el resultado es idéntico al comportamiento
+ * previo; con un `McpUiComponentResolver` puede sustituirse por un componente real del MCP (con
+ * fallback por-entidad al heurístico si el MCP falla).
  */
-function analyzeEntity(name: string, section3?: string): EntitySemanticAnalysis {
+async function analyzeEntity(
+  name: string,
+  section3: string | undefined,
+  resolver: UiComponentResolver,
+): Promise<EntitySemanticAnalysis> {
   const classification = classifyEntity(name);
   const ddlCols = section3 ? extractColumnsFromCreateTable(section3, name) : [];
   const keyFields = pickDisplayColumns(name, ddlCols);
-  const componentType = suggestComponentType(classification, name);
+  const heuristicComponent = suggestComponentType(classification, name);
   const note = suggestNote(name, classification);
+
+  const lifecycleStates =
+    classification === "WorkflowProcess" ? inferLifecycle(name) : undefined;
+
+  const resolved = await resolver.resolve({
+    name,
+    classification,
+    keyFields,
+    lifecycleStates,
+    restEndpoint: `GET /api/v1/${name}`,
+    heuristicComponent,
+  });
 
   const analysis: EntitySemanticAnalysis = {
     name,
     classification,
-    componentType,
+    componentType: resolved.componentType,
+    componentPackage: resolved.package,
+    componentVersion: resolved.version,
+    componentSource: resolved.source,
     keyFields,
   };
 
-  if (classification === "WorkflowProcess") {
-    const lifecycleStates = inferLifecycle(name);
-    const lifecycleColors = assignColors(lifecycleStates);
+  if (classification === "WorkflowProcess" && lifecycleStates) {
     analysis.lifecycleStates = lifecycleStates;
-    analysis.lifecycleColors = lifecycleColors;
+    analysis.lifecycleColors = assignColors(lifecycleStates);
   }
 
   if (note) analysis.note = note;
 
   return analysis;
+}
+
+/** Renderiza `componente` + `(pkg@version)` cuando el componente proviene de un MCP. */
+function renderComponentLabel(entity: EntitySemanticAnalysis): string {
+  const base = `\`${entity.componentType}\``;
+  if (entity.componentSource === "mcp" && entity.componentPackage) {
+    const ver = entity.componentVersion ? `@${entity.componentVersion}` : "";
+    return `${base} (\`${entity.componentPackage}${ver}\`)`;
+  }
+  return base;
 }
 
 /**
@@ -351,7 +393,7 @@ function generateEntitiesTable(entities: EntitySemanticAnalysis[]): string {
       `\`${e.name}\``,
       e.classification,
       lifecycle,
-      `\`${e.componentType}\``,
+      renderComponentLabel(e),
       e.keyFields?.join(", ") ?? "—",
       e.note ?? "—",
     ];
@@ -400,11 +442,16 @@ function generateContractMapping(entity: EntitySemanticAnalysis): string {
  *
  * NO altera el contenido existente del MDD. Simplemente anexa la sección al final.
  */
-function buildUiUxDesignIntentSection(section3: string): string | null {
+async function buildUiUxDesignIntentSection(
+  section3: string,
+  resolver: UiComponentResolver,
+): Promise<string | null> {
   const entityNames = parseEntitiesFromSection3(section3);
   if (entityNames.length === 0) return null;
 
-  const analyses = entityNames.map((n) => analyzeEntity(n, section3));
+  const analyses = await Promise.all(
+    entityNames.map((n) => analyzeEntity(n, section3, resolver)),
+  );
 
   // Clasificar por tipo
   const workflowEntities = analyses.filter((e) => e.classification === "WorkflowProcess");
@@ -442,7 +489,7 @@ function buildUiUxDesignIntentSection(section3: string): string | null {
     for (const entity of workflowEntities) {
       lines.push(`#### ${entity.name}`);
       lines.push("");
-      lines.push(`- **Componente UI:** \`${entity.componentType}\``);
+      lines.push(`- **Componente UI:** ${renderComponentLabel(entity)}`);
       lines.push("- **Lifecycle:**");
       if (entity.lifecycleStates) {
         lines.push("");
@@ -479,7 +526,7 @@ function buildUiUxDesignIntentSection(section3: string): string | null {
     for (const entity of registryEntities) {
       lines.push(`#### ${entity.name}`);
       lines.push("");
-      lines.push(`- **Componente UI:** \`${entity.componentType}\``);
+      lines.push(`- **Componente UI:** ${renderComponentLabel(entity)}`);
       lines.push(`- **API endpoint:** \`GET /api/v1/${entity.name}\``);
       lines.push("- **Mapeo de props:**");
       lines.push(`  - \`dataSource\` mapeado al endpoint REST`);
@@ -506,7 +553,7 @@ function buildUiUxDesignIntentSection(section3: string): string | null {
     for (const entity of configEntities) {
       lines.push(`#### ${entity.name}`);
       lines.push("");
-      lines.push(`- **Componente UI:** \`${entity.componentType}\``);
+      lines.push(`- **Componente UI:** ${renderComponentLabel(entity)}`);
       lines.push("- **Mapeo de props:**");
       lines.push(`  - \`sections\` mapeadas a grupos de configuración`);
       lines.push(`  - \`fields\` mapeadas a atributos de \`${entity.name}\``);
@@ -537,7 +584,10 @@ function buildUiUxDesignIntentSection(section3: string): string | null {
  * Enriquecimiento semántico: analiza el MDD y añade la sección
  * "## UI/UX Design Intent" con clasificación de entidades y sugerencias de UI.
  */
-export function enrichMddWithUiUxDesignIntent(markdown: string): string {
+export async function enrichMddWithUiUxDesignIntent(
+  markdown: string,
+  resolver: UiComponentResolver = heuristicUiComponentResolver,
+): Promise<string> {
   const trimmed = (markdown ?? "").trim();
   if (!trimmed) return markdown;
   if (/^##\s*UI\/UX\s+Design\s+Intent/im.test(trimmed)) return markdown;
@@ -545,13 +595,16 @@ export function enrichMddWithUiUxDesignIntent(markdown: string): string {
   const section3 = extractSection3Body(trimmed);
   if (!section3) return markdown;
 
-  const section = buildUiUxDesignIntentSection(section3);
+  const section = await buildUiUxDesignIntentSection(section3, resolver);
   if (!section) return markdown;
   return `${trimmed}\n\n${section}`;
 }
 
 /** Regenera UI/UX cuando la sección existente usa columnas genéricas repetidas. */
-export function reconcileUiUxDesignIntent(markdown: string): string {
+export async function reconcileUiUxDesignIntent(
+  markdown: string,
+  resolver: UiComponentResolver = heuristicUiComponentResolver,
+): Promise<string> {
   const trimmed = (markdown ?? "").trim();
   if (!trimmed) return markdown;
 
@@ -566,7 +619,7 @@ export function reconcileUiUxDesignIntent(markdown: string): string {
     ? trimmed.replace(/\n##\s*UI\/UX\s+Design\s+Intent[\s\S]*$/i, "").trim()
     : trimmed;
 
-  const section = buildUiUxDesignIntentSection(section3);
+  const section = await buildUiUxDesignIntentSection(section3, resolver);
   if (!section) return markdown;
   return `${core}\n\n${section}`;
 }

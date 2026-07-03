@@ -13,6 +13,7 @@ import { SddIngestorService } from "./sdd-ingestor.service.js";
 import { MddManualAuditService } from "./mdd/mdd-manual-audit.service.js";
 import { GraphMemoryModule } from "./graph-memory/graph-memory.module.js";
 import { Phase0Module } from "./phase0/phase0.module.js";
+import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { Phase0Module } from "./phase0/phase0.module.js";
     AgentSupervisorModule,
     GraphMemoryModule,
     Phase0Module,
+    UiMcpModule,
   ],
   controllers: [AiAnalysisController],
   providers: [NodeCacheService, CheckpointerService, EstimationService, AiAnalysisService, SddIngestorService, MddManualAuditService],
