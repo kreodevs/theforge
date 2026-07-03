@@ -12,7 +12,6 @@ import type {
   EntityClassification,
   GetDesignTokensResult,
   ListComponentsResult,
-  ResolveComponentArgs,
   ResolveComponentResult,
   UiComponentDescriptor,
 } from "@theforge/shared-types";
