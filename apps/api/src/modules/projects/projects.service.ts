@@ -75,6 +75,7 @@ import {
   type ComplexityPending,
   type CreateProjectDto,
   type UpdateProjectDto,
+  specKitFeatureDir,
 } from "@theforge/shared-types";
 import {
   parseAgentGovernanceResponse,
@@ -82,7 +83,6 @@ import {
 } from "../ai/utils/agent-governance.util.js";
 import {
   suggestAgentGovernanceArtifacts,
-  type SuggestAgentGovernanceInput,
 } from "../ai/utils/suggest-agent-governance-artifacts.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
@@ -103,7 +103,7 @@ import {
 } from "./stage-deliverable-persist.util.js";
 import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
-import { reconcileExportScaffold, buildUnifiedHandoff } from "./handoff-export.util.js";
+import { reconcileExportScaffold, buildUnifiedHandoff, buildAgentGovernanceInput, synthesizeExportGovernanceScaffold } from "./handoff-export.util.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
 import {
   buildProjectCloneCreateInput,
@@ -1599,7 +1599,9 @@ name: ${JSON.stringify(name)}
     }
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const mdd = this.constitutionMarkdown(project);
-    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
+    const stage = pickPrimaryStage(project.stages);
+    const governanceInput = buildAgentGovernanceInput(project, mdd, complexity, stage);
+    const featureDir = specKitFeatureDir(stage?.ordinal ?? 1, project.name);
     const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
     this.logger.debug(
       `[agent-gov] generateAgentGovernance input keys=${Object.keys(governanceInput).join(",")} archetypes=${suggestions.archetypes.length} rules=${suggestions.suggestedRules.length} skills=${suggestions.suggestedSkills.length}`,
@@ -1616,6 +1618,7 @@ name: ${JSON.stringify(name)}
       governanceInput,
       target,
       forceFreshOverlay,
+      featureDir,
     });
     const serialized = serializeAgentGovernanceScaffold(scaffold);
     this.logger.debug(
@@ -1634,7 +1637,9 @@ name: ${JSON.stringify(name)}
     const project = await this.assertProjectAccess(projectId);
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const mdd = this.constitutionMarkdown(project);
-    const governanceInput = this.buildAgentGovernanceInput(project, mdd, complexity);
+    const stage = pickPrimaryStage(project.stages);
+    const governanceInput = buildAgentGovernanceInput(project, mdd, complexity, stage);
+    const featureDir = specKitFeatureDir(stage?.ordinal ?? 1, project.name);
     const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
     const raw = await this.ai.generateAgentGovernance(mdd, project.blueprintContent, complexity, {
       suggestions,
@@ -1648,6 +1653,7 @@ name: ${JSON.stringify(name)}
       governanceInput,
       target,
       forceFreshOverlay,
+      featureDir,
     });
     return { content: serializeAgentGovernanceScaffold(scaffold) };
   }
@@ -1657,7 +1663,7 @@ name: ${JSON.stringify(name)}
     const project = await this.assertProjectAccess(projectId);
     const raw = project.agentGovernanceContent;
     if (!raw?.trim()) {
-      throw new BadRequestException("No hay gobernanza de agentes generada para este proyecto.");
+      return synthesizeExportGovernanceScaffold(project);
     }
 
     const filesBefore = parseAgentGovernanceScaffold(raw)?.files.length ?? 0;
@@ -1675,28 +1681,6 @@ name: ${JSON.stringify(name)}
     );
 
     return exportScaffold;
-  }
-
-    private buildAgentGovernanceInput(
-    project: Project,
-    mddMarkdown: string,
-    complexity: ComplexityLevel,
-  ): SuggestAgentGovernanceInput {
-    return {
-      mddMarkdown,
-      blueprintMarkdown: project.blueprintContent,
-      tasksMarkdown: project.tasksContent,
-      architectureMarkdown: project.architectureContent,
-      specMarkdown: project.specContent,
-      apiContractsMarkdown: project.apiContractsContent,
-      logicFlowsMarkdown: project.logicFlowsContent,
-      uxUiGuideMarkdown: project.uxUiGuideContent,
-      infraMarkdown: project.infraContent,
-      useCasesMarkdown: project.useCasesContent,
-      userStoriesMarkdown: project.userStoriesContent,
-      projectName: project.name,
-      complexity,
-    };
   }
 
   async generateTasks(projectId: string) {

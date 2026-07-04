@@ -24,6 +24,9 @@ export interface SpecKitBundleInput {
   phase0SummaryContent?: string | null;
   dbgaContent?: string | null;
   uxUiGuideContent?: string | null;
+  architectureContent?: string | null;
+  useCasesContent?: string | null;
+  userStoriesContent?: string | null;
   /** Guía para agentes implementadores (p. ej. THEFORGE-DOC-CONSUMPTION-GUIDE). */
   consumptionGuideContent?: string | null;
   /** Stage delta change spec (stage 2+ brownfield). */
@@ -191,6 +194,9 @@ export function buildSpecKitBundleFiles(input: SpecKitBundleInput): SpecKitBundl
   pushIf("logic-flows.md", input.logicFlowsContent);
   pushIf("infra.md", input.infraContent);
   pushIf("design-system.md", input.uxUiGuideContent);
+  pushIf("architecture.md", input.architectureContent);
+  pushIf("use-cases.md", input.useCasesContent);
+  pushIf("user-stories.md", input.userStoriesContent);
 
   const research =
     (input.phase0SummaryContent ?? "").trim() || (input.dbgaContent ?? "").trim();

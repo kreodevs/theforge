@@ -20,10 +20,16 @@ describe("spec-kit-bundle", () => {
       specContent: "# Spec",
       blueprintContent: "# Plan",
       tasksContent: "- [ ] Implementar login",
+      architectureContent: "# Arch",
+      useCasesContent: "# UC",
+      userStoriesContent: "# US",
     });
     const paths = files.map((f) => f.path);
     assert.ok(paths.includes(".specify/memory/constitution.md"));
     assert.ok(paths.some((p) => p.startsWith("specs/001-taskify/spec.md")));
+    assert.ok(paths.some((p) => p.endsWith("architecture.md")));
+    assert.ok(paths.some((p) => p.endsWith("use-cases.md")));
+    assert.ok(paths.some((p) => p.endsWith("user-stories.md")));
     assert.ok(paths.some((p) => p.endsWith("data-model.md")));
     assert.ok(paths.includes("IMPLEMENT.md"));
   });

@@ -14,7 +14,7 @@ export interface OpenSpecExportFile {
   content: string;
 }
 
-const BRANCH_POLICY = `# Git branch policy (The Forge export)
+export const OPENSPEC_BRANCH_POLICY_MARKDOWN = `# Git branch policy (The Forge export)
 
 When implementing this change from the repo-handoff bundle:
 
@@ -85,8 +85,13 @@ export function buildOpenSpecChangeExport(input: OpenSpecChangeExportInput): Ope
   return [
     { path: `${dir}/proposal.md`, content: proposalParts.join("\n") },
     { path: `${dir}/tasks.md`, content: tasksLines.join("\n") },
-    { path: "openspec/BRANCH-POLICY.md", content: BRANCH_POLICY },
+    { path: "openspec/BRANCH-POLICY.md", content: OPENSPEC_BRANCH_POLICY_MARKDOWN },
   ];
+}
+
+/** Always included in repo-handoff ZIP (referenced from IMPLEMENT.md). */
+export function buildBranchPolicyExportFile(): OpenSpecExportFile {
+  return { path: "openspec/BRANCH-POLICY.md", content: OPENSPEC_BRANCH_POLICY_MARKDOWN };
 }
 
 /** Micro-spec markdown per handoff item for repo-handoff ZIP. */

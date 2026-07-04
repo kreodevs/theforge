@@ -4,10 +4,13 @@ import { serializeAgentGovernanceScaffold } from "../ai/utils/agent-governance.u
 import {
   analyzeAgentGovernanceSlice,
   buildHermesHandoffPayload,
+  buildProjectDeliverableExportInput,
   buildUnifiedHandoff,
+  enrichSpecKitFilesForHandoff,
   hashHandoffContent,
   reconcileExportScaffold,
   scaffoldToRepoHandoffGovernance,
+  synthesizeExportGovernanceScaffold,
 } from "./handoff-export.util.js";
 
 const baseProject = {
@@ -125,5 +128,30 @@ describe("handoff-export.util", () => {
     assert.match(payload.files[0]!.sha256, /^[a-f0-9]{64}$/);
     assert.equal(payload.files[0]!.sha256, hashHandoffContent(payload.files[0]!.content));
     assert.ok(payload.cliFallback.includes("theforge-export"));
+  });
+
+  it("enrichSpecKitFilesForHandoff añade docs/sdd mirrors y openspec/BRANCH-POLICY", () => {
+    const unified = buildUnifiedHandoff(baseProject as never, null);
+    const deliverables = buildProjectDeliverableExportInput(baseProject as never, baseProject.stages[0]);
+    const enriched = enrichSpecKitFilesForHandoff(unified.specKitFiles, deliverables);
+    const paths = enriched.map((f) => f.path);
+    assert.ok(paths.includes("docs/sdd/mdd.md"));
+    assert.ok(paths.includes("docs/sdd/spec.md"));
+    assert.ok(paths.includes("docs/sdd/tasks.md"));
+    assert.ok(paths.includes("openspec/BRANCH-POLICY.md"));
+    assert.ok(paths.includes("docs/sdd/PROGRESO.md"));
+  });
+
+  it("synthesizeExportGovernanceScaffold incluye rutas obligatorias MEDIUM sin LLM previo", () => {
+    const scaffold = synthesizeExportGovernanceScaffold({
+      ...baseProject,
+      complexity: "MEDIUM",
+    } as never);
+    const paths = scaffold.files.map((f) => f.path);
+    assert.ok(paths.includes("AGENTS.md"));
+    assert.ok(paths.includes("PROMPT-INICIAL.md"));
+    assert.ok(paths.includes("scripts/install-agent-governance.sh"));
+    assert.ok(paths.includes("docs/agent-governance/INSTALACION.md"));
+    assert.ok(paths.includes("docs/sdd/mdd.md"));
   });
 });

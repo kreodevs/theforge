@@ -3,16 +3,19 @@ import type { Project, Stage } from "@theforge/database";
 import {
   appendProjectDeliverablesToScaffold,
   getRequiredAgentGovernancePaths,
+  parseAgentGovernanceResponse,
   reconcileAgentGovernanceScaffold,
   serializeAgentGovernanceScaffold,
+  type ProjectDeliverableExportInput,
 } from "../ai/utils/agent-governance.util.js";
 import {
   suggestAgentGovernanceArtifacts,
   type SuggestAgentGovernanceInput,
 } from "../ai/utils/suggest-agent-governance-artifacts.js";
-import { pickPrimaryStage } from "./stage-helpers.js";
+import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
+  buildBranchPolicyExportFile,
   buildSpecKitBundleFiles,
   GOVERNANCE_DOCS_PREFIX,
   parseAgentGovernanceScaffold,
@@ -25,6 +28,7 @@ import {
   type SpecKitBundleFile,
   type TheforgeProjectJson,
 } from "@theforge/shared-types";
+import { pickPrimaryStage } from "./stage-helpers.js";
 
 type ProjectWithStages = Project & { stages: Stage[] };
 
@@ -82,6 +86,103 @@ export function projectConstitutionMarkdown(project: ProjectWithStages): string 
     return parts.join("\n\n---\n\n");
   }
   return "";
+}
+
+/** Deliverables for SDD mirrors / handoff ZIP (respects stage snapshot in analyze mode). */
+export function buildProjectDeliverableExportInput(
+  project: ProjectWithStages,
+  stage: Stage | null | undefined,
+): ProjectDeliverableExportInput {
+  const deliverables = stage
+    ? resolveStageDeliverables(project, stage, "analyze").deliverables
+    : project;
+  const mdd = projectConstitutionMarkdown(project);
+  return {
+    mddMarkdown: mdd,
+    blueprintMarkdown: deliverables.blueprintContent ?? project.blueprintContent,
+    specMarkdown: deliverables.specContent ?? project.specContent,
+    architectureMarkdown: deliverables.architectureContent ?? project.architectureContent,
+    tasksMarkdown: deliverables.tasksContent ?? project.tasksContent,
+    useCasesMarkdown: deliverables.useCasesContent ?? project.useCasesContent,
+    userStoriesMarkdown: deliverables.userStoriesContent ?? project.userStoriesContent,
+    apiContractsMarkdown: deliverables.apiContractsContent ?? project.apiContractsContent,
+    logicFlowsMarkdown: deliverables.logicFlowsContent ?? project.logicFlowsContent,
+    uxUiGuideMarkdown: deliverables.uxUiGuideContent ?? project.uxUiGuideContent,
+    infraMarkdown: deliverables.infraContent ?? project.infraContent,
+  };
+}
+
+const SDD_MIRROR_PATHS_FOR_SPEC_KIT: Array<{
+  key: keyof ProjectDeliverableExportInput;
+  path: string;
+}> = [
+  { key: "mddMarkdown", path: "docs/sdd/mdd.md" },
+  { key: "blueprintMarkdown", path: "docs/sdd/blueprint.md" },
+  { key: "specMarkdown", path: "docs/sdd/spec.md" },
+  { key: "architectureMarkdown", path: "docs/sdd/architecture.md" },
+  { key: "tasksMarkdown", path: "docs/sdd/tasks.md" },
+  { key: "useCasesMarkdown", path: "docs/sdd/use-cases.md" },
+  { key: "userStoriesMarkdown", path: "docs/sdd/user-stories.md" },
+  { key: "apiContractsMarkdown", path: "docs/sdd/api-contracts.md" },
+  { key: "logicFlowsMarkdown", path: "docs/sdd/logic-flows.md" },
+  { key: "uxUiGuideMarkdown", path: "docs/sdd/ux-ui-guide.md" },
+  { key: "infraMarkdown", path: "docs/sdd/infra.md" },
+];
+
+/**
+ * Adds docs/sdd mirrors, openspec/BRANCH-POLICY and extra files to spec-kit bundle for ZIP export.
+ * Ensures handoff is complete even when agent governance was not pre-generated.
+ */
+export function enrichSpecKitFilesForHandoff(
+  specKitFiles: SpecKitBundleFile[],
+  deliverables: ProjectDeliverableExportInput,
+  extraFiles: SpecKitBundleFile[] = [],
+): SpecKitBundleFile[] {
+  const map = new Map<string, string>();
+  for (const file of specKitFiles) map.set(file.path, file.content);
+  for (const file of extraFiles) map.set(file.path, file.content);
+
+  for (const { key, path } of SDD_MIRROR_PATHS_FOR_SPEC_KIT) {
+    const content = deliverables[key]?.trim();
+    if (content) map.set(path, content);
+  }
+
+  const branchPolicy = buildBranchPolicyExportFile();
+  map.set(branchPolicy.path, branchPolicy.content);
+
+  if (!map.has("docs/sdd/PROGRESO.md") && deliverables.tasksMarkdown?.trim()) {
+    map.set(
+      "docs/sdd/PROGRESO.md",
+      `# Progreso de implementación\n\nChecklist derivado de **Tasks**. Marca \`[x]\` al completar.\n\n${deliverables.tasksMarkdown.trim()}\n`,
+    );
+  }
+
+  return [...map.entries()]
+    .map(([path, content]) => ({ path, content }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Full governance scaffold for export when `agentGovernanceContent` is empty (deterministic fallbacks).
+ */
+export function synthesizeExportGovernanceScaffold(
+  project: ProjectWithStages,
+): AgentGovernanceScaffold {
+  const complexity = (project.complexity ?? "HIGH") as ComplexityLevel;
+  const stage = pickPrimaryStage(project.stages);
+  const mdd = projectConstitutionMarkdown(project);
+  const governanceInput = buildAgentGovernanceInput(project, mdd, complexity, stage);
+  const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
+  const featureDir = specKitFeatureDir(stage?.ordinal ?? 1, project.name);
+  const scaffold = parseAgentGovernanceResponse('{"files":{}}', complexity, {
+    suggestions,
+    governanceInput,
+    featureDir,
+  });
+  return appendProjectDeliverablesToScaffold(
+    scaffold,
+    buildProjectDeliverableExportInput(project, stage),
+  );
 }
 
 export function buildAgentGovernanceInput(
@@ -182,22 +283,29 @@ export function reconcileExportScaffold(
 export function buildSpecKitFilesForProject(
   project: ProjectWithStages,
   consumptionGuideContent: string | null,
+  stage?: Stage | null,
 ): SpecKitBundleFile[] {
-  const stage = pickPrimaryStage(project.stages);
-  const mdd = stage?.mddContent ?? projectConstitutionMarkdown(project);
+  const primaryStage = stage ?? pickPrimaryStage(project.stages);
+  const deliverables = primaryStage
+    ? resolveStageDeliverables(project, primaryStage, "analyze").deliverables
+    : project;
+  const mdd = (primaryStage?.mddContent ?? "").trim() || projectConstitutionMarkdown(project);
   return buildSpecKitBundleFiles({
     projectName: project.name,
-    featureOrdinal: stage?.ordinal ?? 1,
+    featureOrdinal: primaryStage?.ordinal ?? 1,
     mddContent: mdd,
-    specContent: project.specContent,
-    blueprintContent: project.blueprintContent,
-    tasksContent: project.tasksContent,
-    apiContractsContent: project.apiContractsContent,
-    logicFlowsContent: project.logicFlowsContent,
-    infraContent: project.infraContent,
+    specContent: deliverables.specContent ?? project.specContent,
+    blueprintContent: deliverables.blueprintContent ?? project.blueprintContent,
+    tasksContent: deliverables.tasksContent ?? project.tasksContent,
+    apiContractsContent: deliverables.apiContractsContent ?? project.apiContractsContent,
+    logicFlowsContent: deliverables.logicFlowsContent ?? project.logicFlowsContent,
+    infraContent: deliverables.infraContent ?? project.infraContent,
+    architectureContent: deliverables.architectureContent ?? project.architectureContent,
+    useCasesContent: deliverables.useCasesContent ?? project.useCasesContent,
+    userStoriesContent: deliverables.userStoriesContent ?? project.userStoriesContent,
     phase0SummaryContent: project.phase0SummaryContent,
     dbgaContent: project.dbgaContent,
-    uxUiGuideContent: project.uxUiGuideContent,
+    uxUiGuideContent: deliverables.uxUiGuideContent ?? project.uxUiGuideContent,
     consumptionGuideContent,
   });
 }
@@ -224,7 +332,7 @@ export function buildUnifiedHandoff(
   }
 
   const specKitFiles = ensureRootConsumptionGuideInSpecKit(
-    buildSpecKitFilesForProject(project, consumptionGuideContent),
+    buildSpecKitFilesForProject(project, consumptionGuideContent, stage),
     agentGovernance,
     consumptionGuideContent,
   );

@@ -40,9 +40,11 @@ import type { ClarifySpecBody, ConvergeTriggerBody, ProjectDeliverableSource } f
 import {
   analyzeAgentGovernanceSlice,
   buildHermesHandoffPayload,
+  buildProjectDeliverableExportInput,
   buildUnifiedHandoff,
+  enrichSpecKitFilesForHandoff,
   scaffoldToRepoHandoffGovernance,
-  theforgeProjectJsonSpecKitFile,
+  synthesizeExportGovernanceScaffold,
 } from "./handoff-export.util.js";
 
 type ProjectWithStages = Project & {
@@ -119,6 +121,9 @@ export class SddIntegrationService {
       phase0SummaryContent: project.phase0SummaryContent,
       dbgaContent: project.dbgaContent,
       uxUiGuideContent: deliverables.uxUiGuideContent ?? project.uxUiGuideContent,
+      architectureContent: deliverables.architectureContent ?? project.architectureContent,
+      useCasesContent: deliverables.useCasesContent ?? project.useCasesContent,
+      userStoriesContent: deliverables.userStoriesContent ?? project.userStoriesContent,
       consumptionGuideContent: loadConsumptionGuideMarkdown(),
       changeSpecContent: stage?.changeSpecContent ?? null,
       acceptanceCriteriaLines: acceptanceLines.length ? acceptanceLines : null,
@@ -160,7 +165,6 @@ export class SddIntegrationService {
       });
     }
 
-    const specKitBase = this.buildBundleForProject(project, stage);
     const handoffItems = this.readHandoffItemsForStage(project, stage);
     const legacyState = (stage?.legacyChangeState ?? null) as { description?: string } | null;
     const openSpecFiles =
@@ -175,16 +179,22 @@ export class SddIntegrationService {
         : [];
     const microSpecs = handoffItems.length ? buildHandoffMicroSpecFiles(handoffItems) : [];
 
+    const deliverables = buildProjectDeliverableExportInput(project, stage);
+    let agentGovernance = unified.agentGovernance;
+    if (!agentGovernance) {
+      agentGovernance = synthesizeExportGovernanceScaffold(project);
+    }
+
+    const specKitFiles = enrichSpecKitFilesForHandoff(unified.specKitFiles, deliverables, [
+      ...openSpecFiles,
+      ...microSpecs,
+    ]);
+
     return {
       featureDir: unified.featureDir,
       projectName: unified.projectName,
-      specKitFiles: [
-        ...specKitBase,
-        theforgeProjectJsonSpecKitFile(project),
-        ...openSpecFiles,
-        ...microSpecs,
-      ],
-      agentGovernance: scaffoldToRepoHandoffGovernance(unified.agentGovernance),
+      specKitFiles,
+      agentGovernance: scaffoldToRepoHandoffGovernance(agentGovernance),
     };
   }
 
