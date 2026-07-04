@@ -41,4 +41,6 @@ Ejemplo de sesión implement coherente:
 
 Repo handoff reconciliado: `GET /projects/:id/export/repo-handoff` o CLI `scripts/theforge-export.mjs`.
 
-**Legacy MDD:** `legacy_generate_mdd` devuelve respuesta ligera; usar `get_project` para el markdown. `?includeContent=true` vía arg MCP `includeContent`.
+**Implementación sin ZIP (Cursor global):** skill personal `~/.cursor/skills/implement-from-spec/` — detecta spec local (spec-kit, `docs/sdd/`, README) o usa MCP bajo demanda (`get_next_implementation_task`, `get_project_deliverables`) cuando hay `projectId`. No requiere que el repo haya nacido en Workshop.
+
+**Legacy MDD:** `legacy_generate_mdd` devuelve ligera; usar `get_project` para el markdown. `?includeContent=true` vía arg MCP `includeContent`.
