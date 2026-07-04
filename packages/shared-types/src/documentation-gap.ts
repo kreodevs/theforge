@@ -13,6 +13,7 @@ export const affectedArtifactSchema = z.enum([
   "logicFlows",
   "infra",
   "uxUiGuide",
+  "pantallas",
   "agentGovernance",
 ]);
 

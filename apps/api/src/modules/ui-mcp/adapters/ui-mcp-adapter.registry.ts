@@ -4,8 +4,21 @@
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
  */
-import { createKreoAdapter, kreoUiMcpAdapterDefinition } from "./kreo-ui-mcp.adapter.js";
+import {
+  getUiMcpAdapterLabel as sharedGetUiMcpAdapterLabel,
+  UI_MCP_LEGACY_KREO_ADAPTER_ID,
+  UI_MCP_SEMANTIC_CATALOG_ADAPTER_ID,
+} from "@theforge/shared-types";
+import {
+  createSemanticCatalogAdapter,
+  semanticCatalogUiMcpAdapterDefinition,
+} from "./semantic-catalog-ui-mcp.adapter.js";
 import type { UiMcpAdapter } from "./ui-mcp-adapter.types.js";
+
+export {
+  UI_MCP_LEGACY_KREO_ADAPTER_ID as LEGACY_KREO_ADAPTER_ID,
+  UI_MCP_SEMANTIC_CATALOG_ADAPTER_ID as SEMANTIC_CATALOG_ADAPTER_ID,
+} from "@theforge/shared-types";
 
 interface AdapterDefinition {
   id: string;
@@ -16,13 +29,19 @@ interface AdapterDefinition {
 
 const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
   {
-    ...kreoUiMcpAdapterDefinition,
-    create: createKreoAdapter,
+    ...semanticCatalogUiMcpAdapterDefinition,
+    create: createSemanticCatalogAdapter,
   },
 ];
 
 function hasAllTools(available: Set<string>, required: readonly string[]): boolean {
   return required.every((t) => available.has(t));
+}
+
+function normalizeAdapterId(adapterId: string): string {
+  return adapterId === UI_MCP_LEGACY_KREO_ADAPTER_ID
+    ? UI_MCP_SEMANTIC_CATALOG_ADAPTER_ID
+    : adapterId;
 }
 
 /**
@@ -39,9 +58,19 @@ export function matchUiMcpAdapter(toolNames: string[]): UiMcpAdapter | null {
   return null;
 }
 
+/** Rehidrata un adaptador persistido por `adapterId` + tools detectados en capabilitiesJson. */
+export function resolveUiMcpAdapterById(
+  adapterId: string,
+  toolNames: string[],
+): UiMcpAdapter | null {
+  const normalized = normalizeAdapterId(adapterId);
+  const def = ADAPTER_DEFINITIONS.find((d) => d.id === normalized);
+  if (!def) return null;
+  const tools = toolNames.length > 0 ? toolNames : [...def.requiredTools];
+  return def.create(tools);
+}
+
 /** Etiqueta legible del adaptador (para UI). */
 export function getUiMcpAdapterLabel(adapterId: string | null | undefined): string | null {
-  if (!adapterId) return null;
-  const def = ADAPTER_DEFINITIONS.find((d) => d.id === adapterId);
-  return def?.label ?? adapterId;
+  return sharedGetUiMcpAdapterLabel(adapterId);
 }

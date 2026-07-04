@@ -6,12 +6,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { withDocumentChangelogInstructions } from "./with-document-changelog-instructions.js";
+import { appendSddUiUxActionableRules } from "./sdd-ui-ux-actionable-rules.js";
 
 const PROMPT_PATH = join(__dirname, "ux-ui-guide-prompt.md");
 
 function loadUxUiGuidePrompt(): string {
   try {
-    return withDocumentChangelogInstructions(readFileSync(PROMPT_PATH, "utf-8").trim());
+    return appendSddUiUxActionableRules(withDocumentChangelogInstructions(readFileSync(PROMPT_PATH, "utf-8").trim()));
   } catch {
     return withDocumentChangelogInstructions(
       "Eres Lead UX/UI. Construye una Guía UX/UI mediante preguntas (marca, colores, prioridades). Cuando tengas suficiente info, genera el documento en markdown y termina con ---FIN_UX_UI---.",

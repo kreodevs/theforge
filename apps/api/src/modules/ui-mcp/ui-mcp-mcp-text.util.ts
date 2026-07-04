@@ -24,8 +24,8 @@ export function extractJsonFromMcpText(text: string): unknown | null {
   }
 }
 
-/** Nombres de componente en tablas markdown del catálogo Kreo (`| DataTable | composable | …`). */
-export function parseKreoCatalogComponentNames(markdown: string): string[] {
+/** Nombres de componente en tablas markdown de catálogo MCP (`| DataTable | composable | …`). */
+export function parseCatalogTableComponentNames(markdown: string): string[] {
   const names = new Set<string>();
   for (const line of markdown.split("\n")) {
     if (line.includes("---")) continue;
@@ -33,4 +33,9 @@ export function parseKreoCatalogComponentNames(markdown: string): string[] {
     if (m?.[1] && m[1] !== "Componente") names.add(m[1]);
   }
   return [...names];
+}
+
+/** @deprecated Usar `parseCatalogTableComponentNames`. */
+export function parseKreoCatalogComponentNames(markdown: string): string[] {
+  return parseCatalogTableComponentNames(markdown);
 }

@@ -108,18 +108,21 @@ Y `describe_capabilities` devuelve un `contractVersion` reconocido (actualmente 
 - `list_screens` — deliverable Pantallas estructurado
 - `get_design_tokens` — sección de design system en Guía UX/UI
 
-### 2. Adaptador genérico
+### 2. Adaptador genérico (contrato semántico extendido)
 
-Si no cumple el contrato nativo, The Forge intenta emparejar un **adaptador** registrado por intersección de tools en `tools/list`.
+Si no cumple el contrato nativo, The Forge intenta emparejar un **adaptador semántico** por intersección de tools en `tools/list`.
 
 | Adaptador | Tools mínimas requeridas | Id persistido |
 |-----------|--------------------------|---------------|
-| **Kreo UI MCP** | `resolve_component_for_entity`, `get_ui_component_catalog` | `kreo` |
+| **Catálogo semántico** | `resolve_component_for_entity`, `get_ui_component_catalog` | `semantic-catalog` |
 
-Tools Kreo **opcionales** (mejoran capacidades, no bloquean compatibilidad):
+Cualquier MCP gráfico que exponga esas tools (Kreo UI, futuros design systems, etc.) se conecta **sin código vendor-specific**. Instancias antiguas con `adapterId: kreo` siguen resolviendo al mismo adaptador.
 
-- `pull_tokens_dtcg` → design tokens en Guía UX/UI
-- `list_ui_project_screens` → marcado como `supports.listScreens`; **aún no mapeado** al contrato The Forge (workflow PROTOTYPE distinto)
+Tools **opcionales** del contrato semántico (mejoran capacidades, no bloquean compatibilidad):
+
+- `pull_tokens_dtcg` o `get_design_tokens` → design tokens en Guía UX/UI
+- `list_ui_project_screens` → marcado como `supports.listScreens`
+- `validate_ui_project_instructions` / `generate_ui_project` → export `ui-project.json`
 
 ### Auth HTTP
 
@@ -132,15 +135,17 @@ Kreo UI exige Bearer; otros MCPs pueden usar solo X-M2M-Token.
 
 ---
 
-## Adaptador Kreo (mapeo)
+## Adaptador semántico (mapeo)
 
-| Contrato The Forge | Tool Kreo | Notas |
-|--------------------|-----------|-------|
-| `describe_capabilities` | *(sintetizado)* | Desde `tools/list`; declara `kreo-ui` 5.3 |
-| `resolve_component` | `resolve_component_for_entity` | JSON embebido en markdown → componente + path + props |
+Contrato extendido implementado por varios MCPs gráficos (incl. Kreo UI):
+
+| Contrato The Forge | Tool MCP semántica | Notas |
+|--------------------|-------------------|-------|
+| `describe_capabilities` | *(sintetizado)* | Desde `tools/list`; librería genérica `ui-component-mcp` salvo contrato nativo |
+| `resolve_component` | `resolve_component_for_entity` | JSON embebido → componente + path + props |
 | `list_components` | `get_ui_component_catalog` | Parseo de tabla markdown → nombres |
-| `get_design_tokens` | `pull_tokens_dtcg` | JSON W3C DTCG → colores, tipografía, spacing, etc. |
-| `list_screens` | — | No implementado; Pantallas usa fallback por entidad |
+| `get_design_tokens` | `pull_tokens_dtcg` o `get_design_tokens` | JSON W3C DTCG u otro formato tokenizable |
+| `list_screens` | — | Fallback por entidad vía `resolve_component` |
 
 ---
 

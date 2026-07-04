@@ -6,6 +6,19 @@
  */
 import type { EntityClassification, ListScreensEntity } from "@theforge/shared-types";
 import { extractEntityNamesFromMdd } from "./ui-screens-mdd.util.js";
+import {
+  extractHttpEndpointsFromMarkdown,
+  formatEndpointList,
+  inferAuthEndpoints,
+  matchEndpointsForEntity,
+} from "./api-contract-endpoints.util.js";
+import {
+  extractRolesFromMdd,
+  inferPageComponentName,
+  inferScreenRoute,
+  inferUiStates,
+  normalizeRoleLabel,
+} from "./ui-screen-routes.util.js";
 
 /** Historia de usuario parseada del markdown de backlog. */
 export interface ParsedUserStory {
@@ -26,6 +39,14 @@ export interface PantallaPlanItem extends ListScreensEntity {
   resolveContext?: string;
   userStoryRefs?: string[];
   source: "entity" | "entity+hu" | "hu-only";
+  /** Rol/journey (desde HU o MDD §1). */
+  role?: string;
+  route?: string;
+  pageName?: string;
+  uiStates?: string;
+  primaryApi?: string;
+  userStoryId?: string;
+  implementationMode?: "pull-registry" | "prototype-iframe";
 }
 
 const STORY_HEADER =
@@ -140,7 +161,7 @@ export function parseUserStoriesMarkdown(content: string): ParsedUserStory[] {
   return stories;
 }
 
-/** Infiere hint de UI Kreo a partir del texto de la HU o del nombre de entidad. */
+/** Infiere hint de UI a partir del texto de la HU o del nombre de entidad. */
 export function inferUiHintFromText(text: string): string | undefined {
   const t = text.toLowerCase();
   if (/kanban|pipeline|tablero|embudo|funnel|etapas?/.test(t)) return "kanban";
@@ -228,9 +249,13 @@ export function huOnlyEntitySlug(story: ParsedUserStory): string {
 export function buildPantallasPlan(
   mddMarkdown: string,
   userStoriesMarkdown?: string | null,
+  apiContractsMarkdown?: string | null,
 ): PantallaPlanItem[] {
   const entityNames = extractEntityNamesFromMdd(mddMarkdown);
   const stories = parseUserStoriesMarkdown(userStoriesMarkdown ?? "");
+  const endpoints = extractHttpEndpointsFromMarkdown(apiContractsMarkdown ?? "");
+  const defaultRoles = extractRolesFromMdd(mddMarkdown);
+  const defaultRole = defaultRoles[0] ?? "Usuario autenticado";
 
   const linkedByEntity = new Map<string, ParsedUserStory[]>();
   const matchedStoryIndexes = new Set<number>();
@@ -252,35 +277,70 @@ export function buildPantallasPlan(
     const linked = linkedByEntity.get(entityName) ?? [];
     const primary = linked[0];
     const storyText = linked.map((s) => s.searchText).join(" ");
+    const role = primary?.role ? normalizeRoleLabel(primary.role) : defaultRole;
+    const screenName = primary?.title?.trim() || defaultEntityScreenName(entityName);
+    const uiHint = primary
+      ? inferUiHintFromText(`${primary.want ?? ""} ${primary.title}`)
+      : inferUiHintFromText(entityName);
+    const matched = matchEndpointsForEntity(entityName, endpoints);
+    const primaryApi =
+      matched.length > 0
+        ? formatEndpointList(matched, 2)
+        : /login|auth|otp/i.test(screenName)
+          ? formatEndpointList(inferAuthEndpoints(endpoints), 2)
+          : undefined;
 
     plan.push({
       name: entityName,
-      restEndpoint: `GET /api/v1/${entityName}`,
+      restEndpoint: matched[0] ? `${matched[0].method} ${matched[0].path}` : undefined,
       classification: inferClassification(entityName, storyText),
-      uiHint: primary
-        ? inferUiHintFromText(`${primary.want ?? ""} ${primary.title}`)
-        : inferUiHintFromText(entityName),
-      screenName: primary?.title?.trim() || defaultEntityScreenName(entityName),
+      uiHint,
+      screenName,
       purpose: primary ? formatStoryPurpose(primary) : defaultEntityPurpose(entityName),
       resolveContext: primary ? resolveContextFromStory(primary) : undefined,
       userStoryRefs: linked.length > 0 ? linked.map(storyRef) : undefined,
       source: primary ? "entity+hu" : "entity",
+      role,
+      route: inferScreenRoute(screenName, uiHint),
+      pageName: inferPageComponentName(screenName),
+      uiStates: inferUiStates(screenName, uiHint),
+      primaryApi: primaryApi && primaryApi !== "—" ? primaryApi : undefined,
+      userStoryId: primary?.id,
+      implementationMode: "pull-registry",
     });
   }
 
   stories.forEach((story, idx) => {
     if (matchedStoryIndexes.has(idx)) return;
     const slug = huOnlyEntitySlug(story);
+    const uiHint = inferUiHintFromText(story.searchText);
+    const screenName = story.title;
+    const authEps = inferAuthEndpoints(endpoints);
+    const matched = matchEndpointsForEntity(slug, endpoints);
+    const primaryApi =
+      matched.length > 0
+        ? formatEndpointList(matched, 2)
+        : /login|auth|otp/i.test(screenName)
+          ? formatEndpointList(authEps, 2)
+          : undefined;
+
     plan.push({
       name: slug,
-      restEndpoint: undefined,
+      restEndpoint: matched[0] ? `${matched[0].method} ${matched[0].path}` : undefined,
       classification: inferClassification(slug, story.searchText),
-      uiHint: inferUiHintFromText(story.searchText),
-      screenName: story.title,
+      uiHint,
+      screenName,
       purpose: formatStoryPurpose(story),
       resolveContext: resolveContextFromStory(story),
       userStoryRefs: [storyRef(story)],
       source: "hu-only",
+      role: story.role ? normalizeRoleLabel(story.role) : defaultRole,
+      route: inferScreenRoute(screenName, uiHint),
+      pageName: inferPageComponentName(screenName),
+      uiStates: inferUiStates(screenName, uiHint),
+      primaryApi: primaryApi && primaryApi !== "—" ? primaryApi : undefined,
+      userStoryId: story.id,
+      implementationMode: "pull-registry",
     });
   });
 

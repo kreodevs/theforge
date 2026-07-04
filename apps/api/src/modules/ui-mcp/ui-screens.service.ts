@@ -15,6 +15,10 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import { UiMcpClientService } from "./ui-mcp-client.service.js";
 import { UiMcpService } from "./ui-mcp.service.js";
 import { buildUiScreensMarkdown } from "./ui-screens-markdown.util.js";
+import {
+  appendUiProjectToPantallas,
+  buildUiProjectInstructions,
+} from "./ui-project-instructions.util.js";
 import { resolveConstitutionMarkdown } from "./ui-screens-mdd.util.js";
 import { buildPantallasPlan, type PantallaPlanItem } from "./ui-screens-plan.util.js";
 
@@ -39,7 +43,9 @@ export class UiScreensService {
         dbgaContent: true,
         phase0SummaryContent: true,
         specContent: true,
+        apiContractsContent: true,
         userStoriesContent: true,
+        name: true,
         stages: {
           select: { ordinal: true, workflowStatus: true, mddContent: true },
           orderBy: { ordinal: "asc" },
@@ -55,7 +61,7 @@ export class UiScreensService {
     }
 
     const mdd = resolveConstitutionMarkdown(project);
-    const plan = buildPantallasPlan(mdd, project.userStoriesContent);
+    const plan = buildPantallasPlan(mdd, project.userStoriesContent, project.apiContractsContent);
     const entityPlan = plan.filter((p) => p.source !== "hu-only");
 
     if (entityPlan.length === 0) {
@@ -84,14 +90,25 @@ export class UiScreensService {
     }
 
     const meta = await this.uiMcp.getActiveCompatibleMeta();
-    const content = buildUiScreensMarkdown(screens, {
+    const pantallasBody = buildUiScreensMarkdown(screens, plan, {
+      projectName: project.name,
       libraryName: meta?.libraryName,
       libraryVersion: meta?.libraryVersion,
       contractVersion: meta?.contractVersion,
       generatedAt: new Date(),
     });
-    if (!content) {
+    if (!pantallasBody) {
       throw new BadRequestException("No se pudo ensamblar el documento de pantallas.");
+    }
+
+    let content = pantallasBody;
+    if (await this.uiMcp.supportsUiProjectInstructions()) {
+      const uiProject = buildUiProjectInstructions({
+        projectName: project.name,
+        plan,
+        screens,
+      });
+      content = appendUiProjectToPantallas(pantallasBody, uiProject);
     }
 
     await this.prisma.project.update({

@@ -1921,6 +1921,10 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
       mddContent,
       blueprintContent,
       await this.getUiResolver(),
+      {
+        pantallasContent: project.uiScreensContent,
+        apiContractsContent: project.apiContractsContent,
+      },
     );
 
     // Reflection loop (minimal): post-generation conformance re-check

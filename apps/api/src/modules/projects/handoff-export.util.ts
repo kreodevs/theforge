@@ -21,6 +21,7 @@ import {
   parseAgentGovernanceScaffold,
   resolveDocumentPathMap,
   specKitFeatureDir,
+  splitPantallasAndUiProject,
   type AgentGovernanceScaffold,
   type ComplexityLevel,
   type DocumentPathEntry,
@@ -89,7 +90,14 @@ export function projectConstitutionMarkdown(project: ProjectWithStages): string 
 }
 
 /** Deliverables for SDD mirrors / handoff ZIP (respects stage snapshot in analyze mode). */
-export function buildProjectDeliverableExportInput(
+export function exportPantallasMarkdown(raw: string | null | undefined): string | null | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return raw;
+  const { pantallas } = splitPantallasAndUiProject(trimmed);
+  return (pantallas.trim() || trimmed);
+}
+
+function buildProjectDeliverableExportInput(
   project: ProjectWithStages,
   stage: Stage | null | undefined,
 ): ProjectDeliverableExportInput {
@@ -108,7 +116,9 @@ export function buildProjectDeliverableExportInput(
     apiContractsMarkdown: deliverables.apiContractsContent ?? project.apiContractsContent,
     logicFlowsMarkdown: deliverables.logicFlowsContent ?? project.logicFlowsContent,
     uxUiGuideMarkdown: deliverables.uxUiGuideContent ?? project.uxUiGuideContent,
-    uiScreensMarkdown: deliverables.uiScreensContent ?? project.uiScreensContent,
+    uiScreensMarkdown: exportPantallasMarkdown(
+      deliverables.uiScreensContent ?? project.uiScreensContent,
+    ),
     infraMarkdown: deliverables.infraContent ?? project.infraContent,
   };
 }

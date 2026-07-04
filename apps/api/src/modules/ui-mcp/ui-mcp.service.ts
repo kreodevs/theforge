@@ -28,7 +28,7 @@ import {
   callUiMcpToolJson,
   listUiMcpTools,
 } from "./ui-mcp-transport.util.js";
-import { matchUiMcpAdapter } from "./adapters/ui-mcp-adapter.registry.js";
+import { matchUiMcpAdapter, resolveUiMcpAdapterById } from "./adapters/ui-mcp-adapter.registry.js";
 import type { UiMcpAdapter } from "./adapters/ui-mcp-adapter.types.js";
 
 export interface UpsertUiMcpInstanceDto {
@@ -242,7 +242,7 @@ export class UiMcpService {
   /**
    * Detecta compatibilidad de un MCP arbitrario (URL/token en claro, sin persistir).
    * 1. Contrato nativo The Forge (`describe_capabilities` + tools obligatorios).
-   * 2. Si falla, intenta un adaptador genérico por `tools/list` (p. ej. Kreo UI MCP).
+   * 2. Si falla, intenta un adaptador genérico por `tools/list` (contrato semántico extendido).
    */
   async detectCompatibility(url: string, token?: string | null): Promise<UiMcpCompatibility> {
     const conn: UiMcpConnection = { url, token };
@@ -348,9 +348,8 @@ export class UiMcpService {
   }
 
   private resolveAdapterById(adapterId: string, capabilitiesJson: unknown): UiMcpAdapter | null {
-    if (adapterId !== "kreo") return null;
     const toolNames = this.readDetectedToolNames(capabilitiesJson);
-    return matchUiMcpAdapter(toolNames.length > 0 ? toolNames : ["resolve_component_for_entity", "get_ui_component_catalog"]);
+    return resolveUiMcpAdapterById(adapterId, toolNames);
   }
 
   private readDetectedToolNames(capabilitiesJson: unknown): string[] {
@@ -370,6 +369,20 @@ export class UiMcpService {
       select: { libraryName: true, libraryVersion: true, contractVersion: true },
     });
     return row ?? null;
+  }
+
+  /** Indica si el MCP activo expone instrucciones de prototipo UI (p. ej. validate_ui_project_instructions). */
+  async supportsUiProjectInstructions(): Promise<boolean> {
+    const row = await this.prisma.uiMcpInstance.findFirst({
+      where: { isActive: true, enabled: true, compatible: true },
+      select: { capabilitiesJson: true },
+    });
+    if (!row) return false;
+    const toolNames = this.readDetectedToolNames(row.capabilitiesJson);
+    return (
+      toolNames.includes("validate_ui_project_instructions") ||
+      toolNames.includes("generate_ui_project")
+    );
   }
 
   /** Indica si hay un MCP gráfico compatible activo (para feature-gating de UI/deliverables). */

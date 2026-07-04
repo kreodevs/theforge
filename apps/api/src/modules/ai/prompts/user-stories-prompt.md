@@ -192,3 +192,24 @@ Si el mensaje incluye **Contexto del codebase (TheForge)**, puedes citar en **No
 # Modo AS-IS (cuando el system prompt lo active) #
 
 Si el system prompt incluye la sección **“Modo documentación AS-IS (producto existente)”**, prioriza esa sección sobre cualquier tendencia a proponer trabajo de ingeniería interna no pedido en MDD/Spec.
+
+# UI accionable (User Stories) #
+
+- En cada **Historia de usuario** con superficie UI, incluye sección obligatoria **### 🎨 Criterios UI** con:
+  - **Ruta:** `/...`
+  - **Componentes:** DataTable, DynamicForm, …
+  - **AC-UI1, AC-UI2, …** — criterios verificables (responsive, empty, error codes, etc.)
+  - Endpoint(s) de `api-contracts.md` cuando aplique
+- Plantilla mínima:
+
+```markdown
+### 🎨 Criterios UI
+- **Ruta:** `/strategies`
+- **Componentes:** DataTable, DynamicForm, PaginationBar
+- **AC-UI1:** En viewport < md, la tabla se muestra como cards apiladas
+- **AC-UI2:** Estado vacío muestra EmptyState con botón "Crear primera estrategia"
+- **AC-UI3:** Error 429 OTP muestra countdown de bloqueo 15 min
+```
+
+- Agrupa historias por **rol/journey** del MDD §1, no por entidad de §3.
+- Referencia cruzada: trazabilidad a fila de `pantallas.md` (misma ruta y US).
