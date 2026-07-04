@@ -18,6 +18,7 @@ const DELIVERABLE_KEYS: (keyof ProjectDeliverableSource)[] = [
   "infraContent",
   "agentGovernanceContent",
   "uxUiGuideContent",
+  "uiScreensContent",
   "phase0SummaryContent",
   "aemContent",
   "handoffSpecContent",

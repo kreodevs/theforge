@@ -2174,6 +2174,7 @@ export default function WorkshopView({
                 phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent,
                 dbgaContent: dbgaContent ?? project?.dbgaContent,
                 uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent,
+                uiScreensContent: uiScreensContent ?? project?.uiScreensContent,
                 consumptionGuideContent,
               }),
             );
@@ -2271,6 +2272,7 @@ export default function WorkshopView({
       specContent: specContent ?? project?.specContent ?? null,
       mddContent: mddContent ?? project?.mddContent ?? "",
       uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent ?? null,
+      uiScreensContent: uiScreensContent ?? project?.uiScreensContent ?? null,
       blueprintContent: blueprintContent ?? project?.blueprintContent ?? null,
       apiContractsContent: apiContractsContent ?? project?.apiContractsContent ?? null,
       logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent ?? null,
@@ -2290,6 +2292,8 @@ export default function WorkshopView({
       project?.mddContent,
       uxUiGuideContent,
       project?.uxUiGuideContent,
+      uiScreensContent,
+      project?.uiScreensContent,
       blueprintContent,
       project?.blueprintContent,
       apiContractsContent,
@@ -2330,6 +2334,7 @@ export default function WorkshopView({
             phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent,
             dbgaContent: dbgaContent ?? project?.dbgaContent,
             uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent,
+            uiScreensContent: uiScreensContent ?? project?.uiScreensContent,
           }
         : null,
     });
@@ -2373,6 +2378,8 @@ export default function WorkshopView({
     project?.dbgaContent,
     uxUiGuideContent,
     project?.uxUiGuideContent,
+    uiScreensContent,
+    project?.uiScreensContent,
   ]);
 
   const mddDirty = (mddContent ?? "").trim() !== persistedMddBaseline.trim();

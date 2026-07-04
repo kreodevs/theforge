@@ -24,6 +24,8 @@ export interface SpecKitBundleInput {
   phase0SummaryContent?: string | null;
   dbgaContent?: string | null;
   uxUiGuideContent?: string | null;
+  /** Pantallas / UI Screens Spec (MCP gráfico). Distinto de design-system.md (Guía UX/UI). */
+  uiScreensContent?: string | null;
   architectureContent?: string | null;
   useCasesContent?: string | null;
   userStoriesContent?: string | null;
@@ -194,6 +196,7 @@ export function buildSpecKitBundleFiles(input: SpecKitBundleInput): SpecKitBundl
   pushIf("logic-flows.md", input.logicFlowsContent);
   pushIf("infra.md", input.infraContent);
   pushIf("design-system.md", input.uxUiGuideContent);
+  pushIf("pantallas.md", input.uiScreensContent);
   pushIf("architecture.md", input.architectureContent);
   pushIf("use-cases.md", input.useCasesContent);
   pushIf("user-stories.md", input.userStoriesContent);

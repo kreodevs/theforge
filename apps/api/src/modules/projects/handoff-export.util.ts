@@ -108,6 +108,7 @@ export function buildProjectDeliverableExportInput(
     apiContractsMarkdown: deliverables.apiContractsContent ?? project.apiContractsContent,
     logicFlowsMarkdown: deliverables.logicFlowsContent ?? project.logicFlowsContent,
     uxUiGuideMarkdown: deliverables.uxUiGuideContent ?? project.uxUiGuideContent,
+    uiScreensMarkdown: deliverables.uiScreensContent ?? project.uiScreensContent,
     infraMarkdown: deliverables.infraContent ?? project.infraContent,
   };
 }
@@ -126,6 +127,7 @@ const SDD_MIRROR_PATHS_FOR_SPEC_KIT: Array<{
   { key: "apiContractsMarkdown", path: "docs/sdd/api-contracts.md" },
   { key: "logicFlowsMarkdown", path: "docs/sdd/logic-flows.md" },
   { key: "uxUiGuideMarkdown", path: "docs/sdd/ux-ui-guide.md" },
+  { key: "uiScreensMarkdown", path: "docs/sdd/pantallas.md" },
   { key: "infraMarkdown", path: "docs/sdd/infra.md" },
 ];
 
@@ -200,6 +202,7 @@ export function buildAgentGovernanceInput(
     apiContractsMarkdown: project.apiContractsContent,
     logicFlowsMarkdown: project.logicFlowsContent,
     uxUiGuideMarkdown: project.uxUiGuideContent,
+    uiScreensMarkdown: project.uiScreensContent,
     infraMarkdown: project.infraContent,
     useCasesMarkdown: project.useCasesContent,
     userStoriesMarkdown: project.userStoriesContent,
@@ -265,19 +268,10 @@ export function reconcileExportScaffold(
     featureDir,
   });
 
-  return appendProjectDeliverablesToScaffold(reconciled, {
-    mddMarkdown: mdd,
-    blueprintMarkdown: project.blueprintContent,
-    specMarkdown: project.specContent,
-    architectureMarkdown: project.architectureContent,
-    tasksMarkdown: project.tasksContent,
-    useCasesMarkdown: project.useCasesContent,
-    userStoriesMarkdown: project.userStoriesContent,
-    apiContractsMarkdown: project.apiContractsContent,
-    logicFlowsMarkdown: project.logicFlowsContent,
-    uxUiGuideMarkdown: project.uxUiGuideContent,
-    infraMarkdown: project.infraContent,
-  });
+  return appendProjectDeliverablesToScaffold(
+    reconciled,
+    buildProjectDeliverableExportInput(project, pickPrimaryStage(project.stages)),
+  );
 }
 
 export function buildSpecKitFilesForProject(
@@ -306,6 +300,7 @@ export function buildSpecKitFilesForProject(
     phase0SummaryContent: project.phase0SummaryContent,
     dbgaContent: project.dbgaContent,
     uxUiGuideContent: deliverables.uxUiGuideContent ?? project.uxUiGuideContent,
+    uiScreensContent: deliverables.uiScreensContent ?? project.uiScreensContent,
     consumptionGuideContent,
   });
 }

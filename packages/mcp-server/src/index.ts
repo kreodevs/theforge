@@ -1251,6 +1251,7 @@ const handlers: Record<string, Handler> = {
       { key: "infraContent", label: "Infrastructure" },
       { key: "tasksContent", label: "Tasks" },
       { key: "uxUiGuideContent", label: "UX/UI Guide" },
+      { key: "uiScreensContent", label: "Pantallas / UI Screens" },
       { key: "dbgaContent", label: "DBGA" },
       { key: "phase0SummaryContent", label: "Phase 0 Summary" },
       { key: "aemContent", label: "AEM" },

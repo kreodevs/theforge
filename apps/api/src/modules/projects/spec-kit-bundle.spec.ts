@@ -23,6 +23,7 @@ describe("spec-kit-bundle", () => {
       architectureContent: "# Arch",
       useCasesContent: "# UC",
       userStoriesContent: "# US",
+      uiScreensContent: "# Pantallas\n",
     });
     const paths = files.map((f) => f.path);
     assert.ok(paths.includes(".specify/memory/constitution.md"));
@@ -30,6 +31,7 @@ describe("spec-kit-bundle", () => {
     assert.ok(paths.some((p) => p.endsWith("architecture.md")));
     assert.ok(paths.some((p) => p.endsWith("use-cases.md")));
     assert.ok(paths.some((p) => p.endsWith("user-stories.md")));
+    assert.ok(paths.some((p) => p.endsWith("pantallas.md")));
     assert.ok(paths.some((p) => p.endsWith("data-model.md")));
     assert.ok(paths.includes("IMPLEMENT.md"));
   });

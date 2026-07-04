@@ -36,6 +36,11 @@ export const DOCUMENT_PATH_MAP_STATIC: DocumentPathEntry[] = [
     mirror: "docs/sdd/tasks.md",
     label: "Tasks",
   },
+  {
+    primary: "{featureDir}/pantallas.md",
+    mirror: "docs/sdd/pantallas.md",
+    label: "Pantallas (UI MCP)",
+  },
 ];
 
 /** Resolve path map for a concrete feature directory (e.g. specs/001-my-feature). */

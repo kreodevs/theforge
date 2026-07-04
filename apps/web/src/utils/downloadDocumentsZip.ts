@@ -6,6 +6,7 @@ export interface DocumentsForZip {
   specContent: string | null;
   mddContent: string;
   uxUiGuideContent: string | null;
+  uiScreensContent?: string | null;
   blueprintContent: string | null;
   apiContractsContent: string | null;
   logicFlowsContent: string | null;
@@ -33,6 +34,7 @@ export async function downloadDocumentsZip(
     ["spec.md", documents.specContent ?? ""],
     ["mdd.md", documents.mddContent ?? ""],
     ["design-system.md", documents.uxUiGuideContent ?? ""],
+    ["pantallas.md", documents.uiScreensContent ?? ""],
     ["blueprint.md", documents.blueprintContent ?? ""],
     ["api-contracts.md", documents.apiContractsContent ?? ""],
     ["logic-flows.md", documents.logicFlowsContent ?? ""],

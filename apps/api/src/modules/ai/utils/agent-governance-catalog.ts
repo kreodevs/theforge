@@ -171,7 +171,38 @@ export const RULE_CATALOG: RuleCatalogEntry[] = [
       enrichStackBody(ctx, "frontend") +
       "\n" +
       "- Usa design system y tokens del MDD; no valores ad-hoc.\n" +
-      "- lint + typecheck del paquete UI/SPA antes de merge.\n",
+      "- lint + typecheck del paquete UI/SPA antes de merge.\n" +
+      "- Si existe `pantallas.md` (spec-kit) o `docs/sdd/pantallas.md`, léelo antes de crear vistas.\n",
+  },
+  {
+    id: "ui-pantallas",
+    path: "docs/agent-governance/rules/ui-pantallas.mdc",
+    description: "Pantallas MCP: componentes reales, entidades y binding por vista",
+    globs: ["**/*.{tsx,jsx,vue,svelte}"],
+    minComplexity: "LOW",
+    signals: [
+      /UI Screens Spec/i,
+      /pantallas\.md/i,
+      /list_screens/i,
+      /MCP gráfico/i,
+      /resolve_component/i,
+      /ui-mcp/i,
+    ],
+    archetypes: ["nestjs-react-monorepo", "spa-only", "design-system-ui"],
+    template: (ctx) =>
+      ruleFrontmatter("Pantallas / UI MCP — spec de vistas", {
+        globs: stackFrontendGlobs(ctx),
+      }) +
+      "# Pantallas (UI MCP)\n\n" +
+      "## Cuándo aplicar\n\n" +
+      "- Antes de implementar **cualquier** pantalla o ruta de UI.\n" +
+      "- Lee `specs/NNN-slug/pantallas.md` (primario) o espejo `docs/sdd/pantallas.md`.\n\n" +
+      "## Reglas\n\n" +
+      "- Usa **solo** los componentes listados (nombre + paquete@versión); no sustituyas por genéricos sin justificar en MDD.\n" +
+      "- Respeta la tabla **Props / Binding** (endpoints, entidades).\n" +
+      "- Una fila del doc ≈ una vista o flujo; no mezcles pantallas.\n" +
+      "- Si **no** hay `pantallas.md`, usa Blueprint §8 + `design-system.md`; no inventes componentes MCP.\n" +
+      "- Ante conflicto con Blueprint §8 heurístico, **gana pantallas.md** cuando exista.\n",
   },
   {
     id: "api-contracts",
@@ -323,6 +354,37 @@ export const SKILL_CATALOG: SkillCatalogEntry[] = [
       "- Tokens del DS; sin colores/tamaños ad-hoc.\n" +
       "- JSDoc en exports públicos.\n" +
       "- Publicar paquete solo con petición explícita + QA.\n",
+  },
+  {
+    id: "ui-pantallas",
+    folder: "ui-pantallas",
+    path: "docs/agent-governance/skills/ui-pantallas/SKILL.md",
+    description: "Implementar vistas según Pantallas / UI Screens Spec (MCP gráfico)",
+    triggers: "Tareas frontend, rutas SPA o componentes cuando existe pantallas.md.",
+    minComplexity: "LOW",
+    signals: [
+      /UI Screens Spec/i,
+      /pantallas\.md/i,
+      /list_screens/i,
+      /MCP gráfico/i,
+      /resolve_component/i,
+    ],
+    archetypes: ["nestjs-react-monorepo", "spa-only", "design-system-ui"],
+    template: () =>
+      skillFrontmatter(
+        "ui-pantallas",
+        "Pantallas MCP: leer spec de vistas antes de codificar UI.",
+      ) +
+      "# Skill: Pantallas (UI MCP)\n\n" +
+      "## Cuándo cargar\n\n" +
+      "- Implementar listados, formularios, dashboards o rutas del front.\n" +
+      "- Existe `specs/NNN-slug/pantallas.md` o `docs/sdd/pantallas.md`.\n\n" +
+      "## Checklist\n\n" +
+      "1. Abrir pantallas.md y localizar la pantalla de la tarea actual.\n" +
+      "2. Importar componentes con el paquete/versión indicados.\n" +
+      "3. Cablear props según binding (API contracts + MDD §3).\n" +
+      "4. Mobile responsive según design-system.md / MDD.\n" +
+      "5. No cerrar la tarea UI sin revisar que la vista coincide con el doc.\n",
   },
   {
     id: "deploy-docker",

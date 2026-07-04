@@ -18,6 +18,7 @@ Cuando TheForge genera la especificación de un proyecto, produce estos document
 | **`infra.md`** | Infraestructura — Docker, Dokploy, dominios, redes, S3, backups | Configura el despliegue y la infraestructura según lo especificado |
 | **`tasks.md`** | Lista de tareas priorizadas — desglose de implementación paso a paso | Úsalo como checklist, pero **no** como única fuente — contrasta siempre contra MDD y Blueprint |
 | **`design-system.md`** | Guía de diseño — paleta, tipografía, espaciado, componentes UI autorizados | Si el proyecto usa Kreo UI, aquí están los tokens de diseño. Si no, define la guía visual |
+| **`pantallas.md`** | Pantallas / UI Screens Spec (MCP gráfico) — vistas, componentes **reales** (nombre + paquete@versión), entidad y binding a endpoints | **Distinto de design-system.md.** Léelo **antes** de implementar pantallas cuando exista; gana sobre Blueprint §8 heurístico |
 | **`aem.md`** | Análisis y Estrategia de Mercado (opcional) — contexto de negocio | Contexto para entender el "por qué" del producto |
 | **`phase0-deep-research.md`** | Investigación profunda — benchmark, análisis de competencia | Contexto adicional, no vinculante para implementación |
 | **`benchmark.md`** | Benchmark contra competidores | Referencia, no vinculante |
@@ -51,6 +52,16 @@ MDD §6 → Arquitectura (módulos, flujos, integraciones)
 | **Dashboard / KPI** (métricas, resúmenes) | `DashboardKPI` o `StatsCard` | event stats, planner dashboard |
 
 **Si no encuentras el componente Kreo exacto, usa el genérico de `@memoria/ui-components`** (Button, Card, DataTable, EmptyState, LoadingSpinner, PageHeader, Badge, Input, Label, AppShell).
+
+### Regla 2b: Pantallas MCP (`pantallas.md`)
+
+Cuando el ZIP incluye **`pantallas.md`** (spec-kit: `specs/NNN-slug/pantallas.md`; espejo: `docs/sdd/pantallas.md`):
+
+1. **Una sección del doc = una vista** — no mezcles flujos.
+2. Usa **solo** los componentes de la tabla (con paquete/versión indicados).
+3. Cablea **Props / Binding** a los endpoints de `api-contracts.md`.
+4. Si **`pantallas.md` contradice Blueprint §8**, gana **`pantallas.md`**.
+5. Sin `pantallas.md`, sigue Regla 2 (Blueprint §8) y `design-system.md`.
 
 ### Regla 3: Mobile Responsive es Obligatorio
 

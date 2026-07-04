@@ -198,6 +198,19 @@ Monorepo kms-backend/ packages/shared
     assert.equal(skillIds.includes("design-system-ui"), false);
   });
 
+  it("sugiere ui-pantallas rule y skill cuando hay uiScreensMarkdown", () => {
+    const result = suggestAgentGovernanceArtifacts({
+      mddMarkdown: "# App\n## 2. Stack\nReact + NestJS monorepo apps/web",
+      specMarkdown: "Dashboard para usuarios.",
+      uiScreensMarkdown: "# Pantallas / UI Screens Spec\n\n## 1. Login\n",
+      complexity: "MEDIUM",
+    });
+    const ruleIds = result.suggestedRules.map((r) => r.id);
+    const skillIds = result.suggestedSkills.map((s) => s.id);
+    assert.ok(ruleIds.includes("ui-pantallas"));
+    assert.ok(skillIds.includes("ui-pantallas"));
+  });
+
   it("prefiere deploy-kubernetes sobre deploy-docker con señales K8s", () => {
     const result = suggestAgentGovernanceArtifacts({
       mddMarkdown: `

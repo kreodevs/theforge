@@ -206,7 +206,8 @@ function defaultDocConsumptionGuide(featureDir?: string): string {
     `2. **\`${planPath}\`** — Blueprint / plan técnico; espejo: \`docs/sdd/blueprint.md\`.\n` +
     `3. **\`${specPath}\`** — Requisitos y criterios de aceptación; espejo: \`docs/sdd/spec.md\`.\n` +
     `4. **\`${tasksPath}\`** — Checklist de implementación; espejo: \`docs/sdd/tasks.md\`.\n` +
-    `5. Entregables opcionales en \`${featureDir ?? "specs/NNN-slug"}/\` o \`docs/sdd/\`: contratos, logic-flows, architecture, infra.\n\n` +
+    `5. Entregables opcionales en \`${featureDir ?? "specs/NNN-slug"}/\` o \`docs/sdd/\`: contratos, logic-flows, architecture, infra, design-system, **pantallas** (UI MCP).\n` +
+    `6. Si existe **\`${featureDir ?? "specs/NNN-slug"}/pantallas.md\`** (espejo \`docs/sdd/pantallas.md\`), léelo **antes** de implementar vistas: lista componentes reales del MCP, entidades y binding a endpoints.\n\n` +
     "### Mapeo de rutas\n\n" +
     defaultDocumentPathMapTable(featureDir) +
     "\n\n" +
@@ -1147,6 +1148,7 @@ export interface ProjectDeliverableExportInput {
   apiContractsMarkdown?: string | null;
   logicFlowsMarkdown?: string | null;
   uxUiGuideMarkdown?: string | null;
+  uiScreensMarkdown?: string | null;
   infraMarkdown?: string | null;
 }
 
@@ -1164,6 +1166,7 @@ const SDD_EXPORT_ENTRIES: Array<{
   { key: "apiContractsMarkdown", path: "docs/sdd/api-contracts.md" },
   { key: "logicFlowsMarkdown", path: "docs/sdd/logic-flows.md" },
   { key: "uxUiGuideMarkdown", path: "docs/sdd/ux-ui-guide.md" },
+  { key: "uiScreensMarkdown", path: "docs/sdd/pantallas.md" },
   { key: "infraMarkdown", path: "docs/sdd/infra.md" },
 ];
 

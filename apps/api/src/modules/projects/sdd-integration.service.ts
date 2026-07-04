@@ -121,6 +121,7 @@ export class SddIntegrationService {
       phase0SummaryContent: project.phase0SummaryContent,
       dbgaContent: project.dbgaContent,
       uxUiGuideContent: deliverables.uxUiGuideContent ?? project.uxUiGuideContent,
+      uiScreensContent: deliverables.uiScreensContent ?? project.uiScreensContent,
       architectureContent: deliverables.architectureContent ?? project.architectureContent,
       useCasesContent: deliverables.useCasesContent ?? project.useCasesContent,
       userStoriesContent: deliverables.userStoriesContent ?? project.userStoriesContent,

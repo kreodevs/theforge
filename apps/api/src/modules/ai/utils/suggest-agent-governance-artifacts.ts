@@ -43,6 +43,7 @@ export interface SuggestAgentGovernanceInput {
   apiContractsMarkdown?: string | null;
   logicFlowsMarkdown?: string | null;
   uxUiGuideMarkdown?: string | null;
+  uiScreensMarkdown?: string | null;
   infraMarkdown?: string | null;
   useCasesMarkdown?: string | null;
   userStoriesMarkdown?: string | null;
@@ -85,6 +86,7 @@ function corpus(input: SuggestAgentGovernanceInput): string {
     input.apiContractsMarkdown ?? "",
     input.logicFlowsMarkdown ?? "",
     input.uxUiGuideMarkdown ?? "",
+    input.uiScreensMarkdown ?? "",
     input.infraMarkdown ?? "",
     input.useCasesMarkdown ?? "",
     input.userStoriesMarkdown ?? "",
@@ -811,6 +813,7 @@ export function extractProjectGovernanceFacts(
     [!!input.apiContractsMarkdown?.trim(), "docs/sdd/api-contracts.md"],
     [!!input.logicFlowsMarkdown?.trim(), "docs/sdd/logic-flows.md"],
     [!!input.uxUiGuideMarkdown?.trim(), "docs/sdd/ux-ui-guide.md"],
+    [!!input.uiScreensMarkdown?.trim(), "docs/sdd/pantallas.md"],
     [!!input.infraMarkdown?.trim(), "docs/sdd/infra.md"],
   ];
 
@@ -884,6 +887,7 @@ function ruleStrength(
   archetypes: string[],
   complexity: ComplexityLevel,
   authoritativeUiText?: string,
+  uiScreensMarkdown?: string | null,
 ): GovernanceArtifactStrength | null {
   if (!complexityAtLeast(complexity, rule.minComplexity)) return null;
 
@@ -891,6 +895,12 @@ function ruleStrength(
   if (rule.id === "orchestrator" && complexity !== "LOW") return "weak";
 
   if (rule.id === "stack-frontend" && !hasUiSurface(text, authoritativeUiText)) return null;
+
+  if (rule.id === "ui-pantallas") {
+    if (uiScreensMarkdown?.trim()) return "strong";
+    if (!hasUiSurface(text, authoritativeUiText)) return null;
+    return matchesSignals(text, rule.signals) ? "weak" : null;
+  }
 
   const signalHit = matchesSignals(text, rule.signals);
   const archetypeHit = rule.archetypes?.some((a) => archetypes.includes(a)) ?? false;
@@ -914,11 +924,18 @@ function skillStrength(
   archetypes: string[],
   complexity: ComplexityLevel,
   authoritativeUiText?: string,
+  uiScreensMarkdown?: string | null,
 ): GovernanceArtifactStrength | null {
   if (!complexityAtLeast(complexity, skill.minComplexity)) return null;
 
   if (skill.id === "design-system-ui" && !hasUiSurface(text, authoritativeUiText)) return null;
   if (skill.id === "mcp-ariadne" && !hasLegacyAriadneSignals(text)) return null;
+
+  if (skill.id === "ui-pantallas") {
+    if (uiScreensMarkdown?.trim()) return "strong";
+    if (!hasUiSurface(text, authoritativeUiText)) return null;
+    return matchesSignals(text, skill.signals) ? "weak" : null;
+  }
 
   const signalHit = matchesSignals(text, skill.signals);
   const archetypeHit = skill.archetypes?.some((a) => archetypes.includes(a)) ?? false;
@@ -940,6 +957,7 @@ function skillStrength(
 
   if (skill.id === "mcp-ariadne" && hasLegacyAriadneSignals(text)) return "strong";
   if (skill.id === "design-system-ui" && archetypes.includes("design-system-ui")) return "strong";
+  if (skill.id === "ui-pantallas" && uiScreensMarkdown?.trim()) return "strong";
 
   return signalHit && archetypeHit ? "strong" : "weak";
 }
@@ -1001,7 +1019,14 @@ export function suggestAgentGovernanceArtifacts(
 
   const suggestedRules: RuleSpec[] = [];
   for (const rule of RULE_CATALOG) {
-    const strength = ruleStrength(rule, text, archetypes, input.complexity, authoritativeUiText);
+    const strength = ruleStrength(
+      rule,
+      text,
+      archetypes,
+      input.complexity,
+      authoritativeUiText,
+      input.uiScreensMarkdown,
+    );
     if (!strength) continue;
     suggestedRules.push({
       id: rule.id,
@@ -1016,7 +1041,14 @@ export function suggestAgentGovernanceArtifacts(
 
   const suggestedSkills: SkillSpec[] = [];
   for (const skill of SKILL_CATALOG) {
-    const strength = skillStrength(skill, text, archetypes, input.complexity, authoritativeUiText);
+    const strength = skillStrength(
+      skill,
+      text,
+      archetypes,
+      input.complexity,
+      authoritativeUiText,
+      input.uiScreensMarkdown,
+    );
     if (!strength) continue;
     const folder = skill.dynamicFolder && domainFolder ? domainFolder : skill.folder;
     const path = resolveSkillPath(skill, folder);

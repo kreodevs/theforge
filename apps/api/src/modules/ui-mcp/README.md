@@ -38,5 +38,6 @@ Tools opcionales del contrato nativo: `list_screens`, `get_design_tokens`.
 - **MDD UI/UX Design Intent** — `mdd-enrich-uiux-intent` recibe el resolver (async) vía el chokepoint `prepareMddForOutput`.
 - **Blueprint §8** — `enrichBlueprintWithUiDesignSystem` recibe el resolver (async) desde `ProjectsService`.
 - **Guía UX/UI** — `ProjectsService.generateUxUiGuide` anexa la sección de design system del MCP si hay uno compatible activo.
+- **Export / handoff** — `uiScreensContent` se incluye como `{featureDir}/pantallas.md` (spec-kit) y espejo `docs/sdd/pantallas.md` en ZIP handoff, gobernanza y MCP `get_project_deliverables`. Rule/skill `ui-pantallas` en gobernanza IA cuando hay superficie UI.
 
 Sin MCP compatible activo, **todo cae al comportamiento heurístico/Ariadne** actual.

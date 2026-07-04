@@ -154,4 +154,26 @@ describe("handoff-export.util", () => {
     assert.ok(paths.includes("docs/agent-governance/INSTALACION.md"));
     assert.ok(paths.includes("docs/sdd/mdd.md"));
   });
+
+  it("buildUnifiedHandoff pathMap incluye pantallas", () => {
+    const unified = buildUnifiedHandoff(baseProject as never, null);
+    assert.ok(unified.pathMap.some((e) => e.mirror === "docs/sdd/pantallas.md"));
+  });
+
+  it("export incluye pantallas.md en spec-kit y espejo docs/sdd cuando hay uiScreensContent", () => {
+    const project = {
+      ...baseProject,
+      uiScreensContent: "# Pantallas / UI Screens Spec\n\n## 1. Login\n",
+    };
+    const unified = buildUnifiedHandoff(project as never, null);
+    const featureDir = unified.featureDir;
+    const specPantallas = unified.specKitFiles.find((f) => f.path === `${featureDir}/pantallas.md`);
+    assert.ok(specPantallas?.content.includes("Login"));
+    const deliverables = buildProjectDeliverableExportInput(project as never, project.stages[0]);
+    const enriched = enrichSpecKitFilesForHandoff(unified.specKitFiles, deliverables);
+    const mirror = enriched.find((f) => f.path === "docs/sdd/pantallas.md");
+    assert.ok(mirror?.content.includes("Login"));
+    const scaffold = synthesizeExportGovernanceScaffold(project as never);
+    assert.ok(scaffold.files.some((f) => f.path === "docs/sdd/pantallas.md"));
+  });
 });
