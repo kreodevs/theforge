@@ -33,6 +33,8 @@ export * from "./mdd-governance-patterns.js";
 export * from "./phase0-content.js";
 export * from "./project-integration.js";
 export * from "./spec-kit-bundle.js";
+export * from "./ui-screens-export.js";
+export * from "./ui-mcp-adapter-label.js";
 export * from "./tasks-parse.js";
 export * from "./sdd-integrations.js";
 export * from "./sdd-analyze.js";

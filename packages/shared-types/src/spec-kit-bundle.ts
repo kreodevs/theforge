@@ -4,6 +4,7 @@
  */
 
 import { formatDocumentPathMapTable } from "./document-layout.js";
+import { splitPantallasAndUiProject } from "./ui-screens-export.js";
 
 export interface SpecKitBundleFile {
   path: string;
@@ -196,7 +197,13 @@ export function buildSpecKitBundleFiles(input: SpecKitBundleInput): SpecKitBundl
   pushIf("logic-flows.md", input.logicFlowsContent);
   pushIf("infra.md", input.infraContent);
   pushIf("design-system.md", input.uxUiGuideContent);
-  pushIf("pantallas.md", input.uiScreensContent);
+
+  const uiScreensRaw = (input.uiScreensContent ?? "").trim();
+  if (uiScreensRaw) {
+    const { pantallas, uiProjectJson } = splitPantallasAndUiProject(uiScreensRaw);
+    pushIf("pantallas.md", pantallas || uiScreensRaw);
+    pushIf("ui-project.json", uiProjectJson);
+  }
   pushIf("architecture.md", input.architectureContent);
   pushIf("use-cases.md", input.useCasesContent);
   pushIf("user-stories.md", input.userStoriesContent);

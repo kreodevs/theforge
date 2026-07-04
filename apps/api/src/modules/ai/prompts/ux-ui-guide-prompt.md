@@ -182,3 +182,13 @@ Documento DESIGN.md listo para handoff a desarrollo y agentes de IA. Sirve como:
 - **No** incluyas conversación ni prefacios dentro del Bloque 1 (el documento). El Bloque 1 es SOLO el DESIGN.md.
 - El front matter YAML debe ser válido. Las comillas en strings de color y dimensiones negativas son obligatorias.
 - Las referencias a tokens en componentes (`{colors.primary}`) son obligatorias — no dupliques valores hex en componentes.
+
+# UI accionable (design-system.md) #
+
+- Este documento es la **única SSOT de tokens** visuales. No dupliques paleta en MDD ni Blueprint.
+- Frontmatter YAML válido al inicio (sin bloques ``` rotos). **Una sola paleta canónica.**
+- Tras el YAML, incluye en orden: **## Tema canónico** (`mode`, preset del stack si aplica, `stackBase`: MCP gráfico activo o `shadcn/ui`, `productionNote` opcional), **## Tokens** (tabla Token|Valor|Uso), **## Tipografía**, **## Spacing** (grid 8px), **## Radii**, **## Elevation**, **## Componentes base** (Button, Card, Input, Badge con `{colors.*}`), **## Do's and Don'ts**, **## Accesibilidad** (WCAG AA).
+- Tokens obligatorios: `primary`, `background`, `foreground`, `destructive`, `success`, `warning`, `muted`, `border`.
+- **Prohibido** mezclar tokens de fuentes distintas sin declarar cuál manda en Tema canónico.
+- No listes mapeo entidad→componente aquí; eso vive en `pantallas.md`.
+- **Anexo catálogo (opcional):** componentes usados en `pantallas.md` — **no duplicar tokens**.

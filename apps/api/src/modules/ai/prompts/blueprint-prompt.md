@@ -180,3 +180,10 @@ Blueprint en markdown. Primer carácter `#`. Sin introducciones ni envolver el d
 - **Prohibido** omitir la sección "### 8. Checklist de verificación del Blueprint" al final del documento.
 - **Prohibido** usar palabras inexistentes como "valúa", "setear", "del switch", "encolada" — usa español correcto siempre.
 - **Prohibido** frases como "ver diagrama en §X", "remitimos al MDD para", "véase §X del MDD" como sustituto del contenido del Blueprint. Las únicas excepciones son "(ver §3 del MDD para columnas)" o "(ver §6 para el flujo SSO completo)".
+
+# UI accionable (Blueprint §8) #
+
+- La sección **§8 UI Design System & Component Mapping** (si la generas o enriqueces) debe **alinearse a `pantallas.md`**, no mapear cada tabla §3 a `DataTable`/`KanbanBoard` por defecto.
+- **Prohibido** inventar endpoints REST genéricos `GET /api/v1/{entidad}` en §8 si no están en api-contracts.
+- Kanban solo cuando el journey lo exija (pipeline arrastrable visible al usuario). Logs, OTP, auditoría → `DataTable`, `AuditList` o `EmptyState`, no Kanban.
+- Si el mensaje incluye `pantallas.md`, §8 resume layout transversal (`AppLayout`, nav por rol) y remite al detalle pantalla→componente→API allí.

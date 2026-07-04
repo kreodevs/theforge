@@ -13,6 +13,19 @@ describe("spec-kit-bundle", () => {
     assert.equal(slugifySpecKitFeature("Mi App SDD"), "mi-app-sdd");
   });
 
+  it("buildSpecKitBundleFiles separa ui-project.json embebido", () => {
+    const files = buildSpecKitBundleFiles({
+      projectName: "Taskify",
+      mddContent: "# MDD",
+      uiScreensContent: "# Pantallas\n\n---UI_PROJECT_JSON---\n{\"version\":\"1.0.0\"}\n",
+    });
+    const pantallas = files.find((f) => f.path.endsWith("pantallas.md"));
+    const uiProject = files.find((f) => f.path.endsWith("ui-project.json"));
+    assert.ok(pantallas?.content.includes("# Pantallas"));
+    assert.ok(!pantallas?.content.includes("UI_PROJECT_JSON"));
+    assert.ok(uiProject?.content.includes('"version":"1.0.0"') || uiProject?.content.includes('"version": "1.0.0"'));
+  });
+
   it("buildSpecKitBundleFiles crea layout spec-kit", () => {
     const files = buildSpecKitBundleFiles({
       projectName: "Taskify",

@@ -10,6 +10,7 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import { ChangeLogService } from "../change-log/change-log.service.js";
 import { ConformanceService } from "../engine/conformance.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
+import { UiScreensService } from "../ui-mcp/ui-screens.service.js";
 import { collectConformanceGaps } from "../projects/conformance-gaps.util.js";
 import { AgentSessionLogService } from "./agent-session-log.service.js";
 
@@ -25,6 +26,7 @@ const ARTIFACT_FIELD: Partial<Record<AffectedArtifact, string>> = {
   logicFlows: "logicFlowsContent",
   infra: "infraContent",
   uxUiGuide: "uxUiGuideContent",
+  pantallas: "uiScreensContent",
   agentGovernance: "agentGovernanceContent",
 };
 
@@ -33,10 +35,12 @@ const RECONCILE_ORDER: AffectedArtifact[] = [
   "mdd",
   "spec",
   "architecture",
-  "blueprint",
+  "apiContracts",
   "useCases",
   "userStories",
-  "apiContracts",
+  "uxUiGuide",
+  "pantallas",
+  "blueprint",
   "logicFlows",
   "infra",
   "tasks",
@@ -68,6 +72,7 @@ export class DocReconcileService {
     private readonly agentSessionLog: AgentSessionLogService,
     @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
+    private readonly uiScreens: UiScreensService,
   ) {}
 
   buildGapsFeedback(description: string, evidence: DocumentationGapEvidence): string {
@@ -234,7 +239,10 @@ export class DocReconcileService {
         await this.projects.generateAgentGovernance(projectId, undefined, { forceRegenerate: false });
         break;
       case "uxUiGuide":
-        this.logger.warn(`[DocReconcile] Artefacto ${artifact} no auto-regenerable — omitido`);
+        await this.projects.generateUxUiGuide(projectId);
+        break;
+      case "pantallas":
+        await this.uiScreens.syncUiScreens(projectId);
         break;
       default:
         break;

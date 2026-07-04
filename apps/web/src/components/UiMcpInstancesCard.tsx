@@ -15,6 +15,7 @@ import {
 import { Badge, Button, Input } from "./ui";
 import { getStoredUser } from "@/utils/apiClient";
 import { cn } from "@/lib/utils";
+import { getUiMcpAdapterLabel } from "@theforge/shared-types";
 import type { UiMcpInstanceSummary } from "@/types/ui-mcp";
 import {
   activateUiMcpInstance,
@@ -135,9 +136,10 @@ export function UiMcpInstancesCard() {
       const res = await detectUiMcpInstance(inst.id);
       if (res.detection.compatible) {
         const viaAdapter = res.detection.adapterId && !res.detection.nativeCompatible;
+        const adapterLabel = getUiMcpAdapterLabel(res.detection.adapterId ?? null);
         flashSuccess(
           viaAdapter
-            ? `Compatible vía adaptador ${res.detection.adapterId}: ${res.libraryName ?? "librería"} ${res.libraryVersion ?? ""}`
+            ? `Compatible vía ${adapterLabel ?? "adaptador"}: ${res.libraryName ?? "librería"} ${res.libraryVersion ?? ""}`.trim()
             : `Compatible: ${res.libraryName ?? "librería"} ${res.libraryVersion ?? ""} (contrato ${res.contractVersion ?? "?"})`,
         );
       } else {
@@ -345,7 +347,9 @@ export function UiMcpInstancesCard() {
                       {inst.compatible ? (
                         <Badge variant="secondary" className="gap-1 text-[var(--success)]">
                           <CheckCircle2 className="h-3 w-3" aria-hidden />
-                          {inst.adapterId ? `Compatible (${inst.adapterId})` : "Compatible"}
+                          {inst.adapterId
+                            ? `Compatible (${getUiMcpAdapterLabel(inst.adapterId) ?? inst.adapterId})`
+                            : "Compatible"}
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="gap-1 text-[var(--foreground-muted)]">

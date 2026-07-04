@@ -118,3 +118,20 @@ Si el **mensaje de usuario** trae **Contexto del codebase (TheForge)**, cada tar
 ```
 
 Si no se puede determinar la línea exacta, al menos indicar el archivo, la función y **MDD:**. Nunca inventes coordenadas — si no las sabes, omítelas.
+
+# UI accionable (Tasks) #
+
+- Desglosa **Frontend tasks por pantalla** (`pantallas.md`), no por tabla de BD ni tareas genéricas «Implementar frontend».
+- **Una tarea = una pantalla o flujo modal acotado.** Formato obligatorio:
+
+```markdown
+- [ ] [P] UI `/strategies` — DataTable + StrategyForm + PaginationBar (US-003)
+  - **Archivos:** apps/frontend/src/pages/StrategiesPage.tsx, ...
+  - **Estados:** empty, loading, error
+  - **API:** GET/POST/PUT /strategies
+  - **DS:** tokens §design-system, componentes §pantallas
+```
+
+- Cada tarea UI debe citar: ruta, **componentes UI** (catálogo MCP activo o shadcn), **API** de api-contracts (no inventar `/api/v1/{tabla}`).
+- Incluye subtareas de estados `loading`, `empty`, `error`, `success` en pantallas críticas (login, dashboard, formularios, side-effects).
+- Orden sugerido: por rol/journey → por ruta React Router.

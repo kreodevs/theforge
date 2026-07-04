@@ -6,7 +6,7 @@ const MDD_WITH_SECTION3 = `# MDD
 
 ## 1. Contexto
 
-Producto de ejemplo.
+Producto para inversor y superadmin.
 
 ## 3. Modelo de Datos
 
@@ -28,36 +28,36 @@ const BASE_BLUEPRINT = `## 1. Visión
 Blueprint base sin sección UI.
 `;
 
+const PANTALLAS = `# Pantallas — Demo
+
+## Inversor
+
+| Ruta | Página | US | Componentes UI | API principal | Estados |
+|------|--------|-----|------------------|---------------|---------|
+| /dashboard | DashboardPage | US-001 | DashboardKPI | GET /health | loading, empty |
+`;
+
 describe("enrichBlueprintWithUiDesignSystem", () => {
-  it("importa extractSection3Body desde ai-analysis (smoke de rutas entre módulos)", async () => {
-    const out = await enrichBlueprintWithUiDesignSystem(MDD_WITH_SECTION3, BASE_BLUEPRINT);
+  it("anexa §8 con layout transversal y referencia a pantallas.md", async () => {
+    const out = await enrichBlueprintWithUiDesignSystem(MDD_WITH_SECTION3, BASE_BLUEPRINT, undefined, {
+      pantallasContent: PANTALLAS,
+    });
     assert.match(out, /## 8\. UI Design System & Component Mapping/);
+    assert.match(out, /pantallas\.md/);
+    assert.match(out, /AppLayout/);
+    assert.match(out, /prohibido `GET \/api\/v1\/\{tabla\}` inventado/);
+    assert.ok(out.startsWith(BASE_BLUEPRINT.trim()));
   });
 
-  it("anexa §8 con mapeo KanbanBoard para orders y DataTable para users", async () => {
+  it("sin pantallas.md advierte generar deliverable antes de UI", async () => {
     const out = await enrichBlueprintWithUiDesignSystem(MDD_WITH_SECTION3, BASE_BLUEPRINT);
-    assert.match(out, /`orders`.*KanbanBoard/s);
-    assert.match(out, /`users`.*DataTable/s);
-    assert.match(out, /`settings`.*PropertyGrid/s);
-    assert.ok(out.startsWith(BASE_BLUEPRINT.trim()));
+    assert.match(out, /Genera `pantallas\.md`/);
+    assert.match(out, /Entidades §3/);
   });
 
   it("no duplica §8 si el blueprint ya la incluye", async () => {
     const withSection = `${BASE_BLUEPRINT}\n\n## 8. UI Design System & Component Mapping\n\nExistente.\n`;
     const out = await enrichBlueprintWithUiDesignSystem(MDD_WITH_SECTION3, withSection);
     assert.equal(out, withSection);
-    assert.equal((out.match(/## 8\. UI Design System/g) ?? []).length, 1);
-  });
-
-  it("devuelve el blueprint sin cambios si el MDD no tiene §3", async () => {
-    const mddSinModelo = `## 1. Contexto\n\nSolo contexto.\n\n## 2. Stack\n\nNestJS.\n`;
-    const out = await enrichBlueprintWithUiDesignSystem(mddSinModelo, BASE_BLUEPRINT);
-    assert.equal(out, BASE_BLUEPRINT);
-  });
-
-  it("devuelve el blueprint sin cambios si §3 no tiene CREATE TABLE", async () => {
-    const mddVacio = `## 3. Modelo de Datos\n\n(Pendiente de definir.)\n`;
-    const out = await enrichBlueprintWithUiDesignSystem(mddVacio, BASE_BLUEPRINT);
-    assert.equal(out, BASE_BLUEPRINT);
   });
 });
