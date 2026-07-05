@@ -40,7 +40,7 @@ Tools opcionales del contrato nativo: `list_screens`, `get_design_tokens`.
 ## Consumo
 
 - **MDD UI/UX Design Intent** — `mdd-enrich-uiux-intent` recibe el resolver (async) vía el chokepoint `prepareMddForOutput`.
-- **Blueprint §8** — `enrichBlueprintWithUiDesignSystem` recibe el resolver (async) desde `ProjectsService`.
+- **Blueprint §9** — `enrichBlueprintWithUiDesignSystem` anexa UI tras generación (§8 reservado al checklist del prompt); recibe el resolver (async) desde `ProjectsService`.
 - **Guía UX/UI** — `ProjectsService.generateUxUiGuide` anexa la sección de design system del MCP si hay uno compatible activo.
 - **Export / handoff** — `uiScreensContent` → `{featureDir}/pantallas.md` + `ui-project.json` (solo si el MCP soporta prototipo) + espejo `docs/sdd/pantallas.md`.
 - **Formato accionable** — tablas por rol (Ruta, Página, US, Componentes UI, API, Estados); endpoints solo de api-contracts; sin MCP → shadcn/ui + design-system.

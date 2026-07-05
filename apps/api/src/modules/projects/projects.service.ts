@@ -7,6 +7,17 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { validateDocumentForPersist } from "../sessions/document-shrink.util.js";
 import { enrichBlueprintWithUiDesignSystem } from "../engine/blueprint-enrich-ui-system.js";
+import {
+  buildBlueprintQualityRetryFeedback,
+  collectBlueprintQualityGaps,
+  repairBlueprintProgrammaticGaps,
+  runBlueprintQualityChecks,
+} from "../engine/blueprint-conformance-repair.util.js";
+import {
+  buildApiRetryFeedback,
+  repairApiProgrammaticGaps,
+  runApiConformanceCheck,
+} from "../engine/api-conformance-repair.util.js";
 import { UiMcpClientService } from "../ui-mcp/ui-mcp-client.service.js";
 import { UiMcpService } from "../ui-mcp/ui-mcp.service.js";
 import {
@@ -34,14 +45,12 @@ import {
   ConformanceService,
   checkBlueprintDataModelVsMdd,
   checkBlueprintSectionHeaders,
-  checkBlueprintApiTableFormat,
-  checkBlueprintSpanishQuality,
   checkBlueprintSelfContained,
-  checkBlueprintTableFormat,
   checkApiVsMdd,
   checkLogicFlowsVsMdd,
   checkInfraVsMdd,
   extractEntities,
+  extractMddSection4Endpoints,
   extractSection,
 } from "../engine/conformance.service.js";
 import { AiService } from "../ai/ai.service.js";
@@ -1814,6 +1823,24 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
 `;
   }
 
+  /** Pre-extrae endpoints del MDD §4 para el prompt de Contratos API. */
+  private enrichMddWithApiEndpoints(mddContent: string): string {
+    const endpoints = extractMddSection4Endpoints(mddContent);
+    if (endpoints.length === 0) return mddContent;
+    const list = endpoints.map((ep) => `${ep.method} ${ep.path}`).join("\n- ");
+    return (
+      mddContent +
+      `
+
+**LISTA EXACTA DE ENDPOINTS MDD §4 (extraídos automáticamente):**
+- ${list}
+
+CADA endpoint DEBE tener EXACTAMENTE UNA fila en la tabla markdown del documento (columnas Método | Ruta | …).
+Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO omitas ninguno. NO inventes rutas que no estén en esta lista salvo /health si ya figura arriba.
+`
+    );
+  }
+
   async generateBlueprintPreview(projectId: string, gapsFeedback?: string | null): Promise<{ content: string }> {
     const project = await this.assertProjectAccess(projectId);
     const mddContent = this.constitutionMarkdown(project);
@@ -1844,79 +1871,29 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
       throw new BadRequestException("No se pudo generar el Blueprint. Intenta de nuevo.");
     }
 
-    // Verificación multi-capa del Blueprint:
-    // 1. Entidades del MDD §3 vs Blueprint
-    // 2. Secciones requeridas presentes
-    // 3. Formato de tabla API correcto
-    // 4. Calidad de español
-    // 5. Autocontenido (sin "ver §X", "véase §X", "remite al MDD")
-    // Si alguna falla y no es un reintento, regenerar con feedback combinado.
-    const entityCheck = checkBlueprintDataModelVsMdd(mddContent, blueprintContent);
-    const sectionCheck = checkBlueprintSectionHeaders(blueprintContent);
-    const tableCheck = checkBlueprintApiTableFormat(blueprintContent);
-    const spanishCheck = checkBlueprintSpanishQuality(blueprintContent);
-    const selfContainedCheck = checkBlueprintSelfContained(blueprintContent);
-    const generalTableCheck = checkBlueprintTableFormat(blueprintContent);
+    // Verificación multi-capa + un reintento LLM (siempre, aunque venga gapsFeedback del Workshop).
+    let qualityRetried = false;
+    let checks = runBlueprintQualityChecks(mddContent, blueprintContent);
+    let allGaps = collectBlueprintQualityGaps(checks);
 
-    const allGaps = [
-      ...entityCheck.gaps,
-      ...sectionCheck.gaps,
-      ...tableCheck.gaps,
-      ...spanishCheck.gaps,
-      ...selfContainedCheck.gaps,
-      ...generalTableCheck.gaps,
-    ];
-
-    const needsRetry = allGaps.length > 0 && !gapsFeedback;
-    if (needsRetry) {
-      // Feedback conciso: nombres de entidades faltantes + conteo de otros errores
-      const entityNames = entityCheck.gaps
-        .map((g) => g.match(/"([^"]+)"/)?.[1])
-        .filter(Boolean)
-        .join(", ");
-      const otherIssues: string[] = [];
-      if (sectionCheck.gaps.length) otherIssues.push(`${sectionCheck.gaps.length} secciones faltan`);
-      if (generalTableCheck.gaps.length) otherIssues.push(`${generalTableCheck.gaps.length} tablas mal formateadas`);
-      if (spanishCheck.gaps.length) otherIssues.push(`${spanishCheck.gaps.length} errores de español`);
-      if (selfContainedCheck.gaps.length) otherIssues.push(`referencias al MDD`);
-      const otherSummary = otherIssues.length ? `; además: ${otherIssues.join(", ")}` : "";
-      const gapFeedback = entityNames
-        ? `Faltan las siguientes entidades del MDD §3 en el Blueprint (DEBES incluirlas como cabeceras ### o viñetas -): ${entityNames}.${otherSummary}`
-        : allGaps.slice(0, 6).join("; ");
-      this.logger.warn(`[Blueprint] Calidad insuficiente (${entityCheck.gaps.length} entidades, ${sectionCheck.gaps.length} secciones, ${generalTableCheck.gaps.length} tablaGral, ${spanishCheck.gaps.length} español, ${selfContainedCheck.gaps.length} autocontenido) — reintentando con feedback: ${gapFeedback}`);
-      blueprintContent = await this.ai.generateBlueprint(enrichedMdd, gapFeedback, legacyOpts);
+    if (allGaps.length > 0 && !qualityRetried) {
+      qualityRetried = true;
+      const internalFeedback = buildBlueprintQualityRetryFeedback(checks);
+      const combinedFeedback = [gapsFeedback?.trim(), internalFeedback].filter(Boolean).join("\n\n");
+      this.logger.warn(
+        `[Blueprint] Calidad insuficiente (${checks.entity.gaps.length} entidades, ${checks.section.gaps.length} secciones, ` +
+          `${checks.generalTable.gaps.length} tablaGral, ${checks.spanish.gaps.length} español, ` +
+          `${checks.selfContained.gaps.length} autocontenido) — reintentando con feedback`,
+      );
+      blueprintContent = await this.ai.generateBlueprint(enrichedMdd, combinedFeedback, legacyOpts);
       blueprintContent = cleanDocumentContent(blueprintContent);
+      checks = runBlueprintQualityChecks(mddContent, blueprintContent);
+      allGaps = collectBlueprintQualityGaps(checks);
     }
 
-    // INYECCIÓN FORZOSA: si el AI sigue omitiendo entidades después del reintento,
-    // inyectarlas programáticamente para que el semáforo pase y no bloquee API contracts.
-    const finalEntityCheck = checkBlueprintDataModelVsMdd(mddContent, blueprintContent);
-    if (finalEntityCheck.gaps.length > 0) {
-      const missingNames = finalEntityCheck.gaps
-        .map((g) => g.match(/"([^"]+)"/)?.[1])
-        .filter((n): n is string => !!n);
-      if (missingNames.length > 0) {
-        this.logger.warn(
-          `[Blueprint] IA omitió ${missingNames.length} entidades tras reintento — inyectando: ${missingNames.join(", ")}`,
-        );
-        // Agregar las entidades faltantes como cabeceras ### bajo una subsección
-        const entityBlock = `\n\n### Cobertura del modelo (MDD §3) — entidades inyectadas automáticamente\n\n` +
-          missingNames.map((n) => `### ${n}`).join("\n") +
-          `\n\n`;
-        // Insertar antes de la última sección (checklist) o al final
-        const checklistMatch = blueprintContent.match(/\n#{2,3}\s*8\.?\s*checklist/i);
-        if (checklistMatch && checklistMatch.index !== undefined) {
-          blueprintContent =
-            blueprintContent.slice(0, checklistMatch.index) +
-            entityBlock +
-            blueprintContent.slice(checklistMatch.index);
-        } else {
-          blueprintContent += entityBlock;
-        }
-      }
-    }
+    blueprintContent = repairBlueprintProgrammaticGaps(mddContent, blueprintContent);
 
-    // Anexar sección 8: UI Design System & Component Mapping (enriquecimiento semántico)
+    // Anexar §9 UI Design System (§8 queda libre para checklist del prompt).
     blueprintContent = await enrichBlueprintWithUiDesignSystem(
       mddContent,
       blueprintContent,
@@ -1927,10 +1904,11 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
       },
     );
 
-    // Reflection loop (minimal): post-generation conformance re-check
-    const postGenCheck = this.conformance.checkBlueprintDataModel(mddContent, blueprintContent);
+    blueprintContent = repairBlueprintProgrammaticGaps(mddContent, blueprintContent);
+
+    const postGenCheck = this.conformance.checkBlueprint(mddContent, blueprintContent);
     if (!postGenCheck.ok) {
-      const gapSummary = postGenCheck.gaps.slice(0, 4).join("; ");
+      const gapSummary = postGenCheck.gaps.slice(0, 6).join("; ");
       this.logger.warn(`[Blueprint] Post-generation conformance gaps: ${gapSummary}`);
       await this.changeLog
         .log(projectId, "blueprintContent", `[conformance-recheck] ${gapSummary}`)
@@ -1944,14 +1922,11 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     const project = await this.assertProjectAccess(projectId);
     this.assertBlueprintCoversMddDataModel(project);
 
-    // Obtener BRD de la primera etapa (si existe)
     const mainStage = project.stages?.[0];
     const brdContent = mainStage?.brdContent ?? undefined;
-
-    // Legacy etapa 1 AS-IS + contexto TheForge cuando aplica
     const legacyOpts = await this.resolveLegacyGenerateOptions(project);
     const content = await this.ai.generateApiContracts(
-      this.constitutionMarkdown(project),
+      this.enrichMddWithApiEndpoints(this.constitutionMarkdown(project)),
       project.blueprintContent,
       gapsFeedback,
       brdContent,
@@ -1976,20 +1951,73 @@ PROHIBIDO escribir los nombres como texto plano suelto. DEBEN ser cabeceras ### 
     const project = await this.assertProjectAccess(projectId);
     this.assertBlueprintCoversMddDataModel(project);
 
-    // Obtener BRD de la primera etapa (si existe)
     const mainStage = project.stages?.[0];
     const brdContent = mainStage?.brdContent ?? undefined;
-
-    // Legacy etapa 1 AS-IS + contexto TheForge cuando aplica
+    const mddContent = this.constitutionMarkdown(project);
+    const enrichedMdd = this.enrichMddWithApiEndpoints(mddContent);
     const legacyOpts = await this.resolveLegacyGenerateOptions(project);
-    const content = await this.ai.generateApiContracts(
-      this.constitutionMarkdown(project),
+
+    let apiContent = await this.ai.generateApiContracts(
+      enrichedMdd,
       project.blueprintContent,
       gapsFeedback,
       brdContent,
       legacyOpts,
     );
-    return this.update(projectId, { apiContractsContent: cleanDocumentContent(content) });
+    apiContent = cleanDocumentContent(apiContent);
+
+    if (gapsFeedback && apiContent.length < 80) {
+      this.logger.warn(
+        `[API] Resultado vacío/corto (${apiContent.length} chars) con gapsFeedback — reintentando sin gaps`,
+      );
+      apiContent = cleanDocumentContent(
+        await this.ai.generateApiContracts(
+          enrichedMdd,
+          project.blueprintContent,
+          null,
+          brdContent,
+          legacyOpts,
+        ),
+      );
+    }
+
+    if (apiContent.length < 80) {
+      throw new BadRequestException("No se pudo generar Contratos API. Intenta de nuevo.");
+    }
+
+    let qualityRetried = false;
+    let apiCheck = runApiConformanceCheck(mddContent, apiContent);
+    if (!apiCheck.ok && !qualityRetried) {
+      qualityRetried = true;
+      const internalFeedback = buildApiRetryFeedback(apiCheck);
+      const combinedFeedback = [gapsFeedback?.trim(), internalFeedback].filter(Boolean).join("\n\n");
+      this.logger.warn(
+        `[API] Conformidad insuficiente (${apiCheck.missingInApi.length} faltantes, ${apiCheck.extraInApi.length} extra) — reintentando`,
+      );
+      apiContent = cleanDocumentContent(
+        await this.ai.generateApiContracts(
+          enrichedMdd,
+          project.blueprintContent,
+          combinedFeedback,
+          brdContent,
+          legacyOpts,
+        ),
+      );
+      apiCheck = runApiConformanceCheck(mddContent, apiContent);
+    }
+
+    apiContent = repairApiProgrammaticGaps(mddContent, apiContent);
+
+    const postCheck = this.conformance.checkApi(mddContent, apiContent);
+    if (!postCheck.ok) {
+      const gapSummary = [...postCheck.missingInApi, ...postCheck.extraInApi].slice(0, 6).join("; ");
+      this.logger.warn(`[API] Post-generation conformance gaps: ${gapSummary}`);
+      await this.changeLog
+        .log(projectId, "apiContractsContent", `[conformance-recheck] ${gapSummary}`)
+        .catch(() => {});
+    }
+
+    return this.update(projectId, { apiContractsContent: apiContent });
   }
 
   async generateLogicFlows(projectId: string, gapsFeedback?: string | null) {

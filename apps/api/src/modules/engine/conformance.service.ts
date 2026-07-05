@@ -35,6 +35,7 @@ const STACK_CANONICAL: Record<string, string> = {
   postgresql: "postgresql",
   mysql: "mysql",
   sqlite: "sqlite",
+  redis: "redis",
   tailwind: "tailwindcss",
   tailwindcss: "tailwindcss",
   vite: "vite",
@@ -62,7 +63,7 @@ function extractStackKeywords(text: string): Set<string> {
   const patterns = [
     /\b(nestjs|nestjs\s*v?\d*)\b/gi,
     /\b(react|vue|angular|svelte)\b/gi,
-    /\b(postgresql|postgres|mysql|sqlite)\b/gi,
+    /\b(postgresql|postgres|mysql|sqlite|redis)\b/gi,
     /\b(prisma|typeorm)\b/gi,
     /\b(docker|dockerfile|docker-compose)\b/gi,
     /\b(typescript|javascript)\b/gi,
@@ -176,46 +177,84 @@ function defaultMethodForPath(path: string): string {
   return "GET";
 }
 
-/** Extrae métodos + rutas (GET /api/..., POST /auth/...) de un bloque. Acepta líneas sueltas y filas de tabla Markdown (| POST | /api/v1/auth/login | ...). */
-function extractEndpoints(text: string): Array<{ method: string; path: string }> {
+/** Normaliza ruta HTTP para comparación (params `{id}` / `:id` → `/*`, sin query ni trailing slash). */
+export function normalizeApiPathForCompare(path: string): string {
+  let p = path.replace(/`/g, "").trim().split("?")[0] ?? "";
+  if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
+  p = p.toLowerCase();
+  p = p.replace(/\{[^}]+\}/g, "/*");
+  p = p.replace(/:[a-z_][a-z0-9_]*/gi, "/*");
+  return p;
+}
+
+const HTTP_METHODS = "GET|POST|PUT|PATCH|DELETE";
+const API_PATH_CAPTURE = String.raw`(\`[^\`]+\`|\/(?:[\w\-{}:]+(?:\/[\w\-{}:]*)*))`;
+
+/** Extrae métodos + rutas (GET /api/..., POST /auth/...) de un bloque. Acepta líneas sueltas y filas de tabla Markdown. */
+export function extractEndpoints(text: string): Array<{ method: string; path: string }> {
   const endpoints: Array<{ method: string; path: string }> = [];
   const seen = new Set<string>();
   const add = (method: string, path: string) => {
-    const key = `${method.toUpperCase()} ${path.replace(/\/$/, "").toLowerCase()}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    endpoints.push({ method: method.toUpperCase(), path });
+    const pathClean = path.replace(/`/g, "").trim();
+    if (!pathClean.startsWith("/")) return;
+    const normalized = normEp({ method, path: pathClean });
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    endpoints.push({ method: method.toUpperCase(), path: pathClean });
   };
   const lines = text.split(/\r?\n/);
   for (const line of lines) {
-    const methodPath = line.match(/\b(GET|POST|PUT|PATCH|DELETE)\s+`?(\/[\/\w:-]+)`?/i);
+    const methodPath = line.match(
+      new RegExp(`\\b(${HTTP_METHODS})\\s+${API_PATH_CAPTURE}`, "i"),
+    );
     if (methodPath) {
-      add(methodPath[1], methodPath[2]);
+      add(methodPath[1]!, methodPath[2]!);
       continue;
     }
-    const tableRow = line.match(/\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*`?(\/[\/\w:-]+)`?/i);
-    if (tableRow) {
-      add(tableRow[1], tableRow[2]);
+    const tableMethodFirst = line.match(
+      new RegExp(`\\|\\s*(${HTTP_METHODS})\\s*\\|\\s*${API_PATH_CAPTURE}`, "i"),
+    );
+    if (tableMethodFirst) {
+      add(tableMethodFirst[1]!, tableMethodFirst[2]!);
       continue;
     }
-    if (/\/api\/|\/auth\//.test(line)) {
-      const path = line.match(/`?(\/[\/\w:-]+)`?/)?.[1];
-      if (path) {
-        add(defaultMethodForPath(path), path);
-      }
+    const tablePathFirst = line.match(
+      new RegExp(`\\|\\s*${API_PATH_CAPTURE}\\s*\\|\\s*(${HTTP_METHODS})`, "i"),
+    );
+    if (tablePathFirst) {
+      add(tablePathFirst[2]!, tablePathFirst[1]!);
+      continue;
+    }
+    if (/\/api\/|\/auth\/|\/health/.test(line)) {
+      const path = line.match(new RegExp(API_PATH_CAPTURE))?.[1];
+      if (path) add(defaultMethodForPath(path.replace(/`/g, "")), path);
     }
   }
   return endpoints;
 }
 
-/** Normaliza endpoint para comparación (sin trailing slash, lowercase path). */
-function normEp(ep: { method: string; path: string }): string {
+/** Endpoints declarados en MDD §4 (Contratos de API). */
+export function extractMddSection4Endpoints(mddContent: string): Array<{ method: string; path: string }> {
+  const section4 = extractSection(
+    mddContent,
+    /^#+\s*(?:4\.\s*)?(?:contratos\s+de\s+api|api\s+contracts|endpoints)/im,
+  );
+  return extractEndpoints(section4);
+}
+
+/** Normaliza endpoint para comparación (sin trailing slash, lowercase path, params unificados). */
+export function normEp(ep: { method: string; path: string }): string {
   let method = ep.method.toUpperCase();
-  const path = ep.path.replace(/\/$/, "").toLowerCase();
-  if (method === "GET" && defaultMethodForPath(path) === "POST") {
+  const path = normalizeApiPathForCompare(ep.path);
+  if (method === "GET" && defaultMethodForPath(ep.path.replace(/`/g, "")) === "POST") {
     method = "POST";
   }
   return `${method} ${path}`;
+}
+
+function apiEndpointsMatch(mddNorm: string, apiNorm: string): boolean {
+  if (mddNorm === apiNorm) return true;
+  return mddNorm.toLowerCase() === apiNorm.toLowerCase();
 }
 
 /** Longitud mínima para considerar un documento como "con contenido" (evitar falsos Cumple cuando está vacío). */
@@ -484,6 +523,26 @@ export function checkBlueprintDataModelVsMdd(
   return { ok: gaps.length === 0, gaps };
 }
 
+/** Tecnologías de §2 presentes en el MDD pero ausentes por nombre en el Blueprint. */
+export function getMissingBlueprintStackKeywords(
+  mddContent: string | null,
+  blueprintContent: string | null,
+): string[] {
+  if (!mddContent?.trim() || !blueprintContent?.trim()) return [];
+  const section2 = extractSection(
+    mddContent,
+    /^#+\s*(?:2\.\s*)?(?:arquitectura\s+y\s+stack|arquitectura\s+stack)/im,
+  );
+  if (section2.length <= 20) return [];
+  const mddStack = extractStackKeywords(section2);
+  const blueprintStack = extractStackKeywords(blueprintContent);
+  const missing: string[] = [];
+  for (const kw of mddStack) {
+    if (kw && !blueprintStack.has(kw)) missing.push(kw);
+  }
+  return missing;
+}
+
 /**
  * Comprueba conformidad del Blueprint con el MDD (§2 Arquitectura y Stack, §3 Modelo de Datos).
  */
@@ -537,11 +596,15 @@ export function checkApiVsMdd(mddContent: string | null, apiContent: string | nu
   }
   const apiEndpoints = new Set(extractEndpoints(apiContent).map(normEp));
   for (const ep of mddEndpoints) {
-    const match = apiEndpoints.has(ep) || Array.from(apiEndpoints).some((a) => a.toLowerCase() === ep.toLowerCase());
+    const match =
+      apiEndpoints.has(ep) ||
+      Array.from(apiEndpoints).some((a) => apiEndpointsMatch(ep, a));
     if (!match) missingInApi.push(ep);
   }
   for (const ep of apiEndpoints) {
-    const match = mddEndpoints.has(ep) || Array.from(mddEndpoints).some((m) => m.toLowerCase() === ep.toLowerCase());
+    const match =
+      mddEndpoints.has(ep) ||
+      Array.from(mddEndpoints).some((m) => apiEndpointsMatch(m, ep));
     if (!match) extraInApi.push(ep);
   }
   const ok = missingInApi.length === 0;

@@ -40,7 +40,7 @@ export async function enrichBlueprintWithUiDesignSystem(
   resolver: UiComponentResolver = heuristicUiComponentResolver,
   options: BlueprintUiEnrichOptions = {},
 ): Promise<string> {
-  if (/^##\s*[89]\.?\s*UI\s+Design\s+System/im.test(existingBlueprint)) {
+  if (/^##\s*9\.?\s*UI\s+Design\s+System/im.test(existingBlueprint)) {
     return existingBlueprint;
   }
 
@@ -50,7 +50,7 @@ export async function enrichBlueprintWithUiDesignSystem(
 
   const lines: string[] = [];
   lines.push("");
-  lines.push("## 8. UI Design System & Component Mapping");
+  lines.push("## 9. UI Design System & Component Mapping");
   lines.push("");
 
   if (hasPantallasDeliverable(pantallas)) {
