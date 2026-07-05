@@ -26,10 +26,7 @@ import {
 import { callUiMcpToolText, type UiMcpConnection } from "../ui-mcp-transport.util.js";
 import type { UiMcpAdapter } from "./ui-mcp-adapter.types.js";
 
-import {
-  UI_MCP_LEGACY_KREO_ADAPTER_ID,
-  UI_MCP_SEMANTIC_CATALOG_ADAPTER_ID,
-} from "@theforge/shared-types";
+import { UI_MCP_SEMANTIC_CATALOG_ADAPTER_ID } from "@theforge/shared-types";
 
 const DEFAULT_LIBRARY = { name: "ui-component-mcp", version: "1.0" } as const;
 

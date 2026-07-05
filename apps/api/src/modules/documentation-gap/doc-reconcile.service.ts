@@ -2,7 +2,6 @@ import {
   forwardRef,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import type { AffectedArtifact, DocumentationGapEvidence } from "@theforge/shared-types";
@@ -63,8 +62,6 @@ interface ReconcileSnapshot {
 
 @Injectable()
 export class DocReconcileService {
-  private readonly logger = new Logger(DocReconcileService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly changeLog: ChangeLogService,

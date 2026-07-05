@@ -89,15 +89,16 @@ export function projectConstitutionMarkdown(project: ProjectWithStages): string 
   return "";
 }
 
-/** Deliverables for SDD mirrors / handoff ZIP (respects stage snapshot in analyze mode). */
+/** Strips optional ui-project.json annex from stored uiScreensContent for handoff. */
 export function exportPantallasMarkdown(raw: string | null | undefined): string | null | undefined {
   const trimmed = raw?.trim();
   if (!trimmed) return raw;
   const { pantallas } = splitPantallasAndUiProject(trimmed);
-  return (pantallas.trim() || trimmed);
+  return pantallas.trim() || trimmed;
 }
 
-function buildProjectDeliverableExportInput(
+/** Deliverables for SDD mirrors / handoff ZIP (respects stage snapshot in analyze mode). */
+export function buildProjectDeliverableExportInput(
   project: ProjectWithStages,
   stage: Stage | null | undefined,
 ): ProjectDeliverableExportInput {
