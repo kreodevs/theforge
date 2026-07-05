@@ -183,7 +183,7 @@ Blueprint en markdown. Primer carácter `#`. Sin introducciones ni envolver el d
 
 # UI accionable (Blueprint §8) #
 
-- La sección **§8 UI Design System & Component Mapping** (si la generas o enriqueces) debe **alinearse a `pantallas.md`**, no mapear cada tabla §3 a `DataTable`/`KanbanBoard` por defecto.
+- La sección **§9 UI Design System & Component Mapping** (anexada automáticamente tras generación) debe **alinearse a `pantallas.md`**, no mapear cada tabla §3 a `DataTable`/`KanbanBoard` por defecto.
 - **Prohibido** inventar endpoints REST genéricos `GET /api/v1/{entidad}` en §8 si no están en api-contracts.
 - Kanban solo cuando el journey lo exija (pipeline arrastrable visible al usuario). Logs, OTP, auditoría → `DataTable`, `AuditList` o `EmptyState`, no Kanban.
 - Si el mensaje incluye `pantallas.md`, §8 resume layout transversal (`AppLayout`, nav por rol) y remite al detalle pantalla→componente→API allí.

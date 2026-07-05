@@ -42,7 +42,7 @@ describe("enrichBlueprintWithUiDesignSystem", () => {
     const out = await enrichBlueprintWithUiDesignSystem(MDD_WITH_SECTION3, BASE_BLUEPRINT, undefined, {
       pantallasContent: PANTALLAS,
     });
-    assert.match(out, /## 8\. UI Design System & Component Mapping/);
+    assert.match(out, /## 9\. UI Design System & Component Mapping/);
     assert.match(out, /pantallas\.md/);
     assert.match(out, /AppLayout/);
     assert.match(out, /prohibido `GET \/api\/v1\/\{tabla\}` inventado/);
@@ -56,7 +56,7 @@ describe("enrichBlueprintWithUiDesignSystem", () => {
   });
 
   it("no duplica §8 si el blueprint ya la incluye", async () => {
-    const withSection = `${BASE_BLUEPRINT}\n\n## 8. UI Design System & Component Mapping\n\nExistente.\n`;
+    const withSection = `${BASE_BLUEPRINT}\n\n## 9. UI Design System & Component Mapping\n\nExistente.\n`;
     const out = await enrichBlueprintWithUiDesignSystem(MDD_WITH_SECTION3, withSection);
     assert.equal(out, withSection);
   });
