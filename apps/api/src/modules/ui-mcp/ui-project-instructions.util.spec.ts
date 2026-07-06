@@ -56,6 +56,7 @@ describe("buildUiProjectInstructions", () => {
     });
     const combined = appendUiProjectToPantallas("# Pantallas\n", instructions);
     assert.match(combined, new RegExp(UI_PROJECT_JSON_MARKER));
+    assert.match(combined, /```json\n/);
     const { pantallas, uiProjectJson } = splitPantallasAndUiProject(combined);
     assert.match(pantallas, /^# Pantallas/);
     assert.ok(uiProjectJson?.includes('"version": "1.0.0"'));

@@ -65,6 +65,7 @@ import {
 } from "../constants/workshopHeaderToolbar";
 import {
   agentGovernanceScaffoldHasContent,
+  formatPantallasMarkdownForPreview,
   isLegacyChangeGateSatisfied,
   isLegacyIntegrationHandoffGatePending,
   isPhase0BorradorJson,
@@ -4631,7 +4632,11 @@ export default function WorkshopView({
                   icon={MonitorSmartphone}
                   title="Pantallas / UI Screens Spec"
                   description="Pantallas con componentes reales del MCP gráfico conectado. Pulsa «Sincronizar Pantallas» para (re)generarlo desde las entidades del MDD."
-                  content={uiScreensContent}
+                  content={
+                    uiScreensContent
+                      ? formatPantallasMarkdownForPreview(uiScreensContent)
+                      : uiScreensContent
+                  }
                   onContentChange={() => {}}
                   onSave={() => {}}
                   isDirty={false}

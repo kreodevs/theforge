@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { exportPantallasMarkdownOnly, splitPantallasAndUiProject } from "@theforge/shared-types";
 
 export interface DocumentsForZip {
   dbgaContent: string | null;
@@ -46,7 +47,15 @@ export async function downloadDocumentsZip(
 
   let count = 0;
   for (const [filename, content] of entries) {
-    const trimmed = (content ?? "").trim();
+    let trimmed = (content ?? "").trim();
+    if (filename === "pantallas.md" && trimmed.length > 0) {
+      trimmed = exportPantallasMarkdownOnly(trimmed);
+      const { uiProjectJson } = splitPantallasAndUiProject(content ?? "");
+      if (uiProjectJson?.trim()) {
+        zip.file("ui-project.json", uiProjectJson.trim(), { createFolders: false });
+        count += 1;
+      }
+    }
     if (trimmed.length > 0) {
       zip.file(filename, trimmed, { createFolders: false });
       count += 1;

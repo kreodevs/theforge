@@ -233,5 +233,5 @@ export function appendUiProjectToPantallas(
 ): string {
   const base = pantallasMd.trimEnd();
   const json = JSON.stringify(instructions, null, 2);
-  return `${base}\n\n${UI_PROJECT_JSON_MARKER}\n${json}\n`;
+  return `${base}\n\n${UI_PROJECT_JSON_MARKER}\n\n\`\`\`json\n${json}\n\`\`\`\n`;
 }
