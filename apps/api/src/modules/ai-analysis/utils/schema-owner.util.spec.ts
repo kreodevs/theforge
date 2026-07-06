@@ -96,7 +96,7 @@ describe("composeSection3FromStructured", () => {
     assert.ok(!/updated_at TIMESTAMPTZ NOT NULL DEFAULT now\(\)\s*,\s*\n\s*,/i.test(userTable));
   });
 
-  it("reduce blockers §3 y mejora gate Peludo-like", () => {
+  it("reduce blockers §3 y mejora gate Peludo-like", async () => {
     const before = detectSection3CompositionBlockers(PELUDO_BROKEN);
     assert.ok(before.some((b) => b.includes("outbox-like duplicadas")));
     const composed = composeSection3FromStructured(PELUDO_BROKEN);
