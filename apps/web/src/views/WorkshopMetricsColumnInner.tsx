@@ -14,14 +14,23 @@ import {
   Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui";
 import { LlevarAlRepoWizardDialog } from "@/components/LlevarAlRepoWizardDialog";
-import { AgentSessionLogPanel } from "@/components/AgentSessionLogPanel";
-import { PendingDocumentationGapsPanel } from "@/components/PendingDocumentationGapsPanel";
 import { AnalyzeDashboard } from "@/components/AnalyzeDashboard";
-import type { SddAnalyzeReport } from "@theforge/shared-types";
+import type { SddAnalyzeReport, MddDeliveryGateResult } from "@theforge/shared-types";
 import { agentGovernanceScaffoldHasContent } from "@theforge/shared-types";
 import { useWorkshopStore, type Status } from "../store/workshopStore";
 import { calculateCostFromMdd } from "../utils/costCalculator";
+import { apiFetch, API_BASE } from "@/utils/apiClient";
 
 /** Flat cards: border + bg only — avoids muddy stacked shadows next to the metrics flyout in light mode */
 const WORKSHOP_METRICS_CARD =
@@ -79,6 +88,12 @@ function sortWorkshopDeliveryRoleEntries(entries: [string, number][]): [string, 
     });
 }
 
+function formatDeliveryGateBlockersHint(gate: MddDeliveryGateResult, maxItems = 2): string {
+  const items = gate.blockers.slice(0, maxItems);
+  const suffix = gate.blockers.length > items.length ? ` (+${gate.blockers.length - items.length} más)` : "";
+  return `${items.join(" · ")}${suffix}`;
+}
+
 export interface WorkshopMetricsColumnInnerProps {
   projectId: string;
   conformanceUseLlm: boolean;
@@ -100,6 +115,9 @@ export function WorkshopMetricsColumnInner({
 }: WorkshopMetricsColumnInnerProps) {
   const project = useWorkshopStore((s) => s.project);
   const liveMetrics = useWorkshopStore((s) => s.liveMetrics);
+  const deliveryGateStore = useWorkshopStore((s) => s.deliveryGate);
+  const deliveryGate = deliveryGateStore ?? liveMetrics?.deliveryGate ?? null;
+  const deliveryGateOk = deliveryGate == null || deliveryGate.ok;
   const mddContent = useWorkshopStore((s) => s.mddContent);
   const infraContentField = useWorkshopStore((s) => s.infraContent);
   const specContentField = useWorkshopStore((s) => s.specContent);
@@ -112,7 +130,8 @@ export function WorkshopMetricsColumnInner({
     [mddContent, project?.mddContent],
   );
   const projectStatus: Status = project?.status ?? "ROJO";
-  const semaphoreGreen = liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
+  const semaphoreGreen =
+    liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
   const hasSpec = (specContent ?? "").trim().length > 0;
   const complexity = project?.complexity ?? "HIGH";
   const isLegacyProject = project?.projectType === "LEGACY";
@@ -138,6 +157,8 @@ export function WorkshopMetricsColumnInner({
   const [repoWizardOpen, setRepoWizardOpen] = useState(false);
   const [showAnalyze, setShowAnalyze] = useState(false);
   const [analyzeReport, setAnalyzeReport] = useState<SddAnalyzeReport | null>(null);
+  const [gapConfirmOpen, setGapConfirmOpen] = useState(false);
+  const [gapConfirmPendingCount, setGapConfirmPendingCount] = useState(0);
 
   const isLegacyBaselineStage = useMemo(() => {
     if (!isLegacyProject) return false;
@@ -202,6 +223,12 @@ export function WorkshopMetricsColumnInner({
       return `Flujos legacy: cobertura §5 ${logicFlowsS5Coverage.coveragePercent}% (objetivo ${logicFlowsS5Coverage.targetPercent}%). Regenera flujos o la cascada legacy.`;
     }
     if (canGenerate) return null;
+    if (!deliveryGateOk && deliveryGate) {
+      if (deliveryGate.blockers.length > 0) {
+        return `Gate de entrega MDD (${deliveryGate.score}/100): ${formatDeliveryGateBlockersHint(deliveryGate)}`;
+      }
+      return `Gate de entrega MDD (${deliveryGate.score}/100): corrige advertencias antes de generar entregables.`;
+    }
     if (
       isLegacyProject &&
       effectiveMddTrimmed.length === 0 &&
@@ -227,6 +254,8 @@ export function WorkshopMetricsColumnInner({
     activeLegacyState?.codebaseDoc,
     semaphoreGreen,
     hasSpec,
+    deliveryGateOk,
+    deliveryGate,
   ]);
 
   const generateBlueprint = useWorkshopStore((s) => s.generateBlueprint);
@@ -276,7 +305,32 @@ export function WorkshopMetricsColumnInner({
     [costDisplay.teamStructure],
   );
 
-  const effectiveStatus = mddEmpty ? "red" : (liveMetrics?.status ?? (precisionScore <= 40 ? "red" : precisionScore <= 90 ? "yellow" : "green"));
+  const canGenerateDeliverables = useMemo(() => {
+    if (isLegacyProject) return canGenerate;
+    return canGenerate;
+  }, [isLegacyProject, canGenerate]);
+
+  const hasKnownGenerationGaps = useMemo(() => {
+    const deliveryGateIssue = !deliveryGateOk && deliveryGate != null;
+    const conformanceIssues = Boolean(
+      conformance &&
+        (!conformance.blueprint.ok ||
+          !conformance.blueprintDataModel.ok ||
+          !conformance.api.ok ||
+          !conformance.logicFlows.ok ||
+          !conformance.infra.ok),
+    );
+    const crossDoc = (crossDocumentGaps?.length ?? 0) > 0;
+    return deliveryGateIssue || conformanceIssues || crossDoc;
+  }, [deliveryGateOk, deliveryGate, conformance, crossDocumentGaps]);
+
+  const effectiveStatus = mddEmpty
+    ? "red"
+    : deliveryGate && !deliveryGate.ok
+      ? deliveryGate.blockers.length > 0
+        ? "red"
+        : "yellow"
+      : liveMetrics?.status ?? (precisionScore <= 40 ? "red" : precisionScore <= 90 ? "yellow" : "green");
   const semaphoreConfig =
     effectiveStatus === "red"
       ? {
@@ -305,15 +359,54 @@ export function WorkshopMetricsColumnInner({
   const SemaphoreIcon = semaphoreConfig.icon;
 
   const handleGenerateDeliverables = useCallback(async () => {
-    if (!projectId || !canGenerate || cascadeRunning) return;
+    if (!projectId || !canGenerateDeliverables || cascadeRunning) return;
     setError(null);
     if (isLegacyProject) {
       await legacyGenerateDeliverables(projectId);
       if (projectId) fetchProject(projectId);
-    } else {
-      await generateDeliverablesCascade(projectId);
+      return;
     }
-  }, [projectId, canGenerate, cascadeRunning, setError, isLegacyProject, legacyGenerateDeliverables, fetchProject, generateDeliverablesCascade]);
+
+    let pendingCount = 0;
+    if (activeStageId) {
+      try {
+        const r = await apiFetch(
+          `${API_BASE}/projects/${projectId}/stages/${activeStageId}/documentation-gaps?status=pending`,
+        );
+        if (r.ok) {
+          const data = (await r.json()) as { gaps?: unknown[] };
+          pendingCount = data.gaps?.length ?? 0;
+        }
+      } catch {
+        /* confirmación opcional */
+      }
+    }
+
+    if (hasKnownGenerationGaps || pendingCount > 0) {
+      setGapConfirmPendingCount(pendingCount);
+      setGapConfirmOpen(true);
+      return;
+    }
+
+    await generateDeliverablesCascade(projectId);
+  }, [
+    projectId,
+    canGenerateDeliverables,
+    cascadeRunning,
+    setError,
+    isLegacyProject,
+    legacyGenerateDeliverables,
+    fetchProject,
+    generateDeliverablesCascade,
+    activeStageId,
+    hasKnownGenerationGaps,
+  ]);
+
+  const handleConfirmGenerateWithGaps = useCallback(async () => {
+    if (!projectId) return;
+    setGapConfirmOpen(false);
+    await generateDeliverablesCascade(projectId, { acknowledgeGaps: true });
+  }, [projectId, generateDeliverablesCascade]);
 
   return (
     <div
@@ -360,9 +453,45 @@ export function WorkshopMetricsColumnInner({
                 </p>
                 <p className="text-[11px] text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--foreground))]">
                   Precisión {precisionScore}%
+                  {deliveryGate ? ` · Gate ${deliveryGate.score}/100` : ""}
                 </p>
               </div>
             </div>
+            {deliveryGate && !deliveryGate.ok ? (
+              <div
+                role="status"
+                className={cn(
+                  WORKSHOP_METRICS_CARD,
+                  deliveryGate.blockers.length > 0
+                    ? "border-l-4 border-l-[color-mix(in_oklch,var(--destructive)_62%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_7%,var(--card))]"
+                    : "border-l-4 border-l-[color-mix(in_oklch,var(--warning)_55%,var(--border))] bg-[color-mix(in_oklch,var(--warning)_8%,var(--card))]",
+                  "space-y-1.5 p-2.5",
+                )}
+              >
+                <p className="text-[11px] font-semibold text-[var(--foreground)]">
+                  Gate de entrega MDD — {deliveryGate.ok ? "aprobado" : "bloqueado"}
+                </p>
+                {deliveryGate.blockers.length > 0 ? (
+                  <ul className="list-disc space-y-0.5 pl-4 text-[11px] leading-snug text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]">
+                    {deliveryGate.blockers.slice(0, 4).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                    {deliveryGate.blockers.length > 4 ? (
+                      <li className="list-none pl-0 text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--foreground))]">
+                        +{deliveryGate.blockers.length - 4} bloqueo(s) más
+                      </li>
+                    ) : null}
+                  </ul>
+                ) : null}
+                {deliveryGate.warnings.length > 0 ? (
+                  <ul className="list-disc space-y-0.5 pl-4 text-[11px] leading-snug text-[color-mix(in_oklch,var(--warning)_88%,var(--foreground))]">
+                    {deliveryGate.warnings.slice(0, 3).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={() => onOpenAuditModal()}
@@ -937,11 +1066,11 @@ export function WorkshopMetricsColumnInner({
             <button
               type="button"
               onClick={handleGenerateDeliverables}
-              disabled={!canGenerate || cascadeRunning || mddReviewing}
+              disabled={!canGenerateDeliverables || cascadeRunning || mddReviewing}
               aria-describedby={cascadeCtaHint ? "workshop-cascade-cta-hint" : undefined}
               className={cn(
                 "flex w-full min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color-mix(in_oklch,var(--muted)_50%,var(--card))]",
-                canGenerate && !cascadeRunning && !mddReviewing
+                canGenerateDeliverables && !cascadeRunning && !mddReviewing
                   ? "bg-[var(--success)] text-[var(--success-foreground)] hover:bg-[color-mix(in_oklch,var(--success)_88%,black)]"
                   : "cursor-not-allowed border border-dashed border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_28%,var(--card))] text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))]",
               )}
@@ -951,8 +1080,8 @@ export function WorkshopMetricsColumnInner({
                   <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
                   Generando entregables…
                 </>
-              ) : canGenerate ? (
-                "Generar entregables"
+              ) : canGenerateDeliverables ? (
+                !deliveryGateOk ? "Generar entregables (con advertencias)" : "Generar entregables"
               ) : !semaphoreGreen ? (
                 "Semáforo en verde requerido"
               ) : (
@@ -1014,6 +1143,47 @@ export function WorkshopMetricsColumnInner({
             onSuccess={(msg) => useWorkshopStore.getState().setError(msg)}
           />
 
+          <AlertDialog open={gapConfirmOpen} onOpenChange={setGapConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Generar con gaps pendientes</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-2 text-sm text-[color-mix(in_oklch,var(--foreground-subtle)_90%,var(--foreground))]">
+                    <p>
+                      Hay discrepancias sin resolver. Puedes generar entregables igualmente; los conflictos
+                      quedarán visibles en Cambios pendientes para que decidas si reconciliar.
+                    </p>
+                    <ul className="list-disc space-y-1 pl-4 text-xs">
+                      {!deliveryGateOk && deliveryGate ? (
+                        <li>
+                          Gate MDD ({deliveryGate.score}/100):{" "}
+                          {deliveryGate.blockers[0] ?? "advertencias pendientes"}
+                        </li>
+                      ) : null}
+                      {hasKnownGenerationGaps && conformance?.blueprintDataModel?.ok === false ? (
+                        <li>Blueprint no cubre el modelo de datos del MDD (§3).</li>
+                      ) : null}
+                      {(crossDocumentGaps?.length ?? 0) > 0 ? (
+                        <li>{crossDocumentGaps.length} gap(s) transversal(es) entre documentos.</li>
+                      ) : null}
+                      {gapConfirmPendingCount > 0 ? (
+                        <li>
+                          {gapConfirmPendingCount} cambio(s) de documentación pendiente(s) de aprobación.
+                        </li>
+                      ) : null}
+                    </ul>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void handleConfirmGenerateWithGaps()}>
+                  Generar de todos modos
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
           {/* Feedback del auditor debajo del semáforo (selectores Zustand → re-render al actualizar liveMetrics / auditorFeedback) */}
           {auditorFeedback ? (
             <div className="max-h-28 shrink-0 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-[11px] leading-snug text-[color-mix(in_oklch,var(--foreground)_90%,var(--muted-foreground))] shadow-sm">
@@ -1023,15 +1193,6 @@ export function WorkshopMetricsColumnInner({
               {auditorFeedback}
             </div>
           ) : null}
-
-          <PendingDocumentationGapsPanel
-            projectId={projectId}
-            stageId={activeStageId}
-            onResolved={() => {
-              if (projectId) void fetchProject(projectId);
-            }}
-          />
-          <AgentSessionLogPanel projectId={projectId} stageId={activeStageId} />
       </div>
     </div>
   );

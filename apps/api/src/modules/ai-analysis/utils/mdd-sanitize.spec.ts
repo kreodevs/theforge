@@ -1,16 +1,25 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
+  alignDeliverableMarkdownWithMddSecurity,
+  ensurePostMvpUiSurfaceBanner,
   applyCrossConsistencyPatches,
   applyDeploymentStackDirectiveToDraft,
   applyDeterministicCrossConsistencyFixes,
   deduplicateAndReorderMddSections,
   detectCrossConsistencyIssues,
   detectDuplicateOutboxTables,
+  detectJwtAlgorithmMismatch,
+  detectSuspiciousUniqueConstraints,
   deduplicateOutboxTablesInDraft,
+  deduplicateUatSections,
+  extractNodeVersionFromSection2,
   draftHasRequestIdDualApprovalApi,
   ensureOutboxTableInDraft,
   ensureSection6WhenSection7Present,
+  ensureSecurityLockoutInSection6,
+  ensureSecurityTableStubsFromSection6,
+  SECURITY_LOCKOUT_DEFAULT_PARAGRAPH,
   getSection6Or7Range,
   mddHasDuplicateSectionHeadings,
   stripTrailingDuplicateMddSections,
@@ -19,13 +28,22 @@ import {
   fixDualApprovalSchemaInDraft,
   getSectionsToPreserveFromExecutorPlan,
   stripMeshDirectivesFromDraft,
+  stripStrayParenAfterJsonCodeBlocks,
+  repairNestedJsonFencesInDraft,
+  repairSqlDetachedCheckConstraints,
+  sanitizeAllSqlBlocksInDraft,
+  sanitizeMddAtPersist,
+  sanitizeSqlBrokenCommentsAndProse,
+  stripAlternateBackendFromSection1,
+  countMddSection3CreateTables,
+  stripUiUxSectionForApiOnlyMvp,
+  mddExcludesWebUiSurface,
   isMddSectionPlaceholderBody,
   normalizeMddFormat,
   normalizeMddEnglishSubheadings,
   parseCrossConsistencyPatches,
   preserveUntouchedMddSectionsFromBaseline,
   sanitizeSeguridadIntegracionRawJson,
-  sanitizeSqlBrokenCommentsAndProse,
   validateMddStructure,
 } from "./mdd-sanitize.js";
 import { expandSectionsToRun } from "../nodes/mdd-manager.node.js";
@@ -336,6 +354,30 @@ describe("sanitizeSqlBrokenCommentsAndProse", () => {
     const out = sanitizeSqlBrokenCommentsAndProse(broken);
     assert.ok(out.includes("-- esto no es SQL válido para una columna"));
   });
+
+  it("separa comentario pegado a CREATE EXTENSION / TYPE / FUNCTION / TRIGGER (Peludo)", () => {
+    const broken = `-- ext uuid
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- enum estado
+CREATE TYPE estado_enum AS ENUM ('activo', 'inactivo');
+-- fn touch
+CREATE OR REPLACE FUNCTION touch_updated_at() RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW(
+);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+-- trigger
+CREATE TRIGGER trg_touch BEFORE UPDATE ON conversaciones FOR EACH ROW EXECUTE FUNCTION touch_updated_at();`;
+    const out = sanitizeSqlBrokenCommentsAndProse(broken);
+    assert.ok(out.includes('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'));
+    assert.ok(out.includes("CREATE TYPE estado_enum"));
+    assert.ok(out.includes("CREATE OR REPLACE FUNCTION touch_updated_at"));
+    assert.ok(out.includes("CREATE TRIGGER trg_touch"));
+    assert.ok(out.includes("NOW());"));
+    assert.ok(!/NOW\(\s*\n\s*\)\s*;/.test(out));
+  });
 });
 
 describe("fixDeterministicMddCoherence", () => {
@@ -454,7 +496,122 @@ TLS entre microservicios y PostgreSQL.
     assert.ok(!issues.some((i) => i.includes("bcrypt") && i.includes("Argon2")));
   });
 
-  it("corrige §6 y manifest cuando LDAP es auth principal", () => {
+  it("mantiene bcrypt en manifest cuando §6 solo documenta bcrypt", () => {
+    const draft = `## 6. Seguridad
+
+- Hashing local bcrypt (12 rounds) para bootstrap del super administrador.
+
+## 7. Infraestructura
+
+\`\`\`json
+{
+  "stack": {
+    "security": {
+      "hashing_algorithm": "Argon2id",
+      "hashing_rounds": 12
+    }
+  }
+}
+\`\`\`
+`;
+    const out = fixDeterministicMddCoherence(draft);
+    assert.ok(out.includes('"hashing_algorithm": "bcrypt"'));
+    assert.ok(!/"hashing_algorithm"\s*:\s*"Argon2id"/i.test(out));
+  });
+
+  it("sustituye JWT_SECRET por par de claves cuando §6 documenta RS256", () => {
+    const draft = `## 6. Seguridad
+
+- JWT firmado con RS256 y par de claves pública/privada (JWKS).
+
+## 7. Infraestructura
+
+### 7.5 Variables de entorno
+
+- NODE_ENV, JWT_SECRET, JWT_EXPIRES_IN
+`;
+    const out = fixDeterministicMddCoherence(draft);
+    assert.ok(out.includes("JWT_PRIVATE_KEY"));
+    assert.ok(out.includes("JWT_PUBLIC_KEY"));
+    assert.ok(!/\bJWT_SECRET\b/.test(out));
+  });
+
+  it("alinea §7 HS256 → RS256 cuando §6 documenta RS256 (Peludo)", () => {
+    const draft = `## 2. Arquitectura y Stack
+
+| Runtime | Node.js | 22 |
+
+## 6. Seguridad
+
+- Tokens JWT firmados con RS256; validación vía JWKS.
+
+## 7. Infraestructura
+
+- NODE_ENV, JWT_SECRET (HS256), JWT_EXPIRES_IN
+
+\`\`\`json
+{
+  "stack": {
+    "backend": {
+      "container": { "base_image": "node:20-alpine" }
+    },
+    "security": { "jwt_algorithm": "HS256", "jwks_enabled": false }
+  }
+}
+\`\`\`
+`;
+    assert.ok(detectJwtAlgorithmMismatch(draft));
+    const out = fixDeterministicMddCoherence(draft);
+    assert.ok(out.includes('"jwt_algorithm": "RS256"') || out.includes("RS256"));
+    assert.ok(out.includes("node:22-alpine"));
+    assert.ok(!/\bJWT_SECRET\b/.test(out));
+    const issues = detectCrossConsistencyIssues(out);
+    assert.ok(!issues.some((i) => i.includes("JWT incoherente")));
+  });
+
+  it("extractNodeVersionFromSection2 lee versión de tabla stack", () => {
+    const draft = `## 2. Arquitectura y Stack
+
+| Capa | Tecnología | Versión |
+| Backend | Node.js | 22 |
+`;
+    assert.equal(extractNodeVersionFromSection2(draft), "22");
+  });
+
+  it("alignDeliverableMarkdownWithMddSecurity separa JWT_PRIVATE_KEY y JWT_PUBLIC_KEY en bloques .env", () => {
+    const mdd = `## 6. Seguridad
+
+- JWT RS256 con par de claves PEM.
+`;
+    const infra = `### Variables
+
+\`\`\`env
+JWT_SECRET=changeme
+NODE_ENV=development
+\`\`\`
+`;
+    const out = alignDeliverableMarkdownWithMddSecurity(mdd, infra);
+    assert.match(out, /JWT_PRIVATE_KEY=changeme/);
+    assert.match(out, /JWT_PUBLIC_KEY=/);
+    assert.ok(!/\bJWT_SECRET\b/.test(out));
+  });
+
+  it("ensurePostMvpUiSurfaceBanner detecta §1 Contexto y alcance sin panel web", () => {
+    const mdd = `## 1. Contexto y alcance
+
+MVP API-only sin dashboard ni panel web; operaciones vía CLI.
+
+## 2. Arquitectura y Stack
+
+NestJS API REST.
+`;
+    const ux = "# Guía UX\n\nDesign system completo.\n";
+    const out = ensurePostMvpUiSurfaceBanner(mdd, ux);
+    assert.match(out, /post-MVP/i);
+    assert.match(out, /Guía UX/);
+  });
+
+  it("corrige §6 y manifest cuando LDAP es auth principal con Argon2 en §6", () => {
     const draft = `## 2. Arquitectura y Stack
 
 Passport.js (LDAP/AD) + JWT.
@@ -486,6 +643,35 @@ Passport.js (LDAP/AD) + JWT.
     assert.ok(out.includes('"hashing_algorithm": "Argon2id"'));
     assert.ok(out.includes("bootstrap_and_service_secrets_only"));
     assert.ok(out.includes("MFA obligatorio"));
+  });
+
+  it("mantiene bcrypt en manifest cuando LDAP es principal pero §6 documenta bcrypt bootstrap", () => {
+    const draft = `## 2. Arquitectura y Stack
+
+Passport.js (LDAP/AD) + JWT.
+
+## 6. Seguridad
+
+- Los usuarios corporativos usan LDAP/AD.
+- Las contraseñas de usuarios se almacenan con bcrypt (factor de costo 12) solo para bootstrap.
+
+## 7. Infraestructura
+
+\`\`\`json
+{
+  "stack": {
+    "security": {
+      "hashing_algorithm": "Argon2id",
+      "hashing_rounds": 12
+    }
+  }
+}
+\`\`\`
+`;
+    const out = fixDeterministicMddCoherence(draft);
+    assert.ok(out.includes('"auth_provider": "LDAP/AD"'));
+    assert.ok(out.includes('"hashing_algorithm": "bcrypt"'));
+    assert.ok(!/"hashing_algorithm"\s*:\s*"Argon2id"/i.test(out));
   });
 
   it("antepone /api/v1 a rutas §4 cuando manifest lo declara y rutas son bare", () => {
@@ -782,6 +968,48 @@ Un worker lee los eventos no publicados de la tabla outbox_events y los envía a
     assert.ok(/CREATE\s+TABLE\s+outbox_events\b/i.test(out));
     assert.ok(!/CREATE\s+TABLE\s+outbox\s*\(/i.test(out));
   });
+
+  it("no inyecta outbox cuando §3 ya define connector_schema.outbox", () => {
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE connector_schema.outbox (
+  id UUID PRIMARY KEY,
+  event_type VARCHAR(100) NOT NULL,
+  payload JSONB NOT NULL,
+  published_at TIMESTAMPTZ
+);
+\`\`\`
+
+## 2. Arquitectura y Stack
+
+Patrón Outbox: worker lee outbox y publica en RabbitMQ.
+`;
+    const out = ensureOutboxTableInDraft(draft);
+    assert.ok(/CREATE\s+TABLE\s+connector_schema\.outbox\b/i.test(out));
+    assert.ok(!/CREATE\s+TABLE\s+outbox\s*\(/i.test(out));
+  });
+
+  it("no inyecta outbox cuando §3 ya define eventos outbox-like (procesado/payload)", () => {
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE eventos (
+  id UUID PRIMARY KEY,
+  payload JSONB NOT NULL,
+  procesado BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+\`\`\`
+
+## 7. Infraestructura
+
+Worker lee eventos no publicados de la tabla eventos.
+`;
+    const out = ensureOutboxTableInDraft(draft);
+    assert.ok(/CREATE\s+TABLE\s+eventos\b/i.test(out));
+    assert.ok(!/CREATE\s+TABLE\s+outbox\s*\(/i.test(out));
+  });
 });
 
 describe("detectDuplicateOutboxTables", () => {
@@ -799,7 +1027,54 @@ CREATE TABLE outbox (
 `;
     assert.ok(detectDuplicateOutboxTables(draft));
     const issues = detectCrossConsistencyIssues(draft);
-    assert.ok(issues.some((i) => i.includes("outbox duplicadas")));
+    assert.ok(issues.some((i) => i.includes("outbox-like duplicadas")));
+  });
+
+  it("detecta outbox sin schema y connector_schema.outbox duplicados", () => {
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE connector_schema.outbox (
+  id UUID PRIMARY KEY
+);
+CREATE TABLE outbox (
+  id UUID PRIMARY KEY
+);
+\`\`\`
+`;
+    assert.ok(detectDuplicateOutboxTables(draft));
+    const out = applyDeterministicCrossConsistencyFixes(draft);
+    assert.ok(/CREATE\s+TABLE\s+connector_schema\.outbox\b/i.test(out));
+    assert.ok(!/CREATE\s+TABLE\s+outbox\s*\(/i.test(out));
+  });
+
+  it("detecta eventos outbox-like y outbox duplicados (Peludo)", () => {
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE eventos (
+  id UUID PRIMARY KEY,
+  payload JSONB NOT NULL,
+  procesado BOOLEAN NOT NULL DEFAULT false
+);
+CREATE TABLE outbox (
+  id UUID PRIMARY KEY,
+  payload JSONB NOT NULL,
+  published_at TIMESTAMPTZ
+);
+\`\`\`
+
+## 7. Infraestructura
+
+Lee la tabla eventos pendientes de publicar.
+`;
+    assert.ok(detectDuplicateOutboxTables(draft));
+    const issues = detectCrossConsistencyIssues(draft);
+    assert.ok(issues.some((i) => i.includes("outbox-like duplicadas")));
+    const out = deduplicateOutboxTablesInDraft(draft);
+    assert.ok(/CREATE\s+TABLE\s+eventos\b/i.test(out));
+    assert.ok(!/CREATE\s+TABLE\s+outbox\s*\(/i.test(out));
+    assert.strictEqual(detectDuplicateOutboxTables(out), false);
   });
 });
 
@@ -918,6 +1193,60 @@ CREATE TABLE approval_requests (
     const issues = detectCrossConsistencyIssues(draft);
     assert.ok(issues.some((i) => i.includes("second_approver_id")));
   });
+
+  it("detecta tablas §6 sin DDL en §3 (security_events, refresh_tokens)", () => {
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+
+## 6. Seguridad
+
+- Los intentos fallidos se registran en security_events.
+- Los refresh tokens rotativos se almacenan en refresh_tokens.
+`;
+    const issues = detectCrossConsistencyIssues(draft);
+    assert.ok(issues.some((i) => i.includes("security_events")));
+    assert.ok(issues.some((i) => i.includes("refresh_tokens")));
+  });
+
+  it("sugiere índice parcial para UNIQUE conversaciones (Peludo)", () => {
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE conversaciones (
+  id UUID PRIMARY KEY,
+  negocio_id UUID NOT NULL,
+  cliente_id UUID NOT NULL,
+  estado TEXT NOT NULL,
+  UNIQUE (negocio_id, cliente_id, estado)
+);
+\`\`\`
+`;
+    const issues = detectSuspiciousUniqueConstraints(draft);
+    assert.ok(issues.some((i) => i.includes("índice parcial")));
+  });
+
+  it("deduplicateUatSections referencia §1 cuando UAT está duplicado", () => {
+    const draft = `## 1. Contexto
+
+### Criterios UAT
+- Login exitoso con credenciales válidas.
+- Exportación rechazada sin aprobación dual.
+- Auditoría registra cada intento fallido.
+
+## 5. Lógica y Edge Cases
+
+### Criterios UAT
+- Login exitoso con credenciales válidas.
+- Exportación rechazada sin aprobación dual.
+- Auditoría registra cada intento fallido.
+`;
+    const out = deduplicateUatSections(draft);
+    assert.ok(out.includes("Ver §1"));
+    assert.ok(!/## 5[\s\S]*Login exitoso[\s\S]*Exportación rechazada[\s\S]*Auditoría registra/.test(out));
+  });
 });
 
 describe("applyCrossConsistencyPatches", () => {
@@ -969,5 +1298,395 @@ Tabla.
     const out = normalizeMddFormat(draft);
     assert.ok(!out.includes("application_id o NULL para system"));
     assert.ok(out.includes("application_id UUID"));
+  });
+});
+
+describe("stripStrayParenAfterJsonCodeBlocks", () => {
+  it("elimina paréntesis suelto tras bloque json", () => {
+    const draft = `## 7. Infraestructura
+
+\`\`\`json
+{ "manifest": "infra-v1" }
+\`\`\`)
+`;
+    const out = stripStrayParenAfterJsonCodeBlocks(draft);
+    assert.ok(!out.includes("```)\n"));
+    assert.ok(out.trimEnd().endsWith("```"));
+  });
+});
+
+describe("repairNestedJsonFencesInDraft", () => {
+  it("desanida fences json dentro de body POST /audit-events/export", () => {
+    const draft = `## 4. Contratos de API
+
+### POST /audit-events/export
+
+\`\`\`json
+{
+  "event_types": [
+\`\`\`json
+["KEY_CREATED", "KEY_ROTATED"]
+\`\`\`
+  ],
+  "format": "json"
+}
+\`\`\``;
+    const out = repairNestedJsonFencesInDraft(draft);
+    assert.ok(!out.includes("```json\n["));
+    assert.ok(out.includes('"event_types"'));
+    assert.ok(out.includes("KEY_CREATED"));
+    JSON.parse(out.match(/```json\s*\n([\s\S]*?)```/i)![1]!);
+  });
+
+  it("repara permissions anidados en POST /policies", () => {
+    const draft = `\`\`\`json
+{
+  "permissions": [
+\`\`\`json
+["keys:read", "keys:write"]
+\`\`\`
+  ]
+}
+\`\`\``;
+    const out = repairNestedJsonFencesInDraft(draft);
+    const inner = out.match(/```json\s*\n([\s\S]*?)```/i)![1]!;
+    const parsed = JSON.parse(inner) as { permissions: string[] };
+    assert.deepEqual(parsed.permissions, ["keys:read", "keys:write"]);
+  });
+});
+
+describe("stripUiUxSectionForApiOnlyMvp", () => {
+  const MDD_API_ONLY = `## 1. Contexto y alcance
+
+MVP: solo APIs REST y CLI; sin panel web.
+
+## 2. Arquitectura y Stack
+
+NestJS API.
+
+## UI/UX Design Intent
+
+Pantallas de administración.
+`;
+
+  it("elimina UI/UX cuando §1 declara API+CLI sin web", () => {
+    const out = stripUiUxSectionForApiOnlyMvp(MDD_API_ONLY);
+    assert.ok(mddExcludesWebUiSurface(MDD_API_ONLY));
+    assert.ok(!/##\s*UI\/UX\s+Design\s+Intent/i.test(out));
+    assert.ok(out.includes("NestJS API"));
+  });
+
+  it("elimina UI/UX cuando §2.5 declara no incluye panel web (KMS)", () => {
+    const kms = `## 1. Contexto
+
+Fuera de alcance (MVP): panel web.
+
+## 2. Arquitectura y Stack
+
+### 2.5 Frontend (MVP)
+
+El MVP no incluye un panel web de administración completo.
+
+## UI/UX Design Intent
+
+Bloque generado.
+`;
+    const out = stripUiUxSectionForApiOnlyMvp(kms);
+    assert.ok(mddExcludesWebUiSurface(kms));
+    assert.ok(!/##\s*UI\/UX\s+Design\s+Intent/i.test(out));
+  });
+
+  it("conserva UI/UX cuando hay frontend en alcance", () => {
+    const withWeb = `## 1. Contexto y alcance
+
+Panel web React para administración de claves.
+
+## 2. Arquitectura y Stack
+
+NestJS API + frontend Next.js.
+
+## UI/UX Design Intent
+
+Pantallas de administración.
+`;
+    const out = stripUiUxSectionForApiOnlyMvp(withWeb);
+    assert.ok(/##\s*UI\/UX\s+Design\s+Intent/i.test(out));
+  });
+});
+
+describe("sanitizeMddAtPersist", () => {
+  it("combina heading pegado, JSON §4 y strip UI/UX MVP", () => {
+    const draft = `## 1. Contexto
+
+MVP solo API y CLI; sin dashboard.
+
+## 3. Modelo de Datos### SQL
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+
+## 4. Contratos
+
+\`\`\`json
+{ "items": [
+\`\`\`json
+[1]
+\`\`\`
+] }
+\`\`\`
+
+## UI/UX Design Intent
+
+Tabla users en grid.
+`;
+    const out = sanitizeMddAtPersist(draft);
+    assert.match(out, /## 3\. Modelo de Datos\n\n### SQL/);
+    assert.ok(!/##\s*UI\/UX\s+Design\s+Intent/i.test(out));
+    const jsonInner = out.match(/```json\s*\n([\s\S]*?)```/i)![1]!;
+    assert.doesNotThrow(() => JSON.parse(jsonInner));
+  });
+
+  it("despega cuerpo pegado al H2 de §3 (Modelo de DatosLa base…)", () => {
+    const draft = `## 3. Modelo de DatosLa base de datos usa PostgreSQL.
+
+\`\`\`sql
+CREATE TABLE tenants (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const out = sanitizeMddAtPersist(draft);
+    assert.match(out, /## 3\. Modelo de Datos\n\nLa base de datos/);
+  });
+
+  it("corrige multi_tenant_support en manifest §7 cuando MDD exige multi-tenant", () => {
+    const draft = `## 2. Arquitectura y Stack
+Multi-tenant con tenant_id en todas las tablas.
+
+## 3. Modelo de Datos
+\`\`\`TechnicalMetadata
+[multi_tenant] [high_security]
+\`\`\`
+
+## 7. Infraestructura
+\`\`\`json
+{
+  "integration_metadata": {
+    "api_prefix": "/api/v1",
+    "multi_tenant_support": false
+  }
+}
+\`\`\`
+`;
+    const out = sanitizeMddAtPersist(draft);
+    assert.match(out, /"multi_tenant_support"\s*:\s*true/i);
+  });
+
+  it("corrige multi_tenant_support cuando §3 usa negocio_id en todas las tablas", () => {
+    const draft = `## 2. Arquitectura y Stack
+Backend Fastify.
+
+## 3. Modelo de Datos
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+CREATE TABLE negocios (id UUID PRIMARY KEY);
+CREATE TABLE usuarios (id UUID PRIMARY KEY, negocio_id UUID NOT NULL);
+CREATE TABLE clientes (id UUID PRIMARY KEY, negocio_id UUID NOT NULL);
+CREATE TABLE citas (id UUID PRIMARY KEY, negocio_id UUID NOT NULL);
+
+## 6. Seguridad
+Aislamiento multiinquilino: toda consulta filtra por negocio_id del token.
+
+## 7. Infraestructura
+\`\`\`json
+{
+  "integration_metadata": {
+    "api_prefix": "/api/v1",
+    "multi_tenant_support": false
+  }
+}
+\`\`\`
+`;
+    const out = sanitizeMddAtPersist(draft);
+    assert.match(out, /"multi_tenant_support"\s*:\s*true/i);
+  });
+});
+
+describe("repairSqlDetachedCheckConstraints", () => {
+  const BETTING_USERS_FRAGMENT = `CREATE TABLE users (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email           VARCHAR(255) UNIQUE NOT NULL,
+  kyc_status      VARCHAR(20) NOT NULL DEFAULT 'pending'
+  CHECK (kyc_status IN ('pending','approved','rejected')),
+  is_active       BOOLEAN NOT NULL DEFAULT TRUE
+);`;
+
+  const BETTING_WALLET_FRAGMENT = `CREATE TABLE wallets (
+  user_id         UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  currency        VARCHAR(3) NOT NULL DEFAULT 'COP'
+  CHECK (currency = 'COP')
+);`;
+
+  it("añade coma antes de CHECK en línea aparte (users.kyc_status)", () => {
+    const out = repairSqlDetachedCheckConstraints(BETTING_USERS_FRAGMENT);
+    assert.match(out, /DEFAULT 'pending',\s*\n\s*CHECK \(kyc_status/i);
+  });
+
+  it("añade coma antes de CHECK de currency en wallets", () => {
+    const out = repairSqlDetachedCheckConstraints(BETTING_WALLET_FRAGMENT);
+    assert.match(out, /DEFAULT 'COP',\s*\n\s*CHECK \(currency/i);
+  });
+
+  it("repara múltiples CHECK en bloque sql vía sanitizeSqlBrokenCommentsAndProse", () => {
+    const sql = `${BETTING_USERS_FRAGMENT}
+
+CREATE TABLE transactions (
+  id              UUID PRIMARY KEY,
+  type            VARCHAR(20) NOT NULL
+  CHECK (type IN ('deposit','withdrawal','bet')),
+  status          VARCHAR(20) NOT NULL DEFAULT 'pending'
+  CHECK (status IN ('pending','completed','failed','cancelled'))
+);`;
+    const out = sanitizeSqlBrokenCommentsAndProse(sql);
+    assert.match(out, /NOT NULL,\s*\n\s*CHECK \(type/i);
+    assert.match(out, /DEFAULT 'pending',\s*\n\s*CHECK \(status/i);
+  });
+
+  it("aplica en sanitizeAllSqlBlocksInDraft dentro de MDD", () => {
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+${BETTING_WALLET_FRAGMENT}
+\`\`\``;
+    const out = sanitizeAllSqlBlocksInDraft(draft);
+    assert.match(out, /DEFAULT 'COP',\s*\n\s*CHECK \(currency/i);
+  });
+
+  it("no altera CHECK ya inline en la misma línea", () => {
+    const sql = `CREATE TABLE t (
+  status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('a','b'))
+);`;
+    const out = repairSqlDetachedCheckConstraints(sql);
+    assert.equal(out, sql);
+  });
+});
+
+describe("ensureSecurityLockoutInSection6", () => {
+  it("inyecta párrafo OWASP cuando §5 exige bloqueo y §6 no detalla intentos", () => {
+    const draft = `# MDD
+
+## 5. Lógica y Edge Cases
+
+Los intentos fallidos de login se registran en security_events.
+
+## 6. Seguridad
+
+JWT RS256 y gestión de secretos en Vault.
+
+## 7. Infraestructura
+
+Docker.
+`;
+    const out = ensureSecurityLockoutInSection6(draft);
+    assert.ok(out.includes(SECURITY_LOCKOUT_DEFAULT_PARAGRAPH));
+  });
+
+  it("no duplica si §6 ya define intentos", () => {
+    const draft = `# MDD
+
+## 5. Lógica y Edge Cases
+
+Bloqueo de cuenta tras intentos fallidos.
+
+## 6. Seguridad
+
+Lockout tras 5 intentos en 15 minutos.
+
+## 7. Infraestructura
+
+Docker.
+`;
+    const out = ensureSecurityLockoutInSection6(draft);
+    assert.equal(out, draft);
+  });
+});
+
+describe("ensureSecurityTableStubsFromSection6 totp", () => {
+  it("inserta totp_secret sin corromper DDL de usuarios con CHECK", () => {
+    const draft = `# MDD
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE usuarios (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+\`\`\`
+
+## 6. Seguridad
+
+MFA TOTP obligatorio; totp_secret en usuarios.
+
+## 7. Infraestructura
+
+K8s.
+`;
+    const out = ensureSecurityTableStubsFromSection6(draft);
+    const userBlock = out.match(/CREATE TABLE usuarios[\s\S]*?\n\)/i)?.[0] ?? "";
+    assert.ok(/\btotp_secret\s+BYTEA\b/i.test(userBlock));
+    assert.ok(!/DEFAULT now\(\)\s*\n\s*,/i.test(userBlock));
+    assert.ok(!/totp_secret BYTEA,/i.test(userBlock));
+  });
+});
+
+describe("stripAlternateBackendFromSection1", () => {
+  it("elimina FastAPI alternativo en §1 cuando §2 fija Fastify", () => {
+    const draft = `## 1. Contexto
+
+- **Audiencia:** Desarrolladores fullstack con Node.js (Fastify) or Python (FastAPI).
+
+## 2. Arquitectura y Stack
+
+Backend Fastify con TypeScript. Monorepo pnpm.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const out = stripAlternateBackendFromSection1(draft);
+    assert.match(out, /Node\.js \(Fastify\)/);
+    assert.doesNotMatch(out, /FastAPI/i);
+    assert.doesNotMatch(out, /\bor Python\b/i);
+  });
+
+  it("se aplica vía sanitizeMddForExport / fixDeterministicMddCoherence", () => {
+    const draft = `## 1. Contexto
+
+Audiencia: Node.js (Fastify) o Python (FastAPI).
+
+## 2. Arquitectura y Stack
+
+API REST con Fastify.
+`;
+    const out = applyDeterministicCrossConsistencyFixes(draft);
+    assert.doesNotMatch(out, /FastAPI/i);
+  });
+});
+
+describe("countMddSection3CreateTables", () => {
+  it("cuenta CREATE TABLE en §3", () => {
+    const mdd = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+CREATE TABLE sessions (id UUID PRIMARY KEY);
+CREATE TABLE roles (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    assert.equal(countMddSection3CreateTables(mdd), 3);
   });
 });

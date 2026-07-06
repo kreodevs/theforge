@@ -25,9 +25,16 @@ export interface AgentSessionLogPanelProps {
   projectId: string;
   stageId: string | null | undefined;
   className?: string;
+  /** Compact chrome for the workshop sidebar. */
+  variant?: "default" | "sidebar" | "workspace";
 }
 
-export function AgentSessionLogPanel({ projectId, stageId, className }: AgentSessionLogPanelProps) {
+export function AgentSessionLogPanel({
+  projectId,
+  stageId,
+  className,
+  variant = "default",
+}: AgentSessionLogPanelProps) {
   const [entries, setEntries] = useState<AgentSessionLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,30 +68,71 @@ export function AgentSessionLogPanel({ projectId, stageId, className }: AgentSes
     return null;
   }
 
+  const isSidebar = variant === "sidebar";
+  const isWorkspace = variant === "workspace";
+  const showPanelHeader = !isSidebar && !isWorkspace;
+
   return (
     <section
       className={cn(
-        "rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_78%,var(--background))] p-4 space-y-3",
+        isSidebar
+          ? "rounded-lg border border-[color-mix(in_oklch,var(--sidebar-border)_80%,transparent)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_4%,var(--sidebar))] p-2.5 space-y-2"
+          : isWorkspace
+            ? "space-y-3"
+            : "rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_78%,var(--background))] p-4 space-y-3",
         className,
       )}
       aria-label="Sesión agéntica"
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Bot className="h-4 w-4 shrink-0 text-[color-mix(in_oklch,var(--primary)_70%,var(--foreground))]" aria-hidden />
-          <h3 className="text-sm font-semibold truncate">Sesión agéntica</h3>
+      {showPanelHeader ? (
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Bot className="h-4 w-4 shrink-0 text-[color-mix(in_oklch,var(--primary)_70%,var(--foreground))]" aria-hidden />
+            <h3 className="text-sm font-semibold truncate">Log de sesión</h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => void fetchLog()}
+            disabled={loading}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[color-mix(in_oklch,var(--foreground-subtle)_90%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--muted)_40%,transparent)] disabled:opacity-50"
+            title="Actualizar"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => void fetchLog()}
-          disabled={loading}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[color-mix(in_oklch,var(--foreground-subtle)_90%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--muted)_40%,transparent)] disabled:opacity-50"
-          title="Actualizar"
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-        </button>
-      </div>
-      <p className="text-xs text-[color-mix(in_oklch,var(--foreground-subtle)_85%,var(--background))]">
+      ) : isSidebar ? (
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => void fetchLog()}
+            disabled={loading}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--sidebar-foreground))] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_55%,transparent)] disabled:opacity-50"
+            title="Actualizar log de sesión"
+          >
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            <span className="sr-only">Actualizar</span>
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => void fetchLog()}
+            disabled={loading}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[color-mix(in_oklch,var(--foreground-subtle)_90%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--muted)_40%,transparent)] disabled:opacity-50"
+            title="Actualizar log de sesión"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            <span className="sr-only">Actualizar</span>
+          </button>
+        </div>
+      )}
+      <p
+        className={cn(
+          "text-[color-mix(in_oklch,var(--foreground-subtle)_85%,var(--background))]",
+          isSidebar ? "text-[10px] leading-snug" : "text-xs",
+        )}
+      >
         Gaps de documentación reportados vía MCP y reconciliaciones (separado del chat Workshop). Los pendientes de
         aprobación aparecen en el panel «Cambios pendientes».
       </p>
@@ -103,7 +151,7 @@ export function AgentSessionLogPanel({ projectId, stageId, className }: AgentSes
           Sin eventos aún. Los agentes reportan gaps con MCP <code className="text-[10px]">report_documentation_gap</code>.
         </p>
       ) : (
-        <ul className="space-y-2 max-h-64 overflow-y-auto">
+        <ul className={cn("space-y-2 overflow-y-auto", isSidebar ? "max-h-48" : isWorkspace ? "max-h-none" : "max-h-64")}>
           {entries.map((entry) => (
             <li
               key={entry.id}

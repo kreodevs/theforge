@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { serializeAgentGovernanceScaffold } from "../ai/utils/agent-governance.util.js";
+import { appendArchitectureDecisionToScaffold, buildArchitectureDecisionFromSddConflict } from "../documentation-gap/architecture-decision.util.js";
 import {
   analyzeAgentGovernanceSlice,
   buildHermesHandoffPayload,
   buildProjectDeliverableExportInput,
+  buildSpecKitFilesForProject,
   buildUnifiedHandoff,
   enrichSpecKitFilesForHandoff,
   hashHandoffContent,
@@ -121,6 +123,21 @@ describe("handoff-export.util", () => {
     assert.ok(slice.missingRequiredPaths.length > 0);
   });
 
+  it("buildUnifiedHandoff incluye ADRs en docs/sdd/decisions/", () => {
+    const adr = buildArchitectureDecisionFromSddConflict(
+      "TypeORM vs Prisma: prioriza el ORM declarado en MDD §2/Blueprint.",
+      "auto-deterministic",
+    );
+    const { serialized } = appendArchitectureDecisionToScaffold(null, adr);
+    const project = { ...baseProject, agentGovernanceContent: serialized };
+    const unified = buildUnifiedHandoff(project as never, null);
+    assert.ok(unified.specKitFiles.some((f) => f.path === adr.path));
+    assert.match(
+      unified.specKitFiles.find((f) => f.path === adr.path)!.content,
+      /## Decisión/,
+    );
+  });
+
   it("buildHermesHandoffPayload incluye hashes SHA-256", () => {
     const unified = buildUnifiedHandoff(baseProject as never, null);
     const payload = buildHermesHandoffPayload(unified);
@@ -175,5 +192,200 @@ describe("handoff-export.util", () => {
     assert.ok(mirror?.content.includes("Login"));
     const scaffold = synthesizeExportGovernanceScaffold(project as never);
     assert.ok(scaffold.files.some((f) => f.path === "docs/sdd/pantallas.md"));
+  });
+
+  it("buildSpecKitFilesForProject sustituye JWT_SECRET por par RS256 en infra spec-kit", () => {
+    const mdd = `## 6. Seguridad
+
+- JWT firmado con RS256 y par de claves pública/privada (JWKS).
+
+## 7. Infraestructura
+
+### Variables de entorno
+
+\`\`\`env
+JWT_SECRET=changeme
+NODE_ENV=development
+\`\`\`
+`;
+    const project = {
+      ...baseProject,
+      infraContent: `### Variables de entorno
+
+\`\`\`env
+JWT_SECRET=changeme
+NODE_ENV=development
+\`\`\`
+`,
+      stages: [{ ...baseProject.stages[0], mddContent: mdd }],
+    };
+    const files = buildSpecKitFilesForProject(project as never, null);
+    const infra = files.find((f) => f.path.endsWith("/infra.md"));
+    assert.ok(infra);
+    assert.match(infra!.content, /JWT_PRIVATE_KEY/);
+    assert.match(infra!.content, /JWT_PUBLIC_KEY/);
+    assert.ok(!/\bJWT_SECRET\b/.test(infra!.content));
+  });
+
+  it("specs design-system.md y docs/sdd/ux-ui-guide.md alineados tras formatDocumentMarkdown", () => {
+    const gov = serializeAgentGovernanceScaffold({
+      manifest: { templateVersion: "2.0.0", files: ["AGENTS.md"] },
+      files: [{ path: "AGENTS.md", content: "# AGENTS\n" }],
+    });
+    const uxUiRaw = `# Guía UX/UI
+
+typography:
+  h1:
+- fontFamily: "Inter, system-ui, sans-serif"
+- fontSize: 32px
+\`\`\`dockerfile
+  label-sm:
+- fontFamily: "Inter, system-ui, sans-serif"
+- fontSize: 13px
+rounded:
+  sm: 6px
+components:
+  button-primary:
+- backgroundColor: "{colors.tertiary}"
+\`\`\`
+`;
+    const project = {
+      ...baseProject,
+      agentGovernanceContent: gov,
+      uxUiGuideContent: uxUiRaw,
+    };
+    const unified = buildUnifiedHandoff(project as never, null);
+    const specDesignSystem = unified.specKitFiles.find((f) => f.path.endsWith("/design-system.md"));
+    const mirrorUx = unified.agentGovernance?.files.find((f) => f.path === "docs/sdd/ux-ui-guide.md");
+    assert.ok(specDesignSystem);
+    assert.ok(mirrorUx);
+    assert.equal(specDesignSystem!.content, mirrorUx!.content);
+    assert.match(specDesignSystem!.content, /```yaml[\s\S]*label-sm/);
+    assert.doesNotMatch(specDesignSystem!.content, /```dockerfile/);
+  });
+
+  it("specs y docs/sdd infra alineados en buildUnifiedHandoff", () => {
+    const gov = serializeAgentGovernanceScaffold({
+      manifest: { templateVersion: "2.0.0", files: ["AGENTS.md"] },
+      files: [{ path: "AGENTS.md", content: "# AGENTS\n" }],
+    });
+    const mdd = `## 6. Seguridad
+
+- JWT firmado con RS256 y par de claves pública/privada.
+
+## 7. Infraestructura
+
+- NODE_ENV, JWT_SECRET, JWT_EXPIRES_IN
+`;
+    const project = {
+      ...baseProject,
+      agentGovernanceContent: gov,
+      infraContent: `### Variables
+
+- NODE_ENV, JWT_SECRET, JWT_EXPIRES_IN
+`,
+      stages: [{ ...baseProject.stages[0], mddContent: mdd }],
+    };
+    const unified = buildUnifiedHandoff(project as never, null);
+    const specInfra = unified.specKitFiles.find((f) => f.path.endsWith("/infra.md"));
+    const mirrorInfra = unified.agentGovernance?.files.find((f) => f.path === "docs/sdd/infra.md");
+    assert.ok(specInfra);
+    assert.ok(mirrorInfra);
+    assert.equal(specInfra!.content, mirrorInfra!.content);
+    assert.match(specInfra!.content, /JWT_PRIVATE_KEY/);
+    assert.ok(!/\bJWT_SECRET\b/.test(specInfra!.content));
+  });
+
+  it("export PELUDO-like: pnpm en Dockerfile, TypeORM migrations y YAML design-system", () => {
+    const gov = serializeAgentGovernanceScaffold({
+      manifest: { templateVersion: "2.0.0", files: ["AGENTS.md"] },
+      files: [
+        {
+          path: "AGENTS.md",
+          content: "# AGENTS\n\nMonorepo Turborepo; usar pnpm install y pnpm build.\n",
+        },
+      ],
+    });
+    const mdd = `## 2. Arquitectura y Stack
+
+Backend Fastify. Monorepo apps/backend packages/shared-types.
+
+| Capa | Tecnología |
+| --- | --- |
+| API | Fastify |
+| Persistencia | PostgreSQL |
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+CREATE TABLE pets (id UUID PRIMARY KEY);
+\`\`\`
+
+## 6. Seguridad
+
+JWT RS256 con JWT_PRIVATE_KEY / JWT_PUBLIC_KEY.
+
+## 7. Infraestructura
+
+Producción en Railway (single service); sin Kubernetes en v1.
+\`\`\`json
+{ "orm": "typeorm", "deployment": { "orchestrator": "Railway", "provider": "Railway" } }
+\`\`\`
+`;
+    const project = {
+      ...baseProject,
+      name: "PELUDO",
+      agentGovernanceContent: gov,
+      infraContent: `## 1. Dockerfile
+
+\`\`\`dockerfile
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
+RUN yarn build
+\`\`\`
+`,
+      userStoriesContent:
+        "Como dev quiero migrar el esquema con TypeORM o raw SQL y desplegar con yarn.",
+      uxUiGuideContent: `# Guía UX/UI
+
+typography:
+  h1:
+- fontFamily: "Inter, system-ui, sans-serif"
+- fontSize: 32px
+\`\`\`dockerfile
+  label-sm:
+- fontFamily: "Inter, system-ui, sans-serif"
+- fontSize: 13px
+rounded:
+  sm: 6px
+\`\`\`
+`,
+      stages: [{ ...baseProject.stages[0], mddContent: mdd }],
+    };
+    const unified = buildUnifiedHandoff(project as never, null);
+    const specInfra = unified.specKitFiles.find((f) => f.path.endsWith("/infra.md"));
+    const mirrorInfra = unified.agentGovernance?.files.find((f) => f.path === "docs/sdd/infra.md");
+    const mirrorStories = unified.agentGovernance?.files.find(
+      (f) => f.path === "docs/sdd/user-stories.md",
+    );
+    const specDesignSystem = unified.specKitFiles.find((f) => f.path.endsWith("/design-system.md"));
+    const mirrorUx = unified.agentGovernance?.files.find((f) => f.path === "docs/sdd/ux-ui-guide.md");
+
+    assert.ok(specInfra);
+    assert.ok(mirrorInfra);
+    assert.equal(specInfra!.content, mirrorInfra!.content);
+    assert.match(specInfra!.content, /pnpm install --frozen-lockfile/);
+    assert.doesNotMatch(specInfra!.content, /yarn/i);
+
+    assert.ok(mirrorStories);
+    assert.match(mirrorStories!.content, /TypeORM migrations/);
+    assert.doesNotMatch(mirrorStories!.content, /raw SQL/i);
+
+    assert.ok(specDesignSystem);
+    assert.ok(mirrorUx);
+    assert.equal(specDesignSystem!.content, mirrorUx!.content);
+    assert.match(specDesignSystem!.content, /```yaml[\s\S]*typography:[\s\S]*label-sm/);
+    assert.doesNotMatch(specDesignSystem!.content, /```dockerfile/);
   });
 });

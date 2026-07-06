@@ -16,7 +16,7 @@ export interface UseInterviewReturn {
   /** options.regenerateSection: para comandos / (solo tab MDD). options.images: adjuntos visión. */
   sendMessage: (
     message: string,
-    options?: { regenerateSection?: number; images?: ChatImagePart[] },
+    options?: { regenerateSection?: number; regenerateSectionGaps?: string[]; images?: ChatImagePart[] },
   ) => Promise<void>;
 }
 
@@ -63,7 +63,7 @@ export function useInterview(
       : baseMessages;
 
   const send = useCallback(
-    (message: string, options?: { regenerateSection?: number; images?: ChatImagePart[] }) =>
+    (message: string, options?: { regenerateSection?: number; regenerateSectionGaps?: string[]; images?: ChatImagePart[] }) =>
       sendMessageStore(message, activeTab, options),
     [sendMessageStore, activeTab],
   );

@@ -9,11 +9,13 @@ import {
   parseCrossConsistencyPatches,
   validateMddStructure,
 } from "../utils/mdd-sanitize.js";
+import { mddDeliveryGateHasBlockers } from "../utils/mdd-delivery-gate.util.js";
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:CrossConsistency] ${msg}`, ...args);
 
 function shouldSkipLlmPass(draft: string, issues: string[]): boolean {
   if (issues.length > 0) return false;
+  if (mddDeliveryGateHasBlockers(draft)) return false;
   if (draft.length <= 5000) return false;
   const validation = validateMddStructure(draft);
   return validation.missingSections.length === 0 && validation.section3HasPayloads;

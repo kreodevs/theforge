@@ -8,8 +8,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "dev:local": "node scripts/ensure-infra.js && pnpm run dev",
-    "dev:api": "node scripts/ensure-infra.js && turbo run dev --filter=@theforge/api",
+    "dev:local": "node scripts/ensure-infra.js && pnpm run db:migrate && pnpm run dev",
+    "dev:api": "node scripts/ensure-infra.js && pnpm run db:migrate && turbo run dev --filter=@theforge/api",
     "dev:web": "turbo run dev --filter=@theforge/web",
     "compose:local": "docker compose -f docker-compose.yml -f docker-compose.local.yml up --build",
     "compose:local:config": "docker compose -f docker-compose.yml -f docker-compose.local.yml config",

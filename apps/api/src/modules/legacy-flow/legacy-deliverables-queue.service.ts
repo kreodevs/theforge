@@ -5,10 +5,11 @@ import {
   OnModuleDestroy,
   OnModuleInit,
   forwardRef,
-  ServiceUnavailableException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
 import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-user.store.js";
+import { ProjectsService } from "../projects/projects.service.js";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 
 export const LEGACY_DELIVERABLES_QUEUE_NAME = "theforge-legacy-deliverables";
@@ -32,26 +33,41 @@ export interface LegacyDeliverablesJobStatus {
   finishedAt?: number;
 }
 
+type InMemoryLegacyJobRecord = {
+  data: LegacyDeliverablesJobData;
+  status: LegacyDeliverablesJobStatus["status"];
+  progress: unknown;
+  result?: unknown;
+  error?: string;
+  createdAt: number;
+  finishedAt?: number;
+};
+
 @Injectable()
 export class LegacyDeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LegacyDeliverablesQueueService.name);
   private queue: Queue | null = null;
   private worker: Worker | null = null;
+  private readonly inMemoryJobs = new Map<string, InMemoryLegacyJobRecord>();
   private readonly MAX_ATTEMPTS = 4;
 
   constructor(
     @Inject(forwardRef(() => LegacyCoordinatorService))
     private readonly coordinator: LegacyCoordinatorService,
+    @Inject(forwardRef(() => ProjectsService))
+    private readonly projects: ProjectsService,
   ) {}
 
   isEnabled(): boolean {
-    return !!process.env.REDIS_URL?.trim();
+    return true;
   }
 
   async onModuleInit(): Promise<void> {
     const url = process.env.REDIS_URL?.trim();
     if (!url) {
-      this.logger.log("BullMQ legacy: sin REDIS_URL — POST …/legacy/generate-deliverables sigue siendo HTTP síncrono");
+      this.logger.log(
+        "BullMQ legacy: sin REDIS_URL — cascada legacy usa cola in-memory (polling + progreso en chat)",
+      );
       return;
     }
 
@@ -74,6 +90,7 @@ export class LegacyDeliverablesQueueService implements OnModuleInit, OnModuleDes
             `BullMQ legacy worker: job ${job.id} projectId=${projectId} attempt=${job.attemptsMade + 1}/${this.MAX_ATTEMPTS}`,
           );
           job.updateProgress({ phase: "legacy_deliverables", step: "preflight", index: 0, total: 1 });
+          await this.projects.assertMddDeliveryGateForDeliverables(projectId);
           return this.coordinator.generateDeliverables(projectId, stageId, {
             onProgress: (p) => job.updateProgress({ phase: "legacy_deliverables", ...p }),
           });
@@ -101,16 +118,77 @@ export class LegacyDeliverablesQueueService implements OnModuleInit, OnModuleDes
     await this.queue?.close();
   }
 
+  private startInMemoryJob(jobId: string, data: LegacyDeliverablesJobData): void {
+    const record = this.inMemoryJobs.get(jobId);
+    if (!record) return;
+    record.status = "active";
+
+    void runWithRequestUserAsync(data.userId ?? "system", async () => {
+      const started = Date.now();
+      try {
+        record.progress = { phase: "legacy_deliverables", step: "preflight", index: 0, total: 1 };
+        await this.projects.assertMddDeliveryGateForDeliverables(data.projectId);
+        const result = await this.coordinator.generateDeliverables(data.projectId, data.stageId, {
+          onProgress: (p) => {
+            record.progress = { phase: "legacy_deliverables", ...p };
+          },
+        });
+        record.status = "completed";
+        record.result = result;
+        record.finishedAt = Date.now();
+        const elapsed = Math.round((Date.now() - started) / 1000);
+        this.logger.log(
+          `In-memory legacy job ${jobId} (projectId=${data.projectId}) completado en ${elapsed}s`,
+        );
+      } catch (err) {
+        record.status = "failed";
+        record.error = err instanceof Error ? err.message : String(err);
+        record.finishedAt = Date.now();
+        this.logger.error(
+          `In-memory legacy job ${jobId} (projectId=${data.projectId}) falló: ${record.error}`,
+        );
+      }
+    });
+  }
+
   async enqueue(data: LegacyDeliverablesJobData): Promise<string> {
-    if (!this.queue) {
-      throw new ServiceUnavailableException("Cola legacy no disponible. Configure REDIS_URL.");
-    }
     const userId = data.userId ?? getRequestUserId();
-    const job = await this.queue.add("legacy-cascade", { ...data, userId });
-    return String(job.id);
+    const payload: LegacyDeliverablesJobData = { ...data, userId };
+
+    if (this.queue) {
+      const job = await this.queue.add("legacy-cascade", payload);
+      return String(job.id);
+    }
+
+    const jobId = randomUUID();
+    this.inMemoryJobs.set(jobId, {
+      data: payload,
+      status: "queued",
+      progress: 0,
+      createdAt: Date.now(),
+    });
+    this.logger.log(`In-memory legacy job ${jobId} encolado projectId=${data.projectId}`);
+    setImmediate(() => this.startInMemoryJob(jobId, payload));
+    return jobId;
   }
 
   async getJobStatus(jobId: string): Promise<LegacyDeliverablesJobStatus> {
+    const mem = this.inMemoryJobs.get(jobId);
+    if (mem) {
+      return {
+        jobId,
+        projectId: mem.data.projectId,
+        status: mem.status,
+        progress: mem.progress,
+        result: mem.result,
+        error: mem.error,
+        attemptsMade: mem.status === "failed" ? 1 : 0,
+        maxAttempts: this.MAX_ATTEMPTS,
+        createdAt: mem.createdAt,
+        finishedAt: mem.finishedAt,
+      };
+    }
+
     if (!this.queue) {
       return {
         jobId,

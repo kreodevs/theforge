@@ -3,6 +3,8 @@ import { ComplexityLevel, Status } from "@theforge/database";
 import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.service.js";
 import { markdownToMddStructured } from "../ai-analysis/utils/mdd-markdown-to-structured.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "./semaphore.service.js";
+import { prepareMddForOutput } from "../ai-analysis/utils/mdd-prepare-output.js";
+import { validateMddForDelivery } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
 import { normalizeMddContent } from "./mdd-markdown-parser.js";
 import { preRenderMddSanity, sanitizeMermaidInDraft, sanitizeSection4TablesInDraft } from "./mdd-pre-render.js";
 
@@ -33,8 +35,17 @@ export class MddUpdatePipelineService {
     semaphoreBase: Omit<SemaphoreEvaluationInput, "mddJsonString" | "sddDomainGraphOk">,
     graphScope?: { projectId: string; stageId: string },
   ): Promise<MddUpdatePipelineResult> {
-    // Auto-repair §4 tables and Mermaid before validation
-    const tableFixed = sanitizeSection4TablesInDraft(rawMddContent);
+    const gateRef: { current?: ReturnType<typeof validateMddForDelivery> } = {};
+    const prepared = await prepareMddForOutput(rawMddContent, { deliveryGateRef: gateRef });
+    const gate = gateRef.current ?? validateMddForDelivery(prepared);
+    if (!gate.ok) {
+      return {
+        ok: false,
+        code: "ERR_MDD_DELIVERY_GATE",
+        message: gate.blockers.join("; "),
+      };
+    }
+    const tableFixed = sanitizeSection4TablesInDraft(prepared);
     const preSanitized = sanitizeMermaidInDraft(tableFixed);
     const sanity = preRenderMddSanity(preSanitized);
     if (!sanity.ok) {

@@ -3,7 +3,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Check, FileWarning, Loader2, RefreshCw, X } from "lucide-react";
-import type { DocumentationGapResponse } from "@theforge/shared-types";
+import type { DocumentationGapResponse, MddDeliveryGateResult } from "@theforge/shared-types";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { apiFetch, API_BASE } from "@/utils/apiClient";
@@ -29,6 +29,12 @@ export interface PendingDocumentationGapsPanelProps {
   className?: string;
   /** Tras aprobar/rechazar con éxito (p. ej. refrescar proyecto). */
   onResolved?: () => void;
+  /** Compact chrome for the workshop sidebar. */
+  variant?: "default" | "sidebar" | "workspace";
+  /** Notifica el conteo tras cada carga (p. ej. badge en el sidebar). */
+  onGapsCountChange?: (count: number) => void;
+  /** Incrementar para forzar recarga (p. ej. tras cascada de entregables). */
+  refreshToken?: number;
 }
 
 export function PendingDocumentationGapsPanel({
@@ -36,8 +42,12 @@ export function PendingDocumentationGapsPanel({
   stageId,
   className,
   onResolved,
+  variant = "default",
+  onGapsCountChange,
+  refreshToken,
 }: PendingDocumentationGapsPanelProps) {
   const [gaps, setGaps] = useState<DocumentationGapResponse[]>([]);
+  const [mddDeliveryGate, setMddDeliveryGate] = useState<MddDeliveryGateResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [actingId, setActingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,18 +64,24 @@ export function PendingDocumentationGapsPanel({
         const text = await r.text().catch(() => "");
         throw new Error(text || `HTTP ${r.status}`);
       }
-      const data = (await r.json()) as { gaps: DocumentationGapResponse[] };
-      setGaps(data.gaps ?? []);
+      const data = (await r.json()) as {
+        gaps: DocumentationGapResponse[];
+        mddDeliveryGate?: MddDeliveryGateResult | null;
+      };
+      const nextGaps = data.gaps ?? [];
+      setGaps(nextGaps);
+      setMddDeliveryGate(data.mddDeliveryGate ?? null);
+      onGapsCountChange?.(nextGaps.length);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al cargar cambios pendientes");
     } finally {
       setLoading(false);
     }
-  }, [projectId, stageId]);
+  }, [projectId, stageId, onGapsCountChange]);
 
   useEffect(() => {
     void fetchPending();
-  }, [fetchPending]);
+  }, [fetchPending, refreshToken]);
 
   const handleApprove = useCallback(
     async (gapId: string) => {
@@ -131,41 +147,111 @@ export function PendingDocumentationGapsPanel({
     return null;
   }
 
+  const isSidebar = variant === "sidebar";
+  const isWorkspace = variant === "workspace";
+  const showPanelHeader = !isSidebar && !isWorkspace;
+
   return (
     <section
       className={cn(
-        "rounded-xl border border-[color-mix(in_oklch,var(--warning)_35%,var(--border))] bg-[color-mix(in_oklch,var(--warning)_6%,var(--card))] p-4 space-y-3",
+        isSidebar
+          ? "rounded-lg border border-[color-mix(in_oklch,var(--sidebar-border)_80%,transparent)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_4%,var(--sidebar))] p-2.5 space-y-2"
+          : isWorkspace
+            ? "space-y-3"
+            : "rounded-xl border border-[color-mix(in_oklch,var(--warning)_35%,var(--border))] bg-[color-mix(in_oklch,var(--warning)_6%,var(--card))] p-4 space-y-3",
         className,
       )}
       aria-label="Cambios pendientes de documentación"
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <FileWarning
-            className="h-4 w-4 shrink-0 text-[color-mix(in_oklch,var(--warning)_75%,var(--foreground))]"
-            aria-hidden
-          />
-          <h3 className="text-sm font-semibold truncate">Cambios pendientes</h3>
-          {gaps.length > 0 ? (
-            <span className="inline-flex rounded-full bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[color-mix(in_oklch,var(--warning)_85%,var(--foreground))]">
-              {gaps.length}
-            </span>
-          ) : null}
+      {showPanelHeader ? (
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <FileWarning
+              className="h-4 w-4 shrink-0 text-[color-mix(in_oklch,var(--warning)_75%,var(--foreground))]"
+              aria-hidden
+            />
+            <h3 className="text-sm font-semibold truncate">Cambios pendientes</h3>
+            {gaps.length > 0 ? (
+              <span className="inline-flex rounded-full bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[color-mix(in_oklch,var(--warning)_85%,var(--foreground))]">
+                {gaps.length}
+              </span>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => void fetchPending()}
+            disabled={loading}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[color-mix(in_oklch,var(--foreground-subtle)_90%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--muted)_40%,transparent)] disabled:opacity-50"
+            title="Actualizar"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => void fetchPending()}
-          disabled={loading}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[color-mix(in_oklch,var(--foreground-subtle)_90%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--muted)_40%,transparent)] disabled:opacity-50"
-          title="Actualizar"
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-        </button>
-      </div>
-      <p className="text-xs text-[color-mix(in_oklch,var(--foreground-subtle)_85%,var(--background))]">
-        Los agentes reportan discrepancias entre código y SDD. Revisa la descripción y acepta o rechaza antes de
-        actualizar los artefactos.
+      ) : isSidebar ? (
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => void fetchPending()}
+            disabled={loading}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--sidebar-foreground))] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_55%,transparent)] disabled:opacity-50"
+            title="Actualizar cambios pendientes"
+          >
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            <span className="sr-only">Actualizar</span>
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => void fetchPending()}
+            disabled={loading}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[color-mix(in_oklch,var(--foreground-subtle)_90%,var(--foreground))] hover:bg-[color-mix(in_oklch,var(--muted)_40%,transparent)] disabled:opacity-50"
+            title="Actualizar cambios pendientes"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            <span className="sr-only">Actualizar</span>
+          </button>
+        </div>
+      )}
+      <p
+        className={cn(
+          "text-[color-mix(in_oklch,var(--foreground-subtle)_85%,var(--background))]",
+          isSidebar ? "text-[10px] leading-snug" : "text-xs",
+        )}
+      >
+        Los agentes reportan discrepancias entre código implementado y SDD durante la ejecución en el
+        repo destino. Tras generar entregables, los conflictos SDD internos (ORM, colas, JWT, etc.)
+        aparecen aquí para que decidas si reconciliar.
       </p>
+      {mddDeliveryGate && !mddDeliveryGate.ok && mddDeliveryGate.blockers.length > 0 ? (
+        <div
+          className={cn(
+            "rounded-md border border-[color-mix(in_oklch,var(--destructive)_35%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_8%,var(--card))] space-y-1",
+            isSidebar ? "p-2" : "p-3",
+          )}
+          role="alert"
+        >
+          <p
+            className={cn(
+              "font-semibold text-[color-mix(in_oklch,var(--destructive)_85%,var(--foreground))]",
+              isSidebar ? "text-[10px]" : "text-xs",
+            )}
+          >
+            Gate MDD bloqueado ({mddDeliveryGate.score}/100)
+          </p>
+          <ul
+            className={cn(
+              "list-disc pl-4 text-[color-mix(in_oklch,var(--foreground-subtle)_90%,var(--foreground))]",
+              isSidebar ? "text-[10px] space-y-0.5" : "text-xs space-y-1",
+            )}
+          >
+            {mddDeliveryGate.blockers.slice(0, 4).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {error ? (
         <p className="text-xs text-[color-mix(in_oklch,var(--destructive)_85%,var(--foreground))]" role="alert">
           {error}
@@ -181,7 +267,7 @@ export function PendingDocumentationGapsPanel({
           No hay cambios pendientes de aprobación.
         </p>
       ) : (
-        <ul className="space-y-3 max-h-80 overflow-y-auto">
+        <ul className={cn("space-y-3 overflow-y-auto", isSidebar ? "max-h-48 space-y-2" : isWorkspace ? "max-h-none" : "max-h-80")}>
           {gaps.map((gap) => {
             const busy = actingId === gap.id;
             return (

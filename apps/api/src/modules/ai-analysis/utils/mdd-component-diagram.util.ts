@@ -102,11 +102,41 @@ const GRAPH_PATTERNS = [
 ];
 
 const CACHE_QUEUE_PATTERNS = [
+  { re: /\bbullmq\b/i, label: "BullMQ" },
   { re: /\bredis\b/i, label: "Redis" },
   { re: /rabbitmq/i, label: "RabbitMQ" },
   { re: /\bkafka\b/i, label: "Kafka" },
-  { re: /bullmq|\bbull\b/i, label: "BullMQ" },
 ];
+
+/** Broker explícito en tabla §2 (evita falso BullMQ por `@nestjs/bull` en Circuit Breaker). */
+function resolveMessageBrokerLabel(section2Body: string): string | undefined {
+  const tableRow = section2Body.match(
+    /\|\s*(?:\*\*)?(?:Message\s+Broker|Cola|Broker)(?:\*\*)?\s*\|\s*([^|\n]+)/i,
+  )?.[1];
+  if (tableRow) {
+    const cell = tableRow.trim();
+    if (/rabbitmq/i.test(cell)) return "RabbitMQ";
+    if (/\bkafka\b/i.test(cell)) return "Kafka";
+    if (/\bbullmq\b/i.test(cell)) return "BullMQ";
+  }
+  if (/rabbitmq/i.test(section2Body) && !/\bbullmq\b/i.test(section2Body)) return "RabbitMQ";
+  return firstMatchLabel(section2Body, CACHE_QUEUE_PATTERNS);
+}
+
+function section2HasDetailedComponentDiagram(section2Body: string): boolean {
+  if (!/```mermaid/i.test(section2Body) || !/subgraph/i.test(section2Body)) return false;
+  return (
+    /###\s*2\.\d+\s*Diagrama de componentes/i.test(section2Body) ||
+    /Microservicios|Auth Service|Kong|RabbitMQ|API Gateway/i.test(section2Body)
+  );
+}
+
+const NO_UI_SURFACE_PATTERN =
+  /(?:sin|no)\s+(?:dashboard|frontend|ui|interfaz|pantalla|panel\s+web)|(?:mvp|fase\s*1)[^\n]{0,120}(?:sin|no\s+incluye|excluye|fuera\s+de)\s+(?:dashboard|frontend|ui|panel\s+web)|(?:panel|dashboard)\s+web[^\n]{0,40}fuera\s+del\s+alcance|fuera\s+del\s+alcance[^\n]{0,40}(?:mvp|panel\s+web|dashboard)|solo\s+APIs?\s+y\s+CLI|(?:panel|dashboard)\s+web\s+(?:fuera|excluido)|api[\s-]?only|mvp\s+api|cli[\s-]?only|solo\s+api|backend\s+only/i;
+
+function section2ExcludesUiSurface(section2Body: string): boolean {
+  return NO_UI_SURFACE_PATTERN.test(section2Body);
+}
 
 /** Extrae señales de stack y volumen desde un MDD greenfield canónico. */
 export function parseGreenfieldMddSignals(draft: string): GreenfieldStackSignals | null {
@@ -122,11 +152,12 @@ export function parseGreenfieldMddSignals(draft: string): GreenfieldStackSignals
   if (/^\s*\(Pendiente\)\s*$/i.test(section2.body)) return null;
 
   const stackText = [section2.body, section3?.body ?? "", section4?.body ?? ""].join("\n");
-  const frontend = firstMatchLabel(section2.body, FRONTEND_PATTERNS);
+  const uiExcluded = section2ExcludesUiSurface(section2.body);
+  const frontend = uiExcluded ? undefined : firstMatchLabel(section2.body, FRONTEND_PATTERNS);
   const backend = firstMatchLabel(section2.body, BACKEND_PATTERNS);
   const primaryDb = firstMatchLabel(stackText, DB_PATTERNS);
   const graphDb = firstMatchLabel(stackText, GRAPH_PATTERNS);
-  const cacheOrQueue = firstMatchLabel(section2.body, CACHE_QUEUE_PATTERNS);
+  const cacheOrQueue = resolveMessageBrokerLabel(section2.body);
   const hasCypherGraph =
     /```cypher/i.test(section3?.body ?? "") ||
     /```(?:text|plaintext)[\s\S]*?(?:CREATE|MERGE)\s*\(/i.test(section3?.body ?? "") ||
@@ -206,7 +237,14 @@ export function buildProposedComponentDiagramMermaid(signals: GreenfieldStackSig
   if (signals.cacheOrQueue) {
     const auxId = sanitizeMermaidId(signals.cacheOrQueue);
     lines.push(`  ${auxId}["${signals.cacheOrQueue}"]`);
-    const target = signals.backend ? "BE_DOMAIN" : signals.frontend ? "CLIENT" : "APP";
+    const target =
+      signals.backend && signals.frontend
+        ? "BE_DOMAIN"
+        : signals.backend
+          ? "SVC"
+          : signals.frontend
+            ? "CLIENT"
+            : "APP";
     edges.push(`  ${target} --> ${auxId}`);
   }
 
@@ -230,15 +268,56 @@ function hasProposedComponentDiagramSection(draft: string): boolean {
   return /###\s+Diagrama de componentes propuesto/i.test(draft);
 }
 
+/** Diagrama propuesto con arista BE_DOMAIN huérfana (nodo renombrado a SVC). */
+export function proposedComponentDiagramNeedsRepair(mermaid: string): boolean {
+  if (!/BE_DOMAIN\s*-->/.test(mermaid)) return false;
+  return !/\bBE_DOMAIN\s*\[/.test(mermaid);
+}
+
+function extractProposedComponentDiagramMermaid(draft: string): string | null {
+  const match = draft.match(
+    /###\s+Diagrama de componentes propuesto[\s\S]*?```mermaid\n([\s\S]*?)```/i,
+  );
+  return match?.[1]?.trim() ?? null;
+}
+
+function replaceProposedComponentDiagramSection(draft: string, mermaid: string): string {
+  const replacement = formatProposedComponentDiagramMarkdown(mermaid);
+  if (!hasProposedComponentDiagramSection(draft)) {
+    const section2Match = draft.match(/^##\s*2\.\s*Arquitectura[^\n]*/im);
+    if (!section2Match) return draft;
+    const s2Start = section2Match.index ?? 0;
+    const s3Match = /^##\s*3\.\s*/gim;
+    s3Match.lastIndex = s2Start + 1;
+    const s3 = s3Match.exec(draft);
+    const s2End = s3 ? s3.index : draft.length;
+    return draft.slice(0, s2End) + `\n\n${replacement}\n` + draft.slice(s2End);
+  }
+  return draft.replace(
+    /###\s+Diagrama de componentes propuesto[\s\S]*?(?=\n##\s|\n#\s|$)/i,
+    `${replacement.trimEnd()}\n`,
+  );
+}
+
 function hasLegacyComponentDiagramSection(draft: string): boolean {
   return /(?:^|\n)##?\s+Diagrama de Componentes\s*(?:\n|$)/i.test(draft);
 }
 
-/** Inserta ### Diagrama de componentes propuesto al final de §2 (idempotente). */
+/** Inserta o repara ### Diagrama de componentes propuesto al final de §2. */
 export function injectProposedComponentDiagramIntoSection2(draft: string): string {
   if (!isMddProposedComponentDiagramEnabled()) return draft;
   const mdd = (draft ?? "").trim();
-  if (!mdd || hasProposedComponentDiagramSection(mdd) || hasLegacyComponentDiagramSection(mdd)) {
+  if (!mdd || hasLegacyComponentDiagramSection(mdd)) return draft;
+
+  const section2 = getSectionBody(mdd, /^##\s*2\.\s*Arquitectura[^\n]*/im);
+  if (section2?.body && section2HasDetailedComponentDiagram(section2.body)) {
+    return draft;
+  }
+
+  const existingMermaid = hasProposedComponentDiagramSection(mdd)
+    ? extractProposedComponentDiagramMermaid(mdd)
+    : null;
+  if (existingMermaid && !proposedComponentDiagramNeedsRepair(existingMermaid)) {
     return draft;
   }
 
@@ -248,14 +327,5 @@ export function injectProposedComponentDiagramIntoSection2(draft: string): strin
   const mermaid = buildProposedComponentDiagramMermaid(signals);
   if (!mermaid) return draft;
 
-  const section2Match = mdd.match(/^##\s*2\.\s*Arquitectura[^\n]*/im);
-  if (!section2Match) return draft;
-  const s2Start = section2Match.index ?? 0;
-  const s3Match = /^##\s*3\.\s*/gim;
-  s3Match.lastIndex = s2Start + 1;
-  const s3 = s3Match.exec(mdd);
-  const s2End = s3 ? s3.index : mdd.length;
-
-  const injection = `\n\n${formatProposedComponentDiagramMarkdown(mermaid)}\n`;
-  return mdd.slice(0, s2End) + injection + mdd.slice(s2End);
+  return replaceProposedComponentDiagramSection(mdd, mermaid);
 }

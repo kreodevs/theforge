@@ -14,9 +14,19 @@ import {
 } from "../ai/utils/suggest-agent-governance-artifacts.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import {
+  ensurePostMvpUiSurfaceBanner,
+  sanitizeMddForExport,
+} from "../ai-analysis/utils/mdd-sanitize.js";
+import { injectProposedComponentDiagramIntoSection2 } from "../ai-analysis/utils/mdd-component-diagram.util.js";
+import { qualifyBlueprintPostMvpUiMentions } from "../engine/blueprint-enrich-ui-system.js";
+import { alignSddDeliverablesAtPersist, finalizeInfraMarkdownForExport } from "../documentation-gap/sdd-align-at-persist.util.js";
+import { listArchitectureDecisionFiles } from "../documentation-gap/architecture-decision.util.js";
+import { validateMddForDelivery } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
+import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
   buildBranchPolicyExportFile,
   buildSpecKitBundleFiles,
+  formatDocumentMarkdown,
   GOVERNANCE_DOCS_PREFIX,
   parseAgentGovernanceScaffold,
   resolveDocumentPathMap,
@@ -28,6 +38,7 @@ import {
   type SddAgentGovernanceAnalyzeSlice,
   type SpecKitBundleFile,
   type TheforgeProjectJson,
+  type MddDeliveryGateResult,
 } from "@theforge/shared-types";
 import { pickPrimaryStage } from "./stage-helpers.js";
 
@@ -70,6 +81,8 @@ export interface HermesHandoffPayload {
   files: HandoffFileWithHash[];
   governanceFiles: HandoffFileWithHash[];
   cliFallback: string;
+  /** Resumen del gate MDD al exportar (desde .theforge-project.json). */
+  deliveryGate?: MddDeliveryGateResult;
 }
 
 /** MDD or fallback for LOW/MEDIUM without full MDD. */
@@ -203,26 +216,63 @@ export function buildAgentGovernanceInput(
   mddMarkdown: string,
   complexity: ComplexityLevel,
   stage?: Stage | null,
+  deliverableOverrides?: {
+    tasksContent?: string | null;
+    userStoriesContent?: string | null;
+    blueprintContent?: string | null;
+    infraContent?: string | null;
+  },
 ): SuggestAgentGovernanceInput {
   return {
     mddMarkdown,
-    blueprintMarkdown: project.blueprintContent,
-    tasksMarkdown: project.tasksContent,
+    blueprintMarkdown: deliverableOverrides?.blueprintContent ?? project.blueprintContent,
+    tasksMarkdown: deliverableOverrides?.tasksContent ?? project.tasksContent,
     architectureMarkdown: project.architectureContent,
     specMarkdown: project.specContent,
     apiContractsMarkdown: project.apiContractsContent,
     logicFlowsMarkdown: project.logicFlowsContent,
     uxUiGuideMarkdown: project.uxUiGuideContent,
     uiScreensMarkdown: project.uiScreensContent,
-    infraMarkdown: project.infraContent,
+    infraMarkdown: deliverableOverrides?.infraContent ?? project.infraContent,
     useCasesMarkdown: project.useCasesContent,
-    userStoriesMarkdown: project.userStoriesContent,
+    userStoriesMarkdown: deliverableOverrides?.userStoriesContent ?? project.userStoriesContent,
     projectName: project.name,
     projectId: project.id,
     stageId: stage?.id ?? null,
     stageOrdinal: stage?.ordinal ?? null,
     complexity,
   };
+}
+
+function alignedDeliverablesForProject(project: ProjectWithStages) {
+  const stage = pickPrimaryStage(project.stages);
+  const mddRaw = stage?.mddContent ?? projectConstitutionMarkdown(project);
+  return alignSddDeliverablesAtPersist({
+    mddContent: mddRaw ?? "",
+    tasksContent: project.tasksContent,
+    userStoriesContent: project.userStoriesContent,
+    blueprintContent: project.blueprintContent,
+    infraContent: project.infraContent,
+  });
+}
+
+function extractGovernanceCorpusForExport(agentGovernanceContent: string | null | undefined): string {
+  const raw = agentGovernanceContent?.trim();
+  if (!raw) return "";
+  const scaffold = parseAgentGovernanceScaffold(raw);
+  const agents = scaffold?.files.find((f) => f.path === "AGENTS.md" || f.path.endsWith("/AGENTS.md"));
+  return agents?.content?.trim() ?? "";
+}
+
+function buildInfraExportOpts(
+  aligned: ReturnType<typeof alignSddDeliverablesAtPersist>,
+  governanceCorpus: string,
+): { extraCorpus: string; packageManagerCorpus: string } | undefined {
+  const corpus = [governanceCorpus, aligned.tasksContent, aligned.userStoriesContent]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+  return corpus ? { extraCorpus: corpus, packageManagerCorpus: corpus } : undefined;
 }
 
 const ROOT_CONSUMPTION_GUIDE = "THEFORGE-DOC-CONSUMPTION-GUIDE.md";
@@ -266,9 +316,15 @@ export function reconcileExportScaffold(
   }
 
   const complexity = (project.complexity ?? "HIGH") as ComplexityLevel;
-  const mdd = projectConstitutionMarkdown(project);
   const stage = pickPrimaryStage(project.stages);
-  const governanceInput = buildAgentGovernanceInput(project, mdd, complexity, stage);
+  const aligned = alignedDeliverablesForProject(project);
+  const mdd = aligned.mddContent || projectConstitutionMarkdown(project);
+  const governanceInput = buildAgentGovernanceInput(project, mdd, complexity, stage, {
+    tasksContent: aligned.tasksContent,
+    userStoriesContent: aligned.userStoriesContent,
+    blueprintContent: aligned.blueprintContent,
+    infraContent: aligned.infraContent,
+  });
   const suggestions = suggestAgentGovernanceArtifacts(governanceInput);
   const featureDir = specKitFeatureDir(stage?.ordinal ?? 1, project.name);
 
@@ -294,23 +350,49 @@ export function buildSpecKitFilesForProject(
   const deliverables = primaryStage
     ? resolveStageDeliverables(project, primaryStage, "analyze").deliverables
     : project;
-  const mdd = (primaryStage?.mddContent ?? "").trim() || projectConstitutionMarkdown(project);
+  const aligned = alignedDeliverablesForProject(project);
+  const rawMdd =
+    (primaryStage?.mddContent ?? "").trim() ||
+    aligned.mddContent ||
+    projectConstitutionMarkdown(project);
+  const mdd = rawMdd?.trim()
+    ? injectProposedComponentDiagramIntoSection2(sanitizeMddForExport(rawMdd))
+    : rawMdd;
+  const jwtCorpus = [aligned.tasksContent, aligned.userStoriesContent].filter(Boolean).join("\n");
+  const governanceCorpus = extractGovernanceCorpusForExport(project.agentGovernanceContent);
+  const infraExportOpts =
+    buildInfraExportOpts(aligned, governanceCorpus) ??
+    (jwtCorpus.trim() ? { extraCorpus: jwtCorpus, packageManagerCorpus: jwtCorpus } : undefined);
+  const uxUiRaw = deliverables.uxUiGuideContent ?? project.uxUiGuideContent;
+  const uxUiTrimmed = uxUiRaw?.trim();
+  const uxUiFormatted = uxUiTrimmed ? formatDocumentMarkdown(uxUiTrimmed) : null;
+  const uxUi = uxUiFormatted
+    ? ensurePostMvpUiSurfaceBanner(mdd ?? "", uxUiFormatted)
+    : uxUiRaw;
+  const infraSource = aligned.infraContent ?? deliverables.infraContent ?? project.infraContent;
+  const infra = infraSource?.trim()
+    ? finalizeInfraMarkdownForExport(mdd ?? "", infraSource, infraExportOpts)
+    : infraSource;
+  const blueprintSource = aligned.blueprintContent ?? deliverables.blueprintContent ?? project.blueprintContent;
+  const blueprint = blueprintSource?.trim()
+    ? qualifyBlueprintPostMvpUiMentions(mdd ?? "", blueprintSource)
+    : blueprintSource;
   return buildSpecKitBundleFiles({
     projectName: project.name,
     featureOrdinal: primaryStage?.ordinal ?? 1,
     mddContent: mdd,
     specContent: deliverables.specContent ?? project.specContent,
-    blueprintContent: deliverables.blueprintContent ?? project.blueprintContent,
-    tasksContent: deliverables.tasksContent ?? project.tasksContent,
+    blueprintContent: blueprint,
+    tasksContent: aligned.tasksContent ?? deliverables.tasksContent ?? project.tasksContent,
     apiContractsContent: deliverables.apiContractsContent ?? project.apiContractsContent,
     logicFlowsContent: deliverables.logicFlowsContent ?? project.logicFlowsContent,
-    infraContent: deliverables.infraContent ?? project.infraContent,
+    infraContent: infra,
     architectureContent: deliverables.architectureContent ?? project.architectureContent,
     useCasesContent: deliverables.useCasesContent ?? project.useCasesContent,
-    userStoriesContent: deliverables.userStoriesContent ?? project.userStoriesContent,
+    userStoriesContent: aligned.userStoriesContent ?? deliverables.userStoriesContent ?? project.userStoriesContent,
     phase0SummaryContent: project.phase0SummaryContent,
     dbgaContent: project.dbgaContent,
-    uxUiGuideContent: deliverables.uxUiGuideContent ?? project.uxUiGuideContent,
+    uxUiGuideContent: uxUi,
     uiScreensContent: deliverables.uiScreensContent ?? project.uiScreensContent,
     consumptionGuideContent,
   });
@@ -342,6 +424,15 @@ export function buildUnifiedHandoff(
     agentGovernance,
     consumptionGuideContent,
   );
+
+  const adrFiles = listArchitectureDecisionFiles(project.agentGovernanceContent);
+  const specKitPaths = new Set(specKitFiles.map((f) => f.path));
+  for (const adr of adrFiles) {
+    if (!specKitPaths.has(adr.path)) {
+      specKitFiles.push({ path: adr.path, content: adr.content });
+      specKitPaths.add(adr.path);
+    }
+  }
 
   specKitFiles.push(theforgeProjectJsonSpecKitFile(project));
 
@@ -433,6 +524,8 @@ export function buildTheforgeProjectJson(
   for (const entry of pathMap) {
     artifactPaths[entry.label] = entry.mirror;
   }
+  const mddRaw = (stage?.mddContent ?? "").trim();
+  const deliveryGate = mddRaw.length > 80 ? validateMddForDelivery(mddRaw) : undefined;
   return {
     projectId: project.id,
     stageId: stage?.id ?? "",
@@ -442,6 +535,16 @@ export function buildTheforgeProjectJson(
     exportedAt: new Date().toISOString(),
     artifactPaths,
     mcp: { tool: "report_documentation_gap" },
+    ...(deliveryGate
+      ? {
+          deliveryGate: {
+            ok: deliveryGate.ok,
+            score: deliveryGate.score,
+            blockers: deliveryGate.blockers,
+            warnings: deliveryGate.warnings,
+          },
+        }
+      : {}),
   };
 }
 
@@ -469,8 +572,13 @@ export function toHandoffFilesWithHash(
 
 export function buildHermesHandoffPayload(
   unified: UnifiedHandoff,
+  project?: ProjectWithStages,
 ): HermesHandoffPayload {
   const governanceFiles = unified.agentGovernance?.files ?? [];
+  const deliveryGate =
+    project != null
+      ? buildTheforgeProjectJson(project).deliveryGate
+      : undefined;
   return {
     format: "spec-kit-compatible",
     featureDir: unified.featureDir,
@@ -483,5 +591,6 @@ export function buildHermesHandoffPayload(
     files: toHandoffFilesWithHash(unified.specKitFiles),
     governanceFiles: toHandoffFilesWithHash(governanceFiles),
     cliFallback: `node scripts/theforge-export.mjs --project <id> --out ./handoff`,
+    ...(deliveryGate ? { deliveryGate } : {}),
   };
 }

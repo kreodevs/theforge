@@ -3,6 +3,7 @@ import { HumanMessage } from "@langchain/core/messages";
 import { ARCHITECT_CRITIC_MDD_PROMPT } from "../prompts/load-prompts.js";
 import type { MDDStateType } from "../state/index.js";
 import { extractSection3Body, extractSection4Body } from "../utils/mdd-sanitize.js";
+import { detectSection3CompositionBlockers } from "../utils/schema-owner.util.js";
 import { getUserExplicitRequirements } from "../utils/mdd-user-brief.js";
 import { extractFirstJsonObject } from "../utils/parse-json.js";
 import { z } from "zod";
@@ -24,6 +25,16 @@ export function createMddArchitectCriticNode(llm: BaseChatModel) {
     const directive = state.acceptedProposalDirective?.trim();
     const explicitReqs = getUserExplicitRequirements(state);
     const draft = (state.mddDraft ?? "").trim();
+    const attempts = (state.architectCriticAttempts ?? 0) + 1;
+    const sqlBlockers = detectSection3CompositionBlockers(draft);
+    if (sqlBlockers.length > 0 && attempts <= 1) {
+      const feedback = `Corregir §3 (SQL/DDL): ${sqlBlockers.join("; ")}`;
+      LOG("blockers §3 deterministas attempts=%s", attempts);
+      return {
+        architectCriticFeedback: feedback,
+        architectCriticAttempts: attempts,
+      };
+    }
 
     if (!directive && !explicitReqs) {
       LOG("sin directiva ni requisitos explícitos, omitir critic");
@@ -50,7 +61,6 @@ export function createMddArchitectCriticNode(llm: BaseChatModel) {
     const context = `**Directiva o requisitos del usuario:**\n${directiveBlock}\n\n**Fragmento de MDD recién generado (§3 y §4):**\n${fragment.slice(0, 6000)}`;
     const prompt = `${ARCHITECT_CRITIC_MDD_PROMPT}\n\n---\n${context}`;
 
-    const attempts = (state.architectCriticAttempts ?? 0) + 1;
     const fallbackGapFeedback =
       "No se pudo verificar §3 y §4 automáticamente. Revisa que la directiva del usuario (modelo de datos, entidades, roles, aplicaciones, contratos API) esté aplicada en el SQL, diagrama ER y sección 4.";
     try {

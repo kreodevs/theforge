@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { MddDeliveryGateResult } from "./mdd.js";
 
 /** Artefactos SDD que pueden regenerarse parcialmente tras un gap reportado. */
 export const affectedArtifactSchema = z.enum([
@@ -106,6 +107,8 @@ export type RejectDocumentationGapBody = z.infer<typeof rejectDocumentationGapBo
 
 export interface DocumentationGapListResponse {
   gaps: DocumentationGapResponse[];
+  /** Gate MDD de entrega (snapshot o evaluación en vivo) para UI de bloqueos. */
+  mddDeliveryGate?: MddDeliveryGateResult | null;
 }
 
 export interface ApproveDocumentationGapResponse {
@@ -143,4 +146,6 @@ export interface TheforgeProjectJson {
   exportedAt: string;
   artifactPaths: Record<string, string>;
   mcp: { tool: string };
+  /** Resumen del gate de entrega MDD al exportar (≥9/10). */
+  deliveryGate?: MddDeliveryGateResult;
 }

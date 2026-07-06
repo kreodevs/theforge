@@ -6,8 +6,8 @@ import {
   OnModuleInit,
   Optional,
   forwardRef,
-  ServiceUnavailableException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
 import type { AffectedArtifact } from "@theforge/shared-types";
 import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-user.store.js";
@@ -41,6 +41,8 @@ export interface GenerateJobData {
   gapId?: string;
   stageId?: string;
   affectedArtifacts?: AffectedArtifact[];
+  /** Si true, permite generar aunque el gate MDD tenga blockers (soft gate). */
+  acknowledgeGaps?: boolean;
 }
 
 /** Estado público de un job para polling del frontend. */
@@ -57,6 +59,16 @@ export interface GenerateJobStatus {
   createdAt: number;
   finishedAt?: number;
 }
+
+type InMemoryJobRecord = {
+  data: GenerateJobData;
+  status: GenerateJobStatus["status"];
+  progress: unknown;
+  result?: unknown;
+  error?: string;
+  createdAt: number;
+  finishedAt?: number;
+};
 
 /**
  * Determina si un error es transitorio para loggear apropiadamente.
@@ -86,6 +98,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DeliverablesQueueService.name);
   private queue: Queue | null = null;
   private worker: Worker | null = null;
+  private readonly inMemoryJobs = new Map<string, InMemoryJobRecord>();
 
   /** Intentos máximos por job (BullMQ reintenta automáticamente con backoff). */
   private readonly MAX_ATTEMPTS = 4;
@@ -98,14 +111,21 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     private readonly docReconcile: DocReconcileService | null,
   ) {}
 
+  /** Cola disponible (BullMQ con Redis o fallback in-memory en dev). */
   isEnabled(): boolean {
+    return true;
+  }
+
+  usesRedis(): boolean {
     return !!process.env.REDIS_URL?.trim();
   }
 
   async onModuleInit(): Promise<void> {
     const url = process.env.REDIS_URL?.trim();
     if (!url) {
-      this.logger.log("BullMQ: sin REDIS_URL — generate-* endpoints siguen siendo HTTP síncronos");
+      this.logger.log(
+        "BullMQ: sin REDIS_URL — cascada de entregables usa cola in-memory (polling + progreso en chat)",
+      );
       return;
     }
     this.queue = new Queue(DELIVERABLES_QUEUE_NAME, {
@@ -116,71 +136,20 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
         attempts: this.MAX_ATTEMPTS,
         backoff: {
           type: "exponential",
-          delay: 4_000, // 4s → 8s → 16s → 32s (4 intentos, ~60s hasta failure final)
+          delay: 4_000,
         },
       },
     });
     this.worker = new Worker(
       DELIVERABLES_QUEUE_NAME,
       async (job: Job<GenerateJobData>) => {
-        const { type, projectId, userId, preview, gapsFeedback, target, forceRegenerate, gapId, stageId, affectedArtifacts } = job.data;
+        const { userId } = job.data;
         return runWithRequestUserAsync(userId ?? "system", async () => {
           this.logger.log(
-            `BullMQ worker: iniciando job ${job.id} type=${type} projectId=${projectId} attempt=${job.attemptsMade + 1}/${this.MAX_ATTEMPTS}`,
+            `BullMQ worker: iniciando job ${job.id} type=${job.data.type} projectId=${job.data.projectId} attempt=${job.attemptsMade + 1}/${this.MAX_ATTEMPTS}`,
           );
           job.updateProgress(0);
-
-          switch (type) {
-            case "cascade":
-              return this.projects.generateDeliverablesCascade(projectId, (p) => {
-                job.updateProgress(p);
-              });
-            case "blueprint":
-              if (preview) return this.projects.generateBlueprintPreview(projectId, gapsFeedback);
-              return this.projects.generateBlueprint(projectId, gapsFeedback);
-            case "api-contracts":
-              if (preview) return this.projects.generateApiContractsPreview(projectId, gapsFeedback);
-              return this.projects.generateApiContracts(projectId, gapsFeedback);
-            case "logic-flows":
-              return this.projects.generateLogicFlows(projectId, gapsFeedback);
-            case "tasks":
-              return this.projects.generateTasks(projectId);
-            case "agent-governance":
-              if (preview) {
-                return this.projects.generateAgentGovernancePreview(projectId, target, {
-                  forceRegenerate: forceRegenerate !== false,
-                });
-              }
-              return this.projects.generateAgentGovernance(projectId, target, {
-                forceRegenerate: forceRegenerate !== false,
-              });
-            case "infra":
-              if (preview) return this.projects.generateInfraPreview(projectId, gapsFeedback);
-              return this.projects.generateInfra(projectId, gapsFeedback);
-            case "architecture":
-              if (preview) return this.projects.generateArchitecturePreview(projectId);
-              return this.projects.generateArchitecture(projectId);
-            case "use-cases":
-              if (preview) return this.projects.generateUseCasesPreview(projectId);
-              return this.projects.generateUseCases(projectId);
-            case "user-stories":
-              if (preview) return this.projects.generateUserStoriesPreview(projectId);
-              return this.projects.generateUserStories(projectId);
-            case "doc-reconcile-partial": {
-              if (!this.docReconcile || !gapId || !stageId || !affectedArtifacts?.length) {
-                throw new Error("doc-reconcile-partial requiere DocReconcileService, gapId, stageId y affectedArtifacts");
-              }
-              return this.docReconcile.executeReconcile({
-                projectId,
-                stageId,
-                gapId,
-                affectedArtifacts,
-                gapsFeedback: gapsFeedback ?? "",
-              });
-            }
-            default:
-              throw new Error(`Tipo de job desconocido: ${type}`);
-          }
+          return this.runJob(job.data, (p) => job.updateProgress(p as Job["progress"]));
         });
       },
       {
@@ -211,18 +180,197 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     await this.queue?.close();
   }
 
+  private async runJob(data: GenerateJobData, onProgress: (p: unknown) => void): Promise<unknown> {
+    const {
+      type,
+      projectId,
+      preview,
+      gapsFeedback,
+      target,
+      forceRegenerate,
+      gapId,
+      stageId,
+      affectedArtifacts,
+      acknowledgeGaps,
+    } = data;
+
+    if (!preview && type !== "doc-reconcile-partial") {
+      await this.projects.assertDeliverablesAllowed(projectId, { acknowledgeGaps });
+    }
+
+    let result: unknown;
+    switch (type) {
+      case "cascade":
+        result = await this.projects.generateDeliverablesCascade(
+          projectId,
+          (p) => {
+            onProgress(p);
+          },
+          { acknowledgeGaps },
+        );
+        break;
+      case "blueprint":
+        if (preview) {
+          result = await this.projects.generateBlueprintPreview(projectId, gapsFeedback);
+        } else {
+          result = await this.projects.generateBlueprint(projectId, gapsFeedback);
+        }
+        break;
+      case "api-contracts":
+        if (preview) {
+          result = await this.projects.generateApiContractsPreview(projectId, gapsFeedback);
+        } else {
+          result = await this.projects.generateApiContracts(projectId, gapsFeedback);
+        }
+        break;
+      case "logic-flows":
+        result = await this.projects.generateLogicFlows(projectId, gapsFeedback);
+        break;
+      case "tasks":
+        result = await this.projects.generateTasks(projectId);
+        break;
+      case "agent-governance":
+        if (preview) {
+          result = await this.projects.generateAgentGovernancePreview(projectId, target, {
+            forceRegenerate: forceRegenerate !== false,
+          });
+        } else {
+          result = await this.projects.generateAgentGovernance(projectId, target, {
+            forceRegenerate: forceRegenerate !== false,
+          });
+        }
+        break;
+      case "infra":
+        if (preview) {
+          result = await this.projects.generateInfraPreview(projectId, gapsFeedback);
+        } else {
+          result = await this.projects.generateInfra(projectId, gapsFeedback);
+        }
+        break;
+      case "architecture":
+        if (preview) {
+          result = await this.projects.generateArchitecturePreview(projectId);
+        } else {
+          result = await this.projects.generateArchitecture(projectId);
+        }
+        break;
+      case "use-cases":
+        if (preview) {
+          result = await this.projects.generateUseCasesPreview(projectId);
+        } else {
+          result = await this.projects.generateUseCases(projectId);
+        }
+        break;
+      case "user-stories":
+        if (preview) {
+          result = await this.projects.generateUserStoriesPreview(projectId);
+        } else {
+          result = await this.projects.generateUserStories(projectId);
+        }
+        break;
+      case "doc-reconcile-partial": {
+        if (!this.docReconcile || !gapId || !stageId || !affectedArtifacts?.length) {
+          throw new Error("doc-reconcile-partial requiere DocReconcileService, gapId, stageId y affectedArtifacts");
+        }
+        result = await this.docReconcile.executeReconcile({
+          projectId,
+          stageId,
+          gapId,
+          affectedArtifacts,
+          gapsFeedback: gapsFeedback ?? "",
+        });
+        break;
+      }
+      default:
+        throw new Error(`Tipo de job desconocido: ${type}`);
+    }
+
+    if (
+      type !== "cascade" &&
+      type !== "doc-reconcile-partial" &&
+      type !== "agent-governance" &&
+      !preview
+    ) {
+      await this.projects.runPostRegenSddConflictSurfacing(projectId).catch((err) => {
+        this.logger.warn(
+          `[deliverables-queue] sddConflictSurfacing (${type}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    }
+
+    return result;
+  }
+
+  private startInMemoryJob(jobId: string, data: GenerateJobData): void {
+    const record = this.inMemoryJobs.get(jobId);
+    if (!record) return;
+    record.status = "active";
+
+    void runWithRequestUserAsync(data.userId ?? "system", async () => {
+      const started = Date.now();
+      try {
+        const result = await this.runJob(data, (p) => {
+          record.progress = p;
+        });
+        record.status = "completed";
+        record.result = result;
+        record.finishedAt = Date.now();
+        const elapsed = Math.round((Date.now() - started) / 1000);
+        this.logger.log(
+          `In-memory job ${jobId} (${data.type} projectId=${data.projectId}) completado en ${elapsed}s`,
+        );
+      } catch (err) {
+        record.status = "failed";
+        record.error = err instanceof Error ? err.message : String(err);
+        record.finishedAt = Date.now();
+        this.logger.error(
+          `In-memory job ${jobId} (${data.type} projectId=${data.projectId}) falló: ${record.error}`,
+        );
+      }
+    });
+  }
+
   /** Encola cualquier tipo de job de generación. Retorna jobId. */
   async enqueue(data: GenerateJobData): Promise<string> {
-    if (!this.queue) {
-      throw new ServiceUnavailableException("Cola no disponible. Configure REDIS_URL o use modo síncrono.");
-    }
     const userId = data.userId ?? getRequestUserId();
-    const job = await this.queue.add(data.type, { ...data, userId });
-    return String(job.id);
+    const payload: GenerateJobData = { ...data, userId };
+
+    if (this.queue) {
+      const job = await this.queue.add(data.type, payload);
+      return String(job.id);
+    }
+
+    const jobId = randomUUID();
+    this.inMemoryJobs.set(jobId, {
+      data: payload,
+      status: "queued",
+      progress: 0,
+      createdAt: Date.now(),
+    });
+    this.logger.log(`In-memory job ${jobId} encolado type=${data.type} projectId=${data.projectId}`);
+    setImmediate(() => this.startInMemoryJob(jobId, payload));
+    return jobId;
   }
 
   /** Devuelve el estado público de un job para polling del frontend. */
   async getJobStatus(jobId: string): Promise<GenerateJobStatus> {
+    const mem = this.inMemoryJobs.get(jobId);
+    if (mem) {
+      return {
+        jobId,
+        projectId: mem.data.projectId,
+        type: mem.data.type,
+        status: mem.status,
+        progress: mem.progress,
+        result: mem.result,
+        error: mem.error,
+        attemptsMade: mem.status === "failed" ? 1 : 0,
+        maxAttempts: this.MAX_ATTEMPTS,
+        createdAt: mem.createdAt,
+        finishedAt: mem.finishedAt,
+      };
+    }
+
     if (!this.queue) {
       return { jobId, type: null, status: "unknown", progress: 0, attemptsMade: 0, maxAttempts: this.MAX_ATTEMPTS, createdAt: 0 };
     }

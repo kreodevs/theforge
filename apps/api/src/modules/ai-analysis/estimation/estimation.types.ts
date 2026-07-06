@@ -2,6 +2,7 @@
  * Interfaz de referencia para evaluar completitud del MDD (Semáforo).
  * El EstimationService compara el documento contra estas secciones.
  */
+import type { MddDeliveryGateResult } from "@theforge/shared-types";
 export interface MDDReference {
   /** Modelo de datos / entidades */
   db?: boolean;
@@ -107,6 +108,8 @@ export interface LiveMetricsResult {
   consistencyScore?: number;
   /** Gaps estructurados BRD→MDD. */
   crossDocumentGaps?: CrossDocumentGap[];
+  /** Gate bloqueante de entrega MDD (≥9/10); si ok=false, el semáforo no puede ser verde. */
+  deliveryGate?: MddDeliveryGateResult;
 }
 
 /** Snapshot persistido del último pipeline MDD (audit trail + auditor LLM). */

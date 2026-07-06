@@ -60,6 +60,27 @@ interface TableColumns {
 const COL_DEF_REGEX =
   /([a-zA-Z_][a-zA-Z0-9_]*)\s+(UUID|VARCHAR|CHAR|TEXT|BOOLEAN|INT|BIGINT|SMALLINT|SERIAL|TIMESTAMPTZ|TIMESTAMP|DATE|TIME|NUMERIC|DECIMAL|REAL|FLOAT|DOUBLE)(\s*\([^)]+\))?/gi;
 
+const SQL_RESERVED_COL_NAMES = new Set([
+  "CONSTRAINT",
+  "PRIMARY",
+  "FOREIGN",
+  "UNIQUE",
+  "CHECK",
+  "REFERENCES",
+  "FOR",
+  "WHEN",
+  "THEN",
+  "ELSE",
+  "BEGIN",
+  "END",
+]);
+
+function isValidErColumnName(name: string): boolean {
+  if (SQL_RESERVED_COL_NAMES.has(name.toUpperCase())) return false;
+  if (/\b(para|cuando|mediante|debe|null|system)\b/i.test(name)) return false;
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
+}
+
 /** Devuelve el índice del paréntesis de cierre que equilibra el abierto en start. */
 function findMatchingParen(str: string, start: number): number {
   if (str[start] !== "(") return -1;
@@ -85,6 +106,7 @@ function parseColumnsFromBlock(block: string, tableName: string): { columns: Arr
   COL_DEF_REGEX.lastIndex = 0;
   while ((m = COL_DEF_REGEX.exec(inner)) !== null) {
     const colName = m[1].toLowerCase();
+    if (!isValidErColumnName(colName)) continue;
     const sqlType = (m[2] + (m[3] ?? "")).trim();
     const start = m.index;
     const rest = inner.slice(start);

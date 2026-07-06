@@ -1,6 +1,8 @@
 import { Annotation } from "@langchain/langgraph";
+import type { MddDeliveryGateResult } from "@theforge/shared-types";
 import type { MddStructured } from "./mdd-structured.schema.js";
 import type { AuditorGapsState, MDDAuditorDecision, MddPlanStep } from "./mdd-state.schema.js";
+import type { DeliveryGateFixTarget } from "../utils/mdd-delivery-gate-loop.util.js";
 
 /**
  * Combina actualizaciones concurrentes de mddDraft en el mismo paso del grafo.
@@ -99,6 +101,14 @@ export const MDDStateAnnotation = Annotation.Root({
   /** Staging fields for parallel Security ↔ Integration execution. */
   securitySectionMd: Annotation<string | undefined>(),
   integrationSectionMd: Annotation<string | undefined>(),
+  /** Intentos del auto-loop Fase 4 (delivery gate). */
+  deliveryGateAttempt: Annotation<number | undefined>(),
+  /** Último resultado del gate de entrega tras prepareMddForOutput. */
+  deliveryGate: Annotation<MddDeliveryGateResult | undefined>(),
+  /** Si true, el grafo debe re-enrutar a arquitecto/integración. */
+  deliveryGateLoopActive: Annotation<boolean | undefined>(),
+  /** Destino del auto-loop cuando deliveryGateLoopActive. */
+  deliveryGateFixTarget: Annotation<DeliveryGateFixTarget | undefined>(),
 });
 
 export type MDDStateType = typeof MDDStateAnnotation.State;

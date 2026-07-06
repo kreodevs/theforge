@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
 import { ComplexityLevel, Prisma, StageStatus, Status } from "@theforge/database";
 import type { Estimation, Project, Stage } from "@theforge/database";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
@@ -79,6 +79,7 @@ import {
   patchStageBodySchema,
   updateProjectSchema,
   DELIVERABLES_BY_COMPLEXITY,
+  DELIVERABLE_STEP_LABELS,
   parseAgentGovernanceScaffold,
   type DeliverableKind,
   type ComplexityPending,
@@ -107,12 +108,22 @@ import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "./stage-deliverable-snapshot.util.js";
 import {
+  buildMddDeliveryGateConflictBody,
+  evaluateMddDeliveryGatePrepared,
+  MDD_DELIVERY_GATE_ERR,
+} from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
+import {
+  mergeDeliveryGateIntoShortTermContext,
+} from "../ai-analysis/utils/mdd-delivery-gate.util.js";
+import type { MddDeliveryGateResult } from "@theforge/shared-types";
+import {
   persistStageAndProjectDeliverables,
   seedActiveStageDeliverables,
 } from "./stage-deliverable-persist.util.js";
 import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { reconcileExportScaffold, buildUnifiedHandoff, buildAgentGovernanceInput, synthesizeExportGovernanceScaffold } from "./handoff-export.util.js";
+import { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
 import {
   buildProjectCloneCreateInput,
@@ -177,6 +188,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly sddIntegration: SddIntegrationService,
     private readonly uiMcpClient: UiMcpClientService,
     private readonly uiMcp: UiMcpService,
+    @Inject(forwardRef(() => DocumentationGapService))
+    private readonly documentationGap: DocumentationGapService,
   ) {}
 
   /**
@@ -336,6 +349,84 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       return parts.join("\n\n---\n\n");
     }
     return "";
+  }
+
+  /** Bloquea generación de entregables si el MDD no aprueba el gate (409 + ERR_MDD_DELIVERY_GATE). */
+  async assertDeliverablesAllowed(
+    projectId: string,
+    options?: { acknowledgeGaps?: boolean },
+  ): Promise<void> {
+    const project = await this.assertProjectAccess(projectId);
+    if (project.projectType === "LEGACY") return;
+    await this.assertDeliverablesMddGate(project, options?.acknowledgeGaps === true);
+  }
+
+  /** Gate MDD de entrega para cualquier tipo de proyecto (incl. LEGACY). */
+  async assertMddDeliveryGateForDeliverables(projectId: string): Promise<void> {
+    const project = await this.assertProjectAccess(projectId);
+    await this.assertDeliverablesMddGate(project);
+  }
+
+  private async assertDeliverablesMddGate(
+    project: Project & { stages: StageWithEst[] },
+    acknowledgeGaps = false,
+  ): Promise<void> {
+    const stage = pickPrimaryStage(project.stages);
+    const mdd = this.mddFromStages(project.stages).trim();
+    const cx = project.complexity ?? ComplexityLevel.HIGH;
+
+    if (!mdd) {
+      if (cx !== ComplexityLevel.HIGH) return;
+      const gate: MddDeliveryGateResult = {
+        ok: false,
+        score: 0,
+        blockers: [
+          "No hay MDD en la etapa activa; completa la Constitución antes de generar entregables.",
+        ],
+        warnings: [],
+      };
+      if (stage?.id) void this.persistMddDeliveryGateSnapshot(stage.id, gate);
+      if (!acknowledgeGaps) {
+        throw new ConflictException(
+          buildMddDeliveryGateConflictBody(gate, gate.blockers[0]!),
+        );
+      }
+      return;
+    }
+
+    const gate = await evaluateMddDeliveryGatePrepared(mdd);
+    if (stage?.id) void this.persistMddDeliveryGateSnapshot(stage.id, gate);
+    if (!gate.ok && !acknowledgeGaps) {
+      throw new ConflictException(buildMddDeliveryGateConflictBody(gate));
+    }
+  }
+
+  private async persistMddDeliveryGateSnapshot(
+    stageId: string,
+    gate: MddDeliveryGateResult,
+  ): Promise<void> {
+    try {
+      const stage = await this.prisma.stage.findUnique({
+        where: { id: stageId },
+        select: { shortTermContext: true },
+      });
+      const prev =
+        stage?.shortTermContext &&
+        typeof stage.shortTermContext === "object" &&
+        !Array.isArray(stage.shortTermContext)
+          ? (stage.shortTermContext as Record<string, unknown>)
+          : {};
+      await this.prisma.stage.update({
+        where: { id: stageId },
+        data: {
+          shortTermContext: mergeDeliveryGateIntoShortTermContext(prev, gate) as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[DeliveryGate] snapshot persist failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   async create(data: CreateProjectDto) {
@@ -608,6 +699,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
           { projectId: id, stageId: targetStage.id },
         );
         if (!result.ok) {
+          if (result.code === MDD_DELIVERY_GATE_ERR && targetStage.id) {
+            const gate = await evaluateMddDeliveryGatePrepared(mddForPipeline);
+            void this.persistMddDeliveryGateSnapshot(targetStage.id, gate);
+          }
           throw new BadRequestException({
             code: result.code,
             message: result.message,
@@ -627,6 +722,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
           },
         });
         await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
+        void this.persistMddDeliveryGateSnapshot(
+          targetStage.id,
+          await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
+        );
       }
     }
 
@@ -1303,6 +1402,7 @@ name: ${JSON.stringify(name)}
     projectId: string,
     options?: { gapsFeedback?: string | null },
   ): Promise<void> {
+    await this.assertDeliverablesAllowed(projectId);
     const gaps = options?.gapsFeedback ?? undefined;
     switch (kind) {
       case "mdd_canonical":
@@ -1366,7 +1466,9 @@ name: ${JSON.stringify(name)}
   async generateDeliverablesCascade(
     projectId: string,
     onProgress?: (p: { step: DeliverableKind; index: number; total: number }) => void,
+    options?: { acknowledgeGaps?: boolean },
   ) {
+    await this.assertDeliverablesAllowed(projectId, options);
     const project = await this.assertProjectAccess(projectId);
     if (project.projectType === "LEGACY") {
       throw new BadRequestException("Usa el flujo de entregables legacy del proyecto.");
@@ -1380,22 +1482,6 @@ name: ${JSON.stringify(name)}
     const deliverablesToRun = DELIVERABLES_BY_COMPLEXITY[c];
     const total = deliverablesToRun.length;
     const errors: { step: string; error: string }[] = [];
-
-    // Map de nombres legibles para la UI
-    const stepLabel: Record<string, string> = {
-      mdd_canonical: "MDD Canonical",
-      blueprint: "Blueprint",
-      spec: "Spec",
-      architecture: "Arquitectura",
-      use_cases: "Casos de Uso",
-      user_stories: "Historias de Usuario",
-      ux_ui_guide: "Guía UX/UI",
-      api_contracts: "Contratos API",
-      logic_flows: "Flujos de Lógica",
-      agent_governance: "Gobernanza Agentes IA",
-      tasks: "Tareas",
-      infra: "Infraestructura",
-    };
 
     // [PARALELO] Todos los documentos son generaciones LLM independientes.
     // No comparten estado ni LangGraph — cada uno se guarda directo a DB.
@@ -1450,7 +1536,7 @@ name: ${JSON.stringify(name)}
           errors.push({ step, error: message });
         }
         completedCount++;
-        const label = stepLabel[step] ?? step;
+        const label = DELIVERABLE_STEP_LABELS[step];
         onProgress?.({ step: label as DeliverableKind, index: completedCount - 1, total });
       }),
     );
@@ -1471,8 +1557,53 @@ name: ${JSON.stringify(name)}
           `[Cascade] deliverableSnapshot: ${err instanceof Error ? err.message : String(err)}`,
         ),
       );
+      await this.runPostRegenSddConflictSurfacing(result.id).catch((err) =>
+        this.logger.warn(
+          `[Cascade] sddConflictSurfacing: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
     }
     return result;
+  }
+
+  /** Tras cascada o regeneración individual: detecta conflictos SDD y los expone como gaps HITL. */
+  async runPostRegenSddConflictSurfacing(projectId: string): Promise<void> {
+    const project = await this.findOne(projectId);
+    const activeStage = pickPrimaryStage(project.stages ?? []);
+    if (!activeStage?.id) return;
+    const summary = await this.documentationGap.detectAndSurfaceSddConflicts(
+      projectId,
+      activeStage.id,
+    );
+    if (summary.conflictsDetected > 0) {
+      this.logger.debug(
+        `[SDD surfacing] projectId=${projectId} conflicts=${summary.conflictsDetected} created=${summary.gapsCreated} duplicates=${summary.duplicates}`,
+      );
+    }
+  }
+
+  /** @deprecated Usar `runPostRegenSddConflictSurfacing`. Solo reconciliación explícita vía approve gap. */
+  async runPostRegenSddAutoReconcile(projectId: string): Promise<void> {
+    const project = await this.findOne(projectId);
+    const activeStage = pickPrimaryStage(project.stages ?? []);
+    if (!activeStage?.id) return;
+    const summary = await this.documentationGap.autoReconcileSddConflicts(projectId, activeStage.id);
+    if (!summary.clean && summary.remainingConflicts.length > 0) {
+      this.logger.warn(
+        `[SDD auto-reconcile] projectId=${projectId} retries=${summary.retries} remaining=${summary.remainingConflicts.length}`,
+      );
+    } else if (summary.deterministicPasses > 0 || summary.reconcilePasses > 0) {
+      this.logger.debug(
+        `[SDD auto-reconcile] projectId=${projectId} deterministic=${summary.deterministicPasses} reconcile=${summary.reconcilePasses}`,
+      );
+    }
+  }
+
+  private async syncSddConflictGapsForProject(
+    project: Project & { stages: StageWithEst[] },
+    _stageId: string,
+  ): Promise<void> {
+    await this.runPostRegenSddConflictSurfacing(project.id);
   }
 
   async phase0DeepResearch(
@@ -1594,7 +1725,7 @@ name: ${JSON.stringify(name)}
   async generateAgentGovernance(
     projectId: string,
     target?: string,
-    options?: { forceRegenerate?: boolean },
+    options?: { forceRegenerate?: boolean; skipSddAutoReconcile?: boolean },
   ) {
     const forceRegenerate = options?.forceRegenerate !== false;
     const project = await this.assertProjectAccess(projectId);
@@ -1633,9 +1764,20 @@ name: ${JSON.stringify(name)}
     this.logger.debug(
       `[agent-gov] generateAgentGovernance done projectId=${projectId} beforeLen=${beforeLen} afterLen=${serialized.length} files=${scaffold.files.length}`,
     );
-    return this.update(projectId, {
+    const updated = await this.update(projectId, {
       agentGovernanceContent: serialized,
     });
+    if (options?.skipSddAutoReconcile !== true) {
+      const activeStage = pickPrimaryStage(updated.stages ?? []);
+      if (activeStage?.id) {
+        await this.syncSddConflictGapsForProject(updated, activeStage.id).catch((err) =>
+          this.logger.warn(
+            `[agent-gov] sddConflictSurfacing: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+    }
+    return updated;
   }
 
   async generateAgentGovernancePreview(

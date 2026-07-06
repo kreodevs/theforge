@@ -119,12 +119,36 @@ function ensureContainer(name, runArgs) {
   return 0;
 }
 
+/** Espera a que Postgres acepte conexiones (p. ej. tras docker start/create). */
+function waitForPostgres(maxAttempts = 30) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const result = run(
+      `docker exec ${POSTGRES_NAME} pg_isready -U theforge -d theforge`,
+    );
+    if (result.status === 0) {
+      if (attempt > 1) {
+        console.log('[ensure-infra] Postgres listo.');
+      }
+      return 0;
+    }
+    if (attempt === 1) {
+      console.log('[ensure-infra] Esperando Postgres...');
+    }
+    run('sleep 1');
+  }
+  console.error('[ensure-infra] Postgres no respondió a tiempo (30s).');
+  return 1;
+}
+
 function main() {
   const runtimeOk = ensureContainerRuntime();
   if (runtimeOk !== 0) return runtimeOk;
 
   const pgOk = ensureContainer(POSTGRES_NAME, POSTGRES_RUN_ARGS);
   if (pgOk !== 0) return pgOk;
+
+  const pgReady = waitForPostgres();
+  if (pgReady !== 0) return pgReady;
 
   const falkorOk = ensureContainer(FALKOR_NAME, FALKOR_RUN_ARGS);
   if (falkorOk !== 0) return falkorOk;

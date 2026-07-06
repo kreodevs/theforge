@@ -26,3 +26,11 @@ export const mddJsonSchema = z
   .passthrough();
 
 export type MddJson = z.infer<typeof mddJsonSchema>;
+
+/** Resultado del gate bloqueante de entrega MDD (≥9/10). Emitido en stream SSE y estimación en vivo. */
+export interface MddDeliveryGateResult {
+  ok: boolean;
+  score: number;
+  blockers: string[];
+  warnings: string[];
+}

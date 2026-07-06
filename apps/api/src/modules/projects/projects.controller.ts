@@ -282,12 +282,22 @@ export class ProjectsController {
    * Con `REDIS_URL`: encola BullMQ y responde `{ queued: true, jobId }`.
    */
   @Post(":id/generate-deliverables")
-  async generateDeliverablesCascade(@Param("id") id: string) {
-    if (this.deliverablesQueue.isEnabled()) {
-      const jobId = await this.deliverablesQueue.enqueue({ type: "cascade", projectId: id });
-      return { queued: true, jobId, statusPath: `/projects/jobs/${jobId}` };
-    }
-    return this.projects.generateDeliverablesCascade(id);
+  async generateDeliverablesCascade(
+    @Param("id") id: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
+  ) {
+    const ack = acknowledgeGaps === "true";
+    await this.projects.assertDeliverablesAllowed(id, { acknowledgeGaps: ack });
+    const jobId = await this.deliverablesQueue.enqueue({
+      type: "cascade",
+      projectId: id,
+      acknowledgeGaps: ack,
+    });
+    return {
+      queued: true,
+      jobId,
+      statusPath: `/projects/${id}/deliverables-jobs/${jobId}`,
+    };
   }
 
   /** Aplica `complexityPending` a `complexity` y limpia HITL. */
@@ -303,15 +313,23 @@ export class ProjectsController {
   }
 
   @Post(":id/generate-spec")
-  generateSpec(@Param("id") id: string, @Query("queue") queue?: string) {
-    return this.queueOrSync(id, "tasks", {}, queue);
+  generateSpec(
+    @Param("id") id: string,
+    @Query("queue") queue?: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
+  ) {
+    return this.queueOrSync(id, "tasks", {}, queue, acknowledgeGaps);
     // spec no está en el switch del worker — cae a síncrono.
     // Si se implementa el worker, cambiar 'tasks' por el type real.
   }
 
   @Post(":id/generate-tasks")
-  generateTasks(@Param("id") id: string, @Query("queue") queue?: string) {
-    return this.queueOrSync(id, "tasks", {}, queue);
+  generateTasks(
+    @Param("id") id: string,
+    @Query("queue") queue?: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
+  ) {
+    return this.queueOrSync(id, "tasks", {}, queue, acknowledgeGaps);
   }
 
   @Post(":id/generate-agent-governance")
@@ -319,6 +337,7 @@ export class ProjectsController {
     @Param("id") id: string,
     @Body() body: { preview?: boolean; target?: string; force?: boolean },
     @Query("queue") queue?: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
   ) {
     console.warn(
       `[agent-gov] POST generate-agent-governance projectId=${id} force=${body?.force} queue=${queue ?? "(sync)"} preview=${body?.preview ?? false}`,
@@ -333,6 +352,7 @@ export class ProjectsController {
       "agent-governance",
       { preview: false, target: body?.target, forceRegenerate: body?.force !== false },
       queue,
+      acknowledgeGaps,
     );
   }
 
@@ -351,9 +371,10 @@ export class ProjectsController {
     @Param("id") id: string,
     @Body() body: { preview?: boolean },
     @Query("queue") queue?: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
   ) {
     if (body?.preview) return this.projects.generateArchitecturePreview(id);
-    return this.queueOrSync(id, "architecture", { preview: false }, queue);
+    return this.queueOrSync(id, "architecture", { preview: false }, queue, acknowledgeGaps);
   }
 
   @Post(":id/generate-use-cases")
@@ -361,9 +382,10 @@ export class ProjectsController {
     @Param("id") id: string,
     @Body() body: { preview?: boolean },
     @Query("queue") queue?: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
   ) {
     if (body?.preview) return this.projects.generateUseCasesPreview(id);
-    return this.queueOrSync(id, "use-cases", { preview: false }, queue);
+    return this.queueOrSync(id, "use-cases", { preview: false }, queue, acknowledgeGaps);
   }
 
   @Post(":id/generate-user-stories")
@@ -371,9 +393,10 @@ export class ProjectsController {
     @Param("id") id: string,
     @Body() body: { preview?: boolean },
     @Query("queue") queue?: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
   ) {
     if (body?.preview) return this.projects.generateUserStoriesPreview(id);
-    return this.queueOrSync(id, "user-stories", { preview: false }, queue);
+    return this.queueOrSync(id, "user-stories", { preview: false }, queue, acknowledgeGaps);
   }
 
   @Post(":id/generate-blueprint")
@@ -381,10 +404,17 @@ export class ProjectsController {
     @Param("id") id: string,
     @Body() body: { preview?: boolean; gapsFeedback?: string },
     @Query("queue") queue?: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
   ) {
     const gaps = typeof body?.gapsFeedback === "string" ? body.gapsFeedback.trim() || undefined : undefined;
     if (body?.preview) return this.projects.generateBlueprintPreview(id, gaps);
-    return this.queueOrSync(id, "blueprint", { preview: false, gapsFeedback: gaps ?? null }, queue);
+    return this.queueOrSync(
+      id,
+      "blueprint",
+      { preview: false, gapsFeedback: gaps ?? null },
+      queue,
+      acknowledgeGaps,
+    );
   }
 
   @Post(":id/generate-api-contracts")
@@ -392,10 +422,17 @@ export class ProjectsController {
     @Param("id") id: string,
     @Body() body: { preview?: boolean; gapsFeedback?: string },
     @Query("queue") queue?: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
   ) {
     const gaps = typeof body?.gapsFeedback === "string" ? body.gapsFeedback.trim() || undefined : undefined;
     if (body?.preview) return this.projects.generateApiContractsPreview(id, gaps);
-    return this.queueOrSync(id, "api-contracts", { preview: false, gapsFeedback: gaps ?? null }, queue);
+    return this.queueOrSync(
+      id,
+      "api-contracts",
+      { preview: false, gapsFeedback: gaps ?? null },
+      queue,
+      acknowledgeGaps,
+    );
   }
 
   @Post(":id/generate-logic-flows")
@@ -403,9 +440,10 @@ export class ProjectsController {
     @Param("id") id: string,
     @Body() body: { gapsFeedback?: string },
     @Query("queue") queue?: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
   ) {
     const gaps = typeof body?.gapsFeedback === "string" ? body.gapsFeedback.trim() || undefined : undefined;
-    return this.queueOrSync(id, "logic-flows", { gapsFeedback: gaps ?? null }, queue);
+    return this.queueOrSync(id, "logic-flows", { gapsFeedback: gaps ?? null }, queue, acknowledgeGaps);
   }
 
   @Post(":id/generate-infra")
@@ -413,10 +451,17 @@ export class ProjectsController {
     @Param("id") id: string,
     @Body() body: { preview?: boolean; gapsFeedback?: string },
     @Query("queue") queue?: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
   ) {
     const gaps = typeof body?.gapsFeedback === "string" ? body.gapsFeedback.trim() || undefined : undefined;
     if (body?.preview) return this.projects.generateInfraPreview(id, gaps);
-    return this.queueOrSync(id, "infra", { preview: false, gapsFeedback: gaps ?? null }, queue);
+    return this.queueOrSync(
+      id,
+      "infra",
+      { preview: false, gapsFeedback: gaps ?? null },
+      queue,
+      acknowledgeGaps,
+    );
   }
 
   @Post(":id/verify-deliverable")
@@ -462,7 +507,13 @@ export class ProjectsController {
     type: GenerateJobType,
     extra: Record<string, unknown>,
     queueParam?: string,
+    acknowledgeGapsParam?: string,
   ): Promise<unknown> {
+    const acknowledgeGaps = acknowledgeGapsParam === "true";
+    const isPreview = (extra.preview as boolean) ?? false;
+    if (!isPreview && type !== "doc-reconcile-partial") {
+      await this.projects.assertDeliverablesAllowed(projectId, { acknowledgeGaps });
+    }
     const wantQueue = queueParam === "true";
     const canQueue = wantQueue && this.deliverablesQueue.isEnabled();
     if (canQueue) {
@@ -473,6 +524,7 @@ export class ProjectsController {
         gapsFeedback: (extra.gapsFeedback as string | null) ?? null,
         target: (extra.target as string | undefined) ?? undefined,
         forceRegenerate: extra.forceRegenerate !== false,
+        acknowledgeGaps,
       });
       return { queued: true, jobId, statusPath: `/projects/jobs/${jobId}` };
     }
@@ -491,7 +543,7 @@ export class ProjectsController {
         );
       }
       // Disparamos en background sin await — la respuesta HTTP sale ya
-      void this.fireAndForget(type, projectId, extra).catch((err) => {
+      void this.fireAndForget(type, projectId, extra, acknowledgeGaps).catch((err) => {
         console.error(`[fire-and-forget] ${type} falló para ${projectId}: ${err instanceof Error ? err.message : err}`);
       });
       return {
@@ -503,6 +555,22 @@ export class ProjectsController {
     }
 
     // Fallback síncrono (sin ?queue=true explícito)
+    const result = await this.runGenerateJobSync(type, projectId, extra);
+    if (type !== "agent-governance" && type !== "cascade") {
+      await this.projects.runPostRegenSddConflictSurfacing(projectId).catch((err) => {
+        console.warn(
+          `[queueOrSync] sddConflictSurfacing (${type}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    }
+    return result;
+  }
+
+  private async runGenerateJobSync(
+    type: GenerateJobType,
+    projectId: string,
+    extra: Record<string, unknown>,
+  ): Promise<unknown> {
     switch (type) {
       case "blueprint":
         return this.projects.generateBlueprint(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
@@ -530,22 +598,22 @@ export class ProjectsController {
   }
 
   /** Fire-and-forget: ejecuta la generación en background sin esperar respuesta. */
-  private async fireAndForget(type: GenerateJobType, projectId: string, extra: Record<string, unknown>): Promise<void> {
-    switch (type) {
-      case "agent-governance":
-        await this.projects.generateAgentGovernance(projectId, extra.target as string | undefined, {
-          forceRegenerate: extra.forceRegenerate !== false,
-        });
-        return;
-      case "blueprint":
-        await this.projects.generateBlueprint(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
-        return;
-      case "tasks":
-        await this.projects.generateTasks(projectId);
-        return;
-      default:
-        // Para otros tipos no críticos, ignorar
-        console.warn(`[fire-and-forget] Tipo no soportado: ${type}`);
+  private async fireAndForget(
+    type: GenerateJobType,
+    projectId: string,
+    extra: Record<string, unknown>,
+    acknowledgeGaps = false,
+  ): Promise<void> {
+    if (!((extra.preview as boolean) ?? false) && type !== "doc-reconcile-partial") {
+      await this.projects.assertDeliverablesAllowed(projectId, { acknowledgeGaps });
+    }
+    await this.runGenerateJobSync(type, projectId, extra);
+    if (type !== "agent-governance" && type !== "cascade") {
+      await this.projects.runPostRegenSddConflictSurfacing(projectId).catch((err) => {
+        console.warn(
+          `[fire-and-forget] sddConflictSurfacing (${type}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
     }
   }
 }

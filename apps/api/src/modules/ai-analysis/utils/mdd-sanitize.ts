@@ -466,22 +466,39 @@ function repairSqlSplitCommentLines(sqlContent: string): string {
   return out.join("\n");
 }
 
+/** Separa comentarios `--` pegados a DDL (`CREATE TABLE`, `CREATE EXTENSION`, funciones, etc.). */
+function repairSqlCommentGluedToDdl(sqlContent: string): string {
+  return sqlContent.replace(
+    /^(\s*--[^\n]*?)\s+(CREATE\s+(?:OR\s+REPLACE\s+)?(?:SCHEMA|TABLE|INDEX|EXTENSION|TYPE(?:\s+AS\s+ENUM)?|FUNCTION|TRIGGER))/gim,
+    "$1\n$2",
+  );
+}
+
+/** Fusiona llamadas partidas en varias líneas (p. ej. `NOW(\n);` → `NOW());`). */
+function repairSqlSplitFunctionBody(sqlContent: string): string {
+  return sqlContent
+    .replace(/(\b(?:NOW|CURRENT_TIMESTAMP|gen_random_uuid)\()\s*\n\s*\)\s*;/gi, "$1));")
+    .replace(/(\b(?:NOW|CURRENT_TIMESTAMP|gen_random_uuid)\()\s*\n\s*\)/gi, "$1))")
+    .replace(/DEFAULT\s+(\w+)\(\s*\n\s*\)/gi, "DEFAULT $1())");
+}
+
 export function sanitizeSqlBrokenCommentsAndProse(sqlContent: string): string {
   if (!sqlContent || typeof sqlContent !== "string") return sqlContent;
-  const lines = repairSqlSplitCommentLines(sqlContent).split("\n");
+  const repaired = repairSqlSplitFunctionBody(repairSqlCommentGluedToDdl(sqlContent));
+  const lines = repairSqlSplitCommentLines(repaired).split("\n");
   const out: string[] = [];
 
   for (const line of lines) {
     if (isSqlProseArtifactLine(line)) {
       const prev = out[out.length - 1];
       if (prev != null && prevLineHasDanglingSqlComment(prev)) {
-        const repaired = repairSqlProseArtifactLine(line);
-        if (SQL_COLUMN_DEF.test(repaired.trim())) {
+        const repairedLine = repairSqlProseArtifactLine(line);
+        if (SQL_COLUMN_DEF.test(repairedLine.trim())) {
           out[out.length - 1] = prev.replace(/\s*--\s*[\w\s,]+\s*$/, "").trimEnd();
           if (!out[out.length - 1]!.endsWith(",")) {
             out[out.length - 1] = out[out.length - 1]!.replace(/\s*$/, ",");
           }
-          out.push(repaired);
+          out.push(repairedLine);
           continue;
         }
       }
@@ -491,7 +508,34 @@ export function sanitizeSqlBrokenCommentsAndProse(sqlContent: string): string {
     out.push(line);
   }
 
-  return repairSqlOrphanTokensAndSplitParens(out.join("\n"));
+  return repairSqlProseInTableBodies(
+    repairSqlDetachedCheckConstraints(repairSqlOrphanTokensAndSplitParens(out.join("\n"))),
+  );
+}
+
+/**
+ * Elimina prosa huérfana entre definiciones de columnas dentro de CREATE TABLE.
+ */
+export function repairSqlProseInTableBodies(sql: string): string {
+  if (!sql?.trim()) return sql;
+  const tableRe =
+    /(CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\w.]+\s*\()([\s\S]*?)(\)\s*;)/gi;
+  return sql.replace(tableRe, (_full, openPart: string, cols: string, close: string) => {
+    const cleaned = cols
+      .split("\n")
+      .filter((line) => {
+        const t = line.trim();
+        if (!t) return true;
+        if (t.startsWith("--")) return true;
+        if (SQL_DDL_STATEMENT.test(t)) return true;
+        if (SQL_COLUMN_DEF.test(t)) return true;
+        if (/^\s*\)\s*;?\s*$/.test(t)) return true;
+        if (isSqlProseArtifactLine(line)) return false;
+        return true;
+      })
+      .join("\n");
+    return `${openPart}${cleaned}${close}`;
+  });
 }
 
 /** Token suelto tras comentario `--` partido o columna de índice en línea siguiente. */
@@ -550,6 +594,43 @@ function repairSqlOrphanTokensAndSplitParens(sql: string): string {
     .replace(/(CREATE\s+INDEX\s+[^\n]+\([^)\n]+)\n\s*\)\s*;/gi, "$1);");
 }
 
+/** Línea de definición de columna sin CHECK inline, antes de un CHECK en la línea siguiente. */
+function isSqlColumnDefLineBeforeDetachedCheck(line: string): boolean {
+  const t = line.trim();
+  if (!t || t.startsWith("--")) return false;
+  if (SQL_DDL_STATEMENT.test(t)) return false;
+  if (/\bCHECK\s*\(/i.test(t)) return false;
+  return /^[a-zA-Z_][a-zA-Z0-9_]*\s+.+/i.test(t);
+}
+
+/**
+ * PostgreSQL exige coma antes de CHECK en línea aparte dentro de CREATE TABLE.
+ * Corrige: `col TYPE DEFAULT 'x'\n  CHECK (...)` → `col TYPE DEFAULT 'x',\n  CHECK (...)`.
+ */
+export function repairSqlDetachedCheckConstraints(sql: string): string {
+  if (!sql?.trim()) return sql;
+  const lines = sql.split("\n");
+  const out: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i]!;
+    let j = i + 1;
+    while (j < lines.length && lines[j]!.trim() === "") j++;
+    const nextTrim = lines[j]?.trim() ?? "";
+
+    if (
+      nextTrim &&
+      /^\s*CHECK\s*\(/i.test(nextTrim) &&
+      isSqlColumnDefLineBeforeDetachedCheck(line)
+    ) {
+      const trimmed = line.trimEnd();
+      if (!trimmed.endsWith(",")) line = `${trimmed},`;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 function extractMddSectionBody(draft: string, heading: string): { body: string; start: number; end: number } | null {
   const idx = draft.indexOf(heading);
   if (idx === -1) return null;
@@ -559,6 +640,71 @@ function extractMddSectionBody(draft: string, heading: string): { body: string; 
   const body = nextH2 !== -1 ? rest.slice(0, nextH2) : rest;
   const end = nextH2 !== -1 ? sectionStart + nextH2 : draft.length;
   return { body, start: sectionStart, end };
+}
+
+const AUTHORITATIVE_BACKEND_PATTERNS: Array<[RegExp, string]> = [
+  [/fastify/i, "Fastify"],
+  [/fastapi/i, "FastAPI"],
+  [/nestjs/i, "NestJS"],
+  [/express/i, "Express"],
+  [/django/i, "Django"],
+];
+
+/** Cláusulas alternativas de stack a eliminar en §1 cuando §2 ya fijó el backend. */
+const ALTERNATE_BACKEND_CLAUSE_PATTERNS: Record<string, RegExp[]> = {
+  Fastify: [
+    /\s*(?:,\s*)?(?:o|or|\/|\|)\s*Python\s*\(\s*FastAPI\s*\)/gi,
+    /\s*(?:,\s*)?(?:o|or|\/|\|)\s*FastAPI\b(?:\s*\([^)]*\))?/gi,
+    /\s*(?:,\s*)?(?:o|or|\/|\|)\s*Python\b[^.\n;]*\bFastAPI\b/gi,
+  ],
+  FastAPI: [
+    /\s*(?:,\s*)?(?:o|or|\/|\|)\s*Node\.js\s*\(\s*Fastify\s*\)/gi,
+    /\s*(?:,\s*)?(?:o|or|\/|\|)\s*Fastify\b(?:\s*\([^)]*\))?/gi,
+    /\s*(?:,\s*)?(?:o|or|\/|\|)\s*Node\.js\b[^.\n;]*\bFastify\b/gi,
+  ],
+  NestJS: [
+    /\s*(?:,\s*)?(?:o|or|\/|\|)\s*(?:Python\s*\(\s*FastAPI\s*\)|FastAPI|Fastify|Express)\b[^.\n;]*/gi,
+  ],
+};
+
+function resolveAuthoritativeBackendFromSection2(draft: string): string | undefined {
+  const sec2 = extractMddSectionBody(draft, "## 2. Arquitectura y Stack");
+  if (!sec2?.body.trim()) return undefined;
+  for (const [re, label] of AUTHORITATIVE_BACKEND_PATTERNS) {
+    if (re.test(sec2.body)) return label;
+  }
+  return undefined;
+}
+
+/** Cuenta CREATE TABLE en §3 (autoridad para recuentos de entidades en export). */
+export function countMddSection3CreateTables(mddMarkdown: string): number {
+  const sec3 = extractMddSectionBody(mddMarkdown, "## 3. Modelo de Datos");
+  if (!sec3?.body.trim()) return 0;
+  return (
+    sec3.body.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[a-zA-Z_][a-zA-Z0-9_]*/gi) ??
+    []
+  ).length;
+}
+
+/**
+ * Elimina menciones de stack alternativo en §1 (p. ej. FastAPI) cuando §2 ya fijó Fastify.
+ */
+export function stripAlternateBackendFromSection1(draft: string): string {
+  if (!draft?.trim()) return draft;
+  const backend = resolveAuthoritativeBackendFromSection2(draft);
+  const patterns = backend ? ALTERNATE_BACKEND_CLAUSE_PATTERNS[backend] : undefined;
+  if (!patterns?.length) return draft;
+
+  const sec1 = extractMddSectionBody(draft, "## 1. Contexto");
+  if (!sec1) return draft;
+
+  let body = sec1.body;
+  for (const re of patterns) {
+    body = body.replace(re, "");
+  }
+  body = body.replace(/\s{2,}/g, " ").replace(/ +\n/g, "\n");
+  if (body === sec1.body) return draft;
+  return draft.slice(0, sec1.start) + body + draft.slice(sec1.end);
 }
 
 /**
@@ -649,7 +795,14 @@ export function fixDeterministicMddCoherence(draft: string): string {
 
   out = fixLdapAuthCoherenceInDraft(out);
   out = fixSecurityManifestCoherence(out);
+  out = fixIntegrationMetadataCoherence(out);
+  out = alignJwtAlgorithmWithSection6(out);
+  out = fixJwtEnvVarsInDraft(out);
+  out = alignInfraNodeVersionWithSection2(out);
+  out = stripStrayParenAfterJsonCodeBlocks(out);
   out = upgradeNonSection4ApiPathsToV1(out);
+  out = deduplicateUatSections(out);
+  out = stripAlternateBackendFromSection1(out);
 
   return out;
 }
@@ -708,6 +861,336 @@ function fixLdapAuthCoherenceInDraft(draft: string): string {
   return draft.slice(0, section.start) + body + draft.slice(section.end);
 }
 
+/** True si §6 documenta JWT asimétrico (RS256, par de claves, JWKS). */
+export function draftUsesRs256Jwt(draft: string): boolean {
+  const sec6 = extractMddSectionBody(draft, "## 6. Seguridad");
+  if (!sec6) return false;
+  return /RS256|clave\s+pública|public\s+key|par\s+de\s+claves|JWKS|jwt.*asymmetr/i.test(sec6.body);
+}
+
+/** RS256 en MDD §6 o en entregables derivados (tasks, user stories) cuando §6 falta/truncada. */
+export function corpusUsesRs256Jwt(mddMarkdown: string, extraCorpus = ""): boolean {
+  if (draftUsesRs256Jwt(mddMarkdown)) return true;
+  const extra = (extraCorpus ?? "").trim();
+  if (!extra) return false;
+  return /RS256|JWT_PRIVATE_KEY|JWT_PUBLIC_KEY|firmados?\s+con\s+RS256/i.test(extra);
+}
+
+/** Detecta MDD truncado (fence JSON sin cerrar al final). */
+export function detectTruncatedMddMarkdown(mdd: string): boolean {
+  const trimmed = (mdd ?? "").trim();
+  if (!trimmed) return false;
+  const fenceCount = (trimmed.match(/```/g) ?? []).length;
+  if (fenceCount % 2 !== 0) return true;
+  const tail = trimmed.slice(-400);
+  if (/```json[\s\S]*"[^"\n]{0,12}$/i.test(tail)) return true;
+  return false;
+}
+
+/** Extrae algoritmo JWT documentado en §6 (SSOT). */
+function extractJwtAlgorithmFromSection6(draft: string): "RS256" | "HS256" | null {
+  const sec6 = extractMddSectionBody(draft, "## 6. Seguridad");
+  if (!sec6) return null;
+  if (/RS256|JWKS|clave\s+pública|public\s+key|par\s+de\s+claves|asymmetr/i.test(sec6.body)) {
+    return "RS256";
+  }
+  if (/HS256|JWT_SECRET|simétric|symmetric|HMAC/i.test(sec6.body)) return "HS256";
+  return null;
+}
+
+/** Extrae algoritmo JWT inferido de §7 / manifest. */
+function extractJwtAlgorithmFromSection7(draft: string): "RS256" | "HS256" | null {
+  const manifestAlg = draft.match(/"jwt_algorithm"\s*:\s*"(RS256|HS256)"/i)?.[1];
+  if (manifestAlg) return manifestAlg.toUpperCase() as "RS256" | "HS256";
+  const infra = extractMddSectionBody(draft, "## 7. Infraestructura");
+  const body = infra?.body ?? draft;
+  if (/JWT_PRIVATE_KEY|JWKS|RS256/i.test(body) && !/\bJWT_SECRET\b/.test(body)) return "RS256";
+  if (/\bJWT_SECRET\b/.test(body) && !/JWT_PRIVATE_KEY/.test(body)) return "HS256";
+  if (/jwks_enabled"\s*:\s*true/i.test(body)) return "RS256";
+  if (/\(\s*HS256\s*\)/i.test(body)) return "HS256";
+  if (/\(\s*RS256\s*\)/i.test(body)) return "RS256";
+  return null;
+}
+
+/** True si §6 y §7 documentan algoritmos JWT distintos. */
+export function detectJwtAlgorithmMismatch(draft: string): boolean {
+  const s6 = extractJwtAlgorithmFromSection6(draft);
+  const s7 = extractJwtAlgorithmFromSection7(draft);
+  return s6 != null && s7 != null && s6 !== s7;
+}
+
+/** Alinea §7 al algoritmo JWT de §6 (SSOT). */
+export function fixJwtAlgorithmCoherence(draft: string): string {
+  return alignJwtAlgorithmWithSection6(draft);
+}
+
+/** Alinea §7 al algoritmo JWT de §6 (SSOT). */
+function alignJwtAlgorithmWithSection6(draft: string): string {
+  const s6Alg = extractJwtAlgorithmFromSection6(draft);
+  if (!s6Alg || !detectJwtAlgorithmMismatch(draft)) return draft;
+  let out = draft;
+
+  const infra = extractMddSectionBody(out, "## 7. Infraestructura");
+  if (infra) {
+    let body = infra.body;
+    if (s6Alg === "RS256") {
+      body = body
+        .replace(/\(\s*HS256\s*\)/gi, "(RS256)")
+        .replace(/\bHS256\b/g, "RS256")
+        .replace(/\bJWT_SECRET\b/g, "JWT_PRIVATE_KEY, JWT_PUBLIC_KEY");
+      if (/"jwt_algorithm"\s*:\s*"HS256"/i.test(body)) {
+        body = body.replace(/"jwt_algorithm"\s*:\s*"HS256"/gi, '"jwt_algorithm": "RS256"');
+      } else if (!/"jwt_algorithm"\s*:/i.test(body)) {
+        body = body.replace(
+          /("security"\s*:\s*\{)/i,
+          '$1\n      "jwt_algorithm": "RS256",',
+        );
+      }
+      if (/"jwks_enabled"\s*:\s*false/i.test(body)) {
+        body = body.replace(/"jwks_enabled"\s*:\s*false/gi, '"jwks_enabled": true');
+      }
+    } else {
+      body = body
+        .replace(/\(\s*RS256\s*\)/gi, "(HS256)")
+        .replace(/JWT_PRIVATE_KEY,\s*JWT_PUBLIC_KEY/gi, "JWT_SECRET")
+        .replace(/"jwt_algorithm"\s*:\s*"RS256"/gi, '"jwt_algorithm": "HS256"');
+    }
+    if (body !== infra.body) {
+      out = out.slice(0, infra.start) + body + out.slice(infra.end);
+    }
+  }
+  return out;
+}
+
+/** Extrae versión mayor de Node.js declarada en §2. */
+export function extractNodeVersionFromSection2(draft: string): string | null {
+  const arch = extractMddSectionBody(draft, "## 2. Arquitectura y Stack");
+  if (!arch) return null;
+  const patterns = [
+    /Node\.?js\s*(?:LTS\s*)?(\d{2}(?:\.\d+)?)/i,
+    /\|\s*Node(?:\.js)?\s*\|\s*(\d{2}(?:\.\d+)?)/i,
+    /runtime\s+Node\s*(\d{2})/i,
+  ];
+  for (const re of patterns) {
+    const m = arch.body.match(re);
+    if (m?.[1]) return m[1].split(".")[0]!;
+  }
+  return null;
+}
+
+/** Corrige `node:XX` en §7/manifest para coincidir con la versión Node de §2. */
+function alignInfraNodeVersionWithSection2(draft: string): string {
+  const nodeVer = extractNodeVersionFromSection2(draft);
+  if (!nodeVer) return draft;
+  let out = draft.replace(/node:(\d+)(-alpine)?/gi, (_, _v: string, suffix: string) =>
+    `node:${nodeVer}${suffix ?? ""}`,
+  );
+  out = out.replace(/\bNode\s+(\d+)(-alpine)?\b/gi, (_, _v: string, suffix: string) =>
+    `Node ${nodeVer}${suffix ?? ""}`,
+  );
+  return out;
+}
+
+/** Sustituye JWT_SECRET por JWT_PRIVATE_KEY/JWT_PUBLIC_KEY cuando §6 exige RS256. */
+function fixJwtEnvVarsInDraft(draft: string): string {
+  if (!draftUsesRs256Jwt(draft)) return draft;
+  let out = draft;
+  for (const heading of ["## 7. Infraestructura", "## Integración"]) {
+    const section = extractMddSectionBody(out, heading);
+    if (!section) continue;
+    let body = section.body;
+    const updated = body
+      .replace(/\bJWT_SECRET\b/g, "JWT_PRIVATE_KEY, JWT_PUBLIC_KEY")
+      .replace(
+        /NODE_ENV,\s*JWT_PRIVATE_KEY,\s*JWT_PUBLIC_KEY,\s*JWT_EXPIRES_IN/gi,
+        "NODE_ENV, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY, JWT_EXPIRES_IN",
+      );
+    if (updated !== body) {
+      out = out.slice(0, section.start) + updated + out.slice(section.end);
+    }
+  }
+  return out;
+}
+
+export const POST_MVP_UI_SURFACE_BANNER =
+  "> **Alcance MVP:** Esta guía UX/UI y el design system son **post-MVP**. El MVP implementa solo API REST y CLI (Node/Commander); no hay panel web en el alcance actual.\n";
+
+const NO_UI_SURFACE_FOR_BANNER =
+  /(?:sin|no)\s+(?:dashboard|frontend|ui|interfaz|pantalla|panel\s+web)|no\s+incluye[^\n]{0,48}panel\s+web|fuera\s+del\s+alcance[^\n]{0,60}(?:mvp|panel\s+web)|solo\s+interfaces?\s+de\s+integraci[oó]n|solo\s+APIs?\s+y\s+CLI|api[\s-]?only|mvp\s+api|cli[\s-]?only|solo\s+api|backend\s+only|l[ií]nea\s+de\s+comandos/i;
+
+/** §1/§2 indican MVP API+CLI sin panel web (autoridad para omitir UI/UX en MDD). */
+export function mddExcludesWebUiSurface(mddMarkdown: string): boolean {
+  const sec1Body = extractContextSectionBody(mddMarkdown);
+  const sec2 = extractMddSectionBody(mddMarkdown, "## 2. Arquitectura y Stack");
+  const authority = [sec1Body, sec2?.body].filter(Boolean).join("\n");
+  return NO_UI_SURFACE_FOR_BANNER.test(authority);
+}
+
+/** Antepone banner post-MVP en guías UX/design-system cuando el MDD excluye panel web. */
+export function ensurePostMvpUiSurfaceBanner(mddMarkdown: string, content: string): string {
+  const trimmed = (content ?? "").trim();
+  if (!trimmed) return content;
+  if (/post-?mvp/i.test(trimmed.slice(0, 400))) return content;
+  if (!mddExcludesWebUiSurface(mddMarkdown)) return content;
+  return `${POST_MVP_UI_SURFACE_BANNER}\n---\n${trimmed}\n`;
+}
+
+/** Sustituye JWT_SECRET por par RS256 en listas, tablas y bloques `.env`. */
+function replaceJwtSecretWithRs256KeyPair(text: string): string {
+  let out = text;
+  out = out.replace(/^(\s*)(JWT_SECRET)(\s*=\s*)(.*)$/gim, (_, indent, _key, eq, val) => {
+    const value = (val as string).trim() || "<PEM>";
+    const publicVal = /<PEM/i.test(value) ? "<PEM public>" : value;
+    return `${indent}JWT_PRIVATE_KEY${eq}${value}\n${indent}JWT_PUBLIC_KEY${eq}${publicVal}`;
+  });
+  out = out.replace(
+    /^(\s*)([-*]\s+)?JWT_PRIVATE_KEY\s*,\s*JWT_PUBLIC_KEY(.*)$/gim,
+    (_, indent, bullet, rest) =>
+      `${indent}${bullet ?? ""}JWT_PRIVATE_KEY${rest}\n${indent}${bullet ?? ""}JWT_PUBLIC_KEY${rest}`,
+  );
+  out = out.replace(/\bJWT_SECRET\b/g, "JWT_PRIVATE_KEY, JWT_PUBLIC_KEY");
+  out = out.replace(
+    /\|\s*`JWT_SECRET`\s*\|[^\n]*/gi,
+    "| `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | Par RSA PEM para firma/validación JWT (RS256); `JWT_SECRET` deprecado |",
+  );
+  return out;
+}
+
+/** Alinea variables JWT en entregables (infra, architecture) con RS256 del MDD §6. */
+export function alignDeliverableMarkdownWithMddSecurity(
+  mddMarkdown: string,
+  deliverableMarkdown: string,
+  options?: { extraCorpus?: string },
+): string {
+  if (!corpusUsesRs256Jwt(mddMarkdown, options?.extraCorpus ?? "")) return deliverableMarkdown;
+  return replaceJwtSecretWithRs256KeyPair(deliverableMarkdown);
+}
+
+/** Repara contenido interno de un bloque ```json (fences anidados, blockquote, pretty-print). */
+function fixSingleNestedArrayWrappers(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const fixed = value.map(fixSingleNestedArrayWrappers);
+    if (fixed.length === 1 && Array.isArray(fixed[0])) return fixed[0];
+    return fixed;
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = fixSingleNestedArrayWrappers(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+function repairJsonCodeBlockInner(inner: string): string {
+  let cleaned = inner.replace(/^>\s?/gm, "");
+  let prev = "";
+  while (prev !== cleaned) {
+    prev = cleaned;
+    cleaned = cleaned
+      .replace(/^\s*```json\s*[\r]?\n/gim, "")
+      .replace(/^\s*```\s*[\r]?\n/gm, "")
+      .replace(/```json\s*/gi, "")
+      .replace(/```/g, "");
+  }
+  cleaned = cleaned.trim();
+  if (!cleaned) return inner.trim();
+  try {
+    const parsed = fixSingleNestedArrayWrappers(JSON.parse(cleaned) as unknown);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return cleaned;
+  }
+}
+
+/**
+ * Desanida fences ```json dentro de bloques JSON (típico en §4 cuando el LLM formatea arrays).
+ */
+export function repairNestedJsonFencesInDraft(draft: string): string {
+  if (!draft) return draft;
+  const lower = draft.toLowerCase();
+  let result = "";
+  let i = 0;
+  while (i < draft.length) {
+    const open = lower.indexOf("```json", i);
+    if (open === -1) {
+      result += draft.slice(i);
+      break;
+    }
+    result += draft.slice(i, open);
+    let cursor = open + 7;
+    if (draft[cursor] === "\r") cursor++;
+    if (draft[cursor] === "\n") cursor++;
+    const contentStart = cursor;
+    let depth = 1;
+    let closed = false;
+    while (cursor < draft.length && depth > 0) {
+      const fence = draft.indexOf("```", cursor);
+      if (fence === -1) {
+        result += draft.slice(open);
+        return result;
+      }
+      if (lower.startsWith("```json", fence)) {
+        depth++;
+        cursor = fence + 7;
+        if (draft[cursor] === "\r") cursor++;
+        if (draft[cursor] === "\n") cursor++;
+        continue;
+      }
+      depth--;
+      if (depth === 0) {
+        const inner = draft.slice(contentStart, fence);
+        result += "```json\n" + repairJsonCodeBlockInner(inner) + "\n```";
+        cursor = fence + 3;
+        closed = true;
+        break;
+      }
+      cursor = fence + 3;
+    }
+    if (!closed) {
+      result += draft.slice(open);
+      break;
+    }
+    i = cursor;
+  }
+  return result;
+}
+
+/** Quita ## UI/UX Design Intent cuando §1/§2 declaran MVP API+CLI sin panel web. */
+export function stripUiUxSectionForApiOnlyMvp(markdown: string): string {
+  const trimmed = (markdown ?? "").trim();
+  if (!trimmed || !/##\s*UI\/UX\s+Design\s+Intent/i.test(trimmed)) return markdown;
+  if (!mddExcludesWebUiSurface(trimmed)) return markdown;
+  return `${trimmed.replace(/\n##\s*UI\/UX\s+Design\s+Intent[\s\S]*$/i, "").trimEnd()}\n`;
+}
+
+/**
+ * SSOT al persistir MDD (Workshop, doc-gap reconcile, export/handoff).
+ * Orden: headings pegados → coherencia cruzada → JSON §4 → UI/UX MVP.
+ */
+export function sanitizeMddAtPersist(mddMarkdown: string): string {
+  if (!mddMarkdown?.trim()) return mddMarkdown;
+  let out = fixGluedSection6Heading(mddMarkdown);
+  out = applyDeterministicCrossConsistencyFixes(out);
+  out = ensureSecurityLockoutInSection6(out);
+  out = repairNestedJsonFencesInDraft(out);
+  out = stripStrayParenAfterJsonCodeBlocks(out);
+  out = stripUiUxSectionForApiOnlyMvp(out);
+  return out;
+}
+
+/** Sanitiza MDD antes de exportar al handoff (misma pasada que persist). */
+export function sanitizeMddForExport(mddMarkdown: string): string {
+  return sanitizeMddAtPersist(mddMarkdown);
+}
+
+/** Elimina paréntesis suelto inmediatamente después de un bloque ```json. */
+export function stripStrayParenAfterJsonCodeBlocks(draft: string): string {
+  if (!draft) return draft;
+  return draft.replace(/(```json[\s\S]*?```)\s*\)/g, "$1");
+}
+
 /** Alinea manifest §7 (security) con LDAP y estrategia MFA del borrador. */
 function fixSecurityManifestCoherence(draft: string): string {
   const infra = extractMddSectionBody(draft, "## 7. Infraestructura");
@@ -718,6 +1201,9 @@ function fixSecurityManifestCoherence(draft: string): string {
   const sec6 = extractMddSectionBody(draft, "## 6. Seguridad");
   const mfaInSec6 = sec6 != null && /\bMFA\b|\bTOTP\b/i.test(sec6.body);
   const manifestMfa = draft.match(/"mfa_strategy"\s*:\s*"([^"]+)"/i)?.[1];
+  const sec6MentionsArgon2 = sec6 != null && /Argon2(?:id)?/i.test(sec6.body);
+  const sec6MentionsBcryptOnly =
+    sec6 != null && /\bbcrypt\b/i.test(sec6.body) && !/Argon2(?:id)?/i.test(sec6.body);
 
   if (usesLdap) {
     if (!/"auth_provider"\s*:/i.test(body)) {
@@ -726,12 +1212,22 @@ function fixSecurityManifestCoherence(draft: string): string {
         '$1\n      "auth_provider": "LDAP/AD",',
       );
     }
-    body = body.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
-    if (!/"hashing_scope"\s*:/i.test(body)) {
-      body = body.replace(
-        /"hashing_algorithm"\s*:\s*"[^"]*"/i,
-        (m) => `${m},\n      "hashing_scope": "bootstrap_and_service_secrets_only"`,
-      );
+    if (sec6MentionsBcryptOnly) {
+      body = body.replace(/"hashing_algorithm"\s*:\s*"Argon2id"/gi, '"hashing_algorithm": "bcrypt"');
+      if (!/"hashing_scope"\s*:/i.test(body)) {
+        body = body.replace(
+          /"hashing_algorithm"\s*:\s*"[^"]*"/i,
+          (m) => `${m},\n      "hashing_scope": "bootstrap_and_service_secrets_only"`,
+        );
+      }
+    } else if (sec6MentionsArgon2) {
+      body = body.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
+      if (!/"hashing_scope"\s*:/i.test(body)) {
+        body = body.replace(
+          /"hashing_algorithm"\s*:\s*"[^"]*"/i,
+          (m) => `${m},\n      "hashing_scope": "bootstrap_and_service_secrets_only"`,
+        );
+      }
     }
   }
 
@@ -742,7 +1238,9 @@ function fixSecurityManifestCoherence(draft: string): string {
     );
   }
 
-  const sec6MentionsArgon2 = sec6 != null && /Argon2(?:id)?/i.test(sec6.body);
+  if (sec6MentionsBcryptOnly && /"hashing_algorithm"\s*:\s*"Argon2id"/i.test(body)) {
+    body = body.replace(/"hashing_algorithm"\s*:\s*"Argon2id"/gi, '"hashing_algorithm": "bcrypt"');
+  }
   if (sec6MentionsArgon2 && /"hashing_algorithm"\s*:\s*"bcrypt"/i.test(body)) {
     body = body.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
     if (!/"hashing_scope"\s*:/i.test(body)) {
@@ -753,6 +1251,41 @@ function fixSecurityManifestCoherence(draft: string): string {
     }
   }
 
+  if (body === infra.body) return draft;
+  return draft.slice(0, infra.start) + body + draft.slice(infra.end);
+}
+
+/** True si el MDD exige multi-tenant (TechnicalMetadata, §2, §3 o §6). */
+function mddRequiresMultiTenant(draft: string): boolean {
+  if (/\[multi_tenant\]/i.test(draft)) return true;
+  if (/```TechnicalMetadata[\s\S]*?\[multi_tenant\]/i.test(draft)) return true;
+  const sec2 = extractMddSectionBody(draft, "## 2. Arquitectura y Stack");
+  const sec3 = extractMddSectionBody(draft, "## 3. Modelo de Datos");
+  const sec6 = extractMddSectionBody(draft, "## 6. Seguridad");
+  const corpus = [sec2?.body, sec3?.body, sec6?.body].filter(Boolean).join("\n");
+  if (/multi[\s-]?tenant|multitenanc|\btenant_id\b|multiinquilino|aislamiento\s+multi[\s-]?inquilino/i.test(corpus)) {
+    return true;
+  }
+  if (sec3?.body && countNegocioIdMultiTenantSignals(sec3.body)) return true;
+  return false;
+}
+
+/** Heurística: negocio_id en la mayoría de tablas §3 implica multi-tenant. */
+function countNegocioIdMultiTenantSignals(section3Body: string): boolean {
+  const createTableCount = (section3Body.match(/CREATE\s+TABLE/gi) ?? []).length;
+  const negocioIdCount = (section3Body.match(/\bnegocio_id\b/gi) ?? []).length;
+  return createTableCount >= 2 && negocioIdCount >= 3 && negocioIdCount >= createTableCount * 0.5;
+}
+
+/** Alinea integration_metadata.multi_tenant_support con TechnicalMetadata y §2/§3. */
+function fixIntegrationMetadataCoherence(draft: string): string {
+  const infra = extractMddSectionBody(draft, "## 7. Infraestructura");
+  if (!infra || !/"multi_tenant_support"/i.test(infra.body)) return draft;
+  const requiresMultiTenant = mddRequiresMultiTenant(draft);
+  let body = infra.body;
+  if (requiresMultiTenant) {
+    body = body.replace(/"multi_tenant_support"\s*:\s*false/gi, '"multi_tenant_support": true');
+  }
   if (body === infra.body) return draft;
   return draft.slice(0, infra.start) + body + draft.slice(infra.end);
 }
@@ -917,70 +1450,135 @@ CREATE TABLE outbox (
 CREATE INDEX idx_outbox_unpublished ON outbox (created_at) WHERE published_at IS NULL;
 `;
 
-const OUTBOX_TABLE_NAME_RE =
-  /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:outbox_events|eventos_outbox|outbox)\b/i;
+const OUTBOX_LIKE_STATUS_COLUMN_RE =
+  /\b(procesado|processed_at|published_at|retry_count|event_type|tipo_evento|evento_tipo)\b/i;
+
+function isOutboxLikeTableDef(tableName: string, colsBody: string): boolean {
+  const bare = tableName.includes(".") ? tableName.split(".").pop()! : tableName;
+  const lower = bare.toLowerCase();
+  if (/^(outbox_events|eventos_outbox|outbox)$/.test(lower)) return true;
+  if (lower === "eventos") {
+    const hasPayload = /\bpayload(_json)?\b/i.test(colsBody);
+    const hasStatus =
+      OUTBOX_LIKE_STATUS_COLUMN_RE.test(colsBody) || /\bidempotency_key\b/i.test(colsBody);
+    return hasPayload && hasStatus;
+  }
+  return /\bpayload(_json)?\b/i.test(colsBody) && OUTBOX_LIKE_STATUS_COLUMN_RE.test(colsBody);
+}
+
+function listOutboxLikeTablesInSql(sql: string): string[] {
+  const found: string[] = [];
+  const tableRe =
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:([\w]+)\.)?([\w]+)\s*\(([\s\S]*?)\)\s*;/gi;
+  let m: RegExpExecArray | null;
+  while ((m = tableRe.exec(sql)) !== null) {
+    const schema = m[1];
+    const name = m[2]!;
+    const cols = m[3]!;
+    const qualified = (schema ? `${schema}.${name}` : name).toLowerCase();
+    if (isOutboxLikeTableDef(qualified, cols)) found.push(qualified);
+  }
+  return found;
+}
+
+function listOutboxLikeTablesInDraft(draft: string): string[] {
+  const section = extractMddSectionBody(draft, "## 3. Modelo de Datos");
+  if (!section) return [];
+  const tables: string[] = [];
+  for (const [, inner] of section.body.matchAll(/```sql\s*([\s\S]*?)```/gi)) {
+    if (!inner) continue;
+    for (const t of listOutboxLikeTablesInSql(inner)) {
+      if (!tables.includes(t)) tables.push(t);
+    }
+  }
+  return tables;
+}
+
+function bareOutboxTableName(qualified: string): string {
+  return qualified.includes(".") ? qualified.split(".").pop()! : qualified;
+}
+
+function resolveCanonicalOutboxTableName(draft: string, tables: string[]): string {
+  for (const heading of [
+    "## 2. Arquitectura y Stack",
+    "## 5. Lógica y Edge Cases",
+    "## 7. Infraestructura",
+  ]) {
+    const section = extractMddSectionBody(draft, heading);
+    if (!section) continue;
+    for (const t of tables) {
+      const bare = bareOutboxTableName(t);
+      if (new RegExp(`\\btabla\\s+${bare}\\b|\\b${bare}\\b`, "i").test(section.body)) return t;
+    }
+  }
+  const priority = ["outbox_events", "eventos_outbox", "eventos", "outbox"];
+  for (const p of priority) {
+    const match = tables.find((t) => t === p || t.endsWith(`.${p}`));
+    if (match) return match;
+  }
+  return tables[0]!;
+}
+
+function removeOutboxLikeTableFromSql(sql: string, tableToRemove: string): string {
+  const bare = bareOutboxTableName(tableToRemove);
+  const escaped = bare.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const schemaPrefix = tableToRemove.includes(".")
+    ? `${tableToRemove.split(".")[0]!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.`
+    : "";
+  const tableRe = new RegExp(
+    `(?:--[^\\n]*Outbox[^\\n]*\\n(?:--[^\\n]*\\n)*)?CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${schemaPrefix}${escaped}\\s*\\([\\s\\S]*?\\)\\s*;\\s*(?:CREATE\\s+INDEX\\s+idx_${escaped}[^\\n]*;\\s*)?`,
+    "gi",
+  );
+  return sql.replace(tableRe, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function unifyOutboxReferencesInDraft(draft: string, canonicalBare: string): string {
+  const aliases = ["outbox", "outbox_events", "eventos_outbox", "eventos"];
+  let out = draft;
+  for (const alias of aliases) {
+    if (alias === canonicalBare) continue;
+    for (const heading of [
+      "## 2. Arquitectura y Stack",
+      "## 5. Lógica y Edge Cases",
+      "## 7. Infraestructura",
+    ]) {
+      const section = extractMddSectionBody(out, heading);
+      if (!section) continue;
+      const re = new RegExp(`(\\btabla\\s+)${alias}\\b`, "gi");
+      const body = section.body.replace(re, `$1${canonicalBare}`);
+      if (body !== section.body) {
+        out = out.slice(0, section.start) + body + out.slice(section.end);
+      }
+    }
+  }
+  return out;
+}
 
 function draftReferencesOutboxTable(draft: string): boolean {
-  return /tabla\s+(?:outbox_events|eventos_outbox|outbox)\b|eventos\s+no\s+publicados\s+de\s+la\s+tabla\s+(?:outbox_events|eventos_outbox|outbox)|lee\s+los\s+eventos\s+no\s+publicados|Outbox\s+Pattern/i.test(
+  return /tabla\s+(?:outbox_events|eventos_outbox|outbox|eventos)\b|eventos\s+no\s+publicados\s+de\s+la\s+tabla\s+(?:outbox_events|eventos_outbox|outbox|eventos)|lee\s+los\s+eventos\s+no\s+publicados|Outbox\s+Pattern/i.test(
     draft,
   );
 }
 
 function draftHasOutboxTable(draft: string): boolean {
-  return OUTBOX_TABLE_NAME_RE.test(draft);
+  return listOutboxLikeTablesInDraft(draft).length > 0;
 }
 
-function sqlHasPlainOutboxTable(sql: string): boolean {
-  return /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?outbox\s*\(/i.test(sql);
-}
-
-function sqlHasOutboxEventsTable(sql: string): boolean {
-  return /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:outbox_events|eventos_outbox)\s*\(/i.test(
-    sql,
-  );
-}
-
-function draftReferencesOutboxEventsTable(draft: string): boolean {
-  for (const heading of ["## 2. Arquitectura y Stack", "## 7. Infraestructura"]) {
-    const section = extractMddSectionBody(draft, heading);
-    if (section && /outbox_events|eventos_outbox/i.test(section.body)) return true;
-  }
-  return /tabla\s+(?:outbox_events|eventos_outbox)\b/i.test(draft);
-}
-
-/** True si §3 define a la vez `outbox` y `outbox_events`/`eventos_outbox` (tablas duplicadas). */
+/** True si §3 define 2+ tablas outbox-like (outbox, eventos+payload, outbox_events, etc.). */
 export function detectDuplicateOutboxTables(draft: string): boolean {
-  const section = extractMddSectionBody(draft, "## 3. Modelo de Datos");
-  if (!section) return false;
-  const sqlBlocks = [...section.body.matchAll(/```sql\s*([\s\S]*?)```/gi)];
-  for (const [, inner] of sqlBlocks) {
-    if (!inner) continue;
-    if (sqlHasPlainOutboxTable(inner) && sqlHasOutboxEventsTable(inner)) return true;
-  }
-  return false;
-}
-
-function removePlainOutboxTableFromSql(sql: string): string {
-  return sql
-    .replace(
-      /--[^\n]*Outbox[^\n]*\n(?:--[^\n]*\n)*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?outbox\s*\([\s\S]*?\)\s*;\s*(?:CREATE\s+INDEX\s+idx_outbox[^\n]*;\s*)?/gi,
-      "",
-    )
-    .replace(
-      /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?outbox\s*\([\s\S]*?\)\s*;\s*(?:CREATE\s+INDEX\s+idx_outbox[^\n]*;\s*)?/gi,
-      "",
-    )
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return listOutboxLikeTablesInDraft(draft).length >= 2;
 }
 
 /**
- * Elimina `CREATE TABLE outbox` inyectado cuando ya existe `outbox_events`/`eventos_outbox`
- * y §2/§7 referencian la tabla con nombre explícito.
+ * Elimina tablas outbox-like duplicadas cuando ya existe una canónica referenciada en §2/§5/§7.
  */
 export function deduplicateOutboxTablesInDraft(draft: string): string {
   if (!draft || !detectDuplicateOutboxTables(draft)) return draft;
-  if (!draftReferencesOutboxEventsTable(draft)) return draft;
+
+  const tables = listOutboxLikeTablesInDraft(draft);
+  const canonical = resolveCanonicalOutboxTableName(draft, tables);
+  const toRemove = tables.filter((t) => t !== canonical);
+  if (toRemove.length === 0) return draft;
 
   const section = extractMddSectionBody(draft, "## 3. Modelo de Datos");
   if (!section) return draft;
@@ -989,18 +1587,50 @@ export function deduplicateOutboxTablesInDraft(draft: string): string {
   const sqlRe = /```sql\s*([\s\S]*?)```/gi;
   let changed = false;
   body = body.replace(sqlRe, (full, inner: string) => {
-    if (!sqlHasPlainOutboxTable(inner) || !sqlHasOutboxEventsTable(inner)) return full;
-    const cleaned = removePlainOutboxTableFromSql(inner);
-    if (cleaned === inner.trim()) return full;
+    let cleaned = inner;
+    let blockChanged = false;
+    for (const table of toRemove) {
+      const next = removeOutboxLikeTableFromSql(cleaned, table);
+      if (next !== cleaned) {
+        cleaned = next;
+        blockChanged = true;
+      }
+    }
+    if (!blockChanged || cleaned === inner.trim()) return full;
     changed = true;
     return "```sql\n" + cleaned + "\n```";
   });
 
   if (!changed) return draft;
-  return draft.slice(0, section.start) + body + draft.slice(section.end);
+  let out = draft.slice(0, section.start) + body + draft.slice(section.end);
+  out = unifyOutboxReferencesInDraft(out, bareOutboxTableName(canonical));
+  return out;
 }
 
-/** Añade CREATE TABLE outbox en §3 si §7/§2 la mencionan y falta en el DDL. */
+/**
+ * Alinea narrativa §7 (y §2/§5) con la tabla outbox canónica de §3.
+ */
+export function fixSection7OutboxNarrative(draft: string): string {
+  if (!draft?.trim()) return draft;
+  const tables = listOutboxLikeTablesInDraft(draft);
+  if (tables.length === 0) return draft;
+  const canonical = resolveCanonicalOutboxTableName(draft, tables);
+  const bare = bareOutboxTableName(canonical);
+  let out = unifyOutboxReferencesInDraft(draft, bare);
+  const aliases = ["outbox", "outbox_events", "eventos_outbox"];
+  for (const alias of aliases) {
+    if (alias === bare) continue;
+    const tablaRe = new RegExp(`(\\btabla\\s+)${alias}\\b`, "gi");
+    out = out.replace(tablaRe, `$1${bare}`);
+    const genericOutboxRe = /\btabla\s+outbox\b(?!\w)/gi;
+    if (bare !== "outbox") {
+      out = out.replace(genericOutboxRe, `tabla ${bare}`);
+    }
+  }
+  return out;
+}
+
+/** Añade CREATE TABLE outbox en §3 si §7/§2 la mencionan y falta cualquier tabla outbox-like. */
 export function ensureOutboxTableInDraft(draft: string): string {
   if (!draft || !draftReferencesOutboxTable(draft) || draftHasOutboxTable(draft)) return draft;
   const section = extractMddSectionBody(draft, "## 3. Modelo de Datos");
@@ -1011,7 +1641,7 @@ export function ensureOutboxTableInDraft(draft: string): string {
   if (!sqlRe.test(body)) return draft;
 
   body = body.replace(sqlRe, (full, inner: string) => {
-    if (OUTBOX_TABLE_NAME_RE.test(inner)) {
+    if (listOutboxLikeTablesInSql(inner).length > 0) {
       return full;
     }
     return "```sql\n" + inner.trimEnd() + OUTBOX_TABLE_DDL + "\n```";
@@ -1258,6 +1888,259 @@ export function parseCrossConsistencyPatches(text: string): CrossConsistencyPatc
 /**
  * Detecta incoherencias que pueden requerir parche LLM tras el paso determinista.
  */
+
+const SEC6_EXPECTED_TABLES = ["security_events", "refresh_tokens", "mfa_backup_codes"] as const;
+
+/** OWASP ASVS V3.1.1 — bloqueo por intentos fallidos cuando §5 lo exige y §6 no lo detalla. */
+export const SECURITY_LOCKOUT_DEFAULT_PARAGRAPH =
+  "Bloqueo de cuenta tras 5 intentos fallidos de login en ventana de 15 minutos; lockout 5 minutos (OWASP ASVS V3.1.1).";
+
+const LOCKOUT_DETAIL_RE =
+  /\d+\s*intentos?|\d+\s*attempts?|intentos?\s*:\s*\d+|máximo\s+\d+|fallos?\s*:\s*\d+|lockout|bloqueo\s+tras\s+\d+/i;
+
+const LOGIC_LOCKOUT_TRIGGER_RE =
+  /\b(bloqueo\s+de\s+cuenta|lock\s+account|intentos\s+fallidos|failed\s+attempts|máximo\s+de\s+intentos|fallos?\b|lockout\b)/i;
+
+/** Inyecta párrafo OWASP de lockout en §6 si §5 lo requiere y falta número de intentos. */
+export function ensureSecurityLockoutInSection6(draft: string): string {
+  if (!draft?.trim()) return draft;
+  const logicSec = extractMddSectionBody(draft, "## 5. Lógica y Edge Cases");
+  if (!logicSec || !LOGIC_LOCKOUT_TRIGGER_RE.test(logicSec.body)) return draft;
+
+  const sec6 = extractMddSectionBody(draft, "## 6. Seguridad");
+  if (!sec6) return draft;
+  if (LOCKOUT_DETAIL_RE.test(sec6.body)) return draft;
+
+  const injection = `\n\n${SECURITY_LOCKOUT_DEFAULT_PARAGRAPH}\n`;
+  const updatedBody = sec6.body.trimEnd() + injection;
+  return draft.slice(0, sec6.start) + updatedBody + draft.slice(sec6.end);
+}
+
+function detectSecurityTablesMissingInSection3(draft: string): string[] {
+  const sec6 = extractMddSectionBody(draft, "## 6. Seguridad");
+  if (!sec6) return [];
+  const section3 = extractMddSectionBody(draft, "## 3. Modelo de Datos");
+  const sql = section3?.body ?? "";
+  const missing: string[] = [];
+  for (const table of SEC6_EXPECTED_TABLES) {
+    if (!new RegExp(`\\b${table}\\b`, "i").test(sec6.body)) continue;
+    if (!new RegExp(`CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${table}\\b`, "i").test(sql)) {
+      missing.push(table);
+    }
+  }
+  return missing;
+}
+
+const SECURITY_TABLE_STUB_DDL: Record<(typeof SEC6_EXPECTED_TABLES)[number], string> = {
+  security_events: `
+CREATE TABLE security_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID,
+  event_type VARCHAR(100) NOT NULL,
+  ip_address INET,
+  details JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);`,
+  refresh_tokens: `
+CREATE TABLE refresh_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  token_hash VARCHAR(255) NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);`,
+  mfa_backup_codes: `
+CREATE TABLE mfa_backup_codes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  code_hash VARCHAR(255) NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);`,
+};
+
+function section6RequiresTotpSecretColumn(draft: string): boolean {
+  const sec6 = extractMddSectionBody(draft, "## 6. Seguridad");
+  if (!sec6) return false;
+  const body = sec6.body;
+  if (/\b(sin\s+mfa|no\s+mfa|no\s+se\s+(?:implementa|requiere|usa)\s+mfa|mfa\s+no\s+(?:obligatorio|requerido|aplica))\b/i.test(body)) {
+    return false;
+  }
+  const mandatesMfa =
+    /\b(mfa\s+obligatorio|totp\s+obligatorio|2fa\s+obligatorio|requiere\s+mfa|implementa\s+(?:mfa|totp|2fa)|autenticaci[oó]n\s+multifactor)\b/i.test(
+      body,
+    );
+  if (!mandatesMfa) return false;
+  if (!/\btotp_secret\b/i.test(body) && !/\bmfa_secrets?\b/i.test(body)) return false;
+  const section3 = extractMddSectionBody(draft, "## 3. Modelo de Datos");
+  if (!section3) return false;
+  const sqlMatch = section3.body.match(/```sql\s*([\s\S]*?)```/i);
+  if (!sqlMatch?.[1]) return false;
+  return !/\btotp_secret\b/i.test(sqlMatch[1]) && !/\bmfa_secrets\b/i.test(sqlMatch[1]);
+}
+
+function findCreateTableBlock(
+  sql: string,
+  tableNames: string[],
+): { start: number; end: number; tableName: string; cols: string } | null {
+  const re = new RegExp(
+    `CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(${tableNames.join("|")})\\s*\\(`,
+    "i",
+  );
+  const m = re.exec(sql);
+  if (!m || m.index == null) return null;
+  const openParen = m.index + m[0].length - 1;
+  let depth = 0;
+  for (let i = openParen; i < sql.length; i++) {
+    const ch = sql[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) {
+        return {
+          start: m.index,
+          end: i + 1,
+          tableName: m[1]!,
+          cols: sql.slice(openParen + 1, i),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function injectTotpSecretColumnIntoUserTable(sql: string): string {
+  const block = findCreateTableBlock(sql, ["users", "usuarios", "user"]);
+  if (!block || /\btotp_secret\b/i.test(block.cols)) return sql;
+  const trimmedCols = block.cols.trimEnd().replace(/,\s*$/, "");
+  const newCols = `${trimmedCols},\n  totp_secret BYTEA`;
+  const newBlock = `CREATE TABLE ${block.tableName} (\n${newCols}\n)`;
+  return sql.slice(0, block.start) + newBlock + sql.slice(block.end);
+}
+
+/**
+ * Añade stubs DDL mínimos en §3 solo para tablas/columnas mencionadas en §6 y ausentes en SQL.
+ */
+export function ensureSecurityTableStubsFromSection6(draft: string): string {
+  if (!draft?.trim()) return draft;
+  const missing = detectSecurityTablesMissingInSection3(draft);
+  const needsTotp = section6RequiresTotpSecretColumn(draft);
+  if (missing.length === 0 && !needsTotp) return draft;
+
+  const section = extractMddSectionBody(draft, "## 3. Modelo de Datos");
+  if (!section) return draft;
+
+  let body = section.body;
+  const sqlRe = /```sql\s*([\s\S]*?)```/i;
+  if (!sqlRe.test(body)) return draft;
+
+  body = body.replace(sqlRe, (full, inner: string) => {
+    let sql = inner.trimEnd();
+    for (const table of missing) {
+      const stub = SECURITY_TABLE_STUB_DDL[table as (typeof SEC6_EXPECTED_TABLES)[number]];
+      if (stub) sql += `\n${stub}`;
+    }
+    if (needsTotp) sql = injectTotpSecretColumnIntoUserTable(sql);
+    return sql === inner.trimEnd() ? full : "```sql\n" + sql + "\n```";
+  });
+
+  if (body === section.body) return draft;
+  return draft.slice(0, section.start) + body + draft.slice(section.end);
+}
+
+/** Heurística: UNIQUE compuesto de estado sin índice parcial. */
+export function detectSuspiciousUniqueConstraints(draft: string): string[] {
+  const issues: string[] = [];
+  const section = extractMddSectionBody(draft, "## 3. Modelo de Datos");
+  if (!section) return issues;
+  const uniqueRe = /UNIQUE\s*\(\s*([^)]+)\s*\)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = uniqueRe.exec(section.body)) !== null) {
+    const cols = m[1].replace(/\s/g, "").toLowerCase();
+    if (
+      /negocio_id.*cliente_id.*estado|cliente_id.*negocio_id.*estado/.test(cols) &&
+      !/WHERE/i.test(section.body.slice(m.index, m.index + 240))
+    ) {
+      issues.push(
+        "§3: UNIQUE(negocio_id, cliente_id, estado) sin WHERE — considerar índice parcial único por estado activo.",
+      );
+      break;
+    }
+  }
+  return issues;
+}
+
+function extractUatBulletLines(body: string): string[] {
+  return body
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /^[-*]\s+/.test(l))
+    .map((l) => l.replace(/^[-*]\s+/, "").toLowerCase());
+}
+
+/** True si §1 y §5 repiten criterios UAT (warning de entrega, no bloqueante). */
+export function detectDuplicateUatSections(draft: string): boolean {
+  const sec1 = extractMddSectionBody(draft, "## 1. Contexto");
+  const sec5 = extractMddSectionBody(draft, "## 5. Lógica y Edge Cases");
+  if (!sec1 || !sec5) return false;
+  return uatSectionsAreSimilar(sec1.body, sec5.body);
+}
+
+function uatSectionsAreSimilar(sec1Body: string, sec5Body: string): boolean {
+  if (!/\bUAT\b|criterios\s+de\s+aceptaci[oó]n/i.test(sec1Body)) return false;
+  if (!/\bUAT\b|criterios\s+de\s+aceptaci[oó]n/i.test(sec5Body)) return false;
+  const lines1 = extractUatBulletLines(sec1Body);
+  const lines5 = extractUatBulletLines(sec5Body);
+  if (lines1.length < 2 || lines5.length < 2) return false;
+  const shared = lines1.filter((l) => lines5.includes(l));
+  return shared.length >= Math.min(3, Math.min(lines1.length, lines5.length));
+}
+
+/** Si §1 y §5 repiten criterios UAT, §5 referencia §1 en lugar de duplicar. */
+export function deduplicateUatSections(draft: string): string {
+  const sec1 = extractMddSectionBody(draft, "## 1. Contexto");
+  const sec5 = extractMddSectionBody(draft, "## 5. Lógica y Edge Cases");
+  if (!sec1 || !sec5 || !uatSectionsAreSimilar(sec1.body, sec5.body)) return draft;
+
+  const uatHeadingRe =
+    /(\n###[^\n]*(?:UAT|criterios\s+de\s+aceptaci[oó]n)[^\n]*\n)([\s\S]*?)(?=\n###|\n##|$)/i;
+  const match = sec5.body.match(uatHeadingRe);
+  if (!match || /Ver\s+§1/i.test(match[2] ?? "")) return draft;
+
+  const replacement = `${match[1]}\n- Ver §1 (Criterios UAT / aceptación).\n`;
+  const newBody = sec5.body.replace(uatHeadingRe, replacement);
+  if (newBody === sec5.body) return draft;
+  return draft.slice(0, sec5.start) + newBody + draft.slice(sec5.end);
+}
+
+/** True si algún bloque ```sql abrió fence sin cierre ``` antes del siguiente bloque o EOF. */
+export function detectUnclosedSqlFences(draft: string): string | null {
+  if (!draft) return null;
+  const re = /```sql\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(draft)) !== null) {
+    const contentStart = match.index + match[0].length;
+    const rest = draft.slice(contentStart);
+    const lines = rest.split(/\r?\n/);
+    let offset = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed === "```") {
+        break;
+      }
+      if (/^```\w+/.test(trimmed)) {
+        return "Bloque ```sql sin cerrar: otro fence (```mermaid, ```TechnicalMetadata, etc.) antes del cierre.";
+      }
+      offset += line.length + 1;
+    }
+    if (offset >= rest.length || !/\n```[ \t]*(?:\r?\n|$)/.test(rest.slice(offset))) {
+      return "Bloque ```sql sin cerrar con ``` antes del final del documento.";
+    }
+  }
+  return null;
+}
+
 export function detectCrossConsistencyIssues(draft: string): string[] {
   if (!draft) return [];
   const issues: string[] = [];
@@ -1353,10 +2236,41 @@ export function detectCrossConsistencyIssues(draft: string): string[] {
   }
 
   if (detectDuplicateOutboxTables(draft)) {
+    const tables = listOutboxLikeTablesInDraft(draft);
     issues.push(
-      "§3: tablas outbox duplicadas (CREATE TABLE outbox y outbox_events/eventos_outbox con el mismo propósito).",
+      `§3: tablas outbox-like duplicadas (${tables.join(", ")}); conservar una sola tabla canónica.`,
     );
   }
+
+  if (detectJwtAlgorithmMismatch(draft)) {
+    const s6 = extractJwtAlgorithmFromSection6(draft);
+    const s7 = extractJwtAlgorithmFromSection7(draft);
+    issues.push(
+      `§6/§7: algoritmo JWT incoherente (§6=${s6}, §7=${s7}); §6 es SSOT.`,
+    );
+  }
+
+  const nodeVer = extractNodeVersionFromSection2(draft);
+  if (nodeVer) {
+    const infra = extractMddSectionBody(draft, "## 7. Infraestructura");
+    const nodeMismatch =
+      infra != null &&
+      /node:(\d+)/i.test(infra.body) &&
+      !new RegExp(`node:${nodeVer}(?:-|$)`, "i").test(infra.body);
+    if (nodeMismatch) {
+      issues.push(
+        `§7/manifest: versión Node distinta a §2 (esperado node:${nodeVer}-alpine).`,
+      );
+    }
+  }
+
+  for (const table of detectSecurityTablesMissingInSection3(draft)) {
+    issues.push(
+      `§6 menciona tabla \`${table}\` pero falta CREATE TABLE correspondiente en §3.`,
+    );
+  }
+
+  issues.push(...detectSuspiciousUniqueConstraints(draft));
 
   const sec6Argon2 = extractMddSectionBody(draft, "## 6. Seguridad");
   if (sec6Argon2 && /Argon2(?:id)?/i.test(sec6Argon2.body)) {
@@ -1390,8 +2304,10 @@ export function applyDeterministicCrossConsistencyFixes(draft: string): string {
   let out = sanitizeAllSqlBlocksInDraft(draft);
   out = ensureOutboxTableInDraft(out);
   out = deduplicateOutboxTablesInDraft(out);
+  out = fixSection7OutboxNarrative(out);
   out = fixDualApprovalSchemaInDraft(out);
   out = fixDeterministicMddCoherence(out);
+  out = fixJwtAlgorithmCoherence(out);
   // Segunda pasada: rutas ya en /api/v1 y headings detalle pendientes
   if (draftRequiresDualApproval(out)) {
     out = fixDualApprovalSchemaInDraft(out);
@@ -1607,9 +2523,21 @@ function fixSecuritySectionBullets(sectionBody: string): string {
 /** Línea H2 de §6 (con o sin número; admite título pegado sin espacio tras Seguridad). */
 const RE_SECTION6_H2_LINE = /^##\s+(?:6\.\s+)?Seguridad/i;
 
+/** Despega `## 3. Foo### 3.1 Bar` o `## 3. Foo### SQL` → H2 + ### en líneas separadas. */
+function fixGluedSubsectionHeadings(draft: string): string {
+  return draft
+    .replace(/^(##\s+\d+\.\s+[^\n#]+?)(#{1,3}\s+\d+\.\d+)/gm, "$1\n\n$2")
+    .replace(/^(##\s+\d+\.\s+[^\n#]+?)(#{1,3}\s+[A-Za-zÁÉÍÓÚÑ])/gm, "$1\n\n$2");
+}
+
 /** Despega subtítulo del H2 (ej. `## 6. SeguridadGestión…:` o `## 6. Seguridad. Autenticación:` → H2 + ###). */
 function fixGluedSection6Heading(draft: string): string {
-  let out = draft.replace(
+  let out = fixGluedSubsectionHeadings(draft);
+  out = out.replace(
+    /^##\s*3\.\s*Modelo\s+de\s+Datos(?=[A-ZÁÉÍÓÚÑ])/gim,
+    "## 3. Modelo de Datos\n\n",
+  );
+  out = out.replace(
     /^##\s*6\.\s*Seguridad([A-ZÁÉÍÓÚÑ][^\n]*?):?\s*$/gim,
     (_m, tail: string) => {
       const t = tail.trim().replace(/:$/, "");
@@ -3135,7 +4063,7 @@ export function normalizeMddFormat(draft: string): string {
  * Preserva bloques añadidos tras §7 (p. ej. UI/UX) salvo que sean repetición de secciones núcleo.
  */
 export function finalizeMddDeliverable(draft: string): string {
-  let out = applyDeterministicCrossConsistencyFixes(stripMeshDirectivesFromDraft(draft));
+  let out = sanitizeMddAtPersist(stripMeshDirectivesFromDraft(draft));
   if (!mddHasDuplicateSectionHeadings(out)) return out;
 
   const uiUxRe = /\n##\s+UI\/UX\s+Design\s+Intent\b[\s\S]*$/i;

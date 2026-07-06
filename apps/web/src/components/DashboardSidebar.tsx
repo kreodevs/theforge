@@ -47,6 +47,7 @@ import { selectWorkshopAgentsBusy, useWorkshopStore } from "../store/workshopSto
 import { WORKSHOP_EXIT_BLOCKED_TITLE, WORKSHOP_DOC_NAV_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { buildWorkshopDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
 import { fetchUiMcpActive } from "@/lib/ui-mcp-api";
+import { WorkshopAgentActivitySidebarSection } from "./WorkshopAgentActivitySidebarSection";
 
 /** Project row shown under the dashboard “Proyectos” menu group. */
 export interface DashboardSidebarProjectItem {
@@ -384,6 +385,7 @@ export function DashboardSidebar({
   const infraContent = useWorkshopStore((s) => s.infraContent);
   const adrs = useWorkshopStore((s) => s.adrs);
   const workshopAgentsBusy = useWorkshopStore(selectWorkshopAgentsBusy);
+  const documentationGapsRefreshNonce = useWorkshopStore((s) => s.documentationGapsRefreshNonce);
 
   const [uiMcpActive, setUiMcpActive] = useState(false);
   useEffect(() => {
@@ -526,6 +528,21 @@ export function DashboardSidebar({
     closeMobileNav();
     onExitWorkshop?.();
   }, [closeMobileNav, onExitWorkshop, workshopAgentsBusy]);
+
+  const handleSelectWorkshopDocPanel = useCallback(
+    (panelId: string) => {
+      if (workshopAgentsBusy) return;
+      closeMobileNav();
+      onBeforeNavigateToWorkshopDoc?.();
+      setWorkshopActiveDocPanel(panelId);
+    },
+    [
+      workshopAgentsBusy,
+      closeMobileNav,
+      onBeforeNavigateToWorkshopDoc,
+      setWorkshopActiveDocPanel,
+    ],
+  );
 
   return (
     <div className="relative flex w-full shrink-0 flex-col lg:z-40 lg:h-full lg:min-h-0 lg:w-auto lg:shrink-0">
@@ -852,12 +869,7 @@ export function DashboardSidebar({
                                         ? WORKSHOP_DOC_NAV_BLOCKED_TITLE
                                         : `${item.title}${item.required ? " — paso obligatorio" : ""}${done ? " — con contenido" : ""}`
                                     }
-                                    onClick={() => {
-                                      if (workshopAgentsBusy) return;
-                                      closeMobileNav();
-                                      onBeforeNavigateToWorkshopDoc?.();
-                                      setWorkshopActiveDocPanel(item.id);
-                                    }}
+                                    onClick={() => handleSelectWorkshopDocPanel(item.id)}
                                     className={cn(
                                       "flex min-w-0 items-center font-medium transition-colors",
                                       rail
@@ -939,6 +951,17 @@ export function DashboardSidebar({
                       </div>
                     )}
                   </div>
+                  {!workshopDeliverablesLoading && activeStageId ? (
+                    <WorkshopAgentActivitySidebarSection
+                      projectId={workshopProject.id}
+                      stageId={activeStageId}
+                      rail={rail}
+                      activeDocPanel={activeDocPanel}
+                      workshopAgentsBusy={workshopAgentsBusy}
+                      onSelectPanel={handleSelectWorkshopDocPanel}
+                      refreshToken={documentationGapsRefreshNonce}
+                    />
+                  ) : null}
                 </div>
                 ) : null}
               </div>

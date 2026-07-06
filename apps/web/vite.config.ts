@@ -74,7 +74,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:3000",
+        // 127.0.0.1 evita colisión con otro dev server en localhost:3000 (p. ej. PR Architect).
+        target: "http://127.0.0.1:3000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
         // SSE chat/stream: sin timeout corto del proxy de dev

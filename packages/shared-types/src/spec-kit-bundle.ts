@@ -5,6 +5,7 @@
 
 import { formatDocumentPathMapTable } from "./document-layout.js";
 import { splitPantallasAndUiProject } from "./ui-screens-export.js";
+import { extractTaskCheckpoints } from "./tasks-parse.js";
 
 export interface SpecKitBundleFile {
   path: string;
@@ -127,28 +128,160 @@ export function extractMddSection(mdd: string, sectionNumber: number): string {
   return rest.slice(0, end).trim();
 }
 
+const MAX_SMOKE_CHECKPOINTS = 10;
+
+function detectPackageManager(
+  mdd: string,
+  blueprint?: string | null,
+  spec?: string | null,
+): "pnpm" | "npm" | "yarn" {
+  const section2 = extractMddSection(mdd, 2);
+  const corpus = [section2, blueprint, spec].filter(Boolean).join("\n");
+  if (/\byarn\b/i.test(corpus)) return "yarn";
+  if (/\bnpm\b/i.test(corpus) && !/\bpnpm\b/i.test(corpus)) return "npm";
+  return "pnpm";
+}
+
+/** Quita marcadores `**` residuales del parseo de checkpoints en tasks.md. */
+function normalizeCheckpointText(raw: string): string {
+  return raw.replace(/^\*+|\*+$/g, "").trim();
+}
+
+function resolveHealthEndpoint(
+  apiContracts: string | null | undefined,
+  mdd: string | null | undefined,
+): string | null {
+  const sources = [
+    (apiContracts ?? "").trim(),
+    extractMddSection(mdd ?? "", 4),
+    extractMddSection(mdd ?? "", 2),
+  ].filter(Boolean);
+
+  const found: string[] = [];
+  const patterns = [
+    /(?:^|[\s|])(?:GET|HEAD)\s+(\/api\/v\d+\/health\b[^\s|`]*)/gim,
+    /(\/api\/v\d+\/health\b)/gi,
+    /(?:^|[\s|])(?:GET|HEAD)\s+(\/health\b[^\s|`]*)/gim,
+    /(\/(?:health|ready|healthz)\b)/gi,
+  ];
+
+  for (const src of sources) {
+    for (const re of patterns) {
+      re.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(src)) !== null) {
+        const path = (match[1] ?? "").replace(/[`|).,;]+$/, "");
+        if (path) found.push(path);
+      }
+    }
+  }
+
+  const unique = [...new Set(found)];
+  unique.sort((a, b) => {
+    const score = (p: string) => (/\/api\/v\d+\//.test(p) ? 100 : 0) + p.length;
+    return score(b) - score(a);
+  });
+  return unique[0] ?? null;
+}
+
+function checkpointPriority(cp: string): number {
+  const t = cp.toLowerCase();
+  let score = 0;
+  if (/auth|login|jwt|sesión|session|register|oauth|signup/.test(t)) score += 10;
+  if (/health|ready|readiness|liveness|\/api\/v\d+\/health/.test(t)) score += 9;
+  if (/mvp|core|principal|smoke|crud|flujo/.test(t)) score += 4;
+  if (/suite de pruebas sintéticas|modo sombra/i.test(t)) score -= 100;
+  return score;
+}
+
+function selectSmokeCheckpoints(tasksContent: string, max = MAX_SMOKE_CHECKPOINTS): string[] {
+  const all = extractTaskCheckpoints(tasksContent)
+    .map(normalizeCheckpointText)
+    .filter((cp) => cp.length > 3 && checkpointPriority(cp) > -50);
+
+  const seen = new Set<string>();
+  const selected: string[] = [];
+
+  for (const cp of [...all].sort((a, b) => checkpointPriority(b) - checkpointPriority(a))) {
+    if (checkpointPriority(cp) <= 0) continue;
+    if (seen.has(cp)) continue;
+    seen.add(cp);
+    selected.push(cp);
+    if (selected.length >= max) return selected;
+  }
+
+  for (const cp of all) {
+    if (seen.has(cp)) continue;
+    seen.add(cp);
+    selected.push(cp);
+    if (selected.length >= max) break;
+  }
+
+  return selected;
+}
+
 function buildQuickstart(
   spec: string | null | undefined,
   changeSpec?: string | null,
   acceptanceLines?: string[] | null,
+  tasksContent?: string | null,
+  blueprintContent?: string | null,
+  mddContent?: string | null,
+  apiContractsContent?: string | null,
 ): string {
+  const lines: string[] = ["# Quickstart", ""];
+
+  const mdd = (mddContent ?? "").trim();
+  const corpus = [mdd, blueprintContent, spec].filter(Boolean).join("\n\n");
+  const devSteps: string[] = [];
+  const pm = detectPackageManager(mdd, blueprintContent, spec);
+  devSteps.push(`- Instalar dependencias: \`${pm} install\``);
+  if (/docker\s+compose|docker-compose/i.test(corpus)) {
+    devSteps.push("- Levantar servicios: `docker compose up -d`");
+  }
+  const devScript = corpus.match(/(?:pnpm|npm|yarn)\s+(?:run\s+)?(?:dev|start:dev)\b/i)?.[0];
+  if (devScript) devSteps.push(`- Arrancar API/app: \`${devScript.trim()}\``);
+  const healthRoute = resolveHealthEndpoint(apiContractsContent, mdd);
+  if (healthRoute) {
+    devSteps.push(`- Verificar readiness: GET \`${healthRoute}\` (ver contratos API)`);
+  }
+
+  lines.push("## Arranque local", "", ...devSteps, "");
+
   const bullets: string[] = [];
+  const tasksText = (tasksContent ?? "").trim();
+  if (tasksText) {
+    for (const cp of selectSmokeCheckpoints(tasksText)) {
+      const item = `- [ ] Checkpoint: ${cp}`;
+      if (!bullets.includes(item)) bullets.push(item);
+    }
+  }
 
   if (acceptanceLines?.length) {
     for (const line of acceptanceLines.slice(0, 10)) {
-      bullets.push(`- [ ] ${line.replace(/^[-*#\s]+/, "").trim()}`);
+      if (bullets.length >= 12) break;
+      const item = `- [ ] ${line.replace(/^[-*#\s]+/, "").trim()}`;
+      if (!bullets.includes(item)) bullets.push(item);
     }
   }
 
   const s = (spec ?? "").trim();
   if (s) {
-    const lines = s
+    const specLines = s
       .split("\n")
-      .filter((l) => /criterio|éxito|aceptación|validar|acceptance/i.test(l))
+      .filter((l) => {
+        const t = l.trim();
+        if (!/^[-*]\s/.test(t)) return false;
+        const body = t.replace(/^[-*]\s+(\[[ xX]\]\s+)?/, "");
+        if (/^\d+\.\s+\S/.test(body)) return false;
+        if (/(?:ambigu|ambiguity|No se identifican marcadores)/i.test(t)) return false;
+        return /criterios?\s+de\s+(?:éxito|aceptación)|acceptance\s+criteria/i.test(t);
+      })
       .slice(0, 8);
-    for (const l of lines) {
-      const b = `- [ ] ${l.replace(/^[-*#\s]+/, "").trim()}`;
-      if (!bullets.includes(b)) bullets.push(b);
+    for (const l of specLines) {
+      if (bullets.length >= 12) break;
+      const item = `- [ ] ${l.replace(/^[-*#\s]+/, "").replace(/^\[[ xX]\]\s+/, "").trim()}`;
+      if (!bullets.includes(item)) bullets.push(item);
     }
   }
 
@@ -159,17 +292,29 @@ function buildQuickstart(
       .filter((l) => l.startsWith("- ") || l.startsWith("* "))
       .slice(0, 6);
     for (const l of deltaChecks) {
-      const b = `- [ ] Validar: ${l.replace(/^[-*]\s*/, "").trim()}`;
-      if (!bullets.includes(b)) bullets.push(b);
+      if (bullets.length >= 12) break;
+      const item = `- [ ] Validar: ${l.replace(/^[-*]\s*/, "").trim()}`;
+      if (!bullets.includes(item)) bullets.push(item);
     }
   }
 
   if (bullets.length === 0) {
     bullets.push("- [ ] Validar criterios de éxito del spec.md en entorno local");
     bullets.push("- [ ] Ejecutar smoke test del flujo principal descrito en plan.md");
+    bullets.push("- [ ] Ejecutar lint, typecheck y tests del paquete tocado");
   }
 
-  return `# Quickstart\n\n## Escenarios de validación\n\n${bullets.join("\n")}\n`;
+  lines.push("## Escenarios de validación", "", ...bullets, "");
+  lines.push(
+    "## Referencias",
+    "",
+    "- Checklist completo: `tasks.md`",
+    "- Plan técnico: `plan.md`",
+    "- Constitución (MDD): `.specify/memory/constitution.md`",
+    "",
+  );
+
+  return `${lines.join("\n")}`;
 }
 
 /**
@@ -226,6 +371,10 @@ export function buildSpecKitBundleFiles(input: SpecKitBundleInput): SpecKitBundl
       input.specContent,
       input.changeSpecContent,
       input.acceptanceCriteriaLines,
+      input.tasksContent,
+      input.blueprintContent,
+      mdd,
+      input.apiContractsContent,
     ),
   });
 

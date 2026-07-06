@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatImagePart, CodebaseDocResponseMode } from "@theforge/shared-types";
+import type { ChatImagePart, CodebaseDocResponseMode, MddDeliveryGateResult } from "@theforge/shared-types";
 import { contentIncludesVisionBlock } from "@theforge/shared-types/session";
 import { isFormatDocumentChatCommand } from "../utils/documentFormatCommand";
 import {
@@ -15,7 +15,7 @@ import {
 } from "../utils/httpError";
 import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
 import { parseNdjsonLine } from "../utils/ndjson";
-import { mddHasSection6Heading } from "../utils/mddSectionRegen";
+import { mddHasSection6Heading, buildMddSectionRegenNotice } from "../utils/mddSectionRegen";
 import { isWorkshopAgentsBusy } from "../utils/workshopAgentsBusy";
 import { appendAgentProgressDone, type AgentProgressItem } from "../utils/agentProgress";
 import {
@@ -290,6 +290,16 @@ export interface LiveMetricsResult {
   traceabilityHints?: string[];
   consistencyScore?: number;
   crossDocumentGaps?: CrossDocumentGap[];
+  /** Gate bloqueante de entrega MDD (≥9/10). */
+  deliveryGate?: MddDeliveryGateResult;
+}
+
+function deliveryGateFromStreamEvent(
+  event: { deliveryGate?: MddDeliveryGateResult },
+): MddDeliveryGateResult | undefined {
+  const gate = event.deliveryGate;
+  if (!gate || typeof gate.ok !== "boolean") return undefined;
+  return gate;
 }
 
 /** Calificación por sección/agente (0–100) en el evento done del stream MDD. */
@@ -667,6 +677,7 @@ interface WorkshopState {
   loadingReason:
     | "benchmark"
     | "mdd"
+    | "mdd-section"
     | "phase0-deep-research"
     | "legacy-codebase-doc"
     | "legacy-mdd"
@@ -701,6 +712,8 @@ interface WorkshopState {
   managerThreadId: string | null;
   /** true mientras se ejecuta persistAndReviewMdd (grabar + revisión de consistencia) */
   mddReviewing: boolean;
+  /** true mientras reapplyMddFormat persiste el MDD con sanitizers SSOT */
+  mddReapplyingFormat: boolean;
   synced: boolean;
   error: string | null;
   /** Avisos informativos (p. ej. patrones SSOT); no bloquean ni marcan «Sin conexión». */
@@ -720,6 +733,11 @@ interface WorkshopState {
   consistencyScore: number | null;
   /** Feedback del auditor (para mostrar en UI fuera del chat) */
   auditorFeedback: string | null;
+  /** Gate bloqueante de entrega MDD (stream SSE o GET /estimation). */
+  deliveryGate: MddDeliveryGateResult | null;
+  /** Incrementar para refrescar paneles de gaps HITL tras cascada/regeneración. */
+  documentationGapsRefreshNonce: number;
+  bumpDocumentationGapsRefresh: () => void;
   /** Crítica del evaluador legacy (SDD vs código); solo si el backend la envía */
   evaluatorCritique: string | null;
   clearEvaluatorCritique: () => void;
@@ -776,7 +794,7 @@ interface WorkshopState {
   sendMessage: (
     message: string,
     activeTab?: string,
-    options?: { regenerateSection?: number; images?: ChatImagePart[] },
+    options?: { regenerateSection?: number; regenerateSectionGaps?: string[]; images?: ChatImagePart[] },
   ) => Promise<void>;
   /** `/formatear` — normaliza markdown del documento del tab (sin LLM). */
   formatDocumentForActiveTab: (activeTab?: string) => Promise<{ ok: boolean; message: string }>;
@@ -794,6 +812,8 @@ interface WorkshopState {
   clearMddContentCompletely: (projectId: string) => Promise<boolean>;
   revertMddContent: () => void;
   persistAndReviewMdd: () => Promise<void>;
+  /** Re-ejecuta sanitizeMddAtPersist en servidor sin editar manualmente el borrador. */
+  reapplyMddFormat: () => Promise<void>;
   setBlueprintContent: (content: string | null) => void;
   persistBlueprintContent: (content: string) => Promise<void>;
   generateBlueprint: (projectId: string, options?: { gapsFeedback?: string }) => Promise<Project | null>;
@@ -841,7 +861,10 @@ interface WorkshopState {
   /** GET reconciled scaffold para ZIP (materializa sugerencias omitidas en `files[]`). */
   fetchAgentGovernanceExport: (projectId: string) => Promise<import("@theforge/shared-types").AgentGovernanceScaffold | null>;
   /** POST /projects/:id/generate-deliverables — cascada según complexity. */
-  generateDeliverablesCascade: (projectId: string) => Promise<Project | null>;
+  generateDeliverablesCascade: (
+    projectId: string,
+    options?: { acknowledgeGaps?: boolean },
+  ) => Promise<Project | null>;
   /** HITL: aplica propuesta pendiente a `complexity` y limpia `complexityPending`. */
   confirmComplexityProposal: (projectId: string) => Promise<Project | null>;
   /** HITL: descarta propuesta sin aplicar nivel (`clearComplexityPending`). */
@@ -900,7 +923,7 @@ interface WorkshopState {
     opts?: { stageId?: string | null },
   ) => Promise<{ brdContent: string; stageId: string } | null>;
   legacyGenerateDeliverables: (projectId: string) => Promise<boolean>;
-  fetchEstimation: (projectId: string) => Promise<LiveMetricsResult | null>;
+  fetchEstimation: (projectId: string, mddContentOverride?: string) => Promise<LiveMetricsResult | null>;
   fetchAdrs: (projectId: string) => Promise<void>;
   suggestGovernancePatterns: (
     projectId: string,
@@ -963,6 +986,8 @@ const initialState = {
   loading: false,
   loadingReason: null as
     | "benchmark"
+    | "mdd"
+    | "mdd-section"
     | "phase0-deep-research"
     | "legacy-codebase-doc"
     | "legacy-mdd"
@@ -983,6 +1008,7 @@ const initialState = {
   liveMetrics: null as LiveMetricsResult | null,
   managerThreadId: null as string | null,
   mddReviewing: false,
+  mddReapplyingFormat: false,
   synced: true,
   error: null as string | null,
   notice: null as string | null,
@@ -993,6 +1019,8 @@ const initialState = {
   crossDocumentGaps: [] as CrossDocumentGap[],
   consistencyScore: null as number | null,
   auditorFeedback: null as string | null,
+  deliveryGate: null as MddDeliveryGateResult | null,
+  documentationGapsRefreshNonce: 0,
   evaluatorCritique: null as string | null,
   legacyMcpDebugTrace: null as LegacyMcpDebugEntry[] | null,
   lastLegacyDeliverablesDebug: null as LegacyDeliverablesDebugReport | null,
@@ -1051,6 +1079,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setLoading: (v) => set({ loading: v }),
   setSynced: (v) => set({ synced: v }),
   setError: (e) => set({ error: e }),
+  bumpDocumentationGapsRefresh: () =>
+    set((s) => ({ documentationGapsRefreshNonce: s.documentationGapsRefreshNonce + 1 })),
   setNotice: (n) => set({ notice: n }),
   retryWorkshopSync: async () => {
     const { projectId, error } = get();
@@ -1613,6 +1643,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const tab = activeTab ?? "mdd";
     const msg = message.trim();
     const regenerateSection = options?.regenerateSection;
+    const regenerateSectionGaps = options?.regenerateSectionGaps?.filter((g) => g?.trim()) ?? [];
 
     if (isFormatDocumentChatCommand(msg) && !images.length) {
       set({ loading: true, error: null, synced: false });
@@ -1648,30 +1679,28 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return;
     }
 
-    // Comandos /: solo si el cliente pide regenerar una sección (2–7). Resto del tiempo → Manager/resume.
-    if (tab === "mdd" && session?.id && typeof regenerateSection === "number" && regenerateSection >= 1 && regenerateSection <= 7) {
+    // Comandos /: regenerar §N vía API (projectId + mddContent); sesión de chat opcional (historial).
+    if (tab === "mdd" && typeof regenerateSection === "number" && regenerateSection >= 1 && regenerateSection <= 7) {
       set({
         loading: true,
-        loadingReason: "mdd",
+        loadingReason: "mdd-section",
+        notice: buildMddSectionRegenNotice(regenerateSection),
         error: null,
         synced: false,
-        agentProgress: [
-          {
-            agent: "Regenerando sección",
-            message: `Regenerando §${regenerateSection}…`,
-            status: "active",
-          },
-        ],
+        agentProgress: [],
       });
       try {
-        const appendRes = await apiFetch(`${API_BASE}/sessions/${session.id}/messages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: sessionMessageBody({ role: "user", content: msg, tab: "mdd" }, get().activeStageId),
-        });
-        if (appendRes.ok) {
-          const updatedSession = (await appendRes.json()) as Session;
-          set({ session: updatedSession });
+        const chatSessionId = session?.id;
+        if (chatSessionId) {
+          const appendRes = await apiFetch(`${API_BASE}/sessions/${chatSessionId}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: sessionMessageBody({ role: "user", content: msg, tab: "mdd" }, get().activeStageId),
+          });
+          if (appendRes.ok) {
+            const updatedSession = (await appendRes.json()) as Session;
+            set({ session: updatedSession });
+          }
         }
         const mddContent = effectiveMddContentForSectionRegen(get);
         const regStage = get().activeStageId;
@@ -1684,6 +1713,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
               projectId: requestProjectId,
               section: regenerateSection,
               mddContent: mddContent || undefined,
+              ...(regenerateSectionGaps.length ? { gapReasons: regenerateSectionGaps } : {}),
               ...(regStage ? { stageId: regStage } : {}),
             }),
           },
@@ -1707,14 +1737,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
               for (const event of parseNdjsonLine(line)) {
               try {
                 const ev = event as { type: string; agent?: string; markdown?: string; message?: string; precision?: number; status?: string; precisionBreakdown?: PrecisionBreakdown };
-                if (ev.type === "progress" && ev.agent != null && ev.message != null) {
-                  set((s) => ({
-                    agentProgress: appendAgentProgressDone(s.agentProgress, {
-                      agent: ev.agent!,
-                      message: ev.message!,
-                    }),
-                  }));
-                } else if (ev.type === "done") {
+                if (ev.type === "done") {
                   const merged = (ev.markdown ?? "").trim();
                   if (merged.length > 80) {
                     if (regenerateSection === 6 && !mddHasSection6Heading(merged)) {
@@ -1723,6 +1746,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                           "El servidor respondió OK pero el MDD no incluye ## 6. Seguridad. Reintenta /seguridad; si persiste, recarga la página.",
                         loading: false,
                         loadingReason: null,
+                        notice: null,
                         agentProgress: [],
                         evaluatorCritique: null,
                       });
@@ -1734,7 +1758,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     const persistErr = get().error;
                     if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
                     await fetchProject(requestProjectId);
-                    fetchEstimation(requestProjectId).catch(() => { });
+                    await fetchEstimation(requestProjectId, merged).catch(() => { });
                     fetchConformance(requestProjectId).catch(() => { });
                     const current = get();
                     set({
@@ -1742,25 +1766,29 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                       mddContent: merged,
                       loading: false,
                       loadingReason: null,
+                      notice: null,
                       agentProgress: [],
                       evaluatorCritique: null,
                       ...(persistErr ? {} : { error: null }),
                     });
-                    const assistantRes = await apiFetch(`${API_BASE}/sessions/${session.id}/messages`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: sessionMessageBody(
-                        {
-                          role: "assistant",
-                          content: `Sección §${regenerateSection} regenerada. Revisa el documento en el panel central (pestaña MDD).`,
-                          tab: "mdd",
-                        },
-                        get().activeStageId,
-                      ),
-                    });
-                    if (assistantRes.ok) {
-                      const sess = (await assistantRes.json()) as Session;
-                      set({ session: sess });
+                    const sessAfterRegen = get().session?.id;
+                    if (sessAfterRegen) {
+                      const assistantRes = await apiFetch(`${API_BASE}/sessions/${sessAfterRegen}/messages`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: sessionMessageBody(
+                          {
+                            role: "assistant",
+                            content: `Sección §${regenerateSection} regenerada. Revisa el documento en el panel central (pestaña MDD).`,
+                            tab: "mdd",
+                          },
+                          get().activeStageId,
+                        ),
+                      });
+                      if (assistantRes.ok) {
+                        const sess = (await assistantRes.json()) as Session;
+                        set({ session: sess });
+                      }
                     }
                     return;
                   }
@@ -1771,6 +1799,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                         : "La regeneración terminó sin markdown actualizado.",
                     loading: false,
                     loadingReason: null,
+                    notice: null,
                     agentProgress: [],
                     evaluatorCritique: null,
                   });
@@ -1780,6 +1809,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     error: String(ev.message),
                     loading: false,
                     loadingReason: null,
+                    notice: null,
                     agentProgress: [],
                     evaluatorCritique: null,
                   });
@@ -1789,6 +1819,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     ...streamErrorPatch(ev as { message: string; code?: string }),
                     loading: false,
                     loadingReason: null,
+                    notice: null,
                     agentProgress: [],
                     evaluatorCritique: null,
                   });
@@ -1804,6 +1835,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         set({
           loading: false,
           loadingReason: null,
+          notice: null,
           agentProgress: [],
           evaluatorCritique: null,
           error:
@@ -1820,6 +1852,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           ...streamErrorPatch({ message: msg, code }),
           loading: false,
           loadingReason: null,
+          notice: null,
           agentProgress: [],
           evaluatorCritique: null,
         });
@@ -1991,7 +2024,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     });
                   } else if (event.type === "draft" && event.markdown != null && event.markdown.trim().length > 80) {
                     if (!shouldApplyWorkshopUpdate(get, requestProjectId)) continue;
-                    set({ mddContent: event.markdown });
+                    const draftGate = deliveryGateFromStreamEvent(event as { deliveryGate?: MddDeliveryGateResult });
+                    set({
+                      mddContent: event.markdown,
+                      ...(draftGate ? { deliveryGate: draftGate } : {}),
+                    });
                   } else if (event.type === "interrupt") {
                     set({
                       managerThreadId: event.threadId ?? get().managerThreadId ?? null,
@@ -2038,16 +2075,18 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     }
                     // No sobrescribir mddContent con markdown vacío (auditar puede venir de checkpoint sin draft)
 
-                    const precisionBreakdown = event.precisionBreakdown;
-                    const auditorFeedback = event.auditorFeedback;
-                    const auditTrail = event.auditTrail;
+                    const precisionBreakdown = (event as any).precisionBreakdown;
+                    const auditTrail = (event as any).auditTrail;
+                    const auditorFeedback = (event as any).auditorFeedback;
+                    const interruptGate = deliveryGateFromStreamEvent(event as { deliveryGate?: MddDeliveryGateResult });
 
                     // Actualizar estado para el semáforo/modal, NO enviar al chat
-                    if (precisionBreakdown || auditTrail || auditorFeedback) {
+                    if (precisionBreakdown || auditTrail || auditorFeedback || interruptGate) {
                       set({
                         precisionBreakdown: precisionBreakdown ?? get().precisionBreakdown,
                         auditTrail: auditTrail ?? get().auditTrail,
-                        auditorFeedback: auditorFeedback ?? get().auditorFeedback
+                        auditorFeedback: auditorFeedback ?? get().auditorFeedback,
+                        ...(interruptGate ? { deliveryGate: interruptGate } : {}),
                       });
                     }
 
@@ -2097,12 +2136,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     const precisionBreakdown = (event as any).precisionBreakdown;
                     const auditTrail = (event as any).auditTrail;
                     const auditorFeedback = (event as any).auditorFeedback;
+                    const doneGate = deliveryGateFromStreamEvent(event as { deliveryGate?: MddDeliveryGateResult });
 
-                    if (precisionBreakdown || auditTrail || auditorFeedback) {
+                    if (precisionBreakdown || auditTrail || auditorFeedback || doneGate) {
                       set({
                         precisionBreakdown: precisionBreakdown ?? get().precisionBreakdown,
                         auditTrail: auditTrail ?? get().auditTrail,
-                        auditorFeedback: auditorFeedback ?? get().auditorFeedback
+                        auditorFeedback: auditorFeedback ?? get().auditorFeedback,
+                        ...(doneGate ? { deliveryGate: doneGate } : {}),
                       });
                     }
 
@@ -2886,12 +2927,28 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return null;
     }
   },
-  generateDeliverablesCascade: async (projectId) => {
+  generateDeliverablesCascade: async (projectId, options) => {
     if (!projectId?.trim()) return null;
     const pid = projectId.trim();
-    set({ loading: true, loadingReason: "deliverables-cascade", error: null, agentProgress: [], cascadeCompleted: 0, cascadeTotal: 0 });
+    const acknowledgeGaps = options?.acknowledgeGaps === true;
+    const complexity = get().project?.complexity ?? "HIGH";
+    const allStepLabels = deliverableStepLabelsForComplexity(complexity);
+    set({
+      loading: true,
+      loadingReason: "deliverables-cascade",
+      error: null,
+      agentProgress: allStepLabels.map((label) => ({
+        agent: "Entregables",
+        message: `⚪ ${label} — Generando…`,
+        step: label,
+        status: "generando" as const,
+      })),
+      cascadeTotal: allStepLabels.length,
+      cascadeCompleted: 0,
+    });
     try {
-      const r = await apiFetch(`${API_BASE}/projects/${pid}/generate-deliverables`, { method: "POST" });
+      const qs = acknowledgeGaps ? "?acknowledgeGaps=true" : "";
+      const r = await apiFetch(`${API_BASE}/projects/${pid}/generate-deliverables${qs}`, { method: "POST" });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         throw new Error((err as { message?: string }).message ?? "Error al generar entregables");
@@ -2900,21 +2957,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (data.queued === true && typeof data.jobId === "string") {
         const deadline = Date.now() + 45 * 60 * 1000;
 
-        const complexity = get().project?.complexity ?? "HIGH";
-        const allStepLabels = deliverableStepLabelsForComplexity(complexity);
-        set({
-          agentProgress: allStepLabels.map((label) => ({
-            agent: "Entregables",
-            message: `⚪ ${label} — Generando…`,
-            step: label,
-            status: "generando",
-          })),
-          cascadeTotal: allStepLabels.length,
-          cascadeCompleted: 0,
-        });
-
         const completedSteps = new Set<string>();
-        let lastActiveStep: string | null = null;
         while (Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 1200));
           const st = await apiFetch(`${API_BASE}/projects/${pid}/deliverables-jobs/${data.jobId}`);
@@ -2925,41 +2968,28 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           const j = (await st.json()) as {
             status: string;
             progress?: { step?: string; index?: number; total?: number };
-            failedReason?: string;
+            error?: string;
           };
           if (j.status === "failed") {
-            throw new Error(j.failedReason ?? "Cascada de entregables fallida");
+            throw new Error(j.error ?? "Cascada de entregables fallida");
           }
           if (j.status === "completed") break;
           const prog = j.progress;
-if (prog && prog.step && prog.step !== "done") {
-            if (!completedSteps.has(prog.step)) {
-              completedSteps.add(prog.step);
+          if (prog && typeof prog === "object" && prog.step && prog.step !== "done") {
+            const stepLabel = String(prog.step);
+            if (!completedSteps.has(stepLabel)) {
+              completedSteps.add(stepLabel);
               set((s) => ({
                 agentProgress: s.agentProgress.map((item) =>
-                  item.step === prog.step
-                    ? { ...item, message: `✅ ${prog.step} — Terminado`, status: "terminado" }
+                  item.step === stepLabel
+                    ? { ...item, message: `✅ ${stepLabel} — Terminado`, status: "terminado" }
                     : item,
                 ),
                 cascadeCompleted: completedSteps.size,
               }));
             }
-            // Marcar el paso activo actual si es diferente al último completado
-            if (prog.step !== lastActiveStep) {
-              lastActiveStep = prog.step;
-              if (!completedSteps.has(prog.step)) {
-                set((s) => ({
-                  agentProgress: s.agentProgress.map((item) =>
-                    item.step === prog.step
-                      ? { ...item, message: `⚡ ${prog.step} — Generando…`, status: "generando" }
-                      : item,
-                  ),
-                }));
-              }
-            }
           }
         }
-        // Si quedaron pendientes, marcarlos como terminados
         set((s) => ({
           agentProgress: s.agentProgress.map((item) =>
             item.status === "generando"
@@ -2968,15 +2998,24 @@ if (prog && prog.step && prog.step !== "done") {
           ),
           cascadeCompleted: allStepLabels.length,
         }));
-        // Esperar un momento para que el chat vea el estado final
         await new Promise((resolve) => setTimeout(resolve, 4000));
         set({ agentProgress: [] });
         const projQueued = await get().fetchProject(pid);
         await get().fetchEstimation(pid).catch(() => {});
+        get().bumpDocumentationGapsRefresh();
         return projQueued;
       }
+      set((s) => ({
+        agentProgress: s.agentProgress.map((item) =>
+          item.status === "generando"
+            ? { ...item, message: `✅ ${item.step} — Terminado`, status: "terminado" }
+            : item,
+        ),
+        cascadeCompleted: allStepLabels.length,
+      }));
       const projSync = await get().fetchProject(pid);
       await get().fetchEstimation(pid).catch(() => {});
+      get().bumpDocumentationGapsRefresh();
       return projSync;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar entregables", agentProgress: [] });
@@ -3237,9 +3276,15 @@ if (prog && prog.step && prog.step !== "done") {
                   }));
                 } else if (ev.type === "draft" && ev.markdown != null && ev.markdown.trim().length > 80) {
                   accumulatedMdd = ev.markdown;
-                  set({ mddContent: ev.markdown });
+                  const draftGate = deliveryGateFromStreamEvent(ev as { deliveryGate?: MddDeliveryGateResult });
+                  set({
+                    mddContent: ev.markdown,
+                    ...(draftGate ? { deliveryGate: draftGate } : {}),
+                  });
                   } else if (ev.type === "done" && ev.markdown != null) {
                     finalMarkdown = ev.markdown;
+                    const doneGate = deliveryGateFromStreamEvent(ev as { deliveryGate?: MddDeliveryGateResult });
+                    if (doneGate) set({ deliveryGate: doneGate });
                   } else if (ev.type === "blocked" && ev.message) {
                     throw new Error(String(ev.message));
                   } else if (ev.type === "error" && ev.message) {
@@ -3399,10 +3444,10 @@ if (prog && prog.step && prog.step !== "done") {
     }
   },
 
-  fetchEstimation: async (projectId) => {
+  fetchEstimation: async (projectId, mddContentOverride) => {
     if (!projectId?.trim()) return null;
     try {
-      const currentMdd = (get().mddContent ?? get().project?.mddContent ?? "").trim();
+      const currentMdd = (mddContentOverride ?? get().mddContent ?? get().project?.mddContent ?? "").trim();
       const sid = get().activeStageId;
       const r = await apiFetch(`${API_BASE}/ai-analysis/estimation`, {
         method: "POST",
@@ -3428,10 +3473,12 @@ if (prog && prog.step && prog.step !== "done") {
         crossDocumentGaps,
         consistencyScore,
         auditTrail,
+        deliveryGate,
         ...metrics
       } = data;
       set({
         liveMetrics: metrics,
+        ...(deliveryGate != null ? { deliveryGate } : {}),
         ...(precisionBreakdown != null ? { precisionBreakdown } : {}),
         ...(completeness != null ? { documentCompleteness: completeness } : {}),
         ...(crossDocumentGaps != null ? { crossDocumentGaps } : {}),
@@ -4108,6 +4155,27 @@ if (prog && prog.step && prog.step !== "done") {
       fetchEstimation(projectId).catch(() => { });
     } finally {
       set({ mddReviewing: false });
+    }
+  },
+
+  reapplyMddFormat: async () => {
+    const { projectId, project, mddContent, persistMddContent } = get();
+    if (!projectId?.trim() || !project) return;
+    const content = (mddContent ?? project.mddContent ?? "").trim();
+    if (!content) return;
+    const before = selectPersistedMddBaseline(get()) || content;
+    set({ mddReapplyingFormat: true, error: null, notice: null });
+    try {
+      await persistMddContent(content, { force: true });
+      const after = selectPersistedMddBaseline(get());
+      set({
+        notice:
+          after.trim() !== before.trim()
+            ? "MDD reformateado: se aplicaron correcciones deterministas (headings, JSON §4, SQL, coherencia)."
+            : "MDD revisado: la pasada de formato no detectó cambios adicionales.",
+      });
+    } finally {
+      set({ mddReapplyingFormat: false });
     }
   },
 

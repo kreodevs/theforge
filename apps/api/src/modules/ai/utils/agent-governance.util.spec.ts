@@ -668,6 +668,90 @@ Backend NestJS con TypeORM.
     assert.equal((rule?.content.match(/\*\*Globs backend:\*\*/g) ?? []).length, 1);
     assert.equal((rule?.content.match(/\*\*Módulos Blueprint:\*\*/g) ?? []).length, 0);
   });
+
+  it("PROMPT-INICIAL sincroniza checklist desde tasks aunque exista contenido LLM obsoleto", () => {
+    const tasks = [
+      "# Tasks",
+      "- [ ] [P] Implementar `LdapAuthAdapter` en `services/auth-svc/`",
+      "- [ ] [P] DTO `LoginDto` con class-validator",
+    ].join("\n");
+    const stalePrompt = [
+      "# Prompt inicial — implementa este handoff",
+      "",
+      "## Paso 3 — Primera tarea abierta",
+      "",
+      "- [ ] [P] Implementar adaptador `ILdapAuthentication` en `apps/auth-svc/`",
+      "- [ ] [P] Validación Zod en login",
+    ].join("\n");
+    const reconciled = reconcileAgentGovernanceScaffold(
+      {
+        manifest: { templateVersion: "2.0.0", files: ["PROMPT-INICIAL.md"] },
+        files: [{ path: "PROMPT-INICIAL.md", content: stalePrompt }],
+      },
+      "HIGH",
+      {
+        governanceInput: {
+          mddMarkdown: "# KMS\n## 2\nRabbitMQ + TypeORM.\n",
+          tasksMarkdown: tasks,
+          complexity: "HIGH",
+          projectName: "KMS",
+        },
+        featureDir: "specs/001-kms",
+      },
+    );
+    const prompt = reconciled.files.find((f) => f.path === "PROMPT-INICIAL.md");
+    assert.ok(prompt?.content.includes("LdapAuthAdapter"));
+    assert.ok(prompt?.content.includes("services/auth-svc"));
+    assert.ok(!prompt?.content.includes("ILdapAuthentication"));
+    assert.ok(!prompt?.content.includes("Zod"));
+  });
+
+  it("PROGRESO.md es ligero y no duplica tasks.md completo", () => {
+    const longTasks = "# Tasks\n" + "- [ ] Tarea\n".repeat(40);
+    const reconciled = reconcileAgentGovernanceScaffold(
+      { manifest: { templateVersion: "1.0.0", files: [] }, files: [] },
+      "MEDIUM",
+      {
+        governanceInput: {
+          mddMarkdown: "# KMS\n## 2\nBackend NestJS.\n",
+          tasksMarkdown: longTasks,
+          complexity: "MEDIUM",
+        },
+      },
+    );
+    const progreso = reconciled.files.find((f) => f.path === "docs/sdd/PROGRESO.md");
+    assert.ok(progreso?.content.includes("docs/sdd/tasks.md"));
+    assert.ok(progreso?.content.includes("## Checklist rápido"));
+    assert.ok(progreso?.content.includes("| Documento | Canónico (spec-kit) |"));
+    assert.equal((progreso?.content.match(/- \[ \] Tarea/g) ?? []).length <= 5, true);
+    assert.equal(progreso?.content.includes(longTasks), false);
+  });
+
+  it("corrige enlaces legacy ./MDD.md en AGENTS.md", () => {
+    const reconciled = reconcileAgentGovernanceScaffold(
+      {
+        manifest: { templateVersion: "1.0.0", files: [] },
+        files: [
+          {
+            path: "AGENTS.md",
+            content: "# AGENTS\n\nLee [MDD](./MDD.md) y [Blueprint](./blueprint.md).\n",
+          },
+        ],
+      },
+      "MEDIUM",
+      {
+        featureDir: "specs/001-key-management-service",
+        governanceInput: {
+          mddMarkdown: "# KMS\n",
+          complexity: "MEDIUM",
+        },
+      },
+    );
+    const agents = reconciled.files.find((f) => f.path === "AGENTS.md");
+    assert.ok(agents?.content.includes("](docs/sdd/mdd.md)"));
+    assert.ok(agents?.content.includes("](docs/sdd/blueprint.md)"));
+    assert.equal(agents?.content.includes("./MDD.md"), false);
+  });
 });
 
 describe("appendProjectDeliverablesToScaffold", () => {

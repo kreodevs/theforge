@@ -192,15 +192,60 @@ const ORM_BOILERPLATE_LINE_PATTERNS: RegExp[] = [
 
 function extractMddSection(text: string, sectionNum: number): string {
   const re = new RegExp(
-    `##\\s*${sectionNum}\\.[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s|\\n#\\s|$)`,
+    `##\\s*${sectionNum}\\.[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s+\\d+\\.|\\n#\\s|$)`,
     "i",
   );
   return text.match(re)?.[1]?.trim() ?? "";
 }
 
+/** Cuerpo acotado de §2 (hasta el siguiente ## N.) para conflictos de stack en corpus multi-doc. */
+function extractMddSection2Bounded(text: string): string {
+  const bounded = text.match(/##\s*2\.[^\n]*\n([\s\S]*?)(?=\n##\s+\d+\.)/i)?.[1]?.trim();
+  if (bounded) return bounded;
+  const fallback = extractMddSection(text, 2);
+  if (!fallback) return "";
+  return fallback.split(/\n\n+/)[0]?.trim() ?? fallback;
+}
+
 function mentionsOrm(text: string, orm: "typeorm" | "prisma"): boolean {
   const re = orm === "typeorm" ? /\btypeorm\b/i : /\bprisma\b/i;
   return re.test(text);
+}
+
+/** Extrae bloque ```json ... ``` de una sección MDD (p. ej. §7 manifest). */
+export function extractManifestJsonFromMddSection(section: string): Record<string, unknown> | undefined {
+  const m = section.match(/```json\s*([\s\S]*?)```/i);
+  if (!m?.[1]) return undefined;
+  try {
+    const obj = JSON.parse(m[1].trim()) as Record<string, unknown>;
+    return typeof obj === "object" && obj !== null ? obj : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeOrmToken(value: string): "typeorm" | "prisma" | null {
+  const v = value.trim().toLowerCase();
+  if (v === "typeorm") return "typeorm";
+  if (v === "prisma") return "prisma";
+  return null;
+}
+
+/** ORM declarado en manifest §7 (`"orm": "typeorm"` plano o anidado en stack.backend). */
+export function resolveOrmFromManifest(manifest: Record<string, unknown>): "typeorm" | "prisma" | null {
+  const direct = manifest.orm;
+  if (typeof direct === "string") {
+    const norm = normalizeOrmToken(direct);
+    if (norm) return norm;
+  }
+  const stack = manifest.stack as Record<string, unknown> | undefined;
+  const backend = stack?.backend as Record<string, unknown> | undefined;
+  const backendOrm = backend?.orm;
+  if (typeof backendOrm === "string") {
+    const norm = normalizeOrmToken(backendOrm);
+    if (norm) return norm;
+  }
+  return null;
 }
 
 function isOrmBoilerplateLine(line: string): boolean {
@@ -214,23 +259,118 @@ function stripOrmBoilerplateLines(text: string): string {
     .join("\n");
 }
 
-/** Resuelve ORM dominante desde MDD §2/§3 antes de marcar conflicto TypeORM/Prisma. */
-function resolveAuthoritativeOrm(text: string): "typeorm" | "prisma" | "conflict" | "unknown" {
+/** Cuerpo principal de §2 (antes del primer ## interno) para autoridad de stack/ORM/broker. */
+function extractMddSection2StackAuthority(text: string): string {
   const sec2 = extractMddSection(text, 2);
+  if (!sec2) return "";
+  const primary = sec2.split(/\n##\s+/)[0]?.trim() ?? sec2;
+  return stripOrmBoilerplateLines(primary);
+}
+
+function extractMddSection2PrimaryProse(text: string): string {
+  const sec2 = extractMddSection(text, 2);
+  if (!sec2) return "";
+  return sec2.split(/\n##\s+/)[0]?.trim() ?? sec2;
+}
+
+/** Resuelve broker/cola dominante desde MDD §2 antes de marcar conflicto Kafka/RabbitMQ. */
+export function resolveAuthoritativeMessageBroker(
+  text: string,
+): "bull" | "kafka" | "rabbitmq" | "conflict" | "unknown" {
+  const authority = extractMddSection2PrimaryProse(text) || extractMddSection(text, 2) || text;
+  const hasBull = /bullmq|\bbull\b/i.test(authority);
+  const hasRedis = /\bredis\b/i.test(authority);
+  const hasKafka = /kafka/i.test(authority);
+  const hasRabbit = /rabbitmq/i.test(authority);
+
+  if (hasBull || (hasRedis && !hasKafka && !hasRabbit)) return "bull";
+  if (hasKafka && hasRabbit) return "conflict";
+  if (hasKafka) return "kafka";
+  if (hasRabbit) return "rabbitmq";
+  return "unknown";
+}
+
+/** Resuelve ORM dominante desde MDD §2/§3, manifest §7 y corpus completo. */
+export function resolveAuthoritativeOrm(text: string): "typeorm" | "prisma" | "conflict" | "unknown" {
+  const sec2 = extractMddSection2StackAuthority(text);
   const sec2Typeorm = mentionsOrm(sec2, "typeorm");
   const sec2Prisma = mentionsOrm(sec2, "prisma");
   if (sec2Typeorm && !sec2Prisma) return "typeorm";
   if (sec2Prisma && !sec2Typeorm) return "prisma";
   if (sec2Typeorm && sec2Prisma) return "conflict";
 
-  const sec3 = extractMddSection(text, 3);
+  const sec3 = stripOrmBoilerplateLines(extractMddSection(text, 3));
   const sec3Typeorm = mentionsOrm(sec3, "typeorm");
   const sec3Prisma = mentionsOrm(sec3, "prisma");
   if (sec3Typeorm && !sec3Prisma) return "typeorm";
   if (sec3Prisma && !sec3Typeorm) return "prisma";
   if (sec3Typeorm && sec3Prisma) return "conflict";
 
+  const sec7 = extractMddSection(text, 7);
+  const manifest = extractManifestJsonFromMddSection(sec7);
+  if (manifest) {
+    const fromManifest = resolveOrmFromManifest(manifest);
+    if (fromManifest === "typeorm" && !sec2Prisma && !sec3Prisma) return "typeorm";
+    if (fromManifest === "prisma" && !sec2Typeorm && !sec3Typeorm) return "prisma";
+    if (fromManifest === "typeorm" && (sec2Prisma || sec3Prisma)) return "conflict";
+    if (fromManifest === "prisma" && (sec2Typeorm || sec3Typeorm)) return "conflict";
+  }
+
+  const cleaned = stripOrmBoilerplateLines(text);
+  const corpusTypeorm = mentionsOrm(cleaned, "typeorm");
+  const corpusPrisma = mentionsOrm(cleaned, "prisma");
+  if (corpusTypeorm && !corpusPrisma) return "typeorm";
+  if (corpusPrisma && !corpusTypeorm) return "prisma";
+
   return "unknown";
+}
+
+/** Resuelve gestor de paquetes desde MDD §2, manifest §7, overlay gobernanza y corpus. */
+export function resolveAuthoritativePackageManager(
+  mddMarkdown: string,
+  extraCorpus?: string,
+): "pnpm" | "yarn" | "npm" | null {
+  const sec2 = extractMddSection(mddMarkdown, 2);
+  const sec7 = extractMddSection(mddMarkdown, 7);
+  const combined = [sec2, sec7, extraCorpus, mddMarkdown].filter(Boolean).join("\n");
+
+  if (/pnpm-lock\.yaml|pnpm\s+workspace|\bpnpm\b/i.test(sec2)) return "pnpm";
+  if (/yarn\.lock|\byarn\s+workspace\b/i.test(sec2)) return "yarn";
+  if (/\bnpm\s+(?:install|ci|run)\b/i.test(sec2) && !/\bpnpm\b/i.test(sec2)) return "npm";
+
+  const manifest = extractManifestJsonFromMddSection(sec7);
+  if (manifest) {
+    const pmField = manifest.packageManager;
+    if (typeof pmField === "string") {
+      if (/pnpm/i.test(pmField)) return "pnpm";
+      if (/yarn/i.test(pmField)) return "yarn";
+      if (/npm/i.test(pmField)) return "npm";
+    }
+    const stack = manifest.stack as Record<string, unknown> | undefined;
+    const tooling = stack?.tooling as Record<string, unknown> | undefined;
+    const stackPm = tooling?.package_manager ?? tooling?.packageManager;
+    if (typeof stackPm === "string") {
+      if (/pnpm/i.test(stackPm)) return "pnpm";
+      if (/yarn/i.test(stackPm)) return "yarn";
+      if (/npm/i.test(stackPm)) return "npm";
+    }
+  }
+
+  if (extraCorpus && /\bpnpm\b/i.test(extraCorpus)) return "pnpm";
+
+  if (/\bpnpm\b/i.test(mddMarkdown)) return "pnpm";
+
+  if (
+    /apps\/[\w-]+[\s\S]*packages\/|turborepo|monorepo[\s\S]{0,120}packages\//i.test(combined) &&
+    !/yarn\.lock/i.test(combined)
+  ) {
+    return "pnpm";
+  }
+
+  if (/\byarn\b/i.test(mddMarkdown)) return "yarn";
+  if (/\bnpm\b/i.test(mddMarkdown) && !/\bpnpm\b/i.test(mddMarkdown)) return "npm";
+
+  return null;
 }
 
 /** Contradicciones frecuentes entre entregables SDD. */
@@ -249,15 +389,75 @@ export function detectSddConflicts(text: string): string[] {
       );
     }
   }
-  if (/kafka/i.test(text) && /rabbitmq/i.test(text)) {
+  const brokerResolution = resolveAuthoritativeMessageBroker(text);
+  if (brokerResolution === "bull") {
+    if (/kafka/i.test(text) || /rabbitmq/i.test(text)) {
+      conflicts.push(
+        "Cola/mensajería: prioriza BullMQ + Redis del MDD §2; ignora menciones sueltas de RabbitMQ/Kafka en Blueprint u otros entregables.",
+      );
+    }
+  } else if (brokerResolution === "rabbitmq") {
+    if (/bullmq|\bbull\b/i.test(text)) {
+      conflicts.push(
+        "Cola/mensajería: prioriza RabbitMQ del MDD §2; no uses BullMQ/Bull en workers ni tasks.",
+      );
+    }
+  } else if (brokerResolution === "conflict") {
     conflicts.push(
       "Kafka vs RabbitMQ: usa el broker del MDD §2; no dupliques colas ni consumidores.",
+    );
+  } else if (brokerResolution === "unknown" && /kafka/i.test(text) && /rabbitmq/i.test(text)) {
+    conflicts.push(
+      "Kafka vs RabbitMQ: usa el broker del MDD §2; no dupliques colas ni consumidores.",
+    );
+  }
+  const sec6 = extractMddSection(text, 6);
+  if (/RS256|JWT_PRIVATE_KEY|par\s+de\s+claves/i.test(sec6)) {
+    if (/\bJWT_SECRET\b/.test(text) && !/JWT_SECRET.*deprecad/i.test(text)) {
+      conflicts.push(
+        "JWT: prioriza RS256 con JWT_PRIVATE_KEY / JWT_PUBLIC_KEY (PEM); JWT_SECRET (HS256) quedó deprecado.",
+      );
+    }
+  }
+  if (
+    /\bbcrypt\b/i.test(sec6) &&
+    !/Argon2(?:id)?/i.test(sec6) &&
+    /"hashing_algorithm"\s*:\s*"Argon2id"/i.test(text)
+  ) {
+    conflicts.push(
+      "Hashing bootstrap: §6 documenta bcrypt (factor 12) para Super Admin; manifest debe usar bcrypt, no Argon2id.",
+    );
+  }
+  const authoritativeUi = extractMddSection(text, 1) + "\n" + extractMddSection(text, 2);
+  if (NO_UI_SURFACE_PATTERN.test(authoritativeUi) && /react hook form/i.test(text)) {
+    conflicts.push(
+      "Frontend: MVP API + CLI sin panel web; menciones a React Hook Form / UI web son post-MVP.",
     );
   }
   if (/mysql/i.test(text) && /postgres/i.test(text) && !/mysql.*postgres|postgres.*mysql/i.test(text)) {
     conflicts.push(
       "MySQL vs PostgreSQL: confirma el motor en MDD §3 antes de migraciones o schemas.",
     );
+  }
+  const sec2 = extractMddSection2Bounded(text);
+  if (sec2.trim()) {
+    const sec2Stacks = inferStacks(sec2);
+    const rest = text.replace(sec2, "");
+    const altStacks = inferStacks(rest);
+    if (
+      sec2Stacks.backend &&
+      altStacks.backend &&
+      sec2Stacks.backend.toLowerCase() !== altStacks.backend.toLowerCase()
+    ) {
+      conflicts.push(
+        `Stack backend: prioriza ${sec2Stacks.backend} del MDD §2; no uses ${altStacks.backend} en Blueprint/Tasks/governance.`,
+      );
+    }
+    if (sec2Stacks.infra && altStacks.infra && sec2Stacks.infra !== altStacks.infra) {
+      conflicts.push(
+        `Infra/deploy: prioriza ${sec2Stacks.infra} del MDD §2; no uses ${altStacks.infra} en otros entregables.`,
+      );
+    }
   }
   return conflicts;
 }
@@ -290,8 +490,18 @@ export function extractTaskCheckboxes(tasksMarkdown: string | null | undefined, 
   return items;
 }
 
+export const CLI_FRONTEND_STACK_LABEL = "CLI (Node/Commander) — sin panel web en MVP";
+
 const NO_UI_SURFACE_PATTERN =
-  /(?:sin|no)\s+(?:dashboard|frontend|ui|interfaz|pantalla)|(?:mvp|fase\s*1)[^\n]{0,48}(?:sin|no\s+incluye)\s+(?:dashboard|frontend|ui)|api[\s-]?only|mvp\s+api|cli[\s-]?only|solo\s+api|backend\s+only|without\s+dashboard|sin\s+interfaz|sin\s+dashboard/i;
+  /(?:sin|no)\s+(?:dashboard|frontend|ui|interfaz|pantalla|panel\s+web)|(?:mvp|fase\s*1)[^\n]{0,120}(?:sin|no\s+incluye|excluye|fuera\s+de)\s+(?:dashboard|frontend|ui|panel\s+web)|(?:panel|dashboard)\s+web[^\n]{0,40}fuera\s+del\s+alcance|fuera\s+del\s+alcance[^\n]{0,40}(?:mvp|panel\s+web|dashboard)|solo\s+APIs?\s+y\s+CLI|(?:panel|dashboard)\s+web\s+(?:fuera|excluido)|api[\s-]?only|mvp\s+api|cli[\s-]?only|solo\s+api|backend\s+only|without\s+dashboard|sin\s+interfaz|sin\s+dashboard/i;
+
+const CLI_SURFACE_PATTERN =
+  /cli[\s-]?only|mvp\s+cli|interfaz\s+(?:de\s+)?l[ií]nea\s+de\s+comandos|l[ií]nea\s+de\s+comandos|interfaz\s+cli|cliente\s+cli|command[\s-]?line|terminal\s+client|commander\s*\+\s*inquirer|\bcommander\b/i;
+
+function detectCliSurface(authority: string): boolean {
+  if (CLI_SURFACE_PATTERN.test(authority)) return true;
+  return /\bCLI\b/.test(authority) && NO_UI_SURFACE_PATTERN.test(authority);
+}
 
 function hasUiSurface(text: string, authoritativeText?: string): boolean {
   const authority = authoritativeText ?? text;
@@ -373,10 +583,55 @@ function matchesSignals(text: string, signals: RegExp[]): boolean {
   return signals.some((re) => re.test(text));
 }
 
+const K8S_NEGATED_LINE =
+  /\bsin\s+(?:gesti[oó]n\s+de\s+)?(?:kubernetes|\bk8s\b)|\bno\s+kubernetes|\bwithout\s+kubernetes|\bsin\s+kubernetes\s+en\s+v/i;
+
+/** §7 con orchestrator PaaS (Railway/Fly) excluye skill/arquetipo K8s salvo despliegue explícito. */
+function isKubernetesExcludedByPaaSOrchestrator(section7: string): boolean {
+  if (!section7.trim()) return false;
+  if (/"orchestrator"\s*:\s*"(?:Railway|Fly\.io|Fly|Dokploy|Render|Heroku)"/i.test(section7)) {
+    return true;
+  }
+  if (
+    /(?:orchestrator|provider|deployment_manager)\s*[:=]\s*["']?(?:Railway|Fly\.io|Fly|Dokploy)/i.test(
+      section7,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /producci[oó]n\s+en\s+(?:Railway|Fly)/i.test(section7) &&
+    /sin\s+(?:kubernetes|\bk8s\b)/i.test(section7)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** K8s/Helm como objetivo de despliegue, no menciones negadas ni scope v2 futuro. */
+export function hasPositiveKubernetesSignals(text: string): boolean {
+  for (const line of text.split("\n")) {
+    if (!/kubernetes|\bk8s\b|\bhelm\b/i.test(line)) continue;
+    if (K8S_NEGATED_LINE.test(line)) continue;
+    if (/\bsin\s+kubernetes\s+en\s+v\d/i.test(line)) continue;
+    if (/kubernetes\s*\(\s*v2\s*\)|\bk8s\b\s*\(\s*v2\s*\)/i.test(line)) continue;
+    return true;
+  }
+  return false;
+}
+
+function detectKubernetesArchetype(mddMarkdown: string, fullText: string): boolean {
+  const section7 = extractMddSection(mddMarkdown, 7) || extractMddSection(fullText, 7);
+  if (isKubernetesExcludedByPaaSOrchestrator(section7)) return false;
+  if (section7.trim() && hasPositiveKubernetesSignals(section7)) return true;
+  return hasPositiveKubernetesSignals(mddMarkdown) || hasPositiveKubernetesSignals(fullText);
+}
+
 function detectArchetypes(
   text: string,
   complexity: ComplexityLevel,
   authoritativeUiText?: string,
+  mddMarkdown?: string,
 ): string[] {
   const found = new Set<string>();
 
@@ -388,8 +643,8 @@ function detectArchetypes(
   const hasFrontend = uiSurface && /react|vue|svelte|angular|next\.js/i.test(text);
   const hasMobile = uiSurface && /expo|react\s*native|react-native/i.test(text);
   const isMonorepo = /monorepo|lerna|pnpm\s+workspace|turborepo|packages\//i.test(text);
-  const hasKubernetes = /kubernetes|\bk8s\b|helm/i.test(text);
-  const hasDockerDeploy = /docker|dokploy|contenedor/i.test(text);
+  const hasKubernetes = detectKubernetesArchetype(mddMarkdown ?? text, text);
+  const hasDockerDeploy = /docker|dokploy|contenedor|railway|fly\.io/i.test(text);
 
   if (hasBackend && (hasFrontend || hasMobile) && isMonorepo) found.add("nestjs-react-monorepo");
   if (hasBackend && !hasFrontend && !hasMobile) found.add("api-only");
@@ -430,56 +685,79 @@ function firstMatchLabel(text: string, patterns: Array<[RegExp, string]>): strin
   return undefined;
 }
 
-export function inferStacks(text: string): {
+const BACKEND_STACK_PATTERNS: Array<[RegExp, string]> = [
+  [/fastify/i, "Fastify"],
+  [/fastapi/i, "FastAPI"],
+  [/nestjs/i, "NestJS"],
+  [/cloudflare\s+workers?|workers?\s+api/i, "Cloudflare Workers"],
+  [/\bhono\b/i, "Hono"],
+  [/express/i, "Express"],
+  [/django/i, "Django"],
+  [/laravel/i, "Laravel"],
+  [/spring\s*boot/i, "Spring Boot"],
+  [/go\s*\/\s*gin|\bgin\b.*go/i, "Go (Gin)"],
+  [/supabase\s+edge/i, "Supabase Edge Functions"],
+];
+
+const INFRA_STACK_PATTERNS: Array<[RegExp, string]> = [
+  [/railway/i, "Railway"],
+  [/serverless/i, "Serverless"],
+  [/cloudflare/i, "Cloudflare"],
+  [/dokploy/i, "Dokploy"],
+  [/kubernetes|\bk8s\b/i, "Kubernetes"],
+  [/docker/i, "Docker"],
+];
+
+export function inferStacks(
+  text: string,
+  options?: { authoritativeUiText?: string; authoritativeStackText?: string },
+): {
   backend?: string;
   frontend?: string;
   mobile?: string;
   infra?: string;
 } {
-  const backend = firstMatchLabel(text, [
-    [/fastapi/i, "FastAPI"],
-    [/nestjs/i, "NestJS"],
-    [/cloudflare\s+workers?|workers?\s+api/i, "Cloudflare Workers"],
-    [/\bhono\b/i, "Hono"],
-    [/express/i, "Express"],
-    [/fastify/i, "Fastify"],
-    [/django/i, "Django"],
-    [/laravel/i, "Laravel"],
-    [/spring\s*boot/i, "Spring Boot"],
-    [/go\s*\/\s*gin|\bgin\b.*go/i, "Go (Gin)"],
-    [/supabase\s+edge/i, "Supabase Edge Functions"],
-  ]);
+  const authority = options?.authoritativeUiText ?? text;
+  const stackAuthority = options?.authoritativeStackText?.trim() || text;
+  const uiSurface = hasUiSurface(text, authority);
 
-  const mobile = firstMatchLabel(text, [
-    [/react\s*native|react-native/i, "React Native"],
-    [/\bexpo\b/i, "Expo"],
-    [/flutter/i, "Flutter"],
-  ]);
+  const backend =
+    firstMatchLabel(stackAuthority, BACKEND_STACK_PATTERNS) ??
+    firstMatchLabel(text, BACKEND_STACK_PATTERNS);
 
-  const frontend = mobile
-    ? undefined
-    : firstMatchLabel(text, [
-        [/next\.js/i, "Next.js"],
-        [/react/i, "React"],
-        [/\bvue\b/i, "Vue"],
-        [/svelte/i, "Svelte"],
-        [/angular/i, "Angular"],
-      ]);
+  const mobile = uiSurface
+    ? firstMatchLabel(text, [
+        [/react\s*native|react-native/i, "React Native"],
+        [/\bexpo\b/i, "Expo"],
+        [/flutter/i, "Flutter"],
+      ])
+    : undefined;
 
-  const infra = firstMatchLabel(text, [
-    [/serverless/i, "Serverless"],
-    [/cloudflare/i, "Cloudflare"],
-    [/dokploy/i, "Dokploy"],
-    [/kubernetes|\bk8s\b/i, "Kubernetes"],
-    [/docker/i, "Docker"],
-  ]);
+  let frontend: string | undefined;
+  if (uiSurface) {
+    frontend = mobile
+      ? undefined
+      : firstMatchLabel(text, [
+          [/next\.js/i, "Next.js"],
+          [/react/i, "React"],
+          [/\bvue\b/i, "Vue"],
+          [/svelte/i, "Svelte"],
+          [/angular/i, "Angular"],
+        ]);
+  } else if (detectCliSurface(authority)) {
+    frontend = CLI_FRONTEND_STACK_LABEL;
+  }
 
-  const backendMatch = text.match(
+  const infra =
+    firstMatchLabel(stackAuthority, INFRA_STACK_PATTERNS) ??
+    firstMatchLabel(text, INFRA_STACK_PATTERNS);
+
+  const backendMatch = stackAuthority.match(
     /(?:backend|servidor|api)[:\s]+([A-Za-z][A-Za-z0-9.\s/]{1,48})/i,
   );
-  const frontendMatch = text.match(
-    /(?:frontend|cliente|ui|mobile)[:\s]+([A-Za-z][A-Za-z0-9.\s/]{1,48})/i,
-  );
+  const frontendMatch = uiSurface
+    ? stackAuthority.match(/(?:frontend|cliente|ui|mobile)[:\s]+([A-Za-z][A-Za-z0-9.\s/]{1,48})/i)
+    : null;
 
   return {
     backend: backend ?? backendMatch?.[1]?.trim().split(/\s/)[0],
@@ -489,7 +767,11 @@ export function inferStacks(text: string): {
   };
 }
 
-function inferDomainSkillFolder(text: string, blueprintModules: string[]): string | undefined {
+function inferDomainSkillFolder(
+  text: string,
+  blueprintModules: string[],
+  _projectName?: string | null,
+): string | undefined {
   const scoreModule = (name: string): number => {
     const n = name.toLowerCase();
     if (/shared|common|utils|types|config|test|spec/i.test(n)) return 1;
@@ -530,7 +812,7 @@ function inferDomainSkillFolder(text: string, blueprintModules: string[]): strin
   if (pkg && scoreModule(pkg) > 1) return pkg;
   const app = text.match(/(?:^|\s|`)([a-z0-9_-]+)\/(?:src|lib|app)\//im)?.[1];
   if (app && !/^(apps|packages|src)$/i.test(app)) return app;
-  return undefined;
+  return "project-package";
 }
 
 /** Palabras de prosa española frecuentes en blueprints SDD — no son rutas de repo. */
@@ -761,30 +1043,62 @@ function inferCodebaseGlobs(blueprintModules: string[], text: string): {
   };
 }
 
+type PackageManager = "pnpm" | "npm" | "yarn";
+
+function stripDockerfileBlocksForScriptInference(text: string): string {
+  return text
+    .replace(/```dockerfile[\s\S]*?```/gi, "")
+    .replace(/^(?:FROM|RUN|COPY|WORKDIR|CMD|ENTRYPOINT|EXPOSE|ENV)\s+.+$/gim, "");
+}
+
+function detectPrimaryPackageManager(text: string): PackageManager {
+  const corpus = stripDockerfileBlocksForScriptInference(text);
+  const resolved = resolveAuthoritativePackageManager(corpus, corpus);
+  if (resolved) return resolved;
+  return "npm";
+}
+
 function inferNpmScripts(text: string): string[] {
+  const corpus = stripDockerfileBlocksForScriptInference(text);
+  const pm = detectPrimaryPackageManager(corpus);
   const scripts: string[] = [];
-  const patterns: Array<[RegExp, string]> = [
-    [/pnpm\s+(?:run\s+)?(?:test|lint|typecheck|build)/i, "pnpm test / lint / typecheck / build"],
-    [/npm\s+run\s+(test|lint|typecheck|build)/gi, "npm run $1"],
-    [/yarn\s+(test|lint|typecheck|build)/gi, "yarn $1"],
-    [/turbo\s+run\s+(\w+)/i, "turbo run $1"],
-  ];
-  for (const [re, label] of patterns) {
-    if (/\$\d/.test(label)) {
-      const reGlobal = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
-      for (const match of text.matchAll(reGlobal)) {
-        scripts.push(label.replace(/\$(\d+)/g, (_, idx) => match[Number(idx)] ?? ""));
-      }
-    } else if (re.test(text)) {
-      scripts.push(label);
+
+  if (pm === "pnpm") {
+    if (/pnpm\s+(?:run\s+)?(?:test|lint|typecheck|build)/i.test(corpus)) {
+      scripts.push("pnpm test / lint / typecheck / build");
+    }
+    for (const match of corpus.matchAll(/pnpm\s+(?:run\s+)?(test|lint|typecheck|build)\b/gi)) {
+      scripts.push(`pnpm ${match[1]!.toLowerCase()}`);
+    }
+  } else if (pm === "yarn") {
+    for (const match of corpus.matchAll(/yarn\s+(test|lint|typecheck|build)\b/gi)) {
+      scripts.push(`yarn ${match[1]!.toLowerCase()}`);
+    }
+  } else {
+    for (const match of corpus.matchAll(/npm\s+run\s+(test|lint|typecheck|build)\b/gi)) {
+      scripts.push(`npm run ${match[1]!.toLowerCase()}`);
     }
   }
-  const scriptBlock = text.match(/"scripts"\s*:\s*\{([^}]+)\}/s);
+
+  if (/turbo\s+run\s+(\w+)/i.test(corpus)) {
+    const turbo = corpus.match(/turbo\s+run\s+(\w+)/i)?.[1];
+    if (turbo) scripts.push(`turbo run ${turbo}`);
+  }
+
+  const scriptBlock = corpus.match(/"scripts"\s*:\s*\{([^}]+)\}/s);
   if (scriptBlock?.[1]) {
     for (const m of scriptBlock[1].matchAll(/"(test|lint|typecheck|build)"/g)) {
-      scripts.push(`npm run ${m[1]}`);
+      const cmd = m[1]!;
+      if (pm === "pnpm") scripts.push(`pnpm ${cmd}`);
+      else if (pm === "yarn") scripts.push(`yarn ${cmd}`);
+      else scripts.push(`npm run ${cmd}`);
     }
   }
+
+  if (scripts.length === 0 && pm === "pnpm") {
+    scripts.push("pnpm build", "pnpm test", "pnpm lint");
+  }
+
   return [...new Set(scripts)].slice(0, 6);
 }
 
@@ -794,7 +1108,8 @@ export function extractProjectGovernanceFacts(
 ): ProjectGovernanceFacts {
   const text = corpus(input);
   const authoritativeUiText = [input.mddMarkdown, input.specMarkdown].filter(Boolean).join("\n\n");
-  const stacks = inferStacks(text);
+  const authoritativeStackText = extractMddSection(input.mddMarkdown ?? "", 2);
+  const stacks = inferStacks(text, { authoritativeUiText, authoritativeStackText });
   const projectTitle = extractProjectTitle(input);
   const blueprintModules = blueprintModulesForOverlay(
     extractBlueprintModules(input.blueprintMarkdown ?? ""),
@@ -802,6 +1117,7 @@ export function extractProjectGovernanceFacts(
   const globs = inferCodebaseGlobs(blueprintModules, text);
   const taskCheckboxes = extractTaskCheckboxes(input.tasksMarkdown);
   const sddConflicts = detectSddConflicts(text);
+  const npmScriptCorpus = [authoritativeStackText, text].filter(Boolean).join("\n\n");
 
   const optionalDocs: Array<[boolean, string]> = [
     [!!input.blueprintMarkdown?.trim(), "docs/sdd/blueprint.md"],
@@ -857,7 +1173,7 @@ export function extractProjectGovernanceFacts(
     blueprintModules,
     backendGlobs: globs.backend,
     frontendGlobs: globs.frontend,
-    npmScripts: inferNpmScripts(text),
+    npmScripts: inferNpmScripts(npmScriptCorpus),
     sddConflicts,
     hasUiSurface: hasUiSurface(text, authoritativeUiText),
   };
@@ -1002,19 +1318,20 @@ export function suggestAgentGovernanceArtifacts(
 ): AgentGovernanceSuggestions {
   const text = corpus(input);
   const authoritativeUiText = [input.mddMarkdown, input.specMarkdown].filter(Boolean).join("\n\n");
-  const archetypes = detectArchetypes(text, input.complexity, authoritativeUiText);
+  const archetypes = detectArchetypes(text, input.complexity, authoritativeUiText, input.mddMarkdown);
   const rationale: string[] = [];
   const facts = extractProjectGovernanceFacts(input);
-  const domainFolder = inferDomainSkillFolder(text, facts.blueprintModules);
+  const domainFolder = inferDomainSkillFolder(text, facts.blueprintModules, input.projectName);
 
   if (archetypes.length > 0) {
     rationale.push(`Arquetipos detectados: ${archetypes.join(", ")}.`);
   }
 
-  const stacks = inferStacks(text);
+  const authoritativeStackText = extractMddSection(input.mddMarkdown ?? "", 2);
+  const stacks = inferStacks(text, { authoritativeUiText, authoritativeStackText });
   const stackParts = [stacks.backend, stacks.frontend, stacks.mobile, stacks.infra].filter(Boolean);
   if (stackParts.length > 0) {
-    rationale.push(`Stack inferido: ${stackParts.join(", ")}.`);
+    rationale.push(`Stack (MDD §2): ${stackParts.join(", ")}.`);
   }
 
   const suggestedRules: RuleSpec[] = [];
@@ -1136,12 +1453,14 @@ export function buildArtifactTemplateContext(
   input: SuggestAgentGovernanceInput,
 ): ArtifactTemplateContext {
   const text = corpus(input);
-  const stacks = inferStacks(text);
+  const authoritativeUiText = [input.mddMarkdown, input.specMarkdown].filter(Boolean).join("\n\n");
+  const authoritativeStackText = extractMddSection(input.mddMarkdown ?? "", 2);
+  const stacks = inferStacks(text, { authoritativeUiText, authoritativeStackText });
   const facts = extractProjectGovernanceFacts(input);
   return {
     complexity,
     archetypes: suggestions.archetypes,
-    domainSkillFolder: inferDomainSkillFolder(text, facts.blueprintModules),
+    domainSkillFolder: inferDomainSkillFolder(text, facts.blueprintModules, input.projectName),
     backendStack: stacks.backend,
     frontendStack: stacks.frontend ?? stacks.mobile,
     mobileStack: stacks.mobile,
