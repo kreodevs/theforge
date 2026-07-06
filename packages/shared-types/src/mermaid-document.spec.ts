@@ -15,6 +15,8 @@ import {
   repairUnfencedMermaidInDocument,
   stripErDiagramSqlDefaultArtifacts,
   stripMarkdownLeakFromMermaidDiagramBody,
+  stripMermaidFenceWrappers,
+  dedupeMermaidDiagramHeader,
   validateMermaid,
 } from "./mermaid.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
@@ -620,6 +622,52 @@ erDiagram
     const out = normalizeMermaidDiagramBody(body);
     assert.match(out, /A -->|"sync"| B/);
     assert.doesNotMatch(out, /^• /m);
+  });
+});
+
+describe("stripMermaidFenceWrappers + dedupeMermaidDiagramHeader", () => {
+  it("quita ```mermaid anidado del cuerpo antes de render", () => {
+    const nested = `\`\`\`mermaid
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Active
+\`\`\``;
+    const out = normalizeMermaidDiagramBody(nested);
+    assert.match(out, /^stateDiagram-v2/);
+    assert.doesNotMatch(out, /```/);
+    assert.match(out, /Idle --> Active/);
+  });
+
+  it("repara erDiagramerDiagram pegado", () => {
+    const broken = "erDiagramerDiagram\n  USER {\n    uuid id PK\n  }";
+    const out = normalizeMermaidDiagramBody(broken);
+    assert.match(out, /^erDiagram\n/);
+    assert.doesNotMatch(out, /erDiagramerDiagram/);
+  });
+
+  it("elimina cabecera erDiagram duplicada en líneas consecutivas", () => {
+    const broken = "erDiagram\nerDiagram\n  ORDER {\n    uuid id PK\n  }";
+    const out = dedupeMermaidDiagramHeader(broken);
+    assert.equal(out.split("\n").filter((l) => /^erDiagram\b/i.test(l.trim())).length, 1);
+  });
+
+  it("normalizeMermaidInDocument fusiona erDiagram partidos con cierre ```mermaid", () => {
+    const doc = `\`\`\`mermaid
+erDiagram
+  USER {
+    uuid id PK
+  }
+\`\`\`mermaid
+erDiagram
+  ORDER {
+    uuid id PK
+  }
+  USER ||--o{ ORDER : places
+\`\`\``;
+    const out = normalizeMermaidInDocument(doc);
+    assert.equal((out.match(/```mermaid/gi) ?? []).length, 1);
+    assert.match(out, /USER \|\|--o\{ ORDER/);
+    assert.doesNotMatch(out, /erDiagramerDiagram/);
   });
 });
 

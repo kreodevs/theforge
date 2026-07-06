@@ -14,6 +14,7 @@ DTOs e interfaces compartidas (Zod).
 - **`spec-kit-bundle.ts`:** `buildSpecKitBundleFiles` — export layout compatible con github/spec-kit.
 - **`tasks-parse.ts`:** parseo spec-kit de `tasks.md` (`[P]`, rutas, checkpoints); `getNextOpenTask` para MCP.
 - **`sdd-analyze.ts`:** tipos del reporte `GET /projects/:id/analyze`.
+- **`mermaid.ts`:** normalización/reparación de diagramas (erDiagram PK/FK, fences partidos con ` ```mermaid `, cabeceras duplicadas `erDiagramerDiagram`, `stateDiagram-v2`); consumido por `normalizeMermaidInDocument` y `MarkdownMermaid`.
 - **`sdd-integrations.ts`:** Zod `convergeBodySchema`, `tasksToIssuesBodySchema`.
 
 Usado por API y (opcional) por web.
