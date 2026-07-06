@@ -4,6 +4,7 @@ export type WorkshopAgentsBusySlice = {
   loadingReason:
     | "benchmark"
     | "mdd"
+    | "mdd-section"
     | "phase0-deep-research"
     | "legacy-codebase-doc"
     | "legacy-mdd"
@@ -29,6 +30,7 @@ export type WorkshopAgentsBusySlice = {
 const AGENT_LOADING_REASONS = new Set<NonNullable<WorkshopAgentsBusySlice["loadingReason"]>>([
   "benchmark",
   "mdd",
+  "mdd-section",
   "phase0-deep-research",
   "legacy-codebase-doc",
   "legacy-mdd",

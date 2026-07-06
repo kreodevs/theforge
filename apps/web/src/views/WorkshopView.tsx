@@ -29,6 +29,7 @@ import {
   ArrowUp,
   HelpCircle,
   Layers,
+  Wand2,
   MessageSquare,
   Copy,
   Check,
@@ -64,7 +65,6 @@ import {
 } from "../constants/workshopHeaderToolbar";
 import {
   agentGovernanceScaffoldHasContent,
-  buildSpecKitBundleFiles,
   isLegacyChangeGateSatisfied,
   isLegacyIntegrationHandoffGatePending,
   isPhase0BorradorJson,
@@ -110,9 +110,13 @@ import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebu
 import { BrdStagePanel } from "../components/BrdStagePanel";
 import { AgentGovernancePanel } from "../components/AgentGovernancePanel";
 import { WorkshopAgentProgressPanel } from "../components/WorkshopAgentProgressPanel";
-import { downloadAgentGovernanceZip } from "../utils/downloadAgentGovernanceZip";
+import { PendingDocumentationGapsPanel } from "../components/PendingDocumentationGapsPanel";
+import { AgentSessionLogPanel } from "../components/AgentSessionLogPanel";
 import { type DocumentsForZip } from "../utils/downloadDocumentsZip";
-import { downloadWorkshopProjectZip } from "../utils/downloadRepoHandoff";
+import {
+  downloadRepoHandoffFromApi,
+  downloadWorkshopProjectZip,
+} from "../utils/downloadRepoHandoff";
 import {
   downloadSpecKitBundleFromApi,
 } from "../utils/downloadSpecKitBundle";
@@ -128,10 +132,18 @@ import {
   printMarkdownDocument,
 } from "../utils/printDocument";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
+import { isWorkshopAgentActivityPanel } from "../utils/workshopDocNav";
+import {
+  buildRegenerateSectionChatMessage,
+  canRegenerateMddSectionFromWorkshop,
+  MDD_QUALITY_SCORE_COMPLETE,
+  MDD_QUALITY_TABLE_ROWS,
+  mddSectionRegenDisabledTitle,
+  resolveEffectiveMddContent,
+  resolveMddReadinessHintActions,
+} from "../utils/mddSectionRegen";
 import { StandardDocPanel } from "../components/StandardDocPanel";
 import { IntegrationPanel } from "../components/IntegrationPanel";
-import { AgentSessionLogPanel } from "../components/AgentSessionLogPanel";
-import { PendingDocumentationGapsPanel } from "../components/PendingDocumentationGapsPanel";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
 import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
@@ -339,6 +351,7 @@ export default function WorkshopView({
 }: WorkshopViewProps) {
   const project = useWorkshopStore((s) => s.project);
   const activeStageId = useWorkshopStore((s) => s.activeStageId);
+  const documentationGapsRefreshNonce = useWorkshopStore((s) => s.documentationGapsRefreshNonce);
   const setActiveStageId = useWorkshopStore((s) => s.setActiveStageId);
   const createWorkshopStage = useWorkshopStore((s) => s.createWorkshopStage);
   const workshopStages = useWorkshopStore((s) => s.workshopStages);
@@ -369,10 +382,15 @@ export default function WorkshopView({
   }, [project?.projectType, activeWorkshopStage?.legacyChangeState]);
   const liveMetrics = useWorkshopStore((s) => s.liveMetrics);
   const mddContent = useWorkshopStore((s) => s.mddContent);
-  /** MDD en store o persistido en proyecto (evita botones Generar/Regenerar deshabilitados si el store quedó vacío). */
+  /** MDD en store, etapa activa o proyecto (evita botones deshabilitados si el store quedó vacío). */
   const effectiveMddTrimmed = useMemo(
-    () => (mddContent ?? "").trim() || (project?.mddContent ?? "").trim(),
-    [mddContent, project?.mddContent],
+    () =>
+      resolveEffectiveMddContent({
+        mddContent,
+        stageMddContent: activeWorkshopStage?.mddContent,
+        projectMddContent: project?.mddContent,
+      }),
+    [mddContent, activeWorkshopStage?.mddContent, project?.mddContent],
   );
   const specContentField = useWorkshopStore((s) => s.specContent);
   const dbgaContentField = useWorkshopStore((s) => s.dbgaContent);
@@ -611,7 +629,9 @@ export default function WorkshopView({
   const setMddContent = useWorkshopStore((s) => s.setMddContent);
   const revertMddContent = useWorkshopStore((s) => s.revertMddContent);
   const persistAndReviewMdd = useWorkshopStore((s) => s.persistAndReviewMdd);
+  const reapplyMddFormat = useWorkshopStore((s) => s.reapplyMddFormat);
   const mddReviewing = useWorkshopStore((s) => s.mddReviewing);
+  const mddReapplyingFormat = useWorkshopStore((s) => s.mddReapplyingFormat);
   const workshopAgentsBusy = useWorkshopStore(selectWorkshopAgentsBusy);
 
   const setBlueprintContent = useWorkshopStore((s) => s.setBlueprintContent);
@@ -1092,9 +1112,24 @@ export default function WorkshopView({
     | "ui-screens"
     | "agent-governance"
     | "adrs"
-    | "integration";
+    | "integration"
+    | "agent-pending-changes"
+    | "agent-session-log";
   const centralPanel = useWorkshopStore((s) => s.workshopActiveDocPanel) as DocPanel;
   const setCentralPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
+
+  const chatActiveTab = useMemo((): import("../components/ChatContainer").ActiveTab => {
+    if (isWorkshopAgentActivityPanel(centralPanel)) return "mdd";
+    const nonChatPanels = new Set([
+      "integration",
+      "agent-governance",
+      "aem",
+      "agent-pending-changes",
+      "agent-session-log",
+    ]);
+    if (nonChatPanels.has(centralPanel)) return "mdd";
+    return centralPanel as import("../components/ChatContainer").ActiveTab;
+  }, [centralPanel]);
 
   useEffect(() => {
     const tryReconnect = () => {
@@ -1630,6 +1665,61 @@ export default function WorkshopView({
     }
   }, [projectId, project, reassessComplexity, sendMessage]);
 
+  const canRegenerateMddSection = useMemo(
+    () =>
+      canRegenerateMddSectionFromWorkshop(projectId, effectiveMddTrimmed, {
+        loading,
+        mddReviewing,
+        mddReapplyingFormat,
+        workshopAgentsBusy,
+      }),
+    [
+      projectId,
+      effectiveMddTrimmed,
+      loading,
+      mddReviewing,
+      mddReapplyingFormat,
+      workshopAgentsBusy,
+    ],
+  );
+
+  const mddSectionRegenDisabledReason = useMemo(
+    () =>
+      mddSectionRegenDisabledTitle(projectId, effectiveMddTrimmed, {
+        loading,
+        mddReviewing,
+        mddReapplyingFormat,
+        workshopAgentsBusy,
+      }),
+    [
+      projectId,
+      effectiveMddTrimmed,
+      loading,
+      mddReviewing,
+      mddReapplyingFormat,
+      workshopAgentsBusy,
+    ],
+  );
+
+  const handleRegenerateMddSectionFromQuality = useCallback(
+    async (section: number, gapReasons?: string[]) => {
+      if (!canRegenerateMddSection) return;
+      setCentralPanel("mdd");
+      setShowAuditModal(false);
+      const row = MDD_QUALITY_TABLE_ROWS.find((r) => r.section === section);
+      const reasonsFromAudit =
+        gapReasons ??
+        (row && precisionBreakdown?.sectionReasons?.[row.reasonKey]
+          ? [precisionBreakdown.sectionReasons[row.reasonKey]!]
+          : undefined);
+      await sendMessage(buildRegenerateSectionChatMessage(section), "mdd", {
+        regenerateSection: section,
+        ...(reasonsFromAudit?.length ? { regenerateSectionGaps: reasonsFromAudit } : {}),
+      });
+    },
+    [canRegenerateMddSection, setCentralPanel, sendMessage, precisionBreakdown],
+  );
+
   const setProjectId = useWorkshopStore((s) => s.setProjectId);
   /* Prevent infinite fetch loop */
   const hasFetchedProject = useRef<string | null>(null);
@@ -1693,6 +1783,7 @@ export default function WorkshopView({
   /** MEDIUM: barra acotada a entregables de la matriz — redirige si el panel ya no aplica */
   useEffect(() => {
     if (complexity !== "MEDIUM" || !project) return;
+    if (isWorkshopAgentActivityPanel(centralPanel)) return;
     const pt = project.projectType === "LEGACY" ? "LEGACY" : "NEW";
     if (isTabVisibleForComplexity(centralPanel as WorkshopDocTab, "MEDIUM", { projectType: pt })) return;
     setCentralPanel(pt === "LEGACY" ? "mdd" : "spec");
@@ -1810,6 +1901,7 @@ export default function WorkshopView({
   /** Preview/source (or design) toggle — header toolbar on desktop; not in the bubble menu. */
   const docEditToolbarToggle = useMemo(() => {
     if (centralPanel === "legacy" || centralPanel === "adrs" || centralPanel === "integration") return null;
+    if (isWorkshopAgentActivityPanel(centralPanel)) return null;
 
     const editableDocPanels = new Set([
       "spec",
@@ -1925,6 +2017,7 @@ export default function WorkshopView({
 
   const docBubbleMenuItems = useMemo((): WorkshopDocBubbleMenuItem[] => {
     if (centralPanel === "legacy" || centralPanel === "adrs" || centralPanel === "integration") return [];
+    if (isWorkshopAgentActivityPanel(centralPanel)) return [];
 
     const ordered: WorkshopDocBubbleMenuItem[] = [];
 
@@ -1966,8 +2059,15 @@ export default function WorkshopView({
           id: "edit-patterns",
           label: "Editar patrones (SSOT)",
           icon: ListChecks,
-          disabled: loading || mddReviewing || !projectId,
+          disabled: loading || mddReviewing || mddReapplyingFormat || !projectId,
           onClick: openEditMddPatterns,
+        });
+        ordered.push({
+          id: "reapply-mdd-format",
+          label: "Re-aplicar formato MDD",
+          icon: Wand2,
+          disabled: loading || mddReviewing || mddReapplyingFormat || !projectId,
+          onClick: () => void reapplyMddFormat(),
         });
       }
     } else if (centralPanel === "mdd-inicial" && !!(activeLegacyState?.codebaseDoc ?? mddInicialLocalContent ?? "").trim()) {
@@ -2151,34 +2251,10 @@ export default function WorkshopView({
       disabled: centralPanel === "agent-governance" ? !agentGovernanceScaffold : !downloadPayload,
       onClick: () => {
         if (centralPanel === "agent-governance" && agentGovernanceScaffold && projectId) {
-          void (async () => {
-            const exportScaffold =
-              (await fetchAgentGovernanceExport(projectId)) ?? agentGovernanceScaffold;
-            const consumptionGuideContent =
-              exportScaffold.files.find((f) =>
-                f.path.endsWith("THEFORGE-DOC-CONSUMPTION-GUIDE.md"),
-              )?.content ?? null;
-            await downloadAgentGovernanceZip(
-              exportScaffold,
-              projectName ?? project?.name ?? "Workshop",
-              buildSpecKitBundleFiles({
-                projectName: projectName ?? project?.name ?? "Workshop",
-                featureOrdinal: activeWorkshopStage?.ordinal ?? 1,
-                mddContent: effectiveMddTrimmed || mddContent || "",
-                specContent: specContent ?? project?.specContent,
-                blueprintContent: blueprintContent ?? project?.blueprintContent,
-                tasksContent: tasksContent ?? project?.tasksContent,
-                apiContractsContent: apiContractsContent ?? project?.apiContractsContent,
-                logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent,
-                infraContent: infraContent ?? project?.infraContent,
-                phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent,
-                dbgaContent: dbgaContent ?? project?.dbgaContent,
-                uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent,
-                uiScreensContent: uiScreensContent ?? project?.uiScreensContent,
-                consumptionGuideContent,
-              }),
-            );
-          })();
+          void downloadRepoHandoffFromApi(
+            projectId,
+            projectName ?? project?.name ?? "Workshop",
+          );
           return;
         }
         if (downloadPayload) downloadMarkdownFile(downloadPayload.filename, downloadPayload.content);
@@ -2239,6 +2315,8 @@ export default function WorkshopView({
     loading,
     effectiveMddTrimmed,
     mddReviewing,
+    mddReapplyingFormat,
+    reapplyMddFormat,
     apiBlueprintDmBlocked,
     apiBlueprintBlockedHint,
     uxGenProgress,
@@ -2259,7 +2337,6 @@ export default function WorkshopView({
     generateInfra,
     generateTasks,
     generateAgentGovernance,
-    fetchAgentGovernanceExport,
     generateUxGuideSequential,
     clearWorkshopDocumentContent,
     handleClearMddCompletely,
@@ -2864,7 +2941,7 @@ export default function WorkshopView({
             >
               <ChatContainer
                 projectId={projectId}
-                activeTab={centralPanel as import("../components/ChatContainer").ActiveTab}
+                activeTab={chatActiveTab}
                 embedded={false}
                 onOpenSettings={onOpenSettings}
                 onRevaluate={project ? handleRevaluateComplexity : undefined}
@@ -3617,14 +3694,6 @@ export default function WorkshopView({
                   void fetchProject(projectId);
                 }}
               />
-              <PendingDocumentationGapsPanel
-                projectId={projectId}
-                stageId={activeStageId}
-                onResolved={() => {
-                  void fetchProject(projectId);
-                }}
-              />
-              <AgentSessionLogPanel projectId={projectId} stageId={activeStageId} />
               </div>
             )}
             {centralPanel === "legacy" && project?.projectType === "LEGACY" && projectId && (
@@ -4149,6 +4218,15 @@ export default function WorkshopView({
                   </div>
                 ) : null}
                 <WorkshopPanelActionRegion role="region" aria-label="Generar o regenerar el MDD">
+                  {loading && loadingReason === "mdd-section" ? (
+                    <p
+                      className="mb-3 rounded-lg border border-[color-mix(in_oklch,var(--primary)_22%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_6%,var(--card))] px-3 py-2 text-xs text-[color-mix(in_oklch,var(--primary)_72%,var(--foreground))]"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {notice ?? "Regenerando sección del MDD…"}
+                    </p>
+                  ) : null}
                   {loading && (loadingReason === "mdd" || loadingReason === "legacy-mdd") ? (
                     <AiGenerationPanel
                       title={
@@ -4199,8 +4277,24 @@ export default function WorkshopView({
                         {effectiveMddTrimmed.length > 0 && (
                           <WorkshopPanelButton
                             tone="secondary"
+                            onClick={() => void reapplyMddFormat()}
+                            disabled={loading || mddReviewing || mddReapplyingFormat}
+                            className="w-full justify-center lg:w-auto"
+                            title="Ejecuta sanitizers deterministas (headings, JSON §4, SQL, coherencia) sin regenerar con IA"
+                          >
+                            <WorkshopButtonIcon
+                              icon={mddReapplyingFormat ? Loader2 : Wand2}
+                              tone="secondary"
+                              className={mddReapplyingFormat ? "animate-spin" : undefined}
+                            />
+                            {mddReapplyingFormat ? "Aplicando formato…" : "Re-aplicar formato"}
+                          </WorkshopPanelButton>
+                        )}
+                        {effectiveMddTrimmed.length > 0 && (
+                          <WorkshopPanelButton
+                            tone="secondary"
                             onClick={openEditMddPatterns}
-                            disabled={loading || mddReviewing}
+                            disabled={loading || mddReviewing || mddReapplyingFormat}
                             className="w-full justify-center lg:w-auto"
                           >
                             <WorkshopButtonIcon icon={ListChecks} tone="secondary" />
@@ -4214,7 +4308,7 @@ export default function WorkshopView({
                               if (!projectId?.trim()) return;
                               setClearMddConfirmOpen(true);
                             }}
-                            disabled={loading || mddReviewing}
+                            disabled={loading || mddReviewing || mddReapplyingFormat}
                             className="w-full justify-center lg:w-auto"
                           >
                             <WorkshopButtonIcon icon={Trash2} tone="secondary" />
@@ -4740,6 +4834,26 @@ export default function WorkshopView({
                 onRefresh={fetchAdrs}
               />
             )}
+            {centralPanel === "agent-pending-changes" && projectId && activeStageId && (
+              <PendingDocumentationGapsPanel
+                projectId={projectId}
+                stageId={activeStageId}
+                variant="workspace"
+                className="min-h-0 flex-1 border-0 bg-transparent p-0 shadow-none"
+                refreshToken={documentationGapsRefreshNonce}
+                onResolved={() => {
+                  void fetchProject(projectId);
+                }}
+              />
+            )}
+            {centralPanel === "agent-session-log" && projectId && activeStageId && (
+              <AgentSessionLogPanel
+                projectId={projectId}
+                stageId={activeStageId}
+                variant="workspace"
+                className="min-h-0 flex-1 border-0 bg-transparent p-0 shadow-none"
+              />
+            )}
           </div>
           {isLgLayout ? (
             <div className="pointer-events-none absolute inset-0 z-20 hidden overflow-visible lg:block">
@@ -5115,28 +5229,44 @@ export default function WorkshopView({
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[color-mix(in_oklch,var(--border)_70%,transparent)]">
-                            {[
-                              { section: "Contexto y alcance", agent: "Clarificador", value: precisionBreakdown.contexto, reasonKey: "contexto" as const },
-                              { section: "Modelo de datos", agent: "Arquitecto de Software", value: precisionBreakdown.modeloDatos, reasonKey: "modeloDatos" as const },
-                              { section: "Contratos API", agent: "Arquitecto de Software", value: precisionBreakdown.apiContracts, reasonKey: "apiContracts" as const },
-                              { section: "Seguridad", agent: "Arquitecto de Seguridad", value: precisionBreakdown.seguridad, reasonKey: "seguridad" as const },
-                              { section: "Integración", agent: "Ingeniero de Integración", value: precisionBreakdown.integracion, reasonKey: "integracion" as const },
-                            ].map((row, i) => (
-                              <tr key={i} className="hover:bg-[var(--card)]/30">
-                                <td className="px-4 py-2.5 text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] align-top">
-                                  {row.section}
-                                  {precisionBreakdown.sectionReasons?.[row.reasonKey] && (
-                                    <p className="text-[var(--foreground-subtle)] text-xs mt-1 leading-tight max-w-[260px]">
-                                      {precisionBreakdown.sectionReasons[row.reasonKey]}
-                                    </p>
-                                  )}
-                                </td>
-                                <td className="px-4 py-2.5 text-[var(--muted-foreground)] align-top">{row.agent}</td>
-                                <td className={`px-4 py-2.5 text-right font-mono font-medium align-top ${(row.value ?? 0) >= 90 ? "text-[color-mix(in_oklch,var(--success)_88%,var(--foreground))]" : (row.value ?? 0) >= 50 ? "text-[var(--primary)]" : "text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]"}`}>
-                                  {row.value ?? 0}%
-                                </td>
-                              </tr>
-                            ))}
+                            {MDD_QUALITY_TABLE_ROWS.map((row) => {
+                              const value = precisionBreakdown[row.reasonKey] ?? 0;
+                              const reason = precisionBreakdown.sectionReasons?.[row.reasonKey];
+                              const needsAction = value < MDD_QUALITY_SCORE_COMPLETE;
+                              return (
+                                <tr key={row.reasonKey} className="hover:bg-[var(--card)]/30">
+                                  <td className="px-4 py-2.5 text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] align-top">
+                                    {row.label}
+                                    {reason ? (
+                                      <p className="text-[var(--foreground-subtle)] text-xs mt-1 leading-tight max-w-[260px]">
+                                        {reason}
+                                      </p>
+                                    ) : null}
+                                    {needsAction ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleRegenerateMddSectionFromQuality(row.section)}
+                                        disabled={!canRegenerateMddSection}
+                                        title={
+                                          canRegenerateMddSection
+                                            ? `Regenerar solo §${row.section} (pipeline parcial, sin MDD completo)`
+                                            : mddSectionRegenDisabledReason
+                                        }
+                                        className="mt-1.5 block text-left text-xs font-medium text-[var(--primary)] underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        Regenerar §{row.section}
+                                      </button>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-[var(--muted-foreground)] align-top">{row.agent}</td>
+                                  <td
+                                    className={`px-4 py-2.5 text-right font-mono font-medium align-top ${value >= 90 ? "text-[color-mix(in_oklch,var(--success)_88%,var(--foreground))]" : value >= 50 ? "text-[var(--primary)]" : "text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]"}`}
+                                  >
+                                    {value}%
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -5150,13 +5280,45 @@ export default function WorkshopView({
                           <Target className="w-3.5 h-3.5" />
                           Pendientes MDD
                         </h4>
-                        <ul className="space-y-1.5">
-                          {mddReadinessHints.map((hint: string, i: number) => (
-                            <li key={i} className="flex items-start gap-2 text-xs text-[var(--muted-foreground)]">
-                              <span className="text-[var(--primary)] mt-0.5 shrink-0">▶</span>
-                              <span>{hint}</span>
-                            </li>
-                          ))}
+                        <ul className="space-y-2">
+                          {mddReadinessHints.map((hint: string, i: number) => {
+                            const hintActions = resolveMddReadinessHintActions(hint);
+                            return (
+                              <li key={i} className="flex items-start gap-2 text-xs text-[var(--muted-foreground)]">
+                                <span className="text-[var(--primary)] mt-0.5 shrink-0">▶</span>
+                                <div className="min-w-0 space-y-1">
+                                  <span>{hint}</span>
+                                  {hintActions.length > 0 ? (
+                                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                      {hintActions.map((action) =>
+                                        action.kind === "reapply-format" ? (
+                                          <button
+                                            key={`${i}-${action.label}`}
+                                            type="button"
+                                            onClick={() => void reapplyMddFormat()}
+                                            disabled={!canRegenerateMddSection}
+                                            className="text-xs font-medium text-[var(--primary)] underline-offset-2 hover:underline disabled:opacity-50"
+                                          >
+                                            {action.label}
+                                          </button>
+                                        ) : (
+                                          <button
+                                            key={`${i}-${action.label}`}
+                                            type="button"
+                                            onClick={() => void handleRegenerateMddSectionFromQuality(action.section)}
+                                            disabled={!canRegenerateMddSection}
+                                            className="text-xs font-medium text-[var(--primary)] underline-offset-2 hover:underline disabled:opacity-50"
+                                          >
+                                            {action.label}
+                                          </button>
+                                        ),
+                                      )}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </li>
+                            );
+                          })}
                         </ul>
                       </div>
                     )}

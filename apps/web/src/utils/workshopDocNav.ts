@@ -9,6 +9,7 @@ import { Brain,
   Edit3,
   FileCode,
   FileText,
+  FileWarning,
   GitBranch,
   LayoutTemplate,
   Link2,
@@ -17,6 +18,7 @@ import { Brain,
   MonitorSmartphone,
   Package,
   Palette,
+  ScrollText,
   Server,
   Target,
 } from "lucide-react";
@@ -28,6 +30,39 @@ export const WORKSHOP_MANDATORY_NEW_PROJECT_STEP_IDS = ["benchmark", "brd", "mdd
 
 export type WorkshopMandatoryNewProjectStepId =
   (typeof WORKSHOP_MANDATORY_NEW_PROJECT_STEP_IDS)[number];
+
+/** Central panels for agent activity (sidebar nav + workshop workspace). */
+export const WORKSHOP_AGENT_PENDING_CHANGES_PANEL = "agent-pending-changes" as const;
+export const WORKSHOP_AGENT_SESSION_LOG_PANEL = "agent-session-log" as const;
+
+export type WorkshopAgentActivityPanelId =
+  | typeof WORKSHOP_AGENT_PENDING_CHANGES_PANEL
+  | typeof WORKSHOP_AGENT_SESSION_LOG_PANEL;
+
+export function isWorkshopAgentActivityPanel(panel: string): panel is WorkshopAgentActivityPanelId {
+  return (
+    panel === WORKSHOP_AGENT_PENDING_CHANGES_PANEL || panel === WORKSHOP_AGENT_SESSION_LOG_PANEL
+  );
+}
+
+export function buildWorkshopAgentActivityNavItems(): WorkshopDocNavItem[] {
+  return [
+    {
+      id: WORKSHOP_AGENT_PENDING_CHANGES_PANEL,
+      label: "Cambios pendientes",
+      title: "Cambios de documentación pendientes de aprobación humana (HITL)",
+      Icon: FileWarning,
+      content: null,
+    },
+    {
+      id: WORKSHOP_AGENT_SESSION_LOG_PANEL,
+      label: "Log de sesión",
+      title: "Timeline de sesión agéntica (gaps MCP y reconciliaciones)",
+      Icon: ScrollText,
+      content: null,
+    },
+  ];
+}
 
 export function isWorkshopMandatoryDeliverableStep(
   id: string,
@@ -421,6 +456,16 @@ export function getWorkshopDocPanelHeader(
       title: "Integración Legacy ↔ Nuevo",
       subtitle: "Conecta proyectos para compartir contexto AS-IS y gestionar módulos enlazados",
       Icon: Link2,
+    },
+    [WORKSHOP_AGENT_PENDING_CHANGES_PANEL]: {
+      title: "Cambios pendientes",
+      subtitle: "Aprobación humana de cambios de documentación reportados por agentes",
+      Icon: FileWarning,
+    },
+    [WORKSHOP_AGENT_SESSION_LOG_PANEL]: {
+      title: "Log de sesión",
+      subtitle: "Gaps MCP, reconciliaciones y eventos de la sesión agéntica",
+      Icon: ScrollText,
     },
   };
 

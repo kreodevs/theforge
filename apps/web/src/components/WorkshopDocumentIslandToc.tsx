@@ -21,7 +21,13 @@ export type WorkshopDocToolbarViewModes = {
 const MARKDOWN_PREVIEW_SELECTOR =
   ".markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview [data-toc]";
 
-const NON_MARKDOWN_PANELS = new Set(["legacy", "adrs", "wireframes"]);
+const NON_MARKDOWN_PANELS = new Set([
+  "legacy",
+  "adrs",
+  "wireframes",
+  "agent-pending-changes",
+  "agent-session-log",
+]);
 
 function getWorkshopDocToolbarActiveViewMode(
   centralPanel: string,
