@@ -283,7 +283,7 @@ export class AiService {
             systemPrompt +=
               "\n\n**OBLIGATORIO - BRD (formato exacto obligatorio):**\n\n" +
               BRD_CHAT_REFINE_BUSINESS_RULES +
-              "\n\n**NO preguntes ni pidas confirmaci\u00f3n**. Cuando el usuario pida agregar, modificar o eliminar algo del BRD, **Aplica el cambio inmediatamente** siguiendo este formato:\n\n```\n[BRD completo actualizado con el cambio incorporado, conservando TODO el contenido existente]\n---FIN_BRD---\n[breve mensaje de chat resumiendo lo que cambiaste]\n```\n\nEJEMPLO:\n```\n# BRD — Gestión de Márgenes y Costos\n\n## 5. Reglas de Negocio, Políticas y Fórmulas\n### Criterios de aceptación de negocio (UAT)\n- Dado un vendedor sin nivel 5, cuando cotice bajo margen mínimo, entonces el sistema bloquea hasta autorización de gerencia.\n---FIN_BRD---\nAñadido criterio UAT de autorización de margen.\n```\n\n**IMPORTANTE:** Sin ``---FIN_BRD---`` no se persiste NADA. El contenido del BRD va ANTES del delimitador. El mensaje de chat va DESPU\u00c9S.";
+              "\n\n**NO preguntes ni pidas confirmaci\u00f3n**. Cuando el usuario pida agregar, modificar o eliminar algo del BRD, **Aplica el cambio inmediatamente** siguiendo este formato:\n\n```\n[BRD completo actualizado con el cambio incorporado, conservando TODO el contenido existente]\n---FIN_BRD---\n[breve mensaje de chat resumiendo lo que cambiaste]\n```\n\nEJEMPLO:\n```\n# BRD — [Nombre del producto]\n\n## 5. Reglas de Negocio, Políticas y Fórmulas\n### Criterios de aceptación de negocio (UAT)\n- Dado un usuario sin permiso de aprobación, cuando intente confirmar una operación restringida, entonces el sistema bloquea hasta autorización del rol superior.\n---FIN_BRD---\nAñadido criterio UAT de autorización por rol.\n```\n\n**IMPORTANTE:** Sin ``---FIN_BRD---`` no se persiste NADA. El contenido del BRD va ANTES del delimitador. El mensaje de chat va DESPU\u00c9S.";
           }
           if (at === "blueprint") {
             systemPrompt +=
@@ -630,7 +630,7 @@ export class AiService {
         : tab === "ux-ui-guide"
           ? "Guía UX/UI y design system"
           : tab === "benchmark"
-            ? "Fase 0 — Domain Benchmark & Gap Analysis (DBGA); tablas espejo, catálogo OBP/OBP4MO, tenant_id"
+            ? "Fase 0 — Domain Benchmark & Gap Analysis (DBGA); tablas espejo, catálogo multi-origen, tenant_id"
             : `documento o pestaña «${tab}» del Workshop`;
     const benchmarkExtra =
       tab === "benchmark"

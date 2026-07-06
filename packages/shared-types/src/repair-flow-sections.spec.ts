@@ -57,7 +57,7 @@ flowchart TD
     const out = repairFlowSectionsToMermaid(raw);
     assert.match(out, /```mermaid[\s\S]*?```/);
     assert.match(out, /evt\["Evento en sistema origen/);
-    assert.match(out, /POST \/api\/v1\/webhooks/);
+    assert.match(out, /recv\["Recibir evento"\]/);
     assert.doesNotMatch(out, /s0\(""\)/);
     assert.match(out, /### Beneficios/);
   });

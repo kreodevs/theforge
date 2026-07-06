@@ -6,7 +6,9 @@ El BRD responde **QUÉ** se va a construir, **POR QUÉ** y **PARA QUIÉN**. El *
 
 Insumo: DBGA, benchmark de dominio o documentación de sistema. El fuente puede ser técnico; **tu trabajo es traducirlo a lenguaje corporativo** sin perder reglas de negocio.
 
-El dominio puede ser cualquiera (SaaS B2B, herramienta interna, ERP, marketplace). **No inventes** capacidades que contradigan el fuente; **no copies** plantillas genéricas si el fuente no las menciona.
+El dominio puede ser cualquiera (SaaS B2B, herramienta interna, ERP, marketplace, copiloto IA, logística). **No inventes** capacidades que contradigan el fuente; **no copies** plantillas genéricas ni nombres de otros productos (p. ej. sistemas, marcas o módulos de proyectos anteriores) si el fuente no las menciona.
+
+**Principio dominio-agnóstico:** Los ejemplos de este prompt son **ilustrativos**. Entidades, sistemas, roles y flujos en diagramas y glosario deben **derivar del documento fuente** del proyecto actual, no reutilizar plantillas fijas entre clientes.
 
 # Objetivo
 
@@ -30,13 +32,13 @@ Si el fuente menciona estos detalles, **absorbe la intención de negocio** y des
 
 | Fuente técnica (NO escribir así) | Escribir en BRD |
 | --- | --- |
-| CRON diario a las 12:00 | Actualización automática diaria del tipo de cambio |
-| Webhook POST desde Odoo | Sincronización automática de costos reales desde el ERP/Facturación (Odoo) |
+| CRON diario a las 12:00 | Actualización automática diaria del dato maestro |
+| Webhook POST desde ERP externo | Sincronización automática de datos desde el sistema origen (ERP, facturación, CRM) |
 | Multi-tenancy lógico con `tenant_id` | Soporte multi-empresa / multi-marca con aislamiento de datos por organización |
-| GET /api/v1/precio | Consulta de precio de venta para cotización comercial |
-| Tabla `costos_reales_hist` | Historial auditable de costos reales recibidos del ERP |
+| GET /api/v1/recurso | Consulta de información para una operación comercial del dominio |
+| Tabla `historial_eventos` | Historial auditable de eventos o transacciones del negocio |
 | Token M2M SSO | Autenticación automática entre sistemas corporativos (sin intervención del usuario) |
-| Semáforo de margen en API | Validación comercial de margen mínimo antes de confirmar una cotización |
+| Validación de regla en API | Validación de regla de negocio antes de confirmar la operación |
 
 # Profundidad mínima (orientada a negocio)
 
@@ -45,7 +47,7 @@ Si el fuente menciona estos detalles, **absorbe la intención de negocio** y des
 - **Capacidades funcionales:** procesos de negocio (cotizar, aprobar descuento, sincronizar costos), **no** módulos de software ni nombres de endpoints.
 - **Sistemas legacy / AS-IS:** si el fuente documenta muchas entidades o servicios, el BRD debe **mapear cada dominio** con subsección ### propia y al menos un criterio UAT por capacidad crítica — **prohibido** un BRD de 2 páginas para un ERP de decenas de módulos.
 - **Reglas de operación y políticas:** jerarquías de precios, márgenes, quién aprueba qué, qué queda bloqueado hasta autorización.
-- **Definición de entidades de negocio:** glosario corporativo (Costo Base, Costo Real, Margen Teórico, Lista de Precios Dinámica, etc.) — qué significan para la empresa, sin mencionar tablas.
+- **Definición de entidades de negocio:** glosario corporativo con los **nombres del propio producto** (p. ej. Cliente, Pedido, Catálogo maestro, Registro de auditoría — según el fuente) — qué significan para la empresa, sin mencionar tablas.
 - **Criterios de aceptación de negocio (UAT):** escenarios comerciales verificables (ej. «El sistema debe impedir que un vendedor cotice por debajo del nivel 5 de descuento sin autorización de gerencia»).
 - **Matriz de permisos:** capacidad de negocio × rol; confidencialidad (ej. costo real oculto a comercial).
 - **Experiencia y operación:** reglas de visualización financiera (separador de miles, confirmación si variación > X %), reportería y trazabilidad de auditoría en términos de negocio (quién, qué decisión, cuándo).
@@ -61,11 +63,11 @@ Si el fuente menciona estos detalles, **absorbe la intención de negocio** y des
 
 El BRD se renderiza con soporte Mermaid. Incluye **exactamente** estos diagramas en la sección **§4 Diagramas de referencia (Mermaid)** del outline (ver mensaje de usuario):
 
-1. **Arquitectura de integración (el ecosistema):** un `flowchart LR` o `flowchart TB` con los **sistemas y actores de negocio** (ERP, herramienta legacy, microservicio de costos, usuarios comerciales, etc.), las **integraciones de datos** entre ellos y qué capacidades del producto dependen de cada sistema. **Prohibido** rutas HTTP, métodos ni nombres de tablas; usa etiquetas corporativas («Sincronización de costos reales desde ERP», «Consulta de precio para cotización»).
+1. **Arquitectura de integración (el ecosistema):** un `flowchart LR` o `flowchart TB` con los **sistemas y actores de negocio** del **proyecto actual** (ERP, herramienta legacy, microservicio corporativo, usuarios operativos, etc.), las **integraciones de datos** entre ellos y qué capacidades del producto dependen de cada sistema. **Prohibido** rutas HTTP, métodos ni nombres de tablas; usa etiquetas corporativas derivadas del fuente (p. ej. «Sincronización desde sistema origen», «Consulta para decisión operativa»).
 
-2. **Diagrama entidad-relación (estructura de datos de negocio):** un `erDiagram` con las **entidades de negocio** clave del producto (Campaña, Medio, Lista de Precios, Costo Real, etc.) y sus relaciones cardinalidad (1:N, N:M). Usa **nombres corporativos** (los mismos que desarrollarás en §6 Definición de entidades), **no** nombres físicos de tablas/columnas ni tipos SQL.
+2. **Diagrama entidad-relación (estructura de datos de negocio):** un `erDiagram` con las **entidades de negocio clave del producto** (las mismas que definirás en §6) y sus relaciones cardinalidad (1:N, N:M). Usa **nombres corporativos del fuente**, **no** nombres físicos de tablas/columnas ni tipos SQL.
 
-3. **Dos o tres flujos críticos:** elige los **2–3 procesos de negocio más importantes** del producto (p. ej. cotización con validación de margen, sincronización de costos, autorización comercial). **Un diagrama Mermaid por flujo**, en subsección `### Flujo N: [nombre]`. Preferencia **`stateDiagram-v2`** si el flujo es ciclo de vida de un recurso; **`flowchart`** si hay decisiones/autorizaciones; **`sequenceDiagram`** si lo esencial es interacción entre actores/sistemas (sin endpoints técnicos en las etiquetas).
+3. **Dos o tres flujos críticos:** elige los **2–3 procesos de negocio más importantes** del **producto descrito en el fuente** (p. ej. aprobación con regla de negocio, sincronización de datos, autorización por rol). **Un diagrama Mermaid por flujo**, en subsección `### Flujo N: [nombre]`. Preferencia **`stateDiagram-v2`** si el flujo es ciclo de vida de un recurso; **`flowchart`** si hay decisiones/autorizaciones; **`sequenceDiagram`** si lo esencial es interacción entre actores/sistemas (sin endpoints técnicos en las etiquetas).
 
 Reglas de sintaxis (obligatorias para que renderice):
 
@@ -78,7 +80,7 @@ Reglas de sintaxis (obligatorias para que renderice):
 - **Define todas las transiciones/aristas**; no dejes nodos sueltos.
 - Mantén cada diagrama **legible** (preferible 2 diagramas pequeños a uno ilegible).
 
-Los diagramas deben **derivar del contenido** de §3 Capacidades y §6 Reglas/entidades — no plantillas genéricas repetidas entre proyectos.
+Los diagramas deben **derivar del contenido** de §3 Capacidades y §6 Reglas/entidades — **no plantillas genéricas repetidas entre proyectos** ni nombres copiados de otros dominios.
 
 # Estilo
 
@@ -87,8 +89,8 @@ Markdown claro: `##` / `###`, tablas GFM. **Listas numeradas o con viñetas** so
 # Anti-patrones Mermaid (causa rechazo / render roto)
 
 - **Incorrecto:** `flowchart LR` / `erDiagram` como texto plano y conexiones en listas `- A --> B` debajo.
-- **Incorrecto (erDiagram):** atributos con viñeta `- string nombre` o entidades con `### TENANT {` dentro del fence.
-- **Correcto (erDiagram):** `TENANT {` en línea propia; atributos `string nombre_organizacion` sin viñeta; relaciones `TENANT ||--o{ USUARIO : "posee"` sin `###`.
+- **Incorrecto (erDiagram):** atributos con viñeta `- string nombre` o entidades con `### ENTIDAD {` dentro del fence.
+- **Correcto (erDiagram):** `ENTIDAD_PADRE {` en línea propia; atributos `string nombre` sin viñeta; relaciones `ENTIDAD_PADRE ||--o{ ENTIDAD_HIJA : "relación"` sin `###`.
 - **Correcto:** abrir ` ```mermaid `, declaración del diagrama, nodos/aristas/relaciones en líneas planas (sin `-` de lista), cerrar ` ``` `.
 - Las transiciones **nunca** van como viñetas markdown fuera del fence (igual que en Casos de Uso / Handoff Spec).
 
