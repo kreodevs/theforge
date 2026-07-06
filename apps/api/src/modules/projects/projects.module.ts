@@ -17,6 +17,7 @@ import { GraphMemoryModule } from "../ai-analysis/graph-memory/graph-memory.modu
 import { ChangeLogModule } from "../change-log/change-log.module.js";
 import { LegacyFlowModule } from "../legacy-flow/legacy-flow.module.js";
 import { DocumentationGapModule } from "../documentation-gap/documentation-gap.module.js";
+import { EstimationModule } from "../ai-analysis/estimation/estimation.module.js";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
 
@@ -32,6 +33,7 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     forwardRef(() => LegacyFlowModule),
     forwardRef(() => DocumentationGapModule),
     UiMcpModule,
+    EstimationModule,
   ],
   controllers: [ProjectsController, ProjectIntegrationController],
   providers: [
