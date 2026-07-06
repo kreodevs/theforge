@@ -1,12 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
+  CLI_FRONTEND_STACK_LABEL,
   detectSddConflicts,
   extractProjectGovernanceFacts,
   extractProjectTitle,
   extractTaskCheckboxes,
   inferStacks,
   isValidBlueprintModulePath,
+  resolveAuthoritativeOrm,
+  resolveAuthoritativePackageManager,
   suggestAgentGovernanceArtifacts,
 } from "./suggest-agent-governance-artifacts.js";
 import { parseAgentGovernanceResponse } from "./agent-governance.util.js";
@@ -224,6 +227,31 @@ Despliegue en Kubernetes con Helm charts e ingress.
     assert.ok(result.suggestedSkills.some((s) => s.id === "deploy-kubernetes"));
     assert.equal(result.suggestedSkills.some((s) => s.id === "deploy-docker"), false);
   });
+
+  it("excluye deploy-kubernetes cuando §7 es Railway y K8s está negado (PELUDO)", () => {
+    const result = suggestAgentGovernanceArtifacts({
+      mddMarkdown: `
+# Peludo
+## 2. Arquitectura y Stack
+Backend Fastify. Monorepo apps/backend packages/shared-types.
+## 7. Infraestructura
+| **Hosting** | Railway / Fly.io | — | Despliegue single-container, sin gestión de K8s |
+Producción en Railway (single service); sin Kubernetes en v1 para simplificar operaciones.
+\`\`\`json
+{ "deployment": { "orchestrator": "Railway", "provider": "Railway" } }
+\`\`\`
+`,
+      userStoriesMarkdown: "- Kubernetes (v2).\n",
+      infraMarkdown: `
+\`\`\`dockerfile
+RUN yarn build
+\`\`\`
+`,
+      complexity: "HIGH",
+    });
+    assert.equal(result.archetypes.includes("kubernetes"), false);
+    assert.equal(result.suggestedSkills.some((s) => s.id === "deploy-kubernetes"), false);
+  });
 });
 
 describe("extractProjectTitle", () => {
@@ -422,16 +450,48 @@ Backend NestJS.
     assert.equal(facts.npmScripts.some((s) => s === "npm run 1"), false);
   });
 
-  it("nombra skill de dominio desde carpeta Blueprint", () => {
+  it("inferNpmScripts ignora RUN yarn del Dockerfile e infiere pnpm en monorepo", () => {
+    const facts = extractProjectGovernanceFacts({
+      mddMarkdown: `
+## 2. Arquitectura y Stack
+Monorepo pnpm workspace. apps/backend packages/shared-types.
+`,
+      infraMarkdown: `
+\`\`\`dockerfile
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
+RUN yarn build
+\`\`\`
+`,
+      complexity: "HIGH",
+    });
+    assert.equal(facts.npmScripts.some((s) => s.includes("yarn build")), false);
+    assert.ok(facts.npmScripts.some((s) => s.startsWith("pnpm")));
+  });
+
+  it("nombra skill de dominio desde módulos Blueprint (fallback project-package)", () => {
     const result = suggestAgentGovernanceArtifacts({
       mddMarkdown: "# KMS\nBackend NestJS monorepo.",
       blueprintMarkdown: "- kms-backend/src/\n- packages/kms-shared/\n",
+      projectName: "Key Management Service",
       complexity: "HIGH",
     });
     const domain = result.suggestedSkills.find((s) => s.id === "domain-package");
     assert.ok(domain);
     assert.equal(domain.folder, "kms-backend");
     assert.match(domain.path, /kms-backend/);
+  });
+
+  it("domain-package usa project-package sin módulos en Blueprint", () => {
+    const result = suggestAgentGovernanceArtifacts({
+      mddMarkdown: "# KMS\nBackend NestJS.",
+      projectName: "key-management-service",
+      complexity: "HIGH",
+    });
+    const domain = result.suggestedSkills.find((s) => s.id === "domain-package");
+    assert.ok(domain);
+    assert.equal(domain.folder, "project-package");
+    assert.match(domain.path, /project-package/);
   });
 
   it("extrae checkboxes concretos para AGENT-PROMPT y PROMPT-INICIAL", () => {
@@ -514,6 +574,60 @@ describe("parseAgentGovernanceResponse + sugerencias", () => {
   });
 });
 
+describe("resolveAuthoritativeOrm", () => {
+  it("resuelve typeorm desde manifest §7 cuando §2/§3 no lo mencionan", () => {
+    const mdd = `
+## 2. Arquitectura y Stack
+Backend Fastify. Monorepo apps/backend packages/shared-types.
+
+## 3. Modelo de Datos
+PostgreSQL multi-tenant.
+
+## 7. Infraestructura
+\`\`\`json
+{ "orm": "typeorm", "deployment": { "orchestrator": "Railway" } }
+\`\`\`
+`;
+    assert.equal(resolveAuthoritativeOrm(mdd), "typeorm");
+  });
+
+  it("resuelve typeorm desde stack.backend.orm anidado en manifest §7", () => {
+    const mdd = `
+## 2. Stack
+NestJS + PostgreSQL.
+
+## 7. Infraestructura
+\`\`\`json
+{
+  "stack": {
+    "backend": { "framework": "NestJS", "orm": "TypeORM" }
+  }
+}
+\`\`\`
+`;
+    assert.equal(resolveAuthoritativeOrm(mdd), "typeorm");
+  });
+});
+
+describe("resolveAuthoritativePackageManager", () => {
+  it("infiere pnpm desde monorepo apps/packages sin pnpm explícito en §2", () => {
+    const mdd = `
+## 2. Arquitectura y Stack
+Backend Fastify. Monorepo apps/backend packages/shared-types.
+`;
+    assert.equal(resolveAuthoritativePackageManager(mdd), "pnpm");
+  });
+
+  it("prioriza pnpm en overlay AGENTS cuando §2 no lo declara", () => {
+    const mdd = `
+## 2. Arquitectura y Stack
+Backend Fastify. Monorepo apps/backend packages/shared-types.
+`;
+    const agents = "# AGENTS\n\nUsar pnpm install y pnpm build en CI.\n";
+    assert.equal(resolveAuthoritativePackageManager(mdd, agents), "pnpm");
+  });
+});
+
 describe("detectSddConflicts", () => {
   it("no marca conflicto TypeORM/Prisma cuando MDD §2 declara solo TypeORM", () => {
     const text = `
@@ -547,5 +661,75 @@ Backend NestJS con TypeORM.
 - Schemas en Prisma para users y sessions
 `;
     assert.deepEqual(detectSddConflicts(text), []);
+  });
+
+  it("resuelve Bull+Redis del MDD §2 frente a RabbitMQ/Kafka en blueprint", () => {
+    const text = `
+# MDD
+## 2. Arquitectura y Stack
+Colas BullMQ con Redis para jobs asíncronos.
+
+## Blueprint
+- Worker RabbitMQ consumer (plantilla legacy)
+- Integración Kafka opcional en diagrama
+`;
+    const conflicts = detectSddConflicts(text);
+    assert.equal(conflicts.length, 1);
+    assert.match(conflicts[0]!, /BullMQ \+ Redis/i);
+    assert.doesNotMatch(conflicts[0]!, /Kafka vs RabbitMQ/i);
+  });
+
+  it("marca conflicto cuando MDD §2 declara RabbitMQ y tasks mencionan BullMQ", () => {
+    const text = `
+# MDD
+## 2. Arquitectura y Stack
+Mensajería con RabbitMQ para workers asíncronos.
+
+## Tasks
+- [ ] Configurar cola BullMQ para procesamiento de eventos
+`;
+    const conflicts = detectSddConflicts(text);
+    assert.equal(conflicts.length, 1);
+    assert.match(conflicts[0]!, /RabbitMQ del MDD/i);
+    assert.match(conflicts[0]!, /BullMQ/i);
+  });
+
+  it("inferStacks devuelve CLI cuando MDD excluye UI web", () => {
+    const stacks = inferStacks(
+      "Blueprint menciona React post-MVP.\nDashboard React con design system.",
+      {
+        authoritativeUiText:
+          "MVP API-only sin dashboard. CLI-only para operaciones; panel web fuera de MVP.",
+      },
+    );
+    assert.equal(stacks.frontend, CLI_FRONTEND_STACK_LABEL);
+    assert.equal(stacks.mobile, undefined);
+  });
+
+  it("prioriza Fastify+Railway de MDD §2 sobre FastAPI/Kubernetes en Blueprint", () => {
+    const mdd = `
+## 2. Arquitectura y Stack
+Backend Fastify + Node.js. Deploy en Railway con Docker.
+
+## 3. Modelo de Datos
+PostgreSQL multi-tenant.
+`;
+    const blueprint = "Stack alterno: FastAPI en Kubernetes para microservicios.";
+    const stacks = inferStacks(`${mdd}\n${blueprint}`, {
+      authoritativeStackText: mdd,
+    });
+    assert.equal(stacks.backend, "Fastify");
+    assert.equal(stacks.infra, "Railway");
+
+    const facts = extractProjectGovernanceFacts({
+      mddMarkdown: mdd,
+      blueprintMarkdown: blueprint,
+      complexity: "MEDIUM",
+    });
+    assert.equal(facts.backendStack, "Fastify");
+    assert.equal(facts.infraStack, "Railway");
+
+    const conflicts = detectSddConflicts(`${mdd}\n${blueprint}`);
+    assert.ok(conflicts.some((c) => /Stack backend.*Fastify/i.test(c)));
   });
 });

@@ -113,3 +113,24 @@ export async function enrichBlueprintWithUiDesignSystem(
 
   return existingBlueprint.trimEnd() + "\n" + lines.join("\n") + "\n";
 }
+
+const NO_UI_SURFACE_PATTERN =
+  /(?:sin|no)\s+(?:dashboard|frontend|ui|interfaz|pantalla|panel\s+web)|fuera\s+del\s+alcance[^\n]{0,60}(?:mvp|panel\s+web)|solo\s+APIs?\s+y\s+CLI|api[\s-]?only|mvp\s+api|cli[\s-]?only|solo\s+api|backend\s+only/i;
+
+function mddExcludesUiSurface(mddContent: string): boolean {
+  const sec1 = mddContent.match(/##\s*1\.[^\n]*\n([\s\S]*?)(?=\n##\s|\n#\s|$)/i)?.[1] ?? "";
+  const sec2 = mddContent.match(/##\s*2\.[^\n]*\n([\s\S]*?)(?=\n##\s|\n#\s|$)/i)?.[1] ?? "";
+  return NO_UI_SURFACE_PATTERN.test(`${sec1}\n${sec2}`);
+}
+
+/** Califica menciones UI en blueprint ya generado cuando el MDD excluye panel web. */
+export function qualifyBlueprintPostMvpUiMentions(
+  mddContent: string,
+  existingBlueprint: string,
+): string {
+  if (!mddExcludesUiSurface(mddContent)) return existingBlueprint;
+  return existingBlueprint.replace(
+    /Todos los formularios deben usar \*\*React Hook Form\*\*/gi,
+    "Post-MVP panel web: formularios con **React Hook Form** + **Zod**; schemas derivados del contrato de datos",
+  );
+}

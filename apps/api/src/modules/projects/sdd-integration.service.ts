@@ -144,7 +144,7 @@ export class SddIntegrationService {
   /** Payload SDD estructurado para webhook Hermes (hashes completos, sin truncar). */
   buildHermesSddPayload(project: ProjectWithStages) {
     const unified = buildUnifiedHandoff(project, loadConsumptionGuideMarkdown());
-    return buildHermesHandoffPayload(unified);
+    return buildHermesHandoffPayload(unified, project);
   }
 
   async getExportBundle(projectId: string): Promise<{

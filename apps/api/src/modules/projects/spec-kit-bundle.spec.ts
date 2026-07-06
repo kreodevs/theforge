@@ -73,6 +73,83 @@ describe("spec-kit-bundle", () => {
   it("specKitFeatureDir usa ordinal", () => {
     assert.equal(specKitFeatureDir(2, "Foo"), "specs/002-foo");
   });
+
+  it("quickstart.md incluye arranque local y smoke desde tasks", () => {
+    const files = buildSpecKitBundleFiles({
+      projectName: "Peludo",
+      mddContent: "## 2. Arquitectura y Stack\nBackend Fastify. Deploy Railway.\nGET /health",
+      blueprintContent: "## Plan\nUsar pnpm dev.",
+      apiContractsContent: "### Health\nGET /api/v1/health — readiness",
+      tasksContent:
+        "## US-1 Auth\n**Checkpoint**: login smoke\n- [ ] [P] Implementar POST /auth/login\n- [ ] Verificar GET /health",
+      specContent: "# Spec\nCriterio de éxito: login funcional.",
+    });
+    const quickstart = files.find((f) => f.path.endsWith("quickstart.md"));
+    assert.ok(quickstart);
+    assert.match(quickstart!.content, /## Arranque local/);
+    assert.match(quickstart!.content, /pnpm install/);
+    assert.match(quickstart!.content, /Checkpoint: login smoke/);
+    assert.match(quickstart!.content, /\/api\/v1\/health/);
+    assert.doesNotMatch(quickstart!.content, /GET `\/health`/);
+    assert.match(quickstart!.content, /## Referencias/);
+    assert.ok(quickstart!.content.split("\n").length > 12);
+  });
+
+  it("quickstart.md limita checkpoints y limpia marcadores **", () => {
+    const checkpoints = Array.from({ length: 20 }, (_, i) => {
+      const n = i + 1;
+      const label =
+        n === 1
+          ? "Auth JWT válido"
+          : n === 5
+            ? "GET /api/v1/health responde 200"
+            : `Flujo secundario ${n}`;
+      return `## US-${n}\n**Checkpoint**: ${label}\n- [ ] tarea ${n}`;
+    }).join("\n");
+    const files = buildSpecKitBundleFiles({
+      projectName: "Peludo",
+      mddContent: "## 2. Stack\nMonorepo pnpm.",
+      tasksContent: checkpoints,
+    });
+    const quickstart = files.find((f) => f.path.endsWith("quickstart.md"))!.content;
+    const smokeLines = quickstart.split("\n").filter((l) => l.startsWith("- [ ] Checkpoint:"));
+    assert.ok(smokeLines.length >= 2);
+    assert.ok(smokeLines.length <= 12);
+    assert.match(quickstart, /Checkpoint: Auth JWT válido/);
+    assert.match(quickstart, /Checkpoint: GET \/api\/v1\/health responde 200/);
+    assert.doesNotMatch(quickstart, /Checkpoint:\s*\*\*/);
+  });
+
+  it("quickstart.md usa pnpm por defecto si MDD §2 no menciona gestor", () => {
+    const files = buildSpecKitBundleFiles({
+      projectName: "Peludo",
+      mddContent: "## 2. Stack\nBackend Fastify en Railway.",
+      tasksContent: "**Checkpoint:** smoke MVP\n- [ ] init",
+    });
+    const quickstart = files.find((f) => f.path.endsWith("quickstart.md"))!.content;
+    assert.match(quickstart, /pnpm install/);
+    assert.match(quickstart, /Checkpoint: smoke MVP/);
+    assert.doesNotMatch(quickstart, /Checkpoint:\s*\*/);
+  });
+
+  it("quickstart.md excluye encabezados de spec y notas de ambigüedad", () => {
+    const files = buildSpecKitBundleFiles({
+      projectName: "Peludo",
+      mddContent: "## 2. Stack\nFastify Railway.",
+      tasksContent:
+        "- [ ] Suite de pruebas sintéticas** por agente (50 casos) y modo sombra para validar cambios.\n- [ ] [P] Implementar login",
+      specContent: `# Spec
+3. Criterios de éxito
+- Criterio de éxito: login funcional.
+- (No se identifican marcadores de ambigüedad en ninguna sección.)*
+`,
+    });
+    const quickstart = files.find((f) => f.path.endsWith("quickstart.md"))!.content;
+    assert.doesNotMatch(quickstart, /3\. Criterios de éxito/);
+    assert.doesNotMatch(quickstart, /ambigu/i);
+    assert.doesNotMatch(quickstart, /Suite de pruebas sintéticas/);
+    assert.match(quickstart, /login funcional/);
+  });
 });
 
 describe("tasks-parse", () => {

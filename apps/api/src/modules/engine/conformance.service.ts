@@ -16,6 +16,24 @@ export interface ApiConformanceResult {
   extraInApi: string[];
 }
 
+/** Feedback estructurado para regenerar Contratos API alineados con MDD §4. */
+export function buildApiConformanceGapFeedback(check: ApiConformanceResult): string {
+  const parts: string[] = [];
+  if (check.missingInApi.length > 0) {
+    parts.push(
+      "ENDPOINTS DEL MDD §4 QUE FALTAN EN EL DOCUMENTO (incorpora cada uno en tabla | Método | Ruta | … con el método exacto):\n" +
+        check.missingInApi.map((ep) => `- ${ep}`).join("\n"),
+    );
+  }
+  if (check.extraInApi.length > 0) {
+    parts.push(
+      "ENDPOINTS EN EL DOC QUE NO ESTÁN EN MDD §4 (elimínalos; no documentes prefijos base como GET /api/v1):\n" +
+        check.extraInApi.map((ep) => `- ${ep}`).join("\n"),
+    );
+  }
+  return parts.join("\n\n");
+}
+
 /** Extrae el cuerpo de la primera sección cuyo título coincide con el patrón (hasta el siguiente ##). */
 function extractSection(md: string, pattern: RegExp): string {
   const content = (md || "").trim();
@@ -191,16 +209,24 @@ const HTTP_METHODS = "GET|POST|PUT|PATCH|DELETE";
 const API_PATH_CAPTURE = String.raw`(\`[^\`]+\`|\/(?:[\w\-{}:]+(?:\/[\w\-{}:]*)*))`;
 
 /** Extrae métodos + rutas (GET /api/..., POST /auth/...) de un bloque. Acepta líneas sueltas y filas de tabla Markdown. */
+/** Prefijo base (/api/v1) mencionado en prosa — no es un endpoint documentable. */
+function isBareApiPrefix(path: string): boolean {
+  return /^\/api\/v\d+$/i.test(path.replace(/\/$/, ""));
+}
+
+/** Extrae métodos + rutas (GET /api/..., POST /auth/...) de un bloque. Acepta líneas sueltas y filas de tabla Markdown. */
 export function extractEndpoints(text: string): Array<{ method: string; path: string }> {
   const endpoints: Array<{ method: string; path: string }> = [];
   const seen = new Set<string>();
   const add = (method: string, path: string) => {
     const pathClean = path.replace(/`/g, "").trim();
     if (!pathClean.startsWith("/")) return;
+    if (isBareApiPrefix(pathClean)) return;
     const normalized = normEp({ method, path: pathClean });
     if (seen.has(normalized)) return;
     seen.add(normalized);
     endpoints.push({ method: method.toUpperCase(), path: pathClean });
+
   };
   const lines = text.split(/\r?\n/);
   for (const line of lines) {
@@ -611,6 +637,16 @@ export function checkApiVsMdd(mddContent: string | null, apiContent: string | nu
   return { ok, missingInApi, extraInApi };
 }
 
+/** Feedback estructurado para regenerar Infra alineada con MDD §7. */
+export function buildInfraConformanceGapFeedback(gaps: string[]): string {
+  if (gaps.length === 0) return "";
+  return (
+    "GAPS DE CONFORMIDAD MDD §7 — incorpora explícitamente en el documento de Infra:\n" +
+    gaps.map((g) => `- ${g}`).join("\n") +
+    "\n\nSi §7 exige CI/CD o despliegue, incluye una sección dedicada (GitHub Actions, pipeline, estrategia de despliegue, etc.)."
+  );
+}
+
 /**
  * Comprueba conformidad del documento de Infra con el MDD (§7 Infraestructura).
  */
@@ -628,13 +664,16 @@ export function checkInfraVsMdd(mddContent: string | null, infraContent: string 
   );
   const infraLower = infraContent.trim().toLowerCase();
   if (section7.length > 80) {
-    if (/\b(env|variable|variable de entorno|\.env)\b/i.test(section7) && !/\b(env|\.env|variable)\b/i.test(infraLower)) {
+    if (/\b(env|variable|variable de entorno|\.env)\b/i.test(section7) && !/\b(env|\.env|variable|entorno)\b/i.test(infraLower)) {
       gaps.push("MDD §7 exige variables de entorno; no se mencionan en el doc de Infra");
     }
     if (/\b(docker|dockerfile|docker-compose)\b/i.test(section7) && !/\b(docker|dockerfile|docker-compose)\b/i.test(infraLower)) {
       gaps.push("MDD §7 exige Docker; no aparece en el doc de Infra");
     }
-    if (/\b(ci\/cd|pipeline|despliegue)\b/i.test(section7) && !/\b(ci|cd|pipeline|deploy)\b/i.test(infraLower)) {
+    if (
+      /\b(ci\/cd|pipeline|despliegue)\b/i.test(section7) &&
+      !/\b(ci|cd|pipeline|deploy|despliegue|desplegar|github actions|gitlab)\b/i.test(infraLower)
+    ) {
       gaps.push("MDD §7 exige CI/CD o despliegue; no aparece en el doc de Infra");
     }
   }

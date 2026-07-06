@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { generateCodebaseDocRequestSchema } from "@theforge/shared-types";
+import { ProjectsService } from "../projects/projects.service.js";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 import { LegacyDeliverablesQueueService } from "./legacy-deliverables-queue.service.js";
 import { ResolveChangeToFilesService } from "./resolve-change-to-files.service.js";
@@ -14,6 +15,7 @@ export class LegacyFlowController {
   constructor(
     private readonly coordinator: LegacyCoordinatorService,
     private readonly legacyDeliverablesQueue: LegacyDeliverablesQueueService,
+    private readonly projects: ProjectsService,
     private readonly resolveChange: ResolveChangeToFilesService,
     private readonly navImpact: CheckNavigationImpactService,
     private readonly legacyTransition: LegacyTransitionService,
@@ -194,6 +196,7 @@ export class LegacyFlowController {
         statusPath: `/projects/${projectId}/legacy/deliverables-jobs/${jobId}`,
       };
     }
+    await this.projects.assertMddDeliveryGateForDeliverables(projectId);
     return this.coordinator.generateDeliverables(projectId, body.stageId);
   }
 

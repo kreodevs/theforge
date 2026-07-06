@@ -3,6 +3,7 @@ import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
   buildGovernanceInstallMap,
   DOCUMENT_PATH_MAP_STATIC,
+  formatDocumentMarkdown,
   formatDocumentPathMapTable,
   GOVERNANCE_DOCS_PREFIX,
   migrateGovernancePath,
@@ -19,11 +20,25 @@ import {
 } from "./agent-governance-catalog.js";
 import {
   buildArtifactTemplateContext,
+  CLI_FRONTEND_STACK_LABEL,
   extractProjectGovernanceFacts,
   type AgentGovernanceSuggestions,
   type ProjectGovernanceFacts,
   type SuggestAgentGovernanceInput,
 } from "./suggest-agent-governance-artifacts.js";
+import {
+  alignDeliverableMarkdownWithMddSecurity,
+  detectTruncatedMddMarkdown,
+  ensurePostMvpUiSurfaceBanner,
+  sanitizeMddForExport,
+} from "../../ai-analysis/utils/mdd-sanitize.js";
+import {
+  alignTasksWithMddConflicts,
+  finalizeInfraMarkdownForExport,
+  finalizeUserStoriesMarkdownForExport,
+} from "../../documentation-gap/sdd-align-at-persist.util.js";
+import { injectProposedComponentDiagramIntoSection2 } from "../../ai-analysis/utils/mdd-component-diagram.util.js";
+import { qualifyBlueprintPostMvpUiMentions } from "../../engine/blueprint-enrich-ui-system.js";
 
 const logger = new Logger("AgentGovernanceUtil");
 
@@ -696,7 +711,69 @@ function formatStackSection(facts: ProjectGovernanceFacts): string {
   return lines.length > 0 ? lines.join("\n") : "- Deriva el stack del MDD §2 y del Blueprint.";
 }
 
+function buildSddConflictTable(facts: ProjectGovernanceFacts): string {
+  const rows: Array<{ topic: string; decision: string }> = [];
+  const seen = new Set<string>();
+
+  const addRow = (topic: string, decision: string) => {
+    const key = topic.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push({ topic, decision });
+  };
+
+  for (const c of facts.sddConflicts) {
+    const colon = c.indexOf(":");
+    if (colon > 0) {
+      addRow(c.slice(0, colon).trim(), c.slice(colon + 1).trim());
+    } else {
+      addRow("Conflicto SDD", c);
+    }
+  }
+
+  if (facts.frontendStack?.startsWith("CLI")) {
+    addRow(
+      "Frontend",
+      `MVP: **API REST + CLI** (${CLI_FRONTEND_STACK_LABEL}). Panel web React **fuera de alcance** hasta post-MVP.`,
+    );
+  }
+  if (facts.sddConflicts.some((c) => /BullMQ|Redis|mensajer/i.test(c))) {
+    addRow(
+      "Messaging / outbox",
+      facts.sddConflicts.some((c) => /RabbitMQ del MDD/i.test(c))
+        ? "MDD §2: RabbitMQ como broker. No BullMQ/Bull en workers ni tasks del MVP."
+        : "MDD §2: Bull + Redis para colas de workers. Publicación outbox → **Redis Pub/Sub**. No Kafka ni RabbitMQ en MVP.",
+    );
+  }
+  if (facts.sddConflicts.some((c) => /JWT/i.test(c))) {
+    addRow(
+      "JWT",
+      "**RS256** con par de claves `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` (PEM). `JWT_SECRET` (HS256) quedó **deprecado**.",
+    );
+  }
+  if (facts.sddConflicts.some((c) => /bcrypt|Argon2|Hashing/i.test(c))) {
+    addRow(
+      "Hashing bootstrap",
+      "**bcrypt** (factor 12) para Super Admin de bootstrap; coherente con §6 y Tasks. No Argon2id en manifest salvo que §6 lo exija.",
+    );
+  }
+
+  if (rows.length === 0) return "";
+
+  const lines = [
+    "## Resolución de conflictos SDD\n",
+    "Decisiones acordadas al alinear gobernanza con el MDD. **Prioriza siempre el MDD** ante nuevas contradicciones.\n",
+    "| Tema | Decisión |",
+    "|------|----------|",
+    ...rows.map((r) => `| **${r.topic}** | ${r.decision} |`),
+    "",
+  ];
+  return lines.join("\n");
+}
+
 function buildSddConflictSection(facts: ProjectGovernanceFacts): string {
+  const table = buildSddConflictTable(facts);
+  if (table.trim()) return `${table}\n`;
   if (facts.sddConflicts.length === 0) return "";
   const lines = [
     "## Resolución de conflictos SDD\n\n",
@@ -923,34 +1000,85 @@ function buildPromptInicialMd(
   );
 }
 
-function buildProgresoMd(facts: ProjectGovernanceFacts, tasksMarkdown?: string | null): string {
+function buildProgresoMd(
+  facts: ProjectGovernanceFacts,
+  _tasksMarkdown?: string | null,
+  mddMarkdown?: string | null,
+): string {
+  const conflictTable = buildSddConflictTable(facts);
   const lines = [
     "# Progreso de implementación\n\n",
-    "Checklist derivado de **Tasks** del proyecto. Marca `[x]` al completar cada ítem.\n\n",
-    "## Referencias\n\n",
-    "- Tasks completo: `docs/sdd/tasks.md`\n",
-    "- Blueprint: `docs/sdd/blueprint.md`\n",
-    "- MDD: `docs/sdd/mdd.md`\n\n",
+    "Registro **ligero** de avance del **" +
+    facts.projectTitle +
+    "**. El checklist canónico vive en **specs/NNN-slug/tasks.md** (espejo: `docs/sdd/tasks.md`).\n\n",
+    "Marca `[x]` aquí solo como atajo rápido; al cerrar ítems, sincroniza con el archivo canónico de tasks.\n\n",
   ];
 
-  const tasks = (tasksMarkdown ?? "").trim();
-  if (tasks.length > 0) {
-    lines.push("## Checklist (desde Tasks)\n\n", tasks, "\n");
-  } else if (facts.taskHeadings.length > 0) {
-    lines.push("## Checklist\n\n");
-    for (const h of facts.taskHeadings) lines.push(`- [ ] ${h}\n`);
-    lines.push("\n");
-  } else {
+  if (mddMarkdown?.trim() && detectTruncatedMddMarkdown(mddMarkdown)) {
     lines.push(
-      "## Checklist\n\n",
-      "- [ ] Revisar MDD y Blueprint\n",
-      "- [ ] Configurar entorno local según §2 del MDD\n",
-      "- [ ] Implementar primera tarea de `docs/sdd/tasks.md`\n\n",
+      "> **⚠️ MDD incompleto:** el export detectó truncamiento (p. ej. JSON sin cerrar en §4). " +
+        "Regenera el MDD en The Forge antes de implementar contratos o infra.\n\n",
     );
   }
 
-  lines.push("## Notas\n\n", "_Actualiza este archivo al cerrar tareas o hitos._\n");
+  lines.push(
+    "## Referencias\n\n",
+    "| Documento | Canónico (spec-kit) | Espejo (gobernanza) |\n",
+    "|-----------|---------------------|---------------------|\n",
+    "| MDD / Constitución | `.specify/memory/constitution.md` | `docs/sdd/mdd.md` |\n",
+    "| Blueprint / Plan | `specs/NNN-slug/plan.md` | `docs/sdd/blueprint.md` |\n",
+    "| Tasks | `specs/NNN-slug/tasks.md` | `docs/sdd/tasks.md` |\n",
+    "| Contratos API | `specs/NNN-slug/contracts/api-contracts.md` | `docs/sdd/api-contracts.md` |\n\n",
+  );
+
+  if (conflictTable.trim()) {
+    lines.push(conflictTable.trim(), "\n\n");
+  }
+
+  lines.push("## Checklist rápido (primeras tareas abiertas)\n\n", buildTasksPreview(facts), "\n");
   return lines.join("");
+}
+
+const GOVERNANCE_LEGACY_DOC_LINK_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\]\(\.\/MDD\.md\)/gi, "](docs/sdd/mdd.md)"],
+  [/\]\(\.\/mdd\.md\)/gi, "](docs/sdd/mdd.md)"],
+  [/\]\(\.\/blueprint\.md\)/gi, "](docs/sdd/blueprint.md)"],
+  [/\]\(\.\/tasks\.md\)/gi, "](docs/sdd/tasks.md)"],
+  [/\]\(\.\/spec\.md\)/gi, "](docs/sdd/spec.md)"],
+  [/`\.\/MDD\.md`/gi, "`docs/sdd/mdd.md`"],
+  [/`\.\/mdd\.md`/gi, "`docs/sdd/mdd.md`"],
+  [/`\.\/blueprint\.md`/gi, "`docs/sdd/blueprint.md`"],
+  [/`\.\/tasks\.md`/gi, "`docs/sdd/tasks.md`"],
+  [/`MDD\.md`/gi, "`docs/sdd/mdd.md`"],
+  [/(?<![/`\w])blueprint\.md(?![/`\w])/gi, "docs/sdd/blueprint.md"],
+  [/(?<![/`\w])Blueprint\.md(?![/`\w])/gi, "docs/sdd/blueprint.md"],
+  [/(?<![/`\w])Architecture\.md(?![/`\w])/gi, "docs/sdd/architecture.md"],
+  [/(?<![/`\w])architecture\.md(?![/`\w])/gi, "docs/sdd/architecture.md"],
+  [/`Blueprint\.md`/gi, "`docs/sdd/blueprint.md`"],
+  [/`Architecture\.md`/gi, "`docs/sdd/architecture.md`"],
+];
+
+/** Corrige enlaces legacy (`./MDD.md`, `MDD.md`) a rutas `docs/sdd/` y spec-kit. */
+function fixGovernanceRelativeDocPaths(content: string, featureDir?: string): string {
+  let out = content;
+  for (const [pattern, replacement] of GOVERNANCE_LEGACY_DOC_LINK_REPLACEMENTS) {
+    out = out.replace(pattern, replacement);
+  }
+  const tasksCanonical = featureDir?.trim()
+    ? `${featureDir.trim()}/tasks.md`
+    : "specs/NNN-slug/tasks.md";
+  out = out.replace(/\]\(\.\/tasks\.md\)/gi, `](${tasksCanonical})`);
+  out = out.replace(/`tasks\.md`/gi, `\`${tasksCanonical}\``);
+  return out;
+}
+
+function isLlmBoilerplateAgentOnboarding(content: string): boolean {
+  return (
+    /Bienvenido al proyecto/i.test(content) ||
+    /Blueprint\.md \(Blueprint/i.test(content) ||
+    /Architecture\.md \(Arquitectura/i.test(content) ||
+    /skills\/kms\/SKILL\.md/i.test(content)
+  );
 }
 
 function buildCursorAgentMd(role: string, description: string, loadPaths: string[]): string {
@@ -1041,6 +1169,16 @@ function isStaleProjectFactsSection(content: string, facts: ProjectGovernanceFac
   if (facts.blueprintModules.length > 0 && /\*\*Módulos Blueprint:\*\*/i.test(content)) {
     const hasModule = facts.blueprintModules.some((m) => content.includes(m));
     if (!hasModule) return true;
+  }
+  if (facts.frontendStack && !content.includes(facts.frontendStack)) return true;
+  if (
+    facts.frontendStack?.startsWith("CLI") &&
+    !/\*\*Frontend:\*\*\s*CLI/i.test(content)
+  ) {
+    return true;
+  }
+  if (facts.backendStack && !new RegExp(`\\*\\*Backend:\\*\\*\\s*${facts.backendStack}`, "i").test(content)) {
+    return true;
   }
   return false;
 }
@@ -1181,16 +1319,60 @@ export function appendProjectDeliverablesToScaffold(
   }
   deduplicateMcpJsonExample(fileMap);
 
+  const rawMdd = deliverables.mddMarkdown?.trim() ?? "";
+  const sanitizedMdd = rawMdd
+    ? injectProposedComponentDiagramIntoSection2(sanitizeMddForExport(rawMdd))
+    : "";
+
+  const governanceCorpus = fileMap["AGENTS.md"]?.trim() ?? "";
+  const infraExportCorpus = [
+    governanceCorpus,
+    deliverables.tasksMarkdown,
+    deliverables.userStoriesMarkdown,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+  const infraExportOpts = infraExportCorpus
+    ? { extraCorpus: infraExportCorpus, packageManagerCorpus: infraExportCorpus }
+    : undefined;
+
   const written: string[] = [];
   const skipped: string[] = [];
   for (const { key, path } of SDD_EXPORT_ENTRIES) {
-    const content = deliverables[key]?.trim();
-    if (!content) {
+    let content = deliverables[key]?.trim();
+    if (!content && key !== "mddMarkdown") {
       skipped.push(path);
       continue;
     }
+    if (key === "mddMarkdown") {
+      if (!sanitizedMdd) {
+        skipped.push(path);
+        continue;
+      }
+      content = sanitizedMdd;
+    } else {
+      if (key === "uxUiGuideMarkdown" && content) {
+        content = formatDocumentMarkdown(content);
+      }
+      if (sanitizedMdd) {
+        if (key === "tasksMarkdown" && content) {
+          content = alignTasksWithMddConflicts(sanitizedMdd, content);
+        } else if (key === "userStoriesMarkdown" && content) {
+          content = finalizeUserStoriesMarkdownForExport(sanitizedMdd, content);
+        } else if (key === "infraMarkdown" && content) {
+          content = finalizeInfraMarkdownForExport(sanitizedMdd, content, infraExportOpts);
+        } else if (key === "architectureMarkdown" && content) {
+          content = alignDeliverableMarkdownWithMddSecurity(sanitizedMdd, content);
+        } else if (key === "uxUiGuideMarkdown" && content) {
+          content = ensurePostMvpUiSurfaceBanner(sanitizedMdd, content);
+        } else if (key === "blueprintMarkdown") {
+          content = qualifyBlueprintPostMvpUiMentions(sanitizedMdd, content!);
+        }
+      }
+    }
     const hadExisting = Boolean(fileMap[path]?.trim());
-    fileMap[path] = content;
+    fileMap[path] = content!;
     written.push(hadExisting ? `${path} (overwrite)` : path);
   }
   logger.debug(
@@ -1346,6 +1528,7 @@ const FALLBACK_BY_PATH: Record<string, FallbackFactory> = {
             hasUiSurface: false,
           },
       input?.tasksMarkdown,
+      input?.mddMarkdown,
     ),
   [`${GOVERNANCE_DOCS_PREFIX}agent-onboarding.md`]: (_c, _s, input) => {
     const base = defaultAgentOnboarding();
@@ -1521,26 +1704,77 @@ function enrichGovernanceArtifacts(
     }
   }
   const agentPromptPath = AGENT_PROMPT_PATH;
+  const promptPath = "PROMPT-INICIAL.md";
+  const progresoPath = "docs/sdd/PROGRESO.md";
+  const tasksMd = governanceInput.tasksMarkdown?.trim();
+  if (tasksMd) {
+    fileMap[promptPath] = buildPromptInicialMd(facts, complexity, featureDir);
+    fileMap[agentPromptPath] = buildAgentPromptMd(facts, complexity);
+    fileMap[progresoPath] = buildProgresoMd(
+      facts,
+      governanceInput.tasksMarkdown,
+      governanceInput.mddMarkdown,
+    );
+  } else {
+    if (
+      shouldReplaceGovernanceArtifact(
+        fileMap[agentPromptPath],
+        facts,
+        overlayOptions?.forceFreshOverlay === true,
+      )
+    ) {
+      fileMap[agentPromptPath] = buildAgentPromptMd(facts, complexity);
+    }
+    if (
+      shouldReplaceGovernanceArtifact(fileMap[promptPath], facts, overlayOptions?.forceFreshOverlay === true)
+    ) {
+      fileMap[promptPath] = buildPromptInicialMd(facts, complexity, featureDir);
+    }
+    if (
+      shouldReplaceGovernanceArtifact(fileMap[progresoPath], facts, overlayOptions?.forceFreshOverlay === true)
+    ) {
+      fileMap[progresoPath] = buildProgresoMd(
+        facts,
+        governanceInput.tasksMarkdown,
+        governanceInput.mddMarkdown,
+      );
+    }
+  }
+  if (facts.projectId || facts.stageId) {
+    fileMap[THEFORGE_LINK_PATH] = defaultTheforgeLinkMd(facts);
+  }
+  const onboardingPath = `${GOVERNANCE_DOCS_PREFIX}agent-onboarding.md`;
+  const onboardingExisting = fileMap[onboardingPath];
   if (
     shouldReplaceGovernanceArtifact(
-      fileMap[agentPromptPath],
+      onboardingExisting,
       facts,
       overlayOptions?.forceFreshOverlay === true,
-    )
+    ) ||
+    isLlmBoilerplateAgentOnboarding(onboardingExisting ?? "")
   ) {
-    fileMap[agentPromptPath] = buildAgentPromptMd(facts, complexity);
+    fileMap[onboardingPath] = overlayProjectFacts(defaultAgentOnboarding(), facts, overlayOpts);
   }
-  const promptPath = "PROMPT-INICIAL.md";
+  const comoUsarPath = `${GOVERNANCE_DOCS_PREFIX}COMO-USAR-GOBERNANZA-IA.md`;
+  const comoUsarExisting = fileMap[comoUsarPath];
   if (
-    shouldReplaceGovernanceArtifact(fileMap[promptPath], facts, overlayOptions?.forceFreshOverlay === true)
+    shouldReplaceGovernanceArtifact(
+      comoUsarExisting,
+      facts,
+      overlayOptions?.forceFreshOverlay === true,
+    ) ||
+    (facts.sddConflicts.length > 0 && !/## Hechos del proyecto \(/i.test(comoUsarExisting ?? ""))
   ) {
-    fileMap[promptPath] = buildPromptInicialMd(facts, complexity, featureDir);
+    fileMap[comoUsarPath] = overlayProjectFacts(
+      comoUsarExisting?.trim() ? comoUsarExisting : defaultComoUsarGovernanza(),
+      facts,
+      overlayOpts,
+    );
   }
-  const progresoPath = "docs/sdd/PROGRESO.md";
-  if (
-    shouldReplaceGovernanceArtifact(fileMap[progresoPath], facts, overlayOptions?.forceFreshOverlay === true)
-  ) {
-    fileMap[progresoPath] = buildProgresoMd(facts, governanceInput.tasksMarkdown);
+  for (const [path, content] of Object.entries(fileMap)) {
+    if (content.trim()) {
+      fileMap[path] = fixGovernanceRelativeDocPaths(content, featureDir);
+    }
   }
 }
 
@@ -1759,6 +1993,11 @@ export function reconcileAgentGovernanceScaffold(
   appendSuggestionsToComoUsar(fileMap, suggestions);
   applyCanonicalGovernanceDefaults(fileMap, complexity, suggestions, governanceInput, featureDir);
   ensureAgentsCanonicalSections(fileMap, featureDir);
+  for (const [path, content] of Object.entries(fileMap)) {
+    if (content.trim()) {
+      fileMap[path] = fixGovernanceRelativeDocPaths(content, featureDir);
+    }
+  }
 
   const files = recordToFileEntries(fileMap);
   const paths = files.map((f) => f.path);
