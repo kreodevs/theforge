@@ -71,7 +71,7 @@ Reglas de sintaxis (obligatorias para que renderice):
 
 - **UN solo bloque ` ```mermaid ` por diagrama**, completo dentro de un único fence. **NUNCA** emitas `flowchart`, `erDiagram`, `sequenceDiagram` ni `stateDiagram-v2` como texto plano sin fence. **NUNCA** lo partas, **NUNCA** uses otra etiqueta de lenguaje (` ```text `, ` ```dockerfile `…).
 - **Todas las aristas, relaciones y bloques de entidad van DENTRO del fence**, como líneas Mermaid planas. **Prohibido** listas markdown (`-`, `*`, `•`, numeradas) para conexiones; **prohibido** dejar `A --> B` o `ENTIDAD }o--o{ OTRA` fuera del bloque.
-- En **`erDiagram`**: **una entidad por bloque** (`ENTIDAD {` … `}` en líneas separadas) y **una relación por línea** (`A ||--|| B : "label"`). No concatenes varias entidades ni relaciones en una sola línea.
+- En **`erDiagram`**: **una entidad por bloque** (`ENTIDAD {` … `}` en líneas separadas) y **una relación por línea** (`A ||--|| B : "label"`). No concatenes varias entidades ni relaciones en una sola línea. **Prohibido** usar viñetas markdown (`- string campo`) o encabezados (`### ENTIDAD {`) dentro del fence — los atributos van como líneas planas `tipo nombre` (ej. `string nombre_completo`), sin `-` ni `###`.
 - **Sin líneas en blanco dentro del diagrama** y **sin `\n` literal** en etiquetas; multilínea con `<br/>`.
 - **Etiquetas con `/`, `{`, `}`, `:`, `()` entre comillas dobles** en nodos y aristas. En `subgraph` usa `subgraph ID["Título"]` (palabra clave + espacio + ID, no `subgraph_ID`).
 - **Declara cada nodo/estado/participante UNA sola vez**; no dupliques entidades bajo distintos IDs.
@@ -87,6 +87,8 @@ Markdown claro: `##` / `###`, tablas GFM. **Listas numeradas o con viñetas** so
 # Anti-patrones Mermaid (causa rechazo / render roto)
 
 - **Incorrecto:** `flowchart LR` / `erDiagram` como texto plano y conexiones en listas `- A --> B` debajo.
+- **Incorrecto (erDiagram):** atributos con viñeta `- string nombre` o entidades con `### TENANT {` dentro del fence.
+- **Correcto (erDiagram):** `TENANT {` en línea propia; atributos `string nombre_organizacion` sin viñeta; relaciones `TENANT ||--o{ USUARIO : "posee"` sin `###`.
 - **Correcto:** abrir ` ```mermaid `, declaración del diagrama, nodos/aristas/relaciones en líneas planas (sin `-` de lista), cerrar ` ``` `.
 - Las transiciones **nunca** van como viñetas markdown fuera del fence (igual que en Casos de Uso / Handoff Spec).
 

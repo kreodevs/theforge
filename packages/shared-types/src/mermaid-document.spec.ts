@@ -10,6 +10,7 @@ import {
   normalizeMermaidDiagramBody,
   quoteFlowchartLabelsWithParens,
   repairErDiagramPkFkCommas,
+  repairErDiagramBrdMarkdownLeaks,
   repairFragmentedSequenceMermaidInDocument,
   repairMermaidFenceClosedWithMermaidTag,
   repairUnfencedMermaidInDocument,
@@ -790,5 +791,134 @@ describe("subgraph flowchart — BRD ecosystem diagram", () => {
   it("does not mangle parenthetical labels inside quoted node text", () => {
     const out = normalizeMermaidDiagramBody(USER_SUBGRAPH_FLOWCHART);
     assert.match(out, /LLM\["Servicio LLM \(OpenRouter\/TokenLab\)"\]/);
+  });
+});
+
+/** erDiagram §4.2 tal como lo emite el LLM en BRD Copiloto (viñetas + ###). */
+const BRD_COPILOTO_ER_DIAGRAM = `erDiagram
+  TENANT {
+    string nombre_organizacion
+    datetime fecha_creacion
+    string estado
+  }
+    USUARIO_AUTORIZADO {
+- string nombre_completo
+- string whatsapp
+- string email
+- string nivel_higiene
+- datetime fecha_registro
+- datetime ultimo_acceso
+
+  }
+
+### CANAL {
+- enum tipo
+- datetime fecha_creacion
+- string estado
+
+  }
+
+### CONVERSACION {
+- datetime fecha_inicio
+- datetime fecha_ultima_actividad
+- string estado
+
+  }
+
+### MENSAJE {
+- text contenido
+- enum rol
+- datetime fecha_creacion
+
+  }
+
+### MEMORIA_PERSISTENTE {
+- json historial_conversaciones
+- json contexto_semantico
+- json preferencias_usuario
+
+  }
+
+### WASDEVICE {
+- string numero_telefono
+- string estado_dispositivo
+
+  }
+
+### MCPPLUGIN {
+- string nombre_sistema
+- string url_servidor
+
+  }
+
+### MCPTOOL {
+- string nombre_herramienta
+- string tipo_permiso
+- string descripcion
+
+  }
+
+### BITACORA {
+- datetime fecha_intento
+- enum tipo_fallo
+- text mensaje_error
+
+  }
+
+### TENANT ||--o{ USUARIO_AUTORIZADO : "posee"
+  TENANT ||--o{ CANAL : "posee"
+  USUARIO_AUTORIZADO ||--o{ CANAL : "inicia"
+  CANAL ||--o{ CONVERSACION : "contiene"
+  CANAL ||--o{ MENSAJE : "almacena"
+  USUARIO_AUTORIZADO ||--o{ MEMORIA_PERSISTENTE : "tiene"
+  TENANT ||--o{ WASDEVICE : "posee"
+  TENANT ||--o{ MCPPLUGIN : "posee"
+  MCPPLUGIN ||--o{ MCPTOOL : "expone"
+  TENANT ||--o{ BITACORA : "genera"`;
+
+describe("erDiagram BRD Copiloto — viñetas y ### dentro del fence", () => {
+  it("repairErDiagramBrdMarkdownLeaks quita viñetas y encabezados markdown", () => {
+    const out = repairErDiagramBrdMarkdownLeaks(BRD_COPILOTO_ER_DIAGRAM);
+    assert.doesNotMatch(out, /^-\s+string/m);
+    assert.doesNotMatch(out, /^###\s+/m);
+    assert.match(out, /USUARIO_AUTORIZADO \{\s*\n\s+string nombre_completo/);
+    assert.match(out, /TENANT \|\|--o\{ USUARIO_AUTORIZADO/);
+  });
+
+  it("stripMarkdownLeakFromMermaidDiagramBody no trunca erDiagram BRD-style", () => {
+    const out = stripMarkdownLeakFromMermaidDiagramBody(BRD_COPILOTO_ER_DIAGRAM);
+    assert.ok(out.length > 500, `expected full diagram, got ${out.length} chars`);
+    assert.match(out, /BITACORA/);
+    assert.match(out, /TENANT \|\|--o\{ BITACORA/);
+  });
+
+  it("normalizeMermaidDiagramBody produce erDiagram completo y renderizable", () => {
+    const out = normalizeMermaidDiagramBody(BRD_COPILOTO_ER_DIAGRAM);
+    assert.ok(out.length > 500);
+    assert.doesNotMatch(out, /^-\s+/m);
+    assert.doesNotMatch(out, /^###\s+/m);
+    assert.match(out, /MCPTOOL \{\s*\n\s+string nombre_herramienta/);
+    assert.deepEqual(validateMermaid(out), []);
+  });
+
+  it("normalizeMermaidInDocument repara erDiagram en documento BRD §4.2", () => {
+    const doc = `### 4.2 Diagrama entidad-relación
+
+\`\`\`mermaid
+${BRD_COPILOTO_ER_DIAGRAM}
+\`\`\`
+
+## 5. Alcance`;
+    const out = normalizeMermaidInDocument(doc);
+    assert.match(out, /```mermaid[\s\S]*TENANT \|\|--o\{ BITACORA[\s\S]*```/);
+    assert.doesNotMatch(out, /^-\s+string/m);
+  });
+
+  it("prepareMermaidDiagramForRender no trunca erDiagram Copiloto", () => {
+    const fenced = "```mermaid\n" + BRD_COPILOTO_ER_DIAGRAM + "\n```";
+    const out = prepareMermaidDiagramForRender(fenced);
+    assert.ok(out.length > 500);
+    assert.match(out, /^erDiagram/);
+    assert.match(out, /MCPPLUGIN \|\|--o\{ MCPTOOL/);
   });
 });
