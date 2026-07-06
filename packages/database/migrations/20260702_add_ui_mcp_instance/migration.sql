@@ -1,5 +1,6 @@
--- CreateTable
-CREATE TABLE "UiMcpInstance" (
+-- UiMcpInstance + uiScreensContent (idempotent for db push / path migration replays)
+
+CREATE TABLE IF NOT EXISTS "UiMcpInstance" (
     "id" TEXT NOT NULL,
     "displayName" TEXT NOT NULL,
     "url" TEXT NOT NULL,
@@ -21,17 +22,19 @@ CREATE TABLE "UiMcpInstance" (
     CONSTRAINT "UiMcpInstance_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE INDEX "UiMcpInstance_isActive_idx" ON "UiMcpInstance"("isActive");
+CREATE INDEX IF NOT EXISTS "UiMcpInstance_isActive_idx" ON "UiMcpInstance"("isActive");
+CREATE INDEX IF NOT EXISTS "UiMcpInstance_enabled_idx" ON "UiMcpInstance"("enabled");
 
--- CreateIndex
-CREATE INDEX "UiMcpInstance_enabled_idx" ON "UiMcpInstance"("enabled");
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'UiMcpInstance_createdByUserId_fkey'
+  ) THEN
+    ALTER TABLE "UiMcpInstance"
+      ADD CONSTRAINT "UiMcpInstance_createdByUserId_fkey"
+      FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "UiMcpInstance" ADD CONSTRAINT "UiMcpInstance_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AlterTable
-ALTER TABLE "Project" ADD COLUMN "uiScreensContent" TEXT;
-
--- AlterTable
-ALTER TABLE "Stage" ADD COLUMN "uiScreensContent" TEXT;
+ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "uiScreensContent" TEXT;
+ALTER TABLE "Stage" ADD COLUMN IF NOT EXISTS "uiScreensContent" TEXT;

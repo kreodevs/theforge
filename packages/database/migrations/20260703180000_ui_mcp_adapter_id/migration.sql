@@ -1,2 +1,2 @@
--- AlterTable
-ALTER TABLE "UiMcpInstance" ADD COLUMN "adapterId" TEXT;
+-- AlterTable (idempotent)
+ALTER TABLE "UiMcpInstance" ADD COLUMN IF NOT EXISTS "adapterId" TEXT;
