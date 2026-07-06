@@ -17,6 +17,7 @@ import {
   replaceSection6Or7InDraft,
   sanitizeContextKeyValueAndObject,
   sanitizeContextSection,
+  detectCrossConsistencyIssues,
 } from "./mdd-sanitize.js";
 import {
   enrichMddWithUiUxDesignIntent,
@@ -28,6 +29,8 @@ import {
 } from "../../ui-mcp/ui-component-resolver.js";
 import { isPlaceholderSeguridad } from "./mdd-security-parse.js";
 import { ensureMddGovernanceSection, extractGovernanceSection } from "@theforge/shared-types/mdd-governance-patterns";
+import { validateMddForDelivery, type MddDeliveryGateResult } from "./mdd-delivery-gate.util.js";
+import { composeSection3FromStructured } from "./schema-owner.util.js";
 
 export function hasStructuredContent(mdd: MddStructured | null | undefined): boolean {
   if (!mdd || typeof mdd !== "object") return false;
@@ -128,6 +131,8 @@ export type PrepareMddForOutputOptions = {
    * gráfico activo, con fallback por-entidad al heurístico.
    */
   resolver?: UiComponentResolver;
+  /** Recibe el resultado del gate de entrega (no altera el markdown devuelto). */
+  deliveryGateRef?: { current?: MddDeliveryGateResult };
 };
 
 export async function prepareMddForOutput(
@@ -156,10 +161,29 @@ export async function prepareMddForOutput(
   const sanitized =
     replaceContextWhenOnlyMetadata(sanitizeContextKeyValueAndObject(sanitizeContextSection(raw)));
   const normalized = restoreSections6And7AfterNormalize(raw, normalizeMddFormat(sanitized));
-  const withDiagrams = injectMddDiagrams(normalized, suggestMddDiagrams(normalized));
-  const withErFromSql = regenerateErDiagramFromSql(withDiagrams) ?? withDiagrams;
+  const structuredForSection3 =
+    typeof input === "string" ? undefined : input.mddStructured;
+  const withSection3 = composeSection3FromStructured(normalized, structuredForSection3);
+  const consistencyIssues = detectCrossConsistencyIssues(withSection3);
+  const hasInvalidSqlProse = consistencyIssues.some((i) =>
+    i.includes("prosa inválida"),
+  );
+  const withDiagrams = injectMddDiagrams(withSection3, suggestMddDiagrams(withSection3));
+  const withErFromSql = hasInvalidSqlProse
+    ? withDiagrams
+    : (regenerateErDiagramFromSql(withDiagrams) ?? withDiagrams);
   const withComponentDiagram = injectProposedComponentDiagramIntoSection2(withErFromSql);
   const enriched = await enrichMddWithUiUxDesignIntent(withComponentDiagram, resolver);
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
-  return reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
+  const markdown = reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
+  const deliveryGate = validateMddForDelivery(markdown);
+  if (options?.deliveryGateRef) {
+    options.deliveryGateRef.current = deliveryGate;
+  }
+  if (!deliveryGate.ok) {
+    console.warn(
+      `[MDD:DeliveryGate] score=${deliveryGate.score} blockers=${deliveryGate.blockers.length}: ${deliveryGate.blockers.slice(0, 3).join("; ")}`,
+    );
+  }
+  return markdown;
 }

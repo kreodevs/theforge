@@ -60,4 +60,83 @@ describe("enrichMddWithUiUxDesignIntent", () => {
     const soloEspacios = "   \n";
     assert.equal(await enrichMddWithUiUxDesignIntent(soloEspacios), soloEspacios);
   });
+
+  it("no añade UI/UX cuando §1 declara MVP API+CLI sin panel web", () => {
+    const apiOnly = `${MDD_WITH_ENTITIES.replace(
+      "## 1. Contexto\n\nContexto mínimo.",
+      "## 1. Contexto\n\nMVP solo APIs REST y CLI; sin panel web.",
+    )}`;
+    const out = enrichMddWithUiUxDesignIntent(apiOnly);
+    assert.ok(!/##\s*UI\/UX\s+Design\s+Intent/i.test(out));
+  });
+
+  it("mapea endpoints GET reales de §4 y no inventa /api/v1/{entity}", () => {
+    const mdd = `# Master Design Document
+
+## 1. Contexto
+
+Contexto.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE pedidos (id UUID PRIMARY KEY, status TEXT NOT NULL);
+CREATE TABLE clientes (id UUID PRIMARY KEY, email TEXT NOT NULL);
+\`\`\`
+
+## 4. Contratos de API
+
+| Método | Ruta |
+|--------|------|
+| GET | /api/v1/clientes |
+| GET | /api/v1/pedidos |
+`;
+    const out = enrichMddWithUiUxDesignIntent(mdd);
+    assert.ok(out.includes("GET /api/v1/clientes"));
+    assert.ok(out.includes("GET /api/v1/pedidos"));
+    assert.ok(!out.includes("GET /api/v1/customers"));
+    assert.ok(!out.includes("GET /api/v1/orders"));
+  });
+
+  it("marca (sin endpoint en §4) cuando no hay GET para la entidad", () => {
+    const mdd = `${MDD_WITH_ENTITIES.replace(
+      "| GET | /orders |",
+      "| POST | /orders |",
+    )}`;
+    const out = enrichMddWithUiUxDesignIntent(mdd);
+    assert.ok(out.includes("(sin endpoint en §4)"));
+    assert.ok(!out.includes("GET /api/v1/customers"));
+  });
+
+  it("mapea GET /api/v1/eventos y GET /api/v1/pagos (lista, no solo detalle)", () => {
+    const mdd = `# Master Design Document
+
+## 1. Contexto
+
+Contexto.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE eventos (id UUID PRIMARY KEY, payload_json JSONB, procesado BOOLEAN);
+CREATE TABLE pagos (id UUID PRIMARY KEY, monto NUMERIC, estado TEXT);
+CREATE TABLE outbox (id UUID PRIMARY KEY);
+CREATE TABLE sesiones (id UUID PRIMARY KEY);
+\`\`\`
+
+## 4. Contratos de API
+
+| Método | Ruta |
+|--------|------|
+| GET | /api/v1/eventos |
+| GET | /api/v1/pagos |
+| GET | /api/v1/pagos/:id |
+| GET | /api/v1/metricas/noshow |
+`;
+    const out = enrichMddWithUiUxDesignIntent(mdd);
+    assert.ok(out.includes("GET /api/v1/eventos"));
+    assert.ok(out.includes("GET /api/v1/pagos"));
+    assert.ok(!out.includes("#### outbox"));
+    assert.ok(!out.includes("#### sesiones"));
+  });
 });

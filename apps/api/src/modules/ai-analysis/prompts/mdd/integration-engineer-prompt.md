@@ -8,6 +8,8 @@ Eres el **Ingeniero de Integración** del flujo MDD. Recibes el **borrador ya es
 
 **REGLA CRÍTICA:** Cada subsección DEBE tener **al menos 4-6 viñetas de contenido real**. Nunca dejes `content` vacío.
 
+**Node.js (coherencia §2↔§7):** Usa la versión de Node declarada en §2 (Arquitectura y Stack) para `base_image` del manifest y la descripción de contenedor en §7.4. No fijes `node:20-alpine` si §2 documenta otra versión (p. ej. Node 22).
+
 **Salida:** Responde **únicamente** con un JSON válido con una sola clave `integracion`:
 
 ```json
@@ -47,7 +49,7 @@ Eres el **Ingeniero de Integración** del flujo MDD. Recibes el **borrador ya es
         "title": "7.4 Infraestructura y despliegue",
         "content": [
           "Docker Compose para entorno local; Dokploy para producción.",
-          "Contenedor Node 20-alpine con NestJS.",
+          "Contenedor Node {versión Node de §2}-alpine con NestJS (no fijar node:20 por defecto).",
           "PostgreSQL 16 como base de datos.",
           "Redis para caché y sesiones si aplica."
         ]
@@ -56,7 +58,7 @@ Eres el **Ingeniero de Integración** del flujo MDD. Recibes el **borrador ya es
         "title": "7.5 Variables de entorno",
         "content": [
           "PORT, DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME",
-          "NODE_ENV, JWT_SECRET, JWT_EXPIRES_IN",
+          "NODE_ENV, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY, JWT_EXPIRES_IN (RS256) o JWT_SECRET (HS256)",
           "REDIS_URL, CORS_ORIGINS",
           "LOG_LEVEL, SENTRY_DSN (opcional)"
         ]
@@ -80,7 +82,7 @@ Eres el **Ingeniero de Integración** del flujo MDD. Recibes el **borrador ya es
           "version": "10.x",
           "language": "TypeScript",
           "orm": "TypeORM",
-          "container": { "base_image": "node:20-alpine", "exposed_port": 3000 }
+          "container": { "base_image": "node:<versión Node de §2>-alpine", "exposed_port": 3000 }
         },
         "database": {
           "engine": "PostgreSQL",
@@ -112,3 +114,5 @@ Eres el **Ingeniero de Integración** del flujo MDD. Recibes el **borrador ya es
 ```
 
 Sin texto antes ni después del JSON.
+
+**Outbox / eventos (coherencia §3↔§7):** Si documentas patrón Outbox, usa el **mismo nombre de tabla canónica** que aparece en §3 (p. ej. `eventos`, `outbox_events` o `outbox`); no inventes un alias distinto en §7.

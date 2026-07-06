@@ -68,6 +68,7 @@ import {
   extractGovernanceSection,
   mddHasSubstantialBody,
 } from "@theforge/shared-types/mdd-governance-patterns";
+import { mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
 
@@ -101,6 +102,7 @@ export type StreamProgressEvent =
     complexityProposal?: { level: ComplexityLevel; planSummary: string; reason?: string };
     precision?: number;
     status?: "red" | "yellow" | "green";
+    deliveryGate?: MddDeliveryGateResult;
     auditorFeedback?: string;
     precisionBreakdown?: PrecisionBreakdown;
     auditTrail?: string[];
@@ -110,7 +112,7 @@ export type StreamProgressEvent =
 /** Eventos del flujo MDD con Manager; interrupt puede ser reply (conversación) o questions (entrevista). */
 export type StreamMddManagerEvent =
   | StreamProgressEvent
-  | { type: "draft"; markdown: string }
+  | { type: "draft"; markdown: string; deliveryGate?: MddDeliveryGateResult }
   | { type: "blocked"; code: string; message: string }
   | {
     type: "interrupt";
@@ -124,6 +126,7 @@ export type StreamMddManagerEvent =
     markdown?: string;
     precision?: number;
     status?: "red" | "yellow" | "green";
+    deliveryGate?: MddDeliveryGateResult;
     precisionBreakdown?: PrecisionBreakdown;
     auditorFeedback?: string;
     auditTrail?: string[];
@@ -157,6 +160,19 @@ function estimationOpts(
     stageId: sid,
     complexity: state?.mddComplexity,
   };
+}
+
+function createPrepareOptsWithGate(base: PrepareMddForOutputOptions = {}): {
+  opts: PrepareMddForOutputOptions;
+  gateRef: { current?: MddDeliveryGateResult };
+} {
+  const gateRef: { current?: MddDeliveryGateResult } = {};
+  return { opts: { ...base, deliveryGateRef: gateRef }, gateRef };
+}
+
+function snapshotDeliveryGate(gate: MddDeliveryGateResult | undefined): MddDeliveryGateResult | undefined {
+  if (!gate) return undefined;
+  return { ok: gate.ok, score: gate.score, blockers: gate.blockers, warnings: gate.warnings };
 }
 
 @Injectable()
@@ -531,7 +547,7 @@ export class AiAnalysisService {
         }
       }
     }
-    const prepareOpts: PrepareMddForOutputOptions = { preservedGovernance };
+    const { opts: prepareOpts, gateRef: prepareGateRef } = createPrepareOptsWithGate({ preservedGovernance });
     let graph: Awaited<ReturnType<typeof createMddGraph>>;
     try {
       const userId = await this.resolveUserId(projectId);
@@ -622,11 +638,13 @@ export class AiAnalysisService {
         precisionBreakdown,
         auditorGaps: lastState.auditorGaps ?? undefined,
       });
+      const gateFields = mddStreamDeliveryGateFields(prepareGateRef.current, metrics.status);
       yield {
         type: "done",
         markdown,
         precision: metrics.precision,
-        status: metrics.status,
+        status: gateFields.status,
+        deliveryGate: gateFields.deliveryGate,
         auditorFeedback: lastState.auditorFeedback?.trim() || undefined,
         precisionBreakdown,
         auditTrail,
@@ -718,9 +736,9 @@ export class AiAnalysisService {
     }
     const agentCtx = await this.buildMddAgentContext(projectId, stageIdFromClient);
     const existingMdd = (initialMddDraft ?? "").trim();
-    const managerPrepareOpts: PrepareMddForOutputOptions = {
+    const { opts: managerPrepareOpts, gateRef: managerGateRef } = createPrepareOptsWithGate({
       preservedGovernance: extractGovernanceSection(existingMdd),
-    };
+    });
     const rawInitial = (initialMessage ?? "").trim();
     const looksLikeMddDocument =
       rawInitial.length > 500 &&
@@ -822,6 +840,7 @@ export class AiAnalysisService {
               precisionBreakdown,
               auditorGaps: lastState?.auditorGaps ?? undefined,
             });
+            const gateFields = mddStreamDeliveryGateFields(managerGateRef.current, metrics.status);
             this.logger.log(`[MDD stream/manager] interrupt (from stream) reply=${reply ? "(presente)" : "(no)"} questions=${questions?.length ?? 0} plan=${plan?.length ?? 0} markdownLen=${draftOnInterrupt.length}`);
             yield {
               type: "interrupt",
@@ -832,7 +851,8 @@ export class AiAnalysisService {
               planMessage,
               markdown: draftOnInterrupt || undefined,
               precision: metrics.precision,
-              status: metrics.status,
+              status: gateFields.status,
+              deliveryGate: gateFields.deliveryGate,
               precisionBreakdown,
               auditorFeedback: lastState?.auditorFeedback?.trim() || undefined,
               auditTrail,
@@ -861,7 +881,13 @@ export class AiAnalysisService {
               },
               managerPrepareOpts,
             );
-            if (prepared.length > 80) yield { type: "draft", markdown: prepared };
+            if (prepared.length > 80) {
+              yield {
+                type: "draft",
+                markdown: prepared,
+                deliveryGate: snapshotDeliveryGate(managerGateRef.current),
+              };
+            }
           }
         }
       }
@@ -896,11 +922,13 @@ export class AiAnalysisService {
         precisionBreakdown,
         auditorGaps: lastState?.auditorGaps ?? undefined,
       });
+      const managerDoneGate = mddStreamDeliveryGateFields(managerGateRef.current, metrics.status);
       yield {
         type: "done",
         markdown,
         precision: metrics.precision,
-        status: metrics.status,
+        status: managerDoneGate.status,
+        deliveryGate: managerDoneGate.deliveryGate,
         auditorFeedback: lastState?.auditorFeedback?.trim() || undefined,
         precisionBreakdown,
         auditTrail,
@@ -937,7 +965,7 @@ export class AiAnalysisService {
         const estOptsCatch = estimationOpts(projectId, estimationStageId, lastState);
         const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOptsCatch);
         const precision = metrics.precision;
-        const status = metrics.status;
+        const catchGateFields = mddStreamDeliveryGateFields(managerGateRef.current, metrics.status);
         const precisionBreakdown = this.estimationService.getPrecisionBreakdown(draftOnInterrupt, estOptsCatch);
         const auditorFeedback = lastState?.auditorFeedback?.trim() || undefined;
         if (reply && /Estamos al \d+%/.test(reply)) {
@@ -953,7 +981,8 @@ export class AiAnalysisService {
           planMessage,
           markdown: draftOnInterrupt || undefined,
           precision,
-          status,
+          status: catchGateFields.status,
+          deliveryGate: catchGateFields.deliveryGate,
           precisionBreakdown,
           auditorFeedback,
           auditTrail: [],
@@ -1063,9 +1092,9 @@ export class AiAnalysisService {
       mddContentFromClient?.trim() && mddContentFromClient.trim().length > 80
         ? mddContentFromClient.trim()
         : undefined;
-    const resumePrepareOpts: PrepareMddForOutputOptions = {
+    const { opts: resumePrepareOpts, gateRef: resumeGateRef } = createPrepareOptsWithGate({
       preservedGovernance: extractGovernanceSection(clientDraft ?? ""),
-    };
+    });
 
     try {
       // `resume` entrega el texto a interrupt(); el nodo reanudado aplica su propio update (p. ej. lastUserMessage).
@@ -1150,6 +1179,7 @@ export class AiAnalysisService {
             const estOptsResume = estimationOpts(projectId, estimationStage, stateForMarkdown ?? lastState);
             const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOptsResume);
             const precisionBreakdown = this.estimationService.getPrecisionBreakdown(draftOnInterrupt, estOptsResume);
+            const resumeInterruptGate = mddStreamDeliveryGateFields(resumeGateRef.current, metrics.status);
             if (reply && /Estamos al \d+%/.test(reply)) {
               reply = reply.replace(/\bEstamos al \d+%/, `Estamos al ${metrics.precision}%`);
             }
@@ -1163,7 +1193,8 @@ export class AiAnalysisService {
               planMessage,
               markdown: draftOnInterrupt || undefined,
               precision: metrics.precision,
-              status: metrics.status,
+              status: resumeInterruptGate.status,
+              deliveryGate: resumeInterruptGate.deliveryGate,
               precisionBreakdown,
               auditorFeedback: stateForMarkdown?.auditorFeedback?.trim() || undefined,
               auditTrail,
@@ -1203,7 +1234,13 @@ export class AiAnalysisService {
               },
               resumePrepareOpts,
             );
-            if (prepared.length > 80) yield { type: "draft", markdown: prepared };
+            if (prepared.length > 80) {
+              yield {
+                type: "draft",
+                markdown: prepared,
+                deliveryGate: snapshotDeliveryGate(resumeGateRef.current),
+              };
+            }
           }
         }
       }
@@ -1261,11 +1298,13 @@ export class AiAnalysisService {
           precisionBreakdown,
           auditorGaps: lastState?.auditorGaps ?? undefined,
         });
+        const resumeDoneGate = mddStreamDeliveryGateFields(resumeGateRef.current, metrics.status);
         yield {
           type: "done",
           markdown,
           precision: metrics.precision,
-          status: metrics.status,
+          status: resumeDoneGate.status,
+          deliveryGate: resumeDoneGate.deliveryGate,
           auditorFeedback: lastState?.auditorFeedback?.trim() || undefined,
           precisionBreakdown,
           auditTrail,
@@ -1299,14 +1338,17 @@ export class AiAnalysisService {
         } catch {
           // mantener lastState
         }
-        const draftOnInterrupt = await this.runPrepareMddForOutput({
-          mddStructured: stateForMarkdown?.mddStructured,
-          mddDraft: (stateForMarkdown?.mddDraft ?? "").trim(),
-        });
+        const draftOnInterrupt = await this.runPrepareMddForOutput(
+          {
+            mddStructured: stateForMarkdown?.mddStructured,
+            mddDraft: (stateForMarkdown?.mddDraft ?? "").trim(),
+          },
+          resumePrepareOpts,
+        );
         const estOptsResumeCatch = estimationOpts(projectId, estimationStage, stateForMarkdown ?? lastState);
         const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOptsResumeCatch);
         const precision = metrics.precision;
-        const status = metrics.status;
+        const resumeCatchGate = mddStreamDeliveryGateFields(resumeGateRef.current, metrics.status);
         const precisionBreakdown = this.estimationService.getPrecisionBreakdown(draftOnInterrupt, estOptsResumeCatch);
         const auditorFeedback = stateForMarkdown?.auditorFeedback?.trim() || undefined;
         if (reply && /Estamos al \d+%/.test(reply)) {
@@ -1322,7 +1364,8 @@ export class AiAnalysisService {
           planMessage,
           markdown: draftOnInterrupt || undefined,
           precision,
-          status,
+          status: resumeCatchGate.status,
+          deliveryGate: resumeCatchGate.deliveryGate,
           precisionBreakdown,
           auditorFeedback,
         };
@@ -1349,6 +1392,7 @@ export class AiAnalysisService {
     section: number,
     mddContentFromClient?: string,
     stageId?: string | null,
+    gapReasons?: string[],
   ): AsyncGenerator<StreamMddManagerEvent> {
     const pid = projectId?.trim();
     if (!pid) {
@@ -1378,9 +1422,9 @@ export class AiAnalysisService {
       return;
     }
 
-    const regenPrepareOpts: PrepareMddForOutputOptions = {
+    const { opts: regenPrepareOpts, gateRef: regenGateRef } = createPrepareOptsWithGate({
       preservedGovernance: extractGovernanceSection(mddContent),
-    };
+    });
 
     // regenEstimationStage desde pid + stageId (To-Be/As-Is eliminados)
     const regenCx = "HIGH" as EstimationComplexity;
@@ -1427,11 +1471,13 @@ export class AiAnalysisService {
         const finalDraft = replaceSection1BodyFromAnyHeading(mddContent, newBody);
         const markdown = await this.runPrepareMddForOutput(finalDraft, regenPrepareOpts);
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
+        const regenGate1 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
         yield {
           type: "done",
           markdown,
           precision: metrics.precision,
-          status: metrics.status,
+          status: regenGate1.status,
+          deliveryGate: regenGate1.deliveryGate,
           precisionBreakdown: this.estimationService.getPrecisionBreakdown(markdown, regenEstOpts),
         };
         return;
@@ -1449,6 +1495,11 @@ export class AiAnalysisService {
         mddStructured: structured ?? undefined,
         mddDraft: mddContent,
         projectId: pid,
+        ...(gapReasons?.length
+          ? {
+              auditorFeedback: `Gaps del auditor a corregir en esta regeneración:\n${gapReasons.map((g) => `- ${g}`).join("\n")}`,
+            }
+          : {}),
         ...agentCtxRegen,
       };
 
@@ -1465,11 +1516,13 @@ export class AiAnalysisService {
           regenPrepareOpts,
         );
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
+        const regenGate7 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
         yield {
           type: "done",
           markdown,
           precision: metrics.precision,
-          status: metrics.status,
+          status: regenGate7.status,
+          deliveryGate: regenGate7.deliveryGate,
           precisionBreakdown: this.estimationService.getPrecisionBreakdown(markdown, regenEstOpts),
         };
         return;
@@ -1495,11 +1548,13 @@ export class AiAnalysisService {
           return;
         }
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
+        const regenGate6 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
         yield {
           type: "done",
           markdown,
           precision: metrics.precision,
-          status: metrics.status,
+          status: regenGate6.status,
+          deliveryGate: regenGate6.deliveryGate,
           precisionBreakdown: this.estimationService.getPrecisionBreakdown(markdown, regenEstOpts),
         };
         return;
@@ -1524,11 +1579,13 @@ export class AiAnalysisService {
           regenPrepareOpts,
         );
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
+        const regenGate25 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
         yield {
           type: "done",
           markdown,
           precision: metrics.precision,
-          status: metrics.status,
+          status: regenGate25.status,
+          deliveryGate: regenGate25.deliveryGate,
           precisionBreakdown: this.estimationService.getPrecisionBreakdown(markdown, regenEstOpts),
         };
         return;

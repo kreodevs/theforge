@@ -1,5 +1,9 @@
 import type { MDDStateType } from "../state/index.js";
-import { replaceSection6Or7InDraft } from "../utils/mdd-sanitize.js";
+import {
+  fixJwtAlgorithmCoherence,
+  fixSection7OutboxNarrative,
+  replaceSection6Or7InDraft,
+} from "../utils/mdd-sanitize.js";
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:FormatSecInt] ${msg}`, ...args);
 
@@ -25,6 +29,8 @@ export function createMddFormatSecIntNode() {
       draft = replaceSection6Or7InDraft(draft, 7, sec7Md);
       LOG("applied §7 draftLen=%s", draft.length);
     }
+
+    draft = fixSection7OutboxNarrative(fixJwtAlgorithmCoherence(draft));
 
     return {
       mddDraft: draft,

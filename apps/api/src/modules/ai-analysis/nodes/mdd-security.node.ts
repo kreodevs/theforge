@@ -5,6 +5,7 @@ import type { MDDStateType } from "../state/index.js";
 import { mddSeguridadItemSchema } from "../state/mdd-structured.schema.js";
 import type { MddSeguridadItem } from "../state/mdd-structured.schema.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
+import { mergeSection6AvoidingRegression } from "../utils/mdd-credential-storage.util.js";
 import {
   isCorruptedSeguridadSlice,
   isPlaceholderSeguridad,
@@ -17,7 +18,6 @@ import { getUserBrief } from "../utils/mdd-user-brief.js";
 import {
   getMddDraftSummary,
   logMddNodeOutput,
-  replaceSection6Or7InDraft,
   seguridadItemsToSection6Markdown,
 } from "../utils/mdd-sanitize.js";
 
@@ -59,7 +59,7 @@ function buildMddDraftWithSection6(state: MDDStateType, seguridad: MddSeguridadI
     return draft;
   }
   const section6Md = seguridadItemsToSection6Markdown(seguridad);
-  return replaceSection6Or7InDraft(draft, 6, section6Md);
+  return mergeSection6AvoidingRegression(draft, section6Md);
 }
 
 /** Creates the MDD Security Architect node. Outputs structured seguridad; merge into mddStructured and derive mddDraft. */

@@ -141,6 +141,19 @@ export const mddStateSchema = z.object({
   ).optional(),
   /** Resumen del impacto de los cambios solicitados (Impact Analysis). */
   impactSummary: z.string().optional(),
+  /** Intentos del auto-loop Fase 4 (delivery gate). */
+  deliveryGateAttempt: z.number().int().min(0).optional(),
+  /** Último resultado del gate tras prepareMddForOutput. */
+  deliveryGate: z
+    .object({
+      ok: z.boolean(),
+      score: z.number(),
+      blockers: z.array(z.string()),
+      warnings: z.array(z.string()),
+    })
+    .optional(),
+  deliveryGateLoopActive: z.boolean().optional(),
+  deliveryGateFixTarget: z.enum(["software_architect", "integration"]).optional(),
 });
 
 export type MDDState = z.infer<typeof mddStateSchema>;
@@ -184,4 +197,8 @@ export const defaultMDDState: MDDState = {
   mddComplexity: undefined,
   internalDirectives: undefined,
   impactSummary: undefined,
+  deliveryGateAttempt: 0,
+  deliveryGate: undefined,
+  deliveryGateLoopActive: undefined,
+  deliveryGateFixTarget: undefined,
 };

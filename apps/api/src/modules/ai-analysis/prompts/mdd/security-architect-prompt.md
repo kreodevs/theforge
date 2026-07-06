@@ -20,6 +20,9 @@ Ejemplo: `[DIRECTIVE: software_architect] Necesito que la tabla users tenga el c
 
 - `title` (string): título de la subsección sin numeración (ej. "Protección de Datos Sensibles", "Autenticación y Autorización", "Comunicación Segura", "Mecanismo de MFA"). Se renderizará como categoría con subviñetas; no incluyas "6.1" ni "--" al final.
 - `content` (array de strings): viñetas de esa subsección; cada string es un ítem (ej. "Argon2id para hash de contraseñas.", "Bloqueo temporal tras 5 intentos fallidos.").
+- `schemaRequirements` (array opcional de strings): lista estructurada de tablas/columnas que §3 debe materializar (ej. "`security_events`", "`refresh_tokens`", "`totp_secret` en `users`"). **No redactes CREATE TABLE aquí** — el paso determinista *schema owner* los añade en §3 si faltan.
+
+**Ownership §3:** Toda tabla o columna de seguridad debe existir en **§3 Modelo de Datos** (vía schema owner), no solo en prosa de §6. Documenta la decisión en §6 y declárala en `schemaRequirements` cuando aplique.
 
 Ejemplo:
 

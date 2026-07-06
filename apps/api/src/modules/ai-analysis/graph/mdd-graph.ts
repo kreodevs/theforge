@@ -18,8 +18,11 @@ import { createMddMergeSection1Node } from "../nodes/mdd-merge-section1.node.js"
 import { createMddGraphPopulatorNode } from "../nodes/mdd-graph-populator.node.js";
 import { createMddCrossConsistencyNode } from "../nodes/mdd-cross-consistency.node.js";
 import { createMddFormatSecIntNode } from "../nodes/mdd-format-sec-int.node.js";
+import { createMddPrepareOutputNode } from "../nodes/mdd-prepare-output.node.js";
 import { createMddBlackboardNode } from "../nodes/mdd-blackboard.node.js";
+import { draftHasSubstantialSections6And7 } from "../utils/mdd-delivery-gate-loop.util.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
+import { detectSection3CompositionBlockers } from "../utils/schema-owner.util.js";
 import { createDbgaLLM, createMddAuditorLLM } from "../llm/create-dbga-llm.js";
 import type { AIFactory } from "../../ai/ai.factory.js";
 import { getMddAuditorTools, getMddArchitectTools } from "../tools/tool-registry.js";
@@ -119,12 +122,30 @@ export async function createMddGraph(
   const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
   const auditorNode = createMddAuditorNode(auditorLlm, getMddAuditorTools(), null);
   const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
+  const prepareOutputNode = createMddPrepareOutputNode();
+
+  function routeAfterPrepareOutput(state: MDDStateType): string {
+    if (state.deliveryGateLoopActive === true) {
+      return state.deliveryGateFixTarget === "integration" ? "integration" : "software_architect";
+    }
+    return "graph_populator";
+  }
+
+  function routeAfterFormatArchitectGateLoop(state: MDDStateType): string {
+    if (
+      (state.deliveryGateAttempt ?? 0) > 0 &&
+      draftHasSubstantialSections6And7(state.mddDraft ?? "")
+    ) {
+      return "format_after_redactor";
+    }
+    return "security";
+  }
 
   function routeAuditor(state: MDDStateType): string {
     if (state.auditorDecision === "clarifier" && (state.mddIteration ?? 0) < MAX_MDD_ITERATIONS) {
       return "clarifier";
     }
-    return "graph_populator";
+    return "prepare_output";
   }
 
   const builder = new StateGraph(MDDStateAnnotation)
@@ -140,13 +161,16 @@ export async function createMddGraph(
     .addNode("cross_consistency_checker", consistencyNode)
     .addNode("diagram_injector", diagramInjectorNode)
     .addNode("auditor", auditorNode)
+    .addNode("prepare_output", prepareOutputNode)
     .addNode("graph_populator", graphPopulatorNode)
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
     .addEdge("software_architect", "format_after_architect")
-    .addEdge("format_after_architect", "security")
-    .addEdge("format_after_architect", "integration")
-    .addEdge("security", "format_sec_int")
+    .addConditionalEdges("format_after_architect", routeAfterFormatArchitectGateLoop, {
+      format_after_redactor: "format_after_redactor",
+      security: "security",
+    })
+    .addEdge("security", "integration")
     .addEdge("integration", "format_sec_int")
     .addEdge("format_sec_int", "format_after_redactor")
     .addEdge("format_after_redactor", "llm_formatter")
@@ -156,6 +180,11 @@ export async function createMddGraph(
     .addEdge("diagram_injector", "auditor")
     .addConditionalEdges("auditor", routeAuditor, {
       clarifier: "clarifier",
+      prepare_output: "prepare_output",
+    })
+    .addConditionalEdges("prepare_output", routeAfterPrepareOutput, {
+      software_architect: "software_architect",
+      integration: "integration",
       graph_populator: "graph_populator",
     })
     .addEdge("graph_populator", END);
@@ -215,6 +244,15 @@ export async function createMddGraphWithManager(
   );
   const blackboardNode = createMddBlackboardNode(llm);
   const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
+  const prepareOutputNode = createMddPrepareOutputNode();
+
+  function routeAfterPrepareOutput(state: MDDStateType): string {
+    if (state.executorControlled === true) return "executor";
+    if (state.deliveryGateLoopActive === true) {
+      return state.deliveryGateFixTarget === "integration" ? "integration" : "software_architect";
+    }
+    return "graph_populator";
+  }
 
   /** Si hay directiva/requisitos y §3+§4 con contenido y aún no hemos pasado por critic (attempts < 1), ir a architect_critic. */
   function routeAfterSoftwareArchitect(state: MDDStateType): string {
@@ -226,6 +264,8 @@ export async function createMddGraphWithManager(
     const hasSection3 = /##\s*3\.\s*Modelo\s+(?:de\s+)?datos/i.test(draft) && /\bCREATE\s+TABLE\b/i.test(draft);
     const hasSection4 = /##\s*4\.\s*Contratos\s+de\s+API/i.test(draft);
     const attempts = state.architectCriticAttempts ?? 0;
+    const section3SqlBlockers = detectSection3CompositionBlockers(draft);
+    if (section3SqlBlockers.length > 0 && hasSection3 && attempts < 1) return "architect_critic";
     if (hasDirective && hasSection3 && hasSection4 && attempts < 1) return "architect_critic";
     return "format_after_architect";
   }
@@ -257,7 +297,15 @@ export async function createMddGraphWithManager(
 
   function routeAfterFormatArchitect(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
-    return nextInSections(state, "format_after_architect") ?? "security";
+    const next = nextInSections(state, "format_after_architect");
+    if (next) return next;
+    if (
+      (state.deliveryGateAttempt ?? 0) > 0 &&
+      draftHasSubstantialSections6And7(state.mddDraft ?? "")
+    ) {
+      return "format_after_redactor";
+    }
+    return "security";
   }
   function routeAfterSecurity(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
@@ -282,7 +330,7 @@ export async function createMddGraphWithManager(
   function routeAfterAuditor(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
     if (state.auditorDecision === "blackboard") return "blackboard";
-    return "graph_populator";
+    return "prepare_output";
   }
   function routeAfterBlackboard(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
@@ -316,6 +364,7 @@ export async function createMddGraphWithManager(
     "cross_consistency_checker",
     "graph_populator",
     "blackboard",
+    "prepare_output",
   ] as const;
 
   const planApprovalNode = createMddPlanApprovalNode();
@@ -335,6 +384,7 @@ export async function createMddGraphWithManager(
     "graph_populator",
     "blackboard",
     "manager",
+    "prepare_output",
   ] as const;
 
   const builder = new StateGraph(MDDStateAnnotation)
@@ -354,6 +404,7 @@ export async function createMddGraphWithManager(
     .addNode("cross_consistency_checker", consistencyNode)
     .addNode("diagram_injector", diagramInjectorNode)
     .addNode("auditor", auditorNode)
+    .addNode("prepare_output", prepareOutputNode)
     .addNode("blackboard", blackboardNode)
     .addNode("graph_populator", graphPopulatorNode)
     .addEdge(START, "manager")
@@ -386,8 +437,8 @@ export async function createMddGraphWithManager(
     .addConditionalEdges("format_after_architect", routeAfterFormatArchitect, {
       security: "security",
       integration: "integration",
-      cross_consistency_checker: "cross_consistency_checker",
       format_after_redactor: "format_after_redactor",
+      cross_consistency_checker: "cross_consistency_checker",
       diagram_injector: "diagram_injector",
       auditor: "auditor",
       manager: "manager",
@@ -434,6 +485,12 @@ export async function createMddGraphWithManager(
     .addConditionalEdges("auditor", routeAfterAuditor, {
       executor: "executor",
       blackboard: "blackboard",
+      prepare_output: "prepare_output",
+    })
+    .addConditionalEdges("prepare_output", routeAfterPrepareOutput, {
+      executor: "executor",
+      software_architect: "software_architect",
+      integration: "integration",
       graph_populator: "graph_populator",
     })
     .addConditionalEdges("blackboard", routeAfterBlackboard, {

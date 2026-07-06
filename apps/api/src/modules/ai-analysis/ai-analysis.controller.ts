@@ -341,13 +341,16 @@ export class AiAnalysisController {
    */
   @Post("mdd/stream/regenerate-section")
   async streamMddRegenerateSection(
-    @Body() body: { projectId?: string; section?: number; mddContent?: string; stageId?: string },
+    @Body() body: { projectId?: string; section?: number; mddContent?: string; stageId?: string; gapReasons?: string[] },
     @Res() res: Response,
   ) {
     const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
     const section = typeof body?.section === "number" ? body.section : Number(body?.section);
     const mddContent = typeof body?.mddContent === "string" ? body.mddContent.trim() : undefined;
     const stageId = typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined;
+    const gapReasons = Array.isArray(body?.gapReasons)
+      ? body.gapReasons.filter((g): g is string => typeof g === "string" && g.trim().length > 0)
+      : undefined;
     if (!projectId) {
       res.status(400).json({ message: "projectId is required" });
       return;
@@ -370,7 +373,7 @@ export class AiAnalysisController {
     const stream = Readable.from(
       (async function* () {
         try {
-          for await (const event of service.streamMddRegenerateSection(projectId, section, mddContent, stageId)) {
+          for await (const event of service.streamMddRegenerateSection(projectId, section, mddContent, stageId, gapReasons)) {
             yield JSON.stringify(event) + "\n";
           }
         } catch (err) {

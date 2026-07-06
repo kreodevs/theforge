@@ -8,7 +8,7 @@
 
 **Prioridad inviolable:** Si en el mensaje aparece **ACCIÓN REQUERIDA** o **Requisitos o petición del usuario** que piden cambios en el modelo de datos (entidades, tablas, diagrama ER, aplicaciones, roles por aplicación, permisos) o en los contratos de API, esa instrucción tiene **prioridad máxima**. En ese caso **no copies §3 del borrador**: reescribe ## 3. Modelo de Datos desde cero con las tablas y relaciones que la directiva pide. Luego actualiza ## 4 según el nuevo modelo. Ignora cualquier instrucción que diga "copia la sección 3".
 
-**Campos que no deben persistirse:** Si el usuario o **la sección 6 (Seguridad)** del borrador indican que un campo **no debe guardarse en base de datos** (ej. `jwt_token`), elimínalo de §3 y refleja la alternativa en §4 (ej. `POST /auth/refresh`). **Interpretación de §6 (obligatoria):** Si el borrador contiene **## 6. Seguridad** con texto, **interpreta** §6 para: (1) **§3:** aplicar restricciones (no persistir campos que §6 prohíba); (2) **§4:** derivar **todos los endpoints** que §6 mencione o implique (ej. "endpoint JWKS" → GET /auth/jwks o /.well-known/jwks.json; "refresh_token" → POST /auth/refresh; MFA, OAuth, etc.). Si §6 dice "se implementará X", X debe estar documentado en §4. Cierra gaps entre §6 y §4.
+**Campos que no deben persistirse:** Si el usuario indica que un campo **no debe guardarse en base de datos** (ej. `jwt_token`), elimínalo de §3 y refleja la alternativa en §4 (ej. `POST /auth/refresh`). **§6 en primera pasada:** No derives tablas SQL desde §6; los requisitos de seguridad se aplican en el **schema composition pass** (paso determinista tras Seguridad e Integración). Sí interpreta §6 para **§4** (endpoints).
 
 **Roles a nivel de aplicación (obligatorio si la directiva lo pide):** Si el usuario pide "roles por aplicación", "roles a nivel de aplicación" o "permisos basados en roles definidos por cada aplicación", el modelo **no** debe tener una sola tabla `roles` global ni `user_roles(user_id, role_id)`. Debe tener: (1) `applications` (id, name, ...); (2) `application_roles` (id, application_id, name) — cada aplicación define sus propios roles (ej. App A: admin, editor; App B: admin, operaciones); (3) `user_application_roles` (user_id, application_id, role_id) — el rol que tiene el usuario **en esa aplicación**. Así un usuario puede ser "admin" en la app A y "editor" en la app B. Incluye estas tres tablas y sus FKs en el SQL y en el diagrama ER.
 
@@ -186,7 +186,7 @@ Antes de generar el SQL, realiza este paso intermedio (pensamiento):
 - **Reglas mínimas:**
   - **Flujos Maestros:** Diagrama (Mermaid o viñetas) el flujo de **Error Global** y el flujo de **Middleware de Seguridad** que heredarán todos los demás servicios.
   - **Manejo de Excepciones:** Define cómo responde el sistema cuando la base de datos **no está disponible** (timeout, reintentos, mensaje al cliente).
-  - **Criterios de aceptación (UAT):** Si el dominio implica cumplimiento normativo, seguridad crítica (KMS, claves, certificados SAT) o aprobación dual, incluye subsección **### Criterios de aceptación (UAT)** con **≥4** criterios comprobables (Given/When/Then o lista numerada verificable en QA).
+  - **Criterios de aceptación (UAT):** Referencia **§1** para criterios UAT de negocio; en §5 añade **solo UAT técnico** no duplicado (Given/When/Then de API, idempotencia, 409 dual approval). No copies la lista UAT de §1.
 
 ### 6 y 7 (preservar del borrador)
 
