@@ -773,6 +773,62 @@ export function quoteFlowchartLabelsWithParens(content: string): string {
   });
 }
 
+const FLOWCHART_EDGE_ARROW_RE = /(?:--+(?:>|x|o)|==+>|-\.-+>|---)(?:\|[^|\n]+\|)?/;
+
+function slugFromFlowchartLabel(label: string): string {
+  const slug = label
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 24);
+  if (!slug) return "node";
+  return /^[0-9]/.test(slug) ? `n_${slug}` : slug;
+}
+
+/**
+ * flowchart/graph: el LLM a veces concatena varias aristas en una línea (`A --> B    C --> D`).
+ * Mermaid 11 solo admite una arista por línea; partimos antes del nodo origen de la siguiente.
+ */
+export function splitFlowchartMultiEdgeLines(content: string): string {
+  if (!/^(flowchart|graph)\s/im.test((content ?? "").trim())) return content ?? "";
+  const splitRe =
+    /\s+(?=[A-Za-z0-9_*][\w]*\s*(?:--+(?:>|x|o)|==+>|-\.-+>|---)(?:\|[^|\n]+\|)?)/g;
+
+  return content
+    .split("\n")
+    .flatMap((line) => {
+      const trimmed = line.trim();
+      if (
+        !trimmed ||
+        /^(flowchart|graph)\s/i.test(trimmed) ||
+        /^(subgraph|end|direction|style|classDef|class|linkStyle|click)\b/i.test(trimmed)
+      ) {
+        return [line];
+      }
+      const arrows = trimmed.match(new RegExp(FLOWCHART_EDGE_ARROW_RE.source, "g")) ?? [];
+      if (arrows.length <= 1) return [line];
+      const indent = line.match(/^(\s*)/)?.[1] ?? "";
+      const parts = trimmed.split(splitRe).filter(Boolean);
+      if (parts.length <= 1) return [line];
+      return parts.map((part) => `${indent}${part.trim()}`);
+    })
+    .join("\n");
+}
+
+/**
+ * flowchart/graph: repara destinos sin id (`G4 -->[(PostgreSQL 16)]` → `G4 --> PostgreSQL_16[(PostgreSQL 16)]`).
+ */
+export function repairFlowchartMissingTargetNodeIds(content: string): string {
+  if (!/^(flowchart|graph)\s/im.test((content ?? "").trim())) return content ?? "";
+  const edgeArrow = "(?:--+(?:>|x|o)|==+>|-\\.-+>|---)(?:\\|[^|\\n]+\\|)?";
+  return content.replace(
+    new RegExp(`(${edgeArrow})\\s*(\\[\\(([^)]*)\\)\\])`, "g"),
+    (_match, arrow: string, _full: string, label: string) => {
+      const id = slugFromFlowchartLabel(label);
+      return `${arrow} ${id}[(${label})]`;
+    },
+  );
+}
+
 export function erDiagramHasPkFkComma(content: string): boolean {
   const repaired = repairErDiagramPkFkCommas(content);
   return /\bPK\s*,\s*FK\b|\bFK\s*,\s*PK\b/i.test(repaired);
@@ -1655,6 +1711,8 @@ export function normalizeMermaidDiagramBody(raw: string): string {
 
   let result = out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   if (!isErDiagram && /^(flowchart|graph)\s/i.test(result)) {
+    result = splitFlowchartMultiEdgeLines(result);
+    result = repairFlowchartMissingTargetNodeIds(result);
     result = quoteFlowchartLabelsWithParens(result);
     result = quoteFlowchartEdgeLabels(result);
   }

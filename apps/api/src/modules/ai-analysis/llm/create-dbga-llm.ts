@@ -101,7 +101,10 @@ export async function createDbgaLLM(aiFactory: AIFactory, userId: string, opts?:
   return createDbgaLLMFromRuntime(runtime, opts);
 }
 
-/** LLM del nodo Auditor MDD: instancia dedicada en Ajustes o el proveedor activo. */
+/**
+ * LLM de Auditor y Cross-Consistency (grafo MDD): `resolveAuditorRuntime` — misma instancia
+ * activa con `auditorChatModel` opcional; si no hay override, `chatModel` del proveedor.
+ */
 export async function createMddAuditorLLM(
   aiFactory: AIFactory,
   userId: string,
