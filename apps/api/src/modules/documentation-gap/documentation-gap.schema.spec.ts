@@ -45,6 +45,17 @@ describe("handoff .theforge-project.json", () => {
     stages: [{ id: "stage-1", projectId: "proj-abc", ordinal: 1, mddContent: "# MDD\n" }],
   };
 
+  it("buildTheforgeProjectJson incluye deliveryGate cuando hay MDD sustancial", () => {
+    const longMdd = `# MDD\n\n## 1. Contexto\n\n${"x".repeat(90)}`;
+    const json = buildTheforgeProjectJson({
+      ...project,
+      stages: [{ ...project.stages[0], mddContent: longMdd }],
+    } as never);
+    assert.ok(json.deliveryGate);
+    assert.equal(typeof json.deliveryGate.ok, "boolean");
+    assert.ok(Array.isArray(json.deliveryGate.blockers));
+  });
+
   it("buildTheforgeProjectJson incluye projectId, stageId y mcp.tool", () => {
     const json = buildTheforgeProjectJson(project as never);
     assert.equal(json.projectId, "proj-abc");

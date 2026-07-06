@@ -12,6 +12,8 @@ import { ProjectsService } from "../projects/projects.service.js";
 import { UiScreensService } from "../ui-mcp/ui-screens.service.js";
 import { collectConformanceGaps } from "../projects/conformance-gaps.util.js";
 import { AgentSessionLogService } from "./agent-session-log.service.js";
+import { ArchitectureDecisionService } from "./architecture-decision.service.js";
+import { isAutoReconcileInternalGap } from "./architecture-decision.util.js";
 
 const ARTIFACT_FIELD: Partial<Record<AffectedArtifact, string>> = {
   mdd: "mddContent",
@@ -67,6 +69,7 @@ export class DocReconcileService {
     private readonly changeLog: ChangeLogService,
     private readonly conformance: ConformanceService,
     private readonly agentSessionLog: AgentSessionLogService,
+    private readonly architectureDecisions: ArchitectureDecisionService,
     @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
     private readonly uiScreens: UiScreensService,
@@ -186,6 +189,15 @@ export class DocReconcileService {
         data: { status: "RESOLVED", resolvedAt: new Date() },
       });
 
+      const resolvedGap = await this.prisma.documentationGap.findUnique({ where: { id: gapId } });
+      if (resolvedGap) {
+        const evidence = resolvedGap.evidence as DocumentationGapEvidence;
+        const adrSource = isAutoReconcileInternalGap(evidence)
+          ? "auto-reconcile"
+          : "hitl-approved";
+        await this.architectureDecisions.recordFromResolvedGap(projectId, resolvedGap, adrSource);
+      }
+
       return { ok: true };
     } catch (err) {
       await this.restoreSnapshot(projectId, snapshot);
@@ -233,7 +245,10 @@ export class DocReconcileService {
         await this.projects.generateTasks(projectId);
         break;
       case "agentGovernance":
-        await this.projects.generateAgentGovernance(projectId, undefined, { forceRegenerate: false });
+        await this.projects.generateAgentGovernance(projectId, undefined, {
+          forceRegenerate: false,
+          skipSddAutoReconcile: true,
+        });
         break;
       case "uxUiGuide":
         await this.projects.generateUxUiGuide(projectId);
