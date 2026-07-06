@@ -224,6 +224,14 @@ function adjustGapsForEstimationComplexity(
   return g;
 }
 
+/** Section keys used in sectionStatus (matriz de trazabilidad). */
+const TRACEABILITY_SECTION_KEYS = [
+  "contexto",
+  "modeloDatos",
+  "apiContracts",
+  "seguridad",
+] as const;
+
 /**
  * Desglose de precisión por sección/agente (0–100) para la tabla del chat.
  * Usa las mismas secciones y gaps que el semáforo; cada dimensión se penaliza según gaps que la afectan.
