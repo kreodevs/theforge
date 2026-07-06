@@ -1751,6 +1751,13 @@ name: ${JSON.stringify(name)}
       tasksContent: project.tasksContent,
       architectureContent: project.architectureContent,
       specContent: project.specContent,
+      apiContractsContent: project.apiContractsContent,
+      logicFlowsContent: project.logicFlowsContent,
+      uxUiGuideContent: project.uxUiGuideContent,
+      uiScreensContent: project.uiScreensContent,
+      infraContent: project.infraContent,
+      userStoriesContent: project.userStoriesContent,
+      useCasesContent: project.useCasesContent,
     });
     const forceFreshOverlay = forceRegenerate;
     const scaffold = parseAgentGovernanceResponse(raw, complexity, {
@@ -1797,6 +1804,13 @@ name: ${JSON.stringify(name)}
       tasksContent: project.tasksContent,
       architectureContent: project.architectureContent,
       specContent: project.specContent,
+      apiContractsContent: project.apiContractsContent,
+      logicFlowsContent: project.logicFlowsContent,
+      uxUiGuideContent: project.uxUiGuideContent,
+      uiScreensContent: project.uiScreensContent,
+      infraContent: project.infraContent,
+      userStoriesContent: project.userStoriesContent,
+      useCasesContent: project.useCasesContent,
     });
     const forceFreshOverlay = options?.forceRegenerate !== false;
     const scaffold = parseAgentGovernanceResponse(raw, complexity, {
@@ -2453,7 +2467,13 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
 
     const stages = (project as { stages?: StageWithEst[] }).stages ?? [];
     const projectWithStages = { ...(project as Project), stages };
-    const unified = buildUnifiedHandoff(projectWithStages, loadConsumptionGuideMarkdown());
+    const primaryStage = pickPrimaryStage(stages);
+    const unified = buildUnifiedHandoff(
+      projectWithStages,
+      loadConsumptionGuideMarkdown(
+        specKitFeatureDir(primaryStage?.ordinal ?? 1, project.name),
+      ),
+    );
     const sddBundle = this.sddIntegration.buildHermesSddPayload(projectWithStages);
 
     const payload = {

@@ -246,7 +246,7 @@ export class DocReconcileService {
         break;
       case "agentGovernance":
         await this.projects.generateAgentGovernance(projectId, undefined, {
-          forceRegenerate: false,
+          forceRegenerate: true,
           skipSddAutoReconcile: true,
         });
         break;

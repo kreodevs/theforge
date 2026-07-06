@@ -40,6 +40,7 @@ export * from "./tasks-parse.js";
 export * from "./sdd-integrations.js";
 export * from "./sdd-analyze.js";
 export * from "./document-layout.js";
+export * from "./doc-consumption-guide.js";
 export * from "./brd-health.util.js";
 export * from "./stage-change-spec.util.js";
 export * from "./openspec-export.util.js";

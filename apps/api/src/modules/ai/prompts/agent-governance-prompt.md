@@ -159,7 +159,8 @@ Subflujos: trigger + roles + gates + archivos a cargar (en `.cursor/` tras insta
 
 ## docs/agent-governance/mcp.json.example
 
-- Placeholders `{{PROJECT_ID}}`, `{{API_URL}}`; sin secretos.
+- Placeholders `{{API_URL}}` y `{{MCP_M2M_SECRET}}` (Secret MCP M2M de The Forge); sin secretos reales.
+- `projectId` / `stageId` en `references/THEFORGE-LINK.md`, no en el Bearer.
 
 ## scripts/install-agent-governance.sh
 

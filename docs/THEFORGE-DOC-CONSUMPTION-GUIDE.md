@@ -1,12 +1,26 @@
 # TheForge Document Consumption Guide
 
-> **Propósito:** Guía para agentes de IA (Claude Code, Cursor, Codex, Copilot, etc.) que reciben documentación generada por **TheForge** y deben implementar el código correspondiente. Copia este archivo a la raíz de tu proyecto (o inclúyelo en el AGENTS.md / CLAUDE.md / .cursorrules) antes de iniciar la implementación.
+> **SSOT en handoff:** al exportar un proyecto, The Forge genera esta guía con layout **spec-kit primario** ↔ espejo `docs/sdd/` (vía `buildTheforgeDocConsumptionGuide`). El contenido manual siguiente resume reglas de implementación; ante conflicto de rutas, gana el ZIP/handoff.
 
 ---
 
-## 📚 Estructura de Documentos TheForge
+## Layout spec-kit (handoff unificado)
 
-Cuando TheForge genera la especificación de un proyecto, produce estos documentos en `docs/sdd/<proyecto>/`:
+| Primario (spec-kit) | Espejo (gobernanza) |
+|---------------------|---------------------|
+| `.specify/memory/constitution.md` | `docs/sdd/mdd.md` |
+| `specs/NNN-slug/spec.md` | `docs/sdd/spec.md` |
+| `specs/NNN-slug/plan.md` | `docs/sdd/blueprint.md` |
+| `specs/NNN-slug/tasks.md` | `docs/sdd/tasks.md` |
+| … | Ver `AGENTS.md` § Documentos SDD |
+
+Lee **`IMPLEMENT.md`** y **`PROMPT-INICIAL.md`** antes de codificar.
+
+---
+
+## Estructura legacy (solo proyectos antiguos sin spec-kit)
+
+Cuando TheForge generaba solo documentos sueltos en `docs/sdd/<proyecto>/`:
 
 | Archivo | Qué Contiene | Cómo Usarlo |
 |---------|-------------|-------------|
@@ -38,9 +52,9 @@ MDD §5 → Stack tecnológico (framework, librerías, versiones)
 MDD §6 → Arquitectura (módulos, flujos, integraciones)
 ```
 
-### Regla 2: El Blueprint §8 Define el Componente UI
+### Regla 2: Blueprint §8 vs pantallas.md
 
-**Esta es la regla que más se salta.** El Blueprint §8 especifica qué componente Kreo (o shadcn/ui) usar para cada tipo de entidad:
+**Si existe `pantallas.md` (MCP gráfico), gana sobre heurísticas de Blueprint §8.** Sin pantallas, sigue Blueprint §8 y `design-system.md`.
 
 | Tipo de Entidad | Componente a Usar | Ejemplo |
 |-----------------|-------------------|---------|

@@ -39,8 +39,11 @@ export interface SddAgentGovernanceAnalyzeSlice {
   fileCount: number;
   missingRequiredPaths: string[];
   hasInstallGuide: boolean;
-  /** True when docs/sdd mirror paths exist in the governance scaffold. */
+  /** True when all expected docs/sdd mirrors for present deliverables exist. */
   pathAlignmentOk: boolean;
+  missingMirrorPaths?: string[];
+  mddConformanceOk?: boolean;
+  mddConformanceGaps?: string[];
 }
 
 export interface SddAnalyzeConformance {

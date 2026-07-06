@@ -126,6 +126,25 @@ export interface AgentGovernanceGenerateOptions extends LegacyGenerateOptions {
   tasksContent?: string | null;
   architectureContent?: string | null;
   specContent?: string | null;
+  apiContractsContent?: string | null;
+  logicFlowsContent?: string | null;
+  uxUiGuideContent?: string | null;
+  uiScreensContent?: string | null;
+  infraContent?: string | null;
+  userStoriesContent?: string | null;
+  useCasesContent?: string | null;
+}
+
+function appendDeliverableSection(
+  prompt: string,
+  label: string,
+  content: string | null | undefined,
+  maxLen: number,
+  legacyBaselineStage?: LegacyGenerateOptions["legacyBaselineStage"],
+): string {
+  const capped = capTextForLegacyBaseline(content ?? "", maxLen, legacyBaselineStage);
+  if (!capped.trim()) return prompt;
+  return `${prompt}\n\n${label}:\n---\n${capped}\n---`;
 }
 
 /** Instrucción fija para toda documentación legacy: complementar sin inventar. */
@@ -807,12 +826,63 @@ export class AiService {
         ? constitutionNote +
           "MDD:\n---\n" +
           mdd +
-          "\n---\n\n" +
-          (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---\n\n" : "") +
-          (architecture ? "Architecture:\n---\n" + architecture + "\n---\n\n" : "") +
-          (tasks ? "Tasks (checklist de implementación — usar para PROMPT-INICIAL, AGENT-PROMPT y PROGRESO):\n---\n" + tasks + "\n---\n\n" : "") +
-          (spec ? "Spec:\n---\n" + spec + "\n---" : "")
+          "\n---"
         : "No hay MDD. Genera un scaffold mínimo LOW (AGENTS.md, CLAUDE.md, docs/agent-onboarding.md, 1 rule git-commits).");
+    if (mdd.length > 0) {
+      prompt = appendDeliverableSection(prompt, "Blueprint", blueprint, 15000, options?.legacyBaselineStage);
+      prompt = appendDeliverableSection(prompt, "Architecture", architecture, 12000, options?.legacyBaselineStage);
+      prompt = appendDeliverableSection(
+        prompt,
+        "Tasks (checklist — usar para PROMPT-INICIAL, AGENT-PROMPT y PROGRESO)",
+        tasks,
+        12000,
+        options?.legacyBaselineStage,
+      );
+      prompt = appendDeliverableSection(prompt, "Spec", spec, 8000, options?.legacyBaselineStage);
+      prompt = appendDeliverableSection(
+        prompt,
+        "Contratos API",
+        options?.apiContractsContent,
+        12000,
+        options?.legacyBaselineStage,
+      );
+      prompt = appendDeliverableSection(
+        prompt,
+        "Flujos lógicos",
+        options?.logicFlowsContent,
+        8000,
+        options?.legacyBaselineStage,
+      );
+      prompt = appendDeliverableSection(
+        prompt,
+        "Design System",
+        options?.uxUiGuideContent,
+        8000,
+        options?.legacyBaselineStage,
+      );
+      prompt = appendDeliverableSection(
+        prompt,
+        "Pantallas (UI MCP)",
+        options?.uiScreensContent,
+        8000,
+        options?.legacyBaselineStage,
+      );
+      prompt = appendDeliverableSection(prompt, "Infra", options?.infraContent, 8000, options?.legacyBaselineStage);
+      prompt = appendDeliverableSection(
+        prompt,
+        "Historias de usuario",
+        options?.userStoriesContent,
+        8000,
+        options?.legacyBaselineStage,
+      );
+      prompt = appendDeliverableSection(
+        prompt,
+        "Casos de uso",
+        options?.useCasesContent,
+        8000,
+        options?.legacyBaselineStage,
+      );
+    }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);

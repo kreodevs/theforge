@@ -121,6 +121,12 @@ export function migrateGovernancePath(path: string): string {
   if (normalized.startsWith(".cursor/references/")) {
     return `${GOVERNANCE_DOCS_PREFIX}references/${normalized.slice(".cursor/references/".length)}`;
   }
+  if (normalized.startsWith(".cursor/agents/")) {
+    return `${GOVERNANCE_DOCS_PREFIX}agents/${normalized.slice(".cursor/agents/".length)}`;
+  }
+  if (normalized.startsWith(".cursor/commands/")) {
+    return `${GOVERNANCE_DOCS_PREFIX}commands/${normalized.slice(".cursor/commands/".length)}`;
+  }
   if (normalized === ".cursor/mcp.json" || normalized === "mcp.json.example") {
     return `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`;
   }

@@ -135,7 +135,9 @@ export class SddIntegrationService {
       architectureContent: deliverables.architectureContent ?? project.architectureContent,
       useCasesContent: deliverables.useCasesContent ?? project.useCasesContent,
       userStoriesContent: deliverables.userStoriesContent ?? project.userStoriesContent,
-      consumptionGuideContent: loadConsumptionGuideMarkdown(),
+      consumptionGuideContent: loadConsumptionGuideMarkdown(
+        specKitFeatureDir(stage?.ordinal ?? 1, project.name),
+      ),
       changeSpecContent: stage?.changeSpecContent ?? null,
       acceptanceCriteriaLines: acceptanceLines.length ? acceptanceLines : null,
     });
@@ -143,7 +145,11 @@ export class SddIntegrationService {
 
   /** Payload SDD estructurado para webhook Hermes (hashes completos, sin truncar). */
   buildHermesSddPayload(project: ProjectWithStages) {
-    const unified = buildUnifiedHandoff(project, loadConsumptionGuideMarkdown());
+    const stage = pickPrimaryStage(project.stages);
+    const unified = buildUnifiedHandoff(
+      project,
+      loadConsumptionGuideMarkdown(specKitFeatureDir(stage?.ordinal ?? 1, project.name)),
+    );
     return buildHermesHandoffPayload(unified, project);
   }
 
@@ -167,7 +173,10 @@ export class SddIntegrationService {
   async getRepoHandoffExport(projectId: string): Promise<RepoHandoffExport> {
     const project = await this.loadProject(projectId);
     const stage = pickPrimaryStage(project.stages);
-    const unified = buildUnifiedHandoff(project, loadConsumptionGuideMarkdown());
+    const unified = buildUnifiedHandoff(
+      project,
+      loadConsumptionGuideMarkdown(specKitFeatureDir(stage?.ordinal ?? 1, project.name)),
+    );
 
     if (unified.governancePersisted && unified.serializedGovernance) {
       await this.prisma.project.update({
@@ -401,7 +410,7 @@ export class SddIntegrationService {
 
     const agentGov = analyzeAgentGovernanceSlice(project);
     if (!agentGov.present) {
-      crossArtifactGaps.push("Gobernanza IA no generada — recomendada para handoff");
+      crossArtifactGaps.push("Gobernanza IA no generada — obligatoria para handoff HIGH");
     } else {
       if (agentGov.missingRequiredPaths.length > 0) {
         crossArtifactGaps.push(
@@ -410,7 +419,13 @@ export class SddIntegrationService {
       }
       if (!agentGov.pathAlignmentOk) {
         crossArtifactGaps.push(
-          "Gobernanza IA: espejos docs/sdd incompletos (ejecutar export reconciliado)",
+          "Gobernanza IA: espejos docs/sdd incompletos — faltan: " +
+            (agentGov.missingMirrorPaths ?? []).join(", "),
+        );
+      }
+      if (agentGov.mddConformanceOk === false && agentGov.mddConformanceGaps?.length) {
+        crossArtifactGaps.push(
+          ...agentGov.mddConformanceGaps.map((g) => `[Gobernanza↔MDD] ${g}`),
         );
       }
     }
@@ -419,8 +434,10 @@ export class SddIntegrationService {
     let status: SddAnalyzeStatus = "ok";
     const govBlockHigh =
       complexity === ComplexityLevel.HIGH &&
-      agentGov.present &&
-      agentGov.missingRequiredPaths.length > 0;
+      (!agentGov.present ||
+        agentGov.missingRequiredPaths.length > 0 ||
+        !agentGov.pathAlignmentOk ||
+        agentGov.mddConformanceOk === false);
 
     if (!mdd || gapCount > 8 || govBlockHigh) status = "blocked";
     else if (gapCount > 0) status = "warnings";

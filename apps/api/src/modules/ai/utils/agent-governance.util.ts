@@ -2,12 +2,15 @@ import { Logger } from "@nestjs/common";
 import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
   buildGovernanceInstallMap,
+  buildTheforgeDocConsumptionGuide,
   formatDocumentMarkdown,
   formatDocumentPathMapTable,
   formatDocumentPathMapTableStatic,
   formatWorkshopSupplementSection,
+  GOVERNANCE_THEFORGE_DOC_CONSUMPTION_GUIDE,
   GOVERNANCE_DOCS_PREFIX,
   migrateGovernancePath,
+  ROOT_THEFORGE_DOC_CONSUMPTION_GUIDE,
   type AgentGovernanceFile,
   type AgentGovernanceScaffold,
   type AgentGovernanceSuggestionsManifest,
@@ -54,7 +57,7 @@ const DUPLICATE_PROMPT_PATHS = [
   "docs/agent-governance/PROMPT-INICIAL.md",
 ] as const;
 
-const DOC_CONSUMPTION_GUIDE_PATH = `${GOVERNANCE_DOCS_PREFIX}references/THEFORGE-DOC-CONSUMPTION-GUIDE.md`;
+const DOC_CONSUMPTION_GUIDE_PATH = GOVERNANCE_THEFORGE_DOC_CONSUMPTION_GUIDE;
 
 /** Contexto interno del proyecto para agentes (consumido por `/implementar-tarea`). */
 export const AGENT_PROMPT_PATH = `${GOVERNANCE_DOCS_PREFIX}references/AGENT-PROMPT.md`;
@@ -95,6 +98,8 @@ const TARGET_PATH_MAP: Record<GovernanceTarget, Array<{ from: RegExp; to: string
     { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}rules/(.+\\.mdc)$`), to: ".openhands/rules/$1" },
     { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}skills/(.+)/SKILL\\.md$`), to: ".openhands/skills/$1/SKILL.md" },
     { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}references/`), to: ".openhands/references/" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}agents/`), to: ".openhands/agents/" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}commands/`), to: ".openhands/commands/" },
     { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}mcp\\.json\\.example$`), to: ".openhands/mcp.json" },
     { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}`), to: ".openhands/" },
     // Omitir shims de Cursor
@@ -106,6 +111,8 @@ const TARGET_PATH_MAP: Record<GovernanceTarget, Array<{ from: RegExp; to: string
     { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}rules/(.+)\\.mdc$`), to: ".hermes/skills/$1/SKILL.md" },
     { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}skills/(.+)/SKILL\\.md$`), to: ".hermes/skills/$1/SKILL.md" },
     { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}references/`), to: ".hermes/references/" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}agents/`), to: ".hermes/agents/" },
+    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}commands/`), to: ".hermes/commands/" },
     { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}mcp\\.json\\.example$`), to: ".hermes/mcp.json.example" },
     { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}`), to: ".hermes/" },
     // Omitir shims de Cursor
@@ -166,6 +173,9 @@ export const AGENT_GOVERNANCE_REQUIRED_MEDIUM = [
   THEFORGE_DOC_SYNC_SKILL_PATH,
   `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`,
   "scripts/install-agent-governance.sh",
+  GOVERNANCE_THEFORGE_DOC_CONSUMPTION_GUIDE,
+  ROOT_THEFORGE_DOC_CONSUMPTION_GUIDE,
+  "IMPLEMENT.md",
 ] as const;
 
 function stripJsonFences(raw: string): string {
@@ -201,38 +211,7 @@ function replaceFeatureDirPlaceholders(content: string, featureDir: string): str
 }
 
 function defaultDocConsumptionGuide(featureDir?: string): string {
-  const featureRef = featureDir?.trim() || "specs/NNN-slug";
-  const tasksPath = `${featureRef}/tasks.md`;
-  const planPath = `${featureRef}/plan.md`;
-  const specPath = `${featureRef}/spec.md`;
-  const contractsPath = `${featureRef}/contracts/`;
-  return (
-    "# Guía de consumo de documentos TheForge\n\n" +
-    "Resumen para agentes que implementan desde entregables SDD incluidos en este ZIP.\n\n" +
-    "## Orden de lectura (primario spec-kit, espejo docs/sdd)\n\n" +
-    "1. **`.specify/memory/constitution.md`** — Constitución (MDD); espejo: `docs/sdd/mdd.md`.\n" +
-    `2. **\`${featureRef}/research.md\`** — Paso 0 / investigación (si existe); espejo: \`docs/sdd/research.md\`.\n` +
-    `3. **\`${specPath}\`** — Requisitos y criterios de aceptación; espejo: \`docs/sdd/spec.md\`.\n` +
-    `4. **\`${featureRef}/architecture.md\`**, **\`use-cases.md\`**, **\`user-stories.md\`** — cuando existan (espejos homónimos en \`docs/sdd/\`).\n` +
-    `5. **\`${planPath}\`** — Blueprint / plan técnico; espejo: \`docs/sdd/blueprint.md\`.\n` +
-    `6. **\`${featureRef}/design-system.md\`** y **\`pantallas.md\`** — antes de implementar UI (espejos \`ux-ui-guide.md\`, \`pantallas.md\`).\n` +
-    `7. **\`${contractsPath}api-contracts.md\`** y **\`${featureRef}/logic-flows.md\`** — contratos y flujos cuando existan.\n` +
-    `8. **\`${tasksPath}\`** — Checklist de implementación; espejo: \`docs/sdd/tasks.md\`.\n` +
-    `9. **\`${featureRef}/infra.md\`**, **\`data-model.md\`**, **\`docs/sdd/decisions/*.md\`** — infra, modelo §3 y ADRs si están en el ZIP.\n` +
-    `10. **\`${featureRef}/quickstart.md\`** — smoke tests por checkpoint al cerrar bloques de Tasks.\n\n` +
-    "### Mapeo de rutas\n\n" +
-    defaultDocumentPathMapTable(featureDir) +
-    "\n\n" +
-    formatWorkshopSupplementSection(featureDir) +
-    "\n\n" +
-    "**El layout spec-kit es canónico.** Los archivos bajo `docs/sdd/` son espejo para rules/skills de gobernanza; ante conflicto de contenido, gana el primario.\n\n" +
-    "## Prioridad ante conflictos\n\n" +
-    "**El MDD manda.** Si un entregable contradice otro, sigue MDD §2–§6 y documenta la resolución en `docs/sdd/PROGRESO.md`.\n\n" +
-    "## Gates antes de cerrar tareas\n\n" +
-    "- Lint, typecheck y tests del paquete tocado.\n" +
-    `- Contratos API alineados a \`${contractsPath}\` o \`docs/sdd/api-contracts.md\` cuando exista.\n` +
-    "- Actualizar `docs/sdd/PROGRESO.md` al completar ítems de Tasks.\n"
-  );
+  return buildTheforgeDocConsumptionGuide(featureDir);
 }
 
 const AGENTS_SDD_DUAL_SECTION = "## Documentos SDD (layout dual)";
@@ -918,7 +897,7 @@ function buildHandoffReadingOrderSection(featureDir?: string): string {
     `10. **\`${AGENT_PROMPT_PATH}\`** — contexto del proyecto (stack, módulos, conflictos SDD)\n` +
     `11. **\`${featureRef}/tasks.md\`** — checklist de ejecución (espejo: \`docs/sdd/tasks.md\`)\n` +
     `12. **\`${featureRef}/infra.md\`**, **\`data-model.md\`**, **\`docs/sdd/decisions/*.md\`**, **\`quickstart.md\`** — cuando existan\n` +
-    `13. **\`${DOC_CONSUMPTION_GUIDE_PATH}\`** — reglas completas de consumo\n\n` +
+    `13. **\`${ROOT_THEFORGE_DOC_CONSUMPTION_GUIDE}\`** — reglas completas de consumo (misma guía en \`${GOVERNANCE_THEFORGE_DOC_CONSUMPTION_GUIDE}\`)\n\n` +
     "**Ante conflicto entre artefactos, gana el MDD.** No te limites a MDD/Spec/Plan/Tasks: usa todo lo presente en el ZIP según la tarea.\n"
   );
 }

@@ -128,6 +128,11 @@ export const DOCUMENT_PATH_MAP_STATIC: DocumentPathEntry[] = [
   },
 ];
 
+/** Espejos docs/sdd/ exportables (sin wildcards ni quickstart duplicado). */
+export const DOCUMENT_SDD_MIRROR_PATHS = DOCUMENT_PATH_MAP_STATIC.map((e) => e.mirror).filter(
+  (mirror) => mirror.startsWith("docs/sdd/") && !mirror.includes("*"),
+);
+
 /** Artefactos del Workshop que no siguen el layout spec-kit estándar. */
 export const WORKSHOP_SUPPLEMENT_ENTRIES: WorkshopSupplementEntry[] = [
   {

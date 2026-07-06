@@ -1,28 +1,27 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { buildTheforgeDocConsumptionGuide } from "@theforge/shared-types";
 
 const MONOREPO_ROOT = join(__dirname, "../../../../../..");
 
-let cachedConsumptionGuide: string | null = null;
-
-/** Lee `docs/THEFORGE-DOC-CONSUMPTION-GUIDE.md` para bundles SDD (best-effort). */
-export function loadConsumptionGuideMarkdown(): string | null {
-  if (cachedConsumptionGuide !== null) return cachedConsumptionGuide;
-  const candidates = [
-    join(MONOREPO_ROOT, "docs/THEFORGE-DOC-CONSUMPTION-GUIDE.md"),
-    join(process.cwd(), "docs/THEFORGE-DOC-CONSUMPTION-GUIDE.md"),
-  ];
-  for (const p of candidates) {
-    try {
-      const text = readFileSync(p, "utf-8").trim();
-      if (text.length > 0) {
-        cachedConsumptionGuide = text;
-        return text;
-      }
-    } catch {
-      // siguiente candidato
-    }
+/**
+ * Guía canónica para handoff (layout spec-kit dual).
+ * @param featureDir p.ej. specs/001-my-feature — si se omite, usa placeholder NNN-slug.
+ */
+export function loadConsumptionGuideMarkdown(featureDir?: string): string {
+  if (featureDir?.trim()) {
+    return buildTheforgeDocConsumptionGuide(featureDir.trim());
   }
-  cachedConsumptionGuide = "";
-  return null;
+  try {
+    const legacy = readFileSync(
+      join(MONOREPO_ROOT, "docs/THEFORGE-DOC-CONSUMPTION-GUIDE.md"),
+      "utf-8",
+    ).trim();
+    if (legacy.includes("layout spec-kit") || legacy.includes("specs/NNN-slug")) {
+      return legacy;
+    }
+  } catch {
+    // fallback generado
+  }
+  return buildTheforgeDocConsumptionGuide();
 }

@@ -22,12 +22,16 @@ import { qualifyBlueprintPostMvpUiMentions } from "../engine/blueprint-enrich-ui
 import { alignSddDeliverablesAtPersist, finalizeInfraMarkdownForExport } from "../documentation-gap/sdd-align-at-persist.util.js";
 import { listArchitectureDecisionFiles } from "../documentation-gap/architecture-decision.util.js";
 import { validateMddForDelivery } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
+import { checkAgentGovernanceVsMdd } from "./agent-governance-conformance.util.js";
+import { enrichGovernanceScaffoldForHandoff } from "./governance-handoff-bootstrap.util.js";
 import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
   buildBranchPolicyExportFile,
   buildSpecKitBundleFiles,
+  buildTheforgeDocConsumptionGuide,
   formatDocumentMarkdown,
   GOVERNANCE_DOCS_PREFIX,
+  ROOT_THEFORGE_DOC_CONSUMPTION_GUIDE,
   parseAgentGovernanceScaffold,
   resolveDocumentPathMap,
   specKitFeatureDir,
@@ -48,7 +52,15 @@ const SDD_MIRROR_PATHS = [
   "docs/sdd/mdd.md",
   "docs/sdd/spec.md",
   "docs/sdd/blueprint.md",
+  "docs/sdd/architecture.md",
+  "docs/sdd/use-cases.md",
+  "docs/sdd/user-stories.md",
+  "docs/sdd/api-contracts.md",
+  "docs/sdd/logic-flows.md",
+  "docs/sdd/ux-ui-guide.md",
+  "docs/sdd/pantallas.md",
   "docs/sdd/tasks.md",
+  "docs/sdd/infra.md",
 ] as const;
 
 export interface UnifiedHandoff {
@@ -205,9 +217,12 @@ export function synthesizeExportGovernanceScaffold(
     governanceInput,
     featureDir,
   });
-  return appendProjectDeliverablesToScaffold(
-    scaffold,
-    buildProjectDeliverableExportInput(project, stage),
+  return enrichGovernanceScaffoldForHandoff(
+    appendProjectDeliverablesToScaffold(
+      scaffold,
+      buildProjectDeliverableExportInput(project, stage),
+    ),
+    featureDir,
   );
 }
 
@@ -275,22 +290,20 @@ function buildInfraExportOpts(
   return corpus ? { extraCorpus: corpus, packageManagerCorpus: corpus } : undefined;
 }
 
-const ROOT_CONSUMPTION_GUIDE = "THEFORGE-DOC-CONSUMPTION-GUIDE.md";
+const ROOT_CONSUMPTION_GUIDE = ROOT_THEFORGE_DOC_CONSUMPTION_GUIDE;
 
 function ensureRootConsumptionGuideInSpecKit(
   specKitFiles: SpecKitBundleFile[],
   agentGovernance: AgentGovernanceScaffold | null,
-  consumptionGuideContent: string | null,
+  featureDir: string,
 ): SpecKitBundleFile[] {
   if (specKitFiles.some((f) => f.path === ROOT_CONSUMPTION_GUIDE)) {
     return specKitFiles;
   }
-  const fromGuide = consumptionGuideContent?.trim();
-  const fromGovernance = agentGovernance?.files.find((f) =>
-    f.path.endsWith("THEFORGE-DOC-CONSUMPTION-GUIDE.md"),
-  )?.content;
-  const content = fromGuide || fromGovernance?.trim();
-  if (!content) return specKitFiles;
+  const fromGovernance = agentGovernance?.files.find(
+    (f) => f.path === ROOT_CONSUMPTION_GUIDE || f.path.endsWith("THEFORGE-DOC-CONSUMPTION-GUIDE.md"),
+  )?.content?.trim();
+  const content = fromGovernance || buildTheforgeDocConsumptionGuide(featureDir);
   return [...specKitFiles, { path: ROOT_CONSUMPTION_GUIDE, content }];
 }
 
@@ -335,9 +348,12 @@ export function reconcileExportScaffold(
     featureDir,
   });
 
-  return appendProjectDeliverablesToScaffold(
-    reconciled,
-    buildProjectDeliverableExportInput(project, pickPrimaryStage(project.stages)),
+  return enrichGovernanceScaffoldForHandoff(
+    appendProjectDeliverablesToScaffold(
+      reconciled,
+      buildProjectDeliverableExportInput(project, pickPrimaryStage(project.stages)),
+    ),
+    featureDir,
   );
 }
 
@@ -420,9 +436,13 @@ export function buildUnifiedHandoff(
   }
 
   const specKitFiles = ensureRootConsumptionGuideInSpecKit(
-    buildSpecKitFilesForProject(project, consumptionGuideContent, stage),
+    buildSpecKitFilesForProject(
+      project,
+      consumptionGuideContent ?? buildTheforgeDocConsumptionGuide(featureDir),
+      stage,
+    ),
     agentGovernance,
-    consumptionGuideContent,
+    featureDir,
   );
 
   const adrFiles = listArchitectureDecisionFiles(project.agentGovernanceContent);
@@ -469,6 +489,10 @@ export function analyzeAgentGovernanceSlice(
 ): SddAgentGovernanceAnalyzeSlice {
   const complexity = (project.complexity ?? "HIGH") as ComplexityLevel;
   const raw = project.agentGovernanceContent?.trim() ?? "";
+  const stage = pickPrimaryStage(project.stages);
+  const mdd = projectConstitutionMarkdown(project);
+  const governanceInput = buildAgentGovernanceInput(project, mdd, complexity, stage);
+  const deliverables = buildProjectDeliverableExportInput(project, stage);
 
   if (!raw) {
     return {
@@ -477,6 +501,9 @@ export function analyzeAgentGovernanceSlice(
       missingRequiredPaths: getRequiredAgentGovernancePaths(complexity),
       hasInstallGuide: false,
       pathAlignmentOk: false,
+      missingMirrorPaths: [],
+      mddConformanceOk: false,
+      mddConformanceGaps: ["Gobernanza IA no generada"],
     };
   }
 
@@ -488,6 +515,9 @@ export function analyzeAgentGovernanceSlice(
       missingRequiredPaths: getRequiredAgentGovernancePaths(complexity),
       hasInstallGuide: false,
       pathAlignmentOk: false,
+      missingMirrorPaths: [],
+      mddConformanceOk: false,
+      mddConformanceGaps: ["Scaffold de gobernania inválido"],
     };
   }
 
@@ -496,8 +526,16 @@ export function analyzeAgentGovernanceSlice(
   const missingRequiredPaths = required.filter((p) => !paths.has(p));
   const installPath = `${GOVERNANCE_DOCS_PREFIX}INSTALACION.md`;
   const hasInstallGuide = paths.has(installPath);
-  const mirrorsPresent = SDD_MIRROR_PATHS.filter((p) => paths.has(p)).length;
-  const pathAlignmentOk = mirrorsPresent >= 3;
+
+  const expectedMirrors = SDD_MIRROR_PATHS.filter((mirrorPath) => {
+    const key = SDD_MIRROR_PATHS_FOR_SPEC_KIT.find((e) => e.path === mirrorPath)?.key;
+    if (!key) return false;
+    return !!deliverables[key]?.trim();
+  });
+  const missingMirrorPaths = expectedMirrors.filter((p) => !paths.has(p));
+  const pathAlignmentOk = missingMirrorPaths.length === 0;
+
+  const mddConformance = checkAgentGovernanceVsMdd(reconciled, governanceInput);
 
   return {
     present: true,
@@ -505,6 +543,9 @@ export function analyzeAgentGovernanceSlice(
     missingRequiredPaths,
     hasInstallGuide,
     pathAlignmentOk,
+    missingMirrorPaths,
+    mddConformanceOk: mddConformance.ok,
+    mddConformanceGaps: mddConformance.gaps,
   };
 }
 

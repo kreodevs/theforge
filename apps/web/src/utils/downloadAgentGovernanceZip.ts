@@ -29,6 +29,12 @@ export function normalizeAgentGovernanceZipPath(path: string): string {
   if (normalized.startsWith(".cursor/references/")) {
     return `${GOVERNANCE_DOCS_PREFIX}references/${normalized.slice(".cursor/references/".length)}`;
   }
+  if (normalized.startsWith(".cursor/agents/")) {
+    return `${GOVERNANCE_DOCS_PREFIX}agents/${normalized.slice(".cursor/agents/".length)}`;
+  }
+  if (normalized.startsWith(".cursor/commands/")) {
+    return `${GOVERNANCE_DOCS_PREFIX}commands/${normalized.slice(".cursor/commands/".length)}`;
+  }
   if (normalized === ".cursor/mcp.json") {
     return `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`;
   }
@@ -83,10 +89,10 @@ function defaultMcpJsonPlaceholder(): string {
   return JSON.stringify(
     {
       mcpServers: {
-        example: {
-          url: "{{API_URL}}",
+        theforge: {
+          url: "{{API_URL}}/mcp",
           headers: {
-            Authorization: "Bearer {{PROJECT_ID}}",
+            Authorization: "Bearer {{MCP_M2M_SECRET}}",
           },
         },
       },
