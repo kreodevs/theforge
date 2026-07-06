@@ -2,6 +2,8 @@
 
 Prompts del módulo AI. Están estructurados según marcos de ingeniería de prompts (COSTAR, RISEN, TIDD-EC) según el objetivo de cada uno: documentos completos con contexto/objetivo/audiencia (COSTAR), flujos con rol/pasos/restricciones (RISEN), salida acotada o JSON (TIDD-EC).
 
+**Dominio-agnóstico:** los ejemplos en prompts (Mermaid, entidades, integraciones) son **ilustrativos**. Los agentes deben derivar nombres, flujos y diagramas del **MDD/DBGA/proyecto actual**, no reutilizar plantillas de otros productos (p. ej. marcas, módulos o sistemas de clientes anteriores). Ver también `agent-governance-prompt.md` (stack-agnóstico) y `master-prompt.md` (coherencia §1→§3/§4).
+
 | Archivo                               | Uso                                                                                                                                                                                                                                                                                       |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **master-prompt.md**                  | Prompt maestro del Workshop. **Coherencia §1→§3/§4** (sin plantillas ajenas; ejemplos geo/fuentes DENUE, INEGI, DatsWhy, OOH) y **§5 ~70%** (Gherkin, mutaciones §4). `AiService` refuerza constitución en entregables. |

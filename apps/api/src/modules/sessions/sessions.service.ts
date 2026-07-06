@@ -1521,7 +1521,7 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
     if (!msg || !current) return null;
 
     const mirrorHint = /\bespejo\b|id\s+(de\s+)?origen|id\s+propio|tablas?\s+espejo/i.test(msg)
-      ? "\n\n**Tablas espejo (obligatorio si aplica):** En cada tabla espejo documenta `tenant_id`, el **id de origen** (clave en el sistema fuente / OBP u OBP4MO) y el **id propio** (PK de la fila en la tabla espejo). Refleja esto en SQL o tablas markdown del DBGA."
+      ? "\n\n**Tablas espejo (obligatorio si aplica):** En cada tabla espejo documenta `tenant_id`, el **id de origen** (clave en el sistema fuente) y el **id propio** (PK de la fila en la tabla espejo). Refleja esto en SQL o tablas markdown del DBGA."
       : "";
 
     const refinePrompt = `Aplica OBLIGATORIAMENTE al documento completo los cambios que pide el usuario. No respondas solo en chat: devuelve el DBGA/Fase 0 COMPLETO en markdown y termina con la línea exacta ---FIN_DBGA---.
@@ -1551,7 +1551,7 @@ ${msg}
           `[Sessions] refineDbga retry (unchanged=${unchanged}, missingIntent=${missingIntent})`,
         );
         response = await this.ai.generateResponse(
-          `${refinePrompt}\n\nREINTENTO: la respuesta anterior NO aplicó los cambios. El documento debe reflejar explícitamente lo pedido (p. ej. tenant_id, tablas espejo con id de origen e id propio, catálogo OBP/OBP4MO).`,
+          `${refinePrompt}\n\nREINTENTO: la respuesta anterior NO aplicó los cambios. El documento debe reflejar explícitamente lo pedido (p. ej. tenant_id, tablas espejo con id de origen e id propio, catálogo multi-origen).`,
           [],
           llmOpts,
         );

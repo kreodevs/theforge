@@ -36,26 +36,26 @@ El Workshop **solo renderiza** diagramas dentro de fences \`\`\`mermaid. Copia e
 \`\`\`mermaid
 flowchart LR
   subgraph ORIGEN["Sistemas Origen"]
-    OBP["OBP"]
+    SRC["Sistema origen A"]
   end
-  subgraph MC["Sistema de Márgenes y Costos"]
-    CAT["Catálogo de costos"]
+  subgraph CORE["Capacidad central"]
+    CAT["Servicio / catálogo core"]
   end
-  OBP -->|"Sincronización de costos base"| CAT
+  SRC -->|"Sincronización de datos"| CAT
 \`\`\`
 
 ### 4.2 Diagrama entidad-relación (estructura de datos de negocio)
 
 \`\`\`mermaid
 erDiagram
-  COSTO_BASE {
+  ENTIDAD_A {
     string nombre
-    decimal valor_base
+    decimal valor
   }
-  FORMATO_MEDIO {
+  ENTIDAD_B {
     string nombre
   }
-  COSTO_BASE }o--o{ FORMATO_MEDIO : "asignado opcionalmente"
+  ENTIDAD_A }o--o{ ENTIDAD_B : "relacionada con"
 \`\`\`
 
 ### 4.3 Flujos críticos
@@ -71,7 +71,7 @@ stateDiagram-v2
 
 **Anti-patrones PROHIBIDOS (rompen el render y serán rechazados):**
 - \`flowchart LR\` o \`erDiagram\` **sin** fence \`\`\`mermaid
-- Aristas como listas markdown: \`- OBP -->|"sync"| CAT\` **fuera** del bloque
+- Aristas como listas markdown: \`- SRC -->|"sync"| CAT\` **fuera** del bloque
 - Partir un diagrama en dos fences o cerrar el fence antes de las aristas
 
 **Listas markdown (-, *, numeradas)** solo en prosa de negocio (§1–§3, §5–§8), **nunca** para conexiones de diagrama.`;
@@ -164,10 +164,10 @@ Explícito: qué NO se construye en esta fase (evita scope creep).
 Jerarquías de precios, lógicas de márgenes, niveles de aprobación, quién autoriza qué, qué queda bloqueado hasta resolución.
 
 ### Definición de entidades de negocio
-Glosario corporativo: qué es Costo Base, Costo Real, Margen Teórico, Lista de Precios Dinámica, etc. para la empresa — **sin** nombres de tablas ni campos.
+Glosario corporativo: define las entidades del **proyecto actual** (según el fuente) — **sin** nombres de tablas ni campos.
 
 ### Fórmulas y umbrales
-Fórmulas conceptuales (ej. precio de venta = costo ÷ (1 − margen)); variables, unidades y excepciones comerciales.
+Fórmulas conceptuales del dominio (ej. total = base × factor); variables, unidades y excepciones comerciales.
 
 ### Matriz de permisos
 Tabla: | Capacidad de negocio | [roles] | Nivel de acceso | Notas de confidencialidad |

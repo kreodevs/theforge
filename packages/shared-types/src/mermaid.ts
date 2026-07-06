@@ -1685,13 +1685,13 @@ export function looksLikeJsonFlattenFlowchart(body: string): boolean {
 
 export function webhookSyncFlowchartBody(): string {
   return `flowchart TD
-  evt["Evento en sistema origen OBP u OBP4MO"]
-  post["POST /api/v1/webhooks/:sistema/:entidad"]
-  val["Validar payload y tenant_id"]
-  upsert["Upsert en tabla espejo"]
-  rsp["Response 200 status ok"]
-  evt --> post
-  post --> val
+  evt["Evento en sistema origen"]
+  recv["Recibir evento"]
+  val["Validar payload e identificador de tenant"]
+  upsert["Persistir o actualizar registro espejo"]
+  rsp["Confirmar recepción al emisor"]
+  evt --> recv
+  recv --> val
   val --> upsert
   upsert --> rsp`;
 }
