@@ -7,10 +7,12 @@ export const MDD_DELIVERY_GATE_ERR = "ERR_MDD_DELIVERY_GATE";
 /**
  * Evalúa el gate tras el pipeline determinista de prepareMddForOutput (fixes seguros en mdd-sanitize).
  */
-export function evaluateMddDeliveryGatePrepared(mddRaw: string): MddDeliveryGateResult {
+export async function evaluateMddDeliveryGatePrepared(
+  mddRaw: string,
+): Promise<MddDeliveryGateResult> {
   const gateRef: { current?: MddDeliveryGateResult } = {};
-  prepareMddForOutput(mddRaw, { deliveryGateRef: gateRef });
-  return gateRef.current ?? validateMddForDelivery(mddRaw);
+  const prepared = await prepareMddForOutput(mddRaw, { deliveryGateRef: gateRef });
+  return gateRef.current ?? validateMddForDelivery(prepared);
 }
 
 export type MddDeliveryGateHttpErrorBody = {

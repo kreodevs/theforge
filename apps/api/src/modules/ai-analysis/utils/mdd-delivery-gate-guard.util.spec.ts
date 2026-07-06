@@ -66,13 +66,13 @@ Docker Compose con PostgreSQL.
 
 describe("evaluateMddDeliveryGatePrepared", () => {
   it("aprueba MDD válido tras pipeline determinista", () => {
-    const gate = evaluateMddDeliveryGatePrepared(VALID_MDD);
+    const gate = await evaluateMddDeliveryGatePrepared(VALID_MDD);
     assert.equal(gate.ok, true);
     assert.equal(gate.blockers.length, 0);
   });
 
   it("bloquea MDD incompleto", () => {
-    const gate = evaluateMddDeliveryGatePrepared("## 1. Contexto\n\nIncompleto.");
+    const gate = await evaluateMddDeliveryGatePrepared("## 1. Contexto\n\nIncompleto.");
     assert.equal(gate.ok, false);
     assert.ok(gate.blockers.length > 0);
   });
@@ -80,7 +80,7 @@ describe("evaluateMddDeliveryGatePrepared", () => {
 
 describe("buildMddDeliveryGateConflictBody", () => {
   it("expone code ERR_MDD_DELIVERY_GATE y blockers en español", () => {
-    const gate = evaluateMddDeliveryGatePrepared("## 1. Contexto\n\nIncompleto.");
+    const gate = await evaluateMddDeliveryGatePrepared("## 1. Contexto\n\nIncompleto.");
     const body = buildMddDeliveryGateConflictBody(gate);
     assert.equal(body.code, MDD_DELIVERY_GATE_ERR);
     assert.ok(body.message.length > 0);
@@ -91,7 +91,7 @@ describe("buildMddDeliveryGateConflictBody", () => {
 
 describe("deliveryGate snapshot helpers", () => {
   it("merge y read round-trip en shortTermContext", () => {
-    const gate = evaluateMddDeliveryGatePrepared(VALID_MDD);
+    const gate = await evaluateMddDeliveryGatePrepared(VALID_MDD);
     const merged = mergeDeliveryGateIntoShortTermContext({ mddAuditSnapshot: { x: 1 } }, gate);
     assert.ok(merged.mddAuditSnapshot);
     const read = readDeliveryGateSnapshot(merged);

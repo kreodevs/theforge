@@ -16,7 +16,7 @@ const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:PrepareOutput
 export function createMddPrepareOutputNode() {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
     const gateRef: { current?: ReturnType<typeof validateMddForDelivery> } = {};
-    const prepared = prepareMddForOutput(
+    const prepared = await prepareMddForOutput(
       { mddDraft: state.mddDraft, mddStructured: state.mddStructured },
       { deliveryGateRef: gateRef },
     );

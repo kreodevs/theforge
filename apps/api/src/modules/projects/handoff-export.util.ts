@@ -21,7 +21,7 @@ import { injectProposedComponentDiagramIntoSection2 } from "../ai-analysis/utils
 import { qualifyBlueprintPostMvpUiMentions } from "../engine/blueprint-enrich-ui-system.js";
 import { alignSddDeliverablesAtPersist, finalizeInfraMarkdownForExport } from "../documentation-gap/sdd-align-at-persist.util.js";
 import { listArchitectureDecisionFiles } from "../documentation-gap/architecture-decision.util.js";
-import { evaluateMddDeliveryGatePrepared } from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
+import { validateMddForDelivery } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
 import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
   buildBranchPolicyExportFile,
@@ -525,7 +525,7 @@ export function buildTheforgeProjectJson(
     artifactPaths[entry.label] = entry.mirror;
   }
   const mddRaw = (stage?.mddContent ?? "").trim();
-  const deliveryGate = mddRaw.length > 80 ? evaluateMddDeliveryGatePrepared(mddRaw) : undefined;
+  const deliveryGate = mddRaw.length > 80 ? validateMddForDelivery(mddRaw) : undefined;
   return {
     projectId: project.id,
     stageId: stage?.id ?? "",

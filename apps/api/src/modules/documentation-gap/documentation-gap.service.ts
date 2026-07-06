@@ -440,7 +440,7 @@ export class DocumentationGapService {
     const mddRaw = (stageRow?.mddContent ?? "").trim();
     const mddDeliveryGate =
       snapshotGate ??
-      (mddRaw.length > 80 ? evaluateMddDeliveryGatePrepared(mddRaw) : null);
+      (mddRaw.length > 80 ? await evaluateMddDeliveryGatePrepared(mddRaw) : null);
 
     return { gaps: rows.map((row) => this.toGapResponse(row)), mddDeliveryGate };
   }

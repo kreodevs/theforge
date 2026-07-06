@@ -175,7 +175,7 @@ export async function prepareMddForOutput(
   const withComponentDiagram = injectProposedComponentDiagramIntoSection2(withErFromSql);
   const enriched = await enrichMddWithUiUxDesignIntent(withComponentDiagram, resolver);
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
-  const markdown = reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
+  const markdown = await reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
   const deliveryGate = validateMddForDelivery(markdown);
   if (options?.deliveryGateRef) {
     options.deliveryGateRef.current = deliveryGate;

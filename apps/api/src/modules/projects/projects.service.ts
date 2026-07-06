@@ -46,9 +46,6 @@ import {
   checkBlueprintDataModelVsMdd,
   checkBlueprintSectionHeaders,
   checkBlueprintSelfContained,
-  checkBlueprintTableFormat,
-  buildApiConformanceGapFeedback,
-  buildInfraConformanceGapFeedback,
   checkApiVsMdd,
   checkLogicFlowsVsMdd,
   checkInfraVsMdd,
@@ -125,7 +122,6 @@ import {
 } from "./stage-deliverable-persist.util.js";
 import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
-import { EstimationService } from "../ai-analysis/estimation/estimation.service.js";
 import { reconcileExportScaffold, buildUnifiedHandoff, buildAgentGovernanceInput, synthesizeExportGovernanceScaffold } from "./handoff-export.util.js";
 import { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
@@ -192,7 +188,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly sddIntegration: SddIntegrationService,
     private readonly uiMcpClient: UiMcpClientService,
     private readonly uiMcp: UiMcpService,
-    private readonly estimation: EstimationService,
     @Inject(forwardRef(() => DocumentationGapService))
     private readonly documentationGap: DocumentationGapService,
   ) {}
@@ -316,17 +311,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const targetStage = pickPrimaryStage(project.stages);
     if (!targetStage) return;
 
-    const { status, precisionScore: gateScore } = this.semaphore.evaluate({
+    const { status, precisionScore } = this.semaphore.evaluate({
       ...this.buildSemaphoreBase(project),
       mddJsonString: this.mddJsonStringForSemaphore(targetStage.mddContent),
     });
-
-    const precisionScore = await this.estimation.resolveLivePrecisionScore(
-      projectId,
-      targetStage.id,
-      targetStage.mddContent,
-      gateScore,
-    );
 
     await this.prisma.stage.update({
       where: { id: targetStage.id },
@@ -370,19 +358,19 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   ): Promise<void> {
     const project = await this.assertProjectAccess(projectId);
     if (project.projectType === "LEGACY") return;
-    this.assertDeliverablesMddGate(project, options?.acknowledgeGaps === true);
+    await this.assertDeliverablesMddGate(project, options?.acknowledgeGaps === true);
   }
 
   /** Gate MDD de entrega para cualquier tipo de proyecto (incl. LEGACY). */
   async assertMddDeliveryGateForDeliverables(projectId: string): Promise<void> {
     const project = await this.assertProjectAccess(projectId);
-    this.assertDeliverablesMddGate(project);
+    await this.assertDeliverablesMddGate(project);
   }
 
-  private assertDeliverablesMddGate(
+  private async assertDeliverablesMddGate(
     project: Project & { stages: StageWithEst[] },
     acknowledgeGaps = false,
-  ): void {
+  ): Promise<void> {
     const stage = pickPrimaryStage(project.stages);
     const mdd = this.mddFromStages(project.stages).trim();
     const cx = project.complexity ?? ComplexityLevel.HIGH;
@@ -406,7 +394,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       return;
     }
 
-    const gate = evaluateMddDeliveryGatePrepared(mdd);
+    const gate = await evaluateMddDeliveryGatePrepared(mdd);
     if (stage?.id) void this.persistMddDeliveryGateSnapshot(stage.id, gate);
     if (!gate.ok && !acknowledgeGaps) {
       throw new ConflictException(buildMddDeliveryGateConflictBody(gate));
@@ -712,7 +700,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         );
         if (!result.ok) {
           if (result.code === MDD_DELIVERY_GATE_ERR && targetStage.id) {
-            const gate = evaluateMddDeliveryGatePrepared(mddForPipeline);
+            const gate = await evaluateMddDeliveryGatePrepared(mddForPipeline);
             void this.persistMddDeliveryGateSnapshot(targetStage.id, gate);
           }
           throw new BadRequestException({
@@ -720,16 +708,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
             message: result.message,
           });
         }
-        const precisionScore = await this.estimation.resolveLivePrecisionScore(
-          id,
-          targetStage.id,
-          result.sanitizedMdd,
-          result.precisionScore,
-        );
         pipelineResult = {
           sanitizedMdd: result.sanitizedMdd,
           status: result.status,
-          precisionScore,
+          precisionScore: result.precisionScore,
         };
         await this.prisma.stage.update({
           where: { id: targetStage.id },
@@ -742,7 +724,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
         void this.persistMddDeliveryGateSnapshot(
           targetStage.id,
-          evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
+          await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
         );
       }
     }
@@ -2247,19 +2229,12 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
       });
     }
 
-    const precisionScore = await this.estimation.resolveLivePrecisionScore(
-      projectId,
-      stageId,
-      result.sanitizedMdd,
-      result.precisionScore,
-    );
-
     await this.prisma.stage.update({
       where: { id: stageId },
       data: {
         mddContent: result.sanitizedMdd,
         status: result.status,
-        precisionScore,
+        precisionScore: result.precisionScore,
       },
     });
     await this.changeLog.log(projectId, "mddContent", result.sanitizedMdd);
@@ -2272,7 +2247,6 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
 
   async generateInfra(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
-    const mddContent = this.constitutionMarkdown(project);
     const legacyOpts = await this.resolveLegacyGenerateOptions(project);
     const mdd = this.constitutionMarkdown(project);
     let content = await this.ai.generateInfra(

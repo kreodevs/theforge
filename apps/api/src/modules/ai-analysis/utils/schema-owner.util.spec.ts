@@ -104,7 +104,7 @@ describe("composeSection3FromStructured", () => {
     assert.equal(after.some((b) => b.includes("outbox-like duplicadas")), false);
     assert.ok(!/CREATE\s+TABLE\s+outbox\s*\(/i.test(composed));
     assert.ok(/tabla\s+eventos\b/i.test(composed) || /Lee la tabla eventos/i.test(composed));
-    const gate = evaluateMddDeliveryGatePrepared(composed);
+    const gate = await evaluateMddDeliveryGatePrepared(composed);
     assert.ok(gate.blockers.every((b) => !b.includes("outbox-like duplicadas")));
   });
 

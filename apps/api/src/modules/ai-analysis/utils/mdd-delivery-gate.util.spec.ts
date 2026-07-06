@@ -242,7 +242,7 @@ describe("mddStreamDeliveryGateFields", () => {
   it("incluye deliveryGate en payload done cuando prepareMddForOutput validó el borrador", async () => {
     const { prepareMddForOutput } = await import("./mdd-prepare-output.js");
     const gateRef: { current?: ReturnType<typeof validateMddForDelivery> } = {};
-    prepareMddForOutput(VALID_MDD, { deliveryGateRef: gateRef });
+    await prepareMddForOutput(VALID_MDD, { deliveryGateRef: gateRef });
     const fields = mddStreamDeliveryGateFields(gateRef.current, "green");
     assert.ok(fields.deliveryGate);
     assert.equal(fields.deliveryGate.ok, true);
