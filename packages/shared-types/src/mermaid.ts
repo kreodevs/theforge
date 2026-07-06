@@ -526,6 +526,73 @@ export function generateMermaid(input: MermaidInput): string {
 
 // ─── Validate & Fix ─────────────────────────────────────────────────────
 
+/** Decode HTML entities sometimes persisted in stored markdown (breaks quoted subgraph titles). */
+export function decodeMermaidHtmlEntities(text: string): string {
+  return (text ?? "")
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+/**
+ * Apply a regex replacement only on segments outside double-quoted strings.
+ * Prevents corrupting labels like `LLM["Servicio LLM (OpenRouter/TokenLab)"]`.
+ */
+function replaceOutsideDoubleQuotes(
+  line: string,
+  pattern: RegExp,
+  replacer: (match: string, ...groups: string[]) => string,
+): string {
+  const parts = line.split(/("[^"]*")/g);
+  return parts
+    .map((part, index) => {
+      if (index % 2 === 1) return part;
+      return part.replace(pattern, replacer);
+    })
+    .join("");
+}
+
+/**
+ * flowchart/graph: quote edge labels with spaces, accents, or `/{}:` so Mermaid 11 parses reliably.
+ * Example: `A -->|Comunica vía| B` → `A -->|"Comunica vía"| B`.
+ */
+export function quoteFlowchartEdgeLabels(content: string): string {
+  if (!/^(flowchart|graph)\s/im.test((content ?? "").trim())) return content ?? "";
+  const edgeArrow = "(<-->|<--->|--[-=>ox.]*>|==[-=>ox.]*>|-\\.->)";
+  const edgeRe = new RegExp(
+    `^(\\s*)([A-Za-z0-9_*][\\w*]*)\\s*${edgeArrow}\\s*\\|([^|\\n]+)\\|\\s*([A-Za-z0-9_*][\\w]*(?:\\[[^\\]]*\\]|\\([^\\)]*\\))?)`,
+    "gm",
+  );
+  return content.replace(
+    edgeRe,
+    (match, indent: string, from: string, arrow: string, label: string, to: string) => {
+      const trimmed = label.trim();
+      if (!trimmed || /^"/.test(trimmed)) return match;
+      if (/[^\x00-\x7F]|\s|\/|[{}:]/.test(trimmed)) {
+        const cleaned = trimmed.replace(/"/g, "'").slice(0, MAX_MERMAID_LABEL_CHARS);
+        return `${indent}${from} ${arrow}|"${cleaned}"| ${to}`;
+      }
+      return match;
+    },
+  );
+}
+
+/**
+ * Strip fences/leaks and normalize diagram body for `mermaid.render` (no ``` wrappers).
+ * Use in MarkdownMermaid / MddViewer before calling the renderer.
+ */
+export function prepareMermaidDiagramForRender(raw: string): string {
+  const { diagram } = splitMermaidBodyAndTrailingProse(raw ?? "");
+  let body = decodeMermaidHtmlEntities(stripMermaidFenceWrappers(diagram));
+  body = stripMarkdownLeakFromMermaidDiagramBody(body);
+  body = normalizeMermaidDiagramBody(body);
+  return stripMermaidFenceWrappers(body).trim();
+}
+
 /** Comas tipográficas → ASCII antes de reparar anotaciones PK/FK. */
 function normalizeMermaidCommas(text: string): string {
   return text.replace(/[\uFF0C\u201A\uFE50\uFE51\u3001]/g, ",");
@@ -1451,12 +1518,12 @@ export function normalizeMermaidDiagramBody(raw: string): string {
     if (/^\s*(alt|opt|loop|par|critical|break)\s/.test(line.trim())) openBlocks++;
     if (/^\s*end\s*$/.test(line.trim())) openBlocks = Math.max(0, openBlocks - 1);
 
-    // Node IDs con espacios → underscore (flowchart/graph; no aplicar a erDiagram).
+    // Node IDs con espacios → underscore (flowchart/graph; no aplicar a erDiagram ni dentro de "…").
     if (
       !isErDiagram &&
       !/^\s*(subgraph|state|class|namespace|direction)\b/i.test(line)
     ) {
-      line = line.replace(/(\w+)\s+(\w+)(\[|\()/g, (_match, p1: string, p2: string, p3: string) => {
+      line = replaceOutsideDoubleQuotes(line, /(\w+)\s+(\w+)(\[|\()/g, (_match, p1, p2, p3) => {
         return `${cleanId(p1)}_${cleanId(p2)}${p3}`;
       });
     }
@@ -1501,6 +1568,7 @@ export function normalizeMermaidDiagramBody(raw: string): string {
   let result = out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   if (!isErDiagram && /^(flowchart|graph)\s/i.test(result)) {
     result = quoteFlowchartLabelsWithParens(result);
+    result = quoteFlowchartEdgeLabels(result);
   }
   return result;
 }

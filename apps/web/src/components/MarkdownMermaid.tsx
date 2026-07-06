@@ -17,9 +17,8 @@ import {
 import { Maximize2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import mermaid from "mermaid";
 import {
-  normalizeMermaidDiagramBody,
-  splitMermaidBodyAndTrailingProse,
-  stripMarkdownLeakFromMermaidDiagramBody,
+  prepareMermaidDiagramForRender,
+  stripMermaidFenceWrappers,
 } from "@theforge/shared-types/mermaid";
 import {
   Button,
@@ -54,9 +53,7 @@ export function mermaidKey(content: string): string {
 }
 
 export function defaultPrepareMermaidForRender(content: string): string {
-  const { diagram } = splitMermaidBodyAndTrailingProse(content);
-  const stripped = stripMarkdownLeakFromMermaidDiagramBody(diagram);
-  return normalizeMermaidDiagramBody(stripped);
+  return prepareMermaidDiagramForRender(content);
 }
 
 function looksLikeMermaidBlock(source: string, className?: string): boolean {
@@ -116,8 +113,8 @@ function useMermaidSvg(
     setError(null);
     setReady(false);
     let cancelled = false;
-    const toRender = prepareContent(content);
-    if (!toRender) return;
+    const toRender = stripMermaidFenceWrappers(prepareContent(content)).trim();
+    if (!toRender || /^```/m.test(toRender)) return;
 
     const doRender = async () => {
       try {
