@@ -17,6 +17,9 @@ import {
   stripMarkdownLeakFromMermaidDiagramBody,
   stripMermaidFenceWrappers,
   dedupeMermaidDiagramHeader,
+  decodeMermaidHtmlEntities,
+  prepareMermaidDiagramForRender,
+  quoteFlowchartEdgeLabels,
   validateMermaid,
 } from "./mermaid.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
@@ -137,7 +140,7 @@ flowchart LR
     const out = normalizeMermaidInDocument(doc);
     assert.doesNotMatch(out, /```\n### ODOO/);
     assert.match(out, /ODOO\[Odoo ERP\] -->\|Webhook\| NEW/);
-    assert.match(out, /FE -->\|GET \/site-costs\| NEW/);
+    assert.match(out, /FE -->\|"GET \/site-costs"\| NEW/);
     assert.match(out, /BE --> NEW/);
     assert.equal((out.match(/```mermaid/g) ?? []).length, 1);
     assert.match(out, /## Requerimientos/);
@@ -726,5 +729,66 @@ _Propuesta derivada de §2–§4: nota markdown.`;
     const out = normalizeMermaidDiagramBody(raw);
     assert.match(out, /BE_SQL\[\("PostgreSQL · 29 tablas"\)\]/);
     assert.doesNotMatch(out, /Propuesta derivada/);
+  });
+});
+
+const USER_SUBGRAPH_FLOWCHART = `flowchart LR
+  subgraph ACTORES["Actores de Negocio"]
+    USER["Usuario Autorizado"]
+    ADMIN["Superadmin/Administrador"]
+  end
+  
+  subgraph CANALES["Canales de Comunicación"]
+    WAS["WhatsApp Business"]
+    CHAT["Chat Interno"]
+  end
+  
+  subgraph SISTEMAS["Sistemas Externos"]
+    BITRIX["Bitrix24 MCP"]
+  end
+  
+  subgraph INFRAESTRUCTURA["Infraestructura Corporativa"]
+    SSO["SSO Corporativo"]
+    LLM["Servicio LLM (OpenRouter/TokenLab)"]
+    DB["Base de Datos Persistente"]
+  end
+USER -->|Comunica vía| WAS
+  USER -->|Comunica vía| CHAT
+  WAS -->|Autenticación y envío| COPILOTO["Copiloto IA Centralizado"]
+  CHAT -->|API REST| COPILOTO
+  COPILOTO <-->|Descubrimiento y ejecución| BITRIX
+  COPILOTO <-->|Validación de credenciales| SSO
+  COPILOTO <-->|Procesamiento de lenguaje| LLM
+  COPILOTO <-->|Persistencia de datos| DB
+  ADMIN -->|Monitorea y configura| COPILOTO`;
+
+describe("subgraph flowchart — BRD ecosystem diagram", () => {
+  it("prepareMermaidDiagramForRender keeps subgraph headers and strips fences", () => {
+    const fenced = "```mermaid\n" + USER_SUBGRAPH_FLOWCHART + "\n```";
+    const out = prepareMermaidDiagramForRender(fenced);
+    assert.doesNotMatch(out, /```/);
+    assert.doesNotMatch(out, /subgraph_/);
+    assert.match(out, /subgraph ACTORES\["Actores de Negocio"\]/);
+    assert.deepEqual(validateMermaid(out), []);
+  });
+
+  it("quoteFlowchartEdgeLabels wraps accent/spaced edge labels", () => {
+    const out = quoteFlowchartEdgeLabels("flowchart LR\nUSER -->|Comunica vía| WAS");
+    assert.match(out, /USER -->\|"Comunica vía"\| WAS/);
+  });
+
+  it("decodeMermaidHtmlEntities restores quoted subgraph titles", () => {
+    const raw = `flowchart LR
+  subgraph ACTORES[&quot;Actores&quot;]
+    USER[&quot;U&quot;]
+  end`;
+    const out = normalizeMermaidDiagramBody(decodeMermaidHtmlEntities(raw));
+    assert.match(out, /subgraph ACTORES\["Actores"\]/);
+    assert.match(out, /USER\["U"\]/);
+  });
+
+  it("does not mangle parenthetical labels inside quoted node text", () => {
+    const out = normalizeMermaidDiagramBody(USER_SUBGRAPH_FLOWCHART);
+    assert.match(out, /LLM\["Servicio LLM \(OpenRouter\/TokenLab\)"\]/);
   });
 });

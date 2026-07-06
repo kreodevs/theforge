@@ -16,9 +16,7 @@ import {
 } from "@theforge/shared-types/repair-directory-tree";
 import {
   normalizeMermaidInDocument,
-  normalizeMermaidDiagramBody,
-  splitMermaidBodyAndTrailingProse,
-  stripMarkdownLeakFromMermaidDiagramBody,
+  prepareMermaidDiagramForRender,
 } from "@theforge/shared-types/mermaid";
 import { parseMarkdownSections } from "../utils/markdownSections";
 import {
@@ -82,11 +80,7 @@ function normalizeMermaidContent(content: string): string {
  *    Si no se puede determinar el participante, se ignoran (mejor que error de parse).
  */
 function prepareMermaidForRender(content: string): string {
-  const { diagram } = splitMermaidBodyAndTrailingProse(content);
-  const stripped = stripMarkdownLeakFromMermaidDiagramBody(diagram);
-  if (!stripped.trim()) return "";
-
-  let body = normalizeMermaidDiagramBody(stripped);
+  let body = prepareMermaidDiagramForRender(content);
   if (!body.trim()) return "";
 
   if (/sequenceDiagram/i.test(body)) {
