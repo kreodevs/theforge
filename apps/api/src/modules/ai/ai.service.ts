@@ -1180,9 +1180,14 @@ export class AiService {
   async verifyDeliverable(
     mddContent: string,
     documentContent: string,
-    deliverableKind: "blueprint" | "api" | "infra",
+    deliverableKind: "blueprint" | "api" | "infra" | "logicFlows",
   ): Promise<string> {
-    const kindLabel = { blueprint: "Blueprint", api: "Contratos de API", infra: "Infraestructura" }[deliverableKind];
+    const kindLabel = {
+      blueprint: "Blueprint",
+      api: "Contratos de API",
+      infra: "Infraestructura",
+      logicFlows: "Flujos de lógica",
+    }[deliverableKind];
     const prompt = `Verifica si el siguiente documento **${kindLabel}** cumple el MDD (Constitución) que se proporciona.\n\nMDD:\n---\n${(mddContent || "").trim()}\n---\n\nDocumento ${kindLabel}:\n---\n${(documentContent || "").trim()}\n---`;
     return this.generateResponse(prompt, [], { systemPrompt: VERIFY_DELIVERABLE_PROMPT });
   }
@@ -1266,8 +1271,11 @@ export class AiService {
       const ok = parsed?.ok === true;
       const gaps = Array.isArray(parsed?.gaps) ? parsed.gaps.filter((g) => typeof g === "string") : [];
       return { ok, gaps };
-    } catch {
-      return { ok: true, gaps: [] };
+    } catch (err) {
+      this.logger.warn(
+        `[conformanceCheck] ${kind} parse/LLM falló: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return { ok: false, gaps: ["Verificación de conformidad con IA no disponible — revisar manualmente o repetir con ?useLlm=true"] };
     }
   }
 
