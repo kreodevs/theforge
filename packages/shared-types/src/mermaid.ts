@@ -588,6 +588,9 @@ export function quoteFlowchartEdgeLabels(content: string): string {
 export function prepareMermaidDiagramForRender(raw: string): string {
   const { diagram } = splitMermaidBodyAndTrailingProse(raw ?? "");
   let body = decodeMermaidHtmlEntities(stripMermaidFenceWrappers(diagram));
+  if (/^erDiagram\b/im.test(body.trim())) {
+    body = repairErDiagramBrdMarkdownLeaks(body);
+  }
   body = stripMarkdownLeakFromMermaidDiagramBody(body);
   body = normalizeMermaidDiagramBody(body);
   return stripMermaidFenceWrappers(body).trim();
@@ -682,6 +685,66 @@ export function stripErDiagramSqlDefaultArtifacts(content: string): string {
       return !/^\w+\s+default(\s+(?:PK|FK|UK))*\s*$/i.test(t);
     })
     .join("\n");
+}
+
+/**
+ * erDiagram BRD-style: el LLM emite atributos como viñetas `- string attr`, entidades como
+ * `### ENTIDAD {` y relaciones como `### TENANT ||--o{ USUARIO`. Repara a sintaxis Mermaid plana.
+ */
+export function repairErDiagramBrdMarkdownLeaks(content: string): string {
+  if (!/^erDiagram\b/im.test((content ?? "").trim())) return content ?? "";
+
+  return content
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      let s = line;
+
+      // ### TENANT ||--o{ USUARIO : "posee"
+      if (/^#{1,6}\s+/.test(trimmed) && MERMAID_ARROW_OR_ER_RE.test(trimmed)) {
+        s = s.replace(/^(\s*)#{1,6}\s+/, "$1");
+      }
+
+      // ### ENTIDAD {
+      const withoutHeading = trimmed.replace(/^#{1,6}\s+/, "");
+      if (/^#{1,6}\s+/.test(trimmed) && /^[A-Za-z][\w\s]*\s*\{\s*$/.test(withoutHeading)) {
+        s = s.replace(/^(\s*)#{1,6}\s+/, "$1");
+      }
+
+      // - string nombre / * datetime fecha (atributos dentro de bloques de entidad)
+      if (MERMAID_LEAKED_LIST_PREFIX_RE.test(s)) {
+        const core = sequenceLineCore(trimmed);
+        if (
+          /^[a-zA-Z_][\w]*\s+[a-zA-Z_][\w]*/.test(core) &&
+          !MERMAID_ARROW_OR_ER_RE.test(core) &&
+          !/(--+>|->>|--x)/.test(core)
+        ) {
+          s = s.replace(MERMAID_LEAKED_LIST_PREFIX_RE, "$1    ");
+        }
+      }
+
+      return s;
+    })
+    .join("\n");
+}
+
+/** True when a line is valid erDiagram interior syntax (entity, attribute, or relationship). */
+function isErDiagramInteriorSyntaxLine(trimmed: string): boolean {
+  if (!trimmed) return false;
+  const core = sequenceLineCore(trimmed);
+  if (!core) return false;
+  if (/^erDiagram\b/i.test(core)) return true;
+  if (/^[A-Za-z][\w\s]*\s*\{\s*$/.test(core)) return true;
+  if (/^\}\s*$/.test(core)) return true;
+  if (
+    /^[a-zA-Z_][\w]*\s+[a-zA-Z_][\w]*/.test(core) &&
+    !MERMAID_ARROW_OR_ER_RE.test(core) &&
+    !/(--+>|->>|--x)/.test(core)
+  ) {
+    return true;
+  }
+  if (MERMAID_ARROW_OR_ER_RE.test(core) && /[A-Za-z0-9_]/.test(core)) return true;
+  return false;
 }
 
 /** Tipos PostgreSQL → tipos Mermaid seguros en erDiagram. */
@@ -1361,13 +1424,21 @@ export function splitMermaidFenceBodyAtDocumentLeak(body: string): { diagram: st
   const diagramLines: string[] = [];
   const remainderLines: string[] = [];
   let seenDiagramStart = false;
+  let inErDiagram = false;
   let inRemainder = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!inRemainder) {
-      if (MERMAID_BODY_START.test(trimmed)) seenDiagramStart = true;
+      if (MERMAID_BODY_START.test(trimmed)) {
+        seenDiagramStart = true;
+        inErDiagram = /^erDiagram\b/i.test(trimmed);
+      }
       if (seenDiagramStart && mermaidMarkdownLeakLine(trimmed)) {
+        if (inErDiagram && isErDiagramInteriorSyntaxLine(trimmed)) {
+          diagramLines.push(line);
+          continue;
+        }
         inRemainder = true;
         remainderLines.push(line);
         continue;
@@ -1394,6 +1465,7 @@ export function stripMarkdownLeakFromMermaidDiagramBody(raw: string): string {
   const lines = raw.split("\n");
   const out: string[] = [];
   let seenDiagramStart = false;
+  let inErDiagram = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -1406,11 +1478,18 @@ export function stripMarkdownLeakFromMermaidDiagramBody(raw: string): string {
 
     if (MERMAID_DIAGRAM_HEADER_LINE.test(trimmed)) {
       seenDiagramStart = true;
+      inErDiagram = /^erDiagram\b/i.test(trimmed);
       out.push(line);
       continue;
     }
 
-    if (seenDiagramStart && mermaidMarkdownLeakLine(trimmed)) break;
+    if (seenDiagramStart && mermaidMarkdownLeakLine(trimmed)) {
+      if (inErDiagram && isErDiagramInteriorSyntaxLine(trimmed)) {
+        out.push(line);
+        continue;
+      }
+      break;
+    }
 
     out.push(line);
   }
@@ -1429,6 +1508,7 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
   const diagramLines: string[] = [];
   const trailingLines: string[] = [];
   let seenDiagramStart = false;
+  let inErDiagram = false;
   let inTrailing = false;
 
   for (const line of lines) {
@@ -1442,11 +1522,16 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
 
     if (MERMAID_DIAGRAM_HEADER_LINE.test(trimmed)) {
       seenDiagramStart = true;
+      inErDiagram = /^erDiagram\b/i.test(trimmed);
       diagramLines.push(line);
       continue;
     }
 
     if (seenDiagramStart && mermaidMarkdownLeakLine(trimmed)) {
+      if (inErDiagram && isErDiagramInteriorSyntaxLine(trimmed)) {
+        diagramLines.push(line);
+        continue;
+      }
       inTrailing = true;
     }
 
@@ -1473,6 +1558,9 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
 /** Normaliza solo el cuerpo del diagrama (sin fences). */
 export function normalizeMermaidDiagramBody(raw: string): string {
   let stripped = stripMermaidFenceWrappers(raw);
+  if (/^erDiagram\b/im.test(stripped.trim())) {
+    stripped = repairErDiagramBrdMarkdownLeaks(stripped);
+  }
   stripped = stripMarkdownLeakFromMermaidDiagramBody(stripped);
   if (!stripped?.trim()) return "";
   stripped = dedupeMermaidDiagramHeader(stripped);
