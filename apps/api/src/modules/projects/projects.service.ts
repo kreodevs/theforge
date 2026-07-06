@@ -2024,11 +2024,33 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     const project = await this.assertProjectAccess(projectId);
     const legacyOpts = await this.resolveLegacyGenerateOptions(project);
     const mdd = this.constitutionMarkdown(project);
-    const content = await this.ai.generateLogicFlows(mdd, gapsFeedback, legacyOpts);
-    const cleaned = cleanDocumentContent(content);
+    let content = await this.ai.generateLogicFlows(mdd, gapsFeedback, legacyOpts);
+    let cleaned = cleanDocumentContent(content);
+
+    let qualityRetried = false;
+    let lfCheck = this.conformance.checkLogicFlows(mdd, cleaned);
+    if (!lfCheck.ok && !qualityRetried) {
+      qualityRetried = true;
+      const internalFeedback = lfCheck.gaps.join("; ");
+      const combinedFeedback = [gapsFeedback?.trim(), internalFeedback].filter(Boolean).join("\n\n");
+      this.logger.warn(`[Flujos] Conformidad insuficiente — reintentando: ${internalFeedback.slice(0, 200)}`);
+      cleaned = cleanDocumentContent(await this.ai.generateLogicFlows(mdd, combinedFeedback, legacyOpts));
+      lfCheck = this.conformance.checkLogicFlows(mdd, cleaned);
+    }
+
     if ((project as { projectType?: string }).projectType === "LEGACY") {
       await this.persistLegacyLogicFlowsCoverageDebug(projectId, project, cleaned, legacyOpts);
     }
+
+    const postCheck = this.conformance.checkLogicFlows(mdd, cleaned);
+    if (!postCheck.ok) {
+      const gapSummary = postCheck.gaps.slice(0, 6).join("; ");
+      this.logger.warn(`[Flujos] Post-generation conformance gaps: ${gapSummary}`);
+      await this.changeLog
+        .log(projectId, "logicFlowsContent", `[conformance-recheck] ${gapSummary}`)
+        .catch(() => {});
+    }
+
     return this.update(projectId, { logicFlowsContent: cleaned });
   }
 
@@ -2084,13 +2106,38 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
   async generateInfra(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
     const legacyOpts = await this.resolveLegacyGenerateOptions(project);
-    const content = await this.ai.generateInfra(
-      this.constitutionMarkdown(project),
+    const mdd = this.constitutionMarkdown(project);
+    let content = await this.ai.generateInfra(
+      mdd,
       project.blueprintContent,
       gapsFeedback,
       legacyOpts,
     );
-    return this.update(projectId, { infraContent: cleanDocumentContent(content) });
+    let cleaned = cleanDocumentContent(content);
+
+    let qualityRetried = false;
+    let infraCheck = this.conformance.checkInfra(mdd, cleaned);
+    if (!infraCheck.ok && !qualityRetried) {
+      qualityRetried = true;
+      const internalFeedback = infraCheck.gaps.join("; ");
+      const combinedFeedback = [gapsFeedback?.trim(), internalFeedback].filter(Boolean).join("\n\n");
+      this.logger.warn(`[Infra] Conformidad insuficiente — reintentando: ${internalFeedback.slice(0, 200)}`);
+      cleaned = cleanDocumentContent(
+        await this.ai.generateInfra(mdd, project.blueprintContent, combinedFeedback, legacyOpts),
+      );
+      infraCheck = this.conformance.checkInfra(mdd, cleaned);
+    }
+
+    const postCheck = this.conformance.checkInfra(mdd, cleaned);
+    if (!postCheck.ok) {
+      const gapSummary = postCheck.gaps.slice(0, 6).join("; ");
+      this.logger.warn(`[Infra] Post-generation conformance gaps: ${gapSummary}`);
+      await this.changeLog
+        .log(projectId, "infraContent", `[conformance-recheck] ${gapSummary}`)
+        .catch(() => {});
+    }
+
+    return this.update(projectId, { infraContent: cleaned });
   }
 
   async getConformance(
@@ -2140,7 +2187,7 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
 
   async verifyDeliverable(
     projectId: string,
-    deliverable: "blueprint" | "api" | "infra",
+    deliverable: "blueprint" | "api" | "infra" | "logicFlows",
   ): Promise<string> {
     const p = await this.assertProjectAccess(projectId);
     const doc =
@@ -2148,7 +2195,9 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
         ? p.blueprintContent
         : deliverable === "api"
           ? p.apiContractsContent
-          : p.infraContent;
+          : deliverable === "logicFlows"
+            ? p.logicFlowsContent
+            : p.infraContent;
     return this.ai.verifyDeliverable(this.constitutionMarkdown(p), doc ?? "", deliverable);
   }
 

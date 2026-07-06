@@ -37,4 +37,16 @@ describe("ui-mcp-adapter.registry — matchUiMcpAdapter", () => {
       null,
     );
   });
+
+  it("no empareja adaptador semántico si faltan tools Kreo aunque exista resolve_entity_ui", () => {
+    assert.equal(
+      matchUiMcpAdapter([
+        "describe_capabilities",
+        "list_components",
+        "resolve_component",
+        "resolve_entity_ui",
+      ]),
+      null,
+    );
+  });
 });

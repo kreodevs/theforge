@@ -554,6 +554,51 @@ export function ensureErDiagramHeader(content: string): string {
   return t;
 }
 
+/** Regex de cabecera de diagrama en la primera columna de una línea (sin fence). */
+const MERMAID_DIAGRAM_HEADER_LINE =
+  /^(erDiagram|flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|classDiagram|gantt|pie|gitGraph|mindmap|timeline|journey|quadrantChart|xychart|blockDiagram|requirementDiagram)\b/i;
+
+/**
+ * Quita envoltorios ``` / ```mermaid (incl. anidados) del cuerpo antes de normalizar o renderizar.
+ * Corrige bloques donde el LLM dejó el fence dentro del cuerpo del diagrama.
+ */
+export function stripMermaidFenceWrappers(raw: string): string {
+  let t = (raw ?? "").trim();
+  for (let i = 0; i < 5; i++) {
+    const next = t
+      .replace(/^```(?:mermaid)?[ \t]*\r?\n?/i, "")
+      .replace(/\r?\n?```[ \t]*$/i, "")
+      .trim();
+    if (next === t) break;
+    t = next;
+  }
+  return t
+    .split("\n")
+    .filter((line) => !/^```(?:mermaid)?[ \t]*$/i.test(line.trim()))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Repara cabeceras duplicadas o pegadas (`erDiagramerDiagram`, dos `erDiagram` consecutivos).
+ */
+export function dedupeMermaidDiagramHeader(raw: string): string {
+  const lines = (raw ?? "").split("\n").map((line) =>
+    line
+      .replace(/^erDiagramerDiagram\b/i, "erDiagram")
+      .replace(/^stateDiagram-v2stateDiagram-v2\b/i, "stateDiagram-v2")
+      .replace(/^sequenceDiagramsequenceDiagram\b/i, "sequenceDiagram"),
+  );
+  let t = lines.join("\n").trim();
+  if (!t) return t;
+  t = t.replace(/^(erDiagram)\s*\n\s*\1\b/im, "$1");
+  t = t.replace(/^(stateDiagram-v2)\s*\n\s*\1\b/im, "$1");
+  t = t.replace(/^(stateDiagram)\s*\n\s*\1\b/im, "$1");
+  t = t.replace(/^(sequenceDiagram)\s*\n\s*\1\b/im, "$1");
+  return t.trim();
+}
+
 /**
  * El LLM vuelca `DEFAULT` de SQL como columna ficticia (`uuid default`, `uuid default FK`).
  * Mermaid erDiagram no admite el identificador `default` y el render falla → texto plano.
@@ -1144,6 +1189,19 @@ export function repairMermaidFenceClosedWithMermaidTag(document: string): string
         const merged = `${t1}\n${cont}`.replace(/\n{3,}/g, "\n\n").trim();
         return `\`\`\`mermaid\n${merged}\n\`\`\``;
       }
+      const sameErDiagram = /^erDiagram\b/im.test(t1) && /^erDiagram\b/im.test(t2);
+      if (sameErDiagram) {
+        const cont = t2.replace(/^erDiagram\s*\n?/i, "").trim();
+        const merged = `${t1}\n${cont}`.replace(/\n{3,}/g, "\n\n").trim();
+        return `\`\`\`mermaid\n${merged}\n\`\`\``;
+      }
+      const sameState =
+        /^stateDiagram-v2\b/im.test(t1) && /^stateDiagram-v2\b/im.test(t2);
+      if (sameState) {
+        const cont = t2.replace(/^stateDiagram-v2\s*\n?/i, "").trim();
+        const merged = `${t1}\n${cont}`.replace(/\n{3,}/g, "\n\n").trim();
+        return `\`\`\`mermaid\n${merged}\n\`\`\``;
+      }
       return `\`\`\`mermaid\n${t1}\n\`\`\`\n\n\`\`\`mermaid\n${t2}\n\`\`\``;
     });
     guard++;
@@ -1279,11 +1337,7 @@ export function stripMarkdownLeakFromMermaidDiagramBody(raw: string): string {
       break;
     }
 
-    if (
-      /^(erDiagram|flowchart|graph|sequenceDiagram|stateDiagram|classDiagram|gantt|pie|gitGraph|mindmap|timeline)/i.test(
-        trimmed,
-      )
-    ) {
+    if (MERMAID_DIAGRAM_HEADER_LINE.test(trimmed)) {
       seenDiagramStart = true;
       out.push(line);
       continue;
@@ -1319,11 +1373,7 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
       continue;
     }
 
-    if (
-      /^(erDiagram|flowchart|graph|sequenceDiagram|stateDiagram|classDiagram|gantt|pie|gitGraph|mindmap|timeline)/i.test(
-        trimmed,
-      )
-    ) {
+    if (MERMAID_DIAGRAM_HEADER_LINE.test(trimmed)) {
       seenDiagramStart = true;
       diagramLines.push(line);
       continue;
@@ -1338,7 +1388,9 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
   }
 
   return {
-    diagram: diagramLines.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+    diagram: stripMermaidFenceWrappers(
+      diagramLines.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+    ),
     trailing: trailingLines.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
   };
 }
@@ -1353,8 +1405,10 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
  */
 /** Normaliza solo el cuerpo del diagrama (sin fences). */
 export function normalizeMermaidDiagramBody(raw: string): string {
-  let stripped = stripMarkdownLeakFromMermaidDiagramBody(raw);
+  let stripped = stripMermaidFenceWrappers(raw);
+  stripped = stripMarkdownLeakFromMermaidDiagramBody(stripped);
   if (!stripped?.trim()) return "";
+  stripped = dedupeMermaidDiagramHeader(stripped);
   stripped = repairErDiagramPkFkCommas(stripped);
   stripped = ensureErDiagramHeader(stripped);
   const isErDiagram = /^erDiagram\b/i.test(stripped.trim());

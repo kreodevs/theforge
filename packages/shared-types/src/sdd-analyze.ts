@@ -67,12 +67,17 @@ export interface SddAnalyzeReport {
     apiContracts: SddArtifactPresence;
     logicFlows: SddArtifactPresence;
     infra: SddArtifactPresence;
+    useCases: SddArtifactPresence;
+    userStories: SddArtifactPresence;
+    uxUiGuide: SddArtifactPresence;
     agentGovernance: SddAgentGovernanceAnalyzeSlice;
   };
   conformance: SddAnalyzeConformance;
   crossArtifactGaps: string[];
   /** Optional BRD ↔ MDD objective alignment (legacy F2). */
   brdHealth?: { ok: boolean; warnings: string[] };
+  /** Phase0 → BRD → Spec traceability (greenfield). */
+  phase0Bridge?: { ok: boolean; phase0Present: boolean; gapCount: number };
   summary: {
     status: SddAnalyzeStatus;
     score: number;

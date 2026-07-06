@@ -28,6 +28,7 @@ import { reconcileUiUxDesignIntent } from "../utils/mdd-enrich-uiux-intent.js";
 import { z } from "zod";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { generateImpactAnalysis } from "../utils/mdd-impact-analysis.js";
+import { resolveCorrectionAgents } from "../utils/mdd-manager-routing.util.js";
 import { detectLegacyIntegrationIntent, HANDOFF_SPEC_SUGGESTION } from "../utils/integration-intent.util.js";
 import { getAgenticRagToolset } from "../tools/tool-registry.js";
 import { runAgentToolsRound } from "../utils/mdd-agent-tools-invoke.js";
@@ -928,7 +929,9 @@ export function createMddManagerNode(
     // Usuario responde con acuerdo breve al feedback del auditor → plan (sections) y aprobación.
     if (hasDraft && score < QUALITY_THRESHOLD && userMessage && looksLikeShortAgreement(userMessage) && state.auditorFeedback?.trim()) {
       const directive = state.auditorFeedback.trim();
-      const sectionsToRun = expandSectionsToRun(inferAgentsFromAuditorFeedback(directive));
+      const sectionsToRun = expandSectionsToRun(
+        resolveCorrectionAgents(state.auditorGaps, state.auditorFeedback, inferAgentsFromAuditorFeedback),
+      );
       const planDirective = getPlanDirective(state);
       const mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective);
       if (mddPlan.length > 0) {
@@ -954,22 +957,40 @@ export function createMddManagerNode(
       }
     }
 
-    // Refinamiento obligatorio: score < 85% y sin mensaje → plan clarifier + merge_section1_only (Manager asigna gaps a agentes).
+    // Refinamiento obligatorio: score < 85% y sin mensaje → agentes según critical_gaps o Clarifier.
     if (hasDraft && score < QUALITY_THRESHOLD && !userMessage) {
-      const mddPlan = buildMddPlan("clarifier_only", undefined, getUserBrief(state), getPlanDirective(state));
+      const correctionAgents = resolveCorrectionAgents(
+        state.auditorGaps,
+        state.auditorFeedback,
+        inferAgentsFromAuditorFeedback,
+      );
+      const hasStructuredGaps = (state.auditorGaps?.critical_gaps?.length ?? 0) > 0;
+      const useSections = hasStructuredGaps && !correctionAgents.every((a) => a === "clarifier");
+      const sectionsToRun = useSections ? expandSectionsToRun(correctionAgents) : undefined;
+      const delegateTarget = useSections ? ("sections" as const) : ("clarifier_only" as const);
+      const mddPlan = buildMddPlan(delegateTarget, sectionsToRun, getUserBrief(state), getPlanDirective(state));
       if (mddPlan.length > 0) {
-        const impactSummary = state.auditorFeedback ? await generateImpactAnalysis(llm, state, state.auditorFeedback) : "";
-        LOG("Refinamiento (preguntas) → plan_approval plan=[clarifier, merge_section1_only]");
+        const impactSummary = state.auditorFeedback
+          ? await generateImpactAnalysis(llm, state, state.auditorFeedback)
+          : "";
+        LOG(
+          "Refinamiento gaps → plan_approval delegate=%s sections=%s",
+          delegateTarget,
+          sectionsToRun?.join(",") ?? "clarifier",
+        );
         return new Command({
           update: {
-            requestQuestionsOnly: true,
-            delegateTarget: "clarifier_only",
+            requestQuestionsOnly: !useSections,
+            delegateTarget,
+            sectionsToRun,
             previousMddDraftForMerge: state.mddDraft ?? "",
+            acceptedProposalDirective: state.auditorFeedback?.trim() || undefined,
             pendingPlanApproval: {
               mddPlan,
-              delegateTarget: "clarifier_only",
+              delegateTarget,
+              sectionsToRun,
               previousMddDraftForMerge: state.mddDraft ?? "",
-              goto: "clarifier",
+              goto: useSections ? sectionsToRun![0] : "clarifier",
             },
             planUserIntent: getPlanDirective(state),
             impactSummary,
@@ -977,24 +998,30 @@ export function createMddManagerNode(
           goto: "plan_approval",
         });
       }
-      const fallbackPlan: MddPlanStep[] = [
-        stepWithTools("clarifier", "1", NODE_TASK_DESCRIPTIONS.clarifier),
-        { step_id: "2", node: "merge_section1_only", task_description: NODE_TASK_DESCRIPTIONS.merge_section1_only },
-      ];
-      LOG("Refinamiento (preguntas) fallback → plan_approval plan=[clarifier, merge_section1_only]");
+      const fallbackPlan: MddPlanStep[] = useSections
+        ? sectionsToRun!.map((node, i) =>
+            stepWithTools(node, String(i + 1), NODE_TASK_DESCRIPTIONS[node as keyof typeof NODE_TASK_DESCRIPTIONS] ?? node),
+          )
+        : [
+            stepWithTools("clarifier", "1", NODE_TASK_DESCRIPTIONS.clarifier),
+            { step_id: "2", node: "merge_section1_only", task_description: NODE_TASK_DESCRIPTIONS.merge_section1_only },
+          ];
+      LOG("Refinamiento fallback → plan_approval delegate=%s", delegateTarget);
       return new Command({
         update: {
-          requestQuestionsOnly: true,
-          delegateTarget: "clarifier_only",
+          requestQuestionsOnly: !useSections,
+          delegateTarget,
+          sectionsToRun,
           previousMddDraftForMerge: state.mddDraft ?? "",
+          acceptedProposalDirective: state.auditorFeedback?.trim() || undefined,
           pendingPlanApproval: {
             mddPlan: fallbackPlan,
-            delegateTarget: "clarifier_only",
+            delegateTarget,
+            sectionsToRun,
             previousMddDraftForMerge: state.mddDraft ?? "",
-            goto: "clarifier",
+            goto: useSections ? sectionsToRun![0] : "clarifier",
           },
           planUserIntent: getPlanDirective(state),
-          impactSummary: "Análisis de impacto: refinamiento de contexto y alcance (Sección 1).",
         },
         goto: "plan_approval",
       });

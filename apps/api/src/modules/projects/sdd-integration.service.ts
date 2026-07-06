@@ -26,6 +26,16 @@ import {
 import type { Project, Stage } from "@theforge/database";
 import { AiService } from "../ai/ai.service.js";
 import { ConformanceService } from "../engine/conformance.service.js";
+import {
+  checkDeliverablePresence,
+  checkSpecVsMdd,
+  checkTasksCoverage,
+  checkUserStoriesVsUseCases,
+} from "../engine/sdd-cross-artifact.util.js";
+import {
+  checkPhase0BrdSpecBridge,
+  formatPhase0BridgeGaps,
+} from "../engine/phase0-brd-spec-bridge.util.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { CONVERGE_PROMPT } from "../ai/prompts/converge-prompt.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
@@ -339,6 +349,56 @@ export class SddIntegrationService {
       crossArtifactGaps.push(...conformance.infra.gaps.map((g) => `[Infra] ${g}`));
     }
 
+    const complexity = project.complexity ?? ComplexityLevel.HIGH;
+    const useCasesMd = deliverables.useCasesContent ?? project.useCasesContent ?? "";
+    const userStoriesMd = deliverables.userStoriesContent ?? project.userStoriesContent ?? "";
+    const uxUiMd = deliverables.uxUiGuideContent ?? project.uxUiGuideContent ?? "";
+
+    const specVsMdd = checkSpecVsMdd(spec, mdd);
+    if (!specVsMdd.ok) {
+      crossArtifactGaps.push(...specVsMdd.gaps.map((g) => `[Spec↔MDD] ${g}`));
+    }
+
+    const huVsUc = checkUserStoriesVsUseCases(userStoriesMd, useCasesMd, spec);
+    if (!huVsUc.ok) {
+      crossArtifactGaps.push(...huVsUc.gaps.map((g) => `[HU↔UC] ${g}`));
+    }
+
+    const tasksCoverage = checkTasksCoverage(
+      tasksMd,
+      deliverables.blueprintContent ?? null,
+      deliverables.apiContractsContent ?? null,
+    );
+    if (!tasksCoverage.ok) {
+      crossArtifactGaps.push(...tasksCoverage.gaps.map((g) => `[Tasks] ${g}`));
+    }
+
+    const phase0Bridge = checkPhase0BrdSpecBridge({
+      dbgaContent: project.dbgaContent,
+      phase0SummaryContent: project.phase0SummaryContent,
+      brdContent: stage?.brdContent,
+      specContent: spec,
+    });
+    if (!phase0Bridge.ok) {
+      crossArtifactGaps.push(...formatPhase0BridgeGaps(phase0Bridge.gaps));
+    }
+
+    const requireMediumArtifacts = complexity === ComplexityLevel.MEDIUM || complexity === ComplexityLevel.HIGH;
+    const ucGap = checkDeliverablePresence("Casos de uso", useCasesMd, requireMediumArtifacts && !spec.trim());
+    if (ucGap) crossArtifactGaps.push(ucGap);
+    const huGap = checkDeliverablePresence(
+      "Historias de usuario",
+      userStoriesMd,
+      complexity === ComplexityLevel.LOW || requireMediumArtifacts,
+    );
+    if (huGap) crossArtifactGaps.push(huGap);
+    const uxGap = checkDeliverablePresence(
+      "Guía UX/UI",
+      uxUiMd,
+      requireMediumArtifacts && !(deliverables.logicFlowsContent ?? "").trim(),
+    );
+    if (uxGap) crossArtifactGaps.push(uxGap);
+
     const agentGov = analyzeAgentGovernanceSlice(project);
     if (!agentGov.present) {
       crossArtifactGaps.push("Gobernanza IA no generada — recomendada para handoff");
@@ -357,7 +417,6 @@ export class SddIntegrationService {
 
     const gapCount = crossArtifactGaps.length;
     let status: SddAnalyzeStatus = "ok";
-    const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const govBlockHigh =
       complexity === ComplexityLevel.HIGH &&
       agentGov.present &&
@@ -412,11 +471,28 @@ export class SddIntegrationService {
           present: !!(deliverables.infraContent ?? "").trim(),
           wordCount: wordCount(deliverables.infraContent),
         },
+        useCases: {
+          present: !!useCasesMd.trim(),
+          wordCount: wordCount(useCasesMd),
+        },
+        userStories: {
+          present: !!userStoriesMd.trim(),
+          wordCount: wordCount(userStoriesMd),
+        },
+        uxUiGuide: {
+          present: !!uxUiMd.trim(),
+          wordCount: wordCount(uxUiMd),
+        },
         agentGovernance: agentGov,
       },
       conformance,
       crossArtifactGaps,
       brdHealth,
+      phase0Bridge: {
+        ok: phase0Bridge.ok,
+        phase0Present: phase0Bridge.phase0Present,
+        gapCount: phase0Bridge.gaps.length,
+      },
       summary: {
         status,
         score,

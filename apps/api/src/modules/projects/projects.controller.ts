@@ -422,7 +422,7 @@ export class ProjectsController {
   @Post(":id/verify-deliverable")
   verifyDeliverable(
     @Param("id") id: string,
-    @Body() body: { deliverable?: "blueprint" | "api" | "infra" },
+    @Body() body: { deliverable?: "blueprint" | "api" | "infra" | "logicFlows" },
   ) {
     const deliverable = body?.deliverable ?? "blueprint";
     return this.projects.verifyDeliverable(id, deliverable);

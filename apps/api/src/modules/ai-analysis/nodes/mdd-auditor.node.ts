@@ -8,10 +8,17 @@ import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { validateMddStructure } from "../utils/mdd-sanitize.js";
 import { getInternalDirectivesContext } from "../utils/mdd-mesh-topology.js";
 import { auditorConstitutionRigorAppendix } from "../utils/mdd-complexity-rigor.js";
+import {
+  buildAuditorFeedbackFromGaps,
+  computeDeterministicAuditorScore,
+  MDD_AUDIT_PASS_THRESHOLD,
+  synthesizeDeterministicAuditorGaps,
+  truncateDraftForAuditorLlm,
+} from "../utils/mdd-auditor-gaps.util.js";
+import type { AuditorGapsState } from "../state/mdd-state.schema.js";
 import { z } from "zod";
 
-/** >= 85: done (cede intervención al usuario). < 85: clarifier (Manager asigna gaps a agentes). */
-const AUDIT_PASS_THRESHOLD = 85;
+const AUDIT_PASS_THRESHOLD = MDD_AUDIT_PASS_THRESHOLD;
 
 const auditorCriticalGapItemSchema = z.union([
   z.object({
@@ -34,7 +41,6 @@ const auditorOutputSchema = z.object({
   auditorScore: z.number().min(0).max(100),
   auditorFeedback: z.string().optional().nullable(),
   auditorDecision: mddAuditorDecisionSchema,
-  /** LLM a veces devuelve "completed"/"done"; lo normalizamos después del parse. */
   status: z.string().optional(),
   critical_gaps: z.array(auditorCriticalGapItemSchema).optional().default([]),
   syntax_errors: z.union([
@@ -58,7 +64,86 @@ function buildToolsByName(tools: StructuredToolInterface[]): Record<string, Stru
   return byName;
 }
 
-/** Creates the MDD Auditor (quality) node. Optionally with tools and precisionCalculator (semáforo). 4.3: si state.currentStepAllowedTools está set, solo usa esas tools. */
+function mergeAuditorGaps(
+  deterministic: AuditorGapsState,
+  llmGaps: AuditorGapsState | undefined,
+  score: number,
+): AuditorGapsState {
+  if (!llmGaps) return { ...deterministic, score };
+  const seen = new Set<string>();
+  const critical_gaps = [...deterministic.critical_gaps];
+  for (const g of llmGaps.critical_gaps) {
+    const key = `${g.issue.slice(0, 80)}::${g.fix.slice(0, 80)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    critical_gaps.push(g);
+  }
+  for (const g of deterministic.critical_gaps) {
+    seen.add(`${g.issue.slice(0, 80)}::${g.fix.slice(0, 80)}`);
+  }
+  const syntax_errors = [...new Set([...deterministic.syntax_errors, ...llmGaps.syntax_errors])];
+  const infrastructure_ready = deterministic.infrastructure_ready && llmGaps.infrastructure_ready;
+  const status =
+    score >= AUDIT_PASS_THRESHOLD && critical_gaps.length === 0 && syntax_errors.length === 0
+      ? "APROBADO"
+      : "RECHAZADO";
+  return {
+    score,
+    status,
+    critical_gaps,
+    syntax_errors,
+    infrastructure_ready,
+  };
+}
+
+function buildDeterministicAuditorResult(
+  state: MDDStateType,
+  draft: string,
+  validation: ReturnType<typeof validateMddStructure>,
+): Partial<MDDStateType> {
+  const score = computeDeterministicAuditorScore(draft, validation);
+  const auditorGaps = synthesizeDeterministicAuditorGaps(draft, validation, score);
+  const currentIteration = state.mddIteration ?? 0;
+  const decision: "done" | "clarifier" =
+    score >= AUDIT_PASS_THRESHOLD &&
+    validation.missingSections.length === 0 &&
+    auditorGaps.critical_gaps.length === 0 &&
+    auditorGaps.syntax_errors.length === 0
+      ? "done"
+      : currentIteration > 0 && score <= (state.auditorScore ?? 0)
+        ? "done"
+        : "clarifier";
+  const iteration = currentIteration + (decision === "clarifier" ? 1 : 0);
+  const feedback =
+    buildAuditorFeedbackFromGaps(auditorGaps) ||
+    (validation.issues.length > 0
+      ? validation.issues.join(" ")
+      : "Revisión completada: el MDD tiene estructura base.");
+  return {
+    auditorScore: score,
+    auditorFeedback: feedback,
+    auditorGaps,
+    auditorDecision: decision,
+    mddIteration: iteration,
+    delegateTarget: undefined,
+    sectionsToRun: undefined,
+    acceptedProposalDirective: undefined,
+  };
+}
+
+/** Skip LLM only when deterministic audit passes with no gaps (any draft size). */
+function shouldSkipLlmAuditor(draft: string, validation: ReturnType<typeof validateMddStructure>): boolean {
+  const score = computeDeterministicAuditorScore(draft, validation);
+  const gaps = synthesizeDeterministicAuditorGaps(draft, validation, score);
+  return (
+    score >= AUDIT_PASS_THRESHOLD &&
+    validation.missingSections.length === 0 &&
+    gaps.critical_gaps.length === 0 &&
+    gaps.syntax_errors.length === 0
+  );
+}
+
+/** Creates the MDD Auditor (quality) node. Optionally with tools and precisionCalculator (semáforo). */
 export function createMddAuditorNode(
   llm: BaseChatModel,
   tools: StructuredToolInterface[] = [],
@@ -72,54 +157,23 @@ export function createMddAuditorNode(
 
     LOG("entry mddDraftLen=%s tools=%s (allowed=%s)", (state.mddDraft ?? "").length, toolsToUse.length, allowed?.length ?? "all");
     const draft = (state.mddDraft ?? "").trim();
+    const validation = validateMddStructure(draft);
 
-    // Shortcut: si el draft tiene contenido suficiente (>2000 chars), evitar llamada LLM del Auditor
-    // que tarda demasiado y causa timeout del proxy/frontend. Usar validación determinística.
-    if (draft.length > 2000) {
-      LOG("draft grande (%s chars) → shortcut determinístico", draft.length);
-      const validation = validateMddStructure(draft);
-      let shortcutScore = 80;
-      // Boost: draft completo con todas las secciones, payloads y metadata → pasa el threshold en un solo paso
-      if (validation.missingSections.length === 0 && validation.section3HasPayloads && validation.hasTechnicalMetadata) {
-        shortcutScore = 88;
-      } else {
-        if (!validation.section3HasPayloads) shortcutScore -= 20;
-        if (!validation.hasTechnicalMetadata) shortcutScore -= 5;
-        if (validation.missingSections.length > 0) {
-          shortcutScore = Math.min(shortcutScore, 94);
-          shortcutScore -= validation.missingSections.length * 5;
-        }
-      }
-      shortcutScore = Math.max(0, Math.min(100, shortcutScore));
-      const currentIteration = state.mddIteration ?? 0;
-      const shortcutDecision: "done" | "clarifier" = (() => {
-        if (shortcutScore >= AUDIT_PASS_THRESHOLD && validation.missingSections.length === 0) return "done";
-        // Termination guard: si ya iteramos y el score no mejora, entregar el mejor draft disponible
-        if (currentIteration > 0 && shortcutScore <= (state.auditorScore ?? 0)) return "done";
-        return "clarifier";
-      })();
-      const shortcutIteration = currentIteration + (shortcutDecision === "clarifier" ? 1 : 0);
-      const shortcutFeedback = shortcutDecision === "done" && validation.issues.length === 0
-        ? "MDD completo: todas las secciones, contratos y metadatos técnicos presentes."
-        : validation.issues.length > 0
-          ? validation.issues.join(" ")
-          : "Revisión completada: el MDD tiene estructura base.";
-      LOG("shortcut score=%s decision=%s iteration=%s", shortcutScore, shortcutDecision, shortcutIteration);
-      return {
-        auditorScore: shortcutScore,
-        auditorFeedback: shortcutFeedback,
-        auditorDecision: shortcutDecision,
-        mddIteration: shortcutIteration,
-        delegateTarget: undefined,
-        sectionsToRun: undefined,
-        acceptedProposalDirective: undefined,
-      };
+    if (shouldSkipLlmAuditor(draft, validation)) {
+      LOG("deterministic pass (score ok, sin gaps) → sin LLM, len=%s", draft.length);
+      return buildDeterministicAuditorResult(state, draft, validation);
     }
 
     try {
-      let prompt = `${AUDITOR_MDD_PROMPT}\n\n---\n**Borrador completo del MDD:**\n${draft || "(vacío)"}\n\n${getInternalDirectivesContext(state, "auditor")}${auditorConstitutionRigorAppendix(state.mddComplexity)}`;
+      const draftForLlm = truncateDraftForAuditorLlm(draft);
+      let prompt =
+        `${AUDITOR_MDD_PROMPT}\n\n---\n**Borrador completo del MDD:**\n${draftForLlm || "(vacío)"}\n\n` +
+        `${getInternalDirectivesContext(state, "auditor")}${auditorConstitutionRigorAppendix(state.mddComplexity)}`;
       if (toolsToUse.length > 0) {
-        prompt += "\n\n**Opcional:** Usa las tools de validación (validate_mdd_structure, validate_sql_syntax, validate_json_payloads) con el borrador anterior para obtener métricas objetivas. Usa esos resultados para rellenar auditorScore, auditorDecision, critical_gaps, syntax_errors e infrastructure_ready. Responde al final solo con el JSON de salida.";
+        prompt +=
+          "\n\n**Obligatorio:** Usa validate_mdd_structure, validate_sql_syntax y validate_json_payloads con el borrador. " +
+          "Usa esos resultados para auditorScore, critical_gaps, syntax_errors e infrastructure_ready. " +
+          "Responde al final solo con el JSON de salida.";
       }
       const messages = [new HumanMessage(prompt)];
 
@@ -157,74 +211,31 @@ export function createMddAuditorNode(
         loopCount++;
       }
 
-      let text = lastContent.trim();
-      if (!text) {
-        // Sin respuesta final: usar validación determinística para score/feedback
-        const validation = validateMddStructure(draft);
-        let score = 80;
-        if (!validation.section3HasPayloads) score -= 20;
-        if (!validation.hasTechnicalMetadata) score -= 5;
-        if (validation.missingSections.length > 0) {
-          score = Math.min(score, 94);
-          score -= validation.missingSections.length * 5;
-        }
-        score = Math.max(0, Math.min(100, score));
-        const decision =
-          score >= AUDIT_PASS_THRESHOLD && validation.missingSections.length === 0 ? "done" as const : "clarifier" as const;
-        const iteration = (state.mddIteration ?? 0) + (decision === "clarifier" ? 1 : 0);
-        const feedback =
-          validation.issues.length > 0
-            ? validation.issues.join(" ")
-            : "Faltan: modelo de datos/entidades, contratos con payloads, decisiones de seguridad, estrategia de infraestructura.";
-        LOG("sin respuesta LLM, usando validación determinística score=%s", score);
-        return {
-          auditorScore: score,
-          auditorFeedback: feedback,
-          auditorDecision: decision,
-          mddIteration: iteration,
-          delegateTarget: undefined,
-          sectionsToRun: undefined,
-          acceptedProposalDirective: undefined,
-        };
+      const deterministicBase = synthesizeDeterministicAuditorGaps(
+        draft,
+        validation,
+        computeDeterministicAuditorScore(draft, validation),
+      );
+
+      if (!lastContent.trim()) {
+        LOG("sin respuesta LLM → determinístico con gaps estructurados");
+        return buildDeterministicAuditorResult(state, draft, validation);
       }
 
       let parsed: z.infer<typeof auditorOutputSchema>;
       try {
-        parsed = parseJsonOrThrow(text, auditorOutputSchema) as unknown as z.infer<typeof auditorOutputSchema>;
+        parsed = parseJsonOrThrow(lastContent, auditorOutputSchema) as unknown as z.infer<typeof auditorOutputSchema>;
       } catch (parseErr) {
         LOG("fallback determinístico: parse error — %s", parseErr instanceof Error ? parseErr.message.slice(0, 300) : String(parseErr).slice(0, 300));
-        const validation = validateMddStructure(draft);
-        let fallbackScore = 80;
-        if (!validation.section3HasPayloads) fallbackScore -= 20;
-        if (!validation.hasTechnicalMetadata) fallbackScore -= 5;
-        if (validation.missingSections.length > 0) {
-          fallbackScore = Math.min(fallbackScore, 94);
-          fallbackScore -= validation.missingSections.length * 5;
-        }
-        fallbackScore = Math.max(0, Math.min(100, fallbackScore));
-        const fallbackDecision = fallbackScore >= AUDIT_PASS_THRESHOLD && validation.missingSections.length === 0 ? "done" as const : "clarifier" as const;
-        const fallbackIteration = (state.mddIteration ?? 0) + (fallbackDecision === "clarifier" ? 1 : 0);
-        const fallbackFeedback = validation.issues.length > 0
-          ? validation.issues.join(" ")
-          : "Faltan: modelo de datos/entidades, contratos con payloads, decisiones de seguridad, estrategia de infraestructura.";
-        LOG("fallback score=%s decision=%s", fallbackScore, fallbackDecision);
-        return {
-          auditorScore: fallbackScore,
-          auditorFeedback: fallbackFeedback,
-          auditorDecision: fallbackDecision,
-          mddIteration: fallbackIteration,
-          delegateTarget: undefined,
-          sectionsToRun: undefined,
-          acceptedProposalDirective: undefined,
-        };
+        return buildDeterministicAuditorResult(state, draft, validation);
       }
-      let score = Math.min(100, Math.max(0, parsed.auditorScore));
-      const validation = validateMddStructure(draft);
 
-      // Estructura 7 secciones obligatoria: si faltan secciones, MDD no es válido (score capado).
+      let score = Math.min(100, Math.max(0, parsed.auditorScore));
+
       if (validation.missingSections.length > 0) {
         score = Math.min(score, 94);
-        const sectionsNote = "Secciones obligatorias faltantes: " + validation.missingSections.join(", ") + ". El MDD debe tener exactamente las 7 secciones canónicas.";
+        const sectionsNote =
+          "Secciones obligatorias faltantes: " + validation.missingSections.join(", ") + ". El MDD debe tener exactamente las 7 secciones canónicas.";
         const existing = (parsed.auditorFeedback ?? "").trim();
         parsed.auditorFeedback = existing ? existing + " " + sectionsNote : sectionsNote;
         LOG("missingSections=%s → score capped at 94", validation.missingSections.join(";"));
@@ -233,88 +244,80 @@ export function createMddAuditorNode(
       if (tools.length > 0 && !validation.section3HasPayloads && score > 20) {
         score = Math.min(score, 79);
         if (!parsed.auditorFeedback?.includes("Contratos de API")) {
-          parsed.auditorFeedback = (parsed.auditorFeedback ?? "").trim() + " Sección 3. Contratos de API: debe incluir endpoints con request/response en ```json.";
+          parsed.auditorFeedback =
+            (parsed.auditorFeedback ?? "").trim() +
+            " Sección 4. Contratos de API: debe incluir endpoints con request/response en ```json.";
         }
       }
 
-      const hasStructuredGaps =
-        Array.isArray(parsed.critical_gaps) && parsed.critical_gaps.length > 0 ||
-        Array.isArray(parsed.syntax_errors) && parsed.syntax_errors.length > 0 ||
-        parsed.status != null ||
-        typeof parsed.infrastructure_ready === "boolean";
-
-      let auditorGaps: typeof state.auditorGaps = undefined;
+      let llmGaps: AuditorGapsState | undefined;
       let feedback = (parsed.auditorFeedback ?? "").trim();
 
       const normalizedStatus =
         parsed.status === "APROBADO" || parsed.status === "RECHAZADO"
           ? parsed.status
-          : (score >= AUDIT_PASS_THRESHOLD ? "APROBADO" : "RECHAZADO");
+          : score >= AUDIT_PASS_THRESHOLD
+            ? "APROBADO"
+            : "RECHAZADO";
 
-      if (hasStructuredGaps) {
-        const criticalGaps = parsed.critical_gaps ?? [];
-        const syntaxErrors = parsed.syntax_errors ?? [];
-        const result = auditorGapsSchema.safeParse({
-          score,
-          status: normalizedStatus,
-          critical_gaps: criticalGaps,
-          syntax_errors: syntaxErrors,
-          infrastructure_ready: parsed.infrastructure_ready ?? true,
-        });
-        if (result.success) {
-          auditorGaps = result.data;
-          if (!feedback && (criticalGaps.length > 0 || syntaxErrors.length > 0)) {
-            const parts: string[] = [];
-            for (const g of criticalGaps as unknown as { sections: string[], issue: string, fix: string }[]) {
-              parts.push(`[${(g.sections ?? []).join(", ")}] ${g.issue} Corrección: ${g.fix}`);
-            }
-            for (const e of (syntaxErrors as string[])) parts.push(e);
-            feedback = parts.join(" ");
-          }
-        }
+      const criticalGaps = parsed.critical_gaps ?? [];
+      const syntaxErrors = parsed.syntax_errors ?? [];
+      const result = auditorGapsSchema.safeParse({
+        score,
+        status: normalizedStatus,
+        critical_gaps: criticalGaps,
+        syntax_errors: syntaxErrors,
+        infrastructure_ready: parsed.infrastructure_ready ?? true,
+      });
+      if (result.success) {
+        llmGaps = result.data;
       }
 
-      if (!hasStructuredGaps && precisionCalculator && draft.length > 100) {
+      const auditorGaps = mergeAuditorGaps(deterministicBase, llmGaps, score);
+      if (!feedback && (auditorGaps.critical_gaps.length > 0 || auditorGaps.syntax_errors.length > 0)) {
+        feedback = buildAuditorFeedbackFromGaps(auditorGaps);
+      }
+
+      if (precisionCalculator && draft.length > 100 && auditorGaps.critical_gaps.length === 0) {
         const metrics = precisionCalculator.calculateLiveMetrics(draft, {
+          auditorGaps,
           complexity: state.mddComplexity,
           projectId: state.projectId,
           stageId: state.activeStageId ?? null,
         });
         if (metrics.precision < AUDIT_PASS_THRESHOLD) {
           score = metrics.precision;
-          const semaphoreNote =
-            ` El semáforo de consistencia marca ${metrics.precision}%; se requieren correcciones para llegar al 85%.`;
+          const semaphoreNote = ` El semáforo de consistencia marca ${metrics.precision}%; se requieren correcciones para llegar al 85%.`;
           feedback = feedback ? feedback + semaphoreNote : semaphoreNote.trim();
           if (precisionCalculator.getGapsReport) {
-            const gapMessages = precisionCalculator.getGapsReport(draft);
+            const gapMessages = precisionCalculator.getGapsReport(draft, auditorGaps);
             if (gapMessages.length > 0) feedback += " Gaps detectados: " + gapMessages.join(" ");
           }
-          LOG("semáforo (regex) precision=%s < 85 → score y feedback alineados", metrics.precision);
+          LOG("semáforo (regex) precision=%s < 85 → score alineado", metrics.precision);
         }
       }
 
-      const hasConflict = Array.isArray(parsed.critical_gaps) && parsed.critical_gaps.some(g => {
-        const text = typeof g === "string" ? g : (g.issue || "");
-        return text.includes("[CONFLICTO]");
-      });
+      const hasConflict = auditorGaps.critical_gaps.some((g) => g.issue.includes("[CONFLICTO]"));
 
-      const decision =
-        hasConflict
-          ? "blackboard" as const
-          : score >= AUDIT_PASS_THRESHOLD && validation.missingSections.length === 0
-            ? "done" as const
-            : (parsed.auditorDecision === "clarifier" ? "clarifier" as const : "clarifier" as const);
+      const decision = hasConflict
+        ? ("blackboard" as const)
+        : score >= AUDIT_PASS_THRESHOLD &&
+            validation.missingSections.length === 0 &&
+            auditorGaps.critical_gaps.length === 0
+          ? ("done" as const)
+          : ("clarifier" as const);
       const iteration = (state.mddIteration ?? 0) + (decision === "clarifier" ? 1 : 0);
       const finalFeedback =
         feedback ||
         (score < AUDIT_PASS_THRESHOLD
           ? "Faltan: modelo de datos/entidades con tipos y relaciones, contratos u operaciones con entrada/salida, decisiones de seguridad, estrategia de infraestructura/despliegue. Genera preguntas para cubrir estos huecos."
           : undefined);
-      LOG("ok score=%s decision=%s iteration=%s gaps=%s", score, decision, iteration, auditorGaps ? "estructurados" : "no");
+
+      LOG("ok score=%s decision=%s iteration=%s gaps=%s", score, decision, iteration, auditorGaps.critical_gaps.length);
       return {
         auditorScore: score,
         auditorFeedback: finalFeedback,
-        auditorGaps: auditorGaps ?? undefined,
+        auditorGaps,
         auditorDecision: decision,
         mddIteration: iteration,
         delegateTarget: undefined,
@@ -322,31 +325,8 @@ export function createMddAuditorNode(
         acceptedProposalDirective: undefined,
       };
     } catch (err) {
-      LOG("error: %s — usando fallback determinístico", err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300));
-      const validation = validateMddStructure(draft);
-      let fallbackScore = 80;
-      if (!validation.section3HasPayloads) fallbackScore -= 20;
-      if (!validation.hasTechnicalMetadata) fallbackScore -= 5;
-      if (validation.missingSections.length > 0) {
-        fallbackScore = Math.min(fallbackScore, 94);
-        fallbackScore -= validation.missingSections.length * 5;
-      }
-      fallbackScore = Math.max(0, Math.min(100, fallbackScore));
-      const fallbackDecision = fallbackScore >= AUDIT_PASS_THRESHOLD && validation.missingSections.length === 0 ? "done" as const : "clarifier" as const;
-      const fallbackIteration = (state.mddIteration ?? 0) + (fallbackDecision === "clarifier" ? 1 : 0);
-      const fallbackFeedback = validation.issues.length > 0
-        ? validation.issues.join(" ")
-        : "Faltan: modelo de datos/entidades, contratos con payloads, decisiones de seguridad, estrategia de infraestructura.";
-      LOG("fallback score=%s decision=%s", fallbackScore, fallbackDecision);
-      return {
-        auditorScore: fallbackScore,
-        auditorFeedback: fallbackFeedback,
-        auditorDecision: fallbackDecision,
-        mddIteration: fallbackIteration,
-        delegateTarget: undefined,
-        sectionsToRun: undefined,
-        acceptedProposalDirective: undefined,
-      };
+      LOG("error: %s — determinístico", err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300));
+      return buildDeterministicAuditorResult(state, draft, validation);
     }
   };
 }

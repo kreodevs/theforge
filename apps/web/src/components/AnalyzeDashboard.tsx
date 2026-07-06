@@ -3,6 +3,11 @@ import { Loader2, BarChart3, CheckCircle2, AlertTriangle, XCircle } from "lucide
 import type { SddAnalyzeReport } from "@theforge/shared-types";
 import { apiFetch, API_BASE } from "@/utils/apiClient";
 import { cn } from "@/lib/utils";
+import {
+  categorizeSddAnalyzeGap,
+  SDD_GAP_CATEGORY_LABEL,
+  type SddGapCategory,
+} from "@/utils/sddAnalyzeGapCategory";
 
 interface AnalyzeDashboardProps {
   projectId: string;
@@ -76,6 +81,30 @@ export function AnalyzeDashboard({ projectId, className, onReportLoaded }: Analy
   const statusCfg = STATUS_STYLES[report.summary.status];
   const StatusIcon = statusCfg.icon;
 
+  const gapsByCategory = report.crossArtifactGaps.reduce<Record<SddGapCategory, string[]>>(
+    (acc, gap) => {
+      const cat = categorizeSddAnalyzeGap(gap);
+      if (!acc[cat]) acc[cat] = [];
+      acc[cat].push(gap);
+      return acc;
+    },
+    {} as Record<SddGapCategory, string[]>,
+  );
+
+  const artifactTiles = [
+    ["MDD", report.artifacts.mdd.present, report.artifacts.mdd.wordCount],
+    ["Spec", report.artifacts.spec.present, report.artifacts.spec.wordCount],
+    ["Plan", report.artifacts.blueprint.present, report.artifacts.blueprint.wordCount],
+    ["Casos", report.artifacts.useCases?.present ?? false, report.artifacts.useCases?.wordCount ?? 0],
+    ["H.U.", report.artifacts.userStories?.present ?? false, report.artifacts.userStories?.wordCount ?? 0],
+    ["Tasks", report.artifacts.tasks.present, report.artifacts.tasks.totalTasks],
+    ["API", report.artifacts.apiContracts.present, report.artifacts.apiContracts.wordCount],
+    ["Flujos", report.artifacts.logicFlows.present, report.artifacts.logicFlows.wordCount],
+    ["UX", report.artifacts.uxUiGuide?.present ?? false, report.artifacts.uxUiGuide?.wordCount ?? 0],
+    ["Infra", report.artifacts.infra.present, report.artifacts.infra.wordCount],
+    ["Gov IA", report.artifacts.agentGovernance?.present ?? false, report.artifacts.agentGovernance?.fileCount ?? 0],
+  ] as const;
+
   return (
     <div className={cn("space-y-4 p-4 text-sm", className)}>
       <div className="flex items-start justify-between gap-2">
@@ -108,18 +137,8 @@ export function AnalyzeDashboard({ projectId, className, onReportLoaded }: Analy
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-        {(
-          [
-            ["MDD", report.artifacts.mdd.present],
-            ["Spec", report.artifacts.spec.present],
-            ["Plan", report.artifacts.blueprint.present],
-            ["Tasks", report.artifacts.tasks.present],
-            ["API", report.artifacts.apiContracts.present],
-            ["Flujos", report.artifacts.logicFlows.present],
-            ["Gov IA", report.artifacts.agentGovernance?.present ?? false],
-          ] as const
-        ).map(([label, ok]) => (
+      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 lg:grid-cols-4">
+        {artifactTiles.map(([label, ok, meta]) => (
           <div
             key={label}
             className={cn(
@@ -128,12 +147,31 @@ export function AnalyzeDashboard({ projectId, className, onReportLoaded }: Analy
                 ? "bg-[color-mix(in_oklch,var(--success)_12%,var(--card))]"
                 : "bg-[color-mix(in_oklch,var(--destructive)_10%,var(--card))]",
             )}
+            title={typeof meta === "number" && meta > 0 ? `${meta} ${label === "Tasks" ? "ítems" : "palabras"}` : undefined}
           >
             <span className="font-medium">{label}</span>
             <span className="ml-1 opacity-80">{ok ? "✓" : "—"}</span>
           </div>
         ))}
       </div>
+
+      {report.phase0Bridge?.phase0Present ? (
+        <div
+          className={cn(
+            "rounded-lg px-3 py-2 text-xs",
+            report.phase0Bridge.ok
+              ? "bg-[color-mix(in_oklch,var(--success)_10%,var(--card))]"
+              : "bg-[color-mix(in_oklch,var(--warning)_12%,var(--card))]",
+          )}
+        >
+          <p className="font-semibold">Trazabilidad Phase0 → BRD / Spec</p>
+          <p className="text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))]">
+            {report.phase0Bridge.ok
+              ? "Conceptos de Paso 0 reflejados en BRD y Spec."
+              : `${report.phase0Bridge.gapCount} brecha(s) entre borrador Phase0 y documentos downstream.`}
+          </p>
+        </div>
+      ) : null}
 
       {report.artifacts.agentGovernance ? (
         <div className="rounded-lg border border-[var(--border)] p-3 text-xs">
@@ -172,15 +210,24 @@ export function AnalyzeDashboard({ projectId, className, onReportLoaded }: Analy
       ) : null}
 
       {report.crossArtifactGaps.length > 0 ? (
-        <div>
-          <p className="mb-1 text-xs font-semibold">Hallazgos ({report.crossArtifactGaps.length})</p>
-          <ul className="max-h-40 space-y-0.5 overflow-y-auto text-xs text-[color-mix(in_oklch,var(--foreground)_90%,var(--muted-foreground))]">
-            {report.crossArtifactGaps.map((g) => (
-              <li key={g} className="list-inside list-disc">
-                {g}
-              </li>
+        <div className="space-y-2">
+          <p className="text-xs font-semibold">Hallazgos ({report.crossArtifactGaps.length})</p>
+          {(Object.keys(gapsByCategory) as SddGapCategory[])
+            .filter((cat) => (gapsByCategory[cat]?.length ?? 0) > 0)
+            .map((cat) => (
+              <div key={cat}>
+                <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+                  {SDD_GAP_CATEGORY_LABEL[cat]}
+                </p>
+                <ul className="max-h-32 space-y-0.5 overflow-y-auto text-xs text-[color-mix(in_oklch,var(--foreground)_90%,var(--muted-foreground))]">
+                  {gapsByCategory[cat]!.map((g) => (
+                    <li key={g} className="list-inside list-disc">
+                      {g}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
         </div>
       ) : null}
     </div>

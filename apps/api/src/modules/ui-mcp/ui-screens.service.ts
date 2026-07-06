@@ -158,10 +158,12 @@ export class UiScreensService {
   private async buildScreensFromResolve(plan: PantallaPlanItem[]): Promise<ScreenSpec[]> {
     const screens: ScreenSpec[] = [];
     for (const item of plan) {
+      const keyFields =
+        item.keyFields && item.keyFields.length > 0 ? item.keyFields : ["id"];
       const resolved = await this.uiMcpClient.resolveComponent({
         entityName: item.name,
         classification: item.classification,
-        keyFields: item.keyFields,
+        keyFields,
         restEndpoint: item.restEndpoint,
         uiHint: item.uiHint,
         context: item.resolveContext,
