@@ -17,6 +17,7 @@ import {
   replaceSection6Or7InDraft,
   sanitizeContextKeyValueAndObject,
   sanitizeContextSection,
+  applyPreDeliveryGateFixes,
   detectCrossConsistencyIssues,
 } from "./mdd-sanitize.js";
 import {
@@ -175,7 +176,8 @@ export async function prepareMddForOutput(
   const withComponentDiagram = injectProposedComponentDiagramIntoSection2(withErFromSql);
   const enriched = await enrichMddWithUiUxDesignIntent(withComponentDiagram, resolver);
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
-  const markdown = await reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
+  const reconciled = await reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
+  const markdown = applyPreDeliveryGateFixes(reconciled);
   const deliveryGate = validateMddForDelivery(markdown);
   if (options?.deliveryGateRef) {
     options.deliveryGateRef.current = deliveryGate;

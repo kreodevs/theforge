@@ -69,6 +69,59 @@ describe("validateMddForDelivery", () => {
     assert.equal(result.ok, true);
   });
 
+  it("auto-alinea node:XX en §7 con §2 antes de validar (sin blocker Node)", () => {
+    const draft = `# MDD
+
+## 2. Arquitectura y Stack
+
+| Capa | Tecnología | Versión |
+| Backend | Node.js | 20 |
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+
+| GET | /api/v1/health |
+
+\`\`\`json
+{"ok": true}
+\`\`\`
+
+## 5. Lógica y Edge Cases
+
+Reglas.
+
+## 6. Seguridad
+
+JWT.
+
+## 7. Infraestructura
+
+\`\`\`json
+{
+  "stack": {
+    "backend": {
+      "container": { "base_image": "node:22-alpine", "exposed_port": 3000 }
+    }
+  }
+}
+\`\`\`
+`;
+    const result = validateMddForDelivery(draft);
+    assert.ok(
+      !result.blockers.some((b) => b.includes("versión Node distinta")),
+      result.blockers.join("; "),
+    );
+  });
+
   it("bloquea prosa SQL pegada a DDL (Peludo)", () => {
     const draft = `## 3. Modelo de Datos
 

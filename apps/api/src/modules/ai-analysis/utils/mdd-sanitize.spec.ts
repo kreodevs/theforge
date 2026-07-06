@@ -23,6 +23,8 @@ import {
   getSection6Or7Range,
   mddHasDuplicateSectionHeadings,
   stripTrailingDuplicateMddSections,
+  applyPreDeliveryGateFixes,
+  detectSection2Section7NodeVersionMismatchIssue,
   fixDeterministicMddCoherence,
   finalizeMddDeliverable,
   fixDualApprovalSchemaInDraft,
@@ -576,6 +578,23 @@ TLS entre microservicios y PostgreSQL.
 | Backend | Node.js | 22 |
 `;
     assert.equal(extractNodeVersionFromSection2(draft), "22");
+  });
+
+  it("applyPreDeliveryGateFixes alinea node en §7 y elimina mismatch detectado", () => {
+    const draft = `## 2. Arquitectura y Stack
+
+| Backend | Node.js | 20 |
+
+## 7. Infraestructura
+
+\`\`\`json
+{ "stack": { "backend": { "container": { "base_image": "node:22-alpine" } } } }
+\`\`\`
+`;
+    assert.ok(detectSection2Section7NodeVersionMismatchIssue(draft));
+    const fixed = applyPreDeliveryGateFixes(draft);
+    assert.match(fixed, /node:20-alpine/);
+    assert.equal(detectSection2Section7NodeVersionMismatchIssue(fixed), null);
   });
 
   it("alignDeliverableMarkdownWithMddSecurity separa JWT_PRIVATE_KEY y JWT_PUBLIC_KEY en bloques .env", () => {

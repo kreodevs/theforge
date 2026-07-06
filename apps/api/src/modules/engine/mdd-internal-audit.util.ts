@@ -1,3 +1,5 @@
+import { detectSection2Section7NodeVersionMismatchIssue } from "../ai-analysis/utils/mdd-sanitize.js";
+
 /**
  * Deterministic MDD internal audit helpers (§1↔§3↔§4↔§6↔§7, SQL↔Mermaid).
  * Shared by EstimationService and the MDD Auditor node.
@@ -215,7 +217,9 @@ export function computeContractGaps(md: string): MddContractGaps {
     }
   }
 
-  if (/\b(nestjs|node\.?js|node\s)/i.test(archBlock) && archBlock.length > 50) {
+  if (detectSection2Section7NodeVersionMismatchIssue(md)) {
+    infraStackGap = 1;
+  } else if (/\b(nestjs|node\.?js|node\s)/i.test(archBlock) && archBlock.length > 50) {
     const infraReflectsNode =
       /\b(dockerfile|from\s+node|npm\s|pnpm\s|node\s|nodejs|docker\b|contenedor|imagen\s+node|backend\s+node)/i.test(
         infraBlock,

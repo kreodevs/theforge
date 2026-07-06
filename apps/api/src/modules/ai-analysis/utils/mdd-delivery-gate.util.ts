@@ -1,6 +1,7 @@
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
 import { preRenderMddSanity } from "./mdd-pre-render.js";
 import {
+  applyPreDeliveryGateFixes,
   detectCrossConsistencyIssues,
   detectDuplicateUatSections,
   detectUnclosedSqlFences,
@@ -22,7 +23,7 @@ function detectGenericUiUxIntent(draft: string): boolean {
  * ok=true solo si score >= 90 y blockers.length === 0.
  */
 export function validateMddForDelivery(draft: string): MddDeliveryGateResult {
-  const trimmed = (draft ?? "").trim();
+  const trimmed = applyPreDeliveryGateFixes((draft ?? "").trim());
   const blockers: string[] = [];
   const warnings: string[] = [];
   let score = 100;
