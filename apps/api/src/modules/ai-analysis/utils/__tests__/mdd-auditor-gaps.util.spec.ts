@@ -5,6 +5,7 @@ import {
   synthesizeDeterministicAuditorGaps,
 } from "../mdd-auditor-gaps.util.js";
 import { validateMddStructure } from "../mdd-sanitize.js";
+import { computeContractGaps } from "../../../engine/mdd-internal-audit.util.js";
 
 const minimalValidMdd = () => `
 ## 1. Contexto
@@ -68,5 +69,46 @@ describe("mdd-auditor-gaps util", () => {
       40,
     );
     assert.ok(badGaps.critical_gaps.length > gaps.critical_gaps.length);
+  });
+
+  it("detecta mismatch Node §2↔§7 en gaps del auditor", () => {
+    const draft = `## 2. Arquitectura y Stack
+
+| Backend | Node.js | 20 |
+
+## 3. Modelo de Datos
+TechnicalMetadata [high_security]
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+
+## 4. Contratos de API
+| GET | /x |
+\`\`\`json
+{}
+\`\`\`
+
+## 5. Lógica
+x
+
+## 6. Seguridad
+x
+
+## 7. Infraestructura
+
+\`\`\`json
+{ "stack": { "backend": { "container": { "base_image": "node:22-alpine" } } } }
+\`\`\`
+`.trim();
+    assert.equal(computeContractGaps(draft).infraStackGap, 1);
+    const validation = validateMddStructure(draft);
+    const gaps = synthesizeDeterministicAuditorGaps(
+      draft,
+      validation,
+      computeDeterministicAuditorScore(draft, validation),
+    );
+    assert.ok(
+      gaps.critical_gaps.some((g) => g.issue.includes("versión Node distinta")),
+    );
   });
 });

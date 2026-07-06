@@ -979,7 +979,7 @@ export function extractNodeVersionFromSection2(draft: string): string | null {
 }
 
 /** Corrige `node:XX` en §7/manifest para coincidir con la versión Node de §2. */
-function alignInfraNodeVersionWithSection2(draft: string): string {
+export function alignInfraNodeVersionWithSection2(draft: string): string {
   const nodeVer = extractNodeVersionFromSection2(draft);
   if (!nodeVer) return draft;
   let out = draft.replace(/node:(\d+)(-alpine)?/gi, (_, _v: string, suffix: string) =>
@@ -989,6 +989,31 @@ function alignInfraNodeVersionWithSection2(draft: string): string {
     `Node ${nodeVer}${suffix ?? ""}`,
   );
   return out;
+}
+
+/** Pasada final antes del delivery gate: alinea Node §2↔§7 (idempotente). */
+export function applyPreDeliveryGateFixes(draft: string): string {
+  return alignInfraNodeVersionWithSection2(draft ?? "");
+}
+
+function extractInfraSectionBodyForNodeCheck(draft: string): string | null {
+  const sec7 = extractMddSectionBody(draft, "## 7. Infraestructura");
+  if (sec7?.body?.trim()) return sec7.body;
+  const integration = extractMddSectionBody(draft, "## Integración");
+  return integration?.body?.trim() ? integration.body : null;
+}
+
+/** Devuelve el mensaje de blocker si §7 cita `node:XX` distinto al declarado en §2. */
+export function detectSection2Section7NodeVersionMismatchIssue(draft: string): string | null {
+  const nodeVer = extractNodeVersionFromSection2(draft);
+  if (!nodeVer) return null;
+  const infraBody = extractInfraSectionBodyForNodeCheck(draft);
+  if (infraBody == null) return null;
+  const nodeMismatch =
+    /node:(\d+)/i.test(infraBody) &&
+    !new RegExp(`node:${nodeVer}(?:-|$)`, "i").test(infraBody);
+  if (!nodeMismatch) return null;
+  return `§7/manifest: versión Node distinta a §2 (esperado node:${nodeVer}-alpine).`;
 }
 
 /** Sustituye JWT_SECRET por JWT_PRIVATE_KEY/JWT_PUBLIC_KEY cuando §6 exige RS256. */
@@ -2250,19 +2275,8 @@ export function detectCrossConsistencyIssues(draft: string): string[] {
     );
   }
 
-  const nodeVer = extractNodeVersionFromSection2(draft);
-  if (nodeVer) {
-    const infra = extractMddSectionBody(draft, "## 7. Infraestructura");
-    const nodeMismatch =
-      infra != null &&
-      /node:(\d+)/i.test(infra.body) &&
-      !new RegExp(`node:${nodeVer}(?:-|$)`, "i").test(infra.body);
-    if (nodeMismatch) {
-      issues.push(
-        `§7/manifest: versión Node distinta a §2 (esperado node:${nodeVer}-alpine).`,
-      );
-    }
-  }
+  const nodeMismatchIssue = detectSection2Section7NodeVersionMismatchIssue(draft);
+  if (nodeMismatchIssue) issues.push(nodeMismatchIssue);
 
   for (const table of detectSecurityTablesMissingInSection3(draft)) {
     issues.push(

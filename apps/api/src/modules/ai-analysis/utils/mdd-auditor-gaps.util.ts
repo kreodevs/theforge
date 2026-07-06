@@ -1,5 +1,8 @@
 import type { AuditorGapsState } from "../state/mdd-state.schema.js";
-import type { ValidateMddStructureResult } from "./mdd-sanitize.js";
+import {
+  detectSection2Section7NodeVersionMismatchIssue,
+  type ValidateMddStructureResult,
+} from "./mdd-sanitize.js";
 import { computeContractGaps, computeTraceabilityGaps } from "../../engine/mdd-internal-audit.util.js";
 
 export const MDD_AUDIT_PASS_THRESHOLD = 85;
@@ -98,7 +101,14 @@ export function synthesizeDeterministicAuditorGaps(
     });
   }
 
-  if (contract.infraStackGap) {
+  const nodeVersionIssue = detectSection2Section7NodeVersionMismatchIssue(draft);
+  if (nodeVersionIssue) {
+    critical_gaps.push({
+      sections: ["Sección 2", "Sección 7"],
+      issue: nodeVersionIssue,
+      fix: "Alinear `base_image`, Dockerfile y manifest §7 con la versión Node documentada en §2 (p. ej. node:20-alpine).",
+    });
+  } else if (contract.infraStackGap) {
     critical_gaps.push({
       sections: ["Sección 2", "Sección 7"],
       issue: "Stack NestJS/Node en Arquitectura no reflejado en Infraestructura",
