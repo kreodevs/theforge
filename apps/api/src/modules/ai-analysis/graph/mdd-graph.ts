@@ -117,7 +117,7 @@ export async function createMddGraph(
     nodeCache,
     "cross_consistency",
     crossConsistencyInput,
-    createMddCrossConsistencyNode(structuralLlm),
+    createMddCrossConsistencyNode(auditorLlm),
   );
   const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
   const auditorNode = createMddAuditorNode(auditorLlm, getMddAuditorTools(), null);
@@ -235,7 +235,7 @@ export async function createMddGraphWithManager(
     nodeCache,
     "cross_consistency",
     crossConsistencyInput,
-    createMddCrossConsistencyNode(structuralLlm),
+    createMddCrossConsistencyNode(auditorLlm),
   );
   const auditorNode = createMddAuditorNode(
     auditorLlm,

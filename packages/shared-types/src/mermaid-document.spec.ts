@@ -21,6 +21,8 @@ import {
   decodeMermaidHtmlEntities,
   prepareMermaidDiagramForRender,
   quoteFlowchartEdgeLabels,
+  repairFlowchartMissingTargetNodeIds,
+  splitFlowchartMultiEdgeLines,
   validateMermaid,
 } from "./mermaid.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
@@ -730,6 +732,33 @@ _Propuesta derivada de §2–§4: nota markdown.`;
     const out = normalizeMermaidDiagramBody(raw);
     assert.match(out, /BE_SQL\[\("PostgreSQL · 29 tablas"\)\]/);
     assert.doesNotMatch(out, /Propuesta derivada/);
+  });
+});
+
+describe("splitFlowchartMultiEdgeLines + repairFlowchartMissingTargetNodeIds", () => {
+  it("parte aristas concatenadas en una línea y repara cilindro sin id de nodo", () => {
+    const raw = `flowchart TD
+  G3 --> H3    G4 -->[(PostgreSQL 16)]`;
+    const out = normalizeMermaidDiagramBody(raw);
+    assert.match(out, /G3 --> H3\n\s*G4 --> PostgreSQL_16\[\(PostgreSQL 16\)\]/);
+    assert.doesNotMatch(out, /G3 --> H3\s+G4/);
+  });
+
+  it("prepareMermaidDiagramForRender aplica split y repair en bloque fenced", () => {
+    const fenced = `\`\`\`mermaid
+flowchart TD
+  G3 --> H3    G4 -->[(PostgreSQL 16)]
+\`\`\``;
+    const out = prepareMermaidDiagramForRender(fenced);
+    assert.match(out, /G4 --> PostgreSQL_16\[\(PostgreSQL 16\)\]/);
+    assert.doesNotMatch(out, /G3 --> H3\s+G4/);
+  });
+
+  it("splitFlowchartMultiEdgeLines conserva una sola arista intacta", () => {
+    const raw = `flowchart LR
+  A --> B`;
+    const out = splitFlowchartMultiEdgeLines(raw);
+    assert.equal(out, raw);
   });
 });
 
