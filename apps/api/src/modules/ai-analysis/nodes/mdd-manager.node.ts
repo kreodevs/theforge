@@ -515,6 +515,7 @@ function looksLikeInitialTopic(msg: string): boolean {
   return t.length >= 25 && (INITIAL_TOPIC_PATTERN.test(t) || /\b(sistema|plataforma|aplicación|api|backend|servicio)\b.*\b(con|que|para|maneje)\b/i.test(t));
 }
 
+const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:Manager] ${msg}`, ...args);
 
 function hasRealBenchmark(state: MDDStateType): boolean {
   const c = (state.dbgaContent ?? "").trim();
