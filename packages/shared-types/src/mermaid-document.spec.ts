@@ -629,6 +629,14 @@ erDiagram
     assert.match(out, /A -->|"sync"| B/);
     assert.doesNotMatch(out, /^• /m);
   });
+
+  it("convierte graph TD legacy a flowchart TD (Mermaid v11)", () => {
+    const body = `graph TD
+  A[Start] --> B[End]`;
+    const out = normalizeMermaidDiagramBody(body);
+    assert.match(out, /^flowchart TD/);
+    assert.doesNotMatch(out, /^graph TD/);
+  });
 });
 
 describe("stripMermaidFenceWrappers + dedupeMermaidDiagramHeader", () => {

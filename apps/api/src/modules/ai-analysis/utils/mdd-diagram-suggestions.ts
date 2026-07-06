@@ -95,6 +95,18 @@ function findMatchingParen(str: string, start: number): number {
   return -1;
 }
 
+/** Slice from column start to next top-level comma (end of one column definition). */
+function sliceSqlColumnDefinition(inner: string, start: number): string {
+  let depth = 0;
+  for (let i = start; i < inner.length; i++) {
+    const ch = inner[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (ch === "," && depth === 0) return inner.slice(start, i);
+  }
+  return inner.slice(start);
+}
+
 /** Extrae columnas del bloque CREATE TABLE parseando el contenido entre ( y ) con regex global (independiente de saltos de línea). */
 function parseColumnsFromBlock(block: string, tableName: string): { columns: Array<{ name: string; type: string; pk: boolean }>; relations: Array<{ from: string; to: string; fkColumn: string }> } {
   const columns: Array<{ name: string; type: string; pk: boolean }> = [];
@@ -109,7 +121,7 @@ function parseColumnsFromBlock(block: string, tableName: string): { columns: Arr
     if (!isValidErColumnName(colName)) continue;
     const sqlType = (m[2] + (m[3] ?? "")).trim();
     const start = m.index;
-    const rest = inner.slice(start);
+    const rest = sliceSqlColumnDefinition(inner, start);
     const pk = /\bPRIMARY\s+KEY\b/i.test(rest);
     const refMatch = rest.match(/REFERENCES\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^)]*\)/i);
     if (refMatch) relations.push({ from: tableName, to: refMatch[1].toLowerCase(), fkColumn: colName });
@@ -167,11 +179,18 @@ function escapeErLabel(s: string): string {
   return (s ?? "").replace(/"/g, "'").trim() || "ref";
 }
 
-/** Etiqueta de relación: semántica si existe, si no el nombre de la columna FK. */
+/** Etiqueta de relación: mapa semántico, stem de FK (`tenant_id` → `tenant`), o referencia a tabla padre. */
 function getRelationLabel(fromTable: string, toTable: string, fkColumn: string): string {
   const key = `${fromTable}-${toTable}`;
   const semantic = RELATION_LABELS[key];
-  return escapeErLabel(semantic ?? fkColumn);
+  if (semantic) return escapeErLabel(semantic);
+  const fk = (fkColumn ?? "").trim();
+  if (fk && fk !== "ref" && fk.toLowerCase() !== "id") {
+    const stem = fk.replace(/_id$/i, "");
+    if (stem && stem !== fk) return escapeErLabel(stem.replace(/_/g, " "));
+  }
+  const parent = toTable.replace(/_entity$/i, "");
+  return escapeErLabel(`references ${parent}`);
 }
 
 /** Genera erDiagram Mermaid: tipos uuid/timestamptz, indentación 2/4 espacios ASCII (nunca &nbsp; ni tab). */

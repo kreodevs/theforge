@@ -508,9 +508,45 @@ export function sanitizeSqlBrokenCommentsAndProse(sqlContent: string): string {
     out.push(line);
   }
 
-  return repairSqlProseInTableBodies(
-    repairSqlDetachedCheckConstraints(repairSqlOrphanTokensAndSplitParens(out.join("\n"))),
+  return stripIndexesOnCommentedSqlColumns(
+    repairSqlProseInTableBodies(
+      repairSqlDetachedCheckConstraints(repairSqlOrphanTokensAndSplitParens(out.join("\n"))),
+    ),
   );
+}
+
+/** Column name on a fully commented-out definition line (`-- embedding VECTOR(...)`). */
+const SQL_COMMENTED_COLUMN_LINE = /^\s*--\s*,?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+/;
+
+/**
+ * Drops CREATE INDEX when it targets a column that only appears as a commented-out definition.
+ * Typical LLM drift: `-- embedding VECTOR(1536)` left in CREATE TABLE but index on `embedding` kept.
+ */
+export function stripIndexesOnCommentedSqlColumns(sql: string): string {
+  if (!sql?.trim()) return sql;
+
+  const commentedColumns = new Set<string>();
+  for (const line of sql.split("\n")) {
+    const m = line.match(SQL_COMMENTED_COLUMN_LINE);
+    if (m?.[1]) commentedColumns.add(m[1].toLowerCase());
+  }
+  if (commentedColumns.size === 0) return sql;
+
+  const out: string[] = [];
+  for (const line of sql.split("\n")) {
+    const trimmed = line.trim();
+    if (/^CREATE\s+INDEX\b/i.test(trimmed)) {
+      const parenMatch = trimmed.match(/\(([^)]+)\)/);
+      if (parenMatch) {
+        const indexCols = parenMatch[1]
+          .split(/\s*,\s*/)
+          .map((c) => c.trim().replace(/^[\w.]+\./, "").toLowerCase());
+        if (indexCols.some((c) => commentedColumns.has(c))) continue;
+      }
+    }
+    out.push(line);
+  }
+  return out.join("\n");
 }
 
 /**
@@ -1197,10 +1233,13 @@ export function stripUiUxSectionForApiOnlyMvp(markdown: string): string {
 export function sanitizeMddAtPersist(mddMarkdown: string): string {
   if (!mddMarkdown?.trim()) return mddMarkdown;
   let out = fixGluedSection6Heading(mddMarkdown);
+  out = closeUnclosedCodeFencesInDraft(out);
   out = applyDeterministicCrossConsistencyFixes(out);
   out = ensureSecurityLockoutInSection6(out);
   out = repairNestedJsonFencesInDraft(out);
   out = stripStrayParenAfterJsonCodeBlocks(out);
+  out = stripStrayParenBeforeH2(out);
+  out = collapseInlineHorizontalRules(out);
   out = stripUiUxSectionForApiOnlyMvp(out);
   return out;
 }
@@ -1854,8 +1893,12 @@ export function fixDualApprovalSchemaInDraft(draft: string): string {
 export function sanitizeAllSqlBlocksInDraft(draft: string): string {
   if (!draft) return draft;
   return draft.replace(/```sql\s*([\s\S]*?)```/gi, (_full, inner: string) => {
-    const sanitized = sanitizeSqlBrokenCommentsAndProse(inner);
-    return sanitized === inner ? _full : "```sql\n" + sanitized + "\n```";
+    let sanitized = sanitizeSqlBrokenCommentsAndProse(inner);
+    sanitized = dedentCreateIndexLines(sanitized);
+    if (sanitized !== inner) {
+      return "```sql\n" + sanitized + "\n```";
+    }
+    return _full;
   });
 }
 
@@ -2540,13 +2583,72 @@ const RE_SECTION6_H2_LINE = /^##\s+(?:6\.\s+)?Seguridad/i;
 /** Despega `## 3. Foo### 3.1 Bar` o `## 3. Foo### SQL` → H2 + ### en líneas separadas. */
 function fixGluedSubsectionHeadings(draft: string): string {
   return draft
-    .replace(/^(##\s+\d+\.\s+[^\n#]+?)(#{1,3}\s+\d+\.\d+)/gm, "$1\n\n$2")
-    .replace(/^(##\s+\d+\.\s+[^\n#]+?)(#{1,3}\s+[A-Za-zÁÉÍÓÚÑ])/gm, "$1\n\n$2");
+    .replace(/^(##\s+\d+\.\s+[^\n#]+?)\s*(#{1,3}\s+\S+)/gm, "$1\n\n$2")
+    .replace(/^(#{3,4}\s+[^\n#]+?)\s*(#{3,4}\s+\S+)/gm, "$1\n\n$2")
+    .replace(/^\s+(#{3,4}\s+)/gm, "$1");
+}
+
+/** Asegura espacio tras `#` en headings (`###Foo` → `### Foo`). */
+function normalizeMarkdownHeadingHashSpacing(draft: string): string {
+  return draft.replace(/^(#{1,6})([^\s#\n])/gm, "$1 $2");
+}
+
+/** Colapsa `--- --- ---` en la misma línea o consecutivos. */
+function collapseInlineHorizontalRules(draft: string): string {
+  let out = draft.replace(/(?:^|\n)\s*---(?:\s+---\s*)+(?=\s*(?:\n|$))/g, "\n---\n");
+  return collapseConsecutiveHorizontalRules(out);
+}
+
+/** Despega H2/H3 de fences (ej. `## 3. Modelo de Datos```sql`). */
+function fixGluedHeadingToCodeFence(draft: string): string {
+  return draft.replace(
+    /^(##\s+\d+\.\s+[^\n`]+?)```(sql|json|mermaid|TechnicalMetadata)\b/gim,
+    "$1\n\n```$2",
+  );
+}
+
+/** Parte subtítulos ### / #### incrustados en prosa (típico del Clarifier/Architect en §1). */
+function fixInlineMarkdownSubheadings(draft: string): string {
+  return draft
+    .replace(
+      /([^\n#])(\s+#{3,4}\s+(?=[A-Za-zÁÉÍÓÚÑ0-9]))/g,
+      (_m, before: string, heading: string) => `${before}\n\n${heading.trim()}`,
+    )
+    .replace(/([.!?])\s+(#{3,4}\s+)/g, "$1\n\n$2");
+}
+
+/**
+ * Cierra fences ``` sin cierre antes de `---` + ## o de otro H2 (manifest §7, SQL §3).
+ */
+export function closeUnclosedCodeFencesInDraft(draft: string): string {
+  if (!draft?.trim()) return draft ?? "";
+  return draft.replace(
+    /(```(?:json|sql|mermaid|TechnicalMetadata)\s*\n)([\s\S]*?)(?=\n---[\s\S]*?\n##\s|\n##\s+(?:UI\/UX|\d+\.))/gi,
+    (match, open: string, body: string) => {
+      if (/\n```[ \t]*(?:\r?\n|$)/.test(body)) return match;
+      return `${open}${body.trimEnd()}\n\`\`\`\n`;
+    },
+  );
+}
+
+/** Quita `)` suelto en línea propia antes de §7 o cualquier H2. */
+function stripStrayParenBeforeH2(draft: string): string {
+  return draft
+    .replace(/\n\s*\)\s*\n+(---\s*\n)(\s*##\s+7\.)/g, "\n$1$2")
+    .replace(/\n\s*\)\s*\n+(?=\s*##\s+)/g, "\n");
+}
+
+/** Normaliza indentación de CREATE INDEX tras formateo SQL. */
+function dedentCreateIndexLines(sql: string): string {
+  return sql.replace(/^\s+(CREATE\s+INDEX\b)/gim, "$1");
 }
 
 /** Despega subtítulo del H2 (ej. `## 6. SeguridadGestión…:` o `## 6. Seguridad. Autenticación:` → H2 + ###). */
 function fixGluedSection6Heading(draft: string): string {
-  let out = fixGluedSubsectionHeadings(draft);
+  let out = fixGluedHeadingToCodeFence(draft);
+  out = fixGluedSubsectionHeadings(out);
+  out = fixInlineMarkdownSubheadings(out);
+  out = normalizeMarkdownHeadingHashSpacing(out);
   out = out.replace(
     /^##\s*3\.\s*Modelo\s+de\s+Datos(?=[A-ZÁÉÍÓÚÑ])/gim,
     "## 3. Modelo de Datos\n\n",
@@ -2562,6 +2664,7 @@ function fixGluedSection6Heading(draft: string): string {
     /^##\s*6\.\s*Seguridad\.\s*([^:\n]+):?\s*$/gim,
     "## 6. Seguridad\n\n### $1",
   );
+  out = out.replace(/\n{3,}/g, "\n\n");
   return out;
 }
 

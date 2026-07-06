@@ -25,6 +25,7 @@ describe("sqlToErDiagramContent", () => {
     assert.match(out!, /^erDiagram/);
     assert.doesNotMatch(out!, /uuid default/i);
     assert.match(out!, /tenants \|\|--o\{ tenant_users/);
+    assert.match(out!, /: "tenant"/);
   });
 
   it("no emite PK FK cuando la columna es PK y FK", () => {

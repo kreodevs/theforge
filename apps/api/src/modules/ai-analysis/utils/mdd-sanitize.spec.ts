@@ -336,6 +336,19 @@ describe("sanitizeSqlBrokenCommentsAndProse", () => {
     assert.ok(!/occurred_at\n\)/.test(out));
   });
 
+  it("elimina CREATE INDEX sobre columna comentada (embedding fuera de MVP)", () => {
+    const broken = `CREATE TABLE messages (
+  id UUID PRIMARY KEY,
+  content TEXT NOT NULL,
+  -- embedding VECTOR(1536),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_messages_embedding ON messages (embedding);`;
+    const out = sanitizeSqlBrokenCommentsAndProse(broken);
+    assert.doesNotMatch(out, /CREATE INDEX.*embedding/i);
+    assert.match(out, /-- embedding VECTOR/);
+  });
+
   it("repara prosa suelta tras comentario SQL roto (audit_events)", () => {
     const broken = `CREATE TABLE audit_events (
   id UUID PRIMARY KEY,
@@ -1475,6 +1488,49 @@ CREATE TABLE tenants (id UUID PRIMARY KEY);
 `;
     const out = sanitizeMddAtPersist(draft);
     assert.match(out, /## 3\. Modelo de Datos\n\nLa base de datos/);
+  });
+
+  it("repara Copiloto-style: §1 ### inline, §3```sql pegado, manifest sin cerrar, ) antes de §7", () => {
+    const draft = `## 1. Contexto y Alcance ### Propósito del Proyecto
+El sistema orquesta MCP. ### Alcance y Fronteras #### Servicios Core
+- Item uno.
+
+--- --- --- --- ---
+
+## 3. Modelo de Datos\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+  CREATE INDEX idx_users ON users(id);
+\`\`\`
+
+## 6. Seguridad
+
+JWT HS256.
+
+)
+
+---
+## 7. Infraestructura
+
+\`\`\`json
+{
+  "stack": { "backend": { "container": { "base_image": "node:20-alpine" } } }
+}
+
+
+---
+
+## UI/UX Design Intent
+
+Grid.
+`;
+    const out = sanitizeMddAtPersist(draft);
+    assert.match(out, /## 1\. Contexto y Alcance\n\n###\s+Propósito del Proyecto/);
+    assert.match(out, /###\s+Alcance y Fronteras\n\n####\s+Servicios Core/);
+    assert.match(out, /## 3\. Modelo de Datos\n\n```sql/);
+    assert.match(out, /CREATE INDEX idx_users ON users\(id\)/m);
+    assert.doesNotMatch(out, /--- --- ---/);
+    assert.doesNotMatch(out, /\n\s*\)\s*\n---\n## 7/);
+    assert.match(out, /\}\s*\n```\s*\n---\s*\n## UI\/UX Design Intent/);
   });
 
   it("corrige multi_tenant_support en manifest §7 cuando MDD exige multi-tenant", () => {
