@@ -2,8 +2,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { StageStatus } from "@theforge/database";
 import {
+  extractEntityKeyFieldsFromMdd,
   extractEntityNamesFromMdd,
   normalizeGluedSection3Headings,
+  parseCreateTableKeyFields,
+  pickKeyFieldsFromColumns,
   resolveConstitutionMarkdown,
 } from "./ui-screens-mdd.util.js";
 
@@ -35,6 +38,39 @@ describe("ui-screens-mdd — extractEntityNamesFromMdd", () => {
       "```",
     ].join("\n");
     assert.deepEqual(extractEntityNamesFromMdd(mdd), ["orders"]);
+  });
+});
+
+describe("ui-screens-mdd — extractEntityKeyFieldsFromMdd", () => {
+  it("extrae PK y campos semánticos por tabla", () => {
+    const mdd = [
+      "## 3. Modelo de Datos",
+      "",
+      "CREATE TABLE orders (",
+      "  id UUID PRIMARY KEY,",
+      "  status TEXT NOT NULL,",
+      "  total NUMERIC NOT NULL,",
+      "  notes TEXT",
+      ");",
+    ].join("\n");
+    const map = extractEntityKeyFieldsFromMdd(mdd);
+    assert.deepEqual(map.get("orders"), ["id", "status", "total", "notes"]);
+  });
+
+  it("fallback id cuando no hay columnas parseables", () => {
+    const map = parseCreateTableKeyFields("CREATE TABLE empty ();");
+    assert.deepEqual(map.get("empty"), ["id"]);
+  });
+});
+
+describe("ui-screens-mdd — pickKeyFieldsFromColumns", () => {
+  it("prioriza PK y status", () => {
+    const fields = pickKeyFieldsFromColumns([
+      { name: "created_at", pk: false },
+      { name: "status", pk: false },
+      { name: "id", pk: true },
+    ]);
+    assert.deepEqual(fields, ["id", "status", "created_at"]);
   });
 });
 

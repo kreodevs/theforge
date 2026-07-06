@@ -76,6 +76,7 @@ describe("ui-screens-plan — buildPantallasPlan", () => {
     const tenants = plan.find((p) => p.name === "tenants");
     assert.ok(tenants);
     assert.equal(tenants.source, "entity+hu");
+    assert.deepEqual(tenants.keyFields, ["id"]);
     assert.match(tenants.screenName, /tenants/i);
     assert.match(tenants.purpose, /Como:/);
     assert.equal(tenants.uiHint, "form");
@@ -86,6 +87,7 @@ describe("ui-screens-plan — buildPantallasPlan", () => {
 
     const dashboard = plan.find((p) => p.source === "hu-only");
     assert.ok(dashboard);
+    assert.deepEqual(dashboard.keyFields, ["id"]);
     assert.match(dashboard.screenName, /Dashboard/i);
     assert.equal(dashboard.uiHint, "dashboard");
   });

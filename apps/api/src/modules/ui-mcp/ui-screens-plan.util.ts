@@ -5,7 +5,7 @@
  * @license Apache-2.0
  */
 import type { EntityClassification, ListScreensEntity } from "@theforge/shared-types";
-import { extractEntityNamesFromMdd } from "./ui-screens-mdd.util.js";
+import { extractEntityKeyFieldsFromMdd, extractEntityNamesFromMdd } from "./ui-screens-mdd.util.js";
 import {
   extractHttpEndpointsFromMarkdown,
   formatEndpointList,
@@ -252,6 +252,7 @@ export function buildPantallasPlan(
   apiContractsMarkdown?: string | null,
 ): PantallaPlanItem[] {
   const entityNames = extractEntityNamesFromMdd(mddMarkdown);
+  const keyFieldsByEntity = extractEntityKeyFieldsFromMdd(mddMarkdown);
   const stories = parseUserStoriesMarkdown(userStoriesMarkdown ?? "");
   const endpoints = extractHttpEndpointsFromMarkdown(apiContractsMarkdown ?? "");
   const defaultRoles = extractRolesFromMdd(mddMarkdown);
@@ -292,6 +293,10 @@ export function buildPantallasPlan(
 
     plan.push({
       name: entityName,
+      keyFields:
+        keyFieldsByEntity.get(entityName) ??
+        keyFieldsByEntity.get(entityName.toLowerCase()) ??
+        ["id"],
       restEndpoint: matched[0] ? `${matched[0].method} ${matched[0].path}` : undefined,
       classification: inferClassification(entityName, storyText),
       uiHint,
@@ -326,6 +331,7 @@ export function buildPantallasPlan(
 
     plan.push({
       name: slug,
+      keyFields: ["id"],
       restEndpoint: matched[0] ? `${matched[0].method} ${matched[0].path}` : undefined,
       classification: inferClassification(slug, story.searchText),
       uiHint,
