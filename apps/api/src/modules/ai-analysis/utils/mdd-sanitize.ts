@@ -508,9 +508,45 @@ export function sanitizeSqlBrokenCommentsAndProse(sqlContent: string): string {
     out.push(line);
   }
 
-  return repairSqlProseInTableBodies(
-    repairSqlDetachedCheckConstraints(repairSqlOrphanTokensAndSplitParens(out.join("\n"))),
+  return stripIndexesOnCommentedSqlColumns(
+    repairSqlProseInTableBodies(
+      repairSqlDetachedCheckConstraints(repairSqlOrphanTokensAndSplitParens(out.join("\n"))),
+    ),
   );
+}
+
+/** Column name on a fully commented-out definition line (`-- embedding VECTOR(...)`). */
+const SQL_COMMENTED_COLUMN_LINE = /^\s*--\s*,?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+/;
+
+/**
+ * Drops CREATE INDEX when it targets a column that only appears as a commented-out definition.
+ * Typical LLM drift: `-- embedding VECTOR(1536)` left in CREATE TABLE but index on `embedding` kept.
+ */
+export function stripIndexesOnCommentedSqlColumns(sql: string): string {
+  if (!sql?.trim()) return sql;
+
+  const commentedColumns = new Set<string>();
+  for (const line of sql.split("\n")) {
+    const m = line.match(SQL_COMMENTED_COLUMN_LINE);
+    if (m?.[1]) commentedColumns.add(m[1].toLowerCase());
+  }
+  if (commentedColumns.size === 0) return sql;
+
+  const out: string[] = [];
+  for (const line of sql.split("\n")) {
+    const trimmed = line.trim();
+    if (/^CREATE\s+INDEX\b/i.test(trimmed)) {
+      const parenMatch = trimmed.match(/\(([^)]+)\)/);
+      if (parenMatch) {
+        const indexCols = parenMatch[1]
+          .split(/\s*,\s*/)
+          .map((c) => c.trim().replace(/^[\w.]+\./, "").toLowerCase());
+        if (indexCols.some((c) => commentedColumns.has(c))) continue;
+      }
+    }
+    out.push(line);
+  }
+  return out.join("\n");
 }
 
 /**

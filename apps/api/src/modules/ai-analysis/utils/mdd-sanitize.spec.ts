@@ -334,6 +334,19 @@ describe("sanitizeSqlBrokenCommentsAndProse", () => {
     assert.ok(!/occurred_at\n\)/.test(out));
   });
 
+  it("elimina CREATE INDEX sobre columna comentada (embedding fuera de MVP)", () => {
+    const broken = `CREATE TABLE messages (
+  id UUID PRIMARY KEY,
+  content TEXT NOT NULL,
+  -- embedding VECTOR(1536),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_messages_embedding ON messages (embedding);`;
+    const out = sanitizeSqlBrokenCommentsAndProse(broken);
+    assert.doesNotMatch(out, /CREATE INDEX.*embedding/i);
+    assert.match(out, /-- embedding VECTOR/);
+  });
+
   it("repara prosa suelta tras comentario SQL roto (audit_events)", () => {
     const broken = `CREATE TABLE audit_events (
   id UUID PRIMARY KEY,

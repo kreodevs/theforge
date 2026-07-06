@@ -1612,8 +1612,16 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
  * - Líneas en blanco excesivas → compacta
  */
 /** Normaliza solo el cuerpo del diagrama (sin fences). */
+/** Mermaid v11 prefers `flowchart`; `graph` is legacy alias — normalize header for reliable render. */
+function normalizeGraphKeywordToFlowchart(content: string): string {
+  return (content ?? "")
+    .replace(/^(\s*)graph(\s+(?:TD|LR|BT|RL|TB)\b)/im, "$1flowchart$2")
+    .replace(/^(\s*)graph(\s*)$/im, "$1flowchart TD");
+}
+
 export function normalizeMermaidDiagramBody(raw: string): string {
   let stripped = stripMermaidFenceWrappers(raw);
+  stripped = normalizeGraphKeywordToFlowchart(stripped);
   if (/^erDiagram\b/im.test(stripped.trim())) {
     stripped = repairErDiagramBrdMarkdownLeaks(stripped);
   }
