@@ -117,6 +117,30 @@ npx prisma migrate resolve --applied 20260609120000_add_agent_governance_content
 npx prisma migrate deploy
 ```
 
+### P3009 — `20260702_add_ui_mcp_instance` failed (`relation "UiMcpInstance" already exists`)
+
+Ocurre cuando la tabla ya existe por **`db push`** del entrypoint, por una copia previa en `packages/database/prisma/migrations`, o porque el DDL se aplicó sin registrar la migración en `_prisma_migrations` (p. ej. tras mover la migración a `packages/database/migrations` en #396).
+
+El **entrypoint** reciente:
+
+1. Ejecuta `safe-schema-sync.sql` (incluye `UiMcpInstance` + columnas con `IF NOT EXISTS`).
+2. `migrate resolve --rolled-back` para `20260702_add_ui_mcp_instance` y `20260703180000_ui_mcp_adapter_id` si quedaron fallidas.
+3. `migrate resolve --applied` si la tabla `UiMcpInstance` o la columna `adapterId` ya existen.
+4. `migrate deploy` con SQL idempotente en esas migraciones.
+
+**Desbloqueo inmediato** (misma `DATABASE_URL` que Dokploy, sin esperar rebuild):
+
+```bash
+cd packages/database
+export DATABASE_URL="postgresql://..."
+npx prisma migrate resolve --rolled-back 20260702_add_ui_mcp_instance
+npx prisma migrate resolve --applied 20260702_add_ui_mcp_instance
+npx prisma migrate resolve --applied 20260703180000_ui_mcp_adapter_id
+npx prisma migrate deploy
+```
+
+O en Dokploy (un solo redeploy): `PRISMA_RESOLVE_ROLLED_BACK=20260702_add_ui_mcp_instance` **más** imagen con entrypoint que marca `--applied` si la tabla existe.
+
 ### P3009 — `20260319130000_agent_checkpoint_mdd_stage` failed
 
 El entrypoint ya incluye `resolve --rolled-back` para esta migración. Si falla de nuevo tras redeploy:

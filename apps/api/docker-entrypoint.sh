@@ -27,12 +27,58 @@ project_column_exists() {
     2>/dev/null | grep -q 1
 }
 
+table_exists() {
+  tbl="$1"
+  host="$(db_host_from_url)"
+  user="$(db_user_from_url)"
+  pass="$(db_password_from_url)"
+  db="$(db_name_from_url)"
+  [ -n "$host" ] && [ -n "$user" ] && [ -n "$db" ] || return 1
+  PGPASSWORD="${pass}" psql -h "$host" -U "$user" -d "$db" -tAc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='${tbl}'" \
+    2>/dev/null | grep -q 1
+}
+
+table_column_exists() {
+  tbl="$1"
+  col="$2"
+  host="$(db_host_from_url)"
+  user="$(db_user_from_url)"
+  pass="$(db_password_from_url)"
+  db="$(db_name_from_url)"
+  [ -n "$host" ] && [ -n "$user" ] && [ -n "$db" ] || return 1
+  PGPASSWORD="${pass}" psql -h "$host" -U "$user" -d "$db" -tAc \
+    "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${tbl}' AND column_name='${col}'" \
+    2>/dev/null | grep -q 1
+}
+
 resolve_applied_if_project_column() {
   mig="$1"
   col="$2"
   if project_column_exists "$col"; then
     if npx prisma migrate resolve --applied "$mig" 2>/dev/null; then
       echo "migrate resolve --applied $mig (column Project.${col} already present)"
+    fi
+  fi
+}
+
+resolve_applied_if_table() {
+  mig="$1"
+  tbl="$2"
+  if table_exists "$tbl"; then
+    if npx prisma migrate resolve --applied "$mig" 2>/dev/null; then
+      echo "migrate resolve --applied $mig (table ${tbl} already present)"
+    fi
+  fi
+}
+
+resolve_applied_if_table_column() {
+  mig="$1"
+  tbl="$2"
+  col="$3"
+  if table_column_exists "$tbl" "$col"; then
+    if npx prisma migrate resolve --applied "$mig" 2>/dev/null; then
+      echo "migrate resolve --applied $mig (column ${tbl}.${col} already present)"
     fi
   fi
 }
@@ -90,6 +136,14 @@ if npx prisma migrate resolve --rolled-back 20260612120000_project_merge_suite 2
   echo "migrate resolve: cleared failed record for 20260612120000_project_merge_suite"
 fi
 
+# P3009: UI MCP — tabla/columnas ya creadas por db push o migración en ruta prisma/migrations previa
+if npx prisma migrate resolve --rolled-back 20260702_add_ui_mcp_instance 2>/dev/null; then
+  echo "migrate resolve: cleared failed record for 20260702_add_ui_mcp_instance"
+fi
+if npx prisma migrate resolve --rolled-back 20260703180000_ui_mcp_adapter_id 2>/dev/null; then
+  echo "migrate resolve: cleared failed record for 20260703180000_ui_mcp_adapter_id"
+fi
+
 # Otra migración atascada (opcional): PRISMA_RESOLVE_ROLLED_BACK=<nombre_carpeta>
 if [ -n "$PRISMA_RESOLVE_ROLLED_BACK" ]; then
   echo "prisma migrate resolve --rolled-back $PRISMA_RESOLVE_ROLLED_BACK"
@@ -99,6 +153,8 @@ fi
 # Si db push adelantó el DDL, marcar migración como aplicada sin re-ejecutar ADD COLUMN
 resolve_applied_if_project_column "20260609120000_add_agent_governance_content" "agentGovernanceContent"
 resolve_applied_if_project_column "20260612120000_project_merge_suite" "archivedAt"
+resolve_applied_if_table "20260702_add_ui_mcp_instance" "UiMcpInstance"
+resolve_applied_if_table_column "20260703180000_ui_mcp_adapter_id" "UiMcpInstance" "adapterId"
 
 # Migraciones en cada arranque del contenedor (producción); fallo → exit 1, sin API
 echo "Running prisma migrate deploy..."
