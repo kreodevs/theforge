@@ -4,9 +4,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  alignDockerfilePackageManager,
   repairBulletedYamlLines,
   repairFalseDockerfileHeadings,
   repairInfraMarkdown,
+  repairMislabeledYamlFences,
+  repairUnfencedYamlDesignBlock,
 } from "./repair-infra-markdown.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
 
@@ -111,5 +114,80 @@ NODE_ENV=development`;
       assert.doesNotMatch(block, /NODE_ENV=/);
     }
     assert.match(out, /```yaml[\s\S]*postgres_data:[\s\S]*```[\s\S]*- \*\*postgres_data/);
+  });
+
+  it("relabel dockerfile con tokens YAML de design system a yaml", () => {
+    const doc = `# Design tokens
+\`\`\`dockerfile
+colors:
+  primary: "#3366FF"
+  surface: "#FFFFFF"
+typography:
+  fontFamily: Inter
+\`\`\`
+`;
+    const out = repairMislabeledYamlFences(doc);
+    assert.match(out, /```yaml[\s\S]*colors:[\s\S]*primary/);
+    assert.doesNotMatch(out, /```dockerfile/);
+  });
+
+  it("relabel dockerfile con listas YAML de tipografía (PELUDO design-system)", () => {
+    const doc = `typography:
+  h1:
+- fontFamily: "Inter, system-ui, sans-serif"
+- fontSize: 32px
+\`\`\`dockerfile
+  label-sm:
+- fontFamily: "Inter, system-ui, sans-serif"
+- fontSize: 13px
+rounded:
+  sm: 6px
+components:
+  button-primary:
+- backgroundColor: "{colors.tertiary}"
+\`\`\`
+`;
+    const out = repairInfraMarkdown(doc);
+    assert.match(out, /```yaml[\s\S]*typography:[\s\S]*label-sm/);
+    assert.doesNotMatch(out, /```dockerfile/);
+  });
+
+  it("repairUnfencedYamlDesignBlock envuelve frontmatter YAML completo antes de fence erróneo", () => {
+    const doc = `# Guía UX/UI
+
+typography:
+  h1:
+- fontFamily: "Inter, system-ui, sans-serif"
+- fontSize: 32px
+\`\`\`dockerfile
+  label-sm:
+- fontFamily: "Inter, system-ui, sans-serif"
+- fontSize: 13px
+\`\`\`
+`;
+    const out = repairUnfencedYamlDesignBlock(doc);
+    assert.match(out, /```yaml[\s\S]*typography:[\s\S]*label-sm/);
+    assert.doesNotMatch(out, /```dockerfile/);
+  });
+});
+
+describe("alignDockerfilePackageManager", () => {
+  it("reemplaza yarn por pnpm en RUN/COPY cuando §2 es pnpm", () => {
+    const infra = `\`\`\`dockerfile
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
+RUN yarn build
+\`\`\`
+`;
+    const out = alignDockerfilePackageManager(infra, "pnpm");
+    assert.match(out, /pnpm-lock\.yaml/);
+    assert.match(out, /RUN pnpm install --frozen-lockfile/);
+    assert.match(out, /RUN pnpm build/);
+    assert.doesNotMatch(out, /yarn/i);
+  });
+
+  it("no modifica cuando el gestor autoritativo es yarn", () => {
+    const infra = "RUN yarn install --frozen-lockfile";
+    assert.equal(alignDockerfilePackageManager(infra, "yarn"), infra);
   });
 });

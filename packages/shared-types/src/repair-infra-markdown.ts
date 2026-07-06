@@ -3,7 +3,11 @@
  */
 
 const DOCKER_INSTR =
-  /^(FROM|WORKDIR|RUN|COPY|CMD|EXPOSE|USER|ENV|ARG|LABEL|ADD|VOLUME|ENTRYPOINT|STOPSIGNAL|HEALTHCHECK|SHELL|ONBUILD|MAINTAINER)\b/i;
+  /^(FROM|WORKDIR|RUN|COPY|CMD|EXPOSE|USER|ENV|ARG|ADD|VOLUME|ENTRYPOINT|STOPSIGNAL|HEALTHCHECK|SHELL|ONBUILD|MAINTAINER)(\s|$)/i;
+
+function isDockerfileLabelInstruction(trimmed: string): boolean {
+  return /^LABEL\s+\S/i.test(trimmed);
+}
 
 const COMPOSE_SERVICES = new Set([
   "postgres",
@@ -41,6 +45,7 @@ const COMPOSE_PROPS = new Set([
 function isDockerfileLine(trimmed: string): boolean {
   if (!trimmed) return false;
   if (DOCKER_INSTR.test(trimmed)) return true;
+  if (isDockerfileLabelInstruction(trimmed)) return true;
   if (/^#\s*----/.test(trimmed)) return true;
   if (/^#\s*(Copiar|Instalar|Compilar|Generar|Crear|Exponer|Usar|Comando|Construir|Nginx|Copy)/i.test(trimmed)) {
     return true;
@@ -218,6 +223,52 @@ export function repairMislabeledEnvFences(text: string): string {
     const dockerLines = lines.filter((l) => isDockerfileLine(l)).length;
     if (dockerLines === 0 && envLines >= Math.max(2, lines.length * 0.6)) {
       return `\`\`\`env\n${inner.trim()}\n\`\`\``;
+    }
+    return full;
+  });
+}
+
+function isYamlDesignTokenLine(trimmed: string): boolean {
+  if (!trimmed) return false;
+  if (/^(colors|tokens|spacing|typography|radius|shadows|palette|theme|font|breakpoints|components|rounded):/i.test(trimmed)) {
+    return true;
+  }
+  if (/^-\s+[\w.-]+:/.test(trimmed)) return true;
+  if (/^\s{2,}-\s+[\w.-]+:/.test(trimmed)) return true;
+  if (/^[\w.-]+:\s*$/.test(trimmed)) return true;
+  if (/^[\w.-]+:\s+['"#\d{]/.test(trimmed)) return true;
+  if (/^\s{2,}[\w.-]+:/.test(trimmed)) return true;
+  if (/\{(?:colors|rounded|spacing)\./.test(trimmed)) return true;
+  return false;
+}
+
+/** YAML de design system fuera de fence seguido de ```dockerfile|yaml``` parcial → un solo bloque ```yaml`. */
+export function repairUnfencedYamlDesignBlock(text: string): string {
+  const designStart =
+    /(?:^|\n)((?:typography|colors|tokens|spacing|rounded|components|palette|theme|font|breakpoints):[\s\S]*?)```(?:dockerfile|yaml)\s*\n([\s\S]*?)```/gi;
+
+  return text.replace(designStart, (_full, orphan: string, inner: string) => {
+    const merged = [orphan.trim(), inner.trim()].filter(Boolean).join("\n");
+    if (!merged) return _full;
+    return `\n\`\`\`yaml\n${merged}\n\`\`\``;
+  });
+}
+
+/** ` ```dockerfile ` con tokens YAML (design system) → ```yaml`. */
+export function repairMislabeledYamlFences(text: string): string {
+  return text.replace(/```dockerfile\s*\n([\s\S]*?)```/gi, (full, inner: string) => {
+    const lines = inner.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return full;
+    const yamlLines = lines.filter((l) => isYamlDesignTokenLine(l)).length;
+    const dockerLines = lines.filter((l) => isDockerfileLine(l)).length;
+    const designSystemMarkers =
+      /^(typography|components|rounded|spacing|colors|tokens):/im.test(inner) ||
+      /\{(?:colors|rounded)\./.test(inner);
+    if (
+      dockerLines === 0 &&
+      (yamlLines >= Math.max(2, lines.length * 0.4) || (designSystemMarkers && yamlLines >= 2))
+    ) {
+      return `\`\`\`yaml\n${inner.trim()}\n\`\`\``;
     }
     return full;
   });
@@ -560,6 +611,25 @@ export function repairVolumesSection(text: string): string {
   );
 }
 
+/** Alinea instrucciones RUN/COPY del Dockerfile con el gestor de paquetes del MDD §2. */
+export function alignDockerfilePackageManager(
+  infraMarkdown: string,
+  packageManager: "pnpm" | "yarn" | "npm",
+): string {
+  if (!infraMarkdown?.trim() || packageManager !== "pnpm") return infraMarkdown ?? "";
+
+  let out = infraMarkdown;
+  out = out.replace(
+    /\bRUN\s+yarn\s+install(?:\s+--frozen-lockfile)?/gi,
+    "RUN pnpm install --frozen-lockfile",
+  );
+  out = out.replace(/\bRUN\s+yarn\s+build\b/gi, "RUN pnpm build");
+  out = out.replace(/\bRUN\s+yarn\s+(test|lint|typecheck)\b/gi, "RUN pnpm $1");
+  out = out.replace(/\bRUN\s+yarn\s+run\s+(\w+)\b/gi, "RUN pnpm run $1");
+  out = out.replace(/\bCOPY\s+([^\n]*?)yarn\.lock\b/gi, "COPY $1pnpm-lock.yaml");
+  return out;
+}
+
 export function repairInfraMarkdown(text: string): string {
   if (!text?.trim()) return text ?? "";
   let out = text.replace(/\r\n/g, "\n");
@@ -568,7 +638,9 @@ export function repairInfraMarkdown(text: string): string {
   out = repairFalseDockerfileHeadings(out);
   out = repairOrphanDockerfileBlocks(out);
   out = repairOpenFencesBeforeSections(out);
+  out = repairUnfencedYamlDesignBlock(out);
   out = repairMislabeledEnvFences(out);
+  out = repairMislabeledYamlFences(out);
   out = repairComposeYamlSection(out);
   out = repairEnvExampleSection(out);
   out = repairVolumesSection(out);
