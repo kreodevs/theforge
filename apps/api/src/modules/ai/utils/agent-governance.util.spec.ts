@@ -382,6 +382,8 @@ Backend NestJS con Prisma y legacy TypeORM en docs viejos.
     const agents = reconciled.files.find((f) => f.path === "AGENTS.md");
     assert.ok(agents?.content.includes("Documentos SDD (layout dual)"));
     assert.ok(agents?.content.includes(`${featureDir}/spec.md`));
+    assert.ok(agents?.content.includes(`${featureDir}/architecture.md`));
+    assert.ok(agents?.content.includes("Artefactos Workshop"));
     assert.ok(agents?.content.includes("Instalación de gobernanza"));
     assert.ok(agents?.content.includes("Contenido LLM sin tablas"));
   });
@@ -452,8 +454,15 @@ Backend NestJS con TypeORM en borrador; Prisma en blueprint.
     assert.ok(promptInicial?.content.includes("No pidas al usuario"));
     assert.ok(promptInicial?.content.includes(".cursor/rules/"));
     assert.ok(promptInicial?.content.includes("IMPLEMENT.md"));
+    assert.ok(promptInicial?.content.includes(`${featureDir}/spec.md`));
+    assert.ok(promptInicial?.content.includes(`${featureDir}/plan.md`));
+    assert.ok(promptInicial?.content.includes(`${featureDir}/contracts/api-contracts.md`));
+    assert.ok(promptInicial?.content.includes(`${featureDir}/quickstart.md`));
     assert.ok(promptInicial?.content.includes("/implementar-tarea"));
     assert.ok(promptInicial?.content.includes(`${featureDir}/tasks.md`));
+    const specIdx = promptInicial!.content.indexOf(`${featureDir}/spec.md`);
+    const tasksIdx = promptInicial!.content.indexOf(`${featureDir}/tasks.md`);
+    assert.ok(specIdx >= 0 && tasksIdx > specIdx, "tasks.md debe listarse después de spec.md");
     assert.ok(agentPrompt?.content.includes("Agent prompt — contexto del proyecto"));
     assert.ok(agentPrompt?.content.includes("Ejecuta en terminal"));
     assert.ok(agentPrompt?.content.includes("Configurar monorepo"));
@@ -722,7 +731,7 @@ Backend NestJS con TypeORM.
     const progreso = reconciled.files.find((f) => f.path === "docs/sdd/PROGRESO.md");
     assert.ok(progreso?.content.includes("docs/sdd/tasks.md"));
     assert.ok(progreso?.content.includes("## Checklist rápido"));
-    assert.ok(progreso?.content.includes("| Documento | Canónico (spec-kit) |"));
+    assert.ok(progreso?.content.includes("| Documento | Primario (spec-kit) |"));
     assert.equal((progreso?.content.match(/- \[ \] Tarea/g) ?? []).length <= 5, true);
     assert.equal(progreso?.content.includes(longTasks), false);
   });

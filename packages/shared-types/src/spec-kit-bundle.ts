@@ -47,10 +47,12 @@ export function buildSddImplementReadme(featureDir: string): string {
 ## Document order (mandatory)
 
 1. Read \`.specify/memory/constitution.md\` (MDD) — single source of truth.
-2. Read \`spec.md\` (what/why) and \`plan.md\` (blueprint / technical plan) under \`${featureDir}/\`.
-3. Use \`tasks.md\` as the execution checklist; always cross-check MDD §3–§4 and \`contracts/\`.
-4. API contracts are binding (methods, paths, DTOs).
-5. On conflict between artifacts, **the MDD wins**.
+2. Read \`${featureDir}/research.md\` when present (Paso 0 / benchmark context).
+3. Read \`spec.md\` (what/why), then \`architecture.md\`, \`use-cases.md\` and \`user-stories.md\` when bundled.
+4. Read \`plan.md\` (blueprint / technical plan) and cross-check \`design-system.md\`, \`pantallas.md\`, \`contracts/\`, \`logic-flows.md\`.
+5. Use \`tasks.md\` as the execution checklist; run smoke checks from \`quickstart.md\` per checkpoint.
+6. Consult \`infra.md\`, \`data-model.md\` and \`docs/sdd/decisions/*.md\` (ADRs) when present.
+7. On conflict between artifacts, **the MDD wins**.
 
 ## Path map (spec-kit primary ↔ governance mirror)
 

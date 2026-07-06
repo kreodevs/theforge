@@ -2,9 +2,10 @@ import { Logger } from "@nestjs/common";
 import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
   buildGovernanceInstallMap,
-  DOCUMENT_PATH_MAP_STATIC,
   formatDocumentMarkdown,
   formatDocumentPathMapTable,
+  formatDocumentPathMapTableStatic,
+  formatWorkshopSupplementSection,
   GOVERNANCE_DOCS_PREFIX,
   migrateGovernancePath,
   type AgentGovernanceFile,
@@ -190,14 +191,7 @@ function defaultDocumentPathMapTable(featureDir?: string): string {
   if (featureDir?.trim()) {
     return formatDocumentPathMapTable(featureDir.trim());
   }
-  const rows = DOCUMENT_PATH_MAP_STATIC.map(
-    (e) => `| ${e.label} | \`${e.primary}\` | \`${e.mirror}\` |`,
-  ).join("\n");
-  return (
-    "| Documento | Primario (spec-kit) | Espejo (gobernanza) |\n" +
-    "|-----------|---------------------|---------------------|\n" +
-    rows
-  );
+  return formatDocumentPathMapTableStatic();
 }
 
 function replaceFeatureDirPlaceholders(content: string, featureDir: string): string {
@@ -207,24 +201,29 @@ function replaceFeatureDirPlaceholders(content: string, featureDir: string): str
 }
 
 function defaultDocConsumptionGuide(featureDir?: string): string {
-  const tasksPath = featureDir ? `${featureDir}/tasks.md` : "specs/NNN-slug/tasks.md";
-  const planPath = featureDir ? `${featureDir}/plan.md` : "specs/NNN-slug/plan.md";
-  const specPath = featureDir ? `${featureDir}/spec.md` : "specs/NNN-slug/spec.md";
-  const contractsPath = featureDir
-    ? `${featureDir}/contracts/`
-    : "specs/NNN-slug/contracts/";
+  const featureRef = featureDir?.trim() || "specs/NNN-slug";
+  const tasksPath = `${featureRef}/tasks.md`;
+  const planPath = `${featureRef}/plan.md`;
+  const specPath = `${featureRef}/spec.md`;
+  const contractsPath = `${featureRef}/contracts/`;
   return (
     "# Guía de consumo de documentos TheForge\n\n" +
     "Resumen para agentes que implementan desde entregables SDD incluidos en este ZIP.\n\n" +
     "## Orden de lectura (primario spec-kit, espejo docs/sdd)\n\n" +
     "1. **`.specify/memory/constitution.md`** — Constitución (MDD); espejo: `docs/sdd/mdd.md`.\n" +
-    `2. **\`${planPath}\`** — Blueprint / plan técnico; espejo: \`docs/sdd/blueprint.md\`.\n` +
+    `2. **\`${featureRef}/research.md\`** — Paso 0 / investigación (si existe); espejo: \`docs/sdd/research.md\`.\n` +
     `3. **\`${specPath}\`** — Requisitos y criterios de aceptación; espejo: \`docs/sdd/spec.md\`.\n` +
-    `4. **\`${tasksPath}\`** — Checklist de implementación; espejo: \`docs/sdd/tasks.md\`.\n` +
-    `5. Entregables opcionales en \`${featureDir ?? "specs/NNN-slug"}/\` o \`docs/sdd/\`: contratos, logic-flows, architecture, infra, design-system, **pantallas** (UI MCP).\n` +
-    `6. Si existe **\`${featureDir ?? "specs/NNN-slug"}/pantallas.md\`** (espejo \`docs/sdd/pantallas.md\`), léelo **antes** de implementar vistas: lista componentes reales del MCP, entidades y binding a endpoints.\n\n` +
+    `4. **\`${featureRef}/architecture.md\`**, **\`use-cases.md\`**, **\`user-stories.md\`** — cuando existan (espejos homónimos en \`docs/sdd/\`).\n` +
+    `5. **\`${planPath}\`** — Blueprint / plan técnico; espejo: \`docs/sdd/blueprint.md\`.\n` +
+    `6. **\`${featureRef}/design-system.md\`** y **\`pantallas.md\`** — antes de implementar UI (espejos \`ux-ui-guide.md\`, \`pantallas.md\`).\n` +
+    `7. **\`${contractsPath}api-contracts.md\`** y **\`${featureRef}/logic-flows.md\`** — contratos y flujos cuando existan.\n` +
+    `8. **\`${tasksPath}\`** — Checklist de implementación; espejo: \`docs/sdd/tasks.md\`.\n` +
+    `9. **\`${featureRef}/infra.md\`**, **\`data-model.md\`**, **\`docs/sdd/decisions/*.md\`** — infra, modelo §3 y ADRs si están en el ZIP.\n` +
+    `10. **\`${featureRef}/quickstart.md\`** — smoke tests por checkpoint al cerrar bloques de Tasks.\n\n` +
     "### Mapeo de rutas\n\n" +
     defaultDocumentPathMapTable(featureDir) +
+    "\n\n" +
+    formatWorkshopSupplementSection(featureDir) +
     "\n\n" +
     "**El layout spec-kit es canónico.** Los archivos bajo `docs/sdd/` son espejo para rules/skills de gobernanza; ante conflicto de contenido, gana el primario.\n\n" +
     "## Prioridad ante conflictos\n\n" +
@@ -243,8 +242,11 @@ function buildAgentsDualSpecKitSection(featureDir?: string): string {
   return (
     AGENTS_SDD_DUAL_SECTION +
     "\n\n" +
-    "Lee primero el layout **spec-kit** en la raíz del repo; `docs/sdd/*` es espejo para gobernanza:\n\n" +
+    "Lee primero el layout **spec-kit** en la raíz del repo; `docs/sdd/*` es espejo para gobernanza. " +
+    "**No te limites a MDD, Spec, Plan y Tasks**: implementa según el alcance del proyecto leyendo también arquitectura, casos, H.U., design system, pantallas, API, flujos, infra y ADRs cuando estén en el ZIP.\n\n" +
     defaultDocumentPathMapTable(featureDir) +
+    "\n\n" +
+    formatWorkshopSupplementSection(featureDir) +
     "\n"
   );
 }
@@ -892,7 +894,33 @@ function buildGatesSection(facts: ProjectGovernanceFacts, complexity: Complexity
     complexity !== "LOW"
       ? "- Respeta subflujos en `docs/agent-governance/references/workflows.md`.\n"
       : "";
-  return `${scripts}\n${workflow}`.trimEnd();
+  return (
+    `${scripts}\n` +
+    "- Contratos API alineados a `contracts/api-contracts.md` (spec-kit) o `docs/sdd/api-contracts.md` cuando la tarea toque endpoints.\n" +
+    workflow
+  ).trimEnd();
+}
+
+/** Orden de lectura SDD + gobernanza para sesión 0 (PROMPT-INICIAL / IMPLEMENT.md). */
+function buildHandoffReadingOrderSection(featureDir?: string): string {
+  const featureRef = featureDir?.trim() || "specs/NNN-slug";
+  return (
+    "Lee **en este orden** antes de escribir código (layout **spec-kit primario**; espejo en `docs/sdd/`):\n\n" +
+    "1. **`IMPLEMENT.md`** — bootstrap spec-kit, instalación y mapa de rutas\n" +
+    "2. **`AGENTS.md`** — entrada cross-tool e instalación de gobernanza\n" +
+    "3. **`.specify/memory/constitution.md`** — Constitución (MDD); espejo: `docs/sdd/mdd.md`\n" +
+    `4. **\`${featureRef}/research.md\`** — Paso 0 / investigación (**si existe**)\n` +
+    `5. **\`${featureRef}/spec.md\`** — requisitos y criterios de aceptación\n` +
+    `6. **\`${featureRef}/architecture.md\`**, **\`use-cases.md\`**, **\`user-stories.md\`** — cuando existan\n` +
+    `7. **\`${featureRef}/plan.md\`** — Blueprint / plan técnico\n` +
+    `8. **\`${featureRef}/design-system.md\`** y **\`pantallas.md\`** — **antes de implementar UI**\n` +
+    `9. **\`${featureRef}/contracts/api-contracts.md\`** y **\`logic-flows.md\`** — contratos y flujos (**vinculantes** si existen)\n` +
+    `10. **\`${AGENT_PROMPT_PATH}\`** — contexto del proyecto (stack, módulos, conflictos SDD)\n` +
+    `11. **\`${featureRef}/tasks.md\`** — checklist de ejecución (espejo: \`docs/sdd/tasks.md\`)\n` +
+    `12. **\`${featureRef}/infra.md\`**, **\`data-model.md\`**, **\`docs/sdd/decisions/*.md\`**, **\`quickstart.md\`** — cuando existan\n` +
+    `13. **\`${DOC_CONSUMPTION_GUIDE_PATH}\`** — reglas completas de consumo\n\n` +
+    "**Ante conflicto entre artefactos, gana el MDD.** No te limites a MDD/Spec/Plan/Tasks: usa todo lo presente en el ZIP según la tarea.\n"
+  );
 }
 
 /** Contexto interno del proyecto (stack, módulos, tareas) para sesiones iterativas. */
@@ -926,8 +954,8 @@ function buildAgentPromptMd(facts: ProjectGovernanceFacts, complexity: Complexit
     buildSddConflictSection(facts) +
     "## Instrucciones para el agente\n\n" +
     "1. Si `.cursor/rules/` no existe, **Ejecuta en terminal** `chmod +x scripts/install-agent-governance.sh && ./scripts/install-agent-governance.sh` y verifica la instalación. No pidas al usuario salvo que falle.\n" +
-    "2. Lee `AGENTS.md`, `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md` y el MDD en `docs/sdd/mdd.md`.\n" +
-    "3. Implementa siguiendo **Tasks** (`docs/sdd/tasks.md`) y **Blueprint**; actualiza `docs/sdd/PROGRESO.md` al cerrar ítems.\n" +
+    "2. Lee `AGENTS.md`, `IMPLEMENT.md`, `.specify/memory/constitution.md` y `" + DOC_CONSUMPTION_GUIDE_PATH + "`.\n" +
+    "3. Implementa siguiendo **Tasks** (canónico en spec-kit bajo `specs/…/tasks.md`, espejo `docs/sdd/tasks.md`), **Blueprint/plan** y el resto de entregables SDD del ZIP; actualiza `docs/sdd/PROGRESO.md` al cerrar ítems.\n" +
     (complexity !== "LOW"
       ? "4. Respeta subflujos en `docs/agent-governance/references/workflows.md`.\n"
       : "4. Ejecuta lint/typecheck/tests del paquete tocado antes de cerrar.\n")
@@ -940,9 +968,8 @@ function buildPromptInicialMd(
   complexity: ComplexityLevel,
   featureDir?: string,
 ): string {
-  const tasksPath = featureDir?.trim()
-    ? `${featureDir.trim()}/tasks.md`
-    : "specs/NNN-slug/tasks.md";
+  const featureRef = featureDir?.trim() || "specs/NNN-slug";
+  const tasksPath = `${featureRef}/tasks.md`;
   const tasksPreview = buildTasksPreview(facts);
   const projectLabel = facts.projectTitle?.trim() || "este proyecto";
 
@@ -970,22 +997,21 @@ function buildPromptInicialMd(
     "3. Lee `" + THEFORGE_LINK_PATH + "` para `projectId` y `stageId`.\n" +
     "4. Si la documentación SDD contradice el código correcto, usa MCP **`report_documentation_gap`** (ver skill `theforge-doc-sync`).\n\n" +
     "## Paso 2 — Orden de lectura (obligatorio)\n\n" +
-    "Lee **en este orden** antes de escribir código:\n\n" +
-    "1. **`IMPLEMENT.md`** — bootstrap spec-kit y relación con gobernanza\n" +
-    "2. **`.specify/memory/constitution.md`** — principios del proyecto\n" +
-    "3. **`AGENTS.md`** — entrada cross-tool e instalación\n" +
-    `4. **\`${AGENT_PROMPT_PATH}\`** — contexto específico (stack, módulos, conflictos SDD)\n` +
-    `5. **\`${tasksPath}\`** — checklist canónica (espejo: \`docs/sdd/tasks.md\`)\n\n` +
+    buildHandoffReadingOrderSection(featureDir) +
+    "\n" +
     "## Paso 3 — Primera tarea abierta\n\n" +
     "Implementa la **primera tarea pendiente** del checklist:\n\n" +
     tasksPreview +
     "\n\n" +
-    "Consulta Blueprint (`docs/sdd/blueprint.md`), MDD (`docs/sdd/mdd.md`) y Architecture si aplica.\n\n" +
+    `Cruza con **\`${featureRef}/plan.md\`**, **\`spec.md\`**, contratos API, flujos lógicos, **\`pantallas.md\`** (si hay UI) y **\`architecture.md\`** según lo que exija la tarea. ` +
+    `Al cerrar un checkpoint, ejecuta smoke tests de **\`${featureRef}/quickstart.md\`**.\n\n` +
     "## Paso 4 — Gates antes de cerrar\n\n" +
     buildGatesSection(facts, complexity) +
     "\n\n" +
     "## Paso 5 — Actualizar progreso\n\n" +
-    "Marca la tarea completada en **`docs/sdd/PROGRESO.md`** (sincronizado con Tasks).\n\n" +
+    "Marca la tarea completada en **`docs/sdd/PROGRESO.md`** y en **`" +
+    tasksPath +
+    "`** (canónico spec-kit).\n\n" +
     "## Stack detectado (TheForge)\n\n" +
     formatStackSection(facts) +
     "\n\n" +
@@ -1004,13 +1030,17 @@ function buildProgresoMd(
   facts: ProjectGovernanceFacts,
   _tasksMarkdown?: string | null,
   mddMarkdown?: string | null,
+  featureDir?: string,
 ): string {
   const conflictTable = buildSddConflictTable(facts);
+  const featureRef = featureDir?.trim() || "specs/NNN-slug";
   const lines = [
     "# Progreso de implementación\n\n",
     "Registro **ligero** de avance del **" +
     facts.projectTitle +
-    "**. El checklist canónico vive en **specs/NNN-slug/tasks.md** (espejo: `docs/sdd/tasks.md`).\n\n",
+    "**. El checklist canónico vive en **" +
+    featureRef +
+    "/tasks.md** (espejo: `docs/sdd/tasks.md`).\n\n",
     "Marca `[x]` aquí solo como atajo rápido; al cerrar ítems, sincroniza con el archivo canónico de tasks.\n\n",
   ];
 
@@ -1021,15 +1051,7 @@ function buildProgresoMd(
     );
   }
 
-  lines.push(
-    "## Referencias\n\n",
-    "| Documento | Canónico (spec-kit) | Espejo (gobernanza) |\n",
-    "|-----------|---------------------|---------------------|\n",
-    "| MDD / Constitución | `.specify/memory/constitution.md` | `docs/sdd/mdd.md` |\n",
-    "| Blueprint / Plan | `specs/NNN-slug/plan.md` | `docs/sdd/blueprint.md` |\n",
-    "| Tasks | `specs/NNN-slug/tasks.md` | `docs/sdd/tasks.md` |\n",
-    "| Contratos API | `specs/NNN-slug/contracts/api-contracts.md` | `docs/sdd/api-contracts.md` |\n\n",
-  );
+  lines.push("## Referencias\n\n", formatDocumentPathMapTable(featureRef), "\n\n");
 
   if (conflictTable.trim()) {
     lines.push(conflictTable.trim(), "\n\n");
@@ -1714,6 +1736,7 @@ function enrichGovernanceArtifacts(
       facts,
       governanceInput.tasksMarkdown,
       governanceInput.mddMarkdown,
+      featureDir,
     );
   } else {
     if (
@@ -1737,6 +1760,7 @@ function enrichGovernanceArtifacts(
         facts,
         governanceInput.tasksMarkdown,
         governanceInput.mddMarkdown,
+        featureDir,
       );
     }
   }

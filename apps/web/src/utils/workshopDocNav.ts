@@ -249,7 +249,7 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
     items.push({
       id: "aem",
       label: "AEM",
-      title: "AEM",
+      title: "Análisis y Estudio de Mercado (AEM)",
       Icon: FileText,
       content: ctx.aemContent,
     });

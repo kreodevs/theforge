@@ -48,7 +48,7 @@ describe("handoff-export.util", () => {
     const implement = unified.specKitFiles.find((f) => f.path === "IMPLEMENT.md");
     assert.ok(implement?.content.includes(unified.featureDir));
     assert.equal(unified.layout, "spec-kit-primary");
-    assert.ok(unified.pathMap.length >= 4);
+    assert.ok(unified.pathMap.length >= 12);
     assert.equal(unified.governancePresent, false);
   });
 
