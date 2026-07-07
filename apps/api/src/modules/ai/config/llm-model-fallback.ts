@@ -159,9 +159,9 @@ export function isModelExhaustionError(
   ) {
     return true;
   }
-  // OpenRouter envuelve fallos del proveedor upstream (contexto, max_tokens, modelo caído).
+  // OpenRouter envuelve fallos del proveedor upstream (contexto, max_tokens, modelo caído, 502/503).
   if (
-    status === 400 &&
+    (status === 400 || status === 502 || status === 503) &&
     (msg.includes("provider returned error") || msg.includes("provider error"))
   ) {
     return true;

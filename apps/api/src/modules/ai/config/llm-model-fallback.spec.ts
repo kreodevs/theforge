@@ -163,6 +163,48 @@ test("runWithModelFallback — 429 de agotamiento no reintenta antes del siguien
   assert.equal(badCalls, 1);
 });
 
+test("isModelExhaustionError — OpenRouter provider returned error (502/503)", () => {
+  assert.equal(
+    isModelExhaustionError(
+      Object.assign(new Error("502 Provider returned error — Provider returned error"), {
+        status: 502,
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    isModelExhaustionError(
+      Object.assign(new Error("503 Provider returned error — Provider returned error"), {
+        status: 503,
+      }),
+    ),
+    true,
+  );
+});
+
+test("runWithModelFallback — OpenRouter 502 tras reintentos pasa al siguiente modelo", async () => {
+  const used: string[] = [];
+  let hermesCalls = 0;
+  const result = await runWithModelFallback({
+    models: ["nousresearch/hermes-4-70b", "poolside/laguna-xs-2.1:floor"],
+    retriesPerModel: 0,
+    label: "test-provider-502",
+    run: async (model) => {
+      used.push(model);
+      if (model === "nousresearch/hermes-4-70b") {
+        hermesCalls++;
+        throw Object.assign(new Error("502 Provider returned error — Provider returned error"), {
+          status: 502,
+        });
+      }
+      return "ok";
+    },
+  });
+  assert.equal(result, "ok");
+  assert.deepEqual(used, ["nousresearch/hermes-4-70b", "poolside/laguna-xs-2.1:floor"]);
+  assert.equal(hermesCalls, 1);
+});
+
 test("runWithModelFallback — OpenRouter provider error pasa al siguiente modelo", async () => {
   const used: string[] = [];
   const result = await runWithModelFallback({
