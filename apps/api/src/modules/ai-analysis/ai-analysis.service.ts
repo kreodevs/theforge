@@ -57,6 +57,8 @@ import {
   type PrepareMddForOutputOptions,
 } from "./utils/mdd-prepare-output.js";
 import { UiMcpClientService } from "../ui-mcp/ui-mcp-client.service.js";
+import { UiMcpService } from "../ui-mcp/ui-mcp.service.js";
+import { formatUiMcpLibraryLabel } from "./utils/mdd-inject-ui-mcp-frontend.util.js";
 import {
   McpUiComponentResolver,
   heuristicUiComponentResolver,
@@ -195,6 +197,7 @@ export class AiAnalysisService {
     private readonly discovery: DiscoveryService,
     private readonly aiFactory: AIFactory,
     private readonly uiMcpClient: UiMcpClientService,
+    private readonly uiMcp: UiMcpService,
     @Optional() createDbgaGraphFn?: typeof createDbgaGraph,
   ) {
     this.createDbgaGraphFn = createDbgaGraphFn ?? createDbgaGraph;
@@ -220,6 +223,16 @@ export class AiAnalysisService {
     return resolver;
   }
 
+  private async getUiMcpLibraryLabel(): Promise<string | null> {
+    try {
+      if (!(await this.uiMcpClient.isActive())) return null;
+      const meta = await this.uiMcp.getActiveCompatibleMeta();
+      return formatUiMcpLibraryLabel(meta);
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Wrapper async de `prepareMddForOutput` que inyecta el resolver de componentes UI
    * (MCP compatible activo con fallback por-entidad al heurístico). Reemplaza las llamadas directas.
@@ -229,7 +242,11 @@ export class AiAnalysisService {
     options?: PrepareMddForOutputOptions,
   ): Promise<string> {
     const resolver = options?.resolver ?? (await this.getUiResolver());
-    return prepareMddForOutputCore(input, { ...options, resolver });
+    const uiMcpLibraryLabel =
+      options?.uiMcpLibraryLabel !== undefined
+        ? options.uiMcpLibraryLabel
+        : await this.getUiMcpLibraryLabel();
+    return prepareMddForOutputCore(input, { ...options, resolver, uiMcpLibraryLabel });
   }
 
   private async resolveUserId(projectId?: string): Promise<string> {
@@ -548,12 +565,14 @@ export class AiAnalysisService {
       }
     }
     const { opts: prepareOpts, gateRef: prepareGateRef } = createPrepareOptsWithGate({ preservedGovernance });
+    const uiMcpFrontendLibraryLabel = await this.getUiMcpLibraryLabel();
     let graph: Awaited<ReturnType<typeof createMddGraph>>;
     try {
       const userId = await this.resolveUserId(projectId);
       graph = await createMddGraph(this.aiFactory, userId, this.graphMemory, {
         theforge: this.theforge,
         nodeCache: this.nodeCacheService,
+        uiMcpFrontendLibraryLabel,
       });
     } catch (err) {
       const formatted = formatDbgaStreamError(err);
@@ -715,6 +734,7 @@ export class AiAnalysisService {
     let graph: Awaited<ReturnType<typeof createMddGraphWithManager>>;
     try {
       const mddUserId = await this.resolveUserId(projectId);
+      const uiMcpFrontendLibraryLabel = await this.getUiMcpLibraryLabel();
       graph = await createMddGraphWithManager(
         this.aiFactory,
         mddUserId,
@@ -726,7 +746,7 @@ export class AiAnalysisService {
           theforge: this.theforge,
           ai: this.ai,
         },
-        { theforge: this.theforge, nodeCache: this.nodeCacheService },
+        { theforge: this.theforge, nodeCache: this.nodeCacheService, uiMcpFrontendLibraryLabel },
       );
     } catch (err) {
       const formatted = formatDbgaStreamError(err);
@@ -1054,6 +1074,7 @@ export class AiAnalysisService {
     let graph: Awaited<ReturnType<typeof createMddGraphWithManager>>;
     try {
       const resumeUserId = await this.resolveUserId(projectId);
+      const uiMcpFrontendLibraryLabel = await this.getUiMcpLibraryLabel();
       graph = await createMddGraphWithManager(
         this.aiFactory,
         resumeUserId,
@@ -1065,7 +1086,7 @@ export class AiAnalysisService {
           theforge: this.theforge,
           ai: this.ai,
         },
-        { theforge: this.theforge, nodeCache: this.nodeCacheService },
+        { theforge: this.theforge, nodeCache: this.nodeCacheService, uiMcpFrontendLibraryLabel },
       );
     } catch (err) {
       const formatted = formatDbgaStreamError(err);

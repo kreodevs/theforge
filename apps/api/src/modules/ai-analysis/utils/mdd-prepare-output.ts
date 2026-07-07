@@ -32,6 +32,9 @@ import { isPlaceholderSeguridad } from "./mdd-security-parse.js";
 import { ensureMddGovernanceSection, extractGovernanceSection } from "@theforge/shared-types/mdd-governance-patterns";
 import { validateMddForDelivery, type MddDeliveryGateResult } from "./mdd-delivery-gate.util.js";
 import { composeSection3FromStructured } from "./schema-owner.util.js";
+import {
+  injectUiMcpIntoMddFrontendSection,
+} from "./mdd-inject-ui-mcp-frontend.util.js";
 
 export function hasStructuredContent(mdd: MddStructured | null | undefined): boolean {
   if (!mdd || typeof mdd !== "object") return false;
@@ -132,6 +135,8 @@ export type PrepareMddForOutputOptions = {
    * gráfico activo, con fallback por-entidad al heurístico.
    */
   resolver?: UiComponentResolver;
+  /** Librería del MCP gráfico activo para §2 Frontend → UI Library. */
+  uiMcpLibraryLabel?: string | null;
   /** Recibe el resultado del gate de entrega (no altera el markdown devuelto). */
   deliveryGateRef?: { current?: MddDeliveryGateResult };
 };
@@ -174,7 +179,12 @@ export async function prepareMddForOutput(
     ? withDiagrams
     : (regenerateErDiagramFromSql(withDiagrams) ?? withDiagrams);
   const withComponentDiagram = injectProposedComponentDiagramIntoSection2(withErFromSql);
-  const enriched = await enrichMddWithUiUxDesignIntent(withComponentDiagram, resolver);
+  const uiMcpLabel = options?.uiMcpLibraryLabel?.trim();
+  const withUiMcpFrontend =
+    uiMcpLabel && uiMcpLabel.length > 0
+      ? injectUiMcpIntoMddFrontendSection(withComponentDiagram, uiMcpLabel)
+      : withComponentDiagram;
+  const enriched = await enrichMddWithUiUxDesignIntent(withUiMcpFrontend, resolver);
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
   const reconciled = await reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
   const markdown = applyPreDeliveryGateFixes(reconciled);

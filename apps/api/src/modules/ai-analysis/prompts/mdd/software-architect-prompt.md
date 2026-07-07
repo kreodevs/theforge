@@ -115,6 +115,7 @@ Antes de generar el SQL, realiza este paso intermedio (pensamiento):
 ### 2. Arquitectura y Stack (tu responsabilidad)
 
 - Backend: lenguaje, framework (ej. Node/NestJS, Python/FastAPI). Frontend: framework, bundler (ej. React/Vite). Base de datos, colas, caché si aplica. Opcional: diagrama Mermaid de componentes.
+- **Frontend — Stack UI y MCP gráfico:** En **### 2.2 Frontend** (o ### Frontend), incluye bloque **Stack UI** con al menos **Framework**, **Bundler**, **Estado** (si aplica) y **UI Library**. Si el contexto indica un **MCP gráfico compatible activo** (bloque `MCP gráfico compatible activo`), la línea **UI Library** DEBE listar esa librería **además** del stack que definas (ej. `UI Library: Tailwind CSS + Radix UI + Kreo UI 5.3`). No omitas el MCP si está activo.
 - **Numeración:** Usa solo **### 2.1**, **### 2.2**, **### 2.3** (o títulos sin número como ### Frontend). Nivel de heading en §2: **###** (tres almohadillas). PROHIBIDO #### 4.1, #### 4.2 o cualquier 4.x en esta sección.
 - **Reglas mínimas:**
   - **Definición del Estándar:** Detalla la **versión exacta** de cada tecnología (ej. NestJS v10, PostgreSQL 16).

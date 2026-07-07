@@ -29,6 +29,7 @@ import { extractFirstJsonObject, extractJsonFromCodeBlock } from "../utils/parse
 import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { getInternalDirectivesContext, extractInternalDirectives } from "../utils/mdd-mesh-topology.js";
 import { softwareArchitectComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
+import { buildUiMcpFrontendArchitectHint } from "../utils/mdd-inject-ui-mcp-frontend.util.js";
 import type { TheForgeService } from "../../theforge/theforge.service.js";
 import { getMddArchitectTheForgeTools } from "../tools/agent-theforge-tools.js";
 import { stripThinkingTags } from "../utils/mdd-security-parse.js";
@@ -434,6 +435,8 @@ const MAX_ARCHITECT_TOOL_LOOPS_FORGE = 5;
 export type MddSoftwareArchitectNodeOptions = {
   /** Legacy + `theforgeProjectId`: añade herramientas MCP TheForge (contrato, impacto, firma). */
   theforge?: TheForgeService | null;
+  /** MCP gráfico compatible activo → hint en §2 Frontend / UI Library. */
+  uiMcpFrontendLibraryLabel?: string | null;
 };
 
 /** Extrae el cuerpo de ## 6. Seguridad del draft (hasta ## 7. o fin). */
@@ -643,6 +646,10 @@ export function createMddSoftwareArchitectNode(
           "Aplica en §4 (Contratos de API): (1) Deriva de §6 **cada endpoint** que mencione o implique (ej. «endpoint JWKS» o «JSON Web Key Set» → GET /auth/jwks o /.well-known/jwks.json con response { \"keys\": [...] }; «refresh_token» → POST /auth/refresh; MFA/TOTP → endpoints que §6 implique). Si §6 dice «se implementará X», X debe estar documentado en §4 con método, ruta y request/response. (2) No documentes en §4 campos que §6 prohíba persistir. La aplicación es genérica: interpreta §6 para cerrar gaps en §4.",
           "",
         );
+      }
+      const uiMcpHint = buildUiMcpFrontendArchitectHint(opts?.uiMcpFrontendLibraryLabel ?? "");
+      if (uiMcpHint) {
+        contextParts.unshift(uiMcpHint, "");
       }
       const context = contextParts.join("\n");
       const prompt = `${SOFTWARE_ARCHITECT_MDD_PROMPT}${softwareArchitectComplexityAppendix(state.mddComplexity)}\n\n---\n${context}`;
