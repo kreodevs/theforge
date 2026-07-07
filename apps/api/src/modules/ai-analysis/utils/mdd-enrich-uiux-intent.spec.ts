@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { enrichMddWithUiUxDesignIntent } from "./mdd-enrich-uiux-intent.js";
+import { enrichMddWithUiUxDesignIntent, reconcileUiUxDesignIntent } from "./mdd-enrich-uiux-intent.js";
 
 const MDD_WITH_ENTITIES = `# Master Design Document
 
@@ -70,7 +70,7 @@ describe("enrichMddWithUiUxDesignIntent", () => {
     assert.ok(!/##\s*UI\/UX\s+Design\s+Intent/i.test(out));
   });
 
-  it("mapea endpoints GET reales de §4 y no inventa /api/v1/{entity}", () => {
+  it("mapea endpoints GET reales de §4 y no inventa /api/v1/{entity}", async () => {
     const mdd = `# Master Design Document
 
 ## 1. Contexto
@@ -91,24 +91,23 @@ CREATE TABLE clientes (id UUID PRIMARY KEY, email TEXT NOT NULL);
 | GET | /api/v1/clientes |
 | GET | /api/v1/pedidos |
 `;
-    const out = enrichMddWithUiUxDesignIntent(mdd);
-    assert.ok(out.includes("GET /api/v1/clientes"));
-    assert.ok(out.includes("GET /api/v1/pedidos"));
+    const out = await enrichMddWithUiUxDesignIntent(mdd);
+    assert.match(out, /pantallas\.md/);
     assert.ok(!out.includes("GET /api/v1/customers"));
     assert.ok(!out.includes("GET /api/v1/orders"));
   });
 
-  it("marca (sin endpoint en §4) cuando no hay GET para la entidad", () => {
+  it("marca (sin endpoint en §4) cuando no hay GET para la entidad", async () => {
     const mdd = `${MDD_WITH_ENTITIES.replace(
       "| GET | /orders |",
       "| POST | /orders |",
     )}`;
-    const out = enrichMddWithUiUxDesignIntent(mdd);
-    assert.ok(out.includes("(sin endpoint en §4)"));
+    const out = await enrichMddWithUiUxDesignIntent(mdd);
+    assert.match(out, /Fuera de alcance UI v1/);
     assert.ok(!out.includes("GET /api/v1/customers"));
   });
 
-  it("mapea GET /api/v1/eventos y GET /api/v1/pagos (lista, no solo detalle)", () => {
+  it("mapea GET /api/v1/eventos y GET /api/v1/pagos (lista, no solo detalle)", async () => {
     const mdd = `# Master Design Document
 
 ## 1. Contexto
@@ -133,10 +132,37 @@ CREATE TABLE sesiones (id UUID PRIMARY KEY);
 | GET | /api/v1/pagos/:id |
 | GET | /api/v1/metricas/noshow |
 `;
-    const out = enrichMddWithUiUxDesignIntent(mdd);
-    assert.ok(out.includes("GET /api/v1/eventos"));
-    assert.ok(out.includes("GET /api/v1/pagos"));
+    const out = await enrichMddWithUiUxDesignIntent(mdd);
+    assert.match(out, /pantallas\.md/);
     assert.ok(!out.includes("#### outbox"));
     assert.ok(!out.includes("#### sesiones"));
+  });
+
+  it("bug4: elimina bloque embebido ### Design Intent roto y deja una sola sección canónica", async () => {
+    const embeddedBroken = `${MDD_WITH_ENTITIES.trim()}
+
+### Design Intent
+
+> Directrices de alto nivel.
+
+\`\`\`
+**Usuario autenticado** accede al producto.
+\`\`\`
+
+### Personas y journeys
+
+Rotas.
+
+## UI/UX Design Intent
+
+### Personas y journeys
+
+Canónica.
+`;
+    const out = await reconcileUiUxDesignIntent(embeddedBroken);
+    assert.equal((out.match(/## UI\/UX Design Intent/gi) ?? []).length, 1);
+    assert.doesNotMatch(out, /\n### Design Intent\b/i);
+    assert.doesNotMatch(out, /\bRotas\b/);
+    assert.match(out, /### Personas y journeys/);
   });
 });
