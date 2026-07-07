@@ -489,6 +489,8 @@ export interface Project {
   mddContent: string | null;
   phase0SummaryContent: string | null;
   uxUiGuideContent: string | null;
+  /** Referencia visual para Design System: slug del catálogo o `auto`. */
+  uxGuideDesignRef?: string | null;
   blueprintContent: string | null;
   tasksContent: string | null;
   apiContractsContent: string | null;
@@ -780,6 +782,7 @@ interface WorkshopState {
   setMddContent: (content: string) => void;
   setUxUiGuideContent: (content: string | null) => void;
   persistUxUiGuideContent: (content: string) => Promise<void>;
+  persistUxGuideDesignRef: (ref: string | null) => Promise<void>;
   setLoading: (v: boolean) => void;
   setSynced: (v: boolean) => void;
   setError: (e: string | null) => void;
@@ -2564,6 +2567,26 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   setUxUiGuideContent: (content) => set({ uxUiGuideContent: content }),
   persistUxUiGuideContent: async (content) => {
     await persistField("uxUiGuideContent", content, get, set);
+  },
+
+  persistUxGuideDesignRef: async (ref) => {
+    const { projectId, project } = get();
+    if (!projectId || !project) return;
+    const normalized = ref?.trim() || null;
+    if (normalized === (project.uxGuideDesignRef ?? null)) return;
+    set({ synced: false, error: null });
+    try {
+      const r = await fetchWithRetry(`${API_BASE}/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uxGuideDesignRef: normalized }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = (await r.json()) as Project;
+      set({ project: data, synced: true, error: null });
+    } catch (e) {
+      set({ error: friendlyFetchError(e), synced: false });
+    }
   },
 
   setBlueprintContent: (content) => set({ blueprintContent: content }),

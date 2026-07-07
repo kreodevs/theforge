@@ -63,6 +63,8 @@ export interface GenerateResponseOptions {
   uxGuideDesignRef?: string;
   /** Guía UX/UI: bloque de tokens del design reference (generado por DesignRefService). */
   uxGuideDesignRefPromptBlock?: string;
+  uxGuideDesignRefEffectiveSlug?: string;
+  uxGuideDesignRefMode?: "explicit" | "auto-matched" | "none";
   /** Imágenes del turno actual del usuario (junto con `prompt`). */
   userMessageImages?: ChatImagePart[];
   /**

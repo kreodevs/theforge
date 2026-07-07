@@ -96,6 +96,7 @@ import {
 } from "../ai/utils/suggest-agent-governance-artifacts.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
+import { appendUxGuideDesignAttribution } from "../design-ref/design-ref-attribution.util.js";
 import {
   brdGenerationErrorMessage,
   extractBrdFromLlmResponse,
@@ -1250,6 +1251,16 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const project = await this.assertProjectAccess(projectId);
     const mdd = this.constitutionMarkdown(project);
     const bp = (project.blueprintContent ?? "").trim();
+
+    // P0: default auto-match si el proyecto aún no tiene referencia
+    if (!project.uxGuideDesignRef?.trim()) {
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { uxGuideDesignRef: "auto" },
+      });
+      project.uxGuideDesignRef = "auto";
+    }
+
     const uxPrompt =
       "Genera la Guía UX/UI completa en markdown según tu rol. El contexto (MDD, Blueprint y documentos SDD) está en el system prompt. Termina el documento con la línea exacta ---FIN_UX_UI--- y deja un mensaje breve para el usuario después.";
     const raw = await this.ai.generateResponse(uxPrompt, [], {
@@ -1257,7 +1268,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       activeTab: "ux-ui-guide",
       currentMddContent: mdd,
       currentBlueprintContent: bp || undefined,
-      ...uxGuideLlmOptions(project),
+      ...uxGuideLlmOptions(project, mdd),
     });
     const clean = (raw ?? "").replace(/\n?-{1,}FIN_UX_UI-{1,}[\s\S]*$/i, "").trim();
     if (!clean) {
@@ -1276,6 +1287,7 @@ name: ${JSON.stringify(name)}
     }
     // Design system inferido del MCP gráfico compatible activo (fallback: heurístico/Ariadne del LLM).
     finalContent = await this.appendUiMcpDesignSystem(finalContent);
+    finalContent = appendUxGuideDesignAttribution(finalContent, project.uxGuideDesignRef, mdd);
     return this.update(projectId, { uxUiGuideContent: finalContent });
   }
 
@@ -1366,7 +1378,7 @@ name: ${JSON.stringify(name)}
       activeTab: "ux-ui-guide",
       currentMddContent: mdd,
       currentBlueprintContent: bp || undefined,
-      ...uxGuideLlmOptions(project),
+      ...uxGuideLlmOptions(project, mdd),
     });
 
     const trimmed = (raw ?? "").trim();

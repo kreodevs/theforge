@@ -231,14 +231,19 @@ export class AiService {
         }
       }
     }
-    // Design Reference: inyectar tokens de diseño seleccionado
-    const designRefSlug = options?.uxGuideDesignRef;
+    // Design Reference: inyectar tokens de diseño seleccionado o auto-match
     const designRefBlock = options?.uxGuideDesignRefPromptBlock;
-    if (designRefSlug && designRefBlock) {
-      s += `\n\n## [Design Reference activo: ${designRefSlug}]\n${designRefBlock}\n\n### Instrucciones para el Design Reference\n1. Los tokens anteriores son REFERENCIALES — adapta colores, tipografía y componentes al dominio del proyecto descrito en el MDD.\n2. No copies los valores exactos — transpórtalos al contexto del producto.\n3. Si el proyecto tiene un codebase existente (LEGACY), prioriza los tokens reales del código sobre los de referencia.\n4. Mantén la personalidad general del design system de referencia pero hazla propia del producto.\n5. Conserva obligatoriamente WCAG AA (contraste ≥4.5:1) en todos los componentes.`;
-    } else if (designRefSlug === "auto") {
-      // Matching automático: el LLM debe inferir el estilo del MDD
-      s += "\n\n**[Modo: Auto-match de diseño]** Analiza el MDD y el dominio del proyecto para seleccionar automáticamente una personalidad visual coherente. No generes una paleta genérica — busca una dirección de diseño específica que refleje el dominio (fintech → elegante, seguro; creativo → vibrante, expresivo; SaaS → limpio, profesional; salud → cálido, tranquilo).";
+    if (designRefBlock) {
+      const mode = options?.uxGuideDesignRefMode ?? "explicit";
+      const slug = options?.uxGuideDesignRefEffectiveSlug ?? options?.uxGuideDesignRef ?? "reference";
+      s += `\n\n## [Design Reference activo: ${slug} · modo ${mode}]\n${designRefBlock}`;
+      if (mode === "explicit") {
+        s +=
+          "\n\n### Instrucciones\nUsa los hex del bloque anterior como **base canónica** del YAML (colors.primary, background, accent). Adapta nombres semánticos al dominio; **prohibido** sustituir por paleta shadcn genérica.";
+      } else {
+        s +=
+          "\n\n### Instrucciones\nReferencia sugerida por dominio del MDD. Transpón paleta y personalidad al producto; evita colores genéricos repetidos entre proyectos.";
+      }
     }
     return s;
   }

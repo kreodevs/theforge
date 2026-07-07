@@ -1,8 +1,17 @@
-The Forge
-Copyright 2026 Jorge Correa and Special Contributors
+# Third-party notices — The Forge
 
-This product includes software developed as part of The Forge project.
+## Design Extractor (design-extractor.com)
 
-For a list of authors and contributors, see AUTHORS.md.
+Parte de la biblioteca de referencias visuales de The Forge (pestaña Design System / Guía UX/UI)
+usa tokens extraídos de sitios públicos y curados en la galería de Design Extractor:
 
-The full license text is in the LICENSE file (Apache License, Version 2.0).
+https://www.design-extractor.com/gallery
+
+- **Uso en The Forge:** inspiración y adaptación de tokens al dominio del MDD del proyecto.
+- **Archivos locales:** `apps/api/src/modules/design-ref/data/design-extractor-imports/` (snapshot congelado; ver `manifest.json`).
+- **No implica:** afiliación, endorsement ni design system oficial de las marcas citadas (Stripe, Linear, etc.).
+
+Biblioteca builtin adicional (54 entradas): skill open-source `popular-web-designs` (VoltAgent/awesome-design-md),
+independiente de Design Extractor salvo solapamiento de marcas.
+
+Para permisos de redistribución del corpus importado: contactar info@design-extractor.com.

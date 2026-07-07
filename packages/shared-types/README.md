@@ -12,6 +12,7 @@ DTOs e interfaces compartidas (Zod).
 - `orchestrator.ts`: `chatOrchestratorResponseSchema` (respuesta stream/orquestador; incluye `evaluatorCritique` opcional).
 - **`legacy-codebase-doc.ts`:** `codebaseDocResponseModeSchema`, `generateCodebaseDocRequestSchema` (body `POST …/legacy/generate-codebase-doc`).
 - **`doc-consumption-guide.ts`:** SSOT `buildTheforgeDocConsumptionGuide` (layout spec-kit dual) para handoff y gobernanza.
+- **`project.ts`:** `updateProjectSchema` incluye `uxGuideDesignRef` (biblioteca visual Design System).
 - **`document-layout.ts`:** mapa spec-kit ↔ `docs/sdd/` para gobernanza (MDD, Paso 0, Spec, Arq., casos, H.U., Blueprint, Design System, Pantallas, API, Flujos, Tasks, Infra, ADRs) + suplemento Workshop (BRD, AEM, Handoff Spec).
 - **`ui-screens-export.ts`:** split `---UI_PROJECT_JSON---`, preview formateado (`formatPantallasMarkdownForPreview`) y export limpio de `pantallas.md`.
 - **`spec-kit-bundle.ts`:** `buildSpecKitBundleFiles` — export layout compatible con github/spec-kit.

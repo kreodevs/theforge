@@ -1,5 +1,5 @@
 import type { GenerateResponseOptions } from "./interfaces/llm-provider.interface.js";
-import { getDesignBySlug, formatDesignReferencePrompt } from "../design-ref/data/design-references.js";
+import { buildUxGuideDesignRefOptions } from "../design-ref/build-ux-guide-design-ref-options.util.js";
 
 /** Campos de proyecto necesarios para enriquecer la Guía UX/UI y el Prompt Stitch (solo NEW). */
 export type UxGuideProjectFields = {
@@ -21,36 +21,54 @@ function sliceDoc(s: string | null | undefined, max: number): string | undefined
   return t.length <= max ? t : `${t.slice(0, max)}\n…`;
 }
 
+/** MDD efectivo para auto-match de design reference. */
+export function mddContextForUxGuide(
+  project: {
+    mddContent?: string | null;
+    stages?: { id: string; mddContent: string | null }[];
+  },
+  stageId?: string,
+  clientMdd?: string | null,
+): string {
+  const fromClient = clientMdd?.trim();
+  if (fromClient) return fromClient;
+  if (stageId && project.stages?.length) {
+    const st = project.stages.find((s) => s.id === stageId);
+    if (st?.mddContent?.trim()) return st.mddContent.trim();
+  }
+  return (project.mddContent ?? "").trim();
+}
+
 /**
  * Opciones de LLM para la Guía UX/UI: tipo de proyecto (Stitch solo NEW), fragmentos SDD y design reference.
  */
 export function uxGuideLlmOptions(
   project: UxGuideProjectFields,
+  mddContext?: string,
 ): Pick<
   GenerateResponseOptions,
-  "projectTypeForUxGuide" | "uxGuideAdditionalDocs" | "uxGuideDesignRef" | "uxGuideDesignRefPromptBlock"
+  | "projectTypeForUxGuide"
+  | "uxGuideAdditionalDocs"
+  | "uxGuideDesignRef"
+  | "uxGuideDesignRefPromptBlock"
+  | "uxGuideDesignRefEffectiveSlug"
+  | "uxGuideDesignRefMode"
 > {
   const base: Pick<
     GenerateResponseOptions,
-    "projectTypeForUxGuide" | "uxGuideAdditionalDocs" | "uxGuideDesignRef" | "uxGuideDesignRefPromptBlock"
+    | "projectTypeForUxGuide"
+    | "uxGuideAdditionalDocs"
+    | "uxGuideDesignRef"
+    | "uxGuideDesignRefPromptBlock"
+    | "uxGuideDesignRefEffectiveSlug"
+    | "uxGuideDesignRefMode"
   > = {
     projectTypeForUxGuide: project.projectType === "LEGACY" ? "LEGACY" : "NEW",
   };
 
-  // Design Reference
-  const refSlug = project.uxGuideDesignRef?.trim();
-  if (refSlug) {
-    base.uxGuideDesignRef = refSlug;
-    if (refSlug !== "auto") {
-      // Buscar en el catálogo
-      const ref = getDesignBySlug(refSlug);
-      if (ref) {
-        base.uxGuideDesignRefPromptBlock = formatDesignReferencePrompt(ref);
-      }
-    }
-  }
+  const mdd = (mddContext ?? "").trim();
+  Object.assign(base, buildUxGuideDesignRefOptions(project, mdd));
 
-  // SDD docs (solo NEW)
   if (project.projectType !== "LEGACY") {
     base.uxGuideAdditionalDocs = {
       spec: sliceDoc(project.specContent, 6000),

@@ -1,43 +1,34 @@
 /**
- * DesignReferenceService
- *
- * Gestiona el catálogo de design references, scanning de URLs y matching automático.
+ * DesignRefService — catálogo de referencias visuales para Guía UX/UI.
  */
 import { Injectable } from "@nestjs/common";
-import { getDesignBySlug, getDesignReferenceList, matchDesignByDomain, formatDesignReferencePrompt } from "./data/design-references.js";
+import {
+  getDesignBySlugFromCatalog,
+  getDesignReferenceListMerged,
+  matchDesignByDomainMerged,
+} from "./data/design-catalog.js";
+import { formatDesignReferencePrompt } from "./data/design-references.js";
+import { getDesignRefInspiration } from "./design-ref-inspiration.util.js";
 
 @Injectable()
 export class DesignRefService {
-  /**
-   * Lista todas las design references (metadata básica para el selector).
-   */
   list() {
-    return getDesignReferenceList();
+    return getDesignReferenceListMerged();
   }
 
-  /**
-   * Obtiene una design reference completa por slug.
-   */
   getBySlug(slug: string) {
-    const ref = getDesignBySlug(slug);
+    const ref = getDesignBySlugFromCatalog(slug);
     if (!ref) return null;
-    return ref;
+    return { ...ref, ...getDesignRefInspiration(ref) };
   }
 
-  /**
-   * Matching automático: dado el contexto del MDD, devuelve las 3 mejores sugerencias.
-   */
   autoMatch(mddContext: string) {
-    const matches = matchDesignByDomain(mddContext);
-    return matches;
+    return matchDesignByDomainMerged(mddContext);
   }
 
-  /**
-   * Genera el bloque de contexto para inyectar en el prompt de la Guía UX/UI.
-   */
-  getPromptBlock(slug: string): string | null {
-    const ref = getDesignBySlug(slug);
+  getPromptBlock(slug: string, mode: "explicit" | "auto-matched" = "explicit"): string | null {
+    const ref = getDesignBySlugFromCatalog(slug);
     if (!ref) return null;
-    return formatDesignReferencePrompt(ref);
+    return formatDesignReferencePrompt(ref, mode);
   }
 }

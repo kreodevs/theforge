@@ -22,6 +22,8 @@
 | **McpSecretCard** | Re-export de `AccountConfigCard` (compat). |
 | **AriadneConfigCard** | URL/token MCP de Ariadne (base de conocimientos). |
 | **UiMcpInstancesCard** | Ajustes → **MCP gráfico**: CRUD team-wide de MCPs de componentes UI (`/api/ui-mcp`), activar/desactivar, **detectar compatibilidad** (badge compatible/no + librería/versión + contrato). Solo admin/super_admin. Habilita componentes reales en UI/UX del MDD/Blueprint y el deliverable «Pantallas». |
+| **DesignRefSelector** | Biblioteca visual en pestaña **Design System**: catálogo `GET /api/design-refs` (builtin + 26 design-extractor), badge `DESIGN.md` si hay import, auto-match o slug explícito → `Project.uxGuideDesignRef`. |
+| **UxUiGuidePanel** | Design System: preview / design kit / fuente + barra **DesignRefSelector** antes de generar. |
 | **LegacyMcpDebugPanel/** | Panel colapsable (MDD Inicial, LEGACY): traza petición↔respuesta JSON-RPC con Ariadne cuando el API envía `mcpDebugTrace` (`LEGACY_CODEBASE_DOC_MCP_DEBUG_UI=1`); botón **Copiar traza**. En **WorkshopView**, **Copiar MDD** junto al título copia el markdown de partida. Ver README en la carpeta. |
 | **WorkshopHelpModal** | Modal **Ayuda — TheForge** (Workshop): manual, **Integración Legacy ↔ Nuevo**, SDD y referencia por documento. Renderiza Mermaid en markdown. |
 | **IntegrationPanel** | Pestaña **Integración**: enlace NEW↔LEGACY, handoff NEW-LEG, import en etapa 2+, matriz trazabilidad. |

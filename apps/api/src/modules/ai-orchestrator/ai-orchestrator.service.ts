@@ -15,7 +15,8 @@ import type { SupervisorRouteResult } from "../agent-supervisor/agent-supervisor
 import { SddIngestorService } from "../ai-analysis/sdd-ingestor.service.js";
 import { AgentEvaluatorService } from "../agent-supervisor/agent-evaluator.service.js";
 import { EpisodicMemoryKind } from "@theforge/database";
-import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
+import { mddContextForUxGuide, uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
+import { appendUxGuideDesignAttribution } from "../design-ref/design-ref-attribution.util.js";
 import { wouldShrinkDbgaDangerously } from "../sessions/dbga-edit.util.js";
 
 export type OrchestratorClientDeliverables = {
@@ -248,7 +249,10 @@ export class AiOrchestratorService {
         stageId: route.stageId,
         complexityInterviewContext,
         userImages,
-        ...uxGuideLlmOptions(project),
+        ...uxGuideLlmOptions(
+          project,
+          mddContextForUxGuide(project, route.stageId, mddContentFromClient),
+        ),
       });
       updatedSession = chatResult.session;
       mddFromResponse = chatResult.mddContent;
@@ -273,7 +277,12 @@ export class AiOrchestratorService {
     }
     if (tab === "ux-ui-guide" && uxUiGuideFromResponse != null && uxUiGuideFromResponse.length > 0) {
       console.log("[Orchestrator] persisting uxUiGuideContent (Guía UX/UI) length:", uxUiGuideFromResponse.length);
-      updatedProject = await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideFromResponse });
+      const uxWithAttribution = appendUxGuideDesignAttribution(
+        uxUiGuideFromResponse,
+        project.uxGuideDesignRef,
+        mddContextForUxGuide(project, route.stageId, mddContentFromClient),
+      );
+      updatedProject = await this.projects.update(projectId, { uxUiGuideContent: uxWithAttribution });
     }
     if (dbgaFromResponse != null && dbgaFromResponse.length > 0) {
       const prevDbga = (currentDbga ?? project.dbgaContent ?? "").trim();
@@ -542,7 +551,10 @@ export class AiOrchestratorService {
       stageId: routeStream.stageId,
       complexityInterviewContext,
       userImages,
-      ...uxGuideLlmOptions(project),
+      ...uxGuideLlmOptions(
+        project,
+        mddContextForUxGuide(project, routeStream.stageId, mddContentFromClient),
+      ),
     });
 
     for await (const msg of stream) {
@@ -557,7 +569,12 @@ export class AiOrchestratorService {
           });
         }
         if (tab === "ux-ui-guide" && msg.uxUiGuideContent != null && msg.uxUiGuideContent.length > 0) {
-          updatedProject = await this.projects.update(projectId, { uxUiGuideContent: msg.uxUiGuideContent });
+          const uxWithAttribution = appendUxGuideDesignAttribution(
+            msg.uxUiGuideContent,
+            project.uxGuideDesignRef,
+            mddContextForUxGuide(project, routeStream.stageId, mddContentFromClient),
+          );
+          updatedProject = await this.projects.update(projectId, { uxUiGuideContent: uxWithAttribution });
         }
         if (tab === "benchmark" && msg.dbgaContent != null && msg.dbgaContent.length > 0) {
           const prevDbga = (currentDbga ?? project.dbgaContent ?? "").trim();

@@ -10,6 +10,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ChevronDown, Sparkles, Globe, RefreshCw } from "lucide-react";
+import { apiFetch, API_BASE } from "@/utils/apiClient";
 
 export interface DesignRefItem {
   slug: string;
@@ -17,7 +18,13 @@ export interface DesignRefItem {
   category: string;
   style: string;
   tags: string[];
-  colors?: Record<string, string>;
+  source?: string;
+  galleryUrl?: string;
+  hasDesignMdImport?: boolean;
+  inspirationSource?: "design-extractor" | "builtin";
+  inspirationUrl?: string;
+  attributionNote?: string;
+  colors?: Record<string, string | undefined>;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -49,7 +56,7 @@ export function DesignRefSelector({ currentRef, onChange, onAutoMatch }: DesignR
 
   // Cargar catálogo
   useEffect(() => {
-    fetch("/api/design-refs")
+    apiFetch(`${API_BASE}/design-refs`)
       .then((r) => r.json())
       .then((data: DesignRefItem[]) => setDesigns(data))
       .catch(() => {})
@@ -90,7 +97,7 @@ export function DesignRefSelector({ currentRef, onChange, onAutoMatch }: DesignR
   const handleUrlSubmit = useCallback(() => {
     if (!url.trim()) return;
     setUrlLoading(true);
-    fetch("/api/design-refs/scan-url", {
+    apiFetch(`${API_BASE}/design-refs/scan-url`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: url.trim() }),
@@ -117,10 +124,18 @@ export function DesignRefSelector({ currentRef, onChange, onAutoMatch }: DesignR
     <div className="space-y-2">
       {/* Descripción de la funcionalidad */}
       <p className="text-xs text-zinc-500 leading-relaxed">
-        Selecciona un <span className="text-zinc-400">design system de referencia</span> para inspirar la Guía UX/UI.
-        El LLM adaptará sus colores, tipografía y estilo al dominio de tu proyecto — no los copiará textualmente.
-        Puedes elegir entre 54 sistemas reales (Stripe, Linear, Vercel…), activar <span className="text-indigo-400">auto-match</span>
-        para que el LLM infiera el diseño del MDD, o ingresar una URL personalizada.
+        Referencias visuales <span className="text-zinc-400">inspiradas en</span> sistemas públicos curados en{" "}
+        <a
+          href="https://www.design-extractor.com/gallery"
+          target="_blank"
+          rel="noreferrer"
+          className="text-indigo-400 hover:underline"
+        >
+          design-extractor.com
+        </a>
+        . The Forge <span className="text-zinc-400">adapta tokens</span> al dominio de tu MDD; no es copia ni producto
+        oficial de esas marcas. Usa <span className="text-indigo-400">auto-match</span> (p. ej. fintech → Stripe/Klarna)
+        o elige una referencia del catálogo.
       </p>
       <div ref={ref} className="relative">
       {/* Trigger button */}
@@ -229,10 +244,25 @@ export function DesignRefSelector({ currentRef, onChange, onAutoMatch }: DesignR
                             currentRef === d.slug ? "bg-zinc-800 ring-1 ring-indigo-500" : ""
                           }`}
                         >
-                          <span className="h-3 w-3 shrink-0 rounded-full border border-zinc-600" />
+                          <span
+                            className="h-3 w-3 shrink-0 rounded-full border border-zinc-600"
+                            style={{ backgroundColor: d.colors?.primary || undefined }}
+                          />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium text-zinc-200">{d.name}</p>
-                            <p className="truncate text-xs text-zinc-500">{d.style}</p>
+                            <p className="truncate font-medium text-zinc-200">
+                              {d.name}
+                              {d.hasDesignMdImport && (
+                                <span className="ml-1.5 text-[10px] font-normal text-indigo-400/90">
+                                  DESIGN.md
+                                </span>
+                              )}
+                            </p>
+                            <p className="truncate text-xs text-zinc-500">
+                              {d.style}
+                              {d.inspirationSource === "design-extractor" && (
+                                <span className="text-zinc-600"> · inspirado en design-extractor</span>
+                              )}
+                            </p>
                           </div>
                         </button>
                       ))}

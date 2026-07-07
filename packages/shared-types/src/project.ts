@@ -72,6 +72,8 @@ export const updateProjectSchema = z.object({
   /** JSON (`AgentGovernanceScaffold`) del entregable agent-governance. */
   agentGovernanceContent: z.string().optional().nullable(),
   uxUiGuideContent: z.string().optional().nullable(),
+  /** Slug de design reference (`stripe`, `auto`, etc.) para Guía UX/UI. */
+  uxGuideDesignRef: z.string().max(512).optional().nullable(),
   phase0SummaryContent: z.string().optional().nullable(),
   aemContent: z.string().optional().nullable(),
   handoffSpecContent: z.string().optional().nullable(),
@@ -121,6 +123,7 @@ export const projectResponseSchema = z.object({
   infraContent: z.string().nullable(),
   agentGovernanceContent: z.string().nullable(),
   uxUiGuideContent: z.string().nullable(),
+  uxGuideDesignRef: z.string().nullable(),
   phase0SummaryContent: z.string().nullable(),
   aemContent: z.string().nullable(),
   handoffSpecContent: z.string().nullable(),

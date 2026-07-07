@@ -1,0 +1,184 @@
+[
+  {
+    "slug": "airbnb",
+    "brand": "Airbnb",
+    "url": "https://www.design-extractor.com/gallery/airbnb",
+    "file": "airbnb.md",
+    "bytes": 3704
+  },
+  {
+    "slug": "anthropic",
+    "brand": "Anthropic",
+    "url": "https://www.design-extractor.com/gallery/anthropic",
+    "file": "anthropic.md",
+    "bytes": 4260
+  },
+  {
+    "slug": "apple",
+    "brand": "Apple",
+    "url": "https://www.design-extractor.com/gallery/apple",
+    "file": "apple.md",
+    "bytes": 4053
+  },
+  {
+    "slug": "dribbble",
+    "brand": "Dribbble - Discover the World’s Top Designers & Creative Professionals",
+    "url": "https://www.design-extractor.com/gallery/dribbble",
+    "file": "dribbble.md",
+    "bytes": 2784
+  },
+  {
+    "slug": "duolingo",
+    "brand": "Duolingo",
+    "url": "https://www.design-extractor.com/gallery/duolingo",
+    "file": "duolingo.md",
+    "bytes": 3335
+  },
+  {
+    "slug": "figma",
+    "brand": "Figma",
+    "url": "https://www.design-extractor.com/gallery/figma",
+    "file": "figma.md",
+    "bytes": 3097
+  },
+  {
+    "slug": "harvey-2cd5a19d5b",
+    "brand": "Harvey",
+    "url": "https://www.design-extractor.com/gallery/harvey-2cd5a19d5b",
+    "file": "harvey-2cd5a19d5b.md",
+    "bytes": 3644
+  },
+  {
+    "slug": "ikea-ae3b91b472",
+    "brand": "IKEA",
+    "url": "https://www.design-extractor.com/gallery/ikea-ae3b91b472",
+    "file": "ikea-ae3b91b472.md",
+    "bytes": 3595
+  },
+  {
+    "slug": "klarna",
+    "brand": "Klarna",
+    "url": "https://www.design-extractor.com/gallery/klarna",
+    "file": "klarna.md",
+    "bytes": 2992
+  },
+  {
+    "slug": "lassie",
+    "brand": "Lassie",
+    "url": "https://www.design-extractor.com/gallery/lassie",
+    "file": "lassie.md",
+    "bytes": 4866
+  },
+  {
+    "slug": "linear-638bvy",
+    "brand": "Linear",
+    "url": "https://www.design-extractor.com/gallery/linear-638bvy",
+    "file": "linear-638bvy.md",
+    "bytes": 4399
+  },
+  {
+    "slug": "lovable",
+    "brand": "Lovable",
+    "url": "https://www.design-extractor.com/gallery/lovable",
+    "file": "lovable.md",
+    "bytes": 3516
+  },
+  {
+    "slug": "neon",
+    "brand": "Neon",
+    "url": "https://www.design-extractor.com/gallery/neon",
+    "file": "neon.md",
+    "bytes": 4759
+  },
+  {
+    "slug": "notion-3b6ysb",
+    "brand": "Notion",
+    "url": "https://www.design-extractor.com/gallery/notion-3b6ysb",
+    "file": "notion-3b6ysb.md",
+    "bytes": 4246
+  },
+  {
+    "slug": "paperclip",
+    "brand": "Paperclip",
+    "url": "https://www.design-extractor.com/gallery/paperclip",
+    "file": "paperclip.md",
+    "bytes": 5121
+  },
+  {
+    "slug": "paypal",
+    "brand": "PayPal",
+    "url": "https://www.design-extractor.com/gallery/paypal",
+    "file": "paypal.md",
+    "bytes": 3815
+  },
+  {
+    "slug": "railway",
+    "brand": "Railway",
+    "url": "https://www.design-extractor.com/gallery/railway",
+    "file": "railway.md",
+    "bytes": 4176
+  },
+  {
+    "slug": "shopify",
+    "brand": "Shopify",
+    "url": "https://www.design-extractor.com/gallery/shopify",
+    "file": "shopify.md",
+    "bytes": 4381
+  },
+  {
+    "slug": "snapchat",
+    "brand": "Snapchat",
+    "url": "https://www.design-extractor.com/gallery/snapchat",
+    "file": "snapchat.md",
+    "bytes": 4857
+  },
+  {
+    "slug": "stripe",
+    "brand": "Stripe",
+    "url": "https://www.design-extractor.com/gallery/stripe",
+    "file": "stripe.md",
+    "bytes": 3906
+  },
+  {
+    "slug": "supabase",
+    "brand": "Supabase",
+    "url": "https://www.design-extractor.com/gallery/supabase",
+    "file": "supabase.md",
+    "bytes": 4526
+  },
+  {
+    "slug": "theonion",
+    "brand": "The Onion",
+    "url": "https://www.design-extractor.com/gallery/theonion",
+    "file": "theonion.md",
+    "bytes": 3622
+  },
+  {
+    "slug": "uber",
+    "brand": "Uber",
+    "url": "https://www.design-extractor.com/gallery/uber",
+    "file": "uber.md",
+    "bytes": 4911
+  },
+  {
+    "slug": "vercel",
+    "brand": "Vercel",
+    "url": "https://www.design-extractor.com/gallery/vercel",
+    "file": "vercel.md",
+    "bytes": 3512
+  },
+  {
+    "slug": "wired",
+    "brand": "WIRED",
+    "url": "https://www.design-extractor.com/gallery/wired",
+    "file": "wired.md",
+    "bytes": 4082
+  },
+  {
+    "slug": "x",
+    "brand": "xAI",
+    "url": "https://www.design-extractor.com/gallery/x",
+    "file": "x.md",
+    "bytes": 3347
+  }
+]

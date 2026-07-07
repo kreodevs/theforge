@@ -9,6 +9,7 @@
       { "include": "modules/ai-analysis/prompts/**/*.md", "outDir": "dist" },
       { "include": "modules/legacy-flow/knowledge/*.md", "outDir": "dist" },
       { "include": "modules/legacy-flow/prompts/*.md", "outDir": "dist" },
+      { "include": "modules/design-ref/data/design-extractor-imports/*.md", "outDir": "dist" },
       { "include": "modules/auth/assets/**", "outDir": "dist" }
     ]
   }

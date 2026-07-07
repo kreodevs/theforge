@@ -3,6 +3,7 @@ import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { DocEmptyState } from "@/components/DocEmptyState";
 import { DesignMdPreview } from "@/components/DesignMdPreview";
+import { DesignRefSelector } from "@/components/DesignRefSelector";
 import MddViewer from "@/components/MddViewer";
 import { AiDocumentBuildingPlaceholder } from "@/components/AiGenerationLoader";
 import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "@/components/WorkshopDocSourceSaveBar";
@@ -18,6 +19,9 @@ interface UxUiGuidePanelProps {
   canGenerate: boolean;
   isLoading: boolean;
   isGenerating: boolean;
+  designRef?: string | null;
+  onDesignRefChange: (ref: string | null) => void;
+  onDesignRefAutoMatch?: () => void;
   placeholder?: string;
   onBlur?: () => void;
 }
@@ -35,14 +39,29 @@ export function UxUiGuidePanel({
   canGenerate,
   isLoading,
   isGenerating,
+  designRef,
+  onDesignRefChange,
+  onDesignRefAutoMatch,
   placeholder,
   onBlur,
 }: UxUiGuidePanelProps) {
   const isEmpty = !content?.trim();
 
+  const designRefBar = (
+    <div className="mb-3 shrink-0 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_35%,var(--card))] px-3 py-2.5">
+      <DesignRefSelector
+        currentRef={designRef}
+        onChange={onDesignRefChange}
+        onAutoMatch={onDesignRefAutoMatch}
+      />
+    </div>
+  );
+
   if (isEmpty && (viewMode === "preview" || viewMode === "design")) {
     return (
-      <DocEmptyState
+      <>
+        {designRefBar}
+        <DocEmptyState
         icon={Palette}
         title="Design System"
         description="Tokens de diseño (colores, tipografía, espaciado) y un UI Kit de ejemplo con hasta 10 componentes. Se genera desde el MDD y el Blueprint."
@@ -50,11 +69,13 @@ export function UxUiGuidePanel({
         loading={isGenerating || isLoading}
         hasMdd={canGenerate}
       />
+      </>
     );
   }
 
   return (
     <>
+      {designRefBar}
       {viewMode === "design" ? (
         <div key="design-view" className="flex min-h-0 flex-1 flex-col overflow-auto">
           <DesignMdPreview content={content ?? ""} />

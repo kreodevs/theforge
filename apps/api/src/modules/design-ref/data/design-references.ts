@@ -4,6 +4,10 @@
  *
  * Fuente: Hermes Agent skill popular-web-designs (VoltAgent/awesome-design-md)
  */
+import {
+  designExtractorImportPresent,
+  formatDesignExtractorImportBlock,
+} from "./design-extractor-import.loader.js";
 
 export interface DesignReference {
   /** Slug único (ej. "stripe", "linear-app") */
@@ -16,6 +20,10 @@ export interface DesignReference {
   style: string;
   /** Tags para matching automático */
   tags: string[];
+  /** Origen del catálogo (P1: design-extractor). */
+  source?: "builtin" | "design-extractor";
+  /** URL pública en design-extractor.com/gallery/{slug} */
+  galleryUrl?: string;
   /** Paleta de colores clave (valores normativos) */
   colors: {
     primary?: string;
@@ -988,8 +996,11 @@ export function matchDesignByDomain(mddContext: string): DesignReference[] {
 
   // Palabras clave por categoría/dominio
   const domainPatterns: [RegExp, string[]][] = [
-    // Fintech
-    [/(fintech|bank|payment|transaction|finance|invoice|billing|pago|banking)/, ["stripe", "revolut", "wise", "coinbase", "kraken"]],
+    // Fintech / trading / inversión
+    [
+      /(fintech|bank|payment|transaction|finance|invoice|billing|pago|banking|inversi[oó]n|trading|broker|portafolio|burs[aá]til|bolsa|acciones|etf|dashboard\s+financiero|alpaca|tradingview|bloomberg)/,
+      ["stripe", "revolut", "wise", "coinbase", "kraken", "klarna"],
+    ],
     // E-commerce / marketplace
     [/(e-commerce|marketplace|shop|store|retail|commerce|venta|tienda)/, ["airbnb", "stripe", "shopify"]],
     // SaaS / CRM / ERP
@@ -1046,25 +1057,68 @@ export function getDesignBySlug(slug: string): DesignReference | undefined {
   return DESIGN_REFERENCES.find((r) => r.slug === slug);
 }
 
+/** Lista unificada (builtin; P1 añade design-extractor vía design-ref.service). */
+export function getBuiltinDesignReferences(): DesignReference[] {
+  return DESIGN_REFERENCES;
+}
+
 /**
  * Genera el bloque de contexto para inyectar en el prompt del LLM.
  */
-export function formatDesignReferencePrompt(ref: DesignReference): string {
-  return `\n\n## [Design Reference: ${ref.name}]\nEste es un sistema de diseño de referencia. NO lo copies textual — úsalo como inspiración y adapta los valores al dominio del proyecto especificado en el MDD.\n\n### Paleta de colores de referencia\n${Object.entries(ref.colors)
-    .filter(([, v]) => v)
-    .map(([k, v]) => `- ${k}: ${v}`)
-    .join("\n")}\n\n### Tipografía\n- Primaria: ${ref.fonts?.primary ?? "No especificada"}${ref.fonts?.mono ? `\n- Mono: ${ref.fonts.mono}` : ""}\n\n### Personalidad\n${ref.style}\n\n### Directrices\n1. La paleta de colores es referencial — adáptala al dominio y personalidad del producto.\n2. La tipografía puede usarse como guía pero prioriza fuentes del stack del proyecto.\n3. Mantén la personalidad general (${ref.style}) pero hazla propia del producto.\n4. Conserva los principios de accesibilidad WCAG AA (contraste ≥4.5:1).`;
+export function formatDesignReferencePrompt(
+  ref: DesignReference,
+  mode: "explicit" | "auto-matched" = "explicit",
+): string {
+  const hasImport = designExtractorImportPresent(ref.slug);
+  const attribution =
+    ref.source === "design-extractor" || hasImport ? " · design-extractor.com" : "";
+
+  const tokenRule =
+    mode === "explicit"
+      ? hasImport
+        ? "1. **El bloque DESIGN.md importado es la fuente canónica** (YAML + tokens). La paleta resumida abajo es respaldo; prioriza hex y escala del DESIGN.md."
+        : "1. **Usa la paleta y tipografía como base canónica** del YAML (primary, background, accent). Solo renombra tokens semánticos al dominio del producto; no sustituyas por grises genéricos shadcn."
+      : hasImport
+        ? "1. Auto-match con DESIGN.md importado: transpón tokens y personalidad al producto; no uses grises genéricos."
+        : "1. Auto-match: esta referencia encaja con el dominio del MDD. **Transpón la paleta y personalidad** al producto; evita paletas genéricas.";
+
+  const importBlock = formatDesignExtractorImportBlock(ref.slug, mode) ?? "";
+
+  return (
+    `\n\n## [Design Reference: ${ref.name}${attribution}]\n` +
+    `${ref.description}\n\n` +
+    `### Paleta de colores de referencia\n` +
+    `${Object.entries(ref.colors)
+      .filter(([, v]) => v)
+      .map(([k, v]) => `- ${k}: ${v}`)
+      .join("\n")}\n\n` +
+    `### Tipografía\n- Primaria: ${ref.fonts?.primary ?? "No especificada"}` +
+    `${ref.fonts?.mono ? `\n- Mono: ${ref.fonts.mono}` : ""}\n\n` +
+    `### Personalidad\n${ref.style}\n\n` +
+    `### Directrices\n${tokenRule}\n` +
+    "2. Prioriza fuentes del stack del proyecto si el MDD las declara; si no, usa las de referencia.\n" +
+    "3. Conserva WCAG AA (contraste ≥4.5:1) en todos los componentes.\n" +
+    (ref.galleryUrl ? `4. Referencia completa: ${ref.galleryUrl}\n` : "") +
+    importBlock
+  );
 }
 
 /**
  * Lista completa de todas las design references con metadata básica (para el selector UI).
  */
 export function getDesignReferenceList() {
-  return DESIGN_REFERENCES.map(({ slug, name, category, style, tags }) => ({
+  return DESIGN_REFERENCES.map(({ slug, name, category, style, tags, colors, source, galleryUrl }) => ({
     slug,
     name,
     category,
     style,
     tags,
+    source: source ?? "builtin",
+    galleryUrl,
+    colors: {
+      primary: colors.primary,
+      background: colors.background,
+      accent: colors.accent,
+    },
   }));
 }

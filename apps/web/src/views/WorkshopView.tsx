@@ -784,6 +784,7 @@ export default function WorkshopView({
   );
   const legacyGenerateDeliverables = useWorkshopStore((s) => s.legacyGenerateDeliverables);
   const persistUxUiGuideContent = useWorkshopStore((s) => s.persistUxUiGuideContent);
+  const persistUxGuideDesignRef = useWorkshopStore((s) => s.persistUxGuideDesignRef);
   const generateUxGuideSequential = useCallback(async () => {
     const { apiFetch, API_BASE } = await import("../utils/apiClient");
     const mdd = effectiveMddTrimmed || "";
@@ -4470,6 +4471,13 @@ export default function WorkshopView({
                 canGenerate={!!(effectiveMddTrimmed && blueprintContent?.trim())}
                 isLoading={loading}
                 isGenerating={uxGenerating}
+                designRef={project?.uxGuideDesignRef ?? "auto"}
+                onDesignRefChange={(ref) => {
+                  void persistUxGuideDesignRef(ref);
+                }}
+                onDesignRefAutoMatch={() => {
+                  void persistUxGuideDesignRef("auto");
+                }}
                 placeholder="# Design System\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
                 onBlur={handleUxUiGuideBlur}
               />
