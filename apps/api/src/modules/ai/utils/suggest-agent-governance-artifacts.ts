@@ -1,4 +1,4 @@
-import type { ComplexityLevel } from "@theforge/shared-types";
+import type { ComplexityLevel, ProjectType } from "@theforge/shared-types";
 import { GOVERNANCE_DOCS_PREFIX } from "@theforge/shared-types";
 import { selectedPatternIdsFromMdd } from "@theforge/shared-types/mdd-governance-patterns";
 import {
@@ -52,7 +52,13 @@ export interface SuggestAgentGovernanceInput {
   projectId?: string | null;
   stageId?: string | null;
   stageOrdinal?: number | null;
+  /** NEW = greenfield; LEGACY = brownfield (Ariadne). Sin valor → NEW. */
+  projectType?: ProjectType | null;
   complexity: ComplexityLevel;
+}
+
+function isLegacyBrownfieldProject(input: Pick<SuggestAgentGovernanceInput, "projectType">): boolean {
+  return input.projectType === "LEGACY";
 }
 
 export interface ProjectGovernanceFacts {
@@ -567,10 +573,10 @@ function hasLegacyAriadneSignals(text: string): boolean {
   let match: RegExpExecArray | null;
   while ((match = falkorMention.exec(text)) !== null) {
     if (isDeferredScopeContext(text, match.index, match[0].length)) continue;
+    if (/validate_before_edit|mcp\s+ariadne/i.test(text)) return true;
     if (
-      /validate_before_edit|índice\s+de\s+código|grafo\s+de\s+código|mcp\s+ariadne/i.test(
-        text,
-      )
+      /índice\s+de\s+código|grafo\s+de\s+código/i.test(text) &&
+      /\bariadne\b|strangler|código\s+existente|refactor\s+legacy/i.test(text)
     ) {
       return true;
     }
@@ -630,6 +636,7 @@ function detectKubernetesArchetype(mddMarkdown: string, fullText: string): boole
 function detectArchetypes(
   text: string,
   complexity: ComplexityLevel,
+  projectType: ProjectType | null | undefined,
   authoritativeUiText?: string,
   mddMarkdown?: string,
 ): string[] {
@@ -655,7 +662,7 @@ function detectArchetypes(
   ) {
     found.add("design-system-ui");
   }
-  if (hasLegacyAriadneSignals(text)) found.add("legacy-ariadne");
+  if (projectType === "LEGACY" && hasLegacyAriadneSignals(text)) found.add("legacy-ariadne");
   if (/\bjwt\b|oauth|§\s*6|autenticaci[oó]n/i.test(text)) found.add("auth-jwt");
   if (hasKubernetes) found.add("kubernetes");
   else if (hasDockerDeploy || /§\s*7|serverless|cloudflare/i.test(text)) found.add("docker-dokploy");
@@ -1202,6 +1209,7 @@ function ruleStrength(
   text: string,
   archetypes: string[],
   complexity: ComplexityLevel,
+  projectType: ProjectType | null | undefined,
   authoritativeUiText?: string,
   uiScreensMarkdown?: string | null,
 ): GovernanceArtifactStrength | null {
@@ -1227,7 +1235,9 @@ function ruleStrength(
   if (rule.id === "git-commits" || rule.id === "stack-backend" || rule.id === "stack-frontend") {
     return signalHit || archetypeHit ? "strong" : "weak";
   }
-  if (rule.id === "mcp-governance" && hasLegacyAriadneSignals(text)) return "strong";
+  if (rule.id === "mcp-governance" && projectType === "LEGACY" && hasLegacyAriadneSignals(text)) {
+    return "strong";
+  }
   if (rule.id === "security-auth" && /\bjwt\b|oauth/i.test(text)) return "strong";
   if (wizardHit) return "strong";
 
@@ -1239,13 +1249,16 @@ function skillStrength(
   text: string,
   archetypes: string[],
   complexity: ComplexityLevel,
+  projectType: ProjectType | null | undefined,
   authoritativeUiText?: string,
   uiScreensMarkdown?: string | null,
 ): GovernanceArtifactStrength | null {
   if (!complexityAtLeast(complexity, skill.minComplexity)) return null;
 
   if (skill.id === "design-system-ui" && !hasUiSurface(text, authoritativeUiText)) return null;
-  if (skill.id === "mcp-ariadne" && !hasLegacyAriadneSignals(text)) return null;
+  if (skill.id === "mcp-ariadne") {
+    if (projectType !== "LEGACY" || !hasLegacyAriadneSignals(text)) return null;
+  }
 
   if (skill.id === "ui-pantallas") {
     if (uiScreensMarkdown?.trim()) return "strong";
@@ -1271,7 +1284,9 @@ function skillStrength(
 
   if (!signalHit && !archetypeHit) return null;
 
-  if (skill.id === "mcp-ariadne" && hasLegacyAriadneSignals(text)) return "strong";
+  if (skill.id === "mcp-ariadne" && projectType === "LEGACY" && hasLegacyAriadneSignals(text)) {
+    return "strong";
+  }
   if (skill.id === "design-system-ui" && archetypes.includes("design-system-ui")) return "strong";
   if (skill.id === "ui-pantallas" && uiScreensMarkdown?.trim()) return "strong";
 
@@ -1318,7 +1333,14 @@ export function suggestAgentGovernanceArtifacts(
 ): AgentGovernanceSuggestions {
   const text = corpus(input);
   const authoritativeUiText = [input.mddMarkdown, input.specMarkdown].filter(Boolean).join("\n\n");
-  const archetypes = detectArchetypes(text, input.complexity, authoritativeUiText, input.mddMarkdown);
+  const projectType = input.projectType ?? "NEW";
+  const archetypes = detectArchetypes(
+    text,
+    input.complexity,
+    projectType,
+    authoritativeUiText,
+    input.mddMarkdown,
+  );
   const rationale: string[] = [];
   const facts = extractProjectGovernanceFacts(input);
   const domainFolder = inferDomainSkillFolder(text, facts.blueprintModules, input.projectName);
@@ -1341,6 +1363,7 @@ export function suggestAgentGovernanceArtifacts(
       text,
       archetypes,
       input.complexity,
+      projectType,
       authoritativeUiText,
       input.uiScreensMarkdown,
     );
@@ -1363,6 +1386,7 @@ export function suggestAgentGovernanceArtifacts(
       text,
       archetypes,
       input.complexity,
+      projectType,
       authoritativeUiText,
       input.uiScreensMarkdown,
     );

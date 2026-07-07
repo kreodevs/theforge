@@ -255,6 +255,7 @@ export function buildAgentGovernanceInput(
     projectId: project.id,
     stageId: stage?.id ?? null,
     stageOrdinal: stage?.ordinal ?? null,
+    projectType: project.projectType,
     complexity,
   };
 }

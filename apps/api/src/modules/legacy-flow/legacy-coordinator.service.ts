@@ -1872,6 +1872,7 @@ export class LegacyCoordinatorService {
             tasksMarkdown: p.tasksContent?.trim() || undefined,
             architectureMarkdown: p.architectureContent?.trim() || undefined,
             specMarkdown: p.specContent?.trim() || undefined,
+            projectType: "LEGACY" as const,
             complexity,
           };
           const govSuggestions = suggestAgentGovernanceArtifacts(governanceInput);

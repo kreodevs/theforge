@@ -438,7 +438,10 @@ function formatSuggestionsRationaleTable(suggestions: AgentGovernanceSuggestions
     "Sugerencias del **detector TheForge** según MDD, Blueprint, complejidad y patrones wizard.\n\n";
 
   if (suggestions?.archetypes.length) {
-    block += `**Arquetipos:** ${suggestions.archetypes.join(", ")}\n\n`;
+    const archetypes = suggestions.archetypes.filter((a) => a !== "legacy-ariadne");
+    if (archetypes.length > 0) {
+      block += `**Arquetipos:** ${archetypes.join(", ")}\n\n`;
+    }
   }
 
   if (rows.length > 0) {
@@ -449,7 +452,9 @@ function formatSuggestionsRationaleTable(suggestions: AgentGovernanceSuggestions
       "\n\n";
   }
 
-  const extra = (suggestions?.rationale ?? []).slice(0, 8);
+  const extra = (suggestions?.rationale ?? [])
+    .filter((line) => !/\blegacy-ariadne\b/i.test(line) && !/\bmcp-ariadne\b/i.test(line))
+    .slice(0, 8);
   if (extra.length > 0) {
     block += "**Notas del detector:**\n\n";
     for (const line of extra) block += `- ${line}\n`;
@@ -510,7 +515,7 @@ function defaultComoUsarGovernanza(suggestions?: AgentGovernanceSuggestions | nu
     "## 5. Subflujos y cuándo cargar qué\n\n" +
     "- **Feature:** `AGENTS.md` → rule de stack → skill de dominio → `references/workflows.md`\n" +
     "- **Debug:** rule de stack + workflows (Debug)\n" +
-    "- **Refactor (MEDIUM+):** skill MCP/arquitectura si el MDD lo declara\n" +
+    "- **Refactor brownfield (solo LEGACY):** skill MCP Ariadne si el MDD lo declara\n" +
     "- **Consumo docs TheForge:** sección 7\n\n" +
     "## 6. Mantenimiento\n\n" +
     "- Regenera desde TheForge Workshop tras cambios en el MDD.\n" +

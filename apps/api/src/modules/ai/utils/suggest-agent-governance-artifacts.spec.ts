@@ -81,9 +81,10 @@ describe("suggestAgentGovernanceArtifacts", () => {
     assert.ok(result.archetypes.includes("nestjs-react-monorepo"));
   });
 
-  it("MDD con Ariadne sugiere skill mcp-ariadne y rule mcp-governance", () => {
+  it("MDD con Ariadne sugiere skill mcp-ariadne y rule mcp-governance en LEGACY", () => {
     const result = suggestAgentGovernanceArtifacts({
       mddMarkdown: ARIADNE_LEGACY_MDD,
+      projectType: "LEGACY",
       complexity: "MEDIUM",
     });
     const skillIds = result.suggestedSkills.map((s) => s.id);
@@ -138,6 +139,34 @@ describe("inferStacks", () => {
 });
 
 describe("archetype false positives", () => {
+  it("no activa legacy-ariadne en greenfield aunque el MDD mencione Ariadne activo", () => {
+    const result = suggestAgentGovernanceArtifacts({
+      mddMarkdown: ARIADNE_LEGACY_MDD,
+      projectType: "NEW",
+      complexity: "HIGH",
+    });
+    assert.equal(result.archetypes.includes("legacy-ariadne"), false);
+    assert.equal(result.suggestedSkills.some((s) => s.id === "mcp-ariadne"), false);
+    assert.equal(
+      result.rationale.some((r) => r.includes("legacy-ariadne") || r.includes("mcp-ariadne")),
+      false,
+    );
+  });
+
+  it("no activa legacy-ariadne por grafo/FalkorDB sin Ariadne en greenfield", () => {
+    const result = suggestAgentGovernanceArtifacts({
+      mddMarkdown: `
+# Plataforma KMS
+## 2. Stack
+Backend NestJS con FalkorDB para grafo de código en v1.
+`,
+      projectType: "NEW",
+      complexity: "HIGH",
+    });
+    assert.equal(result.archetypes.includes("legacy-ariadne"), false);
+    assert.equal(result.suggestedSkills.some((s) => s.id === "mcp-ariadne"), false);
+  });
+
   it("no activa legacy-ariadne solo por FalkorDB fase 2", () => {
     const result = suggestAgentGovernanceArtifacts({
       mddMarkdown: `
