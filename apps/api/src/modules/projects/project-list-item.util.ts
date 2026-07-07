@@ -1,5 +1,4 @@
-import type { ComplexityLevel, ProjectType, StageStatus, Status } from "@theforge/database";
-import type { Estimation } from "@theforge/database";
+import type { ComplexityLevel, Estimation, Project, StageStatus, Status } from "@theforge/database";
 import { flattenStageDeliverables, pickPrimaryStage, type StageWithEstimation } from "./stage-helpers.js";
 
 /** Campos de documento que el listado del dashboard no carga (siempre null en `GET /projects`). */
@@ -44,7 +43,7 @@ type ProjectListRow = {
   visibility: "PRIVATE" | "SHARED";
   complexity: ComplexityLevel;
   complexityPending: unknown;
-  projectType: ProjectType;
+  projectType: Project["projectType"];
   theforgeProjectId: string | null;
   hasUxTeam: boolean;
   linkedLegacyProjectId: string | null;
