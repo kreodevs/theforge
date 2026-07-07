@@ -9,6 +9,7 @@ import { createMddFormatterNode } from "../nodes/mdd-formatter.node.js";
 import { createMddDiagramInjectorNode } from "../nodes/mdd-diagram-injector.node.js";
 import { createMddSecurityNode } from "../nodes/mdd-security.node.js";
 import { createMddIntegrationNode } from "../nodes/mdd-integration.node.js";
+import { createMddSecurityIntegrationNode } from "../nodes/mdd-security-integration.node.js";
 import { createMddLlmFormatterNode } from "../nodes/mdd-llm-formatter.node.js";
 import { createMddAuditorNode } from "../nodes/mdd-auditor.node.js";
 import { createMddManagerNode, type MddManagerToolDeps } from "../nodes/mdd-manager.node.js";
@@ -34,6 +35,7 @@ import {
   softwareArchitectInput,
   securityInput,
   integrationInput,
+  securityIntegrationInput,
   llmFormatterInput,
   crossConsistencyInput,
 } from "../checkpoint/node-input-hash.js";
@@ -110,9 +112,15 @@ export async function createMddGraph(
     }),
   );
   const formatterNode = createMddFormatterNode();
-  // Security + Integration en paralelo: cada nodo escribe su sección en staging fields
-  // (securitySectionMd / integrationSectionMd). format_sec_int aplica ambas sin conflicto LastValue.
-  const securityNode = wrapCache(nodeCache, "security", securityInput, createMddSecurityNode(structuralLlm));
+  // Primera pasada: Security + Integration en un solo nodo con Promise.all (paralelo real,
+  // ahorra ~60s vs secuencial). Los nodos individuales se conservan solo para el auto-loop
+  // del delivery gate (prepare_output → integration) y regeneración por sección.
+  const securityIntegrationNode = wrapCache(
+    nodeCache,
+    "security_integration",
+    securityIntegrationInput,
+    createMddSecurityIntegrationNode(structuralLlm),
+  );
   const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(structuralLlm));
   const formatSecIntNode = createMddFormatSecIntNode();
   const diagramInjectorNode = createMddDiagramInjectorNode();
@@ -143,7 +151,7 @@ export async function createMddGraph(
     ) {
       return "format_after_redactor";
     }
-    return "security";
+    return "security_integration";
   }
 
   function routeAuditor(state: MDDStateType): string {
@@ -157,7 +165,9 @@ export async function createMddGraph(
     .addNode("clarifier", clarifierNode)
     .addNode("software_architect", softwareArchitectNode)
     .addNode("format_after_architect", formatterNode)
-    .addNode("security", securityNode)
+    // Nodo combinado (Promise.all §6+§7) para la primera pasada; integration/format_sec_int
+    // se mantienen para el auto-loop del delivery gate.
+    .addNode("security_integration", securityIntegrationNode)
     .addNode("integration", integrationNode)
     .addNode("format_sec_int", formatSecIntNode)
     .addNode("format_after_redactor", formatterNode)
@@ -173,9 +183,9 @@ export async function createMddGraph(
     .addEdge("software_architect", "format_after_architect")
     .addConditionalEdges("format_after_architect", routeAfterFormatArchitectGateLoop, {
       format_after_redactor: "format_after_redactor",
-      security: "security",
+      security_integration: "security_integration",
     })
-    .addEdge("security", "integration")
+    .addEdge("security_integration", "format_after_redactor")
     .addEdge("integration", "format_sec_int")
     .addEdge("format_sec_int", "format_after_redactor")
     .addEdge("format_after_redactor", "llm_formatter")
@@ -235,6 +245,14 @@ export async function createMddGraphWithManager(
   const formatterNode = createMddFormatterNode();
   const securityNode = wrapCache(nodeCache, "security", securityInput, createMddSecurityNode(structuralLlm));
   const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(structuralLlm));
+  // Nodo combinado Security+Integration (Promise.all §6+§7) para la pasada completa; los nodos
+  // individuales quedan para regeneración por sección (sectionsToRun) y auto-loop del delivery gate.
+  const securityIntegrationNode = wrapCache(
+    nodeCache,
+    "security_integration",
+    securityIntegrationInput,
+    createMddSecurityIntegrationNode(structuralLlm),
+  );
   const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
   const diagramInjectorNode = createMddDiagramInjectorNode();
   const consistencyNode = wrapCache(
@@ -313,7 +331,12 @@ export async function createMddGraphWithManager(
     ) {
       return "format_after_redactor";
     }
-    return "security";
+    // Pasada completa (no sectionsToRun): Security+Integration en paralelo.
+    return "security_integration";
+  }
+  function routeAfterSecurityIntegration(state: MDDStateType): string {
+    if (state.executorControlled === true) return "executor";
+    return "format_after_redactor";
   }
   function routeAfterSecurity(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
@@ -407,6 +430,7 @@ export async function createMddGraphWithManager(
     .addNode("format_after_architect", formatterNode)
     .addNode("security", securityNode)
     .addNode("integration", integrationNode)
+    .addNode("security_integration", securityIntegrationNode)
     .addNode("format_after_redactor", formatterNode)
     .addNode("llm_formatter", llmFormatterNode)
     .addNode("cross_consistency_checker", consistencyNode)
@@ -445,11 +469,16 @@ export async function createMddGraphWithManager(
     .addConditionalEdges("format_after_architect", routeAfterFormatArchitect, {
       security: "security",
       integration: "integration",
+      security_integration: "security_integration",
       format_after_redactor: "format_after_redactor",
       cross_consistency_checker: "cross_consistency_checker",
       diagram_injector: "diagram_injector",
       auditor: "auditor",
       manager: "manager",
+      executor: "executor",
+    })
+    .addConditionalEdges("security_integration", routeAfterSecurityIntegration, {
+      format_after_redactor: "format_after_redactor",
       executor: "executor",
     })
     .addConditionalEdges("security", routeAfterSecurity, {

@@ -59,6 +59,19 @@ export function integrationInput(state: MDDStateType): Record<string, unknown> {
   };
 }
 
+/** Combined Security + Integration node: union of both nodes' input fields to avoid stale cache. */
+export function securityIntegrationInput(state: MDDStateType): Record<string, unknown> {
+  return {
+    clarifiedScope: state.clarifiedScope,
+    mddDraft: truncStr(state.mddDraft, 20_000),
+    mddStructuredSeguridad: state.mddStructured?.seguridad,
+    mddStructuredIntegracion: state.mddStructured?.integracion,
+    acceptedProposalDirective: state.acceptedProposalDirective,
+    auditorFeedback: state.auditorFeedback,
+    userInputAccumulated: state.userInputAccumulated,
+  };
+}
+
 export function llmFormatterInput(state: MDDStateType): Record<string, unknown> {
   return {
     mddStructuredKeys: state.mddStructured ? Object.keys(state.mddStructured).sort() : undefined,

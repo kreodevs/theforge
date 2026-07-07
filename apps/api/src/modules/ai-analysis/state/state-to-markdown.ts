@@ -14,6 +14,7 @@ const AGENT_LABELS: Record<string, string> = {
   software_architect: "Arquitecto de Software",
   security: "Arquitecto de Seguridad",
   integration: "Ingeniero de Integración",
+  security_integration: "Seguridad + Integración (paralelo)",
   redactor: "Redactor (MDD)",
   // "auditor" ya existe para DBGA; para MDD el nodo se llama "auditor" pero el mensaje es distinto
 };
