@@ -134,8 +134,8 @@ export function DesignRefSelector({ currentRef, onChange, onAutoMatch }: DesignR
           design-extractor.com
         </a>
         . The Forge <span className="text-zinc-400">adapta tokens</span> al dominio de tu MDD; no es copia ni producto
-        oficial de esas marcas. Usa <span className="text-indigo-400">auto-match</span> (p. ej. fintech → Stripe/Klarna)
-        o elige una referencia del catálogo.
+        oficial de esas marcas. Si ya hay Design System, <span className="text-zinc-400">al cambiar referencia se regenera</span>{" "}
+        (requiere MDD y Blueprint). Usa <span className="text-indigo-400">auto-match</span> o elige del catálogo.
       </p>
       <div ref={ref} className="relative">
       {/* Trigger button */}

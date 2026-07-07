@@ -782,7 +782,7 @@ interface WorkshopState {
   setMddContent: (content: string) => void;
   setUxUiGuideContent: (content: string | null) => void;
   persistUxUiGuideContent: (content: string) => Promise<void>;
-  persistUxGuideDesignRef: (ref: string | null) => Promise<void>;
+  persistUxGuideDesignRef: (ref: string | null) => Promise<boolean>;
   setLoading: (v: boolean) => void;
   setSynced: (v: boolean) => void;
   setError: (e: string | null) => void;
@@ -2571,9 +2571,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   persistUxGuideDesignRef: async (ref) => {
     const { projectId, project } = get();
-    if (!projectId || !project) return;
+    if (!projectId || !project) return false;
     const normalized = ref?.trim() || null;
-    if (normalized === (project.uxGuideDesignRef ?? null)) return;
+    if (normalized === (project.uxGuideDesignRef ?? null)) return true;
     set({ synced: false, error: null });
     try {
       const r = await fetchWithRetry(`${API_BASE}/projects/${projectId}`, {
@@ -2584,8 +2584,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = (await r.json()) as Project;
       set({ project: data, synced: true, error: null });
+      return true;
     } catch (e) {
       set({ error: friendlyFetchError(e), synced: false });
+      return false;
     }
   },
 

@@ -1017,6 +1017,25 @@ export default function WorkshopView({
     }
   }, [projectId, uxUiGuideContent, projectName, persistUxUiGuideContent, setUxGenerating, setUxGenProgress]);
 
+  const handleDesignRefChange = useCallback(
+    async (ref: string | null) => {
+      const saved = await persistUxGuideDesignRef(ref);
+      if (!saved) return;
+      const canRegen = !!(effectiveMddTrimmed && blueprintContent?.trim() && projectId);
+      if (canRegen && uxUiGuideContent?.trim()) {
+        await generateUxGuideSequential();
+      }
+    },
+    [
+      persistUxGuideDesignRef,
+      effectiveMddTrimmed,
+      blueprintContent,
+      projectId,
+      uxUiGuideContent,
+      generateUxGuideSequential,
+    ],
+  );
+
   const persistArchitectureContent = useWorkshopStore((s) => s.persistArchitectureContent);
   const persistUseCasesContent = useWorkshopStore((s) => s.persistUseCasesContent);
   const persistUserStoriesContent = useWorkshopStore((s) => s.persistUserStoriesContent);
@@ -4473,10 +4492,10 @@ export default function WorkshopView({
                 isGenerating={uxGenerating}
                 designRef={project?.uxGuideDesignRef ?? "auto"}
                 onDesignRefChange={(ref) => {
-                  void persistUxGuideDesignRef(ref);
+                  void handleDesignRefChange(ref);
                 }}
                 onDesignRefAutoMatch={() => {
-                  void persistUxGuideDesignRef("auto");
+                  void handleDesignRefChange("auto");
                 }}
                 placeholder="# Design System\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
                 onBlur={handleUxUiGuideBlur}
