@@ -57,10 +57,6 @@ export interface SuggestAgentGovernanceInput {
   complexity: ComplexityLevel;
 }
 
-function isLegacyBrownfieldProject(input: Pick<SuggestAgentGovernanceInput, "projectType">): boolean {
-  return input.projectType === "LEGACY";
-}
-
 export interface ProjectGovernanceFacts {
   projectTitle: string;
   projectId?: string;
