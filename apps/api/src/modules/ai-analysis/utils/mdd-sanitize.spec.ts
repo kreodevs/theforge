@@ -1533,6 +1533,25 @@ Grid.
     assert.match(out, /\}\s*\n```\s*\n---\s*\n## UI\/UX Design Intent/);
   });
 
+  it("despega cuerpo en negrita pegado a un encabezado (### UAT **Escenario 1**)", () => {
+    const draft = `### Criterios de Aceptación (UAT) **Escenario 1 - Autenticación de usuario no autorizado**`;
+    const out = sanitizeMddAtPersist(draft);
+    assert.match(out, /### Criterios de Aceptación \(UAT\)\n\n\*\*Escenario 1 - Autenticación de usuario no autorizado\*\*/);
+  });
+
+  it("despega lista → encabezado → negrita pegados en una sola línea", () => {
+    const draft = `- Implementación de Circuit Breaker y Outbox Pattern ### Criterios de Aceptación (UAT) **Escenario 1 - Autenticación de usuario no autorizado**`;
+    const out = sanitizeMddAtPersist(draft);
+    assert.match(out, /Outbox Pattern\n\n### Criterios de Aceptación \(UAT\)\n\n\*\*Escenario 1/);
+  });
+
+  it("no rompe un encabezado enteramente en negrita (### **Título**)", () => {
+    const draft = `### **Título completamente en negrita**`;
+    const out = sanitizeMddAtPersist(draft);
+    assert.match(out, /^### \*\*Título completamente en negrita\*\*/);
+    assert.doesNotMatch(out, /###\s*\n\n/);
+  });
+
   it("corrige multi_tenant_support en manifest §7 cuando MDD exige multi-tenant", () => {
     const draft = `## 2. Arquitectura y Stack
 Multi-tenant con tenant_id en todas las tablas.
