@@ -66,6 +66,7 @@ CREATE TABLE ...
 
 **Reglas:**
 - Usa `##` para secciones principales, `###` para subsecciones
+- **Saltos de línea (CRÍTICO):** Cada encabezado (`##`, `###`, `####`) va **en su propia línea**, con **una línea en blanco antes y después**. Nunca pegues en la misma línea dos encabezados, un encabezado con prosa, prosa con un encabezado, ni un encabezado con una etiqueta en negrita (`### Criterios de Aceptación (UAT) **Escenario 1…**` ❌ → encabezado y `**Escenario 1…**` en líneas/párrafos separados). Cada viñeta y cada párrafo en su propia línea.
 - Usa `- ` para viñetas (nunca `*` ni `+`)
 - Incluye el manifest JSON al final de §7 en bloque ````json`
 - Si una sección tiene "(Pendiente)", déjalo así

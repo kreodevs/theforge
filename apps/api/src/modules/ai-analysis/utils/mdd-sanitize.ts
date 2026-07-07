@@ -2618,6 +2618,17 @@ function fixInlineMarkdownSubheadings(draft: string): string {
 }
 
 /**
+ * Despega un cuerpo en **negrita** pegado a la línea de un encabezado
+ * (ej. `### Criterios de Aceptación (UAT) **Escenario 1 - ...**` → encabezado + párrafo).
+ * Señal fiable: el título del encabezado no contiene `*`, y tras un espacio aparece
+ * un tramo en negrita `**...**` que en realidad inicia el cuerpo (típico de escenarios UAT).
+ * No toca encabezados enteramente en negrita (`### **Título**`) ni prosa sin negrita.
+ */
+function fixGluedHeadingBoldBody(draft: string): string {
+  return draft.replace(/^(#{2,6}\s+[^\n*]+?)\s+(\*\*[^\n]+)$/gm, "$1\n\n$2");
+}
+
+/**
  * Cierra fences ``` sin cierre antes de `---` + ## o de otro H2 (manifest §7, SQL §3).
  */
 export function closeUnclosedCodeFencesInDraft(draft: string): string {
@@ -2649,6 +2660,9 @@ function fixGluedSection6Heading(draft: string): string {
   out = fixGluedSubsectionHeadings(out);
   out = fixInlineMarkdownSubheadings(out);
   out = normalizeMarkdownHeadingHashSpacing(out);
+  // Debe correr tras normalizar el espacio tras `#`: fixInlineMarkdownSubheadings
+  // deja el encabezado como `###Titulo` (sin espacio) y este fix exige `#{2,6}\s+`.
+  out = fixGluedHeadingBoldBody(out);
   out = out.replace(
     /^##\s*3\.\s*Modelo\s+de\s+Datos(?=[A-ZÁÉÍÓÚÑ])/gim,
     "## 3. Modelo de Datos\n\n",
