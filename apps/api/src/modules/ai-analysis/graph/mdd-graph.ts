@@ -77,6 +77,8 @@ export type MddGraphCompileOptions = {
   theforge?: TheForgeService | null;
   /** Cache por nodo para evitar re-ejecutar LLM si el input no cambió. */
   nodeCache?: NodeCacheService | null;
+  /** Librería del MCP gráfico activo (§2 Frontend → UI Library). */
+  uiMcpFrontendLibraryLabel?: string | null;
 };
 
 /**
@@ -104,6 +106,7 @@ export async function createMddGraph(
     softwareArchitectInput,
     createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
       theforge: options?.theforge ?? null,
+      uiMcpFrontendLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
     }),
   );
   const formatterNode = createMddFormatterNode();
@@ -122,7 +125,9 @@ export async function createMddGraph(
   const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
   const auditorNode = createMddAuditorNode(auditorLlm, getMddAuditorTools(), null);
   const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
-  const prepareOutputNode = createMddPrepareOutputNode();
+  const prepareOutputNode = createMddPrepareOutputNode({
+    uiMcpLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
+  });
 
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.deliveryGateLoopActive === true) {
@@ -223,6 +228,7 @@ export async function createMddGraphWithManager(
     softwareArchitectInput,
     createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
       theforge: theForgeForArchitect,
+      uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
     }),
   );
   const architectCriticNode = createMddArchitectCriticNode(llm);
@@ -244,7 +250,9 @@ export async function createMddGraphWithManager(
   );
   const blackboardNode = createMddBlackboardNode(llm);
   const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
-  const prepareOutputNode = createMddPrepareOutputNode();
+  const prepareOutputNode = createMddPrepareOutputNode({
+    uiMcpLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
+  });
 
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";

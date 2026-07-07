@@ -40,6 +40,7 @@ Tools opcionales del contrato nativo: `list_screens`, `get_design_tokens`.
 ## Consumo
 
 - **MDD UI/UX Design Intent** — `mdd-enrich-uiux-intent` recibe el resolver (async) vía el chokepoint `prepareMddForOutput`.
+- **MDD §2 Frontend — UI Library** — Con MCP compatible activo, `mdd-inject-ui-mcp-frontend.util` añade la librería del MCP en **Stack UI → UI Library** (ej. `Tailwind CSS + Radix UI + Kreo UI 5.3`). El Arquitecto recibe hint en prompt; el chokepoint post-LLM garantiza la línea aunque el modelo la omita.
 - **Blueprint §9** — `enrichBlueprintWithUiDesignSystem` anexa UI tras generación (§8 reservado al checklist del prompt); recibe el resolver (async) desde `ProjectsService`.
 - **Guía UX/UI** — `ProjectsService.generateUxUiGuide` anexa la sección de design system del MCP si hay uno compatible activo.
 - **Export / handoff** — `uiScreensContent` → `{featureDir}/pantallas.md` + `ui-project.json` (solo si el MCP soporta prototipo) + espejo `docs/sdd/pantallas.md`.

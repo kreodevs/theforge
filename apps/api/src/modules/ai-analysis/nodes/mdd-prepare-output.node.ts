@@ -13,12 +13,15 @@ const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:PrepareOutput
  * Pipeline determinista final + evaluación del delivery gate (Fase 4).
  * Actualiza mddDraft con prepareMddForOutput y prepara feedback para auto-loop.
  */
-export function createMddPrepareOutputNode() {
+export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: string | null }) {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
     const gateRef: { current?: ReturnType<typeof validateMddForDelivery> } = {};
     const prepared = await prepareMddForOutput(
       { mddDraft: state.mddDraft, mddStructured: state.mddStructured },
-      { deliveryGateRef: gateRef },
+      {
+        deliveryGateRef: gateRef,
+        uiMcpLibraryLabel: options?.uiMcpLibraryLabel ?? null,
+      },
     );
     const gate = gateRef.current ?? validateMddForDelivery(prepared);
     const attempt = state.deliveryGateAttempt ?? 0;
