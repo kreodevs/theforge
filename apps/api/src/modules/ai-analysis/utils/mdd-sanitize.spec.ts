@@ -45,6 +45,8 @@ import {
   normalizeMddEnglishSubheadings,
   parseCrossConsistencyPatches,
   preserveUntouchedMddSectionsFromBaseline,
+  demoteProseHeadingsInSections,
+  repairDisplacedJsonBracesInContratos,
   sanitizeSeguridadIntegracionRawJson,
   validateMddStructure,
 } from "./mdd-sanitize.js";
@@ -1782,5 +1784,113 @@ CREATE TABLE roles (id UUID PRIMARY KEY);
 \`\`\`
 `;
     assert.equal(countMddSection3CreateTables(mdd), 3);
+  });
+});
+
+describe("mdd format sanitizer regressions (copiloto sample)", () => {
+  it("bug1: despega encabezados pegados en §1 y escenarios UAT en negrita", () => {
+    const raw = `## 1. Contexto y Alcance ### Propósito del Proyecto
+El sistema hace X. ### Alcance y Fronteras #### Servicios Core
+- item
+
+### Criterios de Aceptación (UAT) **Escenario 1 - Auth** **Escenario 2 - Permisos**
+Dado un usuario
+`;
+    const out = sanitizeMddAtPersist(raw);
+    assert.match(out, /## 1\. Contexto y Alcance\n\n### Propósito del Proyecto/);
+    assert.match(out, /### Alcance y Fronteras\n\n#### Servicios Core/);
+    assert.match(out, /### Criterios de Aceptación \(UAT\)\n\n\*\*Escenario 1/);
+    assert.match(out, /\*\*Escenario 1 - Auth\*\*\n\n\*\*Escenario 2/);
+  });
+
+  it("bug2: recupera llaves JSON desplazadas en §4", () => {
+    const raw = `### GET /api/v1/health
+
+**Response 200:**
+\`\`\`json
+{
+  "status": "healthy",
+  "dependencies": {
+    "database": "connected"
+  }
+\`\`\`
+
+### POST /api/v1/messages/process
+
+Procesa mensaje.
+}
+\`\`\`
+`;
+    const out = repairDisplacedJsonBracesInContratos(raw);
+    assert.match(out, /"database": "connected"\s*\n\s*\}\s*\n\}\s*\n```/);
+    assert.doesNotMatch(out, /Procesa mensaje\.\n\}/);
+    assert.match(out, /### POST \/api\/v1\/messages\/process/);
+  });
+
+  it("bug3: degrada prosa promovida a ### en §4 y §7", () => {
+    const raw = `# MDD
+
+## 4. Contratos de API
+
+### GET /api/v1/health
+
+### Endpoint de verificación de salud para monitoreo del sistema.
+
+## 6. Seguridad
+
+### Bloqueo de cuenta tras 5 intentos fallidos.
+
+## 7. Infraestructura
+
+### NODE_ENV=production
+### Stage 1 - Linting: ESLint.
+`;
+    const out = demoteProseHeadingsInSections(raw);
+    assert.match(out, /### GET \/api\/v1\/health/);
+    assert.doesNotMatch(out, /### Endpoint de verificación/);
+    assert.match(out, /Endpoint de verificación de salud/);
+    assert.doesNotMatch(out, /### NODE_ENV/);
+    assert.match(out, /NODE_ENV=production/);
+    assert.doesNotMatch(out, /### Stage 1/);
+  });
+
+  it("bug5: desenvuelve fence suelto que envuelve prosa tras heading", () => {
+    const raw = `## 5. Lógica y Edge Cases
+
+### Flujos Maestros
+\`\`\`
+**Flujo de Procesamiento:**
+1. Paso uno
+2. Paso dos
+\`\`\`
+
+## 6. Seguridad
+
+Texto.
+`;
+    const out = sanitizeMddAtPersist(raw);
+    assert.doesNotMatch(out, /### Flujos Maestros\n\n\`\`\`/);
+    assert.match(out, /\*\*Flujo de Procesamiento:\*\*/);
+  });
+
+  it("bug6: colapsa reglas horizontales rotas antes de H2", () => {
+    const raw = `## 1. Contexto
+
+Fin.
+
+--- --- --- --- --- --- ---
+
+## 2. Arquitectura y Stack
+
+--
+
+## 3. Modelo de Datos
+
+-
+`;
+    const out = sanitizeMddAtPersist(raw);
+    assert.doesNotMatch(out, /--- --- ---/);
+    assert.doesNotMatch(out, /\n--\n\n## 2\./);
+    assert.doesNotMatch(out, /\n-\n\n## 3\./);
   });
 });

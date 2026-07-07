@@ -214,12 +214,27 @@ export async function enrichMddWithUiUxDesignIntent(
   if (!section3) return markdown;
 
   const core = isLegacyEntityUiIntent(trimmed)
-    ? trimmed.replace(/\n##\s*UI\/UX\s+Design\s+Intent[\s\S]*$/i, "").trim()
-    : trimmed;
+    ? stripUiUxDesignIntentSections(trimmed)
+    : stripEmbeddedDesignIntentBlocks(trimmed);
 
   const section = await buildUiUxDesignIntentSection(core, section3);
   if (!section) return markdown;
   return `${core}\n\n${section}`;
+}
+
+function stripEmbeddedDesignIntentBlocks(markdown: string): string {
+  return markdown
+    .replace(
+      /\n#{2,3}\s*(?:UI\/UX\s+)?Design\s+Intent[\s\S]*?(?=\n##\s+(?!#)|\n---\s*\n##|$)/gi,
+      "",
+    )
+    .trimEnd();
+}
+
+function stripUiUxDesignIntentSections(markdown: string): string {
+  let core = markdown.replace(/\n##\s*UI\/UX\s+Design\s+Intent[\s\S]*$/i, "").trim();
+  core = stripEmbeddedDesignIntentBlocks(core);
+  return core;
 }
 
 function isLegacyEntityUiIntent(markdown: string): boolean {
@@ -258,9 +273,9 @@ export async function reconcileUiUxDesignIntent(
   const genericHits = (trimmed.match(/\bid,\s*name,\s*status\b/g) ?? []).length;
   if (hasUi && complete && !legacy && genericHits < 4) return markdown;
 
-  const core = hasUi
-    ? trimmed.replace(/\n##\s*UI\/UX\s+Design\s+Intent[\s\S]*$/i, "").trim()
-    : trimmed;
+  const core = hasUi || /#{2,3}\s*(?:UI\/UX\s+)?Design\s+Intent/i.test(trimmed)
+    ? stripUiUxDesignIntentSections(trimmed)
+    : stripEmbeddedDesignIntentBlocks(trimmed);
 
   const section = await buildUiUxDesignIntentSection(core, section3);
   if (!section) return markdown;

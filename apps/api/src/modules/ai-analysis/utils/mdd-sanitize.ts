@@ -1218,6 +1218,132 @@ export function repairNestedJsonFencesInDraft(draft: string): string {
   return result;
 }
 
+/** Saldo de llaves `{`/`}` fuera de strings JSON. Positivo = faltan cierres. */
+function countJsonBraceDelta(text: string): number {
+  let delta = 0;
+  let inString = false;
+  let escape = false;
+  for (const ch of text) {
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") delta++;
+    if (ch === "}") delta--;
+  }
+  return delta;
+}
+
+/**
+ * Recupera llaves `}` desplazadas tras el fence de un bloque ```json en §4.
+ * Típico: el JSON cierra el fence sin `}` y el cierre aparece tras la descripción del siguiente endpoint.
+ */
+export function repairDisplacedJsonBracesInContratos(body: string): string {
+  if (!body?.trim()) return body;
+  let out = body;
+  const openRe = /```json\s*\n/gi;
+  const openIndices: number[] = [];
+  let openMatch: RegExpExecArray | null;
+  while ((openMatch = openRe.exec(body)) !== null) {
+    openIndices.push(openMatch.index);
+  }
+  for (let i = openIndices.length - 1; i >= 0; i--) {
+    const openIdx = openIndices[i];
+    const openTag = out.slice(openIdx).match(/^```json\s*\n/i)?.[0];
+    if (!openTag) continue;
+    const contentStart = openIdx + openTag.length;
+    const closeIdx = out.indexOf("```", contentStart);
+    if (closeIdx === -1) continue;
+    const inner = out.slice(contentStart, closeIdx);
+    let delta = countJsonBraceDelta(inner);
+    if (delta <= 0) continue;
+
+    const tail = out.slice(closeIdx + 3);
+    const braceLine = tail.match(/\n\}\s*\n(?:```[ \t]*\n)?/);
+    if (!braceLine || braceLine.index === undefined) continue;
+
+    const newInner = `${inner.trimEnd()}\n}\n`;
+    const repairedInner = repairJsonCodeBlockInner(newInner);
+    const newBlock = `\`\`\`json\n${repairedInner}\n\`\`\``;
+    const removeStart = closeIdx + 3 + braceLine.index;
+    const removeEnd = closeIdx + 3 + braceLine.index + braceLine[0].length;
+    const preserved = out.slice(closeIdx + 3, removeStart);
+    out = out.slice(0, openIdx) + newBlock + preserved + out.slice(removeEnd);
+  }
+  return out;
+}
+
+function repairDisplacedJsonBracesInContratosSection(draft: string): string {
+  const heading = "## 4. Contratos de API";
+  const idx = draft.indexOf(heading);
+  if (idx === -1) return draft;
+  const sectionStart = idx + heading.length;
+  const rest = draft.slice(sectionStart);
+  const nextH2 = rest.search(/\n##\s+/);
+  const body = nextH2 !== -1 ? rest.slice(0, nextH2) : rest;
+  const fixed = repairDisplacedJsonBracesInContratos(body);
+  if (fixed === body) return draft;
+  return draft.slice(0, sectionStart) + fixed + (nextH2 !== -1 ? rest.slice(nextH2) : "");
+}
+
+function isValidContratosOrInfraSubheading(line: string): boolean {
+  const t = line.replace(/^###\s+/, "").trim();
+  if (/^(GET|POST|PUT|DELETE|PATCH)\s+\//i.test(t)) return true;
+  if (/^7\.\d+/i.test(t)) return true;
+  if (/^Manifest/i.test(t)) return true;
+  if (/^Autenticación|^Autorización|^Aspectos|^Flujos|^Validaciones|^Casos\s+Borde/i.test(t)) return true;
+  if (t.length <= 55 && !/[.=]/.test(t) && !/^(Endpoint|Lista|Crea|Obtiene|Configura|Valida|Consulta|Recibe|Stage)\b/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+function demoteProseHeadingsInSectionBody(body: string): string {
+  return body
+    .split("\n")
+    .map((line) => {
+      if (!/^###\s+/.test(line)) return line;
+      if (isValidContratosOrInfraSubheading(line)) return line;
+      const text = line.replace(/^###\s+/, "").trim();
+      if (/=/.test(text)) return text;
+      if (/\.\s*$/.test(text)) return text;
+      if (/^Stage\s+\d+\s+-/i.test(text)) return text;
+      if (/^(Endpoint|Lista|Crea|Obtiene|Configura|Valida|Consulta|Recibe)\b/i.test(text)) return text;
+      if (text.length > 80) return text;
+      return text;
+    })
+    .join("\n");
+}
+
+/** Degrada `###` usados como prosa/labels en §4, §6 y §7. */
+export function demoteProseHeadingsInSections(draft: string): string {
+  let out = draft;
+  for (const heading of ["## 4. Contratos de API", "## 6. Seguridad", "## 7. Infraestructura"]) {
+    const section = extractMddSectionBody(out, heading);
+    if (!section) continue;
+    const fixed = demoteProseHeadingsInSectionBody(section.body);
+    if (fixed !== section.body) {
+      out = out.slice(0, section.start) + fixed + out.slice(section.end);
+    }
+  }
+  return out;
+}
+
+/** Elimina `}` suelto inmediatamente después de un bloque ```json ya balanceado. */
+function stripStrayBraceAfterJsonCodeBlocks(draft: string): string {
+  if (!draft) return draft;
+  return draft.replace(/(```json[\s\S]*?```)\s*\n\}\s*\n/g, "$1\n");
+}
+
 /** Quita ## UI/UX Design Intent cuando §1/§2 declaran MVP API+CLI sin panel web. */
 export function stripUiUxSectionForApiOnlyMvp(markdown: string): string {
   const trimmed = (markdown ?? "").trim();
@@ -1233,11 +1359,16 @@ export function stripUiUxSectionForApiOnlyMvp(markdown: string): string {
 export function sanitizeMddAtPersist(mddMarkdown: string): string {
   if (!mddMarkdown?.trim()) return mddMarkdown;
   let out = fixGluedSection6Heading(mddMarkdown);
+  out = stripOrphanFenceWrappingProse(out);
+  out = stripEmptyBareCodeFences(out);
   out = closeUnclosedCodeFencesInDraft(out);
+  out = demoteProseHeadingsInSections(out);
   out = applyDeterministicCrossConsistencyFixes(out);
   out = ensureSecurityLockoutInSection6(out);
   out = repairNestedJsonFencesInDraft(out);
+  out = repairDisplacedJsonBracesInContratosSection(out);
   out = stripStrayParenAfterJsonCodeBlocks(out);
+  out = stripStrayBraceAfterJsonCodeBlocks(out);
   out = stripStrayParenBeforeH2(out);
   out = collapseInlineHorizontalRules(out);
   out = stripUiUxSectionForApiOnlyMvp(out);
@@ -2593,9 +2724,12 @@ function normalizeMarkdownHeadingHashSpacing(draft: string): string {
   return draft.replace(/^(#{1,6})([^\s#\n])/gm, "$1 $2");
 }
 
-/** Colapsa `--- --- ---` en la misma línea o consecutivos. */
+/** Colapsa `--- --- ---` en la misma línea o consecutivos; normaliza `--`/`-` sueltos como separadores. */
 function collapseInlineHorizontalRules(draft: string): string {
   let out = draft.replace(/(?:^|\n)\s*---(?:\s+---\s*)+(?=\s*(?:\n|$))/g, "\n---\n");
+  out = out.replace(/\n\s*--\s*\n(?=\s*##\s+)/g, "\n---\n");
+  out = out.replace(/\n\s*-\s*\n(?=\s*##\s+)/g, "\n");
+  out = out.replace(/\n\s*--\s*$/gm, "");
   return collapseConsecutiveHorizontalRules(out);
 }
 
@@ -2614,7 +2748,22 @@ function fixInlineMarkdownSubheadings(draft: string): string {
       /([^\n#])(\s+#{3,4}\s+(?=[A-Za-zÁÉÍÓÚÑ0-9]))/g,
       (_m, before: string, heading: string) => `${before}\n\n${heading.trim()}`,
     )
-    .replace(/([.!?])\s+(#{3,4}\s+)/g, "$1\n\n$2");
+    .replace(/([.!?])\s+(#{3,4}\s+)/g, "$1\n\n$2")
+    .replace(/([)\]])\s+(#{2,4}\s+)/g, "$1\n\n$2")
+    .replace(
+      /([a-záéíóúñA-ZÁÉÍÓÚÑ0-9])\s+(#{2,4}\s+(?=[A-ZÁÉÍÓÚÑ]))/g,
+      "$1\n\n$2",
+    );
+}
+
+/** Separa corridas de etiquetas en negrita en la misma línea (escenarios UAT, riesgos). */
+function splitInlineBoldLabelRuns(draft: string): string {
+  return draft
+    .replace(/(\*\*[^*\n]+\*\*)\s+(\*\*[^*\n]+\*\*)/g, "$1\n\n$2")
+    .replace(
+      /([^\n#])(\s+\*\*(?:Escenario|Riesgo)\s+\d+)/gi,
+      "$1\n\n$2",
+    );
 }
 
 /**
@@ -2633,11 +2782,40 @@ function fixGluedHeadingBoldBody(draft: string): string {
  */
 export function closeUnclosedCodeFencesInDraft(draft: string): string {
   if (!draft?.trim()) return draft ?? "";
+  const closeBeforeH2 = "(?=\\n---[\\s\\S]*?\\n##\\s|\\n##\\s+(?:UI\\/UX|\\d+\\.))";
+  const langs = "json|sql|mermaid|TechnicalMetadata|dockerfile";
   return draft.replace(
-    /(```(?:json|sql|mermaid|TechnicalMetadata)\s*\n)([\s\S]*?)(?=\n---[\s\S]*?\n##\s|\n##\s+(?:UI\/UX|\d+\.))/gi,
+    new RegExp(`(\\\`\\\`\\\`(?:${langs})\\s*\\n)([\\s\\S]*?)${closeBeforeH2}`, "gi"),
     (match, open: string, body: string) => {
       if (/\n```[ \t]*(?:\r?\n|$)/.test(body)) return match;
       return `${open}${body.trimEnd()}\n\`\`\`\n`;
+    },
+  );
+}
+
+/** Elimina fences ``` vacíos o de apertura suelta antes de H2/---. */
+function stripEmptyBareCodeFences(draft: string): string {
+  let result = draft
+    .replace(/\n```[ \t]*\n\s*```[ \t]*\n/g, "\n");
+  result = result.replace(/\n```[ \t]*\n(?=\s*---\s*\n|\s*##\s+)/g, (match, offset) => {
+    const before = result.slice(0, offset);
+    const fenceCount = (before.match(/```/g) ?? []).length;
+    if (fenceCount % 2 === 1) return match;
+    return "\n";
+  });
+  return result;
+}
+
+/** Desenvuelve fences ``` sin lenguaje que encierran prosa tras un encabezado. */
+function stripOrphanFenceWrappingProse(draft: string): string {
+  return draft.replace(
+    /(^#{2,4}\s+[^\n]+\n\n)```\s*\n([\s\S]*?)\n```(?=\n\n#{2,4}|\n\n---|\n*$)/gm,
+    (_m, heading: string, prose: string) => {
+      const trimmed = prose.trim();
+      if (!trimmed) return _m;
+      if (/^\s*(?:CREATE|import|FROM|SELECT|const |function |def |\{)/im.test(trimmed)) return _m;
+      if (/^\{[\s\S]*"[\s\S]*\}/.test(trimmed)) return _m;
+      return `${heading}${trimmed}\n`;
     },
   );
 }
@@ -2657,12 +2835,18 @@ function dedentCreateIndexLines(sql: string): string {
 /** Despega subtítulo del H2 (ej. `## 6. SeguridadGestión…:` o `## 6. Seguridad. Autenticación:` → H2 + ###). */
 function fixGluedSection6Heading(draft: string): string {
   let out = fixGluedHeadingToCodeFence(draft);
-  out = fixGluedSubsectionHeadings(out);
-  out = fixInlineMarkdownSubheadings(out);
+  let prev = "";
+  while (prev !== out) {
+    prev = out;
+    out = fixGluedSubsectionHeadings(out);
+    out = fixInlineMarkdownSubheadings(out);
+  }
   out = normalizeMarkdownHeadingHashSpacing(out);
   // Debe correr tras normalizar el espacio tras `#`: fixInlineMarkdownSubheadings
   // deja el encabezado como `###Titulo` (sin espacio) y este fix exige `#{2,6}\s+`.
   out = fixGluedHeadingBoldBody(out);
+  out = splitInlineBoldLabelRuns(out);
+  out = out.replace(/^(##\s+\d+\.\s+[^\n#]+?)\s+(#{2,4}\s+)/gm, "$1\n\n$2");
   out = out.replace(
     /^##\s*3\.\s*Modelo\s+de\s+Datos(?=[A-ZÁÉÍÓÚÑ])/gim,
     "## 3. Modelo de Datos\n\n",
@@ -4114,7 +4298,8 @@ export function normalizeMddFormat(draft: string): string {
     const rest = out.slice(sectionStart);
     const nextH2 = rest.search(/\n##\s+/);
     const body = nextH2 !== -1 ? rest.slice(0, nextH2) : rest;
-    const formatted = formatContratosBody(body);
+    let formatted = formatContratosBody(body);
+    formatted = repairDisplacedJsonBracesInContratos(formatted);
     if (formatted !== body) {
       out = out.slice(0, sectionStart) + formatted + (nextH2 !== -1 ? rest.slice(nextH2) : "");
     }
