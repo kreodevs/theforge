@@ -1,7 +1,7 @@
 # Módulo AI — LLM, prompts y contexto
 
-- **`config/llm-config.ts`** — Runtime **OpenRouter** (chat + embeddings vía la misma API), `resolveChatModelChain()` / `hasChatModelFallback()`, `getLlmProvidersSnapshot()`. `LLM_EMBEDDINGS_PROVIDER=none` apaga embeddings.
-- **`config/llm-model-fallback.ts`** — `runWithModelFallback`, `isModelExhaustionError` (402, quota, modelo no disponible, 429 opcional).
+- **`config/llm-config.ts`** — Runtime **OpenRouter** (chat + embeddings vía la misma API), `llmMaxTokens()` (techo global, default 32K), **perfiles de salida** (`resolveLlmMaxTokensForPurpose`, `resolveLlmMaxTokensForWorkshopTab`: chat 8K, documento 32K, ux-guide 16K, langgraph 16K, auditor 8K), `resolveChatModelChain()` / `hasChatModelFallback()`, `getLlmProvidersSnapshot()`. `LLM_EMBEDDINGS_PROVIDER=none` apaga embeddings.
+- **`config/llm-model-fallback.ts`** — `runWithModelFallback`, `isModelExhaustionError` (402, quota, modelo no disponible, 429 opcional, OpenRouter «provider returned error», contexto demasiado largo).
 - **`adapters/openrouter.adapter.ts`** — `OpenRouterAdapter`: `chat.completions` y `embeddings` con SDK `openai` (base `OPENROUTER_BASE_URL`); cadena de modelos solo si hay `OPENROUTER_CHAT_MODEL_FALLBACK(S)`.
 - **`ai.factory.ts`** — Devuelve siempre `OpenRouterAdapter`.
 - **`ai.service.ts`** — `generateResponse` / `generateResponseStream`, ensambla system prompt (MDD, Blueprint, tab activo, etc.) y **`appendUxGuideStitchPolicy`** (Google Stitch solo proyectos **NEW** y tab **ux-ui-guide**; **LEGACY** prohíbe Stitch). Opción **`welcomeBrief`** (`GenerateResponseOptions`): system mínimo + sin pegar DBGA/MDD/Spec/etc. en system (p. ej. `generateWelcome`: el contexto va en el mensaje de usuario).

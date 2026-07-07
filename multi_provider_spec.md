@@ -47,7 +47,7 @@ Cada usuario puede usar **instancias de proveedor a nivel tenant** (credenciales
 ```env
 TOKEN_MASTER_KEYS={"1":"<32-bytes-base64>"}
 TOKEN_ACTIVE_KEY_VERSION=1
-LLM_MAX_TOKENS=120000
+LLM_MAX_TOKENS=32768
 # Opcionales — defaults cuando el usuario omite valor en BYOK:
 STT_MODEL=whisper-1
 EMBEDDING_DIM=1536

@@ -150,6 +150,22 @@ export function isModelExhaustionError(
   if (status === 400 && (msg.includes("model") || msg.includes("invalid"))) {
     return true;
   }
+  if (
+    msg.includes("context length") ||
+    msg.includes("maximum context") ||
+    msg.includes("too many tokens") ||
+    msg.includes("prompt is too long") ||
+    msg.includes("tokens exceed")
+  ) {
+    return true;
+  }
+  // OpenRouter envuelve fallos del proveedor upstream (contexto, max_tokens, modelo caído).
+  if (
+    status === 400 &&
+    (msg.includes("provider returned error") || msg.includes("provider error"))
+  ) {
+    return true;
+  }
   if (status === 404 && (msg.includes("model") || msg.includes("endpoint"))) {
     return true;
   }

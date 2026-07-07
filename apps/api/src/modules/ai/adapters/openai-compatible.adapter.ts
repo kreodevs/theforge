@@ -6,7 +6,7 @@ import type {
 } from "../interfaces/llm-provider.interface.js";
 import type { ChatImagePart, ChecklistResult } from "@theforge/shared-types";
 import type { UserLLMRuntime } from "../providers/llm-runtime.types.js";
-import { llmMaxTokens } from "../config/llm-config.js";
+import { resolveLlmMaxTokensForWorkshopTab } from "../config/llm-config.js";
 import { llmDebug } from "../config/llm-debug.util.js";
 import { runWithModelFallback } from "../config/llm-model-fallback.js";
 
@@ -170,7 +170,11 @@ export class OpenAICompatibleAdapter implements LLMProvider {
         const completion = await this.chatClient.chat.completions.create({
           model: activeModel,
           messages,
-          max_tokens: options?.maxTokensOverride ?? llmMaxTokens(),
+          max_tokens:
+            options?.maxTokensOverride ??
+            resolveLlmMaxTokensForWorkshopTab(options?.activeTab, {
+              welcomeBrief: options?.welcomeBrief,
+            }),
         });
 
         return completion.choices[0]?.message?.content ?? "";
@@ -210,7 +214,11 @@ export class OpenAICompatibleAdapter implements LLMProvider {
         return this.chatClient.chat.completions.create({
           model: activeModel,
           messages,
-          max_tokens: llmMaxTokens(),
+          max_tokens:
+            options?.maxTokensOverride ??
+            resolveLlmMaxTokensForWorkshopTab(options?.activeTab, {
+              welcomeBrief: options?.welcomeBrief,
+            }),
           stream: true,
         });
       },

@@ -6,7 +6,10 @@ import type {
 } from "../interfaces/llm-provider.interface.js";
 import type { ChatImagePart, ChecklistResult } from "@theforge/shared-types";
 import type { UserLLMRuntime } from "../providers/llm-runtime.types.js";
-import { llmMaxTokens } from "../config/llm-config.js";
+import {
+  resolveLlmMaxTokensForPurpose,
+  resolveLlmMaxTokensForWorkshopTab,
+} from "../config/llm-config.js";
 
 function toAnthropicMessages(
   history: ChatMessage[],
@@ -63,7 +66,11 @@ export class AnthropicAdapter implements LLMProvider {
   ): Promise<string> {
     const res = await this.client.messages.create({
       model: this.model,
-      max_tokens: options?.maxTokensOverride ?? llmMaxTokens(),
+      max_tokens:
+        options?.maxTokensOverride ??
+        resolveLlmMaxTokensForWorkshopTab(options?.activeTab, {
+          welcomeBrief: options?.welcomeBrief,
+        }),
       system: options?.systemPrompt,
       messages: toAnthropicMessages(history, prompt, options?.userMessageImages),
     });
@@ -78,7 +85,11 @@ export class AnthropicAdapter implements LLMProvider {
   ): Promise<AsyncIterable<string>> {
     const stream = await this.client.messages.create({
       model: this.model,
-      max_tokens: llmMaxTokens(),
+      max_tokens:
+        options?.maxTokensOverride ??
+        resolveLlmMaxTokensForWorkshopTab(options?.activeTab, {
+          welcomeBrief: options?.welcomeBrief,
+        }),
       system: options?.systemPrompt,
       messages: toAnthropicMessages(history, prompt, options?.userMessageImages),
       stream: true,
@@ -103,7 +114,7 @@ export class AnthropicAdapter implements LLMProvider {
     try {
       const res = await this.client.messages.create({
         model: this.model,
-        max_tokens: 4096,
+        max_tokens: resolveLlmMaxTokensForPurpose("checklist"),
         system:
           "Parse the following text and return a JSON object with keys: complete (boolean), items (array of {key, present, value?}).",
         messages: [{ role: "user", content: text }],

@@ -2,7 +2,11 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOpenAI } from "@langchain/openai";
-import { llmMaxTokens, resolveLangChainChatTemperature } from "../../ai/config/llm-config.js";
+import {
+  resolveLlmMaxTokensForPurpose,
+  type LlmOutputTokenPurpose,
+  resolveLangChainChatTemperature,
+} from "../../ai/config/llm-config.js";
 import type { AIFactory } from "../../ai/ai.factory.js";
 import type { UserLLMRuntime } from "../../ai/providers/llm-runtime.types.js";
 import type { ProviderId } from "../../ai/providers/provider-catalog.js";
@@ -25,28 +29,43 @@ function chatModelChain(runtime: UserLLMRuntime): string[] {
 }
 
 /** Opciones de creación del LLM (p. ej. temperature baja para nodos estructurales del MDD). */
-export type CreateDbgaLLMOptions = { temperature?: number };
+export type CreateDbgaLLMOptions = {
+  temperature?: number;
+  /** Perfil de salida; default `langgraph` (16K por nodo). */
+  outputTokenPurpose?: LlmOutputTokenPurpose;
+};
 
-function buildChatOpenAI(runtime: UserLLMRuntime, model: string, temperatureOverride?: number): ChatOpenAI {
+function buildChatOpenAI(
+  runtime: UserLLMRuntime,
+  model: string,
+  temperatureOverride?: number,
+  maxTokens?: number,
+): ChatOpenAI {
   return new ChatOpenAI({
     model,
     temperature: resolveLangChainChatTemperature(temperatureOverride),
-    maxTokens: llmMaxTokens(),
+    maxTokens: maxTokens ?? resolveLlmMaxTokensForPurpose("langgraph"),
     timeout: LLM_TIMEOUT_MS,
     openAIApiKey: runtime.apiKey,
     configuration: { baseURL: runtime.baseURL },
   });
 }
 
-function buildLangChainChat(runtime: UserLLMRuntime, model: string, temperatureOverride?: number): BaseChatModel {
+function buildLangChainChat(
+  runtime: UserLLMRuntime,
+  model: string,
+  temperatureOverride?: number,
+  maxTokens?: number,
+): BaseChatModel {
   const temperature = resolveLangChainChatTemperature(temperatureOverride);
+  const outputCap = maxTokens ?? resolveLlmMaxTokensForPurpose("langgraph");
   switch (runtime.providerId as ProviderId) {
     case "anthropic":
       return new ChatAnthropic({
         model,
         apiKey: runtime.apiKey,
         temperature,
-        maxTokens: llmMaxTokens(),
+        maxTokens: outputCap,
         clientOptions: { timeout: LLM_TIMEOUT_MS },
       });
     case "gemini":
@@ -60,7 +79,7 @@ function buildLangChainChat(runtime: UserLLMRuntime, model: string, temperatureO
     case "cloudflare":
     case "groq":
     default:
-      return buildChatOpenAI(runtime, model, temperatureOverride);
+      return buildChatOpenAI(runtime, model, temperatureOverride, outputCap);
   }
 }
 
@@ -69,6 +88,7 @@ function buildWithFallbacks(
   models: string[],
   build: (model: string) => BaseChatModel,
   temperatureOverride?: number,
+  maxTokens?: number,
 ): BaseChatModel {
   if (models.length <= 1) {
     return build(models[0]!);
@@ -80,7 +100,7 @@ function buildWithFallbacks(
     runtime.providerId === "groq"
   ) {
     return new OpenRouterFallbackChatModel(
-      (model) => buildChatOpenAI(runtime, model, temperatureOverride),
+      (model) => buildChatOpenAI(runtime, model, temperatureOverride, maxTokens),
       models,
     );
   }
@@ -89,7 +109,15 @@ function buildWithFallbacks(
 
 export function createDbgaLLMFromRuntime(runtime: UserLLMRuntime, opts?: CreateDbgaLLMOptions): BaseChatModel {
   const models = chatModelChain(runtime);
-  return buildWithFallbacks(runtime, models, (model) => buildLangChainChat(runtime, model, opts?.temperature), opts?.temperature);
+  const purpose = opts?.outputTokenPurpose ?? "langgraph";
+  const maxTokens = resolveLlmMaxTokensForPurpose(purpose);
+  return buildWithFallbacks(
+    runtime,
+    models,
+    (model) => buildLangChainChat(runtime, model, opts?.temperature, maxTokens),
+    opts?.temperature,
+    maxTokens,
+  );
 }
 
 /**
@@ -110,5 +138,5 @@ export async function createMddAuditorLLM(
   userId: string,
 ): Promise<BaseChatModel> {
   const runtime = await aiFactory.resolveAuditorRuntime(userId);
-  return createDbgaLLMFromRuntime(runtime);
+  return createDbgaLLMFromRuntime(runtime, { outputTokenPurpose: "auditor" });
 }

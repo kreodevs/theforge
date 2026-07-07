@@ -38,7 +38,7 @@ export interface GenerateResponseOptions {
   currentTasksContent?: string;
   /** Infra actual del proyecto; tab `infra` */
   currentInfraContent?: string;
-  /** Activar para que el LLM use más tokens de salida en respuestas extensas (default 65535). */
+  /** Override explícito; si no, el adapter resuelve por `activeTab` / perfiles en `llm-config.ts`. */
   maxTokensOverride?: number;
   /** Tab activo en el Workshop: benchmark | mdd | ux-ui-guide | blueprint | api-contracts | logic-flows | infra */
   activeTab?: string;

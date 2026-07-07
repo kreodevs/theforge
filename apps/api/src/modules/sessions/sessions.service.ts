@@ -19,7 +19,7 @@ import {
   formatVisionContextBlock,
   mergeUserTextWithVisionBlock,
 } from "../ai/utils/vision-context.util.js";
-import { llmMaxTokens } from "../ai/config/llm-config.js";
+import { resolveLlmMaxTokensForPurpose } from "../ai/config/llm-config.js";
 import { normalizeDashes } from "./document-content.util.js";
 import {
   appendOrchestratorDocNotPersistedWarning,
@@ -278,6 +278,10 @@ export class SessionsService {
       /** Guía UX/UI: NEW → bloque Google Stitch para el producto; LEGACY → prohibido. */
       projectTypeForUxGuide?: GenerateResponseOptions["projectTypeForUxGuide"];
       uxGuideAdditionalDocs?: GenerateResponseOptions["uxGuideAdditionalDocs"];
+      uxGuideDesignRef?: GenerateResponseOptions["uxGuideDesignRef"];
+      uxGuideDesignRefPromptBlock?: GenerateResponseOptions["uxGuideDesignRefPromptBlock"];
+      uxGuideDesignRefEffectiveSlug?: GenerateResponseOptions["uxGuideDesignRefEffectiveSlug"];
+      uxGuideDesignRefMode?: GenerateResponseOptions["uxGuideDesignRefMode"];
       /** Imágenes del turno actual (solo usuario). */
       userImages?: ChatImagePart[];
     },
@@ -369,6 +373,10 @@ export class SessionsService {
         complexityInterviewContext: options?.complexityInterviewContext,
         projectTypeForUxGuide: options?.projectTypeForUxGuide,
         uxGuideAdditionalDocs: options?.uxGuideAdditionalDocs,
+        uxGuideDesignRef: options?.uxGuideDesignRef,
+        uxGuideDesignRefPromptBlock: options?.uxGuideDesignRefPromptBlock,
+        uxGuideDesignRefEffectiveSlug: options?.uxGuideDesignRefEffectiveSlug,
+        uxGuideDesignRefMode: options?.uxGuideDesignRefMode,
         userMessageImages: userTurn.imagesForLlm,
       });
     } catch (err) {
@@ -701,6 +709,10 @@ export class SessionsService {
       complexityInterviewContext?: string;
       projectTypeForUxGuide?: GenerateResponseOptions["projectTypeForUxGuide"];
       uxGuideAdditionalDocs?: GenerateResponseOptions["uxGuideAdditionalDocs"];
+      uxGuideDesignRef?: GenerateResponseOptions["uxGuideDesignRef"];
+      uxGuideDesignRefPromptBlock?: GenerateResponseOptions["uxGuideDesignRefPromptBlock"];
+      uxGuideDesignRefEffectiveSlug?: GenerateResponseOptions["uxGuideDesignRefEffectiveSlug"];
+      uxGuideDesignRefMode?: GenerateResponseOptions["uxGuideDesignRefMode"];
       userImages?: ChatImagePart[];
     },
   ): AsyncGenerator<
@@ -801,6 +813,10 @@ export class SessionsService {
         complexityInterviewContext: options?.complexityInterviewContext,
         projectTypeForUxGuide: options?.projectTypeForUxGuide,
         uxGuideAdditionalDocs: options?.uxGuideAdditionalDocs,
+        uxGuideDesignRef: options?.uxGuideDesignRef,
+        uxGuideDesignRefPromptBlock: options?.uxGuideDesignRefPromptBlock,
+        uxGuideDesignRefEffectiveSlug: options?.uxGuideDesignRefEffectiveSlug,
+        uxGuideDesignRefMode: options?.uxGuideDesignRefMode,
         userMessageImages: userTurn.imagesForLlm,
       });
     } catch (err) {
@@ -1534,7 +1550,7 @@ ${msg}
     const llmOpts = {
       activeTab: "benchmark" as const,
       currentDbgaContent: current,
-      maxTokensOverride: llmMaxTokens(),
+      maxTokensOverride: resolveLlmMaxTokensForPurpose("document"),
     };
 
     try {

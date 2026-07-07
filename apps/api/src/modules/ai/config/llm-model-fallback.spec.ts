@@ -47,6 +47,21 @@ test("isModelExhaustionError — 429 solo si allow429", () => {
   assert.equal(isModelExhaustionError(new Error("rate limit exceeded"), { allow429: true }), true);
 });
 
+test("isModelExhaustionError — OpenRouter provider returned error (400)", () => {
+  assert.equal(
+    isModelExhaustionError(
+      Object.assign(new Error("400 Provider returned error — Provider returned error"), {
+        status: 400,
+      }),
+    ),
+    true,
+  );
+});
+
+test("isModelExhaustionError — contexto demasiado largo", () => {
+  assert.equal(isModelExhaustionError(new Error("maximum context length exceeded")), true);
+});
+
 test("isModelExhaustionError — no fallback en 5xx ni red", () => {
   assert.equal(isModelExhaustionError({ status: 500 }), false);
   assert.equal(isModelExhaustionError({ status: 503 }), false);
@@ -146,6 +161,26 @@ test("runWithModelFallback — 429 de agotamiento no reintenta antes del siguien
   assert.equal(result, "ok");
   assert.deepEqual(used, ["bad", "good"]);
   assert.equal(badCalls, 1);
+});
+
+test("runWithModelFallback — OpenRouter provider error pasa al siguiente modelo", async () => {
+  const used: string[] = [];
+  const result = await runWithModelFallback({
+    models: ["poolside/laguna-xs-2.1:floor", "deepseek/deepseek-v4-flash:floor"],
+    retriesPerModel: 0,
+    label: "test-provider-400",
+    run: async (model) => {
+      used.push(model);
+      if (model === "poolside/laguna-xs-2.1:floor") {
+        throw Object.assign(new Error("400 Provider returned error — Provider returned error"), {
+          status: 400,
+        });
+      }
+      return "ok";
+    },
+  });
+  assert.equal(result, "ok");
+  assert.deepEqual(used, ["poolside/laguna-xs-2.1:floor", "deepseek/deepseek-v4-flash:floor"]);
 });
 
 test("runWithModelFallback — 500 no avanza de modelo", async () => {

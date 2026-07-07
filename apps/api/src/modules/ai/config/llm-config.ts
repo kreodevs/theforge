@@ -8,11 +8,88 @@ export const OPENROUTER_DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small
 /** Referencia de catálogo OpenRouter; el runtime usa `ProviderInstance.visionModel` (BYOK). */
 export const OPENROUTER_DEFAULT_VISION_MODEL = "openai/gpt-4o";
 
+/**
+ * Tope de tokens de **salida** (`max_tokens` en la API), no ventana de contexto.
+ * Default 32K: techo global (`LLM_MAX_TOKENS`); los perfiles por tarea nunca lo superan.
+ */
+export const LLM_MAX_TOKENS_DEFAULT = 32_768;
+
+/** Perfiles de salida por tipo de tarea (siempre acotados por `llmMaxTokens()`). */
+export const LLM_OUTPUT_TOKEN_PROFILES = {
+  /** Turnos conversacionales (chat sin regenerar documento). */
+  chat: 8_192,
+  /** Bienvenida / mensajes cortos. */
+  welcome: 2_048,
+  /** Design System (DESIGN.md). */
+  uxGuide: 16_384,
+  /** Documento completo vía Workshop (MDD, DBGA, Blueprint, Spec, BRD…). */
+  document: 32_768,
+  /** Nodos LangGraph MDD/DBGA (una sección por llamada). */
+  langgraph: 16_384,
+  /** Auditor MDD / cross-consistency. */
+  auditor: 8_192,
+  /** parseChecklist y salidas JSON cortas. */
+  checklist: 4_096,
+} as const;
+
+export type LlmOutputTokenPurpose = keyof typeof LLM_OUTPUT_TOKEN_PROFILES;
+
+const WORKSHOP_DOCUMENT_TABS = new Set([
+  "mdd",
+  "benchmark",
+  "spec",
+  "brd",
+  "blueprint",
+  "api-contracts",
+  "logic-flows",
+  "architecture",
+  "use-cases",
+  "user-stories",
+  "tasks",
+  "infra",
+  "phase0",
+]);
+
+/** Tope global desde env (techo de todos los perfiles). */
 export function llmMaxTokens(): number {
   const raw = process.env.LLM_MAX_TOKENS?.trim();
-  if (raw === undefined || raw === "") return 120_000;
+  if (raw === undefined || raw === "") return LLM_MAX_TOKENS_DEFAULT;
   const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : 120_000;
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : LLM_MAX_TOKENS_DEFAULT;
+}
+
+/**
+ * Resuelve `max_tokens` para una tarea concreta.
+ * `explicitOverride` (p. ej. desde `GenerateResponseOptions.maxTokensOverride`) gana sobre el perfil.
+ */
+export function resolveLlmMaxTokensForPurpose(
+  purpose: LlmOutputTokenPurpose = "chat",
+  explicitOverride?: number,
+): number {
+  const ceiling = llmMaxTokens();
+  if (explicitOverride != null && Number.isFinite(explicitOverride) && explicitOverride > 0) {
+    return Math.min(explicitOverride, ceiling);
+  }
+  const profile = LLM_OUTPUT_TOKEN_PROFILES[purpose] ?? LLM_OUTPUT_TOKEN_PROFILES.chat;
+  return Math.min(profile, ceiling);
+}
+
+/** Perfil según pestaña activa del Workshop (chat orquestador / stream). */
+export function resolveLlmMaxTokensForWorkshopTab(
+  activeTab?: string,
+  opts?: { welcomeBrief?: boolean },
+): number {
+  if (opts?.welcomeBrief) {
+    return resolveLlmMaxTokensForPurpose("welcome");
+  }
+  const tab = activeTab?.trim();
+  if (tab === "ux-ui-guide") {
+    return resolveLlmMaxTokensForPurpose("uxGuide");
+  }
+  if (tab && WORKSHOP_DOCUMENT_TABS.has(tab)) {
+    return resolveLlmMaxTokensForPurpose("document");
+  }
+  return resolveLlmMaxTokensForPurpose("chat");
 }
 
 /**

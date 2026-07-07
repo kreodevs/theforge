@@ -4,6 +4,8 @@ import {
   getLlmProvidersSnapshot,
   isChatFallbackOn429Enabled,
   llmMaxTokens,
+  resolveLlmMaxTokensForPurpose,
+  resolveLlmMaxTokensForWorkshopTab,
   resolveEmbeddingDimension,
   resolveLangChainChatTemperature,
 } from "./llm-config.js";
@@ -27,14 +29,57 @@ test("resolveEmbeddingDimension — default 1536", () => {
   }
 });
 
-test("llmMaxTokens — default", () => {
+test("llmMaxTokens — default 32K (salida; no confundir con ventana de contexto)", () => {
   const prev = process.env.LLM_MAX_TOKENS;
   delete process.env.LLM_MAX_TOKENS;
   try {
-    assert.equal(llmMaxTokens(), 120_000);
+    assert.equal(llmMaxTokens(), 32_768);
   } finally {
     if (prev !== undefined) process.env.LLM_MAX_TOKENS = prev;
   }
+});
+
+test("llmMaxTokens — respeta env", () => {
+  const prev = process.env.LLM_MAX_TOKENS;
+  process.env.LLM_MAX_TOKENS = "16384";
+  try {
+    assert.equal(llmMaxTokens(), 16_384);
+  } finally {
+    if (prev !== undefined) process.env.LLM_MAX_TOKENS = prev;
+    else delete process.env.LLM_MAX_TOKENS;
+  }
+});
+
+test("resolveLlmMaxTokensForPurpose — perfiles por tarea", () => {
+  const prev = process.env.LLM_MAX_TOKENS;
+  delete process.env.LLM_MAX_TOKENS;
+  try {
+    assert.equal(resolveLlmMaxTokensForPurpose("chat"), 8_192);
+    assert.equal(resolveLlmMaxTokensForPurpose("document"), 32_768);
+    assert.equal(resolveLlmMaxTokensForPurpose("uxGuide"), 16_384);
+    assert.equal(resolveLlmMaxTokensForPurpose("langgraph"), 16_384);
+    assert.equal(resolveLlmMaxTokensForPurpose("auditor"), 8_192);
+  } finally {
+    if (prev !== undefined) process.env.LLM_MAX_TOKENS = prev;
+  }
+});
+
+test("resolveLlmMaxTokensForPurpose — techo global desde env", () => {
+  const prev = process.env.LLM_MAX_TOKENS;
+  process.env.LLM_MAX_TOKENS = "4096";
+  try {
+    assert.equal(resolveLlmMaxTokensForPurpose("document"), 4_096);
+  } finally {
+    if (prev !== undefined) process.env.LLM_MAX_TOKENS = prev;
+    else delete process.env.LLM_MAX_TOKENS;
+  }
+});
+
+test("resolveLlmMaxTokensForWorkshopTab — pestañas de documento", () => {
+  assert.equal(resolveLlmMaxTokensForWorkshopTab("mdd"), 32_768);
+  assert.equal(resolveLlmMaxTokensForWorkshopTab("ux-ui-guide"), 16_384);
+  assert.equal(resolveLlmMaxTokensForWorkshopTab(undefined), 8_192);
+  assert.equal(resolveLlmMaxTokensForWorkshopTab("mdd", { welcomeBrief: true }), 2_048);
 });
 
 test("isChatFallbackOn429Enabled — sin fallbacks", () => {
