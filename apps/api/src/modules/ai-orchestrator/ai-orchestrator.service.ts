@@ -16,6 +16,7 @@ import { SddIngestorService } from "../ai-analysis/sdd-ingestor.service.js";
 import { AgentEvaluatorService } from "../agent-supervisor/agent-evaluator.service.js";
 import { EpisodicMemoryKind } from "@theforge/database";
 import { mddContextForUxGuide, uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
+import { buildMddContextForUxGuide } from "../ai/utils/mdd-ux-guide-brief.util.js";
 import { appendUxGuideDesignAttribution } from "../design-ref/design-ref-attribution.util.js";
 import { wouldShrinkDbgaDangerously } from "../sessions/dbga-edit.util.js";
 
@@ -178,10 +179,16 @@ export class AiOrchestratorService {
     }
 
     const tab = activeTab?.trim() ?? "mdd";
+    const isUxUiGuide = activeTab?.trim() === "ux-ui-guide";
+    const fullMddForUx = isUxUiGuide
+      ? mddContextForUxGuide(project, route.stageId, mddContentFromClient)
+      : "";
     const currentMdd =
       tab === "mdd"
         ? (mddContentFromClient ?? mddForRouteStage(project, route.stageId) ?? undefined)
-        : undefined;
+        : isUxUiGuide && fullMddForUx
+          ? buildMddContextForUxGuide(fullMddForUx)
+          : undefined;
     const isBenchmarkTab = activeTab?.trim() === "benchmark";
     const hasComplexityPending =
       project.complexityPending != null && typeof project.complexityPending === "object";
@@ -212,7 +219,6 @@ export class AiOrchestratorService {
         await this.projects.patchStage(projectId, route.stageId, { brdContent: brdContentFromClient });
       }
     }
-    const isUxUiGuide = activeTab?.trim() === "ux-ui-guide";
     let systemPrompt: string | undefined;
     if (route.flow === "LEGACY" && route.theforgeProjectId) {
       const theforgeProjectId = route.theforgeProjectId;
@@ -421,10 +427,16 @@ export class AiOrchestratorService {
     }
 
     const tab = activeTab?.trim() ?? "mdd";
+    const isUxUiGuideStream = tab === "ux-ui-guide";
+    const fullMddForUxStream = isUxUiGuideStream
+      ? mddContextForUxGuide(project, routeStream.stageId, mddContentFromClient)
+      : "";
     const currentMdd =
       tab === "mdd"
         ? (mddContentFromClient ?? mddForRouteStage(project, routeStream.stageId) ?? undefined)
-        : undefined;
+        : isUxUiGuideStream && fullMddForUxStream
+          ? buildMddContextForUxGuide(fullMddForUxStream)
+          : undefined;
     const isBenchmarkTab = tab === "benchmark";
     const hasComplexityPendingStream =
       project.complexityPending != null && typeof project.complexityPending === "object";
@@ -506,7 +518,7 @@ export class AiOrchestratorService {
         await this.projects.patchStage(projectId, routeStream.stageId, { brdContent: brdContentFromClient });
       }
     }
-    const isUxUiGuide = tab === "ux-ui-guide";
+    const isUxUiGuide = isUxUiGuideStream;
     let systemPromptStream: string | undefined;
     if (routeStream.flow === "LEGACY" && routeStream.theforgeProjectId) {
       const theforgeProjectId = routeStream.theforgeProjectId;

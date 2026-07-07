@@ -96,6 +96,7 @@ import {
 } from "../ai/utils/suggest-agent-governance-artifacts.js";
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
+import { buildMddContextForUxGuide } from "../ai/utils/mdd-ux-guide-brief.util.js";
 import { appendUxGuideDesignAttribution } from "../design-ref/design-ref-attribution.util.js";
 import { composeDesignSystemFromRef } from "../design-ref/compose-design-system-from-ref.util.js";
 import {
@@ -132,6 +133,7 @@ import {
   resolveCloneProjectOptions,
   type ProjectCloneSource,
 } from "./project-clone.util.js";
+import { toApiProjectListItem } from "./project-list-item.util.js";
 
 import {
   BRD_GENERATION_SYSTEM,
@@ -527,18 +529,44 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       where: {
         archivedAt: null,
         OR: [
-          { userId },                          // mis proyectos PRIVATE
-          { visibility: "SHARED" },            // todos los SHARED
+          { userId },
+          { visibility: "SHARED" },
         ],
       },
       orderBy: { createdAt: "desc" },
-      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+      select: {
+        id: true,
+        userId: true,
+        name: true,
+        visibility: true,
+        complexity: true,
+        complexityPending: true,
+        projectType: true,
+        theforgeProjectId: true,
+        hasUxTeam: true,
+        linkedLegacyProjectId: true,
+        linkedNewProjectId: true,
+        createdAt: true,
+        stages: {
+          orderBy: { ordinal: "asc" },
+          select: {
+            id: true,
+            ordinal: true,
+            key: true,
+            name: true,
+            workflowStatus: true,
+            status: true,
+            precisionScore: true,
+            isLegacy: true,
+            estimation: true,
+          },
+        },
+      },
     });
     const favoriteProjectIds = await this.getUserFavoriteIds(userId);
-    return rows.map((p) => ({
-      ...toApiProject(p),
-      isFavorite: favoriteProjectIds.has(p.id),
-    }));
+    return rows.map((p) =>
+      toApiProjectListItem(p as Parameters<typeof toApiProjectListItem>[0], favoriteProjectIds.has(p.id)),
+    );
   }
 
   async getUserFavoriteIds(userId?: string): Promise<Set<string>> {
@@ -1263,11 +1291,12 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     }
 
     const uxPrompt =
-      "Genera la Guía UX/UI completa en markdown según tu rol. El contexto (MDD, Blueprint y documentos SDD) está en el system prompt. Termina el documento con la línea exacta ---FIN_UX_UI--- y deja un mensaje breve para el usuario después.";
+      "Genera la Guía UX/UI completa en markdown según tu rol. El contexto (resumen MDD, Blueprint y documentos SDD) está en el system prompt. Termina el documento con la línea exacta ---FIN_UX_UI--- y deja un mensaje breve para el usuario después.";
+    const mddBrief = buildMddContextForUxGuide(mdd);
     const raw = await this.ai.generateResponse(uxPrompt, [], {
       systemPrompt: UX_UI_GUIDE_PROMPT,
       activeTab: "ux-ui-guide",
-      currentMddContent: mdd,
+      currentMddContent: mddBrief || undefined,
       currentBlueprintContent: bp || undefined,
       ...uxGuideLlmOptions(project, mdd),
     });
@@ -1405,15 +1434,16 @@ name: ${JSON.stringify(name)}
       `  skeleton: { ... }\n` +
       `---\n\n` +
       `Contexto del proyecto:\n` +
-      `${mdd ? `## MDD\n${mdd.slice(0, 6000)}` : ""}\n\n` +
-      `${bp ? `## Blueprint\n${bp.slice(0, 4000)}` : ""}\n\n` +
-      `${spec ? `## Spec\n${spec.slice(0, 3000)}` : ""}\n\n` +
+      `${mdd ? `## Resumen MDD (design system)\n${buildMddContextForUxGuide(mdd)}` : ""}\n\n` +
+      `${bp ? `## Blueprint\n${bp.slice(0, 3000)}` : ""}\n\n` +
+      `${spec ? `## Spec\n${spec.slice(0, 2000)}` : ""}\n\n` +
       `NO incluyas secciones markdown, solo el bloque YAML.`;
 
+    const mddBrief = buildMddContextForUxGuide(mdd);
     const raw = await this.ai.generateResponse(repairPrompt, [], {
       systemPrompt: UX_UI_GUIDE_PROMPT,
       activeTab: "ux-ui-guide",
-      currentMddContent: mdd,
+      currentMddContent: mddBrief || undefined,
       currentBlueprintContent: bp || undefined,
       ...uxGuideLlmOptions(project, mdd),
     });

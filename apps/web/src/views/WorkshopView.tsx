@@ -787,7 +787,6 @@ export default function WorkshopView({
   const persistUxGuideDesignRef = useWorkshopStore((s) => s.persistUxGuideDesignRef);
   const generateUxGuideSequential = useCallback(async () => {
     const { apiFetch, API_BASE } = await import("../utils/apiClient");
-    const mdd = effectiveMddTrimmed || "";
     const blueprint = blueprintContent?.trim() || "";
     const specContentStr = specContent?.trim() || "";
     // Legacy: incluir codebaseDoc (MDD Inicial) como contexto AS-IS del frontend real
@@ -795,7 +794,6 @@ export default function WorkshopView({
       ? activeLegacyState.codebaseDoc.slice(0, 4000)
       : "";
     const contextMd = [
-      mdd ? `## MDD\n${mdd.slice(0, 4000)}` : "",
       blueprint ? `## Blueprint (data model)\n${blueprint.slice(0, 3000)}` : "",
       specContentStr ? `## Spec\n${specContentStr.slice(0, 2000)}` : "",
       codebaseDoc ? `## Codebase Doc (AS-IS — documentación del frontend real)\n${codebaseDoc}` : "",
@@ -888,7 +886,7 @@ export default function WorkshopView({
             : ""
         }` +
         `\n` +
-        `Contexto del proyecto:\n${contextMd}\n\n` +
+        `Contexto del proyecto (resumen MDD en system prompt del servidor):\n${contextMd}\n\n` +
         `IMPORTANTE: Responde ÚNICAMENTE con el archivo DESIGN.md completo empezando por "---". NO agregues texto explicativo ni bloques \`\`\` alrededor.`;
 
       const body: Record<string, unknown> = {
@@ -896,7 +894,6 @@ export default function WorkshopView({
         message: fullPrompt,
         activeTab: "ux-ui-guide",
       };
-      if (mdd) body.mddContent = mdd;
 
       const r = await apiFetch(`${API_BASE}/ai-orchestrator/chat/stream`, {
         method: "POST",
@@ -1003,7 +1000,6 @@ export default function WorkshopView({
     projectId,
     project,
     projectName,
-    effectiveMddTrimmed,
     blueprintContent,
     specContent,
     isLegacyProject,

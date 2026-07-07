@@ -49,9 +49,9 @@ node scripts/sync-design-extractor-gallery.mjs
 
 | Modo | LLM | Comportamiento |
 |------|-----|----------------|
-| Ref explícita o auto-match con slug | **No** (fast path) | `composeDesignSystemFromRef()` → `POST /projects/:id/compose-ux-guide-from-ref` |
-| Sin match / legacy con codebase AS-IS | Sí | Chat stream / `generateUxUiGuide` como antes |
+| Ref explícita o auto-match con slug | **No** (fast path) | `composeDesignSystemFromRef()` → `POST /projects/:id/compose-ux-guide-from-ref` (MDD **íntegro** solo para heurística local) |
+| Sin match / legacy con codebase AS-IS | Sí | Chat stream / `generateUxUiGuide`; contexto MDD = **`buildMddContextForUxGuide`** (~8K señales de diseño), no el documento completo |
 
 `resolveUxGuideDesignRef()` → `composeDesignSystemFromRef()` (import DESIGN.md o YAML desde catálogo) → `appendUxGuideDesignAttribution()`.
 
-Flujo LLM (fallback): `formatDesignReferencePrompt()` → `uxGuideLlmOptions()` → system prompt.
+Flujo LLM (fallback): resumen MDD + Blueprint + fragmentos SDD → `formatDesignReferencePrompt()` → `uxGuideLlmOptions()` → system prompt.

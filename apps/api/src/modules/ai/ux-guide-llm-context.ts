@@ -1,5 +1,6 @@
 import type { GenerateResponseOptions } from "./interfaces/llm-provider.interface.js";
 import { buildUxGuideDesignRefOptions } from "../design-ref/build-ux-guide-design-ref-options.util.js";
+import { buildMddContextForUxGuide } from "./utils/mdd-ux-guide-brief.util.js";
 
 /** Campos de proyecto necesarios para enriquecer la Guía UX/UI y el Prompt Stitch (solo NEW). */
 export type UxGuideProjectFields = {
@@ -66,19 +67,20 @@ export function uxGuideLlmOptions(
     projectTypeForUxGuide: project.projectType === "LEGACY" ? "LEGACY" : "NEW",
   };
 
-  const mdd = (mddContext ?? "").trim();
-  Object.assign(base, buildUxGuideDesignRefOptions(project, mdd));
+  const mddFull = (mddContext ?? "").trim();
+  const mddBrief = mddFull ? buildMddContextForUxGuide(mddFull) : "";
+  Object.assign(base, buildUxGuideDesignRefOptions(project, mddBrief || mddFull));
 
   if (project.projectType !== "LEGACY") {
     base.uxGuideAdditionalDocs = {
-      spec: sliceDoc(project.specContent, 6000),
-      useCases: sliceDoc(project.useCasesContent, 5000),
-      userStories: sliceDoc(project.userStoriesContent, 5000),
-      logicFlows: sliceDoc(project.logicFlowsContent, 5000),
-      architecture: sliceDoc(project.architectureContent, 5000),
-      apiContracts: sliceDoc(project.apiContractsContent, 4000),
-      dbga: sliceDoc(project.dbgaContent, 4000),
-      phase0: sliceDoc(project.phase0SummaryContent, 3000),
+      spec: sliceDoc(project.specContent, 3_000),
+      useCases: sliceDoc(project.useCasesContent, 2_500),
+      userStories: sliceDoc(project.userStoriesContent, 2_500),
+      logicFlows: sliceDoc(project.logicFlowsContent, 3_000),
+      architecture: sliceDoc(project.architectureContent, 3_000),
+      apiContracts: sliceDoc(project.apiContractsContent, 2_000),
+      dbga: sliceDoc(project.dbgaContent, 2_000),
+      phase0: sliceDoc(project.phase0SummaryContent, 1_500),
     };
   }
 

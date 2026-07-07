@@ -346,6 +346,12 @@ export class AiService {
             options.currentBlueprintContent.trim() +
             "\n---";
         }
+        if (isUxUiGuide && options?.currentMddContent?.trim()) {
+          systemPrompt +=
+            "\n\n[Resumen MDD para inferencia de Design System — producto, dominio, stack UI, entidades y flujos UX. No sustituye Blueprint ni Spec.]\n---\n" +
+            options.currentMddContent.trim() +
+            "\n---";
+        }
         if (options?.currentUxUiGuideContent?.trim()) {
           systemPrompt +=
             "\n\n[Contenido actual de la Guía UX/UI del proyecto (puede incluir ediciones del usuario)]\n---\n" +
@@ -526,6 +532,12 @@ export class AiService {
         systemPrompt +=
           "\n\n[Blueprint del proyecto: estructura, pantallas y módulos. Úsalo para alinear la Guía UX/UI con las pantallas y flujos descritos.]\n---\n" +
           options.currentBlueprintContent.trim() +
+          "\n---";
+      }
+      if (isUxUiGuide && options?.currentMddContent?.trim()) {
+        systemPrompt +=
+          "\n\n[Resumen MDD para inferencia de Design System — producto, dominio, stack UI, entidades y flujos UX. No sustituye Blueprint ni Spec.]\n---\n" +
+          options.currentMddContent.trim() +
           "\n---";
       }
       if (options?.currentUxUiGuideContent?.trim()) {

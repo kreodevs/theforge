@@ -893,7 +893,7 @@ export default function App() {
               const project = projectList.find((p) => p.id === item.id);
               if (project) {
                 closePanelViews();
-                setWorkshopProject(project);
+                setWorkshopProject({ id: project.id, name: project.name } as Project);
               }
             }}
             user={getStoredUser()}
@@ -1047,7 +1047,7 @@ export default function App() {
     isFavorite={p.isFavorite}
     onToggleFavorite={handleToggleFavorite}
     onRename={canRenameProject(p) ? () => openRenameDialog(p) : undefined}
-    onOpen={() => setWorkshopProject(p)}
+    onOpen={() => setWorkshopProject({ id: p.id, name: p.name } as Project)}
     onToggleSelect={() => handleToggleProjectSelect(p.id)}
 />
                   </li>
