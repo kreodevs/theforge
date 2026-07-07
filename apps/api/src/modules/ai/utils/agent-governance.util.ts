@@ -81,6 +81,10 @@ export const AGENT_GOVERNANCE_REQUIRED_ALL = [
   `${GOVERNANCE_DOCS_PREFIX}COMO-USAR-GOBERNANZA-IA.md`,
   `${GOVERNANCE_DOCS_PREFIX}INSTALACION.md`,
   "docs/sdd/PROGRESO.md",
+  THEFORGE_LINK_PATH,
+  THEFORGE_DOC_SYNC_RULE_PATH,
+  THEFORGE_DOC_SYNC_SKILL_PATH,
+  `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`,
 ] as const;
 
 // ── Multi-target path mapping ────────────────────────────────────────
@@ -168,10 +172,6 @@ export const AGENT_GOVERNANCE_REQUIRED_MEDIUM = [
   `${GOVERNANCE_DOCS_PREFIX}references/workflows.md`,
   `${GOVERNANCE_DOCS_PREFIX}references/CURSOR_SKILLS_Y_RULES.md`,
   `${GOVERNANCE_DOCS_PREFIX}references/PROMPT_HANDOFF_AGENTE.md`,
-  THEFORGE_LINK_PATH,
-  THEFORGE_DOC_SYNC_RULE_PATH,
-  THEFORGE_DOC_SYNC_SKILL_PATH,
-  `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`,
   "scripts/install-agent-governance.sh",
   GOVERNANCE_THEFORGE_DOC_CONSUMPTION_GUIDE,
   ROOT_THEFORGE_DOC_CONSUMPTION_GUIDE,
@@ -609,10 +609,10 @@ function defaultWorkflows(complexity: ComplexityLevel): string {
   }
   lines.push(
     "## Doc gap sync (The Forge MCP)\n\n",
-    "- **Trigger:** el código implementado contradice MDD, Blueprint, Tasks u otro SDD\n",
+    "- **Trigger:** el código contradice el SDD (inline) o, al cerrar la tarea / antes de commit, el `git diff` introduce algo no contemplado (endpoint, entidad, flujo, tarea)\n",
     "- **Roles:** Dev implementador\n",
-    "- **Gates:** evidencia con referencia (§, T-, `docs/sdd/`, `tasks.md`); descripción ≥40 chars\n",
-    "- **Acción:** MCP `report_documentation_gap` → reconciliación parcial auto-aplicada (el MDD se parchea siempre primero)\n",
+    "- **Gates:** evidencia con referencia (§, T-, `docs/sdd/`, `tasks.md`); descripción ≥40 chars; `affectedArtifacts` acotados\n",
+    "- **Acción:** MCP `report_documentation_gap` → reconciliación parcial auto-aplicada (el MDD se parchea siempre primero); reserva abrir etapa para hitos reales, no para drift de doc\n",
     "- **Cargar:** `.theforge-project.json`, `" + THEFORGE_LINK_PATH + "`, skill `theforge-doc-sync`\n\n",
   );
   return lines.join("");
@@ -656,16 +656,20 @@ function defaultTheforgeLinkMd(facts: ProjectGovernanceFacts): string {
 function defaultTheforgeDocSyncRule(): string {
   return (
     "---\n" +
-    "description: Sincronizar documentación SDD cuando el código contradice entregables The Forge\n" +
+    "description: Sincronizar la documentación SDD con el código vía MCP The Forge (drift greenfield / pre-producción)\n" +
     "alwaysApply: true\n" +
     "---\n\n" +
     "# The Forge doc sync\n\n" +
-    "Si durante la implementación descubres que un entregable SDD (MDD, Blueprint, Tasks, etc.) es **incorrecto o incompleto**:\n\n" +
-    "1. **No** parches silenciosamente la doc sin reportar.\n" +
-    "2. Llama MCP `report_documentation_gap` con descripción ≥40 chars y `evidence.reference` (§, T-, `docs/sdd/`, `tasks.md`).\n" +
-    "3. Indica `affectedArtifacts` (ej. `[\"blueprint\",\"tasks\"]`); el **MDD se actualiza siempre**.\n" +
-    "4. Continúa con el código correcto; la reconciliación parcial se aplica automáticamente.\n" +
-    "5. Consulta `get_agent_session_log` para ver el estado.\n"
+    "El código es la fuente de verdad; el SDD (MDD, Blueprint, Tasks, contratos, flujos…) debe reflejarlo. En greenfield pre-producción los cambios por faltantes de documentación o funcionalidad nueva se reconcilian con **`report_documentation_gap`**, **no** abriendo una etapa nueva por cada desvío.\n\n" +
+    "## Cuándo reportar\n\n" +
+    "- **Inline:** durante la implementación descubres que un entregable SDD es **incorrecto o incompleto**.\n" +
+    "- **Fin de sesión / pre-commit:** antes de cerrar la tarea o commitear, revisa el `git diff` contra el SDD; si el código introdujo/renombró/eliminó algo no contemplado (endpoint, entidad, flujo, tarea), repórtalo.\n\n" +
+    "## Cómo\n\n" +
+    "1. **No** parches la doc en silencio ni abras una etapa nueva por esto.\n" +
+    "2. Lee `.theforge-project.json` (`projectId`, `stageId`).\n" +
+    "3. Llama MCP `report_documentation_gap`: `description` ≥40 chars, `evidence.reference` (§, T-, `docs/sdd/`, `tasks.md`), `affectedArtifacts` acotados. El **MDD se parchea siempre**.\n" +
+    "4. Continúa con el código correcto; la reconciliación parcial se aplica sola (o queda `PENDING_APPROVAL` en Workshop).\n" +
+    "5. Detalle, pasos del diff y mapeo cambio→artefactos: skill `theforge-doc-sync`.\n"
   );
 }
 
@@ -673,18 +677,37 @@ function defaultTheforgeDocSyncSkill(): string {
   return (
     "---\n" +
     "name: theforge-doc-sync\n" +
-    "description: Reporta gaps de documentación SDD vía MCP The Forge cuando el código contradice entregables.\n" +
+    "description: Reporta gaps de documentación SDD vía MCP The Forge cuando el código diverge de los entregables (inline o al revisar el diff al cerrar la sesión / antes de commit).\n" +
     "---\n\n" +
     "# The Forge doc sync\n\n" +
     "## Cuándo usar\n\n" +
-    "El código que implementaste es correcto pero el MDD, Blueprint, Tasks u otro SDD no refleja la realidad.\n\n" +
-    "## Pasos\n\n" +
-    "1. Lee `.theforge-project.json` para `projectId` y `stageId`.\n" +
-    "2. Llama `report_documentation_gap` con:\n" +
-    "   - `description`: qué está mal y por qué (≥40 caracteres)\n" +
-    "   - `evidence.reference`: cita §, T-, ruta `docs/sdd/` o `tasks.md`\n" +
-    "   - `affectedArtifacts`: lista de artefactos a regenerar (el MDD se parchea siempre)\n" +
-    "3. Opcional: `get_agent_session_log` para confirmar reconciliación.\n"
+    "El código implementado es correcto pero el SDD (MDD, Blueprint, Tasks, contratos, flujos, infra…) no lo refleja. Dos disparadores:\n\n" +
+    "- **Inline:** detectas el desvío mientras implementas.\n" +
+    "- **Fin de sesión / pre-commit:** revisas el diff acumulado antes de cerrar la tarea o commitear.\n\n" +
+    "En greenfield pre-producción esto es lo normal: entra funcionalidad nueva o afloran faltantes de documentación. **No abras una etapa nueva por cada desvío** (proliferan etapas difíciles de auditar); reconcilia el SDD de la **etapa activa** con este flujo.\n\n" +
+    "## Pasos (fin de sesión / pre-commit)\n\n" +
+    "1. `git diff` (o `git diff --staged`) para ver qué cambió realmente.\n" +
+    "2. Contrasta con el SDD: ¿el cambio contradice o no está en el MDD §, `docs/sdd/*` o `tasks.md`?\n" +
+    "3. Lee `.theforge-project.json` → `projectId`, `stageId`.\n" +
+    "4. Por cada desvío relevante, llama `report_documentation_gap` con:\n" +
+    "   - `description`: qué cambió y por qué el SDD queda desalineado (≥40 caracteres).\n" +
+    "   - `evidence.reference`: cita §, T-, ruta `docs/sdd/` o `tasks.md`.\n" +
+    "   - `evidence.codePaths`: archivos del diff que lo justifican.\n" +
+    "   - `affectedArtifacts`: solo los que cambian (el **MDD se parchea siempre**).\n" +
+    "5. Continúa con el código correcto; la reconciliación parcial se aplica sola o queda `PENDING_APPROVAL` en Workshop.\n" +
+    "6. Confirma con `get_agent_session_log` / `get_change_log`.\n\n" +
+    "## Mapa cambio → affectedArtifacts\n\n" +
+    "| Cambio en código | affectedArtifacts típicos |\n" +
+    "| --- | --- |\n" +
+    "| Endpoint nuevo/borrado/renombrado | `apiContracts`, `logicFlows`, `tasks` |\n" +
+    "| Entidad o modelo de datos | `blueprint`, `apiContracts` |\n" +
+    "| Flujo o regla de negocio | `logicFlows`, `useCases`, `userStories` |\n" +
+    "| Pantalla / UI | `uxUiGuide`, `pantallas` |\n" +
+    "| Infra / deploy | `infra` |\n\n" +
+    "## Notas\n\n" +
+    "- **Agrupa** por desvío; no un gap por línea. Hay dedup (24 h) y rate limit (~10/h).\n" +
+    "- Sin `DOC_GAP_AUTO_APPLY=1` el gap queda `PENDING_APPROVAL` (se aprueba en Workshop).\n" +
+    "- Reserva **abrir etapa** para hitos reales (cambio de alcance, handoff), no para drift de documentación.\n"
   );
 }
 
