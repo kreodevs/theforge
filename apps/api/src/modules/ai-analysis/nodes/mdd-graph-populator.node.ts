@@ -21,20 +21,21 @@ export function createMddGraphPopulatorNode(llm: BaseChatModel, graphMemory: Gra
             state.mddDraft || ""
         );
 
-        try {
-            // 1. Sincronización determinista (Tablas, Endpoints)
-            await graphMemory.syncMddToGraph(projectId, state.activeStageId, structured);
+        // 1. Sincronización determinista (Tablas, Endpoints) — fire-and-forget: la sync a FalkorDB
+        // es I/O de red y no debe bloquear la entrega del MDD al usuario (el `done` del stream).
+        // La hidratación de `structured` (arriba) es local y sí se conserva en el estado devuelto.
+        void graphMemory
+            .syncMddToGraph(projectId, state.activeStageId, structured)
+            .then(() => logger.log(`MDD sincronizado al grafo para proyecto ${projectId}`))
+            .catch((err) => {
+                logger.error(`Error al sincronizar MDD al grafo: ${err instanceof Error ? err.message : String(err)}`);
+            });
 
-            // 2. Extracción semántica de ADRs (LLM) — fire-and-forget: no bloquea entrega del doc
-            if (state.mddDraft && state.mddDraft.length > 500) {
-                void extractAndLogAdrs(llm, graphMemory, projectId, state.mddDraft).catch((err) => {
-                    logger.error(`Error extrayendo ADRs: ${err instanceof Error ? err.message : String(err)}`);
-                });
-            }
-
-            logger.log(`MDD sincronizado exitosamente al grafo para proyecto ${projectId}`);
-        } catch (err) {
-            logger.error(`Error al sincronizar MDD al grafo: ${err instanceof Error ? err.message : String(err)}`);
+        // 2. Extracción semántica de ADRs (LLM) — fire-and-forget: no bloquea entrega del doc
+        if (state.mddDraft && state.mddDraft.length > 500) {
+            void extractAndLogAdrs(llm, graphMemory, projectId, state.mddDraft).catch((err) => {
+                logger.error(`Error extrayendo ADRs: ${err instanceof Error ? err.message : String(err)}`);
+            });
         }
 
         return {
