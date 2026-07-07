@@ -149,6 +149,51 @@ export function fallbackFromColors(tokens: DesignTokens): {
   };
 }
 
+/** Canvas background for light preview — skips dark `background` tokens from dark-first systems. */
+export function resolveLightPreviewBackground(
+  tokens: DesignTokens,
+  grayScale: string[],
+  fallback = "#FAFAFA",
+): string {
+  const c = tokens.colors ?? {};
+  const keys = ["surface", "white", "neutral", "muted", "surface-alt", "background"] as const;
+  for (const key of keys) {
+    const raw = c[key];
+    if (!raw) continue;
+    const hex = normalizeHex(hexValue(raw, tokens));
+    if (isLightColor(hex)) return hex;
+  }
+  const fromScale = scaleAt(grayScale, 1);
+  return isLightColor(fromScale) ? fromScale : fallback;
+}
+
+/** Foreground on a light canvas when YAML foreground is light-on-dark. */
+export function resolveLightPreviewForeground(
+  tokens: DesignTokens,
+  palette: ReturnType<typeof fallbackFromColors>,
+  grayScale: string[],
+): string {
+  if (!isLightColor(palette.foreground)) return palette.foreground;
+  const c = tokens.colors ?? {};
+  if (c["on-surface"]) {
+    const onSurface = normalizeHex(hexValue(c["on-surface"], tokens));
+    if (!isLightColor(onSurface)) return onSurface;
+  }
+  const fromScale = scaleAt(grayScale, 12);
+  return isLightColor(fromScale) ? "#18181B" : fromScale;
+}
+
+function resolveLightPreviewCard(tokens: DesignTokens, canvasBg: string): string {
+  const c = tokens.colors ?? {};
+  for (const key of ["white", "surface", "neutral", "muted"] as const) {
+    const raw = c[key];
+    if (!raw) continue;
+    const hex = normalizeHex(hexValue(raw, tokens));
+    if (isLightColor(hex)) return hex;
+  }
+  return isLightColor(canvasBg) ? "#FFFFFF" : canvasBg;
+}
+
 function mixHex(base: string, overlay: string, amount: number): string {
   const b = hexToRgb(normalizeHex(base));
   const o = hexToRgb(normalizeHex(overlay));
@@ -372,31 +417,37 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
   const accentBorder = scaleAt(accentScale, 5);
   const mutedFg = scaleAt(grayScale, 10);
   const border = scaleAt(grayScale, 7);
-  const card = hexValue(c.white ?? c.background ?? "#FFFFFF", tokens);
+  const bg = resolveLightPreviewBackground(tokens, grayScale);
+  const fg = resolveLightPreviewForeground(tokens, palette, grayScale);
+  const card = resolveLightPreviewCard(tokens, bg);
   const inputBg = hexValue(
-    c["surface-alt"] ?? c.background ?? card,
+    c["surface-alt"] && isLightColor(hexValue(c["surface-alt"], tokens))
+      ? c["surface-alt"]
+      : c.white && isLightColor(hexValue(c.white, tokens))
+        ? c.white
+        : card,
     tokens,
   );
-  const playgroundBg = mixHex(scaleAt(grayScale, 2), palette.surface, 0.5);
+  const playgroundBg = mixHex(scaleAt(grayScale, 2), bg, 0.5);
 
   return {
     mode,
     accent: accentSolid,
     gray,
-    background: palette.surface,
+    background: bg,
     cssVars: {
-      "--ds-bg": palette.surface,
-      "--ds-fg": palette.foreground,
+      "--ds-bg": bg,
+      "--ds-fg": fg,
       "--ds-muted-fg": mutedFg,
       "--ds-border": border,
       "--ds-card": card,
       "--ds-muted": scaleAt(grayScale, 2),
       "--ds-input-bg": inputBg,
       "--ds-accent": accentSolid,
-      "--ds-accent-fg": isLightColor(accentSolid) ? palette.foreground : "#FFFFFF",
+      "--ds-accent-fg": isLightColor(accentSolid) ? fg : "#FFFFFF",
       "--ds-accent-subtle": accentSubtle,
       "--ds-accent-border": accentBorder,
-      "--ds-surface": palette.surface,
+      "--ds-surface": bg,
       "--ds-shadow-md": elevationMd,
       "--ds-shadow-sm":
         elevationVars["--ds-shadow-sm"] ?? "0 1px 2px rgba(0,0,0,0.06)",
@@ -404,6 +455,9 @@ export function buildPreviewTheme(tokens: DesignTokens, mode: PreviewMode): Prev
       ...scaleVars("accent", accentScale),
       ...scaleVars("gray", grayScale),
       ...tokenCssVars,
+      "--ds-color-background": bg,
+      "--ds-color-surface": bg,
+      "--ds-color-foreground": fg,
     },
   };
 }
