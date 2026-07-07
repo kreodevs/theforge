@@ -366,6 +366,11 @@ export class ProjectsController {
     return this.projects.repairUxUiGuideYaml(id);
   }
 
+  @Post(":id/compose-ux-guide-from-ref")
+  composeUxGuideFromDesignRef(@Param("id") id: string) {
+    return this.projects.composeUxGuideFromDesignRef(id);
+  }
+
   @Post(":id/generate-architecture")
   generateArchitecture(
     @Param("id") id: string,

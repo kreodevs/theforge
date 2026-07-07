@@ -97,6 +97,7 @@ import {
 import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
 import { appendUxGuideDesignAttribution } from "../design-ref/design-ref-attribution.util.js";
+import { composeDesignSystemFromRef } from "../design-ref/compose-design-system-from-ref.util.js";
 import {
   brdGenerationErrorMessage,
   extractBrdFromLlmResponse,
@@ -1289,6 +1290,42 @@ name: ${JSON.stringify(name)}
     finalContent = await this.appendUiMcpDesignSystem(finalContent);
     finalContent = appendUxGuideDesignAttribution(finalContent, project.uxGuideDesignRef, mdd);
     return this.update(projectId, { uxUiGuideContent: finalContent });
+  }
+
+  /**
+   * Design System determinista desde biblioteca (DESIGN.md importado o catálogo builtin).
+   * Sin LLM: auto-match heurístico + composición local.
+   */
+  async composeUxGuideFromDesignRef(projectId: string): Promise<{
+    composed: boolean;
+    uxUiGuideContent?: string | null;
+    effectiveSlug?: string;
+    source?: string;
+    referenceName?: string;
+    reason?: string;
+  }> {
+    const project = await this.assertProjectAccess(projectId);
+    const mdd = this.constitutionMarkdown(project);
+
+    const composed = composeDesignSystemFromRef({
+      projectName: project.name || projectId,
+      storedRef: project.uxGuideDesignRef,
+      mddContext: mdd,
+    });
+    if (!composed) {
+      return { composed: false, reason: "no-reference-match" };
+    }
+
+    let finalContent = cleanDocumentContent(composed.content);
+    finalContent = appendUxGuideDesignAttribution(finalContent, project.uxGuideDesignRef, mdd);
+    const updated = await this.update(projectId, { uxUiGuideContent: finalContent });
+    return {
+      composed: true,
+      uxUiGuideContent: updated.uxUiGuideContent,
+      effectiveSlug: composed.effectiveSlug,
+      source: composed.source,
+      referenceName: composed.referenceName,
+    };
   }
 
   /**

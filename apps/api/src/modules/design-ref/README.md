@@ -47,4 +47,11 @@ node scripts/sync-design-extractor-gallery.mjs
 
 ## Resolución en generación
 
-`resolveUxGuideDesignRef()` → `formatDesignReferencePrompt()` (+ DESIGN.md importado) → `uxGuideLlmOptions()` → system prompt → `appendUxGuideDesignAttribution()` al persistir.
+| Modo | LLM | Comportamiento |
+|------|-----|----------------|
+| Ref explícita o auto-match con slug | **No** (fast path) | `composeDesignSystemFromRef()` → `POST /projects/:id/compose-ux-guide-from-ref` |
+| Sin match / legacy con codebase AS-IS | Sí | Chat stream / `generateUxUiGuide` como antes |
+
+`resolveUxGuideDesignRef()` → `composeDesignSystemFromRef()` (import DESIGN.md o YAML desde catálogo) → `appendUxGuideDesignAttribution()`.
+
+Flujo LLM (fallback): `formatDesignReferencePrompt()` → `uxGuideLlmOptions()` → system prompt.

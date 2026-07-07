@@ -805,6 +805,31 @@ export default function WorkshopView({
 
     try {
       setUxGenerating(true);
+
+      const skipLibraryCompose =
+        isLegacyProject && !!(activeLegacyState?.codebaseDoc?.trim());
+      if (!skipLibraryCompose) {
+        setUxGenProgress("Aplicando referencia visual (biblioteca)…");
+        const composeRes = await apiFetch(
+          `${API_BASE}/projects/${projectId}/compose-ux-guide-from-ref`,
+          { method: "POST", headers: { "Content-Type": "application/json" } },
+        );
+        if (composeRes.ok) {
+          const data = (await composeRes.json()) as {
+            composed?: boolean;
+            uxUiGuideContent?: string | null;
+          };
+          if (data.composed && data.uxUiGuideContent?.trim()) {
+            const fixed = replaceYamlFrontMatter(data.uxUiGuideContent, projectName);
+            setUxUiGuideContent(fixed);
+            await persistUxUiGuideContent(fixed);
+            setUxGenerating(false);
+            setUxGenProgress(null);
+            return;
+          }
+        }
+      }
+
       setUxGenProgress("Generando DESIGN.md completo\u2026");
 
       const fullPrompt =
@@ -974,7 +999,21 @@ export default function WorkshopView({
       setError(`Error al generar design system: ${msg}`);
       console.error("Error generating UX guide:", e);
     }
-  }, [projectId, project, effectiveMddTrimmed, blueprintContent, specContent, setUxUiGuideContent, persistUxUiGuideContent, setError]);
+  }, [
+    projectId,
+    project,
+    projectName,
+    effectiveMddTrimmed,
+    blueprintContent,
+    specContent,
+    isLegacyProject,
+    activeLegacyState?.codebaseDoc,
+    setUxUiGuideContent,
+    persistUxUiGuideContent,
+    setError,
+    setUxGenerating,
+    setUxGenProgress,
+  ]);
 
   /** Repara/regenera el YAML frontmatter de la guía UX/UI usando el MDD como contexto vía API.
    * Si falla la API, hace reparación local (útil con contenido pegado sin frontmatter). */
@@ -1022,7 +1061,7 @@ export default function WorkshopView({
       const saved = await persistUxGuideDesignRef(ref);
       if (!saved) return;
       const canRegen = !!(effectiveMddTrimmed && blueprintContent?.trim() && projectId);
-      if (canRegen && uxUiGuideContent?.trim()) {
+      if (canRegen) {
         await generateUxGuideSequential();
       }
     },
@@ -1031,7 +1070,6 @@ export default function WorkshopView({
       effectiveMddTrimmed,
       blueprintContent,
       projectId,
-      uxUiGuideContent,
       generateUxGuideSequential,
     ],
   );
