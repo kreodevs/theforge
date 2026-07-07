@@ -13,11 +13,15 @@ import {
 import { suggestAgentGovernanceArtifacts } from "./suggest-agent-governance-artifacts.js";
 
 describe("getRequiredAgentGovernancePaths", () => {
-  it("LOW incluye COMO-USAR, INSTALACION y base sin references", () => {
+  it("LOW incluye doc-sync The Forge, THEFORGE-LINK y mcp.json.example", () => {
     const paths = getRequiredAgentGovernancePaths("LOW");
     for (const p of AGENT_GOVERNANCE_REQUIRED_ALL) {
       assert.ok(paths.includes(p), `falta ${p}`);
     }
+    assert.ok(paths.includes("docs/agent-governance/rules/theforge-doc-sync.mdc"));
+    assert.ok(paths.includes("docs/agent-governance/skills/theforge-doc-sync/SKILL.md"));
+    assert.ok(paths.includes("docs/agent-governance/references/THEFORGE-LINK.md"));
+    assert.ok(paths.includes("docs/agent-governance/mcp.json.example"));
     for (const p of AGENT_GOVERNANCE_REQUIRED_MEDIUM) {
       assert.equal(paths.includes(p), false, `no debería incluir ${p} en LOW`);
     }
@@ -29,10 +33,10 @@ describe("getRequiredAgentGovernancePaths", () => {
       assert.ok(paths.includes(p), `falta ${p}`);
     }
     assert.ok(paths.includes("docs/agent-governance/references/workflows.md"));
-    assert.ok(paths.includes("docs/agent-governance/mcp.json.example"));
-    assert.ok(paths.includes("docs/agent-governance/references/THEFORGE-LINK.md"));
     assert.ok(paths.includes("docs/agent-governance/rules/theforge-doc-sync.mdc"));
     assert.ok(paths.includes("docs/agent-governance/skills/theforge-doc-sync/SKILL.md"));
+    assert.ok(paths.includes("docs/agent-governance/references/THEFORGE-LINK.md"));
+    assert.ok(paths.includes("docs/agent-governance/mcp.json.example"));
     assert.ok(paths.includes("scripts/install-agent-governance.sh"));
   });
 });
