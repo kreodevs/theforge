@@ -14,7 +14,9 @@ function normalizeTreeLine(line: string): string {
 export function isCollapsedDirectoryTreeLine(line: string): boolean {
   const t = normalizeTreeLine(line.trim());
   if (t.length < 40) return false;
-  if (t.startsWith("|") || t.startsWith("```")) return false;
+  if (t.startsWith("|") || t.startsWith("│") || t.startsWith("```")) return false;
+  if (/^[┌└├┘┬┴┼]/.test(t)) return false;
+  if (/[┌┐└┘│┃─━]/.test(t) && !TREE_PATH_RE.test(t)) return false;
   if (/\(\(Root\)\)/i.test(t) && TREE_PATH_RE.test(t)) return true;
   const markers = (t.match(/(?:├──|└──|│|—\s*\||\/—|—\s+(?=apps\/|packages\/|docker|deploy|\.github))/gi) ?? [])
     .length;
@@ -26,6 +28,9 @@ export function isCollapsedDirectoryTreeLine(line: string): boolean {
 export function looksLikeDirectoryTreeParagraph(text: string): boolean {
   const collapsed = normalizeTreeLine(text.replace(/\s+/g, " ").trim());
   if (!collapsed) return false;
+  if ((collapsed.match(/[|│]/g) ?? []).length >= 2) return false;
+  if (/[┌┐└┘┬┴┼▼▲│┃─━]/.test(collapsed)) return false;
+  if (/_{4,}/.test(collapsed)) return false;
   if (isCollapsedDirectoryTreeLine(collapsed)) return true;
   if (/\(\(Root\)\)/i.test(collapsed) && TREE_PATH_RE.test(collapsed)) return true;
   if (/[├└│]/.test(collapsed) && TREE_PATH_RE.test(collapsed)) return true;

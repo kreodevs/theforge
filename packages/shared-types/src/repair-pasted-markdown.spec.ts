@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  looksLikeAsciiDiagramLine,
   repairGluedSqlTokens,
+  repairAsciiDiagramBlocks,
   repairMetadataCoverTable,
   repairOrphanSqlBlocks,
   repairPastedMarkdown,
@@ -91,5 +93,35 @@ describe("repairPastedMarkdown SQL OBP", () => {
     const out = repairPastedMarkdown(raw);
     assert.match(out, /### Esquema SQL[^\n]+\n\n```sql\n-- Tabla espejo/);
     assert.match(out, /CREATE TABLE ubicaciones_obp[\s\S]*```\s*$/);
+  });
+});
+
+describe("repairAsciiDiagramBlocks", () => {
+  it("detects pipe-heavy architecture lines", () => {
+    assert.equal(looksLikeAsciiDiagramLine("| | |"), true);
+    assert.equal(looksLikeAsciiDiagramLine("▼ ▼"), true);
+    assert.equal(looksLikeAsciiDiagramLine("┌─────────────────┐"), true);
+    assert.equal(looksLikeAsciiDiagramLine("| PostgreSQL 16 | Redis 7 | S3 / |"), false);
+  });
+
+  it("wraps consecutive ascii lines in a single text fence", () => {
+    const raw = `### 2.1 Visión general
+
+┌─────────────────────────────┐
+│ CLIENTE (PWA / Navegador)   │
+└─────────────────────────────┘
+            │
+            ▼
+┌─────────────────────────────┐
+│ API GATEWAY (Nginx)         │
+└─────────────────────────────┘
+
+### 2.2 Detalle`;
+    const out = repairAsciiDiagramBlocks(raw);
+    const fences = out.match(/```text/g) ?? [];
+    assert.equal(fences.length, 1);
+    assert.match(out, /CLIENTE \(PWA \/ Navegador\)/);
+    assert.match(out, /API GATEWAY/);
+    assert.match(out, /### 2\.2 Detalle/);
   });
 });

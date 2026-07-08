@@ -245,24 +245,6 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       content: ctx.uiScreensContent,
     });
   }
-  if (visible("aem")) {
-    items.push({
-      id: "aem",
-      label: "AEM",
-      title: "Análisis y Estudio de Mercado (AEM)",
-      Icon: FileText,
-      content: ctx.aemContent,
-    });
-  }
-  if (visible("integration")) {
-    items.push({
-      id: "integration",
-      label: "Integración",
-      title: "Handoff NEW ↔ LEGACY y trazabilidad",
-      Icon: Link2,
-      content: "integration-panel",
-    });
-  }
   if (visible("handoff-spec")) {
     items.push({
       id: "handoff-spec",
@@ -306,6 +288,26 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
   if (visible("agent-governance") && !agentGovBeforeTasks) {
     items.push(agentGovernanceNavItem(ctx));
   }
+  if (visible("infra")) {
+    items.push({
+      id: "infra",
+      label: "Infra",
+      title: "Infraestructura",
+      Icon: Server,
+      content: ctx.infraContent,
+    });
+  }
+
+  // Supplementary panels — always listed after core deliverables.
+  if (visible("integration")) {
+    items.push({
+      id: "integration",
+      label: "Integración",
+      title: "Handoff NEW ↔ LEGACY y trazabilidad",
+      Icon: Link2,
+      content: "integration-panel",
+    });
+  }
   if (!ctx.isLegacyProject && visible("adrs")) {
     items.push({
       id: "adrs",
@@ -315,13 +317,13 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       content: ctx.adrs,
     });
   }
-  if (visible("infra")) {
+  if (visible("aem")) {
     items.push({
-      id: "infra",
-      label: "Infra",
-      title: "Infraestructura",
-      Icon: Server,
-      content: ctx.infraContent,
+      id: "aem",
+      label: "AEM",
+      title: "Análisis y Estudio de Mercado (AEM)",
+      Icon: FileText,
+      content: ctx.aemContent,
     });
   }
 
