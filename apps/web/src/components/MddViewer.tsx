@@ -398,7 +398,7 @@ function MddViewerInner({ content, className = "" }: MddViewerProps) {
   const sections = parseMarkdownSections(cleaned);
 
   return (
-    <div className={`space-y-4 markdown-preview min-w-0 ${className}`}>
+    <div className={`space-y-4 markdown-preview min-w-0 pb-[80px] ${className}`}>
       {sections.map((section) => (
         <MdSection key={section.id} content={section.content} />
       ))}

@@ -16,6 +16,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",
     "@clack/prompts": "^1.0.1",
+    "@google/design.md": "0.3.0",
     "@google/generative-ai": "^0.24.1",
     "@langchain/anthropic": "^0.3.34",
     "@langchain/core": "^0.3.0",

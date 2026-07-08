@@ -2,6 +2,7 @@ import type { DesignReference } from "./data/design-references.js";
 import { getDesignBySlugFromCatalog } from "./data/design-catalog.js";
 import { loadDesignExtractorImport } from "./data/design-extractor-import.loader.js";
 import { resolveUxGuideDesignRef } from "./ux-guide-design-ref.util.js";
+import type { ScannedDesignTokens } from "./scan-url.util.js";
 
 export type ComposeDesignSystemSource = "design-extractor-import" | "builtin-catalog";
 
@@ -54,6 +55,81 @@ function hexOr(fallback: string, value?: string): string {
   return fallback;
 }
 
+/** Primer valor que sea un hex válido (#RRGGBB), normalizado a mayúsculas. */
+function firstHex(...values: (string | undefined)[]): string | null {
+  for (const value of values) {
+    const t = value?.trim();
+    if (t && /^#[0-9A-Fa-f]{6}$/.test(t)) return t.toUpperCase();
+    if (t && /^[0-9A-Fa-f]{6}$/.test(t)) return `#${t.toUpperCase()}`;
+  }
+  return null;
+}
+
+/**
+ * Deriva un bloque de colores semánticos (primary/accent/background…) desde
+ * `ref.colors` del catálogo. Los DESIGN.md importados usan nombres de token
+ * específicos de marca (p. ej. `stripe-indigo`), no claves semánticas, por lo
+ * que el preview cae en azul/naranja genéricos. Este bloque garantiza que la
+ * paleta real de la referencia se aplique de forma determinista.
+ *
+ * `tertiary` se mapea al accent de marca a propósito: el preview
+ * (`fallbackFromColors`) resuelve el accent priorizando `tertiary`.
+ */
+function buildSemanticColorLines(ref: DesignReference): string[] {
+  const c = ref.colors;
+  const primary = firstHex(c.primary, c.accent, c.secondary);
+  const accent = firstHex(c.accent, c.secondary, c.primary);
+  const secondary = firstHex(c.secondary, c.accent, c.primary);
+  const foreground = firstHex(c.text);
+  const background = firstHex(c.background);
+  const surface = firstHex(c.surface, c.background);
+  const muted = firstHex(c.textSecondary, c.border);
+  const border = firstHex(c.border, c.textSecondary);
+
+  const entries: [string, string | null][] = [
+    ["primary", primary],
+    ["secondary", secondary ?? accent ?? primary],
+    ["tertiary", accent ?? secondary ?? primary],
+    ["accent", accent ?? primary],
+    ["neutral", surface ?? background],
+    ["surface", surface ?? background],
+    ["on-surface", foreground],
+    ["foreground", foreground],
+    ["background", background],
+    ["muted", muted],
+    ["border", border],
+    ["error", "#EF4444"],
+  ];
+
+  const lines = entries
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([key, value]) => `  ${key}: ${quoteYaml(value)}`);
+
+  return lines.length > 0 ? ["colors:", ...lines] : [];
+}
+
+/**
+ * Inserta un bloque `colors:` semántico en el YAML frontmatter si aún no existe
+ * uno. No sobrescribe un bloque `colors:` presente en el archivo importado.
+ */
+export function upsertLeadingYamlColors(content: string, ref: DesignReference): string {
+  const colorLines = buildSemanticColorLines(ref);
+  if (colorLines.length === 0) return content;
+
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) {
+    const header = ["---", ...colorLines, "---"].join("\n");
+    return `${header}\n\n${content.trim()}\n`;
+  }
+
+  const yaml = match[1] ?? "";
+  // Si ya define colors (a nivel de bloque), respetarlo.
+  if (/^colors:\s*$/m.test(yaml)) return content;
+
+  const nextYaml = `${yaml.trimEnd()}\n${colorLines.join("\n")}`;
+  return content.replace(match[0], `---\n${nextYaml}\n---`);
+}
+
 function buildBuiltinYamlFrontMatter(ref: DesignReference, projectName: string): string {
   const c = ref.colors;
   const primary = hexOr("#6366F1", c.primary);
@@ -78,13 +154,16 @@ function buildBuiltinYamlFrontMatter(ref: DesignReference, projectName: string):
     "colors:",
     `  primary: ${quoteYaml(primary)}`,
     `  secondary: ${quoteYaml(accent)}`,
-    `  tertiary: ${quoteYaml(muted)}`,
-    `  neutral: ${quoteYaml(muted)}`,
+    `  tertiary: ${quoteYaml(accent)}`,
+    `  neutral: ${quoteYaml(surface)}`,
+    `  surface: ${quoteYaml(surface)}`,
+    `  on-surface: ${quoteYaml(text)}`,
     `  foreground: ${quoteYaml(text)}`,
     `  background: ${quoteYaml(bg)}`,
     `  muted: ${quoteYaml(muted)}`,
     `  border: ${quoteYaml(border)}`,
     `  accent: ${quoteYaml(accent)}`,
+    `  error: "#EF4444"`,
     `  danger: "#EF4444"`,
     `  success: "#22C55E"`,
     `  warning: "#F59E0B"`,
@@ -180,6 +259,9 @@ function composeFromDesignExtractorImport(
     name: projectName,
     description: `${projectName} — adaptado desde ${ref.name}`,
   });
+  // Inyecta la paleta semántica del catálogo para que el preview use los
+  // colores reales de la referencia y no los defaults genéricos.
+  content = upsertLeadingYamlColors(content, ref);
 
   if (!content.includes("## Overview")) {
     const intro = [
@@ -233,4 +315,27 @@ export function composeDesignSystemFromRef(
     source: importMd ? "design-extractor-import" : "builtin-catalog",
     referenceName: ref.name,
   };
+}
+
+/**
+ * Compone un DESIGN.md determinista a partir de tokens escaneados de una URL.
+ * Reutiliza el builder canónico del catálogo builtin para emitir la paleta
+ * semántica (spec DESIGN.md) con los colores reales del sitio.
+ */
+export function composeDesignSystemFromScannedTokens(
+  projectName: string,
+  tokens: ScannedDesignTokens,
+): string {
+  const ref: DesignReference = {
+    slug: "url-scan",
+    name: tokens.name,
+    category: "enterprise-consumer",
+    style: `Escaneado desde ${tokens.url}`,
+    tags: [],
+    colors: tokens.colors,
+    fonts: tokens.fonts,
+    description: `Design System basado en los tokens visuales extraídos de ${tokens.url}.`,
+  };
+  const name = projectName.trim() || "Proyecto";
+  return composeFromBuiltinCatalog(ref, name, "explicit");
 }

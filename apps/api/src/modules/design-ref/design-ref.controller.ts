@@ -6,9 +6,11 @@
  *   GET /api/design-refs/:slug — detalle completo
  *   POST /api/design-refs/auto-match — matching automático por contexto MDD
  *   POST /api/design-refs/scan-url — escanea URL para extraer tokens (pendiente implementación)
+ *   POST /api/design-refs/lint — valida un DESIGN.md con el CLI oficial @google/design.md
  */
 import { Controller, Get, Post, Param, Body } from "@nestjs/common";
 import { DesignRefService } from "./design-ref.service.js";
+import { scanUrlForDesignTokens } from "./scan-url.util.js";
 
 @Controller("design-refs")
 export class DesignRefController {
@@ -36,18 +38,23 @@ export class DesignRefController {
     return this.service.autoMatch(mddContext);
   }
 
+  @Post("lint")
+  lint(@Body("content") content: string) {
+    if (!content?.trim()) {
+      return { error: "content is required" };
+    }
+    return this.service.lint(content);
+  }
+
   @Post("scan-url")
   async scanUrl(@Body("url") url: string) {
     if (!url?.trim()) {
       return { error: "URL is required" };
     }
-    // Por ahora: stub que devuelve lo que se puede extraer
-    // En futura iteración: Puppeteer/curl + parsear CSS vars + Google Fonts
-    return {
-      url,
-      status: "stub",
-      message:
-        "El scanner de URLs extraerá colores, tipografías y CSS variables de la página. Pendiente de implementación con Puppeteer/Playwright.",
-    };
+    const result = await scanUrlForDesignTokens(url);
+    if ("error" in result) {
+      return { url, error: result.error };
+    }
+    return { url, status: "ok", tokens: result.tokens };
   }
 }
