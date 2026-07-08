@@ -128,6 +128,49 @@ export function scaleAt(scale: string[], step: number): string {
   return scale[idx] ?? scale[0] ?? "#000000";
 }
 
+/**
+ * Croma HSL aproximado (0–1). Distingue un color de marca de un neutro (gris,
+ * blanco, negro): los neutros tienen croma ~0.
+ */
+export function colorChroma(hex: string): number {
+  const rgb = hexToRgb(normalizeHex(hex));
+  if (!rgb) return 0;
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max === min) return 0;
+  const l = (max + min) / 2;
+  const d = max - min;
+  return l > 0.5 ? d / (2 - max - min) : d / (max + min);
+}
+
+/** Elige el color más cromático (de interacción/marca) entre candidatos, ignorando neutros. */
+function pickChromatic(...values: (string | undefined)[]): string | undefined {
+  let best: { hex: string; chroma: number } | undefined;
+  for (const value of values) {
+    if (!value) continue;
+    const hex = normalizeHex(value);
+    if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) continue;
+    const chroma = colorChroma(hex);
+    if (chroma < 0.18) continue;
+    if (!best || chroma > best.chroma) best = { hex, chroma };
+  }
+  return best?.hex;
+}
+
+/**
+ * Resuelve los roles semánticos del preview según el spec DESIGN.md de Google.
+ *
+ * Puntos clave del spec (Material-inspired):
+ * - `tertiary` suele ser el color de interacción/acento; `primary` puede ser
+ *   tinta oscura para texto; `neutral`/`surface` son el fondo.
+ * - Por eso el acento de UI se toma como el color **más cromático** de
+ *   {primary, tertiary, accent, secondary}, no ciegamente `primary`.
+ * - `foreground` sale de `on-surface`; si falta, usa `primary` solo cuando es
+ *   una tinta oscura de bajo croma (evita texto de color).
+ */
 export function fallbackFromColors(tokens: DesignTokens): {
   primary: string;
   secondary: string;
@@ -138,13 +181,25 @@ export function fallbackFromColors(tokens: DesignTokens): {
   border: string;
 } {
   const c = tokens.colors ?? {};
+  const interactive =
+    pickChromatic(c.primary, c.tertiary, c.accent, c.secondary, c.brand) ??
+    normalizeHex(c.primary ?? c.tertiary ?? "#3D63DD");
+
+  let foreground: string;
+  if (c["on-surface"]) foreground = normalizeHex(c["on-surface"]);
+  else if (c.foreground) foreground = normalizeHex(c.foreground);
+  else {
+    const p = c.primary ? normalizeHex(c.primary) : null;
+    foreground = p && !isLightColor(p) && colorChroma(p) < 0.2 ? p : "#1C1B1F";
+  }
+
   return {
-    primary: normalizeHex(c.primary ?? c.tertiary ?? "#3D63DD"),
+    primary: normalizeHex(interactive),
     secondary: normalizeHex(c.secondary ?? c.primary ?? "#1A5F7A"),
-    foreground: normalizeHex(c.foreground ?? c["on-surface"] ?? "#1C1B1F"),
+    foreground,
     surface: normalizeHex(c.surface ?? c.background ?? c.neutral ?? "#FAF9F6"),
-    muted: normalizeHex(c.muted ?? c["surface-alt"] ?? "#E8ECF0"),
-    accent: normalizeHex(c.tertiary ?? c.accent ?? c.primary ?? "#F4A261"),
+    muted: normalizeHex(c.muted ?? c["surface-alt"] ?? c.neutral ?? "#E8ECF0"),
+    accent: normalizeHex(c.tertiary ?? c.accent ?? interactive),
     border: normalizeHex(c.border ?? c.muted ?? "#E0E0E0"),
   };
 }

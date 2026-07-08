@@ -11,6 +11,7 @@ import {
   hexValue,
   isLightColor,
   normalizeHex,
+  resolveRadius,
   typographySampleText,
   getElevationPreviewItems,
   type PreviewMode,
@@ -29,6 +30,26 @@ interface DesignSystemCustomizerProps {
   tokens: DesignTokens;
   title?: string;
   description?: string | null;
+}
+
+/**
+ * Picks a concrete, visible corner radius from the theme's `rounded` tokens.
+ * Prefers larger, non-pill values; falls back to a sensible default.
+ */
+function pickThemeRadius(tokens: DesignTokens): string {
+  const rounded = tokens.rounded ?? {};
+  const preference = ["lg", "large", "xl", "md", "medium", "base", "default", "DEFAULT", "sm"];
+  for (const key of preference) {
+    const raw = rounded[key];
+    if (!raw) continue;
+    const resolved = resolveRadius(tokens, raw);
+    if (resolved && resolved !== "0px" && resolved !== "0") return resolved;
+  }
+  for (const raw of Object.values(rounded)) {
+    const resolved = resolveRadius(tokens, raw);
+    if (resolved && resolved !== "0px" && resolved !== "0" && resolved !== "9999px") return resolved;
+  }
+  return "16px";
 }
 
 function ThemeToggle({
@@ -101,10 +122,12 @@ function ColorScaleStrip({
   name,
   baseHex,
   mode,
+  radius,
 }: {
   name: string;
   baseHex: string;
   mode: PreviewMode;
+  radius: string;
 }) {
   const scale = useMemo(() => generateColorScale(baseHex, 12, mode), [baseHex, mode]);
   const normalized = normalizeHex(baseHex);
@@ -134,7 +157,8 @@ function ColorScaleStrip({
       </div>
 
       <div
-        className="flex overflow-hidden rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] ring-1 ring-[var(--ds-border)]"
+        className="flex overflow-hidden shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] ring-1 ring-[var(--ds-border)]"
+        style={{ borderRadius: radius }}
         role="img"
         aria-label={`${name} — 12 steps from ${scale[0]} to ${scale[11]}`}
       >
@@ -382,13 +406,14 @@ export function DesignSystemCustomizer({
 
   const accentHex = hexValue(palette.primary, tokens);
   const grayHex = hexValue(palette.muted, tokens);
+  const themeRadius = pickThemeRadius(tokens);
   return (
     <div
       data-design-system-print-root
       className="design-system-preview w-full bg-[var(--background)] text-[var(--foreground)]"
     >
       {/* App chrome header */}
-      <header className="design-system-print-header border-b border-[var(--border)] bg-[var(--background)] px-4 py-6 text-center sm:px-6">
+      <header className="design-system-print-header bg-[var(--background)] px-4 py-6 text-center sm:px-6">
         <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
           {title ?? "Design System"}
         </h1>
@@ -402,10 +427,10 @@ export function DesignSystemCustomizer({
         </div>
       </header>
 
-      {/* Themed preview canvas (Radix-style) */}
+      {/* Themed preview canvas (Radix-style) — embedded module */}
       <div
-        className="design-system-print-canvas min-h-[480px] bg-[var(--ds-bg)] text-[var(--ds-fg)] transition-[background-color,color] duration-300 ease-out print:min-h-0"
-        style={previewTheme.cssVars as React.CSSProperties}
+        className="design-system-print-canvas mx-3 mb-3 min-h-[480px] overflow-hidden border border-[var(--ds-border)] bg-[var(--ds-bg)] text-[var(--ds-fg)] transition-[background-color,color] duration-300 ease-out sm:mx-4 sm:mb-4 print:min-h-0"
+        style={{ ...(previewTheme.cssVars as React.CSSProperties), borderRadius: themeRadius }}
       >
         <div className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6">
           {/* Colors — single print block (inputs, scales, brand swatches) */}
@@ -417,8 +442,8 @@ export function DesignSystemCustomizer({
             </div>
 
             <div className="space-y-8">
-              <ColorScaleStrip name="Accent scale" baseHex={accentHex} mode={previewMode} />
-              <ColorScaleStrip name="Neutral scale" baseHex={grayHex} mode={previewMode} />
+              <ColorScaleStrip name="Accent scale" baseHex={accentHex} mode={previewMode} radius={themeRadius} />
+              <ColorScaleStrip name="Neutral scale" baseHex={grayHex} mode={previewMode} radius={themeRadius} />
             </div>
 
           {/* Brand swatches */}
@@ -431,7 +456,8 @@ export function DesignSystemCustomizer({
                 {Object.entries(colors).slice(0, 12).map(([name, hex]) => (
                   <div
                     key={name}
-                    className="overflow-hidden rounded-lg border border-[var(--ds-border)]"
+                    className="overflow-hidden border border-[var(--ds-border)]"
+                    style={{ borderRadius: themeRadius }}
                   >
                     <div
                       className="h-10"

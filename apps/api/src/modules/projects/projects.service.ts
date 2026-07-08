@@ -98,7 +98,16 @@ import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
 import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
 import { buildMddContextForUxGuide } from "../ai/utils/mdd-ux-guide-brief.util.js";
 import { appendUxGuideDesignAttribution } from "../design-ref/design-ref-attribution.util.js";
-import { composeDesignSystemFromRef } from "../design-ref/compose-design-system-from-ref.util.js";
+import {
+  composeDesignSystemFromRef,
+  composeDesignSystemFromScannedTokens,
+} from "../design-ref/compose-design-system-from-ref.util.js";
+import {
+  lintDesignMd,
+  formatLintSummary,
+  type DesignMdLintResult,
+} from "../design-ref/design-md-lint.util.js";
+import { scanUrlForDesignTokens } from "../design-ref/scan-url.util.js";
 import {
   brdGenerationErrorMessage,
   extractBrdFromLlmResponse,
@@ -1332,12 +1341,38 @@ name: ${JSON.stringify(name)}
     source?: string;
     referenceName?: string;
     reason?: string;
+    lint?: DesignMdLintResult;
   }> {
     const project = await this.assertProjectAccess(projectId);
     const mdd = this.constitutionMarkdown(project);
+    const projectName = project.name || projectId;
+    const storedRef = project.uxGuideDesignRef?.trim() ?? null;
+
+    // Rama URL personalizada: escanea el sitio y compone con sus colores reales.
+    if (storedRef?.startsWith("url:")) {
+      const url = storedRef.slice("url:".length).trim();
+      const scan = await scanUrlForDesignTokens(url);
+      if ("error" in scan) {
+        this.logger.warn(`[scan-url] project=${projectId} url=${url} fallo: ${scan.error}`);
+        return { composed: false, reason: "url-scan-failed" };
+      }
+      const content = cleanDocumentContent(
+        composeDesignSystemFromScannedTokens(projectName, scan.tokens),
+      );
+      const updated = await this.update(projectId, { uxUiGuideContent: content });
+      const lint = await this.lintUxGuideContent(content, projectId, storedRef);
+      return {
+        composed: true,
+        uxUiGuideContent: updated.uxUiGuideContent,
+        effectiveSlug: storedRef,
+        source: "url-scan",
+        referenceName: scan.tokens.name,
+        lint,
+      };
+    }
 
     const composed = composeDesignSystemFromRef({
-      projectName: project.name || projectId,
+      projectName,
       storedRef: project.uxGuideDesignRef,
       mddContext: mdd,
     });
@@ -1348,13 +1383,49 @@ name: ${JSON.stringify(name)}
     let finalContent = cleanDocumentContent(composed.content);
     finalContent = appendUxGuideDesignAttribution(finalContent, project.uxGuideDesignRef, mdd);
     const updated = await this.update(projectId, { uxUiGuideContent: finalContent });
+
+    const lint = await this.lintUxGuideContent(finalContent, projectId, composed.effectiveSlug);
+
     return {
       composed: true,
       uxUiGuideContent: updated.uxUiGuideContent,
       effectiveSlug: composed.effectiveSlug,
       source: composed.source,
       referenceName: composed.referenceName,
+      lint,
     };
+  }
+
+  /**
+   * Valida el DESIGN.md generado con el CLI oficial `@google/design.md` y
+   * registra un resumen (contraste WCAG, orden de secciones, refs rotas).
+   * Nunca lanza: el linter es informativo y no bloquea el pipeline.
+   */
+  private async lintUxGuideContent(
+    content: string,
+    projectId: string,
+    effectiveSlug?: string,
+  ): Promise<DesignMdLintResult> {
+    const lint = await lintDesignMd(content);
+    if (lint.unavailable) return lint;
+
+    const scope = `[design.md lint] project=${projectId} ref=${effectiveSlug ?? "-"}`;
+    const summary = formatLintSummary(lint);
+    if (lint.summary.errors > 0) {
+      this.logger.warn(`${scope} ${summary}`);
+    } else if (lint.summary.warnings > 0) {
+      this.logger.log(`${scope} ${summary}`);
+    }
+
+    for (const finding of lint.findings) {
+      if (finding.severity === "info") continue;
+      const where = finding.path ? ` (${finding.path})` : "";
+      const line = `${scope} ${finding.severity}${where}: ${finding.message}`;
+      if (finding.severity === "error") this.logger.warn(line);
+      else this.logger.log(line);
+    }
+
+    return lint;
   }
 
   /**

@@ -400,6 +400,42 @@ function darken(hex: string, factor: number): string {
   );
 }
 
+/** Saturación HSL aproximada (0–1) para distinguir colores de marca de neutros. */
+function colorSaturation(hex: string): number {
+  const rgb = hexToRgb(hex.startsWith("#") ? hex : `#${hex}`);
+  if (!rgb) return 0;
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max === min) return 0;
+  const l = (max + min) / 2;
+  const d = max - min;
+  return l > 0.5 ? d / (2 - max - min) : d / (max + min);
+}
+
+/**
+ * Elige el color de marca más saturado de la paleta, ignorando neutros
+ * (grises, blancos, negros) y las claves ya excluidas. Sirve para DESIGN.md con
+ * tokens de nombre específico (p. ej. `stripe-indigo`) sin claves semánticas.
+ */
+function pickBrandColor(
+  colors: Record<string, string>,
+  exclude: string[] = [],
+): string | undefined {
+  const excluded = new Set(exclude.map((v) => v.toUpperCase()));
+  let best: { hex: string; saturation: number } | undefined;
+  for (const value of Object.values(colors)) {
+    const hex = (value.startsWith("#") ? value : `#${value}`).toUpperCase();
+    if (!/^#[0-9A-F]{6}$/.test(hex) || excluded.has(hex)) continue;
+    const saturation = colorSaturation(hex);
+    if (saturation < 0.18) continue;
+    if (!best || saturation > best.saturation) best = { hex, saturation };
+  }
+  return best?.hex;
+}
+
 const DEFAULT_TYPOGRAPHY: Record<string, TypographyToken> = {
   "font-sans": { fontFamily: "'Inter', system-ui, -apple-system, sans-serif" },
   h1: { fontSize: "32px", fontWeight: 700, lineHeight: "40px", letterSpacing: "-0.02em" },
@@ -425,13 +461,18 @@ export function fillDesignMdDefaults(tokens: DesignTokens | null): DesignTokens 
   if (!tokens) return null;
   const t = { ...tokens };
 
-  // Fill colors
+  // Fill colors — deriva primary/accent de la paleta de marca disponible
+  // antes de recurrir a defaults genéricos (evita azul/naranja en DESIGN.md
+  // con tokens de nombre específico como `stripe-indigo`, `google-blue`).
   if (t.colors && Object.keys(t.colors).length > 0) {
     const c = { ...t.colors };
-    const p = c["primary"] || c["primary"] || "#3B82F6";
+    const p = c["primary"] || c["brand"] || pickBrandColor(c) || "#3B82F6";
     c["primary"] ??= p;
-    c["secondary"] ??= p !== "#3B82F6" ? p : "#2E8B57";
-    c["tertiary"] ??= p !== "#F4A261" ? "#F4A261" : lighten(p, 0.3);
+    const accent =
+      c["accent"] || c["secondary"] || pickBrandColor(c, [p]);
+    c["secondary"] ??= accent ?? p;
+    c["tertiary"] ??= accent ?? (p !== "#F4A261" ? "#F4A261" : lighten(p, 0.3));
+    c["accent"] ??= accent ?? p;
     c["neutral"] ??= lighten(p, 0.8);
     c["foreground"] ??= darken(p, 0.8) || "#1A1A2E";
     c["background"] ??= "#FFFFFF";

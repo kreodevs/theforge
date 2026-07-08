@@ -816,7 +816,22 @@ export default function WorkshopView({
           const data = (await composeRes.json()) as {
             composed?: boolean;
             uxUiGuideContent?: string | null;
+            lint?: {
+              unavailable?: boolean;
+              summary?: { errors?: number; warnings?: number; infos?: number };
+              findings?: { severity: "error" | "warning" | "info"; path?: string; message: string }[];
+            };
           };
+          if (data.lint && !data.lint.unavailable) {
+            const { errors = 0, warnings = 0 } = data.lint.summary ?? {};
+            if (errors > 0 || warnings > 0) {
+              const relevant = (data.lint.findings ?? []).filter((f) => f.severity !== "info");
+              console.warn(
+                `[design.md lint] ${errors} error(es), ${warnings} advertencia(s):`,
+                relevant.map((f) => `${f.severity}${f.path ? ` (${f.path})` : ""}: ${f.message}`),
+              );
+            }
+          }
           if (data.composed && data.uxUiGuideContent?.trim()) {
             const fixed = replaceYamlFrontMatter(data.uxUiGuideContent, projectName);
             setUxUiGuideContent(fixed);
