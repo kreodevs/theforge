@@ -1319,28 +1319,86 @@ function stripLeakedMermaidLinePrefix(line: string): string {
   return line.replace(MERMAID_LEAKED_LIST_PREFIX_RE, "$1    ").replace(/[ \t]+$/, "");
 }
 
-/** Entrecomilla mensajes de sequenceDiagram/Note con llaves u objetos JSON que rompen el parser. */
-function quoteSequenceDiagramMessageLine(line: string): string {
+function stripSequenceMessageMarkdown(text: string): string {
+  return text.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+}
+
+function formatSequenceArrowMessage(
+  indent: string,
+  from: string,
+  arrow: string,
+  to: string,
+  message: string,
+): string {
+  const cleaned = message.replace(/"/g, "'").slice(0, MAX_MERMAID_LABEL_CHARS);
+  if (/[{}]/.test(cleaned) || /\?\w+=/.test(cleaned) || /[()]/.test(cleaned)) {
+    return `${indent}${from}${arrow}${to}: "${cleaned}"`;
+  }
+  return `${indent}${from}${arrow}${to}: ${cleaned}`;
+}
+
+/**
+ * Repara líneas sequenceDiagram: quita markdown `**` fugado en mensajes y parte
+ * `Respuesta**Nota:** prosa` en flecha + `Note over`.
+ */
+function repairSequenceDiagramLine(line: string): string[] {
   const trimmed = line.trim();
   if (/^Note over\b/i.test(trimmed)) {
-    return line.replace(/^(Note over\s+[\w,\s]+:\s*)(?!")(.+)$/i, (_m, prefix: string, msg: string) => {
-      const t = msg.trim();
-      if (!/[{}]/.test(t)) return line;
-      return `${prefix}"${t.replace(/"/g, "'").slice(0, MAX_MERMAID_LABEL_CHARS)}"`;
-    });
+    return [
+      line.replace(/^(Note over\s+[\w,\s]+:\s*)(?!")(.+)$/i, (_m, prefix: string, msg: string) => {
+        const t = stripSequenceMessageMarkdown(msg);
+        if (!t) return line;
+        if (/[{}]/.test(t)) {
+          return `${prefix}"${t.replace(/"/g, "'").slice(0, MAX_MERMAID_LABEL_CHARS)}"`;
+        }
+        return `${prefix}${t.slice(0, MAX_MERMAID_LABEL_CHARS)}`;
+      }),
+    ];
   }
+
   const m = trimmed.match(
     /^(\s*)([\w-]+)\s*(-+>>|->>|-->>|--x|-x>|--+>|==+>)\s*([\w-]+)\s*:\s*(.+)$/,
   );
-  if (!m) return line;
-  const [, indent = "", from, arrow, to, msg = ""] = m;
-  const message = msg.trim();
-  if (!message || /^"/.test(message)) return line;
-  if (/[{}]/.test(message) || /\?\w+=/.test(message)) {
-    const cleaned = message.replace(/"/g, "'").slice(0, MAX_MERMAID_LABEL_CHARS);
-    return `${indent}${from}${arrow}${to}: "${cleaned}"`;
+  if (!m) return [line];
+
+  const [, indent = "", from, arrow, to, rawMsg = ""] = m;
+  const message = rawMsg.trim();
+  if (!message || !from || !arrow || !to) return [line];
+  if (/^"/.test(message)) return [line];
+
+  const embeddedNote = message.match(/^(.+?)\*\*(?:Nota|Note)\s*:\*\*\s*(.+)$/i);
+  if (embeddedNote) {
+    const main = stripSequenceMessageMarkdown(embeddedNote[1]!);
+    const noteText = stripSequenceMessageMarkdown(embeddedNote[2]!);
+    const out: string[] = [];
+    if (main) out.push(formatSequenceArrowMessage(indent, from, arrow, to, main));
+    if (noteText) {
+      out.push(`${indent}Note over ${to}: ${noteText.slice(0, MAX_MERMAID_LABEL_CHARS)}`);
+    }
+    return out.length ? out : [line];
   }
-  return line;
+
+  const genericBoldLabel = message.match(/^(.+?)\*\*([^*:\n]{2,80}):\*\*\s*(.+)$/);
+  if (genericBoldLabel) {
+    const main = stripSequenceMessageMarkdown(genericBoldLabel[1]!);
+    const noteText = stripSequenceMessageMarkdown(genericBoldLabel[3]!);
+    const out: string[] = [];
+    if (main) out.push(formatSequenceArrowMessage(indent, from, arrow, to, main));
+    if (noteText) {
+      out.push(`${indent}Note over ${to}: ${noteText.slice(0, MAX_MERMAID_LABEL_CHARS)}`);
+    }
+    return out.length ? out : [line];
+  }
+
+  if (/\*\*/.test(message)) {
+    return [formatSequenceArrowMessage(indent, from, arrow, to, stripSequenceMessageMarkdown(message))];
+  }
+
+  if (/[{}]/.test(message) || /\?\w+=/.test(message)) {
+    return [formatSequenceArrowMessage(indent, from, arrow, to, message)];
+  }
+
+  return [line];
 }
 
 /**
@@ -1709,7 +1767,9 @@ export function normalizeMermaidDiagramBody(raw: string): string {
     });
 
     if (isSequence) {
-      line = quoteSequenceDiagramMessageLine(line);
+      const repaired = repairSequenceDiagramLine(line);
+      for (const seqLine of repaired) out.push(seqLine);
+      continue;
     }
 
     out.push(line);
