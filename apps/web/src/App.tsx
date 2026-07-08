@@ -5,7 +5,7 @@
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "./store/workshopStore";
 import {
   AlertTriangle,
@@ -17,7 +17,6 @@ import {
   Plus,
   Sparkles,
 } from "lucide-react";
-import WorkshopView from "./views/WorkshopView";
 import LoginView from "./views/LoginView";
 import OtpEmailHandoffView from "./views/OtpEmailHandoffView";
 import SetupView from "./views/SetupView";
@@ -99,7 +98,18 @@ interface TheForgeRepository {
   branch?: string;
 }
 
+const WorkshopView = lazy(() => import("./views/WorkshopView"));
+
 const SIDEBAR_COLLAPSED_KEY = "theforge-sidebar-collapsed";
+
+function WorkshopViewFallback() {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center gap-2 bg-[var(--background)] text-[var(--foreground-muted)]">
+      <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
+      <span className="text-sm">Cargando taller…</span>
+    </div>
+  );
+}
 
 function readSidebarCollapsed(): boolean {
   try {
@@ -860,18 +870,20 @@ export default function App() {
                 <UsersView />
               </div>
             ) : (
-              <WorkshopView
-                projectId={workshopProject.id}
-                projectName={workshopProject.name}
-                onBack={handleExitWorkshop}
-                onOpenSettings={openSettings}
-                onRenameProject={
-                  canRenameProject(workshopProject)
-                    ? () => openRenameDialog(workshopProject)
-                    : undefined
-                }
-                mergeAudit={mergeAuditHint}
-              />
+              <Suspense fallback={<WorkshopViewFallback />}>
+                <WorkshopView
+                  projectId={workshopProject.id}
+                  projectName={workshopProject.name}
+                  onBack={handleExitWorkshop}
+                  onOpenSettings={openSettings}
+                  onRenameProject={
+                    canRenameProject(workshopProject)
+                      ? () => openRenameDialog(workshopProject)
+                      : undefined
+                  }
+                  mergeAudit={mergeAuditHint}
+                />
+              </Suspense>
             )}
           </div>
         </div>

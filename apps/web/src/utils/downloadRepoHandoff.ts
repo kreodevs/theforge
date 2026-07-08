@@ -1,4 +1,4 @@
-import JSZip from "jszip";
+import type JSZip from "jszip";
 import {
   buildSpecKitBundleFiles,
   type AgentGovernanceScaffold,
@@ -6,6 +6,7 @@ import {
   type SpecKitBundleInput,
 } from "@theforge/shared-types";
 import { apiFetch, API_BASE } from "./apiClient.js";
+import { loadJsZip } from "./loadJsZip.js";
 import { downloadAgentGovernanceZip } from "./downloadAgentGovernanceZip.js";
 import { downloadDocumentsZip, type DocumentsForZip } from "./downloadDocumentsZip.js";
 import { addSpecKitBundleToZip } from "./downloadSpecKitBundle.js";
@@ -50,6 +51,7 @@ export async function downloadRepoHandoffFromApi(
   const data = (await r.json()) as RepoHandoffApiResponse;
   if (!data.specKitFiles?.length) return false;
 
+  const JSZip = await loadJsZip();
   const zip = new JSZip();
   addSpecKitBundleToZip(zip, data.specKitFiles);
 

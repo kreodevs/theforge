@@ -1,5 +1,6 @@
-import JSZip from "jszip";
+import type JSZip from "jszip";
 import { exportPantallasMarkdownOnly, splitPantallasAndUiProject } from "@theforge/shared-types";
+import { loadJsZip } from "./loadJsZip.js";
 
 export interface DocumentsForZip {
   dbgaContent: string | null;
@@ -27,6 +28,7 @@ export async function downloadDocumentsZip(
   documents: DocumentsForZip,
   projectName: string,
 ): Promise<boolean> {
+  const JSZip = await loadJsZip();
   const zip = new JSZip();
 
   const entries: [string, string][] = [

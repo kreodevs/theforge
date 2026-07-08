@@ -1,5 +1,10 @@
-import type { RefObject } from "react";
-import { DynamicIslandTOC } from "@/components/ui/dynamic-island-toc";
+import { lazy, Suspense, type RefObject } from "react";
+
+const DynamicIslandTOC = lazy(() =>
+  import("@/components/ui/dynamic-island-toc").then((mod) => ({
+    default: mod.DynamicIslandTOC,
+  })),
+);
 
 export type WorkshopDocToolbarViewModes = {
   mddViewMode: "preview" | "source";
@@ -90,11 +95,13 @@ export function WorkshopDocumentIslandToc({
   if (!enabled) return null;
 
   return (
-    <DynamicIslandTOC
-      selector={MARKDOWN_PREVIEW_SELECTOR}
-      scrollContainerRef={scrollContainerRef}
-      contentKey={`${centralPanel}:${contentKey}`}
-      minHeadings={2}
-    />
+    <Suspense fallback={null}>
+      <DynamicIslandTOC
+        selector={MARKDOWN_PREVIEW_SELECTOR}
+        scrollContainerRef={scrollContainerRef}
+        contentKey={`${centralPanel}:${contentKey}`}
+        minHeadings={2}
+      />
+    </Suspense>
   );
 }

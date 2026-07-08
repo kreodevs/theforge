@@ -1,6 +1,7 @@
-import JSZip from "jszip";
+import type JSZip from "jszip";
 import type { AgentGovernanceInstallEntry, AgentGovernanceManifest, AgentGovernanceScaffold } from "@theforge/shared-types";
 import type { SpecKitBundleFile } from "@theforge/shared-types";
+import { loadJsZip } from "./loadJsZip.js";
 
 export const AGENT_GOVERNANCE_ZIP_ROOT = "agent-governance";
 
@@ -219,6 +220,7 @@ export async function downloadAgentGovernanceZip(
 
   logAgentGovernanceZipBuild(build, "export");
 
+  const JSZip = await loadJsZip();
   const zip = new JSZip();
   const handoffBuild =
     specKitBundle?.length

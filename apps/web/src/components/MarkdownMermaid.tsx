@@ -15,7 +15,6 @@ import {
   type ReactNode,
 } from "react";
 import { Maximize2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
-import mermaid from "mermaid";
 import {
   prepareMermaidDiagramForRender,
   stripMermaidFenceWrappers,
@@ -34,16 +33,34 @@ const MERMAID_DIAGRAM_START =
 
 export const MERMAID_BLOCK_MARKER = "data-theforge-mermaid";
 
-let mermaidInit = false;
+type MermaidApi = typeof import("mermaid").default;
 
-function initMermaid() {
-  if (mermaidInit) return;
-  mermaidInit = true;
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: "dark",
-    securityLevel: "loose",
-  });
+let mermaidModule: MermaidApi | null = null;
+let mermaidLoadPromise: Promise<MermaidApi> | null = null;
+let mermaidInitialized = false;
+
+function loadMermaidModule(): Promise<MermaidApi> {
+  if (mermaidModule) return Promise.resolve(mermaidModule);
+  if (!mermaidLoadPromise) {
+    mermaidLoadPromise = import("mermaid").then((mod) => {
+      mermaidModule = mod.default;
+      return mermaidModule;
+    });
+  }
+  return mermaidLoadPromise;
+}
+
+async function initMermaid(): Promise<MermaidApi> {
+  const mermaid = await loadMermaidModule();
+  if (!mermaidInitialized) {
+    mermaidInitialized = true;
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "dark",
+      securityLevel: "loose",
+    });
+  }
+  return mermaid;
 }
 
 export function mermaidKey(content: string): string {
@@ -106,7 +123,6 @@ function useMermaidSvg(
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    initMermaid();
     const el = ref.current;
     if (!el || !content.trim()) return;
 
@@ -118,6 +134,7 @@ function useMermaidSvg(
 
     const doRender = async () => {
       try {
+        const mermaid = await initMermaid();
         const { svg, bindFunctions } = await mermaid.render(renderId, toRender);
         if (cancelled || !el) return;
         el.innerHTML = svg;

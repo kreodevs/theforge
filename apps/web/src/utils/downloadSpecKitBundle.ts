@@ -1,10 +1,11 @@
-import JSZip from "jszip";
+import type JSZip from "jszip";
 import {
   buildSpecKitBundleFiles,
   type SpecKitBundleFile,
   type SpecKitBundleInput,
 } from "@theforge/shared-types";
 import { apiFetch, API_BASE } from "./apiClient.js";
+import { loadJsZip } from "./loadJsZip.js";
 
 export type { SpecKitBundleInput };
 
@@ -26,6 +27,7 @@ export async function downloadSpecKitBundle(
   const files = buildSpecKitBundleFiles(input);
   if (files.length === 0) return false;
 
+  const JSZip = await loadJsZip();
   const zip = new JSZip();
   addSpecKitBundleToZip(zip, files);
 
@@ -55,6 +57,7 @@ export async function downloadSpecKitBundleFromApi(
   const data = (await r.json()) as { files: SpecKitBundleFile[] };
   if (!data.files?.length) return false;
 
+  const JSZip = await loadJsZip();
   const zip = new JSZip();
   addSpecKitBundleToZip(zip, data.files);
   const blob = await zip.generateAsync({ type: "blob" });
