@@ -808,6 +808,7 @@ interface WorkshopState {
       force?: boolean;
       allowGovernancePatternChange?: boolean;
       mddGovernanceSeedOnly?: boolean;
+      mddFormatOnly?: boolean;
       clearMddCompletely?: boolean;
     },
   ) => Promise<void>;
@@ -1592,7 +1593,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         if (formatted === source) {
           return { ok: true, message: "MDD: ya estaba bien formateado (sin cambios)." };
         }
-        await get().persistMddContent(formatted, { force: true });
+        await get().persistMddContent(formatted, { force: true, mddFormatOnly: true });
         return { ok: true, message: "MDD formateado (headings, fences, tablas y Mermaid). Revisa el panel." };
       }
       case "handoff-spec": {
@@ -4076,6 +4077,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           ...(stageId ? { stageId } : {}),
           ...(options?.allowGovernancePatternChange ? { allowGovernancePatternChange: true } : {}),
           ...(options?.mddGovernanceSeedOnly ? { mddGovernanceSeedOnly: true } : {}),
+          ...(options?.mddFormatOnly ? { mddFormatOnly: true } : {}),
           ...(options?.clearMddCompletely ? { clearMddCompletely: true } : {}),
         }),
       });
@@ -4191,7 +4193,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const before = selectPersistedMddBaseline(get()) || content;
     set({ mddReapplyingFormat: true, error: null, notice: null });
     try {
-      await persistMddContent(content, { force: true });
+      await persistMddContent(content, { force: true, mddFormatOnly: true });
       const after = selectPersistedMddBaseline(get());
       set({
         notice:

@@ -51,6 +51,26 @@ function fixGluedHeadingToCodeFence(draft: string): string {
   );
 }
 
+/** Despega prosa pegada al título en la misma línea (`### Título Este sistema…`). */
+function splitHeadingTitleFromInlineProse(draft: string): string {
+  return draft
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!/^#{2,4}\s+/.test(trimmed)) return line;
+      const m = trimmed.match(/^(#{2,4}\s+)(.+)$/);
+      if (!m) return line;
+      const [, prefix, rest = ""] = m;
+      const body = rest.match(
+        /^(.+?)\s+((?:Este|Esta|El|La|Los|Las|Un|Una|Desarrolladores)\b[\s\S].*)$/u,
+      );
+      if (!body || body[1]!.trim().length < 8) return line;
+      const indent = line.match(/^(\s*)/)?.[1] ?? "";
+      return `${indent}${prefix}${body[1]!.trim()}\n\n${indent}${body[2]!.trim()}`;
+    })
+    .join("\n");
+}
+
 /** Reparación genérica de headings pegados (iteración a punto fijo). */
 export function repairGluedMarkdownHeadings(draft: string): string {
   if (!draft?.trim()) return draft ?? "";
@@ -65,5 +85,6 @@ export function repairGluedMarkdownHeadings(draft: string): string {
   out = fixGluedHeadingBoldBody(out);
   out = splitInlineBoldLabelRuns(out);
   out = out.replace(/^(##\s+\d+\.\s+[^\n#]+?)\s+(#{2,4}\s+)/gm, "$1\n\n$2");
+  out = splitHeadingTitleFromInlineProse(out);
   return out.replace(/\n{3,}/g, "\n\n");
 }

@@ -33,6 +33,8 @@ import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.
 import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
 import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson } from "@theforge/shared-types";
+import { formatDocumentMarkdown } from "@theforge/shared-types/format-document-markdown";
+import { sanitizeMddAtPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import {
   enforceMddGovernancePatternsOnPersist,
   mddHasSubstantialBody,
@@ -635,6 +637,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       allowGovernancePatternChange,
       clearMddCompletely,
       mddGovernanceSeedOnly,
+      mddFormatOnly,
       clearComplexityPending,
       complexityPending: cpInput,
       ...rest
@@ -720,7 +723,19 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       const skipPipelineForSeed =
         clearMddCompletely === true ||
         (mddGovernanceSeedOnly === true && !mddHasSubstantialBody(mddForPipeline));
-      if (skipPipelineForSeed) {
+      if (mddFormatOnly === true) {
+        const formatted = sanitizeMddAtPersist(formatDocumentMarkdown(mddForPipeline ?? ""));
+        await this.prisma.stage.update({
+          where: { id: targetStage.id },
+          data: { mddContent: formatted },
+        });
+        await this.changeLog.log(id, "mddContent", formatted);
+        pipelineResult = {
+          sanitizedMdd: formatted,
+          status: targetStage.status,
+          precisionScore: targetStage.precisionScore,
+        };
+      } else if (skipPipelineForSeed) {
         await this.prisma.stage.update({
           where: { id: targetStage.id },
           data: { mddContent: mddForPipeline },

@@ -24,4 +24,11 @@ describe("repairGluedMarkdownHeadings", () => {
     assert.match(out, /## 1\. Contexto y Alcance\n\n### Propósito del Proyecto/);
     assert.doesNotMatch(out, /Contexto y Alcance ###/);
   });
+
+  it("parte título de heading y prosa en la misma línea", () => {
+    const raw =
+      "### Declaración de Independencia Este sistema es la raíz de la arquitectura.";
+    const out = repairGluedMarkdownHeadings(raw);
+    assert.match(out, /### Declaración de Independencia\n\nEste sistema es la raíz/);
+  });
 });
