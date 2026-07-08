@@ -28,6 +28,7 @@ export * from "./repair-pasted-markdown.js";
 export * from "./repair-glued-headings.js";
 export * from "./repair-infra-markdown.js";
 export * from "./dbga-document-structure.js";
+export * from "./deduplicate-dbga-document.js";
 export * from "./orchestrator.js";
 export * from "./legacy-codebase-doc.js";
 export * from "./document-changelog.js";
