@@ -14,10 +14,17 @@ import {
 } from "./repair-pasted-markdown.js";
 import { repairDirectoryTreeBlocks } from "./repair-directory-tree.js";
 import { repairGluedMarkdownHeadings } from "./repair-glued-headings.js";
+import {
+  deduplicateDbgaDocument,
+  hasDuplicateDbgaBlocks,
+} from "./deduplicate-dbga-document.js";
 
 export function formatDocumentMarkdown(text: string): string {
   if (!text) return "";
-  const trimmed = text.trim();
+  let trimmed = text.trim();
+  if (hasDuplicateDbgaBlocks(trimmed)) {
+    trimmed = deduplicateDbgaDocument(trimmed);
+  }
   const hadOuterMarkdownFence =
     /^```(?:markdown|md)?\s*\n/i.test(trimmed) && /\n```\s*$/i.test(trimmed);
 
@@ -57,10 +64,13 @@ export function formatDocumentMarkdown(text: string): string {
 export function formatDbgaDocument(raw: string): {
   formatted: string;
   strippedMdd: string | null;
+  deduplicated: boolean;
 } {
   const { dbgaBody, embeddedMdd } = splitEmbeddedMddFromDbga(raw);
+  const deduplicated = hasDuplicateDbgaBlocks(dbgaBody);
   return {
     formatted: formatDocumentMarkdown(dbgaBody),
     strippedMdd: embeddedMdd,
+    deduplicated,
   };
 }

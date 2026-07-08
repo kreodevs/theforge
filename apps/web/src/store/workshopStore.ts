@@ -1504,15 +1504,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         let anyOk = false;
 
         if (dbga.length > 0) {
-          const { formatted, strippedMdd } = formatDbgaDocument(dbga);
+          const { formatted, strippedMdd, deduplicated } = formatDbgaDocument(dbga);
           const changed = formatted !== dbga;
           if (!changed && !strippedMdd) {
             parts.push("Fase 0 (DBGA): sin cambios detectables tras formatear.");
           } else {
             await persistField("dbgaContent", formatted, get, set);
             set({ dbgaContent: formatted });
-            let msg =
-              "Fase 0 (DBGA) formateado (tablas, SQL, secciones). Revisa el panel Análisis.";
+            let msg = deduplicated
+              ? "Fase 0 (DBGA) deduplicado y formateado (secciones repetidas fusionadas). Revisa el panel Análisis."
+              : "Fase 0 (DBGA) formateado (tablas, SQL, secciones). Revisa el panel Análisis.";
             if (strippedMdd) {
               const kb = Math.round(strippedMdd.length / 1024);
               const mddEmpty = !(get().mddContent ?? project?.mddContent ?? "").trim();

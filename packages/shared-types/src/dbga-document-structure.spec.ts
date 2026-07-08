@@ -18,10 +18,11 @@ describe("splitEmbeddedMddFromDbga", () => {
 describe("formatDbgaDocument", () => {
   it("no incluye el MDD embebido en formatted", () => {
     const raw = "# DBGA\n\n## A\n\n[Contenido actual del MDD]\n\n## MDD section";
-    const { formatted, strippedMdd } = formatDbgaDocument(raw);
+    const { formatted, strippedMdd, deduplicated } = formatDbgaDocument(raw);
     assert.match(formatted, /DBGA/);
     assert.doesNotMatch(formatted, /MDD section/);
     assert.ok(strippedMdd && strippedMdd.includes("MDD section"));
+    assert.equal(deduplicated, false);
   });
 });
 
