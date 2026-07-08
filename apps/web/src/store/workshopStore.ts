@@ -1593,7 +1593,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           return { ok: true, message: "MDD: ya estaba bien formateado (sin cambios)." };
         }
         await get().persistMddContent(formatted, { force: true });
-        return { ok: true, message: "MDD formateado (fences, tablas y Mermaid). Revisa el panel." };
+        return { ok: true, message: "MDD formateado (headings, fences, tablas y Mermaid). Revisa el panel." };
       }
       case "handoff-spec": {
         const source = (get().handoffSpecContent ?? project?.handoffSpecContent ?? "").trim();

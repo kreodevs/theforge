@@ -25,6 +25,7 @@ export * from "./markdown-table.js";
 export * from "./mermaid.js";
 export * from "./format-document-markdown.js";
 export * from "./repair-pasted-markdown.js";
+export * from "./repair-glued-headings.js";
 export * from "./repair-infra-markdown.js";
 export * from "./dbga-document-structure.js";
 export * from "./orchestrator.js";

@@ -1,4 +1,5 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
+import { repairGluedMarkdownHeadings } from "@theforge/shared-types";
 import { sqlToErDiagramContent } from "./mdd-diagram-suggestions.js";
 
 /** Convierte objeto con subsections (array de {title, description: string[]}) a markdown legible. */
@@ -2711,19 +2712,6 @@ function fixSecuritySectionBullets(sectionBody: string): string {
 /** Línea H2 de §6 (con o sin número; admite título pegado sin espacio tras Seguridad). */
 const RE_SECTION6_H2_LINE = /^##\s+(?:6\.\s+)?Seguridad/i;
 
-/** Despega `## 3. Foo### 3.1 Bar` o `## 3. Foo### SQL` → H2 + ### en líneas separadas. */
-function fixGluedSubsectionHeadings(draft: string): string {
-  return draft
-    .replace(/^(##\s+\d+\.\s+[^\n#]+?)\s*(#{1,3}\s+\S+)/gm, "$1\n\n$2")
-    .replace(/^(#{3,4}\s+[^\n#]+?)\s*(#{3,4}\s+\S+)/gm, "$1\n\n$2")
-    .replace(/^\s+(#{3,4}\s+)/gm, "$1");
-}
-
-/** Asegura espacio tras `#` en headings (`###Foo` → `### Foo`). */
-function normalizeMarkdownHeadingHashSpacing(draft: string): string {
-  return draft.replace(/^(#{1,6})([^\s#\n])/gm, "$1 $2");
-}
-
 /** Colapsa `--- --- ---` en la misma línea o consecutivos; normaliza `--`/`-` sueltos como separadores. */
 function collapseInlineHorizontalRules(draft: string): string {
   let out = draft.replace(/(?:^|\n)\s*---(?:\s+---\s*)+(?=\s*(?:\n|$))/g, "\n---\n");
@@ -2731,50 +2719,6 @@ function collapseInlineHorizontalRules(draft: string): string {
   out = out.replace(/\n\s*-\s*\n(?=\s*##\s+)/g, "\n");
   out = out.replace(/\n\s*--\s*$/gm, "");
   return collapseConsecutiveHorizontalRules(out);
-}
-
-/** Despega H2/H3 de fences (ej. `## 3. Modelo de Datos```sql`). */
-function fixGluedHeadingToCodeFence(draft: string): string {
-  return draft.replace(
-    /^(##\s+\d+\.\s+[^\n`]+?)```(sql|json|mermaid|TechnicalMetadata)\b/gim,
-    "$1\n\n```$2",
-  );
-}
-
-/** Parte subtítulos ### / #### incrustados en prosa (típico del Clarifier/Architect en §1). */
-function fixInlineMarkdownSubheadings(draft: string): string {
-  return draft
-    .replace(
-      /([^\n#])(\s+#{3,4}\s+(?=[A-Za-zÁÉÍÓÚÑ0-9]))/g,
-      (_m, before: string, heading: string) => `${before}\n\n${heading.trim()}`,
-    )
-    .replace(/([.!?])\s+(#{3,4}\s+)/g, "$1\n\n$2")
-    .replace(/([)\]])\s+(#{2,4}\s+)/g, "$1\n\n$2")
-    .replace(
-      /([a-záéíóúñA-ZÁÉÍÓÚÑ0-9])\s+(#{2,4}\s+(?=[A-ZÁÉÍÓÚÑ]))/g,
-      "$1\n\n$2",
-    );
-}
-
-/** Separa corridas de etiquetas en negrita en la misma línea (escenarios UAT, riesgos). */
-function splitInlineBoldLabelRuns(draft: string): string {
-  return draft
-    .replace(/(\*\*[^*\n]+\*\*)\s+(\*\*[^*\n]+\*\*)/g, "$1\n\n$2")
-    .replace(
-      /([^\n#])(\s+\*\*(?:Escenario|Riesgo)\s+\d+)/gi,
-      "$1\n\n$2",
-    );
-}
-
-/**
- * Despega un cuerpo en **negrita** pegado a la línea de un encabezado
- * (ej. `### Criterios de Aceptación (UAT) **Escenario 1 - ...**` → encabezado + párrafo).
- * Señal fiable: el título del encabezado no contiene `*`, y tras un espacio aparece
- * un tramo en negrita `**...**` que en realidad inicia el cuerpo (típico de escenarios UAT).
- * No toca encabezados enteramente en negrita (`### **Título**`) ni prosa sin negrita.
- */
-function fixGluedHeadingBoldBody(draft: string): string {
-  return draft.replace(/^(#{2,6}\s+[^\n*]+?)\s+(\*\*[^\n]+)$/gm, "$1\n\n$2");
 }
 
 /**
@@ -2834,26 +2778,14 @@ function dedentCreateIndexLines(sql: string): string {
 
 /** Despega subtítulo del H2 (ej. `## 6. SeguridadGestión…:` o `## 6. Seguridad. Autenticación:` → H2 + ###). */
 function fixGluedSection6Heading(draft: string): string {
-  let out = fixGluedHeadingToCodeFence(draft);
-  let prev = "";
-  while (prev !== out) {
-    prev = out;
-    out = fixGluedSubsectionHeadings(out);
-    out = fixInlineMarkdownSubheadings(out);
-  }
-  out = normalizeMarkdownHeadingHashSpacing(out);
-  // Debe correr tras normalizar el espacio tras `#`: fixInlineMarkdownSubheadings
-  // deja el encabezado como `###Titulo` (sin espacio) y este fix exige `#{2,6}\s+`.
-  out = fixGluedHeadingBoldBody(out);
-  out = splitInlineBoldLabelRuns(out);
-  out = out.replace(/^(##\s+\d+\.\s+[^\n#]+?)\s+(#{2,4}\s+)/gm, "$1\n\n$2");
+  let out = repairGluedMarkdownHeadings(draft);
   out = out.replace(
     /^##\s*3\.\s*Modelo\s+de\s+Datos(?=[A-ZÁÉÍÓÚÑ])/gim,
     "## 3. Modelo de Datos\n\n",
   );
   out = out.replace(
     /^##\s*6\.\s*Seguridad([A-ZÁÉÍÓÚÑ][^\n]*?):?\s*$/gim,
-    (_m, tail: string) => {
+    (_m: string, tail: string) => {
       const t = tail.trim().replace(/:$/, "");
       return t ? `## 6. Seguridad\n\n### ${t}` : _m;
     },
@@ -2862,8 +2794,7 @@ function fixGluedSection6Heading(draft: string): string {
     /^##\s*6\.\s*Seguridad\.\s*([^:\n]+):?\s*$/gim,
     "## 6. Seguridad\n\n### $1",
   );
-  out = out.replace(/\n{3,}/g, "\n\n");
-  return out;
+  return out.replace(/\n{3,}/g, "\n\n");
 }
 
 /** Cuenta ocurrencias de un heading H2 de sección principal (§5–§7). */
