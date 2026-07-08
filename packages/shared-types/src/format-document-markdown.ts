@@ -13,6 +13,7 @@ import {
   repairTableBoundaries,
 } from "./repair-pasted-markdown.js";
 import { repairDirectoryTreeBlocks } from "./repair-directory-tree.js";
+import { repairGluedMarkdownHeadings } from "./repair-glued-headings.js";
 
 export function formatDocumentMarkdown(text: string): string {
   if (!text) return "";
@@ -43,6 +44,7 @@ export function formatDocumentMarkdown(text: string): string {
     }
   }
   cleaned = repairMarkdownFences(cleaned.trim());
+  cleaned = repairGluedMarkdownHeadings(cleaned);
   cleaned = normalizeAllTables(cleaned);
   cleaned = repairTableBoundaries(cleaned);
   cleaned = repairStrayCodeFences(cleaned);

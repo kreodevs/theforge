@@ -1,0 +1,27 @@
+import { describe, it } from "node:test";
+import assert from "node:assert";
+import { repairGluedMarkdownHeadings } from "./repair-glued-headings.js";
+import { formatDocumentMarkdown } from "./format-document-markdown.js";
+
+const COPIlOTO_SECTION1 = `## 1. Contexto y Alcance ### Propósito del Proyecto
+
+El Copiloto Inteligente Multi-MCP es un sistema centralizado que orquesta la interacción entre empleados autorizados y sistemas corporativos (inicialmente Bitrix24) mediante canales de mensajería natural como WhatsApp. El objetivo es eliminar la ineficiencia operativa causada por la fragmentación de información entre múltiples plataformas, permitiendo a los usuarios acceder datos y ejecutar acciones simples directamente desde su canal de comunicación preferido. ### Alcance y Fronteras #### Servicios Core (Dentro del Alcance)
+
+    Copiloto Central: Microservicio que clasifica solicitudes
+`;
+
+describe("repairGluedMarkdownHeadings", () => {
+  it("despega H2/H3/H4 pegados en §1 estilo Copiloto", () => {
+    const out = repairGluedMarkdownHeadings(COPIlOTO_SECTION1);
+    assert.match(out, /## 1\. Contexto y Alcance\n\n### Propósito del Proyecto/);
+    assert.match(out, /preferido\.\n\n### Alcance y Fronteras\n\n#### Servicios Core/);
+    assert.doesNotMatch(out, /Contexto y Alcance ###/);
+    assert.doesNotMatch(out, /Fronteras ####/);
+  });
+
+  it("formatDocumentMarkdown aplica la misma reparación", () => {
+    const out = formatDocumentMarkdown(COPIlOTO_SECTION1);
+    assert.match(out, /## 1\. Contexto y Alcance\n\n### Propósito del Proyecto/);
+    assert.doesNotMatch(out, /Contexto y Alcance ###/);
+  });
+});
