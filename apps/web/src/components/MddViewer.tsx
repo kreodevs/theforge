@@ -15,6 +15,10 @@ import {
   looksLikeDirectoryTreeParagraph,
 } from "@theforge/shared-types/repair-directory-tree";
 import {
+  looksLikeAsciiDiagramLine,
+  repairAsciiDiagramBlocks,
+} from "@theforge/shared-types";
+import {
   normalizeMermaidInDocument,
   prepareMermaidDiagramForRender,
 } from "@theforge/shared-types/mermaid";
@@ -223,11 +227,12 @@ function flattenMarkdownChildren(children: ReactNode): string {
 }
 
 function paragraphLooksLikeDirectoryTree(text: string): boolean {
+  if (looksLikeAsciiDiagramLine(text)) return false;
   return looksLikeDirectoryTreeParagraph(text);
 }
 
 const TREE_PRE_CLASS =
-  "my-2 overflow-x-auto rounded-md border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_78%,var(--card))] p-3 font-mono text-xs whitespace-pre text-[var(--foreground)]";
+  "my-3 overflow-x-auto rounded-md border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_78%,var(--card))] p-3 font-mono text-xs leading-[1.35] whitespace-pre text-[var(--foreground)]";
 
 const FENCED_PRE_CLASS = TREE_PRE_CLASS;
 
@@ -392,8 +397,10 @@ class MddViewerErrorBoundary extends Component<
 function MddViewerInner({ content, className = "" }: MddViewerProps) {
   const cleaned = stripBrokenMermaidBlocks(
     normalizeMermaidInDocument(
-      repairDirectoryTreeBlocks(
-        repairGluedMarkdownHeadings(repairMarkdownFences(content)),
+      repairAsciiDiagramBlocks(
+        repairDirectoryTreeBlocks(
+          repairGluedMarkdownHeadings(repairMarkdownFences(content)),
+        ),
       ),
     ),
   );

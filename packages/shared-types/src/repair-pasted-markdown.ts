@@ -502,7 +502,188 @@ export function repairTableBoundaries(text: string): string {
   return out;
 }
 
-/** Diagramas ASCII de relaciones en una sola línea → bloque text. */
+/** Diagramas ASCII multilínea (arquitectura, cajas con `|`, `│`, `┌`, `▼`, etc.). */
+const ASCII_BOX_DRAWING_RE = /[┌┐└┘┬┴┼╔╗╚╝╠╣╦╩╬│┃─━┄┅┆┇┈┉┊┋╭╮╰╯╱╲]/;
+const ASCII_ARROW_OR_TRIANGLE_RE = /[▼▲►◄↔↕]|(?:-{2,}>|={2,}>)/;
+
+function countDiagramPipes(text: string): number {
+  return (text.match(/[|│]/g) ?? []).length;
+}
+
+function looksLikeMarkdownTableLine(line: string): boolean {
+  const t = line.trim();
+  if (!/^\|.*\|$/.test(t)) return false;
+  if (/^\|[\s:\-|]+\|$/.test(t) && /[-:]/.test(t)) return true;
+  if (/[┌┐└┘┬┴┼▼▲│┃─━_]{2,}/.test(t)) return false;
+  const cells = t
+    .slice(1, -1)
+    .split("|")
+    .map((c) => c.trim());
+  if (cells.length < 2) return false;
+  const substantiveCells = cells.filter((c) => /[A-Za-z0-9áéíóúÁÉÍÓÚñÑ]{2,}/.test(c));
+  return substantiveCells.length >= 2;
+}
+
+export function looksLikeAsciiDiagramLine(line: string): boolean {
+  const t = line.trim();
+  if (!t) return false;
+  if (/^```/.test(t)) return false;
+  if (/^#{1,6}\s/.test(t)) return false;
+  if (looksLikeMarkdownTableLine(line)) return false;
+
+  if (ASCII_BOX_DRAWING_RE.test(t)) return true;
+  if (ASCII_ARROW_OR_TRIANGLE_RE.test(t)) return true;
+  if (/_{4,}/.test(t)) return true;
+  if (/[+\-|│][\-_=]{3,}[+\-|│]/.test(t)) return true;
+
+  const pipes = countDiagramPipes(t);
+  if (pipes >= 2) return true;
+  if (pipes >= 1 && (/^[\s|│+\-_=\\/:.]+$/.test(t) || /_{2,}/.test(t))) return true;
+
+  return false;
+}
+
+function looksLikeAsciiDiagramContinuation(line: string): boolean {
+  if (looksLikeAsciiDiagramLine(line)) return true;
+  const t = line.trim();
+  if (!t) return true;
+  if (/^#{1,6}\s/.test(t)) return false;
+  if (/^[-*]\s+\S/.test(t)) return false;
+  if (/^\d+\.\s+\S/.test(t)) return false;
+  if (t.length > 160) return false;
+  if (/[.!?]\s+[A-ZÁÉÍÓÚÑ]/.test(t)) return false;
+  if (/^[|│].*[|│]$/.test(t)) {
+    if (looksLikeMarkdownTableLine(line)) return false;
+    return true;
+  }
+  if (countDiagramPipes(t) >= 1 && /^[\s|│+\-_=\\/:.]+$/.test(t)) return true;
+  if (/^[A-ZÁÉÍÓÚÑ0-9][\w\s()\/\-–—.:+|│&°,°*#]+$/u.test(t) && t.length <= 80 && !/[.!?]$/.test(t)) return true;
+  return false;
+}
+
+function dedentAsciiLines(lines: string[]): string[] {
+  const nonEmpty = lines.filter((l) => l.trim().length > 0);
+  if (nonEmpty.length === 0) return lines;
+  const indents = nonEmpty.map((l) => l.match(/^\s*/)?.[0]?.length ?? 0);
+  const min = Math.min(...indents);
+  return lines.map((l) => (l.length >= min ? l.slice(min) : l));
+}
+
+function shouldWrapAsciiBlock(lines: string[]): boolean {
+  const significant = lines.map((l) => l.trim()).filter(Boolean);
+  if (significant.length < 2) return false;
+  const diagramLines = significant.filter(
+    (l) => looksLikeAsciiDiagramLine(l) || looksLikeAsciiDiagramContinuation(l),
+  ).length;
+  return diagramLines >= 2;
+}
+
+function wrapAsciiLinesAsTextFence(lines: string[]): string {
+  const normalized = dedentAsciiLines(lines.map((l) => l.trimEnd()));
+  return ["```text", ...normalized, "```"].join("\n");
+}
+
+function repairMultilineAsciiDiagramBlocks(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  const buffer: string[] = [];
+  let inFence = false;
+  let inAsciiRun = false;
+
+  function flushBuffer() {
+    if (buffer.length === 0) return;
+    if (shouldWrapAsciiBlock(buffer)) {
+      out.push(wrapAsciiLinesAsTextFence(buffer));
+    } else {
+      out.push(...buffer);
+    }
+    buffer.length = 0;
+    inAsciiRun = false;
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (/^```/.test(trimmed)) {
+      flushBuffer();
+      inFence = trimmed !== "```";
+      out.push(line);
+      continue;
+    }
+
+    if (inFence) {
+      flushBuffer();
+      out.push(line);
+      continue;
+    }
+
+    const isDiagramLine = inAsciiRun
+      ? looksLikeAsciiDiagramContinuation(line)
+      : looksLikeAsciiDiagramLine(line);
+
+    if (isDiagramLine) {
+      buffer.push(line);
+      inAsciiRun = true;
+      continue;
+    }
+
+    flushBuffer();
+    out.push(line);
+  }
+
+  flushBuffer();
+  return out.join("\n");
+}
+
+/** Une párrafos sueltos (separados por línea en blanco) que forman un diagrama ASCII. */
+function repairLooseAsciiParagraphBlocks(text: string): string {
+  const paragraphs = text.split(/\n{2,}/);
+  const out: string[] = [];
+  const buffer: string[] = [];
+
+  function flushBuffer() {
+    if (buffer.length === 0) return;
+    if (buffer.length >= 2 && buffer.some((p) => looksLikeAsciiDiagramLine(p))) {
+      out.push(wrapAsciiLinesAsTextFence(buffer));
+    } else {
+      out.push(...buffer);
+    }
+    buffer.length = 0;
+  }
+
+  for (const paragraph of paragraphs) {
+    const trimmed = paragraph.trim();
+    if (!trimmed) continue;
+    if (/^```/.test(trimmed)) {
+      flushBuffer();
+      out.push(paragraph);
+      continue;
+    }
+
+    const lines = paragraph.split("\n");
+    if (
+      lines.length === 1 &&
+      (looksLikeAsciiDiagramLine(trimmed) || looksLikeAsciiDiagramContinuation(trimmed))
+    ) {
+      buffer.push(trimmed);
+      continue;
+    }
+
+    if (lines.length > 1 && shouldWrapAsciiBlock(lines)) {
+      flushBuffer();
+      out.push(wrapAsciiLinesAsTextFence(lines));
+      continue;
+    }
+
+    flushBuffer();
+    out.push(paragraph);
+  }
+
+  flushBuffer();
+  return out.join("\n\n");
+}
+
+/** Diagramas ASCII (relaciones en una línea o bloques de arquitectura) → bloque ```text```. */
 export function repairAsciiDiagramBlocks(text: string): string {
   let out = text.replace(
     /^\*\*(OBP4MO|OBP) \([^)]+\):\*\*\s*(.+)$/gim,
@@ -514,7 +695,8 @@ export function repairAsciiDiagramBlocks(text: string): string {
     if (t.startsWith("```")) return line;
     return `\`\`\`text\n${t}\n\`\`\``;
   });
-  return out;
+  out = repairLooseAsciiParagraphBlocks(out);
+  return repairMultilineAsciiDiagramBlocks(out);
 }
 
 /** Quita ### erróneos en subtítulos de contrato API / Odoo. */
