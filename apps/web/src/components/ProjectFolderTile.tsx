@@ -34,6 +34,19 @@ const statusLabelEs: Record<ProjectFolderStatus, string> = {
   VERDE: "Semáforo verde",
 };
 
+const tileActionButtonClass = cn(
+  "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border shadow-sm backdrop-blur-sm transition-all duration-150",
+  "border-[color-mix(in_oklch,var(--foreground)_12%,var(--border))] bg-[color-mix(in_oklch,var(--card)_90%,var(--background))]",
+  "text-[var(--muted-foreground)] hover:border-[color-mix(in_oklch,var(--primary)_40%,var(--border))] hover:bg-[color-mix(in_oklch,var(--muted)_58%,var(--card))] hover:text-[var(--foreground)]",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--background)]",
+);
+
+const tileActionButtonActiveClass =
+  "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_88%,black)] text-[var(--primary-foreground)] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]";
+
+const tileFavoriteActiveClass =
+  "border-[color-mix(in_oklch,var(--destructive)_45%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_12%,var(--card))] text-[var(--destructive)] hover:border-[color-mix(in_oklch,var(--destructive)_55%,var(--border))] hover:bg-[color-mix(in_oklch,var(--destructive)_18%,var(--card))] hover:text-[var(--destructive)]";
+
 /**
  * Layered folder with papers that slide up on `group-hover` (parent must have `group`).
  */
@@ -115,6 +128,7 @@ export function ProjectFolderTile({
   const selectId = `select-project-${id}`;
   const visibilityLabel = isShared ? "Compartido" : "Privado";
   const subtitle = `${precisionScore}% precisión · ${statusLabelEs[status]} · ${visibilityLabel}`;
+  const hasActionBar = selectable || !!onToggleFavorite || !!onRename;
 
   return (
     <article
@@ -124,81 +138,74 @@ export function ProjectFolderTile({
         selected && "border-[var(--primary)]/50 bg-[color-mix(in_oklch,var(--primary)_10%,var(--muted))] ring-2 ring-[var(--primary)]/35 ring-offset-2 ring-offset-[var(--background)]",
       )}
     >
-      {selectable ? (
+      {hasActionBar ? (
         <div
-          className="absolute left-2 top-2 z-30 flex items-center"
+          className="absolute inset-x-2.5 top-2.5 z-30 flex items-center justify-between gap-2"
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <input
-            id={selectId}
-            type="checkbox"
-            checked={selected}
-            onChange={() => onToggleSelect()}
-            className="peer sr-only"
-            aria-label={`Seleccionar carpeta ${name}`}
-          />
-          <label
-            htmlFor={selectId}
-            className={cn(
-              "flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border shadow-md backdrop-blur-md transition-all duration-150",
-              "border-[color-mix(in_oklch,var(--foreground)_14%,var(--border))] bg-[color-mix(in_oklch,var(--card)_88%,var(--background))]",
-              "hover:border-[color-mix(in_oklch,var(--primary)_55%,var(--border))] hover:bg-[color-mix(in_oklch,var(--muted)_70%,var(--card))]",
-              "peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--ring)] peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-[var(--background)]",
-              selected &&
-                "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_88%,black)] text-[var(--primary-foreground)] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_0_0_1px_color-mix(in_oklch,var(--primary)_40%,transparent)]",
-            )}
-          >
-            <Check
-              className={cn(
-                "h-4 w-4 shrink-0 stroke-[2.75] transition-[opacity,transform] duration-150",
-                selected ? "scale-100 opacity-100" : "scale-50 opacity-0",
-              )}
-              aria-hidden
-            />
-          </label>
-        </div>
-      ) : null}
+          {selectable ? (
+            <div className="flex items-center">
+              <input
+                id={selectId}
+                type="checkbox"
+                checked={selected}
+                onChange={() => onToggleSelect()}
+                className="peer sr-only"
+                aria-label={`Seleccionar carpeta ${name}`}
+              />
+              <label
+                htmlFor={selectId}
+                className={cn(
+                  tileActionButtonClass,
+                  "cursor-pointer",
+                  "peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--ring)] peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-[var(--background)]",
+                  selected && tileActionButtonActiveClass,
+                )}
+              >
+                <Check
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0 stroke-[2.75] transition-[opacity,transform] duration-150",
+                    selected ? "scale-100 opacity-100" : "scale-75 opacity-0",
+                  )}
+                  aria-hidden
+                />
+              </label>
+            </div>
+          ) : (
+            <span className="h-7 w-7 shrink-0" aria-hidden />
+          )}
 
-      {/* Heart — favoritos */}
-      {onToggleFavorite && (
-        <div
-          className="absolute right-2 top-2 z-30"
-          onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleFavorite(id); }}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <Heart
-            className={cn(
-              "h-5 w-5 cursor-pointer transition-all duration-150",
-              isFavorite
-                ? "scale-100 text-red-500"
-                : "scale-100 text-[var(--foreground-muted)] hover:scale-110 hover:text-red-400",
-            )}
-            fill={isFavorite ? "currentColor" : "none"}
-            strokeWidth={isFavorite ? 2 : 1.5}
-          />
-        </div>
-      )}
-
-      {onRename ? (
-        <div
-          className="absolute right-2 top-10 z-30"
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={() => onRename(id)}
-            className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-lg border shadow-md backdrop-blur-md transition-colors",
-              "border-[color-mix(in_oklch,var(--foreground)_14%,var(--border))] bg-[color-mix(in_oklch,var(--card)_88%,var(--background))]",
-              "text-[var(--foreground-muted)] hover:border-[color-mix(in_oklch,var(--primary)_55%,var(--border))] hover:text-[var(--foreground)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]",
-            )}
-            aria-label={`Renombrar ${name}`}
-          >
-            <Pencil className="h-3.5 w-3.5" aria-hidden />
-          </button>
+          {(onToggleFavorite || onRename) && (
+            <div className="flex items-center gap-1">
+              {onToggleFavorite ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleFavorite(id)}
+                  className={cn(tileActionButtonClass, isFavorite && tileFavoriteActiveClass)}
+                  aria-label={isFavorite ? `Quitar ${name} de favoritos` : `Añadir ${name} a favoritos`}
+                  aria-pressed={isFavorite}
+                >
+                  <Heart
+                    className="h-3.5 w-3.5 shrink-0"
+                    fill={isFavorite ? "currentColor" : "none"}
+                    strokeWidth={2}
+                    aria-hidden
+                  />
+                </button>
+              ) : null}
+              {onRename ? (
+                <button
+                  type="button"
+                  onClick={() => onRename(id)}
+                  className={tileActionButtonClass}
+                  aria-label={`Renombrar ${name}`}
+                >
+                  <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                </button>
+              ) : null}
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -206,10 +213,10 @@ export function ProjectFolderTile({
         type="button"
         onClick={onOpen}
         className={cn(
-          "flex w-full flex-col items-center gap-2 rounded-xl px-1 pb-1 pt-2 text-center outline-none transition-transform duration-200",
+          "flex w-full flex-col items-center gap-2 rounded-xl px-1 pb-1 text-center outline-none transition-transform duration-200",
           "group-hover:scale-[1.02] active:scale-[0.99] motion-reduce:group-hover:scale-100 motion-reduce:active:scale-100",
           "focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]",
-          selectable ? "pt-8" : "pt-2",
+          hasActionBar ? "pt-9" : "pt-2",
         )}
         aria-label={`Abrir proyecto ${name}, ${statusLabelEs[status]}, precisión ${precisionScore} por ciento`}
       >
@@ -245,7 +252,7 @@ export function ProjectFolderTile({
           <p className="line-clamp-2 text-center text-[0.9375rem] font-semibold leading-snug tracking-tight text-[var(--foreground)]">
             {name}
           </p>
-          <p className="mt-1 line-clamp-2 text-center text-xs leading-snug text-[var(--foreground-muted)]">{subtitle}</p>
+          <p className="mt-1 line-clamp-2 text-center text-xs leading-snug text-[var(--muted-foreground)]">{subtitle}</p>
         </div>
       </button>
     </article>

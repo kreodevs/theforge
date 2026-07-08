@@ -9,17 +9,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "./store/workshopStore";
 import {
   AlertTriangle,
-  Copy,
   FolderGit2,
   FolderOpen,
   GitBranch,
-  GitMerge,
   Heart,
   Loader2,
-  Pencil,
   Plus,
   Sparkles,
-  Trash2,
 } from "lucide-react";
 import WorkshopView from "./views/WorkshopView";
 import LoginView from "./views/LoginView";
@@ -32,6 +28,7 @@ import { ProjectMergeDialog } from "./components/ProjectMergeDialog";
 import { RenameProjectDialog } from "./components/RenameProjectDialog";
 import { CloneProjectDialog } from "./components/CloneProjectDialog";
 import { ProjectFolderTile } from "./components/ProjectFolderTile";
+import { ProjectSelectionToolbar } from "./components/ProjectSelectionToolbar";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { DashboardPanelHeader } from "./components/DashboardPanelHeader";
 import { ProjectTutorialDialog } from "./components/ProjectTutorialDialog";
@@ -1058,85 +1055,38 @@ export default function App() {
         </Card>
 
         {selectedProjectIds.length > 0 ? (
-          <div
-            className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2"
-            role="presentation"
-          >
-            <div
-              role="toolbar"
-              aria-label="Acciones para carpetas seleccionadas"
-              className="pointer-events-auto flex max-w-lg flex-col gap-3 rounded-2xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_92%,black)] px-4 py-3 shadow-2xl backdrop-blur-md sm:flex-row sm:items-center sm:gap-4 sm:px-5"
-            >
-              <p className="text-center text-sm font-medium text-[var(--foreground)] sm:text-left">
-                <span className="tabular-nums text-[var(--primary)]">{selectedProjectIds.length}</span>
-                {" "}
-                {selectedProjectIds.length === 1 ? "carpeta seleccionada" : "carpetas seleccionadas"}
-              </p>
-              <div className="flex flex-1 flex-wrap items-center justify-center gap-2 sm:justify-end">
-                <Button type="button" variant="outline" size="sm" onClick={handleClearProjectSelection} disabled={loading}>
-                  Quitar selección
-                </Button>
-                {selectedProjectIds.length === 1 ? (() => {
-                  const single = projectList.find((p) => p.id === selectedProjectIds[0]);
-                  if (!single) return null;
-                  return (
-                    <>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openCloneDialog(single)}
-                        disabled={loading || cloneLoading}
-                        className="touch-manipulation"
-                      >
-                        <Copy className="h-4 w-4 shrink-0" aria-hidden />
-                        Clonar
-                      </Button>
-                      {canRenameProject(single) ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openRenameDialog(single)}
-                          disabled={loading || renameLoading}
-                          className="touch-manipulation"
-                        >
-                          <Pencil className="h-4 w-4 shrink-0" aria-hidden />
-                          Renombrar
-                        </Button>
-                      ) : null}
-                    </>
-                  );
-                })() : null}
-                {selectedProjectIds.length >= 2 ? (
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="sm"
-                    onClick={openMergeDialog}
-                    disabled={loading}
-                    className="touch-manipulation"
-                  >
-                    <GitMerge className="h-4 w-4 shrink-0" aria-hidden />
-                    Fusionar
-                  </Button>
-                ) : null}
-                {isAdmin ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    onClick={openBulkDeleteConfirm}
-                    disabled={loading}
-                    className="touch-manipulation"
-                  >
-                    <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
-                    Borrar
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          </div>
+          <ProjectSelectionToolbar
+            selectedCount={selectedProjectIds.length}
+            loading={loading}
+            isAdmin={isAdmin}
+            showMerge={selectedProjectIds.length >= 2}
+            showClone={selectedProjectIds.length === 1}
+            showRename={
+              selectedProjectIds.length === 1 &&
+              !!projectList.find((p) => p.id === selectedProjectIds[0] && canRenameProject(p))
+            }
+            cloneLoading={cloneLoading}
+            renameLoading={renameLoading}
+            onClearSelection={handleClearProjectSelection}
+            onClone={
+              selectedProjectIds.length === 1
+                ? () => {
+                    const single = projectList.find((p) => p.id === selectedProjectIds[0]);
+                    if (single) openCloneDialog(single);
+                  }
+                : undefined
+            }
+            onRename={
+              selectedProjectIds.length === 1
+                ? () => {
+                    const single = projectList.find((p) => p.id === selectedProjectIds[0]);
+                    if (single && canRenameProject(single)) openRenameDialog(single);
+                  }
+                : undefined
+            }
+            onMerge={openMergeDialog}
+            onDelete={isAdmin ? openBulkDeleteConfirm : undefined}
+          />
         ) : null}
         </div>
         </div>
