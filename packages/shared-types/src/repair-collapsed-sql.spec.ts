@@ -8,6 +8,7 @@ import {
   extractCreateStatements,
   extractCreateIndexStatements,
   repairCollapsedSqlParagraphs,
+  repairFragmentedSqlFences,
   splitEsquemaSqlHeadingFromPayload,
 } from "./repair-collapsed-sql.js";
 import { repairPastedMarkdown } from "./repair-pasted-markdown.js";
@@ -43,6 +44,62 @@ ${OBP_COLLAPSED}
     assert.match(out, /CREATE TABLE medios_obp/);
     assert.match(out, /CREATE TABLE ubicaciones_obp/);
     assert.match(out, /CREATE TABLE medios_obp/);
+  });
+});
+
+describe("repairFragmentedSqlFences (Copiloto esquema relacional)", () => {
+  const raw = `### Esquema Relacional
+
+\`\`\`sql
+CREATE TABLE tenants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+);
+
+CREATE TABLE authorized_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+\`\`\`text
+CREATE TABLE channels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+### CREATE TABLE conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE
+);
+
+\`\`\`text
+CREATE TABLE wasender_devices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+### CREATE INDEX idx_conversations_last_activity ON conversations(last_activity_at);
+\`\`\`sql
+CREATE INDEX idx_messages_conversation ON messages(conversation_id);
+
+\`\`\`
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\``;
+
+  it("une fences rotos y degrada ### CREATE TABLE/INDEX", () => {
+    const out = repairFragmentedSqlFences(raw);
+    assert.doesNotMatch(out, /### CREATE TABLE/);
+    assert.doesNotMatch(out, /### CREATE INDEX/);
+    assert.doesNotMatch(out, /```text[\s\S]*CREATE TABLE/);
+    assert.match(out, /CREATE TABLE conversations/);
+    assert.match(out, /CREATE INDEX idx_conversations_last_activity/);
+  });
+
+  it("formatDocumentMarkdown deja un solo bloque sql coherente", () => {
+    const out = formatDocumentMarkdown(raw);
+    assert.doesNotMatch(out, /### CREATE TABLE/);
+    assert.match(out, /```sql[\s\S]*CREATE TABLE tenants[\s\S]*CREATE TABLE channels/);
+    assert.match(out, /```TechnicalMetadata/);
   });
 });
 

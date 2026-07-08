@@ -369,3 +369,50 @@ export function repairCollapsedSqlInsideFences(text: string): string {
     return `\`\`\`sql\n${expanded}\n\`\`\``;
   });
 }
+
+function fenceBodyLooksLikeSql(body: string): boolean {
+  const t = body.trim();
+  if (!t) return false;
+  if (/[┌┐└┘├──│]/.test(t) && !/\bCREATE\s+(?:TABLE|INDEX)\b/i.test(t)) return false;
+  return (
+    /\bCREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX)\b/i.test(t) ||
+    /^--\s/m.test(t) ||
+    /^\s{2,}\w+\s+(?:UUID|VARCHAR|TEXT|BOOLEAN|INTEGER|TIMESTAMPTZ|JSONB|VECTOR)/m.test(t)
+  );
+}
+
+/** Quita `###` erróneo delante de `CREATE TABLE` / `CREATE INDEX` incrustado en el esquema. */
+export function demoteSqlPseudoHeadings(text: string): string {
+  return text.replace(
+    /^#{1,6}\s+(CREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX)\b[^\n]*)$/gim,
+    "$1",
+  );
+}
+
+/**
+ * Une fences ```sql / ```text rotos y headings SQL falsos en un bloque coherente.
+ * Típico del Architect cuando parte el esquema relacional en varios fences.
+ */
+export function repairFragmentedSqlFences(text: string): string {
+  let out = demoteSqlPseudoHeadings(text);
+
+  out = out.replace(/```text\s*\n([\s\S]*?)```/gi, (match, body: string) => {
+    if (!fenceBodyLooksLikeSql(body)) return match;
+    return `${body.trim()}\n\n`;
+  });
+
+  out = out.replace(
+    /```\s*\n+(?=(?:CREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX)|--\s))/gi,
+    "\n",
+  );
+
+  let prev = "";
+  while (prev !== out) {
+    prev = out;
+    out = out.replace(/```sql\s*\n([\s\S]*?)```\s*\n+```sql\s*\n/gi, "```sql\n$1\n");
+    out = out.replace(/```\s*\n+```sql\s*\n/gi, "\n");
+  }
+
+  out = out.replace(/```\s*\n+```\s*\n/g, "\n");
+  return out;
+}

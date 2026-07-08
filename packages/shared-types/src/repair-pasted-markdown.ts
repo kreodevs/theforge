@@ -2,7 +2,7 @@
  * Reparaciones heurísticas para markdown pegado desde Word/Excel/chat (sin LLM).
  */
 
-import { repairCollapsedSqlParagraphs, repairCollapsedSqlInsideFences } from "./repair-collapsed-sql.js";
+import { repairCollapsedSqlParagraphs, repairCollapsedSqlInsideFences, repairFragmentedSqlFences } from "./repair-collapsed-sql.js";
 import { repairDirectoryTreeBlocks } from "./repair-directory-tree.js";
 import { repairFlowSectionsToMermaid } from "./repair-flow-sections.js";
 import { repairInfraMarkdown } from "./repair-infra-markdown.js";
@@ -457,6 +457,10 @@ export function repairOrphanSqlBlocks(text: string): string {
       out.push("```sql");
       inSqlFence = true;
     }
+    if (inSqlFence && /^#{1,6}\s+CREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX)\b/i.test(t)) {
+      out.push(line.replace(/^#{1,6}\s+/, ""));
+      continue;
+    }
     if (inSqlFence && /^#{1,6}\s/.test(t)) {
       out.push("```");
       inSqlFence = false;
@@ -783,8 +787,10 @@ export function repairPastedMarkdown(text: string): string {
   out = repairPromoteBareSectionHeadings(out);
   out = repairDemoteFalseApiHeadings(out);
   out = repairCollapsedSqlParagraphs(out);
+  out = repairFragmentedSqlFences(out);
   out = repairCollapsedSqlInsideFences(out);
   out = repairOrphanSqlBlocks(out);
+  out = repairFragmentedSqlFences(out);
   out = repairLooseJsonBlocks(out);
   out = repairJsonFenceIntegrity(out);
   out = repairGluedSqlTokens(out);
