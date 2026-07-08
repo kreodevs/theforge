@@ -7,8 +7,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { repairMarkdownFences } from "@theforge/shared-types/markdown-repair";
-import { repairGluedMarkdownHeadings } from "@theforge/shared-types/repair-glued-headings";
+import { repairMarkdownFences, repairGluedMarkdownHeadings } from "@theforge/shared-types";
 import {
   isCollapsedDirectoryTreeLine,
   splitCollapsedDirectoryTree,
