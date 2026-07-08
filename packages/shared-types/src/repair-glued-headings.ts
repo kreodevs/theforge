@@ -1,7 +1,32 @@
 /**
  * Despega encabezados markdown pegados a prosa u otros headings (§1 MDD, BRD, handoff).
- * SSOT compartido entre `formatDocumentMarkdown` (Workshop /formatear) y `mdd-sanitize`.
+ * SSOT compartido entre `formatDocumentMarkdown` (Workshop /formatear), `mdd-sanitize` y `MddViewer`.
  */
+
+const MDD_TOP_SECTION_TITLE =
+  /^(?:Contexto|Arquitectura y Stack|Modelo de Datos|Contratos de API|Lógica y Edge Cases|Seguridad|Integración y DevOps|Testing|UI\/UX|Manifest)\b/i;
+
+/** `1. Contexto y Alcance ### Propósito` (sin `##`) → H2 + ### en líneas separadas. */
+function fixBareNumberedSectionGluedSubheadings(draft: string): string {
+  return draft.replace(/^(\d+\.\s+[^\n#]+?)\s+(#{2,4}\s+)/gm, "## $1\n\n$2");
+}
+
+/** Promueve `1. Contexto y Alcance` suelto a `## 1. Contexto y Alcance`. */
+function promoteBareNumberedMddSectionLine(draft: string): string {
+  return draft.replace(/^(?!\s*#)(\d+\.\s+[^\n#]+)$/gm, (line) => {
+    const title = line.trim().replace(/^\d+\.\s+/, "");
+    if (!MDD_TOP_SECTION_TITLE.test(title)) return line;
+    return `## ${line.trim()}`;
+  });
+}
+
+/** Normaliza `### 1. Contexto` → `## 1. Contexto` (secciones canónicas del MDD). */
+function normalizeMddTopLevelSectionHeadings(draft: string): string {
+  return draft.replace(
+    /^#{1,6}\s+(\d+\.\s+(?:Contexto|Arquitectura y Stack|Modelo de Datos|Contratos de API|Lógica y Edge Cases|Seguridad|Integración y DevOps|Testing|UI\/UX|Manifest)[^\n]*)$/gim,
+    "## $1",
+  );
+}
 
 /** Despega `## 3. Foo### 3.1 Bar` o `## 3. Foo### SQL` → H2 + ### en líneas separadas. */
 function fixGluedSubsectionHeadings(draft: string): string {
@@ -74,14 +99,18 @@ function splitHeadingTitleFromInlineProse(draft: string): string {
 /** Reparación genérica de headings pegados (iteración a punto fijo). */
 export function repairGluedMarkdownHeadings(draft: string): string {
   if (!draft?.trim()) return draft ?? "";
-  let out = fixGluedHeadingToCodeFence(draft);
+  let out = fixBareNumberedSectionGluedSubheadings(draft);
+  out = fixGluedHeadingToCodeFence(out);
   let prev = "";
   while (prev !== out) {
     prev = out;
     out = fixGluedSubsectionHeadings(out);
     out = fixInlineMarkdownSubheadings(out);
+    out = fixBareNumberedSectionGluedSubheadings(out);
   }
   out = normalizeMarkdownHeadingHashSpacing(out);
+  out = promoteBareNumberedMddSectionLine(out);
+  out = normalizeMddTopLevelSectionHeadings(out);
   out = fixGluedHeadingBoldBody(out);
   out = splitInlineBoldLabelRuns(out);
   out = out.replace(/^(##\s+\d+\.\s+[^\n#]+?)\s+(#{2,4}\s+)/gm, "$1\n\n$2");

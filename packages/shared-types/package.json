@@ -47,6 +47,11 @@
       "import": "./dist/format-document-markdown.js",
       "require": "./dist/format-document-markdown.js"
     },
+    "./repair-glued-headings": {
+      "types": "./dist/repair-glued-headings.d.ts",
+      "import": "./dist/repair-glued-headings.js",
+      "require": "./dist/repair-glued-headings.js"
+    },
     "./mdd-governance-patterns": {
       "types": "./dist/mdd-governance-patterns.d.ts",
       "import": "./dist/mdd-governance-patterns.js",

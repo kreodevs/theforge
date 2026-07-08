@@ -8,6 +8,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { repairMarkdownFences } from "@theforge/shared-types/markdown-repair";
+import { repairGluedMarkdownHeadings } from "@theforge/shared-types/repair-glued-headings";
 import {
   isCollapsedDirectoryTreeLine,
   splitCollapsedDirectoryTree,
@@ -392,7 +393,9 @@ class MddViewerErrorBoundary extends Component<
 function MddViewerInner({ content, className = "" }: MddViewerProps) {
   const cleaned = stripBrokenMermaidBlocks(
     normalizeMermaidInDocument(
-      repairDirectoryTreeBlocks(repairMarkdownFences(content)),
+      repairDirectoryTreeBlocks(
+        repairGluedMarkdownHeadings(repairMarkdownFences(content)),
+      ),
     ),
   );
   const sections = parseMarkdownSections(cleaned);
