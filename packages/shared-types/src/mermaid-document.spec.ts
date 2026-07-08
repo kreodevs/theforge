@@ -639,6 +639,32 @@ erDiagram
   });
 });
 
+describe("normalizeMermaidDiagramBody sequenceDiagram markdown leaks", () => {
+  it("parte Respuesta**Nota:** prosa en flecha + Note over", () => {
+    const body = `sequenceDiagram
+    participant Admin
+    participant API
+    participant Frontend
+    API-->>Frontend: Respuesta**Nota:** El panel de administración solo es visible para superadmins.`;
+    const out = normalizeMermaidDiagramBody(body);
+    assert.match(out, /API-->>Frontend: Respuesta/);
+    assert.match(out, /Note over Frontend: El panel de administración/);
+    assert.doesNotMatch(out, /\*\*Nota:\*\*/);
+  });
+
+  it("prepareMermaidDiagramForRender deja sequenceDiagram parseable sin **", () => {
+    const fenced = `\`\`\`mermaid
+sequenceDiagram
+    participant Backend
+    participant UI
+    Backend-->>UI: OK**Nota:** Mensaje auxiliar.
+\`\`\``;
+    const out = prepareMermaidDiagramForRender(fenced);
+    assert.doesNotMatch(out, /\*\*/);
+    assert.match(out, /Note over UI: Mensaje auxiliar/);
+  });
+});
+
 describe("stripMermaidFenceWrappers + dedupeMermaidDiagramHeader", () => {
   it("quita ```mermaid anidado del cuerpo antes de render", () => {
     const nested = `\`\`\`mermaid
