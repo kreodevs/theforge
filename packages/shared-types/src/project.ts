@@ -64,6 +64,8 @@ export const updateProjectSchema = z.object({
   clearMddCompletely: z.boolean().optional(),
   /** Semilla SSOT sin §1–§7: omite pipeline de validación al persistir. */
   mddGovernanceSeedOnly: z.boolean().optional(),
+  /** Reformato determinista (headings/fences/Mermaid) sin exigir delivery gate completo. */
+  mddFormatOnly: z.boolean().optional(),
   blueprintContent: z.string().optional().nullable(),
   tasksContent: z.string().optional().nullable(),
   apiContractsContent: z.string().optional().nullable(),
