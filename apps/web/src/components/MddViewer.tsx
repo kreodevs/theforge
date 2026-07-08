@@ -7,7 +7,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { repairMarkdownFences } from "@theforge/shared-types/markdown-repair";
+import { repairMarkdownFences, repairGluedMarkdownHeadings } from "@theforge/shared-types";
 import {
   isCollapsedDirectoryTreeLine,
   splitCollapsedDirectoryTree,
@@ -398,7 +398,9 @@ function MddViewerInner({ content, className = "" }: MddViewerProps) {
   const cleaned = stripBrokenMermaidBlocks(
     normalizeMermaidInDocument(
       repairAsciiDiagramBlocks(
-        repairDirectoryTreeBlocks(repairMarkdownFences(content)),
+        repairDirectoryTreeBlocks(
+          repairGluedMarkdownHeadings(repairMarkdownFences(content)),
+        ),
       ),
     ),
   );

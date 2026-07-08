@@ -1594,6 +1594,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         if (formatted === source) {
           return { ok: true, message: "MDD: ya estaba bien formateado (sin cambios)." };
         }
+        set({ mddContent: formatted });
         await get().persistMddContent(formatted, { force: true, mddFormatOnly: true });
         return { ok: true, message: "MDD formateado (headings, fences, tablas y Mermaid). Revisa el panel." };
       }
@@ -4194,7 +4195,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const before = selectPersistedMddBaseline(get()) || content;
     set({ mddReapplyingFormat: true, error: null, notice: null });
     try {
-      await persistMddContent(content, { force: true, mddFormatOnly: true });
+      const formatted = formatDocumentMarkdown(content);
+      set({ mddContent: formatted });
+      await persistMddContent(formatted, { force: true, mddFormatOnly: true });
       const after = selectPersistedMddBaseline(get());
       set({
         notice:

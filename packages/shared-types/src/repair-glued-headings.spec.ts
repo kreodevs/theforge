@@ -31,4 +31,19 @@ describe("repairGluedMarkdownHeadings", () => {
     const out = repairGluedMarkdownHeadings(raw);
     assert.match(out, /### Declaración de Independencia\n\nEste sistema es la raíz/);
   });
+
+  it("promueve §1 sin ## y despega subheadings (muestra Copiloto pegada)", () => {
+    const raw = `1. Contexto y Alcance ### Propósito del Proyecto
+
+Texto. ### Alcance y Fronteras #### Servicios Core (Dentro del Alcance)
+
+    item
+    Autenticación SSO: Integración #### Servicios Extensiones (Fuera del Alcance)
+    más texto ### Declaración de Independencia Este sistema es la raíz. ### Audiencia Técnica Desarrolladores Fullstack:`;
+    const out = repairGluedMarkdownHeadings(raw);
+    assert.match(out, /^## 1\. Contexto y Alcance\n\n### Propósito del Proyecto/m);
+    assert.doesNotMatch(out, /Contexto y Alcance ###/);
+    assert.doesNotMatch(out, /Técnica Desarrolladores/);
+    assert.match(out, /### Audiencia Técnica\n\nDesarrolladores Fullstack/);
+  });
 });
