@@ -1,4 +1,3 @@
-import type JSZip from "jszip";
 import { exportPantallasMarkdownOnly, splitPantallasAndUiProject } from "@theforge/shared-types";
 import { loadJsZip } from "./loadJsZip.js";
 
