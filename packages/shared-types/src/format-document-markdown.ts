@@ -7,7 +7,9 @@ import { repairMarkdownFences } from "./markdown-repair.js";
 import { normalizeAllTables } from "./markdown-table.js";
 import { normalizeMermaidInDocument } from "./mermaid.js";
 import { splitEmbeddedMddFromDbga } from "./dbga-document-structure.js";
+import { repairFragmentedSqlFences } from "./repair-collapsed-sql.js";
 import {
+  repairOrphanSqlBlocks,
   repairPastedMarkdown,
   repairStrayCodeFences,
   repairTableBoundaries,
@@ -61,7 +63,11 @@ export function formatDocumentMarkdown(text: string): string {
   cleaned = repairStrayCodeFences(cleaned);
   cleaned = repairGluedMarkdownHeadings(cleaned);
   cleaned = normalizeMermaidInDocument(cleaned);
+  cleaned = repairFragmentedSqlFences(cleaned);
+  cleaned = repairOrphanSqlBlocks(cleaned);
   cleaned = repairDirectoryTreeBlocks(cleaned);
+  cleaned = repairFragmentedSqlFences(cleaned);
+  cleaned = repairOrphanSqlBlocks(cleaned);
   return cleaned;
 }
 

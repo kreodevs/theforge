@@ -95,6 +95,23 @@ CREATE INDEX idx_messages_conversation ON messages(conversation_id);
     assert.match(out, /CREATE INDEX idx_conversations_last_activity/);
   });
 
+  it("converts ```text``` DDL to ```sql``` and preserves ```mermaid``` close before CREATE TABLE", () => {
+    const raw = `\`\`\`mermaid
+erDiagram
+  tenants ||--o{ authorized_users : has
+\`\`\`
+
+\`\`\`text
+CREATE TABLE authorized_users ( id UUID PRIMARY KEY );
+\`\`\`
+`;
+    const out = repairFragmentedSqlFences(raw);
+    assert.match(out, /```mermaid[\s\S]*```/);
+    const mermaidBody = out.match(/```mermaid\n([\s\S]*?)```/)?.[1] ?? "";
+    assert.doesNotMatch(mermaidBody, /CREATE TABLE/);
+    assert.match(out, /```sql[\s\S]*CREATE TABLE authorized_users/);
+  });
+
   it("formatDocumentMarkdown deja un solo bloque sql coherente", () => {
     const out = formatDocumentMarkdown(raw);
     assert.doesNotMatch(out, /### CREATE TABLE/);
