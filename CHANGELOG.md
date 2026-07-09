@@ -6,6 +6,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Fixed
 
+- **Technology Docs MCP (Context7):** el test de conexión y las llamadas reales hacen `initialize` + `Mcp-Session-Id` en `mcp.context7.com` (antes `tools/list` directo → HTTP 400 «No valid session ID»). Sesión cacheada por URL + `CONTEXT7_API_KEY`.
 - **Markdown / Mermaid — SSOT de `/format`:** `formatDocumentMarkdown` repara sufijos `mermaid` pegados en headings (`Superadminmermaid`), fences que solo envuelven títulos, ``` huérfanos antes de `##`, y homologiza viñetas `*` → `-` en Fase 0/DBGA. `MddViewer` deja de duplicar un pipeline parcial y usa el mismo formateador; el orchestrator normaliza BRD del panel con `cleanDocumentContent`. Corrección en `stripOrphanFenceLineBeforeMermaid` para no eliminar cierres válidos de ` ```sql `; fences Mermaid sin cerrar cortan en `## N. Sección` colada.
 
 ### Added
