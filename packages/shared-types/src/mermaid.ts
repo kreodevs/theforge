@@ -1243,6 +1243,8 @@ export function repairFragmentedSequenceMermaidInDocument(document: string): str
 /** Una línea (sin prefijo de lista/encabezado) parece sintaxis de continuación Mermaid. */
 function isMermaidStatementCore(core: string): boolean {
   if (!core) return false;
+  if (/^CREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX)\b/i.test(core)) return false;
+  if (/^(?:ALTER|DROP|INSERT|SELECT|UPDATE|DELETE|CONSTRAINT|REFERENCES)\b/i.test(core)) return false;
   if (/(-+>>|->>|--x|-x>)/.test(core)) return true;
   if (/(--+>|==+>|-\.-+>|---)/.test(core) && /^[A-Za-z0-9_]/.test(core)) return true;
   if (MERMAID_ARROW_OR_ER_RE.test(core) && /^[A-Za-z0-9_]/.test(core)) return true;
@@ -1277,13 +1279,16 @@ function splitMermaidContinuationPrefix(
   let f = 0;
   while (f < lines.length && !lines[f]!.trim()) f++;
   if (f >= lines.length) return null;
+  const first = lines[f]!.trim();
   if (
     /^(flowchart|graph|sequenceDiagram|erDiagram|classDiagram|stateDiagram(?:-v2)?|gantt|pie|gitGraph|mindmap|timeline|journey|quadrantChart|xychart)\b/i.test(
-      lines[f]!.trim(),
+      first,
     )
   ) {
     return null;
   }
+  if (/^CREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX)\b/i.test(first)) return null;
+  if (/^--\s/.test(first)) return null;
 
   const continuation: string[] = [];
   let hits = 0;

@@ -2,7 +2,7 @@
  * Reparaciones heurísticas para markdown pegado desde Word/Excel/chat (sin LLM).
  */
 
-import { repairCollapsedSqlParagraphs, repairCollapsedSqlInsideFences, repairFragmentedSqlFences } from "./repair-collapsed-sql.js";
+import { repairCollapsedSqlParagraphs, repairCollapsedSqlInsideFences, repairFragmentedSqlFences, openFenceLangBeforeCloseLine } from "./repair-collapsed-sql.js";
 import { repairDirectoryTreeBlocks } from "./repair-directory-tree.js";
 import { repairFlowSectionsToMermaid } from "./repair-flow-sections.js";
 import { repairInfraMarkdown } from "./repair-infra-markdown.js";
@@ -41,6 +41,13 @@ export function repairUnclosedCodeFences(text: string): string {
     const openMatch = trimmed.match(/^```(\w*)\s*$/);
     if (openMatch) {
       const nextLang = openMatch[1] ?? "";
+      // Bare ``` closes the active fence; do not treat it as a new empty-lang opener.
+      if (inFence && nextLang === "") {
+        inFence = false;
+        fenceLang = "";
+        out.push(line);
+        continue;
+      }
       if (inFence) {
         // JSON partido en dos fences consecutivos — no insertar cierre artificial
         if (fenceLang === "json" && nextLang === "json") {
@@ -316,7 +323,11 @@ export function repairApiContractJsonFences(text: string): string {
 /** ` ``` ` sueltos antes de ```json / ```env y fences duplicados. */
 export function repairStackedCodeFences(text: string): string {
   let out = text.replace(/\n```\s*\n```\s*\n```(json|env|sql)\b/gi, "\n\n```$1");
-  out = out.replace(/\n```\s*\n```(json|env|sql)\b/gi, "\n\n```$1");
+  out = out.replace(/\n```[ \t]*\r?\n```(json|env|sql)\b/gi, (match, lang: string, offset: number) => {
+    const openLang = openFenceLangBeforeCloseLine(out, offset + 1);
+    if (openLang != null && openLang !== "" && openLang !== "sql") return match;
+    return `\n\n\`\`\`${lang}`;
+  });
   out = out.replace(/(\n```json\n[\s\S]*?\n```)\s*\n```json\n/gi, "$1\n");
   out = out.replace(/(\n```env\n[\s\S]*?\n```)\s*\n```env\n/gi, "$1\n");
   out = out.replace(/\n```\s*\n\n```json/g, "\n\n```json");
@@ -879,6 +890,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairJsonFenceIntegrity(out);
   out = repairOrphanContratosApiFences(out);
   out = repairFragmentedSqlFences(out);
+  out = repairOrphanSqlBlocks(out);
   out = repairStrayCodeFences(out);
   out = out.replace(/\n(🔴|🟡|🟢)/g, "\n\n$1");
   out = out.replace(/\n-{3,}\n/g, "\n\n---\n\n");

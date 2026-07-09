@@ -66,6 +66,22 @@ describe("repairUnclosedCodeFences", () => {
     const out = repairUnclosedCodeFences(raw);
     assert.match(out, /```\n## Siguiente sección/);
   });
+
+  it("does not treat mermaid close ``` as a new empty fence before ```sql", () => {
+    const raw = `\`\`\`mermaid
+erDiagram
+  tenants ||--o{ authorized_users : has
+\`\`\`
+
+\`\`\`sql
+CREATE TABLE authorized_users ( id UUID PRIMARY KEY );
+\`\`\`
+`;
+    const out = repairUnclosedCodeFences(raw);
+    assert.match(out, /```mermaid[\s\S]*```\s*\n+\s*```sql[\s\S]*CREATE TABLE authorized_users/);
+    const mermaidBody = out.match(/```mermaid\n([\s\S]*?)```/)?.[1] ?? "";
+    assert.doesNotMatch(mermaidBody, /CREATE TABLE/);
+  });
 });
 
 describe("repairTableBoundaries (tablas espejo)", () => {
@@ -148,6 +164,30 @@ CREATE TABLE channels (
     assert.doesNotMatch(out, /```text[\s\S]*CREATE TABLE/);
     assert.match(out, /CREATE TABLE authorized_users/);
     assert.match(out, /CREATE TABLE channels/);
+  });
+
+  it("keeps CREATE TABLE in ```sql``` after erDiagram when LLM used ```text``` (Entidades de BD)", () => {
+    const sql = `CREATE TABLE authorized_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL
+);`;
+    const raw = `### Entidades de base de datos
+
+\`\`\`mermaid
+erDiagram
+  tenants ||--o{ authorized_users : has
+\`\`\`
+
+\`\`\`text
+${sql}
+\`\`\`
+`;
+    const out = formatDocumentMarkdown(raw);
+    assert.doesNotMatch(out, /```text[\s\S]*CREATE TABLE/);
+    const mermaidBody = out.match(/```mermaid\n([\s\S]*?)```/)?.[1] ?? "";
+    assert.doesNotMatch(mermaidBody, /CREATE TABLE authorized_users/);
+    assert.match(out, /```sql[\s\S]*CREATE TABLE authorized_users/);
   });
 });
 

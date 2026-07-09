@@ -389,6 +389,51 @@ export function demoteSqlPseudoHeadings(text: string): string {
   );
 }
 
+/** True when the next non-empty line after `offset` starts SQL DDL. */
+function nextNonEmptyLineLooksLikeSqlDdl(text: string, offset: number): boolean {
+  const rest = text.slice(offset).replace(/^\s*\n+/, "");
+  return /^(?:CREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX)|--\s)/i.test(rest);
+}
+
+/**
+ * Open fence language immediately before a lone ``` line (null = none / already closed).
+ * Used to avoid eating ``` that closes ```mermaid before a CREATE TABLE block.
+ */
+export function openFenceLangBeforeCloseLine(text: string, closeLineOffset: number): string | null {
+  const before = text.slice(0, closeLineOffset);
+  let openLang: string | null = null;
+  for (const line of before.split("\n")) {
+    const m = line.trim().match(/^```(\w*)$/);
+    if (!m) continue;
+    if (openLang === null) openLang = m[1] ?? "";
+    else openLang = null;
+  }
+  return openLang;
+}
+
+/**
+ * Removes orphan bare ``` lines immediately before SQL DDL, but keeps closers for typed fences
+ * (e.g. ```mermaid) so CREATE TABLE is not absorbed into the diagram block.
+ */
+export function stripOrphanFenceLinesBeforeSqlDdl(text: string): string {
+  return text.replace(/```[ \t]*\r?\n/g, (match, offset: number) => {
+    if (!nextNonEmptyLineLooksLikeSqlDdl(text, offset + match.length)) return match;
+    const openLang = openFenceLangBeforeCloseLine(text, offset);
+    if (openLang != null && openLang !== "" && openLang !== "sql") return match;
+    if (openLang === "sql") return match;
+    return "\n";
+  });
+}
+
+/** Drops a bare ``` line before ```sql when it is not closing a typed fence (e.g. ```mermaid). */
+function stripBareFenceBeforeSqlOpen(text: string): string {
+  return text.replace(/```[ \t]*\r?\n+```sql[ \t]*\r?\n/gi, (match, offset: number) => {
+    const openLang = openFenceLangBeforeCloseLine(text, offset);
+    if (openLang != null && openLang !== "" && openLang !== "sql") return match;
+    return "```sql\n";
+  });
+}
+
 /**
  * Une fences ```sql / ```text rotos y headings SQL falsos en un bloque coherente.
  * Típico del Architect cuando parte el esquema relacional en varios fences.
@@ -398,19 +443,16 @@ export function repairFragmentedSqlFences(text: string): string {
 
   out = out.replace(/```text\s*\n([\s\S]*?)```/gi, (match, body: string) => {
     if (!fenceBodyLooksLikeSql(body)) return match;
-    return `${body.trim()}\n\n`;
+    return `\`\`\`sql\n${body.trim()}\n\`\`\`\n\n`;
   });
 
-  out = out.replace(
-    /```\s*\n+(?=(?:CREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX)|--\s))/gi,
-    "\n",
-  );
+  out = stripOrphanFenceLinesBeforeSqlDdl(out);
 
   let prev = "";
   while (prev !== out) {
     prev = out;
     out = out.replace(/```sql\s*\n([\s\S]*?)```\s*\n+```sql\s*\n/gi, "```sql\n$1\n");
-    out = out.replace(/```\s*\n+```sql\s*\n/gi, "\n");
+    out = stripBareFenceBeforeSqlOpen(out);
   }
 
   out = out.replace(/```\s*\n+```\s*\n/g, "\n");
