@@ -6,6 +6,7 @@ import {
   repairAsciiDiagramBlocks,
   repairMetadataCoverTable,
   repairOrphanSqlBlocks,
+  repairOrphanContratosApiFences,
   repairPastedMarkdown,
   repairTableBoundaries,
   repairTabSeparatedTables,
@@ -123,5 +124,48 @@ describe("repairAsciiDiagramBlocks", () => {
     assert.match(out, /CLIENTE \(PWA \/ Navegador\)/);
     assert.match(out, /API GATEWAY/);
     assert.match(out, /### 2\.2 Detalle/);
+  });
+
+  it("does not wrap CREATE TABLE lines as ```text``` after fragmented SQL repair (Copiloto Doris)", () => {
+    const raw = `### Esquema relacional
+
+\`\`\`sql
+CREATE TABLE tenants (
+  id UUID PRIMARY KEY
+);
+\`\`\`
+
+CREATE TABLE authorized_users (
+  id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES tenants(id)
+);
+
+CREATE TABLE channels (
+  id UUID PRIMARY KEY
+);
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.doesNotMatch(out, /```text[\s\S]*CREATE TABLE/);
+    assert.match(out, /CREATE TABLE authorized_users/);
+    assert.match(out, /CREATE TABLE channels/);
+  });
+});
+
+describe("repairOrphanContratosApiFences", () => {
+  it("removes orphan fence between --- and next endpoint (Copiloto Doris §4)", () => {
+    const raw = `**Response 200:**
+
+\`\`\`json
+{ "ok": true }
+\`\`\`
+
+---
+\`\`\`
+
+### POST /api/v1/auth/sso/login
+`;
+    const out = repairOrphanContratosApiFences(raw);
+    assert.match(out, /---\n\n### POST \/api\/v1\/auth\/sso\/login/);
+    assert.doesNotMatch(out, /---\n```\n\n### POST/);
   });
 });

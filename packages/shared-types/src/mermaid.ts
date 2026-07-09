@@ -1485,6 +1485,18 @@ export function mergeSplitMermaidContinuationFences(document: string): string {
   return cur;
 }
 
+/** Fusiona entidades erDiagram en un segundo fence ```text (Copiloto / Doris §3). */
+export function mergeErDiagramTextContinuationFences(document: string): string {
+  if (!document?.trim()) return document ?? "";
+  return document.replace(
+    /```mermaid[ \t]*\n(erDiagram[^\n]*)\n```[ \t]*\n+```text[ \t]*\n([\s\S]*?)```/gi,
+    (_match, header: string, body: string) => {
+      if (!/^\s*[A-Za-z_][\w]*\s*\{/m.test(body)) return _match;
+      return `\`\`\`mermaid\n${header.trim()}\n${body.trim()}\n\`\`\``;
+    },
+  );
+}
+
 /** Encabezado de sección MDD/BRD (## 4. …) colado dentro de un fence sin cerrar. */
 function isMermaidMdSectionHeadingLeak(trimmed: string): boolean {
   return /^#{1,2}\s+\d+\.\s+\S/.test(trimmed);
@@ -1861,12 +1873,15 @@ export function normalizeMermaid(raw: string): string {
 /** Normaliza cada bloque mermaid del documento sin tocar el resto del markdown. */
 export function normalizeMermaidInDocument(document: string): string {
   if (!document?.trim()) return document ?? "";
+  // 0a) Doble apertura ```mermaid seguida de ```mermaid (LLM / pipeline).
+  let merged = document.replace(/```mermaid\s*\n+\s*```mermaid/gi, "```mermaid");
   // 0) Cierre erróneo ```mermaid en lugar de ``` (debe ir antes de unfenced repair).
-  let merged = repairMermaidFenceClosedWithMermaidTag(document);
+  merged = repairMermaidFenceClosedWithMermaidTag(merged);
   // 0b) Diagramas volcados sin fence ```mermaid (texto plano + listas markdown).
   merged = repairUnfencedMermaidInDocument(merged);
   // 1) Fusiona diagramas partidos en un 2.º fence con lenguaje arbitrario (```dockerfile, ```text…).
   merged = mergeSplitMermaidContinuationFences(merged);
+  merged = mergeErDiagramTextContinuationFences(merged);
   // 2) Re-absorbe líneas (sequence/flowchart) que quedaron fuera tras un cierre prematuro del fence.
   merged = repairFragmentedSequenceMermaidInDocument(merged);
   return merged.replace(/```mermaid\s*\n([\s\S]*?)```/gi, (_block, inner: string) => {
