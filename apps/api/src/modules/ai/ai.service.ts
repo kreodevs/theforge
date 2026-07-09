@@ -59,6 +59,15 @@ import {
 } from "./utils/legacy-baseline-detail.util.js";
 import { TechnologyDocsMcpClientService } from "../technology-docs-mcp/technology-docs-mcp-client.service.js";
 import {
+  appendTechDocsToSystemPrompt,
+  appendTechDocsToUserPrompt,
+} from "../technology-docs-mcp/tech-docs-context.util.js";
+import {
+  extractExplicitContext7Query,
+  isExplicitContext7ChatRequest,
+  shouldAutoFetchPhase0TechDocs,
+} from "@theforge/shared-types";
+import {
   buildLegacyAsIsSpecCoverageChecklist,
   buildLegacyAsIsSpecUserPreamble,
   LEGACY_AS_IS_SPEC_SYSTEM_APPENDIX,
@@ -215,12 +224,7 @@ function prependTheForgePrompt(prompt: string, theforgeContext: string): string 
 }
 
 function appendTechDocsContextBlock(prompt: string, techDocsContext: string | null | undefined): string {
-  const block = (techDocsContext ?? "").trim();
-  if (!block) return prompt;
-  return (
-    `${prompt}\n\n**Documentación oficial de tecnologías (Technology Docs MCP — patrones y APIs; no sustituye MDD ni Ariadne):**\n---\n` +
-    `${block}\n---`
-  );
+  return appendTechDocsToUserPrompt(prompt, techDocsContext);
 }
 
 @Injectable()
@@ -249,6 +253,51 @@ export class AiService {
     } catch (e) {
       this.logger.warn(
         `[tech-docs] buildContextForMdd failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return null;
+    }
+  }
+
+  /** Phase 0 / Benchmark chat — explicit Context7 or auto-detect API/auth topics. */
+  private async resolvePhase0TechDocsForChat(
+    prompt: string,
+    options?: GenerateResponseOptions,
+  ): Promise<string | null> {
+    const preset = options?.techDocsContext?.trim();
+    if (preset) return preset;
+
+    const tab = options?.activeTab?.trim();
+    const isPhase0Tab = tab === "benchmark" || tab === "phase0";
+
+    if (isExplicitContext7ChatRequest(prompt)) {
+      try {
+        const q = extractExplicitContext7Query(prompt);
+        return await this.techDocsMcp.buildContextForExplicitQuery(q);
+      } catch (e) {
+        this.logger.warn(
+          `[tech-docs] explicit Context7 failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+        return null;
+      }
+    }
+
+    if (!isPhase0Tab) return null;
+
+    const combined = [
+      prompt,
+      options?.currentDbgaContent,
+      options?.currentPhase0SummaryContent,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    if (!shouldAutoFetchPhase0TechDocs(combined)) return null;
+
+    try {
+      return await this.techDocsMcp.buildContextFromText(combined);
+    } catch (e) {
+      this.logger.warn(
+        `[tech-docs] phase0 auto fetch failed: ${e instanceof Error ? e.message : String(e)}`,
       );
       return null;
     }
@@ -458,6 +507,10 @@ export class AiService {
         }
       }
       systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
+      const phase0TechDocs = await this.resolvePhase0TechDocsForChat(prompt, options);
+      systemPrompt = appendTechDocsToSystemPrompt(systemPrompt, phase0TechDocs, {
+        citeSource: isExplicitContext7ChatRequest(prompt),
+      });
       if (
         (options?.userMessageImages?.length ?? 0) > 0 ||
         history.some((h) => h.role === "user" && (h.images?.length ?? 0) > 0)
@@ -694,6 +747,10 @@ export class AiService {
       }
     }
     systemPrompt = this.appendUxGuideStitchPolicy(systemPrompt, options);
+    const phase0TechDocsStream = await this.resolvePhase0TechDocsForChat(prompt, options);
+    systemPrompt = appendTechDocsToSystemPrompt(systemPrompt, phase0TechDocsStream, {
+      citeSource: isExplicitContext7ChatRequest(prompt),
+    });
     if (
         (options?.userMessageImages?.length ?? 0) > 0 ||
         history.some((h) => h.role === "user" && (h.images?.length ?? 0) > 0)

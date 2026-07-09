@@ -11,6 +11,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Added
 
+- **Context7 en Fase 0 / Benchmark:** consulta automática cuando gaps o chat mencionan PAT, API key, OAuth, JWT, webhooks o vendors (`Phase0InterviewService`, `DiscoveryService`, tabs `benchmark`/`phase0`). Consulta explícita: «Según Context7, …» en el chat del Workshop. Helpers en `@theforge/shared-types/technology-docs/phase0-tech-docs.util.ts`.
 - **Technology Docs MCP (`technology-docs-mcp`):** integración opcional Context7-compatible (`resolve-library-id`, `query-docs`) para enriquecer **Architecture**, **Contratos API** y **Tasks** con documentación oficial de librerías detectadas en MDD §2 / Blueprint. **Credenciales por usuario** en Ajustes → Docs técnicas (`User.techDocsMcpUrl` / `techDocsMcpToken`); sin API key = skip elegante. `@theforge/shared-types/technology-docs` — detector de stack.
 
 ## [0.13.0] — 2026-07-09

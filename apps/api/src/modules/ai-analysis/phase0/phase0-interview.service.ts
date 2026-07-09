@@ -46,6 +46,12 @@ import {
   phase0ProviderUnavailableEvent,
   toPhase0ErrorEvent,
 } from "./phase0-llm-error.util.js";
+import { TechnologyDocsMcpClientService } from "../../technology-docs-mcp/technology-docs-mcp-client.service.js";
+import { appendTechDocsToSystemPrompt } from "../../technology-docs-mcp/tech-docs-context.util.js";
+import {
+  buildPhase0TechDocsQueryText,
+  shouldAutoFetchPhase0TechDocs,
+} from "@theforge/shared-types";
 
 const MAX_PREGUNTAS = 5;
 
@@ -73,6 +79,7 @@ export class Phase0InterviewService {
   constructor(
     private readonly aiFactory: AIFactory,
     private readonly prisma: PrismaService,
+    private readonly techDocsMcp: TechnologyDocsMcpClientService,
   ) {}
 
   async start(idea: string, projectId: string): Promise<Phase0StreamEvent> {
@@ -168,9 +175,31 @@ export class Phase0InterviewService {
     const llm = await this.getUserLLM(state.projectId);
     if (llm) {
       try {
-        const updatePrompt = this.buildUpdatePrompt(state, answer);
+        const project = await this.prisma.project.findUnique({
+          where: { id: state.projectId },
+          select: { userId: true },
+        });
+        const gapIdx = Math.max(0, state.planCursor - 1);
+        const gap = state.questionPlan[gapIdx];
+        const techQueryText = buildPhase0TechDocsQueryText({
+          question: state.ultimaPregunta,
+          gapDescription: gap?.descripcion,
+          answer,
+        });
+        let phase0TechDocs: string | null = null;
+        if (shouldAutoFetchPhase0TechDocs(techQueryText) && project?.userId) {
+          phase0TechDocs = await this.techDocsMcp.buildContextFromText(techQueryText, {
+            userId: project.userId,
+          });
+          if (phase0TechDocs) {
+            this.logger.log(`[Phase0] Context7 snippets injected (${techQueryText.slice(0, 80)}…)`);
+          }
+        }
+
+        const updatePrompt = this.buildUpdatePrompt(state, answer, phase0TechDocs);
+        const systemPrompt = appendTechDocsToSystemPrompt(PHASE0_UPDATE_PROMPT, phase0TechDocs);
         const response = await llm.invoke([
-          { role: "system", content: PHASE0_UPDATE_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: updatePrompt },
         ]);
 
@@ -558,7 +587,11 @@ export class Phase0InterviewService {
     this.threadProjectId.delete(threadId);
   }
 
-  private buildUpdatePrompt(state: Phase0InterviewState, answer: string): string {
+  private buildUpdatePrompt(
+    state: Phase0InterviewState,
+    answer: string,
+    techDocsContext?: string | null,
+  ): string {
     return JSON.stringify(
       {
         borrador_actual: state.borrador,
@@ -566,6 +599,9 @@ export class Phase0InterviewService {
         ultima_pregunta: state.ultimaPregunta,
         respuesta_usuario: answer,
         historial: state.historial.map((qa) => ({ P: qa.pregunta, R: qa.respuesta })),
+        ...(techDocsContext?.trim()
+          ? { context7_documentacion_oficial: techDocsContext.trim() }
+          : {}),
       },
       null,
       2,

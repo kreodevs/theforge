@@ -9,7 +9,12 @@
  */
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { resolveStackLibrariesFromMarkdown } from "@theforge/shared-types";
+import {
+  resolveStackLibrariesFromMarkdown,
+  resolveTechDocCandidatesFromText,
+  shouldAutoFetchPhase0TechDocs,
+  type StackLibraryCandidate,
+} from "@theforge/shared-types";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import {
@@ -26,6 +31,13 @@ export const DEFAULT_TECH_DOCS_MCP_URL = "https://mcp.context7.com/mcp";
 /** Max chars per library snippet injected into LLM prompts. */
 const MAX_SNIPPET_CHARS = 2_400;
 
+export type BuildTechDocsContextOptions = {
+  userId?: string;
+  maxLibraries?: number;
+  /** When true, skip Phase 0 signal detection and fetch if any candidate matches. */
+  force?: boolean;
+};
+
 @Injectable()
 export class TechnologyDocsMcpClientService {
   private readonly logger = new Logger(TechnologyDocsMcpClientService.name);
@@ -40,31 +52,85 @@ export class TechnologyDocsMcpClientService {
    * @returns null when user has no API key, no libraries detected, or all lookups fail.
    */
   async buildContextForMdd(mddContent: string, blueprintContent?: string | null): Promise<string | null> {
-    const conn = await this.resolveConnection();
-    if (!conn) return null;
-
-    const maxLibraries = this.readMaxLibraries();
     const combined = [mddContent, blueprintContent].filter(Boolean).join("\n\n");
-    const candidates = resolveStackLibrariesFromMarkdown(combined, maxLibraries);
+    return this.buildContextFromText(combined, { force: true });
+  }
+
+  /**
+   * Phase 0 / Benchmark — stack + auth/API/vendor topics from free text.
+   * Skips when no external-doc signals unless `force: true`.
+   */
+  async buildContextFromText(
+    text: string,
+    options?: BuildTechDocsContextOptions,
+  ): Promise<string | null> {
+    const trimmed = text?.trim() ?? "";
+    if (!trimmed) return null;
+
+    const maxLibraries = options?.maxLibraries ?? this.readMaxLibraries();
+    const candidates = resolveTechDocCandidatesFromText(trimmed, maxLibraries);
     if (candidates.length === 0) return null;
 
-    const sections: string[] = [];
+    if (!options?.force && !shouldAutoFetchPhase0TechDocs(trimmed)) {
+      const stackOnly = resolveStackLibrariesFromMarkdown(trimmed, 1);
+      if (stackOnly.length === 0) return null;
+    }
 
+    const conn = await this.resolveConnectionForOptions(options);
+    if (!conn) return null;
+
+    return this.fetchSectionsFromCandidates(conn, candidates, "SDD technical documentation");
+  }
+
+  /**
+   * Explicit Context7 lookup from Workshop chat (e.g. "Según Context7, …").
+   */
+  async buildContextForExplicitQuery(
+    query: string,
+    userId?: string,
+  ): Promise<string | null> {
+    const q = query?.trim() ?? "";
+    if (!q) return null;
+
+    const conn = userId
+      ? await this.resolveConnectionForUser(userId)
+      : await this.resolveConnection();
+    if (!conn) return null;
+
+    const maxLibraries = Math.min(this.readMaxLibraries(), 2);
+    const candidates = resolveTechDocCandidatesFromText(q, maxLibraries);
+
+    if (candidates.length === 0) {
+      const snippet = await this.fetchLibrarySnippet(
+        conn,
+        "api authentication",
+        q,
+        "Phase 0 integration documentation",
+      );
+      return snippet ? `### Context7\n\n${snippet.trim()}` : null;
+    }
+
+    const sections: string[] = [];
     for (const candidate of candidates) {
       try {
-        const snippet = await this.fetchLibrarySnippet(conn, candidate.libraryName, candidate.queryTopic);
+        const topic = q.length >= 24 ? q : candidate.queryTopic;
+        const snippet = await this.fetchLibrarySnippet(
+          conn,
+          candidate.libraryName,
+          topic,
+          "Phase 0 integration documentation",
+        );
         if (snippet?.trim()) {
-          sections.push(`### ${candidate.label}\n\n${snippet.trim()}`);
+          sections.push(`### ${candidate.label} (Context7)\n\n${snippet.trim()}`);
         }
       } catch (e) {
         this.logger.warn(
-          `[tech-docs] skip ${candidate.libraryName}: ${e instanceof Error ? e.message : String(e)}`,
+          `[tech-docs] explicit skip ${candidate.libraryName}: ${e instanceof Error ? e.message : String(e)}`,
         );
       }
     }
 
-    if (sections.length === 0) return null;
-    return sections.join("\n\n");
+    return sections.length > 0 ? sections.join("\n\n") : null;
   }
 
   /** Resolves MCP connection for the authenticated user (Context7 API key per user). */
@@ -89,6 +155,15 @@ export class TechnologyDocsMcpClientService {
     };
   }
 
+  private async resolveConnectionForOptions(
+    options?: BuildTechDocsContextOptions,
+  ): Promise<UiMcpConnection | null> {
+    if (options?.userId?.trim()) {
+      return this.resolveConnectionForUser(options.userId.trim());
+    }
+    return this.resolveConnection();
+  }
+
   private async resolveConnection(): Promise<UiMcpConnection | null> {
     try {
       const userId = getRequestUserId();
@@ -110,16 +185,45 @@ export class TechnologyDocsMcpClientService {
     return Number.isFinite(n) && n > 0 ? Math.min(n, 6) : 3;
   }
 
+  private async fetchSectionsFromCandidates(
+    conn: UiMcpConnection,
+    candidates: StackLibraryCandidate[],
+    docKind: string,
+  ): Promise<string | null> {
+    const sections: string[] = [];
+
+    for (const candidate of candidates) {
+      try {
+        const snippet = await this.fetchLibrarySnippet(
+          conn,
+          candidate.libraryName,
+          candidate.queryTopic,
+          docKind,
+        );
+        if (snippet?.trim()) {
+          sections.push(`### ${candidate.label}\n\n${snippet.trim()}`);
+        }
+      } catch (e) {
+        this.logger.warn(
+          `[tech-docs] skip ${candidate.libraryName}: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    return sections.length > 0 ? sections.join("\n\n") : null;
+  }
+
   private async fetchLibrarySnippet(
     conn: UiMcpConnection,
     libraryName: string,
     queryTopic: string,
+    docKind = "SDD technical documentation",
   ): Promise<string | null> {
     const libraryId = await this.resolveLibraryId(conn, libraryName, queryTopic);
     if (!libraryId) return null;
     const docs = await callUiMcpToolText(conn, QUERY_DOCS_TOOL, {
       libraryId,
-      query: `SDD technical documentation: ${queryTopic}. Prefer API patterns, configuration, and best practices.`,
+      query: `${docKind}: ${queryTopic}. Prefer API patterns, configuration, token formats, and best practices.`,
     });
     return capSnippet(docs);
   }
