@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import type { ChatImagePart, CodebaseDocResponseMode, MddDeliveryGateResult, PlanValidationPersisted, ProjectGenerationStatus } from "@theforge/shared-types";
+import {
+  documentPersistFieldLabel,
+  isChangelogOnlyDocument,
+  validateDocumentForPersist,
+} from "@theforge/shared-types";
 import { contentIncludesVisionBlock } from "@theforge/shared-types/session";
 import { isFormatDocumentChatCommand } from "../utils/documentFormatCommand";
 import {
@@ -193,17 +198,31 @@ function cleanFences(c: string): string | null {
  * Helper para persist*Content: aplica retry, offline queue y setea error en el store.
  * Reemplaza el patrón repetitivo de 13 persist functions.
  */
+type PersistFieldResult = { ok: true } | { ok: false; error: string };
+
 async function persistField(
   fieldName: string,
   content: string | null,
   getState: () => WorkshopState,
   setState: (partial: Partial<WorkshopState>) => void,
-): Promise<void> {
+): Promise<PersistFieldResult> {
   const { projectId, project } = getState();
-  if (!projectId || !project) return;
-  if (content === ((project as unknown as Record<string, unknown>)[fieldName] ?? "")) return;
+  if (!projectId || !project) return { ok: false, error: "No hay proyecto activo." };
+  if (content === ((project as unknown as Record<string, unknown>)[fieldName] ?? "")) {
+    return { ok: true };
+  }
 
   const cleaned = cleanDoc(content) || content || "";
+  const currentRaw = String(
+    ((project as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ?? "",
+  );
+  const persistValidation = validateDocumentForPersist(currentRaw, cleaned, {
+    fieldLabel: documentPersistFieldLabel(fieldName),
+  });
+  if (!persistValidation.ok) {
+    setState({ synced: true, error: persistValidation.message });
+    return { ok: false, error: persistValidation.message };
+  }
   const localAtSaveStart = String(
     ((getState() as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ??
       "",
@@ -242,15 +261,22 @@ async function persistField(
       setState(patch);
       // Flush offline queue oportunistically
       flushOfflineQueue().catch(() => {});
-    } else {
-      const errText = await parseErrorMessageFromResponse(r, "Error al guardar");
-      addToOfflineQueue({ field: fieldName, content: cleaned, projectId, timestamp: Date.now() });
-      setState({ synced: true, error: `Error: ${errText}. Cambio guardado localmente.` });
+      return { ok: true };
     }
+
+    const errText = await parseErrorMessageFromResponse(r, "Error al guardar");
+    if (r.status >= 400 && r.status < 500) {
+      setState({ synced: true, error: `Error: ${errText}` });
+      return { ok: false, error: errText };
+    }
+    addToOfflineQueue({ field: fieldName, content: cleaned, projectId, timestamp: Date.now() });
+    setState({ synced: true, error: `Error: ${errText}. Cambio guardado localmente.` });
+    return { ok: false, error: errText };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     addToOfflineQueue({ field: fieldName, content: cleaned, projectId, timestamp: Date.now() });
     setState({ synced: true, error: `Sin conexión: ${msg}. Cambio guardado localmente.` });
+    return { ok: false, error: msg };
   }
 }
 
@@ -1582,11 +1608,28 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const source = (raw ?? "").trim();
       if (!source) return { ok: false, message: `No hay contenido en ${label} para formatear.`, changed: false };
       const formatted = fmt(source);
-      const changed = formatted !== source;
+      const toPersist = cleanDoc(formatted) || formatted;
+      const currentProject = get().project;
+      const currentServer = cleanDoc(
+        String(
+          ((currentProject as unknown as Record<string, unknown>)[field as string] as
+            | string
+            | null
+            | undefined) ?? "",
+        ),
+      ) || String((currentProject as unknown as Record<string, unknown>)[field as string] ?? "");
+      const changed = toPersist !== currentServer;
       if (!changed) {
         return { ok: true, message: `${label}: sin cambios detectables tras formatear.`, changed: false };
       }
-      await persistField(field as string, formatted, get, set);
+      const validation = validateDocumentForPersist(currentServer, toPersist, { fieldLabel: label });
+      if (!validation.ok) {
+        return { ok: false, message: `${label}: ${validation.message}`, changed: false };
+      }
+      const saved = await persistField(field as string, formatted, get, set);
+      if (!saved.ok) {
+        return { ok: false, message: `${label}: ${saved.error}`, changed: false };
+      }
       set({ [field]: formatted } as Partial<WorkshopState>);
       return {
         ok: true,
@@ -1602,7 +1645,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const p0 = (get().phase0SummaryContent ?? project?.phase0SummaryContent ?? "").trim();
         const parts: string[] = [];
         let anyChanged = false;
-        let anyOk = false;
+        let allOk = true;
 
         if (dbga.length > 0) {
           const { formatted, strippedMdd, deduplicated } = formatDbgaDocument(dbga);
@@ -1610,44 +1653,60 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           if (!changed && !strippedMdd) {
             parts.push("Fase 0 (DBGA): sin cambios detectables tras formatear.");
           } else {
-            await persistField("dbgaContent", formatted, get, set);
-            set({ dbgaContent: formatted });
-            let msg = deduplicated
-              ? "Fase 0 (DBGA) deduplicado y formateado (secciones repetidas fusionadas). Revisa el panel Análisis."
-              : "Fase 0 (DBGA) formateado (tablas, SQL, secciones). Revisa el panel Análisis.";
-            if (strippedMdd) {
-              const kb = Math.round(strippedMdd.length / 1024);
-              const mddEmpty = !(get().mddContent ?? project?.mddContent ?? "").trim();
-              if (mddEmpty) {
-                await persistField("mddContent", strippedMdd, get, set);
-                set({ mddContent: strippedMdd });
-                msg += ` MDD duplicado al final del DBGA (~${kb} KB) movido a pestaña MDD (no se borró).`;
-              } else {
-                msg += ` Hay un MDD pegado al final del DBGA (~${kb} KB) que se quitó del panel; el MDD del proyecto ya tenía contenido — revísalo en el chat/historial si lo necesitas.`;
+            const dbgaSaved = await persistField("dbgaContent", formatted, get, set);
+            if (!dbgaSaved.ok) {
+              parts.push(`Fase 0 (DBGA): ${dbgaSaved.error}`);
+              allOk = false;
+            } else {
+              set({ dbgaContent: formatted });
+              let msg = deduplicated
+                ? "Fase 0 (DBGA) deduplicado y formateado (secciones repetidas fusionadas). Revisa el panel Análisis."
+                : "Fase 0 (DBGA) formateado (tablas, SQL, secciones). Revisa el panel Análisis.";
+              if (strippedMdd) {
+                const kb = Math.round(strippedMdd.length / 1024);
+                const mddEmpty = !(get().mddContent ?? project?.mddContent ?? "").trim();
+                if (mddEmpty) {
+                  const mddSaved = await persistField("mddContent", strippedMdd, get, set);
+                  if (mddSaved.ok) {
+                    set({ mddContent: strippedMdd });
+                    msg += ` MDD duplicado al final del DBGA (~${kb} KB) movido a pestaña MDD (no se borró).`;
+                  } else {
+                    allOk = false;
+                    msg += ` No se pudo mover el MDD embebido: ${mddSaved.error}`;
+                  }
+                } else {
+                  msg += ` Hay un MDD pegado al final del DBGA (~${kb} KB) que se quitó del panel; el MDD del proyecto ya tenía contenido — revísalo en el chat/historial si lo necesitas.`;
+                }
               }
+              parts.push(msg);
+              anyChanged = true;
             }
-            parts.push(msg);
-            anyChanged = true;
           }
-          anyOk = true;
         }
         if (spec.length > 0) {
-          const r = await persistProjectField("specContent", spec, "Fase 0 (Spec)");
-          parts.push(r.message);
-          anyOk = anyOk || r.ok;
-          anyChanged = anyChanged || r.changed;
+          const specBody = cleanDoc(spec) || spec;
+          if (isChangelogOnlyDocument(specBody)) {
+            parts.push(
+              "Fase 0 (Spec): omitido (solo registro de cambios; genera o edita el Spec antes de formatear).",
+            );
+          } else {
+            const r = await persistProjectField("specContent", spec, "Fase 0 (Spec)");
+            parts.push(r.message);
+            if (!r.ok) allOk = false;
+            anyChanged = anyChanged || r.changed;
+          }
         }
         if (p0.length > 0) {
           const r = await persistProjectField("phase0SummaryContent", p0, "Benchmark (Deep Research)");
           parts.push(r.message);
-          anyOk = anyOk || r.ok;
+          if (!r.ok) allOk = false;
           anyChanged = anyChanged || r.changed;
         }
         if (!dbga && !spec && !p0) {
           return { ok: false, message: "No hay documento en Fase 0 / Benchmark para formatear." };
         }
         return {
-          ok: anyOk,
+          ok: allOk,
           message: anyChanged
             ? parts.join(" ")
             : `${parts.join(" ")} Si el panel no cambió, confirma que estás en la pestaña correcta (Fase 0 vs Benchmark).`,
@@ -1712,8 +1771,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             "Handoff Spec formateado (fences, tablas y Mermaid; repara diagramas con subgraph). Revisa el panel.",
         };
       }
-      case "spec":
-        return persistProjectField("specContent", get().specContent ?? project?.specContent, "Spec");
+      case "spec": {
+        const raw = (get().specContent ?? project?.specContent ?? "").trim();
+        const body = cleanDoc(raw) || raw;
+        if (!body) return { ok: false, message: "No hay contenido en Spec para formatear." };
+        if (isChangelogOnlyDocument(body)) {
+          return {
+            ok: false,
+            message:
+              "Spec: solo tiene registro de cambios. Genera o escribe el Spec antes de formatear.",
+          };
+        }
+        return persistProjectField("specContent", raw, "Spec");
+      }
       case "ux-ui-guide":
         return persistProjectField(
           "uxUiGuideContent",
