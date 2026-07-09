@@ -140,3 +140,22 @@ test("HIGH: alivio grafo VERDE 92 + constitución incompleta → AMARILLO (const
   assert.equal(r.status, Status.AMARILLO);
   assert.equal(r.precisionScore, 86);
 });
+
+test("HIGH: VERDE baja a AMARILLO si hay gaps cross-artifact SDD", () => {
+  const s = new SemaphoreService();
+  const mdd = JSON.stringify({
+    db_entities: [{ name: "users" }],
+    business_core: "core flows",
+    edge_cases: "e1: lockout after N attempts",
+    field_types:
+      "Detailed field_types markdown with inferred types and enough length to pass the semaphore heuristic threshold.",
+  });
+  const r = s.evaluate(
+    highBase({
+      mddJsonString: mdd,
+      sddCrossArtifactGapCount: 3,
+    }),
+  );
+  assert.equal(r.status, Status.AMARILLO);
+  assert.equal(r.precisionScore, 82);
+});

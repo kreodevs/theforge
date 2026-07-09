@@ -19,7 +19,7 @@ Generar el **documento de Arquitectura** (markdown) como vista técnica del **si
 # Contenido obligatorio #
 
 1. **Contexto y alcance** (breve): qué sistema se documenta y para quién.
-2. **Vista de módulos / capas:** backend (módulos Nest o equivalente), frontend (rutas, vistas, estado), compartidos; nombres alineados a lo que aparece en evidencia o MDD.
+2. **Vista de módulos / capas:** backend (módulos Nest o equivalente), frontend (rutas, vistas, estado), compartidos; nombres alineados a lo que aparece en evidencia o MDD. **Cada servicio core del MDD §2** (Engine, Service, Gateway) debe tener carpeta `modules/{slug}/` en el árbol; con patrón Hexagonal [X], documenta puertos/adaptadores por módulo.
 3. **Modelo y persistencia:** entidades o tablas relevantes, relaciones **según MDD/Blueprint**; no inventar ORM distinto al citado (si dice Prisma, no describas TypeORM “por defecto”).
 4. **APIs y contratos:** cómo se exponen las capacidades (REST, módulos); coherente con la sección de contratos del MDD si existe.
 5. **Flujos relevantes:** uno o dos diagramas **Mermaid** (secuencia o flujo) para casos de uso centrales del dominio — entre **componentes de aplicación** (servicios, DB, colas), no entre “agentes”.

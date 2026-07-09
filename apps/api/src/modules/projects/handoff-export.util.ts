@@ -23,6 +23,7 @@ import { alignSddDeliverablesAtPersist, finalizeInfraMarkdownForExport } from ".
 import { listArchitectureDecisionFiles } from "../documentation-gap/architecture-decision.util.js";
 import { validateMddForDelivery } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
 import { checkAgentGovernanceVsMdd } from "./agent-governance-conformance.util.js";
+import { collectSddPrecisionGaps } from "../engine/sdd-precision-checks.util.js";
 import { enrichGovernanceScaffoldForHandoff } from "./governance-handoff-bootstrap.util.js";
 import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
@@ -238,6 +239,22 @@ export function buildAgentGovernanceInput(
     infraContent?: string | null;
   },
 ): SuggestAgentGovernanceInput {
+  const mdd = mddMarkdown.trim();
+  const sddPendingGaps =
+    mdd.length > 200
+      ? collectSddPrecisionGaps({
+          mdd,
+          architecture: project.architectureContent,
+          blueprint: deliverableOverrides?.blueprintContent ?? project.blueprintContent,
+          tasks: deliverableOverrides?.tasksContent ?? project.tasksContent,
+          logicFlows: project.logicFlowsContent,
+          userStories: deliverableOverrides?.userStoriesContent ?? project.userStoriesContent,
+          useCases: project.useCasesContent,
+          apiContracts: project.apiContractsContent,
+          pantallas: project.uiScreensContent,
+          phase0Summary: project.phase0SummaryContent,
+        })
+      : [];
   return {
     mddMarkdown,
     blueprintMarkdown: deliverableOverrides?.blueprintContent ?? project.blueprintContent,
@@ -257,6 +274,7 @@ export function buildAgentGovernanceInput(
     stageOrdinal: stage?.ordinal ?? null,
     projectType: project.projectType,
     complexity,
+    sddPendingGaps,
   };
 }
 

@@ -41,7 +41,8 @@ Cada caso debe incluir (usa **tabla markdown** por caso, como en el formato est�
 3. **Flujo Principal (Paso a paso).**
 4. **Flujos Alternativos y Excepciones (Edge Cases)** — mínimo 2 alternativos por CU cuando el MDD §5 documente edge cases aplicables.
 5. **Postcondiciones.**
-6. **Diagrama (Mermaid).** Tras la tabla del caso, incluye **un** bloque ` ```mermaid ` que represente el caso. **Preferencia: `stateDiagram-v2`** (estados del recurso y sus transiciones); si el caso se explica mejor como flujo con decisiones usa `flowchart`, y si es una interacción entre actores/sistemas usa `sequenceDiagram` (ver «Diagrama por caso de uso»). Debe derivar del flujo principal + alternativos/excepciones del propio caso, no ser genérico.
+6. **Schema Zod (obligatorio cuando el flujo devuelve JSON estructurado):** Anexo `### Schema Zod` con schema TypeScript/Zod validable (recomendaciones LLM, sustancia económica, metadata técnica). Incluye al menos un ejemplo few-shot JSON válido.
+7. **Diagrama (Mermaid).** Tras la tabla del caso, incluye **un** bloque ` ```mermaid ` que represente el caso. **Preferencia: `stateDiagram-v2`** (estados del recurso y sus transiciones); si el caso se explica mejor como flujo con decisiones usa `flowchart`, y si es una interacción entre actores/sistemas usa `sequenceDiagram` (ver «Diagrama por caso de uso»). Debe derivar del flujo principal + alternativos/excepciones del propio caso, no ser genérico.
 
 Encabezado por caso: `## Caso de Uso N: [Título]` (numeración secuencial).
 

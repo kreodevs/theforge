@@ -55,6 +55,8 @@ export interface SuggestAgentGovernanceInput {
   /** NEW = greenfield; LEGACY = brownfield (Ariadne). Sin valor → NEW. */
   projectType?: ProjectType | null;
   complexity: ComplexityLevel;
+  /** Gaps SDD cross-artifact pendientes (precisión). */
+  sddPendingGaps?: string[];
 }
 
 export interface ProjectGovernanceFacts {

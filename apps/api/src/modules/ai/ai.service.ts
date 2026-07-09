@@ -95,9 +95,45 @@ import {
   type MddSection5ServiceRow,
 } from "./utils/legacy-as-is-logic-flows.util.js";
 import type { MddDeliverableContextOptions } from "./utils/mdd-deliverable-context.util.js";
+import {
+  appendCoverageChecklistToPrompt,
+  buildGreenfieldCoverageChecklist,
+} from "../engine/sdd-coverage-checklist.util.js";
 
 function mddDeliverableCtx(options?: LegacyGenerateOptions): MddDeliverableContextOptions | undefined {
   return options?.legacyBaselineStage ? { legacyBaselineStage: true } : undefined;
+}
+
+function capPhase0Summary(text: string | null | undefined, max = 12000): string {
+  const t = (text ?? "").trim();
+  if (!t) return "";
+  return t.length <= max ? t : t.slice(0, max) + "\n\n[… phase0 truncado …]";
+}
+
+function appendPhase0ResearchBlock(prompt: string, options?: LegacyGenerateOptions): string {
+  const research = capPhase0Summary(options?.phase0SummaryContent);
+  if (!research) return prompt;
+  return (
+    `${prompt.trimEnd()}\n\nResearch / Phase0 (mandatorios M* y open gaps — trazar en el entregable):\n---\n${research}\n---\n`
+  );
+}
+
+function appendGreenfieldCoverageChecklist(
+  prompt: string,
+  mddRaw: string,
+  artifactLabel: string,
+  options?: LegacyGenerateOptions,
+  blueprintMarkdown?: string | null,
+): string {
+  if (options?.legacyBaselineStage || !mddRaw.trim()) return prompt;
+  const checklist = buildGreenfieldCoverageChecklist({
+    mddMarkdown: mddRaw,
+    phase0Summary: options?.phase0SummaryContent,
+    phase0GapsJson: options?.phase0GapsJson,
+    blueprintMarkdown: blueprintMarkdown ?? options?.coverageBlueprintContent,
+    artifactLabel,
+  });
+  return appendCoverageChecklistToPrompt(prompt, checklist);
 }
 
 /** Instrucción fija para que ningún documento generado use "militar" (se añade al system prompt en generación de docs). */
@@ -118,6 +154,12 @@ export interface LegacyGenerateOptions {
   integrationHandoffItems?: { id: string; title: string; description: string; actor?: string; acceptanceCriteria?: string[] }[];
   /** Metadatos del proyecto NEW origen (legacy etapa 2+). */
   integrationNewProject?: { id: string; name: string };
+  /** research.md / phase0 deep research — propagación a tasks y architecture. */
+  phase0SummaryContent?: string | null;
+  /** JSON envelope Phase0 gaps (`Project.phase0Gaps`). */
+  phase0GapsJson?: string | null;
+  /** Blueprint para checklist de cobertura cuando el artefacto destino no lo recibe como body. */
+  coverageBlueprintContent?: string | null;
 }
 
 export interface AgentGovernanceGenerateOptions extends LegacyGenerateOptions {
@@ -773,6 +815,7 @@ export class AiService {
       apiContractsContent?: string | null;
       logicFlowsContent?: string | null;
       infraContent?: string | null;
+      gapsFeedback?: string | null;
     },
   ): Promise<string> {
     const mdd = buildMddContextForTasks(mddContent?.trim() ?? "", mddDeliverableCtx(options));
@@ -809,6 +852,14 @@ export class AiService {
     }
     if (navMap.length > 0) {
       prompt += "\n\n## Mapa de Navegación del Proyecto\n\n" + navMap;
+    }
+    prompt = appendPhase0ResearchBlock(prompt, options);
+    prompt = appendGreenfieldCoverageChecklist(prompt, mddContent?.trim() ?? "", "Tasks", options, blueprintContent);
+    if (options?.gapsFeedback?.trim()) {
+      prompt +=
+        "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" +
+        options.gapsFeedback.trim() +
+        "\n---";
     }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
@@ -912,7 +963,7 @@ export class AiService {
     return this.generateResponse(prompt, [], { systemPrompt: AGENT_GOVERNANCE_PROMPT + NO_MILITAR_INSTRUCTION });
   }
 
-  async generateArchitecture(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
+  async generateArchitecture(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions & { gapsFeedback?: string | null }): Promise<string> {
     const mdd = buildMddContextForArchitecture(mddContent?.trim() ?? "", mddDeliverableCtx(options));
     const blueprint = capTextForLegacyBaseline(blueprintContent ?? "", 15000, options?.legacyBaselineStage);
     let prompt =
@@ -924,6 +975,20 @@ export class AiService {
         "\n---\n\n" +
         (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---" : "")
         : "No hay MDD. Genera un documento breve de arquitectura genérica (capas, trade-offs) sin inventar dominio ni agentes.";
+    prompt = appendPhase0ResearchBlock(prompt, options);
+    prompt = appendGreenfieldCoverageChecklist(
+      prompt,
+      mddContent?.trim() ?? "",
+      "Architecture",
+      options,
+      blueprintContent,
+    );
+    if (options?.gapsFeedback?.trim()) {
+      prompt +=
+        "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" +
+        options.gapsFeedback.trim() +
+        "\n---";
+    }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
@@ -956,6 +1021,8 @@ export class AiService {
         mdd +
         "\n---\n\n" +
         (spec ? "Spec (what/why):\n---\n" + spec + "\n---" : "");
+    prompt = appendPhase0ResearchBlock(prompt, options);
+    prompt = appendGreenfieldCoverageChecklist(prompt, mddRaw, "Use Cases", options);
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (!legacyAsIsUseCases) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
@@ -1050,6 +1117,8 @@ export class AiService {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
+    prompt = appendPhase0ResearchBlock(prompt, options);
+    prompt = appendGreenfieldCoverageChecklist(prompt, mddRaw, "Blueprint", options);
     if (mdd.length > 0 && !legacyAsIsBlueprint) {
       prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     }
@@ -1088,6 +1157,14 @@ export class AiService {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
     }
+    prompt = appendPhase0ResearchBlock(prompt, options);
+    prompt = appendGreenfieldCoverageChecklist(
+      prompt,
+      mddContent?.trim() ?? "",
+      "API Contracts",
+      options,
+      blueprintContent,
+    );
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (options?.contractSpecs?.trim()) {
       const specsBlock = capTextForLegacyBaseline(options.contractSpecs, 12000, options?.legacyBaselineStage);
@@ -1215,6 +1292,10 @@ export class AiService {
     if (gapsFeedback?.trim()) {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" + gapsFeedback.trim() + "\n---";
+    }
+    if (!legacyAsIsLogicFlows) {
+      prompt = appendPhase0ResearchBlock(prompt, options);
+      prompt = appendGreenfieldCoverageChecklist(prompt, mddRaw, "Logic Flows", options);
     }
     const diagramHint = buildLogicFlowsDiagramHint(mddRaw);
     if (diagramHint) prompt += `\n\n${diagramHint}\n`;

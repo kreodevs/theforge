@@ -1,4 +1,3 @@
-import type JSZip from "jszip";
 import {
   buildSpecKitBundleFiles,
   type AgentGovernanceScaffold,
