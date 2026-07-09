@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import type { ChatImagePart } from "@theforge/shared-types";
 import { VISION_CONTEXT_HEADER } from "@theforge/shared-types/session";
 import { MDD_LONG_PASTE_WARN_CHARS } from "@theforge/shared-types/mdd-pipeline-limits";
+import { handleChatComposerEnterKeyDown } from "../utils/chatComposerEnter";
 import {
   Button,
   AlertDialog,
@@ -258,6 +259,7 @@ function ChatComposerBar({
   loading,
   isBenchmarkFirstAction,
   showAttachTools,
+  textareaDisabled,
   imageInputRef,
   imageAttachDisabled,
   imageAttachTitle,
@@ -280,6 +282,8 @@ function ChatComposerBar({
   loading: boolean;
   isBenchmarkFirstAction: boolean;
   showAttachTools: boolean;
+  /** When set, overrides textarea disabled state (send button still uses `loading`). */
+  textareaDisabled?: boolean;
   imageInputRef: RefObject<HTMLInputElement | null>;
   imageAttachDisabled: boolean;
   imageAttachTitle: string;
@@ -306,7 +310,7 @@ function ChatComposerBar({
           rows={3}
           className={WORKSHOP_COMPOSER_TEXTAREA}
           spellCheck={false}
-          disabled={loading}
+          disabled={textareaDisabled ?? loading}
         />
         <div className="flex shrink-0 gap-2">
           <WorkshopPanelButton
@@ -337,7 +341,7 @@ function ChatComposerBar({
         rows={1}
         className={cn(AI_COMPOSER_TEXTAREA, "font-sans")}
         spellCheck={false}
-        disabled={loading}
+        disabled={textareaDisabled ?? loading}
       />
       <div className={AI_COMPOSER_TOOLBAR}>
         <div className="flex min-w-0 items-center gap-0.5">
@@ -527,6 +531,11 @@ export default function ChatContainer({
       loadingReason === "legacy-brd-suggest" ||
       loadingReason === "legacy-deliverables" ||
       loadingReason === "brd-from-dbga");
+  /** Cascada BullMQ: el usuario puede redactar mientras corre; solo el envío queda bloqueado. */
+  const isDeliverablesCascadeRun =
+    loading &&
+    (loadingReason === "deliverables-cascade" || loadingReason === "legacy-deliverables");
+  const composerTextareaDisabled = loading && !isDeliverablesCascadeRun;
   const legacyRotatingSteps = useMemo(() => {
     if (loadingReason === "legacy-codebase-doc") return LEGACY_CODEBASE_DOC_STEPS;
     if (loadingReason === "legacy-mdd") return LEGACY_MDD_STEPS;
@@ -889,6 +898,18 @@ export default function ChatContainer({
     chatInputRef.current?.focus();
   };
 
+  const handleComposerSubmit = useCallback(() => {
+    if (isBenchmarkFirstAction) void handleGenerateBenchmark();
+    else void handleSend();
+  }, [isBenchmarkFirstAction, handleGenerateBenchmark, handleSend]);
+
+  const handleComposerEnterKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      handleChatComposerEnterKeyDown(e, handleComposerSubmit);
+    },
+    [handleComposerSubmit],
+  );
+
   const showCenteredEmpty = embedded && (activeTab === "benchmark" ? benchmarkEmpty : messages.length === 0) && !loading;
 
   return (
@@ -944,12 +965,7 @@ export default function ChatContainer({
               chatInputRef={chatInputRef}
               inputValue={inputValue}
               onInputChange={setInputValue}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" || e.shiftKey) return;
-                e.preventDefault();
-                if (isBenchmarkFirstAction) void handleGenerateBenchmark();
-                else void handleSend();
-              }}
+              onKeyDown={handleComposerEnterKeyDown}
               placeholder={getChatComposerPlaceholder(isBenchmarkFirstAction, activeTab)}
               inputTitle={
                 isBenchmarkFirstAction
@@ -959,6 +975,7 @@ export default function ChatContainer({
               loading={loading}
               isBenchmarkFirstAction={isBenchmarkFirstAction}
               showAttachTools={!isBenchmarkFirstAction}
+              textareaDisabled={composerTextareaDisabled}
               imageInputRef={imageInputRef}
               imageAttachDisabled={imageAttachDisabled}
               imageAttachTitle={imageAttachTitle}
@@ -1334,12 +1351,7 @@ export default function ChatContainer({
               chatInputRef={chatInputRef}
               inputValue={inputValue}
               onInputChange={setInputValue}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" || e.shiftKey) return;
-                e.preventDefault();
-                if (isBenchmarkFirstAction) void handleGenerateBenchmark();
-                else void handleSend();
-              }}
+              onKeyDown={handleComposerEnterKeyDown}
               placeholder={getChatComposerPlaceholder(isBenchmarkFirstAction, activeTab)}
               inputTitle={
                 isBenchmarkFirstAction
@@ -1349,6 +1361,7 @@ export default function ChatContainer({
               loading={loading}
               isBenchmarkFirstAction={isBenchmarkFirstAction}
               showAttachTools={!isBenchmarkFirstAction}
+              textareaDisabled={composerTextareaDisabled}
               imageInputRef={imageInputRef}
               imageAttachDisabled={imageAttachDisabled}
               imageAttachTitle={imageAttachTitle}

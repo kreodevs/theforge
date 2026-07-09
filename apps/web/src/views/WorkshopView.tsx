@@ -1844,19 +1844,20 @@ export default function WorkshopView({
     void fetchConformance(projectId);
   }, [projectId, project?.id, fetchConformance]);
 
-  // Mobile: al volver de background, re-verificar si hay tareas completadas
+  const refreshWorkshopOnTabVisible = useWorkshopStore((s) => s.refreshWorkshopOnTabVisible);
+
+  // Al volver de otra pestaña: sincronizar cola sin vaciar checklist ni sesión del chat.
   useEffect(() => {
     if (!projectId) return;
     const handleVisibility = () => {
       if (document.visibilityState !== "visible") return;
       const store = useWorkshopStore.getState();
-      if (store.loading) {
-        fetchProject(projectId).catch(() => {});
-      }
+      if (!store.loading) return;
+      void refreshWorkshopOnTabVisible(projectId);
     };
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [projectId, fetchProject]);
+  }, [projectId, refreshWorkshopOnTabVisible]);
 
   useEffect(() => {
     if (!project || project.id !== projectId) return;
