@@ -1390,7 +1390,10 @@ export function sanitizeMddAtPersist(mddMarkdown: string): string {
  */
 export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
   if (!mddMarkdown?.trim()) return mddMarkdown;
-  return sanitizeMddAtPersist(formatDocumentMarkdown(mddMarkdown));
+  const formatted = formatDocumentMarkdown(mddMarkdown);
+  const sanitized = sanitizeMddAtPersist(formatted);
+  // Segunda pasada estructural: sanitize puede reintroducir fences rotos en §3/§4.
+  return formatDocumentMarkdown(sanitized);
 }
 
 /** Sanitiza MDD antes de exportar al handoff (misma pasada que persist). */
@@ -2758,7 +2761,7 @@ export function closeUnclosedCodeFencesInDraft(draft: string): string {
 function stripEmptyBareCodeFences(draft: string): string {
   let result = draft
     .replace(/\n```[ \t]*\n\s*```[ \t]*\n/g, "\n");
-  result = result.replace(/\n```[ \t]*\n(?=\s*---\s*\n|\s*##\s+)/g, (match, offset) => {
+  result = result.replace(/\n```[ \t]*\n(?=\s*---\s*\n|\s*##\s+|\s*###\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+)/g, (match, offset) => {
     const before = result.slice(0, offset);
     const fenceCount = (before.match(/```/g) ?? []).length;
     if (fenceCount % 2 === 1) return match;

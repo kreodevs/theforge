@@ -62,7 +62,7 @@ export function repairUnclosedCodeFences(text: string): string {
     if (
       inFence &&
       (/^#{1,6}\s+\S/.test(trimmed) ||
-        /^\*\*(?:Response\s+\d+|Beneficios de las|Headers?:|Request body|Backend\s*\(|Frontends\s+que)/i.test(
+        /^\*\*(?:Response\s+\d+|Beneficios de las|Headers?:|Request body|Request query params|Backend\s*\(|Frontends\s+que)/i.test(
           trimmed,
         ))
     ) {
@@ -250,6 +250,32 @@ export function repairCloseJsonBeforeContractMarkers(text: string): string {
       return `\`\`\`json\n${json}\n\`\`\`${leak ? `\n\n${leak}` : ""}`;
     },
   );
+}
+
+/** Elimina ``` huérfanos entre endpoints §4 y tras separadores `---`. */
+export function repairOrphanContratosApiFences(text: string): string {
+  let out = text.replace(
+    /\n---[ \t]*\n+```[ \t]*\n+(?=\s*###\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s)/gi,
+    "\n---\n\n",
+  );
+  const lines = out.split("\n");
+  const result: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i]!.trim();
+    if (t === "```" && i + 1 < lines.length) {
+      const next = lines[i + 1]!.trim();
+      if (/^###\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+/i.test(next)) {
+        let open = false;
+        for (let j = 0; j < i; j++) {
+          const ft = lines[j]!.trim();
+          if (/^```/.test(ft)) open = !open;
+        }
+        if (!open) continue;
+      }
+    }
+    result.push(lines[i]!);
+  }
+  return result.join("\n");
 }
 
 /** Contratos API (webhook, costos-reales, JWT, env): fences JSON/env rotos. */
@@ -514,6 +540,36 @@ function countDiagramPipes(text: string): number {
   return (text.match(/[|│]/g) ?? []).length;
 }
 
+function looksLikeErDiagramLine(line: string): boolean {
+  const t = line.trim();
+  if (/^[A-Za-z_][\w]*\s*\{\s*$/.test(t)) return true;
+  if (/^\}\s*$/.test(t)) return true;
+  if (/^[A-Za-z_][\w-]*\s+\|\|--/.test(t)) return true;
+  if (/^(uuid|string|int|boolean|datetime|fk)\s+\w+/i.test(t)) return true;
+  if (/^\w+\s+(PK|FK)\b/i.test(t)) return true;
+  return false;
+}
+
+/** SQL/DDL lines must not be wrapped as ASCII ```text``` diagrams (Copiloto §3). */
+function looksLikeSqlStatementLine(line: string): boolean {
+  const t = line.trim();
+  if (!t) return false;
+  if (
+    /^(CREATE|ALTER|DROP|INSERT|SELECT|UPDATE|DELETE|REFERENCES|CONSTRAINT|PRIMARY|UNIQUE|INDEX|ON\s+DELETE|ON\s+UPDATE)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (/^--\s/.test(t)) return true;
+  if (/\b(?:UUID|VARCHAR|TEXT|JSONB|BOOLEAN|INTEGER|BIGINT|TIMESTAMPTZ|INET)\b/i.test(t) && /[(),]/.test(t)) {
+    return true;
+  }
+  if (/^\s*[a-z_][a-z0-9_]*\s+(?:UUID|VARCHAR|TEXT|JSONB|BOOLEAN|INTEGER)\b/i.test(t)) return true;
+  if (/^erDiagram\b/i.test(t)) return true;
+  return false;
+}
+
 function looksLikeMarkdownTableLine(line: string): boolean {
   const t = line.trim();
   if (!/^\|.*\|$/.test(t)) return false;
@@ -533,6 +589,8 @@ export function looksLikeAsciiDiagramLine(line: string): boolean {
   if (!t) return false;
   if (/^```/.test(t)) return false;
   if (/^#{1,6}\s/.test(t)) return false;
+  if (looksLikeSqlStatementLine(line)) return false;
+  if (looksLikeErDiagramLine(line)) return false;
   if (looksLikeMarkdownTableLine(line)) return false;
 
   if (ASCII_BOX_DRAWING_RE.test(t)) return true;
@@ -548,6 +606,8 @@ export function looksLikeAsciiDiagramLine(line: string): boolean {
 }
 
 function looksLikeAsciiDiagramContinuation(line: string): boolean {
+  if (looksLikeSqlStatementLine(line)) return false;
+  if (looksLikeErDiagramLine(line)) return false;
   if (looksLikeAsciiDiagramLine(line)) return true;
   const t = line.trim();
   if (!t) return true;
@@ -779,6 +839,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairMetadataCoverTable(out);
   out = repairGluedBoldFlowTitles(out);
   out = repairApiContractJsonFences(out);
+  out = repairOrphanContratosApiFences(out);
   out = repairStackedCodeFences(out);
   out = repairSplitJsonFragments(out);
   out = repairJsonFenceIntegrity(out);
@@ -795,6 +856,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairJsonFenceIntegrity(out);
   out = repairGluedSqlTokens(out);
   out = repairApiContractJsonFences(out);
+  out = repairOrphanContratosApiFences(out);
   out = repairStackedCodeFences(out);
   out = repairSplitJsonFragments(out);
   out = repairJsonFenceIntegrity(out);
@@ -811,9 +873,12 @@ export function repairPastedMarkdown(text: string): string {
   out = repairInfraMarkdown(out);
   out = repairTableBoundaries(out);
   out = repairApiContractJsonFences(out);
+  out = repairOrphanContratosApiFences(out);
   out = repairStackedCodeFences(out);
   out = repairSplitJsonFragments(out);
   out = repairJsonFenceIntegrity(out);
+  out = repairOrphanContratosApiFences(out);
+  out = repairFragmentedSqlFences(out);
   out = repairStrayCodeFences(out);
   out = out.replace(/\n(🔴|🟡|🟢)/g, "\n\n$1");
   out = out.replace(/\n-{3,}\n/g, "\n\n---\n\n");
