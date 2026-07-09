@@ -1485,6 +1485,11 @@ export function mergeSplitMermaidContinuationFences(document: string): string {
   return cur;
 }
 
+/** Encabezado de sección MDD/BRD (## 4. …) colado dentro de un fence sin cerrar. */
+function isMermaidMdSectionHeadingLeak(trimmed: string): boolean {
+  return /^#{1,2}\s+\d+\.\s+\S/.test(trimmed);
+}
+
 function mermaidMarkdownLeakLine(trimmed: string): boolean {
   if (!trimmed) return false;
   if (/^```/.test(trimmed)) return true;
@@ -1493,6 +1498,8 @@ function mermaidMarkdownLeakLine(trimmed: string): boolean {
     return true;
   }
   if (/^#{1,6}\s/.test(trimmed)) {
+    // MDD/BRD section headings (## 4. Contratos…) colados dentro del fence — siempre prosa.
+    if (/^#{1,2}\s+\d+\.\s+\S/.test(trimmed)) return true;
     if (isOrphanSequenceDiagramLine(trimmed)) return false;
     return true;
   }
@@ -1549,7 +1556,11 @@ export function splitMermaidFenceBodyAtDocumentLeak(body: string): { diagram: st
         inErDiagram = /^erDiagram\b/i.test(trimmed);
       }
       if (seenDiagramStart && mermaidMarkdownLeakLine(trimmed)) {
-        if (inErDiagram && isErDiagramInteriorSyntaxLine(trimmed)) {
+        if (
+          !isMermaidMdSectionHeadingLeak(trimmed) &&
+          inErDiagram &&
+          isErDiagramInteriorSyntaxLine(trimmed)
+        ) {
           diagramLines.push(line);
           continue;
         }
@@ -1598,7 +1609,11 @@ export function stripMarkdownLeakFromMermaidDiagramBody(raw: string): string {
     }
 
     if (seenDiagramStart && mermaidMarkdownLeakLine(trimmed)) {
-      if (inErDiagram && isErDiagramInteriorSyntaxLine(trimmed)) {
+      if (
+        !isMermaidMdSectionHeadingLeak(trimmed) &&
+        inErDiagram &&
+        isErDiagramInteriorSyntaxLine(trimmed)
+      ) {
         out.push(line);
         continue;
       }
@@ -1642,7 +1657,11 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
     }
 
     if (seenDiagramStart && mermaidMarkdownLeakLine(trimmed)) {
-      if (inErDiagram && isErDiagramInteriorSyntaxLine(trimmed)) {
+      if (
+        !isMermaidMdSectionHeadingLeak(trimmed) &&
+        inErDiagram &&
+        isErDiagramInteriorSyntaxLine(trimmed)
+      ) {
         diagramLines.push(line);
         continue;
       }

@@ -13,7 +13,10 @@ import {
   repairTableBoundaries,
 } from "./repair-pasted-markdown.js";
 import { repairDirectoryTreeBlocks } from "./repair-directory-tree.js";
-import { repairGluedMarkdownHeadings } from "./repair-glued-headings.js";
+import {
+  homogenizeMarkdownBulletMarkers,
+  repairGluedMarkdownHeadings,
+} from "./repair-glued-headings.js";
 import {
   deduplicateDbgaDocument,
   hasDuplicateDbgaBlocks,
@@ -52,9 +55,11 @@ export function formatDocumentMarkdown(text: string): string {
   }
   cleaned = repairMarkdownFences(cleaned.trim());
   cleaned = repairGluedMarkdownHeadings(cleaned);
+  cleaned = homogenizeMarkdownBulletMarkers(cleaned);
   cleaned = normalizeAllTables(cleaned);
   cleaned = repairTableBoundaries(cleaned);
   cleaned = repairStrayCodeFences(cleaned);
+  cleaned = repairGluedMarkdownHeadings(cleaned);
   cleaned = normalizeMermaidInDocument(cleaned);
   cleaned = repairDirectoryTreeBlocks(cleaned);
   return cleaned;

@@ -22,6 +22,27 @@ function openFenceLangBeforeLine(lines: string[], lineIndex: number): string | n
   return openLang;
 }
 
+/** Elimina ``` huérfano inmediatamente antes de un encabezado markdown (cierre sin apertura). */
+export function repairOrphanFenceBeforeMarkdownHeading(document: string): string {
+  if (!document?.trim()) return document ?? "";
+  const lines = document.replace(/\r\n/g, "\n").split("\n");
+  const dropLine = new Set<number>();
+
+  for (let i = 0; i < lines.length; i++) {
+    if ((lines[i] ?? "").trim() !== "```") continue;
+    const openLang = openFenceLangBeforeLine(lines, i);
+    if (openLang !== null) continue;
+    const rest = lines.slice(i + 1);
+    const nextNonEmpty = rest.find((l) => (l ?? "").trim())?.trim() ?? "";
+    if (/^#{1,6}\s+/.test(nextNonEmpty)) {
+      dropLine.add(i);
+    }
+  }
+
+  if (dropLine.size === 0) return lines.join("\n");
+  return lines.filter((_line, idx) => !dropLine.has(idx)).join("\n");
+}
+
 /**
  * Elimina ``` huérfano que envuelve el heading + ```mermaid como bloque plano (MDD LLM).
  * No quita un ``` que cierra un bloque ```mermaid real (BRD §4: varios diagramas seguidos).
@@ -38,7 +59,7 @@ export function stripOrphanFenceLineBeforeMermaid(document: string): string {
     if (trimmed !== "```") continue;
 
     const openLang = openFenceLangBeforeLine(lines, i);
-    if (openLang === "mermaid") continue;
+    if (openLang !== null) continue;
 
     const rest = lines.slice(i + 1);
     let j = 0;
@@ -78,13 +99,24 @@ function markdownLikeDocFragment(t: string): boolean {
   return hasListOrPara || /\n##\s/.test(s);
 }
 
+/** Fence sin idioma cuyo cuerpo son solo encabezados markdown (contaminación LLM). */
+function isHeadingOnlyFenceBody(body: string): boolean {
+  const lines = body
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return lines.length > 0 && lines.every((l) => /^#{1,6}\s+/.test(l));
+}
+
 /**
  * - Desenvuelve bloques ``` / ```markdown cuyo interior son títulos y listas (markdown real).
  * - Si hay un ``` de apertura sin cierre y el resto parece MDD, elimina la línea del fence.
  */
 export function repairMarkdownFences(raw: string): string {
   if (!raw?.trim()) return raw ?? "";
-  const preprocessed = stripOrphanFenceLineBeforeMermaid(raw);
+  const preprocessed = stripOrphanFenceLineBeforeMermaid(
+    repairOrphanFenceBeforeMarkdownHeading(raw),
+  );
   const lines = preprocessed.replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   let i = 0;
@@ -120,6 +152,9 @@ export function repairMarkdownFences(raw: string): string {
           if ((out[out.length - 1] ?? "").trim() !== "") out.push("");
           out.push(...remainder.split("\n"));
         }
+      } else if (hasClose && !lang && isHeadingOnlyFenceBody(body)) {
+        if (out.length > 0 && (out[out.length - 1] ?? "").trim() !== "") out.push("");
+        out.push(...body.split("\n"));
       } else if (hasClose && unwrapLang && markdownLikeDocFragment(body) && !isMermaidDiagram) {
         if (out.length > 0 && (out[out.length - 1] ?? "").trim() !== "") out.push("");
         out.push(...body.split("\n"));

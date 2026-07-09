@@ -7,21 +7,14 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { repairMarkdownFences, repairGluedMarkdownHeadings, repairFragmentedSqlFences } from "@theforge/shared-types";
+import { formatDocumentMarkdown } from "@theforge/shared-types";
 import {
   isCollapsedDirectoryTreeLine,
   splitCollapsedDirectoryTree,
-  repairDirectoryTreeBlocks,
   looksLikeDirectoryTreeParagraph,
 } from "@theforge/shared-types/repair-directory-tree";
-import {
-  looksLikeAsciiDiagramLine,
-  repairAsciiDiagramBlocks,
-} from "@theforge/shared-types";
-import {
-  normalizeMermaidInDocument,
-  prepareMermaidDiagramForRender,
-} from "@theforge/shared-types/mermaid";
+import { looksLikeAsciiDiagramLine } from "@theforge/shared-types";
+import { prepareMermaidDiagramForRender } from "@theforge/shared-types/mermaid";
 import { parseMarkdownSections } from "../utils/markdownSections";
 import {
   MermaidBlockErrorBoundary,
@@ -395,17 +388,7 @@ class MddViewerErrorBoundary extends Component<
  * evitando parpadeo al hacer streaming o al actualizar el documento.
  */
 function MddViewerInner({ content, className = "" }: MddViewerProps) {
-  const cleaned = stripBrokenMermaidBlocks(
-    normalizeMermaidInDocument(
-      repairAsciiDiagramBlocks(
-        repairDirectoryTreeBlocks(
-          repairFragmentedSqlFences(
-            repairGluedMarkdownHeadings(repairMarkdownFences(content)),
-          ),
-        ),
-      ),
-    ),
-  );
+  const cleaned = stripBrokenMermaidBlocks(formatDocumentMarkdown(content));
   const sections = parseMarkdownSections(cleaned);
 
   return (
