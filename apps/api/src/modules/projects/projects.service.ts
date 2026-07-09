@@ -142,7 +142,6 @@ import { DocumentationGapService } from "../documentation-gap/documentation-gap.
 import { UiScreensService } from "../ui-mcp/ui-screens.service.js";
 import {
   collectSddPrecisionGaps,
-  checkArchitectureVsMdd,
   formatPrecisionGapsFeedback,
   precisionGapsForPostPassRetry,
 } from "../engine/sdd-precision-checks.util.js";
@@ -1741,7 +1740,7 @@ name: ${JSON.stringify(name)}
     return gapsMap;
   }
 
-  /** W4: reintenta artefactos con gaps de precisión SDD. */
+  /** W4: reintenta artefactos con gaps de precisión SDD (upstream en paralelo; tasks al final). */
   private async runCascadePostPassRetry(projectId: string): Promise<void> {
     const project = await this.findOne(projectId);
     const mdd = this.constitutionMarkdown(project);
@@ -1765,21 +1764,33 @@ name: ${JSON.stringify(name)}
       `[Cascade] Post-pase W4: ${precisionGaps.length} gap(s) de precisión — retry dirigido`,
     );
 
+    const upstreamRetries: Promise<void>[] = [];
     if (flags.retryArchitecture) {
-      await this.generateArchitecture(projectId, feedback).catch((e) =>
-        this.logger.warn(`[Cascade] W4 architecture retry: ${e instanceof Error ? e.message : e}`),
+      upstreamRetries.push(
+        this.generateArchitecture(projectId, feedback).catch((e) =>
+          this.logger.warn(`[Cascade] W4 architecture retry: ${e instanceof Error ? e.message : e}`),
+        ),
       );
     }
     if (flags.retryLogicFlows) {
-      await this.generateLogicFlows(projectId, feedback).catch((e) =>
-        this.logger.warn(`[Cascade] W4 logic-flows retry: ${e instanceof Error ? e.message : e}`),
+      upstreamRetries.push(
+        this.generateLogicFlows(projectId, feedback).catch((e) =>
+          this.logger.warn(`[Cascade] W4 logic-flows retry: ${e instanceof Error ? e.message : e}`),
+        ),
       );
     }
     if (flags.retryApiContracts) {
-      await this.generateApiContracts(projectId, feedback).catch((e) =>
-        this.logger.warn(`[Cascade] W4 api-contracts retry: ${e instanceof Error ? e.message : e}`),
+      upstreamRetries.push(
+        this.generateApiContracts(projectId, feedback).catch((e) =>
+          this.logger.warn(`[Cascade] W4 api-contracts retry: ${e instanceof Error ? e.message : e}`),
+        ),
       );
     }
+
+    if (upstreamRetries.length > 0) {
+      await Promise.allSettled(upstreamRetries);
+    }
+
     if (flags.retryTasks) {
       await this.generateTasks(projectId, feedback).catch((e) =>
         this.logger.warn(`[Cascade] W4 tasks retry: ${e instanceof Error ? e.message : e}`),
@@ -2188,30 +2199,9 @@ name: ${JSON.stringify(name)}
       ...gfOpts,
     };
 
-    let tasksContent = cleanDocumentContent(
+    const tasksContent = cleanDocumentContent(
       await this.ai.generateTasks(mdd, project.blueprintContent, taskOpts),
     );
-
-    const precisionGaps = collectSddPrecisionGaps({
-      mdd,
-      blueprint: project.blueprintContent,
-      tasks: tasksContent,
-      phase0Summary: project.phase0SummaryContent,
-      apiContracts: project.apiContractsContent,
-      logicFlows: project.logicFlowsContent,
-      useCases: project.useCasesContent,
-    }).filter((g) => /\[Tasks\]|\[Research→Tasks\]|\[Events\]|\[LLM JSON\]/i.test(g));
-
-    if (precisionGaps.length > 0 && tasksContent.length >= 80) {
-      const combined = [gapsFeedback, formatPrecisionGapsFeedback(precisionGaps)].filter(Boolean).join("\n\n");
-      this.logger.warn(`[Tasks] ${precisionGaps.length} gap(s) de precisión — reintento`);
-      tasksContent = cleanDocumentContent(
-        await this.ai.generateTasks(mdd, project.blueprintContent, {
-          ...taskOpts,
-          gapsFeedback: combined,
-        }),
-      );
-    }
 
     return this.update(projectId, { tasksContent });
   }
@@ -2242,24 +2232,12 @@ name: ${JSON.stringify(name)}
     const project = await this.assertProjectAccess(projectId);
     const mdd = this.constitutionMarkdown(project);
     const gfOpts = this.greenfieldGenerateOptions(project);
-    let content = cleanDocumentContent(
+    const content = cleanDocumentContent(
       await this.ai.generateArchitecture(mdd, project.blueprintContent, {
         ...gfOpts,
         gapsFeedback,
       }),
     );
-
-    const archGaps = checkArchitectureVsMdd(mdd, content);
-    if (archGaps.gaps.length > 0 && content.length >= 80) {
-      const combined = [gapsFeedback, archGaps.gaps.join("\n")].filter(Boolean).join("\n\n");
-      this.logger.warn(`[Architecture] ${archGaps.gaps.length} gap(s) — reintento`);
-      content = cleanDocumentContent(
-        await this.ai.generateArchitecture(mdd, project.blueprintContent, {
-          ...gfOpts,
-          gapsFeedback: combined,
-        }),
-      );
-    }
 
     return this.update(projectId, { architectureContent: content });
   }
