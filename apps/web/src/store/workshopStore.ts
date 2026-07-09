@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatImagePart, CodebaseDocResponseMode, MddDeliveryGateResult, ProjectGenerationStatus } from "@theforge/shared-types";
+import type { ChatImagePart, CodebaseDocResponseMode, MddDeliveryGateResult, PlanValidationPersisted, ProjectGenerationStatus } from "@theforge/shared-types";
 import { contentIncludesVisionBlock } from "@theforge/shared-types/session";
 import { isFormatDocumentChatCommand } from "../utils/documentFormatCommand";
 import {
@@ -710,6 +710,8 @@ interface WorkshopState {
   cascadeTotal: number;
   /** Métricas en vivo (Semáforo + estimación) desde GET /ai-analysis/estimation */
   liveMetrics: LiveMetricsResult | null;
+  /** Gate 2 — Ariadne validate_change_plan (last persisted on stage). */
+  planValidation: PlanValidationPersisted | null;
   /** ThreadId del flujo Manager (MDD); cuando está definido, el siguiente mensaje en tab MDD va a resume */
   managerThreadId: string | null;
   /** true mientras se ejecuta persistAndReviewMdd (grabar + revisión de consistencia) */
@@ -793,6 +795,8 @@ interface WorkshopState {
   /** Gate de cola: jobs activos, MDD en stream y dependencias upstream. */
   generationStatus: ProjectGenerationStatus | null;
   fetchGenerationStatus: (projectId: string) => Promise<ProjectGenerationStatus | null>;
+  fetchPlanValidation: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
+  validateChangePlan: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
 
   fetchProject: (projectId: string) => Promise<Project | null>;
   fetchWelcome: (projectId: string, activeTab?: string) => Promise<void>;
@@ -1014,6 +1018,7 @@ const initialState = {
   cascadeCompleted: 0,
   cascadeTotal: 0,
   liveMetrics: null as LiveMetricsResult | null,
+  planValidation: null as PlanValidationPersisted | null,
   managerThreadId: null as string | null,
   mddReviewing: false,
   mddReapplyingFormat: false,
@@ -1307,6 +1312,53 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
+  fetchPlanValidation: async (projectId, stageId) => {
+    const requestedId = projectId.trim();
+    if (!requestedId) return null;
+    try {
+      const q = stageId?.trim() ? `?stageId=${encodeURIComponent(stageId.trim())}` : "";
+      const r = await apiFetch(`${API_BASE}/projects/${requestedId}/plan-validation${q}`);
+      if (!r.ok) return null;
+      const data = (await r.json()) as { validation?: PlanValidationPersisted | null };
+      const validation = data.validation ?? null;
+      if (shouldApplyWorkshopUpdate(get, requestedId)) {
+        set({ planValidation: validation });
+      }
+      return validation;
+    } catch {
+      return null;
+    }
+  },
+
+  validateChangePlan: async (projectId, stageId) => {
+    const requestedId = projectId.trim();
+    if (!requestedId) return null;
+    set({ loading: true, error: null });
+    try {
+      const q = stageId?.trim() ? `?stageId=${encodeURIComponent(stageId.trim())}` : "";
+      const r = await apiFetch(`${API_BASE}/projects/${requestedId}/validate-change-plan${q}`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        throw new Error(await parseErrorMessageFromResponse(r, "Error al validar plan"));
+      }
+      const data = (await r.json()) as {
+        skipped?: boolean;
+        persisted?: PlanValidationPersisted;
+      };
+      const validation = data.persisted ?? null;
+      if (validation && shouldApplyWorkshopUpdate(get, requestedId)) {
+        set({ planValidation: validation });
+      }
+      return validation;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Error al validar plan" });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
   fetchProject: async (projectId) => {
     const requestedId = projectId.trim();
     if (!requestedId) return null;
@@ -1386,6 +1438,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         get().fetchEstimation(requestedId).catch(() => { });
         get().fetchAdrs(requestedId).catch(() => { });
         get().fetchGenerationStatus(requestedId).catch(() => { });
+        get().fetchPlanValidation(requestedId).catch(() => { });
       }, 0);
       return data;
     } catch (e) {
@@ -2917,6 +2970,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const data = await queueAndPoll<Project>(`${API_BASE}/projects/${projectId}/generate-tasks`, {});
       set({ project: data, tasksContent: data.tasksContent ?? null, error: null });
       void get().fetchGenerationStatus(projectId);
+      void get().fetchPlanValidation(projectId);
       return data;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar Tasks" });

@@ -32,7 +32,7 @@ import {
 import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
-import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson } from "@theforge/shared-types";
+import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson, isBrownfieldCapable } from "@theforge/shared-types";
 import { formatDocumentMarkdown } from "@theforge/shared-types/format-document-markdown";
 import { sanitizeMddAtPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import {
@@ -151,6 +151,7 @@ import {
   parseChangeScopeFromLegacyState,
 } from "./tasks-coordinates-context.util.js";
 import { ResolveChangeToFilesService } from "../legacy-flow/resolve-change-to-files.service.js";
+import { PlanValidationService } from "./plan-validation.service.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
 import {
   buildProjectCloneCreateInput,
@@ -221,6 +222,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly uiScreens: UiScreensService,
     @Inject(forwardRef(() => ResolveChangeToFilesService))
     private readonly resolveChangeToFiles: ResolveChangeToFilesService,
+    private readonly planValidation: PlanValidationService,
   ) {}
 
   /** Opciones greenfield: Phase0 + blueprint para checklist de cobertura. */
@@ -2220,7 +2222,17 @@ name: ${JSON.stringify(name)}
       await this.ai.generateTasks(mdd, project.blueprintContent, taskOpts),
     );
 
-    return this.update(projectId, { tasksContent });
+    const updated = await this.update(projectId, { tasksContent });
+
+    if (isBrownfieldCapable(theforgeId)) {
+      void this.planValidation.validateProjectChangePlan(projectId).catch((e) =>
+        this.logger.warn(
+          `[plan-validation] post-generateTasks failed: ${e instanceof Error ? e.message : String(e)}`,
+        ),
+      );
+    }
+
+    return updated;
   }
 
   /**

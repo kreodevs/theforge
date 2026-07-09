@@ -20,6 +20,7 @@ import { LegacyFlowModule } from "../legacy-flow/legacy-flow.module.js";
 import { DocumentationGapModule } from "../documentation-gap/documentation-gap.module.js";
 import { EstimationModule } from "../ai-analysis/estimation/estimation.module.js";
 import { SddIntegrationService } from "./sdd-integration.service.js";
+import { PlanValidationService } from "./plan-validation.service.js";
 import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
 
 @Module({
@@ -43,11 +44,12 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     IntegrationAgentService,
     ProjectMergeService,
     SddIntegrationService,
+    PlanValidationService,
     { provide: PROJECTS_ORCHESTRATOR_PORT, useExisting: ProjectsService },
     ProjectEstimationRecalcService,
     DeliverablesQueueService,
     ProjectGenerationGuardService,
   ],
-  exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService],
+  exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
 })
 export class ProjectsModule { }

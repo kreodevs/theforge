@@ -44,6 +44,7 @@ export * from "./spec-kit-bundle.js";
 export * from "./ui-screens-export.js";
 export * from "./ui-mcp-adapter-label.js";
 export * from "./tasks-parse.js";
+export * from "./change-plan/index.js";
 export * from "./sdd-integrations.js";
 export * from "./sdd-analyze.js";
 export * from "./document-layout.js";

@@ -28,6 +28,7 @@ import {
   tasksToIssuesBodySchema,
 } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
+import { PlanValidationService } from "./plan-validation.service.js";
 
 @Controller("projects")
 export class ProjectsController {
@@ -37,6 +38,7 @@ export class ProjectsController {
     private readonly deliverablesQueue: DeliverablesQueueService,
     private readonly generationGuard: ProjectGenerationGuardService,
     private readonly sddIntegration: SddIntegrationService,
+    private readonly planValidation: PlanValidationService,
   ) {}
 
   @Post("merge")
@@ -227,6 +229,20 @@ export class ProjectsController {
   ) {
     const parsed = convergeTriggerBodySchema.parse(body ?? {});
     return this.sddIntegration.triggerConverge(id, parsed, stageId?.trim() || undefined);
+  }
+
+  /** Gate 2: validate change plan (Tasks + legacy state) against Ariadne graph. */
+  @Post(":id/validate-change-plan")
+  validateChangePlan(@Param("id") id: string, @Query("stageId") stageId?: string) {
+    return this.planValidation.validateProjectChangePlan(id, stageId?.trim() || undefined);
+  }
+
+  /** Last persisted plan validation for the active or given stage. */
+  @Get(":id/plan-validation")
+  getPlanValidation(@Param("id") id: string, @Query("stageId") stageId?: string) {
+    return this.planValidation
+      .getPlanValidationForProject(id, stageId?.trim() || undefined)
+      .then((validation) => ({ validation }));
   }
 
   /**
