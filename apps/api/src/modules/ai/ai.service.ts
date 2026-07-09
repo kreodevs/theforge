@@ -816,6 +816,9 @@ export class AiService {
       logicFlowsContent?: string | null;
       infraContent?: string | null;
       gapsFeedback?: string | null;
+      /** Bloque determinista: ChangeScope, resolve-change, module hints. */
+      fileCoordinatesContext?: string | null;
+      coordinatesMode?: boolean;
     },
   ): Promise<string> {
     const mdd = buildMddContextForTasks(mddContent?.trim() ?? "", mddDeliverableCtx(options));
@@ -852,6 +855,15 @@ export class AiService {
     }
     if (navMap.length > 0) {
       prompt += "\n\n## Mapa de Navegación del Proyecto\n\n" + navMap;
+    }
+    if (options?.fileCoordinatesContext?.trim()) {
+      prompt += "\n\n" + options.fileCoordinatesContext.trim() + "\n";
+    }
+    if (options?.coordinatesMode) {
+      prompt =
+        "**MODO COORDENADAS EXACTAS:** Obligatorio el formato T-NNN con Archivo, Función, Línea y diff en bloque Cambio cuando el contexto lo permita. " +
+        "Si no hay línea exacta, indica archivo + función + posición relativa; nunca inventes rutas fuera del mapa.\n\n" +
+        prompt;
     }
     prompt = appendPhase0ResearchBlock(prompt, options);
     prompt = appendGreenfieldCoverageChecklist(prompt, mddContent?.trim() ?? "", "Tasks", options, blueprintContent);

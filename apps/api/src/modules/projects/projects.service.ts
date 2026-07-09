@@ -145,6 +145,12 @@ import {
   formatPrecisionGapsFeedback,
   precisionGapsForPostPassRetry,
 } from "../engine/sdd-precision-checks.util.js";
+import {
+  buildTasksCoordinatesPromptBlock,
+  extractMddCapabilityLines,
+  parseChangeScopeFromLegacyState,
+} from "./tasks-coordinates-context.util.js";
+import { ResolveChangeToFilesService } from "../legacy-flow/resolve-change-to-files.service.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
 import {
   buildProjectCloneCreateInput,
@@ -213,6 +219,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     @Inject(forwardRef(() => DocumentationGapService))
     private readonly documentationGap: DocumentationGapService,
     private readonly uiScreens: UiScreensService,
+    @Inject(forwardRef(() => ResolveChangeToFilesService))
+    private readonly resolveChangeToFiles: ResolveChangeToFilesService,
   ) {}
 
   /** Opciones greenfield: Phase0 + blueprint para checklist de cobertura. */
@@ -2187,6 +2195,13 @@ name: ${JSON.stringify(name)}
     }
 
     const mdd = this.constitutionMarkdown(project);
+    const coordinates = await this.buildTasksCoordinatesContext(
+      projectId,
+      project,
+      mdd,
+      navigationMap,
+    );
+
     const gfOpts = this.greenfieldGenerateOptions(project);
     const taskOpts = {
       navigationMap,
@@ -2196,6 +2211,8 @@ name: ${JSON.stringify(name)}
       logicFlowsContent: project.logicFlowsContent,
       infraContent: project.infraContent,
       gapsFeedback,
+      fileCoordinatesContext: coordinates.block,
+      coordinatesMode: coordinates.coordinatesMode,
       ...gfOpts,
     };
 
@@ -2204,6 +2221,51 @@ name: ${JSON.stringify(name)}
     );
 
     return this.update(projectId, { tasksContent });
+  }
+
+  /**
+   * Arma contexto determinista para tasks con coordenadas (ChangeScope, resolve-change, hints).
+   */
+  private async buildTasksCoordinatesContext(
+    projectId: string,
+    project: Project & { stages?: Stage[] },
+    mddMarkdown: string,
+    navigationMap?: string,
+  ): Promise<{ block: string; coordinatesMode: boolean }> {
+    const stage = pickPrimaryStage(project.stages ?? []);
+    const changeScope = parseChangeScopeFromLegacyState(stage?.legacyChangeState);
+
+    const descriptions: string[] = [];
+    if (changeScope?.description?.trim()) {
+      descriptions.push(changeScope.description.trim());
+    } else {
+      descriptions.push(...extractMddCapabilityLines(mddMarkdown, 4));
+    }
+
+    const resolveResults: Array<{ description: string; result: Awaited<ReturnType<ResolveChangeToFilesService["resolve"]>> }> = [];
+    const theforgeId = (project as Project & { theforgeProjectId?: string | null }).theforgeProjectId;
+    if (theforgeId && descriptions.length > 0) {
+      await Promise.allSettled(
+        descriptions.slice(0, 4).map(async (description) => {
+          const result = await this.resolveChangeToFiles.resolve({
+            projectId,
+            description,
+            stageId: stage?.id,
+          });
+          if (result.suggestedFiles.length || result.affectedRoutes.length) {
+            resolveResults.push({ description, result });
+          }
+        }),
+      );
+    }
+
+    return buildTasksCoordinatesPromptBlock({
+      navigationMapMarkdown: navigationMap,
+      changeScope: changeScope ?? undefined,
+      resolveResults,
+      architectureMarkdown: project.architectureContent,
+      mddMarkdown,
+    });
   }
 
   /**
