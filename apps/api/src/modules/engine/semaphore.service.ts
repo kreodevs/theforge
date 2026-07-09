@@ -28,6 +28,8 @@ export type SemaphoreEvaluationInput = {
    * para la etapa; en HIGH puede sustituir la puerta rígida edge_cases/field_types (§3–§5) hacia VERDE.
    */
   sddDomainGraphOk?: boolean;
+  /** Gaps cross-artifact de precisión SDD (Architecture, Tasks, Scheduler, Research→Tasks, …). */
+  sddCrossArtifactGapCount?: number;
 };
 
 function substantial(s: string | null | undefined): boolean {
@@ -50,15 +52,37 @@ function figmaGateOk(hasUxTeam: boolean, figmaMapping: unknown): boolean {
 @Injectable()
 export class SemaphoreService {
   evaluate(input: SemaphoreEvaluationInput): { status: Status; precisionScore: number } {
+    let result: { status: Status; precisionScore: number };
     switch (input.complexity) {
       case ComplexityLevel.LOW:
-        return this.evaluateLow(input);
+        result = this.evaluateLow(input);
+        break;
       case ComplexityLevel.MEDIUM:
-        return this.evaluateMedium(input);
+        result = this.evaluateMedium(input);
+        break;
       case ComplexityLevel.HIGH:
       default:
-        return this.evaluateHigh(input);
+        result = this.evaluateHigh(input);
+        break;
     }
+    return this.applySddPrecisionGates(result, input.sddCrossArtifactGapCount);
+  }
+
+  /** Gaps de precisión SDD pendientes → AMARILLO (no empeora ROJO). */
+  private applySddPrecisionGates(
+    result: { status: Status; precisionScore: number },
+    gapCount: number | undefined,
+  ): { status: Status; precisionScore: number } {
+    if (!gapCount || gapCount <= 0) return result;
+    if (result.status === Status.ROJO) return result;
+    const cappedScore = Math.min(result.precisionScore, 82);
+    if (result.status === Status.VERDE) {
+      return { status: Status.AMARILLO, precisionScore: cappedScore };
+    }
+    if (result.precisionScore > 82) {
+      return { status: Status.AMARILLO, precisionScore: cappedScore };
+    }
+    return result;
   }
 
   private evaluateLow(input: SemaphoreEvaluationInput): { status: Status; precisionScore: number } {

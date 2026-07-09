@@ -13,6 +13,7 @@ Generar el **documento de Casos de Uso y Flujos de Lógica** (Logic & Flows) en 
 3. **Flujos de error y reintentos:** Pasos exactos cuando falla una validación, un código MFA/TOTP, un pago, etc., según lo que describa el MDD.
 4. **Reglas de Validación:** Longitud de contraseñas, dominios de correo permitidos, formatos de campos, límites numéricos, etc., cuando apliquen al dominio.
 5. **Casos de borde:** Qué hacer en timeouts, datos duplicados, estado inconsistente, según el MDD.
+6. **Scheduler canónico (obligatorio si hay jobs/cron):** Una sola subsección `## Scheduler canónico` con **una** verdad: expresión cron, timezone IANA (ej. `America/Mexico_City`), días hábiles y propósito (recomendaciones, ingestion, stop-loss). No dupliques horarios conflictivos en otras secciones.
 
 # Cobertura exhaustiva (obligatoria cuando el MDD describe MVP completo) #
 

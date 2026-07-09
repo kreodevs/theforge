@@ -80,10 +80,11 @@ import {
   cloneProjectBodySchema,
   patchStageBodySchema,
   updateProjectSchema,
-  DELIVERABLES_BY_COMPLEXITY,
-  DELIVERABLE_STEP_LABELS,
+  DELIVERABLE_WAVES_BY_COMPLEXITY,
+  flattenDeliverableWaves,
   parseAgentGovernanceScaffold,
   type DeliverableKind,
+  type DeliverableWaveStep,
   type ComplexityPending,
   type CreateProjectDto,
   type UpdateProjectDto,
@@ -138,6 +139,13 @@ import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { reconcileExportScaffold, buildUnifiedHandoff, buildAgentGovernanceInput, synthesizeExportGovernanceScaffold } from "./handoff-export.util.js";
 import { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
+import { UiScreensService } from "../ui-mcp/ui-screens.service.js";
+import {
+  collectSddPrecisionGaps,
+  checkArchitectureVsMdd,
+  formatPrecisionGapsFeedback,
+  precisionGapsForPostPassRetry,
+} from "../engine/sdd-precision-checks.util.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
 import {
   buildProjectCloneCreateInput,
@@ -205,7 +213,17 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly uiMcp: UiMcpService,
     @Inject(forwardRef(() => DocumentationGapService))
     private readonly documentationGap: DocumentationGapService,
+    private readonly uiScreens: UiScreensService,
   ) {}
+
+  /** Opciones greenfield: Phase0 + blueprint para checklist de cobertura. */
+  private greenfieldGenerateOptions(project: Project): LegacyGenerateOptions {
+    return {
+      phase0SummaryContent: project.phase0SummaryContent,
+      phase0GapsJson: project.phase0Gaps,
+      coverageBlueprintContent: project.blueprintContent,
+    };
+  }
 
   /**
    * Anexa la sección de design system inferida del MCP gráfico compatible activo, si lo hay.
@@ -316,6 +334,37 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return JSON.stringify(normalized);
   }
 
+  private countSddPrecisionGaps(
+    project: Pick<
+      Project,
+      | "architectureContent"
+      | "blueprintContent"
+      | "tasksContent"
+      | "logicFlowsContent"
+      | "userStoriesContent"
+      | "useCasesContent"
+      | "apiContractsContent"
+      | "uiScreensContent"
+      | "phase0SummaryContent"
+    >,
+    mddMarkdown: string | null | undefined,
+  ): number {
+    const mdd = (mddMarkdown ?? "").trim();
+    if (mdd.length < 120) return 0;
+    return collectSddPrecisionGaps({
+      mdd,
+      architecture: project.architectureContent,
+      blueprint: project.blueprintContent,
+      tasks: project.tasksContent,
+      logicFlows: project.logicFlowsContent,
+      userStories: project.userStoriesContent,
+      useCases: project.useCasesContent,
+      apiContracts: project.apiContractsContent,
+      pantallas: project.uiScreensContent,
+      phase0Summary: project.phase0SummaryContent,
+    }).length;
+  }
+
   /** Recalcula semáforo de la etapa principal cuando cambian entregables/complejidad sin tocar el MDD. */
   private async refreshStageSemaphoreFromProject(projectId: string): Promise<void> {
     const project = await this.prisma.project.findFirst({
@@ -326,9 +375,13 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const targetStage = pickPrimaryStage(project.stages);
     if (!targetStage) return;
 
+    const mddMarkdown = targetStage.mddContent ?? "";
+    const sddCrossArtifactGapCount = this.countSddPrecisionGaps(project, mddMarkdown);
+
     const { status, precisionScore } = this.semaphore.evaluate({
       ...this.buildSemaphoreBase(project),
-      mddJsonString: this.mddJsonStringForSemaphore(targetStage.mddContent),
+      mddJsonString: this.mddJsonStringForSemaphore(mddMarkdown),
+      sddCrossArtifactGapCount,
     });
 
     await this.prisma.stage.update({
@@ -1576,7 +1629,7 @@ name: ${JSON.stringify(name)}
         await this.generateSpec(projectId);
         return;
       case "architecture":
-        await this.generateArchitecture(projectId);
+        await this.generateArchitecture(projectId, gaps);
         return;
       case "use_cases":
         await this.generateUseCases(projectId);
@@ -1601,7 +1654,7 @@ name: ${JSON.stringify(name)}
         await this.generateAgentGovernance(projectId);
         return;
       case "tasks":
-        await this.generateTasks(projectId);
+        await this.generateTasks(projectId, gaps);
         return;
       case "infra":
         await this.generateInfra(projectId, gaps);
@@ -1620,43 +1673,40 @@ name: ${JSON.stringify(name)}
     await this.generateBlueprint(projectId);
   }
 
-  private async runDeliverableStep(kind: DeliverableKind, projectId: string, options?: { gapsFeedback?: string | null }): Promise<void> {
-    return this.generateDocument(kind, projectId, options);
+  private async runDeliverableWaveStep(
+    step: DeliverableWaveStep,
+    projectId: string,
+    gapsFeedback?: string | null,
+  ): Promise<void> {
+    if (step === "ui_screens_sync") {
+      await this.runCascadeUiScreensSync(projectId);
+      return;
+    }
+    await this.runDeliverableStep(step, projectId, gapsFeedback ? { gapsFeedback } : undefined);
   }
 
-  /**
-   * Enrutamiento dinámico: solo ejecuta generadores listados en `DELIVERABLES_BY_COMPLEXITY`.
-   * @param onProgress — opcional (p. ej. BullMQ `job.updateProgress`).
-   */
-  async generateDeliverablesCascade(
-    projectId: string,
-    onProgress?: (p: { step: DeliverableKind; index: number; total: number }) => void,
-    options?: { acknowledgeGaps?: boolean },
-  ) {
-    await this.assertDeliverablesAllowed(projectId, options);
-    const project = await this.assertProjectAccess(projectId);
-    if (project.projectType === "LEGACY") {
-      throw new BadRequestException("Usa el flujo de entregables legacy del proyecto.");
+  /** Sync pantallas tras W2; no falla la cascada si no hay MCP activo. */
+  private async runCascadeUiScreensSync(projectId: string): Promise<void> {
+    try {
+      if (!(await this.uiMcpClient.isActive())) {
+        this.logger.debug("[Cascade] ui_screens_sync omitido — MCP gráfico inactivo");
+        return;
+      }
+      await this.uiScreens.syncUiScreens(projectId);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.logger.warn(`[Cascade] ui_screens_sync saltado: ${message}`);
     }
-    if (project.complexityPending != null) {
-      throw new BadRequestException(
-        "Hay una propuesta de complejidad pendiente de confirmación. Confirma o rechaza en el chat del Workshop antes de generar entregables.",
-      );
-    }
-    const c = project.complexity ?? ComplexityLevel.HIGH;
-    const deliverablesToRun = DELIVERABLES_BY_COMPLEXITY[c];
-    const total = deliverablesToRun.length;
-    const errors: { step: string; error: string }[] = [];
+  }
 
-    // [PARALELO] Todos los documentos son generaciones LLM independientes.
-    // No comparten estado ni LangGraph — cada uno se guarda directo a DB.
-    // Promise.allSettled asegura que si un paso falla, los demás continúan.
-    // Usamos contador atómico (no array index) para progreso real.
-// Recolectamos gaps de conformance existentes para pasarlos a cada generador.
-    const projectFresh = await this.findOne(projectId);
-    const mddContent = this.constitutionMarkdown(project);
-    const gapsMap = new Map<string, string | null>();
-    for (const step of deliverablesToRun) {
+  private buildExistingConformanceGapsMap(
+    projectFresh: Project,
+    mddContent: string,
+    steps: DeliverableWaveStep[],
+  ): Map<string, string> {
+    const gapsMap = new Map<string, string>();
+    for (const step of steps) {
+      if (step === "ui_screens_sync") continue;
       const stepKey = step as string;
       if (stepKey === "blueprint") {
         const bp = projectFresh?.blueprintContent ?? "";
@@ -1688,25 +1738,128 @@ name: ${JSON.stringify(name)}
         }
       }
     }
-    let completedCount = 0;
-    const stepList = [...deliverablesToRun];
-    await Promise.allSettled(
-      stepList.map(async (step) => {
-        try {
-          const stepGaps = gapsMap.get(step) ?? undefined;
-          await this.runDeliverableStep(step, projectId, stepGaps ? { gapsFeedback: stepGaps } : undefined);
-        } catch (e) {
-          const message = e instanceof Error ? e.message : "Error desconocido";
-          this.logger.warn(`[Cascade] Paso ${step} saltado: ${message}.`);
-          errors.push({ step, error: message });
-        }
-        completedCount++;
-        const label = DELIVERABLE_STEP_LABELS[step];
-        onProgress?.({ step: label as DeliverableKind, index: completedCount - 1, total });
-      }),
+    return gapsMap;
+  }
+
+  /** W4: reintenta artefactos con gaps de precisión SDD. */
+  private async runCascadePostPassRetry(projectId: string): Promise<void> {
+    const project = await this.findOne(projectId);
+    const mdd = this.constitutionMarkdown(project);
+    const precisionGaps = collectSddPrecisionGaps({
+      mdd,
+      architecture: project.architectureContent,
+      blueprint: project.blueprintContent,
+      tasks: project.tasksContent,
+      logicFlows: project.logicFlowsContent,
+      userStories: project.userStoriesContent,
+      useCases: project.useCasesContent,
+      apiContracts: project.apiContractsContent,
+      pantallas: project.uiScreensContent,
+      phase0Summary: project.phase0SummaryContent,
+    });
+    if (precisionGaps.length === 0) return;
+
+    const feedback = formatPrecisionGapsFeedback(precisionGaps);
+    const flags = precisionGapsForPostPassRetry(precisionGaps);
+    this.logger.warn(
+      `[Cascade] Post-pase W4: ${precisionGaps.length} gap(s) de precisión — retry dirigido`,
     );
-    // Señal de finalización: reportar un paso "done" para que el frontend sepa que terminó
-    onProgress?.({ step: "done" as DeliverableKind, index: total, total });
+
+    if (flags.retryArchitecture) {
+      await this.generateArchitecture(projectId, feedback).catch((e) =>
+        this.logger.warn(`[Cascade] W4 architecture retry: ${e instanceof Error ? e.message : e}`),
+      );
+    }
+    if (flags.retryLogicFlows) {
+      await this.generateLogicFlows(projectId, feedback).catch((e) =>
+        this.logger.warn(`[Cascade] W4 logic-flows retry: ${e instanceof Error ? e.message : e}`),
+      );
+    }
+    if (flags.retryApiContracts) {
+      await this.generateApiContracts(projectId, feedback).catch((e) =>
+        this.logger.warn(`[Cascade] W4 api-contracts retry: ${e instanceof Error ? e.message : e}`),
+      );
+    }
+    if (flags.retryTasks) {
+      await this.generateTasks(projectId, feedback).catch((e) =>
+        this.logger.warn(`[Cascade] W4 tasks retry: ${e instanceof Error ? e.message : e}`),
+      );
+    }
+  }
+
+  private async runDeliverableStep(kind: DeliverableKind, projectId: string, options?: { gapsFeedback?: string | null }): Promise<void> {
+    return this.generateDocument(kind, projectId, options);
+  }
+
+  /**
+   * Enrutamiento dinámico: solo ejecuta generadores listados en `DELIVERABLES_BY_COMPLEXITY`.
+   * @param onProgress — opcional (p. ej. BullMQ `job.updateProgress`).
+   */
+  async generateDeliverablesCascade(
+    projectId: string,
+    onProgress?: (p: { step: DeliverableKind; index: number; total: number }) => void,
+    options?: { acknowledgeGaps?: boolean },
+  ) {
+    await this.assertDeliverablesAllowed(projectId, options);
+    const project = await this.assertProjectAccess(projectId);
+    if (project.projectType === "LEGACY") {
+      throw new BadRequestException("Usa el flujo de entregables legacy del proyecto.");
+    }
+    if (project.complexityPending != null) {
+      throw new BadRequestException(
+        "Hay una propuesta de complejidad pendiente de confirmación. Confirma o rechaza en el chat del Workshop antes de generar entregables.",
+      );
+    }
+    const c = project.complexity ?? ComplexityLevel.HIGH;
+    const waves = DELIVERABLE_WAVES_BY_COMPLEXITY[c];
+    const flatSteps = flattenDeliverableWaves(c);
+    const total = flatSteps.length + 1;
+    const errors: { step: string; error: string }[] = [];
+
+    let completedCount = 0;
+    const reportProgress = (step: DeliverableWaveStep) => {
+      onProgress?.({
+        step: (step === "ui_screens_sync" ? "ux_ui_guide" : step) as DeliverableKind,
+        index: completedCount,
+        total,
+      });
+      completedCount++;
+    };
+
+    for (let waveIndex = 0; waveIndex < waves.length; waveIndex++) {
+      const wave = waves[waveIndex]!;
+      const projectFresh = await this.findOne(projectId);
+      const mddContent = this.constitutionMarkdown(projectFresh);
+      const gapsMap = this.buildExistingConformanceGapsMap(projectFresh, mddContent, wave);
+
+      await Promise.allSettled(
+        wave.map(async (step: DeliverableWaveStep) => {
+          try {
+            const stepGaps = step !== "ui_screens_sync" ? gapsMap.get(step) : undefined;
+            await this.runDeliverableWaveStep(step, projectId, stepGaps ?? undefined);
+          } catch (e) {
+            const message = e instanceof Error ? e.message : "Error desconocido";
+            this.logger.warn(`[Cascade] Paso ${step} saltado: ${message}.`);
+            errors.push({ step, error: message });
+          }
+          reportProgress(step);
+        }),
+      );
+    }
+
+    await this.runCascadePostPassRetry(projectId).catch((err) =>
+      this.logger.warn(
+        `[Cascade] post-pass W4: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+
+    await this.refreshStageSemaphoreFromProject(projectId).catch((err) =>
+      this.logger.warn(
+        `[Cascade] refresh semaphore: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+
+    onProgress?.({ step: "done" as DeliverableKind, index: total - 1, total });
     if (errors.length > 0) {
       this.logger.warn(
         `[Cascade] Completada con ${errors.length}/${total} paso(s) saltado(s): ${errors.map((e) => `${e.step}: ${e.error}`).join("; ")}`,
@@ -2013,29 +2166,54 @@ name: ${JSON.stringify(name)}
     return exportScaffold;
   }
 
-  async generateTasks(projectId: string) {
+  async generateTasks(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
 
-    // Fetch navigation map from Ariadne MCP for legacy projects
     let navigationMap: string | undefined;
-    const theforgeId = (project as any)?.theforgeProjectId;
+    const theforgeId = (project as Project & { theforgeProjectId?: string | null }).theforgeProjectId;
     if (theforgeId) {
       navigationMap = await this.fetchNavigationMap(theforgeId).catch(() => undefined);
     }
 
-    const tasksContent = await this.ai.generateTasks(
-      this.constitutionMarkdown(project),
-      project.blueprintContent,
-      {
-        navigationMap,
-        specContent: project.specContent,
-        userStoriesContent: project.userStoriesContent,
-        apiContractsContent: project.apiContractsContent,
-        logicFlowsContent: project.logicFlowsContent,
-        infraContent: project.infraContent,
-      },
+    const mdd = this.constitutionMarkdown(project);
+    const gfOpts = this.greenfieldGenerateOptions(project);
+    const taskOpts = {
+      navigationMap,
+      specContent: project.specContent,
+      userStoriesContent: project.userStoriesContent,
+      apiContractsContent: project.apiContractsContent,
+      logicFlowsContent: project.logicFlowsContent,
+      infraContent: project.infraContent,
+      gapsFeedback,
+      ...gfOpts,
+    };
+
+    let tasksContent = cleanDocumentContent(
+      await this.ai.generateTasks(mdd, project.blueprintContent, taskOpts),
     );
-    return this.update(projectId, { tasksContent: cleanDocumentContent(tasksContent) });
+
+    const precisionGaps = collectSddPrecisionGaps({
+      mdd,
+      blueprint: project.blueprintContent,
+      tasks: tasksContent,
+      phase0Summary: project.phase0SummaryContent,
+      apiContracts: project.apiContractsContent,
+      logicFlows: project.logicFlowsContent,
+      useCases: project.useCasesContent,
+    }).filter((g) => /\[Tasks\]|\[Research→Tasks\]|\[Events\]|\[LLM JSON\]/i.test(g));
+
+    if (precisionGaps.length > 0 && tasksContent.length >= 80) {
+      const combined = [gapsFeedback, formatPrecisionGapsFeedback(precisionGaps)].filter(Boolean).join("\n\n");
+      this.logger.warn(`[Tasks] ${precisionGaps.length} gap(s) de precisión — reintento`);
+      tasksContent = cleanDocumentContent(
+        await this.ai.generateTasks(mdd, project.blueprintContent, {
+          ...taskOpts,
+          gapsFeedback: combined,
+        }),
+      );
+    }
+
+    return this.update(projectId, { tasksContent });
   }
 
   /**
@@ -2060,13 +2238,30 @@ name: ${JSON.stringify(name)}
     return { content: cleanDocumentContent(content) };
   }
 
-  async generateArchitecture(projectId: string) {
+  async generateArchitecture(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
-    const content = await this.ai.generateArchitecture(
-      this.constitutionMarkdown(project),
-      project.blueprintContent,
+    const mdd = this.constitutionMarkdown(project);
+    const gfOpts = this.greenfieldGenerateOptions(project);
+    let content = cleanDocumentContent(
+      await this.ai.generateArchitecture(mdd, project.blueprintContent, {
+        ...gfOpts,
+        gapsFeedback,
+      }),
     );
-    return this.update(projectId, { architectureContent: cleanDocumentContent(content) });
+
+    const archGaps = checkArchitectureVsMdd(mdd, content);
+    if (archGaps.gaps.length > 0 && content.length >= 80) {
+      const combined = [gapsFeedback, archGaps.gaps.join("\n")].filter(Boolean).join("\n\n");
+      this.logger.warn(`[Architecture] ${archGaps.gaps.length} gap(s) — reintento`);
+      content = cleanDocumentContent(
+        await this.ai.generateArchitecture(mdd, project.blueprintContent, {
+          ...gfOpts,
+          gapsFeedback: combined,
+        }),
+      );
+    }
+
+    return this.update(projectId, { architectureContent: content });
   }
 
   async generateUseCasesPreview(projectId: string): Promise<{ content: string }> {
@@ -2276,7 +2471,10 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     const brdContent = mainStage?.brdContent ?? undefined;
     const mddContent = this.constitutionMarkdown(project);
     const enrichedMdd = this.enrichMddWithApiEndpoints(mddContent);
-    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
+    const legacyOpts = {
+      ...(await this.resolveLegacyGenerateOptions(project)),
+      ...this.greenfieldGenerateOptions(project),
+    };
 
     let apiContent = await this.ai.generateApiContracts(
       enrichedMdd,

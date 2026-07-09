@@ -93,3 +93,32 @@ export const DELIVERABLES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableKind
     "infra",
   ],
 };
+
+/** Pasos de cascada: entregables LLM + sync de pantallas (no es DeliverableKind). */
+export type DeliverableWaveStep = DeliverableKind | "ui_screens_sync";
+
+/**
+ * Oleadas secuenciales por complejidad. Cada oleada puede ejecutar pasos en paralelo;
+ * entre oleadas se refresca el proyecto desde DB antes de continuar.
+ */
+export const DELIVERABLE_WAVES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableWaveStep[][]> = {
+  LOW: [["user_stories"], ["tasks", "agent_governance"]],
+  MEDIUM: [["spec", "api_contracts", "ux_ui_guide"], ["tasks", "agent_governance"]],
+  HIGH: [
+    ["mdd_canonical"],
+    ["spec", "architecture"],
+    ["use_cases", "user_stories", "api_contracts", "logic_flows", "ux_ui_guide", "blueprint"],
+    ["ui_screens_sync"],
+    ["tasks", "infra", "agent_governance"],
+  ],
+};
+
+/** Aplanado de oleadas (orden de progreso UI). */
+export function flattenDeliverableWaves(complexity: ComplexityLevel): DeliverableWaveStep[] {
+  return DELIVERABLE_WAVES_BY_COMPLEXITY[complexity].flat();
+}
+
+export function deliverableWaveStepLabel(step: DeliverableWaveStep): string {
+  if (step === "ui_screens_sync") return "Pantallas (UI MCP)";
+  return DELIVERABLE_STEP_LABELS[step];
+}

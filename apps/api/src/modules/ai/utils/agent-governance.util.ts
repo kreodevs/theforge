@@ -15,6 +15,7 @@ import {
   type AgentGovernanceScaffold,
   type AgentGovernanceSuggestionsManifest,
   type ComplexityLevel,
+  specKitFeatureDir,
 } from "@theforge/shared-types";
 import {
   getRuleById,
@@ -1038,6 +1039,7 @@ function buildProgresoMd(
   _tasksMarkdown?: string | null,
   mddMarkdown?: string | null,
   featureDir?: string,
+  pendingSddGaps?: string[],
 ): string {
   const conflictTable = buildSddConflictTable(facts);
   const featureRef = featureDir?.trim() || "specs/NNN-slug";
@@ -1062,6 +1064,20 @@ function buildProgresoMd(
 
   if (conflictTable.trim()) {
     lines.push(conflictTable.trim(), "\n\n");
+  }
+
+  if (pendingSddGaps?.length) {
+    lines.push("## Gaps SDD pendientes\n\n");
+    lines.push(
+      "Estos ítems fueron detectados por validadores de precisión The Forge. Resuélvelos en el SDD antes de marcar tareas como completas.\n\n",
+    );
+    for (const g of pendingSddGaps.slice(0, 20)) {
+      lines.push(`- [ ] ${g}\n`);
+    }
+    if (pendingSddGaps.length > 20) {
+      lines.push(`- [ ] … y ${pendingSddGaps.length - 20} gaps más (ver analyze en Workshop)\n`);
+    }
+    lines.push("\n");
   }
 
   lines.push("## Checklist rápido (primeras tareas abiertas)\n\n", buildTasksPreview(facts), "\n");
@@ -1539,8 +1555,12 @@ const FALLBACK_BY_PATH: Record<string, FallbackFactory> = {
           },
       c,
     ),
-  "docs/sdd/PROGRESO.md": (_c, _s, input) =>
-    buildProgresoMd(
+  "docs/sdd/PROGRESO.md": (_c, _s, input) => {
+    const featureDir =
+      input?.stageOrdinal != null && input?.projectName
+        ? specKitFeatureDir(input.stageOrdinal, input.projectName)
+        : undefined;
+    return buildProgresoMd(
       input
         ? extractProjectGovernanceFacts(input)
         : {
@@ -1558,7 +1578,10 @@ const FALLBACK_BY_PATH: Record<string, FallbackFactory> = {
           },
       input?.tasksMarkdown,
       input?.mddMarkdown,
-    ),
+      featureDir,
+      input?.sddPendingGaps,
+    );
+  },
   [`${GOVERNANCE_DOCS_PREFIX}agent-onboarding.md`]: (_c, _s, input) => {
     const base = defaultAgentOnboarding();
     if (!input) return base;
@@ -1744,6 +1767,7 @@ function enrichGovernanceArtifacts(
       governanceInput.tasksMarkdown,
       governanceInput.mddMarkdown,
       featureDir,
+      governanceInput.sddPendingGaps,
     );
   } else {
     if (

@@ -32,6 +32,7 @@ import {
   checkTasksCoverage,
   checkUserStoriesVsUseCases,
 } from "../engine/sdd-cross-artifact.util.js";
+import { collectSddPrecisionGaps } from "../engine/sdd-precision-checks.util.js";
 import {
   checkPhase0BrdSpecBridge,
   formatPhase0BridgeGaps,
@@ -380,6 +381,22 @@ export class SddIntegrationService {
     );
     if (!tasksCoverage.ok) {
       crossArtifactGaps.push(...tasksCoverage.gaps.map((g) => `[Tasks] ${g}`));
+    }
+
+    const precisionGaps = collectSddPrecisionGaps({
+      mdd,
+      architecture: deliverables.architectureContent ?? project.architectureContent,
+      blueprint: deliverables.blueprintContent ?? null,
+      tasks: tasksMd,
+      logicFlows: deliverables.logicFlowsContent ?? null,
+      userStories: userStoriesMd,
+      useCases: useCasesMd,
+      apiContracts: deliverables.apiContractsContent ?? null,
+      pantallas: deliverables.uiScreensContent ?? project.uiScreensContent,
+      phase0Summary: project.phase0SummaryContent,
+    });
+    if (precisionGaps.length > 0) {
+      crossArtifactGaps.push(...precisionGaps);
     }
 
     const phase0Bridge = checkPhase0BrdSpecBridge({

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   DELIVERABLES_BY_COMPLEXITY,
+  DELIVERABLE_WAVES_BY_COMPLEXITY,
+  flattenDeliverableWaves,
   planLegacyDeliverablesToGenerate,
 } from "./deliverables-matrix.js";
 
@@ -37,5 +39,20 @@ describe("DELIVERABLES_BY_COMPLEXITY agent_governance ordering", () => {
     const kinds = DELIVERABLES_BY_COMPLEXITY.HIGH;
     assert.ok(kinds.indexOf("blueprint") < kinds.indexOf("agent_governance"));
     assert.ok(kinds.indexOf("architecture") < kinds.indexOf("agent_governance"));
+  });
+});
+
+describe("DELIVERABLE_WAVES_BY_COMPLEXITY", () => {
+  it("HIGH runs tasks in last LLM wave after blueprint wave", () => {
+    const waves = DELIVERABLE_WAVES_BY_COMPLEXITY.HIGH;
+    const blueprintWaveIdx = waves.findIndex((w) => w.includes("blueprint"));
+    const tasksWaveIdx = waves.findIndex((w) => w.includes("tasks"));
+    assert.ok(blueprintWaveIdx >= 0 && tasksWaveIdx > blueprintWaveIdx);
+  });
+
+  it("flattenDeliverableWaves includes ui_screens_sync for HIGH", () => {
+    const flat = flattenDeliverableWaves("HIGH");
+    assert.ok(flat.includes("ui_screens_sync"));
+    assert.ok(flat.indexOf("blueprint") < flat.indexOf("tasks"));
   });
 });
