@@ -71,9 +71,22 @@ function fixGluedHeadingBoldBody(draft: string): string {
 /** Despega H2/H3 de fences (ej. `## 3. Modelo de Datos```sql`). */
 function fixGluedHeadingToCodeFence(draft: string): string {
   return draft.replace(
-    /^(##\s+\d+\.\s+[^\n`]+?)```(sql|json|mermaid|TechnicalMetadata)\b/gim,
+    /^(#{1,6}\s+[^\n`]+?)```(sql|json|mermaid|TechnicalMetadata)\b/gim,
     "$1\n\n```$2",
   );
+}
+
+/**
+ * Quita sufijo `mermaid` pegado al título (LLM: `Superadminmermaid`, `…asíncronas)mermaid`).
+ * No toca títulos legítimos con espacio o «(Mermaid)» antes del token.
+ */
+function fixGluedHeadingMermaidSuffix(draft: string): string {
+  return draft.replace(/^(#{1,6}\s+.*[^\s(])mermaid\s*$/gim, "$1");
+}
+
+/** Línea de título suelta (sin #) con sufijo mermaid antes de un fence ```mermaid. */
+function fixGluedPlainTitleMermaidSuffix(draft: string): string {
+  return draft.replace(/^([^\n#`][^\n]*[^\s(])mermaid\s*\n(\s*```mermaid)/gim, "$1\n\n$2");
 }
 
 /** Despega prosa pegada al título en la misma línea (`### Título Este sistema…`). */
@@ -97,9 +110,16 @@ function splitHeadingTitleFromInlineProse(draft: string): string {
 }
 
 /** Reparación genérica de headings pegados (iteración a punto fijo). */
+/** Convierte viñetas `*` iniciales a `-` para homogeneizar listas (Fase 0 / DBGA). */
+export function homogenizeMarkdownBulletMarkers(draft: string): string {
+  return draft.replace(/^(\s*)\*\s+/gm, "$1- ");
+}
+
 export function repairGluedMarkdownHeadings(draft: string): string {
   if (!draft?.trim()) return draft ?? "";
   let out = fixBareNumberedSectionGluedSubheadings(draft);
+  out = fixGluedHeadingMermaidSuffix(out);
+  out = fixGluedPlainTitleMermaidSuffix(out);
   out = fixGluedHeadingToCodeFence(out);
   let prev = "";
   while (prev !== out) {

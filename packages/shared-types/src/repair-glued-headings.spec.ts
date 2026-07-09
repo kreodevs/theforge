@@ -46,4 +46,33 @@ Texto. ### Alcance y Fronteras #### Servicios Core (Dentro del Alcance)
     assert.doesNotMatch(out, /Técnica Desarrolladores/);
     assert.match(out, /### Audiencia Técnica\n\nDesarrolladores Fullstack/);
   });
+
+  it("quita sufijo mermaid pegado al heading (BRD Copiloto)", () => {
+    const raw = "#### Flujo 3: Configuración del copiloto por el Superadminmermaid";
+    const out = repairGluedMarkdownHeadings(raw);
+    assert.match(out, /Superadmin$/);
+    assert.doesNotMatch(out, /Superadminmermaid/);
+  });
+
+  it("formatDocumentMarkdown repara heading-only fence y sufijo mermaid", () => {
+    const raw = `\`\`\`
+### 5.2 Flujo: Outbox Pattern (escrituras asíncronas)mermaid
+\`\`\`
+
+\`\`\`mermaid
+stateDiagram-v2
+  [*] --> Idle
+\`\`\``;
+    const out = formatDocumentMarkdown(raw);
+    assert.match(out, /### 5\.2 Flujo: Outbox Pattern \(escrituras asíncronas\)\n+\s*```mermaid/);
+    assert.doesNotMatch(out, /asíncronas\)mermaid/);
+    assert.doesNotMatch(out, /```\s*\n### 5\.2/);
+  });
+
+  it("homogeniza viñetas * a - en formatDocumentMarkdown", () => {
+    const raw = "**Lista:**\n* item A\n* item B\n- item C";
+    const out = formatDocumentMarkdown(raw);
+    assert.doesNotMatch(out, /^\* item/m);
+    assert.match(out, /^- item A/m);
+  });
 });

@@ -19,6 +19,7 @@ import { mddContextForUxGuide, uxGuideLlmOptions } from "../ai/ux-guide-llm-cont
 import { buildMddContextForUxGuide } from "../ai/utils/mdd-ux-guide-brief.util.js";
 import { appendUxGuideDesignAttribution } from "../design-ref/design-ref-attribution.util.js";
 import { wouldShrinkDbgaDangerously } from "../sessions/dbga-edit.util.js";
+import { cleanDocumentContent } from "../sessions/document-content.util.js";
 
 export type OrchestratorClientDeliverables = {
   architectureContent?: string;
@@ -214,9 +215,10 @@ export class AiOrchestratorService {
     }
     if (tab === "brd" && brdContentFromClient != null && brdContentFromClient.trim().length > 0) {
       const persistedBrd = stageBrdContent(project, route.stageId);
+      const normalizedBrd = cleanDocumentContent(brdContentFromClient);
       // Solo persiste si no hay un valor más reciente en BD
-      if (!persistedBrd || persistedBrd !== brdContentFromClient) {
-        await this.projects.patchStage(projectId, route.stageId, { brdContent: brdContentFromClient });
+      if (!persistedBrd || persistedBrd !== normalizedBrd) {
+        await this.projects.patchStage(projectId, route.stageId, { brdContent: normalizedBrd });
       }
     }
     let systemPrompt: string | undefined;
@@ -514,8 +516,9 @@ export class AiOrchestratorService {
     }
     if (tab === "brd" && brdContentFromClient != null && brdContentFromClient.trim().length > 0) {
       const persistedBrdStream = stageBrdContent(project, routeStream.stageId);
-      if (!persistedBrdStream || persistedBrdStream !== brdContentFromClient) {
-        await this.projects.patchStage(projectId, routeStream.stageId, { brdContent: brdContentFromClient });
+      const normalizedBrd = cleanDocumentContent(brdContentFromClient);
+      if (!persistedBrdStream || persistedBrdStream !== normalizedBrd) {
+        await this.projects.patchStage(projectId, routeStream.stageId, { brdContent: normalizedBrd });
       }
     }
     const isUxUiGuide = isUxUiGuideStream;

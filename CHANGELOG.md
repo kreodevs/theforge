@@ -4,6 +4,10 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+### Fixed
+
+- **Markdown / Mermaid — SSOT de `/format`:** `formatDocumentMarkdown` repara sufijos `mermaid` pegados en headings (`Superadminmermaid`), fences que solo envuelven títulos, ``` huérfanos antes de `##`, y homologiza viñetas `*` → `-` en Fase 0/DBGA. `MddViewer` deja de duplicar un pipeline parcial y usa el mismo formateador; el orchestrator normaliza BRD del panel con `cleanDocumentContent`. Corrección en `stripOrphanFenceLineBeforeMermaid` para no eliminar cierres válidos de ` ```sql `; fences Mermaid sin cerrar cortan en `## N. Sección` colada.
+
 ### Added
 
 - **Technology Docs MCP (`technology-docs-mcp`):** integración opcional Context7-compatible (`resolve-library-id`, `query-docs`) para enriquecer **Architecture**, **Contratos API** y **Tasks** con documentación oficial de librerías detectadas en MDD §2 / Blueprint. **Credenciales por usuario** en Ajustes → Docs técnicas (`User.techDocsMcpUrl` / `techDocsMcpToken`); sin API key = skip elegante. `@theforge/shared-types/technology-docs` — detector de stack.
