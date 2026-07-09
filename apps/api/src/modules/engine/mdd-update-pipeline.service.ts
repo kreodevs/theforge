@@ -4,7 +4,7 @@ import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.ser
 import { markdownToMddStructured } from "../ai-analysis/utils/mdd-markdown-to-structured.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "./semaphore.service.js";
 import { prepareMddForOutput } from "../ai-analysis/utils/mdd-prepare-output.js";
-import { sanitizeMddAtPersist } from "../ai-analysis/utils/mdd-sanitize.js";
+import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import { validateMddForDelivery } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
 import { normalizeMddContent } from "./mdd-markdown-parser.js";
 import { preRenderMddSanity, sanitizeMermaidInDraft, sanitizeSection4TablesInDraft } from "./mdd-pre-render.js";
@@ -56,7 +56,7 @@ export class MddUpdatePipelineService {
         message: sanity.message ?? "Error de validación del MDD",
       };
     }
-    const sanitizedMdd = sanitizeMddAtPersist(sanitizeMermaidInDraft(preSanitized));
+    const sanitizedMdd = prepareMddMarkdownForPersist(sanitizeMermaidInDraft(preSanitized));
     const normalized = normalizeMddContent(sanitizedMdd);
     const contentForSemaphore = JSON.stringify(normalized);
 

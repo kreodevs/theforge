@@ -24,6 +24,14 @@ export type WorkshopDocTab =
 
 export type ProjectTypeForTabs = "NEW" | "LEGACY";
 
+/** Etapa 1 = AS-IS/baseline; etapa 2+ = modificación (solo MDD de cambio). */
+export function isLegacyModificationStage(
+  projectType: ProjectTypeForTabs | undefined,
+  stageOrdinal: number | undefined,
+): boolean {
+  return projectType === "LEGACY" && (stageOrdinal ?? 1) >= 2;
+}
+
 /**
  * Visibilidad de pestañas según `Project.complexity` y tipo de proyecto.
  * Alineado con `DELIVERABLES_BY_COMPLEXITY` (incl. `agent_governance` en LOW/MEDIUM/HIGH).
@@ -36,10 +44,14 @@ export type ProjectTypeForTabs = "NEW" | "LEGACY";
 export function isTabVisibleForComplexity(
   tab: WorkshopDocTab,
   complexity: "LOW" | "MEDIUM" | "HIGH" | undefined,
-  opts?: { projectType?: ProjectTypeForTabs },
+  opts?: { projectType?: ProjectTypeForTabs; legacyStageOrdinal?: number },
 ): boolean {
   const c = complexity ?? "HIGH";
   const pt: ProjectTypeForTabs = opts?.projectType ?? "NEW";
+  const legacyModification = isLegacyModificationStage(pt, opts?.legacyStageOrdinal);
+
+  // En etapas de modificación (ordinal ≥ 2) no se generan MDD Inicial ni BRD.
+  if (legacyModification && (tab === "mdd-inicial" || tab === "brd")) return false;
 
   // AEM siempre visible, sin importar complejidad ni tipo de proyecto
   if (tab === "aem") return true;
@@ -98,7 +110,7 @@ export function isTabVisibleForComplexity(
 export function centralPanelHiddenForComplexity(
   panel: string,
   complexity: "LOW" | "MEDIUM" | "HIGH" | undefined,
-  opts?: { projectType?: ProjectTypeForTabs },
+  opts?: { projectType?: ProjectTypeForTabs; legacyStageOrdinal?: number },
 ): boolean {
   return !isTabVisibleForComplexity(panel as WorkshopDocTab, complexity, opts);
 }

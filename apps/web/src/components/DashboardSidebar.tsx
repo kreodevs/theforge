@@ -444,6 +444,7 @@ export function DashboardSidebar({
     if (!workshopProject || !storeProject || storeProject.id !== workshopProject.id) return [];
     return buildWorkshopDocNavItems({
       isLegacyProject: !!isLegacyProject,
+      legacyStageOrdinal: activeWorkshopStageForNav?.ordinal ?? 1,
       effectiveComplexityForTabs,
       activeLegacyState: activeLegacyStateForNav,
       phase0SummaryContent,

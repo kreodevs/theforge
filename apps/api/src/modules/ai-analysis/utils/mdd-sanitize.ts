@@ -1,5 +1,5 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
-import { repairGluedMarkdownHeadings } from "@theforge/shared-types";
+import { formatDocumentMarkdown, repairGluedMarkdownHeadings } from "@theforge/shared-types";
 import { sqlToErDiagramContent } from "./mdd-diagram-suggestions.js";
 
 /** Convierte objeto con subsections (array de {title, description: string[]}) a markdown legible. */
@@ -1353,9 +1353,17 @@ export function stripUiUxSectionForApiOnlyMvp(markdown: string): string {
   return `${trimmed.replace(/\n##\s*UI\/UX\s+Design\s+Intent[\s\S]*$/i, "").trimEnd()}\n`;
 }
 
+/** Re-aplica despegado de headings y reglas horizontales rotas tras pasos que pueden recompactar §1. */
+function finalizeMddPersistFormatting(mddMarkdown: string): string {
+  if (!mddMarkdown?.trim()) return mddMarkdown;
+  let out = repairGluedMarkdownHeadings(mddMarkdown);
+  out = collapseInlineHorizontalRules(out);
+  return out;
+}
+
 /**
  * SSOT al persistir MDD (Workshop, doc-gap reconcile, export/handoff).
- * Orden: headings pegados → coherencia cruzada → JSON §4 → UI/UX MVP.
+ * Orden: headings pegados → coherencia cruzada → JSON §4 → UI/UX MVP → finalize (headings/HR).
  */
 export function sanitizeMddAtPersist(mddMarkdown: string): string {
   if (!mddMarkdown?.trim()) return mddMarkdown;
@@ -1373,7 +1381,16 @@ export function sanitizeMddAtPersist(mddMarkdown: string): string {
   out = stripStrayParenBeforeH2(out);
   out = collapseInlineHorizontalRules(out);
   out = stripUiUxSectionForApiOnlyMvp(out);
-  return out;
+  return finalizeMddPersistFormatting(out);
+}
+
+/**
+ * Persistencia MDD unificada (NEW + LEGACY): fences/tablas/headings vía formatDocumentMarkdown,
+ * luego coherencia determinista vía sanitizeMddAtPersist. Idempotente en re-aplicaciones.
+ */
+export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
+  if (!mddMarkdown?.trim()) return mddMarkdown;
+  return sanitizeMddAtPersist(formatDocumentMarkdown(mddMarkdown));
 }
 
 /** Sanitiza MDD antes de exportar al handoff (misma pasada que persist). */

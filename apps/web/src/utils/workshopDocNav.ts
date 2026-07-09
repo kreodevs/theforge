@@ -84,6 +84,8 @@ export interface WorkshopDocNavItem {
 
 export interface WorkshopDocNavBuildContext {
   isLegacyProject: boolean;
+  /** Etapa activa (1 = AS-IS, ≥2 = modificación). */
+  legacyStageOrdinal?: number;
   effectiveComplexityForTabs: "LOW" | "MEDIUM" | "HIGH";
   activeLegacyState: { description?: string; codebaseDoc?: string } | null | undefined;
   activeWorkshopStage: { brdContent?: string | null } | null | undefined;
@@ -128,8 +130,9 @@ function agentGovernanceNavItem(ctx: WorkshopDocNavBuildContext): WorkshopDocNav
 
 export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): WorkshopDocNavItem[] {
   const tabPt = ctx.isLegacyProject ? "LEGACY" : "NEW";
+  const tabOpts = { projectType: tabPt, legacyStageOrdinal: ctx.legacyStageOrdinal };
   const visible = (id: WorkshopDocTab) =>
-    isTabVisibleForComplexity(id, ctx.effectiveComplexityForTabs, { projectType: tabPt });
+    isTabVisibleForComplexity(id, ctx.effectiveComplexityForTabs, tabOpts);
   const items: WorkshopDocNavItem[] = [];
 
   if (ctx.isLegacyProject) {
