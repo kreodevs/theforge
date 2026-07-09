@@ -23,7 +23,7 @@ import { Brain,
   Target,
 } from "lucide-react";
 import { agentGovernanceScaffoldHasContent } from "@theforge/shared-types";
-import { isTabVisibleForComplexity, type WorkshopDocTab } from "./complexityTabs";
+import { isTabVisibleForComplexity, type ProjectTypeForTabs, type WorkshopDocTab } from "./complexityTabs";
 
 /** Greenfield (NEW) steps required before generating downstream deliverables. */
 export const WORKSHOP_MANDATORY_NEW_PROJECT_STEP_IDS = ["benchmark", "brd", "mdd"] as const;
@@ -129,7 +129,7 @@ function agentGovernanceNavItem(ctx: WorkshopDocNavBuildContext): WorkshopDocNav
 }
 
 export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): WorkshopDocNavItem[] {
-  const tabPt = ctx.isLegacyProject ? "LEGACY" : "NEW";
+  const tabPt: ProjectTypeForTabs = ctx.isLegacyProject ? "LEGACY" : "NEW";
   const tabOpts = { projectType: tabPt, legacyStageOrdinal: ctx.legacyStageOrdinal };
   const visible = (id: WorkshopDocTab) =>
     isTabVisibleForComplexity(id, ctx.effectiveComplexityForTabs, tabOpts);
