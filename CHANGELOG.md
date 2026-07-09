@@ -4,6 +4,8 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-07-09
+
 ### Notes
 
 - **Lint del monorepo desalineado con ESLint 9 (preexistente):** el entorno resuelve **ESLint 9.39** pero los paquetes (`shared-types`, `api`, `web`) siguen configurados con `.eslintrc.*` (sin `eslint.config.js` de flat config), por lo que `pnpm lint` falla con *"ESLint couldn't find an eslint.config.(js|mjs|cjs) file"* en los tres. No está causado por cambios de feature; la validación se cubre con `tsc --noEmit` (limpio en `api` y `web`) y los tests `node --test`. **Acción pendiente:** migrar a flat config de ESLint 9 **o** fijar `eslint@^8` en devDependencies.
@@ -88,6 +90,8 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - **Nest circular dependency (merge):** `ProjectsModule` importaba `AiAnalysisModule` solo por `Phase0InterviewService` → `Phase0Module` dedicado; rompe ciclo `AiAnalysisModule ↔ ProjectsModule`.
 - **safe-schema-sync:** `FavoriteProject_userId_projectId_key` idempotente si ya existe como índice; `postgresql-client` en imagen API; fallback `mcpSecret` vía Prisma (sin `psql`).
 - **BUILD_CACHE_BUST**: 94 → 96
+
+- **BUILD_CACHE_BUST**: 96 → 97 (release 0.13.0)
 
 ## [0.12.0] — 2026-06-12
 
