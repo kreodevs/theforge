@@ -23,11 +23,13 @@ import {
   Target,
   Users,
   Webhook,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import convergeWebhookCiHelp from "../content/help/converge-webhook-ci.md?raw";
 import generacionSegundoPlanoHelp from "../content/help/generacion-en-segundo-plano.md?raw";
 import legacyNewIntegrationHelp from "../content/help/legacy-new-integration.md?raw";
+import validacionPlanAriadneHelp from "../content/help/validacion-plan-ariadne.md?raw";
 import {
   Button,
   Dialog,
@@ -58,6 +60,7 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   "legacy-new-integration": Link2,
   "converge-webhook-ci": Webhook,
   "generacion-segundo-plano": Clock,
+  "validacion-plan-ariadne": ShieldCheck,
   sdd: Brain,
   mdd: FileText,
   spec: ClipboardList,
@@ -160,6 +163,11 @@ const SECTIONS: HelpSection[] = [
     id: "generacion-segundo-plano",
     label: "Generación en segundo plano",
     content: generacionSegundoPlanoHelp.trim(),
+  },
+  {
+    id: "validacion-plan-ariadne",
+    label: "Validación plan (Ariadne)",
+    content: validacionPlanAriadneHelp.trim(),
   },
   {
     id: "legacy-new-integration",
@@ -732,7 +740,7 @@ const SECTIONS: HelpSection[] = [
 ];
 
 const NAV_GROUPS: { label: string; sectionIds: string[] }[] = [
-  { label: "Guía", sectionIds: ["manual", "generacion-segundo-plano", "legacy-new-integration", "converge-webhook-ci"] },
+  { label: "Guía", sectionIds: ["manual", "generacion-segundo-plano", "validacion-plan-ariadne", "legacy-new-integration", "converge-webhook-ci"] },
   { label: "Metodología", sectionIds: ["sdd"] },
   {
     label: "Documentos",

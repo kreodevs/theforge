@@ -115,6 +115,8 @@ export function WorkshopMetricsColumnInner({
 }: WorkshopMetricsColumnInnerProps) {
   const project = useWorkshopStore((s) => s.project);
   const liveMetrics = useWorkshopStore((s) => s.liveMetrics);
+  const planValidation = useWorkshopStore((s) => s.planValidation);
+  const validateChangePlan = useWorkshopStore((s) => s.validateChangePlan);
   const deliveryGateStore = useWorkshopStore((s) => s.deliveryGate);
   const deliveryGate = deliveryGateStore ?? liveMetrics?.deliveryGate ?? null;
   const deliveryGateOk = deliveryGate == null || deliveryGate.ok;
@@ -1183,6 +1185,44 @@ export function WorkshopMetricsColumnInner({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          {/* Plan Ariadne (Gate 2) */}
+          {(project as { theforgeProjectId?: string | null })?.theforgeProjectId ? (
+            <div className="max-h-32 shrink-0 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-[11px] leading-snug shadow-sm">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <strong className="text-[var(--foreground)]">Plan Ariadne</strong>
+                <button
+                  type="button"
+                  className="rounded px-1.5 py-0.5 text-[10px] text-[var(--primary)] hover:underline"
+                  onClick={() => void validateChangePlan(projectId)}
+                >
+                  Validar
+                </button>
+              </div>
+              {planValidation ? (
+                <p className="text-[color-mix(in_oklch,var(--foreground)_85%,var(--muted-foreground))]">
+                  <span
+                    className={
+                      planValidation.verdict === "APPROVED"
+                        ? "text-emerald-600"
+                        : planValidation.verdict === "BLOCKED"
+                          ? "text-red-600"
+                          : "text-amber-600"
+                    }
+                  >
+                    {planValidation.verdict}
+                  </span>
+                  {" · "}
+                  {planValidation.score}%
+                  {planValidation.report.blockers.length > 0
+                    ? ` · ${planValidation.report.blockers.length} blocker(s)`
+                    : ""}
+                </p>
+              ) : (
+                <p className="text-[var(--muted-foreground)]">Sin validación aún. Regenera Tasks o pulsa Validar.</p>
+              )}
+            </div>
+          ) : null}
 
           {/* Feedback del auditor debajo del semáforo (selectores Zustand → re-render al actualizar liveMetrics / auditorFeedback) */}
           {auditorFeedback ? (

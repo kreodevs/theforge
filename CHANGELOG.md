@@ -12,9 +12,14 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 - **SDD precisión — flujo de generación greenfield (HIGH):** el pipeline deja de ser «todos los entregables en paralelo» por un grafo de oleadas con refresh DB entre ellas. Los generadores LLM reciben checklist + phase0; tras W3, `collectSddPrecisionGaps` alimenta W4 (retry dirigido por prefijo de gap) y el semáforo (`sddCrossArtifactGapCount`). La validación es **agnóstica al proyecto** (parseo de MDD/phase0/blueprint); los fixtures `ia-trading-gaps/` son solo regresión de tests. PRs: #416 (precisión), #417 (perf W4).
 
+### Added
+
+- **validate_change_plan (Gate 2):** nueva tool MCP + `POST /projects/:id/validate-change-plan` en ingest Ariadne. Audita un `ChangePlan` JSON (archivos, símbolos, overlap con modification-plan, cobertura tasks) contra FalkorDB; veredicto `APPROVED` | `APPROVED_WITH_WARNINGS` | `BLOCKED`. Contrato v1 en `docs/contracts/change-plan-validation-v1.md`.
+- **The Forge — integración Gate 2:** `@theforge/shared-types/change-plan` (extractor desde Tasks + legacy state), `PlanValidationService`, auto-validación tras `generateTasks` cuando hay `theforgeProjectId`, REST `GET/POST …/plan-validation`, panel **Plan Ariadne** en semáforo Workshop, ayuda `validacion-plan-ariadne.md`.
+
 ### Deferred (SDD precisión — no implementado y por qué)
 
-- **Tasks con coordenadas exactas / diffs en repo** (`docs/implementation-scope.md` §6): **MVP wired** en `generateTasks` cuando hay navigation map o ChangeScope; pendiente scanner de formularios (Fase 1 entregables 2–3) para líneas exactas sin LLM.
+- **Tasks con coordenadas exactas / diffs en repo** (`docs/implementation-scope.md` §6): **MVP wired** en `generateTasks`; **Gate 2** (`validate_change_plan`) cubre auditoría del plan vs grafo; pendiente **scanner de formularios** (Fase 1 entregables 2–3) para líneas exactas sin LLM.
 - **Corregir repos de código ya generados** (p. ej. proyectos cliente con SDD incompleto): fuera de alcance; The Forge mejora el **generador**, no el output histórico.
 - **Forzar despliegue microservicios reales vs monolito modular:** el check exige **módulo documentado** en architecture, no pods/K8s separados; evita imponer topología infra no elegida en el wizard.
 - **Segundo pase W4 / loop hasta 0 gaps:** un solo post-pase + semáforo AMARILLO; evita cascadas de 30+ min y deja al humano decidir en Workshop (`analyzeArtifacts` + PROGRESO).

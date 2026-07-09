@@ -634,6 +634,50 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   /**
+   * Gate 2: validates a structured ChangePlan via Ariadne MCP `validate_change_plan`.
+   */
+  async validateChangePlan(
+    plan: import("@theforge/shared-types").ChangePlan,
+  ): Promise<import("@theforge/shared-types").PlanValidationReport | null> {
+    if (!this.isConfigured()) return null;
+    try {
+      const ident = await this.resolveStoredToMcp(plan.projectId);
+      const scope = mergeAriadneCodebaseScope(ident.scopeForScopedTools, plan.scope);
+      const args: Record<string, unknown> = {
+        ...plan,
+        projectId: ident.workspaceProjectId,
+      };
+      if (scope && Object.keys(scope).length > 0) args.scope = scope;
+      const response = await this.postTheForgeMcp({
+        jsonrpc: "2.0",
+        id: "validate-change-plan-1",
+        method: "tools/call",
+        params: { name: "validate_change_plan", arguments: args },
+      });
+      if (!response.ok) return null;
+      const raw = await response.text();
+      const data = parseMcpResponse(raw) as {
+        result?: { content?: Array<{ type: string; text?: string }>; isError?: boolean };
+        error?: { message: string };
+      } | null;
+      if (!data || data.error || data.result?.isError) {
+        const errText = data?.result?.content?.find((c) => c.type === "text")?.text;
+        this.logger.warn(`[TheForge] validate_change_plan error: ${errText ?? data?.error?.message ?? "unknown"}`);
+        return null;
+      }
+      const text = data.result?.content?.find((c) => c.type === "text")?.text ?? "";
+      if (!text) return null;
+      const jsonStr = extractJsonFromToolContent(text);
+      return JSON.parse(jsonStr) as import("@theforge/shared-types").PlanValidationReport;
+    } catch (err) {
+      this.logger.error(
+        `[TheForge] validateChangePlan failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Realiza una pregunta en lenguaje natural sobre el código indexado (herramienta MCP ask_codebase).
    * @param question - Pregunta en texto libre sobre el codebase.
    * @param projectId - `theforgeProjectId` persistido; `projectId` MCP = **workspace** Ariadne; `scope.repoIds` = todos los roots del proyecto si hay catálogo (ver `resolveAriadneCodebaseMcpTarget`).

@@ -18,6 +18,7 @@ Referencia de herramientas del MCP **AriadneSpecs** alineada a **`mcp_server_spe
 | **list_known_projects** | Mapear IDs a nombres (proyectos + roots). | ✅ Listado al crear proyecto legacy. |
 | **generate_legacy_documentation** | MDD de partida determinista (7 claves JSON → markdown). | ✅ **`POST …/legacy/generate-codebase-doc`** (MDD Inicial). Preferir sobre `ask_codebase` para doc. partida. |
 | **get_modification_plan** | Plan: filesToModify (path + repoId) y questionsToRefine. | ✅ Inicio flujo **cambio** (etapas 2+); fallback con ask_codebase. |
+| **validate_change_plan** | Gate 2: audita ChangePlan JSON vs grafo; veredicto APPROVED / WARNINGS / BLOCKED. | ✅ Tras generateTasks, REST manual, Workshop **Plan Ariadne**. |
 | **ask_codebase** | Chat agéntico ingest; `responseMode: evidence_first` → JSON MDD (claves `summary`, `entities`, `evidence_paths`, … o `mddDocument`) vía LLM/orchestrator (`mdd-evidence`). | ✅ Misma herramienta; con `evidence_first`, `TheForgeService.askCodebase` **normaliza JSON → markdown** antes de devolver texto al legacy/orquestador. |
 | **get_file_content** | Contenido de un archivo (Bitbucket/GitHub; INGEST_URL). | ✅ Contexto de los 2 primeros archivos a modificar al generar MDD. |
 | **validate_before_edit** | **Obligatorio antes de editar:** impacto + contrato en un solo llamado. | ✅ Al generar MDD: validación de los 3 primeros archivos; fallback a get_legacy_impact si no disponible. |
