@@ -22,6 +22,12 @@ import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
 import { parseNdjsonLine } from "../utils/ndjson";
 import { mddHasSection6Heading, buildMddSectionRegenNotice } from "../utils/mddSectionRegen";
 import { isWorkshopAgentsBusy } from "../utils/workshopAgentsBusy";
+import { shouldPreserveWorkshopBusyState } from "../utils/workshopBusyRefresh";
+import {
+  applyDeliverableCascadeStepActive,
+  applyDeliverableCascadeStepDone,
+  readDeliverableCascadeProgressStep,
+} from "../utils/deliverableCascadeProgress";
 import { appendAgentProgressDone, type AgentProgressItem } from "../utils/agentProgress";
 import {
   advanceAgentGovernanceProgressItems,
@@ -821,6 +827,8 @@ interface WorkshopState {
   /** Gate de cola: jobs activos, MDD en stream y dependencias upstream. */
   generationStatus: ProjectGenerationStatus | null;
   fetchGenerationStatus: (projectId: string) => Promise<ProjectGenerationStatus | null>;
+  /** Tab visible again: sync queue status without wiping deliverables checklist. */
+  refreshWorkshopOnTabVisible: (projectId: string) => Promise<void>;
   fetchPlanValidation: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
   validateChangePlan: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
 
@@ -1385,20 +1393,59 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
+  refreshWorkshopOnTabVisible: async (projectId) => {
+    const requestedId = projectId.trim();
+    if (!requestedId) return;
+    await get().fetchGenerationStatus(requestedId);
+    const state = get();
+    if (state.agentProgress.length > 0 || !state.loading) return;
+    const reason = state.loadingReason;
+    if (reason !== "deliverables-cascade" && reason !== "legacy-deliverables") return;
+
+    const complexity = state.project?.complexity ?? "HIGH";
+    const stepLabels =
+      reason === "legacy-deliverables"
+        ? deliverableStepLabelsForKinds(
+            planLegacyDeliverablesToGenerate({
+              complexity,
+              hasMddContent: !!state.project?.mddContent?.trim(),
+            }),
+          )
+        : deliverableStepLabelsForComplexity(complexity);
+    if (stepLabels.length === 0) return;
+
+    const completed = Math.min(state.cascadeCompleted, stepLabels.length);
+    set({
+      agentProgress: stepLabels.map((label, index) => ({
+        agent: "Entregables",
+        message:
+          index < completed ? `✅ ${label} — Terminado` : `⚪ ${label} — Generando…`,
+        step: label,
+        status: index < completed ? ("terminado" as const) : ("generando" as const),
+      })),
+      cascadeTotal: stepLabels.length,
+    });
+  },
+
   fetchProject: async (projectId) => {
     const requestedId = projectId.trim();
     if (!requestedId) return null;
     try {
       const switchingProject =
         !!get().projectId?.trim() && get().projectId!.trim() !== requestedId;
+      const preserveBusy = !switchingProject && shouldPreserveWorkshopBusyState(get(), requestedId);
       set({
-        session: null,
-        managerThreadId: null,
-        streamingUserMessage: null,
-        streamingUserImages: null,
-        streamingContent: null,
-        streamingTab: null,
-        agentProgress: [],
+        ...(preserveBusy
+          ? {}
+          : {
+              session: null,
+              managerThreadId: null,
+              streamingUserMessage: null,
+              streamingUserImages: null,
+              streamingContent: null,
+              streamingTab: null,
+              agentProgress: [],
+            }),
         ...(switchingProject
           ? {
               loading: false,
@@ -3147,6 +3194,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const deadline = Date.now() + 45 * 60 * 1000;
 
         const completedSteps = new Set<string>();
+        let lastReportedStep: string | null = null;
         while (Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 1200));
           const st = await apiFetch(`${API_BASE}/projects/${pid}/deliverables-jobs/${data.jobId}`);
@@ -3163,19 +3211,27 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             throw new Error(j.error ?? "Cascada de entregables fallida");
           }
           if (j.status === "completed") break;
-          const prog = j.progress;
-          if (prog && typeof prog === "object" && prog.step && prog.step !== "done") {
-            const stepLabel = String(prog.step);
-            if (!completedSteps.has(stepLabel)) {
-              completedSteps.add(stepLabel);
-              set((s) => ({
-                agentProgress: s.agentProgress.map((item) =>
-                  item.step === stepLabel
-                    ? { ...item, message: `✅ ${stepLabel} — Terminado`, status: "terminado" }
-                    : item,
+          const apiStep = readDeliverableCascadeProgressStep(j.progress);
+          if (apiStep && apiStep !== "done") {
+            const doneUpdate = applyDeliverableCascadeStepDone(
+              get().agentProgress,
+              completedSteps,
+              apiStep,
+            );
+            if (doneUpdate.matched) {
+              set({
+                agentProgress: doneUpdate.agentProgress,
+                cascadeCompleted: doneUpdate.cascadeCompleted,
+              });
+            } else if (apiStep !== lastReportedStep) {
+              lastReportedStep = apiStep;
+              set({
+                agentProgress: applyDeliverableCascadeStepActive(
+                  get().agentProgress,
+                  apiStep,
+                  completedSteps,
                 ),
-                cascadeCompleted: completedSteps.size,
-              }));
+              });
             }
           }
         }
@@ -4088,7 +4144,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const pollLegacyDeliverablesJob = async (jobId: string): Promise<boolean> => {
       const deadline = Date.now() + 90 * 60 * 1000;
       const completedSteps = new Set<string>();
-      let lastActiveStep: string | null = null;
+      let lastReportedStep: string | null = null;
       while (Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 1200));
         const st = await apiFetch(`${API_BASE}/projects/${pid}/legacy/deliverables-jobs/${jobId}`);
@@ -4111,30 +4167,27 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           }
           return true;
         }
-        const prog = j.progress;
-        if (prog?.step && prog.step !== "done") {
-          if (!completedSteps.has(prog.step)) {
-            completedSteps.add(prog.step);
-            set((s) => ({
-              agentProgress: s.agentProgress.map((item) =>
-                item.step === prog.step
-                  ? { ...item, message: `✅ ${prog.step} — Terminado`, status: "terminado" }
-                  : item,
+        const apiStep = readDeliverableCascadeProgressStep(j.progress);
+        if (apiStep && apiStep !== "done") {
+          const doneUpdate = applyDeliverableCascadeStepDone(
+            get().agentProgress,
+            completedSteps,
+            apiStep,
+          );
+          if (doneUpdate.matched) {
+            set({
+              agentProgress: doneUpdate.agentProgress,
+              cascadeCompleted: doneUpdate.cascadeCompleted,
+            });
+          } else if (apiStep !== lastReportedStep) {
+            lastReportedStep = apiStep;
+            set({
+              agentProgress: applyDeliverableCascadeStepActive(
+                get().agentProgress,
+                apiStep,
+                completedSteps,
               ),
-              cascadeCompleted: completedSteps.size,
-            }));
-          }
-          if (prog.step !== lastActiveStep) {
-            lastActiveStep = prog.step;
-            if (!completedSteps.has(prog.step)) {
-              set((s) => ({
-                agentProgress: s.agentProgress.map((item) =>
-                  item.step === prog.step
-                    ? { ...item, message: `⚡ ${prog.step} — Generando…`, status: "generando" }
-                    : item,
-                ),
-              }));
-            }
+            });
           }
         }
       }
