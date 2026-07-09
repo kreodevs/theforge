@@ -5,6 +5,7 @@ import { AiService } from "./ai.service.js";
 import { DISCOVERY_BENCHMARK_PROMPT } from "./prompts/discovery-benchmark-prompt.js";
 import { PHASE0_DEEP_RESEARCH_PROMPT } from "./prompts/phase0-deep-research-prompt.js";
 import { COMPLEXITY_INFERENCE_PROMPT } from "./prompts/complexity-inference-prompt.js";
+import { TechnologyDocsMcpClientService } from "../technology-docs-mcp/technology-docs-mcp-client.service.js";
 
 /**
  * Servicio de descubrimiento: Domain Benchmark & Gap Analysis (DBGA).
@@ -18,7 +19,10 @@ import { COMPLEXITY_INFERENCE_PROMPT } from "./prompts/complexity-inference-prom
  */
 @Injectable()
 export class DiscoveryService {
-  constructor(private readonly ai: AiService) { }
+  constructor(
+    private readonly ai: AiService,
+    private readonly techDocsMcp: TechnologyDocsMcpClientService,
+  ) {}
 
   /**
    * Genera el contenido del DBGA (Domain Benchmark & Gap Analysis) para la idea del usuario.
@@ -40,8 +44,15 @@ export class DiscoveryService {
         (scrapedContext.length > 30_000 ? "\n…" : "") +
         "\n---";
     }
+
+    const combined = [userIdea, scrapedContext].filter(Boolean).join("\n\n");
+    const techDocsContext = combined.trim()
+      ? await this.techDocsMcp.buildContextFromText(combined)
+      : null;
+
     return this.ai.generateResponse(prompt, [], {
       systemPrompt: DISCOVERY_BENCHMARK_PROMPT,
+      techDocsContext,
     });
   }
 
@@ -75,8 +86,15 @@ export class DiscoveryService {
     if (!userIdea?.trim() && !scrapedContext?.trim() && !dbgaContent?.trim()) {
       prompt += "No se proporcionó idea ni referencias. Genera un resumen genérico de investigación de dominio.\n\n";
     }
+
+    const combined = [userIdea, scrapedContext, dbgaContent].filter(Boolean).join("\n\n");
+    const techDocsContext = combined.trim()
+      ? await this.techDocsMcp.buildContextFromText(combined)
+      : null;
+
     return this.ai.generateResponse(prompt, [], {
       systemPrompt: PHASE0_DEEP_RESEARCH_PROMPT,
+      techDocsContext,
     });
   }
 

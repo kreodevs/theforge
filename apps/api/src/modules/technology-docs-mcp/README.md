@@ -34,8 +34,11 @@ No platform-wide API key — skip when user has not configured theirs.
 
 ## Consumption
 
-`TechnologyDocsMcpClientService.buildContextForMdd()` from `AiService` when generating Architecture, API contracts, and Tasks.
+| Flow | Trigger |
+|------|---------|
+| **Architecture / API / Tasks** | `buildContextForMdd()` from `AiService` when generating those deliverables (stack in MDD §2). |
+| **Fase 0 entrevista** | Auto: `Phase0InterviewService.processAnswer` when gap/question mentions PAT, OAuth, JWT, webhooks, vendors. |
+| **Generar Benchmark / Deep Research** | Auto: `DiscoveryService` → `buildContextFromText()` on idea + scraped URLs. |
+| **Chat Workshop (tabs `benchmark`, `phase0`)** | Auto on API/auth keywords; **explicit**: «Según Context7, …» → `buildContextForExplicitQuery()`. |
 
-## Stack detection
-
-`@theforge/shared-types/technology-docs` — `resolveStackLibrariesFromMarkdown()`.
+Shared detection: `@theforge/shared-types/technology-docs` — `shouldAutoFetchPhase0TechDocs`, `resolveTechDocCandidatesFromText`, `isExplicitContext7ChatRequest`.

@@ -72,6 +72,8 @@ export interface GenerateResponseOptions {
    * (menos tokens hacia el LLM).
    */
   welcomeBrief?: boolean;
+  /** Pre-fetched Context7 block (Benchmark / Phase 0 generation or chat). */
+  techDocsContext?: string | null;
 }
 
 export interface LLMProvider {

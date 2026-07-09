@@ -125,8 +125,8 @@ export function TechDocsConfigCard() {
             Documentación técnica (Context7)
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[var(--foreground-muted)]">
-            Enlaza tu API key de Context7 para enriquecer Architecture, Contratos API y Tasks con
-            documentación oficial de las librerías del MDD §2.
+            Enlaza tu API key de Context7 para enriquecer Architecture, Contratos API, Tasks y
+            **Fase 0 / Benchmark** (tokens API, OAuth, webhooks) con documentación oficial.
           </p>
         </div>
         <Button
