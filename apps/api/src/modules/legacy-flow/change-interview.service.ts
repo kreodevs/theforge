@@ -14,7 +14,7 @@
  * 6. ChangeScope se usa para generar el MDD
  */
 
-import { Injectable, Logger, BadRequestException } from "@nestjs/common";
+import { Injectable, Logger, BadRequestException, Inject, forwardRef } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
@@ -42,6 +42,7 @@ export class ChangeInterviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AiService,
+    @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
     private readonly theforge: TheForgeService,
   ) {}

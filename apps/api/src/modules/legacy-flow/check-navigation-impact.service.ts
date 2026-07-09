@@ -6,7 +6,7 @@
  * Input: projectId, componentPath
  * Output: isShared, routesAffected, screenNames, warning
  */
-import { Injectable, Logger, BadRequestException } from "@nestjs/common";
+import { Injectable, Logger, BadRequestException, Inject, forwardRef } from "@nestjs/common";
 import { ProjectsService } from "../projects/projects.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 
@@ -22,6 +22,7 @@ export class CheckNavigationImpactService {
   private readonly logger = new Logger(CheckNavigationImpactService.name);
 
   constructor(
+    @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
     private readonly theforge: TheForgeService,
   ) {}

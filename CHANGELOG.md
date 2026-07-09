@@ -24,6 +24,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Fixed
 
+- **Deploy — API exit 1 por DI circular en LegacyFlowModule:** `ResolveChangeToFilesService` (y servicios legacy hermanos) inyectaban `ProjectsService` sin `forwardRef`, lo que rompía el bootstrap tras añadir `ProjectGenerationGuardService` (#420). Corregido con `@Inject(forwardRef(() => ProjectsService))`.
 - **Blueprint — gaps recurrentes en Conformance tras generar:** el pipeline ahora reintenta una vez con feedback automático aunque llegue `gapsFeedback` del Workshop; reparación determinista post-IA (`blueprint-conformance-repair.util.ts`) inyecta entidades §3 faltantes, tecnologías §2 (incl. **Redis** en el detector de stack) y cabeceras obligatorias; § UI Design System pasa a **§9** (§8 reservado al checklist del prompt); post-check usa conformidad completa MDD ↔ Blueprint.
 - **Contratos API — gaps `[API falta]` / `[API extra]` tras generar:** nuevo pipeline en `generateApiContracts` (lista exacta de endpoints §4 en el prompt, reintento LLM, reparación programática de filas faltantes); normalización de rutas `{id}` ↔ `:id` en `checkApiVsMdd`; extracción mejorada de tablas markdown (columna Ruta antes que Método, path params, `/health`). Util `api-conformance-repair.util.ts` + tests `conformance-api.spec.ts`.
 

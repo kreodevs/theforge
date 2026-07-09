@@ -6,7 +6,7 @@
  * Puente entre la entrevista conversacional y el staged discovery.
  * Puede usarse como herramienta independiente o integrada en ChangeInterviewService.
  */
-import { Injectable, Logger, BadRequestException } from "@nestjs/common";
+import { Injectable, Logger, BadRequestException, Inject, forwardRef } from "@nestjs/common";
 import { ProjectsService } from "../projects/projects.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 
@@ -33,6 +33,7 @@ export class ResolveChangeToFilesService {
   private readonly logger = new Logger(ResolveChangeToFilesService.name);
 
   constructor(
+    @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
     private readonly theforge: TheForgeService,
   ) {}
