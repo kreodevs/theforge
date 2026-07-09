@@ -15,6 +15,8 @@ REST: `GET/PUT /api/auth/tech-docs-config`, test: `POST /api/admin/tech-docs-con
 
 Default URL when empty: `https://mcp.context7.com/mcp`.
 
+Context7 uses **Streamable HTTP with MCP session** (`initialize` → `notifications/initialized` → `tools/*` with `Mcp-Session-Id`). Auth is only via header `CONTEXT7_API_KEY` (not Bearer/X-M2M-Token).
+
 ## Platform env (optional)
 
 | Env | Role |

@@ -4,6 +4,7 @@ import {
   callUiMcpToolJson,
   callUiMcpToolText,
   clearUiMcpSession,
+  isContext7RemoteUrl,
   isDsMcpRemoteUrl,
   listUiMcpTools,
   requiresMcpSession,
@@ -88,11 +89,50 @@ describe("ui-mcp-transport — ds-mcp session", () => {
     });
   });
 
-  it("requiresMcpSession detecta componentes.obp.mx y localhost:3100/mcp", () => {
+  it("requiresMcpSession detecta componentes.obp.mx, Context7 y localhost:3100/mcp", () => {
     assert.equal(requiresMcpSession("https://componentes.obp.mx/mcp"), true);
+    assert.equal(requiresMcpSession("https://mcp.context7.com/mcp"), true);
     assert.equal(requiresMcpSession("http://127.0.0.1:3100/mcp"), true);
     assert.equal(requiresMcpSession("https://kreo.example.com/mcp"), false);
     assert.equal(isDsMcpRemoteUrl("https://componentes.obp.mx/mcp"), true);
+    assert.equal(isContext7RemoteUrl("https://mcp.context7.com/mcp"), true);
+  });
+
+  it("initialize + CONTEXT7_API_KEY en mcp.context7.com", async () => {
+    stubFetch([
+      {
+        status: 200,
+        sessionId: "ctx7-sess",
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { serverInfo: { name: "context7" } } }),
+      },
+      { status: 202, body: "" },
+      {
+        status: 200,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "tools",
+          result: { tools: [{ name: "resolve-library-id" }, { name: "query-docs" }] },
+        }),
+      },
+    ]);
+    clearUiMcpSession({
+      url: "https://mcp.context7.com/mcp",
+      token: null,
+      extraHeaders: { CONTEXT7_API_KEY: "c7-key" },
+    });
+    const tools = await listUiMcpTools({
+      url: "https://mcp.context7.com/mcp",
+      token: null,
+      extraHeaders: { CONTEXT7_API_KEY: "c7-key" },
+    });
+    assert.deepEqual(tools, ["resolve-library-id", "query-docs"]);
+    assert.equal(fetchCalls.length, 3);
+    const initHeaders = fetchCalls[0]?.init.headers as Record<string, string>;
+    assert.equal(initHeaders.CONTEXT7_API_KEY, "c7-key");
+    assert.equal(initHeaders["X-M2M-Token"], undefined);
+    const listHeaders = fetchCalls[2]?.init.headers as Record<string, string>;
+    assert.equal(listHeaders["Mcp-Session-Id"], "ctx7-sess");
+    assert.equal(listHeaders.CONTEXT7_API_KEY, "c7-key");
   });
 
   it("initialize + session id + X-IMJ-DS-MCP-Token en componentes.obp.mx", async () => {

@@ -31,7 +31,8 @@ export interface UiMcpConnection {
 const sessionByConnectionKey = new Map<string, string>();
 
 function connectionCacheKey(conn: UiMcpConnection): string {
-  return `${conn.url?.trim() ?? ""}|${conn.token?.trim() ?? ""}`;
+  const context7Key = conn.extraHeaders?.CONTEXT7_API_KEY?.trim() ?? "";
+  return `${conn.url?.trim() ?? ""}|${conn.token?.trim() ?? ""}|${context7Key}`;
 }
 
 /** Hosts ds-mcp desplegado (Forge Ajustes → componentes.obp.mx). */
@@ -44,9 +45,20 @@ export function isDsMcpRemoteUrl(url: string): boolean {
   }
 }
 
-/** Streamable HTTP con sesión MCP (ds-mcp local o remoto). */
+/** Context7 hosted MCP (Streamable HTTP con initialize + Mcp-Session-Id). */
+export function isContext7RemoteUrl(url: string): boolean {
+  try {
+    const host = new URL(url.trim()).hostname.toLowerCase();
+    return host === "mcp.context7.com" || host.endsWith(".context7.com");
+  } catch {
+    return false;
+  }
+}
+
+/** Streamable HTTP con sesión MCP (ds-mcp, Context7 u otros stateful). */
 export function requiresMcpSession(url: string): boolean {
   if (isDsMcpRemoteUrl(url)) return true;
+  if (isContext7RemoteUrl(url)) return true;
   try {
     const parsed = new URL(url.trim());
     const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");

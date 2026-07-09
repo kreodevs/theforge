@@ -1,4 +1,6 @@
 import { Controller, Post, Body } from "@nestjs/common";
+import { listUiMcpTools } from "../ui-mcp/ui-mcp-transport.util.js";
+import { DEFAULT_TECH_DOCS_MCP_URL } from "../technology-docs-mcp/technology-docs-mcp-client.service.js";
 
 @Controller("admin")
 export class AdminController {
@@ -13,10 +15,23 @@ export class AdminController {
   async testTechDocsConnection(
     @Body() body: { url?: string; token: string },
   ): Promise<{ ok: boolean; error?: string }> {
-    const url = body.url?.trim() || "https://mcp.context7.com/mcp";
-    return testMcpToolsList(url, body.token, {
-      extraHeaders: { CONTEXT7_API_KEY: body.token },
-    });
+    const url = body.url?.trim() || DEFAULT_TECH_DOCS_MCP_URL;
+    const apiKey = body.token?.trim();
+    if (!apiKey) return { ok: false, error: "API key es requerida" };
+    try {
+      await listUiMcpTools({
+        url,
+        token: null,
+        extraHeaders: { CONTEXT7_API_KEY: apiKey },
+        timeoutMs: 15_000,
+      });
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : "Error de conexión",
+      };
+    }
   }
 }
 
