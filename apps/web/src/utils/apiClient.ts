@@ -173,6 +173,9 @@ export async function flushOfflineQueue(): Promise<number> {
       if (r.ok) {
         removeFromOfflineQueue(entry.field);
         synced++;
+      } else if (r.status >= 400 && r.status < 500) {
+        // Validation / client error — drop entry; retrying will never succeed.
+        removeFromOfflineQueue(entry.field);
       }
     } catch {
       // No se pudo sincronizar ahora, se reintentará después

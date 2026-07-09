@@ -37,6 +37,7 @@ export * from "./deduplicate-dbga-document.js";
 export * from "./orchestrator.js";
 export * from "./legacy-codebase-doc.js";
 export * from "./document-changelog.js";
+export * from "./document-persist-validation.js";
 export * from "./mdd-governance-patterns.js";
 export * from "./phase0-content.js";
 export * from "./project-integration.js";
