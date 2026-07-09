@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatImagePart, CodebaseDocResponseMode, MddDeliveryGateResult } from "@theforge/shared-types";
+import type { ChatImagePart, CodebaseDocResponseMode, MddDeliveryGateResult, ProjectGenerationStatus } from "@theforge/shared-types";
 import { contentIncludesVisionBlock } from "@theforge/shared-types/session";
 import { isFormatDocumentChatCommand } from "../utils/documentFormatCommand";
 import {
@@ -790,6 +790,10 @@ interface WorkshopState {
   /** Reintenta cola offline y valida conexión con el API. */
   retryWorkshopSync: () => Promise<void>;
 
+  /** Gate de cola: jobs activos, MDD en stream y dependencias upstream. */
+  generationStatus: ProjectGenerationStatus | null;
+  fetchGenerationStatus: (projectId: string) => Promise<ProjectGenerationStatus | null>;
+
   fetchProject: (projectId: string) => Promise<Project | null>;
   fetchWelcome: (projectId: string, activeTab?: string) => Promise<void>;
   clearChat: (projectId: string, activeTab?: string) => Promise<void>;
@@ -1037,7 +1041,19 @@ const initialState = {
   workshopStages: [] as WorkshopStage[],
   activeStageId: null as string | null,
   workshopActiveDocPanel: "mdd",
+  generationStatus: null as ProjectGenerationStatus | null,
 };
+
+let generationStatusPollTimer: ReturnType<typeof setInterval> | null = null;
+let generationStatusPollProjectId: string | null = null;
+
+function stopGenerationStatusPolling(): void {
+  if (generationStatusPollTimer) {
+    clearInterval(generationStatusPollTimer);
+    generationStatusPollTimer = null;
+  }
+  generationStatusPollProjectId = null;
+}
 
 export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   ...initialState,
@@ -1261,6 +1277,36 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
+  fetchGenerationStatus: async (projectId) => {
+    const requestedId = projectId.trim();
+    if (!requestedId) return null;
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${requestedId}/generation-status`);
+      if (!r.ok) return null;
+      const status = (await r.json()) as ProjectGenerationStatus;
+      if (!shouldApplyWorkshopUpdate(get, requestedId)) return status;
+      const wasBusy = get().generationStatus?.busy === true;
+      set({ generationStatus: status });
+      if (status.busy) {
+        if (generationStatusPollProjectId !== requestedId) {
+          stopGenerationStatusPolling();
+          generationStatusPollProjectId = requestedId;
+          generationStatusPollTimer = setInterval(() => {
+            void get().fetchGenerationStatus(requestedId);
+          }, 5000);
+        }
+      } else {
+        stopGenerationStatusPolling();
+        if (wasBusy) {
+          void get().fetchProject(requestedId);
+        }
+      }
+      return status;
+    } catch {
+      return null;
+    }
+  },
+
   fetchProject: async (projectId) => {
     const requestedId = projectId.trim();
     if (!requestedId) return null;
@@ -1339,6 +1385,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         if (!shouldApplyWorkshopUpdate(get, requestedId)) return;
         get().fetchEstimation(requestedId).catch(() => { });
         get().fetchAdrs(requestedId).catch(() => { });
+        get().fetchGenerationStatus(requestedId).catch(() => { });
       }, 0);
       return data;
     } catch (e) {
@@ -2845,18 +2892,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId?.trim()) return null;
     set({ loading: true, error: null });
     try {
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}/generate-spec`, { method: "POST" });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.message ?? "Error al generar Spec");
-      }
-      const data: Project = await r.json();
-      // Limpiar etiquetas markdown que a veces genera el LLM
+      const data = await queueAndPoll<Project>(`${API_BASE}/projects/${projectId}/generate-spec`, {});
       const raw = data.specContent ?? "";
       const cleaned = raw.replace(/^\s*```(?:markdown)?\s*/i, "").replace(/^\s*```\s*/, "").replace(/\s*```\s*$/, "");
-
       const newData = { ...data, specContent: cleaned || null };
       set({ project: newData, specContent: cleaned || null, error: null });
+      void get().fetchGenerationStatus(projectId);
       return newData;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar Spec" });
@@ -2873,13 +2914,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId?.trim()) return null;
     set({ loading: true, error: null });
     try {
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}/generate-tasks`, { method: "POST" });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.message ?? "Error al generar Tasks");
-      }
-      const data: Project = await r.json();
+      const data = await queueAndPoll<Project>(`${API_BASE}/projects/${projectId}/generate-tasks`, {});
       set({ project: data, tasksContent: data.tasksContent ?? null, error: null });
+      void get().fetchGenerationStatus(projectId);
       return data;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar Tasks" });

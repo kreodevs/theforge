@@ -8,6 +8,7 @@ import { Phase0InterviewService } from "./phase0/phase0-interview.service.js";
 import { MddManualAuditService } from "./mdd/mdd-manual-audit.service.js";
 import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
+import { ProjectGenerationGuardService } from "../projects/project-generation-guard.service.js";
 
 @Controller("ai-analysis")
 export class AiAnalysisController {
@@ -17,7 +18,16 @@ export class AiAnalysisController {
     private readonly phase0Interview: Phase0InterviewService,
     private readonly mddManualAudit: MddManualAuditService,
     private readonly prisma: PrismaService,
+    private readonly generationGuard: ProjectGenerationGuardService,
   ) { }
+
+  private registerMddStreamLock(projectId: string | undefined): void {
+    if (projectId?.trim()) this.generationGuard.registerMddStream(projectId.trim());
+  }
+
+  private releaseMddStreamLock(projectId: string | undefined): void {
+    if (projectId?.trim()) this.generationGuard.unregisterMddStream(projectId.trim());
+  }
 
   /**
    * Métricas en vivo de estimación (Semáforo + MXN) para un proyecto.
@@ -238,6 +248,7 @@ export class AiAnalysisController {
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
+    this.registerMddStreamLock(projectId);
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
@@ -253,7 +264,10 @@ export class AiAnalysisController {
       })(),
     );
     // Si el cliente se desconecta, destruir el stream para no quedarlo colgado
-    res.on("close", () => { stream.destroy(); });
+    res.on("close", () => {
+      this.releaseMddStreamLock(projectId);
+      stream.destroy();
+    });
     stream.on("error", (err) => {
       console.error("[MDD stream] stream error:", err);
       if (!res.destroyed) {
@@ -302,6 +316,7 @@ export class AiAnalysisController {
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
+    this.registerMddStreamLock(projectId);
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
@@ -324,7 +339,10 @@ export class AiAnalysisController {
       })(),
     );
     // Si el cliente se desconecta, destruir el stream para no quedarlo colgado
-    res.on("close", () => { stream.destroy(); });
+    res.on("close", () => {
+      this.releaseMddStreamLock(projectId);
+      stream.destroy();
+    });
     stream.on("error", (err) => {
       console.error("[MDD stream/manager] stream error:", err);
       if (!res.destroyed) {
@@ -369,6 +387,7 @@ export class AiAnalysisController {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
+    this.registerMddStreamLock(projectId);
     const service = this.aiAnalysis;
     const stream = Readable.from(
       (async function* () {
@@ -383,7 +402,10 @@ export class AiAnalysisController {
         }
       })(),
     );
-    res.on("close", () => { stream.destroy(); });
+    res.on("close", () => {
+      this.releaseMddStreamLock(projectId);
+      stream.destroy();
+    });
     stream.on("error", (err) => {
       console.error("[MDD stream/regenerate-section] stream error:", err);
       if (!res.destroyed) {

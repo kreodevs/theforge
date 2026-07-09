@@ -12,6 +12,7 @@ import { Queue, Worker, type Job } from "bullmq";
 import type { AffectedArtifact } from "@theforge/shared-types";
 import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-user.store.js";
 import { DocReconcileService } from "../documentation-gap/doc-reconcile.service.js";
+import { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
 import { ProjectsService } from "./projects.service.js";
 
 export const DELIVERABLES_QUEUE_NAME = "theforge-deliverables";
@@ -19,6 +20,7 @@ export const DELIVERABLES_QUEUE_NAME = "theforge-deliverables";
 /** Tipos de job soportados por la cola. */
 export type GenerateJobType =
   | "cascade"
+  | "spec"
   | "blueprint"
   | "api-contracts"
   | "logic-flows"
@@ -99,6 +101,9 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   private queue: Queue | null = null;
   private worker: Worker | null = null;
   private readonly inMemoryJobs = new Map<string, InMemoryJobRecord>();
+  /** Un job in-memory activo por proyecto (cola secuencial sin Redis). */
+  private readonly inMemoryRunningProjects = new Set<string>();
+  private readonly inMemoryPendingByProject = new Map<string, string[]>();
 
   /** Intentos máximos por job (BullMQ reintenta automáticamente con backoff). */
   private readonly MAX_ATTEMPTS = 4;
@@ -106,6 +111,8 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
+    @Inject(forwardRef(() => ProjectGenerationGuardService))
+    private readonly generationGuard: ProjectGenerationGuardService,
     @Optional()
     @Inject(forwardRef(() => DocReconcileService))
     private readonly docReconcile: DocReconcileService | null,
@@ -254,6 +261,9 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
           result = await this.projects.generateArchitecture(projectId);
         }
         break;
+      case "spec":
+        result = await this.projects.generateSpec(projectId);
+        break;
       case "use-cases":
         if (preview) {
           result = await this.projects.generateUseCasesPreview(projectId);
@@ -305,6 +315,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     const record = this.inMemoryJobs.get(jobId);
     if (!record) return;
     record.status = "active";
+    this.generationGuard.markBackgroundJobActive(jobId);
 
     void runWithRequestUserAsync(data.userId ?? "system", async () => {
       const started = Date.now();
@@ -326,30 +337,96 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
         this.logger.error(
           `In-memory job ${jobId} (${data.type} projectId=${data.projectId}) falló: ${record.error}`,
         );
+      } finally {
+        this.generationGuard.finishBackgroundJob(jobId);
+        this.inMemoryRunningProjects.delete(data.projectId);
+        this.pumpInMemoryQueue(data.projectId);
       }
     });
   }
 
-  /** Encola cualquier tipo de job de generación. Retorna jobId. */
-  async enqueue(data: GenerateJobData): Promise<string> {
-    const userId = data.userId ?? getRequestUserId();
-    const payload: GenerateJobData = { ...data, userId };
+  private pumpInMemoryQueue(projectId: string): void {
+    if (this.inMemoryRunningProjects.has(projectId)) return;
+    const pending = this.inMemoryPendingByProject.get(projectId);
+    if (!pending?.length) return;
 
-    if (this.queue) {
-      const job = await this.queue.add(data.type, payload);
-      return String(job.id);
+    const nextJobId = pending.shift();
+    if (!nextJobId) return;
+    if (pending.length === 0) this.inMemoryPendingByProject.delete(projectId);
+
+    const record = this.inMemoryJobs.get(nextJobId);
+    if (!record || record.status !== "queued") {
+      this.pumpInMemoryQueue(projectId);
+      return;
     }
 
+    this.inMemoryRunningProjects.add(projectId);
+    this.startInMemoryJob(nextJobId, record.data);
+  }
+
+  private enqueueInMemory(data: GenerateJobData): string {
     const jobId = randomUUID();
     this.inMemoryJobs.set(jobId, {
-      data: payload,
+      data,
       status: "queued",
       progress: 0,
       createdAt: Date.now(),
     });
+    this.generationGuard.registerBackgroundJob(jobId, data.projectId, data.type);
+
+    const pending = this.inMemoryPendingByProject.get(data.projectId) ?? [];
+    pending.push(jobId);
+    this.inMemoryPendingByProject.set(data.projectId, pending);
+
     this.logger.log(`In-memory job ${jobId} encolado type=${data.type} projectId=${data.projectId}`);
-    setImmediate(() => this.startInMemoryJob(jobId, payload));
+    setImmediate(() => this.pumpInMemoryQueue(data.projectId));
     return jobId;
+  }
+
+  /** Jobs activos o en cola para un proyecto (BullMQ + in-memory). */
+  async listActiveJobsForProject(projectId: string): Promise<
+    Array<{ jobId: string; type: GenerateJobType; status: "queued" | "active" | "retrying" }>
+  > {
+    const out: Array<{ jobId: string; type: GenerateJobType; status: "queued" | "active" | "retrying" }> = [];
+
+    for (const [jobId, mem] of this.inMemoryJobs) {
+      if (mem.data.projectId !== projectId) continue;
+      if (mem.status === "queued" || mem.status === "active") {
+        out.push({ jobId, type: mem.data.type, status: mem.status });
+      }
+    }
+
+    if (!this.queue) return out;
+
+    const states = ["waiting", "active", "delayed"] as const;
+    for (const state of states) {
+      const jobs = await this.queue.getJobs([state], 0, 200);
+      for (const job of jobs) {
+        const data = job.data as GenerateJobData | undefined;
+        if (data?.projectId !== projectId) continue;
+        const status =
+          state === "active" ? "active" : state === "delayed" ? "retrying" : ("queued" as const);
+        out.push({ jobId: String(job.id), type: data.type, status });
+      }
+    }
+    return out;
+  }
+
+  /** Encola cualquier tipo de job de generación. Retorna jobId. */
+  async enqueue(data: GenerateJobData): Promise<string> {
+    await this.generationGuard.assertCanEnqueue(data.projectId, data.type);
+
+    const userId = data.userId ?? getRequestUserId();
+    const payload: GenerateJobData = { ...data, userId };
+
+    if (this.queue) {
+      const job = await this.queue.add(data.type, payload, {
+        jobId: undefined,
+      });
+      return String(job.id);
+    }
+
+    return this.enqueueInMemory(payload);
   }
 
   /** Devuelve el estado público de un job para polling del frontend. */

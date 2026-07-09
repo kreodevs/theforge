@@ -10,6 +10,7 @@ import {
   ClipboardList,
   FileText,
   GitBranch,
+  Clock,
   HelpCircle,
   LayoutTemplate,
   Link2,
@@ -25,6 +26,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import convergeWebhookCiHelp from "../content/help/converge-webhook-ci.md?raw";
+import generacionSegundoPlanoHelp from "../content/help/generacion-en-segundo-plano.md?raw";
 import legacyNewIntegrationHelp from "../content/help/legacy-new-integration.md?raw";
 import {
   Button,
@@ -55,6 +57,7 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   manual: BookOpen,
   "legacy-new-integration": Link2,
   "converge-webhook-ci": Webhook,
+  "generacion-segundo-plano": Clock,
   sdd: Brain,
   mdd: FileText,
   spec: ClipboardList,
@@ -149,7 +152,14 @@ const SECTIONS: HelpSection[] = [
       "Integración entre monolito legacy y producto nuevo: ver **Integración Legacy ↔ Nuevo** en esta misma ayuda.",
       "",
       "Automatizar drift brownfield en CI (Ariadne + webhook converge): ver **Webhook converge (CI)** en esta misma ayuda.",
+      "",
+      "Generación en background y orden de entregables: ver **Generación en segundo plano**.",
     ].join("\n"),
+  },
+  {
+    id: "generacion-segundo-plano",
+    label: "Generación en segundo plano",
+    content: generacionSegundoPlanoHelp.trim(),
   },
   {
     id: "legacy-new-integration",
@@ -722,7 +732,7 @@ const SECTIONS: HelpSection[] = [
 ];
 
 const NAV_GROUPS: { label: string; sectionIds: string[] }[] = [
-  { label: "Guía", sectionIds: ["manual", "legacy-new-integration", "converge-webhook-ci"] },
+  { label: "Guía", sectionIds: ["manual", "generacion-segundo-plano", "legacy-new-integration", "converge-webhook-ci"] },
   { label: "Metodología", sectionIds: ["sdd"] },
   {
     label: "Documentos",

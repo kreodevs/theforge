@@ -1,5 +1,6 @@
 import { Module, forwardRef } from "@nestjs/common";
 import { DeliverablesQueueService } from "./deliverables-queue.service.js";
+import { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
 import { PROJECTS_ORCHESTRATOR_PORT } from "./projects-service.port.js";
 import { ProjectsService } from "./projects.service.js";
 import { ProjectMergeService } from "./project-merge.service.js";
@@ -45,7 +46,8 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     { provide: PROJECTS_ORCHESTRATOR_PORT, useExisting: ProjectsService },
     ProjectEstimationRecalcService,
     DeliverablesQueueService,
+    ProjectGenerationGuardService,
   ],
-  exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService],
+  exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService],
 })
 export class ProjectsModule { }

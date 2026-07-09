@@ -1,0 +1,56 @@
+# Generación en segundo plano
+
+The Forge encola la **generación y regeneración de entregables SDD** como jobs en background. Puedes cerrar el navegador o apagar la computadora: con **Redis** (`REDIS_URL` en el servidor) el job sigue en BullMQ hasta terminar. Al volver, abre el proyecto y verás el documento ya persistido.
+
+## Qué va en cola
+
+| Acción | Comportamiento |
+|--------|----------------|
+| **Generar todos los documentos** (cascada) | Un job `cascade` recorre las oleadas W0→W4 según complejidad |
+| **Regenerar Spec, Arquitectura, Blueprint, API, Tasks, etc.** | Un job por entregable (`?queue=true` por defecto) |
+| **Regenerar MDD** (Manager / pipeline / sección) | Stream en vivo; **bloquea** otros entregables mientras corre |
+
+## Reglas de orden (importante)
+
+1. **Un solo job activo por proyecto** — no puedes encolar Spec mientras Blueprint sigue generándose.
+2. **Estar en cola no cuenta como listo** — si el MDD o la Spec están *en cola o ejecutándose*, no puedes generar downstream (p. ej. Spec o Blueprint).
+3. **Upstream persistido al 100 %** — cada entregable exige que los de oleadas anteriores existan en BD con contenido sustancial (≥ 48 caracteres), según `DELIVERABLE_WAVES_BY_COMPLEXITY`.
+4. **MDD en stream** — mientras regeneras MDD, ningún otro documento puede encolarse.
+
+### Ejemplo (complejidad HIGH)
+
+```text
+W0  MDD canonical (persistido)
+W1  Spec + Arquitectura        ← en paralelo, pero ambos requieren MDD listo
+W2  UC, HU, API, flujos, UX, Blueprint
+W2b Pantallas (sync UI MCP)
+W3  Tasks + Infra + Gobernanza
+W4  Post-pase SDD (cascada)
+```
+
+No puedes pulsar «Regenerar Spec» si el MDD acaba de encolarse en cascada pero aún no terminó W0.
+
+## Cómo saber el estado
+
+- **Workshop:** banner cuando hay generación en curso; botones de regenerar deshabilitados si el gate lo impide.
+- **API:** `GET /projects/:id/generation-status` devuelve `{ busy, activeJob, queuedJobs, mddStreamActive, gates }`.
+- **Job concreto:** `GET /projects/:id/deliverables-jobs/:jobId` o `GET /projects/jobs/:jobId`.
+
+## Sin Redis (desarrollo local)
+
+Sin `REDIS_URL`, la API usa una **cola in-memory secuencial por proyecto** en el mismo proceso Node. El job sobrevive si cierras el navegador, pero **no** si reinicias el servidor API. En producción (Dokploy) configura Redis para jobs persistentes.
+
+## Errores 409 (Conflict)
+
+Si intentas generar fuera de orden, la API responde **409** con un mensaje explícito (p. ej. «Spec está en cola…» o «Falta el entregable upstream mdd_canonical»). Espera a que termine el job activo o completa el documento previo.
+
+## Buenas prácticas
+
+1. Tras **Regenerar MDD**, espera a que termine y se persista antes de la cascada o entregables sueltos.
+2. Usa **Generar todos** cuando quieras el orden completo; usa regeneración individual solo para un artefacto concreto.
+3. Si vuelves al día siguiente, **recarga el proyecto** — no hace falta dejar la pestaña abierta durante horas.
+
+## Relacionado
+
+- Semáforo MDD y gates de entrega: ayuda **MDD** y **Specification Driven Development**.
+- Cascada legacy: flujo aparte en proyectos `LEGACY` (`POST …/legacy/generate-deliverables`).

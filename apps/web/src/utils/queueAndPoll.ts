@@ -12,6 +12,10 @@ function agentGovDebug(message: string): void {
   }
 }
 
+/** Máximo ~6 h de polling (10800 × 2 s). Jobs largos pueden completarse con sesión cerrada. */
+const POLL_MAX_ATTEMPTS = 10_800;
+const POLL_INTERVAL_MS = 2_000;
+
 async function pollProjectUntilComplete<T>(
   projectId: string,
   field: string,
@@ -19,9 +23,9 @@ async function pollProjectUntilComplete<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const pollUrl = `${API_BASE}/projects/${projectId}`;
-  for (let attempt = 0; attempt < 150; attempt++) {
+  for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
     if (signal?.aborted) throw new Error("Cancelado por el usuario");
-    await new Promise((r) => setTimeout(r, 2_000));
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     const pr = await apiFetch(pollUrl);
     if (!pr.ok) {
       agentGovDebug(`pollProject attempt=${attempt + 1} fetch failed status=${pr.status}`);
@@ -41,7 +45,7 @@ async function pollProjectUntilComplete<T>(
     }
   }
   agentGovDebug(`pollProject timeout projectId=${projectId} field=${field}`);
-  throw new Error("Tiempo de espera agotado (5 min)");
+  throw new Error("Tiempo de espera agotado (6 h). Recarga el proyecto; el job puede haber terminado en el servidor.");
 }
 
 async function pollJobUntilComplete<T>(
@@ -49,9 +53,9 @@ async function pollJobUntilComplete<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const pollUrl = `${API_BASE}/projects/jobs/${jobId}`;
-  for (let attempt = 0; attempt < 150; attempt++) {
+  for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
     if (signal?.aborted) throw new Error("Cancelado por el usuario");
-    await new Promise((r) => setTimeout(r, 2_000));
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     const pr = await apiFetch(pollUrl);
     if (!pr.ok) {
       if (pr.status === 404) throw new Error("Job no encontrado");
@@ -65,7 +69,7 @@ async function pollJobUntilComplete<T>(
     if (status.status === "completed") return status.result as T;
     if (status.status === "failed") throw new Error(status.error ?? "Error en la generación");
   }
-  throw new Error("Tiempo de espera agotado (5 min)");
+  throw new Error("Tiempo de espera agotado (6 h). Recarga el proyecto; el job puede haber terminado en el servidor.");
 }
 
 /**
