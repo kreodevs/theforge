@@ -57,6 +57,7 @@ import {
   appendLegacyBaselineDetailPrompt,
   capTextForLegacyBaseline,
 } from "./utils/legacy-baseline-detail.util.js";
+import { TechnologyDocsMcpClientService } from "../technology-docs-mcp/technology-docs-mcp-client.service.js";
 import {
   buildLegacyAsIsSpecCoverageChecklist,
   buildLegacyAsIsSpecUserPreamble,
@@ -160,6 +161,8 @@ export interface LegacyGenerateOptions {
   phase0GapsJson?: string | null;
   /** Blueprint para checklist de cobertura cuando el artefacto destino no lo recibe como body. */
   coverageBlueprintContent?: string | null;
+  /** Pre-fetched Technology Docs MCP block (Context7). When absent, AiService may resolve from MDD. */
+  techDocsContext?: string | null;
 }
 
 export interface AgentGovernanceGenerateOptions extends LegacyGenerateOptions {
@@ -211,14 +214,44 @@ function prependTheForgePrompt(prompt: string, theforgeContext: string): string 
   );
 }
 
+function appendTechDocsContextBlock(prompt: string, techDocsContext: string | null | undefined): string {
+  const block = (techDocsContext ?? "").trim();
+  if (!block) return prompt;
+  return (
+    `${prompt}\n\n**Documentación oficial de tecnologías (Technology Docs MCP — patrones y APIs; no sustituye MDD ni Ariadne):**\n---\n` +
+    `${block}\n---`
+  );
+}
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
 
-  constructor(private readonly aiFactory: AIFactory) {}
+  constructor(
+    private readonly aiFactory: AIFactory,
+    private readonly techDocsMcp: TechnologyDocsMcpClientService,
+  ) {}
 
   private async provider() {
     return this.aiFactory.createForUser(getRequestUserId());
+  }
+
+  /** Resolves optional Technology Docs MCP snippets; never throws. */
+  private async resolveTechDocsContext(
+    mddContent: string,
+    blueprintContent: string | null | undefined,
+    options?: LegacyGenerateOptions,
+  ): Promise<string | null> {
+    const preset = options?.techDocsContext?.trim();
+    if (preset) return preset;
+    try {
+      return await this.techDocsMcp.buildContextForMdd(mddContent, blueprintContent);
+    } catch (e) {
+      this.logger.warn(
+        `[tech-docs] buildContextForMdd failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return null;
+    }
   }
 
   private static readonly ACTIVE_TAB_LABELS: Record<string, string> = {
@@ -821,6 +854,7 @@ export class AiService {
       coordinatesMode?: boolean;
     },
   ): Promise<string> {
+    const techDocsContext = await this.resolveTechDocsContext(mddContent, blueprintContent, options);
     const mdd = buildMddContextForTasks(mddContent?.trim() ?? "", mddDeliverableCtx(options));
     const blueprint = capTextForLegacyBaseline(blueprintContent ?? "", 15000, options?.legacyBaselineStage);
     const navMap = capTextForLegacyBaseline(options?.navigationMap ?? "", 8000, options?.legacyBaselineStage);
@@ -874,6 +908,7 @@ export class AiService {
         "\n---";
     }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    prompt = appendTechDocsContextBlock(prompt, techDocsContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
     return this.generateResponse(prompt, [], { systemPrompt: TASKS_PROMPT + NO_MILITAR_INSTRUCTION });
@@ -976,6 +1011,7 @@ export class AiService {
   }
 
   async generateArchitecture(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions & { gapsFeedback?: string | null }): Promise<string> {
+    const techDocsContext = await this.resolveTechDocsContext(mddContent, blueprintContent, options);
     const mdd = buildMddContextForArchitecture(mddContent?.trim() ?? "", mddDeliverableCtx(options));
     const blueprint = capTextForLegacyBaseline(blueprintContent ?? "", 15000, options?.legacyBaselineStage);
     let prompt =
@@ -1002,6 +1038,7 @@ export class AiService {
         "\n---";
     }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    prompt = appendTechDocsContextBlock(prompt, techDocsContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
     return this.generateResponse(prompt, [], { systemPrompt: ARCHITECTURE_PROMPT + NO_MILITAR_INSTRUCTION });
@@ -1149,6 +1186,7 @@ export class AiService {
   }
 
   async generateApiContracts(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, brdContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
+    const techDocsContext = await this.resolveTechDocsContext(mddContent, blueprintContent, options);
     const mdd = buildMddContextForApiContracts(mddContent?.trim() ?? "", mddDeliverableCtx(options));
     const blueprint = capTextForLegacyBaseline(blueprintContent ?? "", 16000, options?.legacyBaselineStage);
     const brd = capTextForLegacyBaseline(brdContent ?? "", 8000, options?.legacyBaselineStage);
@@ -1178,6 +1216,7 @@ export class AiService {
       blueprintContent,
     );
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
+    prompt = appendTechDocsContextBlock(prompt, techDocsContext);
     if (options?.contractSpecs?.trim()) {
       const specsBlock = capTextForLegacyBaseline(options.contractSpecs, 12000, options?.legacyBaselineStage);
       prompt +=
