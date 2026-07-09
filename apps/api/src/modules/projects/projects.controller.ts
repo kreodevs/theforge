@@ -14,6 +14,7 @@ import {
 import type { Response } from "express";
 import { requireAdmin } from "../../common/guards/role.helpers.js";
 import { DeliverablesQueueService, type GenerateJobType } from "./deliverables-queue.service.js";
+import { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
 import { ProjectMergeService } from "./project-merge.service.js";
 import { ProjectsService } from "./projects.service.js";
 import {
@@ -34,6 +35,7 @@ export class ProjectsController {
     private readonly projects: ProjectsService,
     private readonly projectMerge: ProjectMergeService,
     private readonly deliverablesQueue: DeliverablesQueueService,
+    private readonly generationGuard: ProjectGenerationGuardService,
     private readonly sddIntegration: SddIntegrationService,
   ) {}
 
@@ -142,6 +144,13 @@ export class ProjectsController {
   hermesStatus() {
     const configured = !!(process.env.HERMES_WEBHOOK_URL?.trim() && process.env.HERMES_API_KEY?.trim());
     return { configured };
+  }
+
+  @Get(":id/generation-status")
+  async generationStatus(@Param("id") id: string) {
+    const status = await this.generationGuard.getStatus(id);
+    const { complexity: _c, contentReady: _r, ...publicStatus } = status;
+    return publicStatus;
   }
 
   @Get(":id")
@@ -318,9 +327,7 @@ export class ProjectsController {
     @Query("queue") queue?: string,
     @Query("acknowledgeGaps") acknowledgeGaps?: string,
   ) {
-    return this.queueOrSync(id, "tasks", {}, queue, acknowledgeGaps);
-    // spec no está en el switch del worker — cae a síncrono.
-    // Si se implementa el worker, cambiar 'tasks' por el type real.
+    return this.queueOrSync(id, "spec", {}, queue, acknowledgeGaps);
   }
 
   @Post(":id/generate-tasks")
@@ -501,11 +508,9 @@ export class ProjectsController {
   }
 
   /**
-   * Helper: si la cola está habilitada y el cliente envió `?queue=true`,
-   * encola el job y devuelve `{ queued: true, jobId }`.
-   * Si no hay Redis pero el cliente pidió queue, ejecuta fire-and-forget
-   * (responde instantáneo, el job corre en background).
-   * Solo cae a síncrono si NO se pidió queue explícitamente.
+   * Helper: encola el job por defecto (`?queue=true` implícito).
+   * Pasa `?queue=false` solo para ejecución síncrona (integraciones/MCP).
+   * Con Redis responde `{ queued: true, jobId }`; sin Redis, fire-and-forget in-memory secuencial.
    */
   private async queueOrSync(
     projectId: string,
@@ -519,7 +524,7 @@ export class ProjectsController {
     if (!isPreview && type !== "doc-reconcile-partial") {
       await this.projects.assertDeliverablesAllowed(projectId, { acknowledgeGaps });
     }
-    const wantQueue = queueParam === "true";
+    const wantQueue = queueParam !== "false";
     const canQueue = wantQueue && this.deliverablesQueue.isEnabled();
     if (canQueue) {
       const jobId = await this.deliverablesQueue.enqueue({
@@ -534,7 +539,7 @@ export class ProjectsController {
       return { queued: true, jobId, statusPath: `/projects/jobs/${jobId}` };
     }
 
-    // Cliente pidió queue pero Redis no está → fire-and-forget para no timeout
+    // Cliente pidió cola pero Redis no está → fire-and-forget secuencial por proyecto
     if (wantQueue) {
       if (type === "agent-governance" && extra.forceRegenerate !== false) {
         console.warn(
@@ -542,20 +547,18 @@ export class ProjectsController {
         );
         await this.projects.clearAgentGovernanceContent(projectId);
       }
-      if (type === "agent-governance") {
-        console.warn(
-          `[agent-gov] queueOrSync fire-and-forget agent-governance projectId=${projectId} forceRegenerate=${extra.forceRegenerate !== false}`,
-        );
-      }
-      // Disparamos en background sin await — la respuesta HTTP sale ya
-      void this.fireAndForget(type, projectId, extra, acknowledgeGaps).catch((err) => {
+      const bgJobId = `bg-${Date.now()}-${type}`;
+      await this.generationGuard.assertCanEnqueue(projectId, type);
+      this.generationGuard.registerBackgroundJob(bgJobId, projectId, type);
+      void this.fireAndForget(type, projectId, extra, acknowledgeGaps, bgJobId).catch((err) => {
         console.error(`[fire-and-forget] ${type} falló para ${projectId}: ${err instanceof Error ? err.message : err}`);
+        this.generationGuard.finishBackgroundJob(bgJobId);
       });
       return {
         queued: true,
-        jobId: `bg-${Date.now()}`,
-        statusPath: null,
-        note: "Queue no disponible (sin Redis). El job se ejecuta en background. Usa get_agent_governance_export cuando termine (~60-90s).",
+        jobId: bgJobId,
+        statusPath: `/projects/${projectId}/generation-status`,
+        note: "Sin Redis: job en background secuencial por proyecto. Consulta generation-status o recarga el proyecto.",
       };
     }
 
@@ -597,6 +600,8 @@ export class ProjectsController {
         return this.projects.generateUseCases(projectId);
       case "user-stories":
         return this.projects.generateUserStories(projectId);
+      case "spec":
+        return this.projects.generateSpec(projectId);
       default:
         return this.projects.generateBlueprint(projectId);
     }
@@ -608,17 +613,23 @@ export class ProjectsController {
     projectId: string,
     extra: Record<string, unknown>,
     acknowledgeGaps = false,
+    bgJobId?: string,
   ): Promise<void> {
+    if (bgJobId) this.generationGuard.markBackgroundJobActive(bgJobId);
     if (!((extra.preview as boolean) ?? false) && type !== "doc-reconcile-partial") {
       await this.projects.assertDeliverablesAllowed(projectId, { acknowledgeGaps });
     }
-    await this.runGenerateJobSync(type, projectId, extra);
-    if (type !== "agent-governance" && type !== "cascade") {
-      await this.projects.runPostRegenSddConflictSurfacing(projectId).catch((err) => {
-        console.warn(
-          `[fire-and-forget] sddConflictSurfacing (${type}): ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
+    try {
+      await this.runGenerateJobSync(type, projectId, extra);
+      if (type !== "agent-governance" && type !== "cascade") {
+        await this.projects.runPostRegenSddConflictSurfacing(projectId).catch((err) => {
+          console.warn(
+            `[fire-and-forget] sddConflictSurfacing (${type}): ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+      }
+    } finally {
+      if (bgJobId) this.generationGuard.finishBackgroundJob(bgJobId);
     }
   }
 }

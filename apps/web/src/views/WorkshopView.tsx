@@ -83,6 +83,8 @@ import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
 import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
 import { isWorkshopConnectionError, isSsotPatternsNotice } from "../utils/workshopSyncStatus";
+import { activeGenerationLabel, generationJobAllowed } from "../utils/projectGenerationGate";
+import type { GenerationJobType } from "@theforge/shared-types";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import { AIProviderBanner } from "../components/AIProviderBanner";
@@ -608,6 +610,12 @@ export default function WorkshopView({
   const cascadeTotal = useWorkshopStore((s) => s.cascadeTotal);
   const error = useWorkshopStore((s) => s.error);
   const notice = useWorkshopStore((s) => s.notice);
+  const generationStatus = useWorkshopStore((s) => s.generationStatus);
+  const backgroundGenerationLabel = activeGenerationLabel(generationStatus);
+  const isGenerationGateBlocked = useCallback(
+    (type: GenerationJobType) => !generationJobAllowed(generationStatus, type),
+    [generationStatus],
+  );
   const setError = useWorkshopStore((s) => s.setError);
   const setNotice = useWorkshopStore((s) => s.setNotice);
   const retryWorkshopSync = useWorkshopStore((s) => s.retryWorkshopSync);
@@ -2161,7 +2169,7 @@ export default function WorkshopView({
           id: "regen",
           label: "Regenerar Spec",
           icon: RefreshCw,
-          disabled: loading || !projectId,
+          disabled: loading || !projectId || isGenerationGateBlocked("spec"),
           onClick: () => void generateSpec(projectId),
         };
       }
@@ -2170,7 +2178,7 @@ export default function WorkshopView({
         id: "regen",
         label: "Regenerar arquitectura",
         icon: RefreshCw,
-        disabled: loading || !effectiveMddTrimmed || !projectId,
+        disabled: loading || !effectiveMddTrimmed || !projectId || isGenerationGateBlocked("architecture"),
         onClick: () => void generateArchitecture(projectId),
       };
     } else if (centralPanel === "use-cases" && !!useCasesContent?.trim()) {
@@ -2178,7 +2186,7 @@ export default function WorkshopView({
         id: "regen",
         label: "Regenerar casos de uso",
         icon: RefreshCw,
-        disabled: loading || !effectiveMddTrimmed || !projectId,
+        disabled: loading || !effectiveMddTrimmed || !projectId || isGenerationGateBlocked("use-cases"),
         onClick: () => void generateUseCases(projectId),
       };
     } else if (centralPanel === "user-stories" && !!userStoriesContent?.trim()) {
@@ -2186,7 +2194,7 @@ export default function WorkshopView({
         id: "regen",
         label: "Regenerar historias de usuario",
         icon: RefreshCw,
-        disabled: loading || !effectiveMddTrimmed || !projectId,
+        disabled: loading || !effectiveMddTrimmed || !projectId || isGenerationGateBlocked("user-stories"),
         onClick: () => void generateUserStories(projectId),
       };
     } else if (centralPanel === "blueprint" && !!blueprintContent?.trim()) {
@@ -2194,7 +2202,7 @@ export default function WorkshopView({
         id: "regen",
         label: "Regenerar blueprint",
         icon: RefreshCw,
-        disabled: loading || mddReviewing || !effectiveMddTrimmed || !projectId,
+        disabled: loading || mddReviewing || !effectiveMddTrimmed || !projectId || isGenerationGateBlocked("blueprint"),
         onClick: () => void generateBlueprint(projectId),
       };
     } else if (centralPanel === "api-contracts" && !!apiContractsContent?.trim()) {
@@ -2202,7 +2210,7 @@ export default function WorkshopView({
         id: "regen",
         label: apiBlueprintDmBlocked ? apiBlueprintBlockedHint : "Regenerar contratos API",
         icon: RefreshCw,
-        disabled: loading || mddReviewing || !effectiveMddTrimmed || apiBlueprintDmBlocked || !projectId,
+        disabled: loading || mddReviewing || !effectiveMddTrimmed || apiBlueprintDmBlocked || !projectId || isGenerationGateBlocked("api-contracts"),
         onClick: () => void generateApiContracts(projectId),
       };
     } else if (centralPanel === "logic-flows" && !!logicFlowsContent?.trim()) {
@@ -2210,7 +2218,7 @@ export default function WorkshopView({
         id: "regen",
         label: "Regenerar flujos de lógica",
         icon: RefreshCw,
-        disabled: loading || mddReviewing || !effectiveMddTrimmed || !projectId,
+        disabled: loading || mddReviewing || !effectiveMddTrimmed || !projectId || isGenerationGateBlocked("logic-flows"),
         onClick: () => void generateLogicFlows(projectId),
       };
     } else if (centralPanel === "infra" && !!infraContent?.trim()) {
@@ -2218,7 +2226,7 @@ export default function WorkshopView({
         id: "regen",
         label: "Regenerar infraestructura",
         icon: RefreshCw,
-        disabled: loading || mddReviewing || !effectiveMddTrimmed || !projectId,
+        disabled: loading || mddReviewing || !effectiveMddTrimmed || !projectId || isGenerationGateBlocked("infra"),
         onClick: () => void generateInfra(projectId),
       };
     } else if (centralPanel === "tasks" && !!tasksContent?.trim()) {
@@ -2226,7 +2234,7 @@ export default function WorkshopView({
         id: "regen",
         label: "Regenerar tasks",
         icon: RefreshCw,
-        disabled: loading || !effectiveMddTrimmed || !blueprintContent?.trim() || !projectId,
+        disabled: loading || !effectiveMddTrimmed || !blueprintContent?.trim() || !projectId || isGenerationGateBlocked("tasks"),
         onClick: () => void generateTasks(projectId),
       };
     } else if (centralPanel === "agent-governance" && hasAgentGovernance) {
@@ -2234,7 +2242,7 @@ export default function WorkshopView({
         id: "regen",
         label: "Regenerar gobernanza de agentes",
         icon: RefreshCw,
-        disabled: loading || !effectiveMddTrimmed || !projectId,
+        disabled: loading || !effectiveMddTrimmed || !projectId || isGenerationGateBlocked("agent-governance"),
         onClick: () => void generateAgentGovernance(projectId),
       };
     } else if (centralPanel === "aem" && !!aemContent?.trim()) {
@@ -2410,6 +2418,7 @@ export default function WorkshopView({
     generateUxGuideSequential,
     clearWorkshopDocumentContent,
     handleClearMddCompletely,
+    isGenerationGateBlocked,
   ]);
 
   const workshopDocumentsForZip = useMemo(
@@ -2926,6 +2935,14 @@ export default function WorkshopView({
         onOpenChange={setFlowOrderModalOpen}
         isLegacyProject={isLegacyProject}
       />
+
+      {(backgroundGenerationLabel && !cascadeRunning) && (
+        <div className="shrink-0 border-b border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] px-4 py-2">
+          <p className="text-sm text-[color-mix(in_oklch,var(--primary)_80%,white)]">
+            {backgroundGenerationLabel} Puedes cerrar el navegador; al volver, recarga el proyecto para ver el resultado.
+          </p>
+        </div>
+      )}
 
       {(bannerError || bannerNotice) && (
         <div
@@ -4389,7 +4406,7 @@ export default function WorkshopView({
                           <WorkshopMddActionButton
                             tone="success"
                             onClick={handleGenerateDeliverables}
-                            disabled={!canGenerate || cascadeRunning || mddReviewing}
+                            disabled={!canGenerate || cascadeRunning || mddReviewing || isGenerationGateBlocked("cascade")}
                           >
                             {cascadeRunning ? (
                               <span className="inline-flex items-center gap-2">

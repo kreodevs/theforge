@@ -10,6 +10,7 @@ export * from "./checklist.js";
 export * from "./project.js";
 export * from "./project-merge.js";
 export * from "./deliverables-matrix.js";
+export * from "./project-generation-guard.js";
 export * from "./agent-governance.js";
 export * from "./stage.js";
 export * from "./legacy-change-gate.js";
