@@ -1340,7 +1340,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         method: "POST",
       });
       if (!r.ok) {
-        throw new Error(await parseErrorMessageFromResponse(r));
+        throw new Error(await parseErrorMessageFromResponse(r, "Error al validar plan"));
       }
       const data = (await r.json()) as {
         skipped?: boolean;
