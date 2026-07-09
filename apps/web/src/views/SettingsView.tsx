@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { Cable, LayoutTemplate, Settings, Shield, Sparkles } from "lucide-react";
+import { BookOpen, Cable, LayoutTemplate, Settings, Shield, Sparkles } from "lucide-react";
 import { ProviderInstancesCard } from "@/components/ProviderInstancesCard";
 import { AccountConfigCard } from "@/components/AccountConfigCard";
 import { AriadneConfigCard } from "@/components/AriadneConfigCard";
+import { TechDocsConfigCard } from "@/components/TechDocsConfigCard";
 import { UiMcpInstancesCard } from "@/components/UiMcpInstancesCard";
 import { UnderlineTabs, type UnderlineTabItem } from "@/components/ui/UnderlineTabs";
 import { getStoredUser } from "@/utils/apiClient";
 
-type SettingsTab = "providers" | "ariadne" | "ui-mcp" | "account";
+type SettingsTab = "providers" | "ariadne" | "tech-docs" | "ui-mcp" | "account";
 
 const SETTINGS_TABS: UnderlineTabItem<SettingsTab>[] = [
   { id: "providers", label: "Proveedores de IA", shortLabel: "Proveedores", icon: Sparkles },
   { id: "ariadne", label: "Ariadne", shortLabel: "Ariadne", icon: Cable },
+  { id: "tech-docs", label: "Docs técnicas", shortLabel: "Docs", icon: BookOpen },
   { id: "ui-mcp", label: "MCP gráfico", shortLabel: "MCP gráfico", icon: LayoutTemplate },
   { id: "account", label: "Cuenta", shortLabel: "Cuenta", icon: Shield },
 ];
@@ -48,7 +50,7 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
             <p className="mt-1 text-sm text-[var(--foreground-muted)] sm:text-base">
               {isDeveloper
                 ? "Token MCP y preferencias de tu cuenta"
-                : "Proveedores de IA, Ariadne y cuenta"}
+                : "Proveedores de IA, Ariadne, documentación técnica y cuenta"}
             </p>
           </div>
 
@@ -85,6 +87,16 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
               className={activeTab === "ariadne" ? "space-y-6" : undefined}
             >
               {activeTab === "ariadne" ? <AriadneConfigCard /> : null}
+            </div>
+
+            <div
+              id="settings-panel-tech-docs"
+              role="tabpanel"
+              aria-labelledby="settings-tab-tech-docs"
+              hidden={activeTab !== "tech-docs"}
+              className={activeTab === "tech-docs" ? "space-y-6" : undefined}
+            >
+              {activeTab === "tech-docs" ? <TechDocsConfigCard /> : null}
             </div>
 
             <div

@@ -519,6 +519,27 @@ export class AuthService {
     return { ok: true };
   }
 
+  /** Technology Docs MCP (Context7): URL + API key por usuario. */
+  async getTechDocsConfig(userId: string): Promise<{ url: string; token: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { techDocsMcpUrl: true, techDocsMcpToken: true },
+    });
+    return { url: user?.techDocsMcpUrl ?? "", token: user?.techDocsMcpToken ?? "" };
+  }
+
+  async setTechDocsConfig(userId: string, url: string, token: string): Promise<{ ok: boolean }> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        techDocsMcpUrl: url.trim() || null,
+        techDocsMcpToken: token.trim() || null,
+      },
+    });
+    this.logger.log(`Technology Docs MCP config actualizada para usuario ${userId}`);
+    return { ok: true };
+  }
+
   // ─── SSO ───
 
   /**

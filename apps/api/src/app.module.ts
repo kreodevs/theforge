@@ -31,6 +31,7 @@ import { CryptoModule } from "./modules/crypto/crypto.module.js";
 import { UserProvidersModule } from "./modules/user-providers/user-providers.module.js";
 import { DesignRefModule } from "./modules/design-ref/design-ref.module.js";
 import { UiMcpModule } from "./modules/ui-mcp/ui-mcp.module.js";
+import { TechnologyDocsMcpModule } from "./modules/technology-docs-mcp/technology-docs-mcp.module.js";
 
 @Module({
   controllers: [HealthController],
@@ -57,6 +58,7 @@ import { UiMcpModule } from "./modules/ui-mcp/ui-mcp.module.js";
     DocumentationGapModule,
     DesignRefModule,
     UiMcpModule,
+    TechnologyDocsMcpModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

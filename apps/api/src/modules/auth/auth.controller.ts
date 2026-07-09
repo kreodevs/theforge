@@ -131,6 +131,19 @@ export class AuthController {
     return this.auth.setAriadneConfig(userId, body.url ?? "", body.token ?? "");
   }
 
+  @Get("tech-docs-config")
+  getTechDocsConfig() {
+    const userId = getRequestUserId();
+    return this.auth.getTechDocsConfig(userId);
+  }
+
+  @Put("tech-docs-config")
+  @HttpCode(200)
+  async setTechDocsConfig(@Body() body: { url?: string; token?: string }) {
+    const userId = getRequestUserId();
+    return this.auth.setTechDocsConfig(userId, body.url ?? "", body.token ?? "");
+  }
+
   /** GET /auth/has-users — verifica si hay usuarios registrados (público). */
   @Get("has-users")
   @Public()
