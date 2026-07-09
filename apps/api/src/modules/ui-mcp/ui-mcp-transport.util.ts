@@ -23,6 +23,8 @@ export interface UiMcpConnection {
   /** Token M2M (opcional si el MCP no requiere auth). */
   token?: string | null;
   timeoutMs?: number;
+  /** Headers adicionales (p. ej. `CONTEXT7_API_KEY` en Context7 remoto). */
+  extraHeaders?: Record<string, string>;
 }
 
 /** Sesiones MCP Streamable HTTP por URL+token (ds-mcp / componentes.obp.mx). */
@@ -62,11 +64,13 @@ function buildHeaders(
   token?: string | null,
   sessionId?: string | null,
   url?: string,
+  extraHeaders?: Record<string, string>,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
     "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+    ...(extraHeaders ?? {}),
   };
   const trimmed = token?.trim();
   if (trimmed) {
@@ -94,7 +98,7 @@ async function fetchJsonRpc(
   if (!url) throw new Error("URL del MCP no configurada");
   const response = await fetch(url, {
     method: "POST",
-    headers: buildHeaders(conn.token, sessionId, url),
+    headers: buildHeaders(conn.token, sessionId, url, conn.extraHeaders),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(conn.timeoutMs ?? DEFAULT_TIMEOUT_MS),
   });

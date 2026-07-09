@@ -27,6 +27,10 @@ model User {
   /// Es el MCP Secret del usuario en Ariadne que actuará como base de conocimientos.
   /// No confundir con mcpSecret (token de TheForge).
   ariadneMcpToken String?
+  /// URL del MCP de documentación técnica (Context7 u otro compatible). Opcional; default en código.
+  techDocsMcpUrl String?
+  /// API key del usuario para Technology Docs MCP (p. ej. CONTEXT7_API_KEY). Por usuario, no plataforma.
+  techDocsMcpToken String?
   projects  Project[]
   sessions  Session[]
   changeLogs ChangeLog[]

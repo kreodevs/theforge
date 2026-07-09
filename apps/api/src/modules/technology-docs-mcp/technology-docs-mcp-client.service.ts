@@ -1,8 +1,8 @@
 /**
  * @fileoverview Technology Docs MCP — optional Context7-compatible documentation enrichment.
  *
- * When `TECH_DOCS_MCP_URL` is unset or the MCP is unreachable, all methods no-op (null).
- * Used by SDD generators (architecture, API contracts, tasks) to reduce library API hallucinations.
+ * Credentials live on **User** (Ajustes → Documentación técnica), not platform env.
+ * When the user has no API key or MCP is unreachable, all methods no-op (null).
  *
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
@@ -10,6 +10,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { resolveStackLibrariesFromMarkdown } from "@theforge/shared-types";
+import { getRequestUserId } from "../../common/request-user.store.js";
+import { PrismaService } from "../../prisma/prisma.service.js";
 import {
   callUiMcpToolText,
   type UiMcpConnection,
@@ -18,6 +20,9 @@ import {
 const RESOLVE_LIBRARY_TOOL = "resolve-library-id";
 const QUERY_DOCS_TOOL = "query-docs";
 
+/** Context7 hosted MCP (remote). Users override URL in Settings if needed. */
+export const DEFAULT_TECH_DOCS_MCP_URL = "https://mcp.context7.com/mcp";
+
 /** Max chars per library snippet injected into LLM prompts. */
 const MAX_SNIPPET_CHARS = 2_400;
 
@@ -25,26 +30,24 @@ const MAX_SNIPPET_CHARS = 2_400;
 export class TechnologyDocsMcpClientService {
   private readonly logger = new Logger(TechnologyDocsMcpClientService.name);
 
-  constructor(private readonly config: ConfigService) {}
-
-  /** True when TECH_DOCS_MCP_URL is configured. */
-  isConfigured(): boolean {
-    return Boolean(this.config.get<string>("TECH_DOCS_MCP_URL")?.trim());
-  }
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * Builds a markdown block with official library docs for technologies detected in the MDD.
-   * @returns null when MCP is not configured, no libraries detected, or all lookups fail.
+   * @returns null when user has no API key, no libraries detected, or all lookups fail.
    */
   async buildContextForMdd(mddContent: string, blueprintContent?: string | null): Promise<string | null> {
-    if (!this.isConfigured()) return null;
+    const conn = await this.resolveConnection();
+    if (!conn) return null;
 
     const maxLibraries = this.readMaxLibraries();
     const combined = [mddContent, blueprintContent].filter(Boolean).join("\n\n");
     const candidates = resolveStackLibrariesFromMarkdown(combined, maxLibraries);
     if (candidates.length === 0) return null;
 
-    const conn = this.connection();
     const sections: string[] = [];
 
     for (const candidate of candidates) {
@@ -64,12 +67,35 @@ export class TechnologyDocsMcpClientService {
     return sections.join("\n\n");
   }
 
-  private connection(): UiMcpConnection {
+  /** Resolves MCP connection for the authenticated user (Context7 API key per user). */
+  async resolveConnectionForUser(userId: string): Promise<UiMcpConnection | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { techDocsMcpUrl: true, techDocsMcpToken: true },
+    });
+    const apiKey = user?.techDocsMcpToken?.trim();
+    if (!apiKey) return null;
+
+    const url =
+      user?.techDocsMcpUrl?.trim() ||
+      this.config.get<string>("TECH_DOCS_MCP_DEFAULT_URL")?.trim() ||
+      DEFAULT_TECH_DOCS_MCP_URL;
+
     return {
-      url: this.config.get<string>("TECH_DOCS_MCP_URL")?.trim() ?? "",
-      token: this.config.get<string>("TECH_DOCS_MCP_TOKEN")?.trim() || null,
+      url,
+      token: null,
+      extraHeaders: { CONTEXT7_API_KEY: apiKey },
       timeoutMs: this.readTimeoutMs(),
     };
+  }
+
+  private async resolveConnection(): Promise<UiMcpConnection | null> {
+    try {
+      const userId = getRequestUserId();
+      return this.resolveConnectionForUser(userId);
+    } catch {
+      return null;
+    }
   }
 
   private readTimeoutMs(): number {

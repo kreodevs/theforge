@@ -6,7 +6,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Added
 
-- **Technology Docs MCP (`technology-docs-mcp`):** integración opcional Context7-compatible (`resolve-library-id`, `query-docs`) para enriquecer **Architecture**, **Contratos API** y **Tasks** con documentación oficial de librerías detectadas en MDD §2 / Blueprint. Env: `TECH_DOCS_MCP_URL` (vacío = skip elegante). `@theforge/shared-types/technology-docs` — detector de stack.
+- **Technology Docs MCP (`technology-docs-mcp`):** integración opcional Context7-compatible (`resolve-library-id`, `query-docs`) para enriquecer **Architecture**, **Contratos API** y **Tasks** con documentación oficial de librerías detectadas en MDD §2 / Blueprint. **Credenciales por usuario** en Ajustes → Docs técnicas (`User.techDocsMcpUrl` / `techDocsMcpToken`); sin API key = skip elegante. `@theforge/shared-types/technology-docs` — detector de stack.
 
 ## [0.13.0] — 2026-07-09
 

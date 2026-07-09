@@ -112,6 +112,8 @@ INSERT INTO "public"."checkpoint_migrations" (v) VALUES (4) ON CONFLICT (v) DO N
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mcpSecret" TEXT;
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "ariadneMcpUrl" TEXT;
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "ariadneMcpToken" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "techDocsMcpUrl" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "techDocsMcpToken" TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS "User_mcpSecret_key" ON "User"("mcpSecret");
 

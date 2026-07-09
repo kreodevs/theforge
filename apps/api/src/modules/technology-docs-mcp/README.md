@@ -2,14 +2,28 @@
 
 Optional MCP integration to **enrich SDD deliverables** with up-to-date library documentation (NestJS, Prisma, React, etc.). Does **not** replace Ariadne (codebase graph) or UI MCP (components).
 
-## Configuration
+## User configuration (Ajustes)
+
+Each user configures their own Context7 credentials (same pattern as Ariadne):
+
+| Field | Prisma | UI |
+|-------|--------|-----|
+| MCP URL | `User.techDocsMcpUrl` | Ajustes → **Docs técnicas** |
+| API key | `User.techDocsMcpToken` | Header `CONTEXT7_API_KEY` |
+
+REST: `GET/PUT /api/auth/tech-docs-config`, test: `POST /api/admin/tech-docs-config/test`.
+
+Default URL when empty: `https://mcp.context7.com/mcp`.
+
+## Platform env (optional)
 
 | Env | Role |
 |-----|------|
-| `TECH_DOCS_MCP_URL` | Streamable HTTP MCP endpoint (Context7 or compatible). **Empty = skip** (no impact on pipeline). |
-| `TECH_DOCS_MCP_TOKEN` | Optional auth token (`X-M2M-Token` / Bearer). |
-| `TECH_DOCS_MCP_TIMEOUT_MS` | Per-call timeout (default `15000`). |
-| `TECH_DOCS_MCP_MAX_LIBRARIES` | Max libraries resolved per generation (default `3`, cap `6`). |
+| `TECH_DOCS_MCP_DEFAULT_URL` | Override default MCP URL for all users |
+| `TECH_DOCS_MCP_TIMEOUT_MS` | Per-call timeout (default `15000`) |
+| `TECH_DOCS_MCP_MAX_LIBRARIES` | Max libraries per generation (default `3`) |
+
+No platform-wide API key — skip when user has not configured theirs.
 
 ## Tools expected (Context7)
 
@@ -18,14 +32,8 @@ Optional MCP integration to **enrich SDD deliverables** with up-to-date library 
 
 ## Consumption
 
-`TechnologyDocsMcpClientService.buildContextForMdd(mdd, blueprint?)` is invoked from `AiService` when generating:
-
-- Architecture
-- API contracts
-- Tasks
-
-Graceful degradation: unset URL, MCP errors, or unknown libraries → generators run unchanged.
+`TechnologyDocsMcpClientService.buildContextForMdd()` from `AiService` when generating Architecture, API contracts, and Tasks.
 
 ## Stack detection
 
-`@theforge/shared-types/technology-docs` — `resolveStackLibrariesFromMarkdown()` scans MDD §2 / blueprint for known stack tokens.
+`@theforge/shared-types/technology-docs` — `resolveStackLibrariesFromMarkdown()`.
