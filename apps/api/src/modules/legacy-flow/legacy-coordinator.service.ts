@@ -65,6 +65,7 @@ import { AiService } from "../ai/ai.service.js";
 import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
+import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import {
   documentPersistFieldLabel,
   validateDocumentForPersist,
@@ -1297,13 +1298,14 @@ export class LegacyCoordinatorService {
     const mddContent = await this.reviewer.reviewMdd(description, mddDraft?.trim() ?? "", {
       asIsBaseline: isInitialMdd,
     });
-    let cleaned = cleanDocumentContent(mddContent);
+    let cleaned = mddContent?.trim() ?? "";
     if (isLegacyComponentDiagramEnabled() && codebaseDoc.length >= 80) {
       cleaned = injectComponentDiagramIntoMddSection2(cleaned, codebaseDoc);
     }
     if (isInitialMdd && isLegacyAsIsMddEvidenceInjectEnabled() && codebaseDoc.length >= 80) {
       cleaned = injectAsIsCodebaseEvidenceIntoMdd(cleaned, codebaseDoc);
     }
+    cleaned = prepareMddMarkdownForPersist(cleaned);
     // Single write: stage.legacyChangeState (project.legacyFlowState only when no stage exists)
     if (gateStage?.id) {
       await this.persistLegacyChangeState(projectId, gateStage.id, state).catch(() => {});

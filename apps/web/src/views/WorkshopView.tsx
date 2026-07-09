@@ -552,6 +552,8 @@ export default function WorkshopView({
   const effectiveComplexityForTabs = isReverseEngineering ? "HIGH" : complexity;
   const hasCodebaseDoc = isLegacyProject && (activeLegacyState?.codebaseDoc ?? "").trim().length > 300;
   const isStage1Legacy = isLegacyProject && activeWorkshopStage?.ordinal === 1;
+  const isLegacyModificationStage =
+    isLegacyProject && (activeWorkshopStage?.ordinal ?? 1) >= 2;
   const canGenerateFromCodebase = isStage1Legacy && hasCodebaseDoc;
   const canGenerate = useMemo(() => {
     if (isLegacyProject) {
@@ -1469,20 +1471,44 @@ export default function WorkshopView({
     if (codebaseDoc) setMddInicialLocalContent(codebaseDoc);
   }, [activeLegacyState?.codebaseDoc]);
 
-  /** Prefill Modificación textarea from handoff/promote description when analyze not run yet. */
+  /** Sincroniza inputs locales de Modificación al cambiar proyecto/etapa o cuando llega estado del servidor. */
+  useEffect(() => {
+    if (project?.projectType !== "LEGACY") {
+      setLegacyDescriptionInput("");
+      setLegacyAnswersInput({});
+      return;
+    }
+    setLegacyDescriptionInput(activeLegacyState?.description ?? "");
+    setLegacyAnswersInput({});
+  }, [projectId, activeStageId, project?.projectType]);
+
   useEffect(() => {
     if (project?.projectType !== "LEGACY") return;
-    const desc = (activeLegacyState?.description ?? "").trim();
-    if (!desc) return;
-    if (activeLegacyState?.filesToModify?.length || activeLegacyState?.questions?.length) return;
-    setLegacyDescriptionInput((prev) => (prev.trim() ? prev : desc));
-  }, [
-    project?.projectType,
-    activeStageId,
-    activeLegacyState?.description,
-    activeLegacyState?.filesToModify,
-    activeLegacyState?.questions,
-  ]);
+    const answers = activeLegacyState?.answers;
+    if (!answers || Object.keys(answers).length === 0) return;
+    setLegacyAnswersInput((prev) => {
+      if (Object.values(prev).some((v) => v.trim())) return prev;
+      const synced: Record<number, string> = {};
+      for (const [k, v] of Object.entries(answers)) {
+        if (typeof v === "string" && v.trim()) synced[Number(k)] = v;
+      }
+      return synced;
+    });
+    setLegacyDescriptionInput((prev) => prev.trim() || (activeLegacyState?.description ?? ""));
+  }, [project?.projectType, activeLegacyState?.answers, activeLegacyState?.description]);
+
+  const resolveLegacyAnswerValue = useCallback(
+    (index: number): string => {
+      const local = legacyAnswersInput[index];
+      if (local !== undefined && local.trim()) return local;
+      const saved = activeLegacyState?.answers?.[String(index)];
+      if (typeof saved === "string" && saved.trim()) return saved;
+      const suggested = activeLegacyState?.suggestedAnswers?.[String(index)]
+        ?? activeLegacyState?.suggestedAnswers?.[index];
+      return typeof suggested === "string" ? suggested : "";
+    },
+    [legacyAnswersInput, activeLegacyState?.answers, activeLegacyState?.suggestedAnswers],
+  );
 
   const legacyAnalyzeDone = useMemo(
     () =>
@@ -1863,9 +1889,19 @@ export default function WorkshopView({
     if (complexity !== "MEDIUM" || !project) return;
     if (isWorkshopAgentActivityPanel(centralPanel)) return;
     const pt = project.projectType === "LEGACY" ? "LEGACY" : "NEW";
-    if (isTabVisibleForComplexity(centralPanel as WorkshopDocTab, "MEDIUM", { projectType: pt })) return;
+    const tabOpts = {
+      projectType: pt as "NEW" | "LEGACY",
+      legacyStageOrdinal: activeWorkshopStage?.ordinal ?? 1,
+    };
+    if (isTabVisibleForComplexity(centralPanel as WorkshopDocTab, "MEDIUM", tabOpts)) return;
     setCentralPanel(pt === "LEGACY" ? "mdd" : "spec");
-  }, [complexity, centralPanel, project?.projectType]);
+  }, [complexity, centralPanel, project?.projectType, activeWorkshopStage?.ordinal]);
+
+  /** Etapas de modificación: MDD Inicial y BRD no aplican — redirigir a Modificación. */
+  useEffect(() => {
+    if (!isLegacyModificationStage) return;
+    if (centralPanel === "mdd-inicial" || centralPanel === "brd") setCentralPanel("legacy");
+  }, [isLegacyModificationStage, centralPanel]);
 
   // Legacy: si el panel activo es un documento que no tiene contenido y NO es etapa 1 (AS-IS),
   // redirigir a Modificación. En etapa 1 todos los paneles deben ser accesibles.
@@ -3823,7 +3859,7 @@ export default function WorkshopView({
                     <p>{LEGACY_CHANGE_GATE_MESSAGE}</p>
                   </div>
                 ) : null}
-                {!activeLegacyState?.codebaseDoc?.trim() ? (
+                {isStage1Legacy && !activeLegacyState?.codebaseDoc?.trim() ? (
                   <div className="rounded-lg border border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,var(--background))] px-4 py-3 space-y-3 text-sm text-[color-mix(in_oklch,var(--primary)_55%,var(--foreground))]">
                     <p>
                       <strong className="text-[color-mix(in_oklch,var(--primary)_72%,var(--foreground))]">Primera documentación del repo:</strong> en la pestaña{" "}
@@ -3857,12 +3893,12 @@ export default function WorkshopView({
                       </button>
                     </div>
                   </div>
-                ) : (
+                ) : isStage1Legacy ? (
                   <p className="text-xs text-[var(--foreground-subtle)]">
                     Documentación de partida lista. Puedes regenerarla en <strong>MDD Inicial</strong>. Este panel es para el{" "}
                     <strong>MDD de cambio</strong> de esta etapa.
                   </p>
-                )}
+                ) : null}
                 {!activeLegacyState?.filesToModify?.length && !activeLegacyState?.questions?.length ? (
                   <>
                     {activeLegacyState?.description?.trim() ? (
@@ -3882,8 +3918,7 @@ export default function WorkshopView({
                     <button
                       type="button"
                       onClick={async () => {
-                        const res = await legacyStart(projectId, legacyDescriptionInput, activeStageId ?? undefined);
-                        if (res) setLegacyDescriptionInput("");
+                        await legacyStart(projectId, legacyDescriptionInput, activeStageId ?? undefined);
                       }}
                       disabled={loading || !legacyDescriptionInput.trim()}
                       className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[color-mix(in_oklch,var(--primary)_18%,transparent)] text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--primary)_26%,transparent)] disabled:opacity-50 disabled:cursor-not-allowed"
@@ -3894,6 +3929,31 @@ export default function WorkshopView({
                   </>
                 ) : (
                   <>
+                    <div>
+                      <h4 className="text-[var(--muted-foreground)] font-medium mb-2">Solicitud de cambio</h4>
+                      <p className="text-xs text-[var(--foreground-subtle)] mb-2">
+                        Puedes editar la descripción y volver a analizar si el alcance cambió.
+                      </p>
+                      <textarea
+                        value={legacyDescriptionInput}
+                        onChange={(e) => setLegacyDescriptionInput(e.target.value)}
+                        placeholder="Describe la modificación que quieres hacer al proyecto…"
+                        className="w-full min-h-[100px] bg-[var(--background)] border border-[var(--border)] rounded-lg p-3 text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] outline-none resize-y text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await legacyStart(projectId, legacyDescriptionInput, activeStageId ?? undefined);
+                        }}
+                        disabled={loading || !legacyDescriptionInput.trim()}
+                        className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[color-mix(in_oklch,var(--primary)_14%,transparent)] text-[var(--primary)] hover:bg-[color-mix(in_oklch,var(--primary)_22%,transparent)] disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      >
+                        {loading && loadingReason !== "legacy-mdd" && loadingReason !== "legacy-deliverables" ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : null}
+                        Actualizar análisis
+                      </button>
+                    </div>
                     {activeLegacyState?.filesToModify?.length ? (
                       <div>
                         <h4 className="text-[var(--muted-foreground)] font-medium mb-2">Archivos a modificar</h4>
@@ -3923,7 +3983,7 @@ export default function WorkshopView({
                               <label className="block text-[var(--muted-foreground)] text-xs mb-1">{q}</label>
                               <input
                                 type="text"
-                                value={legacyAnswersInput[i] ?? activeLegacyState?.answers?.[String(i)] ?? activeLegacyState?.suggestedAnswers?.[i] ?? ""}
+                                value={resolveLegacyAnswerValue(i)}
                                 onChange={(e) => setLegacyAnswersInput((prev) => ({ ...prev, [i]: e.target.value }))}
                                 placeholder={activeLegacyState?.suggestedAnswers?.[i] ? undefined : "Escribe tu respuesta…"}
                                 className="w-full bg-[var(--background)] border border-[var(--border)] rounded px-2 py-1.5 text-[var(--foreground)] focus:ring-2 focus:ring-[var(--primary)] outline-none"
@@ -3939,10 +3999,11 @@ export default function WorkshopView({
                         onClick={async () => {
                           const answers: Record<string, string> = {};
                           activeLegacyState?.questions?.forEach((_, i) => {
-                            const v = (legacyAnswersInput[i] ?? activeLegacyState?.answers?.[String(i)] ?? activeLegacyState?.suggestedAnswers?.[i])?.trim();
+                            const v = resolveLegacyAnswerValue(i).trim();
                             if (v) answers[String(i)] = v;
                           });
-                          await legacyAnswer(projectId, answers, activeStageId ?? undefined);
+                          const ok = await legacyAnswer(projectId, answers, activeStageId ?? undefined);
+                          if (ok) setLegacyAnswersInput({});
                         }}
                         disabled={loading}
                         className="px-3 py-1.5 rounded bg-[var(--muted)] text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] hover:bg-[var(--muted)] text-sm disabled:opacity-50"
@@ -3954,10 +4015,11 @@ export default function WorkshopView({
                         onClick={async () => {
                           const answers: Record<string, string> = {};
                           activeLegacyState?.questions?.forEach((_, i) => {
-                            const v = (legacyAnswersInput[i] ?? activeLegacyState?.answers?.[String(i)] ?? activeLegacyState?.suggestedAnswers?.[i])?.trim();
+                            const v = resolveLegacyAnswerValue(i).trim();
                             if (v) answers[String(i)] = v;
                           });
                           await legacyAnswer(projectId, answers, activeStageId ?? undefined);
+                          setLegacyAnswersInput({});
                           const ok = await legacyGenerateMdd(projectId, activeStageId ?? undefined);
                           if (ok) setCentralPanel("mdd");
                         }}

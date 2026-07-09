@@ -33,8 +33,7 @@ import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.
 import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
 import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson, isBrownfieldCapable } from "@theforge/shared-types";
-import { formatDocumentMarkdown } from "@theforge/shared-types/format-document-markdown";
-import { sanitizeMddAtPersist } from "../ai-analysis/utils/mdd-sanitize.js";
+import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import {
   enforceMddGovernancePatternsOnPersist,
   mddHasSubstantialBody,
@@ -786,7 +785,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         clearMddCompletely === true ||
         (mddGovernanceSeedOnly === true && !mddHasSubstantialBody(mddForPipeline));
       if (mddFormatOnly === true) {
-        const formatted = sanitizeMddAtPersist(formatDocumentMarkdown(mddForPipeline ?? ""));
+        const formatted = prepareMddMarkdownForPersist(mddForPipeline ?? "");
         await this.prisma.stage.update({
           where: { id: targetStage.id },
           data: { mddContent: formatted },

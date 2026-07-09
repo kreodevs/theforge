@@ -35,6 +35,7 @@ import {
   repairSqlDetachedCheckConstraints,
   sanitizeAllSqlBlocksInDraft,
   sanitizeMddAtPersist,
+  prepareMddMarkdownForPersist,
   sanitizeSqlBrokenCommentsAndProse,
   stripAlternateBackendFromSection1,
   countMddSection3CreateTables,
@@ -1892,5 +1893,25 @@ Fin.
     assert.doesNotMatch(out, /--- --- ---/);
     assert.doesNotMatch(out, /\n--\n\n## 2\./);
     assert.doesNotMatch(out, /\n-\n\n## 3\./);
+  });
+
+  it("prepareMddMarkdownForPersist: despega §1 y colapsa HR rotas (NEW + LEGACY)", () => {
+    const raw = `## 1. Contexto ### Problema
+Texto. ### Objetivos
+- Meta
+
+--- --- --- --- --- --- ---
+
+## 2. Arquitectura y Stack
+
+Stack.
+`;
+    const out = prepareMddMarkdownForPersist(raw);
+    assert.match(out, /## 1\. Contexto\n\n### Problema/);
+    assert.match(out, /### Objetivos\n+- Meta/);
+    assert.doesNotMatch(out, /--- --- ---/);
+    assert.doesNotMatch(out, /## 1\. Contexto ###/);
+    const second = prepareMddMarkdownForPersist(out);
+    assert.doesNotMatch(second, /## 1\. Contexto ###/);
   });
 });
