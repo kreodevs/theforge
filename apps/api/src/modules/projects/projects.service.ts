@@ -1764,7 +1764,7 @@ name: ${JSON.stringify(name)}
       `[Cascade] Post-pase W4: ${precisionGaps.length} gap(s) de precisión — retry dirigido`,
     );
 
-    const upstreamRetries: Promise<void>[] = [];
+    const upstreamRetries: Array<Promise<unknown>> = [];
     if (flags.retryArchitecture) {
       upstreamRetries.push(
         this.generateArchitecture(projectId, feedback).catch((e) =>
