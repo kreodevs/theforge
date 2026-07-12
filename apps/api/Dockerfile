@@ -1,8 +1,9 @@
-FROM node:22.12-alpine3.21 AS builder
+# cache-bust-v4-20260712
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache gcompat openssl postgresql-client
+RUN apk add --no-cache gcompat openssl postgresql-client && echo "apk done"
 
 RUN corepack enable
 
@@ -24,7 +25,7 @@ COPY scripts/rotate-master-key.ts scripts/
 
 RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
 
-FROM node:22.12-alpine3.21 AS runner
+FROM node:22-alpine AS runner
 
 RUN apk add --no-cache wget openssl postgresql-client \
   chromium nss freetype harfbuzz ttf-freefont font-noto-emoji
