@@ -2,8 +2,8 @@
 # Imágenes fijas en ECR Public (evita TLS timeout a Docker Hub y fallos de ARG en Dokploy).
 FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
-ARG BUILD_CACHE_BUST=100
-RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
+ARG BUILD_CACHE_BUST=101
+RUN echo "Cache bust key: ${BUILD_CACHE_BUST}" && rm -rf /root/.turbo 2>/dev/null || true
 
 RUN apk add --no-cache gcompat openssl
 
