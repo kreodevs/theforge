@@ -1,9 +1,13 @@
-# EVD visual stylist - clean build
+# Build stage — context = repo root
+# Imágenes fijas en ECR Public (evita TLS timeout a Docker Hub y fallos de ARG en Dokploy).
 FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
-WORKDIR /app
+ARG BUILD_CACHE_BUST=97
+RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
-RUN apk add --no-cache gcompat openssl postgresql-client
+RUN apk add --no-cache gcompat openssl
+
+WORKDIR /app
 
 RUN corepack enable
 
@@ -20,21 +24,16 @@ COPY packages/database packages/database
 COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
 COPY packages/config packages/config
-COPY apps/api/build-context/.build-trigger /tmp/.build-trigger
-
-RUN cat /tmp/.build-trigger && rm /tmp/.build-trigger
-
 COPY apps/api apps/api
-COPY scripts/rotate-master-key.ts scripts/
+COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 
-RUN pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
+ENV DATABASE_URL="postgresql://local:local@db:5432/theforge"
+RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
 
-RUN test -f apps/api/dist/main.js || (echo "ERROR: main.js missing" && ls -la apps/api/dist/ 2>/dev/null && exit 1)
-
+# Production stage — layout pnpm hoisted desde builder
 FROM public.ecr.aws/docker/library/node:20-alpine AS runner
 
-RUN apk add --no-cache wget openssl postgresql-client \
-  chromium nss freetype harfbuzz ttf-freefont font-noto-emoji
+RUN apk add --no-cache wget openssl postgresql-client
 
 WORKDIR /app
 
@@ -44,12 +43,13 @@ ENV PORT=3000
 COPY --from=builder /app .
 COPY apps/api/docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+# entrypoint: wait DB → prisma migrate deploy → node (no sobrescribir CMD en Dokploy)
 
 WORKDIR /app/apps/api
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-
 EXPOSE 3000
+
+# HEALTHCHECK desactivado: Dokploy no lo soporta correctamente
+# HEALTHCHECK NONE
 
 ENTRYPOINT ["/entrypoint.sh"]
