@@ -1,9 +1,8 @@
-# cache-bust-v4-20260712
-FROM node:22-alpine AS builder
+FROM node:22-bullseye AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache gcompat openssl postgresql-client && echo "apk done"
+RUN apt-get update && apt-get install -y postgresql-client gcompat openssl && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable
 
@@ -25,24 +24,23 @@ COPY scripts/rotate-master-key.ts scripts/
 
 RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
 
-FROM node:22-alpine AS runner
+FROM node:22-bullseye AS runner
 
-RUN apk add --no-cache wget openssl postgresql-client \
-  chromium nss freetype harfbuzz ttf-freefont font-noto-emoji
+RUN apt-get update && apt-get install -y wget openssl postgresql-client \
+  chromium && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY --from=builder /app .
 COPY apps/api/docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 WORKDIR /app/apps/api
-
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 EXPOSE 3000
 
