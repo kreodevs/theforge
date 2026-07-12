@@ -15,6 +15,7 @@ export interface DocumentsForZip {
   infraContent: string | null;
   aemContent: string | null;
   handoffSpecContent?: string | null;
+  evdContent?: string | null;
 }
 
 /**
@@ -44,6 +45,7 @@ export async function downloadDocumentsZip(
     ["infra.md", documents.infraContent ?? ""],
     ["aem.md", documents.aemContent ?? ""],
     ["handoff-spec.md", documents.handoffSpecContent ?? ""],
+    ["evd.json", documents.evdContent ?? ""],
   ];
 
   let count = 0;

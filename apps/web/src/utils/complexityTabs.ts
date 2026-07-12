@@ -20,7 +20,8 @@ export type WorkshopDocTab =
   | "aem"
   | "integration"
   | "handoff-spec"
-  | "ui-screens";
+  | "ui-screens"
+  | "evd";
 
 export type ProjectTypeForTabs = "NEW" | "LEGACY";
 
@@ -67,6 +68,9 @@ export function isTabVisibleForComplexity(
   // Pantallas: gate real es "hay MCP gráfico compatible activo" (se aplica en buildWorkshopDocNavItems).
   // A nivel de complejidad no se oculta.
   if (tab === "ui-screens") return true;
+
+  // EVD: siempre visible (como AEM/Integración/HandoffSpec).
+  if (tab === "evd") return true;
 
   if (c === "HIGH") return true;
 

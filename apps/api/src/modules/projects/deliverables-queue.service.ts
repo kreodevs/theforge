@@ -30,6 +30,7 @@ export type GenerateJobType =
   | "architecture"
   | "use-cases"
   | "user-stories"
+  | "evd"
   | "doc-reconcile-partial";
 
 export interface GenerateJobData {
@@ -277,6 +278,9 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
         } else {
           result = await this.projects.generateUserStories(projectId);
         }
+        break;
+      case "evd":
+        result = await this.projects.generateEvd(projectId);
         break;
       case "doc-reconcile-partial": {
         if (!this.docReconcile || !gapId || !stageId || !affectedArtifacts?.length) {

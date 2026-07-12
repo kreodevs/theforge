@@ -1667,6 +1667,9 @@ name: ${JSON.stringify(name)}
       case "infra":
         await this.generateInfra(projectId, gaps);
         return;
+      case "evd":
+        await this.generateEVD(projectId);
+        return;
       default: {
         const _exhaustive: never = kind;
         return _exhaustive;
@@ -2053,6 +2056,16 @@ name: ${JSON.stringify(name)}
       dbga.length === 0 && rawMdd.length > 0 ? "mdd" : "dbga",
     );
     return this.update(projectId, { specContent: cleanDocumentContent(specContent) });
+  }
+
+  async generateEvd(projectId: string) {
+    const project = await this.assertProjectAccess(projectId);
+    const mddContent = this.constitutionMarkdown(project);
+    if (!mddContent.trim()) {
+      throw new BadRequestException("Se requiere MDD o DBGA para generar el Executive Visual Deck.");
+    }
+    const evdJson = await this.ai.generateEvd(mddContent);
+    return this.update(projectId, { evdContent: evdJson });
   }
 
   /** Limpia gobernanza persistida antes de regenerar (polling y UI). */
@@ -2708,6 +2721,23 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     }
 
     return this.update(projectId, { infraContent: cleaned });
+  }
+
+  /** Executive Vision Deck — genera JSON de presentación ejecutiva visual. */
+  async generateEVD(projectId: string): Promise<void> {
+    const project = await this.assertProjectAccess(projectId);
+
+    const evdJsonStr = await this.ai.generateEVDJSON({
+      mddContent: project.mddContent,
+      specContent: project.specContent,
+      benchmarkContent: project.benchmarkContent,
+      blueprintContent: project.blueprintContent,
+    });
+
+    const parsed = JSON.parse(evdJsonStr);
+    const evdContent = typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
+
+    await this.update(projectId, { evdContent });
   }
 
   async getConformance(

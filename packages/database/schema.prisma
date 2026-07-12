@@ -216,6 +216,8 @@ model Stage {
   handoffSpecContent String? @db.Text
   /// UI Screens Spec (markdown): pantallas + componentes reales + props, generado vía MCP gráfico compatible.
   uiScreensContent String? @db.Text
+  /// Executive Vision Deck (JSON): presentación ejecutiva visual con slides, charts, wireframes.
+  evdContent       String? @db.Text
   estimation       Estimation?
   /// Redundancia intencional con `Project.projectType === LEGACY` para queries y checkpoints por etapa.
   isLegacy         Boolean      @default(false)
@@ -323,6 +325,8 @@ model Project {
   handoffSpecContent   String?   @db.Text
   /// UI Screens Spec (markdown): pantallas + componentes reales + props, generado vía MCP gráfico compatible.
   uiScreensContent     String?   @db.Text
+  /// Executive Vision Deck (JSON): presentación ejecutiva visual con slides, charts, wireframes.
+  evdContent           String?   @db.Text
   /// Estado del flujo Fase 0 interactivo: "idle" | "interviewing" | "done"
   phase0Status        String?   @default("idle")
   /// Gaps pendientes (JSON)

@@ -142,6 +142,8 @@ services:
         condition: service_healthy
       theforge-falkor-sdd:
         condition: service_healthy
+    volumes:
+      - theforge_api_data:/app/data
     expose:
       - "3000"
     healthcheck:
@@ -258,3 +260,4 @@ volumes:
   theforge_db_data:
   theforge_redis_queue_data:
   falkor_sdd_data:
+  theforge_api_data:

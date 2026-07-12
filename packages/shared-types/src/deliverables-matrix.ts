@@ -13,7 +13,8 @@ export type DeliverableKind =
   | "user_stories"
   | "agent_governance"
   | "tasks"
-  | "infra";
+  | "infra"
+  | "evd";
 
 /** Etiquetas legibles para progreso de cascada y UI Workshop. */
 export const DELIVERABLE_STEP_LABELS: Record<DeliverableKind, string> = {
@@ -29,6 +30,7 @@ export const DELIVERABLE_STEP_LABELS: Record<DeliverableKind, string> = {
   agent_governance: "Gobernanza de agentes",
   tasks: "Tareas",
   infra: "Infraestructura",
+  evd: "Executive Vision Deck",
 };
 
 /** Campo `Project` donde persiste cada entregable (null = no aplica). */
@@ -45,6 +47,7 @@ export const DELIVERABLE_PROJECT_CONTENT_FIELD: Record<DeliverableKind, string |
   agent_governance: "agentGovernanceContent",
   tasks: "tasksContent",
   infra: "infraContent",
+  evd: "evdContent",
 };
 
 /** Labels de pasos de cascada según complejidad (orden de `DELIVERABLES_BY_COMPLEXITY`). */

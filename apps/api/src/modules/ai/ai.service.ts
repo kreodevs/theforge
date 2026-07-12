@@ -29,6 +29,7 @@ import { CLARIFY_SPEC_PROMPT } from "./prompts/clarify-spec-prompt.js";
 import { AGENT_GOVERNANCE_PROMPT } from "./prompts/agent-governance-prompt.js";
 import { AEM_PROMPT } from "./prompts/aem-prompt.js";
 import { AEM_INVESTMENT_ADVISOR_PROMPT } from "./prompts/aem-investment-advisor-prompt.js";
+import { EVD_PROMPT } from "./prompts/evd-prompt.js";
 import { formatSuggestedArtifactsPromptBlock } from "./utils/suggest-agent-governance-artifacts.js";
 import type { AgentGovernanceSuggestions } from "./utils/suggest-agent-governance-artifacts.js";
 import type { ComplexityLevel } from "@theforge/shared-types";
@@ -871,6 +872,14 @@ export class AiService {
     return this.generateResponse(prompt, [], { systemPrompt });
   }
 
+  async generateEvd(mddContent: string): Promise<string> {
+    const { EVD_PROMPT } = await import("./prompts/evd-prompt.js");
+    const prompt = mddContent.trim().length > 0
+      ? `Genera un Executive Vision Deck (EVD) en formato JSON válido a partir del siguiente MDD.\n\nMDD:\n---\n${mddContent}\n---`
+      : "Genera un Executive Vision Deck (EVD) genérico en formato JSON válido con 6 slides de ejemplo.";
+    return this.generateResponse(prompt, [], { systemPrompt: EVD_PROMPT });
+  }
+
   /**
    * Clarify Spec pre-MDD (equivalent `/speckit.clarify`): marks ambiguities with [NEEDS CLARIFICATION].
    */
@@ -1650,6 +1659,56 @@ export class AiService {
 
     return this.generateResponse(parts.join("\n\n"), [], {
       systemPrompt: AEM_INVESTMENT_ADVISOR_PROMPT,
+    });
+  }
+
+  /** Executive Vision Deck — genera JSON estructurado de presentación ejecutiva visual. */
+  async generateEVDJSON(input: {
+    mddContent?: string | null;
+    specContent?: string | null;
+    benchmarkContent?: string | null;
+    blueprintContent?: string | null;
+    branding?: {
+      primaryColor?: string;
+      secondaryColor?: string;
+      accentColor?: string;
+      highlightColor?: string;
+      projectName?: string;
+    };
+  }): Promise<string> {
+    const mdd = input.mddContent?.trim() ?? "";
+    const spec = input.specContent?.trim() ?? "";
+    const benchmark = input.benchmarkContent?.trim() ?? "";
+    const blueprint = input.blueprintContent?.trim() ?? "";
+
+    const parts: string[] = [
+      "Genera el **Executive Vision Deck (EVD)** completo en JSON según el system prompt.",
+    ];
+
+    if (mdd) parts.push(`MDD:\n---\n${mdd.slice(0, 15000)}\n---`);
+    if (spec) parts.push(`Spec:\n---\n${spec.slice(0, 8000)}\n---`);
+    if (benchmark) parts.push(`Benchmark/DBGA:\n---\n${benchmark.slice(0, 8000)}\n---`);
+    if (blueprint) parts.push(`Blueprint:\n---\n${blueprint.slice(0, 8000)}\n---`);
+
+    if (input.branding) {
+      const b = input.branding;
+      const brandingBlock: string[] = [];
+      if (b.projectName) brandingBlock.push(`Nombre del proyecto: ${b.projectName}`);
+      if (b.primaryColor) brandingBlock.push(`Color primario: ${b.primaryColor}`);
+      if (b.secondaryColor) brandingBlock.push(`Color secundario: ${b.secondaryColor}`);
+      if (b.accentColor) brandingBlock.push(`Color acento: ${b.accentColor}`);
+      if (b.highlightColor) brandingBlock.push(`Color highlight: ${b.highlightColor}`);
+      if (brandingBlock.length > 0) {
+        parts.push(`Branding preferido:\n${brandingBlock.join("\n")}`);
+      }
+    }
+
+    if (parts.length === 1) {
+      parts.push("No hay contenido del proyecto disponible. Genera un EVD genérico de ejemplo con datos placeholder.");
+    }
+
+    return this.generateResponse(parts.join("\n\n"), [], {
+      systemPrompt: EVD_PROMPT,
     });
   }
 }

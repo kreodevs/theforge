@@ -33,7 +33,13 @@ RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/sha
 # Production stage — layout pnpm hoisted desde builder
 FROM public.ecr.aws/docker/library/node:20-alpine AS runner
 
-RUN apk add --no-cache wget openssl postgresql-client
+RUN apk add --no-cache wget openssl postgresql-client \
+  chromium \
+  nss \
+  freetype \
+  harfbuzz \
+  ttf-freefont \
+  font-noto-emoji
 
 WORKDIR /app
 
@@ -46,6 +52,9 @@ RUN chmod +x /entrypoint.sh
 # entrypoint: wait DB → prisma migrate deploy → node (no sobrescribir CMD en Dokploy)
 
 WORKDIR /app/apps/api
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 EXPOSE 3000
 

@@ -14,6 +14,10 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - **Context7 en Fase 0 / Benchmark:** consulta automática cuando gaps o chat mencionan PAT, API key, OAuth, JWT, webhooks o vendors (`Phase0InterviewService`, `DiscoveryService`, tabs `benchmark`/`phase0`). Consulta explícita: «Según Context7, …» en el chat del Workshop. Helpers en `@theforge/shared-types/technology-docs/phase0-tech-docs.util.ts`.
 - **Technology Docs MCP (`technology-docs-mcp`):** integración opcional Context7-compatible (`resolve-library-id`, `query-docs`) para enriquecer **Architecture**, **Contratos API** y **Tasks** con documentación oficial de librerías detectadas en MDD §2 / Blueprint. **Credenciales por usuario** en Ajustes → Docs técnicas (`User.techDocsMcpUrl` / `techDocsMcpToken`); sin API key = skip elegante. `@theforge/shared-types/technology-docs` — detector de stack.
 
+### Added
+
+- **Executive Visual Deck (EVD):** presentación ejecutiva generada por IA a partir del MDD. Incluye slides tipados (título, bullets, Mermaid diagrams, ECharts SSR bar/line, wireframe SVG, timeline, team, KPI cards), renderizado offline sin dependencias de browser. Branding customizable (6 colores, font family, logo upload). Exportación a PPTX (`pptxgenjs`) y PDF (`pdf-lib`) con assets embebidos. Panel read-only en Workshop con generación en cola y persistencia `evdContent` en Project/Stage. Storage en `/data/evd/{projectId}/`. Dockerfile con Chromium para renderizado headless.
+
 ## [0.13.0] — 2026-07-09
 
 ### Notes

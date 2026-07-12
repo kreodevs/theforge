@@ -42,6 +42,7 @@ import {
   Eye,
   Wrench,
   BrushCleaning,
+  Presentation,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UnderlineTabs } from "@/components/ui/UnderlineTabs";
@@ -146,6 +147,8 @@ import {
   resolveMddReadinessHintActions,
 } from "../utils/mddSectionRegen";
 import { StandardDocPanel } from "../components/StandardDocPanel";
+import { EvdSlideViewer } from "../components/EvdSlideViewer";
+import { EvdBrandingDialog } from "../components/EvdBrandingDialog";
 import { IntegrationPanel } from "../components/IntegrationPanel";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
@@ -419,6 +422,10 @@ export default function WorkshopView({
   const syncHandoffSpec = useWorkshopStore((s) => s.syncHandoffSpec);
   const uiScreensContentField = useWorkshopStore((s) => s.uiScreensContent);
   const syncUiScreens = useWorkshopStore((s) => s.syncUiScreens);
+  const evdContentField = useWorkshopStore((s) => s.evdContent);
+  const generateEvd = useWorkshopStore((s) => s.generateEvd);
+  const [evdBrandingOpen, setEvdBrandingOpen] = useState(false);
+  const [evdExporting, setEvdExporting] = useState<"pptx" | "pdf" | null>(null);
 
   const specContent = resolveWorkshopDeliverableContent(
     "specContent",
@@ -483,6 +490,29 @@ export default function WorkshopView({
   const aemContent = aemContentField ?? project?.aemContent ?? null;
   const handoffSpecContent = handoffSpecContentField ?? project?.handoffSpecContent ?? null;
   const uiScreensContent = uiScreensContentField ?? project?.uiScreensContent ?? null;
+  const evdContent = evdContentField ?? project?.evdContent ?? null;
+
+  const handleEvdExport = useCallback(async (format: "pptx" | "pdf") => {
+    if (!projectId) return;
+    setEvdExporting(format);
+    try {
+      const res = await fetch(`${API_BASE}/evd/${projectId}/export/${format}`, {
+        method: "POST",
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `executive-vision-deck.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setEvdExporting(null);
+    }
+  }, [projectId]);
+
+  const [evdBranding, setEvdBranding] = useState<Record<string, unknown>>({});
 
   const projectStatus: Status = project?.status ?? "ROJO";
   const semaphoreGreen = liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
@@ -1190,6 +1220,7 @@ export default function WorkshopView({
     | "aem"
     | "handoff-spec"
     | "ui-screens"
+    | "evd"
     | "agent-governance"
     | "adrs"
     | "integration"
@@ -2156,6 +2187,7 @@ export default function WorkshopView({
       userStoriesContent,
       aemContent,
       handoffSpecContent,
+      evdContent,
     });
 
     let regenItem: WorkshopDocBubbleMenuItem | null = null;
@@ -2473,6 +2505,7 @@ export default function WorkshopView({
       infraContent: infraContent ?? project?.infraContent ?? null,
       aemContent: aemContent ?? project?.aemContent ?? null,
       handoffSpecContent: handoffSpecContent ?? project?.handoffSpecContent ?? null,
+      evdContent: evdContent ?? project?.evdContent ?? null,
     }),
     [
       dbgaContent,
@@ -2501,6 +2534,8 @@ export default function WorkshopView({
       project?.aemContent,
       handoffSpecContent,
       project?.handoffSpecContent,
+      evdContent,
+      project?.evdContent,
     ],
   );
 
@@ -4804,6 +4839,85 @@ export default function WorkshopView({
                   generateLabel="Sincronizar Pantallas"
                   placeholder="# Pantallas\n\nPulsa «Sincronizar Pantallas» para generarlo desde el MCP gráfico conectado."
                 />
+              </div>
+            )}
+            {centralPanel === "evd" && (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+                <div className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-3 py-2.5">
+                  <p className="min-w-0 flex-1 text-xs leading-relaxed text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
+                    <strong>Executive Visual Deck</strong> — presentación ejecutiva generada por IA a partir del MDD. Incluye diagramas Mermaid, charts ECharts y wireframes SVG renderizados offline.
+                  </p>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={() => void generateEvd(projectId)}
+                      disabled={loading}
+                      aria-label="Generar EVD"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                      Generar EVD
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEvdBrandingOpen(true)}
+                      aria-label="Branding"
+                    >
+                      <Palette className="h-3.5 w-3.5" aria-hidden />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleEvdExport("pptx")}
+                      disabled={!evdContent || evdExporting !== null}
+                      loading={evdExporting === "pptx"}
+                      aria-label="Exportar PPTX"
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden />
+                      PPTX
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleEvdExport("pdf")}
+                      disabled={!evdContent || evdExporting !== null}
+                      loading={evdExporting === "pdf"}
+                      aria-label="Exportar PDF"
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden />
+                      PDF
+                    </Button>
+                  </div>
+                </div>
+                <EvdSlideViewer
+                  content={evdContent}
+                  onGenerate={() => void generateEvd(projectId)}
+                  canGenerate={!loading}
+                  isLoading={loading}
+                />
+                {evdBrandingOpen && projectId && (
+                  <EvdBrandingDialog
+                    open={evdBrandingOpen}
+                    onOpenChange={setEvdBrandingOpen}
+                    projectId={projectId}
+                    branding={{
+                      primaryColor: (evdBranding.primaryColor as string) ?? "#1a1a2e",
+                      secondaryColor: (evdBranding.secondaryColor as string) ?? "#16213e",
+                      accentColor: (evdBranding.accentColor as string) ?? "#0f3460",
+                      highlightColor: (evdBranding.highlightColor as string) ?? "#e94560",
+                      bgColor: (evdBranding.bgColor as string) ?? "#ffffff",
+                      textColor: (evdBranding.textColor as string) ?? "#1a1a2e",
+                      fontFamily: (evdBranding.fontFamily as string) ?? "Inter, system-ui, sans-serif",
+                      logoUrl: (evdBranding.logoUrl as string) ?? null,
+                    }}
+                    onBrandingSaved={(b) => setEvdBranding(b as Record<string, unknown>)}
+                  />
+                )}
               </div>
             )}
             {centralPanel === "brd" && projectId && (

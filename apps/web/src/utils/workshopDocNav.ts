@@ -18,6 +18,7 @@ import { Brain,
   MonitorSmartphone,
   Package,
   Palette,
+  Presentation,
   ScrollText,
   Server,
   Target,
@@ -110,6 +111,8 @@ export interface WorkshopDocNavBuildContext {
   uiScreensContent: string | null | undefined;
   /** Hay un MCP gráfico compatible activo (gate de visibilidad de la pestaña "Pantallas"). */
   uiMcpActive: boolean;
+  /** Deliverable "Executive Visual Deck" (JSON) generado por IA. */
+  evdContent: string | null | undefined;
 }
 
 export function workshopTabDocHasContent(tabId: string, content: unknown): boolean {
@@ -329,6 +332,15 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       content: ctx.aemContent,
     });
   }
+  if (visible("evd")) {
+    items.push({
+      id: "evd",
+      label: "EVD",
+      title: "Executive Visual Deck — presentación ejecutiva generada por IA",
+      Icon: Presentation,
+      content: ctx.evdContent,
+    });
+  }
 
   return items;
 }
@@ -461,6 +473,11 @@ export function getWorkshopDocPanelHeader(
       title: "Integración Legacy ↔ Nuevo",
       subtitle: "Conecta proyectos para compartir contexto AS-IS y gestionar módulos enlazados",
       Icon: Link2,
+    },
+    evd: {
+      title: "Executive Visual Deck",
+      subtitle: "Presentación ejecutiva con diagrams, charts y wireframes generados por IA",
+      Icon: Presentation,
     },
     [WORKSHOP_AGENT_PENDING_CHANGES_PANEL]: {
       title: "Cambios pendientes",
