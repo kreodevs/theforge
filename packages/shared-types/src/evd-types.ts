@@ -43,16 +43,17 @@ export interface EvdWireframeData {
 
 export type EvdSlideType =
   | "title"
-  | "executive_summary"
-  | "problem_statement"
-  | "solution_overview"
-  | "market_analysis"
+  | "product_overview"
+  | "user_flows"
+  | "feature_deep_dive"
   | "data_chart"
   | "architecture_diagram"
+  | "data_model"
   | "wireframe"
+  | "integration_points"
+  | "security_model"
+  | "deployment_plan"
   | "timeline"
-  | "financials"
-  | "team"
   | "cta";
 
 interface EvdSlideBase {
@@ -68,28 +69,28 @@ export interface EvdTitleSlide extends EvdSlideBase {
   subtitle?: string;
 }
 
-export interface EvdExecutiveSummarySlide extends EvdSlideBase {
-  type: "executive_summary";
-  bullets: string[];
-}
-
-export interface EvdProblemStatementSlide extends EvdSlideBase {
-  type: "problem_statement";
-  problem: string;
-  impact?: string;
-}
-
-export interface EvdSolutionOverviewSlide extends EvdSlideBase {
-  type: "solution_overview";
+export interface EvdProductOverviewSlide extends EvdSlideBase {
+  type: "product_overview";
   description: string;
-  keyFeatures?: string[];
-  differentiators?: string[];
+  valueProposition?: string;
+  targetUsers?: string[];
 }
 
-export interface EvdMarketAnalysisSlide extends EvdSlideBase {
-  type: "market_analysis";
-  chartData?: EvdChartData;
-  insights?: string[];
+export interface EvdUserFlowsSlide extends EvdSlideBase {
+  type: "user_flows";
+  flows?: Array<{
+    name: string;
+    steps: string[];
+    description?: string;
+  }>;
+}
+
+export interface EvdFeatureDeepDiveSlide extends EvdSlideBase {
+  type: "feature_deep_dive";
+  featureName?: string;
+  description?: string;
+  benefits?: string[];
+  howItWorks?: string;
 }
 
 export interface EvdDataChartSlide extends EvdSlideBase {
@@ -102,9 +103,46 @@ export interface EvdArchitectureDiagramSlide extends EvdSlideBase {
   diagramData?: EvdDiagramData;
 }
 
+export interface EvdDataModelSlide extends EvdSlideBase {
+  type: "data_model";
+  entities?: Array<{
+    name: string;
+    fields: string[];
+    description?: string;
+  }>;
+  diagramData?: EvdDiagramData;
+}
+
 export interface EvdWireframeSlide extends EvdSlideBase {
   type: "wireframe";
   wireframeData?: EvdWireframeData;
+}
+
+export interface EvdIntegrationPointsSlide extends EvdSlideBase {
+  type: "integration_points";
+  integrations?: Array<{
+    name: string;
+    type?: string;
+    purpose?: string;
+    provider?: string;
+  }>;
+}
+
+export interface EvdSecurityModelSlide extends EvdSlideBase {
+  type: "security_model";
+  authMethod?: string;
+  roles?: string[];
+  dataProtection?: string[];
+}
+
+export interface EvdDeploymentPlanSlide extends EvdSlideBase {
+  type: "deployment_plan";
+  environment?: string;
+  phases?: Array<{
+    label: string;
+    description?: string;
+  }>;
+  ciCd?: string;
 }
 
 export interface EvdTimelineSlide extends EvdSlideBase {
@@ -116,20 +154,6 @@ export interface EvdTimelineSlide extends EvdSlideBase {
   }>;
 }
 
-export interface EvdFinancialsSlide extends EvdSlideBase {
-  type: "financials";
-  chartData?: EvdChartData;
-}
-
-export interface EvdTeamSlide extends EvdSlideBase {
-  type: "team";
-  members?: Array<{
-    name: string;
-    role?: string;
-    bio?: string;
-  }>;
-}
-
 export interface EvdCtaSlide extends EvdSlideBase {
   type: "cta";
   description?: string;
@@ -138,16 +162,17 @@ export interface EvdCtaSlide extends EvdSlideBase {
 
 export type EvdSlide =
   | EvdTitleSlide
-  | EvdExecutiveSummarySlide
-  | EvdProblemStatementSlide
-  | EvdSolutionOverviewSlide
-  | EvdMarketAnalysisSlide
+  | EvdProductOverviewSlide
+  | EvdUserFlowsSlide
+  | EvdFeatureDeepDiveSlide
   | EvdDataChartSlide
   | EvdArchitectureDiagramSlide
+  | EvdDataModelSlide
   | EvdWireframeSlide
+  | EvdIntegrationPointsSlide
+  | EvdSecurityModelSlide
+  | EvdDeploymentPlanSlide
   | EvdTimelineSlide
-  | EvdFinancialsSlide
-  | EvdTeamSlide
   | EvdCtaSlide;
 
 export interface EVDJSON {
@@ -160,5 +185,3 @@ export interface EVDJSON {
   branding?: EvdBranding;
   slides: EvdSlide[];
 }
-
-

@@ -92,7 +92,6 @@ export class EvdPdfService {
     print-color-adjust: exact;
   }
 
-  /* ── Page Base ────────────────────────────────────────── */
   .page {
     width: 297mm;
     height: 210mm;
@@ -276,10 +275,10 @@ export class EvdPdfService {
     background: var(--brand-accent);
   }
 
-  /* ── Impact Box ───────────────────────────────────────── */
-  .impact-box {
-    background: color-mix(in srgb, var(--highlight) 8%, transparent);
-    border-left: 3px solid var(--highlight);
+  /* ── Value Proposition Box ────────────────────────────── */
+  .value-box {
+    background: color-mix(in srgb, var(--brand-accent) 8%, transparent);
+    border-left: 3px solid var(--brand-accent);
     padding: 14px 18px;
     font-size: 13px;
     color: var(--text);
@@ -288,8 +287,8 @@ export class EvdPdfService {
     margin: 16px 0;
     line-height: 1.5;
   }
-  .impact-box strong {
-    color: var(--highlight);
+  .value-box strong {
+    color: var(--brand-accent);
     font-weight: 700;
   }
 
@@ -331,6 +330,87 @@ export class EvdPdfService {
     font-size: 12px;
     line-height: 1.5;
     color: var(--text);
+  }
+
+  /* ── User Flows ───────────────────────────────────────── */
+  .flow-section {
+    margin-bottom: 16px;
+  }
+  .flow-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--brand-accent);
+    margin-bottom: 4px;
+  }
+  .flow-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-bottom: 8px;
+  }
+  .flow-steps {
+    display: flex;
+    gap: 8px;
+  }
+  .flow-step {
+    flex: 1;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .flow-step-num {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--brand-accent);
+    color: var(--white);
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .flow-step-text {
+    font-size: 11px;
+    color: var(--text);
+    line-height: 1.4;
+  }
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    color: var(--brand-accent);
+    font-size: 18px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  /* ── Feature Deep Dive ────────────────────────────────── */
+  .feature-badge {
+    display: inline-block;
+    background: var(--brand-accent);
+    color: var(--white);
+    padding: 4px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .how-it-works {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.6;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    margin-top: 12px;
+  }
+  .how-it-works strong {
+    color: var(--brand-accent);
   }
 
   /* ── Chart Container ──────────────────────────────────── */
@@ -383,6 +463,159 @@ export class EvdPdfService {
     max-height: 420px;
     display: block;
     margin: 8px auto;
+  }
+
+  /* ── Data Model ───────────────────────────────────────── */
+  .data-model-layout {
+    display: flex;
+    gap: 16px;
+    margin-top: 4px;
+  }
+  .entity-table {
+    flex: 1;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+  .entity-table th {
+    background: var(--brand-primary);
+    color: var(--white);
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+  }
+  .entity-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+  .entity-table tr:nth-child(even) td {
+    background: var(--bg-subtle);
+  }
+  .entity-name {
+    font-weight: 700;
+    color: var(--brand-accent);
+  }
+  .entity-fields {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: 'Fira Code', monospace;
+  }
+
+  /* ── Integration Cards ────────────────────────────────── */
+  .integration-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .integration-card {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--brand-accent);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .integration-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .integration-type {
+    display: inline-block;
+    background: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+    color: var(--brand-accent);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .integration-purpose {
+    font-size: 11px;
+    color: var(--text-light);
+    line-height: 1.5;
+  }
+  .integration-provider {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 8px;
+  }
+
+  /* ── Security ─────────────────────────────────────────── */
+  .security-badge {
+    display: inline-block;
+    background: color-mix(in srgb, var(--brand-accent) 10%, transparent);
+    border: 1px solid var(--brand-accent);
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--brand-accent);
+    margin-bottom: 16px;
+  }
+  .roles-row {
+    display: flex;
+    gap: 10px;
+    margin: 12px 0;
+  }
+  .role-badge {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  /* ── Deployment ───────────────────────────────────────── */
+  .deployment-phases {
+    display: flex;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .deployment-phase {
+    flex: 1;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    position: relative;
+  }
+  .phase-num {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--brand-accent);
+    color: var(--white);
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+  .phase-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .phase-desc {
+    font-size: 11px;
+    color: var(--text-light);
+    line-height: 1.5;
+  }
+  .cicd-box {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--text);
+    margin-top: 12px;
   }
 
   /* ── Timeline ─────────────────────────────────────────── */
@@ -443,52 +676,6 @@ export class EvdPdfService {
     line-height: 1.4;
   }
 
-  /* ── Team ─────────────────────────────────────────────── */
-  .team-grid {
-    display: flex;
-    gap: 16px;
-    justify-content: center;
-    margin: 20px 0;
-  }
-  .team-card {
-    flex: 0 0 22%;
-    background: var(--white);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  }
-  .team-header {
-    background: var(--brand-primary);
-    padding: 20px;
-    text-align: center;
-    position: relative;
-  }
-  .team-avatar {
-    width: 64px; height: 64px;
-    border-radius: 50%;
-    background: ${lighten(theme.colors.brandAccent, 0.3)};
-    margin: 0 auto 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--white);
-  }
-  .team-initials {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-  }
-  .team-body { padding: 16px; text-align: center; }
-  .team-name { font-size: 14px; font-weight: 700; color: var(--text); }
-  .team-role { font-size: 11px; color: var(--brand-accent); margin: 4px 0 8px; font-weight: 500; }
-  .team-divider { width: 40px; height: 1px; background: var(--border); margin: 0 auto 8px; }
-  .team-bio { font-size: 10px; color: var(--text-light); line-height: 1.5; }
-
   /* ── Footer ───────────────────────────────────────────── */
   .footer {
     position: absolute;
@@ -543,42 +730,55 @@ export class EvdPdfService {
       <div class="cover-brand">Executive Vision Deck</div>`;
         break;
 
-      case "executive_summary":
-      case "solution_overview":
+      case "product_overview":
         content = `
       <div class="slide-title">${this.esc(title)}</div>
       <div class="accent-line"></div>
       ${slide.description ? `<div class="body-text">${this.esc(slide.description as string)}</div>` : ""}
-      ${(slide.keyFeatures as string[] ?? []).length ? `
-      <div class="feature-grid">
-        ${(slide.keyFeatures as string[]).map((f, i) => `
-        <div class="feature-card">
-          <div class="feature-num">${i + 1}</div>
-          <div class="feature-text">${this.esc(f)}</div>
-        </div>`).join("")}
-      </div>` : ""}
-      ${(slide.bullets as string[] ?? []).length ? `
+      ${slide.valueProposition ? `<div class="value-box"><strong>Propuesta de valor:</strong> ${this.esc(slide.valueProposition as string)}</div>` : ""}
+      ${(slide.targetUsers as string[] ?? []).length ? `
+      <div style="font-size:12px;font-weight:600;color:${theme.colors.brandAccent};margin-bottom:8px;">Usuarios objetivo</div>
       <ul class="bullets">
-        ${(slide.bullets as string[]).map((b) => `<li>${this.esc(b)}</li>`).join("\n        ")}
+        ${(slide.targetUsers as string[]).map((u) => `<li>${this.esc(u)}</li>`).join("\n        ")}
       </ul>` : ""}`;
         break;
 
-      case "problem_statement":
+      case "user_flows": {
+        const flows = (slide.flows as { name: string; steps: string[]; description?: string }[]) ?? [];
         content = `
       <div class="slide-title">${this.esc(title)}</div>
       <div class="accent-line"></div>
-      ${slide.problem ? `<div class="body-text">${this.esc(slide.problem as string)}</div>` : ""}
-      ${slide.impact ? `<div class="impact-box"><strong>Impacto:</strong> ${this.esc(slide.impact as string)}</div>` : ""}
-      ${(slide.differentiators as string[] ?? []).length ? `
-      <div style="margin-top:16px;font-size:12px;font-weight:600;color:${theme.colors.brandAccent};margin-bottom:8px;">Diferenciadores</div>
+      ${flows.map((flow) => `
+      <div class="flow-section">
+        <div class="flow-name">${this.esc(flow.name)}</div>
+        ${flow.description ? `<div class="flow-desc">${this.esc(flow.description)}</div>` : ""}
+        <div class="flow-steps">
+          ${flow.steps.slice(0, 4).map((step, si) => `
+          ${si > 0 ? '<div class="flow-arrow">→</div>' : ""}
+          <div class="flow-step">
+            <div class="flow-step-num">${si + 1}</div>
+            <div class="flow-step-text">${this.esc(step)}</div>
+          </div>`).join("")}
+        </div>
+      </div>`).join("")}`;
+        break;
+      }
+
+      case "feature_deep_dive":
+        content = `
+      <div class="slide-title">${this.esc(title)}</div>
+      <div class="accent-line"></div>
+      ${slide.featureName ? `<div class="feature-badge">${this.esc(slide.featureName as string)}</div>` : ""}
+      ${slide.description ? `<div class="body-text">${this.esc(slide.description as string)}</div>` : ""}
+      ${(slide.benefits as string[] ?? []).length ? `
+      <div style="font-size:12px;font-weight:600;color:${theme.colors.brandAccent};margin-bottom:8px;">Beneficios</div>
       <ul class="bullets">
-        ${(slide.differentiators as string[]).map((d) => `<li>${this.esc(d)}</li>`).join("\n        ")}
-      </ul>` : ""}`;
+        ${(slide.benefits as string[]).map((b) => `<li>${this.esc(b)}</li>`).join("\n        ")}
+      </ul>` : ""}
+      ${slide.howItWorks ? `<div class="how-it-works"><strong>Cómo funciona:</strong> ${this.esc(slide.howItWorks as string)}</div>` : ""}`;
         break;
 
-      case "market_analysis":
-      case "data_chart":
-      case "financials": {
+      case "data_chart": {
         const chartSvg = charts.get(slideId);
         const insights = (slide.insights as string[]) ?? [];
         content = `
@@ -606,12 +806,91 @@ export class EvdPdfService {
         break;
       }
 
+      case "data_model": {
+        const entities = (slide.entities as { name: string; fields: string[]; description?: string }[]) ?? [];
+        const erSvg = diagrams.get(slideId);
+        content = `
+      <div class="slide-title">${this.esc(title)}</div>
+      <div class="accent-line"></div>
+      <div class="data-model-layout">
+        ${erSvg ? `<div class="diagram-svg" style="flex:0 0 48%">${erSvg}</div>` : ""}
+        ${entities.length ? `
+        <table class="entity-table" style="${erSvg ? 'flex:1' : 'width:100%'}">
+          <thead>
+            <tr><th>Entidad</th><th>Campos</th><th>Descripción</th></tr>
+          </thead>
+          <tbody>
+            ${entities.map((e) => `
+            <tr>
+              <td class="entity-name">${this.esc(e.name)}</td>
+              <td class="entity-fields">${this.esc(e.fields.join(", "))}</td>
+              <td>${this.esc(e.description ?? "")}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>` : ""}
+      </div>`;
+        break;
+      }
+
       case "wireframe": {
         const wfSvg = wireframes.get(slideId);
         content = `
       <div class="slide-title">${this.esc(title)}</div>
       <div class="accent-line"></div>
       ${wfSvg ? `<div class="wireframe-svg">${wfSvg}</div>` : ""}`;
+        break;
+      }
+
+      case "integration_points": {
+        const integrations = (slide.integrations as { name: string; type?: string; purpose?: string; provider?: string }[]) ?? [];
+        content = `
+      <div class="slide-title">${this.esc(title)}</div>
+      <div class="accent-line"></div>
+      <div class="integration-grid">
+        ${integrations.map((intg) => `
+        <div class="integration-card">
+          <div class="integration-name">${this.esc(intg.name)}</div>
+          ${intg.type ? `<div class="integration-type">${this.esc(intg.type)}</div>` : ""}
+          ${intg.purpose ? `<div class="integration-purpose">${this.esc(intg.purpose)}</div>` : ""}
+          ${intg.provider ? `<div class="integration-provider">Provider: ${this.esc(intg.provider)}</div>` : ""}
+        </div>`).join("")}
+      </div>`;
+        break;
+      }
+
+      case "security_model":
+        content = `
+      <div class="slide-title">${this.esc(title)}</div>
+      <div class="accent-line"></div>
+      ${slide.authMethod ? `<div class="security-badge">Autenticación: ${this.esc(slide.authMethod as string)}</div>` : ""}
+      ${(slide.roles as string[] ?? []).length ? `
+      <div style="font-size:12px;font-weight:600;color:${theme.colors.brandAccent};margin-bottom:8px;">Roles del sistema</div>
+      <div class="roles-row">
+        ${(slide.roles as string[]).map((r) => `<div class="role-badge">${this.esc(r)}</div>`).join("")}
+      </div>` : ""}
+      ${(slide.dataProtection as string[] ?? []).length ? `
+      <div style="font-size:12px;font-weight:600;color:${theme.colors.brandAccent};margin:16px 0 8px;">Protección de datos</div>
+      <ul class="bullets">
+        ${(slide.dataProtection as string[]).map((p) => `<li>${this.esc(p)}</li>`).join("\n        ")}
+      </ul>` : ""}`;
+        break;
+
+      case "deployment_plan": {
+        const phases = (slide.phases as { label: string; description?: string }[]) ?? [];
+        content = `
+      <div class="slide-title">${this.esc(title)}</div>
+      <div class="accent-line"></div>
+      ${slide.environment ? `<div class="security-badge">Entorno: ${this.esc(slide.environment as string)}</div>` : ""}
+      ${phases.length ? `
+      <div class="deployment-phases">
+        ${phases.map((p, i) => `
+        <div class="deployment-phase">
+          <div class="phase-num">${i + 1}</div>
+          <div class="phase-label">${this.esc(p.label)}</div>
+          ${p.description ? `<div class="phase-desc">${this.esc(p.description)}</div>` : ""}
+        </div>`).join("")}
+      </div>` : ""}
+      ${slide.ciCd ? `<div class="cicd-box"><strong>CI/CD:</strong> ${this.esc(slide.ciCd as string)}</div>` : ""}`;
         break;
       }
 
@@ -633,31 +912,6 @@ export class EvdPdfService {
             </div>
           </div>`).join("\n          ")}
         </div>
-      </div>`;
-        break;
-      }
-
-      case "team": {
-        const members = (slide.members as { name: string; role: string; bio: string }[]) ?? [];
-        content = `
-      <div class="slide-title">${this.esc(title)}</div>
-      <div class="accent-line"></div>
-      <div class="team-grid">
-        ${members.map((m) => {
-          const initials = m.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-          return `
-        <div class="team-card">
-          <div class="team-header">
-            <div class="team-avatar"><div class="team-initials">${this.esc(initials)}</div></div>
-          </div>
-          <div class="team-body">
-            <div class="team-name">${this.esc(m.name)}</div>
-            <div class="team-role">${this.esc(m.role)}</div>
-            <div class="team-divider"></div>
-            <div class="team-bio">${this.esc(m.bio)}</div>
-          </div>
-        </div>`;
-        }).join("\n")}
       </div>`;
         break;
       }
