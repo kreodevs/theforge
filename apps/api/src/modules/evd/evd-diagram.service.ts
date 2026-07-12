@@ -14,9 +14,17 @@ export class EvdDiagramService {
       const { run } = await import("@mermaid-js/mermaid-cli");
       const mermaidTheme = this.buildMermaidTheme(theme);
 
-      const result = await run({
-        inputText: mermaidCode,
-        outputFormat: "svg",
+      const { writeFile, unlink, mkdtemp } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const { tmpdir } = await import("node:os");
+
+      const tmpDir = await mkdtemp(join(tmpdir(), "mermaid-"));
+      const inputFile = join(tmpDir, "input.mmd");
+      const outputFile = join(tmpDir, "output.svg");
+
+      await writeFile(inputFile, mermaidCode, "utf-8");
+
+      await run(inputFile, outputFile, {
         mermaidConfig: {
           theme: "base",
           themeVariables: mermaidTheme,
@@ -35,8 +43,12 @@ export class EvdDiagramService {
         },
       });
 
-      // result is [stdout, stderr]
-      const svg = typeof result[0] === "string" ? result[0] : Buffer.from(result[0]).toString("utf-8");
+      const svg = await import("node:fs/promises").then((fs) => fs.readFile(outputFile, "utf-8"));
+
+      await unlink(inputFile).catch(() => {});
+      await unlink(outputFile).catch(() => {});
+      await import("node:fs/promises").then((fs) => fs.rmdir(tmpDir).catch(() => {}));
+
       return svg;
     } catch (err) {
       this.logger.warn(`mermaid-cli unavailable, generating fallback SVG: ${err}`);

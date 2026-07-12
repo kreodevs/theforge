@@ -40,7 +40,7 @@ export class EvdExportService {
       try {
         if (slide.type === "market_analysis" || slide.type === "data_chart" || slide.type === "financials") {
           if (slide.chartData) {
-            const svg = this.chartService.renderChartSVG(slide.chartData as EvdChartData, theme);
+            const svg = this.chartService.renderChartSVG(slide.chartData as unknown as EvdChartData, theme);
             charts.set(slide.id, svg);
           }
         }
@@ -54,7 +54,7 @@ export class EvdExportService {
         }
 
         if (slide.type === "wireframe" && slide.wireframeData) {
-          const svg = this.wireframeService.renderWireframeSVG(slide.wireframeData as WireframeData, theme);
+          const svg = this.wireframeService.renderWireframeSVG(slide.wireframeData as unknown as WireframeData, theme);
           wireframes.set(slide.id, svg);
         }
       } catch (err) {
