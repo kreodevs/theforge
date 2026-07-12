@@ -52,7 +52,6 @@ function barPath(
 ): string {
   if (maxVal === 0) return "";
   const n = values.length;
-  const _totalW = n * barW + (n - 1) * gap;
   let d = "";
   values.forEach((v, i) => {
     const x = pad + i * (barW + gap);
@@ -485,13 +484,11 @@ function GenericSlideView({
 
 function SlideCard({
   slide,
-  branding,
   isActive,
   onClick,
   index,
 }: {
   slide: EvdSlide;
-  branding: EvdBranding;
   isActive: boolean;
   onClick: () => void;
   index: number;
@@ -658,7 +655,6 @@ export function EvdSlideViewer({
             <SlideCard
               key={s.id}
               slide={s}
-              branding={branding}
               isActive={i === activeIdx}
               onClick={() => setActiveIdx(i)}
               index={i}

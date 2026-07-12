@@ -42,7 +42,6 @@ import {
   Eye,
   Wrench,
   BrushCleaning,
-  Presentation,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UnderlineTabs } from "@/components/ui/UnderlineTabs";
