@@ -163,7 +163,7 @@ IMPORTANT: Keep prompts concise. Focus on shapes, colors, composition. No text i
     }
 
     this.logger.log(
-      `Generating ${tasks.length} images for ${slides.length} slides...`,
+      `Generating ${tasks.length} images for ${slides.length} slides (primary=${config.openaiImageModel || config.openrouterImageModel})...`,
     );
 
     // Execute in batches of 3 to avoid overwhelming the API

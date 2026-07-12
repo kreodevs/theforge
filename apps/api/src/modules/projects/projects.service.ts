@@ -2782,6 +2782,7 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     }
 
     const evdContent = JSON.stringify(deck, null, 2);
+    this.logger.log(`[EVD] Persisting deck with ${deck.slides?.length ?? 0} slides, ${evdContent.length} chars`);
 
     await this.update(projectId, { evdContent });
   }
