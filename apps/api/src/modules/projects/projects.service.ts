@@ -881,7 +881,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         "apiContractsContent", "logicFlowsContent", "infraContent",
         "agentGovernanceContent",
         "uxUiGuideContent", "phase0SummaryContent", "aemContent",
-        "handoffSpecContent",
+        "handoffSpecContent", "evdContent",
       ] as const;
       for (const field of documentFields) {
         if ((rest as Record<string, unknown>)[field] !== undefined) {
