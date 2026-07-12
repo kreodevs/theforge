@@ -296,7 +296,7 @@ function TitleSlideView({
 }) {
   return (
     <div
-      className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-6 text-center sm:px-8 sm:py-10"
+      className="flex flex-col items-center justify-center gap-4 px-4 py-6 text-center sm:px-8 sm:py-10"
       style={{ background: branding.primaryColor, color: branding.bgColor }}
     >
       {branding.logoUrl && (
@@ -343,7 +343,7 @@ function GenericSlideView({
   branding: EvdBranding;
 }) {
   return (
-    <div className="flex flex-1 flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
+    <div className="flex flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
       <h2
         className="text-lg font-bold leading-snug"
         style={{ color: branding.accentColor, fontFamily: branding.fontFamily }}
@@ -641,7 +641,7 @@ export function EvdSlideViewer({
         </div>
 
         {/* Slide content */}
-        <div className="flex min-h-0 flex-1 overflow-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {current.type === "title" ? (
             <TitleSlideView slide={current} branding={branding} />
           ) : (
