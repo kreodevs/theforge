@@ -28,7 +28,7 @@ COPY apps/api apps/api
 COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 
 ENV DATABASE_URL="postgresql://local:local@db:5432/theforge"
-RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
+RUN pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
 
 # Verify dist/main.js was produced (turbo cache can silently skip builds)
 RUN test -f apps/api/dist/main.js || (echo "FATAL: apps/api/dist/main.js missing after turbo build" && ls -la apps/api/dist/ 2>/dev/null && exit 1)
