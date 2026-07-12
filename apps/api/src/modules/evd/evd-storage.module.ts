@@ -4,7 +4,6 @@ import { EvdStorageController } from "./evd-storage.controller.js";
 import { EvdStorageService } from "./evd-storage.service.js";
 import { EvdChartService } from "./evd-chart.service.js";
 import { EvdDiagramService } from "./evd-diagram.service.js";
-import { EvdWireframeService } from "./evd-wireframe.service.js";
 import { EvdPptxService } from "./evd-pptx.service.js";
 import { EvdPdfService } from "./evd-pdf.service.js";
 import { EvdExportService } from "./evd-export.service.js";
@@ -16,7 +15,6 @@ import { EvdExportService } from "./evd-export.service.js";
     EvdStorageService,
     EvdChartService,
     EvdDiagramService,
-    EvdWireframeService,
     EvdPptxService,
     EvdPdfService,
     EvdExportService,
@@ -25,7 +23,6 @@ import { EvdExportService } from "./evd-export.service.js";
     EvdStorageService,
     EvdChartService,
     EvdDiagramService,
-    EvdWireframeService,
     EvdPptxService,
     EvdPdfService,
     EvdExportService,

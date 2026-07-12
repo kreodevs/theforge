@@ -3,6 +3,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Layers,
+  AlertTriangle,
+  CheckCircle2,
+  ArrowRight,
+  Zap,
+  Shield,
+  Database,
+  GitBranch,
 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -10,16 +17,18 @@ import type {
   EvdSlide,
   EvdChartData,
   EvdBranding,
-  EvdWireframeComponent,
   EvdTimelineSlide,
   EVDJSON,
-  EvdProductOverviewSlide,
-  EvdUserFlowsSlide,
-  EvdFeatureDeepDiveSlide,
-  EvdDataModelSlide,
-  EvdIntegrationPointsSlide,
-  EvdSecurityModelSlide,
-  EvdDeploymentPlanSlide,
+  EvdProblemStatementSlide,
+  EvdSolutionVisionSlide,
+  EvdCurrentVsNewSlide,
+  EvdProcessFlowSlide,
+  EvdAutomationsSlide,
+  EvdKeyFeaturesSlide,
+  EvdDataOverviewSlide,
+  EvdIntegrationsSlide,
+  EvdSecurityAccessSlide,
+  EvdRolloutPlanSlide,
 } from "@theforge/shared-types/evd-types";
 
 import {
@@ -234,58 +243,6 @@ function ChartSvg({
   );
 }
 
-/* ────────────────── Wireframe renderer ────────────────── */
-
-function WireframeBox({ c }: { c: EvdWireframeComponent }) {
-  const bgMap: Record<string, string> = {
-    navbar: "bg-[var(--muted)]",
-    sidebar: "bg-[var(--muted)]",
-    card: "bg-[var(--card)] border border-[var(--border)] rounded-md",
-    chart: "bg-[var(--muted)] border border-dashed border-[var(--border)] rounded-md",
-    table: "bg-[var(--card)] border border-[var(--border)] rounded-md",
-    form: "bg-[var(--card)] border border-[var(--border)] rounded-md",
-    modal: "bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-md",
-    button: "bg-[var(--primary)] rounded-md",
-    input: "bg-[var(--card)] border border-[var(--border)] rounded-md",
-    text: "",
-    image: "bg-[var(--muted)] border border-dashed border-[var(--border)] rounded-md",
-  };
-
-  return (
-    <div
-      className={cn(
-        "flex items-center justify-center overflow-hidden text-[10px] font-medium text-[var(--muted-foreground)]",
-        bgMap[c.type] ?? "bg-[var(--muted)] border border-[var(--border)] rounded",
-      )}
-      style={{ width: c.width, height: c.height }}
-    >
-      <span className="truncate px-1 opacity-70">{c.label}</span>
-    </div>
-  );
-}
-
-function WireframeRenderer({
-  components,
-  layout: _layout,
-  columns,
-}: {
-  components: EvdWireframeComponent[];
-  layout?: string;
-  columns?: number;
-}) {
-  const cols = columns ?? 4;
-  const gridCols = cols <= 2 ? "grid-cols-1 sm:grid-cols-2" : cols <= 3 ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
-  return (
-    <div
-      className={`grid gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] p-2 ${gridCols}`}
-    >
-      {components.map((c, i) => (
-        <WireframeBox key={i} c={c} />
-      ))}
-    </div>
-  );
-}
-
 /* ────────────────── Shared sub-components ────────────────── */
 
 function BulletsView({ items }: { items: string[] }) {
@@ -336,17 +293,6 @@ function SectionHeader({
   );
 }
 
-function Badge({ label, accentColor }: { label: string; accentColor: string }) {
-  return (
-    <span
-      className="inline-block rounded-md px-3 py-1 text-xs font-semibold text-white"
-      style={{ background: accentColor }}
-    >
-      {label}
-    </span>
-  );
-}
-
 /* ────────────────── Slide-specific renderers ────────────────── */
 
 function TitleSlideView({
@@ -382,69 +328,92 @@ function TitleSlideView({
   );
 }
 
-function CtaSlideView({
+function ProblemStatementSlideView({
   slide,
   branding,
 }: {
-  slide: EvdSlide;
-  branding: EvdBranding;
-}) {
-  const s = slide as Extract<EvdSlide, { type: "cta" }>;
-  return (
-    <div
-      className="flex flex-col items-center justify-center gap-4 px-4 py-6 text-center sm:px-8 sm:py-10"
-      style={{ background: branding.primaryColor, color: branding.bgColor }}
-    >
-      <h1
-        className="text-xl font-black leading-tight tracking-tight sm:text-2xl md:text-3xl"
-        style={{ fontFamily: branding.fontFamily }}
-      >
-        {s.title}
-      </h1>
-      <div
-        className="h-[3px] w-14 rounded-full"
-        style={{ background: branding.highlightColor }}
-      />
-      {s.description && (
-        <p className="max-w-lg text-sm opacity-80 leading-relaxed">{s.description}</p>
-      )}
-      {s.contactInfo && (
-        <div className="mt-2 rounded-lg bg-white/10 px-4 py-2 text-xs font-medium opacity-70">
-          {s.contactInfo}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ProductOverviewSlideView({
-  slide,
-  branding,
-}: {
-  slide: EvdProductOverviewSlide;
+  slide: EvdProblemStatementSlide;
   branding: EvdBranding;
 }) {
   return (
     <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
       <SectionHeader
         title={slide.title}
-        subtitle={slide.description}
-        accentColor={branding.accentColor}
+        accentColor={branding.highlightColor}
         fontFamily={branding.fontFamily}
       />
-      {slide.valueProposition && (
+      {slide.painPoints && slide.painPoints.length > 0 && (
+        <div className="space-y-2">
+          {slide.painPoints.map((pp, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950/30"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+              <span className="text-sm leading-relaxed">{pp}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {slide.impact && (
         <div
           className="rounded-lg border-l-4 px-4 py-3 text-sm font-medium"
           style={{
-            borderColor: branding.accentColor,
-            background: `${branding.accentColor}08`,
-            color: "var(--foreground)",
+            borderColor: branding.highlightColor,
+            background: `${branding.highlightColor}08`,
           }}
         >
-          <span className="font-bold" style={{ color: branding.accentColor }}>
-            Propuesta de valor:{" "}
+          <span className="font-bold" style={{ color: branding.highlightColor }}>
+            Impacto:{" "}
           </span>
-          {slide.valueProposition}
+          {slide.impact}
+        </div>
+      )}
+      {slide.urgency && (
+        <p className="text-xs italic text-[var(--muted-foreground)]">
+          {slide.urgency}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SolutionVisionSlideView({
+  slide,
+  branding,
+}: {
+  slide: EvdSolutionVisionSlide;
+  branding: EvdBranding;
+}) {
+  return (
+    <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
+      <SectionHeader
+        title={slide.title}
+        accentColor={branding.accentColor}
+        fontFamily={branding.fontFamily}
+      />
+      {slide.description && (
+        <p className="text-sm leading-relaxed">{slide.description}</p>
+      )}
+      {slide.keyOutcomes && slide.keyOutcomes.length > 0 && (
+        <div>
+          <h3
+            className="mb-1.5 text-xs font-semibold uppercase tracking-wide"
+            style={{ color: branding.accentColor }}
+          >
+            Resultados esperados
+          </h3>
+          <div className="space-y-2">
+            {slide.keyOutcomes.map((o, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-900 dark:bg-green-950/30"
+              >
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                <span className="text-sm leading-relaxed">{o}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {slide.targetUsers && slide.targetUsers.length > 0 && (
@@ -453,7 +422,7 @@ function ProductOverviewSlideView({
             className="mb-1.5 text-xs font-semibold uppercase tracking-wide"
             style={{ color: branding.accentColor }}
           >
-            Usuarios objetivo
+            Usuarios beneficiados
           </h3>
           <BulletsView items={slide.targetUsers} />
         </div>
@@ -462,14 +431,15 @@ function ProductOverviewSlideView({
   );
 }
 
-function UserFlowsSlideView({
+function CurrentVsNewSlideView({
   slide,
   branding,
 }: {
-  slide: EvdUserFlowsSlide;
+  slide: EvdCurrentVsNewSlide;
   branding: EvdBranding;
 }) {
-  const flows = slide.flows ?? [];
+  const currentSteps = slide.currentSteps ?? [];
+  const newSteps = slide.newSteps ?? [];
   return (
     <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
       <SectionHeader
@@ -477,52 +447,62 @@ function UserFlowsSlideView({
         accentColor={branding.accentColor}
         fontFamily={branding.fontFamily}
       />
-      {flows.map((flow, fi) => (
-        <div key={fi} className="mb-2">
-          <div className="mb-1 text-xs font-bold" style={{ color: branding.accentColor }}>
-            {flow.name}
-          </div>
-          {flow.description && (
-            <div className="mb-2 text-[11px] italic text-[var(--muted-foreground)]">
-              {flow.description}
-            </div>
-          )}
-          <div className="flex flex-wrap gap-2">
-            {flow.steps.slice(0, 5).map((step, si) => (
-              <div key={si} className="flex items-center gap-2">
-                {si > 0 && (
-                  <span className="text-lg font-bold" style={{ color: branding.accentColor }}>
-                    →
-                  </span>
-                )}
-                <div
-                  className="flex items-center gap-2 rounded-md border px-3 py-2"
-                  style={{ borderColor: "var(--border)", background: "var(--card)" }}
-                >
-                  <span
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                    style={{ background: branding.accentColor }}
-                  >
-                    {si + 1}
-                  </span>
-                  <span className="text-xs leading-snug">{step}</span>
-                </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Current */}
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
+          <h3 className="mb-3 text-sm font-bold text-red-700 dark:text-red-400">
+            {slide.currentLabel ?? "Proceso Actual"}
+          </h3>
+          <div className="space-y-2">
+            {currentSteps.map((step, i) => (
+              <div key={i} className="flex items-start gap-2 text-sm">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red-400" />
+                <span>{step}</span>
               </div>
             ))}
           </div>
         </div>
-      ))}
+        {/* New */}
+        <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950/30">
+          <h3 className="mb-3 text-sm font-bold text-green-700 dark:text-green-400">
+            {slide.newLabel ?? "Nuevo Proceso"}
+          </h3>
+          <div className="space-y-2">
+            {newSteps.map((step, i) => (
+              <div key={i} className="flex items-start gap-2 text-sm">
+                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" />
+                <span>{step}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {slide.improvementSummary && (
+        <div
+          className="rounded-lg border-l-4 px-4 py-3 text-sm font-medium"
+          style={{
+            borderColor: branding.accentColor,
+            background: `${branding.accentColor}08`,
+          }}
+        >
+          <span className="font-bold" style={{ color: branding.accentColor }}>
+            Mejora:{" "}
+          </span>
+          {slide.improvementSummary}
+        </div>
+      )}
     </div>
   );
 }
 
-function FeatureDeepDiveSlideView({
+function ProcessFlowSlideView({
   slide,
   branding,
 }: {
-  slide: EvdFeatureDeepDiveSlide;
+  slide: EvdProcessFlowSlide;
   branding: EvdBranding;
 }) {
+  const steps = slide.steps ?? [];
   return (
     <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
       <SectionHeader
@@ -530,62 +510,49 @@ function FeatureDeepDiveSlideView({
         accentColor={branding.accentColor}
         fontFamily={branding.fontFamily}
       />
-      {slide.featureName && <Badge label={slide.featureName} accentColor={branding.accentColor} />}
-      {slide.description && (
-        <p className="text-sm leading-relaxed">{slide.description}</p>
-      )}
-      {slide.benefits && slide.benefits.length > 0 && (
-        <div>
-          <h3
-            className="mb-1.5 text-xs font-semibold uppercase tracking-wide"
-            style={{ color: branding.accentColor }}
+      {slide.diagramData && (
+        <div className="overflow-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-3">
+          <MermaidBlockErrorBoundary
+            content={slide.diagramData.code}
+            blockKey={mermaidKey(`evd-${slide.id}`)}
           >
-            Beneficios
-          </h3>
-          <BulletsView items={slide.benefits} />
+            <MermaidDiagramBlock
+              content={slide.diagramData.code}
+              blockKey={mermaidKey(`evd-${slide.id}`)}
+            />
+          </MermaidBlockErrorBoundary>
         </div>
       )}
-      {slide.howItWorks && (
-        <div
-          className="rounded-lg border p-3 text-sm"
-          style={{ borderColor: "var(--border)", background: "var(--card)" }}
-        >
-          <span className="font-bold" style={{ color: branding.accentColor }}>
-            Cómo funciona:{" "}
-          </span>
-          {slide.howItWorks}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DataChartSlideView({
-  slide,
-  branding,
-}: {
-  slide: EvdSlide;
-  branding: EvdBranding;
-}) {
-  const s = slide as Extract<EvdSlide, { type: "data_chart" }>;
-  const insights = "insights" in s ? (s as { insights?: string[] }).insights : undefined;
-  return (
-    <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
-      <SectionHeader
-        title={s.title}
-        accentColor={branding.accentColor}
-        fontFamily={branding.fontFamily}
-      />
-      {s.chartData && <ChartSvg chart={s.chartData} branding={branding} />}
-      {insights && insights.length > 0 && (
-        <div className="flex flex-wrap gap-2 mt-1">
-          {insights.map((ins, i) => (
-            <span
-              key={i}
-              className="rounded-full bg-[var(--muted)] px-3 py-1 text-xs font-medium text-[var(--muted-foreground)]"
-            >
-              {ins}
-            </span>
+      {steps.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {steps.slice(0, 6).map((step, i) => (
+            <div key={i} className="flex items-center gap-2">
+              {i > 0 && (
+                <ArrowRight className="h-4 w-4 shrink-0" style={{ color: branding.accentColor }} />
+              )}
+              <div
+                className="flex items-center gap-2 rounded-md border px-3 py-2"
+                style={{ borderColor: "var(--border)", background: "var(--card)" }}
+              >
+                <span
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                  style={{ background: step.automated ? "#22c55e" : branding.accentColor }}
+                >
+                  {i + 1}
+                </span>
+                <div className="flex flex-col">
+                  <span className="text-xs font-semibold leading-snug">{step.label}</span>
+                  {step.description && (
+                    <span className="text-[10px] text-[var(--muted-foreground)] leading-snug">
+                      {step.description}
+                    </span>
+                  )}
+                </div>
+                {step.automated && (
+                  <Zap className="h-3 w-3 shrink-0 text-green-500" />
+                )}
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -593,46 +560,14 @@ function DataChartSlideView({
   );
 }
 
-function ArchitectureDiagramSlideView({
+function AutomationsSlideView({
   slide,
   branding,
 }: {
-  slide: EvdSlide;
+  slide: EvdAutomationsSlide;
   branding: EvdBranding;
 }) {
-  const s = slide as Extract<EvdSlide, { type: "architecture_diagram" }>;
-  return (
-    <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
-      <SectionHeader
-        title={s.title}
-        accentColor={branding.accentColor}
-        fontFamily={branding.fontFamily}
-      />
-      {s.diagramData && (
-        <div className="overflow-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-3">
-          <MermaidBlockErrorBoundary
-            content={s.diagramData.code}
-            blockKey={mermaidKey(`evd-${s.id}`)}
-          >
-            <MermaidDiagramBlock
-              content={s.diagramData.code}
-              blockKey={mermaidKey(`evd-${s.id}`)}
-            />
-          </MermaidBlockErrorBoundary>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DataModelSlideView({
-  slide,
-  branding,
-}: {
-  slide: EvdDataModelSlide;
-  branding: EvdBranding;
-}) {
-  const entities = slide.entities ?? [];
+  const automations = slide.automations ?? [];
   return (
     <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
       <SectionHeader
@@ -640,47 +575,161 @@ function DataModelSlideView({
         accentColor={branding.accentColor}
         fontFamily={branding.fontFamily}
       />
-      <div className="flex gap-4">
-        {slide.diagramData && (
-          <div className="flex-1 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-3">
-            <MermaidBlockErrorBoundary
-              content={slide.diagramData.code}
-              blockKey={mermaidKey(`evd-${slide.id}-er`)}
+      {slide.chartData && <ChartSvg chart={slide.chartData} branding={branding} />}
+      {automations.length > 0 && (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {automations.map((a, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--card)] p-3"
+              style={{ borderLeftWidth: 3, borderLeftColor: "#22c55e" }}
             >
-              <MermaidDiagramBlock
-                content={slide.diagramData.code}
-                blockKey={mermaidKey(`evd-${slide.id}-er`)}
-              />
-            </MermaidBlockErrorBoundary>
+              <Zap className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+              <div className="flex-1">
+                <div className="text-sm font-semibold">{a.name}</div>
+                {a.description && (
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)] leading-relaxed">
+                    {a.description}
+                  </p>
+                )}
+              </div>
+              {a.timeSaved && (
+                <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700 dark:bg-green-900 dark:text-green-300">
+                  {a.timeSaved}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KeyFeaturesSlideView({
+  slide,
+  branding,
+}: {
+  slide: EvdKeyFeaturesSlide;
+  branding: EvdBranding;
+}) {
+  const features = slide.features ?? [];
+  return (
+    <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
+      <SectionHeader
+        title={slide.title}
+        accentColor={branding.accentColor}
+        fontFamily={branding.fontFamily}
+      />
+      {features.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {features.map((f, i) => (
+            <div
+              key={i}
+              className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3"
+              style={{ borderTopWidth: 3, borderTopColor: branding.accentColor }}
+            >
+              <div className="text-sm font-bold">{f.name}</div>
+              {f.description && (
+                <p className="mt-1 text-xs text-[var(--muted-foreground)] leading-relaxed">
+                  {f.description}
+                </p>
+              )}
+              {f.benefit && (
+                <p
+                  className="mt-2 text-[10px] font-semibold"
+                  style={{ color: branding.accentColor }}
+                >
+                  {f.benefit}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DataOverviewSlideView({
+  slide,
+  branding,
+}: {
+  slide: EvdDataOverviewSlide;
+  branding: EvdBranding;
+}) {
+  const dataTypes = slide.dataTypes ?? [];
+  const flows = slide.flows ?? [];
+  const sensColors = { low: "#22c55e", medium: "#f59e0b", high: "#ef4444" };
+  return (
+    <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
+      <SectionHeader
+        title={slide.title}
+        accentColor={branding.accentColor}
+        fontFamily={branding.fontFamily}
+      />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {dataTypes.length > 0 && (
+          <div>
+            <h3
+              className="mb-2 text-xs font-semibold uppercase tracking-wide"
+              style={{ color: branding.accentColor }}
+            >
+              Tipos de datos
+            </h3>
+            <div className="space-y-2">
+              {dataTypes.map((d, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-2 rounded-md border border-[var(--border)] bg-[var(--card)] p-2"
+                >
+                  <Database className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: branding.accentColor }} />
+                  <div className="flex-1">
+                    <span className="text-xs font-semibold">{d.name}</span>
+                    {d.description && (
+                      <span className="ml-1 text-[10px] text-[var(--muted-foreground)]">
+                        — {d.description}
+                      </span>
+                    )}
+                  </div>
+                  {d.sensitivity && (
+                    <span
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold text-white"
+                      style={{ background: sensColors[d.sensitivity] }}
+                    >
+                      {d.sensitivity}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
-        {entities.length > 0 && (
-          <div className={`${slide.diagramData ? "flex-1" : "w-full"} overflow-auto rounded-lg border border-[var(--border)]`}>
-            <table className="w-full text-xs">
-              <thead>
-                <tr style={{ background: branding.accentColor }}>
-                  <th className="px-3 py-2 text-left font-semibold text-white">Entidad</th>
-                  <th className="px-3 py-2 text-left font-semibold text-white">Campos</th>
-                  <th className="px-3 py-2 text-left font-semibold text-white">Descripción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entities.map((e, i) => (
-                  <tr
-                    key={i}
-                    className={i % 2 === 0 ? "bg-[var(--card)]" : "bg-[var(--muted)]"}
-                  >
-                    <td className="px-3 py-2 font-bold" style={{ color: branding.accentColor }}>
-                      {e.name}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-[10px] text-[var(--muted-foreground)]">
-                      {e.fields.join(", ")}
-                    </td>
-                    <td className="px-3 py-2">{e.description ?? ""}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {flows.length > 0 && (
+          <div>
+            <h3
+              className="mb-2 text-xs font-semibold uppercase tracking-wide"
+              style={{ color: branding.accentColor }}
+            >
+              Flujo de información
+            </h3>
+            <div className="space-y-2">
+              {flows.map((f, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--card)] p-2 text-xs"
+                >
+                  <span className="font-semibold">{f.from}</span>
+                  <ArrowRight className="h-3 w-3 shrink-0" style={{ color: branding.accentColor }} />
+                  <span className="font-semibold">{f.to}</span>
+                  {f.description && (
+                    <span className="text-[10px] text-[var(--muted-foreground)]">
+                      — {f.description}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -688,40 +737,19 @@ function DataModelSlideView({
   );
 }
 
-function WireframeSlideView({
+function IntegrationsSlideView({
   slide,
   branding,
 }: {
-  slide: EvdSlide;
-  branding: EvdBranding;
-}) {
-  const s = slide as Extract<EvdSlide, { type: "wireframe" }>;
-  return (
-    <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
-      <SectionHeader
-        title={s.title}
-        accentColor={branding.accentColor}
-        fontFamily={branding.fontFamily}
-      />
-      {s.wireframeData && (
-        <WireframeRenderer
-          components={s.wireframeData.components}
-          layout={s.wireframeData.layout}
-          columns={s.wireframeData.columns}
-        />
-      )}
-    </div>
-  );
-}
-
-function IntegrationPointsSlideView({
-  slide,
-  branding,
-}: {
-  slide: EvdIntegrationPointsSlide;
+  slide: EvdIntegrationsSlide;
   branding: EvdBranding;
 }) {
   const integrations = slide.integrations ?? [];
+  const dirIcon: Record<string, typeof ArrowRight> = {
+    inbound: ArrowRight,
+    outbound: ArrowRight,
+    bidirectional: GitBranch,
+  };
   return (
     <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
       <SectionHeader
@@ -730,45 +758,47 @@ function IntegrationPointsSlideView({
         fontFamily={branding.fontFamily}
       />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {integrations.map((intg, i) => (
-          <div
-            key={i}
-            className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3"
-            style={{ borderTopWidth: 3, borderTopColor: branding.accentColor }}
-          >
-            <div className="text-sm font-bold">{intg.name}</div>
-            {intg.type && (
-              <span
-                className="mt-1 inline-block rounded px-2 py-0.5 text-[10px] font-semibold"
-                style={{ background: `${branding.accentColor}12`, color: branding.accentColor }}
-              >
-                {intg.type}
-              </span>
-            )}
-            {intg.purpose && (
-              <p className="mt-2 text-xs leading-relaxed text-[var(--muted-foreground)]">
-                {intg.purpose}
-              </p>
-            )}
-            {intg.provider && (
-              <p className="mt-2 text-[10px] italic text-[var(--muted-foreground)]">
-                Provider: {intg.provider}
-              </p>
-            )}
-          </div>
-        ))}
+        {integrations.map((intg, i) => {
+          const Icon = dirIcon[intg.direction ?? "bidirectional"] ?? GitBranch;
+          return (
+            <div
+              key={i}
+              className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3"
+              style={{ borderTopWidth: 3, borderTopColor: branding.accentColor }}
+            >
+              <div className="flex items-center gap-2">
+                <Icon className="h-4 w-4" style={{ color: branding.accentColor }} />
+                <span className="text-sm font-bold">{intg.name}</span>
+              </div>
+              {intg.purpose && (
+                <p className="mt-2 text-xs leading-relaxed text-[var(--muted-foreground)]">
+                  {intg.purpose}
+                </p>
+              )}
+              {intg.direction && (
+                <span
+                  className="mt-2 inline-block rounded px-2 py-0.5 text-[10px] font-semibold"
+                  style={{ background: `${branding.accentColor}12`, color: branding.accentColor }}
+                >
+                  {intg.direction}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function SecurityModelSlideView({
+function SecurityAccessSlideView({
   slide,
   branding,
 }: {
-  slide: EvdSecurityModelSlide;
+  slide: EvdSecurityAccessSlide;
   branding: EvdBranding;
 }) {
+  const roles = slide.roles ?? [];
   return (
     <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
       <SectionHeader
@@ -776,28 +806,32 @@ function SecurityModelSlideView({
         accentColor={branding.accentColor}
         fontFamily={branding.fontFamily}
       />
-      {slide.authMethod && (
-        <Badge label={`Autenticación: ${slide.authMethod}`} accentColor={branding.accentColor} />
-      )}
-      {slide.roles && slide.roles.length > 0 && (
-        <div>
-          <h3
-            className="mb-1.5 text-xs font-semibold uppercase tracking-wide"
-            style={{ color: branding.accentColor }}
-          >
-            Roles del sistema
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {slide.roles.map((r, i) => (
-              <span
-                key={i}
-                className="rounded-md border px-3 py-1.5 text-xs font-semibold"
-                style={{ borderColor: "var(--border)", background: "var(--card)" }}
-              >
-                {r}
-              </span>
-            ))}
-          </div>
+      {roles.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {roles.map((r, i) => (
+            <div
+              key={i}
+              className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="h-4 w-4" style={{ color: branding.accentColor }} />
+                <span className="text-sm font-bold">{r.name}</span>
+              </div>
+              {r.permissions && r.permissions.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {r.permissions.map((p, pi) => (
+                    <span
+                      key={pi}
+                      className="rounded-md border px-2 py-0.5 text-[10px]"
+                      style={{ borderColor: "var(--border)", color: "var(--muted-foreground)" }}
+                    >
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
       {slide.dataProtection && slide.dataProtection.length > 0 && (
@@ -815,11 +849,11 @@ function SecurityModelSlideView({
   );
 }
 
-function DeploymentPlanSlideView({
+function RolloutPlanSlideView({
   slide,
   branding,
 }: {
-  slide: EvdDeploymentPlanSlide;
+  slide: EvdRolloutPlanSlide;
   branding: EvdBranding;
 }) {
   const phases = slide.phases ?? [];
@@ -830,9 +864,6 @@ function DeploymentPlanSlideView({
         accentColor={branding.accentColor}
         fontFamily={branding.fontFamily}
       />
-      {slide.environment && (
-        <Badge label={`Entorno: ${slide.environment}`} accentColor={branding.accentColor} />
-      )}
       {phases.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {phases.map((p, i) => (
@@ -847,6 +878,11 @@ function DeploymentPlanSlideView({
                 {i + 1}
               </span>
               <div className="mt-2 text-sm font-bold">{p.label}</div>
+              {p.duration && (
+                <span className="text-[10px] font-semibold" style={{ color: branding.accentColor }}>
+                  {p.duration}
+                </span>
+              )}
               {p.description && (
                 <p className="mt-1 text-xs leading-relaxed text-[var(--muted-foreground)]">
                   {p.description}
@@ -856,15 +892,15 @@ function DeploymentPlanSlideView({
           ))}
         </div>
       )}
-      {slide.ciCd && (
-        <div
-          className="rounded-lg border p-3 font-mono text-xs"
-          style={{ borderColor: "var(--border)", background: "var(--card)" }}
-        >
-          <span className="font-bold" style={{ color: branding.accentColor }}>
-            CI/CD:{" "}
-          </span>
-          {slide.ciCd}
+      {slide.successCriteria && slide.successCriteria.length > 0 && (
+        <div>
+          <h3
+            className="mb-1.5 text-xs font-semibold uppercase tracking-wide"
+            style={{ color: branding.accentColor }}
+          >
+            Criterios de éxito
+          </h3>
+          <BulletsView items={slide.successCriteria} />
         </div>
       )}
     </div>
@@ -911,6 +947,41 @@ function TimelineSlideView({
   );
 }
 
+function CtaSlideView({
+  slide,
+  branding,
+}: {
+  slide: EvdSlide;
+  branding: EvdBranding;
+}) {
+  const s = slide as Extract<EvdSlide, { type: "cta" }>;
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-4 px-4 py-6 text-center sm:px-8 sm:py-10"
+      style={{ background: branding.primaryColor, color: branding.bgColor }}
+    >
+      <h1
+        className="text-xl font-black leading-tight tracking-tight sm:text-2xl md:text-3xl"
+        style={{ fontFamily: branding.fontFamily }}
+      >
+        {s.title}
+      </h1>
+      <div
+        className="h-[3px] w-14 rounded-full"
+        style={{ background: branding.highlightColor }}
+      />
+      {s.description && (
+        <p className="max-w-lg text-sm opacity-80 leading-relaxed">{s.description}</p>
+      )}
+      {s.contactInfo && (
+        <div className="mt-2 rounded-lg bg-white/10 px-4 py-2 text-xs font-medium opacity-70">
+          {s.contactInfo}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ────────────────── Fallback for unknown types ────────────────── */
 
 function FallbackSlideView({
@@ -946,26 +1017,26 @@ function SlideContent({
   switch (slide.type) {
     case "title":
       return <TitleSlideView slide={slide} branding={branding} />;
-    case "product_overview":
-      return <ProductOverviewSlideView slide={slide} branding={branding} />;
-    case "user_flows":
-      return <UserFlowsSlideView slide={slide} branding={branding} />;
-    case "feature_deep_dive":
-      return <FeatureDeepDiveSlideView slide={slide} branding={branding} />;
-    case "data_chart":
-      return <DataChartSlideView slide={slide} branding={branding} />;
-    case "architecture_diagram":
-      return <ArchitectureDiagramSlideView slide={slide} branding={branding} />;
-    case "data_model":
-      return <DataModelSlideView slide={slide} branding={branding} />;
-    case "wireframe":
-      return <WireframeSlideView slide={slide} branding={branding} />;
-    case "integration_points":
-      return <IntegrationPointsSlideView slide={slide} branding={branding} />;
-    case "security_model":
-      return <SecurityModelSlideView slide={slide} branding={branding} />;
-    case "deployment_plan":
-      return <DeploymentPlanSlideView slide={slide} branding={branding} />;
+    case "problem_statement":
+      return <ProblemStatementSlideView slide={slide} branding={branding} />;
+    case "solution_vision":
+      return <SolutionVisionSlideView slide={slide} branding={branding} />;
+    case "current_vs_new":
+      return <CurrentVsNewSlideView slide={slide} branding={branding} />;
+    case "process_flow":
+      return <ProcessFlowSlideView slide={slide} branding={branding} />;
+    case "automations":
+      return <AutomationsSlideView slide={slide} branding={branding} />;
+    case "key_features":
+      return <KeyFeaturesSlideView slide={slide} branding={branding} />;
+    case "data_overview":
+      return <DataOverviewSlideView slide={slide} branding={branding} />;
+    case "integrations":
+      return <IntegrationsSlideView slide={slide} branding={branding} />;
+    case "security_access":
+      return <SecurityAccessSlideView slide={slide} branding={branding} />;
+    case "rollout_plan":
+      return <RolloutPlanSlideView slide={slide} branding={branding} />;
     case "timeline":
       return <TimelineSlideView slide={slide} branding={branding} />;
     case "cta":
@@ -1045,8 +1116,8 @@ export function EvdSlideViewer({
         <Layers className="h-10 w-10 opacity-40" strokeWidth={1.5} />
         <h3 className="text-base font-semibold">Sin contenido EVD</h3>
         <p className="max-w-md text-sm text-[var(--muted-foreground)]">
-          Genera el Executive Visual Deck desde el MDD para visualizar la
-          presentación con diagramas, charts, wireframes y flujos de usuario.
+          Genera el Executive Vision Deck desde el MDD para visualizar la
+          presentación de negocio con procesos, automatizaciones y flujos.
         </p>
         {onGenerate && (
           <Button

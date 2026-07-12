@@ -25,34 +25,18 @@ export interface EvdDiagramData {
   code: string;
 }
 
-export interface EvdWireframeComponent {
-  type: "navbar" | "sidebar" | "card" | "chart" | "table" | "form" | "modal" | "button" | "input" | "text" | "image";
-  label: string;
-  width?: string;
-  height?: string;
-  x?: number;
-  y?: number;
-}
-
-export interface EvdWireframeData {
-  screenName: string;
-  components: EvdWireframeComponent[];
-  layout?: "grid" | "flex" | "absolute";
-  columns?: number;
-}
-
 export type EvdSlideType =
   | "title"
-  | "product_overview"
-  | "user_flows"
-  | "feature_deep_dive"
-  | "data_chart"
-  | "architecture_diagram"
-  | "data_model"
-  | "wireframe"
-  | "integration_points"
-  | "security_model"
-  | "deployment_plan"
+  | "problem_statement"
+  | "solution_vision"
+  | "current_vs_new"
+  | "process_flow"
+  | "automations"
+  | "key_features"
+  | "data_overview"
+  | "integrations"
+  | "security_access"
+  | "rollout_plan"
   | "timeline"
   | "cta";
 
@@ -69,80 +53,98 @@ export interface EvdTitleSlide extends EvdSlideBase {
   subtitle?: string;
 }
 
-export interface EvdProductOverviewSlide extends EvdSlideBase {
-  type: "product_overview";
-  description: string;
-  valueProposition?: string;
+export interface EvdProblemStatementSlide extends EvdSlideBase {
+  type: "problem_statement";
+  painPoints?: string[];
+  impact?: string;
+  urgency?: string;
+}
+
+export interface EvdSolutionVisionSlide extends EvdSlideBase {
+  type: "solution_vision";
+  description?: string;
+  keyOutcomes?: string[];
   targetUsers?: string[];
 }
 
-export interface EvdUserFlowsSlide extends EvdSlideBase {
-  type: "user_flows";
-  flows?: Array<{
-    name: string;
-    steps: string[];
+export interface EvdCurrentVsNewSlide extends EvdSlideBase {
+  type: "current_vs_new";
+  currentLabel?: string;
+  currentSteps?: string[];
+  newLabel?: string;
+  newSteps?: string[];
+  improvementSummary?: string;
+}
+
+export interface EvdProcessFlowSlide extends EvdSlideBase {
+  type: "process_flow";
+  steps?: Array<{
+    label: string;
     description?: string;
+    automated?: boolean;
   }>;
+  diagramData?: EvdDiagramData;
 }
 
-export interface EvdFeatureDeepDiveSlide extends EvdSlideBase {
-  type: "feature_deep_dive";
-  featureName?: string;
-  description?: string;
-  benefits?: string[];
-  howItWorks?: string;
-}
-
-export interface EvdDataChartSlide extends EvdSlideBase {
-  type: "data_chart";
+export interface EvdAutomationsSlide extends EvdSlideBase {
+  type: "automations";
+  automations?: Array<{
+    name: string;
+    description?: string;
+    timeSaved?: string;
+  }>;
   chartData?: EvdChartData;
 }
 
-export interface EvdArchitectureDiagramSlide extends EvdSlideBase {
-  type: "architecture_diagram";
-  diagramData?: EvdDiagramData;
+export interface EvdKeyFeaturesSlide extends EvdSlideBase {
+  type: "key_features";
+  features?: Array<{
+    name: string;
+    description?: string;
+    benefit?: string;
+  }>;
 }
 
-export interface EvdDataModelSlide extends EvdSlideBase {
-  type: "data_model";
-  entities?: Array<{
+export interface EvdDataOverviewSlide extends EvdSlideBase {
+  type: "data_overview";
+  dataTypes?: Array<{
     name: string;
-    fields: string[];
+    description?: string;
+    sensitivity?: "low" | "medium" | "high";
+  }>;
+  flows?: Array<{
+    from: string;
+    to: string;
     description?: string;
   }>;
-  diagramData?: EvdDiagramData;
 }
 
-export interface EvdWireframeSlide extends EvdSlideBase {
-  type: "wireframe";
-  wireframeData?: EvdWireframeData;
-}
-
-export interface EvdIntegrationPointsSlide extends EvdSlideBase {
-  type: "integration_points";
+export interface EvdIntegrationsSlide extends EvdSlideBase {
+  type: "integrations";
   integrations?: Array<{
     name: string;
-    type?: string;
     purpose?: string;
-    provider?: string;
+    direction?: "inbound" | "outbound" | "bidirectional";
   }>;
 }
 
-export interface EvdSecurityModelSlide extends EvdSlideBase {
-  type: "security_model";
-  authMethod?: string;
-  roles?: string[];
+export interface EvdSecurityAccessSlide extends EvdSlideBase {
+  type: "security_access";
+  roles?: Array<{
+    name: string;
+    permissions?: string[];
+  }>;
   dataProtection?: string[];
 }
 
-export interface EvdDeploymentPlanSlide extends EvdSlideBase {
-  type: "deployment_plan";
-  environment?: string;
+export interface EvdRolloutPlanSlide extends EvdSlideBase {
+  type: "rollout_plan";
   phases?: Array<{
     label: string;
     description?: string;
+    duration?: string;
   }>;
-  ciCd?: string;
+  successCriteria?: string[];
 }
 
 export interface EvdTimelineSlide extends EvdSlideBase {
@@ -162,16 +164,16 @@ export interface EvdCtaSlide extends EvdSlideBase {
 
 export type EvdSlide =
   | EvdTitleSlide
-  | EvdProductOverviewSlide
-  | EvdUserFlowsSlide
-  | EvdFeatureDeepDiveSlide
-  | EvdDataChartSlide
-  | EvdArchitectureDiagramSlide
-  | EvdDataModelSlide
-  | EvdWireframeSlide
-  | EvdIntegrationPointsSlide
-  | EvdSecurityModelSlide
-  | EvdDeploymentPlanSlide
+  | EvdProblemStatementSlide
+  | EvdSolutionVisionSlide
+  | EvdCurrentVsNewSlide
+  | EvdProcessFlowSlide
+  | EvdAutomationsSlide
+  | EvdKeyFeaturesSlide
+  | EvdDataOverviewSlide
+  | EvdIntegrationsSlide
+  | EvdSecurityAccessSlide
+  | EvdRolloutPlanSlide
   | EvdTimelineSlide
   | EvdCtaSlide;
 

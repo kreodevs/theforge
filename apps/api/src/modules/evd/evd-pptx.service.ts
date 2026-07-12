@@ -10,30 +10,7 @@ export interface EvdSlide {
   title: string;
   subtitle?: string;
   speakerNotes?: string;
-  bullets?: string[];
   description?: string;
-  valueProposition?: string;
-  targetUsers?: string[];
-  flows?: { name: string; steps: string[]; description?: string }[];
-  featureName?: string;
-  benefits?: string[];
-  howItWorks?: string;
-  chartData?: Record<string, unknown>;
-  diagramData?: { diagramType: string; code: string } | Record<string, unknown>;
-  wireframeData?: Record<string, unknown>;
-  entities?: { name: string; fields: string[]; description?: string }[];
-  integrations?: { name: string; type?: string; purpose?: string; provider?: string }[];
-  authMethod?: string;
-  roles?: string[];
-  dataProtection?: string[];
-  environment?: string;
-  phases?: { label: string; description?: string }[];
-  ciCd?: string;
-  milestones?: { label: string; date: string; description: string }[];
-  contactInfo?: string;
-  columns?: { header: string; align?: string }[];
-  rows?: string[][];
-  insights?: string[];
   [key: string]: unknown;
 }
 
@@ -50,7 +27,6 @@ export class EvdPptxService {
     deck: EvdDeck,
     renderedCharts: Map<string, string> = new Map(),
     renderedDiagrams: Map<string, string> = new Map(),
-    renderedWireframes: Map<string, string> = new Map(),
     logoBuffer?: Buffer | null,
   ): Promise<Buffer> {
     const PptxGenJSModule = await import("pptxgenjs");
@@ -67,7 +43,7 @@ export class EvdPptxService {
     this.defineMasters(pptx, theme, logoBuffer);
 
     for (const slide of deck.slides ?? []) {
-      this.addSlide(pptx, slide, theme, renderedCharts, renderedDiagrams, renderedWireframes, logoBuffer);
+      this.addSlide(pptx, slide, theme, renderedCharts, renderedDiagrams, logoBuffer);
     }
 
     const buffer = await pptx.write({ outputType: "nodebuffer" });
@@ -136,44 +112,43 @@ export class EvdPptxService {
     theme: EvdDesignTheme,
     charts: Map<string, string>,
     diagrams: Map<string, string>,
-    wireframes: Map<string, string>,
     _logoBuffer?: Buffer | null,
   ): void {
-    const type = slide.type?.toLowerCase() ?? "narrative";
+    const type = slide.type?.toLowerCase() ?? "fallback";
 
     switch (type) {
       case "title":
-        this.coverSlide(pptx, slide, theme);
+        this.titleSlide(pptx, slide, theme);
         break;
-      case "product_overview":
-        this.productOverviewSlide(pptx, slide, theme);
+      case "problem_statement":
+        this.problemStatementSlide(pptx, slide, theme);
         break;
-      case "user_flows":
-        this.userFlowsSlide(pptx, slide, theme);
+      case "solution_vision":
+        this.solutionVisionSlide(pptx, slide, theme);
         break;
-      case "feature_deep_dive":
-        this.featureDeepDiveSlide(pptx, slide, theme);
+      case "current_vs_new":
+        this.currentVsNewSlide(pptx, slide, theme);
         break;
-      case "data_chart":
-        this.chartSlide(pptx, slide, theme, charts);
+      case "process_flow":
+        this.processFlowSlide(pptx, slide, theme, diagrams);
         break;
-      case "architecture_diagram":
-        this.diagramSlide(pptx, slide, theme, diagrams);
+      case "automations":
+        this.automationsSlide(pptx, slide, theme, charts);
         break;
-      case "data_model":
-        this.dataModelSlide(pptx, slide, theme, diagrams);
+      case "key_features":
+        this.keyFeaturesSlide(pptx, slide, theme);
         break;
-      case "wireframe":
-        this.wireframeSlide(pptx, slide, theme, wireframes);
+      case "data_overview":
+        this.dataOverviewSlide(pptx, slide, theme);
         break;
-      case "integration_points":
-        this.integrationPointsSlide(pptx, slide, theme);
+      case "integrations":
+        this.integrationsSlide(pptx, slide, theme);
         break;
-      case "security_model":
-        this.securityModelSlide(pptx, slide, theme);
+      case "security_access":
+        this.securityAccessSlide(pptx, slide, theme);
         break;
-      case "deployment_plan":
-        this.deploymentPlanSlide(pptx, slide, theme);
+      case "rollout_plan":
+        this.rolloutPlanSlide(pptx, slide, theme);
         break;
       case "timeline":
         this.timelineSlide(pptx, slide, theme);
@@ -196,9 +171,9 @@ export class EvdPptxService {
     }
   }
 
-  /* ── Cover Slide ────────────────────────────────────────────── */
+  /* ── Title Slide ────────────────────────────────────────────── */
 
-  private coverSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
+  private titleSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
     const s = pptx.addSlide({ masterName: "COVER_MASTER" });
 
     s.addText(slide.title ?? "", {
@@ -229,17 +204,70 @@ export class EvdPptxService {
     });
   }
 
-  /* ── Product Overview — description + value proposition + target users ── */
+  /* ── Problem Statement — pain points + impact + urgency ─────── */
 
-  private productOverviewSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
+  private problemStatementSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
     const s = pptx.addSlide({ masterName: "SIDEBAR_MASTER" });
+    this.addSectionTitle(s, pptx, slide.title, theme);
 
+    let bodyY = 1.6;
+    const painPoints = (slide.painPoints as string[]) ?? [];
+
+    if (painPoints.length) {
+      s.addText("Puntos de dolor", {
+        x: 0.8, y: bodyY, w: 4, h: 0.35,
+        fontSize: 12, fontFace: theme.typography.family,
+        color: theme.colors.brandAccent, bold: true,
+      });
+      bodyY += 0.4;
+      this.addBullets(painPoints, theme, 0.8, bodyY, 11.73, s);
+      bodyY += painPoints.length * 0.45 + 0.2;
+    }
+
+    if (slide.impact) {
+      s.addShape(pptx.ShapeType.roundRect, {
+        x: 0.8, y: bodyY, w: 5.5, h: 0.9,
+        fill: { color: theme.colors.bgSubtle },
+        line: { color: theme.colors.negative, width: 1 },
+        rectRadius: 0.08,
+      });
+      s.addText([
+        { text: "Impacto:  ", options: { bold: true, fontSize: 11, color: theme.colors.negative } },
+        { text: String(slide.impact), options: { fontSize: 11, color: theme.colors.text } },
+      ], {
+        x: 1, y: bodyY + 0.1, w: 5.1, h: 0.7,
+        fontFace: theme.typography.family, valign: "middle", lineSpacingMultiple: 1.3,
+      });
+      bodyY += 1.1;
+    }
+
+    if (slide.urgency) {
+      s.addShape(pptx.ShapeType.roundRect, {
+        x: 0.8, y: bodyY, w: 5.5, h: 0.9,
+        fill: { color: theme.colors.bgSubtle },
+        line: { color: theme.colors.highlight, width: 1 },
+        rectRadius: 0.08,
+      });
+      s.addText([
+        { text: "Urgencia:  ", options: { bold: true, fontSize: 11, color: theme.colors.highlight } },
+        { text: String(slide.urgency), options: { fontSize: 11, color: theme.colors.text } },
+      ], {
+        x: 1, y: bodyY + 0.1, w: 5.1, h: 0.7,
+        fontFace: theme.typography.family, valign: "middle", lineSpacingMultiple: 1.3,
+      });
+    }
+  }
+
+  /* ── Solution Vision — description + outcomes + target users ── */
+
+  private solutionVisionSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
+    const s = pptx.addSlide({ masterName: "SIDEBAR_MASTER" });
     this.addSectionTitle(s, pptx, slide.title, theme);
 
     let bodyY = 1.6;
 
     if (slide.description) {
-      s.addText(slide.description, {
+      s.addText(String(slide.description), {
         x: 0.8, y: bodyY, w: 11.73, h: 1,
         fontSize: theme.typography.bodySize + 1, fontFace: theme.typography.family,
         color: theme.colors.textLight, valign: "top", lineSpacingMultiple: 1.5,
@@ -247,319 +275,282 @@ export class EvdPptxService {
       bodyY += 1.2;
     }
 
-    if (slide.valueProposition) {
+    const outcomes = (slide.keyOutcomes as string[]) ?? [];
+    if (outcomes.length) {
       s.addShape(pptx.ShapeType.roundRect, {
-        x: 0.8, y: bodyY, w: 11.73, h: 1,
+        x: 0.8, y: bodyY, w: 11.73, h: 0.9,
         fill: { color: theme.colors.brandAccent, transparency: 90 },
         line: { color: theme.colors.brandAccent, width: 1.5 },
         rectRadius: 0.12,
       });
       s.addShape(pptx.ShapeType.rect, {
-        x: 0.8, y: bodyY + 0.15, w: 0.06, h: 0.7,
+        x: 0.8, y: bodyY + 0.15, w: 0.06, h: 0.6,
         fill: { color: theme.colors.brandAccent },
       });
-      s.addText([
-        { text: "Propuesta de valor:  ", options: { bold: true, fontSize: 12, color: theme.colors.brandAccent } },
-        { text: slide.valueProposition, options: { fontSize: 12, color: theme.colors.text } },
-      ], {
-        x: 1.1, y: bodyY + 0.15, w: 11.2, h: 0.7,
-        fontFace: theme.typography.family, valign: "middle", lineSpacingMultiple: 1.4,
-      });
-      bodyY += 1.3;
-    }
-
-    if (slide.targetUsers?.length) {
-      s.addText("Usuarios objetivo", {
-        x: 0.8, y: bodyY, w: 4, h: 0.35,
+      s.addText("Resultados esperados", {
+        x: 1.1, y: bodyY + 0.1, w: 11.2, h: 0.3,
         fontSize: 11, fontFace: theme.typography.family,
         color: theme.colors.brandAccent, bold: true,
       });
-      this.addBullets(slide.targetUsers, theme, 0.8, bodyY + 0.4, 11.73, s);
+      this.addBullets(outcomes, theme, 1.1, bodyY + 0.4, 11.2, s);
+      bodyY += 1.2;
+    }
+
+    const users = (slide.targetUsers as string[]) ?? [];
+    if (users.length) {
+      s.addText("Usuarios objetivo", {
+        x: 0.8, y: bodyY, w: 4, h: 0.35,
+        fontSize: 12, fontFace: theme.typography.family,
+        color: theme.colors.brandAccent, bold: true,
+      });
+      this.addBullets(users, theme, 0.8, bodyY + 0.4, 11.73, s);
     }
   }
 
-  /* ── User Flows — flow steps with numbered cards ─────────── */
+  /* ── Current vs New — side-by-side comparison ─────────────── */
 
-  private userFlowsSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
+  private currentVsNewSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
+    const s = pptx.addSlide({ masterName: "WIDE_MASTER" });
+    this.addWideTitle(s, pptx, slide.title, theme);
+
+    const colW = 5.8;
+    const leftX = 0.5;
+    const rightX = 6.8;
+    const topY = 1.3;
+
+    // Current (left)
+    s.addShape(pptx.ShapeType.roundRect, {
+      x: leftX, y: topY, w: colW, h: 5.2,
+      fill: { color: theme.colors.bgSubtle },
+      line: { color: theme.colors.border, width: 0.5 },
+      rectRadius: 0.1,
+    });
+    s.addText(String(slide.currentLabel ?? "Situación actual"), {
+      x: leftX + 0.2, y: topY + 0.15, w: colW - 0.4, h: 0.4,
+      fontSize: 14, fontFace: theme.typography.family,
+      color: theme.colors.negative, bold: true,
+    });
+    const currentSteps = (slide.currentSteps as string[]) ?? [];
+    if (currentSteps.length) {
+      this.addNumberedList(currentSteps, theme, leftX + 0.3, topY + 0.7, colW - 0.6, s, theme.colors.negative, pptx);
+    }
+
+    // New (right)
+    s.addShape(pptx.ShapeType.roundRect, {
+      x: rightX, y: topY, w: colW, h: 5.2,
+      fill: { color: theme.colors.bgSubtle },
+      line: { color: theme.colors.brandAccent, width: 1 },
+      rectRadius: 0.1,
+    });
+    s.addText(String(slide.newLabel ?? "Proceso nuevo"), {
+      x: rightX + 0.2, y: topY + 0.15, w: colW - 0.4, h: 0.4,
+      fontSize: 14, fontFace: theme.typography.family,
+      color: theme.colors.brandAccent, bold: true,
+    });
+    const newSteps = (slide.newSteps as string[]) ?? [];
+    if (newSteps.length) {
+      this.addNumberedList(newSteps, theme, rightX + 0.3, topY + 0.7, colW - 0.6, s, theme.colors.brandAccent, pptx);
+    }
+
+    // Arrow between columns
+    s.addText("→", {
+      x: leftX + colW, y: topY + 2, w: rightX - leftX - colW, h: 1,
+      fontSize: 28, fontFace: theme.typography.family,
+      color: theme.colors.highlight, align: "center", valign: "middle",
+    });
+
+    // Improvement summary
+    if (slide.improvementSummary) {
+      s.addShape(pptx.ShapeType.roundRect, {
+        x: 0.5, y: 6.0, w: 12.33, h: 0.7,
+        fill: { color: theme.colors.positive, transparency: 90 },
+        line: { color: theme.colors.positive, width: 1 },
+        rectRadius: 0.06,
+      });
+      s.addText([
+        { text: "Mejora:  ", options: { bold: true, fontSize: 12, color: theme.colors.positive } },
+        { text: String(slide.improvementSummary), options: { fontSize: 12, color: theme.colors.text } },
+      ], {
+        x: 0.8, y: 6.05, w: 11.73, h: 0.6,
+        fontFace: theme.typography.family, valign: "middle",
+      });
+    }
+  }
+
+  /* ── Process Flow — numbered steps with optional diagram ───── */
+
+  private processFlowSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme, diagrams: Map<string, string>): void {
     const s = pptx.addSlide({ masterName: "SIDEBAR_MASTER" });
-
     this.addSectionTitle(s, pptx, slide.title, theme);
 
-    const flows = slide.flows ?? [];
+    const diagramData = slide.diagramData as { code?: string } | undefined;
+    const svg = diagrams.get(slide.id);
+
+    if (svg) {
+      // Diagram takes center stage
+      s.addImage({ data: this.svgToDataUri(svg), x: 0.5, y: 1.4, w: 12.33, h: 5 });
+      return;
+    }
+
+    const steps = (slide.steps as { label: string; description?: string; automated?: boolean }[]) ?? [];
+    if (!steps.length && diagramData?.code) {
+      // Show mermaid code as fallback
+      s.addShape(pptx.ShapeType.roundRect, {
+        x: 0.5, y: 1.4, w: 12.33, h: 5,
+        fill: { color: "#1E293B" },
+        rectRadius: 0.1,
+      });
+      s.addText(diagramData.code, {
+        x: 0.8, y: 1.6, w: 11.73, h: 4.6,
+        fontSize: 10, fontFace: "Fira Code, Courier New",
+        color: "#E2E8F0", valign: "top",
+      });
+      return;
+    }
+
+    // Render steps as horizontal cards
     const bodyY = 1.6;
+    const cardW = 3.5;
+    const cardGap = 0.3;
+    steps.slice(0, 3).forEach((step, i) => {
+      const cx = 0.8 + i * (cardW + cardGap);
+      const cy = bodyY;
 
-    flows.slice(0, 3).forEach((flow, fi) => {
-      const fy = bodyY + fi * 1.8;
-
-      s.addText(flow.name, {
-        x: 0.8, y: fy, w: 4, h: 0.35,
-        fontSize: 11, fontFace: theme.typography.family,
-        color: theme.colors.brandAccent, bold: true,
+      s.addShape(pptx.ShapeType.roundRect, {
+        x: cx, y: cy, w: cardW, h: 2.2,
+        fill: { color: theme.colors.bgSubtle },
+        line: { color: step.automated ? theme.colors.positive : theme.colors.border, width: step.automated ? 1.5 : 0.5 },
+        rectRadius: 0.08,
       });
 
-      if (flow.description) {
-        s.addText(flow.description, {
-          x: 0.8, y: fy + 0.3, w: 11.73, h: 0.3,
-          fontSize: 9, fontFace: theme.typography.family,
-          color: theme.colors.textLight, italic: true,
+      // Step number badge
+      s.addShape(pptx.ShapeType.ellipse, {
+        x: cx + 0.15, y: cy + 0.15, w: 0.4, h: 0.4,
+        fill: { color: theme.colors.brandAccent },
+      });
+      s.addText(`${i + 1}`, {
+        x: cx + 0.15, y: cy + 0.15, w: 0.4, h: 0.4,
+        fontSize: 12, fontFace: theme.typography.family,
+        color: theme.colors.white, bold: true, align: "center", valign: "middle",
+      });
+
+      // Automated badge
+      if (step.automated) {
+        s.addShape(pptx.ShapeType.roundRect, {
+          x: cx + cardW - 1.2, y: cy + 0.2, w: 1, h: 0.3,
+          fill: { color: theme.colors.positive, transparency: 80 },
+          rectRadius: 0.04,
+        });
+        s.addText("Automático", {
+          x: cx + cardW - 1.2, y: cy + 0.2, w: 1, h: 0.3,
+          fontSize: 7, fontFace: theme.typography.family,
+          color: theme.colors.positive, align: "center", valign: "middle",
         });
       }
 
-      const steps = flow.steps ?? [];
-      const stepW = 3.5;
-      const stepGap = 0.3;
-      steps.slice(0, 3).forEach((step, si) => {
-        const sx = 0.8 + si * (stepW + stepGap);
-        const sy = fy + 0.7;
-
-        s.addShape(pptx.ShapeType.roundRect, {
-          x: sx, y: sy, w: stepW, h: 0.8,
-          fill: { color: theme.colors.bgSubtle },
-          line: { color: theme.colors.border, width: 0.5 },
-          rectRadius: 0.06,
-        });
-        s.addShape(pptx.ShapeType.ellipse, {
-          x: sx + 0.1, y: sy + 0.2, w: 0.35, h: 0.35,
-          fill: { color: theme.colors.brandAccent },
-        });
-        s.addText(`${si + 1}`, {
-          x: sx + 0.1, y: sy + 0.2, w: 0.35, h: 0.35,
-          fontSize: 10, fontFace: theme.typography.family,
-          color: theme.colors.white, bold: true, align: "center", valign: "middle",
-        });
-        s.addText(step, {
-          x: sx + 0.55, y: sy + 0.1, w: stepW - 0.7, h: 0.6,
-          fontSize: 10, fontFace: theme.typography.family,
-          color: theme.colors.text, valign: "middle", lineSpacingMultiple: 1.2,
-        });
-
-        // Arrow between steps
-        if (si < steps.length - 1 && si < 2) {
-          s.addText("→", {
-            x: sx + stepW, y: sy + 0.15, w: stepGap, h: 0.5,
-            fontSize: 16, fontFace: theme.typography.family,
-            color: theme.colors.brandAccent, align: "center", valign: "middle",
-          });
-        }
+      s.addText(step.label, {
+        x: cx + 0.15, y: cy + 0.7, w: cardW - 0.3, h: 0.5,
+        fontSize: 12, fontFace: theme.typography.family,
+        color: theme.colors.text, bold: true, valign: "top",
       });
+
+      if (step.description) {
+        s.addText(String(step.description), {
+          x: cx + 0.15, y: cy + 1.2, w: cardW - 0.3, h: 0.8,
+          fontSize: 10, fontFace: theme.typography.family,
+          color: theme.colors.textLight, valign: "top", lineSpacingMultiple: 1.3,
+        });
+      }
+
+      // Arrow between steps
+      if (i < steps.length - 1 && i < 2) {
+        s.addText("→", {
+          x: cx + cardW, y: cy + 0.8, w: cardGap, h: 0.6,
+          fontSize: 18, fontFace: theme.typography.family,
+          color: theme.colors.brandAccent, align: "center", valign: "middle",
+        });
+      }
     });
   }
 
-  /* ── Feature Deep Dive — feature name + benefits + how it works ── */
+  /* ── Automations — automation cards + time saved ──────────── */
 
-  private featureDeepDiveSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
-    const s = pptx.addSlide({ masterName: "SIDEBAR_MASTER" });
-
-    this.addSectionTitle(s, pptx, slide.title, theme);
-
-    let bodyY = 1.6;
-
-    if (slide.featureName) {
-      s.addShape(pptx.ShapeType.roundRect, {
-        x: 0.8, y: bodyY, w: 4, h: 0.5,
-        fill: { color: theme.colors.brandAccent },
-        rectRadius: 0.06,
-      });
-      s.addText(slide.featureName, {
-        x: 0.95, y: bodyY + 0.05, w: 3.7, h: 0.4,
-        fontSize: 13, fontFace: theme.typography.family,
-        color: theme.colors.white, bold: true, valign: "middle",
-      });
-      bodyY += 0.7;
-    }
-
-    if (slide.description) {
-      s.addText(slide.description, {
-        x: 0.8, y: bodyY, w: 11.73, h: 0.8,
-        fontSize: theme.typography.bodySize, fontFace: theme.typography.family,
-        color: theme.colors.textLight, valign: "top", lineSpacingMultiple: 1.5,
-      });
-      bodyY += 1.0;
-    }
-
-    if (slide.benefits?.length) {
-      s.addText("Beneficios", {
-        x: 0.8, y: bodyY, w: 4, h: 0.3,
-        fontSize: 11, fontFace: theme.typography.family,
-        color: theme.colors.brandAccent, bold: true,
-      });
-      bodyY += 0.35;
-      const col1 = slide.benefits.slice(0, Math.ceil(slide.benefits.length / 2));
-      const col2 = slide.benefits.slice(Math.ceil(slide.benefits.length / 2));
-
-      const renderCol = (items: string[], startX: number, colW: number) => {
-        items.forEach((b, i) => {
-          s.addShape(pptx.ShapeType.ellipse, {
-            x: startX, y: bodyY + i * 0.45, w: 0.1, h: 0.1,
-            fill: { color: theme.colors.brandAccent },
-          });
-          s.addText(b, {
-            x: startX + 0.2, y: bodyY - 0.05 + i * 0.45, w: colW - 0.3, h: 0.35,
-            fontSize: 10, fontFace: theme.typography.family,
-            color: theme.colors.text, valign: "middle",
-          });
-        });
-      };
-
-      renderCol(col1, 0.8, 5.5);
-      if (col2.length) renderCol(col2, 6.8, 5.5);
-      bodyY += Math.max(col1.length, col2.length) * 0.45 + 0.2;
-    }
-
-    if (slide.howItWorks) {
-      s.addText("Cómo funciona", {
-        x: 0.8, y: bodyY, w: 4, h: 0.3,
-        fontSize: 11, fontFace: theme.typography.family,
-        color: theme.colors.brandAccent, bold: true,
-      });
-      s.addText(slide.howItWorks, {
-        x: 0.8, y: bodyY + 0.35, w: 11.73, h: 1.5,
-        fontSize: 10, fontFace: theme.typography.family,
-        color: theme.colors.text, valign: "top", lineSpacingMultiple: 1.5,
-      });
-    }
-  }
-
-  /* ── Chart Slide — wide layout with insights ─────────────── */
-
-  private chartSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme, charts: Map<string, string>): void {
+  private automationsSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme, charts: Map<string, string>): void {
     const s = pptx.addSlide({ masterName: "WIDE_MASTER" });
-
     this.addWideTitle(s, pptx, slide.title, theme);
 
-    const svg = charts.get(slide.id);
-    if (svg) {
-      s.addImage({ data: this.svgToDataUri(svg), x: 0.5, y: 1.3, w: 8.5, h: 5 });
-    } else {
-      this.chartFallbackTable(s, slide, theme, 1.3);
-    }
+    const automations = (slide.automations as { name: string; description?: string; timeSaved?: string }[]) ?? [];
 
-    if (slide.insights?.length) {
-      const insightsX = 9.3;
+    // Chart on left if present
+    const svg = charts.get(slide.id);
+    const contentX = svg ? 0.5 : 0.5;
+    const contentW = svg ? 6 : 12.33;
+
+    // Automation cards
+    const cardH = 1.3;
+    const cardGap = 0.2;
+    automations.slice(0, 4).forEach((auto, i) => {
+      const cy = 1.3 + i * (cardH + cardGap);
+
       s.addShape(pptx.ShapeType.roundRect, {
-        x: insightsX, y: 1.3, w: 3.5, h: 5,
+        x: contentX, y: cy, w: contentW, h: cardH,
         fill: { color: theme.colors.bgSubtle },
         line: { color: theme.colors.border, width: 0.5 },
         rectRadius: 0.08,
       });
-      s.addText("Insights", {
-        x: insightsX + 0.2, y: 1.45, w: 3, h: 0.35,
-        fontSize: 11, fontFace: theme.typography.family,
-        color: theme.colors.brandAccent, bold: true,
+      s.addShape(pptx.ShapeType.rect, {
+        x: contentX, y: cy, w: 0.06, h: cardH,
+        fill: { color: theme.colors.positive },
       });
-      slide.insights.slice(0, 5).forEach((ins, i) => {
-        s.addShape(pptx.ShapeType.ellipse, {
-          x: insightsX + 0.2, y: 2.0 + i * 0.7, w: 0.1, h: 0.1,
-          fill: { color: theme.colors.brandAccent },
-        });
-        s.addText(ins, {
-          x: insightsX + 0.4, y: 1.85 + i * 0.7, w: 3, h: 0.6,
+
+      s.addText(auto.name, {
+        x: contentX + 0.2, y: cy + 0.1, w: contentW - 0.4, h: 0.4,
+        fontSize: 12, fontFace: theme.typography.family,
+        color: theme.colors.text, bold: true, valign: "middle",
+      });
+
+      if (auto.description) {
+        s.addText(String(auto.description), {
+          x: contentX + 0.2, y: cy + 0.5, w: contentW - 1.5, h: 0.4,
           fontSize: 10, fontFace: theme.typography.family,
-          color: theme.colors.text, valign: "top", lineSpacingMultiple: 1.3,
-        });
-      });
-    }
-  }
-
-  /* ── Diagram Slide — wide layout ─────────────────────────── */
-
-  private diagramSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme, diagrams: Map<string, string>): void {
-    const s = pptx.addSlide({ masterName: "WIDE_MASTER" });
-
-    this.addWideTitle(s, pptx, slide.title, theme);
-
-    const svg = diagrams.get(slide.id);
-    if (svg) {
-      s.addImage({ data: this.svgToDataUri(svg), x: 0.5, y: 1.3, w: 12.33, h: 5.2 });
-    } else {
-      const diagramData = slide.diagramData as { code?: string } | undefined;
-      if (diagramData?.code) {
-        s.addShape(pptx.ShapeType.roundRect, {
-          x: 0.5, y: 1.3, w: 12.33, h: 5.2,
-          fill: { color: "#1E293B" },
-          rectRadius: 0.1,
-        });
-        s.addText(diagramData.code, {
-          x: 0.8, y: 1.5, w: 11.73, h: 4.8,
-          fontSize: 10, fontFace: "Fira Code, Courier New",
-          color: "#E2E8F0", valign: "top",
+          color: theme.colors.textLight, valign: "top",
         });
       }
-    }
-  }
 
-  /* ── Data Model — entities table + optional ER diagram ───── */
+      if (auto.timeSaved) {
+        s.addShape(pptx.ShapeType.roundRect, {
+          x: contentX + contentW - 1.5, y: cy + 0.5, w: 1.3, h: 0.35,
+          fill: { color: theme.colors.positive, transparency: 80 },
+          rectRadius: 0.04,
+        });
+        s.addText(String(auto.timeSaved), {
+          x: contentX + contentW - 1.5, y: cy + 0.5, w: 1.3, h: 0.35,
+          fontSize: 9, fontFace: theme.typography.family,
+          color: theme.colors.positive, bold: true, align: "center", valign: "middle",
+        });
+      }
+    });
 
-  private dataModelSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme, diagrams: Map<string, string>): void {
-    const s = pptx.addSlide({ masterName: "WIDE_MASTER" });
-
-    this.addWideTitle(s, pptx, slide.title, theme);
-
-    const entities = slide.entities ?? [];
-    const svg = diagrams.get(slide.id);
-
+    // Chart on right
     if (svg) {
-      s.addImage({ data: this.svgToDataUri(svg), x: 0.5, y: 1.3, w: 6, h: 5 });
-    }
-
-    if (entities.length) {
-      const tableX = svg ? 6.8 : 0.5;
-      const tableW = svg ? 5.5 : 12.33;
-
-      const headerRow = [
-        { text: "Entidad", options: { fill: { color: theme.colors.brandPrimary }, color: theme.colors.white, bold: true, fontSize: 10 } },
-        { text: "Campos", options: { fill: { color: theme.colors.brandPrimary }, color: theme.colors.white, bold: true, fontSize: 10 } },
-        { text: "Descripción", options: { fill: { color: theme.colors.brandPrimary }, color: theme.colors.white, bold: true, fontSize: 10 } },
-      ] as PptxGenJS.TableRow[number][];
-
-      const rows: PptxGenJS.TableRow[] = [
-        headerRow,
-        ...entities.map((e) => [
-          { text: e.name, options: { bold: true, fontSize: 9, color: theme.colors.text } },
-          { text: e.fields.join(", "), options: { fontSize: 8, color: theme.colors.textLight } },
-          { text: e.description ?? "", options: { fontSize: 8, color: theme.colors.textLight } },
-        ] as PptxGenJS.TableRow[number][]),
-      ];
-
-      s.addTable(rows, {
-        x: tableX, y: 1.3, w: tableW,
-        fontSize: 9, fontFace: theme.typography.family,
-        color: theme.colors.text,
-        border: { type: "solid", pt: 0.5, color: theme.colors.border },
-        colW: [tableW * 0.2, tableW * 0.45, tableW * 0.35],
-        autoPage: false,
-      });
+      s.addImage({ data: this.svgToDataUri(svg), x: 6.8, y: 1.3, w: 5.8, h: 5 });
     }
   }
 
-  /* ── Wireframe Slide ─────────────────────────────────────── */
+  /* ── Key Features — feature cards with benefit ────────────── */
 
-  private wireframeSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme, wireframes: Map<string, string>): void {
-    const s = pptx.addSlide({ masterName: "WIDE_MASTER" });
-
-    this.addWideTitle(s, pptx, slide.title, theme);
-
-    const svg = wireframes.get(slide.id);
-    if (svg) {
-      s.addImage({ data: this.svgToDataUri(svg), x: 1.5, y: 1.3, w: 10.33, h: 5.3 });
-    }
-  }
-
-  /* ── Integration Points — integration cards ──────────────── */
-
-  private integrationPointsSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
+  private keyFeaturesSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
     const s = pptx.addSlide({ masterName: "SIDEBAR_MASTER" });
-
     this.addSectionTitle(s, pptx, slide.title, theme);
 
-    const integrations = slide.integrations ?? [];
+    const features = (slide.features as { name: string; description?: string; benefit?: string }[]) ?? [];
     const bodyY = 1.6;
     const cardW = 3.6;
     const cardH = 2.2;
     const gap = 0.3;
-    const cols = Math.min(integrations.length, 3);
+    const cols = 3;
 
-    integrations.slice(0, 6).forEach((intg, i) => {
+    features.slice(0, 6).forEach((feat, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const cx = 0.8 + col * (cardW + gap);
@@ -575,184 +566,344 @@ export class EvdPptxService {
         x: cx, y: cy, w: cardW, h: 0.04,
         fill: { color: theme.colors.brandAccent },
       });
-      s.addText(intg.name, {
-        x: cx + 0.15, y: cy + 0.15, w: cardW - 0.3, h: 0.4,
+
+      // Number badge
+      s.addShape(pptx.ShapeType.ellipse, {
+        x: cx + 0.15, y: cy + 0.15, w: 0.35, h: 0.35,
+        fill: { color: theme.colors.brandAccent },
+      });
+      s.addText(`${i + 1}`, {
+        x: cx + 0.15, y: cy + 0.15, w: 0.35, h: 0.35,
+        fontSize: 10, fontFace: theme.typography.family,
+        color: theme.colors.white, bold: true, align: "center", valign: "middle",
+      });
+
+      s.addText(feat.name, {
+        x: cx + 0.6, y: cy + 0.15, w: cardW - 0.8, h: 0.35,
         fontSize: 12, fontFace: theme.typography.family,
         color: theme.colors.text, bold: true, valign: "middle",
       });
-      if (intg.type) {
-        s.addShape(pptx.ShapeType.roundRect, {
-          x: cx + 0.15, y: cy + 0.6, w: 1.2, h: 0.3,
-          fill: { color: theme.colors.brandAccent, transparency: 80 },
-          rectRadius: 0.04,
-        });
-        s.addText(intg.type, {
-          x: cx + 0.15, y: cy + 0.6, w: 1.2, h: 0.3,
-          fontSize: 8, fontFace: theme.typography.family,
-          color: theme.colors.brandAccent, align: "center", valign: "middle",
+
+      if (feat.description) {
+        s.addText(String(feat.description), {
+          x: cx + 0.15, y: cy + 0.6, w: cardW - 0.3, h: 0.7,
+          fontSize: 10, fontFace: theme.typography.family,
+          color: theme.colors.textLight, valign: "top", lineSpacingMultiple: 1.3,
         });
       }
-      if (intg.purpose) {
-        s.addText(intg.purpose, {
-          x: cx + 0.15, y: cy + 1.05, w: cardW - 0.3, h: 0.4,
-          fontSize: 9, fontFace: theme.typography.family,
-          color: theme.colors.textLight, valign: "top",
-        });
-      }
-      if (intg.provider) {
-        s.addText(`Provider: ${intg.provider}`, {
-          x: cx + 0.15, y: cy + 1.5, w: cardW - 0.3, h: 0.3,
-          fontSize: 8, fontFace: theme.typography.family,
-          color: theme.colors.textMuted, italic: true,
+
+      if (feat.benefit) {
+        s.addText([
+          { text: "Beneficio:  ", options: { bold: true, fontSize: 9, color: theme.colors.positive } },
+          { text: String(feat.benefit), options: { fontSize: 9, color: theme.colors.textLight } },
+        ], {
+          x: cx + 0.15, y: cy + 1.4, w: cardW - 0.3, h: 0.6,
+          fontFace: theme.typography.family, valign: "top", lineSpacingMultiple: 1.3,
         });
       }
     });
   }
 
-  /* ── Security Model — auth method + roles + data protection ── */
+  /* ── Data Overview — data types table + optional flows ────── */
 
-  private securityModelSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
+  private dataOverviewSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
+    const s = pptx.addSlide({ masterName: "WIDE_MASTER" });
+    this.addWideTitle(s, pptx, slide.title, theme);
+
+    const dataTypes = (slide.dataTypes as { name: string; description?: string; sensitivity?: string }[]) ?? [];
+    const flows = (slide.flows as { from: string; to: string; description?: string }[]) ?? [];
+
+    // Data types table
+    if (dataTypes.length) {
+      const sensitivityColors: Record<string, string> = {
+        high: theme.colors.negative,
+        medium: theme.colors.highlight,
+        low: theme.colors.positive,
+      };
+
+      const headerRow = [
+        { text: "Tipo de dato", options: { fill: { color: theme.colors.brandPrimary }, color: theme.colors.white, bold: true, fontSize: 10 } },
+        { text: "Descripción", options: { fill: { color: theme.colors.brandPrimary }, color: theme.colors.white, bold: true, fontSize: 10 } },
+        { text: "Sensibilidad", options: { fill: { color: theme.colors.brandPrimary }, color: theme.colors.white, bold: true, fontSize: 10 } },
+      ] as PptxGenJS.TableRow[number][];
+
+      const rows: PptxGenJS.TableRow[] = [
+        headerRow,
+        ...dataTypes.map((dt) => [
+          { text: dt.name, options: { bold: true, fontSize: 10, color: theme.colors.text } },
+          { text: dt.description ?? "", options: { fontSize: 9, color: theme.colors.textLight } },
+          { text: dt.sensitivity ?? "low", options: { fontSize: 9, color: sensitivityColors[dt.sensitivity ?? "low"] ?? theme.colors.text, bold: true } },
+        ] as PptxGenJS.TableRow[number][]),
+      ];
+
+      s.addTable(rows, {
+        x: 0.5, y: 1.3, w: flows.length ? 6 : 12.33,
+        fontSize: 10, fontFace: theme.typography.family,
+        color: theme.colors.text,
+        border: { type: "solid", pt: 0.5, color: theme.colors.border },
+        colW: [2, 3, 1.5],
+        autoPage: false,
+      });
+    }
+
+    // Data flows
+    if (flows.length) {
+      const flowsX = dataTypes.length ? 6.8 : 0.5;
+      const flowsW = dataTypes.length ? 5.5 : 12.33;
+
+      s.addText("Flujos de datos", {
+        x: flowsX, y: 1.3, w: flowsW, h: 0.35,
+        fontSize: 12, fontFace: theme.typography.family,
+        color: theme.colors.brandAccent, bold: true,
+      });
+
+      flows.slice(0, 5).forEach((flow, i) => {
+        const cy = 1.8 + i * 0.8;
+        s.addText([
+          { text: `${flow.from}`, options: { bold: true, fontSize: 10, color: theme.colors.brandAccent } },
+          { text: "  →  ", options: { fontSize: 10, color: theme.colors.highlight } },
+          { text: `${flow.to}`, options: { bold: true, fontSize: 10, color: theme.colors.brandAccent } },
+        ], {
+          x: flowsX, y: cy, w: flowsW, h: 0.3,
+          fontFace: theme.typography.family,
+        });
+        if (flow.description) {
+          s.addText(String(flow.description), {
+            x: flowsX, y: cy + 0.3, w: flowsW, h: 0.3,
+            fontSize: 9, fontFace: theme.typography.family,
+            color: theme.colors.textLight,
+          });
+        }
+      });
+    }
+  }
+
+  /* ── Integrations — integration cards with direction ──────── */
+
+  private integrationsSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
     const s = pptx.addSlide({ masterName: "SIDEBAR_MASTER" });
+    this.addSectionTitle(s, pptx, slide.title, theme);
 
+    const integrations = (slide.integrations as { name: string; purpose?: string; direction?: string }[]) ?? [];
+    const bodyY = 1.6;
+    const cardW = 3.6;
+    const cardH = 1.8;
+    const gap = 0.3;
+    const cols = 3;
+
+    const directionIcons: Record<string, string> = {
+      inbound: "←",
+      outbound: "→",
+      bidirectional: "↔",
+    };
+    const directionColors: Record<string, string> = {
+      inbound: theme.colors.brandAccent,
+      outbound: theme.colors.positive,
+      bidirectional: theme.colors.highlight,
+    };
+
+    integrations.slice(0, 6).forEach((intg, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const cx = 0.8 + col * (cardW + gap);
+      const cy = bodyY + row * (cardH + gap);
+
+      s.addShape(pptx.ShapeType.roundRect, {
+        x: cx, y: cy, w: cardW, h: cardH,
+        fill: { color: theme.colors.bgSubtle },
+        line: { color: theme.colors.border, width: 0.5 },
+        rectRadius: 0.08,
+      });
+      s.addShape(pptx.ShapeType.rect, {
+        x: cx, y: cy, w: cardW, h: 0.04,
+        fill: { color: directionColors[intg.direction ?? "outbound"] ?? theme.colors.brandAccent },
+      });
+
+      s.addText(intg.name, {
+        x: cx + 0.15, y: cy + 0.15, w: cardW - 0.3, h: 0.4,
+        fontSize: 12, fontFace: theme.typography.family,
+        color: theme.colors.text, bold: true, valign: "middle",
+      });
+
+      // Direction badge
+      const dir = intg.direction ?? "outbound";
+      s.addShape(pptx.ShapeType.roundRect, {
+        x: cx + 0.15, y: cy + 0.6, w: 1.4, h: 0.3,
+        fill: { color: directionColors[dir] ?? theme.colors.brandAccent, transparency: 80 },
+        rectRadius: 0.04,
+      });
+      s.addText(`${directionIcons[dir] ?? "→"} ${dir}`, {
+        x: cx + 0.15, y: cy + 0.6, w: 1.4, h: 0.3,
+        fontSize: 8, fontFace: theme.typography.family,
+        color: directionColors[dir] ?? theme.colors.brandAccent, align: "center", valign: "middle",
+      });
+
+      if (intg.purpose) {
+        s.addText(String(intg.purpose), {
+          x: cx + 0.15, y: cy + 1.05, w: cardW - 0.3, h: 0.6,
+          fontSize: 10, fontFace: theme.typography.family,
+          color: theme.colors.textLight, valign: "top", lineSpacingMultiple: 1.3,
+        });
+      }
+    });
+  }
+
+  /* ── Security Access — roles + permissions + data protection ── */
+
+  private securityAccessSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
+    const s = pptx.addSlide({ masterName: "SIDEBAR_MASTER" });
     this.addSectionTitle(s, pptx, slide.title, theme);
 
     let bodyY = 1.6;
+    const roles = (slide.roles as { name: string; permissions?: string[] }[]) ?? [];
 
-    if (slide.authMethod) {
-      s.addShape(pptx.ShapeType.roundRect, {
-        x: 0.8, y: bodyY, w: 5, h: 0.6,
-        fill: { color: theme.colors.brandAccent, transparency: 85 },
-        line: { color: theme.colors.brandAccent, width: 1 },
-        rectRadius: 0.08,
-      });
-      s.addText([
-        { text: "Autenticación:  ", options: { bold: true, fontSize: 11, color: theme.colors.brandAccent } },
-        { text: slide.authMethod, options: { fontSize: 11, color: theme.colors.text } },
-      ], {
-        x: 1, y: bodyY + 0.05, w: 4.6, h: 0.5,
-        fontFace: theme.typography.family, valign: "middle",
-      });
-      bodyY += 0.9;
-    }
-
-    if (slide.roles?.length) {
-      s.addText("Roles del sistema", {
-        x: 0.8, y: bodyY, w: 4, h: 0.3,
-        fontSize: 11, fontFace: theme.typography.family,
+    if (roles.length) {
+      s.addText("Roles y permisos", {
+        x: 0.8, y: bodyY, w: 4, h: 0.35,
+        fontSize: 12, fontFace: theme.typography.family,
         color: theme.colors.brandAccent, bold: true,
       });
-      bodyY += 0.35;
-      slide.roles.forEach((role, i) => {
+      bodyY += 0.4;
+
+      roles.slice(0, 4).forEach((role, i) => {
+        const cardW = 5.5;
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const cx = 0.8 + col * (cardW + 0.3);
+        const cy = bodyY + row * 1.2;
+
         s.addShape(pptx.ShapeType.roundRect, {
-          x: 0.8 + i * 2.2, y: bodyY, w: 2, h: 0.4,
+          x: cx, y: cy, w: cardW, h: 1,
           fill: { color: theme.colors.bgSubtle },
           line: { color: theme.colors.border, width: 0.5 },
           rectRadius: 0.06,
         });
-        s.addText(role, {
-          x: 0.8 + i * 2.2, y: bodyY, w: 2, h: 0.4,
-          fontSize: 10, fontFace: theme.typography.family,
-          color: theme.colors.text, align: "center", valign: "middle",
+        s.addShape(pptx.ShapeType.ellipse, {
+          x: cx + 0.15, y: cy + 0.15, w: 0.35, h: 0.35,
+          fill: { color: theme.colors.brandAccent },
         });
+        s.addText(role.name, {
+          x: cx + 0.6, y: cy + 0.1, w: cardW - 0.8, h: 0.4,
+          fontSize: 11, fontFace: theme.typography.family,
+          color: theme.colors.text, bold: true, valign: "middle",
+        });
+
+        if (role.permissions?.length) {
+          s.addText(role.permissions.join(" · "), {
+            x: cx + 0.15, y: cy + 0.55, w: cardW - 0.3, h: 0.4,
+            fontSize: 9, fontFace: theme.typography.family,
+            color: theme.colors.textLight, valign: "top",
+          });
+        }
       });
-      bodyY += 0.7;
+      bodyY += Math.ceil(roles.length / 2) * 1.2 + 0.2;
     }
 
-    if (slide.dataProtection?.length) {
+    const dataProtection = (slide.dataProtection as string[]) ?? [];
+    if (dataProtection.length) {
       s.addText("Protección de datos", {
         x: 0.8, y: bodyY, w: 4, h: 0.3,
-        fontSize: 11, fontFace: theme.typography.family,
+        fontSize: 12, fontFace: theme.typography.family,
         color: theme.colors.brandAccent, bold: true,
       });
-      this.addBullets(slide.dataProtection, theme, 0.8, bodyY + 0.35, 11.73, s);
+      this.addBullets(dataProtection, theme, 0.8, bodyY + 0.35, 11.73, s);
     }
   }
 
-  /* ── Deployment Plan — environment + phases + CI/CD ──────── */
+  /* ── Rollout Plan — phases + success criteria ─────────────── */
 
-  private deploymentPlanSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
-    const s = pptx.addSlide({ masterName: "SIDEBAR_MASTER" });
+  private rolloutPlanSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
+    const s = pptx.addSlide({ masterName: "WIDE_MASTER" });
+    this.addWideTitle(s, pptx, slide.title, theme);
 
-    this.addSectionTitle(s, pptx, slide.title, theme);
+    const phases = (slide.phases as { label: string; description?: string; duration?: string }[]) ?? [];
+    const bodyY = 1.3;
 
-    let bodyY = 1.6;
-
-    if (slide.environment) {
-      s.addShape(pptx.ShapeType.roundRect, {
-        x: 0.8, y: bodyY, w: 5, h: 0.6,
-        fill: { color: theme.colors.brandAccent, transparency: 85 },
-        line: { color: theme.colors.brandAccent, width: 1 },
-        rectRadius: 0.08,
-      });
-      s.addText([
-        { text: "Entorno:  ", options: { bold: true, fontSize: 11, color: theme.colors.brandAccent } },
-        { text: slide.environment, options: { fontSize: 11, color: theme.colors.text } },
-      ], {
-        x: 1, y: bodyY + 0.05, w: 4.6, h: 0.5,
-        fontFace: theme.typography.family, valign: "middle",
-      });
-      bodyY += 0.9;
-    }
-
-    const phases = slide.phases ?? [];
     if (phases.length) {
-      const phaseW = 3.5;
-      const phaseGap = 0.3;
-      phases.slice(0, 4).forEach((phase, i) => {
-        const px = 0.8 + i * (phaseW + phaseGap);
+      const phaseW = Math.min(3.5, (12.33 - 0.3 * (phases.length - 1)) / phases.length);
+      const totalW = phases.length * phaseW + (phases.length - 1) * 0.3;
+      const startX = (13.33 - totalW) / 2;
+
+      phases.slice(0, 5).forEach((phase, i) => {
+        const px = startX + i * (phaseW + 0.3);
+
         s.addShape(pptx.ShapeType.roundRect, {
-          x: px, y: bodyY, w: phaseW, h: 1.4,
+          x: px, y: bodyY, w: phaseW, h: 3.5,
           fill: { color: theme.colors.bgSubtle },
           line: { color: theme.colors.border, width: 0.5 },
           rectRadius: 0.08,
         });
+        s.addShape(pptx.ShapeType.rect, {
+          x: px, y: bodyY, w: phaseW, h: 0.04,
+          fill: { color: theme.colors.brandAccent },
+        });
+
+        // Phase number
         s.addShape(pptx.ShapeType.ellipse, {
-          x: px + 0.15, y: bodyY + 0.15, w: 0.35, h: 0.35,
+          x: px + 0.15, y: bodyY + 0.2, w: 0.4, h: 0.4,
           fill: { color: theme.colors.brandAccent },
         });
         s.addText(`${i + 1}`, {
-          x: px + 0.15, y: bodyY + 0.15, w: 0.35, h: 0.35,
-          fontSize: 10, fontFace: theme.typography.family,
+          x: px + 0.15, y: bodyY + 0.2, w: 0.4, h: 0.4,
+          fontSize: 12, fontFace: theme.typography.family,
           color: theme.colors.white, bold: true, align: "center", valign: "middle",
         });
+
         s.addText(phase.label, {
-          x: px + 0.6, y: bodyY + 0.15, w: phaseW - 0.8, h: 0.35,
-          fontSize: 11, fontFace: theme.typography.family,
+          x: px + 0.65, y: bodyY + 0.2, w: phaseW - 0.85, h: 0.4,
+          fontSize: 12, fontFace: theme.typography.family,
           color: theme.colors.text, bold: true, valign: "middle",
         });
+
+        if (phase.duration) {
+          s.addShape(pptx.ShapeType.roundRect, {
+            x: px + 0.15, y: bodyY + 0.75, w: 1.4, h: 0.25,
+            fill: { color: theme.colors.highlight, transparency: 80 },
+            rectRadius: 0.04,
+          });
+          s.addText(String(phase.duration), {
+            x: px + 0.15, y: bodyY + 0.75, w: 1.4, h: 0.25,
+            fontSize: 8, fontFace: theme.typography.family,
+            color: theme.colors.highlight, align: "center", valign: "middle",
+          });
+        }
+
         if (phase.description) {
-          s.addText(phase.description, {
-            x: px + 0.15, y: bodyY + 0.6, w: phaseW - 0.3, h: 0.6,
-            fontSize: 9, fontFace: theme.typography.family,
-            color: theme.colors.textLight, valign: "top", lineSpacingMultiple: 1.3,
+          s.addText(String(phase.description), {
+            x: px + 0.15, y: bodyY + 1.15, w: phaseW - 0.3, h: 2,
+            fontSize: 10, fontFace: theme.typography.family,
+            color: theme.colors.textLight, valign: "top", lineSpacingMultiple: 1.4,
           });
         }
       });
-      bodyY += 1.7;
     }
 
-    if (slide.ciCd) {
-      s.addText("CI/CD", {
-        x: 0.8, y: bodyY, w: 4, h: 0.3,
+    // Success criteria
+    const criteria = (slide.successCriteria as string[]) ?? [];
+    if (criteria.length) {
+      const critY = bodyY + 3.8;
+      s.addShape(pptx.ShapeType.roundRect, {
+        x: 0.5, y: critY, w: 12.33, h: 0.4 + criteria.length * 0.35,
+        fill: { color: theme.colors.positive, transparency: 92 },
+        line: { color: theme.colors.positive, width: 0.5 },
+        rectRadius: 0.06,
+      });
+      s.addText("Criterios de éxito", {
+        x: 0.7, y: critY + 0.05, w: 4, h: 0.3,
         fontSize: 11, fontFace: theme.typography.family,
-        color: theme.colors.brandAccent, bold: true,
+        color: theme.colors.positive, bold: true,
       });
-      s.addText(slide.ciCd, {
-        x: 0.8, y: bodyY + 0.35, w: 11.73, h: 0.5,
-        fontSize: 10, fontFace: "Fira Code, Courier New",
-        color: theme.colors.text, valign: "top",
-      });
+      this.addBullets(criteria, theme, 0.7, critY + 0.35, 11.93, s);
     }
   }
 
-  /* ── Timeline Slide ──────────────────────────────────────── */
+  /* ── Timeline — horizontal milestone line ────────────────── */
 
   private timelineSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
     const s = pptx.addSlide({ masterName: "WIDE_MASTER" });
-
     this.addWideTitle(s, pptx, slide.title, theme);
 
-    const milestones = slide.milestones ?? [];
+    const milestones = (slide.milestones as { label: string; date?: string; description?: string }[]) ?? [];
     if (!milestones.length) return;
 
     const lineY = 3.4;
@@ -777,11 +928,13 @@ export class EvdPptxService {
         fill: { color: theme.colors.brandAccent },
       });
 
-      s.addText(m.date, {
-        x: cx - 1, y: lineY - 1.1, w: 2, h: 0.35,
-        fontSize: 11, fontFace: theme.typography.family,
-        color: theme.colors.brandAccent, bold: true, align: "center",
-      });
+      if (m.date) {
+        s.addText(m.date, {
+          x: cx - 1, y: lineY - 1.1, w: 2, h: 0.35,
+          fontSize: 11, fontFace: theme.typography.family,
+          color: theme.colors.brandAccent, bold: true, align: "center",
+        });
+      }
 
       const textY = lineY + 0.5;
 
@@ -798,12 +951,14 @@ export class EvdPptxService {
         color: theme.colors.text, bold: true, align: "center",
       });
 
-      s.addText(m.description, {
-        x: cx - 0.85, y: textY + 0.5, w: 1.7, h: 0.9,
-        fontSize: 9, fontFace: theme.typography.family,
-        color: theme.colors.textLight, align: "center", valign: "top",
-        lineSpacingMultiple: 1.3,
-      });
+      if (m.description) {
+        s.addText(String(m.description), {
+          x: cx - 0.85, y: textY + 0.5, w: 1.7, h: 0.9,
+          fontSize: 9, fontFace: theme.typography.family,
+          color: theme.colors.textLight, align: "center", valign: "top",
+          lineSpacingMultiple: 1.3,
+        });
+      }
     });
   }
 
@@ -824,7 +979,7 @@ export class EvdPptxService {
     });
 
     if (slide.description) {
-      s.addText(slide.description, {
+      s.addText(String(slide.description), {
         x: 2, y: 3.9, w: 9.33, h: 1,
         fontSize: 15, fontFace: theme.typography.family,
         color: lighten(theme.colors.white, 0.75), align: "center",
@@ -833,7 +988,7 @@ export class EvdPptxService {
     }
 
     if (slide.contactInfo) {
-      s.addText(slide.contactInfo, {
+      s.addText(String(slide.contactInfo), {
         x: 3, y: 5.2, w: 7.33, h: 0.6,
         fontSize: 12, fontFace: theme.typography.family,
         color: lighten(theme.colors.white, 0.5), align: "center",
@@ -841,15 +996,21 @@ export class EvdPptxService {
     }
   }
 
-  /* ── Default Slide ────────────────────────────────────────── */
+  /* ── Default / Fallback Slide ────────────────────────────── */
 
   private defaultSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
     const s = pptx.addSlide({ masterName: "SIDEBAR_MASTER" });
-
     this.addSectionTitle(s, pptx, slide.title, theme);
 
-    if (slide.bullets?.length) {
-      this.addBullets(slide.bullets, theme, 0.8, 1.6, 11.73, s);
+    const bullets = (slide.bullets as string[]) ?? [];
+    if (bullets.length) {
+      this.addBullets(bullets, theme, 0.8, 1.6, 11.73, s);
+    } else if (slide.description) {
+      s.addText(String(slide.description), {
+        x: 0.8, y: 1.6, w: 11.73, h: 4,
+        fontSize: theme.typography.bodySize + 1, fontFace: theme.typography.family,
+        color: theme.colors.textLight, valign: "top", lineSpacingMultiple: 1.5,
+      });
     }
   }
 
@@ -898,30 +1059,30 @@ export class EvdPptxService {
     });
   }
 
-  private chartFallbackTable(s: ReturnType<PptxGenJS["addSlide"]>, slide: EvdSlide, theme: EvdDesignTheme, startY: number): void {
-    const chartData = slide.chartData as { labels?: string[]; datasets?: { label: string; values: number[] }[] } | undefined;
-    if (!chartData?.labels?.length || !chartData.datasets?.length) return;
-
-    const labels = chartData.labels;
-    const headerRow = [{ text: "", options: { fill: { color: theme.colors.brandPrimary }, color: theme.colors.white, bold: true } },
-      ...labels.map((l) => ({ text: l, options: { fill: { color: theme.colors.brandPrimary }, color: theme.colors.white, bold: true } })),
-    ] as PptxGenJS.TableRow[number][];
-
-    const rows: PptxGenJS.TableRow[] = [
-      headerRow,
-      ...chartData.datasets.map((ds) => [
-        { text: ds.label, options: { bold: true, color: theme.colors.text } },
-        ...ds.values.map((v) => ({ text: String(v), options: {} })),
-      ] as PptxGenJS.TableRow[number][]),
-    ];
-
-    s.addTable(rows, {
-      x: 0.5, y: startY, w: 12.33,
-      fontSize: 10, fontFace: theme.typography.family,
-      color: theme.colors.text,
-      border: { type: "solid", pt: 0.5, color: theme.colors.border },
-      colW: [3, ...labels.map(() => (11.33 / labels.length))],
-      autoPage: false,
+  private addNumberedList(
+    items: string[],
+    theme: EvdDesignTheme,
+    x: number, y: number, w: number,
+    s: ReturnType<PptxGenJS["addSlide"]>,
+    accentColor: string,
+    pptx: PptxGenJS,
+  ): void {
+    items.slice(0, 6).forEach((item, i) => {
+      const iy = y + i * 0.7;
+      s.addShape(pptx.ShapeType.ellipse, {
+        x, y: iy + 0.05, w: 0.3, h: 0.3,
+        fill: { color: accentColor },
+      });
+      s.addText(`${i + 1}`, {
+        x, y: iy + 0.05, w: 0.3, h: 0.3,
+        fontSize: 10, fontFace: theme.typography.family,
+        color: theme.colors.white, bold: true, align: "center", valign: "middle",
+      });
+      s.addText(item, {
+        x: x + 0.4, y: iy, w: w - 0.4, h: 0.5,
+        fontSize: 11, fontFace: theme.typography.family,
+        color: theme.colors.text, valign: "middle", lineSpacingMultiple: 1.3,
+      });
     });
   }
 
