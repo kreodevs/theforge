@@ -2726,11 +2726,12 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
   /** Executive Vision Deck — genera JSON de presentación ejecutiva visual. */
   async generateEVD(projectId: string): Promise<void> {
     const project = await this.assertProjectAccess(projectId);
+    const primaryStage = pickPrimaryStage(project.stages);
 
     const evdJsonStr = await this.ai.generateEVDJSON({
-      mddContent: project.mddContent,
+      mddContent: primaryStage?.mddContent ?? null,
       specContent: project.specContent,
-      benchmarkContent: project.benchmarkContent,
+      benchmarkContent: project.dbgaContent,
       blueprintContent: project.blueprintContent,
     });
 

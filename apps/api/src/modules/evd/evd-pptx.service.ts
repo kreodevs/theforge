@@ -1,4 +1,5 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
+import type PptxGenJS from "pptxgenjs";
 import type { EvdDesignTheme } from "./evd-design-system.js";
 import { buildTheme } from "./evd-design-system.js";
 
@@ -35,7 +36,6 @@ export interface EvdDeck {
 
 @Injectable()
 export class EvdPptxService {
-  private readonly logger = new Logger(EvdPptxService.name);
 
   async generatePPTX(
     deck: EvdDeck,
@@ -44,8 +44,9 @@ export class EvdPptxService {
     renderedWireframes: Map<string, string> = new Map(),
     logoBuffer?: Buffer | null,
   ): Promise<Buffer> {
-    const pptxgen = (await import("pptxgenjs")).default;
-    const pptx = new pptxgen();
+    const PptxGenJSModule = await import("pptxgenjs");
+    const PptxGenJSClass = PptxGenJSModule.default as unknown as new () => PptxGenJS;
+    const pptx = new PptxGenJSClass();
 
     const theme = buildTheme(deck.branding as Record<string, unknown> | null);
 
@@ -64,10 +65,10 @@ export class EvdPptxService {
     }
 
     const buffer = await pptx.write({ outputType: "nodebuffer" });
-    return Buffer.from(buffer);
+    return buffer as Buffer;
   }
 
-  private defineMasters(pptx: ReturnType<typeof import("pptxgenjs").default>, theme: EvdDesignTheme, logoBuffer?: Buffer | null): void {
+  private defineMasters(pptx: PptxGenJS, theme: EvdDesignTheme, _logoBuffer?: Buffer | null): void {
     // Cover master
     pptx.defineSlideMaster({
       title: "COVER_MASTER",
@@ -99,13 +100,13 @@ export class EvdPptxService {
   }
 
   private addSlide(
-    pptx: ReturnType<typeof import("pptxgenjs").default>,
+    pptx: PptxGenJS,
     slide: EvdSlide,
     theme: EvdDesignTheme,
     charts: Map<string, string>,
     diagrams: Map<string, string>,
     wireframes: Map<string, string>,
-    logoBuffer?: Buffer | null,
+    _logoBuffer?: Buffer | null,
   ): void {
     const type = slide.type?.toLowerCase() ?? "narrative";
 
@@ -145,15 +146,16 @@ export class EvdPptxService {
 
     // Add speaker notes to the last added slide
     if (slide.speakerNotes) {
-      const slides = pptx.slides;
-      const lastSlide = slides[slides.length - 1];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const slides = (pptx as any).slides as PptxGenJS.Slide[] | undefined;
+      const lastSlide = slides?.[slides.length - 1];
       if (lastSlide) {
         lastSlide.addNotes(slide.speakerNotes);
       }
     }
   }
 
-  private coverSlide(pptx: ReturnType<typeof import("pptxgenjs").default>, slide: EvdSlide, theme: EvdDesignTheme): void {
+  private coverSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
     const s = pptx.addSlide({ masterName: "COVER_MASTER" });
 
     s.addText(slide.title ?? "", {
@@ -171,7 +173,7 @@ export class EvdPptxService {
     }
   }
 
-  private textSlide(pptx: ReturnType<typeof import("pptxgenjs").default>, slide: EvdSlide, theme: EvdDesignTheme, type: string): void {
+  private textSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme, type: string): void {
     const s = pptx.addSlide({ masterName: "CONTENT_MASTER" });
 
     // Title
@@ -248,7 +250,7 @@ export class EvdPptxService {
     }
   }
 
-  private chartSlide(pptx: ReturnType<typeof import("pptxgenjs").default>, slide: EvdSlide, theme: EvdDesignTheme, charts: Map<string, string>): void {
+  private chartSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme, charts: Map<string, string>): void {
     const s = pptx.addSlide({ masterName: "CONTENT_MASTER" });
 
     s.addText(slide.title ?? "", {
@@ -273,26 +275,27 @@ export class EvdPptxService {
     }
   }
 
-  private chartFallbackTable(s: ReturnType<ReturnType<typeof import("pptxgenjs").default>["addSlide"]>, slide: EvdSlide, theme: EvdDesignTheme, startY: number): void {
+  private chartFallbackTable(s: ReturnType<PptxGenJS["addSlide"]>, slide: EvdSlide, theme: EvdDesignTheme, startY: number): void {
     const chartData = slide.chartData as { labels?: string[]; datasets?: { label: string; values: number[] }[] } | undefined;
     if (!chartData?.labels?.length || !chartData.datasets?.length) return;
 
-    const rows: string[][] = [
-      ["", ...chartData.labels],
+    const labels = chartData.labels;
+    const rows = [
+      ["", ...labels],
       ...chartData.datasets.map((ds) => [ds.label, ...ds.values.map(String)]),
-    ];
+    ] as PptxGenJS.TableRow[];
 
     s.addTable(rows, {
       x: 0.5, y: startY, w: 12.33,
       fontSize: 10, fontFace: theme.typography.family,
       color: theme.colors.text,
       border: { type: "solid", pt: 0.5, color: theme.colors.border },
-      colW: [3, ...chartData.labels.map(() => (11.33 / chartData.labels.length))],
+      colW: [3, ...labels.map(() => (11.33 / labels.length))],
       autoPage: false,
     });
   }
 
-  private diagramSlide(pptx: ReturnType<typeof import("pptxgenjs").default>, slide: EvdSlide, theme: EvdDesignTheme, diagrams: Map<string, string>): void {
+  private diagramSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme, diagrams: Map<string, string>): void {
     const s = pptx.addSlide({ masterName: "CONTENT_MASTER" });
 
     s.addText(slide.title ?? "", {
@@ -323,7 +326,7 @@ export class EvdPptxService {
     }
   }
 
-  private wireframeSlide(pptx: ReturnType<typeof import("pptxgenjs").default>, slide: EvdSlide, theme: EvdDesignTheme, wireframes: Map<string, string>): void {
+  private wireframeSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme, wireframes: Map<string, string>): void {
     const s = pptx.addSlide({ masterName: "CONTENT_MASTER" });
 
     s.addText(slide.title ?? "", {
@@ -338,7 +341,7 @@ export class EvdPptxService {
     }
   }
 
-  private timelineSlide(pptx: ReturnType<typeof import("pptxgenjs").default>, slide: EvdSlide, theme: EvdDesignTheme): void {
+  private timelineSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
     const s = pptx.addSlide({ masterName: "CONTENT_MASTER" });
 
     s.addText(slide.title ?? "", {
@@ -392,7 +395,7 @@ export class EvdPptxService {
     });
   }
 
-  private teamSlide(pptx: ReturnType<typeof import("pptxgenjs").default>, slide: EvdSlide, theme: EvdDesignTheme): void {
+  private teamSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
     const s = pptx.addSlide({ masterName: "CONTENT_MASTER" });
 
     s.addText(slide.title ?? "", {
@@ -446,7 +449,7 @@ export class EvdPptxService {
     });
   }
 
-  private ctaSlide(pptx: ReturnType<typeof import("pptxgenjs").default>, slide: EvdSlide, theme: EvdDesignTheme): void {
+  private ctaSlide(pptx: PptxGenJS, slide: EvdSlide, theme: EvdDesignTheme): void {
     const s = pptx.addSlide({ masterName: "COVER_MASTER" });
 
     s.addText(slide.title ?? "Próximos Pasos", {

@@ -90,7 +90,7 @@ function ChartSvg({
   const w = 480;
   const h = 220;
   const pad = 36;
-  const allVals = chart.datasets.flatMap((ds) => ds.values);
+  const allVals = chart.datasets.flatMap((ds: { values: number[] }) => ds.values);
   const maxVal = Math.max(...allVals, 1) * 1.1;
   const isPie = chart.chartType === "pie" || chart.chartType === "doughnut";
   const isRadar = chart.chartType === "radar";

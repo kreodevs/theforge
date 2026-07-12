@@ -24,17 +24,19 @@ export class EvdDiagramService {
 
       await writeFile(inputFile, mermaidCode, "utf-8");
 
-      await run(inputFile, outputFile, {
-        mermaidConfig: {
-          theme: "base",
-          themeVariables: mermaidTheme,
-          flowchart: {
-            curve: "basis",
-            padding: 20,
-            nodeSpacing: 50,
-            rankSpacing: 60,
-            useMaxWidth: true,
-            htmlLabels: true,
+      await run(inputFile, outputFile as `${string}.svg`, {
+        parseMMDOptions: {
+          mermaidConfig: {
+            theme: "base",
+            themeVariables: mermaidTheme,
+            flowchart: {
+              curve: "basis",
+              padding: 20,
+              nodeSpacing: 50,
+              rankSpacing: 60,
+              useMaxWidth: true,
+              htmlLabels: true,
+            },
           },
         },
         puppeteerConfig: {
