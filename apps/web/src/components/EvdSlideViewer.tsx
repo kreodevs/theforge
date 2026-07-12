@@ -52,7 +52,7 @@ function barPath(
 ): string {
   if (maxVal === 0) return "";
   const n = values.length;
-  const totalW = n * barW + (n - 1) * gap;
+  const _totalW = n * barW + (n - 1) * gap;
   let d = "";
   values.forEach((v, i) => {
     const x = pad + i * (barW + gap);
@@ -252,7 +252,7 @@ function WireframeBox({ c }: { c: EvdWireframeComponent }) {
 
 function WireframeRenderer({
   components,
-  layout,
+  layout: _layout,
   columns,
 }: {
   components: EvdWireframeComponent[];
@@ -406,11 +406,11 @@ function GenericSlideView({
         <div className="overflow-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-3">
           <MermaidBlockErrorBoundary
             content={slide.diagramData.code}
-            blockKey={mermaidKey(`evd-${slide.id}`, slide.diagramData.code)}
+            blockKey={mermaidKey(`evd-${slide.id}`)}
           >
             <MermaidDiagramBlock
               content={slide.diagramData.code}
-              blockKey={mermaidKey(`evd-${slide.id}`, slide.diagramData.code)}
+              blockKey={mermaidKey(`evd-${slide.id}`)}
             />
           </MermaidBlockErrorBoundary>
         </div>

@@ -43,7 +43,7 @@ export function EvdBrandingDialog({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const updateColor = useCallback((key: keyof EvdBranding, value: string) => {
-    setBranding((prev) => ({ ...prev, [key]: value }));
+    setBranding((prev: EvdBranding) => ({ ...prev, [key]: value }));
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -72,7 +72,7 @@ export function EvdBrandingDialog({
         body: form,
       });
       if (res.ok) {
-        setBranding((prev) => ({
+        setBranding((prev: EvdBranding) => ({
           ...prev,
           logoUrl: `${API_BASE}/evd/${projectId}/logo?t=${Date.now()}`,
         }));
@@ -84,7 +84,7 @@ export function EvdBrandingDialog({
   }, [projectId]);
 
   const handleRemoveLogo = useCallback(() => {
-    setBranding((prev) => ({ ...prev, logoUrl: null }));
+    setBranding((prev: EvdBranding) => ({ ...prev, logoUrl: null }));
   }, []);
 
   return (
@@ -104,7 +104,7 @@ export function EvdBrandingDialog({
           {/* Color fields */}
           <div className="grid grid-cols-3 gap-3">
             {COLOR_FIELDS.map(({ key, label }) => (
-              <label key={key} className="flex flex-col gap-1">
+              <label key={key as string} className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-[var(--muted-foreground)]">{label}</span>
                 <div className="flex items-center gap-1.5">
                   <input
@@ -128,7 +128,7 @@ export function EvdBrandingDialog({
             <span className="text-xs font-medium text-[var(--muted-foreground)]">Font Family</span>
             <Input
               value={branding.fontFamily}
-              onChange={(e) => setBranding((prev) => ({ ...prev, fontFamily: e.target.value }))}
+              onChange={(e) => setBranding((prev: EvdBranding) => ({ ...prev, fontFamily: e.target.value }))}
               placeholder="Inter, system-ui, sans-serif"
               className="h-8 text-sm"
             />
