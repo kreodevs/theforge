@@ -74,6 +74,8 @@ export interface ProviderCatalogEntry {
   defaultSttModel: string | null;
   /** Modelo para chat con imágenes (visión). */
   defaultVisionModel: string | null;
+  /** Modelo para generación de imágenes. */
+  defaultImageModel: string | null;
   defaultBaseUrl: string;
   /** Si el usuario puede editar baseUrl (p. ej. Cloudflare con account_id en la ruta). */
   baseUrlEditable?: boolean;
@@ -82,6 +84,7 @@ export interface ProviderCatalogEntry {
   supportsEmbeddings: boolean;
   supportsVision: boolean;
   supportsStt: boolean;
+  supportsImageGeneration: boolean;
 }
 
 export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
@@ -93,10 +96,12 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 1536,
     defaultSttModel: "openai/whisper-1",
     defaultVisionModel: "openai/gpt-4o",
+    defaultImageModel: "openai/dall-e-3",
     defaultBaseUrl: "https://openrouter.ai/api/v1",
     supportsEmbeddings: true,
     supportsVision: true,
     supportsStt: true,
+    supportsImageGeneration: true,
   },
   openai: {
     id: "openai",
@@ -106,10 +111,12 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 1536,
     defaultSttModel: "whisper-1",
     defaultVisionModel: "gpt-4o",
+    defaultImageModel: "dall-e-3",
     defaultBaseUrl: "https://api.openai.com/v1",
     supportsEmbeddings: true,
     supportsVision: true,
     supportsStt: true,
+    supportsImageGeneration: true,
   },
   anthropic: {
     id: "anthropic",
@@ -119,10 +126,12 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: null,
     defaultSttModel: null,
     defaultVisionModel: "claude-3-5-sonnet-20240620",
+    defaultImageModel: null,
     defaultBaseUrl: "https://api.anthropic.com",
     supportsEmbeddings: false,
     supportsVision: true,
     supportsStt: false,
+    supportsImageGeneration: false,
   },
   gemini: {
     id: "gemini",
@@ -132,10 +141,12 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 768,
     defaultSttModel: null,
     defaultVisionModel: "gemini-1.5-pro",
+    defaultImageModel: null,
     defaultBaseUrl: "https://generativelanguage.googleapis.com",
     supportsEmbeddings: true,
     supportsVision: true,
     supportsStt: false,
+    supportsImageGeneration: false,
   },
   cloudflare: {
     id: "cloudflare",
@@ -157,6 +168,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 768,
     defaultSttModel: null,
     defaultVisionModel: null,
+    defaultImageModel: null,
     defaultBaseUrl: CLOUDFLARE_BASE_URL_TEMPLATE,
     baseUrlEditable: true,
     extraFields: [
@@ -177,6 +189,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     supportsEmbeddings: true,
     supportsVision: false,
     supportsStt: false,
+    supportsImageGeneration: false,
   },
   groq: {
     id: "groq",
@@ -195,10 +208,12 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: null,
     defaultSttModel: "whisper-large-v3",
     defaultVisionModel: null,
+    defaultImageModel: null,
     defaultBaseUrl: "https://api.groq.com/openai/v1",
     supportsEmbeddings: false,
     supportsVision: false,
     supportsStt: true,
+    supportsImageGeneration: false,
   },
 };
 

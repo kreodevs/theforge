@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { PrismaModule } from "../../prisma/prisma.module.js";
+import { AiModule } from "../ai/ai.module.js";
 import { EvdStorageController } from "./evd-storage.controller.js";
 import { EvdStorageService } from "./evd-storage.service.js";
 import { EvdChartService } from "./evd-chart.service.js";
@@ -7,9 +8,11 @@ import { EvdDiagramService } from "./evd-diagram.service.js";
 import { EvdPptxService } from "./evd-pptx.service.js";
 import { EvdPdfService } from "./evd-pdf.service.js";
 import { EvdExportService } from "./evd-export.service.js";
+import { EvdImageGenerationService } from "./evd-image-generation.service.js";
+import { EvdVisualStylistService } from "./evd-visual-stylist.service.js";
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AiModule],
   controllers: [EvdStorageController],
   providers: [
     EvdStorageService,
@@ -18,6 +21,8 @@ import { EvdExportService } from "./evd-export.service.js";
     EvdPptxService,
     EvdPdfService,
     EvdExportService,
+    EvdImageGenerationService,
+    EvdVisualStylistService,
   ],
   exports: [
     EvdStorageService,
@@ -26,6 +31,8 @@ import { EvdExportService } from "./evd-export.service.js";
     EvdPptxService,
     EvdPdfService,
     EvdExportService,
+    EvdImageGenerationService,
+    EvdVisualStylistService,
   ],
 })
 export class EvdStorageModule {}

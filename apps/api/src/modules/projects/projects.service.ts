@@ -137,6 +137,7 @@ import {
 import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { reconcileExportScaffold, buildUnifiedHandoff, buildAgentGovernanceInput, synthesizeExportGovernanceScaffold } from "./handoff-export.util.js";
+import { EvdVisualStylistService } from "../evd/evd-visual-stylist.service.js";
 import { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
 import { UiScreensService } from "../ui-mcp/ui-screens.service.js";
 import {
@@ -222,6 +223,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     @Inject(forwardRef(() => ResolveChangeToFilesService))
     private readonly resolveChangeToFiles: ResolveChangeToFilesService,
     private readonly planValidation: PlanValidationService,
+    private readonly visualStylist: EvdVisualStylistService,
   ) {}
 
   /** Opciones greenfield: Phase0 + blueprint para checklist de cobertura. */
@@ -2741,13 +2743,41 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     // Repair Mermaid syntax in diagram slides (auto-close unclosed blocks, fix labels, etc.)
     if (deck?.slides && Array.isArray(deck.slides)) {
       for (const slide of deck.slides) {
-        if (
-          (slide.type === "architecture_diagram" || slide.type === "data_model") &&
-          slide.diagramData?.code
-        ) {
+        if (slide.type === "process_flow" && slide.diagramData?.code) {
           const { normalizeMermaidDiagramBody } = await import("@theforge/shared-types");
           slide.diagramData.code = normalizeMermaidDiagramBody(slide.diagramData.code);
         }
+      }
+    }
+
+    // Visual Stylist: generate background + illustration images if image model is configured
+    if (deck?.slides && Array.isArray(deck.slides) && project.userId) {
+      try {
+        const brandingColors = {
+          primary: deck.branding?.primaryColor ?? "#2563EB",
+          secondary: deck.branding?.secondaryColor ?? "#1E40AF",
+          accent: deck.branding?.accentColor ?? "#3B82F6",
+        };
+
+        const imageResults = await this.visualStylist.generateAllImages(
+          deck.slides.map((s: { type: string; title: string; body?: string }) => ({
+            type: s.type,
+            title: s.title,
+            body: s.body,
+          })),
+          brandingColors,
+          project.userId,
+        );
+
+        for (let i = 0; i < deck.slides.length; i++) {
+          const result = imageResults.get(i);
+          if (result) {
+            if (result.backgroundB64) deck.slides[i].backgroundB64 = result.backgroundB64;
+            if (result.illustrationB64) deck.slides[i].illustrationB64 = result.illustrationB64;
+          }
+        }
+      } catch (err) {
+        this.logger.warn(`Visual Stylist image generation failed (proceeding without images): ${err}`);
       }
     }
 

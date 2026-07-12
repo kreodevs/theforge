@@ -61,6 +61,10 @@ export class AIFactory {
     return this.create(runtime);
   }
 
+  async resolveImageRuntime(userId: string): Promise<(UserLLMRuntime & { imageModel: string }) | null> {
+    return this.userProviders.resolveImageRuntime(userId);
+  }
+
   async getRuntimeMediaConfig(userId: string) {
     return this.userProviders.getRuntimeMediaConfig(userId);
   }

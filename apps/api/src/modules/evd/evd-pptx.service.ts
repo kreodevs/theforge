@@ -169,6 +169,9 @@ export class EvdPptxService {
         lastSlide.addNotes(slide.speakerNotes);
       }
     }
+
+    // Visual enhancements (background + illustration images)
+    this.applyVisualEnhancements(pptx, slide);
   }
 
   /* ── Title Slide ────────────────────────────────────────────── */
@@ -1089,5 +1092,34 @@ export class EvdPptxService {
   private svgToDataUri(svg: string): string {
     const encoded = Buffer.from(svg).toString("base64");
     return `data:image/svg+xml;base64,${encoded}`;
+  }
+
+  /* ── Visual Enhancements (backgrounds + illustrations) ──────── */
+
+  private applyVisualEnhancements(
+    pptx: PptxGenJS,
+    slide: EvdSlide,
+  ): void {
+    const slides = (pptx as unknown as { slides?: PptxGenJS.Slide[] }).slides;
+    const lastSlide = slides?.[slides.length - 1];
+    if (!lastSlide) return;
+
+    // Background image (full-bleed, semi-transparent)
+    if (slide.backgroundB64) {
+      lastSlide.addImage({
+        data: `image/png;base64,${slide.backgroundB64}`,
+        x: 0, y: 0, w: "100%", h: "100%",
+        sizing: { type: "cover", w: 13.33, h: 7.5 },
+      });
+    }
+
+    // Illustration (bottom-right corner)
+    if (slide.illustrationB64) {
+      lastSlide.addImage({
+        data: `image/png;base64,${slide.illustrationB64}`,
+        x: 9.5, y: 4.8, w: 3.5, h: 2.4,
+        rounding: true,
+      });
+    }
   }
 }

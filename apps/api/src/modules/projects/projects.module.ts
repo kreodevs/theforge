@@ -22,6 +22,7 @@ import { EstimationModule } from "../ai-analysis/estimation/estimation.module.js
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
 import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
+import { EvdStorageModule } from "../evd/evd-storage.module.js";
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     forwardRef(() => DocumentationGapModule),
     UiMcpModule,
     EstimationModule,
+    EvdStorageModule,
   ],
   controllers: [ProjectsController, ProjectIntegrationController],
   providers: [

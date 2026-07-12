@@ -13,6 +13,7 @@ export interface UserProviderFormState {
   sttModel: string;
   visionModel: string;
   visionModelFallback: string;
+  imageModel: string;
   baseUrl: string;
   extras: Record<string, string>;
 }
@@ -50,6 +51,7 @@ export function configFormFromInstance(
     sttModel: inst.sttModel ?? "",
     visionModel: inst.visionModel ?? "",
     visionModelFallback: visionFallbackFromExtras(inst.extras),
+    imageModel: inst.imageModel ?? catalog.defaultImageModel ?? "",
     baseUrl: inst.baseUrl ?? "",
     extras: extrasFromRecord(catalog, inst.extras),
   };
@@ -68,6 +70,7 @@ export function configFormFromUserConfig(
     sttModel: cfg.sttModel ?? catalog.defaultSttModel ?? "",
     visionModel: cfg.visionModel ?? catalog.defaultVisionModel ?? "",
     visionModelFallback: visionFallbackFromExtras(cfg.extras),
+    imageModel: cfg.imageModel ?? catalog.defaultImageModel ?? "",
     baseUrl: cfg.baseUrl ?? catalog.defaultBaseUrl,
     extras: extrasFromRecord(catalog, cfg.extras),
   };
@@ -86,6 +89,7 @@ export function createEmptyUserProviderForm(
     sttModel: catalog.defaultSttModel ?? "",
     visionModel: catalog.defaultVisionModel ?? "",
     visionModelFallback: "",
+    imageModel: catalog.defaultImageModel ?? "",
     baseUrl: "",
     extras: Object.fromEntries(
       (catalog.extraFields ?? []).map((f) => [f.key, ""]),
@@ -102,6 +106,7 @@ export type UserProviderFormFields =
   | "sttModel"
   | "visionModel"
   | "visionModelFallback"
+  | "imageModel"
   | "baseUrl"
   | `extra:${string}`;
 
@@ -200,12 +205,12 @@ export function validateUserProviderForm(args: {
     errors.visionModel = "Indica un modelo de visión válido";
   }
 
-  if (
-    catalog.supportsVision &&
-    form.visionModelFallback.trim() &&
-    form.visionModelFallback.trim().length < 2
-  ) {
+  if (catalog.supportsVision && form.visionModelFallback.trim() && form.visionModelFallback.trim().length < 2) {
     errors.visionModelFallback = "Indica un modelo de respaldo de visión válido";
+  }
+
+  if (catalog.supportsImageGeneration && form.imageModel.trim() && form.imageModel.trim().length < 2) {
+    errors.imageModel = "Indica un modelo de imagen válido";
   }
 
   if (catalog.baseUrlEditable && form.baseUrl.trim()) {

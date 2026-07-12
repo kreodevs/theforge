@@ -55,6 +55,12 @@ model UserAISettings {
   /// Proveedor BYOK para embeddings cuando el activo no los expone (p. ej. anthropic).
   embeddingProvider      String?
   embeddingsEnabled      Boolean  @default(true)
+  /// Modelo de imagen para generación visual en EVD (ej: dall-e-3, flux-1.1-pro).
+  imageModel             String?
+  /// Calidad de imagen: low, standard, high.
+  imageQuality           String   @default("standard")
+  /// Estilo visual: abstract, geometric, organic, corporate.
+  imageStyle             String   @default("abstract")
   /// Modelos de chat extra permitidos para este usuario (super_admin; unión con la instancia tenant).
   allowedChatModels      String[] @default([])
   updatedAt              DateTime @updatedAt
@@ -76,6 +82,7 @@ model ProviderInstance {
   embeddingDimension     Int?
   sttModel               String?
   visionModel            String?
+  imageModel             String?
   baseUrl                String?
   extras                 Json?
   enabledForUsers        Boolean  @default(false)
@@ -144,6 +151,7 @@ model UserProviderConfig {
   embeddingDimension  Int?
   sttModel            String?
   visionModel         String?
+  imageModel          String?
   baseUrl             String?
   extras              Json?
   createdAt       DateTime @default(now())

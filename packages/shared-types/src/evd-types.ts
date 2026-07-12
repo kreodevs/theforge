@@ -46,6 +46,12 @@ interface EvdSlideBase {
   order: number;
   title: string;
   speakerNotes?: string;
+  /** Base64-encoded background image (added by Visual Stylist Agent). */
+  backgroundB64?: string;
+  /** Base64-encoded illustration (added by Visual Stylist Agent, selective). */
+  illustrationB64?: string;
+  /** Visual style applied by the stylist. */
+  visualStyle?: "geometric" | "organic" | "minimal" | "data-driven";
 }
 
 export interface EvdTitleSlide extends EvdSlideBase {

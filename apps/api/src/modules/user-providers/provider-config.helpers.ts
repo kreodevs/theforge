@@ -124,6 +124,7 @@ export function buildModelFields(
     embeddingDimension?: number | null;
     sttModel?: string | null;
     visionModel?: string | null;
+    imageModel?: string | null;
   },
 ) {
   const catalog = PROVIDER_CATALOG[provider];
@@ -161,6 +162,15 @@ export function buildModelFields(
       ? null
       : auditorRaw.trim() || null;
 
+  let imageModel: string | null | undefined;
+  if (dto.imageModel === undefined) {
+    imageModel = undefined;
+  } else if (dto.imageModel === null) {
+    imageModel = null;
+  } else {
+    imageModel = dto.imageModel.trim() || null;
+  }
+
   return {
     chatModel,
     chatModelFallbacks,
@@ -169,5 +179,6 @@ export function buildModelFields(
     embeddingDimension,
     sttModel,
     visionModel,
+    imageModel,
   };
 }

@@ -320,6 +320,28 @@ export function ProviderConfigFormFields({
         </>
       ) : null}
 
+      {catalog.supportsImageGeneration ? (
+        <FormField
+          id={`${idPrefix}-image`}
+          label="Modelo de imagen (EVD)"
+          hint="Para generar fondos e ilustraciones en decks ejecutivos. Vacío = valor del catálogo."
+          error={showError("imageModel")}
+        >
+          <Input
+            id={`${idPrefix}-image`}
+            value={form.imageModel}
+            onChange={(e) => {
+              onPatch({ imageModel: e.target.value });
+              onClearFieldError("imageModel");
+            }}
+            onBlur={() => onBlurField("imageModel")}
+            placeholder={catalog.defaultImageModel ?? "dall-e-3"}
+            aria-invalid={!!showError("imageModel")}
+            className={cn("font-mono text-xs", inputErrorClass("imageModel"))}
+          />
+        </FormField>
+      ) : null}
+
       {catalog.baseUrlEditable ? (
         <FormField
           id={`${idPrefix}-base-url`}
