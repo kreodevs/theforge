@@ -23,11 +23,7 @@ COPY apps/api/package.json apps/api/
 
 RUN pnpm install --frozen-lockfile
 
-# Copy source - this layer cache key includes BUILD_CACHE_BUST via this dummy file
-COPY .build-bump /tmp/build-id
-RUN echo "Forced rebuild: $(cat /tmp/build-id)" > /tmp/.build-reason
-
-# Now copy the actual source (depends on /tmp/.build-reason to invalidate when changed)
+# Source files
 COPY packages/database packages/database
 COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
@@ -35,8 +31,9 @@ COPY packages/config packages/config
 COPY apps/api apps/api
 COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 
-# Build all packages
-RUN pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api && \
+# Build all packages - ARG is used here to break cache
+RUN echo "Building with key: ${BUILD_CACHE_BUST}" && \
+    pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api && \
     echo "Build completed"
 
 # Verify dist/main.js was produced (turbo cache can silently skip builds)
