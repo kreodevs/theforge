@@ -116,7 +116,7 @@ services:
       # 1 = loguear JSON-RPC y cuerpo de respuesta del MCP Ariadne (verbose; no usar en prod estable).
       DEBUG_MCP: ${DEBUG_MCP:-0}
       # P3009: si una migración queda fallida, desbloquear antes de deploy (ej. 20260319130000_agent_checkpoint_mdd_stage).
-      PRISMA_RESOLVE_ROLLED_BACK: 20260712_add_evd_content_column
+      PRISMA_RESOLVE_ROLLED_BACK: ${PRISMA_RESOLVE_ROLLED_BACK:-}
       # OTP multi-usuario: el email viene en el body del request y se valida contra la tabla `User`.
       # Configura SMTP_* para envío real; en dev sin SMTP el código se loguea en stdout.
       SMTP_HOST: ${SMTP_HOST:-}
@@ -142,8 +142,6 @@ services:
         condition: service_healthy
       theforge-falkor-sdd:
         condition: service_healthy
-    volumes:
-      - theforge_api_data:/app/data
     expose:
       - "3000"
     healthcheck:
@@ -260,4 +258,3 @@ volumes:
   theforge_db_data:
   theforge_redis_queue_data:
   falkor_sdd_data:
-  theforge_api_data:
