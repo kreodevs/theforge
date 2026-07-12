@@ -183,9 +183,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS "User_mcpSecret_key" ON "User"("mcpSecret");
 SQL
 
 cd /app/apps/api
-MAIN_JS="$(find . -name main.js -type f 2>/dev/null | head -1)"
-if [ -z "$MAIN_JS" ]; then
-  echo "ERROR: main.js not found in dist. Check Nest build output."
+MAIN_JS="./dist/main.js"
+if [ ! -f "$MAIN_JS" ]; then
+  echo "ERROR: $MAIN_JS not found. Check Nest build output."
+  echo "Contents of dist/:"
+  ls -la dist/ 2>/dev/null || echo "(dist/ does not exist)"
   exit 1
 fi
 echo "Starting API ($MAIN_JS)..."
