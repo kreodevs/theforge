@@ -1,12 +1,13 @@
-# Cache bust v4 - 20260712T2317
+# EVD-visual-stylist-build-v2
 FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
-ARG BUILD_CACHE_BUST=105
-RUN echo "Cache bust key: ${BUILD_CACHE_BUST}" && rm -rf /root/.turbo 2>/dev/null || true
+ARG BUILD_CACHE_BUST=106
+RUN echo "Cache bust: ${BUILD_CACHE_BUST}" && rm -rf /root/.turbo 2>/dev/null || true
 
 WORKDIR /app
 
-RUN corepack enable
+RUN corepack enable && \
+    apk add --no-cache gcompat openssl postgresql-client
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json .npmrc ./
 COPY packages/database/package.json packages/database/
@@ -22,12 +23,11 @@ COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
 COPY packages/config packages/config
 COPY apps/api apps/api
-COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
+COPY scripts/rotate-master-key.ts scripts/
 
-RUN pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api && \
-    echo "Build completed"
+RUN pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
 
-RUN test -f apps/api/dist/main.js || (echo "FATAL: apps/api/dist/main.js missing after turbo build" && ls -la apps/api/dist/ 2>/dev/null && exit 1)
+RUN test -f apps/api/dist/main.js || (echo "ERROR: main.js missing" && ls -la apps/api/dist/ 2>/dev/null && exit 1)
 
 FROM public.ecr.aws/docker/library/node:20-alpine AS runner
 
