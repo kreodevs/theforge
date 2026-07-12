@@ -513,6 +513,21 @@ export default function WorkshopView({
 
   const [evdBranding, setEvdBranding] = useState<Record<string, unknown>>({});
 
+  // Load saved EVD branding from server on mount
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    void fetch(`${API_BASE}/evd/${projectId}/slides`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.branding && typeof data.branding === "object") {
+          setEvdBranding(data.branding as Record<string, unknown>);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [projectId]);
+
   const projectStatus: Status = project?.status ?? "ROJO";
   const semaphoreGreen = liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
   const hasSpec = (specContent ?? "").trim().length > 0;
