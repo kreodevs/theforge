@@ -1,9 +1,10 @@
-# EVD visual stylist - clean build
+# EVD-visual-stylist-build-clean
 FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache gcompat openssl postgresql-client
+RUN apk add --no-cache gcompat openssl postgresql-client && \
+    rm -rf /root/.turbo 2>/dev/null || true
 
 RUN corepack enable
 
@@ -20,10 +21,6 @@ COPY packages/database packages/database
 COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
 COPY packages/config packages/config
-COPY apps/api/build-context/.build-trigger /tmp/.build-trigger
-
-RUN cat /tmp/.build-trigger && rm /tmp/.build-trigger
-
 COPY apps/api apps/api
 COPY scripts/rotate-master-key.ts scripts/
 
