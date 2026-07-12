@@ -51,7 +51,6 @@ function barPath(
   pad: number,
 ): string {
   if (maxVal === 0) return "";
-  const n = values.length;
   let d = "";
   values.forEach((v, i) => {
     const x = pad + i * (barW + gap);

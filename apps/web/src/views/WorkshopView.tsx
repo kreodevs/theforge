@@ -4929,7 +4929,7 @@ export default function WorkshopView({
                       fontFamily: (evdBranding.fontFamily as string) ?? "Inter, system-ui, sans-serif",
                       logoUrl: (evdBranding.logoUrl as string) ?? null,
                     }}
-                    onBrandingSaved={(b) => setEvdBranding(b as Record<string, unknown>)}
+                    onBrandingSaved={(b) => setEvdBranding(b as unknown as Record<string, unknown>)}
                   />
                 )}
               </div>
