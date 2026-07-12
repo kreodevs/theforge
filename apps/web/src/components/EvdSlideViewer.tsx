@@ -13,13 +13,28 @@ import type {
   EvdWireframeComponent,
   EvdTimelineSlide,
   EvdTeamSlide,
+  EVDJSON,
 } from "@theforge/shared-types/evd-types";
-import { parseEvdJson } from "@theforge/shared-types/evd-types";
+
 import {
   MermaidDiagramBlock,
   mermaidKey,
   MermaidBlockErrorBoundary,
 } from "@/components/MarkdownMermaid";
+
+/* ────────────────── Helpers ────────────────── */
+
+function parseEvdJson(raw: string | null | undefined): EVDJSON | null {
+  if (!raw?.trim()) return null;
+  try {
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const parsed = JSON.parse(cleaned) as EVDJSON;
+    if (parsed?.slides && Array.isArray(parsed.slides)) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /* ────────────────── Branding defaults ────────────────── */
 
