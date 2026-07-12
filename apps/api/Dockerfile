@@ -2,7 +2,12 @@
 # Imágenes fijas en ECR Public (evita TLS timeout a Docker Hub y fallos de ARG en Dokploy).
 FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
-ARG BUILD_CACHE_BUST=101
+# Force cache bust by using timestamp file (copied before any RUN)
+COPY .build-bump /tmp/build-key.txt
+RUN echo "Build timestamp: $(cat /tmp/build-key.txt)"
+
+# Cache invalidation
+ARG BUILD_CACHE_BUST=102
 RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
 # Use tmpfs for build context to avoid cache issues
@@ -15,6 +20,7 @@ RUN corepack enable
 
 # Copy package files first (cached)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json .npmrc ./
+COPY .build-bump .build-bump
 COPY packages/database/package.json packages/database/
 COPY packages/shared-types/package.json packages/shared-types/
 COPY packages/business-rules/package.json packages/business-rules/
