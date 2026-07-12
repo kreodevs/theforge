@@ -26,11 +26,14 @@ COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
 COPY packages/config packages/config
 COPY apps/api apps/api
+COPY apps/api/.build-bump apps/api/.build-bump  # Touch to invalidate cache
 COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 
-# Force rebuild - this RUN reads BUILD_CACHE_BUST and creates a marker that invalidates subsequent layers
-RUN echo "Rebuild trigger: ${BUILD_CACHE_BUST}" > /tmp/.rebuild-trigger && \
-    pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
+# Touch apps/api/.build-stamp to break Docker cache when BUILD_CACHE_BUST changes
+RUN touch apps/api/.build-stamp 2>/dev/null || true
+
+# Build with turbo - the --force flag ensures turbo re-runs, and the stamp ensures we see output
+RUN pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
 
 # Verify dist/main.js was produced (turbo cache can silently skip builds)
 RUN test -f apps/api/dist/main.js || (echo "FATAL: apps/api/dist/main.js missing after turbo build" && ls -la apps/api/dist/ 2>/dev/null && exit 1)
