@@ -20,11 +20,6 @@ COPY apps/api/package.json apps/api/
 
 RUN pnpm install --frozen-lockfile
 
-# This layer is cached, but we add a dummy RUN here that depends on BUILD_CACHE_BUST
-# so Docker will re-execute all subsequent layers when we bump it
-RUN echo "Build invalidated: ${BUILD_CACHE_BUST}" > /tmp/build-invalidation && \
-    rm -rf /root/.turbo 2>/dev/null || true
-
 COPY packages/database packages/database
 COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
@@ -32,8 +27,9 @@ COPY packages/config packages/config
 COPY apps/api apps/api
 COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 
-ENV DATABASE_URL="postgresql://local:local@db:5432/theforge"
-RUN echo "Running turbo build with cache bust ${BUILD_CACHE_BUST}" && \
+# Force rebuild when BUILD_CACHE_BUST changes - this RUN uses the ARG to invalidate cache
+# and comes AFTER COPY so Docker re-executes when ARG changes
+RUN echo "Build invalidator: ${BUILD_CACHE_BUST}" > /tmp/.invalidate && \
     pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
 
 # Verify dist/main.js was produced (turbo cache can silently skip builds)
