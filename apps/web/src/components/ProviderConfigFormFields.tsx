@@ -321,13 +321,11 @@ export function ProviderConfigFormFields({
       ) : null}
 
       {catalog.supportsImageGeneration ? (
-        <FormField
-          id={`${idPrefix}-image`}
-          label="Modelo de imagen (EVD)"
-          hint="Para generar fondos e ilustraciones en decks ejecutivos. Vacío = valor del catálogo."
-          error={showError("imageModel")}
-        >
-          <Input
+        <div>
+          <label htmlFor={`${idPrefix}-image`} className="block text-sm font-medium text-[var(--foreground)] mb-1">
+            Modelo de imagen (EVD)
+          </label>
+          <select
             id={`${idPrefix}-image`}
             value={form.imageModel}
             onChange={(e) => {
@@ -335,11 +333,18 @@ export function ProviderConfigFormFields({
               onClearFieldError("imageModel");
             }}
             onBlur={() => onBlurField("imageModel")}
-            placeholder={catalog.defaultImageModel ?? "dall-e-3"}
-            aria-invalid={!!showError("imageModel")}
-            className={cn("font-mono text-xs", inputErrorClass("imageModel"))}
-          />
-        </FormField>
+            className={cn(
+              "flex h-9 w-full rounded-md border border-[var(--input-border)] bg-[var(--input)] px-3 py-1 text-sm text-[var(--foreground)] shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
+              inputErrorClass("imageModel"),
+            )}
+          >
+            {catalog.imageModels?.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
       ) : null}
 
       {catalog.baseUrlEditable ? (

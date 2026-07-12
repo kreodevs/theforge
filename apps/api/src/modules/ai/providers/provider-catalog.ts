@@ -74,7 +74,9 @@ export interface ProviderCatalogEntry {
   defaultSttModel: string | null;
   /** Modelo para chat con imágenes (visión). */
   defaultVisionModel: string | null;
-  /** Modelo para generación de imágenes. */
+  /** Modelos para generación de imágenes (EVD). */
+  imageModels?: string[];
+  /** Modelo por defecto de generación de imágenes. */
   defaultImageModel: string | null;
   defaultBaseUrl: string;
   /** Si el usuario puede editar baseUrl (p. ej. Cloudflare con account_id en la ruta). */
@@ -96,6 +98,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 1536,
     defaultSttModel: "openai/whisper-1",
     defaultVisionModel: "openai/gpt-4o",
+    imageModels: ["openai/dall-e-3", "google/gemini-3.1-flash-lite-image", "stability/sdxl"],
     defaultImageModel: "openai/dall-e-3",
     defaultBaseUrl: "https://openrouter.ai/api/v1",
     supportsEmbeddings: true,
@@ -111,6 +114,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 1536,
     defaultSttModel: "whisper-1",
     defaultVisionModel: "gpt-4o",
+    imageModels: ["dall-e-3", "gpt-image-1"],
     defaultImageModel: "dall-e-3",
     defaultBaseUrl: "https://api.openai.com/v1",
     supportsEmbeddings: true,

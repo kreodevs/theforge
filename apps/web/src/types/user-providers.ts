@@ -27,6 +27,7 @@ export interface ProviderCatalogEntry {
   defaultEmbeddingDimension: number | null;
   defaultSttModel: string | null;
   defaultVisionModel: string | null;
+  imageModels?: string[];
   defaultImageModel: string | null;
   defaultBaseUrl: string;
   baseUrlEditable?: boolean;
