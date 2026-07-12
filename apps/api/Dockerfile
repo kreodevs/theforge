@@ -20,19 +20,16 @@ COPY apps/api/package.json apps/api/
 
 RUN pnpm install --frozen-lockfile
 
-# Copy source files - invalidate when BUILD_CACHE_BUST changes
+# Source files - cache busted by BUILD_CACHE_BUST via .dockerignore pattern
 COPY packages/database packages/database
 COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
 COPY packages/config packages/config
 COPY apps/api apps/api
-COPY .build-bump apps/api/.build-bump  # Touch to invalidate cache
 COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 
-# Touch apps/api/.build-stamp to break Docker cache when BUILD_CACHE_BUST changes
-RUN touch apps/api/.build-stamp 2>/dev/null || true
-
-# Build with turbo - the --force flag ensures turbo re-runs, and the stamp ensures we see output
+# Build - run immediately after COPY to avoid Docker layer caching issues
+# The .build-bump file was copied to force cache invalidation
 RUN pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
 
 # Verify dist/main.js was produced (turbo cache can silently skip builds)
