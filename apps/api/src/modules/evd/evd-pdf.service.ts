@@ -99,7 +99,29 @@ export class EvdPdfService {
     page-break-after: always;
     overflow: hidden;
     background: var(--white);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
   }
+  .page-with-bg::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.85);
+    z-index: 0;
+  }
+  .slide-illustration {
+    position: absolute;
+    bottom: 14mm;
+    right: 16mm;
+    width: 40mm;
+    height: 30mm;
+    object-fit: contain;
+    z-index: 1;
+    opacity: 0.9;
+  }
+  .page > * { position: relative; z-index: 1; }
+  .cover-inner > * { position: relative; z-index: 1; }
   .page::before {
     content: '';
     position: absolute;
@@ -738,8 +760,16 @@ export class EvdPdfService {
     const type = (slide.type as string)?.toLowerCase() ?? "fallback";
     const title = (slide.title as string) ?? "";
     const slideId = (slide.id as string) ?? `slide-${index}`;
+    const backgroundB64 = slide.backgroundB64 as string | undefined;
+    const illustrationB64 = slide.illustrationB64 as string | undefined;
 
     let pageClass = "page";
+    let pageStyle = "";
+    if (backgroundB64) {
+      pageStyle = ` style="background-image:url('data:image/png;base64,${backgroundB64}')"`;
+      pageClass += " page-with-bg";
+    }
+
     let content = "";
 
     switch (type) {
@@ -1025,8 +1055,13 @@ export class EvdPdfService {
         <span>${index + 1} / ${total}</span>
       </div>` : "";
 
-    return `    <div class="${pageClass}">
+    const illustrationHTML = illustrationB64
+      ? `<img src="data:image/png;base64,${illustrationB64}" class="slide-illustration" alt="Illustration" />`
+      : "";
+
+    return `    <div class="${pageClass}"${pageStyle}>
       ${content}
+      ${illustrationHTML}
       ${footerHTML}
     </div>`;
   }
