@@ -1,8 +1,10 @@
-FROM node:22-bullseye AS builder
+# Cache bust v4 - 20260712T2317
+FROM public.ecr.aws/docker/library/node:20-alpine AS builder
+
+ARG BUILD_CACHE_BUST=105
+RUN echo "Cache bust key: ${BUILD_CACHE_BUST}" && rm -rf /root/.turbo 2>/dev/null || true
 
 WORKDIR /app
-
-RUN apt-get update && apt-get install -y postgresql-client gcompat openssl && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable
 
@@ -20,27 +22,31 @@ COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
 COPY packages/config packages/config
 COPY apps/api apps/api
-COPY scripts/rotate-master-key.ts scripts/
+COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 
-RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
+RUN pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api && \
+    echo "Build completed"
 
-FROM node:22-bullseye AS runner
+RUN test -f apps/api/dist/main.js || (echo "FATAL: apps/api/dist/main.js missing after turbo build" && ls -la apps/api/dist/ 2>/dev/null && exit 1)
 
-RUN apt-get update && apt-get install -y wget openssl postgresql-client \
-  chromium && rm -rf /var/lib/apt/lists/*
+FROM public.ecr.aws/docker/library/node:20-alpine AS runner
+
+RUN apk add --no-cache wget openssl postgresql-client \
+  chromium nss freetype harfbuzz ttf-freefont font-noto-emoji
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY --from=builder /app .
 COPY apps/api/docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 WORKDIR /app/apps/api
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 EXPOSE 3000
 
