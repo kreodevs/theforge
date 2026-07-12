@@ -1,10 +1,8 @@
-FROM node:20-alpine AS builder
-
-COPY .build-bump /tmp/key && cat /tmp/key
+FROM node:22.12-alpine3.21 AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache gcompat openssl
+RUN apk add --no-cache gcompat openssl postgresql-client
 
 RUN corepack enable
 
@@ -24,9 +22,9 @@ COPY packages/config packages/config
 COPY apps/api apps/api
 COPY scripts/rotate-master-key.ts scripts/
 
-RUN pnpm run build --force
+RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
 
-FROM node:20-alpine AS runner
+FROM node:22.12-alpine3.21 AS runner
 
 RUN apk add --no-cache wget openssl postgresql-client \
   chromium nss freetype harfbuzz ttf-freefont font-noto-emoji
