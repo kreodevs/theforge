@@ -495,10 +495,13 @@ export default function WorkshopView({
     if (!projectId) return;
     setEvdExporting(format);
     try {
-      const res = await fetch(`${API_BASE}/evd/${projectId}/export/${format}`, {
+      const res = await apiFetch(`${API_BASE}/evd/${projectId}/export/${format}`, {
         method: "POST",
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.error(`EVD export failed: HTTP ${res.status} ${res.statusText}`);
+        return;
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -517,7 +520,7 @@ export default function WorkshopView({
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    void fetch(`${API_BASE}/evd/${projectId}/slides`)
+    void apiFetch(`${API_BASE}/evd/${projectId}/slides`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!cancelled && data?.branding && typeof data.branding === "object") {
