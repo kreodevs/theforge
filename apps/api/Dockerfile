@@ -30,7 +30,8 @@ COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 # Force rebuild when BUILD_CACHE_BUST changes - this RUN uses the ARG to invalidate cache
 # and comes AFTER COPY so Docker re-executes when ARG changes
 RUN echo "Build invalidator: ${BUILD_CACHE_BUST}" > /tmp/.invalidate && \
-    pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
+    pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api || \
+    (echo "TURBO BUILD FAILED" && ls -la apps/api/dist/ 2>/dev/null && exit 1)
 
 # Verify dist/main.js was produced (turbo cache can silently skip builds)
 RUN test -f apps/api/dist/main.js || (echo "FATAL: apps/api/dist/main.js missing after turbo build" && ls -la apps/api/dist/ 2>/dev/null && exit 1)
