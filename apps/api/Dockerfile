@@ -26,7 +26,7 @@ COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
 COPY packages/config packages/config
 COPY apps/api apps/api
-COPY apps/api/.build-bump apps/api/.build-bump  # Touch to invalidate cache
+COPY .build-bump apps/api/.build-bump  # Touch to invalidate cache
 COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 
 # Touch apps/api/.build-stamp to break Docker cache when BUILD_CACHE_BUST changes
