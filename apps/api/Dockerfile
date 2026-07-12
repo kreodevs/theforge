@@ -3,14 +3,17 @@
 FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
 ARG BUILD_CACHE_BUST=101
-RUN echo "Cache bust key: ${BUILD_CACHE_BUST}" && rm -rf /root/.turbo 2>/dev/null || true
+RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
+# Use tmpfs for build context to avoid cache issues
 RUN apk add --no-cache gcompat openssl
+RUN rm -rf /root/.turbo 2>/dev/null || true
 
 WORKDIR /app
 
 RUN corepack enable
 
+# Copy package files first (cached)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json .npmrc ./
 COPY packages/database/package.json packages/database/
 COPY packages/shared-types/package.json packages/shared-types/
@@ -20,7 +23,11 @@ COPY apps/api/package.json apps/api/
 
 RUN pnpm install --frozen-lockfile
 
-# Source files - cache busted by BUILD_CACHE_BUST via .dockerignore pattern
+# Copy source - this layer cache key includes BUILD_CACHE_BUST via this dummy file
+COPY .build-bump /tmp/build-id
+RUN echo "Forced rebuild: $(cat /tmp/build-id)" > /tmp/.build-reason
+
+# Now copy the actual source (depends on /tmp/.build-reason to invalidate when changed)
 COPY packages/database packages/database
 COPY packages/shared-types packages/shared-types
 COPY packages/business-rules packages/business-rules
@@ -28,9 +35,9 @@ COPY packages/config packages/config
 COPY apps/api apps/api
 COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 
-# Build - run immediately after COPY to avoid Docker layer caching issues
-# The .build-bump file was copied to force cache invalidation
-RUN pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
+# Build all packages
+RUN pnpm exec turbo run build --force --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api && \
+    echo "Build completed"
 
 # Verify dist/main.js was produced (turbo cache can silently skip builds)
 RUN test -f apps/api/dist/main.js || (echo "FATAL: apps/api/dist/main.js missing after turbo build" && ls -la apps/api/dist/ 2>/dev/null && exit 1)
