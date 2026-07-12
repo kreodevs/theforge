@@ -2736,7 +2736,22 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     });
 
     const parsed = JSON.parse(evdJsonStr);
-    const evdContent = typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
+    const deck = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
+
+    // Repair Mermaid syntax in diagram slides (auto-close unclosed blocks, fix labels, etc.)
+    if (deck?.slides && Array.isArray(deck.slides)) {
+      for (const slide of deck.slides) {
+        if (
+          (slide.type === "architecture_diagram" || slide.type === "data_model") &&
+          slide.diagramData?.code
+        ) {
+          const { normalizeMermaidDiagramBody } = await import("@theforge/shared-types");
+          slide.diagramData.code = normalizeMermaidDiagramBody(slide.diagramData.code);
+        }
+      }
+    }
+
+    const evdContent = JSON.stringify(deck, null, 2);
 
     await this.update(projectId, { evdContent });
   }

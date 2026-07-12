@@ -45,10 +45,12 @@ export class EvdExportService {
           }
         }
 
-        if (slide.type === "architecture_diagram") {
+        if (slide.type === "architecture_diagram" || slide.type === "data_model") {
           const diagramData = slide.diagramData as { code?: string; diagramType?: string } | undefined;
           if (diagramData?.code) {
-            const svg = await this.diagramService.renderMermaidSVG(diagramData.code, theme);
+            const { normalizeMermaidDiagramBody } = await import("@theforge/shared-types");
+            const repaired = normalizeMermaidDiagramBody(diagramData.code);
+            const svg = await this.diagramService.renderMermaidSVG(repaired, theme);
             diagrams.set(slide.id, svg);
           }
         }
