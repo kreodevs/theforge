@@ -273,12 +273,10 @@ function WireframeRenderer({
   columns?: number;
 }) {
   const cols = columns ?? 4;
+  const gridCols = cols <= 2 ? "grid-cols-1 sm:grid-cols-2" : cols <= 3 ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
   return (
     <div
-      className="grid gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] p-2"
-      style={{
-        gridTemplateColumns: `repeat(${cols}, 1fr)`,
-      }}
+      className={`grid gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] p-2 ${gridCols}`}
     >
       {components.map((c, i) => (
         <WireframeBox key={i} c={c} />
@@ -298,7 +296,7 @@ function TitleSlideView({
 }) {
   return (
     <div
-      className="flex flex-1 flex-col items-center justify-center gap-4 px-8 py-10 text-center"
+      className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-6 text-center sm:px-8 sm:py-10"
       style={{ background: branding.primaryColor, color: branding.bgColor }}
     >
       {branding.logoUrl && (
@@ -309,7 +307,7 @@ function TitleSlideView({
         />
       )}
       <h1
-        className="text-2xl font-black leading-tight tracking-tight sm:text-3xl"
+        className="text-xl font-black leading-tight tracking-tight sm:text-2xl md:text-3xl"
         style={{ fontFamily: branding.fontFamily }}
       >
         {slide.title}
@@ -345,7 +343,7 @@ function GenericSlideView({
   branding: EvdBranding;
 }) {
   return (
-    <div className="flex flex-1 flex-col gap-4 px-6 py-5">
+    <div className="flex flex-1 flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
       <h2
         className="text-lg font-bold leading-snug"
         style={{ color: branding.accentColor, fontFamily: branding.fontFamily }}
@@ -606,7 +604,7 @@ export function EvdSlideViewer({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-sm">
         {/* Header: slide title + navigation */}
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--muted)]/50 px-4 py-2.5">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <span
               className="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white"
               style={{ background: branding.highlightColor }}
@@ -622,7 +620,7 @@ export function EvdSlideViewer({
               size="sm"
               onClick={goPrev}
               disabled={activeIdx === 0}
-              className="h-7 w-7 p-0"
+              className="h-9 w-9 p-0 sm:h-7 sm:w-7"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -635,7 +633,7 @@ export function EvdSlideViewer({
               size="sm"
               onClick={goNext}
               disabled={activeIdx === slides.length - 1}
-              className="h-7 w-7 p-0"
+              className="h-9 w-9 p-0 sm:h-7 sm:w-7"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -664,7 +662,7 @@ export function EvdSlideViewer({
 
       {/* Thumbnail strip */}
       {slides.length > 1 && (
-        <div className="shrink-0 flex gap-2 overflow-x-auto pb-1">
+        <div className="shrink-0 flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
           {slides.map((s, i) => (
             <SlideCard
               key={s.id}

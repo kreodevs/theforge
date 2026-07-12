@@ -102,7 +102,7 @@ export function EvdBrandingDialog({
 
         <div className="flex flex-col gap-4 py-2">
           {/* Color fields */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {COLOR_FIELDS.map(({ key, label }) => (
               <label key={key as string} className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-[var(--muted-foreground)]">{label}</span>
@@ -111,12 +111,12 @@ export function EvdBrandingDialog({
                     type="color"
                     value={typeof branding[key] === "string" ? (branding[key] as string) : "#000000"}
                     onChange={(e) => updateColor(key, e.target.value)}
-                    className="h-8 w-8 cursor-pointer rounded border border-[var(--border)] bg-transparent p-0"
+                    className="h-10 w-10 cursor-pointer rounded border border-[var(--border)] bg-transparent p-0"
                   />
                   <Input
                     value={typeof branding[key] === "string" ? (branding[key] as string) : ""}
                     onChange={(e) => updateColor(key, e.target.value)}
-                    className="h-8 flex-1 text-xs font-mono"
+                    className="h-10 flex-1 text-xs font-mono"
                   />
                 </div>
               </label>
@@ -130,21 +130,21 @@ export function EvdBrandingDialog({
               value={branding.fontFamily}
               onChange={(e) => setBranding((prev: EvdBranding) => ({ ...prev, fontFamily: e.target.value }))}
               placeholder="Inter, system-ui, sans-serif"
-              className="h-8 text-sm"
+              className="h-10 text-sm"
             />
           </label>
 
           {/* Logo */}
           <div className="flex flex-col gap-2">
             <span className="text-xs font-medium text-[var(--muted-foreground)]">Logo</span>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {branding.logoUrl && (
                 <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--muted)]">
                   <img src={branding.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain p-1" />
                   <button
                     type="button"
                     onClick={handleRemoveLogo}
-                    className="absolute -right-1 -top-1 rounded-full bg-[var(--destructive)] p-0.5 text-white"
+                    className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--destructive)] text-white"
                   >
                     <X className="h-3 w-3" />
                   </button>

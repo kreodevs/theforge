@@ -4861,11 +4861,11 @@ export default function WorkshopView({
                   <p className="min-w-0 flex-1 text-xs leading-relaxed text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
                     <strong>Executive Visual Deck</strong> — presentación ejecutiva generada por IA a partir del MDD. Incluye diagramas Mermaid, charts ECharts y wireframes SVG renderizados offline.
                   </p>
-                  <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                     <Button
                       type="button"
                       variant="default"
-                      size="sm"
+                      size="default"
                       onClick={() => void generateEvd(projectId)}
                       disabled={loading}
                       aria-label="Generar EVD"
@@ -4876,7 +4876,7 @@ export default function WorkshopView({
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
+                      size="default"
                       onClick={() => setEvdBrandingOpen(true)}
                       aria-label="Branding"
                     >
@@ -4885,7 +4885,7 @@ export default function WorkshopView({
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
+                      size="default"
                       onClick={() => void handleEvdExport("pptx")}
                       disabled={!evdContent || evdExporting !== null}
                       loading={evdExporting === "pptx"}
@@ -4897,7 +4897,7 @@ export default function WorkshopView({
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
+                      size="default"
                       onClick={() => void handleEvdExport("pdf")}
                       disabled={!evdContent || evdExporting !== null}
                       loading={evdExporting === "pdf"}
