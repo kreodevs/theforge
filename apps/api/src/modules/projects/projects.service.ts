@@ -2760,10 +2760,10 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
         };
 
         const imageResults = await this.visualStylist.generateAllImages(
-          deck.slides.map((s: { type: string; title: string; body?: string }) => ({
+          deck.slides.map((s: { type: string; title: string; body?: string; subtitle?: string }) => ({
             type: s.type,
             title: s.title,
-            body: s.body,
+            body: s.body ?? s.subtitle ?? "",
           })),
           brandingColors,
           project.userId,
