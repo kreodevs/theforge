@@ -1,13 +1,11 @@
 # Build stage — context = repo root
 # Imágenes fijas en ECR Public (evita TLS timeout a Docker Hub y fallos de ARG en Dokploy).
-FROM public.ecr.aws/docker/library/node:20-alpine AS builder
+FROM node:20-alpine AS builder
 
-# Force cache bust by using timestamp file (copied before any RUN)
 COPY .build-bump /tmp/build-key.txt
-RUN echo "Build timestamp: $(cat /tmp/build-key.txt)"
+RUN echo "Build timestamp: $(head -1 /tmp/build-key.txt)"
 
-# Cache invalidation
-ARG BUILD_CACHE_BUST=102
+ARG BUILD_CACHE_BUST=104
 RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
 
 # Use tmpfs for build context to avoid cache issues
@@ -46,7 +44,7 @@ RUN echo "Building with key: ${BUILD_CACHE_BUST}" && \
 RUN test -f apps/api/dist/main.js || (echo "FATAL: apps/api/dist/main.js missing after turbo build" && ls -la apps/api/dist/ 2>/dev/null && exit 1)
 
 # Production stage — layout pnpm hoisted desde builder
-FROM public.ecr.aws/docker/library/node:20-alpine AS runner
+FROM node:20-alpine AS runner
 
 RUN apk add --no-cache wget openssl postgresql-client \
   chromium \
