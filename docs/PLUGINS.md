@@ -849,9 +849,7 @@ OPENROUTER_API_KEY=sk-or-...
 | Documento | Descripción |
 |-----------|-------------|
 | [ARCHITECTURE_PLUGINS.md](./ARCHITECTURE_PLUGINS.md) | Arquitectura técnica profunda del sistema de plugins |
-| [ARCHITECTURE_EVD_PLUGIN.md](./ARCHITECTURE_EVD_PLUGIN.md) | Caso de estudio: plugin comercial EVD |
-| [EVD_PLUGIN_DELIVERY.md](./EVD_PLUGIN_DELIVERY.md) | Notas de entrega del plugin EVD |
-| [LICENSE_PORTAL_SPEC.md](../packages/evd-executive-visual-deck/docs/LICENSE_PORTAL_SPEC.md) | Especificación del portal de licencias |
+| [LICENSE_PORTAL_SPEC.md](./LICENSE_PORTAL_SPEC.md) | Especificación del portal de licencias para plugins |
 
 ---
 
