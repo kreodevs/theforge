@@ -14,11 +14,14 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from "react";
-import { Maximize2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, RotateCcw, Wrench, ZoomIn, ZoomOut } from "lucide-react";
 import {
-  prepareMermaidDiagramForRender,
   stripMermaidFenceWrappers,
 } from "@theforge/shared-types/mermaid";
+import {
+  prepareMermaidForRender,
+  repairMermaidBlockForRender,
+} from "./mermaid-render-prep.util";
 import {
   Button,
   Dialog,
@@ -70,7 +73,7 @@ export function mermaidKey(content: string): string {
 }
 
 export function defaultPrepareMermaidForRender(content: string): string {
-  return prepareMermaidDiagramForRender(content);
+  return prepareMermaidForRender(content);
 }
 
 function looksLikeMermaidBlock(source: string, className?: string): boolean {
@@ -117,6 +120,7 @@ function useMermaidSvg(
   content: string,
   renderId: string,
   prepareContent: (raw: string) => string,
+  onErrorChange?: (failed: boolean) => void,
 ) {
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +132,7 @@ function useMermaidSvg(
 
     setError(null);
     setReady(false);
+    onErrorChange?.(false);
     let cancelled = false;
     const toRender = stripMermaidFenceWrappers(prepareContent(content)).trim();
     if (!toRender || /^```/m.test(toRender)) return;
@@ -140,10 +145,12 @@ function useMermaidSvg(
         el.innerHTML = svg;
         bindFunctions?.(el);
         setReady(true);
+        onErrorChange?.(false);
       } catch (e) {
         if (!cancelled) {
           console.error("Mermaid render error:", e);
           setError("render_failed");
+          onErrorChange?.(true);
         }
       }
     };
@@ -153,7 +160,7 @@ function useMermaidSvg(
     return () => {
       cancelled = true;
     };
-  }, [content, renderId, prepareContent]);
+  }, [content, renderId, prepareContent, onErrorChange]);
 
   return { ref, error, ready };
 }
@@ -192,6 +199,7 @@ type MermaidDiagramBlockProps = {
   blockKey: string;
   prepareContent?: (raw: string) => string;
   enableFullscreen?: boolean;
+  enableRepair?: boolean;
   svgClassName?: string;
 };
 
@@ -201,14 +209,16 @@ function MermaidSvgCanvas({
   prepareContent,
   className,
   onReadyChange,
+  onErrorChange,
 }: {
   content: string;
   renderId: string;
   prepareContent: (raw: string) => string;
   className?: string;
   onReadyChange?: (ready: boolean) => void;
+  onErrorChange?: (failed: boolean) => void;
 }) {
-  const { ref, error, ready } = useMermaidSvg(content, renderId, prepareContent);
+  const { ref, error, ready } = useMermaidSvg(content, renderId, prepareContent, onErrorChange);
 
   useEffect(() => {
     onReadyChange?.(ready);
@@ -517,12 +527,22 @@ export function MermaidDiagramBlock({
   blockKey,
   prepareContent = defaultPrepareMermaidForRender,
   enableFullscreen = true,
+  enableRepair = true,
   svgClassName,
 }: MermaidDiagramBlockProps) {
   const instanceId = useId();
+  const [displayContent, setDisplayContent] = useState(content);
+  const [repairGeneration, setRepairGeneration] = useState(0);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const [inlineReady, setInlineReady] = useState(false);
+  const [inlineFailed, setInlineFailed] = useState(false);
   const [fullscreenReady, setFullscreenReady] = useState(false);
+
+  useEffect(() => {
+    setDisplayContent(content);
+    setRepairGeneration(0);
+    setInlineFailed(false);
+  }, [content]);
 
   const inlineRenderIdRef = useRef("");
   if (!inlineRenderIdRef.current) {
@@ -534,13 +554,29 @@ export function MermaidDiagramBlock({
       Math.random().toString(36).slice(2, 9);
   }
 
+  const inlineRenderId = `${inlineRenderIdRef.current}-r${repairGeneration}`;
+
   const fullscreenRenderIdRef = useRef("");
   if (!fullscreenRenderIdRef.current) {
     fullscreenRenderIdRef.current = `${inlineRenderIdRef.current}-fs`;
   }
 
+  const fullscreenRenderId = `${fullscreenRenderIdRef.current}-r${repairGeneration}`;
+
   const handleInlineReady = useCallback((ready: boolean) => {
     setInlineReady(ready);
+  }, []);
+
+  const handleInlineError = useCallback((failed: boolean) => {
+    setInlineFailed(failed);
+    if (failed) setInlineReady(false);
+  }, []);
+
+  const handleRepair = useCallback(() => {
+    setDisplayContent((prev) => repairMermaidBlockForRender(prev));
+    setRepairGeneration((g) => g + 1);
+    setInlineReady(false);
+    setInlineFailed(false);
   }, []);
 
   const handleOpenFullscreen = useCallback(() => {
@@ -552,6 +588,13 @@ export function MermaidDiagramBlock({
     setFullscreenReady(ready);
   }, []);
 
+  const toolbarVisibility =
+    inlineFailed
+      ? "opacity-100"
+      : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100";
+
+  const showToolbar = inlineReady || inlineFailed;
+
   return (
     <>
       <div
@@ -559,12 +602,31 @@ export function MermaidDiagramBlock({
         className="group relative my-6 block w-full min-w-0 [isolation:isolate] overflow-x-auto rounded-md border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_35%,var(--card))] p-3"
         aria-label="Diagrama Mermaid"
       >
-        {enableFullscreen && inlineReady ? (
+        {enableRepair && showToolbar ? (
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            className="absolute right-2 top-2 z-[1] h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+            className={cn(
+              "absolute left-2 top-2 z-[1] h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm",
+              toolbarVisibility,
+            )}
+            onClick={handleRepair}
+            aria-label="Reparar diagrama Mermaid"
+          >
+            <Wrench className="h-3.5 w-3.5" aria-hidden />
+            Reparar
+          </Button>
+        ) : null}
+        {enableFullscreen && showToolbar ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className={cn(
+              "absolute right-2 top-2 z-[1] h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm",
+              toolbarVisibility,
+            )}
             onClick={handleOpenFullscreen}
             aria-label="Ver diagrama a pantalla completa"
           >
@@ -573,11 +635,12 @@ export function MermaidDiagramBlock({
           </Button>
         ) : null}
         <MermaidSvgCanvas
-          content={content}
-          renderId={inlineRenderIdRef.current}
+          content={displayContent}
+          renderId={inlineRenderId}
           prepareContent={prepareContent}
           className={svgClassName}
           onReadyChange={handleInlineReady}
+          onErrorChange={handleInlineError}
         />
       </div>
 
@@ -593,20 +656,35 @@ export function MermaidDiagramBlock({
             del ratón para zoom, o Esc para cerrar.
           </DialogDescription>
           <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_22%,var(--card))] px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-[var(--foreground)]">Diagrama Mermaid</p>
-              <p className="text-xs text-[var(--muted-foreground)]">
-                Arrastrar para desplazar · Rueda para zoom · Doble clic restablece
-              </p>
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {enableRepair ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 gap-1.5 text-xs"
+                  onClick={handleRepair}
+                  aria-label="Reparar diagrama Mermaid"
+                >
+                  <Wrench className="h-3.5 w-3.5" aria-hidden />
+                  Reparar
+                </Button>
+              ) : null}
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[var(--foreground)]">Diagrama Mermaid</p>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Arrastrar para desplazar · Rueda para zoom · Doble clic restablece
+                </p>
+              </div>
             </div>
             <p className="hidden shrink-0 text-xs text-[var(--muted-foreground)] sm:block">Esc para cerrar</p>
           </div>
           <div className="relative min-h-0 flex-1 overflow-hidden">
             {fullscreenOpen ? (
-              <MermaidPanZoomViewport resetKey={blockKey} contentReady={fullscreenReady}>
+              <MermaidPanZoomViewport resetKey={`${blockKey}-${repairGeneration}`} contentReady={fullscreenReady}>
                 <MermaidSvgCanvas
-                  content={content}
-                  renderId={fullscreenRenderIdRef.current}
+                  content={displayContent}
+                  renderId={fullscreenRenderId}
                   prepareContent={prepareContent}
                   className="block [&_svg]:block [&_svg]:h-auto [&_svg]:max-w-none [&_svg]:w-auto"
                   onReadyChange={handleFullscreenReady}
