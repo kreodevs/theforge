@@ -325,36 +325,36 @@ export function ProviderConfigFormFields({
           <label htmlFor={`${idPrefix}-image`} className="block text-sm font-medium text-[var(--foreground)]">
             Modelo de imagen (EVD)
           </label>
-          <select
+          <input
             id={`${idPrefix}-image`}
+            list={`${idPrefix}-image-models`}
             value={form.imageModel}
             onChange={(e) => {
               onPatch({ imageModel: e.target.value });
               onClearFieldError("imageModel");
             }}
             onBlur={() => onBlurField("imageModel")}
+            placeholder={catalog.defaultImageModel || "openai/dall-e-3"}
             className={cn(
-              "flex h-auto min-h-[36px] w-full rounded-md border border-[var(--input-border)] bg-[var(--input)] px-3 py-2 text-sm text-[var(--foreground)] shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
+              "flex h-9 w-full rounded-md border border-[var(--input-border)] bg-[var(--input)] px-3 py-1 text-sm text-[var(--foreground)] shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] font-mono text-xs",
               inputErrorClass("imageModel"),
             )}
-          >
-            <option value="" disabled>
-              Seleccionar modelo...
-            </option>
+          />
+          <datalist id={`${idPrefix}-image-models`}>
             {catalog.imageModels?.map((m) => {
               const detail = catalog.imageModelDetails?.[m];
-              return (
-                <option key={m} value={m}>
-                  {detail ? `${detail.label}  —  ${detail.priceOut ?? "?"}` : m}
-                </option>
-              );
+              return <option key={m} value={m} label={detail ? `${detail.label} — ${detail.priceOut ?? "?"}` : m} />;
             })}
-          </select>
-          {form.imageModel ? (
+          </datalist>
+          <p className="text-xs text-[var(--foreground-muted)]">
+            {catalog.id === "openrouter"
+              ? "Cualquier modelo de imagen disponible en OpenRouter. Ver lista actualizada en openrouter.io/docs#image-models"
+              : "ID del modelo de generación de imágenes."}
+          </p>
+          {form.imageModel && catalog.imageModelDetails && catalog.imageModelDetails[form.imageModel] ? (
             <p className="text-xs text-[var(--foreground-muted)]">
               {(() => {
-                const detail = catalog.imageModelDetails?.[form.imageModel];
-                if (!detail) return null;
+                const detail = catalog.imageModelDetails[form.imageModel]!;
                 return (
                   <span>
                     {detail.description} {detail.originProvider ? `(${detail.originProvider})` : ""}
