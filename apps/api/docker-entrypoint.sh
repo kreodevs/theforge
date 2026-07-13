@@ -150,6 +150,11 @@ if [ -n "$PRISMA_RESOLVE_ROLLED_BACK" ]; then
   npx prisma migrate resolve --rolled-back "$PRISMA_RESOLVE_ROLLED_BACK" || true
 fi
 
+# P3009: evdContent — limpiar antes de migrate deploy (la columna ya existe o se crea por db push)
+if npx prisma migrate resolve --rolled-back 20260712_add_evd_content_column 2>/dev/null; then
+  echo "migrate resolve: cleared failed record for 20260712_add_evd_content_column"
+fi
+
 # Si db push adelantó el DDL, marcar migración como aplicada sin re-ejecutar ADD COLUMN
 resolve_applied_if_project_column "20260609120000_add_agent_governance_content" "agentGovernanceContent"
 resolve_applied_if_project_column "20260612120000_project_merge_suite" "archivedAt"
