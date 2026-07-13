@@ -177,4 +177,20 @@ describe("wouldShrinkDbgaDangerously", () => {
     const fragment = "### Módulos\n\n" + "y".repeat(800);
     assert.equal(wouldShrinkDbgaDangerously(current, fragment), true);
   });
+
+  it("bloquea doc reducido a registro de cambios sin Research Report", () => {
+    const current = `# Research Report
+
+## Dos objetivos centrales
+Objetivos…
+
+### Módulos del proyecto
+Detalle extenso ${"x".repeat(4000)}`;
+    const next = `## Registro de cambios del documento
+
+| Versión | Fecha | Descripción |
+| --- | --- | --- |
+| 2.4 | Julio 2026 | Gap migración tiers |`;
+    assert.equal(wouldShrinkDbgaDangerously(current, next), true);
+  });
 });

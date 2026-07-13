@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   isHypotheticalDocumentEditOffer,
+  isUserExploringDbgaIntent,
   looksLikeDbgaEditRequest,
 } from "./document-edit-intent.js";
 
@@ -28,6 +29,22 @@ describe("looksLikeDbgaEditRequest", () => {
         "Tenemos que aislar el núcleo del negocio de la infraestructura de las APIs. Vamos a usar adaptadores. Tendríamos que definir si cada agente tiene su propio modelo o cada tarea tiene un modelo.",
       ),
       false,
+    );
+  });
+
+  it("no trata pregunta condicional con «en el DBGA» como edición inmediata", () => {
+    const msg =
+      "Hay un gap crítico: Migración de datos entre tiers. ¿Qué sugieres hacer? " +
+      "¿Te parece bien esta aproximación? Si es así, la integro en el DBGA y la saco de omisiones críticas.";
+    assert.ok(isUserExploringDbgaIntent(msg));
+    assert.equal(looksLikeDbgaEditRequest(msg), false);
+  });
+
+  it("sigue detectando cubrir gap como edición explícita", () => {
+    assert.ok(
+      looksLikeDbgaEditRequest(
+        "Cubre el gap de Auditoría de acciones de cliente en Seguridad y elimínalo de omisiones críticas.",
+      ),
     );
   });
 });
