@@ -32,7 +32,6 @@ import { UserProvidersModule } from "./modules/user-providers/user-providers.mod
 import { DesignRefModule } from "./modules/design-ref/design-ref.module.js";
 import { UiMcpModule } from "./modules/ui-mcp/ui-mcp.module.js";
 import { TechnologyDocsMcpModule } from "./modules/technology-docs-mcp/technology-docs-mcp.module.js";
-import { EvdStorageModule } from "./modules/evd/evd-storage.module.js";
 import { PluginModule } from "./plugins/plugin.module.js";
 
 @Module({
@@ -61,7 +60,6 @@ import { PluginModule } from "./plugins/plugin.module.js";
     DesignRefModule,
     UiMcpModule,
     TechnologyDocsMcpModule,
-    EvdStorageModule,
     PluginModule,
   ],
   providers: [

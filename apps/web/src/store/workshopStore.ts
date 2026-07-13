@@ -535,7 +535,6 @@ export interface Project {
   handoffSpecContent: string | null;
   uiScreensContent: string | null;
   agentGovernanceContent: string | null;
-  evdContent: string | null;
   convergeWebhookUrl?: string | null;
   linkedLegacyProjectId?: string | null;
   linkedNewProjectId?: string | null;
@@ -698,7 +697,6 @@ interface WorkshopState {
   handoffSpecContent: string | null;
   uiScreensContent: string | null;
   agentGovernanceContent: string | null;
-  evdContent: string | null;
   conformance: {
     blueprint: ConformanceResult;
     blueprintDataModel: ConformanceResult;
@@ -896,9 +894,6 @@ interface WorkshopState {
   setUiScreensContent: (content: string | null) => void;
   /** Genera el deliverable "Pantallas" desde el MCP gráfico compatible activo. */
   syncUiScreens: (projectId: string) => Promise<string | null>;
-  setEvdContent: (content: string | null) => void;
-  persistEvdContent: (content: string) => Promise<void>;
-  generateEvd: (projectId: string) => Promise<Project | null>;
   generateSpec: (projectId: string) => Promise<Project | null>;
   generateAem: (
     projectId: string,
@@ -1026,7 +1021,6 @@ const initialState = {
   handoffSpecContent: null as string | null,
   uiScreensContent: null as string | null,
   agentGovernanceContent: null as string | null,
-  evdContent: null as string | null,
   conformance: null as {
     blueprint: ConformanceResult;
     blueprintDataModel: ConformanceResult;
@@ -1135,7 +1129,6 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       aemContent: p.aemContent ?? null,
       handoffSpecContent: p.handoffSpecContent ?? null,
       uiScreensContent: p.uiScreensContent ?? null,
-      evdContent: p.evdContent ?? null,
       lastLegacyDeliverablesDebug: legacyDebugFromStages(stages, activeStageId),
     });
   },
@@ -3032,29 +3025,6 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return content;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al sincronizar Pantallas" });
-      return null;
-    } finally {
-      set({ loading: false });
-    }
-  },
-  setEvdContent: (content) => set({ evdContent: content }),
-  persistEvdContent: async (content) => {
-    await persistField("evdContent", content, get, set);
-  },
-  generateEvd: async (projectId) => {
-    if (!projectId?.trim()) return null;
-    set({ loading: true, error: null });
-    try {
-      const data = await queueAndPoll<Project>(
-        `${API_BASE}/projects/${projectId}/generate-evd`,
-        {},
-      );
-      const evdContent = data.evdContent ?? null;
-      const proj = { ...data, evdContent };
-      set({ project: proj, evdContent, error: null });
-      return proj;
-    } catch (e) {
-      set({ error: friendlyFetchError(e) });
       return null;
     } finally {
       set({ loading: false });

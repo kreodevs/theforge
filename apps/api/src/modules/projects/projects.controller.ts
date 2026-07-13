@@ -627,8 +627,6 @@ export class ProjectsController {
         return this.projects.generateUserStories(projectId);
       case "spec":
         return this.projects.generateSpec(projectId);
-      case "evd":
-        return this.projects.generateEvd(projectId);
       default:
         return this.projects.generateBlueprint(projectId);
     }

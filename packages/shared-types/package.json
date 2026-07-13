@@ -51,11 +51,6 @@
       "types": "./dist/mdd-governance-patterns.d.ts",
       "import": "./dist/mdd-governance-patterns.js",
       "require": "./dist/mdd-governance-patterns.js"
-    },
-    "./evd-types": {
-      "types": "./dist/evd-types.d.ts",
-      "import": "./dist/evd-types.js",
-      "require": "./dist/evd-types.js"
     }
   },
   "scripts": {

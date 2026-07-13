@@ -111,8 +111,6 @@ export interface WorkshopDocNavBuildContext {
   uiScreensContent: string | null | undefined;
   /** Hay un MCP gráfico compatible activo (gate de visibilidad de la pestaña "Pantallas"). */
   uiMcpActive: boolean;
-  /** Deliverable "Executive Visual Deck" (JSON) generado por IA. */
-  evdContent: string | null | undefined;
 }
 
 export function workshopTabDocHasContent(tabId: string, content: unknown): boolean {
@@ -330,15 +328,6 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       title: "Análisis y Estudio de Mercado (AEM)",
       Icon: FileText,
       content: ctx.aemContent,
-    });
-  }
-  if (visible("evd")) {
-    items.push({
-      id: "evd",
-      label: "EVD",
-      title: "Executive Visual Deck — presentación ejecutiva generada por IA",
-      Icon: Presentation,
-      content: ctx.evdContent,
     });
   }
 

@@ -22,8 +22,7 @@ export type GenerationJobType =
   | "architecture"
   | "use-cases"
   | "user-stories"
-  | "doc-reconcile-partial"
-  | "evd";
+  | "doc-reconcile-partial";
 
 export const GENERATION_JOB_TYPE_LABELS: Record<GenerationJobType, string> = {
   cascade: "Cascada de entregables",
@@ -38,7 +37,6 @@ export const GENERATION_JOB_TYPE_LABELS: Record<GenerationJobType, string> = {
   "use-cases": "Casos de uso",
   "user-stories": "Historias de usuario",
   "doc-reconcile-partial": "Reconciliación parcial",
-  evd: "Executive Vision Deck",
 };
 
 /** Mapeo job → entregable (null = especial / no aplica campo único). */
@@ -70,8 +68,6 @@ export function generationJobToDeliverableKind(
       return "cascade";
     case "doc-reconcile-partial":
       return "doc_reconcile";
-    case "evd":
-      return "evd";
     default:
       return null;
   }

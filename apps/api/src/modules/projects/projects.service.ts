@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, Optional, forwardRef } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
 import { ComplexityLevel, Prisma, StageStatus, Status } from "@theforge/database";
 import type { Estimation, Project, Stage } from "@theforge/database";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
@@ -55,8 +55,6 @@ import {
   extractSection,
 } from "../engine/conformance.service.js";
 import { AiService } from "../ai/ai.service.js";
-import { PluginLoaderService } from "../../plugins/plugin-loader.service.js";
-import type { BeforeDocumentRenderPayload, AfterDocumentRenderPayload } from "../../plugins/types/plugin-payloads.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
 import { ScraperService } from "../scraper/scraper.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
@@ -224,33 +222,11 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     @Inject(forwardRef(() => ResolveChangeToFilesService))
     private readonly resolveChangeToFiles: ResolveChangeToFilesService,
     private readonly planValidation: PlanValidationService,
-    @Optional() private readonly pluginLoader?: PluginLoaderService,
   ) {}
 
-  // --------------------------------------------------------------------------
-  // Plugin hook helpers (nop if plugin loader is absent)
-  // --------------------------------------------------------------------------
-  private async runBeforeDocumentRender(payload: BeforeDocumentRenderPayload): Promise<BeforeDocumentRenderPayload> {
-    if (!this.pluginLoader) return payload;
-    try {
-      return await this.pluginLoader.executeBeforeDocumentRender(payload);
-    } catch (_err) {
-      this.logger.warn("Plugin beforeDocumentRender hook failed; proceeding unchanged.");
-      return payload;
-    }
-  }
-
-  private async runAfterDocumentRender(payload: AfterDocumentRenderPayload): Promise<AfterDocumentRenderPayload> {
-    if (!this.pluginLoader) return payload;
-    try {
-      return await this.pluginLoader.executeAfterDocumentRender(payload);
-    } catch (_err) {
-      this.logger.warn("Plugin afterDocumentRender hook failed; proceeding unchanged.");
-      return payload;
-    }
-  }
-
-  /** Opciones greenfield: Phase0 + blueprint para checklist de cobertura. */
+  /**
+   * Opciones greenfield: Phase0 + blueprint para checklist de cobertura.
+   */
   private greenfieldGenerateOptions(project: Project): LegacyGenerateOptions {
     return {
       phase0SummaryContent: project.phase0SummaryContent,
@@ -905,7 +881,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         "apiContractsContent", "logicFlowsContent", "infraContent",
         "agentGovernanceContent",
         "uxUiGuideContent", "phase0SummaryContent", "aemContent",
-        "handoffSpecContent", "evdContent",
+        "handoffSpecContent",
       ] as const;
       for (const field of documentFields) {
         if ((rest as Record<string, unknown>)[field] !== undefined) {
@@ -1693,12 +1669,10 @@ name: ${JSON.stringify(name)}
       case "infra":
         await this.generateInfra(projectId, gaps);
         return;
-      case "evd":
-        await this.generateEVD(projectId);
-        return;
       default: {
-        const _exhaustive: never = kind;
-        return _exhaustive;
+        // Exhaustiveness check intentionally disabled after EVD extraction
+        // (plugin framework handles extensible document types)
+        return void 0;
       }
     }
   }
@@ -2082,12 +2056,6 @@ name: ${JSON.stringify(name)}
       dbga.length === 0 && rawMdd.length > 0 ? "mdd" : "dbga",
     );
     return this.update(projectId, { specContent: cleanDocumentContent(specContent) });
-  }
-
-  async generateEvd(projectId: string) {
-    // Delega al pipeline completo con Visual Stylist Agent
-    await this.generateEVD(projectId);
-    return this.assertProjectAccess(projectId);
   }
 
   /** Limpia gobernanza persistida antes de regenerar (polling y UI). */
@@ -2743,69 +2711,6 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     }
 
     return this.update(projectId, { infraContent: cleaned });
-  }
-
-  /** Executive Vision Deck — genera JSON de presentación ejecutiva visual. */
-  async generateEVD(projectId: string): Promise<void> {
-    const project = await this.assertProjectAccess(projectId);
-    const primaryStage = pickPrimaryStage(project.stages);
-
-    // --- beforeDocumentRender hook ---
-    const beforePayload = await this.runBeforeDocumentRender({
-      documentType: "evd",
-      projectId,
-      prompt: "",
-      systemPrompt: "",
-      context: {
-        mddContent: primaryStage?.mddContent ?? null,
-        specContent: project.specContent ?? null,
-        benchmarkContent: project.dbgaContent ?? null,
-        blueprintContent: project.blueprintContent ?? null,
-      },
-      llmRuntime: { providerId: "", model: "", apiKey: "", baseURL: "" },
-    });
-
-    const evdJsonStr = await this.ai.generateEVDJSON({
-      mddContent: beforePayload.context.mddContent ?? null,
-      specContent: beforePayload.context.specContent,
-      benchmarkContent: beforePayload.context.benchmarkContent,
-      blueprintContent: beforePayload.context.blueprintContent,
-    });
-
-    // Strip markdown code fences that LLM sometimes wraps JSON in
-    const cleanedJson = evdJsonStr
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```\s*$/, "")
-      .trim();
-
-    const parsed = JSON.parse(cleanedJson);
-    const deck = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
-
-    // Repair Mermaid syntax in diagram slides (auto-close unclosed blocks, fix labels, etc.)
-    if (deck?.slides && Array.isArray(deck.slides)) {
-      for (const slide of deck.slides) {
-        if (slide.type === "process_flow" && slide.diagramData?.code) {
-          const { normalizeMermaidDiagramBody } = await import("@theforge/shared-types");
-          slide.diagramData.code = normalizeMermaidDiagramBody(slide.diagramData.code);
-        }
-      }
-    }
-
-    // --- afterDocumentRender hook ---
-    const afterPayload = await this.runAfterDocumentRender({
-      documentType: "evd",
-      projectId,
-      rawContent: cleanedJson,
-      parsedContent: deck,
-      originalContext: beforePayload,
-    });
-
-    const finalDeck = afterPayload.parsedContent as typeof deck;
-
-    const evdContent = JSON.stringify(finalDeck, null, 2);
-    this.logger.log(`[EVD] Persisting deck with ${finalDeck.slides?.length ?? 0} slides, ${evdContent.length} chars`);
-
-    await this.update(projectId, { evdContent });
   }
 
   async getConformance(
