@@ -23,6 +23,10 @@
  * - **`create_project`**: `POST /projects` (body: name, projectType NEW|LEGACY, hasUxTeam, theforgeProjectId si LEGACY)
  * - **`delete_project`**: `DELETE /projects/:projectId`
  * - **`get_project_stages`**: `GET /projects/:projectId/stages`
+ * - **`get_project_stage_detail`**: `GET /projects/:projectId/stages/:stageId` (detalle + entregables + transiciones permitidas)
+ * - **`create_project_stage`**: `POST /projects/:projectId/stages`
+ * - **`patch_project_stage`**: `PATCH /projects/:projectId/stages/:stageId`
+ * - **`transition_project_stage`**: `POST /projects/:projectId/stages/:stageId/transition` (activate|complete|archive|reopen)
  * - **`get_project_deliverables`**: `GET /projects/:projectId` (resumen cascada + `agentGovernanceContent`)
  * - **`get_conformance`**: `GET /projects/:projectId/conformance?useLlm=`
  * - **`patch_project`**: `PATCH /projects/:projectId` (body parcial MDD/blueprint/spec/groupId/…)
@@ -112,4 +116,4 @@
  * Revisión del catálogo; incrementar si cambia el conjunto de tools.
  * @constant
  */
-export const MCP_THEFORGE_TOOLS_DOC_REVISION = 8;
+export const MCP_THEFORGE_TOOLS_DOC_REVISION = 9;

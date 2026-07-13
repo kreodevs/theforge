@@ -17,6 +17,7 @@ import { generateTable, normalizeTable, normalizeAllTables, parseTable } from "@
 import { generateMermaid, normalizeMermaid, validateMermaid } from "@theforge/shared-types/mermaid";
 import { formatNestApiError } from "./api-error.util.js";
 import { PROJECT_GROUP_TOOLS, createProjectGroupHandlers } from "./project-group-tools.js";
+import { PROJECT_STAGE_TOOLS, createProjectStageHandlers } from "./project-stage-tools.js";
 
 // ── Config ────
 
@@ -314,6 +315,8 @@ const TOOLS: Tool[] = [
       required: ["projectId"],
     },
   },
+  // ── Project stages (control de workflow) ──
+  ...PROJECT_STAGE_TOOLS,
   {
     name: "get_conformance",
     description: "Reporte de conformidad del proyecto contra el MDD",
@@ -1778,6 +1781,11 @@ const handlers: Record<string, Handler> = {
     post: apiPost,
     patch: apiPatch,
     delete: apiDelete,
+  }),
+  ...createProjectStageHandlers({
+    get: apiGet,
+    post: apiPost,
+    patch: apiPatch,
   }),
 };
 
