@@ -21,6 +21,7 @@ import { DocumentationGapModule } from "../documentation-gap/documentation-gap.m
 import { EstimationModule } from "../ai-analysis/estimation/estimation.module.js";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
+import { ProjectGroupsModule } from "../project-groups/project-groups.module.js";
 import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
 
 @Module({
@@ -35,6 +36,7 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     forwardRef(() => LegacyFlowModule),
     forwardRef(() => DocumentationGapModule),
     UiMcpModule,
+    ProjectGroupsModule,
     EstimationModule,
   ],
   controllers: [ProjectsController, ProjectIntegrationController],

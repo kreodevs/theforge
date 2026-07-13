@@ -36,7 +36,6 @@ describe("project-clone.util", () => {
     phase0Gaps: null,
     phase0Questions: 2,
     aemContent: null,
-    handoffSpecContent: null,
     convergeWebhookUrl: "https://example.com/hook",
     convergeWebhookSecret: "secret",
     archivedAt: null,
@@ -46,6 +45,7 @@ describe("project-clone.util", () => {
     linkedNewProjectId: null,
     integrationHandoff: null,
     integrationHandoffUpdatedAt: null,
+    groupId: "00000000-0000-4000-8000-000000000001",
     createdAt: new Date("2026-01-01"),
     stages: [
       {
@@ -78,7 +78,6 @@ describe("project-clone.util", () => {
         phase0SummaryContent: null,
         aemContent: null,
         changeSpecContent: null,
-        handoffSpecContent: null,
         isLegacy: false,
         theforgeProjectId: null,
         shortTermContext: { scratch: true },

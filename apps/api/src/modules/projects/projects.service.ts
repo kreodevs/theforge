@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
 import { ComplexityLevel, Prisma, StageStatus, Status } from "@theforge/database";
 import type { Estimation, Project, Stage } from "@theforge/database";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
@@ -157,6 +157,8 @@ import {
   resolveCloneProjectOptions,
   type ProjectCloneSource,
 } from "./project-clone.util.js";
+import { ProjectGroupsService } from "../project-groups/project-groups.service.js";
+
 import { toApiProjectListItem } from "./project-list-item.util.js";
 
 import {
@@ -169,7 +171,14 @@ type StageWithEst = Stage & { estimation: Estimation | null };
 
 function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unknown>>(project: P) {
   const flat = flattenStageDeliverables(project.stages, project as ProjectDeliverableSource);
-  return { ...project, ...flat };
+  const group = project.group as { name: string } | undefined;
+  const { group: _g, ...rest } = project;
+  return {
+    ...rest,
+    ...flat,
+    groupId: project.groupId as string,
+    groupName: group?.name,
+  };
 }
 
 @Injectable()
@@ -191,7 +200,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const userId = getRequestUserId();
     const project = await this.prisma.project.findFirst({
       where: { id: projectId },
-      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+      include: {
+        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+        group: { select: { name: true } },
+      },
     });
     if (!project) throw new NotFoundException("Project not found");
     const isOwner = project.userId === userId;
@@ -222,6 +234,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     @Inject(forwardRef(() => ResolveChangeToFilesService))
     private readonly resolveChangeToFiles: ResolveChangeToFilesService,
     private readonly planValidation: PlanValidationService,
+    private readonly projectGroups: ProjectGroupsService,
   ) {}
 
   /**
@@ -511,9 +524,20 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const parsed = createProjectSchema.parse(data);
     const isLegacy = parsed.projectType === "LEGACY";
     const userId = getRequestUserId();
+    const defaultGroupId = await this.projectGroups.getDefaultGroupId();
+    let groupId = defaultGroupId;
+    if (parsed.groupId) {
+      const targetGroup = await this.prisma.projectGroup.findUnique({
+        where: { id: parsed.groupId },
+        select: { id: true },
+      });
+      if (!targetGroup) throw new NotFoundException("Grupo no encontrado");
+      groupId = parsed.groupId;
+    }
     const created = await this.prisma.project.create({
       data: {
         userId,
+        groupId,
         name: parsed.name,
         visibility: parsed.visibility ?? "PRIVATE",
         hasUxTeam: parsed.hasUxTeam ?? false,
@@ -534,6 +558,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       },
       include: {
         stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+        group: { select: { name: true } },
       },
     });
 
@@ -568,6 +593,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       data: buildProjectCloneCreateInput(source, { userId, ...options }),
       include: {
         stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+        group: { select: { name: true } },
       },
     });
 
@@ -620,6 +646,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         hasUxTeam: true,
         linkedLegacyProjectId: true,
         linkedNewProjectId: true,
+        groupId: true,
+        group: { select: { name: true } },
         createdAt: true,
         stages: {
           orderBy: { ordinal: "asc" },
@@ -703,6 +731,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       mddFormatOnly,
       clearComplexityPending,
       complexityPending: cpInput,
+      groupId: parsedGroupId,
       ...rest
     } = parsed;
 
@@ -715,6 +744,17 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       rest.convergeWebhookUrl !== undefined || rest.convergeWebhookSecret !== undefined;
     if (hasSettingsChange && existingRaw.userId !== getRequestUserId()) {
       throw new BadRequestException("Only the project owner can change project settings");
+    }
+
+    if (parsedGroupId !== undefined && parsedGroupId !== existingRaw.groupId) {
+      if (!isAdminOrAbove(getRequestUserRole())) {
+        throw new ForbiddenException("Solo admin puede mover proyectos entre grupos");
+      }
+      const targetGroup = await this.prisma.projectGroup.findUnique({
+        where: { id: parsedGroupId },
+        select: { id: true },
+      });
+      if (!targetGroup) throw new NotFoundException("Grupo no encontrado");
     }
 
     const targetStage: StageWithEst | undefined =
@@ -753,6 +793,9 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       figmaMapping:
         rest.figmaMapping === null ? undefined : (rest.figmaMapping as Prisma.InputJsonValue),
     };
+    if (parsedGroupId !== undefined) {
+      updatePayload.group = { connect: { id: parsedGroupId } };
+    }
     if (clearComplexityPending === true) {
       updatePayload.complexityPending = Prisma.JsonNull;
     } else if (cpInput !== undefined) {
@@ -861,7 +904,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const hasProjectFieldUpdates =
       (Object.keys(rest) as (keyof typeof rest)[]).some((k) => rest[k] !== undefined) ||
       clearComplexityPending === true ||
-      cpInput !== undefined;
+      cpInput !== undefined ||
+      parsedGroupId !== undefined;
     if (hasProjectFieldUpdates) {
       const deliverablePatch = pickDeliverableFieldsFromSource(rest as ProjectDeliverableSource);
       const hasDeliverablePatch = Object.keys(deliverablePatch).length > 0;

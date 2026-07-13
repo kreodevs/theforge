@@ -18,6 +18,7 @@ describe("toApiProjectListItem", () => {
         hasUxTeam: false,
         linkedLegacyProjectId: null,
         linkedNewProjectId: null,
+        groupId: "00000000-0000-4000-8000-000000000001",
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
         stages: [
           {
@@ -43,6 +44,7 @@ describe("toApiProjectListItem", () => {
     assert.equal(item.mddContent, null);
     assert.equal(item.specContent, null);
     assert.equal(item.activeStageId, "s1");
+    assert.equal(item.groupId, "00000000-0000-4000-8000-000000000001");
     assert.equal(item.stages?.length, 1);
     assert.equal(item.stages?.[0]?.status, Status.VERDE);
   });

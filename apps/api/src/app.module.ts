@@ -18,6 +18,7 @@ import { AuthModule } from "./modules/auth/auth.module.js";
 import { AiModule } from "./modules/ai/ai.module.js";
 import { EngineModule } from "./modules/engine/engine.module.js";
 import { ProjectsModule } from "./modules/projects/projects.module.js";
+import { ProjectGroupsModule } from "./modules/project-groups/project-groups.module.js";
 import { SessionsModule } from "./modules/sessions/sessions.module.js";
 import { AiOrchestratorModule } from "./modules/ai-orchestrator/ai-orchestrator.module.js";
 import { AiAnalysisModule } from "./modules/ai-analysis/ai-analysis.module.js";
@@ -48,6 +49,7 @@ import { PluginModule } from "./plugins/plugin.module.js";
     AiModule,
     EngineModule,
     ProjectsModule,
+    ProjectGroupsModule,
     SessionsModule,
     AiOrchestratorModule,
     AiAnalysisModule,
