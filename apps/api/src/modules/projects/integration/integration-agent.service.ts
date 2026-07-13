@@ -7,7 +7,6 @@ import { cleanDocumentContent } from "../../sessions/document-content.util.js";
 import { runIntegrationAgent } from "../../ai-analysis/nodes/integration-agent.node.js";
 import { ChangeLogService } from "../../change-log/change-log.service.js";
 import { pickPrimaryStage } from "../stage-helpers.js";
-import { persistStageAndProjectDeliverables } from "../stage-deliverable-persist.util.js";
 import { ProjectIntegrationService } from "./project-integration.service.js";
 
 export interface SyncHandoffSpecResult {
@@ -92,10 +91,11 @@ export class IntegrationAgentService {
     });
 
     const content = cleanDocumentContent(result.markdown);
-    await persistStageAndProjectDeliverables(this.prisma, stage.id, projectId, {
-      handoffSpecContent: content,
+    await this.prisma.stage.update({
+      where: { id: stage.id },
+      data: { changeSpecContent: content },
     });
-    await this.changeLog.log(projectId, "handoffSpecContent", content);
+    await this.changeLog.log(projectId, "changeSpecContent", content);
 
     this.logger.log(
       `[IntegrationAgent] handoff-spec sincronizado (project=${projectId.slice(0, 8)} stage=${stage.id.slice(0, 8)} items=${handoffItems.length} sinEvidencia=${result.itemsWithoutEvidence.length})`,
