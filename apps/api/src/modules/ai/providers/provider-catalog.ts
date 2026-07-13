@@ -112,7 +112,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 1536,
     defaultSttModel: "openai/whisper-1",
     defaultVisionModel: "openai/gpt-4o",
-    imageModels: ["openai/dall-e-3", "google/gemini-3.1-flash-lite-image", "stability/sdxl"],
+    imageModels: ["openai/dall-e-3", "google/gemini-3.1-flash-lite-image"],
     imageModelDetails: {
       "openai/dall-e-3": {
         id: "openai/dall-e-3",
@@ -129,14 +129,6 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
         priceOut: "$0.01",
         description: "Modelo de generación de imágenes de Google. Muy rápido y económico.",
         originProvider: "Google",
-      },
-      "stability/sdxl": {
-        id: "stability/sdxl",
-        label: "SDXL",
-        priceIn: "$0.01",
-        priceOut: "$0.01",
-        description: "Stable Diffusion XL. Divertido, menos corporativo pero opcional.",
-        originProvider: "Stability AI",
       },
     },
     defaultImageModel: "openai/dall-e-3",
