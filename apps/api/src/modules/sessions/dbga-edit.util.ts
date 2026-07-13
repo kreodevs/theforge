@@ -230,7 +230,11 @@ export function mergeBenchmarkPartialDoc(current: string, partial: string): stri
 
 const BENCHMARK_BODY_MARKERS = [
   /^#\s+Research Report/im,
+  /^#\s+Domain Benchmark/im,
+  /^#\s+Fase 0 —/im,
   /^##\s+Dos objetivos centrales/im,
+  /^##\s+1\.\s+Referencia de Industria/im,
+  /^##\s+2\.\s+Funcionalidades/im,
   /^###\s+Módulos del proyecto/im,
   /^##\s+Arquitectura/im,
 ] as const;
@@ -262,6 +266,15 @@ export function wouldShrinkDbgaDangerously(
   if (
     /^#\s+Research Report/im.test(c) &&
     !/^#\s+Research Report/im.test(n) &&
+    /^##\s+Registro de cambios/im.test(n) &&
+    n.length < c.length * 0.7
+  ) {
+    return true;
+  }
+  if (
+    (/^#\s+Domain Benchmark/im.test(c) || /^#\s+Fase 0 —/im.test(c)) &&
+    !/^#\s+Domain Benchmark/im.test(n) &&
+    !/^#\s+Fase 0 —/im.test(n) &&
     /^##\s+Registro de cambios/im.test(n) &&
     n.length < c.length * 0.7
   ) {

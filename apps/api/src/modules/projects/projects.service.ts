@@ -5,7 +5,14 @@ import { getRequestUserId, getRequestUserRole } from "../../common/request-user.
 import { isAdminOrAbove } from "../../common/roles.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
-import { validateDocumentForPersist } from "../sessions/document-shrink.util.js";
+import {
+  validateDocumentForPersist,
+  documentPersistFieldLabel,
+} from "../sessions/document-shrink.util.js";
+import {
+  DocumentSnapshotService,
+  type DocumentSnapshotSource,
+} from "../document-snapshot/document-snapshot.service.js";
 import { enrichBlueprintWithUiDesignSystem } from "../engine/blueprint-enrich-ui-system.js";
 import {
   buildBlueprintQualityRetryFeedback,
@@ -237,7 +244,69 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly resolveChangeToFiles: ResolveChangeToFilesService,
     private readonly planValidation: PlanValidationService,
     private readonly projectGroups: ProjectGroupsService,
+    private readonly documentSnapshot: DocumentSnapshotService,
   ) {}
+
+  private async guardAndSnapshotDocumentField(
+    projectId: string,
+    field: "dbgaContent" | "specContent",
+    current: string | null | undefined,
+    next: string | null | undefined,
+    source: DocumentSnapshotSource = "patch",
+  ): Promise<void> {
+    if (next === undefined) return;
+    const validation = validateDocumentForPersist(current, next, {
+      fieldLabel: documentPersistFieldLabel(field),
+    });
+    if (!validation.ok) {
+      throw new BadRequestException(validation.message);
+    }
+    const cur = (current ?? "").trim();
+    const nxt = (next ?? "").trim();
+    if (cur.length >= 400 && nxt.length > 0 && cur !== nxt) {
+      await this.documentSnapshot.snapshotBeforeOverwrite(projectId, field, current, source);
+    }
+  }
+
+  async listDocumentSnapshots(
+    projectId: string,
+    options?: { field?: string; limit?: number },
+  ) {
+    await this.assertProjectAccess(projectId);
+    return this.documentSnapshot.listByProject(projectId, options);
+  }
+
+  async restoreDocumentSnapshot(projectId: string, snapshotId: string) {
+    const project = await this.assertProjectAccess(projectId);
+    const snap = await this.documentSnapshot.getSnapshotContent(projectId, snapshotId);
+    if (!this.documentSnapshot.isSnapshotField(snap.field)) {
+      throw new BadRequestException(`Restauración no soportada para el campo ${snap.field}.`);
+    }
+
+    const current =
+      snap.field === "dbgaContent"
+        ? project.dbgaContent
+        : snap.field === "specContent"
+          ? project.specContent
+          : null;
+
+    if (snap.field === "dbgaContent" || snap.field === "specContent") {
+      await this.documentSnapshot.snapshotBeforeOverwrite(
+        projectId,
+        snap.field,
+        current,
+        "restore",
+      );
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { [snap.field]: snap.content },
+      });
+      await this.changeLog.log(projectId, snap.field, snap.content);
+      return this.findOne(projectId);
+    }
+
+    throw new BadRequestException(`Restauración no implementada para ${snap.field}.`);
+  }
 
   /**
    * Opciones greenfield: Phase0 + blueprint para checklist de cobertura.
@@ -765,12 +834,21 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
 
     if (rest.specContent !== undefined) {
-      const specValidation = validateDocumentForPersist(existingRaw.specContent, rest.specContent, {
-        fieldLabel: "Spec",
-      });
-      if (!specValidation.ok) {
-        throw new BadRequestException(specValidation.message);
-      }
+      await this.guardAndSnapshotDocumentField(
+        id,
+        "specContent",
+        existingRaw.specContent,
+        rest.specContent,
+      );
+    }
+
+    if (rest.dbgaContent !== undefined) {
+      await this.guardAndSnapshotDocumentField(
+        id,
+        "dbgaContent",
+        existingRaw.dbgaContent,
+        rest.dbgaContent,
+      );
     }
 
     let mddGovernancePatternsReverted = false;

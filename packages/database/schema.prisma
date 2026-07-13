@@ -34,6 +34,7 @@ model User {
   projects  Project[]
   sessions  Session[]
   changeLogs ChangeLog[]
+  documentSnapshots DocumentSnapshot[]
   favorites  FavoriteProject[]
   aiSettings UserAISettings?
   providerConfigs UserProviderConfig[]
@@ -355,6 +356,7 @@ model Project {
   convergeWebhookSecret String?
   agentCheckpoints     AgentStateCheckpoint[]
   changeLogs           ChangeLog[]
+  documentSnapshots    DocumentSnapshot[]
   favoritedBy          FavoriteProject[]
   /// Oculto del dashboard por defecto (fusión archivada, etc.).
   archivedAt           DateTime?
@@ -500,6 +502,24 @@ model ChangeLog {
   createdAt DateTime @default(now())
 
   @@index([projectId, createdAt(sort: Desc)])
+}
+
+/// Copia completa de un campo documental antes de sobrescribir (recuperación manual).
+model DocumentSnapshot {
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Campo del proyecto: dbgaContent, specContent, …
+  field         String
+  content       String   @db.Text
+  contentLength Int
+  /// patch | chat | restore | salvage | generation
+  source        String
+  createdAt     DateTime @default(now())
+
+  @@index([projectId, field, createdAt(sort: Desc)])
 }
 
 /// Gap de documentación SDD reportado vía MCP por un agente implementador.

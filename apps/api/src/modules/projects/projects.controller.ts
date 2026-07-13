@@ -61,6 +61,27 @@ export class ProjectsController {
     return this.projects.listStages(projectId);
   }
 
+  @Get(":projectId/document-snapshots")
+  listDocumentSnapshots(
+    @Param("projectId") projectId: string,
+    @Query("field") field?: string,
+    @Query("limit") limit?: string,
+  ) {
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : undefined;
+    return this.projects.listDocumentSnapshots(projectId, {
+      field: field?.trim() || undefined,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+    });
+  }
+
+  @Post(":projectId/document-snapshots/:snapshotId/restore")
+  restoreDocumentSnapshot(
+    @Param("projectId") projectId: string,
+    @Param("snapshotId") snapshotId: string,
+  ) {
+    return this.projects.restoreDocumentSnapshot(projectId, snapshotId);
+  }
+
   @Post(":projectId/stages")
   createStage(@Param("projectId") projectId: string, @Body() body: unknown) {
     return this.projects.createStage(projectId, body ?? {});

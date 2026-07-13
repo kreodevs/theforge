@@ -28,6 +28,7 @@ import {
   ArrowRight,
   ArrowUp,
   HelpCircle,
+  History,
   Layers,
   Wand2,
   MessageSquare,
@@ -182,6 +183,7 @@ import {
   TooltipTrigger,
 } from "../components/ui";
 import { WorkshopFlowOrderModal } from "../components/WorkshopFlowOrderModal";
+import { WorkshopDbgaRestoreDialog } from "../components/WorkshopDbgaRestoreDialog";
 import { WorkshopNewStageModal } from "../components/WorkshopNewStageModal";
 import {
   AiGenerationPanel,
@@ -1110,6 +1112,7 @@ export default function WorkshopView({
   const [lastBenchmarkIdea, setLastBenchmarkIdea] = useState("");
   /** Pestañas internas del panel benchmark: Fase 0 (DBGA) / Benchmark (Deep Research). */
   const [benchmarkPhaseTab, setBenchmarkPhaseTab] = useState<"fase0" | "benchmark">("fase0");
+  const [dbgaRestoreOpen, setDbgaRestoreOpen] = useState(false);
   const [blueprintViewMode, setBlueprintViewMode] = useState<"preview" | "source">("preview");
   const [apiContractsViewMode, setApiContractsViewMode] = useState<"preview" | "source">("preview");
   const [logicFlowsViewMode, setLogicFlowsViewMode] = useState<"preview" | "source">("preview");
@@ -2969,6 +2972,14 @@ export default function WorkshopView({
         onOpenChange={setFlowOrderModalOpen}
         isLegacyProject={isLegacyProject}
       />
+      <WorkshopDbgaRestoreDialog
+        open={dbgaRestoreOpen}
+        onOpenChange={setDbgaRestoreOpen}
+        projectId={projectId}
+        onRestored={async () => {
+          if (projectId) await fetchProject(projectId);
+        }}
+      />
 
       {(backgroundGenerationLabel && !cascadeRunning) && (
         <div className="shrink-0 border-b border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] px-4 py-2">
@@ -3323,6 +3334,25 @@ export default function WorkshopView({
                       </Tooltip>
                     );
                   })()}
+                {centralPanel === "benchmark" && benchmarkPhaseTab === "fase0" && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className={WORKSHOP_DOC_TOOLBAR_ICON_BTN}
+                        aria-label="Restaurar versión anterior del DBGA"
+                        onClick={() => setDbgaRestoreOpen(true)}
+                      >
+                        <History className={WORKSHOP_DOC_TOOLBAR_ICON} strokeWidth={2} aria-hidden />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" align="end" className="max-w-[14rem]">
+                      Versiones anteriores del DBGA
+                    </TooltipContent>
+                  </Tooltip>
+                )}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -4145,6 +4175,16 @@ export default function WorkshopView({
                           <WorkshopButtonIcon icon={ArrowRight} tone="secondary" />
                           Ir a BRD (editar)
                         </WorkshopPanelButton>
+                        {dbgaContent != null && dbgaContent !== "" && (
+                          <WorkshopPanelButton
+                            tone="secondary"
+                            onClick={() => setDbgaRestoreOpen(true)}
+                            title="Ver y restaurar copias automáticas del DBGA guardadas antes de cada cambio"
+                          >
+                            <WorkshopButtonIcon icon={History} tone="secondary" />
+                            Versiones anteriores
+                          </WorkshopPanelButton>
+                        )}
                         {dbgaContent != null && dbgaContent !== '' && (
                           <WorkshopPanelButton
                             tone="danger"

@@ -193,4 +193,20 @@ Detalle extenso ${"x".repeat(4000)}`;
 | 2.4 | Julio 2026 | Gap migración tiers |`;
     assert.equal(wouldShrinkDbgaDangerously(current, next), true);
   });
+
+  it("bloquea Domain Benchmark reducido a solo changelog", () => {
+    const current = `# Domain Benchmark & Gap Analysis (DBGA) – ForgeOps
+
+## 1. Referencia de Industria
+${"x".repeat(5000)}
+
+## 2. Funcionalidades
+Detalle…`;
+    const next = `## Registro de cambios del documento
+
+| Versión | Fecha | Descripción |
+| --- | --- | --- |
+| 2.3 | Julio 2026 | Auditoría de acciones |`;
+    assert.equal(wouldShrinkDbgaDangerously(current, next), true);
+  });
 });

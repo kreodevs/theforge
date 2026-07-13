@@ -28,7 +28,7 @@ import {
   shouldWarnOrchestratorDocNotPersisted,
   type DocPersistFlags,
 } from "./orchestrator-doc-guard.util.js";
-import { wouldShrinkDocDangerously } from "./document-shrink.util.js";
+import { wouldShrinkDocDangerously, validateDocumentForPersist } from "./document-shrink.util.js";
 import {
   BENCHMARK_CHAT_ACK,
   benchmarkAssistantChatMessage,
@@ -44,6 +44,7 @@ import {
 } from "./dbga-edit.util.js";
 import { llmDebug, llmWarn } from "../ai/config/llm-debug.util.js";
 import { ModelsUnavailableError } from "../ai/config/llm-model-fallback.js";
+import { DocumentSnapshotService } from "../document-snapshot/document-snapshot.service.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -80,6 +81,7 @@ export class SessionsService {
     private readonly preferences: PreferencesService,
     private readonly parser: ChatResponseParserService,
     private readonly intentClassifier: IntentClassifierService,
+    private readonly documentSnapshot: DocumentSnapshotService,
   ) { }
 
   private sessionScope(sessionId: string) {
@@ -1505,12 +1507,16 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
       }
     }
 
-    if (merged && current && wouldShrinkDbgaDangerously(current, merged)) {
-      console.warn(
-        "[Sessions] DBGA merge rechazado (reducción peligrosa); se conserva el documento anterior.",
-        { currentLen: current.length, mergedLen: merged.length },
-      );
-      merged = undefined;
+    if (merged && current) {
+      const validation = validateDocumentForPersist(current, merged, { fieldLabel: "DBGA" });
+      if (!validation.ok || wouldShrinkDbgaDangerously(current, merged)) {
+        console.warn(
+          "[Sessions] DBGA merge rechazado;",
+          validation.ok ? "reducción peligrosa" : validation.message,
+          { currentLen: current.length, mergedLen: merged.length },
+        );
+        merged = undefined;
+      }
     }
 
     return merged && merged.length > 0 ? merged : undefined;
@@ -1708,7 +1714,7 @@ ${msg}
         if (msg.role !== "assistant" || (msg.tab ?? "mdd") !== "benchmark") continue;
         const raw = msg.content?.trim() ?? "";
         if (raw.length < 400) continue;
-        if (!/# Research Report|### Módulos del proyecto|Domain Benchmark/i.test(raw)) {
+        if (!/# Research Report|### Módulos del proyecto|Domain Benchmark|Fase 0 —/i.test(raw)) {
           continue;
         }
 
@@ -1736,6 +1742,20 @@ ${msg}
         "No se encontró un DBGA recuperable en el historial del chat (tab benchmark).",
       );
     }
+
+    const validation = validateDocumentForPersist(currentDbga, best.content, {
+      fieldLabel: "DBGA",
+    });
+    if (!validation.ok) {
+      throw new BadRequestException(validation.message);
+    }
+
+    await this.documentSnapshot.snapshotBeforeOverwrite(
+      projectId,
+      "dbgaContent",
+      project.dbgaContent,
+      "salvage",
+    );
 
     await this.prisma.project.update({
       where: { id: projectId },
