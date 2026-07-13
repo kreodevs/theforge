@@ -39,7 +39,6 @@ import {
   Globe,
   Lock,
   Pencil,
-  Eye,
   Wrench,
   BrushCleaning,
 } from "lucide-react";
@@ -413,10 +412,6 @@ export default function WorkshopView({
   const aemContentField = useWorkshopStore((s) => s.aemContent);
   const setAemContent = useWorkshopStore((s) => s.setAemContent);
   const persistAemContent = useWorkshopStore((s) => s.persistAemContent);
-  const handoffSpecContentField = useWorkshopStore((s) => s.handoffSpecContent);
-  const setHandoffSpecContent = useWorkshopStore((s) => s.setHandoffSpecContent);
-  const persistHandoffSpecContent = useWorkshopStore((s) => s.persistHandoffSpecContent);
-  const syncHandoffSpec = useWorkshopStore((s) => s.syncHandoffSpec);
   const uiScreensContentField = useWorkshopStore((s) => s.uiScreensContent);
   const syncUiScreens = useWorkshopStore((s) => s.syncUiScreens);
 
@@ -481,7 +476,6 @@ export default function WorkshopView({
   );
   const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
   const aemContent = aemContentField ?? project?.aemContent ?? null;
-  const handoffSpecContent = handoffSpecContentField ?? project?.handoffSpecContent ?? null;
   const uiScreensContent = uiScreensContentField ?? project?.uiScreensContent ?? null;
 
   const projectStatus: Status = project?.status ?? "ROJO";
@@ -1124,7 +1118,6 @@ export default function WorkshopView({
   const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
   const [mddInicialViewMode, setMddInicialViewMode] = useState<"preview" | "source">("preview");
   const [aemViewMode, setAemViewMode] = useState<"preview" | "source">("preview");
-  const [handoffSpecViewMode, setHandoffSpecViewMode] = useState<"preview" | "source">("preview");
   const [agentGovernanceViewMode, setAgentGovernanceViewMode] = useState<"preview" | "source">("preview");
   const [agentGovernanceExportScaffold, setAgentGovernanceExportScaffold] =
     useState<import("@theforge/shared-types").AgentGovernanceScaffold | null>(null);
@@ -1188,7 +1181,6 @@ export default function WorkshopView({
     | "user-stories"
     | "infra"
     | "aem"
-    | "handoff-spec"
     | "ui-screens"
     | "agent-governance"
     | "adrs"
@@ -1948,7 +1940,6 @@ export default function WorkshopView({
   // ─── Auto-save hooks ────
   const { handleBlur: handleSpecBlur, isDirty: specDirty } = useAutoSaveContent(specContent, project?.specContent, persistSpecContent, projectId);
   const { handleBlur: handleAemBlur, isDirty: aemDirty } = useAutoSaveContent(aemContent, project?.aemContent, persistAemContent, projectId);
-  const { handleBlur: handleHandoffSpecBlur, isDirty: handoffSpecDirty } = useAutoSaveContent(handoffSpecContent, project?.handoffSpecContent, persistHandoffSpecContent, projectId);
   const { handleBlur: handleArchitectureBlur, isDirty: architectureDirty } = useAutoSaveContent(architectureContent, project?.architectureContent, persistArchitectureContent, projectId);
   const { handleBlur: handleUseCasesBlur, isDirty: useCasesDirty } = useAutoSaveContent(useCasesContent, project?.useCasesContent, persistUseCasesContent, projectId);
   const { handleBlur: handleUserStoriesBlur, isDirty: userStoriesDirty } = useAutoSaveContent(userStoriesContent, project?.userStoriesContent, persistUserStoriesContent, projectId);
@@ -2155,7 +2146,6 @@ export default function WorkshopView({
       useCasesContent,
       userStoriesContent,
       aemContent,
-      handoffSpecContent,
     });
 
     let regenItem: WorkshopDocBubbleMenuItem | null = null;
@@ -2472,7 +2462,7 @@ export default function WorkshopView({
       tasksContent: tasksContent ?? project?.tasksContent ?? null,
       infraContent: infraContent ?? project?.infraContent ?? null,
       aemContent: aemContent ?? project?.aemContent ?? null,
-      handoffSpecContent: handoffSpecContent ?? project?.handoffSpecContent ?? null,
+      
     }),
     [
       dbgaContent,
@@ -2499,8 +2489,6 @@ export default function WorkshopView({
       project?.infraContent,
       aemContent,
       project?.aemContent,
-      handoffSpecContent,
-      project?.handoffSpecContent,
     ],
   );
 
@@ -4702,67 +4690,6 @@ export default function WorkshopView({
                 generateBlocked={!canGenerateAem}
                 generateBlockedReason="Completa al menos Benchmark (Deep Research), Fase 0 (DBGA) o BRD antes de generar."
               />
-            )}
-            {centralPanel === "handoff-spec" && (
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-                <div className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-3 py-2.5">
-                  <p className="min-w-0 flex-1 text-xs leading-relaxed text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
-                    <strong>Handoff Spec</strong> — el IntegrationAgent traduce los items NEW-LEG registrados en la pestaña <em>Integración</em> en requerimientos técnicos (§3 Modelo / §4 API). Artefacto de acuerdo mutuo: el equipo NEW valida que modela bien la integración y el legacy corrobora el impacto. Puedes editarlo manualmente; al volver a sincronizar se regenera y se pierden los cambios manuales.
-                  </p>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    {handoffSpecContent?.trim() ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setHandoffSpecViewMode((m) => (m === "preview" ? "source" : "preview"))
-                        }
-                        aria-label={handoffSpecViewMode === "preview" ? "Editar markdown" : "Ver vista previa"}
-                      >
-                        {handoffSpecViewMode === "preview" ? (
-                          <>
-                            <Pencil className="h-3.5 w-3.5" aria-hidden />
-                            Editar
-                          </>
-                        ) : (
-                          <>
-                            <Eye className="h-3.5 w-3.5" aria-hidden />
-                            Vista previa
-                          </>
-                        )}
-                      </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="default"
-                      size="sm"
-                      onClick={() => void syncHandoffSpec(projectId, activeStageId ?? undefined)}
-                      disabled={loading}
-                      aria-label="Sincronizar Especificación de Handoff"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-                      Sincronizar Especificación de Handoff
-                    </Button>
-                  </div>
-                </div>
-                <StandardDocPanel
-                  icon={FileCode}
-                  title="Handoff Spec"
-                  description="Requerimientos técnicos NEW→LEGACY derivados de la Matriz de Trazabilidad. Pulsa «Sincronizar Especificación de Handoff» para (re)generarlo con el IntegrationAgent, o edítalo manualmente."
-                  content={handoffSpecContent}
-                  onContentChange={(v) => setHandoffSpecContent(v)}
-                  onSave={() => void persistHandoffSpecContent(handoffSpecContent ?? "")}
-                  isDirty={handoffSpecDirty}
-                  viewMode={handoffSpecViewMode}
-                  onGenerate={() => void syncHandoffSpec(projectId, activeStageId ?? undefined)}
-                  canGenerate={!loading}
-                  isLoading={loading}
-                  generateLabel="Sincronizar Especificación de Handoff"
-                  placeholder="# Handoff Spec\n\nRequerimientos técnicos NEW→LEGACY. Pulsa «Sincronizar» para generarlo o escríbelo manualmente..."
-                  onBlur={handleHandoffSpecBlur}
-                />
-              </div>
             )}
             {centralPanel === "ui-screens" && (
               <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">

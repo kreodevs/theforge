@@ -3,22 +3,13 @@ import { PrismaService } from "../../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../../common/request-user.store.js";
 import { AIFactory } from "../../ai/ai.factory.js";
 import { TheForgeService } from "../../theforge/theforge.service.js";
-import { cleanDocumentContent } from "../../sessions/document-content.util.js";
 import { runIntegrationAgent } from "../../ai-analysis/nodes/integration-agent.node.js";
-import { ChangeLogService } from "../../change-log/change-log.service.js";
 import { pickPrimaryStage } from "../stage-helpers.js";
 import { ProjectIntegrationService } from "./project-integration.service.js";
 
-export interface SyncHandoffSpecResult {
-  stageId: string;
-  handoffSpecContent: string;
-  itemsCount: number;
-  itemsWithoutEvidence: string[];
-}
-
 /**
  * IntegrationAgent orchestrator: turns the registered NEW-LEG handoff items of a stage into a
- * dynamic `handoff-spec.md` (Brownfield technical breakdown), persisted as `handoffSpecContent`.
+ * dynamic `handoff-spec.md` (Brownfield technical breakdown).
  *
  * Governance: it only structures/deepens items already in the Matriz de Trazabilidad; it never
  * creates handoff items. The redactor lives in `ai-analysis/nodes/integration-agent.node.ts`.
@@ -31,7 +22,6 @@ export class IntegrationAgentService {
     private readonly prisma: PrismaService,
     private readonly aiFactory: AIFactory,
     private readonly theforge: TheForgeService,
-    private readonly changeLog: ChangeLogService,
     @Inject(forwardRef(() => ProjectIntegrationService))
     private readonly integration: ProjectIntegrationService,
   ) {}
@@ -40,7 +30,10 @@ export class IntegrationAgentService {
    * Regenerates the handoff-spec for a project stage. When `stageId` is omitted, the primary
    * (ACTIVE / lowest ordinal) stage is used. Returns the persisted markdown.
    */
-  async syncHandoffSpec(projectId: string, stageId?: string | null): Promise<SyncHandoffSpecResult> {
+  async syncHandoffSpec(
+    projectId: string,
+    stageId?: string | null,
+  ): Promise<{ stageId: string; itemsCount: number; itemsWithoutEvidence: string[] }> {
     const userId = getRequestUserId();
     const project = await this.prisma.project.findFirst({
       where: { id: projectId },
@@ -90,20 +83,12 @@ export class IntegrationAgentService {
       newApiContext,
     });
 
-    const content = cleanDocumentContent(result.markdown);
-    await this.prisma.stage.update({
-      where: { id: stage.id },
-      data: { changeSpecContent: content },
-    });
-    await this.changeLog.log(projectId, "changeSpecContent", content);
-
     this.logger.log(
       `[IntegrationAgent] handoff-spec sincronizado (project=${projectId.slice(0, 8)} stage=${stage.id.slice(0, 8)} items=${handoffItems.length} sinEvidencia=${result.itemsWithoutEvidence.length})`,
     );
 
     return {
       stageId: stage.id,
-      handoffSpecContent: content,
       itemsCount: handoffItems.length,
       itemsWithoutEvidence: result.itemsWithoutEvidence,
     };

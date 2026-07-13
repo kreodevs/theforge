@@ -37,7 +37,6 @@ export interface WorkshopActiveDocumentDownloadInput {
   useCasesContent?: string | null;
   userStoriesContent?: string | null;
   aemContent?: string | null;
-  handoffSpecContent?: string | null;
 }
 
 /**
@@ -74,7 +73,6 @@ export function resolveWorkshopActiveDocumentDownload(
     "use-cases": input.useCasesContent,
     "user-stories": input.userStoriesContent,
     aem: input.aemContent,
-    "handoff-spec": input.handoffSpecContent,
   };
 
   const content = contentByPanel[panel] ?? "";

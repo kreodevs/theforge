@@ -15,7 +15,7 @@ export const stageDeliverableFieldsSchema = z.object({
   uiScreensContent: z.string().nullable().optional(),
   phase0SummaryContent: z.string().nullable().optional(),
   aemContent: z.string().nullable().optional(),
-  handoffSpecContent: z.string().nullable().optional(),
+
 });
 
 export const stageDeliverableSnapshotSchema = stageDeliverableFieldsSchema.extend({
@@ -41,7 +41,7 @@ const DELIVERABLE_KEYS = [
   "uiScreensContent",
   "phase0SummaryContent",
   "aemContent",
-  "handoffSpecContent",
+
 ] as const satisfies readonly (keyof ProjectDeliverableSource)[];
 
 export function readStageDeliverableSnapshot(raw: unknown): StageDeliverableSnapshot | null {

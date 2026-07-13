@@ -19,7 +19,6 @@ export const PROJECT_LIST_NULL_DOCUMENTS = {
   uxGuideDesignRef: null,
   phase0SummaryContent: null,
   aemContent: null,
-  handoffSpecContent: null,
   uiScreensContent: null,
   figmaMapping: null,
 } as const;

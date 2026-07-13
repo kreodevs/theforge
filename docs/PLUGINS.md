@@ -73,8 +73,8 @@ flowchart TB
 
     AppModule --> PluginModule
     PluginModule --> PL
-    PL -->|dynamic import()| P1
-    PL -->|dynamic import()| P2
+    PL -->|"dynamic import()"| P1
+    PL -->|"dynamic import()"| P2
     PS -->|hooks| PL
     AI -->|hooks| PL
     P2 -->|HTTP POST| License

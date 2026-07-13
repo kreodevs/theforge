@@ -100,7 +100,6 @@ export interface WorkshopDocNavBuildContext {
   blueprintContent: string | null | undefined;
   uxUiGuideContent: string | null | undefined;
   aemContent: string | null | undefined;
-  handoffSpecContent: string | null | undefined;
   apiContractsContent: string | null | undefined;
   logicFlowsContent: string | null | undefined;
   tasksContent: string | null | undefined;
@@ -247,15 +246,6 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       title: "Pantallas / UI Screens Spec — componentes reales del MCP gráfico conectado",
       Icon: MonitorSmartphone,
       content: ctx.uiScreensContent,
-    });
-  }
-  if (visible("handoff-spec")) {
-    items.push({
-      id: "handoff-spec",
-      label: "Handoff Spec",
-      title: "Handoff Spec (handoff-spec.md)",
-      Icon: FileCode,
-      content: ctx.handoffSpecContent,
     });
   }
   if (visible("api-contracts")) {

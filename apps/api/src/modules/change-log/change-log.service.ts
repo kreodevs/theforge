@@ -76,7 +76,6 @@ export class ChangeLogService {
       phase0SummaryContent: "Resumen Fase 0",
       aemContent: "AEM",
       changeSpecContent: "Change Spec",
-      handoffSpecContent: "Handoff Spec",
       brdContent: "BRD",
       integrationHandoff: "Handoff integración",
       handoffSnapshot: "Handoff importado",
