@@ -321,8 +321,8 @@ export function ProviderConfigFormFields({
       ) : null}
 
       {catalog.supportsImageGeneration ? (
-        <div>
-          <label htmlFor={`${idPrefix}-image`} className="block text-sm font-medium text-[var(--foreground)] mb-1">
+        <div className="space-y-1.5">
+          <label htmlFor={`${idPrefix}-image`} className="block text-sm font-medium text-[var(--foreground)]">
             Modelo de imagen (EVD)
           </label>
           <select
@@ -334,16 +334,36 @@ export function ProviderConfigFormFields({
             }}
             onBlur={() => onBlurField("imageModel")}
             className={cn(
-              "flex h-9 w-full rounded-md border border-[var(--input-border)] bg-[var(--input)] px-3 py-1 text-sm text-[var(--foreground)] shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
+              "flex h-auto min-h-[36px] w-full rounded-md border border-[var(--input-border)] bg-[var(--input)] px-3 py-2 text-sm text-[var(--foreground)] shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
               inputErrorClass("imageModel"),
             )}
           >
-            {catalog.imageModels?.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
+            <option value="" disabled>
+              Seleccionar modelo...
+            </option>
+            {catalog.imageModels?.map((m) => {
+              const detail = catalog.imageModelDetails?.[m];
+              return (
+                <option key={m} value={m}>
+                  {detail ? `${detail.label}  —  ${detail.priceOut ?? "?"}` : m}
+                </option>
+              );
+            })}
           </select>
+          {form.imageModel ? (
+            <p className="text-xs text-[var(--foreground-muted)]">
+              {(() => {
+                const detail = catalog.imageModelDetails?.[form.imageModel];
+                if (!detail) return null;
+                return (
+                  <span>
+                    {detail.description} {detail.originProvider ? `(${detail.originProvider})` : ""}
+                    {" · Entrada: "}{detail.priceIn ?? "?"}{" · Salida: "}{detail.priceOut ?? "?"}
+                  </span>
+                );
+              })()}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

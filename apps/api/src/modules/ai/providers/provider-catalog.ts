@@ -59,6 +59,18 @@ export interface ProviderExtraFieldSpec {
   helpText?: string;
 }
 
+export interface ImageModelInfo {
+  id: string;
+  label: string;
+  /** Precio aproximado por prompt/token de entrada. */
+  priceIn?: string;
+  /** Precio aproximado por imagen generada (salida). */
+  priceOut?: string;
+  description?: string;
+  /** Proveedor original del modelo (ej. OpenAI, Google). */
+  originProvider?: string;
+}
+
 export interface ProviderCatalogEntry {
   id: ProviderId;
   label: string;
@@ -76,6 +88,8 @@ export interface ProviderCatalogEntry {
   defaultVisionModel: string | null;
   /** Modelos para generación de imágenes (EVD). */
   imageModels?: string[];
+  /** Metadatos enriquecidos de cada modelo de imagen (clave = id del modelo). */
+  imageModelDetails?: Record<string, ImageModelInfo>;
   /** Modelo por defecto de generación de imágenes. */
   defaultImageModel: string | null;
   defaultBaseUrl: string;
@@ -99,6 +113,32 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultSttModel: "openai/whisper-1",
     defaultVisionModel: "openai/gpt-4o",
     imageModels: ["openai/dall-e-3", "google/gemini-3.1-flash-lite-image", "stability/sdxl"],
+    imageModelDetails: {
+      "openai/dall-e-3": {
+        id: "openai/dall-e-3",
+        label: "DALL-E 3",
+        priceIn: "$0.04",
+        priceOut: "$0.08",
+        description: "Modelo de generación de imágenes de OpenAI. Alta calidad, buen para presentaciones corporativas.",
+        originProvider: "OpenAI",
+      },
+      "google/gemini-3.1-flash-lite-image": {
+        id: "google/gemini-3.1-flash-lite-image",
+        label: "Gemini 3.1 Flash Lite",
+        priceIn: "$0.01",
+        priceOut: "$0.01",
+        description: "Modelo de generación de imágenes de Google. Muy rápido y económico.",
+        originProvider: "Google",
+      },
+      "stability/sdxl": {
+        id: "stability/sdxl",
+        label: "SDXL",
+        priceIn: "$0.01",
+        priceOut: "$0.01",
+        description: "Stable Diffusion XL. Divertido, menos corporativo pero opcional.",
+        originProvider: "Stability AI",
+      },
+    },
     defaultImageModel: "openai/dall-e-3",
     defaultBaseUrl: "https://openrouter.ai/api/v1",
     supportsEmbeddings: true,
@@ -115,6 +155,24 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultSttModel: "whisper-1",
     defaultVisionModel: "gpt-4o",
     imageModels: ["dall-e-3", "gpt-image-1"],
+    imageModelDetails: {
+      "dall-e-3": {
+        id: "dall-e-3",
+        label: "DALL-E 3",
+        priceIn: "$0.02",
+        priceOut: "$0.04–0.08",
+        description: "Modelo premium de OpenAI para imágenes de alta calidad. Precios dependen de resolución.",
+        originProvider: "OpenAI",
+      },
+      "gpt-image-1": {
+        id: "gpt-image-1",
+        label: "GPT Image 1",
+        priceIn: "$0.02",
+        priceOut: "$0.07",
+        description: "Nuevo modelo nativo de OpenAI. Mejor comprensión de prompts complejos.",
+        originProvider: "OpenAI",
+      },
+    },
     defaultImageModel: "dall-e-3",
     defaultBaseUrl: "https://api.openai.com/v1",
     supportsEmbeddings: true,

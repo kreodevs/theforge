@@ -16,6 +16,15 @@ export interface ProviderExtraFieldSpec {
   helpText?: string;
 }
 
+export interface ImageModelInfo {
+  id: string;
+  label: string;
+  priceIn?: string;
+  priceOut?: string;
+  description?: string;
+  originProvider?: string;
+}
+
 export interface ProviderCatalogEntry {
   id: ProviderId;
   label: string;
@@ -28,6 +37,7 @@ export interface ProviderCatalogEntry {
   defaultSttModel: string | null;
   defaultVisionModel: string | null;
   imageModels?: string[];
+  imageModelDetails?: Record<string, ImageModelInfo>;
   defaultImageModel: string | null;
   defaultBaseUrl: string;
   baseUrlEditable?: boolean;
