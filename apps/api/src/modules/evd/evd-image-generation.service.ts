@@ -38,29 +38,34 @@ export class EvdImageGenerationService {
   ): Promise<ImageGenerationResult> {
     const errors: string[] = [];
 
-    // Try primary: OpenAI
-    try {
-      const result = await this.callImageApi({
-        baseUrl: config.openaiBaseUrl,
-        apiKey: config.openaiApiKey,
-        model: config.openaiImageModel,
-        ...request,
-      });
-      return { ...result, provider: "openai", model: config.openaiImageModel };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`OpenAI image generation failed: ${msg}`);
-      errors.push(`openai: ${msg}`);
+    // Try primary: OpenAI (only if key is actually present)
+    if (config.openaiApiKey) {
+      try {
+        const result = await this.callImageApi({
+          baseUrl: config.openaiBaseUrl,
+          apiKey: config.openaiApiKey,
+          model: config.openaiImageModel,
+          ...request,
+        });
+        return { ...result, provider: "openai", model: config.openaiImageModel };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`OpenAI image generation failed: ${msg}`);
+        errors.push(`openai: ${msg}`);
+      }
     }
 
     // Try fallback: OpenRouter
     if (config.openrouterApiKey && config.openrouterImageModel) {
       try {
+        // OpenRouter/Gemini don't support 'quality' ("standard"/"hd") or 'style' ("vivid"/"natural")
+        // Gemini accepts quality: "auto"|"low"|"medium"|"high", but safest is omitting it.
+        const { quality: _q, style: _s, ...routerRequest } = request;
         const result = await this.callImageApi({
           baseUrl: config.openrouterBaseUrl ?? "https://openrouter.ai/api/v1",
           apiKey: config.openrouterApiKey,
           model: config.openrouterImageModel,
-          ...request,
+          ...routerRequest,
         });
         return {
           ...result,
