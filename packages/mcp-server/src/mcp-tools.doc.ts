@@ -23,6 +23,10 @@
  * - **`create_project`**: `POST /projects` (body: name, projectType NEW|LEGACY, hasUxTeam, theforgeProjectId si LEGACY)
  * - **`delete_project`**: `DELETE /projects/:projectId`
  * - **`get_project_stages`**: `GET /projects/:projectId/stages`
+ * - **`get_project_stage_detail`**: `GET /projects/:projectId/stages/:stageId` (detalle + entregables + transiciones permitidas)
+ * - **`create_project_stage`**: `POST /projects/:projectId/stages`
+ * - **`patch_project_stage`**: `PATCH /projects/:projectId/stages/:stageId`
+ * - **`transition_project_stage`**: `POST /projects/:projectId/stages/:stageId/transition` (activate|complete|archive|reopen)
  * - **`get_project_deliverables`**: `GET /projects/:projectId` (resumen cascada + `agentGovernanceContent`)
  * - **`get_conformance`**: `GET /projects/:projectId/conformance?useLlm=`
  * - **`patch_project`**: `PATCH /projects/:projectId` (body parcial MDD/blueprint/spec/groupId/…)
@@ -38,7 +42,7 @@
  * - **`move_project_to_group`**: `PATCH /projects/:projectId` `{ groupId }` — admin / super_admin
  * - **`move_project_group_to_first`**: `POST /project-groups/:groupId/move-to-first` — admin+; reordena sortOrder
  * - **`phase0_deep_research`**: `POST /projects/:projectId/phase0-deep-research`
- * - **`suggest_brd_tobe_from_dbga`**: `POST /projects/:projectId/suggest-brd-tobe-from-dbga`
+ * - **`suggest_brd_tobe_from_dbga`**: `POST /projects/:projectId/suggest-brd-from-dbga` (nombre histórico; solo persiste BRD en etapa)
  *
  * ### Deliverables / generación
  *
@@ -86,7 +90,7 @@
  * - **`legacy_generate_deliverables`**: `POST /projects/:id/legacy/generate-deliverables`
  * - **`legacy_update_codebase_doc`**: `PATCH /projects/:id/legacy/codebase-doc`
  * - **`legacy_generate_as_is_manual`**: `POST /projects/:id/legacy/generate-as-is-manual`
- * - **`legacy_suggest_brd_tobe`**: `POST /projects/:id/legacy/suggest-brd-tobe-from-codebase-doc`
+ * - **`legacy_suggest_brd_tobe`**: `POST /projects/:id/legacy/suggest-brd-from-codebase-doc` (nombre histórico; solo persiste BRD en etapa)
  * - **`legacy_resolve_index_sdd_conflict`**: `POST /projects/:id/legacy/resolve-index-sdd-conflict`
  *
  * ### Integración The Forge / Ariadne
@@ -112,4 +116,4 @@
  * Revisión del catálogo; incrementar si cambia el conjunto de tools.
  * @constant
  */
-export const MCP_THEFORGE_TOOLS_DOC_REVISION = 8;
+export const MCP_THEFORGE_TOOLS_DOC_REVISION = 9;

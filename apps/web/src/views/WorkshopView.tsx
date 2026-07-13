@@ -396,7 +396,7 @@ export default function WorkshopView({
   );
   const specContentField = useWorkshopStore((s) => s.specContent);
   const dbgaContentField = useWorkshopStore((s) => s.dbgaContent);
-  /** Mismo criterio que `POST …/suggest-brd-tobe-from-dbga` (lee `dbgaContent` persistido en proyecto). */
+  /** Mismo criterio que `POST …/suggest-brd-from-dbga` (lee `dbgaContent` persistido en proyecto). */
   // dbgaContentCharCount eliminado
   const blueprintContentField = useWorkshopStore((s) => s.blueprintContent);
   const apiContractsContentField = useWorkshopStore((s) => s.apiContractsContent);
