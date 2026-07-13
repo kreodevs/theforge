@@ -14,9 +14,38 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - **Context7 en Fase 0 / Benchmark:** consulta automática cuando gaps o chat mencionan PAT, API key, OAuth, JWT, webhooks o vendors (`Phase0InterviewService`, `DiscoveryService`, tabs `benchmark`/`phase0`). Consulta explícita: «Según Context7, …» en el chat del Workshop. Helpers en `@theforge/shared-types/technology-docs/phase0-tech-docs.util.ts`.
 - **Technology Docs MCP (`technology-docs-mcp`):** integración opcional Context7-compatible (`resolve-library-id`, `query-docs`) para enriquecer **Architecture**, **Contratos API** y **Tasks** con documentación oficial de librerías detectadas en MDD §2 / Blueprint. **Credenciales por usuario** en Ajustes → Docs técnicas (`User.techDocsMcpUrl` / `techDocsMcpToken`); sin API key = skip elegante. `@theforge/shared-types/technology-docs` — detector de stack.
 
+## [v1.0.0-RC] — 2026-07-13
+
+> **Release Candidate con sistema de plugins modular.**
+> Extracción completa del código EVD (Executive Visual Deck) a repositorio independiente; el core ahora expone un framework de plugins genérico vía hooks. Disponible en el tag [v1.0.0-RC](https://github.com/kreodevs/theforge/releases/tag/v1.0.0-RC).
+
+### Architecture (Breaking)
+
+- **Sistema de Plugins:** framework genérico de extensión por hooks (`ITheForgePlugin`, `PluginLoaderService`, `PluginModule`). El core carga plugins vía `dynamic import()` desde `plugins-enabled/`; comunicación bidireccional sin imports estáticos.
+- **Separación de EVD:** todo el código de Executive Visual Deck (12 archivos en `modules/evd/`, componentes React, tipos compartidos y migraciones DB) se extrajo al repositorio privado [`kreodevs/evd-plugin`](https://github.com/kreodevs/evd-plugin). El plugin comercial incluye validación de licencias, generación de imágenes con IA y exportación PDF/PPTX.
+
 ### Added
 
-- **Executive Visual Deck (EVD):** presentación ejecutiva generada por IA a partir del MDD. Incluye slides tipados (título, bullets, Mermaid diagrams, ECharts SSR bar/line, wireframe SVG, timeline, team, KPI cards), renderizado offline sin dependencias de browser. Branding customizable (6 colores, font family, logo upload). Exportación a PPTX (`pptxgenjs`) y PDF (`pdf-lib`) con assets embebidos. Panel read-only en Workshop con generación en cola y persistencia `evdContent` en Project/Stage. Storage en `/data/evd/{projectId}/`. Dockerfile con Chromium para renderizado headless.
+- **Plugin Framework:**
+  - `ITheForgePlugin` — interfaz de contrato con lifecycle + hooks de documentos y proyectos.
+  - `PluginLoaderService` — carga dinámica con graceful degradation (plugin fallido = skip, core continúa).
+  - `PluginModule` — módulo NestJS registrado en `AppModule`.
+  - Hooks disponibles: `beforeDocumentRender`, `afterDocumentRender`, `afterDocumentPersist`, `onProjectCreate`, `onProjectUpdate`.
+  - Documentación completa: [`docs/PLUGINS.md`](./docs/PLUGINS.md) — guía de desarrollo de plugins; [`docs/ARCHITECTURE_PLUGINS.md`](./docs/ARCHITECTURE_PLUGINS.md) — arquitectura técnica.
+
+### Removed (EVD extraction)
+
+- **Backend:** directorio `apps/api/src/modules/evd/` completo (chart, design-system, diagram, export, image-gen, pdf, pptx, storage controller/service/module, visual-stylist, wireframe). Prompts EVD de AI. Métodos `generateEVD()`, `generateEvd()`, `generateEVDJSON()` y sus imports.
+- **Frontend:** componentes `EvdSlideViewer`, `EvdBrandingDialog`. Estados EVD en workshop store. Tab EVD en navegación.
+- **Packages:** tipos `evd-types.ts`, exports `@theforge/shared-types/evd-types`. Campos `evdContent` en Prisma schema (`Project`, `Stage`). Migraciones de DB `20260711_*` y `20260712_*`.
+
+### Docs
+
+- [`docs/PLUGINS.md`](./docs/PLUGINS.md): guía completa — estructura, contrato, ciclo de vida, hooks, instalación, ejemplos minimal y avanzado, troubleshooting.
+- [`docs/ARCHITECTURE_PLUGINS.md`](./docs/ARCHITECTURE_PLUGINS.md): arquitectura técnica del sistema de plugins.
+- [`docs/ARCHITECTURE_EVD_PLUGIN.md`](./docs/ARCHITECTURE_EVD_PLUGIN.md): caso de estudio del plugin comercial EVD.
+- [`docs/EVD_PLUGIN_DELIVERY.md`](./docs/EVD_PLUGIN_DELIVERY.md): resumen de entrega del plugin EVD.
+- [`packages/evd-executive-visual-deck/docs/LICENSE_PORTAL_SPEC.md`](./packages/evd-executive-visual-deck/docs/LICENSE_PORTAL_SPEC.md): especificación del portal de licencias (API REST, modelo de datos, seguridad).
 
 ## [0.13.0] — 2026-07-09
 

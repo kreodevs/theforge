@@ -21,7 +21,7 @@
 
 <div align="center">
 
-**[Arquitectura](./docs/notebooklm/THEFORGE-INDEX.md)** · **[Blueprint](./blueprint.md)** · **[Contribuir](./CONTRIBUTING.md)** · **[Changelog](./CHANGELOG.md)**
+**[Arquitectura](./docs/notebooklm/THEFORGE-INDEX.md)** · **[Plugins](./docs/PLUGINS.md)** · **[Blueprint](./blueprint.md)** · **[Changelog](./CHANGELOG.md)** · **[Release v1.0.0-RC](https://github.com/kreodevs/theforge/releases/tag/v1.0.0-RC)**
 
 </div>
 
@@ -250,6 +250,8 @@ Ver referencia completa en [`.env.example`](./.env.example).
 
 ## Documentación
 
+- [Guía de plugins](./docs/PLUGINS.md) — Crear, instalar y distribuir plugins
+- [Arquitectura de plugins](./docs/ARCHITECTURE_PLUGINS.md) — Contratos técnicos del framework de plugins
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — Guía de contribución, PRs y tests
 - [docs/JSDOC.md](./docs/JSDOC.md) — Convenciones de documentación
 - [Índice de arquitectura](./docs/notebooklm/THEFORGE-INDEX.md)
