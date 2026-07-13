@@ -2733,7 +2733,13 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
       blueprintContent: project.blueprintContent,
     });
 
-    const parsed = JSON.parse(evdJsonStr);
+    // Strip markdown code fences that LLM sometimes wraps JSON in
+    const cleanedJson = evdJsonStr
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/, "")
+      .trim();
+
+    const parsed = JSON.parse(cleanedJson);
     const deck = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
 
     // Repair Mermaid syntax in diagram slides (auto-close unclosed blocks, fix labels, etc.)
