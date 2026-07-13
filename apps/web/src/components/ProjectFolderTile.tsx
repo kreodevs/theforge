@@ -199,7 +199,7 @@ export function ProjectFolderTile({
                   type="button"
                   onClick={() => onRename(id)}
                   className={tileActionButtonClass}
-                  aria-label={`Renombrar ${name}`}
+                  aria-label={`Configuración del proyecto ${name}`}
                 >
                   <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 </button>

@@ -2653,8 +2653,8 @@ export default function WorkshopView({
                   type="button"
                   onClick={onRenameProject}
                   className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border)] text-[var(--foreground-muted)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  title="Renombrar proyecto"
-                  aria-label="Renombrar proyecto"
+                  title="Configuración del proyecto"
+                  aria-label="Configuración del proyecto"
                 >
                   <Pencil className="h-3.5 w-3.5" aria-hidden />
                 </button>
