@@ -1,4 +1,4 @@
-import { looksLikeDbgaEditRequest } from "@theforge/shared-types";
+import { looksLikeDbgaEditRequest, looksLikeDbgaDocumentBody } from "@theforge/shared-types";
 
 export { looksLikeDbgaEditRequest };
 
@@ -148,7 +148,13 @@ export function benchmarkAssistantChatMessage(
 ): string {
   const chat = rawChat.trim();
   if (finalDbga?.trim()) {
-    return !chat || chat === BENCHMARK_CHAT_ACK ? BENCHMARK_CHAT_ACK : chat;
+    if (!chat || chat === BENCHMARK_CHAT_ACK || looksLikeDbgaDocumentBody(chat)) {
+      return BENCHMARK_CHAT_ACK;
+    }
+    if (chat.length > 280 && looksLikeDbgaDocumentBody(chat.slice(0, Math.min(chat.length, 1200)))) {
+      return BENCHMARK_CHAT_ACK;
+    }
+    return chat;
   }
   if (
     !chat ||

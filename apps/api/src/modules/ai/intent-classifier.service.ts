@@ -1,4 +1,7 @@
 import { Injectable } from "@nestjs/common";
+import {
+  looksLikeDbgaSpecIntegrationRequest,
+} from "@theforge/shared-types";
 
 export type ChatIntent = "explore" | "direct_edit" | "mixed";
 
@@ -53,6 +56,10 @@ export class IntentClassifierService {
   classify(message: string): ChatIntent {
     const lines = message.trim().split("\n").filter(Boolean);
     const lastLine = lines[lines.length - 1] ?? "";
+
+    if (looksLikeDbgaSpecIntegrationRequest(message)) {
+      return "direct_edit";
+    }
 
     // Si la última línea es una afirmación corta confirmando ("sí", "dale", "aplica", "ok")
     // es una confirmación de cambio después de una pregunta del asistente

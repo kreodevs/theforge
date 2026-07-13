@@ -114,6 +114,16 @@ describe("benchmarkAssistantChatMessage", () => {
     );
     assert.match(msg, /No se guardaron cambios/i);
   });
+
+  it("colapsa cuerpo de documento en chat cuando sí hubo persistencia", () => {
+    const docBody =
+      "1. Resumen Ejecutivo\n\nForgeOps es una plataforma.\n\n2. Benchmark de Industria\n\n".repeat(25);
+    const msg = benchmarkAssistantChatMessage(
+      `He integrado la especificación del Portal de Licencias.\n\n${docBody}`,
+      "# Domain Benchmark\n\nSección licenciamiento actualizada.",
+    );
+    assert.equal(msg, BENCHMARK_CHAT_ACK);
+  });
 });
 
 describe("extractDbgaEditKeywords", () => {
