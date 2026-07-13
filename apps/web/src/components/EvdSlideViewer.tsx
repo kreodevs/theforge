@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -303,10 +304,14 @@ function TitleSlideView({
   branding: EvdBranding;
 }) {
   const s = slide as Extract<EvdSlide, { type: "title" }>;
+  const hasBg = !!slide.backgroundB64;
   return (
     <div
       className="flex flex-col items-center justify-center gap-4 px-4 py-6 text-center sm:px-8 sm:py-10"
-      style={{ background: branding.primaryColor, color: branding.bgColor }}
+      style={{
+        background: hasBg ? "transparent" : branding.primaryColor,
+        color: branding.bgColor,
+      }}
     >
       {branding.logoUrl && (
         <img
@@ -955,10 +960,14 @@ function CtaSlideView({
   branding: EvdBranding;
 }) {
   const s = slide as Extract<EvdSlide, { type: "cta" }>;
+  const hasBg = !!slide.backgroundB64;
   return (
     <div
       className="flex flex-col items-center justify-center gap-4 px-4 py-6 text-center sm:px-8 sm:py-10"
-      style={{ background: branding.primaryColor, color: branding.bgColor }}
+      style={{
+        background: hasBg ? "transparent" : branding.primaryColor,
+        color: branding.bgColor,
+      }}
     >
       <h1
         className="text-xl font-black leading-tight tracking-tight sm:text-2xl md:text-3xl"
@@ -1005,6 +1014,54 @@ function FallbackSlideView({
   );
 }
 
+/* ────────────────── Visual wrapper (background + illustration) ────────────────── */
+
+function SlideWithVisuals({
+  slide,
+  children,
+}: {
+  slide: EvdSlide;
+  children: ReactNode;
+}) {
+  const bgUrl = slide.backgroundB64
+    ? `data:image/png;base64,${slide.backgroundB64}`
+    : undefined;
+
+  return (
+    <div
+      className="relative min-h-[60vh] sm:min-h-0 sm:flex-1"
+      style={{ WebkitOverflowScrolling: "touch" }}
+    >
+      {bgUrl && (
+        <div
+          className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: `url(${bgUrl})` }}
+        >
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                slide.visualStyle === "data-driven"
+                  ? "rgba(0,0,0,0.45)"
+                  : slide.visualStyle === "minimal"
+                    ? "rgba(0,0,0,0.15)"
+                    : "rgba(0,0,0,0.35)",
+            }}
+          />
+        </div>
+      )}
+      <div className="relative z-10">{children}</div>
+      {slide.illustrationB64 && (
+        <img
+          src={`data:image/png;base64,${slide.illustrationB64}`}
+          alt=""
+          className="absolute bottom-4 right-4 z-20 h-20 w-20 rounded-lg object-contain shadow-lg sm:h-28 sm:w-28"
+        />
+      )}
+    </div>
+  );
+}
+
 /* ────────────────── Main slide dispatcher ────────────────── */
 
 function SlideContent({
@@ -1016,33 +1073,89 @@ function SlideContent({
 }) {
   switch (slide.type) {
     case "title":
-      return <TitleSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <TitleSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "problem_statement":
-      return <ProblemStatementSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <ProblemStatementSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "solution_vision":
-      return <SolutionVisionSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <SolutionVisionSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "current_vs_new":
-      return <CurrentVsNewSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <CurrentVsNewSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "process_flow":
-      return <ProcessFlowSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <ProcessFlowSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "automations":
-      return <AutomationsSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <AutomationsSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "key_features":
-      return <KeyFeaturesSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <KeyFeaturesSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "data_overview":
-      return <DataOverviewSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <DataOverviewSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "integrations":
-      return <IntegrationsSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <IntegrationsSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "security_access":
-      return <SecurityAccessSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <SecurityAccessSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "rollout_plan":
-      return <RolloutPlanSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <RolloutPlanSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "timeline":
-      return <TimelineSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <TimelineSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     case "cta":
-      return <CtaSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <CtaSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
     default:
-      return <FallbackSlideView slide={slide} branding={branding} />;
+      return (
+        <SlideWithVisuals slide={slide}>
+          <FallbackSlideView slide={slide} branding={branding} />
+        </SlideWithVisuals>
+      );
   }
 }
 
@@ -1153,7 +1266,7 @@ export function EvdSlideViewer({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-sm">
+      <div className="flex min-h-[60vh] sm:min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-sm">
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--muted)]/50 px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2">
             <span
@@ -1191,7 +1304,10 @@ export function EvdSlideViewer({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div
+          className="flex min-h-[50vh] flex-1 flex-col overflow-y-auto overscroll-y-contain sm:min-h-0"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
           <SlideContent slide={current} branding={branding} />
         </div>
 
@@ -1206,7 +1322,10 @@ export function EvdSlideViewer({
       </div>
 
       {slides.length > 1 && (
-        <div className="shrink-0 flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+        <div
+          className="shrink-0 flex gap-2 overflow-x-auto pb-1 scrollbar-thin"
+          style={{ touchAction: "pan-x pan-y", WebkitOverflowScrolling: "touch" }}
+        >
           {slides.map((s, i) => (
             <SlideCard
               key={s.id}

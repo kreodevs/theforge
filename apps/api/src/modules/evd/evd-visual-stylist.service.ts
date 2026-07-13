@@ -17,6 +17,7 @@ export interface SlideImageResult {
   illustrationB64?: string;
   revisedBackgroundPrompt?: string;
   revisedIllustrationPrompt?: string;
+  visualStyle?: "geometric" | "organic" | "minimal" | "data-driven";
 }
 
 /** Slide types that receive an illustration in addition to the background. */
@@ -196,9 +197,20 @@ IMPORTANT: Keep prompts concise. Focus on shapes, colors, composition. No text i
             existing.illustrationB64 = result.b64Json;
             existing.revisedIllustrationPrompt = result.revisedPrompt;
           }
+          // Persist visual style from the original decision
+          const decision = decisions[task.index];
+          if (decision) existing.visualStyle = decision.style;
           results.set(task.index, existing);
         } else {
           this.logger.warn(`Image generation failed: ${settled.reason}`);
+          // Still save the visual style even if image gen failed
+          const task = (settled as PromiseRejectedResult).reason?.task as typeof tasks[0] | undefined;
+          if (task) {
+            const existing = results.get(task.index) ?? {};
+            const decision = decisions[task.index];
+            if (decision) existing.visualStyle = decision.style;
+            results.set(task.index, existing);
+          }
         }
       }
     }

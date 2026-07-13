@@ -1,2 +1,0 @@
-# This file is touched during CI builds to invalidate Docker layer cache
-# Last touched: 20260712-evd-v2

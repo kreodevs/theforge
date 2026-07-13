@@ -2061,13 +2061,9 @@ name: ${JSON.stringify(name)}
   }
 
   async generateEvd(projectId: string) {
-    const project = await this.assertProjectAccess(projectId);
-    const mddContent = this.constitutionMarkdown(project);
-    if (!mddContent.trim()) {
-      throw new BadRequestException("Se requiere MDD o DBGA para generar el Executive Visual Deck.");
-    }
-    const evdJson = await this.ai.generateEvd(mddContent);
-    return this.update(projectId, { evdContent: evdJson });
+    // Delega al pipeline completo con Visual Stylist Agent
+    await this.generateEVD(projectId);
+    return this.assertProjectAccess(projectId);
   }
 
   /** Limpia gobernanza persistida antes de regenerar (polling y UI). */
@@ -2774,6 +2770,7 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
           if (result) {
             if (result.backgroundB64) deck.slides[i].backgroundB64 = result.backgroundB64;
             if (result.illustrationB64) deck.slides[i].illustrationB64 = result.illustrationB64;
+            if (result.visualStyle) deck.slides[i].visualStyle = result.visualStyle;
           }
         }
       } catch (err) {

@@ -104,10 +104,11 @@ export class EvdPdfService {
     background-repeat: no-repeat;
   }
   .page-with-bg::before {
-    content: '';
+    display: none;
+  }
+  .bg-overlay {
     position: absolute;
     inset: 0;
-    background: rgba(255,255,255,0.85);
     z-index: 0;
   }
   .slide-illustration {
@@ -117,7 +118,7 @@ export class EvdPdfService {
     width: 40mm;
     height: 30mm;
     object-fit: contain;
-    z-index: 1;
+    z-index: 2;
     opacity: 0.9;
   }
   .page > * { position: relative; z-index: 1; }
@@ -762,12 +763,21 @@ export class EvdPdfService {
     const slideId = (slide.id as string) ?? `slide-${index}`;
     const backgroundB64 = slide.backgroundB64 as string | undefined;
     const illustrationB64 = slide.illustrationB64 as string | undefined;
+    const visualStyle = slide.visualStyle as string | undefined;
 
     let pageClass = "page";
     let pageStyle = "";
+    let overlayStyle = "";
     if (backgroundB64) {
-      pageStyle = ` style="background-image:url('data:image/png;base64,${backgroundB64}')"`;
+      pageStyle = ` style="background-image:url('data:image/png;base64,${backgroundB64}');background-size:cover;background-position:center"`;
       pageClass += " page-with-bg";
+      const opacity =
+        visualStyle === "data-driven" ? 0.45 :
+        visualStyle === "minimal" ? 0.15 :
+        visualStyle === "geometric" ? 0.3 :
+        visualStyle === "organic" ? 0.25 :
+        0.35;
+      overlayStyle = `<div class="bg-overlay" style="background:rgba(0,0,0,${opacity})"></div>`;
     }
 
     let content = "";
@@ -1060,6 +1070,7 @@ export class EvdPdfService {
       : "";
 
     return `    <div class="${pageClass}"${pageStyle}>
+      ${overlayStyle}
       ${content}
       ${illustrationHTML}
       ${footerHTML}

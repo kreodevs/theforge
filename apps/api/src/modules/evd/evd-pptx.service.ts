@@ -1111,6 +1111,21 @@ export class EvdPptxService {
         x: 0, y: 0, w: "100%", h: "100%",
         sizing: { type: "cover", w: 13.33, h: 7.5 },
       });
+
+      // Overlay layer matching web visualStyle
+      const visualStyle = slide.visualStyle as string | undefined;
+      const opacity =
+        visualStyle === "data-driven" ? 0.45 :
+        visualStyle === "minimal" ? 0.15 :
+        visualStyle === "geometric" ? 0.30 :
+        visualStyle === "organic" ? 0.25 :
+        0.35;
+
+      lastSlide.addShape(pptx.ShapeType.rect, {
+        x: 0, y: 0, w: "100%", h: "100%",
+        fill: { color: "000000", transparency: Math.round((1 - opacity) * 100) },
+        line: { color: "000000", transparency: Math.round((1 - opacity) * 100) },
+      });
     }
 
     // Illustration (bottom-right corner)
