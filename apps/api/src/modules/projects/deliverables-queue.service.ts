@@ -30,7 +30,6 @@ export type GenerateJobType =
   | "architecture"
   | "use-cases"
   | "user-stories"
-  | "evd"
   | "doc-reconcile-partial";
 
 export interface GenerateJobData {

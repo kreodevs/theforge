@@ -1954,10 +1954,6 @@ export class LegacyCoordinatorService {
           p = await load();
           return;
         }
-        case "evd": {
-          // EVD is generated on-demand via dedicated endpoint; skip in legacy cascade.
-          return;
-        }
         default: {
           const _exhaustive: never = kind;
           return _exhaustive;

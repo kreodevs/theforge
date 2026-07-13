@@ -346,15 +346,6 @@ export class ProjectsController {
     return this.queueOrSync(id, "spec", {}, queue, acknowledgeGaps);
   }
 
-  @Post(":id/generate-evd")
-  generateEvd(
-    @Param("id") id: string,
-    @Query("queue") queue?: string,
-    @Query("acknowledgeGaps") acknowledgeGaps?: string,
-  ) {
-    return this.queueOrSync(id, "evd", {}, queue, acknowledgeGaps);
-  }
-
   @Post(":id/generate-tasks")
   generateTasks(
     @Param("id") id: string,
