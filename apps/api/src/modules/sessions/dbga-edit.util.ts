@@ -228,6 +228,17 @@ export function mergeBenchmarkPartialDoc(current: string, partial: string): stri
   return `${cur}\n\n---\n\n${par}`.trim();
 }
 
+const BENCHMARK_BODY_MARKERS = [
+  /^#\s+Research Report/im,
+  /^##\s+Dos objetivos centrales/im,
+  /^###\s+Módulos del proyecto/im,
+  /^##\s+Arquitectura/im,
+] as const;
+
+function countBenchmarkBodySections(text: string): number {
+  return BENCHMARK_BODY_MARKERS.filter((re) => re.test(text)).length;
+}
+
 /** Rechaza persistir un DBGA que borra la mayor parte del documento actual (p. ej. fragmento sin merge). */
 export function wouldShrinkDbgaDangerously(
   current: string,
@@ -238,6 +249,25 @@ export function wouldShrinkDbgaDangerously(
   const n = next.trim();
   if (!c || c.length < 400) return false;
   if (!n) return true;
+
+  const bodyBefore = countBenchmarkBodySections(c);
+  const bodyAfter = countBenchmarkBodySections(n);
+  if (
+    bodyBefore >= 2 &&
+    bodyAfter < bodyBefore - 1 &&
+    n.length < c.length * 0.75
+  ) {
+    return true;
+  }
+  if (
+    /^#\s+Research Report/im.test(c) &&
+    !/^#\s+Research Report/im.test(n) &&
+    /^##\s+Registro de cambios/im.test(n) &&
+    n.length < c.length * 0.7
+  ) {
+    return true;
+  }
+
   if (n.length >= c.length * minRatio) return false;
   // Reemplazo completo legítimo (nuevo doc largo con H1)
   if (/^#\s/m.test(n) && n.length >= Math.min(c.length * 0.85, 2500)) return false;

@@ -15,18 +15,52 @@ const DBGA_IMPERATIVE_RE =
   /\b(?:haz\s+las\s+modific|aplica\s+los\s+cambios|persiste\s+en\s+el\s+panel|guarda\s+en\s+el\s+panel)\b/i;
 
 const DBGA_DOMAIN_WITH_VERB_RE =
-  /\b(?:modific|actualiz|añad|agreg|ajust|incorpor|integr|corrige)/i;
+  /\b(?:modific|actualiz|añad|agreg|ajust|incorpor|integr|corrige|cubr|elimina|saca|quita)/i;
+
+/** Pregunta, propuesta condicional o brainstorming — no persistir DBGA todavía. */
+export function isUserExploringDbgaIntent(message: string): boolean {
+  const m = message.trim();
+  if (!m) return false;
+
+  if (isHypotheticalDocumentEditOffer(m)) return true;
+
+  if (/\b(?:qu[eé]\s+suger|qu[eé]\s+tal|c[oó]mo\s+suger|c[oó]mo\s+manejar|c[oó]mo\s+lo\s+har[ií]as)\b/i.test(m)) {
+    return true;
+  }
+
+  if (/\b(?:¿te\s+parece\s+bien|te\s+parece\s+bien\s+esta)\b/i.test(m)) return true;
+
+  if (/\bsi\s+es\s+as[ií]\b/i.test(m) && /\b(integr|incorpor|añad|agreg|actualiz|modific|sac)\w*/i.test(m)) {
+    return true;
+  }
+
+  if (/\?\s*$/.test(m) && !DBGA_IMPERATIVE_RE.test(m) && !/^(agrega|integra|actualiza|modifica|cubre|elimina|saca|quita)\b/i.test(m)) {
+    return true;
+  }
+
+  return false;
+}
 
 /** El usuario pide persistir cambios en el DBGA/Fase 0 (no brainstorming ni Q&A). */
 export function looksLikeDbgaEditRequest(message: string): boolean {
   const m = message.trim();
   if (!m || m.length < 12) return false;
 
+  if (isUserExploringDbgaIntent(m)) return false;
+
   if (/^\s*¿/.test(m) && !DBGA_IMPERATIVE_RE.test(m) && !DBGA_VERB_WITH_DOC_RE.test(m)) {
     return false;
   }
 
-  if (DBGA_VERB_WITH_DOC_RE.test(m) || DBGA_DOC_TARGET_RE.test(m) || DBGA_IMPERATIVE_RE.test(m)) {
+  if (DBGA_VERB_WITH_DOC_RE.test(m) || DBGA_IMPERATIVE_RE.test(m)) {
+    return true;
+  }
+
+  if (DBGA_DOC_TARGET_RE.test(m) && DBGA_DOMAIN_WITH_VERB_RE.test(m)) {
+    return true;
+  }
+
+  if (DBGA_DOMAIN_WITH_VERB_RE.test(m) && /\b(?:gap|omisiones?\s+cr[ií]ticas?)\b/i.test(m)) {
     return true;
   }
 

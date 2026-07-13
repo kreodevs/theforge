@@ -210,6 +210,10 @@ export class SessionsService {
     if (tab !== "benchmark" || !current || !msg || !looksLikeDbgaEditRequest(msg)) {
       return null;
     }
+    const intent = this.intentClassifier.classify(msg);
+    if (intent === "explore") {
+      return null;
+    }
 
     const finalDbga = await this.resolveDbgaContentForReturn(
       msg,
