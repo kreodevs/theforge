@@ -3,6 +3,7 @@ import type { Session } from "@theforge/database";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiService } from "../ai/ai.service.js";
+import { IntentClassifierService } from "../ai/intent-classifier.service.js";
 import type { GenerateResponseOptions, ChatMessage as LlmChatMessage } from "../ai/interfaces/llm-provider.interface.js";
 import { PreferencesService } from "../ai/preferences.service.js";
 import { ChatResponseParserService } from "./chat-response-parser.service.js";
@@ -78,6 +79,7 @@ export class SessionsService {
     private readonly ai: AiService,
     private readonly preferences: PreferencesService,
     private readonly parser: ChatResponseParserService,
+    private readonly intentClassifier: IntentClassifierService,
   ) { }
 
   private sessionScope(sessionId: string) {
@@ -359,6 +361,7 @@ export class SessionsService {
 
     let response: string;
     try {
+      const userIntent = this.intentClassifier.classify(userTurn.promptForModel);
       response = await this.ai.generateResponse(userTurn.promptForModel, llmHistory, {
         currentMddContent: options?.currentMddContent,
         currentDbgaContent: options?.currentDbgaContent,
@@ -368,6 +371,7 @@ export class SessionsService {
         currentSpecContent: options?.currentSpecContent,
         currentBrdContent: options?.currentBrdContent,
         activeTab: options?.activeTab,
+        intent: userIntent,
         learningHistory: learningHistory || undefined,
         systemPrompt: options?.systemPrompt,
         complexityInterviewContext: options?.complexityInterviewContext,

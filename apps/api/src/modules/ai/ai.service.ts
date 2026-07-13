@@ -393,9 +393,9 @@ export class AiService {
       if (options?.activeTab?.trim()) {
         const at = options.activeTab.trim();
         const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
-        systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).\n\n**INSTRUCCIÓN CRÍTICA — DETECCIÓN DE CAMBIOS:** Cualquier afirmación del usuario sobre lo que el proyecto **debe incluir, tener, usar o cambiar** (ej. "necesitamos X", "queremos Y", "falta Z", "usa W", "debe tener V", "agrega", "cambia", "modifica", "actualiza", "corrige", "elimina") es una **solicitud de modificación del documento actual**. **NO** preguntes si es consulta o cambio — el usuario ya lo dijo. Si hay ambigüedad genuina (que no sea sobre el documento actual), pregunta UNA VEZ. Cuando el usuario responda "sí", "dale", "aplica", "correcto" o similar a una pregunta tuya, **_DEBES_ devolver el documento actualizado con su delimitador ---FIN_TAG--- inmediatamente.** Nunca respondas solo "Hecho" o "MDD generado" sin el contenido del documento antes del delimitador.`;
+        const intent = options?.intent ?? "mixed";
 
-        // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
+        // TagMap para delimitadores
         const tagMap: Record<string, string> = {
           mdd: "MDD",
           benchmark: "DBGA",
@@ -413,6 +413,31 @@ export class AiService {
           "ux-ui-guide": "UX_UI",
         };
         const tag = tagMap[at];
+
+        // Contexto de documento activo
+        systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).\n`;
+
+        // Instrucción de cambio según intención
+        if (intent === "explore") {
+          systemPrompt +=
+            `\n**ATENCIÓN — MODO EXPLORACIÓN:** El usuario está **preguntando o explorando ideas** sobre el documento. ` +
+            `NO hagas cambios al documento. Responde de forma conversacional, explica conceptos, discute alternativas. ` +
+            `Si el usuario te pide explícitamente hacer un cambio (ej. "agrega esto", "actualiza", "haz el cambio"), ` +
+            `entonces sí debes devolver el documento actualizado con el delimitador ---FIN_${tag ?? "DOC"}---. ` +
+            `Pero mientras el usuario solo pregunte o explore, responde sin modificar el documento.`;
+        } else {
+          // direct_edit o mixed — mantener detección de cambios pero con matiz
+          systemPrompt +=
+            `\n**INSTRUCCIÓN — DETECCIÓN DE CAMBIOS:** Si el usuario da una **instrucción directa** ` +
+            `(ej. "agrega", "cambia", "modifica", "actualiza", "corrige", "elimina") es una solicitud de modificación. ` +
+            `**Pero si el usuario está preguntando, explorando opciones o discutiendo alternativas** ` +
+            `(ej. "qué tal si...", "cómo sería...", "sería mejor...", "se podría..."), ` +
+            `**NO** hagas cambios — responde de forma conversacional. ` +
+            `Solo aplica cambios cuando el usuario confirme explícitamente ` +
+            `(ej. "sí", "dale", "aplica", "hazlo", "integra eso", "haz los cambios"). ` +
+            `Cuando apliques cambios, DEBES devolver el documento actualizado con su delimitador ---FIN_TAG--- inmediatamente.`;
+        }
+
         if (tag && !options?.welcomeBrief) {
           systemPrompt += `\n\n**Instrucción DE delimitador (OBLIGATORIO):** Cuando generes o actualices el documento de ${label} (completo o solo una sección), DEBES escribir el contenido y TERMINAR con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Sin ese delimitador, el sistema NO persiste ningún cambio y el usuario no ve nada en el panel del documento.`;
           if (at === "benchmark") {
@@ -573,9 +598,9 @@ export class AiService {
     if (options?.activeTab?.trim()) {
       const at = options.activeTab.trim();
       const label = AiService.ACTIVE_TAB_LABELS[at] ?? at;
-      systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).\n\n**INSTRUCCIÓN CRÍTICA — DETECCIÓN DE CAMBIOS:** Cualquier afirmación del usuario sobre lo que el proyecto **debe incluir, tener, usar o cambiar** (ej. "necesitamos X", "queremos Y", "falta Z", "usa W", "debe tener V", "agrega", "cambia", "modifica", "actualiza", "corrige", "elimina", "no veo los cambios", "sigue mencionando") es una **solicitud de modificación del documento actual**. **NO** preguntes si es consulta o cambio — el usuario ya lo dijo. Cuando el usuario responda "sí", "dale", "aplica", "correcto" o similar a una pregunta tuya, **_DEBES_ devolver el documento actualizado con su delimitador ---FIN_TAG--- inmediatamente.** Nunca respondas solo "Hecho" o "documento actualizado" sin el contenido del documento antes del delimitador. **Prohibido** afirmar en el chat que ya ajustaste o eliminaste algo del documento si no incluyes el markdown completo antes de \`---FIN_TAG---\`.`;
+      const intent = options?.intent ?? "mixed";
 
-      // Instrucción para delimitadores universales en el chat (aplicar cambios al documento)
+      // TagMap para delimitadores
       const tagMap: Record<string, string> = {
         mdd: "MDD",
         benchmark: "DBGA",
@@ -593,6 +618,29 @@ export class AiService {
         "ux-ui-guide": "UX_UI",
       };
       const tag = tagMap[at];
+
+      systemPrompt += `\n\n[Contexto de documento activo:] El usuario está trabajando en: **${label}**. Adapta tu respuesta a ese documento (preguntas, sugerencias o ediciones relevantes para ese contexto).\n`;
+
+      if (intent === "explore") {
+        systemPrompt +=
+          `\n**ATENCIÓN — MODO EXPLORACIÓN:** El usuario está **preguntando o explorando ideas** sobre el documento. ` +
+          `NO hagas cambios al documento. Responde de forma conversacional, explica conceptos, discute alternativas. ` +
+          `Si el usuario te pide explícitamente hacer un cambio (ej. "agrega esto", "actualiza", "haz el cambio"), ` +
+          `entonces sí debes devolver el documento actualizado con el delimitador ---FIN_${tag ?? "DOC"}---. ` +
+          `Pero mientras el usuario solo pregunte o explore, responde sin modificar el documento.`;
+      } else {
+        systemPrompt +=
+          `\n**INSTRUCCIÓN — DETECCIÓN DE CAMBIOS:** Si el usuario da una **instrucción directa** ` +
+          `(ej. "agrega", "cambia", "modifica", "actualiza", "corrige", "elimina") es una solicitud de modificación. ` +
+          `**Pero si el usuario está preguntando, explorando opciones o discutiendo alternativas** ` +
+          `(ej. "qué tal si...", "cómo sería...", "sería mejor...", "se podría..."), ` +
+          `**NO** hagas cambios — responde de forma conversacional. ` +
+          `Solo aplica cambios cuando el usuario confirme explícitamente ` +
+          `(ej. "sí", "dale", "aplica", "hazlo", "integra eso", "haz los cambios"). ` +
+          `Cuando apliques cambios, DEBES devolver el documento actualizado con su delimitador ---FIN_TAG--- inmediatamente. ` +
+          `**Prohibido** afirmar en el chat que ya ajustaste o eliminaste algo del documento si no incluyes el markdown completo antes de \`---FIN_TAG---\`.`;
+      }
+
       if (tag && !options?.welcomeBrief) {
         systemPrompt += `\n\n**Instrucción DE delimitador (OBLIGATORIO):** Cuando generes o actualices el documento de ${label} (completo o solo una sección), DEBES escribir el contenido y TERMINAR con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Sin ese delimitador, el sistema NO persiste ningún cambio y el usuario no ve nada en el panel del documento.`;
         if (at === "benchmark") {

@@ -11,6 +11,8 @@ export const LLM_PROVIDER = Symbol("LLM_PROVIDER");
 
 export interface GenerateResponseOptions {
   systemPrompt?: string;
+  /** Intención del usuario detectada: explore (pregunta), direct_edit (cambio directo), mixed (ambos). */
+  intent?: "explore" | "direct_edit" | "mixed";
   currentMddContent?: string;
   currentDbgaContent?: string;
   currentUxUiGuideContent?: string;
