@@ -45,6 +45,7 @@ El binario **ya no** usa `node --experimental-network-imports` (era ruido en log
 Definidas en `packages/mcp-server/src/index.ts` (array `TOOLS` + mapa `handlers`). Incluyen, entre otras:
 
 - **Proyectos:** `list_projects`, `get_project`, `create_project`, `delete_project`, `get_project_stages`, `get_conformance`, `patch_project`, `generate_benchmark`, `phase0_deep_research`, `suggest_brd_tobe_from_dbga`, `set_aem_content`.
+- **Grupos de proyectos:** `list_project_groups`, `get_project_group`, `create_project_group`, `rename_project_group`, `delete_project_group`, `move_project_to_group`, `move_project_group_to_first` — permisos alineados con la API REST (`admin+` salvo list/get).
 - **Entregables SDD:** `generate_deliverables`, `generate_spec`, `generate_blueprint`, `generate_architecture`, `generate_api_contracts`, `generate_use_cases`, `generate_user_stories`, `generate_logic_flows`, `generate_infra`, `confirm_complexity`, `reassess_complexity`.
 - **IA / análisis:** `start_analysis`, `get_estimation`, `get_mdd_thread`, `get_adrs`, `review_mdd`.
 - **Orquestador:** `orchestrator_chat`, `orchestrator_welcome`, `orchestrator_clear_chat`.

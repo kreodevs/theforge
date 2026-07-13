@@ -15,6 +15,8 @@
 import { parseAgentGovernanceScaffold, type ProjectNextTaskResponse } from "@theforge/shared-types";
 import { generateTable, normalizeTable, normalizeAllTables, parseTable } from "@theforge/shared-types/markdown-table";
 import { generateMermaid, normalizeMermaid, validateMermaid } from "@theforge/shared-types/mermaid";
+import { formatNestApiError } from "./api-error.util.js";
+import { PROJECT_GROUP_TOOLS, createProjectGroupHandlers } from "./project-group-tools.js";
 
 // ── Config ────
 
@@ -196,7 +198,7 @@ async function apiFetch(
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`HTTP ${res.status} ${res.statusText}: ${text.slice(0, 500)}`);
+      throw new Error(formatNestApiError(res.status, text));
     }
     return res.json();
   } catch (err) {
@@ -244,10 +246,10 @@ function summarizeAgentGovernanceField(raw: unknown): {
   };
 }
 
-// ── Tool Definitions (45 tools) ────────────────────────────────────────
+// ── Tool Definitions (51 tools) ────────────────────────────────────────
 
 /**
- * Manifiesto MCP: 45 herramientas que reflejan la API REST The Forge (proyectos, entregables, análisis,
+ * Manifiesto MCP: 51 herramientas que reflejan la API REST The Forge (proyectos, grupos, entregables, análisis,
  * orquestador, sesiones, flujo legacy e integración Ariadne). Cada `name` debe existir como método en
  * {@link handlers}.
  *
@@ -326,20 +328,22 @@ const TOOLS: Tool[] = [
   },
   {
     name: "patch_project",
-    description: "Actualiza campos del proyecto (mddContent, dbgaContent, blueprintContent, etc.)",
+    description: "Actualiza campos del proyecto (mddContent, dbgaContent, blueprintContent, groupId, etc.)",
     inputSchema: {
       type: "object",
       properties: {
         projectId: { type: "string" },
         fields: {
           type: "object",
-          description: "Campos a actualizar (mddContent, dbgaContent, blueprintContent, specContent, etc.)",
+          description: "Campos a actualizar (mddContent, dbgaContent, blueprintContent, specContent, groupId, etc.)",
           additionalProperties: true,
         },
       },
       required: ["projectId", "fields"],
     },
   },
+  // ── Project groups (ver también PROJECT_GROUP_TOOLS) ──
+  ...PROJECT_GROUP_TOOLS,
   {
     name: "generate_benchmark",
     description: "Genera benchmark / análisis de mercado para un proyecto",
@@ -1769,6 +1773,12 @@ const handlers: Record<string, Handler> = {
     const errors = validateMermaid(normalized);
     return JSON.stringify({ normalized, errors, hasErrors: errors.length > 0 });
   },
+  ...createProjectGroupHandlers({
+    get: apiGet,
+    post: apiPost,
+    patch: apiPatch,
+    delete: apiDelete,
+  }),
 };
 
 // ── JSON-RPC Request Handler ───────────────────────────────────────────
