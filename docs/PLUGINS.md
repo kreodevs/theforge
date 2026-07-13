@@ -40,7 +40,7 @@ El **Sistema de Plugins de The Forge** permite extender la plataforma sin modifi
 
 ### Casos de Uso
 
-- **Plugins comerciales** (ej: EVD — Executive Visual Deck): monetización vía validación de licencias
+- **Plugins comerciales**: monetización vía validación de licencias
 - **Plugins de integración**: conectar con servicios externos (Slack, Jira, Notion)
 - **Plugins de exportación**: formatos adicionales (Word, LaTeX, Confluence)
 - **Plugins de análisis**: métricas custom, dashboards, reportes
@@ -63,7 +63,7 @@ flowchart TB
 
     subgraph PluginDir["📁 plugins-enabled/"]
         P1["my-plugin/index.ts"]
-        P2["evd-plugin/index.ts"]
+        P2["otro-plugin/index.ts"]
     end
 
     subgraph External["🌐 Servicios Externos"]
@@ -77,8 +77,8 @@ flowchart TB
     PL -->|"dynamic import()"| P2
     PS -->|hooks| PL
     AI -->|hooks| PL
-    P2 -->|HTTP POST| License
-    P2 -->|HTTP POST| AIProvider
+    P1 -->|HTTP POST| License
+    P1 -->|HTTP POST| AIProvider
     PS --> DB
     PL -->|registro hooks| PS
 ```
@@ -236,16 +236,18 @@ async beforeDocumentRender(payload) {
 
 ```typescript
 async afterDocumentRender(payload) {
-  if (payload.documentType !== "evd") return payload;
+  if (payload.documentType !== "spec") return payload;
 
-  const deck = payload.parsedContent as EvdDeck;
+  const doc = payload.parsedContent as any;
 
-  // Generar imágenes para cada slide
-  for (const slide of deck.slides) {
-    slide.imageUrl = await this.generateImage(slide.title);
-  }
+  // Enriquecer el documento generado
+  doc.metadata = {
+    ...(doc.metadata ?? {}),
+    generatedBy: this.name,
+    timestamp: new Date().toISOString(),
+  };
 
-  return { ...payload, parsedContent: deck };
+  return { ...payload, parsedContent: doc };
 }
 ```
 
@@ -603,19 +605,16 @@ export default class PremiumPlugin implements ITheForgePlugin {
   }
 
   async afterDocumentRender(payload) {
-    if (payload.documentType !== "evd") return payload;
+    if (payload.documentType !== "spec") return payload;
 
-    const deck = payload.parsedContent as any;
-    if (!deck?.slides) return payload;
+    const doc = payload.parsedContent as any;
+    if (!doc?.sections) return payload;
 
-    // Generar imágenes para slides de título
-    for (const slide of deck.slides) {
-      if (slide.type === "title") {
-        slide.backgroundImage = await this.imageGenerator.generate(
-          `Premium background for: ${slide.title}`
-        );
-      }
-    }
+    // Añadir secciones custom
+    doc.sections.push({
+      title: "Plugin Section",
+      content: "Generado por PremiumPlugin",
+    });
 
     return { ...payload, parsedContent: deck };
   }
@@ -667,13 +666,13 @@ async afterDocumentRender(payload) {
 
 ## 11. Migración desde Código Acoplado
 
-Si tienes código EVD o similar acoplado al core, sigue estos pasos:
+Si tienes lógica de negocio acoplada al core, sigue estos pasos:
 
 ### Paso 1: Extraer el código a un paquete independiente
 
 ```bash
 mkdir packages/my-plugin
-cp -r apps/api/src/modules/evd/* packages/my-plugin/src/
+cp -r apps/api/src/modules/mi-logica/* packages/my-plugin/src/
 ```
 
 ### Paso 2: Crear el entry point (`index.ts`)
@@ -691,12 +690,12 @@ Convierte tu clase de servicio en una clase que implementa `ITheForgePlugin`.
 ```typescript
 // ANTES (acoplado)
 @Injectable()
-class EvdService {
+class MiServicio {
   constructor(private readonly ai: AiService) {}
 }
 
 // DESPUÉS (plugin)
-class EvdPlugin implements ITheForgePlugin {
+class MiPlugin implements ITheForgePlugin {
   private ai!: AiService;
 
   async onPluginInit(ctx: PluginContext) {
@@ -709,12 +708,12 @@ class EvdPlugin implements ITheForgePlugin {
 
 ```typescript
 // ANTES (en ProjectsService)
-async generateEVD(projectId: string) {
-  const deck = await this.evdService.generate(projectId);
-  await this.update(projectId, { evdContent: deck });
+async generateDocument(projectId: string, type: string) {
+  const content = await this.miServicio.generate(projectId);
+  await this.update(projectId, { content });
 }
 
-// DESPUÉS (el core ejecuta hooks, no sabe de EVD)
+// DESPUÉS (el core ejecuta hooks, no sabe de tipos concretos)
 async generateDocument(projectId: string, type: string) {
   // ... LLM genera documento
   const afterPayload = await this.pluginLoader.executeAfterDocumentRender({
@@ -724,7 +723,7 @@ async generateDocument(projectId: string, type: string) {
     parsedContent: parsed,
     originalContext: beforePayload,
   });
-  // El plugin EVD intercepta documentType="evd" y enriquece
+  // El plugin intercepta documentType específico y enriquece
 }
 ```
 
@@ -732,7 +731,7 @@ async generateDocument(projectId: string, type: string) {
 
 ```typescript
 // ANTES
-import { EvdService } from "./modules/evd/evd.service.js";
+import { MiServicio } from "./modules/mi-logica/mi-servicio.js";
 
 // DESPUÉS
 // Nada — el core nunca referencia al plugin
@@ -829,9 +828,9 @@ export default class MyPlugin implements ITheForgePlugin {
 PLUGINS_DIRECTORY=/ruta/custom/plugins    # Opcional: ruta extra
 PLUGINS_FAIL_ON_ERROR=false               # Default: false (graceful)
 
-# Configuración por plugin (ejemplo EVD)
-EVD_LICENSE_KEY=tk_prod_xxx
-EVD_LICENSE_PORTAL_URL=https://licenses.theforge.dev
+# Configuración por plugin (ejemplo)
+MI_PLUGIN_API_KEY=tk_prod_xxx
+MI_PLUGIN_PORTAL_URL=https://licenses.theforge.dev
 OPENAI_API_KEY=sk-...
 OPENROUTER_API_KEY=sk-or-...
 ```
@@ -840,7 +839,7 @@ OPENROUTER_API_KEY=sk-or-...
 
 - **Issues del core:** https://github.com/kreodevs/theforge/issues
 - **Discussions:** https://github.com/kreodevs/theforge/discussions
-- **Plugin EVD (ejemplo):** https://github.com/kreodevs/evd-plugin
+- **Plugin de ejemplo:** https://github.com/kreodevs/evd-plugin
 
 ---
 
