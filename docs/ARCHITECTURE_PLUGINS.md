@@ -134,6 +134,16 @@ export interface ITheForgePlugin {
   onProjectUpdate?(
     payload: ProjectLifecyclePayload
   ): Promise<void> | void;
+
+  // ─────────── Registro de Artifacts ───────────
+
+  /**
+   * Registra los tipos de documento/artifact que este plugin genera.
+   * El core expone esta información vía GET /api/plugins/artifacts
+   * para que el frontend renderice paneles dinámicos en el sidebar y Workshop.
+   * @returns Lista de definiciones de artifact (vacío si no aplica)
+   */
+  getArtifactTypes?(): ArtifactTypeDefinition[];
 }
 
 // ─────────── Tipos de Payload ───────────
@@ -214,6 +224,21 @@ export interface ProjectLifecyclePayload {
   userId: string;
   /** Timestamp */
   timestamp: Date;
+}
+
+/**
+ * Definición de un artifact type que un plugin puede registrar.
+ * El core expone esto para que el frontend muestre paneles dinámicos.
+ */
+export interface ArtifactTypeDefinition {
+  /** Identificador único del artifact (ej: "evd", "ppt-export") */
+  id: string;
+  /** Label legible para humanos (ej: "Executive Visual Deck") */
+  label: string;
+  /** Nombre del ícono Lucide (ej: "Presentation", "FileText") */
+  icon?: string;
+  /** Si true, aparece en el sidebar de documentos del Workshop */
+  showInSidebar?: boolean;
 }
 ```
 
@@ -515,6 +540,76 @@ sequenceDiagram
     DQ-->>Client: jobId + status
 ```
 
+### 5.4 Registro de Artifact Types
+
+Los plugins pueden registrar sus propios tipos de documento (artifacts) para que aparezcan como paneles en el sidebar del Workshop. Esto permite que un plugin genere un entregable propio y el frontend lo muestre sin modificar el core.
+
+#### Discovery Endpoint
+
+```
+GET /api/plugins/artifacts → ArtifactTypeDefinition[]
+```
+
+El frontend consulta este endpoint al montar un proyecto y genera items de navegación dinámicos para cada artifact con `showInSidebar: true`.
+
+#### Almacenamiento de Datos
+
+Cada plugin puede leer y escribir datos propios por proyecto:
+
+| Método | Endpoint | Propósito |
+|--------|----------|-----------|
+| GET | `/api/plugins/projects/:id/plugin-data/:pluginId` | Leer datos del plugin |
+| PUT | `/api/plugins/projects/:id/plugin-data/:pluginId` | Guardar datos del plugin |
+
+Los datos se persisten en el campo `pluginData` (JSON) del modelo `Project` en PostgreSQL. Cada plugin tiene su propia clave dentro del mapa.
+
+#### Flujo Extremo a Extremo
+
+```mermaid
+sequenceDiagram
+    participant Plugin as Plugin Code
+    participant Core as Core API
+    participant FE as Frontend
+    participant DB as PostgreSQL
+
+    Plugin->>Core: getArtifactTypes() → [{id:"evd", showInSidebar:true}]
+    Core->>FE: GET /plugins/artifacts
+    FE->>FE: buildPluginDocNavItems()
+    FE->>FE: Renderizar item en sidebar
+
+    User->>FE: Click en item del plugin
+    FE->>Core: GET /plugins/projects/:id/plugin-data/:pluginId
+    Core->>DB: SELECT project.pluginData->pluginId
+    DB-->>Core: datos del plugin
+    Core-->>FE: contenido del artifact
+    FE->>FE: PluginDocPanel renderiza
+```
+
+#### Ejemplo de Implementación en un Plugin
+
+```typescript
+class MiPluginConPanel implements ITheForgePlugin {
+  readonly id = "com.miempresa.panel-plugin";
+  readonly version = "1.0.0";
+  readonly name = "Plugin con Panel UI";
+  readonly description = "Aparece en el sidebar con su propio panel";
+
+  getArtifactTypes(): ArtifactTypeDefinition[] {
+    return [{
+      id: "mi-panel",
+      label: "Mi Panel",
+      icon: "Presentation",
+      showInSidebar: true,
+    }];
+  }
+
+  async afterDocumentPersist(payload: AfterDocumentPersistPayload): Promise<void> {
+    // Guardar datos del artifact usando el endpoint PUT
+    // El frontend los leerá cuando el usuario abra el panel
+  }
+}
+```
+
 ---
 
 ## 6. Estructura de Directorios Propuesta
@@ -608,10 +703,19 @@ export class MiPlugin implements ITheForgePlugin {
 
 ### 8.2 Qué NO cambia
 
-- ✅ Interfaz de usuario (frontend)
-- ✅ Esquema de DB (campos de entregables siguen existiendo)
-- ✅ API REST (mismos endpoints)
+- ✅ Esquema de DB existente (campos de entregables siguen igual)
+- ✅ API REST existente (mismos endpoints)
 - ✅ Cola de BullMQ (mismos job types)
+
+### 8.3 Qué se añade
+
+| Componente | Descripción |
+|-----------|-------------|
+| `PluginsController` | Endpoints de discovery y almacenamiento de artifacts |
+| `PluginsApiModule` | Módulo NestJS que expone los endpoints REST |
+| `pluginData` (JSON) | Campo en Project para datos de plugins por proyecto |
+| `getArtifactTypes()` | Método opcional en ITheForgePlugin para registrar artifacts |
+| `PluginDocPanel` | Componente React que renderiza paneles de plugins dinámicamente |
 
 ---
 
@@ -683,9 +787,12 @@ export class MiPlugin implements ITheForgePlugin {
 
 | Componente | Estado |
 |-----------|--------|
-| `ITheForgePlugin` interfaz | ✅ Implementada |
-| `PluginLoaderService` | ✅ Implementado |
+| `ITheForgePlugin` interfaz | ✅ Implementada (incluye `getArtifactTypes()`) |
+| `PluginLoaderService` | ✅ Implementado (incluye `getArtifactTypes()`) |
 | `PluginModule` | ✅ Implementado |
+| `PluginsController` | ✅ Implementado (GET /plugins/artifacts + project data CRUD) |
+| `PluginDocPanel` (frontend) | ✅ Implementado (panel dinámico en Workshop) |
+| `pluginData` (DB) | ✅ Implementado (campo JSON en Project) |
 | Documentación PLUGINS.md | ✅ Creada |
 | Documentación ARCHITECTURE_PLUGINS.md | ✅ Este documento |
 

@@ -130,6 +130,14 @@ export interface ITheForgePlugin {
   // ── Hooks de Proyecto ──────────────────
   onProjectCreate?(payload: ProjectLifecyclePayload): Promise<void> | void;
   onProjectUpdate?(payload: ProjectLifecyclePayload): Promise<void> | void;
+
+  // ── Registro de Artifacts ──────────────
+  /**
+   * Registra tipos de documento que este plugin genera.
+   * El core los expone vía GET /api/plugins/artifacts para que
+   * el frontend muestre paneles dinámicos en el sidebar y Workshop.
+   */
+  getArtifactTypes?(): ArtifactTypeDefinition[];
 }
 ```
 
@@ -293,6 +301,35 @@ async onProjectUpdate(payload) {
   await this.invalidateProjectCache(payload.projectId);
 }
 ```
+
+### 5.6 `getArtifactTypes` — Registro de Panel UI
+
+**Cuándo se ejecuta:** Una sola vez al cargar el plugin, durante el registro de hooks.
+
+**Uso típico:**
+- Registrar un tipo de documento que el plugin genera
+- El artifact aparece como panel en el sidebar del Workshop
+- El frontend consulta `GET /api/plugins/artifacts` para descubrirlos
+
+```typescript
+getArtifactTypes(): ArtifactTypeDefinition[] {
+  return [{
+    id: "mi-export",
+    label: "Mi Export",
+    icon: "Presentation",
+    showInSidebar: true,
+  }];
+}
+```
+
+Los datos del artifact se persisten en `pluginData` (JSON por proyecto) via:
+
+| Método | Endpoint |
+|--------|----------|
+| GET | `/api/plugins/projects/:id/plugin-data/:pluginId` |
+| PUT | `/api/plugins/projects/:id/plugin-data/:pluginId` |
+
+El frontend renderiza automáticamente un `PluginDocPanel` cuando el usuario abre el artifact desde el sidebar.
 
 ---
 
@@ -616,7 +653,16 @@ export default class PremiumPlugin implements ITheForgePlugin {
       content: "Generado por PremiumPlugin",
     });
 
-    return { ...payload, parsedContent: deck };
+    return { ...payload, parsedContent: doc };
+  }
+
+  getArtifactTypes(): ArtifactTypeDefinition[] {
+    return [{
+      id: "premium-visuals",
+      label: "Premium Visuals",
+      icon: "Presentation",
+      showInSidebar: true,
+    }];
   }
 }
 ```
