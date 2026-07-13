@@ -5,7 +5,7 @@ import type {
   AfterDocumentPersistPayload,
   ProjectLifecyclePayload,
 } from "../types/plugin-payloads.js";
-import type { ArtifactTypeDefinition } from "@theforge/shared-types";
+import type { ArtifactTypeDefinition, PluginSettingsPanelDefinition } from "@theforge/shared-types";
 
 /**
  * Ciclo de vida completo de un plugin The Forge.
@@ -183,4 +183,52 @@ export interface ITheForgePlugin {
    * ```
    */
   getArtifactTypes?(): ArtifactTypeDefinition[];
+
+  // ────────────────────────
+  // Ajustes de usuario (UI enganchada en Ajustes)
+  // ────────────────────────
+
+  /**
+   * Declara paneles de configuración que el core monta en Ajustes → Plugins.
+   * El plugin define campos; el core persiste valores en `UserAISettings.pluginUserSettings`.
+   *
+   * @optional
+   * @example
+   * ```typescript
+   * getSettingsPanels() {
+   *   return [{
+   *     id: "image-generation",
+   *     label: "Generación de imágenes",
+   *     description: "Modelo OpenRouter para slides visuales",
+   *     fields: [{
+   *       key: "imageModel",
+   *       label: "Modelo de imagen",
+   *       type: "text",
+   *       placeholder: "black-forest-labs/flux.2-pro",
+   *     }],
+   *   }];
+   * }
+   * ```
+   */
+  getSettingsPanels?(): Array<Omit<PluginSettingsPanelDefinition, "pluginId">>;
+
+  /**
+   * Normaliza o valida ajustes antes de persistir (opcional).
+   * Si lanza Error, el core responde 400.
+   *
+   * @optional
+   */
+  validateUserSettings?(
+    settings: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> | Record<string, unknown>;
+
+  /**
+   * Hook post-guardado (side-effects: invalidar caché, revalidar licencia, etc.).
+   *
+   * @optional
+   */
+  onUserSettingsSaved?(
+    settings: Record<string, unknown>,
+    context: { userId: string },
+  ): Promise<void> | void;
 }

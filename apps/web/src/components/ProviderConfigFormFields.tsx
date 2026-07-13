@@ -320,53 +320,6 @@ export function ProviderConfigFormFields({
         </>
       ) : null}
 
-      {catalog.supportsImageGeneration ? (
-        <div className="space-y-1.5">
-          <label htmlFor={`${idPrefix}-image`} className="block text-sm font-medium text-[var(--foreground)]">
-            Modelo de imagen (EVD)
-          </label>
-          <input
-            id={`${idPrefix}-image`}
-            list={`${idPrefix}-image-models`}
-            value={form.imageModel}
-            onChange={(e) => {
-              onPatch({ imageModel: e.target.value });
-              onClearFieldError("imageModel");
-            }}
-            onBlur={() => onBlurField("imageModel")}
-            placeholder={catalog.defaultImageModel || "openai/dall-e-3"}
-            className={cn(
-              "flex h-9 w-full rounded-md border border-[var(--input-border)] bg-[var(--input)] px-3 py-1 text-sm text-[var(--foreground)] shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] font-mono text-xs",
-              inputErrorClass("imageModel"),
-            )}
-          />
-          <datalist id={`${idPrefix}-image-models`}>
-            {catalog.imageModels?.map((m) => {
-              const detail = catalog.imageModelDetails?.[m];
-              return <option key={m} value={m} label={detail ? `${detail.label} — ${detail.priceOut ?? "?"}` : m} />;
-            })}
-          </datalist>
-          <p className="text-xs text-[var(--foreground-muted)]">
-            {catalog.id === "openrouter"
-              ? "Cualquier modelo de imagen disponible en OpenRouter. Ver lista actualizada en openrouter.io/docs#image-models"
-              : "ID del modelo de generación de imágenes."}
-          </p>
-          {form.imageModel && catalog.imageModelDetails && catalog.imageModelDetails[form.imageModel] ? (
-            <p className="text-xs text-[var(--foreground-muted)]">
-              {(() => {
-                const detail = catalog.imageModelDetails[form.imageModel]!;
-                return (
-                  <span>
-                    {detail.description} {detail.originProvider ? `(${detail.originProvider})` : ""}
-                    {" · Entrada: "}{detail.priceIn ?? "?"}{" · Salida: "}{detail.priceOut ?? "?"}
-                  </span>
-                );
-              })()}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
       {catalog.baseUrlEditable ? (
         <FormField
           id={`${idPrefix}-base-url`}

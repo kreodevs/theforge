@@ -331,6 +331,49 @@ Los datos del artifact se persisten en `pluginData` (JSON por proyecto) via:
 
 El frontend renderiza automáticamente un `PluginDocPanel` cuando el usuario abre el artifact desde el sidebar.
 
+### 5.7 `getSettingsPanels` — Ajustes enganchados en la UI
+
+**Cuándo se ejecuta:** Al cargar el plugin; el core expone los paneles vía `GET /api/plugins/settings-panels`.
+
+**Uso típico:**
+- Configuración **propia del plugin** (modelo de imagen EVD, licencia, calidad visual, etc.)
+- El core **no** debe mezclar estos campos en Ajustes → Proveedores de IA
+- El frontend monta tarjetas dinámicas en **Ajustes → Plugins**
+
+```typescript
+getSettingsPanels() {
+  return [{
+    id: "image-generation",
+    label: "Generación de imágenes",
+    description: "Modelo OpenRouter para slides del Executive Visual Deck",
+    order: 10,
+    fields: [{
+      key: "imageModel",
+      label: "Modelo de imagen",
+      type: "text",
+      placeholder: "black-forest-labs/flux.2-pro",
+      hint: "Modelos en openrouter.io/docs#image-models",
+      required: true,
+    }],
+  }];
+}
+```
+
+| Método | Endpoint |
+|--------|----------|
+| GET | `/api/plugins/settings-panels` |
+| GET | `/api/plugins/user-settings` |
+| GET | `/api/plugins/:pluginId/user-settings` |
+| PUT | `/api/plugins/:pluginId/user-settings` |
+
+Persistencia: `UserAISettings.pluginUserSettings` → `{ [pluginId]: { ...campos } }`.
+
+Hooks opcionales:
+- `validateUserSettings(settings)` — normalizar/validar antes de guardar (400 si falla)
+- `onUserSettingsSaved(settings, { userId })` — side-effects post-guardado
+
+El plugin lee su configuración en runtime con `context.getService(PluginUserSettingsService)` o resolviendo desde su propio servicio interno.
+
 ---
 
 ## 6. Cómo Crear un Plugin (Paso a Paso)

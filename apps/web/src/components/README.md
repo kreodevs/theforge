@@ -17,6 +17,7 @@
 | **CloneProjectDialog** | Clonar proyecto (`POST /projects/:id/clone`). Barra de selección con una carpeta: «Clonar» → nombre por defecto «Copia de …»; abre el Workshop en el clon. |
 | **Phase0ManualAudit** | Acepta `initialAudit` para reanudar auditoría tras fusión (`audit_started` / `audit_complete`). |
 | **MddPatternsWizardDialog** | Selector SSOT con pestañas verticales (`initial \| edit`): títulos = categorías del wizard MDD (emoji + texto original). Antes de abrir: `POST …/mdd/suggest-governance-patterns` (DBGA, benchmark, BRD). Al confirmar: MDD solo con patrones `[X]` + `POST …/mdd/record-governance-pattern-adrs`. |
+| **PluginSettingsSection** | Ajustes → **Plugins**: formularios declarativos de plugins cargados (`GET /plugins/settings-panels`, persistencia `PUT /plugins/:pluginId/user-settings`). Sustituye campos comerciales en proveedores IA (p. ej. modelo de imagen EVD). |
 | **ProviderInstancesCard** | CRUD/listado de instancias de proveedor IA; marca la instancia **Activa** (runtime del grafo MDD y chat). En el modal, **Modelo de auditor** opcional (`auditorChatModel`) para el nodo Auditor MDD. |
 | **AccountConfigCard** | Ajustes → Cuenta: secret MCP rotable y preferencias del taller. |
 | **McpSecretCard** | Re-export de `AccountConfigCard` (compat). |

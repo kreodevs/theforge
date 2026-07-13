@@ -8,7 +8,7 @@ import {
 import { ModuleRef } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
 import type { ITheForgePlugin } from "./interfaces/the-forge-plugin.interface.js";
-import type { ArtifactTypeDefinition } from "@theforge/shared-types";
+import type { ArtifactTypeDefinition, PluginSettingsPanelDefinition } from "@theforge/shared-types";
 import type {
   BeforeDocumentRenderPayload,
   AfterDocumentRenderPayload,
@@ -384,6 +384,29 @@ export class PluginLoaderService implements OnModuleInit {
       }
     }
     return types;
+  }
+
+  /** Paneles de ajustes declarados por plugins cargados */
+  getSettingsPanels(): PluginSettingsPanelDefinition[] {
+    const panels: PluginSettingsPanelDefinition[] = [];
+    for (const plugin of this.plugins.values()) {
+      if (!plugin.getSettingsPanels) continue;
+      const declared = plugin.getSettingsPanels();
+      if (!Array.isArray(declared)) continue;
+      for (const panel of declared) {
+        panels.push({
+          ...panel,
+          pluginId: plugin.id,
+          mountPoint: panel.mountPoint ?? "settings.plugins",
+        });
+      }
+    }
+    return panels.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }
+
+  /** Plugin cargado por id (para validación de ajustes) */
+  getPluginForSettings(pluginId: string): ITheForgePlugin | undefined {
+    return this.plugins.get(pluginId);
   }
 
   /** Verifica si al menos un hook de un tipo está registrado */

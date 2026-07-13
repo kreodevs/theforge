@@ -57,11 +57,14 @@ model UserAISettings {
   embeddingProvider      String?
   embeddingsEnabled      Boolean  @default(true)
   /// Modelo de imagen para generación visual en EVD (ej: dall-e-3, flux-1.1-pro).
+  /// @deprecated Usar pluginUserSettings del plugin EVD; se mantiene por compatibilidad.
   imageModel             String?
   /// Calidad de imagen: low, standard, high.
   imageQuality           String   @default("standard")
   /// Estilo visual: abstract, geometric, organic, corporate.
   imageStyle             String   @default("abstract")
+  /// Ajustes por plugin comercial: { [pluginId]: Record<string, unknown> }
+  pluginUserSettings     Json?
   /// Modelos de chat extra permitidos para este usuario (super_admin; unión con la instancia tenant).
   allowedChatModels      String[] @default([])
   updatedAt              DateTime @updatedAt

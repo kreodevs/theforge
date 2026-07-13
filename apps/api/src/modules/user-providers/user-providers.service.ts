@@ -622,12 +622,26 @@ export class UserProvidersService {
   }
 
   /**
-   * Resuelve el modelo de imagen para generación visual en EVD.
-   * Cadena: UserAISettings.imageModel → ProviderInstance.imageModel → UserProviderConfig.imageModel → null.
-   * Si no hay modelo configurado, retorna null (sin generación de imágenes).
+   * Resuelve el modelo de imagen para generación visual (plugins comerciales, p. ej. EVD).
+   * Cadena: pluginUserSettings.imageModel → legacy UserAISettings/Instance/Config.imageModel → null.
+   * @deprecated Preferir lectura directa desde PluginUserSettingsService en el plugin.
    */
   async resolveImageRuntime(userId: string): Promise<(UserLLMRuntime & { imageModel: string }) | null> {
     const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
+    const pluginMap = settings?.pluginUserSettings as Record<string, Record<string, unknown>> | null;
+    if (pluginMap) {
+      for (const pluginSettings of Object.values(pluginMap)) {
+        const model =
+          typeof pluginSettings?.imageModel === "string"
+            ? pluginSettings.imageModel.trim()
+            : "";
+        if (model) {
+          const runtime = await this.resolveRuntime(userId);
+          return { ...runtime, imageModel: model };
+        }
+      }
+    }
+
     const imageModelSetting = settings?.imageModel?.trim() || null;
 
     // Try tenant instance first

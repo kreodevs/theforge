@@ -563,6 +563,36 @@ Cada plugin puede leer y escribir datos propios por proyecto:
 
 Los datos se persisten en el campo `pluginData` (JSON) del modelo `Project` en PostgreSQL. Cada plugin tiene su propia clave dentro del mapa.
 
+#### Ajustes de usuario (UI enganchada)
+
+Los plugins **no** deben registrar campos de configuración en el formulario core de proveedores IA (p. ej. «Modelo de imagen (EVD)»). En su lugar declaran paneles con `getSettingsPanels()`:
+
+| Método | Endpoint | Propósito |
+|--------|----------|-----------|
+| GET | `/api/plugins/settings-panels` | Metadatos de formularios (campos, labels) |
+| GET | `/api/plugins/user-settings` | Mapa `{ [pluginId]: settings }` del usuario |
+| GET | `/api/plugins/:pluginId/user-settings` | Ajustes de un plugin |
+| PUT | `/api/plugins/:pluginId/user-settings` | Guardar (validación opcional vía `validateUserSettings`) |
+
+Persistencia: `UserAISettings.pluginUserSettings` (JSONB). El frontend monta **Ajustes → Plugins** con `PluginSettingsSection` leyendo `settings-panels` y renderizando campos declarativos (`text`, `password`, `select`, `url`).
+
+```mermaid
+sequenceDiagram
+    participant Plugin
+    participant Core as Core API
+    participant FE as Ajustes Web
+    participant DB as PostgreSQL
+
+    Plugin->>Core: getSettingsPanels()
+    FE->>Core: GET /plugins/settings-panels
+    Core-->>FE: [{ pluginId, label, fields }]
+    User->>FE: Edita modelo de imagen (EVD)
+    FE->>Core: PUT /plugins/:pluginId/user-settings
+    Core->>Plugin: validateUserSettings? (opcional)
+    Core->>DB: UPDATE pluginUserSettings
+    Plugin->>Core: onUserSettingsSaved? (opcional)
+```
+
 #### Flujo Extremo a Extremo
 
 ```mermaid

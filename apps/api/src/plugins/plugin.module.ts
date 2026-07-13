@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 import { PluginLoaderService, PLUGIN_LOADER_SERVICE } from "./plugin-loader.service.js";
+import { PluginUserSettingsService } from "./plugin-user-settings.service.js";
+import { PrismaModule } from "../prisma/prisma.module.js";
 
 /**
  * Módulo de plugins dinámicos de The Forge.
@@ -11,13 +13,15 @@ import { PluginLoaderService, PLUGIN_LOADER_SERVICE } from "./plugin-loader.serv
  * Cero dependencias de lógica comercial. 100% agnóstico.
  */
 @Module({
+  imports: [PrismaModule],
   providers: [
     PluginLoaderService,
+    PluginUserSettingsService,
     {
       provide: PLUGIN_LOADER_SERVICE,
       useExisting: PluginLoaderService,
     },
   ],
-  exports: [PluginLoaderService, PLUGIN_LOADER_SERVICE],
+  exports: [PluginLoaderService, PLUGIN_LOADER_SERVICE, PluginUserSettingsService],
 })
 export class PluginModule {}

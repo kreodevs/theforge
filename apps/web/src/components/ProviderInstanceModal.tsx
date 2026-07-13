@@ -105,7 +105,6 @@ export function ProviderInstanceModal({
     sttModel: "",
     visionModel: "",
     visionModelFallback: "",
-    imageModel: "",
     baseUrl: "",
     extras: {},
   });
@@ -297,9 +296,6 @@ export function ProviderInstanceModal({
         sttModel: activeCatalog.supportsStt ? configForm.sttModel.trim() || null : null,
 visionModel: activeCatalog.supportsVision
            ? configForm.visionModel.trim() || null
-           : null,
-        imageModel: activeCatalog.supportsImageGeneration
-           ? configForm.imageModel.trim() || null
            : null,
         baseUrl: activeCatalog.baseUrlEditable ? configForm.baseUrl.trim() || null : null,
         extras: Object.keys(extras).length > 0 ? extras : null,
