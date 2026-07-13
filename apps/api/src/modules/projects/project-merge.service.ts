@@ -32,6 +32,7 @@ import type { Phase0Document } from "../ai-analysis/phase0/phase0.types.js";
 import type { Phase0StreamEvent } from "../ai-analysis/phase0/phase0.types.js";
 import { PHASE0_MERGE_PROMPT } from "../ai-analysis/prompts/load-prompts.js";
 import { Phase0InterviewService } from "../ai-analysis/phase0/phase0-interview.service.js";
+import { ProjectGroupsService } from "../project-groups/project-groups.service.js";
 import {
   detectMergeConflicts,
   mergeLlmConflicts,
@@ -73,6 +74,7 @@ export class ProjectMergeService {
     private readonly prisma: PrismaService,
     private readonly aiFactory: AIFactory,
     private readonly phase0Interview: Phase0InterviewService,
+    private readonly projectGroups: ProjectGroupsService,
   ) {}
 
   async merge(body: unknown): Promise<ProjectMergeResult> {
@@ -307,9 +309,11 @@ export class ProjectMergeService {
     const reset = parsed.resetDownstream;
 
     if (parsed.targetMode === "new") {
+      const defaultGroupId = await this.projectGroups.getDefaultGroupId();
       const created = await this.prisma.project.create({
         data: {
           userId,
+          groupId: defaultGroupId,
           name: parsed.name!.trim(),
           projectType: "NEW",
           visibility: "PRIVATE",

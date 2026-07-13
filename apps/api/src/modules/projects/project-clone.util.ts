@@ -61,6 +61,7 @@ export function buildProjectCloneCreateInput(
 
   return {
     user: { connect: { id: options.userId } },
+    group: { connect: { id: source.groupId } },
     name: options.name,
     visibility: options.visibility,
     hasUxTeam: source.hasUxTeam,

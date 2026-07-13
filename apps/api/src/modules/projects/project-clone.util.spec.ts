@@ -45,6 +45,7 @@ describe("project-clone.util", () => {
     linkedNewProjectId: null,
     integrationHandoff: null,
     integrationHandoffUpdatedAt: null,
+    groupId: "00000000-0000-4000-8000-000000000001",
     createdAt: new Date("2026-01-01"),
     stages: [
       {

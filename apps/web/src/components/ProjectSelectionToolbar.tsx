@@ -8,12 +8,12 @@ export interface ProjectSelectionToolbarProps {
   isAdmin?: boolean;
   showMerge: boolean;
   showClone: boolean;
-  showRename: boolean;
+  showSettings: boolean;
   cloneLoading?: boolean;
-  renameLoading?: boolean;
+  settingsLoading?: boolean;
   onClearSelection: () => void;
   onClone?: () => void;
-  onRename?: () => void;
+  onSettings?: () => void;
   onMerge?: () => void;
   onDelete?: () => void;
 }
@@ -27,12 +27,12 @@ export function ProjectSelectionToolbar({
   isAdmin = false,
   showMerge,
   showClone,
-  showRename,
+  showSettings,
   cloneLoading = false,
-  renameLoading = false,
+  settingsLoading = false,
   onClearSelection,
   onClone,
-  onRename,
+  onSettings,
   onMerge,
   onDelete,
 }: ProjectSelectionToolbarProps) {
@@ -116,18 +116,18 @@ export function ProjectSelectionToolbar({
             </Button>
           ) : null}
 
-          {showRename && onRename ? (
+          {showSettings && onSettings ? (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={onRename}
-              disabled={loading || renameLoading}
+              onClick={onSettings}
+              disabled={loading || settingsLoading}
               className="shrink-0 touch-manipulation"
-              aria-label="Renombrar carpeta seleccionada"
+              aria-label="Configuración del proyecto seleccionado"
             >
               <Pencil className="h-4 w-4 shrink-0" aria-hidden />
-              <span className="hidden sm:inline">Renombrar</span>
+              <span className="hidden sm:inline">Configuración</span>
             </Button>
           ) : null}
 

@@ -17,6 +17,8 @@ Variables típicas: `THEFORGE_API_URL`, `MCP_M2M_SECRET` (header del cliente en 
 
 MCP JSON-RPC: `POST /` con header `MCP_M2M_SECRET`. Traefik: path `/mcp` → raíz del contenedor.
 
+**Grupos de proyectos:** `list_project_groups`, `get_project_group`, `create_project_group`, `rename_project_group`, `delete_project_group`, `move_project_to_group`, `move_project_group_to_first` — mismas reglas que la API (`/project-groups` y `PATCH /projects/:id` con `groupId`). Listar/ver: cualquier usuario autenticado; crear/renombrar/eliminar/mover/reordenar: admin o super_admin; el grupo por defecto «Proyectos» no se puede renombrar ni eliminar.
+
 **Fusión:** tool `merge_projects` → `POST /projects/merge` (2+ `sourceProjectIds`, preview, suite, benchmark, archivado).
 
 **Gobernanza IA:** `generate_agent_governance` (persiste `agentGovernanceContent` o preview), `get_agent_governance_export` (scaffold reconciliado para ZIP). También expuesto en `get_project_deliverables` / `get_project_stages` → `agentGovernanceContent`.

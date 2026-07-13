@@ -25,8 +25,18 @@
  * - **`get_project_stages`**: `GET /projects/:projectId/stages`
  * - **`get_project_deliverables`**: `GET /projects/:projectId` (resumen cascada + `agentGovernanceContent`)
  * - **`get_conformance`**: `GET /projects/:projectId/conformance?useLlm=`
- * - **`patch_project`**: `PATCH /projects/:projectId` (body parcial MDD/blueprint/spec/…)
+ * - **`patch_project`**: `PATCH /projects/:projectId` (body parcial MDD/blueprint/spec/groupId/…)
  * - **`generate_benchmark`**: `POST /projects/:projectId/generate-benchmark`
+ *
+ * ### Project groups (admin+ salvo list/get)
+ *
+ * - **`list_project_groups`**: `GET /project-groups` — cualquier usuario autenticado
+ * - **`get_project_group`**: `GET /project-groups` + filtro por `groupId` — cualquier usuario autenticado
+ * - **`create_project_group`**: `POST /project-groups` `{ name }` — admin / super_admin
+ * - **`rename_project_group`**: `PATCH /project-groups/:groupId` `{ name }` — admin+; bloquea grupo por defecto
+ * - **`delete_project_group`**: `DELETE /project-groups/:groupId` — admin+; reasigna proyectos al grupo «Proyectos»
+ * - **`move_project_to_group`**: `PATCH /projects/:projectId` `{ groupId }` — admin / super_admin
+ * - **`move_project_group_to_first`**: `POST /project-groups/:groupId/move-to-first` — admin+; reordena sortOrder
  * - **`phase0_deep_research`**: `POST /projects/:projectId/phase0-deep-research`
  * - **`suggest_brd_tobe_from_dbga`**: `POST /projects/:projectId/suggest-brd-tobe-from-dbga`
  *
@@ -102,4 +112,4 @@
  * Revisión del catálogo; incrementar si cambia el conjunto de tools.
  * @constant
  */
-export const MCP_THEFORGE_TOOLS_DOC_REVISION = 6;
+export const MCP_THEFORGE_TOOLS_DOC_REVISION = 8;
