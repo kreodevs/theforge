@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, Optional, forwardRef } from "@nestjs/common";
 import { ComplexityLevel, Prisma, StageStatus, Status } from "@theforge/database";
 import type { Estimation, Project, Stage } from "@theforge/database";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
@@ -55,6 +55,8 @@ import {
   extractSection,
 } from "../engine/conformance.service.js";
 import { AiService } from "../ai/ai.service.js";
+import { PluginLoaderService } from "../../plugins/plugin-loader.service.js";
+import type { BeforeDocumentRenderPayload, AfterDocumentRenderPayload } from "../../plugins/types/plugin-payloads.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
 import { ScraperService } from "../scraper/scraper.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
@@ -137,7 +139,6 @@ import {
 import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { reconcileExportScaffold, buildUnifiedHandoff, buildAgentGovernanceInput, synthesizeExportGovernanceScaffold } from "./handoff-export.util.js";
-import { EvdVisualStylistService } from "../evd/evd-visual-stylist.service.js";
 import { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
 import { UiScreensService } from "../ui-mcp/ui-screens.service.js";
 import {
@@ -223,8 +224,31 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     @Inject(forwardRef(() => ResolveChangeToFilesService))
     private readonly resolveChangeToFiles: ResolveChangeToFilesService,
     private readonly planValidation: PlanValidationService,
-    private readonly visualStylist: EvdVisualStylistService,
+    @Optional() private readonly pluginLoader?: PluginLoaderService,
   ) {}
+
+  // --------------------------------------------------------------------------
+  // Plugin hook helpers (nop if plugin loader is absent)
+  // --------------------------------------------------------------------------
+  private async runBeforeDocumentRender(payload: BeforeDocumentRenderPayload): Promise<BeforeDocumentRenderPayload> {
+    if (!this.pluginLoader) return payload;
+    try {
+      return await this.pluginLoader.executeBeforeDocumentRender(payload);
+    } catch (_err) {
+      this.logger.warn("Plugin beforeDocumentRender hook failed; proceeding unchanged.");
+      return payload;
+    }
+  }
+
+  private async runAfterDocumentRender(payload: AfterDocumentRenderPayload): Promise<AfterDocumentRenderPayload> {
+    if (!this.pluginLoader) return payload;
+    try {
+      return await this.pluginLoader.executeAfterDocumentRender(payload);
+    } catch (_err) {
+      this.logger.warn("Plugin afterDocumentRender hook failed; proceeding unchanged.");
+      return payload;
+    }
+  }
 
   /** Opciones greenfield: Phase0 + blueprint para checklist de cobertura. */
   private greenfieldGenerateOptions(project: Project): LegacyGenerateOptions {
@@ -2726,11 +2750,26 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     const project = await this.assertProjectAccess(projectId);
     const primaryStage = pickPrimaryStage(project.stages);
 
+    // --- beforeDocumentRender hook ---
+    const beforePayload = await this.runBeforeDocumentRender({
+      documentType: "evd",
+      projectId,
+      prompt: "",
+      systemPrompt: "",
+      context: {
+        mddContent: primaryStage?.mddContent ?? null,
+        specContent: project.specContent ?? null,
+        benchmarkContent: project.dbgaContent ?? null,
+        blueprintContent: project.blueprintContent ?? null,
+      },
+      llmRuntime: { providerId: "", model: "", apiKey: "", baseURL: "" },
+    });
+
     const evdJsonStr = await this.ai.generateEVDJSON({
-      mddContent: primaryStage?.mddContent ?? null,
-      specContent: project.specContent,
-      benchmarkContent: project.dbgaContent,
-      blueprintContent: project.blueprintContent,
+      mddContent: beforePayload.context.mddContent ?? null,
+      specContent: beforePayload.context.specContent,
+      benchmarkContent: beforePayload.context.benchmarkContent,
+      blueprintContent: beforePayload.context.blueprintContent,
     });
 
     // Strip markdown code fences that LLM sometimes wraps JSON in
@@ -2752,40 +2791,19 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
       }
     }
 
-    // Visual Stylist: generate background + illustration images if image model is configured
-    if (deck?.slides && Array.isArray(deck.slides) && project.userId) {
-      try {
-        const brandingColors = {
-          primary: deck.branding?.primaryColor ?? "#2563EB",
-          secondary: deck.branding?.secondaryColor ?? "#1E40AF",
-          accent: deck.branding?.accentColor ?? "#3B82F6",
-        };
+    // --- afterDocumentRender hook ---
+    const afterPayload = await this.runAfterDocumentRender({
+      documentType: "evd",
+      projectId,
+      rawContent: cleanedJson,
+      parsedContent: deck,
+      originalContext: beforePayload,
+    });
 
-        const imageResults = await this.visualStylist.generateAllImages(
-          deck.slides.map((s: { type: string; title: string; body?: string; subtitle?: string }) => ({
-            type: s.type,
-            title: s.title,
-            body: s.body ?? s.subtitle ?? "",
-          })),
-          brandingColors,
-          project.userId,
-        );
+    const finalDeck = afterPayload.parsedContent as typeof deck;
 
-        for (let i = 0; i < deck.slides.length; i++) {
-          const result = imageResults.get(i);
-          if (result) {
-            if (result.backgroundB64) deck.slides[i].backgroundB64 = result.backgroundB64;
-            if (result.illustrationB64) deck.slides[i].illustrationB64 = result.illustrationB64;
-            if (result.visualStyle) deck.slides[i].visualStyle = result.visualStyle;
-          }
-        }
-      } catch (err) {
-        this.logger.warn(`Visual Stylist image generation failed (proceeding without images): ${err}`);
-      }
-    }
-
-    const evdContent = JSON.stringify(deck, null, 2);
-    this.logger.log(`[EVD] Persisting deck with ${deck.slides?.length ?? 0} slides, ${evdContent.length} chars`);
+    const evdContent = JSON.stringify(finalDeck, null, 2);
+    this.logger.log(`[EVD] Persisting deck with ${finalDeck.slides?.length ?? 0} slides, ${evdContent.length} chars`);
 
     await this.update(projectId, { evdContent });
   }
