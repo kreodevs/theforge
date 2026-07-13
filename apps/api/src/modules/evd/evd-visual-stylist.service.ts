@@ -71,12 +71,17 @@ IMPORTANT: Keep prompts concise. Focus on shapes, colors, composition. No text i
     try {
       const provider = this.aiFactory.create(runtime);
       const raw = await provider.generateResponse(prompt, [], {
-        maxTokensOverride: 400,
-        welcomeBrief: true,
+        maxTokensOverride: 800,
+        systemPrompt: "You are a visual design AI. Respond ONLY with valid JSON matching the requested schema. No markdown, no code fences, no extra text.",
       });
 
-      // Extract JSON from response (may be wrapped in markdown code fences)
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      // Clean markdown code fences
+      const cleaned = raw
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```\s*$/, "")
+        .trim();
+
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("No JSON in LLM response");
       const parsed = JSON.parse(jsonMatch[0]) as {
         backgroundPrompt?: string;
