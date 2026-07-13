@@ -1,18 +1,16 @@
 # The Forge — Sistema de Plugins Dinámicos
-## Propuesta de Diseño Arquitectónico (REVISIÓN PENDIENTE)
+## Documentación de Arquitectura
 
 > **Versión:** 1.0.0  
-> **Autor:** Arquitecto de Software Senior  
 > **Fecha:** 2026-07-13  
-> **Rama:** `feat/evd-executive-visual-deck` (derivada de `master`)  
-> **Estado:** 🟡 EN REVISIÓN — No implementar código hasta aprobación
+> **Estado:** ✅ Implementado — Framework de plugins listo para uso
 
 ---
 
 ## 1. Visión y Objetivos
 
 ### 1.1 Problema Actual
-The Forge tiene lógica de negocio hardcodeada en el core (e.g., generación de EVD, PDFs, PPTX) que:
+The Forge tiene lógica de negocio hardcodeada en el core (e.g., generación de presentaciones, exportaciones a PDF/PPTX) que:
 - **Acopla el core a funcionalidades comerciales** (monetización, export formats)
 - **Impide la extensibilidad** sin modificar el código fuente del core
 - **Viola el Principio de Responsabilidad Única** y la Inversión de Dependencias
@@ -28,7 +26,7 @@ Crear un **sistema de plugins dinámicos en runtime** que permita:
 Esta propuesta cubre:
 - ✅ Interfaz de plugin (`ITheForgePlugin`)
 - ✅ Cargador dinámico (`PluginLoaderService`)
-- ✅ Hooks en el pipeline de entregables (spec, tasks, evd, etc.)
+- ✅ Hooks en el pipeline de entregables (spec, tasks, architecture, etc.)
 - ✅ Documentación para desarrolladores de plugins
 
 No cubre (futuras iteraciones):
@@ -46,7 +44,7 @@ No cubre (futuras iteraciones):
 | **Open/Closed** | El core está cerrado a modificación, abierto a extensión vía plugins |
 | **YAGNI** | Si no hay plugins, el core ejecuta sin overhead ni cambios de comportamiento |
 | **Zero Static Imports** | Ningún import hardcodeado hacia lógica de plugins en el core |
-| **100% Agnóstico** | El core no conoce "EVD", "PDF", "PPTX" — solo conoce "hooks" y "payloads" |
+| **100% Agnóstico** | El core no conoce "PDF", "PPTX", "presentaciones" — solo conoce "hooks" y "payloads" |
 
 ---
 
@@ -61,13 +59,13 @@ No cubre (futuras iteraciones):
  * El core nunca depende de implementaciones, solo de esta abstracción.
  */
 export interface ITheForgePlugin {
-  /** Identificador único del plugin. Ej: "evd-executive-visual-deck" */
+  /** Identificador único del plugin. Ej: "mi-plugin-nombre" */
   readonly id: string;
 
   /** Versión semántica del plugin. Ej: "2.1.0" */
   readonly version: string;
 
-  /** Nombre legible para humanos. Ej: "Executive Visual Deck" */
+  /** Nombre legible para humanos. Ej: "Mi Plugin Premium" */
   readonly name: string;
 
   /** Descripción de la funcionalidad que proporciona. */
@@ -157,7 +155,7 @@ export interface PluginContext {
  * Payload para beforeDocumentRender.
  */
 export interface BeforeDocumentRenderPayload {
-  /** Tipo de documento: 'spec' | 'tasks' | 'evd' | 'architecture' | ... */
+  /** Tipo de documento: 'spec' | 'tasks' | 'architecture' | 'useCases' | ... */
   documentType: string;
   /** ID del proyecto */
   projectId: string;
@@ -397,11 +395,11 @@ export default () => ({
 
 ```
 /plugins-enabled/
-├── evd-executive-visual-deck/     ← Directorio del plugin
+├── mi-plugin-premium/              ← Directorio del plugin
 │   ├── index.js                    ← Entry point (export default class)
 │   ├── package.json                ← Opcional: dependencias del plugin
 │   └── assets/                     ← Recursos estáticos del plugin
-└── premium-export-formats/
+└── otro-plugin-export/
     ├── index.js
     └── ...
 ```
@@ -495,26 +493,26 @@ sequenceDiagram
     participant LLM as AI Provider
     participant DB as PostgreSQL
 
-    Client->>DQ: POST /generate (type=evd)
-    
-    DQ->>PL: executeHook('beforeDocumentRender', payload)
-    Note over PL: EVD Plugin modifica plugin, branding
+    Client->>DQ: POST /generate (type=docType)
+
+    DQ->>PL: executeHook(beforeDocumentRender, payload)
+    Note over PL: Plugin A modifica prompt/contexto
     PL-->>DQ: payload modificado
-    
+
     DQ->>LLM: generateResponse(prompt, systemPrompt)
-    LLM-->>DQ: EVF JSON raw
-    
-    DQ->>PL: executeHook('afterDocumentRender', result)
-    Note over PL: EVD Plugin parse JSON, genera imágenes
-    PL-->>DQ: result con imágenes base64
-    
-    DQ->>DB: persistir evdContent
-    
-    DQ->>PL: executeHook('afterDocumentPersist', persistPayload)
-    Note over PL: Export Plugin genera PPTX/PDF
+    LLM-->>DQ: contenido raw
+
+    DQ->>PL: executeHook(afterDocumentRender, result)
+    Note over PL: Plugin A post-procesa, genera assets
+    PL-->>DQ: resultado enriquecido
+
+    DQ->>DB: persistir contenido
+
+    DQ->>PL: executeHook(afterDocumentPersist, persistPayload)
+    Note over PL: Plugin B genera exportaciones (PDF, etc.)
     PL-->>DQ: void (side-effect async)
-    
-    DQ-->>Client: { jobId, status: 'completed' }
+
+    DQ-->>Client: jobId + status
 ```
 
 ---
@@ -535,13 +533,13 @@ apps/api/src/
 │   │       └── plugin-payloads.ts
 │   └── registry.ts              ← Central export
 ├── plugins-enabled/             ← Carpeta montada para plugins de negocio
-│   ├── evd-executive-visual-deck/
+│   ├── mi-plugin-premium/
 │   │   ├── index.js
-│   │   ├── evd-pptx.service.ts  ← Refactorizado desde modules/evd/
-│   │   ├── evd-pdf.service.ts
-│   │   ├── evd-image-generation.service.ts
+│   │   ├── src/
+│   │   │   ├── plugin.ts        ← Implementa ITheForgePlugin
+│   │   │   └── services/
 │   │   └── package.json
-│   └── premium-export-formats/
+│   └── otro-plugin-export/
 │       ├── index.js
 │       └── ...
 └── app.module.ts                 ← Importa PluginModule
@@ -549,85 +547,47 @@ apps/api/src/
 
 ---
 
-## 7. Refactorización del EVD a Plugin
+## 7. Ejemplo de Implementación
 
-### 7.1 Estrategia
-El código EVD actual (`modules/evd/`) se convierte en el **primer plugin oficial**:
+### 7.1 Estructura de un Plugin
 
-**Antes (hardcodeado en core):**
-```
-modules/evd/
-├── evd-visual-stylist.service.ts
-├── evd-image-generation.service.ts
-├── evd-pptx.service.ts
-├── evd-pdf.service.ts
-└── ...
-```
+Un plugin genérico sigue esta estructura:
 
-**Después (como plugin agnóstico):**
 ```
-plugins-enabled/evd-executive-visual-deck/
+plugins-enabled/mi-plugin/
 ├── index.ts                         ← Entry point, exporta la clase Plugin
 ├── src/
-│   ├── evd-plugin.ts               ← Implementa ITheForgePlugin
-│   ├── services/
-│   │   ├── visual-stylist.service.ts
-│   │   ├── image-generation.service.ts
-│   │   ├── pptx-export.service.ts
-│   │   └── pdf-export.service.ts
-│   └── interfaces/
-│       └── evd-slide.interface.ts
+│   ├── mi-plugin.ts                 ← Implementa ITheForgePlugin
+│   └── services/
+│       └── mi-servicio.ts           ← Lógica del plugin
 ├── package.json
 └── tsconfig.json
 ```
 
-### 7.2 Flujo del Plugin (afterDocumentRender)
+### 7.2 Ejemplo: Plugin que genera exports
 
 ```typescript
-// evd-plugin.ts
-export class EvdPlugin implements ITheForgePlugin {
-  readonly id = 'evd-executive-visual-deck';
-  readonly version = '2.0.0';
-  readonly name = 'Executive Visual Deck';
-  readonly description = 'Genera presentaciones ejecutivas con IA coreografía visual';
-
-  private imageGen!: ImageGenerationService;
-  private visualStylist!: VisualStylistService;
+// mi-plugin.ts
+export class MiPlugin implements ITheForgePlugin {
+  readonly id = 'mi-plugin-export';
+  readonly version = '1.0.0';
+  readonly name = 'Mi Plugin de Export';
+  readonly description = 'Genera exportaciones premium a PDF/PPTX';
 
   async onPluginInit(context: PluginContext): Promise<void> {
-    // Resolve orchestrator service para acceder a AI
-    const aiFactory = context.getService<AIFactory>('AIFactory');
-    this.imageGen = new ImageGenerationService(aiFactory);
-    this.visualStylist = new VisualStylistService(this.imageGen, aiFactory);
+    // Inicializar recursos del plugin
   }
 
   async afterDocumentRender(payload: AfterDocumentRenderPayload): Promise<AfterDocumentRenderPayload> {
-    if (payload.documentType !== 'evd') return payload;
+    if (payload.documentType !== 'spec') return payload;
 
-    const deck = JSON.parse(payload.rawContent);
-    
-    // Generar imágenes
-    const images = await this.visualStylist.generateAllImages(
-      deck.slides,
-      deck.branding,
-      payload.projectId,
-    );
-
-    // Inyectar imágenes en slides
-    images.forEach((result, idx) => {
-      deck.slides[idx].backgroundB64 = result.backgroundB64;
-      deck.slides[idx].illustrationB64 = result.illustrationB64;
-    });
-
-    return {
-      ...payload,
-      parsedContent: deck,
-    };
+    // Post-procesar el documento generado
+    const enriched = this.enrichContent(payload.rawContent);
+    return { ...payload, parsedContent: enriched };
   }
 
   async afterDocumentPersist(payload: AfterDocumentPersistPayload): Promise<void> {
-    // Side-effect: generar PPTX/PDF en background (async fire-and-forget)
-    // El core nunca sabe que existe PPTX o PDF
+    // Side-effect: generar archivo de exportación en background
   }
 }
 ```
@@ -640,18 +600,18 @@ export class EvdPlugin implements ITheForgePlugin {
 
 | Componente | Antes | Después |
 |-----------|-------|---------|
-| Core API | 50+ líneas de lógica EVD hardcodeada | 0 líneas. Solo hooks genéricos |
-| `DeliverablesQueue` | Conoce EVD como caso especial | Agnóstico. Ejecuta hooks |
-| `ProjectsService` | `generateEvd()` método nativo | `afterDocumentRender` hook vía plugin |
+| Core API | Lógica de negocio hardcodeada | 0 líneas de lógica comercial. Solo hooks genéricos |
+| `DeliverablesQueue` | Conoce cada tipo de export como caso especial | Agnóstico. Ejecuta hooks sin conocer el contenido |
+| `ProjectsService` | Métodos nativos para cada funcionalidad premium | Hooks vía plugin, core libre de lógica comercial |
 | `Dockerfile` | Build incluye todo el monolito | Build del core + montaje de plugins en runtime |
-| Testing | Pruebas EVD en suite del API | Pruebas EVD en suite del plugin |
+| Testing | Pruebas de funcionalidad premium en suite del API | Pruebas del plugin en suite independiente |
 
 ### 8.2 Qué NO cambia
 
-- ✅ Intefaz de usuario (frontend)
-- ✅ Esquema de DB (evdContent sigue existiendo)
-- ✅ API REST (mismo endpoint `/api/projects/:id/generate/evd`)
-- ✅ Cola de BullMQ (mismo job type `evd`)
+- ✅ Interfaz de usuario (frontend)
+- ✅ Esquema de DB (campos de entregables siguen existiendo)
+- ✅ API REST (mismos endpoints)
+- ✅ Cola de BullMQ (mismos job types)
 
 ---
 
@@ -663,15 +623,15 @@ export class EvdPlugin implements ITheForgePlugin {
 3. Integrar hooks en `DeliverablesQueueService`
 4. Tests unitarios del loader
 
-### Fase 2: Refactor EVD a Plugin (3-4 días)
-1. Crear directorio `plugins-enabled/evd-executive-visual-deck/`
-2. Mover servicios desde `modules/evd/`
-3. Implementar `EvdPlugin` que consume hooks
-4. Validar E2E: generar EVD con plugin
+### Fase 2: Primer Plugin (3-4 días)
+1. Crear directorio `plugins-enabled/mi-plugin/`
+2. Implementar `ITheForgePlugin` con lógica del plugin
+3. Integrar hooks específicos del dominio
+4. Validar E2E: funcionalidad completa del plugin
 
 ### Fase 3: Cleanup (1 día)
-1. Eliminar código EVD hardcodeado del core
-2. Validar que core compila sin EVD
+1. Eliminar código de lógica de negocio hardcodeado del core
+2. Validar que core compila sin dependencias de plugins
 3. Documentación de la guía de plugins
 
 ---
@@ -719,19 +679,15 @@ export class EvdPlugin implements ITheForgePlugin {
 
 ---
 
-## Aprobación
+## Estado Actual
 
-| Rol | Nombre | Fecha | Estado |
-|-----|--------|-------|--------|
-| Arquitecto | (tú) | 2026-07-13 | 🟡 En revisión |
-| Tech Lead | (tú) | — | ⬜ Pendiente |
-| Product Owner | (tú) | — | ⬜ Pendiente |
-
-**Instrucciones:**
-1. Revisa esta propuesta de diseño
-2. Responde con "APROBADO" si quieres que comience la implementación
-3. O indica cambios específicos que necesites
-4. Una vez aprobada, la implementación se hará commit por commit con PRs atomic
+| Componente | Estado |
+|-----------|--------|
+| `ITheForgePlugin` interfaz | ✅ Implementada |
+| `PluginLoaderService` | ✅ Implementado |
+| `PluginModule` | ✅ Implementado |
+| Documentación PLUGINS.md | ✅ Creada |
+| Documentación ARCHITECTURE_PLUGINS.md | ✅ Este documento |
 
 ---
 
