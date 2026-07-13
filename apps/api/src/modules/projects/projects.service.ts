@@ -78,6 +78,8 @@ import {
   createStageBodySchema,
   cloneProjectBodySchema,
   patchStageBodySchema,
+  transitionStageBodySchema,
+  getAllowedStageTransitions,
   updateProjectSchema,
   DELIVERABLE_WAVES_BY_COMPLEXITY,
   flattenDeliverableWaves,
@@ -1273,6 +1275,116 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     });
     if (!out) throw new NotFoundException("Etapa no encontrada");
     return { stage: out };
+  }
+
+  async getStageDetail(projectId: string, stageId: string) {
+    const project = await this.assertProjectAccess(projectId);
+    const stage = project.stages.find((s) => s.id === stageId);
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    const resolved = resolveStageDeliverables(project, stage, "workshop");
+    const stageDocFields = ["mddContent", "brdContent", "changeSpecContent"] as const;
+    const stageDocuments: Record<string, { exists: boolean; wordCount: number }> = {};
+    for (const field of stageDocFields) {
+      const text = (stage[field] ?? "") as string;
+      stageDocuments[field] = {
+        exists: text.trim().length > 0,
+        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+      };
+    }
+
+    const cascadeSummary: Record<string, { exists: boolean; wordCount: number }> = {};
+    for (const [key, val] of Object.entries(resolved.deliverables)) {
+      const text = typeof val === "string" ? val : "";
+      cascadeSummary[key] = {
+        exists: text.trim().length > 0,
+        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+      };
+    }
+
+    return {
+      stage: {
+        id: stage.id,
+        ordinal: stage.ordinal,
+        key: stage.key,
+        name: stage.name,
+        workflowStatus: stage.workflowStatus,
+        status: stage.status,
+        precisionScore: stage.precisionScore,
+        isLegacy: stage.isLegacy,
+        estimation: stage.estimation,
+        createdAt: stage.createdAt,
+        updatedAt: stage.updatedAt,
+      },
+      deliverables: {
+        source: resolved.source,
+        readOnly: resolved.readOnly,
+        snapshotCapturedAt: resolved.snapshotCapturedAt ?? null,
+        stageDocuments,
+        cascadeSummary,
+      },
+      allowedTransitions: getAllowedStageTransitions(stage.workflowStatus),
+      activeStageId: pickPrimaryStage(project.stages)?.id ?? null,
+    };
+  }
+
+  async transitionStage(projectId: string, stageId: string, body: unknown) {
+    const dto = transitionStageBodySchema.parse(body);
+    await this.assertProjectAccess(projectId);
+
+    const stage = await this.prisma.stage.findFirst({
+      where: { id: stageId, projectId },
+      include: { estimation: true },
+    });
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    const allowed = getAllowedStageTransitions(stage.workflowStatus);
+    if (!allowed.includes(dto.action)) {
+      throw new BadRequestException({
+        message: `Transición "${dto.action}" no permitida desde estado ${stage.workflowStatus}`,
+        code: "STAGE_TRANSITION_NOT_ALLOWED",
+        currentStatus: stage.workflowStatus,
+        allowedTransitions: allowed,
+      });
+    }
+
+    const previousStatus = stage.workflowStatus;
+
+    if (dto.action === "activate") {
+      const uid = getRequestUserId();
+      const ownerId = (
+        await this.prisma.project.findUnique({ where: { id: projectId }, select: { userId: true } })
+      )?.userId;
+      if (ownerId !== uid) {
+        throw new BadRequestException("Only the project owner can activate stages");
+      }
+      await this.activateStageExclusive(projectId, stageId);
+    } else if (dto.action === "complete") {
+      await this.patchStage(projectId, stageId, { workflowStatus: StageStatus.COMPLETED });
+    } else if (dto.action === "archive") {
+      await this.patchStage(projectId, stageId, { workflowStatus: StageStatus.ARCHIVED });
+    } else if (dto.action === "reopen") {
+      await this.prisma.stage.update({
+        where: { id: stageId },
+        data: { workflowStatus: StageStatus.DRAFT },
+      });
+    }
+
+    const out = await this.prisma.stage.findFirst({
+      where: { id: stageId, projectId },
+      include: { estimation: true },
+    });
+    if (!out) throw new NotFoundException("Etapa no encontrada");
+
+    return {
+      stage: out,
+      transition: {
+        action: dto.action,
+        reason: dto.reason ?? null,
+        previousStatus,
+        newStatus: out.workflowStatus,
+      },
+    };
   }
 
   async generateBenchmark(projectId: string, userIdea: string, urls?: string[]) {

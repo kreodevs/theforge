@@ -168,6 +168,7 @@ export class LegacyFlowController {
    * Genera borrador BRD desde `codebaseDoc` (legacy); To-Be y As-Is eliminados del sistema.
    */
   @Post("suggest-brd-from-codebase-doc")
+  @Post("suggest-brd-tobe-from-codebase-doc")
   async suggestBrdFromCodebaseDoc(
     @Param("projectId") projectId: string,
     @Body() body: { stageId?: string },

@@ -75,6 +75,23 @@ export class ProjectsController {
     return this.projects.patchStage(projectId, stageId, body ?? {});
   }
 
+  @Get(":projectId/stages/:stageId")
+  getStageDetail(
+    @Param("projectId") projectId: string,
+    @Param("stageId") stageId: string,
+  ) {
+    return this.projects.getStageDetail(projectId, stageId);
+  }
+
+  @Post(":projectId/stages/:stageId/transition")
+  transitionStage(
+    @Param("projectId") projectId: string,
+    @Param("stageId") stageId: string,
+    @Body() body: unknown,
+  ) {
+    return this.projects.transitionStage(projectId, stageId, body ?? {});
+  }
+
   @Get(":projectId/stages/:stageId/deliverables")
   getStageDeliverables(
     @Param("projectId") projectId: string,
@@ -277,6 +294,7 @@ export class ProjectsController {
 
   /** Greenfield: borrador BRD desde `dbgaContent` (To-Be eliminado del sistema). */
   @Post(":id/suggest-brd-from-dbga")
+  @Post(":id/suggest-brd-tobe-from-dbga")
   suggestBrdFromDbga(
     @Param("id") id: string,
     @Body() body: { stageId?: string },
