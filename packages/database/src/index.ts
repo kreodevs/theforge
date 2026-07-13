@@ -11,6 +11,7 @@ export {
   PrismaClient,
   Prisma,
   type Project,
+  type ProjectGroup,
   type Session,
   type ChangeLog,
   type Estimation,

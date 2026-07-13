@@ -290,10 +290,25 @@ enum Visibility {
   SHARED
 }
 
+/// Agrupación visual de proyectos en el dashboard (carpetas por grupo).
+model ProjectGroup {
+  id        String    @id @default(uuid())
+  name      String
+  slug      String    @unique
+  isDefault Boolean   @default(false)
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  projects  Project[]
+
+  @@index([sortOrder, name])
+}
+
 model Project {
   id               String       @id @default(uuid())
   userId           String
   user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId          String
+  group            ProjectGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
   name             String
   /// Privado (solo owner) o compartido (todos los usuarios ven/editan).
   visibility       Visibility   @default(PRIVATE)
@@ -363,6 +378,7 @@ model Project {
   createdAt            DateTime  @default(now())
 
   @@index([userId])
+  @@index([groupId])
   @@index([archivedAt])
   @@index([parentProjectId])
   @@index([linkedLegacyProjectId])
