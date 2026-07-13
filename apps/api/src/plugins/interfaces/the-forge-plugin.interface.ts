@@ -5,6 +5,7 @@ import type {
   AfterDocumentPersistPayload,
   ProjectLifecyclePayload,
 } from "../types/plugin-payloads.js";
+import type { ArtifactTypeDefinition } from "@theforge/shared-types";
 
 /**
  * Ciclo de vida completo de un plugin The Forge.
@@ -151,4 +152,35 @@ export interface ITheForgePlugin {
   onProjectUpdate?(
     payload: ProjectLifecyclePayload
   ): Promise<void> | void;
+
+  // ────────────────────────
+  // Registro de Artifacts
+  // ────────────────────────
+
+  /**
+   * Registra los tipos de documento/artifact que este plugin genera.
+   *
+   * El core expone esta información vía GET /api/plugins/artifacts
+   * para que el frontend muestre paneles dinámicos en el sidebar
+   * y workshop.
+   *
+   * Cada artifact con showInSidebar=true aparecerá como pestaña
+   * en el Workshop, con contenido accesible via
+   * GET/PUT /api/projects/:id/plugin-data/:pluginId
+   *
+   * @returns Lista de definiciones de artifact (vacío si no aplica)
+   * @optional
+   * @example
+   * ```typescript
+   * getArtifactTypes(): ArtifactTypeDefinition[] {
+   *   return [{
+   *     id: "evd",
+   *     label: "Executive Visual Deck",
+   *     icon: "Presentation",
+   *     showInSidebar: true,
+   *   }];
+   * }
+   * ```
+   */
+  getArtifactTypes?(): ArtifactTypeDefinition[];
 }

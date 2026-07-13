@@ -794,6 +794,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       ...rest,
       figmaMapping:
         rest.figmaMapping === null ? undefined : (rest.figmaMapping as Prisma.InputJsonValue),
+      pluginData:
+        rest.pluginData === null ? undefined : (rest.pluginData as Prisma.InputJsonValue),
     };
     if (parsedGroupId !== undefined) {
       updatePayload.group = { connect: { id: parsedGroupId } };

@@ -80,6 +80,7 @@ export const updateProjectSchema = z.object({
   uxGuideDesignRef: z.string().max(512).optional().nullable(),
   phase0SummaryContent: z.string().optional().nullable(),
   aemContent: z.string().optional().nullable(),
+  pluginData: z.record(z.unknown()).optional().nullable(),
 
   figmaMapping: z.record(z.unknown()).optional().nullable(),
   /** Per-project converge webhook (POST /projects/:id/converge/trigger). */
@@ -134,6 +135,7 @@ export const projectResponseSchema = z.object({
   uxGuideDesignRef: z.string().nullable(),
   phase0SummaryContent: z.string().nullable(),
   aemContent: z.string().nullable(),
+  pluginData: z.record(z.unknown()).nullable(),
 
   figmaMapping: z.record(z.unknown()).nullable(),
   createdAt: z.string().datetime(),

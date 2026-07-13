@@ -34,6 +34,7 @@ import { DesignRefModule } from "./modules/design-ref/design-ref.module.js";
 import { UiMcpModule } from "./modules/ui-mcp/ui-mcp.module.js";
 import { TechnologyDocsMcpModule } from "./modules/technology-docs-mcp/technology-docs-mcp.module.js";
 import { PluginModule } from "./plugins/plugin.module.js";
+import { PluginsApiModule } from "./modules/plugins/plugins.module.js";
 
 @Module({
   controllers: [HealthController],
@@ -63,6 +64,7 @@ import { PluginModule } from "./plugins/plugin.module.js";
     UiMcpModule,
     TechnologyDocsMcpModule,
     PluginModule,
+    PluginsApiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

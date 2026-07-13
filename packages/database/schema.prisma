@@ -347,6 +347,8 @@ model Project {
   /// Contador de preguntas realizadas
   phase0Questions     Int?      @default(0)
   aemContent           String?   @db.Text
+  /// Data de plugins comerciales: { [pluginId]: any }. Gestión vía PluginsController.
+  pluginData           Json?
   /// Webhook URL for POST /projects/:id/converge/trigger (falls back to CONVERGE_WEBHOOK_URL env).
   convergeWebhookUrl   String?
   /// Optional HMAC secret for converge webhook (header X-TheForge-Signature: sha256=…).

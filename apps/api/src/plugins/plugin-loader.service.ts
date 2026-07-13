@@ -8,6 +8,7 @@ import {
 import { ModuleRef } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
 import type { ITheForgePlugin } from "./interfaces/the-forge-plugin.interface.js";
+import type { ArtifactTypeDefinition } from "@theforge/shared-types";
 import type {
   BeforeDocumentRenderPayload,
   AfterDocumentRenderPayload,
@@ -369,6 +370,20 @@ export class PluginLoaderService implements OnModuleInit {
   /** Lista de IDs de plugins cargados */
   getPluginIds(): string[] {
     return [...this.plugins.keys()];
+  }
+
+  /** Obtiene los artifact types registrados por todos los plugins */
+  getArtifactTypes(): ArtifactTypeDefinition[] {
+    const types: ArtifactTypeDefinition[] = [];
+    for (const plugin of this.plugins.values()) {
+      if (plugin.getArtifactTypes) {
+        const pluginTypes = plugin.getArtifactTypes();
+        if (Array.isArray(pluginTypes)) {
+          types.push(...pluginTypes);
+        }
+      }
+    }
+    return types;
   }
 
   /** Verifica si al menos un hook de un tipo está registrado */

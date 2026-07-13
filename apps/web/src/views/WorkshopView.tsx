@@ -83,7 +83,7 @@ import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
 import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
 import { isWorkshopConnectionError, isSsotPatternsNotice } from "../utils/workshopSyncStatus";
 import { activeGenerationLabel, generationJobAllowed } from "../utils/projectGenerationGate";
-import type { GenerationJobType } from "@theforge/shared-types";
+import type { ArtifactTypeDefinition, GenerationJobType } from "@theforge/shared-types";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import { AIProviderBanner } from "../components/AIProviderBanner";
@@ -134,7 +134,8 @@ import {
   printMarkdownDocument,
 } from "../utils/printDocument";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
-import { isWorkshopAgentActivityPanel } from "../utils/workshopDocNav";
+import { isWorkshopAgentActivityPanel, isPluginPanel } from "../utils/workshopDocNav";
+import { fetchPluginArtifacts } from "../utils/pluginApi";
 import {
   buildRegenerateSectionChatMessage,
   canRegenerateMddSectionFromWorkshop,
@@ -145,6 +146,7 @@ import {
   resolveMddReadinessHintActions,
 } from "../utils/mddSectionRegen";
 import { StandardDocPanel } from "../components/StandardDocPanel";
+import { PluginDocPanel } from "../components/PluginDocPanel";
 import { IntegrationPanel } from "../components/IntegrationPanel";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
@@ -1127,6 +1129,12 @@ export default function WorkshopView({
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
   const [mddInicialCopyOk, setMddInicialCopyOk] = useState(false);
+
+  const [pluginArtifactTypes, setPluginArtifactTypes] = useState<ArtifactTypeDefinition[]>([]);
+  useEffect(() => {
+    fetchPluginArtifacts().then(setPluginArtifactTypes);
+  }, []);
+
   /** BRD / To-Be (pestañas Workshop): borradores locales y modo preview|fuente (Grabar vía barra / aviso). */
   const brdTobeServerSnap = useRef({ stageId: "", brd: "" });
   const prevLoadingReasonRef = useRef<string | null>(null);
@@ -1186,7 +1194,8 @@ export default function WorkshopView({
     | "adrs"
     | "integration"
     | "agent-pending-changes"
-    | "agent-session-log";
+    | "agent-session-log"
+    | (string & {});
   const centralPanel = useWorkshopStore((s) => s.workshopActiveDocPanel) as DocPanel;
   const setCentralPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
 
@@ -4940,6 +4949,13 @@ export default function WorkshopView({
                 stageId={activeStageId}
                 variant="workspace"
                 className="min-h-0 flex-1 border-0 bg-transparent p-0 shadow-none"
+              />
+            )}
+            {isPluginPanel(centralPanel) && projectId && (
+              <PluginDocPanel
+                panel={centralPanel}
+                projectId={projectId}
+                artifactTypes={pluginArtifactTypes}
               />
             )}
           </div>

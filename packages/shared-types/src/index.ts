@@ -59,3 +59,4 @@ export * from "./aem.js";
 export * from "./document-edit-intent.js";
 export * from "./ui-mcp-contract.js";
 export * from "./technology-docs/index.js";
+export * from "./plugin.js";
