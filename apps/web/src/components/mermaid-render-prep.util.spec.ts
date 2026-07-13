@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeMermaidSequenceSyntax,
   prepareMermaidForRender,
-  repairMermaidBlockForRender,
 } from "./mermaid-render-prep.util";
+import { repairMermaidBlockForRender } from "./mermaid-fix.util";
 
 describe("normalizeMermaidSequenceSyntax", () => {
   it("inserta sequenceDiagram si falta y arranca con participant", () => {

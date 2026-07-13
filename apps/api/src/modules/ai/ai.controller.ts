@@ -1,9 +1,13 @@
-import { Body, Controller, Post } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Post } from "@nestjs/common";
 import { PreferencesService } from "./preferences.service.js";
+import { AiService } from "./ai.service.js";
 
 @Controller("ai")
 export class AiController {
-  constructor(private readonly preferences: PreferencesService) { }
+  constructor(
+    private readonly preferences: PreferencesService,
+    private readonly ai: AiService,
+  ) { }
 
   /**
    * Cuando el usuario aprueba un MDD: extrae preferencias arquitectónicas y las guarda (memoria semántica).
@@ -16,5 +20,18 @@ export class AiController {
     const mddContent = typeof body?.mddContent === "string" ? body.mddContent : "";
     const projectId = typeof body?.projectId === "string" ? body.projectId.trim() || null : null;
     return this.preferences.learnFromMdd(projectId, mddContent);
+  }
+
+  /** Regenera un diagrama Mermaid roto o truncado vía LLM (Workshop). */
+  @Post("mermaid/regenerate")
+  async regenerateMermaid(
+    @Body() body: { content?: string },
+  ): Promise<{ content: string }> {
+    const content = typeof body?.content === "string" ? body.content.trim() : "";
+    if (!content) {
+      throw new BadRequestException("content es obligatorio");
+    }
+    const diagram = await this.ai.regenerateMermaidDiagram(content);
+    return { content: diagram };
   }
 }

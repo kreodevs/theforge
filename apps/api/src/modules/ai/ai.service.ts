@@ -109,6 +109,9 @@ import {
   appendCoverageChecklistToPrompt,
   buildGreenfieldCoverageChecklist,
 } from "../engine/sdd-coverage-checklist.util.js";
+import { resolveLlmMaxTokensForPurpose } from "./config/llm-config.js";
+import { MERMAID_REGENERATE_PROMPT } from "./prompts/mermaid-regenerate-prompt.js";
+import { repairMermaidBlockBody, stripMermaidFenceWrappers } from "@theforge/shared-types/mermaid";
 
 function mddDeliverableCtx(options?: LegacyGenerateOptions): MddDeliverableContextOptions | undefined {
   return options?.legacyBaselineStage ? { legacyBaselineStage: true } : undefined;
@@ -1699,5 +1702,24 @@ export class AiService {
     return this.generateResponse(parts.join("\n\n"), [], {
       systemPrompt: AEM_INVESTMENT_ADVISOR_PROMPT,
     });
+  }
+
+  /** Regenera diagrama Mermaid roto/incompleto para el visor del Workshop. */
+  async regenerateMermaidDiagram(brokenContent: string): Promise<string> {
+    const broken = (brokenContent ?? "").trim();
+    if (!broken) return "";
+
+    const prompt =
+      "Reconstruye el diagrama Mermaid siguiente. Completa el flujo si está truncado.\n\n" +
+      `---\n${broken.slice(0, 14_000)}\n---`;
+
+    const raw = await this.generateResponse(prompt, [], {
+      systemPrompt: MERMAID_REGENERATE_PROMPT,
+      maxTokensOverride: resolveLlmMaxTokensForPurpose("checklist", 4096),
+    });
+
+    const body = stripMermaidFenceWrappers(raw.trim());
+    const normalized = repairMermaidBlockBody(body);
+    return normalized.trim() || body.trim();
   }
 }

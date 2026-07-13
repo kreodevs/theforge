@@ -14,14 +14,18 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from "react";
-import { Maximize2, RotateCcw, Wrench, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, Loader2, RotateCcw, Sparkles, Wrench, ZoomIn, ZoomOut } from "lucide-react";
 import {
   stripMermaidFenceWrappers,
 } from "@theforge/shared-types/mermaid";
 import {
   prepareMermaidForRender,
-  repairMermaidBlockForRender,
 } from "./mermaid-render-prep.util";
+import {
+  assessMermaidFixStrategy,
+  repairMermaidBlockForRender,
+} from "./mermaid-fix.util";
+import { regenerateMermaidDiagram } from "@/lib/mermaid-api";
 import {
   Button,
   Dialog,
@@ -537,11 +541,18 @@ export function MermaidDiagramBlock({
   const [inlineReady, setInlineReady] = useState(false);
   const [inlineFailed, setInlineFailed] = useState(false);
   const [fullscreenReady, setFullscreenReady] = useState(false);
+  const [isFixing, setIsFixing] = useState(false);
+  const [fixError, setFixError] = useState<string | null>(null);
+
+  const fixAssessment = assessMermaidFixStrategy(displayContent);
+  const fixLabel = fixAssessment.strategy === "regenerate" ? "Regenerar" : "Reparar";
+  const FixIcon = fixAssessment.strategy === "regenerate" ? Sparkles : Wrench;
 
   useEffect(() => {
     setDisplayContent(content);
     setRepairGeneration(0);
     setInlineFailed(false);
+    setFixError(null);
   }, [content]);
 
   const inlineRenderIdRef = useRef("");
@@ -572,12 +583,33 @@ export function MermaidDiagramBlock({
     if (failed) setInlineReady(false);
   }, []);
 
-  const handleRepair = useCallback(() => {
-    setDisplayContent((prev) => repairMermaidBlockForRender(prev));
-    setRepairGeneration((g) => g + 1);
+  const handleFix = useCallback(async () => {
+    const assessment = assessMermaidFixStrategy(displayContent);
+    setFixError(null);
     setInlineReady(false);
     setInlineFailed(false);
-  }, []);
+
+    if (assessment.strategy === "repair") {
+      const repaired =
+        assessment.repairedPreview.trim() || repairMermaidBlockForRender(displayContent);
+      setDisplayContent(repaired);
+      setRepairGeneration((g) => g + 1);
+      return;
+    }
+
+    setIsFixing(true);
+    try {
+      const regenerated = await regenerateMermaidDiagram(displayContent);
+      setDisplayContent(regenerated);
+      setRepairGeneration((g) => g + 1);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "No se pudo regenerar el diagrama";
+      setFixError(msg);
+      setInlineFailed(true);
+    } finally {
+      setIsFixing(false);
+    }
+  }, [displayContent]);
 
   const handleOpenFullscreen = useCallback(() => {
     setFullscreenReady(false);
@@ -607,16 +639,31 @@ export function MermaidDiagramBlock({
             type="button"
             variant="secondary"
             size="sm"
+            disabled={isFixing}
             className={cn(
               "absolute left-2 top-2 z-[1] h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm",
               toolbarVisibility,
             )}
-            onClick={handleRepair}
-            aria-label="Reparar diagrama Mermaid"
+            onClick={() => void handleFix()}
+            aria-label={`${fixLabel} diagrama Mermaid`}
+            title={
+              fixAssessment.reasons.length
+                ? fixAssessment.reasons.slice(0, 3).join(" · ")
+                : undefined
+            }
           >
-            <Wrench className="h-3.5 w-3.5" aria-hidden />
-            Reparar
+            {isFixing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <FixIcon className="h-3.5 w-3.5" aria-hidden />
+            )}
+            {isFixing ? "…" : fixLabel}
           </Button>
+        ) : null}
+        {fixError ? (
+          <p className="mb-2 pr-28 text-xs text-[var(--destructive)]" role="alert">
+            {fixError}
+          </p>
         ) : null}
         {enableFullscreen && showToolbar ? (
           <Button
@@ -662,12 +709,17 @@ export function MermaidDiagramBlock({
                   type="button"
                   variant="outline"
                   size="sm"
+                  disabled={isFixing}
                   className="h-8 shrink-0 gap-1.5 text-xs"
-                  onClick={handleRepair}
-                  aria-label="Reparar diagrama Mermaid"
+                  onClick={() => void handleFix()}
+                  aria-label={`${fixLabel} diagrama Mermaid`}
                 >
-                  <Wrench className="h-3.5 w-3.5" aria-hidden />
-                  Reparar
+                  {isFixing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <FixIcon className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                  {isFixing ? "…" : fixLabel}
                 </Button>
               ) : null}
               <div className="min-w-0">

@@ -9,7 +9,7 @@
 | **DashboardSidebar** | En Workshop, «Panel de proyectos» queda `disabled` mientras `selectWorkshopAgentsBusy` (mismo criterio que el chat). |
 | **DashboardPanelHeader** | Panel de proyectos: acciones Crear / Tutorial / Refrescar. |
 | **ProjectTutorialDialog** | Tutorial **Greenfield** vs **Brownfield** (`content/tutorial/*.md`). Renderiza bloques ` ```mermaid ` como SVG vía `MarkdownMermaid.tsx`. |
-| **MarkdownMermaid** | Bloques Mermaid en markdown (MDD, tutorial, ayuda). Carga `mermaid` con `import()` al renderizar el primer diagrama. Botones **Reparar** (izq.) y **Pantalla completa** (der.) sobre el diagrama; modal fullscreen con fit-to-view, zoom (rueda / +/-) y pan. Reparar aplica `normalizeMermaid` + correcciones de sequenceDiagram (`mermaid-render-prep.util.ts`). |
+| **MarkdownMermaid** | Bloques Mermaid en markdown (MDD, tutorial, ayuda). Botón inteligente **Reparar** / **Regenerar** (izq.): reparación local o `POST /ai/mermaid/regenerate` vía LLM si el diagrama está truncado o muy dañado. **Pantalla completa** (der.). |
 | **AnalyzeDashboard** | Panel **Analizar — consistencia SDD** (`GET …/projects/:id/analyze`): presencia MDD/Spec/UC/HU/Tasks/API/Flujos/UX/Infra/Gov, puente Phase0→BRD/Spec, hallazgos agrupados por categoría. |
 | **ProjectMergeDialog** | Fusión de 2+ carpetas en Paso 0: config (destino, benchmark, suite, archivado), preview con conflictos, `POST /projects/merge`. |
 | **AemGenerateDialog** | Modal **Generar AEM**: elige alcance geográfico (Global / México / LATAM) y llama `POST /projects/:id/generate-aem` (Benchmark + Fase 0 + BRD + dictamen de inversión digital). |

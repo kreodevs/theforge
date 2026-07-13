@@ -882,7 +882,7 @@ export function validateMermaid(raw: string): string[] {
   // Validaciones específicas por tipo
   if (mermaidType === "sequenceDiagram") {
     // Check for unclosed alt/opt/loop/par blocks
-    const opens = lines.filter((l) => /^\s*(alt|opt|loop|par|critical|break)\s/.test(l)).length;
+    const opens = lines.filter((l) => isSequenceCompositeBlockOpenLine(l.trim())).length;
     const closes = lines.filter((l) => /^\s*end\s*$/.test(l)).length;
     if (opens > closes) {
       errors.push(`Unclosed block: ${opens} openers but only ${closes} closers (need +${opens - closes} "end")`);
@@ -1747,6 +1747,13 @@ export function splitMermaidBodyAndTrailingProse(inner: string): {
   };
 }
 
+/** Apertura de bloque compuesto en sequenceDiagram — no `participant` ni typo `par ticipant`. */
+function isSequenceCompositeBlockOpenLine(trimmed: string): boolean {
+  if (/^\s*(participant|actor)\b/i.test(trimmed)) return false;
+  if (/^\s*par\s+ticipant\b/i.test(trimmed)) return false;
+  return /^\s*(alt|opt|loop|par|critical|break|rect)\b/i.test(trimmed);
+}
+
 /**
  * Normaliza syntax de sequenceDiagram: corrige keywords mal escritas,
  * Participants sin ID, paréntesis rotos, y labels con formato incorrecto.
@@ -1769,7 +1776,13 @@ export function normalizeSequenceDiagramSyntax(body: string): string {
     line = line.replace(/^(\s*)alt\s*/i, "$1alt ");
     line = line.replace(/^(\s*)else\s*/i, "$1else ");
     line = line.replace(/^(\s*)opt\s*/i, "$1opt ");
-    line = line.replace(/^(\s*)par\s*/i, "$1par ");
+    if (
+      /^(\s*)par\b/i.test(line) &&
+      !/^(\s*)participant\b/i.test(line) &&
+      !/^(\s*)par\s+ticipant\b/i.test(line)
+    ) {
+      line = line.replace(/^(\s*)par\b/i, "$1par ");
+    }
     line = line.replace(/^(\s*)critical\s*/i, "$1critical ");
     line = line.replace(/^(\s*)break\s*/i, "$1break ");
     line = line.replace(/^(\s*)end\s*$/, "$1end");
@@ -1840,6 +1853,7 @@ function normalizeGraphKeywordToFlowchart(content: string): string {
 
 export function normalizeMermaidDiagramBody(raw: string): string {
   let stripped = stripMermaidFenceWrappers(raw);
+  stripped = stripped.replace(/\bpar\s+ticipant\b/gi, "participant");
   stripped = normalizeGraphKeywordToFlowchart(stripped);
   if (/^erDiagram\b/im.test(stripped.trim())) {
     stripped = repairErDiagramBrdMarkdownLeaks(stripped);
@@ -1897,12 +1911,22 @@ export function normalizeMermaidDiagramBody(raw: string): string {
 
     // ── Flowchart subgraph tracking ──────────────────────────────────
     if (isFlowchart && /^\s*subgraph\s/.test(trimmed)) flowchartSubgraphDepth++;
-    if (isFlowchart && /^\s*end\s*$/.test(trimmed)) flowchartSubgraphDepth = Math.max(0, flowchartSubgraphDepth - 1);
 
     // ── Sequence block tracking (alt/opt/loop/par/critical/break) ────
-    if (isSequence && /^\s*(alt|opt|loop|par|critical|break)\s/.test(trimmed)) sequenceBlockDepth++;
+    if (isSequence && isSequenceCompositeBlockOpenLine(trimmed)) sequenceBlockDepth++;
     if (isSequence && /^\s*else\b/.test(trimmed)) { /* else is part of alt — don't count */ }
-    if (isSequence && /^\s*end\s*$/.test(trimmed)) sequenceBlockDepth = Math.max(0, sequenceBlockDepth - 1);
+    if (isSequence && /^\s*end\s*$/.test(trimmed)) {
+      if (sequenceBlockDepth === 0) continue;
+      sequenceBlockDepth = Math.max(0, sequenceBlockDepth - 1);
+      out.push(line);
+      continue;
+    }
+    if (isFlowchart && /^\s*end\s*$/.test(trimmed)) {
+      if (flowchartSubgraphDepth === 0) continue;
+      flowchartSubgraphDepth = Math.max(0, flowchartSubgraphDepth - 1);
+      out.push(line);
+      continue;
+    }
 
     // ── classDiagram: fix unclosed `{` blocks ────────────────────────
     if (isClassDiagram) {
@@ -2057,4 +2081,76 @@ export function normalizeMermaidInDocument(document: string): string {
     const fence = `\`\`\`mermaid\n${body}\n\`\`\``;
     return trailing ? `${fence}\n\n${trailing}` : fence;
   });
+}
+
+export type MermaidFixStrategy = "repair" | "regenerate";
+
+/** Reparación determinista de un bloque Mermaid (cuerpo sin fences). */
+export function repairMermaidBlockBody(raw: string): string {
+  const body = stripMermaidFenceWrappers((raw ?? "").trim());
+  if (!body) return "";
+  return normalizeMermaidDiagramBody(body);
+}
+
+/**
+ * Decide si basta reparación local o hace falta regenerar con LLM.
+ * Usado por el botón «Reparar» / «Regenerar» del visor.
+ */
+export function assessMermaidFixStrategy(raw: string): {
+  strategy: MermaidFixStrategy;
+  reasons: string[];
+  repairedPreview: string;
+} {
+  const source = stripMermaidFenceWrappers((raw ?? "").trim());
+  const reasons: string[] = [];
+
+  if (!source) {
+    return { strategy: "regenerate", reasons: ["empty"], repairedPreview: "" };
+  }
+
+  if (/\bpar\s+ticipant\b/i.test(source)) reasons.push("participant_keyword_split");
+  if (/```\s*text/i.test(raw)) reasons.push("split_across_fences");
+
+  if (/sequenceDiagram/i.test(source)) {
+    const opens = source
+      .split("\n")
+      .filter((l) => isSequenceCompositeBlockOpenLine(l.trim())).length;
+    const closes = (source.match(/^\s*end\s*$/gim) ?? []).length;
+    if (closes > opens) reasons.push("orphan_end_lines");
+  }
+
+  const looksTruncated =
+    /sequenceDiagram/i.test(source) &&
+    /(->>|-->>)/.test(source) &&
+    !/(ValidateLicenseResponse|Plugin cargado|Activar features|License válida)/i.test(source) &&
+    /Plugin->>Web|onPluginInit|payment_intent/i.test(source);
+  if (looksTruncated) reasons.push("truncated_flow");
+
+  const repairedPreview = repairMermaidBlockBody(source);
+  const errors = validateMermaid(repairedPreview);
+
+  const forceRegenerate =
+    reasons.includes("split_across_fences") ||
+    reasons.includes("truncated_flow") ||
+    (reasons.includes("orphan_end_lines") && reasons.includes("participant_keyword_split"));
+
+  if (errors.length === 0 && !forceRegenerate) {
+    return {
+      strategy: "repair",
+      reasons: reasons.length ? reasons : ["valid_after_repair"],
+      repairedPreview,
+    };
+  }
+
+  const needsRegenerate =
+    forceRegenerate ||
+    (reasons.includes("orphan_end_lines") && errors.length > 0) ||
+    (reasons.includes("participant_keyword_split") && errors.length > 1) ||
+    errors.length > 3;
+
+  return {
+    strategy: needsRegenerate ? "regenerate" : "repair",
+    reasons: [...reasons, ...errors.slice(0, 3)],
+    repairedPreview,
+  };
 }

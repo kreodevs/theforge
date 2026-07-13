@@ -1,7 +1,5 @@
 import {
-  normalizeMermaid,
   prepareMermaidDiagramForRender,
-  stripMermaidFenceWrappers,
 } from "@theforge/shared-types/mermaid";
 
 /** Indentación: solo 2 espacios ASCII por nivel; sin espacios al final. */
@@ -136,17 +134,4 @@ export function prepareMermaidForRender(content: string): string {
   }
 
   return normalizeMermaidFirstLineKeywords(normalizeMermaidContent(body));
-}
-
-/** Repara sintaxis Mermaid rota (LLM) y devuelve cuerpo listo para render. */
-export function repairMermaidBlockForRender(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return trimmed;
-
-  const fenced = /^```/m.test(trimmed) ? trimmed : `\`\`\`mermaid\n${trimmed}\n\`\`\``;
-  const normalized = normalizeMermaid(fenced);
-  const body = stripMermaidFenceWrappers(normalized).trim();
-  const candidate = body || trimmed;
-  const repaired = prepareMermaidForRender(candidate);
-  return repaired.trim() ? repaired : candidate;
 }
