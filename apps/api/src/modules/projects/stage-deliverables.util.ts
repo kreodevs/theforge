@@ -21,7 +21,6 @@ const DELIVERABLE_KEYS: (keyof ProjectDeliverableSource)[] = [
   "uiScreensContent",
   "phase0SummaryContent",
   "aemContent",
-  "handoffSpecContent",
 ];
 
 export type ResolveStageDeliverablesMode = "workshop" | "analyze";
