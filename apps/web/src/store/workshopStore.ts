@@ -28,6 +28,12 @@ import {
   applyDeliverableCascadeStepDone,
   readDeliverableCascadeProgressStep,
 } from "../utils/deliverableCascadeProgress";
+import {
+  isStageScopedDeliverableField,
+  resolveWorkshopStageDeliverables,
+  workshopDeliverableStoreSlice,
+  type WorkshopStageDeliverableField,
+} from "../utils/workshopStageDeliverables";
 import { appendAgentProgressDone, type AgentProgressItem } from "../utils/agentProgress";
 import {
   advanceAgentGovernanceProgressItems,
@@ -486,6 +492,21 @@ export interface WorkshopStage {
   status: Status;
   precisionScore: number;
   estimation: Estimation | null;
+  /** Entregables por etapa (columnas Stage; fallback a Project en el store). */
+  specContent?: string | null;
+  architectureContent?: string | null;
+  useCasesContent?: string | null;
+  userStoriesContent?: string | null;
+  blueprintContent?: string | null;
+  tasksContent?: string | null;
+  apiContractsContent?: string | null;
+  logicFlowsContent?: string | null;
+  infraContent?: string | null;
+  agentGovernanceContent?: string | null;
+  uxUiGuideContent?: string | null;
+  uiScreensContent?: string | null;
+  phase0SummaryContent?: string | null;
+  aemContent?: string | null;
   /** Estado del flujo legacy para esta etapa (cambio) */
   legacyChangeState?: LegacyFlowState | null;
   handoffImportedAt?: string | null;
@@ -578,6 +599,41 @@ function effectiveMddContentForSectionRegen(getState: () => {
   if (fromStore.length >= 100) return fromStore;
   const st = project?.stages?.find((s) => s.id === activeStageId);
   return (cleanDoc(st?.mddContent ?? null) ?? cleanDoc(project?.mddContent ?? null) ?? "").trim();
+}
+
+function workshopDeliverableStorePatch(
+  deliverables: ReturnType<typeof resolveWorkshopStageDeliverables>,
+): Pick<WorkshopState, WorkshopStageDeliverableField> {
+  const slice = workshopDeliverableStoreSlice(deliverables);
+  return {
+    specContent: cleanDoc(slice.specContent),
+    architectureContent: cleanDoc(slice.architectureContent),
+    useCasesContent: cleanDoc(slice.useCasesContent),
+    userStoriesContent: cleanDoc(slice.userStoriesContent),
+    blueprintContent: cleanDoc(slice.blueprintContent),
+    tasksContent: cleanDoc(slice.tasksContent),
+    apiContractsContent: cleanDoc(slice.apiContractsContent),
+    logicFlowsContent: cleanDoc(slice.logicFlowsContent),
+    infraContent: cleanDoc(slice.infraContent),
+    agentGovernanceContent: slice.agentGovernanceContent,
+    uxUiGuideContent: cleanDoc(slice.uxUiGuideContent),
+    uiScreensContent: cleanDoc(slice.uiScreensContent),
+    phase0SummaryContent: slice.phase0SummaryContent,
+    aemContent: cleanDoc(slice.aemContent),
+  };
+}
+
+/** Alinea proyecto + campos del store con la etapa en foco (MDD y entregables editables). */
+function workshopStateFromProjectStage(p: Project, stageId: string | null) {
+  const stages = p.stages ?? [];
+  const deliverables = resolveWorkshopStageDeliverables({ ...p, stages }, stageId);
+  const flat = workshopFlatFromStage(p, stageId);
+  return {
+    project: { ...p, ...flat, ...deliverables, stages },
+    activeStageId: stageId,
+    mddContent: cleanDoc(flat.mddContent) ?? "",
+    ...workshopDeliverableStorePatch(deliverables),
+  };
 }
 
 function workshopFlatFromStage(p: Project, stageId: string | null): Pick<Project, "mddContent" | "status" | "precisionScore" | "estimation"> {
@@ -1940,7 +1996,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             for (const line of lines) {
               for (const event of parseNdjsonLine(line)) {
               try {
-                const ev = event as { type: string; agent?: string; markdown?: string; message?: string; precision?: number; status?: string; precisionBreakdown?: PrecisionBreakdown };
+                const ev = event as {
+                  type: string;
+                  agent?: string;
+                  markdown?: string;
+                  message?: string;
+                  precision?: number;
+                  status?: string;
+                  precisionBreakdown?: PrecisionBreakdown;
+                  deliveryGate?: MddDeliveryGateResult;
+                };
                 if (ev.type === "done") {
                   const merged = (ev.markdown ?? "").trim();
                   if (merged.length > 80) {
@@ -1965,9 +2030,20 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     await fetchEstimation(requestProjectId, merged).catch(() => { });
                     fetchConformance(requestProjectId).catch(() => { });
                     const current = get();
+                    const savedMdd = selectPersistedMddBaseline(get()) || merged;
+                    const regenGate = deliveryGateFromStreamEvent(ev);
                     set({
-                      project: current.project ? { ...current.project, mddContent: merged } : null,
-                      mddContent: merged,
+                      project: current.project
+                        ? {
+                            ...current.project,
+                            mddContent: savedMdd,
+                            ...(typeof ev.precision === "number" ? { precisionScore: ev.precision } : {}),
+                            ...(ev.status ? { status: ev.status as Project["status"] } : {}),
+                          }
+                        : null,
+                      mddContent: savedMdd,
+                      ...(ev.precisionBreakdown ? { precisionBreakdown: ev.precisionBreakdown } : {}),
+                      ...(regenGate ? { deliveryGate: regenGate } : {}),
                       loading: false,
                       loadingReason: null,
                       notice: null,
