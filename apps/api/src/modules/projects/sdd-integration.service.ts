@@ -123,7 +123,7 @@ export class SddIntegrationService {
       .filter((l) => /aceptación|acceptance|criterio/i.test(l))
       .slice(0, 12);
 
-    const derived = stage?.derivedSpec;
+    const derived = (stage as any).derivedSpec;
 
     return buildSpecKitBundleFilesV2({
       projectName: project.name,

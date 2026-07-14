@@ -225,4 +225,4 @@ function buildQuickstartV2(input: SpecKitBundleInputV2): string {
 }
 
 // Export backwards-compatible
-export { buildSpecKitBundleFilesV2 };
+

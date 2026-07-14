@@ -124,7 +124,7 @@ function inferTasksForEntity(
     changeType: "create",
     targetFiles: [`packages/database/schema.prisma`],
     language: "prisma",
-    dependency: [],
+    dependencies: [],
     entity: op.entity,
     operations: ["create"],
     codeExpected: generatePrismaModel(entity, hasSoftDelete),
@@ -318,7 +318,7 @@ function inferTasksForEntity(
 
 // ---- Generadores de código (plantillas) ----
 
-function generatePrismaModel(entity: MddEntity | undefined, hasSoftDelete: boolean): string {
+function generatePrismaModel(entity: MddEntity | undefined, _hasSoftDelete: boolean): string {
   if (!entity) return "";
   const fields = entity.fields
     .map((f) => {
@@ -425,12 +425,11 @@ export class ${name}Service {
 
 function generateController(
   entity: MddEntity | undefined,
-  routes: ApiRoute[],
-  hasSoftDelete: boolean,
+  _routes: ApiRoute[],
+  _hasSoftDelete: boolean,
 ): string {
   if (!entity) return "";
   const name = entity.name;
-  const lower = name.toLowerCase();
   const plural = toPlural(name);
 
   return `
@@ -438,14 +437,14 @@ function generateController(
 export class ${name}Controller {
   constructor(private readonly service: ${name}Service) {}
 
-${routes
-  .map((r) => {
+${_routes
+  .map((r: ApiRoute) => {
     const decorators: string[] = [`@${r.method}('${r.path.replace(`/${plural}`, "").replace(/:(\w+)/g, ":$1")}')`];
-    if (r.auth && r.auth.length > 0) decorators.push(`@Roles(${r.auth.map((a) => `'${a}'`).join(", ")})`);
+    if (r.auth && r.auth.length > 0) decorators.push(`@Roles(${r.auth.map((a: string) => `'${a}'`).join(", ")})`);
     if (r.auth?.includes("self")) decorators.push(`@SelfOrAdmin()`);
 
     const methodName = r.action + name;
-    const params = r.params ? r.params.map((p) => `@Param('${p}') ${p}: string`).join(", ") : "";
+    const params = r.params ? r.params.map((p: string) => `@Param('${p}') ${p}: string`).join(", ") : "";
     const bodyParam = r.body ? `, @Body() dto: ${r.body}` : "";
     return `  ${decorators.join("\n  ")}\n  ${methodName}(${params}${bodyParam}) {\n    // implementation\n  }`;
   })
@@ -487,8 +486,8 @@ function generateE2ETests(entity: MddEntity | undefined, routes: ApiRoute[]): st
 
 function generateReactQueryHooks(
   entity: MddEntity | undefined,
-  routes: ApiRoute[],
-  settings: InferenceSettings,
+  _routes: ApiRoute[],
+  _settings: InferenceSettings,
 ): string {
   if (!entity) return "";
   return `
@@ -501,7 +500,7 @@ export function use${entity.name}List(cursor?: string, search?: string) {
 }
 
 export function use${entity.name}ById(id: string) {
-  return useQuery({ queryKey: ['${entity.name.toLowerCase()}', id], queryFn: () => api.get('${toPlural(entity.name)}/${id}').then(r => r.data) });
+  return useQuery({ queryKey: ['${entity.name.toLowerCase()}', id], queryFn: () => api.get('${toPlural(entity.name)}/\${id}').then(r => r.data) });
 }
 
 export function useCreate${entity.name}() {
@@ -511,22 +510,22 @@ export function useCreate${entity.name}() {
 
 export function useUpdate${entity.name}() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: ({ id, dto }: { id: string; dto: Update${entity.name}Dto }) => api.patch('${toPlural(entity.name)}/${id}', dto), onSuccess: () => qc.invalidateQueries({ queryKey: ['${entity.name.toLowerCase()}'] }) });
+  return useMutation({ mutationFn: ({ id, dto }: { id: string; dto: Update${entity.name}Dto }) => api.patch('${toPlural(entity.name)}/\${id}', dto), onSuccess: () => qc.invalidateQueries({ queryKey: ['${entity.name.toLowerCase()}'] }) });
 }
 
 export function useDelete${entity.name}() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (id: string) => api.delete('${toPlural(entity.name)}/${id}'), onSuccess: () => qc.invalidateQueries({ queryKey: ['${entity.name.toLowerCase()}'] }) });
+  return useMutation({ mutationFn: (id: string) => api.delete('${toPlural(entity.name)}/\${id}'), onSuccess: () => qc.invalidateQueries({ queryKey: ['${entity.name.toLowerCase()}'] }) });
 }
 `.trim();
 }
 
-function generateListPage(entity: MddEntity | undefined, settings: InferenceSettings): string {
+function generateListPage(entity: MddEntity | undefined, _settings: InferenceSettings): string {
   if (!entity) return "";
   return `// ${entity.name}ListPage with DataTable + pagination + search`;
 }
 
-function generateFormPage(entity: MddEntity | undefined, settings: InferenceSettings): string {
+function generateFormPage(entity: MddEntity | undefined, _settings: InferenceSettings): string {
   if (!entity) return "";
   return `// ${entity.name}FormPage with react-hook-form + zod`;
 }

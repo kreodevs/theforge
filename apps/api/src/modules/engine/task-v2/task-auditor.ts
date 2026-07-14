@@ -103,8 +103,8 @@ export function auditTasks(parseResult: TaskParseResult): TaskAuditResult {
     score -= RULES.COVERAGE_CHECK.weight;
   }
 
-  // 5. Estimación de precisión
-  const accuracyHints = estimateCodeAccuracy(tasks);
+  // 5. Estimación de precisión (reservado para futura expansión)
+  // const accuracyHints = estimateCodeAccuracy(tasks);
 
   return {
     score: Math.max(0, score),
@@ -210,7 +210,7 @@ function checkDependencies(
   tasks: ParsedTaskV2[],
   taskIds: Set<string>,
   errors: TaskAuditError[],
-  warnings: TaskAuditWarning[],
+  _warnings: TaskAuditWarning[],
 ): void {
   for (const task of tasks) {
     for (const dep of task.dependencies ?? []) {
@@ -286,26 +286,6 @@ function checkCrudCoverage(tasks: ParsedTaskV2[]): { complete: boolean; missing:
   }
 
   return { complete: missing.length === 0, missing };
-}
-
-function estimateCodeAccuracy(tasks: ParsedTaskV2[]): string[] {
-  const hints: string[] = [];
-  let tasksWithCode = 0;
-  let tasksWithTests = 0;
-
-  for (const task of tasks) {
-    if (task.codeExpected) tasksWithCode++;
-    if (task.testCommand || task.verification?.command) tasksWithTests++;
-  }
-
-  const total = tasks.length || 1;
-  const codeRatio = tasksWithCode / total;
-  const testRatio = tasksWithTests / total;
-
-  if (codeRatio < 0.5) hints.push("Considerar añadir Código Esperado a más tareas");
-  if (testRatio < 0.3) hints.push("Considerar añadir verificaciones por tarea");
-
-  return hints;
 }
 
 // ---- Export ----

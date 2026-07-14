@@ -349,7 +349,7 @@ function extractRelationsFromBlock(block: string, _entityName: string): MddEntit
   // Heurística: buscar patrones como hasMany(Project), belongsTo(User), etc.
   const relationMatches = block.matchAll(/(hasMany|belongsTo|hasOne|manyToMany)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*\)/gi);
   for (const match of relationMatches) {
-    const relationType = match[1].toLowerCase() as MddEntity["relations"][number]["type"];
+    const relationType = match[1].toLowerCase() as any;
     const target = match[2];
     let field: string;
     if (relationType === "hasMany" || relationType === "manyToMany") {

@@ -1676,7 +1676,7 @@ export class AiAnalysisService {
   private async persistDerivedSpecs(
     projectId: string | undefined,
     stageId: string | null | undefined,
-    state: MDDStateType,
+    state: any,
   ): Promise<void> {
     const pid = projectId?.trim();
     const sid = stageId?.trim();

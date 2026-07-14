@@ -40,7 +40,7 @@ import {
 } from "./project-merge-conflicts.util.js";
 import { flattenStageDeliverables } from "./stage-helpers.js";
 
-type StageWithEst = Stage & { estimation: Estimation | null; derivedSpec: any | null };
+type StageWithEst = Stage & { estimation: Estimation | null; derivedSpec?: any | null };
 
 function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unknown>>(project: P) {
   const flat = flattenStageDeliverables(project.stages, project as import("@theforge/shared-types").ProjectDeliverableSource);

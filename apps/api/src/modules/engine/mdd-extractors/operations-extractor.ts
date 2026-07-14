@@ -15,6 +15,7 @@ export interface ApiRoute {
   body?: string; // nombre del DTO de request
   response?: string; // nombre del DTO de response
   softDelete?: boolean;
+  description?: string;
   pagination?: { type: "cursor" | "offset"; pageSize?: number } | boolean;
   searchable?: string[]; // campos buscables
   sortable?: string[]; // campos sortable
@@ -125,7 +126,6 @@ function inferEntityOperations(
   typesJson: MddTypesJson,
 ): EntityOperation {
   const routes: ApiRoute[] = [];
-  const entityLower = entity.name.toLowerCase();
   const plural = pluralize(entity.name);
   const hasSoftDelete = entity.flags?.includes("soft_deletable") ?? false;
   const isReadOnly = entity.flags?.includes("read-only") ?? false;
@@ -490,7 +490,6 @@ function inferGlobalFeatures(
 
   const hasSoftDelete = text.includes("soft") || text.includes("deletedat") || text.includes("eliminado lógico");
   const hasAudit = text.includes("audit") || text.includes("createdby") || text.includes("updatedby");
-  const hasSearch = text.includes("search") || text.includes("búsqueda") || text.includes("fulltext");
   const hasAuth = text.includes("jwt") || text.includes("auth") || text.includes("session");
 
   return {

@@ -583,7 +583,8 @@ model StageDerivedSpec {
   typesJson       Json     /// @see docs/lean-sdd-implementation-plan.md §3.2.1
   operationsJson  Json     /// @see docs/lean-sdd-implementation-plan.md §3.2.2
   tasksJson       Json     /// @see docs/lean-sdd-task-format-spec.md §11
-  inferenceRules  Json?    /// reglas de inferencia aplicadas en esta generación
+  inferenceRulesApplied  Json?    /// reglas de inferencia aplicadas en esta generación
+  tasksAuditScore Int      @default(0)
   derivedAt       DateTime @default(now())
   mddHash         String   /// hash del MDD usado para derivar; invalida caché si cambia
 

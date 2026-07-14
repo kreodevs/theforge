@@ -4,15 +4,16 @@
  */
 export {
   extractTypesFromMddSection3,
-  type ExtractedMddType,
-  type MddEntityField,
-  type MddTypeDefinition,
+  type MddField,
+  type MddEntity,
+  type MddEnum,
+  type MddTypesJson,
 } from "./types-extractor.js";
 
 export {
   extractOperationsFromMdd,
-  type ExtractedOperations,
-  type CrudOperations,
-  type ApiEndpoint,
-  type FrontendPageRule,
+  type ApiRoute,
+  type EntityOperation,
+  type FrontendPage,
+  type MddOperationsJson,
 } from "./operations-extractor.js";
