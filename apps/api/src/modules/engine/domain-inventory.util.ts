@@ -281,3 +281,55 @@ export function domainEntityCoverage(
     missing,
   };
 }
+
+/**
+ * Compact block for LLM prompts (Clarifier / SA / Critic / cascade checklist).
+ * Caps length so it stays within context budgets.
+ */
+export function formatDomainInventoryForPrompt(inventory: DomainInventory, maxChars = 3500): string {
+  const domainCaps = inventory.capabilities.filter((c) => !c.isAuthRelated);
+  const authCaps = inventory.capabilities.filter((c) => c.isAuthRelated);
+  const lines: string[] = [
+    "**Inventario de dominio (derivado del BRD/DBGA — fidelidad obligatoria):**",
+    "",
+    `Capacidades de negocio (${domainCaps.length}): ${domainCaps
+      .slice(0, 20)
+      .map((c) => c.title)
+      .join("; ") || "(ninguna detectada)"}`,
+    `Capacidades auth (${authCaps.length}): ${authCaps
+      .slice(0, 8)
+      .map((c) => c.title)
+      .join("; ") || "(ninguna)"}`,
+    `Entidades sugeridas: ${inventory.suggestedEntities.slice(0, 40).join(", ") || "(ninguna)"}`,
+  ];
+  if (inventory.processes.length > 0) {
+    lines.push(
+      `Procesos: ${inventory.processes
+        .slice(0, 12)
+        .map((p) => `${p.name} [${p.trigger}]`)
+        .join("; ")}`,
+    );
+  }
+  const businessSuggested = inventory.suggestedEntities.filter((e) => !AUTH_ENTITY_FAMILY.has(e));
+  if (businessSuggested.length > 0) {
+    lines.push(`Entidades de negocio a cubrir: ${businessSuggested.slice(0, 25).join(", ")}`);
+  }
+  const domainCrud = inventory.crudMatrix.filter((r) => !AUTH_ENTITY_FAMILY.has(r.entity) && !r.infraOnly);
+  if (domainCrud.length > 0) {
+    lines.push(
+      `CrudMatrix dominio: ${domainCrud
+        .slice(0, 20)
+        .map((r) => `${r.entity}(${r.ops.join("")})`)
+        .join(", ")}`,
+    );
+  }
+  if (inventory.adminSurfaces.length > 0) {
+    lines.push(`Superficies admin: ${inventory.adminSurfaces.slice(0, 10).join(", ")}`);
+  }
+  lines.push(
+    "",
+    "Reglas: (1) §3/§4 y entregables deben anclar estas capacidades/entidades. (2) Auth es complemento, no el único dominio. (3) Si falta una entidad de negocio en el MVP, declárala en Fuera de alcance — no la omitas en silencio.",
+  );
+  const text = lines.join("\n");
+  return text.length <= maxChars ? text : text.slice(0, maxChars) + "\n…[inventario truncado]";
+}

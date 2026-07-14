@@ -416,4 +416,6 @@ Demostrar ≥90 en proyecto real; luego endurecer producto.
 
 ## 14. Primera acción recomendada
 
-Implementar **ACC-01 → ACC-04** (Fase 0) en un PR pequeño: medimos Doris con el score nuevo y validamos umbrales antes de tocar el delivery gate (Fase 1). Sin métrica, “90 %” no es verificable.
+**Hecho en PR #438:** métricas + delivery gate dominio + **wiring agentic** (inventario BRD en Clarifier/SA/Critic/Auditor, prepare_output, checklist CrudMatrix, W4 TaskAccuracy, Falkor condicional, UC/US thin).
+
+**Siguiente (humano):** regenerar MDD §3 de piloto Doris en Workshop y re-medir Doc/TaskAccuracy vía analyze.

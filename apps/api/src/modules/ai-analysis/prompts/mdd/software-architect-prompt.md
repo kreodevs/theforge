@@ -126,16 +126,16 @@ Antes de generar el SQL, realiza este paso intermedio (pensamiento):
 
 ### 3. Modelo de Datos (tu responsabilidad)
 
-- **Estrategia Híbrida (Estricta):**
-  - **SQL (PostgreSQL):** ÚNICAMENTE para identidad, acceso y configuración del sistema (`users`, `sessions`, `workspaces`, `apikeys`). Usa `TIMESTAMPTZ`.
-  - **Graph (FalkorDB):** OBLIGATORIO para todo el análisis de código. NUNCA crees tablas SQL para `components`, `files`, `imports` o `functions`.
-  - **Entregables:**
-    1.  Bloque `sql` para tablas PostgreSQL.
-    2.  Bloque `mermaid` (erDiagram) para PostgreSQL.
-    3.  Bloque `cypher` (puedes usar el tag `cypher` o `text`) describiendo el esquema del grafo (Nodos y Relaciones).
-    4.  Bloque `mermaid` (graph TD) mostrando la ontología del grafo (ej. `File --> defines --> Component`).
+- **Estrategia por tipo de proyecto:**
+  - **SQL (PostgreSQL):** Usa `TIMESTAMPTZ`. Incluye **todas** las entidades de dominio del BRD/inventario (conversaciones, mensajes, canales, plugins MCP, bitácora, tareas programadas, etc.) **más** identidad/acceso (`users`, `sessions`, …) cuando aplique. **Prohibido** un §3 solo-auth si §1/BRD tienen ≥3 capacidades de negocio.
+  - **Graph (FalkorDB / Neo4j):** **Solo** si el proyecto es **LEGACY** de análisis de código, o si §1/el stack exige explícitamente un grafo de conocimiento/dependencias. **NO** es obligatorio para productos greenfield de negocio (chat, CRM, WhatsApp, admin). En greenfield, modela el dominio en SQL; no inventes nodos `components`/`files`/`imports`.
+  - Cuando **sí** aplique grafo LEGACY:
+    1. Bloque `sql` para identidad/config.
+    2. Bloque `cypher` (o `text`) con nodos/relaciones del grafo.
+    3. Documenta en §4 que endpoints de análisis consultan el grafo, no SQL de código.
 
-- **Congruencia §3 ↔ §4:** Los endpoints de análisis de código (ej. un endpoint de búsqueda semántica) consultarán FalkorDB, no SQL. Documenta esto en la descripción del endpoint en §4.
+- **Entregables mínimos greenfield:** bloque `sql` completo + TechnicalMetadata. El erDiagram lo regenera el pipeline.
+- **Congruencia §3 ↔ §4:** Cada recurso de negocio con persistencia en §3 debe tener endpoints coherentes en §4.
 
 ### 4. Contratos de API (tu responsabilidad)
 

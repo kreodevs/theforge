@@ -13,12 +13,12 @@ export async function evaluateMddDeliveryGatePrepared(
   domainContext?: { brdMarkdown?: string | null; dbgaMarkdown?: string | null },
 ): Promise<MddDeliveryGateResult> {
   const gateRef: { current?: MddDeliveryGateResult } = {};
-  const prepared = await prepareMddForOutput(mddRaw, { deliveryGateRef: gateRef });
-  const base = gateRef.current ?? validateMddForDelivery(prepared);
-  if (!domainContext?.brdMarkdown?.trim() && !domainContext?.dbgaMarkdown?.trim()) {
-    return base;
-  }
-  return validateMddForDelivery(prepared, domainContext);
+  const prepared = await prepareMddForOutput(mddRaw, {
+    deliveryGateRef: gateRef,
+    brdMarkdown: domainContext?.brdMarkdown,
+    dbgaMarkdown: domainContext?.dbgaMarkdown,
+  });
+  return gateRef.current ?? validateMddForDelivery(prepared, domainContext);
 }
 
 export type MddDeliveryGateHttpErrorBody = {

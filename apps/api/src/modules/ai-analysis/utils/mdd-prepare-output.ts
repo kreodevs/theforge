@@ -139,6 +139,9 @@ export type PrepareMddForOutputOptions = {
   uiMcpLibraryLabel?: string | null;
   /** Recibe el resultado del gate de entrega (no altera el markdown devuelto). */
   deliveryGateRef?: { current?: MddDeliveryGateResult };
+  /** BRD/DBGA for domain fidelity blockers inside validateMddForDelivery. */
+  brdMarkdown?: string | null;
+  dbgaMarkdown?: string | null;
 };
 
 export async function prepareMddForOutput(
@@ -188,7 +191,10 @@ export async function prepareMddForOutput(
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
   const reconciled = await reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
   const markdown = applyPreDeliveryGateFixes(reconciled);
-  const deliveryGate = validateMddForDelivery(markdown);
+  const deliveryGate = validateMddForDelivery(markdown, {
+    brdMarkdown: options?.brdMarkdown,
+    dbgaMarkdown: options?.dbgaMarkdown,
+  });
   if (options?.deliveryGateRef) {
     options.deliveryGateRef.current = deliveryGate;
   }

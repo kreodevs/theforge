@@ -47,6 +47,8 @@ export type MddPlanStep = z.infer<typeof mddPlanStepSchema>;
 export const mddStateSchema = z.object({
   /** Input: Domain Benchmark & Gap Analysis markdown. */
   dbgaContent: z.string(),
+  /** BRD stage content (business capabilities) for domain inventory / delivery gate. */
+  brdContent: z.string().optional(),
   /** Clarified scope/requirements from Clarifier (feeds Security & Integration). */
   clarifiedScope: z.string(),
   /** Structured MDD (source of truth when present); markdown is derived from this. */
@@ -160,6 +162,7 @@ export type MDDState = z.infer<typeof mddStateSchema>;
 
 export const defaultMDDState: MDDState = {
   dbgaContent: "",
+  brdContent: undefined,
   clarifiedScope: "",
   mddStructured: undefined,
   mddDraft: "",

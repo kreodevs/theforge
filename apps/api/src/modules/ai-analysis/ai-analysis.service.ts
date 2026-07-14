@@ -588,6 +588,7 @@ export class AiAnalysisService {
     const initialState: MDDState = {
       ...defaultMDDState,
       dbgaContent: dbgaEffective,
+      brdContent: (brdContent ?? "").trim() || undefined,
       projectId: projectId?.trim(),
       ...agentCtx,
       ...(preservedGovernance
@@ -789,6 +790,7 @@ export class AiAnalysisService {
     const initialState: MDDState = {
       ...defaultMDDState,
       dbgaContent: dbgaEffective,
+      brdContent: (brdContent ?? "").trim() || undefined,
       lastUserMessage,
       mddDraft: existingMdd || defaultMDDState.mddDraft,
       projectId: projectId?.trim(),
@@ -1512,6 +1514,7 @@ export class AiAnalysisService {
       const state: MDDState = {
         ...defaultMDDState,
         dbgaContent: dbgaRegen,
+        brdContent: (regenBrdContent ?? "").trim() || undefined,
         clarifiedScope: structured?.contextoAlcance ?? "",
         mddStructured: structured ?? undefined,
         mddDraft: mddContent,

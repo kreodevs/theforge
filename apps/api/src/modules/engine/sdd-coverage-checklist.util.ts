@@ -4,6 +4,8 @@
 
 import { extractEntities, extractMddSection4Endpoints } from "./conformance.service.js";
 import { extractSectionByNumber } from "./mdd-markdown-parser.js";
+import { buildDomainInventory, formatDomainInventoryForPrompt } from "./domain-inventory.util.js";
+import { AUTH_ENTITY_FAMILY } from "@theforge/shared-types";
 
 export interface SddCoverageChecklistInput {
   mddMarkdown: string;
@@ -12,6 +14,9 @@ export interface SddCoverageChecklistInput {
   blueprintMarkdown?: string | null;
   /** Etiqueta del artefacto destino (Architecture, Tasks, …). */
   artifactLabel?: string;
+  /** BRD for domain inventory / CrudMatrix injection. */
+  brdMarkdown?: string | null;
+  dbgaMarkdown?: string | null;
 }
 
 export interface OpenResearchGap {
@@ -266,6 +271,43 @@ export function buildGreenfieldCoverageChecklist(input: SddCoverageChecklistInpu
     lines.push("- [ ] Contrato evento + payload JSON entre servicios acoplados");
     lines.push("- [ ] Publisher y consumer documentados (Tasks si aplica)");
     lines.push("");
+  }
+
+  if (input.brdMarkdown?.trim() || input.dbgaMarkdown?.trim()) {
+    const inventory = buildDomainInventory({
+      brdMarkdown: input.brdMarkdown,
+      dbgaMarkdown: input.dbgaMarkdown,
+      mddMarkdown: mdd,
+      mddEntities: entities,
+    });
+    const domainMissing = inventory.suggestedEntities.filter(
+      (e) => !AUTH_ENTITY_FAMILY.has(e) && !entities.includes(e),
+    );
+    if (inventory.capabilities.length > 0 || inventory.suggestedEntities.length > 0) {
+      lines.push(formatDomainInventoryForPrompt(inventory, 2500));
+      lines.push("");
+    }
+    if (inventory.processes.length > 0) {
+      lines.push("**Procesos BRD (ProcessInventory) — cubre en este artefacto:**");
+      for (const p of inventory.processes.slice(0, 15)) {
+        lines.push(`- [ ] ${p.name} (trigger: ${p.trigger})`);
+      }
+      lines.push("");
+    }
+    const crudRows = inventory.crudMatrix.filter((r) => !AUTH_ENTITY_FAMILY.has(r.entity) && !r.infraOnly);
+    if (crudRows.length > 0) {
+      lines.push("**CrudMatrix (entidades de dominio):**");
+      for (const r of crudRows.slice(0, 25)) {
+        const inMdd = entities.includes(r.entity);
+        lines.push(`- [ ] ${r.entity} [${r.ops.join("")}]${inMdd ? "" : " (ausente en §3)"}`);
+      }
+      lines.push("");
+    }
+    if (domainMissing.length > 0 && /task|pantalla|screen|architecture|api|flow/i.test(artifact)) {
+      lines.push("**Entidades BRD faltantes en MDD §3 — no inventes fuera de inventario; marca gap o pide ampliar MDD:**");
+      for (const e of domainMissing.slice(0, 20)) lines.push(`- [ ] ${e}`);
+      lines.push("");
+    }
   }
 
   return lines.join("\n");
