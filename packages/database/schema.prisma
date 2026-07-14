@@ -195,6 +195,8 @@ model Stage {
   mddContent       String?      @db.Text
   /// BRD (markdown): problema, KPIs, alcance de negocio — fase previa al MDD técnico.
   brdContent     String?   @db.Text
+  /// Domain inventory SSOT (capabilities, entities, processes, CrudMatrix) — PLAN-CASCADE-90.
+  domainInventory Json?
   /// Semáforo SDD (ROJO / AMARILLO / VERDE) derivado del MDD.
   status           Status       @default(ROJO)
   precisionScore   Int          @default(0)

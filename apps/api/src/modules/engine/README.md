@@ -7,3 +7,4 @@
 - **Auditoría MDD determinística:** `mdd-internal-audit.util.ts` (paridad SQL/Mermaid, trazabilidad MFA) — compartido con el nodo Auditor y `EstimationService`.
 - **Cascada SDD cross-artifact:** `sdd-cross-artifact.util.ts` (Spec↔MDD, HU↔UC, Tasks↔Blueprint/API); `phase0-brd-spec-bridge.util.ts` (Phase0→BRD→Spec en greenfield). Consumidos por `SddIntegrationService.analyzeArtifacts`.
 - **Exactitud cascada ≥90 (PLAN-CASCADE-90-ACCURACY):** `domain-inventory.util.ts` (capacidades BRD, CrudMatrix, ProcessInventory, auth-skew); `cascade-accuracy.util.ts` (DocAccuracyScore / TaskAccuracyScore). Wired en analyze + delivery gate (con BRD) + hard gate export (`REQUIRE_DOC_ACCURACY_90=true`).
+- **P0–P2 (0.14.0):** `domain-inventory-persist.util.ts` (`Stage.domainInventory`); `compose-section3-from-inventory.util.ts` (stubs §3); task auditor dominio; aliases C1/T1.

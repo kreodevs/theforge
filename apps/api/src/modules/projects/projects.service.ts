@@ -154,6 +154,10 @@ import {
   precisionGapsForPostPassRetry,
 } from "../engine/sdd-precision-checks.util.js";
 import {
+  rebuildDomainInventoryPreferringBrd,
+  resolveDomainInventory,
+} from "../engine/domain-inventory-persist.util.js";
+import {
   buildTasksCoordinatesPromptBlock,
   extractMddCapabilityLines,
   parseChangeScopeFromLegacyState,
@@ -560,7 +564,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       brdMarkdown: stage?.brdContent,
       dbgaMarkdown: project.dbgaContent,
     });
-    if (stage?.id) void this.persistMddDeliveryGateSnapshot(stage.id, gate);
+    if (stage?.id) {
+      void this.persistMddDeliveryGateSnapshot(stage.id, gate);
+      void this.syncDomainInventoryForStage(project, stage.id);
+    }
     if (!gate.ok && !acknowledgeGaps) {
       throw new ConflictException(buildMddDeliveryGateConflictBody(gate));
     }
@@ -1263,6 +1270,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       phase0SummaryContent: base?.phase0SummaryContent ?? project.phase0SummaryContent,
       phase0GapsJson: base?.phase0GapsJson ?? project.phase0Gaps,
       preferThinLiteraryDocs: true,
+      omitLiteraryUcUs: (project.complexity ?? ComplexityLevel.HIGH) === ComplexityLevel.HIGH,
+      domainInventory: this.resolveStageDomainInventory(project, stage),
     };
     return domainAware;
   }
@@ -1272,13 +1281,48 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     project: Project & { stages: StageWithEst[] },
   ): LegacyGenerateOptions {
     const stage = pickPrimaryStage(project.stages);
+    const inventory = this.resolveStageDomainInventory(project, stage);
     return {
       brdContent: stage?.brdContent ?? null,
       dbgaContent: project.dbgaContent ?? null,
       phase0SummaryContent: project.phase0SummaryContent,
       phase0GapsJson: project.phase0Gaps,
       preferThinLiteraryDocs: true,
+      omitLiteraryUcUs: (project.complexity ?? ComplexityLevel.HIGH) === ComplexityLevel.HIGH,
+      domainInventory: inventory,
     };
+  }
+
+  private resolveStageDomainInventory(
+    project: Project & { stages?: StageWithEst[] },
+    stage?: StageWithEst | null,
+  ) {
+    return resolveDomainInventory({
+      persisted: (stage as { domainInventory?: unknown } | null | undefined)?.domainInventory,
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: this.constitutionMarkdown(project as Project & { stages: StageWithEst[] }),
+    });
+  }
+
+  /** Persist Stage.domainInventory SSOT from BRD + MDD (idempotent). */
+  private async syncDomainInventoryForStage(
+    project: Project & { stages: StageWithEst[] },
+    stageId?: string | null,
+  ): Promise<void> {
+    const stage =
+      (stageId && project.stages.find((s) => s.id === stageId)) || pickPrimaryStage(project.stages);
+    if (!stage?.id) return;
+    const inventory = rebuildDomainInventoryPreferringBrd({
+      brdMarkdown: stage.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: this.constitutionMarkdown(project),
+    });
+    if (inventory.capabilities.length === 0 && inventory.suggestedEntities.length === 0) return;
+    await this.prisma.stage.update({
+      where: { id: stage.id },
+      data: { domainInventory: inventory as object },
+    });
   }
 
   /** Tras regen individual de flujos legacy etapa 1: telemetría §5 en `legacyFlowState`. */
@@ -2119,6 +2163,11 @@ name: ${JSON.stringify(name)}
   ) {
     await this.assertDeliverablesAllowed(projectId, options);
     const project = await this.assertProjectAccess(projectId);
+    await this.syncDomainInventoryForStage(project).catch((err) =>
+      this.logger.warn(
+        `[Cascade] syncDomainInventory: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
     if (project.projectType === "LEGACY") {
       throw new BadRequestException("Usa el flujo de entregables legacy del proyecto.");
     }

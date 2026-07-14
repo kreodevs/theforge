@@ -541,6 +541,17 @@ export function createMddSoftwareArchitectNode(
       if (inventoryBlock) {
         contextParts.unshift(inventoryBlock.trim(), "");
       }
+      try {
+        const { buildInventoryFromMddState } = await import("../utils/mdd-domain-prompt.util.js");
+        const { domainSchemaCompositionPromptBlock } = await import(
+          "../../engine/compose-section3-from-inventory.util.js"
+        );
+        const { inventory } = buildInventoryFromMddState(state);
+        const schemaBlock = domainSchemaCompositionPromptBlock(inventory, draftTrimmed);
+        if (schemaBlock) contextParts.unshift(schemaBlock, "");
+      } catch {
+        /* optional */
+      }
       if (domainAuthSkew) {
         contextParts.unshift(
           "**ALERTA domain-auth-only-skew:** El §3 actual solo tiene entidades de auth mientras el BRD lista capacidades de dominio. **Reescribe §3 y §4** con entidades y endpoints de negocio del inventario. Auth permanece como complemento.",
