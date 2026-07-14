@@ -5,7 +5,7 @@
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
  */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "./store/workshopStore";
 import {
   AlertTriangle,
@@ -170,6 +170,12 @@ export default function App() {
   const [groupDeleteOpen, setGroupDeleteOpen] = useState(false);
   const [groupDeleteLoading, setGroupDeleteLoading] = useState(false);
   const [groupMoveFirstLoadingId, setGroupMoveFirstLoadingId] = useState<string | null>(null);
+  const [draggingProject, setDraggingProject] = useState<{
+    projectId: string;
+    sourceGroupId: string;
+  } | null>(null);
+  const [dropTargetGroupId, setDropTargetGroupId] = useState<string | null>(null);
+  const [moveProjectLoadingId, setMoveProjectLoadingId] = useState<string | null>(null);
   const [cloneTarget, setCloneTarget] = useState<Project | null>(null);
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [cloneLoading, setCloneLoading] = useState(false);
@@ -496,42 +502,107 @@ export default function App() {
     setSettingsDialogOpen(true);
   }, [canOpenProjectSettings]);
 
+  const patchProject = useCallback(
+    async (projectId: string, data: { name?: string; groupId?: string }) => {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+        const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+        throw new Error(
+          r.status === 403
+            ? "No tienes permiso para cambiar esta configuración"
+            : msg ?? "Error al guardar",
+        );
+      }
+      const updated = (await r.json()) as Project;
+      const patch = {
+        ...(data.name !== undefined ? { name: updated.name ?? data.name } : {}),
+        ...(data.groupId !== undefined
+          ? { groupId: updated.groupId ?? data.groupId, groupName: updated.groupName }
+          : {}),
+      };
+      setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, ...patch } : p)));
+      setWorkshopProject((prev) => (prev?.id === projectId ? { ...prev, ...patch } : prev));
+      const store = useWorkshopStore.getState();
+      if (store.project?.id === projectId && data.name !== undefined) {
+        store.setProject({ ...store.project, name: patch.name ?? store.project.name });
+      }
+    },
+    [],
+  );
+
   const submitProjectSettings = useCallback(
     async (projectId: string, data: { name?: string; groupId?: string }) => {
       setSettingsLoading(true);
       try {
-        const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        });
-        if (!r.ok) {
-          const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
-          const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
-          throw new Error(
-            r.status === 403
-              ? "No tienes permiso para cambiar esta configuración"
-              : msg ?? "Error al guardar",
-          );
-        }
-        const updated = (await r.json()) as Project;
-        const patch = {
-          ...(data.name !== undefined ? { name: updated.name ?? data.name } : {}),
-          ...(data.groupId !== undefined
-            ? { groupId: updated.groupId ?? data.groupId, groupName: updated.groupName }
-            : {}),
-        };
-        setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, ...patch } : p)));
-        setWorkshopProject((prev) => (prev?.id === projectId ? { ...prev, ...patch } : prev));
-        const store = useWorkshopStore.getState();
-        if (store.project?.id === projectId && data.name !== undefined) {
-          store.setProject({ ...store.project, name: patch.name ?? store.project.name });
-        }
+        await patchProject(projectId, data);
       } finally {
         setSettingsLoading(false);
       }
     },
-    [],
+    [patchProject],
+  );
+
+  const moveProjectToGroup = useCallback(
+    async (projectId: string, groupId: string) => {
+      setMoveProjectLoadingId(projectId);
+      try {
+        await patchProject(projectId, { groupId });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setMoveProjectLoadingId(null);
+      }
+    },
+    [patchProject],
+  );
+
+  const handleProjectDragStart = useCallback(
+    (project: Project) => (event: DragEvent<HTMLElement>) => {
+      if (!isAdmin || moveProjectLoadingId) return;
+      event.dataTransfer.setData("application/x-theforge-project-id", project.id);
+      event.dataTransfer.setData("text/plain", project.id);
+      event.dataTransfer.effectAllowed = "move";
+      setDraggingProject({
+        projectId: project.id,
+        sourceGroupId: project.groupId ?? "",
+      });
+    },
+    [isAdmin, moveProjectLoadingId],
+  );
+
+  const handleProjectDragEnd = useCallback(() => {
+    setDraggingProject(null);
+    setDropTargetGroupId(null);
+  }, []);
+
+  const handleGroupDragOver = useCallback(
+    (groupId: string) => (event: DragEvent<HTMLElement>) => {
+      if (!isAdmin || !draggingProject) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      if (dropTargetGroupId !== groupId) {
+        setDropTargetGroupId(groupId);
+      }
+    },
+    [draggingProject, dropTargetGroupId, isAdmin],
+  );
+
+  const handleGroupDrop = useCallback(
+    (groupId: string) => (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      if (!isAdmin || !draggingProject) return;
+      const { projectId, sourceGroupId } = draggingProject;
+      setDraggingProject(null);
+      setDropTargetGroupId(null);
+      if (groupId === sourceGroupId) return;
+      void moveProjectToGroup(projectId, groupId);
+    },
+    [draggingProject, isAdmin, moveProjectToGroup],
   );
 
   const submitCreateProjectGroup = useCallback(
@@ -1130,7 +1201,7 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {workshopProject ? (
-        <div className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row">
+        <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row lg:items-stretch">
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}
@@ -1174,7 +1245,7 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row">
+        <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row lg:items-stretch">
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}
@@ -1342,8 +1413,36 @@ export default function App() {
         {projectGroups.map((group, groupIndex) => {
           const groupProjects = projectsByGroupId.get(group.id) ?? [];
           const isFirstGroup = groupIndex === 0;
+          const isDropTarget =
+            isAdmin && !!draggingProject && dropTargetGroupId === group.id;
+          const isSourceGroupWhileDragging =
+            isAdmin && draggingProject?.sourceGroupId === group.id;
           return (
-            <Card key={group.id} id={group.isDefault ? "dashboard-projects" : undefined}>
+            <Card
+              key={group.id}
+              id={group.isDefault ? "dashboard-projects" : undefined}
+              className={cn(
+                "transition-[box-shadow,background-color,border-color] duration-300 ease-forge-smooth motion-reduce:transition-none",
+                isDropTarget &&
+                  "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] shadow-[0_0_0_2px_color-mix(in_oklch,var(--primary)_45%,transparent)]",
+                isSourceGroupWhileDragging &&
+                  !isDropTarget &&
+                  "border-dashed border-[color-mix(in_oklch,var(--primary)_35%,var(--border))]",
+              )}
+              onDragOver={isAdmin ? handleGroupDragOver(group.id) : undefined}
+              onDragEnter={isAdmin ? handleGroupDragOver(group.id) : undefined}
+              onDragLeave={
+                isAdmin
+                  ? (event) => {
+                      const related = event.relatedTarget as Node | null;
+                      if (!event.currentTarget.contains(related)) {
+                        setDropTargetGroupId((prev) => (prev === group.id ? null : prev));
+                      }
+                    }
+                  : undefined
+              }
+              onDrop={isAdmin ? handleGroupDrop(group.id) : undefined}
+            >
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle className="flex min-w-0 flex-1 items-center gap-2 text-base sm:text-lg">
                   <FolderOpen className="h-5 w-5 shrink-0 text-[var(--primary)]" aria-hidden />
@@ -1428,11 +1527,21 @@ export default function App() {
               </CardHeader>
               <CardContent>
                 {groupProjects.length === 0 ? (
-                  <p className="text-sm text-[var(--foreground-muted)]">
-                    {displayedProjects.length === 0 && !loading
-                      ? "Sin proyectos con los filtros actuales."
-                      : "Ningún proyecto en este grupo con los filtros actuales."}
-                  </p>
+                  <div
+                    className={cn(
+                      "rounded-xl border border-dashed border-transparent px-4 py-8 text-center transition-[border-color,background-color] duration-300 ease-forge-smooth motion-reduce:transition-none",
+                      isDropTarget &&
+                        "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)]",
+                    )}
+                  >
+                    <p className="text-sm text-[var(--foreground-muted)]">
+                      {isDropTarget
+                        ? "Suelta la carpeta aquí"
+                        : displayedProjects.length === 0 && !loading
+                          ? "Sin proyectos con los filtros actuales."
+                          : "Ningún proyecto en este grupo con los filtros actuales."}
+                    </p>
+                  </div>
                 ) : (
                   <ul
                     className="grid list-none gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
@@ -1450,6 +1559,11 @@ export default function App() {
                           selected={selectedProjectIds.includes(p.id)}
                           selectable
                           isFavorite={p.isFavorite}
+                          draggable={isAdmin}
+                          isDragging={draggingProject?.projectId === p.id}
+                          isMoving={moveProjectLoadingId === p.id}
+                          onDragStart={handleProjectDragStart(p)}
+                          onDragEnd={handleProjectDragEnd}
                           onToggleFavorite={handleToggleFavorite}
                           onRename={
                             canOpenProjectSettings(p) ? () => openSettingsDialog(p) : undefined
