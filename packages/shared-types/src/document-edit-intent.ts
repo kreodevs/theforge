@@ -113,6 +113,9 @@ export function looksLikeDbgaEditRequest(message: string): boolean {
 
   if (isUserExploringDbgaIntent(m)) return false;
 
+  // Respuesta a pregunta pendiente con catálogo HTTP → editar documento (sin “integra en el DBGA”).
+  if (looksLikeApiEndpointCatalog(m)) return true;
+
   if (looksLikeDbgaSpecIntegrationRequest(m)) return true;
 
   if (/^\s*¿/.test(m) && !DBGA_IMPERATIVE_RE.test(m) && !DBGA_VERB_WITH_DOC_RE.test(m)) {

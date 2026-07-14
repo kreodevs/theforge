@@ -45,8 +45,10 @@ import {
   wouldShrinkDbgaDangerously,
 } from "./dbga-edit.util.js";
 import {
+  looksLikeApiEndpointCatalog,
   looksLikeDbgaDocumentBody,
   looksLikeDbgaSpecIntegrationRequest,
+  mergeApiEndpointCatalogIntoDbga,
 } from "@theforge/shared-types";
 import { llmDebug, llmWarn } from "../ai/config/llm-debug.util.js";
 import { ModelsUnavailableError } from "../ai/config/llm-model-fallback.js";
@@ -1541,8 +1543,26 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
     const wantsEdit =
       options?.wantsDocumentEdit === true ||
       looksLikeDbgaEditRequest(userMessage) ||
-      looksLikeDbgaSpecIntegrationRequest(userMessage);
+      looksLikeDbgaSpecIntegrationRequest(userMessage) ||
+      looksLikeApiEndpointCatalog(userMessage);
     const hadImages = (options?.userImages?.length ?? 0) > 0;
+
+    // Respuesta a pregunta pendiente = catálogo HTTP: fusión determinista (sin depender de FIN_DBGA).
+    if (tab === "benchmark" && current.length > 0 && looksLikeApiEndpointCatalog(userMessage)) {
+      const deterministic = mergeApiEndpointCatalogIntoDbga(current, userMessage);
+      const validation = validateDocumentForPersist(current, deterministic, { fieldLabel: "DBGA" });
+      if (
+        validation.ok &&
+        !wouldShrinkDbgaDangerously(current, deterministic) &&
+        dbgaReflectsUserEditIntent(deterministic, userMessage)
+      ) {
+        console.log(
+          "[Sessions] mergeApiEndpointCatalogIntoDbga aplicado, length:",
+          deterministic.length,
+        );
+        return deterministic;
+      }
+    }
 
     const cleanedPart = dbgaDocPart
       ? this.parser.cleanDocumentContent(dbgaDocPart)

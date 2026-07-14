@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import {
   hasEmbeddedSpecificationBlock,
   isUserExploringDbgaIntent,
+  looksLikeApiEndpointCatalog,
   looksLikeDbgaEditRequest,
   looksLikeDbgaSpecIntegrationRequest,
 } from "@theforge/shared-types";
@@ -123,6 +124,10 @@ export class IntentRouterService {
 
     if (looksLikeDbgaSpecIntegrationRequest(trimmed)) {
       return { intent: "direct_edit", action: "edit_document", confidence: 0.98 };
+    }
+
+    if (looksLikeApiEndpointCatalog(trimmed)) {
+      return { intent: "direct_edit", action: "edit_document", confidence: 0.97 };
     }
 
     if (looksLikeDbgaEditRequest(trimmed)) {

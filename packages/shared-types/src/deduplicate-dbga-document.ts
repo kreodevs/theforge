@@ -24,6 +24,7 @@ const SECTION_ORDER: Array<{ key: string; pattern: RegExp }> = [
   { key: "s8", pattern: /^##\s+8\.\s+Interfaz/i },
   { key: "s9", pattern: /^##\s+9\.\s+Salidas/i },
   { key: "s10", pattern: /^##\s+10\.\s+Preguntas/i },
+  { key: "s11", pattern: /^##\s+11\.\s+(?:API|Integraci)/i },
   { key: "changelog", pattern: /^##\s+Registro de cambios del documento\b/i },
 ];
 
