@@ -6,7 +6,9 @@ import {
   bumpDocumentPatchVersion,
   documentBodyWithoutChangelog,
   ensureDocumentChangelog,
+  fixDocumentChangelogInitialDate,
   formatDocumentChangelogDate,
+  getDocumentChangelogLlmInstructions,
   hasDocumentChangelogSection,
   isChangelogOnlyDocument,
   parseLatestDocumentVersion,
@@ -26,17 +28,40 @@ describe("document-changelog", () => {
     assert.match(out, /\| 1\.0 \| Mayo 2026 \| Creación inicial del DBGA \|/);
   });
 
-  it("ensureDocumentChangelog no duplica si ya existe", () => {
+  it("ensureDocumentChangelog corrige fecha 1.0 si changelog ya existe", () => {
     const doc = `# BRD
 
 ## Registro de cambios del documento
 
 | Versión | Fecha | Descripción del cambio |
 | --- | --- | --- |
-| 1.0 | Mayo 2026 | Creación inicial del BRD |
+| 1.0 | Abril 2026 | Creación inicial del BRD |
 | 1.1 | Mayo 2026 | Añadir RACI |`;
-    const out = ensureDocumentChangelog(doc);
-    assert.equal(out, doc);
+    const out = ensureDocumentChangelog(doc, { initialDate: "Julio 2026" });
+    assert.match(out, /\| 1\.0 \| Julio 2026 \| Creación inicial del BRD \|/);
+    assert.match(out, /\| 1\.1 \| Mayo 2026 \| Añadir RACI \|/);
+  });
+
+  it("fixDocumentChangelogInitialDate reemplaza fecha incorrecta del LLM", () => {
+    const doc = `# Deep Research
+
+## Registro de cambios del documento
+
+| Versión | Fecha | Descripción del cambio |
+| --- | --- | --- |
+| 1.0 | Abril 2026 | Creación inicial del informe de Deep Research |`;
+    const out = fixDocumentChangelogInitialDate(doc, "Julio 2026");
+    assert.match(
+      out,
+      /\| 1\.0 \| Julio 2026 \| Creación inicial del informe de Deep Research \|/,
+    );
+    assert.doesNotMatch(out, /Abril 2026/);
+  });
+
+  it("getDocumentChangelogLlmInstructions inyecta fecha del sistema", () => {
+    const out = getDocumentChangelogLlmInstructions(new Date(2026, 6, 14));
+    assert.match(out, /«Julio 2026»/);
+    assert.match(out, /\*\*Fecha obligatoria fila 1\.0:\*\* `Julio 2026`/);
   });
 
   it("parseLatestDocumentVersion devuelve la mayor versión", () => {
@@ -71,14 +96,17 @@ describe("document-changelog", () => {
   it("documentBodyWithoutChangelog separa cuerpo y changelog", () => {
     const doc = `# Spec
 
-Alcance MVP.
+Alcance MVP con entregables, criterios de aceptación y dependencias técnicas documentadas para el equipo.
 
 ## Registro de cambios del documento
 
 | Versión | Fecha | Descripción del cambio |
 | --- | --- | --- |
 | 1.0 | Junio 2026 | Creación inicial del documento |`;
-    assert.equal(documentBodyWithoutChangelog(doc), "# Spec\n\nAlcance MVP.");
+    assert.equal(
+      documentBodyWithoutChangelog(doc),
+      "# Spec\n\nAlcance MVP con entregables, criterios de aceptación y dependencias técnicas documentadas para el equipo.",
+    );
     assert.equal(isChangelogOnlyDocument(doc), false);
   });
 

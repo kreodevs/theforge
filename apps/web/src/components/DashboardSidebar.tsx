@@ -590,13 +590,24 @@ export function DashboardSidebar({
     ],
   );
 
+  const handleNavigateHome = useCallback(() => {
+    closeMobileNav();
+    onBeforeNavigateToProjects?.();
+    onExitWorkshop?.();
+  }, [closeMobileNav, onBeforeNavigateToProjects, onExitWorkshop]);
+
   return (
     <div className="relative flex w-full shrink-0 flex-col lg:z-40 lg:h-full lg:min-h-0 lg:w-auto lg:shrink-0">
       <header
         className="sticky top-0 z-40 flex w-full items-center justify-between gap-2 border-b border-[color-mix(in_oklch,var(--sidebar-border)_90%,var(--sidebar))] bg-[var(--sidebar)] px-3 py-2.5 text-[var(--sidebar-foreground)] lg:hidden"
         style={{ paddingTop: "max(0.625rem, env(safe-area-inset-top))" }}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        <button
+          type="button"
+          onClick={handleNavigateHome}
+          aria-label="Ir al inicio"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[var(--radius-lg)] border-0 bg-transparent p-0 text-left transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sidebar)]"
+        >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_7%,var(--sidebar))] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-foreground)_10%,transparent)]">
             <Flame className="h-5 w-5 text-[var(--primary)]" aria-hidden />
           </div>
@@ -604,7 +615,7 @@ export function DashboardSidebar({
             <p className="truncate text-sm font-semibold tracking-tight text-[var(--sidebar-foreground)]">TheForge</p>
             <p className="truncate text-[11px] text-[var(--muted-foreground)]">Software Factory</p>
           </div>
-        </div>
+        </button>
         <div className="flex shrink-0 items-center gap-0.5">
           {!inWorkshop ? (
             <button
@@ -674,16 +685,19 @@ export function DashboardSidebar({
             rail ? "lg:flex-col lg:items-center lg:gap-2.5" : "items-center justify-between",
           )}
         >
-          <div
+          <button
+            type="button"
+            onClick={handleNavigateHome}
+            aria-label="Ir al inicio"
             className={cn(
-              "flex min-w-0 items-center gap-2.5",
+              "flex min-w-0 items-center gap-2.5 rounded-[var(--radius-lg)] border-0 bg-transparent p-0 text-left transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sidebar)]",
               rail ? "lg:flex-none lg:justify-center" : "flex-1",
             )}
           >
             <div
               className={cn(
                 rail
-                  ? railControlClass("pointer-events-none cursor-default hover:bg-[color-mix(in_oklch,var(--sidebar-foreground)_6%,var(--sidebar))]")
+                  ? railControlClass()
                   : "flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_7%,var(--sidebar))] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-foreground)_10%,transparent)]",
               )}
             >
@@ -695,7 +709,7 @@ export function DashboardSidebar({
               </p>
               <p className="truncate text-xs text-[var(--muted-foreground)]">Software Factory</p>
             </div>
-          </div>
+          </button>
           <CollapsedRailHint rail={rail} label="Expandir barra lateral">
             <button
               type="button"
