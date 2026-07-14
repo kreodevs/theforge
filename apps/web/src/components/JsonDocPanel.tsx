@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { FileJson, Copy, Check } from "lucide-react";
 import { Button } from "./ui";
-import { DocEmptyState } from "./DocEmptyState";
 import { cn } from "@/lib/utils";
 
 interface JsonDocPanelProps {
@@ -10,7 +9,7 @@ interface JsonDocPanelProps {
 }
 
 export function JsonDocPanel({ content, title }: JsonDocPanelProps) {
-  const [parsed, error, formatted] = useMemo(() => {
+  const [_parsed, error, formatted] = useMemo(() => {
     if (!content) return [null, null, ""];
     try {
       const obj = JSON.parse(content);
@@ -36,11 +35,13 @@ export function JsonDocPanel({ content, title }: JsonDocPanelProps) {
 
   if (!content) {
     return (
-      <DocEmptyState
-        icon={FileJson}
-        title={title}
-        description="No hay datos disponibles. Genera el MDD para derivar este artefacto."
-      />
+      <div className="flex min-h-[260px] w-full flex-1 flex-col items-center justify-center gap-4 px-4 py-8 text-center">
+        <FileJson className="h-10 w-10 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden />
+        <div className="flex flex-col gap-1">
+          <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
+          <p className="text-sm text-muted-foreground">No hay datos disponibles. Genera el MDD para derivar este artefacto.</p>
+        </div>
+      </div>
     );
   }
 

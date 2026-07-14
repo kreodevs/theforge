@@ -1079,6 +1079,8 @@ const initialState = {
   activeStageId: null as string | null,
   workshopActiveDocPanel: "mdd",
   generationStatus: null as ProjectGenerationStatus | null,
+  typesContent: null as string | null,
+  operationsContent: null as string | null,
 };
 
 let generationStatusPollTimer: ReturnType<typeof setInterval> | null = null;
