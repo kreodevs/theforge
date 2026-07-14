@@ -84,6 +84,24 @@ export const WORKSHOP_COLUMN_HEADER_ICON_SLOT = cn(
 
 export const WORKSHOP_COLUMN_HEADER_ICON = cn(WORKSHOP_GROUP_ICON, "h-4 w-4 text-[var(--primary)]");
 
+/** Horizontal inset for workshop chat column (header, scroll, composer footer). */
+export const WORKSHOP_CHAT_INSET_X = "px-3 sm:px-4 lg:px-4";
+
+/**
+ * Fixed band height (120px) for dashboard sidebar and workshop chat footers on lg+ so `border-t`
+ * shares the same Y when both columns stretch to the viewport bottom. `min-h` alone fails when
+ * sidebar content (theme + user) exceeds the chat composer shell.
+ */
+export const APP_PANEL_FOOTER_H =
+  "lg:h-[7.5rem] lg:min-h-[7.5rem] lg:max-h-[7.5rem] lg:box-border";
+
+/** Shared vertical padding inside panel footers (8px top + bottom). */
+export const APP_PANEL_FOOTER_PY = "py-2";
+
+/** Shared bottom chrome for panel footers (border + bottom-aligned flex column). */
+export const APP_PANEL_FOOTER_CHROME =
+  "shrink-0 border-t flex flex-col justify-end gap-2";
+
 /** Same chrome as `Button size="icon"` + `WORKSHOP_DOC_TOOLBAR_ICON_BTN` for native `<button>` triggers. */
 export const WORKSHOP_DOC_TOOLBAR_ICON_TRIGGER = cn(
   "inline-flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color-mix(in_oklch,var(--card)_40%,var(--background))] disabled:pointer-events-none disabled:opacity-50",

@@ -44,6 +44,10 @@ import {
 } from "../components/ui";
 import { WorkshopChatToolbarIconButton, WorkshopButtonIcon, WorkshopPanelButton } from "@/components/WorkshopButtons";
 import {
+  APP_PANEL_FOOTER_CHROME,
+  APP_PANEL_FOOTER_H,
+  APP_PANEL_FOOTER_PY,
+  WORKSHOP_CHAT_INSET_X,
   WORKSHOP_COLUMN_HEADER_ICON,
   WORKSHOP_COLUMN_HEADER_ICON_SLOT,
 } from "@/constants/workshopDocToolbar";
@@ -913,7 +917,7 @@ export default function ChatContainer({
   const showCenteredEmpty = embedded && (activeTab === "benchmark" ? benchmarkEmpty : messages.length === 0) && !loading;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {showCenteredEmpty ? (
         <div className="flex-1 flex flex-col items-center justify-center min-h-0 p-6">
           <Target className="w-14 h-14 shrink-0 mb-4 text-[color-mix(in_oklch,var(--primary)_75%,var(--muted-foreground))]" />
@@ -996,7 +1000,7 @@ export default function ChatContainer({
         </div>
       ) : (
         <>
-          <header className="shrink-0 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_45%,var(--background))] px-3 py-2.5 sm:px-4 sm:py-3 lg:flex lg:h-16 lg:min-h-16 lg:max-h-16 lg:items-center lg:overflow-hidden lg:py-0 lg:pl-4 lg:pr-4">
+          <header className={cn("shrink-0 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_45%,var(--background))] py-2.5 sm:py-3 lg:flex lg:h-16 lg:min-h-16 lg:max-h-16 lg:items-center lg:overflow-hidden lg:py-0", WORKSHOP_CHAT_INSET_X)}>
             <div className="flex min-h-0 min-w-0 flex-1 items-start justify-between gap-4 lg:items-center">
               <div className="flex min-w-0 flex-1 items-start gap-2.5 lg:items-center">
                 <div className={cn(WORKSHOP_COLUMN_HEADER_ICON_SLOT, "mt-0.5 lg:mt-0")} aria-hidden>
@@ -1101,7 +1105,7 @@ export default function ChatContainer({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <div ref={chatScrollRef} onScroll={handleChatScroll} className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-4 space-y-4">
+          <div ref={chatScrollRef} onScroll={handleChatScroll} className={cn("flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden pt-4 pb-2 space-y-4", WORKSHOP_CHAT_INSET_X)}>
             {messagesToShow.length ? (
               messagesToShow.map((msg, i) => (
                 <div
@@ -1262,10 +1266,10 @@ export default function ChatContainer({
             </div>
           ) : null}
           {error && (
-            <p className="px-4 pb-2 text-sm text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]">{error}</p>
+            <p className={cn("pb-2 text-sm text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]", WORKSHOP_CHAT_INSET_X)}>{error}</p>
           )}
           {showSlashCommands && (
-            <div className="px-4 pt-2 border-t border-[var(--border)]/50 bg-[var(--card)]/30 space-y-2">
+            <div className={cn("pt-2 border-t border-[var(--border)]/50 bg-[var(--card)]/30 space-y-2", WORKSHOP_CHAT_INSET_X)}>
               {showFormatSlash && (
                 <div>
                   <p className="text-xs text-[var(--foreground-subtle)] mb-2">
@@ -1307,7 +1311,15 @@ export default function ChatContainer({
               )}
             </div>
           )}
-          <div className="p-4 border-t border-[var(--border)] flex flex-col gap-2 shrink-0">
+          <div
+            className={cn(
+              APP_PANEL_FOOTER_CHROME,
+              APP_PANEL_FOOTER_H,
+              APP_PANEL_FOOTER_PY,
+              "border-[var(--border)]",
+              WORKSHOP_CHAT_INSET_X,
+            )}
+          >
             {showLongPasteMddWarn && (
               <p className="text-xs text-[color-mix(in_oklch,var(--primary)_85%,var(--foreground))] bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] rounded-lg px-3 py-2">
                 Mensaje muy largo ({inputValue.length} caracteres). Conviene trocear por sección o varios mensajes.
