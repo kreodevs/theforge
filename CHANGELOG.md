@@ -19,6 +19,39 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - **Context7 en Fase 0 / Benchmark:** consulta automática cuando gaps o chat mencionan PAT, API key, OAuth, JWT, webhooks o vendors (`Phase0InterviewService`, `DiscoveryService`, tabs `benchmark`/`phase0`). Consulta explícita: «Según Context7, …» en el chat del Workshop. Helpers en `@theforge/shared-types/technology-docs/phase0-tech-docs.util.ts`.
 - **Technology Docs MCP (`technology-docs-mcp`):** integración opcional Context7-compatible (`resolve-library-id`, `query-docs`) para enriquecer **Architecture**, **Contratos API** y **Tasks** con documentación oficial de librerías detectadas en MDD §2 / Blueprint. **Credenciales por usuario** en Ajustes → Docs técnicas (`User.techDocsMcpUrl` / `techDocsMcpToken`); sin API key = skip elegante. `@theforge/shared-types/technology-docs` — detector de stack.
 
+## [v1.0.0-RC] — 2026-07-13
+
+> **Release Candidate con sistema de plugins modular.**
+> Extracción completa del código EVD (Executive Visual Deck) a repositorio independiente; el core ahora expone un framework de plugins genérico vía hooks. Disponible en el tag [v1.0.0-RC](https://github.com/kreodevs/theforge/releases/tag/v1.0.0-RC).
+
+### Architecture (Breaking)
+
+- **Sistema de Plugins:** framework genérico de extensión por hooks (`ITheForgePlugin`, `PluginLoaderService`, `PluginModule`). El core carga plugins vía `dynamic import()` desde `plugins-enabled/`; comunicación bidireccional sin imports estáticos.
+- **Separación de EVD:** todo el código de Executive Visual Deck (12 archivos en `modules/evd/`, componentes React, tipos compartidos y migraciones DB) se extrajo al repositorio privado [`kreodevs/evd-plugin`](https://github.com/kreodevs/evd-plugin). El plugin comercial incluye validación de licencias, generación de imágenes con IA y exportación PDF/PPTX.
+
+### Added
+
+- **Plugin Framework:**
+  - `ITheForgePlugin` — interfaz de contrato con lifecycle + hooks de documentos y proyectos.
+  - `PluginLoaderService` — carga dinámica con graceful degradation (plugin fallido = skip, core continúa).
+  - `PluginModule` — módulo NestJS registrado en `AppModule`.
+  - Hooks disponibles: `beforeDocumentRender`, `afterDocumentRender`, `afterDocumentPersist`, `onProjectCreate`, `onProjectUpdate`.
+  - Documentación completa: [`docs/PLUGINS.md`](./docs/PLUGINS.md) — guía de desarrollo de plugins; [`docs/ARCHITECTURE_PLUGINS.md`](./docs/ARCHITECTURE_PLUGINS.md) — arquitectura técnica.
+
+### Removed (EVD extraction)
+
+- **Backend:** directorio `apps/api/src/modules/evd/` completo (chart, design-system, diagram, export, image-gen, pdf, pptx, storage controller/service/module, visual-stylist, wireframe). Prompts EVD de AI. Métodos `generateEVD()`, `generateEvd()`, `generateEVDJSON()` y sus imports.
+- **Frontend:** componentes `EvdSlideViewer`, `EvdBrandingDialog`. Estados EVD en workshop store. Tab EVD en navegación.
+- **Packages:** tipos `evd-types.ts`, exports `@theforge/shared-types/evd-types`. Campos `evdContent` en Prisma schema (`Project`, `Stage`). Migraciones de DB `20260711_*` y `20260712_*`.
+
+### Docs
+
+- [`docs/PLUGINS.md`](./docs/PLUGINS.md): guía completa — estructura, contrato, ciclo de vida, hooks, instalación, ejemplos minimal y avanzado, troubleshooting.
+- [`docs/ARCHITECTURE_PLUGINS.md`](./docs/ARCHITECTURE_PLUGINS.md): arquitectura técnica del sistema de plugins.
+- [`docs/ARCHITECTURE_EVD_PLUGIN.md`](./docs/ARCHITECTURE_EVD_PLUGIN.md): caso de estudio del plugin comercial EVD.
+- [`docs/EVD_PLUGIN_DELIVERY.md`](./docs/EVD_PLUGIN_DELIVERY.md): resumen de entrega del plugin EVD.
+- [`packages/evd-executive-visual-deck/docs/LICENSE_PORTAL_SPEC.md`](./packages/evd-executive-visual-deck/docs/LICENSE_PORTAL_SPEC.md): especificación del portal de licencias (API REST, modelo de datos, seguridad).
+
 ## [0.13.0] — 2026-07-09
 
 ### Notes
@@ -46,6 +79,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Fixed
 
+- **Chat DBGA — preguntas borraban el documento sin mostrar propuesta:** mencionar «en el DBGA» en una pregunta condicional («¿te parece bien? Si es así, la integro…») activaba el fast-path de edición (`tryBenchmarkDbgaEditTurn`) y persistía un DBGA truncado con solo «Fase 0 actualizado» en chat. Ahora `isUserExploringDbgaIntent` + clasificador `explore` evitan persistir; `looksLikeDbgaEditRequest` exige verbo de cambio junto al target; `wouldShrinkDbgaDangerously` rechaza docs que pierden secciones principales (p. ej. solo registro de cambios).
 - **Deploy — API exit 1 por DI circular en LegacyFlowModule:** `ResolveChangeToFilesService` (y servicios legacy hermanos) inyectaban `ProjectsService` sin `forwardRef`, lo que rompía el bootstrap tras añadir `ProjectGenerationGuardService` (#420). Corregido con `@Inject(forwardRef(() => ProjectsService))`.
 - **Blueprint — gaps recurrentes en Conformance tras generar:** el pipeline ahora reintenta una vez con feedback automático aunque llegue `gapsFeedback` del Workshop; reparación determinista post-IA (`blueprint-conformance-repair.util.ts`) inyecta entidades §3 faltantes, tecnologías §2 (incl. **Redis** en el detector de stack) y cabeceras obligatorias; § UI Design System pasa a **§9** (§8 reservado al checklist del prompt); post-check usa conformidad completa MDD ↔ Blueprint.
 - **Contratos API — gaps `[API falta]` / `[API extra]` tras generar:** nuevo pipeline en `generateApiContracts` (lista exacta de endpoints §4 en el prompt, reintento LLM, reparación programática de filas faltantes); normalización de rutas `{id}` ↔ `:id` en `checkApiVsMdd`; extracción mejorada de tablas markdown (columna Ruta antes que Método, path params, `/health`). Util `api-conformance-repair.util.ts` + tests `conformance-api.spec.ts`.

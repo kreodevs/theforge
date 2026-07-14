@@ -3,7 +3,7 @@
  * then name for new projects or hand off to the TheForge picker for legacy paths.
  */
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, FolderGit2, GitBranch, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronDown, FolderGit2, GitBranch, Loader2, Plus, Sparkles } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -15,6 +15,7 @@ import {
   Input,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import type { ProjectGroupOption } from "./ProjectSettingsDialog";
 
 export type CreateProjectOrigin = "NEW" | "LEGACY_PROJECT" | "LEGACY_REPO";
 
@@ -22,7 +23,12 @@ export interface CreateProjectWizardDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   loading: boolean;
-  onCreateNew: (name: string) => Promise<void>;
+  groups: ProjectGroupOption[];
+  canCreateGroup: boolean;
+  pendingSelectedGroupId?: string | null;
+  onPendingGroupConsumed?: () => void;
+  onCreateGroup?: () => void;
+  onCreateNew: (name: string, groupId: string) => Promise<void>;
   onContinueLegacy: (tab: "projects" | "repos") => void;
 }
 
@@ -52,26 +58,50 @@ const ORIGINS: {
   },
 ];
 
+function resolveDefaultGroupId(groups: ProjectGroupOption[]): string {
+  const byDefault = groups.find((g) => g.isDefault);
+  return byDefault?.id ?? groups[0]?.id ?? "";
+}
+
 export function CreateProjectWizardDialog({
   open,
   onOpenChange,
   loading,
+  groups,
+  canCreateGroup,
+  pendingSelectedGroupId,
+  onPendingGroupConsumed,
+  onCreateGroup,
   onCreateNew,
   onContinueLegacy,
 }: CreateProjectWizardDialogProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState("");
+  const [groupId, setGroupId] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
   const reset = useCallback(() => {
     setStep(1);
     setName("");
+    setGroupId("");
     setLocalError(null);
   }, []);
 
   useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
+
+  useEffect(() => {
+    if (step === 2 && groups.length > 0 && !groupId) {
+      setGroupId(resolveDefaultGroupId(groups));
+    }
+  }, [step, groups, groupId]);
+
+  useEffect(() => {
+    if (!pendingSelectedGroupId) return;
+    setGroupId(pendingSelectedGroupId);
+    onPendingGroupConsumed?.();
+  }, [pendingSelectedGroupId, onPendingGroupConsumed]);
 
   const handleClose = useCallback(() => {
     onOpenChange(false);
@@ -90,6 +120,7 @@ export function CreateProjectWizardDialog({
     setLocalError(null);
     setStep(1);
     setName("");
+    setGroupId("");
   }, []);
 
   const handleSubmitNew = useCallback(async () => {
@@ -98,14 +129,18 @@ export function CreateProjectWizardDialog({
       setLocalError("Escribe un nombre para el proyecto.");
       return;
     }
+    if (!groupId) {
+      setLocalError("Selecciona un grupo para el proyecto.");
+      return;
+    }
     setLocalError(null);
     try {
-      await onCreateNew(trimmed);
+      await onCreateNew(trimmed, groupId);
       handleClose();
     } catch {
       setLocalError("No se pudo crear el proyecto. Revisa la consola o inténtalo de nuevo.");
     }
-  }, [name, onCreateNew, handleClose]);
+  }, [name, groupId, onCreateNew, handleClose]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -208,12 +243,57 @@ export function CreateProjectWizardDialog({
                   aria-invalid={!!localError}
                   aria-describedby={localError ? "create-project-error" : undefined}
                 />
-                {localError ? (
-                  <p id="create-project-error" className="mt-2 text-sm text-[var(--destructive)]" role="alert">
-                    {localError}
-                  </p>
-                ) : null}
               </div>
+              {groups.length > 0 ? (
+                <div className="space-y-2">
+                  <label htmlFor="create-project-group" className="text-sm font-medium text-[var(--foreground)]">
+                    Grupo
+                  </label>
+                  <div className="flex items-stretch gap-2">
+                    <div className="relative flex-1">
+                      <select
+                        id="create-project-group"
+                        className="min-h-11 w-full appearance-none rounded-md border border-[var(--border)] bg-[var(--card)] py-2 pl-3 pr-10 text-sm"
+                        value={groupId}
+                        onChange={(e) => {
+                          setGroupId(e.target.value);
+                          setLocalError(null);
+                        }}
+                        disabled={loading}
+                      >
+                        {groups.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]"
+                        aria-hidden
+                      />
+                    </div>
+                    {canCreateGroup && onCreateGroup ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-11 shrink-0"
+                        onClick={onCreateGroup}
+                        disabled={loading}
+                        aria-label="Crear nuevo grupo"
+                        title="Crear nuevo grupo"
+                      >
+                        <Plus className="h-4 w-4" aria-hidden />
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              {localError ? (
+                <p id="create-project-error" className="text-sm text-[var(--destructive)]" role="alert">
+                  {localError}
+                </p>
+              ) : null}
             </div>
           )}
         </div>
@@ -223,7 +303,11 @@ export function CreateProjectWizardDialog({
             <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
               Cancelar
             </Button>
-            <Button type="button" onClick={() => void handleSubmitNew()} disabled={loading || !name.trim()}>
+            <Button
+              type="button"
+              onClick={() => void handleSubmitNew()}
+              disabled={loading || !name.trim() || !groupId}
+            >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
               Crear proyecto
             </Button>

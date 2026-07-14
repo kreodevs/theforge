@@ -15,6 +15,9 @@
 import { parseAgentGovernanceScaffold, type ProjectNextTaskResponse } from "@theforge/shared-types";
 import { generateTable, normalizeTable, normalizeAllTables, parseTable } from "@theforge/shared-types/markdown-table";
 import { generateMermaid, normalizeMermaid, validateMermaid } from "@theforge/shared-types/mermaid";
+import { formatNestApiError } from "./api-error.util.js";
+import { PROJECT_GROUP_TOOLS, createProjectGroupHandlers } from "./project-group-tools.js";
+import { PROJECT_STAGE_TOOLS, createProjectStageHandlers } from "./project-stage-tools.js";
 
 // ── Config ────
 
@@ -196,7 +199,7 @@ async function apiFetch(
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`HTTP ${res.status} ${res.statusText}: ${text.slice(0, 500)}`);
+      throw new Error(formatNestApiError(res.status, text));
     }
     return res.json();
   } catch (err) {
@@ -244,10 +247,10 @@ function summarizeAgentGovernanceField(raw: unknown): {
   };
 }
 
-// ── Tool Definitions (45 tools) ────────────────────────────────────────
+// ── Tool Definitions (51 tools) ────────────────────────────────────────
 
 /**
- * Manifiesto MCP: 45 herramientas que reflejan la API REST The Forge (proyectos, entregables, análisis,
+ * Manifiesto MCP: 51 herramientas que reflejan la API REST The Forge (proyectos, grupos, entregables, análisis,
  * orquestador, sesiones, flujo legacy e integración Ariadne). Cada `name` debe existir como método en
  * {@link handlers}.
  *
@@ -312,6 +315,8 @@ const TOOLS: Tool[] = [
       required: ["projectId"],
     },
   },
+  // ── Project stages (control de workflow) ──
+  ...PROJECT_STAGE_TOOLS,
   {
     name: "get_conformance",
     description: "Reporte de conformidad del proyecto contra el MDD",
@@ -326,20 +331,22 @@ const TOOLS: Tool[] = [
   },
   {
     name: "patch_project",
-    description: "Actualiza campos del proyecto (mddContent, dbgaContent, blueprintContent, etc.)",
+    description: "Actualiza campos del proyecto (mddContent, dbgaContent, blueprintContent, groupId, etc.)",
     inputSchema: {
       type: "object",
       properties: {
         projectId: { type: "string" },
         fields: {
           type: "object",
-          description: "Campos a actualizar (mddContent, dbgaContent, blueprintContent, specContent, etc.)",
+          description: "Campos a actualizar (mddContent, dbgaContent, blueprintContent, specContent, groupId, etc.)",
           additionalProperties: true,
         },
       },
       required: ["projectId", "fields"],
     },
   },
+  // ── Project groups (ver también PROJECT_GROUP_TOOLS) ──
+  ...PROJECT_GROUP_TOOLS,
   {
     name: "generate_benchmark",
     description: "Genera benchmark / análisis de mercado para un proyecto",
@@ -369,7 +376,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "suggest_brd_tobe_from_dbga",
-    description: "Genera borradores BRD y To-Be desde DBGA (greenfield)",
+    description: "Genera borrador BRD desde DBGA (greenfield). Persiste en Stage.brdContent vía POST …/suggest-brd-from-dbga.",
     inputSchema: {
       type: "object",
       properties: {
@@ -801,7 +808,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "legacy_suggest_brd_tobe",
-    description: "Genera borradores BRD y To-Be desde codebaseDoc (legacy)",
+    description: "Genera borrador BRD desde codebaseDoc (legacy). Persiste en Stage.brdContent vía POST …/legacy/suggest-brd-from-codebase-doc.",
     inputSchema: {
       type: "object",
       properties: { projectId: { type: "string" } },
@@ -1086,6 +1093,18 @@ const TOOLS: Tool[] = [
       required: ["projectId"],
     },
   },
+  {
+    name: "get_tasks_json",
+    description:
+      "Returns the structured v2 tasks JSON for a project (parsed from YAML front-matter tasks). " +
+      "Use this when you need programmatic task metadata: dependencies, target files, change type, verification. " +
+      "If tasksJson is empty, fall back to get_next_implementation_task or generate_tasks.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "The Forge project ID" } },
+      required: ["projectId"],
+    },
+  },
   // ── Utility Tools (formato consistente, single source of truth) ──
   {
     name: "generate_markdown_table",
@@ -1310,7 +1329,7 @@ const handlers: Record<string, Handler> = {
   async suggest_brd_tobe_from_dbga(args) {
     const body: Record<string, unknown> = {};
     if (args.stageId) body.stageId = args.stageId;
-    return JSON.stringify(await apiPost(`/projects/${args.projectId}/suggest-brd-tobe-from-dbga`, body));
+    return JSON.stringify(await apiPost(`/projects/${args.projectId}/suggest-brd-from-dbga`, body));
   },
   // Deliverables
   async generate_deliverables(args) {
@@ -1531,7 +1550,7 @@ const handlers: Record<string, Handler> = {
     return JSON.stringify(await apiPost(`/projects/${args.projectId}/legacy/generate-as-is-manual`));
   },
   async legacy_suggest_brd_tobe(args) {
-    return JSON.stringify(await apiPost(`/projects/${args.projectId}/legacy/suggest-brd-tobe-from-codebase-doc`));
+    return JSON.stringify(await apiPost(`/projects/${args.projectId}/legacy/suggest-brd-from-codebase-doc`));
   },
   async legacy_resolve_index_sdd_conflict(args) {
     return JSON.stringify(
@@ -1603,7 +1622,7 @@ const handlers: Record<string, Handler> = {
       includeBenchmark: true,
     }) as Record<string, unknown>;
 
-    // Step 3b: Sync phase0SummaryContent → dbgaContent (el deep research guarda en phase0, pero suggest-brd-tobe lee dbga)
+    // Step 3b: Sync phase0SummaryContent → dbgaContent (el deep research guarda en phase0, pero suggest-brd-from-dbga lee dbga)
     console.error("[theforge-mcp] [generate_phase0] Paso 3b: Sincronizando phase0 → dbgaContent...");
     const projectBeforeSync = await apiGet(`/projects/${projectId}`) as Record<string, unknown>;
     const phase0 = (projectBeforeSync.phase0SummaryContent as string || "").trim();
@@ -1613,21 +1632,27 @@ const handlers: Record<string, Handler> = {
       console.error("[theforge-mcp] [generate_phase0] dbgaContent actualizado desde phase0SummaryContent");
     }
 
-    // Step 4: Generar BRD + To-Be desde DBGA
-    console.error("[theforge-mcp] [generate_phase0] Paso 4: Generando BRD + To-Be...");
-    const brdTobeResult = await apiPost(`/projects/${projectId}/suggest-brd-tobe-from-dbga`) as Record<string, unknown>;
+    // Step 4: Generar BRD desde DBGA (persiste en Stage.brdContent)
+    console.error("[theforge-mcp] [generate_phase0] Paso 4: Generando BRD...");
+    const brdResult = await apiPost(`/projects/${projectId}/suggest-brd-from-dbga`) as Record<string, unknown>;
 
-    // Step 5: Leer el proyecto para obtener mddContent y brdContent
+    // Step 5: Verificar MDD (proyecto) y BRD (etapa)
     console.error("[theforge-mcp] [generate_phase0] Paso 5: Obteniendo contenido generado...");
-    const fullProject = await apiGet(`/projects/${projectId}`) as Record<string, unknown>;
+    const [fullProject, stagesResult] = await Promise.all([
+      apiGet(`/projects/${projectId}`) as Promise<Record<string, unknown>>,
+      apiGet(`/projects/${projectId}/stages`) as Promise<{ stages?: Array<{ brdContent?: string | null }> }>,
+    ]);
+    const brdPersisted = (stagesResult.stages ?? []).some(
+      (s) => (s.brdContent ?? "").trim().length > 0,
+    );
 
     const summary = {
       projectId,
       projectName: name,
       deepResearch: deepResult ?? "completed",
-      brdTobe: brdTobeResult ?? "completed",
+      brd: brdResult ?? "completed",
       mddContent: fullProject.mddContent ? "generado ✓" : "no generado",
-      brdContent: fullProject.brdContent ? "generado ✓" : "no generado",
+      brdContent: brdPersisted ? "generado ✓" : "no generado",
       message: "MDD y BRD generados. Revisa y perfecciona en la UI.",
     };
 
@@ -1750,6 +1775,25 @@ const handlers: Record<string, Handler> = {
       ],
     });
   },
+  async get_tasks_json(args) {
+    const projectId = args.projectId as string;
+    const project = await apiGet(`/projects/${projectId}`) as Record<string, unknown>;
+    const tasksJson = project.tasksJson;
+    if (!tasksJson || (typeof tasksJson === "object" && Object.keys(tasksJson).length === 0)) {
+      return JSON.stringify({
+        projectId,
+        hasTasksJson: false,
+        note: "No tasksJson v2 found. Use generate_tasks or get_next_implementation_task.",
+        tasksContentWordCount: typeof project.tasksContent === "string" ? project.tasksContent.trim().split(/\s+/).length : 0,
+      });
+    }
+    return JSON.stringify({
+      projectId,
+      hasTasksJson: true,
+      tasksJson,
+      note: "Structured tasks v2 with YAML front-matter. Use target_files for implementation.",
+    });
+  },
   // ── Utility Tools ──
   async generate_markdown_table(args) {
     const { columns, rows, caption } = args as { columns: any[]; rows: string[][]; caption?: string };
@@ -1769,6 +1813,17 @@ const handlers: Record<string, Handler> = {
     const errors = validateMermaid(normalized);
     return JSON.stringify({ normalized, errors, hasErrors: errors.length > 0 });
   },
+  ...createProjectGroupHandlers({
+    get: apiGet,
+    post: apiPost,
+    patch: apiPatch,
+    delete: apiDelete,
+  }),
+  ...createProjectStageHandlers({
+    get: apiGet,
+    post: apiPost,
+    patch: apiPatch,
+  }),
 };
 
 // ── JSON-RPC Request Handler ───────────────────────────────────────────

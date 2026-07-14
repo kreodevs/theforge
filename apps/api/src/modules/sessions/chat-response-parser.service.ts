@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { looksLikeDbgaDocumentBody } from "@theforge/shared-types";
 import {
   normalizeDashes,
   stripChatLabel as stripChatLabelUtil,
@@ -69,7 +70,7 @@ export class ChatResponseParserService {
     if (!current) return cleaned;
 
     const hasBenchmarkTitle =
-      /#\s*(?:Domain\s+Benchmark|Benchmark\s*&\s*Gap|Research\s+Report|Módulo\s+de\s+Costos)/i.test(
+      /#\s*(?:Domain\s+Benchmark|Benchmark\s*&\s*Gap|Research\s+Report|Módulo\s+de\s+Costos|Fase\s+0\s+[—–-])/i.test(
         cleaned,
       ) || /\bResearch\s+Report\b/i.test(cleaned);
     const looksLikeFullDbga =
@@ -268,8 +269,25 @@ export class ChatResponseParserService {
    * DBGA / Fase 0: el modelo a veces omite ---FIN_DBGA--- o manda solo una sección nueva (## Integración).
    */
   detectBenchmarkDocFallback(trimmed: string): { docPart: string; chatPart: string } | null {
+    const introSplit = trimmed.match(
+      /^([\s\S]{1,420}?)\n\n(?=(?:#\s|##\s+\d+\.|\d+\.\s+(?:Resumen|Visi[oó]n|Benchmark)))/im,
+    );
+    if (introSplit?.[1]?.trim()) {
+      const chatPart = introSplit[1].trim();
+      const docPart = trimmed.slice(introSplit[0].length).trim();
+      if (docPart.length >= 200 && !looksLikeDbgaDocumentBody(chatPart)) {
+        return {
+          docPart,
+          chatPart:
+            chatPart.length <= 420
+              ? chatPart
+              : "Fase 0 (DBGA) actualizado. Revisa el panel «Análisis (DBGA)».",
+        };
+      }
+    }
+
     const titleRe =
-      /(?:^|\n)#\s*(?:Domain\s+Benchmark|Benchmark\s*&\s*Gap|Benchmark\b|Análisis|Research\s+Report|Módulo\s+de\s+Costos)\b/i;
+      /(?:^|\n)#\s*(?:Domain\s+Benchmark|Benchmark\s*&\s*Gap|Benchmark\b|Análisis|Research\s+Report|Módulo\s+de\s+Costos|Fase\s+0\s+[—–-]|Especificaci[oó]n)\b/i;
     const titleMatch = trimmed.match(titleRe);
     if (titleMatch?.index != null) {
       const docStartIdx =
@@ -280,14 +298,16 @@ export class ChatResponseParserService {
     const sectionCount = (trimmed.match(/\n##\s+/g) ?? []).length;
     const startsWithSection = /^#{2,3}\s+/m.test(trimmed);
     const integrationCue =
-      /\b(?:integraci[oó]n|OBP4?MO|tablas?\s+espejo|Gap\s+Analysis|tenant_id|multi-?tenant|catálogo\s+de\s+costos)\b/i.test(
+      /\b(?:integraci[oó]n|licenciamiento|portal\s+de\s+licencias|OBP4?MO|tablas?\s+espejo|Gap\s+Analysis|tenant_id|multi-?tenant|catálogo\s+de\s+costos)\b/i.test(
         trimmed,
       );
-    const minLen = integrationCue || startsWithSection ? 180 : 400;
+    const numberedOutline = (trimmed.match(/\n\d+\.\s+/g) ?? []).length >= 2;
+    const minLen = integrationCue || startsWithSection || numberedOutline ? 180 : 400;
     const looksLikeDbgaBody =
       trimmed.length >= minLen &&
       (startsWithSection ||
         sectionCount >= 2 ||
+        numberedOutline ||
         integrationCue);
 
     if (!looksLikeDbgaBody) return null;

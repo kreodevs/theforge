@@ -16,11 +16,13 @@ import { ScraperModule } from "../scraper/scraper.module.js";
 import { TheForgeModule } from "../theforge/theforge.module.js";
 import { GraphMemoryModule } from "../ai-analysis/graph-memory/graph-memory.module.js";
 import { ChangeLogModule } from "../change-log/change-log.module.js";
+import { DocumentSnapshotModule } from "../document-snapshot/document-snapshot.module.js";
 import { LegacyFlowModule } from "../legacy-flow/legacy-flow.module.js";
 import { DocumentationGapModule } from "../documentation-gap/documentation-gap.module.js";
 import { EstimationModule } from "../ai-analysis/estimation/estimation.module.js";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
+import { ProjectGroupsModule } from "../project-groups/project-groups.module.js";
 import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
 
 @Module({
@@ -32,9 +34,11 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     TheForgeModule,
     GraphMemoryModule,
     ChangeLogModule,
+    DocumentSnapshotModule,
     forwardRef(() => LegacyFlowModule),
     forwardRef(() => DocumentationGapModule),
     UiMcpModule,
+    ProjectGroupsModule,
     EstimationModule,
   ],
   controllers: [ProjectsController, ProjectIntegrationController],

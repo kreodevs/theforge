@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { ComplexityLevel } from "@theforge/database";
+import { ComplexityLevel, Prisma } from "@theforge/database";
 import {
   buildHandoffMicroSpecFiles,
   buildNextTaskDocumentLayout,
@@ -58,6 +58,7 @@ import {
   scaffoldToRepoHandoffGovernance,
   synthesizeExportGovernanceScaffold,
 } from "./handoff-export.util.js";
+import { parseTasksV2 } from "../engine/task-v2/tasks-parser-v2.js";
 
 type ProjectWithStages = Project & {
   stages: Array<Stage & { estimation?: unknown }>;
@@ -726,19 +727,29 @@ export class SddIntegrationService {
     }
 
     let persisted = false;
-    if (persist) {
-      if (stage?.id) {
-        await persistStageAndProjectDeliverables(this.prisma, stage.id, project.id, {
-          tasksContent: suggestedTasksMarkdown,
-        });
-      } else {
-        await this.prisma.project.update({
-          where: { id: project.id },
-          data: { tasksContent: suggestedTasksMarkdown },
-        });
+      if (persist) {
+        if (stage?.id) {
+          await persistStageAndProjectDeliverables(this.prisma, stage.id, project.id, {
+            tasksContent: suggestedTasksMarkdown,
+          });
+        } else {
+          // Auto-parse tasks v2 into structured JSON even when no stage exists
+          let tasksJson: Prisma.InputJsonValue | undefined;
+          try {
+            const parsed = parseTasksV2(suggestedTasksMarkdown);
+            if (parsed.tasks.length > 0) {
+              tasksJson = parsed as unknown as Prisma.InputJsonValue;
+            }
+          } catch {
+            // ignore parse errors
+          }
+          await this.prisma.project.update({
+            where: { id: project.id },
+            data: { tasksContent: suggestedTasksMarkdown, tasksJson },
+          });
+        }
+        persisted = true;
       }
-      persisted = true;
-    }
 
     return {
       featureDir,

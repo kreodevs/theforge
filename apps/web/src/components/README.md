@@ -9,7 +9,7 @@
 | **DashboardSidebar** | En Workshop, «Panel de proyectos» queda `disabled` mientras `selectWorkshopAgentsBusy` (mismo criterio que el chat). |
 | **DashboardPanelHeader** | Panel de proyectos: acciones Crear / Tutorial / Refrescar. |
 | **ProjectTutorialDialog** | Tutorial **Greenfield** vs **Brownfield** (`content/tutorial/*.md`). Renderiza bloques ` ```mermaid ` como SVG vía `MarkdownMermaid.tsx`. |
-| **MarkdownMermaid** | Bloques Mermaid en markdown (MDD, tutorial, ayuda). Carga `mermaid` con `import()` al renderizar el primer diagrama. Botón **Pantalla completa** + modal con **fit-to-view** al abrir, **zoom** (rueda / +/-) y **pan** (arrastrar). Doble clic o ↺ restablece encuadre. |
+| **MarkdownMermaid** | Bloques Mermaid en markdown (MDD, tutorial, ayuda). Botón inteligente **Reparar** / **Regenerar** (izq.): reparación local o `POST /ai/mermaid/regenerate` vía LLM si el diagrama está truncado o muy dañado. **Pantalla completa** (der.). |
 | **AnalyzeDashboard** | Panel **Analizar — consistencia SDD** (`GET …/projects/:id/analyze`): presencia MDD/Spec/UC/HU/Tasks/API/Flujos/UX/Infra/Gov, puente Phase0→BRD/Spec, hallazgos agrupados por categoría. |
 | **ProjectMergeDialog** | Fusión de 2+ carpetas en Paso 0: config (destino, benchmark, suite, archivado), preview con conflictos, `POST /projects/merge`. |
 | **AemGenerateDialog** | Modal **Generar AEM**: elige alcance geográfico (Global / México / LATAM) y llama `POST /projects/:id/generate-aem` (Benchmark + Fase 0 + BRD + dictamen de inversión digital). |
@@ -17,6 +17,7 @@
 | **CloneProjectDialog** | Clonar proyecto (`POST /projects/:id/clone`). Barra de selección con una carpeta: «Clonar» → nombre por defecto «Copia de …»; abre el Workshop en el clon. |
 | **Phase0ManualAudit** | Acepta `initialAudit` para reanudar auditoría tras fusión (`audit_started` / `audit_complete`). |
 | **MddPatternsWizardDialog** | Selector SSOT con pestañas verticales (`initial \| edit`): títulos = categorías del wizard MDD (emoji + texto original). Antes de abrir: `POST …/mdd/suggest-governance-patterns` (DBGA, benchmark, BRD). Al confirmar: MDD solo con patrones `[X]` + `POST …/mdd/record-governance-pattern-adrs`. |
+| **PluginSettingsSection** | Ajustes → **Plugins**: formularios declarativos de plugins cargados (`GET /plugins/settings-panels`, persistencia `PUT /plugins/:pluginId/user-settings`). Sustituye campos comerciales en proveedores IA (p. ej. modelo de imagen EVD). |
 | **ProviderInstancesCard** | CRUD/listado de instancias de proveedor IA; marca la instancia **Activa** (runtime del grafo MDD y chat). En el modal, **Modelo de auditor** opcional (`auditorChatModel`) para el nodo Auditor MDD. |
 | **AccountConfigCard** | Ajustes → Cuenta: secret MCP rotable y preferencias del taller. |
 | **McpSecretCard** | Re-export de `AccountConfigCard` (compat). |
@@ -26,4 +27,5 @@
 | **UxUiGuidePanel** | Design System: preview / design kit / fuente + barra **DesignRefSelector** antes de generar. |
 | **LegacyMcpDebugPanel/** | Panel colapsable (MDD Inicial, LEGACY): traza petición↔respuesta JSON-RPC con Ariadne cuando el API envía `mcpDebugTrace` (`LEGACY_CODEBASE_DOC_MCP_DEBUG_UI=1`); botón **Copiar traza**. En **WorkshopView**, **Copiar MDD** junto al título copia el markdown de partida. Ver README en la carpeta. |
 | **WorkshopHelpModal** | Modal **Ayuda — TheForge** (Workshop): manual, **Integración Legacy ↔ Nuevo**, SDD y referencia por documento. Renderiza Mermaid en markdown. |
+| **WorkshopDbgaRestoreDialog** | Modal **Versiones anteriores del DBGA** (Fase 0): lista snapshots (`GET …/document-snapshots?field=dbgaContent`) y restauración (`POST …/document-snapshots/:id/restore`). Botón en toolbar y acciones del panel benchmark. |
 | **IntegrationPanel** | Pestaña **Integración**: enlace NEW↔LEGACY, handoff NEW-LEG, import en etapa 2+, matriz trazabilidad. |

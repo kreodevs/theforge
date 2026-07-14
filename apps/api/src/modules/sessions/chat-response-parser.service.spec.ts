@@ -68,6 +68,27 @@ El país define formatos de medio asociados a cada medio.`;
     assert.ok(split);
     assert.ok(split!.docPart.includes("OBP4MO"));
   });
+
+  it("separa intro «He integrado…» del cuerpo numerado (Portal de Licencias)", () => {
+    const text = `He integrado la especificación completa del Portal de Licencias en el DBGA.
+
+1. Resumen Ejecutivo
+
+ForgeOps es una plataforma SaaS de aprovisionamiento y gestión de instancias.
+
+2. Benchmark de Industria
+
+Comparativa contra soluciones existentes con licenciamiento integrado.
+
+3. Análisis del Modelo de Licenciamiento
+
+El portal licenses.theforge.dev valida licencias en caliente.`.repeat(4);
+    const split = parser.detectBenchmarkDocFallback(text);
+    assert.ok(split);
+    assert.match(split!.chatPart, /integrado/i);
+    assert.ok(split!.docPart.includes("Resumen Ejecutivo"));
+    assert.ok(split!.docPart.includes("licenciamiento"));
+  });
 });
 
 describe("salvage path via detectDocFallback benchmark", () => {

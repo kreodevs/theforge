@@ -86,3 +86,6 @@ cron/
 
 # DB migration dumps (may contain production data)
 .migration-backup/
+
+# Plugin commercial — lives in separate repo (https://github.com/kreodevs/evd-plugin)
+packages/evd-executive-visual-deck/

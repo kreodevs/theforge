@@ -18,6 +18,7 @@ import { AuthModule } from "./modules/auth/auth.module.js";
 import { AiModule } from "./modules/ai/ai.module.js";
 import { EngineModule } from "./modules/engine/engine.module.js";
 import { ProjectsModule } from "./modules/projects/projects.module.js";
+import { ProjectGroupsModule } from "./modules/project-groups/project-groups.module.js";
 import { SessionsModule } from "./modules/sessions/sessions.module.js";
 import { AiOrchestratorModule } from "./modules/ai-orchestrator/ai-orchestrator.module.js";
 import { AiAnalysisModule } from "./modules/ai-analysis/ai-analysis.module.js";
@@ -32,6 +33,8 @@ import { UserProvidersModule } from "./modules/user-providers/user-providers.mod
 import { DesignRefModule } from "./modules/design-ref/design-ref.module.js";
 import { UiMcpModule } from "./modules/ui-mcp/ui-mcp.module.js";
 import { TechnologyDocsMcpModule } from "./modules/technology-docs-mcp/technology-docs-mcp.module.js";
+import { PluginModule } from "./plugins/plugin.module.js";
+import { PluginsApiModule } from "./modules/plugins/plugins.module.js";
 
 @Module({
   controllers: [HealthController],
@@ -47,6 +50,7 @@ import { TechnologyDocsMcpModule } from "./modules/technology-docs-mcp/technolog
     AiModule,
     EngineModule,
     ProjectsModule,
+    ProjectGroupsModule,
     SessionsModule,
     AiOrchestratorModule,
     AiAnalysisModule,
@@ -59,6 +63,8 @@ import { TechnologyDocsMcpModule } from "./modules/technology-docs-mcp/technolog
     DesignRefModule,
     UiMcpModule,
     TechnologyDocsMcpModule,
+    PluginModule,
+    PluginsApiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

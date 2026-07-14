@@ -29,6 +29,8 @@ export const createProjectSchema = z
     complexity: ComplexityLevelEnum.default("HIGH"),
     projectType: ProjectTypeEnum.default("NEW"),
     theforgeProjectId: z.string().uuid().optional().nullable(),
+    /** Grupo destino al crear; si se omite, el backend usa el grupo por defecto. */
+    groupId: z.string().uuid().optional(),
   })
   .refine(
     (data) => {
@@ -78,12 +80,15 @@ export const updateProjectSchema = z.object({
   uxGuideDesignRef: z.string().max(512).optional().nullable(),
   phase0SummaryContent: z.string().optional().nullable(),
   aemContent: z.string().optional().nullable(),
-  handoffSpecContent: z.string().optional().nullable(),
+  pluginData: z.record(z.unknown()).optional().nullable(),
+
   figmaMapping: z.record(z.unknown()).optional().nullable(),
   /** Per-project converge webhook (POST /projects/:id/converge/trigger). */
   convergeWebhookUrl: z.string().url().optional().nullable(),
   /** Optional HMAC secret for converge webhook signing. */
   convergeWebhookSecret: z.string().min(8).optional().nullable(),
+  /** Mover proyecto a otro grupo (solo admin+). */
+  groupId: z.string().uuid().optional(),
 });
 
 /** Body para POST /projects/:id/phase0-deep-research */
@@ -104,6 +109,8 @@ export const cloneProjectBodySchema = z
 export const projectResponseSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
+  groupId: z.string().uuid(),
+  groupName: z.string().optional(),
   projectType: ProjectTypeEnum,
   requireBrdTobeGate: z.boolean(),
   theforgeProjectId: z.string().nullable(),
@@ -128,7 +135,8 @@ export const projectResponseSchema = z.object({
   uxGuideDesignRef: z.string().nullable(),
   phase0SummaryContent: z.string().nullable(),
   aemContent: z.string().nullable(),
-  handoffSpecContent: z.string().nullable(),
+  pluginData: z.record(z.unknown()).nullable(),
+
   figmaMapping: z.record(z.unknown()).nullable(),
   createdAt: z.string().datetime(),
 });

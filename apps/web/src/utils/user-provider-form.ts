@@ -200,11 +200,7 @@ export function validateUserProviderForm(args: {
     errors.visionModel = "Indica un modelo de visión válido";
   }
 
-  if (
-    catalog.supportsVision &&
-    form.visionModelFallback.trim() &&
-    form.visionModelFallback.trim().length < 2
-  ) {
+  if (catalog.supportsVision && form.visionModelFallback.trim() && form.visionModelFallback.trim().length < 2) {
     errors.visionModelFallback = "Indica un modelo de respaldo de visión válido";
   }
 

@@ -1,5 +1,5 @@
 /**
- * @fileoverview Modal para renombrar un proyecto (`PATCH /projects/:id` con `{ name }`).
+ * @fileoverview Modal para crear un grupo de proyectos (`POST /project-groups`).
  */
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -14,32 +14,28 @@ import {
   Input,
 } from "@/components/ui";
 
-export interface RenameProjectDialogProps {
+export interface CreateProjectGroupDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  projectId: string | null;
-  currentName: string;
   loading?: boolean;
-  onSubmit: (projectId: string, name: string) => Promise<void>;
+  onSubmit: (name: string) => Promise<void>;
 }
 
-export function RenameProjectDialog({
+export function CreateProjectGroupDialog({
   open,
   onOpenChange,
-  projectId,
-  currentName,
   loading = false,
   onSubmit,
-}: RenameProjectDialogProps) {
-  const [name, setName] = useState(currentName);
+}: CreateProjectGroupDialogProps) {
+  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
-      setName(currentName);
+      setName("");
       setError(null);
     }
-  }, [open, currentName]);
+  }, [open]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = name.trim();
@@ -47,35 +43,30 @@ export function RenameProjectDialog({
       setError("El nombre no puede estar vacío");
       return;
     }
-    if (!projectId) return;
-    if (trimmed === currentName.trim()) {
-      onOpenChange(false);
-      return;
-    }
     setError(null);
     try {
-      await onSubmit(projectId, trimmed);
+      await onSubmit(trimmed);
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo renombrar");
+      setError(err instanceof Error ? err.message : "No se pudo crear el grupo");
     }
-  }, [name, projectId, currentName, onSubmit, onOpenChange]);
+  }, [name, onSubmit, onOpenChange]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Renombrar proyecto</DialogTitle>
+          <DialogTitle>Nuevo grupo</DialogTitle>
           <DialogDescription>
-            Solo el propietario puede cambiar el nombre. Se actualiza en el dashboard y en el Workshop.
+            Los proyectos nuevos se asignan al grupo por defecto hasta que un admin los mueva.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 py-1">
-          <label htmlFor="rename-project-name" className="text-sm font-medium text-[var(--foreground)]">
-            Nombre
+          <label htmlFor="create-project-group-name" className="text-sm font-medium text-[var(--foreground)]">
+            Nombre del grupo
           </label>
           <Input
-            id="rename-project-name"
+            id="create-project-group-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
@@ -98,10 +89,10 @@ export function RenameProjectDialog({
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
-                Guardando…
+                Creando…
               </>
             ) : (
-              "Guardar"
+              "Crear grupo"
             )}
           </Button>
         </DialogFooter>

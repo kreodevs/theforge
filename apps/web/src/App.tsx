@@ -5,17 +5,20 @@
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
  */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "./store/workshopStore";
 import {
   AlertTriangle,
+  Pin,
   FolderGit2,
   FolderOpen,
   GitBranch,
   Heart,
   Loader2,
+  Pencil,
   Plus,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import LoginView from "./views/LoginView";
 import OtpEmailHandoffView from "./views/OtpEmailHandoffView";
@@ -24,7 +27,8 @@ import SettingsView from "./views/SettingsView";
 import UsersView from "./views/UsersView";
 import { CreateProjectWizardDialog } from "./components/CreateProjectWizardDialog";
 import { ProjectMergeDialog } from "./components/ProjectMergeDialog";
-import { RenameProjectDialog } from "./components/RenameProjectDialog";
+import { ProjectSettingsDialog } from "./components/ProjectSettingsDialog";
+import { CreateProjectGroupDialog } from "./components/CreateProjectGroupDialog";
 import { CloneProjectDialog } from "./components/CloneProjectDialog";
 import { ProjectFolderTile } from "./components/ProjectFolderTile";
 import { ProjectSelectionToolbar } from "./components/ProjectSelectionToolbar";
@@ -61,6 +65,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   EmptyState,
+  Input,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "./components/ui";
 type Status = "ROJO" | "AMARILLO" | "VERDE";
 
@@ -68,6 +77,8 @@ interface Project {
   id: string;
   name: string;
   userId?: string;
+  groupId?: string;
+  groupName?: string;
   status: Status;
   precisionScore: number;
   hasUxTeam: boolean;
@@ -76,6 +87,15 @@ interface Project {
   theforgeProjectId?: string | null;
   createdAt: string;
   isFavorite?: boolean;
+}
+
+interface ProjectGroup {
+  id: string;
+  name: string;
+  slug: string;
+  isDefault: boolean;
+  sortOrder: number;
+  createdAt: string;
 }
 
 interface TheForgeProjectRoot {
@@ -127,6 +147,7 @@ function isOtpEmailHandoffPath(): boolean {
 export default function App() {
   const [authed, setAuthed] = useState(() => !!getAccessToken());
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectGroups, setProjectGroups] = useState<ProjectGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [workshopProject, setWorkshopProject] = useState<Project | null>(null);
   const [bulkDeleteTargets, setBulkDeleteTargets] = useState<Project[] | null>(null);
@@ -134,9 +155,27 @@ export default function App() {
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<Project | null>(null);
-  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
-  const [renameLoading, setRenameLoading] = useState(false);
+  const [settingsTarget, setSettingsTarget] = useState<Project | null>(null);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [createGroupDialogOpen, setCreateGroupDialogOpen] = useState(false);
+  const [createGroupLoading, setCreateGroupLoading] = useState(false);
+  const [createGroupForWizard, setCreateGroupForWizard] = useState(false);
+  const [wizardPendingGroupId, setWizardPendingGroupId] = useState<string | null>(null);
+  const [groupRenameTarget, setGroupRenameTarget] = useState<ProjectGroup | null>(null);
+  const [groupRenameOpen, setGroupRenameOpen] = useState(false);
+  const [groupRenameName, setGroupRenameName] = useState("");
+  const [groupRenameLoading, setGroupRenameLoading] = useState(false);
+  const [groupDeleteTarget, setGroupDeleteTarget] = useState<ProjectGroup | null>(null);
+  const [groupDeleteOpen, setGroupDeleteOpen] = useState(false);
+  const [groupDeleteLoading, setGroupDeleteLoading] = useState(false);
+  const [groupMoveFirstLoadingId, setGroupMoveFirstLoadingId] = useState<string | null>(null);
+  const [draggingProject, setDraggingProject] = useState<{
+    projectId: string;
+    sourceGroupId: string;
+  } | null>(null);
+  const [dropTargetGroupId, setDropTargetGroupId] = useState<string | null>(null);
+  const [moveProjectLoadingId, setMoveProjectLoadingId] = useState<string | null>(null);
   const [cloneTarget, setCloneTarget] = useState<Project | null>(null);
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [cloneLoading, setCloneLoading] = useState(false);
@@ -216,6 +255,39 @@ export default function App() {
     return filteredProjects.filter((p) => p.name.toLowerCase().includes(q));
   }, [filteredProjects, projectSearchQuery]);
 
+  const projectsByGroupId = useMemo(() => {
+    const map = new Map<string, Project[]>();
+    for (const p of displayedProjects) {
+      const gid = p.groupId ?? "";
+      const list = map.get(gid) ?? [];
+      list.push(p);
+      map.set(gid, list);
+    }
+    return map;
+  }, [displayedProjects]);
+
+  const loadProjectGroups = useCallback(async () => {
+    try {
+      const r = await apiFetch(`${API_BASE}/project-groups`);
+      const raw = await r.text();
+      let data: unknown = null;
+      if (raw) {
+        try {
+          data = JSON.parse(raw) as unknown;
+        } catch {
+          data = null;
+        }
+      }
+      if (!r.ok || !Array.isArray(data)) {
+        setProjectGroups([]);
+        return;
+      }
+      setProjectGroups(data as ProjectGroup[]);
+    } catch {
+      setProjectGroups([]);
+    }
+  }, []);
+
   const loadProjects = useCallback(async () => {
     setLoading(true);
     try {
@@ -239,6 +311,10 @@ export default function App() {
     }
   }, []);
 
+  const refreshDashboard = useCallback(async () => {
+    await Promise.all([loadProjects(), loadProjectGroups()]);
+  }, [loadProjects, loadProjectGroups]);
+
   const handleToggleFavorite = useCallback(async (id: string) => {
     try {
       const r = await apiFetch(`${API_BASE}/projects/${id}/favorite`, {
@@ -255,7 +331,7 @@ export default function App() {
   }, []);
 
   const createProject = useCallback(
-    async (name: string) => {
+    async (name: string, groupId: string) => {
       const trimmed = name.trim();
       if (!trimmed) throw new Error("Nombre vacío");
       setLoading(true);
@@ -263,17 +339,22 @@ export default function App() {
         const r = await apiFetch(`${API_BASE}/projects`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: trimmed, hasUxTeam: false, projectType: "NEW" }),
+          body: JSON.stringify({
+            name: trimmed,
+            hasUxTeam: false,
+            projectType: "NEW",
+            groupId,
+          }),
         });
         if (!r.ok) throw new Error("Error al crear proyecto");
         const created = (await r.json()) as Project;
-        await loadProjects();
+        await refreshDashboard();
         setWorkshopProject(created);
       } finally {
         setLoading(false);
       }
     },
-    [loadProjects],
+    [refreshDashboard],
   );
 
   async function loadTheForgeProjects() {
@@ -402,49 +483,239 @@ export default function App() {
   }, [bulkDeleteTargets, loadProjects]);
 
   const currentUserId = getStoredUser()?.id;
+  const userRole = getStoredUser()?.role;
+  const isAdmin = userRole === "admin" || userRole === "super_admin";
 
   const canRenameProject = useCallback(
     (project: Project) => !project.userId || project.userId === currentUserId,
     [currentUserId],
   );
 
-  const openRenameDialog = useCallback((project: Project) => {
-    if (!canRenameProject(project)) return;
-    setRenameTarget(project);
-    setRenameDialogOpen(true);
-  }, [canRenameProject]);
+  const canOpenProjectSettings = useCallback(
+    (project: Project) => canRenameProject(project) || isAdmin,
+    [canRenameProject, isAdmin],
+  );
 
-  const submitRenameProject = useCallback(
-    async (projectId: string, name: string) => {
-      setRenameLoading(true);
+  const openSettingsDialog = useCallback((project: Project) => {
+    if (!canOpenProjectSettings(project)) return;
+    setSettingsTarget(project);
+    setSettingsDialogOpen(true);
+  }, [canOpenProjectSettings]);
+
+  const patchProject = useCallback(
+    async (projectId: string, data: { name?: string; groupId?: string }) => {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+        const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+        throw new Error(
+          r.status === 403
+            ? "No tienes permiso para cambiar esta configuración"
+            : msg ?? "Error al guardar",
+        );
+      }
+      const updated = (await r.json()) as Project;
+      const patch = {
+        ...(data.name !== undefined ? { name: updated.name ?? data.name } : {}),
+        ...(data.groupId !== undefined
+          ? { groupId: updated.groupId ?? data.groupId, groupName: updated.groupName }
+          : {}),
+      };
+      setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, ...patch } : p)));
+      setWorkshopProject((prev) => (prev?.id === projectId ? { ...prev, ...patch } : prev));
+      const store = useWorkshopStore.getState();
+      if (store.project?.id === projectId && data.name !== undefined) {
+        store.setProject({ ...store.project, name: patch.name ?? store.project.name });
+      }
+    },
+    [],
+  );
+
+  const submitProjectSettings = useCallback(
+    async (projectId: string, data: { name?: string; groupId?: string }) => {
+      setSettingsLoading(true);
       try {
-        const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-          method: "PATCH",
+        await patchProject(projectId, data);
+      } finally {
+        setSettingsLoading(false);
+      }
+    },
+    [patchProject],
+  );
+
+  const moveProjectToGroup = useCallback(
+    async (projectId: string, groupId: string) => {
+      setMoveProjectLoadingId(projectId);
+      try {
+        await patchProject(projectId, { groupId });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setMoveProjectLoadingId(null);
+      }
+    },
+    [patchProject],
+  );
+
+  const handleProjectDragStart = useCallback(
+    (project: Project) => (event: DragEvent<HTMLElement>) => {
+      if (!isAdmin || moveProjectLoadingId) return;
+      event.dataTransfer.setData("application/x-theforge-project-id", project.id);
+      event.dataTransfer.setData("text/plain", project.id);
+      event.dataTransfer.effectAllowed = "move";
+      setDraggingProject({
+        projectId: project.id,
+        sourceGroupId: project.groupId ?? "",
+      });
+    },
+    [isAdmin, moveProjectLoadingId],
+  );
+
+  const handleProjectDragEnd = useCallback(() => {
+    setDraggingProject(null);
+    setDropTargetGroupId(null);
+  }, []);
+
+  const handleGroupDragOver = useCallback(
+    (groupId: string) => (event: DragEvent<HTMLElement>) => {
+      if (!isAdmin || !draggingProject) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      if (dropTargetGroupId !== groupId) {
+        setDropTargetGroupId(groupId);
+      }
+    },
+    [draggingProject, dropTargetGroupId, isAdmin],
+  );
+
+  const handleGroupDrop = useCallback(
+    (groupId: string) => (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      if (!isAdmin || !draggingProject) return;
+      const { projectId, sourceGroupId } = draggingProject;
+      setDraggingProject(null);
+      setDropTargetGroupId(null);
+      if (groupId === sourceGroupId) return;
+      void moveProjectToGroup(projectId, groupId);
+    },
+    [draggingProject, isAdmin, moveProjectToGroup],
+  );
+
+  const submitCreateProjectGroup = useCallback(
+    async (name: string) => {
+      setCreateGroupLoading(true);
+      try {
+        const r = await apiFetch(`${API_BASE}/project-groups`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
         });
         if (!r.ok) {
           const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
           const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
-          throw new Error(
-            r.status === 403
-              ? "Solo el propietario puede renombrar este proyecto"
-              : msg ?? "Error al renombrar",
-          );
+          throw new Error(msg ?? "Error al crear grupo");
         }
-        const updated = (await r.json()) as Project;
-        const nextName = updated.name ?? name;
-        setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, name: nextName } : p)));
-        setWorkshopProject((prev) => (prev?.id === projectId ? { ...prev, name: nextName } : prev));
-        const store = useWorkshopStore.getState();
-        if (store.project?.id === projectId) {
-          store.setProject({ ...store.project, name: nextName });
+        const created = (await r.json()) as { id: string };
+        await loadProjectGroups();
+        if (createGroupForWizard) {
+          setWizardPendingGroupId(created.id);
+          setCreateGroupForWizard(false);
         }
       } finally {
-        setRenameLoading(false);
+        setCreateGroupLoading(false);
       }
     },
-    [],
+    [loadProjectGroups, createGroupForWizard],
+  );
+
+  const openGroupRenameDialog = useCallback((group: ProjectGroup) => {
+    if (group.isDefault) return;
+    setGroupRenameTarget(group);
+    setGroupRenameName(group.name);
+    setGroupRenameOpen(true);
+  }, []);
+
+  const submitGroupRename = useCallback(async () => {
+    if (!groupRenameTarget) return;
+    const trimmed = groupRenameName.trim();
+    if (!trimmed || trimmed === groupRenameTarget.name) {
+      setGroupRenameOpen(false);
+      return;
+    }
+    setGroupRenameLoading(true);
+    try {
+      const r = await apiFetch(`${API_BASE}/project-groups/${groupRenameTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+        const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+        throw new Error(msg ?? "Error al renombrar grupo");
+      }
+      await loadProjectGroups();
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.groupId === groupRenameTarget.id ? { ...p, groupName: trimmed } : p,
+        ),
+      );
+      setGroupRenameOpen(false);
+      setGroupRenameTarget(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setGroupRenameLoading(false);
+    }
+  }, [groupRenameTarget, groupRenameName, loadProjectGroups]);
+
+  const confirmDeleteGroup = useCallback(async () => {
+    if (!groupDeleteTarget) return;
+    setGroupDeleteLoading(true);
+    try {
+      const r = await apiFetch(`${API_BASE}/project-groups/${groupDeleteTarget.id}`, {
+        method: "DELETE",
+      });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+        const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+        throw new Error(msg ?? "Error al eliminar grupo");
+      }
+      await refreshDashboard();
+      setGroupDeleteOpen(false);
+      setGroupDeleteTarget(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setGroupDeleteLoading(false);
+    }
+  }, [groupDeleteTarget, refreshDashboard]);
+
+  const moveGroupToFirst = useCallback(
+    async (group: ProjectGroup) => {
+      if (projectGroups[0]?.id === group.id) return;
+      setGroupMoveFirstLoadingId(group.id);
+      try {
+        const r = await apiFetch(`${API_BASE}/project-groups/${group.id}/move-to-first`, {
+          method: "POST",
+        });
+        if (!r.ok) {
+          const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+          const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+          throw new Error(msg ?? "Error al reordenar grupo");
+        }
+        await loadProjectGroups();
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setGroupMoveFirstLoadingId(null);
+      }
+    },
+    [loadProjectGroups, projectGroups],
   );
 
   const openCloneDialog = useCallback((project: Project) => {
@@ -478,6 +749,11 @@ export default function App() {
   );
 
   useEffect(() => {
+    if (!showCreateWizard) return;
+    void loadProjectGroups();
+  }, [showCreateWizard, loadProjectGroups]);
+
+  useEffect(() => {
     const allowed = new Set(displayedProjects.map((p) => p.id));
     setSelectedProjectIds((prev) => prev.filter((id) => allowed.has(id)));
   }, [displayedProjects]);
@@ -489,8 +765,8 @@ export default function App() {
 
   useEffect(() => {
     if (!authed || workshopProject) return;
-    void loadProjects();
-  }, [authed, workshopProject, loadProjects]);
+    void refreshDashboard();
+  }, [authed, workshopProject, refreshDashboard]);
 
   // Check if first-run setup is needed (no users exist)
   useEffect(() => {
@@ -587,9 +863,6 @@ export default function App() {
     setProjectSearchQuery("");
   }
 
-  const userRole = getStoredUser()?.role;
-  const isAdmin = userRole === "admin" || userRole === "super_admin";
-
   const settingsPanel = settingsViewOpen ? (
     <SettingsView
       showIaCost={showIaCost}
@@ -608,6 +881,18 @@ export default function App() {
         open={showCreateWizard}
         onOpenChange={setShowCreateWizard}
         loading={loading}
+        groups={projectGroups.map((g) => ({ id: g.id, name: g.name, isDefault: g.isDefault }))}
+        canCreateGroup={isAdmin}
+        pendingSelectedGroupId={wizardPendingGroupId}
+        onPendingGroupConsumed={() => setWizardPendingGroupId(null)}
+        onCreateGroup={
+          isAdmin
+            ? () => {
+                setCreateGroupForWizard(true);
+                setCreateGroupDialogOpen(true);
+              }
+            : undefined
+        }
         onCreateNew={createProject}
         onContinueLegacy={openTheForgeModal}
       />
@@ -624,14 +909,86 @@ export default function App() {
         onMerged={handleMergeCompleted}
       />
 
-      <RenameProjectDialog
-        open={renameDialogOpen}
-        onOpenChange={setRenameDialogOpen}
-        projectId={renameTarget?.id ?? null}
-        currentName={renameTarget?.name ?? ""}
-        loading={renameLoading}
-        onSubmit={submitRenameProject}
+      <ProjectSettingsDialog
+        open={settingsDialogOpen}
+        onOpenChange={setSettingsDialogOpen}
+        projectId={settingsTarget?.id ?? null}
+        currentName={settingsTarget?.name ?? ""}
+        currentGroupId={settingsTarget?.groupId ?? null}
+        groups={projectGroups.map((g) => ({ id: g.id, name: g.name, isDefault: g.isDefault }))}
+        canEditName={settingsTarget ? canRenameProject(settingsTarget) : false}
+        canEditGroup={isAdmin}
+        loading={settingsLoading}
+        onSubmit={submitProjectSettings}
+        onCreateGroup={
+          isAdmin
+            ? () => {
+                setCreateGroupForWizard(false);
+                setCreateGroupDialogOpen(true);
+              }
+            : undefined
+        }
       />
+
+      <CreateProjectGroupDialog
+        open={createGroupDialogOpen}
+        onOpenChange={(open) => {
+          setCreateGroupDialogOpen(open);
+          if (!open) setCreateGroupForWizard(false);
+        }}
+        loading={createGroupLoading}
+        onSubmit={submitCreateProjectGroup}
+      />
+
+      <Dialog open={groupRenameOpen} onOpenChange={setGroupRenameOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Renombrar grupo</DialogTitle>
+            <DialogDescription>El grupo por defecto no se puede renombrar.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <label htmlFor="rename-group-name" className="text-sm font-medium">
+              Nombre
+            </label>
+            <Input
+              id="rename-group-name"
+              value={groupRenameName}
+              onChange={(e) => setGroupRenameName(e.target.value)}
+              disabled={groupRenameLoading}
+              maxLength={120}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setGroupRenameOpen(false)} disabled={groupRenameLoading}>
+              Cancelar
+            </Button>
+            <Button onClick={() => void submitGroupRename()} disabled={groupRenameLoading || !groupRenameName.trim()}>
+              {groupRenameLoading ? "Guardando…" : "Guardar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={groupDeleteOpen} onOpenChange={setGroupDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar grupo «{groupDeleteTarget?.name}»?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Los proyectos de este grupo se moverán al grupo por defecto «Proyectos». Los proyectos no se eliminarán.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={groupDeleteLoading}>Cancelar</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={groupDeleteLoading}
+              onClick={() => void confirmDeleteGroup()}
+            >
+              {groupDeleteLoading ? "Eliminando…" : "Eliminar grupo"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <CloneProjectDialog
         open={cloneDialogOpen}
@@ -844,7 +1201,7 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {workshopProject ? (
-        <div className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row">
+        <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row lg:items-stretch">
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}
@@ -877,8 +1234,8 @@ export default function App() {
                   onBack={handleExitWorkshop}
                   onOpenSettings={openSettings}
                   onRenameProject={
-                    canRenameProject(workshopProject)
-                      ? () => openRenameDialog(workshopProject)
+                    canOpenProjectSettings(workshopProject)
+                      ? () => openSettingsDialog(workshopProject)
                       : undefined
                   }
                   mergeAudit={mergeAuditHint}
@@ -888,14 +1245,19 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row">
+        <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] lg:flex-row lg:items-stretch">
           <DashboardSidebar
             projectSearchQuery={projectSearchQuery}
             onProjectSearchChange={setProjectSearchQuery}
-            dashboardProjects={displayedProjects.map((p) => ({
-              id: p.id,
-              name: p.name,
-              isFavorite: p.isFavorite,
+            dashboardProjectGroups={projectGroups.map((group) => ({
+              id: group.id,
+              name: group.name,
+              isDefault: group.isDefault,
+              projects: (projectsByGroupId.get(group.id) ?? []).map((p) => ({
+                id: p.id,
+                name: p.name,
+                isFavorite: p.isFavorite,
+              })),
             }))}
             projectsLoading={loading}
             onOpenProject={(item) => {
@@ -928,18 +1290,27 @@ export default function App() {
         <DashboardPanelHeader
           loading={loading}
           onCreateProject={() => setShowCreateWizard(true)}
-          onRefresh={() => void loadProjects()}
+          onRefresh={() => void refreshDashboard()}
           onOpenTutorial={() => setShowTutorial(true)}
         />
 
-        <Card id="dashboard-projects">
+        <Card id="dashboard-projects-filters">
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <div className="flex min-h-9 min-w-0 w-full shrink-0 items-center sm:max-w-xl sm:flex-1">
-              <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-                <FolderOpen className="h-5 w-5 shrink-0 text-[var(--primary)]" aria-hidden />
-                Proyectos
-              </CardTitle>
-            </div>
+            {isAdmin ? (
+              <div className="flex min-h-9 min-w-0 w-full shrink-0 items-center gap-2 sm:max-w-xl sm:flex-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setCreateGroupDialogOpen(true)}
+                  aria-label="Crear grupo de proyectos"
+                >
+                  <Plus className="mr-1 h-4 w-4" aria-hidden />
+                  Grupo
+                </Button>
+              </div>
+            ) : null}
             <div
               className="flex w-full shrink-0 items-center gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden"
               role="tablist"
@@ -1008,63 +1379,206 @@ export default function App() {
               </button>
             </div>
           </CardHeader>
-          <CardContent>
-            {displayedProjects.length === 0 && !loading && (
-              <EmptyState
-                title={
-                  projectList.length === 0
-                    ? "Aún no hay proyectos"
-                    : projectSearchQuery.trim()
-                      ? "Sin coincidencias"
-                      : projectTypeFilter === "favorites"
-                        ? "Sin proyectos favoritos"
-                        : "No hay proyectos de este tipo"
-                }
-                description={
-                  projectList.length === 0
-                    ? "Usa «Crear nuevo proyecto» para el asistente, o Refrescar si el backend ya tiene datos."
-                    : projectSearchQuery.trim()
-                      ? "Prueba otras palabras o borra el buscador del panel lateral."
-                      : projectTypeFilter === "favorites"
-                        ? "Marca el corazón en una carpeta para añadirla a favoritos."
-                        : "Cambia el filtro o crea un proyecto nuevo desde el encabezado."
-                }
-                icon={FolderGit2}
-                action={projectList.length === 0 ? {
-                  label: "Crear primer proyecto",
-                  icon: <Plus className="w-4 h-4" />,
-                  onClick: () => setShowCreateWizard(true),
-                } : undefined}
-              />
-            )}
-            {displayedProjects.length > 0 && (
-              <ul
-                className="grid list-none gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
-                aria-label="Carpetas de proyectos"
-              >
-                {displayedProjects.map((p) => (
-                  <li key={p.id} className="min-h-0">
-<ProjectFolderTile
-    id={p.id}
-    name={p.name}
-    status={p.status}
-    precisionScore={p.precisionScore}
-    projectType={p.projectType}
-    visibility={p.visibility}
-    selected={selectedProjectIds.includes(p.id)}
-    selectable
-    isFavorite={p.isFavorite}
-    onToggleFavorite={handleToggleFavorite}
-    onRename={canRenameProject(p) ? () => openRenameDialog(p) : undefined}
-    onOpen={() => setWorkshopProject({ id: p.id, name: p.name } as Project)}
-    onToggleSelect={() => handleToggleProjectSelect(p.id)}
-/>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
         </Card>
+
+        {displayedProjects.length === 0 && !loading && (
+          <EmptyState
+            title={
+              projectList.length === 0
+                ? "Aún no hay proyectos"
+                : projectSearchQuery.trim()
+                  ? "Sin coincidencias"
+                  : projectTypeFilter === "favorites"
+                    ? "Sin proyectos favoritos"
+                    : "No hay proyectos de este tipo"
+            }
+            description={
+              projectList.length === 0
+                ? "Usa «Crear nuevo proyecto» para el asistente, o Refrescar si el backend ya tiene datos."
+                : projectSearchQuery.trim()
+                  ? "Prueba otras palabras o borra el buscador del panel lateral."
+                  : projectTypeFilter === "favorites"
+                    ? "Marca el corazón en una carpeta para añadirla a favoritos."
+                    : "Cambia el filtro o crea un proyecto nuevo desde el encabezado."
+            }
+            icon={FolderGit2}
+            action={projectList.length === 0 ? {
+              label: "Crear primer proyecto",
+              icon: <Plus className="w-4 h-4" />,
+              onClick: () => setShowCreateWizard(true),
+            } : undefined}
+          />
+        )}
+
+        {projectGroups.map((group, groupIndex) => {
+          const groupProjects = projectsByGroupId.get(group.id) ?? [];
+          const isFirstGroup = groupIndex === 0;
+          const isDropTarget =
+            isAdmin && !!draggingProject && dropTargetGroupId === group.id;
+          const isSourceGroupWhileDragging =
+            isAdmin && draggingProject?.sourceGroupId === group.id;
+          return (
+            <Card
+              key={group.id}
+              id={group.isDefault ? "dashboard-projects" : undefined}
+              className={cn(
+                "transition-[box-shadow,background-color,border-color] duration-300 ease-forge-smooth motion-reduce:transition-none",
+                isDropTarget &&
+                  "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] shadow-[0_0_0_2px_color-mix(in_oklch,var(--primary)_45%,transparent)]",
+                isSourceGroupWhileDragging &&
+                  !isDropTarget &&
+                  "border-dashed border-[color-mix(in_oklch,var(--primary)_35%,var(--border))]",
+              )}
+              onDragOver={isAdmin ? handleGroupDragOver(group.id) : undefined}
+              onDragEnter={isAdmin ? handleGroupDragOver(group.id) : undefined}
+              onDragLeave={
+                isAdmin
+                  ? (event) => {
+                      const related = event.relatedTarget as Node | null;
+                      if (!event.currentTarget.contains(related)) {
+                        setDropTargetGroupId((prev) => (prev === group.id ? null : prev));
+                      }
+                    }
+                  : undefined
+              }
+              onDrop={isAdmin ? handleGroupDrop(group.id) : undefined}
+            >
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle className="flex min-w-0 flex-1 items-center gap-2 text-base sm:text-lg">
+                  <FolderOpen className="h-5 w-5 shrink-0 text-[var(--primary)]" aria-hidden />
+                  <span className="truncate">{group.name}</span>
+                  {isFirstGroup ? (
+                    <Badge variant="outline" className="shrink-0 text-xs font-normal text-[var(--foreground-muted)]">
+                      Prioritario
+                    </Badge>
+                  ) : null}
+                  <Badge variant="secondary" className="shrink-0 tabular-nums">
+                    {groupProjects.length}
+                  </Badge>
+                </CardTitle>
+                {isAdmin ? (
+                  <div className="flex shrink-0 items-center gap-1">
+                    <TooltipProvider delayDuration={280}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                              "h-8 w-8",
+                              isFirstGroup &&
+                                "border border-[color-mix(in_oklch,var(--primary)_45%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_12%,var(--card))] text-[var(--primary)]",
+                            )}
+                            onClick={() => void moveGroupToFirst(group)}
+                            disabled={isFirstGroup || groupMoveFirstLoadingId === group.id}
+                            aria-pressed={isFirstGroup}
+                            aria-label={
+                              isFirstGroup
+                                ? `${group.name} es el grupo prioritario`
+                                : `Priorizar grupo ${group.name}`
+                            }
+                          >
+                            {groupMoveFirstLoadingId === group.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                            ) : (
+                              <Pin
+                                className="h-4 w-4"
+                                fill={isFirstGroup ? "currentColor" : "none"}
+                                aria-hidden
+                              />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          {isFirstGroup ? "Grupo prioritario" : "Priorizar"}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    {!group.isDefault ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => openGroupRenameDialog(group)}
+                          aria-label={`Renombrar grupo ${group.name}`}
+                        >
+                          <Pencil className="h-4 w-4" aria-hidden />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-[var(--destructive)] hover:text-[var(--destructive)]"
+                          onClick={() => {
+                            setGroupDeleteTarget(group);
+                            setGroupDeleteOpen(true);
+                          }}
+                          aria-label={`Eliminar grupo ${group.name}`}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+              </CardHeader>
+              <CardContent>
+                {groupProjects.length === 0 ? (
+                  <div
+                    className={cn(
+                      "rounded-xl border border-dashed border-transparent px-4 py-8 text-center transition-[border-color,background-color] duration-300 ease-forge-smooth motion-reduce:transition-none",
+                      isDropTarget &&
+                        "border-[var(--primary)] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)]",
+                    )}
+                  >
+                    <p className="text-sm text-[var(--foreground-muted)]">
+                      {isDropTarget
+                        ? "Suelta la carpeta aquí"
+                        : displayedProjects.length === 0 && !loading
+                          ? "Sin proyectos con los filtros actuales."
+                          : "Ningún proyecto en este grupo con los filtros actuales."}
+                    </p>
+                  </div>
+                ) : (
+                  <ul
+                    className="grid list-none gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+                    aria-label={`Carpetas de proyectos en ${group.name}`}
+                  >
+                    {groupProjects.map((p) => (
+                      <li key={p.id} className="min-h-0">
+                        <ProjectFolderTile
+                          id={p.id}
+                          name={p.name}
+                          status={p.status}
+                          precisionScore={p.precisionScore}
+                          projectType={p.projectType}
+                          visibility={p.visibility}
+                          selected={selectedProjectIds.includes(p.id)}
+                          selectable
+                          isFavorite={p.isFavorite}
+                          draggable={isAdmin}
+                          isDragging={draggingProject?.projectId === p.id}
+                          isMoving={moveProjectLoadingId === p.id}
+                          onDragStart={handleProjectDragStart(p)}
+                          onDragEnd={handleProjectDragEnd}
+                          onToggleFavorite={handleToggleFavorite}
+                          onRename={
+                            canOpenProjectSettings(p) ? () => openSettingsDialog(p) : undefined
+                          }
+                          onOpen={() => setWorkshopProject({ id: p.id, name: p.name } as Project)}
+                          onToggleSelect={() => handleToggleProjectSelect(p.id)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
 
         {selectedProjectIds.length > 0 ? (
           <ProjectSelectionToolbar
@@ -1073,12 +1587,14 @@ export default function App() {
             isAdmin={isAdmin}
             showMerge={selectedProjectIds.length >= 2}
             showClone={selectedProjectIds.length === 1}
-            showRename={
+            showSettings={
               selectedProjectIds.length === 1 &&
-              !!projectList.find((p) => p.id === selectedProjectIds[0] && canRenameProject(p))
+              !!projectList.find(
+                (p) => p.id === selectedProjectIds[0] && canOpenProjectSettings(p),
+              )
             }
             cloneLoading={cloneLoading}
-            renameLoading={renameLoading}
+            settingsLoading={settingsLoading}
             onClearSelection={handleClearProjectSelection}
             onClone={
               selectedProjectIds.length === 1
@@ -1088,11 +1604,11 @@ export default function App() {
                   }
                 : undefined
             }
-            onRename={
+            onSettings={
               selectedProjectIds.length === 1
                 ? () => {
                     const single = projectList.find((p) => p.id === selectedProjectIds[0]);
-                    if (single && canRenameProject(single)) openRenameDialog(single);
+                    if (single && canOpenProjectSettings(single)) openSettingsDialog(single);
                   }
                 : undefined
             }

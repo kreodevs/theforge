@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Cable, LayoutTemplate, Settings, Shield, Sparkles } from "lucide-react";
+import { BookOpen, Cable, LayoutTemplate, Puzzle, Settings, Shield, Sparkles } from "lucide-react";
 import { ProviderInstancesCard } from "@/components/ProviderInstancesCard";
 import { AccountConfigCard } from "@/components/AccountConfigCard";
 import { AriadneConfigCard } from "@/components/AriadneConfigCard";
 import { TechDocsConfigCard } from "@/components/TechDocsConfigCard";
 import { UiMcpInstancesCard } from "@/components/UiMcpInstancesCard";
+import { PluginSettingsSection } from "@/components/PluginSettingsSection";
 import { UnderlineTabs, type UnderlineTabItem } from "@/components/ui/UnderlineTabs";
 import { getStoredUser } from "@/utils/apiClient";
 
-type SettingsTab = "providers" | "ariadne" | "tech-docs" | "ui-mcp" | "account";
+type SettingsTab = "providers" | "plugins" | "ariadne" | "tech-docs" | "ui-mcp" | "account";
 
-const SETTINGS_TABS: UnderlineTabItem<SettingsTab>[] = [
+const BASE_SETTINGS_TABS: UnderlineTabItem<SettingsTab>[] = [
   { id: "providers", label: "Proveedores de IA", shortLabel: "Proveedores", icon: Sparkles },
+  { id: "plugins", label: "Plugins", shortLabel: "Plugins", icon: Puzzle },
   { id: "ariadne", label: "Ariadne", shortLabel: "Ariadne", icon: Cable },
   { id: "tech-docs", label: "Docs técnicas", shortLabel: "Docs", icon: BookOpen },
   { id: "ui-mcp", label: "MCP gráfico", shortLabel: "MCP gráfico", icon: LayoutTemplate },
@@ -26,10 +28,12 @@ interface SettingsViewProps {
 /** Vista de ajustes (proveedores IA, Ariadne, cuenta). Renderizada dentro del layout con sidebar (`App.tsx`). */
 export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsViewProps) {
   const isDeveloper = getStoredUser()?.role === "developer";
-  const visibleTabs = useMemo(
-    () => (isDeveloper ? SETTINGS_TABS.filter((tab) => tab.id === "account") : SETTINGS_TABS),
-    [isDeveloper],
-  );
+  const visibleTabs = useMemo(() => {
+    if (isDeveloper) {
+      return BASE_SETTINGS_TABS.filter((tab) => tab.id === "account");
+    }
+    return BASE_SETTINGS_TABS;
+  }, [isDeveloper]);
   const [activeTab, setActiveTab] = useState<SettingsTab>(isDeveloper ? "account" : "providers");
 
   useEffect(() => {
@@ -77,6 +81,16 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
               className={activeTab === "providers" ? "space-y-6" : undefined}
             >
               {activeTab === "providers" ? <ProviderInstancesCard /> : null}
+            </div>
+
+            <div
+              id="settings-panel-plugins"
+              role="tabpanel"
+              aria-labelledby="settings-tab-plugins"
+              hidden={activeTab !== "plugins"}
+              className={activeTab === "plugins" ? "space-y-6" : undefined}
+            >
+              {activeTab === "plugins" ? <PluginSettingsSection /> : null}
             </div>
 
             <div

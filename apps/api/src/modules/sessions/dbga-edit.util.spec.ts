@@ -114,6 +114,16 @@ describe("benchmarkAssistantChatMessage", () => {
     );
     assert.match(msg, /No se guardaron cambios/i);
   });
+
+  it("colapsa cuerpo de documento en chat cuando sí hubo persistencia", () => {
+    const docBody =
+      "1. Resumen Ejecutivo\n\nForgeOps es una plataforma.\n\n2. Benchmark de Industria\n\n".repeat(25);
+    const msg = benchmarkAssistantChatMessage(
+      `He integrado la especificación del Portal de Licencias.\n\n${docBody}`,
+      "# Domain Benchmark\n\nSección licenciamiento actualizada.",
+    );
+    assert.equal(msg, BENCHMARK_CHAT_ACK);
+  });
 });
 
 describe("extractDbgaEditKeywords", () => {
@@ -176,5 +186,37 @@ describe("wouldShrinkDbgaDangerously", () => {
     const current = "# Research Report\n\n" + "x".repeat(5000);
     const fragment = "### Módulos\n\n" + "y".repeat(800);
     assert.equal(wouldShrinkDbgaDangerously(current, fragment), true);
+  });
+
+  it("bloquea doc reducido a registro de cambios sin Research Report", () => {
+    const current = `# Research Report
+
+## Dos objetivos centrales
+Objetivos…
+
+### Módulos del proyecto
+Detalle extenso ${"x".repeat(4000)}`;
+    const next = `## Registro de cambios del documento
+
+| Versión | Fecha | Descripción |
+| --- | --- | --- |
+| 2.4 | Julio 2026 | Gap migración tiers |`;
+    assert.equal(wouldShrinkDbgaDangerously(current, next), true);
+  });
+
+  it("bloquea Domain Benchmark reducido a solo changelog", () => {
+    const current = `# Domain Benchmark & Gap Analysis (DBGA) – ForgeOps
+
+## 1. Referencia de Industria
+${"x".repeat(5000)}
+
+## 2. Funcionalidades
+Detalle…`;
+    const next = `## Registro de cambios del documento
+
+| Versión | Fecha | Descripción |
+| --- | --- | --- |
+| 2.3 | Julio 2026 | Auditoría de acciones |`;
+    assert.equal(wouldShrinkDbgaDangerously(current, next), true);
   });
 });

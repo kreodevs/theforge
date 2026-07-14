@@ -3,6 +3,9 @@ import type { Session } from "@theforge/database";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AiService } from "../ai/ai.service.js";
+import { IntentRouterService } from "../ai/intent-router.service.js";
+import type { IntentRouteResult } from "../ai/intent-route.types.js";
+import { hasWorkshopDocumentForTab } from "../ai/intent-router.util.js";
 import type { GenerateResponseOptions, ChatMessage as LlmChatMessage } from "../ai/interfaces/llm-provider.interface.js";
 import { PreferencesService } from "../ai/preferences.service.js";
 import { ChatResponseParserService } from "./chat-response-parser.service.js";
@@ -27,7 +30,7 @@ import {
   shouldWarnOrchestratorDocNotPersisted,
   type DocPersistFlags,
 } from "./orchestrator-doc-guard.util.js";
-import { wouldShrinkDocDangerously } from "./document-shrink.util.js";
+import { wouldShrinkDocDangerously, validateDocumentForPersist } from "./document-shrink.util.js";
 import {
   BENCHMARK_CHAT_ACK,
   benchmarkAssistantChatMessage,
@@ -41,8 +44,13 @@ import {
   parseBenchmarkResponse,
   wouldShrinkDbgaDangerously,
 } from "./dbga-edit.util.js";
+import {
+  looksLikeDbgaDocumentBody,
+  looksLikeDbgaSpecIntegrationRequest,
+} from "@theforge/shared-types";
 import { llmDebug, llmWarn } from "../ai/config/llm-debug.util.js";
 import { ModelsUnavailableError } from "../ai/config/llm-model-fallback.js";
+import { DocumentSnapshotService } from "../document-snapshot/document-snapshot.service.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -78,7 +86,48 @@ export class SessionsService {
     private readonly ai: AiService,
     private readonly preferences: PreferencesService,
     private readonly parser: ChatResponseParserService,
+    private readonly intentRouter: IntentRouterService,
+    private readonly documentSnapshot: DocumentSnapshotService,
   ) { }
+
+  private workshopDocContext(options?: {
+    activeTab?: string;
+    currentMddContent?: string;
+    currentDbgaContent?: string;
+    currentUxUiGuideContent?: string;
+    currentPhase0SummaryContent?: string;
+    currentBlueprintContent?: string;
+    currentSpecContent?: string;
+    currentBrdContent?: string;
+    currentArchitectureContent?: string;
+    currentUseCasesContent?: string;
+    currentUserStoriesContent?: string;
+    currentApiContractsContent?: string;
+    currentLogicFlowsContent?: string;
+    currentTasksContent?: string;
+    currentInfraContent?: string;
+  }): { activeTab: string; hasDocumentContent: boolean } {
+    const activeTab = (options?.activeTab ?? "mdd").trim();
+    return {
+      activeTab,
+      hasDocumentContent: hasWorkshopDocumentForTab(activeTab, {
+        mdd: options?.currentMddContent,
+        dbga: options?.currentDbgaContent,
+        spec: options?.currentSpecContent,
+        brd: options?.currentBrdContent,
+        blueprint: options?.currentBlueprintContent,
+        phase0Summary: options?.currentPhase0SummaryContent,
+        uxGuide: options?.currentUxUiGuideContent,
+        architecture: options?.currentArchitectureContent,
+        useCases: options?.currentUseCasesContent,
+        userStories: options?.currentUserStoriesContent,
+        apiContracts: options?.currentApiContractsContent,
+        logicFlows: options?.currentLogicFlowsContent,
+        tasks: options?.currentTasksContent,
+        infra: options?.currentInfraContent,
+      }),
+    };
+  }
 
   private sessionScope(sessionId: string) {
     return { id: sessionId, userId: getRequestUserId() };
@@ -201,11 +250,18 @@ export class SessionsService {
     tab: string,
     userMessage: string,
     currentDbga: string | undefined,
-    options?: { userImages?: ChatImagePart[] },
+    options?: { userImages?: ChatImagePart[]; intentRoute?: IntentRouteResult },
   ): Promise<{ finalDbga?: string; assistantContent: string } | null> {
     const current = (currentDbga ?? "").trim();
     const msg = userMessage.trim();
-    if (tab !== "benchmark" || !current || !msg || !looksLikeDbgaEditRequest(msg)) {
+    if (tab !== "benchmark" || !current || !msg) {
+      return null;
+    }
+
+    const route =
+      options?.intentRoute ??
+      (await this.intentRouter.route(msg, { activeTab: tab, hasDocumentContent: true }));
+    if (route.action !== "edit_document") {
       return null;
     }
 
@@ -215,6 +271,7 @@ export class SessionsService {
         activeTab: "benchmark",
         currentDbgaContent: current,
         userImages: options?.userImages,
+        wantsDocumentEdit: true,
       },
       undefined,
     );
@@ -325,11 +382,16 @@ export class SessionsService {
       activeTab,
     );
 
+    const intentRoute = await this.intentRouter.route(
+      userTurn.promptForModel,
+      this.workshopDocContext(options),
+    );
+
     const dbgaEditTurn = await this.tryBenchmarkDbgaEditTurn(
       activeTab,
       userTurn.promptForModel,
       options?.currentDbgaContent,
-      { userImages: options?.userImages },
+      { userImages: options?.userImages, intentRoute },
     );
     if (dbgaEditTurn) {
       const tab = activeTab;
@@ -368,6 +430,7 @@ export class SessionsService {
         currentSpecContent: options?.currentSpecContent,
         currentBrdContent: options?.currentBrdContent,
         activeTab: options?.activeTab,
+        intent: intentRoute.intent,
         learningHistory: learningHistory || undefined,
         systemPrompt: options?.systemPrompt,
         complexityInterviewContext: options?.complexityInterviewContext,
@@ -548,13 +611,13 @@ export class SessionsService {
       hasDbga,
       dbgaDocPart,
       rawChat,
-    }));
+    }, intentRoute.action === "edit_document"));
 
     const cleanedMddPart = hasMdd ? this.parser.cleanDocumentContent(mddSplit!.mddPart) : "";
     const finalMdd = hasMdd ? this.parser.mergeMddSectionOrUseFull(options?.currentMddContent, cleanedMddPart) : undefined;
     const finalDbga = await this.resolveDbgaContentForReturn(
       effectiveUserMessage,
-      options,
+      { ...options, wantsDocumentEdit: intentRoute.action === "edit_document" },
       dbgaDocPart,
     );
     let assistantContent = this.parser.stripChatLabel(
@@ -760,11 +823,16 @@ export class SessionsService {
     };
     const userEntry = stageId ? { ...userEntryBase, stageId } : userEntryBase;
 
+    const intentRoute = await this.intentRouter.route(
+      userTurn.promptForModel,
+      this.workshopDocContext(options),
+    );
+
     const dbgaEditTurn = await this.tryBenchmarkDbgaEditTurn(
       tab,
       userTurn.promptForModel,
       options?.currentDbgaContent,
-      { userImages: options?.userImages },
+      { userImages: options?.userImages, intentRoute },
     );
     if (dbgaEditTurn) {
       const assistantContent = dbgaEditTurn.assistantContent;
@@ -808,6 +876,7 @@ export class SessionsService {
         currentSpecContent: options?.currentSpecContent,
         currentBrdContent: options?.currentBrdContent,
         activeTab: options?.activeTab,
+        intent: intentRoute.intent,
         learningHistory: learningHistory || undefined,
         systemPrompt: options?.systemPrompt,
         complexityInterviewContext: options?.complexityInterviewContext,
@@ -1018,13 +1087,13 @@ export class SessionsService {
       hasDbga,
       dbgaDocPart,
       rawChat,
-    }));
+    }, intentRoute.action === "edit_document"));
 
     const cleanedMddPart = hasMdd ? this.parser.cleanDocumentContent(mddSplit!.mddPart) : "";
     const finalMdd = hasMdd ? this.parser.mergeMddSectionOrUseFull(options?.currentMddContent, cleanedMddPart) : undefined;
     const finalDbga = await this.resolveDbgaContentForReturn(
       effectiveUserMessage,
-      options,
+      { ...options, wantsDocumentEdit: intentRoute.action === "edit_document" },
       dbgaDocPart,
     );
     let assistantContent = this.parser.stripChatLabel(
@@ -1398,6 +1467,7 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
     safeResponse: string,
     userMessage: string,
     state: { hasDbga: boolean; dbgaDocPart?: string; rawChat: string },
+    wantsDocumentEdit = false,
   ): { hasDbga: boolean; dbgaDocPart?: string; rawChat: string } {
     if (tab.trim() !== "benchmark") return state;
 
@@ -1412,7 +1482,10 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
 
     if (state.hasDbga && state.dbgaDocPart?.trim()) {
       const chat = state.rawChat.trim();
-      if (chat.length > 600 && state.dbgaDocPart.length > 400) {
+      if (
+        chat.length > 280 &&
+        (looksLikeDbgaDocumentBody(chat) || state.dbgaDocPart.length > 400)
+      ) {
         return { ...state, rawChat: BENCHMARK_CHAT_ACK };
       }
       return state;
@@ -1429,7 +1502,9 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
 
     if (
       safeResponse.length > 400 &&
-      (looksLikeDbgaEditRequest(userMessage) ||
+      (wantsDocumentEdit ||
+        looksLikeDbgaEditRequest(userMessage) ||
+        looksLikeDbgaSpecIntegrationRequest(userMessage) ||
         /\btenant_id\b|multi-?tenant|###\s+Módulos del proyecto/i.test(safeResponse))
     ) {
       const fb2 = this.parser.detectBenchmarkDocFallback(safeResponse.trim());
@@ -1456,13 +1531,17 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
           activeTab?: string;
           currentDbgaContent?: string;
           userImages?: ChatImagePart[];
+          wantsDocumentEdit?: boolean;
         }
       | undefined,
     dbgaDocPart: string | undefined,
   ): Promise<string | undefined> {
     const tab = (options?.activeTab ?? "mdd").trim();
     const current = options?.currentDbgaContent?.trim() ?? "";
-    const wantsEdit = looksLikeDbgaEditRequest(userMessage);
+    const wantsEdit =
+      options?.wantsDocumentEdit === true ||
+      looksLikeDbgaEditRequest(userMessage) ||
+      looksLikeDbgaSpecIntegrationRequest(userMessage);
     const hadImages = (options?.userImages?.length ?? 0) > 0;
 
     const cleanedPart = dbgaDocPart
@@ -1497,12 +1576,16 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
       }
     }
 
-    if (merged && current && wouldShrinkDbgaDangerously(current, merged)) {
-      console.warn(
-        "[Sessions] DBGA merge rechazado (reducción peligrosa); se conserva el documento anterior.",
-        { currentLen: current.length, mergedLen: merged.length },
-      );
-      merged = undefined;
+    if (merged && current) {
+      const validation = validateDocumentForPersist(current, merged, { fieldLabel: "DBGA" });
+      if (!validation.ok || wouldShrinkDbgaDangerously(current, merged)) {
+        console.warn(
+          "[Sessions] DBGA merge rechazado;",
+          validation.ok ? "reducción peligrosa" : validation.message,
+          { currentLen: current.length, mergedLen: merged.length },
+        );
+        merged = undefined;
+      }
     }
 
     return merged && merged.length > 0 ? merged : undefined;
@@ -1700,7 +1783,7 @@ ${msg}
         if (msg.role !== "assistant" || (msg.tab ?? "mdd") !== "benchmark") continue;
         const raw = msg.content?.trim() ?? "";
         if (raw.length < 400) continue;
-        if (!/# Research Report|### Módulos del proyecto|Domain Benchmark/i.test(raw)) {
+        if (!/# Research Report|### Módulos del proyecto|Domain Benchmark|Fase 0 —/i.test(raw)) {
           continue;
         }
 
@@ -1728,6 +1811,20 @@ ${msg}
         "No se encontró un DBGA recuperable en el historial del chat (tab benchmark).",
       );
     }
+
+    const validation = validateDocumentForPersist(currentDbga, best.content, {
+      fieldLabel: "DBGA",
+    });
+    if (!validation.ok) {
+      throw new BadRequestException(validation.message);
+    }
+
+    await this.documentSnapshot.snapshotBeforeOverwrite(
+      projectId,
+      "dbgaContent",
+      project.dbgaContent,
+      "salvage",
+    );
 
     await this.prisma.project.update({
       where: { id: projectId },

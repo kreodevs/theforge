@@ -19,7 +19,6 @@ export const PROJECT_LIST_NULL_DOCUMENTS = {
   uxGuideDesignRef: null,
   phase0SummaryContent: null,
   aemContent: null,
-  handoffSpecContent: null,
   uiScreensContent: null,
   figmaMapping: null,
 } as const;
@@ -48,6 +47,8 @@ type ProjectListRow = {
   hasUxTeam: boolean;
   linkedLegacyProjectId: string | null;
   linkedNewProjectId: string | null;
+  groupId: string;
+  group?: { name: string };
   createdAt: Date;
   stages: StageWithEstimation[];
 };
@@ -87,6 +88,8 @@ export function toApiProjectListItem(
     requireBrdTobeGate: false,
     linkedLegacyProjectId: project.linkedLegacyProjectId,
     linkedNewProjectId: project.linkedNewProjectId,
+    groupId: project.groupId,
+    groupName: project.group?.name,
     createdAt: project.createdAt.toISOString(),
     stages,
     status: flat.status,

@@ -20,7 +20,8 @@ export type WorkshopDocTab =
   | "aem"
   | "integration"
   | "handoff-spec"
-  | "ui-screens";
+  | "ui-screens"
+;
 
 export type ProjectTypeForTabs = "NEW" | "LEGACY";
 

@@ -28,6 +28,7 @@ import {
   ArrowRight,
   ArrowUp,
   HelpCircle,
+  History,
   Layers,
   Wand2,
   MessageSquare,
@@ -39,7 +40,6 @@ import {
   Globe,
   Lock,
   Pencil,
-  Eye,
   Wrench,
   BrushCleaning,
 } from "lucide-react";
@@ -84,7 +84,7 @@ import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
 import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
 import { isWorkshopConnectionError, isSsotPatternsNotice } from "../utils/workshopSyncStatus";
 import { activeGenerationLabel, generationJobAllowed } from "../utils/projectGenerationGate";
-import type { GenerationJobType } from "@theforge/shared-types";
+import type { ArtifactTypeDefinition, GenerationJobType } from "@theforge/shared-types";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import { AIProviderBanner } from "../components/AIProviderBanner";
@@ -135,7 +135,8 @@ import {
   printMarkdownDocument,
 } from "../utils/printDocument";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
-import { isWorkshopAgentActivityPanel } from "../utils/workshopDocNav";
+import { isWorkshopAgentActivityPanel, isPluginPanel } from "../utils/workshopDocNav";
+import { fetchPluginArtifacts } from "../utils/pluginApi";
 import {
   buildRegenerateSectionChatMessage,
   canRegenerateMddSectionFromWorkshop,
@@ -146,6 +147,7 @@ import {
   resolveMddReadinessHintActions,
 } from "../utils/mddSectionRegen";
 import { StandardDocPanel } from "../components/StandardDocPanel";
+import { PluginDocPanel } from "../components/PluginDocPanel";
 import { IntegrationPanel } from "../components/IntegrationPanel";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
@@ -181,6 +183,7 @@ import {
   TooltipTrigger,
 } from "../components/ui";
 import { WorkshopFlowOrderModal } from "../components/WorkshopFlowOrderModal";
+import { WorkshopDbgaRestoreDialog } from "../components/WorkshopDbgaRestoreDialog";
 import { WorkshopNewStageModal } from "../components/WorkshopNewStageModal";
 import {
   AiGenerationPanel,
@@ -397,7 +400,7 @@ export default function WorkshopView({
   );
   const specContentField = useWorkshopStore((s) => s.specContent);
   const dbgaContentField = useWorkshopStore((s) => s.dbgaContent);
-  /** Mismo criterio que `POST …/suggest-brd-tobe-from-dbga` (lee `dbgaContent` persistido en proyecto). */
+  /** Mismo criterio que `POST …/suggest-brd-from-dbga` (lee `dbgaContent` persistido en proyecto). */
   // dbgaContentCharCount eliminado
   const blueprintContentField = useWorkshopStore((s) => s.blueprintContent);
   const apiContractsContentField = useWorkshopStore((s) => s.apiContractsContent);
@@ -413,10 +416,6 @@ export default function WorkshopView({
   const aemContentField = useWorkshopStore((s) => s.aemContent);
   const setAemContent = useWorkshopStore((s) => s.setAemContent);
   const persistAemContent = useWorkshopStore((s) => s.persistAemContent);
-  const handoffSpecContentField = useWorkshopStore((s) => s.handoffSpecContent);
-  const setHandoffSpecContent = useWorkshopStore((s) => s.setHandoffSpecContent);
-  const persistHandoffSpecContent = useWorkshopStore((s) => s.persistHandoffSpecContent);
-  const syncHandoffSpec = useWorkshopStore((s) => s.syncHandoffSpec);
   const uiScreensContentField = useWorkshopStore((s) => s.uiScreensContent);
   const syncUiScreens = useWorkshopStore((s) => s.syncUiScreens);
 
@@ -481,7 +480,6 @@ export default function WorkshopView({
   );
   const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
   const aemContent = aemContentField ?? project?.aemContent ?? null;
-  const handoffSpecContent = handoffSpecContentField ?? project?.handoffSpecContent ?? null;
   const uiScreensContent = uiScreensContentField ?? project?.uiScreensContent ?? null;
 
   const projectStatus: Status = project?.status ?? "ROJO";
@@ -1114,6 +1112,7 @@ export default function WorkshopView({
   const [lastBenchmarkIdea, setLastBenchmarkIdea] = useState("");
   /** Pestañas internas del panel benchmark: Fase 0 (DBGA) / Benchmark (Deep Research). */
   const [benchmarkPhaseTab, setBenchmarkPhaseTab] = useState<"fase0" | "benchmark">("fase0");
+  const [dbgaRestoreOpen, setDbgaRestoreOpen] = useState(false);
   const [blueprintViewMode, setBlueprintViewMode] = useState<"preview" | "source">("preview");
   const [apiContractsViewMode, setApiContractsViewMode] = useState<"preview" | "source">("preview");
   const [logicFlowsViewMode, setLogicFlowsViewMode] = useState<"preview" | "source">("preview");
@@ -1124,7 +1123,6 @@ export default function WorkshopView({
   const [userStoriesViewMode, setUserStoriesViewMode] = useState<"preview" | "source">("preview");
   const [mddInicialViewMode, setMddInicialViewMode] = useState<"preview" | "source">("preview");
   const [aemViewMode, setAemViewMode] = useState<"preview" | "source">("preview");
-  const [handoffSpecViewMode, setHandoffSpecViewMode] = useState<"preview" | "source">("preview");
   const [agentGovernanceViewMode, setAgentGovernanceViewMode] = useState<"preview" | "source">("preview");
   const [agentGovernanceExportScaffold, setAgentGovernanceExportScaffold] =
     useState<import("@theforge/shared-types").AgentGovernanceScaffold | null>(null);
@@ -1134,6 +1132,12 @@ export default function WorkshopView({
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
   const [mddInicialCopyOk, setMddInicialCopyOk] = useState(false);
+
+  const [pluginArtifactTypes, setPluginArtifactTypes] = useState<ArtifactTypeDefinition[]>([]);
+  useEffect(() => {
+    fetchPluginArtifacts().then(setPluginArtifactTypes);
+  }, []);
+
   /** BRD / To-Be (pestañas Workshop): borradores locales y modo preview|fuente (Grabar vía barra / aviso). */
   const brdTobeServerSnap = useRef({ stageId: "", brd: "" });
   const prevLoadingReasonRef = useRef<string | null>(null);
@@ -1188,13 +1192,13 @@ export default function WorkshopView({
     | "user-stories"
     | "infra"
     | "aem"
-    | "handoff-spec"
     | "ui-screens"
     | "agent-governance"
     | "adrs"
     | "integration"
     | "agent-pending-changes"
-    | "agent-session-log";
+    | "agent-session-log"
+    | (string & {});
   const centralPanel = useWorkshopStore((s) => s.workshopActiveDocPanel) as DocPanel;
   const setCentralPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
 
@@ -1948,7 +1952,6 @@ export default function WorkshopView({
   // ─── Auto-save hooks ────
   const { handleBlur: handleSpecBlur, isDirty: specDirty } = useAutoSaveContent(specContent, project?.specContent, persistSpecContent, projectId);
   const { handleBlur: handleAemBlur, isDirty: aemDirty } = useAutoSaveContent(aemContent, project?.aemContent, persistAemContent, projectId);
-  const { handleBlur: handleHandoffSpecBlur, isDirty: handoffSpecDirty } = useAutoSaveContent(handoffSpecContent, project?.handoffSpecContent, persistHandoffSpecContent, projectId);
   const { handleBlur: handleArchitectureBlur, isDirty: architectureDirty } = useAutoSaveContent(architectureContent, project?.architectureContent, persistArchitectureContent, projectId);
   const { handleBlur: handleUseCasesBlur, isDirty: useCasesDirty } = useAutoSaveContent(useCasesContent, project?.useCasesContent, persistUseCasesContent, projectId);
   const { handleBlur: handleUserStoriesBlur, isDirty: userStoriesDirty } = useAutoSaveContent(userStoriesContent, project?.userStoriesContent, persistUserStoriesContent, projectId);
@@ -2155,7 +2158,6 @@ export default function WorkshopView({
       useCasesContent,
       userStoriesContent,
       aemContent,
-      handoffSpecContent,
     });
 
     let regenItem: WorkshopDocBubbleMenuItem | null = null;
@@ -2472,7 +2474,7 @@ export default function WorkshopView({
       tasksContent: tasksContent ?? project?.tasksContent ?? null,
       infraContent: infraContent ?? project?.infraContent ?? null,
       aemContent: aemContent ?? project?.aemContent ?? null,
-      handoffSpecContent: handoffSpecContent ?? project?.handoffSpecContent ?? null,
+      
     }),
     [
       dbgaContent,
@@ -2499,8 +2501,6 @@ export default function WorkshopView({
       project?.infraContent,
       aemContent,
       project?.aemContent,
-      handoffSpecContent,
-      project?.handoffSpecContent,
     ],
   );
 
@@ -2653,8 +2653,8 @@ export default function WorkshopView({
                   type="button"
                   onClick={onRenameProject}
                   className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border)] text-[var(--foreground-muted)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  title="Renombrar proyecto"
-                  aria-label="Renombrar proyecto"
+                  title="Configuración del proyecto"
+                  aria-label="Configuración del proyecto"
                 >
                   <Pencil className="h-3.5 w-3.5" aria-hidden />
                 </button>
@@ -2972,6 +2972,14 @@ export default function WorkshopView({
         onOpenChange={setFlowOrderModalOpen}
         isLegacyProject={isLegacyProject}
       />
+      <WorkshopDbgaRestoreDialog
+        open={dbgaRestoreOpen}
+        onOpenChange={setDbgaRestoreOpen}
+        projectId={projectId}
+        onRestored={async () => {
+          if (projectId) await fetchProject(projectId);
+        }}
+      />
 
       {(backgroundGenerationLabel && !cascadeRunning) && (
         <div className="shrink-0 border-b border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] px-4 py-2">
@@ -3035,14 +3043,14 @@ export default function WorkshopView({
         {/* Columna A: Chat + rail “mostrar” (solo lg; ancho animado) */}
         <div
           className={cn(
-            "flex min-h-0 shrink-0 flex-col lg:flex-row lg:items-stretch lg:overflow-visible",
-            mobileWorkshopColumn === "chat" ? "flex min-h-0 flex-1" : "hidden lg:flex lg:h-full lg:min-h-0",
+            "flex min-h-0 shrink-0 flex-col lg:flex-row lg:items-stretch lg:min-h-0 lg:overflow-visible",
+            mobileWorkshopColumn === "chat" ? "flex min-h-0 flex-1" : "hidden lg:flex lg:min-h-0 lg:self-stretch",
           )}
         >
           <div
             className={cn(
-              "workshop-chat-column relative min-h-0 min-w-0 overflow-hidden flex flex-col border-r border-[var(--border)] lg:shrink-0",
-              mobileWorkshopColumn === "chat" ? "flex-1" : "lg:h-full lg:min-h-0",
+              "workshop-chat-column relative flex min-h-0 min-w-0 flex-col self-stretch overflow-hidden border-r border-[var(--border)] lg:shrink-0",
+              mobileWorkshopColumn === "chat" ? "flex-1" : "lg:min-h-0",
               !lgChatPanelResizing &&
                 "lg:transition-[width] lg:duration-300 lg:ease-out motion-reduce:lg:transition-none",
               isLgLayout && lgWorkshopChatCollapsed
@@ -3058,8 +3066,8 @@ export default function WorkshopView({
             <section
               ref={chatSectionRef}
               className={cn(
-                "flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden",
-                mobileWorkshopColumn === "chat" ? "min-h-0 flex-1" : "lg:h-full lg:min-h-0 lg:flex-col",
+                "flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
+                mobileWorkshopColumn === "chat" ? "min-h-0 flex-1" : "lg:min-h-0 lg:flex-col",
               )}
               aria-hidden={isLgLayout && lgWorkshopChatCollapsed ? true : undefined}
             >
@@ -3326,6 +3334,25 @@ export default function WorkshopView({
                       </Tooltip>
                     );
                   })()}
+                {centralPanel === "benchmark" && benchmarkPhaseTab === "fase0" && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className={WORKSHOP_DOC_TOOLBAR_ICON_BTN}
+                        aria-label="Restaurar versión anterior del DBGA"
+                        onClick={() => setDbgaRestoreOpen(true)}
+                      >
+                        <History className={WORKSHOP_DOC_TOOLBAR_ICON} strokeWidth={2} aria-hidden />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" align="end" className="max-w-[14rem]">
+                      Versiones anteriores del DBGA
+                    </TooltipContent>
+                  </Tooltip>
+                )}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -4148,6 +4175,16 @@ export default function WorkshopView({
                           <WorkshopButtonIcon icon={ArrowRight} tone="secondary" />
                           Ir a BRD (editar)
                         </WorkshopPanelButton>
+                        {dbgaContent != null && dbgaContent !== "" && (
+                          <WorkshopPanelButton
+                            tone="secondary"
+                            onClick={() => setDbgaRestoreOpen(true)}
+                            title="Ver y restaurar copias automáticas del DBGA guardadas antes de cada cambio"
+                          >
+                            <WorkshopButtonIcon icon={History} tone="secondary" />
+                            Versiones anteriores
+                          </WorkshopPanelButton>
+                        )}
                         {dbgaContent != null && dbgaContent !== '' && (
                           <WorkshopPanelButton
                             tone="danger"
@@ -4703,67 +4740,6 @@ export default function WorkshopView({
                 generateBlockedReason="Completa al menos Benchmark (Deep Research), Fase 0 (DBGA) o BRD antes de generar."
               />
             )}
-            {centralPanel === "handoff-spec" && (
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-                <div className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-3 py-2.5">
-                  <p className="min-w-0 flex-1 text-xs leading-relaxed text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
-                    <strong>Handoff Spec</strong> — el IntegrationAgent traduce los items NEW-LEG registrados en la pestaña <em>Integración</em> en requerimientos técnicos (§3 Modelo / §4 API). Artefacto de acuerdo mutuo: el equipo NEW valida que modela bien la integración y el legacy corrobora el impacto. Puedes editarlo manualmente; al volver a sincronizar se regenera y se pierden los cambios manuales.
-                  </p>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    {handoffSpecContent?.trim() ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setHandoffSpecViewMode((m) => (m === "preview" ? "source" : "preview"))
-                        }
-                        aria-label={handoffSpecViewMode === "preview" ? "Editar markdown" : "Ver vista previa"}
-                      >
-                        {handoffSpecViewMode === "preview" ? (
-                          <>
-                            <Pencil className="h-3.5 w-3.5" aria-hidden />
-                            Editar
-                          </>
-                        ) : (
-                          <>
-                            <Eye className="h-3.5 w-3.5" aria-hidden />
-                            Vista previa
-                          </>
-                        )}
-                      </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="default"
-                      size="sm"
-                      onClick={() => void syncHandoffSpec(projectId, activeStageId ?? undefined)}
-                      disabled={loading}
-                      aria-label="Sincronizar Especificación de Handoff"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-                      Sincronizar Especificación de Handoff
-                    </Button>
-                  </div>
-                </div>
-                <StandardDocPanel
-                  icon={FileCode}
-                  title="Handoff Spec"
-                  description="Requerimientos técnicos NEW→LEGACY derivados de la Matriz de Trazabilidad. Pulsa «Sincronizar Especificación de Handoff» para (re)generarlo con el IntegrationAgent, o edítalo manualmente."
-                  content={handoffSpecContent}
-                  onContentChange={(v) => setHandoffSpecContent(v)}
-                  onSave={() => void persistHandoffSpecContent(handoffSpecContent ?? "")}
-                  isDirty={handoffSpecDirty}
-                  viewMode={handoffSpecViewMode}
-                  onGenerate={() => void syncHandoffSpec(projectId, activeStageId ?? undefined)}
-                  canGenerate={!loading}
-                  isLoading={loading}
-                  generateLabel="Sincronizar Especificación de Handoff"
-                  placeholder="# Handoff Spec\n\nRequerimientos técnicos NEW→LEGACY. Pulsa «Sincronizar» para generarlo o escríbelo manualmente..."
-                  onBlur={handleHandoffSpecBlur}
-                />
-              </div>
-            )}
             {centralPanel === "ui-screens" && (
               <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
                 <div className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-3 py-2.5">
@@ -5013,6 +4989,13 @@ export default function WorkshopView({
                 stageId={activeStageId}
                 variant="workspace"
                 className="min-h-0 flex-1 border-0 bg-transparent p-0 shadow-none"
+              />
+            )}
+            {isPluginPanel(centralPanel) && projectId && (
+              <PluginDocPanel
+                panel={centralPanel}
+                projectId={projectId}
+                artifactTypes={pluginArtifactTypes}
               />
             )}
           </div>

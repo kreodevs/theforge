@@ -40,27 +40,41 @@ import {
   TooltipTrigger,
 } from "./ui";
 import type { TheForgeUser } from "@/utils/apiClient";
+import type { ArtifactTypeDefinition } from "@theforge/shared-types";
 import { useTheme, type ThemePreference } from "@/theme/ThemeProvider";
 import { cn } from "@/lib/utils";
 import { getProjectMonogram } from "@/utils/projectMonogram";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "../store/workshopStore";
+import {
+  APP_PANEL_FOOTER_CHROME,
+  APP_PANEL_FOOTER_H,
+  APP_PANEL_FOOTER_PY,
+} from "@/constants/workshopDocToolbar";
 import { WORKSHOP_EXIT_BLOCKED_TITLE, WORKSHOP_DOC_NAV_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
-import { buildWorkshopDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
+import { buildWorkshopDocNavItems, buildPluginDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
 import { fetchUiMcpActive } from "@/lib/ui-mcp-api";
+import { fetchPluginArtifacts, getPluginData } from "@/utils/pluginApi";
 import { WorkshopAgentActivitySidebarSection } from "./WorkshopAgentActivitySidebarSection";
 
-/** Project row shown under the dashboard “Proyectos” menu group. */
+/** Project row shown under a dashboard group header. */
 export interface DashboardSidebarProjectItem {
   id: string;
   name: string;
   isFavorite?: boolean;
 }
 
+export interface DashboardSidebarProjectGroup {
+  id: string;
+  name: string;
+  isDefault?: boolean;
+  projects: DashboardSidebarProjectItem[];
+}
+
 export interface DashboardSidebarProps {
   projectSearchQuery: string;
   onProjectSearchChange: (value: string) => void;
-  /** Filtered project list for the dashboard sidebar submenu (respects search). */
-  dashboardProjects?: DashboardSidebarProjectItem[];
+  /** Filtered projects grouped for the dashboard sidebar (respects global search/filters). */
+  dashboardProjectGroups?: DashboardSidebarProjectGroup[];
   projectsLoading?: boolean;
   onOpenProject?: (project: DashboardSidebarProjectItem) => void;
   user: TheForgeUser | null;
@@ -245,7 +259,6 @@ function ThemeModeToggle({ compact }: { compact: boolean }) {
   return (
     <div
       className={cn(
-        "mb-2",
         compact
           ? "flex flex-col items-center gap-2"
           : "rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_6%,var(--sidebar))] p-0.5 shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--sidebar-foreground)_8%,transparent)]",
@@ -265,7 +278,7 @@ function ThemeModeToggle({ compact }: { compact: boolean }) {
 export function DashboardSidebar({
   projectSearchQuery,
   onProjectSearchChange,
-  dashboardProjects = [],
+  dashboardProjectGroups = [],
   projectsLoading = false,
   onOpenProject,
   user,
@@ -295,27 +308,34 @@ export function DashboardSidebar({
   /** Expanded/collapsed list under the dashboard “Proyectos” group. */
   const [projectsNavExpanded, setProjectsNavExpanded] = useState(true);
 
-  const sortedDashboardProjects = useMemo(() => {
-    const list = [...dashboardProjects];
-    list.sort((a, b) => {
-      const favA = a.isFavorite ? 1 : 0;
-      const favB = b.isFavorite ? 1 : 0;
-      if (favB !== favA) return favB - favA;
-      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  const sortedDashboardGroups = useMemo(() => {
+    return dashboardProjectGroups.map((group) => {
+      const list = [...group.projects];
+      list.sort((a, b) => {
+        const favA = a.isFavorite ? 1 : 0;
+        const favB = b.isFavorite ? 1 : 0;
+        if (favB !== favA) return favB - favA;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      });
+      return { ...group, projects: list };
     });
-    return list;
-  }, [dashboardProjects]);
+  }, [dashboardProjectGroups]);
+
+  const totalDashboardProjects = useMemo(
+    () => sortedDashboardGroups.reduce((n, g) => n + g.projects.length, 0),
+    [sortedDashboardGroups],
+  );
 
   const projectsRailTooltip = useMemo(() => {
     if (projectsLoading) return "Cargando proyectos…";
-    if (sortedDashboardProjects.length === 0) {
+    if (totalDashboardProjects === 0) {
       return projectSearchQuery.trim() ? "Sin coincidencias" : "Aún no hay proyectos";
     }
-    return `Proyectos (${sortedDashboardProjects.length})`;
-  }, [projectsLoading, sortedDashboardProjects.length, projectSearchQuery]);
+    return `Proyectos (${totalDashboardProjects})`;
+  }, [projectsLoading, totalDashboardProjects, projectSearchQuery]);
 
   const showProjectsRailList =
-    rail && !projectsLoading && sortedDashboardProjects.length > 0;
+    rail && !projectsLoading && totalDashboardProjects > 0;
 
   useEffect(() => {
     setWorkshopStepsExpanded(true);
@@ -366,6 +386,9 @@ export function DashboardSidebar({
   const activeStageId = useWorkshopStore((s) => s.activeStageId);
   const activeDocPanel = useWorkshopStore((s) => s.workshopActiveDocPanel);
   const setWorkshopActiveDocPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
+
+  const [pluginArtifactTypes, setPluginArtifactTypes] = useState<ArtifactTypeDefinition[]>([]);
+  const [pluginData, setPluginData] = useState<Record<string, unknown>>({});
   const mddContent = useWorkshopStore((s) => s.mddContent);
   const dbgaContent = useWorkshopStore((s) => s.dbgaContent);
   const phase0SummaryContent = useWorkshopStore((s) => s.phase0SummaryContent);
@@ -376,7 +399,6 @@ export function DashboardSidebar({
   const blueprintContent = useWorkshopStore((s) => s.blueprintContent);
   const uxUiGuideContent = useWorkshopStore((s) => s.uxUiGuideContent);
   const aemContent = useWorkshopStore((s) => s.aemContent);
-  const handoffSpecContent = useWorkshopStore((s) => s.handoffSpecContent);
   const uiScreensContent = useWorkshopStore((s) => s.uiScreensContent);
   const apiContractsContent = useWorkshopStore((s) => s.apiContractsContent);
   const logicFlowsContent = useWorkshopStore((s) => s.logicFlowsContent);
@@ -386,6 +408,23 @@ export function DashboardSidebar({
   const adrs = useWorkshopStore((s) => s.adrs);
   const workshopAgentsBusy = useWorkshopStore(selectWorkshopAgentsBusy);
   const documentationGapsRefreshNonce = useWorkshopStore((s) => s.documentationGapsRefreshNonce);
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      const types = await fetchPluginArtifacts();
+      setPluginArtifactTypes(types);
+      if (!storeProject?.id) return;
+      const data: Record<string, unknown> = {};
+      for (const t of types) {
+        if (t.showInSidebar) {
+          const d = await getPluginData(storeProject.id, t.id);
+          if (d !== null) data[t.id] = d;
+        }
+      }
+      setPluginData(data);
+    };
+    fetchAll();
+  }, [storeProject?.id]);
 
   const [uiMcpActive, setUiMcpActive] = useState(false);
   useEffect(() => {
@@ -442,7 +481,7 @@ export function DashboardSidebar({
 
   const workshopDeliverables = useMemo(() => {
     if (!workshopProject || !storeProject || storeProject.id !== workshopProject.id) return [];
-    return buildWorkshopDocNavItems({
+    const navCtx = {
       isLegacyProject: !!isLegacyProject,
       legacyStageOrdinal: activeWorkshopStageForNav?.ordinal ?? 1,
       effectiveComplexityForTabs,
@@ -458,7 +497,7 @@ export function DashboardSidebar({
       blueprintContent,
       uxUiGuideContent,
       aemContent,
-      handoffSpecContent,
+
       apiContractsContent,
       logicFlowsContent,
       tasksContent,
@@ -467,7 +506,12 @@ export function DashboardSidebar({
       infraContent,
       uiScreensContent,
       uiMcpActive,
-    });
+      pluginArtifactTypes,
+      pluginData,
+    };
+    const coreItems = buildWorkshopDocNavItems(navCtx);
+    const pluginItems = buildPluginDocNavItems(navCtx);
+    return [...coreItems, ...pluginItems];
   }, [
     workshopProject,
     storeProject,
@@ -485,7 +529,6 @@ export function DashboardSidebar({
     blueprintContent,
     uxUiGuideContent,
     aemContent,
-    handoffSpecContent,
     uiScreensContent,
     uiMcpActive,
     apiContractsContent,
@@ -494,6 +537,8 @@ export function DashboardSidebar({
     agentGovernanceContent,
     adrs,
     infraContent,
+    pluginArtifactTypes,
+    pluginData,
   ]);
 
   const inWorkshop = !!workshopProject && typeof onExitWorkshop === "function";
@@ -513,7 +558,7 @@ export function DashboardSidebar({
 
   useEffect(() => {
     if (!inWorkshop) setProjectsNavExpanded(true);
-  }, [inWorkshop, dashboardProjects.length]);
+  }, [inWorkshop, dashboardProjectGroups.length]);
 
   const handleOpenDashboardProject = useCallback(
     (project: DashboardSidebarProjectItem) => {
@@ -1006,7 +1051,7 @@ export function DashboardSidebar({
                     variant="secondary"
                     className="h-5 min-w-5 shrink-0 justify-center px-1.5 py-0 text-[10px] font-semibold tabular-nums"
                   >
-                    {sortedDashboardProjects.length}
+                    {totalDashboardProjects}
                   </Badge>
                   <ChevronDown
                     className={cn(
@@ -1034,82 +1079,93 @@ export function DashboardSidebar({
                   >
                     {!rail && projectsLoading ? (
                       <p className="px-1 py-2 text-xs text-[var(--muted-foreground)]">Cargando proyectos…</p>
-                    ) : !rail && sortedDashboardProjects.length === 0 ? (
+                    ) : !rail && totalDashboardProjects === 0 ? (
                       <p className="px-1 py-2 text-xs text-[var(--muted-foreground)]">
                         {projectSearchQuery.trim() ? "Sin coincidencias" : "Aún no hay proyectos"}
                       </p>
-                    ) : sortedDashboardProjects.length > 0 ? (
-                      <div className="relative w-full">
-                        {!rail ? (
-                          <span
-                            className="pointer-events-none absolute bottom-1 left-[0.8125rem] top-1 w-0 border-l border-dotted border-[color-mix(in_oklch,var(--sidebar-border)_92%,transparent)]"
-                            aria-hidden
-                          />
-                        ) : null}
-                        <ul
-                          className={cn(
-                            "relative m-0 list-none p-0",
-                            rail ? "flex flex-col items-center gap-1" : "space-y-0.5 py-0.5",
-                          )}
-                        >
-                          {sortedDashboardProjects.map((project) => {
-                            const isActiveProject = workshopProject?.id === project.id;
-                            return (
-                            <li
-                              key={project.id}
-                              className={cn("relative shrink-0", !rail && "pl-5 lg:pl-6")}
-                            >
-                              <CollapsedRailHint
-                                rail={rail}
-                                label={project.isFavorite ? `${project.name} · Favorito` : project.name}
+                    ) : totalDashboardProjects > 0 ? (
+                      <div className="relative w-full space-y-3">
+                        {sortedDashboardGroups.map((group) =>
+                          group.projects.length === 0 ? null : (
+                            <div key={group.id} className="space-y-0.5">
+                              {!rail ? (
+                                <p className="px-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                                  {group.name}
+                                </p>
+                              ) : null}
+                              <ul
+                                className={cn(
+                                  "relative m-0 list-none p-0",
+                                  rail ? "flex flex-col items-center gap-1" : "space-y-0.5 py-0.5",
+                                )}
                               >
-                                <button
-                                  type="button"
-                                  role="listitem"
-                                  title={project.name}
-                                  aria-current={isActiveProject ? "page" : undefined}
-                                  onClick={() => handleOpenDashboardProject(project)}
-                                  className={cn(
-                                    "flex min-w-0 items-center font-medium transition-colors",
-                                    rail
-                                      ? isActiveProject
-                                        ? railControlActiveClass(
-                                            "mx-auto text-[var(--primary)]",
-                                          )
-                                        : railControlClass(
-                                            "mx-auto text-[var(--sidebar-foreground)]",
-                                          )
-                                      : "mb-px w-full gap-2 rounded-md px-2 py-1.5 text-left text-sm text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--sidebar-foreground))] last:mb-0 hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_72%,transparent)] hover:text-[var(--sidebar-accent-foreground)]",
-                                  )}
-                                >
-                                  {rail ? (
-                                    <span
-                                      className="text-[11px] font-semibold uppercase leading-none tracking-wide"
-                                      aria-hidden
+                                {group.projects.map((project) => {
+                                  const isActiveProject = workshopProject?.id === project.id;
+                                  return (
+                                    <li
+                                      key={project.id}
+                                      className={cn("relative shrink-0", !rail && "pl-5 lg:pl-6")}
                                     >
-                                      {getProjectMonogram(project.name)}
-                                    </span>
-                                  ) : (
-                                    <>
-                                      <FolderOpen
-                                        className="h-4 w-4 shrink-0 text-[color-mix(in_oklch,var(--muted-foreground)_92%,var(--sidebar-foreground))]"
-                                        aria-hidden
-                                      />
-                                      <span className="min-w-0 flex-1 truncate leading-snug">{project.name}</span>
-                                      {project.isFavorite ? (
-                                        <Heart
-                                          className="h-3.5 w-3.5 shrink-0 fill-[var(--primary)] text-[var(--primary)]"
-                                          aria-hidden
-                                        />
-                                      ) : null}
-                                    </>
-                                  )}
-                                </button>
-                              </CollapsedRailHint>
-                            </li>
-                            );
-                          })}
-                        </ul>
+                                      <CollapsedRailHint
+                                        rail={rail}
+                                        label={
+                                          project.isFavorite
+                                            ? `${project.name} · Favorito · ${group.name}`
+                                            : `${project.name} · ${group.name}`
+                                        }
+                                      >
+                                        <button
+                                          type="button"
+                                          role="listitem"
+                                          title={project.name}
+                                          aria-current={isActiveProject ? "page" : undefined}
+                                          onClick={() => handleOpenDashboardProject(project)}
+                                          className={cn(
+                                            "flex min-w-0 items-center font-medium transition-colors",
+                                            rail
+                                              ? isActiveProject
+                                                ? railControlActiveClass(
+                                                    "mx-auto text-[var(--primary)]",
+                                                  )
+                                                : railControlClass(
+                                                    "mx-auto text-[var(--sidebar-foreground)]",
+                                                  )
+                                              : "mb-px w-full gap-2 rounded-md px-2 py-1.5 text-left text-sm text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--sidebar-foreground))] last:mb-0 hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_72%,transparent)] hover:text-[var(--sidebar-accent-foreground)]",
+                                          )}
+                                        >
+                                          {rail ? (
+                                            <span
+                                              className="text-[11px] font-semibold uppercase leading-none tracking-wide"
+                                              aria-hidden
+                                            >
+                                              {getProjectMonogram(project.name)}
+                                            </span>
+                                          ) : (
+                                            <>
+                                              <FolderOpen
+                                                className="h-4 w-4 shrink-0 text-[color-mix(in_oklch,var(--muted-foreground)_92%,var(--sidebar-foreground))]"
+                                                aria-hidden
+                                              />
+                                              <span className="min-w-0 flex-1 truncate leading-snug">
+                                                {project.name}
+                                              </span>
+                                              {project.isFavorite ? (
+                                                <Heart
+                                                  className="h-3.5 w-3.5 shrink-0 fill-[var(--primary)] text-[var(--primary)]"
+                                                  aria-hidden
+                                                />
+                                              ) : null}
+                                            </>
+                                          )}
+                                        </button>
+                                      </CollapsedRailHint>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          ),
+                        )}
                       </div>
                     ) : null}
                   </div>
@@ -1122,7 +1178,11 @@ export function DashboardSidebar({
 
       <div
         className={cn(
-          "mt-auto w-full min-w-0 shrink-0 border-t border-[color-mix(in_oklch,var(--sidebar-border)_75%,var(--sidebar))] p-2",
+          "mt-auto w-full min-w-0",
+          APP_PANEL_FOOTER_CHROME,
+          !rail && APP_PANEL_FOOTER_H,
+          APP_PANEL_FOOTER_PY,
+          "border-[color-mix(in_oklch,var(--sidebar-border)_75%,var(--sidebar))] px-2",
           rail && "lg:relative lg:z-[1] lg:px-1.5",
         )}
       >

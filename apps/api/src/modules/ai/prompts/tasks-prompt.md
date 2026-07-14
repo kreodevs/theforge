@@ -123,6 +123,76 @@ Si el **mensaje de usuario** trae **Contexto del codebase (TheForge)**, cada tar
 
 Si no se puede determinar la línea exacta, al menos indicar el archivo, la función y **MDD:**. Nunca inventes coordenadas — si no las sabes, omítelas.
 
+# Formato YAML front-matter v2 (obligatorio para Agentes IA) #
+
+Cada tarea DEBE tener un **bloque YAML front-matter** al inicio (entre `---`), justo antes del checklist. Esto permite que agentes de código (Cursor/Claude) ejecuten la tarea automáticamente.
+
+**Ejemplo completo de una tarea v2:**
+
+```markdown
+---
+id: T-001
+section: Backend
+title: Crear endpoint POST /api/auth/login
+target_files:
+  - apps/api/src/modules/auth/auth.controller.ts
+  - apps/api/src/modules/auth/auth.service.ts
+change_type: create
+dependencies: []
+parallel: true
+estimated_minutes: 60
+mdd_ref: §4 POST /api/auth/login
+story_ref: US-001
+language: TypeScript
+inference_rules:
+  - crud-auto
+verification:
+  command: curl -X POST http://localhost:3000/api/auth/login -d '{"email":"a","password":"b"}'
+  expectedOutput: "token"
+  checklist:
+    - Devuelve JWT válido
+    - Valida email/password
+    - Usa bcrypt
+---
+
+- [ ] [P] Crear endpoint POST /api/auth/login
+  - Crear `auth.controller.ts` con método `login()`
+  - Crear `auth.service.ts` con `validateUser()` + `generateToken()`
+```
+
+**Campos del YAML front-matter (obligatorios):**
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id` | string | Identificador único (T-001, T-002…). |
+| `section` | string | `Backend`, `Frontend`, `Infra`, `QA`, `Integración`. |
+| `title` | string | Título accionable (máx. 80 chars). |
+| `target_files` | string[] | Archivos a modificar/crear (rutas relativas). |
+| `change_type` | enum | `create`, `modify`, `delete`, `append`, `insert`, `replace`, `run`, `configure`, `generate`, `install`, `rename`, `merge`. |
+| `dependencies` | string[] | IDs de tareas que DEBEN terminarse antes (ej. `[T-001, T-002]`). |
+| `inference_rules` | string[] | Reglas de inferencia automática (ej. `["crud-auto"]` para que el agente derive operaciones CRUD restantes). |
+| `verification` | object | `command`, `expectedOutput`, `checklist[]` — cómo verificar que la tarea está completa. |
+
+**Campos opcionales:** `parallel` (bool, default false), `estimated_minutes` (int), `story_ref` (string), `mdd_ref` (string), `language` (string).
+
+**Reglas del formato:**
+1. El bloque YAML va **antes** de cada tarea (entre `---`), NUNCA al final ni en medio del contenido Markdown.
+2. `target_files` debe incluirse SIEMPRE que haya archivo relevante. Si es una tarea conceptual, usa `target_files: []`.
+3. `change_type`:
+   - `create` → archivo/entidad nuevo.
+   - `modify` → cambio en archivo existente.
+   - `append` → añadir al final.
+   - `insert` → insertar en posición específica.
+   - `replace` → reemplazar contenido existente.
+   - `delete` → eliminar archivo/función.
+   - `run` → ejecutar comando (build, test, migrate).
+   - `configure` → modificar config/env.
+4. `inference_rules` indica al agente qué puede auto-derivar. Ejemplos: `["crud-auto"]` (genera POST/GET/PUT/DEL automáticamente desde uno solo), `["soft-delete"]` (agrega `deletedAt` a tablas), `["dto-from-model"]` (genera DTOs desde schema).
+5. Después del YAML, el Markdown normal sigue igual: `- [ ] [P] Título` con descripción, archivos, estado, etc.
+6. **Todos los ejemplos anteriores de coordenadas y formato de tareas siguen siendo válidos** — ahora se envuelven con el front-matter YAML al inicio.
+
+**El prompt DEBE generar TODAS las tareas con YAML front-matter — esto es crucial para la compatibilidad con agentes de ejecución automática.**
+
 # UI accionable (Tasks) #
 
 - Desglosa **Frontend tasks por pantalla** (`pantallas.md`), no por tabla de BD ni tareas genéricas «Implementar frontend».

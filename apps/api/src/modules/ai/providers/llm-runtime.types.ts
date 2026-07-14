@@ -13,5 +13,6 @@ export interface UserLLMRuntime {
   embeddingsEnabled: boolean;
   sttModel: string | null;
   visionModel: string;
+  imageModel: string | null;
   extras?: Record<string, unknown>;
 }

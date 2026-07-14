@@ -56,6 +56,7 @@ export interface UpsertProviderConfigDto {
   embeddingDimension?: number | null;
   sttModel?: string | null;
   visionModel?: string | null;
+  imageModel?: string | null;
   baseUrl?: string | null;
   extras?: Record<string, unknown> | null;
 }
@@ -67,6 +68,9 @@ export interface UpdateAISettingsDto {
   mddAuditorTenantInstanceId?: string | null;
   embeddingProvider?: string | null;
   embeddingsEnabled?: boolean;
+  imageModel?: string | null;
+  imageQuality?: string;
+  imageStyle?: string;
 }
 
 @Injectable()
@@ -274,6 +278,9 @@ export class UserProvidersService {
         mddAuditorTenantInstanceId: dto.mddAuditorTenantInstanceId ?? undefined,
         embeddingProvider: dto.embeddingProvider ?? undefined,
         embeddingsEnabled: dto.embeddingsEnabled ?? true,
+        imageModel: dto.imageModel ?? undefined,
+        imageQuality: dto.imageQuality ?? "standard",
+        imageStyle: dto.imageStyle ?? "abstract",
       },
       update: {
         ...(dto.activeProvider !== undefined ? { activeProvider: dto.activeProvider } : {}),
@@ -287,6 +294,9 @@ export class UserProvidersService {
           ? { embeddingProvider: dto.embeddingProvider }
           : {}),
         ...(dto.embeddingsEnabled !== undefined ? { embeddingsEnabled: dto.embeddingsEnabled } : {}),
+        ...(dto.imageModel !== undefined ? { imageModel: dto.imageModel } : {}),
+        ...(dto.imageQuality !== undefined ? { imageQuality: dto.imageQuality } : {}),
+        ...(dto.imageStyle !== undefined ? { imageStyle: dto.imageStyle } : {}),
       },
     });
     return {
@@ -295,6 +305,9 @@ export class UserProvidersService {
       mddAuditorTenantInstanceId: row.mddAuditorTenantInstanceId,
       embeddingProvider: row.embeddingProvider,
       embeddingsEnabled: row.embeddingsEnabled,
+      imageModel: row.imageModel,
+      imageQuality: row.imageQuality,
+      imageStyle: row.imageStyle,
     };
   }
 
@@ -311,6 +324,7 @@ export class UserProvidersService {
       embeddingDimension: r.embeddingDimension,
       sttModel: r.sttModel,
       visionModel: r.visionModel,
+      imageModel: r.imageModel,
       baseUrl: r.baseUrl,
       extras: r.extras,
       configured: true,
@@ -370,6 +384,7 @@ export class UserProvidersService {
       embeddingDimension: row.embeddingDimension,
       sttModel: row.sttModel,
       visionModel: row.visionModel,
+      imageModel: row.imageModel,
       baseUrl: row.baseUrl,
       extras: row.extras,
       configured: true,
@@ -604,6 +619,54 @@ export class UserProvidersService {
       );
     }
     return { ...runtime, visionModel };
+  }
+
+  /**
+   * Resuelve el modelo de imagen para generación visual (plugins comerciales, p. ej. EVD).
+   * Cadena: pluginUserSettings.imageModel → legacy UserAISettings/Instance/Config.imageModel → null.
+   * @deprecated Preferir lectura directa desde PluginUserSettingsService en el plugin.
+   */
+  async resolveImageRuntime(userId: string): Promise<(UserLLMRuntime & { imageModel: string }) | null> {
+    const settings = await this.prisma.userAISettings.findUnique({ where: { userId } });
+    const pluginMap = settings?.pluginUserSettings as Record<string, Record<string, unknown>> | null;
+    if (pluginMap) {
+      for (const pluginSettings of Object.values(pluginMap)) {
+        const model =
+          typeof pluginSettings?.imageModel === "string"
+            ? pluginSettings.imageModel.trim()
+            : "";
+        if (model) {
+          const runtime = await this.resolveRuntime(userId);
+          return { ...runtime, imageModel: model };
+        }
+      }
+    }
+
+    const imageModelSetting = settings?.imageModel?.trim() || null;
+
+    // Try tenant instance first
+    const instance = await this.resolveEffectiveTenantInstanceForUser(userId);
+    if (instance) {
+      const instanceImageModel = (instance as { imageModel?: string | null }).imageModel?.trim() || null;
+      const model = imageModelSetting || instanceImageModel;
+      if (model) {
+        const runtime = await this.resolveRuntime(userId);
+        return { ...runtime, imageModel: model };
+      }
+    }
+
+    // Try BYOK config
+    if (settings?.activeProvider) {
+      const cfg = await this.prisma.userProviderConfig.findUnique({
+        where: { userId_provider: { userId, provider: settings.activeProvider } },
+      });
+      if (cfg?.imageModel) {
+        const runtime = await this.resolveRuntime(userId);
+        return { ...runtime, imageModel: cfg.imageModel.trim() };
+      }
+    }
+
+    return null;
   }
 
   /** STT y visión resueltos desde instancia tenant o BYOK (para UI del chat). */
@@ -847,6 +910,7 @@ export class UserProvidersService {
         catalogDefaultVisionModel: catalog.defaultVisionModel,
         supportsVision: catalog.supportsVision,
       }),
+      imageModel: instance.imageModel ?? null,
       extras,
     };
   }
@@ -908,6 +972,7 @@ export class UserProvidersService {
         catalogDefaultVisionModel: catalog.defaultVisionModel,
         supportsVision: catalog.supportsVision,
       }),
+      imageModel: cfg.imageModel ?? null,
       extras,
     };
   }

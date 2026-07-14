@@ -3,7 +3,8 @@
  * Keeps visibility rules in sync with `WorkshopView` / `isTabVisibleForComplexity`.
  */
 import type { LucideIcon } from "lucide-react";
-import { Brain,
+import {
+  Brain,
   Bot,
   ClipboardList,
   Edit3,
@@ -18,10 +19,12 @@ import { Brain,
   MonitorSmartphone,
   Package,
   Palette,
+  Presentation,
   ScrollText,
   Server,
   Target,
 } from "lucide-react";
+import type { ArtifactTypeDefinition } from "@theforge/shared-types";
 import { agentGovernanceScaffoldHasContent } from "@theforge/shared-types";
 import { isTabVisibleForComplexity, type ProjectTypeForTabs, type WorkshopDocTab } from "./complexityTabs";
 
@@ -34,6 +37,67 @@ export type WorkshopMandatoryNewProjectStepId =
 /** Central panels for agent activity (sidebar nav + workshop workspace). */
 export const WORKSHOP_AGENT_PENDING_CHANGES_PANEL = "agent-pending-changes" as const;
 export const WORKSHOP_AGENT_SESSION_LOG_PANEL = "agent-session-log" as const;
+
+/** Prefijo para IDs de paneles generados por plugins. */
+const PLUGIN_PANEL_PREFIX = "plugin:";
+
+/** Mapa de nombres de icono Lucide a componentes. */
+const LUCIDE_ICON_MAP: Record<string, LucideIcon> = {
+  Presentation,
+  FileCode,
+  FileText,
+  FileWarning,
+  GitBranch,
+  LayoutTemplate,
+  Bot,
+  Palette,
+  Server,
+  Target,
+  ListOrdered,
+  ListTodo,
+  Package,
+  ClipboardList,
+  Edit3,
+  MonitorSmartphone,
+  Brain,
+  Link2,
+  ScrollText,
+};
+
+export function isPluginPanel(panelId: string): boolean {
+  return panelId.startsWith(PLUGIN_PANEL_PREFIX);
+}
+
+export function pluginPanelId(pluginId: string, artifactId: string): string {
+  return `${PLUGIN_PANEL_PREFIX}${pluginId}/${artifactId}`;
+}
+
+export function parsePluginPanelId(panelId: string): { pluginId: string; artifactId: string } | null {
+  if (!panelId.startsWith(PLUGIN_PANEL_PREFIX)) return null;
+  const rest = panelId.slice(PLUGIN_PANEL_PREFIX.length);
+  const slash = rest.indexOf("/");
+  if (slash === -1) return null;
+  return { pluginId: rest.slice(0, slash), artifactId: rest.slice(slash + 1) };
+}
+
+/** Construye nav items dinámicos desde los artifact types registrados por plugins. */
+export function buildPluginDocNavItems(ctx: WorkshopDocNavBuildContext): WorkshopDocNavItem[] {
+  if (!ctx.pluginArtifactTypes?.length) return [];
+  const items: WorkshopDocNavItem[] = [];
+  for (const artifact of ctx.pluginArtifactTypes) {
+    if (!artifact.showInSidebar) continue;
+    const Icon = LUCIDE_ICON_MAP[artifact.icon ?? ""] ?? FileText;
+    const content = ctx.pluginData?.[artifact.id] ?? null;
+    items.push({
+      id: pluginPanelId(artifact.id, artifact.id),
+      label: artifact.label,
+      title: artifact.label,
+      Icon,
+      content,
+    });
+  }
+  return items;
+}
 
 export type WorkshopAgentActivityPanelId =
   | typeof WORKSHOP_AGENT_PENDING_CHANGES_PANEL
@@ -99,7 +163,6 @@ export interface WorkshopDocNavBuildContext {
   blueprintContent: string | null | undefined;
   uxUiGuideContent: string | null | undefined;
   aemContent: string | null | undefined;
-  handoffSpecContent: string | null | undefined;
   apiContractsContent: string | null | undefined;
   logicFlowsContent: string | null | undefined;
   tasksContent: string | null | undefined;
@@ -110,6 +173,10 @@ export interface WorkshopDocNavBuildContext {
   uiScreensContent: string | null | undefined;
   /** Hay un MCP gráfico compatible activo (gate de visibilidad de la pestaña "Pantallas"). */
   uiMcpActive: boolean;
+  /** Tipos de artifact registrados por plugins (para paneles dinámicos). */
+  pluginArtifactTypes?: ArtifactTypeDefinition[];
+  /** Data de plugins por proyecto: { [pluginId]: data }. */
+  pluginData?: Record<string, unknown>;
 }
 
 export function workshopTabDocHasContent(tabId: string, content: unknown): boolean {
@@ -246,15 +313,6 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       title: "Pantallas / UI Screens Spec — componentes reales del MCP gráfico conectado",
       Icon: MonitorSmartphone,
       content: ctx.uiScreensContent,
-    });
-  }
-  if (visible("handoff-spec")) {
-    items.push({
-      id: "handoff-spec",
-      label: "Handoff Spec",
-      title: "Handoff Spec (handoff-spec.md)",
-      Icon: FileCode,
-      content: ctx.handoffSpecContent,
     });
   }
   if (visible("api-contracts")) {
@@ -462,6 +520,11 @@ export function getWorkshopDocPanelHeader(
       subtitle: "Conecta proyectos para compartir contexto AS-IS y gestionar módulos enlazados",
       Icon: Link2,
     },
+    evd: {
+      title: "Executive Visual Deck",
+      subtitle: "Presentación ejecutiva con diagrams, charts y wireframes generados por IA",
+      Icon: Presentation,
+    },
     [WORKSHOP_AGENT_PENDING_CHANGES_PANEL]: {
       title: "Cambios pendientes",
       subtitle: "Aprobación humana de cambios de documentación reportados por agentes",
@@ -480,4 +543,21 @@ export function getWorkshopDocPanelHeader(
       Icon: FileText,
     }
   );
+}
+
+/**
+ * Header metadata for a plugin artifact panel.
+ * Uses the artifact id (without prefix) to look up the plugin definition.
+ */
+export function getPluginDocPanelHeader(
+  panel: string,
+  artifactTypes?: ArtifactTypeDefinition[],
+): WorkshopDocPanelHeaderMeta {
+  if (!artifactTypes?.length) return { title: panel, Icon: FileText };
+  const parsed = parsePluginPanelId(panel);
+  if (!parsed) return { title: panel, Icon: FileText };
+  const artifact = artifactTypes.find((a) => a.id === parsed.artifactId);
+  if (!artifact) return { title: parsed.artifactId, Icon: FileText };
+  const Icon = LUCIDE_ICON_MAP[artifact.icon ?? ""] ?? FileText;
+  return { title: artifact.label, Icon };
 }

@@ -294,9 +294,9 @@ export function ProviderInstanceModal({
           ? configForm.embeddingModel.trim() || null
           : null,
         sttModel: activeCatalog.supportsStt ? configForm.sttModel.trim() || null : null,
-        visionModel: activeCatalog.supportsVision
-          ? configForm.visionModel.trim() || null
-          : null,
+visionModel: activeCatalog.supportsVision
+           ? configForm.visionModel.trim() || null
+           : null,
         baseUrl: activeCatalog.baseUrlEditable ? configForm.baseUrl.trim() || null : null,
         extras: Object.keys(extras).length > 0 ? extras : null,
         enabledForUsers: isSuperAdmin ? enabledForUsers : false,

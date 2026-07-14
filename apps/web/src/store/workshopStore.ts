@@ -532,7 +532,7 @@ export interface Project {
   userStoriesContent: string | null;
   infraContent: string | null;
   aemContent: string | null;
-  handoffSpecContent: string | null;
+
   uiScreensContent: string | null;
   agentGovernanceContent: string | null;
   convergeWebhookUrl?: string | null;
@@ -694,10 +694,9 @@ interface WorkshopState {
   userStoriesContent: string | null;
   infraContent: string | null;
   aemContent: string | null;
-  handoffSpecContent: string | null;
+
   uiScreensContent: string | null;
   agentGovernanceContent: string | null;
-  /** Conformance (SDD Fase 2): Blueprint/API/Flujos/Infra vs MDD; `blueprintDataModel` = §3 vs Blueprint (gating API). */
   conformance: {
     blueprint: ConformanceResult;
     blueprintDataModel: ConformanceResult;
@@ -888,10 +887,6 @@ interface WorkshopState {
   persistSpecContent: (content: string) => Promise<void>;
   setAemContent: (content: string | null) => void;
   persistAemContent: (content: string) => Promise<void>;
-  setHandoffSpecContent: (content: string | null) => void;
-  persistHandoffSpecContent: (content: string) => Promise<void>;
-  /** IntegrationAgent: regenerate handoff-spec.md from the registered NEW-LEG items. */
-  syncHandoffSpec: (projectId: string, stageId?: string | null) => Promise<string | null>;
   setUiScreensContent: (content: string | null) => void;
   /** Genera el deliverable "Pantallas" desde el MCP gráfico compatible activo. */
   syncUiScreens: (projectId: string) => Promise<string | null>;
@@ -1019,7 +1014,7 @@ const initialState = {
   userStoriesContent: null as string | null,
   infraContent: null as string | null,
   aemContent: null as string | null,
-  handoffSpecContent: null as string | null,
+
   uiScreensContent: null as string | null,
   agentGovernanceContent: null as string | null,
   conformance: null as {
@@ -1128,7 +1123,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       userStoriesContent: p.userStoriesContent ?? null,
       infraContent: p.infraContent ?? null,
       aemContent: p.aemContent ?? null,
-      handoffSpecContent: p.handoffSpecContent ?? null,
+
       uiScreensContent: p.uiScreensContent ?? null,
       lastLegacyDeliverablesDebug: legacyDebugFromStages(stages, activeStageId),
     });
@@ -1481,7 +1476,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         userStoriesContent: cleanDoc(data.userStoriesContent ?? null),
         infraContent: cleanDoc(data.infraContent ?? null),
         aemContent: cleanDoc(data.aemContent ?? null),
-        handoffSpecContent: cleanDoc(data.handoffSpecContent ?? null),
+
         uiScreensContent: cleanDoc(data.uiScreensContent ?? null),
         agentGovernanceContent: data.agentGovernanceContent ?? null,
         error: null,
@@ -1579,7 +1574,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         userStoriesContent: cleanDoc(p.userStoriesContent ?? null),
         infraContent: cleanDoc(p.infraContent ?? null),
         aemContent: cleanDoc(p.aemContent ?? null),
-        handoffSpecContent: cleanDoc(p.handoffSpecContent ?? null),
+
         uiScreensContent: cleanDoc(p.uiScreensContent ?? null),
         synced: true,
         error: null,
@@ -1803,20 +1798,6 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         set({ mddContent: formatted });
         await get().persistMddContent(formatted, { force: true, mddFormatOnly: true });
         return { ok: true, message: "MDD formateado (headings, fences, tablas y Mermaid). Revisa el panel." };
-      }
-      case "handoff-spec": {
-        const source = (get().handoffSpecContent ?? project?.handoffSpecContent ?? "").trim();
-        if (!source) return { ok: false, message: "No hay Handoff Spec para formatear." };
-        const formatted = fmt(source);
-        if (formatted === source) {
-          return { ok: true, message: "Handoff Spec: ya estaba bien formateado (sin cambios)." };
-        }
-        await get().persistHandoffSpecContent(formatted);
-        return {
-          ok: true,
-          message:
-            "Handoff Spec formateado (fences, tablas y Mermaid; repara diagramas con subgraph). Revisa el panel.",
-        };
       }
       case "spec": {
         const raw = (get().specContent ?? project?.specContent ?? "").trim();
@@ -3000,10 +2981,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ loading: false, loadingReason: null });
     }
   },
-  setHandoffSpecContent: (content) => set({ handoffSpecContent: content }),
-  persistHandoffSpecContent: async (content) => {
-    await persistField("handoffSpecContent", content, get, set);
-  },
+
   setUiScreensContent: (content) => set({ uiScreensContent: content }),
   syncUiScreens: async (projectId) => {
     if (!projectId?.trim()) return null;
@@ -3026,33 +3004,6 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return content;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al sincronizar Pantallas" });
-      return null;
-    } finally {
-      set({ loading: false });
-    }
-  },
-  syncHandoffSpec: async (projectId, stageId) => {
-    if (!projectId?.trim()) return null;
-    set({ loading: true, error: null });
-    try {
-      const url = stageId?.trim()
-        ? `${API_BASE}/projects/${projectId}/integration/stages/${stageId}/sync-handoff-spec`
-        : `${API_BASE}/projects/${projectId}/integration/sync-handoff-spec`;
-      const r = await apiFetch(url, { method: "POST" });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.message ?? "Error al sincronizar la especificación de handoff");
-      }
-      const data = (await r.json()) as { handoffSpecContent?: string | null };
-      const content = data.handoffSpecContent ?? null;
-      const current = get().project;
-      set({
-        handoffSpecContent: content,
-        project: current ? { ...current, handoffSpecContent: content } : current,
-      });
-      return content;
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : "Error al sincronizar handoff spec" });
       return null;
     } finally {
       set({ loading: false });
@@ -3794,7 +3745,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         "use-cases": "useCasesContent",
         "user-stories": "userStoriesContent",
         aem: "aemContent",
-        "handoff-spec": "handoffSpecContent",
+
         "agent-governance": "agentGovernanceContent",
       };
 

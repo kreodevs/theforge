@@ -150,6 +150,30 @@ if [ -n "$PRISMA_RESOLVE_ROLLED_BACK" ]; then
   npx prisma migrate resolve --rolled-back "$PRISMA_RESOLVE_ROLLED_BACK" || true
 fi
 
+# P3009: imageModel columns — limpiar antes de migrate deploy
+if npx prisma migrate resolve --rolled-back 20260714120000_add_image_model_columns 2>/dev/null; then
+  echo "migrate resolve: cleared failed record for 20260714120000_add_image_model_columns"
+fi
+
+# P3009: tasksJson — limpiar antes de migrate deploy
+if npx prisma migrate resolve --rolled-back 20260714130000_add_tasks_json 2>/dev/null; then
+  echo "migrate resolve: cleared failed record for 20260714130000_add_tasks_json"
+fi
+
+# P3009: sync schema drift — limpiar antes de migrate deploy
+if npx prisma migrate resolve --rolled-back 20260714140000_sync_schema_drift 2>/dev/null; then
+  echo "migrate resolve: cleared failed record for 20260714140000_sync_schema_drift"
+fi
+
+# P3009: evdContent — limpiar antes de migrate deploy (la columna ya existe o se crea por db push)
+if npx prisma migrate resolve --rolled-back 20260712_add_evd_content_column 2>/dev/null; then
+  echo "migrate resolve: cleared failed record for 20260712_add_evd_content_column"
+fi
+
+# Si db push / safe-schema-sync adelantó las columnas, marcar como aplicadas
+resolve_applied_if_table_column "20260714120000_add_image_model_columns" "ProviderInstance" "imageModel"
+resolve_applied_if_project_column "20260714130000_add_tasks_json" "tasksJson"
+
 # Si db push adelantó el DDL, marcar migración como aplicada sin re-ejecutar ADD COLUMN
 resolve_applied_if_project_column "20260609120000_add_agent_governance_content" "agentGovernanceContent"
 resolve_applied_if_project_column "20260612120000_project_merge_suite" "archivedAt"
@@ -183,10 +207,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS "User_mcpSecret_key" ON "User"("mcpSecret");
 SQL
 
 cd /app/apps/api
-MAIN_JS="$(find . -name main.js -type f 2>/dev/null | head -1)"
-if [ -z "$MAIN_JS" ]; then
-  echo "ERROR: main.js not found in dist. Check Nest build output."
-  exit 1
+MAIN_JS="./dist/main.js"
+if [ ! -f "$MAIN_JS" ]; then
+  echo "WARNING: $MAIN_JS not found. Attempting to build on container start..."
+  echo "Contents of dist/:"
+  ls -la dist/ 2>/dev/null || echo "(dist/ does not exist)"
+  echo "Running pnpm build..."
+  pnpm run build || {
+    echo "ERROR: Build failed"
+    exit 1
+  }
+  if [ ! -f "$MAIN_JS" ]; then
+    echo "ERROR: Build completed but $MAIN_JS still not found"
+    exit 1
+  fi
 fi
 echo "Starting API ($MAIN_JS)..."
 exec node "$MAIN_JS"

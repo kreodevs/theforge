@@ -59,6 +59,18 @@ export interface ProviderExtraFieldSpec {
   helpText?: string;
 }
 
+export interface ImageModelInfo {
+  id: string;
+  label: string;
+  /** Precio aproximado por prompt/token de entrada. */
+  priceIn?: string;
+  /** Precio aproximado por imagen generada (salida). */
+  priceOut?: string;
+  description?: string;
+  /** Proveedor original del modelo (ej. OpenAI, Google). */
+  originProvider?: string;
+}
+
 export interface ProviderCatalogEntry {
   id: ProviderId;
   label: string;
@@ -74,6 +86,12 @@ export interface ProviderCatalogEntry {
   defaultSttModel: string | null;
   /** Modelo para chat con imágenes (visión). */
   defaultVisionModel: string | null;
+  /** Modelos para generación de imágenes (EVD). */
+  imageModels?: string[];
+  /** Metadatos enriquecidos de cada modelo de imagen (clave = id del modelo). */
+  imageModelDetails?: Record<string, ImageModelInfo>;
+  /** Modelo por defecto de generación de imágenes. */
+  defaultImageModel: string | null;
   defaultBaseUrl: string;
   /** Si el usuario puede editar baseUrl (p. ej. Cloudflare con account_id en la ruta). */
   baseUrlEditable?: boolean;
@@ -82,6 +100,7 @@ export interface ProviderCatalogEntry {
   supportsEmbeddings: boolean;
   supportsVision: boolean;
   supportsStt: boolean;
+  supportsImageGeneration: boolean;
 }
 
 export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
@@ -93,10 +112,79 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 1536,
     defaultSttModel: "openai/whisper-1",
     defaultVisionModel: "openai/gpt-4o",
+    imageModels: [
+      "openai/gpt-5-image",
+      "openai/gpt-5-image-mini",
+      "google/gemini-3-pro-image",
+      "google/gemini-3.1-flash-image",
+      "google/gemini-3.1-flash-lite-image",
+      "google/gemini-2.5-flash-image",
+      "openai/gpt-5.4-image-2",
+    ],
+    imageModelDetails: {
+      "openai/gpt-5-image": {
+        id: "openai/gpt-5-image",
+        label: "GPT-5 Image",
+        priceIn: "$0.00002",
+        priceOut: "$0.00002",
+        description: "OpenAI GPT-5 con generación de imágenes nativa (GPT Image 1). Alta calidad, multimodal.",
+        originProvider: "OpenAI",
+      },
+      "openai/gpt-5-image-mini": {
+        id: "openai/gpt-5-image-mini",
+        label: "GPT-5 Image Mini",
+        priceIn: "$0.00002",
+        priceOut: "$0.00002",
+        description: "Versión Mini de GPT-5 Image. Más rápido y económico, ideal para iteraciones.",
+        originProvider: "OpenAI",
+      },
+      "google/gemini-3-pro-image": {
+        id: "google/gemini-3-pro-image",
+        label: "Gemini 3 Pro Image",
+        priceIn: "$0.000002",
+        priceOut: "$0.000004",
+        description: "Google Gemini 3 Pro con generación avanzada de imágenes. La mejor calidad de Google.",
+        originProvider: "Google",
+      },
+      "google/gemini-3.1-flash-image": {
+        id: "google/gemini-3.1-flash-image",
+        label: "Gemini 3.1 Flash Image",
+        priceIn: "$0.000002",
+        priceOut: "$0.000004",
+        description: "Google Gemini 3.1 Flash Image ('Nano Banana 2'). Calidad Pro a velocidad Flash.",
+        originProvider: "Google",
+      },
+      "google/gemini-3.1-flash-lite-image": {
+        id: "google/gemini-3.1-flash-lite-image",
+        label: "Gemini 3.1 Flash Lite Image",
+        priceIn: "$0.000001",
+        priceOut: "$0.000002",
+        description: "Google Gemini 3.1 Flash Lite. El más rápido y económico para exploración visual.",
+        originProvider: "Google",
+      },
+      "google/gemini-2.5-flash-image": {
+        id: "google/gemini-2.5-flash-image",
+        label: "Gemini 2.5 Flash Image",
+        priceIn: "$0.0000003",
+        priceOut: "$0.0000006",
+        description: "Google Gemini 2.5 Flash Image ('Nano Banana'). Modelo de imagen anterior, muy barato.",
+        originProvider: "Google",
+      },
+      "openai/gpt-5.4-image-2": {
+        id: "openai/gpt-5.4-image-2",
+        label: "GPT-5.4 Image 2",
+        priceIn: "$0.00002",
+        priceOut: "$0.00002",
+        description: "OpenAI GPT-5.4 con GPT Image 2. Mejoras en reasoning, código y generación de imágenes.",
+        originProvider: "OpenAI",
+      },
+    },
+    defaultImageModel: "openai/gpt-5-image",
     defaultBaseUrl: "https://openrouter.ai/api/v1",
     supportsEmbeddings: true,
     supportsVision: true,
     supportsStt: true,
+    supportsImageGeneration: true,
   },
   openai: {
     id: "openai",
@@ -106,10 +194,31 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 1536,
     defaultSttModel: "whisper-1",
     defaultVisionModel: "gpt-4o",
+    imageModels: ["dall-e-3", "gpt-image-1"],
+    imageModelDetails: {
+      "dall-e-3": {
+        id: "dall-e-3",
+        label: "DALL-E 3",
+        priceIn: "$0.02",
+        priceOut: "$0.04–0.08",
+        description: "Modelo premium de OpenAI para imágenes de alta calidad. Precios dependen de resolución.",
+        originProvider: "OpenAI",
+      },
+      "gpt-image-1": {
+        id: "gpt-image-1",
+        label: "GPT Image 1",
+        priceIn: "$0.02",
+        priceOut: "$0.07",
+        description: "Nuevo modelo nativo de OpenAI. Mejor comprensión de prompts complejos.",
+        originProvider: "OpenAI",
+      },
+    },
+    defaultImageModel: "dall-e-3",
     defaultBaseUrl: "https://api.openai.com/v1",
     supportsEmbeddings: true,
     supportsVision: true,
     supportsStt: true,
+    supportsImageGeneration: true,
   },
   anthropic: {
     id: "anthropic",
@@ -119,10 +228,12 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: null,
     defaultSttModel: null,
     defaultVisionModel: "claude-3-5-sonnet-20240620",
+    defaultImageModel: null,
     defaultBaseUrl: "https://api.anthropic.com",
     supportsEmbeddings: false,
     supportsVision: true,
     supportsStt: false,
+    supportsImageGeneration: false,
   },
   gemini: {
     id: "gemini",
@@ -132,10 +243,12 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 768,
     defaultSttModel: null,
     defaultVisionModel: "gemini-1.5-pro",
+    defaultImageModel: null,
     defaultBaseUrl: "https://generativelanguage.googleapis.com",
     supportsEmbeddings: true,
     supportsVision: true,
     supportsStt: false,
+    supportsImageGeneration: false,
   },
   cloudflare: {
     id: "cloudflare",
@@ -157,6 +270,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: 768,
     defaultSttModel: null,
     defaultVisionModel: null,
+    defaultImageModel: null,
     defaultBaseUrl: CLOUDFLARE_BASE_URL_TEMPLATE,
     baseUrlEditable: true,
     extraFields: [
@@ -177,6 +291,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     supportsEmbeddings: true,
     supportsVision: false,
     supportsStt: false,
+    supportsImageGeneration: false,
   },
   groq: {
     id: "groq",
@@ -195,10 +310,12 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderCatalogEntry> = {
     defaultEmbeddingDimension: null,
     defaultSttModel: "whisper-large-v3",
     defaultVisionModel: null,
+    defaultImageModel: null,
     defaultBaseUrl: "https://api.groq.com/openai/v1",
     supportsEmbeddings: false,
     supportsVision: false,
     supportsStt: true,
+    supportsImageGeneration: false,
   },
 };
 

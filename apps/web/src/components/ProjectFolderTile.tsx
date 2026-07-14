@@ -1,7 +1,8 @@
 /**
  * @fileoverview Folder tile with layered pocket, document peek on hover, and compact metadata.
  */
-import { Check, GitBranch, Heart, Pencil, Sparkles } from "lucide-react";
+import type { DragEvent } from "react";
+import { Check, GitBranch, Heart, Loader2, Pencil, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type ProjectFolderStatus = "ROJO" | "AMARILLO" | "VERDE";
@@ -20,6 +21,12 @@ export interface ProjectFolderTileProps {
   onToggleSelect: () => void;
   onToggleFavorite?: (id: string) => void;
   onRename?: (id: string) => void;
+  /** Habilita arrastrar la carpeta a otro grupo (admin). */
+  draggable?: boolean;
+  isDragging?: boolean;
+  isMoving?: boolean;
+  onDragStart?: (event: DragEvent<HTMLElement>) => void;
+  onDragEnd?: (event: DragEvent<HTMLElement>) => void;
 }
 
 const statusDotClass: Record<ProjectFolderStatus, string> = {
@@ -64,8 +71,8 @@ function FolderWithPeekPapers() {
           <div
             className={cn(
               "h-5 w-[86%] rounded-[5px] border border-zinc-400/25 bg-zinc-100/95 shadow-md will-change-transform",
-              "translate-y-10 transition-[transform,opacity] duration-500 ease-forge-smooth dark:border-zinc-500/40 dark:bg-zinc-200/95",
-              "opacity-80 group-hover:translate-y-1 group-hover:opacity-100",
+              "translate-y-10 opacity-80 transition-[transform,opacity] duration-500 ease-forge-smooth dark:border-zinc-500/40 dark:bg-zinc-200/95",
+              "delay-0 group-hover:translate-y-1 group-hover:opacity-100 group-hover:delay-0",
               "motion-reduce:translate-y-1 motion-reduce:opacity-100 motion-reduce:transition-none",
             )}
           />
@@ -73,8 +80,8 @@ function FolderWithPeekPapers() {
           <div
             className={cn(
               "h-5 w-[90%] translate-x-px rounded-[5px] border border-zinc-400/35 bg-white shadow-md will-change-transform",
-              "translate-y-11 transition-[transform] duration-500 ease-forge-smooth dark:border-zinc-500/55 dark:bg-zinc-50",
-              "group-hover:translate-y-0.5",
+              "translate-y-11 transition-[transform,opacity] duration-500 ease-forge-smooth dark:border-zinc-500/55 dark:bg-zinc-50",
+              "delay-0 group-hover:translate-y-0.5 group-hover:delay-75",
               "motion-reduce:translate-y-0.5 motion-reduce:transition-none",
             )}
           />
@@ -82,8 +89,8 @@ function FolderWithPeekPapers() {
           <div
             className={cn(
               "relative h-6 w-[94%] rounded-[6px] border border-zinc-300/70 bg-white shadow-lg will-change-transform",
-              "translate-y-12 transition-[transform] duration-500 ease-forge-smooth dark:border-zinc-500/65 dark:bg-white",
-              "group-hover:translate-y-0",
+              "translate-y-12 transition-[transform,opacity] duration-500 ease-forge-smooth dark:border-zinc-500/65 dark:bg-white",
+              "delay-0 group-hover:translate-y-0 group-hover:delay-150",
               "motion-reduce:translate-y-0 motion-reduce:transition-none",
             )}
           >
@@ -122,6 +129,11 @@ export function ProjectFolderTile({
   onToggleSelect,
   onToggleFavorite,
   onRename,
+  draggable = false,
+  isDragging = false,
+  isMoving = false,
+  onDragStart,
+  onDragEnd,
 }: ProjectFolderTileProps) {
   const typeIsNew = (projectType ?? "NEW") === "NEW";
   const isShared = visibility === "SHARED";
@@ -133,8 +145,10 @@ export function ProjectFolderTile({
   return (
     <article
       className={cn(
-        "group relative rounded-2xl border border-transparent p-3 transition-colors duration-200 motion-reduce:transition-none",
+        "group relative rounded-2xl border border-transparent p-3 transition-[background-color,border-color,opacity,transform] duration-300 ease-forge-smooth motion-reduce:transition-none",
         "hover:bg-[color-mix(in_oklch,var(--muted)_65%,transparent)]",
+        isDragging && "scale-[0.98] opacity-45",
+        isMoving && "pointer-events-none opacity-60",
         selected && "border-[var(--primary)]/50 bg-[color-mix(in_oklch,var(--primary)_10%,var(--muted))] ring-2 ring-[var(--primary)]/35 ring-offset-2 ring-offset-[var(--background)]",
       )}
     >
@@ -143,6 +157,7 @@ export function ProjectFolderTile({
           className="absolute inset-x-2.5 top-2.5 z-30 flex items-center justify-between gap-2"
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
+          onDragStart={(e) => e.preventDefault()}
         >
           {selectable ? (
             <div className="flex items-center">
@@ -199,7 +214,7 @@ export function ProjectFolderTile({
                   type="button"
                   onClick={() => onRename(id)}
                   className={tileActionButtonClass}
-                  aria-label={`Renombrar ${name}`}
+                  aria-label={`Configuración del proyecto ${name}`}
                 >
                   <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 </button>
@@ -211,16 +226,25 @@ export function ProjectFolderTile({
 
       <button
         type="button"
+        draggable={draggable}
+        onDragStart={draggable ? onDragStart : undefined}
+        onDragEnd={draggable ? onDragEnd : undefined}
         onClick={onOpen}
         className={cn(
-          "flex w-full flex-col items-center gap-2 rounded-xl px-1 pb-1 text-center outline-none transition-transform duration-200",
+          "flex w-full flex-col items-center gap-2 rounded-xl px-1 pb-1 text-center outline-none transition-transform duration-500 ease-forge-smooth",
           "group-hover:scale-[1.02] active:scale-[0.99] motion-reduce:group-hover:scale-100 motion-reduce:active:scale-100",
           "focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]",
+          draggable && "cursor-grab active:cursor-grabbing",
           hasActionBar ? "pt-9" : "pt-2",
         )}
         aria-label={`Abrir proyecto ${name}, ${statusLabelEs[status]}, precisión ${precisionScore} por ciento`}
       >
         <div className="relative w-full">
+          {isMoving ? (
+            <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-[var(--primary)]" aria-hidden />
+            </div>
+          ) : null}
           <FolderWithPeekPapers />
 
           {/* Overlapping “integration” badges — tipo + semáforo */}

@@ -8,6 +8,7 @@
 export * from "./status.js";
 export * from "./checklist.js";
 export * from "./project.js";
+export * from "./project-group.js";
 export * from "./project-merge.js";
 export * from "./deliverables-matrix.js";
 export * from "./project-generation-guard.js";
@@ -60,3 +61,4 @@ export * from "./aem.js";
 export * from "./document-edit-intent.js";
 export * from "./ui-mcp-contract.js";
 export * from "./technology-docs/index.js";
+export * from "./plugin.js";

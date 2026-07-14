@@ -34,6 +34,7 @@ export interface UpsertProviderInstanceDto {
   embeddingDimension?: number | null;
   sttModel?: string | null;
   visionModel?: string | null;
+  imageModel?: string | null;
   baseUrl?: string | null;
   extras?: Record<string, unknown> | null;
   enabledForUsers?: boolean;
@@ -59,6 +60,7 @@ function mapInstanceRow(
     embeddingDimension: number | null;
     sttModel: string | null;
     visionModel: string | null;
+    imageModel: string | null;
     baseUrl: string | null;
     extras: unknown;
     enabledForUsers: boolean;
@@ -84,6 +86,7 @@ function mapInstanceRow(
     embeddingDimension: row.embeddingDimension,
     sttModel: row.sttModel,
     visionModel: row.visionModel,
+    imageModel: row.imageModel,
     baseUrl: row.baseUrl,
     extras: row.extras,
     enabledForUsers: row.enabledForUsers,
@@ -163,6 +166,7 @@ export class ProviderInstancesService {
         embeddingDimension: true,
         sttModel: true,
         visionModel: true,
+        imageModel: true,
         baseUrl: true,
         extras: true,
         enabledForUsers: true,
@@ -226,6 +230,7 @@ export class ProviderInstancesService {
         embeddingDimension: dto.embeddingDimension,
         sttModel: dto.sttModel,
         visionModel: dto.visionModel,
+        imageModel: dto.imageModel,
         baseUrl: dto.baseUrl,
         extras: dto.extras,
         enabledForUsers: teamVisible,
@@ -286,6 +291,7 @@ export class ProviderInstancesService {
       embeddingDimension: number | null;
       sttModel: string | null;
       visionModel: string | null;
+      imageModel: string | null;
       baseUrl: string | null;
       extras: unknown;
       enabledForUsers: boolean;
@@ -325,6 +331,7 @@ export class ProviderInstancesService {
           : existing?.embeddingDimension,
       sttModel: dto.sttModel !== undefined ? dto.sttModel : existing?.sttModel,
       visionModel: dto.visionModel !== undefined ? dto.visionModel : existing?.visionModel,
+      imageModel: dto.imageModel !== undefined ? dto.imageModel : existing?.imageModel,
     });
     if (isProviderId(providerType)) {
       await this.userProviders.validateUserMayUseChatModels(actorUserId, providerType, [

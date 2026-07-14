@@ -1,11 +1,18 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
 import { ComplexityLevel, Prisma, StageStatus, Status } from "@theforge/database";
 import type { Estimation, Project, Stage } from "@theforge/database";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
 import { isAdminOrAbove } from "../../common/roles.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
-import { validateDocumentForPersist } from "../sessions/document-shrink.util.js";
+import {
+  validateDocumentForPersist,
+  documentPersistFieldLabel,
+} from "../sessions/document-shrink.util.js";
+import {
+  DocumentSnapshotService,
+  type DocumentSnapshotSource,
+} from "../document-snapshot/document-snapshot.service.js";
 import { enrichBlueprintWithUiDesignSystem } from "../engine/blueprint-enrich-ui-system.js";
 import {
   buildBlueprintQualityRetryFeedback,
@@ -78,6 +85,8 @@ import {
   createStageBodySchema,
   cloneProjectBodySchema,
   patchStageBodySchema,
+  transitionStageBodySchema,
+  getAllowedStageTransitions,
   updateProjectSchema,
   DELIVERABLE_WAVES_BY_COMPLEXITY,
   flattenDeliverableWaves,
@@ -157,6 +166,8 @@ import {
   resolveCloneProjectOptions,
   type ProjectCloneSource,
 } from "./project-clone.util.js";
+import { ProjectGroupsService } from "../project-groups/project-groups.service.js";
+
 import { toApiProjectListItem } from "./project-list-item.util.js";
 
 import {
@@ -169,7 +180,14 @@ type StageWithEst = Stage & { estimation: Estimation | null };
 
 function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unknown>>(project: P) {
   const flat = flattenStageDeliverables(project.stages, project as ProjectDeliverableSource);
-  return { ...project, ...flat };
+  const group = project.group as { name: string } | undefined;
+  const { group: _g, ...rest } = project;
+  return {
+    ...rest,
+    ...flat,
+    groupId: project.groupId as string,
+    groupName: group?.name,
+  };
 }
 
 @Injectable()
@@ -191,7 +209,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const userId = getRequestUserId();
     const project = await this.prisma.project.findFirst({
       where: { id: projectId },
-      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
+      include: {
+        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+        group: { select: { name: true } },
+      },
     });
     if (!project) throw new NotFoundException("Project not found");
     const isOwner = project.userId === userId;
@@ -222,9 +243,74 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     @Inject(forwardRef(() => ResolveChangeToFilesService))
     private readonly resolveChangeToFiles: ResolveChangeToFilesService,
     private readonly planValidation: PlanValidationService,
+    private readonly projectGroups: ProjectGroupsService,
+    private readonly documentSnapshot: DocumentSnapshotService,
   ) {}
 
-  /** Opciones greenfield: Phase0 + blueprint para checklist de cobertura. */
+  private async guardAndSnapshotDocumentField(
+    projectId: string,
+    field: "dbgaContent" | "specContent",
+    current: string | null | undefined,
+    next: string | null | undefined,
+    source: DocumentSnapshotSource = "patch",
+  ): Promise<void> {
+    if (next === undefined) return;
+    const validation = validateDocumentForPersist(current, next, {
+      fieldLabel: documentPersistFieldLabel(field),
+    });
+    if (!validation.ok) {
+      throw new BadRequestException(validation.message);
+    }
+    const cur = (current ?? "").trim();
+    const nxt = (next ?? "").trim();
+    if (cur.length >= 400 && nxt.length > 0 && cur !== nxt) {
+      await this.documentSnapshot.snapshotBeforeOverwrite(projectId, field, current, source);
+    }
+  }
+
+  async listDocumentSnapshots(
+    projectId: string,
+    options?: { field?: string; limit?: number },
+  ) {
+    await this.assertProjectAccess(projectId);
+    return this.documentSnapshot.listByProject(projectId, options);
+  }
+
+  async restoreDocumentSnapshot(projectId: string, snapshotId: string) {
+    const project = await this.assertProjectAccess(projectId);
+    const snap = await this.documentSnapshot.getSnapshotContent(projectId, snapshotId);
+    if (!this.documentSnapshot.isSnapshotField(snap.field)) {
+      throw new BadRequestException(`Restauración no soportada para el campo ${snap.field}.`);
+    }
+
+    const current =
+      snap.field === "dbgaContent"
+        ? project.dbgaContent
+        : snap.field === "specContent"
+          ? project.specContent
+          : null;
+
+    if (snap.field === "dbgaContent" || snap.field === "specContent") {
+      await this.documentSnapshot.snapshotBeforeOverwrite(
+        projectId,
+        snap.field,
+        current,
+        "restore",
+      );
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { [snap.field]: snap.content },
+      });
+      await this.changeLog.log(projectId, snap.field, snap.content);
+      return this.findOne(projectId);
+    }
+
+    throw new BadRequestException(`Restauración no implementada para ${snap.field}.`);
+  }
+
+  /**
+   * Opciones greenfield: Phase0 + blueprint para checklist de cobertura.
+   */
   private greenfieldGenerateOptions(project: Project): LegacyGenerateOptions {
     return {
       phase0SummaryContent: project.phase0SummaryContent,
@@ -512,9 +598,20 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const parsed = createProjectSchema.parse(data);
     const isLegacy = parsed.projectType === "LEGACY";
     const userId = getRequestUserId();
+    const defaultGroupId = await this.projectGroups.getDefaultGroupId();
+    let groupId = defaultGroupId;
+    if (parsed.groupId) {
+      const targetGroup = await this.prisma.projectGroup.findUnique({
+        where: { id: parsed.groupId },
+        select: { id: true },
+      });
+      if (!targetGroup) throw new NotFoundException("Grupo no encontrado");
+      groupId = parsed.groupId;
+    }
     const created = await this.prisma.project.create({
       data: {
         userId,
+        groupId,
         name: parsed.name,
         visibility: parsed.visibility ?? "PRIVATE",
         hasUxTeam: parsed.hasUxTeam ?? false,
@@ -535,6 +632,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       },
       include: {
         stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+        group: { select: { name: true } },
       },
     });
 
@@ -569,6 +667,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       data: buildProjectCloneCreateInput(source, { userId, ...options }),
       include: {
         stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+        group: { select: { name: true } },
       },
     });
 
@@ -621,6 +720,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         hasUxTeam: true,
         linkedLegacyProjectId: true,
         linkedNewProjectId: true,
+        groupId: true,
+        group: { select: { name: true } },
         createdAt: true,
         stages: {
           orderBy: { ordinal: "asc" },
@@ -704,6 +805,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       mddFormatOnly,
       clearComplexityPending,
       complexityPending: cpInput,
+      groupId: parsedGroupId,
       ...rest
     } = parsed;
 
@@ -718,18 +820,38 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       throw new BadRequestException("Only the project owner can change project settings");
     }
 
+    if (parsedGroupId !== undefined && parsedGroupId !== existingRaw.groupId) {
+      if (!isAdminOrAbove(getRequestUserRole())) {
+        throw new ForbiddenException("Solo admin puede mover proyectos entre grupos");
+      }
+      const targetGroup = await this.prisma.projectGroup.findUnique({
+        where: { id: parsedGroupId },
+        select: { id: true },
+      });
+      if (!targetGroup) throw new NotFoundException("Grupo no encontrado");
+    }
+
     const targetStage: StageWithEst | undefined =
       (parsedStageId?.trim() && existingRaw.stages.find((s) => s.id === parsedStageId.trim())) ||
       pickPrimaryStage(existingRaw.stages);
     if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
 
     if (rest.specContent !== undefined) {
-      const specValidation = validateDocumentForPersist(existingRaw.specContent, rest.specContent, {
-        fieldLabel: "Spec",
-      });
-      if (!specValidation.ok) {
-        throw new BadRequestException(specValidation.message);
-      }
+      await this.guardAndSnapshotDocumentField(
+        id,
+        "specContent",
+        existingRaw.specContent,
+        rest.specContent,
+      );
+    }
+
+    if (rest.dbgaContent !== undefined) {
+      await this.guardAndSnapshotDocumentField(
+        id,
+        "dbgaContent",
+        existingRaw.dbgaContent,
+        rest.dbgaContent,
+      );
     }
 
     let mddGovernancePatternsReverted = false;
@@ -753,7 +875,12 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       ...rest,
       figmaMapping:
         rest.figmaMapping === null ? undefined : (rest.figmaMapping as Prisma.InputJsonValue),
+      pluginData:
+        rest.pluginData === null ? undefined : (rest.pluginData as Prisma.InputJsonValue),
     };
+    if (parsedGroupId !== undefined) {
+      updatePayload.group = { connect: { id: parsedGroupId } };
+    }
     if (clearComplexityPending === true) {
       updatePayload.complexityPending = Prisma.JsonNull;
     } else if (cpInput !== undefined) {
@@ -862,7 +989,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const hasProjectFieldUpdates =
       (Object.keys(rest) as (keyof typeof rest)[]).some((k) => rest[k] !== undefined) ||
       clearComplexityPending === true ||
-      cpInput !== undefined;
+      cpInput !== undefined ||
+      parsedGroupId !== undefined;
     if (hasProjectFieldUpdates) {
       const deliverablePatch = pickDeliverableFieldsFromSource(rest as ProjectDeliverableSource);
       const hasDeliverablePatch = Object.keys(deliverablePatch).length > 0;
@@ -882,7 +1010,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         "apiContractsContent", "logicFlowsContent", "infraContent",
         "agentGovernanceContent",
         "uxUiGuideContent", "phase0SummaryContent", "aemContent",
-        "handoffSpecContent",
       ] as const;
       for (const field of documentFields) {
         if ((rest as Record<string, unknown>)[field] !== undefined) {
@@ -1255,6 +1382,116 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     });
     if (!out) throw new NotFoundException("Etapa no encontrada");
     return { stage: out };
+  }
+
+  async getStageDetail(projectId: string, stageId: string) {
+    const project = await this.assertProjectAccess(projectId);
+    const stage = project.stages.find((s) => s.id === stageId);
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    const resolved = resolveStageDeliverables(project, stage, "workshop");
+    const stageDocFields = ["mddContent", "brdContent", "changeSpecContent"] as const;
+    const stageDocuments: Record<string, { exists: boolean; wordCount: number }> = {};
+    for (const field of stageDocFields) {
+      const text = (stage[field] ?? "") as string;
+      stageDocuments[field] = {
+        exists: text.trim().length > 0,
+        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+      };
+    }
+
+    const cascadeSummary: Record<string, { exists: boolean; wordCount: number }> = {};
+    for (const [key, val] of Object.entries(resolved.deliverables)) {
+      const text = typeof val === "string" ? val : "";
+      cascadeSummary[key] = {
+        exists: text.trim().length > 0,
+        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+      };
+    }
+
+    return {
+      stage: {
+        id: stage.id,
+        ordinal: stage.ordinal,
+        key: stage.key,
+        name: stage.name,
+        workflowStatus: stage.workflowStatus,
+        status: stage.status,
+        precisionScore: stage.precisionScore,
+        isLegacy: stage.isLegacy,
+        estimation: stage.estimation,
+        createdAt: stage.createdAt,
+        updatedAt: stage.updatedAt,
+      },
+      deliverables: {
+        source: resolved.source,
+        readOnly: resolved.readOnly,
+        snapshotCapturedAt: resolved.snapshotCapturedAt ?? null,
+        stageDocuments,
+        cascadeSummary,
+      },
+      allowedTransitions: getAllowedStageTransitions(stage.workflowStatus),
+      activeStageId: pickPrimaryStage(project.stages)?.id ?? null,
+    };
+  }
+
+  async transitionStage(projectId: string, stageId: string, body: unknown) {
+    const dto = transitionStageBodySchema.parse(body);
+    await this.assertProjectAccess(projectId);
+
+    const stage = await this.prisma.stage.findFirst({
+      where: { id: stageId, projectId },
+      include: { estimation: true },
+    });
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    const allowed = getAllowedStageTransitions(stage.workflowStatus);
+    if (!allowed.includes(dto.action)) {
+      throw new BadRequestException({
+        message: `Transición "${dto.action}" no permitida desde estado ${stage.workflowStatus}`,
+        code: "STAGE_TRANSITION_NOT_ALLOWED",
+        currentStatus: stage.workflowStatus,
+        allowedTransitions: allowed,
+      });
+    }
+
+    const previousStatus = stage.workflowStatus;
+
+    if (dto.action === "activate") {
+      const uid = getRequestUserId();
+      const ownerId = (
+        await this.prisma.project.findUnique({ where: { id: projectId }, select: { userId: true } })
+      )?.userId;
+      if (ownerId !== uid) {
+        throw new BadRequestException("Only the project owner can activate stages");
+      }
+      await this.activateStageExclusive(projectId, stageId);
+    } else if (dto.action === "complete") {
+      await this.patchStage(projectId, stageId, { workflowStatus: StageStatus.COMPLETED });
+    } else if (dto.action === "archive") {
+      await this.patchStage(projectId, stageId, { workflowStatus: StageStatus.ARCHIVED });
+    } else if (dto.action === "reopen") {
+      await this.prisma.stage.update({
+        where: { id: stageId },
+        data: { workflowStatus: StageStatus.DRAFT },
+      });
+    }
+
+    const out = await this.prisma.stage.findFirst({
+      where: { id: stageId, projectId },
+      include: { estimation: true },
+    });
+    if (!out) throw new NotFoundException("Etapa no encontrada");
+
+    return {
+      stage: out,
+      transition: {
+        action: dto.action,
+        reason: dto.reason ?? null,
+        previousStatus,
+        newStatus: out.workflowStatus,
+      },
+    };
   }
 
   async generateBenchmark(projectId: string, userIdea: string, urls?: string[]) {
@@ -1695,8 +1932,9 @@ name: ${JSON.stringify(name)}
         await this.generateInfra(projectId, gaps);
         return;
       default: {
-        const _exhaustive: never = kind;
-        return _exhaustive;
+        // Exhaustiveness check intentionally disabled after EVD extraction
+        // (plugin framework handles extensible document types)
+        return void 0;
       }
     }
   }

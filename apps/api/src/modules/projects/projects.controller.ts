@@ -61,6 +61,27 @@ export class ProjectsController {
     return this.projects.listStages(projectId);
   }
 
+  @Get(":projectId/document-snapshots")
+  listDocumentSnapshots(
+    @Param("projectId") projectId: string,
+    @Query("field") field?: string,
+    @Query("limit") limit?: string,
+  ) {
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : undefined;
+    return this.projects.listDocumentSnapshots(projectId, {
+      field: field?.trim() || undefined,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+    });
+  }
+
+  @Post(":projectId/document-snapshots/:snapshotId/restore")
+  restoreDocumentSnapshot(
+    @Param("projectId") projectId: string,
+    @Param("snapshotId") snapshotId: string,
+  ) {
+    return this.projects.restoreDocumentSnapshot(projectId, snapshotId);
+  }
+
   @Post(":projectId/stages")
   createStage(@Param("projectId") projectId: string, @Body() body: unknown) {
     return this.projects.createStage(projectId, body ?? {});
@@ -73,6 +94,23 @@ export class ProjectsController {
     @Body() body: unknown,
   ) {
     return this.projects.patchStage(projectId, stageId, body ?? {});
+  }
+
+  @Get(":projectId/stages/:stageId")
+  getStageDetail(
+    @Param("projectId") projectId: string,
+    @Param("stageId") stageId: string,
+  ) {
+    return this.projects.getStageDetail(projectId, stageId);
+  }
+
+  @Post(":projectId/stages/:stageId/transition")
+  transitionStage(
+    @Param("projectId") projectId: string,
+    @Param("stageId") stageId: string,
+    @Body() body: unknown,
+  ) {
+    return this.projects.transitionStage(projectId, stageId, body ?? {});
   }
 
   @Get(":projectId/stages/:stageId/deliverables")
@@ -277,6 +315,7 @@ export class ProjectsController {
 
   /** Greenfield: borrador BRD desde `dbgaContent` (To-Be eliminado del sistema). */
   @Post(":id/suggest-brd-from-dbga")
+  @Post(":id/suggest-brd-tobe-from-dbga")
   suggestBrdFromDbga(
     @Param("id") id: string,
     @Body() body: { stageId?: string },

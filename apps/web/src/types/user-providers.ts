@@ -16,6 +16,15 @@ export interface ProviderExtraFieldSpec {
   helpText?: string;
 }
 
+export interface ImageModelInfo {
+  id: string;
+  label: string;
+  priceIn?: string;
+  priceOut?: string;
+  description?: string;
+  originProvider?: string;
+}
+
 export interface ProviderCatalogEntry {
   id: ProviderId;
   label: string;
@@ -27,12 +36,16 @@ export interface ProviderCatalogEntry {
   defaultEmbeddingDimension: number | null;
   defaultSttModel: string | null;
   defaultVisionModel: string | null;
+  imageModels?: string[];
+  imageModelDetails?: Record<string, ImageModelInfo>;
+  defaultImageModel: string | null;
   defaultBaseUrl: string;
   baseUrlEditable?: boolean;
   extraFields?: ProviderExtraFieldSpec[];
   supportsEmbeddings: boolean;
   supportsVision: boolean;
   supportsStt: boolean;
+  supportsImageGeneration: boolean;
 }
 
 export interface UserProviderConfigSummary {
@@ -43,6 +56,7 @@ export interface UserProviderConfigSummary {
   embeddingDimension: number | null;
   sttModel: string | null;
   visionModel: string | null;
+  imageModel: string | null;
   baseUrl: string | null;
   extras: Record<string, unknown> | null;
   configured: boolean;
@@ -57,6 +71,9 @@ export interface UserAISettings {
   embeddingProvider: ProviderId | null;
   embeddingsEnabled: boolean;
   allowedChatModels?: string[];
+  imageModel: string | null;
+  imageQuality: string;
+  imageStyle: string;
 }
 
 export interface ProviderInstanceSummary {
@@ -71,6 +88,7 @@ export interface ProviderInstanceSummary {
   embeddingDimension: number | null;
   sttModel: string | null;
   visionModel: string | null;
+  imageModel: string | null;
   baseUrl: string | null;
   extras: Record<string, unknown> | null;
   enabledForUsers: boolean;
@@ -95,6 +113,7 @@ export interface UpsertProviderInstanceBody {
   embeddingDimension?: number | null;
   sttModel?: string | null;
   visionModel?: string | null;
+  imageModel?: string | null;
   baseUrl?: string | null;
   extras?: Record<string, unknown> | null;
   enabledForUsers?: boolean;
@@ -111,6 +130,7 @@ export interface UpsertProviderConfigBody {
   embeddingDimension?: number | null;
   sttModel?: string | null;
   visionModel?: string | null;
+  imageModel?: string | null;
   baseUrl?: string | null;
   extras?: Record<string, unknown> | null;
 }
@@ -120,4 +140,7 @@ export interface UpdateAISettingsBody {
   activeTenantInstanceId?: string | null;
   embeddingProvider?: ProviderId | null;
   embeddingsEnabled?: boolean;
+  imageModel?: string | null;
+  imageQuality?: string;
+  imageStyle?: string;
 }

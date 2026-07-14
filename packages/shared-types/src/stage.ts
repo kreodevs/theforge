@@ -30,3 +30,33 @@ export const patchStageBodySchema = z.object({
 
 export type CreateStageBody = z.infer<typeof createStageBodySchema>;
 export type PatchStageBody = z.infer<typeof patchStageBodySchema>;
+
+/** Acciones de transición de workflow soportadas por la API y MCP. */
+export const STAGE_TRANSITION_ACTIONS = ["activate", "complete", "archive", "reopen"] as const;
+export type StageTransitionAction = (typeof STAGE_TRANSITION_ACTIONS)[number];
+
+/** POST /projects/:projectId/stages/:stageId/transition */
+export const transitionStageBodySchema = z.object({
+  action: z.enum(STAGE_TRANSITION_ACTIONS),
+  reason: z.string().max(500).optional(),
+});
+
+export type TransitionStageBody = z.infer<typeof transitionStageBodySchema>;
+
+/** Transiciones permitidas según workflowStatus actual de la etapa. */
+export function getAllowedStageTransitions(workflowStatus: string): StageTransitionAction[] {
+  switch (workflowStatus) {
+    case "DRAFT":
+      return ["activate", "archive"];
+    case "ACTIVE":
+      return ["complete", "archive"];
+    case "COMPLETED":
+      return ["reopen", "activate", "archive"];
+    case "SUPERSEDED":
+      return ["reopen", "activate", "archive"];
+    case "ARCHIVED":
+      return ["reopen"];
+    default:
+      return [];
+  }
+}
