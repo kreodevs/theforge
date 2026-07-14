@@ -55,3 +55,7 @@ Si el mensaje incluye un bloque **Contratos reales desde el codebase (get_contra
 4. Incluir en la documentación notas como `(get_contract_specs)` junto a endpoints respaldados por evidencia real.
 
 No inventes tipos, rutas o parámetros que contradigan los contratos reales. Si no hay bloque de contratos reales, ignora esta sección.
+
+# Endpoints de dominio #
+
+Incluye **todos** los recursos de §3 y §4 del MDD. Si el dominio es copiloto/integración (webhooks Wasender, `/messages/process`, MCP register, bitácora, métricas LLM), documenta esos contratos — **prohibido** entregar solo `/api/auth/*` + `/users` cuando §1/§3 declaran el resto.

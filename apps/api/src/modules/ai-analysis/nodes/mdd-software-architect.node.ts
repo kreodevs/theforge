@@ -30,6 +30,10 @@ import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { getInternalDirectivesContext, extractInternalDirectives } from "../utils/mdd-mesh-topology.js";
 import { softwareArchitectComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
 import { buildUiMcpFrontendArchitectHint } from "../utils/mdd-inject-ui-mcp-frontend.util.js";
+import {
+  domainInventoryPromptBlock,
+  mddStateHasDomainAuthSkew,
+} from "../utils/mdd-domain-prompt.util.js";
 import type { TheForgeService } from "../../theforge/theforge.service.js";
 import { getMddArchitectTheForgeTools } from "../tools/agent-theforge-tools.js";
 import { stripThinkingTags } from "../utils/mdd-security-parse.js";
@@ -514,11 +518,13 @@ export function createMddSoftwareArchitectNode(
       const explicitReqsAffectModel = explicitReqs.length > 0 && AFFECTS_MODEL_REGEX.test(explicitReqs);
       const hasExplicitRequirements = explicitReqs.length > 0 || affectsModel || affectsSection2;
       const userAskedForModelOrApiChanges = affectsModel || explicitReqsAffectModel;
+      const domainAuthSkew = mddStateHasDomainAuthSkew(state);
+      const mustRewriteSection3 = hasExplicitRequirements || domainAuthSkew;
       const stepGoal = state.currentStepGoal?.trim();
       const goalBlock = stepGoal ? `**Objetivo de este paso (del plan):** ${stepGoal}\n\n` : "";
       const briefBlock = brief
-        ? hasExplicitRequirements
-          ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Debes **actualizar** ## 3. Modelo de Datos y ## 4. Contratos de API para reflejar los requisitos explícitos del usuario (aplicaciones, roles, MFA, etc.). No copies §3 del borrador si los requisitos piden más entidades o relaciones; genera el SQL, diagrama ER y endpoints que cumplan lo indicado. Copia solo ## 1. Contexto del borrador. Elabora §2 (Arquitectura y Stack) y §5 (Lógica y Edge Cases).${affectsSection2 ? " Actualiza también ## 2. Arquitectura y Stack si la directiva lo indica." : ""}\n\n---\n\n`
+        ? mustRewriteSection3
+          ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Debes **actualizar** ## 3. Modelo de Datos y ## 4. Contratos de API para reflejar el dominio de negocio (BRD/inventario) y los requisitos explícitos. **No copies §3 del borrador** si está sesgado a auth o incompleto frente al inventario; genera el SQL, diagrama ER y endpoints que cubran las capacidades de dominio. Copia solo ## 1. Contexto del borrador. Elabora §2 (Arquitectura y Stack) y §5 (Lógica y Edge Cases).${affectsSection2 ? " Actualiza también ## 2. Arquitectura y Stack si la directiva lo indica." : ""}\n\n---\n\n`
           : `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar secciones 2 (Arquitectura y Stack), 4 (Contratos de API) y 5 (Lógica y Edge Cases) para una aplicación que cumple este objetivo. Copia 1 y 3 del borrador; no las reescribas.\n\n---\n\n`
         : "";
       const contextParts = [
@@ -531,6 +537,16 @@ export function createMddSoftwareArchitectNode(
         draftTrimmed || "(vacío)",
         getInternalDirectivesContext(state, "software_architect"),
       ];
+      const inventoryBlock = domainInventoryPromptBlock(state);
+      if (inventoryBlock) {
+        contextParts.unshift(inventoryBlock.trim(), "");
+      }
+      if (domainAuthSkew) {
+        contextParts.unshift(
+          "**ALERTA domain-auth-only-skew:** El §3 actual solo tiene entidades de auth mientras el BRD lista capacidades de dominio. **Reescribe §3 y §4** con entidades y endpoints de negocio del inventario. Auth permanece como complemento.",
+          "",
+        );
+      }
       if (explicitReqs.length > 0) {
         contextParts.push(
           "",

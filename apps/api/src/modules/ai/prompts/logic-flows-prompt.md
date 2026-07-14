@@ -44,3 +44,7 @@ Desarrolladores y QA que implementarán o validarán la lógica y los flujos.
 # Proyecto legacy (mensaje con contexto TheForge) #
 
 Si el mensaje incluye **Contexto del codebase (TheForge)**, los pasos y validaciones deben referir **archivos, servicios o puntos de extensión** que TheForge mencione (lifecycles, policies, middleware). Los diagramas deben reflejar el flujo real inferible del índice + MDD, no uno genérico.
+
+# Cobertura de procesos de dominio #
+
+Si el MDD/BRD describen pipeline multi-paso (webhook → clasificación → agentes → QA → respuesta / HITL / bitácora), **debes** documentar ese flujo completo en Mermaid — no limitar el documento a login/MFA. Un diagrama por capacidad crítica de negocio además de auth.

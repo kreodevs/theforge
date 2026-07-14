@@ -7,10 +7,17 @@ import {
   detectUnclosedSqlFences,
   validateMddStructure,
 } from "./mdd-sanitize.js";
+import { domainDeliveryGateFindings } from "../../engine/cascade-accuracy.util.js";
 
 export type { MddDeliveryGateResult };
 
 const DELIVERY_SCORE_THRESHOLD = 90;
+
+export type ValidateMddForDeliveryOptions = {
+  /** BRD stage content — enables domain auth-skew / entity coverage blockers. */
+  brdMarkdown?: string | null;
+  dbgaMarkdown?: string | null;
+};
 
 /** Heurística alineada con reconcileUiUxDesignIntent: columnas id,name,status repetidas. */
 function detectGenericUiUxIntent(draft: string): boolean {
@@ -21,8 +28,12 @@ function detectGenericUiUxIntent(draft: string): boolean {
 /**
  * Gate bloqueante de entrega MDD (Fase 0 ≥9/10).
  * ok=true solo si score >= 90 y blockers.length === 0.
+ * Con BRD/DBGA: añade blockers de dominio (auth-only skew, entidades faltantes).
  */
-export function validateMddForDelivery(draft: string): MddDeliveryGateResult {
+export function validateMddForDelivery(
+  draft: string,
+  options?: ValidateMddForDeliveryOptions,
+): MddDeliveryGateResult {
   const trimmed = applyPreDeliveryGateFixes((draft ?? "").trim());
   const blockers: string[] = [];
   const warnings: string[] = [];
@@ -59,6 +70,16 @@ export function validateMddForDelivery(draft: string): MddDeliveryGateResult {
       "UI/UX Design Intent usa columnas genéricas repetidas (id, name, status); regenerar desde §3.",
     );
     score -= 10;
+  }
+
+  if (options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()) {
+    const domain = domainDeliveryGateFindings({
+      brdMarkdown: options.brdMarkdown,
+      dbgaMarkdown: options.dbgaMarkdown,
+      mddMarkdown: trimmed,
+    });
+    blockers.push(...domain.blockers);
+    warnings.push(...domain.warnings);
   }
 
   score -= blockers.length * 8;

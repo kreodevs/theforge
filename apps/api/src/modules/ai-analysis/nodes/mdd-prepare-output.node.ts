@@ -6,6 +6,7 @@ import {
   resolveDeliveryGateFixTarget,
   shouldContinueDeliveryGateLoop,
 } from "../utils/mdd-delivery-gate-loop.util.js";
+import { resolveBrdFromMddState } from "../utils/mdd-domain-prompt.util.js";
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:PrepareOutput] ${msg}`, ...args);
 
@@ -16,14 +17,20 @@ const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:PrepareOutput
 export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: string | null }) {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
     const gateRef: { current?: ReturnType<typeof validateMddForDelivery> } = {};
+    const brdMarkdown = resolveBrdFromMddState(state) || null;
+    const dbgaMarkdown = (state.dbgaContent ?? "").trim() || null;
     const prepared = await prepareMddForOutput(
       { mddDraft: state.mddDraft, mddStructured: state.mddStructured },
       {
         deliveryGateRef: gateRef,
         uiMcpLibraryLabel: options?.uiMcpLibraryLabel ?? null,
+        brdMarkdown,
+        dbgaMarkdown,
       },
     );
-    const gate = gateRef.current ?? validateMddForDelivery(prepared);
+    const gate =
+      gateRef.current ??
+      validateMddForDelivery(prepared, { brdMarkdown, dbgaMarkdown });
     const attempt = state.deliveryGateAttempt ?? 0;
     const loop = shouldContinueDeliveryGateLoop(gate, attempt);
 

@@ -1,0 +1,123 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  buildDomainInventory,
+  detectAuthOnlySkew,
+  extractBrdCapabilities,
+} from "./domain-inventory.util.js";
+import {
+  computeCascadeAccuracy,
+  computeDocAccuracy,
+  domainDeliveryGateFindings,
+} from "./cascade-accuracy.util.js";
+
+const DORIS_BRD_SNIPPET = `
+# BRD - Copiloto Corporativo (CC)
+## 3. Capacidades Funcionales del Producto
+### 3.1 Autenticación y autorización de usuarios
+El copiloto valida la identidad mediante WhatsApp, email o PAT.
+### 3.2 Recepción y clasificación de solicitudes
+Recibe mensajes desde WhatsApp vía Wasender. Clasifica consulta MCP, general o acción.
+### 3.3 Procesamiento multi-agente con calidad garantizada
+Supervisor, Clarificador, Ejecutores MCP y Control de Calidad.
+### 3.4 Memoria persistente y contexto multi-turno
+Historial de conversaciones y embeddings.
+### 3.5 Gestión de tareas programadas
+Crear tareas recurrentes ejecutadas con token MCP.
+### 3.6 Gestión de accesos a sistemas externos (MCP)
+Registrar servidores MCP como Bitrix24.
+### 3.7 Bitácora de peticiones no cumplidas
+Registrar fallos e HITL.
+### 3.8 Panel de administración (interfaz web)
+Admin web para usuarios, MCP y bitácora.
+`;
+
+const AUTH_ONLY_MDD = `
+# Master Design Document
+## 1. Contexto
+Copiloto WhatsApp Bitrix
+## 2. Arquitectura y Stack
+NestJS
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+CREATE TABLE roles (id UUID PRIMARY KEY);
+CREATE TABLE sessions (id UUID PRIMARY KEY);
+CREATE TABLE security_events (id UUID PRIMARY KEY);
+CREATE TABLE outbox_events (id UUID PRIMARY KEY);
+\`\`\`
+TechnicalMetadata: [high_security]
+## 4. Contratos de API
+POST /api/auth/login
+## 5. Lógica y Edge Cases
+Login
+## 6. Seguridad
+LDAP
+## 7. Infraestructura
+Docker
+`;
+
+describe("domain-inventory + cascade-accuracy", () => {
+  it("extracts BRD capabilities including domain ones", () => {
+    const caps = extractBrdCapabilities(DORIS_BRD_SNIPPET);
+    assert.ok(caps.length >= 6);
+    assert.ok(caps.some((c) => /multi-agente|WhatsApp|MCP|Bitácora|Panel/i.test(c.title)));
+    const domain = caps.filter((c) => !c.isAuthRelated);
+    assert.ok(domain.length >= 5);
+  });
+
+  it("detects auth-only skew for Doris-like MDD", () => {
+    const inv = buildDomainInventory({
+      brdMarkdown: DORIS_BRD_SNIPPET,
+      mddMarkdown: AUTH_ONLY_MDD,
+      mddEntities: new Set(["users", "roles", "sessions", "security_events", "outbox_events"]),
+    });
+    const skew = detectAuthOnlySkew(
+      ["users", "roles", "sessions", "security_events", "outbox_events"],
+      inv.capabilities,
+    );
+    assert.equal(skew.skewed, true);
+    assert.ok(skew.domainCapabilityCount >= 3);
+  });
+
+  it("domainDeliveryGateFindings blocks auth-only MDD when BRD has domain caps", () => {
+    const findings = domainDeliveryGateFindings({
+      brdMarkdown: DORIS_BRD_SNIPPET,
+      mddMarkdown: AUTH_ONLY_MDD,
+    });
+    assert.ok(findings.blockers.some((b) => /auth-only|entities-missing/i.test(b)));
+  });
+
+  it("DocAccuracy is low for auth-skewed package (Doris baseline shape)", () => {
+    const doc = computeDocAccuracy({
+      brdMarkdown: DORIS_BRD_SNIPPET,
+      mddMarkdown: AUTH_ONLY_MDD,
+      apiContractsMarkdown: "# API\nPOST /api/auth/login\nGET /api/users\n",
+      logicFlowsMarkdown: "# Flows\n## Login LDAP MFA\n",
+      uiScreensMarkdown: "# Pantallas\n| Table |\n/dashboard Table\nfuera de alcance v1\n",
+      tasksMarkdown: "# Tasks\n- [ ] Implementar LDAP login\n- [ ] MFA TOTP\n- [ ] Outbox\n",
+      specMarkdown: "# Spec\n## 1.\n## 2.\n",
+    });
+    assert.ok(doc.score < 90, `expected doc score < 90, got ${doc.score}`);
+    assert.ok(doc.components.some((c) => c.id === "C6_drift" && c.score < 50));
+  });
+
+  it("computeCascadeAccuracy hardGateBlocked when env enabled and scores low", () => {
+    const report = computeCascadeAccuracy({
+      brdMarkdown: DORIS_BRD_SNIPPET,
+      mddMarkdown: AUTH_ONLY_MDD,
+      tasksMarkdown: "- [ ] LDAP\n",
+      hardGateEnabled: true,
+    });
+    assert.equal(report.hardGateEnabled, true);
+    assert.equal(report.codegenReady, false);
+    assert.equal(report.hardGateBlocked, true);
+  });
+
+  it("suggests domain entities from BRD prose", () => {
+    const inv = buildDomainInventory({ brdMarkdown: DORIS_BRD_SNIPPET });
+    assert.ok(inv.suggestedEntities.length >= 3);
+    assert.ok(inv.crudMatrix.some((r) => !r.infraOnly));
+    assert.ok(inv.processes.length >= 5);
+  });
+});

@@ -36,6 +36,8 @@ Ejemplo: `[DIRECTIVE: security] El modelo incluye pagos sensibles; por favor def
 
 **Narrowing (en positivo):** Incluye en §3 todas las entidades y relaciones mencionadas en el contexto o en los requisitos del usuario (usuarios, aplicaciones, roles, permisos, sesiones, etc.). El diagrama ER debe reflejar cada entidad y cada relación descrita.
 
+**Dominio de negocio antes que glue auth (PLAN-CASCADE-90-ACCURACY):** Si §1 / BRD / inventario listan capacidades de producto (chat, MCP, WhatsApp, bitácora, multi-agente, CRM, etc.), §3 **debe** incluir las entidades de **ese dominio** (p. ej. `tenants`, `conversations`, `messages`, `mcp_plugins`, `scheduled_tasks`, `failed_request_logs`). Las tablas de auth (`users`, `roles`, `sessions`, …) son **complemento**, no el único contenido de §3. **Prohibido** entregar un §3 solo-auth cuando el contexto tiene ≥3 capacidades no-auth. Si una entidad de negocio queda fuera del MVP, declárala explícitamente en «Fuera de alcance» — no la omitas en silencio.
+
 El documento MDD tiene **exactamente 7 secciones**. Tú eres responsable de **cuatro**: **2. Arquitectura y Stack**, **3. Modelo de Datos**, **4. Contratos de API** y **5. Lógica y Edge Cases**. No modifiques ni redactes las demás. Las secciones que rellenas forman parte del documento **Constitución del proyecto**: deben ser coherentes entre sí y con el contexto/clarifiedScope; todo entregable posterior (Blueprint, Contratos, Infra) se derivará de este documento.
 
 **Estructura canónica del MDD:**
@@ -124,16 +126,16 @@ Antes de generar el SQL, realiza este paso intermedio (pensamiento):
 
 ### 3. Modelo de Datos (tu responsabilidad)
 
-- **Estrategia Híbrida (Estricta):**
-  - **SQL (PostgreSQL):** ÚNICAMENTE para identidad, acceso y configuración del sistema (`users`, `sessions`, `workspaces`, `apikeys`). Usa `TIMESTAMPTZ`.
-  - **Graph (FalkorDB):** OBLIGATORIO para todo el análisis de código. NUNCA crees tablas SQL para `components`, `files`, `imports` o `functions`.
-  - **Entregables:**
-    1.  Bloque `sql` para tablas PostgreSQL.
-    2.  Bloque `mermaid` (erDiagram) para PostgreSQL.
-    3.  Bloque `cypher` (puedes usar el tag `cypher` o `text`) describiendo el esquema del grafo (Nodos y Relaciones).
-    4.  Bloque `mermaid` (graph TD) mostrando la ontología del grafo (ej. `File --> defines --> Component`).
+- **Estrategia por tipo de proyecto:**
+  - **SQL (PostgreSQL):** Usa `TIMESTAMPTZ`. Incluye **todas** las entidades de dominio del BRD/inventario (conversaciones, mensajes, canales, plugins MCP, bitácora, tareas programadas, etc.) **más** identidad/acceso (`users`, `sessions`, …) cuando aplique. **Prohibido** un §3 solo-auth si §1/BRD tienen ≥3 capacidades de negocio.
+  - **Graph (FalkorDB / Neo4j):** **Solo** si el proyecto es **LEGACY** de análisis de código, o si §1/el stack exige explícitamente un grafo de conocimiento/dependencias. **NO** es obligatorio para productos greenfield de negocio (chat, CRM, WhatsApp, admin). En greenfield, modela el dominio en SQL; no inventes nodos `components`/`files`/`imports`.
+  - Cuando **sí** aplique grafo LEGACY:
+    1. Bloque `sql` para identidad/config.
+    2. Bloque `cypher` (o `text`) con nodos/relaciones del grafo.
+    3. Documenta en §4 que endpoints de análisis consultan el grafo, no SQL de código.
 
-- **Congruencia §3 ↔ §4:** Los endpoints de análisis de código (ej. un endpoint de búsqueda semántica) consultarán FalkorDB, no SQL. Documenta esto en la descripción del endpoint en §4.
+- **Entregables mínimos greenfield:** bloque `sql` completo + TechnicalMetadata. El erDiagram lo regenera el pipeline.
+- **Congruencia §3 ↔ §4:** Cada recurso de negocio con persistencia en §3 debe tener endpoints coherentes en §4.
 
 ### 4. Contratos de API (tu responsabilidad)
 

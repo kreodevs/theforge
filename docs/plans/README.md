@@ -11,5 +11,6 @@ Planes de implementación vigentes (estado al inicio de cada doc). Histórico no
 | [PLAN-UI-COMPONENT-MCP-VALIDATION.md](PLAN-UI-COMPONENT-MCP-VALIDATION.md) | Validación de componentes `@imj_media/ui` vía MCP corporativo | Propuesta / gap (no implementado) |
 | [PLAN-MDD-SECCION-GOBERNANZA-IA.md](PLAN-MDD-SECCION-GOBERNANZA-IA.md) | Sección de Gobernanza IA en el MDD | — |
 | [PLAN-SPECKIT-ALIGNMENT.md](PLAN-SPECKIT-ALIGNMENT.md) | Alineación con spec-kit | — |
+| [PLAN-CASCADE-90-ACCURACY.md](PLAN-CASCADE-90-ACCURACY.md) | Exactitud ≥90 % docs/Tasks; inventarios CRUD/procesos/pantallas; piloto Doris | **Código F0–F4** (métrica+gates); regenerar Doris en Workshop pendiente |
 
 > Guía de usuario de la integración legacy↔nuevo (no técnica): `docs/notebooklm/LEGACY-NEW-INTEGRATION-GUIDE.md`.

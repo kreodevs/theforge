@@ -22,6 +22,7 @@ import { createMddFormatSecIntNode } from "../nodes/mdd-format-sec-int.node.js";
 import { createMddPrepareOutputNode } from "../nodes/mdd-prepare-output.node.js";
 import { createMddBlackboardNode } from "../nodes/mdd-blackboard.node.js";
 import { draftHasSubstantialSections6And7 } from "../utils/mdd-delivery-gate-loop.util.js";
+import { mddStateHasDomainAuthSkew } from "../utils/mdd-domain-prompt.util.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { detectSection3CompositionBlockers } from "../utils/schema-owner.util.js";
 import { createDbgaLLM, createMddAuditorLLM } from "../llm/create-dbga-llm.js";
@@ -111,6 +112,7 @@ export async function createMddGraph(
       uiMcpFrontendLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
     }),
   );
+  const architectCriticNode = createMddArchitectCriticNode(llm);
   const formatterNode = createMddFormatterNode();
   // Primera pasada: Security + Integration en un solo nodo con Promise.all (paralelo real,
   // ahorra ~60s vs secuencial). Los nodos individuales se conservan solo para el auto-loop
@@ -161,9 +163,31 @@ export async function createMddGraph(
     return "prepare_output";
   }
 
+  /** One-shot: critic when directive, SQL blockers, or BRD domain auth-skew. */
+  function routeAfterSoftwareArchitectOneShot(state: MDDStateType): string {
+    const hasDirective = !!(state.acceptedProposalDirective?.trim());
+    const draft = (state.mddDraft ?? "").trim();
+    const hasSection3 = /##\s*3\.\s*Modelo\s+(?:de\s+)?datos/i.test(draft) && /\bCREATE\s+TABLE\b/i.test(draft);
+    const hasSection4 = /##\s*4\.\s*Contratos\s+de\s+API/i.test(draft);
+    const attempts = state.architectCriticAttempts ?? 0;
+    const section3SqlBlockers = detectSection3CompositionBlockers(draft);
+    if (section3SqlBlockers.length > 0 && hasSection3 && attempts < 1) return "architect_critic";
+    if (mddStateHasDomainAuthSkew(state) && hasSection3 && attempts < 1) return "architect_critic";
+    if (hasDirective && hasSection3 && hasSection4 && attempts < 1) return "architect_critic";
+    return "format_after_architect";
+  }
+
+  function routeAfterArchitectCriticOneShot(state: MDDStateType): string {
+    const hasFeedback = !!(state.architectCriticFeedback?.trim());
+    const attempts = state.architectCriticAttempts ?? 0;
+    if (hasFeedback && attempts <= 1) return "software_architect";
+    return "format_after_architect";
+  }
+
   const builder = new StateGraph(MDDStateAnnotation)
     .addNode("clarifier", clarifierNode)
     .addNode("software_architect", softwareArchitectNode)
+    .addNode("architect_critic", architectCriticNode)
     .addNode("format_after_architect", formatterNode)
     // Nodo combinado (Promise.all §6+§7) para la primera pasada; integration/format_sec_int
     // se mantienen para el auto-loop del delivery gate.
@@ -180,7 +204,14 @@ export async function createMddGraph(
     .addNode("graph_populator", graphPopulatorNode)
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
-    .addEdge("software_architect", "format_after_architect")
+    .addConditionalEdges("software_architect", routeAfterSoftwareArchitectOneShot, {
+      architect_critic: "architect_critic",
+      format_after_architect: "format_after_architect",
+    })
+    .addConditionalEdges("architect_critic", routeAfterArchitectCriticOneShot, {
+      software_architect: "software_architect",
+      format_after_architect: "format_after_architect",
+    })
     .addConditionalEdges("format_after_architect", routeAfterFormatArchitectGateLoop, {
       format_after_redactor: "format_after_redactor",
       security_integration: "security_integration",
@@ -280,7 +311,7 @@ export async function createMddGraphWithManager(
     return "graph_populator";
   }
 
-  /** Si hay directiva/requisitos y §3+§4 con contenido y aún no hemos pasado por critic (attempts < 1), ir a architect_critic. */
+  /** Si hay directiva/requisitos, SQL blockers, o BRD domain skew y §3 con contenido y attempts < 1 → critic. */
   function routeAfterSoftwareArchitect(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
     const next = nextInSections(state, "software_architect");
@@ -292,6 +323,7 @@ export async function createMddGraphWithManager(
     const attempts = state.architectCriticAttempts ?? 0;
     const section3SqlBlockers = detectSection3CompositionBlockers(draft);
     if (section3SqlBlockers.length > 0 && hasSection3 && attempts < 1) return "architect_critic";
+    if (mddStateHasDomainAuthSkew(state) && hasSection3 && attempts < 1) return "architect_critic";
     if (hasDirective && hasSection3 && hasSection4 && attempts < 1) return "architect_critic";
     return "format_after_architect";
   }

@@ -78,6 +78,8 @@ export function AnalyzeDashboard({ projectId, className, onReportLoaded }: Analy
 
   if (!report) return null;
 
+  const accuracy = report.accuracy;
+
   const statusCfg = STATUS_STYLES[report.summary.status];
   const StatusIcon = statusCfg.icon;
 
@@ -114,6 +116,11 @@ export function AnalyzeDashboard({ projectId, className, onReportLoaded }: Analy
             <p className="font-semibold">Analizar — consistencia SDD</p>
             <p className="text-xs text-[color-mix(in_oklch,var(--foreground)_85%,var(--muted-foreground))]">
               {report.featureDir} · semáforo {report.semaphore ?? "—"}
+              {accuracy
+                ? ` · exactitud docs ${accuracy.docScore}% / tasks ${accuracy.taskScore}%`
+                : ""}
+              {accuracy?.codegenReady ? " · codegen ready" : ""}
+              {accuracy?.hardGateBlocked ? " · hard gate" : ""}
             </p>
           </div>
         </div>
@@ -136,6 +143,31 @@ export function AnalyzeDashboard({ projectId, className, onReportLoaded }: Analy
           <p className="text-xs">{report.summary.headline}</p>
         </div>
       </div>
+
+      {accuracy ? (
+        <div
+          className={cn(
+            "rounded-lg px-3 py-2 text-xs",
+            accuracy.codegenReady
+              ? "bg-[color-mix(in_oklch,var(--success)_10%,var(--card))]"
+              : "bg-[color-mix(in_oklch,var(--warning)_12%,var(--card))]",
+          )}
+        >
+          <p className="font-semibold">Exactitud cascada (umbral 90%)</p>
+          <p>
+            Docs {accuracy.docScore}% {accuracy.docOk ? "✓" : "✗"} · Tasks {accuracy.taskScore}%{" "}
+            {accuracy.taskOk ? "✓" : "✗"}
+            {accuracy.hardGateEnabled ? " · hard gate ON" : ""}
+          </p>
+          {accuracy.topGaps.length > 0 ? (
+            <ul className="mt-1 list-inside list-disc opacity-90">
+              {accuracy.topGaps.slice(0, 4).map((g) => (
+                <li key={g.slice(0, 80)}>{g}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 lg:grid-cols-4">
         {artifactTiles.map(([label, ok, meta]) => (

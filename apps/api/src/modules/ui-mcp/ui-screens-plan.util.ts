@@ -5,6 +5,7 @@
  * @license Apache-2.0
  */
 import type { EntityClassification, ListScreensEntity } from "@theforge/shared-types";
+import { AUTH_ENTITY_FAMILY } from "@theforge/shared-types";
 import { extractEntityKeyFieldsFromMdd, extractEntityNamesFromMdd } from "./ui-screens-mdd.util.js";
 import {
   extractHttpEndpointsFromMarkdown,
@@ -19,6 +20,14 @@ import {
   inferUiStates,
   normalizeRoleLabel,
 } from "./ui-screen-routes.util.js";
+
+/** Infra / glue tables — no admin CRUD screen by default (PLAN-CASCADE-90-ACCURACY). */
+export const INFRA_ONLY_SCREEN_ENTITIES = new Set([
+  ...AUTH_ENTITY_FAMILY,
+].filter((e) => ["outbox_events", "sessions", "role_permissions", "user_roles"].includes(e)));
+
+/** Entities that get auth screens (login/MFA) instead of gestión-CRUD. */
+export const AUTH_FLOW_ENTITIES = new Set(["users", "sessions"]);
 
 /** Historia de usuario parseada del markdown de backlog. */
 export interface ParsedUserStory {
@@ -164,12 +173,13 @@ export function parseUserStoriesMarkdown(content: string): ParsedUserStory[] {
 /** Infiere hint de UI a partir del texto de la HU o del nombre de entidad. */
 export function inferUiHintFromText(text: string): string | undefined {
   const t = text.toLowerCase();
+  if (/whatsapp|wasender|chat|conversaci|mensaje|copiloto|composer/.test(t)) return "chat";
   if (/kanban|pipeline|tablero|embudo|funnel|etapas?/.test(t)) return "kanban";
   if (/formulario|registrar|crear|editar|alta|capturar|inscribir/.test(t)) return "form";
   if (/calendario|agenda|cita|horario/.test(t)) return "calendar";
-  if (/wizard|paso a paso|onboarding/.test(t)) return "wizard";
+  if (/wizard|paso a paso|onboarding|registrar servidor|mcp/.test(t)) return "wizard";
   if (/dashboard|panel|métricas|metricas|kpi|resumen ejecutivo/.test(t)) return "dashboard";
-  if (/tabla|listado|consultar|ver lista|grid|catálogo|catalogo/.test(t)) return "table";
+  if (/tabla|listado|consultar|ver lista|grid|catálogo|catalogo|bit[aá]cora/.test(t)) return "table";
   return undefined;
 }
 
@@ -243,20 +253,24 @@ export function huOnlyEntitySlug(story: ParsedUserStory): string {
 
 /**
  * Cruza entidades §3 con historias de usuario y produce el plan de pantallas.
- * - Cada entidad §3 → pantalla (enriquecida si hay HU vinculada).
+ * - Cada entidad §3 → pantalla (enriquecida si hay HU vinculada), salvo infra-only.
  * - HU sin entidad → pantalla adicional (flujos transversales).
+ * - Heurística: chat/HITL/MCP admin cuando el texto lo sugiere.
  */
 export function buildPantallasPlan(
   mddMarkdown: string,
   userStoriesMarkdown?: string | null,
   apiContractsMarkdown?: string | null,
 ): PantallaPlanItem[] {
-  const entityNames = extractEntityNamesFromMdd(mddMarkdown);
+  const entityNames = extractEntityNamesFromMdd(mddMarkdown).filter(
+    (e) => !INFRA_ONLY_SCREEN_ENTITIES.has(e.toLowerCase()),
+  );
   const keyFieldsByEntity = extractEntityKeyFieldsFromMdd(mddMarkdown);
   const stories = parseUserStoriesMarkdown(userStoriesMarkdown ?? "");
   const endpoints = extractHttpEndpointsFromMarkdown(apiContractsMarkdown ?? "");
   const defaultRoles = extractRolesFromMdd(mddMarkdown);
   const defaultRole = defaultRoles[0] ?? "Usuario autenticado";
+  const domainCorpus = `${mddMarkdown}\n${userStoriesMarkdown ?? ""}`.toLowerCase();
 
   const linkedByEntity = new Map<string, ParsedUserStory[]>();
   const matchedStoryIndexes = new Set<number>();
@@ -279,17 +293,30 @@ export function buildPantallasPlan(
     const primary = linked[0];
     const storyText = linked.map((s) => s.searchText).join(" ");
     const role = primary?.role ? normalizeRoleLabel(primary.role) : defaultRole;
-    const screenName = primary?.title?.trim() || defaultEntityScreenName(entityName);
-    const uiHint = primary
+    const isAuthFlow = AUTH_FLOW_ENTITIES.has(entityName.toLowerCase()) && /login|mfa|auth/i.test(storyText || primary?.title || "");
+    const screenName = isAuthFlow
+      ? primary?.title?.trim() || "Inicio de sesión"
+      : primary?.title?.trim() || defaultEntityScreenName(entityName);
+    let uiHint = primary
       ? inferUiHintFromText(`${primary.want ?? ""} ${primary.title}`)
       : inferUiHintFromText(entityName);
+    if (/convers|mensaje|whatsapp|chat|copiloto/i.test(entityName + storyText)) {
+      uiHint = "chat";
+    }
     const matched = matchEndpointsForEntity(entityName, endpoints);
     const primaryApi =
       matched.length > 0
         ? formatEndpointList(matched, 2)
-        : /login|auth|otp/i.test(screenName)
+        : /login|auth|otp|mfa/i.test(screenName)
           ? formatEndpointList(inferAuthEndpoints(endpoints), 2)
           : undefined;
+
+    const route =
+      uiHint === "chat"
+        ? "/chat"
+        : isAuthFlow
+          ? "/login"
+          : inferScreenRoute(screenName, uiHint);
 
     plan.push({
       name: entityName,
@@ -306,7 +333,7 @@ export function buildPantallasPlan(
       userStoryRefs: linked.length > 0 ? linked.map(storyRef) : undefined,
       source: primary ? "entity+hu" : "entity",
       role,
-      route: inferScreenRoute(screenName, uiHint),
+      route,
       pageName: inferPageComponentName(screenName),
       uiStates: inferUiStates(screenName, uiHint),
       primaryApi: primaryApi && primaryApi !== "—" ? primaryApi : undefined,
@@ -315,17 +342,80 @@ export function buildPantallasPlan(
     });
   }
 
+  // Complex surfaces from domain corpus when missing in plan
+  if (/whatsapp|wasender|conversaci[oó]n|mensaje/i.test(domainCorpus) && !plan.some((p) => p.route === "/chat" || p.uiHint === "chat")) {
+    plan.push({
+      name: "chat-shell",
+      keyFields: ["id"],
+      classification: "WorkflowProcess",
+      uiHint: "chat",
+      screenName: "Chat del copiloto",
+      purpose: "Shell de conversación multi-turno (canal WhatsApp / web).",
+      source: "hu-only",
+      role: defaultRole,
+      route: "/chat",
+      pageName: "CopilotChatPage",
+      uiStates: "loading, streaming, error, empty, hitl-paused",
+      primaryApi: formatEndpointList(
+        endpoints.filter((e) => /message|whatsapp|webhook|process/i.test(e.path)),
+        2,
+      ),
+      implementationMode: "pull-registry",
+    });
+  }
+  if (/bit[aá]cora|failed.?request|peticiones?\s+no\s+cumpl/i.test(domainCorpus) && !plan.some((p) => /bitacora|failed/i.test(p.name))) {
+    plan.push({
+      name: "failed_request_logs",
+      keyFields: ["id"],
+      classification: "DataRegistry",
+      uiHint: "table",
+      screenName: "Bitácora de peticiones no cumplidas",
+      purpose: "Listar y revisar solicitudes fallidas / HITL.",
+      source: "hu-only",
+      role: "Admin",
+      route: "/admin/bitacora",
+      pageName: "FailedRequestsPage",
+      uiStates: "loading, empty, error, success",
+      primaryApi: formatEndpointList(
+        endpoints.filter((e) => /failed|bitacora|bitácora/i.test(e.path)),
+        2,
+      ),
+      implementationMode: "pull-registry",
+    });
+  }
+  if (/\bmcp\b|bitrix/i.test(domainCorpus) && !plan.some((p) => /mcp/i.test(p.name))) {
+    plan.push({
+      name: "mcp_plugins",
+      keyFields: ["id"],
+      classification: "Configuration",
+      uiHint: "wizard",
+      screenName: "Registro de servidores MCP",
+      purpose: "Wizard de registro dinámico de MCP (p. ej. Bitrix24) y herramientas.",
+      source: "hu-only",
+      role: "Super Admin",
+      route: "/admin/mcp",
+      pageName: "McpRegisterPage",
+      uiStates: "loading, error, success, disabled",
+      primaryApi: formatEndpointList(
+        endpoints.filter((e) => /mcp/i.test(e.path)),
+        2,
+      ),
+      implementationMode: "pull-registry",
+    });
+  }
+
   stories.forEach((story, idx) => {
     if (matchedStoryIndexes.has(idx)) return;
     const slug = huOnlyEntitySlug(story);
-    const uiHint = inferUiHintFromText(story.searchText);
+    let uiHint = inferUiHintFromText(story.searchText);
+    if (/whatsapp|chat|mensaje|convers/i.test(story.searchText)) uiHint = "chat";
     const screenName = story.title;
     const authEps = inferAuthEndpoints(endpoints);
     const matched = matchEndpointsForEntity(slug, endpoints);
     const primaryApi =
       matched.length > 0
         ? formatEndpointList(matched, 2)
-        : /login|auth|otp/i.test(screenName)
+        : /login|auth|otp|mfa/i.test(screenName)
           ? formatEndpointList(authEps, 2)
           : undefined;
 
@@ -341,7 +431,7 @@ export function buildPantallasPlan(
       userStoryRefs: [storyRef(story)],
       source: "hu-only",
       role: story.role ? normalizeRoleLabel(story.role) : defaultRole,
-      route: inferScreenRoute(screenName, uiHint),
+      route: uiHint === "chat" ? "/chat" : inferScreenRoute(screenName, uiHint),
       pageName: inferPageComponentName(screenName),
       uiStates: inferUiStates(screenName, uiHint),
       primaryApi: primaryApi && primaryApi !== "—" ? primaryApi : undefined,

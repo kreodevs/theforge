@@ -145,8 +145,19 @@ function appendGreenfieldCoverageChecklist(
     phase0GapsJson: options?.phase0GapsJson,
     blueprintMarkdown: blueprintMarkdown ?? options?.coverageBlueprintContent,
     artifactLabel,
+    brdMarkdown: options?.brdContent,
+    dbgaMarkdown: options?.dbgaContent,
   });
   return appendCoverageChecklistToPrompt(prompt, checklist);
+}
+
+function preferThinLiteraryDocs(options?: LegacyGenerateOptions, envKey?: "GENERATE_LITERARY_UC" | "GENERATE_LITERARY_US"): boolean {
+  if (options?.preferThinLiteraryDocs === true) return true;
+  if (options?.preferThinLiteraryDocs === false) return false;
+  if (envKey && process.env[envKey] === "false") return true;
+  if (envKey && process.env[envKey] === "true") return false;
+  // Default: thin for greenfield cascade quality (PLAN-CASCADE-90-ACCURACY)
+  return true;
 }
 
 /** Instrucción fija para que ningún documento generado use "militar" (se añade al system prompt en generación de docs). */
@@ -175,6 +186,15 @@ export interface LegacyGenerateOptions {
   coverageBlueprintContent?: string | null;
   /** Pre-fetched Technology Docs MCP block (Context7). When absent, AiService may resolve from MDD. */
   techDocsContext?: string | null;
+  /** BRD stage — domain inventory injection in greenfield checklists. */
+  brdContent?: string | null;
+  /** DBGA / benchmark markdown for domain inventory. */
+  dbgaContent?: string | null;
+  /**
+   * Prefer thin literary UC/US (journeys + matrix). True when GENERATE_LITERARY_*=false
+   * or preferThinLiteraryDocs; HIGH cascade defaults to thin when env unset.
+   */
+  preferThinLiteraryDocs?: boolean;
 }
 
 export interface AgentGovernanceGenerateOptions extends LegacyGenerateOptions {
@@ -1174,6 +1194,9 @@ export class AiService {
       : "Genera el documento de Casos de Uso según las instrucciones del system prompt. " +
         "Cubre de forma exhaustiva cada capacidad MVP, actor, criterio UAT y dominio API del MDD. " +
         "Cada flujo debe alinearse al texto del MDD y del Spec; no cites archivos ni entidades que no aparezcan en esos documentos.\n\n" +
+        (preferThinLiteraryDocs(options, "GENERATE_LITERARY_UC")
+          ? "Modo thin activo — aplica **modo thin** del system prompt (journeys + matriz; sin novelas UC).\n\n"
+          : "") +
         "MDD:\n---\n" +
         mdd +
         "\n---\n\n" +
@@ -1208,6 +1231,9 @@ export class AiService {
           (useCases ? "Casos de Uso (flujos — traza HU ↔ CU):\n---\n" + useCases + "\n---" : "")
         : "Genera el documento de Historias de Usuario según las instrucciones del system prompt. " +
           constitutionNote +
+          (preferThinLiteraryDocs(options, "GENERATE_LITERARY_US")
+            ? "Modo thin activo — aplica **modo thin** del system prompt (HU trazables sin prosa literaria).\n\n"
+            : "") +
           "MDD:\n---\n" +
           mdd +
           "\n---\n\n" +

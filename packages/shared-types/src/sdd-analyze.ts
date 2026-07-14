@@ -56,12 +56,26 @@ export interface SddAnalyzeConformance {
 
 export type SddAnalyzeStatus = "ok" | "warnings" | "blocked";
 
+/** Cascade doc/tasks accuracy (PLAN-CASCADE-90-ACCURACY). */
+export interface SddAccuracyAnalyzeSlice {
+  docScore: number;
+  taskScore: number;
+  docOk: boolean;
+  taskOk: boolean;
+  codegenReady: boolean;
+  hardGateEnabled: boolean;
+  hardGateBlocked: boolean;
+  topGaps: string[];
+}
+
 export interface SddAnalyzeReport {
   generatedAt: string;
   projectId: string;
   projectName: string;
   featureDir: string;
   semaphore: "ROJO" | "AMARILLO" | "VERDE" | null;
+  /** Exactitud documental / tasks vs BRD (umbral 90). */
+  accuracy?: SddAccuracyAnalyzeSlice;
   artifacts: {
     mdd: SddArtifactPresence;
     spec: SddSpecAnalyzeSlice;

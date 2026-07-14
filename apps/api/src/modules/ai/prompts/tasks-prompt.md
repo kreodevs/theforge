@@ -209,3 +209,10 @@ verification:
 - Cada tarea UI debe citar: ruta, **componentes UI** (catálogo MCP activo o shadcn), **API** de api-contracts (no inventar `/api/v1/{tabla}`).
 - Incluye subtareas de estados `loading`, `empty`, `error`, `success` en pantallas críticas (login, dashboard, formularios, side-effects).
 - Orden sugerido: por rol/journey → por ruta React Router.
+
+# Exactitud de dominio (PLAN-CASCADE-90-ACCURACY) #
+
+1. **Anti-sesgo auth:** Si el MDD/BRD describen un producto de dominio (WhatsApp, MCP, multi-agente, CRM, bitácora, etc.), **≥70 %** de las tasks deben trazar a ese dominio — no solo LDAP/MFA/RBAC/Outbox.
+2. **CRUD:** Por cada entidad MVP de §3 que no sea glue (`outbox_events`, `sessions`), incluye tasks de persistencia + API + (si aplica) UI.
+3. **Procesos:** Cada flujo crítico de §5 / Logic Flows → al menos una task Backend con edge cases.
+4. **Pantallas complejas:** Si pantallas.md o el dominio piden chat/HITL/MCP wizard, crea tasks Frontend específicas (no solo DataTable genérica).

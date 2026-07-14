@@ -8,6 +8,7 @@ import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { validateMddStructure } from "../utils/mdd-sanitize.js";
 import { getInternalDirectivesContext } from "../utils/mdd-mesh-topology.js";
 import { auditorConstitutionRigorAppendix } from "../utils/mdd-complexity-rigor.js";
+import { domainInventoryPromptBlock } from "../utils/mdd-domain-prompt.util.js";
 import {
   buildAuditorFeedbackFromGaps,
   computeDeterministicAuditorScore,
@@ -169,6 +170,12 @@ export function createMddAuditorNode(
       let prompt =
         `${AUDITOR_MDD_PROMPT}\n\n---\n**Borrador completo del MDD:**\n${draftForLlm || "(vacío)"}\n\n` +
         `${getInternalDirectivesContext(state, "auditor")}${auditorConstitutionRigorAppendix(state.mddComplexity)}`;
+      const inventoryBlock = domainInventoryPromptBlock(state);
+      if (inventoryBlock) {
+        prompt +=
+          inventoryBlock +
+          "\n\n**Criterio domain-auth-only-skew:** Si el inventario tiene ≥3 capacidades de negocio y §3 solo lista tablas auth (users/roles/sessions/…), baja el score y registra critical_gap con fix: ampliar §3/§4 al dominio.";
+      }
       if (toolsToUse.length > 0) {
         prompt +=
           "\n\n**Obligatorio:** Usa validate_mdd_structure, validate_sql_syntax y validate_json_payloads con el borrador. " +

@@ -556,7 +556,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       return;
     }
 
-    const gate = await evaluateMddDeliveryGatePrepared(mdd);
+    const gate = await evaluateMddDeliveryGatePrepared(mdd, {
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+    });
     if (stage?.id) void this.persistMddDeliveryGateSnapshot(stage.id, gate);
     if (!gate.ok && !acknowledgeGaps) {
       throw new ConflictException(buildMddDeliveryGateConflictBody(gate));
@@ -1243,7 +1246,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     project: Project & { stages: StageWithEst[] },
   ): Promise<LegacyGenerateOptions | undefined> {
     const p = project as { projectType?: string; theforgeProjectId?: string | null };
-    return buildLegacyGenerateOptions({
+    const stage = pickPrimaryStage(project.stages);
+    const base = await buildLegacyGenerateOptions({
       projectType: p.projectType,
       theforgeProjectId: p.theforgeProjectId ?? null,
       mddMarkdown: this.constitutionMarkdown(project),
@@ -1252,6 +1256,29 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       getContextForDeliverables: (id) => this.theforge.getContextForDeliverables(id),
       gatherContractSpecsForApi: (id) => this.theforge.gatherContractSpecsForApi(id),
     });
+    const domainAware: LegacyGenerateOptions = {
+      ...(base ?? {}),
+      brdContent: stage?.brdContent ?? null,
+      dbgaContent: project.dbgaContent ?? null,
+      phase0SummaryContent: base?.phase0SummaryContent ?? project.phase0SummaryContent,
+      phase0GapsJson: base?.phase0GapsJson ?? project.phase0Gaps,
+      preferThinLiteraryDocs: true,
+    };
+    return domainAware;
+  }
+
+  /** Opciones mínimas (BRD/DBGA + thin UC/US) cuando no hay legacy AS-IS. */
+  private buildDomainCascadeGenerateOptions(
+    project: Project & { stages: StageWithEst[] },
+  ): LegacyGenerateOptions {
+    const stage = pickPrimaryStage(project.stages);
+    return {
+      brdContent: stage?.brdContent ?? null,
+      dbgaContent: project.dbgaContent ?? null,
+      phase0SummaryContent: project.phase0SummaryContent,
+      phase0GapsJson: project.phase0Gaps,
+      preferThinLiteraryDocs: true,
+    };
   }
 
   /** Tras regen individual de flujos legacy etapa 1: telemetría §5 en `legacyFlowState`. */
@@ -1987,10 +2014,11 @@ name: ${JSON.stringify(name)}
     return gapsMap;
   }
 
-  /** W4: reintenta artefactos con gaps de precisión SDD (upstream en paralelo; tasks al final). */
+  /** W4: reintenta artefactos con gaps de precisión SDD o TaskAccuracy < 90. */
   private async runCascadePostPassRetry(projectId: string): Promise<void> {
     const project = await this.findOne(projectId);
     const mdd = this.constitutionMarkdown(project);
+    const stage = pickPrimaryStage(project.stages ?? []);
     const precisionGaps = collectSddPrecisionGaps({
       mdd,
       architecture: project.architectureContent,
@@ -2003,12 +2031,43 @@ name: ${JSON.stringify(name)}
       pantallas: project.uiScreensContent,
       phase0Summary: project.phase0SummaryContent,
     });
-    if (precisionGaps.length === 0) return;
 
-    const feedback = formatPrecisionGapsFeedback(precisionGaps);
+    const { computeCascadeAccuracy } = await import("../engine/cascade-accuracy.util.js");
+    const accuracy = computeCascadeAccuracy({
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: mdd,
+      tasksMarkdown: project.tasksContent,
+      logicFlowsMarkdown: project.logicFlowsContent,
+      apiContractsMarkdown: project.apiContractsContent,
+      uiScreensMarkdown: project.uiScreensContent,
+      userStoriesMarkdown: project.userStoriesContent,
+      useCasesMarkdown: project.useCasesContent,
+      specMarkdown: project.specContent,
+    });
+
+    const taskGaps: string[] = [];
+    if (!accuracy.tasks.ok) {
+      const detail = [
+        ...accuracy.tasks.blockers,
+        ...accuracy.tasks.components.flatMap((c) => c.gaps),
+      ]
+        .filter(Boolean)
+        .slice(0, 12);
+      taskGaps.push(
+        `TaskAccuracy=${accuracy.tasks.score} < 90. ${detail.join("; ") || "mejorar cobertura dominio→task / CRUD / anti auth-skew"}`,
+      );
+    }
+
+    const allGaps = [...precisionGaps, ...taskGaps];
+    if (allGaps.length === 0) return;
+
+    const feedback = formatPrecisionGapsFeedback(allGaps);
     const flags = precisionGapsForPostPassRetry(precisionGaps);
+    if (taskGaps.length > 0) flags.retryTasks = true;
+
     this.logger.warn(
-      `[Cascade] Post-pase W4: ${precisionGaps.length} gap(s) de precisión — retry dirigido`,
+      `[Cascade] Post-pase W4: ${allGaps.length} gap(s) (precision=${precisionGaps.length}, taskAccuracy=${accuracy.tasks.score}) — retry dirigido`,
     );
 
     const upstreamRetries: Array<Promise<unknown>> = [];
@@ -2555,24 +2614,39 @@ name: ${JSON.stringify(name)}
 
   async generateUseCasesPreview(projectId: string): Promise<{ content: string }> {
     const project = await this.assertProjectAccess(projectId);
-    const content = await this.ai.generateUseCases(this.constitutionMarkdown(project), project.specContent);
+    const opts =
+      (await this.resolveLegacyGenerateOptions(project)) ??
+      this.buildDomainCascadeGenerateOptions(project);
+    const content = await this.ai.generateUseCases(
+      this.constitutionMarkdown(project),
+      project.specContent,
+      opts,
+    );
     return { content: cleanDocumentContent(content) };
   }
 
   async generateUseCases(projectId: string) {
     const project = await this.assertProjectAccess(projectId);
-    const content = await this.ai.generateUseCases(this.constitutionMarkdown(project), project.specContent);
+    const opts =
+      (await this.resolveLegacyGenerateOptions(project)) ??
+      this.buildDomainCascadeGenerateOptions(project);
+    const content = await this.ai.generateUseCases(
+      this.constitutionMarkdown(project),
+      project.specContent,
+      opts,
+    );
     return this.update(projectId, { useCasesContent: cleanDocumentContent(content) });
   }
 
   async generateUserStoriesPreview(projectId: string): Promise<{ content: string }> {
     const project = await this.assertProjectAccess(projectId);
     const intOpts = await this.buildIntegrationGenerateOptions(projectId);
+    const domainOpts = this.buildDomainCascadeGenerateOptions(project);
     const content = await this.ai.generateUserStories(
       this.constitutionMarkdown(project),
       project.specContent,
       project.useCasesContent,
-      intOpts,
+      { ...domainOpts, ...intOpts },
     );
     const appendix = buildHandoffUserStoriesAppendix(intOpts?.integrationHandoffItems ?? []);
     return { content: cleanDocumentContent(content + appendix) };
@@ -2581,11 +2655,12 @@ name: ${JSON.stringify(name)}
   async generateUserStories(projectId: string) {
     const project = await this.assertProjectAccess(projectId);
     const intOpts = await this.buildIntegrationGenerateOptions(projectId);
+    const domainOpts = this.buildDomainCascadeGenerateOptions(project);
     const content = await this.ai.generateUserStories(
       this.constitutionMarkdown(project),
       project.specContent,
       project.useCasesContent,
-      intOpts,
+      { ...domainOpts, ...intOpts },
     );
     const appendix = buildHandoffUserStoriesAppendix(intOpts?.integrationHandoffItems ?? []);
     return this.update(projectId, { userStoriesContent: cleanDocumentContent(content + appendix) });

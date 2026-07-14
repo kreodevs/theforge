@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ComplexityLevel, Prisma } from "@theforge/database";
 import {
   buildHandoffMicroSpecFiles,
@@ -37,6 +37,7 @@ import {
   checkPhase0BrdSpecBridge,
   formatPhase0BridgeGaps,
 } from "../engine/phase0-brd-spec-bridge.util.js";
+import { computeCascadeAccuracy } from "../engine/cascade-accuracy.util.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { CONVERGE_PROMPT } from "../ai/prompts/converge-prompt.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
@@ -109,6 +110,40 @@ export class SddIntegrationService {
     private readonly theforge: TheForgeService,
   ) {}
 
+  /** Cuando REQUIRE_DOC_ACCURACY_90=true, bloquea export SpecKit / handoff si scores &lt; 90. */
+  private async assertCascadeAccuracyHardGate(
+    project: ProjectWithStages,
+    stage: Stage | null | undefined,
+  ): Promise<void> {
+    if (process.env.REQUIRE_DOC_ACCURACY_90 !== "true") return;
+    const deliverables = stage
+      ? resolveStageDeliverables(project, stage, "analyze").deliverables
+      : project;
+    const report = computeCascadeAccuracy({
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: stage?.mddContent ?? "",
+      specMarkdown: deliverables.specContent ?? project.specContent,
+      apiContractsMarkdown: deliverables.apiContractsContent ?? project.apiContractsContent,
+      logicFlowsMarkdown: deliverables.logicFlowsContent ?? project.logicFlowsContent,
+      uiScreensMarkdown: deliverables.uiScreensContent ?? project.uiScreensContent,
+      tasksMarkdown: deliverables.tasksContent ?? project.tasksContent,
+    });
+    if (!report.hardGateBlocked) return;
+    throw new ConflictException({
+      code: "ERR_DOC_ACCURACY_HARD_GATE",
+      message: `Exactitud insuficiente para export (docs ${report.doc.score}%, tasks ${report.tasks.score}%; umbral 90).`,
+      accuracy: {
+        docScore: report.doc.score,
+        taskScore: report.tasks.score,
+        topGaps: [
+          ...report.doc.components.flatMap((c) => c.gaps),
+          ...report.tasks.components.flatMap((c) => c.gaps),
+        ].slice(0, 12),
+      },
+    });
+  }
+
   buildBundleForProject(project: ProjectWithStages, stageOverride?: Stage | null): SpecKitBundleFile[] {
     const stage = stageOverride ?? pickPrimaryStage(project.stages);
     const mdd = stage?.mddContent ?? "";
@@ -162,6 +197,7 @@ export class SddIntegrationService {
   }> {
     const project = await this.loadProject(projectId);
     const stage = pickPrimaryStage(project.stages);
+    await this.assertCascadeAccuracyHardGate(project, stage);
     return {
       featureDir: specKitFeatureDir(stage?.ordinal ?? 1, project.name),
       projectName: project.name,
@@ -175,6 +211,7 @@ export class SddIntegrationService {
   async getRepoHandoffExport(projectId: string): Promise<RepoHandoffExport> {
     const project = await this.loadProject(projectId);
     const stage = pickPrimaryStage(project.stages);
+    await this.assertCascadeAccuracyHardGate(project, stage);
     const unified = buildUnifiedHandoff(
       project,
       loadConsumptionGuideMarkdown(specKitFeatureDir(stage?.ordinal ?? 1, project.name)),
@@ -448,6 +485,43 @@ export class SddIntegrationService {
       }
     }
 
+    const brdHealth = checkBrdObjectiveMentionHealth(stage?.brdContent, mdd);
+    if (!brdHealth.ok && brdHealth.warnings.length) {
+      crossArtifactGaps.push(...brdHealth.warnings.map((w) => `[BRD health] ${w}`));
+    }
+
+    const accuracyReport = computeCascadeAccuracy({
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: mdd,
+      specMarkdown: spec,
+      apiContractsMarkdown: deliverables.apiContractsContent,
+      logicFlowsMarkdown: deliverables.logicFlowsContent,
+      uiScreensMarkdown: deliverables.uiScreensContent ?? project.uiScreensContent,
+      tasksMarkdown: tasksMd,
+      useCasesMarkdown: useCasesMd,
+      userStoriesMarkdown: userStoriesMd,
+    });
+    const accuracyTopGaps = [
+      ...accuracyReport.doc.components.flatMap((c) => c.gaps),
+      ...accuracyReport.tasks.components.flatMap((c) => c.gaps),
+    ].slice(0, 16);
+    if (!accuracyReport.doc.ok) {
+      crossArtifactGaps.push(
+        `[Exactitud docs ${accuracyReport.doc.score}%] por debajo de 90 — ${accuracyTopGaps[0] ?? "revisar BRD↔MDD"}`,
+      );
+    }
+    if (!accuracyReport.tasks.ok) {
+      crossArtifactGaps.push(
+        `[Exactitud tasks ${accuracyReport.tasks.score}%] por debajo de 90 — cobertura de dominio incompleta`,
+      );
+    }
+    if (accuracyReport.hardGateBlocked) {
+      crossArtifactGaps.push(
+        "[Hard gate] REQUIRE_DOC_ACCURACY_90: docs y tasks deben ≥90 antes de codegen/export",
+      );
+    }
+
     const gapCount = crossArtifactGaps.length;
     let status: SddAnalyzeStatus = "ok";
     const govBlockHigh =
@@ -457,13 +531,10 @@ export class SddIntegrationService {
         !agentGov.pathAlignmentOk ||
         agentGov.mddConformanceOk === false);
 
-    if (!mdd || gapCount > 8 || govBlockHigh) status = "blocked";
-    else if (gapCount > 0) status = "warnings";
-
-    const brdHealth = checkBrdObjectiveMentionHealth(stage?.brdContent, mdd);
-    if (!brdHealth.ok && brdHealth.warnings.length) {
-      crossArtifactGaps.push(...brdHealth.warnings.map((w) => `[BRD health] ${w}`));
-      if (status === "ok") status = "warnings";
+    if (accuracyReport.hardGateBlocked || !mdd || gapCount > 8 || govBlockHigh) {
+      status = "blocked";
+    } else if (gapCount > 0 || !accuracyReport.doc.ok || !accuracyReport.tasks.ok) {
+      status = "warnings";
     }
 
     const score = Math.max(0, Math.min(100, 100 - gapCount * 8));
@@ -474,6 +545,16 @@ export class SddIntegrationService {
       projectName: project.name,
       featureDir,
       semaphore: (stage?.status as SddAnalyzeReport["semaphore"]) ?? null,
+      accuracy: {
+        docScore: accuracyReport.doc.score,
+        taskScore: accuracyReport.tasks.score,
+        docOk: accuracyReport.doc.ok,
+        taskOk: accuracyReport.tasks.ok,
+        codegenReady: accuracyReport.codegenReady,
+        hardGateEnabled: accuracyReport.hardGateEnabled,
+        hardGateBlocked: accuracyReport.hardGateBlocked,
+        topGaps: accuracyTopGaps,
+      },
       artifacts: {
         mdd: { present: mdd.length > 0, wordCount: wordCount(mdd) },
         spec: {

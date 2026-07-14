@@ -38,6 +38,8 @@ export function reducePreferDefined<T>(left: T | undefined, right: T | undefined
  */
 export const MDDStateAnnotation = Annotation.Root({
   dbgaContent: Annotation<string>(),
+  /** BRD stage markdown (capacidades de negocio) — domain fidelity / auth-skew gates. */
+  brdContent: Annotation<string | undefined>({ reducer: reducePreferDefined }),
   clarifiedScope: Annotation<string>(),
   mddStructured: Annotation<MddStructured | undefined>({
     reducer: (old, newVal) => newVal !== undefined ? { ...(old ?? {}), ...newVal } : old,

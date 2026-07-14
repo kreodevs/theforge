@@ -5,6 +5,10 @@ import type { MDDStateType } from "../state/index.js";
 import { extractSection3Body, extractSection4Body } from "../utils/mdd-sanitize.js";
 import { detectSection3CompositionBlockers } from "../utils/schema-owner.util.js";
 import { getUserExplicitRequirements } from "../utils/mdd-user-brief.js";
+import {
+  domainInventoryPromptBlock,
+  mddStateHasDomainAuthSkew,
+} from "../utils/mdd-domain-prompt.util.js";
 import { extractFirstJsonObject } from "../utils/parse-json.js";
 import { z } from "zod";
 
@@ -16,9 +20,8 @@ const criticOutputSchema = z.object({
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:ArchitectCritic] ${msg}`, ...args);
 
 /**
- * Nodo Architect Critic (Reflection): verifica si §3 y §4 del MDD cumplen la directiva del usuario.
- * Si verdict === "gap", escribe architectCriticFeedback e incrementa architectCriticAttempts; el grafo puede volver a software_architect una vez.
- * Si verdict === "ok" o ya se hizo un reintento, sigue a format_after_architect.
+ * Nodo Architect Critic (Reflection): verifica si §3 y §4 del MDD cumplen la directiva del usuario
+ * y (cuando hay BRD) la fidelidad de dominio / anti auth-skew.
  */
 export function createMddArchitectCriticNode(llm: BaseChatModel) {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
@@ -36,11 +39,24 @@ export function createMddArchitectCriticNode(llm: BaseChatModel) {
       };
     }
 
-    if (!directive && !explicitReqs) {
-      LOG("sin directiva ni requisitos explícitos, omitir critic");
+    const domainSkew = mddStateHasDomainAuthSkew(state);
+    const inventoryBlock = domainInventoryPromptBlock(state);
+    const hasDomainContext = inventoryBlock.length > 0 || domainSkew;
+
+    if (!directive && !explicitReqs && !hasDomainContext) {
+      LOG("sin directiva, requisitos ni inventario de dominio, omitir critic");
       return {
         architectCriticFeedback: undefined,
         architectCriticAttempts: (state.architectCriticAttempts ?? 0) + 1,
+      };
+    }
+
+    if (domainSkew && attempts <= 1) {
+      LOG("domain-auth-only-skew determinista attempts=%s", attempts);
+      return {
+        architectCriticFeedback:
+          "domain-auth-only-skew: §3 solo tiene entidades de auth mientras el BRD/inventario declara capacidades de dominio. Reescribe §3 y §4 con tablas y endpoints de negocio del inventario; auth es complemento.",
+        architectCriticAttempts: attempts,
       };
     }
 
@@ -57,12 +73,16 @@ export function createMddArchitectCriticNode(llm: BaseChatModel) {
       };
     }
 
-    const directiveBlock = [directive, explicitReqs].filter(Boolean).join("\n\n");
-    const context = `**Directiva o requisitos del usuario:**\n${directiveBlock}\n\n**Fragmento de MDD recién generado (§3 y §4):**\n${fragment.slice(0, 6000)}`;
+    const directiveBlock = [directive, explicitReqs].filter(Boolean).join("\n\n") ||
+      "(Sin directiva HITL; evalúa fidelidad al inventario de dominio / BRD.)";
+    const context =
+      `**Directiva o requisitos del usuario:**\n${directiveBlock}\n\n` +
+      (inventoryBlock ? `${inventoryBlock.trim()}\n\n` : "") +
+      `**Fragmento de MDD recién generado (§3 y §4):**\n${fragment.slice(0, 6000)}`;
     const prompt = `${ARCHITECT_CRITIC_MDD_PROMPT}\n\n---\n${context}`;
 
     const fallbackGapFeedback =
-      "No se pudo verificar §3 y §4 automáticamente. Revisa que la directiva del usuario (modelo de datos, entidades, roles, aplicaciones, contratos API) esté aplicada en el SQL, diagrama ER y sección 4.";
+      "No se pudo verificar §3 y §4 automáticamente. Revisa que la directiva del usuario y las entidades/procesos del inventario de dominio estén aplicados en el SQL, diagrama ER y sección 4.";
     try {
       const response = await llm.invoke([new HumanMessage(prompt)]);
       const text = typeof response.content === "string" ? response.content : "";
