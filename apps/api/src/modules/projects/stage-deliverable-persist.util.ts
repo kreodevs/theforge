@@ -5,7 +5,9 @@ import {
   type ProjectDeliverableSource,
   type StageDeliverableSnapshot,
 } from "@theforge/shared-types";
+import { Prisma } from "@theforge/database";
 import type { PrismaService } from "../../prisma/prisma.service.js";
+import { parseTasksV2 } from "../engine/task-v2/tasks-parser-v2.js";
 
 type PrismaStageWriter = Pick<PrismaService, "stage" | "project" | "$transaction">;
 
@@ -37,6 +39,7 @@ function buildStageUpdateData(fields: ProjectDeliverableSource): Record<string, 
 
 /**
  * Writes deliverable fields to Stage (live store) and keeps Project flat fields in sync.
+ * Also auto-parses tasksContent into tasksJson v2 when present.
  */
 export async function persistStageAndProjectDeliverables(
   prisma: PrismaStageWriter,
@@ -47,8 +50,21 @@ export async function persistStageAndProjectDeliverables(
   const picked = pickDeliverableFieldsFromSource(fields);
   if (Object.keys(picked).length === 0) return;
 
-  const stageData = buildStageUpdateData(picked);
-  const projectData = buildStageUpdateData(picked);
+  const stageData: Record<string, unknown> = buildStageUpdateData(picked);
+  const projectData: Record<string, unknown> = buildStageUpdateData(picked);
+
+  // Auto-parse tasks v2 into structured JSON
+  if (typeof picked.tasksContent === "string" && picked.tasksContent.trim().length > 0) {
+    try {
+      const parsed = parseTasksV2(picked.tasksContent);
+      if (parsed.tasks.length > 0) {
+        stageData.tasksJson = parsed as unknown as Prisma.InputJsonValue;
+        projectData.tasksJson = parsed as unknown as Prisma.InputJsonValue;
+      }
+    } catch {
+      // Silently ignore parse errors; tasksJson remains untouched
+    }
+  }
 
   await prisma.$transaction([
     prisma.stage.update({ where: { id: stageId }, data: stageData }),

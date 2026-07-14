@@ -1093,6 +1093,18 @@ const TOOLS: Tool[] = [
       required: ["projectId"],
     },
   },
+  {
+    name: "get_tasks_json",
+    description:
+      "Returns the structured v2 tasks JSON for a project (parsed from YAML front-matter tasks). " +
+      "Use this when you need programmatic task metadata: dependencies, target files, change type, verification. " +
+      "If tasksJson is empty, fall back to get_next_implementation_task or generate_tasks.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "The Forge project ID" } },
+      required: ["projectId"],
+    },
+  },
   // ── Utility Tools (formato consistente, single source of truth) ──
   {
     name: "generate_markdown_table",
@@ -1761,6 +1773,25 @@ const handlers: Record<string, Handler> = {
           ? "4. Install agent-governance per INSTALACION.md if not in .cursor/"
           : "4. (Optional) Generate agent governance in Workshop",
       ],
+    });
+  },
+  async get_tasks_json(args) {
+    const projectId = args.projectId as string;
+    const project = await apiGet(`/projects/${projectId}`) as Record<string, unknown>;
+    const tasksJson = project.tasksJson;
+    if (!tasksJson || (typeof tasksJson === "object" && Object.keys(tasksJson).length === 0)) {
+      return JSON.stringify({
+        projectId,
+        hasTasksJson: false,
+        note: "No tasksJson v2 found. Use generate_tasks or get_next_implementation_task.",
+        tasksContentWordCount: typeof project.tasksContent === "string" ? project.tasksContent.trim().split(/\s+/).length : 0,
+      });
+    }
+    return JSON.stringify({
+      projectId,
+      hasTasksJson: true,
+      tasksJson,
+      note: "Structured tasks v2 with YAML front-matter. Use target_files for implementation.",
     });
   },
   // ── Utility Tools ──
