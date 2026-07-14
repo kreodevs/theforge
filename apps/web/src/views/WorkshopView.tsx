@@ -4883,7 +4883,7 @@ export default function WorkshopView({
               <StandardDocPanel
                 icon={LayoutTemplate}
                 title="Blueprint"
-                description="El blueprint se genera a partir del MDD guardado (vista previa antes de guardar)."
+                description="Plan técnico derivado del MDD. Puedes regenerarlo con IA o editar el markdown en modo fuente."
                 content={blueprintContent}
                 onContentChange={(v) => setBlueprintContent(v)}
                 onSave={() => void persistBlueprintContent(blueprintContent ?? "")}
@@ -4892,7 +4892,7 @@ export default function WorkshopView({
                 onGenerate={() => generateBlueprint(projectId)}
                 canGenerate={!!effectiveMddTrimmed}
                 isLoading={loading || mddReviewing}
-                placeholder="# Blueprint\n\nEl contenido del blueprint se genera desde el MDD..."
+                placeholder="# Blueprint\n\nEl contenido del blueprint se genera desde el MDD o puedes escribirlo manualmente..."
                 onBlur={handleBlueprintBlur}
                 legacyGenerateLabel={canGenerateFromCodebase ? "Generar Blueprint desde MDD Inicial" : undefined}
                 onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "blueprint", activeStageId ?? undefined) : undefined}

@@ -1,7 +1,4 @@
-import {
-  resolveLiveStageDeliverables,
-  type ProjectDeliverableSource,
-} from "@theforge/shared-types";
+import type { ProjectDeliverableSource } from "@theforge/shared-types";
 
 /** Campos de entregables que viven por etapa (Stage) y se sincronizan con Project. */
 export const WORKSHOP_STAGE_DELIVERABLE_FIELDS = [
@@ -31,6 +28,10 @@ export type WorkshopStageDeliverableSource = ProjectDeliverableSource & {
   stages?: Array<ProjectDeliverableSource & { id: string }>;
 };
 
+function hasNonEmptyDeliverable(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 /** Resuelve entregables visibles para la etapa en foco (columnas Stage → fallback Project). */
 export function resolveWorkshopStageDeliverables(
   project: WorkshopStageDeliverableSource,
@@ -40,7 +41,12 @@ export function resolveWorkshopStageDeliverables(
     stageId && project.stages?.length
       ? (project.stages.find((s) => s.id === stageId) ?? null)
       : null;
-  return resolveLiveStageDeliverables(stage, project);
+  const deliverables: ProjectDeliverableSource = {};
+  for (const key of WORKSHOP_STAGE_DELIVERABLE_FIELDS) {
+    const fromStage = stage?.[key];
+    deliverables[key] = hasNonEmptyDeliverable(fromStage) ? fromStage : (project[key] ?? null);
+  }
+  return deliverables;
 }
 
 export function workshopDeliverableStoreSlice(
