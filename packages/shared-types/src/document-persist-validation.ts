@@ -11,7 +11,8 @@ export function wouldShrinkDocDangerously(
   if (!c || c.length < 400) return false;
   if (!n) return true;
   if (n.length >= c.length * minRatio) return false;
-  if (/^#\s/m.test(n) && n.length >= Math.min(c.length * 0.85, 2500)) return false;
+  // Never allow absolute floor to replace a much larger doc (was min(0.85*c, 2500) — wiped 10–20k DBGAs).
+  if (/^#\s/m.test(n) && n.length >= c.length * 0.7) return false;
   return true;
 }
 

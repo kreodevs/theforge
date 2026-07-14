@@ -188,6 +188,32 @@ describe("wouldShrinkDbgaDangerously", () => {
     assert.equal(wouldShrinkDbgaDangerously(current, fragment), true);
   });
 
+  it("bloquea catálogo de endpoints que sustituye un DBGA largo", () => {
+    const current = `# Domain Benchmark & Gap Analysis
+
+## 1. Referencia de Industria
+${"x".repeat(8000)}
+
+## 2. Funcionalidades
+Detalle del producto…`;
+    const endpoints = `Aquí tienes la lista simplificada de los endpoints esenciales:
+
+1. Gestión de Sesión
+POST /v1/chats — Crea sesión.
+GET /v1/chats/{chat_id} — Historial.
+DELETE /v1/chats/{chat_id} — Cierra.
+
+2. Mensajería
+POST /v1/chats/{chat_id}/messages
+POST /v1/chats/{chat_id}/messages/stream
+
+3. Estado
+GET /v1/chats/{chat_id}/status
+POST /v1/chats/{chat_id}/stop
+`;
+    assert.equal(wouldShrinkDbgaDangerously(current, endpoints), true);
+  });
+
   it("bloquea doc reducido a registro de cambios sin Research Report", () => {
     const current = `# Research Report
 

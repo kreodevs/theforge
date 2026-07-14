@@ -287,8 +287,10 @@ export function wouldShrinkDbgaDangerously(
     return true;
   }
 
-  if (n.length >= c.length * minRatio) return false;
-  // Reemplazo completo legítimo (nuevo doc largo con H1)
-  if (/^#\s/m.test(n) && n.length >= Math.min(c.length * 0.85, 2500)) return false;
-  return true;
+  // Catálogo de endpoints / lista corta no sustituye un DBGA largo
+  if (n.length < c.length * minRatio) {
+    if (/^#\s/m.test(n) && n.length >= c.length * 0.7) return false;
+    return true;
+  }
+  return false;
 }

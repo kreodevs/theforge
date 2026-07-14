@@ -21,6 +21,10 @@ const DBGA_DOMAIN_WITH_VERB_RE =
 export function hasEmbeddedSpecificationBlock(message: string): boolean {
   const m = message.trim();
   if (m.length < 500) return false;
+  // Catálogo puro de endpoints REST (POST/GET…) no es un DBGA completo ni “spec” a sustituir el panel.
+  if (looksLikeApiEndpointCatalog(m) && !/^#\s+(?:Domain\s+Benchmark|Fase\s+0|Research\s+Report)/im.test(m)) {
+    return false;
+  }
   return (
     /#\s+Especificaci[oó]n/i.test(m) ||
     /##\s+1\.\s+Visi[oó]n/i.test(m) ||
@@ -28,6 +32,28 @@ export function hasEmbeddedSpecificationBlock(message: string): boolean {
     (/^---\s*$/m.test(m) && /\n##\s+\d+\./m.test(m)) ||
     ((m.match(/\n##\s+/g)?.length ?? 0) >= 3 && m.length >= 1200)
   );
+}
+
+/**
+ * Lista numerada de rutas HTTP (POST/GET/…) — fragmento a integrar, no documento DBGA completo.
+ * Evita que Fase 0 persista solo el catálogo y borre el panel.
+ * Specs largas con título/secciones (p. ej. Portal de Licencias) no cuentan como catálogo.
+ */
+export function looksLikeApiEndpointCatalog(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 80 || t.length > 12_000) return false;
+  // Documento de especificación / DBGA con estructura real — no es un dump de endpoints.
+  if (/#\s+Especificaci[oó]n/i.test(t)) return false;
+  if (/##\s+1\.\s+Visi[oó]n/i.test(t)) return false;
+  if ((t.match(/\n##\s+/g)?.length ?? 0) >= 3 && t.length >= 1200) return false;
+  const methodHits = (t.match(/\b(?:GET|POST|PUT|PATCH|DELETE)\s+\/[v\w{}/:_-]+/gi) ?? []).length;
+  if (methodHits < 3) return false;
+  const numbered = (t.match(/(?:^|\n)\d+\.\s+/g) ?? []).length;
+  const hasBenchmarkTitle =
+    /^#\s+(?:Domain\s+Benchmark|Fase\s+0\s+[—–-]|Research\s+Report|Benchmark\s*&\s*Gap)/im.test(t);
+  if (hasBenchmarkTitle && t.length > 4000) return false;
+  // Catálogo corto dominado por verbos HTTP + outline 1/2/3
+  return methodHits >= 4 || (methodHits >= 3 && numbered >= 2 && t.length < 3500);
 }
 
 /** Usuario pide integrar una spec pegada en el DBGA (no brainstorming). */
@@ -43,6 +69,7 @@ export function looksLikeDbgaSpecIntegrationRequest(message: string): boolean {
 export function looksLikeDbgaDocumentBody(text: string): boolean {
   const t = text.trim();
   if (t.length < 450) return false;
+  if (looksLikeApiEndpointCatalog(t)) return false;
   if (
     /^#\s+(?:Domain\s+Benchmark|Fase\s+0\s+[—–-]|Benchmark\s*&\s*Gap|Research\s+Report)/im.test(t)
   ) {
