@@ -16,12 +16,15 @@ export function createMddTaskGeneratorV2Node() {
     const typesJson = state.typesJson;
     const operationsJson = state.operationsJson;
 
+    console.log(`[task-gen-v2] START hasTypes=${!!typesJson} hasOps=${!!operationsJson} entities=${typesJson?.entities?.length ?? 0}`);
+
     if (
       !typesJson ||
       !operationsJson ||
       !Array.isArray(typesJson.entities) ||
       typesJson.entities.length === 0
     ) {
+      console.log(`[task-gen-v2] SKIP missing typesJson or operationsJson`);
       return {
         tasksJson: undefined,
         inferenceRulesApplied: [
@@ -47,6 +50,8 @@ export function createMddTaskGeneratorV2Node() {
         }
       }
 
+      console.log(`[task-gen-v2] existingTasks=${existingTasks.tasks.length}`);
+
       // Enriquecer con inference engine
       const inferred = inferTasks({
         typesJson,
@@ -54,6 +59,8 @@ export function createMddTaskGeneratorV2Node() {
         existingTasks: existingTasks.tasks,
         stage: state.activeStageId ?? "unknown",
       });
+
+      console.log(`[task-gen-v2] inferredTasks=${inferred.inferredTasks.length} coverage=${inferred.coverage.coveragePercent}%`);
 
       const mergedTasks = {
         version: "2.0",
@@ -67,6 +74,7 @@ export function createMddTaskGeneratorV2Node() {
         },
       };
 
+      console.log(`[task-gen-v2] DONE totalTasks=${mergedTasks.tasks.length}`);
       return {
         tasksJson: mergedTasks as any,
         inferenceRulesApplied: [
@@ -77,6 +85,7 @@ export function createMddTaskGeneratorV2Node() {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      console.error(`[task-gen-v2] ERROR: ${message}`);
       return {
         tasksJson: undefined,
         inferenceRulesApplied: [

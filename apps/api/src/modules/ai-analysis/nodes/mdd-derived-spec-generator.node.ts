@@ -20,8 +20,10 @@ export function createMddDerivedSpecGeneratorNode() {
     state: MDDStateType,
   ): Promise<Partial<MDDStateType>> {
     const draft = (state.mddDraft ?? "").trim();
+    console.log(`[derived-spec] START draftLen=${draft.length}`);
+
     if (draft.length < 200) {
-      // MDD demasiado corto para extraer estructuras
+      console.log(`[derived-spec] SKIP draft too short (${draft.length})`);
       return {
         typesJson: undefined,
         operationsJson: undefined,
@@ -29,10 +31,25 @@ export function createMddDerivedSpecGeneratorNode() {
       };
     }
 
-    const s3 = extractSection3Body(draft);
-    const s4 = extractSection4Body(draft);
+    let s3: string | null = null;
+    let s4: string | null = null;
+    try {
+      s3 = extractSection3Body(draft);
+      s4 = extractSection4Body(draft);
+    } catch (extractErr) {
+      const msg = extractErr instanceof Error ? extractErr.message : String(extractErr);
+      console.error(`[derived-spec] FATAL extractSection error: ${msg}`);
+      return {
+        typesJson: undefined,
+        operationsJson: undefined,
+        inferenceRulesApplied: [`[derived-spec] extractSection fatal: ${msg}`],
+      };
+    }
+
+    console.log(`[derived-spec] s3Len=${s3?.length ?? 0} s4Len=${s4?.length ?? 0}`);
 
     if (!s3 || s3.length < 50) {
+      console.log(`[derived-spec] SKIP s3 missing or too short`);
       return {
         typesJson: undefined,
         operationsJson: undefined,
@@ -42,9 +59,12 @@ export function createMddDerivedSpecGeneratorNode() {
 
     try {
       const typesJson = extractTypesFromMddSection3(s3);
+      console.log(`[derived-spec] typesJson entities=${typesJson.entities.length} enums=${typesJson.enums.length}`);
+
       const operationsJson = s4 && s4.length >= 50
         ? extractOperationsFromMdd(s3, s4, typesJson)
         : { version: "1.0", entities: [], globalFeatures: {} };
+      console.log(`[derived-spec] operationsJson ops=${(operationsJson as any).operations?.length ?? 0}`);
 
       const applied: string[] = [];
       // Casteamos globalFeatures para evitar errores de tipo cuando el schema devuelve {} por defecto
@@ -65,6 +85,7 @@ export function createMddDerivedSpecGeneratorNode() {
         applied.push("[search-auto] detected and enabled");
       }
 
+      console.log(`[derived-spec] DONE appliedRules=${applied.length}`);
       return {
         typesJson: typesJson as any,
         operationsJson: operationsJson as any,
@@ -72,6 +93,7 @@ export function createMddDerivedSpecGeneratorNode() {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      console.error(`[derived-spec] ERROR during extraction: ${message}`);
       return {
         typesJson: undefined,
         operationsJson: undefined,

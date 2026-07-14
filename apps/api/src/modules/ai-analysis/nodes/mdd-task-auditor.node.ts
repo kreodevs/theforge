@@ -13,7 +13,11 @@ export function createMddTaskAuditorNode() {
   ): Promise<Partial<MDDStateType>> {
     const tasksJson = state.tasksJson;
 
+    const taskCount = tasksJson?.tasks?.length ?? 0;
+    console.log(`[task-auditor] START taskCount=${taskCount}`);
+
     if (!tasksJson || !Array.isArray(tasksJson.tasks) || tasksJson.tasks.length === 0) {
+      console.log(`[task-auditor] SKIP no tasksJson`);
       return {
         tasksAuditScore: undefined,
         inferenceRulesApplied: [
@@ -25,6 +29,7 @@ export function createMddTaskAuditorNode() {
 
     try {
       const audit = auditTasks(tasksJson as any);
+      console.log(`[task-auditor] DONE score=${audit.score} passed=${audit.passed} errors=${audit.errors.length} warnings=${audit.warnings.length}`);
 
       const items = [
         ...audit.errors.slice(0, 3).map((e) => `[task-auditor] error: ${e.message}`),
@@ -43,6 +48,7 @@ export function createMddTaskAuditorNode() {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      console.error(`[task-auditor] ERROR: ${message}`);
       return {
         tasksAuditScore: undefined,
         inferenceRulesApplied: [

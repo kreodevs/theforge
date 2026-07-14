@@ -1680,8 +1680,19 @@ export class AiAnalysisService {
   ): Promise<void> {
     const pid = projectId?.trim();
     const sid = stageId?.trim();
-    if (!pid || !sid) return;
-    if (!state.typesJson && !state.operationsJson) return;
+    this.logger.log(`[MDD:DerivedSpecs] persistDerivedSpecs called pid=${pid} sid=${sid}`);
+    if (!pid || !sid) {
+      this.logger.log(`[MDD:DerivedSpecs] abort — missing pid or sid`);
+      return;
+    }
+    const hasTypes = !!state?.typesJson;
+    const hasOps = !!state?.operationsJson;
+    const hasTasks = !!state?.tasksJson;
+    this.logger.log(`[MDD:DerivedSpecs] state flags types=${hasTypes} ops=${hasOps} tasks=${hasTasks} score=${state?.tasksAuditScore ?? "n/a"}`);
+    if (!hasTypes && !hasOps) {
+      this.logger.log(`[MDD:DerivedSpecs] abort — nothing to persist`);
+      return;
+    }
     try {
       await this.prisma.stageDerivedSpec.upsert({
         where: { stageId: sid },
