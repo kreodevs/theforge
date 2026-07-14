@@ -3043,14 +3043,14 @@ export default function WorkshopView({
         {/* Columna A: Chat + rail “mostrar” (solo lg; ancho animado) */}
         <div
           className={cn(
-            "flex min-h-0 shrink-0 flex-col lg:flex-row lg:items-stretch lg:overflow-visible",
-            mobileWorkshopColumn === "chat" ? "flex min-h-0 flex-1" : "hidden lg:flex lg:h-full lg:min-h-0",
+            "flex min-h-0 shrink-0 flex-col lg:flex-row lg:items-stretch lg:min-h-0 lg:overflow-visible",
+            mobileWorkshopColumn === "chat" ? "flex min-h-0 flex-1" : "hidden lg:flex lg:min-h-0 lg:self-stretch",
           )}
         >
           <div
             className={cn(
-              "workshop-chat-column relative min-h-0 min-w-0 overflow-hidden flex flex-col border-r border-[var(--border)] lg:shrink-0",
-              mobileWorkshopColumn === "chat" ? "flex-1" : "lg:h-full lg:min-h-0",
+              "workshop-chat-column relative flex min-h-0 min-w-0 flex-col self-stretch overflow-hidden border-r border-[var(--border)] lg:shrink-0",
+              mobileWorkshopColumn === "chat" ? "flex-1" : "lg:min-h-0",
               !lgChatPanelResizing &&
                 "lg:transition-[width] lg:duration-300 lg:ease-out motion-reduce:lg:transition-none",
               isLgLayout && lgWorkshopChatCollapsed
@@ -3066,8 +3066,8 @@ export default function WorkshopView({
             <section
               ref={chatSectionRef}
               className={cn(
-                "flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden",
-                mobileWorkshopColumn === "chat" ? "min-h-0 flex-1" : "lg:h-full lg:min-h-0 lg:flex-col",
+                "flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
+                mobileWorkshopColumn === "chat" ? "min-h-0 flex-1" : "lg:min-h-0 lg:flex-col",
               )}
               aria-hidden={isLgLayout && lgWorkshopChatCollapsed ? true : undefined}
             >

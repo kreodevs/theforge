@@ -45,6 +45,11 @@ import { useTheme, type ThemePreference } from "@/theme/ThemeProvider";
 import { cn } from "@/lib/utils";
 import { getProjectMonogram } from "@/utils/projectMonogram";
 import { selectWorkshopAgentsBusy, useWorkshopStore } from "../store/workshopStore";
+import {
+  APP_PANEL_FOOTER_CHROME,
+  APP_PANEL_FOOTER_H,
+  APP_PANEL_FOOTER_PY,
+} from "@/constants/workshopDocToolbar";
 import { WORKSHOP_EXIT_BLOCKED_TITLE, WORKSHOP_DOC_NAV_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { buildWorkshopDocNavItems, buildPluginDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
 import { fetchUiMcpActive } from "@/lib/ui-mcp-api";
@@ -254,7 +259,6 @@ function ThemeModeToggle({ compact }: { compact: boolean }) {
   return (
     <div
       className={cn(
-        "mb-2",
         compact
           ? "flex flex-col items-center gap-2"
           : "rounded-[var(--radius-lg)] bg-[color-mix(in_oklch,var(--sidebar-foreground)_6%,var(--sidebar))] p-0.5 shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--sidebar-foreground)_8%,transparent)]",
@@ -1174,7 +1178,11 @@ export function DashboardSidebar({
 
       <div
         className={cn(
-          "mt-auto w-full min-w-0 shrink-0 border-t border-[color-mix(in_oklch,var(--sidebar-border)_75%,var(--sidebar))] p-2",
+          "mt-auto w-full min-w-0",
+          APP_PANEL_FOOTER_CHROME,
+          !rail && APP_PANEL_FOOTER_H,
+          APP_PANEL_FOOTER_PY,
+          "border-[color-mix(in_oklch,var(--sidebar-border)_75%,var(--sidebar))] px-2",
           rail && "lg:relative lg:z-[1] lg:px-1.5",
         )}
       >
