@@ -61,7 +61,29 @@ export class UiScreensService {
     }
 
     const mdd = resolveConstitutionMarkdown(project);
-    const plan = buildPantallasPlan(mdd, project.userStoriesContent, project.apiContractsContent);
+    const stage = await this.prisma.stage.findFirst({
+      where: { projectId },
+      orderBy: { ordinal: "asc" },
+      select: { domainInventory: true, brdContent: true, mddContent: true },
+    });
+    let inventory: import("@theforge/shared-types").DomainInventory | null = null;
+    try {
+      const { resolveDomainInventory } = await import("../engine/domain-inventory-persist.util.js");
+      inventory = resolveDomainInventory({
+        persisted: stage?.domainInventory,
+        brdMarkdown: stage?.brdContent,
+        dbgaMarkdown: (project as { dbgaContent?: string | null }).dbgaContent,
+        mddMarkdown: mdd,
+      });
+    } catch {
+      inventory = null;
+    }
+    const plan = buildPantallasPlan(
+      mdd,
+      project.userStoriesContent,
+      project.apiContractsContent,
+      inventory,
+    );
     const entityPlan = plan.filter((p) => p.source !== "hu-only");
 
     if (entityPlan.length === 0) {

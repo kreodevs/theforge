@@ -4,7 +4,7 @@
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
  */
-import type { EntityClassification, ListScreensEntity } from "@theforge/shared-types";
+import type { DomainInventory, EntityClassification, ListScreensEntity } from "@theforge/shared-types";
 import { AUTH_ENTITY_FAMILY } from "@theforge/shared-types";
 import { extractEntityKeyFieldsFromMdd, extractEntityNamesFromMdd } from "./ui-screens-mdd.util.js";
 import {
@@ -261,16 +261,34 @@ export function buildPantallasPlan(
   mddMarkdown: string,
   userStoriesMarkdown?: string | null,
   apiContractsMarkdown?: string | null,
+  inventory?: DomainInventory | null,
 ): PantallaPlanItem[] {
-  const entityNames = extractEntityNamesFromMdd(mddMarkdown).filter(
+  const fromMatrix =
+    inventory?.crudMatrix
+      .filter((r) => !r.infraOnly && !AUTH_ENTITY_FAMILY.has(r.entity) && r.mvp)
+      .map((r) => r.entity) ?? [];
+  const fromMdd = extractEntityNamesFromMdd(mddMarkdown).filter(
     (e) => !INFRA_ONLY_SCREEN_ENTITIES.has(e.toLowerCase()),
   );
+  // Prefer CrudMatrix order, then MDD §3 (PLAN-CASCADE-90 P1)
+  const entityNames = [...new Set([...fromMatrix, ...fromMdd])];
   const keyFieldsByEntity = extractEntityKeyFieldsFromMdd(mddMarkdown);
   const stories = parseUserStoriesMarkdown(userStoriesMarkdown ?? "");
   const endpoints = extractHttpEndpointsFromMarkdown(apiContractsMarkdown ?? "");
   const defaultRoles = extractRolesFromMdd(mddMarkdown);
   const defaultRole = defaultRoles[0] ?? "Usuario autenticado";
-  const domainCorpus = `${mddMarkdown}\n${userStoriesMarkdown ?? ""}`.toLowerCase();
+  const domainCorpus = `${mddMarkdown}\n${userStoriesMarkdown ?? ""}\n${JSON.stringify(inventory?.processes ?? [])}`.toLowerCase();
+
+  const screenHintByEntity = new Map(
+    (inventory?.crudMatrix ?? [])
+      .filter((r) => r.screenHint)
+      .map((r) => [r.entity.toLowerCase(), r.screenHint!] as const),
+  );
+  const endpointHintByEntity = new Map(
+    (inventory?.crudMatrix ?? [])
+      .filter((r) => r.endpointHint)
+      .map((r) => [r.entity.toLowerCase(), r.endpointHint!] as const),
+  );
 
   const linkedByEntity = new Map<string, ParsedUserStory[]>();
   const matchedStoryIndexes = new Set<number>();
@@ -304,19 +322,23 @@ export function buildPantallasPlan(
       uiHint = "chat";
     }
     const matched = matchEndpointsForEntity(entityName, endpoints);
+    const hintApi = endpointHintByEntity.get(entityName.toLowerCase());
     const primaryApi =
       matched.length > 0
         ? formatEndpointList(matched, 2)
-        : /login|auth|otp|mfa/i.test(screenName)
-          ? formatEndpointList(inferAuthEndpoints(endpoints), 2)
-          : undefined;
+        : hintApi
+          ? `REST ${hintApi}`
+          : /login|auth|otp|mfa/i.test(screenName)
+            ? formatEndpointList(inferAuthEndpoints(endpoints), 2)
+            : undefined;
 
+    const routeFromMatrix = screenHintByEntity.get(entityName.toLowerCase());
     const route =
       uiHint === "chat"
         ? "/chat"
         : isAuthFlow
           ? "/login"
-          : inferScreenRoute(screenName, uiHint);
+          : routeFromMatrix || inferScreenRoute(screenName, uiHint);
 
     plan.push({
       name: entityName,
@@ -439,6 +461,33 @@ export function buildPantallasPlan(
       implementationMode: "pull-registry",
     });
   });
+
+  // ProcessInventory surfaces (chat, admin, etc.) when not already covered
+  for (const proc of inventory?.processes ?? []) {
+    for (const hint of proc.screenHints ?? []) {
+      const route =
+        hint === "chat" || /whatsapp|mensaje/i.test(proc.name)
+          ? "/chat"
+          : hint === "admin" || /admin|bit[aá]cora/i.test(proc.name)
+            ? `/admin/${proc.id.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`
+            : `/${hint.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
+      if (plan.some((p) => p.route === route || p.name === proc.id)) continue;
+      plan.push({
+        name: proc.id,
+        keyFields: ["id"],
+        classification: "WorkflowProcess",
+        uiHint: hint === "chat" ? "chat" : hint === "admin" ? "table" : "form",
+        screenName: proc.name,
+        purpose: `Proceso: ${proc.name}${proc.trigger ? ` (trigger: ${proc.trigger})` : ""}`,
+        source: "hu-only",
+        role: defaultRole,
+        route,
+        pageName: inferPageComponentName(proc.name),
+        uiStates: inferUiStates(proc.name, hint === "chat" ? "chat" : "table"),
+        implementationMode: "pull-registry",
+      });
+    }
+  }
 
   return plan;
 }

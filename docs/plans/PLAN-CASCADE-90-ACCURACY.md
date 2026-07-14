@@ -412,10 +412,12 @@ Demostrar ≥90 en proyecto real; luego endurecer producto.
 | DocAccuracyScore | _TBD_ | | Target ≥90 tras regenerar MDD §3 dominio |
 | TaskAccuracyScore | _TBD_ | | Target ≥90 |
 
+### Entregado en código (0.14.0)
+
+- Inventario persistido (`Stage.domainInventory`), stubs §3 deterministas, pantallas/tasks/auditor dominio, aliases C1/T1, Spec journeys + omit UC/US literarios HIGH, hard gate env.
+
 ---
 
 ## 14. Primera acción recomendada
 
-**Hecho en PR #438:** métricas + delivery gate dominio + **wiring agentic** (inventario BRD en Clarifier/SA/Critic/Auditor, prepare_output, checklist CrudMatrix, W4 TaskAccuracy, Falkor condicional, UC/US thin).
-
-**Siguiente (humano):** regenerar MDD §3 de piloto Doris en Workshop y re-medir Doc/TaskAccuracy vía analyze.
+Regenerar MDD §3 piloto Doris → `analyze` → si ≥90 activar `REQUIRE_DOC_ACCURACY_90=true` en prod.

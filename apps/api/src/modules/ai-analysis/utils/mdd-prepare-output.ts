@@ -191,7 +191,34 @@ export async function prepareMddForOutput(
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
   const reconciled = await reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
   const markdown = applyPreDeliveryGateFixes(reconciled);
-  const deliveryGate = validateMddForDelivery(markdown, {
+  let finalMarkdown = markdown;
+  if (options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()) {
+    try {
+      const { rebuildDomainInventoryPreferringBrd } = await import(
+        "../../engine/domain-inventory-persist.util.js"
+      );
+      const { mergeDomainTablesIntoMdd } = await import(
+        "../../engine/compose-section3-from-inventory.util.js"
+      );
+      const inventory = rebuildDomainInventoryPreferringBrd({
+        brdMarkdown: options.brdMarkdown,
+        dbgaMarkdown: options.dbgaMarkdown,
+        mddMarkdown: markdown,
+      });
+      const merged = mergeDomainTablesIntoMdd(markdown, inventory);
+      if (merged.injected.length > 0) {
+        finalMarkdown = applyPreDeliveryGateFixes(merged.markdown);
+        console.log(
+          `[MDD:DeliveryGate] injected domain table stubs: ${merged.injected.slice(0, 8).join(", ")}`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[MDD:DeliveryGate] domain §3 merge skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  const deliveryGate = validateMddForDelivery(finalMarkdown, {
     brdMarkdown: options?.brdMarkdown,
     dbgaMarkdown: options?.dbgaMarkdown,
   });
@@ -203,5 +230,5 @@ export async function prepareMddForOutput(
       `[MDD:DeliveryGate] score=${deliveryGate.score} blockers=${deliveryGate.blockers.length}: ${deliveryGate.blockers.slice(0, 3).join("; ")}`,
     );
   }
-  return markdown;
+  return finalMarkdown;
 }

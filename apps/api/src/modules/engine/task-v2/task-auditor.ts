@@ -4,6 +4,7 @@
  */
 
 import { ParsedTaskV2, TaskParseResult } from "./tasks-parser-v2.js";
+import { AUTH_ENTITY_FAMILY, type DomainInventory } from "@theforge/shared-types";
 
 export interface TaskAuditResult {
   score: number; // 0-100
@@ -56,6 +57,10 @@ const RULES = {
   // Trazabilidad
   HAS_MDD_REF: { id: "T-AUD-011", weight: 5, message: "Tarea debería referenciar MDD §3" },
   HAS_ENTITY: { id: "T-AUD-012", weight: 5, message: "Tarea backend debería declarar entity" },
+
+  // Dominio (PLAN-CASCADE-90)
+  DOMAIN_ENTITY_TASK: { id: "T-AUD-013", weight: 15, message: "Cada entidad de dominio del inventario debe tener ≥1 task" },
+  DOMAIN_CAPABILITY_TASK: { id: "T-AUD-014", weight: 15, message: "Cada capacidad BRD de dominio debe anclarse en ≥1 task" },
 };
 
 const BASE_SCORE = 100;
@@ -64,7 +69,7 @@ const YELLOW_THRESHOLD = 75;
 
 // ---- Motor de auditoría ----
 
-export function auditTasks(parseResult: TaskParseResult): TaskAuditResult {
+export function auditTasks(parseResult: TaskParseResult, inventory?: DomainInventory | null): TaskAuditResult {
   const errors: TaskAuditError[] = [];
   const warnings: TaskAuditWarning[] = [];
   const fixes: TaskAuditFix[] = [];
@@ -103,8 +108,15 @@ export function auditTasks(parseResult: TaskParseResult): TaskAuditResult {
     score -= RULES.COVERAGE_CHECK.weight;
   }
 
-  // 5. Estimación de precisión (reservado para futura expansión)
-  // const accuracyHints = estimateCodeAccuracy(tasks);
+  // 5. Domain inventory coverage (PLAN-CASCADE-90)
+  if (inventory) {
+    const domainGaps = checkDomainInventoryCoverage(tasks, inventory);
+    for (const g of domainGaps.errors) {
+      errors.push(g);
+      score -= Math.min(10, RULES.DOMAIN_ENTITY_TASK.weight / 2);
+    }
+    for (const w of domainGaps.warnings) warnings.push(w);
+  }
 
   return {
     score: Math.max(0, score),
@@ -288,9 +300,53 @@ function checkCrudCoverage(tasks: ParsedTaskV2[]): { complete: boolean; missing:
   return { complete: missing.length === 0, missing };
 }
 
+/** Coverage vs persisted/live DomainInventory (entities + capabilities). */
+export function checkDomainInventoryCoverage(
+  tasks: ParsedTaskV2[],
+  inventory: DomainInventory,
+): { errors: TaskAuditError[]; warnings: TaskAuditWarning[] } {
+  const errors: TaskAuditError[] = [];
+  const warnings: TaskAuditWarning[] = [];
+  const corpus = tasks
+    .map((t) => [t.id, t.title, t.entity, ...(t.targetFiles ?? []), ...(t.operations ?? [])].filter(Boolean).join(" "))
+    .join("\n")
+    .toLowerCase();
+
+  const businessEntities = inventory.suggestedEntities.filter((e) => !AUTH_ENTITY_FAMILY.has(e));
+  const missingEntities = businessEntities.filter((e) => {
+    const tokens = [e, e.replace(/_/g, "-"), ...e.split("_")].filter((t) => t.length >= 3);
+    return !tokens.some((t) => corpus.includes(t.toLowerCase()));
+  });
+  if (missingEntities.length > 0) {
+    errors.push({
+      severity: "error",
+      message: `${RULES.DOMAIN_ENTITY_TASK.message}: ${missingEntities.slice(0, 12).join(", ")}`,
+      rule: RULES.DOMAIN_ENTITY_TASK.id,
+    });
+  }
+
+  const domainCaps = inventory.capabilities.filter((c) => !c.isAuthRelated);
+  const missingCaps = domainCaps.filter((c) => {
+    const key = c.title.toLowerCase().split(/\s+/).find((w) => w.length >= 5);
+    return key ? !corpus.includes(key) : true;
+  });
+  if (missingCaps.length > 0) {
+    warnings.push({
+      message: `${RULES.DOMAIN_CAPABILITY_TASK.message}: ${missingCaps
+        .slice(0, 8)
+        .map((c) => c.title)
+        .join("; ")}`,
+      rule: RULES.DOMAIN_CAPABILITY_TASK.id,
+    });
+  }
+
+  return { errors, warnings };
+}
+
 // ---- Export ----
 export default {
   auditTasks,
+  checkDomainInventoryCoverage,
   RULES,
   GREEN_THRESHOLD,
   YELLOW_THRESHOLD,

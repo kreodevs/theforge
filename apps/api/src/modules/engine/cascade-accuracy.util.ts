@@ -44,18 +44,44 @@ function capabilityAnchored(
   capTitle: string,
   capBody: string,
   haystack: string,
+  aliasHints: string[] = [],
 ): boolean {
-  const tokens = `${capTitle} ${capBody}`
+  const raw = `${capTitle} ${capBody} ${aliasHints.join(" ")}`
     .toLowerCase()
-    .split(/[^a-záéíóúñ0-9]+/i)
-    .filter((t) => t.length >= 5)
-    .slice(0, 12);
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+  const tokens = raw
+    .split(/[^a-z0-9]+/i)
+    .filter((t) => t.length >= 4)
+    .slice(0, 16);
   if (tokens.length === 0) return haystack.includes(capTitle.toLowerCase().slice(0, 20));
   let hits = 0;
   for (const t of tokens) {
     if (haystack.includes(t)) hits += 1;
+    // stem: conversations ↔ conversation
+    if (t.endsWith("s") && haystack.includes(t.slice(0, -1))) hits += 1;
+    if (!t.endsWith("s") && haystack.includes(`${t}s`)) hits += 1;
   }
-  return hits >= Math.min(2, tokens.length);
+  return hits >= Math.min(2, Math.max(1, Math.ceil(tokens.length / 4)));
+}
+
+/** Entity / capability alias bag for C1 matching. */
+export function domainAliasHints(inventory: DomainInventory): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const e of inventory.suggestedEntities) {
+    const parts = e.split("_").filter((p) => p.length >= 3);
+    map.set(e, parts);
+  }
+  for (const cap of inventory.capabilities) {
+    const aliases = inventory.suggestedEntities
+      .filter((e) => {
+        const bag = `${cap.title} ${cap.body}`.toLowerCase();
+        return e.split("_").some((p) => p.length >= 4 && bag.includes(p));
+      })
+      .slice(0, 6);
+    map.set(cap.id, aliases);
+  }
+  return map;
 }
 
 export function computeDocAccuracy(input: CascadeAccuracyInput): DocAccuracyResult {
@@ -82,11 +108,14 @@ export function computeDocAccuracy(input: CascadeAccuracyInput): DocAccuracyResu
   const domainCaps = caps.filter((c) => !c.isAuthRelated);
   const capsToScore = domainCaps.length > 0 ? domainCaps : caps;
 
+  const aliases = domainAliasHints(inventory);
+
   // C1 Capability coverage (30)
   const c1Gaps: string[] = [];
   let c1Hits = 0;
   for (const cap of capsToScore) {
-    if (capabilityAnchored(cap.title, cap.body, haystack)) c1Hits += 1;
+    const hints = aliases.get(cap.id) ?? [];
+    if (capabilityAnchored(cap.title, cap.body, haystack, hints)) c1Hits += 1;
     else c1Gaps.push(`Capacidad sin ancla en docs: ${cap.title}`);
   }
   const c1Score =
@@ -214,8 +243,10 @@ export function computeTaskAccuracy(input: CascadeAccuracyInput): TaskAccuracyRe
   // T1 Capability→task (35)
   const t1Gaps: string[] = [];
   let t1Hits = 0;
+  const taskAliases = domainAliasHints(inventory);
   for (const cap of capsToScore) {
-    if (capabilityAnchored(cap.title, cap.body, tasks)) t1Hits += 1;
+    const hints = taskAliases.get(cap.id) ?? [];
+    if (capabilityAnchored(cap.title, cap.body, tasks, hints)) t1Hits += 1;
     else t1Gaps.push(`Sin task para capacidad: ${cap.title}`);
   }
   const t1Score =

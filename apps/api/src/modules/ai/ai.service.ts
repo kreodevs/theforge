@@ -6,7 +6,7 @@ import type {
 import { AIFactory } from "./ai.factory.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import type { ChatImagePart } from "@theforge/shared-types";
-import type { AemMarketScope } from "@theforge/shared-types";
+import type { AemMarketScope, DomainInventory } from "@theforge/shared-types";
 import { MASTER_PROMPT } from "./prompts/master-prompt.js";
 
 /** System corto solo para bienvenidas: evita ~6k+ chars de MASTER en cada `POST …/welcome`. */
@@ -148,7 +148,68 @@ function appendGreenfieldCoverageChecklist(
     brdMarkdown: options?.brdContent,
     dbgaMarkdown: options?.dbgaContent,
   });
-  return appendCoverageChecklistToPrompt(prompt, checklist);
+  let out = appendCoverageChecklistToPrompt(prompt, checklist);
+  if (options?.domainInventory?.processes?.length) {
+    const journeys = options.domainInventory.processes
+      .slice(0, 20)
+      .map(
+        (p) =>
+          `- [ ] Journey «${p.name}»${p.trigger ? ` (trigger: ${p.trigger})` : ""}` +
+          (p.steps.length ? `\n  Steps: ${p.steps.slice(0, 6).join(" → ")}` : ""),
+      )
+      .join("\n");
+    out += `\n\n**ProcessInventory journeys (trazabilidad obligatoria):**\n${journeys}\n`;
+  }
+  return out;
+}
+
+function buildThinUseCasesFromInventory(inventory: DomainInventory): string {
+  const lines = [
+    "# Casos de uso (thin — ProcessInventory)",
+    "",
+    "Documento generado sin prosa literaria (PLAN-CASCADE-90). Cada proceso = journey Spec.",
+    "",
+  ];
+  for (const p of inventory.processes.slice(0, 30)) {
+    lines.push(`## CU-${p.id}: ${p.name}`);
+    lines.push(`- **Trigger:** ${p.trigger ?? "user.request"}`);
+    if (p.steps.length) {
+      lines.push("- **Pasos:**");
+      for (const s of p.steps) lines.push(`  1. ${s}`);
+    }
+    if (p.entities.length) lines.push(`- **Entidades:** ${p.entities.join(", ")}`);
+    lines.push("");
+  }
+  if (inventory.processes.length === 0) {
+    lines.push("_Sin procesos en inventario; regenerar BRD/MDD._");
+  }
+  return lines.join("\n");
+}
+
+function buildThinUserStoriesFromInventory(inventory: DomainInventory): string {
+  const lines = [
+    "# Historias de Usuario (thin — ProcessInventory / CrudMatrix)",
+    "",
+  ];
+  let n = 1;
+  for (const row of inventory.crudMatrix.filter((r) => r.mvp && !r.infraOnly).slice(0, 40)) {
+    lines.push(`## US-${String(n).padStart(3, "0")}: Gestionar ${row.entity}`);
+    lines.push(`**Como:** ${row.actor ?? "Usuario autenticado"}`);
+    lines.push(`**Quiero:** operar ${row.ops.join("/")} sobre \`${row.entity}\``);
+    lines.push(`**Para:** cubrir capacidad de dominio vinculada al inventario.`);
+    if (row.screenHint) lines.push(`**Pantalla:** ${row.screenHint}`);
+    lines.push("");
+    n += 1;
+  }
+  for (const p of inventory.processes.slice(0, 15)) {
+    lines.push(`## US-${String(n).padStart(3, "0")}: ${p.name}`);
+    lines.push(`**Como:** Usuario del sistema`);
+    lines.push(`**Quiero:** completar el proceso «${p.name}»`);
+    lines.push(`**Para:** satisfacer el trigger ${p.trigger ?? "user.request"}.`);
+    lines.push("");
+    n += 1;
+  }
+  return lines.join("\n");
 }
 
 function preferThinLiteraryDocs(options?: LegacyGenerateOptions, envKey?: "GENERATE_LITERARY_UC" | "GENERATE_LITERARY_US"): boolean {
@@ -195,6 +256,10 @@ export interface LegacyGenerateOptions {
    * or preferThinLiteraryDocs; HIGH cascade defaults to thin when env unset.
    */
   preferThinLiteraryDocs?: boolean;
+  /** Skip literary UC/US LLM and emit ProcessInventory journeys (HIGH default). */
+  omitLiteraryUcUs?: boolean;
+  /** Persisted/live domain inventory for checklists + Spec journeys. */
+  domainInventory?: DomainInventory | null;
 }
 
 export interface AgentGovernanceGenerateOptions extends LegacyGenerateOptions {
@@ -936,6 +1001,19 @@ export class AiService {
     if (source === "mdd" && content.length > 0 && !legacyAsIsSpec) {
       prompt = appendMddGovernancePatternsToPrompt(prompt, content);
     }
+    if (options?.domainInventory?.processes?.length && !legacyAsIsSpec) {
+      const journeys = options.domainInventory.processes
+        .slice(0, 15)
+        .map(
+          (p) =>
+            `- **${p.name}**${p.trigger ? ` — trigger \`${p.trigger}\`` : ""}` +
+            (p.steps.length ? `: ${p.steps.slice(0, 5).join(" → ")}` : ""),
+        )
+        .join("\n");
+      prompt +=
+        `\n\n**Journeys (ProcessInventory — incluir como user journeys en Spec):**\n${journeys}\n` +
+        "Cubre cada journey en sección de journeys/criterios; no inventes journeys ajenos al inventario.\n";
+    }
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
     const systemPrompt =
       SPEC_PROMPT + (legacyAsIsSpec ? LEGACY_AS_IS_SPEC_SYSTEM_APPENDIX : "");
@@ -1181,6 +1259,9 @@ export class AiService {
         "Completa el MDD y, si aplica, el **Spec**; luego vuelve a ejecutar **Generar casos de uso** desde el Workshop.\n"
       );
     }
+    if (options?.omitLiteraryUcUs && options.domainInventory?.processes?.length) {
+      return buildThinUseCasesFromInventory(options.domainInventory);
+    }
     const legacyAsIsUseCases = options?.legacyBaselineStage === true;
     const mdd = buildMddContextForUseCases(mddRaw, mddDeliverableCtx(options));
     const spec = capTextForLegacyBaseline(specContent ?? "", 20000, options?.legacyBaselineStage);
@@ -1213,6 +1294,9 @@ export class AiService {
 
   async generateUserStories(mddContent: string, specContent?: string | null, useCasesContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
     const mddRaw = mddContent?.trim() ?? "";
+    if (options?.omitLiteraryUcUs && options.domainInventory) {
+      return buildThinUserStoriesFromInventory(options.domainInventory);
+    }
     const legacyAsIsUserStories = options?.legacyBaselineStage === true && mddRaw.length > 0;
     const mdd = buildMddContextForUserStories(mddRaw, mddDeliverableCtx(options));
     const spec = capTextForLegacyBaseline(specContent ?? "", 15000, options?.legacyBaselineStage);

@@ -2,12 +2,16 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
-## [Unreleased]
+## [0.14.0] — 2026-07-14
 
 ### Added
 
-- **Cascade accuracy ≥90 (PLAN-CASCADE-90-ACCURACY):** scores Docs/Tasks vs BRD, domain inventory + auth-skew delivery gate, analyze `accuracy` + dashboard badge, optional hard export gate (`REQUIRE_DOC_ACCURACY_90`), ui-screens plan improvements, UC/US thin env flags.
-- **Cascade agentic wiring (mismo plan):** `brdContent` en estado MDD; Clarifier/SA/Critic/Auditor reciben inventario de dominio; SA no copia §3 bajo auth-skew; critic en one-shot; prepare_output con domain gate; checklist greenfield + CrudMatrix/BRD; W4 reintenta si `TaskAccuracy < 90`; Falkor obligatorio solo LEGACY; UC/US thin por defecto.
+- **Cascade accuracy ≥90 (PLAN-CASCADE-90-ACCURACY) — métricas F0–F4 (#438):** scores Docs/Tasks vs BRD, domain inventory + auth-skew delivery gate, analyze `accuracy` + dashboard badge, optional hard export gate (`REQUIRE_DOC_ACCURACY_90`), ui-screens plan improvements, UC/US thin.
+- **Cascade agentic wiring (#438):** `brdContent` en estado MDD; Clarifier/SA/Critic/Auditor con inventario; SA no copia §3 bajo auth-skew; critic en one-shot; prepare_output con domain gate; checklist CrudMatrix/BRD; W4 si `TaskAccuracy < 90`; Falkor solo LEGACY; UC/US thin por defecto.
+- **Cascade P0–P2 (este release):**
+  - **P0** `Stage.domainInventory` (JSON SSOT) + sync al gate/cascade; composición determinista de stubs §3 (`mergeDomainTablesIntoMdd`) en prepare_output.
+  - **P1** pantallas desde CrudMatrix/ProcessInventory; task auditor dominio (T-AUD-013/014); matching C1/T1 con aliases/stems.
+  - **P2** Spec journeys desde ProcessInventory; HIGH omite UC/US literarios (`omitLiteraryUcUs` → templates thin); hard gate documentado vía `REQUIRE_DOC_ACCURACY_90` (off por defecto).
 
 ### Fixed
 

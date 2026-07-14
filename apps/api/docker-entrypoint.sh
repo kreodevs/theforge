@@ -173,6 +173,7 @@ fi
 # Si db push / safe-schema-sync adelantó las columnas, marcar como aplicadas
 resolve_applied_if_table_column "20260714120000_add_image_model_columns" "ProviderInstance" "imageModel"
 resolve_applied_if_project_column "20260714130000_add_tasks_json" "tasksJson"
+resolve_applied_if_table_column "20260714150000_stage_domain_inventory" "Stage" "domainInventory"
 
 # Si db push adelantó el DDL, marcar migración como aplicada sin re-ejecutar ADD COLUMN
 resolve_applied_if_project_column "20260609120000_add_agent_governance_content" "agentGovernanceContent"
