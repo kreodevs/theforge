@@ -1,5 +1,10 @@
 import { Injectable } from "@nestjs/common";
-import { looksLikeApiEndpointCatalog, looksLikeDbgaDocumentBody } from "@theforge/shared-types";
+import {
+  deduplicateDbgaDocument,
+  looksLikeApiEndpointCatalog,
+  looksLikeDbgaDocumentBody,
+  mergeApiEndpointCatalogIntoDbga,
+} from "@theforge/shared-types";
 import {
   normalizeDashes,
   stripChatLabel as stripChatLabelUtil,
@@ -69,15 +74,21 @@ export class ChatResponseParserService {
     const current = (currentDbga ?? "").trim();
     if (!current) return cleaned;
 
-    // Catálogo de endpoints / fragmento HTTP → anexar, nunca sustituir el panel.
+    // Catálogo de endpoints → §11 canónica (no concatenar un segundo título DBGA).
     if (looksLikeApiEndpointCatalog(cleaned)) {
-      return `${current}\n\n---\n\n## Integración API (endpoints)\n\n${cleaned}`.trim();
+      return mergeApiEndpointCatalogIntoDbga(current, cleaned);
     }
 
+    const startsAsDbgaTitle =
+      /^#\s*(?:Domain\s+Benchmark|Benchmark\s*&\s*Gap|Research\s+Report|Módulo\s+de\s+Costos|Fase\s+0\s+[—–-])/im.test(
+        cleaned,
+      ) || /^\s*Research\s+Report\b/im.test(cleaned);
     const hasBenchmarkTitle =
+      startsAsDbgaTitle ||
       /#\s*(?:Domain\s+Benchmark|Benchmark\s*&\s*Gap|Research\s+Report|Módulo\s+de\s+Costos|Fase\s+0\s+[—–-])/i.test(
         cleaned,
-      ) || /\bResearch\s+Report\b/i.test(cleaned);
+      ) ||
+      /\bResearch\s+Report\b/i.test(cleaned);
     const looksLikeFullDbga =
       hasBenchmarkTitle &&
       cleaned.length >= Math.min(current.length * 0.5, 2000);
@@ -91,10 +102,18 @@ export class ChatResponseParserService {
       if (/^#+\s*(?:dos\s+objetivos|objetivos\s+centrales)/im.test(cleaned)) {
         return `${cleaned}\n\n${current}`;
       }
+      // Fragmento que reinicia el DBGA truncado: dedupe, nunca `---\` + segundo H1.
+      if (startsAsDbgaTitle) {
+        return deduplicateDbgaDocument(`${current}\n\n${cleaned}`);
+      }
       return `${current}\n\n---\n\n${cleaned}`;
     }
 
     if (cleaned.length >= current.length * 0.85) return cleaned;
+    // Reinicio truncado del mismo DBGA: dedupe antes de merge por sección (evita 2× H1).
+    if (startsAsDbgaTitle) {
+      return deduplicateDbgaDocument(`${current}\n\n${cleaned}`);
+    }
     if (/\n##\s+/i.test(cleaned) && cleaned.length < current.length * 0.85) {
       return this.mergeDocSectionOrUseFull(current, cleaned);
     }

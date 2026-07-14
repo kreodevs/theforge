@@ -44,8 +44,35 @@ POST /v1/chats/{id}/stop`;
     const merged = parser.mergeDbgaOrUseFull(longDbga, endpoints);
     assert.ok(merged.includes("Referencia de Industria"));
     assert.ok(merged.includes("POST /v1/chats"));
-    assert.ok(merged.includes("Integración API"));
+    assert.ok(merged.includes("## 11. API de Integración"));
     assert.ok(merged.length > longDbga.length);
+    assert.equal((merged.match(/^# Domain Benchmark/gm) ?? []).length, 1);
+  });
+
+  it("no concatena un segundo DBGA truncado tras ---", () => {
+    const base = `${longDbga}
+
+## 10. Preguntas Pendientes
+
+- pendiente
+
+## Registro de cambios del documento
+
+| Versión | Fecha | Descripción del cambio |
+| --- | --- | --- |
+| 1.0 | Mayo 2026 | Creación |`;
+    const truncated = `# Domain Benchmark & Gap Analysis
+
+## Referencia de Industria
+
+Corto.
+
+## 1. Propósito y Alcance
+
+Los agentes Supervisor`;
+    const merged = parser.mergeDbgaOrUseFull(base, truncated);
+    assert.equal((merged.match(/^# Domain Benchmark/gm) ?? []).length, 1);
+    assert.equal(merged.includes("\n---\n\n# Domain Benchmark"), false);
   });
 });
 

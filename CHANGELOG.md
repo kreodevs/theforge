@@ -7,6 +7,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 ### Fixed
 
 - **Fase 0 / DBGA — wipe por catálogo de endpoints:** una lista numerada `POST/GET /v1/…` ya no se trata como DBGA completo ni pasa el umbral absurdo de 2500 chars que permitía sustituir un documento de 10–20k. `looksLikeApiEndpointCatalog`, merge que anexa bajo «Integración API», shrink ≥70% relativo, y prompt de refine anti-borrado.
+- **Fase 0 / DBGA — merge de endpoints y anti-duplicado:** respuesta con catálogo HTTP se fusiona de forma determinista en **§11 API de Integración con Chat Externo** (cierra la pregunta pendiente + changelog) sin exigir `---FIN_DBGA---` ni verbo “integra”. `mergeDbgaOrUseFull` ya no concatena un segundo `# Domain Benchmark` truncado tras `---`; usa `deduplicateDbgaDocument`.
 
 ## [0.14.0] — 2026-07-14
 

@@ -25,6 +25,7 @@ GET /v1/chats/{chat_id}/status
 POST /v1/chats/{chat_id}/stop`;
     assert.ok(looksLikeApiEndpointCatalog(msg));
     assert.equal(looksLikeDbgaDocumentBody(msg), false);
+    assert.ok(looksLikeDbgaEditRequest(msg));
   });
 });
 

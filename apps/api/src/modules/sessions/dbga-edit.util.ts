@@ -1,4 +1,8 @@
-import { looksLikeDbgaEditRequest, looksLikeDbgaDocumentBody } from "@theforge/shared-types";
+import {
+  looksLikeDbgaEditRequest,
+  looksLikeDbgaDocumentBody,
+  looksLikeApiEndpointCatalog,
+} from "@theforge/shared-types";
 
 export { looksLikeDbgaEditRequest };
 
@@ -126,6 +130,11 @@ export function dbgaReflectsUserEditIntent(doc: string, userMessage: string): bo
     ) {
       return false;
     }
+  }
+
+  // Catálogo de endpoints pegado: exigir §11 / rutas de chat, no keywords sueltas.
+  if (looksLikeApiEndpointCatalog(userMessage)) {
+    return /##\s*11\.\s+|\/v1\/chats|API de Integraci[oó]n con Chat/i.test(d);
   }
 
   if (extractDbgaEditKeywords(userMessage, 8).length >= 2 && !dbgaContainsUserEditKeywords(doc, userMessage)) {
