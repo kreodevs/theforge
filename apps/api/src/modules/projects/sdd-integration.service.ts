@@ -50,6 +50,7 @@ import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import { persistStageAndProjectDeliverables } from "./stage-deliverable-persist.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { validateDocumentForPersist } from "../sessions/document-shrink.util.js";
+import { convertTasksJsonV2ToTasksMdV1 } from "../engine/task-v2/tasks-json-v2-to-md-v1.js";
 import type { ClarifySpecBody, ConvergeTriggerBody, ProjectDeliverableSource } from "@theforge/shared-types";
 import {
   analyzeAgentGovernanceSlice,
@@ -62,7 +63,7 @@ import {
 } from "./handoff-export.util.js";
 
 type ProjectWithStages = Project & {
-  stages: Array<Stage & { estimation?: unknown }>;
+  stages: Array<Stage & { estimation?: unknown; derivedSpec?: unknown }>;
 };
 
 export interface ConvergeResult {
@@ -125,13 +126,39 @@ export class SddIntegrationService {
 
     const derived = (stage as any).derivedSpec;
 
+    let tasksContent = deliverables.tasksContent ?? project.tasksContent;
+    if (derived?.tasksJson) {
+      try {
+        tasksContent = convertTasksJsonV2ToTasksMdV1(derived.tasksJson);
+      } catch (e) {
+        this.logger.warn(
+          `Failed to convert tasks.json v2 to tasks.md v1: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    let inferenceRulesContent: string | null = null;
+    if (derived?.inferenceRulesApplied) {
+      try {
+        const rules = derived.inferenceRulesApplied as Record<string, boolean>;
+        const yamlLines = Object.entries(rules).map(
+          ([k, v]) => `- ${k}: ${v}`,
+        );
+        inferenceRulesContent = `# Inference rules applied\n${yamlLines.join("\n")}`;
+      } catch (e) {
+        this.logger.warn(
+          `Failed to stringify inferenceRulesApplied: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
     return buildSpecKitBundleFilesV2({
       projectName: project.name,
       featureOrdinal: stage?.ordinal ?? 1,
       mddContent: mdd,
       specContent: spec,
       blueprintContent: deliverables.blueprintContent ?? project.blueprintContent,
-      tasksContent: deliverables.tasksContent ?? project.tasksContent,
+      tasksContent,
       apiContractsContent: deliverables.apiContractsContent ?? project.apiContractsContent,
       logicFlowsContent: deliverables.logicFlowsContent ?? project.logicFlowsContent,
       infraContent: deliverables.infraContent ?? project.infraContent,
@@ -150,7 +177,7 @@ export class SddIntegrationService {
       typesJsonContent: derived?.typesJson ? JSON.stringify(derived.typesJson) : null,
       operationsJsonContent: derived?.operationsJson ? JSON.stringify(derived.operationsJson) : null,
       tasksJsonContent: derived?.tasksJson ? JSON.stringify(derived.tasksJson) : null,
-      inferenceRulesContent: null,
+      inferenceRulesContent,
     } as SpecKitBundleInputV2);
   }
 
@@ -843,7 +870,7 @@ export class SddIntegrationService {
     const userId = getRequestUserId();
     const project = await this.prisma.project.findFirst({
       where: { id: projectId },
-      include: { stages: { orderBy: { ordinal: "asc" } } },
+      include: { stages: { orderBy: { ordinal: "asc" }, include: { derivedSpec: true } } },
     });
     if (!project) throw new NotFoundException("Proyecto no encontrado");
     const isOwner = project.userId === userId;
