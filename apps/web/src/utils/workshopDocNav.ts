@@ -271,24 +271,6 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
       content: ctx.architectureContent,
     });
   }
-  if (visible("use-cases")) {
-    items.push({
-      id: "use-cases",
-      label: "Casos",
-      title: "Casos de uso",
-      Icon: ListOrdered,
-      content: ctx.useCasesContent,
-    });
-  }
-  if (visible("user-stories")) {
-    items.push({
-      id: "user-stories",
-      label: "H.U.",
-      title: "Historias de usuario",
-      Icon: Package,
-      content: ctx.userStoriesContent,
-    });
-  }
   if (visible("blueprint")) {
     items.push({
       id: "blueprint",

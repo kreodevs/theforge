@@ -29,7 +29,9 @@ export interface SpecKitBundleInput {
   /** Pantallas / UI Screens Spec (MCP gráfico). Distinto de design-system.md (Guía UX/UI). */
   uiScreensContent?: string | null;
   architectureContent?: string | null;
+  /** ⚠️ Deprecated in lean-SDD — replaced by types.json + operations.json */
   useCasesContent?: string | null;
+  /** ⚠️ Deprecated in lean-SDD — tasks v2 (structured json + inference engine) replaces prose stories */
   userStoriesContent?: string | null;
   /** Guía para agentes implementadores (p. ej. THEFORGE-DOC-CONSUMPTION-GUIDE). */
   consumptionGuideContent?: string | null;
@@ -37,6 +39,8 @@ export interface SpecKitBundleInput {
   changeSpecContent?: string | null;
   /** Acceptance criteria lines from spec or change spec. */
   acceptanceCriteriaLines?: string[] | null;
+  /** When true, suppresses deprecated artifacts (use-cases.md, user-stories.md) for lean-SDD. */
+  leanSdd?: boolean;
 }
 
 /** Resumen para handoff de implementación (equivalente a `/speckit.implement` + consumo The Forge). */
@@ -352,8 +356,10 @@ export function buildSpecKitBundleFiles(input: SpecKitBundleInput): SpecKitBundl
     pushIf("ui-project.json", uiProjectJson);
   }
   pushIf("architecture.md", input.architectureContent);
-  pushIf("use-cases.md", input.useCasesContent);
-  pushIf("user-stories.md", input.userStoriesContent);
+  if (!input.leanSdd) {
+    pushIf("use-cases.md", input.useCasesContent);
+    pushIf("user-stories.md", input.userStoriesContent);
+  }
 
   const research =
     (input.phase0SummaryContent ?? "").trim() || (input.dbgaContent ?? "").trim();

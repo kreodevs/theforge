@@ -13,8 +13,6 @@ export type WorkshopDocTab =
   | "api-contracts"
   | "logic-flows"
   | "architecture"
-  | "use-cases"
-  | "user-stories"
   | "infra"
   | "adrs"
   | "aem"
@@ -23,7 +21,7 @@ export type WorkshopDocTab =
   | "ui-screens"
   | "types"
   | "operations"
-;
+  ;
 
 export type ProjectTypeForTabs = "NEW" | "LEGACY";
 

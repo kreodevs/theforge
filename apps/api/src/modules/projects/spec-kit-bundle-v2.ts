@@ -89,6 +89,7 @@ export interface SpecKitBundleInputV2 extends SpecKitBundleInput {
   operationsJsonContent?: string | null;
   tasksJsonContent?: string | null;
   inferenceRulesContent?: string | null;
+  leanSdd?: boolean;
 }
 
 /**

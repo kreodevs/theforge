@@ -33,7 +33,6 @@ import {
   checkDeliverablePresence,
   checkSpecVsMdd,
   checkTasksCoverage,
-  checkUserStoriesVsUseCases,
 } from "../engine/sdd-cross-artifact.util.js";
 import { collectSddPrecisionGaps } from "../engine/sdd-precision-checks.util.js";
 import {
@@ -167,8 +166,6 @@ export class SddIntegrationService {
       uxUiGuideContent: deliverables.uxUiGuideContent ?? project.uxUiGuideContent,
       uiScreensContent: deliverables.uiScreensContent ?? project.uiScreensContent,
       architectureContent: deliverables.architectureContent ?? project.architectureContent,
-      useCasesContent: deliverables.useCasesContent ?? project.useCasesContent,
-      userStoriesContent: deliverables.userStoriesContent ?? project.userStoriesContent,
       consumptionGuideContent: loadConsumptionGuideMarkdown(
         specKitFeatureDir(stage?.ordinal ?? 1, project.name),
       ),
@@ -178,6 +175,7 @@ export class SddIntegrationService {
       operationsJsonContent: derived?.operationsJson ? JSON.stringify(derived.operationsJson) : null,
       tasksJsonContent: derived?.tasksJson ? JSON.stringify(derived.tasksJson) : null,
       inferenceRulesContent,
+      leanSdd: !!derived,
     } as SpecKitBundleInputV2);
   }
 
@@ -397,18 +395,11 @@ export class SddIntegrationService {
     }
 
     const complexity = project.complexity ?? ComplexityLevel.HIGH;
-    const useCasesMd = deliverables.useCasesContent ?? project.useCasesContent ?? "";
-    const userStoriesMd = deliverables.userStoriesContent ?? project.userStoriesContent ?? "";
     const uxUiMd = deliverables.uxUiGuideContent ?? project.uxUiGuideContent ?? "";
 
     const specVsMdd = checkSpecVsMdd(spec, mdd);
     if (!specVsMdd.ok) {
       crossArtifactGaps.push(...specVsMdd.gaps.map((g) => `[Spec↔MDD] ${g}`));
-    }
-
-    const huVsUc = checkUserStoriesVsUseCases(userStoriesMd, useCasesMd, spec);
-    if (!huVsUc.ok) {
-      crossArtifactGaps.push(...huVsUc.gaps.map((g) => `[HU↔UC] ${g}`));
     }
 
     const tasksCoverage = checkTasksCoverage(
@@ -426,8 +417,6 @@ export class SddIntegrationService {
       blueprint: deliverables.blueprintContent ?? null,
       tasks: tasksMd,
       logicFlows: deliverables.logicFlowsContent ?? null,
-      userStories: userStoriesMd,
-      useCases: useCasesMd,
       apiContracts: deliverables.apiContractsContent ?? null,
       pantallas: deliverables.uiScreensContent ?? project.uiScreensContent,
       phase0Summary: project.phase0SummaryContent,
@@ -447,14 +436,6 @@ export class SddIntegrationService {
     }
 
     const requireMediumArtifacts = complexity === ComplexityLevel.MEDIUM || complexity === ComplexityLevel.HIGH;
-    const ucGap = checkDeliverablePresence("Casos de uso", useCasesMd, requireMediumArtifacts && !spec.trim());
-    if (ucGap) crossArtifactGaps.push(ucGap);
-    const huGap = checkDeliverablePresence(
-      "Historias de usuario",
-      userStoriesMd,
-      complexity === ComplexityLevel.LOW || requireMediumArtifacts,
-    );
-    if (huGap) crossArtifactGaps.push(huGap);
     const uxGap = checkDeliverablePresence(
       "Guía UX/UI",
       uxUiMd,
@@ -543,12 +524,12 @@ export class SddIntegrationService {
           wordCount: wordCount(deliverables.infraContent),
         },
         useCases: {
-          present: !!useCasesMd.trim(),
-          wordCount: wordCount(useCasesMd),
+          present: false,
+          wordCount: 0,
         },
         userStories: {
-          present: !!userStoriesMd.trim(),
-          wordCount: wordCount(userStoriesMd),
+          present: false,
+          wordCount: 0,
         },
         uxUiGuide: {
           present: !!uxUiMd.trim(),
