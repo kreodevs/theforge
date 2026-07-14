@@ -1568,7 +1568,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       };
     }
     return this.update(projectId, {
-      dbgaContent: trimmed,
+      dbgaContent: cleanDocumentContent(trimmed),
       complexityPending: proposal,
     });
   }
@@ -2328,7 +2328,9 @@ name: ${JSON.stringify(name)}
     if (typeof summary !== "string") {
       throw new Error("El proveedor de IA devolvió un formato inesperado");
     }
-    return this.update(projectId, { phase0SummaryContent: summary.trim() });
+    return this.update(projectId, {
+      phase0SummaryContent: cleanDocumentContent(summary.trim()),
+    });
   }
 
   async generateAem(projectId: string, body: unknown) {

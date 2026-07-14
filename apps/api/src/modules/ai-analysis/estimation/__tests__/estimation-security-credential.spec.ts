@@ -110,6 +110,9 @@ describe("estimation seguridad — almacén de credenciales (Peludo-like)", () =
     assert.match(patched, /almac[eé]n de credenciales/i);
     assert.match(patched, /security_events/i);
     assert.equal(isCredentialStorageSatisfied(patched), true);
+    const breakdown = service.getPrecisionBreakdown(patched, { complexity: "HIGH" });
+    assert.equal(breakdown.seguridad, 100);
+    assert.equal(breakdown.sectionReasons?.seguridad, undefined);
   });
 
   it("mergeSection6AvoidingRegression preserva Gestión de Secretos si el LLM acorta §6", () => {

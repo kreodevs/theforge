@@ -1,10 +1,10 @@
-import { DOCUMENT_CHANGELOG_LLM_INSTRUCTIONS } from "@theforge/shared-types";
+import { getDocumentChangelogLlmInstructions } from "@theforge/shared-types";
 
 /** Añade instrucciones de changelog al system prompt si aún no están presentes. */
 export function withDocumentChangelogInstructions(prompt: string): string {
   const base = prompt.trim();
   if (/Registro de cambios del documento/i.test(base)) return base;
-  return `${base}\n\n${DOCUMENT_CHANGELOG_LLM_INSTRUCTIONS}`;
+  return `${base}\n\n${getDocumentChangelogLlmInstructions()}`;
 }
 
 /** Instrucción breve para chat con delimitador ---FIN_*--- */

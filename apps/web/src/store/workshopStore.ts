@@ -28,6 +28,12 @@ import {
   applyDeliverableCascadeStepDone,
   readDeliverableCascadeProgressStep,
 } from "../utils/deliverableCascadeProgress";
+import {
+  isStageScopedDeliverableField,
+  resolveWorkshopStageDeliverables,
+  workshopDeliverableStoreSlice,
+  type WorkshopStageDeliverableField,
+} from "../utils/workshopStageDeliverables";
 import { appendAgentProgressDone, type AgentProgressItem } from "../utils/agentProgress";
 import {
   advanceAgentGovernanceProgressItems,
@@ -212,16 +218,21 @@ async function persistField(
   getState: () => WorkshopState,
   setState: (partial: Partial<WorkshopState>) => void,
 ): Promise<PersistFieldResult> {
-  const { projectId, project } = getState();
+  const { projectId, project, activeStageId } = getState();
   if (!projectId || !project) return { ok: false, error: "No hay proyecto activo." };
-  if (content === ((project as unknown as Record<string, unknown>)[fieldName] ?? "")) {
+  const stageDeliverables = resolveWorkshopStageDeliverables(
+    { ...project, stages: project.stages ?? [] },
+    activeStageId,
+  );
+  const persistedBaseline = isStageScopedDeliverableField(fieldName)
+    ? (stageDeliverables[fieldName] ?? "")
+    : (((project as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ?? "");
+  if (content === persistedBaseline) {
     return { ok: true };
   }
 
   const cleaned = cleanDoc(content) || content || "";
-  const currentRaw = String(
-    ((project as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ?? "",
-  );
+  const currentRaw = String(persistedBaseline);
   const persistValidation = validateDocumentForPersist(currentRaw, cleaned, {
     fieldLabel: documentPersistFieldLabel(fieldName),
   });
@@ -235,19 +246,39 @@ async function persistField(
   );
   setState({ synced: false, error: null, notice: null });
 
+  const stageIdForPatch =
+    fieldName === "mddContent" || isStageScopedDeliverableField(fieldName)
+      ? activeStageId ?? undefined
+      : undefined;
+
   try {
-    const stageId = getState().activeStageId;
     const r = await fetchWithRetry(`${API_BASE}/projects/${projectId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         [fieldName]: cleaned,
-        ...(fieldName === "mddContent" && stageId ? { stageId } : {}),
+        ...(stageIdForPatch ? { stageId: stageIdForPatch } : {}),
       }),
     });
     if (r.ok) {
       const data = (await r.json()) as Project & { mddGovernancePatternsReverted?: boolean };
-      const serverRaw = (data[fieldName as keyof Project] as string | undefined) ?? cleaned;
+      const stages = data.stages ?? project.stages ?? [];
+      let mergedProject: Project = { ...data, stages };
+      if (stageIdForPatch && (isStageScopedDeliverableField(fieldName) || fieldName === "mddContent")) {
+        mergedProject = {
+          ...mergedProject,
+          stages: stages.map((s) =>
+            s.id === stageIdForPatch ? { ...s, [fieldName]: cleaned } : s,
+          ),
+        };
+      }
+      const focused = workshopStateFromProjectStage(mergedProject, activeStageId);
+      const serverRaw =
+        fieldName === "mddContent"
+          ? ((focused.project.mddContent as string | undefined) ?? cleaned)
+          : isStageScopedDeliverableField(fieldName)
+            ? (focused[fieldName] ?? cleaned)
+            : ((data[fieldName as keyof Project] as string | undefined) ?? cleaned);
       const serverCleaned = cleanDoc(serverRaw) ?? serverRaw ?? "";
       const patternsReverted =
         fieldName === "mddContent" && data.mddGovernancePatternsReverted === true;
@@ -256,7 +287,7 @@ async function persistField(
           "",
       );
       const patch: Partial<WorkshopState> = {
-        project: data,
+        project: focused.project,
         synced: true,
         error: null,
         notice: patternsReverted ? SSOT_PATTERNS_RESTORED_NOTICE : null,
@@ -486,6 +517,21 @@ export interface WorkshopStage {
   status: Status;
   precisionScore: number;
   estimation: Estimation | null;
+  /** Entregables por etapa (columnas Stage; fallback a Project en el store). */
+  specContent?: string | null;
+  architectureContent?: string | null;
+  useCasesContent?: string | null;
+  userStoriesContent?: string | null;
+  blueprintContent?: string | null;
+  tasksContent?: string | null;
+  apiContractsContent?: string | null;
+  logicFlowsContent?: string | null;
+  infraContent?: string | null;
+  agentGovernanceContent?: string | null;
+  uxUiGuideContent?: string | null;
+  uiScreensContent?: string | null;
+  phase0SummaryContent?: string | null;
+  aemContent?: string | null;
   /** Estado del flujo legacy para esta etapa (cambio) */
   legacyChangeState?: LegacyFlowState | null;
   handoffImportedAt?: string | null;
@@ -580,6 +626,41 @@ function effectiveMddContentForSectionRegen(getState: () => {
   return (cleanDoc(st?.mddContent ?? null) ?? cleanDoc(project?.mddContent ?? null) ?? "").trim();
 }
 
+function workshopDeliverableStorePatch(
+  deliverables: ReturnType<typeof resolveWorkshopStageDeliverables>,
+): Pick<WorkshopState, WorkshopStageDeliverableField> {
+  const slice = workshopDeliverableStoreSlice(deliverables);
+  return {
+    specContent: cleanDoc(slice.specContent),
+    architectureContent: cleanDoc(slice.architectureContent),
+    useCasesContent: cleanDoc(slice.useCasesContent),
+    userStoriesContent: cleanDoc(slice.userStoriesContent),
+    blueprintContent: cleanDoc(slice.blueprintContent),
+    tasksContent: cleanDoc(slice.tasksContent),
+    apiContractsContent: cleanDoc(slice.apiContractsContent),
+    logicFlowsContent: cleanDoc(slice.logicFlowsContent),
+    infraContent: cleanDoc(slice.infraContent),
+    agentGovernanceContent: slice.agentGovernanceContent,
+    uxUiGuideContent: cleanDoc(slice.uxUiGuideContent),
+    uiScreensContent: cleanDoc(slice.uiScreensContent),
+    phase0SummaryContent: slice.phase0SummaryContent,
+    aemContent: cleanDoc(slice.aemContent),
+  };
+}
+
+/** Alinea proyecto + campos del store con la etapa en foco (MDD y entregables editables). */
+function workshopStateFromProjectStage(p: Project, stageId: string | null) {
+  const stages = p.stages ?? [];
+  const deliverables = resolveWorkshopStageDeliverables({ ...p, stages }, stageId);
+  const flat = workshopFlatFromStage(p, stageId);
+  return {
+    project: { ...p, ...flat, ...deliverables, stages },
+    activeStageId: stageId,
+    mddContent: cleanDoc(flat.mddContent) ?? "",
+    ...workshopDeliverableStorePatch(deliverables),
+  };
+}
+
 function workshopFlatFromStage(p: Project, stageId: string | null): Pick<Project, "mddContent" | "status" | "precisionScore" | "estimation"> {
   const stages = p.stages;
   if (!stageId || !stages?.length) {
@@ -615,11 +696,11 @@ function mergeProjectWithActiveStage(
   const stages = proj.stages ?? [];
   const activeStageId =
     prevActiveId && stages.some((s) => s.id === prevActiveId) ? prevActiveId : pickDefaultStageId(stages);
-  const flat = workshopFlatFromStage(proj, activeStageId);
+  const focused = workshopStateFromProjectStage(proj, activeStageId);
   return {
-    project: { ...proj, ...flat },
+    project: focused.project,
     activeStageId,
-    mddContent: cleanDoc(flat.mddContent) ?? "",
+    mddContent: focused.mddContent,
   };
 }
 
@@ -1106,25 +1187,27 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const stages = p.stages ?? [];
     const prev = get().activeStageId;
     const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
-    const flat = workshopFlatFromStage(p, activeStageId);
+    const focused = workshopStateFromProjectStage({ ...p, stages }, activeStageId);
     set({
-      project: { ...p, ...flat, stages },
+      project: focused.project,
       workshopStages: stages,
       activeStageId,
-      mddContent: cleanDoc(flat.mddContent) ?? "",
-      uxUiGuideContent: p.uxUiGuideContent ?? null,
+      mddContent: focused.mddContent,
+      uxUiGuideContent: focused.uxUiGuideContent,
       dbgaContent: p.dbgaContent ?? null,
-      phase0SummaryContent: p.phase0SummaryContent ?? null,
-      blueprintContent: p.blueprintContent ?? null,
-      apiContractsContent: p.apiContractsContent ?? null,
-      logicFlowsContent: p.logicFlowsContent ?? null,
-      architectureContent: p.architectureContent ?? null,
-      useCasesContent: p.useCasesContent ?? null,
-      userStoriesContent: p.userStoriesContent ?? null,
-      infraContent: p.infraContent ?? null,
-      aemContent: p.aemContent ?? null,
-
-      uiScreensContent: p.uiScreensContent ?? null,
+      phase0SummaryContent: focused.phase0SummaryContent,
+      blueprintContent: focused.blueprintContent,
+      apiContractsContent: focused.apiContractsContent,
+      logicFlowsContent: focused.logicFlowsContent,
+      architectureContent: focused.architectureContent,
+      useCasesContent: focused.useCasesContent,
+      userStoriesContent: focused.userStoriesContent,
+      infraContent: focused.infraContent,
+      aemContent: focused.aemContent,
+      specContent: focused.specContent,
+      tasksContent: focused.tasksContent,
+      uiScreensContent: focused.uiScreensContent,
+      agentGovernanceContent: focused.agentGovernanceContent,
       lastLegacyDeliverablesDebug: legacyDebugFromStages(stages, activeStageId),
     });
   },
@@ -1176,12 +1259,25 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!project || !stageId) return;
     const stages = workshopStages.length > 0 ? workshopStages : (project.stages ?? []);
     if (!stages.some((s) => s.id === stageId)) return;
-    const merged = { ...project, stages };
-    const flat = workshopFlatFromStage(merged, stageId);
+    const focused = workshopStateFromProjectStage({ ...project, stages }, stageId);
     set({
       activeStageId: stageId,
-      project: { ...merged, ...flat },
-      mddContent: cleanDoc(flat.mddContent) ?? "",
+      project: focused.project,
+      mddContent: focused.mddContent,
+      specContent: focused.specContent,
+      architectureContent: focused.architectureContent,
+      useCasesContent: focused.useCasesContent,
+      userStoriesContent: focused.userStoriesContent,
+      blueprintContent: focused.blueprintContent,
+      tasksContent: focused.tasksContent,
+      apiContractsContent: focused.apiContractsContent,
+      logicFlowsContent: focused.logicFlowsContent,
+      infraContent: focused.infraContent,
+      agentGovernanceContent: focused.agentGovernanceContent,
+      uxUiGuideContent: focused.uxUiGuideContent,
+      uiScreensContent: focused.uiScreensContent,
+      phase0SummaryContent: focused.phase0SummaryContent,
+      aemContent: focused.aemContent,
     });
     const pid = projectId ?? project.id;
     if (pid?.trim()) {
@@ -1456,29 +1552,28 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const stages = data.stages ?? [];
       const prev = get().activeStageId;
       const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
-      const flat = workshopFlatFromStage(data, activeStageId);
+      const focused = workshopStateFromProjectStage({ ...data, stages }, activeStageId);
       if (!shouldApplyWorkshopUpdate(get, requestedId)) return null;
       set({
-        project: { ...data, ...flat, stages },
+        project: focused.project,
         workshopStages: stages,
         activeStageId,
-        mddContent: cleanDoc(flat.mddContent) ?? "",
-        uxUiGuideContent: cleanDoc(data.uxUiGuideContent ?? null),
+        mddContent: focused.mddContent,
+        uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: cleanDoc(data.dbgaContent ?? null),
-        specContent: cleanDoc(data.specContent ?? null),
-        phase0SummaryContent: data.phase0SummaryContent ?? null,
-        blueprintContent: cleanDoc(data.blueprintContent ?? null),
-        tasksContent: cleanDoc(data.tasksContent ?? null),
-        apiContractsContent: cleanDoc(data.apiContractsContent ?? null),
-        logicFlowsContent: cleanDoc(data.logicFlowsContent ?? null),
-        architectureContent: cleanDoc(data.architectureContent ?? null),
-        useCasesContent: cleanDoc(data.useCasesContent ?? null),
-        userStoriesContent: cleanDoc(data.userStoriesContent ?? null),
-        infraContent: cleanDoc(data.infraContent ?? null),
-        aemContent: cleanDoc(data.aemContent ?? null),
-
-        uiScreensContent: cleanDoc(data.uiScreensContent ?? null),
-        agentGovernanceContent: data.agentGovernanceContent ?? null,
+        specContent: focused.specContent,
+        phase0SummaryContent: focused.phase0SummaryContent,
+        blueprintContent: focused.blueprintContent,
+        tasksContent: focused.tasksContent,
+        apiContractsContent: focused.apiContractsContent,
+        logicFlowsContent: focused.logicFlowsContent,
+        architectureContent: focused.architectureContent,
+        useCasesContent: focused.useCasesContent,
+        userStoriesContent: focused.userStoriesContent,
+        infraContent: focused.infraContent,
+        aemContent: focused.aemContent,
+        uiScreensContent: focused.uiScreensContent,
+        agentGovernanceContent: focused.agentGovernanceContent,
         error: null,
         legacyMcpDebugTrace: null,
       });
@@ -1554,28 +1649,27 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const stages = p.stages ?? [];
       const prev = get().activeStageId;
       const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
-      const flat = workshopFlatFromStage(p, activeStageId);
+      const focused = workshopStateFromProjectStage({ ...p, stages }, activeStageId);
       set({
         session: data.session,
-        project: { ...p, ...flat, stages },
+        project: focused.project,
         workshopStages: stages,
         activeStageId,
-        mddContent: cleanDoc(flat.mddContent ?? null) ?? get().mddContent,
-        uxUiGuideContent: cleanDoc(p.uxUiGuideContent ?? null),
+        mddContent: focused.mddContent || get().mddContent,
+        uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: cleanDoc(p.dbgaContent ?? null),
-        specContent: cleanDoc(p.specContent ?? null),
-        phase0SummaryContent: p.phase0SummaryContent ?? null,
-        blueprintContent: cleanDoc(p.blueprintContent ?? null),
-        tasksContent: cleanDoc(p.tasksContent ?? null),
-        apiContractsContent: cleanDoc(p.apiContractsContent ?? null),
-        logicFlowsContent: cleanDoc(p.logicFlowsContent ?? null),
-        architectureContent: cleanDoc(p.architectureContent ?? null),
-        useCasesContent: cleanDoc(p.useCasesContent ?? null),
-        userStoriesContent: cleanDoc(p.userStoriesContent ?? null),
-        infraContent: cleanDoc(p.infraContent ?? null),
-        aemContent: cleanDoc(p.aemContent ?? null),
-
-        uiScreensContent: cleanDoc(p.uiScreensContent ?? null),
+        specContent: focused.specContent,
+        phase0SummaryContent: focused.phase0SummaryContent,
+        blueprintContent: focused.blueprintContent,
+        tasksContent: focused.tasksContent,
+        apiContractsContent: focused.apiContractsContent,
+        logicFlowsContent: focused.logicFlowsContent,
+        architectureContent: focused.architectureContent,
+        useCasesContent: focused.useCasesContent,
+        userStoriesContent: focused.userStoriesContent,
+        infraContent: focused.infraContent,
+        aemContent: focused.aemContent,
+        uiScreensContent: focused.uiScreensContent,
         synced: true,
         error: null,
       });
@@ -1940,7 +2034,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             for (const line of lines) {
               for (const event of parseNdjsonLine(line)) {
               try {
-                const ev = event as { type: string; agent?: string; markdown?: string; message?: string; precision?: number; status?: string; precisionBreakdown?: PrecisionBreakdown };
+                const ev = event as {
+                  type: string;
+                  agent?: string;
+                  markdown?: string;
+                  message?: string;
+                  precision?: number;
+                  status?: string;
+                  precisionBreakdown?: PrecisionBreakdown;
+                  deliveryGate?: MddDeliveryGateResult;
+                };
                 if (ev.type === "done") {
                   const merged = (ev.markdown ?? "").trim();
                   if (merged.length > 80) {
@@ -1965,9 +2068,20 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     await fetchEstimation(requestProjectId, merged).catch(() => { });
                     fetchConformance(requestProjectId).catch(() => { });
                     const current = get();
+                    const savedMdd = selectPersistedMddBaseline(get()) || merged;
+                    const regenGate = deliveryGateFromStreamEvent(ev);
                     set({
-                      project: current.project ? { ...current.project, mddContent: merged } : null,
-                      mddContent: merged,
+                      project: current.project
+                        ? {
+                            ...current.project,
+                            mddContent: savedMdd,
+                            ...(typeof ev.precision === "number" ? { precisionScore: ev.precision } : {}),
+                            ...(ev.status ? { status: ev.status as Project["status"] } : {}),
+                          }
+                        : null,
+                      mddContent: savedMdd,
+                      ...(ev.precisionBreakdown ? { precisionBreakdown: ev.precisionBreakdown } : {}),
+                      ...(regenGate ? { deliveryGate: regenGate } : {}),
                       loading: false,
                       loadingReason: null,
                       notice: null,
@@ -2806,13 +2920,22 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     try {
       const body: Record<string, unknown> = {};
       if (options?.gapsFeedback?.trim()) body.gapsFeedback = options.gapsFeedback.trim();
+      const stageId = get().activeStageId;
+      if (stageId) body.stageId = stageId;
       const data = await queueAndPoll<Project>(`${API_BASE}/projects/${projectId}/generate-blueprint`, body);
       const raw = data.blueprintContent ?? "";
       const cleaned = raw.replace(/^\s*```(?:markdown)?\s*/i, "").replace(/^\s*```\s*/, "").replace(/\s*```\s*$/, "");
-      const proj = { ...data, blueprintContent: cleaned || null };
-      set({ project: proj, blueprintContent: cleaned || null, error: null });
+      const stages = data.stages ?? get().project?.stages ?? [];
+      const merged: Project = {
+        ...data,
+        stages: stageId
+          ? stages.map((s) => (s.id === stageId ? { ...s, blueprintContent: cleaned || null } : s))
+          : stages,
+      };
+      const focused = workshopStateFromProjectStage(merged, get().activeStageId);
+      set({ project: focused.project, blueprintContent: focused.blueprintContent, error: null });
       get().fetchConformance(projectId).catch(() => { });
-      return proj;
+      return focused.project;
     } catch (e) {
       set({ error: friendlyFetchError(e) });
       return null;

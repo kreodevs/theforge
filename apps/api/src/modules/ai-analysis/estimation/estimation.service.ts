@@ -40,6 +40,7 @@ import {
 } from "../../engine/mdd-internal-audit.util.js";
 import { computeDocumentCompleteness } from "./completeness.util.js";
 import { computeCrossDocumentConsistency } from "./consistency.util.js";
+import { isCredentialStorageSatisfied } from "../utils/mdd-credential-storage.util.js";
 
 /** Horas base por unidad (entidades, pantallas, endpoints) para derivar total. */
 const HOURS_PER_ENTITY = 12;
@@ -150,15 +151,14 @@ function computeConsistencyGaps(md: string): {
 
   let securityCompletenessGap = 0;
   const highSecurity = /\b(high_security|alta seguridad|seguridad crítica)\b/i.test(lower);
-  const hasCredentials = /\b(credencial|password|contraseña|autenticaci[oó]n)\b/i.test(contextBlock) || /\b(credencial|password|autenticaci[oó]n)\b/i.test(securityBlock);
   // Solo exigir columnas de auditoría (ip/user_agent) cuando el doc marca alta seguridad explícita
   if (highSecurity) {
     const needsAudit = /\b(ip_address|user_agent|ip\b|user_agent)\b/i.test(tablesAndColumns);
     if (!needsAudit) securityCompletenessGap += 0.5;
   }
-  if (hasCredentials) {
-    const hasCredStorage = /\b(password_hash|credential|external_store|almac[eé]n\b|referencia)\b/i.test(tablesAndColumns);
-    if (!hasCredStorage) securityCompletenessGap += 0.5;
+  // Alineado con prepareMddForOutput / isCredentialStorageSatisfied (§6 gestión de secretos cuenta).
+  if (!isCredentialStorageSatisfied(md)) {
+    securityCompletenessGap += 0.5;
   }
   securityCompletenessGap = Math.min(1, securityCompletenessGap);
 
