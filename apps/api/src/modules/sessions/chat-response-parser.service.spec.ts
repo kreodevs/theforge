@@ -29,18 +29,23 @@ Endpoint Odoo para costos reales.`;
     assert.equal(merged, full.trim());
   });
 
-  it("acepta Research Report como documento completo de Fase 0", () => {
-    const research = `# Research Report — Módulo de Costos OBP
-
-## Módulos del proyecto
-Contenido extenso del discovery con tablas y módulos numerados.`.repeat(8);
-    const updated = `# Research Report — Módulo de Costos OBP
-
-## Multi-tenancy
-tenant_id en catálogo y tablas espejo.`.repeat(8);
-    const merged = parser.mergeDbgaOrUseFull(research, updated);
-    assert.ok(merged.includes("Multi-tenancy"));
-    assert.ok(merged.includes("tenant_id"));
+  it("anexa catálogo de endpoints sin borrar el DBGA actual", () => {
+    const endpoints = `Aquí tienes la lista:
+1. Sesión
+POST /v1/chats
+GET /v1/chats/{id}
+DELETE /v1/chats/{id}
+2. Mensajes
+POST /v1/chats/{id}/messages
+POST /v1/chats/{id}/messages/stream
+3. Status
+GET /v1/chats/{id}/status
+POST /v1/chats/{id}/stop`;
+    const merged = parser.mergeDbgaOrUseFull(longDbga, endpoints);
+    assert.ok(merged.includes("Referencia de Industria"));
+    assert.ok(merged.includes("POST /v1/chats"));
+    assert.ok(merged.includes("Integración API"));
+    assert.ok(merged.length > longDbga.length);
   });
 });
 

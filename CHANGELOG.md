@@ -2,6 +2,12 @@
 
 Todas las notas relevantes de este repositorio se documentan aquí. El formato sigue una variante orientada a release técnico (Added / Changed / Fixed / Architecture).
 
+## [Unreleased]
+
+### Fixed
+
+- **Fase 0 / DBGA — wipe por catálogo de endpoints:** una lista numerada `POST/GET /v1/…` ya no se trata como DBGA completo ni pasa el umbral absurdo de 2500 chars que permitía sustituir un documento de 10–20k. `looksLikeApiEndpointCatalog`, merge que anexa bajo «Integración API», shrink ≥70% relativo, y prompt de refine anti-borrado.
+
 ## [0.14.0] — 2026-07-14
 
 ### Added

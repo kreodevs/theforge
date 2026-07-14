@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { looksLikeDbgaDocumentBody } from "@theforge/shared-types";
+import { looksLikeApiEndpointCatalog, looksLikeDbgaDocumentBody } from "@theforge/shared-types";
 import {
   normalizeDashes,
   stripChatLabel as stripChatLabelUtil,
@@ -68,6 +68,11 @@ export class ChatResponseParserService {
     if (!cleaned) return (currentDbga ?? "").trim();
     const current = (currentDbga ?? "").trim();
     if (!current) return cleaned;
+
+    // Catálogo de endpoints / fragmento HTTP → anexar, nunca sustituir el panel.
+    if (looksLikeApiEndpointCatalog(cleaned)) {
+      return `${current}\n\n---\n\n## Integración API (endpoints)\n\n${cleaned}`.trim();
+    }
 
     const hasBenchmarkTitle =
       /#\s*(?:Domain\s+Benchmark|Benchmark\s*&\s*Gap|Research\s+Report|Módulo\s+de\s+Costos|Fase\s+0\s+[—–-])/i.test(
@@ -269,6 +274,11 @@ export class ChatResponseParserService {
    * DBGA / Fase 0: el modelo a veces omite ---FIN_DBGA--- o manda solo una sección nueva (## Integración).
    */
   detectBenchmarkDocFallback(trimmed: string): { docPart: string; chatPart: string } | null {
+    // Lista de endpoints REST ≠ DBGA completo (evita wipe de Fase 0).
+    if (looksLikeApiEndpointCatalog(trimmed)) {
+      return null;
+    }
+
     const introSplit = trimmed.match(
       /^([\s\S]{1,420}?)\n\n(?=(?:#\s|##\s+\d+\.|\d+\.\s+(?:Resumen|Visi[oó]n|Benchmark)))/im,
     );

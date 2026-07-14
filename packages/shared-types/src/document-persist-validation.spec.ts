@@ -7,10 +7,16 @@ import {
 } from "./document-persist-validation.js";
 
 describe("document-persist-validation", () => {
-  it("wouldShrinkDocDangerously rechaza borrado masivo", () => {
-    const current = "# Spec\n\n".padEnd(1200, "x");
-    const next = "## Registro de cambios del documento\n\n| 1.0 | Junio 2026 | Creación |";
+  it("wouldShrinkDocDangerously rechaza reemplazo de 15k por 2.5k con H1 (floor abs eliminado)", () => {
+    const current = "# Domain Benchmark\n\n" + "x".repeat(15_000);
+    const next = "# Domain Benchmark\n\n" + "y".repeat(2500);
     assert.equal(wouldShrinkDocDangerously(current, next), true);
+  });
+
+  it("wouldShrinkDocDangerously permite doc ≥70% con H1", () => {
+    const current = "# Spec\n\n" + "a".repeat(5000);
+    const next = "# Spec\n\n" + "b".repeat(3600);
+    assert.equal(wouldShrinkDocDangerously(current, next), false);
   });
 
   it("validateDocumentForPersist rechaza changelog-only", () => {

@@ -4,10 +4,29 @@ import {
   hasEmbeddedSpecificationBlock,
   isHypotheticalDocumentEditOffer,
   isUserExploringDbgaIntent,
+  looksLikeApiEndpointCatalog,
   looksLikeDbgaDocumentBody,
   looksLikeDbgaEditRequest,
   looksLikeDbgaSpecIntegrationRequest,
 } from "./document-edit-intent.js";
+
+describe("looksLikeApiEndpointCatalog", () => {
+  it("detecta lista de endpoints de chat externo", () => {
+    const msg = `Aquí tienes la lista simplificada de los endpoints esenciales:
+1. Gestión de Sesión
+POST /v1/chats — Crea una nueva sesión.
+GET /v1/chats/{chat_id} — Historial.
+DELETE /v1/chats/{chat_id} — Cierra.
+2. Mensajería
+POST /v1/chats/{chat_id}/messages
+POST /v1/chats/{chat_id}/messages/stream
+3. Estado
+GET /v1/chats/{chat_id}/status
+POST /v1/chats/{chat_id}/stop`;
+    assert.ok(looksLikeApiEndpointCatalog(msg));
+    assert.equal(looksLikeDbgaDocumentBody(msg), false);
+  });
+});
 
 describe("looksLikeDbgaEditRequest", () => {
   it("detecta edición explícita al documento", () => {

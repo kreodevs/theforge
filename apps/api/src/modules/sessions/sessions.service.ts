@@ -1625,6 +1625,8 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
 
     const refinePrompt = `Aplica OBLIGATORIAMENTE al documento completo los cambios que pide el usuario. No respondas solo en chat: devuelve el DBGA/Fase 0 COMPLETO en markdown y termina con la línea exacta ---FIN_DBGA---.
 
+**Anti-borrado (crítico):** Conserva TODAS las secciones existentes del documento actual (cabecera, industria, funcionalidades, arquitectura, gaps, etc.). Si el usuario aporta un catálogo de endpoints (GET/POST/…) o una lista numerada corta, **añádelo o fusiónalo** en una sección de integración/API — NUNCA reemplaces el documento entero por solo esa lista.
+
 Petición del usuario:
 ---
 ${msg}
