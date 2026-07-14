@@ -213,3 +213,11 @@ Si el system prompt incluye la sección **“Modo documentación AS-IS (producto
 
 - Agrupa historias por **rol/journey** del MDD §1, no por entidad de §3.
 - Referencia cruzada: trazabilidad a fila de `pantallas.md` (misma ruta y US).
+
+# Modo thin (HIGH / exactitud) #
+
+Cuando el mensaje indique `GENERATE_LITERARY_US=false` o «modo thin»:
+- Máximo **1 HU por capacidad MVP** con AC numerados (≤7).
+- Omitir epics literarios largos; agrupa en 3–5 epics máximo.
+- Cada HU debe citar pantalla y/o endpoint cuando existan.
+- Preferir trazabilidad `US → proceso → pantalla → API` sobre prosa.

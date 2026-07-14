@@ -1123,6 +1123,9 @@ export class AiService {
       : "Genera el documento de Casos de Uso según las instrucciones del system prompt. " +
         "Cubre de forma exhaustiva cada capacidad MVP, actor, criterio UAT y dominio API del MDD. " +
         "Cada flujo debe alinearse al texto del MDD y del Spec; no cites archivos ni entidades que no aparezcan en esos documentos.\n\n" +
+        (process.env.GENERATE_LITERARY_UC === "false"
+          ? "GENERATE_LITERARY_UC=false — aplica **modo thin** del system prompt.\n\n"
+          : "") +
         "MDD:\n---\n" +
         mdd +
         "\n---\n\n" +
@@ -1157,6 +1160,9 @@ export class AiService {
           (useCases ? "Casos de Uso (flujos — traza HU ↔ CU):\n---\n" + useCases + "\n---" : "")
         : "Genera el documento de Historias de Usuario según las instrucciones del system prompt. " +
           constitutionNote +
+          (process.env.GENERATE_LITERARY_US === "false"
+            ? "GENERATE_LITERARY_US=false — aplica **modo thin** del system prompt.\n\n"
+            : "") +
           "MDD:\n---\n" +
           mdd +
           "\n---\n\n" +

@@ -470,7 +470,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       return;
     }
 
-    const gate = await evaluateMddDeliveryGatePrepared(mdd);
+    const gate = await evaluateMddDeliveryGatePrepared(mdd, {
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+    });
     if (stage?.id) void this.persistMddDeliveryGateSnapshot(stage.id, gate);
     if (!gate.ok && !acknowledgeGaps) {
       throw new ConflictException(buildMddDeliveryGateConflictBody(gate));

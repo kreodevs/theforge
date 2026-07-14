@@ -4,6 +4,10 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+### Added
+
+- **Cascade accuracy ≥90 (PLAN-CASCADE-90-ACCURACY):** scores Docs/Tasks vs BRD, domain inventory + auth-skew delivery gate, analyze `accuracy` + dashboard badge, optional hard export gate (`REQUIRE_DOC_ACCURACY_90`), ui-screens plan improvements, UC/US thin env flags.
+
 ### Fixed
 
 - **Technology Docs MCP (Context7):** el test de conexión y las llamadas reales hacen `initialize` + `Mcp-Session-Id` en `mcp.context7.com` (antes `tools/list` directo → HTTP 400 «No valid session ID»). Sesión cacheada por URL + `CONTEXT7_API_KEY`.

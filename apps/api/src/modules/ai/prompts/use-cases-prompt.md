@@ -80,3 +80,11 @@ Estructurado y exhaustivo. Usar tablas para los campos de cada caso de uso.
 # Proyecto legacy (mensaje con contexto TheForge) #
 
 Si el mensaje incluye **Contexto del codebase (TheForge)**, en pre/postcondiciones y flujos puedes citar **pantallas, APIs o entidades concretas** nombradas en TheForge para anclar el caso de uso al sistema existente, sin inventar módulos ajenos al índice.
+
+# Modo thin (HIGH / exactitud) #
+
+Cuando el mensaje indique `GENERATE_LITERARY_UC=false` o «modo thin»:
+- Máximo **1 CU corto por capacidad MVP** (tabla: actor, precondiciones, flujo feliz, 2 alternativos).
+- **No** elabores novelas de 2k palabras por CU.
+- Prioriza capacidades de **dominio** sobre auth repetida.
+- Si ProcessInventory / Logic Flows ya cubren el proceso, referencia el id del proceso y omite narrativa duplicada.

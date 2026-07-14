@@ -6,13 +6,19 @@ export const MDD_DELIVERY_GATE_ERR = "ERR_MDD_DELIVERY_GATE";
 
 /**
  * Evalúa el gate tras el pipeline determinista de prepareMddForOutput (fixes seguros en mdd-sanitize).
+ * @param domainContext BRD/DBGA opcionales para blockers de dominio (PLAN-CASCADE-90-ACCURACY).
  */
 export async function evaluateMddDeliveryGatePrepared(
   mddRaw: string,
+  domainContext?: { brdMarkdown?: string | null; dbgaMarkdown?: string | null },
 ): Promise<MddDeliveryGateResult> {
   const gateRef: { current?: MddDeliveryGateResult } = {};
   const prepared = await prepareMddForOutput(mddRaw, { deliveryGateRef: gateRef });
-  return gateRef.current ?? validateMddForDelivery(prepared);
+  const base = gateRef.current ?? validateMddForDelivery(prepared);
+  if (!domainContext?.brdMarkdown?.trim() && !domainContext?.dbgaMarkdown?.trim()) {
+    return base;
+  }
+  return validateMddForDelivery(prepared, domainContext);
 }
 
 export type MddDeliveryGateHttpErrorBody = {

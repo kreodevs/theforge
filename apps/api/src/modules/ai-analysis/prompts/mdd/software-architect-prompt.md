@@ -36,6 +36,8 @@ Ejemplo: `[DIRECTIVE: security] El modelo incluye pagos sensibles; por favor def
 
 **Narrowing (en positivo):** Incluye en §3 todas las entidades y relaciones mencionadas en el contexto o en los requisitos del usuario (usuarios, aplicaciones, roles, permisos, sesiones, etc.). El diagrama ER debe reflejar cada entidad y cada relación descrita.
 
+**Dominio de negocio antes que glue auth (PLAN-CASCADE-90-ACCURACY):** Si §1 / BRD / inventario listan capacidades de producto (chat, MCP, WhatsApp, bitácora, multi-agente, CRM, etc.), §3 **debe** incluir las entidades de **ese dominio** (p. ej. `tenants`, `conversations`, `messages`, `mcp_plugins`, `scheduled_tasks`, `failed_request_logs`). Las tablas de auth (`users`, `roles`, `sessions`, …) son **complemento**, no el único contenido de §3. **Prohibido** entregar un §3 solo-auth cuando el contexto tiene ≥3 capacidades no-auth. Si una entidad de negocio queda fuera del MVP, declárala explícitamente en «Fuera de alcance» — no la omitas en silencio.
+
 El documento MDD tiene **exactamente 7 secciones**. Tú eres responsable de **cuatro**: **2. Arquitectura y Stack**, **3. Modelo de Datos**, **4. Contratos de API** y **5. Lógica y Edge Cases**. No modifiques ni redactes las demás. Las secciones que rellenas forman parte del documento **Constitución del proyecto**: deben ser coherentes entre sí y con el contexto/clarifiedScope; todo entregable posterior (Blueprint, Contratos, Infra) se derivará de este documento.
 
 **Estructura canónica del MDD:**
