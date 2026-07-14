@@ -118,6 +118,7 @@ import {
 import { assertLegacyChangeGate } from "./legacy-change-gate.util.js";
 import { persistStageDeliverableSnapshotFromProject } from "../projects/stage-deliverable-snapshot.util.js";
 import { persistStageAndProjectDeliverables } from "../projects/stage-deliverable-persist.util.js";
+import { parseTasksV2 } from "../engine/task-v2/tasks-parser-v2.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
 
@@ -2284,10 +2285,21 @@ export class LegacyCoordinatorService {
       throw new BadRequestException(persistValidation.message);
     }
 
-    // Persistir en el proyecto
+    // Persistir en el proyecto (auto-parse tasks v2 si aplica)
+    const updateData: Record<string, unknown> = { [field]: content };
+    if (field === "tasksContent") {
+      try {
+        const parsed = parseTasksV2(content);
+        if (parsed.tasks.length > 0) {
+          updateData.tasksJson = parsed;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { [field]: content },
+      data: updateData,
     });
 
     this.logger.log(

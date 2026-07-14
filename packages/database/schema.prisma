@@ -215,6 +215,8 @@ model Stage {
   userStoriesContent   String? @db.Text
   blueprintContent     String? @db.Text
   tasksContent         String? @db.Text
+  /// Tasks estructurado v2 (JSON parseado desde tasksContent): dependencias, targetFiles, inferenceRules, etc.
+  tasksJson            Json?
   apiContractsContent  String? @db.Text
   logicFlowsContent    String? @db.Text
   infraContent         String? @db.Text
@@ -335,6 +337,8 @@ model Project {
   userStoriesContent   String?   @db.Text
   blueprintContent     String?   @db.Text
   tasksContent         String?   @db.Text
+  /// Tasks estructurado v2 (JSON parseado desde tasksContent): dependencias, targetFiles, inferenceRules, etc.
+  tasksJson            Json?
   apiContractsContent  String?   @db.Text
   logicFlowsContent    String?   @db.Text
   infraContent         String?   @db.Text
