@@ -21,6 +21,9 @@ import { createMddCrossConsistencyNode } from "../nodes/mdd-cross-consistency.no
 import { createMddFormatSecIntNode } from "../nodes/mdd-format-sec-int.node.js";
 import { createMddPrepareOutputNode } from "../nodes/mdd-prepare-output.node.js";
 import { createMddBlackboardNode } from "../nodes/mdd-blackboard.node.js";
+import { createMddDerivedSpecGeneratorNode } from "../nodes/mdd-derived-spec-generator.node.js";
+import { createMddTaskGeneratorV2Node } from "../nodes/mdd-task-generator-v2.node.js";
+import { createMddTaskAuditorNode } from "../nodes/mdd-task-auditor.node.js";
 import { draftHasSubstantialSections6And7 } from "../utils/mdd-delivery-gate-loop.util.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { detectSection3CompositionBlockers } from "../utils/schema-owner.util.js";
@@ -137,11 +140,16 @@ export async function createMddGraph(
     uiMcpLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
   });
 
+  // Lean-SDD: nodos post-auditoría que derivan specs estructuradas y tasks v2.
+  const derivedSpecGeneratorNode = createMddDerivedSpecGeneratorNode();
+  const taskGeneratorV2Node = createMddTaskGeneratorV2Node();
+  const taskAuditorNode = createMddTaskAuditorNode();
+
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.deliveryGateLoopActive === true) {
       return state.deliveryGateFixTarget === "integration" ? "integration" : "software_architect";
     }
-    return "graph_populator";
+    return "derived_spec_generator";
   }
 
   function routeAfterFormatArchitectGateLoop(state: MDDStateType): string {
@@ -177,6 +185,9 @@ export async function createMddGraph(
     .addNode("diagram_injector", diagramInjectorNode)
     .addNode("auditor", auditorNode)
     .addNode("prepare_output", prepareOutputNode)
+    .addNode("derived_spec_generator", derivedSpecGeneratorNode)
+    .addNode("task_generator_v2", taskGeneratorV2Node)
+    .addNode("task_auditor", taskAuditorNode)
     .addNode("graph_populator", graphPopulatorNode)
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
@@ -200,8 +211,11 @@ export async function createMddGraph(
     .addConditionalEdges("prepare_output", routeAfterPrepareOutput, {
       software_architect: "software_architect",
       integration: "integration",
-      graph_populator: "graph_populator",
+      derived_spec_generator: "derived_spec_generator",
     })
+    .addEdge("derived_spec_generator", "task_generator_v2")
+    .addEdge("task_generator_v2", "task_auditor")
+    .addEdge("task_auditor", "graph_populator")
     .addEdge("graph_populator", END);
 
   return builder.compile();
@@ -272,12 +286,17 @@ export async function createMddGraphWithManager(
     uiMcpLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
   });
 
+  // Lean-SDD: nodos post-auditoría que derivan specs estructuradas y tasks v2.
+  const derivedSpecGeneratorNode = createMddDerivedSpecGeneratorNode();
+  const taskGeneratorV2Node = createMddTaskGeneratorV2Node();
+  const taskAuditorNode = createMddTaskAuditorNode();
+
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
     if (state.deliveryGateLoopActive === true) {
       return state.deliveryGateFixTarget === "integration" ? "integration" : "software_architect";
     }
-    return "graph_populator";
+    return "derived_spec_generator";
   }
 
   /** Si hay directiva/requisitos y §3+§4 con contenido y aún no hemos pasado por critic (attempts < 1), ir a architect_critic. */
@@ -437,6 +456,9 @@ export async function createMddGraphWithManager(
     .addNode("diagram_injector", diagramInjectorNode)
     .addNode("auditor", auditorNode)
     .addNode("prepare_output", prepareOutputNode)
+    .addNode("derived_spec_generator", derivedSpecGeneratorNode)
+    .addNode("task_generator_v2", taskGeneratorV2Node)
+    .addNode("task_auditor", taskAuditorNode)
     .addNode("blackboard", blackboardNode)
     .addNode("graph_populator", graphPopulatorNode)
     .addEdge(START, "manager")
@@ -528,8 +550,11 @@ export async function createMddGraphWithManager(
       executor: "executor",
       software_architect: "software_architect",
       integration: "integration",
-      graph_populator: "graph_populator",
+      derived_spec_generator: "derived_spec_generator",
     })
+    .addEdge("derived_spec_generator", "task_generator_v2")
+    .addEdge("task_generator_v2", "task_auditor")
+    .addEdge("task_auditor", "graph_populator")
     .addConditionalEdges("blackboard", routeAfterBlackboard, {
       executor: "executor",
       manager: "manager",

@@ -109,6 +109,23 @@ export const MDDStateAnnotation = Annotation.Root({
   deliveryGateLoopActive: Annotation<boolean | undefined>(),
   /** Destino del auto-loop cuando deliveryGateLoopActive. */
   deliveryGateFixTarget: Annotation<DeliveryGateFixTarget | undefined>(),
+  /** Lean-SDD: types.json extraído del MDD §3. */
+  typesJson: Annotation<any | undefined>(),
+  /** Lean-SDD: operations.json extraído del MDD §4. */
+  operationsJson: Annotation<any | undefined>(),
+  /** Lean-SDD: tasks en formato v2 (estructurado con YAML front-matter). */
+  tasksJson: Annotation<any | undefined>(),
+  /** Lean-SDD: score de auditoría de tasks v2 (0-100). */
+  tasksAuditScore: Annotation<number | undefined>(),
+  /** Lean-SDD: reglas de inferencia aplicadas durante generación. */
+  inferenceRulesApplied: Annotation<string[] | undefined>({
+    reducer: (old, newVal) => {
+      if (newVal && Array.isArray(newVal) && newVal.length === 0) return [];
+      if (!newVal) return old;
+      return (old ?? []).concat(newVal);
+    },
+    default: () => [],
+  }),
 });
 
 export type MDDStateType = typeof MDDStateAnnotation.State;

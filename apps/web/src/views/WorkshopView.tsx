@@ -115,6 +115,7 @@ import { AgentGovernancePanel } from "../components/AgentGovernancePanel";
 import { WorkshopAgentProgressPanel } from "../components/WorkshopAgentProgressPanel";
 import { PendingDocumentationGapsPanel } from "../components/PendingDocumentationGapsPanel";
 import { AgentSessionLogPanel } from "../components/AgentSessionLogPanel";
+import { JsonDocPanel } from "../components/JsonDocPanel";
 import { type DocumentsForZip } from "../utils/downloadDocumentsZip";
 import {
   downloadRepoHandoffFromApi,
@@ -418,6 +419,8 @@ export default function WorkshopView({
   const persistAemContent = useWorkshopStore((s) => s.persistAemContent);
   const uiScreensContentField = useWorkshopStore((s) => s.uiScreensContent);
   const syncUiScreens = useWorkshopStore((s) => s.syncUiScreens);
+  const typesContentField = useWorkshopStore((s) => s.typesContent);
+  const operationsContentField = useWorkshopStore((s) => s.operationsContent);
 
   const specContent = resolveWorkshopDeliverableContent(
     "specContent",
@@ -481,6 +484,8 @@ export default function WorkshopView({
   const uxUiGuideContent = uxUiGuideContentField ?? project?.uxUiGuideContent ?? null;
   const aemContent = aemContentField ?? project?.aemContent ?? null;
   const uiScreensContent = uiScreensContentField ?? project?.uiScreensContent ?? null;
+  const typesContent = typesContentField ?? null;
+  const operationsContent = operationsContentField ?? null;
 
   const projectStatus: Status = project?.status ?? "ROJO";
   const semaphoreGreen = liveMetrics ? liveMetrics.status === "green" : projectStatus === "VERDE";
@@ -4866,6 +4871,18 @@ export default function WorkshopView({
                 legacyGenerateLabel={canGenerateFromCodebase ? "Generar Tasks desde MDD Inicial" : undefined}
                 onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "tasks", activeStageId ?? undefined) : undefined}
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
+              />
+            )}
+            {centralPanel === "types" && (
+              <JsonDocPanel
+                content={typesContent}
+                title="Tipos (types.json)"
+              />
+            )}
+            {centralPanel === "operations" && (
+              <JsonDocPanel
+                content={operationsContent}
+                title="Operaciones (operations.json)"
               />
             )}
             {centralPanel === "agent-governance" && (

@@ -5,7 +5,6 @@ import {
   buildHandoffMicroSpecFiles,
   buildNextTaskDocumentLayout,
   buildOpenSpecChangeExport,
-  buildSpecKitBundleFiles,
   checkBrdObjectiveMentionHealth,
   countClarificationMarkers,
   extractTaskCheckpoints,
@@ -23,6 +22,10 @@ import {
   type SpecKitBundleFile,
   type TasksToIssuesBody,
 } from "@theforge/shared-types";
+import {
+  buildSpecKitBundleFilesV2,
+  type SpecKitBundleInputV2,
+} from "./spec-kit-bundle-v2.js";
 import type { Project, Stage } from "@theforge/database";
 import { AiService } from "../ai/ai.service.js";
 import { ConformanceService } from "../engine/conformance.service.js";
@@ -119,7 +122,10 @@ export class SddIntegrationService {
       .split("\n")
       .filter((l) => /aceptación|acceptance|criterio/i.test(l))
       .slice(0, 12);
-    return buildSpecKitBundleFiles({
+
+    const derived = stage?.derivedSpec;
+
+    return buildSpecKitBundleFilesV2({
       projectName: project.name,
       featureOrdinal: stage?.ordinal ?? 1,
       mddContent: mdd,
@@ -141,7 +147,11 @@ export class SddIntegrationService {
       ),
       changeSpecContent: stage?.changeSpecContent ?? null,
       acceptanceCriteriaLines: acceptanceLines.length ? acceptanceLines : null,
-    });
+      typesJsonContent: derived?.typesJson ? JSON.stringify(derived.typesJson) : null,
+      operationsJsonContent: derived?.operationsJson ? JSON.stringify(derived.operationsJson) : null,
+      tasksJsonContent: derived?.tasksJson ? JSON.stringify(derived.tasksJson) : null,
+      inferenceRulesContent: null,
+    } as SpecKitBundleInputV2);
   }
 
   /** Payload SDD estructurado para webhook Hermes (hashes completos, sin truncar). */

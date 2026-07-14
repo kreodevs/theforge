@@ -1,7 +1,7 @@
 import { Prisma, type Estimation, type Project, type Stage } from "@theforge/database";
 import type { CloneProjectBody, Visibility } from "@theforge/shared-types";
 
-type StageWithEst = Stage & { estimation: Estimation | null };
+type StageWithEst = Stage & { estimation: Estimation | null; derivedSpec: any | null };
 
 export type ProjectCloneSource = Project & { stages: StageWithEst[] };
 

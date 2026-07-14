@@ -657,6 +657,7 @@ export class AiAnalysisService {
         precisionBreakdown,
         auditorGaps: lastState.auditorGaps ?? undefined,
       });
+      await this.persistDerivedSpecs(projectId, estimationStage, lastState);
       const gateFields = mddStreamDeliveryGateFields(prepareGateRef.current, metrics.status);
       yield {
         type: "done",
@@ -942,6 +943,7 @@ export class AiAnalysisService {
         precisionBreakdown,
         auditorGaps: lastState?.auditorGaps ?? undefined,
       });
+      await this.persistDerivedSpecs(projectId, estimationStageId, lastState);
       const managerDoneGate = mddStreamDeliveryGateFields(managerGateRef.current, metrics.status);
       yield {
         type: "done",
@@ -1665,6 +1667,46 @@ export class AiAnalysisService {
       }),
     ));
     return this.graphMemory.getDecisionsByProject(projectId);
+  }
+
+  /**
+   * Persiste los specs derivados (types.json, operations.json, tasks.json) en StageDerivedSpec.
+   * Se ejecuta tras completar el pipeline MDD, solo si el estado contiene los nuevos campos lean-sdd.
+   */
+  private async persistDerivedSpecs(
+    projectId: string | undefined,
+    stageId: string | null | undefined,
+    state: MDDStateType,
+  ): Promise<void> {
+    const pid = projectId?.trim();
+    const sid = stageId?.trim();
+    if (!pid || !sid) return;
+    if (!state.typesJson && !state.operationsJson) return;
+    try {
+      await this.prisma.stageDerivedSpec.upsert({
+        where: { stageId: sid },
+        create: {
+          stageId: sid,
+          typesJson: (state.typesJson as any) ?? undefined,
+          operationsJson: (state.operationsJson as any) ?? undefined,
+          tasksJson: (state.tasksJson as any) ?? undefined,
+          tasksAuditScore: state.tasksAuditScore ?? undefined,
+          mddHash: "", // TODO: hash del mddDraft para invalidación
+        },
+        update: {
+          typesJson: (state.typesJson as any) ?? undefined,
+          operationsJson: (state.operationsJson as any) ?? undefined,
+          tasksJson: (state.tasksJson as any) ?? undefined,
+          tasksAuditScore: state.tasksAuditScore ?? undefined,
+          mddHash: "",
+        },
+      });
+      this.logger.log(`[MDD:DerivedSpecs] persisted for stage ${sid}`);
+    } catch (err) {
+      this.logger.warn(
+        `[MDD:DerivedSpecs] persist failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** Persiste trail/breakdown/gaps del pipeline MDD para rehidratar el modal tras recargar. */

@@ -166,6 +166,8 @@ export interface WorkshopDocNavBuildContext {
   apiContractsContent: string | null | undefined;
   logicFlowsContent: string | null | undefined;
   tasksContent: string | null | undefined;
+  typesContent: string | null | undefined;
+  operationsContent: string | null | undefined;
   agentGovernanceContent: string | null | undefined;
   infraContent: string | null | undefined;
   adrs: unknown[] | null | undefined;
@@ -348,6 +350,24 @@ export function buildWorkshopDocNavItems(ctx: WorkshopDocNavBuildContext): Works
   }
   if (visible("agent-governance") && !agentGovBeforeTasks) {
     items.push(agentGovernanceNavItem(ctx));
+  }
+  if (visible("types")) {
+    items.push({
+      id: "types",
+      label: "Tipos",
+      title: "Tipos de datos extraídos del MDD (types.json)",
+      Icon: FileCode,
+      content: ctx.typesContent,
+    });
+  }
+  if (visible("operations")) {
+    items.push({
+      id: "operations",
+      label: "Operaciones",
+      title: "Operaciones extraídas del MDD (operations.json)",
+      Icon: GitBranch,
+      content: ctx.operationsContent,
+    });
   }
   if (visible("infra")) {
     items.push({

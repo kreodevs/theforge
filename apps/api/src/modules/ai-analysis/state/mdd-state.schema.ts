@@ -154,6 +154,16 @@ export const mddStateSchema = z.object({
     .optional(),
   deliveryGateLoopActive: z.boolean().optional(),
   deliveryGateFixTarget: z.enum(["software_architect", "integration"]).optional(),
+  /** Lean-SDD: types.json extraído del MDD §3 (Zod schemas + TypeScript interfaces). */
+  typesJson: z.any().optional(),
+  /** Lean-SDD: operations.json extraído del MDD §4 (CRUD + endpoints + frontend). */
+  operationsJson: z.any().optional(),
+  /** Lean-SDD: tasks en formato v2 (estructurado con YAML front-matter). */
+  tasksJson: z.any().optional(),
+  /** Lean-SDD: score de auditoría de tasks v2 (0-100). */
+  tasksAuditScore: z.number().min(0).max(100).optional(),
+  /** Lean-SDD: reglas de inferencia aplicadas durante generación. */
+  inferenceRulesApplied: z.array(z.string()).optional(),
 });
 
 export type MDDState = z.infer<typeof mddStateSchema>;
@@ -201,4 +211,9 @@ export const defaultMDDState: MDDState = {
   deliveryGate: undefined,
   deliveryGateLoopActive: undefined,
   deliveryGateFixTarget: undefined,
+  typesJson: undefined,
+  operationsJson: undefined,
+  tasksJson: undefined,
+  tasksAuditScore: undefined,
+  inferenceRulesApplied: [],
 };

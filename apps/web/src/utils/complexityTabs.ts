@@ -21,6 +21,8 @@ export type WorkshopDocTab =
   | "integration"
   | "handoff-spec"
   | "ui-screens"
+  | "types"
+  | "operations"
 ;
 
 export type ProjectTypeForTabs = "NEW" | "LEGACY";
@@ -68,6 +70,9 @@ export function isTabVisibleForComplexity(
   // Pantallas: gate real es "hay MCP gráfico compatible activo" (se aplica en buildWorkshopDocNavItems).
   // A nivel de complejidad no se oculta.
   if (tab === "ui-screens") return true;
+
+  // Lean-SDD: types.json y operations.json son derivados del MDD, visibles siempre que existan
+  if (tab === "types" || tab === "operations") return true;
 
   if (c === "HIGH") return true;
 

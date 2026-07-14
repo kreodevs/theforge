@@ -234,6 +234,8 @@ model Stage {
   episodicMemories EpisodicMemory[]
   documentationGaps DocumentationGap[]
   agentSessionLogs AgentSessionLog[]
+  /// Derived structured specs (types.json, operations.json, tasks.json) — lean-sdd feature.
+  derivedSpec StageDerivedSpec?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
@@ -570,4 +572,21 @@ model AgentSessionLog {
 model AppConfig {
   key   String @id
   value String
+}
+
+/// Specs derivados estructurados desde el MDD (types.json, operations.json, tasks.json).
+/// Agregado en rama lean-sdd. Removable via rollback: eliminar este modelo y regenerar.
+model StageDerivedSpec {
+  id              String   @id @default(uuid())
+  stageId         String   @unique
+  stage           Stage    @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  typesJson       Json     /// @see docs/lean-sdd-implementation-plan.md §3.2.1
+  operationsJson  Json     /// @see docs/lean-sdd-implementation-plan.md §3.2.2
+  tasksJson       Json     /// @see docs/lean-sdd-task-format-spec.md §11
+  inferenceRules  Json?    /// reglas de inferencia aplicadas en esta generación
+  derivedAt       DateTime @default(now())
+  mddHash         String   /// hash del MDD usado para derivar; invalida caché si cambia
+
+  @@index([stageId])
+  @@index([derivedAt])
 }

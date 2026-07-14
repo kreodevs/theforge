@@ -176,7 +176,7 @@ import {
   buildBrdUserPrompt,
 } from "../ai/prompts/brd-generation-prompt.js";
 
-type StageWithEst = Stage & { estimation: Estimation | null };
+type StageWithEst = Stage & { estimation: Estimation | null; derivedSpec: any | null };
 
 function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unknown>>(project: P) {
   const flat = flattenStageDeliverables(project.stages, project as ProjectDeliverableSource);
@@ -210,7 +210,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId },
       include: {
-        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
+        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true, derivedSpec: true } },
         group: { select: { name: true } },
       },
     });

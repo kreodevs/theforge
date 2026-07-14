@@ -695,6 +695,9 @@ interface WorkshopState {
   infraContent: string | null;
   aemContent: string | null;
 
+  typesContent: string | null;
+  operationsContent: string | null;
+
   uiScreensContent: string | null;
   agentGovernanceContent: string | null;
   conformance: {
@@ -1457,6 +1460,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const prev = get().activeStageId;
       const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
       const flat = workshopFlatFromStage(data, activeStageId);
+      const activeStage = stages.find((s) => s.id === activeStageId);
+      const typesJson = (activeStage as any)?.derivedSpec?.typesJson;
+      const operationsJson = (activeStage as any)?.derivedSpec?.operationsJson;
+
       if (!shouldApplyWorkshopUpdate(get, requestedId)) return null;
       set({
         project: { ...data, ...flat, stages },
@@ -1476,6 +1483,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         userStoriesContent: cleanDoc(data.userStoriesContent ?? null),
         infraContent: cleanDoc(data.infraContent ?? null),
         aemContent: cleanDoc(data.aemContent ?? null),
+
+        typesContent: typesJson ? JSON.stringify(typesJson, null, 2) : null,
+        operationsContent: operationsJson ? JSON.stringify(operationsJson, null, 2) : null,
 
         uiScreensContent: cleanDoc(data.uiScreensContent ?? null),
         agentGovernanceContent: data.agentGovernanceContent ?? null,
