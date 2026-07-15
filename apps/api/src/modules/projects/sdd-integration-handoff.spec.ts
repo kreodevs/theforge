@@ -52,7 +52,7 @@ describe("handoff-export.util", () => {
     assert.equal(unified.governancePresent, false);
   });
 
-  it("reconcileExportScaffold incluye PROMPT-INICIAL y AGENT-PROMPT en gobernanza", () => {
+  it("reconcileExportScaffold incluye PROMPT-INICIAL índice, variantes IDE y bundle multi-target", () => {
     const gov = serializeAgentGovernanceScaffold({
       manifest: { templateVersion: "2.0.0", files: ["AGENTS.md"] },
       files: [{ path: "AGENTS.md", content: "# AGENTS\n" }],
@@ -62,10 +62,19 @@ describe("handoff-export.util", () => {
     assert.ok(scaffold);
     const paths = scaffold!.files.map((f) => f.path);
     assert.ok(paths.includes("PROMPT-INICIAL.md"));
+    assert.ok(paths.includes("PROMPT-INICIAL.cursor.md"));
+    assert.ok(paths.includes("PROMPT-INICIAL.antigravity.md"));
+    assert.ok(paths.some((p) => p.startsWith("install-targets/antigravity/")));
+    assert.ok(paths.includes("scripts/install-governance-antigravity.sh"));
     assert.ok(paths.includes("docs/agent-governance/references/AGENT-PROMPT.md"));
-    const promptInicial = scaffold!.files.find((f) => f.path === "PROMPT-INICIAL.md");
-    assert.ok(promptInicial?.content.includes("install-agent-governance.sh"));
-    assert.ok(promptInicial?.content.includes("Paso 1.5"));
+    const cursorPrompt = scaffold!.files.find((f) => f.path === "PROMPT-INICIAL.cursor.md");
+    assert.ok(cursorPrompt?.content.includes("install-governance-cursor.sh"));
+    assert.equal(/\.agents\//i.test(cursorPrompt?.content ?? ""), false);
+    const antigravityPrompt = scaffold!.files.find((f) => f.path === "PROMPT-INICIAL.antigravity.md");
+    assert.ok(antigravityPrompt?.content.includes("install-governance-antigravity.sh"));
+    assert.equal(/\.cursor\//i.test(antigravityPrompt?.content ?? ""), false);
+    assert.ok(scaffold!.manifest.installMaps);
+    assert.ok(scaffold!.manifest.prompts?.length);
   });
 
   it("reconcileExportScaffold añade docs/sdd y overlay AGENTS.md dual spec-kit", () => {

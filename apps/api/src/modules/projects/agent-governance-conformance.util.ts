@@ -50,7 +50,13 @@ export function checkAgentGovernanceVsMdd(
   }
 
   if (!paths.has("PROMPT-INICIAL.md")) {
-    gaps.push("Falta PROMPT-INICIAL.md (sesión 0 paste-ready)");
+    gaps.push("Falta PROMPT-INICIAL.md (índice sesión 0)");
+  }
+  const hasTargetPrompt = [...paths].some(
+    (p) => p.startsWith("PROMPT-INICIAL.") && p.endsWith(".md"),
+  );
+  if (!hasTargetPrompt) {
+    gaps.push("Falta al menos un PROMPT-INICIAL.{target}.md paste-ready");
   }
   if (!paths.has("IMPLEMENT.md") && !paths.has("docs/agent-governance/IMPLEMENT.md")) {
     gaps.push("Falta IMPLEMENT.md en el handoff de gobernania");

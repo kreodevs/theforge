@@ -173,8 +173,8 @@ export function LlevarAlRepoWizardDialog({
               </li>
               {hasAgentGovernance ? (
                 <li>
-                  <code className="text-xs">agent-governance/</code> — rules, skills, AGENTS.md
-                  (reconciliado + docs/sdd)
+                  Gobernanza multi-target: <code className="text-xs">install-targets/</code>,{" "}
+                  <code className="text-xs">PROMPT-INICIAL.{"{ide}"}.md</code>, rules/skills
                 </li>
               ) : (
                 <li className="flex items-start gap-1.5 text-[var(--warning)]">
@@ -184,7 +184,9 @@ export function LlevarAlRepoWizardDialog({
               )}
             </ul>
             <p className="text-xs text-[color-mix(in_oklch,var(--foreground)_85%,var(--muted-foreground))]">
-              Descomprime en la raíz del repo destino. El agente debe leer IMPLEMENT.md antes de codificar.
+              Descomprime en la raíz del repo destino. Pega{" "}
+              <code className="text-[10px]">PROMPT-INICIAL.{"{tu-ide}"}.md</code> en sesión 0 (índice en{" "}
+              <code className="text-[10px]">PROMPT-INICIAL.md</code>).
             </p>
           </div>
         ) : (

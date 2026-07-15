@@ -2,21 +2,30 @@ import { Logger } from "@nestjs/common";
 import {
   AGENT_GOVERNANCE_TEMPLATE_VERSION,
   buildGovernanceInstallMap,
+  buildMultiTargetInstallMaps,
   buildTheforgeDocConsumptionGuide,
+  expectedPromptInicialPaths,
   formatDocumentMarkdown,
   formatDocumentPathMapTable,
   formatDocumentPathMapTableStatic,
   formatWorkshopSupplementSection,
+  GOVERNANCE_TARGET_LABELS,
+  GOVERNANCE_TARGETS_ORDER,
   GOVERNANCE_THEFORGE_DOC_CONSUMPTION_GUIDE,
   GOVERNANCE_DOCS_PREFIX,
+  GOVERNANCE_INSTALL_TARGETS_PREFIX,
+  installTargetBundlePrefix,
   migrateGovernancePath,
   ROOT_THEFORGE_DOC_CONSUMPTION_GUIDE,
   type AgentGovernanceFile,
   type AgentGovernanceScaffold,
   type AgentGovernanceSuggestionsManifest,
   type ComplexityLevel,
+  type GovernanceTarget,
   specKitFeatureDir,
 } from "@theforge/shared-types";
+import { buildAllPromptIniciales, buildPromptInicialIndexMd } from "./governance-prompt-inicial.js";
+import { buildMultiTargetBundle, remapGovernanceScaffold } from "./governance-target-map.js";
 import {
   getRuleById,
   getSkillById,
@@ -51,6 +60,13 @@ const logger = new Logger("AgentGovernanceUtil");
 const LLM_PROOF_CANONICAL_PATHS = [
   `${GOVERNANCE_DOCS_PREFIX}INSTALACION.md`,
   "scripts/install-agent-governance.sh",
+  "scripts/install-governance-cursor.sh",
+  "scripts/install-governance-antigravity.sh",
+  "scripts/install-governance-claude-code.sh",
+  "scripts/install-governance-github-copilot.sh",
+  "scripts/install-governance-windsurf.sh",
+  "scripts/install-governance-openhands.sh",
+  "scripts/install-governance-all.sh",
 ] as const;
 
 const DUPLICATE_PROMPT_PATHS = [
@@ -88,85 +104,10 @@ export const AGENT_GOVERNANCE_REQUIRED_ALL = [
   `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`,
 ] as const;
 
-// ── Multi-target path mapping ────────────────────────────────────────
+// ── Multi-target (export-only remap en governance-target-map.ts) ─────
 
-export type GovernanceTarget = "cursor" | "openhands" | "hermes";
-
-/** Reglas de renombre de paths por target. Se aplican en orden. */
-const TARGET_PATH_MAP: Record<GovernanceTarget, Array<{ from: RegExp; to: string | ((match: RegExpMatchArray) => string) }>> = {
-  cursor: [
-    // Cursor es el default — solo normaliza paths de LLM
-    { from: /^\.cursor\//, to: `${GOVERNANCE_DOCS_PREFIX}` },
-  ],
-  openhands: [
-    // OpenHands: reglas → .openhands/rules/, skills → .openhands/skills/
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}rules/(.+\\.mdc)$`), to: ".openhands/rules/$1" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}skills/(.+)/SKILL\\.md$`), to: ".openhands/skills/$1/SKILL.md" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}references/`), to: ".openhands/references/" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}agents/`), to: ".openhands/agents/" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}commands/`), to: ".openhands/commands/" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}mcp\\.json\\.example$`), to: ".openhands/mcp.json" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}`), to: ".openhands/" },
-    // Omitir shims de Cursor
-    { from: /^CLAUDE\.md$/, to: "" }, // omitido
-    { from: /^\.cursor\//, to: ".openhands/" },
-  ],
-  hermes: [
-    // Hermes: skills → .hermes/skills/, reglas se convierten en skills
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}rules/(.+)\\.mdc$`), to: ".hermes/skills/$1/SKILL.md" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}skills/(.+)/SKILL\\.md$`), to: ".hermes/skills/$1/SKILL.md" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}references/`), to: ".hermes/references/" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}agents/`), to: ".hermes/agents/" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}commands/`), to: ".hermes/commands/" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}mcp\\.json\\.example$`), to: ".hermes/mcp.json.example" },
-    { from: new RegExp(`^${GOVERNANCE_DOCS_PREFIX}`), to: ".hermes/" },
-    // Omitir shims de Cursor
-    { from: /^CLAUDE\.md$/, to: "" }, // omitido
-    { from: /^\.cursor\//, to: ".hermes/" },
-  ],
-};
-
-/** Aplica el mapeo de paths según el target. Retorna nuevo path (o "" para omitir). */
-function remapPathForTarget(rawPath: string, target: GovernanceTarget): string {
-  const normalized = rawPath.trim();
-  const rules = TARGET_PATH_MAP[target];
-  for (const rule of rules) {
-    const match = normalized.match(rule.from);
-    if (match) {
-      if (typeof rule.to === "function") return rule.to(match);
-      return rule.to; // "" => omitir
-    }
-  }
-  // Sin match = mantener el path original
-  return normalized;
-}
-
-/**
- * Transforma todos los paths de un scaffold al target especificado.
- * Omite archivos cuyo path queda vacío (ej. CLAUDE.md en openhands/hermes).
- */
-function remapGovernanceScaffold(scaffold: AgentGovernanceScaffold, target: GovernanceTarget): AgentGovernanceScaffold {
-  if (target === "cursor") return scaffold; // no-op
-
-  const remappedFiles: AgentGovernanceFile[] = [];
-  const remappedManifestPaths: string[] = [];
-
-  for (const file of scaffold.files) {
-    const newPath = remapPathForTarget(file.path, target);
-    if (!newPath) continue; // omitir
-    remappedFiles.push({ ...file, path: newPath });
-    remappedManifestPaths.push(newPath);
-  }
-
-  return {
-    ...scaffold,
-    manifest: {
-      ...scaffold.manifest,
-      files: remappedManifestPaths,
-    },
-    files: remappedFiles,
-  };
-}
+export type { GovernanceTarget };
+export { remapGovernanceScaffold };
 
 /** Rutas obligatorias a partir de MEDIUM. */
 export const AGENT_GOVERNANCE_REQUIRED_MEDIUM = [
@@ -235,28 +176,26 @@ function buildAgentsInstallSection(): string {
   return (
     AGENTS_INSTALL_SECTION +
     "\n\n" +
-    "El ZIP **no incluye** la carpeta oculta `.cursor/` (macOS/Finder la oculta al extraer). " +
-    "Los artefactos viven en `docs/agent-governance/`; instálalos en el repo destino así:\n\n" +
+    "El ZIP incluye SSOT en `docs/agent-governance/` y bundles pre-mapeados en `" +
+    GOVERNANCE_INSTALL_TARGETS_PREFIX +
+    "{target}/`. Instala según tu IDE:\n\n" +
     "1. Lee `IMPLEMENT.md` y `.specify/memory/constitution.md`.\n" +
     "2. Lee `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md` y `docs/agent-governance/INSTALACION.md`.\n" +
-    "3. Copia o mapea cada archivo según la tabla (o ejecuta `scripts/install-agent-governance.sh`).\n\n" +
-    "| Archivo en ZIP | Destino en repo destino |\n" +
-    "|----------------|-------------------------|\n" +
-    defaultInstallMapTableRows() +
-    "\n" +
+    "3. Ejecuta `scripts/install-governance-{tu-ide}.sh` o copia desde `install-targets/{tu-ide}/`.\n" +
+    "4. Pega **`PROMPT-INICIAL.{tu-ide}.md`** en sesión 0 (índice en `PROMPT-INICIAL.md`).\n\n" +
+    defaultMultiTargetInstallTableRows() +
+    "\n\n" +
     "- **Uso del paquete:** `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md`\n" +
-    "- **Onboarding:** `docs/agent-governance/agent-onboarding.md`\n" +
-    "- **Instalación paso a paso:** `docs/agent-governance/INSTALACION.md`\n"
+    "- **Onboarding:** `docs/agent-governance/agent-onboarding.md`\n"
   );
 }
 
 const AGENTS_INSTALL_CANONICAL_MARKERS = [
+  "install-targets/",
+  "install-governance-",
+  "PROMPT-INICIAL.{tu-ide}.md",
   "docs/agent-governance/references/*",
   ".cursor/references/*",
-  "docs/agent-governance/agents/*",
-  ".cursor/agents/*",
-  "docs/agent-governance/commands/*",
-  ".cursor/commands/*",
 ] as const;
 
 function extractMarkdownSection(
@@ -337,10 +276,27 @@ function deduplicateMcpJsonExample(fileMap: Record<string, string>): void {
   delete fileMap[rootPath];
 }
 
+const AGENTS_CRITICAL_RULES_SECTION = "## Reglas críticas";
+
+function buildAgentsCriticalRulesSection(): string {
+  return (
+    AGENTS_CRITICAL_RULES_SECTION +
+    "\n\n" +
+    "Estas reglas aplican **independientemente del IDE** (Antigravity, Copilot, Codex, etc.):\n\n" +
+    "1. **Git:** conventional commits cuando el repo los use; sin `Co-authored-by` de agentes IA salvo petición explícita.\n" +
+    "2. **Stack:** respeta el MDD §2 y Blueprint; no introduzcas frameworks no documentados.\n" +
+    "3. **Seguridad:** auth, secretos y contratos API según MDD §6 y `api-contracts.md`.\n" +
+    "4. **SDD:** ante conflicto entre artefactos, **gana el MDD**; reporta gaps vía MCP `report_documentation_gap` si aplica.\n" +
+    "5. **Alcance:** implementa solo la tarea abierta; no expandas scope sin aprobación.\n"
+  );
+}
+
 function defaultAgentsMd(featureDir?: string): string {
   return (
     "# AGENTS\n\n" +
-    "Punto de entrada para agentes de código (Cursor, Claude Code, Copilot, etc.).\n\n" +
+    "Punto de entrada para agentes de código. Usa **`PROMPT-INICIAL.{tu-ide}.md`** en sesión 0.\n\n" +
+    buildAgentsCriticalRulesSection().trimEnd() +
+    "\n\n" +
     buildAgentsDualSpecKitSection(featureDir).trimEnd() +
     "\n\n" +
     buildAgentsInstallSection().trimEnd() +
@@ -351,76 +307,212 @@ function defaultAgentsMd(featureDir?: string): string {
 function defaultAgentOnboarding(): string {
   return (
     "# Onboarding para agentes implementadores\n\n" +
-    "1. **Sesión 0:** pega o adjunta **`PROMPT-INICIAL.md`** (raíz) en tu agente.\n" +
+    "1. **Sesión 0:** pega **`PROMPT-INICIAL.{tu-ide}.md`** (elige el archivo de tu herramienta; ver índice `PROMPT-INICIAL.md`).\n" +
     "2. Lee **`IMPLEMENT.md`** y **`.specify/memory/constitution.md`** (layout spec-kit primario).\n" +
     "3. Lee **`docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md`** (guía principal).\n" +
-    "4. Si aún no instalaste gobernanza en `.cursor/`, sigue **`docs/agent-governance/INSTALACION.md`**.\n" +
+    "4. Instala gobernanza según tu IDE — **`docs/agent-governance/INSTALACION.md`** (scripts `install-governance-{target}.sh`).\n" +
     `5. Contexto del proyecto: **\`${AGENT_PROMPT_PATH}\`**; checklist en **\`specs/NNN-slug/tasks.md\`** (espejo \`docs/sdd/tasks.md\`).\n` +
     "6. Consulta la guía de consumo: `" + DOC_CONSUMPTION_GUIDE_PATH + "`.\n" +
-    "7. Carga `AGENTS.md` y las rules/skills en `.cursor/` según la tarea.\n" +
-    "8. Sesiones siguientes: comando **`/implementar-tarea`** o repite pasos 3–5 de `PROMPT-INICIAL.md`.\n"
+    "7. Carga `AGENTS.md` y las reglas/skills instaladas según la tarea.\n" +
+    "8. Sesiones siguientes: sigue la sección «Sesiones siguientes» de tu `PROMPT-INICIAL.{tu-ide}.md`.\n"
   );
+}
+
+function defaultMultiTargetInstallTableRows(): string {
+  const rows: string[] = [
+    "| Target | Script | Destino repo |",
+    "|--------|--------|--------------|",
+  ];
+  for (const target of GOVERNANCE_TARGETS_ORDER) {
+    if (target === "codex") {
+      rows.push(`| ${GOVERNANCE_TARGET_LABELS[target]} | _(solo prompt)_ | \`AGENTS.md\` + SSOT |`);
+      continue;
+    }
+    const script =
+      target === "cursor"
+        ? "install-governance-cursor.sh"
+        : `install-governance-${target}.sh`;
+    const dest =
+      target === "cursor"
+        ? "`.cursor/`"
+        : target === "antigravity"
+          ? "`.agents/skills/`"
+          : target === "claude-code"
+            ? "`.claude/`"
+            : target === "github-copilot"
+              ? "`.github/instructions/`"
+              : target === "windsurf"
+                ? "`.devin/`"
+                : target === "openhands"
+                  ? "`.openhands/`"
+                  : installTargetBundlePrefix(target);
+    rows.push(`| ${GOVERNANCE_TARGET_LABELS[target]} | \`scripts/${script}\` | ${dest} |`);
+  }
+  rows.push(
+    "",
+    "El ZIP incluye carpetas pre-mapeadas bajo `" +
+      GOVERNANCE_INSTALL_TARGETS_PREFIX +
+      "{target}/` (visibles en Finder).",
+  );
+  return rows.join("\n");
 }
 
 function defaultInstalacion(featureDir?: string): string {
   const featureRef = featureDir ?? "specs/NNN-slug";
   return (
     "# Instalación de gobernanza IA en el repo destino\n\n" +
-    "Este paquete TheForge entrega reglas, skills y referencias bajo **`docs/agent-governance/`** " +
-    "(visible en Finder y al extraer el ZIP). En el repo destino deben vivir en **`.cursor/`** " +
-    "para que Cursor y herramientas compatibles las carguen automáticamente.\n\n" +
+    "Este paquete TheForge entrega reglas, skills y referencias bajo **`docs/agent-governance/`** (SSOT canónico). " +
+    "Para cada IDE hay una carpeta **`install-targets/{target}/`** en el ZIP y un script de copia al destino real " +
+    "(`.cursor/`, `.agents/`, `.claude/`, etc.).\n\n" +
+    "## Matriz multi-target\n\n" +
+    defaultMultiTargetInstallTableRows() +
+    "\n\n" +
     "## Orden de instalación recomendado\n\n" +
     `1. **Spec-kit en raíz** — Descomprime \`.specify/\` y \`${featureRef}/\` (constitution, spec, plan, tasks).\n` +
-    "2. **Gobernanza IA** — Instala `docs/agent-governance/` → `.cursor/` (opciones A/B/C abajo).\n" +
-    "3. **Verificar espejos** — Confirma que `docs/sdd/*` refleja los mismos entregables (no es SSOT alternativo).\n\n" +
+    "2. **Elige tu IDE** — Ejecuta el script correspondiente (§ abajo) o copia desde `install-targets/{target}/`.\n" +
+    "3. **Prompt inicial** — Pega **`PROMPT-INICIAL.{tu-ide}.md`** (ver índice `PROMPT-INICIAL.md`).\n" +
+    "4. **Verificar espejos** — Confirma que `docs/sdd/*` refleja los entregables (no es SSOT alternativo).\n\n" +
     "### Mapeo spec-kit ↔ docs/sdd\n\n" +
     defaultDocumentPathMapTable(featureDir) +
     "\n\n" +
-    "## Opción A — Script (recomendado)\n\n" +
-    "Desde la raíz del repo destino (tras copiar el ZIP):\n\n" +
+    "## Cursor — Script (recomendado)\n\n" +
     "```bash\n" +
-    "chmod +x scripts/install-agent-governance.sh\n" +
-    "./scripts/install-agent-governance.sh\n" +
+    "chmod +x scripts/install-governance-cursor.sh\n" +
+    "./scripts/install-governance-cursor.sh\n" +
     "```\n\n" +
-    "## Opción B — Copia manual\n\n" +
+    "## Antigravity — Script\n\n" +
+    "```bash\n" +
+    "chmod +x scripts/install-governance-antigravity.sh\n" +
+    "./scripts/install-governance-antigravity.sh\n" +
+    "```\n\n" +
+    "## Claude Code / Copilot / Windsurf / OpenHands\n\n" +
+    "Usa `scripts/install-governance-{claude-code|github-copilot|windsurf|openhands}.sh` según tu herramienta.\n\n" +
+    "## Instalar todos los targets\n\n" +
+    "```bash\n" +
+    "chmod +x scripts/install-governance-all.sh\n" +
+    "./scripts/install-governance-all.sh\n" +
+    "```\n\n" +
+    "## Opción manual (Cursor)\n\n" +
     "| Archivo en ZIP | Destino en repo destino |\n" +
     "|----------------|-------------------------|\n" +
     defaultInstallMapTableRows() +
     "\n" +
-    "Crea las carpetas si no existen: `.cursor/rules/`, `.cursor/skills/`, `.cursor/references/`, `.cursor/agents/`, `.cursor/commands/`.\n\n" +
-    "## Opción C — One-liner\n\n" +
-    "```bash\n" +
-    "mkdir -p .cursor/{rules,skills,references,agents,commands} && \\\n" +
-    "cp docs/agent-governance/rules/*.mdc .cursor/rules/ 2>/dev/null; \\\n" +
-    "cp -R docs/agent-governance/skills/* .cursor/skills/ 2>/dev/null; \\\n" +
-    "cp docs/agent-governance/references/* .cursor/references/ 2>/dev/null; \\\n" +
-    "cp -R docs/agent-governance/agents/* .cursor/agents/ 2>/dev/null; \\\n" +
-    "cp -R docs/agent-governance/commands/* .cursor/commands/ 2>/dev/null; \\\n" +
-    "cp docs/agent-governance/mcp.json.example .cursor/mcp.json 2>/dev/null\n" +
-    "```\n\n" +
     "## Verificación\n\n" +
-    "- `AGENTS.md` y `CLAUDE.md` quedan en la **raíz** del repo (no se mueven).\n" +
-    "- Abre el proyecto en Cursor y confirma que aparecen rules/skills en configuración.\n" +
-    "- Consulta `MANIFEST.json` → `installMap` para el mapeo exacto de este paquete.\n"
+    "- `AGENTS.md` y `CLAUDE.md` quedan en la **raíz** del repo.\n" +
+    "- Consulta `MANIFEST.json` → `installMaps` para el mapeo exacto por IDE.\n"
   );
 }
 
 function defaultInstallScript(): string {
+  return defaultInstallScriptForTarget("cursor");
+}
+
+function defaultInstallScriptForTarget(target: GovernanceTarget): string {
+  const root = 'ROOT="$(cd "$(dirname "$0")/.." && pwd)"';
+  switch (target) {
+    case "cursor":
+      return (
+        "#!/usr/bin/env bash\n" +
+        "# Instala gobernanza IA (Cursor) desde install-targets/cursor/ o docs/agent-governance/\n" +
+        "set -euo pipefail\n" +
+        `${root}\n` +
+        'BUNDLE="$ROOT/install-targets/cursor"\n' +
+        'SRC="$ROOT/docs/agent-governance"\n' +
+        'mkdir -p "$ROOT/.cursor/rules" "$ROOT/.cursor/skills" "$ROOT/.cursor/references" "$ROOT/.cursor/agents" "$ROOT/.cursor/commands"\n' +
+        'copy_from() { local base="$1"; [[ -d "$base/rules" ]] && cp -f "$base/rules/"*.mdc "$ROOT/.cursor/rules/" 2>/dev/null || true; [[ -d "$base/skills" ]] && cp -R "$base/skills/"* "$ROOT/.cursor/skills/" 2>/dev/null || true; [[ -d "$base/references" ]] && cp -f "$base/references/"* "$ROOT/.cursor/references/" 2>/dev/null || true; [[ -d "$base/agents" ]] && cp -R "$base/agents/"* "$ROOT/.cursor/agents/" 2>/dev/null || true; [[ -d "$base/commands" ]] && cp -R "$base/commands/"* "$ROOT/.cursor/commands/" 2>/dev/null || true; [[ -f "$base/mcp.json.example" ]] && cp -f "$base/mcp.json.example" "$ROOT/.cursor/mcp.json"; }\n' +
+        'if [[ -d "$BUNDLE" ]]; then copy_from "$BUNDLE"; else copy_from "$SRC"; fi\n' +
+        'echo "Gobernanza Cursor instalada en .cursor/"\n'
+      );
+    case "antigravity":
+      return (
+        "#!/usr/bin/env bash\n" +
+        "# Instala skills Antigravity desde install-targets/antigravity/\n" +
+        "set -euo pipefail\n" +
+        `${root}\n` +
+        'BUNDLE="$ROOT/install-targets/antigravity"\n' +
+        'mkdir -p "$ROOT/.agents/skills" "$ROOT/.agents/references"\n' +
+        '[[ -d "$BUNDLE/skills" ]] && cp -R "$BUNDLE/skills/"* "$ROOT/.agents/skills/" 2>/dev/null || true\n' +
+        '[[ -d "$BUNDLE/references" ]] && cp -f "$BUNDLE/references/"* "$ROOT/.agents/references/" 2>/dev/null || true\n' +
+        '[[ -f "$BUNDLE/mcp.json.example" ]] && mkdir -p "$ROOT/.gemini/config" && cp -f "$BUNDLE/mcp.json.example" "$ROOT/.gemini/config/mcp_config.json"\n' +
+        'echo "Gobernanza Antigravity instalada en .agents/"\n'
+      );
+    case "claude-code":
+      return (
+        "#!/usr/bin/env bash\n" +
+        "set -euo pipefail\n" +
+        `${root}\n` +
+        'BUNDLE="$ROOT/install-targets/claude-code"\n' +
+        'mkdir -p "$ROOT/.claude/rules" "$ROOT/.claude/skills" "$ROOT/.claude/commands"\n' +
+        '[[ -d "$BUNDLE/rules" ]] && cp -f "$BUNDLE/rules/"*.md "$ROOT/.claude/rules/" 2>/dev/null || true\n' +
+        '[[ -d "$BUNDLE/skills" ]] && cp -R "$BUNDLE/skills/"* "$ROOT/.claude/skills/" 2>/dev/null || true\n' +
+        '[[ -d "$BUNDLE/commands" ]] && cp -R "$BUNDLE/commands/"* "$ROOT/.claude/commands/" 2>/dev/null || true\n' +
+        '[[ -f "$BUNDLE/mcp.json.example" ]] && cp -f "$BUNDLE/mcp.json.example" "$ROOT/.mcp.json"\n' +
+        'echo "Gobernanza Claude Code instalada en .claude/"\n'
+      );
+    case "github-copilot":
+      return (
+        "#!/usr/bin/env bash\n" +
+        "set -euo pipefail\n" +
+        `${root}\n` +
+        'BUNDLE="$ROOT/install-targets/github-copilot"\n' +
+        'mkdir -p "$ROOT/.github/instructions"\n' +
+        '[[ -d "$BUNDLE/instructions" ]] && cp -f "$BUNDLE/instructions/"* "$ROOT/.github/instructions/" 2>/dev/null || true\n' +
+        'echo "Instrucciones Copilot instaladas en .github/instructions/"\n'
+      );
+    case "windsurf":
+      return (
+        "#!/usr/bin/env bash\n" +
+        "set -euo pipefail\n" +
+        `${root}\n` +
+        'BUNDLE="$ROOT/install-targets/windsurf"\n' +
+        'mkdir -p "$ROOT/.devin/rules" "$ROOT/.devin/skills"\n' +
+        '[[ -d "$BUNDLE/rules" ]] && cp -f "$BUNDLE/rules/"*.md "$ROOT/.devin/rules/" 2>/dev/null || true\n' +
+        '[[ -d "$BUNDLE/skills" ]] && cp -R "$BUNDLE/skills/"* "$ROOT/.devin/skills/" 2>/dev/null || true\n' +
+        'echo "Gobernanza Windsurf/Devin instalada en .devin/"\n'
+      );
+    case "openhands":
+    case "hermes":
+      return (
+        "#!/usr/bin/env bash\n" +
+        "set -euo pipefail\n" +
+        `${root}\n` +
+        'BUNDLE="$ROOT/install-targets/openhands"\n' +
+        'mkdir -p "$ROOT/.openhands/rules" "$ROOT/.openhands/skills"\n' +
+        '[[ -d "$BUNDLE/rules" ]] && cp -f "$BUNDLE/rules/"*.mdc "$ROOT/.openhands/rules/" 2>/dev/null || true\n' +
+        '[[ -d "$BUNDLE/skills" ]] && cp -R "$BUNDLE/skills/"* "$ROOT/.openhands/skills/" 2>/dev/null || true\n' +
+        '[[ -f "$BUNDLE/mcp.json.example" ]] && cp -f "$BUNDLE/mcp.json.example" "$ROOT/.openhands/mcp.json"\n' +
+        'echo "Gobernanza OpenHands instalada en .openhands/"\n'
+      );
+    default:
+      return defaultInstallScriptForTarget("cursor");
+  }
+}
+
+function defaultInstallAllScript(): string {
   return (
     "#!/usr/bin/env bash\n" +
-    "# Instala gobernanza IA desde docs/agent-governance/ hacia .cursor/\n" +
+    "# Instala gobernanza para todos los targets soportados\n" +
     "set -euo pipefail\n" +
-    'ROOT="$(cd "$(dirname "$0")/.." && pwd)"\n' +
-    'SRC="$ROOT/docs/agent-governance"\n' +
-    'mkdir -p "$ROOT/.cursor/rules" "$ROOT/.cursor/skills" "$ROOT/.cursor/references" "$ROOT/.cursor/agents" "$ROOT/.cursor/commands"\n' +
-    'if [[ -d "$SRC/rules" ]]; then cp -f "$SRC/rules/"*.mdc "$ROOT/.cursor/rules/" 2>/dev/null || true; fi\n' +
-    'if [[ -d "$SRC/skills" ]]; then cp -R "$SRC/skills/"* "$ROOT/.cursor/skills/" 2>/dev/null || true; fi\n' +
-    'if [[ -d "$SRC/references" ]]; then cp -f "$SRC/references/"* "$ROOT/.cursor/references/" 2>/dev/null || true; fi\n' +
-    'if [[ -d "$SRC/agents" ]]; then cp -R "$SRC/agents/"* "$ROOT/.cursor/agents/" 2>/dev/null || true; fi\n' +
-    'if [[ -d "$SRC/commands" ]]; then cp -R "$SRC/commands/"* "$ROOT/.cursor/commands/" 2>/dev/null || true; fi\n' +
-    'if [[ -f "$SRC/mcp.json.example" ]]; then cp -f "$SRC/mcp.json.example" "$ROOT/.cursor/mcp.json"; fi\n' +
-    'echo "Gobernanza instalada en .cursor/ (rules, skills, references, agents, commands, mcp.json)."\n'
+    'DIR="$(cd "$(dirname "$0")" && pwd)"\n' +
+    'for s in install-governance-cursor.sh install-governance-antigravity.sh install-governance-claude-code.sh install-governance-github-copilot.sh install-governance-windsurf.sh install-governance-openhands.sh; do\n' +
+    '  if [[ -x "$DIR/$s" ]]; then "$DIR/$s"; fi\n' +
+    "done\n" +
+    'echo "Todos los install-governance-*.sh ejecutados."\n'
   );
+}
+
+/** Plantillas de scripts install-governance-{target}.sh para el ZIP. */
+export function buildGovernanceInstallScripts(): Record<string, string> {
+  return {
+    "scripts/install-agent-governance.sh": defaultInstallScript(),
+    "scripts/install-governance-cursor.sh": defaultInstallScriptForTarget("cursor"),
+    "scripts/install-governance-antigravity.sh": defaultInstallScriptForTarget("antigravity"),
+    "scripts/install-governance-claude-code.sh": defaultInstallScriptForTarget("claude-code"),
+    "scripts/install-governance-github-copilot.sh": defaultInstallScriptForTarget("github-copilot"),
+    "scripts/install-governance-windsurf.sh": defaultInstallScriptForTarget("windsurf"),
+    "scripts/install-governance-openhands.sh": defaultInstallScriptForTarget("openhands"),
+    "scripts/install-governance-all.sh": defaultInstallAllScript(),
+  };
 }
 
 function formatSuggestionsRationaleTable(suggestions: AgentGovernanceSuggestions | null | undefined): string {
@@ -893,44 +985,6 @@ function buildTasksPreview(facts: ProjectGovernanceFacts): string {
   return "- Consulta `docs/sdd/tasks.md` (espejo de spec-kit) para el checklist completo.";
 }
 
-function buildGatesSection(facts: ProjectGovernanceFacts, complexity: ComplexityLevel): string {
-  const scripts =
-    facts.npmScripts.length > 0
-      ? facts.npmScripts.slice(0, 4).map((s) => `- \`${s}\``).join("\n")
-      : "- Lint, typecheck y tests del paquete tocado (ver MDD §2 y scripts del repo).";
-  const workflow =
-    complexity !== "LOW"
-      ? "- Respeta subflujos en `docs/agent-governance/references/workflows.md`.\n"
-      : "";
-  return (
-    `${scripts}\n` +
-    "- Contratos API alineados a `contracts/api-contracts.md` (spec-kit) o `docs/sdd/api-contracts.md` cuando la tarea toque endpoints.\n" +
-    workflow
-  ).trimEnd();
-}
-
-/** Orden de lectura SDD + gobernanza para sesión 0 (PROMPT-INICIAL / IMPLEMENT.md). */
-function buildHandoffReadingOrderSection(featureDir?: string): string {
-  const featureRef = featureDir?.trim() || "specs/NNN-slug";
-  return (
-    "Lee **en este orden** antes de escribir código (layout **spec-kit primario**; espejo en `docs/sdd/`):\n\n" +
-    "1. **`IMPLEMENT.md`** — bootstrap spec-kit, instalación y mapa de rutas\n" +
-    "2. **`AGENTS.md`** — entrada cross-tool e instalación de gobernanza\n" +
-    "3. **`.specify/memory/constitution.md`** — Constitución (MDD); espejo: `docs/sdd/mdd.md`\n" +
-    `4. **\`${featureRef}/research.md\`** — Paso 0 / investigación (**si existe**)\n` +
-    `5. **\`${featureRef}/spec.md\`** — requisitos y criterios de aceptación\n` +
-    `6. **\`${featureRef}/architecture.md\`**, **\`use-cases.md\`**, **\`user-stories.md\`** — cuando existan\n` +
-    `7. **\`${featureRef}/plan.md\`** — Blueprint / plan técnico\n` +
-    `8. **\`${featureRef}/design-system.md\`** y **\`pantallas.md\`** — **antes de implementar UI**\n` +
-    `9. **\`${featureRef}/contracts/api-contracts.md\`** y **\`logic-flows.md\`** — contratos y flujos (**vinculantes** si existen)\n` +
-    `10. **\`${AGENT_PROMPT_PATH}\`** — contexto del proyecto (stack, módulos, conflictos SDD)\n` +
-    `11. **\`${featureRef}/tasks.md\`** — checklist de ejecución (espejo: \`docs/sdd/tasks.md\`)\n` +
-    `12. **\`${featureRef}/infra.md\`**, **\`data-model.md\`**, **\`docs/sdd/decisions/*.md\`**, **\`quickstart.md\`** — cuando existan\n` +
-    `13. **\`${ROOT_THEFORGE_DOC_CONSUMPTION_GUIDE}\`** — reglas completas de consumo (misma guía en \`${GOVERNANCE_THEFORGE_DOC_CONSUMPTION_GUIDE}\`)\n\n` +
-    "**Ante conflicto entre artefactos, gana el MDD.** No te limites a MDD/Spec/Plan/Tasks: usa todo lo presente en el ZIP según la tarea.\n"
-  );
-}
-
 /** Contexto interno del proyecto (stack, módulos, tareas) para sesiones iterativas. */
 function buildAgentPromptMd(facts: ProjectGovernanceFacts, complexity: ComplexityLevel): string {
   const docList = facts.docPaths.map((p) => `- \`${p}\``).join("\n");
@@ -967,70 +1021,6 @@ function buildAgentPromptMd(facts: ProjectGovernanceFacts, complexity: Complexit
     (complexity !== "LOW"
       ? "4. Respeta subflujos en `docs/agent-governance/references/workflows.md`.\n"
       : "4. Ejecuta lint/typecheck/tests del paquete tocado antes de cerrar.\n")
-  );
-}
-
-/** Prompt paste-ready en raíz para Cursor, Claude Code, Copilot u otros agentes (sesión 0). */
-function buildPromptInicialMd(
-  facts: ProjectGovernanceFacts,
-  complexity: ComplexityLevel,
-  featureDir?: string,
-): string {
-  const featureRef = featureDir?.trim() || "specs/NNN-slug";
-  const tasksPath = `${featureRef}/tasks.md`;
-  const tasksPreview = buildTasksPreview(facts);
-  const projectLabel = facts.projectTitle?.trim() || "este proyecto";
-
-  return (
-    "# Prompt inicial — implementa este handoff\n\n" +
-    `**Misión:** Implementar **${projectLabel}** desde el entregable TheForge, tarea a tarea, respetando spec-kit y gobernanza IA.\n\n` +
-    "## Prerrequisitos (humano)\n\n" +
-    "- Descomprime el ZIP en la **raíz del repositorio destino** (mismo nivel que `AGENTS.md` e `IMPLEMENT.md`).\n" +
-    "- Abre el repo en la herramienta de agente (Cursor, Claude Code, GitHub Copilot, OpenHands, etc.).\n\n" +
-    "## Paso 1 — Instalar gobernanza IA (acción del agente)\n\n" +
-    "**Tu primera acción** en esta sesión es instalar gobernanza ejecutando el script en **terminal/shell** desde la raíz del repo. " +
-    "Cursor, Claude Code, Copilot y herramientas similares pueden correr shell si el usuario **aprueba permisos de terminal** cuando se soliciten.\n\n" +
-    "**Ejecuta en terminal:**\n\n" +
-    "```bash\n" +
-    "chmod +x scripts/install-agent-governance.sh\n" +
-    "./scripts/install-agent-governance.sh\n" +
-    "```\n\n" +
-    "**Verifica** que exista `.cursor/rules/` (y `.cursor/skills/` si aplica) antes de continuar al Paso 2. " +
-    "El script copia reglas, skills y referencias de `docs/agent-governance/` hacia `.cursor/`.\n\n" +
-    "**No pidas al usuario** que ejecute el script salvo que falle por permisos, rutas inexistentes o un error que no puedas resolver.\n\n" +
-    "## Paso 1.5 — Vincular The Forge MCP (si aplica)\n\n" +
-    "Si existe **`.theforge-project.json`** en la raíz del repo:\n\n" +
-    "1. Copia `docs/agent-governance/mcp.json.example` → `.cursor/mcp.json` (si no lo hizo el script).\n" +
-    "2. Sustituye `{{API_URL}}` y `{{MCP_M2M_SECRET}}` con tu Secret MCP de The Forge.\n" +
-    "3. Lee `" + THEFORGE_LINK_PATH + "` para `projectId` y `stageId`.\n" +
-    "4. Si la documentación SDD contradice el código correcto, usa MCP **`report_documentation_gap`** (ver skill `theforge-doc-sync`).\n\n" +
-    "## Paso 2 — Orden de lectura (obligatorio)\n\n" +
-    buildHandoffReadingOrderSection(featureDir) +
-    "\n" +
-    "## Paso 3 — Primera tarea abierta\n\n" +
-    "Implementa la **primera tarea pendiente** del checklist:\n\n" +
-    tasksPreview +
-    "\n\n" +
-    `Cruza con **\`${featureRef}/plan.md\`**, **\`spec.md\`**, contratos API, flujos lógicos, **\`pantallas.md\`** (si hay UI) y **\`architecture.md\`** según lo que exija la tarea. ` +
-    `Al cerrar un checkpoint, ejecuta smoke tests de **\`${featureRef}/quickstart.md\`**.\n\n` +
-    "## Paso 4 — Gates antes de cerrar\n\n" +
-    buildGatesSection(facts, complexity) +
-    "\n\n" +
-    "## Paso 5 — Actualizar progreso\n\n" +
-    "Marca la tarea completada en **`docs/sdd/PROGRESO.md`** y en **`" +
-    tasksPath +
-    "`** (canónico spec-kit).\n\n" +
-    "## Stack detectado (TheForge)\n\n" +
-    formatStackSection(facts) +
-    "\n\n" +
-    buildSddConflictSection(facts) +
-    "## Compatibilidad multi-herramienta\n\n" +
-    "- **Cursor:** adjunta `@PROMPT-INICIAL.md`, `@IMPLEMENT.md`, `@AGENTS.md` y los archivos de la tarea.\n" +
-    `- **Claude Code:** incluye este archivo, \`IMPLEMENT.md\` y \`${AGENT_PROMPT_PATH}\` en el contexto inicial.\n` +
-    "- **Copilot / otros:** pega este prompt completo y referencia rutas relativas del repo.\n\n" +
-    "## Sesiones siguientes\n\n" +
-    "Tras la sesión 0, usa el comando **`/implementar-tarea`** (Cursor) o repite pasos 3–5 leyendo " +
-    `\`${AGENT_PROMPT_PATH}\` y la siguiente tarea abierta en \`${tasksPath}\`.\n`
   );
 }
 
@@ -1430,7 +1420,7 @@ export function appendProjectDeliverablesToScaffold(
     manifest: {
       ...scaffold.manifest,
       files: paths,
-      installMap: buildGovernanceInstallMap(paths),
+      installMap: buildGovernanceInstallMap(paths, "cursor"),
     },
     files,
   };
@@ -1517,25 +1507,7 @@ const FALLBACK_BY_PATH: Record<string, FallbackFactory> = {
     return overlayProjectFacts(base, facts);
   },
   "CLAUDE.md": () => defaultClaudeShim(),
-  "PROMPT-INICIAL.md": (c, _s, input) =>
-    buildPromptInicialMd(
-      input
-        ? extractProjectGovernanceFacts(input)
-        : {
-            projectTitle: "Proyecto TheForge",
-            docPaths: ["docs/sdd/mdd.md"],
-            taskHeadings: [],
-            taskCheckboxes: [],
-            architectureLayers: [],
-            blueprintModules: [],
-            backendGlobs: [],
-            frontendGlobs: [],
-            npmScripts: [],
-            sddConflicts: [],
-            hasUiSurface: false,
-          },
-      c,
-    ),
+  "PROMPT-INICIAL.md": () => buildPromptInicialIndexMd(),
   [AGENT_PROMPT_PATH]: (c, _s, input) =>
     buildAgentPromptMd(
       input
@@ -1617,6 +1589,11 @@ function applyCanonicalGovernanceDefaults(
       fileMap[path] = defaultInstalacion(featureDir);
       continue;
     }
+    if (path.startsWith("scripts/install-governance-") || path === "scripts/install-agent-governance.sh") {
+      const scripts = buildGovernanceInstallScripts();
+      if (scripts[path]) fileMap[path] = scripts[path]!;
+      continue;
+    }
     const factory = FALLBACK_BY_PATH[path];
     if (factory) {
       let content = factory(complexity, suggestions, governanceInput);
@@ -1644,6 +1621,22 @@ function ensureAgentsCanonicalSections(fileMap: Record<string, string>, featureD
   const path = "AGENTS.md";
   let current = fileMap[path]?.trim() ?? "";
 
+  if (!current.includes(AGENTS_CRITICAL_RULES_SECTION)) {
+    const critical = buildAgentsCriticalRulesSection().trimEnd();
+    if (current.length > 0) {
+      const lines = current.split("\n");
+      let insertAt = lines[0]?.startsWith("#") ? 1 : 0;
+      while (insertAt < lines.length && (lines[insertAt] ?? "").trim() === "") insertAt++;
+      const before = lines.slice(0, insertAt).join("\n");
+      const after = lines.slice(insertAt).join("\n");
+      current = `${before.trimEnd()}\n\n${critical}${after.trim() ? `\n\n${after}` : ""}`;
+    } else {
+      current = critical;
+    }
+    fileMap[path] = current;
+  }
+
+  current = fileMap[path]?.trim() ?? "";
   if (!current.includes(AGENTS_SDD_DUAL_SECTION)) {
     const dualSection = buildAgentsDualSpecKitSection(featureDir).trimEnd();
     if (current.length > 0) {
@@ -1760,7 +1753,7 @@ function enrichGovernanceArtifacts(
   const progresoPath = "docs/sdd/PROGRESO.md";
   const tasksMd = governanceInput.tasksMarkdown?.trim();
   if (tasksMd) {
-    fileMap[promptPath] = buildPromptInicialMd(facts, complexity, featureDir);
+    fileMap[promptPath] = buildPromptInicialIndexMd();
     fileMap[agentPromptPath] = buildAgentPromptMd(facts, complexity);
     fileMap[progresoPath] = buildProgresoMd(
       facts,
@@ -1782,7 +1775,7 @@ function enrichGovernanceArtifacts(
     if (
       shouldReplaceGovernanceArtifact(fileMap[promptPath], facts, overlayOptions?.forceFreshOverlay === true)
     ) {
-      fileMap[promptPath] = buildPromptInicialMd(facts, complexity, featureDir);
+      fileMap[promptPath] = buildPromptInicialIndexMd();
     }
     if (
       shouldReplaceGovernanceArtifact(fileMap[progresoPath], facts, overlayOptions?.forceFreshOverlay === true)
@@ -2011,7 +2004,6 @@ export function reconcileAgentGovernanceScaffold(
       mddMarkdown: options?.mddMarkdown ?? "",
       complexity,
     } satisfies SuggestAgentGovernanceInput);
-  const target = options?.target ?? "cursor";
   const featureDir = options?.featureDir?.trim();
   const overlayOptions: AgentGovernanceOverlayOptions = {
     forceFreshOverlay: options?.forceFreshOverlay === true,
@@ -2066,13 +2058,12 @@ export function reconcileAgentGovernanceScaffold(
       templateVersion: scaffold.manifest.templateVersion || AGENT_GOVERNANCE_TEMPLATE_VERSION,
       files: paths,
       suggestions: scaffold.manifest.suggestions ?? toManifestSuggestions(suggestions),
-      installMap: buildGovernanceInstallMap(paths),
+      installMap: buildGovernanceInstallMap(paths, "cursor"),
     },
     files,
   };
 
-  // Aplicar adaptador multi-target
-  return remapGovernanceScaffold(reconciled, target);
+  return reconciled;
 }
 
 /**
@@ -2166,6 +2157,61 @@ export function parseAgentGovernanceResponse(
     complexity,
     { suggestions, governanceInput, target, forceFreshOverlay: overlayOptions.forceFreshOverlay, featureDir },
   );
+}
+
+/** Enriquece scaffold canónico con bundle multi-target (solo export/ZIP). */
+export function enrichExportWithMultiTargetBundle(
+  scaffold: AgentGovernanceScaffold,
+  options: {
+    facts: ProjectGovernanceFacts;
+    complexity: ComplexityLevel;
+    featureDir?: string;
+  },
+): AgentGovernanceScaffold {
+  const fileMap: Record<string, string> = {};
+  for (const file of scaffold.files) {
+    setFileMapEntry(fileMap, file.path, file.content);
+  }
+
+  const bundles = buildMultiTargetBundle(scaffold);
+  for (const files of bundles.values()) {
+    for (const f of files) setFileMapEntry(fileMap, f.path, f.content);
+  }
+
+  for (const prompt of buildAllPromptIniciales(options.facts, options.complexity, options.featureDir)) {
+    setFileMapEntry(fileMap, prompt.path, prompt.content);
+  }
+
+  for (const [path, content] of Object.entries(buildGovernanceInstallScripts())) {
+    setFileMapEntry(fileMap, path, content);
+  }
+
+  applyCanonicalGovernanceDefaults(
+    fileMap,
+    options.complexity,
+    null,
+    {
+      mddMarkdown: "",
+      complexity: options.complexity,
+      projectName: options.facts.projectTitle,
+    },
+    options.featureDir,
+  );
+
+  const files = recordToFileEntries(fileMap);
+  const paths = files.map((f) => f.path);
+
+  return {
+    manifest: {
+      ...scaffold.manifest,
+      templateVersion: scaffold.manifest.templateVersion || AGENT_GOVERNANCE_TEMPLATE_VERSION,
+      files: paths,
+      installMap: buildGovernanceInstallMap(paths, "cursor"),
+      installMaps: buildMultiTargetInstallMaps(paths),
+      prompts: expectedPromptInicialPaths().filter((p) => paths.includes(p)),
+    },
+    files,
+  };
 }
 
 /** Serializa el scaffold para persistencia en `Project.agentGovernanceContent`. */

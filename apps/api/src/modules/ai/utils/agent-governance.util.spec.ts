@@ -70,7 +70,7 @@ describe("parseAgentGovernanceResponse", () => {
     const installScript = scaffold.files.find(
       (f) => f.path === "scripts/install-agent-governance.sh",
     );
-    assert.ok(installScript?.content.includes(".cursor/agents"));
+    assert.ok(installScript?.content.includes(".cursor/agents") || installScript?.content.includes('base/agents"'));
     assert.ok(installScript?.content.includes(".cursor/commands"));
     assert.equal(paths.some((p) => p.startsWith(".cursor/")), false);
     assert.ok(scaffold.manifest.installMap?.length);
@@ -365,9 +365,9 @@ Backend NestJS con Prisma y legacy TypeORM en docs viejos.
       (f) => f.path === "docs/agent-governance/INSTALACION.md",
     );
     const script = reconciled.files.find((f) => f.path === "scripts/install-agent-governance.sh");
-    assert.ok(instalacion?.content.includes(".cursor/references/"));
-    assert.ok(instalacion?.content.includes("Opción C"));
-    assert.ok(instalacion?.content.includes(".cursor/agents"));
+    assert.ok(instalacion?.content.includes("install-targets/"));
+    assert.ok(instalacion?.content.includes("Matriz multi-target"));
+    assert.ok(instalacion?.content.includes("install-governance-cursor.sh"));
     assert.equal(instalacion?.content.includes("workflows.md"), false);
     assert.ok(script?.content.includes(".cursor/agents"));
     assert.ok(script?.content.includes(".cursor/commands"));
@@ -433,7 +433,7 @@ Backend NestJS con TypeORM en borrador; Prisma en blueprint.
     assert.ok(reconciled.files.some((f) => f.path === AGENT_PROMPT_PATH));
   });
 
-  it("PROMPT-INICIAL (raíz) es paste-ready; AGENT-PROMPT es contexto interno", () => {
+  it("PROMPT-INICIAL (raíz) es índice IDE; AGENT-PROMPT es contexto interno paste-ready", () => {
     const featureDir = "specs/001-demo-app";
     const reconciled = reconcileAgentGovernanceScaffold(
       {
@@ -452,21 +452,13 @@ Backend NestJS con TypeORM en borrador; Prisma en blueprint.
     );
     const promptInicial = reconciled.files.find((f) => f.path === "PROMPT-INICIAL.md");
     const agentPrompt = reconciled.files.find((f) => f.path === AGENT_PROMPT_PATH);
-    assert.ok(promptInicial?.content.includes("install-agent-governance.sh"));
-    assert.ok(promptInicial?.content.includes("Tu primera acción"));
-    assert.ok(promptInicial?.content.includes("Ejecuta en terminal"));
-    assert.ok(promptInicial?.content.includes("No pidas al usuario"));
-    assert.ok(promptInicial?.content.includes(".cursor/rules/"));
-    assert.ok(promptInicial?.content.includes("IMPLEMENT.md"));
-    assert.ok(promptInicial?.content.includes(`${featureDir}/spec.md`));
-    assert.ok(promptInicial?.content.includes(`${featureDir}/plan.md`));
-    assert.ok(promptInicial?.content.includes(`${featureDir}/contracts/api-contracts.md`));
-    assert.ok(promptInicial?.content.includes(`${featureDir}/quickstart.md`));
-    assert.ok(promptInicial?.content.includes("/implementar-tarea"));
-    assert.ok(promptInicial?.content.includes(`${featureDir}/tasks.md`));
-    const specIdx = promptInicial!.content.indexOf(`${featureDir}/spec.md`);
-    const tasksIdx = promptInicial!.content.indexOf(`${featureDir}/tasks.md`);
-    assert.ok(specIdx >= 0 && tasksIdx > specIdx, "tasks.md debe listarse después de spec.md");
+    assert.ok(promptInicial?.content.includes("elige tu IDE"));
+    assert.ok(promptInicial?.content.includes("PROMPT-INICIAL.cursor.md"));
+    assert.ok(promptInicial?.content.includes("PROMPT-INICIAL.antigravity.md"));
+    assert.ok(agentPrompt?.content.includes("install-agent-governance.sh"));
+    assert.ok(agentPrompt?.content.includes(".cursor/rules/"));
+    assert.ok(agentPrompt?.content.includes("IMPLEMENT.md"));
+    assert.ok(agentPrompt?.content.includes("docs/sdd/mdd.md") || agentPrompt?.content.includes("spec.md"));
     assert.ok(agentPrompt?.content.includes("Agent prompt — contexto del proyecto"));
     assert.ok(agentPrompt?.content.includes("Ejecuta en terminal"));
     assert.ok(agentPrompt?.content.includes("Configurar monorepo"));
@@ -493,9 +485,8 @@ Backend NestJS con TypeORM en borrador; Prisma en blueprint.
     );
     const agents = reconciled.files.find((f) => f.path === "AGENTS.md");
     assert.ok(agents?.content.includes("Instalación de gobernanza"));
-    assert.ok(agents?.content.includes(".cursor/references/*"));
-    assert.ok(agents?.content.includes(".cursor/agents/*"));
-    assert.ok(agents?.content.includes(".cursor/commands/*"));
+    assert.ok(agents?.content.includes("install-targets/"));
+    assert.ok(agents?.content.includes("install-governance-"));
     assert.equal(agents?.content.includes(".cursor/specifications/"), false);
     assert.equal(
       (agents?.content.match(/## Instalación de gobernanza/g) ?? []).length,
@@ -682,7 +673,7 @@ Backend NestJS con TypeORM.
     assert.equal((rule?.content.match(/\*\*Módulos Blueprint:\*\*/g) ?? []).length, 0);
   });
 
-  it("PROMPT-INICIAL sincroniza checklist desde tasks aunque exista contenido LLM obsoleto", () => {
+  it("AGENT-PROMPT sincroniza checklist desde tasks aunque exista PROMPT-INICIAL LLM obsoleto", () => {
     const tasks = [
       "# Tasks",
       "- [ ] [P] Implementar `LdapAuthAdapter` en `services/auth-svc/`",
@@ -713,10 +704,12 @@ Backend NestJS con TypeORM.
       },
     );
     const prompt = reconciled.files.find((f) => f.path === "PROMPT-INICIAL.md");
-    assert.ok(prompt?.content.includes("LdapAuthAdapter"));
-    assert.ok(prompt?.content.includes("services/auth-svc"));
-    assert.ok(!prompt?.content.includes("ILdapAuthentication"));
-    assert.ok(!prompt?.content.includes("Zod"));
+    const agentPrompt = reconciled.files.find((f) => f.path === AGENT_PROMPT_PATH);
+    assert.ok(prompt?.content.includes("elige tu IDE"));
+    assert.ok(agentPrompt?.content.includes("LdapAuthAdapter"));
+    assert.ok(agentPrompt?.content.includes("services/auth-svc"));
+    assert.ok(!agentPrompt?.content.includes("ILdapAuthentication"));
+    assert.ok(!agentPrompt?.content.includes("Zod"));
   });
 
   it("PROGRESO.md es ligero y no duplica tasks.md completo", () => {
