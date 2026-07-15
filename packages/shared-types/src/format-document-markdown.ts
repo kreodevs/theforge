@@ -23,6 +23,10 @@ import {
   deduplicateDbgaDocument,
   hasDuplicateDbgaBlocks,
 } from "./deduplicate-dbga-document.js";
+import {
+  peelTheforgeDocStamp,
+  reattachTheforgeDocStamp,
+} from "./theforge-doc-stamp.js";
 
 export function formatDocumentMarkdown(text: string): string {
   if (!text) return "";
@@ -30,6 +34,10 @@ export function formatDocumentMarkdown(text: string): string {
   if (hasDuplicateDbgaBlocks(trimmed)) {
     trimmed = deduplicateDbgaDocument(trimmed);
   }
+  // Date stamp sits before H1/H2 — peel so preamble trim does not delete it.
+  const { stamp: docStamp, body: withoutStamp } = peelTheforgeDocStamp(trimmed);
+  trimmed = withoutStamp.trim();
+
   const hadOuterMarkdownFence =
     /^```(?:markdown|md)?\s*\n/i.test(trimmed) && /\n```\s*$/i.test(trimmed);
 
@@ -70,7 +78,7 @@ export function formatDocumentMarkdown(text: string): string {
   cleaned = repairOrphanSqlBlocks(cleaned);
   // Segunda pasada Mermaid: SQL/árboles pueden haber dejado aristas o fences huérfanos.
   cleaned = normalizeMermaidInDocument(cleaned);
-  return cleaned;
+  return reattachTheforgeDocStamp(docStamp, cleaned);
 }
 
 /** Formatea solo el cuerpo DBGA/Research; separa MDD embebido al final. */

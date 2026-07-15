@@ -34,6 +34,10 @@ import { repairMarkdownFences } from "./markdown-repair.js";
 import { normalizeAllTables } from "./markdown-table.js";
 import { normalizeTaskLists, type TaskListOptions } from "./gfm-task-lists.js";
 import { generateToc, type TocOptions } from "./toc-generator.js";
+import {
+  peelTheforgeDocStamp,
+  reattachTheforgeDocStamp,
+} from "./theforge-doc-stamp.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -124,13 +128,16 @@ function removeOuterMarkdownFence(text: string): string {
 
 /**
  * Remove preamble before first H1/H2.
+ * Preserves The Forge Creado / Última regeneración stamp at the top.
  */
 function removePreamble(text: string): string {
-  const headerMatch = text.match(/^#{1,2}\s+/m);
+  const { stamp, body } = peelTheforgeDocStamp(text);
+  const headerMatch = body.match(/^#{1,2}\s+/m);
+  let next = body;
   if (headerMatch?.index != null && headerMatch.index > 0) {
-    return text.slice(headerMatch.index).trim();
+    next = body.slice(headerMatch.index).trim();
   }
-  return text;
+  return reattachTheforgeDocStamp(stamp, next);
 }
 
 // ─── AST-based Pipeline ────────────────────────────────────────────────
