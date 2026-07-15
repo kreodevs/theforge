@@ -13,7 +13,9 @@ export class CheckpointerService implements OnModuleInit {
   private setupPromise: Promise<void> | null = null;
 
   async onModuleInit(): Promise<void> {
+    this.logger.log("[CheckpointerService] onModuleInit start");
     await this.getCheckpointer();
+    this.logger.log("[CheckpointerService] onModuleInit end");
   }
 
   /**
@@ -22,6 +24,7 @@ export class CheckpointerService implements OnModuleInit {
   async getCheckpointer(): Promise<PostgresSaver | null> {
     const url = process.env.DATABASE_URL;
     if (!url?.trim()) {
+      this.logger.log("[CheckpointerService] getCheckpointer: no DATABASE_URL, skipping.");
       return null;
     }
     if (this.checkpointer) {
@@ -38,10 +41,12 @@ export class CheckpointerService implements OnModuleInit {
   }
 
   private async initCheckpointer(connString: string): Promise<void> {
+    this.logger.log("[CheckpointerService] initCheckpointer start");
     const saver = PostgresSaver.fromConnString(connString.trim(), {
       schema: "public",
     });
     try {
+      this.logger.log("[CheckpointerService] PostgresSaver setup() running...");
       await saver.setup();
       this.logger.log("LangGraph PostgresSaver: setup() completed (checkpoints tables).");
     } catch (err) {
@@ -52,5 +57,6 @@ export class CheckpointerService implements OnModuleInit {
       throw err;
     }
     this.checkpointer = saver;
+    this.logger.log("[CheckpointerService] initCheckpointer end");
   }
 }

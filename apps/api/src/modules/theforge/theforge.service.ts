@@ -158,12 +158,17 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   onModuleInit(): void {
+    this.logger.log("[TheForgeService] onModuleInit start");
     // Refrescar config desde BD
     this.refreshAriadneConfig().catch(() => {});
-    if (this.isConfigured()) return;
+    if (this.isConfigured()) {
+      this.logger.log("[TheForgeService] onModuleInit end (configured)");
+      return;
+    }
     this.logger.warn(
       "[TheForge] THEFORGE_MCP_URL vacío: MCP desactivado. Comprueba env dentro del contenedor theforge-api (env_file .env o variables del servicio en Dokploy; evita compose que fije la clave a string vacío).",
     );
+    this.logger.log("[TheForgeService] onModuleInit end");
   }
 
   private get baseUrl(): string {

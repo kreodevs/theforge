@@ -63,11 +63,13 @@ export class LegacyDeliverablesQueueService implements OnModuleInit, OnModuleDes
   }
 
   async onModuleInit(): Promise<void> {
+    this.logger.log("[LegacyDeliverablesQueueService] onModuleInit start");
     const url = process.env.REDIS_URL?.trim();
     if (!url) {
       this.logger.log(
         "BullMQ legacy: sin REDIS_URL — cascada legacy usa cola in-memory (polling + progreso en chat)",
       );
+      this.logger.log("[LegacyDeliverablesQueueService] onModuleInit end");
       return;
     }
 
@@ -111,6 +113,7 @@ export class LegacyDeliverablesQueueService implements OnModuleInit, OnModuleDes
       this.logger.log(`BullMQ legacy job ${job.id} completado en ${elapsed}s`);
     });
     this.logger.log(`BullMQ legacy worker activo (${LEGACY_DELIVERABLES_QUEUE_NAME}), concurrency=1`);
+    this.logger.log("[LegacyDeliverablesQueueService] onModuleInit end");
   }
 
   async onModuleDestroy(): Promise<void> {

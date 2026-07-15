@@ -39,6 +39,7 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             process.env.FALKORDB_SDD_URL ||
             process.env.FALKORDB_URL ||
             "redis://localhost:6379";
+        this.logger.log(`[GraphMemoryService] onModuleInit start (url=${url})`);
         try {
             this.client = await FalkorDB.connect({ url });
             this.graph = this.client.selectGraph(this.graphName);
@@ -57,6 +58,7 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
         } catch (err) {
             this.logger.error(`Error conectando a FalkorDB: ${err instanceof Error ? err.message : String(err)}`);
         }
+        this.logger.log("[GraphMemoryService] onModuleInit end");
     }
 
     private async ensureVectorIndices(dim: number) {

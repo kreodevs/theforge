@@ -66,6 +66,7 @@ export class PluginLoaderService implements OnModuleInit {
 
   /** Ciclo de vida de NestJS: cargar plugins al arrancar */
   async onModuleInit(): Promise<void> {
+    this.logger.log("[PluginLoaderService] onModuleInit start");
     const directories = this.resolvePluginDirectories();
 
     for (const dir of directories) {
@@ -90,6 +91,7 @@ export class PluginLoaderService implements OnModuleInit {
         `${this.plugins.size} plugin(s) loaded: ${[...this.plugins.keys()].join(", ")}`,
       );
     }
+    this.logger.log("[PluginLoaderService] onModuleInit end");
   }
 
   /**

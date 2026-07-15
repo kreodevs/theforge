@@ -132,11 +132,13 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    this.logger.log("[DeliverablesQueueService] onModuleInit start");
     const url = process.env.REDIS_URL?.trim();
     if (!url) {
       this.logger.log(
         "BullMQ: sin REDIS_URL — cascada de entregables usa cola in-memory (polling + progreso en chat)",
       );
+      this.logger.log("[DeliverablesQueueService] onModuleInit end");
       return;
     }
     this.queue = new Queue(DELIVERABLES_QUEUE_NAME, {
@@ -184,6 +186,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `BullMQ worker activo (${DELIVERABLES_QUEUE_NAME}), maxAttempts=${this.MAX_ATTEMPTS}, concurrency=2, backoff=exponential/4s`,
     );
+    this.logger.log("[DeliverablesQueueService] onModuleInit end");
   }
 
   async onModuleDestroy(): Promise<void> {
