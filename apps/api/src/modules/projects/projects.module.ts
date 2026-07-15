@@ -1,4 +1,4 @@
-import { Module, forwardRef } from "@nestjs/common";
+import { Module } from "@nestjs/common";
 import {
   PROJECTS_SERVICE_TOKEN,
   PROJECT_INTEGRATION_SERVICE_TOKEN,
@@ -23,8 +23,7 @@ import { TheForgeModule } from "../theforge/theforge.module.js";
 import { GraphMemoryModule } from "../ai-analysis/graph-memory/graph-memory.module.js";
 import { ChangeLogModule } from "../change-log/change-log.module.js";
 import { DocumentSnapshotModule } from "../document-snapshot/document-snapshot.module.js";
-import { LegacyFlowModule } from "../legacy-flow/legacy-flow.module.js";
-import { DocumentationGapModule } from "../documentation-gap/documentation-gap.module.js";
+
 import { EstimationModule } from "../ai-analysis/estimation/estimation.module.js";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
@@ -41,8 +40,8 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     GraphMemoryModule,
     ChangeLogModule,
     DocumentSnapshotModule,
-    forwardRef(() => LegacyFlowModule),
-    forwardRef(() => DocumentationGapModule),
+    // forwardRef(() => LegacyFlowModule),
+    // forwardRef(() => DocumentationGapModule),
     UiMcpModule,
     ProjectGroupsModule,
     EstimationModule,
