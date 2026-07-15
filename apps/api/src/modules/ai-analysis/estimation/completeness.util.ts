@@ -1,4 +1,4 @@
-import { PlanningDocumentFields, DocumentCompleteness, DOC_COMPLETE_MIN_LENGTH, DOC_PARTIAL_MIN_LENGTH } from "./estimation.types";
+import { PlanningDocumentFields, DocumentCompleteness, DOC_COMPLETE_MIN_LENGTH, DOC_PARTIAL_MIN_LENGTH } from "./estimation.types.js";
 const DOC_WEIGHTS: Record<keyof PlanningDocumentFields, number> = {
   mddContent: 0,
   brdContent: 0.22,
