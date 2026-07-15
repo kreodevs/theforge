@@ -2314,14 +2314,19 @@ export function normalizeMermaidDiagramBody(raw: string): string {
     line = line.replace(/\\n/g, " ");
 
     if (isFlowchart || (!isErDiagram && !isSequence && !isClassDiagram && !isStateDiagram)) {
-      // Quote labels with braces in flowchart nodes: `A[/{id}]` → `A["/{id}"]`
+      // Quote node labels with special chars / <br/>: `A[x<br/>y: z]` → `A["x<br/>y: z"]`
       line = line.replace(
-        /(\[|\()(?!["(])([^"\]\)]*[{}][^"\]\)]*)(\]|\))/g,
+        /(\[|\()(?!["(])([^"\]\)]*(?:[{}:?<]|<br\s*\/?>)[^"\]\)]*)(\]|\))/g,
         (_m, open: string, label: string, close: string) => `${open}"${label.trim()}"${close}`,
       );
-      // Quote edge labels with braces: `|/{id}|` → `|"/{id}"|`
+      // Diamond decisions: `E{Token?<br/>x < y}` → `E{"Token?<br/>x < y"}`
       line = line.replace(
-        /\|(?!")([^"|]*[{}][^"|]*)\|/g,
+        /(\{)(?!")([^{}"]*(?:[?:<]|<br\s*\/?>)[^{}"]*)(\})/g,
+        (_m, open: string, label: string, close: string) => `${open}"${label.trim()}"${close}`,
+      );
+      // Quote edge labels with braces / specials: `|/{id}|` → `|"/{id}"|`
+      line = line.replace(
+        /\|(?!")([^"|]*(?:[{}:?<]|<br\s*\/?>)[^"|]*)\|/g,
         (_m, label: string) => `|"${label.trim()}"|`,
       );
     }

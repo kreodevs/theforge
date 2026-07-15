@@ -244,6 +244,19 @@ flowchart LR
   });
 });
 
+describe("normalizeMermaidDiagramBody — entrecomilla <br/> y especiales", () => {
+  it("cita nodos [] y diamantes {} con <br/> : ?", () => {
+    const body = `flowchart TD
+    B{Usuario autorizado?}
+    C[Registrar en failed_request_logs<br/>failure_type: autorización]
+    E{Token MCP expirado?<br/>pat_expires_at < now}`;
+    const out = normalizeMermaidDiagramBody(body);
+    assert.match(out, /B\{"Usuario autorizado\?"\}/);
+    assert.match(out, /C\["Registrar en failed_request_logs<br\/>failure_type: autorización"\]/);
+    assert.match(out, /E\{"Token MCP expirado\?<br\/>pat_expires_at < now"\}/);
+  });
+});
+
 describe("normalizeMermaidDiagramBody — no trunca etiquetas legítimas largas", () => {
   it("preserva subgraph y aristas con <br/> y rutas (no corta a 56 chars)", () => {
     const doc = `\`\`\`mermaid

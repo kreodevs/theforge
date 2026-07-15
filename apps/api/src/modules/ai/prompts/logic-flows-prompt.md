@@ -41,6 +41,18 @@ Desarrolladores y QA que implementarán o validarán la lógica y los flujos.
 - Usa **diagramas Mermaid** cuando ayuden (secuencia, flujo).
 - Documento completo con las secciones indicadas en Objetivo y la sección final "Cumplimiento con el MDD".
 
+# Sintaxis Mermaid (OBLIGATORIO — sin esto el Workshop no renderiza) #
+
+- **UN solo fence** ` ```mermaid ` … ` ``` ` por diagrama. Primera línea del cuerpo: `flowchart TD|LR`, `sequenceDiagram` o `stateDiagram-v2`.
+- **Cierra siempre** cada `[` `]` `{` `}` `"` antes de la siguiente línea. **Prohibido** terminar a media etiqueta (`N[Ejecutar herramienta M` incompleto). Si te quedas sin espacio, acorta la etiqueta; no cortes el fence.
+- **Etiquetas con `<br/>`, `:`, `?`, `/`, `{`, `}`, `<`, `>` o texto largo** van **entre comillas dobles** dentro del nodo o diamante:
+  - Correcto: `C["Registrar en failed_request_logs<br/>failure_type: autorización"]`
+  - Correcto: `E{"Token MCP expirado?<br/>pat_expires_at < now"}`
+  - Incorrecto: `C[Registrar … failure_type: autorización]` (sin comillas + `:` / `<br/>`)
+- Multilínea solo con `<br/>` **dentro** de `"…"`. **Nunca** `\n` literal ni listas markdown `- A --> B` fuera del fence.
+- Aristas: `-->|No|` o `-->|"Permiso concedido"|` (comillas si el rótulo tiene espacios o puntuación).
+- IDs de nodo cortos (`A`, `B`, `tokenCheck`); el texto va en la etiqueta entrecomillada, no en el ID.
+
 # Proyecto legacy (mensaje con contexto TheForge) #
 
 Si el mensaje incluye **Contexto del codebase (TheForge)**, los pasos y validaciones deben referir **archivos, servicios o puntos de extensión** que TheForge mencione (lifecycles, policies, middleware). Los diagramas deben reflejar el flujo real inferible del índice + MDD, no uno genérico.
