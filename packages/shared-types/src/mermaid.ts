@@ -1906,7 +1906,7 @@ export function quoteFlowchartChineseLabels(content: string): string {
   // Quote node labels containing non-ASCII that aren't already quoted
   let result = content.replace(
     /(\[(?!\")([^"\]]*[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af][^\]]*)\])/g,
-    (_m: string, full: string, inner: string) => `["${inner.trim()}"]`,
+    (_m: string, _full: string, inner: string) => `["${inner.trim()}"]`,
   );
   // Quote edge labels containing non-ASCII that aren't already quoted
   result = result.replace(
@@ -2070,9 +2070,9 @@ export function classifyMermaidErrors(raw: string): MermaidClassifiedError[] {
   // Detect diagram type
   const isFlowchart = /^(flowchart|graph)\s/i.test(header);
   const isSequence = /^sequenceDiagram\b/i.test(header);
-  const isEr = /^erDiagram\b/i.test(header);
+  const _isEr = /^erDiagram\b/i.test(header);
   const isClass = /^classDiagram\b/i.test(header);
-  const isState = /^stateDiagram/i.test(header);
+  const _isState = /^stateDiagram/i.test(header);
 
   // Empty check
   if (lines.filter((l) => l.trim()).length < 2) {
