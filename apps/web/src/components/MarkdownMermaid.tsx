@@ -536,6 +536,7 @@ export function MermaidDiagramBlock({
   const [displayContent, setDisplayContent] = useState(content);
   const [repairGeneration, setRepairGeneration] = useState(0);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
+  const [fullscreenExcalidrawFallback, setFullscreenExcalidrawFallback] = useState(false);
   const [inlineReady, setInlineReady] = useState(false);
   const [inlineFailed, setInlineFailed] = useState(false);
   const [fullscreenReady, setFullscreenReady] = useState(false);
@@ -558,6 +559,11 @@ export function MermaidDiagramBlock({
   const rebuildKey = useMemo(
     () => `${blockKey}-r${repairGeneration}-${mermaidKey(preparedExcalidrawContent)}`,
     [blockKey, repairGeneration, preparedExcalidrawContent],
+  );
+
+  const fullscreenExcalidrawRebuildKey = useMemo(
+    () => `${rebuildKey}-fs`,
+    [rebuildKey],
   );
 
   const fixAssessment = assessMermaidFixStrategy(displayContent);
@@ -632,7 +638,21 @@ export function MermaidDiagramBlock({
 
   const handleOpenFullscreen = useCallback(() => {
     setFullscreenReady(false);
+    setFullscreenExcalidrawFallback(false);
     setFullscreenOpen(true);
+  }, []);
+
+  const handleFullscreenOpenChange = useCallback((open: boolean) => {
+    setFullscreenOpen(open);
+    if (!open) {
+      setFullscreenExcalidrawFallback(false);
+      setFullscreenReady(false);
+    }
+  }, []);
+
+  const handleFullscreenExcalidrawFallback = useCallback(() => {
+    setFullscreenExcalidrawFallback(true);
+    setFullscreenReady(false);
   }, []);
 
   const handleFullscreenReady = useCallback((ready: boolean) => {
@@ -643,8 +663,10 @@ export function MermaidDiagramBlock({
     setViewMode("svg");
   }, []);
 
-  const showToolbar = inlineReady || inlineFailed || excalidrawSupported;
   const isExcalidrawView = viewMode === "excalidraw" && excalidrawSupported;
+  const showToolbar = inlineReady || inlineFailed || excalidrawSupported || isExcalidrawView;
+  const showFullscreenExcalidraw =
+    isExcalidrawView && !fullscreenExcalidrawFallback;
 
   return (
     <>
@@ -688,7 +710,10 @@ export function MermaidDiagramBlock({
                   variant="secondary"
                   size="sm"
                   className="h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm"
-                  onClick={() => setViewMode((v) => (v === "svg" ? "excalidraw" : "svg"))}
+                  onClick={() => {
+                    setFullscreenExcalidrawFallback(false);
+                    setViewMode((v) => (v === "svg" ? "excalidraw" : "svg"));
+                  }}
                   aria-label={
                     viewMode === "svg" ? "Cambiar a vista Excalidraw" : "Cambiar a vista SVG"
                   }
@@ -746,7 +771,7 @@ export function MermaidDiagramBlock({
         )}
       </div>
 
-      <Dialog open={fullscreenOpen} onOpenChange={setFullscreenOpen}>
+      <Dialog open={fullscreenOpen} onOpenChange={handleFullscreenOpenChange}>
         <DialogContent
           showClose
           aria-describedby="mermaid-fullscreen-desc"
@@ -783,7 +808,10 @@ export function MermaidDiagramBlock({
                   variant="outline"
                   size="sm"
                   className="h-8 shrink-0 gap-1.5 text-xs"
-                  onClick={() => setViewMode((v) => (v === "svg" ? "excalidraw" : "svg"))}
+                  onClick={() => {
+                    setFullscreenExcalidrawFallback(false);
+                    setViewMode((v) => (v === "svg" ? "excalidraw" : "svg"));
+                  }}
                   aria-label={
                     viewMode === "svg" ? "Cambiar a vista Excalidraw" : "Cambiar a vista SVG"
                   }
@@ -805,22 +833,22 @@ export function MermaidDiagramBlock({
                 <p className="text-sm font-medium text-[var(--foreground)]">Diagrama Mermaid</p>
                 <p className="text-xs text-[var(--muted-foreground)]">
                   {isExcalidrawView
-                    ? "Zoom − / + abajo a la derecha · Ajustar restablece · Esc cierra"
+                    ? "Rueda/gesto hace zoom · Arrastrar pan · Controles abajo a la derecha · Esc cierra"
                     : "Arrastrar para desplazar · Rueda para zoom · Doble clic restablece"}
                 </p>
               </div>
             </div>
             <p className="hidden shrink-0 text-xs text-[var(--muted-foreground)] sm:block">Esc para cerrar</p>
           </div>
-          <div className="relative min-h-0 flex-1 overflow-hidden">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             {fullscreenOpen ? (
-              isExcalidrawView ? (
+              showFullscreenExcalidraw ? (
                 <ExcalidrawDiagramBlock
                   mermaidContent={preparedExcalidrawContent}
                   diagramType={diagramType}
-                  rebuildKey={rebuildKey}
-                  onFallbackToSvg={handleFallbackToSvg}
-                  className="h-full min-h-0"
+                  rebuildKey={fullscreenExcalidrawRebuildKey}
+                  layout="fullscreen"
+                  onFallbackToSvg={handleFullscreenExcalidrawFallback}
                 />
               ) : (
                 <MermaidPanZoomViewport resetKey={`${blockKey}-${repairGeneration}`} contentReady={fullscreenReady}>

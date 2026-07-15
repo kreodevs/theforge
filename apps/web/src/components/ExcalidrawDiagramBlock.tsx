@@ -21,13 +21,18 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import type { BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type {
+  BinaryFiles,
+  ExcalidrawImperativeAPI,
+  NormalizedZoomValue,
+} from "@excalidraw/excalidraw/types";
 import { stripMermaidFenceWrappers } from "@theforge/shared-types/mermaid";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { isExcalidrawSupported, type MermaidDiagramType } from "./mermaid-diagram-type.util";
 
 import "@excalidraw/excalidraw/index.css";
+import "./ExcalidrawDiagramBlock.css";
 
 type ExcalidrawModule = typeof import("@excalidraw/excalidraw");
 type ExcalidrawComponent = ExcalidrawModule["Excalidraw"];
@@ -36,6 +41,7 @@ type OrderedExcalidrawElement = ReturnType<ExcalidrawModule["convertToExcalidraw
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 0.15;
+const WHEEL_ZOOM_FACTOR = 1.08;
 
 // Lazy-loaded Excalidraw (no SSR, ~45MB JS)
 const LazyExcalidraw = lazy<ExcalidrawComponent>(() =>
@@ -74,6 +80,10 @@ function clampZoom(value: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
 }
 
+function asNormalizedZoom(value: number): NormalizedZoomValue {
+  return clampZoom(value) as NormalizedZoomValue;
+}
+
 type ExcalidrawDiagramBlockProps = {
   mermaidContent: string;
   diagramType: MermaidDiagramType;
@@ -81,7 +91,9 @@ type ExcalidrawDiagramBlockProps = {
   rebuildKey?: string;
   /** Called when conversion fails; consumer should fall back to SVG. */
   onFallbackToSvg?: () => void;
-  /** Additional CSS classes for the outer container (e.g. h-full for fullscreen). */
+  /** Inline preview vs modal pantalla completa (altura y auto-fit). */
+  layout?: "inline" | "fullscreen";
+  /** Additional CSS classes for the outer container. */
   className?: string;
 };
 
@@ -95,8 +107,10 @@ export function ExcalidrawDiagramBlock({
   diagramType,
   rebuildKey,
   onFallbackToSvg,
+  layout = "inline",
   className,
 }: ExcalidrawDiagramBlockProps) {
+  const isFullscreenLayout = layout === "fullscreen";
   const [scene, setScene] = useState<ConvertedScene | null>(null);
   /** Remount Excalidraw when scene changes — `initialData` is mount-only. */
   const [sceneRev, setSceneRev] = useState(0);
@@ -104,6 +118,7 @@ export function ExcalidrawDiagramBlock({
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [zoomPct, setZoomPct] = useState(100);
+  const hostRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const cancelledRef = useRef(false);
   const onFallbackRef = useRef(onFallbackToSvg);
@@ -172,24 +187,63 @@ export function ExcalidrawDiagramBlock({
     };
   }, [mermaidContent, rebuildKey, excalidrawSupported, applyScene, failToSvg]);
 
-  const handleApi = useCallback((api: ExcalidrawImperativeAPI) => {
-    apiRef.current = api;
-    const z = api.getAppState().zoom.value;
-    setZoomPct(Math.round(z * 100));
-  }, []);
+  const handleApi = useCallback(
+    (api: ExcalidrawImperativeAPI) => {
+      apiRef.current = api;
+      const z = api.getAppState().zoom.value;
+      setZoomPct(Math.round(z * 100));
+      if (isFullscreenLayout) {
+        requestAnimationFrame(() => {
+          api.scrollToContent(undefined, { fitToContent: true });
+          requestAnimationFrame(() => {
+            const next = api.getAppState().zoom.value;
+            setZoomPct(Math.round(next * 100));
+          });
+        });
+      }
+    },
+    [isFullscreenLayout],
+  );
 
-  const applyZoomFactor = useCallback((factor: number) => {
+  const zoomTo = useCallback(async (nextRaw: number, clientX?: number, clientY?: number) => {
     const api = apiRef.current;
     if (!api) return;
-    const current = api.getAppState().zoom.value;
-    const next = clampZoom(current * factor);
+    const nextZoom = asNormalizedZoom(nextRaw);
+    const appState = api.getAppState();
+
+    if (clientX == null || clientY == null) {
+      api.updateScene({
+        appState: { zoom: { value: nextZoom } },
+      });
+      setZoomPct(Math.round(nextZoom * 100));
+      return;
+    }
+
+    // Keep the scene point under the pointer stable across the zoom change.
+    const { viewportCoordsToSceneCoords } = await import("@excalidraw/excalidraw");
+    const scenePoint = viewportCoordsToSceneCoords({ clientX, clientY }, appState);
+    const scrollX = (clientX - appState.offsetLeft) / nextZoom - scenePoint.x;
+    const scrollY = (clientY - appState.offsetTop) / nextZoom - scenePoint.y;
+
     api.updateScene({
       appState: {
-        zoom: { value: next as typeof current },
+        zoom: { value: nextZoom },
+        scrollX,
+        scrollY,
       },
     });
-    setZoomPct(Math.round(next * 100));
+    setZoomPct(Math.round(nextZoom * 100));
   }, []);
+
+  const applyZoomFactor = useCallback(
+    (factor: number, clientX?: number, clientY?: number) => {
+      const api = apiRef.current;
+      if (!api) return;
+      const current = api.getAppState().zoom.value;
+      void zoomTo(current * factor, clientX, clientY);
+    },
+    [zoomTo],
+  );
 
   const fitToView = useCallback(() => {
     const api = apiRef.current;
@@ -200,6 +254,36 @@ export function ExcalidrawDiagramBlock({
       setZoomPct(Math.round(z * 100));
     });
   }, []);
+
+  // Wheel / trackpad / pinch → zoom (Excalidraw default pans on wheel).
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !scene) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const factor = e.deltaY > 0 ? 1 / WHEEL_ZOOM_FACTOR : WHEEL_ZOOM_FACTOR;
+      void applyZoomFactor(factor, e.clientX, e.clientY);
+    };
+
+    host.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    return () => host.removeEventListener("wheel", onWheel, { capture: true });
+  }, [scene, sceneRev, applyZoomFactor]);
+
+  // Fullscreen dialog: refit once layout has settled (header + flex-1 viewport).
+  useEffect(() => {
+    if (!isFullscreenLayout || !scene) return;
+    let cancelled = false;
+    const runFit = () => {
+      if (!cancelled) fitToView();
+    };
+    const id = requestAnimationFrame(() => requestAnimationFrame(runFit));
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+    };
+  }, [isFullscreenLayout, scene, sceneRev, fitToView]);
 
   // Manual rebuild
   const handleRebuild = useCallback(async () => {
@@ -236,7 +320,12 @@ export function ExcalidrawDiagramBlock({
   // Loading state (only when no scene yet)
   if (loading && !scene) {
     return (
-      <div className="flex min-h-[180px] items-center justify-center">
+      <div
+        className={cn(
+          "flex items-center justify-center",
+          isFullscreenLayout ? "h-full min-h-0" : "min-h-[180px]",
+        )}
+      >
         <Loader2 className="h-5 w-5 animate-spin text-[var(--muted-foreground)]" />
         <span className="ml-2 text-sm text-[var(--muted-foreground)]">
           Convirtiendo a Excalidraw…
@@ -252,24 +341,19 @@ export function ExcalidrawDiagramBlock({
 
   return (
     <div
+      ref={hostRef}
       className={cn(
-        // Excalidraw uses height:100% — parent must have non-zero explicit height
-        "relative h-[min(420px,55vh)] w-full min-h-[220px]",
+        "relative w-full",
+        isFullscreenLayout
+          ? "h-full min-h-0"
+          : "h-[min(420px,55vh)] min-h-[220px]",
+        !isEditing && "excalidraw-embed-host--view",
         bg,
         className,
       )}
     >
-      {/* Canvas — fill container; clip host UI, not our bottom controls */}
-      <div
-        className={cn(
-          "absolute inset-0 overflow-hidden rounded-md [&_.excalidraw]:h-full [&_.excalidraw]:w-full",
-          // Hide Excalidraw chrome that fights with Workshop toolbar / our zoom bar
-          "[&_.App-menu]:!hidden [&_.App-toolbar]:!hidden [&_.App-toolbar-container]:!hidden",
-          "[&_.layer-ui__wrapper__top-right]:!hidden [&_.layer-ui__wrapper__footer-left]:!hidden",
-          "[&_.layer-ui__wrapper__footer-center]:!hidden [&_.layer-ui__wrapper__footer-right]:!hidden",
-          "[&_.FixedSideContainer]:!hidden [&_.mobile-misc-tools-container]:!hidden",
-        )}
-      >
+      {/* Canvas — fill container */}
+      <div className="absolute inset-0 overflow-hidden rounded-md [&_.excalidraw]:h-full [&_.excalidraw]:w-full">
         <Suspense
           fallback={
             <div className="flex h-full min-h-[180px] items-center justify-center">
@@ -286,7 +370,6 @@ export function ExcalidrawDiagramBlock({
               scrollToContent: true,
             }}
             theme="dark"
-            zenModeEnabled
             UIOptions={{
               canvasActions: {
                 changeViewBackgroundColor: false,
@@ -308,10 +391,11 @@ export function ExcalidrawDiagramBlock({
         </Suspense>
       </div>
 
-      {/* Bottom controls — never overlap MarkdownMermaid top toolbar */}
+      {/* Bottom controls — Workshop zoom (rueda también hace zoom) */}
       <div
         className="pointer-events-auto absolute bottom-3 right-3 z-20 flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)]/95 p-1 shadow-sm"
         onPointerDown={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
       >
         <Button
           type="button"
