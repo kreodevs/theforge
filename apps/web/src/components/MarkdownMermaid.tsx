@@ -675,7 +675,7 @@ export function MermaidDiagramBlock({
         className="group relative my-6 block w-full min-w-0 [isolation:isolate] overflow-x-auto rounded-md border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_35%,var(--card))] p-3"
         aria-label="Diagrama Mermaid"
       >
-        {/* Single in-flow toolbar — never overlaps Excalidraw canvas chrome */}
+        {/* Opaque toolbar — solid card bg so labels stay readable over Excalidraw dark canvas */}
         {showToolbar ? (
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -685,7 +685,7 @@ export function MermaidDiagramBlock({
                   variant="secondary"
                   size="sm"
                   disabled={isFixing}
-                  className="h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm"
+                  className="h-8 gap-1.5 border border-[var(--border)] bg-[var(--card)] px-2.5 text-xs text-[var(--foreground)] shadow-md"
                   onClick={() => void handleFix()}
                   aria-label={`${fixLabel} diagrama Mermaid`}
                   title={
@@ -709,7 +709,7 @@ export function MermaidDiagramBlock({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  className="h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm"
+                  className="h-8 gap-1.5 border border-[var(--border)] bg-[var(--card)] px-2.5 text-xs text-[var(--foreground)] shadow-md"
                   onClick={() => {
                     setFullscreenExcalidrawFallback(false);
                     setViewMode((v) => (v === "svg" ? "excalidraw" : "svg"));
@@ -736,7 +736,7 @@ export function MermaidDiagramBlock({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  className="h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm"
+                  className="h-8 gap-1.5 border border-[var(--border)] bg-[var(--card)] px-2.5 text-xs text-[var(--foreground)] shadow-md"
                   onClick={handleOpenFullscreen}
                   aria-label="Ver diagrama a pantalla completa"
                 >
@@ -833,7 +833,7 @@ export function MermaidDiagramBlock({
                 <p className="text-sm font-medium text-[var(--foreground)]">Diagrama Mermaid</p>
                 <p className="text-xs text-[var(--muted-foreground)]">
                   {isExcalidrawView
-                    ? "Rueda/gesto hace zoom · Arrastrar pan · Controles abajo a la derecha · Esc cierra"
+                    ? "Pinch o Ctrl+rueda = zoom (cursor) · Rueda = pan · −/+ centro · Esc cierra"
                     : "Arrastrar para desplazar · Rueda para zoom · Doble clic restablece"}
                 </p>
               </div>

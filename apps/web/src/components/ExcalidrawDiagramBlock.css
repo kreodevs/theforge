@@ -1,14 +1,39 @@
 /**
- * Embedded Excalidraw: kill host chrome so Workshop toolbar is not covered.
- * zenMode is not used — it only delays UI until hover, which is the overlap bug.
+ * Embedded Excalidraw: hide ALL host chrome so Workshop toolbars never overlap.
+ * Apply on `.excalidraw-embed-host` (view and edit) — we ship our own −/+/edit controls.
  */
-.excalidraw-embed-host--view .layer-ui__wrapper,
-.excalidraw-embed-host--view .App-menu,
-.excalidraw-embed-host--view .App-toolbar,
-.excalidraw-embed-host--view .App-toolbar-container,
-.excalidraw-embed-host--view .FixedSideContainer,
-.excalidraw-embed-host--view .mobile-misc-tools-container {
+.excalidraw-embed-host .layer-ui__wrapper,
+.excalidraw-embed-host .App-menu,
+.excalidraw-embed-host .App-menu__left,
+.excalidraw-embed-host .App-menu__right,
+.excalidraw-embed-host .App-toolbar,
+.excalidraw-embed-host .App-toolbar-content,
+.excalidraw-embed-host .App-toolbar-container,
+.excalidraw-embed-host .FixedSideContainer,
+.excalidraw-embed-host .mobile-misc-tools-container,
+.excalidraw-embed-host .main-menu-trigger,
+.excalidraw-embed-host .footer-left,
+.excalidraw-embed-host .footer-center,
+.excalidraw-embed-host .footer-right,
+.excalidraw-embed-host .layer-ui__wrapper__footer,
+.excalidraw-embed-host .layer-ui__wrapper__top-right,
+.excalidraw-embed-host .Island,
+.excalidraw-embed-host .HelpButton,
+.excalidraw-embed-host .undo-redo-buttons,
+.excalidraw-embed-host .zoom-actions,
+.excalidraw-embed-host .user-list-wrapper,
+.excalidraw-embed-host .App-bottom-bar {
   display: none !important;
+  visibility: hidden !important;
   pointer-events: none !important;
   opacity: 0 !important;
+}
+
+/**
+ * Confine gestures to the diagram canvas (avoid browser overscroll bleed).
+ * Native Excalidraw handles pinch / Ctrl+wheel zoom at the cursor.
+ */
+.excalidraw-embed-canvas {
+  touch-action: none;
+  overscroll-behavior: contain;
 }
