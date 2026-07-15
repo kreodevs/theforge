@@ -21,6 +21,7 @@ import {
 } from "./ui-project-instructions.util.js";
 import { resolveConstitutionMarkdown } from "./ui-screens-mdd.util.js";
 import { buildPantallasPlan, type PantallaPlanItem } from "./ui-screens-plan.util.js";
+import { prependDocumentTimestamps } from "../engine/document-date-header.util.js";
 
 @Injectable()
 export class UiScreensService {
@@ -135,7 +136,7 @@ export class UiScreensService {
 
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { uiScreensContent: content },
+      data: { uiScreensContent: prependDocumentTimestamps(content) },
     });
 
     return { content, screens: screens.length };

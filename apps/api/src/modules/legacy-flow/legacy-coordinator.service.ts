@@ -119,6 +119,7 @@ import { assertLegacyChangeGate } from "./legacy-change-gate.util.js";
 import { persistStageDeliverableSnapshotFromProject } from "../projects/stage-deliverable-snapshot.util.js";
 import { persistStageAndProjectDeliverables } from "../projects/stage-deliverable-persist.util.js";
 import { parseTasksV2 } from "../engine/task-v2/tasks-parser-v2.js";
+import { prependDocumentTimestamps } from "../engine/document-date-header.util.js";
 
 const KNOWLEDGE = loadLegacyKnowledgePack();
 
@@ -724,7 +725,7 @@ export class LegacyCoordinatorService {
     await this.prisma.stage.update({
       where: { id: stage.id },
       data: {
-        brdContent: brd,
+        brdContent: prependDocumentTimestamps(brd),
       },
     });
     await this.syncCurrentLegacyStageToGraph(projectId, stage.id).catch(() => {});

@@ -19,6 +19,14 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
   - **Persistencia en update flow**: `ProjectsService.update()` captura `documentAst`/`documentVersion` desde el DTO y los persiste en `Stage` via `prisma.stage.update()` con null handling Prisma-correcto (`Prisma.JsonNull`).
   - **docker-entrypoint.sh**: guard `P3009` para la migración `20260715100000_add_document_ast_columns` (idempotente, no bloquea deploy).
 
+- **Excalidraw Hybrid Phase 1 — vista Excalidraw por defecto para diagramas Mermaid:**
+  - **`mermaid-diagram-type.util.ts`**: detecta tipo de diagrama Mermaid (flowchart, erDiagram, sequenceDiagram, classDiagram, stateDiagram) y determina soporte Excalidraw. Flowcharts generan elementos nativos editables; ER/Sequence/Class usan fallback de imagen.
+  - **`ExcalidrawDiagramBlock.tsx`**: wrapper lazy-loaded de `@excalidraw/excalidraw` + `@excalidraw/mermaid-to-excalidraw`. Convierte Mermaid → `ExcalidrawElementSkeleton[]` → `OrderedExcalidrawElement[]` via `convertToExcalidrawElements`. Toolbar con rebuild manual, toggle edición/vista, export PNG.
+  - **Vista por defecto**: Excalidraw para tipos soportados (flowchart, ER, sequence, class). SVG como fallback para stateDiagram y tipos no soportados.
+  - **Rebuild automático**: al editar Mermaid en source mode, el `rebuildKey` cambia y `ExcalidrawDiagramBlock` reconvierte automáticamente al volver a preview.
+  - **Toggle Excalidraw/SVG**: botón `PenLine`/`Code` en toolbar para alternar entre vistas.
+  - **`@excalidraw/excalidraw@^0.18.1` + `@excalidraw/mermaid-to-excalidraw@^2.2.2`** añadidos a `apps/web/package.json`.
+
 ### Architecture
 
 - **Document Engine** como módulo independiente dentro de `modules/engine/` (5 archivos + tests + barrel index). `DocumentEngineService` registrado en `EngineModule` como provider/export.

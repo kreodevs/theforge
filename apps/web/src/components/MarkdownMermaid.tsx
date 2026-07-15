@@ -1,6 +1,6 @@
 /**
- * Renders ```mermaid fenced blocks from ReactMarkdown as SVG (MDD viewer, tutorial, help).
- * Supports fullscreen expand for dense diagrams (ER, flowcharts).
+ * Renders ```mermaid fenced blocks from ReactMarkdown as Excalidraw canvas (default)
+ * or SVG (fallback). Supports fullscreen expand for dense diagrams.
  */
 import {
   Children,
@@ -9,12 +9,13 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from "react";
-import { Maximize2, Loader2, RotateCcw, Sparkles, Wrench, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, Loader2, RotateCcw, Sparkles, Wrench, ZoomIn, ZoomOut, PenLine, Code } from "lucide-react";
 import {
   stripMermaidFenceWrappers,
 } from "@theforge/shared-types/mermaid";
@@ -34,6 +35,11 @@ import {
   DialogTitle,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { ExcalidrawDiagramBlock } from "./ExcalidrawDiagramBlock";
+import {
+  detectMermaidDiagramType,
+  isExcalidrawSupported,
+} from "./mermaid-diagram-type.util";
 
 const MERMAID_DIAGRAM_START =
   /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|gitGraph|mindmap|timeline|journey|quadrantChart|requirementDiagram|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|sankey-beta|xychart-beta|block-beta)\b/i;
@@ -543,6 +549,16 @@ export function MermaidDiagramBlock({
   const [fullscreenReady, setFullscreenReady] = useState(false);
   const [isFixing, setIsFixing] = useState(false);
   const [fixError, setFixError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"svg" | "excalidraw">("excalidraw");
+
+  const diagramType = useMemo(() => detectMermaidDiagramType(displayContent), [displayContent]);
+  const excalidrawSupported = isExcalidrawSupported(diagramType);
+
+  // Generate rebuild key that changes when displayContent changes (manual edits)
+  const rebuildKey = useMemo(
+    () => `${blockKey}-r${repairGeneration}`,
+    [blockKey, repairGeneration],
+  );
 
   const fixAssessment = assessMermaidFixStrategy(displayContent);
   const fixLabel = fixAssessment.strategy === "regenerate" ? "Regenerar" : "Reparar";
@@ -625,7 +641,7 @@ export function MermaidDiagramBlock({
       ? "opacity-100"
       : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100";
 
-  const showToolbar = inlineReady || inlineFailed;
+  const showToolbar = inlineReady || inlineFailed || excalidrawSupported;
 
   return (
     <>
@@ -665,6 +681,31 @@ export function MermaidDiagramBlock({
             {fixError}
           </p>
         ) : null}
+        {excalidrawSupported ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className={cn(
+              "absolute right-28 top-2 z-[1] h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm",
+              toolbarVisibility,
+            )}
+            onClick={() => setViewMode((v) => (v === "svg" ? "excalidraw" : "svg"))}
+            aria-label={viewMode === "svg" ? "Cambiar a vista Excalidraw" : "Cambiar a vista SVG"}
+          >
+            {viewMode === "svg" ? (
+              <>
+                <PenLine className="h-3.5 w-3.5" aria-hidden />
+                Excalidraw
+              </>
+            ) : (
+              <>
+                <Code className="h-3.5 w-3.5" aria-hidden />
+                SVG
+              </>
+            )}
+          </Button>
+        ) : null}
         {enableFullscreen && showToolbar ? (
           <Button
             type="button"
@@ -681,14 +722,23 @@ export function MermaidDiagramBlock({
             Pantalla completa
           </Button>
         ) : null}
-        <MermaidSvgCanvas
-          content={displayContent}
-          renderId={inlineRenderId}
-          prepareContent={prepareContent}
-          className={svgClassName}
-          onReadyChange={handleInlineReady}
-          onErrorChange={handleInlineError}
-        />
+        {viewMode === "excalidraw" && excalidrawSupported ? (
+          <ExcalidrawDiagramBlock
+            mermaidContent={displayContent}
+            diagramType={diagramType}
+            rebuildKey={rebuildKey}
+            onFallbackToSvg={() => setViewMode("svg")}
+          />
+        ) : (
+          <MermaidSvgCanvas
+            content={displayContent}
+            renderId={inlineRenderId}
+            prepareContent={prepareContent}
+            className={svgClassName}
+            onReadyChange={handleInlineReady}
+            onErrorChange={handleInlineError}
+          />
+        )}
       </div>
 
       <Dialog open={fullscreenOpen} onOpenChange={setFullscreenOpen}>

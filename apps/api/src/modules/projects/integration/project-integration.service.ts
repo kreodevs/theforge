@@ -28,6 +28,7 @@ import { GraphMemoryService } from "../../ai-analysis/graph-memory/graph-memory.
 import { TheForgeService } from "../../theforge/theforge.service.js";
 import { LegacyCoordinatorService } from "../../legacy-flow/legacy-coordinator.service.js";
 import { ProjectsService } from "../projects.service.js";
+import { prependDocumentTimestamps } from "../../engine/document-date-header.util.js";
 import { isLegacyHandoffAutoLegacyStartEnabled } from "./legacy-handoff-auto-start.util.js";
 import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "../stage-deliverable-snapshot.util.js";
 import {
@@ -729,7 +730,7 @@ export class ProjectIntegrationService {
     if (changeSpec) {
       await this.prisma.stage.update({
         where: { id: stageId },
-        data: { changeSpecContent: changeSpec },
+        data: { changeSpecContent: prependDocumentTimestamps(changeSpec) },
       });
     }
 

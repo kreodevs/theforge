@@ -8,6 +8,7 @@ import {
 import { Prisma } from "@theforge/database";
 import type { PrismaService } from "../../prisma/prisma.service.js";
 import { parseTasksV2 } from "../engine/task-v2/tasks-parser-v2.js";
+import { prependDocumentTimestamps } from "../engine/document-date-header.util.js";
 
 type PrismaStageWriter = Pick<PrismaService, "stage" | "project" | "$transaction">;
 
@@ -52,6 +53,17 @@ export async function persistStageAndProjectDeliverables(
 
   const stageData: Record<string, unknown> = buildStageUpdateData(picked);
   const projectData: Record<string, unknown> = buildStageUpdateData(picked);
+
+  // Prepend creation / updated timestamp header to every text deliverable
+  const now = new Date();
+  for (const key of DELIVERABLE_KEYS) {
+    const val = stageData[key];
+    if (typeof val === "string" && val.trim().length > 0) {
+      const stamped = prependDocumentTimestamps(val, now);
+      stageData[key] = stamped;
+      projectData[key] = stamped;
+    }
+  }
 
   // Auto-parse tasks v2 into structured JSON
   if (typeof picked.tasksContent === "string" && picked.tasksContent.trim().length > 0) {
