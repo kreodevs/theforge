@@ -806,6 +806,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const {
       mddContent: parsedMdd,
       stageId: parsedStageId,
+      documentAst: parsedDocumentAst,
+      documentVersion: parsedDocumentVersion,
       allowGovernancePatternChange,
       clearMddCompletely,
       mddGovernanceSeedOnly,
@@ -925,7 +927,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         const formatted = prepareMddMarkdownForPersist(mddForPipeline ?? "");
         await this.prisma.stage.update({
           where: { id: targetStage.id },
-          data: { mddContent: formatted },
+          data: { mddContent: formatted, documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue), documentVersion: parsedDocumentVersion },
         });
         await this.changeLog.log(id, "mddContent", formatted);
         pipelineResult = {
@@ -936,7 +938,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       } else if (skipPipelineForSeed) {
         await this.prisma.stage.update({
           where: { id: targetStage.id },
-          data: { mddContent: mddForPipeline },
+          data: { mddContent: mddForPipeline, documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue), documentVersion: parsedDocumentVersion },
         });
         await this.changeLog.log(id, "mddContent", mddForPipeline);
         pipelineResult = {
@@ -971,6 +973,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
             mddContent: result.sanitizedMdd,
             status: result.status,
             precisionScore: result.precisionScore,
+            documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue),
+            documentVersion: parsedDocumentVersion,
           },
         });
         await this.changeLog.log(id, "mddContent", result.sanitizedMdd);

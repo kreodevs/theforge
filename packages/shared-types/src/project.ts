@@ -82,6 +82,11 @@ export const updateProjectSchema = z.object({
   aemContent: z.string().optional().nullable(),
   pluginData: z.record(z.unknown()).optional().nullable(),
 
+  /** RFC-001: AST estructurado del documento (source of truth v2). */
+  documentAst: z.record(z.unknown()).optional().nullable(),
+  /** RFC-001: Versión de parche atómico del documento. */
+  documentVersion: z.number().int().optional(),
+
   figmaMapping: z.record(z.unknown()).optional().nullable(),
   /** Per-project converge webhook (POST /projects/:id/converge/trigger). */
   convergeWebhookUrl: z.string().url().optional().nullable(),

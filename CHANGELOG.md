@@ -4,6 +4,28 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+### Added
+
+- **Document Engine v2 (RFC-001) — AST deterministic, patch semántico y validación:**
+  - **MddMarkdownTranspiler** (`mdd-markdown-transpiler.ts`): motor registry-based que serializa `MddDocumentAst` → Markdown determinísticamente (sin LLM, sin heurísticas). 15 tipos de sección (`processInventory`, `crudMatrix`, `techStack`, etc.) con sus renderers. Bidireccionalmente estable: re-render de un AST siempre produce el mismo Markdown.
+  - **DocumentPatchEngine** (`document-patch-engine.ts`): 6 operaciones de patch semántico (`ADD_SECTION`, `MODIFY_SECTION`, `DELETE_SECTION`, `REPLACE_SECTION`, `REPLACE_FIELD`, `ADD_FIELD`) con tracking de `entityIndex` para merge incremental por ID. Idempotente: patches repetidos no duplican datos.
+  - **Validation Gates** (`validation-gates.ts`): 5 puertas de validación — Schema (Zod), Referencia Cruzada (§ refs), Completitud (campos requeridos), Circularidad (refs rotos) y Unicidad (IDs duplicados). Devuelve array de `ValidationGateResult` con passed/warnings/errors por gate.
+  - **DocumentResponseParser** (`document-response-parser.ts`): detecta ` ```json ` fences en respuestas del LLM, valida contra `MddDocumentAstSchema` (Zod), calcula divergencia (secciones faltantes/extras/modificadas) y extrae `remainingMarkdown` para la parte de chat. Fallback automático al parser legacy cuando no hay bloque JSON.
+  - **Intent Router** (`intent-router.service.ts`): clasificación de intención por keywords + routing a agentes (MDD, legacy, spec, architecture, tasks). Extensible con patrones regex.
+  - **DocumentEngineService** (`document-engine.service.ts`): API de alto nivel — `parseResponse()`, `applyPatches()`, `classifyIntent()`. Orquesta parser → validación → patches.
+  - **AST Types** (`packages/shared-types/src/document-ast/types.ts`): `MddDocumentAst`, `DocumentSection` (15 tipos), `PatchOp`, `DocumentResponse`, `IntentClassification`, `ValidationGateResult`, schemas Zod exportados.
+  - **Prisma schema**: `documentAst Json?` + `documentVersion Int @default(0)` en modelo `Stage`, con migración idempotente `IF NOT EXISTS`.
+  - **Dual Output Protocol**: el LLM puede emitir ` ```json ` block + markdown chat en la misma respuesta. `ChatResponseParserService.tryParseDualOutput()` intenta dual antes de `splitMddAndChat`. Si el LLM no emite JSON, fallback transparente al parser legacy (backward compatible).
+  - **Persistencia en update flow**: `ProjectsService.update()` captura `documentAst`/`documentVersion` desde el DTO y los persiste en `Stage` via `prisma.stage.update()` con null handling Prisma-correcto (`Prisma.JsonNull`).
+  - **docker-entrypoint.sh**: guard `P3009` para la migración `20260715100000_add_document_ast_columns` (idempotente, no bloquea deploy).
+
+### Architecture
+
+- **Document Engine** como módulo independiente dentro de `modules/engine/` (5 archivos + tests + barrel index). `DocumentEngineService` registrado en `EngineModule` como provider/export.
+- **Flujo de datos**: LLM response → `DocumentResponseParser.parseDualOutput()` → Zod validate → `DocumentPatchEngine.applyPatch()` → `MddMarkdownTranspiler.renderDocument()` → `prisma.stage.update(documentAst, documentVersion, mddContent)`.
+- **Dual Output como opt-in**: si el LLM no emite ` ```json ` block, el sistema cae al parser legacy (`splitMddAndChat`) sin degradación. Compatible con prompts existentes sin cambios.
+- **Tests**: 12/12 unit tests (transpiler, patch engine, validation gates, dual output parser) con `node:test`. No dependen de DB ni LLM.
+
 ### Fixed
 
 - **Fase 0 / DBGA — wipe por catálogo de endpoints:** una lista numerada `POST/GET /v1/…` ya no se trata como DBGA completo ni pasa el umbral absurdo de 2500 chars que permitía sustituir un documento de 10–20k. `looksLikeApiEndpointCatalog`, merge que anexa bajo «Integración API», shrink ≥70% relativo, y prompt de refine anti-borrado.

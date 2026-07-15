@@ -51,6 +51,11 @@
       "types": "./dist/mdd-governance-patterns.d.ts",
       "import": "./dist/mdd-governance-patterns.js",
       "require": "./dist/mdd-governance-patterns.js"
+    },
+    "./document-ast": {
+      "types": "./dist/document-ast/index.d.ts",
+      "import": "./dist/document-ast/index.js",
+      "require": "./dist/document-ast/index.js"
     }
   },
   "scripts": {

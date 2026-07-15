@@ -361,6 +361,10 @@ export class SessionsService {
     architectureContent?: string | null;
     useCasesContent?: string | null;
     userStoriesContent?: string | null;
+    /** RFC-001: AST estructurado del documento devuelto por Dual Output Protocol v2. */
+    documentAst?: Record<string, unknown> | null;
+    /** RFC-001: Versión de parche atómico del documento (documentVersion). */
+    documentVersion?: number | null;
   }> {
     const session = await this.prisma.session.findFirst({
       where: this.sessionScope(sessionId),
@@ -459,7 +463,16 @@ export class SessionsService {
         "La IA no generó texto (respuesta vacía o bloqueada). Intenta de nuevo o reformula el mensaje.",
       );
     }
-    let mddSplit = this.parser.splitMddAndChat(safeResponse);
+    // RFC-001: intentar Dual Output Protocol v2 antes de caer a split legacy
+    let dualMdd: any = null;
+    try {
+      dualMdd = this.parser.tryParseDualOutput(safeResponse);
+    } catch {
+      dualMdd = null;
+    }
+    let mddSplit = dualMdd
+      ? { mddPart: dualMdd.markdown, chatPart: dualMdd.chatPart }
+      : this.parser.splitMddAndChat(safeResponse);
     const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
     let dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
     let phase0Split = this.parser.splitPhase0AndChat(safeResponse);
@@ -744,6 +757,8 @@ export class SessionsService {
         storiesSplit?.docPart,
         options?.currentUserStoriesContent,
       ),
+      documentAst: dualMdd?.ast ?? null,
+      documentVersion: dualMdd ? (dualMdd.ast?.metadata?.patchVersion ?? 0) : null,
     };
   }
 

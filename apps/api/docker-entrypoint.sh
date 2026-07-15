@@ -165,6 +165,11 @@ if npx prisma migrate resolve --rolled-back 20260714140000_sync_schema_drift 2>/
   echo "migrate resolve: cleared failed record for 20260714140000_sync_schema_drift"
 fi
 
+# P3009: RFC-001 Document Ast columns — limpiar antes de migrate deploy
+if npx prisma migrate resolve --rolled-back 20260715100000_add_document_ast_columns 2>/dev/null; then
+  echo "migrate resolve: cleared failed record for 20260715100000_add_document_ast_columns"
+fi
+
 # P3009: evdContent — limpiar antes de migrate deploy (la columna ya existe o se crea por db push)
 if npx prisma migrate resolve --rolled-back 20260712_add_evd_content_column 2>/dev/null; then
   echo "migrate resolve: cleared failed record for 20260712_add_evd_content_column"

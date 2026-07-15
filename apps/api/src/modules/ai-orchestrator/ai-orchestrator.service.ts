@@ -242,6 +242,8 @@ export class AiOrchestratorService {
     let dbgaFromResponse: string | null | undefined;
     let phase0FromResponse: string | null | undefined;
     let brdFromResponse: string | null | undefined;
+    let documentAstFromResponse: Record<string, unknown> | null | undefined;
+    let documentVersionFromResponse: number | null | undefined;
     try {
       const chatResult = await this.sessions.chat(session.id, message, {
         currentMddContent: currentMdd,
@@ -268,6 +270,8 @@ export class AiOrchestratorService {
       dbgaFromResponse = chatResult.dbgaContent;
       phase0FromResponse = chatResult.phase0SummaryContent;
       brdFromResponse = chatResult.brdContent;
+      documentAstFromResponse = chatResult.documentAst;
+      documentVersionFromResponse = chatResult.documentVersion;
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Error al generar la respuesta";
@@ -281,7 +285,7 @@ export class AiOrchestratorService {
 
     let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
     if (tab === "mdd" && mddFromResponse != null && mddFromResponse.length > 0) {
-      updatedProject = await this.projects.update(projectId, { mddContent: mddFromResponse, stageId: route.stageId });
+      updatedProject = await this.projects.update(projectId, { mddContent: mddFromResponse, stageId: route.stageId, documentAst: documentAstFromResponse ?? undefined, documentVersion: documentVersionFromResponse ?? undefined });
     }
     if (tab === "ux-ui-guide" && uxUiGuideFromResponse != null && uxUiGuideFromResponse.length > 0) {
       console.log("[Orchestrator] persisting uxUiGuideContent (Guía UX/UI) length:", uxUiGuideFromResponse.length);
