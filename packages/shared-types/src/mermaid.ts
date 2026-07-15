@@ -2070,9 +2070,7 @@ export function classifyMermaidErrors(raw: string): MermaidClassifiedError[] {
   // Detect diagram type
   const isFlowchart = /^(flowchart|graph)\s/i.test(header);
   const isSequence = /^sequenceDiagram\b/i.test(header);
-  const _isEr = /^erDiagram\b/i.test(header);
   const isClass = /^classDiagram\b/i.test(header);
-  const _isState = /^stateDiagram/i.test(header);
 
   // Empty check
   if (lines.filter((l) => l.trim()).length < 2) {
