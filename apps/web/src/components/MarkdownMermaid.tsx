@@ -37,12 +37,11 @@ import {
 import { cn } from "@/lib/utils";
 import { ExcalidrawDiagramBlock } from "./ExcalidrawDiagramBlock";
 import {
+  defaultMermaidViewMode,
   detectMermaidDiagramType,
   isExcalidrawSupported,
+  isMermaidCodeBlock,
 } from "./mermaid-diagram-type.util";
-
-const MERMAID_DIAGRAM_START =
-  /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|gitGraph|mindmap|timeline|journey|quadrantChart|requirementDiagram|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|sankey-beta|xychart-beta|block-beta)\b/i;
 
 export const MERMAID_BLOCK_MARKER = "data-theforge-mermaid";
 
@@ -84,13 +83,6 @@ export function mermaidKey(content: string): string {
 
 export function defaultPrepareMermaidForRender(content: string): string {
   return prepareMermaidForRender(content);
-}
-
-function looksLikeMermaidBlock(source: string, className?: string): boolean {
-  const trimmed = source.trim();
-  if (!trimmed) return false;
-  if (/\blanguage-mermaid\b/i.test(className ?? "")) return true;
-  return MERMAID_DIAGRAM_START.test(trimmed);
 }
 
 function flattenMarkdownChildren(children: ReactNode): string {
@@ -549,7 +541,9 @@ export function MermaidDiagramBlock({
   const [fullscreenReady, setFullscreenReady] = useState(false);
   const [isFixing, setIsFixing] = useState(false);
   const [fixError, setFixError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"svg" | "excalidraw">("excalidraw");
+  const [viewMode, setViewMode] = useState<"svg" | "excalidraw">(() =>
+    defaultMermaidViewMode(content),
+  );
 
   const diagramType = useMemo(() => detectMermaidDiagramType(displayContent), [displayContent]);
   const excalidrawSupported = isExcalidrawSupported(diagramType);
@@ -569,6 +563,7 @@ export function MermaidDiagramBlock({
     setRepairGeneration(0);
     setInlineFailed(false);
     setFixError(null);
+    setViewMode(defaultMermaidViewMode(content));
   }, [content]);
 
   const inlineRenderIdRef = useRef("");
@@ -610,6 +605,7 @@ export function MermaidDiagramBlock({
         assessment.repairedPreview.trim() || repairMermaidBlockForRender(displayContent);
       setDisplayContent(repaired);
       setRepairGeneration((g) => g + 1);
+      setViewMode(defaultMermaidViewMode(repaired));
       return;
     }
 
@@ -618,6 +614,7 @@ export function MermaidDiagramBlock({
       const regenerated = await regenerateMermaidDiagram(displayContent);
       setDisplayContent(regenerated);
       setRepairGeneration((g) => g + 1);
+      setViewMode(defaultMermaidViewMode(regenerated));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "No se pudo regenerar el diagrama";
       setFixError(msg);
@@ -826,7 +823,7 @@ type MarkdownCodeProps = ComponentPropsWithoutRef<"code"> & { node?: unknown };
 export function tryRenderMarkdownMermaid(props: MarkdownCodeProps): ReactNode | null {
   const { className, children, node } = props;
   const source = extractCodeBlockSource(className, children, node);
-  if (!looksLikeMermaidBlock(source, className) || !source.trim()) return null;
+  if (!isMermaidCodeBlock(source, className) || !source.trim()) return null;
 
   const normalized = defaultPrepareMermaidForRender(source.trim());
   if (!normalized.trim()) return null;

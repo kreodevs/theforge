@@ -16,6 +16,7 @@ import {
 import { looksLikeAsciiDiagramLine } from "@theforge/shared-types";
 import { parseMarkdownSections } from "../utils/markdownSections";
 import { prepareMermaidForRender } from "./mermaid-render-prep.util";
+import { isMermaidCodeBlock } from "./mermaid-diagram-type.util";
 import {
   MermaidBlockErrorBoundary,
   MermaidDiagramBlock,
@@ -37,24 +38,6 @@ function normalizeCodeBlockToAsciiSpaces(content: string): string {
     .map((line) => line.trimEnd())
     .join("\n")
     .trim();
-}
-
-/**
- * Tipos de diagrama Mermaid válidos (insensible a mayúsculas).
- * No usar `graph\b`: rutas `graph-internal/…` activan \b entre `h` y `-` y se parsean como Mermaid.
- * graph/flowchart legados exigen `TD|TB|LR|RL|BT`; el resto exige separador real (\s, \n o fin).
- */
-const MERMAID_DIAGRAM_START =
-  /^\s*(erDiagram(?:\s+|\n|$)|flowchart\s+(?:TD|TB|LR|RL|BT)\b|graph\s+(?:TD|TB|LR|RL|BT)\b|sequenceDiagram(?:\s+|\n|$)|stateDiagram(?:-v2)?(?:\s+|\n|$)|classDiagram(?:\s+|\n|$)|pie(?:\s+|\n|$)|gantt(?:\s+|\n|$)|journey(?:\s+|\n|$)|gitGraph(?:\s+|\n|$)|mindmap(?:\s+|\n|$)|timeline(?:\s+|\n|$)|blockDiagram(?:\s+|\n|$)|quadrantChart(?:\s+|\n|$)|xychart(?:\s+|\n|$)|requirementDiagram(?:\s+|\n|$))/i;
-
-/**
- * True solo si el contenido es sintaxis Mermaid reconocible.
- * `language-mermaid` por sí solo no basta: el LLM a veces envuelve BRD/MDD en ```mermaid por error.
- */
-function looksLikeMermaidBlock(source: string, _className?: string): boolean {
-  const trimmed = source.trim();
-  if (!trimmed) return false;
-  return MERMAID_DIAGRAM_START.test(trimmed);
 }
 
 /** Theme tokens so preview text stays readable in light mode (avoids zinc-300 on pale backgrounds). */
@@ -159,8 +142,7 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
                 </span>
               );
             }
-            const isMermaidLang = /\blanguage-mermaid\b/i.test(className ?? "");
-            if ((isMermaidLang || looksLikeMermaidBlock(source, className)) && source.trim()) {
+            if (isMermaidCodeBlock(source, className)) {
               const trimmed = source.trim();
               const normalized = prepareMermaidForRender(trimmed);
               if (!normalized.trim()) {
