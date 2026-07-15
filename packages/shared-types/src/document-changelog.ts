@@ -47,7 +47,11 @@ export type EnsureDocumentChangelogOptions = {
 };
 
 /** Instrucciones para prompts LLM — misma regla en todos los artefactos generados. */
-export const DOCUMENT_CHANGELOG_LLM_INSTRUCTIONS = `# Registro de cambios (OBLIGATORIO en todo documento)
+export function getDocumentChangelogLlmInstructions(
+  date: Date = new Date(),
+): string {
+  const currentDate = formatDocumentChangelogDate(date);
+  return `# Registro de cambios (OBLIGATORIO en todo documento)
 
 Al **final** del markdown (después del contenido principal y **antes** de cualquier delimitador \`---FIN_*---\` si aplica), incluye siempre:
 
@@ -56,10 +60,16 @@ ${DOCUMENT_CHANGELOG_HEADING}
 ${DOCUMENT_CHANGELOG_TABLE_HEADER}
 
 Reglas:
-- **Creación:** primera versión \`1.0\` con fecha mes/año en español (ej. «Mayo 2026») y descripción breve del artefacto (ej. «Creación inicial del DBGA»).
+- **Creación:** primera versión \`1.0\` con fecha mes/año en español (usa exactamente «${currentDate}») y descripción breve del artefacto (ej. «Creación inicial del DBGA»).
 - **Actualización:** conserva todas las filas anteriores y **añade una fila nueva** al final con versión incrementada (\`1.1\`, \`1.2\`, …; salto a \`2.0\` solo si reestructuras el documento de forma mayor).
 - **Descripción:** una línea clara del cambio material (qué se añadió, movió o eliminó).
-- **Nunca** elimines filas históricas ni dejes la sección vacía.`;
+- **Nunca** elimines filas históricas ni dejes la sección vacía.
+- **Fecha obligatoria fila 1.0:** \`${currentDate}\` (mes y año del sistema; no inventes otra fecha).`;
+}
+
+/** @deprecated Usa getDocumentChangelogLlmInstructions() para inyectar la fecha del sistema. */
+export const DOCUMENT_CHANGELOG_LLM_INSTRUCTIONS =
+  getDocumentChangelogLlmInstructions();
 
 export function hasDocumentChangelogSection(content: string): boolean {
   return CHANGELOG_HEADING_RE.test(content.trim());
@@ -169,29 +179,46 @@ function inferInitialDescription(content: string): string {
   return "Creación inicial del documento";
 }
 
+const INITIAL_VERSION_ROW_RE =
+  /^\|\s*1\.0\s*\|\s*[^|]+\s*\|\s*([^|]+)\s*\|/gm;
+
+/** Corrige la columna Fecha de la fila 1.0 al mes/año del sistema (o el indicado). */
+export function fixDocumentChangelogInitialDate(
+  content: string,
+  date: string = formatDocumentChangelogDate(),
+): string {
+  if (!hasDocumentChangelogSection(content)) return content;
+  return content.replace(INITIAL_VERSION_ROW_RE, (_match, description: string) =>
+    `| 1.0 | ${date} | ${description.trim()} |`,
+  );
+}
+
 /**
  * Garantiza que el markdown termina con la sección de changelog.
- * Si ya existe, no modifica filas (el LLM o el usuario las mantienen).
+ * Si ya existe, corrige la fecha de la fila 1.0 al mes/año del sistema.
  */
 export function ensureDocumentChangelog(
   content: string,
   options: EnsureDocumentChangelogOptions = {},
 ): string {
   const trimmed = content.trimEnd();
+  const initialDate = options.initialDate ?? formatDocumentChangelogDate();
   if (!trimmed) return buildChangelogSection([
     {
       version: "1.0",
-      date: options.initialDate ?? formatDocumentChangelogDate(),
+      date: initialDate,
       description: options.initialDescription ?? "Creación inicial del documento",
     },
   ]);
 
-  if (hasDocumentChangelogSection(trimmed)) return trimmed;
+  if (hasDocumentChangelogSection(trimmed)) {
+    return fixDocumentChangelogInitialDate(trimmed, initialDate);
+  }
 
   const section = buildChangelogSection([
     {
       version: "1.0",
-      date: options.initialDate ?? formatDocumentChangelogDate(),
+      date: initialDate,
       description:
         options.initialDescription ?? inferInitialDescription(trimmed),
     },

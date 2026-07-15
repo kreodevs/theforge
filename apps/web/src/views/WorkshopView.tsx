@@ -32,6 +32,7 @@ import {
   Layers,
   Wand2,
   MessageSquare,
+  ClipboardPaste,
   Copy,
   Check,
   Rocket,
@@ -168,6 +169,7 @@ import {
 } from "../components/WorkshopButtons";
 import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
 import { Phase0InterviewPanel } from "../components/Phase0InterviewPanel";
+import { Phase0PastePanel } from "../components/Phase0PastePanel";
 import { Phase0ManualAudit } from "../components/Phase0ManualAudit";
 import { MddManualAudit } from "../components/MddManualAudit";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -427,6 +429,7 @@ export default function WorkshopView({
   const dbgaContent = dbgaContentField ?? project?.dbgaContent ?? null;
   /** Contenido visible en el panel Fase 0: usa dbgaContent o specContent legacy como fallback */
   const fase0Content = dbgaContent ?? specContent ?? null;
+  const phase0IsEmpty = !dbgaContent?.trim() && !specContent?.trim();
   const blueprintContent = resolveWorkshopDeliverableContent(
     "blueprintContent",
     blueprintContentField ?? project?.blueprintContent ?? null,
@@ -1112,6 +1115,13 @@ export default function WorkshopView({
   const [lastBenchmarkIdea, setLastBenchmarkIdea] = useState("");
   /** Pestañas internas del panel benchmark: Fase 0 (DBGA) / Benchmark (Deep Research). */
   const [benchmarkPhaseTab, setBenchmarkPhaseTab] = useState<"fase0" | "benchmark">("fase0");
+  /** Modo de entrada cuando Paso 0 está vacío: entrevista IA o pegar DBGA. */
+  const [phase0EntryMode, setPhase0EntryMode] = useState<"interview" | "paste">("interview");
+  useEffect(() => {
+    if (!phase0IsEmpty) {
+      setPhase0EntryMode("interview");
+    }
+  }, [phase0IsEmpty]);
   const [dbgaRestoreOpen, setDbgaRestoreOpen] = useState(false);
   const [blueprintViewMode, setBlueprintViewMode] = useState<"preview" | "source">("preview");
   const [apiContractsViewMode, setApiContractsViewMode] = useState<"preview" | "source">("preview");
@@ -2016,6 +2026,34 @@ export default function WorkshopView({
     printMarkdownDocument(mdPreview, { title: docTitle });
   }, [centralPanel, uxUiGuideViewMode]);
 
+  const handlePhase0Complete = useCallback(async () => {
+    const store = useWorkshopStore.getState();
+    const dbga = (store.dbgaContent ?? store.project?.dbgaContent ?? "").trim();
+    if (!dbga) {
+      const res = await apiFetch(`${API_BASE}/ai-analysis/phase0/sync-markdown`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { markdown?: string | null };
+        if (data.markdown?.trim()) {
+          store.setDbgaContent(data.markdown.trim());
+        }
+      }
+    }
+    await store.fetchProject(projectId);
+  }, [projectId]);
+
+  const phase0EntryModeToolbarToggle = useMemo(() => {
+    if (!phase0IsEmpty) return null;
+    return {
+      Icon: phase0EntryMode === "interview" ? ClipboardPaste : MessageSquare,
+      tooltip: phase0EntryMode === "interview" ? "Pegar Paso 0" : "Entrevista con IA",
+      onClick: () => setPhase0EntryMode((m) => (m === "interview" ? "paste" : "interview")),
+    };
+  }, [phase0IsEmpty, phase0EntryMode]);
+
   /** Preview/source (or design) toggle — header toolbar on desktop; not in the bubble menu. */
   const docEditToolbarToggle = useMemo(() => {
     if (centralPanel === "legacy" || centralPanel === "adrs" || centralPanel === "integration") return null;
@@ -2059,6 +2097,9 @@ export default function WorkshopView({
     if (!showDocEdit && !showBenchmarkEdit) return null;
 
     if (showBenchmarkEdit) {
+      if (benchmarkPhaseTab === "fase0" && phase0EntryModeToolbarToggle) {
+        return phase0EntryModeToolbarToggle;
+      }
       const benchmarkViewModeActive =
         benchmarkPhaseTab === "fase0" ? benchmarkViewMode : phase0SummaryViewMode;
       const { Icon, tooltip } = workshopDocSourceTogglePresentation("mdd", benchmarkViewModeActive);
@@ -2131,6 +2172,7 @@ export default function WorkshopView({
     mddInicialLocalContent,
     activeStageId,
     toggleDocViewMode,
+    phase0EntryModeToolbarToggle,
   ]);
 
   const docBubbleMenuItems = useMemo((): WorkshopDocBubbleMenuItem[] => {
@@ -3300,6 +3342,33 @@ export default function WorkshopView({
                 )}
                 {centralPanel === "benchmark" &&
                   (() => {
+                    if (benchmarkPhaseTab === "fase0" && phase0EntryModeToolbarToggle) {
+                      const { Icon: BenchmarkToggleIcon, tooltip: benchmarkToggleTooltip, onClick } =
+                        phase0EntryModeToolbarToggle;
+                      return (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className={WORKSHOP_DOC_TOOLBAR_ICON_BTN}
+                              aria-label={benchmarkToggleTooltip}
+                              onClick={onClick}
+                            >
+                              <BenchmarkToggleIcon
+                                className={WORKSHOP_DOC_TOOLBAR_ICON}
+                                strokeWidth={2}
+                                aria-hidden
+                              />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" align="end" className="max-w-[14rem]">
+                            {benchmarkToggleTooltip}
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    }
                     const activeBenchmarkViewMode =
                       benchmarkPhaseTab === "fase0" ? benchmarkViewMode : phase0SummaryViewMode;
                     const { Icon: BenchmarkToggleIcon, tooltip: benchmarkToggleTooltip } =
@@ -4118,28 +4187,12 @@ export default function WorkshopView({
                 />
 
                 {benchmarkPhaseTab === "fase0" ? (
-                  !dbgaContent?.trim() && !specContent?.trim() ? (
-                    <Phase0InterviewPanel
-                      projectId={projectId}
-                      onComplete={async () => {
-                        const store = useWorkshopStore.getState();
-                        const dbga = (store.dbgaContent ?? store.project?.dbgaContent ?? "").trim();
-                        if (!dbga) {
-                          const res = await apiFetch(`${API_BASE}/ai-analysis/phase0/sync-markdown`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ projectId }),
-                          });
-                          if (res.ok) {
-                            const data = (await res.json()) as { markdown?: string | null };
-                            if (data.markdown?.trim()) {
-                              store.setDbgaContent(data.markdown.trim());
-                            }
-                          }
-                        }
-                        await store.fetchProject(projectId);
-                      }}
-                    />
+                  phase0IsEmpty ? (
+                    phase0EntryMode === "paste" ? (
+                      <Phase0PastePanel projectId={projectId} onComplete={handlePhase0Complete} />
+                    ) : (
+                      <Phase0InterviewPanel projectId={projectId} onComplete={handlePhase0Complete} />
+                    )
                   ) : (
                   <>
                     {loading && loadingReason === "phase0-deep-research" && (
@@ -4830,7 +4883,7 @@ export default function WorkshopView({
               <StandardDocPanel
                 icon={LayoutTemplate}
                 title="Blueprint"
-                description="El blueprint se genera a partir del MDD guardado (vista previa antes de guardar)."
+                description="Plan técnico derivado del MDD. Puedes regenerarlo con IA o editar el markdown en modo fuente."
                 content={blueprintContent}
                 onContentChange={(v) => setBlueprintContent(v)}
                 onSave={() => void persistBlueprintContent(blueprintContent ?? "")}
@@ -4839,7 +4892,7 @@ export default function WorkshopView({
                 onGenerate={() => generateBlueprint(projectId)}
                 canGenerate={!!effectiveMddTrimmed}
                 isLoading={loading || mddReviewing}
-                placeholder="# Blueprint\n\nEl contenido del blueprint se genera desde el MDD..."
+                placeholder="# Blueprint\n\nEl contenido del blueprint se genera desde el MDD o puedes escribirlo manualmente..."
                 onBlur={handleBlueprintBlur}
                 legacyGenerateLabel={canGenerateFromCodebase ? "Generar Blueprint desde MDD Inicial" : undefined}
                 onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "blueprint", activeStageId ?? undefined) : undefined}
@@ -5152,10 +5205,10 @@ export default function WorkshopView({
           const showBenchmarkToggle = centralPanel === "benchmark";
           const benchmarkToolbarViewMode =
             benchmarkPhaseTab === "fase0" ? benchmarkViewMode : phase0SummaryViewMode;
-          const benchmarkTogglePresentation = workshopDocSourceTogglePresentation(
-            "mdd",
-            benchmarkToolbarViewMode,
-          );
+          const benchmarkTogglePresentation =
+            benchmarkPhaseTab === "fase0" && phase0EntryModeToolbarToggle
+              ? phase0EntryModeToolbarToggle
+              : workshopDocSourceTogglePresentation("mdd", benchmarkToolbarViewMode);
           const BenchmarkFabToggleIcon = benchmarkTogglePresentation.Icon;
           const showDocToggle =
             centralPanel !== "benchmark" &&
@@ -5246,6 +5299,10 @@ export default function WorkshopView({
                       title={benchmarkTogglePresentation.tooltip}
                       aria-label={benchmarkTogglePresentation.tooltip}
                       onClick={() => {
+                        if (benchmarkPhaseTab === "fase0" && phase0EntryModeToolbarToggle) {
+                          phase0EntryModeToolbarToggle.onClick();
+                          return;
+                        }
                         if (benchmarkPhaseTab === "fase0") {
                           setBenchmarkViewMode((m) => (m === "preview" ? "source" : "preview"));
                         } else {
