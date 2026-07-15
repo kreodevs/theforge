@@ -4,7 +4,23 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [v1.0.0-rc.2] — 2026-07-15
+
 ### Added
+
+- **Markdown Formatter — remark AST engine (Phases 1–3):**
+  - **remark adapter** (`remark-adapter.ts`): `parseMarkdown`, `stringifyMarkdown`, `normalizeMarkdown` con options para bullet, emphasis, rule, GFM, frontmatter. Type guards `isHeading`, `isParagraph`, `isCode`, `isTable`, `isListItem` + helpers `findNodes`, `replaceNodes`, `extractHeadings`.
+  - **AST-based repair suite**: `markdown-table-ast.ts` (table normalization), `repair-glued-headings-ast.ts` (inline headings, glued prose), `markdown-repair-ast.ts` (fence unwrap, unclosed fence repair).
+  - **Pattern classifier** (`pattern-classifier.ts`): classifies content into 10 patterns (mermaid, sql, dockerfile, docker-compose, env, json, yaml, directory-tree, markdown, unknown) with confidence scores. `classifyPattern` + `classifyCodeBlock`.
+  - **Repair pipeline** (`repair-pipeline.ts`): `runRepairPipeline()` orchestrates classify→repair→replace in two phases (code blocks + prose segments). Options: `skipPatterns`, `onlyPatterns`, `debug`.
+  - **Pattern repairers** (`repairers/pattern-repairers.ts`): per-pattern repair dispatcher wrapping existing domain repairers (mermaid, SQL, infra, directory tree, flow sections).
+  - **AST-based format orchestrator** (`format-document-markdown-ast.ts`): 9-step pipeline — trim → fence repair → heading repair → table normalization → remark stringify → pattern pipeline → boundary repair → task list normalization → optional TOC insertion. `useAst` toggle for incremental migration.
+  - **TOC generator** (`toc-generator.ts`): `generateToc` from remark headings, `insertToc` with `<!-- toc -->` marker support. Options: minDepth, maxDepth, useAnchors, title.
+  - **GFM task list normalizer** (`gfm-task-lists.ts`): normalizes checkbox markers (X, ✓, ✔ → [x]), detection, counting, optional sort unchecked-first.
+  - **Formatter presets** (`formatter-presets.ts`): 3 built-in presets (minimal, standard, strict) + `registerPreset` for custom configs. Each preset bundles FormatOptions + TocOptions + TaskListOptions.
+  - **Dependencies**: `unified`, `remark-parse`, `remark-stringify`, `remark-gfm`, `remark-frontmatter`, `mdast-util-toc`, `unist-builder`. Package now `"type": "module"`.
+  - **Tests**: 26 new tests across `toc-generator.spec.ts`, `gfm-task-lists.spec.ts`, `formatter-presets.spec.ts`, `pattern-classifier.spec.ts` (20), `repair-pipeline.spec.ts` (8). Total: 148 tests pass, `tsc --noEmit` clean.
+  - **Improvement plan** (`docs/FORMATTER_IMPROVEMENT_PLAN.md`): 4-phase roadmap — Phases 1–3 complete, Phase 4 (integration tests + docs) pending.
 
 - **Document Engine v2 (RFC-001) — AST deterministic, patch semántico y validación:**
   - **MddMarkdownTranspiler** (`mdd-markdown-transpiler.ts`): motor registry-based que serializa `MddDocumentAst` → Markdown determinísticamente (sin LLM, sin heurísticas). 15 tipos de sección (`processInventory`, `crudMatrix`, `techStack`, etc.) con sus renderers. Bidireccionalmente estable: re-render de un AST siempre produce el mismo Markdown.
