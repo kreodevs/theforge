@@ -17,7 +17,6 @@ import { HealthController } from "./health.controller.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
 import { AiModule } from "./modules/ai/ai.module.js";
 import { EngineModule } from "./modules/engine/engine.module.js";
-import { ProjectsModule } from "./modules/projects/projects.module.js";
 import { ProjectGroupsModule } from "./modules/project-groups/project-groups.module.js";
 import { SessionsModule } from "./modules/sessions/sessions.module.js";
 import { CryptoModule } from "./modules/crypto/crypto.module.js";
@@ -36,7 +35,6 @@ import { UserProvidersModule } from "./modules/user-providers/user-providers.mod
     UserProvidersModule,
     AiModule,
     EngineModule,
-    ProjectsModule,
     ProjectGroupsModule,
     SessionsModule,
   ],
