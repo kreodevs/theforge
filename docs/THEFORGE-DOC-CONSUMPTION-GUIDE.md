@@ -30,7 +30,7 @@ Cuando TheForge generaba solo documentos sueltos en `docs/sdd/<proyecto>/`:
 | **`api-contracts.md`** | Contratos REST — endpoints, métodos, DTOs de request/response, códigos de error | Implementa los endpoints **exactamente** como se especifica aquí. Los DTOs deben coincidir |
 | **`logic-flows.md`** | Diagramas de flujo de lógica de negocio — auth, pagos, video pipeline, expiración | Guía para implementar servicios complejos con múltiples pasos y condiciones |
 | **`infra.md`** | Infraestructura — Docker, Dokploy, dominios, redes, S3, backups | Configura el despliegue y la infraestructura según lo especificado |
-| **`tasks.md`** | Lista de tareas priorizadas — desglose de implementación paso a paso | Úsalo como checklist, pero **no** como única fuente — contrasta siempre contra MDD y Blueprint |
+| **`tasks.md`** | Lista de tareas priorizadas — desglose de implementación paso a paso | Úsalo como checklist, pero **no** como única fuente — contrasta siempre contra MDD y Blueprint. Ver [TASKS-ROL-EN-SDD.md](./TASKS-ROL-EN-SDD.md) |
 | **`design-system.md`** | Guía de diseño — paleta, tipografía, espaciado, componentes UI autorizados | Si el proyecto usa Kreo UI, aquí están los tokens de diseño. Si no, define la guía visual |
 | **`pantallas.md`** | Pantallas / UI Screens Spec (MCP gráfico) — vistas, componentes **reales** (nombre + paquete@versión), entidad y binding a endpoints | **Distinto de design-system.md.** Léelo **antes** de implementar pantallas cuando exista; gana sobre Blueprint §8 heurístico |
 | **`aem.md`** | Análisis y Estrategia de Mercado (opcional) — contexto de negocio | Contexto para entender el "por qué" del producto |

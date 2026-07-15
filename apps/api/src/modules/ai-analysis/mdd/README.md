@@ -21,7 +21,12 @@ Un solo job MDD activo o en cola por proyecto (`assertCanEnqueue` → 409 si bus
 
 ## Persistencia
 
-`AiAnalysisService.runMddGenerationJob` persiste borradores (`draft`) y resultado final (`done`) en BD vía `projects.update` + `cleanDocumentContent`. El frontend ya no depende de `persistMddContent` tras encolar.
+`AiAnalysisService.runMddGenerationJob` persiste borradores (`draft`) y resultado final (`done`) en BD vía `projects.persistMddFromBackgroundJob`:
+
+- **Borradores:** `prepareMddForOutput` + guardado en stage **sin** delivery gate (el MDD puede faltar §1–§7 a mitad de pipeline).
+- **Final (`done`):** pipeline completo (`MddUpdatePipelineService`) con gate de entrega, semáforo y estimación.
+
+El Workshop ya no depende de `persistMddContent` tras encolar.
 
 ## API
 

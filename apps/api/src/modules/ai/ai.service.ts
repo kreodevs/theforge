@@ -1054,6 +1054,9 @@ export class AiService {
       apiContractsContent?: string | null;
       logicFlowsContent?: string | null;
       infraContent?: string | null;
+      architectureContent?: string | null;
+      uxUiGuideContent?: string | null;
+      uiScreensContent?: string | null;
       gapsFeedback?: string | null;
       /** Bloque determinista: ChangeScope, resolve-change, module hints. */
       fileCoordinatesContext?: string | null;
@@ -1069,6 +1072,9 @@ export class AiService {
     const apiContracts = capTextForLegacyBaseline(options?.apiContractsContent ?? "", 12000, options?.legacyBaselineStage);
     const logicFlows = capTextForLegacyBaseline(options?.logicFlowsContent ?? "", 10000, options?.legacyBaselineStage);
     const infra = capTextForLegacyBaseline(options?.infraContent ?? "", 8000, options?.legacyBaselineStage);
+    const architecture = capTextForLegacyBaseline(options?.architectureContent ?? "", 12000, options?.legacyBaselineStage);
+    const designSystem = capTextForLegacyBaseline(options?.uxUiGuideContent ?? "", 10000, options?.legacyBaselineStage);
+    const pantallas = capTextForLegacyBaseline(options?.uiScreensContent ?? "", 12000, options?.legacyBaselineStage);
     let prompt =
       mdd.length > 0
         ? "Genera el documento Tasks según las instrucciones del system prompt. " +
@@ -1092,6 +1098,18 @@ export class AiService {
     }
     if (infra.length > 0) {
       prompt += "Infraestructura (generar tareas Infra por servicio/env):\n---\n" + infra + "\n---\n\n";
+    }
+    if (architecture.length > 0) {
+      prompt += "Arquitectura (módulos, capas, convenciones — alinear rutas target_files):\n---\n" + architecture + "\n---\n\n";
+    }
+    if (designSystem.length > 0) {
+      prompt += "Design system / UX guide (tokens y componentes autorizados para Frontend tasks):\n---\n" + designSystem + "\n---\n\n";
+    }
+    if (pantallas.length > 0) {
+      prompt +=
+        "Pantallas MCP (OBLIGATORIO: una Frontend task por vista/ruta; componentes y binding API reales):\n---\n" +
+        pantallas +
+        "\n---\n\n";
     }
     if (navMap.length > 0) {
       prompt += "\n\n## Mapa de Navegación del Proyecto\n\n" + navMap;

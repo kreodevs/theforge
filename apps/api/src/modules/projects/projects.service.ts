@@ -41,6 +41,7 @@ import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semap
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
 import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson, isBrownfieldCapable } from "@theforge/shared-types";
 import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
+import { prepareMddForOutput } from "../ai-analysis/utils/mdd-prepare-output.js";
 import { prependDocumentTimestamps } from "../engine/document-date-header.util.js";
 import {
   enforceMddGovernancePatternsOnPersist,
@@ -163,6 +164,10 @@ import {
   extractMddCapabilityLines,
   parseChangeScopeFromLegacyState,
 } from "./tasks-coordinates-context.util.js";
+import {
+  evaluateTasksGenerationQuality,
+  TASKS_QUALITY_THRESHOLD,
+} from "./tasks-generation-quality.util.js";
 import { ResolveChangeToFilesService } from "../legacy-flow/resolve-change-to-files.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
@@ -2539,6 +2544,77 @@ name: ${JSON.stringify(name)}
     return exportScaffold;
   }
 
+  /**
+   * Persistencia MDD desde job en background (cola theforge-mdd).
+   * - Borradores (`finalize: false`): sin delivery gate — el MDD puede estar incompleto.
+   * - Final (`finalize: true`): pipeline completo (gate + semáforo + estimación).
+   */
+  async persistMddFromBackgroundJob(
+    projectId: string,
+    rawMarkdown: string,
+    options?: { stageId?: string; finalize?: boolean },
+  ): Promise<void> {
+    const existing = await this.assertProjectAccess(projectId);
+    const existingRaw = existing as Project & { stages: StageWithEst[] };
+    const targetStage: StageWithEst | undefined =
+      (options?.stageId?.trim() && existingRaw.stages.find((s) => s.id === options.stageId!.trim())) ||
+      pickPrimaryStage(existingRaw.stages);
+    if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
+
+    const cleaned = cleanDocumentContent(rawMarkdown);
+    if (cleaned.trim().length < 48) return;
+
+    const enforced = enforceMddGovernancePatternsOnPersist(cleaned, targetStage.mddContent, {});
+    const mddForPipeline = enforced.markdown;
+
+    if (!options?.finalize) {
+      const prepared = await prepareMddForOutput(mddForPipeline);
+      const stored = prependDocumentTimestamps(prepareMddMarkdownForPersist(prepared));
+      await this.prisma.stage.update({
+        where: { id: targetStage.id },
+        data: { mddContent: stored },
+      });
+      await this.changeLog.log(projectId, "mddContent", prepared);
+      return;
+    }
+
+    const mergedForSemaphore = this.mergeProjectForSemaphore(existingRaw, {});
+    const result = await this.mddUpdatePipeline.process(
+      mddForPipeline,
+      this.buildSemaphoreBase(mergedForSemaphore),
+      { projectId, stageId: targetStage.id },
+    );
+    if (!result.ok) {
+      if (result.code === MDD_DELIVERY_GATE_ERR) {
+        const gate = await evaluateMddDeliveryGatePrepared(mddForPipeline);
+        void this.persistMddDeliveryGateSnapshot(targetStage.id, gate);
+      }
+      throw new BadRequestException({
+        code: result.code,
+        message: result.message,
+      });
+    }
+
+    await this.prisma.stage.update({
+      where: { id: targetStage.id },
+      data: {
+        mddContent: prependDocumentTimestamps(result.sanitizedMdd),
+        status: result.status,
+        precisionScore: result.precisionScore,
+      },
+    });
+    await this.changeLog.log(projectId, "mddContent", result.sanitizedMdd);
+    void this.persistMddDeliveryGateSnapshot(
+      targetStage.id,
+      await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
+    );
+    await this.estimationRecalc.recalcAndUpsert(targetStage.id, {
+      mddContent: result.sanitizedMdd,
+      infraContent: existingRaw.infraContent ?? null,
+      status: result.status,
+    });
+  }
+
   async generateTasks(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
 
@@ -2549,6 +2625,7 @@ name: ${JSON.stringify(name)}
     }
 
     const mdd = this.constitutionMarkdown(project);
+    const stage = pickPrimaryStage(project.stages ?? []);
     const coordinates = await this.buildTasksCoordinatesContext(
       projectId,
       project,
@@ -2564,15 +2641,55 @@ name: ${JSON.stringify(name)}
       apiContractsContent: project.apiContractsContent,
       logicFlowsContent: project.logicFlowsContent,
       infraContent: project.infraContent,
+      architectureContent: project.architectureContent,
+      uxUiGuideContent: project.uxUiGuideContent,
+      uiScreensContent: project.uiScreensContent,
       gapsFeedback,
       fileCoordinatesContext: coordinates.block,
       coordinatesMode: coordinates.coordinatesMode,
       ...gfOpts,
     };
 
-    const tasksContent = cleanDocumentContent(
-      await this.ai.generateTasks(mdd, project.blueprintContent, taskOpts),
-    );
+    const inventory = resolveDomainInventory({
+      persisted: stage?.domainInventory,
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: mdd,
+    });
+
+    let tasksRaw = await this.ai.generateTasks(mdd, project.blueprintContent, taskOpts);
+    let quality = evaluateTasksGenerationQuality({
+      tasksMarkdown: tasksRaw,
+      mddMarkdown: mdd,
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      inventory,
+    });
+
+    if (!quality.ok && quality.feedback) {
+      this.logger.warn(
+        `[Tasks] Calidad insuficiente (score=${quality.score}, TaskAccuracy=${quality.accuracyScore}, audit=${quality.auditScore}, n=${quality.taskCount}) — reintento único`,
+      );
+      const retryFeedback = [gapsFeedback?.trim(), quality.feedback].filter(Boolean).join("\n\n");
+      tasksRaw = await this.ai.generateTasks(mdd, project.blueprintContent, {
+        ...taskOpts,
+        gapsFeedback: retryFeedback,
+      });
+      quality = evaluateTasksGenerationQuality({
+        tasksMarkdown: tasksRaw,
+        mddMarkdown: mdd,
+        brdMarkdown: stage?.brdContent,
+        dbgaMarkdown: project.dbgaContent,
+        inventory,
+      });
+      if (!quality.ok) {
+        this.logger.warn(
+          `[Tasks] Tras reintento: score=${quality.score} (umbral ${TASKS_QUALITY_THRESHOLD}). Se persiste el mejor esfuerzo; W4 puede volver a regenerar.`,
+        );
+      }
+    }
+
+    const tasksContent = cleanDocumentContent(tasksRaw);
 
     const updated = await this.update(projectId, { tasksContent });
 

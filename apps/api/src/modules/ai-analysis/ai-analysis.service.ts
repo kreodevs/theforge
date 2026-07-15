@@ -1696,16 +1696,16 @@ export class AiAnalysisService {
     const { mode, projectId, stageId } = data;
     let lastPersistedLen = 0;
 
-    const persistMarkdown = async (markdown: string): Promise<void> => {
+    const persistMarkdown = async (markdown: string, finalize: boolean): Promise<void> => {
       const cleaned = cleanDocumentContent(markdown);
       if (cleaned.trim().length < 48) return;
-      if (cleaned.length === lastPersistedLen) return;
+      if (cleaned.length === lastPersistedLen && !finalize) return;
       lastPersistedLen = cleaned.length;
-      await this.projects.update(projectId, {
-        mddContent: cleaned,
-        ...(stageId?.trim() ? { stageId: stageId.trim() } : {}),
+      await this.projects.persistMddFromBackgroundJob(projectId, markdown, {
+        stageId: stageId?.trim() || undefined,
+        finalize,
       });
-      onProgress({ phase: "persisted", mddLength: cleaned.length });
+      onProgress({ phase: finalize ? "persisted" : "draft", mddLength: cleaned.length });
     };
 
     type MddJobEvent = StreamMddManagerEvent | StreamProgressEvent;
@@ -1716,10 +1716,10 @@ export class AiAnalysisService {
         if (event.type === "progress") {
           onProgress({ agent: event.agent, message: event.message });
         } else if (event.type === "draft" && event.markdown?.trim()) {
-          await persistMarkdown(event.markdown);
+          await persistMarkdown(event.markdown, false);
           onProgress({ phase: "draft", mddLength: event.markdown.length });
         } else if (event.type === "interrupt") {
-          if (event.markdown?.trim()) await persistMarkdown(event.markdown);
+          if (event.markdown?.trim()) await persistMarkdown(event.markdown, false);
           return {
             ok: true,
             mode,
@@ -1736,7 +1736,7 @@ export class AiAnalysisService {
           };
         } else if (event.type === "done" && event.markdown) {
           finalMarkdown = event.markdown;
-          await persistMarkdown(event.markdown);
+          await persistMarkdown(event.markdown, true);
           if (projectId?.trim()) {
             this.estimationService.clearLiveDraft(projectId.trim(), stageId ?? undefined);
           }

@@ -26,6 +26,9 @@ export interface ProjectDeliverablesForTasks {
   apiContractsContent?: string | null;
   logicFlowsContent?: string | null;
   infraContent?: string | null;
+  architectureContent?: string | null;
+  uxUiGuideContent?: string | null;
+  uiScreensContent?: string | null;
 }
 
 export type TasksGenerateOptions = LegacyGenerateOptions & {
@@ -35,6 +38,9 @@ export type TasksGenerateOptions = LegacyGenerateOptions & {
   apiContractsContent?: string | null;
   logicFlowsContent?: string | null;
   infraContent?: string | null;
+  architectureContent?: string | null;
+  uxUiGuideContent?: string | null;
+  uiScreensContent?: string | null;
 };
 
 /**
@@ -53,6 +59,9 @@ export function mergeLegacyTasksGenerateOptions(
     apiContractsContent: project.apiContractsContent,
     logicFlowsContent: project.logicFlowsContent,
     infraContent: project.infraContent,
+    architectureContent: project.architectureContent,
+    uxUiGuideContent: project.uxUiGuideContent,
+    uiScreensContent: project.uiScreensContent,
   };
 }
 
