@@ -11,8 +11,17 @@ import {
   useRef,
   useState,
 } from "react";
-import { Download, Edit3, Eye, Loader2, RefreshCw } from "lucide-react";
-import type { BinaryFiles } from "@excalidraw/excalidraw/types";
+import {
+  Download,
+  Edit3,
+  Eye,
+  Loader2,
+  RefreshCw,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import type { BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { stripMermaidFenceWrappers } from "@theforge/shared-types/mermaid";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -23,6 +32,10 @@ import "@excalidraw/excalidraw/index.css";
 type ExcalidrawModule = typeof import("@excalidraw/excalidraw");
 type ExcalidrawComponent = ExcalidrawModule["Excalidraw"];
 type OrderedExcalidrawElement = ReturnType<ExcalidrawModule["convertToExcalidrawElements"]>[number];
+
+const ZOOM_MIN = 0.1;
+const ZOOM_MAX = 4;
+const ZOOM_STEP = 0.15;
 
 // Lazy-loaded Excalidraw (no SSR, ~45MB JS)
 const LazyExcalidraw = lazy<ExcalidrawComponent>(() =>
@@ -57,6 +70,10 @@ async function exportToPng(scene: ConvertedScene) {
   });
 }
 
+function clampZoom(value: number): number {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
+}
+
 type ExcalidrawDiagramBlockProps = {
   mermaidContent: string;
   diagramType: MermaidDiagramType;
@@ -86,6 +103,8 @@ export function ExcalidrawDiagramBlock({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [zoomPct, setZoomPct] = useState(100);
+  const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const cancelledRef = useRef(false);
   const onFallbackRef = useRef(onFallbackToSvg);
   onFallbackRef.current = onFallbackToSvg;
@@ -97,6 +116,7 @@ export function ExcalidrawDiagramBlock({
     setSceneRev((n) => n + 1);
     setLoading(false);
     setError(null);
+    setZoomPct(100);
   }, []);
 
   const failToSvg = useCallback((message?: string) => {
@@ -151,6 +171,35 @@ export function ExcalidrawDiagramBlock({
       cancelledRef.current = true;
     };
   }, [mermaidContent, rebuildKey, excalidrawSupported, applyScene, failToSvg]);
+
+  const handleApi = useCallback((api: ExcalidrawImperativeAPI) => {
+    apiRef.current = api;
+    const z = api.getAppState().zoom.value;
+    setZoomPct(Math.round(z * 100));
+  }, []);
+
+  const applyZoomFactor = useCallback((factor: number) => {
+    const api = apiRef.current;
+    if (!api) return;
+    const current = api.getAppState().zoom.value;
+    const next = clampZoom(current * factor);
+    api.updateScene({
+      appState: {
+        zoom: { value: next as typeof current },
+      },
+    });
+    setZoomPct(Math.round(next * 100));
+  }, []);
+
+  const fitToView = useCallback(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    api.scrollToContent(undefined, { fitToContent: true });
+    requestAnimationFrame(() => {
+      const z = api.getAppState().zoom.value;
+      setZoomPct(Math.round(z * 100));
+    });
+  }, []);
 
   // Manual rebuild
   const handleRebuild = useCallback(async () => {
@@ -210,43 +259,17 @@ export function ExcalidrawDiagramBlock({
         className,
       )}
     >
-      {/* Toolbar */}
-      <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)]/95 p-1 shadow-sm">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          disabled={loading}
-          onClick={() => void handleRebuild()}
-          title="Reconstruir desde Mermaid"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={() => setIsEditing((e) => !e)}
-          title={isEditing ? "Modo vista" : "Modo edición"}
-        >
-          {isEditing ? <Eye className="h-3.5 w-3.5" /> : <Edit3 className="h-3.5 w-3.5" />}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={() => void handleExport()}
-          title="Exportar PNG"
-        >
-          <Download className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-
-      {/* Excalidraw canvas — fill container */}
-      <div className="absolute inset-0 overflow-hidden rounded-md [&_.excalidraw]:h-full [&_.excalidraw]:w-full">
+      {/* Canvas — fill container; clip host UI, not our bottom controls */}
+      <div
+        className={cn(
+          "absolute inset-0 overflow-hidden rounded-md [&_.excalidraw]:h-full [&_.excalidraw]:w-full",
+          // Hide Excalidraw chrome that fights with Workshop toolbar / our zoom bar
+          "[&_.App-menu]:!hidden [&_.App-toolbar]:!hidden [&_.App-toolbar-container]:!hidden",
+          "[&_.layer-ui__wrapper__top-right]:!hidden [&_.layer-ui__wrapper__footer-left]:!hidden",
+          "[&_.layer-ui__wrapper__footer-center]:!hidden [&_.layer-ui__wrapper__footer-right]:!hidden",
+          "[&_.FixedSideContainer]:!hidden [&_.mobile-misc-tools-container]:!hidden",
+        )}
+      >
         <Suspense
           fallback={
             <div className="flex h-full min-h-[180px] items-center justify-center">
@@ -256,12 +279,14 @@ export function ExcalidrawDiagramBlock({
         >
           <LazyExcalidraw
             key={sceneRev}
+            excalidrawAPI={handleApi}
             initialData={{
               elements: scene.elements,
               files: scene.files ?? undefined,
               scrollToContent: true,
             }}
             theme="dark"
+            zenModeEnabled
             UIOptions={{
               canvasActions: {
                 changeViewBackgroundColor: false,
@@ -276,8 +301,93 @@ export function ExcalidrawDiagramBlock({
               },
             }}
             viewModeEnabled={!isEditing}
+            onScrollChange={(_x, _y, zoom) => {
+              setZoomPct(Math.round(zoom.value * 100));
+            }}
           />
         </Suspense>
+      </div>
+
+      {/* Bottom controls — never overlap MarkdownMermaid top toolbar */}
+      <div
+        className="pointer-events-auto absolute bottom-3 right-3 z-20 flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)]/95 p-1 shadow-sm"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => applyZoomFactor(1 / (1 + ZOOM_STEP))}
+          aria-label="Alejar"
+          title="Alejar"
+        >
+          <ZoomOut className="h-4 w-4" aria-hidden />
+        </Button>
+        <span className="min-w-[3rem] px-1 text-center text-xs tabular-nums text-[var(--muted-foreground)]">
+          {zoomPct}%
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => applyZoomFactor(1 + ZOOM_STEP)}
+          aria-label="Acercar"
+          title="Acercar"
+        >
+          <ZoomIn className="h-4 w-4" aria-hidden />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={fitToView}
+          aria-label="Ajustar al contenido"
+          title="Ajustar al contenido"
+        >
+          <RotateCcw className="h-4 w-4" aria-hidden />
+        </Button>
+        <span className="mx-0.5 h-5 w-px bg-[var(--border)]" aria-hidden />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          disabled={loading}
+          onClick={() => void handleRebuild()}
+          aria-label="Reconstruir desde Mermaid"
+          title="Reconstruir desde Mermaid"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} aria-hidden />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setIsEditing((e) => !e)}
+          aria-label={isEditing ? "Modo vista" : "Modo edición"}
+          title={isEditing ? "Modo vista" : "Modo edición"}
+        >
+          {isEditing ? (
+            <Eye className="h-3.5 w-3.5" aria-hidden />
+          ) : (
+            <Edit3 className="h-3.5 w-3.5" aria-hidden />
+          )}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => void handleExport()}
+          aria-label="Exportar PNG"
+          title="Exportar PNG"
+        >
+          <Download className="h-3.5 w-3.5" aria-hidden />
+        </Button>
       </div>
     </div>
   );

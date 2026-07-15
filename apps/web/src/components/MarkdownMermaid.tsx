@@ -643,12 +643,8 @@ export function MermaidDiagramBlock({
     setViewMode("svg");
   }, []);
 
-  const toolbarVisibility =
-    inlineFailed
-      ? "opacity-100"
-      : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100";
-
   const showToolbar = inlineReady || inlineFailed || excalidrawSupported;
+  const isExcalidrawView = viewMode === "excalidraw" && excalidrawSupported;
 
   return (
     <>
@@ -657,79 +653,81 @@ export function MermaidDiagramBlock({
         className="group relative my-6 block w-full min-w-0 [isolation:isolate] overflow-x-auto rounded-md border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_35%,var(--card))] p-3"
         aria-label="Diagrama Mermaid"
       >
-        {enableRepair && showToolbar ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={isFixing}
-            className={cn(
-              "absolute left-2 top-2 z-[1] h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm",
-              toolbarVisibility,
-            )}
-            onClick={() => void handleFix()}
-            aria-label={`${fixLabel} diagrama Mermaid`}
-            title={
-              fixAssessment.reasons.length
-                ? fixAssessment.reasons.slice(0, 3).join(" · ")
-                : undefined
-            }
-          >
-            {isFixing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <FixIcon className="h-3.5 w-3.5" aria-hidden />
-            )}
-            {isFixing ? "…" : fixLabel}
-          </Button>
+        {/* Single in-flow toolbar — never overlaps Excalidraw canvas chrome */}
+        {showToolbar ? (
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              {enableRepair ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isFixing}
+                  className="h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm"
+                  onClick={() => void handleFix()}
+                  aria-label={`${fixLabel} diagrama Mermaid`}
+                  title={
+                    fixAssessment.reasons.length
+                      ? fixAssessment.reasons.slice(0, 3).join(" · ")
+                      : undefined
+                  }
+                >
+                  {isFixing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <FixIcon className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                  {isFixing ? "…" : fixLabel}
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {excalidrawSupported ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm"
+                  onClick={() => setViewMode((v) => (v === "svg" ? "excalidraw" : "svg"))}
+                  aria-label={
+                    viewMode === "svg" ? "Cambiar a vista Excalidraw" : "Cambiar a vista SVG"
+                  }
+                >
+                  {viewMode === "svg" ? (
+                    <>
+                      <PenLine className="h-3.5 w-3.5" aria-hidden />
+                      Excalidraw
+                    </>
+                  ) : (
+                    <>
+                      <Code className="h-3.5 w-3.5" aria-hidden />
+                      SVG
+                    </>
+                  )}
+                </Button>
+              ) : null}
+              {enableFullscreen ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm"
+                  onClick={handleOpenFullscreen}
+                  aria-label="Ver diagrama a pantalla completa"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+                  Pantalla completa
+                </Button>
+              ) : null}
+            </div>
+          </div>
         ) : null}
         {fixError ? (
-          <p className="mb-2 pr-28 text-xs text-[var(--destructive)]" role="alert">
+          <p className="mb-2 text-xs text-[var(--destructive)]" role="alert">
             {fixError}
           </p>
         ) : null}
-        {excalidrawSupported ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className={cn(
-              "absolute right-28 top-2 z-[1] h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm",
-              toolbarVisibility,
-            )}
-            onClick={() => setViewMode((v) => (v === "svg" ? "excalidraw" : "svg"))}
-            aria-label={viewMode === "svg" ? "Cambiar a vista Excalidraw" : "Cambiar a vista SVG"}
-          >
-            {viewMode === "svg" ? (
-              <>
-                <PenLine className="h-3.5 w-3.5" aria-hidden />
-                Excalidraw
-              </>
-            ) : (
-              <>
-                <Code className="h-3.5 w-3.5" aria-hidden />
-                SVG
-              </>
-            )}
-          </Button>
-        ) : null}
-        {enableFullscreen && showToolbar ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className={cn(
-              "absolute right-2 top-2 z-[1] h-8 gap-1.5 bg-[var(--card)]/95 px-2.5 text-xs shadow-sm",
-              toolbarVisibility,
-            )}
-            onClick={handleOpenFullscreen}
-            aria-label="Ver diagrama a pantalla completa"
-          >
-            <Maximize2 className="h-3.5 w-3.5" aria-hidden />
-            Pantalla completa
-          </Button>
-        ) : null}
-        {viewMode === "excalidraw" && excalidrawSupported ? (
+        {isExcalidrawView ? (
           <ExcalidrawDiagramBlock
             mermaidContent={preparedExcalidrawContent}
             diagramType={diagramType}
@@ -756,8 +754,8 @@ export function MermaidDiagramBlock({
         >
           <DialogTitle className="sr-only">Diagrama Mermaid — pantalla completa</DialogTitle>
           <DialogDescription id="mermaid-fullscreen-desc" className="sr-only">
-            Vista ampliada del diagrama con zoom y desplazamiento. Arrastra para mover, usa la rueda
-            del ratón para zoom, o Esc para cerrar.
+            Vista ampliada del diagrama con zoom y desplazamiento. Usa los controles − / + o Esc
+            para cerrar.
           </DialogDescription>
           <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_22%,var(--card))] px-4 py-3">
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -779,10 +777,36 @@ export function MermaidDiagramBlock({
                   {isFixing ? "…" : fixLabel}
                 </Button>
               ) : null}
+              {excalidrawSupported ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 gap-1.5 text-xs"
+                  onClick={() => setViewMode((v) => (v === "svg" ? "excalidraw" : "svg"))}
+                  aria-label={
+                    viewMode === "svg" ? "Cambiar a vista Excalidraw" : "Cambiar a vista SVG"
+                  }
+                >
+                  {viewMode === "svg" ? (
+                    <>
+                      <PenLine className="h-3.5 w-3.5" aria-hidden />
+                      Excalidraw
+                    </>
+                  ) : (
+                    <>
+                      <Code className="h-3.5 w-3.5" aria-hidden />
+                      SVG
+                    </>
+                  )}
+                </Button>
+              ) : null}
               <div className="min-w-0">
                 <p className="text-sm font-medium text-[var(--foreground)]">Diagrama Mermaid</p>
                 <p className="text-xs text-[var(--muted-foreground)]">
-                  Arrastrar para desplazar · Rueda para zoom · Doble clic restablece
+                  {isExcalidrawView
+                    ? "Zoom − / + abajo a la derecha · Ajustar restablece · Esc cierra"
+                    : "Arrastrar para desplazar · Rueda para zoom · Doble clic restablece"}
                 </p>
               </div>
             </div>
@@ -790,7 +814,7 @@ export function MermaidDiagramBlock({
           </div>
           <div className="relative min-h-0 flex-1 overflow-hidden">
             {fullscreenOpen ? (
-              viewMode === "excalidraw" && excalidrawSupported ? (
+              isExcalidrawView ? (
                 <ExcalidrawDiagramBlock
                   mermaidContent={preparedExcalidrawContent}
                   diagramType={diagramType}
