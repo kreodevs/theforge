@@ -75,7 +75,7 @@ Reglas de sintaxis (obligatorias para que renderice):
 - **Todas las aristas, relaciones y bloques de entidad van DENTRO del fence**, como líneas Mermaid planas. **Prohibido** listas markdown (`-`, `*`, `•`, numeradas) para conexiones; **prohibido** dejar `A --> B` o `ENTIDAD }o--o{ OTRA` fuera del bloque.
 - En **`erDiagram`**: **una entidad por bloque** (`ENTIDAD {` … `}` en líneas separadas) y **una relación por línea** (`A ||--|| B : "label"`). No concatenes varias entidades ni relaciones en una sola línea. **Prohibido** usar viñetas markdown (`- string campo`) o encabezados (`### ENTIDAD {`) dentro del fence — los atributos van como líneas planas `tipo nombre` (ej. `string nombre_completo`), sin `-` ni `###`.
 - **Sin líneas en blanco dentro del diagrama** y **sin `\n` literal** en etiquetas; multilínea con `<br/>`.
-- **Etiquetas con `/`, `{`, `}`, `:`, `()` entre comillas dobles** en nodos y aristas. En `subgraph` usa `subgraph ID["Título"]` (palabra clave + espacio + ID, no `subgraph_ID`).
+- **Etiquetas con `/`, `{`, `}`, `:`, `?`, `<br/>`, `()` entre comillas dobles** en nodos, diamantes y aristas (`A["…"]`, `E{"…"}`). **Cierra** todos los brackets; no cortes a media etiqueta. En `subgraph` usa `subgraph ID["Título"]` (palabra clave + espacio + ID, no `subgraph_ID`).
 - **Declara cada nodo/estado/participante UNA sola vez**; no dupliques entidades bajo distintos IDs.
 - **Define todas las transiciones/aristas**; no dejes nodos sueltos.
 - Mantén cada diagrama **legible** (preferible 2 diagramas pequeños a uno ilegible).
