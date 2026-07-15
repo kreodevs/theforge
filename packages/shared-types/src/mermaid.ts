@@ -770,7 +770,7 @@ export function normalizeErDiagramPgTypes(content: string): string {
     .replace(/\bnumeric(?:\s*\([^)]*\))?\b/gi, "int")
     .replace(/\bcharacter\s+varying(?:\s*\([^)]*\))?\b/gi, "string")
     .replace(/\bcharacter(?:\s*\([^)]*\))?\b/gi, "string")
-    .replace(/\buuid\b/gi, "string")
+    // uuid is valid Mermaid and semantically meaningful — preserve it
     .replace(/\btext\b/gi, "string")
     .replace(/\barray\b/gi, "string")
     .replace(/\bsmallint\b/gi, "int")
@@ -1851,8 +1851,333 @@ function normalizeGraphKeywordToFlowchart(content: string): string {
     .replace(/^(\s*)graph(\s*)$/im, "$1flowchart TD");
 }
 
+// ─── Comment stripping (sopaco/mermaid-fixer concept) ────────────────────
+/** Strip `%%` comment lines — they confuse the Mermaid parser when LLMs embed explanations. */
+export function stripMermaidComments(body: string): string {
+  if (!body?.trim()) return body ?? "";
+  return body
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim();
+      // Preserve empty lines for diagram spacing; strip only actual %% comment lines
+      return !t.startsWith("%%");
+    })
+    .join("\n");
+}
+
+// ─── Node ID sanitization (sopaco/mermaid-fixer concept) ─────────────────
+/**
+ * Sanitize flowchart node IDs to only contain `[a-zA-Z0-9_]` (must not start with digit).
+ * Strips `()[]{}`, `:`, `,`, `+`, `=` from node IDs.
+ * Example: `A[Text(id)]` → `A[Text_id]` (the paren in ID is wrong; `id` was meant as label).
+ */
+export function sanitizeFlowchartNodeIds(content: string): string {
+  if (!/^(flowchart|graph)\s/im.test((content ?? "").trim())) return content ?? "";
+  const FLOWCHART_KEYWORDS = new Set([
+    "flowchart", "graph", "subgraph", "end", "linkStyle", "click",
+    "style", "classDef", "class", "callback", "icon", "deploy",
+    "TD", "TB", "LR", "RL", "BT", "direction",
+  ]);
+  return content.replace(
+    /(?:^\s*|-->\s*|,\s*)([A-Za-z0-9_][\w-]*)(?=[\s\[{(])/gm,
+    (_match: string, rawId: string) => {
+      if (FLOWCHART_KEYWORDS.has(rawId)) return _match;
+      let sanitized = rawId
+        .replace(/[^A-Za-z0-9_]/g, "_")    // strip invalid chars
+        .replace(/_{2,}/g, "_")              // collapse underscores
+        .replace(/^_+|_+$/g, "");            // trim leading/trailing underscores
+      // Prefix with _ if starts with digit (must happen AFTER trimming)
+      if (/^\d/.test(sanitized)) sanitized = `_${sanitized}`;
+      if (!sanitized || sanitized === rawId) return _match;
+      return _match.replace(rawId, sanitized);
+    },
+  );
+}
+
+// ─── Chinese/Unicode label quoting (sopaco/mermaid-fixer concept) ─────────
+/**
+ * Quote flowchart labels containing non-ASCII characters (Chinese, Japanese, etc.).
+ * Mermaid strict mode requires double-quoted labels for Unicode text.
+ * `A -- 是 --> B` → `A -- "是" --> B`
+ * `A[用户管理]` → `A["用户管理"]`
+ */
+export function quoteFlowchartChineseLabels(content: string): string {
+  if (!/^(flowchart|graph)\s/im.test((content ?? "").trim())) return content ?? "";
+  // Quote node labels containing non-ASCII that aren't already quoted
+  let result = content.replace(
+    /(\[(?!\")([^"\]]*[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af][^\]]*)\])/g,
+    (_m: string, full: string, inner: string) => `["${inner.trim()}"]`,
+  );
+  // Quote edge labels containing non-ASCII that aren't already quoted
+  result = result.replace(
+    /\|(?!")([^"|]*[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af][^"|]*)\|/g,
+    (_m: string, inner: string) => `|"${inner.trim()}"|`,
+  );
+  return result;
+}
+
+// ─── Sequence activate/deactivate pairing ────────────────────────────────
+/**
+ * Pair orphaned `activate`/`deactivate` statements.
+ * LLMs often emit `activate B` without matching `deactivate B`.
+ * Strategy: pair sequential activate→deactivate for same actor, close unclosed blocks.
+ */
+export function normalizeSequenceActivation(body: string): string {
+  if (!/^sequenceDiagram\b/im.test(body.trim())) return body;
+  const lines = body.split("\n");
+  const out: string[] = [];
+  const stack: string[] = []; // track which actors are currently activated
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const activateMatch = trimmed.match(/^activate\s+(\S+)/i);
+    const deactivateMatch = trimmed.match(/^deactivate\s+(\S+)/i);
+
+    if (activateMatch) {
+      const actor = activateMatch[1]!;
+      // Avoid double-activate: skip if already activated
+      if (stack.includes(actor)) continue;
+      stack.push(actor);
+      out.push(line);
+    } else if (deactivateMatch) {
+      const actor = deactivateMatch[1]!;
+      // If not in stack, skip (orphan deactivate)
+      const idx = stack.indexOf(actor);
+      if (idx === -1) continue;
+      stack.splice(idx, 1);
+      out.push(line);
+    } else {
+      out.push(line);
+    }
+  }
+
+  // Close any remaining activations (reverse order)
+  for (let i = stack.length - 1; i >= 0; i--) {
+    // Find the last line before the end of the diagram to insert deactivate
+    const lastContentIdx = out.length - 1;
+    out.splice(lastContentIdx, 0, `deactivate ${stack[i]}`);
+  }
+
+  return out.join("\n");
+}
+
+// ─── ER cardinality normalization ────────────────────────────────────────
+/**
+ * Normalize ER diagram cardinality notation.
+ * Common LLM mistakes: `|o--|` (should be `}|--o{`), missing braces, inverted pipes.
+ * Standard patterns: `||--o{`, `}o--||`, `||--||`, `}o--o{`.
+ *
+ * IMPORTANT: This function only matches RELATIONSHIP lines (entity1 -- entity2),
+ * NOT entity definition lines (which contain `{` or `}` braces for attributes).
+ */
+export function normalizeErCardinalityNotation(body: string): string {
+  if (!/^erDiagram\b/im.test(body.trim())) return body;
+  return body.replace(
+    /^(\s*\w+\s+)([\|\}][\|\}o*]\s*--\s*[\|\}o*][\|\{o*])(\s+\w+)/gm,
+    (_match: string, prefix: string, rel: string, suffix: string) => {
+      // Skip lines that are entity definitions (contain { or } braces for attributes)
+      if (/[{}]/.test(prefix) || /[{}]/.test(suffix)) return _match;
+      // Normalize the relationship notation
+      let norm = rel
+        .replace(/\s+/g, "")  // strip spaces inside notation
+        .replace(/\|\|/g, "||")
+        .replace(/\}\}/g, "}}")
+        .replace(/\{/g, "{")
+        .replace(/\}/g, "}");
+      // Validate pattern: (}{|)*--(}{|)* — must be one of the valid combos
+      const validPatterns = new Set([
+        "||--||", "||--|{", "||--o{", "||--}o", "||--}}",
+        "|{--||", "|{--|{", "|{--o{", "|{--}o", "|{--}}",
+        "o{--||", "o{--|{", "o{--o{", "o{--}o", "o{--}}",
+        "}o--||", "}o--|{", "}o--o{", "}o--}o", "}o--}}",
+        "}}--||", "}}--|{", "}}--o{", "}}--}o", "}}--}}",
+        "}|--||", "}|--|{", "}|--o{", "}|--}o", "}|--}}",
+      ]);
+      // Check if normalized form is valid; if not, fall back to ||--o{ (most common)
+      if (!validPatterns.has(norm)) norm = "||--o{";
+      return `${prefix}${norm}${suffix}`;
+    },
+  );
+}
+
+// ─── Class diagram visibility normalization ──────────────────────────────
+/**
+ * Normalize class diagram member visibility: add `+` prefix to members/methods
+ * that don't have explicit visibility (`+`, `-`, `#`, `~`).
+ * LLMs often emit `getAge()` instead of `+getAge()`.
+ */
+export function normalizeClassDiagramVisibility(body: string): string {
+  if (!/^classDiagram\b/im.test(body.trim())) return body;
+  return body.replace(
+    /^(\s+)([a-zA-Z_]\w*(?:\s+\w+)?(?:\([^)]*\))?)\s*$/gm,
+    (_match: string, indent: string, member: string) => {
+      // Skip lines that already have visibility prefix
+      if (/^\s*[+#\-~]/.test(member)) return _match;
+      // Skip lines that are class/namespace/relationship/annotation declarations
+      if (/^\s*(class|namespace|relationship|annotation|<<|linkStyle|click|style|classDef)\b/i.test(member)) return _match;
+      // Skip lines with arrows (relationships)
+      if (/-->|-->|<\|--|\*--|o--/.test(member)) return _match;
+      // Skip block openers/closers
+      if (/\{\s*$/.test(_match) || /^\s*\}\s*$/.test(_match)) return _match;
+      // Add `+` (public) visibility prefix
+      return `${indent}+${member}`;
+    },
+  );
+}
+
+// ─── Self-edge detection and guard ───────────────────────────────────────
+/**
+ * Detect and remove self-referencing edges (`A --> A`) which can cause infinite loops
+ * in Mermaid rendering. Returns the line with self-edges commented out.
+ */
+export function guardFlowchartSelfEdges(content: string): string {
+  if (!/^(flowchart|graph)\s/im.test((content ?? "").trim())) return content ?? "";
+  return content.replace(
+    /^(\s*)(\w[\w]*)\s*(--+(?:>|x|o)|==+>|-\.-+>|-{3,})\s*\2\s*$/gm,
+    (_match: string, indent: string, id: string) => `${indent}%% self-edge removed: ${id} --> ${id}`,
+  );
+}
+
+// ─── Structured error classification (sopaco/mermaid-fixer concept) ──────
+export type MermaidErrorCategory =
+  | "syntax"      // General syntax errors (unclosed blocks, bad arrows)
+  | "node"        // Node definition errors (bad IDs, invalid shapes)
+  | "edge"        // Edge/arrow errors (invalid connectors, missing targets)
+  | "structure"   // Structural errors (unclosed subgraphs/blocks, orphan end)
+  | "style"       // Style/classDef errors
+  | "content"     // Content errors (prose leaking, markdown artifacts)
+  | "empty"       // Empty diagram
+  | "unknown";    // Unclassified
+
+export interface MermaidClassifiedError {
+  category: MermaidErrorCategory;
+  message: string;
+  line?: number;
+}
+
+/**
+ * Classify Mermaid validation errors into structured categories.
+ * Based on sopaco/mermaid-fixer's `MermaidErrorType` classification.
+ */
+export function classifyMermaidErrors(raw: string): MermaidClassifiedError[] {
+  const source = stripMermaidFenceWrappers((raw ?? "").trim());
+  if (!source.trim()) return [{ category: "empty", message: "Empty diagram body" }];
+
+  const errors: MermaidClassifiedError[] = [];
+  const lines = source.split("\n");
+  const header = lines[0]?.trim() ?? "";
+
+  // Detect diagram type
+  const isFlowchart = /^(flowchart|graph)\s/i.test(header);
+  const isSequence = /^sequenceDiagram\b/i.test(header);
+  const isEr = /^erDiagram\b/i.test(header);
+  const isClass = /^classDiagram\b/i.test(header);
+  const isState = /^stateDiagram/i.test(header);
+
+  // Empty check
+  if (lines.filter((l) => l.trim()).length < 2) {
+    errors.push({ category: "empty", message: "Diagram has fewer than 2 non-empty lines" });
+    return errors;
+  }
+
+  // ── Structure errors (unclosed blocks) ──────────────────────────────
+  if (isFlowchart || isSequence) {
+    let subgraphDepth = 0;
+    let blockDepth = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i]!.trim();
+      if (isFlowchart && /^\s*subgraph\b/.test(t)) subgraphDepth++;
+      if (isSequence && isSequenceCompositeBlockOpenLine(t)) blockDepth++;
+      if (/^\s*end\s*$/.test(t)) {
+        if (subgraphDepth > 0) subgraphDepth--;
+        else if (blockDepth > 0) blockDepth--;
+        else errors.push({ category: "structure", message: "Orphan `end` without matching block", line: i + 1 });
+      }
+    }
+    if (subgraphDepth > 0) errors.push({ category: "structure", message: `Unclosed subgraph: ${subgraphDepth} openers without matching end` });
+    if (blockDepth > 0) errors.push({ category: "structure", message: `Unclosed sequence block: ${blockDepth} openers without matching end` });
+  }
+
+  if (isClass) {
+    let classDepth = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i]!.trim();
+      if (/\b(class|annotation)\s+\w+\s*\{/.test(t)) classDepth++;
+      if (/^\s*\}\s*$/.test(t)) classDepth = Math.max(0, classDepth - 1);
+    }
+    if (classDepth > 0) errors.push({ category: "structure", message: `Unclosed class/annotation block: ${classDepth} openers without "}"` });
+  }
+
+  // ── Node errors ─────────────────────────────────────────────────────
+  if (isFlowchart) {
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i]!.trim();
+      // Node IDs with invalid characters
+      const idMatch = t.match(/^\s*([A-Za-z0-9_][\w]*\s+\w+)\[/);
+      if (idMatch && /\s/.test(idMatch[1]!.split(/\s+/)[0]!)) {
+        errors.push({ category: "node", message: `Node ID with spaces: "${idMatch[1]}"`, line: i + 1 });
+      }
+      // Node shapes with unquoted labels containing special chars
+      if (/\[[^\"]*[{}()|][^\"]*\]/.test(t) && !/\[\"[^\"]*\"\]/.test(t)) {
+        errors.push({ category: "node", message: `Unquoted label with special chars`, line: i + 1 });
+      }
+    }
+  }
+
+  // ── Edge errors ─────────────────────────────────────────────────────
+  if (isFlowchart) {
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i]!.trim();
+      // Multiple edges on one line
+      const arrows = t.match(/(--+(?:>|x|o)|==+>|-{3,})/g) ?? [];
+      if (arrows.length > 1) {
+        errors.push({ category: "edge", message: `Multiple arrows on one line (${arrows.length})`, line: i + 1 });
+      }
+    }
+  }
+
+  if (isSequence) {
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i]!.trim();
+      // Invalid arrow syntax
+      if (/^[\w-]+\s+[^(]+\s+[\w-]+\s*$/i.test(t) && !/^participant|^actor|^Note|^alt|^opt|^loop|^par|^critical|^break|^rect|^else|^end/i.test(t)) {
+        if (/->|-x|--x|-->>/.test(t)) {
+          errors.push({ category: "edge", message: `Possible invalid sequence arrow syntax`, line: i + 1 });
+        }
+      }
+    }
+  }
+
+  // ── Content errors (prose leaking) ──────────────────────────────────
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i]!.trim();
+    if (/^\*\*[A-Z]/.test(t) || /^El usuario|^Al cargar|^Tras retorno/i.test(t)) {
+      errors.push({ category: "content", message: `Prose leaking into diagram at line ${i + 1}`, line: i + 1 });
+    }
+  }
+
+  // ── Syntax errors (participant keyword split) ───────────────────────
+  if (isSequence && /\bpar\s+ticipant\b/i.test(source)) {
+    errors.push({ category: "syntax", message: "Split participant keyword (par ticipant)" });
+  }
+
+  // ── Style errors ────────────────────────────────────────────────────
+  if (isFlowchart) {
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i]!.trim();
+      if (/^classDef\b/.test(t) && !/^classDef\s+\w+\s+/.test(t)) {
+        errors.push({ category: "style", message: "Malformed classDef declaration", line: i + 1 });
+      }
+    }
+  }
+
+  return errors;
+}
+
 export function normalizeMermaidDiagramBody(raw: string): string {
   let stripped = stripMermaidFenceWrappers(raw);
+  // Strip %% comment lines early — they confuse downstream repairs
+  stripped = stripMermaidComments(stripped);
   stripped = stripped.replace(/\bpar\s+ticipant\b/gi, "participant");
   stripped = normalizeGraphKeywordToFlowchart(stripped);
   if (/^erDiagram\b/im.test(stripped.trim())) {
@@ -1871,9 +2196,11 @@ export function normalizeMermaidDiagramBody(raw: string): string {
   if (isErDiagram) {
     stripped = stripErDiagramSqlDefaultArtifacts(stripped);
     stripped = normalizeErDiagramPgTypes(stripped);
+    stripped = normalizeErCardinalityNotation(stripped);
   }
   if (isSequence) {
     stripped = normalizeSequenceDiagramSyntax(stripped);
+    stripped = normalizeSequenceActivation(stripped);
   }
 
   const lines = stripped.trim().split("\n");
@@ -2001,8 +2328,14 @@ export function normalizeMermaidDiagramBody(raw: string): string {
   if (isFlowchart) {
     result = splitFlowchartMultiEdgeLines(result);
     result = repairFlowchartMissingTargetNodeIds(result);
+    result = sanitizeFlowchartNodeIds(result);
     result = quoteFlowchartLabelsWithParens(result);
     result = quoteFlowchartEdgeLabels(result);
+    result = quoteFlowchartChineseLabels(result);
+    result = guardFlowchartSelfEdges(result);
+  }
+  if (isClassDiagram) {
+    result = normalizeClassDiagramVisibility(result);
   }
   return result;
 }
@@ -2095,17 +2428,21 @@ export function repairMermaidBlockBody(raw: string): string {
 /**
  * Decide si basta reparación local o hace falta regenerar con LLM.
  * Usado por el botón «Reparar» / «Regenerar» del visor.
+ *
+ * Enhanced with structured error classification (sopaco/mermaid-fixer concept).
+ * Errors are now categorized into: syntax, node, edge, structure, style, content, empty.
  */
 export function assessMermaidFixStrategy(raw: string): {
   strategy: MermaidFixStrategy;
   reasons: string[];
   repairedPreview: string;
+  classifiedErrors: MermaidClassifiedError[];
 } {
   const source = stripMermaidFenceWrappers((raw ?? "").trim());
   const reasons: string[] = [];
 
   if (!source) {
-    return { strategy: "regenerate", reasons: ["empty"], repairedPreview: "" };
+    return { strategy: "regenerate", reasons: ["empty"], repairedPreview: "", classifiedErrors: [{ category: "empty", message: "Empty diagram body" }] };
   }
 
   if (/\bpar\s+ticipant\b/i.test(source)) reasons.push("participant_keyword_split");
@@ -2128,17 +2465,24 @@ export function assessMermaidFixStrategy(raw: string): {
 
   const repairedPreview = repairMermaidBlockBody(source);
   const errors = validateMermaid(repairedPreview);
+  const classifiedErrors = classifyMermaidErrors(source);
 
   const forceRegenerate =
     reasons.includes("split_across_fences") ||
     reasons.includes("truncated_flow") ||
     (reasons.includes("orphan_end_lines") && reasons.includes("participant_keyword_split"));
 
+  // Structured classification boost: structure/syntax errors are harder to repair
+  const structureErrors = classifiedErrors.filter((e) => e.category === "structure").length;
+  const syntaxErrors = classifiedErrors.filter((e) => e.category === "syntax").length;
+  const contentErrors = classifiedErrors.filter((e) => e.category === "content").length;
+
   if (errors.length === 0 && !forceRegenerate) {
     return {
       strategy: "repair",
       reasons: reasons.length ? reasons : ["valid_after_repair"],
       repairedPreview,
+      classifiedErrors,
     };
   }
 
@@ -2146,11 +2490,264 @@ export function assessMermaidFixStrategy(raw: string): {
     forceRegenerate ||
     (reasons.includes("orphan_end_lines") && errors.length > 0) ||
     (reasons.includes("participant_keyword_split") && errors.length > 1) ||
-    errors.length > 3;
+    errors.length > 3 ||
+    structureErrors >= 2 ||  // Multiple structural issues → regenerate
+    (syntaxErrors >= 1 && structureErrors >= 1) ||  // Syntax + structure → regenerate
+    contentErrors >= 3;  // Heavy prose contamination → regenerate
 
   return {
     strategy: needsRegenerate ? "regenerate" : "repair",
     reasons: [...reasons, ...errors.slice(0, 3)],
     repairedPreview,
+    classifiedErrors,
   };
+}
+
+// ─── Markdown → Flowchart wrapping ──────────────────────────────────────
+/**
+ * Convert markdown section structure (headings, bullet lists) into a valid
+ * Mermaid flowchart. Headings become nodes, nesting creates edges.
+ * Useful when the orchestrator receives raw markdown and needs a diagram.
+ *
+ * @param body  Markdown text with `#`/`##` headings and optional `- ` bullets.
+ * @param direction  Flowchart direction (default: `TD`).
+ * @returns A complete `flowchart TD` block.
+ */
+export function wrapMarkdownWithFlowchart(
+  body: string,
+  direction: string = "TD",
+): string {
+  const lines = body.split("\n");
+  const nodes: Array<{ id: string; label: string; level: number }> = [];
+  const edges: Array<{ from: string; to: string; label?: string }> = [];
+  const validDir = /^(TD|TB|LR|RL|BT)$/i.test(direction)
+    ? direction.toUpperCase()
+    : "TD";
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
+    if (headingMatch) {
+      const level = headingMatch[1]!.length;
+      const label = headingMatch[2]!.trim();
+      const id = `N${nodes.length + 1}`;
+      nodes.push({ id, label, level });
+      continue;
+    }
+    const bulletMatch = line.match(/^(\s*)[-*]\s+(.+)/);
+    if (bulletMatch) {
+      const label = bulletMatch[2]!.trim();
+      const id = `N${nodes.length + 1}`;
+      const parentLevel = bulletMatch[1]!.length >= 2 ? 2 : 1;
+      nodes.push({ id, label, level: parentLevel });
+    }
+  }
+
+  if (nodes.length === 0) return "flowchart TD\n  EmptyDoc[\"(empty document)\"]";
+
+  // Build edges: each node connects to its nearest preceding node of lower level
+  const stack: typeof nodes = [];
+  for (const node of nodes) {
+    while (stack.length > 0 && stack[stack.length - 1]!.level >= node.level) {
+      stack.pop();
+    }
+    if (stack.length > 0) {
+      edges.push({ from: stack[stack.length - 1]!.id, to: node.id });
+    }
+    stack.push(node);
+  }
+
+  const nodeDefs = nodes.map(
+    (n) => `  ${n.id}["${n.label.replace(/"/g, "'")}"]`,
+  );
+  const edgeDefs = edges.map(
+    (e) => `  ${e.from} --> ${e.to}`,
+  );
+
+  return `flowchart ${validDir}\n${[...nodeDefs, ...edgeDefs].join("\n")}`;
+}
+
+// ─── Sequence activation ordering ───────────────────────────────────────
+/**
+ * Enforce LIFO (last-in, first-out) ordering of activate/deactivate
+ * statements in a sequence diagram.  If activate B appears between
+ * activate A and deactivate A, the function reorders so that B is
+ * deactivated before A, which is the only valid nesting for Mermaid.
+ *
+ * This is a DIFFERENT concern from `normalizeSequenceActivation` (which
+ * pairs orphaned activate/deactivate).  This function keeps all existing
+ * statements but reorders them to satisfy LIFO nesting.
+ */
+export function normalizeSequenceActivationOrder(content: string): string {
+  if (!/^sequenceDiagram\b/im.test(content.trim())) return content;
+  const lines = content.split("\n");
+  const out: string[] = [];
+  // Each entry: { actor, activateLine, deactivateLine? }
+  const pending: Array<{ actor: string; activateLine: string; deactivateLine?: string }> = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const actMatch = trimmed.match(/^activate\s+(\S+)/i);
+    const deactMatch = trimmed.match(/^deactivate\s+(\S+)/i);
+
+    if (actMatch) {
+      const actor = actMatch[1]!;
+      // Check if this actor is already activated — skip duplicate
+      if (pending.some((p) => p.actor === actor)) continue;
+      pending.push({ actor, activateLine: line });
+    } else if (deactMatch) {
+      const actor = deactMatch[1]!;
+      const idx = pending.findIndex((p) => p.actor === actor);
+      if (idx === -1) continue; // orphan deactivate — drop
+      // For LIFO: the most recently activated should deactivate first.
+      // If actor is not last in pending, we still emit it (Mermaid handles nesting).
+      pending[idx]!.deactivateLine = line;
+    } else {
+      out.push(line);
+    }
+  }
+
+  // Emit activate/deactivate pairs in LIFO order (reverse of pending)
+  // First emit activations in order, then deactivate in reverse
+  for (const p of pending) {
+    out.push(p.activateLine);
+  }
+  for (let i = pending.length - 1; i >= 0; i--) {
+    const p = pending[i]!;
+    if (p.deactivateLine) {
+      out.push(p.deactivateLine);
+    } else {
+      out.push(`deactivate ${p.actor}`);
+    }
+  }
+
+  return out.join("\n");
+}
+
+// ─── Sequence arrow repair ──────────────────────────────────────────────
+/**
+ * Fix malformed arrow syntax in sequence diagrams.
+ * Common LLM errors:
+ *   - Wrong arrow type: `A --> B`  → `A->>B` (solid, open-arrow is default)
+ *   - Spaces inside arrow: `A ->> B` → `A->>B`
+ *   - Arrow to undeclared participant: silently dropped or participant auto-added
+ *
+ * Normalises arrow spacing (no spaces around arrow token) and maps
+ * legacy `-->` (dashed) to the correct `->>` (solid) for non-response arrows.
+ */
+export function repairSequenceArrowParties(content: string): string {
+  if (!/^sequenceDiagram\b/im.test(content.trim())) return content;
+
+  // Collect declared participants
+  const participants = new Set<string>();
+  for (const m of content.matchAll(/^\s*participant\s+(\S+)/im)) {
+    participants.add(m[1]!);
+  }
+
+  // Normalise arrow spacing: `A  ->>  B` → `A->>B`
+  let result = content.replace(
+    /^(\s*\S+)\s+(-{1,2}[>xX]{0,2})\s+(\S+)/gm,
+    (_m: string, from: string, arrow: string, to: string) => {
+      // Map legacy dashed arrow to solid for request lines
+      const normArrow = arrow === "-->" ? "->>" : arrow;
+      return `${from}${normArrow}${to}`;
+    },
+  );
+
+  // Auto-declare participants referenced in arrows but not declared
+  const usedParticipants = new Set<string>();
+  for (const m of result.matchAll(/^\s*(\S+?)(-{1,2}[>xX]{0,2})(\S+)/gm)) {
+    usedParticipants.add(m[1]!);
+    usedParticipants.add(m[3]!);
+  }
+  const missing = [...usedParticipants].filter(
+    (p) => !participants.has(p) && !/^(Note|participant|activate|deactivate|alt|else|end|opt|loop|break|par|rect|critical)/i.test(p),
+  );
+  if (missing.length > 0) {
+    // Insert participant declarations after the sequenceDiagram line
+    const lines = result.split("\n");
+    const insertIdx = lines.findIndex((l) => /^\s*sequenceDiagram\b/i.test(l.trim()));
+    const decls = missing.map((p) => `    participant ${p}`);
+    lines.splice(insertIdx + 1, 0, ...decls);
+    result = lines.join("\n");
+  }
+
+  return result;
+}
+
+// ─── Quick renderability check ──────────────────────────────────────────
+/**
+ * Lightweight structural validation that checks whether a Mermaid diagram
+ * body is likely to render without crashing the Mermaid parser.
+ *
+ * Does NOT check every Mermaid syntax rule — just the top render-breaking
+ * issues.  For deeper analysis, use `assessMermaidFixStrategy`.
+ *
+ * @returns `{ valid: true }` or `{ valid: false, errors: [...] }`.
+ */
+export function validateMermaidRenderable(body: string): {
+  valid: boolean;
+  errors: string[];
+} {
+  const errors: string[] = [];
+  const trimmed = (body ?? "").trim();
+
+  if (!trimmed) {
+    return { valid: false, errors: ["empty_body"] };
+  }
+
+  // Check for diagram type header
+  const hasHeader = /^(flowchart|graph|sequenceDiagram|classDiagram|erDiagram|stateDiagram|stateDiagram-v2|gantt|pie|gitGraph)\b/i.test(trimmed);
+  if (!hasHeader) {
+    errors.push("missing_diagram_header");
+  }
+
+  // Count opening/closing fences inside body (should be 0 if raw body)
+  const fences = (trimmed.match(/```/g) ?? []).length;
+  if (fences > 0) {
+    errors.push("contains_fences_strip_first");
+  }
+
+  // Sequence: check alt/opt/loop blocks are closed
+  const seqKeywords = trimmed.match(
+    /^\s*(alt|opt|loop|break|par|rect|critical)\b/gim,
+  );
+  const seqEnds = trimmed.match(/^\s*end\b/gim);
+  if (seqKeywords && seqKeywords.length > (seqEnds?.length ?? 0)) {
+    errors.push(`unclosed_sequence_block_open=${seqKeywords.length}_close=${seqEnds?.length ?? 0}`);
+  }
+
+  // Flowchart: check subgraph/end balance
+  const subgraphs = trimmed.match(/^\s*subgraph\b/gim);
+  const flowEnds = trimmed.match(/^\s*end\b/gim);
+  if (subgraphs && subgraphs.length > (flowEnds?.length ?? 0)) {
+    errors.push(`unclosed_subgraph_open=${subgraphs.length}_close=${flowEnds?.length ?? 0}`);
+  }
+
+  // ER: check braces balance in entity definitions
+  const erEntities = trimmed.match(/^\s*\w+\s*\{/gim);
+  if (erEntities) {
+    const openBraces = (trimmed.match(/\{/g) ?? []).length;
+    const closeBraces = (trimmed.match(/\}/g) ?? []).length;
+    if (openBraces !== closeBraces) {
+      errors.push(`unbalanced_braces_open=${openBraces}_close=${closeBraces}`);
+    }
+  }
+
+  // Node ID with space before `[` (Mermaid parser crash)
+  if (/^[A-Za-z0-9_]+\s+\[/m.test(trimmed)) {
+    errors.push("node_id_space_before_bracket");
+  }
+
+  // Check for completely empty diagram body (only header, no content)
+  if (hasHeader) {
+    const afterHeader = trimmed.replace(
+      /^(flowchart|graph|sequenceDiagram|classDiagram|erDiagram|stateDiagram|stateDiagram-v2|gantt|pie|gitGraph)\b[^\n]*\n?/i,
+      "",
+    ).trim();
+    if (!afterHeader) {
+      errors.push("empty_diagram_body");
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
 }

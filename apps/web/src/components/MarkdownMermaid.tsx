@@ -783,15 +783,25 @@ export function MermaidDiagramBlock({
           </div>
           <div className="relative min-h-0 flex-1 overflow-hidden">
             {fullscreenOpen ? (
-              <MermaidPanZoomViewport resetKey={`${blockKey}-${repairGeneration}`} contentReady={fullscreenReady}>
-                <MermaidSvgCanvas
-                  content={displayContent}
-                  renderId={fullscreenRenderId}
-                  prepareContent={prepareContent}
-                  className="block [&_svg]:block [&_svg]:h-auto [&_svg]:max-w-none [&_svg]:w-auto"
-                  onReadyChange={handleFullscreenReady}
+              viewMode === "excalidraw" && excalidrawSupported ? (
+                <ExcalidrawDiagramBlock
+                  mermaidContent={displayContent}
+                  diagramType={diagramType}
+                  rebuildKey={rebuildKey}
+                  onFallbackToSvg={() => setViewMode("svg")}
+                  className="h-full"
                 />
-              </MermaidPanZoomViewport>
+              ) : (
+                <MermaidPanZoomViewport resetKey={`${blockKey}-${repairGeneration}`} contentReady={fullscreenReady}>
+                  <MermaidSvgCanvas
+                    content={displayContent}
+                    renderId={fullscreenRenderId}
+                    prepareContent={prepareContent}
+                    className="block [&_svg]:block [&_svg]:h-auto [&_svg]:max-w-none [&_svg]:w-auto"
+                    onReadyChange={handleFullscreenReady}
+                  />
+                </MermaidPanZoomViewport>
+              )
             ) : null}
           </div>
         </DialogContent>

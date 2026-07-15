@@ -775,7 +775,7 @@ describe("splitFlowchartMultiEdgeLines + repairFlowchartMissingTargetNodeIds", (
   G3 --> H3    G4 -->[(PostgreSQL 16)]`;
     const out = normalizeMermaidDiagramBody(raw);
     assert.match(out, /G3 --> H3\n\s*G4 --> PostgreSQL_16\[\(PostgreSQL 16\)\]/);
-    assert.doesNotMatch(out, /G3 --> H3\s+G4/);
+    assert.doesNotMatch(out, /G3 --> H3[^\S\n]+G4/);
   });
 
   it("prepareMermaidDiagramForRender aplica split y repair en bloque fenced", () => {
@@ -785,7 +785,7 @@ flowchart TD
 \`\`\``;
     const out = prepareMermaidDiagramForRender(fenced);
     assert.match(out, /G4 --> PostgreSQL_16\[\(PostgreSQL 16\)\]/);
-    assert.doesNotMatch(out, /G3 --> H3\s+G4/);
+    assert.doesNotMatch(out, /G3 --> H3[^\S\n]+G4/);
   });
 
   it("splitFlowchartMultiEdgeLines conserva una sola arista intacta", () => {

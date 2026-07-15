@@ -50,6 +50,8 @@ type ExcalidrawDiagramBlockProps = {
   rebuildKey?: string;
   /** Called when conversion fails; consumer should fall back to SVG. */
   onFallbackToSvg?: () => void;
+  /** Additional CSS classes for the outer container (e.g. h-full for fullscreen). */
+  className?: string;
 };
 
 type ConversionResult =
@@ -62,6 +64,7 @@ export function ExcalidrawDiagramBlock({
   diagramType,
   rebuildKey,
   onFallbackToSvg,
+  className,
 }: ExcalidrawDiagramBlockProps) {
   const [elements, setElements] = useState<OrderedExcalidrawElement[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -168,7 +171,7 @@ export function ExcalidrawDiagramBlock({
   const bg = isEditing ? "bg-[var(--background)]" : "bg-transparent";
 
   return (
-    <div className={cn("relative min-h-[180px]", bg)}>
+    <div className={cn("relative min-h-[180px]", bg, className)}>
       {/* Toolbar */}
       <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)]/95 p-1 shadow-sm">
         <Button
@@ -213,7 +216,7 @@ export function ExcalidrawDiagramBlock({
         }
       >
         <LazyExcalidraw
-          initialData={{ elements }}
+          initialData={{ elements, scrollToContent: true }}
           UIOptions={{
             canvasActions: {
               changeViewBackgroundColor: false,
