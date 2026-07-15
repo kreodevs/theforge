@@ -548,10 +548,16 @@ export function MermaidDiagramBlock({
   const diagramType = useMemo(() => detectMermaidDiagramType(displayContent), [displayContent]);
   const excalidrawSupported = isExcalidrawSupported(diagramType);
 
-  // Generate rebuild key that changes when displayContent changes (manual edits)
+  /** Same prep as SVG render — Excalidraw conversion must see repaired body, not fences. */
+  const preparedExcalidrawContent = useMemo(
+    () => stripMermaidFenceWrappers(prepareContent(displayContent)).trim(),
+    [displayContent, prepareContent],
+  );
+
+  // Rebuild when source edits / repairs change conversion input
   const rebuildKey = useMemo(
-    () => `${blockKey}-r${repairGeneration}`,
-    [blockKey, repairGeneration],
+    () => `${blockKey}-r${repairGeneration}-${mermaidKey(preparedExcalidrawContent)}`,
+    [blockKey, repairGeneration, preparedExcalidrawContent],
   );
 
   const fixAssessment = assessMermaidFixStrategy(displayContent);
@@ -631,6 +637,10 @@ export function MermaidDiagramBlock({
 
   const handleFullscreenReady = useCallback((ready: boolean) => {
     setFullscreenReady(ready);
+  }, []);
+
+  const handleFallbackToSvg = useCallback(() => {
+    setViewMode("svg");
   }, []);
 
   const toolbarVisibility =
@@ -721,10 +731,10 @@ export function MermaidDiagramBlock({
         ) : null}
         {viewMode === "excalidraw" && excalidrawSupported ? (
           <ExcalidrawDiagramBlock
-            mermaidContent={displayContent}
+            mermaidContent={preparedExcalidrawContent}
             diagramType={diagramType}
             rebuildKey={rebuildKey}
-            onFallbackToSvg={() => setViewMode("svg")}
+            onFallbackToSvg={handleFallbackToSvg}
           />
         ) : (
           <MermaidSvgCanvas
@@ -782,11 +792,11 @@ export function MermaidDiagramBlock({
             {fullscreenOpen ? (
               viewMode === "excalidraw" && excalidrawSupported ? (
                 <ExcalidrawDiagramBlock
-                  mermaidContent={displayContent}
+                  mermaidContent={preparedExcalidrawContent}
                   diagramType={diagramType}
                   rebuildKey={rebuildKey}
-                  onFallbackToSvg={() => setViewMode("svg")}
-                  className="h-full"
+                  onFallbackToSvg={handleFallbackToSvg}
+                  className="h-full min-h-0"
                 />
               ) : (
                 <MermaidPanZoomViewport resetKey={`${blockKey}-${repairGeneration}`} contentReady={fullscreenReady}>
