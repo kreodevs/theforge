@@ -12,7 +12,14 @@
  * @license Apache-2.0
  */
 
-import { parseAgentGovernanceScaffold, type ProjectNextTaskResponse } from "@theforge/shared-types";
+import {
+  GOVERNANCE_TARGET_LABELS,
+  GOVERNANCE_TARGETS_ORDER,
+  normalizeGovernanceTargetAlias,
+  parseAgentGovernanceScaffold,
+  promptInicialFilename,
+  type ProjectNextTaskResponse,
+} from "@theforge/shared-types";
 import { generateTable, normalizeTable, normalizeAllTables, parseTable } from "@theforge/shared-types/markdown-table";
 import { generateMermaid, normalizeMermaid, validateMermaid } from "@theforge/shared-types/mermaid";
 import { formatNestApiError } from "./api-error.util.js";
@@ -32,11 +39,8 @@ let clientName = "";
 
 /** Resuelve el target de gobernanza: explícito > auto-detectado > "cursor". */
 function resolveGovernanceTarget(explicit?: string): string {
-  if (explicit) return explicit;
-  const name = clientName.toLowerCase();
-  if (name.includes("hermes")) return "hermes";
-  if (name.includes("openhands")) return "openhands";
-  return "cursor";
+  if (explicit?.trim()) return normalizeGovernanceTargetAlias(explicit);
+  return normalizeGovernanceTargetAlias(clientName);
 }
 
 /**
@@ -95,8 +99,6 @@ function compactifyGovernanceResponse(raw: unknown, projectId: string): unknown 
 
   return { ...obj, content: JSON.stringify(scaffold), agentGovernanceContent: undefined, _compact: true };
 }
-
-// ── Local Types ────────────────────────────────────────────────────────
 
 interface Tool {
   name: string;
@@ -495,7 +497,9 @@ const TOOLS: Tool[] = [
   {
     name: "generate_agent_governance",
     description:
-      "Genera el scaffold de Gobernanza IA (AGENTS.md, rules, skills, mcp.json.example) desde MDD + Blueprint + complejidad. Auto-detecta el cliente (cursor, openhands, hermes) vía initialize; usa 'target' para forzar.",
+      "Genera el scaffold de Gobernanza IA (AGENTS.md, rules, skills, mcp.json.example) desde MDD + Blueprint + complejidad. " +
+      "Persistencia canónica en docs/agent-governance/; el bundle multi-target se aplica en export. " +
+      "Auto-detecta el cliente vía initialize; usa 'target' para forzar async/compact.",
     inputSchema: {
       type: "object",
       properties: {
@@ -510,9 +514,9 @@ const TOOLS: Tool[] = [
         },
         target: {
           type: "string",
-          enum: ["cursor", "openhands", "hermes"],
           description:
-            "Target para el scaffold: 'cursor' (.cursor/rules/, .cursor/skills/), 'openhands' (.openhands/instructions.md), 'hermes' (.hermes/skills/). Si se omite, se auto-detecta del clientInfo enviado en initialize.",
+            "IDE opcional: cursor, antigravity, claude-code, github-copilot, windsurf, openhands, codex, hermes " +
+            "(aliases: gemini, devin, copilot). Afecta async/compact; persistencia siempre canónica.",
         },
       },
       required: ["projectId"],
@@ -521,10 +525,18 @@ const TOOLS: Tool[] = [
   {
     name: "get_agent_governance_export",
     description:
-      "Devuelve el scaffold de Gobernanza IA reconciliado para export/ZIP (sin re-llamar al LLM)",
+      "Devuelve el scaffold de Gobernanza IA reconciliado con bundle multi-target (install-targets/, PROMPT-INICIAL.{ide}.md, MANIFEST.installMaps). " +
+      "Opcional `target` filtra vista a un IDE; default = bundle completo.",
     inputSchema: {
       type: "object",
-      properties: { projectId: { type: "string" } },
+      properties: {
+        projectId: { type: "string" },
+        target: {
+          type: "string",
+          description:
+            "IDE opcional: cursor, antigravity, claude-code, github-copilot, windsurf, openhands, codex, hermes. Sin target = bundle completo.",
+        },
+      },
       required: ["projectId"],
     },
   },
@@ -1404,7 +1416,40 @@ const handlers: Record<string, Handler> = {
     return JSON.stringify(response);
   },
   async get_agent_governance_export(args) {
-    return JSON.stringify(await apiGet(`/projects/${args.projectId}/agent-governance-export`));
+    const raw = await apiGet(`/projects/${args.projectId}/agent-governance-export`);
+    const target = args.target as string | undefined;
+    if (!target?.trim()) {
+      return JSON.stringify(raw);
+    }
+    const resolved = normalizeGovernanceTargetAlias(target);
+    const scaffold = parseAgentGovernanceScaffold(
+      (raw as { files?: unknown; manifest?: unknown })?.files
+        ? raw
+        : (raw as { agentGovernance?: unknown })?.agentGovernance ?? raw,
+    );
+    if (!scaffold) return JSON.stringify(raw);
+    const promptPath = promptInicialFilename(resolved);
+    const bundlePrefix = `install-targets/${resolved}/`;
+    const filtered = scaffold.files.filter(
+      (f) =>
+        f.path === promptPath ||
+        f.path.startsWith(bundlePrefix) ||
+        f.path.startsWith("docs/agent-governance/") ||
+        f.path === "AGENTS.md" ||
+        f.path === "PROMPT-INICIAL.md",
+    );
+    return JSON.stringify({
+      target: resolved,
+      label: GOVERNANCE_TARGET_LABELS[resolved],
+      promptPath,
+      availableTargets: GOVERNANCE_TARGETS_ORDER.map((t) => ({
+        id: t,
+        label: GOVERNANCE_TARGET_LABELS[t],
+        prompt: promptInicialFilename(t),
+      })),
+      manifest: scaffold.manifest,
+      files: filtered,
+    });
   },
   async get_job_status(args) {
     return JSON.stringify(

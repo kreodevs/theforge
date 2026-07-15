@@ -13,6 +13,7 @@ export * from "./project-merge.js";
 export * from "./deliverables-matrix.js";
 export * from "./project-generation-guard.js";
 export * from "./agent-governance.js";
+export * from "./governance-targets.js";
 export * from "./stage.js";
 export * from "./legacy-change-gate.js";
 export * from "./legacy-change-state.util.js";

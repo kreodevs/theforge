@@ -52,7 +52,14 @@ export const agentGovernanceManifestSchema = z.object({
   files: z.array(z.string()),
   generatedAt: z.string().optional(),
   suggestions: agentGovernanceSuggestionsSchema.optional(),
+  /** Mapeo cursor/canónico (backward compat). */
   installMap: z.array(agentGovernanceInstallEntrySchema).optional(),
+  /** Mapeos por IDE (`install-targets/{target}/` → repo destino). */
+  installMaps: z
+    .record(z.string(), z.array(agentGovernanceInstallEntrySchema))
+    .optional(),
+  /** Rutas PROMPT-INICIAL incluidas en el bundle. */
+  prompts: z.array(z.string()).optional(),
 });
 
 export type AgentGovernanceManifest = z.infer<typeof agentGovernanceManifestSchema>;
@@ -139,35 +146,12 @@ export function isLegacyCursorGovernancePath(path: string): boolean {
   return migrated !== path || path.startsWith(".cursor/");
 }
 
-/** Destino en repo destino para un archivo bajo `docs/agent-governance/`. */
-export function governanceInstallTarget(source: string): string | null {
-  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}rules/`)) {
-    return `.cursor/rules/${source.slice(`${GOVERNANCE_DOCS_PREFIX}rules/`.length)}`;
-  }
-  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}skills/`)) {
-    return `.cursor/skills/${source.slice(`${GOVERNANCE_DOCS_PREFIX}skills/`.length)}`;
-  }
-  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}references/`)) {
-    return `.cursor/references/${source.slice(`${GOVERNANCE_DOCS_PREFIX}references/`.length)}`;
-  }
-  if (source === `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`) {
-    return ".cursor/mcp.json";
-  }
-  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}agents/`)) {
-    return `.cursor/agents/${source.slice(`${GOVERNANCE_DOCS_PREFIX}agents/`.length)}`;
-  }
-  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}commands/`)) {
-    return `.cursor/commands/${source.slice(`${GOVERNANCE_DOCS_PREFIX}commands/`.length)}`;
-  }
-  return null;
-}
+export {
+  governanceInstallTarget,
+  buildGovernanceInstallMapForTarget as buildGovernanceInstallMap,
+  buildMultiTargetInstallMaps,
+  type GovernanceTarget,
+} from "./governance-targets.js";
 
-/** Construye `installMap` para MANIFEST.json a partir de rutas del ZIP. */
-export function buildGovernanceInstallMap(zipPaths: string[]): AgentGovernanceInstallEntry[] {
-  const entries: AgentGovernanceInstallEntry[] = [];
-  for (const source of zipPaths) {
-    const target = governanceInstallTarget(source);
-    if (target) entries.push({ source, target });
-  }
-  return entries.sort((a, b) => a.source.localeCompare(b.source));
-}
+/** @deprecated Import from `./governance-targets.js` — alias cursor-only. */
+export { buildGovernanceInstallMapForTarget } from "./governance-targets.js";

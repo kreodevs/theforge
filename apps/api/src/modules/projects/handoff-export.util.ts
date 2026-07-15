@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Project, Stage } from "@theforge/database";
 import {
   appendProjectDeliverablesToScaffold,
+  enrichExportWithMultiTargetBundle,
   getRequiredAgentGovernancePaths,
   parseAgentGovernanceResponse,
   reconcileAgentGovernanceScaffold,
@@ -10,6 +11,7 @@ import {
 } from "../ai/utils/agent-governance.util.js";
 import {
   suggestAgentGovernanceArtifacts,
+  extractProjectGovernanceFacts,
   type SuggestAgentGovernanceInput,
 } from "../ai/utils/suggest-agent-governance-artifacts.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
@@ -218,12 +220,16 @@ export function synthesizeExportGovernanceScaffold(
     governanceInput,
     featureDir,
   });
-  return enrichGovernanceScaffoldForHandoff(
-    appendProjectDeliverablesToScaffold(
-      scaffold,
-      buildProjectDeliverableExportInput(project, stage),
+  return enrichExportWithMultiTargetBundle(
+    enrichGovernanceScaffoldForHandoff(
+      appendProjectDeliverablesToScaffold(scaffold, buildProjectDeliverableExportInput(project, stage)),
+      featureDir,
     ),
-    featureDir,
+    {
+      facts: extractProjectGovernanceFacts(governanceInput),
+      complexity,
+      featureDir,
+    },
   );
 }
 
@@ -367,13 +373,20 @@ export function reconcileExportScaffold(
     featureDir,
   });
 
-  return enrichGovernanceScaffoldForHandoff(
+  const withDeliverables = enrichGovernanceScaffoldForHandoff(
     appendProjectDeliverablesToScaffold(
       reconciled,
       buildProjectDeliverableExportInput(project, pickPrimaryStage(project.stages)),
     ),
     featureDir,
   );
+
+  const facts = extractProjectGovernanceFacts(governanceInput);
+  return enrichExportWithMultiTargetBundle(withDeliverables, {
+    facts,
+    complexity,
+    featureDir,
+  });
 }
 
 export function buildSpecKitFilesForProject(

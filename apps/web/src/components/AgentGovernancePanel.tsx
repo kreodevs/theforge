@@ -13,8 +13,11 @@ import {
   Wrench,
 } from "lucide-react";
 import {
+  GOVERNANCE_TARGET_LABELS,
+  GOVERNANCE_TARGETS_ORDER,
   migrateGovernancePath,
   parseAgentGovernanceScaffold,
+  promptInicialFilename,
   type AgentGovernanceFile,
   type AgentGovernanceScaffold,
 } from "@theforge/shared-types";
@@ -300,6 +303,16 @@ export function AgentGovernancePanel({
   const suggestionCount =
     suggestions?.entries?.length ??
     (suggestions?.rationale?.length ? suggestions.rationale.length : 0);
+  const installTargetCount = useMemo(
+    () => scaffold?.files.filter((f) => f.path.startsWith("install-targets/")).length ?? 0,
+    [scaffold],
+  );
+  const promptVariants = useMemo(
+    () =>
+      scaffold?.files.filter((f) => f.path.startsWith("PROMPT-INICIAL.") && f.path.endsWith(".md")) ??
+      [],
+    [scaffold],
+  );
 
   useEffect(() => {
     if (!scaffold) return;
@@ -359,6 +372,16 @@ export function AgentGovernancePanel({
                 <Badge variant="outline" className="px-1.5 py-0 text-[9px] font-medium">
                   {scaffold.files.length} archivos
                 </Badge>
+                {installTargetCount > 0 ? (
+                  <Badge variant="outline" className="px-1.5 py-0 text-[9px] font-medium" title="Bundles pre-mapeados por IDE">
+                    install-targets ({installTargetCount})
+                  </Badge>
+                ) : null}
+                {promptVariants.length > 0 ? (
+                  <Badge variant="outline" className="px-1.5 py-0 text-[9px] font-medium" title="Pega PROMPT-INICIAL.{tu-ide}.md en sesión 0">
+                    {promptVariants.length} prompts IDE
+                  </Badge>
+                ) : null}
               </div>
             </div>
           </div>
@@ -419,6 +442,29 @@ export function AgentGovernancePanel({
                     ))}
                   </div>
                 ) : null}
+              </div>
+            ) : null}
+
+            {promptVariants.length > 0 ? (
+              <div className="space-y-1">
+                <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
+                  Prompt sesión 0 (pega solo el tuyo)
+                </p>
+                {GOVERNANCE_TARGETS_ORDER.map((target) => {
+                  const path = promptInicialFilename(target);
+                  const file = scaffold.files.find((f) => f.path === path);
+                  if (!file) return null;
+                  return (
+                    <QuickLinkButton
+                      key={target}
+                      icon={Bot}
+                      label={GOVERNANCE_TARGET_LABELS[target]}
+                      description={path}
+                      active={selectedFile?.path === path}
+                      onClick={() => setSelectedPath(path)}
+                    />
+                  );
+                })}
               </div>
             ) : null}
           </div>

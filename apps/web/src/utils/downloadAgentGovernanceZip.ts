@@ -1,67 +1,25 @@
 import type JSZip from "jszip";
-import type { AgentGovernanceInstallEntry, AgentGovernanceManifest, AgentGovernanceScaffold } from "@theforge/shared-types";
+import type {
+  AgentGovernanceManifest,
+  AgentGovernanceScaffold,
+} from "@theforge/shared-types";
 import type { SpecKitBundleFile } from "@theforge/shared-types";
+import {
+  buildGovernanceInstallMap,
+  buildMultiTargetInstallMaps,
+  GOVERNANCE_DOCS_PREFIX,
+  migrateGovernancePath,
+} from "@theforge/shared-types";
 import { loadJsZip } from "./loadJsZip.js";
 
 export const AGENT_GOVERNANCE_ZIP_ROOT = "agent-governance";
 
 /** Prefijo visible en ZIP (paridad con `@theforge/shared-types`). */
-export const GOVERNANCE_DOCS_PREFIX = "docs/agent-governance/";
-
-const LEGACY_DOC_PATHS: Record<string, string> = {
-  "docs/agent-onboarding.md": `${GOVERNANCE_DOCS_PREFIX}agent-onboarding.md`,
-  "docs/COMO-USAR-GOBERNANZA-IA.md": `${GOVERNANCE_DOCS_PREFIX}COMO-USAR-GOBERNANZA-IA.md`,
-};
+export { GOVERNANCE_DOCS_PREFIX };
 
 /** Normaliza rutas del scaffold al layout visible del ZIP (sin `.cursor/`). */
 export function normalizeAgentGovernanceZipPath(path: string): string {
-  let normalized = path.replace(/^agent-governance\//i, "").replace(/^\/+/, "").trim();
-  if (normalized.startsWith("cursor/")) {
-    normalized = `.${normalized}`;
-  }
-  const legacyDoc = LEGACY_DOC_PATHS[normalized];
-  if (legacyDoc) return legacyDoc;
-  if (normalized.startsWith(".cursor/rules/")) {
-    return `${GOVERNANCE_DOCS_PREFIX}rules/${normalized.slice(".cursor/rules/".length)}`;
-  }
-  if (normalized.startsWith(".cursor/skills/")) {
-    return `${GOVERNANCE_DOCS_PREFIX}skills/${normalized.slice(".cursor/skills/".length)}`;
-  }
-  if (normalized.startsWith(".cursor/references/")) {
-    return `${GOVERNANCE_DOCS_PREFIX}references/${normalized.slice(".cursor/references/".length)}`;
-  }
-  if (normalized.startsWith(".cursor/agents/")) {
-    return `${GOVERNANCE_DOCS_PREFIX}agents/${normalized.slice(".cursor/agents/".length)}`;
-  }
-  if (normalized.startsWith(".cursor/commands/")) {
-    return `${GOVERNANCE_DOCS_PREFIX}commands/${normalized.slice(".cursor/commands/".length)}`;
-  }
-  if (normalized === ".cursor/mcp.json") {
-    return `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`;
-  }
-  return normalized;
-}
-
-function governanceInstallTarget(source: string): string | null {
-  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}rules/`)) {
-    return `.cursor/rules/${source.slice(`${GOVERNANCE_DOCS_PREFIX}rules/`.length)}`;
-  }
-  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}skills/`)) {
-    return `.cursor/skills/${source.slice(`${GOVERNANCE_DOCS_PREFIX}skills/`.length)}`;
-  }
-  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}references/`)) {
-    return `.cursor/references/${source.slice(`${GOVERNANCE_DOCS_PREFIX}references/`.length)}`;
-  }
-  if (source === `${GOVERNANCE_DOCS_PREFIX}mcp.json.example`) {
-    return ".cursor/mcp.json";
-  }
-  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}agents/`)) {
-    return `.cursor/agents/${source.slice(`${GOVERNANCE_DOCS_PREFIX}agents/`.length)}`;
-  }
-  if (source.startsWith(`${GOVERNANCE_DOCS_PREFIX}commands/`)) {
-    return `.cursor/commands/${source.slice(`${GOVERNANCE_DOCS_PREFIX}commands/`.length)}`;
-  }
-  return null;
+  return migrateGovernancePath(path);
 }
 
 /** Fusiona rutas de gobernanza y spec-kit en `manifest.files` (implement/repo handoff). */
@@ -75,15 +33,6 @@ export function buildUnifiedHandoffManifest(
   return [...new Set([...governancePaths, ...specKitPaths])].sort((a, b) =>
     a.localeCompare(b),
   );
-}
-
-function buildGovernanceInstallMap(zipPaths: string[]): AgentGovernanceInstallEntry[] {
-  const entries: AgentGovernanceInstallEntry[] = [];
-  for (const source of zipPaths) {
-    const target = governanceInstallTarget(source);
-    if (target) entries.push({ source, target });
-  }
-  return entries.sort((a, b) => a.source.localeCompare(b.source));
 }
 
 function defaultMcpJsonPlaceholder(): string {
@@ -155,7 +104,9 @@ export function buildAgentGovernanceZipEntries(
     ...scaffold.manifest,
     templateVersion: scaffold.manifest.templateVersion,
     files: paths,
-    installMap: buildGovernanceInstallMap(paths),
+    installMap: scaffold.manifest.installMap ?? buildGovernanceInstallMap(paths, "cursor"),
+    installMaps: scaffold.manifest.installMaps ?? buildMultiTargetInstallMaps(paths),
+    prompts: scaffold.manifest.prompts,
   };
 
   return { entries, manifest };
@@ -193,16 +144,23 @@ export function logAgentGovernanceZipBuild(
 ): void {
   const paths = [...build.entries.keys()];
   const governancePaths = paths.filter((p) => p.startsWith(GOVERNANCE_DOCS_PREFIX));
+  const installTargets = paths.filter((p) => p.startsWith("install-targets/"));
   const cursorLeak = paths.filter((p) => p.startsWith(".cursor/"));
+  const promptFiles = paths.filter((p) => p.startsWith("PROMPT-INICIAL"));
   const payload = {
     source,
     totalEntries: build.entries.size,
     governanceEntries: governancePaths.length,
+    installTargetEntries: installTargets.length,
+    promptFileCount: promptFiles.length,
     cursorLeakCount: cursorLeak.length,
     governancePaths,
+    installTargetPaths: installTargets,
+    promptPaths: promptFiles,
     allPaths: paths.sort((a, b) => a.localeCompare(b)),
     manifestFiles: build.manifest.files.length,
     installMapCount: build.manifest.installMap?.length ?? 0,
+    installMapsTargets: Object.keys(build.manifest.installMaps ?? {}),
   };
   if (typeof import.meta !== "undefined" && import.meta.env?.DEV) {
     console.info("[agent-governance-zip]", payload);
