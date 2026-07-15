@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { esmDirname } from "../../esm-helpers.js";
 
 const PROMPT_FILE = "staged-discovery-mdd-prompt.md";
 
@@ -8,6 +9,7 @@ const PROMPT_FILE = "staged-discovery-mdd-prompt.md";
  * Runtime: `dist/.../legacy-flow/prompts/` vía assets de nest-cli.
  */
 export function loadStagedDiscoveryMddPrompt(): string {
+const __dirname = esmDirname(import.meta.url);
   const p = join(__dirname, "prompts", PROMPT_FILE);
   if (!existsSync(p)) {
     return "";

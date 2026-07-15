@@ -13,6 +13,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, parse } from "node:path";
+import { esmDirname } from "../../esm-helpers.js";
 
 export type DesignMdLintSeverity = "error" | "warning" | "info";
 
@@ -44,6 +45,8 @@ function unavailableResult(): DesignMdLintResult {
   return { ok: true, unavailable: true, findings: [], summary: { ...EMPTY_SUMMARY } };
 }
 
+const __dirname = esmDirname(import.meta.url);
+
 let cachedCliEntry: string | null | undefined;
 
 /**
@@ -56,7 +59,7 @@ let cachedCliEntry: string | null | undefined;
 function resolveDesignMdCliEntry(): string | null {
   if (cachedCliEntry !== undefined) return cachedCliEntry;
 
-  const here = typeof __dirname !== "undefined" ? __dirname : process.cwd();
+  const here = __dirname;
   const seeds = [process.cwd(), here];
   const visited = new Set<string>();
 

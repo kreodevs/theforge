@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildTheforgeDocConsumptionGuide } from "@theforge/shared-types";
+import { esmDirname } from "../../esm-helpers.js";
 
+const __dirname = esmDirname(import.meta.url);
 const MONOREPO_ROOT = join(__dirname, "../../../../../..");
 
 /**

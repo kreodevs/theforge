@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { withDocumentChangelogInstructions } from "./with-document-changelog-instructions.js";
 import { appendSddUiUxActionableRules } from "./sdd-ui-ux-actionable-rules.js";
+import { esmDirname } from "../../../esm-helpers.js";
 
+const __dirname = esmDirname(import.meta.url);
 const PROMPT_PATH = join(__dirname, "tasks-prompt.md");
 
 function loadTasksPrompt(): string {

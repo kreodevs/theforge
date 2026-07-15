@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { esmDirname } from "../../../esm-helpers.js";
 
+const __dirname = esmDirname(import.meta.url);
 const RULES_PATH = join(__dirname, "sdd-ui-ux-actionable-rules.md");
 
 /** Reglas compartidas UI/UX accionables (append a prompts de entregables). */

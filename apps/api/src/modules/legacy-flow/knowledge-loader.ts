@@ -1,6 +1,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { esmDirname } from "../../esm-helpers.js";
 
+const __dirname = esmDirname(import.meta.url);
 const KNOWLEDGE_DIR = join(__dirname, "knowledge");
 
 const FILES = [

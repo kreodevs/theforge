@@ -4,9 +4,11 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { withDocumentChangelogInstructions } from "./with-document-changelog-instructions.js";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPT_PATH = join(__dirname, "master-prompt.md");
 
 function loadMasterPrompt(): string {

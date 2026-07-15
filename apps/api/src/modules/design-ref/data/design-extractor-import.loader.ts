@@ -1,7 +1,9 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { gallerySlugForCatalog } from "./design-extractor-slugs.js";
+import { esmDirname } from "../../../esm-helpers.js";
 
+const __dirname = esmDirname(import.meta.url);
 const IMPORTS_DIR = join(__dirname, "design-extractor-imports");
 /** En build Nest: assets → dist/modules/design-ref/data/design-extractor-imports */
 const IMPORTS_DIR_DIST = join(

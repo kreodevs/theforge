@@ -5,7 +5,9 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { esmDirname } from "../../../../esm-helpers.js";
 
+const __dirname = esmDirname(import.meta.url);
 const PROMPT_PATH = join(__dirname, "question-prompt.md");
 
 function load(): string {
