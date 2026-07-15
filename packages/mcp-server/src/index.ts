@@ -1422,11 +1422,21 @@ const handlers: Record<string, Handler> = {
       return JSON.stringify(raw);
     }
     const resolved = normalizeGovernanceTargetAlias(target);
-    const scaffold = parseAgentGovernanceScaffold(
-      (raw as { files?: unknown; manifest?: unknown })?.files
-        ? raw
-        : (raw as { agentGovernance?: unknown })?.agentGovernance ?? raw,
-    );
+    const scaffoldRaw: string | Record<string, unknown> | null | undefined =
+      (raw as { files?: unknown }).files != null
+        ? (raw as Record<string, unknown>)
+        : typeof (raw as { agentGovernance?: unknown }).agentGovernance === "string" ||
+            (typeof (raw as { agentGovernance?: unknown }).agentGovernance === "object" &&
+              (raw as { agentGovernance?: unknown }).agentGovernance != null)
+          ? ((raw as { agentGovernance?: unknown }).agentGovernance as
+              | string
+              | Record<string, unknown>)
+          : typeof raw === "string"
+            ? raw
+            : raw != null && typeof raw === "object"
+              ? (raw as Record<string, unknown>)
+              : null;
+    const scaffold = parseAgentGovernanceScaffold(scaffoldRaw);
     if (!scaffold) return JSON.stringify(raw);
     const promptPath = promptInicialFilename(resolved);
     const bundlePrefix = `install-targets/${resolved}/`;
