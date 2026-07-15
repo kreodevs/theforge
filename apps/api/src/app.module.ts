@@ -15,6 +15,15 @@ import { JwtAuthGuard } from "./common/guards/jwt-auth.guard.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 import { HealthController } from "./health.controller.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
+import { AiModule } from "./modules/ai/ai.module.js";
+import { EngineModule } from "./modules/engine/engine.module.js";
+import { ProjectsModule } from "./modules/projects/projects.module.js";
+import { ProjectGroupsModule } from "./modules/project-groups/project-groups.module.js";
+import { SessionsModule } from "./modules/sessions/sessions.module.js";
+import { AiOrchestratorModule } from "./modules/ai-orchestrator/ai-orchestrator.module.js";
+import { AiAnalysisModule } from "./modules/ai-analysis/ai-analysis.module.js";
+import { TheForgeModule } from "./modules/theforge/theforge.module.js";
+import { LegacyFlowModule } from "./modules/legacy-flow/legacy-flow.module.js";
 import { CryptoModule } from "./modules/crypto/crypto.module.js";
 import { UserProvidersModule } from "./modules/user-providers/user-providers.module.js";
 
@@ -29,6 +38,15 @@ import { UserProvidersModule } from "./modules/user-providers/user-providers.mod
     AuthModule,
     PrismaModule,
     UserProvidersModule,
+    AiModule,
+    EngineModule,
+    ProjectsModule,
+    ProjectGroupsModule,
+    SessionsModule,
+    AiOrchestratorModule,
+    AiAnalysisModule,
+    TheForgeModule,
+    LegacyFlowModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
