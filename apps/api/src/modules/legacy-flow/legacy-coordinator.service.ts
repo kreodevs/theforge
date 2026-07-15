@@ -1,16 +1,13 @@
 import {
   BadRequestException,
   ConflictException,
+  forwardRef,
   HttpException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import {
-  PROJECTS_SERVICE_TOKEN,
-  PROJECT_INTEGRATION_SERVICE_TOKEN,
-} from "../../injection-tokens.js";
 import { ComplexityLevel, type Project as DbProject } from "@theforge/database";
 import {
   DELIVERABLES_BY_COMPLEXITY,
@@ -21,8 +18,8 @@ import {
   type GenerateCodebaseDocRequest,
 } from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
-import type { ProjectsService } from "../projects/projects.service.js";
-import type { ProjectIntegrationService } from "../projects/integration/project-integration.service.js";
+import { ProjectsService } from "../projects/projects.service.js";
+import { ProjectIntegrationService } from "../projects/integration/project-integration.service.js";
 import { buildHandoffPromptBlockForLegacyChange } from "../projects/integration/integration-context.util.js";
 import type { TheForgeFileToModify } from "../theforge/theforge.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
@@ -465,7 +462,7 @@ export class LegacyCoordinatorService {
   constructor(
     private readonly aiFactory: AIFactory,
     private readonly prisma: PrismaService,
-    @Inject(PROJECTS_SERVICE_TOKEN)
+    @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
     private readonly theforge: TheForgeService,
     private readonly ai: AiService,
@@ -473,7 +470,7 @@ export class LegacyCoordinatorService {
     private readonly graphMemory: GraphMemoryService,
     private readonly agentSupervisor: AgentSupervisorService,
     private readonly legacyDeliverablesStrategy: LegacyDeliverablesStrategyService,
-    @Inject(PROJECT_INTEGRATION_SERVICE_TOKEN)
+    @Inject(forwardRef(() => ProjectIntegrationService))
     private readonly projectIntegration: ProjectIntegrationService,
   ) {}
 

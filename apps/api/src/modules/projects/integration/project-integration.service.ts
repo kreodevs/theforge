@@ -1,8 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import {
-  LEGACY_COORDINATOR_SERVICE_TOKEN,
-  PROJECTS_SERVICE_TOKEN,
-} from "../../../injection-tokens.js";
+import { BadRequestException, forwardRef, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
   buildStageChangeSpecContent,
   createHandoffItemBodySchema,
@@ -30,8 +26,8 @@ import { getRequestUserId } from "../../../common/request-user.store.js";
 import { ChangeLogService } from "../../change-log/change-log.service.js";
 import { GraphMemoryService } from "../../ai-analysis/graph-memory/graph-memory.service.js";
 import { TheForgeService } from "../../theforge/theforge.service.js";
-import type { LegacyCoordinatorService } from "../../legacy-flow/legacy-coordinator.service.js";
-import type { ProjectsService } from "../projects.service.js";
+import { LegacyCoordinatorService } from "../../legacy-flow/legacy-coordinator.service.js";
+import { ProjectsService } from "../projects.service.js";
 import { prependDocumentTimestamps } from "../../engine/document-date-header.util.js";
 import { isLegacyHandoffAutoLegacyStartEnabled } from "./legacy-handoff-auto-start.util.js";
 import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "../stage-deliverable-snapshot.util.js";
@@ -90,9 +86,9 @@ export class ProjectIntegrationService {
     private readonly changeLog: ChangeLogService,
     private readonly graphMemory: GraphMemoryService,
     private readonly theforge: TheForgeService,
-    @Inject(LEGACY_COORDINATOR_SERVICE_TOKEN)
+    @Inject(forwardRef(() => LegacyCoordinatorService))
     private readonly legacyCoordinator: LegacyCoordinatorService,
-    @Inject(PROJECTS_SERVICE_TOKEN)
+    @Inject(forwardRef(() => ProjectsService))
     private readonly projectsService: ProjectsService,
   ) {}
 

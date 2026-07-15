@@ -1,15 +1,12 @@
 import {
   BadRequestException,
+  forwardRef,
   HttpException,
   HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import {
-  DOC_RECONCILE_SERVICE_TOKEN,
-  DELIVERABLES_QUEUE_SERVICE_TOKEN,
-} from "../../injection-tokens.js";
 import type {
   AffectedArtifact,
   ApproveDocumentationGapResponse,
@@ -26,9 +23,9 @@ import {
 } from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
-import type { DeliverablesQueueService } from "../projects/deliverables-queue.service.js";
+import { DeliverablesQueueService } from "../projects/deliverables-queue.service.js";
 import { AgentSessionLogService } from "./agent-session-log.service.js";
-import type { DocReconcileService } from "./doc-reconcile.service.js";
+import { DocReconcileService } from "./doc-reconcile.service.js";
 import { ArchitectureDecisionService } from "./architecture-decision.service.js";
 import type { AffectedArtifact as AffectedArtifactType } from "@theforge/shared-types";
 import { detectSddConflicts } from "../ai/utils/suggest-agent-governance-artifacts.js";
@@ -77,9 +74,9 @@ export class DocumentationGapService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agentSessionLog: AgentSessionLogService,
-    @Inject(DOC_RECONCILE_SERVICE_TOKEN)
+    @Inject(forwardRef(() => DocReconcileService))
     private readonly docReconcile: DocReconcileService,
-    @Inject(DELIVERABLES_QUEUE_SERVICE_TOKEN)
+    @Inject(forwardRef(() => DeliverablesQueueService))
     private readonly deliverablesQueue: DeliverablesQueueService,
     private readonly architectureDecisions: ArchitectureDecisionService,
   ) {}

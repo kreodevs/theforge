@@ -5,19 +5,15 @@ import {
   OnModuleDestroy,
   OnModuleInit,
   Optional,
+  forwardRef,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
 import type { AffectedArtifact } from "@theforge/shared-types";
 import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-user.store.js";
-import {
-  PROJECTS_SERVICE_TOKEN,
-  PROJECT_GENERATION_GUARD_SERVICE_TOKEN,
-  DOC_RECONCILE_SERVICE_TOKEN,
-} from "../../injection-tokens.js";
-import type { DocReconcileService } from "../documentation-gap/doc-reconcile.service.js";
-import type { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
-import type { ProjectsService } from "./projects.service.js";
+import { DocReconcileService } from "../documentation-gap/doc-reconcile.service.js";
+import { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
+import { ProjectsService } from "./projects.service.js";
 
 export const DELIVERABLES_QUEUE_NAME = "theforge-deliverables";
 
@@ -113,12 +109,12 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly MAX_ATTEMPTS = 4;
 
   constructor(
-    @Inject(PROJECTS_SERVICE_TOKEN)
+    @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
-    @Inject(PROJECT_GENERATION_GUARD_SERVICE_TOKEN)
+    @Inject(forwardRef(() => ProjectGenerationGuardService))
     private readonly generationGuard: ProjectGenerationGuardService,
     @Optional()
-    @Inject(DOC_RECONCILE_SERVICE_TOKEN)
+    @Inject(forwardRef(() => DocReconcileService))
     private readonly docReconcile: DocReconcileService | null,
   ) {}
 
