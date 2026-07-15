@@ -647,6 +647,7 @@ export default function WorkshopView({
   const reapplyMddFormat = useWorkshopStore((s) => s.reapplyMddFormat);
   const mddReviewing = useWorkshopStore((s) => s.mddReviewing);
   const mddReapplyingFormat = useWorkshopStore((s) => s.mddReapplyingFormat);
+  const mddPersisting = useWorkshopStore((s) => s.mddPersisting);
   const workshopAgentsBusy = useWorkshopStore(selectWorkshopAgentsBusy);
 
   const setBlueprintContent = useWorkshopStore((s) => s.setBlueprintContent);
@@ -2620,7 +2621,8 @@ export default function WorkshopView({
     project?.uiScreensContent,
   ]);
 
-  const mddDirty = (mddContent ?? "").trim() !== persistedMddBaseline.trim();
+  const mddDirty =
+    !mddPersisting && (mddContent ?? "").trim() !== persistedMddBaseline.trim();
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
 
   if (error && !project) {
@@ -4626,9 +4628,9 @@ export default function WorkshopView({
                     message="Tienes cambios sin guardar. Graba para revisar consistencia (ER, etc.)."
                     onCancel={() => revertMddContent()}
                     onSave={() => persistAndReviewMdd()}
-                    saving={mddReviewing}
-                    disabled={mddReviewing}
-                    savingLabel="Grabando y revisando…"
+                    saving={mddReviewing || mddPersisting}
+                    disabled={mddReviewing || mddPersisting}
+                    savingLabel={mddPersisting ? "Guardando MDD…" : "Grabando y revisando…"}
                   />
                 )}
                 {mddViewMode === "preview" ? (

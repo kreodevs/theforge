@@ -93,6 +93,57 @@ export const selectPersistedMddBaseline = (s: WorkshopState): string => {
   return cleanDoc(raw) ?? raw ?? "";
 };
 
+/** Comparación estable para evitar PATCH cuando el markdown ya coincide con el baseline persistido. */
+function normalizedMddForPersistCompare(content: string | null | undefined): string {
+  const raw = (content ?? "").trim();
+  if (!raw) return "";
+  return cleanDoc(raw) ?? raw;
+}
+
+let mddPersistQueue: Promise<void> = Promise.resolve();
+let mddStreamPersistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function enqueueMddPersist(task: () => Promise<void>): Promise<void> {
+  const next = mddPersistQueue.then(task, task);
+  mddPersistQueue = next.catch(() => {});
+  return next;
+}
+
+/** Persiste MDD tras eventos interrupt/done del stream Manager (debounce + sin fetchProject). */
+async function persistMddFromChatStream(
+  get: () => WorkshopState,
+  set: (partial: Partial<WorkshopState>) => void,
+  markdown: string,
+  requestProjectId: string,
+): Promise<void> {
+  const incoming = markdown.trim();
+  if (incoming.length <= 80) return;
+
+  set({ mddContent: incoming });
+
+  if (mddStreamPersistDebounceTimer) clearTimeout(mddStreamPersistDebounceTimer);
+  await new Promise<void>((resolve) => {
+    mddStreamPersistDebounceTimer = setTimeout(() => {
+      mddStreamPersistDebounceTimer = null;
+      resolve();
+    }, 400);
+  });
+
+  if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
+
+  const baseline = normalizedMddForPersistCompare(selectPersistedMddBaseline(get()));
+  const normalized = normalizedMddForPersistCompare(incoming);
+  if (normalized === baseline) {
+    set({ synced: true });
+    return;
+  }
+
+  const errBefore = get().error;
+  await get().persistMddContent(incoming);
+  if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
+  if (errBefore) set({ error: errBefore });
+}
+
 /**
  * Convierte mensajes de error de fetch del navegador (Safari "Load failed", Chrome "Failed to fetch")
  * a mensajes amigables en español.
@@ -876,6 +927,8 @@ interface WorkshopState {
   mddReviewing: boolean;
   /** true mientras reapplyMddFormat persiste el MDD con sanitizers SSOT */
   mddReapplyingFormat: boolean;
+  /** true mientras persistMddContent ejecuta un PATCH al proyecto */
+  mddPersisting: boolean;
   synced: boolean;
   error: string | null;
   /** Avisos informativos (p. ej. patrones SSOT); no bloquean ni marcan «Sin conexión». */
@@ -1189,6 +1242,7 @@ const initialState = {
   managerThreadId: null as string | null,
   mddReviewing: false,
   mddReapplyingFormat: false,
+  mddPersisting: false,
   synced: true,
   error: null as string | null,
   notice: null as string | null,
@@ -1611,11 +1665,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
       const focused = workshopStateFromProjectStage({ ...data, stages }, activeStageId);
       if (!shouldApplyWorkshopUpdate(get, requestedId)) return null;
+      const preserveMddLocal = get().mddPersisting;
       set({
         project: focused.project,
         workshopStages: stages,
         activeStageId,
-        mddContent: focused.mddContent,
+        mddContent: preserveMddLocal ? get().mddContent : focused.mddContent,
         uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: cleanDoc(data.dbgaContent ?? null),
         specContent: focused.specContent,
@@ -1633,6 +1688,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         agentGovernanceContent: focused.agentGovernanceContent,
         error: null,
         legacyMcpDebugTrace: null,
+        synced: true,
       });
       const sessionsRes = await apiFetch(`${API_BASE}/sessions/project/${requestedId}`);
       if (sessionsRes.ok) {
@@ -2356,24 +2412,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                         });
                       }
                       set({ mddContent: incoming });
-                      const { persistMddContent, fetchProject, fetchEstimation } = get();
                       if (!unchanged) {
-                        await persistMddContent(incoming, { force: true });
-                      }
-                      if (!unchanged) {
-                        const errBeforeFetch = get().error;
-                        if (shouldApplyWorkshopUpdate(get, requestProjectId)) {
-                          await fetchProject(requestProjectId);
-                          if (errBeforeFetch) set({ error: errBeforeFetch });
-                          await fetchEstimation(requestProjectId);
-                          const current = get();
-                          set({
-                            mddContent: incoming,
-                            project: current.project
-                              ? { ...current.project, mddContent: incoming }
-                              : null,
-                          });
-                        }
+                        await persistMddFromChatStream(get, set, incoming, requestProjectId);
                       }
                     }
                     // No sobrescribir mddContent con markdown vacío (auditar puede venir de checkpoint sin draft)
@@ -2450,20 +2490,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                       });
                     }
 
-                    const { persistMddContent, fetchProject, fetchEstimation } = get();
-                    if (markdownOk) await persistMddContent(event.markdown);
-                    const errorBeforeFetch = get().error;
-                    if (shouldApplyWorkshopUpdate(get, requestProjectId)) {
-                      await fetchProject(requestProjectId);
-                      if (errorBeforeFetch) set({ error: errorBeforeFetch });
-                      await fetchEstimation(requestProjectId);
-                    }
                     if (markdownOk) {
-                      const current = get();
-                      set({
-                        mddContent: event.markdown,
-                        project: current.project ? { ...current.project, mddContent: event.markdown } : null,
-                      });
+                      await persistMddFromChatStream(get, set, event.markdown, requestProjectId);
                     } else if (mddBeforeFetch.length > 80) {
                       // `done` con markdown corto (p. ej. placeholder) no debe vaciar borradores ya mostrados por eventos `draft`.
                       const current = get();
@@ -4249,72 +4277,83 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   },
 
   persistMddContent: async (content, options) => {
-    const { projectId, project, fetchEstimation } = get();
-    if (!projectId || !project) return;
-    if (!options?.force && content === (project.mddContent ?? "")) return;
-    set({ synced: false, error: null, notice: null });
-    try {
-      const stageId = get().activeStageId;
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mddContent: content,
-          ...(stageId ? { stageId } : {}),
-          ...(options?.allowGovernancePatternChange ? { allowGovernancePatternChange: true } : {}),
-          ...(options?.mddGovernanceSeedOnly ? { mddGovernanceSeedOnly: true } : {}),
-          ...(options?.mddFormatOnly ? { mddFormatOnly: true } : {}),
-          ...(options?.clearMddCompletely ? { clearMddCompletely: true } : {}),
-        }),
-      });
-      if (r.ok) {
-        const data = (await r.json()) as Project & { mddGovernancePatternsReverted?: boolean };
-        const packed = projectWithUxAfterStream(data, data.uxUiGuideContent, get().activeStageId);
-        const savedContent = packed?.mddContent ?? data.mddContent ?? content;
-        const patternsReverted = data.mddGovernancePatternsReverted === true;
-        const nextProjectRaw = packed?.project ?? data;
-        const stateNow = get();
-        const localFields = Object.fromEntries(
-          WORKSHOP_PERSIST_BASELINE_FIELDS.map((f) => [
-            f,
-            (stateNow as unknown as Record<string, unknown>)[f] as string | null | undefined,
-          ]),
-        );
-        const nextProject = mergeProjectBaselinesAfterPersist(
-          nextProjectRaw as unknown as Record<string, unknown>,
-          {
-            savedField: "mddContent",
-            prevProject: project as unknown as Record<string, unknown>,
-            activeStageId: stageId,
-            localFields,
-          },
-        ) as unknown as Project;
-        const nextStages = nextProject.stages ?? get().workshopStages;
-        set({
-          project: nextProject,
-          workshopStages: nextStages.length > 0 ? nextStages : get().workshopStages,
-          activeStageId: packed?.activeStageId ?? get().activeStageId,
-          mddContent: savedContent,
-          synced: true,
-          error: null,
-          notice: patternsReverted ? SSOT_PATTERNS_RESTORED_NOTICE : null,
-        });
-        await apiFetch(`${API_BASE}/ai-analysis/estimation/clear-draft`, {
-          method: "POST",
+    return enqueueMddPersist(async () => {
+      const { projectId, project, fetchEstimation } = get();
+      if (!projectId || !project) return;
+
+      const baseline = normalizedMddForPersistCompare(selectPersistedMddBaseline(get()));
+      const normalized = normalizedMddForPersistCompare(content);
+      if (!options?.force && normalized === baseline) {
+        set({ synced: true });
+        return;
+      }
+
+      set({ mddPersisting: true, synced: false, error: null, notice: null });
+      try {
+        const stageId = get().activeStageId;
+        const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
+          method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            projectId: projectId.trim(),
+            mddContent: content,
             ...(stageId ? { stageId } : {}),
+            ...(options?.allowGovernancePatternChange ? { allowGovernancePatternChange: true } : {}),
+            ...(options?.mddGovernanceSeedOnly ? { mddGovernanceSeedOnly: true } : {}),
+            ...(options?.mddFormatOnly ? { mddFormatOnly: true } : {}),
+            ...(options?.clearMddCompletely ? { clearMddCompletely: true } : {}),
           }),
-        }).catch(() => { });
-        fetchEstimation(projectId).catch(() => { });
-      } else {
-        const errText = await parseErrorMessageFromResponse(r, "Error al guardar el MDD");
-        set({ synced: false, error: errText });
+        });
+        if (r.ok) {
+          const data = (await r.json()) as Project & { mddGovernancePatternsReverted?: boolean };
+          const packed = projectWithUxAfterStream(data, data.uxUiGuideContent, get().activeStageId);
+          const savedContent = packed?.mddContent ?? data.mddContent ?? content;
+          const patternsReverted = data.mddGovernancePatternsReverted === true;
+          const nextProjectRaw = packed?.project ?? data;
+          const stateNow = get();
+          const localFields = Object.fromEntries(
+            WORKSHOP_PERSIST_BASELINE_FIELDS.map((f) => [
+              f,
+              (stateNow as unknown as Record<string, unknown>)[f] as string | null | undefined,
+            ]),
+          );
+          const nextProject = mergeProjectBaselinesAfterPersist(
+            nextProjectRaw as unknown as Record<string, unknown>,
+            {
+              savedField: "mddContent",
+              prevProject: project as unknown as Record<string, unknown>,
+              activeStageId: stageId,
+              localFields,
+            },
+          ) as unknown as Project;
+          const nextStages = nextProject.stages ?? get().workshopStages;
+          set({
+            project: nextProject,
+            workshopStages: nextStages.length > 0 ? nextStages : get().workshopStages,
+            activeStageId: packed?.activeStageId ?? get().activeStageId,
+            mddContent: savedContent,
+            synced: true,
+            error: null,
+            notice: patternsReverted ? SSOT_PATTERNS_RESTORED_NOTICE : null,
+          });
+          await apiFetch(`${API_BASE}/ai-analysis/estimation/clear-draft`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectId: projectId.trim(),
+              ...(stageId ? { stageId } : {}),
+            }),
+          }).catch(() => { });
+          fetchEstimation(projectId).catch(() => { });
+        } else {
+          const errText = await parseErrorMessageFromResponse(r, "Error al guardar el MDD");
+          set({ synced: false, error: errText });
+        }
+      } catch {
+        set({ synced: false, error: "Error de red al guardar" });
+      } finally {
+        set({ mddPersisting: false });
       }
-    } catch {
-      set({ synced: false, error: "Error de red al guardar" });
-    }
+    });
   },
 
   revertMddContent: () => {
