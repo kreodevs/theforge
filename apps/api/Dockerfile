@@ -2,8 +2,9 @@
 # Imágenes fijas en ECR Public (evita TLS timeout a Docker Hub y fallos de ARG en Dokploy).
 FROM public.ecr.aws/docker/library/node:20-alpine AS builder
 
-ARG BUILD_CACHE_BUST=98
-RUN echo "Cache bust key: ${BUILD_CACHE_BUST}"
+ARG BUILD_CACHE_BUST=99
+ARG GIT_SHA=unknown
+RUN echo "Cache bust key: ${BUILD_CACHE_BUST} git: ${GIT_SHA}"
 
 RUN apk add --no-cache gcompat openssl
 
@@ -28,7 +29,17 @@ COPY apps/api apps/api
 COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
 
 ENV DATABASE_URL="postgresql://local:local@db:5432/theforge"
-RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
+ENV THEFORGE_BUILD_SHA="${GIT_SHA}"
+# --force: evita que turbo remote cache restaure dist con injection tokens (deadlock DI)
+RUN pnpm exec turbo run build --force \
+  --filter=@theforge/database \
+  --filter=@theforge/shared-types \
+  --filter=@theforge/business-rules \
+  --filter=@theforge/api \
+  && test ! -e apps/api/dist/injection-tokens.js \
+  && node -e "const fs=require('fs');const p='apps/api/dist/modules/projects/deliverables-queue.service.js';const s=fs.readFileSync(p,'utf8');if(!s.includes('forwardRef')){console.error('missing forwardRef in',p);process.exit(1)}if(s.includes('PROJECTS_SERVICE_TOKEN')){console.error('stale injection token in',p);process.exit(1)}" \
+  && test -f packages/shared-types/dist-cjs/index.js \
+  && node -e "const fs=require('fs');const p='apps/api/dist/app.module.js';const s=fs.readFileSync(p,'utf8');if(!s.includes('sessions_module_js_1')){console.error('truncated AppModule in',p);process.exit(1)}"
 
 # Production stage — layout pnpm hoisted desde builder
 FROM public.ecr.aws/docker/library/node:20-alpine AS runner
@@ -39,6 +50,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
+ARG GIT_SHA=unknown
+ENV THEFORGE_BUILD_SHA="${GIT_SHA}"
 
 COPY --from=builder /app .
 COPY apps/api/docker-entrypoint.sh /entrypoint.sh

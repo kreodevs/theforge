@@ -50,6 +50,9 @@ function corsOriginsFromEnv(): string[] {
 
 async function bootstrap() {
   const logger = new Logger("Bootstrap");
+  logger.log(
+    `[bootstrap] build=${process.env.THEFORGE_BUILD_SHA ?? "dev"} di=forwardRef`,
+  );
   logger.log("[bootstrap] Creating Nest application...");
   const app = await NestFactory.create(AppModule, {
     logger: ["error", "warn", "log", "debug", "verbose"],

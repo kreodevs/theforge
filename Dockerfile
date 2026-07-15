@@ -17,8 +17,14 @@ COPY packages/business-rules packages/business-rules
 COPY packages/config packages/config
 COPY apps/api apps/api
 COPY scripts/rotate-master-key.ts scripts/rotate-master-key.ts
+ARG GIT_SHA=unknown
 ENV DATABASE_URL="postgresql://theforge:theforge@localhost:5432/theforge"
-RUN pnpm exec turbo run build --filter=@theforge/database --filter=@theforge/shared-types --filter=@theforge/business-rules --filter=@theforge/api
+ENV THEFORGE_BUILD_SHA="${GIT_SHA}"
+RUN pnpm exec turbo run build --force \
+  --filter=@theforge/database \
+  --filter=@theforge/shared-types \
+  --filter=@theforge/business-rules \
+  --filter=@theforge/api
 
 # ========== Build Web ==========
 FROM node:20-alpine AS web-builder
