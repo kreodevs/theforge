@@ -46,6 +46,37 @@ const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 0.15;
 
+/** Resolve a CSS color (incl. oklch vars) to `#rrggbb` for Excalidraw appState. */
+function cssColorToHex(cssColor: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const probe = document.createElement("span");
+  probe.style.color = cssColor;
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  document.body.appendChild(probe);
+  const rgb = getComputedStyle(probe).color;
+  document.body.removeChild(probe);
+  const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (!m) return fallback;
+  const hex = [m[1], m[2], m[3]]
+    .map((n) => Number(n).toString(16).padStart(2, "0"))
+    .join("");
+  return `#${hex}`;
+}
+
+/** Match Workshop markdown preview paper (muted∩card), not Excalidraw default black. */
+function workshopCanvasBackground(): string {
+  return cssColorToHex(
+    "color-mix(in oklch, var(--muted) 35%, var(--card))",
+    "#f4f1ea",
+  );
+}
+
+function workshopExcalidrawTheme(): "light" | "dark" {
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
+
 // Lazy-loaded Excalidraw (no SSR, ~45MB JS)
 const LazyExcalidraw = lazy<ExcalidrawComponent>(() =>
   import("@excalidraw/excalidraw").then((mod) => ({ default: mod.Excalidraw })),
@@ -121,6 +152,8 @@ export function ExcalidrawDiagramBlock({
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [zoomPct, setZoomPct] = useState(100);
+  const [canvasBg] = useState(() => workshopCanvasBackground());
+  const [excalidrawTheme] = useState(() => workshopExcalidrawTheme());
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const cancelledRef = useRef(false);
   const onFallbackRef = useRef(onFallbackToSvg);
@@ -338,9 +371,11 @@ export function ExcalidrawDiagramBlock({
                 // Keep Excalidraw chrome collapsed; CSS also hides leftovers.
                 openMenu: null,
                 openSidebar: null,
+                // Align canvas with Workshop document paper (not default black).
+                viewBackgroundColor: canvasBg,
               },
             }}
-            theme="dark"
+            theme={excalidrawTheme}
             renderTopRightUI={() => null}
             UIOptions={{
               canvasActions: {

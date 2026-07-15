@@ -10,7 +10,7 @@
 | **DashboardPanelHeader** | Panel de proyectos: acciones Crear / Tutorial / Refrescar. |
 | **ProjectTutorialDialog** | Tutorial **Greenfield** vs **Brownfield** (`content/tutorial/*.md`). Bloques ` ```mermaid ` vía `MarkdownMermaid` (misma ruta híbrida que Workshop). |
 | **MarkdownMermaid** | Bloques Mermaid en markdown. Toolbar en flujo: Reparar · SVG/Excalidraw · **Pantalla completa** (visible también en vista Excalidraw). El modal reutiliza Excalidraw (`layout="fullscreen"`) o pan/zoom SVG según el modo activo. |
-| **ExcalidrawDiagramBlock** | Mermaid → Excalidraw. Chrome nativo oculto siempre (`.excalidraw-embed-host`). Gestos nativos: pinch/`Ctrl`+rueda = zoom al cursor; rueda = pan. Botones −/+ al centro. Toolbars Workshop/`Excalidraw` **opacas** (`bg-card`) para leerse sobre canvas oscuro. |
+| **ExcalidrawDiagramBlock** | Mermaid → Excalidraw. Chrome nativo oculto. Canvas alineado al papel del preview (`viewBackgroundColor` = mix muted/card; tema light/dark según `<html>`). Gestos nativos; −/+ al centro; toolbars opacas. |
 | **mermaid-diagram-type.util** | SSOT: tipo de diagrama, soporte Excalidraw, detección de bloques fenced (`isMermaidCodeBlock`), modo de vista por defecto. |
 | **AnalyzeDashboard** | Panel **Analizar — consistencia SDD** (`GET …/projects/:id/analyze`): presencia MDD/Spec/UC/HU/Tasks/API/Flujos/UX/Infra/Gov, puente Phase0→BRD/Spec, hallazgos agrupados por categoría. |
 | **ProjectMergeDialog** | Fusión de 2+ carpetas en Paso 0: config (destino, benchmark, suite, archivado), preview con conflictos, `POST /projects/merge`. |
