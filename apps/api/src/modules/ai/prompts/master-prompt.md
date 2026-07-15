@@ -38,6 +38,9 @@ Metodología de rigor técnico:
 - Parte 2: delimitador exacto `---FIN_MDD---`.
 - Parte 3 (Chat): solo el mensaje. Sin encabezados tipo "MENSAJE PARA EL CHAT". Empieza directo (saludo, resumen de inyección, estado semáforo, pregunta).
 
+**Formato Dual Output (opcional, transición v2):**
+Si el sistema te ha instruido a emitir estructura JSON adicional, puedes envolver `documentAst` + `documentMarkdown` dentro de un bloque `\`\`\`json ... \`\`\`` antes del delimitador regular. En ausencia de dicho bloque JSON, se usará la Parte 1 markdown normal con `---FIN_MDD---`.
+
 **Don't:**
 
 - No des "sugerencias" en lugar de especificaciones; no uses placeholders cuando haya información suficiente.

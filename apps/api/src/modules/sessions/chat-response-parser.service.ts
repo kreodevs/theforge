@@ -5,6 +5,8 @@ import {
   looksLikeDbgaDocumentBody,
   mergeApiEndpointCatalogIntoDbga,
 } from "@theforge/shared-types";
+import type { MddDocumentAst } from "@theforge/shared-types/document-ast";
+import { parseDualOutputResponse } from "../engine/document-engine/document-response-parser.js";
 import {
   normalizeDashes,
   stripChatLabel as stripChatLabelUtil,
@@ -396,5 +398,30 @@ export class ChatResponseParserService {
 
   stripChatLabel(text: string): string {
     return stripChatLabelUtil(text);
+  }
+
+  /**
+   * RFC-001 (opcional): Intenta parsear respuesta en Dual Output Protocol v2.
+   * Si lo logra, devuelve { markdown, ast } con el AST estructurado.
+   * Si no, retorna null para que el flujo legacy tome el control con `splitDocAndChat`.
+   */
+  tryParseDualOutput(response: string): { markdown: string; ast: MddDocumentAst | null; chatPart: string } | null {
+    const parsed = parseDualOutputResponse(response, {
+      allowMarkdownFallback: false,
+      enforceDeterminism: false,
+      divergenceThreshold: 0.25,
+    });
+
+    if (parsed.success && parsed.response) {
+      // Preferir markdown canónico si hubo divergencia; si no, usar el recibido.
+      const markdown =
+        parsed.canonicalMarkdown ||
+        parsed.response.documentMarkdown ||
+        parsed.fallbackMarkdown ||
+        "";
+      const chatPart = parsed.remainingMarkdown || "";
+      return { markdown, ast: parsed.response.documentAst, chatPart };
+    }
+    return null;
   }
 }
