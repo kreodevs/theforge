@@ -1,0 +1,14 @@
+/**
+ * Embedded Excalidraw: kill host chrome so Workshop toolbar is not covered.
+ * zenMode is not used — it only delays UI until hover, which is the overlap bug.
+ */
+.excalidraw-embed-host--view .layer-ui__wrapper,
+.excalidraw-embed-host--view .App-menu,
+.excalidraw-embed-host--view .App-toolbar,
+.excalidraw-embed-host--view .App-toolbar-container,
+.excalidraw-embed-host--view .FixedSideContainer,
+.excalidraw-embed-host--view .mobile-misc-tools-container {
+  display: none !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
