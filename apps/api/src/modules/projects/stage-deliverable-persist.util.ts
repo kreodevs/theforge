@@ -26,9 +26,15 @@ const DELIVERABLE_KEYS = [
   "infraContent",
   "agentGovernanceContent",
   "uxUiGuideContent",
+  "uiScreensContent",
   "phase0SummaryContent",
   "aemContent",
 ] as const satisfies readonly (keyof ProjectDeliverableSource)[];
+
+/** JSON borrador Fase 0 — no recibe cabecera markdown. */
+const STAMP_EXCLUDED_DELIVERABLE_KEYS = new Set<keyof ProjectDeliverableSource>([
+  "phase0SummaryContent",
+]);
 
 function buildStageUpdateData(fields: ProjectDeliverableSource): Record<string, string | null> {
   const data: Record<string, string | null> = {};
@@ -58,7 +64,11 @@ export async function persistStageAndProjectDeliverables(
   const now = new Date();
   for (const key of DELIVERABLE_KEYS) {
     const val = stageData[key];
-    if (typeof val === "string" && val.trim().length > 0) {
+    if (
+      !STAMP_EXCLUDED_DELIVERABLE_KEYS.has(key) &&
+      typeof val === "string" &&
+      val.trim().length > 0
+    ) {
       const stamped = prependDocumentTimestamps(val, now);
       stageData[key] = stamped;
       projectData[key] = stamped;
@@ -108,6 +118,7 @@ export async function seedActiveStageDeliverables(
         infraContent: true,
         agentGovernanceContent: true,
         uxUiGuideContent: true,
+        uiScreensContent: true,
         phase0SummaryContent: true,
         aemContent: true,
       },

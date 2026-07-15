@@ -907,7 +907,11 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     }
     if (rest.dbgaContent !== undefined && rest.dbgaContent !== null) {
       const { ensureJsonCodeFences } = await import("../ai-analysis/state/state-to-markdown.js");
-      updatePayload.dbgaContent = ensureJsonCodeFences(rest.dbgaContent);
+      let dbgaFormatted = ensureJsonCodeFences(rest.dbgaContent);
+      if (dbgaFormatted.trim()) {
+        dbgaFormatted = prependDocumentTimestamps(dbgaFormatted);
+      }
+      updatePayload.dbgaContent = dbgaFormatted;
       const { isPhase0StructuredMarkdown, markdownToPhase0Document } = await import(
         "../ai-analysis/phase0/phase0-from-markdown.js"
       );
@@ -1387,7 +1391,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const data: Prisma.StageUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name.trim();
     if (dto.key !== undefined) data.key = dto.key.trim();
-    if (dto.brdContent !== undefined) data.brdContent = dto.brdContent.trim() || null;
+    if (dto.brdContent !== undefined) {
+      const trimmed = dto.brdContent.trim();
+      data.brdContent = trimmed ? prependDocumentTimestamps(trimmed) : null;
+    }
     if (dto.ordinal !== undefined) {
       const clash = await this.prisma.stage.findFirst({
         where: {

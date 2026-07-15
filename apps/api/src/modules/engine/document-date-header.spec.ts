@@ -6,14 +6,15 @@ import {
 } from "./document-date-header.util.js";
 
 describe("document-date-header", () => {
-  const fixed = new Date("2026-07-15T10:30:00.000Z");
-  const later = new Date("2026-07-16T14:45:00.000Z");
+  const fixed = new Date("2026-07-15T10:30:45.000Z");
+  const later = new Date("2026-07-16T14:45:30.000Z");
 
   it("prepends header on fresh content", () => {
     const out = prependDocumentTimestamps("# My Doc\n\nBody", fixed);
     assert.ok(out.startsWith("<!-- theforge-doc:created=2026-07-15"));
-    assert.ok(out.includes("Generado:"));
-    assert.ok(out.includes("Actualizado:"));
+    assert.ok(out.includes("Creado:"));
+    assert.ok(out.includes("Última regeneración:"));
+    assert.ok(out.includes("10:30:45"));
     assert.ok(out.includes("# My Doc"));
   });
 
@@ -24,6 +25,20 @@ describe("document-date-header", () => {
     const ts = extractDocumentTimestamps(second);
     assert.equal(ts.created?.toISOString(), fixed.toISOString());
     assert.equal(ts.updated?.toISOString(), later.toISOString());
+    assert.ok(second.includes("14:45:30"));
+  });
+
+  it("strips legacy Generado/Actualizado header on re-stamp", () => {
+    const legacy =
+      "<!-- theforge-doc:created=2026-07-01T08:00:00.000Z|updated=2026-07-01T08:00:00.000Z -->\n" +
+      "> 📅 Generado: 1 jul 2026, 08:00 UTC · Actualizado: 1 jul 2026, 08:00 UTC\n\n" +
+      "---\n\n" +
+      "# Doc";
+    const out = prependDocumentTimestamps(legacy, later);
+    assert.ok(out.includes("Creado:"));
+    assert.ok(out.includes("Última regeneración:"));
+    assert.ok(!out.includes("Generado:"));
+    assert.equal(extractDocumentTimestamps(out).created?.toISOString(), "2026-07-01T08:00:00.000Z");
   });
 
   it("returns empty object for content without header", () => {

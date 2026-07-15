@@ -1,11 +1,11 @@
 /**
- * Prepend creation / last-updated timestamp header to any SDD document.
+ * Prepend creation / last-regeneration timestamp header to any SDD document.
  *
  * Format (at the very top of the markdown):
  *
  * ```
- * <!-- theforge-doc:created=ISO:updated=ISO -->
- * > 📅 Generado: DD MMM YYYY, HH:MM · Actualizado: DD MMM YYYY, HH:MM
+ * <!-- theforge-doc:created=ISO|updated=ISO -->
+ * > 📅 Creado: DD de MMMM de YYYY, HH:MM:SS UTC · Última regeneración: DD de MMMM de YYYY, HH:MM:SS UTC
  *
  * ---
  * ```
@@ -21,31 +21,50 @@
 const META_COMMENT_RE =
   /^<!--\s*theforge-doc:created=([^|]+)\|updated=([^|]+)\s*-->\s*\n?/;
 
+/** Strips legacy and current human-readable header blocks. */
 const HUMAN_HEADER_RE =
-  /^>\s*📅\s*Generado:.*?\n\n---\n\n/;
+  /^>\s*📅\s*.+?\n\n---\n\n/s;
 
 const LOCALE = "es-MX";
 
-function formatShortDate(d: Date): string {
-  return d.toLocaleDateString(LOCALE, {
+/** Markdown fields that receive the timestamp header on persist. */
+export const THEFORGE_STAMPED_MARKDOWN_FIELDS = [
+  "dbgaContent",
+  "mddContent",
+  "brdContent",
+  "changeSpecContent",
+  "specContent",
+  "architectureContent",
+  "useCasesContent",
+  "userStoriesContent",
+  "blueprintContent",
+  "tasksContent",
+  "apiContractsContent",
+  "logicFlowsContent",
+  "infraContent",
+  "agentGovernanceContent",
+  "uxUiGuideContent",
+  "uiScreensContent",
+  "aemContent",
+] as const;
+
+export type TheforgeStampedMarkdownField = (typeof THEFORGE_STAMPED_MARKDOWN_FIELDS)[number];
+
+function formatFullDateTime(d: Date): string {
+  const datePart = d.toLocaleDateString(LOCALE, {
     day: "numeric",
-    month: "short",
+    month: "long",
     year: "numeric",
     timeZone: "UTC",
   });
-}
-
-function formatTime(d: Date): string {
-  return d.toLocaleTimeString(LOCALE, {
+  const timePart = d.toLocaleTimeString(LOCALE, {
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hour12: false,
     timeZone: "UTC",
   });
-}
-
-function formatHumanDate(d: Date): string {
-  return `${formatShortDate(d)}, ${formatTime(d)} UTC`;
+  return `${datePart}, ${timePart} UTC`;
 }
 
 /**
@@ -65,7 +84,7 @@ export function extractDocumentTimestamps(content: string): {
 }
 
 /**
- * Prepend or update the timestamp header on a document.
+ * Prepend or update the timestamp header on a markdown document.
  *
  * @param content  Current markdown content (may already have a header).
  * @param now      Timestamp to use (defaults to `new Date()`).
@@ -77,7 +96,6 @@ export function prependDocumentTimestamps(
 ): string {
   const existing = extractDocumentTimestamps(content);
 
-  // Strip any existing header (both comment and human-readable)
   let body = content;
   body = body.replace(META_COMMENT_RE, "");
   body = body.replace(HUMAN_HEADER_RE, "");
@@ -86,7 +104,37 @@ export function prependDocumentTimestamps(
   const updated = now;
 
   const comment = `<!-- theforge-doc:created=${created.toISOString()}|updated=${updated.toISOString()} -->`;
-  const human = `> 📅 Generado: ${formatHumanDate(created)} · Actualizado: ${formatHumanDate(updated)}`;
+  const human =
+    `> 📅 Creado: ${formatFullDateTime(created)} · Última regeneración: ${formatFullDateTime(updated)}`;
 
   return `${comment}\n${human}\n\n---\n\n${body}`;
+}
+
+/** Stamps a single markdown document when it has substantive body text. */
+export function stampMarkdownDocumentIfNonEmpty(
+  content: string | null | undefined,
+  now: Date = new Date(),
+): string | null | undefined {
+  if (content == null) return content;
+  const trimmed = content.trim();
+  if (!trimmed) return content;
+  return prependDocumentTimestamps(content, now);
+}
+
+/**
+ * Applies timestamp headers to all known markdown document fields in a patch object.
+ */
+export function stampMarkdownDocumentFields<T extends Record<string, unknown>>(
+  patch: T,
+  fields: readonly TheforgeStampedMarkdownField[] = THEFORGE_STAMPED_MARKDOWN_FIELDS,
+  now: Date = new Date(),
+): T {
+  const out = { ...patch };
+  for (const key of fields) {
+    const val = out[key];
+    if (typeof val === "string" && val.trim().length > 0) {
+      (out as Record<string, unknown>)[key] = prependDocumentTimestamps(val, now);
+    }
+  }
+  return out;
 }
