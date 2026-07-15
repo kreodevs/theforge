@@ -15,8 +15,7 @@ import { JwtAuthGuard } from "./common/guards/jwt-auth.guard.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 import { HealthController } from "./health.controller.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
-import { AiModule } from "./modules/ai/ai.module.js";
-import { EngineModule } from "./modules/engine/engine.module.js";
+import { ProjectGroupsModule } from "./modules/project-groups/project-groups.module.js";
 import { CryptoModule } from "./modules/crypto/crypto.module.js";
 import { UserProvidersModule } from "./modules/user-providers/user-providers.module.js";
 
@@ -31,8 +30,7 @@ import { UserProvidersModule } from "./modules/user-providers/user-providers.mod
     AuthModule,
     PrismaModule,
     UserProvidersModule,
-    AiModule,
-    EngineModule,
+    ProjectGroupsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
