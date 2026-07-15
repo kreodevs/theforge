@@ -73,7 +73,7 @@ const MDD_TRACE_SECTIONS = "§1 Contexto, §4 Contratos API y §5 Lógica";
 function normalizeConcept(raw: string): string {
   return raw
     .replace(/\*\*/g, "")
-    .replace(/^\d+\.\s*/, "")
+    .replace(/^\d+\.?\s*/, "")
     .replace(/^[-*]\s*/, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -254,23 +254,41 @@ export function extractMddTraceabilityCorpus(mddText: string): string {
   return parts.length > 0 ? parts.join("\n\n") : md;
 }
 
-function extractKeywords(text: string): string[] {
-  const lower = text.toLowerCase();
-  const acronyms = lower.match(/\b[a-z]{2,4}\b/g)?.filter((w) => /^(?:usd|mxn|eur|erp|uat|iva|roi|kpi)$/.test(w)) ?? [];
-  const words = lower
+function tokenizeConceptWords(text: string): string[] {
+  return text
+    .toLowerCase()
     .split(/\s+/)
     .map((w) => w.replace(/^[^a-záéíóúñ0-9]+|[^a-záéíóúñ0-9]+$/gi, ""))
-    .filter((w) => w.length > 3 && !NOISE_WORDS.has(w));
-  return [...new Set([...words, ...acronyms])];
+    .filter((w) => w.length > 0);
+}
+
+function extractKeywords(text: string): string[] {
+  const lower = text.toLowerCase();
+  const acronyms =
+    lower.match(/\b[a-z]{2,4}\b/g)?.filter((w) => /^(?:usd|mxn|eur|erp|uat|iva|roi|kpi)$/.test(w)) ?? [];
+  const tokens = tokenizeConceptWords(lower);
+  const words = tokens.filter((w) => w.length > 3 && !NOISE_WORDS.has(w));
+  if (words.length > 0) return [...new Set([...words, ...acronyms])];
+
+  // Títulos H3 cortos («Objetivos de negocio») pierden todo al filtrar ruido — conservar tokens ≥3.
+  const fallback = tokens.filter((w) => w.length >= 3);
+  return [...new Set([...fallback, ...acronyms])];
 }
 
 function conceptCoverageDetail(
   concept: string,
   targetText: string,
 ): { ratio: number; matched: string[]; missing: string[] } {
+  const normalized = normalizeConcept(concept).toLowerCase();
+  const tgt = targetText.toLowerCase();
+
+  if (normalized.length >= 8 && tgt.includes(normalized)) {
+    return { ratio: 1, matched: [normalized], missing: [] };
+  }
+
   const words = extractKeywords(concept);
   if (words.length === 0) return { ratio: 0, matched: [], missing: [] };
-  const tgt = targetText.toLowerCase();
+
   const matched: string[] = [];
   const missing: string[] = [];
   for (const w of words) {

@@ -4,6 +4,7 @@ import { PrismaService } from "../../../prisma/prisma.service.js";
 import { pickPrimaryStage } from "../../projects/stage-helpers.js";
 import type {
   AuditorGaps,
+  DocumentCompleteness,
   EstimationComplexity,
   LiveMetricsResult,
   MDDContext,
@@ -41,6 +42,10 @@ import {
 import { computeDocumentCompleteness } from "./completeness.util.js";
 import { computeCrossDocumentConsistency } from "./consistency.util.js";
 import { isCredentialStorageSatisfied } from "../utils/mdd-credential-storage.util.js";
+import {
+  applyDeliveryGateToSemaphoreStatus,
+  validateMddForDelivery,
+} from "../utils/mdd-delivery-gate.util.js";
 
 /** Horas base por unidad (entidades, pantallas, endpoints) para derivar total. */
 const HOURS_PER_ENTITY = 12;
@@ -789,7 +794,7 @@ export class EstimationService {
       : useLegacyGaps
         ? this.auditorGapsByProject.get(projectId!.trim())
         : undefined;
-    if (!auditorGaps) {
+    if (!auditorGaps && !mddContentOverride) {
       const snap = await this.getMddAuditSnapshot(projectId, stageId);
       auditorGaps = snap?.auditorGaps;
     }
@@ -865,13 +870,16 @@ export class EstimationService {
       documents = { ...documents, mddContent: content };
     }
 
-    return this.calculateLiveMetrics(content, {
+    const metrics = this.calculateLiveMetrics(content, {
       auditorGaps,
       complexity: cx,
       projectId: projectId.trim(),
       stageId: stageId ?? null,
       documents,
     });
+    const deliveryGate = validateMddForDelivery(content);
+    const status = applyDeliveryGateToSemaphoreStatus(metrics.status, deliveryGate);
+    return { ...metrics, status, deliveryGate };
   }
 
   /** Desglose por sección/agente (0–100) para mostrar en la tabla del chat tras auditar. */
@@ -945,6 +953,8 @@ export class EstimationService {
     let traceabilityHints: string[] = [];
     let crossDocumentGaps: LiveMetricsResult["crossDocumentGaps"];
     let consistencyScore: number | undefined;
+    let completeness: DocumentCompleteness | undefined;
+    let mddQualityScore: number | undefined;
 
     if (hasDocs) {
       // ── Métrica integral ──────────────────────────────────
@@ -970,8 +980,9 @@ export class EstimationService {
       }
 
       // 2. Completitud (todos los documentos)
-      const completeness = computeDocumentCompleteness(docs!);
+      completeness = computeDocumentCompleteness(docs!);
       const completenessScore = completeness.overall;
+      mddQualityScore = mddQuality;
 
       // 3. Consistencia transversal BRD→MDD
       const consistency = computeCrossDocumentConsistency(docs!);
@@ -1008,6 +1019,7 @@ export class EstimationService {
     } else if (options?.auditorGaps) {
       const g = options.auditorGaps;
       precision = Math.min(100, Math.max(0, g.score));
+      mddQualityScore = precision;
       const strictInfra = cx === "HIGH";
       const hasGreenCriteria = strictInfra
         ? precision >= PRECISION_GREEN_MIN && g.infrastructure_ready && g.critical_gaps.length === 0
@@ -1042,6 +1054,7 @@ export class EstimationService {
         gaps.securityEdgeCaseGap * 8 +
         traceabilityPenalty;
       precision = Math.min(100, Math.round(Math.max(0, basePrecisionRaw - gapPenalty)));
+      mddQualityScore = precision;
       const hasGreenCriteria =
         cx === "HIGH"
           ? sections.db > 0 && sections.endpointsWithPayloads && gaps.contradictionGap === 0
@@ -1107,6 +1120,8 @@ export class EstimationService {
       mddReadinessHints,
       traceabilityHints,
       ...(consistencyScore != null ? { consistencyScore } : {}),
+      ...(completeness != null ? { completeness } : {}),
+      ...(mddQualityScore != null ? { mddQualityScore } : {}),
       ...(crossDocumentGaps != null ? { crossDocumentGaps } : {}),
     };
   }

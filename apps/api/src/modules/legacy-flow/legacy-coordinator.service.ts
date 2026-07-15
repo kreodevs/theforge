@@ -66,6 +66,7 @@ import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
+import { evaluateMddDeliveryGatePrepared } from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
 import {
   documentPersistFieldLabel,
   validateDocumentForPersist,
@@ -447,6 +448,12 @@ export type LegacyGenerateMddResponse = {
   mddLength: number;
   wordCount: number;
   stageId?: string;
+  deliveryGate: {
+    ok: boolean;
+    score: number;
+    blockers: string[];
+    warnings: string[];
+  };
   /** Solo si `?includeContent=true` (MCP/debug). */
   mddContent?: string;
 };
@@ -1317,11 +1324,18 @@ export class LegacyCoordinatorService {
       mddContent: cleaned,
       ...(gateStage?.id ? { stageId: gateStage.id } : {}),
     });
+    const deliveryGate = await evaluateMddDeliveryGatePrepared(cleaned);
     const response: LegacyGenerateMddResponse = {
       ok: true,
       persisted: true,
       mddLength: cleaned.length,
       wordCount: cleaned.trim() ? cleaned.trim().split(/\s+/).length : 0,
+      deliveryGate: {
+        ok: deliveryGate.ok,
+        score: deliveryGate.score,
+        blockers: deliveryGate.blockers,
+        warnings: deliveryGate.warnings,
+      },
       ...(gateStage?.id ? { stageId: gateStage.id } : {}),
     };
     if (options?.includeContent) {

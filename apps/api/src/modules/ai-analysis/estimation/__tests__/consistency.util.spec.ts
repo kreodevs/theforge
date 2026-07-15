@@ -103,6 +103,35 @@ Validación de margen.
     assert.match(gap!.hint!, /§1 Contexto|§4 Contratos|§5 Lógica/i, gap!.hint);
   });
 
+  it("cierra gap «1 Objetivos de negocio» cuando el MDD refleja objetivos en §1", () => {
+    const docs = {
+      brdContent: `## 3. Capacidades Funcionales del Producto
+### 1 Objetivos de negocio
+- Eliminar Excel/NAS como fuente de verdad de costos
+- Automatizar actualización de costos por evidencia real
+`,
+      mddContent: `## 1. Contexto
+### Objetivos de negocio
+| ID | Objetivo |
+|----|----------|
+| O1 | Eliminar Excel/NAS como SoT de costos |
+
+<!-- trazabilidad BRD→MDD §1 -->
+- **Objetivos de negocio** (trazabilidad BRD: Capacidades funcionales): los objetivos de negocio O1–O6 gobiernan el MVP.
+
+## 4. Contratos de API
+POST /cost-catalog
+
+## 5. Lógica
+Cron de promedio y auditoría Trade.
+`,
+    };
+    const r = computeCrossDocumentConsistency(docs);
+    const gap = r.gaps.find((g) => /objetivos de negocio/i.test(g.concept));
+    assert.equal(gap, undefined, `gaps=${JSON.stringify(r.gaps.map((g) => g.concept))}`);
+    assert.ok(r.score >= 50);
+  });
+
   it("extractMddTraceabilityCorpus prioriza secciones 1, 4 y 5", () => {
     const mdd = `## 1. Contexto
 Negocio de márgenes.

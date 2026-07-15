@@ -1,5 +1,13 @@
 import { create } from "zustand";
-import type { ChatImagePart, CodebaseDocResponseMode, MddDeliveryGateResult, PlanValidationPersisted, ProjectGenerationStatus } from "@theforge/shared-types";
+import type {
+  ChatImagePart,
+  CodebaseDocResponseMode,
+  MddDeliveryGateResult,
+  PlanValidationPersisted,
+  ProjectGenerationStatus,
+  TraceabilityGapInput,
+  TraceabilitySuggestFixResponse,
+} from "@theforge/shared-types";
 import {
   documentPersistFieldLabel,
   isChangelogOnlyDocument,
@@ -14,7 +22,11 @@ import {
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue, getOfflineQueue } from "../utils/apiClient";
 import { queueAndPoll } from "../utils/queueAndPoll";
 import { enqueueAndPollLegacyMdd, enqueueAndPollMddJob } from "../utils/pollMddJob";
-import { shouldApplyPersistedFieldContent } from "../utils/persist-field-guard";
+import {
+  mergeProjectBaselinesAfterPersist,
+  shouldApplyPersistedFieldContent,
+  WORKSHOP_PERSIST_BASELINE_FIELDS,
+} from "../utils/persist-field-guard";
 import {
   parseApiErrorPayloadFromResponse,
   parseErrorMessageFromResponse,
@@ -22,6 +34,7 @@ import {
 import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
 import { parseNdjsonLine } from "../utils/ndjson";
 import { mddHasSection6Heading, buildMddSectionRegenNotice } from "../utils/mddSectionRegen";
+import { appendMddTraceSection } from "../utils/appendMddTraceSection";
 import { isWorkshopAgentsBusy } from "../utils/workshopAgentsBusy";
 import { shouldPreserveWorkshopBusyState } from "../utils/workshopBusyRefresh";
 import {
@@ -287,8 +300,24 @@ async function persistField(
         ((getState() as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ??
           "",
       );
+      const stateNow = getState();
+      const localFields = Object.fromEntries(
+        WORKSHOP_PERSIST_BASELINE_FIELDS.map((f) => [
+          f,
+          (stateNow as unknown as Record<string, unknown>)[f] as string | null | undefined,
+        ]),
+      );
+      const alignedProject = mergeProjectBaselinesAfterPersist(
+        focused.project as unknown as Record<string, unknown>,
+        {
+          savedField: fieldName,
+          prevProject: project as unknown as Record<string, unknown>,
+          activeStageId,
+          localFields,
+        },
+      ) as unknown as Project;
       const patch: Partial<WorkshopState> = {
-        project: focused.project,
+        project: alignedProject,
         synced: true,
         error: null,
         notice: patternsReverted ? SSOT_PATTERNS_RESTORED_NOTICE : null,
@@ -353,6 +382,10 @@ export interface LiveMetricsResult {
   mddReadinessHints?: string[];
   traceabilityHints?: string[];
   consistencyScore?: number;
+  /** Completitud por documento (30% del total integral). */
+  completeness?: DocumentCompleteness;
+  /** Calidad MDD usada en la fórmula integral (45% del total). */
+  mddQualityScore?: number;
   crossDocumentGaps?: CrossDocumentGap[];
   /** Gate bloqueante de entrega MDD (≥9/10). */
   deliveryGate?: MddDeliveryGateResult;
@@ -364,6 +397,18 @@ function deliveryGateFromStreamEvent(
   const gate = event.deliveryGate;
   if (!gate || typeof gate.ok !== "boolean") return undefined;
   return gate;
+}
+
+function formatDeliveryGateInsertBlocker(gate: MddDeliveryGateResult): string {
+  const blockers = gate.blockers.filter((b) => b.trim().length > 0);
+  if (blockers.length === 0) return "";
+  const shown = blockers.slice(0, 2).join(" · ");
+  const suffix = blockers.length > 2 ? ` (+${blockers.length - 2} más)` : "";
+  return `No se puede guardar: ${shown}${suffix}. Arregla el MDD antes de insertar.`;
+}
+
+function hasDeliveryGateBlockers(gate: MddDeliveryGateResult | null | undefined): boolean {
+  return !!gate && !gate.ok && gate.blockers.some((b) => b.trim().length > 0);
 }
 
 /** Calificación por sección/agente (0–100) en el evento done del stream MDD. */
@@ -1052,6 +1097,17 @@ interface WorkshopState {
     projectId: string,
     stageId?: string | null,
   ) => Promise<{ patternIds: string[]; rationale?: string }>;
+  /** POST …/ai-analysis/traceability/suggest-fix — parche markdown para brecha BRD→MDD. */
+  suggestTraceabilityFix: (
+    projectId: string,
+    gap: CrossDocumentGap,
+    opts?: { stageId?: string | null; mddContent?: string; signal?: AbortSignal },
+  ) => Promise<TraceabilitySuggestFixResponse | null>;
+  /** Inserta parche al final de §1/§4/§5 y persiste el MDD. */
+  insertTraceabilityPatch: (
+    suggestion: string,
+    targetSection: TraceabilitySuggestFixResponse["targetSection"],
+  ) => Promise<boolean>;
   recordGovernancePatternAdrs: (
     projectId: string,
     patternIds: ReadonlySet<string>,
@@ -3630,7 +3686,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       } = data;
       set({
         liveMetrics: metrics,
-        ...(deliveryGate != null ? { deliveryGate } : {}),
+        deliveryGate: deliveryGate ?? null,
         ...(precisionBreakdown != null ? { precisionBreakdown } : {}),
         ...(completeness != null ? { documentCompleteness: completeness } : {}),
         ...(crossDocumentGaps != null ? { crossDocumentGaps } : {}),
@@ -4216,7 +4272,23 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const packed = projectWithUxAfterStream(data, data.uxUiGuideContent, get().activeStageId);
         const savedContent = packed?.mddContent ?? data.mddContent ?? content;
         const patternsReverted = data.mddGovernancePatternsReverted === true;
-        const nextProject = packed?.project ?? data;
+        const nextProjectRaw = packed?.project ?? data;
+        const stateNow = get();
+        const localFields = Object.fromEntries(
+          WORKSHOP_PERSIST_BASELINE_FIELDS.map((f) => [
+            f,
+            (stateNow as unknown as Record<string, unknown>)[f] as string | null | undefined,
+          ]),
+        );
+        const nextProject = mergeProjectBaselinesAfterPersist(
+          nextProjectRaw as unknown as Record<string, unknown>,
+          {
+            savedField: "mddContent",
+            prevProject: project as unknown as Record<string, unknown>,
+            activeStageId: stageId,
+            localFields,
+          },
+        ) as unknown as Project;
         const nextStages = nextProject.stages ?? get().workshopStages;
         set({
           project: nextProject,
@@ -4237,9 +4309,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }).catch(() => { });
         fetchEstimation(projectId).catch(() => { });
       } else {
-        const errBody = await r.json().catch(() => ({}));
-        const message = typeof errBody?.message === "string" ? errBody.message : "Error al guardar el MDD";
-        set({ synced: false, error: message });
+        const errText = await parseErrorMessageFromResponse(r, "Error al guardar el MDD");
+        set({ synced: false, error: errText });
       }
     } catch {
       set({ synced: false, error: "Error de red al guardar" });
@@ -4366,6 +4437,78 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       throw new Error((err as { message?: string }).message ?? "No se pudo analizar documentos para patrones");
     }
     return (await r.json()) as { patternIds: string[]; rationale?: string };
+  },
+
+  suggestTraceabilityFix: async (projectId, gap, opts) => {
+    const pid = projectId?.trim();
+    if (!pid) return null;
+    const body: {
+      projectId: string;
+      stageId?: string;
+      gap: TraceabilityGapInput;
+      mddContent?: string;
+    } = {
+      projectId: pid,
+      gap: {
+        concept: gap.concept,
+        hint: gap.hint,
+        brdSection: gap.brdSection,
+        brdSubsection: gap.brdSubsection,
+        kind: gap.kind,
+        missingTerms: gap.missingTerms,
+        severity: gap.severity,
+      },
+    };
+    const sid = (opts?.stageId ?? get().activeStageId)?.trim();
+    if (sid) body.stageId = sid;
+    const mdd = (opts?.mddContent ?? get().mddContent ?? "").trim();
+    if (mdd) body.mddContent = mdd;
+    try {
+      const r = await apiFetch(`${API_BASE}/ai-analysis/traceability/suggest-fix`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: opts?.signal,
+      });
+      if (!r.ok) {
+        const msg = await parseErrorMessageFromResponse(r, "No se pudo generar la sugerencia de trazabilidad");
+        set({ error: msg });
+        return null;
+      }
+      return (await r.json()) as TraceabilitySuggestFixResponse;
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        set({ error: "La sugerencia tardó demasiado. Inténtalo de nuevo." });
+        return null;
+      }
+      set({
+        error: e instanceof Error ? e.message : "Error de red al sugerir parche de trazabilidad",
+      });
+      return null;
+    }
+  },
+
+  insertTraceabilityPatch: async (suggestion, targetSection) => {
+    const { mddContent, project, persistMddContent, deliveryGate, projectId, fetchEstimation } = get();
+    const baseline = (mddContent ?? project?.mddContent ?? "").trim();
+    if (!baseline) {
+      set({ error: "No hay MDD para insertar el parche" });
+      return false;
+    }
+    if (hasDeliveryGateBlockers(deliveryGate)) {
+      set({ error: formatDeliveryGateInsertBlocker(deliveryGate!) });
+      return false;
+    }
+    const merged = appendMddTraceSection(baseline, targetSection, suggestion);
+    await persistMddContent(merged, { force: true });
+    if (get().error) {
+      return false;
+    }
+    if (projectId) {
+      const persisted = (get().mddContent ?? merged).trim();
+      await fetchEstimation(projectId, persisted).catch(() => {});
+    }
+    return true;
   },
 
   recordGovernancePatternAdrs: async (projectId, patternIds) => {
