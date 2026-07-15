@@ -1,13 +1,33 @@
 /**
  * Parses NestJS-style JSON error bodies or plain text (proxies, HTML errors).
  */
+function formatStructuredNestMessage(message: unknown): string | null {
+  if (typeof message !== "object" || message === null || Array.isArray(message)) {
+    return null;
+  }
+  const m = message as {
+    code?: string;
+    message?: string;
+    deliveryGate?: { blockers?: string[] };
+  };
+  const blockers = (m.deliveryGate?.blockers ?? []).filter(
+    (b): b is string => typeof b === "string" && b.trim().length > 0,
+  );
+  if (blockers.length > 0) return blockers.join(" — ");
+  if (typeof m.message === "string" && m.message.trim()) return m.message.trim();
+  if (typeof m.code === "string" && m.code.trim()) return m.code.trim();
+  return null;
+}
+
 export function parseErrorBodyText(text: string, fallback: string, httpStatus?: number): string {
   const trimmed = text.trim();
   if (!trimmed) {
     return httpStatus != null ? `${fallback} (HTTP ${httpStatus})` : fallback;
   }
   try {
-    const data = JSON.parse(trimmed) as { message?: string | string[]; code?: string };
+    const data = JSON.parse(trimmed) as { message?: string | string[] | Record<string, unknown>; code?: string };
+    const structured = formatStructuredNestMessage(data.message);
+    if (structured) return structured;
     if (data.code === "MODELS_UNAVAILABLE") {
       return "No hay un modelo disponible configurado. Revisa el modelo principal y los respaldos en Ajustes → Gestionar instancias.";
     }

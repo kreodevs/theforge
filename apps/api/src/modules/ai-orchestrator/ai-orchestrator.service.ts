@@ -20,6 +20,14 @@ import { buildMddContextForUxGuide } from "../ai/utils/mdd-ux-guide-brief.util.j
 import { appendUxGuideDesignAttribution } from "../design-ref/design-ref-attribution.util.js";
 import { wouldShrinkDbgaDangerously } from "../sessions/dbga-edit.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
+import {
+  buildMddDocumentPersistStatus,
+  extractMddPersistErrorFromException,
+  MISSING_FIN_MDD_DELIMITER,
+  MISSING_FIN_MDD_HINT,
+  shouldReportMissingMddDelimiter,
+  type OrchestratorDocumentPersist,
+} from "./orchestrator-document-persist.util.js";
 
 export type OrchestratorClientDeliverables = {
   architectureContent?: string;
@@ -81,6 +89,99 @@ export class AiOrchestratorService {
     void this.sddIngestor.ingestProjectMdd(projectId).catch((err) => {
       console.error("[Orchestrator] SDD ingest failed:", err);
     });
+  }
+
+  private lastAssistantContentForTab(
+    session: { chatLog?: unknown } | null | undefined,
+    tab: string,
+  ): string {
+    const log = (session?.chatLog ?? []) as ChatMessage[];
+    for (let i = log.length - 1; i >= 0; i--) {
+      const m = log[i];
+      if (m?.role === "assistant" && (m.tab ?? "mdd") === tab) {
+        return m.content ?? "";
+      }
+    }
+    return "";
+  }
+
+  private async tryPersistMddContent(
+    projectId: string,
+    mddContent: string,
+    stageId: string,
+    extras?: {
+      documentAst?: Record<string, unknown> | null;
+      documentVersion?: number | null;
+    },
+  ): Promise<{
+    saved: boolean;
+    project?: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>>;
+    code?: string;
+    deliveryGate?: import("@theforge/shared-types").MddDeliveryGateResult;
+    hint?: string;
+  }> {
+    try {
+      const project = await this.projects.update(projectId, {
+        mddContent,
+        stageId,
+        ...(extras?.documentAst !== undefined
+          ? { documentAst: extras.documentAst ?? undefined }
+          : {}),
+        ...(extras?.documentVersion !== undefined
+          ? { documentVersion: extras.documentVersion ?? undefined }
+          : {}),
+      });
+      return { saved: true, project };
+    } catch (err) {
+      const extracted = extractMddPersistErrorFromException(err);
+      return {
+        saved: false,
+        code: extracted.code,
+        hint: extracted.message,
+        deliveryGate: extracted.deliveryGate,
+      };
+    }
+  }
+
+  private resolveMddDocumentPersist(params: {
+    userMessage: string;
+    assistantContent: string;
+    currentMddLen: number;
+    mddFromResponse?: string | null;
+    persistResult?: Awaited<ReturnType<AiOrchestratorService["tryPersistMddContent"]>>;
+    parsedFromResponse: boolean;
+  }): OrchestratorDocumentPersist | undefined {
+    const { userMessage, assistantContent, currentMddLen, persistResult, parsedFromResponse } =
+      params;
+    if (parsedFromResponse && persistResult) {
+      return buildMddDocumentPersistStatus({
+        parsedFromResponse: true,
+        saved: persistResult.saved,
+        ...(persistResult.saved
+          ? {}
+          : {
+              reason: persistResult.code ?? "ERR_VALIDATION",
+              deliveryGate: persistResult.deliveryGate,
+              hint: persistResult.hint,
+            }),
+      });
+    }
+    if (
+      shouldReportMissingMddDelimiter({
+        userMessage,
+        assistantContent,
+        flags: { hasMdd: false },
+        currentMddLen,
+      })
+    ) {
+      return buildMddDocumentPersistStatus({
+        parsedFromResponse: false,
+        saved: false,
+        reason: MISSING_FIN_MDD_DELIMITER,
+        hint: MISSING_FIN_MDD_HINT,
+      });
+    }
+    return undefined;
   }
 
   /** Sufijo de prompt con rechazos/reflexión recientes (legacy / SDD). */
@@ -208,7 +309,7 @@ export class AiOrchestratorService {
     const currentBrd =
       stageBrdContent(project, route.stageId) ?? brdContentFromClient ?? undefined;
     if (tab === "mdd" && mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
-      await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: route.stageId });
+      await this.tryPersistMddContent(projectId, mddContentFromClient, route.stageId);
     }
     if (tab === "ux-ui-guide" && uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideContentFromClient });
@@ -284,8 +385,20 @@ export class AiOrchestratorService {
     if (!updatedSession) throw new NotFoundException("Session not found after chat");
 
     let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
+    let mddPersistResult: Awaited<ReturnType<AiOrchestratorService["tryPersistMddContent"]>> | undefined;
     if (tab === "mdd" && mddFromResponse != null && mddFromResponse.length > 0) {
-      updatedProject = await this.projects.update(projectId, { mddContent: mddFromResponse, stageId: route.stageId, documentAst: documentAstFromResponse ?? undefined, documentVersion: documentVersionFromResponse ?? undefined });
+      mddPersistResult = await this.tryPersistMddContent(
+        projectId,
+        mddFromResponse,
+        route.stageId,
+        {
+          documentAst: documentAstFromResponse,
+          documentVersion: documentVersionFromResponse,
+        },
+      );
+      if (mddPersistResult.saved && mddPersistResult.project) {
+        updatedProject = mddPersistResult.project;
+      }
     }
     if (tab === "ux-ui-guide" && uxUiGuideFromResponse != null && uxUiGuideFromResponse.length > 0) {
       console.log("[Orchestrator] persisting uxUiGuideContent (Guía UX/UI) length:", uxUiGuideFromResponse.length);
@@ -344,6 +457,21 @@ export class AiOrchestratorService {
     this.scheduleSddIngest(projectId, shouldIngestMdd);
     const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, route, hitlLine);
 
+    let documentPersist: OrchestratorDocumentPersist | undefined;
+    if (tab === "mdd") {
+      const assistantContent = this.lastAssistantContentForTab(updatedSession, tab);
+      const currentMddLen = (currentMdd ?? mddForRouteStage(project, route.stageId) ?? "").trim()
+        .length;
+      documentPersist = this.resolveMddDocumentPersist({
+        userMessage: hitlLine,
+        assistantContent,
+        currentMddLen,
+        mddFromResponse,
+        persistResult: mddPersistResult,
+        parsedFromResponse: Boolean(mddFromResponse && mddFromResponse.length > 0),
+      });
+    }
+
     return {
       session: updatedSession,
       project: finalProject,
@@ -352,6 +480,7 @@ export class AiOrchestratorService {
       phase0SummaryContent:
         phase0FromResponse ?? finalProject?.phase0SummaryContent ?? undefined,
       evaluatorCritique,
+      ...(documentPersist ? { documentPersist } : {}),
     };
   }
 
@@ -513,7 +642,7 @@ export class AiOrchestratorService {
       (project as { infraContent?: string | null }).infraContent,
     );
     if (tab === "mdd" && mddContentFromClient != null && mddContentFromClient.trim().length > 0) {
-      await this.projects.update(projectId, { mddContent: mddContentFromClient, stageId: routeStream.stageId });
+      await this.tryPersistMddContent(projectId, mddContentFromClient, routeStream.stageId);
     }
     if (tab === "ux-ui-guide" && uxUiGuideContentFromClient != null && uxUiGuideContentFromClient.trim().length > 0) {
       await this.projects.update(projectId, { uxUiGuideContent: uxUiGuideContentFromClient });
@@ -581,11 +710,18 @@ export class AiOrchestratorService {
         yield { event: "chunk", data: { content: msg.content } };
       } else {
         let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
+        let mddPersistResult:
+          | Awaited<ReturnType<AiOrchestratorService["tryPersistMddContent"]>>
+          | undefined;
         if (tab === "mdd" && msg.mddContent != null && msg.mddContent.length > 0) {
-          updatedProject = await this.projects.update(projectId, {
-            mddContent: msg.mddContent,
-            stageId: routeStream.stageId,
-          });
+          mddPersistResult = await this.tryPersistMddContent(
+            projectId,
+            msg.mddContent,
+            routeStream.stageId,
+          );
+          if (mddPersistResult.saved && mddPersistResult.project) {
+            updatedProject = mddPersistResult.project;
+          }
         }
         if (tab === "ux-ui-guide" && msg.uxUiGuideContent != null && msg.uxUiGuideContent.length > 0) {
           const uxWithAttribution = appendUxGuideDesignAttribution(
@@ -656,6 +792,22 @@ export class AiOrchestratorService {
             (mddContentFromClient != null && mddContentFromClient.trim().length > 0));
         this.scheduleSddIngest(projectId, shouldIngestMddStream);
         const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, routeStream, hitlLineStream);
+
+        let documentPersist: OrchestratorDocumentPersist | undefined;
+        if (tab === "mdd") {
+          const assistantContent = this.lastAssistantContentForTab(msg.session, tab);
+          const currentMddLen = (currentMdd ?? mddForRouteStage(project, routeStream.stageId) ?? "")
+            .trim().length;
+          documentPersist = this.resolveMddDocumentPersist({
+            userMessage: hitlLineStream,
+            assistantContent,
+            currentMddLen,
+            mddFromResponse: msg.mddContent,
+            persistResult: mddPersistResult,
+            parsedFromResponse: Boolean(msg.mddContent && msg.mddContent.length > 0),
+          });
+        }
+
         yield {
           event: "done",
           data: {
@@ -671,6 +823,7 @@ export class AiOrchestratorService {
               projectOut.phase0SummaryContent ??
               undefined,
             evaluatorCritique,
+            ...(documentPersist ? { documentPersist } : {}),
           },
         };
       }

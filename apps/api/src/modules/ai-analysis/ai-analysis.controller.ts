@@ -6,6 +6,8 @@ import { AiAnalysisService } from "./ai-analysis.service.js";
 import { EstimationService } from "./estimation/estimation.service.js";
 import { Phase0InterviewService } from "./phase0/phase0-interview.service.js";
 import { MddManualAuditService } from "./mdd/mdd-manual-audit.service.js";
+import { TraceabilitySuggestService } from "./traceability/traceability-suggest.service.js";
+import type { TraceabilitySuggestFixRequest } from "@theforge/shared-types";
 import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
 import { ProjectGenerationGuardService } from "../projects/project-generation-guard.service.js";
@@ -18,6 +20,7 @@ export class AiAnalysisController {
     private readonly estimationService: EstimationService,
     private readonly phase0Interview: Phase0InterviewService,
     private readonly mddManualAudit: MddManualAuditService,
+    private readonly traceabilitySuggest: TraceabilitySuggestService,
     private readonly prisma: PrismaService,
     private readonly generationGuard: ProjectGenerationGuardService,
     private readonly mddQueue: MddQueueService,
@@ -544,6 +547,14 @@ export class AiAnalysisController {
       throw new BadRequestException("projectId is required");
     }
     return this.aiAnalysis.getProjectDecisions(id);
+  }
+
+  /**
+   * Sugiere un parche markdown para cerrar una brecha BRD→MDD (§1/§4/§5).
+   */
+  @Post("traceability/suggest-fix")
+  async suggestTraceabilityFix(@Body() body: TraceabilitySuggestFixRequest) {
+    return this.traceabilitySuggest.suggestFix(body);
   }
 
   @Post("mdd/suggest-governance-patterns")

@@ -134,6 +134,7 @@ import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "./stage-deliverable-snapshot.util.js";
 import {
   buildMddDeliveryGateConflictBody,
+  buildMddPatchPipelineErrorBody,
   evaluateMddDeliveryGatePrepared,
   MDD_DELIVERY_GATE_ERR,
 } from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
@@ -607,6 +608,29 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     }
   }
 
+  /** BadRequest 400 con cuerpo estructurado para fallos del pipeline MDD en PATCH. */
+  private async throwMddPipelineBadRequest(
+    result: { code: string; message: string },
+    stageId: string,
+    mddRaw: string,
+  ): Promise<never> {
+    if (result.code === MDD_DELIVERY_GATE_ERR) {
+      const gate = await evaluateMddDeliveryGatePrepared(mddRaw);
+      void this.persistMddDeliveryGateSnapshot(stageId, gate);
+      throw new BadRequestException(
+        buildMddPatchPipelineErrorBody(
+          MDD_DELIVERY_GATE_ERR,
+          buildMddDeliveryGateConflictBody(gate).message,
+          stageId,
+          gate,
+        ),
+      );
+    }
+    throw new BadRequestException(
+      buildMddPatchPipelineErrorBody(result.code, result.message, stageId),
+    );
+  }
+
   async create(data: CreateProjectDto) {
     const parsed = createProjectSchema.parse(data);
     const isLegacy = parsed.projectType === "LEGACY";
@@ -962,36 +986,30 @@ export class ProjectsService implements IOrchestratorProjectsPort {
           this.buildSemaphoreBase(mergedForSemaphore),
           { projectId: id, stageId: targetStage.id },
         );
-        if (!result.ok) {
-          if (result.code === MDD_DELIVERY_GATE_ERR && targetStage.id) {
-            const gate = await evaluateMddDeliveryGatePrepared(mddForPipeline);
-            void this.persistMddDeliveryGateSnapshot(targetStage.id, gate);
-          }
-          throw new BadRequestException({
-            code: result.code,
-            message: result.message,
-          });
-        }
-        pipelineResult = {
-          sanitizedMdd: result.sanitizedMdd,
-          status: result.status,
-          precisionScore: result.precisionScore,
-        };
-        await this.prisma.stage.update({
-          where: { id: targetStage.id },
-          data: {
-            mddContent: prependDocumentTimestamps(result.sanitizedMdd),
+        if (result.ok) {
+          pipelineResult = {
+            sanitizedMdd: result.sanitizedMdd,
             status: result.status,
             precisionScore: result.precisionScore,
-            documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue),
-            documentVersion: parsedDocumentVersion,
-          },
-        });
-        await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
-        void this.persistMddDeliveryGateSnapshot(
-          targetStage.id,
-          await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
-        );
+          };
+          await this.prisma.stage.update({
+            where: { id: targetStage.id },
+            data: {
+              mddContent: prependDocumentTimestamps(result.sanitizedMdd),
+              status: result.status,
+              precisionScore: result.precisionScore,
+              documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue),
+              documentVersion: parsedDocumentVersion,
+            },
+          });
+          await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
+          void this.persistMddDeliveryGateSnapshot(
+            targetStage.id,
+            await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
+          );
+        } else {
+          await this.throwMddPipelineBadRequest(result, targetStage.id, mddForPipeline);
+        }
       }
     }
 
@@ -1058,8 +1076,18 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     }
 
     const project = await this.findOne(id);
+    const mddWasInRequest = mddForPipeline !== undefined && mddForPipeline !== null;
     if (mddGovernancePatternsReverted) {
-      return { ...project, mddGovernancePatternsReverted: true as const };
+      return {
+        ...project,
+        mddGovernancePatternsReverted: true as const,
+        ...(mddWasInRequest && pipelineResult
+          ? { mddPersist: { saved: true as const, stageId: targetStage.id } }
+          : {}),
+      };
+    }
+    if (mddWasInRequest && pipelineResult) {
+      return { ...project, mddPersist: { saved: true as const, stageId: targetStage.id } };
     }
     return project;
   }
@@ -3143,27 +3171,24 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
       this.buildSemaphoreBase(project),
       { projectId, stageId },
     );
-    if (!result.ok) {
-      throw new BadRequestException({
-        code: result.code,
-        message: result.message,
+    if (result.ok) {
+      await this.prisma.stage.update({
+        where: { id: stageId },
+        data: {
+          mddContent: prependDocumentTimestamps(result.sanitizedMdd),
+          status: result.status,
+          precisionScore: result.precisionScore,
+        },
       });
-    }
-
-    await this.prisma.stage.update({
-      where: { id: stageId },
-      data: {
-        mddContent: prependDocumentTimestamps(result.sanitizedMdd),
+      await this.changeLog.log(projectId, "mddContent", result.sanitizedMdd);
+      await this.estimationRecalc.recalcAndUpsert(stageId, {
+        mddContent: result.sanitizedMdd,
+        infraContent: project.infraContent ?? null,
         status: result.status,
-        precisionScore: result.precisionScore,
-      },
-    });
-    await this.changeLog.log(projectId, "mddContent", result.sanitizedMdd);
-    await this.estimationRecalc.recalcAndUpsert(stageId, {
-      mddContent: result.sanitizedMdd,
-      infraContent: project.infraContent ?? null,
-      status: result.status,
-    });
+      });
+    } else {
+      await this.throwMddPipelineBadRequest(result, stageId, enforced.markdown);
+    }
   }
 
   async generateInfra(projectId: string, gapsFeedback?: string | null) {

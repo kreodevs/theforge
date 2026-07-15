@@ -115,6 +115,7 @@ import { BrdStagePanel } from "../components/BrdStagePanel";
 import { AgentGovernancePanel } from "../components/AgentGovernancePanel";
 import { WorkshopAgentProgressPanel } from "../components/WorkshopAgentProgressPanel";
 import { PendingDocumentationGapsPanel } from "../components/PendingDocumentationGapsPanel";
+import { TraceabilityGapList } from "../components/TraceabilityGapList";
 import { AgentSessionLogPanel } from "../components/AgentSessionLogPanel";
 import { type DocumentsForZip } from "../utils/downloadDocumentsZip";
 import {
@@ -596,6 +597,8 @@ export default function WorkshopView({
     [liveMetrics?.traceabilityHints],
   );
   const consistencyScore = useWorkshopStore((s) => s.consistencyScore);
+  const documentCompleteness = useWorkshopStore((s) => s.documentCompleteness);
+  const crossDocumentGaps = useWorkshopStore((s) => s.crossDocumentGaps);
 
   const auditTrailRaw = useWorkshopStore((s) => s.auditTrail);
   const auditTrail = useMemo(() => auditTrailRaw || [], [auditTrailRaw]);
@@ -5402,10 +5405,31 @@ export default function WorkshopView({
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setShowAuditModal(false)}>
               <div className="bg-[var(--background)] border border-[var(--border)] rounded-xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] shrink-0">
-                  <h2 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-[var(--primary)]" />
-                    Detalles de Auditoría MDD
-                  </h2>
+                  <div>
+                    <h2 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-[var(--primary)]" />
+                      Detalles de Auditoría MDD
+                    </h2>
+                    {liveMetrics ? (
+                      <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+                        Precisión integral: <span className="font-semibold text-[var(--foreground)]">{liveMetrics.precision}%</span>
+                        {documentCompleteness != null || consistencyScore != null || liveMetrics.mddQualityScore != null ? (
+                          <span className="text-xs text-[var(--foreground-subtle)]">
+                            {" "}
+                            (
+                            {[
+                              documentCompleteness != null ? `Docs ${documentCompleteness.overall}%` : null,
+                              consistencyScore != null ? `BRD→MDD ${consistencyScore}%` : null,
+                              liveMetrics.mddQualityScore != null ? `MDD ${liveMetrics.mddQualityScore}%` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                            )
+                          </span>
+                        ) : null}
+                      </p>
+                    ) : null}
+                  </div>
                   <button onClick={() => setShowAuditModal(false)} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
                     <X className="w-5 h-5" />
                   </button>
@@ -5416,6 +5440,9 @@ export default function WorkshopView({
                     <h3 className="text-sm font-medium text-[var(--muted-foreground)] mb-1 uppercase tracking-wider">
                       Calidad MDD (Constitución)
                     </h3>
+                    <p className="text-xs text-[var(--foreground-subtle)] mb-1">
+                      Componente calidad MDD (45% del total)
+                    </p>
                     <p className="text-xs text-[var(--foreground-subtle)] mb-3">
                       Evalúa §1 Contexto, §3 Modelo, §4 API, §6 Seguridad y §7 Integración del Master Design Document.
                     </p>
@@ -5524,7 +5551,50 @@ export default function WorkshopView({
                       </div>
                     )}
 
-                    {traceabilityHints && traceabilityHints.length > 0 && (
+                    {(consistencyScore != null || documentCompleteness != null) && (
+                      <div className="mt-4 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_40%,transparent)] p-3">
+                        <h4 className="text-sm font-medium text-[var(--muted-foreground)] mb-2">
+                          Componentes de precisión integral
+                        </h4>
+                        <ul className="space-y-1 text-xs text-[var(--muted-foreground)]">
+                          {documentCompleteness != null ? (
+                            <li>
+                              Completitud documentos (30%):{" "}
+                              <span className="font-mono font-medium text-[var(--foreground)]">
+                                {documentCompleteness.overall}%
+                              </span>
+                            </li>
+                          ) : null}
+                          {consistencyScore != null ? (
+                            <li>
+                              Trazabilidad BRD→MDD (25%):{" "}
+                              <span className="font-mono font-medium text-[var(--foreground)]">
+                                {consistencyScore}%
+                              </span>
+                            </li>
+                          ) : null}
+                          {liveMetrics?.mddQualityScore != null ? (
+                            <li>
+                              Calidad MDD (45%):{" "}
+                              <span className="font-mono font-medium text-[var(--foreground)]">
+                                {liveMetrics.mddQualityScore}%
+                              </span>
+                            </li>
+                          ) : null}
+                        </ul>
+                        {consistencyScore === 50 &&
+                        (crossDocumentGaps?.length ?? 0) === 0 &&
+                        (traceabilityHints?.length ?? 0) === 0 ? (
+                          <p className="mt-2 text-[11px] leading-snug text-[color-mix(in_oklch,var(--warning)_82%,var(--foreground))]">
+                            BRD sin ítems trazables; trazabilidad neutra al 50%.
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {(traceabilityHints && traceabilityHints.length > 0) ||
+                    consistencyScore != null ||
+                    documentCompleteness != null ? (
                       <div className="mt-4">
                         <h4 className="text-sm font-medium text-[color-mix(in_oklch,var(--warning)_75%,var(--foreground))] mb-2 flex items-center gap-2">
                           <Target className="w-3.5 h-3.5" />
@@ -5538,16 +5608,30 @@ export default function WorkshopView({
                         <p className="text-[10px] text-[var(--foreground-subtle)] mb-2">
                           Capacidades de negocio del BRD que aún no se reflejan en §1, §4 o §5 del MDD.
                         </p>
-                        <ul className="space-y-1.5">
-                          {traceabilityHints.map((hint: string, i: number) => (
-                            <li key={i} className="flex items-start gap-2 text-xs text-[var(--muted-foreground)]">
-                              <span className="text-[color-mix(in_oklch,var(--warning)_75%,var(--foreground))] mt-0.5 shrink-0">▶</span>
-                              <span>{hint}</span>
-                            </li>
-                          ))}
-                        </ul>
+                        {crossDocumentGaps && crossDocumentGaps.length > 0 ? (
+                          <TraceabilityGapList
+                            gaps={crossDocumentGaps}
+                            projectId={projectId}
+                            stageId={activeStageId}
+                            mddContent={effectiveMddTrimmed}
+                            maxVisible={12}
+                          />
+                        ) : traceabilityHints && traceabilityHints.length > 0 ? (
+                          <ul className="space-y-1.5">
+                            {traceabilityHints.map((hint: string, i: number) => (
+                              <li key={i} className="flex items-start gap-2 text-xs text-[var(--muted-foreground)]">
+                                <span className="text-[color-mix(in_oklch,var(--warning)_75%,var(--foreground))] mt-0.5 shrink-0">▶</span>
+                                <span>{hint}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-xs italic text-[var(--foreground-subtle)]">
+                            Sin brechas BRD→MDD detectadas en este momento.
+                          </p>
+                        )}
                       </div>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* Sección Logs */}

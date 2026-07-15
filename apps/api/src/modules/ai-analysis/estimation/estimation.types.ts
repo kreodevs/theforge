@@ -106,6 +106,10 @@ export interface LiveMetricsResult {
   traceabilityHints: string[];
   /** Score 0–100 de trazabilidad BRD→MDD. */
   consistencyScore?: number;
+  /** Completitud por documento (30% del total integral). */
+  completeness?: DocumentCompleteness;
+  /** Calidad MDD usada en la fórmula integral (45% del total). */
+  mddQualityScore?: number;
   /** Gaps estructurados BRD→MDD. */
   crossDocumentGaps?: CrossDocumentGap[];
   /** Gate bloqueante de entrega MDD (≥9/10); si ok=false, el semáforo no puede ser verde. */

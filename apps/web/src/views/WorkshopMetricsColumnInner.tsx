@@ -25,6 +25,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui";
 import { LlevarAlRepoWizardDialog } from "@/components/LlevarAlRepoWizardDialog";
+import { TraceabilityGapList } from "@/components/TraceabilityGapList";
 import { AnalyzeDashboard } from "@/components/AnalyzeDashboard";
 import type { SddAnalyzeReport, MddDeliveryGateResult } from "@theforge/shared-types";
 import { agentGovernanceScaffoldHasContent } from "@theforge/shared-types";
@@ -45,7 +46,9 @@ const WORKSHOP_METRICS_BADGE_WARN =
 const WORKSHOP_METRICS_BADGE_ERR =
   "inline-flex shrink-0 items-center rounded-full bg-[color-mix(in_oklch,var(--destructive)_14%,transparent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-[color-mix(in_oklch,var(--destructive)_90%,var(--foreground))]";
 
-/** Stable column order for delivery roles in the estimation breakdown. */
+/** Umbrales alineados con backend (PRECISION_RED_MAX=85, PRECISION_GREEN_MIN=95). */
+const SEMAPHORE_PRECISION_RED_MAX = 85;
+const SEMAPHORE_PRECISION_GREEN_MIN = 95;
 const WORKSHOP_DELIVERY_ROLE_ORDER: readonly string[] = [
   "architect",
   "techLead",
@@ -200,6 +203,7 @@ export function WorkshopMetricsColumnInner({
   const conformanceRaw = useWorkshopStore((s) => s.conformance);
   const conformance = useMemo(() => conformanceRaw, [conformanceRaw]);
   const documentCompleteness = useWorkshopStore((s) => s.documentCompleteness);
+  const consistencyScore = useWorkshopStore((s) => s.consistencyScore);
   const crossDocumentGaps = useWorkshopStore((s) => s.crossDocumentGaps);
   const apiBlueprintDmBlocked = conformance?.blueprintDataModel?.ok === false;
   const apiBlueprintBlockedHint =
@@ -332,7 +336,23 @@ export function WorkshopMetricsColumnInner({
       ? deliveryGate.blockers.length > 0
         ? "red"
         : "yellow"
-      : liveMetrics?.status ?? (precisionScore <= 40 ? "red" : precisionScore <= 90 ? "yellow" : "green");
+      : liveMetrics?.status ?? (precisionScore < SEMAPHORE_PRECISION_RED_MAX ? "red" : precisionScore < SEMAPHORE_PRECISION_GREEN_MIN ? "yellow" : "green");
+  const statusDiffersByDeliveryGate =
+    deliveryGate != null &&
+    !deliveryGate.ok &&
+    liveMetrics?.status != null &&
+    effectiveStatus !== liveMetrics.status;
+  const precisionFormulaBreakdown = useMemo(() => {
+    const docsScore = liveMetrics?.completeness?.overall ?? documentCompleteness?.overall;
+    const traceScore = liveMetrics?.consistencyScore ?? consistencyScore;
+    const mddScore = liveMetrics?.mddQualityScore;
+    if (docsScore == null && traceScore == null && mddScore == null) return null;
+    return {
+      docs: docsScore,
+      trace: traceScore,
+      mdd: mddScore,
+    };
+  }, [liveMetrics, documentCompleteness, consistencyScore]);
   const semaphoreConfig =
     effectiveStatus === "red"
       ? {
@@ -457,6 +477,32 @@ export function WorkshopMetricsColumnInner({
                   Precisión {precisionScore}%
                   {deliveryGate ? ` · Gate ${deliveryGate.score}/100` : ""}
                 </p>
+                {precisionFormulaBreakdown ? (
+                  <p className="text-[10px] leading-snug text-[color-mix(in_oklch,var(--muted-foreground)_92%,var(--foreground))]">
+                    {[
+                      precisionFormulaBreakdown.docs != null
+                        ? `Docs ${precisionFormulaBreakdown.docs}%`
+                        : null,
+                      precisionFormulaBreakdown.trace != null
+                        ? `BRD→MDD ${precisionFormulaBreakdown.trace}%`
+                        : null,
+                      precisionFormulaBreakdown.mdd != null
+                        ? `MDD ${precisionFormulaBreakdown.mdd}%`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                ) : null}
+                {statusDiffersByDeliveryGate ? (
+                  <p className="text-[10px] leading-snug text-[color-mix(in_oklch,var(--destructive)_82%,var(--foreground))]">
+                    Bloqueado por gate de entrega
+                  </p>
+                ) : effectiveStatus === "red" && precisionScore < SEMAPHORE_PRECISION_RED_MAX ? (
+                  <p className="text-[10px] leading-snug text-[color-mix(in_oklch,var(--destructive)_82%,var(--foreground))]">
+                    Precisión &lt; {SEMAPHORE_PRECISION_RED_MAX}%
+                  </p>
+                ) : null}
               </div>
             </div>
             {deliveryGate && !deliveryGate.ok ? (
@@ -912,38 +958,15 @@ export function WorkshopMetricsColumnInner({
                       <AlertTriangle className="h-3 w-3" aria-hidden />
                       Trazabilidad BRD → MDD ({crossDocumentGaps.length})
                     </p>
-                    <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-md border border-[color-mix(in_oklch,var(--warning)_35%,var(--border))] bg-[color-mix(in_oklch,var(--warning)_10%,var(--card))] p-2 text-[11px] leading-snug">
-                      {crossDocumentGaps.slice(0, 8).map((gap, i) => (
-                        <div key={i} className="flex items-start gap-1.5">
-                          <span className="shrink-0 text-[var(--primary)]" aria-hidden>
-                            ⚠
-                          </span>
-                          <span className="min-w-0 text-[color-mix(in_oklch,var(--muted-foreground)_98%,var(--foreground))]">
-                            {gap.hint ? (
-                              <span className="leading-snug">{gap.hint}</span>
-                            ) : (
-                              <>
-                                <strong className="text-[color-mix(in_oklch,var(--foreground)_90%,var(--muted-foreground))]">{gap.concept}</strong>{" "}
-                                <span className="text-[10px] opacity-90">
-                                  {gap.from}→{gap.to}
-                                </span>{" "}
-                                <span
-                                  className={
-                                    gap.severity === "missing"
-                                      ? "text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]"
-                                      : "text-[var(--primary)]"
-                                  }
-                                >
-                                  ({gap.severity === "missing" ? "falta" : "parcial"})
-                                </span>
-                              </>
-                            )}
-                          </span>
-                        </div>
-                      ))}
-                      {crossDocumentGaps.length > 8 && (
-                        <p className="text-[10px] text-[var(--foreground-subtle)]">+{crossDocumentGaps.length - 8} más</p>
-                      )}
+                    <div className="max-h-56 overflow-y-auto rounded-md border border-[color-mix(in_oklch,var(--warning)_35%,var(--border))] bg-[color-mix(in_oklch,var(--warning)_10%,var(--card))] p-2">
+                      <TraceabilityGapList
+                        gaps={crossDocumentGaps}
+                        projectId={projectId}
+                        stageId={activeStageId}
+                        mddContent={effectiveMddTrimmed}
+                        maxVisible={8}
+                        compact
+                      />
                     </div>
                   </div>
                 )}

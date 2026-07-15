@@ -27,6 +27,20 @@ export type MddDeliveryGateHttpErrorBody = {
   deliveryGate: MddDeliveryGateResult;
 };
 
+export type MddContentPersistMeta = {
+  attempted: true;
+  saved: false;
+  field: "mddContent";
+  stageId: string;
+};
+
+export type MddPatchPipelineErrorBody = {
+  code: string;
+  message: string;
+  deliveryGate?: MddDeliveryGateResult;
+  persist: MddContentPersistMeta;
+};
+
 /** Cuerpo de error HTTP 409 para bloqueo de entregables. */
 export function buildMddDeliveryGateConflictBody(
   gate: MddDeliveryGateResult,
@@ -36,5 +50,20 @@ export function buildMddDeliveryGateConflictBody(
     code: MDD_DELIVERY_GATE_ERR,
     message: gate.blockers.join("; ") || fallbackMessage,
     deliveryGate: gate,
+  };
+}
+
+/** Cuerpo de error HTTP 400 para PATCH mddContent (pipeline / gate). */
+export function buildMddPatchPipelineErrorBody(
+  code: string,
+  message: string,
+  stageId: string,
+  deliveryGate?: MddDeliveryGateResult,
+): MddPatchPipelineErrorBody {
+  return {
+    code,
+    message,
+    ...(deliveryGate ? { deliveryGate } : {}),
+    persist: { attempted: true, saved: false, field: "mddContent", stageId },
   };
 }

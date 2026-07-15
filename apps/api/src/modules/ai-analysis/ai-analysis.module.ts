@@ -13,6 +13,7 @@ import { EstimationModule } from "./estimation/estimation.module.js";
 import { SddIngestorService } from "./sdd-ingestor.service.js";
 import { MddManualAuditService } from "./mdd/mdd-manual-audit.service.js";
 import { MddQueueService } from "./mdd/mdd-queue.service.js";
+import { TraceabilitySuggestService } from "./traceability/traceability-suggest.service.js";
 import { GraphMemoryModule } from "./graph-memory/graph-memory.module.js";
 import { Phase0Module } from "./phase0/phase0.module.js";
 import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
@@ -38,6 +39,7 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     SddIngestorService,
     MddManualAuditService,
     MddQueueService,
+    TraceabilitySuggestService,
   ],
   exports: [
     AiAnalysisService,
@@ -47,6 +49,7 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     Phase0Module,
     MddManualAuditService,
     MddQueueService,
+    TraceabilitySuggestService,
   ],
 })
 export class AiAnalysisModule { }
