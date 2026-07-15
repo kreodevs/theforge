@@ -52,7 +52,6 @@ async function bootstrap() {
   const logger = new Logger("Bootstrap");
   logger.log("[bootstrap] Creating Nest application...");
   const app = await NestFactory.create(AppModule, {
-    abortOnError: false,
     logger: ["error", "warn", "log", "debug", "verbose"],
   });
   logger.log("[bootstrap] Nest application created.");

@@ -1,4 +1,6 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
+import { LegacyFlowModule } from "../legacy-flow/legacy-flow.module.js";
+import { DocumentationGapModule } from "../documentation-gap/documentation-gap.module.js";
 import {
   PROJECTS_SERVICE_TOKEN,
   PROJECT_INTEGRATION_SERVICE_TOKEN,
@@ -40,8 +42,8 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     GraphMemoryModule,
     ChangeLogModule,
     DocumentSnapshotModule,
-    // forwardRef(() => LegacyFlowModule),
-    // forwardRef(() => DocumentationGapModule),
+    forwardRef(() => LegacyFlowModule),
+    forwardRef(() => DocumentationGapModule),
     UiMcpModule,
     ProjectGroupsModule,
     EstimationModule,
