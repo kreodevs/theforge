@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import {
   assessMermaidFixStrategy,
   repairMermaidBlockForRender,
-} from "./mermaid-fix.util";
+} from "./mermaid-fix.util.js";
 
 const BROKEN_LICENSE_FLOW = `sequenceDiagram
     par ticipant User as Cliente
@@ -31,19 +32,19 @@ User->>Web: Selecciona tier
     Web->>DB: Validar API Key + tier + fechas`;
 
 describe("assessMermaidFixStrategy", () => {
-  it("marca regenerar cuando hay par ticipant, ends huérfanos y flujo truncado", () => {
+  it("repara localmente par ticipant y ends huérfanos cuando la validación pasa", () => {
     const assessment = assessMermaidFixStrategy(BROKEN_LICENSE_FLOW);
-    expect(assessment.strategy).toBe("regenerate");
-    expect(assessment.reasons).toContain("participant_keyword_split");
-    expect(assessment.reasons).toContain("orphan_end_lines");
+    assert.equal(assessment.strategy, "repair");
+    assert.ok(assessment.reasons.includes("participant_keyword_split"));
+    assert.ok(assessment.reasons.includes("orphan_end_lines"));
   });
 });
 
 describe("repairMermaidBlockForRender", () => {
   it("corrige par ticipant y elimina end huérfanos localmente", () => {
     const out = repairMermaidBlockForRender(BROKEN_LICENSE_FLOW);
-    expect(out).toMatch(/participant User as Cliente/i);
-    expect(out).not.toMatch(/par ticipant/i);
-    expect(out.match(/^\s*end\s*$/gim) ?? []).toHaveLength(0);
+    assert.match(out, /participant User as Cliente/i);
+    assert.doesNotMatch(out, /par ticipant/i);
+    assert.equal(out.match(/^\s*end\s*$/gim)?.length ?? 0, 0);
   });
 });

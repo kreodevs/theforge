@@ -1,5 +1,5 @@
 import {
-  prepareMermaidDiagramForRender,
+  resolveMermaidBlockForRender,
 } from "@theforge/shared-types/mermaid";
 
 /** Indentación: solo 2 espacios ASCII por nivel; sin espacios al final. */
@@ -122,7 +122,7 @@ export function normalizeMermaidSequenceSyntax(content: string): string {
 
 /** Pipeline de normalización antes de `mermaid.render` (MDD, DBGA, tutorial). */
 export function prepareMermaidForRender(content: string): string {
-  let body = prepareMermaidDiagramForRender(content);
+  let body = resolveMermaidBlockForRender(content);
   if (!body.trim()) return "";
 
   if (/sequenceDiagram/i.test(body) || /^(participant|actor)\s/im.test(body)) {

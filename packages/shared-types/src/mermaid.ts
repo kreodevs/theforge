@@ -596,6 +596,18 @@ export function prepareMermaidDiagramForRender(raw: string): string {
   return stripMermaidFenceWrappers(body).trim();
 }
 
+/**
+ * Reparación determinista + preparación para render (bloque sin fences).
+ * Usar en preview antes de `mermaid.render` / Excalidraw.
+ */
+export function resolveMermaidBlockForRender(raw: string): string {
+  const stripped = stripMermaidFenceWrappers((raw ?? "").trim());
+  if (!stripped) return "";
+  const repaired = repairMermaidBlockBody(stripped);
+  const candidate = repaired.trim() || stripped;
+  return prepareMermaidDiagramForRender(candidate);
+}
+
 /** Comas tipográficas → ASCII antes de reparar anotaciones PK/FK. */
 function normalizeMermaidCommas(text: string): string {
   return text.replace(/[\uFF0C\u201A\uFE50\uFE51\u3001]/g, ",");
@@ -1851,6 +1863,14 @@ function normalizeGraphKeywordToFlowchart(content: string): string {
     .replace(/^(\s*)graph(\s*)$/im, "$1flowchart TD");
 }
 
+/** Antepone `sequenceDiagram` si el LLM omitió la cabecera pero hay participant/actor. */
+function ensureSequenceDiagramHeader(content: string): string {
+  const t = (content ?? "").trim();
+  if (!t || /^sequenceDiagram\b/im.test(t)) return content ?? "";
+  if (/^(participant|actor)\s/im.test(t)) return `sequenceDiagram\n${t}`;
+  return content ?? "";
+}
+
 // ─── Comment stripping (sopaco/mermaid-fixer concept) ────────────────────
 /** Strip `%%` comment lines — they confuse the Mermaid parser when LLMs embed explanations. */
 export function stripMermaidComments(body: string): string {
@@ -2178,6 +2198,7 @@ export function normalizeMermaidDiagramBody(raw: string): string {
   stripped = stripMermaidComments(stripped);
   stripped = stripped.replace(/\bpar\s+ticipant\b/gi, "participant");
   stripped = normalizeGraphKeywordToFlowchart(stripped);
+  stripped = ensureSequenceDiagramHeader(stripped);
   if (/^erDiagram\b/im.test(stripped.trim())) {
     stripped = repairErDiagramBrdMarkdownLeaks(stripped);
   }
@@ -2187,8 +2208,11 @@ export function normalizeMermaidDiagramBody(raw: string): string {
   stripped = repairErDiagramPkFkCommas(stripped);
   stripped = ensureErDiagramHeader(stripped);
   const isErDiagram = /^erDiagram\b/i.test(stripped.trim());
-  const isSequence = /^sequenceDiagram\b/im.test(stripped.trim());
-  const isFlowchart = /^(flowchart|graph)\s/i.test(stripped.trim());
+  const isSequence =
+    /^sequenceDiagram\b/im.test(stripped.trim()) || /^(participant|actor)\s/im.test(stripped.trim());
+  const isFlowchart =
+    /^flowchart\b/im.test(stripped.trim()) ||
+    /^graph\s+(?:TD|TB|LR|RL|BT)\b/im.test(stripped.trim());
   const isClassDiagram = /^classDiagram\b/im.test(stripped.trim());
   const isStateDiagram = /^stateDiagram(?:-v2)?\b/im.test(stripped.trim());
   if (isErDiagram) {
@@ -2198,7 +2222,9 @@ export function normalizeMermaidDiagramBody(raw: string): string {
   }
   if (isSequence) {
     stripped = normalizeSequenceDiagramSyntax(stripped);
+    stripped = repairSequenceArrowParties(stripped);
     stripped = normalizeSequenceActivation(stripped);
+    stripped = normalizeSequenceActivationOrder(stripped);
   }
 
   const lines = stripped.trim().split("\n");
@@ -2465,6 +2491,16 @@ export function assessMermaidFixStrategy(raw: string): {
   const errors = validateMermaid(repairedPreview);
   const classifiedErrors = classifyMermaidErrors(source);
 
+  // Si la reparación local deja el diagrama válido, no forzar regeneración LLM.
+  if (errors.length === 0 && repairedPreview.trim()) {
+    return {
+      strategy: "repair",
+      reasons: reasons.length ? reasons : ["valid_after_repair"],
+      repairedPreview,
+      classifiedErrors,
+    };
+  }
+
   const forceRegenerate =
     reasons.includes("split_across_fences") ||
     reasons.includes("truncated_flow") ||
@@ -2474,15 +2510,6 @@ export function assessMermaidFixStrategy(raw: string): {
   const structureErrors = classifiedErrors.filter((e) => e.category === "structure").length;
   const syntaxErrors = classifiedErrors.filter((e) => e.category === "syntax").length;
   const contentErrors = classifiedErrors.filter((e) => e.category === "content").length;
-
-  if (errors.length === 0 && !forceRegenerate) {
-    return {
-      strategy: "repair",
-      reasons: reasons.length ? reasons : ["valid_after_repair"],
-      repairedPreview,
-      classifiedErrors,
-    };
-  }
 
   const needsRegenerate =
     forceRegenerate ||
@@ -2635,33 +2662,39 @@ export function normalizeSequenceActivationOrder(content: string): string {
 export function repairSequenceArrowParties(content: string): string {
   if (!/^sequenceDiagram\b/im.test(content.trim())) return content;
 
-  // Collect declared participants
   const participants = new Set<string>();
-  for (const m of content.matchAll(/^\s*participant\s+(\S+)/im)) {
-    participants.add(m[1]!);
+  for (const m of content.matchAll(/^\s*(?:participant|actor)\s+(\S+)/gim)) {
+    participants.add(m[1]!.replace(/:$/, ""));
   }
 
-  // Normalise arrow spacing: `A  ->>  B` → `A->>B`
+  const sequenceArrowLine =
+    /^(\s*)(\w+)\s+(-{1,2}[>xX]{0,2}>?)\s+(\w+)\s*:\s*(.*)$/;
+
   let result = content.replace(
-    /^(\s*\S+)\s+(-{1,2}[>xX]{0,2})\s+(\S+)/gm,
-    (_m: string, from: string, arrow: string, to: string) => {
-      // Map legacy dashed arrow to solid for request lines
-      const normArrow = arrow === "-->" ? "->>" : arrow;
-      return `${from}${normArrow}${to}`;
+    sequenceArrowLine,
+    (_m: string, indent: string, from: string, arrow: string, to: string, msg: string) => {
+      const normArrow = arrow === "-->" || arrow === "--" ? "->>" : arrow.replace(/\s+/g, "");
+      return `${indent}${from}${normArrow}${to}: ${msg}`;
     },
   );
 
-  // Auto-declare participants referenced in arrows but not declared
   const usedParticipants = new Set<string>();
-  for (const m of result.matchAll(/^\s*(\S+?)(-{1,2}[>xX]{0,2})(\S+)/gm)) {
-    usedParticipants.add(m[1]!);
-    usedParticipants.add(m[3]!);
+  for (const line of result.split("\n")) {
+    const m = line.trim().match(/^(\w+)\s*(->>|-->>|-->|->)\s*(\w+)\s*:/);
+    if (m) {
+      usedParticipants.add(m[1]!);
+      usedParticipants.add(m[3]!);
+    }
   }
+
   const missing = [...usedParticipants].filter(
-    (p) => !participants.has(p) && !/^(Note|participant|activate|deactivate|alt|else|end|opt|loop|break|par|rect|critical)/i.test(p),
+    (p) =>
+      !participants.has(p) &&
+      !/^(Note|participant|activate|deactivate|alt|else|end|opt|loop|break|par|rect|critical|sequenceDiagram)$/i.test(
+        p,
+      ),
   );
   if (missing.length > 0) {
-    // Insert participant declarations after the sequenceDiagram line
     const lines = result.split("\n");
     const insertIdx = lines.findIndex((l) => /^\s*sequenceDiagram\b/i.test(l.trim()));
     const decls = missing.map((p) => `    participant ${p}`);

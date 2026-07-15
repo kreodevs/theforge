@@ -1,6 +1,6 @@
 import {
   assessMermaidFixStrategy,
-  repairMermaidBlockBody,
+  resolveMermaidBlockForRender,
 } from "@theforge/shared-types/mermaid";
 import { prepareMermaidForRender } from "./mermaid-render-prep.util";
 
@@ -8,9 +8,8 @@ import { prepareMermaidForRender } from "./mermaid-render-prep.util";
 export function repairMermaidBlockForRender(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return trimmed;
-  const body = repairMermaidBlockBody(trimmed);
-  const prepared = body ? prepareMermaidForRender(body) : "";
-  return prepared.trim() || body || trimmed;
+  const prepared = prepareMermaidForRender(resolveMermaidBlockForRender(trimmed) || trimmed);
+  return prepared.trim() || trimmed;
 }
 
 export { assessMermaidFixStrategy };

@@ -68,6 +68,8 @@ export function formatDocumentMarkdown(text: string): string {
   cleaned = repairDirectoryTreeBlocks(cleaned);
   cleaned = repairFragmentedSqlFences(cleaned);
   cleaned = repairOrphanSqlBlocks(cleaned);
+  // Segunda pasada Mermaid: SQL/árboles pueden haber dejado aristas o fences huérfanos.
+  cleaned = normalizeMermaidInDocument(cleaned);
   return cleaned;
 }
 
