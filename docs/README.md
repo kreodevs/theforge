@@ -6,6 +6,7 @@ Punto de entrada para humanos y agentes. **Arquitectura y producto (NotebookLM):
 
 | Necesitas… | Documento |
 |------------|-------------|
+| Release v1 — generación v2, Excalidraw híbrido, formateador Markdown | [THE-FORGE-V1-RELEASE.md](THE-FORGE-V1-RELEASE.md) |
 | Comparativa spec-kit vs The Forge (SDD, gaps, alineación) | [speckit-vs-theforge.md](speckit-vs-theforge.md) |
 | Agente IA implementando desde docs TheForge | [THEFORGE-DOC-CONSUMPTION-GUIDE.md](THEFORGE-DOC-CONSUMPTION-GUIDE.md) |
 | MCP gráfico (componentes UI, Kreo, Pantallas) | [MCP_GRAFICO.md](MCP_GRAFICO.md) |
