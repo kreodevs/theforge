@@ -26,6 +26,7 @@ export class ProjectGenerationGuardService {
   private readonly bgJobs = new Map<string, TrackedBgJob>();
 
   constructor(
+    @Inject(forwardRef(() => ProjectsService))
     private readonly projects: ProjectsService,
     @Inject(forwardRef(() => DeliverablesQueueService))
     private readonly deliverablesQueue: DeliverablesQueueService,
