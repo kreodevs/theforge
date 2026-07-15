@@ -26,6 +26,7 @@ export * from "./repair-directory-tree.js";
 export * from "./markdown-table.js";
 export * from "./mermaid.js";
 export * from "./format-document-markdown.js";
+export * from "./theforge-doc-stamp.js";
 export * from "./repair-pasted-markdown.js";
 export * from "./repair-glued-headings.js";
 export {
