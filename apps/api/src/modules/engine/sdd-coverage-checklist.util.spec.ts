@@ -1,8 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import {
   buildGreenfieldCoverageChecklist,
   extractMddCoreServices,
@@ -10,7 +9,7 @@ import {
   extractBlueprintPhases,
 } from "./sdd-coverage-checklist.util.js";
 
-const FIX = join(dirname(fileURLToPath(import.meta.url)), "__fixtures__/ia-trading-gaps");
+const FIX = join(__dirname, "__fixtures__/ia-trading-gaps");
 const mdd = readFileSync(join(FIX, "mdd-snippet.md"), "utf8");
 const research = readFileSync(join(FIX, "research-snippet.md"), "utf8");
 const blueprint = readFileSync(join(FIX, "blueprint-phases-snippet.md"), "utf8");

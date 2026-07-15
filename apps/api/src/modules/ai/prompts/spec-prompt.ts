@@ -1,9 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { withDocumentChangelogInstructions } from "./with-document-changelog-instructions.js";
-import { esmDirname } from "../../../esm-helpers.js";
-
-const __dirname = esmDirname(import.meta.url);
 const PROMPT_PATH = join(__dirname, "spec-prompt.md");
 
 function loadSpecPrompt(): string {

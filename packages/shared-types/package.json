@@ -9,58 +9,108 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist-cjs/index.d.ts",
+        "default": "./dist-cjs/index.js"
+      }
     },
     "./session": {
-      "types": "./dist/session.d.ts",
-      "import": "./dist/session.js",
-      "require": "./dist/session.js"
+      "import": {
+        "types": "./dist/session.d.ts",
+        "default": "./dist/session.js"
+      },
+      "require": {
+        "types": "./dist-cjs/session.d.ts",
+        "default": "./dist-cjs/session.js"
+      }
     },
     "./markdown-repair": {
-      "types": "./dist/markdown-repair.d.ts",
-      "import": "./dist/markdown-repair.js",
-      "require": "./dist/markdown-repair.js"
+      "import": {
+        "types": "./dist/markdown-repair.d.ts",
+        "default": "./dist/markdown-repair.js"
+      },
+      "require": {
+        "types": "./dist-cjs/markdown-repair.d.ts",
+        "default": "./dist-cjs/markdown-repair.js"
+      }
     },
     "./repair-directory-tree": {
-      "types": "./dist/repair-directory-tree.d.ts",
-      "import": "./dist/repair-directory-tree.js",
-      "require": "./dist/repair-directory-tree.js"
+      "import": {
+        "types": "./dist/repair-directory-tree.d.ts",
+        "default": "./dist/repair-directory-tree.js"
+      },
+      "require": {
+        "types": "./dist-cjs/repair-directory-tree.d.ts",
+        "default": "./dist-cjs/repair-directory-tree.js"
+      }
     },
     "./mdd-pipeline-limits": {
-      "types": "./dist/mdd-pipeline-limits.d.ts",
-      "import": "./dist/mdd-pipeline-limits.js",
-      "require": "./dist/mdd-pipeline-limits.js"
+      "import": {
+        "types": "./dist/mdd-pipeline-limits.d.ts",
+        "default": "./dist/mdd-pipeline-limits.js"
+      },
+      "require": {
+        "types": "./dist-cjs/mdd-pipeline-limits.d.ts",
+        "default": "./dist-cjs/mdd-pipeline-limits.js"
+      }
     },
     "./markdown-table": {
-      "types": "./dist/markdown-table.d.ts",
-      "import": "./dist/markdown-table.js",
-      "require": "./dist/markdown-table.js"
+      "import": {
+        "types": "./dist/markdown-table.d.ts",
+        "default": "./dist/markdown-table.js"
+      },
+      "require": {
+        "types": "./dist-cjs/markdown-table.d.ts",
+        "default": "./dist-cjs/markdown-table.js"
+      }
     },
     "./mermaid": {
-      "types": "./dist/mermaid.d.ts",
-      "import": "./dist/mermaid.js",
-      "require": "./dist/mermaid.js"
+      "import": {
+        "types": "./dist/mermaid.d.ts",
+        "default": "./dist/mermaid.js"
+      },
+      "require": {
+        "types": "./dist-cjs/mermaid.d.ts",
+        "default": "./dist-cjs/mermaid.js"
+      }
     },
     "./format-document-markdown": {
-      "types": "./dist/format-document-markdown.d.ts",
-      "import": "./dist/format-document-markdown.js",
-      "require": "./dist/format-document-markdown.js"
+      "import": {
+        "types": "./dist/format-document-markdown.d.ts",
+        "default": "./dist/format-document-markdown.js"
+      },
+      "require": {
+        "types": "./dist-cjs/format-document-markdown.d.ts",
+        "default": "./dist-cjs/format-document-markdown.js"
+      }
     },
     "./mdd-governance-patterns": {
-      "types": "./dist/mdd-governance-patterns.d.ts",
-      "import": "./dist/mdd-governance-patterns.js",
-      "require": "./dist/mdd-governance-patterns.js"
+      "import": {
+        "types": "./dist/mdd-governance-patterns.d.ts",
+        "default": "./dist/mdd-governance-patterns.js"
+      },
+      "require": {
+        "types": "./dist-cjs/mdd-governance-patterns.d.ts",
+        "default": "./dist-cjs/mdd-governance-patterns.js"
+      }
     },
     "./document-ast": {
-      "types": "./dist/document-ast/index.d.ts",
-      "import": "./dist/document-ast/index.js",
-      "require": "./dist/document-ast/index.js"
+      "import": {
+        "types": "./dist/document-ast/index.d.ts",
+        "default": "./dist/document-ast/index.js"
+      },
+      "require": {
+        "types": "./dist-cjs/document-ast/index.d.ts",
+        "default": "./dist-cjs/document-ast/index.js"
+      }
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsc -p tsconfig.cjs.json && node -e \"require('fs').writeFileSync('./dist-cjs/package.json', JSON.stringify({ type: 'commonjs' }))\"",
     "lint": "eslint src"
   },
   "devDependencies": {

@@ -13,8 +13,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, parse } from "node:path";
-import { esmDirname } from "../../esm-helpers.js";
-
 export type DesignMdLintSeverity = "error" | "warning" | "info";
 
 export interface DesignMdLintFinding {
@@ -44,8 +42,6 @@ const EMPTY_SUMMARY: DesignMdLintSummary = { errors: 0, warnings: 0, infos: 0 };
 function unavailableResult(): DesignMdLintResult {
   return { ok: true, unavailable: true, findings: [], summary: { ...EMPTY_SUMMARY } };
 }
-
-const __dirname = esmDirname(import.meta.url);
 
 let cachedCliEntry: string | null | undefined;
 

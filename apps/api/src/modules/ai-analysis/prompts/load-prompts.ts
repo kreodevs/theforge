@@ -1,8 +1,5 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { esmDirname } from "../../../esm-helpers.js";
-
-const __dirname = esmDirname(import.meta.url);
 const PROMPTS_DIR = join(__dirname, ".");
 // Force reload comment - Fix Manager "regenerar" delegation
 /** En build Nest: assets van a dist/modules/ai-analysis/prompts; el JS a dist/apps/api/src/.../prompts (8 niveles hasta dist) */

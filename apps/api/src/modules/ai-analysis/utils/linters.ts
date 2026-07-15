@@ -1,5 +1,4 @@
-import pkg from "node-sql-parser";
-const { Parser } = pkg;
+import { Parser } from "node-sql-parser";
 
 export interface SqlLintResult {
     valid: boolean;

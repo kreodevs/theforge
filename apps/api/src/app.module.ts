@@ -35,10 +35,6 @@ import { UiMcpModule } from "./modules/ui-mcp/ui-mcp.module.js";
 import { TechnologyDocsMcpModule } from "./modules/technology-docs-mcp/technology-docs-mcp.module.js";
 import { PluginModule } from "./plugins/plugin.module.js";
 import { PluginsApiModule } from "./modules/plugins/plugins.module.js";
-import { esmDirname } from "./esm-helpers.js";
-
-const __dirname = esmDirname(import.meta.url);
-
 @Module({
   controllers: [HealthController],
   imports: [

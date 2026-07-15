@@ -2,7 +2,6 @@
   "name": "@theforge/business-rules",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "author": "Jorge Correa <jcorrea@e-personal.net>",
   "license": "Apache-2.0",
   "main": "./dist/index.js",

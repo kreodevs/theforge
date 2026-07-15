@@ -2,10 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { withDocumentChangelogInstructions } from "./with-document-changelog-instructions.js";
 import { appendSddUiUxActionableRules } from "./sdd-ui-ux-actionable-rules.js";
-import { esmDirname } from "../../../esm-helpers.js";
-
 // Nest copia *.md a dist; misma convención que master-prompt
-const __dirname = esmDirname(import.meta.url);
 const PROMPT_PATH = join(__dirname, "blueprint-prompt.md");
 
 function loadBlueprintPrompt(): string {
