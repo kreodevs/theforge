@@ -26,10 +26,14 @@ const DELIVERABLE_KEYS = [
   "infraContent",
   "agentGovernanceContent",
   "uxUiGuideContent",
-  "uiScreensContent",
   "phase0SummaryContent",
   "aemContent",
 ] as const satisfies readonly (keyof ProjectDeliverableSource)[];
+
+/** Project flat only — not a Stage column; stamped via `ui-screens.service` or project update. */
+const PROJECT_ONLY_DELIVERABLE_KEYS = ["uiScreensContent"] as const satisfies readonly (keyof ProjectDeliverableSource)[];
+
+const STAGE_DELIVERABLE_KEYS = DELIVERABLE_KEYS;
 
 /** JSON borrador Fase 0 — no recibe cabecera markdown. */
 const STAMP_EXCLUDED_DELIVERABLE_KEYS = new Set<keyof ProjectDeliverableSource>([
@@ -38,7 +42,15 @@ const STAMP_EXCLUDED_DELIVERABLE_KEYS = new Set<keyof ProjectDeliverableSource>(
 
 function buildStageUpdateData(fields: ProjectDeliverableSource): Record<string, string | null> {
   const data: Record<string, string | null> = {};
-  for (const key of DELIVERABLE_KEYS) {
+  for (const key of STAGE_DELIVERABLE_KEYS) {
+    if (fields[key] !== undefined) data[key] = fields[key] ?? null;
+  }
+  return data;
+}
+
+function buildProjectUpdateData(fields: ProjectDeliverableSource): Record<string, string | null> {
+  const data = buildStageUpdateData(fields);
+  for (const key of PROJECT_ONLY_DELIVERABLE_KEYS) {
     if (fields[key] !== undefined) data[key] = fields[key] ?? null;
   }
   return data;
@@ -58,19 +70,20 @@ export async function persistStageAndProjectDeliverables(
   if (Object.keys(picked).length === 0) return;
 
   const stageData: Record<string, unknown> = buildStageUpdateData(picked);
-  const projectData: Record<string, unknown> = buildStageUpdateData(picked);
+  const projectData: Record<string, unknown> = buildProjectUpdateData(picked);
 
   // Prepend creation / updated timestamp header to every text deliverable
   const now = new Date();
-  for (const key of DELIVERABLE_KEYS) {
-    const val = stageData[key];
+  const stampKeys = [...STAGE_DELIVERABLE_KEYS, ...PROJECT_ONLY_DELIVERABLE_KEYS] as const;
+  for (const key of stampKeys) {
+    const val = projectData[key];
     if (
       !STAMP_EXCLUDED_DELIVERABLE_KEYS.has(key) &&
       typeof val === "string" &&
       val.trim().length > 0
     ) {
       const stamped = prependDocumentTimestamps(val, now);
-      stageData[key] = stamped;
+      if (key in stageData) stageData[key] = stamped;
       projectData[key] = stamped;
     }
   }
@@ -118,7 +131,6 @@ export async function seedActiveStageDeliverables(
         infraContent: true,
         agentGovernanceContent: true,
         uxUiGuideContent: true,
-        uiScreensContent: true,
         phase0SummaryContent: true,
         aemContent: true,
       },
@@ -134,7 +146,7 @@ export async function seedActiveStageDeliverables(
 
   if (!stage || !project) return;
 
-  const hasAnyStageContent = DELIVERABLE_KEYS.some((key) => {
+  const hasAnyStageContent = STAGE_DELIVERABLE_KEYS.some((key) => {
     const value = stage[key];
     return typeof value === "string" && value.trim().length > 0;
   });
@@ -142,7 +154,7 @@ export async function seedActiveStageDeliverables(
 
   const snapshot = readStageDeliverableSnapshot(previousStage?.deliverableSnapshot);
   const source: ProjectDeliverableSource = snapshot
-    ? DELIVERABLE_KEYS.reduce<ProjectDeliverableSource>((acc, key) => {
+    ? [...STAGE_DELIVERABLE_KEYS, ...PROJECT_ONLY_DELIVERABLE_KEYS].reduce<ProjectDeliverableSource>((acc, key) => {
         acc[key] = snapshot[key] ?? project[key] ?? null;
         return acc;
       }, {})
@@ -159,7 +171,7 @@ export function resolveStageDeliverableSource(
   const snapshot = options?.snapshot ?? readStageDeliverableSnapshot(stage.deliverableSnapshot);
   if (snapshot) {
     const merged: ProjectDeliverableSource = {};
-    for (const key of DELIVERABLE_KEYS) {
+    for (const key of [...STAGE_DELIVERABLE_KEYS, ...PROJECT_ONLY_DELIVERABLE_KEYS]) {
       merged[key] = snapshot[key] ?? project[key] ?? null;
     }
     return merged;
