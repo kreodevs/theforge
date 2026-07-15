@@ -64,6 +64,6 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     ProjectGenerationGuardService,
     { provide: PROJECT_GENERATION_GUARD_SERVICE_TOKEN, useExisting: ProjectGenerationGuardService },
   ],
-  exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
+  exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService, PROJECTS_SERVICE_TOKEN, PROJECT_INTEGRATION_SERVICE_TOKEN, DELIVERABLES_QUEUE_SERVICE_TOKEN, PROJECT_GENERATION_GUARD_SERVICE_TOKEN],
 })
 export class ProjectsModule { }

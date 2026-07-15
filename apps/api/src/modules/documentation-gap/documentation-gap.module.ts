@@ -31,6 +31,8 @@ import { DocumentationGapService } from "./documentation-gap.service.js";
     AgentSessionLogService,
     ArchitectureDecisionService,
     DocReconcileService,
+    DOCUMENTATION_GAP_SERVICE_TOKEN,
+    DOC_RECONCILE_SERVICE_TOKEN,
   ],
 })
 export class DocumentationGapModule {}

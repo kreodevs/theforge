@@ -49,6 +49,8 @@ import { LegacyDeliverablesQueueService } from "./legacy-deliverables-queue.serv
     ResolveChangeToFilesService,
     CheckNavigationImpactService,
     LegacyTransitionService,
+    LEGACY_COORDINATOR_SERVICE_TOKEN,
+    RESOLVE_CHANGE_TO_FILES_SERVICE_TOKEN,
   ],
 })
 export class LegacyFlowModule {}
