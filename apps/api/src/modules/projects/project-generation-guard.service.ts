@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, forwardRef } from "@nestjs/common";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { ComplexityLevel } from "@theforge/shared-types";
 import {
   buildDeliverableReadiness,
@@ -8,8 +8,9 @@ import {
   type GenerationJobType,
   type ProjectGenerationStatus,
 } from "@theforge/shared-types";
-import { ProjectsService } from "./projects.service.js";
-import { DeliverablesQueueService } from "./deliverables-queue.service.js";
+import { PROJECTS_SERVICE_TOKEN, DELIVERABLES_QUEUE_SERVICE_TOKEN } from "../../injection-tokens.js";
+import type { ProjectsService } from "./projects.service.js";
+import type { DeliverablesQueueService } from "./deliverables-queue.service.js";
 
 type TrackedBgJob = {
   projectId: string;
@@ -26,8 +27,9 @@ export class ProjectGenerationGuardService {
   private readonly bgJobs = new Map<string, TrackedBgJob>();
 
   constructor(
+    @Inject(PROJECTS_SERVICE_TOKEN)
     private readonly projects: ProjectsService,
-    @Inject(forwardRef(() => DeliverablesQueueService))
+    @Inject(DELIVERABLES_QUEUE_SERVICE_TOKEN)
     private readonly deliverablesQueue: DeliverablesQueueService,
   ) {}
 

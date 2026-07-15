@@ -3,6 +3,7 @@ import {
   PROJECTS_SERVICE_TOKEN,
   PROJECT_INTEGRATION_SERVICE_TOKEN,
   DELIVERABLES_QUEUE_SERVICE_TOKEN,
+  PROJECT_GENERATION_GUARD_SERVICE_TOKEN,
 } from "../../injection-tokens.js";
 import { DeliverablesQueueService } from "./deliverables-queue.service.js";
 import { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
@@ -61,6 +62,7 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     DeliverablesQueueService,
     { provide: DELIVERABLES_QUEUE_SERVICE_TOKEN, useExisting: DeliverablesQueueService },
     ProjectGenerationGuardService,
+    { provide: PROJECT_GENERATION_GUARD_SERVICE_TOKEN, useExisting: ProjectGenerationGuardService },
   ],
   exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
 })
