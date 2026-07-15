@@ -1,4 +1,8 @@
 import { Module, forwardRef } from "@nestjs/common";
+import {
+  LEGACY_COORDINATOR_SERVICE_TOKEN,
+  RESOLVE_CHANGE_TO_FILES_SERVICE_TOKEN,
+} from "../../injection-tokens.js";
 import { PrismaModule } from "../../prisma/prisma.module.js";
 import { AiAnalysisModule } from "../ai-analysis/ai-analysis.module.js";
 import { AgentSupervisorModule } from "../agent-supervisor/agent-supervisor.module.js";
@@ -28,10 +32,12 @@ import { LegacyDeliverablesQueueService } from "./legacy-deliverables-queue.serv
   controllers: [LegacyFlowController, ChangeInterviewController],
   providers: [
     LegacyCoordinatorService,
+    { provide: LEGACY_COORDINATOR_SERVICE_TOKEN, useExisting: LegacyCoordinatorService },
     LegacyDeliverablesQueueService,
     LegacyReviewerService,
     ChangeInterviewService,
     ResolveChangeToFilesService,
+    { provide: RESOLVE_CHANGE_TO_FILES_SERVICE_TOKEN, useExisting: ResolveChangeToFilesService },
     CheckNavigationImpactService,
     LegacyTransitionService,
     LegacyDeliverablesStrategyService,

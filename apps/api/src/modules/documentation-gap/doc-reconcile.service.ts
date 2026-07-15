@@ -1,14 +1,14 @@
 import {
-  forwardRef,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { PROJECTS_SERVICE_TOKEN } from "../../injection-tokens.js";
 import type { AffectedArtifact, DocumentationGapEvidence } from "@theforge/shared-types";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ChangeLogService } from "../change-log/change-log.service.js";
 import { ConformanceService } from "../engine/conformance.service.js";
-import { ProjectsService } from "../projects/projects.service.js";
+import type { ProjectsService } from "../projects/projects.service.js";
 import { UiScreensService } from "../ui-mcp/ui-screens.service.js";
 import { collectConformanceGaps } from "../projects/conformance-gaps.util.js";
 import { AgentSessionLogService } from "./agent-session-log.service.js";
@@ -70,7 +70,7 @@ export class DocReconcileService {
     private readonly conformance: ConformanceService,
     private readonly agentSessionLog: AgentSessionLogService,
     private readonly architectureDecisions: ArchitectureDecisionService,
-    @Inject(forwardRef(() => ProjectsService))
+    @Inject(PROJECTS_SERVICE_TOKEN)
     private readonly projects: ProjectsService,
     private readonly uiScreens: UiScreensService,
   ) {}

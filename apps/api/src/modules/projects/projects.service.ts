@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  PROJECT_INTEGRATION_SERVICE_TOKEN,
+  DOCUMENTATION_GAP_SERVICE_TOKEN,
+  RESOLVE_CHANGE_TO_FILES_SERVICE_TOKEN,
+} from "../../injection-tokens.js";
 import { ComplexityLevel, Prisma, StageStatus, Status } from "@theforge/database";
 import type { Estimation, Project, Stage } from "@theforge/database";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
@@ -76,7 +81,7 @@ import {
   toLogicFlowsSection5CoverageReport,
 } from "../ai/utils/legacy-as-is-logic-flows.util.js";
 import { buildLegacyGenerateOptions } from "../legacy-flow/legacy-generate-options.util.js";
-import { ProjectIntegrationService } from "./integration/project-integration.service.js";
+import type { ProjectIntegrationService } from "./integration/project-integration.service.js";
 import { buildHandoffUserStoriesAppendix } from "./integration/integration-context.util.js";
 import { patchLegacyDeliverablesDebugReport } from "../legacy-flow/legacy-flow-state-debug.util.js";
 import type { IOrchestratorProjectsPort } from "./projects-service.port.js";
@@ -147,7 +152,7 @@ import {
 import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { reconcileExportScaffold, buildUnifiedHandoff, buildAgentGovernanceInput, synthesizeExportGovernanceScaffold } from "./handoff-export.util.js";
-import { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
+import type { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
 import { UiScreensService } from "../ui-mcp/ui-screens.service.js";
 import {
   collectSddPrecisionGaps,
@@ -163,7 +168,7 @@ import {
   extractMddCapabilityLines,
   parseChangeScopeFromLegacyState,
 } from "./tasks-coordinates-context.util.js";
-import { ResolveChangeToFilesService } from "../legacy-flow/resolve-change-to-files.service.js";
+import type { ResolveChangeToFilesService } from "../legacy-flow/resolve-change-to-files.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
 import {
@@ -238,14 +243,14 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly theforge: TheForgeService,
     private readonly graphMemory: GraphMemoryService,
     private readonly changeLog: ChangeLogService,
-    private readonly projectIntegration: ProjectIntegrationService,
+    @Inject(PROJECT_INTEGRATION_SERVICE_TOKEN) private readonly projectIntegration: ProjectIntegrationService,
     private readonly sddIntegration: SddIntegrationService,
     private readonly uiMcpClient: UiMcpClientService,
     private readonly uiMcp: UiMcpService,
-    @Inject(forwardRef(() => DocumentationGapService))
+    @Inject(DOCUMENTATION_GAP_SERVICE_TOKEN)
     private readonly documentationGap: DocumentationGapService,
     private readonly uiScreens: UiScreensService,
-    @Inject(forwardRef(() => ResolveChangeToFilesService))
+    @Inject(RESOLVE_CHANGE_TO_FILES_SERVICE_TOKEN)
     private readonly resolveChangeToFiles: ResolveChangeToFilesService,
     private readonly planValidation: PlanValidationService,
     private readonly projectGroups: ProjectGroupsService,

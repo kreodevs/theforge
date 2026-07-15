@@ -1,4 +1,8 @@
 import { Module, forwardRef } from "@nestjs/common";
+import {
+  DOCUMENTATION_GAP_SERVICE_TOKEN,
+  DOC_RECONCILE_SERVICE_TOKEN,
+} from "../../injection-tokens.js";
 import { ChangeLogModule } from "../change-log/change-log.module.js";
 import { EngineModule } from "../engine/engine.module.js";
 import { GraphMemoryModule } from "../ai-analysis/graph-memory/graph-memory.module.js";
@@ -16,9 +20,11 @@ import { DocumentationGapService } from "./documentation-gap.service.js";
   controllers: [DocumentationGapController, AgentSessionLogController],
   providers: [
     DocumentationGapService,
+    { provide: DOCUMENTATION_GAP_SERVICE_TOKEN, useExisting: DocumentationGapService },
     AgentSessionLogService,
     ArchitectureDecisionService,
     DocReconcileService,
+    { provide: DOC_RECONCILE_SERVICE_TOKEN, useExisting: DocReconcileService },
   ],
   exports: [
     DocumentationGapService,

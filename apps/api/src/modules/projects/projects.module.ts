@@ -1,4 +1,9 @@
 import { Module, forwardRef } from "@nestjs/common";
+import {
+  PROJECTS_SERVICE_TOKEN,
+  PROJECT_INTEGRATION_SERVICE_TOKEN,
+  DELIVERABLES_QUEUE_SERVICE_TOKEN,
+} from "../../injection-tokens.js";
 import { DeliverablesQueueService } from "./deliverables-queue.service.js";
 import { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
 import { PROJECTS_ORCHESTRATOR_PORT } from "./projects-service.port.js";
@@ -50,8 +55,11 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     SddIntegrationService,
     PlanValidationService,
     { provide: PROJECTS_ORCHESTRATOR_PORT, useExisting: ProjectsService },
+    { provide: PROJECTS_SERVICE_TOKEN, useExisting: ProjectsService },
+    { provide: PROJECT_INTEGRATION_SERVICE_TOKEN, useExisting: ProjectIntegrationService },
     ProjectEstimationRecalcService,
     DeliverablesQueueService,
+    { provide: DELIVERABLES_QUEUE_SERVICE_TOKEN, useExisting: DeliverablesQueueService },
     ProjectGenerationGuardService,
   ],
   exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
