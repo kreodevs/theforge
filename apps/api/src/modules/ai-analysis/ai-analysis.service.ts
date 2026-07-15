@@ -71,6 +71,8 @@ import {
   mddHasSubstantialBody,
 } from "@theforge/shared-types/mdd-governance-patterns";
 import { mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
+import { cleanDocumentContent } from "../sessions/document-content.util.js";
+import type { MddJobData, MddJobProgress, MddJobResult } from "./mdd/mdd-queue.service.js";
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
 
@@ -96,6 +98,7 @@ async function* runRegenWithHeartbeat<T>(
 
 export type StreamProgressEvent =
   | { type: "progress"; agent: string; message: string }
+  | { type: "draft"; markdown: string; deliveryGate?: MddDeliveryGateResult }
   | { type: "blocked"; code: string; message: string }
   | {
     type: "done";
@@ -628,10 +631,22 @@ export class AiAnalysisService {
         }
         if (mode === "values" && data && typeof data === "object") {
           lastState = data as MDDState;
-          if (projectId?.trim() && (lastState.mddDraft ?? "").trim()) {
-            this.estimationService.setLiveDraft(projectId.trim(), lastState.mddDraft ?? "", estimationStage);
+          const draft = (lastState.mddDraft ?? "").trim();
+          if (projectId?.trim() && draft) {
+            this.estimationService.setLiveDraft(projectId.trim(), draft, estimationStage);
             if (lastState.auditorGaps) {
               this.estimationService.setAuditorGaps(projectId.trim(), lastState.auditorGaps, estimationStage);
+            }
+            const prepared = await this.runPrepareMddForOutput(
+              { mddStructured: lastState.mddStructured, mddDraft: draft },
+              prepareOpts,
+            );
+            if (prepared.length > 80) {
+              yield {
+                type: "draft",
+                markdown: prepared,
+                deliveryGate: snapshotDeliveryGate(prepareGateRef.current),
+              };
             }
           }
         }
@@ -1668,6 +1683,125 @@ export class AiAnalysisService {
       }),
     ));
     return this.graphMemory.getDecisionsByProject(projectId);
+  }
+
+  /**
+   * Ejecuta generación/regeneración MDD desacoplada del SSE (cola background).
+   * Persiste borradores y resultado final en BD desde el servidor.
+   */
+  async runMddGenerationJob(
+    data: MddJobData,
+    onProgress: (p: MddJobProgress) => void,
+  ): Promise<MddJobResult> {
+    const { mode, projectId, stageId } = data;
+    let lastPersistedLen = 0;
+
+    const persistMarkdown = async (markdown: string): Promise<void> => {
+      const cleaned = cleanDocumentContent(markdown);
+      if (cleaned.trim().length < 48) return;
+      if (cleaned.length === lastPersistedLen) return;
+      lastPersistedLen = cleaned.length;
+      await this.projects.update(projectId, {
+        mddContent: cleaned,
+        ...(stageId?.trim() ? { stageId: stageId.trim() } : {}),
+      });
+      onProgress({ phase: "persisted", mddLength: cleaned.length });
+    };
+
+    type MddJobEvent = StreamMddManagerEvent | StreamProgressEvent;
+
+    const consume = async (events: AsyncGenerator<MddJobEvent>): Promise<MddJobResult> => {
+      let finalMarkdown = "";
+      for await (const event of events) {
+        if (event.type === "progress") {
+          onProgress({ agent: event.agent, message: event.message });
+        } else if (event.type === "draft" && event.markdown?.trim()) {
+          await persistMarkdown(event.markdown);
+          onProgress({ phase: "draft", mddLength: event.markdown.length });
+        } else if (event.type === "interrupt") {
+          if (event.markdown?.trim()) await persistMarkdown(event.markdown);
+          return {
+            ok: true,
+            mode,
+            projectId,
+            stageId: stageId?.trim() || undefined,
+            mddLength: event.markdown?.length ?? lastPersistedLen,
+            outcome: "interrupt",
+            threadId: event.threadId,
+            interrupt: {
+              reply: event.reply,
+              questions: event.questions,
+              planMessage: event.planMessage,
+            },
+          };
+        } else if (event.type === "done" && event.markdown) {
+          finalMarkdown = event.markdown;
+          await persistMarkdown(event.markdown);
+          if (projectId?.trim()) {
+            this.estimationService.clearLiveDraft(projectId.trim(), stageId ?? undefined);
+          }
+          return {
+            ok: true,
+            mode,
+            projectId,
+            stageId: stageId?.trim() || undefined,
+            mddLength: finalMarkdown.length,
+            outcome: "done",
+          };
+        } else if (event.type === "error") {
+          throw new Error(event.message);
+        } else if (event.type === "blocked") {
+          throw new Error(event.message);
+        }
+      }
+      if (finalMarkdown.trim().length >= 48) {
+        return {
+          ok: true,
+          mode,
+          projectId,
+          stageId: stageId?.trim() || undefined,
+          mddLength: finalMarkdown.length,
+          outcome: "done",
+        };
+      }
+      throw new Error("La generación del MDD no devolvió contenido suficiente.");
+    };
+
+    switch (mode) {
+      case "pipeline":
+        return consume(
+          this.streamMddAnalysis(data.dbgaContent ?? "", projectId, stageId) as AsyncGenerator<MddJobEvent>,
+        );
+      case "manager":
+        return consume(
+          this.streamMddAnalysisWithManager(
+            data.dbgaContent ?? "",
+            projectId,
+            data.initialMessage,
+            data.mddContent,
+            stageId,
+          ),
+        );
+      case "section": {
+        const rawSection = data.section;
+        if (rawSection == null || !Number.isInteger(rawSection) || rawSection < 1 || rawSection > 7) {
+          throw new Error("section must be 1–7");
+        }
+        const section = rawSection;
+        onProgress({ phase: "section", section, message: `Regenerando §${section}…` });
+        return consume(
+          this.streamMddRegenerateSection(
+            projectId,
+            section,
+            data.mddContent,
+            stageId,
+            data.gapReasons,
+          ),
+        );
+      }
+      default:
+        throw new Error(`Modo MDD no soportado en job: ${mode}`);
+    }
   }
 
   /** Persiste trail/breakdown/gaps del pipeline MDD para rehidratar el modal tras recargar. */

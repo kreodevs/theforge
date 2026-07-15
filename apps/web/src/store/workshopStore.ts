@@ -13,6 +13,7 @@ import {
 } from "@theforge/shared-types/format-document-markdown";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue, getOfflineQueue } from "../utils/apiClient";
 import { queueAndPoll } from "../utils/queueAndPoll";
+import { enqueueAndPollLegacyMdd, enqueueAndPollMddJob } from "../utils/pollMddJob";
 import { shouldApplyPersistedFieldContent } from "../utils/persist-field-guard";
 import {
   parseApiErrorPayloadFromResponse,
@@ -2002,164 +2003,92 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }
         const mddContent = effectiveMddContentForSectionRegen(get);
         const regStage = get().activeStageId;
-        const r = await fetchWithRetry(
-          `${API_BASE}/ai-analysis/mdd/stream/regenerate-section`,
+        void get().fetchGenerationStatus(requestProjectId);
+        await enqueueAndPollMddJob(
           {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              projectId: requestProjectId,
-              section: regenerateSection,
-              mddContent: mddContent || undefined,
-              ...(regenerateSectionGaps.length ? { gapReasons: regenerateSectionGaps } : {}),
-              ...(regStage ? { stageId: regStage } : {}),
-            }),
+            mode: "section",
+            projectId: requestProjectId,
+            section: regenerateSection,
+            mddContent: mddContent || undefined,
+            ...(regenerateSectionGaps.length ? { gapReasons: regenerateSectionGaps } : {}),
+            ...(regStage ? { stageId: regStage } : {}),
           },
-          2,
+          requestProjectId,
+          {
+            onProgress: (p) => {
+              if (p?.agent && p?.message) {
+                set((s) => ({
+                  agentProgress: appendAgentProgressDone(s.agentProgress, {
+                    agent: p.agent!,
+                    message: p.message!,
+                  }),
+                }));
+              }
+            },
+          },
         );
-        if (!r.ok) {
-          const err = await r.json().catch(() => ({}));
-          throw new Error(err.message ?? "Error al regenerar sección");
+        if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
+        const { fetchProject, fetchEstimation, fetchConformance } = get();
+        await fetchProject(requestProjectId);
+        const merged = selectPersistedMddBaseline(get()) || get().mddContent || "";
+        if (merged.trim().length <= 80) {
+          set({
+            error:
+              merged.trim().length > 0
+                ? "La regeneración devolvió un documento demasiado corto; la sección no se aplicó al MDD."
+                : "La regeneración terminó sin markdown actualizado.",
+            loading: false,
+            loadingReason: null,
+            notice: null,
+            agentProgress: [],
+            evaluatorCritique: null,
+          });
+          return;
         }
-        const reader = r.body?.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        if (reader) {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() ?? "";
-            for (const line of lines) {
-              for (const event of parseNdjsonLine(line)) {
-              try {
-                const ev = event as {
-                  type: string;
-                  agent?: string;
-                  markdown?: string;
-                  message?: string;
-                  precision?: number;
-                  status?: string;
-                  precisionBreakdown?: PrecisionBreakdown;
-                  deliveryGate?: MddDeliveryGateResult;
-                };
-                if (ev.type === "done") {
-                  const merged = (ev.markdown ?? "").trim();
-                  if (merged.length > 80) {
-                    if (regenerateSection === 6 && !mddHasSection6Heading(merged)) {
-                      set({
-                        error:
-                          "El servidor respondió OK pero el MDD no incluye ## 6. Seguridad. Reintenta /seguridad; si persiste, recarga la página.",
-                        loading: false,
-                        loadingReason: null,
-                        notice: null,
-                        agentProgress: [],
-                        evaluatorCritique: null,
-                      });
-                      return;
-                    }
-                    set({ mddContent: merged });
-                    const { persistMddContent, fetchProject, fetchEstimation, fetchConformance } = get();
-                    await persistMddContent(merged, { force: true });
-                    const persistErr = get().error;
-                    if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
-                    await fetchProject(requestProjectId);
-                    await fetchEstimation(requestProjectId, merged).catch(() => { });
-                    fetchConformance(requestProjectId).catch(() => { });
-                    const current = get();
-                    const savedMdd = selectPersistedMddBaseline(get()) || merged;
-                    const regenGate = deliveryGateFromStreamEvent(ev);
-                    set({
-                      project: current.project
-                        ? {
-                            ...current.project,
-                            mddContent: savedMdd,
-                            ...(typeof ev.precision === "number" ? { precisionScore: ev.precision } : {}),
-                            ...(ev.status ? { status: ev.status as Project["status"] } : {}),
-                          }
-                        : null,
-                      mddContent: savedMdd,
-                      ...(ev.precisionBreakdown ? { precisionBreakdown: ev.precisionBreakdown } : {}),
-                      ...(regenGate ? { deliveryGate: regenGate } : {}),
-                      loading: false,
-                      loadingReason: null,
-                      notice: null,
-                      agentProgress: [],
-                      evaluatorCritique: null,
-                      ...(persistErr ? {} : { error: null }),
-                    });
-                    const sessAfterRegen = get().session?.id;
-                    if (sessAfterRegen) {
-                      const assistantRes = await apiFetch(`${API_BASE}/sessions/${sessAfterRegen}/messages`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: sessionMessageBody(
-                          {
-                            role: "assistant",
-                            content: `Sección §${regenerateSection} regenerada. Revisa el documento en el panel central (pestaña MDD).`,
-                            tab: "mdd",
-                          },
-                          get().activeStageId,
-                        ),
-                      });
-                      if (assistantRes.ok) {
-                        const sess = (await assistantRes.json()) as Session;
-                        set({ session: sess });
-                      }
-                    }
-                    return;
-                  }
-                  set({
-                    error:
-                      merged.length > 0
-                        ? "La regeneración devolvió un documento demasiado corto; la sección no se aplicó al MDD."
-                        : "La regeneración terminó sin markdown actualizado.",
-                    loading: false,
-                    loadingReason: null,
-                    notice: null,
-                    agentProgress: [],
-                    evaluatorCritique: null,
-                  });
-                  return;
-                } else if (ev.type === "blocked" && ev.message) {
-                  set({
-                    error: String(ev.message),
-                    loading: false,
-                    loadingReason: null,
-                    notice: null,
-                    agentProgress: [],
-                    evaluatorCritique: null,
-                  });
-                  return;
-                } else if (ev.type === "error" && ev.message) {
-                  set({
-                    ...streamErrorPatch(ev as { message: string; code?: string }),
-                    loading: false,
-                    loadingReason: null,
-                    notice: null,
-                    agentProgress: [],
-                    evaluatorCritique: null,
-                  });
-                  return;
-                }
-              } catch {
-                // ignore parse
-              }
-              }
-            }
-          }
+        if (regenerateSection === 6 && !mddHasSection6Heading(merged)) {
+          set({
+            error:
+              "El servidor respondió OK pero el MDD no incluye ## 6. Seguridad. Reintenta /seguridad; si persiste, recarga la página.",
+            loading: false,
+            loadingReason: null,
+            notice: null,
+            agentProgress: [],
+            evaluatorCritique: null,
+          });
+          return;
         }
+        await fetchEstimation(requestProjectId, merged).catch(() => {});
+        fetchConformance(requestProjectId).catch(() => {});
+        void get().fetchGenerationStatus(requestProjectId);
         set({
+          mddContent: merged,
           loading: false,
           loadingReason: null,
           notice: null,
           agentProgress: [],
           evaluatorCritique: null,
-          error:
-            get().error ??
-            "La regeneración no actualizó el MDD. Usa la pestaña MDD (no MDD Inicial), escribe /seguridad o confirma el plan si el Manager lo pidió.",
+          error: null,
         });
+        const sessAfterRegen = get().session?.id;
+        if (sessAfterRegen) {
+          const assistantRes = await apiFetch(`${API_BASE}/sessions/${sessAfterRegen}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: sessionMessageBody(
+              {
+                role: "assistant",
+                content: `Sección §${regenerateSection} regenerada. Revisa el documento en el panel central (pestaña MDD).`,
+                tab: "mdd",
+              },
+              get().activeStageId,
+            ),
+          });
+          if (assistantRes.ok) {
+            const sess = (await assistantRes.json()) as Session;
+            set({ session: sess });
+          }
+        }
+        return;
       } catch (e) {
         const msg = e instanceof Error ? friendlyFetchError(e) : "Error al regenerar sección";
         const code =
@@ -3546,149 +3475,53 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   generateMddFromBenchmark: async (projectId) => {
     if (!projectId?.trim()) return null;
+    const pid = projectId.trim();
     const dbgaContent = (get().dbgaContent ?? get().project?.dbgaContent ?? "").trim();
+    const benchStage = get().activeStageId;
     set({ loading: true, loadingReason: "mdd", error: null, agentProgress: [] });
+    void get().fetchGenerationStatus(pid);
 
-    const MAX_RETRIES = 3;
-    const RETRY_DELAY_MS = 2000;
-    let lastError: string | null = null;
-    let lastErrorCode: string | undefined;
-    let accumulatedMdd: string | null = null;
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        const benchStage = get().activeStageId;
-        const r = await apiFetch(`${API_BASE}/ai-analysis/mdd/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            dbgaContent: dbgaContent || undefined,
-            projectId: projectId.trim(),
-            ...(benchStage ? { stageId: benchStage } : {}),
-          }),
-        });
-        if (!r.ok) {
-          await throwStreamHttpError(r, "Error al generar MDD");
-        }
-        const reader = r.body?.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let finalMarkdown: string | null = null;
-
-        if (reader) {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() ?? "";
-            for (const line of lines) {
-              for (const event of parseNdjsonLine(line)) {
-                try {
-                  const ev = event as { type: string; agent?: string; message?: string; markdown?: string; code?: string };
-                if (ev.type === "progress" && ev.agent != null && ev.message != null) {
-                  set((s) => ({
-                    agentProgress: appendAgentProgressDone(s.agentProgress, {
-                      agent: ev.agent!,
-                      message: ev.message!,
-                    }),
-                  }));
-                } else if (ev.type === "draft" && ev.markdown != null && ev.markdown.trim().length > 80) {
-                  accumulatedMdd = ev.markdown;
-                  const draftGate = deliveryGateFromStreamEvent(ev as { deliveryGate?: MddDeliveryGateResult });
-                  set({
-                    mddContent: ev.markdown,
-                    ...(draftGate ? { deliveryGate: draftGate } : {}),
-                  });
-                  } else if (ev.type === "done" && ev.markdown != null) {
-                    finalMarkdown = ev.markdown;
-                    const doneGate = deliveryGateFromStreamEvent(ev as { deliveryGate?: MddDeliveryGateResult });
-                    if (doneGate) set({ deliveryGate: doneGate });
-                  } else if (ev.type === "blocked" && ev.message) {
-                    throw new Error(String(ev.message));
-                  } else if (ev.type === "error" && ev.message) {
-                    const err = new Error(ev.message) as Error & { code?: string };
-                    if (ev.code) err.code = ev.code;
-                    throw err;
-                  }
-                } catch (parseErr) {
-                  if (parseErr instanceof SyntaxError) continue;
-                  throw parseErr;
-                }
-              }
+    try {
+      await enqueueAndPollMddJob(
+        {
+          mode: "pipeline",
+          projectId: pid,
+          dbgaContent: dbgaContent || undefined,
+          ...(benchStage ? { stageId: benchStage } : {}),
+        },
+        pid,
+        {
+          onProgress: (p) => {
+            if (p?.agent && p?.message) {
+              set((s) => ({
+                agentProgress: appendAgentProgressDone(s.agentProgress, {
+                  agent: p.agent!,
+                  message: p.message!,
+                }),
+              }));
             }
-          }
-        }
-
-        if (finalMarkdown != null && finalMarkdown.trim().length > 80) {
-          set({ mddContent: finalMarkdown, error: null, mddJustGeneratedFromBenchmark: true });
-          const { persistMddContent, fetchProject, fetchEstimation } = get();
-          await persistMddContent(finalMarkdown);
-          // Si persistMddContent falló (pipeline validation, etc.), mostrar el error en vez de recargar silenciosamente
-          if (get().error) {
-            set({ loading: false, loadingReason: null, agentProgress: [] });
-            return get().project;
-          }
-          const data = await fetchProject(projectId);
-          await fetchEstimation(projectId);
-          set({ loading: false, loadingReason: null, agentProgress: [] });
-          return data ?? get().project;
-        }
-        // Si llegamos aquí sin finalMarkdown pero con accumulatedMdd, usar accumulated
-        if (accumulatedMdd && accumulatedMdd.trim().length > 80) {
-          set({ mddContent: accumulatedMdd, error: null, mddJustGeneratedFromBenchmark: true });
-          const { persistMddContent, fetchProject, fetchEstimation } = get();
-          await persistMddContent(accumulatedMdd);
-          if (get().error) {
-            set({ loading: false, loadingReason: null, agentProgress: [] });
-            return get().project;
-          }
-          const data = await fetchProject(projectId);
-          await fetchEstimation(projectId);
-          set({ loading: false, loadingReason: null, agentProgress: [] });
-          return data ?? get().project;
-        }
-        set({
-          loading: false,
-          loadingReason: null,
-          agentProgress: [],
-          error:
-            "La generación del MDD no devolvió contenido. Comprueba el Benchmark en Paso 0 y reintenta.",
-        });
-        break;
-      } catch (e) {
-        const patch = errorStateFromCaught(e);
-        lastError = patch.error;
-        if (e instanceof Error && "code" in e && typeof (e as { code?: string }).code === "string") {
-          lastErrorCode = (e as { code?: string }).code;
-        }
-        if (patch.modelsUnavailableModalOpen) {
-          break;
-        }
-        // Si tenemos contenido acumulado, guardarlo antes de reintentar
-        if (accumulatedMdd && accumulatedMdd.trim().length > 80) {
-          set({ mddContent: accumulatedMdd });
-          const { persistMddContent } = get();
-          await persistMddContent(accumulatedMdd).catch(() => {});
-        }
-        if (attempt < MAX_RETRIES) {
-          console.log(`[MDD Retry] attempt ${attempt}/${MAX_RETRIES} failed: ${lastError}. Retrying in ${RETRY_DELAY_MS}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-          set({ agentProgress: [] });
-        }
-      }
+            if (p?.phase === "persisted" || p?.phase === "draft") {
+              void get().fetchProject(pid);
+            }
+          },
+        },
+      );
+      set({ mddJustGeneratedFromBenchmark: true, error: null });
+      const data = await get().fetchProject(pid);
+      await get().fetchEstimation(pid);
+      await get().fetchGenerationStatus(pid);
+      set({ loading: false, loadingReason: null, agentProgress: [] });
+      return data ?? get().project;
+    } catch (e) {
+      set({
+        ...errorStateFromCaught(e),
+        loading: false,
+        loadingReason: null,
+        agentProgress: [],
+      });
+      void get().fetchGenerationStatus(pid);
+      return null;
     }
-
-    set({
-      ...streamErrorPatch({
-        message: lastError ?? "Error al generar MDD tras reintentos",
-        code: lastErrorCode,
-      }),
-      loading: false,
-      loadingReason: null,
-      agentProgress: [],
-    });
-    return null;
   },
 
   clearMddJustGeneratedFromBenchmark: () => set({ mddJustGeneratedFromBenchmark: false }),
@@ -4023,21 +3856,26 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
 
   legacyGenerateMdd: async (projectId, stageId) => {
     if (!projectId?.trim()) return null;
+    const pid = projectId.trim();
     set({ loading: true, loadingReason: "legacy-mdd", error: null });
+    void get().fetchGenerationStatus(pid);
     try {
-      const body: Record<string, unknown> = {};
-      if (stageId?.trim()) body.stageId = stageId.trim();
-      const r = await apiFetch(`${API_BASE}/projects/${projectId}/legacy/generate-mdd`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+      const jobStatus = await enqueueAndPollLegacyMdd(pid, stageId, {
+        onProgress: (p) => {
+          if (p?.message) {
+            set((s) => ({
+              agentProgress: appendAgentProgressDone(s.agentProgress, {
+                agent: "MDD Legacy",
+                message: p.message!,
+              }),
+            }));
+          }
+        },
       });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { message?: string }).message ?? "Error al generar MDD");
+      if (jobStatus.result?.outcome === "interrupt" && jobStatus.result.threadId) {
+        set({ managerThreadId: jobStatus.result.threadId });
       }
-      await r.json().catch(() => ({}));
-      const project = await get().fetchProject(projectId);
+      const project = await get().fetchProject(pid);
       const mddContent = project?.mddContent ?? "";
       set({
         mddContent,
@@ -4045,10 +3883,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         loadingReason: null,
         error: null,
       });
+      await get().fetchGenerationStatus(pid);
       return mddContent.trim() ? { mddContent } : null;
     } catch (e) {
       try {
-        const project = await get().fetchProject(projectId);
+        const project = await get().fetchProject(pid);
         if (project?.mddContent?.trim()) {
           set({
             mddContent: project.mddContent,
@@ -4066,6 +3905,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         loading: false,
         loadingReason: null,
       });
+      void get().fetchGenerationStatus(pid);
       return null;
     }
   },

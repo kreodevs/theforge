@@ -3,6 +3,7 @@ import { generateCodebaseDocRequestSchema } from "@theforge/shared-types";
 import { ProjectsService } from "../projects/projects.service.js";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 import { LegacyDeliverablesQueueService } from "./legacy-deliverables-queue.service.js";
+import { MddQueueService } from "../ai-analysis/mdd/mdd-queue.service.js";
 import { ResolveChangeToFilesService } from "./resolve-change-to-files.service.js";
 import { CheckNavigationImpactService } from "./check-navigation-impact.service.js";
 import { LegacyTransitionService } from "./legacy-transition.service.js";
@@ -15,6 +16,7 @@ export class LegacyFlowController {
   constructor(
     private readonly coordinator: LegacyCoordinatorService,
     private readonly legacyDeliverablesQueue: LegacyDeliverablesQueueService,
+    private readonly mddQueue: MddQueueService,
     private readonly projects: ProjectsService,
     private readonly resolveChange: ResolveChangeToFilesService,
     private readonly navImpact: CheckNavigationImpactService,
@@ -158,9 +160,40 @@ export class LegacyFlowController {
     @Param("projectId") projectId: string,
     @Body() body: { stageId?: string } = {},
     @Query("includeContent") includeContent?: string,
+    @Query("queue") queue?: string,
   ) {
+    const useQueue = queue !== "false" && this.mddQueue.isEnabled();
+    if (useQueue) {
+      const jobId = await this.mddQueue.enqueue({
+        mode: "legacy",
+        projectId,
+        stageId: body.stageId?.trim() || undefined,
+      });
+      return {
+        queued: true,
+        jobId,
+        statusPath: `/projects/${projectId}/mdd-jobs/${jobId}`,
+      };
+    }
     return this.coordinator.generateMdd(projectId, body.stageId, {
       includeContent: includeContent === "true",
+    });
+  }
+
+  /** Polling de MDD legacy encolado. */
+  @Get("mdd-jobs/:jobId")
+  getLegacyMddJobStatus(
+    @Param("projectId") projectId: string,
+    @Param("jobId") jobId: string,
+  ) {
+    return this.mddQueue.getJobStatus(jobId).then((status) => {
+      if (status.status === "unknown") {
+        throw new BadRequestException("Job no encontrado");
+      }
+      if (status.projectId && status.projectId !== projectId) {
+        throw new BadRequestException("jobId no pertenece a este proyecto");
+      }
+      return status;
     });
   }
 

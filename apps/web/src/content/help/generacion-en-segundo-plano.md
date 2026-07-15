@@ -8,14 +8,14 @@ The Forge encola la **generación y regeneración de entregables SDD** como jobs
 |--------|----------------|
 | **Generar todos los documentos** (cascada) | Un job `cascade` recorre las oleadas W0→W4 según complejidad |
 | **Regenerar Spec, Arquitectura, Blueprint, API, Tasks, etc.** | Un job por entregable (`?queue=true` por defecto) |
-| **Regenerar MDD** (Manager / pipeline / sección) | Stream en vivo; **bloquea** otros entregables mientras corre |
+| **Regenerar MDD** (pipeline / sección / legacy) | Job en cola `theforge-mdd`; persiste en servidor; **bloquea** otros entregables mientras corre |
 
 ## Reglas de orden (importante)
 
 1. **Un solo job activo por proyecto** — no puedes encolar Spec mientras Blueprint sigue generándose.
 2. **Estar en cola no cuenta como listo** — si el MDD o la Spec están *en cola o ejecutándose*, no puedes generar downstream (p. ej. Spec o Blueprint).
 3. **Upstream persistido al 100 %** — cada entregable exige que los de oleadas anteriores existan en BD con contenido sustancial (≥ 48 caracteres), según `DELIVERABLE_WAVES_BY_COMPLEXITY`.
-4. **MDD en stream** — mientras regeneras MDD, ningún otro documento puede encolarse.
+4. **MDD en cola o ejecutándose** — mientras un job MDD está activo o encolado, ningún otro documento puede encolarse.
 
 ### Ejemplo (complejidad HIGH)
 
@@ -34,7 +34,7 @@ No puedes pulsar «Regenerar Spec» si el MDD acaba de encolarse en cascada pero
 
 - **Workshop:** banner cuando hay generación en curso; botones de regenerar deshabilitados si el gate lo impide.
 - **API:** `GET /projects/:id/generation-status` devuelve `{ busy, activeJob, queuedJobs, mddStreamActive, gates }`.
-- **Job concreto:** `GET /projects/:id/deliverables-jobs/:jobId` o `GET /projects/jobs/:jobId`.
+- **Job concreto:** `GET /projects/:id/deliverables-jobs/:jobId`, `GET /projects/:id/mdd-jobs/:jobId` (MDD greenfield) o `GET /projects/jobs/:jobId`.
 
 ## Sin Redis (desarrollo local)
 
@@ -48,7 +48,9 @@ Si intentas generar fuera de orden, la API responde **409** con un mensaje expl�
 
 1. Tras **Regenerar MDD**, espera a que termine y se persista antes de la cascada o entregables sueltos.
 2. Usa **Generar todos** cuando quieras el orden completo; usa regeneración individual solo para un artefacto concreto.
-3. Si vuelves al día siguiente, **recarga el proyecto** — no hace falta dejar la pestaña abierta durante horas.
+3. Si vuelves al día siguiente, **recarga el proyecto** — no hace falta dejar la pestaña abierta durante horas (igual que con entregables).
+
+**Nota:** el chat interactivo del Manager (HITL, aprobación de plan) sigue usando SSE en vivo; solo el arranque masivo (benchmark, legacy, `/sección`) va en cola.
 
 ## Relacionado
 

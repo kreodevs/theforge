@@ -4,6 +4,24 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [v1.0.0-rc.3] — 2026-07-15
+
+### Added
+
+- **MDD en background (greenfield + legacy):** cola `theforge-mdd` (`MddQueueService`, BullMQ con `REDIS_URL`, fallback in-memory por proyecto). Modos `pipeline`, `section`, `manager` (arranque) y `legacy`. Persistencia de borradores y `done` en servidor vía `runMddGenerationJob` + `projects.update` (sin depender de `persistMddContent` en el cliente).
+- **Endpoints MDD jobs:** `POST /ai-analysis/mdd/jobs`, `GET /ai-analysis/mdd/jobs/:jobId`, `GET /projects/:id/mdd-jobs/:jobId`; legacy `POST …/legacy/generate-mdd` encola por defecto (`?queue=false` sync) + `GET …/legacy/mdd-jobs/:jobId`.
+- **Web polling:** `apps/web/src/utils/pollMddJob.ts`; Workshop (`generateMddFromBenchmark`, `legacyGenerateMdd`, regeneración §N) migrado a cola + polling + `fetchGenerationStatus`.
+
+### Changed
+
+- **`ProjectGenerationGuardService`:** `mddStreamActive` incluye `mddQueue.isProjectBusy()` — un job MDD activo o en cola bloquea entregables downstream.
+- **Ayuda Workshop:** `generacion-en-segundo-plano.md` — MDD ya va en cola; Manager HITL sigue en SSE.
+- **Documentación release:** `docs/THE-FORGE-V1-RELEASE.md` §1.6 (jobs MDD); `apps/api/src/modules/ai-analysis/mdd/README.md`.
+
+### Architecture
+
+- Misma infra que entregables SDD (BullMQ / in-memory). Wizard SSOT de patrones (`suggest-governance-patterns`, `enforceMddGovernancePatternsOnPersist`, `appendMddGovernancePatternsToPrompt`) **sin cambios** — la cola reutiliza `streamMddAnalysis` / `prepareMddForOutput` y persiste por `projects.update`.
+
 ## [v1.0.0-rc.2] — 2026-07-15
 
 ### Added

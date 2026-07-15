@@ -15,6 +15,7 @@ import type { Response } from "express";
 import { requireAdmin } from "../../common/guards/role.helpers.js";
 import { DeliverablesQueueService, type GenerateJobType } from "./deliverables-queue.service.js";
 import { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
+import { MddQueueService } from "../ai-analysis/mdd/mdd-queue.service.js";
 import { ProjectMergeService } from "./project-merge.service.js";
 import { ProjectsService } from "./projects.service.js";
 import {
@@ -39,6 +40,7 @@ export class ProjectsController {
     private readonly generationGuard: ProjectGenerationGuardService,
     private readonly sddIntegration: SddIntegrationService,
     private readonly planValidation: PlanValidationService,
+    private readonly mddQueue: MddQueueService,
   ) {}
 
   @Post("merge")
@@ -129,8 +131,17 @@ export class ProjectsController {
   ) {
     const status = await this.deliverablesQueue.getJobStatus(jobId);
     if (status.status === "unknown") throw new NotFoundException("Job no encontrado");
-    const data = status as any;
+    const data = status as { projectId?: string };
     if (data.projectId !== projectId) throw new ForbiddenException();
+    return status;
+  }
+
+  /** Polling de job MDD en background (greenfield / legacy vía statusPath). */
+  @Get(":id/mdd-jobs/:jobId")
+  async mddJobStatus(@Param("id") projectId: string, @Param("jobId") jobId: string) {
+    const status = await this.mddQueue.getJobStatus(jobId);
+    if (status.status === "unknown") throw new NotFoundException("Job no encontrado");
+    if (status.projectId && status.projectId !== projectId) throw new ForbiddenException();
     return status;
   }
 

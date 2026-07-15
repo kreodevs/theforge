@@ -10,6 +10,7 @@ import {
 } from "@theforge/shared-types";
 import { ProjectsService } from "./projects.service.js";
 import { DeliverablesQueueService } from "./deliverables-queue.service.js";
+import { MddQueueService } from "../ai-analysis/mdd/mdd-queue.service.js";
 
 type TrackedBgJob = {
   projectId: string;
@@ -30,6 +31,8 @@ export class ProjectGenerationGuardService {
     private readonly projects: ProjectsService,
     @Inject(forwardRef(() => DeliverablesQueueService))
     private readonly deliverablesQueue: DeliverablesQueueService,
+    @Inject(forwardRef(() => MddQueueService))
+    private readonly mddQueue: MddQueueService,
   ) {}
 
   registerMddStream(projectId: string): void {
@@ -80,7 +83,8 @@ export class ProjectGenerationGuardService {
     const project = await this.projects.findOne(projectId);
     const complexity = ((project as { complexity?: ComplexityLevel }).complexity ?? "HIGH") as ComplexityLevel;
     const contentReady = buildDeliverableReadiness(project as Record<string, unknown>);
-    const mddStreamActive = this.isMddStreamActive(projectId);
+    const mddStreamActive =
+      this.isMddStreamActive(projectId) || this.mddQueue.isProjectBusy(projectId);
 
     const queueJobs = await this.deliverablesQueue.listActiveJobsForProject(projectId);
     const bgSnapshots: GenerationJobSnapshot[] = [];

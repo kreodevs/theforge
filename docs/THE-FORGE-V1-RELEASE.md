@@ -1,6 +1,6 @@
 # The Forge — Release v1.0.0
 
-**Tag:** `v1.0.0-rc.2`  
+**Tag:** `v1.0.0-rc.3`  
 **Fecha de corte:** 2026-07-15  
 **Rama de referencia:** `master`
 
@@ -12,7 +12,7 @@ Este documento resume los tres cambios estructurales del release: **generación 
 
 The Forge deja de tratar los entregables SDD como texto frágil del LLM y pasa a un modelo en capas:
 
-1. **Generación** — oleadas con dependencias reales, inventario de dominio, post-pase de exactitud ≥90 % (greenfield) y contexto Ariadne v2 multi-repo (brownfield).
+1. **Generación** — oleadas con dependencias reales, inventario de dominio, post-pase de exactitud ≥90 % (greenfield), contexto Ariadne v2 multi-repo (brownfield) y **cola MDD en background** (greenfield + legacy).
 2. **Persistencia** — `formatDocumentMarkdown` en cada guardado; Tasks v2 → `tasksJson`; snapshots por etapa.
 3. **Visualización** — Mermaid reparado en preview; Excalidraw por defecto cuando la conversión es viable; SVG como fallback estable.
 
@@ -61,7 +61,7 @@ Reglas clave:
 
 **Router unificado:** `generateDocument(kind)` atiende cascada y endpoints individuales (`generate-spec`, `generate-tasks`, etc.).
 
-**Jobs en segundo plano:** cola por defecto (`ProjectGenerationGuardService`, BullMQ con `REDIS_URL`); gates de orden vía `GET /projects/:id/generation-status`.
+**Jobs en segundo plano:** cola por defecto para entregables SDD (`ProjectGenerationGuardService`, BullMQ con `REDIS_URL`); gates de orden vía `GET /projects/:id/generation-status`. **MDD** (greenfield y legacy) usa la misma infraestructura — ver §1.6.
 
 ### 1.2 Brownfield (proyectos LEGACY)
 
@@ -119,6 +119,51 @@ Métricas en `cascade-accuracy.util.ts`, expuestas en `GET …/analyze`:
 Hard gate opcional: `REQUIRE_DOC_ACCURACY_90` (off por defecto).
 
 Plan: [plans/PLAN-CASCADE-90-ACCURACY.md](plans/PLAN-CASCADE-90-ACCURACY.md).
+
+### 1.6 Jobs MDD en background
+
+Hasta este release, la generación del MDD dependía del **SSE del navegador** (greenfield) o de un **HTTP síncrono largo** (legacy). Al cerrar la pestaña, el stream se destruía y la persistencia final recaía en el cliente (`persistMddContent` tras evento `done`). Los entregables SDD ya iban en cola; el MDD era la excepción.
+
+#### Antes
+
+| Flujo | Comportamiento |
+|-------|----------------|
+| Benchmark → MDD (greenfield) | `POST /ai-analysis/mdd/stream` — NDJSON en vivo; `res.destroy()` al cerrar cliente |
+| Regenerar §N (`/seguridad`, etc.) | `POST …/mdd/stream/regenerate-section` — SSE |
+| MDD legacy | `POST …/legacy/generate-mdd` — respuesta bloqueante hasta terminar |
+| Persistencia | Frontend llama `persistMddContent` al recibir `done` |
+
+#### Ahora
+
+Cola dedicada **`theforge-mdd`** (`MddQueueService`, `apps/api/src/modules/ai-analysis/mdd/mdd-queue.service.ts`). Misma semántica que entregables: BullMQ con `REDIS_URL` (job sobrevive cerrar navegador) o cola **in-memory** secuencial por proyecto sin Redis (no sobrevive reinicio del API).
+
+**Modos (`MddJobMode`):**
+
+| Modo | Origen | Generador |
+|------|--------|-----------|
+| `pipeline` | Greenfield — benchmark → MDD completo | `streamMddAnalysis` |
+| `section` | Greenfield — comandos `/` por sección (§1–§7) | `streamMddRegenerateSection` |
+| `manager` | Greenfield — arranque del Manager (no HITL) | `streamMddAnalysisWithManager` |
+| `legacy` | Proyectos `LEGACY` | `LegacyCoordinatorService.generateMdd` |
+
+**Persistencia en servidor:** `AiAnalysisService.runMddGenerationJob` escribe borradores (`draft`) y resultado final (`done`) en BD vía `projects.update` + `cleanDocumentContent`. El Workshop ya no depende de `persistMddContent` tras encolar.
+
+**Endpoints:**
+
+| Método | Ruta | Uso |
+|--------|------|-----|
+| `POST` | `/ai-analysis/mdd/jobs` | Encola greenfield (`pipeline` \| `manager` \| `section`) |
+| `GET` | `/projects/:id/mdd-jobs/:jobId` | Polling (web) |
+| `POST` | `/projects/:id/legacy/generate-mdd` | Encola legacy **por defecto** (`?queue=false` = sync legacy) |
+| `GET` | `/projects/:id/legacy/mdd-jobs/:jobId` | Polling legacy |
+
+**Frontend:** `apps/web/src/utils/pollMddJob.ts` (`enqueueAndPollMddJob`, `enqueueAndPollLegacyMdd`); `workshopStore` — `generateMddFromBenchmark`, `legacyGenerateMdd` y regeneración §N vía cola + `fetchGenerationStatus`.
+
+**Gates:** `ProjectGenerationGuardService` incluye `mddQueue.isProjectBusy()` en `mddStreamActive`; un job MDD activo o en cola bloquea entregables downstream (igual que antes con el stream).
+
+**Excepción deliberada:** el chat interactivo del **Manager** (HITL, aprobación de plan, `resume`) sigue en **SSE** (`POST …/mdd/stream/manager`). Solo arranques masivos (benchmark, legacy, `/sección`) van en background.
+
+Los endpoints SSE (`/mdd/stream`, `/regenerate-section`) permanecen para compatibilidad; el Workshop los sustituyó por jobs.
 
 ---
 
@@ -277,8 +322,9 @@ flowchart TB
 
 1. **Generación** produce markdown crudo del LLM.
 2. **`cleanDocumentContent`** lo normaliza y añade changelog antes de persistir.
-3. **Preview** vuelve a reparar Mermaid en memoria (`resolveMermaidBlockForRender`) y elige Excalidraw o SVG.
-4. Documentos **viejos** en BD pueden necesitar **Reformatear MDD** (`reapplyMddFormat`) o `/format` para materializar fixes del pipeline nuevo.
+3. **MDD en cola** persiste borradores y `done` en servidor sin depender del cliente (§1.6).
+4. **Preview** vuelve a reparar Mermaid en memoria (`resolveMermaidBlockForRender`) y elige Excalidraw o SVG.
+5. Documentos **viejos** en BD pueden necesitar **Reformatear MDD** (`reapplyMddFormat`) o `/format` para materializar fixes del pipeline nuevo.
 
 ---
 
@@ -288,15 +334,17 @@ flowchart TB
 
 1. Confirmar complejidad en el chat (sin `complexityPending`).
 2. Semáforo **VERDE** → **Generar entregables** (cola background).
-3. Revisar badge de exactitud en **Analizar** si Doc/Task Accuracy < 90.
-4. W4 puede disparar un segundo pase automático; no hace falta regenerar todo manualmente.
+3. **Generar MDD desde benchmark** o **regenerar §N** — job en cola; puedes cerrar el navegador (con Redis).
+4. Revisar badge de exactitud en **Analizar** si Doc/Task Accuracy < 90.
+5. W4 puede disparar un segundo pase automático; no hace falta regenerar todo manualmente.
 
 ### Brownfield
 
 1. **MDD Inicial** o MDD de etapa con doc. partida ≥ 300 caracteres.
-2. Gates de índice SDD y cambio (etapa 2+).
-3. `POST …/legacy/generate-deliverables` — traza en `lastDeliverablesDebug`.
-4. Converge y Gate 2 son flujos **post-generación**, no parte de la cascada bulk.
+2. **`POST …/legacy/generate-mdd`** encola por defecto — mismo criterio de background que greenfield (§1.6).
+3. Gates de índice SDD y cambio (etapa 2+).
+4. `POST …/legacy/generate-deliverables` — traza en `lastDeliverablesDebug`.
+5. Converge y Gate 2 son flujos **post-generación**, no parte de la cascada bulk.
 
 ### Diagramas y markdown
 
@@ -315,11 +363,14 @@ flowchart TB
 | Oleadas y matriz | `packages/shared-types/src/deliverables-matrix.ts` |
 | Greenfield cascada | `apps/api/src/modules/projects/projects.service.ts` → `generateDeliverablesCascade` |
 | Brownfield cascada | `apps/api/src/modules/legacy-flow/legacy-coordinator.service.ts` → `generateDeliverables` |
+| Cola MDD background | `apps/api/src/modules/ai-analysis/mdd/mdd-queue.service.ts`, `runMddGenerationJob` |
+| Polling MDD (web) | `apps/web/src/utils/pollMddJob.ts` |
+| Ayuda background jobs | `apps/web/src/content/help/generacion-en-segundo-plano.md` |
 | Formateador | `packages/shared-types/src/format-document-markdown.ts` |
 | Mermaid SSOT | `packages/shared-types/src/mermaid.ts` |
 | Excalidraw UI | `apps/web/src/components/MarkdownMermaid.tsx`, `ExcalidrawDiagramBlock.tsx` |
-| Changelog release | `CHANGELOG.md` → `[v1.0.0-rc.2]` |
-| Tag Git | [v1.0.0-rc.2](https://github.com/kreodevs/theforge/releases/tag/v1.0.0-rc.2) |
+| Changelog release | `CHANGELOG.md` → `[v1.0.0-rc.3]` |
+| Tag Git | [v1.0.0-rc.3](https://github.com/kreodevs/theforge/releases/tag/v1.0.0-rc.3) |
 
 ---
 
@@ -330,6 +381,7 @@ flowchart TB
 - **Excalidraw Phase 2** (persistencia de ediciones manuales en canvas como fuente).
 - **Formatter AST** como path por defecto en API (pendiente Fase 4 del plan remark).
 - **Plugins comerciales** (EVD extraído a repositorio aparte en `v1.0.0-RC`).
+- **Manager MDD con HITL en cola** — aprobación de plan y `resume` siguen en SSE; no hay job reanudable para el bucle interactivo del Manager.
 
 ---
 

@@ -20,6 +20,7 @@ import { DocumentSnapshotModule } from "../document-snapshot/document-snapshot.m
 import { LegacyFlowModule } from "../legacy-flow/legacy-flow.module.js";
 import { DocumentationGapModule } from "../documentation-gap/documentation-gap.module.js";
 import { EstimationModule } from "../ai-analysis/estimation/estimation.module.js";
+import { AiAnalysisModule } from "../ai-analysis/ai-analysis.module.js";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
 import { ProjectGroupsModule } from "../project-groups/project-groups.module.js";
@@ -40,6 +41,7 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     UiMcpModule,
     ProjectGroupsModule,
     EstimationModule,
+    forwardRef(() => AiAnalysisModule),
   ],
   controllers: [ProjectsController, ProjectIntegrationController],
   providers: [

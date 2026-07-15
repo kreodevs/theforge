@@ -9,6 +9,7 @@ import { MddManualAuditService } from "./mdd/mdd-manual-audit.service.js";
 import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
 import { ProjectGenerationGuardService } from "../projects/project-generation-guard.service.js";
+import { MddQueueService, type MddJobData, type MddJobMode } from "./mdd/mdd-queue.service.js";
 
 @Controller("ai-analysis")
 export class AiAnalysisController {
@@ -19,6 +20,7 @@ export class AiAnalysisController {
     private readonly mddManualAudit: MddManualAuditService,
     private readonly prisma: PrismaService,
     private readonly generationGuard: ProjectGenerationGuardService,
+    private readonly mddQueue: MddQueueService,
   ) { }
 
   private registerMddStreamLock(projectId: string | undefined): void {
@@ -230,9 +232,62 @@ export class AiAnalysisController {
   }
 
   /**
+   * Encola generación/regeneración MDD en background (sobrevive cerrar el navegador con Redis).
+   * Body: { mode: pipeline|manager|section, projectId, stageId?, dbgaContent?, initialMessage?, mddContent?, section?, gapReasons? }
+   */
+  @Post("mdd/jobs")
+  async enqueueMddJob(@Body() body: Record<string, unknown>) {
+    const mode = body?.mode as MddJobMode | undefined;
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    if (!mode || !["pipeline", "manager", "section"].includes(mode)) {
+      throw new BadRequestException("mode must be pipeline, manager, or section");
+    }
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (project && (project as { projectType?: string }).projectType === "LEGACY") {
+      throw new BadRequestException("Usa POST …/legacy/generate-mdd para proyectos LEGACY.");
+    }
+    const data: MddJobData = {
+      mode,
+      projectId,
+      stageId: typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined,
+      dbgaContent: typeof body?.dbgaContent === "string" ? body.dbgaContent : undefined,
+      initialMessage: typeof body?.initialMessage === "string" ? body.initialMessage.trim() : undefined,
+      mddContent: typeof body?.mddContent === "string" ? body.mddContent : undefined,
+      section: typeof body?.section === "number" ? body.section : Number(body?.section) || undefined,
+      gapReasons: Array.isArray(body?.gapReasons)
+        ? body.gapReasons.filter((g): g is string => typeof g === "string" && g.trim().length > 0)
+        : undefined,
+    };
+    if (mode === "section") {
+      const section = data.section;
+      if (!Number.isInteger(section) || section! < 1 || section! > 7) {
+        throw new BadRequestException("section must be 1–7");
+      }
+    }
+    const jobId = await this.mddQueue.enqueue(data);
+    return {
+      queued: true,
+      jobId,
+      statusPath: `/ai-analysis/mdd/jobs/${jobId}`,
+      projectStatusPath: `/projects/${projectId}/mdd-jobs/${jobId}`,
+    };
+  }
+
+  @Get("mdd/jobs/:jobId")
+  async getMddJobStatus(@Param("jobId") jobId: string) {
+    const status = await this.mddQueue.getJobStatus(jobId);
+    if (status.status === "unknown") {
+      throw new BadRequestException("Job no encontrado");
+    }
+    return status;
+  }
+
+  /**
    * Streams the MDD (Master Design Document) pipeline: Clarificador → Security → Integration → Auditor.
    * NDJSON: { type: "progress"|"done"|"error", agent?, message?, markdown? }.
    * Body: { dbgaContent?: string, projectId?: string }. dbgaContent opcional; si no hay Benchmark, los agentes generan un MDD base.
+   * Preferir POST mdd/jobs para ejecución en background.
    */
   @Post("mdd/stream")
   async streamMdd(
