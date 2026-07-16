@@ -28,6 +28,25 @@ import {
   integrationInput,
 } from "../checkpoint/node-input-hash.js";
 import type { MddFlowTraceOpts, MddFlowTraceService } from "../mdd/mdd-flow-trace.service.js";
+import {
+  shouldRunSecIntNode,
+  nextInSections,
+  nextInCorrectionPipeline,
+  shouldRunSecIntPass,
+  routeAfterSoftwareArchitectLean,
+  routeAfterFormatterPreSecIntLean,
+  routeAfterSecurityLean,
+  routeAfterIntegrationLean,
+  routeAfterFormatSecIntLean,
+  routeAfterDiagramLean,
+  LEAN_SOFTWARE_ARCHITECT_DESTINATIONS,
+  LEAN_FORMATTER_DESTINATIONS,
+  LEAN_SECURITY_DESTINATIONS,
+  LEAN_INTEGRATION_DESTINATIONS,
+  LEAN_FORMAT_SEC_INT_DESTINATIONS,
+  LEAN_DIAGRAM_DESTINATIONS,
+  LEAN_QUALITY_GATE_DESTINATIONS,
+} from "./mdd-graph-routing.util.js";
 
 const MAX_MDD_ITERATIONS = 2;
 
@@ -118,13 +137,6 @@ function wrapCache(
   };
 }
 
-function shouldRunSecIntNode(state: MDDStateType, nodeName: "security" | "integration"): boolean {
-  if (state.delegateTarget === "sections" && state.sectionsToRun?.length) {
-    return state.sectionsToRun.includes(nodeName);
-  }
-  return true;
-}
-
 function wrapSecIntGuard(nodeName: "security" | "integration", nodeFn: AnyNodeFn): NodeFn {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
     if (!shouldRunSecIntNode(state, nodeName)) return {};
@@ -132,26 +144,36 @@ function wrapSecIntGuard(nodeName: "security" | "integration", nodeFn: AnyNodeFn
   };
 }
 
-function nextInSections(state: MDDStateType, currentNode: string): string | null {
-  if (state.delegateTarget !== "sections" || !state.sectionsToRun?.length) return null;
-  const idx = state.sectionsToRun.indexOf(currentNode);
-  if (idx === -1) return null;
-  const next = state.sectionsToRun[idx + 1];
-  return next ?? "manager";
+function routeTracePayload(state: MDDStateType): Record<string, unknown> {
+  return {
+    sectionsToRun: state.sectionsToRun,
+    managerRound: state.managerRound,
+    delegateTarget: state.delegateTarget,
+    mddIteration: state.mddIteration,
+    qualityGateOk: state.qualityGate?.ok,
+  };
 }
 
-/** Igual que nextInSections pero sin destino manager (grafo lean sin nodo Manager). */
-function nextInCorrectionPipeline(state: MDDStateType, currentNode: string): string | null {
-  const next = nextInSections(state, currentNode);
-  if (!next || next === "manager") return null;
-  return next;
-}
-
-function shouldRunSecIntPass(state: MDDStateType): boolean {
-  if (state.delegateTarget === "sections" && state.sectionsToRun?.length) {
-    return state.sectionsToRun.includes("security") || state.sectionsToRun.includes("integration");
-  }
-  return true;
+function makeTracedRouter(
+  trace: MddFlowTraceService | null,
+  correlationId: string | null,
+  routerName: string,
+  routeFn: (state: MDDStateType) => string,
+  validDestinations: readonly string[],
+): (state: MDDStateType) => string {
+  return (state: MDDStateType) => {
+    const destination = routeFn(state);
+    if (trace && correlationId) {
+      trace.routeDecision(correlationId, routerName, destination, routeTracePayload(state));
+      if (!validDestinations.includes(destination)) {
+        trace.graphRouteCrash(correlationId, routerName, destination, {
+          validDestinations: [...validDestinations],
+          ...routeTracePayload(state),
+        });
+      }
+    }
+    return destination;
+  };
 }
 
 function inferAgentsFromQualityFeedback(feedback: string): string[] {
@@ -233,35 +255,62 @@ export async function createMddGraph(
 
   const fanoutSecIntNode = async (_state: MDDStateType): Promise<Partial<MDDStateType>> => ({});
 
-  function routeAfterFormatterPreSecInt(state: MDDStateType): string {
-    const next = nextInCorrectionPipeline(state, "formatter");
-    if (next) return next;
-    if (shouldRunSecIntPass(state)) return "fanout_sec_int";
-    return "diagram_injector";
-  }
-
-  function routeAfterFormatSecInt(state: MDDStateType): string {
-    const next = nextInCorrectionPipeline(state, "format_sec_int");
-    if (next) return next;
-    return "diagram_injector";
-  }
-
-  function routeAfterDiagram(state: MDDStateType): string {
-    const next = nextInCorrectionPipeline(state, "diagram_injector");
-    if (next) return next;
-    return "quality_gate";
-  }
-
-  function routeAfterSoftwareArchitect(state: MDDStateType): string {
-    const next = nextInCorrectionPipeline(state, "software_architect");
-    if (next) return next;
-    if (state.delegateTarget !== "sections") {
-      if (!state.architectSection5PassPending && mddNeedsSection5Pass(state.mddDraft ?? "")) {
-        return "architect_section5_prep";
+  const routeAfterSoftwareArchitect = makeTracedRouter(
+    trace,
+    correlationId,
+    "routeAfterSoftwareArchitect",
+    (state) => {
+      const destination = routeAfterSoftwareArchitectLean(state);
+      if (trace && correlationId && destination === "architect_section5_prep") {
+        trace.section5PassTriggered(correlationId, {
+          reason: "mddNeedsSection5Pass",
+          ...routeTracePayload(state),
+        });
       }
-    }
-    return "formatter";
-  }
+      return destination;
+    },
+    LEAN_SOFTWARE_ARCHITECT_DESTINATIONS,
+  );
+
+  const routeAfterFormatterPreSecInt = makeTracedRouter(
+    trace,
+    correlationId,
+    "routeAfterFormatterPreSecInt",
+    routeAfterFormatterPreSecIntLean,
+    LEAN_FORMATTER_DESTINATIONS,
+  );
+
+  const routeAfterFormatSecInt = makeTracedRouter(
+    trace,
+    correlationId,
+    "routeAfterFormatSecInt",
+    routeAfterFormatSecIntLean,
+    LEAN_FORMAT_SEC_INT_DESTINATIONS,
+  );
+
+  const routeAfterDiagram = makeTracedRouter(
+    trace,
+    correlationId,
+    "routeAfterDiagram",
+    routeAfterDiagramLean,
+    LEAN_DIAGRAM_DESTINATIONS,
+  );
+
+  const routeAfterSecurity = makeTracedRouter(
+    trace,
+    correlationId,
+    "routeAfterSecurity",
+    routeAfterSecurityLean,
+    LEAN_SECURITY_DESTINATIONS,
+  );
+
+  const routeAfterIntegration = makeTracedRouter(
+    trace,
+    correlationId,
+    "routeAfterIntegration",
+    routeAfterIntegrationLean,
+    LEAN_INTEGRATION_DESTINATIONS,
+  );
 
   const architectSection5PrepNode = async (state: MDDStateType): Promise<Partial<MDDStateType>> => ({
     architectSection5PassPending: true,
@@ -277,15 +326,28 @@ export async function createMddGraph(
     const iteration = state.mddIteration ?? 0;
     if (iteration >= MAX_MDD_ITERATIONS) return "graph_populator";
     if (state.delegateTarget === "clarifier_only") return "clarifier";
+    let destination: string;
     if (state.delegateTarget === "sections" && state.sectionsToRun?.length) {
-      return state.sectionsToRun[0]!;
+      destination = state.sectionsToRun[0]!;
+    } else {
+      const agents = resolveCorrectionAgentsFromQualityGate(state.qualityGate, inferAgentsFromQualityFeedback);
+      if (agents.includes("clarifier")) destination = "clarifier";
+      else if (agents.includes("software_architect")) destination = "software_architect";
+      else if (agents.includes("security")) destination = "security";
+      else if (agents.includes("integration")) destination = "integration";
+      else destination = "clarifier";
     }
-    const agents = resolveCorrectionAgentsFromQualityGate(state.qualityGate, inferAgentsFromQualityFeedback);
-    if (agents.includes("clarifier")) return "clarifier";
-    if (agents.includes("software_architect")) return "software_architect";
-    if (agents.includes("security")) return "security";
-    if (agents.includes("integration")) return "integration";
-    return "clarifier";
+    if (trace && correlationId) {
+      trace.correctionStart(correlationId, {
+        mddIteration: iteration,
+        gapCount: state.qualityGate?.gaps?.length ?? 0,
+        blockerCount: state.qualityGate?.blockers?.length ?? 0,
+        firstNode: destination,
+        ...routeTracePayload(state),
+      });
+      trace.routeDecision(correlationId, "routeAfterQualityGate", destination, routeTracePayload(state));
+    }
+    return destination;
   }
 
   const builder = new StateGraph(MDDStateAnnotation)
@@ -318,14 +380,16 @@ export async function createMddGraph(
     })
     .addEdge("fanout_sec_int", "security")
     .addEdge("fanout_sec_int", "integration")
-    .addConditionalEdges("security", (state) => nextInCorrectionPipeline(state, "security") ?? "format_sec_int", {
+    .addConditionalEdges("security", routeAfterSecurity, {
       integration: "integration",
       format_sec_int: "format_sec_int",
+      formatter: "formatter",
       diagram_injector: "diagram_injector",
       quality_gate: "quality_gate",
     })
-    .addConditionalEdges("integration", (state) => nextInCorrectionPipeline(state, "integration") ?? "format_sec_int", {
+    .addConditionalEdges("integration", routeAfterIntegration, {
       format_sec_int: "format_sec_int",
+      formatter: "formatter",
       diagram_injector: "diagram_injector",
       quality_gate: "quality_gate",
     })
@@ -435,13 +499,17 @@ export async function createMddGraphWithManager(
   }
 
   function routeAfterSoftwareArchitect(state: MDDStateType): string {
+    if (!state.architectSection5PassPending && mddNeedsSection5Pass(state.mddDraft ?? "")) {
+      if (trace && correlationId) {
+        trace.section5PassTriggered(correlationId, {
+          reason: "mddNeedsSection5Pass",
+          ...routeTracePayload(state),
+        });
+      }
+      return "architect_section5_prep";
+    }
     const next = nextInSections(state, "software_architect");
     if (next) return next;
-    if (state.delegateTarget !== "sections") {
-      if (!state.architectSection5PassPending && mddNeedsSection5Pass(state.mddDraft ?? "")) {
-        return "architect_section5_prep";
-      }
-    }
     return "formatter";
   }
 
@@ -538,12 +606,14 @@ export async function createMddGraphWithManager(
     .addConditionalEdges("security", (state) => nextInSections(state, "security") ?? "format_sec_int", {
       integration: "integration",
       format_sec_int: "format_sec_int",
+      formatter: "formatter",
       diagram_injector: "diagram_injector",
       quality_gate: "quality_gate",
       manager: "manager",
     })
     .addConditionalEdges("integration", (state) => nextInSections(state, "integration") ?? "format_sec_int", {
       format_sec_int: "format_sec_int",
+      formatter: "formatter",
       diagram_injector: "diagram_injector",
       quality_gate: "quality_gate",
       manager: "manager",

@@ -5,6 +5,13 @@ import {
   expandCorrectionSectionsToRun,
   resolveCorrectionAgentsFromQualityGate,
 } from "../utils/mdd-manager-routing.util.js";
+import {
+  LEAN_ROUTE_RESOLVERS,
+  resolveCorrectionHop,
+  routeAfterIntegrationLean,
+  routeAfterSecurityLean,
+  routeAfterSoftwareArchitectLean,
+} from "./mdd-graph-routing.util.js";
 
 /** Destinos válidos en createMddGraph tras corrección QG (sin nodo manager). */
 const LEAN_GRAPH_CORRECTION_TARGETS = new Set([
@@ -21,13 +28,30 @@ const LEAN_GRAPH_CORRECTION_TARGETS = new Set([
   "graph_populator",
 ]);
 
+const NODE_ROUTE_RESOLVER: Record<string, string> = {
+  software_architect: "routeAfterSoftwareArchitect",
+  formatter: "routeAfterFormatterPreSecInt",
+  security: "routeAfterSecurity",
+  integration: "routeAfterIntegration",
+  format_sec_int: "routeAfterFormatSecInt",
+  diagram_injector: "routeAfterDiagram",
+};
+
 function assertCorrectionChainRoutable(sectionsToRun: string[]): void {
   for (let i = 0; i < sectionsToRun.length - 1; i++) {
+    const current = sectionsToRun[i]!;
     const hop = sectionsToRun[i + 1]!;
     assert.ok(
       LEAN_GRAPH_CORRECTION_TARGETS.has(hop),
-      `hop ${sectionsToRun[i]} → ${hop} must be a lean graph node`,
+      `hop ${current} → ${hop} must be a lean graph node`,
     );
+    const routerName = NODE_ROUTE_RESOLVER[current];
+    const resolver = routerName
+      ? LEAN_ROUTE_RESOLVERS.find((r) => r.router === routerName)
+      : undefined;
+    if (resolver) {
+      assert.equal(resolveCorrectionHop(sectionsToRun, current, resolver), hop);
+    }
   }
 }
 
@@ -80,5 +104,36 @@ describe("mdd-graph quality gate correction routing", () => {
     const sections = expandCorrectionSectionsToRun(["software_architect", "security"]);
     assert.deepEqual(sections.slice(0, 2), ["software_architect", "security"]);
     assertCorrectionChainRoutable(sections);
+  });
+
+  it("full correction path routes integration to formatter (not null)", () => {
+    const sections = expandCorrectionSectionsToRun([
+      "software_architect",
+      "security",
+      "integration",
+    ]);
+    assert.deepEqual(sections, [
+      "software_architect",
+      "security",
+      "integration",
+      "formatter",
+      "diagram_injector",
+      "quality_gate",
+    ]);
+    const state = {
+      delegateTarget: "sections" as const,
+      sectionsToRun: sections,
+      mddDraft: "# MDD",
+      architectSection5PassPending: true,
+    };
+    assert.equal(routeAfterSoftwareArchitectLean(state), "security");
+    assert.equal(routeAfterSecurityLean(state), "integration");
+    assert.equal(routeAfterIntegrationLean(state), "formatter");
+    assertCorrectionChainRoutable(sections);
+  });
+
+  it("integration without sectionsToRun falls back to format_sec_int", () => {
+    const state = { mddDraft: "# MDD" };
+    assert.equal(routeAfterIntegrationLean(state), "format_sec_int");
   });
 });

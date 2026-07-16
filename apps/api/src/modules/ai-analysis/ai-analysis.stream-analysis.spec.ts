@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { runWithRequestUserAsync } from "../../common/request-user.store.js";
 import { AiAnalysisService } from "./ai-analysis.service.js";
+import { MddFlowTraceService } from "./mdd/mdd-flow-trace.service.js";
 
 const RECURSION_RAW =
   "Recursion limit of 25 reached without hitting a stop condition";
@@ -33,6 +34,9 @@ function createServiceWithMockGraph(): AiAnalysisService {
         visionModel: "m",
       }),
     } as never,
+    {} as never,
+    {} as never,
+    new MddFlowTraceService(),
     async (_factory, _userId) =>
       ({
         stream: async () => {
