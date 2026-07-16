@@ -3,6 +3,7 @@ import { ExternalLink, Eye, EyeOff } from "lucide-react";
 import { Input } from "./ui";
 import { cn } from "@/lib/utils";
 import type { ProviderCatalogEntry } from "@/types/user-providers";
+import { PROVIDER_TIER_BADGES, PROVIDER_TIER_FORM_LABELS } from "@/utils/provider-model-tier-labels";
 import type { UserProviderFormFields, UserProviderFormState } from "@/utils/user-provider-form";
 
 function FormField({
@@ -188,37 +189,33 @@ export function ProviderConfigFormFields({
         </div>
       </FormField>
 
-      <FormField
-        id={`${idPrefix}-chat-model`}
-        label={showInstanceModelTiers ? "Ligero" : "Modelo de chat"}
-        required
-        hint={
-          showInstanceModelTiers
-            ? "Tier ligero — p. ej. anthropic/claude-haiku. Conversación Workshop e intent router."
-            : `ID del modelo (p. ej. ${catalog.defaultChatModel} u openrouter/free).`
-        }
-        error={showError("chatModel")}
-      >
-        <Input
-          id={`${idPrefix}-chat-model`}
-          value={form.chatModel}
-          onChange={(e) => {
-            onPatch({ chatModel: e.target.value });
-            onClearFieldError("chatModel");
-          }}
-          onBlur={() => onBlurField("chatModel")}
-          placeholder={catalog.defaultChatModel}
-          aria-invalid={!!showError("chatModel")}
-          className={cn("font-mono text-xs", inputErrorClass("chatModel"))}
-        />
-      </FormField>
-
       {showInstanceModelTiers ? (
-        <>
+        <div className="space-y-3 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_20%,var(--card))] p-3">
+          <p className="text-sm font-medium text-[var(--foreground)]">Modelos configurados</p>
+          <FormField
+            id={`${idPrefix}-architect-model`}
+            label={`${PROVIDER_TIER_FORM_LABELS.architect} (${PROVIDER_TIER_BADGES.architect})`}
+            hint="Tier A — p. ej. anthropic/claude-opus. §2–§5 SQL/API y Legacy Coordinador. Vacío = grafo → chat."
+            error={showError("architectChatModel")}
+          >
+            <Input
+              id={`${idPrefix}-architect-model`}
+              value={form.architectChatModel}
+              onChange={(e) => {
+                onPatch({ architectChatModel: e.target.value });
+                onClearFieldError("architectChatModel");
+              }}
+              onBlur={() => onBlurField("architectChatModel")}
+              placeholder="p. ej. anthropic/claude-opus-4"
+              aria-invalid={!!showError("architectChatModel")}
+              className={cn("font-mono text-xs", inputErrorClass("architectChatModel"))}
+            />
+          </FormField>
+
           <FormField
             id={`${idPrefix}-graph-model`}
-            label="Estándar"
-            hint="Tier estándar — p. ej. anthropic/claude-sonnet. Generadores §1/§6/§7, Quality Gate, entregables y tasks. Vacío = hereda de Ligero."
+            label={`${PROVIDER_TIER_FORM_LABELS.graph} (${PROVIDER_TIER_BADGES.graph})`}
+            hint="Tier B — p. ej. anthropic/claude-sonnet. Generadores §1/§6/§7, Quality Gate, entregables y tasks. Vacío = mismo que chat."
             error={showError("graphChatModel")}
           >
             <Input
@@ -236,26 +233,48 @@ export function ProviderConfigFormFields({
           </FormField>
 
           <FormField
-            id={`${idPrefix}-architect-model`}
-            label="Premium"
-            hint="Tier premium — p. ej. anthropic/claude-opus. §2–§5 SQL/API y Legacy Coordinador. Vacío = hereda de Estándar o Ligero."
-            error={showError("architectChatModel")}
+            id={`${idPrefix}-chat-model`}
+            label={`${PROVIDER_TIER_FORM_LABELS.chat} (${PROVIDER_TIER_BADGES.chat})`}
+            required
+            hint="Tier C — p. ej. anthropic/claude-haiku. Conversación Workshop e intent router."
+            error={showError("chatModel")}
           >
             <Input
-              id={`${idPrefix}-architect-model`}
-              value={form.architectChatModel}
+              id={`${idPrefix}-chat-model`}
+              value={form.chatModel}
               onChange={(e) => {
-                onPatch({ architectChatModel: e.target.value });
-                onClearFieldError("architectChatModel");
+                onPatch({ chatModel: e.target.value });
+                onClearFieldError("chatModel");
               }}
-              onBlur={() => onBlurField("architectChatModel")}
-              placeholder="p. ej. anthropic/claude-opus-4"
-              aria-invalid={!!showError("architectChatModel")}
-              className={cn("font-mono text-xs", inputErrorClass("architectChatModel"))}
+              onBlur={() => onBlurField("chatModel")}
+              placeholder={catalog.defaultChatModel}
+              aria-invalid={!!showError("chatModel")}
+              className={cn("font-mono text-xs", inputErrorClass("chatModel"))}
             />
           </FormField>
-        </>
-      ) : null}
+        </div>
+      ) : (
+        <FormField
+          id={`${idPrefix}-chat-model`}
+          label="Modelo de chat"
+          required
+          hint={`ID del modelo (p. ej. ${catalog.defaultChatModel} u openrouter/free).`}
+          error={showError("chatModel")}
+        >
+          <Input
+            id={`${idPrefix}-chat-model`}
+            value={form.chatModel}
+            onChange={(e) => {
+              onPatch({ chatModel: e.target.value });
+              onClearFieldError("chatModel");
+            }}
+            onBlur={() => onBlurField("chatModel")}
+            placeholder={catalog.defaultChatModel}
+            aria-invalid={!!showError("chatModel")}
+            className={cn("font-mono text-xs", inputErrorClass("chatModel"))}
+          />
+        </FormField>
+      )}
 
       <FormField
         id={`${idPrefix}-fallbacks`}

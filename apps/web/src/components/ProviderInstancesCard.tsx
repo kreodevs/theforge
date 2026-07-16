@@ -7,15 +7,14 @@ import {
   deleteProviderInstance,
   fetchAllProviderInstances,
   fetchEnabledProviderInstances,
-  fetchProviderInstance,
   updateProviderInstance,
 } from "@/lib/provider-instances-api";
 import { fetchUserAISettings, updateUserAISettings } from "@/lib/user-providers-api";
 import { ProviderInstanceModal } from "./ProviderInstanceModal";
-import { ProviderInstanceCard } from "./ProviderInstanceCard";
-import { ProviderInstanceDetailPanel } from "./ProviderInstanceDetailPanel";
-import { ProviderTierModelModal } from "./ProviderTierModelModal";
-import type { ProviderModelTier } from "@/utils/provider-tier-labels";
+import {
+  ProviderInstanceCardDesktop,
+  ProviderInstanceCardMobile,
+} from "./ProviderInstanceCard";
 
 function canManageInstances(role: string | undefined) {
   return role === "admin" || role === "super_admin";
@@ -36,14 +35,6 @@ export function ProviderInstancesCard() {
   const [editing, setEditing] = useState<ProviderInstanceSummary | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [activatingId, setActivatingId] = useState<string | null>(null);
-
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [detailInstance, setDetailInstance] = useState<ProviderInstanceSummary | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-
-  const [tierModalOpen, setTierModalOpen] = useState(false);
-  const [tierEditInstance, setTierEditInstance] = useState<ProviderInstanceSummary | null>(null);
-  const [tierEditTier, setTierEditTier] = useState<ProviderModelTier | null>(null);
 
   const activeInstanceId = userSettings?.activeTenantInstanceId ?? null;
 
@@ -78,34 +69,6 @@ export function ProviderInstancesCard() {
     void load();
   }, [load]);
 
-  function syncInstance(updated: ProviderInstanceSummary) {
-    setInstances((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
-    setDetailInstance((prev) => (prev?.id === updated.id ? updated : prev));
-    setTierEditInstance((prev) => (prev?.id === updated.id ? updated : prev));
-  }
-
-  async function openDetail(inst: ProviderInstanceSummary) {
-    setDetailInstance(inst);
-    setDetailOpen(true);
-    if (!canManage) return;
-    setDetailLoading(true);
-    try {
-      const full = await fetchProviderInstance(inst.id);
-      setDetailInstance(full);
-      syncInstance(full);
-    } catch {
-      // Mantener resumen de lista si GET :id falla (p. ej. permisos).
-    } finally {
-      setDetailLoading(false);
-    }
-  }
-
-  function openTierEdit(inst: ProviderInstanceSummary, tier: ProviderModelTier) {
-    setTierEditInstance(inst);
-    setTierEditTier(tier);
-    setTierModalOpen(true);
-  }
-
   async function handleToggleVisibleForTeam(inst: ProviderInstanceSummary) {
     if (!isSuperAdmin) return;
     const next = !inst.enabledForUsers;
@@ -132,7 +95,7 @@ export function ProviderInstancesCard() {
         enabledForUsers: next,
         isTenantDefault: next ? inst.isTenantDefault : false,
       });
-      syncInstance(updated);
+      setInstances((prev) => prev.map((i) => (i.id === inst.id ? updated : i)));
     } catch (e) {
       setInstances((prev) =>
         prev.map((i) => (i.id === inst.id ? { ...i, enabledForUsers: !next } : i)),
@@ -160,8 +123,6 @@ export function ProviderInstancesCard() {
     if (!window.confirm("¿Eliminar esta instancia de proveedor?")) return;
     try {
       await deleteProviderInstance(id);
-      setDetailOpen(false);
-      setDetailInstance(null);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo eliminar");
@@ -186,16 +147,6 @@ export function ProviderInstancesCard() {
     setEditing(null);
     setModalOpen(true);
   }
-
-  function openEditModal(inst: ProviderInstanceSummary) {
-    setEditing(inst);
-    setModalOpen(true);
-    setDetailOpen(false);
-  }
-
-  const detailIsActive = detailInstance
-    ? activeInstanceId === detailInstance.id
-    : false;
 
   return (
     <>
@@ -255,59 +206,36 @@ export function ProviderInstancesCard() {
             </p>
           </div>
         ) : (
-          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-4">
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
             {sortedInstances.map((inst) => {
               const isActive = activeInstanceId === inst.id;
+              const cardProps = {
+                inst,
+                isActive,
+                isDeveloper,
+                isSuperAdmin,
+                canManage,
+                canMutate: canMutateInstance(inst),
+                togglingId,
+                activatingId,
+                onToggleVisibleForTeam: () => void handleToggleVisibleForTeam(inst),
+                onSetActive: () => void handleSetActive(inst),
+                onEdit: () => {
+                  setEditing(inst);
+                  setModalOpen(true);
+                },
+                onDelete: () => void handleDelete(inst.id),
+              };
               return (
                 <li key={inst.id} className="min-w-0">
-                  <ProviderInstanceCard
-                    inst={inst}
-                    isActive={isActive}
-                    isSuperAdmin={isSuperAdmin}
-                    canManage={canManage}
-                    canMutate={canMutateInstance(inst)}
-                    togglingId={togglingId}
-                    onToggleVisibleForTeam={() => void handleToggleVisibleForTeam(inst)}
-                    onSelect={() => void openDetail(inst)}
-                    onEditTier={(tier) => openTierEdit(inst, tier)}
-                  />
+                  <ProviderInstanceCardMobile {...cardProps} />
+                  <ProviderInstanceCardDesktop {...cardProps} />
                 </li>
               );
             })}
           </ul>
         )}
       </section>
-
-      <ProviderInstanceDetailPanel
-        instance={detailInstance}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-        loading={detailLoading}
-        isActive={detailIsActive}
-        isDeveloper={isDeveloper}
-        canMutate={detailInstance ? canMutateInstance(detailInstance) : false}
-        activatingId={activatingId}
-        onSetActive={() => {
-          if (detailInstance) void handleSetActive(detailInstance);
-        }}
-        onEdit={() => {
-          if (detailInstance) openEditModal(detailInstance);
-        }}
-        onDelete={() => {
-          if (detailInstance) void handleDelete(detailInstance.id);
-        }}
-        onEditTier={(tier) => {
-          if (detailInstance) openTierEdit(detailInstance, tier);
-        }}
-      />
-
-      <ProviderTierModelModal
-        open={tierModalOpen}
-        onOpenChange={setTierModalOpen}
-        instance={tierEditInstance}
-        tier={tierEditTier}
-        onSaved={syncInstance}
-      />
 
       {canManage ? (
         <ProviderInstanceModal
