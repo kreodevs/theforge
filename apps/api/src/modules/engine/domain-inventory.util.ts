@@ -13,6 +13,22 @@ import {
 const AUTH_CAPABILITY_RE =
   /\b(autenticaci[oó]n|autorizaci[oó]n|login|mfa|ldap|rbac|sso|sesiones?|credenciales)\b/i;
 
+/** H3 plantilla del outline BRD — no son capacidades/procesos de dominio. */
+const BRD_STRUCTURAL_CAPABILITY_TITLE_RE =
+  /^(?:\d+\.\s*)?(?:definici[oó]n de entidades(?: de negocio)?|f[óo]rmulas y umbrales|reglas de operaci[oó]n|matriz de permisos|flujos de negocio cr[ií]ticos|criterios de aceptaci[oó]n(?: de negocio)?(?: \(uat\))?|roles de negocio|casos de uso clave|objetivos comerciales|dentro del alcance|fuera de alcance|riesgos|m[eé]tricas de [ée]xito|validaci[oó]n de demanda|impacto financiero|problema de negocio|diagrama entidad|flujos cr[ií]ticos|accesibilidad|reporter[ií]a para roles|trazabilidad de auditor[ií]a|reglas de visualizaci[oó]n financiera|se estima que la ausencia)/i;
+
+export function isStructuralBrdCapabilityTitle(title: string): boolean {
+  const t = title
+    .replace(/\*\*/g, "")
+    .replace(/^\d+\.?\s*/, "")
+    .replace(/^#\s*/, "")
+    .trim();
+  if (!t) return true;
+  if (BRD_STRUCTURAL_CAPABILITY_TITLE_RE.test(t)) return true;
+  if (/^flujo\s+\d+\s*:/i.test(t)) return true;
+  return false;
+}
+
 const ENTITY_HINT_RE =
   /\b(tenant|canal|conversaci[oó]n|mensaje|solicitud|embedding|mcp|bit[aá]cora|tarea\s+programada|scheduled|whatsapp|wasender|bitrix|lead|plugin|tool|memoria|agente|llm|configuraci[oó]n)\b/gi;
 
@@ -48,14 +64,19 @@ export function extractBrdCapabilities(brdMarkdown: string): BrdCapability[] {
   if (!text) return [];
 
   const capabilities: BrdCapability[] = [];
-  // Prefer ### 3.x under section 3
-  const section3 = extractMarkdownSection(text, /^##\s*3[\.\s]/i) || text;
+  // Prefer §3 Capacidades (evita `## 3.` vacíos en §1 y fallback al BRD completo).
+  const section3 =
+    extractMarkdownSection(text, /^##\s*3[\.\s]*Capacidades/im) ??
+    extractMarkdownSection(text, /^##\s*3[\.\s][^\n]*(?:funcional|producto)/im) ??
+    extractMarkdownSection(text, /^##\s*3[\.\s]/im) ??
+    text;
   const headingRe = /^###\s*(?:(\d+(?:\.\d+)*)\s+)?(.+)$/gm;
   let match: RegExpExecArray | null;
   const headings: { id: string; title: string; start: number }[] = [];
   while ((match = headingRe.exec(section3)) !== null) {
     const title = (match[2] ?? "").trim();
-    if (!title || /^(contexto|objetivos|impacto)/i.test(title)) continue;
+    if (!title || isStructuralBrdCapabilityTitle(title)) continue;
+    if (/^(contexto|objetivos|impacto)/i.test(title)) continue;
     const id = match[1] ? `cap-${match[1]}` : `cap-${headings.length + 1}`;
     headings.push({ id, title, start: match.index });
   }
@@ -101,10 +122,13 @@ export function extractBrdCapabilities(brdMarkdown: string): BrdCapability[] {
 }
 
 function extractMarkdownSection(md: string, startRe: RegExp): string | null {
-  const start = md.search(startRe);
+  const flags = startRe.flags.includes("m") ? startRe.flags : `${startRe.flags}m`;
+  const re = new RegExp(startRe.source, flags);
+  const start = md.search(re);
   if (start < 0) return null;
   const rest = md.slice(start);
-  const next = rest.slice(1).search(/^##\s+/m);
+  // Solo H2 numerados (## N.) — no confundir con ### subsecciones.
+  const next = rest.slice(1).search(/^##\s+\d+/m);
   return next >= 0 ? rest.slice(0, next + 1) : rest;
 }
 

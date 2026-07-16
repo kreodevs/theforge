@@ -4,6 +4,7 @@ import {
   buildDomainInventory,
   detectAuthOnlySkew,
   extractBrdCapabilities,
+  isStructuralBrdCapabilityTitle,
 } from "./domain-inventory.util.js";
 import {
   computeCascadeAccuracy,
@@ -14,22 +15,22 @@ import {
 const DORIS_BRD_SNIPPET = `
 # BRD - Copiloto Corporativo (CC)
 ## 3. Capacidades Funcionales del Producto
-### 3.1 Autenticación y autorización de usuarios
+### 3.1 Autenticaci?n y autorizaci?n de usuarios
 El copiloto valida la identidad mediante WhatsApp, email o PAT.
-### 3.2 Recepción y clasificación de solicitudes
-Recibe mensajes desde WhatsApp vía Wasender. Clasifica consulta MCP, general o acción.
+### 3.2 Recepci?n y clasificaci?n de solicitudes
+Recibe mensajes desde WhatsApp v?a Wasender. Clasifica consulta MCP, general o acci?n.
 ### 3.3 Procesamiento multi-agente con calidad garantizada
 Supervisor, Clarificador, Ejecutores MCP y Control de Calidad.
 ### 3.4 Memoria persistente y contexto multi-turno
 Historial de conversaciones y embeddings.
-### 3.5 Gestión de tareas programadas
+### 3.5 Gesti?n de tareas programadas
 Crear tareas recurrentes ejecutadas con token MCP.
-### 3.6 Gestión de accesos a sistemas externos (MCP)
+### 3.6 Gesti?n de accesos a sistemas externos (MCP)
 Registrar servidores MCP como Bitrix24.
-### 3.7 Bitácora de peticiones no cumplidas
+### 3.7 Bit?cora de peticiones no cumplidas
 Registrar fallos e HITL.
-### 3.8 Panel de administración (interfaz web)
-Admin web para usuarios, MCP y bitácora.
+### 3.8 Panel de administraci?n (interfaz web)
+Admin web para usuarios, MCP y bit?cora.
 `;
 
 const AUTH_ONLY_MDD = `
@@ -49,7 +50,7 @@ CREATE TABLE outbox_events (id UUID PRIMARY KEY);
 TechnicalMetadata: [high_security]
 ## 4. Contratos de API
 POST /api/auth/login
-## 5. Lógica y Edge Cases
+## 5. L?gica y Edge Cases
 Login
 ## 6. Seguridad
 LDAP
@@ -61,7 +62,7 @@ describe("domain-inventory + cascade-accuracy", () => {
   it("extracts BRD capabilities including domain ones", () => {
     const caps = extractBrdCapabilities(DORIS_BRD_SNIPPET);
     assert.ok(caps.length >= 6);
-    assert.ok(caps.some((c) => /multi-agente|WhatsApp|MCP|Bitácora|Panel/i.test(c.title)));
+    assert.ok(caps.some((c) => /multi-agente|WhatsApp|MCP|Bit?cora|Panel/i.test(c.title)));
     const domain = caps.filter((c) => !c.isAuthRelated);
     assert.ok(domain.length >= 5);
   });
@@ -119,5 +120,36 @@ describe("domain-inventory + cascade-accuracy", () => {
     assert.ok(inv.suggestedEntities.length >= 3);
     assert.ok(inv.crudMatrix.some((r) => !r.infraOnly));
     assert.ok(inv.processes.length >= 5);
+  });
+
+  it("ignores BRD template headings and parses ?3 Capacidades only", () => {
+    const brd = `
+# BRD
+## 1. Contexto
+## 1.
+## 2.
+## 3.
+## 4.
+Objetivo suelto
+## 2. Usuarios y Casos de Uso
+### Casos de uso clave
+Actor hace algo
+## 3. Capacidades Funcionales del Producto
+### Gesti?n de inquilinos y empresas
+Alta de tenant y empresas asociadas con aislamiento estricto de datos por cliente.
+### Cat?logo de capacidades (MCP)
+Registro de servidores MCP y traducci?n autom?tica de tools a skills at?micas.
+## 4. Diagramas
+### F?rmulas y umbrales
+No aplica
+## 8. Riesgos
+### Riesgos
+Riesgo operativo
+`;
+    assert.equal(isStructuralBrdCapabilityTitle("Casos de uso clave"), true);
+    const caps = extractBrdCapabilities(brd);
+    assert.ok(caps.length >= 2 && caps.length <= 4);
+    assert.ok(caps.some((c) => /inquilinos/i.test(c.title)));
+    assert.ok(!caps.some((c) => /casos de uso clave|f?rmulas y umbrales|^riesgos$/i.test(c.title)));
   });
 });
