@@ -4160,6 +4160,8 @@ export function normalizeMddFormat(draft: string): string {
   out = forceStripBrokenPrefix(out);
   out = collapseDuplicateMainTitle(out);
   out = out.replace(/\[object\s+Object\]/gi, "(contenido omitido)");
+  // Despegar palabras pegadas por truncado LLM (ej. "microserviciomulti-tenant")
+  out = out.replace(/\bmicroservicios?(multi[-_\s]?tenant)\b/gi, "microservicio $1");
   out = stripBrokenMetadataDocumentBlock(out);
   out = sanitizeSeguridadIntegracionRawJson(out);
   // Quitar heading duplicado "### ## Integración" que a veces deja el LLM (dejar solo ## Integración)
@@ -4647,6 +4649,31 @@ export function extractSection7Body(draft: string): string | null {
   if (!range) return null;
   const body = draft.slice(range.start + range.heading.length, range.end).replace(/^\s*\n+/, "").trim();
   return isMddSectionPlaceholderBody(body) ? null : body;
+}
+
+const SECTION5_HEADING_REGEX =
+  /##\s*5\.\s*L[oó]gica\s+y\s*Edge\s+Cases|##\s*L[oó]gica\s+y\s*Edge\s+Cases/i;
+
+/** Extrae el cuerpo de §5 (Lógica y Edge Cases). */
+export function extractLogicaEdgeCasesBody(draft: string): string | null {
+  const t = (draft ?? "").trim();
+  const match = t.match(SECTION5_HEADING_REGEX);
+  if (!match) return null;
+  const start = t.indexOf(match[0]) + match[0].length;
+  const rest = t.slice(start).replace(/^\s*\n+/, "");
+  const nextH2 = rest.search(/\n##\s+/);
+  return (nextH2 !== -1 ? rest.slice(0, nextH2) : rest).trim() || null;
+}
+
+/** True si §5 falta, es placeholder o demasiado corta — requiere paso dedicado del Arquitecto. */
+export function mddNeedsSection5Pass(draft: string): boolean {
+  const trimmed = (draft ?? "").trim();
+  if (!trimmed) return true;
+  const structure = validateMddStructure(trimmed);
+  if (structure.missingSections.some((s) => /5\./.test(s))) return true;
+  const body = extractLogicaEdgeCasesBody(trimmed);
+  if (!body || isMddSectionPlaceholderBody(body)) return true;
+  return body.length < 40;
 }
 
 function replaceH2SectionBody(draft: string, headingPattern: RegExp, newBody: string): string {

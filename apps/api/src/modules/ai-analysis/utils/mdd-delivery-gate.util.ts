@@ -85,7 +85,11 @@ export function validateMddForDelivery(
   score -= blockers.length * 8;
   score = Math.max(0, Math.min(100, score));
 
-  const ok = score >= DELIVERY_SCORE_THRESHOLD && blockers.length === 0;
+  /** Alineado con Quality Gate lean: `ok` solo cuando no hay blockers (warnings no bloquean). */
+  const ok = blockers.length === 0;
+  if (ok && score < DELIVERY_SCORE_THRESHOLD) {
+    score = DELIVERY_SCORE_THRESHOLD;
+  }
   return { ok, score, blockers, warnings };
 }
 

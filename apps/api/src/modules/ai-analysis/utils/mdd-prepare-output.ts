@@ -30,7 +30,8 @@ import {
 } from "../../ui-mcp/ui-component-resolver.js";
 import { isPlaceholderSeguridad } from "./mdd-security-parse.js";
 import { ensureMddGovernanceSection, extractGovernanceSection } from "@theforge/shared-types/mdd-governance-patterns";
-import { validateMddForDelivery, type MddDeliveryGateResult } from "./mdd-delivery-gate.util.js";
+import type { MddDeliveryGateResult } from "./mdd-delivery-gate.util.js";
+import { evaluateMddQualityGate, qualityGateToDeliveryGate } from "./mdd-quality-gate.util.js";
 import { composeSection3FromStructured } from "./schema-owner.util.js";
 import {
   injectUiMcpIntoMddFrontendSection,
@@ -218,10 +219,12 @@ export async function prepareMddForOutput(
       );
     }
   }
-  const deliveryGate = validateMddForDelivery(finalMarkdown, {
-    brdMarkdown: options?.brdMarkdown,
-    dbgaMarkdown: options?.dbgaMarkdown,
-  });
+  const deliveryGate = qualityGateToDeliveryGate(
+    evaluateMddQualityGate(finalMarkdown, {
+      brdMarkdown: options?.brdMarkdown,
+      dbgaMarkdown: options?.dbgaMarkdown,
+    }),
+  );
   if (options?.deliveryGateRef) {
     options.deliveryGateRef.current = deliveryGate;
   }

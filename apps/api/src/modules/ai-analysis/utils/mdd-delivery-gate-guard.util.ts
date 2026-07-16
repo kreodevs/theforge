@@ -1,6 +1,6 @@
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
 import { prepareMddForOutput } from "./mdd-prepare-output.js";
-import { validateMddForDelivery } from "./mdd-delivery-gate.util.js";
+import { evaluateMddQualityGate, qualityGateToDeliveryGate } from "./mdd-quality-gate.util.js";
 
 export const MDD_DELIVERY_GATE_ERR = "ERR_MDD_DELIVERY_GATE";
 
@@ -12,13 +12,11 @@ export async function evaluateMddDeliveryGatePrepared(
   mddRaw: string,
   domainContext?: { brdMarkdown?: string | null; dbgaMarkdown?: string | null },
 ): Promise<MddDeliveryGateResult> {
-  const gateRef: { current?: MddDeliveryGateResult } = {};
   const prepared = await prepareMddForOutput(mddRaw, {
-    deliveryGateRef: gateRef,
     brdMarkdown: domainContext?.brdMarkdown,
     dbgaMarkdown: domainContext?.dbgaMarkdown,
   });
-  return gateRef.current ?? validateMddForDelivery(prepared, domainContext);
+  return qualityGateToDeliveryGate(evaluateMddQualityGate(prepared, domainContext));
 }
 
 export type MddDeliveryGateHttpErrorBody = {

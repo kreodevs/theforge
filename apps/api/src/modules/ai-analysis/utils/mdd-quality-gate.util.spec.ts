@@ -352,3 +352,17 @@ describe("quality gate snapshot helpers", () => {
     assert.deepEqual(resolved.blockers, ["legacy blocker"]);
   });
 });
+
+describe("mddNeedsSection5Pass", () => {
+  it("detecta §5 faltante o placeholder", async () => {
+    const { mddNeedsSection5Pass } = await import("./mdd-sanitize.js");
+    assert.equal(mddNeedsSection5Pass(VALID_MDD), false);
+    const missing = VALID_MDD.replace(/## 5\. Lógica y Edge Cases[\s\S]*?(?=## 6\.)/, "");
+    assert.equal(mddNeedsSection5Pass(missing), true);
+    const placeholder = VALID_MDD.replace(
+      "Dado un usuario autenticado cuando exporta entonces requiere aprobación dual.",
+      "(Pendiente: Arquitecto de Software)",
+    );
+    assert.equal(mddNeedsSection5Pass(placeholder), true);
+  });
+});

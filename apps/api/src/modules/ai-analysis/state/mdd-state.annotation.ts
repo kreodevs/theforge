@@ -80,6 +80,8 @@ export const MDDStateAnnotation = Annotation.Root({
   currentStepGoal: Annotation<string | undefined>(),
   architectCriticFeedback: Annotation<string | undefined>(),
   architectCriticAttempts: Annotation<number | undefined>(),
+  /** Segundo paso del Arquitecto enfocado solo en §5 (evita truncado 16K en primer pass). */
+  architectSection5PassPending: Annotation<boolean | undefined>(),
   projectId: Annotation<string | undefined>({ reducer: reducePreferDefined }),
   activeStageId: Annotation<string | undefined>({ reducer: reducePreferDefined }),
   isLegacyProject: Annotation<boolean | undefined>({ reducer: reducePreferDefined }),

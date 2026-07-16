@@ -5,13 +5,20 @@ import { markdownToMddStructured } from "../ai-analysis/utils/mdd-markdown-to-st
 import { SemaphoreService, type SemaphoreEvaluationInput } from "./semaphore.service.js";
 import { prepareMddForOutput } from "../ai-analysis/utils/mdd-prepare-output.js";
 import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
-import { validateMddForDelivery } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
+import { evaluateMddQualityGate } from "../ai-analysis/utils/mdd-quality-gate.util.js";
 import { normalizeMddContent } from "./mdd-markdown-parser.js";
 import { preRenderMddSanity, sanitizeMermaidInDraft, sanitizeSection4TablesInDraft } from "./mdd-pre-render.js";
 
 export type MddUpdatePipelineResult =
   | { ok: true; sanitizedMdd: string; status: Status; precisionScore: number }
   | { ok: false; code: string; message: string };
+
+export type MddUpdatePipelineOptions = {
+  brdMarkdown?: string | null;
+  dbgaMarkdown?: string | null;
+  /** Skip gate re-check when the lean graph already recorded qualityGate.ok. */
+  qualityGatePassed?: boolean;
+};
 
 /**
  * Responsabilidad única: validar MDD (sanity), sanitizar Mermaid y evaluar semáforo.
@@ -29,22 +36,28 @@ export class MddUpdatePipelineService {
   /**
    * Valida el borrador, sanitiza bloques Mermaid y evalúa semáforo.
    * Con `graphScope`, reingiere el MDD al Grafo SDD y consulta Cypher (coherencia CONSUMES) para relajar AMARILLO→VERDE en HIGH.
-   * Si la validación falla, devuelve ok: false con code y message.
+   * Gate de bloqueo: Quality Gate lean (`ok === blockers.length === 0`), no umbrales de score legacy.
    */
   async process(
     rawMddContent: string,
     semaphoreBase: Omit<SemaphoreEvaluationInput, "mddJsonString" | "sddDomainGraphOk">,
     graphScope?: { projectId: string; stageId: string },
+    options?: MddUpdatePipelineOptions,
   ): Promise<MddUpdatePipelineResult> {
-    const gateRef: { current?: ReturnType<typeof validateMddForDelivery> } = {};
-    const prepared = await prepareMddForOutput(rawMddContent, { deliveryGateRef: gateRef });
-    const gate = gateRef.current ?? validateMddForDelivery(prepared);
-    if (!gate.ok) {
-      return {
-        ok: false,
-        code: "ERR_MDD_DELIVERY_GATE",
-        message: gate.blockers.join("; "),
-      };
+    const domainOpts = {
+      brdMarkdown: options?.brdMarkdown,
+      dbgaMarkdown: options?.dbgaMarkdown,
+    };
+    const prepared = await prepareMddForOutput(rawMddContent, domainOpts);
+    if (!options?.qualityGatePassed) {
+      const qualityGate = evaluateMddQualityGate(prepared, domainOpts);
+      if (!qualityGate.ok) {
+        return {
+          ok: false,
+          code: "ERR_MDD_DELIVERY_GATE",
+          message: qualityGate.blockers.join("; "),
+        };
+      }
     }
     const tableFixed = sanitizeSection4TablesInDraft(prepared);
     const preSanitized = sanitizeMermaidInDraft(tableFixed);

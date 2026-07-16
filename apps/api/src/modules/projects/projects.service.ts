@@ -2725,15 +2725,24 @@ name: ${JSON.stringify(name)}
     }
 
     const mergedForSemaphore = this.mergeProjectForSemaphore(existingRaw, {});
+    const domainGateOpts = {
+      brdMarkdown: targetStage.brdContent,
+      dbgaMarkdown: existingRaw.dbgaContent,
+    };
+    const prePersistQualityGate = evaluateMddQualityGate(mddForPipeline, domainGateOpts);
+    void this.persistMddQualityGateSnapshot(targetStage.id, prePersistQualityGate);
     const result = await this.mddUpdatePipeline.process(
       mddForPipeline,
       this.buildSemaphoreBase(mergedForSemaphore),
       { projectId, stageId: targetStage.id },
+      {
+        ...domainGateOpts,
+        qualityGatePassed: prePersistQualityGate.ok,
+      },
     );
     if (!result.ok) {
       if (result.code === MDD_DELIVERY_GATE_ERR) {
-        const gate = await evaluateMddDeliveryGatePrepared(mddForPipeline);
-        void this.persistMddDeliveryGateSnapshot(targetStage.id, gate);
+        void this.persistMddQualityGateSnapshot(targetStage.id, prePersistQualityGate);
       }
       throw new BadRequestException({
         code: result.code,
@@ -2750,9 +2759,9 @@ name: ${JSON.stringify(name)}
       },
     });
     await this.changeLog.log(projectId, "mddContent", result.sanitizedMdd);
-    void this.persistMddDeliveryGateSnapshot(
+    void this.persistMddQualityGateSnapshot(
       targetStage.id,
-      await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
+      evaluateMddQualityGate(result.sanitizedMdd, domainGateOpts),
     );
     await this.estimationRecalc.recalcAndUpsert(targetStage.id, {
       mddContent: result.sanitizedMdd,

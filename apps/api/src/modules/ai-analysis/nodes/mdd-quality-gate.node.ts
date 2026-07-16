@@ -13,6 +13,7 @@ import {
   runDeterministicMddQualityGate,
   shouldSkipLlmQualityGate,
 } from "../utils/mdd-quality-gate.util.js";
+import { buildQualityGateCorrectionState, inferAgentsFromQualityGaps } from "../utils/mdd-manager-routing.util.js";
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:QualityGate] ${msg}`, ...args);
 
@@ -45,9 +46,26 @@ function finalizeQualityGateOutput(
   state: MDDStateType,
   qualityGate: MddQualityGateResult,
 ): MddQualityGateNodeOutput {
+  const gapFeedback =
+    qualityGate.gaps.map((g) => `**${g.section}:** ${g.issue}\n→ ${g.fix}`).join("\n\n") ||
+    qualityGate.blockers.join("\n");
+  const correction =
+    qualityGate.ok
+      ? {}
+      : buildQualityGateCorrectionState(
+          qualityGate,
+          (fb) => inferAgentsFromQualityGaps([{ section: "General", issue: fb, fix: fb }]),
+          gapFeedback || undefined,
+        );
   return {
     ...emitQualityGate(qualityGate),
     ...(qualityGate.ok ? {} : { mddIteration: (state.mddIteration ?? 0) + 1 }),
+    ...(qualityGate.ok
+      ? {}
+      : {
+          ...correction,
+          previousMddDraftForMerge: correction.previousMddDraftForMerge ?? state.mddDraft ?? "",
+        }),
   };
 }
 

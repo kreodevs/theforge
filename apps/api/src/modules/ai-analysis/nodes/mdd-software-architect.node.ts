@@ -502,10 +502,13 @@ export function createMddSoftwareArchitectNode(
     try {
       const draftTrimmed = (state.mddDraft ?? "").trim();
       const mergeBaseline = (state.previousMddDraftForMerge ?? "").trim() || draftTrimmed;
+      const section5OnlyPass = state.architectSection5PassPending === true;
       const sectionsToPreserve =
-        state.executorControlled === true
-          ? getSectionsToPreserveFromExecutorPlan(state.sectionsToRun)
-          : [];
+        section5OnlyPass
+          ? [1, 2, 3, 4, 6, 7]
+          : state.executorControlled === true
+            ? getSectionsToPreserveFromExecutorPlan(state.sectionsToRun)
+            : [];
       const brief = getUserBrief(state);
       const explicitReqs = getUserExplicitRequirements(state);
       const directive = state.acceptedProposalDirective?.trim();
@@ -525,8 +528,12 @@ export function createMddSoftwareArchitectNode(
       const briefBlock = brief
         ? mustRewriteSection3
           ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Debes **actualizar** ## 3. Modelo de Datos y ## 4. Contratos de API para reflejar el dominio de negocio (BRD/inventario) y los requisitos explícitos. **No copies §3 del borrador** si está sesgado a auth o incompleto frente al inventario; genera el SQL, diagrama ER y endpoints que cubran las capacidades de dominio. Copia solo ## 1. Contexto del borrador. Elabora §2 (Arquitectura y Stack) y §5 (Lógica y Edge Cases).${affectsSection2 ? " Actualiza también ## 2. Arquitectura y Stack si la directiva lo indica." : ""}\n\n---\n\n`
-          : `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar secciones 2 (Arquitectura y Stack), 4 (Contratos de API) y 5 (Lógica y Edge Cases) para una aplicación que cumple este objetivo. Copia 1 y 3 del borrador; no las reescribas.\n\n---\n\n`
-        : "";
+          : section5OnlyPass
+            ? `**Objetivo del documento:** ${brief}\n\n**Tu tarea (paso dedicado §5):** Genera **únicamente** ## 5. Lógica y Edge Cases con reglas Dado/Cuando/Entonces y edge cases del dominio. **No modifiques §1–§4**; el borrador ya tiene contexto, stack, SQL y contratos API completos.\n\n---\n\n`
+            : `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar secciones 2 (Arquitectura y Stack), 4 (Contratos de API) y 5 (Lógica y Edge Cases) para una aplicación que cumple este objetivo. Copia 1 y 3 del borrador; no las reescribas.\n\n---\n\n`
+        : section5OnlyPass
+          ? "**Tu tarea (paso dedicado §5):** Genera **únicamente** ## 5. Lógica y Edge Cases. Preserva §1–§4 sin cambios.\n\n---\n\n"
+          : "";
       const contextParts = [
         goalBlock,
         briefBlock,
@@ -944,9 +951,18 @@ export function createMddSoftwareArchitectNode(
 
       if (Object.keys(slice).length > 0) {
         const merged = mergeMddStructured(state.mddStructured ?? undefined, slice, state.mddDraft ?? "");
-        return { mddStructured: merged, mddDraft, ...meshUpdate };
+        return {
+          mddStructured: merged,
+          mddDraft,
+          ...meshUpdate,
+          ...(section5OnlyPass ? { architectSection5PassPending: false } : {}),
+        };
       }
-      return { mddDraft, ...meshUpdate };
+      return {
+        mddDraft,
+        ...meshUpdate,
+        ...(section5OnlyPass ? { architectSection5PassPending: false } : {}),
+      };
     } catch (err) {
       LOG("error: %s", err instanceof Error ? err.message : String(err));
       throw err;

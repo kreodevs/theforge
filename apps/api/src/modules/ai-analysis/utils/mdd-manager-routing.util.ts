@@ -73,3 +73,51 @@ export function resolveCorrectionAgentsFromQualityGate(
   }
   return ["software_architect"];
 }
+
+const CORRECTION_PIPELINE_AGENTS = ["software_architect", "security", "integration"] as const;
+const CORRECTION_PIPELINE_TAIL = ["formatter", "diagram_injector", "quality_gate"] as const;
+
+/**
+ * Expande agentes de corrección a nodos concretos del grafo lean.
+ * Solo incluye security/integration cuando los gaps lo exigen (evita ~6 min de re-ejecución).
+ */
+export function expandCorrectionSectionsToRun(agentNames: string[]): string[] {
+  const valid = new Set(
+    agentNames.filter((a) =>
+      CORRECTION_PIPELINE_AGENTS.includes(a as (typeof CORRECTION_PIPELINE_AGENTS)[number]),
+    ),
+  );
+  const out: string[] = [];
+  for (const node of CORRECTION_PIPELINE_AGENTS) {
+    if (valid.has(node)) out.push(node);
+  }
+  if (!out.length) return ["software_architect", ...CORRECTION_PIPELINE_TAIL];
+  return [...out, ...CORRECTION_PIPELINE_TAIL];
+}
+
+export type QualityGateCorrectionState = {
+  delegateTarget: "sections" | "clarifier_only";
+  sectionsToRun?: string[];
+  executorControlled?: boolean;
+  previousMddDraftForMerge?: string;
+  acceptedProposalDirective?: string;
+};
+
+/** Estado de routing para corrección acotada tras fallo del Quality Gate. */
+export function buildQualityGateCorrectionState(
+  qualityGate: MddQualityGateResult | null | undefined,
+  inferFromFeedback?: (feedback: string) => string[],
+  gapFeedback?: string,
+): QualityGateCorrectionState {
+  const agents = resolveCorrectionAgentsFromQualityGate(qualityGate, inferFromFeedback);
+  const clarifierOnly = agents.length === 1 && agents[0] === "clarifier";
+  if (clarifierOnly) {
+    return { delegateTarget: "clarifier_only" };
+  }
+  return {
+    delegateTarget: "sections",
+    sectionsToRun: expandCorrectionSectionsToRun(agents),
+    executorControlled: true,
+    acceptedProposalDirective: gapFeedback,
+  };
+}

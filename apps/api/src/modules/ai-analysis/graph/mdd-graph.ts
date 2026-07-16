@@ -13,6 +13,7 @@ import { createMddManagerNode, type MddManagerToolDeps } from "../nodes/mdd-mana
 import { createMddMergeSection1Node } from "../nodes/mdd-merge-section1.node.js";
 import { createMddGraphPopulatorNode } from "../nodes/mdd-graph-populator.node.js";
 import { resolveCorrectionAgentsFromQualityGate, inferAgentsFromQualityGaps } from "../utils/mdd-manager-routing.util.js";
+import { mddNeedsSection5Pass } from "../utils/mdd-sanitize.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { createArchitectLLM, createDbgaLLM, createGraphLLM } from "../llm/create-dbga-llm.js";
 import type { AIFactory } from "../../ai/ai.factory.js";
@@ -26,8 +27,11 @@ import {
   securityInput,
   integrationInput,
 } from "../checkpoint/node-input-hash.js";
+import type { MddFlowTraceOpts, MddFlowTraceService } from "../mdd/mdd-flow-trace.service.js";
 
 const MAX_MDD_ITERATIONS = 2;
+
+const SILENT_STEPS = new Set(["fanout_sec_int"]);
 
 /** Temperatura baja para nodos estructurales (architect/security/integration): reproducibilidad de diseño. */
 const STRUCTURAL_TEMPERATURE = 0.2;
@@ -35,22 +39,64 @@ const STRUCTURAL_TEMPERATURE = 0.2;
 type NodeFn = (state: MDDStateType) => Promise<Partial<MDDStateType>>;
 type InputHashFn = (state: MDDStateType) => Record<string, unknown>;
 
+function wrapTraced(
+  trace: MddFlowTraceService | null | undefined,
+  correlationId: string | null | undefined,
+  stepName: string,
+  nodeFn: NodeFn,
+): NodeFn {
+  if (!trace || !correlationId || SILENT_STEPS.has(stepName)) return nodeFn;
+  return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
+    const stepStart = Date.now();
+    trace.stepStart(correlationId, stepName, { projectId: state.projectId });
+    try {
+      const result = await trace.runWithStepHeartbeats(correlationId, stepName, () => nodeFn(state));
+      trace.stepEnd(correlationId, stepName, {
+        durationMs: Date.now() - stepStart,
+        projectId: state.projectId,
+      });
+      return result;
+    } catch (err) {
+      trace.stepEnd(correlationId, stepName, {
+        durationMs: Date.now() - stepStart,
+        projectId: state.projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+  };
+}
+
+function traceNode(
+  trace: MddFlowTraceService | null | undefined,
+  correlationId: string | null | undefined,
+  stepName: string,
+  nodeFn: NodeFn,
+): NodeFn {
+  return wrapTraced(trace, correlationId, stepName, nodeFn);
+}
+
 function wrapCache(
   cache: NodeCacheService | null,
   nodeName: string,
   getInput: InputHashFn,
   nodeFn: NodeFn,
+  trace?: MddFlowTraceService | null,
+  correlationId?: string | null,
 ): NodeFn {
-  if (!cache) return nodeFn;
+  const tracedFn = traceNode(trace, correlationId, nodeName, nodeFn);
+  if (!cache) return tracedFn;
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
     const projectId = state.projectId;
     const key = cache.key(nodeName, projectId, getInput(state));
     const cached = cache.get(key);
     if (cached !== undefined) {
-      console.log(`[MDD:Cache] HIT ${nodeName} (key=${key})`);
+      if (trace && correlationId) {
+        trace.cacheHit(correlationId, nodeName, { key, projectId });
+      }
       return cached;
     }
-    const result = await nodeFn(state);
+    const result = await tracedFn(state);
     cache.set(key, result);
     return result;
   };
@@ -96,6 +142,8 @@ export type MddGraphCompileOptions = {
   nodeCache?: NodeCacheService | null;
   /** Librería del MCP gráfico activo (§2 Frontend → UI Library). */
   uiMcpFrontendLibraryLabel?: string | null;
+  /** Tracing estructurado del flujo MDD (siempre activo en producción). */
+  flowTrace?: MddFlowTraceOpts | null;
 };
 
 /**
@@ -114,8 +162,19 @@ export async function createMddGraph(
   const graphStructuralLlm = await createGraphLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const architectLlm = await createArchitectLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const nodeCache = options?.nodeCache ?? null;
+  const flowTrace = options?.flowTrace ?? null;
+  const trace = flowTrace?.service ?? null;
+  const correlationId = flowTrace?.correlationId ?? null;
+  const t = (name: string, fn: NodeFn): NodeFn => traceNode(trace, correlationId, name, fn);
 
-  const clarifierNode = wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(graphLlm));
+  const clarifierNode = wrapCache(
+    nodeCache,
+    "clarifier",
+    clarifierInput,
+    createMddClarifierNode(graphLlm),
+    trace,
+    correlationId,
+  );
   const softwareArchitectNode = wrapCache(
     nodeCache,
     "software_architect",
@@ -124,24 +183,30 @@ export async function createMddGraph(
       theforge: options?.theforge ?? null,
       uiMcpFrontendLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
     }),
+    trace,
+    correlationId,
   );
-  const formatterNode = createMddFormatterNode();
+  const formatterNode = t("formatter", createMddFormatterNode());
   const securityNode = wrapCache(
     nodeCache,
     "security",
     securityInput,
     wrapSecIntGuard("security", createMddSecurityNode(graphStructuralLlm)),
+    trace,
+    correlationId,
   );
   const integrationNode = wrapCache(
     nodeCache,
     "integration",
     integrationInput,
     wrapSecIntGuard("integration", createMddIntegrationNode(graphStructuralLlm)),
+    trace,
+    correlationId,
   );
-  const formatSecIntNode = createMddFormatSecIntNode();
-  const diagramInjectorNode = createMddDiagramInjectorNode();
-  const qualityGateNode = createMddQualityGateNode(graphLlm);
-  const graphPopulatorNode = createMddGraphPopulatorNode(chatLlm, graphMemory);
+  const formatSecIntNode = t("format_sec_int", createMddFormatSecIntNode());
+  const diagramInjectorNode = t("diagram_injector", createMddDiagramInjectorNode());
+  const qualityGateNode = t("quality_gate", createMddQualityGateNode(graphLlm));
+  const graphPopulatorNode = t("graph_populator", createMddGraphPopulatorNode(chatLlm, graphMemory));
 
   const fanoutSecIntNode = async (_state: MDDStateType): Promise<Partial<MDDStateType>> => ({});
 
@@ -150,10 +215,34 @@ export async function createMddGraph(
     return "diagram_injector";
   }
 
+  function routeAfterSoftwareArchitect(state: MDDStateType): string {
+    const next = nextInSections(state, "software_architect");
+    if (next) return next;
+    if (state.delegateTarget !== "sections") {
+      if (!state.architectSection5PassPending && mddNeedsSection5Pass(state.mddDraft ?? "")) {
+        return "architect_section5_prep";
+      }
+    }
+    return "formatter";
+  }
+
+  const architectSection5PrepNode = async (state: MDDStateType): Promise<Partial<MDDStateType>> => ({
+    architectSection5PassPending: true,
+    previousMddDraftForMerge: state.mddDraft ?? "",
+    currentStepGoal:
+      "Genera ÚNICAMENTE ## 5. Lógica y Edge Cases con reglas Dado/Cuando/Entonces y edge cases del dominio. " +
+      "Preserva §1–§4 sin cambios; no reescribas SQL ni contratos API.",
+    executorControlled: true,
+  });
+
   function routeAfterQualityGate(state: MDDStateType): string {
     if (state.qualityGate?.ok === true) return "graph_populator";
     const iteration = state.mddIteration ?? 0;
     if (iteration >= MAX_MDD_ITERATIONS) return "graph_populator";
+    if (state.delegateTarget === "clarifier_only") return "clarifier";
+    if (state.delegateTarget === "sections" && state.sectionsToRun?.length) {
+      return state.sectionsToRun[0]!;
+    }
     const agents = resolveCorrectionAgentsFromQualityGate(state.qualityGate, inferAgentsFromQualityFeedback);
     if (agents.includes("clarifier")) return "clarifier";
     if (agents.includes("software_architect")) return "software_architect";
@@ -165,6 +254,7 @@ export async function createMddGraph(
   const builder = new StateGraph(MDDStateAnnotation)
     .addNode("clarifier", clarifierNode)
     .addNode("software_architect", softwareArchitectNode)
+    .addNode("architect_section5_prep", t("architect_section5_prep", architectSection5PrepNode))
     .addNode("formatter", formatterNode)
     .addNode("fanout_sec_int", fanoutSecIntNode)
     .addNode("security", securityNode)
@@ -175,7 +265,11 @@ export async function createMddGraph(
     .addNode("graph_populator", graphPopulatorNode)
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
-    .addEdge("software_architect", "formatter")
+    .addConditionalEdges("software_architect", routeAfterSoftwareArchitect, {
+      architect_section5_prep: "architect_section5_prep",
+      formatter: "formatter",
+    })
+    .addEdge("architect_section5_prep", "software_architect")
     .addConditionalEdges("formatter", routeAfterFormatterPreSecInt, {
       fanout_sec_int: "fanout_sec_int",
       diagram_injector: "diagram_injector",
@@ -217,8 +311,29 @@ export async function createMddGraphWithManager(
   const graphStructuralLlm = await createGraphLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const architectLlm = await createArchitectLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const nodeCache = compileOptions?.nodeCache ?? null;
-  const managerNode = createMddManagerNode(graphLlm, graphMemory, precisionCalculator, managerToolDeps ?? null);
-  const clarifierNode = wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(graphLlm));
+  const flowTrace = compileOptions?.flowTrace ?? null;
+  const trace = flowTrace?.service ?? null;
+  const correlationId = flowTrace?.correlationId ?? null;
+  const t = (name: string, fn: NodeFn): NodeFn => traceNode(trace, correlationId, name, fn);
+
+  const managerNode = t(
+    "manager",
+    createMddManagerNode(
+      graphLlm,
+      graphMemory,
+      precisionCalculator,
+      managerToolDeps ?? null,
+      flowTrace,
+    ),
+  );
+  const clarifierNode = wrapCache(
+    nodeCache,
+    "clarifier",
+    clarifierInput,
+    createMddClarifierNode(graphLlm),
+    trace,
+    correlationId,
+  );
   const theForgeForArchitect = compileOptions?.theforge ?? managerToolDeps?.theforge ?? null;
   const softwareArchitectNode = wrapCache(
     nodeCache,
@@ -228,25 +343,31 @@ export async function createMddGraphWithManager(
       theforge: theForgeForArchitect,
       uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
     }),
+    trace,
+    correlationId,
   );
-  const formatterNode = createMddFormatterNode();
+  const formatterNode = t("formatter", createMddFormatterNode());
   const securityNode = wrapCache(
     nodeCache,
     "security",
     securityInput,
     wrapSecIntGuard("security", createMddSecurityNode(graphStructuralLlm)),
+    trace,
+    correlationId,
   );
   const integrationNode = wrapCache(
     nodeCache,
     "integration",
     integrationInput,
     wrapSecIntGuard("integration", createMddIntegrationNode(graphStructuralLlm)),
+    trace,
+    correlationId,
   );
-  const formatSecIntNode = createMddFormatSecIntNode();
-  const diagramInjectorNode = createMddDiagramInjectorNode();
-  const qualityGateNode = createMddQualityGateNode(graphLlm);
-  const graphPopulatorNode = createMddGraphPopulatorNode(chatLlm, graphMemory);
-  const mergeSection1Node = createMddMergeSection1Node();
+  const formatSecIntNode = t("format_sec_int", createMddFormatSecIntNode());
+  const diagramInjectorNode = t("diagram_injector", createMddDiagramInjectorNode());
+  const qualityGateNode = t("quality_gate", createMddQualityGateNode(graphLlm));
+  const graphPopulatorNode = t("graph_populator", createMddGraphPopulatorNode(chatLlm, graphMemory));
+  const mergeSection1Node = t("merge_section1_only", createMddMergeSection1Node());
   const fanoutSecIntNode = async (_state: MDDStateType): Promise<Partial<MDDStateType>> => ({});
 
   function routeAfterClarifier(state: MDDStateType): "manager" | "merge_section1_only" | "software_architect" {
@@ -258,8 +379,22 @@ export async function createMddGraphWithManager(
   function routeAfterSoftwareArchitect(state: MDDStateType): string {
     const next = nextInSections(state, "software_architect");
     if (next) return next;
+    if (state.delegateTarget !== "sections") {
+      if (!state.architectSection5PassPending && mddNeedsSection5Pass(state.mddDraft ?? "")) {
+        return "architect_section5_prep";
+      }
+    }
     return "formatter";
   }
+
+  const architectSection5PrepNode = async (state: MDDStateType): Promise<Partial<MDDStateType>> => ({
+    architectSection5PassPending: true,
+    previousMddDraftForMerge: state.mddDraft ?? "",
+    currentStepGoal:
+      "Genera ÚNICAMENTE ## 5. Lógica y Edge Cases con reglas Dado/Cuando/Entonces y edge cases del dominio. " +
+      "Preserva §1–§4 sin cambios; no reescribas SQL ni contratos API.",
+    executorControlled: true,
+  });
 
   function routeAfterFormatterPreSecInt(state: MDDStateType): string {
     const next = nextInSections(state, "formatter");
@@ -295,6 +430,7 @@ export async function createMddGraphWithManager(
     END,
     "manager",
     "software_architect",
+    "architect_section5_prep",
     "security",
     "integration",
     "formatter",
@@ -308,6 +444,7 @@ export async function createMddGraphWithManager(
     .addNode("clarifier", clarifierNode)
     .addNode("merge_section1_only", mergeSection1Node)
     .addNode("software_architect", softwareArchitectNode)
+    .addNode("architect_section5_prep", t("architect_section5_prep", architectSection5PrepNode))
     .addNode("formatter", formatterNode)
     .addNode("fanout_sec_int", fanoutSecIntNode)
     .addNode("security", securityNode)
@@ -324,6 +461,7 @@ export async function createMddGraphWithManager(
     })
     .addEdge("merge_section1_only", END)
     .addConditionalEdges("software_architect", routeAfterSoftwareArchitect, {
+      architect_section5_prep: "architect_section5_prep",
       formatter: "formatter",
       security: "security",
       integration: "integration",
@@ -331,6 +469,7 @@ export async function createMddGraphWithManager(
       quality_gate: "quality_gate",
       manager: "manager",
     })
+    .addEdge("architect_section5_prep", "software_architect")
     .addConditionalEdges("formatter", routeAfterFormatterPreSecInt, {
       fanout_sec_int: "fanout_sec_int",
       diagram_injector: "diagram_injector",
