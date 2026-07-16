@@ -1,5 +1,5 @@
 import { Annotation } from "@langchain/langgraph";
-import type { MddDeliveryGateResult } from "@theforge/shared-types";
+import type { MddDeliveryGateResult, MddQualityGateResult } from "@theforge/shared-types";
 import type { MddStructured } from "./mdd-structured.schema.js";
 import type { AuditorGapsState, MDDAuditorDecision, MddPlanStep } from "./mdd-state.schema.js";
 import type { DeliveryGateFixTarget } from "../utils/mdd-delivery-gate-loop.util.js";
@@ -105,6 +105,8 @@ export const MDDStateAnnotation = Annotation.Root({
   integrationSectionMd: Annotation<string | undefined>(),
   /** Intentos del auto-loop Fase 4 (delivery gate). */
   deliveryGateAttempt: Annotation<number | undefined>(),
+  /** Resultado del Quality Gate lean (`ok` cuando `blockers.length === 0`). */
+  qualityGate: Annotation<MddQualityGateResult | undefined>(),
   /** Último resultado del gate de entrega tras prepareMddForOutput. */
   deliveryGate: Annotation<MddDeliveryGateResult | undefined>(),
   /** Si true, el grafo debe re-enrutar a arquitecto/integración. */

@@ -1,6 +1,19 @@
 import { z } from "zod";
 import { mddStructuredSchema } from "./mdd-structured.schema.js";
 
+const mddQualityGateGapSchema = z.object({
+  section: z.string(),
+  issue: z.string(),
+  fix: z.string(),
+});
+
+const mddQualityGateResultSchema = z.object({
+  ok: z.boolean(),
+  blockers: z.array(z.string()),
+  warnings: z.array(z.string()),
+  gaps: z.array(mddQualityGateGapSchema),
+});
+
 /** Alineado con `Project.complexity` (Prisma): gobierna apéndices de rigor en Clarifier / Arquitecto / Auditor y el desglose del estimador en vivo. */
 export const mddComplexityLevelSchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
 export type MddComplexityLevel = z.infer<typeof mddComplexityLevelSchema>;
@@ -143,6 +156,8 @@ export const mddStateSchema = z.object({
   ).optional(),
   /** Resumen del impacto de los cambios solicitados (Impact Analysis). */
   impactSummary: z.string().optional(),
+  /** Resultado del Quality Gate lean (reemplaza auditor/prepare_output como gate final). */
+  qualityGate: mddQualityGateResultSchema.optional(),
   /** Intentos del auto-loop Fase 4 (delivery gate). */
   deliveryGateAttempt: z.number().int().min(0).optional(),
   /** Último resultado del gate tras prepareMddForOutput. */
@@ -200,6 +215,7 @@ export const defaultMDDState: MDDState = {
   mddComplexity: undefined,
   internalDirectives: undefined,
   impactSummary: undefined,
+  qualityGate: undefined,
   deliveryGateAttempt: 0,
   deliveryGate: undefined,
   deliveryGateLoopActive: undefined,

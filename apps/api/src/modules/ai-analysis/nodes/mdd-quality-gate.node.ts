@@ -1,8 +1,9 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { HumanMessage } from "@langchain/core/messages";
-import type { MddQualityGateGap, MddQualityGateResult } from "@theforge/shared-types";
+import type { MddDeliveryGateResult, MddQualityGateResult } from "@theforge/shared-types";
 import { z } from "zod";
 import type { MDDStateType } from "../state/index.js";
+import type { AuditorGapsState, MDDAuditorDecision } from "../state/mdd-state.schema.js";
 import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { getInternalDirectivesContext } from "../utils/mdd-mesh-topology.js";
 import { domainInventoryPromptBlock } from "../utils/mdd-domain-prompt.util.js";
@@ -31,11 +32,72 @@ const qualityGateLlmOutputSchema = z.object({
   gaps: z.array(qualityGateGapSchema).optional().default([]),
 });
 
-export type MddQualityGateNodeOutput = {
+export type MddQualityGateNodeOutput = Partial<MDDStateType> & {
   qualityGate: MddQualityGateResult;
+  deliveryGate: MddDeliveryGateResult;
+  auditorDecision: MDDAuditorDecision;
+  auditorGaps: AuditorGapsState;
+  auditorFeedback: string | undefined;
+  auditorScore: number;
 };
 
-function normalizeLlmGaps(raw: z.infer<typeof qualityGateLlmOutputSchema>): MddQualityGateGap[] {
+function finalizeQualityGateOutput(
+  state: MDDStateType,
+  qualityGate: MddQualityGateResult,
+): MddQualityGateNodeOutput {
+  return {
+    ...emitQualityGate(qualityGate),
+    ...(qualityGate.ok ? {} : { mddIteration: (state.mddIteration ?? 0) + 1 }),
+  };
+}
+
+function qualityGateLegacyScore(ok: boolean, blockers: string[]): number {
+  if (ok) return 100;
+  return Math.max(0, 85 - blockers.length * 5);
+}
+
+function qualityGateToLegacyFields(qualityGate: MddQualityGateResult): Omit<MddQualityGateNodeOutput, "qualityGate"> {
+  const score = qualityGateLegacyScore(qualityGate.ok, qualityGate.blockers);
+  const auditorGaps: AuditorGapsState = {
+    score,
+    status: qualityGate.ok ? "APROBADO" : "RECHAZADO",
+    critical_gaps: qualityGate.gaps.map((g) => ({
+      sections: [g.section],
+      issue: g.issue,
+      fix: g.fix,
+    })),
+    syntax_errors: qualityGate.blockers,
+    infrastructure_ready: qualityGate.ok,
+  };
+  const auditorFeedback =
+    qualityGate.gaps.length > 0
+      ? qualityGate.gaps.map((g) => `**${g.section}:** ${g.issue}\n→ ${g.fix}`).join("\n\n")
+      : qualityGate.blockers.length > 0
+        ? qualityGate.blockers.join("\n")
+        : undefined;
+  return {
+    deliveryGate: {
+      ok: qualityGate.ok,
+      score: qualityGate.ok ? 10 : Math.max(0, 10 - qualityGate.blockers.length),
+      blockers: qualityGate.blockers,
+      warnings: qualityGate.warnings,
+    },
+    auditorDecision: qualityGate.ok ? "done" : "clarifier",
+    auditorGaps,
+    auditorFeedback,
+    auditorScore: score,
+  };
+}
+
+function emitQualityGate(qualityGate: MddQualityGateResult): Omit<MddQualityGateNodeOutput, "mddIteration"> {
+  return { qualityGate, ...qualityGateToLegacyFields(qualityGate) };
+}
+
+function normalizeLlmGaps(raw: z.infer<typeof qualityGateLlmOutputSchema>): Array<{
+  section: string;
+  issue: string;
+  fix: string;
+}> {
   return raw.gaps
     .filter((g) => g.issue.trim().length > 0 || g.fix.trim().length > 0)
     .map((g) => ({
@@ -65,7 +127,7 @@ export function createMddQualityGateNode(llm?: BaseChatModel) {
         deterministic.blockers.length,
         deterministic.gaps.length,
       );
-      return { qualityGate: buildMddQualityGateResult(deterministic) };
+      return finalizeQualityGateOutput(state, buildMddQualityGateResult(deterministic));
     }
 
     try {
@@ -85,7 +147,7 @@ export function createMddQualityGateNode(llm?: BaseChatModel) {
 
       if (!content.trim()) {
         LOG("sin respuesta LLM → solo determinístico");
-        return { qualityGate: buildMddQualityGateResult(deterministic) };
+        return finalizeQualityGateOutput(state, buildMddQualityGateResult(deterministic));
       }
 
       const parsed = parseJsonOrThrow(content, qualityGateLlmOutputSchema) as z.infer<
@@ -101,13 +163,13 @@ export function createMddQualityGateNode(llm?: BaseChatModel) {
         qualityGate.gaps.length,
         llmGaps.length,
       );
-      return { qualityGate };
+      return finalizeQualityGateOutput(state, qualityGate);
     } catch (err) {
       LOG(
         "error LLM: %s — fallback determinístico",
         err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
       );
-      return { qualityGate: buildMddQualityGateResult(deterministic) };
+      return finalizeQualityGateOutput(state, buildMddQualityGateResult(deterministic));
     }
   };
 }

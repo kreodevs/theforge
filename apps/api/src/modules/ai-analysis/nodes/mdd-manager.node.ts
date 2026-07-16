@@ -28,7 +28,7 @@ import { reconcileUiUxDesignIntent } from "../utils/mdd-enrich-uiux-intent.js";
 import { z } from "zod";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { generateImpactAnalysis } from "../utils/mdd-impact-analysis.js";
-import { resolveCorrectionAgents } from "../utils/mdd-manager-routing.util.js";
+import { resolveCorrectionAgentsFromQualityGate } from "../utils/mdd-manager-routing.util.js";
 import { detectLegacyIntegrationIntent, HANDOFF_SPEC_SUGGESTION } from "../utils/integration-intent.util.js";
 import { getAgenticRagToolset } from "../tools/tool-registry.js";
 import { runAgentToolsRound } from "../utils/mdd-agent-tools-invoke.js";
@@ -75,9 +75,9 @@ const managerStructuredOutputSchema = z.object({
     .describe("Si action es search_memory: la intención a buscar en el grafo (ej: 'auth con MFA'); si no, cadena vacía"),
 });
 
-/** Orden de agentes en el pipeline (sin Clarifier). Tras software_architect viene format_after_architect (y crítico si aplica). */
+/** Orden de agentes en el pipeline lean (sin Clarifier). */
 const PIPELINE_AGENTS = ["software_architect", "security", "integration"] as const;
-const PIPELINE_TAIL = ["format_after_redactor", "diagram_injector", "auditor"] as const;
+const PIPELINE_TAIL = ["formatter", "diagram_injector", "quality_gate"] as const;
 
 /** Infiere qué agentes toca la petición a partir del texto (modelo de datos, seguridad, integración). */
 function inferSectionsFromMessage(text: string): string[] {
@@ -146,22 +146,19 @@ function replyClaimsDocumentWasModified(reply: string): boolean {
 
 /** Descripción por nodo para el plan explícito (patrón Planner–Executor). */
 const NODE_TASK_DESCRIPTIONS: Record<string, string> = {
-  ask_initial_topic: "Preguntar tema o problema del MDD",
   clarifier: "Clarificar contexto y alcance",
   merge_section1_only: "Fusionar solo sección 1 (contexto y alcance)",
   software_architect: "Definir schema SQL y contratos de API",
-  format_after_architect: "Formatear documento tras arquitecto",
+  formatter: "Formatear documento MDD",
   security: "Definir arquitectura de seguridad",
   integration: "Definir integraciones (API/Docker)",
-  format_after_redactor: "Formatear documento final",
   diagram_injector: "Añadir diagramas Mermaid",
-  auditor: "Evaluar calidad del MDD",
+  quality_gate: "Evaluar calidad del MDD (Quality Gate)",
 };
 
 /** 4.3 Least privilege: tools por nodo (solo nodos con tools en el grafo MDD). */
 const NODE_REQUIRED_TOOLS: Record<string, string[]> = {
   software_architect: ["format_section3_endpoints"],
-  auditor: ["validate_mdd_structure", "validate_sql_syntax", "validate_json_payloads"],
 };
 
 function stepWithTools(node: string, stepId: string, taskDescription: string, goal?: string): MddPlanStep {
@@ -271,7 +268,7 @@ function buildMddPlan(
     );
   }
   if (delegateTarget === "full_pipeline" || !delegateTarget) {
-    const fullSequence = ["clarifier", "software_architect", "format_after_architect", "security", "integration", "format_after_redactor", "diagram_injector", "auditor"];
+    const fullSequence = ["clarifier", "software_architect", "security", "integration", "formatter", "diagram_injector", "quality_gate"];
     return fullSequence.map((node, i) =>
       step(node, String(i + 1), NODE_TASK_DESCRIPTIONS[node] ?? node, i === 0),
     );
@@ -298,7 +295,6 @@ export function expandSectionsToRun(
   for (const node of PIPELINE_AGENTS) {
     if (valid.has(node)) {
       out.push(node);
-      if (tailMode === "full" && node === "software_architect") out.push("format_after_architect");
     }
   }
   if (!out.length) return [];
@@ -306,7 +302,7 @@ export function expandSectionsToRun(
   return [...out, ...PIPELINE_TAIL];
 }
 
-const FULL_PIPELINE_NODES = ["clarifier", "software_architect", "format_after_architect", "security", "integration", "format_after_redactor", "diagram_injector", "auditor"] as const;
+const FULL_PIPELINE_NODES = ["clarifier", "software_architect", "security", "integration", "formatter", "diagram_injector", "quality_gate"] as const;
 const CLARIFIER_ONLY_NODES = ["clarifier", "merge_section1_only"] as const;
 
 const planGeneratorOutputSchema = z.object({
@@ -377,11 +373,10 @@ async function generateMddPlanWithLLM(
   }
 }
 
-/** >= 85: done (cede intervención al usuario). < 85: Manager asigna gaps a agentes para corregir. */
-const QUALITY_THRESHOLD = 85;
-/** Nota < 9/10: por debajo de 90% el documento se devuelve al Clarifier con reporte de gaps para segunda iteración. */
-const AUDITOR_RETRY_THRESHOLD = 90;
-const MAX_MDD_ITERATIONS = 3;
+const MAX_MANAGER_ROUNDS = 2;
+
+const INITIAL_TOPIC_QUESTION =
+  "¿Sobre qué tema o problema necesitas el MDD? Indica, si puedes, el tipo de sistema (ej. app interna, SaaS, API pública) y requisitos clave (auth, roles, integraciones externas).";
 
 /** Usuario pide explícitamente detenerse: done solo si Auditor >= 85% o el usuario lo pide. */
 const USER_STOP_PATTERN = /^(parar|detener|stop|terminar|salir|no\s+continuar|basta|listo)$/i;
@@ -517,6 +512,80 @@ function looksLikeInitialTopic(msg: string): boolean {
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:Manager] ${msg}`, ...args);
 
+function buildPlanSummaryMessage(impactSummary?: string): string {
+  let msg = "Revisa la lista de tareas y quién las ejecuta. Confirma para ejecutar o escribe qué quieres cambiar.";
+  if (impactSummary) {
+    msg = `${impactSummary}\n\n---\n${msg}`;
+  }
+  return msg;
+}
+
+function firstNodeForPlan(pending: NonNullable<MDDStateType["pendingPlanApproval"]>): string {
+  if (pending.delegateTarget === "clarifier_only") return "clarifier";
+  return pending.sectionsToRun?.[0] ?? "clarifier";
+}
+
+async function interruptForPlanApproval(
+  state: MDDStateType,
+  pending: NonNullable<MDDStateType["pendingPlanApproval"]>,
+  impactSummary?: string,
+): Promise<Command> {
+  const planMessage = buildPlanSummaryMessage(impactSummary);
+  const userResponse = interrupt({
+    type: "plan_approval",
+    plan: pending.mddPlan,
+    message: planMessage,
+    impactSummary,
+  });
+  const message = typeof userResponse === "string" ? userResponse : String(userResponse ?? "").trim();
+  if (PLAN_APPROVAL_CONFIRM_PATTERN.test(message)) {
+    const directive = state.planUserIntent ?? getLastSubstantiveUserMessage(state);
+    const impact = state.impactSummary?.trim();
+    let mergedDirective = directive?.trim() ?? "";
+    if (impact && mergedDirective && !mergedDirective.includes(impact.slice(0, Math.min(80, impact.length)))) {
+      mergedDirective = `${mergedDirective}\n\n---\n\n**Resumen de impacto (aprobado con el plan):**\n${impact}`;
+    } else if (impact && !mergedDirective) {
+      mergedDirective = `**Resumen de impacto (aprobado con el plan):**\n${impact}`;
+    }
+    return new Command({
+      update: {
+        pendingPlanApproval: undefined,
+        planUserIntent: undefined,
+        impactSummary: undefined,
+        lastUserMessage: undefined,
+        requestQuestionsOnly: pending.delegateTarget === "clarifier_only",
+        delegateTarget: pending.delegateTarget,
+        sectionsToRun: pending.sectionsToRun,
+        mddPlan: pending.mddPlan,
+        previousMddDraftForMerge: pending.previousMddDraftForMerge,
+        architectCriticFeedback: undefined,
+        architectCriticAttempts: undefined,
+        ...(mergedDirective ? { acceptedProposalDirective: mergedDirective } : {}),
+      },
+      goto: firstNodeForPlan(pending),
+    });
+  }
+  return new Command({
+    update: {
+      pendingPlanApproval: undefined,
+      planUserIntent: undefined,
+      impactSummary: undefined,
+      lastUserMessage: message || undefined,
+    },
+    goto: "manager",
+  });
+}
+
+async function presentPlanForApproval(
+  state: MDDStateType,
+  update: Partial<MDDStateType> & {
+    pendingPlanApproval: NonNullable<MDDStateType["pendingPlanApproval"]>;
+  },
+): Promise<Command> {
+  const impactSummary = update.impactSummary ?? state.impactSummary;
+  return interruptForPlanApproval({ ...state, ...update }, update.pendingPlanApproval, impactSummary);
+}
+
 function hasRealBenchmark(state: MDDStateType): boolean {
   const c = (state.dbgaContent ?? "").trim();
   return c.length > 0 && !/^\(sin\s+benchmark|sin\s+contexto/i.test(c);
@@ -537,82 +606,44 @@ function mddHasContent(state: MDDStateType): boolean {
 export function createMddManagerNode(
   llm: BaseChatModel,
   graphMemory: GraphMemoryService,
-  precisionCalculator?: LivePrecisionCalculator | null,
+  _precisionCalculator?: LivePrecisionCalculator | null,
   toolDeps?: MddManagerToolDeps | null,
 ) {
   return async (state: MDDStateType): Promise<Partial<MDDStateType> | Command> => {
     const userMessage = (state.lastUserMessage ?? "").trim();
-    const score = state.auditorScore ?? 0;
-    const iteration = state.mddIteration ?? 0;
-    LOG("entry lastUserMessage=%s mddDraftLen=%s auditorScore=%s", userMessage.slice(0, 80), (state.mddDraft ?? "").length, score);
+    const qualityOk = state.qualityGate?.ok === true;
+    const managerRound = state.managerRound ?? 0;
+    LOG(
+      "entry lastUserMessage=%s mddDraftLen=%s qualityGateOk=%s managerRound=%s",
+      userMessage.slice(0, 80),
+      (state.mddDraft ?? "").length,
+      qualityOk,
+      managerRound,
+    );
 
-    // Terminar solo sin mensaje nuevo (p. ej. vuelta del Executor). Con score alto el usuario
-    // sigue pudiendo pedir cambios (Dokploy, stack, etc.); no cortar en END aquí.
-    if (score >= QUALITY_THRESHOLD && !userMessage) {
-      LOG("goto END (score >= 85, sin mensaje nuevo)");
+    if (qualityOk && !userMessage) {
+      LOG("goto END (qualityGate.ok, sin mensaje nuevo)");
       return new Command({ goto: END });
-    }
-    if (score < AUDITOR_RETRY_THRESHOLD) {
-      LOG("score < 90% → segunda iteración con reporte de gaps");
     }
     if (USER_STOP_PATTERN.test(userMessage)) {
       LOG("goto END (usuario pidió detenerse)");
       return new Command({ goto: END });
     }
-    if (iteration >= MAX_MDD_ITERATIONS) {
-      LOG("goto END (máx. iteraciones=%s)", MAX_MDD_ITERATIONS);
+    if (managerRound >= MAX_MANAGER_ROUNDS && !userMessage) {
+      LOG("goto END (máx. rondas manager=%s)", MAX_MANAGER_ROUNDS);
       return new Command({ goto: END });
-    }
-
-    const pending = state.pendingPlanApproval;
-    if (pending) {
-      if (PLAN_APPROVAL_CONFIRM_PATTERN.test(userMessage)) {
-        LOG("plan aprobado por usuario → Executor (paso a paso)");
-        const accumulatedWithRequest = state.userInputAccumulated?.trim() ?? "";
-        const dbgaWithRequest = state.dbgaContent?.trim() ?? "";
-        const directive = state.planUserIntent ?? getLastSubstantiveUserMessage(state);
-        const impact = state.impactSummary?.trim();
-        let mergedDirective = directive?.trim() ?? "";
-        if (impact && mergedDirective && !mergedDirective.includes(impact.slice(0, Math.min(80, impact.length)))) {
-          mergedDirective = `${mergedDirective}\n\n---\n\n**Resumen de impacto (aprobado con el plan):**\n${impact}`;
-        } else if (impact && !mergedDirective) {
-          mergedDirective = `**Resumen de impacto (aprobado con el plan):**\n${impact}`;
-        }
-        const { mddPlan, delegateTarget, sectionsToRun, previousMddDraftForMerge } = pending;
-        return new Command({
-          update: {
-            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-            dbgaContent: dbgaWithRequest || state.dbgaContent,
-            lastUserMessage: undefined,
-            requestQuestionsOnly: delegateTarget === "clarifier_only",
-            lastStepFailed: undefined,
-            mddPlan,
-            delegateTarget,
-            sectionsToRun,
-            previousMddDraftForMerge,
-            pendingPlanApproval: undefined,
-            planUserIntent: undefined,
-            impactSummary: undefined,
-            executorControlled: true,
-            mddPlanCurrentStep: undefined,
-            architectCriticFeedback: undefined,
-            architectCriticAttempts: undefined,
-            ...(mergedDirective ? { acceptedProposalDirective: mergedDirective } : {}),
-          },
-          goto: "executor",
-        });
-      }
-      LOG("plan no aprobado, usuario respondió; re-entrando Manager sin plan pendiente");
-      return new Command({ update: { pendingPlanApproval: undefined }, goto: "manager" });
     }
 
     const hasBench = hasRealBenchmark(state);
     const hasDraft = mddHasContent(state);
     const hasAccumulated = !!(state.userInputAccumulated?.trim());
+    const gapFeedback =
+      state.auditorFeedback?.trim() ||
+      state.qualityGate?.gaps.map((g: { section: string; issue: string }) => `${g.section}: ${g.issue}`).join("\n") ||
+      state.qualityGate?.blockers.join("\n");
 
-    // Vuelta del executor sin mensaje nuevo: no generar otro plan ni preguntar de nuevo; terminar para que el usuario vea "MDD generado".
-    if (!userMessage.trim() && hasDraft) {
-      LOG("vuelta del executor sin mensaje nuevo → END (evitar segundo plan/segunda ejecución)");
+    if (!userMessage.trim() && hasDraft && qualityOk) {
+      LOG("pipeline completado (qualityGate.ok) sin mensaje nuevo → END");
       return new Command({ goto: END });
     }
 
@@ -625,23 +656,19 @@ export function createMddManagerNode(
             .filter(Boolean)
             .join("\n\n") || userMessage;
         const sectionsToRun = agents;
-        const mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective);
-        LOG("regenerar §%s solicitado → Executor sections=%s", regenSection, sectionsToRun.join(","));
+        LOG("regenerar §%s solicitado → sections=%s", regenSection, sectionsToRun.join(","));
         return new Command({
           update: {
             lastUserMessage: undefined,
             requestQuestionsOnly: false,
             delegateTarget: "sections",
             sectionsToRun,
-            mddPlan,
-            executorControlled: true,
-            mddPlanCurrentStep: undefined,
             acceptedProposalDirective: planDirective,
             pendingPlanApproval: undefined,
             planUserIntent: undefined,
             impactSummary: undefined,
           },
-          goto: "executor",
+          goto: sectionsToRun[0]!,
         });
       }
     }
@@ -709,18 +736,15 @@ export function createMddManagerNode(
         const accumulatedWithRequest = [state.userInputAccumulated?.trim(), `Petición: ${userMessage}`].filter(Boolean).join("\n\n---\n\n");
         const dbgaWithRequest = [state.dbgaContent?.trim(), `Petición: ${userMessage}`].filter(Boolean).join("\n\n");
         const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
-        LOG("regeneración completa MDD solicitada → plan_approval full_pipeline");
-        return new Command({
-          update: {
-            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-            dbgaContent: dbgaWithRequest || state.dbgaContent,
-            lastUserMessage: undefined,
-            requestQuestionsOnly: false,
-            pendingPlanApproval: { mddPlan, delegateTarget: "full_pipeline", goto: "clarifier" },
-            planUserIntent: clipped,
-            impactSummary,
-          },
-          goto: "plan_approval",
+        LOG("regeneración completa MDD solicitada → interrupt plan full_pipeline");
+        return presentPlanForApproval(state, {
+          userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
+          dbgaContent: dbgaWithRequest || state.dbgaContent,
+          lastUserMessage: undefined,
+          requestQuestionsOnly: false,
+          pendingPlanApproval: { mddPlan, delegateTarget: "full_pipeline", goto: "clarifier" },
+          planUserIntent: clipped,
+          impactSummary,
         });
       }
     }
@@ -753,9 +777,20 @@ export function createMddManagerNode(
           goto: "clarifier",
         });
       }
-      if (!hasAccumulated) {
-        LOG("Caso 1 (Inicio): sin respuesta inicial → ask_initial_topic");
-        return new Command({ goto: "ask_initial_topic" });
+      if (!hasAccumulated && !messageIsTopic) {
+        LOG("Caso 1 (Inicio): sin respuesta inicial → interrupt tema");
+        const userAnswer = interrupt({ type: "questions", questions: [INITIAL_TOPIC_QUESTION] });
+        const answerText = typeof userAnswer === "string" ? userAnswer : String(userAnswer ?? "").trim();
+        const newDbgaContent = [state.dbgaContent?.trim(), `Tema/problema indicado por el usuario:\n${answerText}`].filter(Boolean).join("\n\n");
+        return new Command({
+          update: {
+            userInputAccumulated: answerText,
+            dbgaContent: newDbgaContent,
+            lastUserMessage: undefined,
+            requestQuestionsOnly: false,
+          },
+          goto: "clarifier",
+        });
       }
       LOG("Caso 1: usuario ya respondió tema → delegar a Clarifier para v1");
       const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
@@ -765,56 +800,6 @@ export function createMddManagerNode(
           userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
           dbgaContent: dbgaWithRequest || state.dbgaContent,
           lastUserMessage: undefined,
-          requestQuestionsOnly: false,
-        },
-        goto: "clarifier",
-      });
-    }
-
-    // HITL 4.4: reanudación tras aprobación del plan. Usuario aprobó (ejecutar) o rechazó (modificar → Clarifier).
-    if (state.pendingPlanApproval && state.lastUserMessage?.trim()) {
-      const approved = PLAN_APPROVAL_CONFIRM_PATTERN.test(state.lastUserMessage.trim());
-      const { mddPlan, delegateTarget, sectionsToRun, previousMddDraftForMerge } = state.pendingPlanApproval;
-      const accumulatedWithRequest = approved
-        ? state.userInputAccumulated?.trim() ?? ""
-        : [state.userInputAccumulated?.trim(), state.lastUserMessage ? `Usuario: ${state.lastUserMessage}` : ""]
-            .filter(Boolean)
-            .join("\n\n---\n\n");
-      const dbgaWithRequest = approved
-        ? state.dbgaContent?.trim() ?? ""
-        : [state.dbgaContent?.trim(), state.lastUserMessage ? `Usuario: ${state.lastUserMessage}` : ""]
-            .filter(Boolean)
-            .join("\n\n");
-      if (approved) {
-        LOG("plan aprobado por usuario → Executor (paso a paso)");
-        const directive = state.planUserIntent ?? getLastSubstantiveUserMessage(state);
-        return new Command({
-          update: {
-            pendingPlanApproval: undefined,
-            planUserIntent: undefined,
-            lastUserMessage: undefined,
-            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-            dbgaContent: dbgaWithRequest || state.dbgaContent,
-            mddPlan,
-            delegateTarget,
-            sectionsToRun,
-            previousMddDraftForMerge,
-            executorControlled: true,
-            mddPlanCurrentStep: undefined,
-            architectCriticFeedback: undefined,
-            architectCriticAttempts: undefined,
-            ...(directive ? { acceptedProposalDirective: directive } : {}),
-          },
-          goto: "executor",
-        });
-      }
-      LOG("usuario pidió modificar plan → delegar a Clarifier");
-      return new Command({
-        update: {
-          pendingPlanApproval: undefined,
-          lastUserMessage: undefined,
-          userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-          dbgaContent: dbgaWithRequest || state.dbgaContent,
           requestQuestionsOnly: false,
         },
         goto: "clarifier",
@@ -838,21 +823,11 @@ export function createMddManagerNode(
         const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), planDirective);
         if (mddPlan.length > 0) {
           const impactSummary = await generateImpactAnalysis(llm, state, resumeAnswer);
-          return new Command({
-            update: {
-              managerQuestions: undefined,
-              managerRound: round,
-              userInputAccumulated: newAccumulated,
-              dbgaContent: newDbgaContent,
-              clarifierJustGeneratedQuestions: false,
-              lastUserMessage: undefined,
-              requestQuestionsOnly: false,
-              pendingPlanApproval: { mddPlan, delegateTarget: "full_pipeline", goto: "clarifier" },
-              planUserIntent: planDirective,
-              impactSummary,
-            },
-            goto: "plan_approval",
-          });
+          return interruptForPlanApproval(
+            { ...state, planUserIntent: planDirective, impactSummary },
+            { mddPlan, delegateTarget: "full_pipeline", goto: "clarifier" },
+            impactSummary,
+          );
         }
         return new Command({
           update: {
@@ -866,19 +841,9 @@ export function createMddManagerNode(
           goto: "clarifier",
         });
       }
-      const precision =
-        precisionCalculator && (state.mddDraft ?? "").trim()
-          ? precisionCalculator.calculateLiveMetrics(state.mddDraft, {
-            auditorGaps: state.auditorGaps ?? undefined,
-            complexity: state.mddComplexity,
-            projectId: state.projectId,
-            stageId: state.activeStageId ?? null,
-          }).precision
-          : (state.auditorScore ?? 0);
       const directiveReply =
-        "Estamos al " +
-        precision +
-        "%. Para avanzar al 85%, necesito que definamos los siguientes puntos.\n\n" +
+        (qualityOk ? "El MDD pasó el Quality Gate." : "Hay puntos pendientes en el Quality Gate.") +
+        " Para continuar, necesito que definamos los siguientes puntos.\n\n" +
         questions.join("\n\n");
       LOG("interrupt questions (Clarifier) count=%s con mensaje directivo", questions.length);
       const userAnswer = interrupt({ type: "questions", questions, reply: directiveReply });
@@ -900,37 +865,61 @@ export function createMddManagerNode(
       });
     }
 
-    // Patrón Planner–Executor: toda delegación pasa por plan → plan_approval → executor. Sin atajos.
+    // Quality Gate con gaps y sin mensaje nuevo → delegar directo a generadores (máx. 2 rondas).
+    if (hasDraft && !qualityOk && !userMessage) {
+      const correctionAgents = resolveCorrectionAgentsFromQualityGate(
+        state.qualityGate,
+        inferAgentsFromAuditorFeedback,
+      );
+      const useSections = !correctionAgents.every((a) => a === "clarifier");
+      const sectionsToRun = useSections ? expandSectionsToRun(correctionAgents) : undefined;
+      const delegateTarget = useSections ? ("sections" as const) : ("clarifier_only" as const);
+      const round = (state.managerRound ?? 0) + 1;
+      LOG(
+        "Quality Gate gaps → delegate=%s sections=%s round=%s",
+        delegateTarget,
+        sectionsToRun?.join(",") ?? "clarifier",
+        round,
+      );
+      return new Command({
+        update: {
+          managerRound: round,
+          requestQuestionsOnly: !useSections,
+          delegateTarget,
+          sectionsToRun,
+          previousMddDraftForMerge: state.mddDraft ?? "",
+          acceptedProposalDirective: gapFeedback || undefined,
+        },
+        goto: useSections ? sectionsToRun![0]! : "clarifier",
+      });
+    }
 
     // Usuario pide seguir refinando → plan (full_pipeline) y aprobación.
-    if (hasDraft && score < QUALITY_THRESHOLD && userMessage && wantsToContinueRefining(userMessage)) {
+    if (hasDraft && !qualityOk && userMessage && wantsToContinueRefining(userMessage)) {
       const planDirective = getPlanDirective(state);
       const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), planDirective);
       if (mddPlan.length > 0) {
         const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
         const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n");
         const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
-        LOG("Seguir refinando → plan_approval mddPlanLen=%s", mddPlan.length);
-        return new Command({
-          update: {
-            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-            dbgaContent: dbgaWithRequest || state.dbgaContent,
-            lastUserMessage: undefined,
-            requestQuestionsOnly: false,
-            pendingPlanApproval: { mddPlan, delegateTarget: "full_pipeline", goto: "clarifier" },
-            planUserIntent: planDirective,
-            impactSummary,
-          },
-          goto: "plan_approval",
+        LOG("Seguir refinando → interrupt plan mddPlanLen=%s", mddPlan.length);
+        return presentPlanForApproval(state, {
+          userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
+          dbgaContent: dbgaWithRequest || state.dbgaContent,
+          lastUserMessage: undefined,
+          requestQuestionsOnly: false,
+          pendingPlanApproval: { mddPlan, delegateTarget: "full_pipeline", goto: "clarifier" },
+          planUserIntent: planDirective,
+          impactSummary,
         });
       }
     }
 
     // Usuario responde con acuerdo breve al feedback del auditor → plan (sections) y aprobación.
-    if (hasDraft && score < QUALITY_THRESHOLD && userMessage && looksLikeShortAgreement(userMessage) && state.auditorFeedback?.trim()) {
+    if (hasDraft && !qualityOk && userMessage && looksLikeShortAgreement(userMessage) && state.auditorFeedback?.trim()) {
       const directive = state.auditorFeedback.trim();
       const sectionsToRun = expandSectionsToRun(
-        resolveCorrectionAgents(state.auditorGaps, state.auditorFeedback, inferAgentsFromAuditorFeedback),
+        resolveCorrectionAgentsFromQualityGate(state.qualityGate, inferAgentsFromAuditorFeedback),
       );
       const planDirective = getPlanDirective(state);
       const mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective);
@@ -938,118 +927,35 @@ export function createMddManagerNode(
         const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Usuario: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
         const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Usuario: ${userMessage}` : ""].filter(Boolean).join("\n\n");
         const impactSummary = await generateImpactAnalysis(llm, state, directive);
-        LOG("Acuerdo breve → plan_approval sections=%s", sectionsToRun.join(", "));
-        return new Command({
-          update: {
-            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-            dbgaContent: dbgaWithRequest || state.dbgaContent,
-            lastUserMessage: undefined,
-            requestQuestionsOnly: false,
-            delegateTarget: "sections",
-            sectionsToRun,
-            acceptedProposalDirective: directive,
-            pendingPlanApproval: { mddPlan, delegateTarget: "sections", sectionsToRun, goto: sectionsToRun[0] },
-            planUserIntent: planDirective,
-            impactSummary,
-          },
-          goto: "plan_approval",
-        });
-      }
-    }
-
-    // Refinamiento obligatorio: score < 85% y sin mensaje → agentes según critical_gaps o Clarifier.
-    if (hasDraft && score < QUALITY_THRESHOLD && !userMessage) {
-      const correctionAgents = resolveCorrectionAgents(
-        state.auditorGaps,
-        state.auditorFeedback,
-        inferAgentsFromAuditorFeedback,
-      );
-      const hasStructuredGaps = (state.auditorGaps?.critical_gaps?.length ?? 0) > 0;
-      const useSections = hasStructuredGaps && !correctionAgents.every((a) => a === "clarifier");
-      const sectionsToRun = useSections ? expandSectionsToRun(correctionAgents) : undefined;
-      const delegateTarget = useSections ? ("sections" as const) : ("clarifier_only" as const);
-      const mddPlan = buildMddPlan(delegateTarget, sectionsToRun, getUserBrief(state), getPlanDirective(state));
-      if (mddPlan.length > 0) {
-        const impactSummary = state.auditorFeedback
-          ? await generateImpactAnalysis(llm, state, state.auditorFeedback)
-          : "";
-        LOG(
-          "Refinamiento gaps → plan_approval delegate=%s sections=%s",
-          delegateTarget,
-          sectionsToRun?.join(",") ?? "clarifier",
-        );
-        return new Command({
-          update: {
-            requestQuestionsOnly: !useSections,
-            delegateTarget,
-            sectionsToRun,
-            previousMddDraftForMerge: state.mddDraft ?? "",
-            acceptedProposalDirective: state.auditorFeedback?.trim() || undefined,
-            pendingPlanApproval: {
-              mddPlan,
-              delegateTarget,
-              sectionsToRun,
-              previousMddDraftForMerge: state.mddDraft ?? "",
-              goto: useSections ? sectionsToRun![0] : "clarifier",
-            },
-            planUserIntent: getPlanDirective(state),
-            impactSummary,
-          },
-          goto: "plan_approval",
-        });
-      }
-      const fallbackPlan: MddPlanStep[] = useSections
-        ? sectionsToRun!.map((node, i) =>
-            stepWithTools(node, String(i + 1), NODE_TASK_DESCRIPTIONS[node as keyof typeof NODE_TASK_DESCRIPTIONS] ?? node),
-          )
-        : [
-            stepWithTools("clarifier", "1", NODE_TASK_DESCRIPTIONS.clarifier),
-            { step_id: "2", node: "merge_section1_only", task_description: NODE_TASK_DESCRIPTIONS.merge_section1_only },
-          ];
-      LOG("Refinamiento fallback → plan_approval delegate=%s", delegateTarget);
-      return new Command({
-        update: {
-          requestQuestionsOnly: !useSections,
-          delegateTarget,
+        LOG("Acuerdo breve → interrupt plan sections=%s", sectionsToRun.join(", "));
+        return presentPlanForApproval(state, {
+          userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
+          dbgaContent: dbgaWithRequest || state.dbgaContent,
+          lastUserMessage: undefined,
+          requestQuestionsOnly: false,
+          delegateTarget: "sections",
           sectionsToRun,
-          previousMddDraftForMerge: state.mddDraft ?? "",
-          acceptedProposalDirective: state.auditorFeedback?.trim() || undefined,
-          pendingPlanApproval: {
-            mddPlan: fallbackPlan,
-            delegateTarget,
-            sectionsToRun,
-            previousMddDraftForMerge: state.mddDraft ?? "",
-            goto: useSections ? sectionsToRun![0] : "clarifier",
-          },
-          planUserIntent: getPlanDirective(state),
-        },
-        goto: "plan_approval",
-      });
+          acceptedProposalDirective: directive,
+          pendingPlanApproval: { mddPlan, delegateTarget: "sections", sectionsToRun, goto: sectionsToRun[0]! },
+          planUserIntent: planDirective,
+          impactSummary,
+        });
+      }
     }
 
-    // Usuario pregunta qué falta para llegar al 85% → responder con auditorFeedback si existe (no mensaje genérico).
+    // Usuario pregunta qué falta → responder con feedback del Quality Gate si existe.
     const askingWhatNeededFor85 =
       userMessage &&
       ASK_WHAT_NEEDED_FOR_85_PATTERN.test(userMessage.trim()) &&
       hasDraft &&
-      score < QUALITY_THRESHOLD;
-    if (askingWhatNeededFor85 && state.auditorFeedback?.trim()) {
-      const precision =
-        precisionCalculator && (state.mddDraft ?? "").trim()
-          ? precisionCalculator.calculateLiveMetrics(state.mddDraft, {
-            auditorGaps: state.auditorGaps ?? undefined,
-            complexity: state.mddComplexity,
-            projectId: state.projectId,
-            stageId: state.activeStageId ?? null,
-          }).precision
-          : score;
+      !qualityOk;
+    if (askingWhatNeededFor85 && gapFeedback) {
       const replyContent =
-        "Estamos al " +
-        precision +
-        "%. Para avanzar al 85%, necesitamos:\n\n" +
-        state.auditorFeedback.trim() +
+        (qualityOk
+          ? "El MDD pasó el Quality Gate."
+          : "El Quality Gate reporta pendientes:\n\n" + gapFeedback) +
         "\n\n¿Quieres que avancemos con estos puntos? Responde validando o indicando cambios concretos.";
-      LOG("interrupt reply (qué falta para 85%, con auditorFeedback)");
+      LOG("interrupt reply (qué falta, con feedback QG)");
       const resumeValue = interrupt({ type: "reply", reply: replyContent });
       const newMsg = typeof resumeValue === "string" ? resumeValue : String(resumeValue ?? "").trim();
       return new Command({
@@ -1058,22 +964,13 @@ export function createMddManagerNode(
       });
     }
 
-    // "Audita el documento" → plan [auditor] y aprobación (patrón exclusivo).
+    // "Evalúa el documento" → ejecutar solo quality_gate.
     const trimmedMsg = userMessage?.trim() ?? "";
     if (hasDraft && trimmedMsg && AUDIT_DOCUMENT_PATTERN.test(trimmedMsg) && trimmedMsg.length <= 120) {
-      const mddPlan: MddPlanStep[] = [
-        stepWithTools("auditor", "1", NODE_TASK_DESCRIPTIONS.auditor),
-      ];
-      LOG("usuario pidió auditar → plan_approval (1 paso: auditor)");
-      const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
+      LOG("usuario pidió evaluar calidad → quality_gate");
       return new Command({
-        update: {
-          lastUserMessage: undefined,
-          pendingPlanApproval: { mddPlan, delegateTarget: "sections", sectionsToRun: ["auditor"], goto: "auditor" },
-          planUserIntent: getPlanDirective(state),
-          impactSummary,
-        },
-        goto: "plan_approval",
+        update: { lastUserMessage: undefined },
+        goto: "quality_gate",
       });
     }
 
@@ -1085,20 +982,17 @@ export function createMddManagerNode(
         const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
         const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n");
         const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
-        LOG("solo contexto y alcance → plan_approval mddPlanLen=%s", mddPlan.length);
-        return new Command({
-          update: {
-            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-            dbgaContent: dbgaWithRequest || state.dbgaContent,
-            lastUserMessage: undefined,
-            requestQuestionsOnly: false,
-            delegateTarget: "clarifier_only",
-            previousMddDraftForMerge: state.mddDraft ?? "",
-            pendingPlanApproval: { mddPlan, delegateTarget: "clarifier_only", previousMddDraftForMerge: state.mddDraft ?? "", goto: "clarifier" },
-            planUserIntent: planDirective,
-            impactSummary,
-          },
-          goto: "plan_approval",
+        LOG("solo contexto y alcance → interrupt plan mddPlanLen=%s", mddPlan.length);
+        return presentPlanForApproval(state, {
+          userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
+          dbgaContent: dbgaWithRequest || state.dbgaContent,
+          lastUserMessage: undefined,
+          requestQuestionsOnly: false,
+          delegateTarget: "clarifier_only",
+          previousMddDraftForMerge: state.mddDraft ?? "",
+          pendingPlanApproval: { mddPlan, delegateTarget: "clarifier_only", previousMddDraftForMerge: state.mddDraft ?? "", goto: "clarifier" },
+          planUserIntent: planDirective,
+          impactSummary,
         });
       }
     }
@@ -1125,28 +1019,22 @@ export function createMddManagerNode(
           .filter(Boolean)
           .join("\n\n");
         const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
-        LOG(
-          "cambio explícito MDD (stack/infra) → plan_approval sections=%s",
-          sectionsToRun.join(","),
-        );
-        return new Command({
-          update: {
-            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-            dbgaContent: dbgaWithRequest || state.dbgaContent,
-            lastUserMessage: undefined,
-            managerQuestions: undefined,
-            requestQuestionsOnly: false,
-            pendingPlanApproval: {
-              mddPlan,
-              delegateTarget: "sections",
-              sectionsToRun,
-              previousMddDraftForMerge: state.mddDraft ?? "",
-              goto: sectionsToRun[0],
-            },
-            planUserIntent: planDirective,
-            impactSummary,
+        LOG("cambio explícito MDD (stack/infra) → interrupt plan sections=%s", sectionsToRun.join(","));
+        return presentPlanForApproval(state, {
+          userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
+          dbgaContent: dbgaWithRequest || state.dbgaContent,
+          lastUserMessage: undefined,
+          managerQuestions: undefined,
+          requestQuestionsOnly: false,
+          pendingPlanApproval: {
+            mddPlan,
+            delegateTarget: "sections",
+            sectionsToRun,
+            previousMddDraftForMerge: state.mddDraft ?? "",
+            goto: sectionsToRun[0]!,
           },
-          goto: "plan_approval",
+          planUserIntent: planDirective,
+          impactSummary,
         });
       }
     }
@@ -1172,19 +1060,16 @@ export function createMddManagerNode(
         const accumulatedWithRequest = stateForDirective.userInputAccumulated ?? state.userInputAccumulated;
         const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n");
         const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
-        LOG("petición sustancial (len=%s) → plan sections=%s, goto plan_approval", userMessage!.trim().length, sectionsToRun.join(","));
-        return new Command({
-          update: {
-            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-            dbgaContent: dbgaWithRequest || state.dbgaContent,
-            lastUserMessage: undefined,
-            managerQuestions: undefined,
-            requestQuestionsOnly: false,
-            pendingPlanApproval: { mddPlan, delegateTarget: "sections", sectionsToRun, goto: sectionsToRun[0] },
-            planUserIntent: planDirective,
-            impactSummary,
-          },
-          goto: "plan_approval",
+        LOG("petición sustancial (len=%s) → interrupt plan sections=%s", userMessage!.trim().length, sectionsToRun.join(","));
+        return presentPlanForApproval(state, {
+          userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
+          dbgaContent: dbgaWithRequest || state.dbgaContent,
+          lastUserMessage: undefined,
+          managerQuestions: undefined,
+          requestQuestionsOnly: false,
+          pendingPlanApproval: { mddPlan, delegateTarget: "sections", sectionsToRun, goto: sectionsToRun[0]! },
+          planUserIntent: planDirective,
+          impactSummary,
         });
       }
     }
@@ -1204,17 +1089,14 @@ export function createMddManagerNode(
       if (mddPlan.length > 0) {
         const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Usuario: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
         const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
-        LOG("usuario dijo 'ya trabaje' / ejecuta (len=%s) → plan sections=%s, goto plan_approval", userMessage!.trim().length, sectionsToRun.join(","));
-        return new Command({
-          update: {
-            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-            lastUserMessage: undefined,
-            requestQuestionsOnly: false,
-            pendingPlanApproval: { mddPlan, delegateTarget: "sections", sectionsToRun, goto: sectionsToRun[0] },
-            planUserIntent: planDirective,
-            impactSummary,
-          },
-          goto: "plan_approval",
+        LOG("usuario dijo 'ya trabaje' / ejecuta (len=%s) → interrupt plan sections=%s", userMessage!.trim().length, sectionsToRun.join(","));
+        return presentPlanForApproval(state, {
+          userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
+          lastUserMessage: undefined,
+          requestQuestionsOnly: false,
+          pendingPlanApproval: { mddPlan, delegateTarget: "sections", sectionsToRun, goto: sectionsToRun[0]! },
+          planUserIntent: planDirective,
+          impactSummary,
         });
       }
     }
@@ -1232,20 +1114,17 @@ export function createMddManagerNode(
         const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
         const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n");
         const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
-        LOG("usuario respondió con sustancia a nuestras preguntas (len=%s) → delegate (no más preguntas)", userMessage!.trim().length);
-        return new Command({
-          update: {
-            userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
-            dbgaContent: dbgaWithRequest || state.dbgaContent,
-            lastUserMessage: undefined,
-            managerQuestions: undefined,
-            requestQuestionsOnly: false,
-            clarifierJustGeneratedQuestions: false,
-            pendingPlanApproval: { mddPlan, delegateTarget: "full_pipeline", goto: "clarifier" },
-            planUserIntent: planDirective,
-            impactSummary,
-          },
-          goto: "plan_approval",
+        LOG("usuario respondió con sustancia (len=%s) → interrupt plan full_pipeline", userMessage!.trim().length);
+        return presentPlanForApproval(state, {
+          userInputAccumulated: accumulatedWithRequest || state.userInputAccumulated,
+          dbgaContent: dbgaWithRequest || state.dbgaContent,
+          lastUserMessage: undefined,
+          managerQuestions: undefined,
+          requestQuestionsOnly: false,
+          clarifierJustGeneratedQuestions: false,
+          pendingPlanApproval: { mddPlan, delegateTarget: "full_pipeline", goto: "clarifier" },
+          planUserIntent: planDirective,
+          impactSummary,
         });
       }
     }
@@ -1482,21 +1361,18 @@ export function createMddManagerNode(
       } else {
         gotoNode = "clarifier";
       }
-      LOG("delegar a plan_approval mddPlanLen=%s goto=%s", mddPlan.length, gotoNode);
+      LOG("delegar interrupt plan mddPlanLen=%s goto=%s", mddPlan.length, gotoNode);
       const impactSummary = await generateImpactAnalysis(llm, state, userMessage || planDirective || "Re-planificación");
-      return new Command({
-        update: {
-          pendingPlanApproval: {
-            mddPlan,
-            delegateTarget: delegateTarget ?? "full_pipeline",
-            sectionsToRun,
-            previousMddDraftForMerge,
-            goto: gotoNode,
-          },
-          planUserIntent: planDirective,
-          impactSummary,
+      return presentPlanForApproval(state, {
+        pendingPlanApproval: {
+          mddPlan,
+          delegateTarget: delegateTarget ?? "full_pipeline",
+          sectionsToRun,
+          previousMddDraftForMerge,
+          goto: gotoNode,
         },
-        goto: "plan_approval",
+        planUserIntent: planDirective,
+        impactSummary,
       });
     }
 
@@ -1528,7 +1404,7 @@ export function createMddManagerNode(
       });
     }
 
-    // Pipeline completo: Clarifier → ... → Auditor → Manager.
+    // Pipeline completo: Clarifier → … → Quality Gate → Manager.
     LOG("delegate -> clarifier (full pipeline) mddPlanLen=%s", mddPlan.length);
     return new Command({
       update: {

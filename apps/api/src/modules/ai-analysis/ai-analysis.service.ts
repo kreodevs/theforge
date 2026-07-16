@@ -625,7 +625,10 @@ export class AiAnalysisService {
             if (draftLen) extra.push(`draft=${draftLen}`);
             if (scopeLen) extra.push(`scope=${scopeLen}`);
             auditTrail.push(`${nodeName}(${extra.join(" ")})`);
-            const label = nodeName === "auditor" ? getAgentLabel("auditor", "mdd") : getAgentLabel(nodeName);
+            const label =
+              nodeName === "auditor" || nodeName === "quality_gate"
+                ? getAgentLabel("auditor", "mdd")
+                : getAgentLabel(nodeName);
             yield { type: "progress", agent: label, message: getMddNodeProgressMessage(nodeName) };
           }
         }
@@ -897,7 +900,12 @@ export class AiAnalysisService {
             return;
           }
           if (nodeName) {
-            const label = nodeName === "auditor" ? getAgentLabel("auditor", "mdd") : nodeName === "manager" ? "Manager (entrevista)" : getAgentLabel(nodeName);
+            const label =
+              nodeName === "auditor" || nodeName === "quality_gate"
+                ? getAgentLabel("auditor", "mdd")
+                : nodeName === "manager"
+                  ? "Manager (entrevista)"
+                  : getAgentLabel(nodeName);
             this.logger.log(`[MDD stream/manager] progress node=${nodeName} label=${label}`);
             yield { type: "progress", agent: label, message: getMddNodeProgressMessage(nodeName) };
           }
@@ -1240,7 +1248,12 @@ export class AiAnalysisService {
             return;
           }
           if (nodeName) {
-            const label = nodeName === "auditor" ? getAgentLabel("auditor", "mdd") : nodeName === "manager" ? "Manager (entrevista)" : getAgentLabel(nodeName);
+            const label =
+              nodeName === "auditor" || nodeName === "quality_gate"
+                ? getAgentLabel("auditor", "mdd")
+                : nodeName === "manager"
+                  ? "Manager (entrevista)"
+                  : getAgentLabel(nodeName);
 
             const nodeData = dataRecord[nodeName] as Partial<MDDState> | undefined;
             const draftLen = nodeData?.mddDraft?.length;

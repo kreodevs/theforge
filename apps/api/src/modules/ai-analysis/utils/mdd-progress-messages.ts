@@ -3,17 +3,16 @@
  */
 export const MDD_NODE_PROGRESS_MESSAGE: Record<string, string> = {
   manager: "Entrevista con el usuario completada",
-  ask_initial_topic: "Tema o problema del MDD recopilado",
-  plan_approval: "Plan presentado para aprobación",
-  executor: "Plan ejecutado paso a paso",
   clarifier: "Alcance y requisitos clarificados",
   software_architect: "Schema SQL y contratos de API definidos",
-  architect_critic: "§3 y §4 verificados frente a la directiva",
-  format_after_architect: "Documento formateado (post-arquitectura)",
+  formatter: "Documento MDD formateado",
   security: "Arquitectura de seguridad definida",
   integration: "Integraciones definidas",
-  format_after_redactor: "Documento formateado (post-redacción)",
+  format_sec_int: "Secciones §6 y §7 fusionadas",
   diagram_injector: "Diagramas Mermaid añadidos",
+  quality_gate: "Calidad del MDD evaluada (Quality Gate)",
+  graph_populator: "Grafo de decisiones actualizado",
+  /** Alias SSE legacy (1 release) — mismo mensaje que quality_gate. */
   auditor: "Calidad del MDD evaluada",
 };
 
