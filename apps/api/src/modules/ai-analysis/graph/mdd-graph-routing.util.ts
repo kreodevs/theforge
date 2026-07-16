@@ -8,7 +8,15 @@ export function shouldRunSecIntNode(state: MDDStateType, nodeName: "security" | 
   return true;
 }
 
-export function nextInSections(state: MDDStateType, currentNode: string): string | null {
+export type LeanRoutingState = Pick<
+  MDDStateType,
+  "delegateTarget" | "sectionsToRun" | "mddDraft" | "architectSection5PassPending"
+>;
+
+export function nextInSections(
+  state: Pick<MDDStateType, "delegateTarget" | "sectionsToRun">,
+  currentNode: string,
+): string | null {
   if (state.delegateTarget !== "sections" || !state.sectionsToRun?.length) return null;
   const idx = state.sectionsToRun.indexOf(currentNode);
   if (idx === -1) return null;
@@ -17,13 +25,13 @@ export function nextInSections(state: MDDStateType, currentNode: string): string
 }
 
 /** Igual que nextInSections pero sin destino manager (grafo lean sin nodo Manager). */
-export function nextInCorrectionPipeline(state: MDDStateType, currentNode: string): string | null {
+export function nextInCorrectionPipeline(state: LeanRoutingState, currentNode: string): string | null {
   const next = nextInSections(state, currentNode);
   if (!next || next === "manager") return null;
   return next;
 }
 
-export function shouldRunSecIntPass(state: MDDStateType): boolean {
+export function shouldRunSecIntPass(state: Pick<MDDStateType, "delegateTarget" | "sectionsToRun">): boolean {
   if (state.delegateTarget === "sections" && state.sectionsToRun?.length) {
     return state.sectionsToRun.includes("security") || state.sectionsToRun.includes("integration");
   }
@@ -69,7 +77,7 @@ export const LEAN_QUALITY_GATE_DESTINATIONS = [
   "integration",
 ] as const;
 
-export function routeAfterSoftwareArchitectLean(state: MDDStateType): string {
+export function routeAfterSoftwareArchitectLean(state: LeanRoutingState): string {
   if (!state.architectSection5PassPending && mddNeedsSection5Pass(state.mddDraft ?? "")) {
     return "architect_section5_prep";
   }
@@ -78,28 +86,28 @@ export function routeAfterSoftwareArchitectLean(state: MDDStateType): string {
   return "formatter";
 }
 
-export function routeAfterFormatterPreSecIntLean(state: MDDStateType): string {
+export function routeAfterFormatterPreSecIntLean(state: LeanRoutingState): string {
   const next = nextInCorrectionPipeline(state, "formatter");
   if (next) return next;
   if (shouldRunSecIntPass(state)) return "fanout_sec_int";
   return "diagram_injector";
 }
 
-export function routeAfterSecurityLean(state: MDDStateType): string {
+export function routeAfterSecurityLean(state: LeanRoutingState): string {
   return nextInCorrectionPipeline(state, "security") ?? "format_sec_int";
 }
 
-export function routeAfterIntegrationLean(state: MDDStateType): string {
+export function routeAfterIntegrationLean(state: LeanRoutingState): string {
   return nextInCorrectionPipeline(state, "integration") ?? "format_sec_int";
 }
 
-export function routeAfterFormatSecIntLean(state: MDDStateType): string {
+export function routeAfterFormatSecIntLean(state: LeanRoutingState): string {
   const next = nextInCorrectionPipeline(state, "format_sec_int");
   if (next) return next;
   return "diagram_injector";
 }
 
-export function routeAfterDiagramLean(state: MDDStateType): string {
+export function routeAfterDiagramLean(state: LeanRoutingState): string {
   const next = nextInCorrectionPipeline(state, "diagram_injector");
   if (next) return next;
   return "quality_gate";
@@ -107,7 +115,7 @@ export function routeAfterDiagramLean(state: MDDStateType): string {
 
 export type LeanRouteResolver = {
   router: string;
-  resolve: (state: MDDStateType) => string;
+  resolve: (state: LeanRoutingState) => string;
   validDestinations: readonly string[];
 };
 

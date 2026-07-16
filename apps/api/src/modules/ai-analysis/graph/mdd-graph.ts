@@ -31,7 +31,6 @@ import type { MddFlowTraceOpts, MddFlowTraceService } from "../mdd/mdd-flow-trac
 import {
   shouldRunSecIntNode,
   nextInSections,
-  nextInCorrectionPipeline,
   shouldRunSecIntPass,
   routeAfterSoftwareArchitectLean,
   routeAfterFormatterPreSecIntLean,
@@ -45,7 +44,6 @@ import {
   LEAN_INTEGRATION_DESTINATIONS,
   LEAN_FORMAT_SEC_INT_DESTINATIONS,
   LEAN_DIAGRAM_DESTINATIONS,
-  LEAN_QUALITY_GATE_DESTINATIONS,
 } from "./mdd-graph-routing.util.js";
 
 const MAX_MDD_ITERATIONS = 2;
