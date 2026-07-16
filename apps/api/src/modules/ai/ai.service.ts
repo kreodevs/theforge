@@ -678,7 +678,7 @@ export class AiService {
   async generateAuditorResponse(
     prompt: string,
     history: LlmChatMessage[] = [],
-    options?: { systemPrompt?: string; maxTokensOverride?: number },
+    options?: { systemPrompt?: string; maxTokensOverride?: number; jsonObjectMode?: boolean },
   ): Promise<string> {
     try {
       const systemPrompt = options?.systemPrompt ?? "";
@@ -686,9 +686,13 @@ export class AiService {
       this.logger.debug(
         `[AiService] generateAuditorResponse provider=${runtime.providerId} model=${runtime.chatModel}`,
       );
+      const jsonSuffix = options?.jsonObjectMode
+        ? "\n\nResponde ÚNICAMENTE con un objeto JSON válido parseable por JSON.parse."
+        : "";
       const out = await (await this.auditorProvider()).generateResponse(prompt, history, {
-        systemPrompt,
+        systemPrompt: systemPrompt + jsonSuffix,
         maxTokensOverride: options?.maxTokensOverride,
+        jsonObjectMode: options?.jsonObjectMode,
       });
       return out;
     } catch (err) {

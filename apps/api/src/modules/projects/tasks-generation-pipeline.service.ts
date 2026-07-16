@@ -23,6 +23,8 @@ import {
   type TasksQualityReport,
 } from "./tasks-generation-quality.util.js";
 import { runTasksPreflightStrict } from "./tasks-preflight.util.js";
+import { buildHeuristicTasksPlan } from "./tasks-heuristic-plan.util.js";
+import { buildSlimTasksPlannerContext } from "./tasks-planner-context.util.js";
 
 export type TasksPipelineInput = {
   mddMarkdown: string;
@@ -88,7 +90,7 @@ export class TasksGenerationPipelineService {
     }
 
     const plannerContext = this.buildPlannerContext(input);
-    const plan = await this.runPlanner(plannerContext);
+    const plan = await this.runPlanner(plannerContext, input);
     const planJson = JSON.stringify(plan, null, 2);
 
     let tasksMarkdown = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
@@ -172,41 +174,76 @@ export class TasksGenerationPipelineService {
     };
     append("Blueprint", input.blueprintMarkdown, 12_000);
     append("Spec", input.taskOpts.specContent);
-    append("User Stories", input.taskOpts.userStoriesContent);
+    append("User Stories", input.taskOpts.userStoriesContent, 6_000);
     append("API Contracts", input.taskOpts.apiContractsContent, 12_000);
-    append("Logic Flows", input.taskOpts.logicFlowsContent);
-    append("Infra", input.taskOpts.infraContent);
-    append("Architecture", input.taskOpts.architectureContent, 12_000);
-    append("UX Guide", input.taskOpts.uxUiGuideContent);
-    append("Pantallas", input.taskOpts.uiScreensContent, 12_000);
+    append("Logic Flows", input.taskOpts.logicFlowsContent, 8_000);
+    append("Infra", input.taskOpts.infraContent, 6_000);
+    append("Architecture", input.taskOpts.architectureContent, 8_000);
+    if (input.hasUxTeam) {
+      append("UX Guide", input.taskOpts.uxUiGuideContent, 6_000);
+    }
+    append("Pantallas", input.taskOpts.uiScreensContent, 8_000);
     if (input.taskOpts.navigationMap?.trim()) {
       append("Navigation map", input.taskOpts.navigationMap, 8_000);
     }
     if (input.taskOpts.fileCoordinatesContext?.trim()) {
-      parts.push("\n\n" + input.taskOpts.fileCoordinatesContext.trim());
+      parts.push("\n\n" + input.taskOpts.fileCoordinatesContext.trim().slice(0, 6_000));
     }
     return parts.join("");
   }
 
-  private async runPlanner(context: string): Promise<TasksGenerationPlan> {
-    const parsed = await this.callAuditorJson({
-      step: "planner",
-      prompt: context,
-      systemPrompt: TASKS_PLANNER_PROMPT,
-      schema: tasksGenerationPlanSchema,
-      maxTokensPurpose: "tasksPlanner",
+  private async runPlanner(context: string, input: TasksPipelineInput): Promise<TasksGenerationPlan> {
+    const contexts: Array<{ label: string; prompt: string }> = [
+      { label: "full", prompt: context },
+      {
+        label: "slim",
+        prompt: buildSlimTasksPlannerContext(
+          {
+            mddMarkdown: input.mddMarkdown,
+            blueprintMarkdown: input.blueprintMarkdown,
+            taskOpts: input.taskOpts,
+          },
+          input.inventory,
+        ),
+      },
+    ];
+
+    for (const { label, prompt } of contexts) {
+      const parsed = await this.tryCallAuditorJson({
+        step: "planner",
+        prompt,
+        systemPrompt: TASKS_PLANNER_PROMPT,
+        schema: tasksGenerationPlanSchema,
+        maxTokensPurpose: "tasksPlanner",
+      });
+      if (parsed) {
+        this.logger.log(`[Tasks pipeline] planner OK (${label}, ${parsed.items.length} items)`);
+        return {
+          sections: parsed.sections ?? [],
+          items: parsed.items.map((item) => ({
+            ...item,
+            mddRefs: item.mddRefs ?? [],
+            storyRefs: item.storyRefs ?? [],
+            upstreamRefs: item.upstreamRefs ?? [],
+            dependsOn: item.dependsOn ?? [],
+            targetFilesHint: item.targetFilesHint ?? [],
+          })),
+        };
+      }
+      this.logger.warn(`[Tasks pipeline] planner JSON failed (${label})`);
+    }
+
+    const heuristic = buildHeuristicTasksPlan({
+      mddMarkdown: input.mddMarkdown,
+      apiContractsMarkdown: input.taskOpts.apiContractsContent,
+      uiScreensMarkdown: input.taskOpts.uiScreensContent,
+      inventory: input.inventory,
+      hasUxTeam: input.hasUxTeam,
     });
-    return {
-      sections: parsed.sections ?? [],
-      items: parsed.items.map((item) => ({
-        ...item,
-        mddRefs: item.mddRefs ?? [],
-        storyRefs: item.storyRefs ?? [],
-        upstreamRefs: item.upstreamRefs ?? [],
-        dependsOn: item.dependsOn ?? [],
-        targetFilesHint: item.targetFilesHint ?? [],
-      })),
-    };
+    this.logger.warn(
+      `[Tasks pipeline] planner heuristic fallback (${heuristic.items.length} items) — revisa auditorChatModel o upstream`,
+    );
+    return heuristic;
   }
 
   private async runLlmAuditor(
@@ -248,7 +285,47 @@ export class TasksGenerationPipelineService {
 
   /**
    * LLM auditor/planner con reintento si el modelo no devuelve JSON parseable.
+   * Devuelve null si agota reintentos (planner usa fallback heurístico).
    */
+  private async tryCallAuditorJson<T>(params: {
+    step: "planner" | "auditor";
+    prompt: string;
+    systemPrompt: string;
+    schema: z.ZodType<T>;
+    maxTokensPurpose: "tasksPlanner" | "auditor";
+  }): Promise<T | null> {
+    const maxTokens = resolveLlmMaxTokensForPurpose(params.maxTokensPurpose);
+    const retrySuffix =
+      "\n\nIMPORTANTE: Responde ÚNICAMENTE con un objeto JSON válido (JSON.parse). " +
+      "Sin markdown, sin fences ```, sin texto antes ni después.";
+    const prompts = [params.prompt, params.prompt + retrySuffix];
+
+    for (let attempt = 0; attempt < prompts.length; attempt++) {
+      const raw = await this.ai.generateAuditorResponse(prompts[attempt]!, [], {
+        systemPrompt: params.systemPrompt,
+        maxTokensOverride: maxTokens,
+        jsonObjectMode: true,
+      });
+      if (!raw.trim()) {
+        this.logger.warn(
+          `[Tasks pipeline] ${params.step} empty response (attempt ${attempt + 1})`,
+        );
+        continue;
+      }
+      try {
+        const jsonText = extractFirstJsonObject(raw) ?? raw.trim();
+        return parseJsonOrThrow(jsonText, params.schema);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `[Tasks pipeline] ${params.step} JSON parse failed (attempt ${attempt + 1}): ${detail}; preview=${raw.trim().slice(0, 120)}`,
+        );
+      }
+    }
+    return null;
+  }
+
+  /** Auditor LLM — fallo duro (no hay fallback determinista). */
   private async callAuditorJson<T>(params: {
     step: "planner" | "auditor";
     prompt: string;
@@ -256,45 +333,17 @@ export class TasksGenerationPipelineService {
     schema: z.ZodType<T>;
     maxTokensPurpose: "tasksPlanner" | "auditor";
   }): Promise<T> {
-    const maxTokens = resolveLlmMaxTokensForPurpose(params.maxTokensPurpose);
-    const retrySuffix =
-      "\n\nIMPORTANTE: Responde ÚNICAMENTE con un objeto JSON válido (JSON.parse). " +
-      "Sin markdown, sin fences ```, sin texto antes ni después.";
-    const prompts = [params.prompt, params.prompt + retrySuffix];
-    let lastRaw = "";
-
-    for (let attempt = 0; attempt < prompts.length; attempt++) {
-      lastRaw = await this.ai.generateAuditorResponse(prompts[attempt]!, [], {
-        systemPrompt: params.systemPrompt,
-        maxTokensOverride: maxTokens,
-      });
-      try {
-        const jsonText = extractFirstJsonObject(lastRaw) ?? lastRaw.trim();
-        return parseJsonOrThrow(jsonText, params.schema);
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        if (attempt < prompts.length - 1) {
-          this.logger.warn(
-            `[Tasks pipeline] ${params.step} JSON parse failed (attempt ${attempt + 1}): ${detail}`,
-          );
-          continue;
-        }
-        throw new BadRequestException({
-          code:
-            params.step === "planner"
-              ? "TASKS_PLANNER_JSON_FAILED"
-              : "TASKS_AUDITOR_JSON_FAILED",
-          message:
-            `Tasks ${params.step === "planner" ? "Planner" : "Auditor LLM"}: ` +
-            `el modelo no devolvió JSON válido (${detail}). Reintenta; si persiste, reduce complejidad upstream o cambia auditorChatModel.`,
-          preview: lastRaw.trim().slice(0, 600),
-        });
-      }
-    }
+    const parsed = await this.tryCallAuditorJson(params);
+    if (parsed) return parsed;
 
     throw new BadRequestException({
-      code: "TASKS_PLANNER_JSON_FAILED",
-      message: "Tasks pipeline: fallo inesperado al parsear JSON.",
+      code:
+        params.step === "planner"
+          ? "TASKS_PLANNER_JSON_FAILED"
+          : "TASKS_AUDITOR_JSON_FAILED",
+      message:
+        `Tasks ${params.step === "planner" ? "Planner" : "Auditor LLM"}: ` +
+        "el modelo no devolvió JSON válido tras reintentos. Reintenta o cambia auditorChatModel.",
     });
   }
 

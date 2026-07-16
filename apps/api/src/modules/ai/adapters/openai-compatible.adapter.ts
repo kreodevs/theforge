@@ -175,6 +175,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
             resolveLlmMaxTokensForWorkshopTab(options?.activeTab, {
               welcomeBrief: options?.welcomeBrief,
             }),
+          ...(options?.jsonObjectMode ? { response_format: { type: "json_object" as const } } : {}),
         });
 
         return completion.choices[0]?.message?.content ?? "";

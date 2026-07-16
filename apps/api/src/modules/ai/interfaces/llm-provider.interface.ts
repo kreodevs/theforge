@@ -76,6 +76,8 @@ export interface GenerateResponseOptions {
   welcomeBrief?: boolean;
   /** Pre-fetched Context7 block (Benchmark / Phase 0 generation or chat). */
   techDocsContext?: string | null;
+  /** Fuerza salida JSON (OpenAI `response_format`; otros adapters vía system). */
+  jsonObjectMode?: boolean;
 }
 
 export interface LLMProvider {
