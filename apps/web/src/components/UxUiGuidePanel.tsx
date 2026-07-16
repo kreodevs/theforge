@@ -8,6 +8,8 @@ import MddViewer from "@/components/MddViewer";
 import { AiDocumentBuildingPlaceholder } from "@/components/AiGenerationLoader";
 import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "@/components/WorkshopDocSourceSaveBar";
 import { WorkshopDocTextarea } from "@/components/WorkshopDocTextarea";
+import { WorkshopDocumentStampBar } from "@/components/WorkshopDocumentStampBar";
+import type { WorkshopDocumentTimestamps } from "@/utils/workshop-document-content.util";
 
 interface UxUiGuidePanelProps {
   content: string | null;
@@ -24,6 +26,7 @@ interface UxUiGuidePanelProps {
   onDesignRefAutoMatch?: () => void;
   placeholder?: string;
   onBlur?: () => void;
+  documentTimestamps?: WorkshopDocumentTimestamps | null;
 }
 
 /**
@@ -44,6 +47,7 @@ export function UxUiGuidePanel({
   onDesignRefAutoMatch,
   placeholder,
   onBlur,
+  documentTimestamps,
 }: UxUiGuidePanelProps) {
   const isEmpty = !content?.trim();
 
@@ -76,6 +80,7 @@ export function UxUiGuidePanel({
   return (
     <>
       {designRefBar}
+      <WorkshopDocumentStampBar timestamps={documentTimestamps} />
       {viewMode === "design" ? (
         <div key="design-view" className="flex min-h-0 flex-1 flex-col overflow-auto">
           <DesignMdPreview content={content ?? ""} />

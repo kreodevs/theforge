@@ -8,4 +8,4 @@
 - **`downloadRepoHandoff.ts`:** handoff completo (spec-kit + gobernanza aplanada en raíz del ZIP) vía `GET /projects/:id/export/repo-handoff`. `downloadWorkshopProjectZip` es el botón del header Workshop: handoff si hay gobernanza; si no, `-documentos.zip` plano.
 - **`downloadDocumentsZip.ts`:** solo `.md` sueltos en la raíz (fallback sin gobernanza); `pantallas.md` sin anexo JSON embebido + `ui-project.json` aparte cuando exista.
 - **`downloadAgentGovernanceZip.ts`:** gobernanza + spec-kit client-side (`-implement-handoff.zip`); fallback si falla repo-handoff API.
-- **`workshop-document-content.util.ts`:** quita cabecera stamp API (`peelTheforgeDocStamp`) y normaliza markdown de editor; `workshopDocumentBodiesEqual` evita bucles PATCH en auto-guardado (DBGA y entregables).
+- **`workshop-document-content.util.ts`:** quita cabecera stamp API (`peelTheforgeDocStamp`) y normaliza markdown de editor; `workshopDocumentBodiesEqual` evita bucles PATCH en auto-guardado (DBGA y entregables). `buildWorkshopDocumentTimestampsMap` / `extractWorkshopDocumentTimestamps` alimentan la barra visible en Workshop.

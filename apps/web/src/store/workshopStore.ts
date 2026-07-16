@@ -28,9 +28,12 @@ import {
   WORKSHOP_PERSIST_BASELINE_FIELDS,
 } from "../utils/persist-field-guard";
 import {
+  buildWorkshopDocumentTimestampsMap,
   cleanDocForWorkshop as cleanDoc,
+  extractWorkshopDocumentTimestamps,
   normalizeWorkshopDocumentForEditor,
   workshopDocumentBodiesEqual,
+  type WorkshopDocumentTimestamps,
 } from "../utils/workshop-document-content.util";
 import {
   parseApiErrorPayloadFromResponse,
@@ -346,6 +349,13 @@ async function persistField(
         error: null,
         notice: patternsReverted ? SSOT_PATTERNS_RESTORED_NOTICE : null,
       };
+      const fieldTimestamps = extractWorkshopDocumentTimestamps(serverRaw);
+      if (fieldTimestamps) {
+        patch.documentTimestamps = {
+          ...getState().documentTimestamps,
+          [fieldName]: fieldTimestamps,
+        };
+      }
       if (shouldApplyPersistedFieldContent(localNow, localAtSaveStart, cleaned) || patternsReverted) {
         (patch as Record<string, unknown>)[fieldName] = serverCleaned;
       }
@@ -736,6 +746,7 @@ function workshopStateFromProjectStage(p: Project, stageId: string | null) {
     },
     activeStageId: stageId,
     mddContent: cleanDoc(flat.mddContent) ?? "",
+    documentTimestamps: buildWorkshopDocumentTimestampsMap(p, stageId),
     ...deliverablePatch,
   };
 }
@@ -857,6 +868,8 @@ interface WorkshopState {
 
   uiScreensContent: string | null;
   agentGovernanceContent: string | null;
+  /** Fechas Creado/Última regeneración por campo (desde stamp API, no del editor). */
+  documentTimestamps: Record<string, WorkshopDocumentTimestamps>;
   conformance: {
     blueprint: ConformanceResult;
     blueprintDataModel: ConformanceResult;
@@ -1190,6 +1203,7 @@ const initialState = {
 
   uiScreensContent: null as string | null,
   agentGovernanceContent: null as string | null,
+  documentTimestamps: {} as Record<string, WorkshopDocumentTimestamps>,
   conformance: null as {
     blueprint: ConformanceResult;
     blueprintDataModel: ConformanceResult;
@@ -1286,6 +1300,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       workshopStages: stages,
       activeStageId,
       mddContent: focused.mddContent,
+      documentTimestamps: focused.documentTimestamps,
       uxUiGuideContent: focused.uxUiGuideContent,
       dbgaContent: p.dbgaContent ?? null,
       phase0SummaryContent: focused.phase0SummaryContent,
@@ -1357,6 +1372,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       activeStageId: stageId,
       project: focused.project,
       mddContent: focused.mddContent,
+      documentTimestamps: focused.documentTimestamps,
       specContent: focused.specContent,
       architectureContent: focused.architectureContent,
       useCasesContent: focused.useCasesContent,
@@ -1653,6 +1669,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         workshopStages: stages,
         activeStageId,
         mddContent: preserveMddLocal ? get().mddContent : focused.mddContent,
+        documentTimestamps: focused.documentTimestamps,
         uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: normalizeWorkshopDocumentForEditor(data.dbgaContent ?? null),
         specContent: focused.specContent,
@@ -1751,6 +1768,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         workshopStages: stages,
         activeStageId,
         mddContent: focused.mddContent || get().mddContent,
+        documentTimestamps: focused.documentTimestamps,
         uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: focused.project.dbgaContent ?? normalizeWorkshopDocumentForEditor(p.dbgaContent ?? null),
         specContent: focused.specContent,

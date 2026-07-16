@@ -7,6 +7,8 @@ import { DocEmptyState } from "@/components/DocEmptyState";
 import { AiDocumentBuildingPlaceholder } from "@/components/AiGenerationLoader";
 import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "@/components/WorkshopDocSourceSaveBar";
 import { WorkshopDocTextarea } from "@/components/WorkshopDocTextarea";
+import { WorkshopDocumentStampBar } from "@/components/WorkshopDocumentStampBar";
+import type { WorkshopDocumentTimestamps } from "@/utils/workshop-document-content.util";
 
 export interface StandardDocPanelProps {
   icon: LucideIcon;
@@ -33,6 +35,8 @@ export interface StandardDocPanelProps {
   /** Oculta completamente los botones de generar (panel manual como AEM). */
   hideGenerate?: boolean;
   readOnly?: boolean;
+  /** Fechas de creación/regeneración del documento persistido. */
+  documentTimestamps?: WorkshopDocumentTimestamps | null;
 }
 
 /**
@@ -63,6 +67,7 @@ export function StandardDocPanel({
   generateBlockedReason,
   hideGenerate,
   readOnly = false,
+  documentTimestamps,
 }: StandardDocPanelProps) {
   const IconComp = icon;
   // Estado 1: preview vacío → DocEmptyState
@@ -99,6 +104,7 @@ export function StandardDocPanel({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <WorkshopDocumentStampBar timestamps={documentTimestamps} />
       {viewMode === "preview" ? (
         /* Estado 2: preview con contenido */
         <MddViewer content={content || ""} />

@@ -23,6 +23,8 @@ import {
   mermaidKey,
   preWrapsMermaidBlock,
 } from "./MarkdownMermaid";
+import { WorkshopDocumentStampBar } from "./WorkshopDocumentStampBar";
+import type { WorkshopDocumentTimestamps } from "@/utils/workshop-document-content.util";
 
 /** Quita bloques ```mermaid vacíos para no intentar renderizarlos (evita SVG de error). */
 function stripBrokenMermaidBlocks(content: string): string {
@@ -181,6 +183,8 @@ const MdSection = memo(function MdSection({ content }: { content: string }) {
 interface MddViewerProps {
   content: string;
   className?: string;
+  /** Fechas API (Creado / Última regeneración) — visibles aunque el editor no incluya el stamp. */
+  documentTimestamps?: WorkshopDocumentTimestamps | null;
 }
 
 class MddViewerErrorBoundary extends Component<
@@ -224,12 +228,13 @@ class MddViewerErrorBoundary extends Component<
  * Visualizador de MDD por secciones: solo re-renderiza las secciones cuyo contenido cambió,
  * evitando parpadeo al hacer streaming o al actualizar el documento.
  */
-function MddViewerInner({ content, className = "" }: MddViewerProps) {
+function MddViewerInner({ content, className = "", documentTimestamps }: MddViewerProps) {
   const cleaned = stripBrokenMermaidBlocks(formatDocumentMarkdown(content));
   const sections = parseMarkdownSections(cleaned);
 
   return (
     <div className={`space-y-4 markdown-preview min-w-0 pb-[80px] ${className}`}>
+      <WorkshopDocumentStampBar timestamps={documentTimestamps} />
       {sections.map((section) => (
         <MdSection key={section.id} content={section.content} />
       ))}

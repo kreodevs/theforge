@@ -39,3 +39,19 @@ describe("workshop-document-content", () => {
     assert.equal(workshopDocumentBodiesEqual(body, STAMP + body), true);
   });
 });
+
+describe("buildWorkshopDocumentTimestampsMap", () => {
+  it("extrae fechas de campos con stamp antes de normalizar editor", async () => {
+    const { buildWorkshopDocumentTimestampsMap } = await import(
+      "./workshop-document-content.util.js"
+    );
+    const body = "# MDD\n\nContenido.";
+    const stamped = STAMP + body;
+    const map = buildWorkshopDocumentTimestampsMap(
+      { mddContent: stamped, dbgaContent: stamped, stages: [] },
+      null,
+    );
+    assert.ok(map.mddContent?.created.includes("10:30:45"));
+    assert.ok(map.dbgaContent?.updated.includes("14:45:30"));
+  });
+});

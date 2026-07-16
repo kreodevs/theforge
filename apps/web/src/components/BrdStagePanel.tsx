@@ -1,4 +1,6 @@
 import MddViewer from "./MddViewer";
+import { WorkshopDocumentStampBar } from "./WorkshopDocumentStampBar";
+import type { WorkshopDocumentTimestamps } from "@/utils/workshop-document-content.util";
 
 export interface BrdStagePanelProps {
   projectId: string;
@@ -6,6 +8,7 @@ export interface BrdStagePanelProps {
   brdContent: string;
   onBrdContentChange: (value: string) => void;
   docViewMode?: "preview" | "source";
+  documentTimestamps?: WorkshopDocumentTimestamps | null;
 }
 
 /**
@@ -16,6 +19,7 @@ export function BrdStagePanel({
   brdContent,
   onBrdContentChange,
   docViewMode,
+  documentTimestamps,
 }: BrdStagePanelProps) {
   if (!activeStageId) {
     return (
@@ -29,6 +33,7 @@ export function BrdStagePanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <WorkshopDocumentStampBar timestamps={documentTimestamps} />
       {showPreview ? (
         <div className="min-h-0 flex-1 overflow-auto text-[var(--foreground)]">
           <MddViewer content={brdContent} />

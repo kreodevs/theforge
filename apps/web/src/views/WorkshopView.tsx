@@ -91,6 +91,7 @@ import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import { AIProviderBanner } from "../components/AIProviderBanner";
 import { ModelsUnavailableDialog } from "../components/ModelsUnavailableDialog";
 import MddViewer from "../components/MddViewer";
+import { WorkshopDocumentStampBar } from "../components/WorkshopDocumentStampBar";
 import {
   MddPatternsWizardDialog,
   type MddPatternsWizardMode,
@@ -600,6 +601,12 @@ export default function WorkshopView({
   const consistencyScore = useWorkshopStore((s) => s.consistencyScore);
   const documentCompleteness = useWorkshopStore((s) => s.documentCompleteness);
   const crossDocumentGaps = useWorkshopStore((s) => s.crossDocumentGaps);
+
+  const documentTimestamps = useWorkshopStore((s) => s.documentTimestamps);
+  const docTs = useCallback(
+    (field: string) => documentTimestamps[field] ?? null,
+    [documentTimestamps],
+  );
 
   const auditTrailRaw = useWorkshopStore((s) => s.auditTrail);
   const auditTrail = useMemo(() => auditTrailRaw || [], [auditTrailRaw]);
@@ -3796,6 +3803,7 @@ export default function WorkshopView({
                     <div className="flex-1 overflow-auto min-h-0 flex flex-col">
                       {mddInicialViewMode === "preview" ? (
                         <div className="rounded border border-[var(--border)] bg-[color-mix(in_oklch,var(--background)_78%,var(--card))] p-4">
+                          <WorkshopDocumentStampBar timestamps={docTs("codebaseDoc")} />
                           <MddViewer content={mddInicialLocalContent || activeLegacyState?.codebaseDoc || ""} />
                         </div>
                       ) : (
@@ -4278,10 +4286,13 @@ export default function WorkshopView({
                         <div className="flex-1 flex flex-col min-h-0">
                           {benchmarkViewMode === "preview" && fase0Content != null && fase0Content !== "" ? (
                             <div className="flex-1 min-h-[200px] overflow-auto">
+                              <WorkshopDocumentStampBar timestamps={docTs("dbgaContent")} />
                               <MddViewer content={fase0Content} />
                             </div>
                           ) : (
-                            <WorkshopDocTextarea
+                            <>
+                              <WorkshopDocumentStampBar timestamps={docTs("dbgaContent")} />
+                              <WorkshopDocTextarea
                               value={fase0Content ?? ""}
                               onChange={(v) => setDbgaContent(v)}
                               onBlur={handleBenchmarkBlur}
@@ -4289,6 +4300,7 @@ export default function WorkshopView({
                               className="flex-1 min-h-[200px] w-full bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
                               spellCheck={false}
                             />
+                            </>
                           )}
                         </div>
                       </div>
@@ -4392,6 +4404,7 @@ export default function WorkshopView({
                             benchmarkMarkdown != null &&
                             benchmarkMarkdown !== "" ? (
                               <div className="flex-1 min-h-[200px] overflow-auto">
+                                <WorkshopDocumentStampBar timestamps={docTs("dbgaContent")} />
                                 <MddViewer content={benchmarkMarkdown} />
                               </div>
                             ) : (
@@ -4637,6 +4650,7 @@ export default function WorkshopView({
                     savingLabel={mddPersisting ? "Guardando MDD…" : "Grabando y revisando…"}
                   />
                 )}
+                <WorkshopDocumentStampBar timestamps={docTs("mddContent")} />
                 {mddViewMode === "preview" ? (
                   <MddViewer content={mddContent || ""} />
                 ) : (
@@ -4665,6 +4679,7 @@ export default function WorkshopView({
                 isLoading={loading}
                 placeholder="# Arquitectura del sistema\n\nMódulos, datos, APIs y flujos del producto (según MDD y codebase)..."
                 onBlur={handleArchitectureBlur}
+                documentTimestamps={docTs("architectureContent")}
               />
             )}
             {centralPanel === "use-cases" && (
@@ -4682,6 +4697,7 @@ export default function WorkshopView({
                 isLoading={loading}
                 placeholder="# Casos de Uso\n\nDescribe los escenarios de interacción y flujos transaccionales..."
                 onBlur={handleUseCasesBlur}
+                documentTimestamps={docTs("useCasesContent")}
               />
             )}
             {centralPanel === "user-stories" && (
@@ -4699,6 +4715,7 @@ export default function WorkshopView({
                 isLoading={loading}
                 placeholder="# Historias de Usuario\n\nDefine los requisitos en formato Agile (Como... quiero... para...)..."
                 onBlur={handleUserStoriesBlur}
+                documentTimestamps={docTs("userStoriesContent")}
               />
             )}
             {centralPanel === "ux-ui-guide" && (
@@ -4727,6 +4744,7 @@ export default function WorkshopView({
                 }}
                 placeholder="# Design System\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
                 onBlur={handleUxUiGuideBlur}
+                documentTimestamps={docTs("uxUiGuideContent")}
               />
               </ErrorBoundary>
             )}
@@ -4779,6 +4797,7 @@ export default function WorkshopView({
                 onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "spec", activeStageId ?? undefined) : undefined}
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
                 readOnly={deliverablesReadOnly}
+                documentTimestamps={docTs("specContent")}
               />
               </>
             )}
@@ -4800,6 +4819,7 @@ export default function WorkshopView({
                 onBlur={handleAemBlur}
                 generateBlocked={!canGenerateAem}
                 generateBlockedReason="Completa al menos Benchmark (Deep Research), Fase 0 (DBGA) o BRD antes de generar."
+                documentTimestamps={docTs("aemContent")}
               />
             )}
             {centralPanel === "ui-screens" && (
@@ -4841,6 +4861,7 @@ export default function WorkshopView({
                   isLoading={loading}
                   generateLabel="Sincronizar Pantallas"
                   placeholder="# Pantallas\n\nPulsa «Sincronizar Pantallas» para generarlo desde el MCP gráfico conectado."
+                  documentTimestamps={docTs("uiScreensContent")}
                 />
               </div>
             )}
@@ -4884,6 +4905,7 @@ export default function WorkshopView({
                   brdContent={brdWorkshopDraft}
                   onBrdContentChange={setBrdWorkshopDraft}
                   docViewMode={brdDocViewMode}
+                  documentTimestamps={docTs("brdContent")}
                 />
               </div>
             )}
@@ -4907,6 +4929,7 @@ export default function WorkshopView({
                 onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "blueprint", activeStageId ?? undefined) : undefined}
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
                 readOnly={deliverablesReadOnly}
+                documentTimestamps={docTs("blueprintContent")}
               />
             )}
             {centralPanel === "tasks" && (
@@ -4928,6 +4951,7 @@ export default function WorkshopView({
                 legacyGenerateLabel={canGenerateFromCodebase ? "Generar Tasks desde MDD Inicial" : undefined}
                 onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "tasks", activeStageId ?? undefined) : undefined}
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
+                documentTimestamps={docTs("tasksContent")}
               />
             )}
             {centralPanel === "agent-governance" && (
@@ -4985,6 +5009,7 @@ export default function WorkshopView({
                 onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "api-contracts", activeStageId ?? undefined) : undefined}
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
                 readOnly={deliverablesReadOnly}
+                documentTimestamps={docTs("apiContractsContent")}
               />
             )}
             {centralPanel === "logic-flows" && (
@@ -5003,6 +5028,7 @@ export default function WorkshopView({
                 placeholder="# Casos de Uso y Flujos de Lógica\n\n..."
                 onBlur={handleLogicFlowsBlur}
                 readOnly={deliverablesReadOnly}
+                documentTimestamps={docTs("logicFlowsContent")}
               />
             )}
             {centralPanel === "infra" && (
@@ -5024,6 +5050,7 @@ export default function WorkshopView({
                 onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "infra", activeStageId ?? undefined) : undefined}
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
                 readOnly={deliverablesReadOnly}
+                documentTimestamps={docTs("infraContent")}
               />
             )}
             {centralPanel === "adrs" && (
