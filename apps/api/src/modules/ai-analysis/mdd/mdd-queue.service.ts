@@ -68,6 +68,14 @@ export interface MddJobStatus {
   finishedAt?: number;
 }
 
+export type MddCancelResult = {
+  ok: true;
+  cancelled: boolean;
+  jobIds: string[];
+  /** Job activo en worker: se detendrá cooperativamente entre pasos del grafo. */
+  activeJobCooperative?: boolean;
+};
+
 type InMemoryMddJobRecord = {
   data: MddJobData;
   status: MddJobStatus["status"];
@@ -88,8 +96,12 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly inMemoryPendingByProject = new Map<string, string[]>();
   /** Proyectos cuyo job MDD el usuario pidió cancelar (evita re-encolar tras remove). */
   private readonly cancelledProjects = new Set<string>();
+  /** Evita spam de cancelaciones repetidas (p. ej. doble clic en Detener). */
+  private readonly cancelInFlightUntil = new Map<string, number>();
+  private readonly lastCancelResult = new Map<string, MddCancelResult>();
+  private static readonly CANCEL_DEDUPE_MS = 2_000;
   private readonly MAX_ATTEMPTS = 3;
-  private static readonly CANCELLED_MESSAGE = "Cancelado por el usuario";
+  static readonly CANCELLED_MESSAGE = "Cancelado por el usuario";
   static readonly ORPHAN_RECOVERY_MESSAGE =
     "Recuperado tras reinicio del API (job huérfano)";
 
@@ -110,8 +122,13 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     return !!process.env.REDIS_URL?.trim();
   }
 
+  isProjectCancelled(projectId: string): boolean {
+    return this.cancelledProjects.has(projectId.trim());
+  }
+
   /** True si hay job MDD in-memory o stream SSE activo (no consulta Redis). */
   isProjectBusy(projectId: string): boolean {
+    if (this.cancelledProjects.has(projectId)) return true;
     if (this.generationGuard.isMddStreamActive(projectId)) return true;
     if (this.inMemoryRunningProjects.has(projectId)) return true;
     const pending = this.inMemoryPendingByProject.get(projectId);
@@ -187,6 +204,11 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
       const data = job?.data as MddJobData | undefined;
       if (data?.projectId) {
         this.generationGuard.unregisterMddStream(data.projectId);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg === MddQueueService.CANCELLED_MESSAGE) {
+          this.clearCancelState(data.projectId);
+          this.clearCancelDedupe(data.projectId);
+        }
       }
       this.logger.error(
         `BullMQ MDD job ${job?.id} falló: ${err instanceof Error ? err.message : err}`,
@@ -308,6 +330,10 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
         record.status = "failed";
         record.error = err instanceof Error ? err.message : String(err);
         record.finishedAt = Date.now();
+        if (record.error === MddQueueService.CANCELLED_MESSAGE) {
+          this.clearCancelState(data.projectId);
+          this.clearCancelDedupe(data.projectId);
+        }
       } finally {
         this.inMemoryRunningProjects.delete(data.projectId);
         this.pumpInMemoryQueue(data.projectId);
@@ -317,9 +343,18 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
 
   private assertNotCancelled(projectId: string): void {
     if (this.cancelledProjects.has(projectId)) {
-      this.cancelledProjects.delete(projectId);
       throw new Error(MddQueueService.CANCELLED_MESSAGE);
     }
+  }
+
+  private clearCancelState(projectId: string): void {
+    this.cancelledProjects.delete(projectId.trim());
+  }
+
+  private clearCancelDedupe(projectId: string): void {
+    const trimmed = projectId.trim();
+    this.cancelInFlightUntil.delete(trimmed);
+    this.lastCancelResult.delete(trimmed);
   }
 
   private markInMemoryJobCancelled(_jobId: string, record: InMemoryMddJobRecord): void {
@@ -331,10 +366,20 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Cancela jobs MDD en cola o en curso para un proyecto. Idempotente si ya terminaron.
+   * Jobs activos (locked por el worker) usan cancelación cooperativa vía {@link cancelledProjects}.
    */
-  async cancelProjectJobs(projectId: string): Promise<{ ok: true; cancelled: boolean; jobIds: string[] }> {
+  async cancelProjectJobs(projectId: string): Promise<MddCancelResult> {
     const trimmed = projectId.trim();
     if (!trimmed) return { ok: true, cancelled: false, jobIds: [] };
+
+    const now = Date.now();
+    const inflightUntil = this.cancelInFlightUntil.get(trimmed);
+    if (inflightUntil != null && inflightUntil > now) {
+      const cached = this.lastCancelResult.get(trimmed);
+      if (cached) return cached;
+      return { ok: true, cancelled: true, jobIds: [], activeJobCooperative: true };
+    }
+    this.cancelInFlightUntil.set(trimmed, now + MddQueueService.CANCEL_DEDUPE_MS);
 
     const wasBusy =
       this.generationGuard.isMddStreamActive(trimmed) ||
@@ -346,6 +391,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     this.generationGuard.unregisterMddStream(trimmed);
 
     const cancelledJobIds: string[] = [];
+    let activeJobCooperative = false;
 
     const pending = this.inMemoryPendingByProject.get(trimmed) ?? [];
     for (const jobId of pending) {
@@ -360,44 +406,70 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     for (const [jobId, record] of this.inMemoryJobs) {
       if (record.data.projectId !== trimmed) continue;
       if (record.status === "active") {
-        this.markInMemoryJobCancelled(jobId, record);
+        activeJobCooperative = true;
         cancelledJobIds.push(jobId);
       }
     }
 
     if (this.queue) {
       const states = ["waiting", "delayed", "active"] as const;
+      const seenJobIds = new Set<string>();
       for (const state of states) {
         const jobs = await this.queue.getJobs([state], 0, 100);
         for (const job of jobs) {
           const data = job.data as MddJobData | undefined;
           if (data?.projectId !== trimmed) continue;
           const jobId = String(job.id);
-          if (state === "active") {
-            try {
-              await job.moveToFailed(new Error(MddQueueService.CANCELLED_MESSAGE), "0", true);
-            } catch (err) {
-              this.logger.warn(
-                `No se pudo marcar job MDD activo ${jobId} como fallido: ${err instanceof Error ? err.message : err}`,
-              );
-            }
-          } else {
+          if (seenJobIds.has(jobId)) continue;
+          seenJobIds.add(jobId);
+
+          const actualState = await job.getState();
+          if (actualState === "active") {
+            activeJobCooperative = true;
+            cancelledJobIds.push(jobId);
+            this.logger.log(
+              `Cancelación cooperativa solicitada para job MDD activo ${jobId} (índice cola=${state})`,
+            );
+            continue;
+          }
+          if (
+            actualState === "waiting" ||
+            actualState === "delayed" ||
+            actualState === "waiting-children"
+          ) {
             try {
               await job.remove();
+              cancelledJobIds.push(jobId);
             } catch (err) {
-              this.logger.warn(
-                `No se pudo eliminar job MDD ${jobId} (${state}): ${err instanceof Error ? err.message : err}`,
-              );
+              const msg = err instanceof Error ? err.message : String(err);
+              if (msg.includes("locked")) {
+                activeJobCooperative = true;
+                cancelledJobIds.push(jobId);
+                this.logger.log(
+                  `Job MDD ${jobId} bloqueado (${actualState}); cancelación cooperativa`,
+                );
+              } else {
+                this.logger.warn(
+                  `No se pudo eliminar job MDD ${jobId} (${actualState}): ${msg}`,
+                );
+              }
             }
           }
-          cancelledJobIds.push(jobId);
         }
       }
     }
 
-    this.inMemoryRunningProjects.delete(trimmed);
-
-    return { ok: true, cancelled: wasBusy || cancelledJobIds.length > 0, jobIds: [...new Set(cancelledJobIds)] };
+    const result: MddCancelResult = {
+      ok: true,
+      cancelled: wasBusy || cancelledJobIds.length > 0,
+      jobIds: [...new Set(cancelledJobIds)],
+      ...(activeJobCooperative ? { activeJobCooperative: true } : {}),
+    };
+    this.lastCancelResult.set(trimmed, result);
+    if (!activeJobCooperative) {
+      this.clearCancelState(trimmed);
+    }
+    return result;
   }
 
   private async executeJob(

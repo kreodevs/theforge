@@ -113,6 +113,7 @@ export class MddFlowTraceService {
     correlationId: string,
     step: string,
     work: () => Promise<T>,
+    shouldAbort?: () => void,
   ): Promise<T> {
     let settled = false;
     let result!: T;
@@ -134,6 +135,7 @@ export class MddFlowTraceService {
         sleep(MDD_FLOW_HEARTBEAT_MS).then(() => "tick" as const),
       ]);
       if (winner === "tick" && !settled) {
+        shouldAbort?.();
         this.heartbeat(correlationId, step);
       }
     }

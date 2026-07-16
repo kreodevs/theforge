@@ -63,6 +63,7 @@ function wrapTraced(
   correlationId: string | null | undefined,
   stepName: string,
   nodeFn: AnyNodeFn | ManagerNodeFn,
+  shouldAbort?: () => void,
 ): NodeFn | ManagerNodeFn {
   if (!trace || !correlationId || SILENT_STEPS.has(stepName)) {
     return nodeFn as NodeFn | ManagerNodeFn;
@@ -73,6 +74,7 @@ function wrapTraced(
     try {
       const result = await trace.runWithStepHeartbeats(correlationId, stepName, () =>
         Promise.resolve(nodeFn(state)),
+      shouldAbort,
       );
       trace.stepEnd(correlationId, stepName, {
         durationMs: Date.now() - stepStart,
@@ -96,8 +98,9 @@ function traceNode(
   correlationId: string | null | undefined,
   stepName: string,
   nodeFn: AnyNodeFn,
+  shouldAbort?: () => void,
 ): NodeFn {
-  return wrapTraced(trace, correlationId, stepName, nodeFn) as NodeFn;
+  return wrapTraced(trace, correlationId, stepName, nodeFn, shouldAbort) as NodeFn;
 }
 
 function traceManagerNode(
@@ -105,8 +108,9 @@ function traceManagerNode(
   correlationId: string | null | undefined,
   stepName: string,
   nodeFn: ManagerNodeFn,
+  shouldAbort?: () => void,
 ): ManagerNodeFn {
-  return wrapTraced(trace, correlationId, stepName, nodeFn) as ManagerNodeFn;
+  return wrapTraced(trace, correlationId, stepName, nodeFn, shouldAbort) as ManagerNodeFn;
 }
 
 function wrapCache(
@@ -116,8 +120,9 @@ function wrapCache(
   nodeFn: AnyNodeFn,
   trace?: MddFlowTraceService | null,
   correlationId?: string | null,
+  shouldAbort?: () => void,
 ): NodeFn {
-  const tracedFn = traceNode(trace, correlationId, nodeName, nodeFn);
+  const tracedFn = traceNode(trace, correlationId, nodeName, nodeFn, shouldAbort);
   if (!cache) return tracedFn;
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
     const projectId = state.projectId;
@@ -187,6 +192,8 @@ export type MddGraphCompileOptions = {
   uiMcpFrontendLibraryLabel?: string | null;
   /** Tracing estructurado del flujo MDD (siempre activo en producción). */
   flowTrace?: MddFlowTraceOpts | null;
+  /** Lanzar si el usuario canceló el job (cooperativo entre pasos LLM). */
+  shouldAbort?: () => void;
 };
 
 /**
@@ -208,7 +215,8 @@ export async function createMddGraph(
   const flowTrace = options?.flowTrace ?? null;
   const trace = flowTrace?.service ?? null;
   const correlationId = flowTrace?.correlationId ?? null;
-  const t = (name: string, fn: AnyNodeFn): NodeFn => traceNode(trace, correlationId, name, fn);
+  const shouldAbort = options?.shouldAbort;
+  const t = (name: string, fn: AnyNodeFn): NodeFn => traceNode(trace, correlationId, name, fn, shouldAbort);
 
   const clarifierNode = wrapCache(
     nodeCache,
@@ -217,6 +225,7 @@ export async function createMddGraph(
     createMddClarifierNode(graphLlm),
     trace,
     correlationId,
+    shouldAbort,
   );
   const softwareArchitectNode = wrapCache(
     nodeCache,
@@ -228,6 +237,7 @@ export async function createMddGraph(
     }),
     trace,
     correlationId,
+    shouldAbort,
   );
   const formatterNode = t("formatter", createMddFormatterNode());
   const securityNode = wrapCache(
@@ -237,6 +247,7 @@ export async function createMddGraph(
     wrapSecIntGuard("security", createMddSecurityNode(graphStructuralLlm)),
     trace,
     correlationId,
+    shouldAbort,
   );
   const integrationNode = wrapCache(
     nodeCache,
@@ -245,6 +256,7 @@ export async function createMddGraph(
     wrapSecIntGuard("integration", createMddIntegrationNode(graphStructuralLlm)),
     trace,
     correlationId,
+    shouldAbort,
   );
   const formatSecIntNode = t("format_sec_int", createMddFormatSecIntNode());
   const diagramInjectorNode = t("diagram_injector", createMddDiagramInjectorNode());
@@ -432,7 +444,8 @@ export async function createMddGraphWithManager(
   const flowTrace = compileOptions?.flowTrace ?? null;
   const trace = flowTrace?.service ?? null;
   const correlationId = flowTrace?.correlationId ?? null;
-  const t = (name: string, fn: AnyNodeFn): NodeFn => traceNode(trace, correlationId, name, fn);
+  const shouldAbort = compileOptions?.shouldAbort;
+  const t = (name: string, fn: AnyNodeFn): NodeFn => traceNode(trace, correlationId, name, fn, shouldAbort);
 
   const managerNode = traceManagerNode(
     trace,
@@ -445,6 +458,7 @@ export async function createMddGraphWithManager(
       managerToolDeps ?? null,
       flowTrace,
     ),
+    shouldAbort,
   );
   const clarifierNode = wrapCache(
     nodeCache,
@@ -453,6 +467,7 @@ export async function createMddGraphWithManager(
     createMddClarifierNode(graphLlm),
     trace,
     correlationId,
+    shouldAbort,
   );
   const theForgeForArchitect = compileOptions?.theforge ?? managerToolDeps?.theforge ?? null;
   const softwareArchitectNode = wrapCache(
@@ -465,6 +480,7 @@ export async function createMddGraphWithManager(
     }),
     trace,
     correlationId,
+    shouldAbort,
   );
   const formatterNode = t("formatter", createMddFormatterNode());
   const securityNode = wrapCache(
@@ -474,6 +490,7 @@ export async function createMddGraphWithManager(
     wrapSecIntGuard("security", createMddSecurityNode(graphStructuralLlm)),
     trace,
     correlationId,
+    shouldAbort,
   );
   const integrationNode = wrapCache(
     nodeCache,
@@ -482,6 +499,7 @@ export async function createMddGraphWithManager(
     wrapSecIntGuard("integration", createMddIntegrationNode(graphStructuralLlm)),
     trace,
     correlationId,
+    shouldAbort,
   );
   const formatSecIntNode = t("format_sec_int", createMddFormatSecIntNode());
   const diagramInjectorNode = t("diagram_injector", createMddDiagramInjectorNode());

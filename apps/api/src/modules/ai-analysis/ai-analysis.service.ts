@@ -73,6 +73,7 @@ import {
 import { mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import type { MddJobData, MddJobProgress, MddJobResult } from "./mdd/mdd-queue.service.js";
+import { MddQueueService } from "./mdd/mdd-queue.service.js";
 import { MddFlowTraceService } from "./mdd/mdd-flow-trace.service.js";
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
@@ -88,13 +89,14 @@ async function* runRegenWithHeartbeat<T>(
   work: Promise<T>,
   agent: string,
   label: string,
+  shouldAbort?: () => void,
 ): AsyncGenerator<StreamProgressEvent, T, undefined> {
   yield { type: "progress", agent, message: label };
   const heartbeat = awaitWithNdjsonHeartbeat(work, () => ({
     type: "progress" as const,
     agent,
     message: `${label} (LLM en curso)`,
-  }));
+  }), undefined, shouldAbort);
   while (true) {
     const step = await heartbeat.next();
     if (step.done) return step.value;
@@ -210,9 +212,21 @@ export class AiAnalysisService {
     private readonly uiMcpClient: UiMcpClientService,
     private readonly uiMcp: UiMcpService,
     private readonly flowTrace: MddFlowTraceService,
+    @Inject(forwardRef(() => MddQueueService))
+    private readonly mddQueue: MddQueueService,
     @Optional() createDbgaGraphFn?: typeof createDbgaGraph,
   ) {
     this.createDbgaGraphFn = createDbgaGraphFn ?? createDbgaGraph;
+  }
+
+  private throwIfMddCancelled(projectId?: string): void {
+    const pid = projectId?.trim();
+    if (!pid || !this.mddQueue.isProjectCancelled(pid)) return;
+    throw new Error(MddQueueService.CANCELLED_MESSAGE);
+  }
+
+  private mddAbortCheck(projectId?: string): () => void {
+    return () => this.throwIfMddCancelled(projectId);
   }
 
   /** Resolver de componentes UI memoizado (TTL corto): MCP compatible activo o heurístico. */
@@ -614,6 +628,7 @@ export class AiAnalysisService {
         nodeCache: this.nodeCacheService,
         uiMcpFrontendLibraryLabel,
         flowTrace: { service: this.flowTrace, correlationId },
+        shouldAbort: this.mddAbortCheck(projectId),
       });
     } catch (err) {
       const formatted = formatDbgaStreamError(err);
@@ -654,6 +669,7 @@ export class AiAnalysisService {
       });
 
       for await (const raw of stream) {
+        this.throwIfMddCancelled(projectId);
         const [mode, data] = Array.isArray(raw) ? (raw as [string, unknown]) : ["values", raw];
         if (mode === "updates" && data && typeof data === "object" && !Array.isArray(data)) {
           const dataRecord = data as Record<string, unknown>;
@@ -822,7 +838,7 @@ export class AiAnalysisService {
           theforge: this.theforge,
           ai: this.ai,
         },
-        { theforge: this.theforge, nodeCache: this.nodeCacheService, uiMcpFrontendLibraryLabel, flowTrace: { service: this.flowTrace, correlationId } },
+        { theforge: this.theforge, nodeCache: this.nodeCacheService, uiMcpFrontendLibraryLabel, flowTrace: { service: this.flowTrace, correlationId }, shouldAbort: this.mddAbortCheck(projectId) },
       );
     } catch (err) {
       const formatted = formatDbgaStreamError(err);
@@ -891,6 +907,7 @@ export class AiAnalysisService {
       });
 
       for await (const raw of stream) {
+        this.throwIfMddCancelled(projectId);
         const [mode, data] = Array.isArray(raw) ? (raw as [string, unknown]) : ["values", raw];
         if (mode === "updates" && data && typeof data === "object" && !Array.isArray(data)) {
           const dataRecord = data as Record<string, unknown>;
@@ -1258,6 +1275,7 @@ export class AiAnalysisService {
       );
 
       for await (const raw of stream) {
+        this.throwIfMddCancelled(projectId);
         const [mode, data] = Array.isArray(raw) ? (raw as [string, unknown]) : ["values", raw];
         if (mode === "updates" && data && typeof data === "object" && !Array.isArray(data)) {
           const dataRecord = data as Record<string, unknown>;
@@ -1588,6 +1606,7 @@ export class AiAnalysisService {
           llm.invoke([new HumanMessage(prompt)]),
           "Contexto",
           "Regenerando §1…",
+          this.mddAbortCheck(pid),
         );
         const text = (typeof response.content === "string" ? response.content : "").trim();
         let newBody = (text && extractContextSectionBody(text)) || text || "(Contexto sintetizado desde el documento.)";
@@ -1647,6 +1666,7 @@ export class AiAnalysisService {
           integrationNode(state as MDDStateType),
           getAgentLabel("integration"),
           "Regenerando §7 Infraestructura…",
+          this.mddAbortCheck(pid),
         );
         const finalDraft = (result.mddDraft ?? mddContent).trim();
         const markdown = await this.runPrepareMddForOutput(
@@ -1672,6 +1692,7 @@ export class AiAnalysisService {
           securityNode(state as MDDStateType),
           getAgentLabel("security"),
           "Regenerando §6 Seguridad…",
+          this.mddAbortCheck(pid),
         );
         const finalDraft = (result.mddDraft ?? mddContent).trim();
         const markdown = await this.runPrepareMddForOutput(
@@ -1707,6 +1728,7 @@ export class AiAnalysisService {
           softwareArchitectNode(state as MDDStateType),
           getAgentLabel("software_architect"),
           `Regenerando §${section}…`,
+          this.mddAbortCheck(pid),
         );
         const architectDraft = (result.mddDraft ?? "").trim();
         const content25 = extractSections2To5Content(architectDraft);
@@ -1838,6 +1860,7 @@ export class AiAnalysisService {
     const consume = async (events: AsyncGenerator<MddJobEvent>): Promise<MddJobResult> => {
       let finalMarkdown = "";
       for await (const event of events) {
+        this.throwIfMddCancelled(projectId);
         if (event.type === "progress") {
           onProgress({ agent: event.agent, message: event.message });
         } else if (event.type === "draft" && event.markdown?.trim()) {

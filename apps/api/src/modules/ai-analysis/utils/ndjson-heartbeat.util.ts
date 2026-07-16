@@ -12,6 +12,7 @@ export async function* awaitWithNdjsonHeartbeat<T>(
   work: Promise<T>,
   tick: () => { type: "progress"; agent: string; message: string },
   intervalMs = DEFAULT_HEARTBEAT_MS,
+  shouldAbort?: () => void,
 ): AsyncGenerator<{ type: "progress"; agent: string; message: string }, T, undefined> {
   let settled = false;
   let result!: T;
@@ -33,6 +34,7 @@ export async function* awaitWithNdjsonHeartbeat<T>(
       sleep(intervalMs).then(() => "tick" as const),
     ]);
     if (winner === "tick" && !settled) {
+      shouldAbort?.();
       yield tick();
     }
   }
