@@ -21,10 +21,23 @@ export function resolveDeliverableCascadeStepLabel(apiStep: string): string | nu
 
 export type DeliverableCascadeProgressPayload = {
   step?: string;
+  /** Acumulado de pasos terminados (evita perder eventos entre polls en oleadas paralelas). */
+  completedSteps?: string[];
   index?: number;
   total?: number;
   phase?: string;
 };
+
+/** Pasos completados en el payload de progreso (cola / SSE). */
+export function readDeliverableCascadeCompletedSteps(progress: unknown): string[] {
+  if (!progress || typeof progress !== "object") return [];
+  const payload = progress as DeliverableCascadeProgressPayload;
+  if (Array.isArray(payload.completedSteps) && payload.completedSteps.length > 0) {
+    return payload.completedSteps.filter((s): s is string => typeof s === "string" && s.length > 0);
+  }
+  const step = readDeliverableCascadeProgressStep(progress);
+  return step && step !== "done" ? [step] : [];
+}
 
 /** Normalizes queue job progress (object or missing) into a step string. */
 export function readDeliverableCascadeProgressStep(
@@ -62,6 +75,33 @@ export function applyDeliverableCascadeStepDone(
       : item,
   );
   return { agentProgress: next, cascadeCompleted: completedLabels.size, matched: true };
+}
+
+/**
+ * Aplica todos los pasos completados del job (no solo el último `step`).
+ * En greenfield oleada 3+ varios entregables terminan entre dos polls de 1,2s.
+ */
+export function applyDeliverableCascadeProgressUpdate(
+  agentProgress: readonly AgentProgressItem[],
+  completedLabels: Set<string>,
+  progress: unknown,
+): { agentProgress: AgentProgressItem[]; cascadeCompleted: number; matched: boolean } {
+  const steps = readDeliverableCascadeCompletedSteps(progress);
+  if (steps.length === 0) {
+    return { agentProgress: [...agentProgress], cascadeCompleted: completedLabels.size, matched: false };
+  }
+  let rows = [...agentProgress];
+  let matched = false;
+  for (const apiStep of steps) {
+    const result = applyDeliverableCascadeStepDone(rows, completedLabels, apiStep);
+    rows = result.agentProgress;
+    if (result.matched) matched = true;
+  }
+  const latest = readDeliverableCascadeProgressStep(progress);
+  if (latest && latest !== "done" && !completedLabels.has(resolveDeliverableCascadeStepLabel(latest) ?? "")) {
+    rows = applyDeliverableCascadeStepActive(rows, latest, completedLabels);
+  }
+  return { agentProgress: rows, cascadeCompleted: completedLabels.size, matched };
 }
 
 /** Highlights the step currently running (legacy queue reports label after each wave). */

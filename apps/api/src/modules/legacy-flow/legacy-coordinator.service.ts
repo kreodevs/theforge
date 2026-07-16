@@ -2045,6 +2045,7 @@ export class LegacyCoordinatorService {
     const stepErrors: Array<{ step: string; error: string }> = [];
     let completedCount = 0;
     const totalPlanned = deliverablesPlanned.length;
+    const completedStepsReport: string[] = [];
 
     await Promise.allSettled(
       deliverablesPlanned.map(async (kind) => {
@@ -2084,11 +2085,22 @@ export class LegacyCoordinatorService {
         }
         completedCount++;
         const label = DELIVERABLE_STEP_LABELS[kind] ?? kind;
-        options?.onProgress?.({ step: label, index: completedCount - 1, total: totalPlanned });
+        completedStepsReport.push(label);
+        options?.onProgress?.({
+          step: label,
+          completedSteps: [...completedStepsReport],
+          index: completedCount - 1,
+          total: totalPlanned,
+        });
       }),
     );
 
-    options?.onProgress?.({ step: "done", index: totalPlanned, total: totalPlanned });
+    options?.onProgress?.({
+      step: "done",
+      completedSteps: [...completedStepsReport],
+      index: totalPlanned,
+      total: totalPlanned,
+    });
 
     p = await load();
 

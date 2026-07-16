@@ -46,8 +46,7 @@ import { appendMddTraceSection } from "../utils/appendMddTraceSection";
 import { isWorkshopAgentsBusy } from "../utils/workshopAgentsBusy";
 import { shouldPreserveWorkshopBusyState } from "../utils/workshopBusyRefresh";
 import {
-  applyDeliverableCascadeStepActive,
-  applyDeliverableCascadeStepDone,
+  applyDeliverableCascadeProgressUpdate,
   readDeliverableCascadeProgressStep,
 } from "../utils/deliverableCascadeProgress";
 import {
@@ -3308,27 +3307,23 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             throw new Error(j.error ?? "Cascada de entregables fallida");
           }
           if (j.status === "completed") break;
-          const apiStep = readDeliverableCascadeProgressStep(j.progress);
-          if (apiStep && apiStep !== "done") {
-            const doneUpdate = applyDeliverableCascadeStepDone(
+          if (j.progress != null) {
+            const progressUpdate = applyDeliverableCascadeProgressUpdate(
               get().agentProgress,
               completedSteps,
-              apiStep,
+              j.progress,
             );
-            if (doneUpdate.matched) {
+            if (progressUpdate.matched) {
               set({
-                agentProgress: doneUpdate.agentProgress,
-                cascadeCompleted: doneUpdate.cascadeCompleted,
+                agentProgress: progressUpdate.agentProgress,
+                cascadeCompleted: progressUpdate.cascadeCompleted,
               });
-            } else if (apiStep !== lastReportedStep) {
-              lastReportedStep = apiStep;
-              set({
-                agentProgress: applyDeliverableCascadeStepActive(
-                  get().agentProgress,
-                  apiStep,
-                  completedSteps,
-                ),
-              });
+            } else {
+              const apiStep = readDeliverableCascadeProgressStep(j.progress);
+              if (apiStep && apiStep !== "done" && apiStep !== lastReportedStep) {
+                lastReportedStep = apiStep;
+                set({ agentProgress: progressUpdate.agentProgress });
+              }
             }
           }
         }
@@ -4179,26 +4174,20 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           return true;
         }
         const apiStep = readDeliverableCascadeProgressStep(j.progress);
-        if (apiStep && apiStep !== "done") {
-          const doneUpdate = applyDeliverableCascadeStepDone(
+        if (j.progress != null && (apiStep !== "done" || (j.progress as { completedSteps?: string[] }).completedSteps?.length)) {
+          const progressUpdate = applyDeliverableCascadeProgressUpdate(
             get().agentProgress,
             completedSteps,
-            apiStep,
+            j.progress,
           );
-          if (doneUpdate.matched) {
+          if (progressUpdate.matched) {
             set({
-              agentProgress: doneUpdate.agentProgress,
-              cascadeCompleted: doneUpdate.cascadeCompleted,
+              agentProgress: progressUpdate.agentProgress,
+              cascadeCompleted: progressUpdate.cascadeCompleted,
             });
-          } else if (apiStep !== lastReportedStep) {
+          } else if (apiStep && apiStep !== "done" && apiStep !== lastReportedStep) {
             lastReportedStep = apiStep;
-            set({
-              agentProgress: applyDeliverableCascadeStepActive(
-                get().agentProgress,
-                apiStep,
-                completedSteps,
-              ),
-            });
+            set({ agentProgress: progressUpdate.agentProgress });
           }
         }
       }

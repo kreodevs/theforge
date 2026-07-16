@@ -2238,7 +2238,12 @@ name: ${JSON.stringify(name)}
    */
   async generateDeliverablesCascade(
     projectId: string,
-    onProgress?: (p: { step: DeliverableKind; index: number; total: number }) => void,
+    onProgress?: (p: {
+      step: string;
+      completedSteps: string[];
+      index: number;
+      total: number;
+    }) => void,
     options?: { acknowledgeGaps?: boolean },
   ) {
     await this.assertDeliverablesAllowed(projectId, options);
@@ -2263,9 +2268,13 @@ name: ${JSON.stringify(name)}
     const errors: { step: string; error: string }[] = [];
 
     let completedCount = 0;
+    const completedSteps: string[] = [];
     const reportProgress = (step: DeliverableWaveStep) => {
+      const progressKey = step === "ui_screens_sync" ? "ui_screens_sync" : step;
+      completedSteps.push(progressKey);
       onProgress?.({
-        step: (step === "ui_screens_sync" ? "ux_ui_guide" : step) as DeliverableKind,
+        step: progressKey,
+        completedSteps: [...completedSteps],
         index: completedCount,
         total,
       });
@@ -2305,7 +2314,7 @@ name: ${JSON.stringify(name)}
       ),
     );
 
-    onProgress?.({ step: "done" as DeliverableKind, index: total - 1, total });
+    onProgress?.({ step: "done", completedSteps: [...completedSteps], index: total - 1, total });
     if (errors.length > 0) {
       this.logger.warn(
         `[Cascade] Completada con ${errors.length}/${total} paso(s) saltado(s): ${errors.map((e) => `${e.step}: ${e.error}`).join("; ")}`,

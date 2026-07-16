@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyDeliverableCascadeProgressUpdate,
   applyDeliverableCascadeStepDone,
   readDeliverableCascadeProgressStep,
   resolveDeliverableCascadeStepLabel,
@@ -36,5 +37,22 @@ describe("deliverableCascadeProgress", () => {
     assert.equal(spec.matched, true);
     assert.equal(spec.agentProgress[1]?.status, "terminado");
     assert.match(spec.agentProgress[1]?.message ?? "", /✅ Spec — Terminado/);
+  });
+
+  it("applyDeliverableCascadeProgressUpdate marks all completedSteps from one poll", () => {
+    const rows: AgentProgressItem[] = [
+      { agent: "Entregables", message: "⚪ Blueprint — Generando…", step: "Blueprint", status: "generando" },
+      { agent: "Entregables", message: "⚪ Contratos API — Generando…", step: "Contratos API", status: "generando" },
+      { agent: "Entregables", message: "⚪ Tareas — Generando…", step: "Tareas", status: "generando" },
+    ];
+    const completed = new Set<string>();
+    const out = applyDeliverableCascadeProgressUpdate(rows, completed, {
+      step: "tasks",
+      completedSteps: ["blueprint", "api_contracts", "tasks"],
+    });
+    assert.equal(out.cascadeCompleted, 3);
+    assert.equal(out.agentProgress[0]?.status, "terminado");
+    assert.equal(out.agentProgress[1]?.status, "terminado");
+    assert.equal(out.agentProgress[2]?.status, "terminado");
   });
 });
