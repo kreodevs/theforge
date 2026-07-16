@@ -9,6 +9,7 @@ import {
   type TasksPipelineQualitySnapshot,
 } from "@theforge/shared-types";
 import type { DomainInventory } from "@theforge/shared-types";
+import type { z } from "zod";
 import { resolveLlmMaxTokensForPurpose } from "../ai/config/llm-config.js";
 import { AiService, type LegacyGenerateOptions } from "../ai/ai.service.js";
 import {
@@ -188,12 +189,13 @@ export class TasksGenerationPipelineService {
   }
 
   private async runPlanner(context: string): Promise<TasksGenerationPlan> {
-    const raw = await this.ai.generateAuditorResponse(context, [], {
+    const parsed = await this.callAuditorJson({
+      step: "planner",
+      prompt: context,
       systemPrompt: TASKS_PLANNER_PROMPT,
-      maxTokensOverride: resolveLlmMaxTokensForPurpose("auditor"),
+      schema: tasksGenerationPlanSchema,
+      maxTokensPurpose: "tasksPlanner",
     });
-    const jsonText = extractFirstJsonObject(raw) ?? raw.trim();
-    const parsed = parseJsonOrThrow(jsonText, tasksGenerationPlanSchema);
     return {
       sections: parsed.sections ?? [],
       items: parsed.items.map((item) => ({
@@ -219,12 +221,13 @@ export class TasksGenerationPipelineService {
       "tasks.md:\n---\n" +
       tasksMarkdown.trim().slice(0, 20_000) +
       "\n---";
-    const raw = await this.ai.generateAuditorResponse(prompt, [], {
+    const parsed = await this.callAuditorJson({
+      step: "auditor",
+      prompt,
       systemPrompt: TASKS_AUDITOR_LLM_PROMPT,
-      maxTokensOverride: resolveLlmMaxTokensForPurpose("auditor"),
+      schema: tasksLlmAuditorOutputSchema,
+      maxTokensPurpose: "auditor",
     });
-    const jsonText = extractFirstJsonObject(raw) ?? raw.trim();
-    const parsed = parseJsonOrThrow(jsonText, tasksLlmAuditorOutputSchema);
     const normalized: TasksLlmAuditorOutput = {
       score: parsed.score,
       passed: parsed.passed,
@@ -241,6 +244,58 @@ export class TasksGenerationPipelineService {
       normalized.conflicts.length === 0 &&
       normalized.dependency_issues.length === 0;
     return { ...normalized, passed };
+  }
+
+  /**
+   * LLM auditor/planner con reintento si el modelo no devuelve JSON parseable.
+   */
+  private async callAuditorJson<T>(params: {
+    step: "planner" | "auditor";
+    prompt: string;
+    systemPrompt: string;
+    schema: z.ZodType<T>;
+    maxTokensPurpose: "tasksPlanner" | "auditor";
+  }): Promise<T> {
+    const maxTokens = resolveLlmMaxTokensForPurpose(params.maxTokensPurpose);
+    const retrySuffix =
+      "\n\nIMPORTANTE: Responde ÚNICAMENTE con un objeto JSON válido (JSON.parse). " +
+      "Sin markdown, sin fences ```, sin texto antes ni después.";
+    const prompts = [params.prompt, params.prompt + retrySuffix];
+    let lastRaw = "";
+
+    for (let attempt = 0; attempt < prompts.length; attempt++) {
+      lastRaw = await this.ai.generateAuditorResponse(prompts[attempt]!, [], {
+        systemPrompt: params.systemPrompt,
+        maxTokensOverride: maxTokens,
+      });
+      try {
+        const jsonText = extractFirstJsonObject(lastRaw) ?? lastRaw.trim();
+        return parseJsonOrThrow(jsonText, params.schema);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        if (attempt < prompts.length - 1) {
+          this.logger.warn(
+            `[Tasks pipeline] ${params.step} JSON parse failed (attempt ${attempt + 1}): ${detail}`,
+          );
+          continue;
+        }
+        throw new BadRequestException({
+          code:
+            params.step === "planner"
+              ? "TASKS_PLANNER_JSON_FAILED"
+              : "TASKS_AUDITOR_JSON_FAILED",
+          message:
+            `Tasks ${params.step === "planner" ? "Planner" : "Auditor LLM"}: ` +
+            `el modelo no devolvió JSON válido (${detail}). Reintenta; si persiste, reduce complejidad upstream o cambia auditorChatModel.`,
+          preview: lastRaw.trim().slice(0, 600),
+        });
+      }
+    }
+
+    throw new BadRequestException({
+      code: "TASKS_PLANNER_JSON_FAILED",
+      message: "Tasks pipeline: fallo inesperado al parsear JSON.",
+    });
   }
 
   private async runRepair(

@@ -28,6 +28,8 @@ export const LLM_OUTPUT_TOKEN_PROFILES = {
   langgraph: 16_384,
   /** Auditor MDD / cross-consistency. */
   auditor: 8_192,
+  /** Tasks Planner JSON (plan grande en proyectos HIGH). */
+  tasksPlanner: 32_768,
   /** parseChecklist y salidas JSON cortas. */
   checklist: 4_096,
 } as const;
