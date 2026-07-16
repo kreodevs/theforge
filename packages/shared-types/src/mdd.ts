@@ -34,3 +34,21 @@ export interface MddDeliveryGateResult {
   blockers: string[];
   warnings: string[];
 }
+
+/** Gap estructurado del Quality Gate lean (enrutamiento Manager → generador por sección). */
+export interface MddQualityGateGap {
+  section: string;
+  issue: string;
+  fix: string;
+}
+
+/**
+ * Resultado del Quality Gate lean del pipeline MDD.
+ * `ok === true` cuando `blockers.length === 0` (sin umbrales 85/90).
+ */
+export interface MddQualityGateResult {
+  ok: boolean;
+  blockers: string[];
+  warnings: string[];
+  gaps: MddQualityGateGap[];
+}
