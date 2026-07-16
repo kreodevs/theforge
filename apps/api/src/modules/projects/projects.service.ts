@@ -2698,7 +2698,7 @@ name: ${JSON.stringify(name)}
   async persistMddFromBackgroundJob(
     projectId: string,
     rawMarkdown: string,
-    options?: { stageId?: string; finalize?: boolean },
+    options?: { stageId?: string; finalize?: boolean; qualityGatePassed?: boolean },
   ): Promise<void> {
     const existing = await this.assertProjectAccess(projectId);
     const existingRaw = existing as Project & { stages: StageWithEst[] };
@@ -2731,13 +2731,14 @@ name: ${JSON.stringify(name)}
     };
     const prePersistQualityGate = evaluateMddQualityGate(mddForPipeline, domainGateOpts);
     void this.persistMddQualityGateSnapshot(targetStage.id, prePersistQualityGate);
+    const trustGraphQualityGate = options?.qualityGatePassed === true;
     const result = await this.mddUpdatePipeline.process(
       mddForPipeline,
       this.buildSemaphoreBase(mergedForSemaphore),
       { projectId, stageId: targetStage.id },
       {
         ...domainGateOpts,
-        qualityGatePassed: prePersistQualityGate.ok,
+        qualityGatePassed: trustGraphQualityGate || prePersistQualityGate.ok,
       },
     );
     if (!result.ok) {

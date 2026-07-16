@@ -73,10 +73,16 @@ import {
 import { mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import type { MddJobData, MddJobProgress, MddJobResult } from "./mdd/mdd-queue.service.js";
+import { MddFlowTraceService } from "./mdd/mdd-flow-trace.service.js";
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
 
 const LANGGRAPH_RECURSION_LIMIT = resolveLangGraphRecursionLimit();
+
+/** Optional correlation id when MDD tracing is owned by a parent (e.g. background job). */
+export type MddTraceRunOptions = {
+  correlationId?: string;
+};
 
 async function* runRegenWithHeartbeat<T>(
   work: Promise<T>,
@@ -108,6 +114,8 @@ export type StreamProgressEvent =
     precision?: number;
     status?: "red" | "yellow" | "green";
     deliveryGate?: MddDeliveryGateResult;
+    /** Snapshot del Quality Gate lean del grafo; persist final confía en esto si ok=true. */
+    qualityGatePassed?: boolean;
     auditorFeedback?: string;
     precisionBreakdown?: PrecisionBreakdown;
     auditTrail?: string[];
@@ -201,6 +209,7 @@ export class AiAnalysisService {
     private readonly aiFactory: AIFactory,
     private readonly uiMcpClient: UiMcpClientService,
     private readonly uiMcp: UiMcpService,
+    private readonly flowTrace: MddFlowTraceService,
     @Optional() createDbgaGraphFn?: typeof createDbgaGraph,
   ) {
     this.createDbgaGraphFn = createDbgaGraphFn ?? createDbgaGraph;
@@ -242,14 +251,34 @@ export class AiAnalysisService {
    */
   private async runPrepareMddForOutput(
     input: Parameters<typeof prepareMddForOutputCore>[0],
-    options?: PrepareMddForOutputOptions,
+    options?: PrepareMddForOutputOptions & { correlationId?: string },
   ): Promise<string> {
-    const resolver = options?.resolver ?? (await this.getUiResolver());
-    const uiMcpLibraryLabel =
-      options?.uiMcpLibraryLabel !== undefined
-        ? options.uiMcpLibraryLabel
-        : await this.getUiMcpLibraryLabel();
-    return prepareMddForOutputCore(input, { ...options, resolver, uiMcpLibraryLabel });
+    const { correlationId, ...prepareOptions } = options ?? {};
+    if (correlationId) this.flowTrace.prepareStart(correlationId);
+    const start = Date.now();
+    try {
+      const resolver = prepareOptions?.resolver ?? (await this.getUiResolver());
+      const uiMcpLibraryLabel =
+        prepareOptions?.uiMcpLibraryLabel !== undefined
+          ? prepareOptions.uiMcpLibraryLabel
+          : await this.getUiMcpLibraryLabel();
+      const result = await prepareMddForOutputCore(input, { ...prepareOptions, resolver, uiMcpLibraryLabel });
+      if (correlationId) {
+        this.flowTrace.prepareEnd(correlationId, {
+          durationMs: Date.now() - start,
+          markdownLen: result.length,
+        });
+      }
+      return result;
+    } catch (err) {
+      if (correlationId) {
+        this.flowTrace.prepareEnd(correlationId, {
+          durationMs: Date.now() - start,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      throw err;
+    }
   }
 
   private async resolveUserId(projectId?: string): Promise<string> {
@@ -538,7 +567,14 @@ export class AiAnalysisService {
     dbgaContent: string,
     projectId?: string,
     stageId?: string | null,
+    traceRun?: MddTraceRunOptions,
   ): AsyncGenerator<StreamProgressEvent> {
+    const correlationId = traceRun?.correlationId ?? randomUUID();
+    const ownsJobLifecycle = !traceRun?.correlationId;
+    if (ownsJobLifecycle) {
+      this.flowTrace.jobStart(correlationId, { projectId, stageId, mode: "pipeline" });
+    }
+    let jobOk = false;
     let estimationStage: string | undefined;
     let brdContent: string | null = null;
     let preservedGovernance: string | null = null;
@@ -568,6 +604,7 @@ export class AiAnalysisService {
       }
     }
     const { opts: prepareOpts, gateRef: prepareGateRef } = createPrepareOptsWithGate({ preservedGovernance });
+    const prepareOptsWithTrace = { ...prepareOpts, correlationId };
     const uiMcpFrontendLibraryLabel = await this.getUiMcpLibraryLabel();
     let graph: Awaited<ReturnType<typeof createMddGraph>>;
     try {
@@ -576,9 +613,13 @@ export class AiAnalysisService {
         theforge: this.theforge,
         nodeCache: this.nodeCacheService,
         uiMcpFrontendLibraryLabel,
+        flowTrace: { service: this.flowTrace, correlationId },
       });
     } catch (err) {
       const formatted = formatDbgaStreamError(err);
+      if (ownsJobLifecycle) {
+        this.flowTrace.jobEnd(correlationId, { ok: false, error: formatted.message });
+      }
       yield { type: "error", message: formatted.message, code: formatted.code };
       return;
     }
@@ -642,7 +683,7 @@ export class AiAnalysisService {
             }
             const prepared = await this.runPrepareMddForOutput(
               { mddStructured: lastState.mddStructured, mddDraft: draft },
-              prepareOpts,
+              prepareOptsWithTrace,
             );
             if (prepared.length > 80) {
               yield {
@@ -661,7 +702,7 @@ export class AiAnalysisService {
           mddStructured: lastState.mddStructured,
           mddDraft: raw || lastState.mddDraft,
         },
-        prepareOpts,
+        prepareOptsWithTrace,
       );
       const mddDraftRaw = (lastState.mddDraft ?? "").trim();
       this.logger.log(`[MDD:PersistCheck] mddDraft len=${mddDraftRaw.length} first200=${JSON.stringify(mddDraftRaw.slice(0, 200))}`);
@@ -677,12 +718,14 @@ export class AiAnalysisService {
         auditorGaps: lastState.auditorGaps ?? undefined,
       });
       const gateFields = mddStreamDeliveryGateFields(prepareGateRef.current, metrics.status);
+      jobOk = true;
       yield {
         type: "done",
         markdown,
         precision: metrics.precision,
         status: gateFields.status,
         deliveryGate: gateFields.deliveryGate,
+        qualityGatePassed: lastState.qualityGate?.ok === true,
         auditorFeedback: lastState.auditorFeedback?.trim() || undefined,
         precisionBreakdown,
         auditTrail,
@@ -690,7 +733,14 @@ export class AiAnalysisService {
     } catch (err) {
       if (projectId?.trim()) this.estimationService.clearLiveDraft(projectId.trim(), estimationStage);
       const formatted = formatDbgaStreamError(err);
+      if (ownsJobLifecycle) {
+        this.flowTrace.jobEnd(correlationId, { ok: false, error: formatted.message });
+      }
       yield { type: "error", message: formatted.message, code: formatted.code };
+    } finally {
+      if (ownsJobLifecycle && jobOk) {
+        this.flowTrace.jobEnd(correlationId, { ok: true });
+      }
     }
   }
 
@@ -706,7 +756,11 @@ export class AiAnalysisService {
     initialMddDraft?: string,
     stageIdFromClient?: string | null,
     imageAttachments?: ChatImagePart[],
+    traceRun?: MddTraceRunOptions,
   ): AsyncGenerator<StreamMddManagerEvent> {
+    const correlationId = traceRun?.correlationId ?? randomUUID();
+    const ownsJobLifecycle = !traceRun?.correlationId;
+    let jobOk = false;
     this.logger.log(`[MDD stream/manager] start projectId=${projectId} initialMessage=${initialMessage ? "(presente)" : "(vacío)"} mddDraftLen=${(initialMddDraft ?? "").length}`);
 
     const checkpointer = await this.checkpointerService.getCheckpointer();
@@ -723,6 +777,9 @@ export class AiAnalysisService {
     if (!projRow) {
       yield { type: "error", message: "Proyecto no encontrado." };
       return;
+    }
+    if (ownsJobLifecycle) {
+      this.flowTrace.jobStart(correlationId, { projectId, mode: "manager", stageId: stageIdFromClient });
     }
     const route = await this.agentSupervisor.resolveRouteFromProject(projRow, stageIdFromClient);
     const mddStageKey = route.stageId;
@@ -765,11 +822,14 @@ export class AiAnalysisService {
           theforge: this.theforge,
           ai: this.ai,
         },
-        { theforge: this.theforge, nodeCache: this.nodeCacheService, uiMcpFrontendLibraryLabel },
+        { theforge: this.theforge, nodeCache: this.nodeCacheService, uiMcpFrontendLibraryLabel, flowTrace: { service: this.flowTrace, correlationId } },
       );
     } catch (err) {
       const formatted = formatDbgaStreamError(err);
       this.logger.error(`[MDD stream/manager] setup error: ${formatted.message}`, err instanceof Error ? err.stack : String(err));
+      if (ownsJobLifecycle) {
+        this.flowTrace.jobEnd(correlationId, { ok: false, error: formatted.message });
+      }
       yield { type: "error", message: formatted.message, code: formatted.code };
       return;
     }
@@ -778,6 +838,7 @@ export class AiAnalysisService {
     const { opts: managerPrepareOpts, gateRef: managerGateRef } = createPrepareOptsWithGate({
       preservedGovernance: extractGovernanceSection(existingMdd),
     });
+    const managerPrepareOptsWithTrace = { ...managerPrepareOpts, correlationId };
     const rawInitial = (initialMessage ?? "").trim();
     const looksLikeMddDocument =
       rawInitial.length > 500 &&
@@ -864,10 +925,10 @@ export class AiAnalysisService {
                 mddStructured: lastState?.mddStructured,
                 mddDraft: (lastState?.mddDraft ?? "").trim(),
               },
-              managerPrepareOpts,
+              managerPrepareOptsWithTrace,
             );
             if (draftOnInterrupt.length < 200 && existingMdd.length >= 200) {
-              draftOnInterrupt = await this.runPrepareMddForOutput(existingMdd, managerPrepareOpts);
+              draftOnInterrupt = await this.runPrepareMddForOutput(existingMdd, managerPrepareOptsWithTrace);
             }
             const estOpts = estimationOpts(projectId, estimationStageId, lastState);
             const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOpts);
@@ -882,6 +943,9 @@ export class AiAnalysisService {
             });
             const gateFields = mddStreamDeliveryGateFields(managerGateRef.current, metrics.status);
             this.logger.log(`[MDD stream/manager] interrupt (from stream) reply=${reply ? "(presente)" : "(no)"} questions=${questions?.length ?? 0} plan=${plan?.length ?? 0} markdownLen=${draftOnInterrupt.length}`);
+            if (ownsJobLifecycle) {
+              this.flowTrace.jobEnd(correlationId, { ok: true, outcome: "interrupt" });
+            }
             yield {
               type: "interrupt",
               threadId,
@@ -924,7 +988,7 @@ export class AiAnalysisService {
                 mddStructured: lastState?.mddStructured,
                 mddDraft: draft,
               },
-              managerPrepareOpts,
+              managerPrepareOptsWithTrace,
             );
             if (prepared.length > 80) {
               yield {
@@ -950,7 +1014,7 @@ export class AiAnalysisService {
           mddStructured: lastState?.mddStructured,
           mddDraft: rawMarkdown,
         },
-        managerPrepareOpts,
+        managerPrepareOptsWithTrace,
       );
       logSection3Debug("final (stream/manager done)", markdown);
       
@@ -968,12 +1032,14 @@ export class AiAnalysisService {
         auditorGaps: lastState?.auditorGaps ?? undefined,
       });
       const managerDoneGate = mddStreamDeliveryGateFields(managerGateRef.current, metrics.status);
+      jobOk = true;
       yield {
         type: "done",
         markdown,
         precision: metrics.precision,
         status: managerDoneGate.status,
         deliveryGate: managerDoneGate.deliveryGate,
+        qualityGatePassed: lastState?.qualityGate?.ok === true,
         auditorFeedback: lastState?.auditorFeedback?.trim() || undefined,
         precisionBreakdown,
         auditTrail,
@@ -1002,10 +1068,10 @@ export class AiAnalysisService {
             mddStructured: lastState?.mddStructured,
             mddDraft: (lastState?.mddDraft ?? "").trim(),
           },
-          managerPrepareOpts,
+          managerPrepareOptsWithTrace,
         );
         if (draftOnInterrupt.length < 200 && existingMdd.length >= 200) {
-          draftOnInterrupt = await this.runPrepareMddForOutput(existingMdd, managerPrepareOpts);
+          draftOnInterrupt = await this.runPrepareMddForOutput(existingMdd, managerPrepareOptsWithTrace);
         }
         const estOptsCatch = estimationOpts(projectId, estimationStageId, lastState);
         const metrics = this.estimationService.calculateLiveMetrics(draftOnInterrupt, estOptsCatch);
@@ -1017,6 +1083,9 @@ export class AiAnalysisService {
           reply = reply.replace(/\bEstamos al \d+%/, `Estamos al ${metrics.precision}%`);
         }
         this.logger.log(`[MDD stream/manager] interrupt reply=${reply ? "(presente)" : "(no)"} questions=${questions?.length ?? 0} plan=${plan?.length ?? 0} markdownLen=${draftOnInterrupt.length}`);
+        if (ownsJobLifecycle) {
+          this.flowTrace.jobEnd(correlationId, { ok: true, outcome: "interrupt" });
+        }
         yield {
           type: "interrupt",
           threadId,
@@ -1039,6 +1108,9 @@ export class AiAnalysisService {
       const message = formatted.message;
       this.logger.error(`[MDD stream/manager] error: ${message}`, err instanceof Error ? err.stack : String(err));
       lastStepFailedByThread.set(threadId, { node: "unknown", error: message });
+      if (ownsJobLifecycle) {
+        this.flowTrace.jobEnd(correlationId, { ok: false, error: message });
+      }
       if (formatted.code === "MODELS_UNAVAILABLE") {
         yield { type: "error", message: formatted.message, code: formatted.code };
         return;
@@ -1048,6 +1120,10 @@ export class AiAnalysisService {
         message: `${message} Reanuda con un mensaje (ej. "reintentar" o "omitir") y el Manager re-planificará.`,
         replanning: true,
       };
+    } finally {
+      if (ownsJobLifecycle && jobOk) {
+        this.flowTrace.jobEnd(correlationId, { ok: true });
+      }
     }
   }
 
@@ -1356,6 +1432,7 @@ export class AiAnalysisService {
           precision: metrics.precision,
           status: resumeDoneGate.status,
           deliveryGate: resumeDoneGate.deliveryGate,
+          qualityGatePassed: lastState?.qualityGate?.ok === true,
           auditorFeedback: lastState?.auditorFeedback?.trim() || undefined,
           precisionBreakdown,
           auditTrail,
@@ -1444,7 +1521,14 @@ export class AiAnalysisService {
     mddContentFromClient?: string,
     stageId?: string | null,
     gapReasons?: string[],
+    traceRun?: MddTraceRunOptions,
   ): AsyncGenerator<StreamMddManagerEvent> {
+    const correlationId = traceRun?.correlationId ?? randomUUID();
+    const ownsJobLifecycle = !traceRun?.correlationId;
+    if (ownsJobLifecycle) {
+      this.flowTrace.jobStart(correlationId, { projectId, mode: "section", section, stageId });
+    }
+    let jobOk = false;
     const pid = projectId?.trim();
     if (!pid) {
       yield { type: "error", message: "projectId es requerido" };
@@ -1476,6 +1560,7 @@ export class AiAnalysisService {
     const { opts: regenPrepareOpts, gateRef: regenGateRef } = createPrepareOptsWithGate({
       preservedGovernance: extractGovernanceSection(mddContent),
     });
+    const regenPrepareOptsWithTrace = { ...regenPrepareOpts, correlationId };
 
     // regenEstimationStage desde pid + stageId (To-Be/As-Is eliminados)
     const regenCx = "HIGH" as EstimationComplexity;
@@ -1520,9 +1605,10 @@ export class AiAnalysisService {
           .replace(/\n?```\s*$/, "")
           .trim() || newBody;
         const finalDraft = replaceSection1BodyFromAnyHeading(mddContent, newBody);
-        const markdown = await this.runPrepareMddForOutput(finalDraft, regenPrepareOpts);
+        const markdown = await this.runPrepareMddForOutput(finalDraft, regenPrepareOptsWithTrace);
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         const regenGate1 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
+        jobOk = true;
         yield {
           type: "done",
           markdown,
@@ -1565,10 +1651,11 @@ export class AiAnalysisService {
         const finalDraft = (result.mddDraft ?? mddContent).trim();
         const markdown = await this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
-          regenPrepareOpts,
+          regenPrepareOptsWithTrace,
         );
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         const regenGate7 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
+        jobOk = true;
         yield {
           type: "done",
           markdown,
@@ -1589,7 +1676,7 @@ export class AiAnalysisService {
         const finalDraft = (result.mddDraft ?? mddContent).trim();
         const markdown = await this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
-          regenPrepareOpts,
+          regenPrepareOptsWithTrace,
         );
         if (!draftHasSection6Heading(markdown)) {
           yield {
@@ -1601,6 +1688,7 @@ export class AiAnalysisService {
         }
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         const regenGate6 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
+        jobOk = true;
         yield {
           type: "done",
           markdown,
@@ -1628,10 +1716,11 @@ export class AiAnalysisService {
             : architectDraft || mddContent;
         const markdown = await this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
-          regenPrepareOpts,
+          regenPrepareOptsWithTrace,
         );
         const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
         const regenGate25 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
+        jobOk = true;
         yield {
           type: "done",
           markdown,
@@ -1646,7 +1735,14 @@ export class AiAnalysisService {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`[MDD regenerate-section] error: ${message}`, err instanceof Error ? err.stack : undefined);
+      if (ownsJobLifecycle) {
+        this.flowTrace.jobEnd(correlationId, { ok: false, error: message });
+      }
       yield { type: "error", message: `Error al regenerar §${section}: ${message}` };
+    } finally {
+      if (ownsJobLifecycle && jobOk) {
+        this.flowTrace.jobEnd(correlationId, { ok: true });
+      }
     }
   }
 
@@ -1705,19 +1801,35 @@ export class AiAnalysisService {
   async runMddGenerationJob(
     data: MddJobData,
     onProgress: (p: MddJobProgress) => void,
+    options?: { correlationId?: string },
   ): Promise<MddJobResult> {
     const { mode, projectId, stageId } = data;
+    const correlationId = options?.correlationId ?? randomUUID();
     let lastPersistedLen = 0;
 
-    const persistMarkdown = async (markdown: string, finalize: boolean): Promise<void> => {
+    this.flowTrace.jobStart(correlationId, { projectId, mode, stageId });
+
+    const persistMarkdown = async (
+      markdown: string,
+      finalize: boolean,
+      qualityGatePassed?: boolean,
+    ): Promise<void> => {
       const cleaned = cleanDocumentContent(markdown);
       if (cleaned.trim().length < 48) return;
       if (cleaned.length === lastPersistedLen && !finalize) return;
+      const persistStart = Date.now();
       lastPersistedLen = cleaned.length;
       await this.projects.persistMddFromBackgroundJob(projectId, markdown, {
         stageId: stageId?.trim() || undefined,
         finalize,
+        qualityGatePassed: finalize ? qualityGatePassed : undefined,
       });
+      const persistPayload = { durationMs: Date.now() - persistStart, mddLength: cleaned.length };
+      if (finalize) {
+        this.flowTrace.persistFinal(correlationId, persistPayload);
+      } else {
+        this.flowTrace.persistDraft(correlationId, persistPayload);
+      }
       onProgress({ phase: finalize ? "persisted" : "draft", mddLength: cleaned.length });
     };
 
@@ -1749,7 +1861,7 @@ export class AiAnalysisService {
           };
         } else if (event.type === "done" && event.markdown) {
           finalMarkdown = event.markdown;
-          await persistMarkdown(event.markdown, true);
+          await persistMarkdown(event.markdown, true, event.qualityGatePassed);
           if (projectId?.trim()) {
             this.estimationService.clearLiveDraft(projectId.trim(), stageId ?? undefined);
           }
@@ -1780,40 +1892,57 @@ export class AiAnalysisService {
       throw new Error("La generación del MDD no devolvió contenido suficiente.");
     };
 
-    switch (mode) {
-      case "pipeline":
-        return consume(
-          this.streamMddAnalysis(data.dbgaContent ?? "", projectId, stageId) as AsyncGenerator<MddJobEvent>,
-        );
-      case "manager":
-        return consume(
-          this.streamMddAnalysisWithManager(
-            data.dbgaContent ?? "",
-            projectId,
-            data.initialMessage,
-            data.mddContent,
-            stageId,
-          ),
-        );
-      case "section": {
-        const rawSection = data.section;
-        if (rawSection == null || !Number.isInteger(rawSection) || rawSection < 1 || rawSection > 7) {
-          throw new Error("section must be 1–7");
+    try {
+      let result: MddJobResult;
+      switch (mode) {
+        case "pipeline":
+          result = await consume(
+            this.streamMddAnalysis(data.dbgaContent ?? "", projectId, stageId, { correlationId }) as AsyncGenerator<MddJobEvent>,
+          );
+          break;
+        case "manager":
+          result = await consume(
+            this.streamMddAnalysisWithManager(
+              data.dbgaContent ?? "",
+              projectId,
+              data.initialMessage,
+              data.mddContent,
+              stageId,
+              undefined,
+              { correlationId },
+            ),
+          );
+          break;
+        case "section": {
+          const rawSection = data.section;
+          if (rawSection == null || !Number.isInteger(rawSection) || rawSection < 1 || rawSection > 7) {
+            throw new Error("section must be 1–7");
+          }
+          const section = rawSection;
+          onProgress({ phase: "section", section, message: `Regenerando §${section}…` });
+          result = await consume(
+            this.streamMddRegenerateSection(
+              projectId,
+              section,
+              data.mddContent,
+              stageId,
+              data.gapReasons,
+              { correlationId },
+            ),
+          );
+          break;
         }
-        const section = rawSection;
-        onProgress({ phase: "section", section, message: `Regenerando §${section}…` });
-        return consume(
-          this.streamMddRegenerateSection(
-            projectId,
-            section,
-            data.mddContent,
-            stageId,
-            data.gapReasons,
-          ),
-        );
+        default:
+          throw new Error(`Modo MDD no soportado en job: ${mode}`);
       }
-      default:
-        throw new Error(`Modo MDD no soportado en job: ${mode}`);
+      this.flowTrace.jobEnd(correlationId, { ok: true, outcome: result.outcome });
+      return result;
+    } catch (err) {
+      this.flowTrace.jobEnd(correlationId, {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
     }
   }
 

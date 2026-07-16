@@ -76,7 +76,7 @@ describe("prepareMddForOutput", () => {
     assert.strictEqual(mddHasDuplicateSectionHeadings(out), false);
   });
 
-  it("no reintroduce duplicados desde source corrupto y quita directivas mesh", async () => {
+  it("conserva §6 tras normalize aunque el borrador fuente tenga §6 duplicada", async () => {
     const good = FULL_MDD_PREFIX + EXISTING_SECTION6;
     const corrupted =
       good +
@@ -91,10 +91,12 @@ Cola duplicada.
 - [DIRECTIVE: software_architect] Campo totp_secret en users.
 `;
     const out = await prepareMddForOutput({ mddDraft: corrupted });
+    assert.ok(out.includes("## 6. Seguridad"), "debe conservar §6 tras normalize");
+    assert.ok(out.includes("Argon2id") || out.includes("JWT"), "contenido §6 preservado");
+    assert.ok(out.includes("## 7. Infraestructura"), "debe conservar §7");
     assert.strictEqual(mddHasDuplicateSectionHeadings(out), false);
     assert.ok(!out.includes("[DIRECTIVE:"));
     assert.ok(!out.includes("Cola duplicada"));
-    assert.ok(out.includes("Argon2id"));
   });
 });
 

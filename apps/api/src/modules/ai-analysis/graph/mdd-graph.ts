@@ -1,4 +1,4 @@
-import { StateGraph, START, END } from "@langchain/langgraph";
+import { StateGraph, START, END, Command } from "@langchain/langgraph";
 import type { BaseCheckpointSaver } from "@langchain/langgraph/web";
 import type { LivePrecisionCalculator } from "../estimation/estimation.types.js";
 import { createMddClarifierNode } from "../nodes/mdd-clarifier.node.js";
@@ -37,20 +37,26 @@ const SILENT_STEPS = new Set(["fanout_sec_int"]);
 const STRUCTURAL_TEMPERATURE = 0.2;
 
 type NodeFn = (state: MDDStateType) => Promise<Partial<MDDStateType>>;
+type AnyNodeFn = (state: MDDStateType) => Promise<Partial<MDDStateType>> | Partial<MDDStateType>;
+type ManagerNodeFn = (state: MDDStateType) => Promise<Partial<MDDStateType> | Command>;
 type InputHashFn = (state: MDDStateType) => Record<string, unknown>;
 
 function wrapTraced(
   trace: MddFlowTraceService | null | undefined,
   correlationId: string | null | undefined,
   stepName: string,
-  nodeFn: NodeFn,
-): NodeFn {
-  if (!trace || !correlationId || SILENT_STEPS.has(stepName)) return nodeFn;
-  return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
+  nodeFn: AnyNodeFn | ManagerNodeFn,
+): NodeFn | ManagerNodeFn {
+  if (!trace || !correlationId || SILENT_STEPS.has(stepName)) {
+    return nodeFn as NodeFn | ManagerNodeFn;
+  }
+  const run = async (state: MDDStateType) => {
     const stepStart = Date.now();
     trace.stepStart(correlationId, stepName, { projectId: state.projectId });
     try {
-      const result = await trace.runWithStepHeartbeats(correlationId, stepName, () => nodeFn(state));
+      const result = await trace.runWithStepHeartbeats(correlationId, stepName, () =>
+        Promise.resolve(nodeFn(state)),
+      );
       trace.stepEnd(correlationId, stepName, {
         durationMs: Date.now() - stepStart,
         projectId: state.projectId,
@@ -65,22 +71,32 @@ function wrapTraced(
       throw err;
     }
   };
+  return run as NodeFn | ManagerNodeFn;
 }
 
 function traceNode(
   trace: MddFlowTraceService | null | undefined,
   correlationId: string | null | undefined,
   stepName: string,
-  nodeFn: NodeFn,
+  nodeFn: AnyNodeFn,
 ): NodeFn {
-  return wrapTraced(trace, correlationId, stepName, nodeFn);
+  return wrapTraced(trace, correlationId, stepName, nodeFn) as NodeFn;
+}
+
+function traceManagerNode(
+  trace: MddFlowTraceService | null | undefined,
+  correlationId: string | null | undefined,
+  stepName: string,
+  nodeFn: ManagerNodeFn,
+): ManagerNodeFn {
+  return wrapTraced(trace, correlationId, stepName, nodeFn) as ManagerNodeFn;
 }
 
 function wrapCache(
   cache: NodeCacheService | null,
   nodeName: string,
   getInput: InputHashFn,
-  nodeFn: NodeFn,
+  nodeFn: AnyNodeFn,
   trace?: MddFlowTraceService | null,
   correlationId?: string | null,
 ): NodeFn {
@@ -109,10 +125,10 @@ function shouldRunSecIntNode(state: MDDStateType, nodeName: "security" | "integr
   return true;
 }
 
-function wrapSecIntGuard(nodeName: "security" | "integration", nodeFn: NodeFn): NodeFn {
+function wrapSecIntGuard(nodeName: "security" | "integration", nodeFn: AnyNodeFn): NodeFn {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
     if (!shouldRunSecIntNode(state, nodeName)) return {};
-    return nodeFn(state);
+    return Promise.resolve(nodeFn(state));
   };
 }
 
@@ -122,6 +138,13 @@ function nextInSections(state: MDDStateType, currentNode: string): string | null
   if (idx === -1) return null;
   const next = state.sectionsToRun[idx + 1];
   return next ?? "manager";
+}
+
+/** Igual que nextInSections pero sin destino manager (grafo lean sin nodo Manager). */
+function nextInCorrectionPipeline(state: MDDStateType, currentNode: string): string | null {
+  const next = nextInSections(state, currentNode);
+  if (!next || next === "manager") return null;
+  return next;
 }
 
 function shouldRunSecIntPass(state: MDDStateType): boolean {
@@ -165,7 +188,7 @@ export async function createMddGraph(
   const flowTrace = options?.flowTrace ?? null;
   const trace = flowTrace?.service ?? null;
   const correlationId = flowTrace?.correlationId ?? null;
-  const t = (name: string, fn: NodeFn): NodeFn => traceNode(trace, correlationId, name, fn);
+  const t = (name: string, fn: AnyNodeFn): NodeFn => traceNode(trace, correlationId, name, fn);
 
   const clarifierNode = wrapCache(
     nodeCache,
@@ -211,12 +234,26 @@ export async function createMddGraph(
   const fanoutSecIntNode = async (_state: MDDStateType): Promise<Partial<MDDStateType>> => ({});
 
   function routeAfterFormatterPreSecInt(state: MDDStateType): string {
+    const next = nextInCorrectionPipeline(state, "formatter");
+    if (next) return next;
     if (shouldRunSecIntPass(state)) return "fanout_sec_int";
     return "diagram_injector";
   }
 
+  function routeAfterFormatSecInt(state: MDDStateType): string {
+    const next = nextInCorrectionPipeline(state, "format_sec_int");
+    if (next) return next;
+    return "diagram_injector";
+  }
+
+  function routeAfterDiagram(state: MDDStateType): string {
+    const next = nextInCorrectionPipeline(state, "diagram_injector");
+    if (next) return next;
+    return "quality_gate";
+  }
+
   function routeAfterSoftwareArchitect(state: MDDStateType): string {
-    const next = nextInSections(state, "software_architect");
+    const next = nextInCorrectionPipeline(state, "software_architect");
     if (next) return next;
     if (state.delegateTarget !== "sections") {
       if (!state.architectSection5PassPending && mddNeedsSection5Pass(state.mddDraft ?? "")) {
@@ -268,18 +305,37 @@ export async function createMddGraph(
     .addConditionalEdges("software_architect", routeAfterSoftwareArchitect, {
       architect_section5_prep: "architect_section5_prep",
       formatter: "formatter",
+      security: "security",
+      integration: "integration",
+      diagram_injector: "diagram_injector",
+      quality_gate: "quality_gate",
     })
     .addEdge("architect_section5_prep", "software_architect")
     .addConditionalEdges("formatter", routeAfterFormatterPreSecInt, {
       fanout_sec_int: "fanout_sec_int",
       diagram_injector: "diagram_injector",
+      quality_gate: "quality_gate",
     })
     .addEdge("fanout_sec_int", "security")
     .addEdge("fanout_sec_int", "integration")
-    .addEdge("security", "format_sec_int")
-    .addEdge("integration", "format_sec_int")
-    .addEdge("format_sec_int", "diagram_injector")
-    .addEdge("diagram_injector", "quality_gate")
+    .addConditionalEdges("security", (state) => nextInCorrectionPipeline(state, "security") ?? "format_sec_int", {
+      integration: "integration",
+      format_sec_int: "format_sec_int",
+      diagram_injector: "diagram_injector",
+      quality_gate: "quality_gate",
+    })
+    .addConditionalEdges("integration", (state) => nextInCorrectionPipeline(state, "integration") ?? "format_sec_int", {
+      format_sec_int: "format_sec_int",
+      diagram_injector: "diagram_injector",
+      quality_gate: "quality_gate",
+    })
+    .addConditionalEdges("format_sec_int", routeAfterFormatSecInt, {
+      diagram_injector: "diagram_injector",
+      quality_gate: "quality_gate",
+    })
+    .addConditionalEdges("diagram_injector", routeAfterDiagram, {
+      quality_gate: "quality_gate",
+    })
     .addConditionalEdges("quality_gate", routeAfterQualityGate, {
       graph_populator: "graph_populator",
       clarifier: "clarifier",
@@ -314,9 +370,11 @@ export async function createMddGraphWithManager(
   const flowTrace = compileOptions?.flowTrace ?? null;
   const trace = flowTrace?.service ?? null;
   const correlationId = flowTrace?.correlationId ?? null;
-  const t = (name: string, fn: NodeFn): NodeFn => traceNode(trace, correlationId, name, fn);
+  const t = (name: string, fn: AnyNodeFn): NodeFn => traceNode(trace, correlationId, name, fn);
 
-  const managerNode = t(
+  const managerNode = traceManagerNode(
+    trace,
+    correlationId,
     "manager",
     createMddManagerNode(
       graphLlm,
