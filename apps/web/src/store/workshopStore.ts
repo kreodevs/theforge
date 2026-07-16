@@ -47,8 +47,11 @@ import { isWorkshopAgentsBusy } from "../utils/workshopAgentsBusy";
 import { shouldPreserveWorkshopBusyState } from "../utils/workshopBusyRefresh";
 import {
   applyDeliverableCascadeProgressUpdate,
+  ensurePostPassCascadeRow,
+  markAllAgentProgressTerminated,
   readDeliverableCascadeProgressStep,
 } from "../utils/deliverableCascadeProgress";
+import { CASCADE_POST_PASS_STEP_LABEL } from "@theforge/shared-types";
 import {
   isStageScopedDeliverableField,
   resolveWorkshopStageDeliverables,
@@ -3347,34 +3350,34 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 set({ agentProgress: progressUpdate.agentProgress });
               }
             }
+            const waveStepsDone =
+              get().cascadeCompleted >= allStepLabels.length &&
+              get().agentProgress.every((item) => item.status === "terminado");
+            if (waveStepsDone && !get().agentProgress.some((item) => item.step === CASCADE_POST_PASS_STEP_LABEL)) {
+              set({ agentProgress: ensurePostPassCascadeRow(get().agentProgress) });
+            }
           }
         }
         set((s) => ({
-          agentProgress: s.agentProgress.map((item) =>
-            item.status === "generando"
-              ? { ...item, message: `✅ ${item.step} — Terminado`, status: "terminado" }
-              : item,
-          ),
-          cascadeCompleted: allStepLabels.length,
+          agentProgress: markAllAgentProgressTerminated(s.agentProgress),
+          cascadeCompleted: Math.max(s.cascadeCompleted, allStepLabels.length),
         }));
-        await new Promise((resolve) => setTimeout(resolve, 4000));
-        set({ agentProgress: [] });
         const projQueued = await get().fetchProject(pid);
         await get().fetchEstimation(pid).catch(() => {});
+        await get().fetchGenerationStatus(pid);
         get().bumpDocumentationGapsRefresh();
+        set({ agentProgress: [] });
         return projQueued;
       }
       set((s) => ({
-        agentProgress: s.agentProgress.map((item) =>
-          item.status === "generando"
-            ? { ...item, message: `✅ ${item.step} — Terminado`, status: "terminado" }
-            : item,
-        ),
-        cascadeCompleted: allStepLabels.length,
+        agentProgress: markAllAgentProgressTerminated(s.agentProgress),
+        cascadeCompleted: Math.max(s.cascadeCompleted, allStepLabels.length),
       }));
       const projSync = await get().fetchProject(pid);
       await get().fetchEstimation(pid).catch(() => {});
+      await get().fetchGenerationStatus(pid);
       get().bumpDocumentationGapsRefresh();
+      set({ agentProgress: [] });
       return projSync;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar entregables", agentProgress: [] });
@@ -4254,17 +4257,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
 
       set((s) => ({
-        agentProgress: s.agentProgress.map((item) =>
-          item.status === "generando"
-            ? { ...item, message: `✅ ${item.step} — Terminado`, status: "terminado" }
-            : item,
-        ),
+        agentProgress: markAllAgentProgressTerminated(s.agentProgress),
         cascadeCompleted: stepLabels.length,
       }));
-      await new Promise((resolve) => setTimeout(resolve, 4000));
-
       const proj = await get().fetchProject(pid);
       await get().fetchEstimation(pid).catch(() => {});
+      await get().fetchGenerationStatus(pid);
+      get().bumpDocumentationGapsRefresh();
       set({
         loading: false,
         loadingReason: null,

@@ -622,6 +622,12 @@ export default function WorkshopView({
       loadingReason === "legacy-deliverables");
   const cascadeCompleted = useWorkshopStore((s) => s.cascadeCompleted);
   const cascadeTotal = useWorkshopStore((s) => s.cascadeTotal);
+  const agentProgress = useWorkshopStore((s) => s.agentProgress);
+  const cascadePostPassRunning =
+    cascadeRunning &&
+    agentProgress.some(
+      (item) => item.status === "generando" && item.step?.includes("Refinando precisión"),
+    );
   const error = useWorkshopStore((s) => s.error);
   const notice = useWorkshopStore((s) => s.notice);
   const generationStatus = useWorkshopStore((s) => s.generationStatus);
@@ -4596,9 +4602,11 @@ export default function WorkshopView({
                               <WorkshopButtonIcon icon={Layers} tone="success" />
                             )}
                             {cascadeRunning
-                              ? cascadeCompleted > 0
-                                ? `Generando documentos (${cascadeCompleted}/${cascadeTotal})`
-                                : "Generando documentos…"
+                              ? cascadePostPassRunning
+                                ? "Refinando precisión (W4)…"
+                                : cascadeCompleted > 0
+                                  ? `Generando documentos (${cascadeCompleted}/${cascadeTotal})`
+                                  : "Generando documentos…"
                               : "Generar todos los documentos"}
                           </WorkshopMddActionButton>
                         )}

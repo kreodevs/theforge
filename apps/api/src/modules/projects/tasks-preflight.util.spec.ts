@@ -91,7 +91,10 @@ describe("tasks-preflight", () => {
     const withUiGap = withUi.blockers.find((b) => b.includes("DocAccuracy"));
     const noUxGap = noUxTeam.blockers.find((b) => b.includes("DocAccuracy"));
 
-    assert.ok(uxTeamGap?.includes("uiScreens") || withoutUiUxTeam.warnings.some((w) => w.includes("uiScreens")));
+    assert.ok(
+      uxTeamGap?.toLowerCase().includes("pantallas") ||
+        withoutUiUxTeam.warnings.some((w) => w.toLowerCase().includes("pantallas")),
+    );
     assert.ok(!withUiGap?.includes("uiScreens ausente"));
     assert.ok(!noUxGap?.includes("uiScreens ausente"));
   });
