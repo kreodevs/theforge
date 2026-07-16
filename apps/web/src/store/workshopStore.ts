@@ -1648,7 +1648,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   cancelMddGeneration: async (projectId) => {
     const requestedId = projectId.trim();
     if (!requestedId) return false;
-    set({ mddCancelInFlight: true, error: null });
+    if (get().mddCancelInFlight) return false;
+    set({ mddCancelInFlight: true, error: null, notice: null });
     abortActiveMddPoll();
     try {
       const r = await apiFetch(`${API_BASE}/projects/${requestedId}/mdd/cancel`, {
@@ -1657,7 +1658,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (!r.ok) {
         const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
         const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
-        throw new Error(msg ?? "No se pudo cancelar la generación del MDD");
+        const fallback =
+          r.status === 404
+            ? "El servidor no reconoce la cancelación del MDD. Reinicia el API (npm run dev) e inténtalo de nuevo."
+            : "No se pudo cancelar la generación del MDD";
+        throw new Error(msg ?? fallback);
       }
       if (shouldApplyWorkshopUpdate(get, requestedId)) {
         set({
@@ -1671,8 +1676,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       await get().fetchGenerationStatus(requestedId);
       return true;
     } catch (e) {
-      if (!wasMddPollCancelled()) {
-        set({ error: e instanceof Error ? e.message : "Error al cancelar generación del MDD" });
+      const message = e instanceof Error ? e.message : "Error al cancelar generación del MDD";
+      console.error("[cancelMdd]", message);
+      if (shouldApplyWorkshopUpdate(get, requestedId)) {
+        set({ error: message, notice: null });
       }
       return false;
     } finally {

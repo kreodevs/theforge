@@ -272,7 +272,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private markInMemoryJobCancelled(jobId: string, record: InMemoryMddJobRecord): void {
+  private markInMemoryJobCancelled(_jobId: string, record: InMemoryMddJobRecord): void {
     record.status = "failed";
     record.error = MddQueueService.CANCELLED_MESSAGE;
     record.finishedAt = Date.now();
