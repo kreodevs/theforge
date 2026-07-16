@@ -11,7 +11,6 @@ import {
   finalizeMddDeliverable,
   getSection6Or7Range,
   hydrateStructuredFromDraft,
-  mddHasDuplicateSectionHeadings,
   normalizeMddFormat,
   replaceContextWhenOnlyMetadata,
   replaceSection6Or7InDraft,
