@@ -9,6 +9,10 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
+import {
+  LONG_JOB_LOCK_DURATION_MS,
+  longRunningBullmqWorkerOptions,
+} from "../../../common/bullmq-long-job.worker-options.js";
 import { getRequestUserId, runWithRequestUserAsync } from "../../../common/request-user.store.js";
 import { ProjectGenerationGuardService } from "../../projects/project-generation-guard.service.js";
 import { LegacyCoordinatorService } from "../../legacy-flow/legacy-coordinator.service.js";
@@ -155,25 +159,37 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
         backoff: { type: "exponential", delay: 5_000 },
       },
     });
+    const workerOpts = longRunningBullmqWorkerOptions({ concurrency: 1 });
     this.worker = new Worker(
       MDD_QUEUE_NAME,
-      async (job: Job<MddJobData>) => {
+      async (job: Job<MddJobData>, token?: string) => {
         const { userId } = job.data;
         return runWithRequestUserAsync(userId ?? "system", async () => {
           this.logger.log(
             `BullMQ MDD job ${job.id} mode=${job.data.mode} projectId=${job.data.projectId}`,
           );
-          return this.executeJob(job.data, (p) => job.updateProgress(p));
+          const onProgress = async (p: MddJobProgress) => {
+            await job.updateProgress(p);
+            if (!token) return;
+            try {
+              await job.extendLock(token, LONG_JOB_LOCK_DURATION_MS);
+            } catch {
+              // Worker timer still renews; ignore if lock already lost (logged by BullMQ).
+            }
+          };
+          return this.executeJob(job.data, onProgress);
         });
       },
-      { connection: { url }, concurrency: 1 },
+      { connection: { url }, ...workerOpts },
     );
     this.worker.on("failed", (job, err) => {
       this.logger.error(
         `BullMQ MDD job ${job?.id} falló: ${err instanceof Error ? err.message : err}`,
       );
     });
-    this.logger.log(`BullMQ MDD worker activo (${MDD_QUEUE_NAME})`);
+    this.logger.log(
+      `BullMQ MDD worker activo (${MDD_QUEUE_NAME}), lockDuration=${workerOpts.lockDuration}ms, concurrency=1`,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -259,7 +275,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
 
   private async executeJob(
     data: MddJobData,
-    onProgress: (p: MddJobProgress) => void,
+    onProgress: (p: MddJobProgress) => void | Promise<void>,
   ): Promise<MddJobResult> {
     const { projectId } = data;
     this.generationGuard.registerMddStream(projectId);

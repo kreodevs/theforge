@@ -58,6 +58,7 @@ async function bootstrap() {
     logger: ["error", "warn", "log", "debug", "verbose"],
   });
   logger.log("[bootstrap] Nest application created.");
+  app.enableShutdownHooks();
   app.useGlobalFilters(new ModelsUnavailableExceptionFilter());
   const origins = corsOriginsFromEnv();
   app.enableCors({ origin: origins, credentials: true });
