@@ -65,6 +65,7 @@ import { AiService } from "../ai/ai.service.js";
 import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
+import { cleanSpecDocumentContent } from "../projects/spec-content.util.js";
 import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import { evaluateMddDeliveryGatePrepared } from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
 import {
@@ -1592,13 +1593,13 @@ export class LegacyCoordinatorService {
             );
             if (sm) {
               pushSectionMergeTrace(sm.trace);
-              await update({ specContent: cleanDocumentContent(sm.content) });
+              await update({ specContent: cleanSpecDocumentContent(sm.content) });
               p = await load();
               return;
             }
           }
           const specContent = await this.ai.generateSpec(mddForLlm, null, "mdd", legacyOpts);
-          await update({ specContent: cleanDocumentContent(specContent) });
+          await update({ specContent: cleanSpecDocumentContent(specContent) });
           p = await load();
           return;
         }

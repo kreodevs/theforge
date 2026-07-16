@@ -69,6 +69,7 @@ export async function runTasksPreflightStrict(params: {
   apiContractsMarkdown?: string | null;
   hasUxTeam?: boolean;
   uiScreensMarkdown?: string | null;
+  logicFlowsMarkdown?: string | null;
   inventory?: DomainInventory | null;
   /** Legacy AS-IS / ingeniería inversa: relaja gate MDD y Spec/Blueprint obligatorios. */
   legacyBaselineStage?: boolean;
@@ -117,6 +118,8 @@ export async function runTasksPreflightStrict(params: {
       mddMarkdown: params.mddMarkdown,
       specMarkdown: spec,
       apiContractsMarkdown: api.length >= 80 ? api : undefined,
+      logicFlowsMarkdown: params.logicFlowsMarkdown,
+      uiScreensMarkdown: params.uiScreensMarkdown,
       brdMarkdown: params.brdMarkdown,
       dbgaMarkdown: params.dbgaMarkdown,
       inventory: params.inventory ?? undefined,

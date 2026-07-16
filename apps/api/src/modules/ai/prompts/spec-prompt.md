@@ -33,6 +33,7 @@ Producto, arquitectura y equipos que usarán el Spec para alinear el MDD y el de
 
 - **Solo markdown.** El **primer carácter** debe ser `#`. Sin introducciones ni texto conversacional antes del documento.
 - Documento completo con las cuatro secciones indicadas en Objetivo.
+- **Headings:** Usa títulos descriptivos (`## Criterios de éxito`, `### Autenticación funcional`). **Prohibido** `## 1.`, `## 2.` u otros `## N.` sin texto — usa viñetas `-` para listas numeradas de criterios o journeys.
 
 # Restricciones #
 

@@ -71,6 +71,7 @@ export class TasksGenerationPipelineService {
       apiContractsMarkdown: input.taskOpts.apiContractsContent,
       hasUxTeam: input.hasUxTeam,
       uiScreensMarkdown: input.taskOpts.uiScreensContent,
+      logicFlowsMarkdown: input.taskOpts.logicFlowsContent,
       inventory: input.inventory,
       legacyBaselineStage: input.legacyBaselineStage,
     });

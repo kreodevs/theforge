@@ -171,6 +171,7 @@ import {
   parseChangeScopeFromLegacyState,
 } from "./tasks-coordinates-context.util.js";
 import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.service.js";
+import { cleanSpecDocumentContent } from "./spec-content.util.js";
 import { ResolveChangeToFilesService } from "../legacy-flow/resolve-change-to-files.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
@@ -2486,7 +2487,7 @@ name: ${JSON.stringify(name)}
       project.phase0SummaryContent,
       dbga.length === 0 && rawMdd.length > 0 ? "mdd" : "dbga",
     );
-    return this.update(projectId, { specContent: cleanDocumentContent(specContent) });
+    return this.update(projectId, { specContent: cleanSpecDocumentContent(specContent) });
   }
 
   /** Limpia gobernanza persistida antes de regenerar (polling y UI). */

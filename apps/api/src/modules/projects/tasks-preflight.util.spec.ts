@@ -57,4 +57,29 @@ describe("tasks-preflight", () => {
     assert.equal(r.ok, false);
     assert.ok(r.blockers.some((b) => b.includes("api-contracts")));
   });
+
+  it("strict DocAccuracy includes uiScreens when provided", async () => {
+    const specWithEmptyHeadings = `# Spec\n\n## 1.\n\n**Journey:** flujo.\n\n${"z".repeat(120)}`;
+    const uiScreens = "# Pantallas\n\n" + "| /dashboard | Page | — | Table | GET /api/v1/health | ok |\n".repeat(20) + "x".repeat(800);
+
+    const withoutUi = await runTasksPreflightStrict({
+      mddMarkdown: substantiveMdd,
+      blueprintMarkdown: substantiveBlueprint,
+      specMarkdown: specWithEmptyHeadings,
+      apiContractsMarkdown: "# API\n\n" + "a".repeat(120),
+      uiScreensMarkdown: "",
+    });
+    const withUi = await runTasksPreflightStrict({
+      mddMarkdown: substantiveMdd,
+      blueprintMarkdown: substantiveBlueprint,
+      specMarkdown: specWithEmptyHeadings,
+      apiContractsMarkdown: "# API\n\n" + "a".repeat(120),
+      uiScreensMarkdown: uiScreens,
+    });
+
+    const withoutGap = withoutUi.blockers.find((b) => b.includes("DocAccuracy"));
+    const withGap = withUi.blockers.find((b) => b.includes("DocAccuracy"));
+    assert.ok(withoutGap?.includes("uiScreens ausente"));
+    assert.ok(!withGap?.includes("uiScreens ausente"));
+  });
 });
