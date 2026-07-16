@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildPantallasPlan,
   entityMatchTokens,
+  extractMddAdminViewLines,
   inferUiHintFromText,
   parseUserStoriesMarkdown,
   storyMatchesEntity,
@@ -96,5 +97,28 @@ describe("ui-screens-plan — buildPantallasPlan", () => {
     const plan = buildPantallasPlan(SAMPLE_MDD, null);
     assert.equal(plan.length, 2);
     assert.ok(plan.every((p) => p.source === "entity"));
+  });
+
+  it("prioriza vistas administrativas §2.2 y reduce CRUD por entidad", () => {
+    const mddWithViews = [
+      "## 2. Arquitectura y Stack",
+      "### 2.2 Frontend",
+      "**Vistas administrativas:**",
+      "- Dashboard de inquilinos (superadmin)",
+      "- Gestión de empresas por inquilino",
+      "- Catálogo MCP (superadmin)",
+      "- Gestión de skills y agentes",
+      "## 3. Modelo de Datos",
+      "CREATE TABLE tenants (id UUID PRIMARY KEY);",
+      "CREATE TABLE companies (id UUID PRIMARY KEY);",
+      "CREATE TABLE agent_skills (id UUID PRIMARY KEY);",
+    ].join("\n");
+
+    const plan = buildPantallasPlan(mddWithViews, SAMPLE_HU);
+    assert.ok(plan.length >= 4);
+    assert.ok(plan.some((p) => /Dashboard de inquilinos/i.test(p.screenName)));
+    assert.ok(!plan.some((p) => p.name === "agent_skills"));
+    const adminFirst = plan.findIndex((p) => /Dashboard de inquilinos/i.test(p.screenName));
+    assert.equal(adminFirst, 0);
   });
 });

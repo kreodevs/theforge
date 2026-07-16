@@ -130,9 +130,24 @@ export class TasksGenerationPipelineService {
     };
 
     if (!snapshot.passed) {
-      this.logger.warn(
-        `[Tasks pipeline] best-effort persist (det=${quality.score}, llm=${llmAuditor.score}, repairs=${repairAttempts})`,
-      );
+      const blockers = [
+        quality.feedback,
+        !quality.ok ? `deterministic score ${quality.score}` : null,
+        llmAuditor.score < TASKS_LLM_AUDITOR_PASS_THRESHOLD
+          ? `LLM auditor ${llmAuditor.score} < ${TASKS_LLM_AUDITOR_PASS_THRESHOLD}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join("; ");
+      this.logger.warn(`[Tasks pipeline] blocked persist (${blockers})`);
+      throw new BadRequestException({
+        code: "TASKS_QUALITY_BLOCKED",
+        message:
+          "Tasks no cumple umbral de calidad estructural/determinístico/auditor. Regenera tras corregir upstream (pantallas, API, MDD).",
+        snapshot,
+        feedback: quality.feedback,
+        llmAuditor,
+      });
     }
 
     return {
@@ -270,6 +285,8 @@ export class TasksGenerationPipelineService {
       brdMarkdown: input.brdMarkdown,
       dbgaMarkdown: input.dbgaMarkdown,
       inventory: input.inventory,
+      uiScreensMarkdown: input.taskOpts.uiScreensContent,
+      apiContractsMarkdown: input.taskOpts.apiContractsContent,
     });
   }
 

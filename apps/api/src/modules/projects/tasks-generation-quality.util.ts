@@ -9,6 +9,7 @@ import { computeTaskAccuracy } from "../engine/cascade-accuracy.util.js";
 import { auditTasks } from "../engine/task-v2/task-auditor.js";
 import { parseTasksV2 } from "../engine/task-v2/tasks-parser-v2.js";
 import { formatPrecisionGapsFeedback } from "../engine/sdd-precision-checks.util.js";
+import { evaluateTasksStructure } from "./tasks-generation-structure.util.js";
 
 export const TASKS_QUALITY_THRESHOLD = CASCADE_ACCURACY_THRESHOLD;
 
@@ -27,6 +28,8 @@ export function evaluateTasksGenerationQuality(params: {
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
   inventory?: DomainInventory | null;
+  uiScreensMarkdown?: string | null;
+  apiContractsMarkdown?: string | null;
 }): TasksQualityReport {
   const tasksMarkdown = (params.tasksMarkdown ?? "").trim();
   if (tasksMarkdown.length < 48) {
@@ -54,8 +57,17 @@ export function evaluateTasksGenerationQuality(params: {
   });
 
   const audit = auditTasks(parsed, params.inventory ?? undefined);
+  const structure = evaluateTasksStructure({
+    tasksMarkdown,
+    uiScreensMarkdown: params.uiScreensMarkdown,
+    apiContractsMarkdown: params.apiContractsMarkdown,
+  });
   const score = Math.round(accuracy.score * 0.55 + audit.score * 0.45);
-  const ok = accuracy.ok && audit.passed && score >= TASKS_QUALITY_THRESHOLD;
+  const ok =
+    accuracy.ok &&
+    audit.passed &&
+    structure.ok &&
+    score >= TASKS_QUALITY_THRESHOLD;
 
   if (ok) {
     return {
@@ -83,6 +95,9 @@ export function evaluateTasksGenerationQuality(params: {
   }
   if (taskCount < 5 && tasksMarkdown.length > 500) {
     gaps.push(`Solo ${taskCount} tareas parseadas (v2/v1); se esperan más ítems para MVP completo.`);
+  }
+  if (!structure.ok) {
+    gaps.push(...structure.gaps);
   }
 
   const unique = [...new Set(gaps.map((g) => g.trim()).filter(Boolean))].slice(0, 18);

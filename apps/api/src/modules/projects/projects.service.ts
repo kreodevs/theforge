@@ -2754,12 +2754,7 @@ name: ${JSON.stringify(name)}
     });
 
     const { tasksMarkdown: tasksRaw, quality, snapshot } = pipelineResult;
-    if (!quality.ok) {
-      this.logger.warn(
-        `[Tasks] Pipeline best-effort (det=${quality.score}, llm=${snapshot.llmAuditorScore}, ` +
-          `umbral ${TASKS_QUALITY_THRESHOLD}, repairs=${snapshot.repairAttempts}). W4 puede regenerar.`,
-      );
-    } else {
+    if (quality.ok) {
       this.logger.log(
         `[Tasks] Pipeline OK (det=${quality.score}, llm=${snapshot.llmAuditorScore}, n=${quality.taskCount})`,
       );

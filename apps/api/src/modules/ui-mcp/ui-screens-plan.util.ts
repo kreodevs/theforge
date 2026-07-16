@@ -21,10 +21,72 @@ import {
   normalizeRoleLabel,
 } from "./ui-screen-routes.util.js";
 
+/** Tablas puente / glue — no generan pantalla CRUD admin por defecto. */
+export const JUNCTION_OR_GLUE_SCREEN_ENTITIES = new Set([
+  "agent_skills",
+  "wasender_phone_companies",
+  "application_capabilities",
+  "conversation_memory",
+  "multi_company_sessions",
+  "messages",
+  "sessions",
+  "wasender_devices",
+  "whatsapp_devices",
+  "requests",
+  "processing_queue",
+  "agent_runs",
+]);
+
+/** Vistas administrativas declaradas en MDD §2.2 Frontend (journeys, no CRUD por tabla). */
+export function extractMddAdminViewLines(mddMarkdown: string): string[] {
+  const mdd = mddMarkdown ?? "";
+  const feMatch = mdd.match(
+    /(?:###\s*2\.2\s+Frontend|###\s+Frontend)[\s\S]*?(?=\n###\s|\n##\s+[3-9]|$)/i,
+  );
+  if (!feMatch) return [];
+
+  const block = feMatch[0];
+  const viewsIdx = block.search(/Vistas administrativas\s*:?\s*/i);
+  if (viewsIdx < 0) return [];
+
+  const lines: string[] = [];
+  for (const line of block.slice(viewsIdx).split("\n")) {
+    if (/^#{2,3}\s/.test(line) && lines.length > 0) break;
+    const bullet = line.match(/^-\s+(.+)/);
+    if (bullet?.[1]) {
+      lines.push(bullet[1].trim());
+      continue;
+    }
+    if (lines.length > 0 && line.trim() === "") break;
+  }
+  return lines;
+}
+
+function slugFromAdminViewLabel(label: string): string {
+  return label
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+}
+
+function adminViewMatchesEntity(viewLabel: string, entityName: string): boolean {
+  const view = viewLabel.toLowerCase();
+  for (const token of entityMatchTokens(entityName)) {
+    if (token.length >= 4 && view.includes(token.replace(/_/g, " "))) return true;
+    if (view.includes(token.replace(/_/g, "-"))) return true;
+  }
+  return false;
+}
+
 /** Infra / glue tables — no admin CRUD screen by default (PLAN-CASCADE-90-ACCURACY). */
-export const INFRA_ONLY_SCREEN_ENTITIES = new Set([
-  ...AUTH_ENTITY_FAMILY,
-].filter((e) => ["outbox_events", "sessions", "role_permissions", "user_roles"].includes(e)));
+export const INFRA_ONLY_SCREEN_ENTITIES = new Set(
+  [...AUTH_ENTITY_FAMILY].filter((e) =>
+    ["outbox_events", "sessions", "role_permissions", "user_roles"].includes(e),
+  ),
+);
 
 /** Entities that get auth screens (login/MFA) instead of gestión-CRUD. */
 export const AUTH_FLOW_ENTITIES = new Set(["users", "sessions"]);
@@ -268,8 +330,12 @@ export function buildPantallasPlan(
       .filter((r) => !r.infraOnly && !AUTH_ENTITY_FAMILY.has(r.entity) && r.mvp)
       .map((r) => r.entity) ?? [];
   const fromMdd = extractEntityNamesFromMdd(mddMarkdown).filter(
-    (e) => !INFRA_ONLY_SCREEN_ENTITIES.has(e.toLowerCase()),
+    (e) =>
+      !INFRA_ONLY_SCREEN_ENTITIES.has(e.toLowerCase()) &&
+      !JUNCTION_OR_GLUE_SCREEN_ENTITIES.has(e.toLowerCase()),
   );
+  const adminViews = extractMddAdminViewLines(mddMarkdown);
+  const journeyFirst = adminViews.length >= 4;
   // Prefer CrudMatrix order, then MDD §3 (PLAN-CASCADE-90 P1)
   const entityNames = [...new Set([...fromMatrix, ...fromMdd])];
   const keyFieldsByEntity = extractEntityKeyFieldsFromMdd(mddMarkdown);
@@ -283,11 +349,6 @@ export function buildPantallasPlan(
     (inventory?.crudMatrix ?? [])
       .filter((r) => r.screenHint)
       .map((r) => [r.entity.toLowerCase(), r.screenHint!] as const),
-  );
-  const endpointHintByEntity = new Map(
-    (inventory?.crudMatrix ?? [])
-      .filter((r) => r.endpointHint)
-      .map((r) => [r.entity.toLowerCase(), r.endpointHint!] as const),
   );
 
   const linkedByEntity = new Map<string, ParsedUserStory[]>();
@@ -306,8 +367,48 @@ export function buildPantallasPlan(
 
   const plan: PantallaPlanItem[] = [];
 
+  for (const viewLabel of adminViews) {
+    const uiHint = inferUiHintFromText(viewLabel) ?? "dashboard";
+    const slug = slugFromAdminViewLabel(viewLabel);
+    const matched = matchEndpointsForEntity(slug, endpoints);
+    const role = /superadmin/i.test(viewLabel)
+      ? "Super Admin"
+      : /tenant|inquilino/i.test(viewLabel)
+        ? "Admin inquilino"
+        : defaultRole;
+    plan.push({
+      name: slug || "admin-view",
+      keyFields: ["id"],
+      restEndpoint: matched[0] ? `${matched[0].method} ${matched[0].path}` : undefined,
+      classification: uiHint === "wizard" ? "Configuration" : "WorkflowProcess",
+      uiHint,
+      screenName: viewLabel,
+      purpose: `Vista administrativa del MDD §2.2: ${viewLabel}.`,
+      source: "hu-only",
+      role: normalizeRoleLabel(role),
+      route: inferScreenRoute(viewLabel, uiHint),
+      pageName: inferPageComponentName(viewLabel),
+      uiStates: inferUiStates(viewLabel, uiHint),
+      primaryApi:
+        matched.length > 0
+          ? formatEndpointList(matched, 2)
+          : /login|auth/i.test(viewLabel)
+            ? formatEndpointList(inferAuthEndpoints(endpoints), 2)
+            : undefined,
+      implementationMode: "pull-registry",
+    });
+  }
+
   for (const entityName of entityNames) {
+    if (JUNCTION_OR_GLUE_SCREEN_ENTITIES.has(entityName.toLowerCase())) continue;
+
     const linked = linkedByEntity.get(entityName) ?? [];
+    if (journeyFirst && linked.length === 0) {
+      const coveredByAdmin = adminViews.some((v) => adminViewMatchesEntity(v, entityName));
+      const hasScreenHint = screenHintByEntity.has(entityName.toLowerCase());
+      if (!coveredByAdmin && !hasScreenHint) continue;
+    }
+
     const primary = linked[0];
     const storyText = linked.map((s) => s.searchText).join(" ");
     const role = primary?.role ? normalizeRoleLabel(primary.role) : defaultRole;
@@ -322,15 +423,12 @@ export function buildPantallasPlan(
       uiHint = "chat";
     }
     const matched = matchEndpointsForEntity(entityName, endpoints);
-    const hintApi = endpointHintByEntity.get(entityName.toLowerCase());
     const primaryApi =
       matched.length > 0
         ? formatEndpointList(matched, 2)
-        : hintApi
-          ? `REST ${hintApi}`
-          : /login|auth|otp|mfa/i.test(screenName)
-            ? formatEndpointList(inferAuthEndpoints(endpoints), 2)
-            : undefined;
+        : /login|auth|otp|mfa/i.test(screenName)
+          ? formatEndpointList(inferAuthEndpoints(endpoints), 2)
+          : undefined;
 
     const routeFromMatrix = screenHintByEntity.get(entityName.toLowerCase());
     const route =

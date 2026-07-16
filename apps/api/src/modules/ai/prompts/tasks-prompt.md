@@ -40,14 +40,15 @@ Si el mensaje incluye **Contratos API**, **Flujos**, **Infra** o **User Stories*
 # Cobertura exhaustiva (obligatoria cuando el MDD describe MVP completo) #
 
 1. **Tarea comprobable** (`- [ ]`) por capacidad MVP de §1, dominio API de §4, entidad de §3, flujo de §5, control de §6 e ítem de §7 que requiera trabajo.
-2. Separa Backend / Frontend / Infra — no un solo bloque genérico.
-3. **Fases del Blueprint §7:** Incluye secciones `## Fase N` (espejo del plan de implementación) con checkpoints verificables.
-4. **Migraciones §3:** Por cada tabla/columna `UNIQUE` o `NOT NULL` del MDD, incluye tarea explícita de migración TypeORM/Prisma + entity/DTO.
-5. **Open gaps research:** Cada ítem de «Análisis de Gaps» o `[OPEN-GAP]` del research → tarea correctiva con trazabilidad.
-6. **Eventos RabbitMQ/EDA:** Si el plan menciona bus de eventos, incluye tasks publisher + consumer + test de integración.
-7. **Volumen orientativo:** 12+ capacidades → espera **30+ tareas** repartidas en las tres secciones; 5+ endpoints → al menos una tarea Backend por endpoint.
-8. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]` y emite al menos una tarea trazable antes de cerrar el documento.
-5. **Prohibido** omitir entregables que existan en MDD, Blueprint, Spec o bloques adjuntos del mensaje.
+2. Separa **obligatoriamente** en secciones H2 canónicas: `## Backend tasks`, `## Frontend tasks`, `## Infraestructura tasks` (o `## Infra tasks`). **Prohibido** usar solo `## Fase N` como secciones principales; las fases van como `### Fase N` **dentro** de cada sección canónica.
+3. **Migraciones §3:** Por cada tabla/columna `UNIQUE` o `NOT NULL` del MDD, incluye tarea explícita de migración TypeORM/Prisma + entity/DTO.
+4. **Open gaps research:** Cada ítem de «Análisis de Gaps» o `[OPEN-GAP]` del research → tarea correctiva con trazabilidad.
+5. **Eventos RabbitMQ/EDA:** Si el plan menciona bus de eventos, incluye tasks publisher + consumer + test de integración.
+6. **Volumen orientativo:** 12+ capacidades → espera **30+ tareas** repartidas en las tres secciones; 5+ endpoints → al menos una tarea Backend por endpoint.
+7. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]` y emite al menos una tarea trazable antes de cerrar el documento.
+8. **Prohibido** omitir entregables que existan en MDD, Blueprint, Spec o bloques adjuntos del mensaje.
+9. **API contracts:** Usa **exactamente** método + ruta de `api-contracts.md`. No inventes alias (`mcp-capabilities`, `webhooks/whatsapp`, etc.) si el contrato dice `mcp-plugins`, `whatsapp/webhook`, etc.
+10. **Pantallas:** Si el mensaje incluye `pantallas.md`, genera **≥1 tarea Frontend por ruta principal** con `section: Frontend` en YAML.
 
 # Estilo (formato spec-kit) #
 

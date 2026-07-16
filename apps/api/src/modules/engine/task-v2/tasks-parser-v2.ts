@@ -233,9 +233,11 @@ function parseTaskBlock(
   const bodyLines: string[] = [];
   while (i < lines.length) {
     const line = lines[i];
-    // Si encontramos otro task YAML, paramos
-    if (line.trim() === "---" && i + 1 < lines.length && lines[i + 1].match(/^[a-z_]+:/)) {
-      break;
+    // Si encontramos otro task YAML, paramos (permite líneas en blanco entre bloques)
+    if (line.trim() === "---") {
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() === "") j += 1;
+      if (j < lines.length && /^[a-z_]+:/i.test(lines[j])) break;
     }
     // Si encontramos un header de sección, paramos
     if (/^##\s+/.test(line)) break;
@@ -276,7 +278,7 @@ function parseTaskBlock(
     inferenceRules,
     typeContext,
     verification: verification || {},
-    section,
+    section: fm.section ? String(fm.section).trim() : section,
     checkpoint,
     rawMarkdown: [lines.slice(startIdx, i).join("\n")].join("\n"),
   };
