@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  Logger,
+} from "@nestjs/common";
 import type { Session } from "@theforge/database";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
@@ -53,6 +59,11 @@ import {
 import { llmDebug, llmWarn } from "../ai/config/llm-debug.util.js";
 import { ModelsUnavailableError } from "../ai/config/llm-model-fallback.js";
 import { DocumentSnapshotService } from "../document-snapshot/document-snapshot.service.js";
+import { MddQueueService } from "../ai-analysis/mdd/mdd-queue.service.js";
+import {
+  buildMddSectionDelegateAssistantMessage,
+  inferMddSectionFromEditMessage,
+} from "./mdd-chat-section.util.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -90,6 +101,7 @@ export class SessionsService {
     private readonly parser: ChatResponseParserService,
     private readonly intentRouter: IntentRouterService,
     private readonly documentSnapshot: DocumentSnapshotService,
+    private readonly mddQueue: MddQueueService,
   ) { }
 
   private workshopDocContext(options?: {
@@ -293,6 +305,92 @@ export class SessionsService {
     return { finalDbga, assistantContent };
   }
 
+  /**
+   * direct_edit en tab MDD: delega a job `section` del pipeline lean (sin regenerar 7 § en chat).
+   */
+  private async tryMddSectionEditTurn(
+    session: { projectId: string },
+    tab: string,
+    userMessage: string,
+    options?: {
+      intentRoute?: IntentRouteResult;
+      currentMddContent?: string;
+      stageId?: string;
+    },
+  ): Promise<{ assistantContent: string; mddJobId: string; mddSection: number } | null> {
+    const msg = userMessage.trim();
+    if (tab !== "mdd" || !msg) return null;
+
+    const route =
+      options?.intentRoute ??
+      (await this.intentRouter.route(msg, {
+        activeTab: tab,
+        hasDocumentContent: Boolean((options?.currentMddContent ?? "").trim()),
+      }));
+    if (route.action !== "edit_document") return null;
+
+    const mddContent = (options?.currentMddContent ?? "").trim();
+    if (mddContent.length < 100) return null;
+
+    const section = inferMddSectionFromEditMessage(msg);
+    const stageId = options?.stageId?.trim() || undefined;
+
+    let jobId: string;
+    try {
+      jobId = await this.mddQueue.enqueue({
+        mode: "section",
+        projectId: session.projectId,
+        stageId,
+        section,
+        mddContent,
+        initialMessage: msg,
+      });
+    } catch (err) {
+      if (err instanceof ConflictException) {
+        return {
+          assistantContent:
+            "Ya hay una generación de MDD en curso para este proyecto. Espera a que termine o recarga el estado.",
+          mddJobId: "",
+          mddSection: section,
+        };
+      }
+      throw err;
+    }
+
+    return {
+      assistantContent: buildMddSectionDelegateAssistantMessage(section, jobId),
+      mddJobId: jobId,
+      mddSection: section,
+    };
+  }
+
+  private async persistMddDelegateChatTurn(
+    sessionId: string,
+    fullLog: ChatMessage[],
+    userTurn: { contentForLog: string },
+    tab: string,
+    stageId: string | undefined,
+    userImages: ChatImagePart[] | undefined,
+    delegate: { assistantContent: string; mddJobId: string; mddSection: number },
+  ): Promise<Session | null> {
+    const userMsgBase = {
+      role: "user" as const,
+      content: userTurn.contentForLog,
+      tab,
+      ...(userImages?.length ? { images: userImages } : {}),
+    };
+    const userMsg = stageId ? { ...userMsgBase, stageId } : userMsgBase;
+    const asstMsg = { role: "assistant" as const, content: delegate.assistantContent, tab };
+    const updated = [...fullLog, userMsg, stageId ? { ...asstMsg, stageId } : asstMsg];
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { chatLog: updated as object },
+    });
+    return this.prisma.session.findFirst({
+      where: this.sessionScope(sessionId),
+    });
+  }
+
   private async resolveUserTurnForLlm(
     userMessage: string,
     images: ChatImagePart[] | undefined,
@@ -365,6 +463,9 @@ export class SessionsService {
     documentAst?: Record<string, unknown> | null;
     /** RFC-001: Versión de parche atómico del documento (documentVersion). */
     documentVersion?: number | null;
+    /** Job MDD section encolado desde chat (direct_edit tab mdd). */
+    mddJobId?: string;
+    mddSection?: number;
   }> {
     const session = await this.prisma.session.findFirst({
       where: this.sessionScope(sessionId),
@@ -422,6 +523,31 @@ export class SessionsService {
       return {
         session: updatedSession,
         dbgaContent: dbgaEditTurn.finalDbga,
+      };
+    }
+
+    const mddDelegateTurn = await this.tryMddSectionEditTurn(session, activeTab, userTurn.promptForModel, {
+      intentRoute,
+      currentMddContent: options?.currentMddContent,
+      stageId: options?.stageId,
+    });
+    if (mddDelegateTurn) {
+      const tab = activeTab;
+      const stageId = options?.stageId?.trim();
+      const updatedSession = await this.persistMddDelegateChatTurn(
+        sessionId,
+        fullLog,
+        userTurn,
+        tab,
+        stageId,
+        options?.userImages,
+        mddDelegateTurn,
+      );
+      return {
+        session: updatedSession,
+        ...(mddDelegateTurn.mddJobId
+          ? { mddJobId: mddDelegateTurn.mddJobId, mddSection: mddDelegateTurn.mddSection }
+          : {}),
       };
     }
 
@@ -815,6 +941,8 @@ export class SessionsService {
       architectureContent?: string | null;
       useCasesContent?: string | null;
       userStoriesContent?: string | null;
+      mddJobId?: string;
+      mddSection?: number;
     }
   > {
     const session = await this.prisma.session.findFirst({
@@ -869,6 +997,32 @@ export class SessionsService {
         type: "done",
         session: updatedSession,
         dbgaContent: dbgaEditTurn.finalDbga,
+      };
+      return;
+    }
+
+    const mddDelegateTurn = await this.tryMddSectionEditTurn(session, tab, userTurn.promptForModel, {
+      intentRoute,
+      currentMddContent: options?.currentMddContent,
+      stageId: options?.stageId,
+    });
+    if (mddDelegateTurn) {
+      const updatedSession = await this.persistMddDelegateChatTurn(
+        sessionId,
+        fullLog,
+        userTurn,
+        tab,
+        stageId,
+        options?.userImages,
+        mddDelegateTurn,
+      );
+      yield { type: "chunk", content: mddDelegateTurn.assistantContent };
+      yield {
+        type: "done",
+        session: updatedSession,
+        ...(mddDelegateTurn.mddJobId
+          ? { mddJobId: mddDelegateTurn.mddJobId, mddSection: mddDelegateTurn.mddSection }
+          : {}),
       };
       return;
     }

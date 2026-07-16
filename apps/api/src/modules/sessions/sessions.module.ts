@@ -4,12 +4,14 @@ import { SessionsController } from "./sessions.controller.js";
 import { ChatResponseParserService } from "./chat-response-parser.service.js";
 import { AiModule } from "../ai/ai.module.js";
 import { AiOrchestratorModule } from "../ai-orchestrator/ai-orchestrator.module.js";
+import { AiAnalysisModule } from "../ai-analysis/ai-analysis.module.js";
 import { DocumentSnapshotModule } from "../document-snapshot/document-snapshot.module.js";
 
 @Module({
   imports: [
     AiModule,
     DocumentSnapshotModule,
+    forwardRef(() => AiAnalysisModule),
     forwardRef(() => AiOrchestratorModule),
   ],
   controllers: [SessionsController],

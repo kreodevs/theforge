@@ -21,7 +21,7 @@ import {
 } from "@theforge/shared-types/format-document-markdown";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue, getOfflineQueue } from "../utils/apiClient";
 import { queueAndPoll } from "../utils/queueAndPoll";
-import { enqueueAndPollLegacyMdd, enqueueAndPollMddJob } from "../utils/pollMddJob";
+import { enqueueAndPollLegacyMdd, enqueueAndPollMddJob, pollMddJob } from "../utils/pollMddJob";
 import {
   mergeProjectBaselinesAfterPersist,
   shouldApplyPersistedFieldContent,
@@ -705,6 +705,95 @@ function effectiveMddContentForSectionRegen(getState: () => {
   if (fromStore.length >= 100) return fromStore;
   const st = project?.stages?.find((s) => s.id === activeStageId);
   return (cleanDoc(st?.mddContent ?? null) ?? cleanDoc(project?.mddContent ?? null) ?? "").trim();
+}
+
+/** Poll de job MDD lanzado desde chat (direct_edit → section job). */
+async function pollAndApplyMddSectionJobFromChat(
+  get: () => WorkshopState,
+  set: (partial: Partial<WorkshopState> | ((s: WorkshopState) => Partial<WorkshopState>)) => void,
+  projectId: string,
+  jobId: string,
+  section?: number,
+): Promise<void> {
+  const sec = typeof section === "number" && section >= 1 && section <= 7 ? section : 3;
+  set({
+    loading: true,
+    loadingReason: "mdd-section",
+    notice: buildMddSectionRegenNotice(sec),
+    agentProgress: [],
+    error: null,
+  });
+  try {
+    void get().fetchGenerationStatus(projectId);
+    await pollMddJob(jobId, projectId, {
+      onProgress: (p) => {
+        if (p?.agent && p?.message) {
+          set((s) => ({
+            agentProgress: appendAgentProgressDone(s.agentProgress, {
+              agent: p.agent!,
+              message: p.message!,
+            }),
+          }));
+        }
+      },
+    });
+    if (!shouldApplyWorkshopUpdate(get, projectId)) return;
+    const { fetchProject, fetchEstimation, fetchConformance } = get();
+    await fetchProject(projectId);
+    const merged = selectPersistedMddBaseline(get()) || get().mddContent || "";
+    if (merged.trim().length <= 80) {
+      set({
+        error:
+          merged.trim().length > 0
+            ? "La regeneración devolvió un documento demasiado corto; la sección no se aplicó al MDD."
+            : "La regeneración terminó sin markdown actualizado.",
+        loading: false,
+        loadingReason: null,
+        notice: null,
+        agentProgress: [],
+        evaluatorCritique: null,
+      });
+      return;
+    }
+    if (sec === 6 && !mddHasSection6Heading(merged)) {
+      set({
+        error:
+          "El servidor respondió OK pero el MDD no incluye ## 6. Seguridad. Reintenta /seguridad; si persiste, recarga la página.",
+        loading: false,
+        loadingReason: null,
+        notice: null,
+        agentProgress: [],
+        evaluatorCritique: null,
+      });
+      return;
+    }
+    await fetchEstimation(projectId, merged).catch(() => {});
+    fetchConformance(projectId).catch(() => {});
+    void get().fetchGenerationStatus(projectId);
+    set({
+      mddContent: merged,
+      loading: false,
+      loadingReason: null,
+      notice: null,
+      agentProgress: [],
+      evaluatorCritique: null,
+      error: null,
+    });
+  } catch (e) {
+    const errMsg = e instanceof Error ? friendlyFetchError(e) : "Error al regenerar sección";
+    const code =
+      e instanceof Error && "code" in e && typeof (e as { code?: string }).code === "string"
+        ? (e as { code?: string }).code
+        : undefined;
+    set({
+      ...streamErrorPatch({ message: errMsg, code }),
+      loading: false,
+      loadingReason: null,
+      notice: null,
+      agentProgress: [],
+      evaluatorCritique: null,
+    });
+  }
 }
 
 function workshopDeliverableStorePatch(
@@ -2223,15 +2312,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return;
     }
 
-    if (tab === "mdd" && session?.id) {
-      const managerThreadId = get().managerThreadId;
-      const pendingPlan = get().pendingPlanApproval;
-      const approvingPlan =
-        Boolean(pendingPlan?.plan?.length) &&
-        managerThreadId != null &&
-        isPlanApprovalResumeMessage(msg);
-      const wantsManager = true;
+    const managerThreadId = get().managerThreadId;
+    const pendingPlan = get().pendingPlanApproval;
+    const approvingPlan =
+      Boolean(pendingPlan?.plan?.length) &&
+      managerThreadId != null &&
+      isPlanApprovalResumeMessage(msg);
+    const wantsManager = Boolean(managerThreadId != null || approvingPlan);
 
+    if (tab === "mdd" && session?.id && wantsManager) {
       const looksLikeMddDocument =
         msg.length > 500 &&
         /^#\s*Master\s+Design\s+Document/i.test(msg) &&
@@ -2244,8 +2333,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         console.warn("[Workshop] El mensaje parece el documento MDD, no la petición del usuario; se envía texto por defecto al API.");
       }
 
-      if (wantsManager) {
-        set({
+      set({
           loading: true,
           loadingReason: "mdd",
           error: null,
@@ -2588,22 +2676,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           });
           return;
         }
-      }
-
-      // No encadenar `ai-orchestrator/chat/stream` tras el Manager MDD: un segundo stream vaciaba el
-      // panel (done del orquestador trae `project` sin MDD persistido) y duplicaba respuesta en chat.
-      set({
-        loading: false,
-        loadingReason: null,
-        agentProgress: [],
-        streamingUserMessage: null,
-        streamingUserImages: null,
-        streamingContent: null,
-        streamingTab: null,
-      });
-      return;
     } else {
-      // Chat genérico para Guía UX/UI, benchmark, spec, etc. (tabs que no usan el flujo MDD/Manager)
+      // Chat vía orquestador (explore / direct_edit→section job) y otras pestañas.
       set({
         loading: true,
         error: null,
@@ -2773,6 +2847,21 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 if (tab === "ux-ui-guide" && freshUx && !docUnchangedError) {
                   get().persistUxUiGuideContent(freshUx).catch(() => {});
                 }
+                const mddJobId =
+                  typeof data.mddJobId === "string" && data.mddJobId.trim()
+                    ? data.mddJobId.trim()
+                    : "";
+                if (mddJobId) {
+                  const mddSection =
+                    typeof data.mddSection === "number" ? data.mddSection : undefined;
+                  void pollAndApplyMddSectionJobFromChat(
+                    get,
+                    set,
+                    requestProjectId,
+                    mddJobId,
+                    mddSection,
+                  );
+                }
               } else if (event === "error" && data.error) {
                 set({
                   error: String(data.error),
@@ -2866,6 +2955,21 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   });
                   if (tab === "ux-ui-guide" && freshUx && !docUnchangedError) {
                     get().persistUxUiGuideContent(freshUx).catch(() => {});
+                  }
+                  const mddJobIdTail =
+                    typeof data.mddJobId === "string" && data.mddJobId.trim()
+                      ? data.mddJobId.trim()
+                      : "";
+                  if (mddJobIdTail) {
+                    const mddSectionTail =
+                      typeof data.mddSection === "number" ? data.mddSection : undefined;
+                    void pollAndApplyMddSectionJobFromChat(
+                      get,
+                      set,
+                      requestProjectId,
+                      mddJobIdTail,
+                      mddSectionTail,
+                    );
                   }
                 }
               } else if (event === "error" && data.error) {

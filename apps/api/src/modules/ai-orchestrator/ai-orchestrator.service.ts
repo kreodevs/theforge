@@ -345,6 +345,8 @@ export class AiOrchestratorService {
     let brdFromResponse: string | null | undefined;
     let documentAstFromResponse: Record<string, unknown> | null | undefined;
     let documentVersionFromResponse: number | null | undefined;
+    let mddJobIdFromResponse: string | undefined;
+    let mddSectionFromResponse: number | undefined;
     try {
       const chatResult = await this.sessions.chat(session.id, message, {
         currentMddContent: currentMdd,
@@ -373,6 +375,8 @@ export class AiOrchestratorService {
       brdFromResponse = chatResult.brdContent;
       documentAstFromResponse = chatResult.documentAst;
       documentVersionFromResponse = chatResult.documentVersion;
+      mddJobIdFromResponse = chatResult.mddJobId;
+      mddSectionFromResponse = chatResult.mddSection;
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Error al generar la respuesta";
@@ -386,7 +390,7 @@ export class AiOrchestratorService {
 
     let updatedProject: Awaited<ReturnType<IOrchestratorProjectsPort["update"]>> | null = null;
     let mddPersistResult: Awaited<ReturnType<AiOrchestratorService["tryPersistMddContent"]>> | undefined;
-    if (tab === "mdd" && mddFromResponse != null && mddFromResponse.length > 0) {
+    if (tab === "mdd" && !mddJobIdFromResponse && mddFromResponse != null && mddFromResponse.length > 0) {
       mddPersistResult = await this.tryPersistMddContent(
         projectId,
         mddFromResponse,
@@ -452,13 +456,14 @@ export class AiOrchestratorService {
 
     const shouldIngestMdd =
       tab === "mdd" &&
+      !mddJobIdFromResponse &&
       ((mddFromResponse != null && mddFromResponse.length > 0) ||
         (mddContentFromClient != null && mddContentFromClient.trim().length > 0));
     this.scheduleSddIngest(projectId, shouldIngestMdd);
     const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, route, hitlLine);
 
     let documentPersist: OrchestratorDocumentPersist | undefined;
-    if (tab === "mdd") {
+    if (tab === "mdd" && !mddJobIdFromResponse) {
       const assistantContent = this.lastAssistantContentForTab(updatedSession, tab);
       const currentMddLen = (currentMdd ?? mddForRouteStage(project, route.stageId) ?? "").trim()
         .length;
@@ -481,6 +486,9 @@ export class AiOrchestratorService {
         phase0FromResponse ?? finalProject?.phase0SummaryContent ?? undefined,
       evaluatorCritique,
       ...(documentPersist ? { documentPersist } : {}),
+      ...(mddJobIdFromResponse
+        ? { mddJobId: mddJobIdFromResponse, mddSection: mddSectionFromResponse }
+        : {}),
     };
   }
 
@@ -713,7 +721,9 @@ export class AiOrchestratorService {
         let mddPersistResult:
           | Awaited<ReturnType<AiOrchestratorService["tryPersistMddContent"]>>
           | undefined;
-        if (tab === "mdd" && msg.mddContent != null && msg.mddContent.length > 0) {
+        const mddJobIdFromStream = msg.mddJobId;
+        const mddSectionFromStream = msg.mddSection;
+        if (tab === "mdd" && !mddJobIdFromStream && msg.mddContent != null && msg.mddContent.length > 0) {
           mddPersistResult = await this.tryPersistMddContent(
             projectId,
             msg.mddContent,
@@ -788,13 +798,14 @@ export class AiOrchestratorService {
         if (uxToReturn != null) projectOut.uxUiGuideContent = uxToReturn;
         const shouldIngestMddStream =
           tab === "mdd" &&
+          !mddJobIdFromStream &&
           ((msg.mddContent != null && msg.mddContent.length > 0) ||
             (mddContentFromClient != null && mddContentFromClient.trim().length > 0));
         this.scheduleSddIngest(projectId, shouldIngestMddStream);
         const evaluatorCritique = await this.maybeEvaluatorCritique(projectId, routeStream, hitlLineStream);
 
         let documentPersist: OrchestratorDocumentPersist | undefined;
-        if (tab === "mdd") {
+        if (tab === "mdd" && !mddJobIdFromStream) {
           const assistantContent = this.lastAssistantContentForTab(msg.session, tab);
           const currentMddLen = (currentMdd ?? mddForRouteStage(project, routeStream.stageId) ?? "")
             .trim().length;
@@ -824,6 +835,9 @@ export class AiOrchestratorService {
               undefined,
             evaluatorCritique,
             ...(documentPersist ? { documentPersist } : {}),
+            ...(mddJobIdFromStream
+              ? { mddJobId: mddJobIdFromStream, mddSection: mddSectionFromStream }
+              : {}),
           },
         };
       }
