@@ -64,6 +64,10 @@ export class AnthropicAdapter implements LLMProvider {
     history: ChatMessage[],
     options?: GenerateResponseOptions,
   ): Promise<string> {
+    const messages = toAnthropicMessages(history, prompt, options?.userMessageImages);
+    if (options?.jsonObjectMode) {
+      messages.push({ role: "assistant", content: "{" });
+    }
     const res = await this.client.messages.create({
       model: this.model,
       max_tokens:
@@ -72,10 +76,11 @@ export class AnthropicAdapter implements LLMProvider {
           welcomeBrief: options?.welcomeBrief,
         }),
       system: options?.systemPrompt,
-      messages: toAnthropicMessages(history, prompt, options?.userMessageImages),
+      messages,
     });
     const block = res.content.find((b) => b.type === "text");
-    return block?.type === "text" ? block.text : "";
+    const text = block?.type === "text" ? block.text : "";
+    return options?.jsonObjectMode ? `{${text}` : text;
   }
 
   async generateResponseStream(
