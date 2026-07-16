@@ -155,6 +155,7 @@ export function ExcalidrawDiagramBlock({
   const [canvasBg] = useState(() => workshopCanvasBackground());
   const [excalidrawTheme] = useState(() => workshopExcalidrawTheme());
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const cancelledRef = useRef(false);
   const onFallbackRef = useRef(onFallbackToSvg);
   onFallbackRef.current = onFallbackToSvg;
@@ -225,19 +226,15 @@ export function ExcalidrawDiagramBlock({
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
       apiRef.current = api;
-      const z = api.getAppState().zoom.value;
-      setZoomPct(Math.round(z * 100));
-      if (isFullscreenLayout) {
+      requestAnimationFrame(() => {
+        api.scrollToContent(undefined, { fitToContent: true });
         requestAnimationFrame(() => {
-          api.scrollToContent(undefined, { fitToContent: true });
-          requestAnimationFrame(() => {
-            const next = api.getAppState().zoom.value;
-            setZoomPct(Math.round(next * 100));
-          });
+          const z = api.getAppState().zoom.value;
+          setZoomPct(Math.round(z * 100));
         });
-      }
+      });
     },
-    [isFullscreenLayout],
+    [],
   );
 
   /** Button zoom: scale about the viewport center (native pinch already uses cursor). */
@@ -272,9 +269,9 @@ export function ExcalidrawDiagramBlock({
     });
   }, []);
 
-  // Fullscreen dialog: refit once layout has settled (header + flex-1 viewport).
+  // Refit when scene mounts or container size changes (inline + fullscreen).
   useEffect(() => {
-    if (!isFullscreenLayout || !scene) return;
+    if (!scene) return;
     let cancelled = false;
     const runFit = () => {
       if (!cancelled) fitToView();
@@ -284,7 +281,22 @@ export function ExcalidrawDiagramBlock({
       cancelled = true;
       cancelAnimationFrame(id);
     };
-  }, [isFullscreenLayout, scene, sceneRev, fitToView]);
+  }, [scene, sceneRev, fitToView]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !scene) return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => fitToView());
+    });
+    ro.observe(host);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [scene, sceneRev, fitToView]);
 
   // Manual rebuild
   const handleRebuild = useCallback(async () => {
@@ -342,6 +354,7 @@ export function ExcalidrawDiagramBlock({
 
   return (
     <div
+      ref={hostRef}
       className={cn(
         "relative w-full",
         isFullscreenLayout
