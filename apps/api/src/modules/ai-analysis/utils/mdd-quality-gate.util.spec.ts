@@ -2,7 +2,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
   evaluateMddQualityGate,
+  mergeQualityGateIntoShortTermContext,
   mddQualityGateHasBlockers,
+  qualityGateToDeliveryGate,
+  readQualityGateSnapshot,
+  resolveMddGateFromShortTermContext,
   runDeterministicMddQualityGate,
   shouldSkipLlmQualityGate,
 } from "./mdd-quality-gate.util.js";
@@ -308,5 +312,43 @@ describe("runDeterministicMddQualityGate", () => {
     const det = runDeterministicMddQualityGate(VALID_MDD);
     assert.equal(det.blockers.length, 0);
     assert.equal(shouldSkipLlmQualityGate(det), det.gaps.length === 0);
+  });
+});
+
+describe("quality gate snapshot helpers", () => {
+  it("qualityGateToDeliveryGate asigna score 100 cuando ok", () => {
+    const qg = evaluateMddQualityGate(VALID_MDD);
+    const dg = qualityGateToDeliveryGate(qg);
+    assert.equal(dg.ok, qg.ok);
+    assert.equal(dg.score, 100);
+  });
+
+  it("mergeQualityGateIntoShortTermContext persiste qualityGate y deliveryGate", () => {
+    const qg = evaluateMddQualityGate(VALID_MDD);
+    const merged = mergeQualityGateIntoShortTermContext({}, qg);
+    assert.ok(merged.qualityGate);
+    assert.ok(merged.deliveryGate);
+    const read = readQualityGateSnapshot(merged);
+    assert.ok(read);
+    assert.equal(read.ok, qg.ok);
+    const resolved = resolveMddGateFromShortTermContext(merged);
+    assert.ok(resolved);
+    assert.equal(resolved.ok, qg.ok);
+  });
+
+  it("resolveMddGateFromShortTermContext cae a deliveryGate legado", () => {
+    const legacy = {
+      deliveryGate: {
+        ok: false,
+        score: 70,
+        blockers: ["legacy blocker"],
+        warnings: [],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    };
+    const resolved = resolveMddGateFromShortTermContext(legacy);
+    assert.ok(resolved);
+    assert.equal(resolved.ok, false);
+    assert.deepEqual(resolved.blockers, ["legacy blocker"]);
   });
 });

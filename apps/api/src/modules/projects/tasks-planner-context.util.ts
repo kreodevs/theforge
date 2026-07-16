@@ -1,5 +1,5 @@
 /**
- * Contexto compacto para Tasks Planner (evita saturar ventana del auditorChatModel).
+ * Contexto compacto para Tasks Planner (evita saturar ventana del graphChatModel).
  */
 
 import type { DomainInventory } from "@theforge/shared-types";

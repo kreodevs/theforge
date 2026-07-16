@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { ComplexityLevel, Status } from "@theforge/database";
-import { mddJsonSchema, type MddJson } from "@theforge/shared-types";
+import { mddJsonSchema, type MddJson, type MddDeliveryGateResult } from "@theforge/shared-types";
+import { resolveMddGateFromShortTermContext } from "../ai-analysis/utils/mdd-quality-gate.util.js";
 
 /** Longitud mínima (caracteres no vacíos) para considerar un entregable “presente”. */
 const MIN_DELIVERABLE_LEN = 48;
@@ -51,6 +52,14 @@ function figmaGateOk(hasUxTeam: boolean, figmaMapping: unknown): boolean {
  */
 @Injectable()
 export class SemaphoreService {
+  /**
+   * Lee gate MDD persistido en `Stage.shortTermContext` (`qualityGate` con fallback a `deliveryGate`).
+   * Devuelve formato `MddDeliveryGateResult` para semáforo, entregables y APIs legacy.
+   */
+  resolvePersistedMddGate(shortTermContext: unknown): MddDeliveryGateResult | null {
+    return resolveMddGateFromShortTermContext(shortTermContext);
+  }
+
   evaluate(input: SemaphoreEvaluationInput): { status: Status; precisionScore: number } {
     let result: { status: Status; precisionScore: number };
     switch (input.complexity) {

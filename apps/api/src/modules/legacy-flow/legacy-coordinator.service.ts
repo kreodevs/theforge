@@ -67,7 +67,7 @@ import { loadLegacyKnowledgePack } from "./knowledge-loader.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { cleanSpecDocumentContent } from "../projects/spec-content.util.js";
 import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
-import { evaluateMddDeliveryGatePrepared } from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
+import { evaluateMddQualityGate, qualityGateToDeliveryGate } from "../ai-analysis/utils/mdd-quality-gate.util.js";
 import {
   documentPersistFieldLabel,
   validateDocumentForPersist,
@@ -1290,7 +1290,7 @@ export class LegacyCoordinatorService {
             "\n---"
           : "");
     }
-    const mddDraft = await this.ai.generateResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
+    const mddDraft = await this.ai.generateArchitectResponse(prompt, [], { systemPrompt: COORDINATOR_SYSTEM });
     const mddContent = await this.reviewer.reviewMdd(description, mddDraft?.trim() ?? "", {
       asIsBaseline: isInitialMdd,
     });
@@ -1311,7 +1311,8 @@ export class LegacyCoordinatorService {
       mddContent: cleaned,
       ...(gateStage?.id ? { stageId: gateStage.id } : {}),
     });
-    const deliveryGate = await evaluateMddDeliveryGatePrepared(cleaned);
+    const qualityGate = evaluateMddQualityGate(cleaned);
+    const deliveryGate = qualityGateToDeliveryGate(qualityGate);
     const response: LegacyGenerateMddResponse = {
       ok: true,
       persisted: true,

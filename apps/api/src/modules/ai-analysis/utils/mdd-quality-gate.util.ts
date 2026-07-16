@@ -1,4 +1,5 @@
-import type { MddQualityGateGap, MddQualityGateResult } from "@theforge/shared-types";
+import type { MddQualityGateGap, MddQualityGateResult, MddDeliveryGateResult } from "@theforge/shared-types";
+import { readDeliveryGateSnapshot } from "./mdd-delivery-gate.util.js";
 import { domainDeliveryGateFindings } from "../../engine/cascade-accuracy.util.js";
 import { preRenderMddSanity } from "./mdd-pre-render.js";
 import {
@@ -158,4 +159,85 @@ export function mddQualityGateHasBlockers(draft: string): boolean {
 /** Skip LLM cuando el paso determinista no reporta blockers ni gaps. */
 export function shouldSkipLlmQualityGate(deterministic: MddQualityGateDeterministicResult): boolean {
   return deterministic.blockers.length === 0 && deterministic.gaps.length === 0;
+}
+
+export type PersistedMddQualityGate = MddQualityGateResult & { updatedAt: string };
+
+/** Convierte Quality Gate lean a formato legacy `deliveryGate` (SSE / entregables). */
+export function qualityGateToDeliveryGate(qualityGate: MddQualityGateResult): MddDeliveryGateResult {
+  const score = qualityGate.ok ? 100 : Math.max(0, 85 - qualityGate.blockers.length * 5);
+  return {
+    ok: qualityGate.ok,
+    score,
+    blockers: qualityGate.blockers,
+    warnings: qualityGate.warnings,
+  };
+}
+
+/** Lee snapshot persistido en `Stage.shortTermContext.qualityGate`. */
+export function readQualityGateSnapshot(shortTermContext: unknown): PersistedMddQualityGate | null {
+  if (!shortTermContext || typeof shortTermContext !== "object" || Array.isArray(shortTermContext)) {
+    return null;
+  }
+  const gate = (shortTermContext as Record<string, unknown>).qualityGate;
+  if (!gate || typeof gate !== "object" || Array.isArray(gate)) return null;
+  const g = gate as Record<string, unknown>;
+  if (typeof g.ok !== "boolean" || !Array.isArray(g.blockers)) return null;
+  const gapsRaw = g.gaps;
+  const gaps: MddQualityGateGap[] = Array.isArray(gapsRaw)
+    ? gapsRaw
+        .filter((item): item is Record<string, unknown> => item != null && typeof item === "object")
+        .map((item) => ({
+          section: typeof item.section === "string" ? item.section : "General",
+          issue: typeof item.issue === "string" ? item.issue : "",
+          fix: typeof item.fix === "string" ? item.fix : "",
+        }))
+    : [];
+  return {
+    ok: g.ok,
+    blockers: g.blockers.filter((b): b is string => typeof b === "string"),
+    warnings: Array.isArray(g.warnings)
+      ? g.warnings.filter((w): w is string => typeof w === "string")
+      : [],
+    gaps,
+    updatedAt: typeof g.updatedAt === "string" ? g.updatedAt : "",
+  };
+}
+
+/**
+ * Lee gate persistido: `qualityGate` primero, fallback a `deliveryGate` legado.
+ * Devuelve siempre formato `MddDeliveryGateResult` para APIs existentes.
+ */
+export function resolveMddGateFromShortTermContext(shortTermContext: unknown): MddDeliveryGateResult | null {
+  const quality = readQualityGateSnapshot(shortTermContext);
+  if (quality) return qualityGateToDeliveryGate(quality);
+  const legacy = readDeliveryGateSnapshot(shortTermContext);
+  if (!legacy) return null;
+  const { ok, score, blockers, warnings } = legacy;
+  return { ok, score, blockers, warnings };
+}
+
+/** Fusiona quality gate en shortTermContext sin borrar otras claves (incl. deliveryGate legacy). */
+export function mergeQualityGateIntoShortTermContext(
+  prev: Record<string, unknown>,
+  qualityGate: MddQualityGateResult,
+): Record<string, unknown> {
+  const deliveryGate = qualityGateToDeliveryGate(qualityGate);
+  return {
+    ...prev,
+    qualityGate: {
+      ok: qualityGate.ok,
+      blockers: qualityGate.blockers,
+      warnings: qualityGate.warnings,
+      gaps: qualityGate.gaps,
+      updatedAt: new Date().toISOString(),
+    },
+    deliveryGate: {
+      ok: deliveryGate.ok,
+      score: deliveryGate.score,
+      blockers: deliveryGate.blockers,
+      warnings: deliveryGate.warnings,
+      updatedAt: new Date().toISOString(),
+    },
+  };
 }

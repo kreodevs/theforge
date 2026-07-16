@@ -130,13 +130,38 @@ export async function createDbgaLLM(aiFactory: AIFactory, userId: string, opts?:
 }
 
 /**
- * LLM de Auditor (grafo MDD), Tasks Planner y Tasks Auditor LLM: `resolveAuditorRuntime` —
- * misma instancia activa con `auditorChatModel` opcional; si no hay override, `chatModel` del proveedor.
+ * Tier B (graphChatModel): Clarifier, Manager, Security, Integration, Quality Gate, tasks planner/auditor.
+ */
+export async function createGraphLLM(
+  aiFactory: AIFactory,
+  userId: string,
+  opts?: CreateDbgaLLMOptions,
+): Promise<BaseChatModel> {
+  const runtime = await aiFactory.resolveGraphRuntime(userId);
+  return createDbgaLLMFromRuntime(runtime, {
+    outputTokenPurpose: "auditor",
+    ...opts,
+  });
+}
+
+/**
+ * Tier A (architectChatModel): software_architect §2–§5, Legacy Coordinador.
+ */
+export async function createArchitectLLM(
+  aiFactory: AIFactory,
+  userId: string,
+  opts?: CreateDbgaLLMOptions,
+): Promise<BaseChatModel> {
+  const runtime = await aiFactory.resolveArchitectRuntime(userId);
+  return createDbgaLLMFromRuntime(runtime, opts);
+}
+
+/**
+ * @deprecated Use `createGraphLLM` — alias para compatibilidad con auditorChatModel legado.
  */
 export async function createMddAuditorLLM(
   aiFactory: AIFactory,
   userId: string,
 ): Promise<BaseChatModel> {
-  const runtime = await aiFactory.resolveAuditorRuntime(userId);
-  return createDbgaLLMFromRuntime(runtime, { outputTokenPurpose: "auditor" });
+  return createGraphLLM(aiFactory, userId);
 }

@@ -250,7 +250,7 @@ export class TasksGenerationPipelineService {
       hasUxTeam: input.hasUxTeam,
     });
     this.logger.warn(
-      `[Tasks pipeline] planner heuristic fallback (${heuristic.items.length} items) — revisa auditorChatModel o upstream`,
+      `[Tasks pipeline] planner heuristic fallback (${heuristic.items.length} items) — revisa graphChatModel o upstream`,
     );
     return heuristic;
   }
@@ -352,7 +352,7 @@ export class TasksGenerationPipelineService {
           : "TASKS_AUDITOR_JSON_FAILED",
       message:
         `Tasks ${params.step === "planner" ? "Planner" : "Auditor LLM"}: ` +
-        "el modelo no devolvió JSON válido tras reintentos. Reintenta o cambia auditorChatModel.",
+        "el modelo no devolvió JSON válido tras reintentos. Reintenta o cambia graphChatModel.",
     });
   }
 

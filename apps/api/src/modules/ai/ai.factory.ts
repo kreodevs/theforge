@@ -47,9 +47,20 @@ export class AIFactory {
     return this.create(runtime);
   }
 
-  /** Mismo adaptador que chat; runtime con `auditorChatModel` si está configurado en la instancia activa. */
+  /** @deprecated Use `createGraphForUser` — alias para auditorChatModel legado. */
   async createAuditorForUser(userId: string): Promise<LLMProvider> {
-    const runtime = await this.resolveAuditorRuntime(userId);
+    return this.createGraphForUser(userId);
+  }
+
+  /** Tier B: graphChatModel (Clarifier, QG, tasks planner/auditor). */
+  async createGraphForUser(userId: string): Promise<LLMProvider> {
+    const runtime = await this.resolveGraphRuntime(userId);
+    return this.create(runtime);
+  }
+
+  /** Tier A: architectChatModel (software_architect, Legacy Coordinador). */
+  async createArchitectForUser(userId: string): Promise<LLMProvider> {
+    const runtime = await this.resolveArchitectRuntime(userId);
     return this.create(runtime);
   }
 

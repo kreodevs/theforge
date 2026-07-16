@@ -14,7 +14,7 @@ import { createMddMergeSection1Node } from "../nodes/mdd-merge-section1.node.js"
 import { createMddGraphPopulatorNode } from "../nodes/mdd-graph-populator.node.js";
 import { resolveCorrectionAgentsFromQualityGate, inferAgentsFromQualityGaps } from "../utils/mdd-manager-routing.util.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
-import { createDbgaLLM, createMddAuditorLLM } from "../llm/create-dbga-llm.js";
+import { createArchitectLLM, createDbgaLLM, createGraphLLM } from "../llm/create-dbga-llm.js";
 import type { AIFactory } from "../../ai/ai.factory.js";
 import { getMddArchitectTools } from "../tools/tool-registry.js";
 import type { TheForgeService } from "../../theforge/theforge.service.js";
@@ -109,17 +109,18 @@ export async function createMddGraph(
   graphMemory: GraphMemoryService,
   options?: MddGraphCompileOptions,
 ) {
-  const llm = await createDbgaLLM(aiFactory, userId);
-  const structuralLlm = await createDbgaLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
-  const graphLlm = await createMddAuditorLLM(aiFactory, userId);
+  const chatLlm = await createDbgaLLM(aiFactory, userId);
+  const graphLlm = await createGraphLLM(aiFactory, userId);
+  const graphStructuralLlm = await createGraphLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
+  const architectLlm = await createArchitectLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const nodeCache = options?.nodeCache ?? null;
 
-  const clarifierNode = wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(llm));
+  const clarifierNode = wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(graphLlm));
   const softwareArchitectNode = wrapCache(
     nodeCache,
     "software_architect",
     softwareArchitectInput,
-    createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
+    createMddSoftwareArchitectNode(architectLlm, getMddArchitectTools(), {
       theforge: options?.theforge ?? null,
       uiMcpFrontendLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
     }),
@@ -129,18 +130,18 @@ export async function createMddGraph(
     nodeCache,
     "security",
     securityInput,
-    wrapSecIntGuard("security", createMddSecurityNode(structuralLlm)),
+    wrapSecIntGuard("security", createMddSecurityNode(graphStructuralLlm)),
   );
   const integrationNode = wrapCache(
     nodeCache,
     "integration",
     integrationInput,
-    wrapSecIntGuard("integration", createMddIntegrationNode(structuralLlm)),
+    wrapSecIntGuard("integration", createMddIntegrationNode(graphStructuralLlm)),
   );
   const formatSecIntNode = createMddFormatSecIntNode();
   const diagramInjectorNode = createMddDiagramInjectorNode();
   const qualityGateNode = createMddQualityGateNode(graphLlm);
-  const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
+  const graphPopulatorNode = createMddGraphPopulatorNode(chatLlm, graphMemory);
 
   const fanoutSecIntNode = async (_state: MDDStateType): Promise<Partial<MDDStateType>> => ({});
 
@@ -211,18 +212,19 @@ export async function createMddGraphWithManager(
   managerToolDeps?: MddManagerToolDeps | null,
   compileOptions?: MddGraphCompileOptions,
 ) {
-  const llm = await createDbgaLLM(aiFactory, userId);
-  const structuralLlm = await createDbgaLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
-  const graphLlm = await createMddAuditorLLM(aiFactory, userId);
+  const chatLlm = await createDbgaLLM(aiFactory, userId);
+  const graphLlm = await createGraphLLM(aiFactory, userId);
+  const graphStructuralLlm = await createGraphLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
+  const architectLlm = await createArchitectLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const nodeCache = compileOptions?.nodeCache ?? null;
-  const managerNode = createMddManagerNode(llm, graphMemory, precisionCalculator, managerToolDeps ?? null);
-  const clarifierNode = wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(llm));
+  const managerNode = createMddManagerNode(graphLlm, graphMemory, precisionCalculator, managerToolDeps ?? null);
+  const clarifierNode = wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(graphLlm));
   const theForgeForArchitect = compileOptions?.theforge ?? managerToolDeps?.theforge ?? null;
   const softwareArchitectNode = wrapCache(
     nodeCache,
     "software_architect",
     softwareArchitectInput,
-    createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
+    createMddSoftwareArchitectNode(architectLlm, getMddArchitectTools(), {
       theforge: theForgeForArchitect,
       uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
     }),
@@ -232,18 +234,18 @@ export async function createMddGraphWithManager(
     nodeCache,
     "security",
     securityInput,
-    wrapSecIntGuard("security", createMddSecurityNode(structuralLlm)),
+    wrapSecIntGuard("security", createMddSecurityNode(graphStructuralLlm)),
   );
   const integrationNode = wrapCache(
     nodeCache,
     "integration",
     integrationInput,
-    wrapSecIntGuard("integration", createMddIntegrationNode(structuralLlm)),
+    wrapSecIntGuard("integration", createMddIntegrationNode(graphStructuralLlm)),
   );
   const formatSecIntNode = createMddFormatSecIntNode();
   const diagramInjectorNode = createMddDiagramInjectorNode();
   const qualityGateNode = createMddQualityGateNode(graphLlm);
-  const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
+  const graphPopulatorNode = createMddGraphPopulatorNode(chatLlm, graphMemory);
   const mergeSection1Node = createMddMergeSection1Node();
   const fanoutSecIntNode = async (_state: MDDStateType): Promise<Partial<MDDStateType>> => ({});
 

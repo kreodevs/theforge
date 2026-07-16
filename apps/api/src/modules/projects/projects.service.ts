@@ -141,6 +141,11 @@ import {
 import {
   mergeDeliveryGateIntoShortTermContext,
 } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
+import {
+  evaluateMddQualityGate,
+  mergeQualityGateIntoShortTermContext,
+  qualityGateToDeliveryGate,
+} from "../ai-analysis/utils/mdd-quality-gate.util.js";
 import { resolveLegacyBaselineStageFlag } from "../ai/utils/legacy-as-is-spec.util.js";
 import {
   mergeTasksQualityIntoShortTermContext,
@@ -556,6 +561,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const stage = pickPrimaryStage(project.stages);
     const mdd = this.mddFromStages(project.stages).trim();
     const cx = project.complexity ?? ComplexityLevel.HIGH;
+    const stageContext = stage?.shortTermContext;
 
     if (!mdd) {
       if (cx !== ComplexityLevel.HIGH) return;
@@ -567,7 +573,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         ],
         warnings: [],
       };
-      if (stage?.id) void this.persistMddDeliveryGateSnapshot(stage.id, gate);
+      if (stage?.id) void this.persistMddQualityGateSnapshot(stage.id, evaluateMddQualityGate(""));
       if (!acknowledgeGaps) {
         throw new ConflictException(
           buildMddDeliveryGateConflictBody(gate, gate.blockers[0]!),
@@ -576,12 +582,25 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       return;
     }
 
-    const gate = await evaluateMddDeliveryGatePrepared(mdd, {
-      brdMarkdown: stage?.brdContent,
-      dbgaMarkdown: project.dbgaContent,
-    });
+    const snapshotGate = this.semaphore.resolvePersistedMddGate(stageContext);
+    const gate =
+      snapshotGate ??
+      qualityGateToDeliveryGate(
+        evaluateMddQualityGate(mdd, {
+          brdMarkdown: stage?.brdContent,
+          dbgaMarkdown: project.dbgaContent,
+        }),
+      );
     if (stage?.id) {
-      void this.persistMddDeliveryGateSnapshot(stage.id, gate);
+      if (!snapshotGate) {
+        void this.persistMddQualityGateSnapshot(
+          stage.id,
+          evaluateMddQualityGate(mdd, {
+            brdMarkdown: stage.brdContent,
+            dbgaMarkdown: project.dbgaContent,
+          }),
+        );
+      }
       void this.syncDomainInventoryForStage(project, stage.id);
     }
     if (!gate.ok && !acknowledgeGaps) {
@@ -589,6 +608,35 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     }
   }
 
+  private async persistMddQualityGateSnapshot(
+    stageId: string,
+    qualityGate: ReturnType<typeof evaluateMddQualityGate>,
+  ): Promise<void> {
+    try {
+      const stage = await this.prisma.stage.findUnique({
+        where: { id: stageId },
+        select: { shortTermContext: true },
+      });
+      const prev =
+        stage?.shortTermContext &&
+        typeof stage.shortTermContext === "object" &&
+        !Array.isArray(stage.shortTermContext)
+          ? (stage.shortTermContext as Record<string, unknown>)
+          : {};
+      await this.prisma.stage.update({
+        where: { id: stageId },
+        data: {
+          shortTermContext: mergeQualityGateIntoShortTermContext(prev, qualityGate) as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[QualityGate] snapshot persist failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /** @deprecated Persiste solo deliveryGate; preferir persistMddQualityGateSnapshot. */
   private async persistMddDeliveryGateSnapshot(
     stageId: string,
     gate: MddDeliveryGateResult,

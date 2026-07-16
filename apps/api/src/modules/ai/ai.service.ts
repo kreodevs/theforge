@@ -333,8 +333,17 @@ export class AiService {
     return this.aiFactory.createForUser(getRequestUserId());
   }
 
+  private async graphProvider() {
+    return this.aiFactory.createGraphForUser(getRequestUserId());
+  }
+
+  private async architectProvider() {
+    return this.aiFactory.createArchitectForUser(getRequestUserId());
+  }
+
+  /** @deprecated Alias de graphProvider — compat auditorChatModel legado. */
   private async auditorProvider() {
-    return this.aiFactory.createAuditorForUser(getRequestUserId());
+    return this.graphProvider();
   }
 
   /** Resolves optional Technology Docs MCP snippets; never throws. */
@@ -680,8 +689,7 @@ export class AiService {
   }
 
   /**
-   * LLM con runtime de auditor/planner (`auditorChatModel` de la instancia activa).
-   * Misma ruta de adaptadores que `generateResponse` (OpenRouter, OpenAI, Anthropic, etc.).
+   * LLM tier B (graphChatModel): Tasks Planner, Tasks Auditor y nodos medios del grafo MDD.
    */
   async generateAuditorResponse(
     prompt: string,
@@ -690,14 +698,14 @@ export class AiService {
   ): Promise<string> {
     try {
       const systemPrompt = options?.systemPrompt ?? "";
-      const runtime = await this.aiFactory.resolveAuditorRuntime(getRequestUserId());
+      const runtime = await this.aiFactory.resolveGraphRuntime(getRequestUserId());
       this.logger.debug(
         `[AiService] generateAuditorResponse provider=${runtime.providerId} model=${runtime.chatModel}`,
       );
       const jsonSuffix = options?.jsonObjectMode
         ? "\n\nResponde ÚNICAMENTE con un objeto JSON válido parseable por JSON.parse."
         : "";
-      const out = await (await this.auditorProvider()).generateResponse(prompt, history, {
+      const out = await (await this.graphProvider()).generateResponse(prompt, history, {
         systemPrompt: systemPrompt + jsonSuffix,
         maxTokensOverride: options?.maxTokensOverride,
         jsonObjectMode: options?.jsonObjectMode,
@@ -705,6 +713,35 @@ export class AiService {
       return out;
     } catch (err) {
       this.logger.error("[AiService] generateAuditorResponse error", err);
+      throw err;
+    }
+  }
+
+  /**
+   * LLM tier A (architectChatModel): Legacy Coordinador MDD y software_architect §2–§5.
+   */
+  async generateArchitectResponse(
+    prompt: string,
+    history: LlmChatMessage[] = [],
+    options?: { systemPrompt?: string; maxTokensOverride?: number; jsonObjectMode?: boolean },
+  ): Promise<string> {
+    try {
+      const systemPrompt = options?.systemPrompt ?? "";
+      const runtime = await this.aiFactory.resolveArchitectRuntime(getRequestUserId());
+      this.logger.debug(
+        `[AiService] generateArchitectResponse provider=${runtime.providerId} model=${runtime.chatModel}`,
+      );
+      const jsonSuffix = options?.jsonObjectMode
+        ? "\n\nResponde ÚNICAMENTE con un objeto JSON válido parseable por JSON.parse."
+        : "";
+      const out = await (await this.architectProvider()).generateResponse(prompt, history, {
+        systemPrompt: systemPrompt + jsonSuffix,
+        maxTokensOverride: options?.maxTokensOverride,
+        jsonObjectMode: options?.jsonObjectMode,
+      });
+      return out;
+    } catch (err) {
+      this.logger.error("[AiService] generateArchitectResponse error", err);
       throw err;
     }
   }

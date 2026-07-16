@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ComplexityLevel, Status } from "@theforge/database";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "./semaphore.service.js";
+import { mergeQualityGateIntoShortTermContext } from "../ai-analysis/utils/mdd-quality-gate.util.js";
 
 const emptyDeliverables: SemaphoreEvaluationInput["deliverables"] = {
   specContent: null,
@@ -158,4 +159,22 @@ test("HIGH: VERDE baja a AMARILLO si hay gaps cross-artifact SDD", () => {
   );
   assert.equal(r.status, Status.AMARILLO);
   assert.equal(r.precisionScore, 82);
+});
+
+test("resolvePersistedMddGate lee qualityGate con fallback a deliveryGate", () => {
+  const s = new SemaphoreService();
+  const qgCtx = mergeQualityGateIntoShortTermContext(
+    {},
+    { ok: true, blockers: [], warnings: [], gaps: [] },
+  );
+  const fromQg = s.resolvePersistedMddGate(qgCtx);
+  assert.ok(fromQg);
+  assert.equal(fromQg.ok, true);
+
+  const legacyOnly = {
+    deliveryGate: { ok: false, score: 60, blockers: ["x"], warnings: [], updatedAt: "" },
+  };
+  const fromLegacy = s.resolvePersistedMddGate(legacyOnly);
+  assert.ok(fromLegacy);
+  assert.equal(fromLegacy.ok, false);
 });
