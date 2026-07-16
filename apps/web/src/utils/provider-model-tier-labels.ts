@@ -7,10 +7,10 @@ export type ProviderModelTier = "architect" | "graph" | "chat";
 /** Agentes y funciones que resuelven cada tier (MDD lean). */
 export const PROVIDER_TIER_USAGE: Record<ProviderModelTier, string> = {
   chat:
-    "Chat Workshop, Clasificador de intención, Mensaje de bienvenida, ADRs (grafo SDD)",
+    "Chat Workshop, Clasificador de intención, Mensaje de bienvenida, Decisiones de arquitectura",
   graph:
-    "Clarificador (§1), Manager MDD, Seguridad (§6), Infraestructura (§7), Control de calidad MDD, Generación de entregables, Planificador y auditor de tareas",
-  architect: "Arquitecto (stack, SQL, API, lógica), Coordinador legacy",
+    "Alcance del proyecto, Orquestador, Seguridad, Infraestructura, Calidad del documento, Entregables (spec, blueprint…), Tareas de implementación",
+  architect: "Arquitecto, Coordinador legacy",
 };
 
 export const PROVIDER_TIER_FORM_LABELS = {
