@@ -3803,8 +3803,10 @@ export default function WorkshopView({
                     <div className="flex-1 overflow-auto min-h-0 flex flex-col">
                       {mddInicialViewMode === "preview" ? (
                         <div className="rounded border border-[var(--border)] bg-[color-mix(in_oklch,var(--background)_78%,var(--card))] p-4">
-                          <WorkshopDocumentStampBar timestamps={docTs("codebaseDoc")} />
-                          <MddViewer content={mddInicialLocalContent || activeLegacyState?.codebaseDoc || ""} />
+                          <MddViewer
+                            content={mddInicialLocalContent || activeLegacyState?.codebaseDoc || ""}
+                            documentTimestamps={docTs("codebaseDoc")}
+                          />
                         </div>
                       ) : (
                         <textarea
@@ -4286,8 +4288,7 @@ export default function WorkshopView({
                         <div className="flex-1 flex flex-col min-h-0">
                           {benchmarkViewMode === "preview" && fase0Content != null && fase0Content !== "" ? (
                             <div className="flex-1 min-h-[200px] overflow-auto">
-                              <WorkshopDocumentStampBar timestamps={docTs("dbgaContent")} />
-                              <MddViewer content={fase0Content} />
+                              <MddViewer content={fase0Content} documentTimestamps={docTs("dbgaContent")} />
                             </div>
                           ) : (
                             <>
@@ -4404,8 +4405,10 @@ export default function WorkshopView({
                             benchmarkMarkdown != null &&
                             benchmarkMarkdown !== "" ? (
                               <div className="flex-1 min-h-[200px] overflow-auto">
-                                <WorkshopDocumentStampBar timestamps={docTs("dbgaContent")} />
-                                <MddViewer content={benchmarkMarkdown} />
+                                <MddViewer
+                                  content={benchmarkMarkdown}
+                                  documentTimestamps={docTs("dbgaContent")}
+                                />
                               </div>
                             ) : (
                               <WorkshopDocTextarea
@@ -4650,17 +4653,19 @@ export default function WorkshopView({
                     savingLabel={mddPersisting ? "Guardando MDD…" : "Grabando y revisando…"}
                   />
                 )}
-                <WorkshopDocumentStampBar timestamps={docTs("mddContent")} />
                 {mddViewMode === "preview" ? (
-                  <MddViewer content={mddContent || ""} />
+                  <MddViewer content={mddContent || ""} documentTimestamps={docTs("mddContent")} />
                 ) : (
-                  <textarea
-                    value={mddContent}
-                    onChange={(e) => setMddContent(e.target.value)}
-                    placeholder="# Master Design Doc\n\nEl contenido del MDD se irá generando aquí..."
-                    className="w-full min-h-full bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
-                    spellCheck={false}
-                  />
+                  <>
+                    <WorkshopDocumentStampBar timestamps={docTs("mddContent")} />
+                    <textarea
+                      value={mddContent}
+                      onChange={(e) => setMddContent(e.target.value)}
+                      placeholder="# Master Design Doc\n\nEl contenido del MDD se irá generando aquí..."
+                      className="w-full min-h-full bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
+                      spellCheck={false}
+                    />
+                  </>
                 )}
               </>
             )}

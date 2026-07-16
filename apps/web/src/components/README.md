@@ -5,8 +5,8 @@
 | **Phase0ManualAudit** | Botón **Auditar Paso 0**: audita el **dbgaContent** visible en pestaña Fase 0 (DBGA libre o entrevista estructurada); no exige JSON de entrevista. `POST …/phase0/audit` → gaps/preguntas o `audit_complete`. |
 | **MddManualAudit** | Botón **Auditar MDD**: audita el **mddContent** visible en pestaña MDD (`POST …/mdd/audit` / `…/mdd/audit/answer`). Reutiliza nodo Auditor MDD + preguntas por gaps. |
 | **Phase0InterviewPanel** | Entrevistador interactivo Paso 0 (`start` → preguntas → `answer`). Incluye auditoría manual al completar. |
-| **MddViewer** | Preview markdown (Fase 0, MDD, BRD, Blueprint): `repairDirectoryTreeBlocks` + detección `((Root))`/`— apps/` envuelve árboles en ` ```text `; párrafos colapsados → `<pre>` monoespaciado. Diagramas Mermaid vía `MermaidDiagramBlock` (híbrido Excalidraw/SVG). Opcional `documentTimestamps` o barra externa `WorkshopDocumentStampBar`. |
-| **WorkshopDocumentStampBar** | Cabecera visible **Creado / Última regeneración** (stamp API). El editor quita el stamp del markdown para evitar bucles PATCH; las fechas viven en `workshopStore.documentTimestamps`. |
+| **MddViewer** | Preview markdown (Fase 0, MDD, BRD, Blueprint): quita el stamp API del cuerpo renderizado y muestra **una sola** `WorkshopDocumentStampBar` (prop `documentTimestamps` o extracción del markdown). `repairDirectoryTreeBlocks` + detección `((Root))`/`— apps/`; párrafos colapsados → `<pre>` monoespaciado. Diagramas Mermaid vía `MermaidDiagramBlock`. |
+| **WorkshopDocumentStampBar** | Cabecera visible **Creado / Última regeneración** (stamp API). El editor y el preview quitan el stamp del markdown; las fechas viven en la barra / `workshopStore.documentTimestamps`. |
 | **DashboardSidebar** | En Workshop, «Panel de proyectos» queda `disabled` mientras `selectWorkshopAgentsBusy` (mismo criterio que el chat). |
 | **DashboardPanelHeader** | Panel de proyectos: acciones Crear / Tutorial / Refrescar. |
 | **ProjectTutorialDialog** | Tutorial **Greenfield** vs **Brownfield** (`content/tutorial/*.md`). Bloques ` ```mermaid ` vía `MarkdownMermaid` (misma ruta híbrida que Workshop). |

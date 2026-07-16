@@ -7,7 +7,8 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { formatDocumentMarkdown } from "@theforge/shared-types";
+import { formatDocumentMarkdown, peelTheforgeDocStamp } from "@theforge/shared-types";
+import { extractWorkshopDocumentTimestamps } from "@/utils/workshop-document-content.util";
 import {
   isCollapsedDirectoryTreeLine,
   splitCollapsedDirectoryTree,
@@ -229,12 +230,15 @@ class MddViewerErrorBoundary extends Component<
  * evitando parpadeo al hacer streaming o al actualizar el documento.
  */
 function MddViewerInner({ content, className = "", documentTimestamps }: MddViewerProps) {
-  const cleaned = stripBrokenMermaidBlocks(formatDocumentMarkdown(content));
+  const timestamps =
+    documentTimestamps ?? extractWorkshopDocumentTimestamps(content);
+  const { body } = peelTheforgeDocStamp(content);
+  const cleaned = stripBrokenMermaidBlocks(formatDocumentMarkdown(body));
   const sections = parseMarkdownSections(cleaned);
 
   return (
     <div className={`space-y-4 markdown-preview min-w-0 pb-[80px] ${className}`}>
-      <WorkshopDocumentStampBar timestamps={documentTimestamps} />
+      <WorkshopDocumentStampBar timestamps={timestamps} />
       {sections.map((section) => (
         <MdSection key={section.id} content={section.content} />
       ))}

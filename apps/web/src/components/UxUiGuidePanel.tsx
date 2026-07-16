@@ -80,17 +80,18 @@ export function UxUiGuidePanel({
   return (
     <>
       {designRefBar}
-      <WorkshopDocumentStampBar timestamps={documentTimestamps} />
       {viewMode === "design" ? (
         <div key="design-view" className="flex min-h-0 flex-1 flex-col overflow-auto">
+          <WorkshopDocumentStampBar timestamps={documentTimestamps} />
           <DesignMdPreview content={content ?? ""} />
         </div>
       ) : viewMode === "preview" ? (
         <div key="preview-view" className="min-h-0 flex-1">
-          <MddViewer content={content ?? ""} />
+          <MddViewer content={content ?? ""} documentTimestamps={documentTimestamps} />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-2">
+          <WorkshopDocumentStampBar timestamps={documentTimestamps} />
           <WorkshopDocSourceSaveBar onSave={onSave} disabled={!isDirty} />
           <WorkshopDocTextarea
             value={content ?? ""}

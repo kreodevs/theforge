@@ -21,9 +21,11 @@
 const META_COMMENT_RE =
   /^<!--\s*theforge-doc:created=([^|]+)\|updated=([^|]+)\s*-->\s*\n?/;
 
-/** Strips legacy and current human-readable header blocks. */
-const HUMAN_HEADER_RE =
+/** Strips legacy and current human-readable header blocks (with or without `---`). */
+const HUMAN_HEADER_WITH_SEP_RE =
   /^>\s*📅\s*.+?\n\n---\n\n/s;
+
+const HUMAN_BLOCKQUOTE_LINE_RE = /^>\s*📅[^\n]*\n+/;
 
 const LOCALE = "es-MX";
 
@@ -98,7 +100,9 @@ export function prependDocumentTimestamps(
 
   let body = content;
   body = body.replace(META_COMMENT_RE, "");
-  body = body.replace(HUMAN_HEADER_RE, "");
+  body = body.replace(HUMAN_HEADER_WITH_SEP_RE, "");
+  body = body.replace(HUMAN_BLOCKQUOTE_LINE_RE, "");
+  body = body.replace(/^---\s*\n+/, "");
 
   const created = existing.created ?? now;
   const updated = now;
@@ -114,7 +118,9 @@ export function prependDocumentTimestamps(
 export function stripDocumentStampHeader(content: string): string {
   let body = content;
   body = body.replace(META_COMMENT_RE, "");
-  body = body.replace(HUMAN_HEADER_RE, "");
+  body = body.replace(HUMAN_HEADER_WITH_SEP_RE, "");
+  body = body.replace(HUMAN_BLOCKQUOTE_LINE_RE, "");
+  body = body.replace(/^---\s*\n+/, "");
   return body;
 }
 

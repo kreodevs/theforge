@@ -33,19 +33,21 @@ export function BrdStagePanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <WorkshopDocumentStampBar timestamps={documentTimestamps} />
       {showPreview ? (
         <div className="min-h-0 flex-1 overflow-auto text-[var(--foreground)]">
-          <MddViewer content={brdContent} />
+          <MddViewer content={brdContent} documentTimestamps={documentTimestamps} />
         </div>
       ) : (
-        <textarea
-          value={brdContent}
-          onChange={(e) => onBrdContentChange(e.target.value)}
-          spellCheck={false}
-          className="w-full min-h-[10rem] flex-1 rounded-md border border-[var(--border)] bg-[var(--background)]/80 p-2 font-mono text-xs text-[var(--foreground)] outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--primary)_55%,transparent)] resize-none"
-          placeholder="Problema, KPIs, alcance…"
-        />
+        <>
+          <WorkshopDocumentStampBar timestamps={documentTimestamps} />
+          <textarea
+            value={brdContent}
+            onChange={(e) => onBrdContentChange(e.target.value)}
+            spellCheck={false}
+            className="w-full min-h-[10rem] flex-1 rounded-md border border-[var(--border)] bg-[var(--background)]/80 p-2 font-mono text-xs text-[var(--foreground)] outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--primary)_55%,transparent)] resize-none"
+            placeholder="Problema, KPIs, alcance…"
+          />
+        </>
       )}
     </div>
   );

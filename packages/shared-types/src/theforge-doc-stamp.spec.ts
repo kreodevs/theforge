@@ -49,6 +49,17 @@ describe("theforge-doc-stamp", () => {
     assert.ok(display!.updated.includes("14:45:30"));
   });
 
+  it("peels blockquote stamp without --- before H1", () => {
+    const raw =
+      "<!-- theforge-doc:created=2026-07-16T03:28:39.226Z|updated=2026-07-16T03:28:39.226Z -->\n" +
+      "> 📅 Creado: 16 de julio de 2026, 03:28:39 UTC · Última regeneración: 16 de julio de 2026, 03:28:39 UTC\n\n" +
+      "# Specs\n";
+    const { stamp, body } = peelTheforgeDocStamp(raw);
+    assert.ok(stamp.includes("theforge-doc:created="));
+    assert.ok(stamp.includes("Creado:"));
+    assert.ok(body.startsWith("# Specs"));
+  });
+
   it("formatDocumentMarkdown preserves Creado / Última regeneración with seconds", () => {
     const out = formatDocumentMarkdown(STAMPED);
     assert.ok(out.includes("<!-- theforge-doc:created=2026-07-15T10:30:45.000Z|updated="));

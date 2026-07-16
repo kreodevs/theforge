@@ -16,8 +16,11 @@
 const META_COMMENT_RE =
   /^<!--\s*theforge-doc:created=([^|]+)\|updated=([^|]+)\s*-->\s*\n?/;
 
-/** Human line (current Creado/… or legacy Generado/…) + separator. */
-const HUMAN_HEADER_RE = /^>\s*📅[\s\S]*?\n\n---\n\n/;
+/** Human line (current Creado/… or legacy Generado/…) + optional `---` separator. */
+const HUMAN_HEADER_WITH_SEP_RE = /^>\s*📅[\s\S]*?\n\n---\n\n/;
+
+/** Blockquote stamp without `---` (regeneraciones que van directo al H1). */
+const HUMAN_BLOCKQUOTE_LINE_RE = /^>\s*📅[^\n]*\n+/;
 
 const STAMP_LOCALE = "es-MX";
 
@@ -79,10 +82,17 @@ export function peelTheforgeDocStamp(text: string): { stamp: string; body: strin
     body = body.slice(meta[0].length);
   }
 
-  const human = body.match(HUMAN_HEADER_RE);
-  if (human?.[0]) {
-    stamp += human[0];
-    body = body.slice(human[0].length);
+  const humanWithSep = body.match(HUMAN_HEADER_WITH_SEP_RE);
+  if (humanWithSep?.[0]) {
+    stamp += humanWithSep[0];
+    body = body.slice(humanWithSep[0].length);
+  } else {
+    const humanLine = body.match(HUMAN_BLOCKQUOTE_LINE_RE);
+    if (humanLine?.[0]) {
+      stamp += humanLine[0];
+      body = body.slice(humanLine[0].length);
+      body = body.replace(/^---\s*\n+/, "");
+    }
   }
 
   return { stamp, body };

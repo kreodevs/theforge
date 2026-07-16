@@ -9,7 +9,7 @@ type WorkshopDocumentStampBarProps = {
 
 /**
  * Cabecera visible de trazabilidad (Creado / Última regeneración).
- * El stamp vive en el markdown persistido; el editor lo quita para evitar bucles PATCH.
+ * El stamp vive en el markdown persistido; el editor y MddViewer lo quitan del cuerpo visible.
  */
 export function WorkshopDocumentStampBar({
   timestamps,

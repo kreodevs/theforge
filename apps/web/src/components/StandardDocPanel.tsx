@@ -104,13 +104,12 @@ export function StandardDocPanel({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <WorkshopDocumentStampBar timestamps={documentTimestamps} />
       {viewMode === "preview" ? (
         /* Estado 2: preview con contenido */
-        <MddViewer content={content || ""} />
+        <MddViewer content={content || ""} documentTimestamps={documentTimestamps} />
       ) : (
-        /* Estado 3: source mode */
         <>
+          <WorkshopDocumentStampBar timestamps={documentTimestamps} />
           <div className="flex min-h-0 flex-1 flex-col gap-2">
             <WorkshopDocSourceSaveBar onSave={onSave} disabled={!isDirty || readOnly} />
             <WorkshopDocTextarea
