@@ -158,22 +158,7 @@ export function resolveEffectiveModelTiers(
   };
 }
 
-const TIER_HINT_BY_SOURCE: Record<EffectiveModelTierSource, string> = {
-  configured: "",
-  "graph-fallback": "Mismo modelo que el grafo (medio)",
-  "chat-fallback": "Mismo modelo que el chat (ligero)",
-};
-
-export function modelTierHint(
-  tier: "graph" | "architect",
-  source: EffectiveModelTierSource,
-): string | null {
-  if (source === "configured") return null;
-  if (tier === "graph" && source === "chat-fallback") {
-    return "Mismo modelo que el chat (ligero)";
-  }
-  return TIER_HINT_BY_SOURCE[source] || null;
-}
+export { providerTierHint as modelTierHint } from "./provider-model-tier-labels";
 
 export type EffectiveProviderSource =
   | "selected-instance"

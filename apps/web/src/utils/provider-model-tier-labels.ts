@@ -1,7 +1,16 @@
 import type { LucideIcon } from "lucide-react";
 import { Rocket, Scale, Zap } from "lucide-react";
 import type { EffectiveModelTierSource, EffectiveModelTiers } from "./resolve-effective-provider";
-import { modelTierHint } from "./resolve-effective-provider";
+
+export type ProviderModelTier = "architect" | "graph" | "chat";
+
+/** Agentes y funciones que resuelven cada tier (MDD lean). */
+export const PROVIDER_TIER_USAGE: Record<ProviderModelTier, string> = {
+  chat: "Workshop chat, intent router, bienvenida, ADRs graph_populator",
+  graph:
+    "Clarifier, Manager, Security, Integration, Quality Gate, entregables, tasks planner/auditor",
+  architect: "software_architect §2–§5, Legacy Coordinador",
+};
 
 export const PROVIDER_TIER_FORM_LABELS = {
   architect: "Alto rendimiento",
@@ -57,61 +66,53 @@ export const PROVIDER_TIER_ICON_TONE_CLASSES: Record<ProviderTierIconTone, strin
     "text-[var(--success)] bg-[color-mix(in_oklch,var(--success)_18%,var(--card))]",
 };
 
-export const PROVIDER_TIER_BADGE_CLASSES: Record<ProviderTierIconTone, string> = {
-  warning:
-    "bg-[color-mix(in_oklch,var(--warning)_16%,var(--card))] text-[var(--warning)]",
-  info: "bg-[color-mix(in_oklch,var(--info)_16%,var(--card))] text-[var(--info)]",
-  success:
-    "bg-[color-mix(in_oklch,var(--success)_16%,var(--card))] text-[var(--success)]",
+function tierUsageHint(tier: ProviderModelTier): string {
+  return `Usado en: ${PROVIDER_TIER_USAGE[tier]}`;
+}
+
+/** Hint de card/panel: uso del tier y, si aplica, herencia de otro tier. */
+export function providerTierHint(
+  tier: ProviderModelTier,
+  source?: EffectiveModelTierSource | null,
+): string {
+  const usage = tierUsageHint(tier);
+  if (tier === "chat" || source === "configured" || !source) {
+    return usage;
+  }
+  if (source === "graph-fallback") {
+    return `Hereda de grafo · ${usage}`;
+  }
+  return `Hereda de chat · ${usage}`;
+}
+
+export const PROVIDER_TIER_FORM_HINTS: Record<ProviderModelTier, string> = {
+  architect: `${tierUsageHint("architect")}. Vacío → hereda grafo o chat.`,
+  graph: `${tierUsageHint("graph")}. Vacío → hereda chat.`,
+  chat: `${tierUsageHint("chat")}. Obligatorio.`,
 };
 
 export interface ResolvedProviderModelTierRow extends ProviderModelTierRowDef {
   model: string | null;
-  displayModel: string | null;
   hint: string | null;
   source: EffectiveModelTierSource | null;
 }
 
-/** Strip OpenRouter-style `provider/model` prefix for compact card labels. */
-export function formatModelShortLabel(model: string): string {
-  const trimmed = model.trim();
-  if (!trimmed) return trimmed;
-  const slashIdx = trimmed.lastIndexOf("/");
-  if (slashIdx >= 0) {
-    return trimmed.slice(slashIdx + 1);
-  }
-  return trimmed;
-}
-
-export interface ResolveProviderModelTierRowsOptions {
-  /** When true, graph/architect fallback hints are included (e.g. chat popover). */
-  showHints?: boolean;
-}
-
 export function resolveProviderModelTierRows(
   tiers: EffectiveModelTiers,
-  options?: ResolveProviderModelTierRowsOptions,
 ): ResolvedProviderModelTierRow[] {
-  const showHints = options?.showHints ?? false;
-
   return PROVIDER_MODEL_TIER_ROWS.map((row) => {
     const model = tiers[row.tier];
-    if (row.tier === "chat") {
-      return {
-        ...row,
-        model,
-        displayModel: model ? formatModelShortLabel(model) : null,
-        hint: null,
-        source: null,
-      };
-    }
-    const source = row.tier === "graph" ? tiers.graphSource : tiers.architectSource;
+    const source =
+      row.tier === "chat"
+        ? null
+        : row.tier === "graph"
+          ? tiers.graphSource
+          : tiers.architectSource;
     return {
       ...row,
       model,
-      displayModel: model ? formatModelShortLabel(model) : null,
       source,
-      hint: showHints ? modelTierHint(row.tier, source) : null,
+      hint: providerTierHint(row.tier, source),
     };
   });
 }

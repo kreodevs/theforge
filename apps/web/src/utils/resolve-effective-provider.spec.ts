@@ -5,6 +5,7 @@ import {
   resolveEffectiveModelTiers,
   resolveEffectiveProvider,
   resolveTierChatModel,
+  modelTierHint,
   visionModelHint,
 } from "./resolve-effective-provider.js";
 import type {
@@ -194,6 +195,14 @@ describe("resolveEffectiveModelTiers", () => {
     assert.equal(tiers.graph, "gpt-4o-mini");
     assert.equal(tiers.architect, "gpt-4o-mini");
     assert.equal(tiers.graphSource, "chat-fallback");
+  });
+
+  it("modelTierHint describe herencia y uso del tier", () => {
+    assert.match(modelTierHint("graph", "chat-fallback"), /Hereda de chat/);
+    assert.match(modelTierHint("graph", "chat-fallback"), /Clarifier/);
+    assert.match(modelTierHint("architect", "graph-fallback"), /Hereda de grafo/);
+    assert.match(modelTierHint("architect", "configured"), /Legacy Coordinador/);
+    assert.doesNotMatch(modelTierHint("architect", "configured"), /Hereda/);
   });
 });
 

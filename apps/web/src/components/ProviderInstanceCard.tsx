@@ -3,8 +3,10 @@ import { Button } from "@/components/ui";
 import { ListRowIconButton } from "@/components/ListRowIconButton";
 import { ProviderLogo, getProviderLabel } from "@/components/ProviderLogo";
 import type { ProviderInstanceSummary } from "@/types/user-providers";
-import { ProviderModelTierColumn } from "@/components/ProviderModelTierRow";
-import { resolveProviderModelTierRows } from "@/utils/provider-model-tier-labels";
+import {
+  PROVIDER_TIER_ICON_TONE_CLASSES,
+  resolveProviderModelTierRows,
+} from "@/utils/provider-model-tier-labels";
 import { resolveEffectiveModelTiers } from "@/utils/resolve-effective-provider";
 import { cn } from "@/lib/utils";
 
@@ -27,7 +29,7 @@ function ModelPill({ model }: { model: string }) {
   return (
     <span
       title={model}
-      className="inline-flex max-w-full items-center rounded-full border border-[color-mix(in_oklch,var(--border)_80%,transparent)] bg-[color-mix(in_oklch,var(--muted)_45%,var(--card))] px-2.5 py-1 font-mono text-[10px] leading-tight text-[var(--foreground)]"
+      className="inline-flex max-w-[min(100%,14rem)] shrink-0 items-center rounded-full border border-[color-mix(in_oklch,var(--border)_80%,transparent)] bg-[color-mix(in_oklch,var(--muted)_45%,var(--card))] px-2.5 py-1 font-mono text-[10px] leading-tight text-[var(--foreground)]"
     >
       <span className="truncate">{model}</span>
     </span>
@@ -42,19 +44,45 @@ function ConfiguredModelsSection({ inst }: { inst: ProviderInstanceSummary }) {
       <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
         Modelos configurados
       </p>
-      <div className="grid grid-cols-1 divide-y divide-[var(--border)] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-        {tierRows.map((row) => (
-          <ProviderModelTierColumn
-            key={row.tier}
-            icon={row.icon}
-            iconTone={row.iconTone}
-            title={row.title}
-            badge={row.badge}
-            model={row.model}
-            displayModel={row.displayModel}
-          />
-        ))}
-      </div>
+      <ul className="space-y-2">
+        {tierRows.map((row) => {
+          const Icon = row.icon;
+          return (
+            <li
+              key={row.tier}
+              className="flex items-center gap-2.5 rounded-lg border border-[color-mix(in_oklch,var(--border)_72%,transparent)] bg-[color-mix(in_oklch,var(--muted)_16%,var(--card))] px-2.5 py-2"
+            >
+              <span
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                  PROVIDER_TIER_ICON_TONE_CLASSES[row.iconTone],
+                )}
+              >
+                <Icon className="h-4 w-4" strokeWidth={2} aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-semibold text-[var(--foreground)]">{row.title}</span>
+                  <span className="rounded-md bg-[color-mix(in_oklch,var(--muted)_55%,var(--card))] px-1.5 py-0.5 text-[10px] font-medium text-[var(--foreground-muted)]">
+                    {row.badge}
+                  </span>
+                </div>
+                {row.hint ? (
+                  <p className="mt-0.5 text-[10px] leading-snug text-[var(--foreground-muted)]">
+                    {row.hint}
+                  </p>
+                ) : null}
+              </div>
+              <span
+                title={row.model ?? undefined}
+                className="min-w-0 max-w-[45%] shrink-0 truncate text-right font-mono text-[10px] text-[var(--foreground)]"
+              >
+                {row.model ?? "—"}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -64,18 +92,20 @@ function CardHeader({
   isActive,
   canMutate,
   onEdit,
+  showMainModelPill = true,
 }: {
   inst: ProviderInstanceSummary;
   isActive: boolean;
   canMutate: boolean;
   onEdit: () => void;
+  showMainModelPill?: boolean;
 }) {
   const providerLabel = getProviderLabel(inst.providerType);
 
   return (
     <div className="flex items-start gap-3">
       <ProviderLogo provider={inst.providerType} size="md" />
-      <div className="min-w-0 flex-1 space-y-1">
+      <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <p className="min-w-0 truncate text-sm font-semibold tracking-tight text-[var(--foreground)]">
             {inst.displayName}
@@ -87,17 +117,17 @@ function CardHeader({
           ) : null}
         </div>
         <p className="truncate text-xs text-[var(--foreground-muted)]">{providerLabel}</p>
-        {inst.chatModel ? (
-          <div className="pt-0.5">
-            <ModelPill model={inst.chatModel} />
-          </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5 self-start">
+        {showMainModelPill && inst.chatModel ? (
+          <ModelPill model={inst.chatModel} />
+        ) : null}
+        {canMutate ? (
+          <ListRowIconButton tooltip="Editar instancia" onClick={onEdit}>
+            <Pencil className="h-4 w-4" />
+          </ListRowIconButton>
         ) : null}
       </div>
-      {canMutate ? (
-        <ListRowIconButton tooltip="Editar instancia" onClick={onEdit} className="shrink-0 self-start">
-          <Pencil className="h-4 w-4" />
-        </ListRowIconButton>
-      ) : null}
     </div>
   );
 }

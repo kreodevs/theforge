@@ -1,26 +1,14 @@
 import { useMemo } from "react";
 import { ExternalLink, Eye, EyeOff } from "lucide-react";
 import { Input } from "./ui";
-import { ProviderModelTierRow } from "./ProviderModelTierRow";
 import { cn } from "@/lib/utils";
 import type { ProviderCatalogEntry } from "@/types/user-providers";
-import { PROVIDER_MODEL_TIER_ROWS } from "@/utils/provider-model-tier-labels";
+import {
+  PROVIDER_TIER_BADGES,
+  PROVIDER_TIER_FORM_HINTS,
+  PROVIDER_TIER_FORM_LABELS,
+} from "@/utils/provider-model-tier-labels";
 import type { UserProviderFormFields, UserProviderFormState } from "@/utils/user-provider-form";
-
-const INSTANCE_TIER_FIELD_BY_TIER = {
-  architect: "architectChatModel",
-  graph: "graphChatModel",
-  chat: "chatModel",
-} as const satisfies Record<
-  (typeof PROVIDER_MODEL_TIER_ROWS)[number]["tier"],
-  UserProviderFormFields
->;
-
-const INSTANCE_TIER_PLACEHOLDER = {
-  architect: "p. ej. anthropic/claude-opus-4",
-  graph: "p. ej. anthropic/claude-sonnet-4",
-  chat: null,
-} as const;
 
 function FormField({
   id,
@@ -207,51 +195,67 @@ export function ProviderConfigFormFields({
 
       {showInstanceModelTiers ? (
         <div className="space-y-3 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_20%,var(--card))] p-3">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-[var(--foreground)]">Modelos configurados</p>
-            <p className="text-xs text-[var(--foreground-muted)]">
-              Alto y estándar son opcionales; vacío hereda del tier inferior. Bajo rendimiento (chat) es
-              obligatorio.
-            </p>
-          </div>
-          <ul className="grid grid-cols-1 gap-4 divide-y divide-[var(--border)] md:grid-cols-3 md:gap-0 md:divide-x md:divide-y-0">
-            {PROVIDER_MODEL_TIER_ROWS.map((row) => {
-              const field = INSTANCE_TIER_FIELD_BY_TIER[row.tier];
-              const value = form[field];
-              const isChat = row.tier === "chat";
-              const placeholder =
-                INSTANCE_TIER_PLACEHOLDER[row.tier] ?? catalog.defaultChatModel;
+          <p className="text-sm font-medium text-[var(--foreground)]">Modelos configurados</p>
+          <FormField
+            id={`${idPrefix}-architect-model`}
+            label={`${PROVIDER_TIER_FORM_LABELS.architect} (${PROVIDER_TIER_BADGES.architect})`}
+            hint={PROVIDER_TIER_FORM_HINTS.architect}
+            error={showError("architectChatModel")}
+          >
+            <Input
+              id={`${idPrefix}-architect-model`}
+              value={form.architectChatModel}
+              onChange={(e) => {
+                onPatch({ architectChatModel: e.target.value });
+                onClearFieldError("architectChatModel");
+              }}
+              onBlur={() => onBlurField("architectChatModel")}
+              placeholder="p. ej. anthropic/claude-opus-4"
+              aria-invalid={!!showError("architectChatModel")}
+              className={cn("font-mono text-xs", inputErrorClass("architectChatModel"))}
+            />
+          </FormField>
 
-              return (
-                <li key={row.tier} className="min-w-0 px-0 first:pl-0 last:pr-0 md:px-3 md:first:pl-0 md:last:pr-0">
-                  <ProviderModelTierRow
-                    layout="column"
-                    icon={row.icon}
-                    iconTone={row.iconTone}
-                    title={row.title}
-                    badge={row.badge}
-                    error={showError(field)}
-                    trailing={
-                      <Input
-                        id={`${idPrefix}-${field}`}
-                        value={value}
-                        onChange={(e) => {
-                          onPatch({ [field]: e.target.value });
-                          onClearFieldError(field);
-                        }}
-                        onBlur={() => onBlurField(field)}
-                        placeholder={placeholder}
-                        required={isChat}
-                        aria-invalid={!!showError(field)}
-                        aria-label={`${row.title} (${row.badge})`}
-                        className={cn("h-8 w-full min-w-0 font-mono text-xs", inputErrorClass(field))}
-                      />
-                    }
-                  />
-                </li>
-              );
-            })}
-          </ul>
+          <FormField
+            id={`${idPrefix}-graph-model`}
+            label={`${PROVIDER_TIER_FORM_LABELS.graph} (${PROVIDER_TIER_BADGES.graph})`}
+            hint={PROVIDER_TIER_FORM_HINTS.graph}
+            error={showError("graphChatModel")}
+          >
+            <Input
+              id={`${idPrefix}-graph-model`}
+              value={form.graphChatModel}
+              onChange={(e) => {
+                onPatch({ graphChatModel: e.target.value });
+                onClearFieldError("graphChatModel");
+              }}
+              onBlur={() => onBlurField("graphChatModel")}
+              placeholder="p. ej. anthropic/claude-sonnet-4"
+              aria-invalid={!!showError("graphChatModel")}
+              className={cn("font-mono text-xs", inputErrorClass("graphChatModel"))}
+            />
+          </FormField>
+
+          <FormField
+            id={`${idPrefix}-chat-model`}
+            label={`${PROVIDER_TIER_FORM_LABELS.chat} (${PROVIDER_TIER_BADGES.chat})`}
+            required
+            hint={PROVIDER_TIER_FORM_HINTS.chat}
+            error={showError("chatModel")}
+          >
+            <Input
+              id={`${idPrefix}-chat-model`}
+              value={form.chatModel}
+              onChange={(e) => {
+                onPatch({ chatModel: e.target.value });
+                onClearFieldError("chatModel");
+              }}
+              onBlur={() => onBlurField("chatModel")}
+              placeholder={catalog.defaultChatModel}
+              aria-invalid={!!showError("chatModel")}
+              className={cn("font-mono text-xs", inputErrorClass("chatModel"))}
+            />
+          </FormField>
         </div>
       ) : (
         <FormField

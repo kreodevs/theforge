@@ -1,59 +1,47 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  formatModelShortLabel,
+  PROVIDER_TIER_USAGE,
+  providerTierHint,
   resolveProviderModelTierRows,
 } from "./provider-model-tier-labels.js";
 
-describe("formatModelShortLabel", () => {
-  it("strips OpenRouter provider prefix", () => {
-    assert.equal(
-      formatModelShortLabel("deepseek/deepseek-v4-flash:floor"),
-      "deepseek-v4-flash:floor",
-    );
-    assert.equal(formatModelShortLabel("anthropic/claude-haiku"), "claude-haiku");
+describe("providerTierHint", () => {
+  it("lista agentes cuando el tier está configurado", () => {
+    assert.match(providerTierHint("graph", "configured"), /Usado en:/);
+    assert.match(providerTierHint("graph", "configured"), /Clarifier/);
+    assert.match(providerTierHint("architect", "configured"), /software_architect/);
+    assert.match(providerTierHint("chat"), /Workshop chat/);
   });
 
-  it("keeps model id when no slash", () => {
-    assert.equal(formatModelShortLabel("gpt-4o-mini"), "gpt-4o-mini");
-  });
-
-  it("uses segment after last slash for nested paths", () => {
-    assert.equal(formatModelShortLabel("openrouter/anthropic/claude-opus"), "claude-opus");
-  });
-
-  it("trims whitespace", () => {
-    assert.equal(formatModelShortLabel("  deepseek/deepseek-v4-flash  "), "deepseek-v4-flash");
+  it("indica herencia y mantiene el uso del tier", () => {
+    assert.match(providerTierHint("graph", "chat-fallback"), /Hereda de chat/);
+    assert.match(providerTierHint("graph", "chat-fallback"), /Quality Gate/);
+    assert.match(providerTierHint("architect", "graph-fallback"), /Hereda de grafo/);
+    assert.match(providerTierHint("architect", "graph-fallback"), /Legacy Coordinador/);
+    assert.match(providerTierHint("architect", "chat-fallback"), /Hereda de chat/);
   });
 });
 
 describe("resolveProviderModelTierRows", () => {
-  it("omits fallback hints on cards by default", () => {
+  it("incluye hint de uso en los tres tiers", () => {
     const rows = resolveProviderModelTierRows({
-      chat: "deepseek/deepseek-v4-flash:floor",
-      graph: "deepseek/deepseek-v4-flash:floor",
+      chat: "haiku",
+      graph: "haiku",
       graphSource: "chat-fallback",
-      architect: "deepseek/deepseek-v4-flash:floor",
-      architectSource: "chat-fallback",
+      architect: "sonnet",
+      architectSource: "configured",
     });
-
-    assert.equal(rows.every((row) => row.hint === null), true);
-    assert.equal(rows[0]?.displayModel, "deepseek-v4-flash:floor");
-    assert.equal(rows[0]?.model, "deepseek/deepseek-v4-flash:floor");
+    assert.equal(rows.length, 3);
+    assert.match(rows.find((r) => r.tier === "chat")?.hint ?? "", /Workshop chat/);
+    assert.match(rows.find((r) => r.tier === "graph")?.hint ?? "", /Hereda de chat/);
+    assert.match(rows.find((r) => r.tier === "architect")?.hint ?? "", /Usado en:/);
+    assert.doesNotMatch(rows.find((r) => r.tier === "architect")?.hint ?? "", /Hereda/);
   });
 
-  it("includes hints when showHints is true", () => {
-    const rows = resolveProviderModelTierRows(
-      {
-        chat: "haiku",
-        graph: "haiku",
-        graphSource: "chat-fallback",
-        architect: "haiku",
-        architectSource: "chat-fallback",
-      },
-      { showHints: true },
-    );
-
-    assert.match(rows.find((row) => row.tier === "graph")?.hint ?? "", /chat/i);
+  it("expone listas de uso por tier", () => {
+    assert.ok(PROVIDER_TIER_USAGE.chat.includes("intent router"));
+    assert.ok(PROVIDER_TIER_USAGE.graph.includes("tasks planner"));
+    assert.ok(PROVIDER_TIER_USAGE.architect.includes("§2"));
   });
 });

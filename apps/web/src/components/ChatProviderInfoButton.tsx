@@ -24,8 +24,8 @@ import type { LucideIcon } from "lucide-react";
 import { ProviderLogo, getProviderLabel } from "./ProviderLogo";
 import { WorkshopChatToolbarIconButton } from "./WorkshopButtons";
 import { useActiveProviderInfo } from "@/hooks/useActiveProviderInfo";
+import { providerTierHint } from "@/utils/provider-model-tier-labels";
 import {
-  modelTierHint,
   resolveEffectiveModelTiers,
   visionModelHint,
   type EffectiveProviderSource,
@@ -328,20 +328,21 @@ export function ChatProviderInfoButton({ onOpenSettings }: ChatProviderInfoButto
                       icon={MessageSquare}
                       label="Modelo chat (ligero)"
                       value={modelTiers.chat}
+                      hint={providerTierHint("chat")}
                       alwaysShow
                     />
                     <ModelField
                       icon={Layers}
                       label="Modelo grafo (medio)"
                       value={modelTiers.graph}
-                      hint={modelTierHint("graph", modelTiers.graphSource)}
+                      hint={providerTierHint("graph", modelTiers.graphSource)}
                       alwaysShow
                     />
                     <ModelField
                       icon={Network}
                       label="Modelo arquitecto (potente)"
                       value={modelTiers.architect}
-                      hint={modelTierHint("architect", modelTiers.architectSource)}
+                      hint={providerTierHint("architect", modelTiers.architectSource)}
                       alwaysShow
                     />
                     <FallbackModelsField models={fallbackModels} />
