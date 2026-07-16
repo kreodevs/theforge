@@ -190,11 +190,11 @@ export function ProviderConfigFormFields({
 
       <FormField
         id={`${idPrefix}-chat-model`}
-        label={showInstanceModelTiers ? "Modelo chat (ligero)" : "Modelo de chat"}
+        label={showInstanceModelTiers ? "Ligero" : "Modelo de chat"}
         required
         hint={
           showInstanceModelTiers
-            ? "Tier C — p. ej. anthropic/claude-haiku. Conversación Workshop e intent router."
+            ? "Tier ligero — p. ej. anthropic/claude-haiku. Conversación Workshop e intent router."
             : `ID del modelo (p. ej. ${catalog.defaultChatModel} u openrouter/free).`
         }
         error={showError("chatModel")}
@@ -217,8 +217,8 @@ export function ProviderConfigFormFields({
         <>
           <FormField
             id={`${idPrefix}-graph-model`}
-            label="Modelo grafo (medio)"
-            hint="Tier B — p. ej. anthropic/claude-sonnet. Generadores §1/§6/§7, Quality Gate, entregables y tasks. Vacío = mismo que chat."
+            label="Estándar"
+            hint="Tier estándar — p. ej. anthropic/claude-sonnet. Generadores §1/§6/§7, Quality Gate, entregables y tasks. Vacío = hereda de Ligero."
             error={showError("graphChatModel")}
           >
             <Input
@@ -237,8 +237,8 @@ export function ProviderConfigFormFields({
 
           <FormField
             id={`${idPrefix}-architect-model`}
-            label="Modelo arquitecto (potente)"
-            hint="Tier A — p. ej. anthropic/claude-opus. §2–§5 SQL/API y Legacy Coordinador. Vacío = grafo → chat."
+            label="Premium"
+            hint="Tier premium — p. ej. anthropic/claude-opus. §2–§5 SQL/API y Legacy Coordinador. Vacío = hereda de Estándar o Ligero."
             error={showError("architectChatModel")}
           >
             <Input

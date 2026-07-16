@@ -45,7 +45,7 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden text-[var(--foreground)]">
       <div className="mx-auto w-full max-w-[min(100%,88rem)] shrink-0 px-4 pt-6 sm:px-6 lg:px-8 xl:px-10">
-        <div className="mx-auto max-w-4xl space-y-4 pb-4 sm:space-y-6 sm:pb-6">
+        <div className="mx-auto max-w-5xl space-y-4 pb-4 sm:space-y-6 sm:pb-6">
           <div className="min-w-0">
             <h1 className="flex items-center gap-2 text-2xl font-bold text-[var(--primary)] sm:text-3xl">
               <Settings className="h-8 w-8 shrink-0" />
@@ -72,7 +72,7 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto w-full max-w-[min(100%,88rem)] px-4 pb-6 sm:px-6 lg:px-8 xl:px-10">
-          <div className="mx-auto max-w-4xl space-y-6">
+          <div className="mx-auto max-w-5xl space-y-6">
             <div
               id="settings-panel-providers"
               role="tabpanel"

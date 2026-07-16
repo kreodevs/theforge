@@ -26,6 +26,12 @@ export async function fetchAllProviderInstances(): Promise<ProviderInstanceSumma
   return res.json() as Promise<ProviderInstanceSummary[]>;
 }
 
+export async function fetchProviderInstance(id: string): Promise<ProviderInstanceSummary> {
+  const res = await api.get(`${BASE}/${id}`);
+  await ensureOk(res, "No se pudo cargar la instancia de proveedor");
+  return res.json() as Promise<ProviderInstanceSummary>;
+}
+
 export async function fetchProviderInstanceCatalogModels(providerType: ProviderId): Promise<{
   chatModels: string[];
   embeddingModels: string[];
