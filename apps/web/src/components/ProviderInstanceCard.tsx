@@ -3,10 +3,8 @@ import { Button } from "@/components/ui";
 import { ListRowIconButton } from "@/components/ListRowIconButton";
 import { ProviderLogo, getProviderLabel } from "@/components/ProviderLogo";
 import type { ProviderInstanceSummary } from "@/types/user-providers";
-import {
-  PROVIDER_TIER_ICON_TONE_CLASSES,
-  resolveProviderModelTierRows,
-} from "@/utils/provider-model-tier-labels";
+import { ProviderModelTierReadonlyValue, ProviderModelTierRow } from "@/components/ProviderModelTierRow";
+import { resolveProviderModelTierRows } from "@/utils/provider-model-tier-labels";
 import { resolveEffectiveModelTiers } from "@/utils/resolve-effective-provider";
 import { cn } from "@/lib/utils";
 
@@ -45,43 +43,19 @@ function ConfiguredModelsSection({ inst }: { inst: ProviderInstanceSummary }) {
         Modelos configurados
       </p>
       <ul className="space-y-2">
-        {tierRows.map((row) => {
-          const Icon = row.icon;
-          return (
-            <li
-              key={row.tier}
-              className="flex items-center gap-2.5 rounded-lg border border-[color-mix(in_oklch,var(--border)_72%,transparent)] bg-[color-mix(in_oklch,var(--muted)_16%,var(--card))] px-2.5 py-2"
-            >
-              <span
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                  PROVIDER_TIER_ICON_TONE_CLASSES[row.iconTone],
-                )}
-              >
-                <Icon className="h-4 w-4" strokeWidth={2} aria-hidden />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs font-semibold text-[var(--foreground)]">{row.title}</span>
-                  <span className="rounded-md bg-[color-mix(in_oklch,var(--muted)_55%,var(--card))] px-1.5 py-0.5 text-[10px] font-medium text-[var(--foreground-muted)]">
-                    {row.badge}
-                  </span>
-                </div>
-                {row.hint ? (
-                  <p className="mt-0.5 text-[10px] leading-snug text-[var(--foreground-muted)]">
-                    {row.hint}
-                  </p>
-                ) : null}
-              </div>
-              <span
-                title={row.model ?? undefined}
-                className="min-w-0 max-w-[45%] shrink-0 truncate text-right font-mono text-[10px] text-[var(--foreground)]"
-              >
-                {row.model ?? "—"}
-              </span>
-            </li>
-          );
-        })}
+        {tierRows.map((row) => (
+          <li key={row.tier}>
+            <ProviderModelTierRow
+              icon={row.icon}
+              iconTone={row.iconTone}
+              title={row.title}
+              badge={row.badge}
+              trailing={
+                <ProviderModelTierReadonlyValue model={row.model} displayModel={row.displayModel} />
+              }
+            />
+          </li>
+        ))}
       </ul>
     </div>
   );

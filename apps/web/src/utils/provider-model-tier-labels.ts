@@ -59,24 +59,51 @@ export const PROVIDER_TIER_ICON_TONE_CLASSES: Record<ProviderTierIconTone, strin
 
 export interface ResolvedProviderModelTierRow extends ProviderModelTierRowDef {
   model: string | null;
+  displayModel: string | null;
   hint: string | null;
   source: EffectiveModelTierSource | null;
 }
 
+/** Strip OpenRouter-style `provider/model` prefix for compact card labels. */
+export function formatModelShortLabel(model: string): string {
+  const trimmed = model.trim();
+  if (!trimmed) return trimmed;
+  const slashIdx = trimmed.lastIndexOf("/");
+  if (slashIdx >= 0) {
+    return trimmed.slice(slashIdx + 1);
+  }
+  return trimmed;
+}
+
+export interface ResolveProviderModelTierRowsOptions {
+  /** When true, graph/architect fallback hints are included (e.g. chat popover). */
+  showHints?: boolean;
+}
+
 export function resolveProviderModelTierRows(
   tiers: EffectiveModelTiers,
+  options?: ResolveProviderModelTierRowsOptions,
 ): ResolvedProviderModelTierRow[] {
+  const showHints = options?.showHints ?? false;
+
   return PROVIDER_MODEL_TIER_ROWS.map((row) => {
     const model = tiers[row.tier];
     if (row.tier === "chat") {
-      return { ...row, model, hint: null, source: null };
+      return {
+        ...row,
+        model,
+        displayModel: model ? formatModelShortLabel(model) : null,
+        hint: null,
+        source: null,
+      };
     }
     const source = row.tier === "graph" ? tiers.graphSource : tiers.architectSource;
     return {
       ...row,
       model,
+      displayModel: model ? formatModelShortLabel(model) : null,
       source,
-      hint: modelTierHint(row.tier, source),
+      hint: showHints ? modelTierHint(row.tier, source) : null,
     };
   });
 }
