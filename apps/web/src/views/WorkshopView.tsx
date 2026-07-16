@@ -673,7 +673,7 @@ export default function WorkshopView({
   const generateSpec = useWorkshopStore((s) => s.generateSpec);
   const generateAem = useWorkshopStore((s) => s.generateAem);
   const clarifySpec = useWorkshopStore((s) => s.clarifySpec);
-  const generateTasks = useWorkshopStore((s) => s.generateTasks);
+  const generateTasks = useWorkshopStore((s) => s.requestGenerateTasks);
   const generateAgentGovernance = useWorkshopStore((s) => s.generateAgentGovernance);
   const fetchAgentGovernanceExport = useWorkshopStore((s) => s.fetchAgentGovernanceExport);
   const persistTasksContent = useWorkshopStore((s) => s.persistTasksContent);

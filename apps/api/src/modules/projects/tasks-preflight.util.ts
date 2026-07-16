@@ -4,15 +4,23 @@
 
 import {
   CASCADE_ACCURACY_THRESHOLD,
+  TASKS_PREFLIGHT_DOC_ACCURACY_BLOCK_THRESHOLD,
   type DomainInventory,
 } from "@theforge/shared-types";
 import { evaluateMddDeliveryGatePrepared } from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
 import { computeDocAccuracy } from "../engine/cascade-accuracy.util.js";
+import {
+  deriveTasksUpstreamActions,
+  formatTasksUpstreamHints,
+  prepareSpecMarkdownForTasks,
+} from "./tasks-upstream-prep.util.js";
 
 export type TasksPreflightResult = {
   ok: boolean;
   blockers: string[];
   warnings: string[];
+  upstreamHints?: string[];
+  docAccuracyScore?: number;
 };
 
 export function runTasksPreflight(params: {
@@ -60,6 +68,82 @@ export function runTasksPreflight(params: {
   };
 }
 
+function evaluateDocAccuracyForTasksPreflight(params: {
+  mddMarkdown: string;
+  specMarkdown?: string | null;
+  apiContractsMarkdown?: string | null;
+  logicFlowsMarkdown?: string | null;
+  uiScreensMarkdown?: string | null;
+  brdMarkdown?: string | null;
+  dbgaMarkdown?: string | null;
+  inventory?: DomainInventory | null;
+  hasUxTeam?: boolean;
+}): ReturnType<typeof computeDocAccuracy> {
+  const specPrep = prepareSpecMarkdownForTasks(params.specMarkdown);
+  return computeDocAccuracy({
+    mddMarkdown: params.mddMarkdown,
+    specMarkdown: specPrep.normalized || params.specMarkdown,
+    apiContractsMarkdown: params.apiContractsMarkdown,
+    logicFlowsMarkdown: params.logicFlowsMarkdown,
+    uiScreensMarkdown: params.uiScreensMarkdown,
+    brdMarkdown: params.brdMarkdown,
+    dbgaMarkdown: params.dbgaMarkdown,
+    inventory: params.inventory ?? undefined,
+    uiScreensRequired: params.hasUxTeam === true,
+  });
+}
+
+function applyDocAccuracyPreflightGates(
+  docAcc: ReturnType<typeof computeDocAccuracy>,
+  params: {
+    acknowledgeGaps?: boolean;
+    specMarkdown?: string | null;
+    apiContractsMarkdown?: string | null;
+    logicFlowsMarkdown?: string | null;
+    uiScreensMarkdown?: string | null;
+    hasUxTeam?: boolean;
+    mddMarkdown: string;
+  },
+  blockers: string[],
+  warnings: string[],
+): { upstreamHints: string[]; docAccuracyScore: number } {
+  const mddHasApiSection = /##\s*4[\.\s]/i.test(params.mddMarkdown);
+  const upstreamActions = deriveTasksUpstreamActions(docAcc, {
+    hasUxTeam: params.hasUxTeam,
+    specMarkdown: params.specMarkdown,
+    apiContractsMarkdown: params.apiContractsMarkdown,
+    logicFlowsMarkdown: params.logicFlowsMarkdown,
+    uiScreensMarkdown: params.uiScreensMarkdown,
+    mddHasApiSection,
+  });
+  const upstreamHints = formatTasksUpstreamHints(upstreamActions);
+
+  const authSkewBlockers = docAcc.blockers.filter((b) => /solo auth|auth-only|domain-auth/i.test(b));
+  for (const b of authSkewBlockers) {
+    blockers.push(`MDD delivery gate: ${b}`);
+  }
+
+  const score = docAcc.score;
+  const minBlockScore = params.acknowledgeGaps
+    ? Math.min(TASKS_PREFLIGHT_DOC_ACCURACY_BLOCK_THRESHOLD, 50)
+    : TASKS_PREFLIGHT_DOC_ACCURACY_BLOCK_THRESHOLD;
+
+  if (score < minBlockScore) {
+    const hint = upstreamHints.slice(0, 3).join("; ") || docAcc.components.flatMap((c) => c.gaps).slice(0, 3).join("; ");
+    blockers.push(
+      `DocAccuracy upstream ${score}/${CASCADE_ACCURACY_THRESHOLD}${hint ? `: ${hint}` : ""}`,
+    );
+  } else if (score < CASCADE_ACCURACY_THRESHOLD) {
+    const hint = upstreamHints.slice(0, 4).join("; ");
+    warnings.push(
+      `DocAccuracy upstream ${score}/${CASCADE_ACCURACY_THRESHOLD} (calidad media; Tasks se generará con advertencias).` +
+        (hint ? ` Sugerido: ${hint}` : ""),
+    );
+  }
+
+  return { upstreamHints, docAccuracyScore: score };
+}
+
 export async function runTasksPreflightStrict(params: {
   mddMarkdown: string;
   brdMarkdown?: string | null;
@@ -73,15 +157,20 @@ export async function runTasksPreflightStrict(params: {
   inventory?: DomainInventory | null;
   /** Legacy AS-IS / ingeniería inversa: relaja gate MDD y Spec/Blueprint obligatorios. */
   legacyBaselineStage?: boolean;
+  /** Cascada/Workshop: relaja gate MDD delivery y umbral bajo de DocAccuracy. */
+  acknowledgeGaps?: boolean;
 }): Promise<TasksPreflightResult> {
   const base = runTasksPreflight(params);
   const blockers = [...base.blockers];
   const warnings = [...base.warnings];
+  let upstreamHints: string[] | undefined;
+  let docAccuracyScore: number | undefined;
 
   const spec = (params.specMarkdown ?? "").trim();
   const blueprint = (params.blueprintMarkdown ?? "").trim();
   const api = (params.apiContractsMarkdown ?? "").trim();
   const legacy = params.legacyBaselineStage === true;
+  const acknowledgeGaps = params.acknowledgeGaps === true;
 
   if (!legacy) {
     const gate = await evaluateMddDeliveryGatePrepared(params.mddMarkdown, {
@@ -89,10 +178,14 @@ export async function runTasksPreflightStrict(params: {
       dbgaMarkdown: params.dbgaMarkdown,
     });
     if (!gate.ok) {
-      if (gate.blockers.length > 0) {
-        blockers.push(...gate.blockers.map((b) => `MDD delivery gate: ${b}`));
+      const gateMessages =
+        gate.blockers.length > 0
+          ? gate.blockers.map((b) => `MDD delivery gate: ${b}`)
+          : [`MDD delivery gate: score ${gate.score}/100 insuficiente para Tasks.`];
+      if (acknowledgeGaps) {
+        warnings.push(...gateMessages);
       } else {
-        blockers.push(`MDD delivery gate: score ${gate.score}/100 insuficiente para Tasks.`);
+        blockers.push(...gateMessages);
       }
     }
     for (const w of gate.warnings) warnings.push(`MDD gate: ${w}`);
@@ -114,27 +207,38 @@ export async function runTasksPreflightStrict(params: {
   }
 
   if (!legacy && spec.length >= 80) {
-    const docAcc = computeDocAccuracy({
-      mddMarkdown: params.mddMarkdown,
-      specMarkdown: spec,
-      apiContractsMarkdown: api.length >= 80 ? api : undefined,
-      logicFlowsMarkdown: params.logicFlowsMarkdown,
-      uiScreensMarkdown: params.uiScreensMarkdown,
-      brdMarkdown: params.brdMarkdown,
-      dbgaMarkdown: params.dbgaMarkdown,
-      inventory: params.inventory ?? undefined,
-    });
-    if (!docAcc.ok || docAcc.score < CASCADE_ACCURACY_THRESHOLD) {
-      const hint = docAcc.blockers.slice(0, 3).join("; ") || docAcc.components.flatMap((c) => c.gaps).slice(0, 3).join("; ");
-      blockers.push(
-        `DocAccuracy upstream ${docAcc.score}/${CASCADE_ACCURACY_THRESHOLD}${hint ? `: ${hint}` : ""}`,
-      );
-    }
+    const docAcc = evaluateDocAccuracyForTasksPreflight(params);
+    const applied = applyDocAccuracyPreflightGates(
+      docAcc,
+      {
+        acknowledgeGaps,
+        specMarkdown: params.specMarkdown,
+        apiContractsMarkdown: params.apiContractsMarkdown,
+        logicFlowsMarkdown: params.logicFlowsMarkdown,
+        uiScreensMarkdown: params.uiScreensMarkdown,
+        hasUxTeam: params.hasUxTeam,
+        mddMarkdown: params.mddMarkdown,
+      },
+      blockers,
+      warnings,
+    );
+    upstreamHints = applied.upstreamHints;
+    docAccuracyScore = applied.docAccuracyScore;
   }
 
   if (legacy) {
     warnings.push("Modo legacy baseline: pre-flight MDD delivery gate y Spec/Blueprint relajados.");
   }
 
-  return { ok: blockers.length === 0, blockers, warnings };
+  if (acknowledgeGaps) {
+    warnings.push("Modo acknowledgeGaps: gate MDD y DocAccuracy bajo relajados para Tasks.");
+  }
+
+  return {
+    ok: blockers.length === 0,
+    blockers,
+    warnings,
+    upstreamHints,
+    docAccuracyScore,
+  };
 }

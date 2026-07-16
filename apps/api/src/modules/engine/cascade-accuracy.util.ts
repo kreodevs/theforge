@@ -28,6 +28,8 @@ export interface CascadeAccuracyInput {
   userStoriesMarkdown?: string | null;
   inventory?: DomainInventory;
   hardGateEnabled?: boolean;
+  /** Cuando false (p. ej. sin `hasUxTeam`), pantallas vacías no penalizan C4. Default true. */
+  uiScreensRequired?: boolean;
 }
 
 function weightedScore(components: AccuracyComponentScore[]): number {
@@ -149,11 +151,16 @@ export function computeDocAccuracy(input: CascadeAccuracyInput): DocAccuracyResu
 
   // C4 Screen fidelity (15)
   const screens = input.uiScreensMarkdown ?? "";
+  const uiScreensRequired = input.uiScreensRequired !== false;
   const c4Gaps: string[] = [];
   let c4Score = 40;
   if (!screens.trim()) {
-    c4Gaps.push("uiScreens ausente");
-    c4Score = 0;
+    if (!uiScreensRequired) {
+      c4Score = 50;
+    } else {
+      c4Gaps.push("uiScreens ausente");
+      c4Score = 0;
+    }
   } else {
     const wordCount = screens.trim().split(/\s+/).length;
     const hasChat = /chat|convers|whatsapp|composer|mensaje/i.test(screens);

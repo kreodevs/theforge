@@ -32,6 +32,8 @@ No platform-wide API key — skip when user has not configured theirs.
 - `resolve-library-id` — `{ libraryName, query }`
 - `query-docs` — `{ libraryId, query }`
 
+Queries sent to Context7 are capped (~480 chars) to avoid HTTP 413 (`PayloadTooLargeError`) when the Workshop chat or MDD text is pasted into an explicit «Según Context7…» request.
+
 ## Consumption
 
 | Flow | Trigger |

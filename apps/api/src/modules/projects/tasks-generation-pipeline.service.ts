@@ -35,6 +35,7 @@ export type TasksPipelineInput = {
   gapsFeedback?: string | null;
   hasUxTeam?: boolean;
   legacyBaselineStage?: boolean;
+  acknowledgeGaps?: boolean;
   taskOpts: LegacyGenerateOptions & {
     navigationMap?: string;
     specContent?: string | null;
@@ -77,16 +78,24 @@ export class TasksGenerationPipelineService {
       logicFlowsMarkdown: input.taskOpts.logicFlowsContent,
       inventory: input.inventory,
       legacyBaselineStage: input.legacyBaselineStage,
+      acknowledgeGaps: input.acknowledgeGaps,
     });
     if (!preflight.ok) {
       throw new BadRequestException({
         code: "TASKS_PREFLIGHT_BLOCKED",
         message: preflight.blockers.join(" "),
         blockers: preflight.blockers,
+        upstreamHints: preflight.upstreamHints,
+        docAccuracyScore: preflight.docAccuracyScore,
       });
     }
     for (const w of preflight.warnings) {
       this.logger.warn(`[Tasks pipeline] preflight warning: ${w}`);
+    }
+    if (preflight.upstreamHints?.length) {
+      this.logger.warn(
+        `[Tasks pipeline] upstream hints: ${preflight.upstreamHints.slice(0, 4).join(" | ")}`,
+      );
     }
 
     const plannerContext = this.buildPlannerContext(input);

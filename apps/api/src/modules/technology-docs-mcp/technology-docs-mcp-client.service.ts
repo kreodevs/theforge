@@ -31,6 +31,23 @@ export const DEFAULT_TECH_DOCS_MCP_URL = "https://mcp.context7.com/mcp";
 /** Max chars per library snippet injected into LLM prompts. */
 const MAX_SNIPPET_CHARS = 2_400;
 
+/**
+ * Context7 MCP rejects oversized JSON-RPC bodies (HTTP 413).
+ * Cap queries sent to resolve-library-id / query-docs.
+ */
+const MAX_MCP_QUERY_CHARS = 480;
+
+function capMcpQuery(text: string): string {
+  const trimmed = text?.trim() ?? "";
+  if (trimmed.length <= MAX_MCP_QUERY_CHARS) return trimmed;
+  const cut = trimmed.slice(0, MAX_MCP_QUERY_CHARS);
+  const lastSentence = cut.lastIndexOf(". ");
+  if (lastSentence > MAX_MCP_QUERY_CHARS * 0.45) {
+    return cut.slice(0, lastSentence + 1);
+  }
+  return `${cut}…`;
+}
+
 export type BuildTechDocsContextOptions = {
   userId?: string;
   maxLibraries?: number;
@@ -113,7 +130,7 @@ export class TechnologyDocsMcpClientService {
     const sections: string[] = [];
     for (const candidate of candidates) {
       try {
-        const topic = q.length >= 24 ? q : candidate.queryTopic;
+        const topic = capMcpQuery(q.length >= 24 ? q : candidate.queryTopic);
         const snippet = await this.fetchLibrarySnippet(
           conn,
           candidate.libraryName,
@@ -219,11 +236,14 @@ export class TechnologyDocsMcpClientService {
     queryTopic: string,
     docKind = "SDD technical documentation",
   ): Promise<string | null> {
-    const libraryId = await this.resolveLibraryId(conn, libraryName, queryTopic);
+    const topic = capMcpQuery(queryTopic);
+    const libraryId = await this.resolveLibraryId(conn, libraryName, topic);
     if (!libraryId) return null;
     const docs = await callUiMcpToolText(conn, QUERY_DOCS_TOOL, {
       libraryId,
-      query: `${docKind}: ${queryTopic}. Prefer API patterns, configuration, token formats, and best practices.`,
+      query: capMcpQuery(
+        `${docKind}: ${topic}. Prefer API patterns, configuration, token formats, and best practices.`,
+      ),
     });
     return capSnippet(docs);
   }
@@ -235,7 +255,7 @@ export class TechnologyDocsMcpClientService {
   ): Promise<string | null> {
     const text = await callUiMcpToolText(conn, RESOLVE_LIBRARY_TOOL, {
       libraryName,
-      query: queryTopic,
+      query: capMcpQuery(queryTopic),
     });
     if (!text?.trim()) return null;
 

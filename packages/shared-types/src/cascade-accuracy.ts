@@ -35,3 +35,6 @@ export interface CascadeAccuracyReport {
 }
 
 export const CASCADE_ACCURACY_THRESHOLD = 90;
+
+/** Pre-flight Tasks: por debajo de este score no se genera (salvo `acknowledgeGaps` ≥ 50). */
+export const TASKS_PREFLIGHT_DOC_ACCURACY_BLOCK_THRESHOLD = 70;
