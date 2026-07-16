@@ -157,6 +157,7 @@ import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButt
 import { WorkshopExportSddButton } from "../components/WorkshopExportSddButton";
 import { ClarifySpecPanel } from "../components/ClarifySpecPanel";
 import { AemGenerateDialog } from "../components/AemGenerateDialog";
+import { TasksQualityBadge } from "@/components/TasksQualityBadge";
 import type { AemMarketScope } from "@theforge/shared-types";
 import {
   WorkshopDirtySaveBar,
@@ -3602,6 +3603,9 @@ export default function WorkshopView({
                     loading={loading && loadingReason === "aem"}
                     ariaLabel="Regenerar Análisis y Estudio de Mercado"
                   />
+                )}
+                {centralPanel === "tasks" && !!tasksContent?.trim() && (
+                  <TasksQualityBadge shortTermContext={activeWorkshopStage?.shortTermContext} />
                 )}
                 {centralPanel === "tasks" && !!tasksContent?.trim() && (
                   <WorkshopRegenButton

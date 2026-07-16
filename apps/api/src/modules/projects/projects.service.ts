@@ -141,6 +141,11 @@ import {
 import {
   mergeDeliveryGateIntoShortTermContext,
 } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
+import { resolveLegacyBaselineStageFlag } from "../ai/utils/legacy-as-is-spec.util.js";
+import {
+  mergeTasksQualityIntoShortTermContext,
+  type TasksPipelineQualitySnapshot,
+} from "@theforge/shared-types";
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
 import {
   persistStageAndProjectDeliverables,
@@ -166,9 +171,9 @@ import {
   parseChangeScopeFromLegacyState,
 } from "./tasks-coordinates-context.util.js";
 import {
-  evaluateTasksGenerationQuality,
   TASKS_QUALITY_THRESHOLD,
 } from "./tasks-generation-quality.util.js";
+import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.service.js";
 import { ResolveChangeToFilesService } from "../legacy-flow/resolve-change-to-files.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
@@ -256,6 +261,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly planValidation: PlanValidationService,
     private readonly projectGroups: ProjectGroupsService,
     private readonly documentSnapshot: DocumentSnapshotService,
+    private readonly tasksPipeline: TasksGenerationPipelineService,
   ) {}
 
   private async guardAndSnapshotDocumentField(
@@ -604,6 +610,35 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     } catch (err) {
       this.logger.warn(
         `[DeliveryGate] snapshot persist failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  private async persistTasksQualitySnapshot(
+    stageId: string | undefined,
+    snapshot: TasksPipelineQualitySnapshot,
+  ): Promise<void> {
+    if (!stageId?.trim()) return;
+    try {
+      const stage = await this.prisma.stage.findUnique({
+        where: { id: stageId.trim() },
+        select: { shortTermContext: true },
+      });
+      const prev =
+        stage?.shortTermContext &&
+        typeof stage.shortTermContext === "object" &&
+        !Array.isArray(stage.shortTermContext)
+          ? (stage.shortTermContext as Record<string, unknown>)
+          : {};
+      await this.prisma.stage.update({
+        where: { id: stageId.trim() },
+        data: {
+          shortTermContext: mergeTasksQualityIntoShortTermContext(prev, snapshot) as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[Tasks] quality snapshot persist failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -2692,41 +2727,39 @@ name: ${JSON.stringify(name)}
       mddMarkdown: mdd,
     });
 
-    let tasksRaw = await this.ai.generateTasks(mdd, project.blueprintContent, taskOpts);
-    let quality = evaluateTasksGenerationQuality({
-      tasksMarkdown: tasksRaw,
+    const legacyBaselineStage =
+      project.projectType === "LEGACY"
+        ? resolveLegacyBaselineStageFlag(stage, mdd)
+        : false;
+
+    const pipelineResult = await this.tasksPipeline.run({
       mddMarkdown: mdd,
+      blueprintMarkdown: project.blueprintContent,
       brdMarkdown: stage?.brdContent,
       dbgaMarkdown: project.dbgaContent,
       inventory,
+      gapsFeedback,
+      hasUxTeam: project.hasUxTeam === true,
+      legacyBaselineStage,
+      taskOpts,
     });
 
-    if (!quality.ok && quality.feedback) {
+    const { tasksMarkdown: tasksRaw, quality, snapshot } = pipelineResult;
+    if (!quality.ok) {
       this.logger.warn(
-        `[Tasks] Calidad insuficiente (score=${quality.score}, TaskAccuracy=${quality.accuracyScore}, audit=${quality.auditScore}, n=${quality.taskCount}) — reintento único`,
+        `[Tasks] Pipeline best-effort (det=${quality.score}, llm=${snapshot.llmAuditorScore}, ` +
+          `umbral ${TASKS_QUALITY_THRESHOLD}, repairs=${snapshot.repairAttempts}). W4 puede regenerar.`,
       );
-      const retryFeedback = [gapsFeedback?.trim(), quality.feedback].filter(Boolean).join("\n\n");
-      tasksRaw = await this.ai.generateTasks(mdd, project.blueprintContent, {
-        ...taskOpts,
-        gapsFeedback: retryFeedback,
-      });
-      quality = evaluateTasksGenerationQuality({
-        tasksMarkdown: tasksRaw,
-        mddMarkdown: mdd,
-        brdMarkdown: stage?.brdContent,
-        dbgaMarkdown: project.dbgaContent,
-        inventory,
-      });
-      if (!quality.ok) {
-        this.logger.warn(
-          `[Tasks] Tras reintento: score=${quality.score} (umbral ${TASKS_QUALITY_THRESHOLD}). Se persiste el mejor esfuerzo; W4 puede volver a regenerar.`,
-        );
-      }
+    } else {
+      this.logger.log(
+        `[Tasks] Pipeline OK (det=${quality.score}, llm=${snapshot.llmAuditorScore}, n=${quality.taskCount})`,
+      );
     }
 
     const tasksContent = cleanDocumentContent(tasksRaw);
 
     const updated = await this.update(projectId, { tasksContent });
+    await this.persistTasksQualitySnapshot(stage?.id, snapshot);
 
     if (isBrownfieldCapable(theforgeId)) {
       void this.planValidation.validateProjectChangePlan(projectId).catch((e) =>

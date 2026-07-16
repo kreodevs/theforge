@@ -245,6 +245,10 @@ export interface LegacyGenerateOptions {
   phase0GapsJson?: string | null;
   /** Blueprint para checklist de cobertura cuando el artefacto destino no lo recibe como body. */
   coverageBlueprintContent?: string | null;
+  /** Plan JSON del TasksPlanner (Fase 1); el redactor no debe salir del plan. */
+  tasksPlanJson?: string | null;
+  /** Feedback del Auditor LLM de Tasks para reparación. */
+  tasksAuditorFeedback?: string | null;
   /** Pre-fetched Technology Docs MCP block (Context7). When absent, AiService may resolve from MDD. */
   techDocsContext?: string | null;
   /** BRD stage — domain inventory injection in greenfield checklists. */
@@ -326,6 +330,10 @@ export class AiService {
 
   private async provider() {
     return this.aiFactory.createForUser(getRequestUserId());
+  }
+
+  private async auditorProvider() {
+    return this.aiFactory.createAuditorForUser(getRequestUserId());
   }
 
   /** Resolves optional Technology Docs MCP snippets; never throws. */
@@ -659,6 +667,32 @@ export class AiService {
       return out;
     } catch (err) {
       console.error("[AiService] generateResponse error", err);
+      throw err;
+    }
+  }
+
+  /**
+   * LLM con runtime de auditor/planner (`auditorChatModel` de la instancia activa).
+   * Misma ruta de adaptadores que `generateResponse` (OpenRouter, OpenAI, Anthropic, etc.).
+   */
+  async generateAuditorResponse(
+    prompt: string,
+    history: LlmChatMessage[] = [],
+    options?: { systemPrompt?: string; maxTokensOverride?: number },
+  ): Promise<string> {
+    try {
+      const systemPrompt = options?.systemPrompt ?? "";
+      const runtime = await this.aiFactory.resolveAuditorRuntime(getRequestUserId());
+      this.logger.debug(
+        `[AiService] generateAuditorResponse provider=${runtime.providerId} model=${runtime.chatModel}`,
+      );
+      const out = await (await this.auditorProvider()).generateResponse(prompt, history, {
+        systemPrompt,
+        maxTokensOverride: options?.maxTokensOverride,
+      });
+      return out;
+    } catch (err) {
+      this.logger.error("[AiService] generateAuditorResponse error", err);
       throw err;
     }
   }
@@ -1129,6 +1163,18 @@ export class AiService {
       prompt +=
         "\n\n**Los siguientes puntos deben corregirse o incorporarse:**\n---\n" +
         options.gapsFeedback.trim() +
+        "\n---";
+    }
+    if (options?.tasksPlanJson?.trim()) {
+      prompt +=
+        "\n\n**PLAN JSON APROBADO (OBLIGATORIO — no añadas tareas fuera del plan; expande cada ítem en markdown):**\n---\n" +
+        options.tasksPlanJson.trim() +
+        "\n---";
+    }
+    if (options?.tasksAuditorFeedback?.trim()) {
+      prompt +=
+        "\n\n**Feedback del Auditor Tasks:**\n---\n" +
+        options.tasksAuditorFeedback.trim() +
         "\n---";
     }
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);

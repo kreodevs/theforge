@@ -107,7 +107,6 @@ import {
 } from "../theforge/legacy-mdd-v1-markdown.util.js";
 import { trySectionMergeDeliverable } from "./legacy-section-merge-deliverables.runner.js";
 import type { LegacySectionMergeTrace } from "./legacy-section-merge.types.js";
-import { mergeLegacyTasksGenerateOptions } from "./legacy-generate-options.util.js";
 import { LegacyDeliverablesStrategyService } from "./legacy-deliverables-strategy/legacy-deliverables-strategy.service.js";
 import type {
   LegacyDeliverablesStrategyContext,
@@ -537,19 +536,6 @@ export class LegacyCoordinatorService {
    * Sincroniza la etapa legacy actual al grafo FalkorDB (nodo :LegacyStage).
    * No crítico — fallos se loguean como warning y no interrumpen el flujo.
    */
-  /**
-   * Navigation map from Ariadne MCP (same cap as `ProjectsService.fetchNavigationMap`).
-   */
-  private async fetchNavigationMapForTasks(theforgeId: string): Promise<string | undefined> {
-    try {
-      const content = await this.theforge.fetchNavigationMap(theforgeId);
-      if (!content || content.length < 200) return undefined;
-      return content;
-    } catch {
-      return undefined;
-    }
-  }
-
   private async syncCurrentLegacyStageToGraph(projectId: string, stageId: string): Promise<void> {
     try {
       const [stage, project] = await Promise.all([
@@ -1932,14 +1918,7 @@ export class LegacyCoordinatorService {
             p = await load();
             return;
           }
-          const freshForTasks = await load();
-          const navigationMap = await this.fetchNavigationMapForTasks(theforgeId).catch(() => undefined);
-          const tasksContent = await this.ai.generateTasks(
-            mddForLlm,
-            freshForTasks.blueprintContent?.trim() || bpTasks || undefined,
-            mergeLegacyTasksGenerateOptions(legacyOpts, freshForTasks, navigationMap),
-          );
-          await update({ tasksContent: cleanDocumentContent(tasksContent) });
+          await this.projects.generateTasks(projectId);
           p = await load();
           return;
         }
@@ -2239,41 +2218,28 @@ export class LegacyCoordinatorService {
       );
     }
 
-    let content: string;
-
     if (documentType === "tasks") {
       const gateStageForMdd = stage ?? pickPrimaryStage(project.stages);
       const stageMdd = String(gateStageForMdd?.mddContent ?? "").trim();
-      const mddForTasks =
-        stageMdd ||
-        `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}`;
-      const legacyBaselineStage = resolveLegacyBaselineStageFlag(gateStageForMdd, stageMdd || mddForTasks);
-      let legacyOpts:
-        | { theforgeContext?: string; contractSpecs?: string; legacyBaselineStage?: boolean }
-        | undefined;
-      if (project.theforgeProjectId && this.theforge.isConfigured()) {
-        const [theforgeContext, contractSpecs] = await Promise.all([
-          this.theforge.getContextForDeliverables(project.theforgeProjectId),
-          this.theforge.gatherContractSpecsForApi(project.theforgeProjectId),
-        ]);
-        legacyOpts = {
-          legacyBaselineStage,
-          theforgeContext: theforgeContext?.trim() || undefined,
-          contractSpecs: contractSpecs?.trim() || undefined,
-        };
-      } else if (legacyBaselineStage) {
-        legacyOpts = { legacyBaselineStage };
+      if (!stageMdd && gateStageForMdd?.id) {
+        const mddSeed =
+          `[Ingeniería inversa: documento del codebase existente. Genera entregables que describan el sistema AS-IS.]\n\n${codebaseDoc}`;
+        await this.prisma.stage.update({
+          where: { id: gateStageForMdd.id },
+          data: { mddContent: mddSeed },
+        });
       }
-      const navigationMap = project.theforgeProjectId
-        ? await this.fetchNavigationMapForTasks(project.theforgeProjectId).catch(() => undefined)
-        : undefined;
-      const rawTasks = await this.ai.generateTasks(
-        mddForTasks,
-        project.blueprintContent,
-        mergeLegacyTasksGenerateOptions(legacyOpts, project, navigationMap),
-      );
-      content = cleanDocumentContent(rawTasks);
-    } else {
+      await this.projects.generateTasks(projectId);
+      const refreshed = await this.projects.findOne(projectId);
+      return {
+        content: (refreshed.tasksContent ?? "").trim(),
+        field: String(field),
+      };
+    }
+
+    let content: string;
+
+    {
       // Construir prompt
       const typePrompt = LegacyCoordinatorService.DOCUMENT_TYPE_PROMPTS[documentType];
       const prompt = `${typePrompt}\n\n--- codebaseDoc ---\n\n${codebaseDoc}`;

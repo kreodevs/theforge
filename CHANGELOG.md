@@ -4,6 +4,38 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [v1.0.0] — 2026-07-15
+
+> **General Availability** — release estable tras las RC `v1.0.0-rc.2` / `v1.0.0-rc.3`. Incluye el pipeline Tasks planner + auditor LLM, endurecimiento Excalidraw/Mermaid, cabeceras de trazabilidad en entregables y correcciones de deploy/Workshop acumuladas desde la RC.
+
+### Added
+
+- **Pipeline Tasks planner + auditor LLM:** `TasksGenerationPipelineService` — pre-flight estricto (`runTasksPreflightStrict`: gate MDD delivery, Spec/Blueprint obligatorios, API si §4, DocAccuracy ≥ 90; modo `legacyBaselineStage` relaja gate en AS-IS) → **Tasks Planner** (modelo `auditorChatModel`, misma ruta OpenRouter/BYOK que chat) → redacción con plan JSON (modelo de chat) → **Tasks Auditor LLM** (umbral 92, hasta 2 reparaciones dirigidas) → gates deterministas + `TaskAccuracy`. Schemas y snapshot en `@theforge/shared-types/tasks-pipeline`; persistencia `tasksQualitySnapshot` en `Stage.shortTermContext`.
+- **Legacy y brownfield en el mismo pipeline:** `LegacyCoordinatorService` delega Tasks en `ProjectsService.generateTasks` (bulk y `generate-from-codebase`); si falta MDD en stage legacy se siembra AS-IS antes de encolar.
+- **Workshop — badge de calidad Tasks:** `TasksQualityBadge` en toolbar Tasks (score auditor LLM + tooltip de métricas); `WorkshopStage.shortTermContext` expuesto al front.
+- **IA — `generateAuditorResponse`:** `AiService` + `AIFactory.createAuditorForUser` para Planner/Auditor Tasks y reutilización del modelo auditor MDD.
+- **Gobernanza multi-target:** scaffold de agent governance con varios destinos de export (`feat/agent-governance-multi-target`).
+- **Workshop — trazabilidad:** inserción de gaps de trazabilidad y corrección de baseline en autoguardado (`traceability gap insert`).
+
+### Changed
+
+- **Ajustes → instancia activa:** etiqueta **Modelo auditor / planner** (`auditorChatModel`) — Auditor MDD, Tasks Planner y Tasks Auditor LLM comparten un solo campo.
+- **Documentación:** `docs/TASKS-ROL-EN-SDD.md`, READMEs en `projects/`, `ai/`, `ai/prompts/`, `web/components/`.
+
+### Fixed
+
+- **Cabeceras SDD con fecha/hora completa:** `prependDocumentTimestamps` en todos los entregables (`Creado` / `Última regeneración` con segundos UTC); el formateador preserva el stamp (`preserve-doc-stamp`).
+- **Deploy TS2353:** `uiScreensContent` solo en persistencia Project (`PROJECT_ONLY_DELIVERABLE_KEYS`), no en columnas Stage.
+- **MDD background:** omitir delivery gate al persistir borradores de job MDD en cola.
+- **Workshop MDD:** bucle de `PATCH` al persistir MDD desde chat interrumpido.
+- **Excalidraw / Mermaid (web):** canvas alineado al papel del Workshop, chrome nativo oculto, toolbars opacas, pantalla completa, zoom con rueda, reparación del canvas híbrido.
+- **Mermaid flowchart:** prompts endurecidos y etiquetas con `<br/>` entrecomilladas.
+- **MCP agent governance:** export acotado para parse en spec-kit.
+
+### Architecture
+
+- Un solo runtime **auditor/planner** (`auditorChatModel`) para MDD Auditor, Tasks Planner y Tasks Auditor; redactor Tasks usa modelo de chat con plan JSON inyectado. Pre-flight sync bloquea generación aguas arriba insuficiente; legacy baseline relaja Spec/Blueprint sin saltarse gates de calidad del pipeline.
+
 ## [v1.0.0-rc.3] — 2026-07-15
 
 ### Added

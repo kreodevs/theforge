@@ -506,7 +506,7 @@ export class UserProvidersService {
   }
 
   /**
-   * Runtime del agente Auditor (grafo MDD).
+   * Runtime del agente Auditor (grafo MDD) y del pipeline Tasks (Planner + Auditor LLM).
    * Usa la instancia activa del usuario; `auditorChatModel` en la instancia es opcional.
    * Si no hay override, mismo runtime que `resolveRuntime`.
    */

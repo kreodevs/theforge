@@ -22,6 +22,9 @@ Prompts del módulo AI. Están estructurados según marcos de ingeniería de pro
 | **logic-flows-prompt.md** | Flujos Mermaid al MDD §4–§5; `buildMddContextForLogicFlows`. Guardas flowchart (etiquetas con `<br/>` / `:` / `?` entrecomilladas, no truncar nodos). **Legacy etapa 1 AS-IS:** `legacy-as-is-logic-flows.util`. Pie **Proyecto legacy**. |
 | **mermaid-regenerate-prompt.ts** | Botón Regenerar del Workshop: reescribe diagramas rotos/truncados (flowchart + sequence). |
 | **tasks-prompt.md** | Breakdown Backend / Front / Infra / QA; alineación MDD §1–§7 con trazabilidad **MDD:** / **Story:**; cobertura exhaustiva; `buildMddContextForTasks` + artefactos Spec/HU/API/Flujos/Infra en `generateTasks`. Pie **Proyecto legacy**. |
+| **tasks-planner-prompt.md** | Plan JSON (`T-NNN`, capas, dependsOn) — **Tasks Planner** vía `generateAuditorResponse` (`auditorChatModel`). |
+| **tasks-auditor-prompt.md** | Auditor LLM de Tasks (score, gaps) — mismo runtime auditor/planner. |
+| **tasks-repair-prompt.md** | Parche dirigido tras fallo de gates. |
 | **agent-governance-prompt.md** | Scaffold `agent-governance/` (JSON `files`) desde MDD §1–§7 + Blueprint; plantillas LOW/MEDIUM/HIGH; derivación stack-agnóstica; `generateAgentGovernance()`. |
 | **spec-prompt.md** | Spec what/why desde DBGA o MDD (`buildMddContextForSpec`). **Legacy etapa 1 AS-IS:** `legacy-as-is-spec.util` — extracto §1/§3/§5, sin §4 API; sin section merge. |
 | **use-cases-prompt.md** | Casos de uso desde MDD+Spec; cobertura exhaustiva; `buildMddContextForUseCases`. **Cada CU cierra con un diagrama Mermaid** (preferencia `stateDiagram-v2`; `flowchart`/`sequenceDiagram` cuando represente mejor el caso) con guardas de sintaxis (un solo fence, etiquetas entrecomilladas, nodos únicos). **Legacy etapa 1 AS-IS:** `legacy-as-is-use-cases.util` — flujos de negocio, checklist actores/dominios, matriz única; sin section merge. Pie **Proyecto legacy**. |

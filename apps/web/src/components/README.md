@@ -20,7 +20,8 @@
 | **Phase0ManualAudit** | Acepta `initialAudit` para reanudar auditoría tras fusión (`audit_started` / `audit_complete`). |
 | **MddPatternsWizardDialog** | Selector SSOT con pestañas verticales (`initial \| edit`): títulos = categorías del wizard MDD (emoji + texto original). Antes de abrir: `POST …/mdd/suggest-governance-patterns` (DBGA, benchmark, BRD). Al confirmar: MDD solo con patrones `[X]` + `POST …/mdd/record-governance-pattern-adrs`. |
 | **PluginSettingsSection** | Ajustes → **Plugins**: formularios declarativos de plugins cargados (`GET /plugins/settings-panels`, persistencia `PUT /plugins/:pluginId/user-settings`). Sustituye campos comerciales en proveedores IA (p. ej. modelo de imagen EVD). |
-| **ProviderInstancesCard** | CRUD/listado de instancias de proveedor IA; marca la instancia **Activa** (runtime del grafo MDD y chat). En el modal, **Modelo de auditor** opcional (`auditorChatModel`) para el nodo Auditor MDD. |
+| **ProviderInstancesCard** | CRUD/listado de instancias de proveedor IA; marca la instancia **Activa** (runtime del grafo MDD y chat). En el modal, **Modelo auditor / planner** opcional (`auditorChatModel`) para Auditor MDD, Tasks Planner y Tasks Auditor LLM. |
+| **TasksQualityBadge** | Toolbar Tasks (Workshop): lee `Stage.shortTermContext.tasksQualitySnapshot` y muestra score del auditor LLM (umbral 92) con tooltip de métricas deterministas. |
 | **AccountConfigCard** | Ajustes → Cuenta: secret MCP rotable y preferencias del taller. |
 | **McpSecretCard** | Re-export de `AccountConfigCard` (compat). |
 | **AriadneConfigCard** | URL/token MCP de Ariadne (base de conocimientos). |

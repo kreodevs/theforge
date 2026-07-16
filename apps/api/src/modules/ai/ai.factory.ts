@@ -39,6 +39,12 @@ export class AIFactory {
     return this.create(runtime);
   }
 
+  /** Mismo adaptador que chat; runtime con `auditorChatModel` si está configurado en la instancia activa. */
+  async createAuditorForUser(userId: string): Promise<LLMProvider> {
+    const runtime = await this.resolveAuditorRuntime(userId);
+    return this.create(runtime);
+  }
+
   async resolveEmbeddingRuntime(userId: string): Promise<UserLLMRuntime> {
     return this.userProviders.resolveEmbeddingRuntime(userId);
   }

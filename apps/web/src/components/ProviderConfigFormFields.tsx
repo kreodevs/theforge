@@ -227,8 +227,8 @@ export function ProviderConfigFormFields({
 
       <FormField
         id={`${idPrefix}-auditor-model`}
-        label="Modelo de auditor (opcional)"
-        hint="Solo para el agente Auditor del MDD (revisión final). Vacío = mismo que modelo de chat. Misma clave API."
+        label="Modelo auditor / planner (opcional)"
+        hint="MDD Auditor, Tasks Planner y Tasks Auditor LLM. Vacío = mismo que modelo de chat. Misma clave API y proveedor (p. ej. openai/gpt-4o en OpenRouter)."
         error={showError("auditorChatModel")}
       >
         <Input
