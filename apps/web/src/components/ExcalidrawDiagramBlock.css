@@ -37,3 +37,12 @@
   touch-action: none;
   overscroll-behavior: contain;
 }
+
+/** Inline preview: drag to pan; double-click recenters (see ExcalidrawDiagramBlock). */
+.excalidraw-embed-host:not(.excalidraw-embed-host--fullscreen) .excalidraw-embed-canvas {
+  cursor: grab;
+}
+
+.excalidraw-embed-host:not(.excalidraw-embed-host--fullscreen) .excalidraw-embed-canvas.is-panning {
+  cursor: grabbing;
+}

@@ -3,9 +3,9 @@
  * Supports conversion of flowcharts, ER, sequence, and class diagrams.
  * Falls back to SVG view for unsupported types or conversion failures.
  *
- * Gesture zoom: leave to Excalidraw (pinch / Ctrl+wheel → zoom at cursor;
- * plain wheel → pan). Do not intercept wheel — a custom handler looked like
- * "move" when scrollX/scrollY were not recalculated toward the pivot.
+ * Gestures: fullscreen uses native Excalidraw (zoom at cursor + pan). Inline
+ * preview uses center-based wheel zoom and drag-to-pan so the diagram cannot
+ * drift off-screen in the small embed.
  */
 import {
   lazy,
@@ -156,6 +156,7 @@ export function ExcalidrawDiagramBlock({
   const [excalidrawTheme] = useState(() => workshopExcalidrawTheme());
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
   const cancelledRef = useRef(false);
   const onFallbackRef = useRef(onFallbackToSvg);
   onFallbackRef.current = onFallbackToSvg;
@@ -298,6 +299,98 @@ export function ExcalidrawDiagramBlock({
     };
   }, [scene, sceneRev, fitToView]);
 
+  // Inline embed: center zoom + drag pan (native cursor-zoom loses the diagram in a small box).
+  useEffect(() => {
+    if (isFullscreenLayout || isEditing || !scene) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const wheelFactor = (deltaY: number) =>
+      deltaY > 0 ? 1 / (1 + ZOOM_STEP) : 1 + ZOOM_STEP;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void zoomAboutViewportCenter(wheelFactor(e.deltaY));
+    };
+
+    let panning = false;
+    let panPointerId = -1;
+    let panStart = { x: 0, y: 0, scrollX: 0, scrollY: 0 };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const api = apiRef.current;
+      if (!api) return;
+      e.stopPropagation();
+      panning = true;
+      panPointerId = e.pointerId;
+      canvas.setPointerCapture(e.pointerId);
+      canvas.classList.add("is-panning");
+      const appState = api.getAppState();
+      panStart = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollX: appState.scrollX,
+        scrollY: appState.scrollY,
+      };
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!panning || e.pointerId !== panPointerId) return;
+      const api = apiRef.current;
+      if (!api) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const zoom = api.getAppState().zoom.value;
+      const dx = (e.clientX - panStart.x) / zoom;
+      const dy = (e.clientY - panStart.y) / zoom;
+      api.updateScene({
+        appState: {
+          scrollX: panStart.scrollX - dx,
+          scrollY: panStart.scrollY - dy,
+        },
+      });
+    };
+
+    const endPan = (e: PointerEvent) => {
+      if (!panning || e.pointerId !== panPointerId) return;
+      panning = false;
+      panPointerId = -1;
+      canvas.releasePointerCapture(e.pointerId);
+      canvas.classList.remove("is-panning");
+    };
+
+    const onDblClick = (e: MouseEvent) => {
+      e.preventDefault();
+      fitToView();
+    };
+
+    canvas.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    canvas.addEventListener("pointerdown", onPointerDown, { capture: true });
+    canvas.addEventListener("pointermove", onPointerMove, { capture: true });
+    canvas.addEventListener("pointerup", endPan);
+    canvas.addEventListener("pointercancel", endPan);
+    canvas.addEventListener("dblclick", onDblClick);
+
+    return () => {
+      canvas.removeEventListener("wheel", onWheel, { capture: true });
+      canvas.removeEventListener("pointerdown", onPointerDown, { capture: true });
+      canvas.removeEventListener("pointermove", onPointerMove, { capture: true });
+      canvas.removeEventListener("pointerup", endPan);
+      canvas.removeEventListener("pointercancel", endPan);
+      canvas.removeEventListener("dblclick", onDblClick);
+      canvas.classList.remove("is-panning");
+    };
+  }, [
+    isFullscreenLayout,
+    isEditing,
+    scene,
+    sceneRev,
+    fitToView,
+    zoomAboutViewportCenter,
+  ]);
+
   // Manual rebuild
   const handleRebuild = useCallback(async () => {
     setLoading(true);
@@ -361,11 +454,15 @@ export function ExcalidrawDiagramBlock({
           ? "h-full min-h-0"
           : "h-[min(420px,55vh)] min-h-[220px]",
         "excalidraw-embed-host",
+        isFullscreenLayout && "excalidraw-embed-host--fullscreen",
         bg,
         className,
       )}
     >
-      <div className="excalidraw-embed-canvas absolute inset-0 overflow-hidden rounded-md [&_.excalidraw]:h-full [&_.excalidraw]:w-full">
+      <div
+        ref={canvasRef}
+        className="excalidraw-embed-canvas absolute inset-0 overflow-hidden rounded-md [&_.excalidraw]:h-full [&_.excalidraw]:w-full"
+      >
         <Suspense
           fallback={
             <div className="flex h-full min-h-[180px] items-center justify-center">
@@ -447,7 +544,7 @@ export function ExcalidrawDiagramBlock({
           className="h-8 w-8"
           onClick={fitToView}
           aria-label="Ajustar al contenido"
-          title="Ajustar al contenido"
+          title="Ajustar al contenido (doble clic en el canvas en vista embebida)"
         >
           <RotateCcw className="h-4 w-4" aria-hidden />
         </Button>
