@@ -106,20 +106,16 @@ Con Tasks **incompletos o genéricos**, vuelve el escenario sin Tasks: hay que l
 
 ## 5. Cómo The Forge asegura calidad en Tasks
 
-Generación: `ProjectsService.generateTasks` → `AiService.generateTasks` con:
+Pipeline: `TasksGenerationPipelineService` → `ProjectsService.generateTasks`:
 
-- MDD (contexto constitución) + Blueprint.
-- Spec, HU, API, flujos, infra ya persistidos.
-- **Architecture**, **design-system** (`uxUiGuideContent`) y **pantallas** (`uiScreensContent`) cuando existen.
-- Checklist greenfield (`appendGreenfieldCoverageChecklist`).
-- Patrones activos `[X]` (`appendMddGovernancePatternsToPrompt`).
-- Modo coordenadas (legacy + Ariadne): archivo, función, línea, diff.
+1. **Pre-flight** (`tasks-preflight.util.ts`) — bloquea si MDD vacío; advierte upstream incompleto.
+2. **Tasks Planner** — JSON de plan (`T-001`…) con modelo **auditor/planner** (`auditorChatModel` en Ajustes; `AiService.generateAuditorResponse` → mismos adaptadores que chat/OpenRouter).
+3. **Redactor** — `AiService.generateTasks` con plan JSON inyectado (modelo de chat estándar).
+4. **Tasks Auditor LLM** — score ≥ 92, gaps estructurados (mismo modelo auditor/planner).
+5. **Gates deterministas** — `TaskAccuracy` + `task-auditor` v2 (`tasks-generation-quality.util.ts`).
+6. **Reparación** — hasta 2 ciclos con feedback combinado (Auditor LLM + gates).
 
-**Control de calidad post-generación:**
-
-1. **TaskAccuracy** (`computeTaskAccuracy`) — capacidades → tasks, CRUD, procesos, anti auth-skew, rutas.
-2. **Task auditor** (`auditTasks` + `parseTasksV2`) — YAML v2, dependencias, cobertura dominio.
-3. Si score &lt; 90 → **un reintento** automático con feedback de gaps (además del post-pase **W4** en cascada).
+Configuración: **Ajustes → Editar instancia → Modelo auditor / planner** (vacío = modelo de chat).
 
 Persistencia: `cleanDocumentContent` + auto-parse a `tasksJson` (Tasks v2).
 

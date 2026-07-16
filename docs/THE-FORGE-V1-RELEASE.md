@@ -1,6 +1,6 @@
 # The Forge — Release v1.0.0
 
-**Tag:** `v1.0.0-rc.3`  
+**Tag:** `v1.0.0`  
 **Fecha de corte:** 2026-07-15  
 **Rama de referencia:** `master`
 
@@ -16,7 +16,7 @@ The Forge deja de tratar los entregables SDD como texto frágil del LLM y pasa a
 2. **Persistencia** — `formatDocumentMarkdown` en cada guardado; Tasks v2 → `tasksJson`; snapshots por etapa.
 3. **Visualización** — Mermaid reparado en preview; Excalidraw por defecto cuando la conversión es viable; SVG como fallback estable.
 
-Los tres pilares comparten el mismo SSOT de reparación Mermaid en `@theforge/shared-types` (`mermaid.ts`).
+Los tres pilares comparten el mismo SSOT de reparación Mermaid en `@theforge/shared-types` (`mermaid.ts`). Desde **v1.0.0** se añade un cuarto eje transversal: **pipeline Tasks planner + auditor LLM** (§1.7).
 
 ---
 
@@ -164,6 +164,24 @@ Cola dedicada **`theforge-mdd`** (`MddQueueService`, `apps/api/src/modules/ai-an
 **Excepción deliberada:** el chat interactivo del **Manager** (HITL, aprobación de plan, `resume`) sigue en **SSE** (`POST …/mdd/stream/manager`). Solo arranques masivos (benchmark, legacy, `/sección`) van en background.
 
 Los endpoints SSE (`/mdd/stream`, `/regenerate-section`) permanecen para compatibilidad; el Workshop los sustituyó por jobs.
+
+### 1.7 Pipeline Tasks planner + auditor (v1.0.0)
+
+Hasta la RC, `generateTasks` era una sola llamada LLM con checklist inyectado. En **v1.0.0** Tasks pasa por un pipeline de calidad en capas:
+
+| Etapa | Responsable | Modelo |
+|-------|-------------|--------|
+| Pre-flight estricto | `runTasksPreflightStrict` | Sin LLM — gate MDD, Spec/Blueprint, API §4, DocAccuracy ≥ 90 |
+| Planner | `TasksGenerationPipelineService` | `auditorChatModel` (Ajustes → **Modelo auditor / planner**) |
+| Redactor | Mismo servicio | Modelo de chat estándar + plan JSON |
+| Auditor LLM | Mismo servicio | `auditorChatModel` — umbral **92**, máx. **2** reparaciones |
+| Gates | Deterministas + `TaskAccuracy` | Snapshot en `Stage.shortTermContext.tasksQualitySnapshot` |
+
+- **Greenfield y legacy** comparten `ProjectsService.generateTasks` → `tasksPipeline.run`.
+- **Legacy baseline** (`legacyBaselineStage`): relaja gate MDD delivery y Spec/Blueprint obligatorios en ingeniería inversa AS-IS.
+- **Workshop:** `TasksQualityBadge` en toolbar Tasks muestra score del auditor y métricas en tooltip.
+
+Código: `tasks-generation-pipeline.service.ts`, `tasks-preflight.util.ts`, `packages/shared-types/src/tasks-pipeline.ts`. Guía de producto: `docs/TASKS-ROL-EN-SDD.md`.
 
 ---
 
@@ -369,8 +387,8 @@ flowchart TB
 | Formateador | `packages/shared-types/src/format-document-markdown.ts` |
 | Mermaid SSOT | `packages/shared-types/src/mermaid.ts` |
 | Excalidraw UI | `apps/web/src/components/MarkdownMermaid.tsx`, `ExcalidrawDiagramBlock.tsx` |
-| Changelog release | `CHANGELOG.md` → `[v1.0.0-rc.3]` |
-| Tag Git | [v1.0.0-rc.3](https://github.com/kreodevs/theforge/releases/tag/v1.0.0-rc.3) |
+| Changelog release | `CHANGELOG.md` → `[v1.0.0]` |
+| Tag Git | [v1.0.0](https://github.com/kreodevs/theforge/releases/tag/v1.0.0) |
 
 ---
 

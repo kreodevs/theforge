@@ -631,6 +631,8 @@ export interface WorkshopStage {
   aemContent?: string | null;
   /** Estado del flujo legacy para esta etapa (cambio) */
   legacyChangeState?: LegacyFlowState | null;
+  /** STM agéntica: gate MDD, snapshot calidad Tasks, etc. */
+  shortTermContext?: Record<string, unknown> | null;
   handoffImportedAt?: string | null;
   handoffSnapshot?: { items?: unknown[] | null } | null;
   linkedNewProjectId?: string | null;
@@ -3172,7 +3174,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const data = await queueAndPoll<Project>(`${API_BASE}/projects/${projectId}/generate-tasks`, {});
-      set({ project: data, tasksContent: data.tasksContent ?? null, error: null });
+      const nextStages = data.stages ?? get().workshopStages;
+      set({
+        project: data,
+        tasksContent: data.tasksContent ?? null,
+        workshopStages: nextStages.length > 0 ? nextStages : get().workshopStages,
+        error: null,
+      });
       void get().fetchGenerationStatus(projectId);
       void get().fetchPlanValidation(projectId);
       return data;

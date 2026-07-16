@@ -177,7 +177,7 @@ export function validateUserProviderForm(args: {
   }
 
   if (form.auditorChatModel.trim() && form.auditorChatModel.trim().length < 2) {
-    errors.auditorChatModel = "Indica un modelo de auditor válido";
+    errors.auditorChatModel = "Indica un modelo auditor/planner válido";
   } else if (
     form.auditorChatModel.trim() &&
     form.auditorChatModel.trim() === form.chatModel.trim()

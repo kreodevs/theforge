@@ -21,7 +21,7 @@
 
 <div align="center">
 
-**[Arquitectura](./docs/notebooklm/THEFORGE-INDEX.md)** · **[Plugins](./docs/PLUGINS.md)** · **[Blueprint](./blueprint.md)** · **[Changelog](./CHANGELOG.md)** · **[Release v1.0.0-RC](https://github.com/kreodevs/theforge/releases/tag/v1.0.0-RC)**
+**[Arquitectura](./docs/notebooklm/THEFORGE-INDEX.md)** · **[Plugins](./docs/PLUGINS.md)** · **[Blueprint](./blueprint.md)** · **[Changelog](./CHANGELOG.md)** · **[Release v1.0.0](./docs/THE-FORGE-V1-RELEASE.md)** · **[GitHub Release](https://github.com/kreodevs/theforge/releases/tag/v1.0.0)**
 
 </div>
 
