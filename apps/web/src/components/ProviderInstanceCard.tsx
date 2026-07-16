@@ -3,7 +3,7 @@ import { Button } from "@/components/ui";
 import { ListRowIconButton } from "@/components/ListRowIconButton";
 import { ProviderLogo, getProviderLabel } from "@/components/ProviderLogo";
 import type { ProviderInstanceSummary } from "@/types/user-providers";
-import { ProviderModelTierReadonlyValue, ProviderModelTierRow } from "@/components/ProviderModelTierRow";
+import { ProviderModelTierColumn } from "@/components/ProviderModelTierRow";
 import { resolveProviderModelTierRows } from "@/utils/provider-model-tier-labels";
 import { resolveEffectiveModelTiers } from "@/utils/resolve-effective-provider";
 import { cn } from "@/lib/utils";
@@ -27,7 +27,7 @@ function ModelPill({ model }: { model: string }) {
   return (
     <span
       title={model}
-      className="inline-flex max-w-[min(100%,14rem)] shrink-0 items-center rounded-full border border-[color-mix(in_oklch,var(--border)_80%,transparent)] bg-[color-mix(in_oklch,var(--muted)_45%,var(--card))] px-2.5 py-1 font-mono text-[10px] leading-tight text-[var(--foreground)]"
+      className="inline-flex max-w-full items-center rounded-full border border-[color-mix(in_oklch,var(--border)_80%,transparent)] bg-[color-mix(in_oklch,var(--muted)_45%,var(--card))] px-2.5 py-1 font-mono text-[10px] leading-tight text-[var(--foreground)]"
     >
       <span className="truncate">{model}</span>
     </span>
@@ -42,21 +42,19 @@ function ConfiguredModelsSection({ inst }: { inst: ProviderInstanceSummary }) {
       <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
         Modelos configurados
       </p>
-      <ul className="space-y-2">
+      <div className="grid grid-cols-1 divide-y divide-[var(--border)] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         {tierRows.map((row) => (
-          <li key={row.tier}>
-            <ProviderModelTierRow
-              icon={row.icon}
-              iconTone={row.iconTone}
-              title={row.title}
-              badge={row.badge}
-              trailing={
-                <ProviderModelTierReadonlyValue model={row.model} displayModel={row.displayModel} />
-              }
-            />
-          </li>
+          <ProviderModelTierColumn
+            key={row.tier}
+            icon={row.icon}
+            iconTone={row.iconTone}
+            title={row.title}
+            badge={row.badge}
+            model={row.model}
+            displayModel={row.displayModel}
+          />
         ))}
-      </ul>
+      </div>
     </div>
   );
 }
@@ -66,20 +64,18 @@ function CardHeader({
   isActive,
   canMutate,
   onEdit,
-  showMainModelPill = true,
 }: {
   inst: ProviderInstanceSummary;
   isActive: boolean;
   canMutate: boolean;
   onEdit: () => void;
-  showMainModelPill?: boolean;
 }) {
   const providerLabel = getProviderLabel(inst.providerType);
 
   return (
     <div className="flex items-start gap-3">
       <ProviderLogo provider={inst.providerType} size="md" />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 space-y-1">
         <div className="flex min-w-0 items-center gap-2">
           <p className="min-w-0 truncate text-sm font-semibold tracking-tight text-[var(--foreground)]">
             {inst.displayName}
@@ -91,17 +87,17 @@ function CardHeader({
           ) : null}
         </div>
         <p className="truncate text-xs text-[var(--foreground-muted)]">{providerLabel}</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5 self-start">
-        {showMainModelPill && inst.chatModel ? (
-          <ModelPill model={inst.chatModel} />
-        ) : null}
-        {canMutate ? (
-          <ListRowIconButton tooltip="Editar instancia" onClick={onEdit}>
-            <Pencil className="h-4 w-4" />
-          </ListRowIconButton>
+        {inst.chatModel ? (
+          <div className="pt-0.5">
+            <ModelPill model={inst.chatModel} />
+          </div>
         ) : null}
       </div>
+      {canMutate ? (
+        <ListRowIconButton tooltip="Editar instancia" onClick={onEdit} className="shrink-0 self-start">
+          <Pencil className="h-4 w-4" />
+        </ListRowIconButton>
+      ) : null}
     </div>
   );
 }

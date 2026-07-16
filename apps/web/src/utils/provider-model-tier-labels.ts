@@ -57,6 +57,14 @@ export const PROVIDER_TIER_ICON_TONE_CLASSES: Record<ProviderTierIconTone, strin
     "text-[var(--success)] bg-[color-mix(in_oklch,var(--success)_18%,var(--card))]",
 };
 
+export const PROVIDER_TIER_BADGE_CLASSES: Record<ProviderTierIconTone, string> = {
+  warning:
+    "bg-[color-mix(in_oklch,var(--warning)_16%,var(--card))] text-[var(--warning)]",
+  info: "bg-[color-mix(in_oklch,var(--info)_16%,var(--card))] text-[var(--info)]",
+  success:
+    "bg-[color-mix(in_oklch,var(--success)_16%,var(--card))] text-[var(--success)]",
+};
+
 export interface ResolvedProviderModelTierRow extends ProviderModelTierRowDef {
   model: string | null;
   displayModel: string | null;

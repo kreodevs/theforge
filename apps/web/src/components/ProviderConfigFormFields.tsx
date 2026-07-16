@@ -214,7 +214,7 @@ export function ProviderConfigFormFields({
               obligatorio.
             </p>
           </div>
-          <ul className="space-y-2">
+          <ul className="grid grid-cols-1 gap-4 divide-y divide-[var(--border)] md:grid-cols-3 md:gap-0 md:divide-x md:divide-y-0">
             {PROVIDER_MODEL_TIER_ROWS.map((row) => {
               const field = INSTANCE_TIER_FIELD_BY_TIER[row.tier];
               const value = form[field];
@@ -223,8 +223,9 @@ export function ProviderConfigFormFields({
                 INSTANCE_TIER_PLACEHOLDER[row.tier] ?? catalog.defaultChatModel;
 
               return (
-                <li key={row.tier}>
+                <li key={row.tier} className="min-w-0 px-0 first:pl-0 last:pr-0 md:px-3 md:first:pl-0 md:last:pr-0">
                   <ProviderModelTierRow
+                    layout="column"
                     icon={row.icon}
                     iconTone={row.iconTone}
                     title={row.title}
@@ -243,10 +244,7 @@ export function ProviderConfigFormFields({
                         required={isChat}
                         aria-invalid={!!showError(field)}
                         aria-label={`${row.title} (${row.badge})`}
-                        className={cn(
-                          "h-8 min-w-0 max-w-[45%] shrink-0 font-mono text-xs",
-                          inputErrorClass(field),
-                        )}
+                        className={cn("h-8 w-full min-w-0 font-mono text-xs", inputErrorClass(field))}
                       />
                     }
                   />
