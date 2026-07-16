@@ -341,11 +341,6 @@ export class AiService {
     return this.aiFactory.createArchitectForUser(getRequestUserId());
   }
 
-  /** @deprecated Alias de graphProvider — compat auditorChatModel legado. */
-  private async auditorProvider() {
-    return this.graphProvider();
-  }
-
   /** Resolves optional Technology Docs MCP snippets; never throws. */
   private async resolveTechDocsContext(
     mddContent: string,
