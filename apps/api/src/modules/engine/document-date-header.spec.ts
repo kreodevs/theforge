@@ -15,7 +15,7 @@ describe("document-date-header", () => {
     const out = prependDocumentTimestamps("# My Doc\n\nBody", fixed);
     assert.ok(out.startsWith("<!-- theforge-doc:created=2026-07-15"));
     assert.ok(out.includes("Creado:"));
-    assert.ok(out.includes("Última regeneración:"));
+    assert.ok(out.includes("Última modificación:"));
     assert.ok(out.includes("10:30:45"));
     assert.ok(out.includes("# My Doc"));
   });
@@ -38,7 +38,7 @@ describe("document-date-header", () => {
       "# Doc";
     const out = prependDocumentTimestamps(legacy, later);
     assert.ok(out.includes("Creado:"));
-    assert.ok(out.includes("Última regeneración:"));
+    assert.ok(out.includes("Última modificación:"));
     assert.ok(!out.includes("Generado:"));
     assert.equal(extractDocumentTimestamps(out).created?.toISOString(), "2026-07-01T08:00:00.000Z");
   });

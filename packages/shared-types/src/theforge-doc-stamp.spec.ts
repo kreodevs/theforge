@@ -60,13 +60,18 @@ describe("theforge-doc-stamp", () => {
     assert.ok(body.startsWith("# Specs"));
   });
 
-  it("formatDocumentMarkdown preserves Creado / Última regeneración with seconds", () => {
+  it("formatTheforgeDocTimestampsForDisplay accepts custom timezone", () => {
+    const display = formatTheforgeDocTimestampsForDisplay(parseTheforgeDocTimestamps(STAMPED), {
+      timeZone: "America/Mexico_City",
+    });
+    assert.ok(display);
+    assert.doesNotMatch(display!.created, / UTC$/);
+  });
+
+  it("formatDocumentMarkdown preserves stamp ISO and human header", () => {
     const out = formatDocumentMarkdown(STAMPED);
     assert.ok(out.includes("<!-- theforge-doc:created=2026-07-15T10:30:45.000Z|updated="));
     assert.ok(out.includes("Creado:"));
-    assert.ok(out.includes("Última regeneración:"));
-    assert.ok(out.includes("10:30:45"));
-    assert.ok(out.includes("14:45:30"));
     assert.ok(out.includes("# Título"));
   });
 });

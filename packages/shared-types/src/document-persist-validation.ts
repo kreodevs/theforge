@@ -35,7 +35,9 @@ export const DOCUMENT_PERSIST_FIELD_LABELS: Record<string, string> = {
   uxUiGuideContent: "Guía UX/UI",
   phase0SummaryContent: "Resumen Fase 0",
   aemContent: "AEM",
-
+  mddContent: "MDD",
+  brdContent: "BRD",
+  uiScreensContent: "Pantallas UI",
   agentGovernanceContent: "Gobernanza Agentes IA",
 };
 

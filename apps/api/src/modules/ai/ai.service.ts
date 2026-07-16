@@ -26,6 +26,10 @@ import { USE_CASES_PROMPT } from "./prompts/use-cases-prompt.js";
 import { USER_STORIES_PROMPT } from "./prompts/user-stories-prompt.js";
 import { TASKS_PROMPT } from "./prompts/tasks-prompt.js";
 import { CLARIFY_SPEC_PROMPT } from "./prompts/clarify-spec-prompt.js";
+import {
+  CLARIFY_DOCUMENT_PROMPT,
+  RESOLVE_CLARIFICATIONS_PROMPT,
+} from "./prompts/clarify-document-prompt.js";
 import { AGENT_GOVERNANCE_PROMPT } from "./prompts/agent-governance-prompt.js";
 import { AEM_PROMPT } from "./prompts/aem-prompt.js";
 import { AEM_INVESTMENT_ADVISOR_PROMPT } from "./prompts/aem-investment-advisor-prompt.js";
@@ -1077,6 +1081,55 @@ export class AiService {
       notes.length > 0 ? `\n\nNotas del usuario:\n---\n${notes}\n---` : "",
     ];
     return this.generateResponse(parts.filter(Boolean).join("\n"), [], { systemPrompt: CLARIFY_SPEC_PROMPT });
+  }
+
+  /**
+   * Clarify any SDD document: marks ambiguities with [NEEDS CLARIFICATION].
+   */
+  async clarifyDocument(
+    documentContent: string,
+    docLabel: string,
+    context?: {
+      notes?: string | null;
+      relatedDocs?: Record<string, string>;
+    },
+  ): Promise<string> {
+    const doc = (documentContent ?? "").trim();
+    const notes = (context?.notes ?? "").trim();
+    const related = context?.relatedDocs ?? {};
+    const parts = [
+      `Revisa y aclara el entregable **${docLabel}** según el system prompt. Marca ambigüedades con [NEEDS CLARIFICATION].\n`,
+      doc.length > 0
+        ? `${docLabel} actual:\n---\n${doc}\n---`
+        : `${docLabel} vacío — genera esqueleto mínimo con marcadores.`,
+      ...Object.entries(related).map(
+        ([label, text]) => (text.trim() ? `\n\nContexto ${label}:\n---\n${text.trim()}\n---` : ""),
+      ),
+      notes.length > 0 ? `\n\nNotas del usuario:\n---\n${notes}\n---` : "",
+    ];
+    return this.generateResponse(parts.filter(Boolean).join("\n"), [], {
+      systemPrompt: CLARIFY_DOCUMENT_PROMPT,
+    });
+  }
+
+  /**
+   * Integrates clarification answers and regenerates the full document without markers.
+   */
+  async resolveClarifications(
+    documentContent: string,
+    docLabel: string,
+    answers: Array<{ question: string; answer: string }>,
+  ): Promise<string> {
+    const doc = (documentContent ?? "").trim();
+    const qaBlock = answers
+      .map((a, i) => `${i + 1}. **Pregunta:** ${a.question}\n   **Respuesta:** ${a.answer}`)
+      .join("\n\n");
+    const prompt = [
+      `Regenera el ${docLabel} integrando las respuestas siguientes. Elimina todos los [NEEDS CLARIFICATION].\n`,
+      `${docLabel} actual:\n---\n${doc}\n---\n`,
+      `Respuestas del usuario:\n---\n${qaBlock}\n---`,
+    ].join("\n");
+    return this.generateResponse(prompt, [], { systemPrompt: RESOLVE_CLARIFICATIONS_PROMPT });
   }
 
   /**

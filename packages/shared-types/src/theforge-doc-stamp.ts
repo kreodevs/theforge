@@ -24,6 +24,21 @@ const HUMAN_BLOCKQUOTE_LINE_RE = /^>\s*📅[^\n]*\n+/;
 
 const STAMP_LOCALE = "es-MX";
 
+export type TheforgeDocDateTimeFormatOptions = {
+  /** IANA timezone; default `UTC` (API stamp). Web should pass `Intl.DateTimeFormat().resolvedOptions().timeZone`. */
+  timeZone?: string;
+};
+
+function formatTimeZoneSuffix(d: Date, timeZone: string): string {
+  if (timeZone === "UTC") return " UTC";
+  const parts = new Intl.DateTimeFormat(STAMP_LOCALE, {
+    timeZone,
+    timeZoneName: "short",
+  }).formatToParts(d);
+  const label = parts.find((p) => p.type === "timeZoneName")?.value;
+  return label ? ` ${label}` : ` (${timeZone})`;
+}
+
 export type TheforgeDocTimestamps = {
   created: string;
   updated: string;
@@ -41,33 +56,38 @@ export function parseTheforgeDocTimestamps(text: string): Partial<TheforgeDocTim
   };
 }
 
-/** Human-readable UTC label (seconds) for Workshop UI. */
-export function formatTheforgeDocDateTime(iso: string): string {
+/** Human-readable label (seconds). Default UTC for persisted markdown; pass browser TZ in Workshop. */
+export function formatTheforgeDocDateTime(
+  iso: string,
+  options?: TheforgeDocDateTimeFormatOptions,
+): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
+  const timeZone = options?.timeZone ?? "UTC";
   const datePart = d.toLocaleDateString(STAMP_LOCALE, {
     day: "numeric",
     month: "long",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone,
   });
   const timePart = d.toLocaleTimeString(STAMP_LOCALE, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-    timeZone: "UTC",
+    timeZone,
   });
-  return `${datePart}, ${timePart} UTC`;
+  return `${datePart}, ${timePart}${formatTimeZoneSuffix(d, timeZone)}`;
 }
 
 export function formatTheforgeDocTimestampsForDisplay(
   raw: Partial<TheforgeDocTimestamps>,
+  options?: TheforgeDocDateTimeFormatOptions,
 ): TheforgeDocTimestamps | null {
   if (!raw.created || !raw.updated) return null;
   return {
-    created: formatTheforgeDocDateTime(raw.created),
-    updated: formatTheforgeDocDateTime(raw.updated),
+    created: formatTheforgeDocDateTime(raw.created, options),
+    updated: formatTheforgeDocDateTime(raw.updated, options),
   };
 }
 

@@ -12,6 +12,7 @@ import {
   documentPersistFieldLabel,
   isChangelogOnlyDocument,
   validateDocumentForPersist,
+  type ClarifyableDocumentField,
 } from "@theforge/shared-types";
 import { contentIncludesVisionBlock } from "@theforge/shared-types/session";
 import { isFormatDocumentChatCommand } from "../utils/documentFormatCommand";
@@ -899,6 +900,8 @@ interface WorkshopState {
     | "converge"
     | "tasks-to-issues"
     | "clarify-spec"
+    | "clarify-document"
+    | "resolve-clarifications"
     | "aem"
     | null;
   /** Mensaje de usuario en curso (streaming); se muestra hasta recibir "done" */
@@ -1186,7 +1189,81 @@ interface WorkshopState {
     persisted: boolean;
     mddSyncQueued?: boolean;
   } | null>;
+  clarifyDocument: (
+    projectId: string,
+    opts: {
+      field: ClarifyableDocumentField;
+      persist: boolean;
+      notes?: string;
+      stageId?: string | null;
+      syncMdd?: boolean;
+    },
+  ) => Promise<{
+    field: ClarifyableDocumentField;
+    clarifiedContent: string;
+    clarificationMarkerCount: number;
+    persisted: boolean;
+    mddSyncQueued?: boolean;
+  } | null>;
+  resolveClarifications: (
+    projectId: string,
+    opts: {
+      field: ClarifyableDocumentField;
+      answers: Record<string, string>;
+      persist?: boolean;
+      stageId?: string | null;
+    },
+  ) => Promise<{
+    field: ClarifyableDocumentField;
+    resolvedContent: string;
+    clarificationMarkerCount: number;
+    persisted: boolean;
+  } | null>;
   reset: () => void;
+}
+
+function workshopStorePatchForClarifiedField(
+  field: ClarifyableDocumentField,
+  content: string,
+): Partial<typeof initialState> {
+  switch (field) {
+    case "mddContent":
+      return { mddContent: content };
+    case "dbgaContent":
+      return { dbgaContent: content };
+    case "specContent":
+      return { specContent: content };
+    case "architectureContent":
+      return { architectureContent: content };
+    case "useCasesContent":
+      return { useCasesContent: content };
+    case "userStoriesContent":
+      return { userStoriesContent: content };
+    case "blueprintContent":
+      return { blueprintContent: content };
+    case "tasksContent":
+      return { tasksContent: content };
+    case "apiContractsContent":
+      return { apiContractsContent: content };
+    case "logicFlowsContent":
+      return { logicFlowsContent: content };
+    case "infraContent":
+      return { infraContent: content };
+    case "agentGovernanceContent":
+      return { agentGovernanceContent: content };
+    case "uxUiGuideContent":
+      return { uxUiGuideContent: content };
+    case "uiScreensContent":
+      return { uiScreensContent: content };
+    case "phase0SummaryContent":
+      return { phase0SummaryContent: content };
+    case "aemContent":
+      return { aemContent: content };
+    case "brdContent":
+      return {};
+    default:
+      return {};
+  }
 }
 
 const initialState = {
@@ -4677,30 +4754,89 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
   clarifySpec: async (projectId, opts) => {
+    const res = await get().clarifyDocument(projectId, {
+      field: "specContent",
+      persist: opts.persist,
+      notes: opts.notes,
+      syncMdd: opts.syncMdd,
+    });
+    if (!res) return null;
+    return {
+      clarifiedSpec: res.clarifiedContent,
+      clarificationMarkerCount: res.clarificationMarkerCount,
+      persisted: res.persisted,
+      mddSyncQueued: res.mddSyncQueued,
+    };
+  },
+  clarifyDocument: async (projectId, opts) => {
     if (!projectId?.trim()) return null;
-    set({ loading: true, loadingReason: "clarify-spec", error: null });
+    set({ loading: true, loadingReason: "clarify-document", error: null });
     try {
-      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/clarify-spec`, {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/clarify-document`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(opts),
+        body: JSON.stringify({
+          field: opts.field,
+          persist: opts.persist,
+          notes: opts.notes,
+          stageId: opts.stageId ?? undefined,
+          syncMdd: opts.syncMdd,
+        }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        throw new Error((err as { message?: string }).message ?? "Error en clarify-spec");
+        throw new Error((err as { message?: string }).message ?? "Error en clarify-document");
       }
       const data = (await r.json()) as {
-        clarifiedSpec: string;
+        field: ClarifyableDocumentField;
+        clarifiedContent: string;
         clarificationMarkerCount: number;
         persisted: boolean;
         mddSyncQueued?: boolean;
       };
       if (data.persisted) {
-        set({ specContent: data.clarifiedSpec, error: null });
+        set({ ...workshopStorePatchForClarifiedField(data.field, data.clarifiedContent), error: null });
       }
       return data;
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : "Error en clarify-spec" });
+      set({ error: e instanceof Error ? e.message : "Error en clarify-document" });
+      return null;
+    } finally {
+      set({ loading: false, loadingReason: null });
+    }
+  },
+  resolveClarifications: async (projectId, opts) => {
+    if (!projectId?.trim()) return null;
+    set({ loading: true, loadingReason: "resolve-clarifications", error: null });
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/resolve-clarifications`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          field: opts.field,
+          answers: opts.answers,
+          persist: opts.persist ?? true,
+          stageId: opts.stageId ?? undefined,
+        }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al resolver clarificaciones");
+      }
+      const data = (await r.json()) as {
+        field: ClarifyableDocumentField;
+        resolvedContent: string;
+        clarificationMarkerCount: number;
+        persisted: boolean;
+      };
+      if (data.persisted) {
+        set({ ...workshopStorePatchForClarifiedField(data.field, data.resolvedContent), error: null });
+      }
+      return data;
+    } catch (e) {
+      set({
+        error: e instanceof Error ? e.message : "Error al resolver clarificaciones",
+      });
       return null;
     } finally {
       set({ loading: false, loadingReason: null });

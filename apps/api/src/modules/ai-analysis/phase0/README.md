@@ -2,7 +2,9 @@
 
 Entrevista IA guiada: borrador de 8 secciones, gaps y auditoría manual.
 
-- **`phase0-interview.service.ts`** — `start`, `question`, `answer`, `audit`, `finalize`. En `processAnswer`, si el gap menciona APIs/tokens/OAuth, consulta **Context7** (credenciales del owner en Ajustes → Docs técnicas) e inyecta snippets en el prompt de actualización.
+- **`phase0-markdown-format.md`** — SSOT: §4 Flujos con `###` + listas `1.` (nunca `## 1.`). Exportado como `PHASE0_MARKDOWN_FORMAT_RULES` en `load-prompts.ts`; se inyecta en refinado DBGA y chat Fase 0.
+- **`phase0-to-markdown.ts`** / **`phase0-from-markdown.ts`** — serialización canónica Fase 0. En §4 los pasos son listas `1. …`, `2. …` bajo `### Nombre del flujo`. El parser acepta también pasos mal formateados como `## N. …` (reparados por `repairPhase0FlowFormat` en `formatDocumentMarkdown`).
+- **`phase0-interview.service.ts`** — `start`, `question`, `answer`, `audit`, `finalize`. Persiste `dbgaContent` con `stampMarkdownIfBodyChanged` (preserva **Creado**, actualiza **Última modificación**). En `processAnswer`, si el gap menciona APIs/tokens/OAuth, consulta **Context7** (credenciales del owner en Ajustes → Docs técnicas) e inyecta snippets en el prompt de actualización.
 - **`phase0.module.ts`** — Nest module exportando solo `Phase0InterviewService` (sin `ProjectsModule`) para que `ProjectsModule` pueda inyectarlo sin ciclo con `AiAnalysisModule`.
 
 `AiAnalysisModule` importa y re-exporta `Phase0Module`.

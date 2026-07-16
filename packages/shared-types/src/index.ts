@@ -31,6 +31,7 @@ export * from "./theforge-doc-stamp.js";
 export * from "./tasks-pipeline.js";
 export * from "./repair-pasted-markdown.js";
 export * from "./repair-glued-headings.js";
+export * from "./repair-phase0-flow-format.js";
 export {
   demoteSqlPseudoHeadings,
   repairFragmentedSqlFences,
@@ -51,6 +52,7 @@ export * from "./ui-mcp-adapter-label.js";
 export * from "./tasks-parse.js";
 export * from "./change-plan/index.js";
 export * from "./sdd-integrations.js";
+export * from "./document-clarification.js";
 export * from "./sdd-analyze.js";
 export * from "./cascade-accuracy.js";
 export * from "./domain-inventory.js";

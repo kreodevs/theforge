@@ -109,9 +109,30 @@ export function markdownToPhase0Document(markdown: string): Phase0Document {
             entity.descripcion = inner.replace(/^\*\*Descripción:\*\*\s*/, "").trim();
           } else if (inner.startsWith("**Atributos clave:**")) {
             const attrs = inner.replace(/^\*\*Atributos clave:\*\*\s*/, "").trim();
-            entity.atributosClave = attrs
-              ? attrs.split(",").map((a) => a.trim()).filter(Boolean)
-              : [];
+            if (attrs) {
+              entity.atributosClave = attrs
+                .split(",")
+                .map((a) => a.trim())
+                .filter(Boolean);
+            } else {
+              i += 1;
+              while (i < end) {
+                const bullet = lines[i]!.trim();
+                if (bullet.startsWith("- ")) {
+                  entity.atributosClave.push(bullet.slice(2).trim());
+                  i += 1;
+                  continue;
+                }
+                if (bullet === "") {
+                  i += 1;
+                  continue;
+                }
+                break;
+              }
+              i -= 1;
+            }
+          } else if (inner.startsWith("- ") && entity.descripcion) {
+            entity.atributosClave.push(inner.slice(2).trim());
           }
           i += 1;
         }
@@ -142,10 +163,20 @@ export function markdownToPhase0Document(markdown: string): Phase0Document {
         const flow: Phase0Flow = { nombre: line.slice(4).trim(), pasos: [] };
         i += 1;
         while (i < end) {
-          const inner = lines[i].trim();
+          const inner = lines[i]!.trim();
+          const stepMatch = inner.match(/^(?:##\s+)?(\d+)\.\s+(.+)$/);
+          if (stepMatch) {
+            flow.pasos.push(stepMatch[2]!.trim());
+            i += 1;
+            continue;
+          }
           if (inner.startsWith("### ") || inner.startsWith("## ")) break;
-          const stepMatch = inner.match(/^\d+\.\s+(.+)$/);
-          if (stepMatch) flow.pasos.push(stepMatch[1].trim());
+          if (inner.startsWith("- ")) {
+            const note = inner.slice(2).trim();
+            if (note && flow.pasos.length > 0) {
+              flow.pasos[flow.pasos.length - 1] = `${flow.pasos[flow.pasos.length - 1]} (${note})`;
+            }
+          }
           i += 1;
         }
         if (flow.nombre) doc.flujos.push(flow);

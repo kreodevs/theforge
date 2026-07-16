@@ -53,6 +53,9 @@ import {
 import { llmDebug, llmWarn } from "../ai/config/llm-debug.util.js";
 import { ModelsUnavailableError } from "../ai/config/llm-model-fallback.js";
 import { DocumentSnapshotService } from "../document-snapshot/document-snapshot.service.js";
+import { stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
+import { isPhase0StructuredMarkdown } from "../ai-analysis/phase0/phase0-from-markdown.js";
+import { PHASE0_MARKDOWN_FORMAT_RULES } from "../ai-analysis/prompts/load-prompts.js";
 
 function filterChatByTab(log: ChatMessage[], tab: string): ChatMessage[] {
   return log.filter((m) => (m.tab ?? "mdd") === tab);
@@ -1658,6 +1661,10 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
       ? "\n\n**Tablas espejo (obligatorio si aplica):** En cada tabla espejo documenta `tenant_id`, el **id de origen** (clave en el sistema fuente) y el **id propio** (PK de la fila en la tabla espejo). Refleja esto en SQL o tablas markdown del DBGA."
       : "";
 
+    const fase0FormatHint = isPhase0StructuredMarkdown(current)
+      ? `\n\n${PHASE0_MARKDOWN_FORMAT_RULES}`
+      : "";
+
     const refinePrompt = `Aplica OBLIGATORIAMENTE al documento completo los cambios que pide el usuario. No respondas solo en chat: devuelve el DBGA/Fase 0 COMPLETO en markdown y termina con la línea exacta ---FIN_DBGA---.
 
 **Anti-borrado (crítico):** Conserva TODAS las secciones existentes del documento actual (cabecera, industria, funcionalidades, arquitectura, gaps, etc.). Si el usuario aporta un catálogo de endpoints (GET/POST/…) o una lista numerada corta, **añádelo o fusiónalo** en una sección de integración/API — NUNCA reemplaces el documento entero por solo esa lista.
@@ -1665,7 +1672,7 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
 Petición del usuario:
 ---
 ${msg}
----${mirrorHint}`;
+---${mirrorHint}${fase0FormatHint}`;
 
     const llmOpts = {
       activeTab: "benchmark" as const,
@@ -1863,16 +1870,18 @@ ${msg}
       "salvage",
     );
 
+    const stampedDbga = stampMarkdownIfBodyChanged(project.dbgaContent, best.content);
+
     await this.prisma.project.update({
       where: { id: projectId },
       data: {
-        dbgaContent: best.content,
+        dbgaContent: stampedDbga,
         phase0SummaryContent: best.content,
       },
     });
 
     return {
-      dbgaContent: best.content,
+      dbgaContent: stampedDbga,
       recoveredFromSessionId: best.sessionId,
       length: best.len,
     };

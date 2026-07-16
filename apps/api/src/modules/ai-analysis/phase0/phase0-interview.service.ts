@@ -26,6 +26,7 @@ import {
   normalizePhase0Document,
 } from "./phase0-normalize.util.js";
 import { shouldReplacePhase0SummaryWithBorrador } from "@theforge/shared-types";
+import { stampMarkdownIfBodyChanged } from "../../engine/document-date-header.util.js";
 import { phase0ToMarkdown } from "./phase0-to-markdown.js";
 import {
   hasAuditDocument,
@@ -460,11 +461,15 @@ export class Phase0InterviewService {
   ): Promise<string> {
     const markdown = phase0ToMarkdown(borrador);
     const syncDbga = this.shouldSyncDbgaMarkdown(state);
+    let stampedMarkdown = "";
     try {
       const existing = await this.prisma.project.findUnique({
         where: { id: projectId },
-        select: { phase0SummaryContent: true },
+        select: { phase0SummaryContent: true, dbgaContent: true },
       });
+      if (syncDbga) {
+        stampedMarkdown = stampMarkdownIfBodyChanged(existing?.dbgaContent, markdown);
+      }
       const data: {
         phase0SummaryContent?: string;
         phase0Gaps?: string;
@@ -475,7 +480,7 @@ export class Phase0InterviewService {
         phase0Gaps: state ? serializePhase0GapsEnvelope(state) : undefined,
         phase0Status: "done",
         phase0Questions: state?.preguntasRealizadas,
-        ...(syncDbga ? { dbgaContent: markdown } : {}),
+        ...(syncDbga ? { dbgaContent: stampedMarkdown } : {}),
       };
       if (shouldReplacePhase0SummaryWithBorrador(existing?.phase0SummaryContent)) {
         data.phase0SummaryContent = JSON.stringify(borrador, null, 2);
@@ -487,7 +492,7 @@ export class Phase0InterviewService {
     } catch (err) {
       this.logger.warn(`[Phase0] finalize persist failed for ${projectId}: ${err}`);
     }
-    return syncDbga ? markdown : "";
+    return syncDbga ? stampedMarkdown : "";
   }
 
   private shouldSyncDbgaMarkdown(state?: Phase0InterviewState): boolean {
@@ -529,13 +534,15 @@ export class Phase0InterviewService {
   ): Promise<void> {
     try {
       let existing = existingPhase0Summary;
+      let existingDbga: string | null | undefined;
+      const row = await this.prisma.project.findUnique({
+        where: { id: state.projectId },
+        select: { phase0SummaryContent: true, dbgaContent: true },
+      });
       if (existing === undefined) {
-        const row = await this.prisma.project.findUnique({
-          where: { id: state.projectId },
-          select: { phase0SummaryContent: true },
-        });
         existing = row?.phase0SummaryContent;
       }
+      existingDbga = row?.dbgaContent;
 
       const summaryJson = JSON.stringify(state.borrador, null, 2);
       const data: {
@@ -553,7 +560,10 @@ export class Phase0InterviewService {
         data.phase0SummaryContent = summaryJson;
       }
       if (this.shouldSyncDbgaMarkdown(state)) {
-        data.dbgaContent = phase0ToMarkdown(state.borrador);
+        data.dbgaContent = stampMarkdownIfBodyChanged(
+          existingDbga,
+          phase0ToMarkdown(state.borrador),
+        );
       }
       await this.prisma.project.update({
         where: { id: state.projectId },

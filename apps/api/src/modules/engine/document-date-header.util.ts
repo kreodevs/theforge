@@ -5,7 +5,7 @@
  *
  * ```
  * <!-- theforge-doc:created=ISO|updated=ISO -->
- * > 📅 Creado: DD de MMMM de YYYY, HH:MM:SS UTC · Última regeneración: DD de MMMM de YYYY, HH:MM:SS UTC
+ * > 📅 Creado: DD de MMMM de YYYY, HH:MM:SS UTC · Última modificación: DD de MMMM de YYYY, HH:MM:SS UTC
  *
  * ---
  * ```
@@ -109,7 +109,7 @@ export function prependDocumentTimestamps(
 
   const comment = `<!-- theforge-doc:created=${created.toISOString()}|updated=${updated.toISOString()} -->`;
   const human =
-    `> 📅 Creado: ${formatFullDateTime(created)} · Última regeneración: ${formatFullDateTime(updated)}`;
+    `> 📅 Creado: ${formatFullDateTime(created)} · Última modificación: ${formatFullDateTime(updated)}`;
 
   return `${comment}\n${human}\n\n---\n\n${body}`;
 }
@@ -129,7 +129,7 @@ export function documentMarkdownBodiesEqual(a: string, b: string): boolean {
 }
 
 /**
- * Re-stampa solo si el cuerpo cambió; evita PATCH en bucle que solo actualizan «Última regeneración».
+ * Re-stampa solo si el cuerpo cambió; evita PATCH en bucle que solo actualizan «Última modificación».
  */
 export function stampMarkdownIfBodyChanged(
   existing: string | null | undefined,

@@ -156,7 +156,8 @@ import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
 import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
 import { WorkshopExportSddButton } from "../components/WorkshopExportSddButton";
-import { ClarifySpecPanel } from "../components/ClarifySpecPanel";
+import { DocumentClarificationSection } from "../components/DocumentClarificationSection";
+import type { ClarifyableDocumentField } from "@theforge/shared-types";
 import { AemGenerateDialog } from "../components/AemGenerateDialog";
 import { TasksQualityBadge } from "@/components/TasksQualityBadge";
 import type { AemMarketScope } from "@theforge/shared-types";
@@ -637,6 +638,28 @@ export default function WorkshopView({
     [generationStatus],
   );
   const setError = useWorkshopStore((s) => s.setError);
+  const buildDocClarification = useCallback(
+    (
+      field: ClarifyableDocumentField,
+      onApplied: (content: string) => void,
+      hint?: string,
+      extra?: { clarifyOpen?: boolean; onClarifyOpenChange?: (open: boolean) => void },
+    ) =>
+      projectId
+        ? {
+            projectId,
+            field,
+            stageId: activeStageId,
+            disabled: loading,
+            readOnly: deliverablesReadOnly,
+            onContentApplied: onApplied,
+            onMessage: (msg: string) => setError(msg),
+            hint,
+            ...extra,
+          }
+        : undefined,
+    [projectId, activeStageId, loading, deliverablesReadOnly, setError],
+  );
   const setNotice = useWorkshopStore((s) => s.setNotice);
   const retryWorkshopSync = useWorkshopStore((s) => s.retryWorkshopSync);
   const connectionError = isWorkshopConnectionError(error);
@@ -678,7 +701,6 @@ export default function WorkshopView({
   const generateInfra = useWorkshopStore((s) => s.generateInfra);
   const generateSpec = useWorkshopStore((s) => s.generateSpec);
   const generateAem = useWorkshopStore((s) => s.generateAem);
-  const clarifySpec = useWorkshopStore((s) => s.clarifySpec);
   const generateTasks = useWorkshopStore((s) => s.requestGenerateTasks);
   const generateAgentGovernance = useWorkshopStore((s) => s.generateAgentGovernance);
   const fetchAgentGovernanceExport = useWorkshopStore((s) => s.fetchAgentGovernanceExport);
@@ -4290,6 +4312,12 @@ export default function WorkshopView({
                     />
 
                     <div className="flex-1 flex flex-col min-h-0 border-t border-[var(--border)] pt-4 mt-4">
+                        {buildDocClarification("dbgaContent", (c) => setDbgaContent(c)) ? (
+                          <DocumentClarificationSection
+                            {...buildDocClarification("dbgaContent", (c) => setDbgaContent(c))!}
+                            content={fase0Content}
+                          />
+                        ) : null}
                         <h3 className="shrink-0 text-sm font-medium text-[var(--muted-foreground)] mb-2">Análisis (DBGA) — Fase 0</h3>
                         <div className="flex-1 flex flex-col min-h-0">
                           {benchmarkViewMode === "preview" && fase0Content != null && fase0Content !== "" ? (
@@ -4661,6 +4689,12 @@ export default function WorkshopView({
                     savingLabel={mddPersisting ? "Guardando MDD…" : "Grabando y revisando…"}
                   />
                 )}
+                {buildDocClarification("mddContent", (c) => setMddContent(c)) ? (
+                  <DocumentClarificationSection
+                    {...buildDocClarification("mddContent", (c) => setMddContent(c))!}
+                    content={mddContent}
+                  />
+                ) : null}
                 {mddViewMode === "preview" ? (
                   <MddViewer content={mddContent || ""} documentTimestamps={docTs("mddContent")} />
                 ) : (
@@ -4693,6 +4727,9 @@ export default function WorkshopView({
                 placeholder="# Arquitectura del sistema\n\nMódulos, datos, APIs y flujos del producto (según MDD y codebase)..."
                 onBlur={handleArchitectureBlur}
                 documentTimestamps={docTs("architectureContent")}
+                clarification={buildDocClarification("architectureContent", (c) =>
+                  setArchitectureContent(c),
+                )}
               />
             )}
             {centralPanel === "use-cases" && (
@@ -4711,6 +4748,9 @@ export default function WorkshopView({
                 placeholder="# Casos de Uso\n\nDescribe los escenarios de interacción y flujos transaccionales..."
                 onBlur={handleUseCasesBlur}
                 documentTimestamps={docTs("useCasesContent")}
+                clarification={buildDocClarification("useCasesContent", (c) =>
+                  setUseCasesContent(c),
+                )}
               />
             )}
             {centralPanel === "user-stories" && (
@@ -4729,6 +4769,9 @@ export default function WorkshopView({
                 placeholder="# Historias de Usuario\n\nDefine los requisitos en formato Agile (Como... quiero... para...)..."
                 onBlur={handleUserStoriesBlur}
                 documentTimestamps={docTs("userStoriesContent")}
+                clarification={buildDocClarification("userStoriesContent", (c) =>
+                  setUserStoriesContent(c),
+                )}
               />
             )}
             {centralPanel === "ux-ui-guide" && (
@@ -4774,24 +4817,6 @@ export default function WorkshopView({
                       : ""}
                   </div>
                 ) : null}
-                <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-3 py-2.5">
-                  <p className="min-w-0 flex-1 text-xs leading-relaxed text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
-                    <strong>Aclarar Spec</strong> antes del MDD: detecta ambigüedades y marca{" "}
-                    <code className="text-[10px]">[NEEDS CLARIFICATION]</code> (equivalente a{" "}
-                    <code className="text-[10px]">/speckit.clarify</code>).
-                  </p>
-                  <ClarifySpecPanel
-                    projectId={projectId}
-                    disabled={loading}
-                    onClarify={clarifySpec}
-                    onApplied={(content) => setSpecContent(content)}
-                    onMessage={(msg) => setError(msg)}
-                    open={clarifySpecDialogOpen}
-                    onOpenChange={setClarifySpecDialogOpen}
-                    showTrigger
-                    triggerVariant="button"
-                  />
-                </div>
                 <StandardDocPanel
                 icon={ListOrdered}
                 title="Spec"
@@ -4811,6 +4836,15 @@ export default function WorkshopView({
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
                 readOnly={deliverablesReadOnly}
                 documentTimestamps={docTs("specContent")}
+                clarification={buildDocClarification(
+                  "specContent",
+                  (c) => setSpecContent(c),
+                  "detecta ambigüedades y marca [NEEDS CLARIFICATION] antes del MDD",
+                  {
+                    clarifyOpen: clarifySpecDialogOpen,
+                    onClarifyOpenChange: setClarifySpecDialogOpen,
+                  },
+                )}
               />
               </>
             )}
@@ -4833,6 +4867,7 @@ export default function WorkshopView({
                 generateBlocked={!canGenerateAem}
                 generateBlockedReason="Completa al menos Benchmark (Deep Research), Fase 0 (DBGA) o BRD antes de generar."
                 documentTimestamps={docTs("aemContent")}
+                clarification={buildDocClarification("aemContent", (c) => setAemContent(c))}
               />
             )}
             {centralPanel === "ui-screens" && (
@@ -4875,6 +4910,9 @@ export default function WorkshopView({
                   generateLabel="Sincronizar Pantallas"
                   placeholder="# Pantallas\n\nPulsa «Sincronizar Pantallas» para generarlo desde el MCP gráfico conectado."
                   documentTimestamps={docTs("uiScreensContent")}
+                  clarification={buildDocClarification("uiScreensContent", () => {
+                    void fetchProject(projectId);
+                  })}
                 />
               </div>
             )}
@@ -4912,6 +4950,18 @@ export default function WorkshopView({
                     className="py-2"
                   />
                 )}
+                {buildDocClarification("brdContent", (c) => {
+                  setBrdWorkshopDraft(c);
+                  void fetchProject(projectId);
+                }) ? (
+                  <DocumentClarificationSection
+                    {...buildDocClarification("brdContent", (c) => {
+                      setBrdWorkshopDraft(c);
+                      void fetchProject(projectId);
+                    })!}
+                    content={brdWorkshopDraft}
+                  />
+                ) : null}
                 <BrdStagePanel
                   projectId={projectId}
                   activeStageId={activeStageId}
@@ -4943,6 +4993,9 @@ export default function WorkshopView({
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
                 readOnly={deliverablesReadOnly}
                 documentTimestamps={docTs("blueprintContent")}
+                clarification={buildDocClarification("blueprintContent", (c) =>
+                  setBlueprintContent(c),
+                )}
               />
             )}
             {centralPanel === "tasks" && (
@@ -4965,6 +5018,7 @@ export default function WorkshopView({
                 onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "tasks", activeStageId ?? undefined) : undefined}
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
                 documentTimestamps={docTs("tasksContent")}
+                clarification={buildDocClarification("tasksContent", (c) => setTasksContent(c))}
               />
             )}
             {centralPanel === "agent-governance" && (
@@ -5023,6 +5077,9 @@ export default function WorkshopView({
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
                 readOnly={deliverablesReadOnly}
                 documentTimestamps={docTs("apiContractsContent")}
+                clarification={buildDocClarification("apiContractsContent", (c) =>
+                  setApiContractsContent(c),
+                )}
               />
             )}
             {centralPanel === "logic-flows" && (
@@ -5042,6 +5099,9 @@ export default function WorkshopView({
                 onBlur={handleLogicFlowsBlur}
                 readOnly={deliverablesReadOnly}
                 documentTimestamps={docTs("logicFlowsContent")}
+                clarification={buildDocClarification("logicFlowsContent", (c) =>
+                  setLogicFlowsContent(c),
+                )}
               />
             )}
             {centralPanel === "infra" && (
@@ -5064,6 +5124,7 @@ export default function WorkshopView({
                 legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
                 readOnly={deliverablesReadOnly}
                 documentTimestamps={docTs("infraContent")}
+                clarification={buildDocClarification("infraContent", (c) => setInfraContent(c))}
               />
             )}
             {centralPanel === "adrs" && (

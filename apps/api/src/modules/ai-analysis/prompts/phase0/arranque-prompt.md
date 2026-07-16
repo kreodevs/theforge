@@ -33,7 +33,7 @@ Debes responder ÚNICAMENTE con un JSON válido con esta estructura. Sin markdow
     "flujos": [
       {
         "nombre": "string — nombre del flujo",
-        "pasos": ["string — cada paso en orden"]
+        "pasos": ["string — cada paso en orden (texto plano, sin ## ni encabezados markdown)"]
       }
     ],
     "roles": [
@@ -76,6 +76,8 @@ Debes responder ÚNICAMENTE con un JSON válido con esta estructura. Sin markdow
 
 8. **Reglas de negocio:** son reglas del dominio, no técnicas. "Un proyecto solo puede tener un dueño activo" ✅. "El servidor debe usar PostgreSQL" ❌ (eso va en integraciones o stack).
 
-9. **Out of scope:** si el usuario no mencionó límites, infiere los más probables y marcalos como supuestos.
+9. **Flujos (`flujos[].pasos`):** cada paso es una oración completa en texto plano. **No** incluyas `## 1.`, `###` ni numeración como si fuera título markdown; al exportarse a Fase 0 se convierten en listas `1.`, `2.` bajo `### Nombre del flujo`.
 
-10. **Si el input es demasiado vago** (menos de 20 palabras), infiere lo básico y marca gaps críticos en entidades, reglas de negocio y roles.
+10. **Out of scope:** si el usuario no mencionó límites, infiere los más probables y marcalos como supuestos.
+
+11. **Si el input es demasiado vago** (menos de 20 palabras), infiere lo básico y marca gaps críticos en entidades, reglas de negocio y roles.

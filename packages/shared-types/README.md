@@ -5,7 +5,7 @@ DTOs e interfaces compartidas (Zod).
 - Status, ChecklistResult, **MddJson** (`mddConstitutionSchema`, `constitution` opcional; `.passthrough()` para campos extra).
 - **`mdd-pipeline-limits.ts`:** constantes de tamaño (brief, plan, goals, aviso de pegado largo en Workshop).
 - **`markdown-repair.ts`:** export también vía subpath `@theforge/shared-types/markdown-repair` (MddViewer / limpieza de fences).
-- **`format-document-markdown.ts`:** `/formatear` + preview `MddViewer` — repara fences/tablas/Mermaid/infra. Antes de recortar el preámbulo (todo lo anterior al primer H1/H2) **preserva** la cabecera `Creado` / `Última regeneración` (`theforge-doc-stamp.ts`); sin eso el viewer ocultaba fecha y hora aunque estuvieran en la DB.
+- **`format-document-markdown.ts`:** `/formatear` + preview `MddViewer` — repara fences/tablas/Mermaid/infra. Antes de recortar el preámbulo (todo lo anterior al primer H1/H2) **preserva** la cabecera `Creado` / `Última regeneración` (`theforge-doc-stamp.ts`); sin eso el viewer ocultaba fecha y hora aunque estuvieran en la DB. **`repair-phase0-flow-format.ts`:** en Fase 0 §N Flujos convierte pasos mal emitidos como `## 1. …` a listas `1. …` y notas `### La cola…` a viñetas. **`repair-dbga-markdown.ts`:** DBGA/Fase 0 — desenvelopa markdown dentro de fences ` ```text ` erróneos, pseudo-tablas de pasos `|  | 1. |`, secciones `7. Roles` sin `##`, viñetas `-**R5.1**` y headings duplicados.
 - **`theforge-doc-stamp.ts`:** peel/reattach del stamp `<!-- theforge-doc:created|updated -->` + blockquote 📅.
 - **`repair-directory-tree.ts`:** árboles de directorios del Blueprint colapsados en una línea → bloque ` ```text ` multilínea (vía `repairPastedMarkdown`).
 - createProjectSchema, updateProjectSchema, sessionResponseSchema, etc.

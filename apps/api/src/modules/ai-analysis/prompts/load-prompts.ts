@@ -166,6 +166,13 @@ export const PHASE0_MERGE_PROMPT = loadPrompt(
   "Fusiona varios borradores Fase 0 en uno. JSON: { borrador, conflicts, benchmarkMerged? }.",
 );
 
+/** Reglas de markdown canónico (§4 flujos con `1.` no `## 1.`). Usar en refinado DBGA/Fase 0. */
+export const PHASE0_MARKDOWN_FORMAT_RULES = loadPrompt(
+  "phase0",
+  "phase0-markdown-format.md",
+  "En §4 Flujos Principales usa ### por flujo y pasos como listas 1. 2. — nunca ## 1. dentro del flujo.",
+);
+
 export const MDD_AUDIT_UPDATE_PROMPT = loadPrompt(
   "mdd",
   "mdd-audit-update-prompt.md",

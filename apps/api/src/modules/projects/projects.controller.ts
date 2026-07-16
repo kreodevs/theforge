@@ -26,6 +26,8 @@ import {
   convergeBodySchema,
   convergeTriggerBodySchema,
   clarifySpecBodySchema,
+  clarifyDocumentBodySchema,
+  resolveClarificationsBodySchema,
   tasksToIssuesBodySchema,
 } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
@@ -243,6 +245,25 @@ export class ProjectsController {
   clarifySpec(@Param("id") id: string, @Body() body: unknown) {
     const parsed = clarifySpecBodySchema.parse(body ?? {});
     return this.sddIntegration.clarifySpec(id, parsed);
+  }
+
+  /**
+   * Clarify any Workshop document. Body: `{ field, persist?, notes?, stageId? }`.
+   */
+  @Post(":id/clarify-document")
+  clarifyDocument(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = clarifyDocumentBodySchema.parse(body ?? {});
+    return this.sddIntegration.clarifyDocument(id, parsed);
+  }
+
+  /**
+   * Resolve pending [NEEDS CLARIFICATION] markers with user answers and regenerate.
+   * Body: `{ field, answers: Record<id, string>, persist?, stageId? }`.
+   */
+  @Post(":id/resolve-clarifications")
+  resolveClarifications(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = resolveClarificationsBodySchema.parse(body ?? {});
+    return this.sddIntegration.resolveClarifications(id, parsed);
   }
 
   /**

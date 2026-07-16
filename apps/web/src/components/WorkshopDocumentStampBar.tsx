@@ -8,8 +8,9 @@ type WorkshopDocumentStampBarProps = {
 };
 
 /**
- * Cabecera visible de trazabilidad (Creado / Última regeneración).
+ * Cabecera visible de trazabilidad (Creado / Última modificación).
  * El stamp vive en el markdown persistido; el editor y MddViewer lo quitan del cuerpo visible.
+ * Las fechas se muestran en la zona horaria detectada en el navegador.
  */
 export function WorkshopDocumentStampBar({
   timestamps,
@@ -17,7 +18,7 @@ export function WorkshopDocumentStampBar({
 }: WorkshopDocumentStampBarProps) {
   if (!timestamps) return null;
 
-  const regenerated = timestamps.created !== timestamps.updated;
+  const modified = timestamps.created !== timestamps.updated;
 
   return (
     <div
@@ -38,13 +39,13 @@ export function WorkshopDocumentStampBar({
           {timestamps.created}
         </p>
         <p>
-          <span className="font-medium text-[var(--muted-foreground)]">Última regeneración:</span>{" "}
+          <span className="font-medium text-[var(--muted-foreground)]">Última modificación:</span>{" "}
           {timestamps.updated}
         </p>
-        {!regenerated ? (
+        {!modified ? (
           <p className="text-[var(--muted-foreground)]">
-            Sin regeneraciones posteriores a la creación. Si editaste el MDD o pediste regenerar
-            entregables, comprueba que la fecha de regeneración coincida con tu último cambio.
+            Sin cambios posteriores a la creación. Tras editar el documento o regenerar
+            entregables, la fecha de modificación debería actualizarse al guardar.
           </p>
         ) : null}
       </div>

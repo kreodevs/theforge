@@ -9,6 +9,10 @@ import { WorkshopDocSourceSaveBar, WORKSHOP_DOC_EMPTY_PRIMARY_BTN } from "@/comp
 import { WorkshopDocTextarea } from "@/components/WorkshopDocTextarea";
 import { WorkshopDocumentStampBar } from "@/components/WorkshopDocumentStampBar";
 import type { WorkshopDocumentTimestamps } from "@/utils/workshop-document-content.util";
+import {
+  DocumentClarificationSection,
+  type DocumentClarificationSectionProps,
+} from "@/components/DocumentClarificationSection";
 
 export interface StandardDocPanelProps {
   icon: LucideIcon;
@@ -37,6 +41,8 @@ export interface StandardDocPanelProps {
   readOnly?: boolean;
   /** Fechas de creación/regeneración del documento persistido. */
   documentTimestamps?: WorkshopDocumentTimestamps | null;
+  /** Clarificación `[NEEDS CLARIFICATION]` — banner, respuestas y regeneración. */
+  clarification?: Omit<DocumentClarificationSectionProps, "content">;
 }
 
 /**
@@ -68,6 +74,7 @@ export function StandardDocPanel({
   hideGenerate,
   readOnly = false,
   documentTimestamps,
+  clarification,
 }: StandardDocPanelProps) {
   const IconComp = icon;
   // Estado 1: preview vacío → DocEmptyState
@@ -104,6 +111,9 @@ export function StandardDocPanel({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {clarification ? (
+        <DocumentClarificationSection {...clarification} content={content} />
+      ) : null}
       {viewMode === "preview" ? (
         /* Estado 2: preview con contenido */
         <MddViewer content={content || ""} documentTimestamps={documentTimestamps} />

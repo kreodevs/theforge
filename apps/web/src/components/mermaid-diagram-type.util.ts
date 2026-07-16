@@ -72,7 +72,19 @@ export function isNativeExcalidraw(type: MermaidDiagramType): boolean {
   return type === "flowchart";
 }
 
-/** Default preview mode: Excalidraw when supported, otherwise Mermaid SVG. */
+/** True when a flowchart body declares at least one `subgraph` block. */
+export function flowchartHasSubgraphs(content: string): boolean {
+  return /^\s*subgraph\b/im.test(content);
+}
+
+/**
+ * Default preview mode.
+ * Excalidraw only for simple flowcharts (native editable elements).
+ * ER / sequence / class and flowcharts with subgraphs use Mermaid SVG — the
+ * Excalidraw converter logs parse errors and falls back to a raster image anyway.
+ */
 export function defaultMermaidViewMode(content: string): "svg" | "excalidraw" {
-  return isExcalidrawSupported(detectMermaidDiagramType(content)) ? "excalidraw" : "svg";
+  const type = detectMermaidDiagramType(content);
+  if (type === "flowchart" && !flowchartHasSubgraphs(content)) return "excalidraw";
+  return "svg";
 }

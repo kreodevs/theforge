@@ -51,7 +51,8 @@ describe("buildWorkshopDocumentTimestampsMap", () => {
       { mddContent: stamped, dbgaContent: stamped, stages: [] },
       null,
     );
-    assert.ok(map.mddContent?.created.includes("10:30:45"));
-    assert.ok(map.dbgaContent?.updated.includes("14:45:30"));
+    assert.ok(map.mddContent?.created.includes("2026"));
+    assert.ok(map.dbgaContent?.updated.includes("2026"));
+    assert.notEqual(map.mddContent?.created, map.mddContent?.updated);
   });
 });

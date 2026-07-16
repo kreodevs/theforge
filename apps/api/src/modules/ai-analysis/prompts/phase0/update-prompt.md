@@ -26,6 +26,7 @@ Recibirás:
 6. **Conserva TODO el contenido previo.** No borres nada que ya estaba.
 7. **Si notas que una respuesta anterior necesita ajuste** por la nueva información, haz el ajuste.
 8. **Contador de preguntas:** incrementa preguntasRealizadas en 1.
+9. **Flujos (`flujos[].pasos`):** al añadir o editar pasos, usa texto plano (oración completa). **Prohibido** prefijos tipo `## 1.` o encabezados markdown; el sistema los serializa como listas ordenadas `1.`, `2.` bajo `### Nombre del flujo` en §4.
 
 # Formato de salida
 

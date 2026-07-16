@@ -22,17 +22,10 @@ const TASK_LINE = /^(\s*)- \[( |x|X)\]\s+(.+)$/;
 const SECTION_HEADING = /^##\s+(.+)$/;
 const CHECKPOINT_LINE = /^\*{0,2}Checkpoint\*{0,2}\s*:\s*(.+)$/i;
 const FILE_PATH_INLINE = /(?:`([^`]+)`|\*\*Archivo:\*\*\s*([^\s\n]+)|\b((?:src|apps|packages)\/[\w./-]+))/gi;
-const NEEDS_CLARIFICATION = /\[NEEDS CLARIFICATION[^\]]*\]/gi;
-
-/** Cuenta marcadores `[NEEDS CLARIFICATION]` en markdown Spec. */
-export function countClarificationMarkers(md: string): number {
-  const matches = (md ?? "").match(NEEDS_CLARIFICATION);
-  return matches?.length ?? 0;
-}
-
-export function specHasPendingClarificationSection(md: string): boolean {
-  return /##\s+Pendientes de clarificación/i.test(md ?? "");
-}
+export {
+  countClarificationMarkers,
+  specHasPendingClarificationSection,
+} from "./document-clarification.js";
 
 function stripParallelPrefix(title: string): { parallel: boolean; clean: string } {
   const m = title.match(/^\[P\]\s+/i);

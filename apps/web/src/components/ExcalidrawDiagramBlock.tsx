@@ -87,6 +87,21 @@ type ConvertedScene = {
   files: BinaryFiles | null;
 };
 
+/** Suppress expected parse noise — the library falls back to SVG-as-image internally. */
+function withQuietMermaidConversion<T>(run: () => Promise<T>): Promise<T> {
+  const prevError = console.error;
+  console.error = (...args: unknown[]) => {
+    const first = args[0];
+    if (typeof first === "string" && first.startsWith("Error processing Mermaid diagram:")) {
+      return;
+    }
+    prevError.apply(console, args);
+  };
+  return run().finally(() => {
+    console.error = prevError;
+  });
+}
+
 async function convertMermaidToExcalidraw(content: string): Promise<ConvertedScene> {
   const prepared = stripMermaidFenceWrappers(content).trim();
   const [mermaidMod, excalidrawMod] = await Promise.all([
@@ -94,7 +109,9 @@ async function convertMermaidToExcalidraw(content: string): Promise<ConvertedSce
     import("@excalidraw/excalidraw"),
   ]);
   // ER / sequence / class arrive as image skeletons — `files` holds the dataURLs.
-  const { elements: skeletons, files } = await mermaidMod.parseMermaidToExcalidraw(prepared);
+  const { elements: skeletons, files } = await withQuietMermaidConversion(() =>
+    mermaidMod.parseMermaidToExcalidraw(prepared),
+  );
   const elements = excalidrawMod.convertToExcalidrawElements(skeletons, {
     regenerateIds: false,
   });

@@ -7,4 +7,5 @@ Tu tarea: **extraer** la información a la estructura Fase 0 y **detectar gaps**
 1. **No inventes** información que no esté en el documento. Si algo no aparece, déjalo vacío y marca un gap.
 2. **No añadas decisiones técnicas** que el documento no mencione.
 3. **Extrae** entidades, reglas, flujos, roles e integraciones tal como están descritos (aunque el documento use otro formato o títulos).
-4. Responde **ÚNICAMENTE** con JSON válido (misma estructura que arranque: `{ "borrador": {...}, "gaps": [...] }`).
+4. Si el markdown tiene pasos de flujo como `## 1.` bajo §4, normalízalos mentalmente a strings planos en `flujos[].pasos` (sin `##`).
+5. Responde **ÚNICAMENTE** con JSON válido (misma estructura que arranque: `{ "borrador": {...}, "gaps": [...] }`).

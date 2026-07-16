@@ -8,6 +8,10 @@ import {
   buildSpecKitBundleFiles,
   checkBrdObjectiveMentionHealth,
   countClarificationMarkers,
+  extractClarificationItems,
+  type ClarifyDocumentBody,
+  type ClarifyableDocumentField,
+  type ResolveClarificationsBody,
   extractTaskCheckpoints,
   filterOpenTasks,
   getNextOpenTask,
@@ -48,7 +52,14 @@ import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import { persistStageAndProjectDeliverables } from "./stage-deliverable-persist.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { validateDocumentForPersist } from "../sessions/document-shrink.util.js";
+import { stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
 import type { ClarifySpecBody, ConvergeTriggerBody, ProjectDeliverableSource } from "@theforge/shared-types";
+import {
+  buildClarifyContextDocs,
+  clarifyDocumentFieldLabel,
+  persistClarifyDocumentContent,
+  readClarifyDocumentContent,
+} from "./document-clarify.util.js";
 import {
   analyzeAgentGovernanceSlice,
   buildHermesHandoffPayload,
@@ -86,6 +97,22 @@ export interface ClarifySpecResult {
   clarificationMarkerCount: number;
   persisted: boolean;
   mddSyncQueued?: boolean;
+}
+
+export interface ClarifyDocumentResult {
+  field: ClarifyableDocumentField;
+  clarifiedContent: string;
+  clarificationMarkerCount: number;
+  pendingItems: ReturnType<typeof extractClarificationItems>;
+  persisted: boolean;
+  mddSyncQueued?: boolean;
+}
+
+export interface ResolveClarificationsResult {
+  field: ClarifyableDocumentField;
+  resolvedContent: string;
+  clarificationMarkerCount: number;
+  persisted: boolean;
 }
 
 export interface RepoHandoffExport {
@@ -342,6 +369,183 @@ export class SddIntegrationService {
       persisted,
       mddSyncQueued,
     };
+  }
+
+  /**
+   * Clarify any Workshop document — marks ambiguities with [NEEDS CLARIFICATION].
+   */
+  async clarifyDocument(projectId: string, body: ClarifyDocumentBody): Promise<ClarifyDocumentResult> {
+    const project = await this.loadProject(projectId);
+    const stage = this.resolveOptionalStage(project, body.stageId);
+    const deliverables = stage
+      ? resolveStageDeliverables(project, stage, "analyze").deliverables
+      : {};
+    const field = body.field;
+    const fieldLabel = clarifyDocumentFieldLabel(field);
+    const current = readClarifyDocumentContent(project, stage, deliverables, field);
+
+    if (!current && field === "specContent") {
+      const dbga = (project.dbgaContent ?? project.phase0SummaryContent ?? "").trim();
+      const brd = (stage?.brdContent ?? "").trim();
+      if (!dbga && !brd) {
+        throw new BadRequestException(
+          "Genera Spec, DBGA o BRD antes de ejecutar clarificación",
+        );
+      }
+    } else if (!current && field !== "specContent") {
+      throw new BadRequestException(
+        `Genera ${fieldLabel} antes de ejecutar clarificación`,
+      );
+    }
+
+    const relatedDocs = buildClarifyContextDocs(project, stage, deliverables, field);
+    const clarified = cleanDocumentContent(
+      await this.ai.clarifyDocument(current, fieldLabel, {
+        notes: body.notes ?? null,
+        relatedDocs,
+      }),
+    );
+    const markerCount = countClarificationMarkers(clarified);
+    const pendingItems = extractClarificationItems(clarified);
+    let persisted = false;
+    let mddSyncQueued = false;
+
+    if (body.persist) {
+      const validation = validateDocumentForPersist(current, clarified, {
+        fieldLabel,
+        minBodyChars: current.length > 0 ? 80 : 120,
+      });
+      if (!validation.ok) {
+        throw new BadRequestException(validation.message);
+      }
+      await this.persistClarifiedField(project, stage, field, current, clarified);
+      persisted = true;
+    }
+
+    if (body.syncMdd && persisted && markerCount === 0 && field === "specContent" && stage?.mddContent?.trim()) {
+      const syncNote =
+        `\n\n<!-- clarify-spec-sync ${new Date().toISOString()} -->\n` +
+        `> Spec aclarado sincronizado desde clarify-spec. Revisar ambigüedades resueltas.\n`;
+      await this.prisma.stage.update({
+        where: { id: stage.id },
+        data: {
+          mddContent: `${(stage.mddContent ?? "").trim()}${syncNote}`,
+        },
+      });
+      mddSyncQueued = true;
+    }
+
+    return {
+      field,
+      clarifiedContent: clarified,
+      clarificationMarkerCount: markerCount,
+      pendingItems,
+      persisted,
+      mddSyncQueued,
+    };
+  }
+
+  /**
+   * Applies user answers to pending clarifications and regenerates the document.
+   */
+  async resolveClarifications(
+    projectId: string,
+    body: ResolveClarificationsBody,
+  ): Promise<ResolveClarificationsResult> {
+    const project = await this.loadProject(projectId);
+    const stage = this.resolveOptionalStage(project, body.stageId);
+    const deliverables = stage
+      ? resolveStageDeliverables(project, stage, "analyze").deliverables
+      : {};
+    const field = body.field;
+    const fieldLabel = clarifyDocumentFieldLabel(field);
+    const current = readClarifyDocumentContent(project, stage, deliverables, field);
+
+    if (!current) {
+      throw new BadRequestException(`No hay contenido en ${fieldLabel} para resolver clarificaciones`);
+    }
+
+    const pendingItems = extractClarificationItems(current);
+    if (pendingItems.length === 0) {
+      throw new BadRequestException(`No hay marcadores [NEEDS CLARIFICATION] en ${fieldLabel}`);
+    }
+
+    for (const item of pendingItems) {
+      const answer = body.answers[item.id]?.trim();
+      if (!answer) {
+        throw new BadRequestException(
+          `Falta respuesta para la clarificación ${item.id}: ${item.question.slice(0, 80)}…`,
+        );
+      }
+    }
+
+    const resolved = cleanDocumentContent(
+      await this.ai.resolveClarifications(
+        current,
+        fieldLabel,
+        pendingItems.map((item) => ({
+          question: item.question,
+          answer: body.answers[item.id]!.trim(),
+        })),
+      ),
+    );
+    const markerCount = countClarificationMarkers(resolved);
+    let persisted = false;
+
+    if (body.persist) {
+      const validation = validateDocumentForPersist(current, resolved, {
+        fieldLabel,
+        minBodyChars: 80,
+      });
+      if (!validation.ok) {
+        throw new BadRequestException(validation.message);
+      }
+      await this.persistClarifiedField(project, stage, field, current, resolved);
+      persisted = true;
+    }
+
+    return {
+      field,
+      resolvedContent: resolved,
+      clarificationMarkerCount: markerCount,
+      persisted,
+    };
+  }
+
+  private async persistClarifiedField(
+    project: ProjectWithStages,
+    stage: Stage | undefined,
+    field: ClarifyableDocumentField,
+    previous: string,
+    next: string,
+  ): Promise<void> {
+    if (field === "dbgaContent") {
+      await persistClarifyDocumentContent(this.prisma, project.id, null, field, previous, next);
+      return;
+    }
+    if (stage?.id) {
+      await persistClarifyDocumentContent(this.prisma, project.id, stage.id, field, previous, next);
+      return;
+    }
+    if (field === "specContent") {
+      await this.prisma.project.update({
+        where: { id: project.id },
+        data: {
+          specContent: stampMarkdownIfBodyChanged(previous, next),
+        },
+      });
+      return;
+    }
+    throw new BadRequestException("Se requiere una etapa activa para persistir este entregable");
+  }
+
+  private resolveOptionalStage(project: ProjectWithStages, stageId?: string): Stage | undefined {
+    if (stageId) {
+      const found = project.stages.find((s) => s.id === stageId);
+      if (!found) throw new NotFoundException("Etapa no encontrada");
+      return found;
+    }
+    return pickPrimaryStage(project.stages);
   }
 
   /**

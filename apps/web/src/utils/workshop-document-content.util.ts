@@ -29,12 +29,22 @@ type WorkshopTimestampProject = Omit<WorkshopStageDeliverableSource, "stages"> &
   stages?: WorkshopTimestampStage[];
 };
 
+/** Zona horaria del navegador para mostrar fechas del stamp en Workshop. */
+export function resolveWorkshopDisplayTimeZone(): string {
+  if (typeof Intl !== "undefined") {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }
+  return "UTC";
+}
+
 /** Fechas legibles desde stamp API (comentario HTML), o null si el doc no está sellado. */
 export function extractWorkshopDocumentTimestamps(
   raw: string | null | undefined,
 ): WorkshopDocumentTimestamps | null {
   if (!raw?.trim()) return null;
-  return formatTheforgeDocTimestampsForDisplay(parseTheforgeDocTimestamps(raw));
+  return formatTheforgeDocTimestampsForDisplay(parseTheforgeDocTimestamps(raw), {
+    timeZone: resolveWorkshopDisplayTimeZone(),
+  });
 }
 
 /** Mapa field → fechas al cargar proyecto/etapa (antes de quitar stamp del editor). */

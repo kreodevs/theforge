@@ -18,6 +18,8 @@ export type WorkshopAgentsBusySlice = {
     | "converge"
     | "tasks-to-issues"
     | "clarify-spec"
+    | "clarify-document"
+    | "resolve-clarifications"
     | "aem"
     | null;
   streamingUserMessage: string | null;
@@ -44,6 +46,8 @@ const AGENT_LOADING_REASONS = new Set<NonNullable<WorkshopAgentsBusySlice["loadi
   "converge",
   "tasks-to-issues",
   "clarify-spec",
+  "clarify-document",
+  "resolve-clarifications",
   "aem",
 ]);
 

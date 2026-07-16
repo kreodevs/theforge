@@ -38,6 +38,45 @@ describe("phase0 markdown round-trip", () => {
     assert.equal(parsed.roles[0].rol, "Operaciones");
     assert.deepEqual(parsed.integraciones, original.integraciones);
   });
+
+  it("markdownToPhase0Document parsea pasos ## N. en §4 Flujos", () => {
+    const md = `# Fase 0 — Especificación Inicial
+
+## 4. Flujos Principales
+
+### Inicio de chat
+## 1. Primer paso del flujo.
+## 2. Segundo paso.
+
+## 5. Roles y Permisos
+`;
+    const parsed = markdownToPhase0Document(md);
+    assert.equal(parsed.flujos.length, 1);
+    assert.deepEqual(parsed.flujos[0].pasos, ["Primer paso del flujo.", "Segundo paso."]);
+  });
+
+  it("markdownToPhase0Document parsea atributos en viñetas bajo entidad", () => {
+    const md = `# Fase 0 — Especificación Inicial
+
+## 2. Entidades del Dominio
+
+### Agente
+**Descripción:** Definición declarativa del agente.
+- Identificador (UUID)
+- Nombre
+- Rol (CrewAI Role)
+
+## 3. Reglas de Negocio
+`;
+    const parsed = markdownToPhase0Document(md);
+    assert.equal(parsed.entidades.length, 1);
+    assert.equal(parsed.entidades[0].nombre, "Agente");
+    assert.deepEqual(parsed.entidades[0].atributosClave, [
+      "Identificador (UUID)",
+      "Nombre",
+      "Rol (CrewAI Role)",
+    ]);
+  });
 });
 
 describe("loadProjectBorrador", () => {

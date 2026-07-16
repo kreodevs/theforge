@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   defaultMermaidViewMode,
   detectMermaidDiagramType,
+  flowchartHasSubgraphs,
   isExcalidrawSupported,
   isMermaidCodeBlock,
   isNativeExcalidraw,
@@ -92,10 +93,33 @@ describe("isMermaidCodeBlock", () => {
   });
 });
 
+describe("flowchartHasSubgraphs", () => {
+  it("detects subgraph blocks", () => {
+    assert.equal(
+      flowchartHasSubgraphs("flowchart TD\n  subgraph A\n    X --> Y\n  end"),
+      true,
+    );
+    assert.equal(flowchartHasSubgraphs("flowchart TD\n  A --> B"), false);
+  });
+});
+
 describe("defaultMermaidViewMode", () => {
-  it("prefers excalidraw for supported types", () => {
+  it("prefers excalidraw only for simple flowcharts", () => {
     assert.equal(defaultMermaidViewMode("flowchart\n  A --> B"), "excalidraw");
-    assert.equal(defaultMermaidViewMode("sequenceDiagram\n  A->>B: hi"), "excalidraw");
+    assert.equal(defaultMermaidViewMode("flowchart TD\n  A --> B"), "excalidraw");
+  });
+
+  it("uses svg for ER, sequence, class and subgraph flowcharts", () => {
+    assert.equal(defaultMermaidViewMode("sequenceDiagram\n  A->>B: hi"), "svg");
+    assert.equal(
+      defaultMermaidViewMode("erDiagram\n  USER ||--o{ ORDER : places"),
+      "svg",
+    );
+    assert.equal(defaultMermaidViewMode("classDiagram\n  class Foo"), "svg");
+    assert.equal(
+      defaultMermaidViewMode("flowchart TD\n  subgraph G\n    A --> B\n  end"),
+      "svg",
+    );
   });
 
   it("uses svg for unsupported types", () => {
