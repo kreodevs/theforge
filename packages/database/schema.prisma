@@ -80,7 +80,11 @@ model ProviderInstance {
   tokenKeyVersion        Int
   chatModel              String
   chatModelFallbacks     String[] @default([])
-  /// Modelo solo para el agente Auditor MDD en esta instancia; vacío = mismo que chatModel.
+  /// Tier B (medio): generadores §1/§6/§7, Manager, Quality Gate, entregables, tasks. Vacío → chatModel.
+  graphChatModel         String?
+  /// Tier A (potente): software_architect §2–§5, Legacy Coordinador. Vacío → graphChatModel → chatModel.
+  architectChatModel     String?
+  /// @deprecated Migrado a graphChatModel; se mantiene una release por compatibilidad API.
   auditorChatModel       String?
   embeddingModel         String?
   embeddingDimension     Int?

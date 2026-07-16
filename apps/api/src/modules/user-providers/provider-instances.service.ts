@@ -29,6 +29,8 @@ export interface UpsertProviderInstanceDto {
   apiKey: string;
   chatModel?: string;
   chatModelFallbacks?: string[];
+  graphChatModel?: string | null;
+  architectChatModel?: string | null;
   auditorChatModel?: string | null;
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
@@ -55,6 +57,8 @@ function mapInstanceRow(
     displayName: string;
     chatModel: string;
     chatModelFallbacks: string[];
+    graphChatModel: string | null;
+    architectChatModel: string | null;
     auditorChatModel: string | null;
     embeddingModel: string | null;
     embeddingDimension: number | null;
@@ -81,6 +85,8 @@ function mapInstanceRow(
     createdByUserId: row.createdByUserId,
     chatModel: row.chatModel,
     chatModelFallbacks: row.chatModelFallbacks,
+    graphChatModel: row.graphChatModel,
+    architectChatModel: row.architectChatModel,
     auditorChatModel: row.auditorChatModel,
     embeddingModel: row.embeddingModel,
     embeddingDimension: row.embeddingDimension,
@@ -161,6 +167,8 @@ export class ProviderInstancesService {
         displayName: true,
         chatModel: true,
         chatModelFallbacks: true,
+        graphChatModel: true,
+        architectChatModel: true,
         auditorChatModel: true,
         embeddingModel: true,
         embeddingDimension: true,
@@ -225,6 +233,8 @@ export class ProviderInstancesService {
         apiKey: dto.apiKey ?? "",
         chatModel: dto.chatModel,
         chatModelFallbacks: dto.chatModelFallbacks,
+        graphChatModel: dto.graphChatModel,
+        architectChatModel: dto.architectChatModel,
         auditorChatModel: dto.auditorChatModel,
         embeddingModel: dto.embeddingModel,
         embeddingDimension: dto.embeddingDimension,
@@ -286,6 +296,8 @@ export class ProviderInstancesService {
       displayName: string;
       chatModel: string;
       chatModelFallbacks: string[];
+      graphChatModel: string | null;
+      architectChatModel: string | null;
       auditorChatModel: string | null;
       embeddingModel: string | null;
       embeddingDimension: number | null;
@@ -321,6 +333,12 @@ export class ProviderInstancesService {
     const models = buildModelFields(providerType, {
       chatModel: dto.chatModel ?? existing?.chatModel,
       chatModelFallbacks: dto.chatModelFallbacks ?? existing?.chatModelFallbacks,
+      graphChatModel:
+        dto.graphChatModel !== undefined ? dto.graphChatModel : existing?.graphChatModel,
+      architectChatModel:
+        dto.architectChatModel !== undefined
+          ? dto.architectChatModel
+          : existing?.architectChatModel,
       auditorChatModel:
         dto.auditorChatModel !== undefined ? dto.auditorChatModel : existing?.auditorChatModel,
       embeddingModel:
@@ -337,6 +355,8 @@ export class ProviderInstancesService {
       await this.userProviders.validateUserMayUseChatModels(actorUserId, providerType, [
         models.chatModel,
         ...models.chatModelFallbacks,
+        ...(models.graphChatModel ? [models.graphChatModel] : []),
+        ...(models.architectChatModel ? [models.architectChatModel] : []),
         ...(models.auditorChatModel ? [models.auditorChatModel] : []),
       ]);
     }

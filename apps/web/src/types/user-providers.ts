@@ -83,6 +83,11 @@ export interface ProviderInstanceSummary {
   displayName: string;
   chatModel: string;
   chatModelFallbacks: string[];
+  /** Tier B (medio): grafo MDD, Quality Gate, entregables. */
+  graphChatModel: string | null;
+  /** Tier A (potente): software_architect §2–§5. */
+  architectChatModel: string | null;
+  /** @deprecated Migrado a graphChatModel; se mantiene una release. */
   auditorChatModel: string | null;
   embeddingModel: string | null;
   embeddingDimension: number | null;
@@ -108,6 +113,8 @@ export interface UpsertProviderInstanceBody {
   apiKey: string;
   chatModel?: string;
   chatModelFallbacks?: string[];
+  graphChatModel?: string | null;
+  architectChatModel?: string | null;
   auditorChatModel?: string | null;
   embeddingModel?: string | null;
   embeddingDimension?: number | null;

@@ -34,6 +34,14 @@ export class AIFactory {
     return this.userProviders.resolveAuditorRuntime(userId);
   }
 
+  async resolveGraphRuntime(userId: string): Promise<UserLLMRuntime> {
+    return this.userProviders.resolveGraphRuntime(userId);
+  }
+
+  async resolveArchitectRuntime(userId: string): Promise<UserLLMRuntime> {
+    return this.userProviders.resolveArchitectRuntime(userId);
+  }
+
   async createForUser(userId: string): Promise<LLMProvider> {
     const runtime = await this.resolveRuntime(userId);
     return this.create(runtime);

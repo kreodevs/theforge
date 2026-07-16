@@ -31,6 +31,7 @@ import {
   normalizeProviderExtras,
   resolveConfigBaseUrl,
   resolveRuntimeBaseUrl,
+  resolveTierChatModel,
   resolveVisionModelForRuntime,
 } from "./provider-config.helpers.js";
 import { isLlmDebugEnabled, llmDebug, summarizeRuntimeForLog } from "../ai/config/llm-debug.util.js";
@@ -506,6 +507,26 @@ export class UserProvidersService {
   }
 
   /**
+   * Runtime tier B (grafo MDD, Quality Gate, entregables, tasks).
+   * Usa `graphChatModel` con fallback a `auditorChatModel` legado y luego `chatModel`.
+   */
+  async resolveGraphRuntime(userId: string): Promise<UserLLMRuntime> {
+    const tenant = await this.resolveTenantInstanceForUser(userId);
+    if (tenant) return this.runtimeFromTenantInstanceForTier(userId, tenant, "graph");
+    return this.resolveRuntime(userId);
+  }
+
+  /**
+   * Runtime tier A (software_architect §2–§5, Legacy Coordinador).
+   * Fallback: architectChatModel → graphChatModel → chatModel.
+   */
+  async resolveArchitectRuntime(userId: string): Promise<UserLLMRuntime> {
+    const tenant = await this.resolveTenantInstanceForUser(userId);
+    if (tenant) return this.runtimeFromTenantInstanceForTier(userId, tenant, "architect");
+    return this.resolveRuntime(userId);
+  }
+
+  /**
    * Runtime del agente Auditor (grafo MDD) y del pipeline Tasks (Planner + Auditor LLM).
    * Usa la instancia activa del usuario; `auditorChatModel` en la instancia es opcional.
    * Si no hay override, mismo runtime que `resolveRuntime`.
@@ -514,6 +535,30 @@ export class UserProvidersService {
     const tenant = await this.resolveTenantInstanceForUser(userId);
     if (tenant) return this.runtimeFromTenantInstanceForAuditor(userId, tenant);
     return this.resolveRuntime(userId);
+  }
+
+  private async runtimeFromTenantInstanceForTier(
+    userId: string,
+    instance: ProviderInstance,
+    tier: "graph" | "architect",
+  ): Promise<UserLLMRuntime> {
+    const effectiveModel = resolveTierChatModel(
+      {
+        chatModel: instance.chatModel,
+        graphChatModel: instance.graphChatModel,
+        architectChatModel: instance.architectChatModel,
+        auditorChatModel: instance.auditorChatModel,
+      },
+      tier,
+    );
+    const baseModel = instance.chatModel.trim();
+    if (effectiveModel !== baseModel) {
+      return this.runtimeFromTenantInstance(userId, instance, {
+        chatModelOverride: effectiveModel,
+        modelRole: tier,
+      });
+    }
+    return this.runtimeFromTenantInstance(userId, instance);
   }
 
   private async runtimeFromTenantInstanceForAuditor(
@@ -780,7 +825,7 @@ export class UserProvidersService {
   private async runtimeFromTenantInstance(
     userId: string,
     instance: ProviderInstance,
-    opts?: { forEmbeddings?: boolean; chatModelOverride?: string },
+    opts?: { forEmbeddings?: boolean; chatModelOverride?: string; modelRole?: string },
   ): Promise<UserLLMRuntime> {
     if (!isProviderId(instance.providerType)) {
       throw new BadRequestException("Instancia tenant con tipo de proveedor no válido");
@@ -798,7 +843,7 @@ export class UserProvidersService {
     const userGrants =
       superAdmin || role === "developer" ? [] : (settings?.allowedChatModels ?? []);
     const chatModel = opts?.chatModelOverride?.trim() || instance.chatModel;
-    const modelRole = opts?.chatModelOverride ? "auditor" : "activo";
+    const modelRole = opts?.modelRole ?? (opts?.chatModelOverride ? "auditor" : "activo");
 
     const apiKey = this.tokenCrypto.decrypt(instance.tokenCiphertext, instance.tokenKeyVersion);
     const extras = (instance.extras ?? {}) as Record<string, unknown>;
@@ -814,6 +859,8 @@ export class UserProvidersService {
       chatModel: instance.chatModel,
       chatModelFallbacks,
       allowedChatModels: instance.allowedChatModels,
+      graphChatModel: instance.graphChatModel,
+      architectChatModel: instance.architectChatModel,
       auditorChatModel: instance.auditorChatModel,
       extras,
     });

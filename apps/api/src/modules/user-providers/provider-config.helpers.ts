@@ -114,11 +114,47 @@ export function resolveVisionModelForRuntime(params: {
   );
 }
 
+function normalizeOptionalChatModel(raw: string | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null;
+  return raw.trim() || null;
+}
+
+export type ProviderInstanceModelTiers = {
+  chatModel: string;
+  graphChatModel?: string | null;
+  architectChatModel?: string | null;
+  /** @deprecated Legado tier B; solo si graphChatModel vacío. */
+  auditorChatModel?: string | null;
+};
+
+/**
+ * Resuelve el modelo efectivo para tier B (grafo) o A (arquitecto).
+ * Fallback: architect → graph (+ auditor legado) → chat.
+ */
+export function resolveTierChatModel(
+  tiers: ProviderInstanceModelTiers,
+  tier: "graph" | "architect",
+): string {
+  const chat = tiers.chatModel.trim();
+  const graph =
+    tiers.graphChatModel?.trim() ||
+    tiers.auditorChatModel?.trim() ||
+    "";
+  const architect = tiers.architectChatModel?.trim() || "";
+
+  if (tier === "graph") {
+    return graph || chat;
+  }
+  return architect || graph || chat;
+}
+
 export function buildModelFields(
   provider: ProviderId,
   dto: {
     chatModel?: string;
     chatModelFallbacks?: string[];
+    graphChatModel?: string | null;
+    architectChatModel?: string | null;
     auditorChatModel?: string | null;
     embeddingModel?: string | null;
     embeddingDimension?: number | null;
@@ -156,11 +192,9 @@ export function buildModelFields(
   if (visionModel && !catalog.supportsVision) {
     throw new BadRequestException(`El proveedor «${provider}» no soporta visión (imágenes)`);
   }
-  const auditorRaw = dto.auditorChatModel;
-  const auditorChatModel =
-    auditorRaw === null || auditorRaw === undefined
-      ? null
-      : auditorRaw.trim() || null;
+  const graphChatModel = normalizeOptionalChatModel(dto.graphChatModel);
+  const architectChatModel = normalizeOptionalChatModel(dto.architectChatModel);
+  const auditorChatModel = normalizeOptionalChatModel(dto.auditorChatModel);
 
   let imageModel: string | null | undefined;
   if (dto.imageModel === undefined) {
@@ -174,6 +208,8 @@ export function buildModelFields(
   return {
     chatModel,
     chatModelFallbacks,
+    graphChatModel,
+    architectChatModel,
     auditorChatModel,
     embeddingModel,
     embeddingDimension,

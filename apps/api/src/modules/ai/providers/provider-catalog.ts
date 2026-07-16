@@ -415,6 +415,8 @@ export function resolveInstanceChatModelWhitelist(instance: {
   chatModel: string;
   chatModelFallbacks: string[];
   allowedChatModels: string[];
+  graphChatModel?: string | null;
+  architectChatModel?: string | null;
   auditorChatModel?: string | null;
   extras?: Record<string, unknown> | null;
 }): string[] {
@@ -431,6 +433,8 @@ export function resolveInstanceChatModelWhitelist(instance: {
   const configured = [
     instance.chatModel,
     ...fallbacks,
+    ...(instance.graphChatModel?.trim() ? [instance.graphChatModel.trim()] : []),
+    ...(instance.architectChatModel?.trim() ? [instance.architectChatModel.trim()] : []),
     ...(instance.auditorChatModel?.trim() ? [instance.auditorChatModel.trim()] : []),
   ].filter((m): m is string => typeof m === "string" && m.trim().length > 0);
   return [...new Set(configured)];

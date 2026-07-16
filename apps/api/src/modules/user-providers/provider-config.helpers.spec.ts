@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildModelFields,
+  resolveTierChatModel,
   resolveVisionModelForRuntime,
 } from "./provider-config.helpers.js";
 
@@ -44,5 +45,71 @@ describe("buildModelFields visionModel", () => {
       visionModel: "",
     });
     assert.equal(fields.visionModel, "openai/gpt-4o");
+  });
+});
+
+describe("resolveTierChatModel", () => {
+  const tiers = {
+    chatModel: "anthropic/claude-haiku",
+    graphChatModel: null,
+    architectChatModel: null,
+    auditorChatModel: null,
+  };
+
+  it("tier graph usa chatModel si graph y auditor vacíos", () => {
+    assert.equal(resolveTierChatModel(tiers, "graph"), "anthropic/claude-haiku");
+  });
+
+  it("tier graph prefiere graphChatModel", () => {
+    assert.equal(
+      resolveTierChatModel({ ...tiers, graphChatModel: "anthropic/claude-sonnet" }, "graph"),
+      "anthropic/claude-sonnet",
+    );
+  });
+
+  it("tier graph cae a auditorChatModel legado si graph vacío", () => {
+    assert.equal(
+      resolveTierChatModel({ ...tiers, auditorChatModel: "anthropic/claude-sonnet" }, "graph"),
+      "anthropic/claude-sonnet",
+    );
+  });
+
+  it("tier architect aplica cadena architect → graph → chat", () => {
+    assert.equal(
+      resolveTierChatModel(
+        {
+          chatModel: "anthropic/claude-haiku",
+          graphChatModel: "anthropic/claude-sonnet",
+          architectChatModel: null,
+        },
+        "architect",
+      ),
+      "anthropic/claude-sonnet",
+    );
+    assert.equal(
+      resolveTierChatModel(
+        {
+          chatModel: "anthropic/claude-haiku",
+          graphChatModel: "anthropic/claude-sonnet",
+          architectChatModel: "anthropic/claude-opus",
+        },
+        "architect",
+      ),
+      "anthropic/claude-opus",
+    );
+  });
+});
+
+describe("buildModelFields graph/architect tiers", () => {
+  it("normaliza graphChatModel y architectChatModel opcionales", () => {
+    const fields = buildModelFields("openrouter", {
+      chatModel: "deepseek/deepseek-v4-flash:floor",
+      graphChatModel: "  anthropic/claude-sonnet  ",
+      architectChatModel: "",
+      auditorChatModel: "  legacy/auditor  ",
+    });
+    assert.equal(fields.graphChatModel, "anthropic/claude-sonnet");
+    assert.equal(fields.architectChatModel, null);
+    assert.equal(fields.auditorChatModel, "legacy/auditor");
   });
 });
