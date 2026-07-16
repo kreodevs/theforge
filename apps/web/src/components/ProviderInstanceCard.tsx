@@ -25,17 +25,6 @@ export interface ProviderInstanceCardProps {
   onDelete: () => void;
 }
 
-function ModelPill({ model }: { model: string }) {
-  return (
-    <span
-      title={model}
-      className="inline-flex max-w-[min(100%,14rem)] shrink-0 items-center rounded-full border border-[color-mix(in_oklch,var(--border)_80%,transparent)] bg-[color-mix(in_oklch,var(--muted)_45%,var(--card))] px-2.5 py-1 font-mono text-[10px] leading-tight text-[var(--foreground)]"
-    >
-      <span className="truncate">{model}</span>
-    </span>
-  );
-}
-
 function ConfiguredModelsSection({ inst }: { inst: ProviderInstanceSummary }) {
   const tierRows = resolveProviderModelTierRows(resolveEffectiveModelTiers(inst, null));
 
@@ -92,13 +81,13 @@ function CardHeader({
   isActive,
   canMutate,
   onEdit,
-  showMainModelPill = true,
+  onDelete,
 }: {
   inst: ProviderInstanceSummary;
   isActive: boolean;
   canMutate: boolean;
   onEdit: () => void;
-  showMainModelPill?: boolean;
+  onDelete: () => void;
 }) {
   const providerLabel = getProviderLabel(inst.providerType);
 
@@ -118,16 +107,20 @@ function CardHeader({
         </div>
         <p className="truncate text-xs text-[var(--foreground-muted)]">{providerLabel}</p>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5 self-start">
-        {showMainModelPill && inst.chatModel ? (
-          <ModelPill model={inst.chatModel} />
-        ) : null}
-        {canMutate ? (
+      {canMutate ? (
+        <div className="flex shrink-0 items-center gap-1.5 self-start">
+          <ListRowIconButton
+            tooltip="Eliminar instancia"
+            className="text-[var(--destructive)] hover:text-[var(--destructive)]"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-4 w-4" />
+          </ListRowIconButton>
           <ListRowIconButton tooltip="Editar instancia" onClick={onEdit}>
             <Pencil className="h-4 w-4" />
           </ListRowIconButton>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -150,7 +143,7 @@ export function ProviderInstanceCardMobile(props: ProviderInstanceCardProps) {
   } = props;
   const showUseAction = !isDeveloper && !isActive;
   const actionCols =
-    (showUseAction ? 1 : 0) + (isDeveloper && isActive ? 1 : 0) + (canMutate ? 2 : 0);
+    (showUseAction ? 1 : 0) + (isDeveloper && isActive ? 1 : 0) + (canMutate ? 1 : 0);
   const actionGridClass =
     actionCols === 1
       ? "grid-cols-1"
@@ -170,7 +163,13 @@ export function ProviderInstanceCardMobile(props: ProviderInstanceCardProps) {
       )}
     >
       <div className="space-y-4 p-4">
-        <CardHeader inst={inst} isActive={isActive} canMutate={canMutate} onEdit={onEdit} />
+        <CardHeader
+          inst={inst}
+          isActive={isActive}
+          canMutate={canMutate}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
         <ConfiguredModelsSection inst={inst} />
         {isSuperAdmin && canManage ? (
           <label className="flex cursor-pointer items-center gap-2.5">
@@ -229,24 +228,14 @@ export function ProviderInstanceCardMobile(props: ProviderInstanceCardProps) {
           </div>
         ) : null}
         {canMutate ? (
-          <>
-            <button
-              type="button"
-              className="flex min-h-[3rem] flex-col items-center justify-center gap-1 py-2.5 text-xs font-medium text-[var(--foreground-muted)] active:bg-[var(--muted)]"
-              onClick={onEdit}
-            >
-              <Pencil className="h-5 w-5" aria-hidden />
-              Editar
-            </button>
-            <button
-              type="button"
-              className="flex min-h-[3rem] flex-col items-center justify-center gap-1 py-2.5 text-xs font-medium text-[var(--destructive)] active:bg-[var(--destructive)]/10"
-              onClick={onDelete}
-            >
-              <Trash2 className="h-5 w-5" aria-hidden />
-              Eliminar
-            </button>
-          </>
+          <button
+            type="button"
+            className="flex min-h-[3rem] flex-col items-center justify-center gap-1 py-2.5 text-xs font-medium text-[var(--foreground-muted)] active:bg-[var(--muted)]"
+            onClick={onEdit}
+          >
+            <Pencil className="h-5 w-5" aria-hidden />
+            Editar
+          </button>
         ) : null}
       </div>
     </article>
@@ -285,43 +274,36 @@ export function ProviderInstanceCardDesktop(props: ProviderInstanceCardProps) {
       ) : null}
 
       <div className="space-y-4 p-4 pl-5">
-        <CardHeader inst={inst} isActive={isActive} canMutate={canMutate} onEdit={onEdit} />
+        <CardHeader
+          inst={inst}
+          isActive={isActive}
+          canMutate={canMutate}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
         <ConfiguredModelsSection inst={inst} />
 
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-          {!isDeveloper && !isActive ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 px-3"
-              disabled={activatingId === inst.id}
-              onClick={onSetActive}
-            >
-              {activatingId === inst.id ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              ) : (
-                <Star className="h-3.5 w-3.5" aria-hidden />
-              )}
-              Usar
-            </Button>
-          ) : isDeveloper && isActive ? (
-            <span className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--foreground-muted)]">
-              Predeterminado del equipo
-            </span>
-          ) : (
-            <span />
-          )}
-          {canMutate ? (
-            <ListRowIconButton
-              tooltip="Eliminar instancia"
-              className="text-[var(--destructive)] hover:text-[var(--destructive)]"
-              onClick={onDelete}
-            >
-              <Trash2 className="h-4 w-4" />
-            </ListRowIconButton>
-          ) : null}
-        </div>
+        {!isDeveloper && !isActive ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-3"
+            disabled={activatingId === inst.id}
+            onClick={onSetActive}
+          >
+            {activatingId === inst.id ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Star className="h-3.5 w-3.5" aria-hidden />
+            )}
+            Usar
+          </Button>
+        ) : isDeveloper && isActive ? (
+          <span className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--foreground-muted)]">
+            Predeterminado del equipo
+          </span>
+        ) : null}
       </div>
 
       {isSuperAdmin && canManage ? (
