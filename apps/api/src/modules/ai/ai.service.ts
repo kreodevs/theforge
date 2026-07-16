@@ -110,6 +110,7 @@ import {
   buildGreenfieldCoverageChecklist,
 } from "../engine/sdd-coverage-checklist.util.js";
 import { resolveLlmMaxTokensForPurpose } from "./config/llm-config.js";
+import { resolveModelByIntent } from "./resolve-model-by-intent.util.js";
 import { MERMAID_REGENERATE_PROMPT } from "./prompts/mermaid-regenerate-prompt.js";
 import { repairMermaidBlockBody, stripMermaidFenceWrappers } from "@theforge/shared-types/mermaid";
 
@@ -540,9 +541,9 @@ export class AiService {
             systemPrompt +=
               "\n\n**OBLIGATORIO — Benchmark (DBGA):** Si el usuario pide **añadir, modificar, integrar o corregir** el análisis (p. ej. Kill Switch, tablero de aprobación, reglas de negocio, flujos), devuelve el **DBGA COMPLETO** (todo lo que ya existía en el contexto más tus cambios), no solo el párrafo nuevo. Termina con `---FIN_DBGA---` y un mensaje breve después. **Nunca** respondas solo \"He actualizado…\", \"He integrado…\" o \"El cambio ya está reflejado en el panel\" sin el markdown completo antes del delimitador — sin `---FIN_DBGA---` el panel NO cambia.";
           }
-          if (at === "mdd") {
+          if (at === "mdd" && intent !== "explore") {
             systemPrompt +=
-              "\n\n**\u26a0\ufe0f REGLA ABSOLUTA \u2014 MDD:\n1. **No eval\u00faes si un cambio es \"ya est\u00e1 cubierto\" o \"impacto m\u00ednimo\".** Si el usuario expresa un requisito expl\u00edcito (\"necesitamos X\", \"queremos Y\", \"usa Z\", \"agrega\", \"cambia\", \"modifica\", \"actualiza\", \"corrige\", \"elimina\"), es una orden, no una sugerencia. **El requerimiento del usuario siempre tiene prioridad sobre tu inferencia.**\n2. **NO respondas \"El MDD actual ya especifica...\" y te saltes el cambio.** Si el usuario pide algo, actualiza el documento para reflejarlo expl\u00edcitamente.\n3. Cada vez que el usuario pida agregar, cambiar, modificar, actualizar, corregir o eliminar algo del MDD, o cuando despu\u00e9s de preguntar confirme (\"s\u00ed\", \"dale\", \"aplica\", \"correcto\"), **DEBES** devolver el **MDD COMPLETO ACTUALIZADO** (conservando TODO el contenido existente m\u00e1s los cambios) terminando con `---FIN_MDD---`.\n4. **NUNCA** respondas solo con un mensaje como \"MDD actualizado\" o \"Hecho\" \u2014 si lo haces, el sistema NO persiste ning\u00fan cambio y el usuario cree que se aplic\u00f3 cuando no es as\u00ed. Siempre incluye un mensaje breve resumiendo el cambio DESPU\u00c9S de `---FIN_MDD---`.";
+              "\n\n**\u26a0\ufe0f REGLA ABSOLUTA \u2014 MDD:\n1. **No eval\u00faes si un cambio es \"ya est\u00e1 cubierto\" o \"impacto m\u00ednimo\".** Si el usuario expresa un requisito expl\u00edcito (\"necesitamos X\", \"queremos Y\", \"usa Z\", \"agrega\", \"cambia\", \"modifica\", \"actualiza\", \"corrige\", \"elimina\"), es una orden, no una sugerencia. **El requerimiento del usuario siempre tiene prioridad sobre tu inferencia.**\n2. **NO respondas \"El MDD actual ya especifica...\" y te saltes el cambio.** Si el usuario pide algo, actualiza el documento para reflejarlo expl\u00edcitamente.\n3. Cuando el system prompt indique edici\u00f3n confirmada del MDD, devuelve el documento actualizado terminando con `---FIN_MDD---`. El pipeline lean regenera secciones completas; en chat no vuelques las siete \u00a7 enteras salvo que el system prompt lo exija expl\u00edcitamente.\n4. **NUNCA** respondas solo con un mensaje como \"MDD actualizado\" o \"Hecho\" \u2014 si lo haces, el sistema NO persiste ning\u00fan cambio y el usuario cree que se aplic\u00f3 cuando no es as\u00ed. Siempre incluye un mensaje breve resumiendo el cambio DESPU\u00c9S de `---FIN_MDD---`.";
           }
           if (at === "spec") {
             systemPrompt +=
@@ -640,7 +641,8 @@ export class AiService {
           "\n\n**Entrada multimodal:** Puede haber imágenes en el historial o en este mensaje. Interprétalas en el contexto del documento activo y la conversación (modelo de datos, UI, flujos); no inventes detalles no visibles.";
         if (
           options?.activeTab?.trim() === "mdd" &&
-          (options?.currentMddContent?.trim().length ?? 0) > 400
+          (options?.currentMddContent?.trim().length ?? 0) > 400 &&
+          options?.intent !== "explore"
         ) {
           systemPrompt +=
             "\n\n**MDD no destructivo (obligatorio si ya hay MDD en contexto):** El bloque \"Contenido actual del MDD\" incluye **todas** las secciones. Si el usuario pide revisar, alinear o ampliar (p. ej. tras un diagrama), **no sustituyas el proyecto por un solo fragmento**: devuelve el **MDD completo** actualizado (copia el contenido existente y aplica cambios), terminando con `---FIN_MDD---`. Si optas por enviar **solo una sección**, debe empezar por el **mismo patrón de encabezado** que ya usa el documento para esa sección (`## N.` recomendado, mismo `N` que corresponda). Nunca envíes solo tablas o JSON sueltos sin el título de sección reconocible.";
@@ -656,9 +658,15 @@ export class AiService {
         approxTotalChars: systemPrompt.length + prompt.length,
         historyLength: history.length,
       });
+      const modelResolution = resolveModelByIntent({
+        intent: options?.intent,
+        activeTab: options?.activeTab,
+        welcomeBrief: options?.welcomeBrief,
+      });
       const out = await (await this.provider()).generateResponse(prompt, history, {
         systemPrompt,
         userMessageImages: options?.userMessageImages,
+        maxTokensOverride: options?.maxTokensOverride ?? modelResolution.maxTokens,
       });
       console.log(`[AiService] ${ts()} ← Respuesta del LLM recibida:`, {
         length: out?.length ?? 0,
@@ -773,9 +781,9 @@ export class AiService {
           systemPrompt +=
             "\n\n**OBLIGATORIO — Benchmark (DBGA):** Devuelve el **DBGA COMPLETO** (contexto actual + cambios), no solo el fragmento nuevo. Termina con `---FIN_DBGA---`. Sin delimitador no se persiste nada en el panel. **Prohibido** afirmar en chat que integraste o actualizaste el documento si no incluyes el markdown completo antes de `---FIN_DBGA---`.";
         }
-        if (at === "mdd") {
+        if (at === "mdd" && intent !== "explore") {
             systemPrompt +=
-              "\n\n**\u26a0\ufe0f REGLA ABSOLUTA \u2014 MDD:\n1. **No eval\u00faes si un cambio es \"ya est\u00e1 cubierto\" o \"impacto m\u00ednimo\".** Si el usuario expresa un requisito expl\u00edcito (\"necesitamos X\", \"queremos Y\", \"usa Z\", \"agrega\", \"cambia\", \"modifica\", \"actualiza\", \"corrige\", \"elimina\"), es una orden, no una sugerencia. **El requerimiento del usuario siempre tiene prioridad sobre tu inferencia.**\n2. **NO respondas \"El MDD actual ya especifica...\" y te saltes el cambio.** Si el usuario pide algo, actualiza el documento para reflejarlo expl\u00edcitamente.\n3. Cada vez que el usuario pida agregar, cambiar, modificar, actualizar, corregir o eliminar algo del MDD, o cuando despu\u00e9s de preguntar confirme (\"s\u00ed\", \"dale\", \"aplica\", \"correcto\"), **DEBES** devolver el **MDD COMPLETO ACTUALIZADO** (conservando TODO el contenido existente m\u00e1s los cambios) terminando con `---FIN_MDD---`.\n4. **NUNCA** respondas solo con un mensaje como \"MDD actualizado\" o \"Hecho\" \u2014 si lo haces, el sistema NO persiste ning\u00fan cambio y el usuario cree que se aplic\u00f3 cuando no es as\u00ed. Siempre incluye un mensaje breve resumiendo el cambio DESPU\u00c9S de `---FIN_MDD---`.";
+              "\n\n**\u26a0\ufe0f REGLA ABSOLUTA \u2014 MDD:\n1. **No eval\u00faes si un cambio es \"ya est\u00e1 cubierto\" o \"impacto m\u00ednimo\".** Si el usuario expresa un requisito expl\u00edcito (\"necesitamos X\", \"queremos Y\", \"usa Z\", \"agrega\", \"cambia\", \"modifica\", \"actualiza\", \"corrige\", \"elimina\"), es una orden, no una sugerencia. **El requerimiento del usuario siempre tiene prioridad sobre tu inferencia.**\n2. **NO respondas \"El MDD actual ya especifica...\" y te saltes el cambio.** Si el usuario pide algo, actualiza el documento para reflejarlo expl\u00edcitamente.\n3. Cuando el system prompt indique edici\u00f3n confirmada del MDD, devuelve el documento actualizado terminando con `---FIN_MDD---`. El pipeline lean regenera secciones completas; en chat no vuelques las siete \u00a7 enteras salvo que el system prompt lo exija expl\u00edcitamente.\n4. **NUNCA** respondas solo con un mensaje como \"MDD actualizado\" o \"Hecho\" \u2014 si lo haces, el sistema NO persiste ning\u00fan cambio y el usuario cree que se aplic\u00f3 cuando no es as\u00ed. Siempre incluye un mensaje breve resumiendo el cambio DESPU\u00c9S de `---FIN_MDD---`.";
           }
         if (at === "spec") {
           systemPrompt +=
@@ -933,7 +941,8 @@ export class AiService {
         "\n\n**Entrada multimodal:** Puede haber imágenes en el historial o en este mensaje. Interprétalas en el contexto del documento activo y la conversación (modelo de datos, UI, flujos); no inventes detalles no visibles.";
       if (
         options?.activeTab?.trim() === "mdd" &&
-        (options?.currentMddContent?.trim().length ?? 0) > 400
+        (options?.currentMddContent?.trim().length ?? 0) > 400 &&
+        options?.intent !== "explore"
       ) {
         systemPrompt +=
           "\n\n**MDD no destructivo (obligatorio si ya hay MDD en contexto):** El bloque \"Contenido actual del MDD\" incluye **todas** las secciones. Si el usuario pide revisar, alinear o ampliar (p. ej. tras un diagrama), **no sustituyas el proyecto por un solo fragmento**: devuelve el **MDD completo** actualizado (copia el contenido existente y aplica cambios), terminando con `---FIN_MDD---`. Si optas por enviar **solo una sección**, debe empezar por el **mismo patrón de encabezado** que ya usa el documento para esa sección (`## N.` recomendado, mismo `N` que corresponda). Nunca envíes solo tablas o JSON sueltos sin el título de sección reconocible.";
@@ -950,7 +959,16 @@ export class AiService {
         `[generateResponseStream] resolveRuntime falló userId=${userId}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    return (await this.provider()).generateResponseStream(prompt, history, { ...options, systemPrompt });
+    const modelResolution = resolveModelByIntent({
+      intent: options?.intent,
+      activeTab: options?.activeTab,
+      welcomeBrief: options?.welcomeBrief,
+    });
+    return (await this.provider()).generateResponseStream(prompt, history, {
+      ...options,
+      systemPrompt,
+      maxTokensOverride: options?.maxTokensOverride ?? modelResolution.maxTokens,
+    });
   }
 
   /**

@@ -174,6 +174,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
             options?.maxTokensOverride ??
             resolveLlmMaxTokensForWorkshopTab(options?.activeTab, {
               welcomeBrief: options?.welcomeBrief,
+              intent: options?.intent,
             }),
           ...(options?.jsonObjectMode ? { response_format: { type: "json_object" as const } } : {}),
         });
@@ -219,6 +220,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
             options?.maxTokensOverride ??
             resolveLlmMaxTokensForWorkshopTab(options?.activeTab, {
               welcomeBrief: options?.welcomeBrief,
+              intent: options?.intent,
             }),
           stream: true,
         });

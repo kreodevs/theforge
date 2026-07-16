@@ -83,6 +83,30 @@ test("resolveLlmMaxTokensForWorkshopTab — pestañas de documento", () => {
   assert.equal(resolveLlmMaxTokensForWorkshopTab("mdd", { welcomeBrief: true }), 2_048);
 });
 
+test("resolveLlmMaxTokensForWorkshopTab — mdd + explore usa chat 8K", () => {
+  assert.equal(
+    resolveLlmMaxTokensForWorkshopTab("mdd", { intent: "explore", action: "chat_only" }),
+    8_192,
+  );
+});
+
+test("resolveLlmMaxTokensForWorkshopTab — mdd + direct_edit usa chat 8K", () => {
+  assert.equal(
+    resolveLlmMaxTokensForWorkshopTab("mdd", { intent: "direct_edit", action: "edit_document" }),
+    8_192,
+  );
+});
+
+test("resolveLlmMaxTokensForWorkshopTab — benchmark + direct_edit mantiene document 32K", () => {
+  assert.equal(
+    resolveLlmMaxTokensForWorkshopTab("benchmark", {
+      intent: "direct_edit",
+      action: "edit_document",
+    }),
+    32_768,
+  );
+});
+
 test("isChatFallbackOn429Enabled — sin fallbacks", () => {
   assert.equal(isChatFallbackOn429Enabled(false), false);
 });

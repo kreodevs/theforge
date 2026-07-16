@@ -4,6 +4,7 @@ import { IntentClassifierService } from "./intent-classifier.service.js";
 import { IntentRouterService } from "./intent-router.service.js";
 import type { AiService } from "./ai.service.js";
 import { summarizeMessageForIntentClassification } from "./intent-router.util.js";
+import { resolveModelByIntent } from "./resolve-model-by-intent.util.js";
 
 describe("summarizeMessageForIntentClassification", () => {
   it("conserva la instrucción del usuario y omite la spec embebida", () => {
@@ -106,5 +107,44 @@ describe("IntentRouterService", () => {
     await router.route(message, { activeTab: "benchmark", hasDocumentContent: true });
     await router.route(message, { activeTab: "benchmark", hasDocumentContent: true });
     assert.equal(llmCalls, 1);
+  });
+});
+
+describe("resolveModelByIntent — contrato tras IntentRouter", () => {
+  it("explore en tab mdd → tier C y chat 8K", async () => {
+    const router = new IntentRouterService(new IntentClassifierService(), {
+      generateResponse: async () => "",
+    } as unknown as AiService);
+    const route = await router.route("¿Qué tal si usamos Redis?", {
+      activeTab: "mdd",
+      hasDocumentContent: true,
+    });
+    assert.equal(route.action, "chat_only");
+    const model = resolveModelByIntent({
+      intent: route.intent,
+      action: route.action,
+      activeTab: "mdd",
+    });
+    assert.equal(model.tier, "C");
+    assert.equal(model.purpose, "chat");
+    assert.equal(model.maxTokens, 8_192);
+  });
+
+  it("direct_edit heurístico en tab mdd → chat 8K (no document 32K)", async () => {
+    const router = new IntentRouterService(new IntentClassifierService(), {
+      generateResponse: async () => "",
+    } as unknown as AiService);
+    const route = await router.route("agrega autenticación OAuth al MDD", {
+      activeTab: "mdd",
+      hasDocumentContent: true,
+    });
+    assert.equal(route.intent, "direct_edit");
+    const model = resolveModelByIntent({
+      intent: route.intent,
+      action: route.action,
+      activeTab: "mdd",
+    });
+    assert.equal(model.tier, "C");
+    assert.equal(model.maxTokens, 8_192);
   });
 });

@@ -76,15 +76,44 @@ export function resolveLlmMaxTokensForPurpose(
   return Math.min(profile, ceiling);
 }
 
+type WorkshopTabIntent = "explore" | "direct_edit" | "mixed";
+type WorkshopTabAction = "chat_only" | "edit_document" | "confirm_then_edit";
+
+function isExploreOrConfirmIntent(
+  intent?: WorkshopTabIntent,
+  action?: WorkshopTabAction,
+): boolean {
+  return (
+    intent === "explore" ||
+    action === "chat_only" ||
+    intent === "mixed" ||
+    action === "confirm_then_edit"
+  );
+}
+
 /** Perfil según pestaña activa del Workshop (chat orquestador / stream). */
 export function resolveLlmMaxTokensForWorkshopTab(
   activeTab?: string,
-  opts?: { welcomeBrief?: boolean },
+  opts?: {
+    welcomeBrief?: boolean;
+    intent?: WorkshopTabIntent;
+    action?: WorkshopTabAction;
+  },
 ): number {
   if (opts?.welcomeBrief) {
     return resolveLlmMaxTokensForPurpose("welcome");
   }
   const tab = activeTab?.trim();
+
+  if (isExploreOrConfirmIntent(opts?.intent, opts?.action)) {
+    return resolveLlmMaxTokensForPurpose("chat");
+  }
+
+  // MDD direct_edit: perfil chat (8K) hasta delegación section-job (Agent G)
+  if (tab === "mdd" && opts?.intent === "direct_edit") {
+    return resolveLlmMaxTokensForPurpose("chat");
+  }
+
   if (tab === "ux-ui-guide") {
     return resolveLlmMaxTokensForPurpose("uxGuide");
   }

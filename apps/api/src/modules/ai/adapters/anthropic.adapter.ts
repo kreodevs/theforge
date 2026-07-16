@@ -74,6 +74,7 @@ export class AnthropicAdapter implements LLMProvider {
         options?.maxTokensOverride ??
         resolveLlmMaxTokensForWorkshopTab(options?.activeTab, {
           welcomeBrief: options?.welcomeBrief,
+          intent: options?.intent,
         }),
       system: options?.systemPrompt,
       messages,
@@ -94,6 +95,7 @@ export class AnthropicAdapter implements LLMProvider {
         options?.maxTokensOverride ??
         resolveLlmMaxTokensForWorkshopTab(options?.activeTab, {
           welcomeBrief: options?.welcomeBrief,
+          intent: options?.intent,
         }),
       system: options?.systemPrompt,
       messages: toAnthropicMessages(history, prompt, options?.userMessageImages),
