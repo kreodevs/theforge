@@ -14,6 +14,21 @@ export type WorkshopDocumentTimestamps = {
   updated: string;
 };
 
+/** Etapa con campos de documento fuera de `ProjectDeliverableSource`. */
+type WorkshopTimestampStage = {
+  id: string;
+  mddContent?: string | null;
+  brdContent?: string | null;
+  codebaseDoc?: string | null;
+};
+
+/** Proyecto + etapas para extraer stamps antes de normalizar el editor. */
+type WorkshopTimestampProject = Omit<WorkshopStageDeliverableSource, "stages"> & {
+  mddContent?: string | null;
+  dbgaContent?: string | null;
+  stages?: WorkshopTimestampStage[];
+};
+
 /** Fechas legibles desde stamp API (comentario HTML), o null si el doc no está sellado. */
 export function extractWorkshopDocumentTimestamps(
   raw: string | null | undefined,
@@ -24,18 +39,7 @@ export function extractWorkshopDocumentTimestamps(
 
 /** Mapa field → fechas al cargar proyecto/etapa (antes de quitar stamp del editor). */
 export function buildWorkshopDocumentTimestampsMap(
-  project: WorkshopStageDeliverableSource & {
-    mddContent?: string | null;
-    dbgaContent?: string | null;
-    stages?: Array<
-      WorkshopStageDeliverableSource & {
-        id: string;
-        mddContent?: string | null;
-        brdContent?: string | null;
-        codebaseDoc?: string | null;
-      }
-    >;
-  },
+  project: WorkshopTimestampProject,
   stageId: string | null,
 ): Record<string, WorkshopDocumentTimestamps> {
   const stages = project.stages ?? [];
