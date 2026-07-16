@@ -119,6 +119,8 @@ export interface ProviderConfigFormFieldsProps {
   onClearFieldError: (field: UserProviderFormFields) => void;
   showError: (field: UserProviderFormFields) => string | undefined;
   inputErrorClass: (field: UserProviderFormFields) => string;
+  /** Muestra tiers B/A (instancias de equipo). BYOK personal solo usa chat. */
+  showInstanceModelTiers?: boolean;
 }
 
 /** Campos BYOK compartidos (personal y instancias de equipo). */
@@ -134,6 +136,7 @@ export function ProviderConfigFormFields({
   onClearFieldError,
   showError,
   inputErrorClass,
+  showInstanceModelTiers = false,
 }: ProviderConfigFormFieldsProps) {
   return (
     <>
@@ -187,9 +190,13 @@ export function ProviderConfigFormFields({
 
       <FormField
         id={`${idPrefix}-chat-model`}
-        label="Modelo de chat"
+        label={showInstanceModelTiers ? "Modelo chat (ligero)" : "Modelo de chat"}
         required
-        hint={`ID del modelo (p. ej. ${catalog.defaultChatModel} u openrouter/free).`}
+        hint={
+          showInstanceModelTiers
+            ? "Tier C — p. ej. anthropic/claude-haiku. Conversación Workshop e intent router."
+            : `ID del modelo (p. ej. ${catalog.defaultChatModel} u openrouter/free).`
+        }
         error={showError("chatModel")}
       >
         <Input
@@ -205,6 +212,50 @@ export function ProviderConfigFormFields({
           className={cn("font-mono text-xs", inputErrorClass("chatModel"))}
         />
       </FormField>
+
+      {showInstanceModelTiers ? (
+        <>
+          <FormField
+            id={`${idPrefix}-graph-model`}
+            label="Modelo grafo (medio)"
+            hint="Tier B — p. ej. anthropic/claude-sonnet. Generadores §1/§6/§7, Quality Gate, entregables y tasks. Vacío = mismo que chat."
+            error={showError("graphChatModel")}
+          >
+            <Input
+              id={`${idPrefix}-graph-model`}
+              value={form.graphChatModel}
+              onChange={(e) => {
+                onPatch({ graphChatModel: e.target.value });
+                onClearFieldError("graphChatModel");
+              }}
+              onBlur={() => onBlurField("graphChatModel")}
+              placeholder="p. ej. anthropic/claude-sonnet-4"
+              aria-invalid={!!showError("graphChatModel")}
+              className={cn("font-mono text-xs", inputErrorClass("graphChatModel"))}
+            />
+          </FormField>
+
+          <FormField
+            id={`${idPrefix}-architect-model`}
+            label="Modelo arquitecto (potente)"
+            hint="Tier A — p. ej. anthropic/claude-opus. §2–§5 SQL/API y Legacy Coordinador. Vacío = grafo → chat."
+            error={showError("architectChatModel")}
+          >
+            <Input
+              id={`${idPrefix}-architect-model`}
+              value={form.architectChatModel}
+              onChange={(e) => {
+                onPatch({ architectChatModel: e.target.value });
+                onClearFieldError("architectChatModel");
+              }}
+              onBlur={() => onBlurField("architectChatModel")}
+              placeholder="p. ej. anthropic/claude-opus-4"
+              aria-invalid={!!showError("architectChatModel")}
+              className={cn("font-mono text-xs", inputErrorClass("architectChatModel"))}
+            />
+          </FormField>
+        </>
+      ) : null}
 
       <FormField
         id={`${idPrefix}-fallbacks`}
@@ -224,27 +275,6 @@ export function ProviderConfigFormFields({
           className={inputErrorClass("chatModelFallbacks")}
         />
       </FormField>
-
-      <FormField
-        id={`${idPrefix}-auditor-model`}
-        label="Modelo auditor / planner (opcional)"
-        hint="MDD Auditor, Tasks Planner y Tasks Auditor LLM. Vacío = mismo que modelo de chat. Misma clave API y proveedor (p. ej. openai/gpt-4o en OpenRouter)."
-        error={showError("auditorChatModel")}
-      >
-        <Input
-          id={`${idPrefix}-auditor-model`}
-          value={form.auditorChatModel}
-          onChange={(e) => {
-            onPatch({ auditorChatModel: e.target.value });
-            onClearFieldError("auditorChatModel");
-          }}
-          onBlur={() => onBlurField("auditorChatModel")}
-          placeholder="p. ej. anthropic/claude-opus-4"
-          aria-invalid={!!showError("auditorChatModel")}
-          className={cn("font-mono text-xs", inputErrorClass("auditorChatModel"))}
-        />
-      </FormField>
-
       {catalog.supportsEmbeddings ? (
         <ModelInput
           id={`${idPrefix}-embedding`}

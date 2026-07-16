@@ -100,7 +100,8 @@ export function ProviderInstanceModal({
     apiKey: "",
     chatModel: "",
     chatModelFallbacks: "",
-    auditorChatModel: "",
+    graphChatModel: "",
+    architectChatModel: "",
     embeddingModel: "",
     sttModel: "",
     visionModel: "",
@@ -204,7 +205,12 @@ export function ProviderInstanceModal({
       takenSlugsForType: slugsForType,
     });
     const nextConfig = activeCatalog
-      ? validateUserProviderForm({ catalog: activeCatalog, form: configForm, isEditing })
+      ? validateUserProviderForm({
+          catalog: activeCatalog,
+          form: configForm,
+          isEditing,
+          instanceModelTiers: true,
+        })
       : {};
     setMetaErrors(nextMeta);
     setConfigErrors(nextConfig);
@@ -214,7 +220,8 @@ export function ProviderInstanceModal({
         apiKey: true,
         chatModel: true,
         chatModelFallbacks: true,
-        auditorChatModel: true,
+        graphChatModel: true,
+        architectChatModel: true,
         embeddingModel: true,
         sttModel: true,
         visionModel: true,
@@ -289,7 +296,8 @@ export function ProviderInstanceModal({
         apiKey: configForm.apiKey.trim(),
         chatModel: configForm.chatModel.trim(),
         chatModelFallbacks: parseFallbacks(configForm.chatModelFallbacks),
-        auditorChatModel: configForm.auditorChatModel.trim() || null,
+        graphChatModel: configForm.graphChatModel.trim() || null,
+        architectChatModel: configForm.architectChatModel.trim() || null,
         embeddingModel: activeCatalog.supportsEmbeddings
           ? configForm.embeddingModel.trim() || null
           : null,
@@ -495,6 +503,7 @@ visionModel: activeCatalog.supportsVision
                 onClearFieldError={clearConfigFieldError}
                 showError={showConfigError}
                 inputErrorClass={configInputErrorClass}
+                showInstanceModelTiers
               />
             ) : null}
 

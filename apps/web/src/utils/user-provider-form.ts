@@ -8,7 +8,10 @@ export interface UserProviderFormState {
   apiKey: string;
   chatModel: string;
   chatModelFallbacks: string;
-  auditorChatModel: string;
+  /** Tier B (medio): grafo MDD, Quality Gate, entregables. */
+  graphChatModel: string;
+  /** Tier A (potente): software_architect §2–§5. */
+  architectChatModel: string;
   embeddingModel: string;
   sttModel: string;
   visionModel: string;
@@ -45,7 +48,8 @@ export function configFormFromInstance(
     apiKey: "",
     chatModel: inst.chatModel,
     chatModelFallbacks: inst.chatModelFallbacks?.join(", ") ?? "",
-    auditorChatModel: inst.auditorChatModel ?? "",
+    graphChatModel: inst.graphChatModel ?? inst.auditorChatModel ?? "",
+    architectChatModel: inst.architectChatModel ?? "",
     embeddingModel: inst.embeddingModel ?? "",
     sttModel: inst.sttModel ?? "",
     visionModel: inst.visionModel ?? "",
@@ -63,7 +67,8 @@ export function configFormFromUserConfig(
     apiKey: "",
     chatModel: cfg.chatModel || catalog.defaultChatModel,
     chatModelFallbacks: cfg.chatModelFallbacks?.join(", ") ?? "",
-    auditorChatModel: "",
+    graphChatModel: "",
+    architectChatModel: "",
     embeddingModel: cfg.embeddingModel ?? catalog.defaultEmbeddingModel ?? "",
     sttModel: cfg.sttModel ?? catalog.defaultSttModel ?? "",
     visionModel: cfg.visionModel ?? catalog.defaultVisionModel ?? "",
@@ -81,7 +86,8 @@ export function createEmptyUserProviderForm(
     apiKey: "",
     chatModel: catalog.defaultChatModel,
     chatModelFallbacks: "",
-    auditorChatModel: "",
+    graphChatModel: "",
+    architectChatModel: "",
     embeddingModel: catalog.defaultEmbeddingModel ?? "",
     sttModel: catalog.defaultSttModel ?? "",
     visionModel: catalog.defaultVisionModel ?? "",
@@ -97,7 +103,8 @@ export type UserProviderFormFields =
   | "apiKey"
   | "chatModel"
   | "chatModelFallbacks"
-  | "auditorChatModel"
+  | "graphChatModel"
+  | "architectChatModel"
   | "embeddingModel"
   | "sttModel"
   | "visionModel"
@@ -150,6 +157,8 @@ export function validateUserProviderForm(args: {
   catalog: ProviderCatalogEntry;
   form: UserProviderFormState;
   isEditing: boolean;
+  /** Valida tiers B/A (instancias de equipo); omitir en BYOK personal. */
+  instanceModelTiers?: boolean;
 }): UserProviderFormErrors {
   const { catalog, form } = args;
   const errors: UserProviderFormErrors = {};
@@ -158,9 +167,11 @@ export function validateUserProviderForm(args: {
     errors.apiKey = "La clave API es obligatoria";
   }
 
-  if (!form.chatModel.trim()) {
+  const chat = form.chatModel.trim();
+
+  if (!chat) {
     errors.chatModel = "El modelo de chat es obligatorio";
-  } else if (form.chatModel.trim().length < 2) {
+  } else if (chat.length < 2) {
     errors.chatModel = "Indica un modelo de chat válido";
   }
 
@@ -170,20 +181,37 @@ export function validateUserProviderForm(args: {
       "Los modelos de respaldo deben ser nombres separados por coma";
   }
   for (const fb of fallbacks) {
-    if (fb === form.chatModel.trim()) {
+    if (fb === chat) {
       errors.chatModelFallbacks = "El modelo de respaldo no puede ser igual al principal";
       break;
     }
   }
 
-  if (form.auditorChatModel.trim() && form.auditorChatModel.trim().length < 2) {
-    errors.auditorChatModel = "Indica un modelo auditor/planner válido";
-  } else if (
-    form.auditorChatModel.trim() &&
-    form.auditorChatModel.trim() === form.chatModel.trim()
-  ) {
-    errors.auditorChatModel =
-      "Si es el mismo que el de chat, déjalo vacío (se usará el modelo de chat)";
+  if (args.instanceModelTiers) {
+    const graph = form.graphChatModel.trim();
+    const architect = form.architectChatModel.trim();
+
+    if (graph && graph.length < 2) {
+      errors.graphChatModel = "Indica un modelo de grafo válido";
+    } else if (graph && graph === chat) {
+      errors.graphChatModel =
+        "Si es el mismo que el de chat, déjalo vacío (se usará el modelo de chat)";
+    }
+
+    if (architect && architect.length < 2) {
+      errors.architectChatModel = "Indica un modelo arquitecto válido";
+    } else if (architect && architect === graph) {
+      errors.architectChatModel =
+        "Si es el mismo que el de grafo, déjalo vacío (se usará el modelo de grafo)";
+    } else if (architect && architect === chat) {
+      errors.architectChatModel =
+        "Si es el mismo que el de chat, déjalo vacío (se usará el modelo de chat)";
+    }
+
+    if (chat && graph && architect && chat === graph && graph === architect) {
+      errors.architectChatModel =
+        "Los tres modelos son iguales; considera usar solo el de chat o diferenciar tiers";
+    }
   }
 
   if (catalog.supportsEmbeddings && form.embeddingModel.trim()) {

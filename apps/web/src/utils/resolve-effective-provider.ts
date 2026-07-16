@@ -65,6 +65,116 @@ export function resolveDisplayVisionModel(
   return { supportsVision: true, model: null, source: null };
 }
 
+export type EffectiveModelTierSource = "configured" | "graph-fallback" | "chat-fallback";
+
+export interface EffectiveModelTiers {
+  chat: string | null;
+  graph: string | null;
+  graphSource: EffectiveModelTierSource;
+  architect: string | null;
+  architectSource: EffectiveModelTierSource;
+}
+
+export type ProviderInstanceModelTiers = {
+  chatModel: string;
+  graphChatModel?: string | null;
+  architectChatModel?: string | null;
+  /** @deprecated Legado tier B; solo si graphChatModel vacío. */
+  auditorChatModel?: string | null;
+};
+
+/** Réplica en cliente de `resolveTierChatModel` del API. */
+export function resolveTierChatModel(
+  tiers: ProviderInstanceModelTiers,
+  tier: "graph" | "architect",
+): string {
+  const chat = tiers.chatModel.trim();
+  const graph =
+    tiers.graphChatModel?.trim() ||
+    tiers.auditorChatModel?.trim() ||
+    "";
+  const architect = tiers.architectChatModel?.trim() || "";
+
+  if (tier === "graph") {
+    return graph || chat;
+  }
+  return architect || graph || chat;
+}
+
+function tierSource(
+  configured: string | null | undefined,
+  effective: string,
+  chat: string,
+  graphEffective: string,
+): EffectiveModelTierSource {
+  if (configured?.trim()) return "configured";
+  if (effective === graphEffective && graphEffective !== chat) return "graph-fallback";
+  return "chat-fallback";
+}
+
+/** Modelos efectivos C/B/A para panel de proveedor activo. */
+export function resolveEffectiveModelTiers(
+  instance: ProviderInstanceSummary | null,
+  personal: UserProviderConfigSummary | null,
+): EffectiveModelTiers {
+  const chat = instance?.chatModel ?? personal?.chatModel ?? null;
+  if (!chat?.trim()) {
+    return {
+      chat: null,
+      graph: null,
+      graphSource: "chat-fallback",
+      architect: null,
+      architectSource: "chat-fallback",
+    };
+  }
+
+  const tiers: ProviderInstanceModelTiers = instance
+    ? {
+        chatModel: instance.chatModel,
+        graphChatModel: instance.graphChatModel,
+        architectChatModel: instance.architectChatModel,
+        auditorChatModel: instance.auditorChatModel,
+      }
+    : { chatModel: chat };
+
+  const graphEffective = resolveTierChatModel(tiers, "graph");
+  const architectEffective = resolveTierChatModel(tiers, "architect");
+
+  return {
+    chat: chat.trim(),
+    graph: graphEffective,
+    graphSource: instance
+      ? tierSource(
+          instance.graphChatModel ?? instance.auditorChatModel,
+          graphEffective,
+          chat.trim(),
+          graphEffective,
+        )
+      : "chat-fallback",
+    architect: architectEffective,
+    architectSource: instance
+      ? tierSource(instance.architectChatModel, architectEffective, chat.trim(), graphEffective)
+      : "chat-fallback",
+  };
+}
+
+const TIER_HINT_BY_SOURCE: Record<EffectiveModelTierSource, string> = {
+  configured: "",
+  "graph-fallback": "Mismo modelo que el grafo (medio)",
+  "chat-fallback": "Mismo modelo que el chat (ligero)",
+};
+
+export function modelTierHint(
+  tier: "graph" | "architect",
+  source: EffectiveModelTierSource,
+): string | null {
+  if (source === "configured") return null;
+  if (tier === "graph" && source === "chat-fallback") {
+    return "Mismo modelo que el chat (ligero)";
+  }
+  return TIER_HINT_BY_SOURCE[source] || null;
+}
+
 export type EffectiveProviderSource =
   | "selected-instance"
   | "tenant-default"

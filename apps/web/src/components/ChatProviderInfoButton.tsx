@@ -15,9 +15,9 @@ import {
   Loader2,
   MessageSquare,
   Mic,
+  Network,
   ScanEye,
   Settings2,
-  Shield,
   Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -25,6 +25,8 @@ import { ProviderLogo, getProviderLabel } from "./ProviderLogo";
 import { WorkshopChatToolbarIconButton } from "./WorkshopButtons";
 import { useActiveProviderInfo } from "@/hooks/useActiveProviderInfo";
 import {
+  modelTierHint,
+  resolveEffectiveModelTiers,
   visionModelHint,
   type EffectiveProviderSource,
 } from "@/utils/resolve-effective-provider";
@@ -136,8 +138,7 @@ export function ChatProviderInfoButton({ onOpenSettings }: ChatProviderInfoButto
   const providerType = instance?.providerType ?? personal?.provider ?? null;
   const displayName =
     instance?.displayName ?? (personal ? getProviderLabel(personal.provider) : null);
-  const chatModel = instance?.chatModel ?? personal?.chatModel ?? null;
-  const auditorModel = instance?.auditorChatModel?.trim() || chatModel;
+  const modelTiers = resolveEffectiveModelTiers(instance, personal);
   const apiKeyHint = instance?.apiKeyHint ?? personal?.apiKeyHint ?? null;
   const fallbackModels =
     instance?.chatModelFallbacks?.length
@@ -323,8 +324,26 @@ export function ChatProviderInfoButton({ onOpenSettings }: ChatProviderInfoButto
                   </p>
                 ) : (
                   <>
-                    <ModelField icon={MessageSquare} label="Modelo de chat" value={chatModel} />
-                    <ModelField icon={Shield} label="Modelo auditor" value={auditorModel} />
+                    <ModelField
+                      icon={MessageSquare}
+                      label="Modelo chat (ligero)"
+                      value={modelTiers.chat}
+                      alwaysShow
+                    />
+                    <ModelField
+                      icon={Layers}
+                      label="Modelo grafo (medio)"
+                      value={modelTiers.graph}
+                      hint={modelTierHint("graph", modelTiers.graphSource)}
+                      alwaysShow
+                    />
+                    <ModelField
+                      icon={Network}
+                      label="Modelo arquitecto (potente)"
+                      value={modelTiers.architect}
+                      hint={modelTierHint("architect", modelTiers.architectSource)}
+                      alwaysShow
+                    />
                     <FallbackModelsField models={fallbackModels} />
                     {vision.supportsVision ? (
                       <ModelField

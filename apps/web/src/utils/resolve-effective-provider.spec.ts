@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   resolveDisplayVisionModel,
+  resolveEffectiveModelTiers,
   resolveEffectiveProvider,
+  resolveTierChatModel,
   visionModelHint,
 } from "./resolve-effective-provider.js";
 import type {
@@ -34,6 +36,8 @@ const baseInstance = (
   displayName: "OpenRouter",
   chatModel: "gpt-4o-mini",
   chatModelFallbacks: [],
+  graphChatModel: null,
+  architectChatModel: null,
   auditorChatModel: null,
   embeddingModel: null,
   embeddingDimension: null,
@@ -109,6 +113,87 @@ describe("resolveEffectiveProvider", () => {
     const result = resolveEffectiveProvider([], settings, configs);
     assert.equal(result.source, "personal-byok");
     assert.equal(result.personalConfig?.provider, "openai");
+  });
+});
+
+describe("resolveTierChatModel", () => {
+  it("tier graph prefiere graphChatModel", () => {
+    assert.equal(
+      resolveTierChatModel(
+        { chatModel: "haiku", graphChatModel: "sonnet", architectChatModel: "opus" },
+        "graph",
+      ),
+      "sonnet",
+    );
+  });
+
+  it("tier graph cae a auditor legado y luego chat", () => {
+    assert.equal(
+      resolveTierChatModel(
+        { chatModel: "haiku", graphChatModel: null, auditorChatModel: "legacy-sonnet" },
+        "graph",
+      ),
+      "legacy-sonnet",
+    );
+    assert.equal(
+      resolveTierChatModel({ chatModel: "haiku", graphChatModel: null, auditorChatModel: null }, "graph"),
+      "haiku",
+    );
+  });
+
+  it("tier architect aplica cadena architect → graph → chat", () => {
+    assert.equal(
+      resolveTierChatModel(
+        { chatModel: "haiku", graphChatModel: "sonnet", architectChatModel: null },
+        "architect",
+      ),
+      "sonnet",
+    );
+    assert.equal(
+      resolveTierChatModel(
+        { chatModel: "haiku", graphChatModel: "sonnet", architectChatModel: "opus" },
+        "architect",
+      ),
+      "opus",
+    );
+  });
+});
+
+describe("resolveEffectiveModelTiers", () => {
+  it("expone tiers efectivos C/B/A para instancia", () => {
+    const instance = baseInstance({
+      id: "x",
+      chatModel: "anthropic/claude-haiku",
+      graphChatModel: "anthropic/claude-sonnet",
+      architectChatModel: null,
+    });
+    const tiers = resolveEffectiveModelTiers(instance, null);
+    assert.equal(tiers.chat, "anthropic/claude-haiku");
+    assert.equal(tiers.graph, "anthropic/claude-sonnet");
+    assert.equal(tiers.graphSource, "configured");
+    assert.equal(tiers.architect, "anthropic/claude-sonnet");
+    assert.equal(tiers.architectSource, "graph-fallback");
+  });
+
+  it("BYOK personal repite chat en los tres tiers", () => {
+    const personal: UserProviderConfigSummary = {
+      provider: "openai",
+      chatModel: "gpt-4o-mini",
+      chatModelFallbacks: [],
+      embeddingModel: null,
+      embeddingDimension: null,
+      sttModel: null,
+      visionModel: null,
+      baseUrl: null,
+      extras: null,
+      configured: true,
+      apiKeyHint: "sk-…",
+    };
+    const tiers = resolveEffectiveModelTiers(null, personal);
+    assert.equal(tiers.chat, "gpt-4o-mini");
+    assert.equal(tiers.graph, "gpt-4o-mini");
+    assert.equal(tiers.architect, "gpt-4o-mini");
+    assert.equal(tiers.graphSource, "chat-fallback");
   });
 });
 
