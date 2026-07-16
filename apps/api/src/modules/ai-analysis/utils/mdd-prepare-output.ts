@@ -33,8 +33,10 @@ import type { MddDeliveryGateResult } from "./mdd-delivery-gate.util.js";
 import { evaluateMddQualityGate, qualityGateToDeliveryGate } from "./mdd-quality-gate.util.js";
 import { composeSection3FromStructured } from "./schema-owner.util.js";
 import {
-  injectUiMcpIntoMddFrontendSection,
-} from "./mdd-inject-ui-mcp-frontend.util.js";
+  filterSuggestedEntitiesForDomain,
+  isTheForgeDomainProject,
+} from "../../engine/domain-inventory.util.js";
+import { injectUiMcpIntoMddFrontendSection } from "./mdd-inject-ui-mcp-frontend.util.js";
 
 export function hasStructuredContent(mdd: MddStructured | null | undefined): boolean {
   if (!mdd || typeof mdd !== "object") return false;
@@ -203,7 +205,18 @@ export async function prepareMddForOutput(
         dbgaMarkdown: options.dbgaMarkdown,
         mddMarkdown: markdown,
       });
-      const merged = mergeDomainTablesIntoMdd(markdown, inventory);
+      const isTheForge = isTheForgeDomainProject(
+        options.brdMarkdown,
+        options.dbgaMarkdown,
+        markdown,
+      );
+      const filteredInventory = isTheForge
+        ? inventory
+        : {
+            ...inventory,
+            suggestedEntities: filterSuggestedEntitiesForDomain(inventory.suggestedEntities, false),
+          };
+      const merged = mergeDomainTablesIntoMdd(markdown, filteredInventory);
       if (merged.injected.length > 0) {
         finalMarkdown = applyPreDeliveryGateFixes(merged.markdown);
         console.log(

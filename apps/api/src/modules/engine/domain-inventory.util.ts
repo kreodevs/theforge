@@ -32,32 +32,83 @@ export function isStructuralBrdCapabilityTitle(title: string): boolean {
 const ENTITY_HINT_RE =
   /\b(tenant|canal|conversaci[oó]n|mensaje|solicitud|embedding|mcp|bit[aá]cora|tarea\s+programada|scheduled|whatsapp|wasender|bitrix|lead|plugin|tool|memoria|agente|llm|configuraci[oó]n)\b/gi;
 
-/** Map Spanish / product nouns → suggested snake_case table names. */
-const ENTITY_ALIASES: Record<string, string> = {
+/** Tablas/entidades específicas del dominio The Forge — no sugerir en otros proyectos. */
+export const THEFORGE_SPECIFIC_ENTITIES = new Set([
+  "conversation_memory",
+  "llm_configs",
+  "agent_runs",
+  "mcp_plugins",
+  "mcp_tools",
+  "failed_request_logs",
+  "message_embeddings",
+  "whatsapp_devices",
+  "wasender_devices",
+]);
+
+/** Aliases de entidades genéricas (cualquier dominio). */
+const GENERIC_ENTITY_ALIASES: Record<string, string> = {
   tenant: "tenants",
   canal: "channels",
   conversación: "conversations",
   conversacion: "conversations",
   mensaje: "messages",
   solicitud: "requests",
-  embedding: "message_embeddings",
+  embedding: "embeddings",
+  bitrix: "integrations",
+  lead: "leads",
+  plugin: "plugins",
+  tool: "tools",
+};
+
+/** Aliases solo cuando el BRD/DBGA es dominio The Forge. */
+const THEFORGE_ENTITY_ALIASES: Record<string, string> = {
   mcp: "mcp_plugins",
   bitácora: "failed_request_logs",
   bitacora: "failed_request_logs",
   whatsapp: "whatsapp_devices",
   wasender: "wasender_devices",
-  bitrix: "mcp_plugins",
-  lead: "leads",
-  plugin: "mcp_plugins",
-  tool: "mcp_tools",
   memoria: "conversation_memory",
   agente: "agent_runs",
   llm: "llm_configs",
   configuración: "llm_configs",
   configuracion: "llm_configs",
+  embedding: "message_embeddings",
+  bitrix: "mcp_plugins",
+  plugin: "mcp_plugins",
+  tool: "mcp_tools",
   "tarea programada": "scheduled_tasks",
   scheduled: "scheduled_tasks",
 };
+
+/** True when BRD/DBGA content indicates The Forge product domain (not generic "forge" metaphors). */
+export function isTheForgeDomainProject(...docs: Array<string | null | undefined>): boolean {
+  const combined = docs.filter(Boolean).join("\n").toLowerCase();
+  if (!combined.trim()) return false;
+  return (
+    /\bthe\s*forge\b/.test(combined) ||
+    /\btheforge\b/.test(combined) ||
+    /\bworkshop\s+view\b/.test(combined) ||
+    /\bmdd\s+semaphore\b|\bsem[aá]foro\s+mdd\b/.test(combined) ||
+    /\bariadne\s*specs?\b/.test(combined) ||
+    /\bconversation_memory\b/.test(combined) ||
+    /\bllm_configs\b/.test(combined)
+  );
+}
+
+function entityAliasesForDomain(isTheForge: boolean): Record<string, string> {
+  return isTheForge
+    ? { ...GENERIC_ENTITY_ALIASES, ...THEFORGE_ENTITY_ALIASES }
+    : { ...GENERIC_ENTITY_ALIASES };
+}
+
+/** Filter TheForge-internal stub entities when project is not The Forge domain. */
+export function filterSuggestedEntitiesForDomain(
+  entities: string[],
+  isTheForge: boolean,
+): string[] {
+  if (isTheForge) return entities;
+  return entities.filter((e) => !THEFORGE_SPECIFIC_ENTITIES.has(e.toLowerCase()));
+}
 
 export function extractBrdCapabilities(brdMarkdown: string): BrdCapability[] {
   const text = (brdMarkdown ?? "").trim();
@@ -134,21 +185,32 @@ function extractMarkdownSection(md: string, startRe: RegExp): string | null {
 
 /** Suggest entity table names from BRD/DBGA prose. */
 export function suggestEntitiesFromProse(...docs: Array<string | null | undefined>): string[] {
+  const isTheForge = isTheForgeDomainProject(...docs);
+  const aliases = entityAliasesForDomain(isTheForge);
   const found = new Set<string>();
   for (const doc of docs) {
     if (!doc) continue;
     for (const m of doc.matchAll(ENTITY_HINT_RE)) {
       const raw = m[1]?.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "") ?? "";
       const key = raw.replace(/\s+/g, " ").trim();
-      const aliased = ENTITY_ALIASES[key] ?? ENTITY_ALIASES[raw] ?? snakePlural(key);
-      if (aliased.length >= 3) found.add(aliased);
+      const aliased = aliases[key] ?? aliases[raw] ?? snakePlural(key);
+      if (aliased.length >= 3 && (isTheForge || !THEFORGE_SPECIFIC_ENTITIES.has(aliased))) {
+        found.add(aliased);
+      }
     }
     // CREATE TABLE already present
     for (const m of doc.matchAll(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)/gi)) {
       if (m[1]) found.add(m[1].toLowerCase());
     }
+    // snake_case table names mentioned in prose (e.g. conversation_memory, llm_configs)
+    for (const m of doc.matchAll(/\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b/g)) {
+      const name = m[1]!.toLowerCase();
+      if (name.length >= 5 && name.length <= 64) {
+        if (isTheForge || !THEFORGE_SPECIFIC_ENTITIES.has(name)) found.add(name);
+      }
+    }
   }
-  return [...found].sort();
+  return filterSuggestedEntitiesForDomain([...found].sort(), isTheForge);
 }
 
 function snakePlural(word: string): string {

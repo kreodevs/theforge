@@ -209,6 +209,7 @@ export async function createMddGraph(
 ) {
   const chatLlm = await createDbgaLLM(aiFactory, userId);
   const graphLlm = await createGraphLLM(aiFactory, userId);
+  const clarifierLlm = await createGraphLLM(aiFactory, userId, { outputTokenPurpose: "langgraph" });
   const graphStructuralLlm = await createGraphLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const architectLlm = await createArchitectLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const nodeCache = options?.nodeCache ?? null;
@@ -222,7 +223,7 @@ export async function createMddGraph(
     nodeCache,
     "clarifier",
     clarifierInput,
-    createMddClarifierNode(graphLlm),
+    createMddClarifierNode(clarifierLlm),
     trace,
     correlationId,
     shouldAbort,
@@ -438,6 +439,7 @@ export async function createMddGraphWithManager(
 ) {
   const chatLlm = await createDbgaLLM(aiFactory, userId);
   const graphLlm = await createGraphLLM(aiFactory, userId);
+  const clarifierLlm = await createGraphLLM(aiFactory, userId, { outputTokenPurpose: "langgraph" });
   const graphStructuralLlm = await createGraphLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const architectLlm = await createArchitectLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const nodeCache = compileOptions?.nodeCache ?? null;
@@ -464,7 +466,7 @@ export async function createMddGraphWithManager(
     nodeCache,
     "clarifier",
     clarifierInput,
-    createMddClarifierNode(graphLlm),
+    createMddClarifierNode(clarifierLlm),
     trace,
     correlationId,
     shouldAbort,

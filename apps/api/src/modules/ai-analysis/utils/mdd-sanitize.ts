@@ -3485,7 +3485,7 @@ export function extractContextSectionBody(draft: string): string | null {
 export function mergeSection1IntoDraft(previousDraft: string, newDraft: string): string {
   const section1Body = extractContextSectionBody(newDraft);
   if (!section1Body?.trim()) return previousDraft;
-  return replaceContextSectionBody(previousDraft, section1Body);
+  return replaceSection1BodyFromAnyHeading(previousDraft, section1Body);
 }
 
 /** Reemplaza el cuerpo de "## 1. Contexto y alcance" en draft por newBody. */

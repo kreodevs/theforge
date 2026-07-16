@@ -2,13 +2,15 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage } from "@langchain/core/messages";
 import { CLARIFIER_MDD_PROMPT, CLARIFIER_QUESTIONS_ONLY_MDD_PROMPT } from "../prompts/load-prompts.js";
 import type { MDDStateType } from "../state/index.js";
-import { getMddTemplatePlaceholder } from "../state/mdd-structured.schema.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
 import { getMddDraftSummary, extractAlreadyDocumentedTopics, extractIdentifiedInfraFromText, logMddNodeOutput } from "../utils/mdd-sanitize.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
 import { extractFirstJsonObject, parseJsonOrThrow } from "../utils/parse-json.js";
 import { clarifierComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
 import { domainInventoryPromptBlock } from "../utils/mdd-domain-prompt.util.js";
+import { extractBrdDigest } from "../utils/extract-brd-digest.js";
+import { buildMddDraftFromClarifierOutput } from "../utils/merge-section1-into-template.js";
+import { stripThinkingTags } from "../utils/mdd-security-parse.js";
 import { z } from "zod";
 
 /** Acepta string o objeto (el LLM a veces devuelve objeto); normaliza a string. */
@@ -16,11 +18,12 @@ function toScopeString(x: unknown): string {
   if (typeof x === "string") return x;
   if (x && typeof x === "object" && !Array.isArray(x)) {
     const obj = x as Record<string, unknown>;
-    const key = ["content", "text", "scope", "summary", "clarifiedScope"].find((k) => typeof obj[k] === "string");
+    const key = ["content", "text", "scope", "summary", "clarifiedScope", "contextoAlcance"].find((k) => typeof obj[k] === "string");
     if (key) return String(obj[key]);
   }
   return typeof x === "object" ? JSON.stringify(x, null, 2) : String(x);
 }
+
 const stringOrObject = z
   .union([z.string(), z.record(z.unknown()), z.array(z.unknown())])
   .transform(toScopeString)
@@ -28,9 +31,8 @@ const stringOrObject = z
 
 const clarifierOutputSchema = z.object({
   clarifiedScope: stringOrObject,
-  mddDraft: stringOrObject,
+  contextoAlcance: stringOrObject,
   title: z.string().optional(),
-  contextoAlcance: z.string().optional(),
 });
 
 /** Tipo de salida tras parse (stringOrObject se transforma a string). */
@@ -41,6 +43,22 @@ const questionsOnlySchema = z.object({
 });
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:Clarifier] ${msg}`, ...args);
+
+const JSON_RETRY_SUFFIX =
+  "\n\n**IMPORTANTE:** Responde ÚNICAMENTE JSON válido sin thinking ni markdown.";
+
+const CLARIFIER_PARSE_ERROR = "Clarifier no pudo estructurar el alcance del BRD";
+
+function parseClarifierResponse(text: string): ClarifierParsed {
+  const cleaned = stripThinkingTags(text);
+  const jsonStr = extractFirstJsonObject(cleaned) ?? cleaned.trim();
+  return parseJsonOrThrow(jsonStr, clarifierOutputSchema) as ClarifierParsed;
+}
+
+async function invokeClarifierLlm(llm: BaseChatModel, prompt: string): Promise<string> {
+  const response = await llm.invoke([new HumanMessage(prompt)]);
+  return typeof response.content === "string" ? response.content : "";
+}
 
 /** Creates the MDD Clarifier node. */
 export function createMddClarifierNode(llm: BaseChatModel) {
@@ -110,74 +128,104 @@ export function createMddClarifierNode(llm: BaseChatModel) {
       }
     }
 
+    const draftTrimmed = (state.mddDraft ?? "").trim();
+    const hasGoodPriorDraft = draftTrimmed.length > 200;
+
     try {
       const brief = getUserBrief(state);
-      const draftTrimmed = (state.mddDraft ?? "").trim();
       const hasSubstantialDraft = draftTrimmed.length > 500 && /##\s*2\.\s*Arquitectura/i.test(draftTrimmed);
       const briefBlock = brief && !hasSubstantialDraft
-        ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar la sección 1. Contexto para una aplicación que cumple este objetivo; las secciones 2–7 son placeholders de una línea.\n\n---\n\n`
+        ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar la sección 1. Contexto para una aplicación que cumple este objetivo; las secciones 2–7 las rellenará el pipeline (no las escribas).\n\n---\n\n`
         : brief && hasSubstantialDraft
-          ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Revisa y modifica el borrador existente del MDD según el objetivo. Preserva el contenido completo de todas las secciones (1-7) y solo aplica los cambios necesarios para cumplir el objetivo.\n\n---\n\n`
+          ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Revisa y actualiza **solo** la sección 1. Contexto según el objetivo. El sistema fusionará tu §1 en el borrador existente; **no** reescribas §2–7.\n\n---\n\n`
           : "";
-      let prompt = `${CLARIFIER_MDD_PROMPT}${clarifierComplexityAppendix(state.mddComplexity)}\n\n---\n${briefBlock}**DBGA (entrada):**\n${state.dbgaContent}`;
+
+      const { digest: dbgaForPrompt, usedDigest, originalLen } = extractBrdDigest(state.dbgaContent ?? "");
+      if (usedDigest) {
+        LOG("using BRD digest len=%s from original=%s", dbgaForPrompt.length, originalLen);
+      }
+
+      let prompt = `${CLARIFIER_MDD_PROMPT}${clarifierComplexityAppendix(state.mddComplexity)}\n\n---\n${briefBlock}**DBGA (entrada):**\n${dbgaForPrompt}`;
       const inventoryBlock = domainInventoryPromptBlock(state);
       if (inventoryBlock) {
         prompt += inventoryBlock;
         prompt +=
           "\n\n**Obligatorio en §1 Contexto:** enumera las capacidades de negocio del inventario (no solo auth/RBAC). Las capacidades de autenticación van como complemento.";
       }
-      if (draftTrimmed) {
+      if (hasSubstantialDraft) {
         const maxDraftLen = 14_000;
         const draftBlock =
           draftTrimmed.length > maxDraftLen
-            ? draftTrimmed.slice(0, maxDraftLen) + "\n\n...(truncado; mantén el resto del documento en tu salida basándote en la estructura anterior)..."
+            ? draftTrimmed.slice(0, maxDraftLen) + "\n\n...(truncado; conserva §2–7 del borrador existente)..."
             : draftTrimmed;
-        prompt += `\n\n**Borrador actual del MDD (refinar con las respuestas del usuario y feedback; NO reemplazar por un resumen nuevo; incorpora cambios y devuelve el documento completo):**\n${draftBlock}`;
+        prompt += `\n\n**Borrador actual del MDD (solo para contexto de refinamiento de §1; NO devuelvas §2–7 en tu salida):**\n${draftBlock}`;
       }
       if (state.auditorFeedback?.trim()) {
-        prompt += `\n\n**Feedback del Auditor (incorporar):**\n${state.auditorFeedback.trim()}`;
+        prompt += `\n\n**Feedback del Auditor (incorporar en §1 y clarifiedScope):**\n${state.auditorFeedback.trim()}`;
       }
       if (state.userInputAccumulated?.trim()) {
-        prompt += `\n\n**Respuestas del usuario (incorporar al borrador; el v2 debe reflejar esto):**\n${state.userInputAccumulated.trim()}`;
+        prompt += `\n\n**Respuestas del usuario (incorporar en §1 y clarifiedScope):**\n${state.userInputAccumulated.trim()}`;
         const lastSegment = state.userInputAccumulated.split(/\n\n---\n\n/).pop()?.trim() ?? "";
         if (lastSegment.length <= 80 && /^(?:usuario:\s*)?(?:s[ií]|s[ií]\s*,\s*de\s*acuerdo|de\s*acuerdo|ok|vale|correcto|estoy\s+de\s+acuerdo|perfecto|acepto)[\s.]*$/i.test(lastSegment)) {
-          prompt += `\n\n**Importante:** La última respuesta es un acuerdo breve; el usuario acepta la propuesta concreta del Feedback del Auditor (ej. transacciones ACID, consistencia eventual, Docker, etc.). Incorpórala explícitamente al borrador en la sección correspondiente.`;
+          prompt += `\n\n**Importante:** La última respuesta es un acuerdo breve; el usuario acepta la propuesta concreta del Feedback del Auditor (ej. transacciones ACID, consistencia eventual, Docker, etc.). Incorpórala explícitamente en contextoAlcance y clarifiedScope.`;
         }
       }
-      const response = await llm.invoke([new HumanMessage(prompt)]);
-      const text = typeof response.content === "string" ? response.content : "";
+
+      let text = await invokeClarifierLlm(llm, prompt);
       if (!text.trim()) {
-        LOG("LLM vacío, usando fallback");
-        const noBench = /sin benchmark|no hay benchmark/i.test(state.dbgaContent);
-        const base = noBench
-          ? getMddTemplatePlaceholder("(Genera un MDD base; el usuario refinará después.)")
-          : getMddTemplatePlaceholder(`(Basado en: ${state.dbgaContent.slice(0, 1500)}.)`);
-        return {
-          clarifiedScope: state.dbgaContent.slice(0, 2000),
-          mddDraft: base,
-          clarifierJustGeneratedQuestions: false,
-        };
+        LOG("LLM vacío");
+        if (hasGoodPriorDraft) {
+          LOG("soft fallback: borrador previo sustancial (len=%s)", draftTrimmed.length);
+          return {
+            clarifiedScope: (state.clarifiedScope ?? draftTrimmed.slice(0, 2000)).trim(),
+            mddDraft: draftTrimmed,
+            clarifierJustGeneratedQuestions: false,
+          };
+        }
+        throw new Error(CLARIFIER_PARSE_ERROR);
       }
-      const jsonStr = extractFirstJsonObject(text) ?? text.trim();
+
       let parsed: ClarifierParsed;
       try {
-        parsed = parseJsonOrThrow(jsonStr, clarifierOutputSchema) as ClarifierParsed;
+        parsed = parseClarifierResponse(text);
       } catch (parseErr) {
-        LOG("JSON inválido en respuesta del Clarificador, usando borrador anterior y scope de fallback");
-        const fallbackScope =
-          (state.clarifiedScope ?? "").trim() ||
-          (state.userInputAccumulated ?? "").trim().split(/\n\n---\n\n/).map((s) => s.trim()).filter((s) => s.length > 50 && !/^(Usuario:\s*)?(sí|ok|vale)/i.test(s))[0]?.slice(0, 500) ||
-          state.dbgaContent?.trim().slice(0, 500) ||
-          "Alcance pendiente de refinar.";
-        const fallbackDraft = draftTrimmed && draftTrimmed.length > 200 ? draftTrimmed : undefined;
-        return {
-          clarifiedScope: fallbackScope,
-          mddDraft: fallbackDraft ?? getMddTemplatePlaceholder(fallbackScope),
-          clarifierJustGeneratedQuestions: false,
-        };
+        LOG("JSON inválido, retry 1x: %s", parseErr instanceof Error ? parseErr.message : String(parseErr));
+        text = await invokeClarifierLlm(llm, prompt + JSON_RETRY_SUFFIX);
+        try {
+          parsed = parseClarifierResponse(text);
+        } catch (retryErr) {
+          LOG("JSON inválido tras retry: %s", retryErr instanceof Error ? retryErr.message : String(retryErr));
+          if (hasGoodPriorDraft) {
+            LOG("soft fallback tras parse failure: borrador previo (len=%s)", draftTrimmed.length);
+            const fallbackScope =
+              (state.clarifiedScope ?? "").trim() ||
+              (state.userInputAccumulated ?? "").trim().split(/\n\n---\n\n/).map((s) => s.trim()).filter((s) => s.length > 50 && !/^(Usuario:\s*)?(sí|ok|vale)/i.test(s))[0]?.slice(0, 500) ||
+              state.dbgaContent?.trim().slice(0, 500) ||
+              "Alcance pendiente de refinar.";
+            return {
+              clarifiedScope: fallbackScope,
+              mddDraft: draftTrimmed,
+              clarifierJustGeneratedQuestions: false,
+            };
+          }
+          throw new Error(CLARIFIER_PARSE_ERROR);
+        }
       }
+
       let scope = String(parsed.clarifiedScope ?? "").trim();
-      let draft = String(parsed.mddDraft ?? "").trim();
+      const contextoAlcance = String(parsed.contextoAlcance ?? "").trim();
+
+      if (!contextoAlcance || contextoAlcance.length < 20) {
+        if (hasGoodPriorDraft) {
+          LOG("contextoAlcance vacío; soft fallback borrador previo");
+          return {
+            clarifiedScope: scope || state.clarifiedScope || draftTrimmed.slice(0, 500),
+            mddDraft: draftTrimmed,
+            clarifierJustGeneratedQuestions: false,
+          };
+        }
+        throw new Error(CLARIFIER_PARSE_ERROR);
+      }
 
       if (scope.length < 300 && (state.userInputAccumulated ?? "").trim().length > 80) {
         const acc = state.userInputAccumulated!.trim();
@@ -192,55 +240,22 @@ export function createMddClarifierNode(llm: BaseChatModel) {
       }
 
       const scopeSummary = scope.length > 100 ? scope.slice(0, 100) + "..." : scope;
-      const draftSummary = draft.length > 100 ? draft.slice(0, 100) + "..." : draft;
       LOG("Input detected -> Clarified Scope: %s", scopeSummary);
-      LOG("Draft update -> Start: %s", draftSummary);
+      LOG("contextoAlcance len=%s", contextoAlcance.length);
 
-      const isBrokenDraft = (d: string): boolean => {
-        if (d.slice(0, 500).includes("useMermaidForDiagrams") || d.slice(0, 500).includes("## document")) return true;
-        if (d.startsWith("{") && d.includes('"document"') && (d.includes("useMermaidForDiagrams") || d.includes("leaveUncovered"))) {
-          try {
-            const o = JSON.parse(d) as Record<string, unknown>;
-            return typeof o.document === "object" && (o.useMermaidForDiagrams !== undefined || o.leaveUncovered !== undefined);
-          } catch {
-            return false;
-          }
-        }
-        return false;
+      const mddDraft = buildMddDraftFromClarifierOutput({
+        contextoAlcance,
+        clarifiedScope: scope,
+        previousDraft: draftTrimmed,
+        preserveSectionsBeyond1: hasSubstantialDraft,
+      });
+
+      const slice: { title?: string; contextoAlcance: string } = {
+        contextoAlcance,
+        ...(parsed.title?.trim() ? { title: parsed.title.trim() } : {}),
       };
-
-      if (isBrokenDraft(draft)) {
-        LOG("mddDraft con forma useMermaidForDiagrams/document rechazado, usando borrador anterior o mínimo");
-        draft =
-          draftTrimmed && !isBrokenDraft(draftTrimmed)
-            ? draftTrimmed
-            : getMddTemplatePlaceholder(scope || "(Pendiente de definir según alcance.)");
-      }
-
-      const section1Match = draft.match(/\n##\s*1\.\s*Contexto\s*\n+([\s\S]*?)(?=\n##\s|\n#\s|$)/i) ?? draft.match(/\n##\s*Contexto\s*\n+([\s\S]*?)(?=\n##\s|\n#\s|$)/i);
-      const section1Body = section1Match?.[1]?.trim() ?? "";
-      const isSection1Placeholder = (body: string) =>
-        !body ||
-        body.length < 20 ||
-        /^\s*\(?\s*(Pendiente|Pendiente de definir)[^)]*\)?\s*$/i.test(body) ||
-        /^\s*\(?\s*vacío\s*\)?\s*$/i.test(body);
-
-      let slice: { title?: string; contextoAlcance?: string } | undefined =
-        parsed.title !== undefined || parsed.contextoAlcance !== undefined
-          ? { title: parsed.title?.trim(), contextoAlcance: parsed.contextoAlcance?.trim() }
-          : undefined;
-      if (scope && isSection1Placeholder(section1Body)) {
-        const contextFallback = scope.split(/\n\n+/)[0]?.trim() ?? scope;
-        const contextoAlcance = (contextFallback.length > 800 ? contextFallback.slice(0, 800) + "…" : contextFallback).trim();
-        slice = slice ? { ...slice, contextoAlcance: slice.contextoAlcance || contextoAlcance } : { contextoAlcance };
-      }
-      const merged = slice ? mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "") : state.mddStructured;
-      // Usar siempre el draft directo del LLM, que contiene el documento COMPLETO (incluye §1-7).
-      // useRendered reemplazaba el draft del LLM por mddStructuredToMarkdown, perdiendo modificaciones
-      // que el usuario pidió (ej. "cambia Argon2id por bcrypt"). El structured solo se usa para
-      // downstream nodes (graph_populator), no para el documento final.
-      const mddDraft = (draft && draft.length > 80 ? draft : (getMddTemplatePlaceholder(scope)));
-      const outStructured = merged ?? (slice ? mergeMddStructured(undefined, slice) : undefined);
+      const merged = mergeMddStructured(state.mddStructured, slice, state.mddDraft ?? "");
+      const outStructured = merged ?? mergeMddStructured(undefined, slice);
       const sum = getMddDraftSummary(mddDraft);
       LOG("ok clarifiedScopeLen=%s mddDraftLen=%s section2=%s", scope.length, sum.length, sum.section2);
       logMddNodeOutput("Clarifier", mddDraft);
