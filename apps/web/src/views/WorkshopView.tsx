@@ -626,6 +626,8 @@ export default function WorkshopView({
   const notice = useWorkshopStore((s) => s.notice);
   const generationStatus = useWorkshopStore((s) => s.generationStatus);
   const backgroundGenerationLabel = activeGenerationLabel(generationStatus);
+  const mddCancelInFlight = useWorkshopStore((s) => s.mddCancelInFlight);
+  const cancelMddGeneration = useWorkshopStore((s) => s.cancelMddGeneration);
   const isGenerationGateBlocked = useCallback(
     (type: GenerationJobType) => !generationJobAllowed(generationStatus, type),
     [generationStatus],
@@ -3036,7 +3038,27 @@ export default function WorkshopView({
         }}
       />
 
-      {(backgroundGenerationLabel && !cascadeRunning) && (
+      {(generationStatus?.mddStreamActive && !cascadeRunning) && (
+        <div className="shrink-0 border-b border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] px-4 py-2 flex items-center justify-between gap-3">
+          <p className="text-sm text-[color-mix(in_oklch,var(--primary)_80%,white)]">
+            Regenerando MDD… Puedes cerrar el navegador; al volver, recarga el proyecto para ver el resultado.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            loading={mddCancelInFlight}
+            disabled={mddCancelInFlight || !projectId}
+            onClick={() => {
+              if (projectId) void cancelMddGeneration(projectId);
+            }}
+          >
+            Detener
+          </Button>
+        </div>
+      )}
+
+      {(backgroundGenerationLabel && !generationStatus?.mddStreamActive && !cascadeRunning) && (
         <div className="shrink-0 border-b border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] px-4 py-2">
           <p className="text-sm text-[color-mix(in_oklch,var(--primary)_80%,white)]">
             {backgroundGenerationLabel} Puedes cerrar el navegador; al volver, recarga el proyecto para ver el resultado.

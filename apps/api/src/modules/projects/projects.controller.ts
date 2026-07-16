@@ -136,6 +136,12 @@ export class ProjectsController {
     return status;
   }
 
+  /** Cancela generación/regeneración MDD en background para el proyecto. */
+  @Post(":id/mdd/cancel")
+  async cancelMddGeneration(@Param("id") projectId: string) {
+    return this.mddQueue.cancelProjectJobs(projectId);
+  }
+
   /** Polling de job MDD en background (greenfield / legacy vía statusPath). */
   @Get(":id/mdd-jobs/:jobId")
   async mddJobStatus(@Param("id") projectId: string, @Param("jobId") jobId: string) {

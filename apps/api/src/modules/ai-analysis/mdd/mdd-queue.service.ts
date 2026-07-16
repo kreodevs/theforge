@@ -85,7 +85,10 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly inMemoryJobs = new Map<string, InMemoryMddJobRecord>();
   private readonly inMemoryRunningProjects = new Set<string>();
   private readonly inMemoryPendingByProject = new Map<string, string[]>();
+  /** Proyectos cuyo job MDD el usuario pidió cancelar (evita re-encolar tras remove). */
+  private readonly cancelledProjects = new Set<string>();
   private readonly MAX_ATTEMPTS = 3;
+  private static readonly CANCELLED_MESSAGE = "Cancelado por el usuario";
 
   constructor(
     @Inject(forwardRef(() => AiAnalysisService))
@@ -163,7 +166,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
           this.logger.log(
             `BullMQ MDD job ${job.id} mode=${job.data.mode} projectId=${job.data.projectId}`,
           );
-          return this.executeJob(job.data, (p) => job.updateProgress(p));
+          return this.executeJob(job.data, (p) => job.updateProgress(p), String(job.id));
         });
       },
       { connection: { url }, concurrency: 1 },
@@ -229,6 +232,11 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
       this.pumpInMemoryQueue(projectId);
       return;
     }
+    if (this.cancelledProjects.has(projectId)) {
+      this.markInMemoryJobCancelled(nextJobId, record);
+      this.pumpInMemoryQueue(projectId);
+      return;
+    }
     this.inMemoryRunningProjects.add(projectId);
     this.startInMemoryJob(nextJobId, record.data);
   }
@@ -242,7 +250,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
       try {
         const result = await this.executeJob(data, (p) => {
           record.progress = p;
-        });
+        }, jobId);
         record.status = "completed";
         record.result = result;
         record.finishedAt = Date.now();
@@ -257,11 +265,99 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  private assertNotCancelled(projectId: string): void {
+    if (this.cancelledProjects.has(projectId)) {
+      this.cancelledProjects.delete(projectId);
+      throw new Error(MddQueueService.CANCELLED_MESSAGE);
+    }
+  }
+
+  private markInMemoryJobCancelled(jobId: string, record: InMemoryMddJobRecord): void {
+    record.status = "failed";
+    record.error = MddQueueService.CANCELLED_MESSAGE;
+    record.finishedAt = Date.now();
+    this.inMemoryRunningProjects.delete(record.data.projectId);
+  }
+
+  /**
+   * Cancela jobs MDD en cola o en curso para un proyecto. Idempotente si ya terminaron.
+   */
+  async cancelProjectJobs(projectId: string): Promise<{ ok: true; cancelled: boolean; jobIds: string[] }> {
+    const trimmed = projectId.trim();
+    if (!trimmed) return { ok: true, cancelled: false, jobIds: [] };
+
+    const wasBusy =
+      this.generationGuard.isMddStreamActive(trimmed) ||
+      this.inMemoryRunningProjects.has(trimmed) ||
+      (this.inMemoryPendingByProject.get(trimmed)?.length ?? 0) > 0 ||
+      (await this.listActiveJobsForProject(trimmed)).length > 0;
+
+    this.cancelledProjects.add(trimmed);
+    this.generationGuard.unregisterMddStream(trimmed);
+
+    const cancelledJobIds: string[] = [];
+
+    const pending = this.inMemoryPendingByProject.get(trimmed) ?? [];
+    for (const jobId of pending) {
+      const record = this.inMemoryJobs.get(jobId);
+      if (record && record.status === "queued") {
+        this.markInMemoryJobCancelled(jobId, record);
+        cancelledJobIds.push(jobId);
+      }
+    }
+    this.inMemoryPendingByProject.delete(trimmed);
+
+    for (const [jobId, record] of this.inMemoryJobs) {
+      if (record.data.projectId !== trimmed) continue;
+      if (record.status === "active") {
+        this.markInMemoryJobCancelled(jobId, record);
+        cancelledJobIds.push(jobId);
+      }
+    }
+
+    if (this.queue) {
+      const states = ["waiting", "delayed", "active"] as const;
+      for (const state of states) {
+        const jobs = await this.queue.getJobs([state], 0, 100);
+        for (const job of jobs) {
+          const data = job.data as MddJobData | undefined;
+          if (data?.projectId !== trimmed) continue;
+          const jobId = String(job.id);
+          if (state === "active") {
+            try {
+              await job.moveToFailed(new Error(MddQueueService.CANCELLED_MESSAGE), "0", true);
+            } catch (err) {
+              this.logger.warn(
+                `No se pudo marcar job MDD activo ${jobId} como fallido: ${err instanceof Error ? err.message : err}`,
+              );
+            }
+          } else {
+            try {
+              await job.remove();
+            } catch (err) {
+              this.logger.warn(
+                `No se pudo eliminar job MDD ${jobId} (${state}): ${err instanceof Error ? err.message : err}`,
+              );
+            }
+          }
+          cancelledJobIds.push(jobId);
+        }
+      }
+    }
+
+    this.inMemoryRunningProjects.delete(trimmed);
+
+    return { ok: true, cancelled: wasBusy || cancelledJobIds.length > 0, jobIds: [...new Set(cancelledJobIds)] };
+  }
+
   private async executeJob(
     data: MddJobData,
     onProgress: (p: MddJobProgress) => void,
+    correlationId?: string,
   ): Promise<MddJobResult> {
     const { projectId } = data;
+    const traceId = correlationId ?? randomUUID();
+    this.assertNotCancelled(projectId);
     this.generationGuard.registerMddStream(projectId);
     try {
       if (data.mode === "legacy") {
@@ -278,7 +374,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
           outcome: "done",
         };
       }
-      return await this.aiAnalysis.runMddGenerationJob(data, onProgress);
+      return await this.aiAnalysis.runMddGenerationJob(data, onProgress, { correlationId: traceId });
     } finally {
       this.generationGuard.unregisterMddStream(projectId);
     }

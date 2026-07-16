@@ -21,7 +21,7 @@ import {
 } from "@theforge/shared-types/format-document-markdown";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue, getOfflineQueue } from "../utils/apiClient";
 import { queueAndPoll } from "../utils/queueAndPoll";
-import { enqueueAndPollLegacyMdd, enqueueAndPollMddJob, pollMddJob } from "../utils/pollMddJob";
+import { enqueueAndPollLegacyMdd, enqueueAndPollMddJob, pollMddJob, abortActiveMddPoll, clearMddPollScope, wasMddPollCancelled } from "../utils/pollMddJob";
 import {
   mergeProjectBaselinesAfterPersist,
   shouldApplyPersistedFieldContent,
@@ -780,6 +780,7 @@ async function pollAndApplyMddSectionJobFromChat(
       error: null,
     });
   } catch (e) {
+    if (wasMddPollCancelled()) return;
     const errMsg = e instanceof Error ? friendlyFetchError(e) : "Error al regenerar sección";
     const code =
       e instanceof Error && "code" in e && typeof (e as { code?: string }).code === "string"
@@ -1088,7 +1089,11 @@ interface WorkshopState {
 
   /** Gate de cola: jobs activos, MDD en stream y dependencias upstream. */
   generationStatus: ProjectGenerationStatus | null;
+  /** true mientras se cancela un job MDD en background desde la UI. */
+  mddCancelInFlight: boolean;
   fetchGenerationStatus: (projectId: string) => Promise<ProjectGenerationStatus | null>;
+  /** Detiene generación/regeneración MDD en cola (BullMQ o in-memory). */
+  cancelMddGeneration: (projectId: string) => Promise<boolean>;
   /** Tab visible again: sync queue status without wiping deliverables checklist. */
   refreshWorkshopOnTabVisible: (projectId: string) => Promise<void>;
   fetchPlanValidation: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
@@ -1357,6 +1362,7 @@ const initialState = {
   activeStageId: null as string | null,
   workshopActiveDocPanel: "mdd",
   generationStatus: null as ProjectGenerationStatus | null,
+  mddCancelInFlight: false,
 };
 
 let generationStatusPollTimer: ReturnType<typeof setInterval> | null = null;
@@ -1636,6 +1642,42 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return status;
     } catch {
       return null;
+    }
+  },
+
+  cancelMddGeneration: async (projectId) => {
+    const requestedId = projectId.trim();
+    if (!requestedId) return false;
+    set({ mddCancelInFlight: true, error: null });
+    abortActiveMddPoll();
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${requestedId}/mdd/cancel`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))) as { message?: string | string[] };
+        const msg = Array.isArray(err.message) ? err.message.join("; ") : err.message;
+        throw new Error(msg ?? "No se pudo cancelar la generación del MDD");
+      }
+      if (shouldApplyWorkshopUpdate(get, requestedId)) {
+        set({
+          loading: false,
+          loadingReason: null,
+          agentProgress: [],
+          notice: "Generación cancelada",
+          error: null,
+        });
+      }
+      await get().fetchGenerationStatus(requestedId);
+      return true;
+    } catch (e) {
+      if (!wasMddPollCancelled()) {
+        set({ error: e instanceof Error ? e.message : "Error al cancelar generación del MDD" });
+      }
+      return false;
+    } finally {
+      clearMddPollScope();
+      set({ mddCancelInFlight: false });
     }
   },
 
@@ -2295,6 +2337,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }
         return;
       } catch (e) {
+        if (wasMddPollCancelled()) return;
         const msg = e instanceof Error ? friendlyFetchError(e) : "Error al regenerar sección";
         const code =
           e instanceof Error && "code" in e && typeof (e as { code?: string }).code === "string"
@@ -3728,6 +3771,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ loading: false, loadingReason: null, agentProgress: [] });
       return data ?? get().project;
     } catch (e) {
+      if (wasMddPollCancelled()) return null;
       set({
         ...errorStateFromCaught(e),
         loading: false,
@@ -4104,6 +4148,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       await get().fetchGenerationStatus(pid);
       return mddContent.trim() ? { mddContent } : null;
     } catch (e) {
+      if (wasMddPollCancelled()) return null;
       try {
         const project = await get().fetchProject(pid);
         if (project?.mddContent?.trim()) {
