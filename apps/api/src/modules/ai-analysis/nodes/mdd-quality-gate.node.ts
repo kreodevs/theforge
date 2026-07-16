@@ -64,7 +64,7 @@ function finalizeQualityGateOutput(
       ? {}
       : {
           ...correction,
-          previousMddDraftForMerge: correction.previousMddDraftForMerge ?? state.mddDraft ?? "",
+          previousMddDraftForMerge: state.mddDraft ?? "",
         }),
   };
 }

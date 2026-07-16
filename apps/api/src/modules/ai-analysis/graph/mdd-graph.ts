@@ -458,7 +458,6 @@ export async function createMddGraphWithManager(
       graphMemory,
       precisionCalculator,
       managerToolDeps ?? null,
-      flowTrace,
     ),
     shouldAbort,
   );
