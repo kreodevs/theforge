@@ -199,9 +199,9 @@ describe("resolveEffectiveModelTiers", () => {
 
   it("modelTierHint describe herencia y uso del tier", () => {
     assert.match(modelTierHint("graph", "chat-fallback"), /Hereda de chat/);
-    assert.match(modelTierHint("graph", "chat-fallback"), /Clarifier/);
+    assert.match(modelTierHint("graph", "chat-fallback"), /Clarificador/);
     assert.match(modelTierHint("architect", "graph-fallback"), /Hereda de grafo/);
-    assert.match(modelTierHint("architect", "configured"), /Legacy Coordinador/);
+    assert.match(modelTierHint("architect", "configured"), /Coordinador legacy/);
     assert.doesNotMatch(modelTierHint("architect", "configured"), /Hereda/);
   });
 });
