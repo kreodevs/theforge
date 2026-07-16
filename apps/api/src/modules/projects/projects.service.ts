@@ -172,6 +172,11 @@ import {
 } from "./tasks-coordinates-context.util.js";
 import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.service.js";
 import { cleanSpecDocumentContent } from "./spec-content.util.js";
+import {
+  deriveTasksUpstreamActions,
+  prepareSpecMarkdownForTasks,
+} from "./tasks-upstream-prep.util.js";
+import { computeDocAccuracy } from "../engine/cascade-accuracy.util.js";
 import { ResolveChangeToFilesService } from "../legacy-flow/resolve-change-to-files.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
 import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
@@ -2012,10 +2017,13 @@ name: ${JSON.stringify(name)}
   async generateDocument(
     kind: DeliverableKind,
     projectId: string,
-    options?: { gapsFeedback?: string | null },
+    options?: { gapsFeedback?: string | null; acknowledgeGaps?: boolean },
   ): Promise<void> {
-    await this.assertDeliverablesAllowed(projectId);
+    await this.assertDeliverablesAllowed(projectId, {
+      acknowledgeGaps: options?.acknowledgeGaps === true,
+    });
     const gaps = options?.gapsFeedback ?? undefined;
+    const ack = options?.acknowledgeGaps === true;
     switch (kind) {
       case "mdd_canonical":
         return;
@@ -2048,7 +2056,7 @@ name: ${JSON.stringify(name)}
         await this.generateAgentGovernance(projectId);
         return;
       case "tasks":
-        await this.generateTasks(projectId, gaps);
+        await this.generateTasks(projectId, gaps, { acknowledgeGaps: ack });
         return;
       case "infra":
         await this.generateInfra(projectId, gaps);
@@ -2068,16 +2076,28 @@ name: ${JSON.stringify(name)}
     await this.generateBlueprint(projectId);
   }
 
+  private async runDeliverableStep(
+    kind: DeliverableKind,
+    projectId: string,
+    options?: { gapsFeedback?: string | null; acknowledgeGaps?: boolean },
+  ): Promise<void> {
+    return this.generateDocument(kind, projectId, options);
+  }
+
   private async runDeliverableWaveStep(
     step: DeliverableWaveStep,
     projectId: string,
     gapsFeedback?: string | null,
+    acknowledgeGaps?: boolean,
   ): Promise<void> {
     if (step === "ui_screens_sync") {
       await this.runCascadeUiScreensSync(projectId);
       return;
     }
-    await this.runDeliverableStep(step, projectId, gapsFeedback ? { gapsFeedback } : undefined);
+    await this.runDeliverableStep(step, projectId, {
+      gapsFeedback: gapsFeedback ?? undefined,
+      acknowledgeGaps,
+    });
   }
 
   /** Sync pantallas tras W2; no falla la cascada si no hay MCP activo. */
@@ -2220,14 +2240,10 @@ name: ${JSON.stringify(name)}
     }
 
     if (flags.retryTasks) {
-      await this.generateTasks(projectId, feedback).catch((e) =>
+      await this.generateTasks(projectId, feedback, { acknowledgeGaps: true }).catch((e) =>
         this.logger.warn(`[Cascade] W4 tasks retry: ${e instanceof Error ? e.message : e}`),
       );
     }
-  }
-
-  private async runDeliverableStep(kind: DeliverableKind, projectId: string, options?: { gapsFeedback?: string | null }): Promise<void> {
-    return this.generateDocument(kind, projectId, options);
   }
 
   /**
@@ -2289,7 +2305,12 @@ name: ${JSON.stringify(name)}
         wave.map(async (step: DeliverableWaveStep) => {
           try {
             const stepGaps = step !== "ui_screens_sync" ? gapsMap.get(step) : undefined;
-            await this.runDeliverableWaveStep(step, projectId, stepGaps ?? undefined);
+            await this.runDeliverableWaveStep(
+              step,
+              projectId,
+              stepGaps ?? undefined,
+              options?.acknowledgeGaps === true,
+            );
           } catch (e) {
             const message = e instanceof Error ? e.message : "Error desconocido";
             this.logger.warn(`[Cascade] Paso ${step} saltado: ${message}.`);
@@ -2692,8 +2713,14 @@ name: ${JSON.stringify(name)}
     });
   }
 
-  async generateTasks(projectId: string, gapsFeedback?: string | null) {
-    const project = await this.assertProjectAccess(projectId);
+  async generateTasks(
+    projectId: string,
+    gapsFeedback?: string | null,
+    options?: { acknowledgeGaps?: boolean },
+  ) {
+    let project = await this.assertProjectAccess(projectId);
+
+    project = await this.ensureTasksUpstreamArtifacts(project);
 
     let navigationMap: string | undefined;
     const theforgeId = (project as Project & { theforgeProjectId?: string | null }).theforgeProjectId;
@@ -2748,6 +2775,7 @@ name: ${JSON.stringify(name)}
       gapsFeedback,
       hasUxTeam: project.hasUxTeam === true,
       legacyBaselineStage,
+      acknowledgeGaps: options?.acknowledgeGaps === true,
       taskOpts,
     });
 
@@ -2772,6 +2800,89 @@ name: ${JSON.stringify(name)}
     }
 
     return updated;
+  }
+
+  /**
+   * Reparaciones deterministas de insumos upstream antes de Tasks (Spec, pantallas MCP, API/flujos vacíos).
+   */
+  private async ensureTasksUpstreamArtifacts(
+    project: Project & { stages: StageWithEst[] },
+  ): Promise<Project & { stages: StageWithEst[] }> {
+    const projectId = project.id;
+    let spec = (project.specContent ?? "").trim();
+    const specPrep = prepareSpecMarkdownForTasks(spec);
+    if (specPrep.changed && specPrep.normalized.length >= 80) {
+      this.logger.log("[Tasks upstream] normalizando Spec (headings vacíos)");
+      await this.update(projectId, { specContent: cleanSpecDocumentContent(specPrep.normalized) });
+      project = await this.findOne(projectId);
+      spec = (project.specContent ?? "").trim();
+    }
+
+    const mdd = this.constitutionMarkdown(project);
+    const hasUxTeam = project.hasUxTeam === true;
+    const stage = pickPrimaryStage(project.stages ?? []);
+    const inventory = resolveDomainInventory({
+      persisted: stage?.domainInventory,
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: mdd,
+    });
+
+    const docAcc = computeDocAccuracy({
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: mdd,
+      specMarkdown: specPrep.normalized || spec,
+      apiContractsMarkdown: project.apiContractsContent,
+      logicFlowsMarkdown: project.logicFlowsContent,
+      uiScreensMarkdown: project.uiScreensContent,
+      inventory,
+      uiScreensRequired: hasUxTeam,
+    });
+
+    const actions = deriveTasksUpstreamActions(docAcc, {
+      hasUxTeam,
+      specMarkdown: spec,
+      apiContractsMarkdown: project.apiContractsContent,
+      logicFlowsMarkdown: project.logicFlowsContent,
+      uiScreensMarkdown: project.uiScreensContent,
+      mddHasApiSection: /##\s*4[\.\s]/i.test(mdd),
+    }).filter((a) => a.autoRepairable);
+
+    for (const action of actions) {
+      try {
+        if (action.artifact === "ui_screens" && hasUxTeam) {
+          this.logger.log("[Tasks upstream] sync pantallas MCP");
+          await this.runCascadeUiScreensSync(projectId);
+          project = await this.findOne(projectId);
+          continue;
+        }
+        if (
+          action.artifact === "api_contracts" &&
+          (project.apiContractsContent ?? "").trim().length < 80 &&
+          /##\s*4[\.\s]/i.test(mdd)
+        ) {
+          this.logger.log("[Tasks upstream] generando api-contracts vacío");
+          await this.generateApiContracts(projectId);
+          project = await this.findOne(projectId);
+          continue;
+        }
+        if (
+          action.artifact === "logic_flows" &&
+          (project.logicFlowsContent ?? "").trim().length < 80
+        ) {
+          this.logger.log("[Tasks upstream] generando logic-flows vacío");
+          await this.generateLogicFlows(projectId);
+          project = await this.findOne(projectId);
+        }
+      } catch (e) {
+        this.logger.warn(
+          `[Tasks upstream] skip ${action.artifact}: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    return project;
   }
 
   /**

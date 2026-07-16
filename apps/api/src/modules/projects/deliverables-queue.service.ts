@@ -237,7 +237,11 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
         result = await this.projects.generateLogicFlows(projectId, gapsFeedback);
         break;
       case "tasks":
-        result = await this.projects.generateTasks(projectId);
+        result = await this.projects.generateTasks(
+          projectId,
+          (data.gapsFeedback as string | null) ?? undefined,
+          { acknowledgeGaps: data.acknowledgeGaps === true },
+        );
         break;
       case "agent-governance":
         if (preview) {

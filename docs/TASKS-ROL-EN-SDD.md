@@ -108,7 +108,7 @@ Con Tasks **incompletos o genéricos**, vuelve el escenario sin Tasks: hay que l
 
 Pipeline: `TasksGenerationPipelineService` → `ProjectsService.generateTasks`:
 
-1. **Pre-flight** (`tasks-preflight.util.ts`) — bloquea si MDD vacío; advierte upstream incompleto.
+1. **Pre-flight** (`tasks-preflight.util.ts`) — bloquea si MDD vacío o DocAccuracy &lt; 70; **70–89** → warning y continúa; C4 (pantallas) solo exige `uiScreens` con `hasUxTeam`; `?acknowledgeGaps=true` relaja gate MDD. Antes del LLM, **`ensureTasksUpstreamArtifacts`** normaliza Spec, sync pantallas y regenera API/flujos vacíos (`tasks-upstream-prep.util.ts`).
 2. **Tasks Planner** — JSON de plan (`T-001`…) con modelo **auditor/planner** (`auditorChatModel` en Ajustes; `AiService.generateAuditorResponse` → mismos adaptadores que chat/OpenRouter).
 3. **Redactor** — `AiService.generateTasks` con plan JSON inyectado (modelo de chat estándar).
 4. **Tasks Auditor LLM** — score ≥ 92, gaps estructurados (mismo modelo auditor/planner).

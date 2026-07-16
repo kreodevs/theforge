@@ -1071,7 +1071,12 @@ interface WorkshopState {
   ) => Promise<Project | null>;
   setTasksContent: (content: string | null) => void;
   persistTasksContent: (content: string) => Promise<void>;
-  generateTasks: (projectId: string) => Promise<Project | null>;
+  generateTasks: (
+    projectId: string,
+    options?: { acknowledgeGaps?: boolean },
+  ) => Promise<Project | null>;
+  /** Pregunta acknowledgeGaps si el gate MDD tiene blockers; luego encola generate-tasks. */
+  requestGenerateTasks: (projectId: string) => Promise<Project | null>;
   generateAgentGovernance: (projectId: string) => Promise<Project | null>;
   /** GET reconciled scaffold para ZIP (materializa sugerencias omitidas en `files[]`). */
   fetchAgentGovernanceExport: (projectId: string) => Promise<import("@theforge/shared-types").AgentGovernanceScaffold | null>;
@@ -3170,11 +3175,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   persistTasksContent: async (content) => {
     await persistField("tasksContent", content, get, set);
   },
-  generateTasks: async (projectId) => {
+  generateTasks: async (projectId, options) => {
     if (!projectId?.trim()) return null;
     set({ loading: true, error: null });
     try {
-      const data = await queueAndPoll<Project>(`${API_BASE}/projects/${projectId}/generate-tasks`, {});
+      const qs = options?.acknowledgeGaps === true ? "?acknowledgeGaps=true" : "";
+      const data = await queueAndPoll<Project>(
+        `${API_BASE}/projects/${projectId}/generate-tasks${qs}`,
+        {},
+      );
       const nextStages = data.stages ?? get().workshopStages;
       set({
         project: data,
@@ -3191,6 +3200,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     } finally {
       set({ loading: false });
     }
+  },
+  requestGenerateTasks: async (projectId) => {
+    if (!projectId?.trim()) return null;
+    const gate = get().deliveryGate;
+    let acknowledgeGaps = false;
+    if (hasDeliveryGateBlockers(gate)) {
+      const ok = window.confirm(
+        "El gate MDD tiene gaps conocidos. ¿Generar Tasks igual? Se relajará el pre-flight upstream (DocAccuracy medio / gate MDD).",
+      );
+      if (!ok) return null;
+      acknowledgeGaps = true;
+    }
+    return get().generateTasks(projectId, { acknowledgeGaps });
   },
   generateAgentGovernance: async (projectId) => {
     if (!projectId?.trim()) return null;

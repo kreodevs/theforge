@@ -616,7 +616,13 @@ export class ProjectsController {
       const bgJobId = `bg-${Date.now()}-${type}`;
       await this.generationGuard.assertCanEnqueue(projectId, type);
       this.generationGuard.registerBackgroundJob(bgJobId, projectId, type);
-      void this.fireAndForget(type, projectId, extra, acknowledgeGaps, bgJobId).catch((err) => {
+      void this.fireAndForget(
+        type,
+        projectId,
+        { ...extra, acknowledgeGaps },
+        acknowledgeGaps,
+        bgJobId,
+      ).catch((err) => {
         console.error(`[fire-and-forget] ${type} falló para ${projectId}: ${err instanceof Error ? err.message : err}`);
         this.generationGuard.finishBackgroundJob(bgJobId);
       });
@@ -629,7 +635,10 @@ export class ProjectsController {
     }
 
     // Fallback síncrono (sin ?queue=true explícito)
-    const result = await this.runGenerateJobSync(type, projectId, extra);
+    const result = await this.runGenerateJobSync(type, projectId, {
+      ...extra,
+      acknowledgeGaps,
+    });
     if (type !== "agent-governance" && type !== "cascade") {
       await this.projects.runPostRegenSddConflictSurfacing(projectId).catch((err) => {
         console.warn(
@@ -653,7 +662,11 @@ export class ProjectsController {
       case "logic-flows":
         return this.projects.generateLogicFlows(projectId, (extra.gapsFeedback as string | undefined) ?? undefined);
       case "tasks":
-        return this.projects.generateTasks(projectId);
+        return this.projects.generateTasks(
+          projectId,
+          (extra.gapsFeedback as string | undefined) ?? undefined,
+          { acknowledgeGaps: extra.acknowledgeGaps === true },
+        );
       case "agent-governance":
         return this.projects.generateAgentGovernance(projectId, extra.target as string | undefined, {
           forceRegenerate: extra.forceRegenerate !== false,

@@ -103,6 +103,26 @@ describe("domain-inventory + cascade-accuracy", () => {
     assert.ok(doc.components.some((c) => c.id === "C6_drift" && c.score < 50));
   });
 
+  it("DocAccuracy no penaliza C4 cuando uiScreensRequired es false", () => {
+    const withPenalty = computeDocAccuracy({
+      mddMarkdown: "## 1.\n\n" + "x".repeat(200),
+      specMarkdown: "# Spec\n\n" + "z".repeat(120),
+      apiContractsMarkdown: "# API\n\n" + "a".repeat(120),
+      uiScreensMarkdown: "",
+      uiScreensRequired: true,
+    });
+    const neutral = computeDocAccuracy({
+      mddMarkdown: "## 1.\n\n" + "x".repeat(200),
+      specMarkdown: "# Spec\n\n" + "z".repeat(120),
+      apiContractsMarkdown: "# API\n\n" + "a".repeat(120),
+      uiScreensMarkdown: "",
+      uiScreensRequired: false,
+    });
+    assert.ok(withPenalty.components.find((c) => c.id === "C4_screens")!.score === 0);
+    assert.equal(neutral.components.find((c) => c.id === "C4_screens")!.score, 50);
+    assert.ok(neutral.score >= withPenalty.score);
+  });
+
   it("computeCascadeAccuracy hardGateBlocked when env enabled and scores low", () => {
     const report = computeCascadeAccuracy({
       brdMarkdown: DORIS_BRD_SNIPPET,

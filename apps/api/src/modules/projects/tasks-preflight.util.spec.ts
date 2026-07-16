@@ -58,16 +58,17 @@ describe("tasks-preflight", () => {
     assert.ok(r.blockers.some((b) => b.includes("api-contracts")));
   });
 
-  it("strict DocAccuracy includes uiScreens when provided", async () => {
+  it("strict DocAccuracy penaliza uiScreens solo con hasUxTeam", async () => {
     const specWithEmptyHeadings = `# Spec\n\n## 1.\n\n**Journey:** flujo.\n\n${"z".repeat(120)}`;
     const uiScreens = "# Pantallas\n\n" + "| /dashboard | Page | — | Table | GET /api/v1/health | ok |\n".repeat(20) + "x".repeat(800);
 
-    const withoutUi = await runTasksPreflightStrict({
+    const withoutUiUxTeam = await runTasksPreflightStrict({
       mddMarkdown: substantiveMdd,
       blueprintMarkdown: substantiveBlueprint,
       specMarkdown: specWithEmptyHeadings,
       apiContractsMarkdown: "# API\n\n" + "a".repeat(120),
       uiScreensMarkdown: "",
+      hasUxTeam: true,
     });
     const withUi = await runTasksPreflightStrict({
       mddMarkdown: substantiveMdd,
@@ -75,11 +76,41 @@ describe("tasks-preflight", () => {
       specMarkdown: specWithEmptyHeadings,
       apiContractsMarkdown: "# API\n\n" + "a".repeat(120),
       uiScreensMarkdown: uiScreens,
+      hasUxTeam: true,
+    });
+    const noUxTeam = await runTasksPreflightStrict({
+      mddMarkdown: substantiveMdd,
+      blueprintMarkdown: substantiveBlueprint,
+      specMarkdown: specWithEmptyHeadings,
+      apiContractsMarkdown: "# API\n\n" + "a".repeat(120),
+      uiScreensMarkdown: "",
+      hasUxTeam: false,
     });
 
-    const withoutGap = withoutUi.blockers.find((b) => b.includes("DocAccuracy"));
-    const withGap = withUi.blockers.find((b) => b.includes("DocAccuracy"));
-    assert.ok(withoutGap?.includes("uiScreens ausente"));
-    assert.ok(!withGap?.includes("uiScreens ausente"));
+    const uxTeamGap = withoutUiUxTeam.blockers.find((b) => b.includes("DocAccuracy"));
+    const withUiGap = withUi.blockers.find((b) => b.includes("DocAccuracy"));
+    const noUxGap = noUxTeam.blockers.find((b) => b.includes("DocAccuracy"));
+
+    assert.ok(uxTeamGap?.includes("uiScreens") || withoutUiUxTeam.warnings.some((w) => w.includes("uiScreens")));
+    assert.ok(!withUiGap?.includes("uiScreens ausente"));
+    assert.ok(!noUxGap?.includes("uiScreens ausente"));
+  });
+
+  it("acknowledgeGaps convierte gate MDD en warning", async () => {
+    const thinMdd =
+      "## 1. Contexto\n\n" +
+      "x".repeat(220) +
+      "\n## 2. Stack\n\nx\n## 3. Datos\n\nusers\n## 4. API\n\nGET /health\n## 5. Lógica\n\nx\n## 6. Seguridad\n\nx\n## 7. Infra\n\nx";
+    const r = await runTasksPreflightStrict({
+      mddMarkdown: thinMdd,
+      blueprintMarkdown: substantiveBlueprint,
+      specMarkdown: substantiveSpec,
+      apiContractsMarkdown: "# API\n\n" + "a".repeat(120),
+      acknowledgeGaps: true,
+    });
+    assert.ok(
+      !r.blockers.some((b) => b.includes("MDD delivery gate")) ||
+        r.warnings.some((w) => w.includes("MDD delivery gate")),
+    );
   });
 });
