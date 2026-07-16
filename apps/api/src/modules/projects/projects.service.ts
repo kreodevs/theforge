@@ -170,9 +170,6 @@ import {
   extractMddCapabilityLines,
   parseChangeScopeFromLegacyState,
 } from "./tasks-coordinates-context.util.js";
-import {
-  TASKS_QUALITY_THRESHOLD,
-} from "./tasks-generation-quality.util.js";
 import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.service.js";
 import { ResolveChangeToFilesService } from "../legacy-flow/resolve-change-to-files.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";

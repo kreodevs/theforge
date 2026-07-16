@@ -1378,7 +1378,12 @@ export class LegacyCoordinatorService {
     projectId: string,
     stageId?: string,
     options?: {
-      onProgress?: (p: { step: string; index: number; total: number }) => void;
+      onProgress?: (p: {
+        step: string;
+        completedSteps: string[];
+        index: number;
+        total: number;
+      }) => void;
     },
   ): Promise<{ ok: boolean; lastDeliverablesDebug: LegacyDeliverablesDebugReport }> {
     const report: LegacyDeliverablesDebugReport = {
@@ -2021,7 +2026,7 @@ export class LegacyCoordinatorService {
           );
         }
       }
-      options?.onProgress?.({ step: "done", index: 0, total: 0 });
+      options?.onProgress?.({ step: "done", completedSteps: [], index: 0, total: 0 });
       return { ok: true, lastDeliverablesDebug: report };
     }
 
