@@ -42,7 +42,7 @@ import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
 import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson, isBrownfieldCapable } from "@theforge/shared-types";
 import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import { prepareMddForOutput } from "../ai-analysis/utils/mdd-prepare-output.js";
-import { prependDocumentTimestamps } from "../engine/document-date-header.util.js";
+import { prependDocumentTimestamps, stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
 import {
   enforceMddGovernancePatternsOnPersist,
   mddHasSubstantialBody,
@@ -968,7 +968,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       const { ensureJsonCodeFences } = await import("../ai-analysis/state/state-to-markdown.js");
       let dbgaFormatted = ensureJsonCodeFences(rest.dbgaContent);
       if (dbgaFormatted.trim()) {
-        dbgaFormatted = prependDocumentTimestamps(dbgaFormatted);
+        dbgaFormatted = stampMarkdownIfBodyChanged(existingRaw.dbgaContent, dbgaFormatted);
       }
       updatePayload.dbgaContent = dbgaFormatted;
       const { isPhase0StructuredMarkdown, markdownToPhase0Document } = await import(

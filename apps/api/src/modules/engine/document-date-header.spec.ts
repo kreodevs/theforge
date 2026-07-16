@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   prependDocumentTimestamps,
   extractDocumentTimestamps,
+  stampMarkdownIfBodyChanged,
+  documentMarkdownBodiesEqual,
 } from "./document-date-header.util.js";
 
 describe("document-date-header", () => {
@@ -52,5 +54,29 @@ describe("document-date-header", () => {
     const out = prependDocumentTimestamps(body, fixed);
     const afterHeader = out.replace(/^.*?---\n\n/s, "");
     assert.equal(afterHeader, body);
+  });
+
+  it("stampMarkdownIfBodyChanged preserves existing when body unchanged", () => {
+    const body = "# Doc\n\nSame.";
+    const stamped = prependDocumentTimestamps(body, fixed);
+    const again = stampMarkdownIfBodyChanged(stamped, body, later);
+    assert.equal(again, stamped);
+    assert.equal(extractDocumentTimestamps(again).updated?.toISOString(), fixed.toISOString());
+  });
+
+  it("stampMarkdownIfBodyChanged re-stamps when body changes", () => {
+    const body = "# Doc\n\nOld.";
+    const stamped = prependDocumentTimestamps(body, fixed);
+    const next = stampMarkdownIfBodyChanged(stamped, "# Doc\n\nNew.", later);
+    assert.notEqual(next, stamped);
+    assert.equal(extractDocumentTimestamps(next).updated?.toISOString(), later.toISOString());
+  });
+
+  it("documentMarkdownBodiesEqual ignores stamp metadata", () => {
+    const body = "# X\n";
+    assert.equal(
+      documentMarkdownBodiesEqual(prependDocumentTimestamps(body, fixed), body),
+      true,
+    );
   });
 });

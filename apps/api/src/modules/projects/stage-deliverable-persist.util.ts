@@ -8,7 +8,7 @@ import {
 import { Prisma } from "@theforge/database";
 import type { PrismaService } from "../../prisma/prisma.service.js";
 import { parseTasksV2 } from "../engine/task-v2/tasks-parser-v2.js";
-import { prependDocumentTimestamps } from "../engine/document-date-header.util.js";
+import { stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
 
 type PrismaStageWriter = Pick<PrismaService, "stage" | "project" | "$transaction">;
 
@@ -69,10 +69,25 @@ export async function persistStageAndProjectDeliverables(
   const picked = pickDeliverableFieldsFromSource(fields);
   if (Object.keys(picked).length === 0) return;
 
+  const [stageRow, projectRow] = await Promise.all([
+    prisma.stage.findUnique({
+      where: { id: stageId },
+      select: Object.fromEntries(STAGE_DELIVERABLE_KEYS.map((k) => [k, true])) as Record<
+        string,
+        boolean
+      >,
+    }),
+    prisma.project.findUnique({
+      where: { id: projectId },
+      select: Object.fromEntries(
+        [...STAGE_DELIVERABLE_KEYS, ...PROJECT_ONLY_DELIVERABLE_KEYS].map((k) => [k, true]),
+      ) as Record<string, boolean>,
+    }),
+  ]);
+
   const stageData: Record<string, unknown> = buildStageUpdateData(picked);
   const projectData: Record<string, unknown> = buildProjectUpdateData(picked);
 
-  // Prepend creation / updated timestamp header to every text deliverable
   const now = new Date();
   const stampKeys = [...STAGE_DELIVERABLE_KEYS, ...PROJECT_ONLY_DELIVERABLE_KEYS] as const;
   for (const key of stampKeys) {
@@ -82,7 +97,12 @@ export async function persistStageAndProjectDeliverables(
       typeof val === "string" &&
       val.trim().length > 0
     ) {
-      const stamped = prependDocumentTimestamps(val, now);
+      const existing = String(
+        (stageRow as Record<string, unknown> | null)?.[key] ??
+          (projectRow as Record<string, unknown> | null)?.[key] ??
+          "",
+      );
+      const stamped = stampMarkdownIfBodyChanged(existing, val, now);
       if (key in stageData) stageData[key] = stamped;
       projectData[key] = stamped;
     }

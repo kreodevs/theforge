@@ -28,6 +28,11 @@ import {
   WORKSHOP_PERSIST_BASELINE_FIELDS,
 } from "../utils/persist-field-guard";
 import {
+  cleanDocForWorkshop as cleanDoc,
+  normalizeWorkshopDocumentForEditor,
+  workshopDocumentBodiesEqual,
+} from "../utils/workshop-document-content.util";
+import {
   parseApiErrorPayloadFromResponse,
   parseErrorMessageFromResponse,
 } from "../utils/httpError";
@@ -227,50 +232,6 @@ function lastMddUserMessageContent(
   return null;
 }
 
-const cleanDoc = (text: string | null) => {
-  if (typeof text !== "string") return null;
-  let c = text.trim();
-  if (!c) return null;
-
-  // Si empieza con --- (YAML frontmatter), preservarlo completo -- no cortar preambulos
-  if (c.startsWith("---")) {
-    // Saltar la limpieza de preamble para contenido con YAML (ej. Guia UX/UI)
-    // Solo quitar fences ``` y retornar
-    return cleanFences(c);
-  }
-
-  // Encontrar el primer # para quitar preambulos, sin regex lookbehind
-  const firstHashIndex = c.indexOf("#");
-  if (firstHashIndex !== -1) {
-    if (c.startsWith("#")) {
-      // ok, empieza ahi
-    } else {
-      const newlineHashIndex = c.indexOf("\n#");
-      if (newlineHashIndex !== -1) {
-        c = c.slice(newlineHashIndex + 1).trim();
-      }
-    }
-  }
-
-  return cleanFences(c);
-};
-
-function cleanFences(c: string): string | null {
-  // Quitar fences de markdown ```
-  if (c.startsWith("```")) {
-    const firstNewline = c.indexOf("\n");
-    if (firstNewline !== -1) {
-      c = c.slice(firstNewline + 1).trim();
-    } else {
-      c = c.slice(3).trim();
-    }
-  }
-  if (c.endsWith("```")) {
-    c = c.slice(0, -3).trim();
-  }
-  return c || null;
-}
-
 /**
  * Helper para persist*Content: aplica retry, offline queue y setea error en el store.
  * Reemplaza el patrón repetitivo de 13 persist functions.
@@ -292,7 +253,7 @@ async function persistField(
   const persistedBaseline = isStageScopedDeliverableField(fieldName)
     ? (stageDeliverables[fieldName] ?? "")
     : (((project as unknown as Record<string, unknown>)[fieldName] as string | null | undefined) ?? "");
-  if (content === persistedBaseline) {
+  if (content === persistedBaseline || workshopDocumentBodiesEqual(content, persistedBaseline)) {
     return { ok: true };
   }
 
@@ -344,7 +305,8 @@ async function persistField(
           : isStageScopedDeliverableField(fieldName)
             ? (focused[fieldName] ?? cleaned)
             : ((data[fieldName as keyof Project] as string | undefined) ?? cleaned);
-      const serverCleaned = cleanDoc(serverRaw) ?? serverRaw ?? "";
+      const serverCleaned =
+        normalizeWorkshopDocumentForEditor(serverRaw) ?? cleanDoc(serverRaw) ?? serverRaw ?? "";
       const patternsReverted =
         fieldName === "mddContent" && data.mddGovernancePatternsReverted === true;
       const localNow = String(
@@ -367,6 +329,17 @@ async function persistField(
           localFields,
         },
       ) as unknown as Project;
+      const editorBaseline = serverCleaned;
+      (alignedProject as unknown as Record<string, unknown>)[fieldName] = editorBaseline;
+      if (fieldName === "mddContent" && activeStageId && alignedProject.stages?.length) {
+        alignedProject.stages = alignedProject.stages.map((s) =>
+          s.id === activeStageId ? { ...s, mddContent: editorBaseline } : s,
+        );
+      } else if (isStageScopedDeliverableField(fieldName) && activeStageId && alignedProject.stages?.length) {
+        alignedProject.stages = alignedProject.stages.map((s) =>
+          s.id === activeStageId ? { ...s, [fieldName]: editorBaseline } : s,
+        );
+      }
       const patch: Partial<WorkshopState> = {
         project: alignedProject,
         synced: true,
@@ -730,20 +703,20 @@ function workshopDeliverableStorePatch(
 ): Pick<WorkshopState, WorkshopStageDeliverableField> {
   const slice = workshopDeliverableStoreSlice(deliverables);
   return {
-    specContent: cleanDoc(slice.specContent),
-    architectureContent: cleanDoc(slice.architectureContent),
-    useCasesContent: cleanDoc(slice.useCasesContent),
-    userStoriesContent: cleanDoc(slice.userStoriesContent),
-    blueprintContent: cleanDoc(slice.blueprintContent),
-    tasksContent: cleanDoc(slice.tasksContent),
-    apiContractsContent: cleanDoc(slice.apiContractsContent),
-    logicFlowsContent: cleanDoc(slice.logicFlowsContent),
-    infraContent: cleanDoc(slice.infraContent),
+    specContent: normalizeWorkshopDocumentForEditor(slice.specContent),
+    architectureContent: normalizeWorkshopDocumentForEditor(slice.architectureContent),
+    useCasesContent: normalizeWorkshopDocumentForEditor(slice.useCasesContent),
+    userStoriesContent: normalizeWorkshopDocumentForEditor(slice.userStoriesContent),
+    blueprintContent: normalizeWorkshopDocumentForEditor(slice.blueprintContent),
+    tasksContent: normalizeWorkshopDocumentForEditor(slice.tasksContent),
+    apiContractsContent: normalizeWorkshopDocumentForEditor(slice.apiContractsContent),
+    logicFlowsContent: normalizeWorkshopDocumentForEditor(slice.logicFlowsContent),
+    infraContent: normalizeWorkshopDocumentForEditor(slice.infraContent),
     agentGovernanceContent: slice.agentGovernanceContent,
-    uxUiGuideContent: cleanDoc(slice.uxUiGuideContent),
-    uiScreensContent: cleanDoc(slice.uiScreensContent),
+    uxUiGuideContent: normalizeWorkshopDocumentForEditor(slice.uxUiGuideContent),
+    uiScreensContent: normalizeWorkshopDocumentForEditor(slice.uiScreensContent),
     phase0SummaryContent: slice.phase0SummaryContent,
-    aemContent: cleanDoc(slice.aemContent),
+    aemContent: normalizeWorkshopDocumentForEditor(slice.aemContent),
   };
 }
 
@@ -752,11 +725,18 @@ function workshopStateFromProjectStage(p: Project, stageId: string | null) {
   const stages = p.stages ?? [];
   const deliverables = resolveWorkshopStageDeliverables({ ...p, stages }, stageId);
   const flat = workshopFlatFromStage(p, stageId);
+  const deliverablePatch = workshopDeliverableStorePatch(deliverables);
   return {
-    project: { ...p, ...flat, ...deliverables, stages },
+    project: {
+      ...p,
+      ...flat,
+      ...deliverablePatch,
+      dbgaContent: normalizeWorkshopDocumentForEditor(p.dbgaContent),
+      stages,
+    },
     activeStageId: stageId,
     mddContent: cleanDoc(flat.mddContent) ?? "",
-    ...workshopDeliverableStorePatch(deliverables),
+    ...deliverablePatch,
   };
 }
 
@@ -819,17 +799,17 @@ function projectWithUxAfterStream(
         proj != null && proj.complexityPending !== undefined
           ? proj.complexityPending
           : p.complexityPending ?? null,
-      uxUiGuideContent: cleanDoc(uxFromApi ?? p.uxUiGuideContent ?? null),
-      blueprintContent: cleanDoc(p.blueprintContent ?? null),
-      dbgaContent: cleanDoc(p.dbgaContent ?? null),
-      specContent: cleanDoc(p.specContent ?? null),
-      apiContractsContent: cleanDoc(p.apiContractsContent ?? null),
-      logicFlowsContent: cleanDoc(p.logicFlowsContent ?? null),
-      tasksContent: cleanDoc(p.tasksContent ?? null),
-      architectureContent: cleanDoc(p.architectureContent ?? null),
-      useCasesContent: cleanDoc(p.useCasesContent ?? null),
-      userStoriesContent: cleanDoc(p.userStoriesContent ?? null),
-      infraContent: cleanDoc(p.infraContent ?? null),
+      uxUiGuideContent: normalizeWorkshopDocumentForEditor(uxFromApi ?? p.uxUiGuideContent ?? null),
+      blueprintContent: normalizeWorkshopDocumentForEditor(p.blueprintContent ?? null),
+      dbgaContent: normalizeWorkshopDocumentForEditor(p.dbgaContent ?? null),
+      specContent: normalizeWorkshopDocumentForEditor(p.specContent ?? null),
+      apiContractsContent: normalizeWorkshopDocumentForEditor(p.apiContractsContent ?? null),
+      logicFlowsContent: normalizeWorkshopDocumentForEditor(p.logicFlowsContent ?? null),
+      tasksContent: normalizeWorkshopDocumentForEditor(p.tasksContent ?? null),
+      architectureContent: normalizeWorkshopDocumentForEditor(p.architectureContent ?? null),
+      useCasesContent: normalizeWorkshopDocumentForEditor(p.useCasesContent ?? null),
+      userStoriesContent: normalizeWorkshopDocumentForEditor(p.userStoriesContent ?? null),
+      infraContent: normalizeWorkshopDocumentForEditor(p.infraContent ?? null),
     },
     mddContent: merged.mddContent,
     activeStageId: merged.activeStageId,
@@ -1674,7 +1654,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         activeStageId,
         mddContent: preserveMddLocal ? get().mddContent : focused.mddContent,
         uxUiGuideContent: focused.uxUiGuideContent,
-        dbgaContent: cleanDoc(data.dbgaContent ?? null),
+        dbgaContent: normalizeWorkshopDocumentForEditor(data.dbgaContent ?? null),
         specContent: focused.specContent,
         phase0SummaryContent: focused.phase0SummaryContent,
         blueprintContent: focused.blueprintContent,
@@ -1772,7 +1752,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         activeStageId,
         mddContent: focused.mddContent || get().mddContent,
         uxUiGuideContent: focused.uxUiGuideContent,
-        dbgaContent: cleanDoc(p.dbgaContent ?? null),
+        dbgaContent: focused.project.dbgaContent ?? normalizeWorkshopDocumentForEditor(p.dbgaContent ?? null),
         specContent: focused.specContent,
         phase0SummaryContent: focused.phase0SummaryContent,
         blueprintContent: focused.blueprintContent,
@@ -2737,11 +2717,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   workshopStages: nextStages && nextStages.length > 0 ? nextStages : get().workshopStages,
                   uxUiGuideContent: freshUx,
                   dbgaContent:
-                    cleanDoc(
+                    packed?.project?.dbgaContent ??
+                    normalizeWorkshopDocumentForEditor(
                       (data.dbgaContent as string | null | undefined) ??
                         proj?.dbgaContent ??
                         null,
-                    ) ?? get().dbgaContent,
+                    ) ??
+                    get().dbgaContent,
                   phase0SummaryContent:
                     cleanDoc(
                       (data.phase0SummaryContent as string | null | undefined) ??
@@ -2830,11 +2812,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     workshopStages: nextStagesB && nextStagesB.length > 0 ? nextStagesB : get().workshopStages,
                     uxUiGuideContent: freshUx,
                     dbgaContent:
-                      cleanDoc(
+                      packed?.project?.dbgaContent ??
+                      normalizeWorkshopDocumentForEditor(
                         (data.dbgaContent as string | null | undefined) ??
                           projTail?.dbgaContent ??
                           null,
-                      ) ?? get().dbgaContent,
+                      ) ??
+                      get().dbgaContent,
                     phase0SummaryContent:
                       cleanDoc(
                         (data.phase0SummaryContent as string | null | undefined) ??
@@ -3681,7 +3665,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       });
       if (r.ok) {
         const data: Project = await r.json();
-        set({ project: data, dbgaContent: data.dbgaContent ?? null });
+        set({
+          project: data,
+          dbgaContent: normalizeWorkshopDocumentForEditor(data.dbgaContent ?? null),
+        });
       }
     } catch {
       // ignore

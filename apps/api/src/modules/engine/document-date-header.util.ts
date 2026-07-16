@@ -110,6 +110,33 @@ export function prependDocumentTimestamps(
   return `${comment}\n${human}\n\n---\n\n${body}`;
 }
 
+/** Markdown sin cabecera stamp (comentario HTML + blockquote + `---`). */
+export function stripDocumentStampHeader(content: string): string {
+  let body = content;
+  body = body.replace(META_COMMENT_RE, "");
+  body = body.replace(HUMAN_HEADER_RE, "");
+  return body;
+}
+
+export function documentMarkdownBodiesEqual(a: string, b: string): boolean {
+  return stripDocumentStampHeader(a).trim() === stripDocumentStampHeader(b).trim();
+}
+
+/**
+ * Re-stampa solo si el cuerpo cambió; evita PATCH en bucle que solo actualizan «Última regeneración».
+ */
+export function stampMarkdownIfBodyChanged(
+  existing: string | null | undefined,
+  incoming: string,
+  now: Date = new Date(),
+): string {
+  const inc = incoming.trim();
+  if (!inc) return inc;
+  const ex = (existing ?? "").trim();
+  if (ex && documentMarkdownBodiesEqual(ex, inc)) return ex;
+  return prependDocumentTimestamps(incoming, now);
+}
+
 /** Stamps a single markdown document when it has substantive body text. */
 export function stampMarkdownDocumentIfNonEmpty(
   content: string | null | undefined,
