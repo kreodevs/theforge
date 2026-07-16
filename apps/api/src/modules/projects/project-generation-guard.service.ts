@@ -84,7 +84,7 @@ export class ProjectGenerationGuardService {
     const complexity = ((project as { complexity?: ComplexityLevel }).complexity ?? "HIGH") as ComplexityLevel;
     const contentReady = buildDeliverableReadiness(project as Record<string, unknown>);
     const mddStreamActive =
-      this.isMddStreamActive(projectId) || this.mddQueue.isProjectBusy(projectId);
+      this.isMddStreamActive(projectId) || (await this.mddQueue.isProjectBusyAsync(projectId));
 
     const queueJobs = await this.deliverablesQueue.listActiveJobsForProject(projectId);
     const bgSnapshots: GenerationJobSnapshot[] = [];

@@ -41,4 +41,9 @@ describe("MddQueueService.cancelProjectJobs", () => {
     const result = await service.cancelProjectJobs("proj-empty");
     expect(result).toEqual({ ok: true, cancelled: false, jobIds: [] });
   });
+
+  it("isProjectBusyAsync devuelve false sin Redis ni jobs in-memory", async () => {
+    const service = createService();
+    await expect(service.isProjectBusyAsync("proj-empty")).resolves.toBe(false);
+  });
 });

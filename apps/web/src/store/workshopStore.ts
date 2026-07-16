@@ -21,7 +21,14 @@ import {
 } from "@theforge/shared-types/format-document-markdown";
 import { apiFetch, API_BASE, fetchWithRetry, addToOfflineQueue, flushOfflineQueue, getOfflineQueue } from "../utils/apiClient";
 import { queueAndPoll } from "../utils/queueAndPoll";
-import { enqueueAndPollLegacyMdd, enqueueAndPollMddJob, pollMddJob, abortActiveMddPoll, clearMddPollScope, wasMddPollCancelled } from "../utils/pollMddJob";
+import {
+  enqueueAndPollLegacyMdd,
+  enqueueAndPollMddJob,
+  pollMddJob,
+  abortActiveMddPoll,
+  clearMddPollScope,
+  wasMddPollCancelled,
+} from "../utils/pollMddJob";
 import {
   mergeProjectBaselinesAfterPersist,
   shouldApplyPersistedFieldContent,
@@ -725,7 +732,7 @@ async function pollAndApplyMddSectionJobFromChat(
   });
   try {
     void get().fetchGenerationStatus(projectId);
-    await pollMddJob(jobId, projectId, {
+    const pollResult = await pollMddJob(jobId, projectId, {
       onProgress: (p) => {
         if (p?.agent && p?.message) {
           set((s) => ({
@@ -737,6 +744,18 @@ async function pollAndApplyMddSectionJobFromChat(
         }
       },
     });
+    if (pollResult.status === "failed") {
+      set({
+        error: pollResult.error ?? "La regeneración de sección se interrumpió",
+        loading: false,
+        loadingReason: null,
+        notice: null,
+        agentProgress: [],
+        evaluatorCritique: null,
+      });
+      void get().fetchGenerationStatus(projectId);
+      return;
+    }
     if (!shouldApplyWorkshopUpdate(get, projectId)) return;
     const { fetchProject, fetchEstimation, fetchConformance } = get();
     await fetchProject(projectId);
@@ -1638,6 +1657,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         if (wasBusy) {
           void get().fetchProject(requestedId);
         }
+        const loadingReason = get().loadingReason;
+        if (
+          loadingReason === "mdd" ||
+          loadingReason === "mdd-section" ||
+          loadingReason === "legacy-mdd"
+        ) {
+          set({ loading: false, loadingReason: null, agentProgress: [] });
+        }
       }
       return status;
     } catch {
@@ -2258,7 +2285,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const mddContent = effectiveMddContentForSectionRegen(get);
         const regStage = get().activeStageId;
         void get().fetchGenerationStatus(requestProjectId);
-        await enqueueAndPollMddJob(
+        const pollResult = await enqueueAndPollMddJob(
           {
             mode: "section",
             projectId: requestProjectId,
@@ -2281,6 +2308,18 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             },
           },
         );
+        if (pollResult.status === "failed") {
+          set({
+            error: pollResult.error ?? "La regeneración de sección se interrumpió",
+            loading: false,
+            loadingReason: null,
+            notice: null,
+            agentProgress: [],
+            evaluatorCritique: null,
+          });
+          void get().fetchGenerationStatus(requestProjectId);
+          return;
+        }
         if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
         const { fetchProject, fetchEstimation, fetchConformance } = get();
         await fetchProject(requestProjectId);
@@ -3747,7 +3786,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     void get().fetchGenerationStatus(pid);
 
     try {
-      await enqueueAndPollMddJob(
+      const pollResult = await enqueueAndPollMddJob(
         {
           mode: "pipeline",
           projectId: pid,
@@ -3771,6 +3810,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           },
         },
       );
+      if (pollResult.status === "failed") {
+        set({
+          error: pollResult.error ?? "La generación del MDD se interrumpió",
+          loading: false,
+          loadingReason: null,
+          agentProgress: [],
+        });
+        void get().fetchGenerationStatus(pid);
+        return null;
+      }
       set({ mddJustGeneratedFromBenchmark: true, error: null });
       const data = await get().fetchProject(pid);
       await get().fetchEstimation(pid);
@@ -4141,6 +4190,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           }
         },
       });
+      if (jobStatus.status === "failed") {
+        set({
+          error: jobStatus.error ?? "La generación legacy del MDD se interrumpió",
+          loading: false,
+          loadingReason: null,
+          agentProgress: [],
+        });
+        void get().fetchGenerationStatus(pid);
+        return null;
+      }
       if (jobStatus.result?.outcome === "interrupt" && jobStatus.result.threadId) {
         set({ managerThreadId: jobStatus.result.threadId });
       }

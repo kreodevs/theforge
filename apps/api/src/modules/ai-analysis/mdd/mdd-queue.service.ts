@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
+import { BULLMQ_LONG_JOB_WORKER_OPTS } from "../../../common/bullmq-long-job.worker-options.js";
 import { getRequestUserId, runWithRequestUserAsync } from "../../../common/request-user.store.js";
 import { ProjectGenerationGuardService } from "../../projects/project-generation-guard.service.js";
 import { LegacyCoordinatorService } from "../../legacy-flow/legacy-coordinator.service.js";
@@ -89,6 +90,8 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly cancelledProjects = new Set<string>();
   private readonly MAX_ATTEMPTS = 3;
   private static readonly CANCELLED_MESSAGE = "Cancelado por el usuario";
+  static readonly ORPHAN_RECOVERY_MESSAGE =
+    "Recuperado tras reinicio del API (job huérfano)";
 
   constructor(
     @Inject(forwardRef(() => AiAnalysisService))
@@ -107,13 +110,21 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     return !!process.env.REDIS_URL?.trim();
   }
 
-  /** True si hay job MDD en cola o ejecutándose (incl. stream SSE activo). */
+  /** True si hay job MDD in-memory o stream SSE activo (no consulta Redis). */
   isProjectBusy(projectId: string): boolean {
     if (this.generationGuard.isMddStreamActive(projectId)) return true;
     if (this.inMemoryRunningProjects.has(projectId)) return true;
     const pending = this.inMemoryPendingByProject.get(projectId);
     if (pending?.length) return true;
     return false;
+  }
+
+  /** Incluye cola BullMQ (waiting/active/delayed) además del estado in-memory. */
+  async isProjectBusyAsync(projectId: string): Promise<boolean> {
+    if (this.isProjectBusy(projectId)) return true;
+    if (!this.queue) return false;
+    const active = await this.listActiveJobsForProject(projectId);
+    return active.length > 0;
   }
 
   async listActiveJobsForProject(
@@ -158,6 +169,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
         backoff: { type: "exponential", delay: 5_000 },
       },
     });
+    await this.recoverOrphanedActiveJobs();
     this.worker = new Worker(
       MDD_QUEUE_NAME,
       async (job: Job<MddJobData>) => {
@@ -169,14 +181,20 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
           return this.executeJob(job.data, (p) => job.updateProgress(p), String(job.id));
         });
       },
-      { connection: { url }, concurrency: 1 },
+      { connection: { url }, concurrency: 1, ...BULLMQ_LONG_JOB_WORKER_OPTS },
     );
     this.worker.on("failed", (job, err) => {
+      const data = job?.data as MddJobData | undefined;
+      if (data?.projectId) {
+        this.generationGuard.unregisterMddStream(data.projectId);
+      }
       this.logger.error(
         `BullMQ MDD job ${job?.id} falló: ${err instanceof Error ? err.message : err}`,
       );
     });
-    this.logger.log(`BullMQ MDD worker activo (${MDD_QUEUE_NAME})`);
+    this.logger.log(
+      `BullMQ MDD worker activo (${MDD_QUEUE_NAME}), stalledInterval=${BULLMQ_LONG_JOB_WORKER_OPTS.stalledInterval}ms`,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -184,16 +202,48 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     await this.queue?.close();
   }
 
-  private assertCanEnqueue(projectId: string): void {
-    if (this.isProjectBusy(projectId)) {
+  private async assertCanEnqueue(projectId: string): Promise<void> {
+    if (await this.isProjectBusyAsync(projectId)) {
       throw new ConflictException(
         "Ya hay una generación de MDD en curso para este proyecto. Espera a que termine o recarga el estado.",
       );
     }
   }
 
+  /**
+   * Jobs que quedaron `active` en Redis cuando murió el worker anterior (p. ej. restart API).
+   */
+  private async recoverOrphanedActiveJobs(): Promise<void> {
+    if (!this.queue) return;
+    const activeJobs = await this.queue.getJobs(["active"], 0, 200);
+    if (!activeJobs.length) return;
+
+    for (const job of activeJobs) {
+      const data = job.data as MddJobData | undefined;
+      const projectId = data?.projectId?.trim();
+      const jobId = String(job.id);
+      try {
+        await job.moveToFailed(
+          new Error(MddQueueService.ORPHAN_RECOVERY_MESSAGE),
+          "0",
+          true,
+        );
+        if (projectId) {
+          this.generationGuard.unregisterMddStream(projectId);
+        }
+        this.logger.warn(
+          `Job MDD huérfano ${jobId} (projectId=${projectId ?? "?"}) marcado como fallido tras reinicio del API`,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `No se pudo recuperar job MDD huérfano ${jobId}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+  }
+
   async enqueue(data: MddJobData): Promise<string> {
-    this.assertCanEnqueue(data.projectId);
+    await this.assertCanEnqueue(data.projectId);
     const userId = data.userId ?? getRequestUserId();
     const payload: MddJobData = { ...data, userId };
 

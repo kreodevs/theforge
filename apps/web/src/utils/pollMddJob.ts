@@ -1,4 +1,5 @@
 import { apiFetch, API_BASE } from "./apiClient";
+import { isMddJobTerminalFailure } from "./mddJobTerminalFailure";
 
 const POLL_MAX_ATTEMPTS = 10_800;
 const POLL_INTERVAL_MS = 2_000;
@@ -60,6 +61,8 @@ export type PollMddJobOptions = {
   signal?: AbortSignal;
 };
 
+export { isMddJobTerminalFailure } from "./mddJobTerminalFailure";
+
 /**
  * Polls an MDD background job until completed or failed.
  */
@@ -84,7 +87,7 @@ export async function pollMddJob(
     }
     if (status.status === "completed") return status;
     if (status.status === "failed") {
-      if (status.error?.includes("Cancelado")) {
+      if (isMddJobTerminalFailure(status.error)) {
         return status;
       }
       throw new Error(status.error ?? "Error al generar MDD en background");
