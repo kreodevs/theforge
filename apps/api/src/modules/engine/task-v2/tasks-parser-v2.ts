@@ -280,7 +280,7 @@ function parseTaskBlock(
     verification: verification || {},
     section: fm.section ? String(fm.section).trim() : section,
     checkpoint,
-    rawMarkdown: [lines.slice(startIdx, i).join("\n")].join("\n"),
+    rawMarkdown: stripFrontMatterFromRaw(lines.slice(startIdx, i).join("\n")),
   };
 
   return { task, errors: errors.length > 0 ? errors : undefined, endLine: i - 1 };
@@ -392,6 +392,15 @@ function extractDescription(body: string): string {
   // Primer párrafo tras un header #### Descripción
   const match = body.match(/#{2,4}\s*Descripción\s*\n+([^#\n][\s\S]*?)(?:\n#{2,4}|\n\n#{2,4}|\n---|$)/i);
   return match ? match[1].trim() : "";
+}
+
+/** Strip YAML front-matter from raw markdown to avoid duplicating parsed fields. */
+function stripFrontMatterFromRaw(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("---")) return trimmed;
+  const endIdx = trimmed.indexOf("\n---", 3);
+  if (endIdx === -1) return trimmed;
+  return trimmed.slice(endIdx + 4).trim();
 }
 
 // ---- Utilidades YAML simple ----

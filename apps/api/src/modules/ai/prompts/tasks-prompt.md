@@ -11,7 +11,9 @@ Generar el **documento Tasks** (breakdown de implementación) en markdown: lista
 1. **Backend tasks:** Solo trabajo que corre en **servidor**: API (controllers/routes/services), persistencia (ORM, migraciones, `schema.prisma`, Strapi `src/api/**/content-types/**/schema.json`), validación en capa API, jobs server-side.
 2. **Frontend tasks:** Todo lo que corre en **cliente**: pantallas, componentes, hooks, estado UI, formularios, llamadas `fetch` desde el navegador, **tipos TypeScript / carpetas `Models` o `types` que viven bajo el árbol de la app front** (p. ej. `apps/web`, `packages/login-sso`, `src/components`, SPA `src/` cuando el inventario muestra que es Vite/React y no el servidor).
 3. **Infraestructura tasks:** Variables de entorno, Docker/despliegue, CI/CD, pasos de configuración.
-4. **Opcional – Integración/QA:** Pruebas de integración, criterios de aceptación por flujo.
+4. **Testing tasks (§8):** Unit tests (Jest/Vitest) por cada módulo CRUD, integration tests para Auth/RBAC/RLS, E2E tests para flujos críticos (login → sesión → mensaje), load tests para colas (BullMQ/similar). Cada task de test DEBE tener: `target_files` apuntando al archivo de test, `dependencies` sobre la task de implementación correspondiente, `verification` con el comando para ejecutar el test suite.
+5. **Deploy tasks (§9):** Dockerfile multi-stage optimizado, CI/CD pipeline (GitHub Actions / GitLab CI), cloud deploy (ECS Fargate / Cloud Run según §7), monitoring setup (Sentry, health checks), variables de entorno en secrets manager. Cada task de deploy DEBE incluir `target_files` con los archivos de configuración de infra/CI.
+6. **Opcional – Integración/QA:** Pruebas de integración, criterios de aceptación por flujo.
 
 **Clasificación Backend vs Frontend (crítico):** No uses el nombre del archivo (`cliente.ts`, `Model`) para decidir la sección. Usa la **ruta completa** y el **stack** del Blueprint o del contexto TheForge: si la ruta está en el paquete o carpeta del **frontend**, el ítem va en **Frontend tasks**, aunque el archivo modele datos. La persistencia real del campo (BD / API Strapi / Nest) va en **Backend**. Si un mismo cambio toca ambos, crea **dos** ítems (uno por capa).
 
@@ -40,7 +42,7 @@ Si el mensaje incluye **Contratos API**, **Flujos**, **Infra** o **User Stories*
 # Cobertura exhaustiva (obligatoria cuando el MDD describe MVP completo) #
 
 1. **Tarea comprobable** (`- [ ]`) por capacidad MVP de §1, dominio API de §4, entidad de §3, flujo de §5, control de §6 e ítem de §7 que requiera trabajo.
-2. Separa **obligatoriamente** en secciones H2 canónicas: `## Backend tasks`, `## Frontend tasks`, `## Infraestructura tasks` (o `## Infra tasks`). **Prohibido** usar solo `## Fase N` como secciones principales; las fases van como `### Fase N` **dentro** de cada sección canónica.
+2. Separa **obligatoriamente** en secciones H2 canónicas: `## Backend tasks`, `## Frontend tasks`, `## Infraestructura tasks` (o `## Infra tasks`), `## Testing tasks`, `## Deploy tasks`. **Prohibido** usar solo `## Fase N` como secciones principales; las fases van como `### Fase N` **dentro** de cada sección canónica.
 3. **Migraciones §3:** Por cada tabla/columna `UNIQUE` o `NOT NULL` del MDD, incluye tarea explícita de migración TypeORM/Prisma + entity/DTO.
 4. **Open gaps research:** Cada ítem de «Análisis de Gaps» o `[OPEN-GAP]` del research → tarea correctiva con trazabilidad.
 5. **Eventos RabbitMQ/EDA:** Si el plan menciona bus de eventos, incluye tasks publisher + consumer + test de integración.

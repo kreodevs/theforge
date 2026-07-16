@@ -218,11 +218,23 @@ export const RULE_CATALOG: RuleCatalogEntry[] = [
       /graphql/i,
     ],
     archetypes: ["nestjs-react-monorepo", "api-only"],
-    template: () =>
-      ruleFrontmatter("Contratos API alineados al MDD §4") +
-      "# API contracts\n\n" +
-      "- Cambios de contrato: actualizar spec/OpenAPI y tests.\n" +
-      "- Validación de entrada según stack (Zod, class-validator, etc.).\n",
+    template: (ctx) => {
+      const facts = ctx.projectFacts;
+      const lines = [
+        ruleFrontmatter("Contratos API alineados al MDD §4") +
+        "# API contracts\n\n" +
+        "- Cambios de contrato: actualizar spec/OpenAPI y tests.\n" +
+        "- Validación de entrada según stack (Zod, class-validator, etc.).\n",
+      ];
+      if (facts?.blueprintModules.length) {
+        lines.push("## Módulos con endpoints\n");
+        for (const mod of facts.blueprintModules.slice(0, 6)) {
+          lines.push(`- \`${mod}\``);
+        }
+        lines.push("");
+      }
+      return lines.join("\n");
+    },
   },
   {
     id: "orchestrator",
@@ -273,11 +285,30 @@ export const RULE_CATALOG: RuleCatalogEntry[] = [
       /event-?driven/i,
       /\[X\][^\n]*(Hexagonal|CQRS|Clean Architecture|Microservicios)/i,
     ],
-    template: () =>
-      ruleFrontmatter("Patrones de arquitectura activos en el wizard MDD") +
-      "# Architecture patterns\n\n" +
-      "Alinea implementación a los patrones marcados [X] en el MDD.\n" +
-      "No contradigas capas, puertos o bounded contexts acordados.\n",
+    template: (ctx) => {
+      const facts = ctx.projectFacts;
+      const lines = [
+        ruleFrontmatter("Patrones de arquitectura activos en el wizard MDD") +
+        "# Architecture patterns\n\n" +
+        "Alinea implementación a los patrones marcados [X] en el MDD.\n" +
+        "No contradigas capas, puertos o bounded contexts acordados.\n",
+      ];
+      if (facts?.architectureLayers.length) {
+        lines.push("## Capas del proyecto\n");
+        for (const layer of facts.architectureLayers.slice(0, 8)) {
+          lines.push(`- ${layer}`);
+        }
+        lines.push("");
+      }
+      if (facts?.blueprintModules.length) {
+        lines.push("## Módulos Blueprint\n");
+        for (const mod of facts.blueprintModules.slice(0, 8)) {
+          lines.push(`- \`${mod}\``);
+        }
+        lines.push("");
+      }
+      return lines.join("\n");
+    },
   },
   {
     id: "mcp-governance",

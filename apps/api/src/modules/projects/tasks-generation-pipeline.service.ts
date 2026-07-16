@@ -175,18 +175,18 @@ export class TasksGenerationPipelineService {
   private buildPlannerContext(input: TasksPipelineInput): string {
     const parts: string[] = [
       "Genera el plan JSON de Tasks según el system prompt.",
-      "\n\nMDD:\n---\n" + input.mddMarkdown.trim().slice(0, 24_000) + "\n---",
+      "\n\nMDD:\n---\n" + input.mddMarkdown.trim().slice(0, 40_000) + "\n---",
     ];
     const append = (label: string, content?: string | null, cap = 10_000) => {
       const t = (content ?? "").trim();
       if (t.length > 0) parts.push(`\n\n${label}:\n---\n` + t.slice(0, cap) + "\n---");
     };
-    append("Blueprint", input.blueprintMarkdown, 12_000);
-    append("Spec", input.taskOpts.specContent);
+    append("Blueprint", input.blueprintMarkdown, 20_000);
+    append("Spec", input.taskOpts.specContent, 15_000);
     append("User Stories", input.taskOpts.userStoriesContent, 6_000);
-    append("API Contracts", input.taskOpts.apiContractsContent, 12_000);
-    append("Logic Flows", input.taskOpts.logicFlowsContent, 8_000);
-    append("Infra", input.taskOpts.infraContent, 6_000);
+    append("API Contracts", input.taskOpts.apiContractsContent, 20_000);
+    append("Logic Flows", input.taskOpts.logicFlowsContent, 12_000);
+    append("Infra", input.taskOpts.infraContent, 10_000);
     append("Architecture", input.taskOpts.architectureContent, 8_000);
     if (input.hasUxTeam) {
       append("UX Guide", input.taskOpts.uxUiGuideContent, 6_000);

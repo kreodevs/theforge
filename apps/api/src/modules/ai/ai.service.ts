@@ -217,8 +217,8 @@ function preferThinLiteraryDocs(options?: LegacyGenerateOptions, envKey?: "GENER
   if (options?.preferThinLiteraryDocs === false) return false;
   if (envKey && process.env[envKey] === "false") return true;
   if (envKey && process.env[envKey] === "true") return false;
-  // Default: thin for greenfield cascade quality (PLAN-CASCADE-90-ACCURACY)
-  return true;
+  // Default: use literary docs for richer narrative quality
+  return false;
 }
 
 /** Instrucción fija para que ningún documento generado use "militar" (se añade al system prompt en generación de docs). */
@@ -1674,6 +1674,9 @@ export class AiService {
     if (options?.theforgeContext?.trim()) prompt = prependTheForgePrompt(prompt, options.theforgeContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
+    if (mdd.length > 0) {
+      prompt = appendGreenfieldCoverageChecklist(prompt, mddContent?.trim() ?? "", "Infra", options, blueprintContent);
+    }
     return this.generateResponse(prompt, [], {
       systemPrompt: INFRA_PROMPT + NO_MILITAR_INSTRUCTION,
     });

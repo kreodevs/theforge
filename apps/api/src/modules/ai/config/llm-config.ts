@@ -12,7 +12,7 @@ export const OPENROUTER_DEFAULT_VISION_MODEL = "openai/gpt-4o";
  * Tope de tokens de **salida** (`max_tokens` en la API), no ventana de contexto.
  * Default 32K: techo global (`LLM_MAX_TOKENS`); los perfiles por tarea nunca lo superan.
  */
-export const LLM_MAX_TOKENS_DEFAULT = 32_768;
+export const LLM_MAX_TOKENS_DEFAULT = 65_536;
 
 /** Perfiles de salida por tipo de tarea (siempre acotados por `llmMaxTokens()`). */
 export const LLM_OUTPUT_TOKEN_PROFILES = {
@@ -23,13 +23,13 @@ export const LLM_OUTPUT_TOKEN_PROFILES = {
   /** Design System (DESIGN.md). */
   uxGuide: 16_384,
   /** Documento completo vía Workshop (MDD, DBGA, Blueprint, Spec, BRD…). */
-  document: 32_768,
+  document: 65_536,
   /** Nodos LangGraph MDD/DBGA (una sección por llamada). */
   langgraph: 16_384,
   /** Auditor MDD / cross-consistency. */
   auditor: 8_192,
   /** Tasks Planner JSON (plan grande en proyectos HIGH). */
-  tasksPlanner: 32_768,
+  tasksPlanner: 65_536,
   /** parseChecklist y salidas JSON cortas. */
   checklist: 4_096,
 } as const;

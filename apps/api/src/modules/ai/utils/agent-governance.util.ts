@@ -125,7 +125,61 @@ function stripJsonFences(raw: string): string {
 }
 
 function defaultClaudeShim(): string {
-  return "@AGENTS.md\n";
+  return (
+    "# Claude Code — Instrucciones del proyecto\n\n" +
+    "Este archivo es el punto de entrada para **Claude Code** (claude.ai / Claude Code CLI).\n\n" +
+    "## Carga automática\n\n" +
+    "Claude Code carga este archivo al iniciar una sesión en el repositorio.\n\n" +
+    "## Contenido\n\n" +
+    "Lee `@AGENTS.md` para la gobernanza completa del proyecto (stack, reglas, skills, workflows).\n" +
+    "Los archivos de referencia están en `docs/agent-governance/`.\n\n" +
+    "## Comandos rápidos\n\n" +
+    "- `npm run build` — build completo\n" +
+    "- `npm run test` — tests unitarios\n" +
+    "- `npm run lint` — lint del proyecto\n\n" +
+    "## Reglas\n\n" +
+    "- No uses la palabra \"militar\" — usa \"alta criticidad\" o \"misión crítica\".\n" +
+    "- Sigue el MDD como constitución del proyecto.\n" +
+    "- Usa los patrones de arquitectura definidos en el Blueprint.\n"
+  );
+}
+
+function generateClaudeMdWithContext(facts: ProjectGovernanceFacts): string {
+  const stack = [facts.backendStack, facts.frontendStack, facts.infraStack]
+    .filter(Boolean)
+    .join(", ");
+  const sections: string[] = [
+    `# ${facts.projectTitle} — Claude Code Instructions\n`,
+    "## Stack\n",
+    stack ? `${stack}\n` : "Ver MDD §2 para stack completo.\n",
+    "## Commands\n",
+    "- Build: `npm run build`",
+    "- Test: `npm run test`",
+    "- Lint: `npm run lint`",
+    "",
+    "## Architecture\n",
+  ];
+  if (facts.architectureLayers.length > 0) {
+    sections.push(facts.architectureLayers.slice(0, 8).join(", ") + "\n");
+  } else {
+    sections.push("Ver docs/sdd/architecture.md\n");
+  }
+  if (facts.blueprintModules.length > 0) {
+    sections.push("## Modules\n");
+    sections.push(facts.blueprintModules.slice(0, 12).join(", ") + "\n");
+  }
+  sections.push("## Key Files\n");
+  sections.push(facts.docPaths.slice(0, 8).map((f) => `- ${f}`).join("\n") + "\n");
+  sections.push("## Rules\n");
+  sections.push("- No uses \"militar\" — usa \"alta criticidad\" o \"misión crítica\".");
+  sections.push("- Sigue el MDD como constitución del proyecto.");
+  sections.push("- Usa los patrones de arquitectura definidos en el Blueprint.");
+  if (facts.npmScripts.length > 0) {
+    sections.push("\n## npm scripts\n");
+    sections.push(facts.npmScripts.slice(0, 10).map((s) => `\`${s}\``).join(", ") + "\n");
+  }
+  sections.push("");
+  return sections.join("\n");
 }
 
 function defaultInstallMapTableRows(): string {
@@ -1506,7 +1560,11 @@ const FALLBACK_BY_PATH: Record<string, FallbackFactory> = {
     const facts = extractProjectGovernanceFacts(input);
     return overlayProjectFacts(base, facts);
   },
-  "CLAUDE.md": () => defaultClaudeShim(),
+  "CLAUDE.md": (_c, _s, input) => {
+    if (!input) return defaultClaudeShim();
+    const facts = extractProjectGovernanceFacts(input);
+    return generateClaudeMdWithContext(facts);
+  },
   "PROMPT-INICIAL.md": () => buildPromptInicialIndexMd(),
   [AGENT_PROMPT_PATH]: (c, _s, input) =>
     buildAgentPromptMd(

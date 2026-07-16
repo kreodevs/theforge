@@ -183,7 +183,7 @@ export function computeDocAccuracy(input: CascadeAccuracyInput): DocAccuracyResu
     c4Score = Math.max(0, Math.min(100, c4Score));
   }
 
-  // C5 Cross-artifact (10) — lightweight
+  // C5 Cross-artifact (8) — lightweight
   const c5Gaps: string[] = [];
   let c5Score = 100;
   if (!(input.specMarkdown ?? "").trim()) {
@@ -199,7 +199,7 @@ export function computeDocAccuracy(input: CascadeAccuracyInput): DocAccuracyResu
     c5Score -= 20;
   }
 
-  // C6 Scope drift / auth skew (10)
+  // C6 Scope drift / auth skew (7)
   const skew = detectAuthOnlySkew(mddEntities, caps);
   const c6Gaps: string[] = [];
   let c6Score = 100;
@@ -210,13 +210,61 @@ export function computeDocAccuracy(input: CascadeAccuracyInput): DocAccuracyResu
     c6Score = 10;
   }
 
+  // C7 Use cases coverage (10)
+  const ucText = (input.useCasesMarkdown ?? "").toLowerCase();
+  const c7Gaps: string[] = [];
+  let c7Score = 40;
+  if (!ucText.trim()) {
+    c7Gaps.push("Use cases ausente");
+    c7Score = 0;
+  } else {
+    const ucWordCount = ucText.trim().split(/\s+/).length;
+    if (ucWordCount >= 500) c7Score = 90;
+    else if (ucWordCount >= 200) c7Score = 70;
+    else if (ucWordCount >= 80) c7Score = 50;
+    else {
+      c7Gaps.push("Use cases demasiado breves (< 80 palabras)");
+      c7Score = 30;
+    }
+    const hasActors = /actor|usuario|sistema|admin|cliente/i.test(input.useCasesMarkdown ?? "");
+    if (!hasActors) {
+      c7Gaps.push("Use cases sin actores explícitos");
+      c7Score -= 10;
+    }
+  }
+
+  // C8 User stories coverage (10)
+  const usText = (input.userStoriesMarkdown ?? "").toLowerCase();
+  const c8Gaps: string[] = [];
+  let c8Score = 40;
+  if (!usText.trim()) {
+    c8Gaps.push("User stories ausente");
+    c8Score = 0;
+  } else {
+    const usWordCount = usText.trim().split(/\s+/).length;
+    if (usWordCount >= 400) c8Score = 90;
+    else if (usWordCount >= 150) c8Score = 70;
+    else if (usWordCount >= 50) c8Score = 50;
+    else {
+      c8Gaps.push("User stories demasiado breves (< 50 palabras)");
+      c8Score = 30;
+    }
+    const hasAcceptance = /criterio|aceptaci[oó]n|given|when|then/i.test(input.userStoriesMarkdown ?? "");
+    if (!hasAcceptance) {
+      c8Gaps.push("User stories sin criterios de aceptación");
+      c8Score -= 10;
+    }
+  }
+
   const components: AccuracyComponentScore[] = [
-    { id: "C1_capability", weight: 30, score: c1Score, gaps: c1Gaps.slice(0, 12) },
-    { id: "C2_process", weight: 20, score: c2Score, gaps: c2Gaps.slice(0, 12) },
-    { id: "C3_crud", weight: 15, score: c3Score, gaps: c3Gaps.slice(0, 12) },
-    { id: "C4_screens", weight: 15, score: c4Score, gaps: c4Gaps.slice(0, 8) },
-    { id: "C5_cross", weight: 10, score: Math.max(0, c5Score), gaps: c5Gaps },
-    { id: "C6_drift", weight: 10, score: c6Score, gaps: c6Gaps },
+    { id: "C1_capability", weight: 25, score: c1Score, gaps: c1Gaps.slice(0, 12) },
+    { id: "C2_process", weight: 18, score: c2Score, gaps: c2Gaps.slice(0, 12) },
+    { id: "C3_crud", weight: 12, score: c3Score, gaps: c3Gaps.slice(0, 12) },
+    { id: "C4_screens", weight: 10, score: c4Score, gaps: c4Gaps.slice(0, 8) },
+    { id: "C5_cross", weight: 8, score: Math.max(0, c5Score), gaps: c5Gaps },
+    { id: "C6_drift", weight: 7, score: c6Score, gaps: c6Gaps },
+    { id: "C7_useCases", weight: 10, score: Math.max(0, c7Score), gaps: c7Gaps },
+    { id: "C8_userStories", weight: 10, score: Math.max(0, c8Score), gaps: c8Gaps },
   ];
 
   const score = weightedScore(components);
