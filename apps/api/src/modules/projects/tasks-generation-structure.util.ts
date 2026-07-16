@@ -151,6 +151,19 @@ export function evaluateTasksStructure(params: {
     gaps.push(`Parser tasks v2: ${parseErrors.length} error(es) de formato YAML.`);
   }
 
+  // Detect orphan tasks: tasks with empty target_files or empty verification
+  const orphans = parsed.tasks.filter(
+    (t) =>
+      (t.targetFiles.length === 0 || Object.keys(t.verification).length === 0) &&
+      t.changeType !== "run" &&
+      t.changeType !== "configure",
+  );
+  if (orphans.length > 0) {
+    gaps.push(
+      `${orphans.length} tarea(s) huérfana(s) sin target_files o verification: ${orphans.map((t) => t.id).slice(0, 5).join(", ")}`,
+    );
+  }
+
   return {
     ok: gaps.length === 0,
     gaps,

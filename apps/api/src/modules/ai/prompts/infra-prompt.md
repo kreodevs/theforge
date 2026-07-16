@@ -22,6 +22,19 @@ Generar el **documento de Infraestructura y Despliegue** (DevOps / Docker Spec) 
 2. **Variable en `.env.example`** por secreto o flag citado en §6/§7.
 3. **Checklist del mensaje:** Si el prompt incluye «CHECKLIST DE COBERTURA OBLIGATORIA», recorre **cada** ítem `- [ ]`.
 
+# Contenido adicional obligatorio (proyectos greenfield) #
+
+Cuando el MDD describe un MVP completo (§1–§7), el documento DEBE incluir **todas** estas secciones:
+
+- **CI/CD Pipeline:** Configuración de GitHub Actions / GitLab CI / equivalente con lint, test, build y deploy. Incluir triggers (push a main, PR), cache de dependencias y pasos de verificación.
+- **Cloud Deploy:** Estrategia de despliegue según §7 del MDD (ECS Fargate / Cloud Run / Kubernetes / VPS). Incluir configuración de servicios, puertos, health checks y escalado básico.
+- **Variables de entorno:** Tabla completa con cada variable, su descripción, valor por defecto (si aplica) y referencia a secrets manager. Incluir DATABASE_URL, REDIS_URL, API keys, JWT_SECRET, feature flags y cualquier variable citada en §6/§7.
+- **mTLS / JWT interno:** Estrategia de autenticación entre servicios si §7.2 del MDD lo requiere. Documentar si se usa mTLS, JWT interno, o comunicación por red privada.
+- **Monitoring:** Configuración de Sentry DSN, health checks (/health, /ready), métricas básicas y alertas. Incluir si §7.5 del MDD lo especifica.
+- **Manifest de infra:** Variables de infraestructura: `deployment.orchestrator`, `deployment.provider`, `jwks_enabled`, `redis_enabled`. Si el MDD las define, documentarlas explícitamente.
+
+Cada sección debe ser **trazable** a §7 o §6 del MDD. Si el MDD no menciona un servicio o variable, omitir la sección correspondiente con una nota breve.
+
 # Estilo #
 
 Técnico y operativo. Especificaciones listas para implementar en entornos reales.
