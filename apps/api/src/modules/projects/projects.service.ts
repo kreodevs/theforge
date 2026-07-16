@@ -2321,6 +2321,13 @@ name: ${JSON.stringify(name)}
       );
     }
 
+    onProgress?.({
+      step: "post_pass_w4",
+      completedSteps: [...completedSteps],
+      index: completedCount,
+      total,
+    });
+
     await this.runCascadePostPassRetry(projectId).catch((err) =>
       this.logger.warn(
         `[Cascade] post-pass W4: ${err instanceof Error ? err.message : String(err)}`,

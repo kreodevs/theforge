@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applyDeliverableCascadeProgressUpdate,
   applyDeliverableCascadeStepDone,
+  ensurePostPassCascadeRow,
   readDeliverableCascadeProgressStep,
   resolveDeliverableCascadeStepLabel,
 } from "./deliverableCascadeProgress.js";
@@ -12,6 +13,7 @@ describe("deliverableCascadeProgress", () => {
   it("maps DeliverableKind slugs to Workshop labels", () => {
     assert.equal(resolveDeliverableCascadeStepLabel("spec"), "Spec");
     assert.equal(resolveDeliverableCascadeStepLabel("architecture"), "Arquitectura");
+    assert.equal(resolveDeliverableCascadeStepLabel("post_pass_w4"), "Refinando precisión (W4)");
   });
 
   it("ignores preflight and done", () => {
@@ -54,5 +56,14 @@ describe("deliverableCascadeProgress", () => {
     assert.equal(out.agentProgress[0]?.status, "terminado");
     assert.equal(out.agentProgress[1]?.status, "terminado");
     assert.equal(out.agentProgress[2]?.status, "terminado");
+  });
+
+  it("ensurePostPassCascadeRow añade fila W4", () => {
+    const rows = ensurePostPassCascadeRow([
+      { agent: "Entregables", step: "Tasks", message: "ok", status: "terminado" },
+    ]);
+    assert.equal(rows.length, 2);
+    assert.match(rows[1]?.step ?? "", /Refinando precisión/);
+    assert.equal(rows[1]?.status, "generando");
   });
 });

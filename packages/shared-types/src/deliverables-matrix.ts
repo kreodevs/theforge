@@ -94,8 +94,15 @@ export const DELIVERABLES_BY_COMPLEXITY: Record<ComplexityLevel, DeliverableKind
   ],
 };
 
+/** Sync pantallas MCP en oleada W2b (no es DeliverableKind). */
+export const DELIVERABLE_UI_SCREENS_SYNC_STEP = "ui_screens_sync" as const;
+
+/** Post-pase W4: reintentos de precisión tras oleadas principales (no es DeliverableKind). */
+export const CASCADE_POST_PASS_STEP = "post_pass_w4" as const;
+export const CASCADE_POST_PASS_STEP_LABEL = "Refinando precisión (W4)";
+
 /** Pasos de cascada: entregables LLM + sync de pantallas (no es DeliverableKind). */
-export type DeliverableWaveStep = DeliverableKind | "ui_screens_sync";
+export type DeliverableWaveStep = DeliverableKind | typeof DELIVERABLE_UI_SCREENS_SYNC_STEP;
 
 /**
  * Oleadas secuenciales por complejidad. Cada oleada puede ejecutar pasos en paralelo;
@@ -118,7 +125,10 @@ export function flattenDeliverableWaves(complexity: ComplexityLevel): Deliverabl
   return DELIVERABLE_WAVES_BY_COMPLEXITY[complexity].flat();
 }
 
-export function deliverableWaveStepLabel(step: DeliverableWaveStep): string {
-  if (step === "ui_screens_sync") return "Pantallas (UI MCP)";
+export function deliverableWaveStepLabel(
+  step: DeliverableWaveStep | typeof CASCADE_POST_PASS_STEP,
+): string {
+  if (step === DELIVERABLE_UI_SCREENS_SYNC_STEP) return "Pantallas (UI MCP)";
+  if (step === CASCADE_POST_PASS_STEP) return CASCADE_POST_PASS_STEP_LABEL;
   return DELIVERABLE_STEP_LABELS[step];
 }

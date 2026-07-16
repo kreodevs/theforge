@@ -1,5 +1,8 @@
 import type { DeliverableWaveStep } from "../../../../packages/shared-types/src/deliverables-matrix.ts";
-import { deliverableWaveStepLabel } from "../../../../packages/shared-types/src/deliverables-matrix.ts";
+import {
+  CASCADE_POST_PASS_STEP,
+  deliverableWaveStepLabel,
+} from "../../../../packages/shared-types/src/deliverables-matrix.ts";
 import type { AgentProgressItem } from "./agentProgress";
 
 const IGNORED_CASCADE_PROGRESS_STEPS = new Set([
@@ -13,6 +16,7 @@ const IGNORED_CASCADE_PROGRESS_STEPS = new Set([
 export function resolveDeliverableCascadeStepLabel(apiStep: string): string | null {
   const step = apiStep.trim();
   if (!step || IGNORED_CASCADE_PROGRESS_STEPS.has(step)) return null;
+  if (step === CASCADE_POST_PASS_STEP) return deliverableWaveStepLabel(CASCADE_POST_PASS_STEP);
   if (step === "ui_screens_sync") return deliverableWaveStepLabel("ui_screens_sync");
   const fromKind = deliverableWaveStepLabel(step as DeliverableWaveStep);
   if (typeof fromKind === "string" && fromKind.length > 0) return fromKind;
@@ -98,10 +102,41 @@ export function applyDeliverableCascadeProgressUpdate(
     if (result.matched) matched = true;
   }
   const latest = readDeliverableCascadeProgressStep(progress);
-  if (latest && latest !== "done" && !completedLabels.has(resolveDeliverableCascadeStepLabel(latest) ?? "")) {
+  if (latest === CASCADE_POST_PASS_STEP) {
+    rows = ensurePostPassCascadeRow(rows);
+    matched = true;
+  } else if (latest && latest !== "done" && !completedLabels.has(resolveDeliverableCascadeStepLabel(latest) ?? "")) {
     rows = applyDeliverableCascadeStepActive(rows, latest, completedLabels);
   }
   return { agentProgress: rows, cascadeCompleted: completedLabels.size, matched };
+}
+
+/** Añade fila de post-pase W4 si aún no existe (oleadas principales ya en checklist). */
+export function ensurePostPassCascadeRow(
+  agentProgress: readonly AgentProgressItem[],
+): AgentProgressItem[] {
+  const label = deliverableWaveStepLabel(CASCADE_POST_PASS_STEP);
+  if (agentProgress.some((item) => item.step === label)) return [...agentProgress];
+  return [
+    ...agentProgress,
+    {
+      agent: "Entregables",
+      step: label,
+      message: `⚡ ${label} — Generando…`,
+      status: "generando" as const,
+    },
+  ];
+}
+
+/** Marca filas aún en generando como terminadas al completar el job. */
+export function markAllAgentProgressTerminated(
+  agentProgress: readonly AgentProgressItem[],
+): AgentProgressItem[] {
+  return agentProgress.map((item) =>
+    item.status === "generando"
+      ? { ...item, message: `✅ ${item.step} — Terminado`, status: "terminado" as const }
+      : item,
+  );
 }
 
 /** Highlights the step currently running (legacy queue reports label after each wave). */
