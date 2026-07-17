@@ -1,6 +1,9 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
 import { formatDocumentMarkdown, repairGluedMarkdownHeadings } from "@theforge/shared-types";
-import { fixBareMermaidFences, collectMddQualityIssues } from "../../engine/mdd-quality-audit.util.js";
+import {
+  applyMddQualityAutoRepairs,
+  collectMddQualityIssues,
+} from "../../engine/mdd-quality-audit.util.js";
 import { sqlToErDiagramContent } from "./mdd-diagram-suggestions.js";
 
 /** Convierte objeto con subsections (array de {title, description: string[]}) a markdown legible. */
@@ -1029,10 +1032,13 @@ export function alignInfraNodeVersionWithSection2(draft: string): string {
   return out;
 }
 
-/** Pasada final antes del delivery gate: alinea Node §2↔§7, Mermaid y duplicados (idempotente). */
+/** Pasada final antes del delivery gate: alinea Node §2↔§7, calidad MDD, JSON §4 y duplicados (idempotente). */
 export function applyPreDeliveryGateFixes(draft: string): string {
   let out = alignInfraNodeVersionWithSection2(draft ?? "");
-  out = fixBareMermaidFences(out);
+  out = repairNestedJsonFencesInDraft(out);
+  out = repairDisplacedJsonBracesInContratosSection(out);
+  out = closeUnclosedCodeFencesInDraft(out);
+  out = applyMddQualityAutoRepairs(out).markdown;
   if (mddHasDuplicateSectionHeadings(out)) {
     out = stripTrailingDuplicateMddSections(out);
     if (mddHasDuplicateSectionHeadings(out)) {

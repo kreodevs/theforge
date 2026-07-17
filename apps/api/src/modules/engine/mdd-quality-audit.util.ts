@@ -137,6 +137,239 @@ export function detectPlaceholderNoise(draft: string): string | null {
   return null;
 }
 
+const AUTO_REPAIRABLE_QUALITY_RE =
+  /fences desbalanceados|JSON inválido|Tabla huérfana|Manifest de Infraestructura|placeholder con guiones|Mermaid sin fence/i;
+
+/** True si el issue puede intentar repararse sin intervención del usuario. */
+export function isAutoRepairableMddQualityIssue(issue: string): boolean {
+  return AUTO_REPAIRABLE_QUALITY_RE.test(issue);
+}
+
+/** Nombres de tablas §3 marcadas como huérfanas (misma heurística que detectOrphanSqlTables). */
+export function listOrphanSqlTableNames(draft: string): string[] {
+  const sqlMatch = draft.match(/```sql\s*([\s\S]*?)```/i);
+  if (!sqlMatch?.[1]) return [];
+  const sql = sqlMatch[1];
+  const orphans: string[] = [];
+  const createRe =
+    /\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)["`]?\s*\(([\s\S]*?)\)\s*;/gi;
+  let m: RegExpExecArray | null;
+  while ((m = createRe.exec(sql)) !== null) {
+    const name = m[1]!.toLowerCase();
+    const body = m[2] ?? "";
+    const colLines = body
+      .split(/,\s*\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !/^(primary\s+key|constraint|unique|check|foreign\s+key)/i.test(l));
+    const businessCols = colLines.filter(
+      (l) => !/^(id|created_at|updated_at)\b/i.test(l.split(/\s+/)[0] ?? ""),
+    );
+    if (businessCols.length <= 1 && colLines.length <= 3) orphans.push(name);
+  }
+  if (orphans.length === 0) return [];
+  const erBlock = draft.match(/```mermaid\s*([\s\S]*?)```/i)?.[1] ?? "";
+  return orphans.filter((t) => {
+    const inEr = new RegExp(`\\b${t}\\b`, "i").test(erBlock);
+    const fkRef = new RegExp(`references\\s+${t}\\b`, "i").test(sql);
+    return !inEr && !fkRef;
+  });
+}
+
+function suggestOrphanTableColumns(tableName: string): string[] {
+  const n = tableName.toLowerCase();
+  const byName: Record<string, string[]> = {
+    conversation_memory: [
+      "session_id UUID NOT NULL",
+      "content TEXT NOT NULL",
+      "metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
+    ],
+    messages: [
+      "conversation_id UUID NOT NULL",
+      "role VARCHAR(32) NOT NULL",
+      "content TEXT NOT NULL",
+    ],
+    requests: [
+      "method VARCHAR(8) NOT NULL",
+      "path TEXT NOT NULL",
+      "status_code INT",
+      "request_payload JSONB",
+    ],
+    llm_configs: [
+      "provider VARCHAR(64) NOT NULL",
+      "model VARCHAR(128) NOT NULL",
+      "parameters JSONB NOT NULL DEFAULT '{}'::jsonb",
+    ],
+    mcp_plugins: [
+      "plugin_key VARCHAR(128) NOT NULL",
+      "enabled BOOLEAN NOT NULL DEFAULT true",
+      "config JSONB NOT NULL DEFAULT '{}'::jsonb",
+    ],
+  };
+  if (byName[n]) return byName[n];
+  if (n.endsWith("_configs") || n.endsWith("_settings")) {
+    return ["label VARCHAR(255) NOT NULL", "config JSONB NOT NULL DEFAULT '{}'::jsonb"];
+  }
+  if (n.includes("memory")) {
+    return ["context_key VARCHAR(128) NOT NULL", "content TEXT NOT NULL"];
+  }
+  return ["name VARCHAR(255) NOT NULL", "payload JSONB NOT NULL DEFAULT '{}'::jsonb"];
+}
+
+function findSqlParentTable(sql: string): string | null {
+  const tables = [
+    ...sql.matchAll(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)["`]?\s*\(/gi),
+  ].map((m) => m[1]!.toLowerCase());
+  for (const preferred of ["tenants", "users", "organizations", "projects", "workspaces"]) {
+    if (tables.includes(preferred)) return preferred;
+  }
+  return tables[0] ?? null;
+}
+
+/** Añade columnas de negocio y FK opcional a tablas §3 huérfanas (determinista). */
+export function enrichOrphanSqlTablesInDraft(draft: string): string {
+  const sqlMatch = draft.match(/```sql\s*([\s\S]*?)```/i);
+  if (!sqlMatch?.[1]) return draft;
+  const orphanNames = listOrphanSqlTableNames(draft);
+  if (orphanNames.length === 0) return draft;
+
+  let sql = sqlMatch[1];
+  const parent = findSqlParentTable(sql);
+  for (const tableName of orphanNames) {
+    const createRe = new RegExp(
+      `(\\bcreate\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?["\`]?${tableName}["\`]?\\s*\\()([\\s\\S]*?)(\\)\\s*;)`,
+      "i",
+    );
+    sql = sql.replace(createRe, (_full, open: string, body: string, close: string) => {
+      const cols = suggestOrphanTableColumns(tableName);
+      const fk =
+        parent && parent !== tableName.toLowerCase()
+          ? `${parent.slice(0, -1)}_id UUID REFERENCES ${parent}(id)`
+          : null;
+      const additions = [...cols, ...(fk ? [fk] : [])];
+      const trimmedBody = body.trimEnd();
+      const sep = trimmedBody.endsWith(",") || trimmedBody.length === 0 ? "\n  " : ",\n  ";
+      return `${open}${trimmedBody}${sep}${additions.join(",\n  ")}${close}`;
+    });
+  }
+  return draft.replace(sqlMatch[0], `\`\`\`sql\n${sql.trimEnd()}\n\`\`\``);
+}
+
+/** Elimina placeholders `--- ---` en §1 y normaliza headings ruidosos. */
+export function stripContextPlaceholderDashes(draft: string): string {
+  const section1 = extractSection(
+    draft,
+    /^#+\s*(?:1\.\s*)?(?:contexto\s+y\s+alcance|contexto\b)/im,
+  );
+  if (!section1) return draft;
+  let cleaned = section1
+    .replace(/^#+\s*([^\n]*?)\s+---\s+---[^\n]*$/gm, "## 1. Contexto y Alcance")
+    .replace(/^[^\n#][^\n]*---\s+---\s+---[^\n]*$/gm, "")
+    .replace(/^[^\n#][^\n]*---\s+---[^\n]*$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd();
+  if (cleaned === section1) return draft;
+  const idx = draft.indexOf(section1);
+  if (idx === -1) return draft;
+  return draft.slice(0, idx) + cleaned + draft.slice(idx + section1.length);
+}
+
+/** Envuelve JSON suelto de manifest §7 en fence ```json o repara bloque inválido. */
+export function fixLooseInfraManifestJson(draft: string): string {
+  const headingRe = /^#+\s*(?:7\.\s*)?(?:Infraestructura|Integración)\b/im;
+  const headingMatch = draft.match(headingRe);
+  if (!headingMatch || headingMatch.index === undefined) return draft;
+
+  const sectionStart = headingMatch.index;
+  const bodyStart = sectionStart + headingMatch[0].length;
+  const rest = draft.slice(bodyStart);
+  const nextH2 = rest.search(/\n##\s+/);
+  const sectionEnd = nextH2 === -1 ? draft.length : bodyStart + nextH2;
+  const section7 = draft.slice(bodyStart, sectionEnd);
+
+  const fenced = section7.match(/```json\s*\n([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    try {
+      JSON.parse(fenced[1]);
+      return draft;
+    } catch {
+      const repaired = fenced[1]
+        .replace(/^>\s?/gm, "")
+        .replace(/```/g, "")
+        .trim();
+      try {
+        const pretty = JSON.stringify(JSON.parse(repaired) as unknown, null, 2);
+        const fixedSection = section7.replace(
+          fenced[0],
+          `\`\`\`json\n${pretty}\n\`\`\``,
+        );
+        return draft.slice(0, bodyStart) + fixedSection + draft.slice(sectionEnd);
+      } catch {
+        // fall through to loose-json extraction
+      }
+    }
+  }
+
+  const loose = section7.match(/\{\s*"stack"\s*:[\s\S]*\}/);
+  if (loose) {
+    try {
+      const pretty = JSON.stringify(JSON.parse(loose[0]) as unknown, null, 2);
+      const fixedSection = section7.replace(
+        loose[0],
+        `\`\`\`json\n${pretty}\n\`\`\``,
+      );
+      return draft.slice(0, bodyStart) + fixedSection + draft.slice(sectionEnd);
+    } catch {
+      return draft;
+    }
+  }
+
+  if (/manifest\s+de\s+infraestructura/i.test(section7) && /Argon2id|DLQ|CloudFront/i.test(section7)) {
+    const manifest = {
+      stack: {
+        security: { hashing_algorithm: /Argon2id/i.test(section7) ? "Argon2id" : undefined },
+        messaging: /DLQ|dead[- ]?letter/i.test(section7) ? { dlq: true } : undefined,
+        frontend: /CloudFront|S3/i.test(section7) ? { deploy: "cloudfront_s3" } : undefined,
+      },
+    };
+    const block = `\`\`\`json\n${JSON.stringify(manifest, null, 2)}\n\`\`\``;
+    if (!/"stack"\s*:/i.test(section7)) {
+      const fixedSection = `${section7.trimEnd()}\n\n${block}\n`;
+      return draft.slice(0, bodyStart) + fixedSection + draft.slice(sectionEnd);
+    }
+  }
+
+  return draft;
+}
+
+/**
+ * Pasada determinista de calidad MDD: repara lo posible sin LLM.
+ * Idempotente; devuelve lista de acciones aplicadas (para logs).
+ */
+export function applyMddQualityAutoRepairs(draft: string): { markdown: string; repairs: string[] } {
+  const repairs: string[] = [];
+  let out = draft ?? "";
+
+  const run = (label: string, fn: (s: string) => string) => {
+    const next = fn(out);
+    if (next !== out) {
+      repairs.push(label);
+      out = next;
+    }
+  };
+
+  for (let pass = 0; pass < 3; pass++) {
+    const beforeIssues = collectMddQualityIssues(out).length;
+    run("§1 placeholders", stripContextPlaceholderDashes);
+    run("§4/§7 JSON", fixLooseInfraManifestJson);
+    run("§3 tablas huérfanas", enrichOrphanSqlTablesInDraft);
+    run("Mermaid fences", fixBareMermaidFences);
+    const afterIssues = collectMddQualityIssues(out).length;
+    if (afterIssues >= beforeIssues) break;
+  }
+
+  return { markdown: out, repairs };
+}
+
 /** Envuelve bloques mermaid sueltos en fences. */
 export function fixBareMermaidFences(draft: string): string {
   let out = draft ?? "";
