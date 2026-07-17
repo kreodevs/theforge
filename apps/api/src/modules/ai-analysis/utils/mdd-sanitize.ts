@@ -1051,12 +1051,18 @@ export function alignInfraNodeVersionWithSection2(draft: string): string {
   return out;
 }
 
-/** Pasada final antes del delivery gate: fences rotos + coherencia determinista §2/§4/§6/§7 (idempotente). */
-export function applyPreDeliveryGateFixes(draft: string): string {
+/** Repara solo fences rotos (§3 SQL, manifest §7, mermaid) sin re-normalizar el MDD completo. */
+export function repairMddFencesOnly(draft: string): string {
   let out = draft ?? "";
   out = fixSection2UnclosedSqlAndGluedMermaid(out);
   out = ensureSection2SqlBlockClosed(out);
   out = closeUnclosedCodeFencesInDraft(out);
+  return out;
+}
+
+/** Pasada final antes del delivery gate: fences rotos + coherencia determinista §2/§4/§6/§7 (idempotente). */
+export function applyPreDeliveryGateFixes(draft: string): string {
+  let out = repairMddFencesOnly(draft);
   out = fixDeterministicMddCoherence(out);
   return out;
 }
