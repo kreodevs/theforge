@@ -44,6 +44,13 @@ import type { TheForgeService } from "../../theforge/theforge.service.js";
 import { getMddArchitectTheForgeTools } from "../tools/agent-theforge-tools.js";
 import { stripThinkingTags } from "../utils/mdd-security-parse.js";
 import type { MddFlowTraceOpts } from "../mdd/mdd-flow-trace.service.js";
+import {
+  emitArchitectLlmProgress,
+  invokeArchitectLlmBlocking,
+  invokeArchitectLlmStreaming,
+  type ArchitectLlmProgressContext,
+} from "../utils/architect-llm-invoke.util.js";
+import type { LlmLike } from "../llm/chat-model-generate.js";
 import { z } from "zod";
 
 /** Schema estructurado que algunos LLMs devuelven en lugar de mddDraft. */
@@ -464,6 +471,8 @@ export type MddSoftwareArchitectNodeOptions = {
   uiMcpFrontendLibraryLabel?: string | null;
   /** max_tokens del perfil document (32K) usado por createArchitectLLM. */
   maxOutputTokens?: number;
+  /** Modelo tier A resuelto (p. ej. google/gemini-2.5-pro-preview). */
+  modelSlug?: string | null;
   /** Trazas MDD correlacionadas (architect_llm_pass, section5 routing). */
   flowTrace?: MddFlowTraceOpts | null;
 };
@@ -731,10 +740,27 @@ export function createMddSoftwareArchitectNode(
       const prompt = `${SOFTWARE_ARCHITECT_MDD_PROMPT}${softwareArchitectComplexityAppendix(state.mddComplexity)}\n\n---\n${context}`;
       const messages = [new HumanMessage(prompt)];
       const passNumber = section5OnlyPass ? 2 : 1;
+      const passKind = section5OnlyPass
+        ? "section5_retry"
+        : isCorrectionPass
+          ? "architect_correction"
+          : "architect_sections_2_to_5";
       const maxOutputTokens = opts?.maxOutputTokens;
       const flowTrace = opts?.flowTrace ?? null;
       const correlationId = flowTrace?.correlationId ?? null;
       const traceSvc = flowTrace?.service ?? null;
+      const progressCtx: ArchitectLlmProgressContext = {
+        passNumber,
+        passKind,
+        promptChars: prompt.length,
+        maxOutputTokens: maxOutputTokens ?? null,
+        modelSlug: opts?.modelSlug ?? null,
+        toolsEnabled: toolsToUse.length > 0,
+        trace: traceSvc,
+        correlationId,
+        log: LOG,
+      };
+      emitArchitectLlmProgress(progressCtx, "prompt_built");
       const emitArchitectPassMetrics = (finalDraft: string, extra: Record<string, unknown> = {}): void => {
         const sectionLengths = architectSectionBodyLengths(finalDraft);
         const needsSection5Pass = mddNeedsSection5Pass(finalDraft);
@@ -779,8 +805,8 @@ export function createMddSoftwareArchitectNode(
       if (toolsToUse.length > 0) {
         let loopCount = 0;
         while (loopCount < maxToolLoops) {
-          const response = await llmWithTools.invoke(messages);
-          const aiMsg = response as AIMessage;
+          const toolProgressCtx: ArchitectLlmProgressContext = { ...progressCtx, toolLoop: loopCount };
+          const aiMsg = await invokeArchitectLlmBlocking(llmWithTools as LlmLike, messages, toolProgressCtx);
           text = typeof aiMsg.content === "string" ? aiMsg.content : "";
           const toolCalls = aiMsg.tool_calls ?? [];
           if (toolCalls.length === 0) break;
@@ -822,11 +848,11 @@ export function createMddSoftwareArchitectNode(
         }
         toolLoopCount = loopCount;
       } else {
-        const response = await llm.invoke(messages);
-        text = typeof response.content === "string" ? response.content : "";
+        text = await invokeArchitectLlmStreaming(llm as LlmLike, messages, progressCtx);
       }
       llmInvokeDurationMs = Date.now() - llmInvokeStart;
       text = stripThinkingTags(text);
+      emitArchitectLlmProgress(progressCtx, "parse_merge", { outputTextChars: text.length, llmInvokeDurationMs });
 
       if (!text.trim()) {
         LOG("LLM vacío, devolviendo borrador sin transformar");

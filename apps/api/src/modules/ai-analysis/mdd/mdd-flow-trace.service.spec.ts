@@ -111,6 +111,32 @@ describe("MddFlowTraceService", () => {
     assert.match(logs[2], /event=section5_pass_skipped/);
   });
 
+  it("emits architect_llm_progress with phase and modelSlug", () => {
+    const svc = new MddFlowTraceService();
+    const logs: string[] = [];
+    (svc as unknown as { logger: { log: (msg: string) => void } }).logger = {
+      log: (msg: string) => logs.push(msg),
+    };
+
+    svc.jobStart("corr-h");
+    svc.architectLlmProgress("corr-h", {
+      node: "software_architect",
+      phase: "llm_stream_chunk",
+      passNumber: 1,
+      passKind: "architect_sections_2_to_5",
+      elapsedMs: 24000,
+      charsReceived: 4200,
+      modelSlug: "google/gemini-2.5-pro-preview",
+      promptChars: 18000,
+      maxOutputTokens: 32768,
+    });
+
+    assert.match(logs[1], /event=architect_llm_progress/);
+    assert.match(logs[1], /"phase":"llm_stream_chunk"/);
+    assert.match(logs[1], /"modelSlug":"google\/gemini-2.5-pro-preview"/);
+    assert.match(logs[1], /"charsReceived":4200/);
+  });
+
   it("emits correction_sections_skipped_architect and job_duration_estimate", () => {
     const svc = new MddFlowTraceService();
     const logs: string[] = [];

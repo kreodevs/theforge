@@ -15,7 +15,7 @@ import { createMddGraphPopulatorNode } from "../nodes/mdd-graph-populator.node.j
 import { resolveCorrectionAgentsFromQualityGate, inferAgentsFromQualityGaps, resolveCorrectionRouting } from "../utils/mdd-manager-routing.util.js";
 import { mddNeedsSection5Pass } from "../utils/mdd-sanitize.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
-import { createArchitectLLM, createDbgaLLM, createGraphLLM } from "../llm/create-dbga-llm.js";
+import { createDbgaLLM, createDbgaLLMFromRuntime, createGraphLLM } from "../llm/create-dbga-llm.js";
 import { resolveLlmMaxTokensForPurpose } from "../../ai/config/llm-config.js";
 import type { AIFactory } from "../../ai/ai.factory.js";
 import { getMddArchitectTools } from "../tools/tool-registry.js";
@@ -212,10 +212,12 @@ export async function createMddGraph(
   const graphLlm = await createGraphLLM(aiFactory, userId);
   const clarifierLlm = await createGraphLLM(aiFactory, userId, { outputTokenPurpose: "langgraph" });
   const graphStructuralLlm = await createGraphLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
-  const architectLlm = await createArchitectLLM(aiFactory, userId, {
+  const architectRuntime = await aiFactory.resolveArchitectRuntime(userId);
+  const architectLlm = createDbgaLLMFromRuntime(architectRuntime, {
     temperature: STRUCTURAL_TEMPERATURE,
     outputTokenPurpose: "document",
   });
+  const architectModelSlug = architectRuntime.chatModel;
   const architectMaxTokens = resolveLlmMaxTokensForPurpose("document");
   const nodeCache = options?.nodeCache ?? null;
   const flowTrace = options?.flowTrace ?? null;
@@ -241,6 +243,7 @@ export async function createMddGraph(
       theforge: options?.theforge ?? null,
       uiMcpFrontendLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
       maxOutputTokens: architectMaxTokens,
+      modelSlug: architectModelSlug,
       flowTrace: flowTrace ?? null,
     }),
     trace,
@@ -477,10 +480,12 @@ export async function createMddGraphWithManager(
   const graphLlm = await createGraphLLM(aiFactory, userId);
   const clarifierLlm = await createGraphLLM(aiFactory, userId, { outputTokenPurpose: "langgraph" });
   const graphStructuralLlm = await createGraphLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
-  const architectLlm = await createArchitectLLM(aiFactory, userId, {
+  const architectRuntime = await aiFactory.resolveArchitectRuntime(userId);
+  const architectLlm = createDbgaLLMFromRuntime(architectRuntime, {
     temperature: STRUCTURAL_TEMPERATURE,
     outputTokenPurpose: "document",
   });
+  const architectModelSlug = architectRuntime.chatModel;
   const architectMaxTokens = resolveLlmMaxTokensForPurpose("document");
   const nodeCache = compileOptions?.nodeCache ?? null;
   const flowTrace = compileOptions?.flowTrace ?? null;
@@ -519,6 +524,7 @@ export async function createMddGraphWithManager(
       theforge: theForgeForArchitect,
       uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
       maxOutputTokens: architectMaxTokens,
+      modelSlug: architectModelSlug,
       flowTrace: flowTrace ?? null,
     }),
     trace,

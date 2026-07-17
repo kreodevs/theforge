@@ -66,7 +66,7 @@ describe("delivery gate aligned with quality gate", () => {
     assert.equal(qualityGateToDeliveryGate(qg).ok, true);
   });
 
-  it("warnings UAT no bloquean delivery gate (sin umbral score>=90)", () => {
+  it("UAT duplicado §1/§5 no bloquea delivery gate (dedupe sin warning)", () => {
     const uatBullets = `### Criterios UAT
 - Login exitoso con credenciales válidas.
 - Exportación rechazada sin aprobación dual.`;
@@ -81,6 +81,10 @@ describe("delivery gate aligned with quality gate", () => {
     const dg = validateMddForDelivery(draft);
     assert.equal(qg.ok, true);
     assert.equal(dg.ok, true);
-    assert.ok(dg.warnings.some((w) => w.includes("UAT")));
+    assert.equal(
+      dg.warnings.some((w) => w.includes("UAT")),
+      false,
+      "UAT idéntico en §1 y §5 se deduplica sin warning",
+    );
   });
 });

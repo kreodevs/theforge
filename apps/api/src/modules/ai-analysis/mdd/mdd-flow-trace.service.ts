@@ -113,6 +113,11 @@ export class MddFlowTraceService {
     this.emit(correlationId, "architect_llm_pass", payload);
   }
 
+  /** Progreso durante espera LLM del arquitecto (fases prompt/invoke/stream/parse). */
+  architectLlmProgress(correlationId: string, payload: Record<string, unknown> = {}): void {
+    this.emit(correlationId, "architect_llm_progress", payload);
+  }
+
   /** Resultado del parse JSON del Clarifier (reparación local vs retry LLM vs fallback). */
   clarifierJsonParse(correlationId: string, payload: Record<string, unknown> = {}): void {
     this.emit(correlationId, "clarifier_json_parse", payload);
