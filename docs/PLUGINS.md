@@ -1,7 +1,7 @@
 # Sistema de Plugins de The Forge
 
-**Versión:** 1.0.0  
-**Estado:** Estable — en producción desde v1.0.0-RC  
+**Versión:** 1.1.0
+**Estado:** Estable — motor de plugins genérico desde v1.1.0
 **Última actualización:** 2026-07-13
 
 ---

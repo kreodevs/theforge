@@ -24,6 +24,41 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 - **Tasks parser front-matter:** `rawMarkdown` limpiado con `stripFrontMatterFromRaw()` para evitar duplicación de campos parseados.
 
+## [v1.1.0] — 2026-07-16
+
+> **Motor de plugins genérico** — implementación completa del framework anunciado en `v1.0.0-RC`: hooks en todos los generadores LLM de entregables, artifacts encolables, Workshop con cola + polling, lifecycle y health de boot. Sin plugins cargados, el core se comporta igual que en v1.0.0.
+
+### Added
+
+- **Motor de plugins (API):**
+  - `PluginDocumentPipelineService` — orquesta `beforeDocumentRender`, `afterDocumentRender`, `afterDocumentPersist` y lifecycle.
+  - `PluginArtifactService` — `generateArtifact` → persistencia en `project.pluginData[pluginId]`.
+  - `PluginProjectContext` — `buildProjectHookContext`, `pickPrimaryStageForHooks`, validación `requires`.
+  - Cola BullMQ / in-memory: job `plugin-artifact` en `DeliverablesQueueService`.
+  - Endpoints: `POST /plugins/projects/:id/generate/:pluginId/:artifactId`, `GET /plugins/health` (plugins cargados, artifacts, conteo de hooks).
+  - Stub de desarrollo: `plugins-enabled/stub-plugin` (`dev.theforge.stub-plugin`, artifact `demo-report`).
+  - Template terceros: `plugins-enabled/template/README.md`.
+- **Hooks en generadores LLM:** `AiService.finishDocumentGeneration` integrado en Spec, Architecture, Tasks, Blueprint, API Contracts, Logic Flows, Infra, Use Cases, User Stories, Agent Governance, AEM y UX/UI Guide; `ProjectsService` pasa `hookContext` y dispara `afterDocumentPersist` tras persistir.
+- **Lifecycle:** `onProjectCreate` (ya existente) + **`onProjectUpdate`** al persistir cambios de proyecto.
+- **Workshop (web):**
+  - `PluginDocPanel` — generación encolada con `generateAndPollPluginArtifact`, guards `requires` y `generationStatus.busy`.
+  - `pluginData` en `useWorkshopStore` (sincronizado desde API).
+  - `contentType` en artifacts (`markdown` | `json` | `html`) y util `pluginArtifactContent`.
+  - Sidebar: `pluginId` correcto por artifact (sin hardcode EVD).
+- **Shared-types:** `ArtifactTypeDefinition` ampliado (`generatable`, `requires`, `contentType`); gate `plugin-artifact` en `buildGenerationGates`.
+- **CI:** spec `plugin-project-context.util.spec.ts`.
+
+### Changed
+
+- **`generateSpec`:** unificado en `finishDocumentGeneration` (sin rama duplicada).
+- **DashboardSidebar:** deja de fetchear `pluginData` por plugin; usa el store del Workshop.
+
+### Architecture
+
+- **Modo A (hooks):** generación LLM con `projectId` → hooks opcionales; sin plugins = `generateResponse` directo (zero overhead).
+- **Modo B (artifacts):** generación propia del plugin vía cola o sync; no entra en cascada automática de entregables core.
+- **Graceful degradation:** plugin roto al boot → skip + log; la API arranca sin plugins.
+
 ## [v1.0.0] — 2026-07-15
 
 > **General Availability** — release estable tras las RC `v1.0.0-rc.2` / `v1.0.0-rc.3`. Incluye el pipeline Tasks planner + auditor LLM, endurecimiento Excalidraw/Mermaid, cabeceras de trazabilidad en entregables y correcciones de deploy/Workshop acumuladas desde la RC.
