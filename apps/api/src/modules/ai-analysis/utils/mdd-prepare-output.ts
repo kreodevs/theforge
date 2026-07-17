@@ -173,7 +173,7 @@ export async function prepareMddForOutput(
   const structuredForSection3 =
     typeof input === "string" ? undefined : input.mddStructured;
   const withSection3 = composeSection3FromStructured(normalized, structuredForSection3);
-  const consistencyIssues = detectCrossConsistencyIssues(withSection3);
+  const consistencyIssues = detectCrossConsistencyIssues(applyPreDeliveryGateFixes(withSection3));
   const hasInvalidSqlProse = consistencyIssues.some((i) =>
     i.includes("prosa inválida"),
   );

@@ -8,6 +8,7 @@ import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { getInternalDirectivesContext } from "../utils/mdd-mesh-topology.js";
 import { domainInventoryPromptBlock } from "../utils/mdd-domain-prompt.util.js";
 import { truncateDraftForAuditorLlm } from "../utils/mdd-auditor-gaps.util.js";
+import { applyPreDeliveryGateFixes } from "../utils/mdd-sanitize.js";
 import {
   buildMddQualityGateResult,
   runDeterministicMddQualityGate,
@@ -45,6 +46,7 @@ export type MddQualityGateNodeOutput = Partial<MDDStateType> & {
 function finalizeQualityGateOutput(
   state: MDDStateType,
   qualityGate: MddQualityGateResult,
+  fixedDraft?: string,
 ): MddQualityGateNodeOutput {
   const gapFeedback =
     qualityGate.gaps.map((g) => `**${g.section}:** ${g.issue}\n→ ${g.fix}`).join("\n\n") ||
@@ -58,8 +60,11 @@ function finalizeQualityGateOutput(
           gapFeedback || undefined,
           { mddDraft: state.mddDraft },
         );
+  const draftPatch =
+    fixedDraft && fixedDraft !== (state.mddDraft ?? "").trim() ? { mddDraft: fixedDraft } : {};
   return {
     ...emitQualityGate(qualityGate),
+    ...draftPatch,
     ...(qualityGate.ok ? {} : { mddIteration: (state.mddIteration ?? 0) + 1 }),
     ...(qualityGate.ok
       ? {}
@@ -133,9 +138,10 @@ function normalizeLlmGaps(raw: z.infer<typeof qualityGateLlmOutputSchema>): Arra
 export function createMddQualityGateNode(llm?: BaseChatModel) {
   return async (state: MDDStateType): Promise<MddQualityGateNodeOutput> => {
     const draft = (state.mddDraft ?? "").trim();
+    const fixedDraft = applyPreDeliveryGateFixes(draft);
     LOG("entry mddDraftLen=%s llm=%s", draft.length, Boolean(llm));
 
-    const deterministic = runDeterministicMddQualityGate(draft, {
+    const deterministic = runDeterministicMddQualityGate(fixedDraft, {
       brdMarkdown: state.brdContent,
       dbgaMarkdown: state.dbgaContent,
     });
@@ -146,11 +152,11 @@ export function createMddQualityGateNode(llm?: BaseChatModel) {
         deterministic.blockers.length,
         deterministic.gaps.length,
       );
-      return finalizeQualityGateOutput(state, buildMddQualityGateResult(deterministic));
+      return finalizeQualityGateOutput(state, buildMddQualityGateResult(deterministic), fixedDraft);
     }
 
     try {
-      const draftForLlm = truncateDraftForAuditorLlm(draft);
+      const draftForLlm = truncateDraftForAuditorLlm(fixedDraft);
       let prompt =
         `${QUALITY_GATE_LLM_PROMPT}\n\n---\n**Borrador del MDD:**\n${draftForLlm || "(vacío)"}\n\n` +
         `${getInternalDirectivesContext(state, "quality_gate")}`;
@@ -166,7 +172,7 @@ export function createMddQualityGateNode(llm?: BaseChatModel) {
 
       if (!content.trim()) {
         LOG("sin respuesta LLM → solo determinístico");
-        return finalizeQualityGateOutput(state, buildMddQualityGateResult(deterministic));
+        return finalizeQualityGateOutput(state, buildMddQualityGateResult(deterministic), fixedDraft);
       }
 
       const parsed = parseJsonOrThrow(content, qualityGateLlmOutputSchema) as z.infer<
@@ -182,13 +188,13 @@ export function createMddQualityGateNode(llm?: BaseChatModel) {
         qualityGate.gaps.length,
         llmGaps.length,
       );
-      return finalizeQualityGateOutput(state, qualityGate);
+      return finalizeQualityGateOutput(state, qualityGate, fixedDraft);
     } catch (err) {
       LOG(
         "error LLM: %s — fallback determinístico",
         err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
       );
-      return finalizeQualityGateOutput(state, buildMddQualityGateResult(deterministic));
+      return finalizeQualityGateOutput(state, buildMddQualityGateResult(deterministic), fixedDraft);
     }
   };
 }

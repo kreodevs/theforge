@@ -4,6 +4,7 @@ import { domainDeliveryGateFindings } from "../../engine/cascade-accuracy.util.j
 import { preRenderMddSanity } from "./mdd-pre-render.js";
 import {
   applyPreDeliveryGateFixes,
+  areAutoFixableCoherenceBlockers,
   detectCrossConsistencyIssues,
   detectDuplicateUatSections,
   detectUnclosedSqlFences,
@@ -121,8 +122,14 @@ export function runDeterministicMddQualityGate(
   const gaps = auditorGaps.critical_gaps.map(auditorGapToQualityGateGap);
   blockers.push(...auditorGaps.syntax_errors);
 
+  let dedupedBlockers = dedupeBlockers(blockers);
+  const coherenceIssues = detectCrossConsistencyIssues(trimmed);
+  if (coherenceIssues.length === 0) {
+    dedupedBlockers = dedupedBlockers.filter((b) => !areAutoFixableCoherenceBlockers([b]));
+  }
+
   return {
-    blockers: dedupeBlockers(blockers),
+    blockers: dedupedBlockers,
     warnings: [...new Set(warnings)],
     gaps: dedupeGaps(gaps),
   };

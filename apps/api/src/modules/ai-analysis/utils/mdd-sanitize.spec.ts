@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
+import { validateMddForDelivery } from "./mdd-delivery-gate.util.js";
 import {
   alignDeliverableMarkdownWithMddSecurity,
   ensurePostMvpUiSurfaceBanner,
@@ -646,6 +647,104 @@ Passport.js (LDAP/AD) + JWT.
       !issues.some((i) => i.includes("hashing_algorithm") && i.includes("bcrypt")),
       issues.join("; "),
     );
+  });
+
+  it("applyPreDeliveryGateFixes parchea bcrypt LDAP sin fence JSON (job-13)", () => {
+    const draft = `## 2. Arquitectura y Stack
+
+Passport.js (LDAP/AD) + JWT.
+
+## 6. Seguridad
+
+- Autenticación corporativa vía LDAP/AD.
+
+## 7. Infraestructura
+
+{"stack":{"security":{"hashing_algorithm": "bcrypt"}}}
+`;
+    const fixed = applyPreDeliveryGateFixes(draft);
+    assert.ok(fixed.includes('"hashing_algorithm": "Argon2id"'));
+    assert.equal(detectCrossConsistencyIssues(fixed).length, 0);
+  });
+
+  it("applyPreDeliveryGateFixes parchea bcrypt en ## Integración (job-13)", () => {
+    const draft = `## 2. Arquitectura y Stack
+
+LDAP/AD corporativo.
+
+## 6. Seguridad
+
+Auth principal LDAP/AD.
+
+## Integración
+
+\`\`\`json
+{"security":{"hashing_algorithm":"bcrypt","hashing_rounds":12}}
+\`\`\`
+`;
+    const fixed = applyPreDeliveryGateFixes(draft);
+    assert.ok(fixed.includes('"hashing_algorithm": "Argon2id"'));
+    assert.equal(detectCrossConsistencyIssues(fixed).length, 0);
+  });
+
+  it("applyPreDeliveryGateFixes alinea JWT HS256 §6 vs RS256 §7/Integración (job-14)", () => {
+    const draft = `## 6. Seguridad
+
+- Tokens JWT firmados con HS256 (JWT_SECRET simétrico).
+
+## Integración
+
+\`\`\`json
+{"security":{"jwt_algorithm":"RS256","jwks_enabled":true}}
+\`\`\`
+`;
+    const fixed = applyPreDeliveryGateFixes(draft);
+    assert.match(fixed, /"jwt_algorithm"\s*:\s*"HS256"/);
+    assert.match(fixed, /"jwks_enabled"\s*:\s*false/);
+    const issues = detectCrossConsistencyIssues(fixed);
+    assert.ok(!issues.some((i) => i.includes("JWT incoherente")), issues.join("; "));
+  });
+
+  it("validateMddForDelivery job_end path aprueba tras fixes bcrypt/JWT deterministas", () => {
+    const draft = `## 1. Contexto
+
+Producto interno.
+
+## 2. Arquitectura y Stack
+
+Passport.js (LDAP/AD) + NestJS.
+
+## 3. Modelo de Datos
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+
+## 4. Contratos de API
+
+| POST | /api/v1/auth/login | Login | JWT |
+
+## 5. Lógica y Edge Cases
+
+Dado credenciales válidas Cuando login Entonces JWT.
+
+## 6. Seguridad
+
+- Auth LDAP/AD; JWT HS256 con JWT_SECRET.
+
+## 7. Infraestructura
+
+\`\`\`json
+{"stack":{"security":{"hashing_algorithm":"bcrypt","jwt_algorithm":"RS256","jwks_enabled":true}}}
+\`\`\`
+`;
+    const gate = validateMddForDelivery(draft);
+    assert.equal(gate.ok, true, gate.blockers.join("; "));
+    assert.ok(!gate.blockers.some((b) => /bcrypt|JWT incoherente/i.test(b)));
   });
 
   it("alignDeliverableMarkdownWithMddSecurity separa JWT_PRIVATE_KEY y JWT_PUBLIC_KEY en bloques .env", () => {

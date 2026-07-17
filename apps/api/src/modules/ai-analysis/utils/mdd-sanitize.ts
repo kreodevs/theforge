@@ -840,6 +840,7 @@ export function fixDeterministicMddCoherence(draft: string): string {
   out = upgradeNonSection4ApiPathsToV1(out);
   out = deduplicateUatSections(out);
   out = stripAlternateBackendFromSection1(out);
+  out = patchGlobalManifestSecurityFields(out);
 
   return out;
 }
@@ -898,6 +899,15 @@ function fixLdapAuthCoherenceInDraft(draft: string): string {
   return draft.slice(0, section.start) + body + draft.slice(section.end);
 }
 
+/** Secciones donde vive el manifest JSON (§7 canónico o legacy ## Integración). */
+const INFRA_MANIFEST_HEADINGS = ["## 7. Infraestructura", "## Integración"] as const;
+
+function combineInfraManifestBodies(draft: string): string {
+  return INFRA_MANIFEST_HEADINGS.map((heading) => extractMddSectionBody(draft, heading)?.body ?? "")
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 /** True si §6 documenta JWT asimétrico (RS256, par de claves, JWKS). */
 export function draftUsesRs256Jwt(draft: string): boolean {
   const sec6 = extractMddSectionBody(draft, "## 6. Seguridad");
@@ -939,8 +949,7 @@ function extractJwtAlgorithmFromSection6(draft: string): "RS256" | "HS256" | nul
 function extractJwtAlgorithmFromSection7(draft: string): "RS256" | "HS256" | null {
   const manifestAlg = draft.match(/"jwt_algorithm"\s*:\s*"(RS256|HS256)"/i)?.[1];
   if (manifestAlg) return manifestAlg.toUpperCase() as "RS256" | "HS256";
-  const infra = extractMddSectionBody(draft, "## 7. Infraestructura");
-  const body = infra?.body ?? draft;
+  const body = combineInfraManifestBodies(draft) || draft;
   if (/JWT_PRIVATE_KEY|JWKS|RS256/i.test(body) && !/\bJWT_SECRET\b/.test(body)) return "RS256";
   if (/\bJWT_SECRET\b/.test(body) && !/JWT_PRIVATE_KEY/.test(body)) return "HS256";
   if (/jwks_enabled"\s*:\s*true/i.test(body)) return "RS256";
@@ -961,14 +970,15 @@ export function fixJwtAlgorithmCoherence(draft: string): string {
   return alignJwtAlgorithmWithSection6(draft);
 }
 
-/** Alinea §7 al algoritmo JWT de §6 (SSOT). */
+/** Alinea §7/Integración al algoritmo JWT de §6 (SSOT). */
 function alignJwtAlgorithmWithSection6(draft: string): string {
   const s6Alg = extractJwtAlgorithmFromSection6(draft);
   if (!s6Alg || !detectJwtAlgorithmMismatch(draft)) return draft;
   let out = draft;
 
-  const infra = extractMddSectionBody(out, "## 7. Infraestructura");
-  if (infra) {
+  for (const heading of INFRA_MANIFEST_HEADINGS) {
+    const infra = extractMddSectionBody(out, heading);
+    if (!infra) continue;
     let body = infra.body;
     if (s6Alg === "RS256") {
       body = body
@@ -989,8 +999,21 @@ function alignJwtAlgorithmWithSection6(draft: string): string {
     } else {
       body = body
         .replace(/\(\s*RS256\s*\)/gi, "(HS256)")
+        .replace(/\bRS256\b/g, "HS256")
         .replace(/JWT_PRIVATE_KEY,\s*JWT_PUBLIC_KEY/gi, "JWT_SECRET")
+        .replace(/\bJWT_PRIVATE_KEY\b/g, "JWT_SECRET")
+        .replace(/\bJWT_PUBLIC_KEY\b[^,\n]*/gi, "")
+        .replace(/,\s*,/g, ",")
         .replace(/"jwt_algorithm"\s*:\s*"RS256"/gi, '"jwt_algorithm": "HS256"');
+      if (!/"jwt_algorithm"\s*:/i.test(body)) {
+        body = body.replace(
+          /("security"\s*:\s*\{)/i,
+          '$1\n      "jwt_algorithm": "HS256",',
+        );
+      }
+      if (/"jwks_enabled"\s*:\s*true/i.test(body)) {
+        body = body.replace(/"jwks_enabled"\s*:\s*true/gi, '"jwks_enabled": false');
+      }
     }
     if (body !== infra.body) {
       out = out.slice(0, infra.start) + body + out.slice(infra.end);
@@ -1407,12 +1430,8 @@ export function stripStrayParenAfterJsonCodeBlocks(draft: string): string {
   return draft.replace(/(```json[\s\S]*?```)\s*\)/g, "$1");
 }
 
-/** Alinea manifest §7 (security) con LDAP y estrategia MFA del borrador. */
-function fixSecurityManifestCoherence(draft: string): string {
-  const infra = extractMddSectionBody(draft, "## 7. Infraestructura");
-  if (!infra || !/```json/i.test(infra.body)) return draft;
-
-  let body = infra.body;
+/** Parchea manifest security en el cuerpo de §7/Integración (con o sin fence ```json). */
+function patchSecurityManifestInInfraBody(body: string, draft: string): string {
   const usesLdap = draftUsesLdapPrimaryAuth(draft);
   const sec6 = extractMddSectionBody(draft, "## 6. Seguridad");
   const mfaInSec6 = sec6 != null && /\bMFA\b|\bTOTP\b/i.test(sec6.body);
@@ -1421,40 +1440,42 @@ function fixSecurityManifestCoherence(draft: string): string {
   const sec6MentionsBcryptOnly =
     sec6 != null && /\bbcrypt\b/i.test(sec6.body) && !/Argon2(?:id)?/i.test(sec6.body);
 
+  let patched = body;
+
   if (usesLdap) {
-    if (!/"auth_provider"\s*:/i.test(body)) {
-      body = body.replace(
+    if (!/"auth_provider"\s*:/i.test(patched)) {
+      patched = patched.replace(
         /("security"\s*:\s*\{)/i,
         '$1\n      "auth_provider": "LDAP/AD",',
       );
     }
     // LDAP/AD es auth principal: manifest nunca usa bcrypt (solo Argon2id para bootstrap local).
-    if (/"hashing_algorithm"\s*:\s*"bcrypt"/i.test(body)) {
-      body = body.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
+    if (/"hashing_algorithm"\s*:\s*"bcrypt"/i.test(patched)) {
+      patched = patched.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
     }
-    if (!/"hashing_scope"\s*:/i.test(body) && /"hashing_algorithm"/i.test(body)) {
-      body = body.replace(
+    if (!/"hashing_scope"\s*:/i.test(patched) && /"hashing_algorithm"/i.test(patched)) {
+      patched = patched.replace(
         /"hashing_algorithm"\s*:\s*"[^"]*"/i,
         (m) => `${m},\n      "hashing_scope": "bootstrap_and_service_secrets_only"`,
       );
     }
   }
 
-  if (mfaInSec6 && manifestMfa && !/"mfa_strategy"\s*:/i.test(body)) {
-    body = body.replace(
+  if (mfaInSec6 && manifestMfa && !/"mfa_strategy"\s*:/i.test(patched)) {
+    patched = patched.replace(
       /("security"\s*:\s*\{)/i,
       `$1\n      "mfa_strategy": "${manifestMfa}",`,
     );
   }
 
   if (!usesLdap) {
-    if (sec6MentionsBcryptOnly && /"hashing_algorithm"\s*:\s*"Argon2id"/i.test(body)) {
-      body = body.replace(/"hashing_algorithm"\s*:\s*"Argon2id"/gi, '"hashing_algorithm": "bcrypt"');
+    if (sec6MentionsBcryptOnly && /"hashing_algorithm"\s*:\s*"Argon2id"/i.test(patched)) {
+      patched = patched.replace(/"hashing_algorithm"\s*:\s*"Argon2id"/gi, '"hashing_algorithm": "bcrypt"');
     }
-    if (sec6MentionsArgon2 && /"hashing_algorithm"\s*:\s*"bcrypt"/i.test(body)) {
-      body = body.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
-      if (!/"hashing_scope"\s*:/i.test(body)) {
-        body = body.replace(
+    if (sec6MentionsArgon2 && /"hashing_algorithm"\s*:\s*"bcrypt"/i.test(patched)) {
+      patched = patched.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
+      if (!/"hashing_scope"\s*:/i.test(patched)) {
+        patched = patched.replace(
           /"hashing_algorithm"\s*:\s*"[^"]*"/i,
           (m) => `${m},\n      "hashing_scope": "local_passwords_and_bootstrap"`,
         );
@@ -1462,8 +1483,61 @@ function fixSecurityManifestCoherence(draft: string): string {
     }
   }
 
-  if (body === infra.body) return draft;
-  return draft.slice(0, infra.start) + body + draft.slice(infra.end);
+  return patched;
+}
+
+/** Fallback global: parchea claves manifest fuera de fences o en ## Integración. */
+function patchGlobalManifestSecurityFields(draft: string): string {
+  let out = draft;
+  const usesLdap = draftUsesLdapPrimaryAuth(out);
+
+  if (usesLdap && /"hashing_algorithm"\s*:\s*"bcrypt"/i.test(out)) {
+    out = out.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
+  }
+
+  const sec6Argon2 = extractMddSectionBody(out, "## 6. Seguridad");
+  if (sec6Argon2 && /Argon2(?:id)?/i.test(sec6Argon2.body)) {
+    out = out.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
+  }
+
+  const s6Jwt = extractJwtAlgorithmFromSection6(out);
+  if (s6Jwt === "HS256" && detectJwtAlgorithmMismatch(out)) {
+    out = out
+      .replace(/"jwt_algorithm"\s*:\s*"RS256"/gi, '"jwt_algorithm": "HS256"')
+      .replace(/"jwks_enabled"\s*:\s*true/gi, '"jwks_enabled": false');
+  } else if (s6Jwt === "RS256" && detectJwtAlgorithmMismatch(out)) {
+    out = out
+      .replace(/"jwt_algorithm"\s*:\s*"HS256"/gi, '"jwt_algorithm": "RS256"')
+      .replace(/"jwks_enabled"\s*:\s*false/gi, '"jwks_enabled": true');
+  }
+
+  return out;
+}
+
+/** Blockers de coherencia §6/§7 resueltos por applyPreDeliveryGateFixes (no requieren LLM). */
+export function areAutoFixableCoherenceBlockers(blockers: string[]): boolean {
+  if (blockers.length === 0) return false;
+  return blockers.every(
+    (b) =>
+      /hashing_algorithm.*bcrypt.*(?:LDAP|Argon2id)/i.test(b) ||
+      /algoritmo JWT incoherente/i.test(b) ||
+      /versión Node distinta/i.test(b) ||
+      /node:\d+/i.test(b),
+  );
+}
+
+/** Alinea manifest §7/Integración (security) con LDAP y estrategia MFA del borrador. */
+function fixSecurityManifestCoherence(draft: string): string {
+  let out = draft;
+  for (const heading of INFRA_MANIFEST_HEADINGS) {
+    const infra = extractMddSectionBody(out, heading);
+    if (!infra) continue;
+    const body = patchSecurityManifestInInfraBody(infra.body, out);
+    if (body !== infra.body) {
+      out = out.slice(0, infra.start) + body + out.slice(infra.end);
+    }
+  }
+  return out;
 }
 
 /** True si el MDD exige multi-tenant (TechnicalMetadata, §2, §3 o §6). */
