@@ -5,8 +5,10 @@ import {
   detectCrossConsistencyIssues,
   detectDuplicateUatSections,
   detectUnclosedSqlFences,
+  mddHasDuplicateSectionHeadings,
   validateMddStructure,
 } from "./mdd-sanitize.js";
+import { collectMddQualityIssues } from "../../engine/mdd-quality-audit.util.js";
 import { domainDeliveryGateFindings } from "../../engine/cascade-accuracy.util.js";
 
 export type { MddDeliveryGateResult };
@@ -54,6 +56,18 @@ export function validateMddForDelivery(
 
   const consistencyIssues = detectCrossConsistencyIssues(trimmed);
   blockers.push(...consistencyIssues);
+
+  if (mddHasDuplicateSectionHeadings(trimmed)) {
+    blockers.push("MDD repite headings de §5, §6 o §7 (secciones duplicadas por acumulación del pipeline).");
+  }
+
+  for (const q of collectMddQualityIssues(trimmed)) {
+    if (/huérfana|JSON inválido|fences desbalanceados|Manifest|Mermaid sin fence|placeholder/i.test(q)) {
+      blockers.push(q);
+    } else {
+      warnings.push(q);
+    }
+  }
 
   const sanity = preRenderMddSanity(trimmed);
   if (!sanity.ok) {
@@ -165,6 +179,10 @@ export function mddDeliveryGateHasBlockers(draft: string): boolean {
   if (structure.missingSections.length > 0 || !structure.hasTechnicalMetadata) return true;
   if (detectUnclosedSqlFences(trimmed)) return true;
   if (detectCrossConsistencyIssues(trimmed).length > 0) return true;
+  if (mddHasDuplicateSectionHeadings(trimmed)) return true;
+  if (collectMddQualityIssues(trimmed).some((q) => /huérfana|JSON inválido|fences desbalanceados|Manifest|Mermaid sin fence|placeholder/i.test(q))) {
+    return true;
+  }
   if (!preRenderMddSanity(trimmed).ok) return true;
   return false;
 }

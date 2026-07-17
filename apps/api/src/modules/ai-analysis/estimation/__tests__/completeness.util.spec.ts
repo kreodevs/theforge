@@ -59,4 +59,10 @@ describe("computeDocumentCompleteness", () => {
     assert.equal(r.brdContent, 50);
     assert.equal(r.overall, 11);
   });
+
+  it("caps thin ProcessInventory use cases at 50 even when long", () => {
+    const thin = `# Casos de uso (thin — ProcessInventory)\n${"x".repeat(400)}`;
+    const r = computeDocumentCompleteness({ useCasesContent: thin });
+    assert.equal(r.useCasesContent, 50);
+  });
 });

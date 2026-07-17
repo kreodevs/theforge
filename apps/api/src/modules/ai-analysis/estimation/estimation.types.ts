@@ -114,6 +114,8 @@ export interface LiveMetricsResult {
   crossDocumentGaps?: CrossDocumentGap[];
   /** Gate bloqueante de entrega MDD (≥9/10); si ok=false, el semáforo no puede ser verde. */
   deliveryGate?: MddDeliveryGateResult;
+  /** Conformidad heurística MDD ↔ cascada (API, Infra, Blueprint, Flujos). */
+  conformanceSummary?: import("../../engine/mdd-quality-audit.util.js").ConformanceSummary;
 }
 
 /** Snapshot persistido del último pipeline MDD (audit trail + auditor LLM). */

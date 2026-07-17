@@ -1,5 +1,6 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
 import { formatDocumentMarkdown, repairGluedMarkdownHeadings } from "@theforge/shared-types";
+import { fixBareMermaidFences, collectMddQualityIssues } from "../../engine/mdd-quality-audit.util.js";
 import { sqlToErDiagramContent } from "./mdd-diagram-suggestions.js";
 
 /** Convierte objeto con subsections (array de {title, description: string[]}) a markdown legible. */
@@ -1028,9 +1029,17 @@ export function alignInfraNodeVersionWithSection2(draft: string): string {
   return out;
 }
 
-/** Pasada final antes del delivery gate: alinea Node §2↔§7 (idempotente). */
+/** Pasada final antes del delivery gate: alinea Node §2↔§7, Mermaid y duplicados (idempotente). */
 export function applyPreDeliveryGateFixes(draft: string): string {
-  return alignInfraNodeVersionWithSection2(draft ?? "");
+  let out = alignInfraNodeVersionWithSection2(draft ?? "");
+  out = fixBareMermaidFences(out);
+  if (mddHasDuplicateSectionHeadings(out)) {
+    out = stripTrailingDuplicateMddSections(out);
+    if (mddHasDuplicateSectionHeadings(out)) {
+      out = deduplicateAndReorderMddSections(out);
+    }
+  }
+  return out;
 }
 
 function extractInfraSectionBodyForNodeCheck(draft: string): string | null {
@@ -5048,6 +5057,14 @@ export function validateMddStructure(draft: string): ValidateMddStructureResult 
   const sectionOrderCorrect =
     foundOrder.length === 0 ||
     foundOrder.every((h, idx) => h === SECTION_HEADINGS_CANONICAL[idx]);
+
+  if (mddHasDuplicateSectionHeadings(trimmed)) {
+    issues.push("MDD repite headings de §5, §6 o §7; deduplicar antes de entregar.");
+  }
+
+  for (const q of collectMddQualityIssues(trimmed)) {
+    if (!issues.includes(q)) issues.push(q);
+  }
 
   return {
     section3HasPayloads,

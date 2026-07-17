@@ -1,9 +1,11 @@
 import type { AuditorGapsState } from "../state/mdd-state.schema.js";
 import {
   detectSection2Section7NodeVersionMismatchIssue,
+  mddHasDuplicateSectionHeadings,
   type ValidateMddStructureResult,
 } from "./mdd-sanitize.js";
 import { computeContractGaps, computeTraceabilityGaps } from "../../engine/mdd-internal-audit.util.js";
+import { collectMddQualityIssues } from "../../engine/mdd-quality-audit.util.js";
 
 export const MDD_AUDIT_PASS_THRESHOLD = 85;
 
@@ -44,6 +46,8 @@ export function computeDeterministicAuditorScore(
   if (contract.infraStackGap) score -= 10;
   if (contract.securityEdgeCaseGap) score -= 5;
   if (trace.inconsistentSections.length > 0) score -= 15;
+  if (mddHasDuplicateSectionHeadings(draft)) score -= 12;
+  if (collectMddQualityIssues(draft).length > 0) score -= 8;
 
   return Math.max(0, Math.min(100, score));
 }
@@ -133,8 +137,22 @@ export function synthesizeDeterministicAuditorGaps(
   }
 
   for (const issue of validation.issues) {
-    if (/mermaid|erDiagram|syntax|sintaxis|tabla markdown/i.test(issue)) {
+    if (/mermaid|erDiagram|syntax|sintaxis|tabla markdown|huérfana|JSON inválido|duplic/i.test(issue)) {
       syntax_errors.push(issue);
+    }
+  }
+
+  if (mddHasDuplicateSectionHeadings(draft)) {
+    critical_gaps.push({
+      sections: ["Sección 5", "Sección 6", "Sección 7"],
+      issue: "Headings de §5/§6/§7 duplicados en el borrador",
+      fix: "Ejecutar deduplicateAndReorderMddSections o regenerar §5–§7 desde cero.",
+    });
+  }
+
+  for (const q of collectMddQualityIssues(draft)) {
+    if (/Mermaid|JSON|Manifest|huérfana|placeholder/i.test(q)) {
+      syntax_errors.push(q);
     }
   }
 
