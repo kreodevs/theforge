@@ -140,9 +140,25 @@ export function detectPlaceholderNoise(draft: string): string | null {
 const AUTO_REPAIRABLE_QUALITY_RE =
   /fences desbalanceados|JSON inválido|Tabla huérfana|Manifest de Infraestructura|placeholder con guiones|Mermaid sin fence/i;
 
+const AUTO_REPAIRABLE_CROSS_CONSISTENCY_RE =
+  /§6\/§7|api_prefix|outbox-like|outbox pattern|prosa inválida|versión Node distinta|node:|hashing_algorithm|microservicios pero §2|second_approver|approve-first|segundo_aprobador|§6 menciona tabla|Manifest §7|Tabla solicitudes_exportacion|approved_by|aprobación dual|Bloque SQL contiene|```sql sin cerrar|TechnicalMetadata|repite headings de §5|Diagrama Mermaid inválido|ERR_MERMAID|ERR_TABLE_SYNTAX|tabla markdown/i;
+
 /** True si el issue puede intentar repararse sin intervención del usuario. */
 export function isAutoRepairableMddQualityIssue(issue: string): boolean {
   return AUTO_REPAIRABLE_QUALITY_RE.test(issue);
+}
+
+/** Coherencia cruzada §2–§7 reparable determinísticamente o por agente (no bloquear al usuario). */
+export function isAutoRepairableCrossConsistencyIssue(issue: string): boolean {
+  return AUTO_REPAIRABLE_CROSS_CONSISTENCY_RE.test(issue);
+}
+
+/** Warnings del delivery gate que no deben bloquear persistencia ni agobiar al usuario. */
+export function isAutoRepairableDeliveryGateWarning(issue: string): boolean {
+  return (
+    isAutoRepairableMddQualityIssue(issue) ||
+    isAutoRepairableCrossConsistencyIssue(issue)
+  );
 }
 
 /** Nombres de tablas §3 marcadas como huérfanas (misma heurística que detectOrphanSqlTables). */

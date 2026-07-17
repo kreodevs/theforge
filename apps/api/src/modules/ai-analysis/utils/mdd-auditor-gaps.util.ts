@@ -5,7 +5,7 @@ import {
   type ValidateMddStructureResult,
 } from "./mdd-sanitize.js";
 import { computeContractGaps, computeTraceabilityGaps } from "../../engine/mdd-internal-audit.util.js";
-import { collectMddQualityIssues, isAutoRepairableMddQualityIssue } from "../../engine/mdd-quality-audit.util.js";
+import { collectMddQualityIssues, isAutoRepairableDeliveryGateWarning } from "../../engine/mdd-quality-audit.util.js";
 import { applyPreDeliveryGateFixes } from "./mdd-sanitize.js";
 
 export const MDD_AUDIT_PASS_THRESHOLD = 85;
@@ -139,7 +139,10 @@ export function synthesizeDeterministicAuditorGaps(
   }
 
   for (const issue of validation.issues) {
-    if (/mermaid|erDiagram|syntax|sintaxis|tabla markdown|huérfana|JSON inválido|duplic/i.test(issue)) {
+    if (
+      /mermaid|erDiagram|syntax|sintaxis|tabla markdown|huérfana|JSON inválido|duplic/i.test(issue) &&
+      !isAutoRepairableDeliveryGateWarning(issue)
+    ) {
       syntax_errors.push(issue);
     }
   }
@@ -153,7 +156,7 @@ export function synthesizeDeterministicAuditorGaps(
   }
 
   for (const q of collectMddQualityIssues(repairedDraft)) {
-    if (/Mermaid|JSON|Manifest|huérfana|placeholder/i.test(q) && !isAutoRepairableMddQualityIssue(q)) {
+    if (/Mermaid|JSON|Manifest|huérfana|placeholder/i.test(q) && !isAutoRepairableDeliveryGateWarning(q)) {
       syntax_errors.push(q);
     }
   }

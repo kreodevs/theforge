@@ -5,7 +5,7 @@ import type { LivePrecisionCalculator } from "../estimation/estimation.types.js"
 import { AUDITOR_MDD_PROMPT } from "../prompts/load-prompts.js";
 import { auditorGapsSchema, mddAuditorDecisionSchema, type MDDStateType } from "../state/index.js";
 import { parseJsonOrThrow } from "../utils/parse-json.js";
-import { validateMddStructure } from "../utils/mdd-sanitize.js";
+import { applyPreDeliveryGateFixes, validateMddStructure } from "../utils/mdd-sanitize.js";
 import { getInternalDirectivesContext } from "../utils/mdd-mesh-topology.js";
 import { auditorConstitutionRigorAppendix } from "../utils/mdd-complexity-rigor.js";
 import { domainInventoryPromptBlock } from "../utils/mdd-domain-prompt.util.js";
@@ -157,7 +157,7 @@ export function createMddAuditorNode(
     const llmWithTools = llm.bindTools && toolsToUse.length > 0 ? llm.bindTools(toolsToUse) : llm;
 
     LOG("entry mddDraftLen=%s tools=%s (allowed=%s)", (state.mddDraft ?? "").length, toolsToUse.length, allowed?.length ?? "all");
-    const draft = (state.mddDraft ?? "").trim();
+    const draft = applyPreDeliveryGateFixes((state.mddDraft ?? "").trim());
     const validation = validateMddStructure(draft);
 
     if (shouldSkipLlmAuditor(draft, validation)) {

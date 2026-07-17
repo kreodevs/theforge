@@ -4,7 +4,7 @@ import { validateMddForDelivery } from "../utils/mdd-delivery-gate.util.js";
 import {
   formatDeliveryGateBlockersFeedback,
   formatDeliveryGateQualityWarningsFeedback,
-  hasUnresolvedAutoRepairableQuality,
+  hasUnresolvedAutoRepairableGateWarnings,
   MAX_MDD_DELIVERY_GATE_ATTEMPTS,
   resolveDeliveryGateFixTarget,
   shouldContinueDeliveryGateLoop,
@@ -35,7 +35,7 @@ export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: strin
       gateRef.current ??
       validateMddForDelivery(prepared, { brdMarkdown, dbgaMarkdown });
     const attempt = state.deliveryGateAttempt ?? 0;
-    const qualityPending = hasUnresolvedAutoRepairableQuality(gate.warnings);
+    const qualityPending = hasUnresolvedAutoRepairableGateWarnings(gate.warnings);
     const loop =
       shouldContinueDeliveryGateLoop(gate, attempt) ||
       (qualityPending && attempt < MAX_MDD_DELIVERY_GATE_ATTEMPTS);
@@ -54,7 +54,7 @@ export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: strin
     if (loop) {
       const fixTarget = resolveDeliveryGateFixTarget([
         ...gate.blockers,
-        ...gate.warnings.filter((w) => hasUnresolvedAutoRepairableQuality([w])),
+        ...gate.warnings.filter((w) => hasUnresolvedAutoRepairableGateWarnings([w])),
       ]);
       const agentFeedback = [
         formatDeliveryGateBlockersFeedback(gate.blockers),

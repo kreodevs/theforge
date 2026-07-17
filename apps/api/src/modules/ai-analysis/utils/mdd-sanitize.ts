@@ -1,9 +1,7 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
 import { formatDocumentMarkdown, repairGluedMarkdownHeadings } from "@theforge/shared-types";
-import {
-  applyMddQualityAutoRepairs,
-  collectMddQualityIssues,
-} from "../../engine/mdd-quality-audit.util.js";
+import { applyMddQualityAutoRepairs, collectMddQualityIssues } from "../../engine/mdd-quality-audit.util.js";
+import { sanitizeMermaidInDraft } from "../../engine/mdd-pre-render.js";
 import { sqlToErDiagramContent } from "./mdd-diagram-suggestions.js";
 
 /** Convierte objeto con subsections (array de {title, description: string[]}) a markdown legible. */
@@ -1032,6 +1030,33 @@ export function alignInfraNodeVersionWithSection2(draft: string): string {
   return out;
 }
 
+/** Inyecta bloque TechnicalMetadata en §3 si falta (etiquetas inferidas del corpus). */
+export function ensureTechnicalMetadataBlockInDraft(draft: string): string {
+  if (
+    /TechnicalMetadata|\[(?:high_security|external_api|multi_tenant|cicd_pipeline|real_time)\]/i.test(
+      draft,
+    )
+  ) {
+    return draft;
+  }
+  const section = extractMddSectionBody(draft, "## 3. Modelo de Datos");
+  if (!section?.body?.trim()) return draft;
+
+  const tags: string[] = [];
+  if (/Argon2|JWT|MFA|TOTP|RS256|oauth|seguridad/i.test(draft)) tags.push("[high_security]");
+  if (/webhook|api externa|terceros|integraci[oó]n externa/i.test(draft)) tags.push("[external_api]");
+  if (/tenant|multi.?tenant/i.test(draft)) tags.push("[multi_tenant]");
+  if (/docker|ci\/cd|pipeline|deploy|github actions/i.test(draft)) tags.push("[cicd_pipeline]");
+  if (/websocket|real.?time|streaming/i.test(draft)) tags.push("[real_time]");
+  if (tags.length === 0) tags.push("[high_security]");
+
+  const metaBlock = `\n\n\`\`\`TechnicalMetadata\n${tags.join(" ")}\n\`\`\``;
+  const headingLen = "## 3. Modelo de Datos".length;
+  const bodyStart = section.start + headingLen;
+  const newBody = section.body.trimEnd() + metaBlock + "\n";
+  return draft.slice(0, bodyStart) + newBody + draft.slice(section.end);
+}
+
 /** Pasada final antes del delivery gate: alinea Node §2↔§7, calidad MDD, JSON §4 y duplicados (idempotente). */
 export function applyPreDeliveryGateFixes(draft: string): string {
   let out = alignInfraNodeVersionWithSection2(draft ?? "");
@@ -1039,6 +1064,9 @@ export function applyPreDeliveryGateFixes(draft: string): string {
   out = repairDisplacedJsonBracesInContratosSection(out);
   out = closeUnclosedCodeFencesInDraft(out);
   out = applyMddQualityAutoRepairs(out).markdown;
+  out = applyDeterministicCrossConsistencyFixes(out);
+  out = sanitizeMermaidInDraft(out);
+  out = ensureTechnicalMetadataBlockInDraft(out);
   if (mddHasDuplicateSectionHeadings(out)) {
     out = stripTrailingDuplicateMddSections(out);
     if (mddHasDuplicateSectionHeadings(out)) {

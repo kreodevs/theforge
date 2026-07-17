@@ -8,7 +8,7 @@ import {
   mddHasDuplicateSectionHeadings,
   validateMddStructure,
 } from "./mdd-sanitize.js";
-import { collectMddQualityIssues, isAutoRepairableMddQualityIssue } from "../../engine/mdd-quality-audit.util.js";
+import { collectMddQualityIssues, isAutoRepairableDeliveryGateWarning } from "../../engine/mdd-quality-audit.util.js";
 import { domainDeliveryGateFindings } from "../../engine/cascade-accuracy.util.js";
 
 export type { MddDeliveryGateResult };
@@ -46,23 +46,40 @@ export function validateMddForDelivery(
     blockers.push(`Secciones obligatorias faltantes: ${structure.missingSections.join(", ")}`);
   }
   if (!structure.hasTechnicalMetadata) {
-    blockers.push(
-      "Falta bloque TechnicalMetadata con etiquetas (ej. [high_security]) en §3 Modelo de Datos.",
-    );
+    const metaIssue =
+      "Falta bloque TechnicalMetadata con etiquetas (ej. [high_security]) en §3 Modelo de Datos.";
+    if (isAutoRepairableDeliveryGateWarning(metaIssue)) {
+      warnings.push(metaIssue);
+    } else {
+      blockers.push(metaIssue);
+    }
   }
 
   const unclosedSql = detectUnclosedSqlFences(trimmed);
-  if (unclosedSql) blockers.push(unclosedSql);
+  if (unclosedSql) {
+    if (isAutoRepairableDeliveryGateWarning(unclosedSql)) {
+      warnings.push(unclosedSql);
+    } else {
+      blockers.push(unclosedSql);
+    }
+  }
 
-  const consistencyIssues = detectCrossConsistencyIssues(trimmed);
-  blockers.push(...consistencyIssues);
+  for (const issue of detectCrossConsistencyIssues(trimmed)) {
+    if (isAutoRepairableDeliveryGateWarning(issue)) {
+      warnings.push(issue);
+    } else {
+      blockers.push(issue);
+    }
+  }
 
   if (mddHasDuplicateSectionHeadings(trimmed)) {
-    blockers.push("MDD repite headings de §5, §6 o §7 (secciones duplicadas por acumulación del pipeline).");
+    const dupIssue =
+      "MDD repite headings de §5, §6 o §7 (secciones duplicadas por acumulación del pipeline).";
+    warnings.push(dupIssue);
   }
 
   for (const q of collectMddQualityIssues(trimmed)) {
-    if (isAutoRepairableMddQualityIssue(q)) {
+    if (isAutoRepairableDeliveryGateWarning(q)) {
       warnings.push(q);
     } else if (/huérfana|JSON inválido|fences desbalanceados|Manifest|Mermaid sin fence|placeholder/i.test(q)) {
       blockers.push(q);
@@ -73,7 +90,12 @@ export function validateMddForDelivery(
 
   const sanity = preRenderMddSanity(trimmed);
   if (!sanity.ok) {
-    blockers.push(sanity.message ?? sanity.code ?? "Error de validación pre-render del MDD.");
+    const sanityMsg = sanity.message ?? sanity.code ?? "Error de validación pre-render del MDD.";
+    if (isAutoRepairableDeliveryGateWarning(sanityMsg)) {
+      warnings.push(sanityMsg);
+    } else {
+      blockers.push(sanityMsg);
+    }
   }
 
   if (detectDuplicateUatSections(trimmed)) {
@@ -172,19 +194,8 @@ export function mergeDeliveryGateIntoShortTermContext(
   };
 }
 
-/** Lightweight: true si validateMddForDelivery reportaría blockers (sin recalcular score). */
+/** Lightweight: true si validateMddForDelivery reportaría blockers duros (sin recalcular score). */
 export function mddDeliveryGateHasBlockers(draft: string): boolean {
-  const trimmed = (draft ?? "").trim();
-  if (!trimmed) return true;
-
-  const structure = validateMddStructure(trimmed);
-  if (structure.missingSections.length > 0 || !structure.hasTechnicalMetadata) return true;
-  if (detectUnclosedSqlFences(trimmed)) return true;
-  if (detectCrossConsistencyIssues(trimmed).length > 0) return true;
-  if (mddHasDuplicateSectionHeadings(trimmed)) return true;
-  if (collectMddQualityIssues(trimmed).some((q) => !isAutoRepairableMddQualityIssue(q) && /huérfana|JSON inválido|fences desbalanceados|Manifest|Mermaid sin fence|placeholder/i.test(q))) {
-    return true;
-  }
-  if (!preRenderMddSanity(trimmed).ok) return true;
-  return false;
+  if (!(draft ?? "").trim()) return true;
+  return validateMddForDelivery(draft).blockers.length > 0;
 }

@@ -1,5 +1,5 @@
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
-import { isAutoRepairableMddQualityIssue } from "../../engine/mdd-quality-audit.util.js";
+import { isAutoRepairableDeliveryGateWarning } from "../../engine/mdd-quality-audit.util.js";
 import { getSection6Or7Range } from "./mdd-sanitize.js";
 
 /** Máximo de reintentos automáticos del gate de entrega (Fase 4). */
@@ -33,9 +33,14 @@ export function resolveDeliveryGateFixTarget(blockers: string[]): DeliveryGateFi
   return INTEGRATION_BLOCKER_RE.test(text) ? "integration" : "software_architect";
 }
 
-/** Issues de calidad MDD que siguen tras auto-reparación — disparan loop de agentes, no bloquean al usuario. */
+/** Issues del gate que siguen tras auto-reparación — disparan loop de agentes, no bloquean al usuario. */
+export function hasUnresolvedAutoRepairableGateWarnings(warnings: string[]): boolean {
+  return warnings.some((w) => isAutoRepairableDeliveryGateWarning(w));
+}
+
+/** @deprecated Use hasUnresolvedAutoRepairableGateWarnings */
 export function hasUnresolvedAutoRepairableQuality(warnings: string[]): boolean {
-  return warnings.some((w) => isAutoRepairableMddQualityIssue(w));
+  return hasUnresolvedAutoRepairableGateWarnings(warnings);
 }
 
 /** Feedback en español para agentes en el auto-loop del gate (no se muestra crudo al usuario). */
@@ -47,12 +52,12 @@ export function formatDeliveryGateBlockersFeedback(blockers: string[]): string {
   return `${header}\n${items.map((b) => `- ${b}`).join("\n")}`;
 }
 
-/** Feedback para agentes a partir de warnings de calidad auto-reparable. */
+/** Feedback para agentes a partir de warnings auto-reparables del gate. */
 export function formatDeliveryGateQualityWarningsFeedback(warnings: string[]): string {
-  const items = warnings.filter((w) => isAutoRepairableMddQualityIssue(w));
+  const items = warnings.filter((w) => isAutoRepairableDeliveryGateWarning(w));
   if (items.length === 0) return "";
   const header =
-    "Calidad MDD — reparar sin intervención del usuario (estructura §1/§3/§4/§7):";
+    "Gate MDD — reparar automáticamente (coherencia §1–§7, SQL, Mermaid, metadata):";
   return `${header}\n${items.map((w) => `- ${w}`).join("\n")}`;
 }
 

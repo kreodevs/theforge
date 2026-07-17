@@ -11,6 +11,8 @@ import {
   enrichOrphanSqlTablesInDraft,
   fixBareMermaidFences,
   findApiSemanticAliasWarnings,
+  isAutoRepairableCrossConsistencyIssue,
+  isAutoRepairableDeliveryGateWarning,
   listOrphanSqlTableNames,
   stripContextPlaceholderDashes,
 } from "./mdd-quality-audit.util.js";
@@ -120,5 +122,18 @@ describe("mdd-quality-audit.util", () => {
     const after = collectMddQualityIssues(markdown).length;
     assert.ok(repairs.length > 0);
     assert.ok(after < before);
+  });
+
+  it("isAutoRepairableCrossConsistencyIssue cubre JWT y api_prefix", () => {
+    assert.ok(
+      isAutoRepairableCrossConsistencyIssue(
+        "§6/§7: algoritmo JWT incoherente (§6=RS256, §7=HS256); §6 es SSOT.",
+      ),
+    );
+    assert.ok(
+      isAutoRepairableDeliveryGateWarning(
+        'Manifest api_prefix "/api" no coincide con rutas dominantes (/api/v1).',
+      ),
+    );
   });
 });

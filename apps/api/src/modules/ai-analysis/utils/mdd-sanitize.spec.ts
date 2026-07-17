@@ -24,6 +24,7 @@ import {
   mddHasDuplicateSectionHeadings,
   stripTrailingDuplicateMddSections,
   applyPreDeliveryGateFixes,
+  ensureTechnicalMetadataBlockInDraft,
   detectSection2Section7NodeVersionMismatchIssue,
   fixDeterministicMddCoherence,
   finalizeMddDeliverable,
@@ -611,6 +612,18 @@ TLS entre microservicios y PostgreSQL.
     const fixed = applyPreDeliveryGateFixes(draft);
     assert.match(fixed, /node:20-alpine/);
     assert.equal(detectSection2Section7NodeVersionMismatchIssue(fixed), null);
+  });
+
+  it("ensureTechnicalMetadataBlockInDraft inyecta etiquetas en §3", () => {
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const out = ensureTechnicalMetadataBlockInDraft(draft);
+    assert.match(out, /```TechnicalMetadata/);
+    assert.match(out, /\[high_security\]/);
   });
 
   it("alignDeliverableMarkdownWithMddSecurity separa JWT_PRIVATE_KEY y JWT_PUBLIC_KEY en bloques .env", () => {

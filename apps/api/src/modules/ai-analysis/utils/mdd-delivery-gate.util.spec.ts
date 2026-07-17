@@ -6,6 +6,7 @@ import {
   applyDeliveryGateToSemaphoreStatus,
   mddStreamDeliveryGateFields,
 } from "./mdd-delivery-gate.util.js";
+import { applyPreDeliveryGateFixes } from "./mdd-sanitize.js";
 
 const VALID_MDD = `# Master Design Document
 
@@ -161,7 +162,7 @@ K8s.
     );
   });
 
-  it("bloquea outbox duplicado eventos+outbox (Peludo)", () => {
+  it("auto-repara o advierte outbox duplicado sin bloquear (Peludo)", () => {
     const draft = `## 3. Modelo de Datos
 
 \`\`\`sql
@@ -198,11 +199,14 @@ JWT.
 Lee la tabla eventos pendientes de publicar.
 `;
     const result = validateMddForDelivery(draft);
-    assert.equal(result.ok, false);
-    assert.ok(result.blockers.some((b) => b.includes("outbox-like duplicadas")));
+    assert.equal(
+      result.blockers.filter((b) => b.includes("outbox-like")).length,
+      0,
+      result.blockers.join("; "),
+    );
   });
 
-  it("bloquea tablas §6 sin CREATE TABLE en §3 (security_events, refresh_tokens)", () => {
+  it("advierte tablas §6 sin CREATE TABLE en §3 (security_events, refresh_tokens)", () => {
     const draft = `## 3. Modelo de Datos
 
 \`\`\`sql
@@ -231,12 +235,21 @@ CREATE TABLE users (id UUID PRIMARY KEY);
 Docker.
 `;
     const result = validateMddForDelivery(draft);
-    assert.equal(result.ok, false);
-    assert.ok(result.blockers.some((b) => b.includes("security_events")));
-    assert.ok(result.blockers.some((b) => b.includes("refresh_tokens")));
+    assert.ok(
+      result.warnings.some((b) => b.includes("security_events")),
+      result.warnings.join("; "),
+    );
+    assert.ok(
+      result.warnings.some((b) => b.includes("refresh_tokens")),
+      result.warnings.join("; "),
+    );
+    assert.equal(
+      result.blockers.filter((b) => /security_events|refresh_tokens/.test(b)).length,
+      0,
+    );
   });
 
-  it("bloquea bloque ```sql sin cerrar", () => {
+  it("auto-repara bloque ```sql sin cerrar o advierte sin bloquear", () => {
     const draft = `${VALID_MDD.split("## 3. Modelo de Datos")[0]}## 3. Modelo de Datos
 
 \`\`\`sql
@@ -249,14 +262,14 @@ CREATE TABLE users (id UUID PRIMARY KEY);
 \`\`\`
 ${VALID_MDD.split("## 4. Contratos de API")[1]}`;
     const result = validateMddForDelivery(draft);
-    assert.equal(result.ok, false);
-    assert.ok(
-      result.blockers.some((b) => b.includes("```sql sin cerrar")),
+    assert.equal(
+      result.blockers.filter((b) => b.includes("```sql sin cerrar")).length,
+      0,
       result.blockers.join("; "),
     );
   });
 
-  it("advierte UAT duplicado §1/§5 sin bloquear si el resto es válido", () => {
+  it("deduplica criterios UAT duplicados §1/§5 sin bloquear", () => {
     const uatBullets = `### Criterios UAT
 - Login exitoso con credenciales válidas.
 - Exportación rechazada sin aprobación dual.
@@ -268,8 +281,10 @@ ${VALID_MDD.split("## 4. Contratos de API")[1]}`;
       "## 5. Lógica y Edge Cases\n\nDado un usuario autenticado cuando exporta entonces requiere aprobación dual.",
       `## 5. Lógica y Edge Cases\n\n${uatBullets}\n\nDado un usuario autenticado cuando exporta entonces requiere aprobación dual.`,
     );
+    const fixed = applyPreDeliveryGateFixes(draft);
+    assert.match(fixed, /Ver\s+§1/i);
     const result = validateMddForDelivery(draft);
-    assert.ok(result.warnings.some((w) => w.includes("UAT")), result.warnings.join("; "));
+    assert.equal(result.blockers.length, 0, result.blockers.join("; "));
   });
 
   it("mddDeliveryGateHasBlockers refleja blockers del gate", () => {
