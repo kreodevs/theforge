@@ -135,6 +135,8 @@ export const mddStateSchema = z.object({
   architectCriticAttempts: z.number().int().min(0).optional(),
   /** Segundo paso del Arquitecto enfocado solo en §5. */
   architectSection5PassPending: z.boolean().optional(),
+  /** Corrección QG omitió software_architect (gaps solo §6/§7). */
+  correctionArchitectSkipped: z.boolean().optional(),
   /** ID del proyecto activo (para memoria semántica). */
   projectId: z.string().optional(),
   /** Etapa SDD activa (FalkorDB / estimación); resuelto por AgentSupervisor. */
@@ -210,6 +212,7 @@ export const defaultMDDState: MDDState = {
   architectCriticFeedback: undefined,
   architectCriticAttempts: undefined,
   architectSection5PassPending: undefined,
+  correctionArchitectSkipped: undefined,
   projectId: undefined,
   activeStageId: undefined,
   isLegacyProject: undefined,

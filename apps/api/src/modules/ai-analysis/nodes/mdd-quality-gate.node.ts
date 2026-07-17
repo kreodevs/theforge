@@ -56,6 +56,7 @@ function finalizeQualityGateOutput(
           qualityGate,
           (fb) => inferAgentsFromQualityGaps([{ section: "General", issue: fb, fix: fb }]),
           gapFeedback || undefined,
+          { mddDraft: state.mddDraft },
         );
   return {
     ...emitQualityGate(qualityGate),

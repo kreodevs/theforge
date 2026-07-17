@@ -10,6 +10,7 @@ import {
   runDeterministicMddQualityGate,
   shouldSkipLlmQualityGate,
 } from "./mdd-quality-gate.util.js";
+import { detectDuplicateUatSections } from "./mdd-sanitize.js";
 
 const VALID_MDD = `# Master Design Document
 
@@ -259,7 +260,7 @@ ${VALID_MDD.split("## 4. Contratos de API")[1]}`;
     );
   });
 
-  it("advierte UAT duplicado §1/§5 sin bloquear si el resto es válido", () => {
+  it("deduplica UAT §1/§5 en pre-delivery sin bloquear si el resto es válido", () => {
     const uatBullets = `### Criterios UAT
 - Login exitoso con credenciales válidas.
 - Exportación rechazada sin aprobación dual.
@@ -271,9 +272,10 @@ ${VALID_MDD.split("## 4. Contratos de API")[1]}`;
       "## 5. Lógica y Edge Cases\n\nDado un usuario autenticado cuando exporta entonces requiere aprobación dual.",
       `## 5. Lógica y Edge Cases\n\n${uatBullets}\n\nDado un usuario autenticado cuando exporta entonces requiere aprobación dual.`,
     );
+    assert.ok(detectDuplicateUatSections(draft));
     const result = evaluateMddQualityGate(draft);
-    assert.ok(result.warnings.some((w) => w.includes("UAT")), result.warnings.join("; "));
-    assert.equal(result.ok, true);
+    assert.equal(result.ok, true, result.blockers.join("; "));
+    assert.ok(!result.warnings.some((w) => w.includes("UAT")), result.warnings.join("; "));
   });
 
   it("mddQualityGateHasBlockers refleja blockers del gate", () => {
@@ -281,7 +283,7 @@ ${VALID_MDD.split("## 4. Contratos de API")[1]}`;
     assert.equal(mddQualityGateHasBlockers(""), true);
   });
 
-  it("ok depende solo de blockers aunque haya warnings (UAT duplicado)", () => {
+  it("ok depende solo de blockers tras deduplicar UAT §1/§5", () => {
     const uatBullets = `### Criterios UAT
 - Login exitoso con credenciales válidas.
 - Exportación rechazada sin aprobación dual.
@@ -293,9 +295,10 @@ ${VALID_MDD.split("## 4. Contratos de API")[1]}`;
       "## 5. Lógica y Edge Cases\n\nDado un usuario autenticado cuando exporta entonces requiere aprobación dual.",
       `## 5. Lógica y Edge Cases\n\n${uatBullets}\n\nDado un usuario autenticado cuando exporta entonces requiere aprobación dual.`,
     );
+    assert.ok(detectDuplicateUatSections(draft));
     const result = evaluateMddQualityGate(draft);
-    assert.ok(result.warnings.some((w) => w.includes("UAT")), result.warnings.join("; "));
     assert.equal(result.ok, true, result.blockers.join("; "));
+    assert.ok(!result.warnings.some((w) => w.includes("UAT")), result.warnings.join("; "));
   });
 });
 

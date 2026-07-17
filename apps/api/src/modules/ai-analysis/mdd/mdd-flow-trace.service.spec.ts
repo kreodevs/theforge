@@ -81,4 +81,71 @@ describe("MddFlowTraceService", () => {
     assert.match(logs[2], /"router":"routeAfterIntegration"/);
     assert.match(logs[2], /"destination":"formatter"/);
   });
+
+  it("emits architect_llm_pass and section5_pass_skipped events", () => {
+    const svc = new MddFlowTraceService();
+    const logs: string[] = [];
+    (svc as unknown as { logger: { log: (msg: string) => void } }).logger = {
+      log: (msg: string) => logs.push(msg),
+    };
+
+    svc.jobStart("corr-e");
+    svc.architectLlmPass("corr-e", {
+      passNumber: 1,
+      passKind: "architect_sections_2_to_5",
+      promptChars: 12000,
+      promptTokensEst: 3000,
+      outputTextChars: 8000,
+      llmInvokeDurationMs: 45000,
+      maxOutputTokens: 32768,
+      toolLoopCount: 1,
+      mddNeedsSection5PassAfterPass: false,
+      logicaEdgeCasesBodyChars: 420,
+    });
+    svc.section5PassSkipped("corr-e", { reason: "section5_substantial_after_pass1" });
+
+    assert.match(logs[1], /event=architect_llm_pass/);
+    assert.match(logs[1], /"passNumber":1/);
+    assert.match(logs[1], /"maxOutputTokens":32768/);
+    assert.match(logs[1], /"mddNeedsSection5PassAfterPass":false/);
+    assert.match(logs[2], /event=section5_pass_skipped/);
+  });
+
+  it("emits correction_sections_skipped_architect and job_duration_estimate", () => {
+    const svc = new MddFlowTraceService();
+    const logs: string[] = [];
+    (svc as unknown as { logger: { log: (msg: string) => void } }).logger = {
+      log: (msg: string) => logs.push(msg),
+    };
+
+    svc.jobStart("corr-f");
+    svc.correctionSectionsSkippedArchitect("corr-f", {
+      reason: "gaps_only_sec_int",
+      correctionAgents: ["security", "integration"],
+    });
+    svc.jobDurationEstimate("corr-f", { phase: "correction_start", estimatedArchitectPassesSkipped: 1 });
+
+    assert.match(logs[1], /event=correction_sections_skipped_architect/);
+    assert.match(logs[2], /event=job_duration_estimate/);
+    assert.match(logs[2], /"estimatedArchitectPassesSkipped":1/);
+  });
+
+  it("emits clarifier_json_parse with repair metadata", () => {
+    const svc = new MddFlowTraceService();
+    const logs: string[] = [];
+    (svc as unknown as { logger: { log: (msg: string) => void } }).logger = {
+      log: (msg: string) => logs.push(msg),
+    };
+
+    svc.jobStart("corr-g");
+    svc.clarifierJsonParse("corr-g", {
+      source: "local_repair",
+      escapeRepaired: true,
+      llmRetry: false,
+    });
+
+    assert.match(logs[1], /event=clarifier_json_parse/);
+    assert.match(logs[1], /"source":"local_repair"/);
+    assert.match(logs[1], /"escapeRepaired":true/);
+  });
 });

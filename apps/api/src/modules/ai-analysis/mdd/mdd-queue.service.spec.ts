@@ -1,19 +1,26 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { MddQueueService } from "./mdd-queue.service.js";
+
+type RunMddGenerationJob = (
+  ...args: unknown[]
+) => Promise<{ ok: boolean; mode: "pipeline"; projectId: string }>;
 
 function createService(
   overrides?: Partial<{
-    runMddGenerationJob: ReturnType<typeof vi.fn>;
+    runMddGenerationJob: RunMddGenerationJob;
   }>,
 ): MddQueueService {
   const aiAnalysis = {
-    runMddGenerationJob: overrides?.runMddGenerationJob ?? vi.fn(),
+    runMddGenerationJob:
+      overrides?.runMddGenerationJob ??
+      (async () => ({ ok: true, mode: "pipeline" as const, projectId: "" })),
   };
-  const legacyCoordinator = { generateMdd: vi.fn() };
+  const legacyCoordinator = { generateMdd: async () => ({}) };
   const generationGuard = {
-    registerMddStream: vi.fn(),
-    unregisterMddStream: vi.fn(),
-    isMddStreamActive: vi.fn(() => false),
+    registerMddStream: () => {},
+    unregisterMddStream: () => {},
+    isMddStreamActive: () => false,
   };
   return new MddQueueService(
     aiAnalysis as never,
@@ -34,18 +41,18 @@ describe("MddQueueService.cancelProjectJobs", () => {
 
     const result = await service.cancelProjectJobs(projectId);
 
-    expect(result.cancelled).toBe(true);
-    expect(result.jobIds).toContain(jobId);
+    assert.equal(result.cancelled, true);
+    assert.ok(result.jobIds.includes(jobId));
     const status = await service.getJobStatus(jobId);
-    expect(status.status).toBe("failed");
-    expect(status.error).toBe("Cancelado por el usuario");
-    expect(service.isProjectBusy(projectId)).toBe(false);
+    assert.equal(status.status, "failed");
+    assert.equal(status.error, "Cancelado por el usuario");
+    assert.equal(service.isProjectBusy(projectId), false);
   });
 
   it("es idempotente si no hay jobs activos", async () => {
     const service = createService();
     const result = await service.cancelProjectJobs("proj-empty");
-    expect(result).toEqual({ ok: true, cancelled: false, jobIds: [] });
+    assert.deepEqual(result, { ok: true, cancelled: false, jobIds: [] });
   });
 
   it("deduplica cancelaciones repetidas en 2s", async () => {
@@ -60,9 +67,9 @@ describe("MddQueueService.cancelProjectJobs", () => {
     const first = await service.cancelProjectJobs(projectId);
     const second = await service.cancelProjectJobs(projectId);
 
-    expect(first.cancelled).toBe(true);
-    expect(second).toEqual(first);
-    expect(second.jobIds).toContain(jobId);
+    assert.equal(first.cancelled, true);
+    assert.deepEqual(second, first);
+    assert.ok(second.jobIds.includes(jobId));
   });
 
   it("marca activeJobCooperative para job in-memory activo", async () => {
@@ -71,10 +78,10 @@ describe("MddQueueService.cancelProjectJobs", () => {
       resolveJob = resolve;
     });
     const service = createService({
-      runMddGenerationJob: vi.fn(async () => {
+      runMddGenerationJob: async () => {
         await hang;
         return { ok: true, mode: "pipeline" as const, projectId: "proj-active" };
-      }),
+      },
     });
     const projectId = "proj-active";
     await service.enqueue({ mode: "pipeline", projectId, userId: "user-1" });
@@ -83,9 +90,9 @@ describe("MddQueueService.cancelProjectJobs", () => {
 
     const result = await service.cancelProjectJobs(projectId);
 
-    expect(result.activeJobCooperative).toBe(true);
-    expect(result.cancelled).toBe(true);
-    expect(service.isProjectCancelled(projectId)).toBe(true);
+    assert.equal(result.activeJobCooperative, true);
+    assert.equal(result.cancelled, true);
+    assert.equal(service.isProjectCancelled(projectId), true);
 
     resolveJob();
     await new Promise((r) => setTimeout(r, 30));
@@ -93,6 +100,6 @@ describe("MddQueueService.cancelProjectJobs", () => {
 
   it("isProjectBusyAsync devuelve false sin Redis ni jobs in-memory", async () => {
     const service = createService();
-    await expect(service.isProjectBusyAsync("proj-empty")).resolves.toBe(false);
+    assert.equal(await service.isProjectBusyAsync("proj-empty"), false);
   });
 });

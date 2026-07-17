@@ -5,12 +5,13 @@ import type { MDDStateType } from "../state/index.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
 import { getMddDraftSummary, extractAlreadyDocumentedTopics, extractIdentifiedInfraFromText, logMddNodeOutput } from "../utils/mdd-sanitize.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
-import { extractFirstJsonObject, parseJsonOrThrow } from "../utils/parse-json.js";
+import { extractFirstJsonObject, extractJsonFromCodeBlock, parseJsonOrThrowWithMeta } from "../utils/parse-json.js";
 import { clarifierComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
 import { domainInventoryPromptBlock } from "../utils/mdd-domain-prompt.util.js";
 import { extractBrdDigest } from "../utils/extract-brd-digest.js";
 import { buildMddDraftFromClarifierOutput } from "../utils/merge-section1-into-template.js";
 import { stripThinkingTags } from "../utils/mdd-security-parse.js";
+import type { MddFlowTraceOpts } from "../mdd/mdd-flow-trace.service.js";
 import { z } from "zod";
 
 /** Acepta string o objeto (el LLM a veces devuelve objeto); normaliza a string. */
@@ -49,10 +50,129 @@ const JSON_RETRY_SUFFIX =
 
 const CLARIFIER_PARSE_ERROR = "Clarifier no pudo estructurar el alcance del BRD";
 
-function parseClarifierResponse(text: string): ClarifierParsed {
+type ClarifierParseMeta = {
+  source: "direct" | "local_repair" | "llm_retry" | "llm_retry_repair";
+  escapeRepaired: boolean;
+  llmRetry: boolean;
+};
+
+/** §2 con contenido real (no solo «(Pendiente)» del esqueleto ~800 chars). */
+function hasSubstantialSection2Body(draft: string): boolean {
+  const match = draft.match(/##\s*2\.\s*Arquitectura[\s\S]*?(?=##\s*3\.|$)/i);
+  if (!match) return false;
+  const body = match[0]
+    .replace(/^##\s*2\.[^\n]*\n?/i, "")
+    .replace(/\(Pendiente[^)]*\)/gi, "")
+    .trim();
+  return body.length > 80;
+}
+
+function isSubstantialClarifierFallbackDraft(draft: string, existingScope?: string): boolean {
+  if ((existingScope ?? "").trim().length > 300) return true;
+  return hasSubstantialSection2Body(draft);
+}
+
+function buildClarifierJsonCandidates(text: string): string[] {
+  const stripped = stripThinkingTags(text);
+  const raw = [
+    stripped,
+    extractJsonFromCodeBlock(text) ?? "",
+    extractJsonFromCodeBlock(stripped) ?? "",
+    extractFirstJsonObject(stripped) ?? "",
+    extractFirstJsonObject(text) ?? "",
+  ].filter((c) => c.trim().length > 0);
+
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of raw) {
+    const key = candidate.slice(0, 160);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push(candidate);
+  }
+  return candidates;
+}
+
+function parseClarifierResponseWithMeta(text: string): { parsed: ClarifierParsed; escapeRepaired: boolean } {
   const cleaned = stripThinkingTags(text);
   const jsonStr = extractFirstJsonObject(cleaned) ?? cleaned.trim();
-  return parseJsonOrThrow(jsonStr, clarifierOutputSchema) as ClarifierParsed;
+  const { value, escapeRepaired } = parseJsonOrThrowWithMeta(jsonStr, clarifierOutputSchema, {
+    repairEscapes: true,
+  });
+  return { parsed: value, escapeRepaired };
+}
+
+/** Intentos locales antes de re-invocar el LLM (ahorra ~60–120s en retries JSON). */
+function tryParseClarifierLocally(text: string): { parsed: ClarifierParsed; escapeRepaired: boolean } | null {
+  for (const candidate of buildClarifierJsonCandidates(text)) {
+    try {
+      return parseClarifierResponseWithMeta(candidate);
+    } catch {
+      /* next candidate */
+    }
+  }
+  return null;
+}
+
+function resolveClarifierParsed(text: string): { parsed: ClarifierParsed; meta: ClarifierParseMeta } {
+  const localParsed = tryParseClarifierLocally(text);
+  if (localParsed) {
+    return {
+      parsed: localParsed.parsed,
+      meta: {
+        source: localParsed.escapeRepaired ? "local_repair" : "direct",
+        escapeRepaired: localParsed.escapeRepaired,
+        llmRetry: false,
+      },
+    };
+  }
+
+  const direct = parseClarifierResponseWithMeta(text);
+  return {
+    parsed: direct.parsed,
+    meta: {
+      source: direct.escapeRepaired ? "local_repair" : "direct",
+      escapeRepaired: direct.escapeRepaired,
+      llmRetry: false,
+    },
+  };
+}
+
+async function resolveClarifierParsedWithRetry(
+  llm: BaseChatModel,
+  prompt: string,
+  initialText: string,
+): Promise<{ parsed: ClarifierParsed; meta: ClarifierParseMeta; text: string }> {
+  let text = initialText;
+  try {
+    const resolved = resolveClarifierParsed(text);
+    return { ...resolved, text };
+  } catch (parseErr) {
+    LOG("JSON inválido, retry 1x: %s", parseErr instanceof Error ? parseErr.message : String(parseErr));
+    text = await invokeClarifierLlm(llm, prompt + JSON_RETRY_SUFFIX);
+    const retryLocal = tryParseClarifierLocally(text);
+    if (retryLocal) {
+      return {
+        parsed: retryLocal.parsed,
+        text,
+        meta: {
+          source: retryLocal.escapeRepaired ? "llm_retry_repair" : "llm_retry",
+          escapeRepaired: retryLocal.escapeRepaired,
+          llmRetry: true,
+        },
+      };
+    }
+    const retryDirect = parseClarifierResponseWithMeta(text);
+    return {
+      parsed: retryDirect.parsed,
+      text,
+      meta: {
+        source: retryDirect.escapeRepaired ? "llm_retry_repair" : "llm_retry",
+        escapeRepaired: retryDirect.escapeRepaired,
+        llmRetry: true,
+      },
+    };
+  }
 }
 
 async function invokeClarifierLlm(llm: BaseChatModel, prompt: string): Promise<string> {
@@ -61,7 +181,32 @@ async function invokeClarifierLlm(llm: BaseChatModel, prompt: string): Promise<s
 }
 
 /** Creates the MDD Clarifier node. */
-export function createMddClarifierNode(llm: BaseChatModel) {
+export type MddClarifierNodeOptions = {
+  flowTrace?: MddFlowTraceOpts | null;
+};
+
+export function createMddClarifierNode(llm: BaseChatModel, opts?: MddClarifierNodeOptions) {
+  const flowTrace = opts?.flowTrace ?? null;
+
+  const emitClarifierParseMetric = (meta: ClarifierParseMeta, extra: Record<string, unknown> = {}) => {
+    LOG(
+      "JSON parse outcome source=%s escapeRepaired=%s llmRetry=%s",
+      meta.source,
+      meta.escapeRepaired,
+      meta.llmRetry,
+    );
+    const correlationId = flowTrace?.correlationId;
+    const trace = flowTrace?.service;
+    if (trace && correlationId) {
+      trace.clarifierJsonParse(correlationId, {
+        source: meta.source,
+        escapeRepaired: meta.escapeRepaired,
+        llmRetry: meta.llmRetry,
+        ...extra,
+      });
+    }
+  };
+
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
     const requestQuestionsOnly = state.requestQuestionsOnly === true;
     LOG("entry requestQuestionsOnly=%s dbgaContentLen=%s", requestQuestionsOnly, (state.dbgaContent ?? "").length);
@@ -110,7 +255,7 @@ export function createMddClarifierNode(llm: BaseChatModel) {
         const response = await llm.invoke([new HumanMessage(prompt)]);
         const text = typeof response.content === "string" ? response.content : "";
         const questions = text.trim()
-          ? parseJsonOrThrow(text, questionsOnlySchema).questions.slice(0, 2)
+          ? parseJsonOrThrowWithMeta(text, questionsOnlySchema, { repairEscapes: true }).value.questions.slice(0, 2)
           : ["¿Cuáles son los objetivos principales del sistema?", "¿Qué requisitos técnicos o integraciones son prioritarios?"];
         LOG("questions-only ok count=%s", questions.length);
         return {
@@ -129,7 +274,8 @@ export function createMddClarifierNode(llm: BaseChatModel) {
     }
 
     const draftTrimmed = (state.mddDraft ?? "").trim();
-    const hasGoodPriorDraft = draftTrimmed.length > 200;
+    const existingScope = (state.clarifiedScope ?? "").trim();
+    const hasGoodPriorDraft = isSubstantialClarifierFallbackDraft(draftTrimmed, existingScope);
 
     try {
       const brief = getUserBrief(state);
@@ -186,30 +332,33 @@ export function createMddClarifierNode(llm: BaseChatModel) {
       }
 
       let parsed: ClarifierParsed;
+      let parseMeta: ClarifierParseMeta;
       try {
-        parsed = parseClarifierResponse(text);
-      } catch (parseErr) {
-        LOG("JSON inválido, retry 1x: %s", parseErr instanceof Error ? parseErr.message : String(parseErr));
-        text = await invokeClarifierLlm(llm, prompt + JSON_RETRY_SUFFIX);
-        try {
-          parsed = parseClarifierResponse(text);
-        } catch (retryErr) {
-          LOG("JSON inválido tras retry: %s", retryErr instanceof Error ? retryErr.message : String(retryErr));
-          if (hasGoodPriorDraft) {
-            LOG("soft fallback tras parse failure: borrador previo (len=%s)", draftTrimmed.length);
-            const fallbackScope =
-              (state.clarifiedScope ?? "").trim() ||
-              (state.userInputAccumulated ?? "").trim().split(/\n\n---\n\n/).map((s) => s.trim()).filter((s) => s.length > 50 && !/^(Usuario:\s*)?(sí|ok|vale)/i.test(s))[0]?.slice(0, 500) ||
-              state.dbgaContent?.trim().slice(0, 500) ||
-              "Alcance pendiente de refinar.";
-            return {
-              clarifiedScope: fallbackScope,
-              mddDraft: draftTrimmed,
-              clarifierJustGeneratedQuestions: false,
-            };
-          }
-          throw new Error(CLARIFIER_PARSE_ERROR);
+        const resolved = await resolveClarifierParsedWithRetry(llm, prompt, text);
+        parsed = resolved.parsed;
+        parseMeta = resolved.meta;
+        text = resolved.text;
+        emitClarifierParseMetric(parseMeta, { clarifiedScopeLen: String(parsed.clarifiedScope ?? "").length });
+      } catch (retryErr) {
+        LOG("JSON inválido tras retry: %s", retryErr instanceof Error ? retryErr.message : String(retryErr));
+        emitClarifierParseMetric(
+          { source: "llm_retry", escapeRepaired: false, llmRetry: true },
+          { failed: true, error: retryErr instanceof Error ? retryErr.message : String(retryErr) },
+        );
+        if (hasGoodPriorDraft) {
+          LOG("soft fallback tras parse failure: borrador previo (len=%s)", draftTrimmed.length);
+          const fallbackScope =
+            existingScope ||
+            (state.userInputAccumulated ?? "").trim().split(/\n\n---\n\n/).map((s) => s.trim()).filter((s) => s.length > 50 && !/^(Usuario:\s*)?(sí|ok|vale)/i.test(s))[0]?.slice(0, 500) ||
+            state.dbgaContent?.trim().slice(0, 500) ||
+            "Alcance pendiente de refinar.";
+          return {
+            clarifiedScope: fallbackScope,
+            mddDraft: draftTrimmed,
+            clarifierJustGeneratedQuestions: false,
+          };
         }
+        throw new Error(CLARIFIER_PARSE_ERROR);
       }
 
       let scope = String(parsed.clarifiedScope ?? "").trim();

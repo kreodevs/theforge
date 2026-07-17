@@ -85,7 +85,10 @@ import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
 import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
 import { isWorkshopConnectionError, isSsotPatternsNotice } from "../utils/workshopSyncStatus";
 import { activeGenerationLabel, generationJobAllowed } from "../utils/projectGenerationGate";
-import { shouldClearCancelledNotice } from "../utils/mddGenerationNotice";
+import {
+  isLocalMddGenerationLoading,
+  shouldShowMddRegeneratingBanner,
+} from "../utils/mddGenerationNotice";
 import type { ArtifactTypeDefinition, GenerationJobType } from "@theforge/shared-types";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
@@ -637,10 +640,15 @@ export default function WorkshopView({
   const setNotice = useWorkshopStore((s) => s.setNotice);
   const retryWorkshopSync = useWorkshopStore((s) => s.retryWorkshopSync);
   const connectionError = isWorkshopConnectionError(error);
-  const bannerNotice =
-    notice && shouldClearCancelledNotice(generationStatus, notice)
-      ? null
-      : notice ?? (isSsotPatternsNotice(error) ? error : null);
+  const localMddLoading = isLocalMddGenerationLoading(loading, loadingReason);
+  const showMddRegeneratingBanner = shouldShowMddRegeneratingBanner({
+    generationStatus,
+    notice,
+    mddCancelInFlight,
+    localMddLoading,
+    cascadeRunning,
+  });
+  const bannerNotice = notice ?? (isSsotPatternsNotice(error) ? error : null);
   const bannerError = error && !isSsotPatternsNotice(error) ? error : null;
   const modelsUnavailableModalOpen = useWorkshopStore((s) => s.modelsUnavailableModalOpen);
   const setModelsUnavailableModalOpen = useWorkshopStore((s) => s.setModelsUnavailableModalOpen);
@@ -3042,7 +3050,7 @@ export default function WorkshopView({
         }}
       />
 
-      {(generationStatus?.mddStreamActive && !cascadeRunning) && (
+      {showMddRegeneratingBanner && (
         <div className="shrink-0 border-b border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] px-4 py-2 flex items-center justify-between gap-3">
           <p className="text-sm text-[color-mix(in_oklch,var(--primary)_80%,white)]">
             Regenerando MDD… Puedes cerrar el navegador; al volver, recarga el proyecto para ver el resultado.

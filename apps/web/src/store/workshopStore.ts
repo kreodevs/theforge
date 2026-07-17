@@ -50,7 +50,6 @@ import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
 import {
   MDD_GENERATION_CANCELLED_NOTICE,
   optimisticallyClearMddStreamStatus,
-  shouldClearCancelledNotice,
 } from "../utils/mddGenerationNotice";
 import { parseNdjsonLine } from "../utils/ndjson";
 import { mddHasSection6Heading, buildMddSectionRegenNotice } from "../utils/mddSectionRegen";
@@ -100,6 +99,19 @@ function shouldApplyWorkshopUpdate(get: () => WorkshopState, requestedProjectId:
   const id = requestedProjectId.trim();
   if (!id) return false;
   return workshopScopeProjectId(get) === id;
+}
+
+function applyMddPollCancelledUiState(
+  get: () => WorkshopState,
+  set: (partial: Partial<WorkshopState> | ((s: WorkshopState) => Partial<WorkshopState>)) => void,
+): void {
+  set({
+    loading: false,
+    loadingReason: null,
+    agentProgress: [],
+    notice: get().notice ?? MDD_GENERATION_CANCELLED_NOTICE,
+    error: null,
+  });
 }
 
 export const selectWorkshopAgentsBusy = (s: WorkshopState) => isWorkshopAgentsBusy(s);
@@ -804,7 +816,11 @@ async function pollAndApplyMddSectionJobFromChat(
       error: null,
     });
   } catch (e) {
-    if (wasMddPollCancelled()) return;
+    if (wasMddPollCancelled()) {
+      applyMddPollCancelledUiState(get, set);
+      void get().fetchGenerationStatus(projectId);
+      return;
+    }
     const errMsg = e instanceof Error ? friendlyFetchError(e) : "Error al regenerar sección";
     const code =
       e instanceof Error && "code" in e && typeof (e as { code?: string }).code === "string"
@@ -1649,9 +1665,6 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (!shouldApplyWorkshopUpdate(get, requestedId)) return status;
       const wasBusy = get().generationStatus?.busy === true;
       set({ generationStatus: status });
-      if (shouldClearCancelledNotice(status, get().notice)) {
-        set({ notice: null });
-      }
       if (status.busy) {
         if (generationStatusPollProjectId !== requestedId) {
           stopGenerationStatusPolling();
@@ -1711,13 +1724,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             : "No se pudo cancelar la generación del MDD";
         throw new Error(msg ?? fallback);
       }
-      const status = await get().fetchGenerationStatus(requestedId);
+      await get().fetchGenerationStatus(requestedId);
       if (shouldApplyWorkshopUpdate(get, requestedId)) {
-        if (status?.busy || status?.mddStreamActive) {
-          set({ notice: null, error: null });
-        } else {
-          set({ notice: MDD_GENERATION_CANCELLED_NOTICE, error: null });
-        }
+        set({ notice: MDD_GENERATION_CANCELLED_NOTICE, error: null });
       }
       return true;
     } catch (e) {
@@ -2401,7 +2410,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }
         return;
       } catch (e) {
-        if (wasMddPollCancelled()) return;
+        if (wasMddPollCancelled()) {
+          applyMddPollCancelledUiState(get, set);
+          void get().fetchGenerationStatus(requestProjectId);
+          return;
+        }
         const msg = e instanceof Error ? friendlyFetchError(e) : "Error al regenerar sección";
         const code =
           e instanceof Error && "code" in e && typeof (e as { code?: string }).code === "string"
@@ -3846,7 +3859,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ loading: false, loadingReason: null, agentProgress: [] });
       return data ?? get().project;
     } catch (e) {
-      if (wasMddPollCancelled()) return null;
+      if (wasMddPollCancelled()) {
+        applyMddPollCancelledUiState(get, set);
+        void get().fetchGenerationStatus(pid);
+        return null;
+      }
       set({
         ...errorStateFromCaught(e),
         loading: false,
@@ -4233,7 +4250,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       await get().fetchGenerationStatus(pid);
       return mddContent.trim() ? { mddContent } : null;
     } catch (e) {
-      if (wasMddPollCancelled()) return null;
+      if (wasMddPollCancelled()) {
+        applyMddPollCancelledUiState(get, set);
+        void get().fetchGenerationStatus(pid);
+        return null;
+      }
       try {
         const project = await get().fetchProject(pid);
         if (project?.mddContent?.trim()) {

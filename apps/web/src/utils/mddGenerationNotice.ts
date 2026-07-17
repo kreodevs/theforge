@@ -2,13 +2,30 @@ import type { ProjectGenerationStatus } from "@theforge/shared-types";
 
 export const MDD_GENERATION_CANCELLED_NOTICE = "Generación cancelada";
 
-/** Hide stale "Generación cancelada" when backend reports MDD or other generation still running. */
-export function shouldClearCancelledNotice(
-  status: ProjectGenerationStatus | null | undefined,
-  notice: string | null | undefined,
+export function isLocalMddGenerationLoading(
+  loading: boolean,
+  loadingReason: string | null | undefined,
 ): boolean {
-  if (notice !== MDD_GENERATION_CANCELLED_NOTICE) return false;
-  return Boolean(status?.busy || status?.mddStreamActive);
+  return (
+    loading &&
+    (loadingReason === "mdd" ||
+      loadingReason === "mdd-section" ||
+      loadingReason === "legacy-mdd")
+  );
+}
+
+/** Show the top «Regenerando MDD…» banner with Detener (not after user cancelled). */
+export function shouldShowMddRegeneratingBanner(params: {
+  generationStatus: ProjectGenerationStatus | null | undefined;
+  notice: string | null | undefined;
+  mddCancelInFlight: boolean;
+  localMddLoading: boolean;
+  cascadeRunning: boolean;
+}): boolean {
+  if (params.cascadeRunning) return false;
+  if (params.mddCancelInFlight) return false;
+  if (params.notice === MDD_GENERATION_CANCELLED_NOTICE) return false;
+  return Boolean(params.generationStatus?.mddStreamActive || params.localMddLoading);
 }
 
 /** Optimistically hide the regenerating banner while cancel is in flight. */

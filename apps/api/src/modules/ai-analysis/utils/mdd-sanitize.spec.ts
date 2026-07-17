@@ -613,6 +613,41 @@ TLS entre microservicios y PostgreSQL.
     assert.equal(detectSection2Section7NodeVersionMismatchIssue(fixed), null);
   });
 
+  it("applyPreDeliveryGateFixes parchea manifest bcrypt→Argon2id con LDAP (job-13 blocker)", () => {
+    const draft = `## 2. Arquitectura y Stack
+
+Passport.js (LDAP/AD) + JWT.
+
+## 6. Seguridad
+
+- Autenticación corporativa vía LDAP/AD.
+- Hash local Argon2id solo para cuenta bootstrap del super administrador.
+
+## 7. Infraestructura
+
+\`\`\`json
+{
+  "stack": {
+    "security": {
+      "hashing_algorithm": "bcrypt",
+      "hashing_rounds": 12,
+      "mfa_strategy": "TOTP"
+    }
+  }
+}
+\`\`\`
+`;
+    const fixed = applyPreDeliveryGateFixes(draft);
+    assert.ok(fixed.includes('"hashing_algorithm": "Argon2id"'));
+    assert.ok(fixed.includes('"auth_provider": "LDAP/AD"'));
+    assert.ok(!/"hashing_algorithm"\s*:\s*"bcrypt"/i.test(fixed));
+    const issues = detectCrossConsistencyIssues(fixed);
+    assert.ok(
+      !issues.some((i) => i.includes("hashing_algorithm") && i.includes("bcrypt")),
+      issues.join("; "),
+    );
+  });
+
   it("alignDeliverableMarkdownWithMddSecurity separa JWT_PRIVATE_KEY y JWT_PUBLIC_KEY en bloques .env", () => {
     const mdd = `## 6. Seguridad
 
@@ -680,7 +715,7 @@ Passport.js (LDAP/AD) + JWT.
     assert.ok(out.includes("MFA obligatorio"));
   });
 
-  it("mantiene bcrypt en manifest cuando LDAP es principal pero §6 documenta bcrypt bootstrap", () => {
+  it("corrige manifest a Argon2id bootstrap cuando LDAP es principal aunque §6 cite bcrypt", () => {
     const draft = `## 2. Arquitectura y Stack
 
 Passport.js (LDAP/AD) + JWT.
@@ -696,7 +731,7 @@ Passport.js (LDAP/AD) + JWT.
 {
   "stack": {
     "security": {
-      "hashing_algorithm": "Argon2id",
+      "hashing_algorithm": "bcrypt",
       "hashing_rounds": 12
     }
   }
@@ -705,8 +740,11 @@ Passport.js (LDAP/AD) + JWT.
 `;
     const out = fixDeterministicMddCoherence(draft);
     assert.ok(out.includes('"auth_provider": "LDAP/AD"'));
-    assert.ok(out.includes('"hashing_algorithm": "bcrypt"'));
-    assert.ok(!/"hashing_algorithm"\s*:\s*"Argon2id"/i.test(out));
+    assert.ok(out.includes('"hashing_algorithm": "Argon2id"'));
+    assert.ok(out.includes("bootstrap_and_service_secrets_only"));
+    assert.ok(!/"hashing_algorithm"\s*:\s*"bcrypt"/i.test(out));
+    const issues = detectCrossConsistencyIssues(out);
+    assert.ok(!issues.some((i) => i.includes("bcrypt") && i.includes("LDAP")));
   });
 
   it("antepone /api/v1 a rutas §4 cuando manifest lo declara y rutas son bare", () => {

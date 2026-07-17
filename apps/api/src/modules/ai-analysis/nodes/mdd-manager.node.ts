@@ -28,7 +28,11 @@ import { reconcileUiUxDesignIntent } from "../utils/mdd-enrich-uiux-intent.js";
 import { z } from "zod";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { generateImpactAnalysis } from "../utils/mdd-impact-analysis.js";
-import { resolveCorrectionAgentsFromQualityGate } from "../utils/mdd-manager-routing.util.js";
+import {
+  resolveCorrectionAgentsFromQualityGate,
+  resolveCorrectionRouting,
+  expandCorrectionSectionsToRun,
+} from "../utils/mdd-manager-routing.util.js";
 import { detectLegacyIntegrationIntent, HANDOFF_SPEC_SUGGESTION } from "../utils/integration-intent.util.js";
 import { getAgenticRagToolset } from "../tools/tool-registry.js";
 import { runAgentToolsRound } from "../utils/mdd-agent-tools-invoke.js";
@@ -867,19 +871,20 @@ export function createMddManagerNode(
 
     // Quality Gate con gaps y sin mensaje nuevo → delegar directo a generadores (máx. 2 rondas).
     if (hasDraft && !qualityOk && !userMessage) {
-      const correctionAgents = resolveCorrectionAgentsFromQualityGate(
-        state.qualityGate,
-        inferAgentsFromAuditorFeedback,
-      );
-      const useSections = !correctionAgents.every((a) => a === "clarifier");
-      const sectionsToRun = useSections ? expandSectionsToRun(correctionAgents) : undefined;
+      const routing = resolveCorrectionRouting(state.qualityGate, inferAgentsFromAuditorFeedback, {
+        mddDraft: state.mddDraft,
+      });
+      const useSections = !routing.agents.every((a) => a === "clarifier");
+      const sectionsToRun = useSections ? routing.sectionsToRun : undefined;
       const delegateTarget = useSections ? ("sections" as const) : ("clarifier_only" as const);
       const round = (state.managerRound ?? 0) + 1;
       LOG(
-        "Quality Gate gaps → delegate=%s sections=%s round=%s",
+        "Quality Gate gaps → delegate=%s sections=%s round=%s architectSkipped=%s section5Only=%s",
         delegateTarget,
         sectionsToRun?.join(",") ?? "clarifier",
         round,
+        routing.architectSkipped,
+        routing.section5OnlyPass,
       );
       return new Command({
         update: {
@@ -889,6 +894,9 @@ export function createMddManagerNode(
           sectionsToRun,
           previousMddDraftForMerge: state.mddDraft ?? "",
           acceptedProposalDirective: gapFeedback || undefined,
+          executorControlled: useSections ? true : undefined,
+          ...(routing.section5OnlyPass ? { architectSection5PassPending: true } : {}),
+          ...(routing.architectSkipped ? { correctionArchitectSkipped: true } : {}),
         },
         goto: useSections ? sectionsToRun![0]! : "clarifier",
       });
@@ -918,7 +926,7 @@ export function createMddManagerNode(
     // Usuario responde con acuerdo breve al feedback del auditor → plan (sections) y aprobación.
     if (hasDraft && !qualityOk && userMessage && looksLikeShortAgreement(userMessage) && state.auditorFeedback?.trim()) {
       const directive = state.auditorFeedback.trim();
-      const sectionsToRun = expandSectionsToRun(
+      const sectionsToRun = expandCorrectionSectionsToRun(
         resolveCorrectionAgentsFromQualityGate(state.qualityGate, inferAgentsFromAuditorFeedback),
       );
       const planDirective = getPlanDirective(state);

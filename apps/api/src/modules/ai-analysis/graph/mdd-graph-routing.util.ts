@@ -3,6 +3,7 @@ import { mddNeedsSection5Pass } from "../utils/mdd-sanitize.js";
 
 export function shouldRunSecIntNode(state: MDDStateType, nodeName: "security" | "integration"): boolean {
   if (state.delegateTarget === "sections" && state.sectionsToRun?.length) {
+    if (state.sectionsToRun.includes("fanout_sec_int")) return true;
     return state.sectionsToRun.includes(nodeName);
   }
   return true;
@@ -73,6 +74,7 @@ export const LEAN_QUALITY_GATE_DESTINATIONS = [
   "graph_populator",
   "clarifier",
   "software_architect",
+  "fanout_sec_int",
   "security",
   "integration",
 ] as const;

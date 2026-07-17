@@ -97,7 +97,34 @@ describe("mdd-graph quality gate correction routing", () => {
       gaps: [{ section: "Sección 6", issue: "Sin MFA", fix: "Añadir TOTP" }],
     });
     assert.deepEqual(state.sectionsToRun?.[0], "security");
+    assert.ok(!state.sectionsToRun?.includes("software_architect"));
     assertCorrectionChainRoutable(state.sectionsToRun ?? []);
+  });
+
+  it("§6+§7 correction uses fanout_sec_int and excludes software_architect", () => {
+    const state = buildQualityGateCorrectionState({
+      ok: false,
+      blockers: [],
+      warnings: [],
+      gaps: [
+        { section: "Sección 6", issue: "Sin RBAC", fix: "Añadir roles" },
+        { section: "Sección 7", issue: "Sin CI", fix: "Añadir pipeline" },
+      ],
+    });
+    assert.deepEqual(state.sectionsToRun?.slice(0, 2), ["fanout_sec_int", "format_sec_int"]);
+    assert.ok(!state.sectionsToRun?.includes("software_architect"));
+    assert.ok(state.sectionsToRun?.includes("diagram_injector"));
+  });
+
+  it("manifest §7 blocker correction chain is routable via fanout", () => {
+    const state = buildQualityGateCorrectionState({
+      ok: false,
+      blockers: ['Manifest §7: hashing_algorithm "bcrypt" incoherente con Argon2id en §6.'],
+      warnings: [],
+      gaps: [],
+    });
+    assert.deepEqual(state.sectionsToRun?.[0], "fanout_sec_int");
+    assert.ok(!state.sectionsToRun?.includes("software_architect"));
   });
 
   it("architect+security correction chain has routable hops (no null destination)", () => {

@@ -8,20 +8,26 @@ import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
 import {
   applyDeploymentStackDirectiveToDraft,
+  buildArchitectPromptDraftBlock,
   ensureContratosSection,
+  extractArquitecturaSectionBody,
   extractSection3Body,
   extractSection6Body,
   extractSection7Body,
+  extractSections2To5Content,
   getMddDraftSummary,
   getSectionsToPreserveFromExecutorPlan,
   isMddSectionPlaceholderBody,
   logMddNodeOutput,
   logSection3Debug,
+  mergeSection5BodyIntoDraft,
+  mddNeedsSection5Pass,
   normalizeMddFormat,
   parseModeloDatosFromSection3Markdown,
   preserveContextSectionIfSubstantial,
   preserveUntouchedMddSectionsFromBaseline,
   replaceContextWhenOnlyMetadata,
+  replaceSections2To5InDraft,
   sanitizeContextSection,
 } from "../utils/mdd-sanitize.js";
 import { getUserBrief, getUserExplicitRequirements } from "../utils/mdd-user-brief.js";
@@ -37,6 +43,7 @@ import {
 import type { TheForgeService } from "../../theforge/theforge.service.js";
 import { getMddArchitectTheForgeTools } from "../tools/agent-theforge-tools.js";
 import { stripThinkingTags } from "../utils/mdd-security-parse.js";
+import type { MddFlowTraceOpts } from "../mdd/mdd-flow-trace.service.js";
 import { z } from "zod";
 
 /** Schema estructurado que algunos LLMs devuelven en lugar de mddDraft. */
@@ -436,11 +443,29 @@ function validatedDecisionsMentionModel(state: MDDStateType): boolean {
 const MAX_ARCHITECT_TOOL_LOOPS = 2;
 const MAX_ARCHITECT_TOOL_LOOPS_FORGE = 5;
 
+/** Estimación rápida de tokens (~4 chars/token en español/técnico). */
+function estimatePromptTokens(charCount: number): number {
+  return Math.ceil(charCount / 4);
+}
+
+function architectSectionBodyLengths(draft: string): Record<string, number> {
+  return {
+    section2BodyChars: extractArquitecturaSectionBody(draft)?.length ?? 0,
+    section3BodyChars: extractSection3Body(draft)?.length ?? 0,
+    section4BodyChars: extractContratosBody(draft)?.length ?? 0,
+    logicaEdgeCasesBodyChars: extractLogicaEdgeCasesBody(draft)?.length ?? 0,
+  };
+}
+
 export type MddSoftwareArchitectNodeOptions = {
   /** Legacy + `theforgeProjectId`: añade herramientas MCP TheForge (contrato, impacto, firma). */
   theforge?: TheForgeService | null;
   /** MCP gráfico compatible activo → hint en §2 Frontend / UI Library. */
   uiMcpFrontendLibraryLabel?: string | null;
+  /** max_tokens del perfil document (32K) usado por createArchitectLLM. */
+  maxOutputTokens?: number;
+  /** Trazas MDD correlacionadas (architect_llm_pass, section5 routing). */
+  flowTrace?: MddFlowTraceOpts | null;
 };
 
 /** Extrae el cuerpo de ## 6. Seguridad del draft (hasta ## 7. o fin). */
@@ -503,6 +528,12 @@ export function createMddSoftwareArchitectNode(
       const draftTrimmed = (state.mddDraft ?? "").trim();
       const mergeBaseline = (state.previousMddDraftForMerge ?? "").trim() || draftTrimmed;
       const section5OnlyPass = state.architectSection5PassPending === true;
+      const isCorrectionPass =
+        state.executorControlled === true &&
+        ((state.mddIteration ?? 0) > 0 || Boolean(state.acceptedProposalDirective?.trim()));
+      const draftBlock = buildArchitectPromptDraftBlock(draftTrimmed, {
+        correctionPass: isCorrectionPass && !section5OnlyPass,
+      });
       const sectionsToPreserve =
         section5OnlyPass
           ? [1, 2, 3, 4, 6, 7]
@@ -527,37 +558,41 @@ export function createMddSoftwareArchitectNode(
       const goalBlock = stepGoal ? `**Objetivo de este paso (del plan):** ${stepGoal}\n\n` : "";
       const briefBlock = brief
         ? mustRewriteSection3
-          ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Debes **actualizar** ## 3. Modelo de Datos y ## 4. Contratos de API para reflejar el dominio de negocio (BRD/inventario) y los requisitos explícitos. **No copies §3 del borrador** si está sesgado a auth o incompleto frente al inventario; genera el SQL, diagrama ER y endpoints que cubran las capacidades de dominio. Copia solo ## 1. Contexto del borrador. Elabora §2 (Arquitectura y Stack) y §5 (Lógica y Edge Cases).${affectsSection2 ? " Actualiza también ## 2. Arquitectura y Stack si la directiva lo indica." : ""}\n\n---\n\n`
+          ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Debes **actualizar** ## 3. Modelo de Datos y ## 4. Contratos de API para reflejar el dominio de negocio (BRD/inventario) y los requisitos explícitos. **No copies §3 del borrador** si está sesgado a auth o incompleto frente al inventario; genera el SQL, diagrama ER y endpoints que cubran las capacidades de dominio. **Responde solo con §2–§5** (desde \`## 2. Arquitectura y Stack\`); **no incluyas §1 Contexto ni §6/§7** — el pipeline los fusiona desde el borrador. Elabora §2 (Arquitectura y Stack) y §5 (Lógica y Edge Cases).${affectsSection2 ? " Actualiza también ## 2. Arquitectura y Stack si la directiva lo indica." : ""}\n\n---\n\n`
           : section5OnlyPass
             ? `**Objetivo del documento:** ${brief}\n\n**Tu tarea (paso dedicado §5):** Genera **únicamente** ## 5. Lógica y Edge Cases con reglas Dado/Cuando/Entonces y edge cases del dominio. **No modifiques §1–§4**; el borrador ya tiene contexto, stack, SQL y contratos API completos.\n\n---\n\n`
-            : `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar secciones 2 (Arquitectura y Stack), 4 (Contratos de API) y 5 (Lógica y Edge Cases) para una aplicación que cumple este objetivo. Copia 1 y 3 del borrador; no las reescribas.\n\n---\n\n`
+            : `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elabora **únicamente** las secciones ## 2. Arquitectura y Stack, ## 3. Modelo de Datos, ## 4. Contratos de API y ## 5. Lógica y Edge Cases. **No copies §1 Contexto ni §6/§7** en tu respuesta — el pipeline los fusiona desde el borrador. Empieza directamente en \`## 2. Arquitectura y Stack\`.\n\n---\n\n`
         : section5OnlyPass
           ? "**Tu tarea (paso dedicado §5):** Genera **únicamente** ## 5. Lógica y Edge Cases. Preserva §1–§4 sin cambios.\n\n---\n\n"
-          : "";
+          : "**Tu tarea:** Elabora **únicamente §2–§5** del MDD (desde `## 2. Arquitectura y Stack`). No incluyas §1 Contexto ni §6/§7; el pipeline los conserva del borrador.\n\n---\n\n";
       const contextParts = [
         goalBlock,
         briefBlock,
         "**Alcance clarificado:**",
         (state.clarifiedScope ?? "").trim() || "(vacío)",
         "",
-        "**Borrador actual del MDD (Contexto + Modelo de datos del Experto en Datos):**",
-        draftTrimmed || "(vacío)",
+        draftBlock.mode === "correction_summary"
+          ? "**Borrador actual del MDD (resumen para corrección; §2–§5 completas en baseline):**"
+          : "**Borrador actual del MDD (Contexto + Modelo de datos del Experto en Datos):**",
+        draftBlock.text || "(vacío)",
         getInternalDirectivesContext(state, "software_architect"),
       ];
       const inventoryBlock = domainInventoryPromptBlock(state);
-      if (inventoryBlock) {
+      if (inventoryBlock && (!isCorrectionPass || mustRewriteSection3 || domainAuthSkew)) {
         contextParts.unshift(inventoryBlock.trim(), "");
       }
-      try {
-        const { buildInventoryFromMddState } = await import("../utils/mdd-domain-prompt.util.js");
-        const { domainSchemaCompositionPromptBlock } = await import(
-          "../../engine/compose-section3-from-inventory.util.js"
-        );
-        const { inventory } = buildInventoryFromMddState(state);
-        const schemaBlock = domainSchemaCompositionPromptBlock(inventory, draftTrimmed);
-        if (schemaBlock) contextParts.unshift(schemaBlock, "");
-      } catch {
-        /* optional */
+      if (!isCorrectionPass || mustRewriteSection3 || domainAuthSkew) {
+        try {
+          const { buildInventoryFromMddState } = await import("../utils/mdd-domain-prompt.util.js");
+          const { domainSchemaCompositionPromptBlock } = await import(
+            "../../engine/compose-section3-from-inventory.util.js"
+          );
+          const { inventory } = buildInventoryFromMddState(state);
+          const schemaBlock = domainSchemaCompositionPromptBlock(inventory, draftTrimmed);
+          if (schemaBlock) contextParts.unshift(schemaBlock, "");
+        } catch {
+          /* optional */
+        }
       }
       if (domainAuthSkew) {
         contextParts.unshift(
@@ -604,16 +639,23 @@ export function createMddSoftwareArchitectNode(
       }
       const hasSection1 = /##\s*1\.\s*Contexto/i.test(draftTrimmed);
       const hasSection3Modelo = /##\s*3\.\s*Modelo\s+(?:de\s+)?datos/i.test(draftTrimmed) && /\bCREATE\s+TABLE\b/i.test(draftTrimmed);
-      if (hasSection1 && draftTrimmed.length > 200) {
+      if (!isCorrectionPass && hasSection1 && draftTrimmed.length > 200) {
         contextParts.unshift(
           "**Fuente de verdad del alcance:** La sección '## 1. Contexto' del borrador es la fuente de verdad del alcance técnico del proyecto. Secciones 2 (Arquitectura y Stack), 4 (Contratos de API) y 5 (Lógica y Edge Cases) DEBEN reflejar **todo** lo allí mencionado. No reduzcas a un mínimo genérico.",
           "**Instrucción crítica de integridad:** Revisa 'Alcance clarificado' para detectar requisitos de resiliencia (reintentos, backoff), seguridad o consistencia/transacciones. Si el input menciona 'reintentos automáticos' o 'backoff', el output DEBE incluir la estrategia explícita en la Sección 2 (Arquitectura) o Sección 5 (Lógica).",
           "",
         );
       }
-      if (hasSection1 && hasSection3Modelo) {
+      if (!isCorrectionPass && hasSection1 && hasSection3Modelo) {
         contextParts.unshift(
           "**Cobertura de la sección 4:** La sección 4 (Contratos de API) debe incluir **un endpoint por cada capacidad** descrita en la sección 1 y **por cada entidad/recurso** del modelo (sección 3) que requiera API. Revisa el borrador completo: lista las funcionalidades del alcance y las tablas del modelo, y asegura que cada una tenga su operación en la tabla de endpoints. Si falta algún endpoint para algo que el documento describe, la sección 4 está incompleta.",
+          "",
+        );
+      }
+      if (isCorrectionPass && state.acceptedProposalDirective?.trim()) {
+        contextParts.unshift(
+          "**Corrección Quality Gate (aplicar solo lo indicado; no regeneres §2–§5 completas salvo que la directiva lo exija):**",
+          state.acceptedProposalDirective.trim(),
           "",
         );
       }
@@ -670,7 +712,7 @@ export function createMddSoftwareArchitectNode(
         );
       }
       const section6Body = extractSection6SeguridadBody(draftTrimmed);
-      if (section6Body) {
+      if (section6Body && (!isCorrectionPass || mustRewriteSection3 || userAskedForModelOrApiChanges)) {
         contextParts.unshift(
           "",
           "**Requisitos de §6 Seguridad (OBLIGATORIO aplicar en §3 y §4):**",
@@ -688,8 +730,52 @@ export function createMddSoftwareArchitectNode(
       const context = contextParts.join("\n");
       const prompt = `${SOFTWARE_ARCHITECT_MDD_PROMPT}${softwareArchitectComplexityAppendix(state.mddComplexity)}\n\n---\n${context}`;
       const messages = [new HumanMessage(prompt)];
+      const passNumber = section5OnlyPass ? 2 : 1;
+      const maxOutputTokens = opts?.maxOutputTokens;
+      const flowTrace = opts?.flowTrace ?? null;
+      const correlationId = flowTrace?.correlationId ?? null;
+      const traceSvc = flowTrace?.service ?? null;
+      const emitArchitectPassMetrics = (finalDraft: string, extra: Record<string, unknown> = {}): void => {
+        const sectionLengths = architectSectionBodyLengths(finalDraft);
+        const needsSection5Pass = mddNeedsSection5Pass(finalDraft);
+        LOG(
+          "metrics pass=%s durationMs=%s promptChars=%s outChars=%s §5chars=%s needsS5Pass=%s toolLoops=%s",
+          passNumber,
+          llmInvokeDurationMs,
+          prompt.length,
+          text.length,
+          sectionLengths.logicaEdgeCasesBodyChars,
+          needsSection5Pass,
+          toolLoopCount,
+        );
+        if (!traceSvc || !correlationId) return;
+        traceSvc.architectLlmPass(correlationId, {
+          node: "software_architect",
+          passNumber,
+          passKind: section5OnlyPass ? "section5_retry" : isCorrectionPass ? "architect_correction" : "architect_sections_2_to_5",
+          promptChars: prompt.length,
+          promptTokensEst: estimatePromptTokens(prompt.length),
+          draftPromptOriginalChars: draftBlock.originalChars,
+          draftPromptUsedChars: draftBlock.usedChars,
+          draftPromptCharsSaved: Math.max(0, draftBlock.originalChars - draftBlock.usedChars),
+          draftPromptMode: draftBlock.mode,
+          correctionPass: isCorrectionPass,
+          outputTextChars: text.length,
+          llmInvokeDurationMs,
+          maxOutputTokens: maxOutputTokens ?? null,
+          toolLoopCount,
+          toolsEnabled: toolsToUse.length > 0,
+          mddNeedsSection5PassAfterPass: needsSection5Pass,
+          mddDraftChars: finalDraft.length,
+          ...sectionLengths,
+          ...extra,
+        });
+      };
 
       let text = "";
+      let toolLoopCount = 0;
+      let llmInvokeDurationMs = 0;
+      const llmInvokeStart = Date.now();
       if (toolsToUse.length > 0) {
         let loopCount = 0;
         while (loopCount < maxToolLoops) {
@@ -709,10 +795,24 @@ export function createMddSoftwareArchitectNode(
             const args = typeof tc.args === "object" && tc.args !== null ? (tc.args as Record<string, unknown>) : {};
             let result: unknown;
             try {
+              if (traceSvc && correlationId) {
+                traceSvc.toolStart(correlationId, tc.name, { node: "software_architect", passNumber, toolLoop: loopCount });
+              }
               result = await tool.invoke(args);
+              if (traceSvc && correlationId) {
+                traceSvc.toolEnd(correlationId, tc.name, { node: "software_architect", passNumber, toolLoop: loopCount });
+              }
             } catch (toolErr) {
               LOG("tool.invoke error: %s args=%s", toolErr instanceof Error ? toolErr.message : String(toolErr), JSON.stringify(args).slice(0, 200));
               result = `Error: ${toolErr instanceof Error ? toolErr.message : "Tool call failed"}`;
+              if (traceSvc && correlationId) {
+                traceSvc.toolEnd(correlationId, tc.name, {
+                  node: "software_architect",
+                  passNumber,
+                  toolLoop: loopCount,
+                  error: toolErr instanceof Error ? toolErr.message : String(toolErr),
+                });
+              }
             }
             const content = typeof result === "string" ? result : JSON.stringify(result);
             toolMessages.push(new ToolMessage({ content, tool_call_id: toolCallId }));
@@ -720,14 +820,17 @@ export function createMddSoftwareArchitectNode(
           messages.push(aiMsg, ...toolMessages);
           loopCount++;
         }
+        toolLoopCount = loopCount;
       } else {
         const response = await llm.invoke(messages);
         text = typeof response.content === "string" ? response.content : "";
       }
+      llmInvokeDurationMs = Date.now() - llmInvokeStart;
       text = stripThinkingTags(text);
 
       if (!text.trim()) {
         LOG("LLM vacío, devolviendo borrador sin transformar");
+        emitArchitectPassMetrics(draftTrimmed, { emptyLlmOutput: true });
         return {};
       }
       const contextIntro = ((state.clarifiedScope ?? "").trim() || (draftTrimmed.slice(0, 800) + (draftTrimmed.length > 800 ? "…" : ""))).trim();
@@ -763,6 +866,7 @@ export function createMddSoftwareArchitectNode(
             const internalDirectives = extractInternalDirectives(text, "software_architect");
             LOG("usando slice estructurado (contratosApi/arquitecturaStack/logicaEdgeCases), mddDraftLen=%s", structuredDraft.length);
             logMddNodeOutput("SoftwareArchitect", structuredDraft);
+            emitArchitectPassMetrics(structuredDraft, { outputFormat: "structured_slice" });
             return {
               mddStructured: merged,
               mddDraft: structuredDraft,
@@ -864,7 +968,27 @@ export function createMddSoftwareArchitectNode(
           throw new SyntaxError("El Arquitecto no devolvió JSON con mddDraft, ni sqlSchema/apiContracts, ni markdown usable.");
         }
       }
-      if (!mddDraft) return {};
+      if (!mddDraft) {
+        emitArchitectPassMetrics(draftTrimmed, { parseFailed: true });
+        return {};
+      }
+      const minLength = 600;
+      if (section5OnlyPass && mergeBaseline.length >= minLength) {
+        const section5Slice = extractLogicaEdgeCasesBody(mddDraft);
+        if (section5Slice && !/##\s*2\.\s*Arquitectura/i.test(mddDraft.trim())) {
+          mddDraft = mergeSection5BodyIntoDraft(mergeBaseline, section5Slice);
+          LOG("merged §5 slice into baseline (len=%s)", mddDraft.length);
+        }
+      } else if (!section5OnlyPass && mergeBaseline.length >= minLength) {
+        const slice25 = extractSections2To5Content(mddDraft);
+        const outputTrimmed = mddDraft.trim();
+        const missingSection1 = !/##\s*1\.\s*Contexto/i.test(outputTrimmed);
+        const startsAtSection2 = /^#+\s*2\.\s*Arquitectura|^##\s*2\.\s*Arquitectura/im.test(outputTrimmed);
+        if (slice25 && (missingSection1 || startsAtSection2)) {
+          mddDraft = replaceSections2To5InDraft(mergeBaseline, slice25);
+          LOG("merged §2–§5 slice into baseline (len=%s)", mddDraft.length);
+        }
+      }
       // §3 la genera el SA; no hay Experto en Modelo de Datos en el flujo.
       // No pisar sección 4 (Contratos) si el borrador entrante ya tenía contratos y el Arquitecto devolvió placeholder.
       const incomingContratos = extractContratosBody(draftTrimmed);
@@ -874,7 +998,6 @@ export function createMddSoftwareArchitectNode(
         LOG("preservada sección 4 entrante (contratos reales); el Arquitecto había devuelto placeholder");
       }
       // Si la conversión del LLM dejó un draft muy corto pero teníamos uno sustancial del Clarificador, conservarlo.
-      const minLength = 600;
       if (mddDraft.length < minLength && draftTrimmed.length >= minLength) {
         if (contractsRequired(state)) {
           const contratosFromText = extractContratosFromArchitectResponse(text);
@@ -951,6 +1074,7 @@ export function createMddSoftwareArchitectNode(
 
       if (Object.keys(slice).length > 0) {
         const merged = mergeMddStructured(state.mddStructured ?? undefined, slice, state.mddDraft ?? "");
+        emitArchitectPassMetrics(mddDraft, { outputFormat: "markdown_merged_structured" });
         return {
           mddStructured: merged,
           mddDraft,
@@ -958,6 +1082,7 @@ export function createMddSoftwareArchitectNode(
           ...(section5OnlyPass ? { architectSection5PassPending: false } : {}),
         };
       }
+      emitArchitectPassMetrics(mddDraft, { outputFormat: "markdown" });
       return {
         mddDraft,
         ...meshUpdate,

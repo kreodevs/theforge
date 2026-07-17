@@ -153,7 +153,10 @@ export async function createArchitectLLM(
   opts?: CreateDbgaLLMOptions,
 ): Promise<BaseChatModel> {
   const runtime = await aiFactory.resolveArchitectRuntime(userId);
-  return createDbgaLLMFromRuntime(runtime, opts);
+  return createDbgaLLMFromRuntime(runtime, {
+    outputTokenPurpose: "document",
+    ...opts,
+  });
 }
 
 /**

@@ -1028,9 +1028,9 @@ export function alignInfraNodeVersionWithSection2(draft: string): string {
   return out;
 }
 
-/** Pasada final antes del delivery gate: alinea Node §2↔§7 (idempotente). */
+/** Pasada final antes del delivery gate: coherencia determinista §2/§4/§6/§7 (idempotente). */
 export function applyPreDeliveryGateFixes(draft: string): string {
-  return alignInfraNodeVersionWithSection2(draft ?? "");
+  return fixDeterministicMddCoherence(draft ?? "");
 }
 
 function extractInfraSectionBodyForNodeCheck(draft: string): string | null {
@@ -1428,22 +1428,15 @@ function fixSecurityManifestCoherence(draft: string): string {
         '$1\n      "auth_provider": "LDAP/AD",',
       );
     }
-    if (sec6MentionsBcryptOnly) {
-      body = body.replace(/"hashing_algorithm"\s*:\s*"Argon2id"/gi, '"hashing_algorithm": "bcrypt"');
-      if (!/"hashing_scope"\s*:/i.test(body)) {
-        body = body.replace(
-          /"hashing_algorithm"\s*:\s*"[^"]*"/i,
-          (m) => `${m},\n      "hashing_scope": "bootstrap_and_service_secrets_only"`,
-        );
-      }
-    } else if (sec6MentionsArgon2) {
+    // LDAP/AD es auth principal: manifest nunca usa bcrypt (solo Argon2id para bootstrap local).
+    if (/"hashing_algorithm"\s*:\s*"bcrypt"/i.test(body)) {
       body = body.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
-      if (!/"hashing_scope"\s*:/i.test(body)) {
-        body = body.replace(
-          /"hashing_algorithm"\s*:\s*"[^"]*"/i,
-          (m) => `${m},\n      "hashing_scope": "bootstrap_and_service_secrets_only"`,
-        );
-      }
+    }
+    if (!/"hashing_scope"\s*:/i.test(body) && /"hashing_algorithm"/i.test(body)) {
+      body = body.replace(
+        /"hashing_algorithm"\s*:\s*"[^"]*"/i,
+        (m) => `${m},\n      "hashing_scope": "bootstrap_and_service_secrets_only"`,
+      );
     }
   }
 
@@ -1454,16 +1447,18 @@ function fixSecurityManifestCoherence(draft: string): string {
     );
   }
 
-  if (sec6MentionsBcryptOnly && /"hashing_algorithm"\s*:\s*"Argon2id"/i.test(body)) {
-    body = body.replace(/"hashing_algorithm"\s*:\s*"Argon2id"/gi, '"hashing_algorithm": "bcrypt"');
-  }
-  if (sec6MentionsArgon2 && /"hashing_algorithm"\s*:\s*"bcrypt"/i.test(body)) {
-    body = body.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
-    if (!/"hashing_scope"\s*:/i.test(body)) {
-      body = body.replace(
-        /"hashing_algorithm"\s*:\s*"[^"]*"/i,
-        (m) => `${m},\n      "hashing_scope": "local_passwords_and_bootstrap"`,
-      );
+  if (!usesLdap) {
+    if (sec6MentionsBcryptOnly && /"hashing_algorithm"\s*:\s*"Argon2id"/i.test(body)) {
+      body = body.replace(/"hashing_algorithm"\s*:\s*"Argon2id"/gi, '"hashing_algorithm": "bcrypt"');
+    }
+    if (sec6MentionsArgon2 && /"hashing_algorithm"\s*:\s*"bcrypt"/i.test(body)) {
+      body = body.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
+      if (!/"hashing_scope"\s*:/i.test(body)) {
+        body = body.replace(
+          /"hashing_algorithm"\s*:\s*"[^"]*"/i,
+          (m) => `${m},\n      "hashing_scope": "local_passwords_and_bootstrap"`,
+        );
+      }
     }
   }
 
@@ -4518,6 +4513,72 @@ export function getMddDraftSummary(draft: string): { length: number; section2: "
   return { length: trimmed.length, section2 };
 }
 
+const ARCHITECT_SECTION_MIN_SUBSTANTIAL = 400;
+
+/** True si §2–§5 tienen contenido real (no placeholders) — candidato a resumir en corrección. */
+export function mddSections25Substantial(draft: string): boolean {
+  const bodies = [
+    extractArquitecturaSectionBody(draft),
+    extractSection3Body(draft),
+    extractSection4Body(draft),
+    extractLogicaEdgeCasesBody(draft),
+  ];
+  return bodies.every((b) => b && b.length >= ARCHITECT_SECTION_MIN_SUBSTANTIAL && !isMddSectionPlaceholderBody(b));
+}
+
+export type ArchitectPromptDraftBlock = {
+  text: string;
+  originalChars: number;
+  usedChars: number;
+  mode: "full" | "correction_summary";
+};
+
+/**
+ * En pasos de corrección con §2–§5 ya sustanciales, reduce el borrador embebido en el prompt
+ * del Arquitecto (preserva §1 y metadatos; el pipeline fusiona desde baseline).
+ */
+export function buildArchitectPromptDraftBlock(
+  draft: string,
+  options?: { correctionPass?: boolean; maxSection1Chars?: number },
+): ArchitectPromptDraftBlock {
+  const trimmed = (draft ?? "").trim();
+  const originalChars = trimmed.length;
+  const correctionPass = options?.correctionPass === true;
+  if (!correctionPass || !mddSections25Substantial(trimmed) || originalChars < 8_000) {
+    return { text: trimmed || "(vacío)", originalChars, usedChars: originalChars, mode: "full" };
+  }
+
+  const maxS1 = options?.maxSection1Chars ?? 2_500;
+  const s1Body = getSectionBody(trimmed, /##\s*1\.\s*Contexto/i) ?? "";
+  const s1Preview =
+    s1Body.length <= maxS1 ? s1Body : `${s1Body.slice(0, maxS1)}\n\n[... §1 truncada (${s1Body.length} chars) ...]`;
+
+  const s2Len = extractArquitecturaSectionBody(trimmed)?.length ?? 0;
+  const s3Len = extractSection3Body(trimmed)?.length ?? 0;
+  const s4Len = extractSection4Body(trimmed)?.length ?? 0;
+  const s5Len = extractLogicaEdgeCasesBody(trimmed)?.length ?? 0;
+  const tableCount = (extractSection3Body(trimmed)?.match(/\bCREATE\s+TABLE\b/gi) ?? []).length;
+
+  const text = [
+    "## 1. Contexto",
+    "",
+    s1Preview || "(sin §1)",
+    "",
+    "## §2–§5 (resumen — ya generadas; aplicar solo la directiva de corrección)",
+    "",
+    `- §2 Arquitectura y Stack: ${s2Len} caracteres`,
+    `- §3 Modelo de Datos: ${s3Len} caracteres, ${tableCount} tabla(s) CREATE TABLE`,
+    `- §4 Contratos de API: ${s4Len} caracteres`,
+    `- §5 Lógica y Edge Cases: ${s5Len} caracteres`,
+    "",
+    "El contenido completo de §2–§5 se omite del prompt para acelerar la corrección. " +
+      "El pipeline preserva las secciones no modificadas desde el borrador baseline. " +
+      "Regenera únicamente las secciones indicadas en la directiva de corrección.",
+  ].join("\n");
+
+  return { text, originalChars, usedChars: text.length, mode: "correction_summary" };
+}
+
 /**
  * Devuelve el rango [start, end) del bloque §2–§5 (Arquitectura hasta antes de Seguridad) en el draft.
  * Usado para reemplazar solo §2–§5 al regenerar desde el arquitecto.
@@ -4702,6 +4763,11 @@ function replaceSection4Body(draft: string, newBody: string): string {
 
 function replaceSection5Body(draft: string, newBody: string): string {
   return replaceH2SectionBody(draft, /##\s*5\.\s*Lógica\s+y\s*Edge\s+Cases/i, newBody);
+}
+
+/** Fusiona solo el cuerpo de §5 en un borrador baseline (paso dedicado del Arquitecto). */
+export function mergeSection5BodyIntoDraft(baselineDraft: string, section5Body: string): string {
+  return replaceSection5Body(baselineDraft, section5Body);
 }
 
 /** Secciones 1–7 que no serán reescritas por los nodos del plan sections (sin format/diagram/auditor). */

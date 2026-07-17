@@ -108,6 +108,29 @@ export class MddFlowTraceService {
     this.emit(correlationId, "section5_pass_triggered", payload);
   }
 
+  /** Métricas de una invocación LLM del nodo software_architect (pass 1 o retry §5). */
+  architectLlmPass(correlationId: string, payload: Record<string, unknown> = {}): void {
+    this.emit(correlationId, "architect_llm_pass", payload);
+  }
+
+  /** Resultado del parse JSON del Clarifier (reparación local vs retry LLM vs fallback). */
+  clarifierJsonParse(correlationId: string, payload: Record<string, unknown> = {}): void {
+    this.emit(correlationId, "clarifier_json_parse", payload);
+  }
+
+  /** Corrección QG omitió software_architect (gaps solo §6/§7 u otros no-arquitecto). */
+  correctionSectionsSkippedArchitect(correlationId: string, payload: Record<string, unknown> = {}): void {
+    this.emit(correlationId, "correction_sections_skipped_architect", payload);
+  }
+
+  /** Estimación de duración acumulada del job (desde job_start). */
+  jobDurationEstimate(correlationId: string, payload: Record<string, unknown> = {}): void {
+    this.emit(correlationId, "job_duration_estimate", {
+      elapsedMs: this.elapsedMs(correlationId),
+      ...payload,
+    });
+  }
+
   /** Runs work while emitting heartbeats every {@link MDD_FLOW_HEARTBEAT_MS} until settled. */
   async runWithStepHeartbeats<T>(
     correlationId: string,

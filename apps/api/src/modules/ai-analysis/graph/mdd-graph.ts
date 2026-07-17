@@ -12,10 +12,11 @@ import { createMddQualityGateNode } from "../nodes/mdd-quality-gate.node.js";
 import { createMddManagerNode, type MddManagerToolDeps } from "../nodes/mdd-manager.node.js";
 import { createMddMergeSection1Node } from "../nodes/mdd-merge-section1.node.js";
 import { createMddGraphPopulatorNode } from "../nodes/mdd-graph-populator.node.js";
-import { resolveCorrectionAgentsFromQualityGate, inferAgentsFromQualityGaps } from "../utils/mdd-manager-routing.util.js";
+import { resolveCorrectionAgentsFromQualityGate, inferAgentsFromQualityGaps, resolveCorrectionRouting } from "../utils/mdd-manager-routing.util.js";
 import { mddNeedsSection5Pass } from "../utils/mdd-sanitize.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { createArchitectLLM, createDbgaLLM, createGraphLLM } from "../llm/create-dbga-llm.js";
+import { resolveLlmMaxTokensForPurpose } from "../../ai/config/llm-config.js";
 import type { AIFactory } from "../../ai/ai.factory.js";
 import { getMddArchitectTools } from "../tools/tool-registry.js";
 import type { TheForgeService } from "../../theforge/theforge.service.js";
@@ -211,7 +212,11 @@ export async function createMddGraph(
   const graphLlm = await createGraphLLM(aiFactory, userId);
   const clarifierLlm = await createGraphLLM(aiFactory, userId, { outputTokenPurpose: "langgraph" });
   const graphStructuralLlm = await createGraphLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
-  const architectLlm = await createArchitectLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
+  const architectLlm = await createArchitectLLM(aiFactory, userId, {
+    temperature: STRUCTURAL_TEMPERATURE,
+    outputTokenPurpose: "document",
+  });
+  const architectMaxTokens = resolveLlmMaxTokensForPurpose("document");
   const nodeCache = options?.nodeCache ?? null;
   const flowTrace = options?.flowTrace ?? null;
   const trace = flowTrace?.service ?? null;
@@ -223,7 +228,7 @@ export async function createMddGraph(
     nodeCache,
     "clarifier",
     clarifierInput,
-    createMddClarifierNode(clarifierLlm),
+    createMddClarifierNode(clarifierLlm, { flowTrace: flowTrace ?? null }),
     trace,
     correlationId,
     shouldAbort,
@@ -235,6 +240,8 @@ export async function createMddGraph(
     createMddSoftwareArchitectNode(architectLlm, getMddArchitectTools(), {
       theforge: options?.theforge ?? null,
       uiMcpFrontendLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
+      maxOutputTokens: architectMaxTokens,
+      flowTrace: flowTrace ?? null,
     }),
     trace,
     correlationId,
@@ -272,11 +279,18 @@ export async function createMddGraph(
     "routeAfterSoftwareArchitect",
     (state) => {
       const destination = routeAfterSoftwareArchitectLean(state);
-      if (trace && correlationId && destination === "architect_section5_prep") {
-        trace.section5PassTriggered(correlationId, {
-          reason: "mddNeedsSection5Pass",
-          ...routeTracePayload(state),
-        });
+      if (trace && correlationId) {
+        if (destination === "architect_section5_prep") {
+          trace.section5PassTriggered(correlationId, {
+            reason: "mddNeedsSection5Pass",
+            ...routeTracePayload(state),
+          });
+        } else if (!state.architectSection5PassPending) {
+          trace.section5PassSkipped(correlationId, {
+            reason: "section5_substantial_after_pass1",
+            ...routeTracePayload(state),
+          });
+        }
       }
       return destination;
     },
@@ -341,20 +355,41 @@ export async function createMddGraph(
     if (state.delegateTarget === "sections" && state.sectionsToRun?.length) {
       destination = state.sectionsToRun[0]!;
     } else {
-      const agents = resolveCorrectionAgentsFromQualityGate(state.qualityGate, inferAgentsFromQualityFeedback);
+      const agents = resolveCorrectionAgentsFromQualityGate(state.qualityGate, inferAgentsFromQualityFeedback, {
+        mddDraft: state.mddDraft,
+      });
       if (agents.includes("clarifier")) destination = "clarifier";
       else if (agents.includes("software_architect")) destination = "software_architect";
+      else if (agents.includes("security") && agents.includes("integration")) destination = "fanout_sec_int";
       else if (agents.includes("security")) destination = "security";
       else if (agents.includes("integration")) destination = "integration";
       else destination = "clarifier";
     }
     if (trace && correlationId) {
+      const routing = resolveCorrectionRouting(state.qualityGate, inferAgentsFromQualityFeedback, {
+        mddDraft: state.mddDraft,
+      });
       trace.correctionStart(correlationId, {
         mddIteration: iteration,
         gapCount: state.qualityGate?.gaps?.length ?? 0,
         blockerCount: state.qualityGate?.blockers?.length ?? 0,
         firstNode: destination,
+        correctionAgents: routing.agents,
+        section5OnlyPass: routing.section5OnlyPass,
         ...routeTracePayload(state),
+      });
+      if (routing.architectSkipped || state.correctionArchitectSkipped) {
+        trace.correctionSectionsSkippedArchitect(correlationId, {
+          reason: "gaps_only_sec_int_or_non_architect",
+          correctionAgents: routing.agents,
+          sectionsToRun: state.sectionsToRun,
+          mddIteration: iteration,
+        });
+      }
+      trace.jobDurationEstimate(correlationId, {
+        phase: "correction_start",
+        mddIteration: iteration,
+        estimatedArchitectPassesSkipped: routing.architectSkipped ? 1 : 0,
       });
       trace.routeDecision(correlationId, "routeAfterQualityGate", destination, routeTracePayload(state));
     }
@@ -415,6 +450,7 @@ export async function createMddGraph(
       graph_populator: "graph_populator",
       clarifier: "clarifier",
       software_architect: "software_architect",
+      fanout_sec_int: "fanout_sec_int",
       security: "security",
       integration: "integration",
     })
@@ -441,7 +477,11 @@ export async function createMddGraphWithManager(
   const graphLlm = await createGraphLLM(aiFactory, userId);
   const clarifierLlm = await createGraphLLM(aiFactory, userId, { outputTokenPurpose: "langgraph" });
   const graphStructuralLlm = await createGraphLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
-  const architectLlm = await createArchitectLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
+  const architectLlm = await createArchitectLLM(aiFactory, userId, {
+    temperature: STRUCTURAL_TEMPERATURE,
+    outputTokenPurpose: "document",
+  });
+  const architectMaxTokens = resolveLlmMaxTokensForPurpose("document");
   const nodeCache = compileOptions?.nodeCache ?? null;
   const flowTrace = compileOptions?.flowTrace ?? null;
   const trace = flowTrace?.service ?? null;
@@ -465,7 +505,7 @@ export async function createMddGraphWithManager(
     nodeCache,
     "clarifier",
     clarifierInput,
-    createMddClarifierNode(clarifierLlm),
+    createMddClarifierNode(clarifierLlm, { flowTrace: flowTrace ?? null }),
     trace,
     correlationId,
     shouldAbort,
@@ -478,6 +518,8 @@ export async function createMddGraphWithManager(
     createMddSoftwareArchitectNode(architectLlm, getMddArchitectTools(), {
       theforge: theForgeForArchitect,
       uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
+      maxOutputTokens: architectMaxTokens,
+      flowTrace: flowTrace ?? null,
     }),
     trace,
     correlationId,
@@ -524,6 +566,12 @@ export async function createMddGraphWithManager(
         });
       }
       return "architect_section5_prep";
+    }
+    if (trace && correlationId && !state.architectSection5PassPending) {
+      trace.section5PassSkipped(correlationId, {
+        reason: "section5_substantial_after_pass1",
+        ...routeTracePayload(state),
+      });
     }
     const next = nextInSections(state, "software_architect");
     if (next) return next;

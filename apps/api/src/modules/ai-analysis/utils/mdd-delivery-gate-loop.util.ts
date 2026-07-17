@@ -1,5 +1,5 @@
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
-import { getSection6Or7Range } from "./mdd-sanitize.js";
+import { extractSection3Body, getSection6Or7Range } from "./mdd-sanitize.js";
 
 /** Máximo de reintentos automáticos del gate de entrega (Fase 4). */
 export const MAX_MDD_DELIVERY_GATE_ATTEMPTS = 3;
@@ -41,6 +41,17 @@ export function draftHasSubstantialSection7(draft: string): boolean {
     .replace(/^\s*\n+/, "")
     .trim();
   return body.length > 200 && !/^\s*\(Pendiente[^)]*\)\s*$/im.test(body);
+}
+
+/** True si §2–§5 tienen contenido sustancial (evitar re-ejecutar architect en corrección mixta). */
+export function draftHasSubstantialArchitectSections(draft: string): boolean {
+  const trimmed = (draft ?? "").trim();
+  const section3 = extractSection3Body(trimmed);
+  if ((section3?.length ?? 0) > 200 && /\bCREATE\s+TABLE\b/i.test(section3 ?? "")) {
+    return true;
+  }
+  const architectH2 = (trimmed.match(/^##\s+[1-5]\./gm) ?? []).length;
+  return trimmed.length > 800 && architectH2 >= 3;
 }
 
 /** True si §6 y §7 tienen contenido sustancial (saltar re-ejecución en reintentos del gate). */

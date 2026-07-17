@@ -82,6 +82,8 @@ export const MDDStateAnnotation = Annotation.Root({
   architectCriticAttempts: Annotation<number | undefined>(),
   /** Segundo paso del Arquitecto enfocado solo en §5 (evita truncado 16K en primer pass). */
   architectSection5PassPending: Annotation<boolean | undefined>(),
+  /** Corrección QG omitió software_architect. */
+  correctionArchitectSkipped: Annotation<boolean | undefined>(),
   projectId: Annotation<string | undefined>({ reducer: reducePreferDefined }),
   activeStageId: Annotation<string | undefined>({ reducer: reducePreferDefined }),
   isLegacyProject: Annotation<boolean | undefined>({ reducer: reducePreferDefined }),
