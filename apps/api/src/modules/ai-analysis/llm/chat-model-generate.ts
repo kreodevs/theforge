@@ -3,7 +3,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { AIMessageChunk, type BaseMessage } from "@langchain/core/messages";
 import { ChatGenerationChunk, type ChatResult } from "@langchain/core/outputs";
 
-type LlmLike = {
+export type LlmLike = {
   _generate?: BaseChatModel["_generate"];
   _streamResponseChunks?: BaseChatModel["_streamResponseChunks"];
   invoke: (messages: BaseMessage[], options?: unknown) => Promise<BaseMessage>;

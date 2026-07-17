@@ -144,8 +144,11 @@ export async function invokeArchitectLlmBlocking(
   emitArchitectLlmProgress(ctx, "llm_invoke_start", { invokeMode: "blocking" });
   const invokeStart = Date.now();
 
-  const response = await waitWithProgress(
-    () => llm.invoke(messages).then((message) => message as AIMessage),
+  const response = await waitWithProgress<AIMessage>(
+    async () => {
+      const message = await llm.invoke(messages);
+      return message as AIMessage;
+    },
     (elapsedMs) => {
       emitArchitectLlmProgress(ctx, "llm_waiting", {
         elapsedMs,

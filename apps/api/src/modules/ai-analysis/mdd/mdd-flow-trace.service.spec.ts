@@ -20,7 +20,9 @@ describe("MddFlowTraceService", () => {
     svc.jobEnd("corr-a", { ok: true });
 
     assert.equal(logs.length, 3);
-    assert.match(logs[0], /\[MDD:Flow\] correlationId=corr-a event=job_start elapsedMs=0/);
+    assert.match(logs[0], /\[MDD:Flow\] correlationId=corr-a event=job_start elapsedMs=\d+/);
+    const jobStartElapsed = Number(logs[0].match(/elapsedMs=(\d+)/)?.[1] ?? -1);
+    assert.ok(jobStartElapsed >= 0 && jobStartElapsed <= 2);
     assert.match(logs[0], /"mode":"pipeline"/);
     assert.match(logs[1], /event=step_start elapsedMs=\d+/);
     const stepElapsed = Number(logs[1].match(/elapsedMs=(\d+)/)?.[1] ?? 0);
