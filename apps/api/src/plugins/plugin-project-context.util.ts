@@ -1,4 +1,5 @@
-import { StageStatus } from "@theforge/database";
+/** Etapa ACTIVE (alineado con Prisma `StageStatus`; sin importar @theforge/database en specs). */
+const STAGE_WORKFLOW_ACTIVE = "ACTIVE";
 
 /** Campos de entregables core usados por hooks y generateArtifact. */
 export interface ProjectDeliverablesSource {
@@ -23,11 +24,11 @@ export interface ProjectDeliverablesSource {
 
 /** Etapa primaria (ACTIVE menor ordinal, si no la de menor ordinal). */
 export function pickPrimaryStageForHooks<
-  T extends { ordinal: number; workflowStatus?: StageStatus | string },
+  T extends { ordinal: number; workflowStatus?: string },
 >(stages: T[]): T | undefined {
   if (!stages.length) return undefined;
   const active = stages
-    .filter((s) => s.workflowStatus === StageStatus.ACTIVE)
+    .filter((s) => s.workflowStatus === STAGE_WORKFLOW_ACTIVE)
     .sort((a, b) => a.ordinal - b.ordinal);
   if (active.length > 0) return active[0];
   return [...stages].sort((a, b) => a.ordinal - b.ordinal)[0];
@@ -53,7 +54,7 @@ export function buildProjectHookContextFromStages(
   project: ProjectDeliverablesSource,
   stages: Array<{
     ordinal: number;
-    workflowStatus?: StageStatus | string;
+    workflowStatus?: string;
     mddContent?: string | null;
     brdContent?: string | null;
   }>,

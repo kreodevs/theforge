@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { StageStatus } from "@theforge/database";
 import { describe, it } from "node:test";
 import {
   buildProjectDeliverablesContext,
@@ -35,9 +34,9 @@ describe("plugin-project-context.util", () => {
 
   it("pickPrimaryStageForHooks prefiere ACTIVE de menor ordinal", () => {
     const stages = [
-      { ordinal: 2, workflowStatus: StageStatus.ACTIVE, mddContent: "m2" },
-      { ordinal: 1, workflowStatus: StageStatus.ACTIVE, mddContent: "m1" },
-      { ordinal: 0, workflowStatus: StageStatus.DRAFT, mddContent: "m0" },
+      { ordinal: 2, workflowStatus: "ACTIVE", mddContent: "m2" },
+      { ordinal: 1, workflowStatus: "ACTIVE", mddContent: "m1" },
+      { ordinal: 0, workflowStatus: "DRAFT", mddContent: "m0" },
     ];
     const primary = pickPrimaryStageForHooks(stages);
     assert.equal(primary?.ordinal, 1);
