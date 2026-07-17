@@ -39,7 +39,6 @@ import {
   dbgaContainsUserEditKeywords,
   isDbgaContentNearlyIdentical,
   isPartialBenchmarkDoc,
-  looksLikeDbgaEditRequest,
   mergeBenchmarkPartialDoc,
   parseBenchmarkResponse,
   wouldShrinkDbgaDangerously,
@@ -47,6 +46,7 @@ import {
 import {
   looksLikeApiEndpointCatalog,
   looksLikeDbgaDocumentBody,
+  looksLikeDbgaEditRequest,
   looksLikeDbgaSpecIntegrationRequest,
   mergeApiEndpointCatalogIntoDbga,
 } from "@theforge/shared-types";
@@ -163,8 +163,11 @@ export class SessionsService {
   private promptForIntentTurn(
     userPrompt: string,
     action: WorkshopChatAction,
+    activeTab?: string,
   ): string {
-    return action === "edit_document" ? buildEditModeUserPrompt(userPrompt) : userPrompt;
+    return action === "edit_document"
+      ? buildEditModeUserPrompt(userPrompt, activeTab)
+      : userPrompt;
   }
 
   private applyIntentGateToDocFlags(
@@ -373,6 +376,72 @@ export class SessionsService {
     }
 
     return { content: merged, retried };
+  }
+
+  private userMessageForDocHeuristics(userMessage: string, llmUserPrompt: string): string {
+    return userMessage.trim() || llmUserPrompt.trim();
+  }
+
+  private wantsDbgaDocumentProcessing(
+    intentAction: WorkshopChatAction,
+    userMessage: string,
+    llmUserPrompt: string,
+  ): boolean {
+    if (intentAction === "edit_document") return true;
+    return looksLikeDbgaEditRequest(this.userMessageForDocHeuristics(userMessage, llmUserPrompt));
+  }
+
+  private computeTabDocumentPersisted(
+    tab: string,
+    parts: {
+      finalMdd?: string;
+      finalDbga?: string;
+      spec?: string;
+      brd?: string;
+      blueprint?: string;
+      api?: string;
+      flows?: string;
+      tasks?: string;
+      infra?: string;
+      arch?: string;
+      useCases?: string;
+      stories?: string;
+      ux?: string;
+      phase0?: string;
+    },
+  ): boolean {
+    switch (tab) {
+      case "mdd":
+        return Boolean(parts.finalMdd?.trim());
+      case "benchmark":
+        return Boolean(parts.finalDbga?.trim());
+      case "spec":
+        return Boolean(parts.spec?.trim());
+      case "brd":
+        return Boolean(parts.brd?.trim());
+      case "blueprint":
+        return Boolean(parts.blueprint?.trim());
+      case "api-contracts":
+        return Boolean(parts.api?.trim());
+      case "logic-flows":
+        return Boolean(parts.flows?.trim());
+      case "tasks":
+        return Boolean(parts.tasks?.trim());
+      case "infra":
+        return Boolean(parts.infra?.trim());
+      case "architecture":
+        return Boolean(parts.arch?.trim());
+      case "use-cases":
+        return Boolean(parts.useCases?.trim());
+      case "user-stories":
+        return Boolean(parts.stories?.trim());
+      case "ux-ui-guide":
+        return Boolean(parts.ux?.trim());
+      case "phase0":
+        return Boolean(parts.phase0?.trim());
+      default:
+        return false;
+    }
   }
 
   private sessionScope(sessionId: string) {
@@ -609,6 +678,8 @@ export class SessionsService {
     documentAst?: Record<string, unknown> | null;
     /** RFC-001: Versión de parche atómico del documento (documentVersion). */
     documentVersion?: number | null;
+    documentHadDelimiter?: boolean;
+    documentPersisted?: boolean;
   }> {
     const session = await this.prisma.session.findFirst({
       where: this.sessionScope(sessionId),
@@ -636,7 +707,11 @@ export class SessionsService {
       userTurn.promptForModel,
       this.intentRouteContext(options, history),
     );
-    const llmUserPrompt = this.promptForIntentTurn(userTurn.promptForModel, intentRoute.action);
+    const llmUserPrompt = this.promptForIntentTurn(
+      userTurn.promptForModel,
+      intentRoute.action,
+      activeTab,
+    );
 
     const dbgaEditTurn = await this.tryBenchmarkDbgaEditTurn(
       activeTab,
@@ -864,7 +939,15 @@ export class SessionsService {
     }
 
     const effectiveUserMessage = llmUserPrompt.trim() || userMessage.trim();
-    const wantsDocumentEdit = intentRoute.action === "edit_document";
+    const heuristicsUserMsg = this.userMessageForDocHeuristics(userMessage, llmUserPrompt);
+    const wantsDocumentEdit =
+      intentRoute.action === "edit_document" ||
+      (activeTab === "benchmark" && looksLikeDbgaEditRequest(heuristicsUserMsg));
+    const processDbga = this.wantsDbgaDocumentProcessing(
+      wantsDocumentEdit ? "edit_document" : intentRoute.action,
+      userMessage,
+      llmUserPrompt,
+    );
 
     const docFlagsBeforeGate: DocPersistFlags = {
       hasMdd,
@@ -883,7 +966,10 @@ export class SessionsService {
       hasPhase0,
     };
     const hadDelimiter = hadAnyDocumentDelimiter(docFlagsBeforeGate);
-    const gatedFlags = this.applyIntentGateToDocFlags(intentRoute.action, docFlagsBeforeGate);
+    const gatedFlags = this.applyIntentGateToDocFlags(
+      wantsDocumentEdit ? "edit_document" : intentRoute.action,
+      docFlagsBeforeGate,
+    );
     hasMdd = Boolean(gatedFlags.hasMdd);
     hasSpec = Boolean(gatedFlags.hasSpec);
     hasArch = Boolean(gatedFlags.hasArch);
@@ -920,8 +1006,8 @@ export class SessionsService {
 
     const finalDbga = await this.resolveDbgaContentForReturn(
       effectiveUserMessage,
-      { ...options, wantsDocumentEdit },
-      dbgaDocPart,
+      { ...options, wantsDocumentEdit: processDbga },
+      processDbga ? dbgaDocPart : undefined,
     );
 
     const specResolved = await this.resolveDeliverableContentForReturn(
@@ -1054,7 +1140,7 @@ export class SessionsService {
     );
     assistantContent = this.maybeWarnOrchestratorDocNotPersisted(
       activeTab,
-      effectiveUserMessage,
+      heuristicsUserMsg,
       assistantContent,
       {
         hasMdd: Boolean(finalMdd),
@@ -1073,7 +1159,23 @@ export class SessionsService {
         hasPhase0: Boolean(phase0Resolved.content),
       },
       options,
-      activeTab === "benchmark" ? Boolean(finalDbga?.trim()) : undefined,
+      this.computeTabDocumentPersisted(activeTab, {
+        finalMdd,
+        finalDbga,
+        spec: specResolved.content,
+        brd: brdResolved.content,
+        blueprint: blueprintResolved.content,
+        api: apiResolved.content,
+        flows: flowsResolved.content,
+        tasks: tasksResolved.content,
+        infra: infraResolved.content,
+        arch: archResolved.content,
+        useCases: useCasesResolved.content,
+        stories: storiesResolved.content,
+        ux: uxResolved.content,
+        phase0: phase0Resolved.content,
+      }),
+      hadDelimiter,
     );
 
     const tab = activeTab;
@@ -1130,8 +1232,26 @@ export class SessionsService {
     const updatedSession = await this.prisma.session.findFirst({
       where: this.sessionScope(sessionId),
     });
+    const documentPersisted = this.computeTabDocumentPersisted(tab, {
+      finalMdd,
+      finalDbga,
+      spec: specResolved.content,
+      brd: brdResolved.content,
+      blueprint: blueprintResolved.content,
+      api: apiResolved.content,
+      flows: flowsResolved.content,
+      tasks: tasksResolved.content,
+      infra: infraResolved.content,
+      arch: archResolved.content,
+      useCases: useCasesResolved.content,
+      stories: storiesResolved.content,
+      ux: uxResolved.content,
+      phase0: phase0Resolved.content,
+    });
     return {
       session: updatedSession,
+      documentHadDelimiter: hadDelimiter,
+      documentPersisted,
       mddContent: tab === "mdd" && finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
       uxUiGuideContent: tab === "ux-ui-guide" ? uxResolved.content : undefined,
       dbgaContent: tab === "benchmark" ? finalDbga : undefined,
@@ -1204,6 +1324,8 @@ export class SessionsService {
       architectureContent?: string | null;
       useCasesContent?: string | null;
       userStoriesContent?: string | null;
+      documentHadDelimiter?: boolean;
+      documentPersisted?: boolean;
     }
   > {
     const session = await this.prisma.session.findFirst({
@@ -1233,7 +1355,11 @@ export class SessionsService {
       userTurn.promptForModel,
       this.intentRouteContext(options, history),
     );
-    const llmUserPrompt = this.promptForIntentTurn(userTurn.promptForModel, intentRoute.action);
+    const llmUserPrompt = this.promptForIntentTurn(
+      userTurn.promptForModel,
+      intentRoute.action,
+      activeTab,
+    );
 
     const dbgaEditTurn = await this.tryBenchmarkDbgaEditTurn(
       tab,
@@ -1497,7 +1623,15 @@ export class SessionsService {
     }
 
     const effectiveUserMessage = llmUserPrompt.trim() || userMessage.trim();
-    const wantsDocumentEdit = intentRoute.action === "edit_document";
+    const heuristicsUserMsg = this.userMessageForDocHeuristics(userMessage, llmUserPrompt);
+    const wantsDocumentEdit =
+      intentRoute.action === "edit_document" ||
+      (activeTab === "benchmark" && looksLikeDbgaEditRequest(heuristicsUserMsg));
+    const processDbga = this.wantsDbgaDocumentProcessing(
+      wantsDocumentEdit ? "edit_document" : intentRoute.action,
+      userMessage,
+      llmUserPrompt,
+    );
 
     const docFlagsBeforeGate: DocPersistFlags = {
       hasMdd,
@@ -1516,7 +1650,10 @@ export class SessionsService {
       hasPhase0,
     };
     const hadDelimiter = hadAnyDocumentDelimiter(docFlagsBeforeGate);
-    const gatedFlags = this.applyIntentGateToDocFlags(intentRoute.action, docFlagsBeforeGate);
+    const gatedFlags = this.applyIntentGateToDocFlags(
+      wantsDocumentEdit ? "edit_document" : intentRoute.action,
+      docFlagsBeforeGate,
+    );
     hasMdd = Boolean(gatedFlags.hasMdd);
     hasSpec = Boolean(gatedFlags.hasSpec);
     hasArch = Boolean(gatedFlags.hasArch);
@@ -1553,8 +1690,8 @@ export class SessionsService {
 
     const finalDbga = await this.resolveDbgaContentForReturn(
       effectiveUserMessage,
-      { ...options, wantsDocumentEdit },
-      dbgaDocPart,
+      { ...options, wantsDocumentEdit: processDbga },
+      processDbga ? dbgaDocPart : undefined,
     );
 
     const specResolved = await this.resolveDeliverableContentForReturn(
@@ -1685,9 +1822,26 @@ export class SessionsService {
         ? benchmarkAssistantChatMessage(rawChat, finalDbga)
         : rawChat,
     );
+    const documentPersisted = this.computeTabDocumentPersisted(tab, {
+      finalMdd,
+      finalDbga,
+      spec: specResolved.content,
+      brd: brdResolved.content,
+      blueprint: blueprintResolved.content,
+      api: apiResolved.content,
+      flows: flowsResolved.content,
+      tasks: tasksResolved.content,
+      infra: infraResolved.content,
+      arch: archResolved.content,
+      useCases: useCasesResolved.content,
+      stories: storiesResolved.content,
+      ux: uxResolved.content,
+      phase0: phase0Resolved.content,
+    });
+
     assistantContent = this.maybeWarnOrchestratorDocNotPersisted(
       tab,
-      effectiveUserMessage,
+      heuristicsUserMsg,
       assistantContent,
       {
         hasMdd: Boolean(finalMdd),
@@ -1706,7 +1860,8 @@ export class SessionsService {
         hasPhase0: Boolean(phase0Resolved.content),
       },
       options,
-      tab === "benchmark" ? Boolean(finalDbga?.trim()) : undefined,
+      documentPersisted,
+      hadDelimiter,
     );
     const assistantEntry = stageId
       ? { role: "assistant" as const, content: assistantContent, tab, stageId }
@@ -1748,6 +1903,8 @@ export class SessionsService {
     yield {
       type: "done",
       session: updatedSession,
+      documentHadDelimiter: hadDelimiter,
+      documentPersisted,
       mddContent: tab === "mdd" && finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
       uxUiGuideContent: tab === "ux-ui-guide" ? uxResolved.content : undefined,
       dbgaContent: tab === "benchmark" ? finalDbga : undefined,
@@ -2450,6 +2607,7 @@ ${msg}
       currentPhase0SummaryContent?: string;
     },
     docPersisted?: boolean,
+    hadDelimiter = false,
   ): string {
     const currentDocLen = currentDocLengthForTab(tab, options);
     if (
@@ -2460,6 +2618,7 @@ ${msg}
         flags,
         currentDocLen,
         docPersisted,
+        hadDelimiter,
       })
     ) {
       return assistantContent;
@@ -2467,8 +2626,9 @@ ${msg}
     console.warn("[Chat] documento no persistido pese a pedido/afirmación de cambio", {
       tab,
       currentDocLen,
+      hadDelimiter,
       assistantPreview: assistantContent.slice(0, 120),
     });
-    return appendOrchestratorDocNotPersistedWarning(assistantContent, tab);
+    return appendOrchestratorDocNotPersistedWarning(assistantContent, tab, { hadDelimiter });
   }
 }

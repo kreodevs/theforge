@@ -4,6 +4,10 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [v1.2.1] — 2026-07-17
+
+> **Workshop — edición DBGA y covenant de delimitadores** — Pipeline de edición en chat endurecido, heurística «revisa gaps», avisos sin jerga `---FIN_*---` para el usuario y regla firmada para agentes.
+
 ### Added
 
 - **Workshop — pipeline de edición de documentos (3 fases):**
@@ -12,16 +16,22 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
   - `resolveMddContentForReturn` / `resolveDeliverableContentForReturn` — merge + `validateDocumentForPersist` + retry si falta delimitador o el doc no refleja la petición.
   - Dual Output RFC-001 solo en `edit_document` + tab `mdd`.
   - Intent router: contexto `lastAssistantMessage` y heurística de confirmación (`assistantOfferedDocumentEdit` + «dale» / «sí»).
+- **`workshop-fin-delimiter-covenant.ts`:** covenant LLM (`WORKSHOP_DBGA_EDIT_COVENANT`, `workshopFinDelimiterCovenant`) y mensajes al usuario cuando el panel no persistió.
 
 ### Changed
 
 - **`SessionsService.chat` / `chatStream`:** aplican gate de intención, sanitización, resolución unificada de documentos y log `[DocumentTurn]` en cada turno.
 - **`IntentRouterService`:** cache incluye último mensaje del asistente; prompt LLM del router recibe contexto del turno anterior.
+- **Heurística DBGA «revisa gaps»:** mensajes tipo «revisa que no tenga gaps / motor agnóstico» clasifican como edición (`looksLikeDbgaEditRequest`) aunque el router LLM diga `chat_only`.
+- **Aviso UI/API con delimitador sin persistencia:** si el modelo emite documento (`hadDelimiter`) pero el panel no cambia, warning en chat + banner en Workshop (`documentHadDelimiter` / `documentPersisted` en SSE `done`).
+- **Mensajes al usuario sin jerga `---FIN_*---`:** avisos de panel no persistido ya no piden reformular con delimitadores; el covenant refuerza la regla solo para agentes.
+- **`AiService` / `phase0-benchmark-refine-prompt.md`:** regla firmada DBGA — documento completo + `---FIN_DBGA---`; si hay duda, preguntar en chat sin pedir delimitadores al usuario.
 
 ### Fixed
 
 - **Ediciones accidentales en modo exploración:** el modelo ya no puede persistir documento cuando el router clasifica `chat_only` o `confirm_then_edit`, aunque emita delimitador.
 - **Validación server-side alineada con web:** entregables del chat pasan por `validateDocumentForPersist` completo (no solo shrink peligroso).
+- **SSE `done`:** el orquestador reenvía `documentHadDelimiter` / `documentPersisted` al frontend para el banner del Workshop.
 
 ## [v1.2.0] — 2026-07-17
 

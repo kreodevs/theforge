@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@theforge/shared-types";
+import { workshopFinDelimiterCovenant } from "@theforge/shared-types";
 import type { WorkshopChatAction } from "../ai/intent-route.types.js";
 import { stripThinkingTags } from "../ai-analysis/utils/mdd-security-parse.js";
 import type { DocPersistFlags } from "./orchestrator-doc-guard.util.js";
@@ -29,13 +30,16 @@ export function sanitizeLlmResponse(raw: string): string {
   return stripThinkingTags(raw ?? "").trim();
 }
 
-export function buildEditModeUserPrompt(userMessage: string): string {
+export function buildEditModeUserPrompt(userMessage: string, activeTab?: string): string {
   const msg = userMessage.trim();
   if (!msg) return msg;
+  const tab = (activeTab ?? "mdd").trim();
+  const finTag = WORKSHOP_TAB_FIN_TAG[tab] ?? "DOC";
+  const covenant = workshopFinDelimiterCovenant(finTag, tab === "benchmark" ? "DBGA" : tab);
   return (
     `[MODO EDICIÓN — persistir en el panel del documento]\n` +
-    `Devuelve el documento COMPLETO actualizado y termina con la línea exacta del delimitador (---FIN_*---) de la pestaña activa.\n\n` +
-    `Petición:\n${msg}`
+    `${covenant}\n\n` +
+    `Petición del usuario:\n${msg}`
   );
 }
 

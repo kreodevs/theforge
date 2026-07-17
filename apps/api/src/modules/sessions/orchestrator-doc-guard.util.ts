@@ -1,6 +1,7 @@
 import {
   isHypotheticalDocumentEditOffer,
   looksLikeDbgaEditRequest,
+  workshopPanelPersistFailedChatNote,
 } from "@theforge/shared-types";
 
 /** Tabs del orquestador que persisten documento vía ---FIN_TAG---. */
@@ -26,23 +27,6 @@ const DOC_CLAIMS_EDIT_RE =
 
 const CHANGE_INTENT_RE =
   /\b(no\s+veo\s+(los\s+)?cambios|sigue\s+(haciendo\s+)?menci|a[uú]n\s+(dice|menciona|tiene|aparece|contiene)|no\s+se\s+(reflej|aplic|guard)|documento\s+sigue|persiste|sigue\s+igual|no\s+se\s+usar[aá]?|cambiar|cambio|reemplaz|sustitu|modific|actualiz|eliminar|quita(?:r|n|do)?|en\s+vez\s+de|en\s+lugar\s+de|ajust|agrega|añade|corrige|integra|incorpor|aplica(?:r)?\s+(los\s+)?cambios|al\s+documento|haz\s+las\s+modific|kill\s*switch|tablero|aprobaci[oó]n)\b/i;
-
-const FIN_TAGS: Record<string, string> = {
-  mdd: "MDD",
-  spec: "SPEC",
-  architecture: "ARCH",
-  "use-cases": "USECASES",
-  "user-stories": "STORIES",
-  blueprint: "BLUEPRINT",
-  "api-contracts": "API",
-  "logic-flows": "FLOWS",
-  tasks: "TASKS",
-  infra: "INFRA",
-  brd: "BRD",
-  benchmark: "DBGA",
-  "ux-ui-guide": "UX_UI",
-  phase0: "PHASE0",
-};
 
 export function chatClaimsDocumentWasModified(text: string): boolean {
   const t = (text ?? "").trim();
@@ -167,12 +151,10 @@ export function currentDocLengthForTab(
 export function appendOrchestratorDocNotPersistedWarning(
   assistantContent: string,
   tab: string,
+  opts?: { hadDelimiter?: boolean },
 ): string {
-  const fin = FIN_TAGS[tab] ?? "TAG";
-  const warning =
-    `\n\n⚠️ **El documento del panel no se actualizó.** ` +
-    `Para persistir cambios debes devolver el markdown completo seguido de \`---FIN_${fin}---\`. ` +
-    `Reformula tu pedido pidiendo explícitamente aplicar los cambios al documento.`;
+  const detail = workshopPanelPersistFailedChatNote(tab, opts?.hadDelimiter);
+  const warning = `\n\n⚠️ **El documento del panel no se actualizó.** ${detail}`;
   if (assistantContent.includes("El documento del panel no se actualizó")) return assistantContent;
   return `${assistantContent.trim()}${warning}`;
 }
@@ -185,12 +167,16 @@ export function shouldWarnOrchestratorDocNotPersisted(params: {
   currentDocLen: number;
   /** Si se conoce el resultado real de persistencia (p. ej. benchmark tras resolveDbgaContentForReturn). */
   docPersisted?: boolean;
+  /** El modelo emitió bloque ---FIN_*--- o fallback de documento. */
+  hadDelimiter?: boolean;
 }): boolean {
-  const { tab, userMessage, assistantContent, flags, currentDocLen, docPersisted } = params;
+  const { tab, userMessage, assistantContent, flags, currentDocLen, docPersisted, hadDelimiter } =
+    params;
   if (!ORCHESTRATOR_DOC_TABS.has(tab)) return false;
   if (currentDocLen < 80) return false;
   const persisted = docPersisted ?? docWasPersistedForTab(tab, flags);
   if (persisted) return false;
+  if (hadDelimiter) return true;
   const userWantsEdit =
     tab === "benchmark"
       ? looksLikeDbgaEditRequest(userMessage)
