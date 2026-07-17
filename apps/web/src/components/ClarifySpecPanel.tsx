@@ -1,42 +1,21 @@
-import type { ClarifyDocumentPanelProps } from "@/components/ClarifyDocumentPanel";
-import { ClarifyDocumentPanel } from "@/components/ClarifyDocumentPanel";
-import { useWorkshopStore } from "@/store/workshopStore";
+import type { ResolveClarificationsPanelProps } from "@/components/ResolveClarificationsPanel";
+import { ResolveClarificationsPanel } from "@/components/ResolveClarificationsPanel";
 
 type ClarifySpecPanelProps = Omit<
-  ClarifyDocumentPanelProps,
-  "field" | "documentLabel" | "onClarify" | "allowSyncMdd"
-> & {
-  onClarify?: ClarifyDocumentPanelProps["onClarify"];
-};
+  ResolveClarificationsPanelProps,
+  "field" | "documentLabel"
+>;
 
 /**
- * Pre-MDD clarify flow for Spec tab (`/speckit.clarify` equivalent).
- * @deprecated Prefer `DocumentClarificationSection` o `ClarifyDocumentPanel` con `field="specContent"`.
+ * Wrapper de `ResolveClarificationsPanel` para Spec (compat toolbar).
+ * @deprecated Prefer `DocumentClarificationSection` con `field="specContent"`.
  */
-export function ClarifySpecPanel({
-  onClarify: onClarifyProp,
-  ...rest
-}: ClarifySpecPanelProps) {
-  const clarifyDocument = useWorkshopStore((s) => s.clarifyDocument);
-  const onClarify =
-    onClarifyProp ??
-    (async (projectId, opts) => {
-      const res = await clarifyDocument(projectId, opts);
-      if (!res) return null;
-      return {
-        clarifiedContent: res.clarifiedContent,
-        clarificationMarkerCount: res.clarificationMarkerCount,
-        mddSyncQueued: res.mddSyncQueued,
-      };
-    });
-
+export function ClarifySpecPanel(props: ClarifySpecPanelProps) {
   return (
-    <ClarifyDocumentPanel
+    <ResolveClarificationsPanel
       field="specContent"
       documentLabel="Spec"
-      onClarify={onClarify}
-      allowSyncMdd
-      {...rest}
+      {...props}
     />
   );
 }

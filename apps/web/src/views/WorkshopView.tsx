@@ -2280,7 +2280,7 @@ export default function WorkshopView({
     } else if (centralPanel === "spec") {
       ordered.push({
         id: "clarify",
-        label: "Aclarar Spec",
+        label: "Resolver clarificaciones",
         icon: HelpCircle,
         disabled: loading || !projectId,
         onClick: () => setClarifySpecDialogOpen(true),
@@ -4839,7 +4839,7 @@ export default function WorkshopView({
                 clarification={buildDocClarification(
                   "specContent",
                   (c) => setSpecContent(c),
-                  "detecta ambigüedades y marca [NEEDS CLARIFICATION] antes del MDD",
+                  undefined,
                   {
                     clarifyOpen: clarifySpecDialogOpen,
                     onClarifyOpenChange: setClarifySpecDialogOpen,
