@@ -1,6 +1,7 @@
 import {
   isHypotheticalDocumentEditOffer,
   looksLikeDbgaEditRequest,
+  workshopPanelPersistFailedBanner,
 } from "@theforge/shared-types";
 
 /** Tabs cuyo chat usa orquestador y persiste documento vía ---FIN_TAG---. */
@@ -107,42 +108,8 @@ export function orchestratorDocSnapshot(source: OrchestratorDocSnapshotSource, t
   }
 }
 
-const TAB_LABELS: Record<string, string> = {
-  spec: "Spec",
-  architecture: "Arquitectura",
-  "use-cases": "Casos de uso",
-  "user-stories": "Historias de usuario",
-  blueprint: "Blueprint",
-  "api-contracts": "Contratos API",
-  "logic-flows": "Flujos lógicos",
-  tasks: "Tasks",
-  infra: "Infraestructura",
-  brd: "BRD",
-  benchmark: "Benchmark",
-  "ux-ui-guide": "Guía UX/UI",
-  phase0: "Fase 0",
-};
-
-const FIN_TAGS: Record<string, string> = {
-  spec: "SPEC",
-  architecture: "ARCH",
-  "use-cases": "USECASES",
-  "user-stories": "STORIES",
-  blueprint: "BLUEPRINT",
-  "api-contracts": "API",
-  "logic-flows": "FLOWS",
-  tasks: "TASKS",
-  infra: "INFRA",
-  brd: "BRD",
-  benchmark: "DBGA",
-  "ux-ui-guide": "UX_UI",
-  phase0: "PHASE0",
-};
-
 export function orchestratorDocUnchangedError(tab: string): string {
-  const label = TAB_LABELS[tab] ?? "documento";
-  const fin = FIN_TAGS[tab] ?? "TAG";
-  return `El chat indicó cambios pero ${label} no se actualizó. El asistente debe devolver el markdown completo terminando en ---FIN_${fin}---. Reformula el pedido o pide "aplica los cambios al documento".`;
+  return workshopPanelPersistFailedBanner(tab);
 }
 
 export function extractOrchestratorDocFromDone(
@@ -234,6 +201,18 @@ export function resolveOrchestratorDocUnchangedError(params: {
 }): string | null {
   const docAfter = extractOrchestratorDocFromDone(params.data, params.tab, params.snapshotSource);
   const assistantReply = lastAssistantChatForTab(params.session?.chatLog, params.tab);
+  const hadDelimiter = params.data.documentHadDelimiter === true;
+  const documentPersisted = params.data.documentPersisted === true;
+
+  if (
+    hadDelimiter &&
+    !documentPersisted &&
+    params.snapshotBefore.length >= 80 &&
+    docAfter === params.snapshotBefore
+  ) {
+    return orchestratorDocUnchangedError(params.tab);
+  }
+
   if (
     detectOrchestratorDocUnchanged({
       tab: params.tab,

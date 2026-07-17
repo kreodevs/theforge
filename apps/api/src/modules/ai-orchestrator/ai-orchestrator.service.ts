@@ -823,6 +823,8 @@ export class AiOrchestratorService {
               projectOut.phase0SummaryContent ??
               undefined,
             evaluatorCritique,
+            documentHadDelimiter: (msg as { documentHadDelimiter?: boolean }).documentHadDelimiter,
+            documentPersisted: (msg as { documentPersisted?: boolean }).documentPersisted,
             ...(documentPersist ? { documentPersist } : {}),
           },
         };

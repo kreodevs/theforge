@@ -70,6 +70,8 @@ import {
   extractExplicitContext7Query,
   isExplicitContext7ChatRequest,
   shouldAutoFetchPhase0TechDocs,
+  WORKSHOP_DBGA_EDIT_COVENANT,
+  workshopFinDelimiterCovenant,
 } from "@theforge/shared-types";
 import {
   buildLegacyAsIsSpecCoverageChecklist,
@@ -621,10 +623,9 @@ export class AiService {
         }
 
         if (tag && !options?.welcomeBrief) {
-          systemPrompt += `\n\n**Instrucción DE delimitador (OBLIGATORIO):** Cuando generes o actualices el documento de ${label} (completo o solo una sección), DEBES escribir el contenido y TERMINAR con la línea exacta \`---FIN_${tag}---\`. Lo que vaya después se mostrará como mensaje en el chat. Sin ese delimitador, el sistema NO persiste ningún cambio y el usuario no ve nada en el panel del documento.`;
+          systemPrompt += `\n\n${workshopFinDelimiterCovenant(tag, label)}`;
           if (at === "benchmark") {
-            systemPrompt +=
-              "\n\n**OBLIGATORIO — Benchmark (DBGA):** Si el usuario pide **añadir, modificar, integrar o corregir** el análisis (p. ej. Kill Switch, tablero de aprobación, reglas de negocio, flujos), devuelve el **DBGA COMPLETO** (todo lo que ya existía en el contexto más tus cambios), no solo el párrafo nuevo. Termina con `---FIN_DBGA---` y un mensaje breve después. **Nunca** respondas solo \"He actualizado…\", \"He integrado…\" o \"El cambio ya está reflejado en el panel\" sin el markdown completo antes del delimitador — sin `---FIN_DBGA---` el panel NO cambia.";
+            systemPrompt += `\n\n${WORKSHOP_DBGA_EDIT_COVENANT}`;
           }
           if (at === "mdd") {
             systemPrompt +=
