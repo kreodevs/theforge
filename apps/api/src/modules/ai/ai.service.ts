@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import type {
   GenerateResponseOptions,
   ChatMessage as LlmChatMessage,
@@ -116,6 +116,8 @@ import {
 import { resolveLlmMaxTokensForPurpose } from "./config/llm-config.js";
 import { MERMAID_REGENERATE_PROMPT } from "./prompts/mermaid-regenerate-prompt.js";
 import { repairMermaidBlockBody, stripMermaidFenceWrappers } from "@theforge/shared-types/mermaid";
+import { PluginDocumentPipelineService } from "../../plugins/plugin-document-pipeline.service.js";
+import type { BeforeDocumentRenderPayload } from "../../plugins/types/plugin-payloads.js";
 
 function mddDeliverableCtx(options?: LegacyGenerateOptions): MddDeliverableContextOptions | undefined {
   return options?.legacyBaselineStage ? { legacyBaselineStage: true } : undefined;
@@ -268,6 +270,10 @@ export interface LegacyGenerateOptions {
   omitLiteraryUcUs?: boolean;
   /** Persisted/live domain inventory for checklists + Spec journeys. */
   domainInventory?: DomainInventory | null;
+  /** Hooks de plugins: id de proyecto para before/afterDocumentRender */
+  projectId?: string;
+  /** Contexto de entregables para hooks de plugins */
+  hookContext?: Record<string, string | null | undefined>;
 }
 
 export interface AgentGovernanceGenerateOptions extends LegacyGenerateOptions {
@@ -330,10 +336,86 @@ export class AiService {
   constructor(
     private readonly aiFactory: AIFactory,
     private readonly techDocsMcp: TechnologyDocsMcpClientService,
+    @Optional() private readonly pluginPipeline: PluginDocumentPipelineService | null,
   ) {}
 
   private async provider() {
     return this.aiFactory.createForUser(getRequestUserId());
+  }
+
+  /**
+   * Genera contenido LLM ejecutando hooks before/afterDocumentRender cuando hay plugins
+   * y se proporciona projectId.
+   */
+  async generateWithDocumentHooks(opts: {
+    documentType: string;
+    projectId: string;
+    context: Record<string, string | null | undefined>;
+    prompt: string;
+    systemPrompt: string;
+    history?: LlmChatMessage[];
+    generateOptions?: GenerateResponseOptions;
+  }): Promise<string> {
+    const pipeline = this.pluginPipeline;
+    if (!pipeline?.hasDocumentHooks()) {
+      return this.generateResponse(opts.prompt, opts.history ?? [], {
+        systemPrompt: opts.systemPrompt,
+        ...opts.generateOptions,
+      });
+    }
+
+    const userId = getRequestUserId();
+    const runtime = await this.aiFactory.resolveRuntime(userId);
+    const beforeBase: BeforeDocumentRenderPayload = {
+      documentType: opts.documentType,
+      projectId: opts.projectId,
+      prompt: opts.prompt,
+      systemPrompt: opts.systemPrompt,
+      context: opts.context,
+      llmRuntime: {
+        providerId: runtime.providerId,
+        model: runtime.chatModel,
+        apiKey: runtime.apiKey,
+        baseURL: runtime.baseURL,
+      },
+    };
+    const before = await pipeline.runBeforeDocumentRender(beforeBase);
+    const raw = await this.generateResponse(before.prompt, opts.history ?? [], {
+      systemPrompt: before.systemPrompt,
+      ...opts.generateOptions,
+    });
+    const after = await pipeline.runAfterDocumentRender({
+      documentType: opts.documentType,
+      projectId: opts.projectId,
+      rawContent: raw,
+      parsedContent: null,
+      originalContext: before,
+    });
+    return after.rawContent;
+  }
+
+  /**
+   * Cierra generación LLM con hooks opcionales. Sin `projectId` o sin plugins registrados
+   * → mismo camino que `generateResponse` (core intacto).
+   */
+  private async finishDocumentGeneration(
+    documentType: string,
+    options: LegacyGenerateOptions | undefined,
+    prompt: string,
+    systemPrompt: string,
+    generateOptions?: GenerateResponseOptions,
+  ): Promise<string> {
+    if (options?.projectId) {
+      return this.generateWithDocumentHooks({
+        documentType,
+        projectId: options.projectId,
+        context: options.hookContext ?? {},
+        prompt,
+        systemPrompt,
+        generateOptions,
+      });
+    }
+    return this.generateResponse(prompt, [], { systemPrompt, ...generateOptions });
   }
 
   private async auditorProvider() {
@@ -1059,7 +1141,7 @@ export class AiService {
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
     const systemPrompt =
       SPEC_PROMPT + (legacyAsIsSpec ? LEGACY_AS_IS_SPEC_SYSTEM_APPENDIX : "");
-    return this.generateResponse(prompt, [], { systemPrompt });
+    return this.finishDocumentGeneration("spec", options, prompt, systemPrompt);
   }
 
   /**
@@ -1238,7 +1320,12 @@ export class AiService {
     prompt = appendTechDocsContextBlock(prompt, techDocsContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
-    return this.generateResponse(prompt, [], { systemPrompt: TASKS_PROMPT + NO_MILITAR_INSTRUCTION });
+    return this.finishDocumentGeneration(
+      "tasks",
+      options,
+      prompt,
+      TASKS_PROMPT + NO_MILITAR_INSTRUCTION,
+    );
   }
 
   /**
@@ -1334,7 +1421,12 @@ export class AiService {
     console.warn(
       `[agent-gov] ai.generateAgentGovernance promptLen=${prompt.length} suggestions=${suggestionsCount} archetypes=${options?.suggestions?.archetypes.length ?? 0} complexity=${complexity}`,
     );
-    return this.generateResponse(prompt, [], { systemPrompt: AGENT_GOVERNANCE_PROMPT + NO_MILITAR_INSTRUCTION });
+    return this.finishDocumentGeneration(
+      "agent-governance",
+      options,
+      prompt,
+      AGENT_GOVERNANCE_PROMPT + NO_MILITAR_INSTRUCTION,
+    );
   }
 
   async generateArchitecture(mddContent: string, blueprintContent?: string | null, options?: LegacyGenerateOptions & { gapsFeedback?: string | null }): Promise<string> {
@@ -1368,7 +1460,12 @@ export class AiService {
     prompt = appendTechDocsContextBlock(prompt, techDocsContext);
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
-    return this.generateResponse(prompt, [], { systemPrompt: ARCHITECTURE_PROMPT + NO_MILITAR_INSTRUCTION });
+    return this.finishDocumentGeneration(
+      "architecture",
+      options,
+      prompt,
+      ARCHITECTURE_PROMPT + NO_MILITAR_INSTRUCTION,
+    );
   }
 
   async generateUseCases(mddContent: string, specContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
@@ -1410,7 +1507,7 @@ export class AiService {
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
     const systemPrompt =
       USE_CASES_PROMPT + (legacyAsIsUseCases ? LEGACY_AS_IS_USE_CASES_SYSTEM_APPENDIX : "");
-    return this.generateResponse(prompt, [], { systemPrompt });
+    return this.finishDocumentGeneration("use-cases", options, prompt, systemPrompt);
   }
 
   async generateUserStories(mddContent: string, specContent?: string | null, useCasesContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
@@ -1480,7 +1577,7 @@ export class AiService {
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
     const systemPrompt =
       USER_STORIES_PROMPT + (legacyAsIsUserStories ? LEGACY_AS_IS_USER_STORIES_SYSTEM_APPENDIX : "");
-    return this.generateResponse(prompt, [], { systemPrompt });
+    return this.finishDocumentGeneration("user-stories", options, prompt, systemPrompt);
   }
 
   async generateBlueprint(mddContent: string, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
@@ -1521,7 +1618,7 @@ export class AiService {
         : "\n\n**CRÍTICO — Proyecto existente (contexto Relic):** El bloque anterior describe el codebase REAL indexado por el MCP. El Blueprint DEBE describir ÚNICAMENTE esta estructura y stack. **PROHIBIDO inventar:** no Turborepo, Nx, NestJS, ni nuevos repos ni directorios que no aparezcan en ese contexto. El sistema puede tener uno o varios repositorios; indica los repos y carpetas reales. Solo añade o modifica lo que el MDD exija para el cambio. Si el contexto no menciona un framework concreto, no lo inventes.";
     }
 
-    return this.generateResponse(prompt, [], { systemPrompt });
+    return this.finishDocumentGeneration("blueprint", options, prompt, systemPrompt);
   }
 
   async generateApiContracts(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, brdContent?: string | null, options?: LegacyGenerateOptions): Promise<string> {
@@ -1565,9 +1662,12 @@ export class AiService {
     }
     if (mdd.length > 0) prompt = appendMddGovernancePatternsToPrompt(prompt, mdd);
     prompt = appendLegacyBaselineDetailPrompt(prompt, options?.legacyBaselineStage);
-    return this.generateResponse(prompt, [], {
-      systemPrompt: API_CONTRACTS_PROMPT + NO_MILITAR_INSTRUCTION,
-    });
+    return this.finishDocumentGeneration(
+      "api-contracts",
+      options,
+      prompt,
+      API_CONTRACTS_PROMPT + NO_MILITAR_INSTRUCTION,
+    );
   }
 
   async generateLogicFlows(mddContent: string, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
@@ -1702,7 +1802,7 @@ export class AiService {
       systemPrompt += legacyAsIsLogicFlows ? LEGACY_AS_IS_LOGIC_FLOWS_THEFORGE_APPENDIX : "";
     }
 
-    return this.generateResponse(prompt, [], { systemPrompt });
+    return this.finishDocumentGeneration("logic-flows", options, prompt, systemPrompt);
   }
 
   async generateInfra(mddContent: string, blueprintContent?: string | null, gapsFeedback?: string | null, options?: LegacyGenerateOptions): Promise<string> {
@@ -1730,9 +1830,27 @@ export class AiService {
     if (mdd.length > 0) {
       prompt = appendGreenfieldCoverageChecklist(prompt, mddContent?.trim() ?? "", "Infra", options, blueprintContent);
     }
-    return this.generateResponse(prompt, [], {
-      systemPrompt: INFRA_PROMPT + NO_MILITAR_INSTRUCTION,
-    });
+    return this.finishDocumentGeneration(
+      "infra",
+      options,
+      prompt,
+      INFRA_PROMPT + NO_MILITAR_INSTRUCTION,
+    );
+  }
+
+  /** Guía UX/UI (markdown). Hooks opcionales vía `options.projectId`. */
+  async generateUxUiGuide(
+    uxPrompt: string,
+    options?: LegacyGenerateOptions,
+    generateOptions?: GenerateResponseOptions,
+  ): Promise<string> {
+    return this.finishDocumentGeneration(
+      "ux-ui-guide",
+      options,
+      uxPrompt,
+      UX_UI_GUIDE_PROMPT,
+      generateOptions,
+    );
   }
 
   /**
@@ -1840,13 +1958,16 @@ export class AiService {
     }
   }
 
-  async generateAem(input: {
-    marketScope: AemMarketScope;
-    benchmarkContent?: string | null;
-    phase0Content?: string | null;
-    brdContent?: string | null;
-    projectName?: string | null;
-  }): Promise<string> {
+  async generateAem(
+    input: {
+      marketScope: AemMarketScope;
+      benchmarkContent?: string | null;
+      phase0Content?: string | null;
+      brdContent?: string | null;
+      projectName?: string | null;
+    },
+    options?: LegacyGenerateOptions,
+  ): Promise<string> {
     const cap = (raw: string | null | undefined, max: number) => {
       const t = (raw ?? "").trim();
       if (t.length <= max) return t;
@@ -1886,7 +2007,7 @@ export class AiService {
       );
     }
 
-    return this.generateResponse(parts.join("\n\n"), [], { systemPrompt: AEM_PROMPT });
+    return this.finishDocumentGeneration("aem", options, parts.join("\n\n"), AEM_PROMPT);
   }
 
   /** Dictamen de inversión digital que complementa el AEM generado. */

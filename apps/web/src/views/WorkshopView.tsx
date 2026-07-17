@@ -5159,6 +5159,7 @@ export default function WorkshopView({
                 panel={centralPanel}
                 projectId={projectId}
                 artifactTypes={pluginArtifactTypes}
+                stageId={activeStageId}
               />
             )}
           </div>

@@ -171,6 +171,8 @@ import {
   parseChangeScopeFromLegacyState,
 } from "./tasks-coordinates-context.util.js";
 import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.service.js";
+import { PluginDocumentPipelineService } from "../../plugins/plugin-document-pipeline.service.js";
+import { buildProjectHookContext } from "../../plugins/plugin-project-context.util.js";
 import { cleanSpecDocumentContent } from "./spec-content.util.js";
 import {
   deriveTasksUpstreamActions,
@@ -265,7 +267,60 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly projectGroups: ProjectGroupsService,
     private readonly documentSnapshot: DocumentSnapshotService,
     private readonly tasksPipeline: TasksGenerationPipelineService,
+    private readonly pluginPipeline: PluginDocumentPipelineService,
   ) {}
+
+  /** Contexto de hooks para generadores LLM (MDD/BRD desde stage primaria). */
+  private buildHookContextForProject(project: Project & { stages: StageWithEst[] }) {
+    const stage = pickPrimaryStage(project.stages);
+    return buildProjectHookContext(project, {
+      mddContent: this.mddFromStages(project.stages).trim() || null,
+      brdContent: stage?.brdContent ?? null,
+    });
+  }
+
+  private buildHookGenerateOpts(project: Project & { stages: StageWithEst[] }) {
+    return {
+      projectId: project.id,
+      hookContext: this.buildHookContextForProject(project),
+    };
+  }
+
+  /** Fusiona opciones de generación LLM con contexto de hooks del proyecto. */
+  private withHookGenerateOpts(
+    project: Project & { stages: StageWithEst[] },
+    opts?: LegacyGenerateOptions,
+  ): LegacyGenerateOptions {
+    return { ...(opts ?? {}), ...this.buildHookGenerateOpts(project) };
+  }
+
+  /** Fire-and-forget; sin plugins es no-op en el loader. */
+  private notifyPluginAfterDocumentPersist(
+    documentType: string,
+    projectId: string,
+    finalContent: string,
+  ): void {
+    void this.pluginPipeline.runAfterDocumentPersist({
+      documentType,
+      projectId,
+      finalContent,
+      metadata: {
+        durationMs: 0,
+        provider: "core",
+        model: documentType,
+      },
+    });
+  }
+
+  /** Fire-and-forget lifecycle hook tras persistir cambios de proyecto. */
+  private notifyPluginProjectUpdate(projectId: string, projectName: string): void {
+    void this.pluginPipeline.runOnProjectUpdate({
+      projectId,
+      projectName,
+      userId: getRequestUserId(),
+      timestamp: new Date(),
+    });
+  }
 
   private async guardAndSnapshotDocumentField(
     projectId: string,
@@ -713,6 +768,13 @@ export class ProjectsService implements IOrchestratorProjectsPort {
 
     const apiProject = toApiProject(created);
 
+    void this.pluginPipeline.runOnProjectCreate({
+      projectId: created.id,
+      projectName: created.name,
+      userId,
+      timestamp: new Date(),
+    });
+
     if (isLegacy && parsed.theforgeProjectId?.trim()) {
       const stage = created.stages[0];
       this.theforge.scheduleAriadneBrownfieldWire(
@@ -1115,7 +1177,13 @@ export class ProjectsService implements IOrchestratorProjectsPort {
 
     const project = await this.findOne(id);
     const mddWasInRequest = mddForPipeline !== undefined && mddForPipeline !== null;
+    const notifyLifecycle = () => {
+      if (hasProjectFieldUpdates) {
+        this.notifyPluginProjectUpdate(id, project.name);
+      }
+    };
     if (mddGovernancePatternsReverted) {
+      notifyLifecycle();
       return {
         ...project,
         mddGovernancePatternsReverted: true as const,
@@ -1125,8 +1193,10 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       };
     }
     if (mddWasInRequest && pipelineResult) {
+      notifyLifecycle();
       return { ...project, mddPersist: { saved: true as const, stageId: targetStage.id } };
     }
+    notifyLifecycle();
     return project;
   }
 
@@ -1769,13 +1839,16 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const uxPrompt =
       "Genera la Guía UX/UI completa en markdown según tu rol. El contexto (resumen MDD, Blueprint y documentos SDD) está en el system prompt. Termina el documento con la línea exacta ---FIN_UX_UI--- y deja un mensaje breve para el usuario después.";
     const mddBrief = buildMddContextForUxGuide(mdd);
-    const raw = await this.ai.generateResponse(uxPrompt, [], {
-      systemPrompt: UX_UI_GUIDE_PROMPT,
-      activeTab: "ux-ui-guide",
-      currentMddContent: mddBrief || undefined,
-      currentBlueprintContent: bp || undefined,
-      ...uxGuideLlmOptions(project, mdd),
-    });
+    const raw = await this.ai.generateUxUiGuide(
+      uxPrompt,
+      this.buildHookGenerateOpts(project),
+      {
+        activeTab: "ux-ui-guide",
+        currentMddContent: mddBrief || undefined,
+        currentBlueprintContent: bp || undefined,
+        ...uxGuideLlmOptions(project, mdd),
+      },
+    );
     const clean = (raw ?? "").replace(/\n?-{1,}FIN_UX_UI-{1,}[\s\S]*$/i, "").trim();
     if (!clean) {
       // LLM no generó contenido de documento (solo chat) — no persistas nada
@@ -1794,7 +1867,13 @@ name: ${JSON.stringify(name)}
     // Design system inferido del MCP gráfico compatible activo (fallback: heurístico/Ariadne del LLM).
     finalContent = await this.appendUiMcpDesignSystem(finalContent);
     finalContent = appendUxGuideDesignAttribution(finalContent, project.uxGuideDesignRef, mdd);
-    return this.update(projectId, { uxUiGuideContent: finalContent });
+    const updated = await this.update(projectId, { uxUiGuideContent: finalContent });
+    this.notifyPluginAfterDocumentPersist(
+      "ux-ui-guide",
+      projectId,
+      updated.uxUiGuideContent ?? finalContent,
+    );
+    return updated;
   }
 
   /**
@@ -2475,14 +2554,18 @@ name: ${JSON.stringify(name)}
     }
 
     let content: string;
+    const hookOpts = this.buildHookGenerateOpts(project);
     try {
-      const aemMarkdown = await this.ai.generateAem({
-        marketScope: parsed.marketScope,
-        benchmarkContent,
-        phase0Content,
-        brdContent,
-        projectName: project.name,
-      });
+      const aemMarkdown = await this.ai.generateAem(
+        {
+          marketScope: parsed.marketScope,
+          benchmarkContent,
+          phase0Content,
+          brdContent,
+          projectName: project.name,
+        },
+        hookOpts,
+      );
       const advisory = await this.ai.generateAemInvestmentAdvisory({
         aemContent: aemMarkdown,
         marketScope: parsed.marketScope,
@@ -2497,7 +2580,10 @@ name: ${JSON.stringify(name)}
       throw new Error(`Falló la generación del AEM. ${message.slice(0, 200)}`);
     }
 
-    return this.update(projectId, { aemContent: cleanDocumentContent(content) });
+    const cleaned = cleanDocumentContent(content);
+    const updated = await this.update(projectId, { aemContent: cleaned });
+    this.notifyPluginAfterDocumentPersist("aem", projectId, updated.aemContent ?? cleaned);
+    return updated;
   }
 
   async generateSpec(projectId: string) {
@@ -2514,8 +2600,14 @@ name: ${JSON.stringify(name)}
       inputContent,
       project.phase0SummaryContent,
       dbga.length === 0 && rawMdd.length > 0 ? "mdd" : "dbga",
+      {
+        ...this.buildHookGenerateOpts(project),
+      },
     );
-    return this.update(projectId, { specContent: cleanSpecDocumentContent(specContent) });
+    const cleaned = cleanSpecDocumentContent(specContent);
+    const updated = await this.update(projectId, { specContent: cleaned });
+    this.notifyPluginAfterDocumentPersist("spec", projectId, updated.specContent ?? cleaned);
+    return updated;
   }
 
   /** Limpia gobernanza persistida antes de regenerar (polling y UI). */
@@ -2559,6 +2651,7 @@ name: ${JSON.stringify(name)}
       infraContent: project.infraContent,
       userStoriesContent: project.userStoriesContent,
       useCasesContent: project.useCasesContent,
+      ...this.buildHookGenerateOpts(project),
     });
     const forceFreshOverlay = forceRegenerate;
     const scaffold = parseAgentGovernanceResponse(raw, complexity, {
@@ -2575,6 +2668,11 @@ name: ${JSON.stringify(name)}
     const updated = await this.update(projectId, {
       agentGovernanceContent: serialized,
     });
+    this.notifyPluginAfterDocumentPersist(
+      "agent-governance",
+      projectId,
+      updated.agentGovernanceContent ?? serialized,
+    );
     if (options?.skipSddAutoReconcile !== true) {
       const activeStage = pickPrimaryStage(updated.stages ?? []);
       if (activeStage?.id) {
@@ -2758,6 +2856,7 @@ name: ${JSON.stringify(name)}
       gapsFeedback,
       fileCoordinatesContext: coordinates.block,
       coordinatesMode: coordinates.coordinatesMode,
+      ...this.buildHookGenerateOpts(project),
       ...gfOpts,
     };
 
@@ -2796,6 +2895,7 @@ name: ${JSON.stringify(name)}
     const tasksContent = cleanDocumentContent(tasksRaw);
 
     const updated = await this.update(projectId, { tasksContent });
+    this.notifyPluginAfterDocumentPersist("tasks", projectId, updated.tasksContent ?? tasksContent);
     await this.persistTasksQualitySnapshot(stage?.id, snapshot);
 
     if (isBrownfieldCapable(theforgeId)) {
@@ -2967,10 +3067,17 @@ name: ${JSON.stringify(name)}
       await this.ai.generateArchitecture(mdd, project.blueprintContent, {
         ...gfOpts,
         gapsFeedback,
+        ...this.buildHookGenerateOpts(project),
       }),
     );
 
-    return this.update(projectId, { architectureContent: content });
+    const updated = await this.update(projectId, { architectureContent: content });
+    this.notifyPluginAfterDocumentPersist(
+      "architecture",
+      projectId,
+      updated.architectureContent ?? content,
+    );
+    return updated;
   }
 
   async generateUseCasesPreview(projectId: string): Promise<{ content: string }> {
@@ -2988,15 +3095,20 @@ name: ${JSON.stringify(name)}
 
   async generateUseCases(projectId: string) {
     const project = await this.assertProjectAccess(projectId);
-    const opts =
+    const opts = this.withHookGenerateOpts(
+      project,
       (await this.resolveLegacyGenerateOptions(project)) ??
-      this.buildDomainCascadeGenerateOptions(project);
+        this.buildDomainCascadeGenerateOptions(project),
+    );
     const content = await this.ai.generateUseCases(
       this.constitutionMarkdown(project),
       project.specContent,
       opts,
     );
-    return this.update(projectId, { useCasesContent: cleanDocumentContent(content) });
+    const cleaned = cleanDocumentContent(content);
+    const updated = await this.update(projectId, { useCasesContent: cleaned });
+    this.notifyPluginAfterDocumentPersist("use-cases", projectId, updated.useCasesContent ?? cleaned);
+    return updated;
   }
 
   async generateUserStoriesPreview(projectId: string): Promise<{ content: string }> {
@@ -3021,10 +3133,13 @@ name: ${JSON.stringify(name)}
       this.constitutionMarkdown(project),
       project.specContent,
       project.useCasesContent,
-      { ...domainOpts, ...intOpts },
+      this.withHookGenerateOpts(project, { ...domainOpts, ...intOpts }),
     );
     const appendix = buildHandoffUserStoriesAppendix(intOpts?.integrationHandoffItems ?? []);
-    return this.update(projectId, { userStoriesContent: cleanDocumentContent(content + appendix) });
+    const cleaned = cleanDocumentContent(content + appendix);
+    const updated = await this.update(projectId, { userStoriesContent: cleaned });
+    this.notifyPluginAfterDocumentPersist("user-stories", projectId, updated.userStoriesContent ?? cleaned);
+    return updated;
   }
 
   private async buildIntegrationGenerateOptions(projectId: string): Promise<LegacyGenerateOptions | undefined> {
@@ -3095,7 +3210,10 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     const project = await this.assertProjectAccess(projectId);
     const mddContent = this.constitutionMarkdown(project);
     const enrichedMdd = this.enrichMddWithEntities(mddContent);
-    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
+    const legacyOpts = this.withHookGenerateOpts(
+      project,
+      (await this.resolveLegacyGenerateOptions(project)) ?? {},
+    );
     let blueprintContent = await this.ai.generateBlueprint(enrichedMdd, gapsFeedback, legacyOpts);
     blueprintContent = cleanDocumentContent(blueprintContent);
 
@@ -3156,7 +3274,13 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
         .catch(() => {});
     }
 
-    return this.update(projectId, { blueprintContent });
+    const updated = await this.update(projectId, { blueprintContent });
+    this.notifyPluginAfterDocumentPersist(
+      "blueprint",
+      projectId,
+      updated.blueprintContent ?? blueprintContent,
+    );
+    return updated;
   }
 
   async generateApiContractsPreview(projectId: string, gapsFeedback?: string | null): Promise<{ content: string }> {
@@ -3196,10 +3320,10 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     const brdContent = mainStage?.brdContent ?? undefined;
     const mddContent = this.constitutionMarkdown(project);
     const enrichedMdd = this.enrichMddWithApiEndpoints(mddContent);
-    const legacyOpts = {
+    const legacyOpts = this.withHookGenerateOpts(project, {
       ...(await this.resolveLegacyGenerateOptions(project)),
       ...this.greenfieldGenerateOptions(project),
-    };
+    });
 
     let apiContent = await this.ai.generateApiContracts(
       enrichedMdd,
@@ -3261,12 +3385,21 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
         .catch(() => {});
     }
 
-    return this.update(projectId, { apiContractsContent: apiContent });
+    const updated = await this.update(projectId, { apiContractsContent: apiContent });
+    this.notifyPluginAfterDocumentPersist(
+      "api-contracts",
+      projectId,
+      updated.apiContractsContent ?? apiContent,
+    );
+    return updated;
   }
 
   async generateLogicFlows(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
-    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
+    const legacyOpts = this.withHookGenerateOpts(
+      project,
+      (await this.resolveLegacyGenerateOptions(project)) ?? {},
+    );
     const mdd = this.constitutionMarkdown(project);
     let content = await this.ai.generateLogicFlows(mdd, gapsFeedback, legacyOpts);
     let cleaned = cleanDocumentContent(content);
@@ -3295,7 +3428,13 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
         .catch(() => {});
     }
 
-    return this.update(projectId, { logicFlowsContent: cleaned });
+    const updated = await this.update(projectId, { logicFlowsContent: cleaned });
+    this.notifyPluginAfterDocumentPersist(
+      "logic-flows",
+      projectId,
+      updated.logicFlowsContent ?? cleaned,
+    );
+    return updated;
   }
 
   /** Parchea el MDD de la etapa según feedback de un documentation gap (reconciliación parcial). */
@@ -3346,7 +3485,10 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
 
   async generateInfra(projectId: string, gapsFeedback?: string | null) {
     const project = await this.assertProjectAccess(projectId);
-    const legacyOpts = await this.resolveLegacyGenerateOptions(project);
+    const legacyOpts = this.withHookGenerateOpts(
+      project,
+      (await this.resolveLegacyGenerateOptions(project)) ?? {},
+    );
     const mdd = this.constitutionMarkdown(project);
     let content = await this.ai.generateInfra(
       mdd,
@@ -3378,7 +3520,9 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
         .catch(() => {});
     }
 
-    return this.update(projectId, { infraContent: cleaned });
+    const updated = await this.update(projectId, { infraContent: cleaned });
+    this.notifyPluginAfterDocumentPersist("infra", projectId, updated.infraContent ?? cleaned);
+    return updated;
   }
 
   async getConformance(

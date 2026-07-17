@@ -77,6 +77,12 @@ jobs:
             src/modules/ai/utils/agent-governance.util.spec.ts \
             src/modules/ai/utils/suggest-agent-governance-artifacts.spec.ts
 
+      - name: Plugin engine API specs
+        working-directory: apps/api
+        run: |
+          node --import tsx --test \
+            src/plugins/plugin-project-context.util.spec.ts
+
       - name: queueAndPoll web spec
         working-directory: apps/web
         run: node --import tsx --test src/utils/queueAndPoll.spec.ts

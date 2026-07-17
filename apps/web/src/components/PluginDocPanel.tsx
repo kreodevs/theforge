@@ -1,49 +1,187 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { FileText } from "lucide-react";
 import type { ArtifactTypeDefinition } from "@theforge/shared-types";
 import { getPluginDocPanelHeader, parsePluginPanelId } from "../utils/workshopDocNav";
-import { getPluginData, setPluginData } from "../utils/pluginApi";
+import {
+  generateAndPollPluginArtifact,
+  getPluginData,
+  pluginArtifactRequirementsMessage,
+  setPluginData,
+} from "../utils/pluginApi";
+import {
+  pluginArtifactDefaultViewMode,
+  pluginArtifactFromEditorText,
+  pluginArtifactToEditorText,
+} from "../utils/pluginArtifactContent";
+import { useWorkshopStore } from "../store/workshopStore";
 import { StandardDocPanel } from "./StandardDocPanel";
 
 interface PluginDocPanelProps {
   panel: string;
   projectId: string;
   artifactTypes: ArtifactTypeDefinition[];
+  stageId?: string | null;
+}
+
+function projectDeliverablesForArtifact(
+  project: Record<string, unknown> | null,
+  mddContent: string,
+): Record<string, string | null | undefined> {
+  if (!project) return { mddContent };
+  return {
+    mddContent,
+    dbgaContent: typeof project.dbgaContent === "string" ? project.dbgaContent : null,
+    specContent: typeof project.specContent === "string" ? project.specContent : null,
+    phase0SummaryContent:
+      typeof project.phase0SummaryContent === "string" ? project.phase0SummaryContent : null,
+    architectureContent:
+      typeof project.architectureContent === "string" ? project.architectureContent : null,
+    useCasesContent: typeof project.useCasesContent === "string" ? project.useCasesContent : null,
+    userStoriesContent:
+      typeof project.userStoriesContent === "string" ? project.userStoriesContent : null,
+    blueprintContent: typeof project.blueprintContent === "string" ? project.blueprintContent : null,
+    uxUiGuideContent: typeof project.uxUiGuideContent === "string" ? project.uxUiGuideContent : null,
+    apiContractsContent:
+      typeof project.apiContractsContent === "string" ? project.apiContractsContent : null,
+    logicFlowsContent:
+      typeof project.logicFlowsContent === "string" ? project.logicFlowsContent : null,
+    tasksContent: typeof project.tasksContent === "string" ? project.tasksContent : null,
+    infraContent: typeof project.infraContent === "string" ? project.infraContent : null,
+    agentGovernanceContent:
+      typeof project.agentGovernanceContent === "string" ? project.agentGovernanceContent : null,
+    aemContent: typeof project.aemContent === "string" ? project.aemContent : null,
+    uiScreensContent:
+      typeof project.uiScreensContent === "string" ? project.uiScreensContent : null,
+    brdContent: typeof project.brdContent === "string" ? project.brdContent : null,
+  };
 }
 
 export function PluginDocPanel({
   panel,
   projectId,
   artifactTypes,
+  stageId,
 }: PluginDocPanelProps): ReactElement | null {
   const parsed = parsePluginPanelId(panel);
-  const artifact = artifactTypes.find((a) => a.id === parsed?.artifactId);
+  const artifact = artifactTypes.find(
+    (a) => a.pluginId === parsed?.pluginId && a.id === parsed?.artifactId,
+  );
   const header = getPluginDocPanelHeader(panel, artifactTypes);
+  const contentType = artifact?.contentType ?? "json";
+
+  const project = useWorkshopStore((s) => s.project);
+  const storePluginData = useWorkshopStore((s) => s.pluginData);
+  const patchPluginData = useWorkshopStore((s) => s.patchPluginData);
+  const mddContent = useWorkshopStore((s) => s.mddContent);
+  const generationStatus = useWorkshopStore((s) => s.generationStatus);
+  const fetchGenerationStatus = useWorkshopStore((s) => s.fetchGenerationStatus);
+  const setError = useWorkshopStore((s) => s.setError);
+
+  const storedPayload = parsed ? storePluginData[parsed.pluginId] : undefined;
 
   const [content, setContent] = useState<string>("");
+  const viewMode = pluginArtifactDefaultViewMode(contentType);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
 
-  useEffect(() => {
+  const deliverables = useMemo(
+    () => projectDeliverablesForArtifact(project as Record<string, unknown> | null, mddContent),
+    [project, mddContent],
+  );
+
+  const requirementsBlock = useMemo(
+    () => pluginArtifactRequirementsMessage(artifact?.requires, deliverables),
+    [artifact?.requires, deliverables],
+  );
+
+  const generationBusy = generationStatus?.busy === true;
+  const activePluginJob =
+    generationStatus?.activeJob?.type === "plugin-artifact" ||
+    generationStatus?.queuedJobs.some((j) => j.type === "plugin-artifact");
+
+  const generateBlockedReason = useMemo(() => {
+    if (requirementsBlock) return requirementsBlock;
+    if (generationBusy && !activePluginJob) {
+      return "Hay otra generación en curso. Espera a que termine.";
+    }
+    return null;
+  }, [requirementsBlock, generationBusy, activePluginJob]);
+
+  const syncEditorFromPayload = useCallback(
+    (data: unknown) => {
+      setContent(pluginArtifactToEditorText(data, contentType));
+    },
+    [contentType],
+  );
+
+  const reload = useCallback(async () => {
     if (!parsed) return;
     setLoading(true);
-    getPluginData(projectId, parsed.artifactId)
-      .then((data) => {
-        setContent(data ? JSON.stringify(data, null, 2) : "");
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [projectId, parsed?.artifactId]);
+    try {
+      const fromStore = storePluginData[parsed.pluginId];
+      if (fromStore !== undefined) {
+        syncEditorFromPayload(fromStore);
+        return;
+      }
+      const data = await getPluginData(projectId, parsed.pluginId);
+      if (data != null) patchPluginData(parsed.pluginId, data);
+      syncEditorFromPayload(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [parsed, patchPluginData, projectId, storePluginData, syncEditorFromPayload]);
+
+  useEffect(() => {
+    if (storedPayload !== undefined) {
+      syncEditorFromPayload(storedPayload);
+      setLoading(false);
+      return;
+    }
+    void reload();
+  }, [reload, storedPayload, syncEditorFromPayload]);
 
   const handleSave = useCallback(async () => {
     if (!parsed) return;
-    let parsedData: Record<string, unknown>;
+    const parsedData = pluginArtifactFromEditorText(content, contentType);
+    await setPluginData(projectId, parsed.pluginId, parsedData as Record<string, unknown>);
+    patchPluginData(parsed.pluginId, parsedData);
+  }, [content, contentType, patchPluginData, projectId, parsed]);
+
+  const handleGenerate = useCallback(async () => {
+    if (!parsed || !artifact || generateBlockedReason) return;
+    setGenerating(true);
+    void fetchGenerationStatus(projectId);
     try {
-      parsedData = JSON.parse(content);
-    } catch {
-      parsedData = { raw: content };
+      const data = await generateAndPollPluginArtifact(
+        projectId,
+        parsed.pluginId,
+        parsed.artifactId,
+        { stageId },
+      );
+      if (data != null) {
+        patchPluginData(parsed.pluginId, data);
+        syncEditorFromPayload(data);
+      } else {
+        await reload();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al generar artifact del plugin");
+    } finally {
+      setGenerating(false);
+      void fetchGenerationStatus(projectId);
     }
-    await setPluginData(projectId, parsed.artifactId, parsedData);
-  }, [content, projectId, parsed]);
+  }, [
+    artifact,
+    fetchGenerationStatus,
+    generateBlockedReason,
+    parsed,
+    patchPluginData,
+    projectId,
+    reload,
+    setError,
+    stageId,
+    syncEditorFromPayload,
+  ]);
 
   if (!parsed || !artifact) return null;
 
@@ -51,15 +189,22 @@ export function PluginDocPanel({
     <StandardDocPanel
       icon={FileText}
       title={header.title}
-      description={`Plugin: ${artifact.label}`}
+      description={
+        generateBlockedReason
+          ? generateBlockedReason
+          : `Plugin: ${artifact.label}${contentType !== "json" ? ` (${contentType})` : ""}`
+      }
       content={content}
       onContentChange={(v) => setContent(v ?? "")}
       onSave={handleSave}
       isDirty={false}
-      viewMode="source"
-      isLoading={loading}
-      canGenerate={false}
-      onGenerate={() => {}}
+      viewMode={viewMode}
+      onGenerate={() => void handleGenerate()}
+      canGenerate={artifact.generatable === true && !generateBlockedReason}
+      isLoading={loading || generating}
+      generateLabel={generating || activePluginJob ? "Generando…" : "Generar"}
+      generateBlocked={Boolean(generateBlockedReason)}
+      generateBlockedReason={generateBlockedReason ?? undefined}
       placeholder={`# ${artifact.label}\n\nContenido generado por el plugin...`}
     />
   );

@@ -53,7 +53,7 @@ import {
 import { WORKSHOP_EXIT_BLOCKED_TITLE, WORKSHOP_DOC_NAV_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { buildWorkshopDocNavItems, buildPluginDocNavItems, workshopTabDocHasContent } from "../utils/workshopDocNav";
 import { fetchUiMcpActive } from "@/lib/ui-mcp-api";
-import { fetchPluginArtifacts, getPluginData } from "@/utils/pluginApi";
+import { fetchPluginArtifacts } from "@/utils/pluginApi";
 import { WorkshopAgentActivitySidebarSection } from "./WorkshopAgentActivitySidebarSection";
 
 /** Project row shown under a dashboard group header. */
@@ -388,7 +388,7 @@ export function DashboardSidebar({
   const setWorkshopActiveDocPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
 
   const [pluginArtifactTypes, setPluginArtifactTypes] = useState<ArtifactTypeDefinition[]>([]);
-  const [pluginData, setPluginData] = useState<Record<string, unknown>>({});
+  const pluginData = useWorkshopStore((s) => s.pluginData);
   const mddContent = useWorkshopStore((s) => s.mddContent);
   const dbgaContent = useWorkshopStore((s) => s.dbgaContent);
   const phase0SummaryContent = useWorkshopStore((s) => s.phase0SummaryContent);
@@ -410,21 +410,8 @@ export function DashboardSidebar({
   const documentationGapsRefreshNonce = useWorkshopStore((s) => s.documentationGapsRefreshNonce);
 
   useEffect(() => {
-    const fetchAll = async () => {
-      const types = await fetchPluginArtifacts();
-      setPluginArtifactTypes(types);
-      if (!storeProject?.id) return;
-      const data: Record<string, unknown> = {};
-      for (const t of types) {
-        if (t.showInSidebar) {
-          const d = await getPluginData(storeProject.id, t.id);
-          if (d !== null) data[t.id] = d;
-        }
-      }
-      setPluginData(data);
-    };
-    fetchAll();
-  }, [storeProject?.id]);
+    void fetchPluginArtifacts().then(setPluginArtifactTypes);
+  }, []);
 
   const [uiMcpActive, setUiMcpActive] = useState(false);
   useEffect(() => {
