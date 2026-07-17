@@ -6,7 +6,6 @@
 import { extractSection } from "./conformance.service.js";
 
 const PLACEHOLDER_NOISE_RE = /(?:^|\n)#+\s*[^\n]*(?:---\s*){3,}/m;
-const BARE_MERMAID_RE = /(?:^|\n)(mermaid\s*\n(?:flowchart|sequenceDiagram|erDiagram|graph\s))/gim;
 
 /** §4: bloques ```json con fences desbalanceados. */
 export function detectUnbalancedJsonFences(draft: string): string | null {

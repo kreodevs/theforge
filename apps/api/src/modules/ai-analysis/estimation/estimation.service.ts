@@ -1048,15 +1048,15 @@ export class EstimationService {
       // 5. Semáforo
       const gapCount = consistency.gaps.length;
       let conformancePenalty = 0;
-      if (docs && mdd.trim().length > 80) {
+      if (docs && md.trim().length > 80) {
         if (docs.apiContractsContent?.trim()) {
-          const apiC = checkApiVsMdd(mdd, docs.apiContractsContent);
+          const apiC = checkApiVsMdd(md, docs.apiContractsContent);
           if (!apiC.ok) {
             conformancePenalty += Math.min(15, apiC.missingInApi.length * 2 + apiC.extraInApi.length);
           }
         }
         if (docs.infraContent?.trim()) {
-          const infC = checkInfraVsMdd(mdd, docs.infraContent);
+          const infC = checkInfraVsMdd(md, docs.infraContent);
           if (!infC.ok) conformancePenalty += Math.min(12, infC.gaps.length * 2);
         }
       }
