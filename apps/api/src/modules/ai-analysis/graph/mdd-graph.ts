@@ -141,7 +141,9 @@ export async function createMddGraph(
 
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.deliveryGateLoopActive === true) {
-      return state.deliveryGateFixTarget === "integration" ? "integration" : "software_architect";
+      if (state.deliveryGateFixTarget === "integration") return "integration";
+      if (state.deliveryGateFixTarget === "clarifier") return "clarifier";
+      return "software_architect";
     }
     return "graph_populator";
   }
@@ -231,6 +233,7 @@ export async function createMddGraph(
     .addConditionalEdges("prepare_output", routeAfterPrepareOutput, {
       software_architect: "software_architect",
       integration: "integration",
+      clarifier: "clarifier",
       graph_populator: "graph_populator",
     })
     .addEdge("graph_populator", END);
@@ -306,7 +309,9 @@ export async function createMddGraphWithManager(
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
     if (state.deliveryGateLoopActive === true) {
-      return state.deliveryGateFixTarget === "integration" ? "integration" : "software_architect";
+      if (state.deliveryGateFixTarget === "integration") return "integration";
+      if (state.deliveryGateFixTarget === "clarifier") return "clarifier";
+      return "software_architect";
     }
     return "graph_populator";
   }
@@ -560,6 +565,7 @@ export async function createMddGraphWithManager(
       executor: "executor",
       software_architect: "software_architect",
       integration: "integration",
+      clarifier: "clarifier",
       graph_populator: "graph_populator",
     })
     .addConditionalEdges("blackboard", routeAfterBlackboard, {

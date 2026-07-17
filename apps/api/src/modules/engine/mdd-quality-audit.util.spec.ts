@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applyMddQualityAutoRepairs,
   collectMddQualityIssues,
   detectBareMermaidBlocks,
   detectOrphanSqlTables,
   detectPlaceholderNoise,
   extractMddInfraRequirements,
   checkInfraManifestConformance,
+  enrichOrphanSqlTablesInDraft,
   fixBareMermaidFences,
   findApiSemanticAliasWarnings,
+  listOrphanSqlTableNames,
+  stripContextPlaceholderDashes,
 } from "./mdd-quality-audit.util.js";
 
 const MDD_BASE = `# Master Design Document
@@ -90,5 +94,31 @@ describe("mdd-quality-audit.util", () => {
       "POST /api/v1/auth/login",
     );
     assert.equal(warnings.length, 1);
+  });
+
+  it("listOrphanSqlTableNames finds thin tables", () => {
+    const names = listOrphanSqlTableNames(MDD_BASE);
+    assert.ok(names.includes("whatsapp_devices"));
+  });
+
+  it("enrichOrphanSqlTablesInDraft adds business columns", () => {
+    const enriched = enrichOrphanSqlTablesInDraft(MDD_BASE);
+    assert.match(enriched, /whatsapp_devices[\s\S]*name VARCHAR/);
+    assert.equal(listOrphanSqlTableNames(enriched).length, 0);
+  });
+
+  it("stripContextPlaceholderDashes removes dash noise in §1", () => {
+    const draft = "## 1. Contexto\n\nObjetivos --- --- ---\n\nDetalle real.";
+    const cleaned = stripContextPlaceholderDashes(draft);
+    assert.ok(!/---\s+---\s+---/.test(cleaned));
+    assert.ok(cleaned.includes("Detalle real"));
+  });
+
+  it("applyMddQualityAutoRepairs reduces issues on sample MDD", () => {
+    const before = collectMddQualityIssues(MDD_BASE).length;
+    const { markdown, repairs } = applyMddQualityAutoRepairs(MDD_BASE);
+    const after = collectMddQualityIssues(markdown).length;
+    assert.ok(repairs.length > 0);
+    assert.ok(after < before);
   });
 });

@@ -5,7 +5,8 @@ import {
   type ValidateMddStructureResult,
 } from "./mdd-sanitize.js";
 import { computeContractGaps, computeTraceabilityGaps } from "../../engine/mdd-internal-audit.util.js";
-import { collectMddQualityIssues } from "../../engine/mdd-quality-audit.util.js";
+import { collectMddQualityIssues, isAutoRepairableMddQualityIssue } from "../../engine/mdd-quality-audit.util.js";
+import { applyPreDeliveryGateFixes } from "./mdd-sanitize.js";
 
 export const MDD_AUDIT_PASS_THRESHOLD = 85;
 
@@ -60,10 +61,11 @@ export function synthesizeDeterministicAuditorGaps(
   validation: ValidateMddStructureResult,
   score: number,
 ): AuditorGapsState {
+  const repairedDraft = applyPreDeliveryGateFixes((draft ?? "").trim());
   const critical_gaps: AuditorGapsState["critical_gaps"] = [];
   const syntax_errors: string[] = [];
-  const contract = computeContractGaps(draft);
-  const trace = computeTraceabilityGaps(draft);
+  const contract = computeContractGaps(repairedDraft);
+  const trace = computeTraceabilityGaps(repairedDraft);
 
   for (const sec of validation.missingSections) {
     critical_gaps.push({
@@ -105,7 +107,7 @@ export function synthesizeDeterministicAuditorGaps(
     });
   }
 
-  const nodeVersionIssue = detectSection2Section7NodeVersionMismatchIssue(draft);
+  const nodeVersionIssue = detectSection2Section7NodeVersionMismatchIssue(repairedDraft);
   if (nodeVersionIssue) {
     critical_gaps.push({
       sections: ["Sección 2", "Sección 7"],
@@ -142,7 +144,7 @@ export function synthesizeDeterministicAuditorGaps(
     }
   }
 
-  if (mddHasDuplicateSectionHeadings(draft)) {
+  if (mddHasDuplicateSectionHeadings(repairedDraft)) {
     critical_gaps.push({
       sections: ["Sección 5", "Sección 6", "Sección 7"],
       issue: "Headings de §5/§6/§7 duplicados en el borrador",
@@ -150,8 +152,8 @@ export function synthesizeDeterministicAuditorGaps(
     });
   }
 
-  for (const q of collectMddQualityIssues(draft)) {
-    if (/Mermaid|JSON|Manifest|huérfana|placeholder/i.test(q)) {
+  for (const q of collectMddQualityIssues(repairedDraft)) {
+    if (/Mermaid|JSON|Manifest|huérfana|placeholder/i.test(q) && !isAutoRepairableMddQualityIssue(q)) {
       syntax_errors.push(q);
     }
   }
