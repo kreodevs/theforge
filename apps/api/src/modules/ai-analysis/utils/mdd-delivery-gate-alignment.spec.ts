@@ -126,4 +126,14 @@ describe("delivery gate aligned with quality gate", () => {
       "UAT idéntico en §1 y §5 se deduplica sin warning",
     );
   });
+
+  it("quality gate reconoce ## 7. Integración emitido por nodo integration", () => {
+    const draft = VALID_MDD.replace(
+      "## 7. Infraestructura\n\nDocker Compose con PostgreSQL.",
+      "## 7. Integración\n\n### 7.1 Flujo\n\nOAuth.\n\n### Manifest de Infraestructura\n\n```json\n{\"stack\":[]}\n```",
+    );
+    const qg = evaluateMddQualityGate(draft);
+    assert.equal(qg.ok, true, qg.blockers.join("; "));
+    assert.equal(qualityGateToDeliveryGate(qg).ok, true);
+  });
 });

@@ -1051,12 +1051,22 @@ export function alignInfraNodeVersionWithSection2(draft: string): string {
   return out;
 }
 
+/** Cierra un fence ``` impar al final del borrador (evita §7 invisible al gate). */
+export function balanceMddCodeFences(draft: string): string {
+  const trimmed = (draft ?? "").trim();
+  if (!trimmed) return draft;
+  const opens = (trimmed.match(/```/g) ?? []).length;
+  if (opens % 2 === 1) return `${trimmed}\n\`\`\`\n`;
+  return trimmed;
+}
+
 /** Repara solo fences rotos (§3 SQL, manifest §7, mermaid) sin re-normalizar el MDD completo. */
 export function repairMddFencesOnly(draft: string): string {
   let out = draft ?? "";
   out = fixSection2UnclosedSqlAndGluedMermaid(out);
   out = ensureSection2SqlBlockClosed(out);
   out = closeUnclosedCodeFencesInDraft(out);
+  out = balanceMddCodeFences(out);
   return out;
 }
 
@@ -2813,6 +2823,68 @@ function fixSecuritySectionBullets(sectionBody: string): string {
 /** Línea H2 de §6 (con o sin número; admite título pegado sin espacio tras Seguridad). */
 const RE_SECTION6_H2_LINE = /^##\s+(?:6\.\s+)?Seguridad/i;
 
+/** §7 H2: Infraestructura, Integración (con/sin acento), Integration (EN). */
+export const RE_SECTION7_H2_LINE =
+  /^##\s+(?:7\.\s*)?(?:Infraestructura|Integraci[oó]n|Integracion|Integration)\b/i;
+
+function isIndexOutsideFencedBlocks(text: string, index: number): boolean {
+  const before = text.slice(0, Math.max(0, index));
+  return ((before.match(/```/g) ?? []).length % 2) === 0;
+}
+
+/**
+ * Índice del siguiente ## que NO está dentro de un bloque con fences (```...```).
+ */
+function indexOfNextH2OutsideFenced(text: string, fromIndex: number): number {
+  const rest = text.slice(fromIndex);
+  const re = /\n##\s+/g;
+  let match: RegExpExecArray | null = null;
+  while ((match = re.exec(rest)) !== null) {
+    const pos = fromIndex + match.index;
+    if (isIndexOutsideFencedBlocks(text, pos)) return pos;
+  }
+  return -1;
+}
+
+/** Primera ### 7.1–7.6 fuera de fences en `fromIndex`. */
+function indexOfSection7SubsectionOutsideFences(text: string, fromIndex: number): number {
+  const rest = text.slice(fromIndex);
+  const re = /\n(###\s+7\.(?:[1-6])[^\n]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(rest)) !== null) {
+    const pos = fromIndex + m.index + 1;
+    if (isIndexOutsideFencedBlocks(text, pos)) return pos;
+  }
+  return -1;
+}
+
+/** Primera ### 7.1–7.6 fuera de fences y tras §6 (si existe). */
+function findFirstSection7SubsectionStart(trimmed: string): number | null {
+  const sec6 = getSection6Or7Range(trimmed, 6);
+  const minStart = sec6 ? sec6.start + sec6.heading.length : 0;
+  const re = /(?:^|\n)(###\s+7\.(?:[1-6])[^\n]*)/gim;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(trimmed)) !== null) {
+    const start = m.index + (m[0].startsWith("\n") ? 1 : 0);
+    if (start < minStart) continue;
+    if (!isIndexOutsideFencedBlocks(trimmed, start)) continue;
+    return start;
+  }
+  return null;
+}
+
+/**
+ * Inserta `## 7. Infraestructura` cuando el nodo de integración emitió solo ### 7.1–7.6.
+ * Idempotente si ya hay H2 §7.
+ */
+export function ensureSection7HeadingFromSubsections(draft: string): string {
+  const trimmed = (draft ?? "").trim();
+  if (!trimmed || getSection6Or7Range(trimmed, 7)) return draft;
+  const subStart = findFirstSection7SubsectionStart(trimmed);
+  if (subStart == null) return draft;
+  return `${trimmed.slice(0, subStart).trimEnd()}\n\n## 7. Infraestructura\n\n${trimmed.slice(subStart).trimStart()}`.trim();
+}
+
 /** Colapsa `--- --- ---` en la misma línea o consecutivos; normaliza `--`/`-` sueltos como separadores. */
 function collapseInlineHorizontalRules(draft: string): string {
   let out = draft.replace(/(?:^|\n)\s*---(?:\s+---\s*)+(?=\s*(?:\n|$))/g, "\n---\n");
@@ -2903,7 +2975,7 @@ function countMddSectionH2Occurrences(draft: string, section: 5 | 6 | 7): number
   const patterns: Record<5 | 6 | 7, RegExp> = {
     5: /^##\s+5\.\s*Lógica\s+y\s*Edge\s+Cases/im,
     6: /^##\s+(?:6\.\s+)?Seguridad/im,
-    7: /^##\s+(?:7\.\s+)?(?:Infraestructura|Integraci[oó]n)/im,
+    7: /^##\s+(?:7\.\s+)?(?:Infraestructura|Integraci[oó]n|Integracion|Integration)/im,
   };
   return (draft.match(new RegExp(patterns[section].source, "gm")) ?? []).length;
 }
@@ -3746,6 +3818,20 @@ export function hydrateStructuredFromDraft(
   const out = { ...base };
   if (ctx && ctx.length >= 80 && !(base.contextoAlcance?.trim())) out.contextoAlcance = ctx;
   if (arch && arch.length >= 80 && !(base.arquitecturaStack?.trim())) out.arquitecturaStack = arch;
+  const hasIntegracion =
+    base.integracion &&
+    (Array.isArray(base.integracion)
+      ? base.integracion.length > 0
+      : (base.integracion.subsections?.length ?? 0) > 0 ||
+        base.integracion.manifest != null);
+  if (!hasIntegracion) {
+    const sec7Body = extractSection7Body(trimmed);
+    if (sec7Body) {
+      out.integracion = {
+        subsections: [{ title: "Integración", content: [sec7Body] }],
+      };
+    }
+  }
   return out as MddStructured;
 }
 
@@ -4720,19 +4806,42 @@ export function getSection6Or7Range(
   section: 6 | 7,
 ): { start: number; end: number; heading: string } | null {
   const trimmed = fixGluedSection6Heading((draft ?? "").trim());
-  const re =
-    section === 6
-      ? /(?:^|\n)(##\s+(?:6\.\s+)?Seguridad[^\n]*)/im
-      : /(?:^|\n)(##\s+(?:7\.\s+)?(?:Infraestructura|Integración)[^\n]*)/im;
-  const m = trimmed.match(re);
-  if (!m || m.index == null) return null;
-  const heading = m[1] ?? (section === 6 ? "## 6. Seguridad" : "## 7. Infraestructura");
-  const start = m.index + (m[0].startsWith("\n") ? 1 : 0);
-  const afterHeading = start + heading.length;
-  const rest = trimmed.slice(afterHeading).replace(/^\s*\n+/, "");
-  const nextH2 = rest.search(/\n##\s+/);
-  const end = nextH2 >= 0 ? afterHeading + nextH2 : trimmed.length;
-  return { start, end, heading };
+  if (section === 6) {
+    const re = /(?:^|\n)(##\s+(?:6\.\s+)?Seguridad[^\n]*)/gim;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(trimmed)) !== null) {
+      const start = m.index + (m[0].startsWith("\n") ? 1 : 0);
+      if (!isIndexOutsideFencedBlocks(trimmed, start)) continue;
+      const heading = m[1] ?? "## 6. Seguridad";
+      const afterHeading = start + heading.length;
+      const nextH2 = indexOfNextH2OutsideFenced(trimmed, afterHeading);
+      const nextSub7 = indexOfSection7SubsectionOutsideFences(trimmed, afterHeading);
+      let end = trimmed.length;
+      if (nextH2 >= 0) end = nextH2;
+      if (nextSub7 >= 0 && nextSub7 < end) end = nextSub7;
+      return { start, end, heading };
+    }
+    return null;
+  }
+
+  const re7 =
+    /(?:^|\n)(##\s+(?:7\.\s+)?(?:Infraestructura|Integraci[oó]n|Integracion|Integration)[^\n]*)/gim;
+  let m7: RegExpExecArray | null;
+  while ((m7 = re7.exec(trimmed)) !== null) {
+    const start = m7.index + (m7[0].startsWith("\n") ? 1 : 0);
+    if (!isIndexOutsideFencedBlocks(trimmed, start)) continue;
+    const heading = m7[1] ?? "## 7. Infraestructura";
+    const afterHeading = start + heading.length;
+    const nextH2 = indexOfNextH2OutsideFenced(trimmed, afterHeading);
+    const end = nextH2 >= 0 ? nextH2 : trimmed.length;
+    return { start, end, heading };
+  }
+
+  const subStart = findFirstSection7SubsectionStart(trimmed);
+  if (subStart == null) return null;
+  const nextH2 = indexOfNextH2OutsideFenced(trimmed, subStart);
+  const end = nextH2 >= 0 ? nextH2 : trimmed.length;
+  return { start: subStart, end, heading: "## 7. Infraestructura" };
 }
 
 /**
@@ -5190,15 +5299,19 @@ export function validateMddStructure(draft: string): ValidateMddStructureResult 
     let match: RegExpExecArray | null = null;
     let sectionFound = false;
     while ((match = re.exec(withNewline)) !== null) {
-      if (pattern.test(match[1])) {
-        const bodyStart = match.index + match[0].length;
-        const rest = withNewline.slice(bodyStart).replace(/^\s*\n+/, "");
-        const nextH2 = rest.search(/\n##\s+/);
-        const body = (nextH2 !== -1 ? rest.slice(0, nextH2) : rest).trim();
-        if (body.length > 0) foundOrder.push(SECTION_HEADINGS_CANONICAL[i]);
-        sectionFound = true;
-        break;
-      }
+      if (!pattern.test(match[1])) continue;
+      if (i === 6 && !isIndexOutsideFencedBlocks(withNewline, match.index + 1)) continue;
+      const bodyStart = match.index + match[0].length;
+      const nextH2 = indexOfNextH2OutsideFenced(withNewline, bodyStart);
+      const bodyEnd = nextH2 >= 0 ? nextH2 : withNewline.length;
+      const body = withNewline.slice(bodyStart, bodyEnd).replace(/^\s*\n+/, "").trim();
+      if (body.length > 0) foundOrder.push(SECTION_HEADINGS_CANONICAL[i]);
+      sectionFound = true;
+      break;
+    }
+    if (!sectionFound && i === 6 && getSection6Or7Range(trimmed, 7)) {
+      sectionFound = true;
+      foundOrder.push(SECTION_HEADINGS_CANONICAL[i]);
     }
     if (!sectionFound) missingSections.push(SECTION_HEADINGS_CANONICAL[i]);
   }
@@ -5246,26 +5359,9 @@ const SECTION_ORDER = [
   { pattern: /^##\s+5\.\s*Lógica\s+y\s*Edge\s+Cases/i, heading: "## 5. Lógica y Edge Cases" },
   // §6: acepta numbered (## 6. Seguridad) y bare (## Seguridad); sin \b (admite SeguridadGestión pegado)
   { pattern: RE_SECTION6_H2_LINE, heading: "## 6. Seguridad" },
-  // §7: acepta Infraestructura o Integración, con o sin número
-  { pattern: /^##\s+(?:7\.\s*)?(?:Infraestructura|Integración)\b/i, heading: "## 7. Infraestructura" },
+  // §7: acepta Infraestructura o Integración (con/sin acento), Integration (EN)
+  { pattern: RE_SECTION7_H2_LINE, heading: "## 7. Infraestructura" },
 ];
-
-/**
- * Índice del siguiente ## que NO está dentro de un bloque con fences (```...```).
- * Así no cortamos una sección en un ## que sea contenido literal (ej. dentro de ```markdown).
- */
-function indexOfNextH2OutsideFenced(text: string, fromIndex: number): number {
-  const rest = text.slice(fromIndex);
-  const re = /\n##\s+/g;
-  let match: RegExpExecArray | null = null;
-  while ((match = re.exec(rest)) !== null) {
-    const pos = fromIndex + match.index;
-    const before = text.slice(0, pos);
-    const fences = (before.match(/```/g) || []).length;
-    if (fences % 2 === 0) return pos;
-  }
-  return -1;
-}
 
 /**
  * Extrae el contenido de una sección (desde la línea del heading hasta el siguiente ## o fin).
@@ -5304,7 +5400,7 @@ function canonicalSectionNumber(heading: string): number | null {
     return n >= 1 && n <= 7 ? n : null;
   }
   if (RE_SECTION6_H2_LINE.test(heading)) return 6;
-  if (/^##\s+(?:Infraestructura|Integraci[oó]n)\b/i.test(heading)) return 7;
+  if (RE_SECTION7_H2_LINE.test(heading)) return 7;
   return null;
 }
 

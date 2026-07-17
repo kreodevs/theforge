@@ -59,6 +59,15 @@ export function draftHasSubstantialSection6(draft: string): boolean {
   return body.length > 200 && !/^\s*\(Pendiente[^)]*\)\s*$/im.test(body) && !/^\s*\{/.test(body);
 }
 
+function draftHasSubstantialSection7(draft: string): boolean {
+  const trimmed = (draft ?? "").trim();
+  const range = getSection6Or7Range(trimmed, 7);
+  if (!range) return false;
+  const bodyStart = range.start + range.heading.length;
+  const body = trimmed.slice(bodyStart, range.end).replace(/^\s*\n+/, "").trim();
+  return body.length > 200 && !/^\s*\(Pendiente[^)]*\)\s*$/im.test(body);
+}
+
 function draftHasSubstantialSection3(draft: string): boolean {
   const section3Body = extractSection3Body(draft);
   return (section3Body?.length ?? 0) > 200 && /\bCREATE\s+TABLE\b/i.test(section3Body ?? "");
@@ -79,6 +88,7 @@ export function shouldPreferDraftOverStructured(
   const trimmed = (draft ?? "").trim();
   if (trimmed.length < 200) return false;
   if (draftHasSubstantialSection6(trimmed)) return true;
+  if (draftHasSubstantialSection7(trimmed)) return true;
   // Si el draft tiene §6 pero el structured solo tiene placeholder, preservar draft
   const s6Range = getSection6Or7Range(trimmed, 6);
   if (s6Range) {
@@ -190,7 +200,9 @@ export async function prepareMddForOutput(
   const enriched = await enrichMddWithUiUxDesignIntent(withUiMcpFrontend, resolver);
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
   const reconciled = await reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
-  const markdown = applyPreDeliveryGateFixes(restoreSections6And7AfterNormalize(raw, reconciled));
+  let markdown = applyPreDeliveryGateFixes(reconciled);
+  markdown = restoreSections6And7AfterNormalize(raw, markdown);
+  markdown = applyPreDeliveryGateFixes(markdown);
   let finalMarkdown = markdown;
   if (options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()) {
     try {
@@ -217,10 +229,14 @@ export async function prepareMddForOutput(
             suggestedEntities: filterSuggestedEntitiesForDomain(inventory.suggestedEntities, false),
           };
       const merged = mergeDomainTablesIntoMdd(markdown, filteredInventory);
-      if (merged.injected.length > 0) {
+      if (merged.injected.length > 0 && merged.markdown.length <= markdown.length * 1.15) {
         finalMarkdown = applyPreDeliveryGateFixes(merged.markdown);
         console.log(
           `[MDD:DeliveryGate] injected domain table stubs: ${merged.injected.slice(0, 8).join(", ")}`,
+        );
+      } else if (merged.injected.length > 0) {
+        console.warn(
+          `[MDD:DeliveryGate] domain §3 merge skipped (would inflate markdown ${markdown.length}→${merged.markdown.length})`,
         );
       }
     } catch (err) {

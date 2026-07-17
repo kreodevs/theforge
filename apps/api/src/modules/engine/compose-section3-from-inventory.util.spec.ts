@@ -51,4 +51,21 @@ CREATE TABLE users (id UUID PRIMARY KEY);
     assert.match(markdown, /Domain inventory stubs/i);
     assert.match(markdown, /CREATE TABLE users/i);
   });
+
+  it("no re-inyecta stubs cuando el marcador ya existe y las tablas están en el MDD", () => {
+    const inv = buildDomainInventory({ brdMarkdown: BRD });
+    const first = mergeDomainTablesIntoMdd(
+      `# MDD
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+`,
+      inv,
+    );
+    assert.ok(first.injected.length > 0);
+    const second = mergeDomainTablesIntoMdd(first.markdown, inv);
+    assert.equal(second.injected.length, 0);
+    assert.equal(second.markdown, first.markdown);
+  });
 });

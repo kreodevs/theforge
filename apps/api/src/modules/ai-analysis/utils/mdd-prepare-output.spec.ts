@@ -53,6 +53,31 @@ describe("shouldPreferDraftOverStructured", () => {
     };
     assert.ok(shouldPreferDraftOverStructured(draft, structured));
   });
+
+  it("prefiere borrador con §7 sustancial sobre structured.integracion placeholder", () => {
+    const draft =
+      FULL_MDD_PREFIX +
+      `## 6. Seguridad
+
+JWT RS256 con rotación.
+
+## 7. Infraestructura
+
+### 7.1 Flujo de integración
+
+OAuth2 detallado con PKCE y refresh tokens documentados paso a paso para el flujo completo de autenticación entre cliente, API gateway y proveedor de identidad corporativo.
+
+### 7.4 Infraestructura y despliegue
+
+Docker Compose en producción con PostgreSQL 16, Redis 7 y variables de entorno documentadas en manifest JSON al cierre de la sección.
+`;
+    const structured = {
+      integracion: {
+        subsections: [{ title: "Integración", content: ["(Pendiente de definir.)"] }],
+      },
+    };
+    assert.ok(shouldPreferDraftOverStructured(draft, structured));
+  });
 });
 
 describe("prepareMddForOutput", () => {

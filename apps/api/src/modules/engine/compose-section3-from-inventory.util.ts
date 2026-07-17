@@ -50,10 +50,18 @@ export function mergeDomainTablesIntoMdd(
 ): { markdown: string; injected: string[] } {
   const draft = (mddMarkdown ?? "").trim();
   if (!draft) return { markdown: draft, injected: [] };
+  const injected = missingDomainEntities(inventory, draft);
+  if (injected.length === 0) return { markdown: draft, injected: [] };
+
+  if (/-- Domain inventory stubs/i.test(draft)) {
+    const stillMissing = injected.filter(
+      (entity) => !new RegExp(`\\bCREATE\\s+TABLE\\s+${entity}\\b`, "i").test(draft),
+    );
+    if (stillMissing.length === 0) return { markdown: draft, injected: [] };
+  }
+
   const stubs = composeDomainTableStubsSql(inventory, draft);
   if (!stubs) return { markdown: draft, injected: [] };
-
-  const injected = missingDomainEntities(inventory, draft);
   const section3 = extractSectionByNumber(draft, 3);
   if (!section3 || section3.length < 20) {
     const appendix =

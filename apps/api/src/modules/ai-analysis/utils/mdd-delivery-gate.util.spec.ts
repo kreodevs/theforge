@@ -288,6 +288,47 @@ Docker.
     assert.equal(mddDeliveryGateHasBlockers(VALID_MDD), false);
     assert.equal(mddDeliveryGateHasBlockers(""), true);
   });
+
+  it("aprueba §7 con heading ## Integracion sin acento", () => {
+    const draft = VALID_MDD.replace("## 7. Infraestructura", "## Integracion");
+    const result = validateMddForDelivery(draft);
+    assert.equal(
+      result.blockers.some((b) => b.includes("7. Infraestructura")),
+      false,
+      result.blockers.join("; "),
+    );
+    assert.equal(result.ok, true, result.blockers.join("; "));
+  });
+
+  it("aprueba §7 con solo subsecciones ### 7.1–7.6 (sin H2 padre)", () => {
+    const draft = VALID_MDD.replace(
+      "## 7. Infraestructura\n\nDocker Compose con PostgreSQL.",
+      "### 7.1 Flujo de integración\n\nOAuth2 con PKCE.\n\n### 7.4 Infraestructura y despliegue\n\nDocker Compose con PostgreSQL.",
+    );
+    const result = validateMddForDelivery(draft);
+    assert.equal(
+      result.blockers.some((b) => b.includes("7. Infraestructura")),
+      false,
+      result.blockers.join("; "),
+    );
+    assert.equal(result.ok, true, result.blockers.join("; "));
+  });
+
+  it("no confunde ## Integración dentro de fence SQL como §7 real", () => {
+    const draft = VALID_MDD.replace(
+      "## 7. Infraestructura\n\nDocker Compose con PostgreSQL.",
+      "",
+    ).replace(
+      "CREATE TABLE security_events (",
+      "-- ejemplo\n## Integración\nCREATE TABLE security_events (",
+    );
+    const result = validateMddForDelivery(draft);
+    assert.equal(
+      result.blockers.some((b) => b.includes("7. Infraestructura")),
+      true,
+      "sin §7 real debe seguir bloqueando",
+    );
+  });
 });
 
 describe("applyDeliveryGateToSemaphoreStatus", () => {
