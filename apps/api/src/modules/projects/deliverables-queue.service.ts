@@ -14,6 +14,7 @@ import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-
 import { DocReconcileService } from "../documentation-gap/doc-reconcile.service.js";
 import { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
 import { ProjectsService } from "./projects.service.js";
+import { PluginArtifactService } from "../../plugins/plugin-artifact.service.js";
 
 export const DELIVERABLES_QUEUE_NAME = "theforge-deliverables";
 
@@ -30,7 +31,8 @@ export type GenerateJobType =
   | "architecture"
   | "use-cases"
   | "user-stories"
-  | "doc-reconcile-partial";
+  | "doc-reconcile-partial"
+  | "plugin-artifact";
 
 export interface GenerateJobData {
   type: GenerateJobType;
@@ -45,6 +47,10 @@ export interface GenerateJobData {
   affectedArtifacts?: AffectedArtifact[];
   /** Si true, permite generar aunque el gate MDD tenga blockers (soft gate). */
   acknowledgeGaps?: boolean;
+  /** Solo type=plugin-artifact */
+  pluginId?: string;
+  /** Solo type=plugin-artifact */
+  artifactId?: string;
 }
 
 /** Estado público de un job para polling del frontend. */
@@ -116,6 +122,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(forwardRef(() => DocReconcileService))
     private readonly docReconcile: DocReconcileService | null,
+    private readonly pluginArtifact: PluginArtifactService,
   ) {}
 
   /** Cola disponible (BullMQ con Redis o fallback in-memory en dev). */
@@ -295,6 +302,17 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
           gapId,
           affectedArtifacts,
           gapsFeedback: gapsFeedback ?? "",
+        });
+        break;
+      }
+      case "plugin-artifact": {
+        const pluginId = data.pluginId?.trim();
+        const artifactId = data.artifactId?.trim();
+        if (!pluginId || !artifactId) {
+          throw new Error("plugin-artifact requiere pluginId y artifactId");
+        }
+        result = await this.pluginArtifact.generate(projectId, pluginId, artifactId, {
+          stageId: stageId ?? null,
         });
         break;
       }

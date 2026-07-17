@@ -16,6 +16,7 @@
 | **AnalyzeDashboard** | Panel **Analizar — consistencia SDD** (`GET …/projects/:id/analyze`): presencia MDD/Spec/UC/HU/Tasks/API/Flujos/UX/Infra/Gov, puente Phase0→BRD/Spec, hallazgos agrupados por categoría. |
 | **DocumentClarificationSection** | Banner + modal para responder `[NEEDS CLARIFICATION]` existentes y regenerar el documento (`resolve-clarifications`). Integrado en `StandardDocPanel` y pestañas MDD, Fase 0, BRD, Spec. |
 | **ResolveClarificationsPanel** | Diálogo: lista marcadores pendientes, captura respuestas y regenera vía `POST …/resolve-clarifications`. |
+| **PluginDocPanel** | Panel dinámico de artifact de plugin (`pluginData`, Generar vía cola + polling `generateAndPollPluginArtifact`, guards `requires` y `generationStatus.busy`). |
 | **ClarifyDocumentPanel** | (Legacy) Diálogo para marcar nuevas ambigüedades vía IA (`clarify-document`). No se usa en el flujo principal del Workshop. |
 | **ProjectMergeDialog** | Fusión de 2+ carpetas en Paso 0: config (destino, benchmark, suite, archivado), preview con conflictos, `POST /projects/merge`. |
 | **AemGenerateDialog** | Modal **Generar AEM**: elige alcance geográfico (Global / México / LATAM) y llama `POST /projects/:id/generate-aem` (Benchmark + Fase 0 + BRD + dictamen de inversión digital). |

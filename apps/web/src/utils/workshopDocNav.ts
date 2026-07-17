@@ -87,9 +87,9 @@ export function buildPluginDocNavItems(ctx: WorkshopDocNavBuildContext): Worksho
   for (const artifact of ctx.pluginArtifactTypes) {
     if (!artifact.showInSidebar) continue;
     const Icon = LUCIDE_ICON_MAP[artifact.icon ?? ""] ?? FileText;
-    const content = ctx.pluginData?.[artifact.id] ?? null;
+    const content = ctx.pluginData?.[artifact.pluginId] ?? null;
     items.push({
-      id: pluginPanelId(artifact.id, artifact.id),
+      id: pluginPanelId(artifact.pluginId, artifact.id),
       label: artifact.label,
       title: artifact.label,
       Icon,
@@ -519,11 +519,6 @@ export function getWorkshopDocPanelHeader(
       title: "Integración Legacy ↔ Nuevo",
       subtitle: "Conecta proyectos para compartir contexto AS-IS y gestionar módulos enlazados",
       Icon: Link2,
-    },
-    evd: {
-      title: "Executive Visual Deck",
-      subtitle: "Presentación ejecutiva con diagrams, charts y wireframes generados por IA",
-      Icon: Presentation,
     },
     [WORKSHOP_AGENT_PENDING_CHANGES_PANEL]: {
       title: "Cambios pendientes",

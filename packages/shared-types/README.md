@@ -21,5 +21,4 @@ DTOs e interfaces compartidas (Zod).
 - **`sdd-analyze.ts`:** tipos del reporte `GET /projects/:id/analyze`.
 - **`mermaid.ts`:** normalización/reparación de diagramas (erDiagram PK/FK, **erDiagram BRD con viñetas/`###` dentro del fence**, fences partidos, cabeceras duplicadas, `subgraph ID["…"]`, secuencia sin cabecera, flechas/participantes, `resolveMermaidBlockForRender` para preview); `assessMermaidFixStrategy` prioriza reparación local si `validateMermaid` pasa tras el fix. Consumido por `normalizeMermaidInDocument`, `MarkdownMermaid` y `MddViewer`.
 - **`sdd-integrations.ts`:** Zod `convergeBodySchema`, `tasksToIssuesBodySchema`.
-
-Usado por API y (opcional) por web.
+- **`plugin.ts`:** `ArtifactTypeDefinition` (con `pluginId`, `generatable`, `requires`, `contentType`), `PluginArtifactContext`, `PluginArtifactResult`; job `plugin-artifact` en `project-generation-guard.ts` (incl. gate `project_busy`).

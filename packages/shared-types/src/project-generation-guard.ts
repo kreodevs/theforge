@@ -22,7 +22,8 @@ export type GenerationJobType =
   | "architecture"
   | "use-cases"
   | "user-stories"
-  | "doc-reconcile-partial";
+  | "doc-reconcile-partial"
+  | "plugin-artifact";
 
 export const GENERATION_JOB_TYPE_LABELS: Record<GenerationJobType, string> = {
   cascade: "Cascada de entregables",
@@ -37,6 +38,7 @@ export const GENERATION_JOB_TYPE_LABELS: Record<GenerationJobType, string> = {
   "use-cases": "Casos de uso",
   "user-stories": "Historias de usuario",
   "doc-reconcile-partial": "Reconciliación parcial",
+  "plugin-artifact": "Artifact de plugin",
 };
 
 /** Mapeo job → entregable (null = especial / no aplica campo único). */
@@ -267,6 +269,7 @@ export function buildGenerationGates(params: {
     "tasks",
     "infra",
     "agent-governance",
+    "plugin-artifact",
   ];
   const gates: Partial<Record<GenerationJobType, GenerationGateEntry>> = {};
   for (const type of types) {

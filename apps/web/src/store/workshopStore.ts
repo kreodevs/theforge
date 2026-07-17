@@ -666,6 +666,8 @@ export interface Project {
 
   uiScreensContent: string | null;
   agentGovernanceContent: string | null;
+  /** Mapa pluginId → payload (motor de plugins). */
+  pluginData?: Record<string, unknown> | null;
   convergeWebhookUrl?: string | null;
   linkedLegacyProjectId?: string | null;
   linkedNewProjectId?: string | null;
@@ -1006,6 +1008,9 @@ interface WorkshopState {
   /** Gate de cola: jobs activos, MDD en stream y dependencias upstream. */
   generationStatus: ProjectGenerationStatus | null;
   fetchGenerationStatus: (projectId: string) => Promise<ProjectGenerationStatus | null>;
+  /** Datos por pluginId (`project.pluginData` sincronizado desde API). */
+  pluginData: Record<string, unknown>;
+  patchPluginData: (pluginId: string, data: unknown) => void;
   /** Tab visible again: sync queue status without wiping deliverables checklist. */
   refreshWorkshopOnTabVisible: (projectId: string) => Promise<void>;
   fetchPlanValidation: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
@@ -1348,6 +1353,7 @@ const initialState = {
   activeStageId: null as string | null,
   workshopActiveDocPanel: "mdd",
   generationStatus: null as ProjectGenerationStatus | null,
+  pluginData: {} as Record<string, unknown>,
 };
 
 let generationStatusPollTimer: ReturnType<typeof setInterval> | null = null;
@@ -1372,7 +1378,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   },
   setProject: (p) => {
     if (!p) {
-      set({ project: null, activeStageId: null, workshopStages: [], lastLegacyDeliverablesDebug: null });
+      set({
+        project: null,
+        activeStageId: null,
+        workshopStages: [],
+        lastLegacyDeliverablesDebug: null,
+        pluginData: {},
+      });
       return;
     }
     const stages = p.stages ?? [];
@@ -1401,8 +1413,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       uiScreensContent: focused.uiScreensContent,
       agentGovernanceContent: focused.agentGovernanceContent,
       lastLegacyDeliverablesDebug: legacyDebugFromStages(stages, activeStageId),
+      pluginData: (p.pluginData as Record<string, unknown> | null | undefined) ?? {},
     });
   },
+  patchPluginData: (pluginId, data) =>
+    set((s) => ({
+      pluginData: { ...s.pluginData, [pluginId]: data },
+      project: s.project
+        ? {
+            ...s.project,
+            pluginData: { ...(s.project.pluginData as Record<string, unknown> | undefined), [pluginId]: data },
+          }
+        : s.project,
+    })),
   setSession: (s) => set({ session: s }),
   setMddContent: (content) => set({ mddContent: content }),
   setLoading: (v) => set({ loading: v }),
@@ -1772,6 +1795,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         error: null,
         legacyMcpDebugTrace: null,
         synced: true,
+        pluginData: (data.pluginData as Record<string, unknown> | null | undefined) ?? {},
       });
       const sessionsRes = await apiFetch(`${API_BASE}/sessions/project/${requestedId}`);
       if (sessionsRes.ok) {

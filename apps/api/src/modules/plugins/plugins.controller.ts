@@ -3,12 +3,17 @@ import {
   Body,
   Controller,
   Get,
+  Inject,
   NotFoundException,
   Param,
+  Post,
   Put,
+  forwardRef,
 } from "@nestjs/common";
 import { PluginLoaderService } from "../../plugins/plugin-loader.service.js";
+import { PluginArtifactService } from "../../plugins/plugin-artifact.service.js";
 import { PluginUserSettingsService } from "../../plugins/plugin-user-settings.service.js";
+import { DeliverablesQueueService } from "../projects/deliverables-queue.service.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import type { Prisma } from "@theforge/database";
@@ -17,13 +22,21 @@ import type { Prisma } from "@theforge/database";
 export class PluginsController {
   constructor(
     private readonly pluginLoader: PluginLoaderService,
+    private readonly pluginArtifact: PluginArtifactService,
     private readonly pluginUserSettings: PluginUserSettingsService,
     private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => DeliverablesQueueService))
+    private readonly deliverablesQueue: DeliverablesQueueService,
   ) {}
 
   @Get("artifacts")
   getArtifacts() {
     return this.pluginLoader.getArtifactTypes();
+  }
+
+  @Get("health")
+  getHealth() {
+    return this.pluginLoader.getHealthSnapshot();
   }
 
   @Get("settings-panels")
@@ -70,6 +83,33 @@ export class PluginsController {
       data: { pluginData: current as Prisma.InputJsonValue },
     });
     return body;
+  }
+
+  @Post("projects/:id/generate/:pluginId/:artifactId")
+  async generatePluginArtifact(
+    @Param("id") projectId: string,
+    @Param("pluginId") pluginId: string,
+    @Param("artifactId") artifactId: string,
+    @Body() body: { queue?: boolean; stageId?: string | null },
+  ) {
+    this.pluginArtifact.resolveArtifactDefinition(pluginId, artifactId);
+
+    if (body?.queue !== false && this.deliverablesQueue.isEnabled()) {
+      const jobId = await this.deliverablesQueue.enqueue({
+        type: "plugin-artifact",
+        projectId,
+        userId: getRequestUserId(),
+        pluginId,
+        artifactId,
+        stageId: body?.stageId ?? undefined,
+      });
+      return { queued: true, jobId };
+    }
+
+    const result = await this.pluginArtifact.generate(projectId, pluginId, artifactId, {
+      stageId: body?.stageId ?? null,
+    });
+    return { queued: false, ...result };
   }
 
   @Get(":pluginId/user-settings")

@@ -26,6 +26,7 @@ import { PlanValidationService } from "./plan-validation.service.js";
 import { ProjectGroupsModule } from "../project-groups/project-groups.module.js";
 import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
 import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.service.js";
+import { PluginModule } from "../../plugins/plugin.module.js";
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.serv
     ProjectGroupsModule,
     EstimationModule,
     forwardRef(() => AiAnalysisModule),
+    PluginModule,
   ],
   controllers: [ProjectsController, ProjectIntegrationController],
   providers: [
