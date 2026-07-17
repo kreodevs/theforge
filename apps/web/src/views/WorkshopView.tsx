@@ -85,6 +85,7 @@ import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
 import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
 import { isWorkshopConnectionError, isSsotPatternsNotice } from "../utils/workshopSyncStatus";
 import { activeGenerationLabel, generationJobAllowed } from "../utils/projectGenerationGate";
+import { shouldClearCancelledNotice } from "../utils/mddGenerationNotice";
 import type { ArtifactTypeDefinition, GenerationJobType } from "@theforge/shared-types";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
@@ -636,7 +637,10 @@ export default function WorkshopView({
   const setNotice = useWorkshopStore((s) => s.setNotice);
   const retryWorkshopSync = useWorkshopStore((s) => s.retryWorkshopSync);
   const connectionError = isWorkshopConnectionError(error);
-  const bannerNotice = notice ?? (isSsotPatternsNotice(error) ? error : null);
+  const bannerNotice =
+    notice && shouldClearCancelledNotice(generationStatus, notice)
+      ? null
+      : notice ?? (isSsotPatternsNotice(error) ? error : null);
   const bannerError = error && !isSsotPatternsNotice(error) ? error : null;
   const modelsUnavailableModalOpen = useWorkshopStore((s) => s.modelsUnavailableModalOpen);
   const setModelsUnavailableModalOpen = useWorkshopStore((s) => s.setModelsUnavailableModalOpen);

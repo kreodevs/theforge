@@ -47,6 +47,11 @@ import {
   parseErrorMessageFromResponse,
 } from "../utils/httpError";
 import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
+import {
+  MDD_GENERATION_CANCELLED_NOTICE,
+  optimisticallyClearMddStreamStatus,
+  shouldClearCancelledNotice,
+} from "../utils/mddGenerationNotice";
 import { parseNdjsonLine } from "../utils/ndjson";
 import { mddHasSection6Heading, buildMddSectionRegenNotice } from "../utils/mddSectionRegen";
 import { appendMddTraceSection } from "../utils/appendMddTraceSection";
@@ -1644,6 +1649,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (!shouldApplyWorkshopUpdate(get, requestedId)) return status;
       const wasBusy = get().generationStatus?.busy === true;
       set({ generationStatus: status });
+      if (shouldClearCancelledNotice(status, get().notice)) {
+        set({ notice: null });
+      }
       if (status.busy) {
         if (generationStatusPollProjectId !== requestedId) {
           stopGenerationStatusPolling();
@@ -1676,8 +1684,20 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const requestedId = projectId.trim();
     if (!requestedId) return false;
     if (get().mddCancelInFlight) return false;
-    set({ mddCancelInFlight: true, error: null, notice: null });
     abortActiveMddPoll();
+    if (shouldApplyWorkshopUpdate(get, requestedId)) {
+      set({
+        mddCancelInFlight: true,
+        error: null,
+        notice: null,
+        loading: false,
+        loadingReason: null,
+        agentProgress: [],
+        generationStatus: optimisticallyClearMddStreamStatus(get().generationStatus),
+      });
+    } else {
+      set({ mddCancelInFlight: true, error: null, notice: null });
+    }
     try {
       const r = await apiFetch(`${API_BASE}/projects/${requestedId}/mdd/cancel`, {
         method: "POST",
@@ -1691,16 +1711,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             : "No se pudo cancelar la generación del MDD";
         throw new Error(msg ?? fallback);
       }
+      const status = await get().fetchGenerationStatus(requestedId);
       if (shouldApplyWorkshopUpdate(get, requestedId)) {
-        set({
-          loading: false,
-          loadingReason: null,
-          agentProgress: [],
-          notice: "Generación cancelada",
-          error: null,
-        });
+        if (status?.busy || status?.mddStreamActive) {
+          set({ notice: null, error: null });
+        } else {
+          set({ notice: MDD_GENERATION_CANCELLED_NOTICE, error: null });
+        }
       }
-      await get().fetchGenerationStatus(requestedId);
       return true;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Error al cancelar generación del MDD";
@@ -2426,6 +2444,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           loading: true,
           loadingReason: "mdd",
           error: null,
+          notice: null,
           synced: false,
           agentProgress: [],
           streamingUserMessage: looksLikeMddDocument
@@ -3782,7 +3801,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const pid = projectId.trim();
     const dbgaContent = (get().dbgaContent ?? get().project?.dbgaContent ?? "").trim();
     const benchStage = get().activeStageId;
-    set({ loading: true, loadingReason: "mdd", error: null, agentProgress: [] });
+    set({ loading: true, loadingReason: "mdd", error: null, notice: null, agentProgress: [] });
     void get().fetchGenerationStatus(pid);
 
     try {
@@ -4175,7 +4194,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   legacyGenerateMdd: async (projectId, stageId) => {
     if (!projectId?.trim()) return null;
     const pid = projectId.trim();
-    set({ loading: true, loadingReason: "legacy-mdd", error: null });
+    set({ loading: true, loadingReason: "legacy-mdd", error: null, notice: null });
     void get().fetchGenerationStatus(pid);
     try {
       const jobStatus = await enqueueAndPollLegacyMdd(pid, stageId, {
