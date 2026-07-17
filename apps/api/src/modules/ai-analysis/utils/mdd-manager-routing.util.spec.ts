@@ -262,4 +262,43 @@ describe("mdd-manager-routing (quality gate)", () => {
     assert.equal(state.correctionArchitectSkipped, true);
     assert.deepEqual(state.sectionsToRun?.[0], "fanout_sec_int");
   });
+
+  it("job-15 style unclosed ```sql fence blocker routes to formatter (not sec/int)", () => {
+    const blocker =
+      "Bloque ```sql sin cerrar: otro fence (```mermaid, ```TechnicalMetadata, etc.) antes del cierre.";
+    const gap = blockerToRoutableGap(blocker);
+    assert.equal(gap.section, "Sección 3");
+    assert.deepEqual(inferAgentsFromQualityGap(gap), ["formatter"]);
+
+    const routing = resolveCorrectionRouting({
+      ok: false,
+      blockers: [blocker],
+      warnings: [],
+      gaps: [],
+    });
+    assert.deepEqual(routing.agents, ["formatter"]);
+    assert.ok(!routing.agents.includes("security"));
+    assert.ok(!routing.agents.includes("integration"));
+    assert.ok(!routing.agents.includes("software_architect"));
+    assert.equal(routing.architectSkipped, true);
+    assert.deepEqual(routing.sectionsToRun, [
+      "formatter",
+      "diagram_injector",
+      "quality_gate",
+    ]);
+  });
+
+  it("unclosed sql fence blocker with EOF variant routes to formatter", () => {
+    const blocker = "Bloque ```sql sin cerrar con ``` antes del final del documento.";
+    const agents = inferAgentsFromQualityGaps([blockerToRoutableGap(blocker)]);
+    assert.deepEqual(agents, ["formatter"]);
+    const state = buildQualityGateCorrectionState({
+      ok: false,
+      blockers: [blocker],
+      warnings: [],
+      gaps: [],
+    });
+    assert.deepEqual(state.sectionsToRun?.[0], "formatter");
+    assert.ok(!state.sectionsToRun?.includes("fanout_sec_int"));
+  });
 });

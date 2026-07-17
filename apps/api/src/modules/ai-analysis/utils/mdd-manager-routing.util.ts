@@ -9,6 +9,16 @@ const SECURITY_GAP_RE =
 const ARCHITECT_GAP_RE =
   /§\s*[2345]\b|secci[oó]n\s*[2345]|modelo\s+de\s+datos|create\s+table|technicalmetadata|erdiagram|contrato\s+api|l[oó]gica|edge\s*case/i;
 const CLARIFIER_GAP_RE = /§\s*1\b|secci[oó]n\s*1|contexto|alcance|constituci/i;
+/** Mensajes de `detectUnclosedSqlFences` y variantes delivery gate (fix determinista vía formatter). */
+const SQL_FENCE_BLOCKER_RE = /```sql sin cerrar|bloque ```sql sin cerrar|unclosed.*```sql/i;
+
+function isSqlFenceBlockerText(text: string): boolean {
+  return SQL_FENCE_BLOCKER_RE.test(text);
+}
+
+function isSqlFenceBlockerGap(gap: MddQualityGateGap): boolean {
+  return isSqlFenceBlockerText(gapBlob(gap));
+}
 
 /** Agente primario desde el campo `section` del gap (evita falsos positivos por "endpoint" en fixes de §6). */
 export function inferPrimaryAgentFromGapSection(section: string): string | null {
@@ -39,7 +49,7 @@ function inferSectionLabelFromText(text: string): string {
 export function blockerToRoutableGap(blocker: string): MddQualityGateGap {
   const trimmed = blocker.trim();
   return {
-    section: inferSectionLabelFromText(trimmed),
+    section: isSqlFenceBlockerText(trimmed) ? "Sección 3" : inferSectionLabelFromText(trimmed),
     issue: trimmed,
     fix: trimmed,
   };
@@ -71,6 +81,7 @@ function gapBlob(gap: MddQualityGateGap): string {
 }
 
 function gapExplicitlyTargetsArchitect(gap: MddQualityGateGap): boolean {
+  if (isSqlFenceBlockerGap(gap)) return false;
   const primary = inferPrimaryAgentFromGapSection(gap.section);
   if (primary === "software_architect") return true;
   if (primary === "security" || primary === "integration" || primary === "clarifier") return false;
@@ -91,6 +102,7 @@ function gapTargetsSecInt(gap: MddQualityGateGap): boolean {
 }
 
 function inferAgentsFromBlob(blob: string): string[] {
+  if (isSqlFenceBlockerText(blob)) return ["formatter"];
   const agents = new Set<string>();
   if (CLARIFIER_GAP_RE.test(blob)) agents.add("clarifier");
   if (ARCHITECT_GAP_RE.test(blob)) agents.add("software_architect");
@@ -113,6 +125,7 @@ function inferAgentsFromBlob(blob: string): string[] {
 
 /** Infiere uno o más agentes para un gap (manifest+bcrypt puede requerir security+integration). */
 export function inferAgentsFromQualityGap(gap: MddQualityGateGap): string[] {
+  if (isSqlFenceBlockerGap(gap)) return ["formatter"];
   const primary = inferPrimaryAgentFromGapSection(gap.section);
   const blob = gapBlob(gap);
 
@@ -142,6 +155,7 @@ const CORRECTION_AGENT_ORDER = [
   "software_architect",
   "security",
   "integration",
+  "formatter",
   "clarifier",
 ] as const;
 
@@ -241,7 +255,9 @@ function filterCorrectionAgents(
   }
 
   if (filtered.length === 0) {
-    if (secIntOnly || routableGaps.some((g) => gapTargetsSecInt(g))) {
+    if (routableGaps.some((g) => isSqlFenceBlockerGap(g))) {
+      filtered = ["formatter"];
+    } else if (secIntOnly || routableGaps.some((g) => gapTargetsSecInt(g))) {
       filtered = sortCorrectionAgents(
         inferAgentsFromQualityGaps(routableGaps).filter(
           (a) => a === "security" || a === "integration",
@@ -269,12 +285,14 @@ export function resolveCorrectionAgentsFromQualityGate(
 const CORRECTION_PIPELINE_AGENTS = ["software_architect", "security", "integration"] as const;
 const CORRECTION_PIPELINE_TAIL = ["formatter", "diagram_injector", "quality_gate"] as const;
 const CORRECTION_SEC_INT_FANOUT_TAIL = ["format_sec_int", "diagram_injector", "quality_gate"] as const;
+const CORRECTION_FORMATTER_ONLY_PIPELINE = ["formatter", "diagram_injector", "quality_gate"] as const;
 
 /**
  * Expande agentes de corrección a nodos concretos del grafo lean.
  * security+integration en paralelo vía fanout_sec_int cuando no hay architect previo.
  */
 export function expandCorrectionSectionsToRun(agentNames: string[]): string[] {
+  const wantsFormatter = agentNames.includes("formatter");
   const valid = new Set(
     agentNames.filter((a) =>
       CORRECTION_PIPELINE_AGENTS.includes(a as (typeof CORRECTION_PIPELINE_AGENTS)[number]),
@@ -284,10 +302,17 @@ export function expandCorrectionSectionsToRun(agentNames: string[]): string[] {
   const hasIntegration = valid.has("integration");
   const hasArchitect = valid.has("software_architect");
 
-  if (!valid.size) return ["software_architect", ...CORRECTION_PIPELINE_TAIL];
+  if (!valid.size) {
+    if (wantsFormatter) return [...CORRECTION_FORMATTER_ONLY_PIPELINE];
+    return ["software_architect", ...CORRECTION_PIPELINE_TAIL];
+  }
 
   if (!hasArchitect && hasSecurity && hasIntegration) {
-    return ["fanout_sec_int", ...CORRECTION_SEC_INT_FANOUT_TAIL];
+    return [
+      ...(wantsFormatter ? (["formatter"] as const) : []),
+      "fanout_sec_int",
+      ...CORRECTION_SEC_INT_FANOUT_TAIL,
+    ];
   }
 
   const out: string[] = [];
@@ -296,7 +321,11 @@ export function expandCorrectionSectionsToRun(agentNames: string[]): string[] {
   }
 
   if (!hasArchitect && (hasSecurity || hasIntegration)) {
-    return [...out, ...CORRECTION_SEC_INT_FANOUT_TAIL];
+    return [
+      ...(wantsFormatter ? (["formatter"] as const) : []),
+      ...out,
+      ...CORRECTION_SEC_INT_FANOUT_TAIL,
+    ];
   }
 
   return [...out, ...CORRECTION_PIPELINE_TAIL];

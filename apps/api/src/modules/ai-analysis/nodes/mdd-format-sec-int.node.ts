@@ -1,7 +1,9 @@
 import type { MDDStateType } from "../state/index.js";
 import {
+  finalizeMddDeliverable,
   fixJwtAlgorithmCoherence,
   fixSection7OutboxNarrative,
+  normalizeMddFormat,
   replaceSection6Or7InDraft,
 } from "../utils/mdd-sanitize.js";
 
@@ -31,6 +33,11 @@ export function createMddFormatSecIntNode() {
     }
 
     draft = fixSection7OutboxNarrative(fixJwtAlgorithmCoherence(draft));
+
+    if (state.executorControlled === true || state.sectionsToRun?.includes("formatter")) {
+      draft = finalizeMddDeliverable(normalizeMddFormat(draft));
+      LOG("correction sanitize fences/format applied draftLen=%s", draft.length);
+    }
 
     return {
       mddDraft: draft,
