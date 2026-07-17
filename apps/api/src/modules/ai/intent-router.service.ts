@@ -18,6 +18,7 @@ import {
   workshopIntentLlmSchema,
 } from "./intent-route.types.js";
 import {
+  assistantOfferedDocumentEdit,
   documentLabelForTab,
   summarizeMessageForIntentClassification,
 } from "./intent-router.util.js";
@@ -51,11 +52,12 @@ export class IntentRouterService {
       return this.buildResult("explore", "chat_only", 1, "heuristic", "Mensaje vacío");
     }
 
-    const cacheKey = `${context.activeTab ?? ""}|${context.hasDocumentContent ? "1" : "0"}|${trimmed}`;
+    const assistantCtx = (context.lastAssistantMessage ?? "").slice(0, 200);
+    const cacheKey = `${context.activeTab ?? ""}|${context.hasDocumentContent ? "1" : "0"}|${assistantCtx}|${trimmed}`;
     const cached = this.routeCache.get(cacheKey);
     if (cached) return cached;
 
-    const heuristic = this.classifyHeuristic(trimmed);
+    const heuristic = this.classifyHeuristic(trimmed, context);
     if (heuristic.confidence >= HEURISTIC_CONFIDENCE_THRESHOLD) {
       const result = this.buildResult(
         heuristic.intent,
@@ -112,10 +114,19 @@ export class IntentRouterService {
   }
 
   /** Heurística determinista con score de confianza (sin LLM). */
-  classifyHeuristic(message: string): HeuristicIntentResult {
+  classifyHeuristic(message: string, context: IntentRouteContext = {}): HeuristicIntentResult {
     const trimmed = message.trim();
     if (!trimmed) {
       return { intent: "explore", action: "chat_only", confidence: 1 };
+    }
+
+    const lastAssistant = context.lastAssistantMessage?.trim() ?? "";
+    if (
+      lastAssistant &&
+      assistantOfferedDocumentEdit(lastAssistant) &&
+      /^(s[íi]|dale|aplica|ok|vale|correcto|de acuerdo|hazlo|adelante|procede|int[eé]gralo)\b/i.test(trimmed)
+    ) {
+      return { intent: "direct_edit", action: "edit_document", confidence: 0.94 };
     }
 
     if (isUserExploringDbgaIntent(trimmed)) {
@@ -166,9 +177,14 @@ export class IntentRouterService {
   ): Promise<{ action: WorkshopChatAction; confidence: number; reasoning: string }> {
     const docLabel = documentLabelForTab(context.activeTab);
     const summary = summarizeMessageForIntentClassification(message);
+    const assistantBlock = context.lastAssistantMessage?.trim()
+      ? `\nÚltimo mensaje del asistente en este tab:\n---\n${context.lastAssistantMessage.trim().slice(0, 1200)}\n---\n\n`
+      : "";
+
     const prompt =
       `Pestaña activa: **${docLabel}**.\n` +
-      `¿Hay documento en el panel?: ${context.hasDocumentContent ? "sí" : "no"}.\n\n` +
+      `¿Hay documento en el panel?: ${context.hasDocumentContent ? "sí" : "no"}.\n` +
+      assistantBlock +
       `Mensaje del usuario:\n---\n${summary}\n---`;
 
     const raw = await this.ai.generateResponse(prompt, [], {

@@ -40,6 +40,16 @@ export function documentLabelForTab(activeTab?: string): string {
   return TAB_LABELS[tab] ?? tab;
 }
 
+/** El asistente ofreció aplicar un cambio y espera confirmación del usuario. */
+export function assistantOfferedDocumentEdit(assistantText: string): boolean {
+  const t = (assistantText ?? "").trim();
+  if (t.length < 12) return false;
+  if (!/\?/m.test(t)) return false;
+  return /\b(?:te parece|quieres que|confirmas|procedo|lo integro|si es as[ií]|puedo integrarlo|puedo aplicarlo)\b/i.test(
+    t,
+  );
+}
+
 /** Indica si hay contenido de panel para la pestaña (contexto de edición). */
 export function hasWorkshopDocumentForTab(
   activeTab: string | undefined,
