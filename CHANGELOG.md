@@ -4,6 +4,25 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+### Added
+
+- **Workshop — pipeline de edición de documentos (3 fases):**
+  - `workshop-document-turn.util.ts` — gate de persistencia por intención (`chat_only` / `confirm_then_edit` no guardan aunque venga `---FIN_*---`), `sanitizeLlmResponse` (strip thinking), prefijo `[MODO EDICIÓN]`, validación estructural MDD (§1–§7), métricas `[DocumentTurn]`.
+  - `document-refine.util.ts` + `refineDocumentFromUserRequest` — segunda pasada barata de refinado para todos los tabs (paridad con DBGA).
+  - `resolveMddContentForReturn` / `resolveDeliverableContentForReturn` — merge + `validateDocumentForPersist` + retry si falta delimitador o el doc no refleja la petición.
+  - Dual Output RFC-001 solo en `edit_document` + tab `mdd`.
+  - Intent router: contexto `lastAssistantMessage` y heurística de confirmación (`assistantOfferedDocumentEdit` + «dale» / «sí»).
+
+### Changed
+
+- **`SessionsService.chat` / `chatStream`:** aplican gate de intención, sanitización, resolución unificada de documentos y log `[DocumentTurn]` en cada turno.
+- **`IntentRouterService`:** cache incluye último mensaje del asistente; prompt LLM del router recibe contexto del turno anterior.
+
+### Fixed
+
+- **Ediciones accidentales en modo exploración:** el modelo ya no puede persistir documento cuando el router clasifica `chat_only` o `confirm_then_edit`, aunque emita delimitador.
+- **Validación server-side alineada con web:** entregables del chat pasan por `validateDocumentForPersist` completo (no solo shrink peligroso).
+
 ## [v1.2.0] — 2026-07-17
 
 > **Auditoría SDD y calidad de cascada** — Endurecimiento agnóstico del pipeline MDD→entregables: gates de calidad estructural, conformidad Infra/API ampliada, semáforo alineado con cascada, MCP `audit_documents` y panel Workshop.
