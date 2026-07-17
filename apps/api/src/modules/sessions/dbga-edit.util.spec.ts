@@ -151,6 +151,16 @@ describe("isDbgaContentNearlyIdentical", () => {
     const b = a + " ";
     assert.equal(isDbgaContentNearlyIdentical(b, a), true);
   });
+
+  it("NO descarta una aclaración pequeña en un documento grande", () => {
+    // Regresión: un DBGA de ~90 KB con una aclaración de ~250 chars no debe tratarse
+    // como "sin cambios" (antes el umbral proporcional 0.008 llegaba a ~720 chars).
+    const current = "# Domain Benchmark\n\n" + "contenido de dominio. ".repeat(4_000);
+    const edit =
+      current +
+      "\n\n## PAT\nExisten dos tipos de PAT: el de la cuenta maestra de Wasender API que coordina las sesiones de cada tenant, y el del usuario provisto por el SSO corporativo.";
+    assert.equal(isDbgaContentNearlyIdentical(edit, current), false);
+  });
 });
 
 describe("parseBenchmarkResponse", () => {
@@ -167,6 +177,33 @@ describe("parseBenchmarkResponse", () => {
     const split = parseBenchmarkResponse(text);
     assert.ok(split);
     assert.match(split!.docPart, /Arquitectura/);
+  });
+
+  it("tolera delimitador sin guiones finales (---FIN_DBGA)", () => {
+    const text = "# Domain Benchmark\n\nContenido con tenant_id.\n\n---FIN_DBGA";
+    const split = parseBenchmarkResponse(text);
+    assert.ok(split);
+    assert.match(split!.docPart, /tenant_id/);
+    assert.doesNotMatch(split!.docPart, /FIN_DBGA/);
+    assert.equal(split!.chatPart, BENCHMARK_CHAT_ACK);
+  });
+
+  it("tolera delimitador sin guiones iniciales (FIN_DBGA---)", () => {
+    const text = "# Domain Benchmark\n\nContenido.\n\nFIN_DBGA---\nListo.";
+    const split = parseBenchmarkResponse(text);
+    assert.ok(split);
+    assert.match(split!.docPart, /Contenido/);
+    assert.match(split!.chatPart, /Listo/);
+  });
+
+  it("tolera delimitador en su propia línea sin guiones o envuelto", () => {
+    for (const marker of ["FIN_DBGA", "## FIN_DBGA", "**FIN_DBGA**"]) {
+      const text = `# Domain Benchmark\n\nCuerpo del análisis.\n\n${marker}\n\nRevisa el panel.`;
+      const split = parseBenchmarkResponse(text);
+      assert.ok(split, `marker=${marker}`);
+      assert.match(split!.docPart, /Cuerpo del análisis/);
+      assert.doesNotMatch(split!.docPart, /FIN_DBGA/);
+    }
   });
 });
 

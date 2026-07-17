@@ -22,6 +22,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Fixed
 
+- **Chat Fase 0 (DBGA) — cambios que no se persistían:** dos causas del mensaje «No se guardaron cambios en Fase 0 (DBGA)». (1) `parseBenchmarkResponse` exigía guiones a **ambos** lados del marcador (`-{1,}…-{1,}`), así que cierres reales como `---FIN_DBGA` (sin guiones finales), `FIN_DBGA---`, `## FIN_DBGA` o `**FIN_DBGA**` no se detectaban; ahora un único `FIN_DBGA_MARKER_RE` tolera esas variantes. (2) `isDbgaContentNearlyIdentical` usaba una tolerancia proporcional (`b.length * 0.008`) que en un DBGA grande (~90 KB) llegaba a ~720 chars y descartaba ediciones legítimas pequeñas (1–2 frases) como «sin cambios»; ahora la tolerancia está acotada (cap 200 chars).
 - **Tasks parser front-matter:** `rawMarkdown` limpiado con `stripFrontMatterFromRaw()` para evitar duplicación de campos parseados.
 
 ## [v1.0.0] — 2026-07-15

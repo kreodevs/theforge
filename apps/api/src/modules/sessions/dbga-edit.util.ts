@@ -72,7 +72,14 @@ export function isDbgaContentNearlyIdentical(next: string, current: string): boo
   const b = normalizeDbgaForCompare(current);
   if (a === b) return true;
   const lenDiff = Math.abs(a.length - b.length);
-  return lenDiff < Math.max(150, b.length * 0.008);
+  // Tolerancia ACOTADA. El factor proporcional anterior (`b.length * 0.008`) crecía
+  // con el tamaño del documento: en un DBGA de ~90 KB el umbral llegaba a ~720 chars,
+  // así que una aclaración legítima de 1–2 frases se descartaba como "sin cambios" y
+  // el panel nunca se actualizaba (mensaje "No se guardaron cambios en Fase 0"). Con
+  // el cap, cualquier edición real (> ~90–200 chars) se persiste; solo se considera
+  // idéntico un eco casi textual del documento.
+  const tolerance = Math.min(Math.max(64, b.length * 0.001), 200);
+  return lenDiff < tolerance;
 }
 
 /**
@@ -180,6 +187,18 @@ export function benchmarkAssistantChatMessage(
   return chat;
 }
 
+/**
+ * Marcador `---FIN_DBGA---` tolerante a las variantes que emiten los modelos:
+ * - Con guiones a ambos lados (`---FIN_DBGA---`), solo a la izquierda (`---FIN_DBGA`)
+ *   o solo a la derecha (`FIN_DBGA---`). Antes se exigía `-{1,}` en AMBOS lados, así
+ *   que un cierre sin guiones finales (muy común) no se detectaba y el panel no se
+ *   persistía.
+ * - En su propia línea, opcionalmente envuelto por `#`, `*`, `>` o espacios
+ *   (`## FIN_DBGA`, `**FIN_DBGA**`), con o sin salto de línea final.
+ */
+const FIN_DBGA_MARKER_RE =
+  /-{1,}[ \t]*FIN_DBGA[ \t]*-*|FIN_DBGA[ \t]*-{1,}|(?:^|\n)[ \t>*#]*FIN_DBGA[ \t*]*(?=\r?\n|$)/i;
+
 /** Separa documento DBGA del mensaje de chat (tolerante a `---FIN_DBGA---` pegado al texto). */
 export function parseBenchmarkResponse(
   response: string,
@@ -187,8 +206,7 @@ export function parseBenchmarkResponse(
   const trimmed = response.trim();
   if (!trimmed) return null;
   const normalized = trimmed.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
-  const re = /-{1,}\s*FIN_DBGA\s*-{1,}/i;
-  const match = re.exec(normalized);
+  const match = FIN_DBGA_MARKER_RE.exec(normalized);
   if (!match || match.index == null) return null;
   const idx = match.index;
   const docPart = trimmed.slice(0, idx).trim();
