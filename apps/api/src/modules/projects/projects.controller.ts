@@ -216,6 +216,12 @@ export class ProjectsController {
     return this.projects.getConformance(id, { useLlm: useLlm === "true" });
   }
 
+  /** Auditoría integral de calidad documental (conformidad + gaps SDD). */
+  @Get(":id/audit-documents")
+  auditDocuments(@Param("id") id: string, @Query("useLlm") useLlm?: string) {
+    return this.projects.auditDocuments(id, { useLlm: useLlm === "true" });
+  }
+
   /** Bundle SDD compatible con spec-kit (JSON para cliente o integraciones). */
   @Get(":id/export/sdd-bundle")
   exportSddBundle(@Param("id") id: string) {

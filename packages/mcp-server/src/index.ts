@@ -332,6 +332,19 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "audit_documents",
+    description:
+      "Auditoría integral de calidad documental: conformidad heurística (y opcional LLM), resumen API/Infra/Blueprint/Flujos y gaps SDD transversales.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        useLlm: { type: "boolean", description: "Incluir conformidad con LLM además de heurística" },
+      },
+      required: ["projectId"],
+    },
+  },
+  {
     name: "patch_project",
     description: "Actualiza campos del proyecto (mddContent, dbgaContent, blueprintContent, groupId, etc.)",
     inputSchema: {
@@ -1315,6 +1328,13 @@ const handlers: Record<string, Handler> = {
   async get_conformance(args) {
     return JSON.stringify(
       await apiGet(`/projects/${args.projectId}/conformance?useLlm=${args.useLlm === true ? "true" : "false"}`),
+    );
+  },
+  async audit_documents(args) {
+    return JSON.stringify(
+      await apiGet(
+        `/projects/${args.projectId}/audit-documents?useLlm=${args.useLlm === true ? "true" : "false"}`,
+      ),
     );
   },
   async patch_project(args) {

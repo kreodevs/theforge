@@ -426,6 +426,14 @@ export interface LiveMetricsResult {
   crossDocumentGaps?: CrossDocumentGap[];
   /** Gate bloqueante de entrega MDD (≥9/10). */
   deliveryGate?: MddDeliveryGateResult;
+  /** Conformidad heurística MDD ↔ cascada. */
+  conformanceSummary?: {
+    ok: boolean;
+    api: { ok: boolean; missingCount: number; extraCount: number; aliasWarnings: string[] };
+    infra: { ok: boolean; gapCount: number; gaps: string[] };
+    blueprint: { ok: boolean };
+    logicFlows: { ok: boolean };
+  };
 }
 
 function deliveryGateFromStreamEvent(

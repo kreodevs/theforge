@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { checkInfraManifestConformance } from "./mdd-quality-audit.util.js";
 
 /**
  * Verificación de conformidad de entregables (Blueprint, API, Infra) contra el MDD (Constitución).
@@ -677,6 +678,9 @@ export function checkInfraVsMdd(mddContent: string | null, infraContent: string 
       gaps.push("MDD §7 exige CI/CD o despliegue; no aparece en el doc de Infra");
     }
   }
+
+  gaps.push(...checkInfraManifestConformance(mddContent ?? "", infraContent ?? ""));
+
   return { ok: gaps.length === 0, gaps };
 }
 

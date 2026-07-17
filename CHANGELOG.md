@@ -4,25 +4,38 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [v1.2.0] — 2026-07-17
+
+> **Auditoría SDD y calidad de cascada** — Endurecimiento agnóstico del pipeline MDD→entregables: gates de calidad estructural, conformidad Infra/API ampliada, semáforo alineado con cascada, MCP `audit_documents` y panel Workshop.
+
 ### Added
 
-- **Cascade accuracy — C7/C8:** componentes `C7_useCases` y `C8_userStories` en `computeDocAccuracy` para validar presencia y sustancia de Use Cases y User Stories; pesos redistribuidos (C1:25, C2:18, C3:12, C4:10, C5:8, C6:7, C7:10, C8:10).
-- **Tasks planner — orphan detection:** `evaluateTasksStructure()` detecta tareas sin `target_files`/`verification` y las reporta como gaps.
-- **Governance — CLAUDE.md contextual:** genera CLAUDE.md con stack, capas, módulos y scripts del proyecto en vez de shim `@AGENTS.md`.
-- **Governance — reglas enriquecidas:** `architecture-patterns` y `api-contracts` inyectan capas Blueprint y módulos del proyecto en su contenido.
+- **Cascade accuracy — C7/C8:** componentes `C7_useCases` y `C8_userStories` en `computeDocAccuracy`; pesos redistribuidos.
+- **Tasks planner — orphan detection:** `evaluateTasksStructure()` reporta tareas sin `target_files`/`verification`.
+- **Governance — CLAUDE.md contextual** y reglas enriquecidas (`architecture-patterns`, `api-contracts`).
+- **`mdd-quality-audit.util`:** detección determinista de JSON §4 desbalanceado, Mermaid sin fence, tablas SQL huérfanas, manifest §7 truncado, placeholders en §1; extracción de requisitos Infra desde manifest; alias semánticos API.
+- **Delivery gate MDD:** blockers por §5/§6/§7 duplicadas y issues de calidad estructural; `applyPreDeliveryGateFixes` repara Mermaid suelto y deduplica secciones.
+- **Auditor determinista:** penalización y `syntax_errors` por duplicados, JSON roto y tablas huérfanas.
+- **Conformidad Infra:** `checkInfraManifestConformance` (Argon2id, DLQ, rate limits, CloudFront vs nginx, `/health` Celery).
+- **API post-generación:** doble pasada de `repairApiProgrammaticGaps`; change log JSON estructurado en gaps de conformance.
+- **Cascada:** `runCascadeConformanceRetry` (hasta 2 iteraciones API+Infra) tras generar entregables.
+- **Estimación en vivo:** penalización por gaps API/Infra; `conformanceSummary` en `get_estimation`; Spec sustituto de BRD en trazabilidad greenfield; Use Cases thin capados a 50% completitud.
+- **API:** `GET /projects/:id/audit-documents` — auditoría integral (conformidad + gaps SDD).
+- **MCP:** tool `audit_documents`.
+- **Workshop:** panel «Conformidad cascada» cuando `conformanceSummary.ok === false`.
 
 ### Changed
 
 - **LLM maxTokens:** `document`, `tasksPlanner` y `default` elevados a 65,536 tokens.
-- **Tasks pipeline caps:** MDD 24K→40K, Blueprint 12K→20K, Spec 10K→15K, API Contracts 12K→20K, Logic Flows 8K→12K, Infra 6K→10K; planner context §1 4K→6K, §3 8K→12K, §4 6K→8K, §5 5K→7K, §6 3K→4K, §7 3K→4K, Spec 5K→8K, Blueprint 6K→8K.
-- **Infra prompt:** secciones obligatorias CI/CD Pipeline, Cloud Deploy, Variables de entorno, mTLS/JWT, Monitoring, Manifest de infra.
-- **Tasks prompt:** §8 Testing tasks y §9 Deploy tasks como secciones obligatorias.
-- **`preferThinLiteraryDocs`:** default cambiado de `true` a `false`.
-- **`generateInfra`:** checklist de cobertura anexa al system prompt tras governance patterns.
+- **Tasks pipeline caps** ampliados (MDD, Blueprint, Spec, API, Logic Flows, Infra).
+- **Infra/Tasks prompts:** secciones CI/CD, Deploy y Testing obligatorias; `preferThinLiteraryDocs` default `false`.
+- **`generateInfra`:** retry con `buildInfraConformanceGapFeedback` (incluye manifest §7).
+- **Semáforo:** no puede quedar verde con `conformanceSummary` roto o >3 endpoints API faltantes.
 
 ### Fixed
 
-- **Tasks parser front-matter:** `rawMarkdown` limpiado con `stripFrontMatterFromRaw()` para evitar duplicación de campos parseados.
+- **Tasks parser front-matter:** `stripFrontMatterFromRaw()` evita duplicación de campos parseados.
+- **Consistencia transversal:** proyectos sin BRD ya no quedan penalizados con score 50 fijo si tienen Spec trazable.
 
 ## [v1.1.0] — 2026-07-16
 

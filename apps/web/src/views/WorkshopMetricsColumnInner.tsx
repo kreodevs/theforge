@@ -1256,6 +1256,31 @@ export function WorkshopMetricsColumnInner({
               {auditorFeedback}
             </div>
           ) : null}
+
+          {liveMetrics?.conformanceSummary && !liveMetrics.conformanceSummary.ok ? (
+            <div className="max-h-28 shrink-0 overflow-y-auto rounded-lg border border-[color-mix(in_oklch,var(--warning)_40%,var(--border))] bg-[color-mix(in_oklch,var(--warning)_6%,var(--background))] p-2 text-[11px] leading-snug shadow-sm">
+              <strong className="mb-0.5 block text-[var(--foreground)]">Conformidad cascada</strong>
+              <ul className="list-disc space-y-0.5 pl-4">
+                {!liveMetrics.conformanceSummary.api.ok ? (
+                  <li>
+                    API: {liveMetrics.conformanceSummary.api.missingCount} endpoint(s) faltante(s)
+                    {liveMetrics.conformanceSummary.api.extraCount > 0
+                      ? `, ${liveMetrics.conformanceSummary.api.extraCount} extra(s)`
+                      : ""}
+                  </li>
+                ) : null}
+                {!liveMetrics.conformanceSummary.infra.ok ? (
+                  <li>
+                    Infra: {liveMetrics.conformanceSummary.infra.gapCount} gap(s) —{" "}
+                    {liveMetrics.conformanceSummary.infra.gaps[0] ?? "revisar §7"}
+                  </li>
+                ) : null}
+                {liveMetrics.conformanceSummary.api.aliasWarnings?.slice(0, 2).map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
       </div>
     </div>
   );

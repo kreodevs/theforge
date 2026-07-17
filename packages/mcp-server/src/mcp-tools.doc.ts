@@ -29,6 +29,7 @@
  * - **`transition_project_stage`**: `POST /projects/:projectId/stages/:stageId/transition` (activate|complete|archive|reopen)
  * - **`get_project_deliverables`**: `GET /projects/:projectId` (resumen cascada + `agentGovernanceContent`)
  * - **`get_conformance`**: `GET /projects/:projectId/conformance?useLlm=`
+ * - **`audit_documents`**: `GET /projects/:projectId/audit-documents?useLlm=` (conformidad + gaps SDD + resumen)
  * - **`patch_project`**: `PATCH /projects/:projectId` (body parcial MDD/blueprint/spec/groupId/…)
  * - **`generate_benchmark`**: `POST /projects/:projectId/generate-benchmark`
  *

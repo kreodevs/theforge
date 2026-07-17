@@ -13,9 +13,12 @@ const DOC_WEIGHTS: Record<keyof PlanningDocumentFields, number> = {
   tasksContent: 0.05,
 };
 
+const THIN_USE_CASES_RE = /thin\s*[—–-]\s*ProcessInventory|ProcessInventory/i;
+
 /**
  * Calcula la completitud de cada documento del proyecto.
  * 100 = completo (≥300 chars), 50 = parcial (≥80 chars), 10 = mínimo (algún contenido), 0 = vacío.
+ * Use Cases "thin" (ProcessInventory) se capan a 50 aunque superen 300 chars.
  * El `overall` es el promedio ponderado por `DOC_WEIGHTS`.
  */
 export function computeDocumentCompleteness(docs: PlanningDocumentFields): DocumentCompleteness {
@@ -34,6 +37,9 @@ export function computeDocumentCompleteness(docs: PlanningDocumentFields): Docum
       score = 10;
     } else {
       score = 0;
+    }
+    if (key === "useCasesContent" && trimmed.length > 0 && THIN_USE_CASES_RE.test(trimmed)) {
+      score = Math.min(score, 50);
     }
     result[key] = score;
     weightedSum += (score / 100) * weight;

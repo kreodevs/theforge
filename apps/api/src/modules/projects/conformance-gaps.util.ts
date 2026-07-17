@@ -1,5 +1,10 @@
 import { ConformanceService } from "../engine/conformance.service.js";
 import { collectSddPrecisionGaps } from "../engine/sdd-precision-checks.util.js";
+import {
+  findApiSemanticAliasWarnings,
+  type ConformanceSummary,
+} from "../engine/mdd-quality-audit.util.js";
+import { checkApiVsMdd, checkInfraVsMdd } from "../engine/conformance.service.js";
 
 export interface ProjectDeliverableSource {
   blueprintContent?: string | null;
@@ -49,4 +54,33 @@ export function collectConformanceGaps(
     }),
   );
   return gaps;
+}
+
+/** Resumen estructurado para semáforo, MCP audit_documents y Workshop. */
+export function buildConformanceSummary(
+  conformance: ConformanceService,
+  mdd: string,
+  project: ProjectDeliverableSource,
+): ConformanceSummary {
+  const apiCheck = checkApiVsMdd(mdd, project.apiContractsContent ?? null);
+  const infraCheck = checkInfraVsMdd(mdd, project.infraContent ?? null);
+  const bp = conformance.checkBlueprint(mdd, project.blueprintContent ?? null);
+  const lf = conformance.checkLogicFlows(mdd, project.logicFlowsContent ?? null);
+  const aliasWarnings = findApiSemanticAliasWarnings(mdd, project.apiContractsContent ?? "");
+  return {
+    ok: apiCheck.ok && infraCheck.ok && bp.ok && lf.ok,
+    api: {
+      ok: apiCheck.ok,
+      missingCount: apiCheck.missingInApi.length,
+      extraCount: apiCheck.extraInApi.length,
+      aliasWarnings,
+    },
+    infra: {
+      ok: infraCheck.ok,
+      gapCount: infraCheck.gaps.length,
+      gaps: infraCheck.gaps.slice(0, 12),
+    },
+    blueprint: { ok: bp.ok },
+    logicFlows: { ok: lf.ok },
+  };
 }

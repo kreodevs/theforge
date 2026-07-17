@@ -59,6 +59,7 @@ import {
   checkApiVsMdd,
   checkLogicFlowsVsMdd,
   checkInfraVsMdd,
+  buildInfraConformanceGapFeedback,
   extractEntities,
   extractMddSection4Endpoints,
   extractSection,
@@ -77,6 +78,10 @@ import {
   toLogicFlowsSection5CoverageReport,
 } from "../ai/utils/legacy-as-is-logic-flows.util.js";
 import { buildLegacyGenerateOptions } from "../legacy-flow/legacy-generate-options.util.js";
+import {
+  buildConformanceSummary,
+  collectConformanceGaps,
+} from "./conformance-gaps.util.js";
 import { ProjectIntegrationService } from "./integration/project-integration.service.js";
 import { buildHandoffUserStoriesAppendix } from "./integration/integration-context.util.js";
 import { patchLegacyDeliverablesDebugReport } from "../legacy-flow/legacy-flow-state-debug.util.js";
@@ -2325,6 +2330,43 @@ name: ${JSON.stringify(name)}
     }
   }
 
+  /** Reintenta API e Infra cuando conformance heurístico falla tras la cascada (máx. 2 iteraciones). */
+  private async runCascadeConformanceRetry(projectId: string): Promise<void> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const project = await this.findOne(projectId);
+      const mdd = this.constitutionMarkdown(project);
+      if (!mdd.trim()) return;
+
+      const apiCheck = checkApiVsMdd(mdd, project.apiContractsContent ?? null);
+      const infraCheck = checkInfraVsMdd(mdd, project.infraContent ?? null);
+      if (apiCheck.ok && infraCheck.ok) return;
+
+      this.logger.warn(
+        `[Cascade] Conformance retry ${attempt + 1}/2 — API ok=${apiCheck.ok} Infra ok=${infraCheck.ok}`,
+      );
+
+      const retries: Promise<unknown>[] = [];
+      if (!apiCheck.ok && (project.apiContractsContent ?? "").trim().length > 80) {
+        const feedback = buildApiRetryFeedback(apiCheck);
+        retries.push(
+          this.generateApiContracts(projectId, feedback).catch((e) =>
+            this.logger.warn(`[Cascade] API conformance retry: ${e instanceof Error ? e.message : e}`),
+          ),
+        );
+      }
+      if (!infraCheck.ok && (project.infraContent ?? "").trim().length > 80) {
+        const feedback = buildInfraConformanceGapFeedback(infraCheck.gaps);
+        retries.push(
+          this.generateInfra(projectId, feedback).catch((e) =>
+            this.logger.warn(`[Cascade] Infra conformance retry: ${e instanceof Error ? e.message : e}`),
+          ),
+        );
+      }
+      if (retries.length === 0) return;
+      await Promise.allSettled(retries);
+    }
+  }
+
   /**
    * Enrutamiento dinámico: solo ejecuta generadores listados en `DELIVERABLES_BY_COMPLEXITY`.
    * @param onProgress — opcional (p. ej. BullMQ `job.updateProgress`).
@@ -2410,6 +2452,12 @@ name: ${JSON.stringify(name)}
     await this.runCascadePostPassRetry(projectId).catch((err) =>
       this.logger.warn(
         `[Cascade] post-pass W4: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+
+    await this.runCascadeConformanceRetry(projectId).catch((err) =>
+      this.logger.warn(
+        `[Cascade] conformance retry: ${err instanceof Error ? err.message : String(err)}`,
       ),
     );
 
@@ -3375,13 +3423,27 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     }
 
     apiContent = repairApiProgrammaticGaps(mddContent, apiContent);
+    let postCheck = this.conformance.checkApi(mddContent, apiContent);
+    if (!postCheck.ok) {
+      apiContent = repairApiProgrammaticGaps(mddContent, apiContent);
+      postCheck = this.conformance.checkApi(mddContent, apiContent);
+    }
 
-    const postCheck = this.conformance.checkApi(mddContent, apiContent);
     if (!postCheck.ok) {
       const gapSummary = [...postCheck.missingInApi, ...postCheck.extraInApi].slice(0, 6).join("; ");
       this.logger.warn(`[API] Post-generation conformance gaps: ${gapSummary}`);
       await this.changeLog
-        .log(projectId, "apiContractsContent", `[conformance-recheck] ${gapSummary}`)
+        .log(
+          projectId,
+          "apiContractsContent",
+          JSON.stringify({
+            type: "conformance-recheck",
+            ok: false,
+            missing: postCheck.missingInApi.slice(0, 20),
+            extra: postCheck.extraInApi.slice(0, 12),
+            at: new Date().toISOString(),
+          }),
+        )
         .catch(() => {});
     }
 
@@ -3502,7 +3564,7 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     let infraCheck = this.conformance.checkInfra(mdd, cleaned);
     if (!infraCheck.ok && !qualityRetried) {
       qualityRetried = true;
-      const internalFeedback = infraCheck.gaps.join("; ");
+      const internalFeedback = buildInfraConformanceGapFeedback(infraCheck.gaps);
       const combinedFeedback = [gapsFeedback?.trim(), internalFeedback].filter(Boolean).join("\n\n");
       this.logger.warn(`[Infra] Conformidad insuficiente — reintentando: ${internalFeedback.slice(0, 200)}`);
       cleaned = cleanDocumentContent(
@@ -3516,13 +3578,42 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
       const gapSummary = postCheck.gaps.slice(0, 6).join("; ");
       this.logger.warn(`[Infra] Post-generation conformance gaps: ${gapSummary}`);
       await this.changeLog
-        .log(projectId, "infraContent", `[conformance-recheck] ${gapSummary}`)
+        .log(
+          projectId,
+          "infraContent",
+          JSON.stringify({
+            type: "conformance-recheck",
+            ok: false,
+            gaps: postCheck.gaps.slice(0, 16),
+            at: new Date().toISOString(),
+          }),
+        )
         .catch(() => {});
     }
 
     const updated = await this.update(projectId, { infraContent: cleaned });
     this.notifyPluginAfterDocumentPersist("infra", projectId, updated.infraContent ?? cleaned);
     return updated;
+  }
+
+  /** Auditoría integral: conformidad heurística + métricas en vivo + gaps SDD. */
+  async auditDocuments(projectId: string, options?: { useLlm?: boolean }) {
+    const project = await this.assertProjectAccess(projectId);
+    const mdd = this.constitutionMarkdown(project);
+    const conformance = await this.getConformance(projectId, options);
+    const conformanceSummary = buildConformanceSummary(this.conformance, mdd, project);
+    const crossArtifactGaps = collectConformanceGaps(this.conformance, mdd, project);
+    const stage = pickPrimaryStage(project.stages ?? []);
+    return {
+      projectId,
+      projectName: project.name,
+      stageStatus: stage?.status ?? null,
+      precisionScore: stage?.precisionScore ?? null,
+      conformance,
+      conformanceSummary,
+      crossArtifactGaps: crossArtifactGaps.slice(0, 24),
+      auditedAt: new Date().toISOString(),
+    };
   }
 
   async getConformance(
