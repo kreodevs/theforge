@@ -26,6 +26,7 @@ import {
   stripTrailingDuplicateMddSections,
   applyPreDeliveryGateFixes,
   detectSection2Section7NodeVersionMismatchIssue,
+  detectUnclosedSqlFences,
   fixDeterministicMddCoherence,
   finalizeMddDeliverable,
   fixDualApprovalSchemaInDraft,
@@ -595,6 +596,28 @@ TLS entre microservicios y PostgreSQL.
 | Backend | Node.js | 22 |
 `;
     assert.equal(extractNodeVersionFromSection2(draft), "22");
+  });
+
+  it("applyPreDeliveryGateFixes cierra ```sql sin cerrar antes de ### Diagrama / TechnicalMetadata", () => {
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+
+### Diagrama entidad-relación
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+
+| POST | /auth/login | Login |
+`;
+    assert.ok(detectUnclosedSqlFences(draft));
+    const fixed = applyPreDeliveryGateFixes(draft);
+    assert.equal(detectUnclosedSqlFences(fixed), null);
+    assert.match(fixed, /```sql[\s\S]*```[\s\S]*### Diagrama/);
   });
 
   it("applyPreDeliveryGateFixes alinea node en §7 y elimina mismatch detectado", () => {

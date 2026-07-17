@@ -1051,9 +1051,14 @@ export function alignInfraNodeVersionWithSection2(draft: string): string {
   return out;
 }
 
-/** Pasada final antes del delivery gate: coherencia determinista §2/§4/§6/§7 (idempotente). */
+/** Pasada final antes del delivery gate: fences rotos + coherencia determinista §2/§4/§6/§7 (idempotente). */
 export function applyPreDeliveryGateFixes(draft: string): string {
-  return fixDeterministicMddCoherence(draft ?? "");
+  let out = draft ?? "";
+  out = fixSection2UnclosedSqlAndGluedMermaid(out);
+  out = ensureSection2SqlBlockClosed(out);
+  out = closeUnclosedCodeFencesInDraft(out);
+  out = fixDeterministicMddCoherence(out);
+  return out;
 }
 
 function extractInfraSectionBodyForNodeCheck(draft: string): string | null {
@@ -1514,7 +1519,7 @@ function patchGlobalManifestSecurityFields(draft: string): string {
   return out;
 }
 
-/** Blockers de coherencia §6/§7 resueltos por applyPreDeliveryGateFixes (no requieren LLM). */
+/** Blockers de coherencia §6/§7 y fences resueltos por applyPreDeliveryGateFixes (no requieren LLM). */
 export function areAutoFixableCoherenceBlockers(blockers: string[]): boolean {
   if (blockers.length === 0) return false;
   return blockers.every(
@@ -1522,7 +1527,8 @@ export function areAutoFixableCoherenceBlockers(blockers: string[]): boolean {
       /hashing_algorithm.*bcrypt.*(?:LDAP|Argon2id)/i.test(b) ||
       /algoritmo JWT incoherente/i.test(b) ||
       /versión Node distinta/i.test(b) ||
-      /node:\d+/i.test(b),
+      /node:\d+/i.test(b) ||
+      /```sql sin cerrar/i.test(b),
   );
 }
 

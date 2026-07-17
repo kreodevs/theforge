@@ -66,6 +66,29 @@ Argon2id para bootstrap; intentos fallidos en security_events.
 Docker Compose con PostgreSQL.
 `;
 
+const MDD_WITH_UNCLOSED_SQL = VALID_MDD.replace(
+  /## 3\. Modelo de Datos[\s\S]*?(?=\n## 4\. Contratos de API)/,
+  `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  email TEXT NOT NULL
+);
+CREATE TABLE security_events (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  event_type TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+### Diagrama entidad-relación
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\``,
+);
+
 describe("evaluateMddQualityGate", () => {
   it("aprueba MDD canónico mínimo (ok=true, sin blockers)", () => {
     const result = evaluateMddQualityGate(VALID_MDD);
@@ -240,24 +263,10 @@ Docker.
     assert.ok(result.blockers.some((b) => b.includes("refresh_tokens")));
   });
 
-  it("bloquea bloque ```sql sin cerrar", () => {
-    const draft = `${VALID_MDD.split("## 3. Modelo de Datos")[0]}## 3. Modelo de Datos
-
-\`\`\`sql
-CREATE TABLE users (id UUID PRIMARY KEY);
-
-### Diagrama entidad-relación
-
-\`\`\`TechnicalMetadata
-[high_security]
-\`\`\`
-${VALID_MDD.split("## 4. Contratos de API")[1]}`;
-    const result = evaluateMddQualityGate(draft);
-    assert.equal(result.ok, false);
-    assert.ok(
-      result.blockers.some((b) => b.includes("```sql sin cerrar")),
-      result.blockers.join("; "),
-    );
+  it("repara bloque ```sql sin cerrar en pre-delivery (no bloquea quality gate)", () => {
+    const result = evaluateMddQualityGate(MDD_WITH_UNCLOSED_SQL);
+    assert.equal(result.ok, true, result.blockers.join("; "));
+    assert.ok(!result.blockers.some((b) => b.includes("```sql sin cerrar")));
   });
 
   it("deduplica UAT §1/§5 en pre-delivery sin bloquear si el resto es válido", () => {

@@ -2,6 +2,10 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { validateMddForDelivery } from "./mdd-delivery-gate.util.js";
 import { evaluateMddQualityGate, qualityGateToDeliveryGate } from "./mdd-quality-gate.util.js";
+import {
+  applyPreDeliveryGateFixes,
+  detectUnclosedSqlFences,
+} from "./mdd-sanitize.js";
 
 const VALID_MDD = `# Master Design Document
 
@@ -57,12 +61,47 @@ Argon2id para bootstrap; intentos fallidos en security_events.
 Docker Compose con PostgreSQL.
 `;
 
+const MDD_WITH_UNCLOSED_SQL = VALID_MDD.replace(
+  /## 3\. Modelo de Datos[\s\S]*?(?=\n## 4\. Contratos de API)/,
+  `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  email TEXT NOT NULL
+);
+CREATE TABLE security_events (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  event_type TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+### Diagrama entidad-relación
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\``,
+);
+
 describe("delivery gate aligned with quality gate", () => {
   it("validateMddForDelivery ok coincide con quality gate cuando no hay blockers", () => {
     const qg = evaluateMddQualityGate(VALID_MDD);
     const dg = validateMddForDelivery(VALID_MDD);
     assert.equal(qg.ok, true);
     assert.equal(dg.ok, qg.ok);
+    assert.equal(qualityGateToDeliveryGate(qg).ok, true);
+  });
+
+  it("```sql sin cerrar se repara en pre-delivery y no bloquea gate", () => {
+    const draft = MDD_WITH_UNCLOSED_SQL;
+    assert.ok(detectUnclosedSqlFences(draft), "borrador sin fix debe tener fence roto");
+    const fixed = applyPreDeliveryGateFixes(draft);
+    assert.equal(detectUnclosedSqlFences(fixed), null, fixed);
+    const qg = evaluateMddQualityGate(draft);
+    const dg = validateMddForDelivery(draft);
+    assert.equal(qg.ok, true, qg.blockers.join("; "));
+    assert.equal(dg.ok, true, dg.blockers.join("; "));
     assert.equal(qualityGateToDeliveryGate(qg).ok, true);
   });
 
