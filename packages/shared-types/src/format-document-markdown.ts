@@ -20,6 +20,7 @@ import {
   repairGluedMarkdownHeadings,
 } from "./repair-glued-headings.js";
 import { repairPhase0FlowFormat } from "./repair-phase0-flow-format.js";
+import { repairSplitOrderedListItems } from "./repair-split-ordered-list-items.js";
 import { repairDbgaMarkdown } from "./repair-dbga-markdown.js";
 import {
   deduplicateDbgaDocument,
@@ -67,6 +68,7 @@ export function formatDocumentMarkdown(text: string): string {
   }
   cleaned = repairMarkdownFences(cleaned.trim());
   cleaned = repairDbgaMarkdown(cleaned);
+  cleaned = repairSplitOrderedListItems(cleaned);
   cleaned = repairGluedMarkdownHeadings(cleaned);
   cleaned = repairPhase0FlowFormat(cleaned);
   cleaned = homogenizeMarkdownBulletMarkers(cleaned);
