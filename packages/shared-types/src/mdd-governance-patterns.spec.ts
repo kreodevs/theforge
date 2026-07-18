@@ -105,6 +105,13 @@ describe("mdd-governance-patterns", () => {
     assert.equal(serverWouldDropGovernancePatterns(withPat, withPat), false);
   });
 
+  it("parseActivePatternsFromMdd tolera viñetas corruptas # - [X]", () => {
+    const gov =
+      "## [ARQUITECTURA - SECCIÓN INMUTABLE]\n\n# - [X] **Singleton:** Descripción. *(Afecta a: MDD, Tasks)*\n";
+    const md = `# MDD\n\n---\n\n${gov}\n\n## 1. Contexto\n\nTexto.\n`;
+    assert.ok(parseActivePatternsFromMdd(md).some((p) => p.label.includes("Singleton")));
+  });
+
   it("preserva gobernanza al preparar salida con §1 sustancial", () => {
     const skeleton = buildMddWithGovernanceSkeleton();
     const withS1 =

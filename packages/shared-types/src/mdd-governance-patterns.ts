@@ -242,7 +242,7 @@ export function parseActivePatternsFromMdd(md: string): MddActivePattern[] {
   if (!gov) return [];
   const active: MddActivePattern[] = [];
   for (const line of gov.split("\n")) {
-    const m = line.match(/^- \[\s*[xX]\s*\] \*\*(.+):\*\*\s*(.*)$/);
+    const m = line.match(/^#?\s*- \[\s*[xX]\s*\] \*\*(.+):\*\*\s*(.*)$/);
     if (!m) continue;
     const label = m[1]!.trim();
     const rest = m[2]!.trim();

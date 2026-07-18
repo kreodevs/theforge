@@ -150,4 +150,16 @@ describe("theforge-doc-stamp", () => {
     assert.ok(out.includes("Creado:"));
     assert.ok(out.includes("# Título"));
   });
+
+  it("peelDocumentBodyForPersist no promueve viñetas SSOT - [X] a H1", async () => {
+    const { updateMddGovernancePatterns, selectedPatternIdsFromMdd, listGovernancePatternOptions } =
+      await import("./mdd-governance-patterns.js");
+    const base =
+      "# Master Design Document\n\n## 1. Contexto\n\nCuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba.\n";
+    const id = listGovernancePatternOptions().find((o) => o.label.includes("Singleton"))!.id;
+    const md = updateMddGovernancePatterns(base, new Set([id]));
+    const peeled = peelDocumentBodyForPersist(md);
+    assert.equal(selectedPatternIdsFromMdd(peeled).size, 1);
+    assert.doesNotMatch(peeled, /^# - \[[xX]\]/m);
+  });
 });

@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
+  listGovernancePatternOptions,
+  selectedPatternIdsFromMdd,
+  updateMddGovernancePatterns,
+} from "@theforge/shared-types";
+import {
   alignDeliverableMarkdownWithMddSecurity,
   ensurePostMvpUiSurfaceBanner,
   applyCrossConsistencyPatches,
@@ -1969,5 +1974,15 @@ Stack.
     assert.doesNotMatch(out, /## 1\. Contexto ###/);
     const second = prepareMddMarkdownForPersist(out);
     assert.doesNotMatch(second, /## 1\. Contexto ###/);
+  });
+
+  it("prepareMddMarkdownForPersist conserva patrones SSOT - [X] tras peel", () => {
+    const base =
+      "# Master Design Document\n\n## 1. Contexto\n\nCuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba.\n";
+    const id = listGovernancePatternOptions().find((o) => o.label.includes("Singleton"))!.id;
+    const md = updateMddGovernancePatterns(base, new Set([id]));
+    const out = prepareMddMarkdownForPersist(md);
+    assert.equal(selectedPatternIdsFromMdd(out).size, 1);
+    assert.doesNotMatch(out, /^# - \[[xX]\]/m);
   });
 });

@@ -55,8 +55,17 @@ export function repairInlineHorizontalRuleSectionBreaks(text: string): string {
 function promoteBareDocumentTitleBeforeH2(body: string): string {
   return body.replace(
     /^([^\n#][^\n]{2,160}?)\n\n---\n\n(##\s)/m,
-    (_m, title: string, h2: string) => `# ${title.trim()}\n\n---\n\n${h2}`,
+    (full, title: string, h2: string) => {
+      const t = title.trim();
+      if (/^[-*+]\s/.test(t) || /^\d+\.\s/.test(t)) return full;
+      return `# ${t}\n\n---\n\n${h2}`;
+    },
   );
+}
+
+/** Repara viñetas SSOT promovidas por error a H1 (`# - [X]` → `- [X]`). */
+function repairGovernancePatternListHeadings(body: string): string {
+  return body.replace(/^#\s+(- \[[ xX]\]\s)/gm, "$1");
 }
 
 const STAMP_RESIDUE_MARKERS_RE =
@@ -221,6 +230,7 @@ export function peelTheforgeDocStamp(text: string): { stamp: string; body: strin
   body = stripStampResidueBeforeHeading(body);
   body = repairInlineHorizontalRuleSectionBreaks(body);
   body = promoteBareDocumentTitleBeforeH2(body);
+  body = repairGovernancePatternListHeadings(body);
   body = body.trimStart();
 
   return { stamp, body };
@@ -238,6 +248,7 @@ export function peelDocumentBodyForPersist(text: string): string {
   body = extractCanonicalMddBody(body);
   body = repairInlineHorizontalRuleSectionBreaks(body);
   body = promoteBareDocumentTitleBeforeH2(body);
+  body = repairGovernancePatternListHeadings(body);
   return body.trim();
 }
 
