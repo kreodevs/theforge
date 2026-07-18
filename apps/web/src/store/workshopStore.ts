@@ -110,12 +110,7 @@ function shouldApplyWorkshopUpdate(get: () => WorkshopState, requestedProjectId:
 export const selectWorkshopAgentsBusy = (s: WorkshopState) => isWorkshopAgentsBusy(s);
 
 /** MDD persistido en BD para la etapa activa (baseline del aviso «sin guardar»). */
-export const selectPersistedMddBaseline = (s: WorkshopState): string => {
-  const stages = s.workshopStages.length > 0 ? s.workshopStages : (s.project?.stages ?? []);
-  const st = stages.find((x) => x.id === s.activeStageId);
-  const raw = st?.mddContent ?? s.project?.mddContent ?? null;
-  return workshopMddEditorBaseline(raw);
-};
+export const selectPersistedMddBaseline = (s: WorkshopState): string => s.mddPersistedBaseline;
 
 /** Markdown MDD en BD sin normalizar (incluye stamp API si existe). */
 function selectRawMddFromStage(s: WorkshopState): string {
@@ -183,6 +178,7 @@ function applyMddEditorBaselineToWorkshop(
     project: { ...focused.project, stages: alignedStages, mddContent: editorBaseline },
     workshopStages: alignedStages,
     mddContent: editorBaseline,
+    mddPersistedBaseline: editorBaseline,
   };
 }
 
@@ -239,7 +235,7 @@ async function persistMddFromChatStream(
   const baseline = normalizedMddForPersistCompare(selectPersistedMddBaseline(get()));
   const normalized = normalizedMddForPersistCompare(incoming);
   if (normalized === baseline) {
-    set({ synced: true });
+    set({ synced: true, mddPersistedBaseline: normalized });
     return;
   }
 
@@ -459,6 +455,12 @@ async function persistField(
       }
       if (fieldName === "mddContent" && alignedProject.stages?.length) {
         patch.workshopStages = alignedProject.stages;
+      }
+      if (
+        fieldName === "mddContent" &&
+        (shouldApplyPersistedFieldContent(localNow, localAtSaveStart, cleaned) || patternsReverted)
+      ) {
+        patch.mddPersistedBaseline = serverCleaned;
       }
       setState(patch);
       // Flush offline queue oportunistically
@@ -968,6 +970,8 @@ interface WorkshopState {
   session: Session | null;
   /** Contenido del MDD (Constitución del proyecto en SDD; gobierna Blueprint, Contratos, Infra). */
   mddContent: string;
+  /** Último MDD guardado en BD alineado al editor (baseline «sin guardar»). */
+  mddPersistedBaseline: string;
   uxUiGuideContent: string | null;
   dbgaContent: string | null;
   specContent: string | null;
@@ -1390,6 +1394,7 @@ const initialState = {
   project: null as Project | null,
   session: null as Session | null,
   mddContent: "",
+  mddPersistedBaseline: "",
   uxUiGuideContent: null as string | null,
   dbgaContent: null as string | null,
   specContent: null as string | null,
@@ -1496,6 +1501,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         project: null,
         activeStageId: null,
         workshopStages: [],
+        mddPersistedBaseline: "",
         lastLegacyDeliverablesDebug: null,
         pluginData: {},
       });
@@ -1510,6 +1516,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       workshopStages: stages,
       activeStageId,
       mddContent: focused.mddContent,
+      mddPersistedBaseline: focused.mddContent ?? "",
       documentTimestamps: focused.documentTimestamps,
       uxUiGuideContent: focused.uxUiGuideContent,
       dbgaContent: p.dbgaContent ?? null,
@@ -1593,6 +1600,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       activeStageId: stageId,
       project: focused.project,
       mddContent: focused.mddContent,
+      mddPersistedBaseline: focused.mddContent ?? "",
       documentTimestamps: focused.documentTimestamps,
       specContent: focused.specContent,
       architectureContent: focused.architectureContent,
@@ -1973,6 +1981,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         workshopStages: nextStages,
         activeStageId,
         mddContent: nextMddContent,
+        ...(preserveMddLocal && hasUnsavedEditorChanges
+          ? {}
+          : { mddPersistedBaseline: nextMddContent }),
         documentTimestamps: focused.documentTimestamps,
         uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: normalizeWorkshopDocumentForEditor(data.dbgaContent ?? null),
@@ -2067,12 +2078,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const prev = get().activeStageId;
       const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
       const focused = workshopStateFromProjectStage({ ...p, stages }, activeStageId);
+      const nextMdd = focused.mddContent || get().mddContent;
       set({
         session: data.session,
         project: focused.project,
         workshopStages: stages,
         activeStageId,
-        mddContent: focused.mddContent || get().mddContent,
+        mddContent: nextMdd,
+        mddPersistedBaseline: focused.mddContent || get().mddPersistedBaseline,
         documentTimestamps: focused.documentTimestamps,
         uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: focused.project.dbgaContent ?? normalizeWorkshopDocumentForEditor(p.dbgaContent ?? null),
@@ -3051,11 +3064,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 const packed = projectWithUxAfterStream(proj, uxFromApi, get().activeStageId);
                 const nextStages = packed?.project?.stages ?? proj?.stages;
                 const freshUx = cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null);
+                const nextMdd = packed?.mddContent ?? get().mddContent;
                 set({
                   session: sess ?? get().session,
                   project: packed?.project ?? get().project,
                   activeStageId: packed?.activeStageId ?? get().activeStageId,
-                  mddContent: packed?.mddContent ?? get().mddContent,
+                  mddContent: nextMdd,
+                  ...(packed?.mddContent != null ? { mddPersistedBaseline: packed.mddContent } : {}),
                   workshopStages: nextStages && nextStages.length > 0 ? nextStages : get().workshopStages,
                   uxUiGuideContent: freshUx,
                   dbgaContent:
@@ -3146,11 +3161,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   const packed = projectWithUxAfterStream(projTail, uxFromApi, get().activeStageId);
                   const nextStagesB = packed?.project?.stages ?? projTail?.stages;
                   const freshUx = cleanDoc(uxFromApi ?? get().uxUiGuideContent ?? null);
+                  const nextMddTail = packed?.mddContent ?? get().mddContent;
                   set({
                     session: sessTail ?? get().session,
                     project: packed?.project ?? get().project,
                     activeStageId: packed?.activeStageId ?? get().activeStageId,
-                    mddContent: packed?.mddContent ?? get().mddContent,
+                    mddContent: nextMddTail,
+                    ...(packed?.mddContent != null ? { mddPersistedBaseline: packed.mddContent } : {}),
                     workshopStages: nextStagesB && nextStagesB.length > 0 ? nextStagesB : get().workshopStages,
                     uxUiGuideContent: freshUx,
                     dbgaContent:
@@ -4706,7 +4723,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const baseline = normalizedMddForPersistCompare(selectPersistedMddBaseline(state));
     const normalized = normalizedMddForPersistCompare(content);
     if (!options?.force && normalized === baseline) {
-      set({ synced: true });
+      set({ synced: true, mddPersistedBaseline: normalized });
       return;
     }
 
@@ -4787,6 +4804,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             workshopStages: aligned.workshopStages,
             activeStageId: packed?.activeStageId ?? get().activeStageId,
             mddContent: aligned.mddContent,
+            mddPersistedBaseline: aligned.mddPersistedBaseline,
             ...(nextTimestamps
               ? {
                   documentTimestamps: {
@@ -4821,7 +4839,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   },
 
   revertMddContent: () => {
-    set({ mddContent: selectPersistedMddBaseline(get()) });
+    set({ mddContent: get().mddPersistedBaseline });
   },
 
   clearMddContentCompletely: async (projectId) => {
@@ -4852,6 +4870,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         project: nextProject,
         workshopStages: nextProject.stages ?? get().workshopStages,
         mddContent: "",
+        mddPersistedBaseline: "",
         managerThreadId: null,
         synced: true,
         error: null,
