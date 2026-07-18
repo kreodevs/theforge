@@ -142,6 +142,7 @@ import {
   printMarkdownDocument,
 } from "../utils/printDocument";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
+import { evaluateTasksGenerationPrerequisites } from "../utils/tasksGenerationPrerequisites";
 import { isWorkshopAgentActivityPanel, isPluginPanel } from "../utils/workshopDocNav";
 import { fetchPluginArtifacts } from "../utils/pluginApi";
 import {
@@ -502,6 +503,27 @@ export default function WorkshopView({
   const hasSpec = (specContent ?? "").trim().length > 0;
   const complexity = project?.complexity ?? "HIGH";
   const isLegacyProject = project?.projectType === "LEGACY";
+  const tasksPrerequisites = useMemo(
+    () =>
+      evaluateTasksGenerationPrerequisites({
+        mddMarkdown: effectiveMddTrimmed,
+        blueprintMarkdown: blueprintContent,
+        specMarkdown: specContent,
+        apiContractsMarkdown: apiContractsContent,
+        uiScreensMarkdown: uiScreensContent,
+        hasUxTeam: project?.hasUxTeam === true,
+        legacyBaseline: isLegacyProject,
+      }),
+    [
+      effectiveMddTrimmed,
+      blueprintContent,
+      specContent,
+      apiContractsContent,
+      uiScreensContent,
+      project?.hasUxTeam,
+      isLegacyProject,
+    ],
+  );
   const legacyChangeGateSatisfied = useMemo(() => {
     if (!isLegacyProject) return true;
     const ordinal = activeWorkshopStage?.ordinal ?? 1;
@@ -2403,7 +2425,7 @@ export default function WorkshopView({
         id: "regen",
         label: "Regenerar tasks",
         icon: RefreshCw,
-        disabled: loading || !effectiveMddTrimmed || !blueprintContent?.trim() || !projectId || isGenerationGateBlocked("tasks"),
+        disabled: loading || !tasksPrerequisites.ready || !projectId || isGenerationGateBlocked("tasks"),
         onClick: () => void generateTasks(projectId),
       };
     } else if (centralPanel === "agent-governance" && hasAgentGovernance) {
@@ -3683,9 +3705,9 @@ export default function WorkshopView({
                 {centralPanel === "tasks" && !!tasksContent?.trim() && (
                   <WorkshopRegenButton
                     onClick={() => generateTasks(projectId)}
-                    disabled={loading || !effectiveMddTrimmed || !blueprintContent?.trim()}
+                    disabled={loading || !tasksPrerequisites.ready}
                     loading={loading}
-                    ariaLabel="Regenerar Tasks desde MDD y Blueprint"
+                    ariaLabel="Regenerar Tasks desde upstream SDD"
                   />
                 )}
                 {centralPanel === "tasks" && !!tasksContent?.trim() && (
@@ -5064,16 +5086,16 @@ export default function WorkshopView({
               <StandardDocPanel
                 icon={ListTodo}
                 title="Task Breakdown"
-                description="Desglose ejecutable desde MDD y Blueprint."
+                description={tasksPrerequisites.hint}
                 content={tasksContent}
                 onContentChange={(v) => setTasksContent(v)}
                 onSave={() => void persistTasksContent(tasksContent ?? "")}
                 isDirty={tasksDirty}
                 viewMode={tasksViewMode}
                 onGenerate={() => generateTasks(projectId)}
-                canGenerate={!!(effectiveMddTrimmed && blueprintContent?.trim())}
+                canGenerate={tasksPrerequisites.ready}
                 isLoading={loading}
-                generateLabel="Generar Tasks desde MDD y Blueprint"
+                generateLabel="Generar Tasks (MDD + Spec + Blueprint + API + pantallas)"
                 placeholder="# Task Breakdown\n\nUser Story: US-001 …\n\n- [ ] Tarea…"
                 onBlur={handleTasksBlur}
                 legacyGenerateLabel={canGenerateFromCodebase ? "Generar Tasks desde MDD Inicial" : undefined}

@@ -4,6 +4,7 @@ import {
   tasksLlmAuditorOutputSchema,
   TASKS_LLM_AUDITOR_PASS_THRESHOLD,
   TASKS_PIPELINE_MAX_REPAIRS,
+  TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED,
   type TasksGenerationPlan,
   type TasksLlmAuditorOutput,
   type TasksPipelineQualitySnapshot,
@@ -25,6 +26,11 @@ import {
 import { runTasksPreflightStrict } from "./tasks-preflight.util.js";
 import { buildHeuristicTasksPlan } from "./tasks-heuristic-plan.util.js";
 import { buildSlimTasksPlannerContext } from "./tasks-planner-context.util.js";
+import {
+  buildTasksCoverageChecklist,
+  serializeTasksCoverageChecklist,
+} from "./tasks-coverage-checklist.util.js";
+import { isTasksDocumentTruncated } from "./tasks-generation-structure.util.js";
 
 export type TasksPipelineInput = {
   mddMarkdown: string;
@@ -39,6 +45,7 @@ export type TasksPipelineInput = {
   taskOpts: LegacyGenerateOptions & {
     navigationMap?: string;
     specContent?: string | null;
+    useCasesContent?: string | null;
     userStoriesContent?: string | null;
     apiContractsContent?: string | null;
     logicFlowsContent?: string | null;
@@ -111,14 +118,17 @@ export class TasksGenerationPipelineService {
     let llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
     let quality = this.evaluateQuality(tasksMarkdown, input);
     let repairAttempts = 0;
+    const maxRepairs = isTasksDocumentTruncated(tasksMarkdown)
+      ? TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED
+      : TASKS_PIPELINE_MAX_REPAIRS;
 
     while (
-      repairAttempts < TASKS_PIPELINE_MAX_REPAIRS &&
+      repairAttempts < maxRepairs &&
       (!quality.ok || !llmAuditor.passed || llmAuditor.score < TASKS_LLM_AUDITOR_PASS_THRESHOLD)
     ) {
       repairAttempts += 1;
       this.logger.warn(
-        `[Tasks pipeline] repair ${repairAttempts}/${TASKS_PIPELINE_MAX_REPAIRS} ` +
+        `[Tasks pipeline] repair ${repairAttempts}/${maxRepairs} ` +
           `(det=${quality.score}, llm=${llmAuditor.score})`,
       );
       const repairFeedback = this.composeRepairFeedback(quality, llmAuditor, input.gapsFeedback);
@@ -183,15 +193,16 @@ export class TasksGenerationPipelineService {
     };
     append("Blueprint", input.blueprintMarkdown, 20_000);
     append("Spec", input.taskOpts.specContent, 15_000);
-    append("User Stories", input.taskOpts.userStoriesContent, 6_000);
+    append("Use Cases", input.taskOpts.useCasesContent, 10_000);
+    append("User Stories", input.taskOpts.userStoriesContent, 10_000);
     append("API Contracts", input.taskOpts.apiContractsContent, 20_000);
     append("Logic Flows", input.taskOpts.logicFlowsContent, 12_000);
     append("Infra", input.taskOpts.infraContent, 10_000);
     append("Architecture", input.taskOpts.architectureContent, 8_000);
     if (input.hasUxTeam) {
-      append("UX Guide", input.taskOpts.uxUiGuideContent, 6_000);
+      append("UX Guide", input.taskOpts.uxUiGuideContent, 8_000);
     }
-    append("Pantallas", input.taskOpts.uiScreensContent, 8_000);
+    append("Pantallas", input.taskOpts.uiScreensContent, 20_000);
     if (input.taskOpts.navigationMap?.trim()) {
       append("Navigation map", input.taskOpts.navigationMap, 8_000);
     }
@@ -255,17 +266,41 @@ export class TasksGenerationPipelineService {
     return heuristic;
   }
 
+  private buildAuditorUpstreamContext(input: TasksPipelineInput, tasksMarkdown: string): string {
+    const append = (label: string, content?: string | null, cap = 8_000) => {
+      const t = (content ?? "").trim();
+      if (!t) return "";
+      return `\n\n${label}:\n---\n${t.slice(0, cap)}\n---`;
+    };
+    const checklist = buildTasksCoverageChecklist({
+      tasksMarkdown,
+      apiContractsMarkdown: input.taskOpts.apiContractsContent,
+      uiScreensMarkdown: input.taskOpts.uiScreensContent,
+      mddMarkdown: input.mddMarkdown,
+      infraMarkdown: input.taskOpts.infraContent,
+    });
+    return (
+      append("API Contracts", input.taskOpts.apiContractsContent, 12_000) +
+      append("Pantallas", input.taskOpts.uiScreensContent, 12_000) +
+      append("User Stories", input.taskOpts.userStoriesContent, 6_000) +
+      append("Use Cases", input.taskOpts.useCasesContent, 6_000) +
+      `\n\nChecklist determinista (gaps conocidos):\n---\n${serializeTasksCoverageChecklist(checklist)}\n---`
+    );
+  }
+
   private async runLlmAuditor(
     tasksMarkdown: string,
     input: TasksPipelineInput,
   ): Promise<TasksLlmAuditorOutput> {
+    const upstream = this.buildAuditorUpstreamContext(input, tasksMarkdown);
     const prompt =
       "Audita el siguiente tasks.md contra el MDD y upstream del contexto.\n\n" +
       "MDD (extracto):\n---\n" +
-      input.mddMarkdown.trim().slice(0, 12_000) +
+      input.mddMarkdown.trim().slice(0, 16_000) +
       "\n---\n\n" +
-      "tasks.md:\n---\n" +
-      tasksMarkdown.trim().slice(0, 20_000) +
+      upstream +
+      "\n\ntasks.md:\n---\n" +
+      tasksMarkdown.trim().slice(0, 24_000) +
       "\n---";
     const parsed = await this.callAuditorJson({
       step: "auditor",
@@ -362,6 +397,7 @@ export class TasksGenerationPipelineService {
     feedback: string,
     input: TasksPipelineInput,
   ): Promise<string> {
+    const upstream = this.buildAuditorUpstreamContext(input, tasksMarkdown);
     const prompt =
       "Repara el documento Tasks según gaps.\n\n" +
       "Plan JSON:\n---\n" +
@@ -370,15 +406,16 @@ export class TasksGenerationPipelineService {
       "Gaps:\n---\n" +
       feedback +
       "\n---\n\n" +
-      "tasks.md actual:\n---\n" +
+      upstream +
+      "\n\ntasks.md actual:\n---\n" +
       tasksMarkdown.trim().slice(0, 22_000) +
       "\n---\n\n" +
       "MDD (referencia):\n---\n" +
-      input.mddMarkdown.trim().slice(0, 8_000) +
+      input.mddMarkdown.trim().slice(0, 10_000) +
       "\n---";
     const repaired = await this.ai.generateAuditorResponse(prompt, [], {
       systemPrompt: TASKS_REPAIR_PROMPT,
-      maxTokensOverride: resolveLlmMaxTokensForPurpose("document"),
+      maxTokensOverride: resolveLlmMaxTokensForPurpose("tasksDoc"),
     });
     const trimmed = repaired.trim();
     if (trimmed.startsWith("#") || trimmed.includes("## Backend")) {
@@ -401,6 +438,8 @@ export class TasksGenerationPipelineService {
       inventory: input.inventory,
       uiScreensMarkdown: input.taskOpts.uiScreensContent,
       apiContractsMarkdown: input.taskOpts.apiContractsContent,
+      infraMarkdown: input.taskOpts.infraContent,
+      userStoriesMarkdown: input.taskOpts.userStoriesContent,
     });
   }
 

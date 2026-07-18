@@ -19,8 +19,9 @@ describe("tasks-heuristic-plan", () => {
       hasUxTeam: false,
     });
 
-    assert.ok(plan.items.length >= 4);
-    assert.ok(plan.items.some((i) => i.layer === "Backend" && /tenants/i.test(i.title)));
+    assert.ok(plan.items.length >= 5);
+    assert.ok(plan.items.some((i) => i.layer === "Backend" && /POST.*tenants/i.test(i.title)));
+    assert.ok(plan.items.some((i) => i.layer === "Backend" && /GET.*tenants/i.test(i.title)));
     assert.ok(plan.items.some((i) => i.layer === "Frontend" && i.title.includes("/chat")));
     assert.ok(!plan.items.some((i) => i.title.includes("proc-cap")));
     assert.ok(plan.items.some((i) => i.layer === "Infra"));

@@ -30,6 +30,8 @@ export function evaluateTasksGenerationQuality(params: {
   inventory?: DomainInventory | null;
   uiScreensMarkdown?: string | null;
   apiContractsMarkdown?: string | null;
+  infraMarkdown?: string | null;
+  userStoriesMarkdown?: string | null;
 }): TasksQualityReport {
   const tasksMarkdown = (params.tasksMarkdown ?? "").trim();
   if (tasksMarkdown.length < 48) {
@@ -56,11 +58,15 @@ export function evaluateTasksGenerationQuality(params: {
     inventory: params.inventory ?? undefined,
   });
 
-  const audit = auditTasks(parsed, params.inventory ?? undefined);
+  const audit = auditTasks(parsed, params.inventory ?? undefined, {
+    requireStoryRef: (params.userStoriesMarkdown ?? "").trim().length >= 80,
+  });
   const structure = evaluateTasksStructure({
     tasksMarkdown,
     uiScreensMarkdown: params.uiScreensMarkdown,
     apiContractsMarkdown: params.apiContractsMarkdown,
+    mddMarkdown: params.mddMarkdown,
+    infraMarkdown: params.infraMarkdown,
   });
   const score = Math.round(accuracy.score * 0.55 + audit.score * 0.45);
   const ok =

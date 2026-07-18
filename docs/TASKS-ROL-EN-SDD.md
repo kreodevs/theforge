@@ -109,11 +109,12 @@ Con Tasks **incompletos o genéricos**, vuelve el escenario sin Tasks: hay que l
 Pipeline: `TasksGenerationPipelineService` → `ProjectsService.generateTasks`:
 
 1. **Pre-flight** (`tasks-preflight.util.ts`) — bloquea si MDD vacío o DocAccuracy &lt; 70; **70–89** → warning y continúa; C4 (pantallas) solo exige `uiScreens` con `hasUxTeam`; `?acknowledgeGaps=true` relaja gate MDD. Antes del LLM, **`ensureTasksUpstreamArtifacts`** normaliza Spec, sync pantallas y regenera API/flujos vacíos (`tasks-upstream-prep.util.ts`).
-2. **Tasks Planner** — JSON de plan (`T-001`…) con modelo **auditor/planner** (`auditorChatModel` en Ajustes; `AiService.generateAuditorResponse` → mismos adaptadores que chat/OpenRouter).
-3. **Redactor** — `AiService.generateTasks` con plan JSON inyectado (modelo de chat estándar).
-4. **Tasks Auditor LLM** — score ≥ 92, gaps estructurados (mismo modelo auditor/planner).
-5. **Gates deterministas** — `TaskAccuracy` + `task-auditor` v2 (`tasks-generation-quality.util.ts`).
-6. **Reparación** — hasta 2 ciclos con feedback combinado (Auditor LLM + gates).
+2. **Tasks Planner** — JSON de plan (`T-001`…) con modelo **auditor/planner**; fallback heurístico **1 ítem por endpoint**.
+3. **Redactor** — `AiService.generateTasks` con plan JSON, Use Cases, caps ampliados API/pantallas y **`max_tokens` perfil `tasksDoc` (131K)**.
+4. **Tasks Auditor LLM** — score ≥ 92, con extractos API/pantallas y **checklist determinista** (`tasks-coverage-checklist.util.ts`).
+5. **Gates deterministas** — cobertura bijectiva endpoint↔task y ruta↔Frontend; secciones Testing/Deploy; `TaskAccuracy` + `task-auditor` v2 (`mdd_ref` / `story_ref` obligatorios en implementación).
+6. **Reparación** — hasta 2 ciclos (3 si documento truncado) con feedback combinado (Auditor LLM + gates).
+7. **W4 cascada** — reintento Tasks con `acknowledgeGaps` solo si DocAccuracy upstream &lt; 70.
 
 Configuración: **Ajustes → Editar instancia → Modelo auditor / planner** (vacío = modelo de chat).
 

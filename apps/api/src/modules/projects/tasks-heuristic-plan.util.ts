@@ -7,7 +7,6 @@ import { extractEntities } from "../engine/conformance.service.js";
 import { extractSectionByNumber } from "../engine/mdd-markdown-parser.js";
 import {
   extractHttpEndpointsFromMarkdown,
-  type HttpEndpointRef,
 } from "../ui-mcp/api-contract-endpoints.util.js";
 import { extractPantallaRoutes } from "./tasks-generation-structure.util.js";
 
@@ -22,18 +21,6 @@ export type HeuristicTasksPlanInput = {
 function nextTaskId(counter: { n: number }): string {
   counter.n += 1;
   return `T-${String(counter.n).padStart(3, "0")}`;
-}
-
-function groupEndpointsByResource(endpoints: HttpEndpointRef[]): Map<string, HttpEndpointRef[]> {
-  const groups = new Map<string, HttpEndpointRef[]>();
-  for (const ep of endpoints) {
-    const parts = ep.path.split("/").filter(Boolean);
-    const resource = parts.length >= 3 ? parts.slice(0, 3).join("/") : ep.path;
-    const list = groups.get(resource) ?? [];
-    list.push(ep);
-    groups.set(resource, list);
-  }
-  return groups;
 }
 
 function filterPlannerRoutes(routes: string[]): string[] {
@@ -52,20 +39,18 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
   const sections = new Set<string>(["Backend", "Infra", "QA"]);
 
   const endpoints = extractHttpEndpointsFromMarkdown(input.apiContractsMarkdown ?? "");
-  for (const [resource, eps] of groupEndpointsByResource(endpoints)) {
-    const sample = eps
-      .slice(0, 4)
-      .map((e) => `${e.method} ${e.path}`)
-      .join(", ");
+  for (const ep of endpoints) {
     items.push({
       id: nextTaskId(counter),
-      title: `Implementar endpoints ${resource} (${sample})`,
+      title: `Implementar endpoint ${ep.method} ${ep.path}`,
       layer: "Backend",
-      mddRefs: [`§4 ${eps[0]?.path ?? resource}`],
+      mddRefs: [`§4 ${ep.path}`],
       storyRefs: [],
-      upstreamRefs: eps.map((e) => `api-contracts:${e.method} ${e.path}`),
+      upstreamRefs: [`api-contracts:${ep.method} ${ep.path}`],
       dependsOn: [],
-      targetFilesHint: [`apps/api/src/modules/${resource.split("/").pop()?.replace(/-/g, "_") ?? "domain"}/`],
+      targetFilesHint: [
+        `apps/api/src/modules/${ep.path.split("/").filter(Boolean).pop()?.replace(/-/g, "_") ?? "domain"}/`,
+      ],
     });
   }
 
